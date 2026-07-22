@@ -39,6 +39,7 @@ from scripts.calibration_anchor_fit import (
     build_win_counts,
     check_connectivity,
     compute_residuals,
+    fit_bot_cell_rating,
     fit_bradley_terry,
     main,
 )
@@ -52,6 +53,25 @@ BOOTSTRAP_MIN_WIDTH = 1.0  # a well-conditioned CI must not collapse to a point
 BOOTSTRAP_MAX_WIDTH = 1500.0  # generous upper bound — not a runaway/degenerate CI
 
 RATING_SCALE = 400.0  # matches the Elo/Bradley-Terry 400*log10(pi) convention
+
+# Phase 180 (D-06) bot-cell fit tolerances.
+BOT_CELL_RECOVERY_TOLERANCE = 1.0  # rating points; oracle is an exact single-param BT fixed point
+G_PRESET_MIN_MAGNITUDE = 50.0  # a deliberately asymmetric fixture must yield a clearly-signed gap
+
+# 10 FIXED anchors (mirrors the shape of reports/data/anchor-ladder-internal-scale.json's
+# internal_rating block) — 5 Maia rungs + 5 Stockfish skills, held constant by the fit.
+FIXED_RATINGS = {
+    "maia700": 1129.29,
+    "maia1100": 1373.87,
+    "maia1500": 1500.0,
+    "maia1900": 1626.39,
+    "maia2300": 1706.49,
+    "sf0": 1069.33,
+    "sf3": 1363.88,
+    "sf5": 1525.09,
+    "sf8": 1801.10,
+    "sf10": 1907.93,
+}
 
 
 def _expected_score(rating_i: float, rating_j: float) -> float:
@@ -263,3 +283,71 @@ def test_residuals() -> None:
         observed_cross - predicted_cross, abs=RESIDUAL_TOLERANCE
     )
     assert cross_family["cross_family"] is True
+
+
+def _synthetic_bot_counts(
+    true_rating: float, fixed_ratings: dict[str, float], games_per_anchor: float
+) -> tuple[dict[str, float], dict[str, float]]:
+    """Builds EXACT Bradley-Terry folded win/games counts for a bot at `true_rating`.
+
+    win_counts[a] = games * P(bot beats anchor a) at the model's expected score,
+    so `true_rating` is an exact fixed point of the single-parameter MM iteration
+    (up to the fit's own numerical tolerance) — the fit must recover it.
+    """
+    wins = {a: games_per_anchor * _expected_score(true_rating, r) for a, r in fixed_ratings.items()}
+    games = {a: games_per_anchor for a in fixed_ratings}
+    return wins, games
+
+
+def test_fit_bot_cell_rating_synthetic_ground_truth() -> None:
+    """Single-parameter pinned-anchor MLE recovers a KNOWN bot strength (D-06).
+
+    The counts are generated at the model's exact expected scores against the 10
+    fixed anchors, so the true rating is an exact fixed point — the fit must
+    return it within a small tolerance while the anchors stay pinned.
+    """
+    true_rating = 1450.0
+    wins, games = _synthetic_bot_counts(true_rating, FIXED_RATINGS, games_per_anchor=500.0)
+
+    fitted = fit_bot_cell_rating(wins, games, FIXED_RATINGS)
+
+    assert fitted == pytest.approx(true_rating, abs=BOT_CELL_RECOVERY_TOLERANCE)
+
+
+def test_g_preset_sign() -> None:
+    """g_preset = rating_vs_maia - rating_vs_sf carries the fixture's asymmetry (Pitfall 3).
+
+    On a fabricated cell that beats the SF family HARDER than the Maia family,
+    the SF-fit rating must land clearly above the Maia-fit rating, so g_preset
+    (Maia - SF) is clearly NEGATIVE — the two families are fit separately and the
+    gap is a real measured signal, never averaged away.
+    """
+    maia = {a: r for a, r in FIXED_RATINGS.items() if a.startswith("maia")}
+    sf = {a: r for a, r in FIXED_RATINGS.items() if a.startswith("sf")}
+
+    # Same games everywhere; the bot performs as a 1450-strength player vs Maia
+    # but as a much stronger 1700-strength player vs SF (asymmetric by construction).
+    wins_vs_maia, games_vs_maia = _synthetic_bot_counts(1450.0, maia, games_per_anchor=500.0)
+    wins_vs_sf, games_vs_sf = _synthetic_bot_counts(1700.0, sf, games_per_anchor=500.0)
+
+    rating_vs_maia = fit_bot_cell_rating(wins_vs_maia, games_vs_maia, FIXED_RATINGS)
+    rating_vs_sf = fit_bot_cell_rating(wins_vs_sf, games_vs_sf, FIXED_RATINGS)
+    g_preset = rating_vs_maia - rating_vs_sf
+
+    assert rating_vs_sf > rating_vs_maia
+    assert g_preset < -G_PRESET_MIN_MAGNITUDE
+
+
+def test_fit_bot_cell_rating_rejects_bad_input() -> None:
+    """fit_bot_cell_rating fails loud (T-180-02), never NaN, on empty/mis-keyed input."""
+    # Empty games -> nothing to fit.
+    with pytest.raises(ValueError):
+        fit_bot_cell_rating({}, {}, FIXED_RATINGS)
+
+    # A counted anchor label absent from fixed_ratings -> refuse to fit garbage.
+    with pytest.raises(ValueError):
+        fit_bot_cell_rating(
+            {"maia1500": 5.0, "not_an_anchor": 3.0},
+            {"maia1500": 10.0, "not_an_anchor": 10.0},
+            FIXED_RATINGS,
+        )

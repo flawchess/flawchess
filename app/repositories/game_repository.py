@@ -3,7 +3,7 @@
 from collections.abc import Sequence
 
 import sqlalchemy as sa
-from sqlalchemy import delete, func, select, update
+from sqlalchemy import and_, delete, func, or_, select, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -260,6 +260,67 @@ async def delete_all_games_for_user(session: AsyncSession, user_id: int) -> int:
     await session.execute(delete(GamePosition).where(GamePosition.user_id == user_id))
     result = await session.execute(delete(Game).where(Game.user_id == user_id).returning(Game.id))
     return len(result.fetchall())
+
+
+async def update_bot_game_persona_id(session: AsyncSession, game_id: int, persona_id: str) -> None:
+    """Write a stored bot game's `persona_id` (Phase 185, T-185-01).
+
+    Mirrors update_bot_game_pgn_and_url's shape exactly — a single-column
+    targeted UPDATE. Does NOT commit — the caller owns the transaction (D-10).
+    Called only from the `if created:` branch of store_bot_game_service, so a
+    duplicate resubmit never re-writes persona_id (D-11 idempotency).
+
+    Args:
+        session: AsyncSession to use.
+        game_id: The row's internal id (already scoped to the caller's user
+            by the preceding lookup).
+        persona_id: The client-supplied persona identifier to persist.
+    """
+    await session.execute(update(Game).where(Game.id == game_id).values(persona_id=persona_id))
+
+
+async def count_wins_by_persona(session: AsyncSession, user_id: int) -> dict[str, int]:
+    """Return win counts grouped by persona_id for the given user (Phase 185, T-185-02).
+
+    Excludes draws, losses, and rows where persona_id IS NULL (custom-mode
+    games never earn a persona win). The `platform == "flawchess"` predicate
+    is defense-in-depth (Open Question 2 in 185-RESEARCH.md) — persona_id is
+    only ever set on flawchess-platform rows, but this guards against a future
+    bug where persona_id might accidentally get set on a non-flawchess path.
+
+    win_cond mirrors stats_repository.query_results_by_time_control's
+    win_cond VERBATIM — do not redefine a third divergent copy of this logic
+    (project has a history of color-parity bugs).
+
+    Args:
+        session: AsyncSession to use.
+        user_id: Internal user PK, scoping the aggregation (never cross-user).
+
+    Returns:
+        Dict mapping persona_id -> win count. Personas with zero wins for
+        this user are simply absent from the dict (not present as 0).
+    """
+    win_cond = or_(
+        and_(Game.result == "1-0", Game.user_color == "white"),
+        and_(Game.result == "0-1", Game.user_color == "black"),
+    )
+    win_count = func.count().filter(win_cond)
+    result = await session.execute(
+        select(Game.persona_id, win_count.label("wins"))
+        .where(
+            Game.user_id == user_id,
+            Game.persona_id.is_not(None),
+            Game.platform == "flawchess",
+        )
+        .group_by(Game.persona_id)
+        # WR-01 fix: without this HAVING, a persona group with played-but-never-won
+        # games still produced a ("persona_id", 0) row, contradicting the docstring
+        # above ("zero-win personas are simply absent") — filter them out in SQL
+        # rather than just correcting the prose, since the docstring's contract is
+        # also what the response payload should uphold.
+        .having(win_count > 0)
+    )
+    return {row[0]: row[1] for row in result.all()}
 
 
 async def count_games_by_platform(session: AsyncSession, user_id: int) -> dict[str, int]:

@@ -66,6 +66,10 @@ vi.mock('@sentry/react', () => ({ captureException: vi.fn() }));
 // (unmocked, real hook) POSTs `/imports/eval/tier1/{id}` through it, and the
 // "one-click tier-1 enqueue" describe block below needs to control/observe
 // that call the same way the store tests control `botsApi.storeGame`.
+// CR-01: `getPersonaWins` is also mocked here (not left as `...actual.botsApi`)
+// so the "store on finish" tests below can assert the win-star cache actually
+// refetches after a successful store, rather than falling through to the
+// real (network-hitting) implementation.
 vi.mock('@/api/client', async () => {
   const actual = await vi.importActual<typeof import('@/api/client')>('@/api/client');
   return {
@@ -73,6 +77,7 @@ vi.mock('@/api/client', async () => {
     botsApi: {
       ...actual.botsApi,
       storeGame: vi.fn(),
+      getPersonaWins: vi.fn(),
     },
     apiClient: {
       ...actual.apiClient,
@@ -101,6 +106,11 @@ interface FakeGameHandle {
   /** 171-09 (gap 2): settable so a test can prove the ChessBoard consumer
    * actually reads game.lastMove, not just that the hook exposes it. */
   lastMove: { from: string; to: string } | null;
+  /** Phase 183 Plan 05 (D-07): settable so a test can drive the bot's
+   * outgoing draw-offer banner without any real grade-callback machinery. */
+  setBotDrawOffer: (offer: boolean) => void;
+  acceptBotDraw: ReturnType<typeof vi.fn>;
+  declineBotDraw: ReturnType<typeof vi.fn>;
 }
 
 const fakeGame: FakeGameHandle = {
@@ -110,6 +120,9 @@ const fakeGame: FakeGameHandle = {
   lastSettings: null,
   moveHistory: [],
   lastMove: null,
+  setBotDrawOffer: () => {},
+  acceptBotDraw: vi.fn(),
+  declineBotDraw: vi.fn(),
 };
 
 vi.mock('@/hooks/useBotGame', () => ({
@@ -121,10 +134,12 @@ vi.mock('@/hooks/useBotGame', () => ({
     // confirmLive() fires — needed here only so `ResumeGate`'s
     // `resume !== null && !game.live` render gate stays honest.
     const [live, setLive] = useState<boolean>(resume === undefined);
+    const [botDrawOffer, setBotDrawOffer] = useState(false);
 
     fakeGame.setOutcome = setOutcome;
     fakeGame.setPgn = setPgn;
     fakeGame.lastSettings = settings;
+    fakeGame.setBotDrawOffer = setBotDrawOffer;
 
     return {
       position: 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1',
@@ -140,6 +155,9 @@ vi.mock('@/hooks/useBotGame', () => ({
       pgn,
       drawOfferPending: false,
       canOfferDraw: true,
+      botDrawOffer,
+      acceptBotDraw: fakeGame.acceptBotDraw,
+      declineBotDraw: fakeGame.declineBotDraw,
       gameUuid: FAKE_GAME_UUID,
       live,
       confirmLive: () => setLive(true),
@@ -290,7 +308,13 @@ function pendingStoreKeyFor(ownerKey: string | null): string {
   return `${BOT_PENDING_STORE_KEY_PREFIX}${ownerKey ?? 'anon'}`;
 }
 
+/** Phase 183: the default setup view is now `PersonaGrid`, not `SetupScreen`
+ * directly (PERS-01/PERS-04) — this helper routes through the Custom entry
+ * first, so every pre-existing SetupScreen-driven test below keeps working
+ * unchanged from that point on. */
 async function startFromSetup(colorTestId = 'setup-color-white', tcTestId = 'setup-tc-blitz-5-3') {
+  await waitFor(() => expect(screen.getByTestId('bots-persona-grid')).toBeTruthy());
+  fireEvent.click(screen.getByTestId('bots-persona-custom'));
   await waitFor(() => expect(screen.getByTestId('setup-screen')).toBeTruthy());
   fireEvent.click(screen.getByTestId(colorTestId));
   fireEvent.click(screen.getByTestId(tcTestId));
@@ -303,8 +327,14 @@ beforeEach(() => {
   fakeGame.newGame.mockClear();
   fakeGame.moveHistory = [];
   fakeGame.lastMove = null;
+  fakeGame.acceptBotDraw.mockClear();
+  fakeGame.declineBotDraw.mockClear();
   navigateSpy.mockClear();
   vi.mocked(botsApi.storeGame).mockReset();
+  // CR-01: a benign default so `useBotPersonaWins`'s mount-time fetch resolves
+  // rather than hanging — tests that assert on refetch counts override this.
+  vi.mocked(botsApi.getPersonaWins).mockReset();
+  vi.mocked(botsApi.getPersonaWins).mockResolvedValue({});
   // A safe default: the D-13 mount-drain effect fires on EVERY BotsPage
   // mount now that `useDrainPendingStore` is unmocked (Plan 07). Tests that
   // don't care about the store (e.g. the D-11 setup/discard convergence
@@ -352,8 +382,10 @@ describe('Bots — profile fetch failure (WR-08)', () => {
     await waitFor(() => expect(screen.getByTestId('bots-page-error')).toBeTruthy());
     expect(screen.getByTestId('bots-page-error').textContent).toContain('Something went wrong');
 
-    // Not the game, not the setup screen, and NOT stuck on the loading branch.
+    // Not the game, not the setup view (grid or Custom), and NOT stuck on
+    // the loading branch.
     expect(screen.queryByTestId('bots-page')).toBeNull();
+    expect(screen.queryByTestId('bots-persona-grid')).toBeNull();
     expect(screen.queryByTestId('setup-screen')).toBeNull();
     expect(screen.queryByTestId('bots-page-loading')).toBeNull();
 
@@ -365,11 +397,39 @@ describe('Bots — profile fetch failure (WR-08)', () => {
 });
 
 describe('Bots — setup/resume/new-game convergence (V-11)', () => {
-  it('renders the setup screen when there is no snapshot', async () => {
+  it('renders the persona grid (not SetupScreen) when there is no snapshot (Phase 183, PERS-01)', async () => {
     renderBots();
 
-    await waitFor(() => expect(screen.getByTestId('setup-screen')).toBeTruthy());
+    await waitFor(() => expect(screen.getByTestId('bots-persona-grid')).toBeTruthy());
+    expect(screen.queryByTestId('setup-screen')).toBeNull();
     expect(screen.queryByTestId('bots-page')).toBeNull();
+  });
+
+  it('selecting the Custom entry renders the unchanged SetupScreen (Phase 183, PERS-04)', async () => {
+    renderBots();
+
+    await waitFor(() => expect(screen.getByTestId('bots-persona-grid')).toBeTruthy());
+    fireEvent.click(screen.getByTestId('bots-persona-custom'));
+
+    await waitFor(() => expect(screen.getByTestId('setup-screen')).toBeTruthy());
+    expect(screen.queryByTestId('bots-persona-grid')).toBeNull();
+  });
+
+  it('selecting a persona opens the detail surface, whose Play routes through the single handleStart entry (Phase 183, PERS-02)', async () => {
+    renderBots();
+
+    await waitFor(() => expect(screen.getByTestId('bots-persona-grid')).toBeTruthy());
+    fireEvent.click(screen.getByTestId('bots-persona-card-attacker-800'));
+
+    await waitFor(() => expect(screen.getByTestId('persona-detail-surface')).toBeTruthy());
+    fireEvent.click(screen.getByTestId('persona-color-white'));
+    fireEvent.click(screen.getByTestId('btn-persona-play'));
+
+    await waitFor(() => expect(screen.getByTestId('bots-page')).toBeTruthy());
+    expect(fakeGame.lastSettings).not.toBeNull();
+    const settings = fakeGame.lastSettings as BotGameSettings;
+    expect(settings.personaId).toBe('attacker-800');
+    expect(settings.userColor).toBe('white');
   });
 
   it('mounts the game with the settings chosen at setup', async () => {
@@ -388,13 +448,14 @@ describe('Bots — setup/resume/new-game convergence (V-11)', () => {
     expect(settings.incrementSeconds).toBe(3);
   });
 
-  it('snapshot beats setup — setup-screen is absent when a snapshot is present', async () => {
+  it('snapshot beats setup — neither the persona grid nor SetupScreen render when a snapshot is present', async () => {
     localStorage.setItem(snapshotKeyFor('user@example.com'), JSON.stringify(buildSnapshot()));
 
     renderBots();
 
     await waitFor(() => expect(screen.getByTestId('bots-page')).toBeTruthy());
     expect(screen.getByTestId('resume-gate')).toBeTruthy();
+    expect(screen.queryByTestId('bots-persona-grid')).toBeNull();
     expect(screen.queryByTestId('setup-screen')).toBeNull();
   });
 
@@ -412,7 +473,9 @@ describe('Bots — setup/resume/new-game convergence (V-11)', () => {
     fireEvent.click(screen.getByTestId('btn-discard'));
     fireEvent.click(screen.getByTestId('btn-discard-confirm'));
 
-    await waitFor(() => expect(screen.getByTestId('setup-screen')).toBeTruthy());
+    // Falls through to the setup view's default (Phase 183: the persona
+    // grid, not SetupScreen directly).
+    await waitFor(() => expect(screen.getByTestId('bots-persona-grid')).toBeTruthy());
     expect(screen.queryByTestId('bots-page')).toBeNull();
     expect(localStorage.getItem(snapshotKeyFor(ownerKey))).toBeNull();
     // 170 D-05: discard never touches the pending-store queue.
@@ -430,11 +493,13 @@ describe('Bots — setup/resume/new-game convergence (V-11)', () => {
     await waitFor(() => expect(screen.getByTestId('result-dialog')).toBeTruthy());
     fireEvent.click(screen.getByTestId('btn-new-game'));
 
-    await waitFor(() => expect(screen.getByTestId('setup-screen')).toBeTruthy());
+    // Falls through to the setup view's default (Phase 183: the persona
+    // grid, not SetupScreen directly).
+    await waitFor(() => expect(screen.getByTestId('bots-persona-grid')).toBeTruthy());
     expect(screen.queryByTestId('bots-page')).toBeNull();
     // The load-bearing negative assertion (D-11): the old wiring called
     // game.newGame() and restarted in place with the same settings — a test
-    // that only checks for setup-screen would also pass against that wiring.
+    // that only checks for the setup view would also pass against that wiring.
     expect(fakeGame.newGame).not.toHaveBeenCalled();
   });
 
@@ -454,7 +519,9 @@ describe('Bots — setup/resume/new-game convergence (V-11)', () => {
 
     fireEvent.click(screen.getByTestId('strip-btn-new-game'));
 
-    await waitFor(() => expect(screen.getByTestId('setup-screen')).toBeTruthy());
+    // Falls through to the setup view's default (Phase 183: the persona
+    // grid, not SetupScreen directly).
+    await waitFor(() => expect(screen.getByTestId('bots-persona-grid')).toBeTruthy());
     expect(screen.queryByTestId('bots-page')).toBeNull();
     expect(fakeGame.newGame).not.toHaveBeenCalled();
   });
@@ -468,12 +535,156 @@ describe('Bots — setup/resume/new-game convergence (V-11)', () => {
 
     renderBots();
 
+    await waitFor(() => expect(screen.getByTestId('bots-persona-grid')).toBeTruthy());
+    fireEvent.click(screen.getByTestId('bots-persona-custom'));
     await waitFor(() => expect(screen.getByTestId('setup-screen')).toBeTruthy());
     fireEvent.click(screen.getByTestId('setup-color-black'));
     fireEvent.click(screen.getByTestId('btn-start-game'));
 
     await waitFor(() => expect(screen.getByTestId('bots-page')).toBeTruthy());
     expect(fakeGame.lastSettings?.userColor).toBe('black');
+  });
+});
+
+describe('Bots — bot clock persona presence (D-06)', () => {
+  it('shows the persona avatar + name in the bot clock strip for a persona game', async () => {
+    renderBots();
+
+    await waitFor(() => expect(screen.getByTestId('bots-persona-grid')).toBeTruthy());
+    fireEvent.click(screen.getByTestId('bots-persona-card-attacker-800'));
+
+    await waitFor(() => expect(screen.getByTestId('persona-detail-surface')).toBeTruthy());
+    fireEvent.click(screen.getByTestId('persona-color-white'));
+    fireEvent.click(screen.getByTestId('btn-persona-play'));
+
+    await waitFor(() => expect(screen.getByTestId('bots-page')).toBeTruthy());
+    const clock = screen.getByTestId('clock-bot');
+    expect(clock.textContent).toContain('Ziggy the Wasp');
+    // The estimated ELO label renders below the name.
+    expect(clock.textContent).toContain('~800');
+    // The avatar node renders: either the real-art <img> (when the asset
+    // exists) or the emoji placeholder — both live in the one aria-hidden
+    // avatar circle.
+    expect(clock.querySelectorAll('span[aria-hidden="true"]').length).toBe(1);
+  });
+
+  it('shows the generic "FlawChess Bot" label for a Custom game (no persona)', async () => {
+    renderBots();
+    await startFromSetup();
+
+    const clock = screen.getByTestId('clock-bot');
+    expect(clock.textContent).toContain('FlawChess Bot');
+  });
+});
+
+describe('Bots — bot draw-offer banner wiring (D-07)', () => {
+  it('shows the persona-named draw offer and Accept/Decline call through to the hook', async () => {
+    renderBots();
+
+    await waitFor(() => expect(screen.getByTestId('bots-persona-grid')).toBeTruthy());
+    fireEvent.click(screen.getByTestId('bots-persona-card-attacker-800'));
+    await waitFor(() => expect(screen.getByTestId('persona-detail-surface')).toBeTruthy());
+    fireEvent.click(screen.getByTestId('persona-color-white'));
+    fireEvent.click(screen.getByTestId('btn-persona-play'));
+    await waitFor(() => expect(screen.getByTestId('bots-page')).toBeTruthy());
+
+    expect(screen.queryByTestId('bot-draw-offer-banner')).toBeNull();
+
+    act(() => {
+      fakeGame.setBotDrawOffer(true);
+    });
+
+    const banner = screen.getByTestId('bot-draw-offer-banner');
+    expect(banner.textContent).toContain('Ziggy the Wasp offers a draw');
+
+    fireEvent.click(screen.getByTestId('btn-accept-bot-draw'));
+    expect(fakeGame.acceptBotDraw).toHaveBeenCalledTimes(1);
+
+    fireEvent.click(screen.getByTestId('btn-decline-bot-draw'));
+    expect(fakeGame.declineBotDraw).toHaveBeenCalledTimes(1);
+  });
+
+  it('falls back to the generic draw-offer copy for a Custom game (no persona)', async () => {
+    renderBots();
+    await startFromSetup();
+
+    act(() => {
+      fakeGame.setBotDrawOffer(true);
+    });
+
+    expect(screen.getByTestId('bot-draw-offer-banner').textContent).toContain(
+      'The bot offers a draw',
+    );
+  });
+});
+
+describe('Bots — Rematch/New opponent (Phase 183, D-06/D-08)', () => {
+  async function startPersonaGame(): Promise<void> {
+    renderBots();
+    await waitFor(() => expect(screen.getByTestId('bots-persona-grid')).toBeTruthy());
+    fireEvent.click(screen.getByTestId('bots-persona-card-attacker-800'));
+    await waitFor(() => expect(screen.getByTestId('persona-detail-surface')).toBeTruthy());
+    fireEvent.click(screen.getByTestId('persona-color-white'));
+    fireEvent.click(screen.getByTestId('btn-persona-play'));
+    await waitFor(() => expect(screen.getByTestId('bots-page')).toBeTruthy());
+  }
+
+  it('names the persona in the result dialog title and Rematch starts a fresh game with the SAME pinned settings', async () => {
+    await startPersonaGame();
+
+    act(() => {
+      fakeGame.setOutcome({ reason: 'checkmate', winner: 'black' });
+    });
+    await waitFor(() => expect(screen.getByTestId('result-dialog')).toBeTruthy());
+    expect(screen.getByTestId('result-dialog').textContent).toContain('Ziggy the Wasp wins — checkmate');
+
+    const rematchBtn = screen.getByTestId('btn-rematch');
+    expect(rematchBtn.textContent).toBe('Rematch Ziggy the Wasp');
+
+    const firstSettings = fakeGame.lastSettings;
+    fireEvent.click(rematchBtn);
+
+    // Rematch remounts BotsGame (a fresh game, outcome reset to null) with the
+    // EXACT SAME pinned settings object — via the single existing handleStart
+    // path (never a second start path, never game.newGame()).
+    await waitFor(() => expect(screen.queryByTestId('result-dialog')).toBeNull());
+    expect(fakeGame.lastSettings).toBe(firstSettings);
+    expect(fakeGame.lastSettings?.personaId).toBe('attacker-800');
+    expect(fakeGame.newGame).not.toHaveBeenCalled();
+  });
+
+  it('the result strip mirrors the SAME persona-named copy and a working Rematch (mobile parity)', async () => {
+    await startPersonaGame();
+
+    act(() => {
+      fakeGame.setOutcome({ reason: 'checkmate', winner: 'black' });
+    });
+    await waitFor(() => expect(screen.getByTestId('result-dialog')).toBeTruthy());
+    fireEvent.click(screen.getByRole('button', { name: 'Close' }));
+    await waitFor(() => expect(screen.getByTestId('strip-btn-rematch')).toBeTruthy());
+
+    expect(screen.getByTestId('strip-btn-rematch').textContent).toBe('Rematch Ziggy the Wasp');
+    const firstSettings = fakeGame.lastSettings;
+    fireEvent.click(screen.getByTestId('strip-btn-rematch'));
+
+    // A fresh game remounts (outcome reset to null) — the strip/dialog give
+    // way to the live game controls again.
+    await waitFor(() => expect(screen.queryByTestId('strip-btn-rematch')).toBeNull());
+    expect(fakeGame.lastSettings).toBe(firstSettings);
+    expect(fakeGame.lastSettings?.personaId).toBe('attacker-800');
+  });
+
+  it('a Custom game shows generic result copy and no Rematch button (New opponent only)', async () => {
+    renderBots();
+    await startFromSetup();
+
+    act(() => {
+      fakeGame.setOutcome({ reason: 'resignation', winner: 'white' });
+    });
+    await waitFor(() => expect(screen.getByTestId('result-dialog')).toBeTruthy());
+
+    expect(screen.queryByTestId('btn-rematch')).toBeNull();
+    expect(screen.getByTestId('btn-new-game').textContent).toBe('New opponent');
   });
 });
 
@@ -639,6 +850,23 @@ describe('store on finish (D-21)', () => {
     // onSuccess never fired — the entry survives for the D-13 next-visit drain.
     expect(pendingEntryCount()).toBe(1);
   }, 15000);
+
+  // CR-01: without the finish-time store's onSuccess invalidation, this
+  // second call never happens — `useBotPersonaWins`'s 5-minute staleTime
+  // query instance (mounted once at BotsPage level, never unmounted across
+  // this cycle) would keep serving its pre-game win counts.
+  it('invalidates the persona-wins cache after a successful finish-time store, forcing a refetch (CR-01)', async () => {
+    vi.mocked(botsApi.storeGame).mockResolvedValue({ game_id: 1, created: true });
+    renderBots();
+    await startFromSetup();
+
+    await waitFor(() => expect(botsApi.getPersonaWins).toHaveBeenCalledTimes(1));
+
+    finishAndEnqueue(FAKE_GAME_UUID);
+
+    await waitFor(() => expect(botsApi.storeGame).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(botsApi.getPersonaWins).toHaveBeenCalledTimes(2));
+  });
 });
 
 describe('Analyze CTA carries the played colour (171 UAT gap 1)', () => {

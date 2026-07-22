@@ -35,8 +35,9 @@ import json
 import math
 import random
 from collections.abc import Iterable, Sequence
+from dataclasses import dataclass, field
 from pathlib import Path
-from typing import TypedDict
+from typing import Literal, TypedDict
 
 # --- Per-game TSV column contract (shared with the Node harness, must match exactly) ---
 TSV_HEADER = (
@@ -77,6 +78,21 @@ INTERNAL_SCALE_HEADER = (
     f"{DEFAULT_SCALE_PIN} == {DEFAULT_SCALE_PIN_VALUE:.0f}; see "
     ".planning/notes/ for the compression-verdict methodology and findings."
 )
+
+# --- Bot-cell fit path (Phase 180, D-06) ---------------------------------------
+# Two-sided 95% normal z used to back out a per-family standard error from a
+# bootstrap CI width when inverse-CI-weighting the per-preset combined G_preset.
+NORMAL_95_Z = 1.959963985
+# Required columns of the harness's aggregated per-(cell, anchor) WDL TSV
+# (a superset is fine — the row carries extra provenance columns). `wins`/
+# `draws`/`losses` are the BOT's outcomes vs `anchor`.
+BOT_TSV_REQUIRED_COLUMNS = ("bot_elo", "bot_blend", "anchor", "wins", "draws", "losses")
+# Optional per-row flag (Pitfall 4): the cell landed beyond the anchor ladder.
+BOT_TSV_BEYOND_LADDER_COLUMN = "beyond_ladder"
+# Single source of truth for the 10 FIXED anchor ratings the bot cell is fit
+# against — the JSON the anchor-ladder path writes (keeps the two in sync,
+# rather than hardcoding the numbers from calibration-internal-scale.mjs).
+DEFAULT_INTERNAL_SCALE_JSON = "reports/data/anchor-ladder-internal-scale.json"
 
 
 def load_games(path: str) -> list[dict[str, str]]:
@@ -395,20 +411,389 @@ def _print_report(
         )
 
 
+# ==============================================================================
+# Bot-cell strength curves (Phase 180, D-06)
+# ==============================================================================
+# The anchor-ladder path above jointly fits N free anchors. This path instead
+# holds those 10 anchors FIXED at their measured INTERNAL_RATING and fits ONE
+# free parameter — a bot cell's own strength — TWICE per cell (once on its
+# vs-Maia rows, once on its vs-SF rows). The two ratings' difference IS the
+# cross-family style-inflation gap G_preset (Pitfall 3 — never average it away).
+
+
+def _anchor_family(anchor: str) -> Literal["maia", "sf"]:
+    """Classifies an anchor label into its engine family, fail-loud on unknown."""
+    if anchor.startswith("maia"):
+        return "maia"
+    if anchor.startswith("sf"):
+        return "sf"
+    raise ValueError(f"_anchor_family: unknown anchor family for {anchor!r} (expected maia*/sf*)")
+
+
+def _clamp_bot_win_counts(
+    win_counts_vs_fixed: dict[str, float], games_vs_fixed: dict[str, float]
+) -> dict[str, float]:
+    """Continuity-corrects each bot-vs-anchor score before the single-parameter fit.
+
+    Mirrors `_clamp_win_counts`'s epsilon formula (epsilon = 1 /
+    (SCORE_CLAMP_EPSILON_DIVISOR * games)) applied per anchor: a swept bracket
+    (bot wins/loses ALL games vs an anchor) would otherwise drive its strength
+    to +infinity / 0 and the log10 to +/-infinity (Pitfall 4). Only anchors with
+    games > 0 are returned.
+    """
+    clamped: dict[str, float] = {}
+    for anchor, games in games_vs_fixed.items():
+        if games <= 0:
+            continue
+        epsilon = 1.0 / (SCORE_CLAMP_EPSILON_DIVISOR * games)
+        score = win_counts_vs_fixed.get(anchor, 0.0) / games
+        clamped_score = min(1.0 - epsilon, max(epsilon, score))
+        clamped[anchor] = clamped_score * games
+    return clamped
+
+
+def fit_bot_cell_rating(
+    win_counts_vs_fixed: dict[str, float],
+    games_vs_fixed: dict[str, float],
+    fixed_ratings: dict[str, float],
+    tol: float = DEFAULT_FIT_TOL,
+    max_iter: int = DEFAULT_FIT_MAX_ITER,
+) -> float:
+    """Single-parameter pinned-anchor MLE (D-06): fit ONE bot strength, anchors fixed.
+
+    Specializes `fit_bradley_terry` from N free anchors to a single free bot
+    strength played against N FIXED opponents held at `fixed_ratings` (their
+    Phase-173 measured INTERNAL_RATING). `win_counts_vs_fixed[a]` is the bot's
+    folded score vs anchor `a` (wins + 0.5*draws); `games_vs_fixed[a]` its games
+    vs `a`. Returns the bot's rating on the same 400*log10(pi) internal scale.
+
+    Applies the same continuity-correction discipline as `_clamp_win_counts`
+    before iterating. Seed `strength = 1.0` neutral (Pitfall 3 — NEVER seed from
+    a folklore/nominal bot_elo).
+
+    Fail-loud (STRIDE Tampering, T-180-02): raises ValueError on empty games or
+    on any counted anchor label missing from `fixed_ratings` — never returns NaN
+    for a corrupted/mis-keyed input consumed downstream by SEED-104.
+    """
+    if sum(games_vs_fixed.values()) <= 0:
+        raise ValueError("fit_bot_cell_rating: no games played vs any fixed anchor")
+    for anchor in set(win_counts_vs_fixed) | set(games_vs_fixed):
+        if anchor not in fixed_ratings:
+            raise ValueError(
+                f"fit_bot_cell_rating: anchor {anchor!r} absent from fixed_ratings "
+                f"{sorted(fixed_ratings)!r}"
+            )
+
+    clamped = _clamp_bot_win_counts(win_counts_vs_fixed, games_vs_fixed)
+    total_wins = sum(clamped.values())
+    anchor_strengths = {a: 10.0 ** (fixed_ratings[a] / RATING_SCALE) for a in clamped}
+    strength = 1.0  # neutral init, same convention as fit_bradley_terry
+    for _ in range(max_iter):
+        denom = sum(games_vs_fixed[a] / (strength + anchor_strengths[a]) for a in clamped)
+        new_strength = total_wins / denom if denom > 0 else strength
+        if abs(new_strength - strength) / strength < tol:
+            strength = new_strength
+            break
+        strength = new_strength
+    return RATING_SCALE * math.log10(strength)
+
+
+class BotCell(TypedDict):
+    """One (bot_elo, bot_blend) cell's raw W/D/L split by anchor family."""
+
+    bot_elo: int
+    bot_blend: float
+    beyond_ladder: bool
+    wdl_vs_maia: dict[str, tuple[float, float, float]]  # anchor -> (wins, draws, losses)
+    wdl_vs_sf: dict[str, tuple[float, float, float]]
+
+
+class BotCellFit(TypedDict):
+    """One fitted cell: two per-family ratings, the direct G_preset, and CIs."""
+
+    bot_elo: int
+    bot_blend: float
+    rating_vs_maia: float
+    rating_vs_sf: float
+    g_preset: float
+    ci_vs_maia: tuple[float, float]
+    ci_vs_sf: tuple[float, float]
+    beyond_ladder: bool
+
+
+@dataclass
+class _BotCellAccum:
+    beyond_ladder: bool = False
+    wdl_vs_maia: dict[str, tuple[float, float, float]] = field(default_factory=dict)
+    wdl_vs_sf: dict[str, tuple[float, float, float]] = field(default_factory=dict)
+
+
+def load_bot_cells(path: str) -> list[BotCell]:
+    """Reads the harness's aggregated per-(cell, anchor) WDL TSV into BotCells.
+
+    Aggregates rows by (bot_elo, bot_blend), splitting each row's W/D/L into the
+    Maia and SF family dicts. Fail-loud (T-180-02) on a missing required column.
+    Carries the optional `beyond_ladder` per-row flag through if present.
+    """
+    with open(path, encoding="utf-8") as f:
+        rows = [line.rstrip("\n") for line in f if line.strip()]
+    if not rows:
+        raise ValueError(f"load_bot_cells: {path!r} is empty")
+
+    header = rows[0].split("\t")
+    missing = [c for c in BOT_TSV_REQUIRED_COLUMNS if c not in header]
+    if missing:
+        raise ValueError(
+            f"load_bot_cells: TSV missing required column(s) {missing!r}; header={header!r}"
+        )
+    idx = {c: header.index(c) for c in header}
+    has_beyond = BOT_TSV_BEYOND_LADDER_COLUMN in header
+
+    cells: dict[tuple[int, float], _BotCellAccum] = {}
+    for line in rows[1:]:
+        fields = line.split("\t")
+        bot_elo = int(fields[idx["bot_elo"]])
+        bot_blend = float(fields[idx["bot_blend"]])
+        anchor = fields[idx["anchor"]]
+        wdl = (
+            float(fields[idx["wins"]]),
+            float(fields[idx["draws"]]),
+            float(fields[idx["losses"]]),
+        )
+        accum = cells.setdefault((bot_elo, bot_blend), _BotCellAccum())
+        if _anchor_family(anchor) == "maia":
+            accum.wdl_vs_maia[anchor] = wdl
+        else:
+            accum.wdl_vs_sf[anchor] = wdl
+        if has_beyond and fields[idx[BOT_TSV_BEYOND_LADDER_COLUMN]].strip().lower() == "true":
+            accum.beyond_ladder = True
+
+    return [
+        BotCell(
+            bot_elo=elo,
+            bot_blend=blend,
+            beyond_ladder=accum.beyond_ladder,
+            wdl_vs_maia=accum.wdl_vs_maia,
+            wdl_vs_sf=accum.wdl_vs_sf,
+        )
+        for (elo, blend), accum in sorted(cells.items())
+    ]
+
+
+def _fold_wdl(
+    wdl: dict[str, tuple[float, float, float]],
+) -> tuple[dict[str, float], dict[str, float]]:
+    """Folds per-anchor (wins, draws, losses) to (folded_score, games) dicts (D-05)."""
+    wins = {a: w + DRAW_SPLIT * d for a, (w, d, _loss) in wdl.items()}
+    games = {a: w + d + loss for a, (w, d, loss) in wdl.items()}
+    return wins, games
+
+
+def bootstrap_bot_cell_ci(
+    wdl_vs_fixed: dict[str, tuple[float, float, float]],
+    fixed_ratings: dict[str, float],
+    n_samples: int = DEFAULT_BOOTSTRAP_SAMPLES,
+    seed: int = DEFAULT_BOOTSTRAP_SEED,
+) -> tuple[float, float]:
+    """Parametric bootstrap CI for one bot cell's rating vs one anchor family (D-06).
+
+    Resamples each anchor's W/D/L from a multinomial at the observed rates (A3:
+    the aggregate counts are sufficient since the anchors are held FIXED, not
+    jointly refit — anchor uncertainty is deliberately NOT propagated, A4),
+    refits `fit_bot_cell_rating` each resample, and returns the empirical
+    [BOOTSTRAP_LOWER_PERCENTILE, BOOTSTRAP_UPPER_PERCENTILE] interval.
+    """
+    rng = random.Random(seed)
+    ratings: list[float] = []
+    for _ in range(n_samples):
+        wins: dict[str, float] = {}
+        games: dict[str, float] = {}
+        for anchor, (w, d, ell) in wdl_vs_fixed.items():
+            n = int(round(w + d + ell))
+            if n <= 0:
+                continue
+            p_win = w / n
+            p_draw = d / n
+            r_win = r_draw = 0
+            for _game in range(n):
+                r = rng.random()
+                if r < p_win:
+                    r_win += 1
+                elif r < p_win + p_draw:
+                    r_draw += 1
+            wins[anchor] = r_win + DRAW_SPLIT * r_draw
+            games[anchor] = float(n)
+        ratings.append(fit_bot_cell_rating(wins, games, fixed_ratings))
+
+    ratings.sort()
+    last_index = len(ratings) - 1
+    lo_idx = max(0, round(BOOTSTRAP_LOWER_PERCENTILE * last_index))
+    hi_idx = min(last_index, round(BOOTSTRAP_UPPER_PERCENTILE * last_index))
+    return (ratings[lo_idx], ratings[hi_idx])
+
+
+def fit_all_bot_cells(
+    cells: Sequence[BotCell],
+    fixed_ratings: dict[str, float],
+    n_bootstrap: int = DEFAULT_BOOTSTRAP_SAMPLES,
+    seed: int = DEFAULT_BOOTSTRAP_SEED,
+) -> list[BotCellFit]:
+    """Fits every cell TWICE (vs-Maia, vs-SF) against the SAME fixed anchors.
+
+    `g_preset = rating_vs_maia - rating_vs_sf` is computed directly from the two
+    separate fits — the two families are NEVER merged before fitting (Pitfall 3).
+    """
+    fits: list[BotCellFit] = []
+    for cell in cells:
+        wins_maia, games_maia = _fold_wdl(cell["wdl_vs_maia"])
+        wins_sf, games_sf = _fold_wdl(cell["wdl_vs_sf"])
+        rating_vs_maia = fit_bot_cell_rating(wins_maia, games_maia, fixed_ratings)
+        rating_vs_sf = fit_bot_cell_rating(wins_sf, games_sf, fixed_ratings)
+        ci_vs_maia = bootstrap_bot_cell_ci(cell["wdl_vs_maia"], fixed_ratings, n_bootstrap, seed)
+        ci_vs_sf = bootstrap_bot_cell_ci(cell["wdl_vs_sf"], fixed_ratings, n_bootstrap, seed + 1)
+        fits.append(
+            BotCellFit(
+                bot_elo=cell["bot_elo"],
+                bot_blend=cell["bot_blend"],
+                rating_vs_maia=rating_vs_maia,
+                rating_vs_sf=rating_vs_sf,
+                g_preset=rating_vs_maia - rating_vs_sf,
+                ci_vs_maia=ci_vs_maia,
+                ci_vs_sf=ci_vs_sf,
+                beyond_ladder=cell["beyond_ladder"],
+            )
+        )
+    return fits
+
+
+def combine_preset_g_preset(cells_fit: Sequence[BotCellFit]) -> dict[str, dict[str, float]]:
+    """Per-preset combined G_preset scalar (open-Q3): inverse-CI-weighted mean.
+
+    Groups fitted cells by `bot_blend` (the preset key) and combines their
+    per-cell `g_preset` values with the same inverse-variance weighting
+    convention as combineAnchorEstimates — each cell's standard error is backed
+    out of its two per-family bootstrap CI widths (se_g = sqrt(se_maia^2 +
+    se_sf^2)). Falls back to an unweighted mean if every CI collapsed.
+    """
+    by_blend: dict[float, list[BotCellFit]] = {}
+    for cell in cells_fit:
+        by_blend.setdefault(cell["bot_blend"], []).append(cell)
+
+    combined: dict[str, dict[str, float]] = {}
+    for blend, group in sorted(by_blend.items()):
+        weighted_sum = 0.0
+        weight_total = 0.0
+        for cell in group:
+            se_maia = (cell["ci_vs_maia"][1] - cell["ci_vs_maia"][0]) / (2.0 * NORMAL_95_Z)
+            se_sf = (cell["ci_vs_sf"][1] - cell["ci_vs_sf"][0]) / (2.0 * NORMAL_95_Z)
+            se_g = math.hypot(se_maia, se_sf)
+            if se_g <= 0:
+                continue
+            weight = 1.0 / (se_g * se_g)
+            weighted_sum += weight * cell["g_preset"]
+            weight_total += weight
+        if weight_total > 0:
+            g_combined = weighted_sum / weight_total
+        else:  # every CI collapsed to a point — fall back to a plain mean
+            g_combined = sum(c["g_preset"] for c in group) / len(group)
+        combined[f"{blend:g}"] = {"g_preset_combined": g_combined, "n_cells": float(len(group))}
+    return combined
+
+
+def load_fixed_ratings(path: str) -> dict[str, float]:
+    """Reads the 10 fixed anchor INTERNAL_RATING values from the anchor-ladder JSON."""
+    with open(path, encoding="utf-8") as f:
+        payload = json.load(f)
+    ratings = payload.get("internal_rating")
+    if not isinstance(ratings, dict) or not ratings:
+        raise ValueError(f"load_fixed_ratings: {path!r} has no non-empty 'internal_rating' object")
+    return {str(a): float(r) for a, r in ratings.items()}
+
+
+def _write_bot_curves(out_json: str, cells_fit: Sequence[BotCellFit]) -> None:
+    """Writes the bot-curves JSON, mirroring `_write_outputs`'s caveated envelope.
+
+    Per-cell entries carry the two per-family ratings, the direct `g_preset`,
+    both CIs, and `beyond_ladder`; a `per_preset` block carries the combined
+    per-blend `G_preset` scalar (open-Q3: report both). The `_caveat` is the
+    INTERNAL-SCALE-NOT-human-ELO header verbatim (T-180-03).
+    """
+    payload = {
+        "_caveat": INTERNAL_SCALE_HEADER,
+        "cells": [
+            {
+                "bot_elo": cell["bot_elo"],
+                "bot_blend": cell["bot_blend"],
+                "rating_vs_maia": cell["rating_vs_maia"],
+                "rating_vs_sf": cell["rating_vs_sf"],
+                "g_preset": cell["g_preset"],
+                "ci_vs_maia": list(cell["ci_vs_maia"]),
+                "ci_vs_sf": list(cell["ci_vs_sf"]),
+                "beyond_ladder": cell["beyond_ladder"],
+            }
+            for cell in cells_fit
+        ],
+        "per_preset": combine_preset_g_preset(cells_fit),
+    }
+    Path(out_json).parent.mkdir(parents=True, exist_ok=True)
+    Path(out_json).write_text(
+        json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+    )
+
+
+def _run_bot_curves_path(args: argparse.Namespace, parser: argparse.ArgumentParser) -> None:
+    """Bot-cell fit path: load_bot_cells -> fit_all_bot_cells -> _write_bot_curves."""
+    try:
+        fixed_ratings = load_fixed_ratings(args.internal_scale_json)
+    except OSError as exc:
+        parser.error(f"--internal-scale-json: cannot read {args.internal_scale_json!r}: {exc}")
+    try:
+        cells = load_bot_cells(args.bot_input)
+    except OSError as exc:
+        parser.error(f"--bot-input: cannot read {args.bot_input!r}: {exc}")
+    if not cells:
+        parser.error(f"--bot-input: {args.bot_input!r} contains no bot cells")
+
+    cells_fit = fit_all_bot_cells(
+        cells, fixed_ratings, n_bootstrap=args.bootstrap_samples, seed=args.seed
+    )
+    _write_bot_curves(args.out_bot_curves, cells_fit)
+    print(f"# {INTERNAL_SCALE_HEADER}")
+    print("\nbot_elo\tbot_blend\trating_vs_maia\trating_vs_sf\tg_preset\tbeyond_ladder")
+    for cell in cells_fit:
+        print(
+            f"{cell['bot_elo']}\t{cell['bot_blend']:g}\t{cell['rating_vs_maia']:.2f}\t"
+            f"{cell['rating_vs_sf']:.2f}\t{cell['g_preset']:+.2f}\t{cell['beyond_ladder']}"
+        )
+
+
 def main(argv: Sequence[str] | None = None) -> None:
     parser = argparse.ArgumentParser(
         description="Joint Bradley-Terry/Elo rating fit over the anchor-ladder game graph (D-05)."
     )
+    # --- anchor-ladder mode (existing, D-05) ---
     parser.add_argument(
         "--input",
-        required=True,
-        help="Path to the raw per-game TSV emitted by calibration-anchor-ladder.mjs",
+        help="Path to the raw per-game TSV emitted by calibration-anchor-ladder.mjs "
+        "(anchor-ladder mode)",
     )
     parser.add_argument(
-        "--out-js", required=True, help="Output path for the Node-consumable INTERNAL_RATING module"
+        "--out-js", help="Output path for the Node-consumable INTERNAL_RATING module"
+    )
+    parser.add_argument("--out-json", help="Output path for the human/Python-readable JSON sibling")
+    # --- bot-curves mode (Phase 180, D-06) ---
+    parser.add_argument(
+        "--bot-input",
+        help="Path to the harness's aggregated per-(cell, anchor) WDL TSV (bot-curves mode)",
     )
     parser.add_argument(
-        "--out-json", required=True, help="Output path for the human/Python-readable JSON sibling"
+        "--out-bot-curves", help="Output path for the bot-curves JSON (bot-curves mode)"
+    )
+    parser.add_argument(
+        "--internal-scale-json",
+        default=DEFAULT_INTERNAL_SCALE_JSON,
+        help="Path to the anchor-ladder JSON providing the 10 FIXED anchor INTERNAL_RATING "
+        f"values (bot-curves mode; default {DEFAULT_INTERNAL_SCALE_JSON})",
     )
     parser.add_argument(
         "--bootstrap-samples",
@@ -423,6 +808,29 @@ def main(argv: Sequence[str] | None = None) -> None:
 
     if args.bootstrap_samples <= 0:
         parser.error(f"--bootstrap-samples must be positive, got {args.bootstrap_samples}")
+
+    # Bot-curves mode: fit per-preset strength curves + G_preset, leave the
+    # anchor-ladder path below entirely untouched.
+    if args.bot_input:
+        if not args.out_bot_curves:
+            parser.error("--out-bot-curves is required in bot-curves mode (--bot-input)")
+        _run_bot_curves_path(args, parser)
+        return
+
+    missing_flags = [
+        flag
+        for flag, value in (
+            ("--input", args.input),
+            ("--out-js", args.out_js),
+            ("--out-json", args.out_json),
+        )
+        if not value
+    ]
+    if missing_flags:
+        parser.error(
+            f"anchor-ladder mode requires {', '.join(missing_flags)} "
+            "(or use --bot-input for bot-curves mode)"
+        )
 
     try:
         games = load_games(args.input)

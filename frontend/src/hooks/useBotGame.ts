@@ -103,6 +103,8 @@ import { detectEndCondition, type BotGameOutcome } from '@/lib/botGameEnd';
 import {
   canOfferDraw as canOfferDrawGate,
   wouldBotAcceptDraw,
+  wouldBotResign,
+  wouldBotOfferDraw,
   DRAW_OFFER_COOLDOWN_MOVES,
 } from '@/lib/botDrawGate';
 import { annotateClock, finalizeBotPgn, toBackendTcStr } from '@/lib/botGamePgn';
@@ -111,6 +113,10 @@ import { createWorkerPool, type WorkerPool } from '@/lib/engine/workerPool';
 import { createMaiaQueue, type MaiaQueue } from '@/lib/engine/maiaQueue';
 import { selectBotMove, type BotMoveDeps } from '@/lib/engine/selectBotMove';
 import { selectBookMove } from '@/lib/engine/openingBook';
+import { styleBookWeighting, type BotStyleParams } from '@/lib/engine/botStyle';
+import { styleLinesFor, type Style } from '@/lib/engine/styleOpeningLines';
+import { BOT_STYLE_BUNDLES } from '@/lib/engine/botStyleBundles';
+import type { PersonaId } from '@/lib/personas/personaRegistry';
 import { loadOpeningPrefixSet } from '@/lib/openings';
 import { createDeadlineSearch, BOT_MIN_SEARCH_NODES } from '@/lib/engine/deadlineSearch';
 import {
@@ -173,6 +179,36 @@ export interface BotGameSettings {
   incrementSeconds: number;
   /** Which color the human player is playing. */
   userColor: MoverColor;
+  /**
+   * Optional bot-only style layer (Phase 182, STYLE-01/02/05). The SAME bare
+   * `BotStyleParams` object `selectBotMove.ts`'s `BotSettings.style` accepts
+   * (Plan 06) — never player-derived (BOT-03), never a style NAME (D-01).
+   * `undefined` runs today's exact code path everywhere it is consumed: the
+   * default `maiaPolicyWeighting` book, the Phase 169 draw gate (contempt 0),
+   * and the bot never resigns (D-03). Threaded into three seams below: the
+   * book-weighting call (`resolveBookMove`), the draw-accept contempt shift,
+   * and a new resign-hysteresis check — plus `selectBotMove`'s own
+   * `style`-gated regime hooks (Plan 06), reached via the same object at the
+   * `runBotTurn` search call site.
+   */
+  style?: BotStyleParams;
+  /**
+   * Optional persona identity (Phase 183, PERS-02/PERS-04). Mirrors `style?`'s
+   * optional-everywhere contract exactly: `undefined` means a Custom-mode
+   * game (PERS-04, by construction — the Custom setup flow never sets this
+   * field) and runs today's exact code path everywhere it is consumed. Only
+   * the id STRING is ever carried here — the full `Persona` object (and by
+   * extension its resolved `style` bundle) is looked up ONCE, on demand, via
+   * `PERSONA_REGISTRY`/`personaForId` (`@/lib/personas/personaRegistry`)
+   * wherever a component needs it (e.g. the Plan 05 draw-offer banner, a
+   * future persona badge) — never re-serialized or spread into this settings
+   * object or the snapshot. `personaId` is an INDEPENDENT field, never
+   * derived from `settings.style` via a reverse lookup: 6 personas share one
+   * style bundle by reference (Pitfall 4, 183-01-SUMMARY.md), so a
+   * style-to-persona reverse lookup cannot disambiguate which rung produced
+   * it.
+   */
+  personaId?: PersonaId;
 }
 
 /** The full state + callback contract this hook exposes. Serializable aside
@@ -206,6 +242,19 @@ export interface UseBotGameState {
   drawOfferPending: boolean;
   /** Whether the "Offer draw" button is currently clickable (D-04 throttle). */
   canOfferDraw: boolean;
+  /**
+   * True while the BOT has a live OUTGOING draw offer (Phase 183, D-07) —
+   * the counterpart to `drawOfferPending`, which tracks the user-initiated
+   * direction. Computed at the same `pool.grade().then()` seam as
+   * `wouldBotResign`, gated by `settings.style`. Auto-clears on the user's
+   * next committed move (D-07: "expires on the user's next move").
+   */
+  botDrawOffer: boolean;
+  /** Accepts the bot's own outgoing draw offer — ends the game as an agreed draw. */
+  acceptBotDraw: () => void;
+  /** Dismisses the bot's own outgoing draw offer without ending the game;
+   * the D-07 own-offer cooldown already restarted when the offer was raised. */
+  declineBotDraw: () => void;
   /** Stable per-game identifier (Phase 170 D-11): minted once via
    * `crypto.randomUUID()` at game start, carried unchanged through a resume,
    * and re-minted ONLY by `newGame()`. This is what keeps the server's
@@ -280,6 +329,60 @@ function delay(ms: number): Promise<void> {
 }
 
 /**
+ * D-07 (Phase 183): pure decision + counter update for the bot's own
+ * outgoing draw offer, extracted out of the `pool.grade().then()` callback
+ * (already dense — CLAUDE.md nesting/logic-LOC limits) so this one seam is
+ * isolated and easy to audit. Mirrors `wouldBotResign`'s caller-owned
+ * counter discipline: this function holds no state itself — the caller
+ * (`runBotTurn`) applies the returned mutation to its own refs.
+ *
+ * When an offer is already live or the game just ended (e.g. this same
+ * grade turn resigned), the cooldown counter is simply advanced — never
+ * reset — and no new offer is raised, even if `wouldBotOfferDraw` would
+ * otherwise say yes. Raising a fresh offer always resets the counter to 0
+ * (D-07: "the cooldown restarts").
+ */
+function resolveBotDrawOfferUpdate(
+  score: number,
+  chess: Chess,
+  style: BotStyleParams,
+  movesSinceOwnOffer: number,
+  offerAlreadyLive: boolean,
+  gameAlreadyOver: boolean,
+): { raiseOffer: boolean; nextMovesSinceOwnOffer: number } {
+  if (offerAlreadyLive || gameAlreadyOver) {
+    return { raiseOffer: false, nextMovesSinceOwnOffer: movesSinceOwnOffer + 1 };
+  }
+  const offers = wouldBotOfferDraw(score, chess, style.contempt, movesSinceOwnOffer);
+  return offers
+    ? { raiseOffer: true, nextMovesSinceOwnOffer: 0 }
+    : { raiseOffer: false, nextMovesSinceOwnOffer: movesSinceOwnOffer + 1 };
+}
+
+/**
+ * Reverse-resolves a bare `BotStyleParams` object to its `Style` key by
+ * identity against `BOT_STYLE_BUNDLES` (Phase 182, STYLE-01/Task 1).
+ * `BotGameSettings.style` is deliberately typed as the SAME numeric-only
+ * `BotStyleParams` shape `selectBotMove.ts`'s `BotSettings.style` accepts
+ * (D-01: no style names at the engine layer) — but
+ * `styleOpeningLines.ts`'s curated book-line sets are keyed by `Style` name,
+ * not by the params object itself (per `botStyleBundles.ts`'s own doc
+ * comment: "a bundle references its curated book set by key membership, not
+ * by embedding the set here"). `resolveBookMove` needs this one-hop lookup
+ * to find the right book for a given style. Every style a real caller
+ * supplies is one of the 4 exported `BOT_STYLE_BUNDLES` singleton objects
+ * (D-02) — reference equality is exact for those. A `BotStyleParams` value
+ * NOT sourced from a bundle (a future Custom-mode literal, PERS-04, out of
+ * scope this phase) resolves to `undefined`, and the caller falls back to
+ * the default `maiaPolicyWeighting` — a safe, silent degrade, never a crash.
+ */
+function styleNameFor(style: BotStyleParams): Style | undefined {
+  return (Object.keys(BOT_STYLE_BUNDLES) as Style[]).find(
+    (name) => BOT_STYLE_BUNDLES[name] === style,
+  );
+}
+
+/**
  * Assembles the deps object passed to `selectBotMove` for one bot turn — the
  * ONLY wiring point where the D-16 think deadline reaches the engine, via
  * the injectable `deps.search` seam (Phase 166 D-08). Extracted out of
@@ -317,6 +420,7 @@ async function resolveBookMove(
   chess: Chess,
   botElo: number,
   policy: MaiaQueue['policy'],
+  style: BotStyleParams | undefined,
 ): Promise<string | null> {
   let prefixSet: ReadonlySet<string>;
   try {
@@ -340,8 +444,23 @@ async function resolveBookMove(
 
   const rawPolicy = await policy(chess.fen(), botElo, side);
 
-  // Default weighting only (D-06: the BookWeightingFn seam exists for a future
-  // persona, which this phase deliberately does not build).
+  // Phase 182, STYLE-01/D-03/D-06: a style's curated book lines get their
+  // base Maia weight boosted (styleBookWeighting composes over
+  // maiaPolicyWeighting, never replaces it). `moveHistorySan` is curried in
+  // at construction (Pitfall 2 — BookWeightingFn's own signature has no
+  // history slot); the color set is picked from `chess.turn()` (Open
+  // Question #3). `undefined` style, or a style with no resolvable name
+  // (styleNameFor), falls through to selectBookMove's own default
+  // `maiaPolicyWeighting` — byte-identical to the pre-182 behavior (D-03).
+  const styleName = style ? styleNameFor(style) : undefined;
+  if (style && styleName) {
+    const weighting = styleBookWeighting(
+      styleLinesFor(styleName, side),
+      moveHistorySan,
+      style.bookBoost,
+    );
+    return selectBookMove(moveHistorySan, legalMoves, prefixSet, rawPolicy, Math.random, weighting);
+  }
   return selectBookMove(moveHistorySan, legalMoves, prefixSet, rawPolicy, Math.random);
 }
 
@@ -469,6 +588,34 @@ export function useBotGame(
    * writes need a fresh read of this value from an event handler that does
    * not want to depend on (and re-run per) the state itself. */
   const movesSinceLastDeclineRef = useRef(resume?.movesSinceLastDecline ?? DRAW_OFFER_COOLDOWN_MOVES);
+  /** D-08 (Phase 182, STYLE-02): per-game hysteresis counter for a styled
+   * bot's resign check — consecutive OWN turns (not plies) whose FRESH
+   * practicalScore graded at/below `settings.style.threshold`. Mirrors the
+   * ref-latch pattern every other per-game counter in this hook uses
+   * (Pitfall 3, 182-RESEARCH.md): incremented/reset ONLY inside the same
+   * `pool.grade(...).then(...)` callback that already updates
+   * `lastRootPracticalScoreRef` below — never derived fresh per call, never
+   * module-level. Reset to 0 in `newGame()` alongside the other latches. For
+   * an unstyled game (`settings.style` undefined) this counter is never even
+   * touched — `wouldBotResign` is only ever called inside the
+   * `settings.style` guard (D-03). No resume-seed needed: a resumed game's
+   * fresh hysteresis state naturally rebuilds itself as the bot plays on. */
+  const consecutiveLowScoreTurnsRef = useRef(0);
+  /** D-07 (Phase 183): per-game counter for the bot's OWN outgoing
+   * draw-offer cooldown — mirrors `consecutiveLowScoreTurnsRef`'s
+   * caller-owned discipline exactly: mutated ONLY inside the same
+   * `pool.grade(...).then(...)` callback, incremented each bot turn, reset
+   * to 0 whenever the bot actually raises an offer. Reset to 0 in
+   * `newGame()`. Distinct from `movesSinceLastDeclineRef`, which counts the
+   * USER's own moves toward the D-04 offer-BUTTON throttle — different
+   * lifecycle, different direction (outgoing vs the user's button). */
+  const movesSinceOwnOfferRef = useRef(0);
+  /** D-07 (Phase 183): source-of-truth latch for the bot's live outgoing
+   * draw offer, mirroring `outcomeRef`'s raw-mutation-in-a-ref pattern — the
+   * `pool.grade().then()` continuation reads/writes this ref directly
+   * (never the `botDrawOffer` state) to stay stale-closure-safe, then
+   * mirrors the value into `botDrawOffer` state for rendering. */
+  const botDrawOfferRef = useRef(false);
 
   // ─── State ─────────────────────────────────────────────────────────────────
 
@@ -487,6 +634,11 @@ export function useBotGame(
   const [pgn, setPgn] = useState<string | null>(null);
   const [isBotThinking, setIsBotThinking] = useState(false);
   const [drawOfferPending, setDrawOfferPending] = useState(false);
+  /** D-07 (Phase 183): render-facing mirror of `botDrawOfferRef` — the bot's
+   * own live outgoing draw offer. No resume-seed: a resumed game restarts
+   * with no pending bot offer, same as a fresh game (the offer is a
+   * transient in-session flag, not persisted in the snapshot). */
+  const [botDrawOffer, setBotDrawOffer] = useState(false);
   /** D-04 throttle counter — initialized at the cooldown value so a draw can
    * be offered from the very start of a fresh game (no prior decline yet).
    * Seeded from `resume.movesSinceLastDecline` on a resume (Phase 170 D-09)
@@ -675,6 +827,18 @@ export function useBotGame(
       const chess = chessRef.current;
       const incrementMs = settings.incrementSeconds * 1000;
 
+      // D-07 (Phase 183): a bot's outgoing draw offer expires the instant the
+      // USER commits their next move — checked here (not in `attemptMove`)
+      // because this is the single seam both a user move AND a bot move
+      // reach; the `mover === settings.userColor` gate means a bot's own
+      // move commit (which can itself raise a NEW offer moments later, via
+      // the async grade callback) never clears the flag it might be about
+      // to set.
+      if (mover === settings.userColor && botDrawOfferRef.current) {
+        botDrawOfferRef.current = false;
+        setBotDrawOffer(false);
+      }
+
       // CR-02 fix: a plain subtraction, no floor-at-zero. By construction
       // both callers (attemptMove, runBotTurn) already call
       // flagIfOutOfTime before reaching this point, so debitMs never
@@ -733,17 +897,6 @@ export function useBotGame(
       // resetTurnAnchor's doc comment for why the two must travel together.
       resetTurnAnchor();
 
-      // Phase 170 D-01 (primary write path): a snapshot after every
-      // committed move, no fold needed — `clockBaseRef.current[mover]`
-      // above is already the settled post-move, post-increment value by
-      // this point. Skipped for a dormant resumed game (`!live`, so a
-      // stale re-serialization can never overwrite the source snapshot
-      // before the user confirms) and for a terminal move (`outcomeRef` is
-      // already set by the `finalizeGame` call above, whose own
-      // enqueue-and-clear owns persistence for a finished game instead) —
-      // though the `return` a few lines above already makes the terminal
-      // case unreachable here, this guard is kept explicit per the plan's
-      // stated invariant rather than relying on that ordering alone.
       // Phase 170 D-01 (primary write path): a snapshot after every
       // committed move, no fold needed — `clockBaseRef.current[mover]`
       // above is already the settled post-move, post-increment value by
@@ -860,7 +1013,10 @@ export function useBotGame(
     // nothing this game (e.g. it is still in book, which runs zero Stockfish
     // evals) and `wouldBotAcceptDraw` refuses outright — the bot never accepts
     // a draw off an evaluation it did not run.
-    const accepts = wouldBotAcceptDraw(lastRootPracticalScoreRef.current, chessRef.current);
+    // D-09 (Phase 182, STYLE-02): undefined style ⇒ contempt 0 ⇒ the exact
+    // pre-182 accept target (0.5), unchanged for every unstyled caller.
+    const contempt = settings.style?.contempt ?? 0;
+    const accepts = wouldBotAcceptDraw(lastRootPracticalScoreRef.current, chessRef.current, contempt);
     if (accepts) {
       finalizeGame({ reason: 'draw', drawReason: 'agreement' });
     } else {
@@ -868,13 +1024,33 @@ export function useBotGame(
       playSound('draw-declined');
     }
     setDrawOfferPending(false);
-  }, [drawOfferPending, finalizeGame]);
+  }, [drawOfferPending, finalizeGame, settings.style]);
 
   const offerDraw = useCallback((): void => {
     if (outcome) return;
     if (!canOfferDrawNow) return; // D-04 throttle gates the button itself
     setDrawOfferPending(true);
   }, [outcome, canOfferDrawNow]);
+
+  /** D-07 (Phase 183): accepts the bot's own outgoing draw offer. Guards on
+   * `outcomeRef` first, mirroring the user-offer resolution effect above —
+   * a stale accept firing after the game already ended some other way
+   * (e.g. the user flagged, or the offer itself is stale UI) is a no-op. */
+  const acceptBotDraw = useCallback((): void => {
+    if (outcomeRef.current) return;
+    botDrawOfferRef.current = false;
+    setBotDrawOffer(false);
+    finalizeGame({ reason: 'draw', drawReason: 'agreement' });
+  }, [finalizeGame]);
+
+  /** D-07 (Phase 183): dismisses the bot's own outgoing draw offer without
+   * ending the game. The own-offer cooldown already restarted (reset to 0)
+   * the moment the offer was raised, so declining only needs to clear the
+   * pending flag — no separate cooldown reset here. */
+  const declineBotDraw = useCallback((): void => {
+    botDrawOfferRef.current = false;
+    setBotDrawOffer(false);
+  }, []);
 
   // ─── New game ───────────────────────────────────────────────────────────────
 
@@ -887,6 +1063,15 @@ export function useBotGame(
     outcomeRef.current = null;
     // Back to the not-yet-evaluated sentinel — a fresh game has evaluated nothing.
     lastRootPracticalScoreRef.current = null;
+    // D-08 (Phase 182, STYLE-02): a fresh game's resign hysteresis starts
+    // clean — never leaks a prior game's consecutive-low-score streak.
+    consecutiveLowScoreTurnsRef.current = 0;
+    // D-07 (Phase 183): a fresh game has no live bot offer and no leaked
+    // own-offer cooldown streak — mirrors consecutiveLowScoreTurnsRef's
+    // per-game reset immediately above.
+    botDrawOfferRef.current = false;
+    setBotDrawOffer(false);
+    movesSinceOwnOfferRef.current = 0;
     // SC4: a fresh game re-enters the book.
     hasLeftBookRef.current = false;
     hasFiredLowTimeRef.current = false;
@@ -1145,13 +1330,22 @@ export function useBotGame(
         // for the rest of the game.
         const resolveMove = async (): Promise<{ uci: string; fromBook: boolean }> => {
           if (!hasLeftBookRef.current) {
-            const bookUci = await resolveBookMove(chess, settings.botElo, queue.policy);
+            const bookUci = await resolveBookMove(
+              chess,
+              settings.botElo,
+              queue.policy,
+              settings.style,
+            );
             if (bookUci !== null) return { uci: bookUci, fromBook: true };
             hasLeftBookRef.current = true;
           }
+          // STYLE-03/04 (Plan 06's selectBotMove.ts hooks): the SAME
+          // settings.style object also reaches the prior-reweighting
+          // (blend<=0) and score-shaping (search) regime branches there —
+          // undefined here is byte-identical to omitting the field (D-03).
           const searchedUci = await selectBotMove(
             fen,
-            { elo: settings.botElo, blend: settings.blend, budget },
+            { elo: settings.botElo, blend: settings.blend, budget, style: settings.style },
             deps,
             controller.signal,
           );
@@ -1251,13 +1445,70 @@ export function useBotGame(
         pool
           .grade(fen, [uci])
           .then((gradeMap) => {
+            // CR-02 fix (182-REVIEW.md): unlike the search/resolveMove()
+            // path above (which checks controller.signal.aborted per the
+            // D-17 two-signal contract), this continuation had NO staleness
+            // guard — a pool.grade() RPC can resolve arbitrarily late, so a
+            // grade issued for a discarded turn could land after
+            // newGame()/resign() mint a new game, corrupting
+            // lastRootPracticalScoreRef/consecutiveLowScoreTurnsRef with a
+            // stale score and even spuriously resigning the NEW game.
+            // `controller` is the SAME AbortController newGame()/resign()
+            // (via finalizeGame) already abort — bail out if it no longer
+            // matches the live turn.
+            if (controller.signal.aborted) return;
             const grade = gradeMap.get(uci);
             if (grade) {
-              lastRootPracticalScoreRef.current = evalToExpectedScore(
-                grade.evalCp,
-                grade.evalMate,
-                mover,
-              );
+              const score = evalToExpectedScore(grade.evalCp, grade.evalMate, mover);
+              lastRootPracticalScoreRef.current = score;
+
+              // D-07/D-08 (Phase 182, STYLE-02): the resign hysteresis
+              // counter and wouldBotResign check live entirely inside this
+              // `settings.style` guard (D-03: unstyled games never touch
+              // either) and are updated ONLY from a FRESH grade this same
+              // callback just computed — never from a stale prior-turn
+              // score (Task 3's "increments only on a fresh at/below-
+              // threshold score" must-have). Mirrors the ref-latch pattern
+              // (Pitfall 3): mutated here, reset only in newGame().
+              if (settings.style) {
+                if (score <= settings.style.threshold) {
+                  consecutiveLowScoreTurnsRef.current += 1;
+                } else {
+                  consecutiveLowScoreTurnsRef.current = 0;
+                }
+                const resigns = wouldBotResign(
+                  score,
+                  settings.style.threshold,
+                  consecutiveLowScoreTurnsRef.current,
+                  settings.style.hysteresisFloor,
+                  chessRef.current,
+                );
+                if (resigns) {
+                  // The bot resigns — the user wins (mirrors resign()'s own
+                  // winner logic, the confirmed-resign callback above).
+                  finalizeGame({ reason: 'resignation', winner: settings.userColor });
+                }
+
+                // D-07 (Phase 183, PERS-02/CR-02 discipline): the bot's own
+                // OUTGOING draw offer, checked at this SAME grade seam —
+                // never a second pool.grade() call site. If `resigns` just
+                // ended the game above, `outcomeRef.current` is already set
+                // (finalizeGame is synchronous), so `resolveBotDrawOfferUpdate`
+                // naturally refuses to raise an offer on the same turn.
+                const offerUpdate = resolveBotDrawOfferUpdate(
+                  score,
+                  chessRef.current,
+                  settings.style,
+                  movesSinceOwnOfferRef.current,
+                  botDrawOfferRef.current,
+                  outcomeRef.current !== null,
+                );
+                movesSinceOwnOfferRef.current = offerUpdate.nextMovesSinceOwnOffer;
+                if (offerUpdate.raiseOffer) {
+                  botDrawOfferRef.current = true;
+                  setBotDrawOffer(true);
+                }
+              }
             }
           })
           .catch(() => {
@@ -1269,9 +1520,12 @@ export function useBotGame(
       settings.botElo,
       settings.blend,
       settings.incrementSeconds,
+      settings.style,
+      settings.userColor,
       chargeableElapsedMs,
       flagIfOutOfTime,
       commitMove,
+      finalizeGame,
     ],
   );
 
@@ -1319,6 +1573,7 @@ export function useBotGame(
     pgn,
     drawOfferPending,
     canOfferDraw: canOfferDrawNow,
+    botDrawOffer,
     gameUuid,
     live,
     confirmLive,
@@ -1327,6 +1582,8 @@ export function useBotGame(
     returnToLive,
     resign,
     offerDraw,
+    acceptBotDraw,
+    declineBotDraw,
     newGame,
   };
 }

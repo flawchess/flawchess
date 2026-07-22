@@ -8,10 +8,32 @@ in `YYYY-MM-DD` (Europe/Zurich).
 
 ## [Unreleased]
 
+### Added
+
+- Persona win stars — winning a game against a bot persona now earns a gold star on that persona's roster card (up to three shown per persona), tracked per user on the server and updated as soon as you return to the roster after a win. Custom-setup games don't earn stars (Phase 185).
+
+- **Bot personas on the Bots page** — a roster of 24 named opponents, four play styles (Attacker, Trickster, Grinder, Wall) across six strength rungs each. Every persona is a complete pinned opponent: its own preset and style parameters, opening book, resign and draw-offer policy, avatar and bio. Browse the grid, open a persona for its bio and colour/time-control chips, and start a game in one action; your last colour and time control are remembered per persona. Personas are present in-game too — avatar and name in the clock strip, a draw-offer banner when the bot offers, persona-named result copy, and Rematch / New opponent when the game ends. Custom setup is still there for a hand-tuned bot (Phase 183).
+
+- Persona strength labels now come from a single generated calibration file, with a disclosure popover on the detail surface explaining what the number means. The labels are currently **provisional estimates from each persona's target rung** and the popover says so; a per-persona measurement sweep against the internal anchor ladder replaces them with measured values, at which point the popover switches to the measured wording on its own. Also adds the operator sweep runbook, the fit and codegen pipeline, and a CI drift gate on the generated file (Phase 184).
+
+- Dev: bot play-style levers — four named styles (Attacker, Trickster, Grinder, Wall) can now steer a bot's play through new bot-only parameters: a curated per-style opening book, signed draw contempt plus a hysteresis-gated resign policy, Maia policy reweighting by move features (checks, captures, pawn advances, trades) on the Human rungs, and additive score shaping with a variance preference on the Light/Deep rungs. A headless measurement script (`scripts/style-lever-measurement.mjs`) backs the per-style tuning with committed evidence. Every lever is optional and gated: with no style set, bot play and Custom mode are byte-identical to before. Dev-only, nothing selects a style yet (the Bots page personas land in Phase 183) (Phase 182).
+
+### Changed
+
+- The Bots roster is now organized as a strength ladder: six rung rows (~800 at the top, strongest at the bottom) by four style columns, with a single accent-colored style header row. Each card's own ELO label identifies its rung, so the grid needs no row labels, and the four style names fit on one line down to the narrowest phone widths (Phase 185).
+
+## [v2.6] Bot Strength Calibration — 2026-07-21
+
+### Added
+- Dev: three-preset bot strength-curve calibration harness — builds on the Phase 173 internal anchor scale to measure each play-style preset (Human / Light / Deep) against the 10 fixed Maia/Stockfish anchors. A pure-logic two-pass scheduler (`scripts/lib/calibration-bot-cell-schedule.mjs`) locates each bot cell's rough rating then brackets it with a cross-family (Maia + Stockfish) anchor set on the measured `INTERNAL_RATING` scale; a single-parameter pinned-anchor MLE (`fit_bot_cell_rating` in `scripts/calibration_anchor_fit.py`) produces per-cell `rating_vs_maia`/`rating_vs_sf` with CIs and the cross-family style-inflation gap `G_preset`; the harness also records near-free per-game quality metrics (draw rate, length, ACPL, blunder rate, SF/Maia agreement) and a resumable raw-game ledger. Validated on a real-engine pilot; the full ~18-22h three-preset sweep is an operator-run step. Dev-only, not yet wired into the product (feeds a future preset-strength surface, SEED-104) (Phase 180).
+
+- Dev: per-preset bot strength lookup curves — the Phase 180 sweep's 15 measured cells are now fitted into a shipping artifact that maps a target approximate blitz ELO to a bot setting per preset. `scripts/gen_bot_strength_curves.py` runs a monotone (PAVA isotonic) fit over each preset's measured points, converts to approximate human blitz ELO via the pooled style-gap correction plus a shared literature offset, and inverts it into 100-step lookups with honest per-preset ranges (Human ~900-1400, Light ~1500-1600, Deep ~1600-1800) and an approximate-ELO disclaimer. Emits `reports/data/bot-strength-lookup.json` plus a generated `frontend/src/generated/botStrengthCurves.ts`, both CI drift-checked. A sibling generator writes 7 off-grid confirmation-cell predictions with 95% CI bands and runbook commands for an operator validation run. Dev-only, nothing reads the lookup yet (Phase 181).
+
 ### Fixed
 - Maia "Human Move Probability" card: when you played a non-best move, the engine's best move is now marked as a gem in the card *before* you play it, matching the gem badge that already appeared once the move was played on the board. The card also classifies that gem at the mover's rating-at-game-time (consistent with the board badge) instead of the ELO slider (Quick 260719-m5g).
 - Best/gem move analysis now reaches games it previously skipped forever: lichess-imported games (with their own evals) and guest games are now covered by the best-move pass. This also un-orphans games whose best-move pass was skipped during a Maia-outage window. Gem/great badges on lichess games are now computed against the engine's own evaluation (previously they could be over-awarded).
 - Mobile analysis board: when analysis of a just-played bot game finishes, the move-quality icons (blunder/mistake, gem/great, book) now appear in the Moves tab automatically. Previously they stayed hidden until you switched to another tab and back.
+- Long analysis and bot-play sessions no longer creep toward an out-of-memory crash: the Maia move-prediction worker now releases each inference's memory instead of leaking it. Most visible on devices without WebGPU, where a marathon session could previously exhaust the WebAssembly heap (Quick 260721-sgb, SEED-113).
 
 ## [v2.5] Move Statistics — 2026-07-18
 
@@ -1109,7 +1131,8 @@ bookmarks, game cards, and rating / stats pages.
 - Rating history, global stats, openings W/D/L charts.
 - Multi-user auth with data isolation.
 
-[Unreleased]: https://github.com/flawchess/flawchess/compare/v2.5...HEAD
+[Unreleased]: https://github.com/flawchess/flawchess/compare/v2.6...HEAD
+[v2.6]: https://github.com/flawchess/flawchess/compare/v2.5...v2.6
 [v2.5]: https://github.com/flawchess/flawchess/compare/v2.4...v2.5
 [v2.4]: https://github.com/flawchess/flawchess/compare/v2.3...v2.4
 [v2.3]: https://github.com/flawchess/flawchess/compare/v2.2...v2.3

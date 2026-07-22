@@ -46,21 +46,26 @@
  * Usage:
  *   node --import ./scripts/lib/frontend-alias-hook.mjs scripts/calibration-harness.mjs \
  *     [--elo 1100,1500,1900] [--blends 0,0.5,1] \
- *     [--anchors maia1100,maia1300,maia1500,maia1700,maia1900,sf0,sf3,sf5] \
+ *     [--anchors maia700,maia1100,maia1500,maia1900,maia2300,sf0,sf3,sf5,sf8,sf10] \
  *     [--games-per-cell 20] [--seed 1] [--out-dir reports/data] [--stockfish-procs 4] \
  *     [--resume reports/data/calibration-harness-<ts>.tsv]
  *
- * **SEED-097 resumability:** a killed sweep leaves a durable prior TSV whose
- * completed `(bot_elo, bot_blend, anchor)` cells form a grid-order prefix (one
- * `writeRow` per cell, WR-01). `--resume <prior.tsv>` re-invokes the SAME
- * command, reads that file, skips every already-swept cell, and APPENDS the
- * remaining cells to the same file so the finished map is byte-identical to an
- * uninterrupted run. The skip fast-forwards the GLOBAL `gameIndex` through each
- * skipped cell (never resets it) so every remaining cell keeps the opening/
- * color/seed it would have had in a from-scratch run (D-09). Resuming refuses
- * (throws) on any mismatch of `--games-per-cell`, `--seed`, the D-11 budget, or
- * the grid axes vs the prior TSV — a changed experiment is a footgun, not a
- * feature.
+ * **Phase 180 two-pass + resumability:** the cell loop is locate→bracket→measure
+ * (D-07, `calibration-bot-cell-schedule.mjs`), so a cell consumes a VARIABLE
+ * number of games before its bracket is even known — which breaks the old
+ * fixed-`--games-per-cell` aggregate-based resume (Pitfall 5). So — mirroring
+ * `calibration-anchor-ladder.mjs` — the durable/resumable artifact is now a RAW
+ * PER-GAME LEDGER (`calibration-harness-<ts>.tsv`, one row streamed the instant
+ * each game finishes, both passes). `--resume <prior-ledger.tsv>` replays that
+ * ledger to reconstruct per-(cell,anchor) progress and fast-forwards the GLOBAL
+ * `gameIndex` past the last logged game, so every remaining game keeps the
+ * opening/color/seed a from-scratch run would have produced (D-09) and a resumed
+ * run is byte-identical. The per-(cell,anchor) aggregate (`-cells.tsv`, the Plan
+ * 02 fit input) and advisory summary (`-summary.tsv`) are DERIVED siblings,
+ * rewritten fresh from the reconstructed+new store at the end of the run.
+ * Resuming refuses (throws) on a changed `--seed`, an anchor/cell outside the
+ * current sets, or a `game_index` whose recorded opening/color does not match
+ * the seed-derived value (a corrupt/mis-ordered ledger) — T-180-05.
  */
 import { pathToFileURL } from 'node:url';
 import { execFileSync } from 'node:child_process';
@@ -74,9 +79,19 @@ import { maiaArgmaxMove, SF_SKILL_ELO, anchorRatingFor } from './lib/calibration
 import { OPENING_BOOK, assertOpeningBookUciPrefixes } from './lib/calibration-openings.mjs';
 import { combineAnchorEstimates, wasScoreClamped } from './lib/calibration-elo.mjs';
 import { playTwoMoverGame } from './lib/calibration-game-loop.mjs';
+import {
+  internalRatingFor,
+  pickLocateAnchors,
+  locateEstimate,
+  selectMeasureBracket,
+  bracketBeyondLadder,
+  LOCATE_PASS_GAMES,
+} from './lib/calibration-bot-cell-schedule.mjs';
 
 import { selectBotMove } from '@/lib/engine/selectBotMove';
+import { BOT_STYLE_BUNDLES } from '@/lib/engine/botStyleBundles';
 import { mulberry32 } from '@/lib/engine/botSampling';
+import { evalToExpectedScore, classifyLiveSeverity } from '@/lib/liveFlaw';
 import {
   FLAWCHESS_BOT_MAX_NODES,
   FLAWCHESS_BOT_MAX_PLIES,
@@ -144,28 +159,43 @@ export function deriveGameSeed(seed, gameIndex) {
   return (seed + gameIndex * SEED_GAME_INDEX_MULTIPLIER) >>> 0;
 }
 
-// ─── Anchor token prefixes (declared before DEFAULT_ANCHOR_TOKENS builds the maia ladder) ──
+// ─── Anchor token prefixes (used by parseAnchorSpec to classify a token) ──
 
 const SF_ANCHOR_PREFIX = 'sf';
 const MAIA_ANCHOR_PREFIX = 'maia';
 
 // ─── D-07 default grid (CLI defaults AND the CAL-03 spike's projection basis) ──
 
+// D-04/D-01 (SEED-102): the three LOCKED presets are the bot_blend values
+// 0 (Human), 0.05 (Light, default), 0.5 (Deep) — matching the shipped
+// PlayStyleControl presets (see frontend/src/lib/playStyle.ts). Named by
+// calculation behavior, not search depth: Human is raw Maia policy (no
+// search); Light and Deep run the SAME search and differ only in softmax
+// temperature (tau = TAU_MAX*(1-blend)), Deep sampling sharper. The operator passes a per-preset
+// `--elo` grid at runtime (Plan 04), so DEFAULT_BOT_ELOS is only a bounded
+// stand-in used by the throughput projection. Each `--elo` value must be a
+// MAIA_ELO_LADDER rung (validateEloRungs) — it seeds the bot's own Maia policy.
 const DEFAULT_BOT_ELOS = [1100, 1500, 1900];
-const DEFAULT_BOT_BLENDS = [0, 0.5, 1];
-// Maia human-imitation ladder sampled every 200 ELO (maia600, 800, .. 2600 —
-// every other 100-rung of MAIA_ELO_LADDER) plus three Stockfish rungs for the
-// superhuman end Maia can't reach. The 200-ELO spacing keeps the anchor count
-// manageable; the ANCHOR_ELO_WINDOW + dynamic-cutoff pruning further trim
-// anchors too far from each bot cell to be informative.
-const ANCHOR_MAIA_ELO_STEP = 200;
+const DEFAULT_BOT_BLENDS = [0, 0.05, 0.5];
+// D-07/D-01: the anchor pool is EXACTLY the 10 Phase-173 MEASURED labels
+// (maia700/1100/1500/1900/2300 + sf0/3/5/8/10). Restricting to these 10 is what
+// enables BOTH anchor families in every cell (D-07) AND lets the two-pass
+// schedule select on the MEASURED `internalRatingFor` scale — every token has a
+// measured INTERNAL_RATING, so it never falls back to the nominal `anchorRatingFor`
+// scale that clamped the 2026-07-12 run (Pitfall 1). `parseAnchorSpec` already
+// handles both the `sf<N>` and `maia<ELO>` token forms — no new dispatch logic is
+// needed (RESEARCH Pattern 2).
 const DEFAULT_ANCHOR_TOKENS = [
-  ...MAIA_ELO_LADDER.filter((elo) => (elo - MAIA_ELO_LADDER[0]) % ANCHOR_MAIA_ELO_STEP === 0).map(
-    (elo) => `${MAIA_ANCHOR_PREFIX}${elo}`,
-  ),
+  'maia700',
+  'maia1100',
+  'maia1500',
+  'maia1900',
+  'maia2300',
   'sf0',
   'sf3',
   'sf5',
+  'sf8',
+  'sf10',
 ];
 const DEFAULT_GAMES_PER_CELL = 20;
 const DEFAULT_SEED = 1;
@@ -369,6 +399,100 @@ async function playAnchorMove({ providers, pool, anchorSpec, fen, gameRng }) {
   return pool.skillMove(fen, anchorSpec.skillLevel);
 }
 
+// ─── Phase 180 near-free metrics (SEED-102): draw rate, game length, ACPL, ─────
+// blunder rate, SF-agreement, Maia-agreement. All are BYPRODUCTS of a game
+// already being played (CONTEXT.md "Also log near-free"): draw rate + game
+// length fall straight out of the result; ACPL/blunder rate/SF-agreement reuse
+// the per-ply adjudication eval + its free `bestmove` byproduct (zero extra
+// engine calls); Maia-agreement adds ONE cheap policy forward-pass per bot ply.
+// The pure accumulator below is engine-free and unit-tested on fabricated
+// eval/policy fixtures (calibration-near-free-metrics.check.mjs) — the metric
+// math never touches a real engine, so it is provable independent of any run.
+//
+// Severity + expected-score conversion reuse the app's canonical, generated-
+// from-Python thresholds (`classifyLiveSeverity`/`evalToExpectedScore` from
+// `@/lib/liveFlaw`) rather than a hand-rolled table (RESEARCH Don't-Hand-Roll).
+
+/** Independent PRNG for the Maia-agreement argmax's degenerate-policy fallback —
+ * kept SEPARATE from the game's own `gameRng` so a metric-only argmax call can
+ * never advance the seeded game stream and break determinism (it only ever
+ * touches this rng in the empty-policy `fallbackMove` path, which should not
+ * normally occur). */
+const NEARFREE_METRIC_RNG_SEED = 0x1a2b3c4d;
+
+/** Zeroed per-GAME near-free accumulator (bot moves only — we measure the bot). */
+export function newNearFreeGameStats() {
+  return { botEvalCount: 0, cpLossSum: 0, blunderCount: 0, sfComparable: 0, sfAgree: 0, maiaComparable: 0, maiaAgree: 0 };
+}
+
+/**
+ * Records ONE bot move's eval swing for ACPL + blunder rate, from the white-POV
+ * cp BEFORE and AFTER the move. ACPL uses the raw centipawn loss (clamped at 0 —
+ * a move that improves the eval has no loss); blunder rate uses the expected-
+ * score drop graded by `classifyLiveSeverity` (liveFlaw's canonical
+ * BLUNDER_DROP threshold). A null eval on either side (e.g. the pre-move eval of
+ * ply 1, or a terminal move with no post-move adjudication eval) is skipped.
+ */
+export function recordBotMoveEval(stats, { evalBeforeWhiteCp, evalAfterWhiteCp, botIsWhite }) {
+  if (evalBeforeWhiteCp === null || evalAfterWhiteCp === null) return;
+  const povSign = botIsWhite ? 1 : -1;
+  stats.botEvalCount++;
+  stats.cpLossSum += Math.max(0, evalBeforeWhiteCp * povSign - evalAfterWhiteCp * povSign);
+  const mover = botIsWhite ? 'white' : 'black';
+  const esBefore = evalToExpectedScore(evalBeforeWhiteCp, null, mover);
+  const esAfter = evalToExpectedScore(evalAfterWhiteCp, null, mover);
+  if (classifyLiveSeverity(esBefore, esAfter) === 'blunder') stats.blunderCount++;
+}
+
+/** Records whether a bot move matched Stockfish's `bestmove` at the pre-move position (SF-agreement). */
+export function recordBotMoveSfAgreement(stats, { botUci, preMoveBestUci }) {
+  if (!preMoveBestUci) return; // no pre-move adjudication best (ply 1) — not comparable
+  stats.sfComparable++;
+  if (botUci === preMoveBestUci) stats.sfAgree++;
+}
+
+/** Records whether a bot move matched raw-Maia's argmax at the bot's own ELO (Maia-agreement). */
+export function recordBotMoveMaiaAgreement(stats, { botUci, maiaArgmaxUci }) {
+  if (!maiaArgmaxUci) return;
+  stats.maiaComparable++;
+  if (botUci === maiaArgmaxUci) stats.maiaAgree++;
+}
+
+/** Zeroed CELL-level near-free accumulator (per (botElo, botBlend, anchor)). */
+export function newNearFreeCellStats() {
+  return { pliesSum: 0, ...newNearFreeGameStats() };
+}
+
+/** Folds one completed game's per-game near-free stats (+ its ply count) into a cell accumulator. */
+export function foldNearFreeGame(cell, gameStats, plies) {
+  cell.pliesSum += plies;
+  cell.botEvalCount += gameStats.botEvalCount;
+  cell.cpLossSum += gameStats.cpLossSum;
+  cell.blunderCount += gameStats.blunderCount;
+  cell.sfComparable += gameStats.sfComparable;
+  cell.sfAgree += gameStats.sfAgree;
+  cell.maiaComparable += gameStats.maiaComparable;
+  cell.maiaAgree += gameStats.maiaAgree;
+}
+
+/**
+ * Finalizes a cell's six near-free metric values from its accumulator + the
+ * cell's game/draw counts. Each metric is `null` when its denominator is 0
+ * (no games, or no comparable bot move) — the TSV renders `null` as an empty
+ * cell rather than a misleading 0.
+ */
+export function finalizeNearFreeMetrics(cell, { games, draws }) {
+  const ratio = (num, den) => (den > 0 ? num / den : null);
+  return {
+    drawRate: ratio(draws, games),
+    meanGameLength: ratio(cell.pliesSum, games),
+    acpl: ratio(cell.cpLossSum, cell.botEvalCount),
+    blunderRate: ratio(cell.blunderCount, cell.botEvalCount),
+    sfAgreement: ratio(cell.sfAgree, cell.sfComparable),
+    maiaAgreement: ratio(cell.maiaAgree, cell.maiaComparable),
+  };
+}
+
 // ─── The bot-vs-anchor game loop (Task 1, Phase 168; thin wrapper since Phase 173) ──
 
 /** Maps a WHITE-POV color-keyed `playTwoMoverGame` result to the bot-relative `win`/`loss`/`draw` shape. */
@@ -412,6 +536,18 @@ function mapColorResultToBotRelative(colorResult, botIsWhite) {
  * a pure extraction, no behavior change): derives `moverWhite`/`moverBlack`
  * from `botIsWhite`, then maps the color-keyed result back to this
  * function's bot-relative `{ result: 'win'|'loss'|'draw', reason }` shape.
+ *
+ * `style` (optional, Phase 184 CAL-04, `BotStyleParams` from
+ * `@/lib/engine/botStyleBundles`) is forwarded into `selectBotMove`'s
+ * `BotSettings.style` ONLY when defined — a `...(style !== undefined ? {
+ * style } : {})` spread inside `selectBotMoveOnce`, never a literal `style:
+ * undefined` key, so an unstyled/vanilla bot-cell call produces a
+ * `BotSettings` object structurally byte-identical to the pre-184 harness
+ * (the STYLE-05 absent-style invariant, asserted in
+ * `calibration-determinism.check.mjs`). This is the harness-side style seam
+ * the persona-cell schedule (`calibration-persona-cell-schedule.mjs`) uses to
+ * measure each of the 24 styled personas; every pre-184 caller (`main()`'s
+ * bot-cell sweep) simply omits `style`, which is `undefined` by default here.
  */
 export async function playGame({
   Chess,
@@ -426,11 +562,22 @@ export async function playGame({
   onPly,
   maxNodes = FLAWCHESS_BOT_MAX_NODES,
   maxPlies = FLAWCHESS_BOT_MAX_PLIES,
+  style,
 }) {
   const notifyPly = onPly ?? (() => {});
 
-  const selectBotMoveOnce = (fen, rng) =>
-    selectBotMove(
+  // Phase 180 near-free accumulation (SEED-102). `prevEvalWhiteCp`/`prevBestUci`
+  // carry the PREVIOUS ply's post-move eval + engine best move forward: at the
+  // bot's ply N (mover call) they hold the eval/best of the position the bot now
+  // faces (the opponent's ply N-1 post-move state), and at onPly of ply N they
+  // are the pre-move eval used for the bot's own cp-loss/blunder swing.
+  const nearFree = newNearFreeGameStats();
+  const metricRng = mulberry32(NEARFREE_METRIC_RNG_SEED);
+  let prevEvalWhiteCp = null;
+  let prevBestUci = null;
+
+  const selectBotMoveOnce = async (fen, rng) => {
+    const botUci = await selectBotMove(
       fen,
       {
         elo: botElo,
@@ -448,10 +595,23 @@ export async function playGame({
           // measure a bot without the early-stop rule (T-168.5-04-02).
           stopRule: FLAWCHESS_BOT_STOP_RULE,
         },
+        // Phase 184 CAL-04: `style` is conditionally spread, NEVER a literal
+        // `style: undefined` key — an undefined style must leave this object
+        // structurally identical to the pre-184 harness (STYLE-05 absent-style
+        // invariant, asserted in calibration-determinism.check.mjs).
+        ...(style !== undefined ? { style } : {}),
       },
       { policy: providers.policy, grade: providers.grade, rng },
       // deps.search intentionally omitted (CAL-02) — defaults to the real mctsSearch.
     );
+    // Near-free (SEED-102): Maia-agreement = one cheap policy argmax at the
+    // bot's OWN ELO (metricRng keeps it off the seeded game stream);
+    // SF-agreement reuses the pre-move adjudication `bestmove` (prevBestUci).
+    const maiaArgmaxUci = await maiaArgmaxMove(providers, fen, botElo, metricRng);
+    recordBotMoveMaiaAgreement(nearFree, { botUci, maiaArgmaxUci });
+    recordBotMoveSfAgreement(nearFree, { botUci, preMoveBestUci: prevBestUci });
+    return botUci;
+  };
   const playAnchorMoveOnce = (fen, rng) => playAnchorMove({ providers, pool, anchorSpec, fen, gameRng: rng });
 
   const moverWhite = botIsWhite ? selectBotMoveOnce : playAnchorMoveOnce;
@@ -464,13 +624,19 @@ export async function playGame({
     moverBlack,
     startFen,
     gameRng,
-    onPly: (p) =>
-      notifyPly({
-        ply: p.ply,
-        mover: (p.mover === 'white') === botIsWhite ? 'bot' : 'anchor',
-        uci: p.uci,
-        moveMs: p.moveMs,
-      }),
+    onPly: (p) => {
+      const isBot = (p.mover === 'white') === botIsWhite;
+      // ACPL + blunder rate: the bot's move swings the eval from the previous
+      // ply's post-move cp (the position it faced) to this ply's post-move cp.
+      if (isBot) {
+        recordBotMoveEval(nearFree, { evalBeforeWhiteCp: prevEvalWhiteCp, evalAfterWhiteCp: p.evalCp, botIsWhite });
+      }
+      // Advance the pre-move carriers for the NEXT ply (any mover — the bot
+      // faces the position after the opponent's move).
+      prevEvalWhiteCp = p.evalCp ?? null;
+      prevBestUci = p.bestUci ?? null;
+      notifyPly({ ply: p.ply, mover: isBot ? 'bot' : 'anchor', uci: p.uci, moveMs: p.moveMs });
+    },
     // maxPlies intentionally NOT forwarded — playTwoMoverGame's own maxPlies
     // is the D-10 game-ply-cap (PLY_CAP), a different concept than this
     // function's own maxPlies param (the SearchBudget's tree-depth cap);
@@ -482,6 +648,7 @@ export async function playGame({
     reason: colorResult.reason,
     plies: colorResult.plies,
     moveUcis: colorResult.moveUcis,
+    nearFree,
   };
 }
 
@@ -583,15 +750,41 @@ export function mainTsvColumns() {
     'stockfish_procs',
     'git_sha',
     // Phase 168.5-05 D-15: empty for every played cell; populated with a
-    // skip-reason marker (SKIP_REASON_OUT_OF_WINDOW/_LOST_CUTOFF/_WON_CUTOFF)
-    // for a pruned cell (games=0) — every skipped anchor is still a REAL row
-    // here (Pitfall 4), never a silently absent one.
+    // skip-reason marker (SKIP_REASON_OUT_OF_WINDOW/_LOST_CUTOFF/_WON_CUTOFF,
+    // Phase 180 SKIP_REASON_NOT_BRACKETED) for a pruned/un-bracketed cell
+    // (games=0) — every skipped anchor is still a REAL row here (Pitfall 4),
+    // never a silently absent one.
     'skip_reason',
+    // Phase 180 (D-07, Pitfall 4): 'true' when this cell's locate estimate sits
+    // PAST a ladder edge (above sf10 / below sf0) so its measure bracket cannot
+    // straddle it — a real but imprecise extrapolated cell, warn-and-flag, never
+    // an error. Set per CELL (same value on all its anchor rows). load_bot_cells
+    // (Plan 02) reads this as `.strip().lower() == 'true'`.
+    'beyond_ladder',
+    // Phase 180 near-free metrics (SEED-102) — byproducts of games already
+    // played, per (bot_elo, bot_blend, anchor). Empty when the denominator is 0
+    // (a skip row, or no comparable bot move). load_bot_cells (Plan 02) ignores
+    // these extra columns; they exist to confirm the presets play differently.
+    'draw_rate',
+    'mean_game_length',
+    'acpl',
+    'blunder_rate',
+    'sf_agreement',
+    'maia_agreement',
   ];
+}
+
+/** Renders a nullable near-free metric to a fixed-precision string, or '' when null (empty denominator). */
+function fmtNearFree(value, digits) {
+  return value === null ? '' : value.toFixed(digits);
 }
 
 /** One (botElo, botBlend, anchor) cell row, rendered as a tab-joined TSV line (D-04 schema). */
 export function mainTsvRowLine(row) {
+  const nf = finalizeNearFreeMetrics(row.nf ?? newNearFreeCellStats(), {
+    games: row.tally.games,
+    draws: row.tally.draws,
+  });
   const cells = [
     row.botElo,
     row.botBlend,
@@ -617,32 +810,22 @@ export function mainTsvRowLine(row) {
     row.stockfishProcs,
     row.gitSha,
     row.skipReason ?? '',
+    row.beyondLadder ? 'true' : 'false',
+    fmtNearFree(nf.drawRate, 4),
+    fmtNearFree(nf.meanGameLength, 2),
+    fmtNearFree(nf.acpl, 1),
+    fmtNearFree(nf.blunderRate, 4),
+    fmtNearFree(nf.sfAgreement, 4),
+    fmtNearFree(nf.maiaAgreement, 4),
   ];
   return cells.join('\t');
 }
 
-/**
- * Opens the main TSV and returns a durable per-row-append handle (mirrors
- * gem-elo's openTsvWriter). Fresh runs (`append=false`) truncate and write the
- * header; a `--resume` run (`append=true`, SEED-097) opens in append mode and
- * does NOT re-write the header — new cell rows are streamed onto the prior
- * file's completed grid-order prefix.
- */
-function openMainTsvWriter(filePath, { append = false } = {}) {
-  fs.mkdirSync(path.dirname(filePath), { recursive: true });
-  const stream = fs.createWriteStream(filePath, { encoding: 'utf8', flags: append ? 'a' : 'w' });
-  if (!append) stream.write(`${mainTsvColumns().join('\t')}\n`);
-  return {
-    writeRow(row) {
-      stream.write(`${mainTsvRowLine(row)}\n`);
-    },
-    close() {
-      return new Promise((resolve, reject) => {
-        stream.end((err) => (err ? reject(err) : resolve()));
-      });
-    },
-  };
-}
+// Note (Phase 180): the former per-row-append `openMainTsvWriter` is removed —
+// the durable/resumable artifact is now the raw per-game ledger (`openLedgerWriter`
+// below), and the per-(cell,anchor) aggregate is derived + written once at the
+// end of the run (`writeAggregateFile`). `mainTsvColumns`/`mainTsvRowLine` still
+// render that aggregate (the Plan 02 fit input).
 
 // ─── D-05: advisory per-cell ELO-estimate summary TSV (SEED-091 caveat) ────────
 // Post-processing step (RESEARCH.md's Architecture Diagram): per (botElo,
@@ -668,7 +851,13 @@ function summaryRowForCellGroup(group) {
   const perAnchor = group.rows.map((row) => ({
     score: tallyScore(row.tally),
     games: row.tally.games,
-    anchorRating: anchorRatingFor(row.anchorSpec),
+    // BUG-FIX (2026-07-12 clamped-run incident, D-07): the advisory combined
+    // estimate MUST be inverted on the MEASURED internal-rating scale
+    // (`internalRatingFor`), NOT the nominal `anchorRatingFor` folklore scale
+    // that mis-rated the bracket and let the estimate clamp. Per Pitfall 3 this
+    // remains a single combined ADVISORY number only — the real per-preset
+    // G_preset comes from the Python fit (Plan 02), never from this print.
+    anchorRating: internalRatingFor(row.anchorSpec),
   }));
   const eloEstimate = combineAnchorEstimates(perAnchor);
   const anyClamped = perAnchor.some(({ score, games }) => wasScoreClamped(score, games));
@@ -882,6 +1071,17 @@ export function loadPriorSweep(filePath, args, gridKeys) {
 // bot-cell would otherwise play still gets a real TSV row — pruned ones as
 // `games=0` with a populated `skip_reason` — so `--resume`'s grid-membership
 // guard and the "no silent coverage gaps" requirement both hold.
+//
+// ── SUPERSEDED for Phase 180 bot cells (RESEARCH open-Q1 decision, D-15 supersede) ──
+// The Phase-180 two-pass locate→measure schedule (`calibration-bot-cell-schedule.mjs`,
+// wired into `main()` below) is the SOLE cell-level anchor-selection mechanism
+// for this run: it selects anchors on the MEASURED internal scale, so the D-15
+// static-window (`partitionAnchorsByWindow` / `ANCHOR_ELO_WINDOW`) and dynamic-
+// cutoff (`orderAnchorsForDynamicCutoff`) helpers below are DELIBERATELY NOT
+// deleted (a future non-two-pass sweep may still want them) but are NOT called
+// by the two-pass cell loop. Their `anchorRatingFor` (nominal-scale) internals
+// are exactly the axis the two-pass path replaces, so re-wiring them here would
+// reintroduce the 2026-07-12 clamp bug — leave them retired, not layered.
 
 /** Static bracketing (D-15 mechanism 1): an anchor rated more than this many
  * Elo from a bot-cell's own nominal rating is skipped outright — a
@@ -905,6 +1105,8 @@ export const SKIP_REASON_OUT_OF_WINDOW = 'out_of_window';
 export const SKIP_REASON_LOST_CUTOFF = 'lost_cutoff';
 /** D-15 mechanism 2: a weaker-side anchor pruned after an all-win sweep against a closer, stronger-rated anchor on that same side. */
 export const SKIP_REASON_WON_CUTOFF = 'won_cutoff';
+/** Phase 180 two-pass: an anchor the cell's locate estimate never bracketed (and was not a locate anchor) — a real games=0 row (row-not-silently-absent), never played. */
+export const SKIP_REASON_NOT_BRACKETED = 'not_bracketed';
 
 /** Splits a bot-cell's anchor list into in-window / out-of-window (D-15 mechanism 1). */
 function partitionAnchorsByWindow(anchorSpecs, botElo) {
@@ -947,7 +1149,7 @@ function orderAnchorsForDynamicCutoff(inWindowAnchors, botElo) {
 }
 
 /** Builds a pruned (games=0) row for a skipped anchor — a real TSV row, never a silently absent one. */
-function buildSkipRow({ botElo, botBlend, anchorSpec, args, gitSha, skipReason }) {
+function buildSkipRow({ botElo, botBlend, anchorSpec, args, gitSha, skipReason, beyondLadder = false }) {
   return {
     botElo,
     botBlend,
@@ -960,103 +1162,127 @@ function buildSkipRow({ botElo, botBlend, anchorSpec, args, gitSha, skipReason }
     stockfishProcs: args.stockfishProcs,
     gitSha,
     skipReason,
+    beyondLadder,
   };
 }
 
-/**
- * Processes ONE (botElo, botBlend, anchor) cell: reuses a completed `--resume`
- * row verbatim, writes a pruned `games=0` row if `skipReasonIfPruned` is set
- * (and no prior row exists), or actually plays the cell via `playCell`.
- * Always returns the row that was written/reused so the caller's dynamic-
- * cutoff state can inspect its score, and the gameIndex delta the caller must
- * apply — a pruned/reused-skip row consumes ZERO gameIndex slices (D-09), a
- * reused PLAYED row consumes exactly the games it recorded (never a blind
- * `args.gamesPerCell`, which would over-advance past a pruned resume row).
- */
-async function processCellAnchor({
-  Chess,
-  providers,
-  pool,
-  botElo,
-  botBlend,
-  anchorSpec,
-  args,
-  gameIndex,
-  priorSweep,
-  tsvWriter,
-  gitSha,
-  skipReasonIfPruned,
-}) {
-  const key = cellKey(botElo, botBlend, anchorSpecLabel(anchorSpec));
-
-  if (priorSweep.completedKeys.has(key)) {
-    // Landmine #1 (SEED-097) + D-15: the prior row's OWN games count is the
-    // truth for how far to fast-forward — a pruned prior row is games=0 and
-    // must not advance gameIndex at all.
-    const row = priorSweep.rowByKey.get(key);
-    return { row, nextGameIndex: gameIndex + row.tally.games, cellMoves: 0, gamesPlayed: 0 };
-  }
-
-  if (skipReasonIfPruned) {
-    const row = buildSkipRow({ botElo, botBlend, anchorSpec, args, gitSha, skipReason: skipReasonIfPruned });
-    tsvWriter.writeRow(row);
-    return { row, nextGameIndex: gameIndex, cellMoves: 0, gamesPlayed: 0 };
-  }
-
-  const { tally, cellMoves, gamesPlayed, nextGameIndex } = await playCell({
-    Chess,
-    providers,
-    pool,
-    botElo,
-    botBlend,
-    anchorSpec,
-    args,
-    gameIndex,
-  });
-  const row = {
-    botElo,
-    botBlend,
-    anchor: anchorSpecLabel(anchorSpec),
-    anchorSpec,
-    tally,
-    seed: args.seed,
-    // Phase 168.5 Task 2: TSV records the ACTUAL budget playGame used
-    // (the bot budget, not the retired analysis-board mirrors).
-    maxNodes: FLAWCHESS_BOT_MAX_NODES,
-    maxPlies: FLAWCHESS_BOT_MAX_PLIES,
-    stockfishProcs: args.stockfishProcs,
-    gitSha,
-    skipReason: '',
-  };
-  // WR-01/D-06: durable — this cell's row is streamed to disk as soon as its
-  // games-per-cell games complete, not buffered until the whole sweep finishes.
-  tsvWriter.writeRow(row);
-  return { row, nextGameIndex, cellMoves, gamesPlayed };
-}
-
-// ─── Main orchestration ────────────────────────────────────────────────────────
+// ─── Phase 180 two-pass orchestration: raw per-game ledger + cell store ────────
+// The Phase-180 cell loop is locate→bracket→measure (D-07), so a cell consumes
+// a VARIABLE number of games before its bracket is even known. That breaks the
+// old fixed-`--games-per-cell` aggregate-based resume (Pitfall 5), so — mirroring
+// `calibration-anchor-ladder.mjs` — the durable/resumable artifact is now a RAW
+// PER-GAME LEDGER (one row streamed the instant each game finishes, both passes).
+// `--resume` replays that ledger to reconstruct per-(cell,anchor) progress and
+// fast-forwards the seeded global game index, so a resumed run is byte-identical
+// to an uninterrupted one. The per-(cell,anchor) aggregate + advisory summary
+// are DERIVED siblings, rewritten fresh from the reconstructed+new store.
 
 function anchorSpecLabel(anchorSpec) {
   return anchorSpec.label;
 }
 
-/**
- * Plays one full (botElo, botBlend, anchor) cell's `--games-per-cell` games,
- * tallying results — extracted so `main()`'s own loop nesting stays shallow
- * (bot-cell x anchor only; the per-game loop lives here).
- */
-async function playCell({ Chess, providers, pool, botElo, botBlend, anchorSpec, args, gameIndex }) {
-  const tally = newCellTally();
-  let idx = gameIndex;
-  let cellMoves = 0;
+/** Shared column contract with Plan 02's downstream tooling — clean header, no leading comment. */
+const RAW_LEDGER_COLUMNS = [
+  'pass',
+  'bot_elo',
+  'bot_blend',
+  'anchor',
+  'result',
+  'reason',
+  'plies',
+  'game_index',
+  'bot_is_white',
+  'opening',
+  'seed',
+  'git_sha',
+  'bot_eval_count',
+  'cp_loss_sum',
+  'blunder_count',
+  'sf_comparable',
+  'sf_agree',
+  'maia_comparable',
+  'maia_agree',
+];
 
-  for (let g = 0; g < args.gamesPerCell; g++) {
+const LEDGER_COL_INDEX = new Map(RAW_LEDGER_COLUMNS.map((name, i) => [name, i]));
+
+/** One completed game rendered as a raw-ledger TSV line (both passes stream here). */
+function ledgerRowLine(row) {
+  const nf = row.nearFree;
+  return [
+    row.pass,
+    row.botElo,
+    row.botBlend,
+    row.anchor,
+    row.result,
+    row.reason,
+    row.plies,
+    row.gameIndex,
+    row.botIsWhite ? 1 : 0,
+    row.opening,
+    row.seed,
+    row.gitSha,
+    nf.botEvalCount,
+    nf.cpLossSum.toFixed(2),
+    nf.blunderCount,
+    nf.sfComparable,
+    nf.sfAgree,
+    nf.maiaComparable,
+    nf.maiaAgree,
+  ].join('\t');
+}
+
+/** Durable per-game ledger writer (one `writeRow` the instant each game finishes, WR-01). */
+function openLedgerWriter(filePath, { append = false } = {}) {
+  fs.mkdirSync(path.dirname(filePath), { recursive: true });
+  const stream = fs.createWriteStream(filePath, { encoding: 'utf8', flags: append ? 'a' : 'w' });
+  if (!append) stream.write(`${RAW_LEDGER_COLUMNS.join('\t')}\n`);
+  return {
+    writeRow(row) {
+      stream.write(`${ledgerRowLine(row)}\n`);
+    },
+    close() {
+      return new Promise((resolve, reject) => {
+        stream.end((err) => (err ? reject(err) : resolve()));
+      });
+    },
+  };
+}
+
+/** Gets (or creates) the per-(cell,anchor) accumulator — WDL tally + near-free stats. */
+function ensureCellAnchorStat(store, botElo, botBlend, anchorSpec) {
+  const key = cellKey(botElo, botBlend, anchorSpec.label);
+  let stat = store.get(key);
+  if (!stat) {
+    stat = { botElo, botBlend, anchorSpec, tally: newCellTally(), nf: newNearFreeCellStats() };
+    store.set(key, stat);
+  }
+  return stat;
+}
+
+/** Folds ONE completed game (WDL + near-free + ply count) into a cell-anchor accumulator. */
+function foldGameIntoCellAnchor(stat, { result, botIsWhite, plies, nearFree }) {
+  tallyGameResult(stat.tally, result, botIsWhite);
+  foldNearFreeGame(stat.nf, nearFree, plies);
+}
+
+/**
+ * Plays `count` NEW games for one (cell, anchor), streaming each to the ledger
+ * the instant it finishes (WR-01) and folding it into `stat`. Color/opening/PRNG
+ * all derive from the single global `state.gameIndex` (D-09), so `--resume`
+ * fast-forwarding it reproduces byte-identical games. Returns the plies played
+ * (for the throughput report).
+ */
+async function playCellAnchorGames({ Chess, providers, pool, botElo, botBlend, anchorSpec, count, pass, args, gitSha, state, ledgerWriter, stat, style }) {
+  let moves = 0;
+  for (let i = 0; i < count; i++) {
+    const idx = state.gameIndex;
     const opening = OPENING_BOOK[idx % OPENING_BOOK.length];
     const botIsWhite = idx % 2 === 0;
     const gameRng = mulberry32(deriveGameSeed(args.seed, idx));
 
     console.log(
-      `[calibration-harness] game ${idx + 1}: elo=${botElo} blend=${botBlend} ` +
+      `[calibration-harness] game ${idx} (${pass}): elo=${botElo} blend=${botBlend} ` +
         `anchor=${anchorSpecLabel(anchorSpec)} opening=${opening.name} botIsWhite=${botIsWhite}`,
     );
     const result = await playGame({
@@ -1071,16 +1297,309 @@ async function playCell({ Chess, providers, pool, botElo, botBlend, anchorSpec, 
       gameRng,
       onPly: (p) =>
         console.log(`[calibration-harness]   ply ${p.ply} (${p.mover}) ${p.uci} took ${(p.moveMs / 1000).toFixed(2)}s`),
+      // Phase 184 CAL-04: forwarded (undefined for the existing bot-cell sweep
+      // paths below — a future persona-cell sweep script passes a real
+      // BotStyleParams bundle here).
+      style,
     });
     console.log(`[calibration-harness] result=${result.result} reason=${result.reason} plies=${result.plies}`);
     console.log(`[calibration-harness] analyze: ${analysisLineUrl(opening, result.moveUcis)}`);
 
-    tallyGameResult(tally, result.result, botIsWhite);
-    cellMoves += result.plies;
-    idx++;
+    ledgerWriter.writeRow({
+      pass,
+      botElo,
+      botBlend,
+      anchor: anchorSpecLabel(anchorSpec),
+      result: result.result,
+      reason: result.reason,
+      plies: result.plies,
+      gameIndex: idx,
+      botIsWhite,
+      opening: opening.name,
+      seed: args.seed,
+      gitSha,
+      nearFree: result.nearFree,
+    });
+    foldGameIntoCellAnchor(stat, { result: result.result, botIsWhite, plies: result.plies, nearFree: result.nearFree });
+    moves += result.plies;
+    state.gameIndex++;
   }
+  return { moves, games: count };
+}
 
-  return { tally, cellMoves, gamesPlayed: args.gamesPerCell, nextGameIndex: idx };
+/**
+ * LOCATE pass (D-07): tops up the two widest anchors (weakest + strongest by
+ * MEASURED internal rating, `pickLocateAnchors`) to `LOCATE_PASS_GAMES` games
+ * each, then returns a rough internal-rating `estimate` (`locateEstimate`) from
+ * their full scores. On `--resume` an already-full locate anchor plays zero new
+ * games, so the estimate is always computed from the same LOCATE_PASS_GAMES
+ * sample a from-scratch run would have used.
+ */
+async function locateCellPass({ Chess, providers, pool, botElo, botBlend, anchorSpecs, args, gitSha, state, ledgerWriter, store, style }) {
+  const locateAnchors = pickLocateAnchors(anchorSpecs);
+  let moves = 0;
+  let games = 0;
+  for (const anchorSpec of locateAnchors) {
+    const stat = ensureCellAnchorStat(store, botElo, botBlend, anchorSpec);
+    const remaining = LOCATE_PASS_GAMES - stat.tally.games;
+    if (remaining <= 0) continue;
+    const played = await playCellAnchorGames({
+      Chess,
+      providers,
+      pool,
+      botElo,
+      botBlend,
+      anchorSpec,
+      count: remaining,
+      pass: 'locate',
+      args,
+      gitSha,
+      state,
+      ledgerWriter,
+      stat,
+      style,
+    });
+    moves += played.moves;
+    games += played.games;
+  }
+  const locateResults = locateAnchors.map((anchorSpec) => {
+    const stat = store.get(cellKey(botElo, botBlend, anchorSpec.label));
+    return { anchorSpec, score: tallyScore(stat.tally), games: stat.tally.games };
+  });
+  return { estimate: locateEstimate(locateResults), moves, games };
+}
+
+/**
+ * MEASURE pass (D-07): extends every `bracket` anchor to `--games-per-cell`
+ * total games, REUSING any games already played against it in the locate pass
+ * as the first N (never replayed — mirrors the anchor-ladder's info-efficiency).
+ */
+async function measureCellPass({ Chess, providers, pool, botElo, botBlend, bracket, args, gitSha, state, ledgerWriter, store, style }) {
+  let moves = 0;
+  let games = 0;
+  for (const anchorSpec of bracket) {
+    const stat = ensureCellAnchorStat(store, botElo, botBlend, anchorSpec);
+    const remaining = args.gamesPerCell - stat.tally.games;
+    if (remaining <= 0) continue;
+    const played = await playCellAnchorGames({
+      Chess,
+      providers,
+      pool,
+      botElo,
+      botBlend,
+      anchorSpec,
+      count: remaining,
+      pass: 'measure',
+      args,
+      gitSha,
+      state,
+      ledgerWriter,
+      stat,
+      style,
+    });
+    moves += played.moves;
+    games += played.games;
+  }
+  return { moves, games };
+}
+
+// ─── --resume: replay the raw ledger (mirrors calibration-anchor-ladder.mjs) ───
+
+/** Parses one prior raw-ledger line into a reconstructed game record. */
+function parsePriorLedgerRow(line, filePath) {
+  const cells = line.split('\t');
+  if (cells.length !== RAW_LEDGER_COLUMNS.length) {
+    throw new Error(`--resume: malformed ledger row in ${filePath} (${cells.length} columns): ${line}`);
+  }
+  const get = (name) => cells[LEDGER_COL_INDEX.get(name)];
+  const int = (name) => Number.parseInt(get(name), 10);
+  return {
+    pass: get('pass'),
+    botElo: int('bot_elo'),
+    botBlend: Number.parseFloat(get('bot_blend')),
+    anchor: get('anchor'),
+    result: get('result'),
+    reason: get('reason'),
+    plies: int('plies'),
+    gameIndex: int('game_index'),
+    botIsWhite: get('bot_is_white') === '1',
+    opening: get('opening'),
+    seed: int('seed'),
+    gitSha: get('git_sha'),
+    nearFree: {
+      botEvalCount: int('bot_eval_count'),
+      cpLossSum: Number.parseFloat(get('cp_loss_sum')),
+      blunderCount: int('blunder_count'),
+      sfComparable: int('sf_comparable'),
+      sfAgree: int('sf_agree'),
+      maiaComparable: int('maia_comparable'),
+      maiaAgree: int('maia_agree'),
+    },
+  };
+}
+
+/** Reads + validates a prior raw ledger — refuses (WR-02) a truncated final line or schema mismatch. */
+function readPriorLedgerRows(filePath) {
+  let content;
+  try {
+    content = fs.readFileSync(filePath, 'utf8');
+  } catch (err) {
+    throw new Error(`--resume: cannot read prior ledger ${filePath}: ${err.message}`);
+  }
+  if (!content.endsWith('\n')) {
+    throw new Error(`--resume: prior ledger ${filePath} has a truncated final line (no trailing newline) — cannot safely resume`);
+  }
+  const lines = content.split('\n').filter((line) => line.length > 0);
+  if (lines.length === 0) throw new Error(`--resume: prior ledger ${filePath} is empty`);
+  const header = lines[0].split('\t');
+  if (header.length !== RAW_LEDGER_COLUMNS.length || RAW_LEDGER_COLUMNS.some((col, i) => header[i] !== col)) {
+    throw new Error(`--resume: prior ledger ${filePath} header does not match the current schema`);
+  }
+  return lines.slice(1).map((line) => parsePriorLedgerRow(line, filePath));
+}
+
+/**
+ * Reconstructs the per-(cell,anchor) `store` from a prior ledger and fast-forwards
+ * `state.gameIndex` past the last logged game (D-09). Refuses (WR-02) a ledger
+ * that is a DIFFERENT experiment: a changed seed, an anchor/cell outside the
+ * current sets, or — the T-180-05 integrity guard — a `game_index` whose recorded
+ * opening/color does not match the seed-derived value (a corrupt/mis-ordered
+ * ledger surfaces rather than silently corrupting the resumed sweep).
+ */
+function applyPriorLedgerRows(rows, { store, state, anchorByLabel, gridCells, args }) {
+  let maxGameIndex = -1;
+  for (const row of rows) {
+    if (row.seed !== args.seed) {
+      throw new Error(`--resume: prior seed=${row.seed} differs from current --seed=${args.seed} — refusing to resume a different experiment`);
+    }
+    const anchorSpec = anchorByLabel.get(row.anchor);
+    if (!anchorSpec) {
+      throw new Error(`--resume: ledger anchor ${row.anchor} is not in the current --anchors set — refusing to resume a changed anchor pool`);
+    }
+    if (!gridCells.has(`${row.botElo}|${row.botBlend}`)) {
+      throw new Error(
+        `--resume: ledger cell (elo=${row.botElo}, blend=${row.botBlend}) is not in the current grid — refusing to resume a changed grid`,
+      );
+    }
+    const expectedOpening = OPENING_BOOK[row.gameIndex % OPENING_BOOK.length].name;
+    if (row.opening !== expectedOpening) {
+      throw new Error(
+        `--resume: ledger game_index=${row.gameIndex} recorded opening=${row.opening} but the seed derives ${expectedOpening} — corrupt/mismatched ledger`,
+      );
+    }
+    if (row.botIsWhite !== (row.gameIndex % 2 === 0)) {
+      throw new Error(
+        `--resume: ledger game_index=${row.gameIndex} recorded bot_is_white=${row.botIsWhite} but the seed derives ${row.gameIndex % 2 === 0} — corrupt/mismatched ledger`,
+      );
+    }
+    const stat = ensureCellAnchorStat(store, row.botElo, row.botBlend, anchorSpec);
+    foldGameIntoCellAnchor(stat, { result: row.result, botIsWhite: row.botIsWhite, plies: row.plies, nearFree: row.nearFree });
+    if (row.gameIndex > maxGameIndex) maxGameIndex = row.gameIndex;
+  }
+  state.gameIndex = maxGameIndex + 1;
+}
+
+// ─── Derived per-(cell,anchor) aggregate (the fit input, D-04) ─────────────────
+
+/**
+ * Builds one aggregate row per (cell, anchor) across the WHOLE grid: a real row
+ * for every played anchor (locate and/or measure), and a `games=0`
+ * `SKIP_REASON_NOT_BRACKETED` row for any anchor the cell never played
+ * (row-not-silently-absent). `beyondLadder` is a per-CELL flag stamped on all of
+ * that cell's rows.
+ */
+function buildCellAggregateRows({ args, anchorSpecs, gitSha, store, cellBeyondByKey }) {
+  const rows = [];
+  for (const botElo of args.elo) {
+    for (const botBlend of args.blends) {
+      const beyondLadder = cellBeyondByKey.get(`${botElo}|${botBlend}`) ?? false;
+      for (const anchorSpec of anchorSpecs) {
+        const stat = store.get(cellKey(botElo, botBlend, anchorSpec.label));
+        if (stat && stat.tally.games > 0) {
+          rows.push({
+            botElo,
+            botBlend,
+            anchor: anchorSpec.label,
+            anchorSpec,
+            tally: stat.tally,
+            nf: stat.nf,
+            seed: args.seed,
+            maxNodes: FLAWCHESS_BOT_MAX_NODES,
+            maxPlies: FLAWCHESS_BOT_MAX_PLIES,
+            stockfishProcs: args.stockfishProcs,
+            gitSha,
+            skipReason: '',
+            beyondLadder,
+          });
+        } else {
+          rows.push(buildSkipRow({ botElo, botBlend, anchorSpec, args, gitSha, skipReason: SKIP_REASON_NOT_BRACKETED, beyondLadder }));
+        }
+      }
+    }
+  }
+  return rows;
+}
+
+/** Writes the derived per-(cell,anchor) aggregate TSV (header + rows only, NO metadata footer — Plan 02's load_bot_cells parses every data line). */
+function writeAggregateFile(filePath, cellRows) {
+  const lines = [mainTsvColumns().join('\t')];
+  for (const row of cellRows) lines.push(mainTsvRowLine(row));
+  fs.mkdirSync(path.dirname(filePath), { recursive: true });
+  fs.writeFileSync(filePath, `${lines.join('\n')}\n`, 'utf8');
+}
+
+/** Runs one cell's locate→bracket→measure passes; records its beyond-ladder flag and returns games/moves played. */
+async function runCell({ Chess, providers, pool, botElo, botBlend, anchorSpecs, args, gitSha, state, ledgerWriter, store, cellBeyondByKey, style }) {
+  // LOCATE (D-07): top up the two widest anchors, then a rough internal estimate.
+  const locate = await locateCellPass({ Chess, providers, pool, botElo, botBlend, anchorSpecs, args, gitSha, state, ledgerWriter, store, style });
+  // BRACKET (D-07): the nearest-to-estimate anchors with the cross-family floor.
+  const bracket = selectMeasureBracket(anchorSpecs, locate.estimate);
+  const beyondLadder = bracketBeyondLadder(locate.estimate, bracket);
+  cellBeyondByKey.set(`${botElo}|${botBlend}`, beyondLadder);
+  console.log(
+    `[calibration-harness] cell elo=${botElo} blend=${botBlend}: locate estimate=` +
+      `${locate.estimate === null ? 'n/a' : locate.estimate.toFixed(1)} ` +
+      `bracket=[${bracket.map((anchorSpec) => anchorSpec.label).join(', ')}] beyond_ladder=${beyondLadder}`,
+  );
+  // MEASURE (D-07): extend each bracket anchor to --games-per-cell (reuses locate games).
+  const measure = await measureCellPass({ Chess, providers, pool, botElo, botBlend, bracket, args, gitSha, state, ledgerWriter, store, style });
+  return { moves: locate.moves + measure.moves, games: locate.games + measure.games };
+}
+
+// ─── Phase 184 (CAL-04): env-var-driven style override for a persona sweep ────
+//
+// `bin/preset-supervisor.sh` is REUSED AS-IS (never modified — it stays
+// generic over `<name> <blend> <elo-csv> [adopt-pid]`) for the persona
+// overnight sweep: `bin/run_persona_calibration_sweep.sh` launches ONE
+// supervised invocation PER PERSONA, each with its own `--out-dir` (so
+// distinct personas that collide on `(botElo, blend)` post-retargeting —
+// Pitfall 1 — never share a store; each process/ledger is independent) and
+// exports `CALIBRATION_HARNESS_STYLE=<StyleName>` in its own environment
+// before invoking the supervisor, which `nohup`s a child that inherits it.
+// This is the ONLY seam threading a real `BotStyleParams` bundle into a
+// harness CLI run — every existing (unstyled) bot-cell/anchor-ladder
+// invocation leaves the env var unset, so `resolveStyleFromEnv()` returns
+// `undefined` and every downstream `style` forward stays the same
+// conditional-spread no-op Plan 01 already proved byte-identical.
+export const CALIBRATION_HARNESS_STYLE_ENV = 'CALIBRATION_HARNESS_STYLE';
+
+/**
+ * Resolves the optional style override from `process.env[CALIBRATION_HARNESS_STYLE_ENV]`.
+ * Returns `undefined` when unset (every pre-184 invocation) — never a
+ * default/fallback style. Fails loud (never silently ignores a typo) if the
+ * env var is set to a name that is not one of `BOT_STYLE_BUNDLES`'s 4 keys.
+ */
+export function resolveStyleFromEnv(env = process.env) {
+  const styleName = env[CALIBRATION_HARNESS_STYLE_ENV];
+  if (styleName === undefined || styleName === '') return undefined;
+  const style = BOT_STYLE_BUNDLES[styleName];
+  if (style === undefined) {
+    throw new Error(
+      `resolveStyleFromEnv: unknown ${CALIBRATION_HARNESS_STYLE_ENV}=${JSON.stringify(styleName)} — ` +
+        `expected one of ${Object.keys(BOT_STYLE_BUNDLES).join(', ')}`,
+    );
+  }
+  return style;
 }
 
 async function main() {
@@ -1088,51 +1607,55 @@ async function main() {
   validateEloRungs(args.elo);
   validateBlends(args.blends);
   const anchorSpecs = args.anchors.map(parseAnchorSpec);
+  const anchorByLabel = new Map(anchorSpecs.map((spec) => [spec.label, spec]));
   const gitSha = resolveGitSha();
+  // Phase 184 (CAL-04): resolved BEFORE any engine bring-up so a typo'd env
+  // var fails fast, not after spawning the Maia session + Stockfish pool.
+  const style = resolveStyleFromEnv();
 
-  // Current grid's cell keys — the resume grid-change guard checks every prior
-  // cell against this set, and the grid loop skips any key already completed.
-  const gridKeys = new Set();
+  // Current grid's (bot_elo, bot_blend) cells — the resume grid-change guard
+  // checks every prior ledger cell against this set.
+  const gridCells = new Set();
   for (const botElo of args.elo) {
-    for (const botBlend of args.blends) {
-      for (const anchorSpec of anchorSpecs) {
-        gridKeys.add(cellKey(botElo, botBlend, anchorSpec.label));
-      }
-    }
+    for (const botBlend of args.blends) gridCells.add(`${botElo}|${botBlend}`);
   }
 
-  let priorSweep = { completedKeys: new Set(), rowByKey: new Map() };
+  // Replay the prior ledger BEFORE spawning engines (pure, and it fail-louds on a
+  // corrupt/mismatched ledger before any expensive bring-up).
+  const priorRows = args.resume ? readPriorLedgerRows(args.resume) : [];
+  const store = new Map();
+  const state = { gameIndex: 0 };
   if (args.resume) {
-    priorSweep = loadPriorSweep(args.resume, args, gridKeys);
+    applyPriorLedgerRows(priorRows, { store, state, anchorByLabel, gridCells, args });
     console.log(
-      `[calibration-harness] --resume ${args.resume}: ${priorSweep.completedKeys.size}/${gridKeys.size} cells ` +
-        `already complete, appending the remaining ${gridKeys.size - priorSweep.completedKeys.size}`,
+      `[calibration-harness] --resume ${args.resume}: replayed ${priorRows.length} logged games, continuing at game index ${state.gameIndex}`,
     );
   }
 
   console.log(`[calibration-harness] loading Maia session + spawning a ${args.stockfishProcs}-process Stockfish pool...`);
 
   const timestamp = buildTimestamp();
-  // On --resume, append to the prior file itself so the finished artifact is one
-  // byte-identical map; a fresh run opens a new timestamped file as before.
-  const mainTsvPath = args.resume ?? path.join(args.outDir, `calibration-harness-${timestamp}.tsv`);
+  // The RAW PER-GAME LEDGER is the durable/resumable artifact (Pitfall 5). On
+  // --resume we append to the prior ledger; the per-(cell,anchor) aggregate
+  // (`-cells.tsv`, the Plan 02 fit input) and advisory summary (`-summary.tsv`)
+  // are DERIVED siblings rewritten fresh from the reconstructed+new store.
+  const ledgerPath = args.resume ?? path.join(args.outDir, `calibration-harness-${timestamp}.tsv`);
+  const aggPath = ledgerPath.replace(/\.tsv$/, '-cells.tsv');
+  const summaryPath = ledgerPath.replace(/\.tsv$/, '-summary.tsv');
 
-  // CR-01: guard the ENTIRE bring-up sequence (pool spawn through TSV-writer
-  // creation) in one try/catch. Without this, an `openMainTsvWriter` failure
-  // (e.g. --out-dir not writable) would leave the already-spawned `pool` (N
-  // real Stockfish processes) with no reference anywhere to terminate it —
-  // `main().catch()` below only logs the error, it never calls `pool.quitAll()`.
+  // CR-01: guard the ENTIRE bring-up sequence (pool spawn through ledger-writer
+  // creation) in one try/catch so an `openLedgerWriter` failure after the pool
+  // spawned still terminates the already-live Stockfish processes.
   let pool;
   let providers;
   let Chess;
-  let tsvWriter;
+  let ledgerWriter;
   try {
     ({ providers, pool, Chess } = await setupHarnessEngines({ stockfishProcs: args.stockfishProcs }));
-    // Fail fast (before any game is played) if an opening's uci prefix no
-    // longer replays to its committed FEN — a drifted prefix would emit
-    // analyze links to the wrong position for every game of that opening.
+    // Fail fast (before any game) if an opening's uci prefix no longer replays
+    // to its committed FEN — a drifted prefix mis-points every analyze link.
     assertOpeningBookUciPrefixes(Chess);
-    tsvWriter = openMainTsvWriter(mainTsvPath, { append: Boolean(args.resume) });
+    ledgerWriter = openLedgerWriter(ledgerPath, { append: Boolean(args.resume) });
   } catch (err) {
     pool?.quitAll();
     throw err;
@@ -1141,124 +1664,55 @@ async function main() {
   const startTimeMs = performance.now();
   let totalMoves = 0;
   let totalGames = 0;
-  let gameIndex = 0;
-  /** Per-cell rows kept in memory for Task 3's advisory per-cell ELO summary (grouped by botElo+botBlend). */
-  const cellRows = [];
+  /** Per-cell beyond-ladder flag, stamped on every one of that cell's aggregate rows. */
+  const cellBeyondByKey = new Map();
 
   try {
     for (const botElo of args.elo) {
       for (const botBlend of args.blends) {
-        const { inWindow, outOfWindow } = partitionAnchorsByWindow(anchorSpecs, botElo);
-
-        // D-15 mechanism 1 (static bracketing): every out-of-window anchor is
-        // pruned unconditionally — no dynamic-cutoff state to track, since
-        // this decision never depends on any other cell's outcome.
-        for (const anchorSpec of outOfWindow) {
-          const outcome = await processCellAnchor({
-            Chess,
-            providers,
-            pool,
-            botElo,
-            botBlend,
-            anchorSpec,
-            args,
-            gameIndex,
-            priorSweep,
-            tsvWriter,
-            gitSha,
-            skipReasonIfPruned: SKIP_REASON_OUT_OF_WINDOW,
-          });
-          gameIndex = outcome.nextGameIndex;
-          totalMoves += outcome.cellMoves;
-          totalGames += outcome.gamesPlayed;
-          cellRows.push(outcome.row);
-        }
-
-        // D-15 mechanism 2 (dynamic cutoff): each side of the in-window
-        // anchor list is walked outward from the bot-cell's own rating,
-        // independently — see `orderAnchorsForDynamicCutoff`'s doc comment.
-        const { weakerOutward, strongerOutward } = orderAnchorsForDynamicCutoff(inWindow, botElo);
-
-        let wonCutoff = false;
-        for (const anchorSpec of weakerOutward) {
-          const outcome = await processCellAnchor({
-            Chess,
-            providers,
-            pool,
-            botElo,
-            botBlend,
-            anchorSpec,
-            args,
-            gameIndex,
-            priorSweep,
-            tsvWriter,
-            gitSha,
-            skipReasonIfPruned: wonCutoff ? SKIP_REASON_WON_CUTOFF : null,
-          });
-          gameIndex = outcome.nextGameIndex;
-          totalMoves += outcome.cellMoves;
-          totalGames += outcome.gamesPlayed;
-          cellRows.push(outcome.row);
-          // Only a UNANIMOUS win (every game won, no draws/losses) establishes
-          // the weaker-side cutoff — a split or drawn cell leaves the next
-          // weaker anchor to be played out. `isUnanimousWin` already guards
-          // games>0, so a games=0 pruned row can never be misread as a sweep.
-          if (!wonCutoff && isUnanimousWin(outcome.row.tally)) {
-            wonCutoff = true;
-          }
-        }
-
-        let lostCutoff = false;
-        for (const anchorSpec of strongerOutward) {
-          const outcome = await processCellAnchor({
-            Chess,
-            providers,
-            pool,
-            botElo,
-            botBlend,
-            anchorSpec,
-            args,
-            gameIndex,
-            priorSweep,
-            tsvWriter,
-            gitSha,
-            skipReasonIfPruned: lostCutoff ? SKIP_REASON_LOST_CUTOFF : null,
-          });
-          gameIndex = outcome.nextGameIndex;
-          totalMoves += outcome.cellMoves;
-          totalGames += outcome.gamesPlayed;
-          cellRows.push(outcome.row);
-          // Only a UNANIMOUS loss (every game lost) stops the climb to stronger
-          // anchors; an all-win or split cell keeps climbing until the bot is
-          // swept (per the stronger-side rule).
-          if (!lostCutoff && isUnanimousLoss(outcome.row.tally)) {
-            lostCutoff = true;
-          }
-        }
+        const played = await runCell({
+          Chess,
+          providers,
+          pool,
+          botElo,
+          botBlend,
+          anchorSpecs,
+          args,
+          gitSha,
+          state,
+          ledgerWriter,
+          store,
+          cellBeyondByKey,
+          style,
+        });
+        totalMoves += played.moves;
+        totalGames += played.games;
       }
     }
   } finally {
     pool.quitAll();
-    await tsvWriter.close();
+    await ledgerWriter.close();
   }
 
   const elapsedSec = (performance.now() - startTimeMs) / 1000;
   if (totalGames > 0) {
     printSpikeReport({ totalGames, totalMoves, elapsedSec, stockfishProcs: args.stockfishProcs });
   } else {
-    // --resume where every grid cell was already complete: nothing was played,
-    // so the throughput report would divide by zero. Still emit the summary.
+    // --resume where every grid cell was already complete: nothing was played
+    // this run, so the throughput report would divide by zero. Still emit the
+    // derived artifacts from the reconstructed store.
     console.log('\n=== --resume: all grid cells already complete, no games played this run ===');
   }
-  console.log(`[calibration-harness] wrote ${mainTsvPath} (${cellRows.length} cell rows)`);
 
-  // Sibling summary derived from the main path (fresh: -${timestamp}-summary.tsv;
-  // resume: the prior file's -summary.tsv sibling, spanning the whole grid).
-  const summaryPath = mainTsvPath.replace(/\.tsv$/, '-summary.tsv');
+  const cellRows = buildCellAggregateRows({ args, anchorSpecs, gitSha, store, cellBeyondByKey });
+  writeAggregateFile(aggPath, cellRows);
+  console.log(`[calibration-harness] wrote ${ledgerPath} (raw per-game ledger)`);
+  console.log(`[calibration-harness] wrote ${aggPath} (${cellRows.length} per-(cell,anchor) rows — Plan 02 fit input)`);
+
   emitEloSummary(summaryPath, cellRows, { seed: args.seed, stockfishProcs: args.stockfishProcs, gitSha });
   console.log(`[calibration-harness] wrote ${summaryPath}`);
 
-  return { cellRows, outDir: args.outDir, timestamp, gitSha };
+  return { cellRows, ledgerPath, aggPath, outDir: args.outDir, timestamp, gitSha };
 }
 
 // Only auto-run when executed directly (not when imported by the determinism check).

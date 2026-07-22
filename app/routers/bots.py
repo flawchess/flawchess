@@ -11,7 +11,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_async_session
 from app.models.user import User
-from app.schemas.bots import StoreBotGameRequest, StoreBotGameResponse
+from app.repositories import game_repository
+from app.schemas.bots import PersonaWinsResponse, StoreBotGameRequest, StoreBotGameResponse
 from app.services import store_bot_game_service
 from app.users import current_active_user
 
@@ -37,3 +38,17 @@ async def store_game(
     if result is None:
         raise HTTPException(status_code=422, detail="Invalid PGN or missing [%clk] annotations")
     return result
+
+
+@router.get("/persona-wins", response_model=PersonaWinsResponse, status_code=200)
+async def get_persona_wins(
+    session: Annotated[AsyncSession, Depends(get_async_session)],
+    user: Annotated[User, Depends(current_active_user)],
+) -> PersonaWinsResponse:
+    """Return per-persona win counts for the authenticated user (Phase 185, T-185-02).
+
+    user_id is derived from the authenticated JWT — never from a request
+    parameter (ASVS V4). No cross-user win-count leakage: current_active_user
+    is the only source of scope.
+    """
+    return await game_repository.count_wins_by_persona(session, user.id)

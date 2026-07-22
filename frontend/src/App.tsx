@@ -16,6 +16,7 @@ import {
 } from '@/components/ui/drawer';
 
 import { apiClient } from '@/api/client';
+import { useBotPlayActive } from '@/lib/botPlayActive';
 import { AuthProvider, useAuth } from '@/hooks/useAuth';
 import { InstallPromptBanner } from '@/components/install/InstallPromptBanner';
 import { FeedbackButton } from '@/components/feedback/FeedbackButton';
@@ -470,6 +471,10 @@ function ProtectedLayout() {
   // footer owned by the page), so it gets a full-height flex chain on mobile and the
   // standard mobile header / bottom nav are suppressed. Desktop (sm+) is unaffected.
   const isAnalysisRoute = location.pathname.startsWith('/analysis');
+  // A mounted bot-game board suppresses the mobile header (NavHeader is
+  // desktop-only and unaffected) — the board + clocks need the vertical
+  // space on small screens. Set by BotsGame via useMarkBotPlayActive().
+  const botPlayActive = useBotPlayActive();
   const refreshedRef = useRef(false);
 
   useEffect(() => {
@@ -557,7 +562,7 @@ function ProtectedLayout() {
   return (
     <>
       <NavHeader />
-      {!isOpeningsRoute && (
+      {!isOpeningsRoute && !botPlayActive && (
         <>
           <MobileHeader />
         </>

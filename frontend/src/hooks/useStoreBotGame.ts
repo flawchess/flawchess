@@ -15,12 +15,13 @@
 
 import { useCallback } from 'react';
 import axios from 'axios';
-import { useMutation, type UseMutationResult } from '@tanstack/react-query';
+import { useMutation, useQueryClient, type UseMutationResult } from '@tanstack/react-query';
 
 import { botsApi } from '@/api/client';
 import type { StoreBotGameRequest, StoreBotGameResponse } from '@/types/bots';
 import { toBackendTcStr } from '@/lib/botGamePgn';
 import { listPendingStore, removePendingStore, type PendingStoreEntry } from '@/lib/botPendingStore';
+import { BOT_PERSONA_WINS_QUERY_KEY } from '@/hooks/useBotPersonaWins';
 
 /** Bounded in-session retries for a transient (network/5xx) store failure. A
  * pending entry blocks nothing — the real retry is "the user's next visit"
@@ -44,6 +45,12 @@ export function toStoreRequest(entry: PendingStoreEntry): StoreBotGameRequest {
     bot_elo: entry.settings.botElo,
     play_style_blend: entry.settings.blend,
     tc_preset: toBackendTcStr(entry.settings.baseSeconds, entry.settings.incrementSeconds),
+    // Phase 185: persist which persona (if any) the user played. `?? null`
+    // covers both a Custom-mode game (no personaId at all) and old queued
+    // localStorage entries minted before this field existed — do NOT tighten
+    // isValidPendingEntry/isValidSettingsShape to require personaId, they
+    // must still round-trip (Pitfall 3).
+    persona_id: entry.settings.personaId ?? null,
   };
 }
 
@@ -123,20 +130,30 @@ export function useStoreBotGame(): UseMutationResult<
  * paragraph read "`shouldRetryStore` retries a 401 forever, which would hang
  * this loop" — that unbounded 401 branch is gone, so the reason to keep the
  * predicate out of the drain is now cost, not a hang.)
+ *
+ * CR-01 fix: invalidates `BOT_PERSONA_WINS_QUERY_KEY` once, after the drain
+ * loop finishes, if AT LEAST ONE entry stored successfully (2xx). A queued/
+ * offline game that drains successfully on a later `/bots` mount should also
+ * refresh the win stars shown on that same mount — without this, a persona
+ * win stored only via the drain (never via the finish-time store, e.g. an
+ * offline finish) would never invalidate the cache at all.
  */
 export function useDrainPendingStore(ownerKey: string | null | undefined): {
   drain: () => Promise<void>;
 } {
+  const queryClient = useQueryClient();
   const { mutateAsync } = useMutation<StoreBotGameResponse, Error, StoreBotGameRequest>({
     mutationFn: botsApi.storeGame,
   });
 
   const drain = useCallback(async (): Promise<void> => {
     const entries = listPendingStore(ownerKey);
+    let anyStored = false;
     for (const entry of entries) {
       try {
         await mutateAsync(toStoreRequest(entry));
         removePendingStore(ownerKey, entry.gameUuid);
+        anyStored = true;
       } catch (err) {
         const status = axios.isAxiosError(err) ? err.response?.status : undefined;
         if (status === STATUS_UNPROCESSABLE) {
@@ -145,7 +162,10 @@ export function useDrainPendingStore(ownerKey: string | null | undefined): {
         // 401 / 5xx / network / non-axios: keep the entry, retry next visit.
       }
     }
-  }, [ownerKey, mutateAsync]);
+    if (anyStored) {
+      void queryClient.invalidateQueries({ queryKey: BOT_PERSONA_WINS_QUERY_KEY });
+    }
+  }, [ownerKey, mutateAsync, queryClient]);
 
   return { drain };
 }

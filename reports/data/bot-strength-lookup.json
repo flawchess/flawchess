@@ -1,0 +1,121 @@
+{
+  "components": {
+    "human": {
+      "fit_points": [
+        {
+          "bot_elo": 700.0,
+          "internal_rating": 882.1991289099648
+        },
+        {
+          "bot_elo": 1100.0,
+          "internal_rating": 1006.242446396252
+        },
+        {
+          "bot_elo": 1500.0,
+          "internal_rating": 1143.0499118913096
+        },
+        {
+          "bot_elo": 1900.0,
+          "internal_rating": 1405.0476538550313
+        },
+        {
+          "bot_elo": 2300.0,
+          "internal_rating": 1474.4617525888584
+        }
+      ],
+      "g_preset_combined": 40.947876930543565,
+      "c_offset": 40,
+      "band": 225,
+      "extrapolated_bot_elos": [
+        700,
+        1100
+      ]
+    },
+    "light": {
+      "fit_points": [
+        {
+          "bot_elo": 1100.0,
+          "internal_rating": 1575.8424314825147
+        },
+        {
+          "bot_elo": 1500.0,
+          "internal_rating": 1604.9588103460424
+        },
+        {
+          "bot_elo": 1700.0,
+          "internal_rating": 1608.3062011102434
+        },
+        {
+          "bot_elo": 1900.0,
+          "internal_rating": 1783.4932121675113
+        }
+      ],
+      "g_preset_combined": 186.23527490876148,
+      "c_offset": 40,
+      "band": 200,
+      "extrapolated_bot_elos": []
+    },
+    "deep": {
+      "fit_points": [
+        {
+          "bot_elo": 1100.0,
+          "internal_rating": 1783.4932121675113
+        },
+        {
+          "bot_elo": 1500.0,
+          "internal_rating": 1966.5462349734019
+        },
+        {
+          "bot_elo": 1900.0,
+          "internal_rating": 1991.9470260676576
+        },
+        {
+          "bot_elo": 2300.0,
+          "internal_rating": 2091.2695221899544
+        }
+      ],
+      "g_preset_combined": 247.17815365881333,
+      "c_offset": 40,
+      "band": 250,
+      "extrapolated_bot_elos": []
+    }
+  },
+  "derived": {
+    "human": {
+      "range": {
+        "floor": 900,
+        "ceiling": 1400
+      },
+      "lookup": {
+        "900": 1100,
+        "1000": 1100,
+        "1100": 1500,
+        "1200": 1900,
+        "1300": 1900,
+        "1400": 1900
+      }
+    },
+    "light": {
+      "range": {
+        "floor": 1500,
+        "ceiling": 1600
+      },
+      "lookup": {
+        "1500": 1900,
+        "1600": 1900
+      }
+    },
+    "deep": {
+      "range": {
+        "floor": 1600,
+        "ceiling": 1800
+      },
+      "lookup": {
+        "1600": 1500,
+        "1700": 1500,
+        "1800": 2300
+      }
+    }
+  },
+  "disclaimer": "This is an APPROXIMATE Lichess blitz ELO, derived from an internal calibration scale rather than measured against real players. It carries a per-preset uncertainty band and should be read as a rough guide, not a precise rating."
+}

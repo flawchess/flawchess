@@ -204,6 +204,25 @@ function buildModalPath<N extends SearchTreeNode<N>>(rootChild: N): {
 }
 
 /**
+ * Variance/"sharpness" proxy for a root candidate (Phase 182 D-10): the
+ * max−min spread across `node`'s OWN children's backed-up `.value`s. When
+ * `node` is a root child, these are the grandchildren of the search root —
+ * exactly the `RankedLine.childScoreSpread` semantic. Returns `null` when
+ * `node.children.size` is 0 or 1 (no meaningful spread to report — never
+ * 0-as-a-signal for the empty case).
+ */
+function computeChildScoreSpread<N extends SearchTreeNode<N>>(node: N): number | null {
+  if (node.children.size <= 1) return null;
+  let min = Infinity;
+  let max = -Infinity;
+  for (const child of node.children.values()) {
+    if (child.value < min) min = child.value;
+    if (child.value > max) max = child.value;
+  }
+  return max - min;
+}
+
+/**
  * Ranked root candidates by findability-weighted rankScore descending,
  * canonical-UCI tie-break (ENGINE-01/ENGINE-07, Phase 159 D-01/D-04).
  * `rankScore` is a SORT-ONLY local — never assigned onto the public
@@ -230,6 +249,7 @@ function buildRankedLines<N extends SearchTreeNode<N>>(root: N, rootElo: number)
         modalPath: modal.path,
         modalStats: modal.stats,
         visits: child.visits,
+        childScoreSpread: computeChildScoreSpread(child),
       },
       sortRankScore: rankScore(child.prior, pRef, child.value),
     });

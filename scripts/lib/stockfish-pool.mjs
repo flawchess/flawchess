@@ -29,7 +29,7 @@
  * retry rather than aborting the whole multi-hour sweep.
  */
 import { spawnStockfish, STOCKFISH_INIT_TIMEOUT_MS } from './node-engine-providers.mjs';
-import { nodeGrade, evalPositionCp } from './calibration-providers.mjs';
+import { nodeGrade, evalPositionCp, evalPositionCpWithBest } from './calibration-providers.mjs';
 import { stockfishSkillMove } from './calibration-anchors.mjs';
 
 /** Default pool size — mirrors `workerPool.ts`'s `DESKTOP_POOL_MAX` order of magnitude. */
@@ -150,6 +150,13 @@ export async function createStockfishPool({ size = STOCKFISH_POOL_DEFAULT_SIZE }
 
     /** Single-line white-POV cp eval for D-10 cutoff 2 (adjudication). */
     evalPosition: (fen) => withEngine(pool, (engine) => evalPositionCp(engine, fen)),
+
+    /**
+     * White-POV cp eval + the engine's own `bestmove` byproduct (Phase 180
+     * near-free SF-agreement). Same single `go` as `evalPosition` — the
+     * `bestmove` line is already awaited, so this adds ZERO extra engine work.
+     */
+    evalPositionWithBest: (fen) => withEngine(pool, (engine) => evalPositionCpWithBest(engine, fen)),
 
     /** Stockfish-skill anchor move at `skillLevel` (D-07 anchor). */
     skillMove: (fen, skillLevel) => withEngine(pool, (engine) => stockfishSkillMove(engine, fen, skillLevel)),

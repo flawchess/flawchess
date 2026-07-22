@@ -239,6 +239,7 @@ import {
   type BotGameSnapshot,
 } from '@/lib/botGameSnapshot';
 import { listPendingStore, enqueuePendingStore } from '@/lib/botPendingStore';
+import type { BotStyleParams } from '@/lib/engine/botStyle';
 
 // ─── Fixtures ────────────────────────────────────────────────────────────────
 
@@ -1925,6 +1926,234 @@ describe('useBotGame', () => {
       const entries = listPendingStore(OWNER_KEY);
       expect(entries).toHaveLength(1);
       expect(entries[0]?.gameUuid).toBe('already-finished-game');
+    });
+  });
+
+  // ─── styled resign wiring (Phase 182, STYLE-02) ──────────────────────────
+  //
+  // Proves the HOOK wiring (not the pure wouldBotResign predicate, which is
+  // 182-02's job): the consecutiveLowScoreTurnsRef hysteresis counter
+  // increments only on a FRESH at/below-threshold grade and resets
+  // otherwise, finalizeGame fires with reason:'resignation' exactly once
+  // the counter reaches settings.style.hysteresisFloor past
+  // RESIGN_MIN_FULLMOVE (20), and an unstyled game never reaches the
+  // branch at all.
+  //
+  // Move script: a long (44-ply/22-round) sequence of legal, non-repeating
+  // knight-shuffle moves generated ahead of time via a direct chess.js run
+  // (not hand-derived) — verified to never threefold-repeat and to carry
+  // the game to fullmove 23 without triggering any end condition. White
+  // (the user, attemptMove) and Black (the bot, mockSelectBotMove) each
+  // shuffle a knight; `chess.moveNumber()` reaches 20 (RESIGN_MIN_FULLMOVE)
+  // right after round 18's black move (round r ⇒ moveNumber = r + 2).
+  // Rounds 0-17 are pure warm-up (the move-number gate alone already blocks
+  // any resign there, regardless of score) to get the game position past
+  // RESIGN_MIN_FULLMOVE; rounds 18+ carry each test's actual assertions.
+
+  describe('styled resign wiring (STYLE-02)', () => {
+    const RESIGN_TEST_ROUNDS: [white: string, black: string][] = [
+      ['g1f3', 'g8h6'],
+      ['f3g1', 'h6g8'],
+      ['b1c3', 'b8a6'],
+      ['c3b1', 'g8f6'],
+      ['g1f3', 'a6b8'],
+      ['f3d4', 'f6d5'],
+      ['d4b3', 'd5b6'],
+      ['b3d4', 'b6d5'],
+      ['d4b3', 'd5b6'],
+      ['b3c5', 'b6c4'],
+      ['c5d3', 'c4d6'],
+      ['b1c3', 'b8c6'],
+      ['c3b1', 'c6b8'],
+      ['b1c3', 'b8c6'],
+      ['c3b1', 'd6e4'],
+      ['b1c3', 'c6b8'],
+      ['c3b1', 'b8a6'],
+      ['b1a3', 'a6b8'],
+      ['a3b1', 'e4f6'], // round 18: black's 19th move ⇒ chess.moveNumber() === 20
+      ['d3e5', 'f6d5'], // round 19
+      ['e5d3', 'd5b6'], // round 20
+      ['d3e5', 'b6d5'], // round 21
+    ];
+    const WARMUP_ROUNDS = 18; // rounds [0, 18) — before RESIGN_MIN_FULLMOVE
+
+    /** Bot (black) losing badly — evalCp is WHITE-POV, so a large positive
+     * value is bad for black; es(black) ≈ 0.025, well below any sane
+     * threshold. */
+    const LOSING_GRADE: MoveGrade = { evalCp: 1000, evalMate: null, depth: 12 };
+    /** Bot (black) clearly fine — es(black) ≈ 0.975, above any sane
+     * threshold, resetting the hysteresis counter. */
+    const WINNING_GRADE: MoveGrade = { evalCp: -1000, evalMate: null, depth: 12 };
+
+    const STYLED_PARAMS: BotStyleParams = {
+      featureMultipliers: {
+        isCheck: 1,
+        isCapture: 1,
+        isPawnAdvance: 1,
+        isPawnStorm: 1,
+        isExchange: 1,
+        isRetreat: 1,
+      },
+      scoreBonus: 0,
+      varianceBonus: 0,
+      contempt: 0,
+      threshold: 0.3,
+      hysteresisFloor: 2,
+      bookBoost: 1,
+    };
+    const STYLED_SETTINGS: BotGameSettings = { ...DEFAULT_SETTINGS, style: STYLED_PARAMS };
+
+    /** Plays one (white, black) round: queues the bot's mocked reply, makes
+     * the user's move, then lets the bot's think/grade resolve. */
+    async function playRound(
+      result: { current: ReturnType<typeof useBotGame> },
+      round: [string, string],
+    ): Promise<void> {
+      const [whiteUci, blackUci] = round;
+      mockSelectBotMove.mockResolvedValueOnce(blackUci);
+      act(() => {
+        result.current.attemptMove(whiteUci.slice(0, 2), whiteUci.slice(2, 4));
+      });
+      await advance(2000);
+    }
+
+    /** Sets the grade EVERY subsequent `pool.grade()` call resolves until
+     * changed again — mirrors the queens-off draw-accept test's mockGrade
+     * pattern (resign-draw describe block above). */
+    function setGrade(grade: MoveGrade): void {
+      mockGrade.mockImplementation((_fen: string, ucis: string[]) => {
+        const map = new Map<string, MoveGrade>();
+        for (const uci of ucis) map.set(uci, grade);
+        return Promise.resolve(map);
+      });
+    }
+
+    async function playWarmup(result: { current: ReturnType<typeof useBotGame> }): Promise<void> {
+      setGrade(WINNING_GRADE);
+      for (let r = 0; r < WARMUP_ROUNDS; r++) {
+        await playRound(result, RESIGN_TEST_ROUNDS[r]!);
+      }
+    }
+
+    it('increments the hysteresis counter only on a fresh at/below-threshold grade, and resets on an above-threshold grade', async () => {
+      const { result } = renderHook(() => useBotGame(STYLED_SETTINGS));
+      await playWarmup(result);
+      expect(result.current.outcome).toBeNull();
+
+      // Round 18 (moveNumber === 20): one low grade — counter reaches 1,
+      // still below hysteresisFloor (2). No resignation yet.
+      setGrade(LOSING_GRADE);
+      await playRound(result, RESIGN_TEST_ROUNDS[18]!);
+      expect(result.current.outcome).toBeNull();
+
+      // Round 19: one high grade — resets the counter to 0.
+      setGrade(WINNING_GRADE);
+      await playRound(result, RESIGN_TEST_ROUNDS[19]!);
+      expect(result.current.outcome).toBeNull();
+
+      // Round 20: a SINGLE low grade after the reset — counter is back to 1
+      // (not 2). If the reset above had NOT happened, this round would push
+      // the counter to 2 and trigger a resignation — it does not, proving
+      // the reset actually occurred.
+      setGrade(LOSING_GRADE);
+      await playRound(result, RESIGN_TEST_ROUNDS[20]!);
+      expect(result.current.outcome).toBeNull();
+    });
+
+    it('fires finalizeGame with reason:resignation exactly once the counter reaches hysteresisFloor past RESIGN_MIN_FULLMOVE', async () => {
+      const { result } = renderHook(() => useBotGame(STYLED_SETTINGS));
+      await playWarmup(result);
+
+      setGrade(LOSING_GRADE);
+      // Round 18 (moveNumber === 20): counter reaches 1 — below the floor (2).
+      await playRound(result, RESIGN_TEST_ROUNDS[18]!);
+      expect(result.current.outcome).toBeNull();
+
+      // Round 19 (moveNumber === 21): a SECOND consecutive low grade —
+      // counter reaches hysteresisFloor (2), past RESIGN_MIN_FULLMOVE — the
+      // bot resigns. The user (settings.userColor) wins.
+      mockPlaySound.mockClear();
+      await playRound(result, RESIGN_TEST_ROUNDS[19]!);
+      expect(result.current.outcome).toEqual({ reason: 'resignation', winner: 'white' });
+      expect(mockPlaySound.mock.calls.filter((c) => c[0] === 'game-end')).toHaveLength(1);
+
+      // Idempotency: nothing further happens — the bot-turn-trigger effect
+      // is gated on `!outcome`, so no additional move/grade/finalize occurs.
+      const pgnAfterResign = result.current.pgn;
+      await advance(2000);
+      expect(result.current.outcome).toEqual({ reason: 'resignation', winner: 'white' });
+      expect(result.current.pgn).toBe(pgnAfterResign);
+      expect(mockPlaySound.mock.calls.filter((c) => c[0] === 'game-end')).toHaveLength(1);
+    });
+
+    it('never resigns for an unstyled game (DEFAULT_SETTINGS) under the same low-score grade sequence', async () => {
+      const { result } = renderHook(() => useBotGame(DEFAULT_SETTINGS));
+      await playWarmup(result);
+
+      setGrade(LOSING_GRADE);
+      // Same two consecutive low grades past RESIGN_MIN_FULLMOVE that make
+      // the styled test above resign — the resign branch is unreachable
+      // without settings.style (D-03), so the game just continues.
+      await playRound(result, RESIGN_TEST_ROUNDS[18]!);
+      expect(result.current.outcome).toBeNull();
+      await playRound(result, RESIGN_TEST_ROUNDS[19]!);
+      expect(result.current.outcome).toBeNull();
+      await playRound(result, RESIGN_TEST_ROUNDS[20]!);
+      expect(result.current.outcome).toBeNull();
+    });
+
+    it('a stale pool.grade() continuation resolving after newGame() does not mutate resign state for the new game (CR-02)', async () => {
+      // Game A: the bot's post-commit grade call is deliberately left
+      // pending (its resolve function is captured, not invoked) —
+      // simulating a real Web Worker RPC that outlives the turn it was
+      // issued for, per 182-REVIEW.md CR-01's failure sequence.
+      let resolveStaleGrade: ((map: Map<string, MoveGrade>) => void) | undefined;
+      mockGrade.mockImplementationOnce(
+        () =>
+          new Promise<Map<string, MoveGrade>>((resolve) => {
+            resolveStaleGrade = resolve;
+          }),
+      );
+      const [gameAWhiteUci, gameABlackUci] = RESIGN_TEST_ROUNDS[0]!;
+      mockSelectBotMove.mockResolvedValueOnce(gameABlackUci);
+      const { result } = renderHook(() => useBotGame(STYLED_SETTINGS));
+      act(() => {
+        result.current.attemptMove(gameAWhiteUci.slice(0, 2), gameAWhiteUci.slice(2, 4));
+      });
+      await advance(2000); // bot's move commits; its pool.grade() call is now the pending stale one above
+
+      // Game B: newGame() discards game A (and its still-pending grade)
+      // and aborts game A's turn controller.
+      act(() => {
+        result.current.newGame();
+      });
+      await playWarmup(result);
+
+      // One real, FRESH low grade in game B: counter reaches 1 (below the
+      // hysteresisFloor of 2). No resignation yet.
+      setGrade(LOSING_GRADE);
+      await playRound(result, RESIGN_TEST_ROUNDS[18]!);
+      expect(result.current.outcome).toBeNull();
+
+      // The STALE game-A grade finally resolves — a losing score for
+      // game A's mover. Without the CR-02 staleness guard, this stale
+      // continuation would push consecutiveLowScoreTurnsRef to 2 (at
+      // game B's hysteresisFloor) and evaluate wouldBotResign against
+      // game B's CURRENT (already past-RESIGN_MIN_FULLMOVE) board,
+      // firing a spurious resignation right here — one real turn early,
+      // off a score computed for a discarded game.
+      await act(async () => {
+        resolveStaleGrade?.(new Map([[gameABlackUci, LOSING_GRADE]]));
+        await vi.advanceTimersByTimeAsync(0);
+      });
+      expect(result.current.outcome).toBeNull(); // guarded: the stale resolution did nothing
+
+      // Game B's own SECOND real low-score turn is what legitimately
+      // reaches the hysteresis floor and fires the resignation — proving
+      // the earlier stale resolution above was correctly a no-op, not
+      // that resign is unreachable.
+      await playRound(result, RESIGN_TEST_ROUNDS[19]!);
+      expect(result.current.outcome).toEqual({ reason: 'resignation', winner: 'white' });
     });
   });
 });

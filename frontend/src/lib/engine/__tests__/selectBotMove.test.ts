@@ -19,14 +19,19 @@
 
 import { describe, it, expect, vi } from 'vitest';
 import { selectBotMove, TAU_MAX, type BotMoveDeps, type BotSettings } from '../selectBotMove';
-import { mulberry32 } from '../botSampling';
+import { mulberry32, samplePolicy, argmaxLine } from '../botSampling';
+import type { BotStyleParams, FeatureMultipliers } from '../botStyle';
 import type { EngineSnapshot, MoveGrade, RankedLine, SearchBudget, Side } from '../types';
 
 const WHITE_FEN = '4k3/8/8/8/8/8/4P3/4K3 w - - 0 1'; // 6 legal moves
 const BLACK_FEN = '4k3/4p3/8/8/8/8/8/4K3 b - - 0 1';
 const CHECKMATE_FEN = 'rnb1kbnr/pppp1ppp/8/4p3/6Pq/5P2/PPPPP2P/RNBQKBNR w KQkq - 1 3'; // fool's mate
 
-function makeLine(rootMove: string, practicalScore: number): RankedLine {
+function makeLine(
+  rootMove: string,
+  practicalScore: number,
+  childScoreSpread: number | null = null,
+): RankedLine {
   return {
     rootMove,
     practicalScore,
@@ -35,6 +40,31 @@ function makeLine(rootMove: string, practicalScore: number): RankedLine {
     modalPath: [],
     modalStats: [],
     visits: 0,
+    childScoreSpread,
+  };
+}
+
+// ─── Style fixtures (Phase 182, Plan 06) ────────────────────────────────────
+
+const NEUTRAL_FEATURE_MULTIPLIERS: FeatureMultipliers = {
+  isCheck: 1,
+  isCapture: 1,
+  isPawnAdvance: 1,
+  isPawnStorm: 1,
+  isExchange: 1,
+  isRetreat: 1,
+};
+
+function makeStyle(overrides: Partial<BotStyleParams> = {}): BotStyleParams {
+  return {
+    featureMultipliers: NEUTRAL_FEATURE_MULTIPLIERS,
+    scoreBonus: 0,
+    varianceBonus: 0,
+    contempt: 0,
+    threshold: 0,
+    hysteresisFloor: 0,
+    bookBoost: 1,
+    ...overrides,
   };
 }
 
@@ -323,5 +353,84 @@ describe('selectBotMove — signal', () => {
     await selectBotMove(WHITE_FEN, settings, deps, controller.signal);
 
     expect(calls[0]?.signal).toBe(controller.signal);
+  });
+});
+
+// ─── Style hooks (Phase 182, STYLE-03/04/05) ────────────────────────────────
+
+describe('selectBotMove — style undefined regression (D-03 baseline invariant)', () => {
+  it('blend<=0: an omitted style samples the raw policy exactly as before the field existed', async () => {
+    // WHITE_FEN has no captures/checks/exchanges/retreats among its 6 legal
+    // moves, but e2e3/e2e4 ARE pawn advances — a style boosting
+    // isPawnAdvance would visibly shift this distribution (see the styled
+    // test below), so this fixture is a real discriminator, not a vacuous
+    // one.
+    const rawPolicy = { e1d1: 1, e1d2: 1, e1f1: 1, e1f2: 1, e2e3: 1, e2e4: 1 };
+    const policy = vi.fn(async (): Promise<Record<string, number>> => rawPolicy);
+    const rng = () => 0.5;
+    const settings: BotSettings = { elo: 1500, blend: 0, budget: baseBudget() }; // no `style` key at all
+
+    const move = await selectBotMove(WHITE_FEN, settings, baseDeps({ policy, rng }));
+
+    // The expectation is derived from calling samplePolicy directly on the
+    // UNTRANSFORMED rawPolicy — proving selectBotMove ran zero reweight
+    // calls when style is undefined (a mutation that made the reweight
+    // unconditional would diverge from this independently-computed value).
+    expect(move).toBe(samplePolicy(rawPolicy, rng));
+    expect(move).toBe('e1f2');
+  });
+
+  it('search branch: an omitted style leaves practicalScore untouched exactly as before the field existed', async () => {
+    const lines = [makeLine('a1a2', 0.5, 0.5), makeLine('b1b2', 0.52, 0)];
+    const { search } = stubSearch(lines);
+    const settings: BotSettings = { elo: 1800, blend: 1, budget: baseBudget() }; // no `style` key at all
+
+    const move = await selectBotMove(WHITE_FEN, settings, baseDeps({ search }));
+
+    // Derived independently from argmaxLine over the UNSHAPED lines — proves
+    // selectBotMove ran zero shaping calls when style is undefined.
+    expect(move).toBe(argmaxLine(lines));
+    expect(move).toBe('b1b2');
+  });
+});
+
+describe('selectBotMove — styled blend<=0 (STYLE-03 prior reweighting)', () => {
+  it('a style favoring isPawnAdvance shifts the sampled move toward a pawn push vs the undefined-style baseline', async () => {
+    const rawPolicy = { e1d1: 1, e1d2: 1, e1f1: 1, e1f2: 1, e2e3: 1, e2e4: 1 };
+    const policy = vi.fn(async (): Promise<Record<string, number>> => rawPolicy);
+    const rng = () => 0.5;
+    const style = makeStyle({
+      featureMultipliers: { ...NEUTRAL_FEATURE_MULTIPLIERS, isPawnAdvance: 1000 },
+    });
+    const settings: BotSettings = { elo: 1500, blend: 0, budget: baseBudget(), style };
+
+    const move = await selectBotMove(WHITE_FEN, settings, baseDeps({ policy, rng }));
+
+    // Baseline (no style, same rawPolicy/rng) picks e1f2 (see the regression
+    // test above) — the style must pick a DIFFERENT, pawn-advance move.
+    expect(move).toBe('e2e3');
+    expect(move).not.toBe('e1f2');
+  });
+});
+
+describe('selectBotMove — styled search branch (STYLE-04 score shaping)', () => {
+  it('a style score bonus on one line changes the argmax pick vs the undefined-style baseline', async () => {
+    const lines = [makeLine('a1a2', 0.5, 0.5), makeLine('b1b2', 0.52, 0)];
+    const { search, calls } = stubSearch(lines);
+    // Uniform scoreBonus alone never changes ranking (it's additive across
+    // every line) — the differentiator is varianceBonus x childScoreSpread,
+    // which favors a1a2's wider spread enough to overtake b1b2's higher raw
+    // practicalScore.
+    const style = makeStyle({ scoreBonus: 0, varianceBonus: 0.5 });
+    const settings: BotSettings = { elo: 1800, blend: 1, budget: baseBudget(), style };
+
+    const move = await selectBotMove(WHITE_FEN, settings, baseDeps({ search }));
+
+    // Baseline (no style, same lines) picks b1b2 (see the regression test
+    // above) — the style must pick a DIFFERENT, higher-spread line.
+    expect(move).toBe('a1a2');
+    expect(move).not.toBe('b1b2');
+    // BOT-03: budget.elo stays symmetric regardless of style.
+    expect(calls[0]?.budget.elo).toEqual({ w: 1800, b: 1800 });
   });
 });

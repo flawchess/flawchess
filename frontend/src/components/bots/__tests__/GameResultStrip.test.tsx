@@ -23,6 +23,7 @@ const OUTCOME: BotGameOutcome = { reason: 'resignation', winner: 'white' };
 function renderStrip(overrides: Partial<Parameters<typeof GameResultStrip>[0]> = {}) {
   const onNewGame = vi.fn();
   const onAnalyze = vi.fn();
+  const onRematch = vi.fn();
   render(
     <MemoryRouter>
       <GameResultStrip
@@ -33,11 +34,13 @@ function renderStrip(overrides: Partial<Parameters<typeof GameResultStrip>[0]> =
         storeSucceeded={false}
         isGuest={false}
         analyzeBusy={false}
+        personaName={null}
+        onRematch={onRematch}
         {...overrides}
       />
     </MemoryRouter>,
   );
-  return { onNewGame, onAnalyze };
+  return { onNewGame, onAnalyze, onRematch };
 }
 
 describe('GameResultStrip — Saved to Library + guest caveat (V-16)', () => {
@@ -105,5 +108,31 @@ describe('GameResultStrip — Analyze is store-gated (Quick 260714-rj5, retires 
 
     fireEvent.click(screen.getByTestId('strip-btn-new-game'));
     expect(onNewGame).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('GameResultStrip — persona-named copy + Rematch/New opponent (Phase 183, D-06/D-08, mobile parity)', () => {
+  const BOT_LOSS_OUTCOME: BotGameOutcome = { reason: 'checkmate', winner: 'black' };
+
+  it('renders the generic title and NO Rematch button for a Custom game (personaName null)', () => {
+    renderStrip({ personaName: null, outcome: BOT_LOSS_OUTCOME });
+
+    expect(screen.getByText('You lost — checkmate')).toBeTruthy();
+    expect(screen.queryByTestId('strip-btn-rematch')).toBeNull();
+    expect(screen.getByTestId('strip-btn-new-game').textContent).toBe('New opponent');
+  });
+
+  it('renders the SAME persona-named title as GameResultDialog and a working "Rematch <Persona>" (mobile parity)', () => {
+    const { onRematch } = renderStrip({
+      personaName: 'Ziggy the Wasp',
+      outcome: BOT_LOSS_OUTCOME,
+    });
+
+    expect(screen.getByText('Ziggy the Wasp wins — checkmate')).toBeTruthy();
+    const rematchBtn = screen.getByTestId('strip-btn-rematch');
+    expect(rematchBtn.textContent).toBe('Rematch Ziggy the Wasp');
+
+    fireEvent.click(rematchBtn);
+    expect(onRematch).toHaveBeenCalledTimes(1);
   });
 });

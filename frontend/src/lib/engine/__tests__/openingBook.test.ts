@@ -32,6 +32,7 @@ import {
   type BookWeightingFn,
 } from '../openingBook';
 import { mulberry32 } from '../botSampling';
+import { styleBookWeighting } from '../botStyle';
 
 // ─── getBookCandidates ──────────────────────────────────────────────────────
 
@@ -209,5 +210,42 @@ describe('weighting seam', () => {
 
     const move = selectBookMove([], legalMoves, prefixSet, rawPolicy, mulberry32(1), onlyD2d4);
     expect(move).toBeNull();
+  });
+});
+
+// ─── styled weighting: floor-check-before-weighting regression (Phase 182, Pitfall 1) ─
+
+describe('styled weighting (Phase 182, STYLE-01) — floor check still runs before weighting', () => {
+  it('a real styleBookWeighting boost does NOT rescue a sole candidate whose RAW policy is below BOOK_POLICY_FLOOR', () => {
+    const legalMoves = [
+      { san: 'e4', lan: 'e2e4' },
+      { san: 'd4', lan: 'd2d4' },
+    ];
+    const prefixSet = new Set(['e4']); // only e4 is a book move
+    const rawPolicy = { e2e4: 0.01, d2d4: 0.99 }; // e2e4's RAW policy is below the floor
+    expect(rawPolicy.e2e4).toBeLessThan(BOOK_POLICY_FLOOR);
+
+    // A heavy real boost on the sole candidate's style line — if the floor
+    // check ever read weighting()'s output instead of rawPolicy, this boost
+    // would make e2e4 look plausible (0.01 * 50 = 0.5) and wrongly survive.
+    const styledWeighting = styleBookWeighting(new Set(['e4']), [], 50);
+
+    const move = selectBookMove([], legalMoves, prefixSet, rawPolicy, mulberry32(1), styledWeighting);
+    expect(move).toBeNull();
+  });
+
+  it('a boosted candidate that clears the RAW floor is still selected via the styled weighting', () => {
+    const legalMoves = [
+      { san: 'e4', lan: 'e2e4' },
+      { san: 'd4', lan: 'd2d4' },
+    ];
+    const prefixSet = new Set(['e4', 'd4']);
+    const rawPolicy = { e2e4: 0.05, d2d4: 0.05 }; // both clear BOOK_POLICY_FLOOR, equal raw share
+    const styledWeighting = styleBookWeighting(new Set(['d4']), [], 1000); // only d4 is styled, heavily
+
+    for (const seed of [1, 2, 3, 4, 5]) {
+      const move = selectBookMove([], legalMoves, prefixSet, rawPolicy, mulberry32(seed), styledWeighting);
+      expect(move).toBe('d2d4'); // heavily boosted candidate dominates the sample
+    }
   });
 });

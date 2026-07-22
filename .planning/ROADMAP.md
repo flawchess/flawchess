@@ -41,6 +41,8 @@
 - ✅ **v2.3 Bot Play** — Phases 166–172 (incl. 168.5, 169.5) (shipped 2026-07-15) — clocked play against the FlawChess engine on a new top-level **Bots** page (`selectBotMove` sample↔argmax blend), every finished game stored as a `platform='flawchess'` analyzable Library game, localStorage resume, a headless anchor-calibration harness for the first (ELO × play-style) strength map (SEED-091), and a background gem sweep + book markers on `/analysis` (SEED-106, Phase 172) — see [milestones/v2.3-ROADMAP.md](milestones/v2.3-ROADMAP.md)
 - ✅ **v2.4 Backend Gem & Great Detection** — Phases 174–177 (shipped 2026-07-17; Phase 177 folded in post-close 2026-07-18) — move gem/great move detection into the backend full-game analysis pass as stored first-class artifacts (backend Maia-3 inference at eval-apply) powering the analysis board plus a Library game filter, with opportunistic tier-4 lottery backfill (SEED-108, supersedes SEED-107); Phase 177 (SEED-111) then offloads the gem-candidate MultiPV-2 search onto the worker fleet — see [milestones/v2.4-ROADMAP.md](milestones/v2.4-ROADMAP.md)
 - ✅ **v2.5 Move Statistics** — Phases 178–179 (shipped 2026-07-18) — one uniform, lichess-compatible per-game accuracy & ACPL methodology written into repurposed canonical `games` columns so games are comparable across chess.com/lichess/self-analyzed (Phase 178, SEED-110), then a single shared **two-sided Move Stats** component (accuracy strip + a 7-category per-player move-classification table) replacing the badge rows on both the Library game card and the analysis board tags panel (Phase 179, SEED-112) — see [milestones/v2.5-ROADMAP.md](milestones/v2.5-ROADMAP.md)
+- ✅ **v2.6 Bot Strength Calibration** — Phases 173, 180, 181 (shipped 2026-07-21; dev-only, no deploy) — put the bot's play-style presets on a measured strength scale without ever playing a human. Phase 173 (SEED-101) round-robins the calibration anchors into one internal rating scale (verdict: the Maia-3 argmax ladder is ~2.8x compressed); Phase 180 (SEED-102) measures the three-preset (Human/Light/Deep) strength curves on that scale plus the cross-family style-inflation gap `G_preset`; Phase 181 (SEED-104) inverts those curves into per-preset `target_blitz_elo → bot_elo` lookups with honest measured ranges (Human 900–1400, Light 1500–1600, Deep 1600–1800) and an approximate-ELO disclaimer. Nothing in the product reads the lookup yet — see [milestones/v2.6-ROADMAP.md](milestones/v2.6-ROADMAP.md)
+- ⏳ **v2.7 Bot Personas & Playstyle Layer** — Phases 182-184 (in progress) — a roster of 24 named bot personas (4 styles × 6 ELO rungs, 800–1800) on the Bots page, each a complete pinned opponent (preset, calibrated ELO, style params, opening book, resign/draw-offer policy, avatar, bio); style levers land first (Phase 182), then the persona registry + Bots page UI with provisional ELO labels (Phase 183), then per-persona harness calibration finalizes the labels (Phase 184) (SEED-098)
 
 ## Progress
 
@@ -125,12 +127,18 @@
 | 170. localStorage Resume | 5/5 | Complete    | 2026-07-14 |
 | 171. Bots Page + Setup Screen + Nav | 10/10 | Complete    | 2026-07-14 |
 | 172. Background Gem Sweep on Analysis (SEED-106) | 5/5 | Complete    | 2026-07-14 |
+| 173. Anchor ladder self-calibration (SEED-101, v2.6) | 4/4 | Complete | 2026-07-15 |
 | 174. Backend Maia Inference + Best-Move Storage (spike-gated) | 7/7 | Complete    | 2026-07-16 |
 | 175. Board & Filter — Gem/Great Consumption | 6/6 | Complete | 2026-07-17 |
 | 176. Backfill | 1/1 | Complete    | 2026-07-17 |
 | 177. Worker-side MultiPV-2 gem-candidate searches (SEED-111, v2.4 addendum) | 5/5 | Complete | 2026-07-17 |
 | 178. Lichess-compatible accuracy & ACPL (computed columns) (v2.5) | 4/4 | Complete | 2026-07-18 |
 | 179. Two-sided Move Stats component (SEED-112, v2.5) | 3/3 | Complete | 2026-07-18 |
+| 180. Three-preset bot strength curves (SEED-102, v2.6) | 4/4 | Complete — D-02b pilot operator-approved 2026-07-19 (phase completes at pilot, D-01); Task 3 operator sweep landed 2026-07-21 | 2026-07-21 |
+| 181. Per-preset strength lookup curves (SEED-104, v2.6) | 2/2 | Complete | 2026-07-21 |
+| 182. Style Levers (SEED-098, v2.7) | 7/7 | Complete | 2026-07-22 |
+| 183. Persona Registry & Bots Page (SEED-098, v2.7) | 0/5 | Planned | - |
+| 184. Persona Calibration & Strength Honesty (SEED-098, v2.7) | 0/4 | Planned | - |
 
 ## Backlog
 
@@ -650,25 +658,142 @@ See [milestones/v2.2-ROADMAP.md](milestones/v2.2-ROADMAP.md) for full details.
 
 </details>
 
-### Phase 173: Anchor ladder self-calibration (SEED-101)
+<details>
+<summary>✅ v2.6 Bot Strength Calibration (Phases 173, 180, 181) — SHIPPED 2026-07-21 (dev-only, nothing user-facing wired up)</summary>
 
-**Goal:** Round-robin the calibration harness's anchors against each other (Maia-argmax rungs 700–2300, SF Skill 0/3/5/8/10, cross-family games included) and fit a logistic/BayesElo-style rating model over the game graph, placing every anchor on one common internal scale with measured spacing (scale fixed arbitrarily, e.g. maia1500 = 1500; explicitly NOT human ELO). Unblocks SEED-102 and answers whether the Maia-3 argmax ladder is compressed like Maia-1's.
-**Requirements**: TBD (none mapped; plans trace CONTEXT.md decisions D-01–D-13)
-**Depends on:** Phase 172
-**Plans:** 4/4 plans complete
+Put the bot's play-style presets on a measured strength scale, with no human ground truth anywhere in the loop. Phase 173 (SEED-101) built the internal anchor rating scale by round-robining the calibration anchors against each other; Phase 180 (SEED-102) measured the bot's three-preset strength curves on that scale plus the cross-family style-inflation gap `G_preset`; Phase 181 (SEED-104) inverted those curves into the shipping per-preset `target_blitz_elo → bot_elo` lookup. Phases 173 and 180 were standalone post-v2.3 addendum phases, regrouped under this milestone 2026-07-19; Phase 181 was added 2026-07-21 once the Phase-180 sweep landed.
+
+- [x] Phase 173: Anchor ladder self-calibration (SEED-101) (4/4 plans) — mover-agnostic game loop + SF skills 8/10, stdlib Bradley-Terry/Elo fit with connectivity guard, two-pass probe→measure anchor-vs-anchor orchestrator, real sweep + internal-scale fit. Headline: the Maia-3 argmax ladder is **~2.8x compressed** vs its nominal ELO labels, worst at the top; published as `INTERNAL_RATING` in `scripts/lib/calibration-internal-scale.mjs` — completed 2026-07-15
+- [x] Phase 180: Three-preset bot strength curves on the internal anchor scale (SEED-102) (4/4 plans) — engine-free two-pass bot-cell scheduler windowing anchors by measured `INTERNAL_RATING` (fixing the nominal-scale bug that clamped the 2026-07-12 run), `fit_bot_cell_rating` single-parameter pinned-anchor MLE producing per-cell `rating_vs_maia`/`rating_vs_sf` + `G_preset`, 10-anchor cross-family harness integration with resumable raw ledger and near-free quality metrics. D-02a gate GREEN + D-02b pilot operator-approved 2026-07-19 (phase completes at pilot per D-01); the full operator sweep (15 cells) landed 2026-07-21 — completed 2026-07-21
+- [x] Phase 181: Per-preset strength lookup curves (SEED-104) (2/2 plans) — `scripts/gen_bot_strength_curves.py` fits each preset via hand-rolled PAVA isotonic regression, converts to approximate blitz ELO via pooled `G_preset` plus a shared `BLITZ_OFFSET_C = 40` literature constant, and inverts lowest-`bot_elo`-wins into 100-step lookups; emits CI-drift-checked `reports/data/bot-strength-lookup.json` + generated `frontend/src/generated/botStrengthCurves.ts`. Sibling generator writes 7 off-grid confirmation-cell predictions with interpolated 95% CI bands and runbook commands — completed 2026-07-21
+
+**Measured outcome (the honest numbers):** shipped approximate-blitz ranges are **Human 900–1400, Light 1500–1600, Deep 1600–1800** — far below SEED-102's expected ~2600 ceiling. Deep plateaus at ~1950–1970 internal, and Light's raw curve is genuinely non-monotone (a real measured dip at bot_elo 1300, pooled into a PAVA plateau rather than smoothed away). Extending the ladder above ~1900 is captured as SEED-114.
+
+**Dev-only** — the lookup artifact ships and is CI-drift-checked, but nothing in the product reads it yet. No deploy required for this milestone; it feeds the custom bot builder, preset cards, and the SEED-098 persona roster.
+
+**Deferred to operator/HUMAN-UAT:** the overnight off-grid confirmation run validating the inversion (7 predicted cells, pass criterion and runbook commands committed in `reports/data/bot-strength-confirmation-predictions.json`).
+
+See [milestones/v2.6-ROADMAP.md](milestones/v2.6-ROADMAP.md) for full phase detail.
+
+</details>
+
+## v2.7 Bot Personas & Playstyle Layer (in progress)
+
+Add distinct playstyles to the bot, surfaced as a roster of 24 named bot personas (4 styles × 6 ELO rungs, 800–1800) on the Bots page. Each persona is a complete pinned opponent — preset, calibrated ELO, style params, opening book, resign/draw-offer policy, avatar, bio — with no persona × strength picker (the persona frame carries the personality, cf. chess.com bots); Custom mode keeps the raw (ELO, preset) knobs for power users. Built in perceptibility-per-effort order: style levers first (opening books, draw contempt/resign policy, prior reweighting, score shaping), then the persona registry + Bots page UI (shipped with provisional ELO labels, independently playable), then per-persona harness calibration (~2 overnight Phase-180 harness runs) finalizes the labels. Sourced from SEED-098 (explore sessions 2026-07-12 + 2026-07-21) on the v2.6 measured-strength substrate (Phases 173/180/181).
+
+- [x] **Phase 182: Style Levers** - Opening books, draw contempt/resign policy, prior reweighting (Human rungs), and score shaping (Light/Deep rungs) as new bot-only style params (completed 2026-07-22)
+- [ ] **Phase 183: Persona Registry & Bots Page** - 24-persona typed registry + Bots page grid UI + avatars/bios, provisional ELO labels
+- [ ] **Phase 184: Persona Calibration & Strength Honesty** - Per-persona harness-measured ELO offsets replace the provisional labels, with floor/ceiling honesty constraints
+
+### Phase 182: Style Levers
+
+**Goal**: The bot's play is steerable by style parameters across the full ELO range — distinct opening choices, resign/draw behavior, and move preferences per style — without touching Custom mode or existing invariants (`policyTemperature`, player-derived inputs).
+**Depends on**: Nothing (builds on existing v2.0/v2.3 engine primitives — `botSampling.ts`, `selectBotMove`, `trollOpenings.ts`)
+**Requirements**: STYLE-01, STYLE-02, STYLE-03, STYLE-04, STYLE-05
+**Success Criteria** (what must be TRUE):
+
+  1. A bot configured with a given style plays its style-specific opening book for the first several moves (e.g. Trickster follows a `trollOpenings.ts` trap line; other styles follow their own curated book) instead of falling back to generic book/search moves.
+  2. A bot configured with Grinder-style draw/resign policy keeps playing (does not resign or agree to a draw) in a position where a neutral-style bot would resign or accept a draw; contempt is configurable per style.
+  3. At Human-rung strength (800-1400), a bot's move distribution visibly shifts toward its style's favored move features (e.g. Attacker toward checks/captures/pawn advances, Grinder/Wall toward trades) versus the unstyled baseline, via a cheap chess.js move classifier reweighting Maia's policy probabilities.
+  4. At Light/Deep-rung strength (1600-1800), a bot's chosen move reflects its style's score bonus/malus and variance preference (e.g. a high-variance style more often takes the wider-spread child) added to `practicalScore` before the existing softmax in `selectBotMove`.
+  5. `botSampling.ts` helpers stay pure (no new search machinery) and no style param is derived from the player's rating or play — style params are entirely new bot-only fields, never the analysis-board `policyTemperature`.
+
+**Plans**: 7/7 plans executed
+**Wave 1**
+
+- [x] 182-01-PLAN.md — RankedLine.childScoreSpread variance signal (types.ts + treeCommon.ts)
+- [x] 182-02-PLAN.md — Draw contempt + pure wouldBotResign predicate (botDrawGate.ts)
+- [x] 182-03-PLAN.md — Curated per-style×color opening-line prefix sets (styleOpeningLines.ts)
+
+**Wave 2** *(blocked on Wave 1 completion)*
+
+- [x] 182-04-PLAN.md — botStyle engine helpers: classifier + prior reweighting + score shaping + book weighting
+
+**Wave 3** *(blocked on Wave 2 completion)*
+
+- [x] 182-05-PLAN.md — 4 named style bundles + D-11 measurement script + D-12 hand-tuning
+- [x] 182-06-PLAN.md — selectBotMove wiring: BotSettings.style + two regime hooks
+
+**Wave 4** *(blocked on Wave 3 completion)*
+
+- [x] 182-07-PLAN.md — useBotGame integration: style book, contempt, resign hysteresis
+
+### Phase 183: Persona Registry & Bots Page
+
+**Goal**: Users can browse and start a game against any of 24 named bot personas — each a complete pinned opponent (preset, provisional ELO label, style params, opening book, resign/draw policy, avatar, bio) — while Custom mode keeps exposing the raw (ELO, preset) knobs unchanged.
+**Depends on**: Phase 182
+**Requirements**: PERS-01, PERS-02, PERS-03, PERS-04, AVAT-01, AVAT-02
+**Success Criteria** (what must be TRUE):
+
+  1. User can browse a grid of 24 personas on the Bots page (4 styles × 6 rungs, 800-1800), each showing name, avatar portrait, bio, style, and ELO label.
+  2. User can start a game against any single persona in one action; the game launches with that persona's full pinned config (preset, ELO, style params, opening book, resign/draw policy) with no separate persona/strength selection step.
+  3. The persona roster is defined in one typed registry mapping each of the 24 slots to its complete config, with each rung's preset chosen per the measured ranges (800-1400 Human, 1600 Light/Deep, 1800 Deep).
+  4. User can still choose Custom mode and configure a bot via the existing raw (ELO, preset) controls, unaffected by the new persona roster.
+  5. Each persona's bio conveys a per-tier identity story (e.g. Trickster: trap lines at 800-1200, swindle mode at 1600+), and its avatar is a curated AI-generated portrait consistent with the roster's single style prompt.
+
+**Plans**: 5/5 plans executed
 
 Plans:
 **Wave 1**
 
-- [x] 173-01-PLAN.md — Extract mover-agnostic game loop + wire SF skills 8/10 (D-08/D-09/D-10) [wave 1]
-- [x] 173-03-PLAN.md — Stdlib Bradley-Terry/Elo fit + connectivity guard + tests (D-04/D-05/D-06/D-07) [wave 1]
+- [x] 183-01-PLAN.md — Persona data foundation: 24-slot typed registry + rung→preset table, placeholder avatars + committed prompts, last-used color/TC persistence, per-style theme accents (wave 1)
+- [x] 183-02-PLAN.md — Bot outgoing draw-offer predicate (`wouldBotOfferDraw`) + tuning constants (wave 1)
 
 **Wave 2** *(blocked on Wave 1 completion)*
 
-- [x] 173-02-PLAN.md — Anchor-vs-anchor orchestrator: two-pass probe→measure scheduler + two-tier TSV (D-01/D-02/D-03/D-04/D-13) [wave 2]
+- [x] 183-03-PLAN.md — useBotGame threading: `BotGameSettings.personaId?` + version-safe snapshot round-trip + bot-offer state/accept/decline (wave 2)
+- [x] 183-04-PLAN.md — Persona grid + card + detail surface + Bots setup-branch integration (one-action Play, Custom routed) (wave 2)
 
 **Wave 3** *(blocked on Wave 2 completion)*
 
-- [x] 173-04-PLAN.md — Execute the real sweep + fit the internal scale + findings/compression verdict (D-11/D-12/D-13) [wave 3]
+- [x] 183-05-PLAN.md — In-game persona presence: clock avatar+name, draw-offer banner, persona-named result copy, Rematch/New opponent (wave 3)
 
-*Phase 177 (Worker-side MultiPV-2 gem-candidate searches, SEED-111) folded into the **v2.4** milestone 2026-07-18 — full detail in [milestones/v2.4-ROADMAP.md](milestones/v2.4-ROADMAP.md).*
+**UI hint**: yes
+
+### Phase 184: Persona Calibration & Strength Honesty
+
+**Goal**: Each persona's displayed ELO label reflects its actual measured strength (style-induced delta included) rather than the raw underlying preset target, and labels honor the measured floor/ceiling honesty constraints.
+**Depends on**: Phase 183
+**Requirements**: CAL-04, CAL-05
+**Success Criteria** (what must be TRUE):
+
+  1. Every persona's ELO label is the calibrated ELO measured via harness runs on the Phase-173 internal anchor scale (not the provisional/raw preset ELO), with a per-persona offset absorbing the style-induced strength delta.
+  2. The bottom rung (800) is labeled honestly as below the measured floor (~900 approx blitz, `beyond_ladder`-flagged extrapolation) instead of a precise, fully-measured value.
+  3. The top rung (1800) is capped at Deep's measured ceiling — no persona claims strength above what Phase 180/181 measured.
+  4. The ~2 overnight harness runs (24 cells × ~4 anchors × ~24 games) complete and produce per-persona offset data that replaces the provisional labels shipped in Phase 183.
+
+**Plans**: 3/4 plans executed
+
+Plans:
+**Wave 1**
+
+- [x] 184-01-PLAN.md — Harness style-wiring + PersonaId-keyed persona-cell schedule (measurement machinery)
+
+**Wave 2** *(blocked on Wave 1 completion)*
+
+- [x] 184-02-PLAN.md — Python fit + codegen + runbook + CI drift + bootstrap generated file
+
+**Wave 3** *(blocked on Wave 2 completion)*
+
+- [x] 184-03-PLAN.md — Frontend integration: registry/card/detail read calibrated labels + D-08 disclosure popover
+
+**Wave 4** *(blocked on Wave 3 completion)*
+
+- [ ] 184-04-PLAN.md — Operator overnight sweep (HUMAN-UAT) + refit/regenerate final calibration artifacts
+
+### Phase 185: Bots roster transpose + win stars
+
+**Goal:** Bots page follow-ups to Phase 184, per /gsd-explore decisions (2026-07-22): (1) transpose PersonaGrid to 6 rung rows (easiest ~800 on top) × 4 style columns, with a single header row of the 4 style names in their accent colors — no row labels, avatar tints carry style identity within the grid; (2) PersonaCard keeps its vertical stack (avatar, name, calibrated ELO) and gains a stars row at the bottom; (3) server-side per-persona win tracking: nullable `persona_id` on `StoreBotGameRequest` and the `games` table (Alembic migration; persona games only, custom games stay NULL), a small aggregation endpoint returning wins per persona, frontend renders min(wins, 3) gold stars + grey outline stars for the remainder. Any win counts, any time control, no quality tiers; 3 is a display cap only (LEAST(count, 3)); pre-existing games earn nothing (no retroactive persona identity).
+**Requirements**: TBD
+**Depends on:** Phase 184
+**Plans:** 3/3 plans executed
+
+Plans:
+**Wave 1**
+
+- [x] 185-01-PLAN.md — Backend win-tracking vertical slice (tracer): nullable games.persona_id + persist-on-finish + GET /bots/persona-wins aggregation
+- [x] 185-02-PLAN.md — Grid transpose (frontend-only): 6 rung rows × 4 style columns, accent-colored header row, no row labels
+
+**Wave 2** *(blocked on Wave 1 completion)*
+
+- [x] 185-03-PLAN.md — Frontend win-stars: theme constants + useBotPersonaWins fetch, prop-drilled PersonaStars row (min(wins,3) gold + grey outline)

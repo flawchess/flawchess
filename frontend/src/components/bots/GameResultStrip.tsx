@@ -12,6 +12,7 @@ import {
 interface GameResultStripProps {
   outcome: BotGameOutcome;
   userColor: MoverColor;
+  /** D-08: relabeled "New opponent" — mirrors `GameResultDialog`'s prop. */
   onNewGame: () => void;
   onAnalyze: () => void;
   /** D-21: true only once the finish-time store mutation has CONFIRMED
@@ -24,6 +25,11 @@ interface GameResultStripProps {
   /** Quick 260714-rj5: mirrors `GameResultDialog`'s analyzeBusy gate — see its
    * doc comment. This IS the mobile/dismissed surface, so it must land here too. */
   analyzeBusy: boolean;
+  /** Phase 183 (D-06/D-08): mirrors `GameResultDialog`'s persona props —
+   * the strip renders the IDENTICAL persona-aware `resultCopy` string and
+   * mirrors the same action set (mobile parity). */
+  personaName: string | null;
+  onRematch: () => void;
 }
 
 /**
@@ -40,8 +46,10 @@ export function GameResultStrip({
   storeSucceeded,
   isGuest,
   analyzeBusy,
+  personaName,
+  onRematch,
 }: GameResultStripProps): ReactElement {
-  const title = resultCopy(outcome, userColor);
+  const title = resultCopy(outcome, userColor, personaName);
 
   return (
     <div
@@ -50,7 +58,10 @@ export function GameResultStrip({
     >
       <div className="flex flex-wrap items-center justify-between gap-2">
         <span className="text-sm font-medium text-foreground">{title}</span>
-        <div className="flex items-center gap-2">
+        {/* Quick 260722-nlm: `flex-wrap` mirrors the dialog's stacking fix —
+            the same three actions overflowed this non-wrapping row on narrow
+            screens (this IS the mobile/dismissed surface). */}
+        <div className="flex flex-wrap items-center gap-2">
           {/* D-21 RETIRED (Quick 260714-rj5) — mirrors GameResultDialog's
               comment: the Analyze CTA is now store-gated because it needs the
               server-assigned game_id to enqueue tier-1 analysis and open the
@@ -66,9 +77,26 @@ export function GameResultStrip({
             {analyzeBusy && <Loader2 className="size-4 animate-spin" aria-hidden="true" />}
             Analyze this game
           </Button>
-          <Button variant="default" size="sm" onClick={onNewGame} data-testid="strip-btn-new-game">
-            New game
+          {/* D-08: mirrors GameResultDialog's primary/secondary swap — Rematch
+              is the single high-emphasis CTA when present (persona game). */}
+          <Button
+            variant={personaName ? 'brand-outline' : 'default'}
+            size="sm"
+            onClick={onNewGame}
+            data-testid="strip-btn-new-game"
+          >
+            New opponent
           </Button>
+          {personaName && (
+            <Button
+              variant="default"
+              size="sm"
+              onClick={onRematch}
+              data-testid="strip-btn-rematch"
+            >
+              {`Rematch ${personaName}`}
+            </Button>
+          )}
         </div>
       </div>
       {/* D-20: only renders once the finish-time store has CONFIRMED (never

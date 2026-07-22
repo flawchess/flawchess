@@ -76,9 +76,22 @@ export function detectEndCondition(chess: Chess): GameEndResult | null {
  * Maps a finished game's outcome to the exact UI-SPEC Copywriting Contract
  * result string, from `userColor`'s point of view. No invented copy — every
  * branch below is a verbatim string from 169-UI-SPEC.md's Copywriting
- * Contract table.
+ * Contract table, EXCEPT the bot-actor substitution added below.
+ *
+ * `personaName` (Phase 183, D-06) is optional and additive: when supplied
+ * (a persona game), it is substituted into the branches where the BOT is the
+ * grammatical actor — the bot winning by checkmate/timeout, or (the
+ * D-03-unreachable) the bot resigning — e.g. "Riko the Raccoon wins on time"
+ * / "Ziggy the Wasp wins — checkmate". Branches where the USER is the actor
+ * (the user winning, or the user resigning) and the draw branches (no actor)
+ * are UNCHANGED regardless of `personaName` — this stays the single copy
+ * generator, no forked second table.
  */
-export function resultCopy(outcome: BotGameOutcome, userColor: MoverColor): string {
+export function resultCopy(
+  outcome: BotGameOutcome,
+  userColor: MoverColor,
+  personaName?: string | null,
+): string {
   const { reason, winner, drawReason } = outcome;
 
   if (reason === 'draw') {
@@ -100,13 +113,18 @@ export function resultCopy(outcome: BotGameOutcome, userColor: MoverColor): stri
   const userWon = winner === userColor;
 
   if (reason === 'checkmate') {
-    return userWon ? 'You won — checkmate' : 'You lost — checkmate';
+    if (userWon) return 'You won — checkmate';
+    return personaName ? `${personaName} wins — checkmate` : 'You lost — checkmate';
   }
   if (reason === 'timeout') {
-    return userWon ? 'You won on time' : 'You lost on time';
+    if (userWon) return 'You won on time';
+    return personaName ? `${personaName} wins on time` : 'You lost on time';
   }
   // reason === 'resignation'. D-03: the bot never resigns, so a bot-loss
   // resignation copy never actually occurs — only "You resigned" is reachable
   // in practice, but the win-side copy is kept for completeness of the copy table.
-  return userWon ? 'You won — the bot resigned' : 'You resigned';
+  if (userWon) {
+    return personaName ? `You won — ${personaName} resigned` : 'You won — the bot resigned';
+  }
+  return 'You resigned';
 }

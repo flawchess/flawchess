@@ -23,6 +23,7 @@ dependencies = [
 
 [dependency-groups]
 dev = [
+    "pillow>=12.3.0",
     "pytest>=8.0.0",
     "pytest-asyncio>=0.23.0",
     "pytest-cov>=7.1.0",
@@ -62,6 +63,12 @@ line-length = 100
 [tool.ruff.lint.per-file-ignores]
 "app/models/*.py" = ["F821"]  # SQLAlchemy forward references in relationship() strings
 "alembic/versions/*.py" = ["F401"]  # Alembic auto-imports sa/op that may appear unused
+
+[tool.ty.environment]
+# Scripts in scripts/ are run as `python scripts/foo.py`, so sibling modules
+# resolve via sys.path[0] at runtime. ty has no such implicit path, so
+# scripts/ importing scripts/ reads as unresolved-import without this.
+extra-paths = ["scripts"]
 
 [tool.ty.rules]
 # Warn on unused suppression comments so stale ignores don't accumulate

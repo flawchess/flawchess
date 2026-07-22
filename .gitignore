@@ -230,3 +230,9 @@ __marimo__/
 # Benchmark generator numeric artifact (regenerable intermediate consumed by the benchmarks
 # SKILL; the committed deliverable is the LLM-narrated reports/benchmark/benchmarks-latest.md)
 reports/benchmark/benchmarks-generated.*
+
+# Calibration sweep working dirs (per-preset / per-persona harness ledgers).
+# Intermediate measurement output — only the combined *-cells.tsv aggregate and
+# the fitted JSON/TS artifacts are committed.
+reports/data/sweep-*/
+reports/data/persona-sweep-*/
