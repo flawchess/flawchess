@@ -9,6 +9,16 @@
  * will reference per persona; Plan 06 (`selectBotMove.ts` wiring) and Plan 07
  * (`useBotGame.ts` wiring) consume these same constants directly.
  *
+ * STALENESS (D-11, Phase 184, CAL-04/CAL-05): `frontend/src/lib/personas/
+ * personaRegistry.ts`'s `botElo`/`calibratedLabel` fields are calibrated
+ * against the style params below via an operator-run overnight sweep
+ * (`bin/run_persona_calibration_sweep.sh`). Changing ANY numeric knob in
+ * this file (or extending the anchor ladder) invalidates that calibration —
+ * re-run the sweep and regenerate `frontend/src/generated/
+ * personaCalibration.ts` (`scripts/gen_persona_calibration.py`) before
+ * trusting the persona registry's displayed strength labels again. This is
+ * a documented operator policy only; no hash-guard automation enforces it.
+ *
  * Magnitude provenance (D-12): every numeric knob below was hand-tuned
  * against `scripts/style-lever-measurement.mjs`'s real-Maia-policy TSV
  * output (`reports/data/style-lever-measurement-*.tsv`, N=200, seed=1,

@@ -138,7 +138,7 @@
 | 181. Per-preset strength lookup curves (SEED-104, v2.6) | 2/2 | Complete | 2026-07-21 |
 | 182. Style Levers (SEED-098, v2.7) | 7/7 | Complete | 2026-07-22 |
 | 183. Persona Registry & Bots Page (SEED-098, v2.7) | 0/5 | Planned | - |
-| 184. Persona Calibration & Strength Honesty (SEED-098, v2.7) | 0/0 | Not started | - |
+| 184. Persona Calibration & Strength Honesty (SEED-098, v2.7) | 0/4 | Planned | - |
 
 ## Backlog
 
@@ -762,4 +762,21 @@ Plans:
   3. The top rung (1800) is capped at Deep's measured ceiling — no persona claims strength above what Phase 180/181 measured.
   4. The ~2 overnight harness runs (24 cells × ~4 anchors × ~24 games) complete and produce per-persona offset data that replaces the provisional labels shipped in Phase 183.
 
-**Plans**: TBD
+**Plans**: 3/4 plans executed
+
+Plans:
+**Wave 1**
+
+- [x] 184-01-PLAN.md — Harness style-wiring + PersonaId-keyed persona-cell schedule (measurement machinery)
+
+**Wave 2** *(blocked on Wave 1 completion)*
+
+- [x] 184-02-PLAN.md — Python fit + codegen + runbook + CI drift + bootstrap generated file
+
+**Wave 3** *(blocked on Wave 2 completion)*
+
+- [x] 184-03-PLAN.md — Frontend integration: registry/card/detail read calibrated labels + D-08 disclosure popover
+
+**Wave 4** *(blocked on Wave 3 completion)*
+
+- [ ] 184-04-PLAN.md — Operator overnight sweep (HUMAN-UAT) + refit/regenerate final calibration artifacts

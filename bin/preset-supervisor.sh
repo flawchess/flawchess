@@ -17,18 +17,31 @@
 # MIN_HEALTHY_SECS) resets the counter.
 #
 # Usage: preset-supervisor.sh <name> <blend> <elo-csv> [adopt-pid]
+#
+# Env overrides (all optional, defaults preserve the original Phase-180 behavior):
+#   PRESET_SUPERVISOR_DIR    out-dir for this run (default reports/data/sweep-<name>)
+#   PRESET_SUPERVISOR_GAMES  --games-per-cell for the harness (default 24)
 set -uo pipefail
 cd "$(dirname "$0")/.."   # bin/ -> repo root
 
 NAME="${1:?need preset name}"; BLEND="${2:?need blend}"; ELO="${3:?need elo csv}"
 ADOPT_PID="${4:-}"
 
-DIR="reports/data/sweep-${NAME}"
+# Overridable so a caller that owns its own out-dir layout (e.g. the Phase-184
+# persona sweep, which needs one dir per PersonaId) does not have to match this
+# script's `sweep-<name>` convention. Bug: run_persona_calibration_sweep.sh
+# created `persona-sweep-<id>/` while this script wrote to `sweep-<id>/`, so
+# every log/nohup redirect below failed, the harness never launched, and the
+# fast-crash guard aborted after three 0-second "runs".
+DIR="${PRESET_SUPERVISOR_DIR:-reports/data/sweep-${NAME}}"
+GAMES_PER_CELL="${PRESET_SUPERVISOR_GAMES:-24}"
 LOG="${DIR}/run.log"
 HOOK="./scripts/lib/frontend-alias-hook.mjs"
 HARNESS="scripts/calibration-harness.mjs"
 MIN_HEALTHY_SECS=180
 FAST_FAIL_LIMIT=3
+
+mkdir -p "$DIR"
 
 log() { echo "[supervisor:${NAME} $(date -u +%FT%TZ)] $*" | tee -a "$LOG"; }
 find_ledger() { find "$DIR" -maxdepth 1 -name 'calibration-harness-*.tsv' ! -name '*-cells.tsv' ! -name '*-summary.tsv' 2>/dev/null | sort | tail -1; }
@@ -36,11 +49,19 @@ cells_present() { find "$DIR" -maxdepth 1 -name '*-cells.tsv' 2>/dev/null | grep
 
 launch() {
   local ledger; ledger="$(find_ledger)"
+  # Bug: this unconditionally passed `--resume "$ledger"`, but on a COLD start
+  # there is no prior ledger and the harness rejects an empty --resume with
+  # "expected a .tsv file". Phase 180 only ever ran this supervisor in
+  # adopt-pid mode (attached to an already-running harness that had created its
+  # ledger), so the cold-start path was never exercised. Only pass --resume
+  # when a ledger actually exists.
+  local resume_args=()
+  [ -n "$ledger" ] && resume_args=(--resume "$ledger")
   nohup node --import "$HOOK" "$HARNESS" \
     --blends "$BLEND" --elo "$ELO" \
-    --games-per-cell 24 --stockfish-procs 4 \
+    --games-per-cell "$GAMES_PER_CELL" --stockfish-procs 4 \
     --seed 1 --out-dir "$DIR" \
-    --resume "$ledger" >> "$LOG" 2>&1 &
+    "${resume_args[@]}" >> "$LOG" 2>&1 &
   echo $!
 }
 

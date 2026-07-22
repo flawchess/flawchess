@@ -41,6 +41,7 @@ import {
   type TimeControlPreset,
 } from '@/lib/botTimeControlPresets';
 import { BOT_STYLE_BUNDLES } from '@/lib/engine/botStyleBundles';
+import { PersonaEloDisclosurePopover } from '@/components/bots/PersonaEloDisclosurePopover';
 import type { BotGameSettings } from '@/hooks/useBotGame';
 import type { MoverColor } from '@/lib/liveFlaw';
 import { cn } from '@/lib/utils';
@@ -217,10 +218,19 @@ export function PersonaDetailSurface({
         </DialogHeader>
 
         {/* Display-only ELO/style text — never an EloSelector/PlayStyleControl
-            (Pitfall 3): this surface has no strength picker. */}
-        <p className="text-sm text-muted-foreground" data-testid="persona-detail-meta">
-          {`${persona.style} · ~${persona.rung}`}
-        </p>
+            (Pitfall 3): this surface has no strength picker. The calibrated
+            label (Phase 184 CAL-05) pairs with a D-08 disclosure popover as
+            supplementary hover/tap detail, never replacing the visible
+            label. */}
+        <div className="flex items-center gap-1">
+          <p className="text-sm text-muted-foreground" data-testid="persona-detail-meta">
+            {`${persona.style} · ${persona.calibratedLabel}`}
+          </p>
+          <PersonaEloDisclosurePopover
+            isFloorRung={persona.rung === 800}
+            ariaLabel={`About ${persona.name}'s ELO measurement`}
+          />
+        </div>
         <p className="text-sm text-foreground" data-testid="persona-detail-bio">
           {persona.bio}
         </p>

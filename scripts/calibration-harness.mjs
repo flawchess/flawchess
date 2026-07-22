@@ -89,6 +89,7 @@ import {
 } from './lib/calibration-bot-cell-schedule.mjs';
 
 import { selectBotMove } from '@/lib/engine/selectBotMove';
+import { BOT_STYLE_BUNDLES } from '@/lib/engine/botStyleBundles';
 import { mulberry32 } from '@/lib/engine/botSampling';
 import { evalToExpectedScore, classifyLiveSeverity } from '@/lib/liveFlaw';
 import {
@@ -535,6 +536,18 @@ function mapColorResultToBotRelative(colorResult, botIsWhite) {
  * a pure extraction, no behavior change): derives `moverWhite`/`moverBlack`
  * from `botIsWhite`, then maps the color-keyed result back to this
  * function's bot-relative `{ result: 'win'|'loss'|'draw', reason }` shape.
+ *
+ * `style` (optional, Phase 184 CAL-04, `BotStyleParams` from
+ * `@/lib/engine/botStyleBundles`) is forwarded into `selectBotMove`'s
+ * `BotSettings.style` ONLY when defined — a `...(style !== undefined ? {
+ * style } : {})` spread inside `selectBotMoveOnce`, never a literal `style:
+ * undefined` key, so an unstyled/vanilla bot-cell call produces a
+ * `BotSettings` object structurally byte-identical to the pre-184 harness
+ * (the STYLE-05 absent-style invariant, asserted in
+ * `calibration-determinism.check.mjs`). This is the harness-side style seam
+ * the persona-cell schedule (`calibration-persona-cell-schedule.mjs`) uses to
+ * measure each of the 24 styled personas; every pre-184 caller (`main()`'s
+ * bot-cell sweep) simply omits `style`, which is `undefined` by default here.
  */
 export async function playGame({
   Chess,
@@ -549,6 +562,7 @@ export async function playGame({
   onPly,
   maxNodes = FLAWCHESS_BOT_MAX_NODES,
   maxPlies = FLAWCHESS_BOT_MAX_PLIES,
+  style,
 }) {
   const notifyPly = onPly ?? (() => {});
 
@@ -581,6 +595,11 @@ export async function playGame({
           // measure a bot without the early-stop rule (T-168.5-04-02).
           stopRule: FLAWCHESS_BOT_STOP_RULE,
         },
+        // Phase 184 CAL-04: `style` is conditionally spread, NEVER a literal
+        // `style: undefined` key — an undefined style must leave this object
+        // structurally identical to the pre-184 harness (STYLE-05 absent-style
+        // invariant, asserted in calibration-determinism.check.mjs).
+        ...(style !== undefined ? { style } : {}),
       },
       { policy: providers.policy, grade: providers.grade, rng },
       // deps.search intentionally omitted (CAL-02) — defaults to the real mctsSearch.
@@ -1254,7 +1273,7 @@ function foldGameIntoCellAnchor(stat, { result, botIsWhite, plies, nearFree }) {
  * fast-forwarding it reproduces byte-identical games. Returns the plies played
  * (for the throughput report).
  */
-async function playCellAnchorGames({ Chess, providers, pool, botElo, botBlend, anchorSpec, count, pass, args, gitSha, state, ledgerWriter, stat }) {
+async function playCellAnchorGames({ Chess, providers, pool, botElo, botBlend, anchorSpec, count, pass, args, gitSha, state, ledgerWriter, stat, style }) {
   let moves = 0;
   for (let i = 0; i < count; i++) {
     const idx = state.gameIndex;
@@ -1278,6 +1297,10 @@ async function playCellAnchorGames({ Chess, providers, pool, botElo, botBlend, a
       gameRng,
       onPly: (p) =>
         console.log(`[calibration-harness]   ply ${p.ply} (${p.mover}) ${p.uci} took ${(p.moveMs / 1000).toFixed(2)}s`),
+      // Phase 184 CAL-04: forwarded (undefined for the existing bot-cell sweep
+      // paths below — a future persona-cell sweep script passes a real
+      // BotStyleParams bundle here).
+      style,
     });
     console.log(`[calibration-harness] result=${result.result} reason=${result.reason} plies=${result.plies}`);
     console.log(`[calibration-harness] analyze: ${analysisLineUrl(opening, result.moveUcis)}`);
@@ -1312,7 +1335,7 @@ async function playCellAnchorGames({ Chess, providers, pool, botElo, botBlend, a
  * games, so the estimate is always computed from the same LOCATE_PASS_GAMES
  * sample a from-scratch run would have used.
  */
-async function locateCellPass({ Chess, providers, pool, botElo, botBlend, anchorSpecs, args, gitSha, state, ledgerWriter, store }) {
+async function locateCellPass({ Chess, providers, pool, botElo, botBlend, anchorSpecs, args, gitSha, state, ledgerWriter, store, style }) {
   const locateAnchors = pickLocateAnchors(anchorSpecs);
   let moves = 0;
   let games = 0;
@@ -1334,6 +1357,7 @@ async function locateCellPass({ Chess, providers, pool, botElo, botBlend, anchor
       state,
       ledgerWriter,
       stat,
+      style,
     });
     moves += played.moves;
     games += played.games;
@@ -1350,7 +1374,7 @@ async function locateCellPass({ Chess, providers, pool, botElo, botBlend, anchor
  * total games, REUSING any games already played against it in the locate pass
  * as the first N (never replayed — mirrors the anchor-ladder's info-efficiency).
  */
-async function measureCellPass({ Chess, providers, pool, botElo, botBlend, bracket, args, gitSha, state, ledgerWriter, store }) {
+async function measureCellPass({ Chess, providers, pool, botElo, botBlend, bracket, args, gitSha, state, ledgerWriter, store, style }) {
   let moves = 0;
   let games = 0;
   for (const anchorSpec of bracket) {
@@ -1371,6 +1395,7 @@ async function measureCellPass({ Chess, providers, pool, botElo, botBlend, brack
       state,
       ledgerWriter,
       stat,
+      style,
     });
     moves += played.moves;
     games += played.games;
@@ -1524,9 +1549,9 @@ function writeAggregateFile(filePath, cellRows) {
 }
 
 /** Runs one cell's locate→bracket→measure passes; records its beyond-ladder flag and returns games/moves played. */
-async function runCell({ Chess, providers, pool, botElo, botBlend, anchorSpecs, args, gitSha, state, ledgerWriter, store, cellBeyondByKey }) {
+async function runCell({ Chess, providers, pool, botElo, botBlend, anchorSpecs, args, gitSha, state, ledgerWriter, store, cellBeyondByKey, style }) {
   // LOCATE (D-07): top up the two widest anchors, then a rough internal estimate.
-  const locate = await locateCellPass({ Chess, providers, pool, botElo, botBlend, anchorSpecs, args, gitSha, state, ledgerWriter, store });
+  const locate = await locateCellPass({ Chess, providers, pool, botElo, botBlend, anchorSpecs, args, gitSha, state, ledgerWriter, store, style });
   // BRACKET (D-07): the nearest-to-estimate anchors with the cross-family floor.
   const bracket = selectMeasureBracket(anchorSpecs, locate.estimate);
   const beyondLadder = bracketBeyondLadder(locate.estimate, bracket);
@@ -1537,8 +1562,44 @@ async function runCell({ Chess, providers, pool, botElo, botBlend, anchorSpecs, 
       `bracket=[${bracket.map((anchorSpec) => anchorSpec.label).join(', ')}] beyond_ladder=${beyondLadder}`,
   );
   // MEASURE (D-07): extend each bracket anchor to --games-per-cell (reuses locate games).
-  const measure = await measureCellPass({ Chess, providers, pool, botElo, botBlend, bracket, args, gitSha, state, ledgerWriter, store });
+  const measure = await measureCellPass({ Chess, providers, pool, botElo, botBlend, bracket, args, gitSha, state, ledgerWriter, store, style });
   return { moves: locate.moves + measure.moves, games: locate.games + measure.games };
+}
+
+// ─── Phase 184 (CAL-04): env-var-driven style override for a persona sweep ────
+//
+// `bin/preset-supervisor.sh` is REUSED AS-IS (never modified — it stays
+// generic over `<name> <blend> <elo-csv> [adopt-pid]`) for the persona
+// overnight sweep: `bin/run_persona_calibration_sweep.sh` launches ONE
+// supervised invocation PER PERSONA, each with its own `--out-dir` (so
+// distinct personas that collide on `(botElo, blend)` post-retargeting —
+// Pitfall 1 — never share a store; each process/ledger is independent) and
+// exports `CALIBRATION_HARNESS_STYLE=<StyleName>` in its own environment
+// before invoking the supervisor, which `nohup`s a child that inherits it.
+// This is the ONLY seam threading a real `BotStyleParams` bundle into a
+// harness CLI run — every existing (unstyled) bot-cell/anchor-ladder
+// invocation leaves the env var unset, so `resolveStyleFromEnv()` returns
+// `undefined` and every downstream `style` forward stays the same
+// conditional-spread no-op Plan 01 already proved byte-identical.
+export const CALIBRATION_HARNESS_STYLE_ENV = 'CALIBRATION_HARNESS_STYLE';
+
+/**
+ * Resolves the optional style override from `process.env[CALIBRATION_HARNESS_STYLE_ENV]`.
+ * Returns `undefined` when unset (every pre-184 invocation) — never a
+ * default/fallback style. Fails loud (never silently ignores a typo) if the
+ * env var is set to a name that is not one of `BOT_STYLE_BUNDLES`'s 4 keys.
+ */
+export function resolveStyleFromEnv(env = process.env) {
+  const styleName = env[CALIBRATION_HARNESS_STYLE_ENV];
+  if (styleName === undefined || styleName === '') return undefined;
+  const style = BOT_STYLE_BUNDLES[styleName];
+  if (style === undefined) {
+    throw new Error(
+      `resolveStyleFromEnv: unknown ${CALIBRATION_HARNESS_STYLE_ENV}=${JSON.stringify(styleName)} — ` +
+        `expected one of ${Object.keys(BOT_STYLE_BUNDLES).join(', ')}`,
+    );
+  }
+  return style;
 }
 
 async function main() {
@@ -1548,6 +1609,9 @@ async function main() {
   const anchorSpecs = args.anchors.map(parseAnchorSpec);
   const anchorByLabel = new Map(anchorSpecs.map((spec) => [spec.label, spec]));
   const gitSha = resolveGitSha();
+  // Phase 184 (CAL-04): resolved BEFORE any engine bring-up so a typo'd env
+  // var fails fast, not after spawning the Maia session + Stockfish pool.
+  const style = resolveStyleFromEnv();
 
   // Current grid's (bot_elo, bot_blend) cells — the resume grid-change guard
   // checks every prior ledger cell against this set.
@@ -1619,6 +1683,7 @@ async function main() {
           ledgerWriter,
           store,
           cellBeyondByKey,
+          style,
         });
         totalMoves += played.moves;
         totalGames += played.games;

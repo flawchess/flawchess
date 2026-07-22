@@ -55,6 +55,25 @@
  * construction) — this note is kept as history; a recurrence here would be a
  * regression, not an expected flake.
  *
+ * Phase 184 (CAL-04) extension: `playGame` gained an optional `style` param
+ * (`BotStyleParams`, forwarded into `selectBotMove`'s `BotSettings.style`
+ * ONLY when defined — a conditional spread, never a literal `style:
+ * undefined` key). Two additional assertions below cover the new seam:
+ *
+ *   1. STYLE-05 absent-style byte-identity (real engines): a `playGame` run
+ *      that OMITS `style` entirely must be byte-identical to one that passes
+ *      `style: undefined` explicitly, under the same seed — proving the
+ *      conditional spread genuinely leaves `BotSettings` structurally
+ *      unchanged, not just "usually produces the same move".
+ *   2. A DEFINED style bundle reaches `selectBotMove` and changes its
+ *      output. This assertion calls the REAL `selectBotMove` directly with
+ *      DETERMINISTIC STUB `policy`/`grade` providers and a fixed `rng`
+ *      (mirrors `calibration-parity.check.mjs`'s stub-provider convention)
+ *      rather than playing a second/third full real-engine game — a fixed
+ *      `rng` and hand-derived cumulative weights make the flip
+ *      deterministic and fast, instead of relying on a real Maia policy
+ *      distribution to probabilistically diverge over a multi-ply game.
+ *
  * Run via: node --import ./scripts/lib/frontend-alias-hook.mjs scripts/lib/calibration-determinism.check.mjs
  */
 import assert from 'node:assert/strict';
@@ -70,6 +89,59 @@ import {
 } from '../calibration-harness.mjs';
 import { OPENING_BOOK } from './calibration-openings.mjs';
 import { mulberry32 } from '@/lib/engine/botSampling';
+import { selectBotMove } from '@/lib/engine/selectBotMove';
+import { ATTACKER_STYLE } from '@/lib/engine/botStyleBundles';
+
+// ─── Phase 184: defined style bundle reaches selectBotMove (deterministic stub) ─
+
+// A position where the SAME pawn has both a capture and a quiet-advance
+// candidate move, so Attacker's featureMultipliers (isCapture=1.5,
+// isPawnAdvance=1.1, isPawnStorm=1.6 applied identically to both — a common
+// factor that cancels out of the RELATIVE ordering) cleanly separate the two
+// moves' reweighted mass. Position: 1.e4 d5, White to move.
+const STYLE_CHECK_FEN = 'rnbqkbnr/ppp1pppp/8/3p4/4P3/8/PPPP1PPP/RNBQKBNR w KQkq d6 0 2';
+const STYLE_CHECK_CAPTURE_UCI = 'e4d5'; // pawn takes pawn: isCapture + isExchange + isPawnStorm
+const STYLE_CHECK_ADVANCE_UCI = 'e4e5'; // quiet push: isPawnAdvance + isPawnStorm
+
+/** Equal raw mass on both candidates — any divergence in the picked move is
+ * caused ENTIRELY by the style reweighting, never by an unequal starting prior. */
+async function stubPolicyStyleCheck() {
+  return { [STYLE_CHECK_CAPTURE_UCI]: 0.5, [STYLE_CHECK_ADVANCE_UCI]: 0.5 };
+}
+
+async function stubGradeMustNotBeCalledStyle() {
+  throw new Error('grade() must never be called at blend<=0 (selectBotMove.ts D-03/BOT-02)');
+}
+
+/** Fixed, non-random draw (D-10's `rng` contract is just `() => number`) — makes
+ * `botSampling.ts`'s `weightedPick` cumulative-sum comparison fully deterministic. */
+const FIXED_DRAW = () => 0.5;
+
+const unstyledPick = await selectBotMove(
+  STYLE_CHECK_FEN,
+  { elo: 1500, blend: 0, budget: { maxNodes: 1, maxPlies: 1, concurrency: 1 } },
+  { policy: stubPolicyStyleCheck, grade: stubGradeMustNotBeCalledStyle, rng: FIXED_DRAW },
+);
+assert.equal(
+  unstyledPick,
+  STYLE_CHECK_ADVANCE_UCI,
+  `precondition: with equal raw weights and a fixed 0.5 draw, the UNSTYLED pick must be the alphabetically-second candidate (${STYLE_CHECK_ADVANCE_UCI})`,
+);
+
+const styledPick = await selectBotMove(
+  STYLE_CHECK_FEN,
+  { elo: 1500, blend: 0, budget: { maxNodes: 1, maxPlies: 1, concurrency: 1 }, style: ATTACKER_STYLE },
+  { policy: stubPolicyStyleCheck, grade: stubGradeMustNotBeCalledStyle, rng: FIXED_DRAW },
+);
+assert.equal(
+  styledPick,
+  STYLE_CHECK_CAPTURE_UCI,
+  'a defined style bundle (ATTACKER_STYLE) must reach selectBotMove\'s prior-reweighting branch and flip the ' +
+    `pick to the capture (${STYLE_CHECK_CAPTURE_UCI}) under the SAME fixed draw and raw weights (STYLE-03)`,
+);
+console.log(
+  'PASS: a defined style bundle reaches selectBotMove and changes its output (STYLE-03 prior reweighting, deterministic stub)',
+);
 
 const DETERMINISM_SEED = 42;
 const DETERMINISM_ELO = 1500;
@@ -120,6 +192,35 @@ try {
     result2.moveUcis,
     result1.moveUcis,
     'same --seed must reproduce a byte-identical blend=1 game (D-09)',
+  );
+
+  // ─── Phase 184: absent style === `style: undefined` (STYLE-05) ────────────
+  // `result1` above OMITS `style` entirely. This third run passes `style:
+  // undefined` EXPLICITLY under the identical seed/settings — proving the
+  // conditional spread inside `selectBotMoveOnce` (`...(style !== undefined ?
+  // { style } : {})`) genuinely produces the same BotSettings object shape
+  // either way, not merely a coincidentally-identical move in this one game.
+  const gameRng3 = mulberry32(DETERMINISM_SEED);
+  const result3 = await playGame({
+    Chess,
+    providers,
+    pool,
+    botElo: DETERMINISM_ELO,
+    botBlend: DETERMINISM_BLEND,
+    anchorSpec,
+    startFen: opening.fen,
+    botIsWhite: DETERMINISM_BOT_IS_WHITE,
+    gameRng: gameRng3,
+    style: undefined,
+  });
+
+  assert.deepEqual(
+    result3.moveUcis,
+    result1.moveUcis,
+    'omitting `style` and passing `style: undefined` explicitly must produce byte-identical games (STYLE-05 absent-style invariant)',
+  );
+  console.log(
+    'PASS: omitting `style` vs explicit `style: undefined` produce a byte-identical game (STYLE-05 absent-style invariant)',
   );
 
   console.log(

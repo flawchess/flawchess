@@ -80,9 +80,8 @@ describe('PERSONA_REGISTRY', () => {
     });
   });
 
-  it('every persona.botElo === persona.rung AND is a member of MAIA_ELO_LADDER', () => {
+  it('every persona.botElo is a member of MAIA_ELO_LADDER (Phase 184 D-01: retargeted, no longer === rung)', () => {
     for (const persona of Object.values(PERSONA_REGISTRY)) {
-      expect(persona.botElo, persona.id).toBe(persona.rung);
       expect(MAIA_ELO_LADDER, persona.id).toContain(persona.botElo);
     }
   });
@@ -123,6 +122,57 @@ describe('PERSONA_REGISTRY', () => {
   it('no persona ships an avatarSrc yet (D-16 — placeholders only this phase)', () => {
     for (const persona of Object.values(PERSONA_REGISTRY)) {
       expect(persona.avatarSrc, persona.id).toBeUndefined();
+    }
+  });
+});
+
+describe('CAL-05 calibrated label honesty (Phase 184)', () => {
+  /** Parses a `~NNNN` calibrated label back to its numeric value. */
+  function parseLabel(label: string): number {
+    return Number(label.replace('~', ''));
+  }
+
+  it('every persona has a defined, non-empty calibratedLabel and botElo (24-slot completeness)', () => {
+    for (const persona of Object.values(PERSONA_REGISTRY)) {
+      expect(persona.calibratedLabel, persona.id).toBeDefined();
+      expect(persona.calibratedLabel.trim().length, persona.id).toBeGreaterThan(0);
+      expect(persona.botElo, persona.id).toBeDefined();
+    }
+  });
+
+  it('every calibratedLabel is a tilde-prefixed integer, rounded to the nearest 50 (D-03)', () => {
+    for (const persona of Object.values(PERSONA_REGISTRY)) {
+      expect(persona.calibratedLabel, persona.id).toMatch(/^~\d+$/);
+      const value = parseLabel(persona.calibratedLabel);
+      expect(value % 50, persona.id).toBe(0);
+    }
+  });
+
+  it('no calibratedLabel exceeds the ~1800 global ceiling (D-07)', () => {
+    for (const persona of Object.values(PERSONA_REGISTRY)) {
+      expect(parseLabel(persona.calibratedLabel), persona.id).toBeLessThanOrEqual(1800);
+    }
+  });
+
+  it('every bottom-rung (800) persona carries a defined, non-blank label — the floor is acknowledged, never dropped (D-06)', () => {
+    const floorPersonas = Object.values(PERSONA_REGISTRY).filter((p) => p.rung === 800);
+    expect(floorPersonas).toHaveLength(4);
+    for (const persona of floorPersonas) {
+      expect(persona.calibratedLabel, persona.id).toBeDefined();
+      expect(persona.calibratedLabel.trim().length, persona.id).toBeGreaterThan(0);
+    }
+  });
+
+  it('calibratedLabel is non-decreasing by rung within each style column (D-04 monotonicity spot-check)', () => {
+    for (const style of ALL_STYLES) {
+      const personas = personasForSection(style);
+      const values = personas.map((p) => parseLabel(p.calibratedLabel));
+      for (let i = 1; i < values.length; i++) {
+        const prev = values[i - 1];
+        const curr = values[i];
+        expect(prev, `${style} rung ${personas[i - 1]?.rung}->${personas[i]?.rung}`).toBeDefined();
+        expect(curr).toBeGreaterThanOrEqual(prev as number);
+      }
     }
   });
 });
@@ -168,6 +218,7 @@ function assertPersonaShape(p: Persona): void {
   void p.style;
   void p.rung;
   void p.botElo;
+  void p.calibratedLabel;
   void p.blend;
   void p.name;
   void p.species;

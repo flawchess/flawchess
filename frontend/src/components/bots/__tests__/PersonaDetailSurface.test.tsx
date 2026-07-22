@@ -8,10 +8,11 @@
  * resolve. jsdom supplies a real `localStorage`.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 
 import { PersonaDetailSurface } from '../PersonaDetailSurface';
 import { PERSONA_REGISTRY } from '@/lib/personas/personaRegistry';
+import { PERSONA_CALIBRATION_MEASURED } from '@/generated/personaCalibration';
 import { BOT_STYLE_BUNDLES } from '@/lib/engine/botStyleBundles';
 import {
   writePersonaSetupSettings,
@@ -62,14 +63,20 @@ describe('PersonaDetailSurface — rendering', () => {
     expect(screen.getByTestId('btn-persona-play')).toBeTruthy();
   });
 
-  it('renders no ELO/strength picker — display-only ELO + style text only', () => {
+  it('renders no ELO/strength picker — display-only calibrated ELO + style text only', () => {
     renderSurface();
 
     expect(screen.getByTestId('persona-detail-meta').textContent).toBe(
-      `${PERSONA.style} · ~${PERSONA.rung}`,
+      `${PERSONA.style} · ${PERSONA.calibratedLabel}`,
     );
     expect(screen.queryByTestId('setup-elo')).toBeNull();
     expect(screen.queryByRole('slider')).toBeNull();
+  });
+
+  it('mounts the D-08 ELO disclosure popover trigger for every persona', () => {
+    renderSurface();
+
+    expect(screen.getByTestId('persona-elo-disclosure')).toBeTruthy();
   });
 
   it('returns null (renders nothing) when persona is null', () => {
@@ -142,5 +149,61 @@ describe('PersonaDetailSurface — Play builds the pinned BotGameSettings (PERS-
     const raw = localStorage.getItem(`${BOT_PERSONA_SETUP_SETTINGS_KEY_PREFIX}${OWNER_KEY}`);
     expect(raw).not.toBeNull();
     expect(JSON.parse(raw as string)).toEqual({ colorPreference: 'black', tcLabel: '5+3' });
+  });
+});
+
+describe('PersonaDetailSurface — D-08/D-06 ELO disclosure popover copy', () => {
+  /** Hovers the ELO disclosure trigger and waits for the popover body to open. */
+  async function openEloDisclosure() {
+    vi.useFakeTimers();
+    try {
+      const trigger = screen.getByTestId('persona-elo-disclosure');
+      fireEvent.mouseEnter(trigger);
+      act(() => {
+        vi.advanceTimersByTime(200);
+      });
+    } finally {
+      vi.useRealTimers();
+    }
+    return waitFor(() => screen.getByTestId('persona-elo-disclosure-content'));
+  }
+
+  it('a non-floor-rung persona popover does NOT include the floor acknowledgment', async () => {
+    renderSurface(); // PERSONA = grinder-1200
+
+    const content = await openEloDisclosure();
+    expect(content.textContent).not.toContain('900');
+  });
+
+  // The committed calibration is still the `--bootstrap` fit (approx_blitz =
+  // rung, ratings NaN), so PERSONA_CALIBRATION_MEASURED is false. These two
+  // assertions are the honesty contract: until a real sweep is fitted the
+  // popover must not claim a measurement, and must not print the ~900 floor
+  // line (which would contradict the visible "~800" label). Both flip to the
+  // measured copy automatically when the refit lands — see
+  // PersonaEloDisclosurePopover.test.tsx for the measured-state coverage.
+  it('withholds the measured claim while the calibration is provisional', async () => {
+    renderSurface();
+
+    const content = await openEloDisclosure();
+    expect(PERSONA_CALIBRATION_MEASURED).toBe(false);
+    expect(content.textContent).toContain('provisional');
+    expect(content.textContent).not.toContain('measured in bot-vs-engine games');
+  });
+
+  it('withholds the ~900 floor line for a bottom-rung persona while provisional', async () => {
+    const floorPersona = PERSONA_REGISTRY['grinder-800'];
+    render(
+      <PersonaDetailSurface
+        persona={floorPersona}
+        ownerKey={OWNER_KEY}
+        open={true}
+        onOpenChange={vi.fn()}
+        onStart={vi.fn()}
+      />,
+    );
+
+    const content = await openEloDisclosure();
+    expect(content.textContent).not.toContain('900');
   });
 });

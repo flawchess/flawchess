@@ -12,14 +12,24 @@ afterEach(() => {
 const PERSONA = PERSONA_REGISTRY['attacker-800'];
 
 describe('PersonaCard', () => {
-  it('renders the persona name, tilde ELO label, and an avatar node', () => {
+  it('renders the persona name, calibrated ELO label, and an avatar node', () => {
     render(<PersonaCard persona={PERSONA} onSelect={vi.fn()} />);
 
     const card = screen.getByTestId(`bots-persona-card-${PERSONA.id}`);
     expect(card.textContent).toContain(PERSONA.name);
-    expect(card.textContent).toContain(`~${PERSONA.rung}`);
+    expect(card.textContent).toContain(PERSONA.calibratedLabel);
     // The avatar emoji node renders inside the card.
     expect(card.textContent).toContain(PERSONA.avatarEmoji);
+  });
+
+  it('renders the calibrated label, not the raw rung, when they differ (CAL-05)', () => {
+    const personaWithDistinctLabel = { ...PERSONA, calibratedLabel: '~1050' };
+    render(<PersonaCard persona={personaWithDistinctLabel} onSelect={vi.fn()} />);
+
+    const card = screen.getByTestId(`bots-persona-card-${personaWithDistinctLabel.id}`);
+    expect(card.textContent).toContain('~1050');
+    expect(card.textContent).not.toContain(`~${PERSONA.rung}`);
+    expect(card.getAttribute('aria-label')).toContain('~1050');
   });
 
   it('is a semantic button with an aria-label naming the persona', () => {

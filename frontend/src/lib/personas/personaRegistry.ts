@@ -11,15 +11,23 @@
  * at compile time — omitting any of the 24 slots is a type error, mirroring
  * `botStyleBundles.ts`'s `Record<Style, BotStyleParams>` convention.
  *
- * A1 (pre-calibration decision, RESEARCH.md Pitfall 2 / Assumption A1):
- * `botElo === rung` for every persona this phase. Human rungs (800-1400)
- * feed `rung` directly as the raw Maia policy ELO input with no search
- * (`HUMAN_BLEND`); this is a DELIBERATE placeholder, not the actual measured
- * strength — Phase 184 (CAL-04/05) replaces these provisional labels with
- * calibrated values from the Phase-180 harness once personas are wired end
- * to end. Documented here so Phase 184 has an auditable starting point: the
- * label a user sees this phase ("~1200") is the raw preset input, not a
- * measured rating.
+ * Calibration provenance (Phase 184, CAL-04/CAL-05): `botElo` and
+ * `calibratedLabel` are sourced per-persona from the generated
+ * `frontend/src/generated/personaCalibration.ts` (`PERSONA_CALIBRATION`,
+ * keyed by `PersonaId`), produced by `scripts/calibration_persona_fit.py` +
+ * `scripts/gen_persona_calibration.py` from the operator-run overnight
+ * sweep (`bin/run_persona_calibration_sweep.sh`). `botElo` is the
+ * RETARGETED engine-facing ELO input (Phase-181 lookup, D-01) — it is no
+ * longer `=== rung`. `calibratedLabel` is the honest, tilde-prefixed,
+ * round-50 measured/extrapolated display value a user sees (D-03/D-06/D-07).
+ * `rung` is UNCHANGED in meaning: it stays the structural grid-position key
+ * this registry is organized by, never a strength value.
+ *
+ * STALENESS (D-11): changing `botStyleBundles.ts`'s style params or the
+ * anchor ladder invalidates this calibration — re-run the persona sweep
+ * (`bin/run_persona_calibration_sweep.sh`) and regenerate
+ * `personaCalibration.ts` before trusting these values again. No hash-guard
+ * automation enforces this; it is a documented operator policy only.
  *
  * Rung -> preset mapping (`RUNG_BLEND`, per `reports/data/bot-strength-lookup.json`'s
  * measured ranges — Human 900-1400, Light 1500-1600, Deep 1600-1800):
@@ -38,6 +46,7 @@
 
 import type { Style } from '@/lib/engine/styleOpeningLines';
 import { HUMAN_BLEND, LIGHT_BLEND, DEEP_BLEND } from '@/lib/playStyle';
+import { PERSONA_CALIBRATION } from '@/generated/personaCalibration';
 // Type-only import: `verbatimModuleSyntax` (tsconfig.app.json) erases this at
 // compile time, so it introduces no runtime circular dependency even though
 // `useBotGame.ts` also imports `PersonaId` from this module.
@@ -60,9 +69,14 @@ export interface Persona {
   id: PersonaId;
   style: Style;
   rung: Rung;
-  /** Engine-facing ELO input. This phase: always `=== rung` (see the A1 note
-   * above) — Phase 184 replaces this with a calibrated value. */
+  /** Engine-facing ELO input — RETARGETED per the persona's own preset via
+   * the Phase-181 lookup (see the calibration-provenance note above), read
+   * from `PERSONA_CALIBRATION[id].botElo`. No longer `=== rung`. */
   botElo: number;
+  /** Honest, tilde-prefixed, round-50 measured/extrapolated display label
+   * (D-03/D-06/D-07), read from `PERSONA_CALIBRATION[id].label`. This is
+   * what `PersonaCard`/`PersonaDetailSurface` render — never `~${rung}`. */
+  calibratedLabel: string;
   /** The search-preset blend (`HUMAN_BLEND` / `LIGHT_BLEND` / `DEEP_BLEND` —
    * see `playStyle.ts`). Always one of those 3 named constants, never a raw
    * literal, so a persona's preset is traceable back to its named regime. */
@@ -117,7 +131,8 @@ const ATTACKER_PERSONAS: Record<`attacker-${Rung}`, Persona> = {
     id: personaId('Attacker', 800),
     style: 'Attacker',
     rung: 800,
-    botElo: 800,
+    botElo: PERSONA_CALIBRATION['attacker-800'].botElo,
+    calibratedLabel: PERSONA_CALIBRATION['attacker-800'].label,
     blend: RUNG_BLEND[800],
     name: 'Ziggy the Wasp',
     species: 'Wasp',
@@ -128,7 +143,8 @@ const ATTACKER_PERSONAS: Record<`attacker-${Rung}`, Persona> = {
     id: personaId('Attacker', 1000),
     style: 'Attacker',
     rung: 1000,
-    botElo: 1000,
+    botElo: PERSONA_CALIBRATION['attacker-1000'].botElo,
+    calibratedLabel: PERSONA_CALIBRATION['attacker-1000'].label,
     blend: RUNG_BLEND[1000],
     name: 'Duke the Terrier',
     species: 'Terrier',
@@ -139,7 +155,8 @@ const ATTACKER_PERSONAS: Record<`attacker-${Rung}`, Persona> = {
     id: personaId('Attacker', 1200),
     style: 'Attacker',
     rung: 1200,
-    botElo: 1200,
+    botElo: PERSONA_CALIBRATION['attacker-1200'].botElo,
+    calibratedLabel: PERSONA_CALIBRATION['attacker-1200'].label,
     blend: RUNG_BLEND[1200],
     name: 'Talon the Falcon',
     species: 'Falcon',
@@ -150,7 +167,8 @@ const ATTACKER_PERSONAS: Record<`attacker-${Rung}`, Persona> = {
     id: personaId('Attacker', 1400),
     style: 'Attacker',
     rung: 1400,
-    botElo: 1400,
+    botElo: PERSONA_CALIBRATION['attacker-1400'].botElo,
+    calibratedLabel: PERSONA_CALIBRATION['attacker-1400'].label,
     blend: RUNG_BLEND[1400],
     name: 'Fury the Wolverine',
     species: 'Wolverine',
@@ -164,7 +182,8 @@ const ATTACKER_PERSONAS: Record<`attacker-${Rung}`, Persona> = {
     id: personaId('Attacker', 1600),
     style: 'Attacker',
     rung: 1600,
-    botElo: 1600,
+    botElo: PERSONA_CALIBRATION['attacker-1600'].botElo,
+    calibratedLabel: PERSONA_CALIBRATION['attacker-1600'].label,
     blend: LIGHT_BLEND,
     name: 'Butch the Ram',
     species: 'Ram',
@@ -175,7 +194,8 @@ const ATTACKER_PERSONAS: Record<`attacker-${Rung}`, Persona> = {
     id: personaId('Attacker', 1800),
     style: 'Attacker',
     rung: 1800,
-    botElo: 1800,
+    botElo: PERSONA_CALIBRATION['attacker-1800'].botElo,
+    calibratedLabel: PERSONA_CALIBRATION['attacker-1800'].label,
     blend: RUNG_BLEND[1800],
     name: 'Diesel the Bull',
     species: 'Bull',
@@ -193,7 +213,8 @@ const TRICKSTER_PERSONAS: Record<`trickster-${Rung}`, Persona> = {
     id: personaId('Trickster', 800),
     style: 'Trickster',
     rung: 800,
-    botElo: 800,
+    botElo: PERSONA_CALIBRATION['trickster-800'].botElo,
+    calibratedLabel: PERSONA_CALIBRATION['trickster-800'].label,
     blend: RUNG_BLEND[800],
     name: 'Miko the Magpie',
     species: 'Magpie',
@@ -204,7 +225,8 @@ const TRICKSTER_PERSONAS: Record<`trickster-${Rung}`, Persona> = {
     id: personaId('Trickster', 1000),
     style: 'Trickster',
     rung: 1000,
-    botElo: 1000,
+    botElo: PERSONA_CALIBRATION['trickster-1000'].botElo,
+    calibratedLabel: PERSONA_CALIBRATION['trickster-1000'].label,
     blend: RUNG_BLEND[1000],
     name: 'Slinky the Ferret',
     species: 'Ferret',
@@ -215,7 +237,8 @@ const TRICKSTER_PERSONAS: Record<`trickster-${Rung}`, Persona> = {
     id: personaId('Trickster', 1200),
     style: 'Trickster',
     rung: 1200,
-    botElo: 1200,
+    botElo: PERSONA_CALIBRATION['trickster-1200'].botElo,
+    calibratedLabel: PERSONA_CALIBRATION['trickster-1200'].label,
     blend: RUNG_BLEND[1200],
     name: 'Vix the Fox',
     species: 'Fox',
@@ -226,7 +249,8 @@ const TRICKSTER_PERSONAS: Record<`trickster-${Rung}`, Persona> = {
     id: personaId('Trickster', 1400),
     style: 'Trickster',
     rung: 1400,
-    botElo: 1400,
+    botElo: PERSONA_CALIBRATION['trickster-1400'].botElo,
+    calibratedLabel: PERSONA_CALIBRATION['trickster-1400'].label,
     blend: RUNG_BLEND[1400],
     name: 'Riko the Raccoon',
     species: 'Raccoon',
@@ -241,7 +265,8 @@ const TRICKSTER_PERSONAS: Record<`trickster-${Rung}`, Persona> = {
     id: personaId('Trickster', 1600),
     style: 'Trickster',
     rung: 1600,
-    botElo: 1600,
+    botElo: PERSONA_CALIBRATION['trickster-1600'].botElo,
+    calibratedLabel: PERSONA_CALIBRATION['trickster-1600'].label,
     blend: DEEP_BLEND,
     name: 'Sly the Coyote',
     species: 'Coyote',
@@ -252,7 +277,8 @@ const TRICKSTER_PERSONAS: Record<`trickster-${Rung}`, Persona> = {
     id: personaId('Trickster', 1800),
     style: 'Trickster',
     rung: 1800,
-    botElo: 1800,
+    botElo: PERSONA_CALIBRATION['trickster-1800'].botElo,
+    calibratedLabel: PERSONA_CALIBRATION['trickster-1800'].label,
     blend: RUNG_BLEND[1800],
     name: 'Cackle the Hyena',
     species: 'Hyena',
@@ -270,7 +296,8 @@ const GRINDER_PERSONAS: Record<`grinder-${Rung}`, Persona> = {
     id: personaId('Grinder', 800),
     style: 'Grinder',
     rung: 800,
-    botElo: 800,
+    botElo: PERSONA_CALIBRATION['grinder-800'].botElo,
+    calibratedLabel: PERSONA_CALIBRATION['grinder-800'].label,
     blend: RUNG_BLEND[800],
     name: 'Pip the Ant',
     species: 'Ant',
@@ -281,7 +308,8 @@ const GRINDER_PERSONAS: Record<`grinder-${Rung}`, Persona> = {
     id: personaId('Grinder', 1000),
     style: 'Grinder',
     rung: 1000,
-    botElo: 1000,
+    botElo: PERSONA_CALIBRATION['grinder-1000'].botElo,
+    calibratedLabel: PERSONA_CALIBRATION['grinder-1000'].label,
     blend: RUNG_BLEND[1000],
     name: 'Dig the Mole',
     species: 'Mole',
@@ -292,7 +320,8 @@ const GRINDER_PERSONAS: Record<`grinder-${Rung}`, Persona> = {
     id: personaId('Grinder', 1200),
     style: 'Grinder',
     rung: 1200,
-    botElo: 1200,
+    botElo: PERSONA_CALIBRATION['grinder-1200'].botElo,
+    calibratedLabel: PERSONA_CALIBRATION['grinder-1200'].label,
     blend: RUNG_BLEND[1200],
     name: 'Otto the Otter',
     species: 'Otter',
@@ -303,7 +332,8 @@ const GRINDER_PERSONAS: Record<`grinder-${Rung}`, Persona> = {
     id: personaId('Grinder', 1400),
     style: 'Grinder',
     rung: 1400,
-    botElo: 1400,
+    botElo: PERSONA_CALIBRATION['grinder-1400'].botElo,
+    calibratedLabel: PERSONA_CALIBRATION['grinder-1400'].label,
     blend: RUNG_BLEND[1400],
     name: 'Tank the Ox',
     species: 'Ox',
@@ -317,7 +347,8 @@ const GRINDER_PERSONAS: Record<`grinder-${Rung}`, Persona> = {
     id: personaId('Grinder', 1600),
     style: 'Grinder',
     rung: 1600,
-    botElo: 1600,
+    botElo: PERSONA_CALIBRATION['grinder-1600'].botElo,
+    calibratedLabel: PERSONA_CALIBRATION['grinder-1600'].label,
     blend: DEEP_BLEND,
     name: 'Bo the Buffalo',
     species: 'Buffalo',
@@ -328,7 +359,8 @@ const GRINDER_PERSONAS: Record<`grinder-${Rung}`, Persona> = {
     id: personaId('Grinder', 1800),
     style: 'Grinder',
     rung: 1800,
-    botElo: 1800,
+    botElo: PERSONA_CALIBRATION['grinder-1800'].botElo,
+    calibratedLabel: PERSONA_CALIBRATION['grinder-1800'].label,
     blend: RUNG_BLEND[1800],
     name: 'Yara the Yak',
     species: 'Yak',
@@ -346,7 +378,8 @@ const WALL_PERSONAS: Record<`wall-${Rung}`, Persona> = {
     id: personaId('Wall', 800),
     style: 'Wall',
     rung: 800,
-    botElo: 800,
+    botElo: PERSONA_CALIBRATION['wall-800'].botElo,
+    calibratedLabel: PERSONA_CALIBRATION['wall-800'].label,
     blend: RUNG_BLEND[800],
     name: 'Sheldon the Snail',
     species: 'Snail',
@@ -357,7 +390,8 @@ const WALL_PERSONAS: Record<`wall-${Rung}`, Persona> = {
     id: personaId('Wall', 1000),
     style: 'Wall',
     rung: 1000,
-    botElo: 1000,
+    botElo: PERSONA_CALIBRATION['wall-1000'].botElo,
+    calibratedLabel: PERSONA_CALIBRATION['wall-1000'].label,
     blend: RUNG_BLEND[1000],
     name: 'Spike the Hedgehog',
     species: 'Hedgehog',
@@ -368,7 +402,8 @@ const WALL_PERSONAS: Record<`wall-${Rung}`, Persona> = {
     id: personaId('Wall', 1200),
     style: 'Wall',
     rung: 1200,
-    botElo: 1200,
+    botElo: PERSONA_CALIBRATION['wall-1200'].botElo,
+    calibratedLabel: PERSONA_CALIBRATION['wall-1200'].label,
     blend: RUNG_BLEND[1200],
     name: 'Shelly the Turtle',
     species: 'Turtle',
@@ -379,7 +414,8 @@ const WALL_PERSONAS: Record<`wall-${Rung}`, Persona> = {
     id: personaId('Wall', 1400),
     style: 'Wall',
     rung: 1400,
-    botElo: 1400,
+    botElo: PERSONA_CALIBRATION['wall-1400'].botElo,
+    calibratedLabel: PERSONA_CALIBRATION['wall-1400'].label,
     blend: RUNG_BLEND[1400],
     name: 'Bruno the Badger',
     species: 'Badger',
@@ -394,7 +430,8 @@ const WALL_PERSONAS: Record<`wall-${Rung}`, Persona> = {
     id: personaId('Wall', 1600),
     style: 'Wall',
     rung: 1600,
-    botElo: 1600,
+    botElo: PERSONA_CALIBRATION['wall-1600'].botElo,
+    calibratedLabel: PERSONA_CALIBRATION['wall-1600'].label,
     blend: LIGHT_BLEND,
     name: 'Dana the Beaver',
     species: 'Beaver',
@@ -405,7 +442,8 @@ const WALL_PERSONAS: Record<`wall-${Rung}`, Persona> = {
     id: personaId('Wall', 1800),
     style: 'Wall',
     rung: 1800,
-    botElo: 1800,
+    botElo: PERSONA_CALIBRATION['wall-1800'].botElo,
+    calibratedLabel: PERSONA_CALIBRATION['wall-1800'].label,
     blend: RUNG_BLEND[1800],
     name: 'Rocco the Armadillo',
     species: 'Armadillo',

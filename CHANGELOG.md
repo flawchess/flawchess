@@ -10,6 +10,10 @@ in `YYYY-MM-DD` (Europe/Zurich).
 
 ### Added
 
+- **Bot personas on the Bots page** — a roster of 24 named opponents, four play styles (Attacker, Trickster, Grinder, Wall) across six strength rungs each. Every persona is a complete pinned opponent: its own preset and style parameters, opening book, resign and draw-offer policy, avatar and bio. Browse the grid, open a persona for its bio and colour/time-control chips, and start a game in one action; your last colour and time control are remembered per persona. Personas are present in-game too — avatar and name in the clock strip, a draw-offer banner when the bot offers, persona-named result copy, and Rematch / New opponent when the game ends. Custom setup is still there for a hand-tuned bot (Phase 183).
+
+- Persona strength labels now come from a single generated calibration file, with a disclosure popover on the detail surface explaining what the number means. The labels are currently **provisional estimates from each persona's target rung** and the popover says so; a per-persona measurement sweep against the internal anchor ladder replaces them with measured values, at which point the popover switches to the measured wording on its own. Also adds the operator sweep runbook, the fit and codegen pipeline, and a CI drift gate on the generated file (Phase 184).
+
 - Dev: bot play-style levers — four named styles (Attacker, Trickster, Grinder, Wall) can now steer a bot's play through new bot-only parameters: a curated per-style opening book, signed draw contempt plus a hysteresis-gated resign policy, Maia policy reweighting by move features (checks, captures, pawn advances, trades) on the Human rungs, and additive score shaping with a variance preference on the Light/Deep rungs. A headless measurement script (`scripts/style-lever-measurement.mjs`) backs the per-style tuning with committed evidence. Every lever is optional and gated: with no style set, bot play and Custom mode are byte-identical to before. Dev-only, nothing selects a style yet (the Bots page personas land in Phase 183) (Phase 182).
 
 ## [v2.6] Bot Strength Calibration — 2026-07-21

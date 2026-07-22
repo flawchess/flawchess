@@ -2,18 +2,18 @@
 gsd_state_version: 1.0
 milestone: v2.7
 milestone_name: Bot Personas & Playstyle Layer
-current_phase: 183
-current_phase_name: persona-registry-bots-page
-status: verifying
-stopped_at: Completed 183-05-PLAN.md
-last_updated: "2026-07-22T10:11:16.673Z"
+current_phase: 184
+current_phase_name: persona-calibration-strength-honesty
+status: executing
+stopped_at: Completed 184-03-PLAN.md
+last_updated: "2026-07-22T14:15:45.603Z"
 last_activity: 2026-07-22
-last_activity_desc: Phase 183 execution started
+last_activity_desc: Phase 184 execution started
 progress:
   total_phases: 3
   completed_phases: 2
-  total_plans: 12
-  completed_plans: 12
+  total_plans: 16
+  completed_plans: 15
   percent: 67
 ---
 
@@ -21,10 +21,10 @@ progress:
 
 ## Current Position
 
-Phase: 183 (persona-registry-bots-page) — EXECUTING
-Plan: 5 of 5
-Status: Phase complete — ready for verification
-Last activity: 2026-07-22 — Phase 183 execution started
+Phase: 184 (persona-calibration-strength-honesty) — EXECUTING
+Plan: 4 of 4
+Status: Ready to execute
+Last activity: 2026-07-22 — Phase 184 execution started
 
 ## Project Reference
 
@@ -400,6 +400,12 @@ v1.29 Live-Engine Analysis Page shipped 2026-06-29 — 5 phases (136–140), 14 
 - [Phase ?]: [Phase 183-04]: PersonaCard/PersonaDetailSurface consume resolveAvatarSrc (Plan 01's D-17 seam) as a real fallback branch, not just placeholderAvatarFor — required by the plan's backstop truth and to keep npm run knip green
 - [Phase ?]: personaFor(settings) is the single shared personaId->Persona lookup (type-only BotGameSettings import, no runtime circular dependency); resultCopy substitutes the persona name only into bot-actor branches, leaving user-actor/draw copy and the no-persona default byte-identical to pre-183 strings
 - [Phase ?]: Rematch reuses the exact same BotGameSettings object reference via the existing handleStart path (no second start path); New opponent relabels the existing onNewGame action; AVAT-01 stays intentionally open (placeholder avatars only, per 183-01's D-16)
+- [Phase ?]: [Phase 184-01]: presetNameForBlend reuses playStyle.ts's deriveActivePlayStylePreset rather than re-deriving the 0/0.05/0.5 mapping
+- [Phase ?]: [Phase 184-01]: Reverted requirements.mark-complete's CAL-04 checkbox flip — shared across Plans 01/02/04; this plan delivers only the harness style seam + persona-cell schedule, not the actual sweep/fit/labels; left [ ] Pending
+- [Phase ?]: [Phase 184-02]: 24-persona overnight sweep runs as 24 independent single-cell harness invocations (one --out-dir per persona) through an unmodified bin/preset-supervisor.sh, sidestepping botElo/blend collisions structurally instead of a new persona-keyed grid mode
+- [Phase ?]: [Phase 184-02]: Added a CALIBRATION_HARNESS_STYLE env-var seam to calibration-harness.mjs (Rule 2 deviation) so the persona runbook can thread a real BotStyleParams bundle into selectBotMove without modifying preset-supervisor.sh
+- [Phase 184-03]: requirements-completed left empty — CAL-05 is jointly delivered across Plans 02/03/04; this plan wires the honesty UI surfaces (ceiling clamp, floor-acknowledgment popover) against Plan 02's bootstrap placeholder data, not the real measured values from Plan 04's sweep
+- [Phase 184-03]: calibratedLabel added as a sibling field on Persona (not a rename) — rung stays the unchanged structural grid key per the assumption_delta_decision
 
 ### Pending Todos
 
@@ -491,9 +497,9 @@ Items acknowledged and deferred at **v1.29 milestone close on 2026-06-29** (user
 
 ## Session Continuity
 
-**Stopped at:** Completed 183-05-PLAN.md
+**Stopped at:** Completed 184-03-PLAN.md
 
-**Last session:** 2026-07-22T10:11:16.657Z
+**Last session:** 2026-07-22T14:15:45.585Z
 
 **Resume file:**
 
@@ -543,6 +549,9 @@ None
 | Phase 183 P03 | 11min | 2 tasks | 2 files |
 | Phase 183 P04 | 20min | 3 tasks | 8 files |
 | Phase 183 P05 | 20min | 3 tasks | 13 files |
+| Phase 184 P01 | 35min | 3 tasks | 4 files |
+| Phase 184 P02 | 45min | 3 tasks | 9 files |
+| Phase 184 P03 | 40min | 3 tasks | 9 files |
 
 ## Performance Metrics
 

@@ -1,9 +1,10 @@
 /**
  * PersonaCard — a single tappable persona tile on the Bots page grid (Phase
- * 183, PERS-01/AVAT-01/AVAT-02). Shows the persona's avatar, name, and a
- * tilde-prefixed provisional ELO label (D-04) — never a raw unqualified
- * number, since `botElo` this phase is a preset placeholder, not a measured
- * rating (see `personaRegistry.ts`'s A1 header note).
+ * 183, PERS-01/AVAT-01/AVAT-02). Shows the persona's avatar, name, and the
+ * calibrated, tilde-prefixed strength label (Phase 184 CAL-05,
+ * `persona.calibratedLabel`) — never a raw unqualified number, and never
+ * `~${persona.rung}` (the pre-calibration provisional value; see
+ * `personaRegistry.ts`'s calibration-provenance header note).
  *
  * Backstop: the avatar renders `resolveAvatarSrc(persona)`'s future real-art
  * portrait (D-17) when present, otherwise the D-18 placeholder (species
@@ -35,7 +36,7 @@ export function PersonaCard({ persona, onSelect }: PersonaCardProps): ReactEleme
     <button
       type="button"
       data-testid={`bots-persona-card-${persona.id}`}
-      aria-label={`${persona.name}, approximately ${persona.rung} ELO`}
+      aria-label={`${persona.name}, ${persona.calibratedLabel} ELO`}
       onClick={() => onSelect(persona)}
       className="flex flex-col items-center gap-1 rounded border border-border bg-card p-2 text-center transition-colors pointer-fine:hover:bg-inactive-bg-hover"
     >
@@ -55,7 +56,7 @@ export function PersonaCard({ persona, onSelect }: PersonaCardProps): ReactEleme
         )}
       </span>
       <span className="text-sm font-medium text-foreground">{persona.name}</span>
-      <span className="text-sm text-muted-foreground">{`~${persona.rung}`}</span>
+      <span className="text-sm text-muted-foreground">{persona.calibratedLabel}</span>
     </button>
   );
 }
