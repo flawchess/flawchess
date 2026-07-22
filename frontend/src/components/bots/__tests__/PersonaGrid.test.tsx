@@ -67,7 +67,9 @@ describe('PersonaGrid', () => {
       const card = screen.getByTestId(`bots-persona-card-${persona.id}`);
       expect(card.textContent).toContain(persona.name);
       expect(card.textContent).toMatch(/~\d+/);
-      expect(card.textContent).toContain(persona.avatarEmoji);
+      // Avatar node: real-art <img> or emoji placeholder — both live in the
+      // one aria-hidden avatar circle.
+      expect(card.querySelectorAll('span[aria-hidden="true"]').length).toBe(1);
     }
   });
 

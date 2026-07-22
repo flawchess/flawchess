@@ -2,6 +2,13 @@ import type { ReactElement } from 'react';
 import { cn } from '@/lib/utils';
 import { formatClockLabel, isLowTime } from '@/lib/chessClock';
 import { CLOCK_LOW_TIME_URGENT } from '@/lib/theme';
+import type { Persona } from '@/lib/personas/personaRegistry';
+import { placeholderAvatarFor, resolveAvatarSrc } from '@/lib/personas/personaAvatars';
+
+/** Avatar-circle size (px) for the persona portrait. Sized so the persona
+ * card lands at ~60px tall (avatar + py-1.5), a deliberate +50% over the
+ * compact ~40px text-only card — the portrait needs the room. */
+const AVATAR_SIZE_PX = 48;
 
 interface ClockDisplayProps {
   /** Side caption — the resolved player display name (lichess_username ->
@@ -9,10 +16,11 @@ interface ClockDisplayProps {
    * or the persona's name / "FlawChess Bot" for the bot side (Phase 183,
    * D-06), per the UI-SPEC Copywriting Contract. */
   sideLabel: string;
-  /** Persona placeholder-avatar glyph (Phase 183, D-06) — rendered beside
-   * `sideLabel` for a persona game; omitted (no avatar rendered) for a
-   * Custom game or the human side. */
-  avatarEmoji?: string;
+  /** The bot's persona (Phase 183, D-06) — renders the avatar portrait with
+   * the name and a "style · estimated ELO" line beside it for a persona
+   * game; omitted (text-only compact card) for a Custom game or the human
+   * side. */
+  persona?: Persona;
   /** Remaining time in milliseconds. */
   remainingMs: number;
   /** The side to move — gets a subtle --secondary highlight (D-06/UI-SPEC). */
@@ -20,6 +28,28 @@ interface ClockDisplayProps {
   /** True while the bot's move selection is in flight (D-06). */
   isThinking: boolean;
   testId?: string;
+}
+
+/** The persona's avatar portrait: real art when present, else the D-18
+ * species-emoji placeholder on the per-style tint — same backstop pattern as
+ * `PersonaCard`/`PersonaDetailSurface`. */
+function PersonaAvatar({ persona }: { persona: Persona }): ReactElement {
+  const avatar = placeholderAvatarFor(persona);
+  const avatarSrc = resolveAvatarSrc(persona);
+
+  return (
+    <span
+      aria-hidden="true"
+      className="flex shrink-0 items-center justify-center overflow-hidden rounded-full text-2xl"
+      style={{ backgroundColor: avatar.tint, width: AVATAR_SIZE_PX, height: AVATAR_SIZE_PX }}
+    >
+      {avatarSrc !== undefined ? (
+        <img src={avatarSrc} alt="" className="h-full w-full object-cover" />
+      ) : (
+        avatar.emoji
+      )}
+    </span>
+  );
 }
 
 /**
@@ -30,17 +60,31 @@ interface ClockDisplayProps {
  * Sized to sit close to the analysis board's PlayerBar strip (170 UAT test 7:
  * the original p-4 / text-xl card ate too much vertical space on mobile). The
  * card surface itself stays — the active-side fill and the low-time ring need
- * something to paint on.
+ * something to paint on. A persona game's bot card is the one exception: it
+ * grows ~50% taller to fit the avatar portrait with the name + estimated
+ * ELO stacked beside it.
  */
 export function ClockDisplay({
   sideLabel,
-  avatarEmoji,
+  persona,
   remainingMs,
   isActive,
   isThinking,
   testId,
 }: ClockDisplayProps): ReactElement {
   const lowTime = isLowTime(remainingMs);
+
+  const thinkingIndicator = isThinking && (
+    <>
+      <span
+        aria-hidden="true"
+        className="inline-block h-2 w-2 shrink-0 animate-pulse rounded-full bg-brand-brown"
+      />
+      <span className="sr-only" aria-live="polite">
+        Bot is thinking
+      </span>
+    </>
+  );
 
   return (
     <div
@@ -52,21 +96,23 @@ export function ClockDisplay({
       )}
     >
       <span className="flex items-center gap-2 text-sm font-medium">
-        {avatarEmoji && (
-          <span aria-hidden="true" className="text-lg leading-none">
-            {avatarEmoji}
-          </span>
-        )}
-        {sideLabel}
-        {isThinking && (
+        {persona ? (
           <>
-            <span
-              aria-hidden="true"
-              className="inline-block h-2 w-2 shrink-0 animate-pulse rounded-full bg-brand-brown"
-            />
-            <span className="sr-only" aria-live="polite">
-              Bot is thinking
+            <PersonaAvatar persona={persona} />
+            <span className="flex flex-col">
+              <span className="flex items-center gap-2">
+                {sideLabel}
+                {thinkingIndicator}
+              </span>
+              <span className="font-normal text-muted-foreground">
+                {`${persona.style} · ${persona.calibratedLabel}`}
+              </span>
             </span>
+          </>
+        ) : (
+          <>
+            {sideLabel}
+            {thinkingIndicator}
           </>
         )}
       </span>

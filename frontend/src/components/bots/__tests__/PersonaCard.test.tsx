@@ -18,8 +18,10 @@ describe('PersonaCard', () => {
     const card = screen.getByTestId(`bots-persona-card-${PERSONA.id}`);
     expect(card.textContent).toContain(PERSONA.name);
     expect(card.textContent).toContain(PERSONA.calibratedLabel);
-    // The avatar emoji node renders inside the card.
-    expect(card.textContent).toContain(PERSONA.avatarEmoji);
+    // The avatar node renders inside the card: either the real-art <img>
+    // (when the persona's webp asset exists) or the emoji placeholder — both
+    // live in the one aria-hidden avatar circle.
+    expect(card.querySelectorAll('span[aria-hidden="true"]')).toHaveLength(1);
   });
 
   it('renders the calibrated label, not the raw rung, when they differ (CAL-05)', () => {
@@ -57,10 +59,18 @@ describe('PersonaCard', () => {
     expect(card.innerHTML).not.toContain('text-xs');
   });
 
-  it('backstop: falls back to the emoji when avatarSrc is absent (every current persona)', () => {
-    render(<PersonaCard persona={PERSONA} onSelect={vi.fn()} />);
+  it('backstop: falls back to the emoji when no real art resolves', () => {
+    // An id the assets glob cannot match — forces resolveAvatarSrc to
+    // undefined regardless of which webp files exist on disk, so the D-18
+    // emoji placeholder branch stays covered now that real art has landed.
+    const personaNoArt = {
+      ...PERSONA,
+      id: 'no-such-persona' as typeof PERSONA.id,
+      avatarSrc: undefined,
+    };
+    render(<PersonaCard persona={personaNoArt} onSelect={vi.fn()} />);
 
-    const card = screen.getByTestId(`bots-persona-card-${PERSONA.id}`);
+    const card = screen.getByTestId(`bots-persona-card-${personaNoArt.id}`);
     expect(card.querySelector('img')).toBeNull();
     expect(card.textContent).toContain(PERSONA.avatarEmoji);
   });

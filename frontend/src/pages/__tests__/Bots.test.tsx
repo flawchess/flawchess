@@ -560,7 +560,12 @@ describe('Bots — bot clock persona presence (D-06)', () => {
     await waitFor(() => expect(screen.getByTestId('bots-page')).toBeTruthy());
     const clock = screen.getByTestId('clock-bot');
     expect(clock.textContent).toContain('Ziggy the Wasp');
-    expect(clock.textContent).toContain('🐝');
+    // The estimated ELO label renders below the name.
+    expect(clock.textContent).toContain('~800');
+    // The avatar node renders: either the real-art <img> (when the asset
+    // exists) or the emoji placeholder — both live in the one aria-hidden
+    // avatar circle.
+    expect(clock.querySelectorAll('span[aria-hidden="true"]').length).toBe(1);
   });
 
   it('shows the generic "FlawChess Bot" label for a Custom game (no persona)', async () => {

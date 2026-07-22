@@ -8,8 +8,10 @@
  * by the persona, never a separate strength picker — Pitfall 3) and calls
  * `onStart` exactly once, the SAME entry `SetupScreen`'s Start button calls.
  *
- * Mirrors `GameResultDialog.tsx`'s Dialog shell + mobile-anchor pattern
- * (`top-[30%] sm:top-1/2`).
+ * Mirrors `GameResultDialog.tsx`'s Dialog shell. Uses the DialogContent
+ * default vertical centering on all breakpoints — the previous
+ * `top-[30%] sm:top-1/2` mobile anchor pushed this (tall) dialog off the
+ * top of small screens.
  */
 
 import { useEffect, useState } from 'react';
@@ -199,12 +201,12 @@ export function PersonaDetailSurface({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="top-[30%] sm:top-1/2" data-testid="persona-detail-surface">
+      <DialogContent data-testid="persona-detail-surface">
         <DialogHeader>
-          <DialogTitle className="flex items-center gap-2">
+          <div className="flex items-center gap-3">
             <span
               aria-hidden="true"
-              className="flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-full text-xl"
+              className="flex h-[60px] w-[60px] shrink-0 items-center justify-center overflow-hidden rounded-full text-3xl"
               style={{ backgroundColor: avatar.tint }}
             >
               {avatarSrc !== undefined ? (
@@ -213,24 +215,25 @@ export function PersonaDetailSurface({
                 avatar.emoji
               )}
             </span>
-            {persona.name}
-          </DialogTitle>
+            <div className="flex flex-col gap-1">
+              <DialogTitle>{persona.name}</DialogTitle>
+              {/* Display-only ELO/style text — never an EloSelector/
+                  PlayStyleControl (Pitfall 3): this surface has no strength
+                  picker. The calibrated label (Phase 184 CAL-05) pairs with a
+                  D-08 disclosure popover as supplementary hover/tap detail,
+                  never replacing the visible label. */}
+              <div className="flex items-center gap-1">
+                <p className="text-sm text-muted-foreground" data-testid="persona-detail-meta">
+                  {`${persona.style} · ${persona.calibratedLabel}`}
+                </p>
+                <PersonaEloDisclosurePopover
+                  isFloorRung={persona.rung === 800}
+                  ariaLabel={`About ${persona.name}'s ELO measurement`}
+                />
+              </div>
+            </div>
+          </div>
         </DialogHeader>
-
-        {/* Display-only ELO/style text — never an EloSelector/PlayStyleControl
-            (Pitfall 3): this surface has no strength picker. The calibrated
-            label (Phase 184 CAL-05) pairs with a D-08 disclosure popover as
-            supplementary hover/tap detail, never replacing the visible
-            label. */}
-        <div className="flex items-center gap-1">
-          <p className="text-sm text-muted-foreground" data-testid="persona-detail-meta">
-            {`${persona.style} · ${persona.calibratedLabel}`}
-          </p>
-          <PersonaEloDisclosurePopover
-            isFloorRung={persona.rung === 800}
-            ariaLabel={`About ${persona.name}'s ELO measurement`}
-          />
-        </div>
         <p className="text-sm text-foreground" data-testid="persona-detail-bio">
           {persona.bio}
         </p>

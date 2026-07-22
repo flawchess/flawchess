@@ -36,7 +36,7 @@ export interface PersonaCardProps {
 /** Fixed avatar-circle size (px) — shared by the width/height so the avatar
  * always renders in a perfect circle regardless of Tailwind's responsive
  * grid-column width above it. */
-const AVATAR_SIZE_PX = 48;
+const AVATAR_SIZE_PX = 58;
 
 /** Icon size (px) for each star glyph in the win-stars row (185-UI-SPEC.md). */
 const STAR_SIZE_PX = 14;

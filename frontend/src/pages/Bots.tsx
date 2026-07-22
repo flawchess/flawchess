@@ -51,13 +51,13 @@ import { SetupScreen } from '@/components/bots/SetupScreen';
 import { PersonaGrid } from '@/components/bots/PersonaGrid';
 import { PersonaDetailSurface } from '@/components/bots/PersonaDetailSurface';
 import { personaFor, type Persona } from '@/lib/personas/personaRegistry';
-import { placeholderAvatarFor } from '@/lib/personas/personaAvatars';
 import { useBotGame, type BotGameSettings } from '@/hooks/useBotGame';
 import { useUserProfile } from '@/hooks/useUserProfile';
 import { useBotPersonaWins, BOT_PERSONA_WINS_QUERY_KEY } from '@/hooks/useBotPersonaWins';
 import { useDrainPendingStore, useStoreBotGame, toStoreRequest } from '@/hooks/useStoreBotGame';
 import { useTier1EnqueueForGame } from '@/hooks/useEnqueueGame';
 import { readSnapshot, clearSnapshot, type BotGameSnapshot } from '@/lib/botGameSnapshot';
+import { useMarkBotPlayActive } from '@/lib/botPlayActive';
 import { removePendingStore } from '@/lib/botPendingStore';
 import { resolvePlayerName } from '@/lib/playerName';
 import { setMuted, unlockAudio, useMuted } from '@/lib/sounds';
@@ -214,6 +214,9 @@ function BotsGame({
   const queryClient = useQueryClient();
   const isDesktop = useIsDesktop();
   const muted = useMuted();
+  // Suppress the mobile app header while the game board is on screen — the
+  // board + clocks need the vertical space (ProtectedLayout reads this flag).
+  useMarkBotPlayActive();
   // D-11: `game.newGame` (a public hook API) is intentionally left UNCALLED
   // from this UI — both result surfaces below use `onNewGame` (returns to the
   // setup screen) instead.
@@ -377,7 +380,7 @@ function BotsGame({
   const botClock = (
     <ClockDisplay
       sideLabel={persona?.name ?? 'FlawChess Bot'}
-      avatarEmoji={persona ? placeholderAvatarFor(persona).emoji : undefined}
+      persona={persona ?? undefined}
       remainingMs={botColor === 'white' ? game.whiteClockMs : game.blackClockMs}
       isActive={game.activeColor === botColor}
       isThinking={game.isBotThinking}
