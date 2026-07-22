@@ -4,17 +4,17 @@ milestone: v2.7
 milestone_name: Bot Personas & Playstyle Layer
 current_phase: 185
 current_phase_name: bots-roster-transpose-win-stars
-status: verifying
+status: Phase 185 shipped — squash-merged to main (f5ff3ff4)
 stopped_at: Completed 185-03-PLAN.md
-last_updated: "2026-07-22T16:28:03.603Z"
+last_updated: "2026-07-22T17:17:02.884Z"
 last_activity: 2026-07-22
-last_activity_desc: Phase 185 execution started
 progress:
   total_phases: 4
   completed_phases: 3
   total_plans: 19
   completed_plans: 18
   percent: 75
+last_activity_desc: Phase 185 execution started
 ---
 
 # Project State: FlawChess
@@ -23,8 +23,8 @@ progress:
 
 Phase: 185 (bots-roster-transpose-win-stars) — EXECUTING
 Plan: 3 of 3
-Status: Phase complete — ready for verification
-Last activity: 2026-07-22 — Phase 185 execution started
+Status: Phase 185 shipped — squash-merged to main (f5ff3ff4)
+Last activity: 2026-07-22
 
 ## Project Reference
 
