@@ -35,6 +35,22 @@ export const WDL_WIN = 'oklch(0.50 0.14 145)';
 export const WDL_DRAW = 'oklch(0.60 0.02 260)';
 export const WDL_LOSS = 'oklch(0.50 0.15 25)';
 
+// Celebration confetti palette — a mixed, festive set for the bot-win confetti
+// burst (Quick 260723-tqn). MUST be plain hex: canvas-confetti parses colors by
+// stripping every non-hex char from the string, so oklch()/named colors are
+// silently mangled into muddy browns (its hexToRgb only understands hex). Kept
+// here so the celebration palette lives with the other colors, not hardcoded at
+// the call site. Bright green + gold + amber + blue + pink + violet so the burst
+// reads as a rainbow celebration rather than a single flat hue.
+export const CONFETTI_COLORS = [
+  '#22C55E', // green (win)
+  '#FFD700', // gold
+  '#FF9E1B', // amber
+  '#3B9EFF', // blue
+  '#FF5DA2', // pink
+  '#A970FF', // violet
+];
+
 // Solid WDL accent borders (e.g. game card left edges).
 // Matched to the strength/weakness card severity palette in arrowColor.ts.
 export const WDL_BORDER_WIN = '#036C22';

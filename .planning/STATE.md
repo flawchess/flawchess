@@ -24,7 +24,7 @@ progress:
 Phase: 185 (bots-roster-transpose-win-stars) — EXECUTING
 Plan: 3 of 3
 Status: Phase 185 shipped — squash-merged to main (f5ff3ff4)
-Last activity: 2026-07-23 - Completed quick task 260723-j6g: lichess-eval lane promoted into the tier-3 weighted ES lottery (starvation fix)
+Last activity: 2026-07-23 - Completed quick task 260723-tqn: bot-win celebration (confetti + Victory sound, outcome-specific Defeat/Draw clips)
 
 ## Project Reference
 
@@ -456,6 +456,7 @@ None active.
 | 260722-r7t | Bot persona avatar pipeline: personaAvatarPrompts.md enriched with all 24 bios (doc is now the single generation source of truth); new scripts/gen_persona_avatars.py generates missing frontend/src/assets/personas/{id}.webp avatars via pydantic-ai + google:gemini-3.1-flash-image (1:1, 1K → Pillow 512×512 webp; --limit, --logo-ref, --dry-run; Pillow added as dev dep); resolveAvatarSrc() seam swapped to an eager import.meta.glob over assets/personas/*.webp with emoji fallback preserved (delete-and-rerun curation loop). No images committed — user runs the script with GOOGLE_API_KEY. Frontend gate green (2521 tests, tsc, knip) | 2026-07-22 | 729b5ba2 | [260722-r7t-bot-persona-avatar-generation-prompts-do](./quick/260722-r7t-bot-persona-avatar-generation-prompts-do/) |
 | 260722-ucc | Bot games store the persona name and calibrated ELO (not the internal engine dial) in the PGN bot-side name/Elo tags and games username/rating fields; persona_name/bot_rating wire fields, keyword-only bot_username in normalize_flawchess_game; Custom-mode games unchanged | 2026-07-22 | b02cf181 | [260722-ucc-when-playing-a-bot-store-the-bot-persona](./quick/260722-ucc-when-playing-a-bot-store-the-bot-persona/) |
 | 260723-j6g | Lichess-eval games (full_pv NULL, lichess_evals set) now participate in the tier-3 recency-weighted ES user lottery instead of a residual lane that only ran when the needs-engine backlog was globally empty — fixes multi-day starvation when one user mass-imports (63.5k games, prod user 235); unified Step-1/Step-2 union predicates preserve the guest asymmetry (guests via lichess-eval games only), residual fallback removed, deliberately reverses 174-07's "same precedence" stance; mutation-verified starvation test | 2026-07-23 | ec9940f6 | [260723-j6g-promote-the-lichess-eval-residual-lane-i](./quick/260723-j6g-promote-the-lichess-eval-residual-lane-i/) |
+| 260723-tqn | Bot-win celebration: on a human win vs a bot, play the vendored Victory clip and (unless prefers-reduced-motion) fire a canvas-confetti burst, holding the result modal closed ~1.3s so the confetti plays over the board first; loss/draw now play the previously-unused Defeat/Draw clips instead of the single Checkmate clip and open the modal immediately. Single firing site in finalizeGame; new testable useWinCelebrationHold hook gates GameResultDialog's open prop; all sounds stay mute-gated; confetti accents added to theme.ts. Frontend gate green (2538 tests, tsc, lint, knip) | 2026-07-23 | 7a489371 | [260723-tqn-add-bot-win-celebration-confetti-victory](./quick/260723-tqn-add-bot-win-celebration-confetti-victory/) |
 
 ## Deferred Items
 

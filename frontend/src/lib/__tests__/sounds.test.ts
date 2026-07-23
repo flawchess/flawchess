@@ -83,6 +83,9 @@ describe('sounds', () => {
     ['game-end', 'Checkmate.mp3'],
     ['low-time', 'LowTime.mp3'],
     ['draw-declined', 'GenericNotify.mp3'],
+    ['game-win', 'WinChime.mp3'],
+    ['game-loss', 'Defeat.mp3'],
+    ['game-draw', 'Draw.mp3'],
   ] satisfies [SoundEvent, string][])(
     'dispatches the %s asset (%s)',
     async (event, filename) => {
@@ -129,8 +132,9 @@ describe('sounds', () => {
 
     unlockAudio();
 
-    // Six SoundEvent members, each gets its own preloaded Audio instance.
-    expect(instances).toHaveLength(6);
+    // Nine SoundEvent members (Task 1: added game-win/game-loss/game-draw),
+    // each gets its own preloaded Audio instance.
+    expect(instances).toHaveLength(9);
     for (const instance of instances) {
       expect(instance.play).toHaveBeenCalledTimes(1);
       expect(instance.pause).toHaveBeenCalledTimes(1);

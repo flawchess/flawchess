@@ -52,6 +52,7 @@ import { PersonaGrid } from '@/components/bots/PersonaGrid';
 import { PersonaDetailSurface } from '@/components/bots/PersonaDetailSurface';
 import { personaFor, type Persona } from '@/lib/personas/personaRegistry';
 import { useBotGame, type BotGameSettings } from '@/hooks/useBotGame';
+import { useWinCelebrationHold } from '@/hooks/useWinCelebrationHold';
 import { useUserProfile } from '@/hooks/useUserProfile';
 import { useBotPersonaWins, BOT_PERSONA_WINS_QUERY_KEY } from '@/hooks/useBotPersonaWins';
 import { useDrainPendingStore, useStoreBotGame, toStoreRequest } from '@/hooks/useStoreBotGame';
@@ -235,6 +236,10 @@ function BotsGame({
   const game = useBotGame(settings, resume ?? undefined, ownerKey);
   const [dialogDismissed, setDialogDismissed] = useState(false);
   const hasUnlockedAudioRef = useRef(false);
+  // Quick 260723-tqn: holds the result modal closed for a short window after
+  // a human win so the confetti (fired from useBotGame's finalizeGame) plays
+  // over the board first; false (no hold) for loss/draw/reduced-motion.
+  const celebrationHold = useWinCelebrationHold(game.outcome, settings.userColor);
 
   // D-21 (the CONTEXT amendment): store the finished game ON FINISH, not
   // deferred to the next `/bots` mount.
@@ -507,7 +512,7 @@ function BotsGame({
         <GameResultDialog
           outcome={game.outcome}
           userColor={settings.userColor}
-          open={!dialogDismissed}
+          open={!dialogDismissed && !celebrationHold}
           onDismiss={() => setDialogDismissed(true)}
           onNewGame={onNewGame}
           onAnalyze={handleAnalyze}

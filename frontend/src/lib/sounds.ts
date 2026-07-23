@@ -4,8 +4,14 @@
  * Thin wrapper around `HTMLAudioElement` playing the vendored, license-correct
  * AGPLv3+ lila `sfx` clips (see README.md "## Sound Assets" and RESEARCH.md
  * Pitfall 1 — NOT the non-free "standard" set D-08 originally named). No new
- * npm dependency: six independent, non-overlapping, non-spatial one-shot
+ * npm dependency: nine independent, non-overlapping, non-spatial one-shot
  * clips are exactly `HTMLAudioElement`'s designed use case.
+ *
+ * Quick 260723-tqn: added `game-win`/`game-loss`/`game-draw`, which now play
+ * the previously-unused vendored Victory/Defeat/Draw clips instead of the
+ * single undiscriminated `game-end` (Checkmate) fired for every outcome.
+ * `game-end` itself is kept (still iterated by `unlockAudio`) since callers
+ * may still reference it.
  *
  * Mute persistence (D-10) deliberately does NOT reuse `useUserFlag.ts` — that
  * hook is a one-shot, per-user-email-scoped, set-only-to-true flag (used for
@@ -32,7 +38,10 @@ export type SoundEvent =
   | 'check'
   | 'game-end'
   | 'low-time'
-  | 'draw-declined';
+  | 'draw-declined'
+  | 'game-win'
+  | 'game-loss'
+  | 'game-draw';
 
 // ─── Named constants ─────────────────────────────────────────────────────────
 
@@ -44,11 +53,13 @@ export const MUTE_KEY = 'flawchess_bot_sound_muted';
  * (including the never-written `'0'`) reads as unmuted (default ON, D-10). */
 const MUTED_VALUE = '1';
 
-/** Maps each SoundEvent to its vendored clip filename (without extension)
- * under `frontend/public/sound/`. `game-end` uses `Checkmate` as the single
- * representative clip (Claude's discretion — the SoundEvent union has no
- * win/loss/draw discrimination; Victory/Defeat/Draw remain vendored for a
- * future surface that wants finer-grained game-end sounds). */
+/** Maps each SoundEvent to its clip filename (without extension) under
+ * `frontend/public/sound/`. `game-end` still uses `Checkmate` (kept for any
+ * remaining undiscriminated caller); `game-loss`/`game-draw` (Quick 260723-tqn)
+ * use the vendored lila Defeat/Draw clips. `game-win` uses `WinChime` — a
+ * gentle, self-authored (CC0, no attribution) chime chosen over the vendored
+ * `Victory` fanfare, which read as too aggressive; `Victory.mp3` stays in the
+ * folder for any future surface that wants the fuller sound. */
 const SOUND_FILES: Record<SoundEvent, string> = {
   move: 'Move',
   capture: 'Capture',
@@ -56,6 +67,9 @@ const SOUND_FILES: Record<SoundEvent, string> = {
   'game-end': 'Checkmate',
   'low-time': 'LowTime',
   'draw-declined': 'GenericNotify',
+  'game-win': 'WinChime',
+  'game-loss': 'Defeat',
+  'game-draw': 'Draw',
 };
 
 const SOUND_EVENTS = Object.keys(SOUND_FILES) as SoundEvent[];
