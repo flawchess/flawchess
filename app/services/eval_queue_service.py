@@ -13,19 +13,27 @@ a lock-safe, serialized claim contract (QUEUE-06 / SEED-012 D-8); the claim SQL
 is tier-agnostic (`ORDER BY tier ASC`) so it would transparently pick up a
 future tier-2 row without changes.
 
-Tier-3 is a *derived* pick via an Efraimidis–Spirakis recency-weighted lottery over
-candidate users (games WHERE full_evals_completed_at IS NULL AND lichess_evals_at
-IS NULL AND is_guest=false — the "needs our engine" predicate). No rows are
-pre-populated in eval_jobs for the backlog. This keeps the queue table lean
-(~558k backlog games never pre-inserted) while providing fast catch-up for
-returning users (SEED-046).
+Tier-3 is a *derived* pick via a SINGLE Efraimidis–Spirakis recency-weighted
+lottery over candidate users. Quick 260723-j6g unified the population: a
+candidate user is anyone with EITHER a needs-engine game (full_evals_completed_at
+IS NULL AND lichess_evals_at IS NULL, non-guest only) OR a lichess-eval-pv-
+incomplete game (full_pv_completed_at IS NULL AND lichess_evals_at IS NOT NULL,
+any user incl. guests). No rows are pre-populated in eval_jobs for the backlog.
+This keeps the queue table lean (~558k backlog games never pre-inserted) while
+providing fast catch-up for returning users (SEED-046).
 
-When the primary lottery finds no candidate (no needs-engine games), a residual
-fallback picks a best-move-backfill-only lichess-eval game (lichess_evals_at IS
-NOT NULL AND full_pv_completed_at IS NULL). Phase 174-07/SEED-109 broadened this
-fallback's predicate from full_evals_completed_at IS NULL to full_pv_completed_at
-IS NULL so it also covers the ~43k lichess-eval games that are already eval-complete
-(often stamped at import) but still lack our best_move/PV coverage.
+DELIBERATE PRECEDENCE CHANGE (260723-j6g, supersedes 174-07/SEED-109): prior to
+this quick, the lichess-eval population ran ONLY as a residual fallback — it was
+drawn only when NO needs-engine candidate existed anywhere. Verified against prod
+2026-07-23: user 235's 63.5k-game needs-engine import (~5 days to drain) was
+starving user 28's 3 returning lichess-eval games, because the residual lane never
+got a turn while ANY needs-engine game existed for ANY user. The τ½=1d
+recency-weighted user lottery exists precisely so a returning user wins a fair
+share of draws against a mass importer — but the lichess-eval population never
+entered that lottery. Folding it into the SAME unified Step-1/Step-2 draw fixes
+this: lichess-eval games now compete on equal footing with needs-engine games,
+weighted by the same recency lottery, instead of only draining when the
+needs-engine backlog is globally empty. There is no more residual fallback lane.
 
 Tier 4b (TIER_BESTMOVE_BACKFILL, Phase 176 BACK-01) is a separate spare-capacity
 lottery ordered after tier-4 blob backfill in the bundled scope=None path: it
@@ -421,69 +429,77 @@ async def _es_weighted_game_pick(
 async def _claim_tier3_derived(
     session: AsyncSession,
 ) -> tuple[int, int, bool] | None:
-    """Derive a tier-3 pick using a recency-weighted Efraimidis–Spirakis user lottery.
+    """Derive a tier-3 pick using ONE unified recency-weighted Efraimidis–Spirakis
+    user lottery over the needs-engine ∪ lichess-eval-pv-incomplete population
+    (260723-j6g — see the module docstring's DELIBERATE PRECEDENCE CHANGE note).
 
     Two steps in a single session (no locking — see Phase 118 note below), both
     built on the shared _es_weighted_user_pick / _es_weighted_game_pick building
-    blocks (WRITE-06):
+    blocks (WRITE-06). There is no residual fallback lane — the population that
+    used to run there is folded directly into Step 1/Step 2 below.
 
-    Step 1 — WEIGHTED USER PICK (SEED-046):
-      Candidate users = non-guest users with at least one needs-engine game
-      (full_evals_completed_at IS NULL AND lichess_evals_at IS NULL). This raw
-      predicate is backed by the ix_games_needs_engine_full_evals partial index
-      (added by migration 119-01).
+    Step 1 — UNIFIED WEIGHTED USER PICK (SEED-046, unified 260723-j6g):
+      Candidate users = users with at least one game matching EITHER branch of
+      the union:
+        (a) needs-engine: full_evals_completed_at IS NULL AND lichess_evals_at
+            IS NULL, guarded by u.is_guest = false (QUEUE-08 — guests never
+            qualify via this branch); backed by the
+            ix_games_needs_engine_full_evals partial index (migration 119-01).
+        (b) lichess-eval-pv-incomplete: full_pv_completed_at IS NULL AND
+            lichess_evals_at IS NOT NULL, unguarded so guests DO qualify via
+            this branch (the same guest-eligible lane the old residual fallback
+            ran, Quick 260719-fsz); backed by the
+            ix_games_lichess_pv_backfill_pending partial index (174-07).
+      _es_weighted_user_pick is called with include_guests=True so its own
+      outer `u.is_guest = false AND` filter is DROPPED — the per-branch guard
+      above is what enforces QUEUE-08 now, expressed inside the EXISTS subquery
+      (valid: the subquery is correlated on u.id, so u.is_guest is in scope).
       weight = exp(-Δt/τ) + WEIGHT_FLOOR, where Δt = seconds since last_activity
       (NULL → coalesced to a very old timestamp so the exp term ≈ 0 and weight ≈
       floor), τ = RECENCY_HALF_LIFE_DAYS / ln(2) converted to seconds. weight is
       always > 0 (guards div-by-zero in the ES key).
 
-    Step 2 — WEIGHTED GAME PICK FOR PICKED USER (D-7):
-      Within the chosen user, pick a needs-engine game via the same ES
-      weighted-random key used in Step 1 — game_weight = tc_multiplier *
-      (exp(-Δt_played / τ_game) + GAME_WEIGHT_FLOOR). tc_multiplier comes from
+    Step 2 — UNIFIED WEIGHTED GAME PICK FOR PICKED USER (D-7, unified 260723-j6g):
+      Within the chosen user, pick a game via the SAME union predicate as Step 1,
+      scoped to g.user_id = :picked_user — game_weight = tc_multiplier *
+      (exp(-Δt_played / τ_game) + GAME_WEIGHT_FLOOR). The needs-engine branch is
+      guarded by `EXISTS (SELECT 1 FROM users u WHERE u.id = :picked_user AND
+      u.is_guest = false)` so a guest's needs-engine game can NEVER be picked
+      here even if Step 1 somehow picked a guest (it only can via branch (b));
+      the lichess-eval branch is unguarded. tc_multiplier comes from
       GAME_TC_WEIGHTS (classical=8 > rapid=4 > blitz=2 > bullet=1 > other=0.5),
       τ_game derives from GAME_RECENCY_HALF_LIFE_DAYS, and Δt_played is seconds
-      since played_at (NULL coalesced to epoch-0 so a game without a played_at
-      date collapses to floor weight, matching the previous NULLS LAST
-      deprioritization intent). This replaces the old deterministic
-      ORDER BY tc_case, played_at DESC LIMIT 1 (D-7: three workers landing on
-      the same user now usually pick different games, cutting avoidable wasted
-      eval cycles; D-4 residual-duplicate acceptance still stands).
-      Both callers benefit: the in-process server pool and the 120-02 HTTP lease
-      endpoint both reach this via claim_eval_job / direct call — no caller change
-      needed.
+      since played_at (NULL coalesced to epoch-0). This preserves D-7 (three
+      workers landing on the same user usually pick different games; D-4
+      residual-duplicate acceptance still stands). Both callers benefit: the
+      in-process server pool and the 120-02 HTTP lease endpoint both reach this
+      via claim_eval_job / direct call — no caller change needed.
 
-    RESIDUAL FALLBACK (when no needs-engine candidate exists anywhere):
-      Pick a best-move-backfill-only lichess-eval game (full_pv_completed_at IS
-      NULL AND lichess_evals_at IS NOT NULL AND is_guest=false) via the same ES
-      game_weight formula and ORDER BY -ln(random()) / game_weight LIMIT 1 (D-7:
-      same collision shape as Step 2 under contention; symmetry preferred over a
-      "left deterministic because rare" carve-out). The guest exclusion is
-      expressed as an EXISTS subquery (equivalent to the old JOIN users — a
-      game's user_id maps to exactly one user row, so no cardinality change)
-      since _es_weighted_game_pick's base query is `FROM games g` alone.
-      Returns is_lichess_eval_game=True for this path only.
+      After Step 2 returns a game_id, is_lichess_eval_game is derived PER-GAME
+      via a PK-indexed lookup (`select(Game.lichess_evals_at).where(Game.id ==
+      game_id)`) rather than assumed from which branch "should" have matched —
+      this is more robust than branch-tagging and matches how the tier-1/2 and
+      tier-4b paths already resolve the flag elsewhere in this module.
 
-      Phase 174-07 (SEED-109 item 2): this predicate was BROADENED from
-      full_evals_completed_at IS NULL to full_pv_completed_at IS NULL — its
-      precedence (final fallback after the needs-engine Step 1/2 pick) is
-      UNCHANGED, so no new rung and no new starvation dynamic is introduced. The
-      new population is a strict superset of the old one (an eval-incomplete
-      lichess game is necessarily pv-incomplete too), so this purely ADDS the
-      eval-complete-but-pv-incomplete backlog (~43k games, many stamped
-      full_evals_completed_at at import) without losing any prior behavior.
-      Draining a picked game through the unified 174-06 full pass stamps
-      full_pv_completed_at, which drops it out of this same predicate on the
-      next draw — self-terminating, no operator script, no completion deadline.
+      If Step 1 returns None (no candidate anywhere) → return None. If Step 2
+      returns None (a race: the picked user's matching games drained between
+      Step 1 and Step 2) → return None; the next tick re-draws. There is
+      deliberately NO fallback lane here — reintroducing one would resurrect
+      the precedence bug this quick fixes.
 
     This replaces the old D-118-04 last_activity DESC winner-take-all ordering and
     drops the dead lichess_evals_at tiebreaker (live prod bug: it was the LAST ORDER
     key and played_at broke ties first, so lichess games were picked at full engine
     cost despite the needs-engine predicate above saying to skip them — ~70%
-    throughput waste on user 28; see RESEARCH-NOTES §Live prod bug).
+    throughput waste on user 28; see RESEARCH-NOTES §Live prod bug). It further
+    replaces the 174-07/SEED-109 residual-fallback precedence (lichess-eval games
+    only drawn when the needs-engine backlog is globally empty) with the unified
+    single-lottery precedence described above (260723-j6g).
 
-    Guest games are excluded (QUEUE-08) via the shared building blocks' is_guest
-    filter / EXISTS subquery.
+    Guest asymmetry (QUEUE-08, Quick 260719-fsz) is preserved but now expressed
+    per-branch inside the unified predicate rather than via a blanket outer
+    filter: guests are eligible ONLY through the lichess-eval branch, never the
+    needs-engine branch, in both Step 1 and Step 2.
 
     Returns (game_id, user_id, is_lichess_eval_game) or None when nothing to process.
 
@@ -493,9 +509,17 @@ async def _claim_tier3_derived(
     the ephemeral TTL-lease escalation (D-4 "later") remains the deferred zero-
     collision endgame. Add FOR UPDATE SKIP LOCKED when multi-worker leasing is added.
 
-    Security: τ_seconds, floor_val, game τ and multipliers bound as :params —
-    no f-string-interpolated VALUES anywhere (see _es_weighted_user_pick /
-    _es_weighted_game_pick docstrings for the query-shape-vs-value distinction).
+    Security: τ_seconds, floor_val, game τ and multipliers, and :picked_user are
+    all bound as :params — no f-string-interpolated VALUES anywhere (see
+    _es_weighted_user_pick / _es_weighted_game_pick docstrings for the
+    query-shape-vs-value distinction). The EXISTS-subquery fragments composed
+    here are trusted hardcoded literals, never derived from request/user input.
+
+    Index note (no migration needed): both branches of the unified predicate are
+    already backed by existing partial indexes on games(user_id) —
+    ix_games_needs_engine_full_evals (needs-engine) and
+    ix_games_lichess_pv_backfill_pending (lichess-eval-pv-incomplete, 174-07) —
+    so PostgreSQL can BitmapOr the two partials for Step 1's EXISTS predicate.
     """
     # Convert half-life (days) to the decay constant τ in seconds.
     # τ = τ½ / ln2; weight = exp(-Δt_seconds / τ_seconds) + floor
@@ -507,70 +531,67 @@ async def _claim_tier3_derived(
     tau_game_seconds: float = GAME_RECENCY_HALF_LIFE_DAYS / math.log(2) * 86400.0
     game_floor: float = GAME_WEIGHT_FLOOR
 
-    # Step 1: ES weighted user pick over needs-engine games.
-    # ix_games_needs_engine_full_evals (119-01 migration) covers
-    # WHERE full_evals_completed_at IS NULL AND lichess_evals_at IS NULL.
+    # Step 1: unified ES weighted user pick over the needs-engine ∪ lichess-eval-
+    # pv-incomplete union (260723-j6g). include_guests=True drops
+    # _es_weighted_user_pick's own outer guest filter — the per-branch guard
+    # below (u.is_guest = false on branch (a) only) is what enforces QUEUE-08.
     picked_user_id = await _es_weighted_user_pick(
         session,
         candidate_exists_sql="""
                 SELECT 1 FROM games g
                 WHERE g.user_id = u.id
-                  AND g.full_evals_completed_at IS NULL
-                  AND g.lichess_evals_at IS NULL
+                  AND (
+                    (u.is_guest = false
+                     AND g.full_evals_completed_at IS NULL
+                     AND g.lichess_evals_at IS NULL)
+                    OR
+                    (g.full_pv_completed_at IS NULL
+                     AND g.lichess_evals_at IS NOT NULL)
+                  )
         """,
         recency_col_sql="u.last_activity",
         tau_seconds=tau_seconds,
         floor=floor_val,
+        include_guests=True,
     )
+    if picked_user_id is None:
+        return None
 
-    if picked_user_id is not None:
-        # Step 2: ES weighted game pick for the picked user (D-7).
-        game_id = await _es_weighted_game_pick(
-            session,
-            game_where_sql=(
-                "g.user_id = :picked_user"
-                " AND g.full_evals_completed_at IS NULL"
-                " AND g.lichess_evals_at IS NULL"
-            ),
-            recency_col_sql="g.played_at",
-            tau_seconds=tau_game_seconds,
-            game_floor=game_floor,
-            tc_weights=GAME_TC_WEIGHTS,
-            extra_params={"picked_user": picked_user_id},
-        )
-        if game_id is not None:
-            # Needs-engine game → is_lichess_eval_game=False by construction.
-            return game_id, picked_user_id, False
-
-    # Residual fallback: no needs-engine candidate exists → try best-move-backfill-only
-    # lichess-eval games (174-07/SEED-109: broadened from full_evals_completed_at IS NULL
-    # to full_pv_completed_at IS NULL — same precedence, strictly superset population).
-    # Only path that returns is_lichess_eval_game=True.
-    fallback_game_id = await _es_weighted_game_pick(
+    # Step 2: unified ES weighted game pick for the picked user, mirroring the
+    # SAME union predicate. The needs-engine branch is guarded by an EXISTS
+    # check on the picked user's is_guest flag (a guest can only have reached
+    # here via branch (b), but this keeps the two branches independently
+    # correct rather than relying on that invariant holding).
+    game_id = await _es_weighted_game_pick(
         session,
         game_where_sql=(
-            "g.full_pv_completed_at IS NULL AND g.lichess_evals_at IS NOT NULL"
-            # Quick 260719-fsz: guests are now INCLUDED in this residual
-            # lichess-eval lane — a deliberate scoped reversal of QUEUE-08 for
-            # THIS lane only (CONTEXT "Guest data — process them"). ~18.9k guest
-            # lichess games that only have imported evals need the full engine
-            # pass to earn best/gem moves. Other tiers' user pick still excludes
-            # guests via _es_weighted_user_pick's default.
+            "g.user_id = :picked_user"
+            " AND ("
+            "  (EXISTS (SELECT 1 FROM users u WHERE u.id = :picked_user AND u.is_guest = false)"
+            "   AND g.full_evals_completed_at IS NULL"
+            "   AND g.lichess_evals_at IS NULL)"
+            "  OR"
+            "  (g.full_pv_completed_at IS NULL AND g.lichess_evals_at IS NOT NULL)"
+            " )"
         ),
         recency_col_sql="g.played_at",
         tau_seconds=tau_game_seconds,
         game_floor=game_floor,
         tc_weights=GAME_TC_WEIGHTS,
+        extra_params={"picked_user": picked_user_id},
     )
-    if fallback_game_id is None:
+    if game_id is None:
+        # Race: the picked user's matching games drained between Step 1 and
+        # Step 2. No fallback lane — the next tick re-draws (260723-j6g).
         return None
 
-    # _es_weighted_game_pick only returns game_id — fetch the owning user_id via a
-    # trivial PK-indexed lookup (the residual fallback is the one caller that needs
-    # a paired (game_id, user_id), unlike Step 2 which already knows picked_user_id).
-    user_result = await session.execute(select(Game.user_id).where(Game.id == fallback_game_id))
-    fallback_user_id: int = user_result.scalar_one()
-    return fallback_game_id, fallback_user_id, True
+    # Derive is_lichess_eval_game PER-GAME (not per-branch) via a trivial
+    # PK-indexed lookup, mirroring how the tier-1/2 and tier-4b paths resolve
+    # the same flag elsewhere in this module.
+    lichess_result = await session.execute(select(Game.lichess_evals_at).where(Game.id == game_id))
+    is_lichess_eval_game = lichess_result.scalar_one_or_none() is not None
+
+    return game_id, picked_user_id, is_lichess_eval_game
 
 
 async def _claim_tier4_blob(

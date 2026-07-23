@@ -795,18 +795,22 @@ class TestTier3Lottery:
         finally:
             await _delete_games(queue_session_maker, [game_a, game_b])
 
-    async def test_tier3_never_picks_lichess_while_engine_candidate_exists(
+    async def test_tier3_lichess_and_engine_both_participate(
         self,
         tier2_test_users: dict[str, int],
         queue_session_maker: async_sessionmaker[AsyncSession],
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        """The leak fix: with a needs-engine game and a lichess-eval game for the same
-        user (both full_evals_completed_at IS NULL), the primary lottery NEVER picks the
-        lichess-eval game while the needs-engine game exists.
+        """260723-j6g unified contract: a non-guest user owning BOTH a needs-engine
+        game and a lichess-eval-pv-incomplete game has BOTH games participate in the
+        SAME unified lottery — the lichess-eval game no longer starves behind the
+        needs-engine game for the same user.
 
-        Replaces the old test_tier3_pv_ordering single-pick assertion with a
-        'never picks lichess while engine candidate exists' assertion.
+        Replaces the old test_tier3_never_picks_lichess_while_engine_candidate_exists,
+        which encoded the now-superseded 174-07/SEED-109 precedence (lichess-eval
+        games NEVER picked while a needs-engine game exists). Asserts a distribution
+        (both counts > 0), not strict ordering — the lottery is probabilistic
+        (mirrors test_tier3_recency_weighting's style).
         """
         import app.services.eval_queue_service as svc
         from app.models.user import User
@@ -823,7 +827,7 @@ class TestTier3Lottery:
             )
             await session.commit()
 
-        # needs-engine game: lichess_evals_at IS NULL → should be the primary candidate
+        # needs-engine game: lichess_evals_at IS NULL.
         needs_engine_game = await _insert_game(
             queue_session_maker,
             user_id,
@@ -831,28 +835,122 @@ class TestTier3Lottery:
             lichess_evals_at=None,
             played_at=now,
         )
-        # lichess-eval game: lichess_evals_at IS NOT NULL → excluded from primary lottery
+        # lichess-eval-pv-incomplete game: full_pv_completed_at IS NULL AND
+        # lichess_evals_at IS NOT NULL — now unified into the SAME lottery.
         lichess_game = await _insert_game(
             queue_session_maker,
             user_id,
             full_evals_completed_at=None,
+            full_pv_completed_at=None,
             lichess_evals_at=now,
             played_at=now,
         )
 
         from app.services.eval_queue_service import _claim_tier3_derived
 
+        n_draws = 200
+        count_needs_engine = 0
+        count_lichess = 0
         try:
             async with queue_session_maker() as session:
-                for i in range(20):
+                for _ in range(n_draws):
                     result = await _claim_tier3_derived(session)
-                    assert result is not None, f"Draw {i}: expected a result, got None"
-                    picked_game_id = result[0]
-                    assert picked_game_id == needs_engine_game, (
-                        f"Draw {i}: primary lottery must NEVER pick the lichess-eval "
-                        f"game {lichess_game} while needs-engine game {needs_engine_game} "
-                        f"exists; got {picked_game_id}"
-                    )
+                    if result is not None:
+                        picked_game_id = result[0]
+                        if picked_game_id == needs_engine_game:
+                            count_needs_engine += 1
+                        elif picked_game_id == lichess_game:
+                            count_lichess += 1
+
+            assert count_needs_engine > 0, (
+                f"needs-engine game {needs_engine_game} must win at least one draw "
+                f"of {n_draws}; got 0"
+            )
+            assert count_lichess > 0, (
+                f"lichess-eval game {lichess_game} must win at least one draw of "
+                f"{n_draws} (it must NOT starve behind the needs-engine game for "
+                f"the same user); got 0"
+            )
+        finally:
+            await _delete_games(queue_session_maker, [needs_engine_game, lichess_game])
+
+    async def test_tier3_lichess_does_not_starve_behind_mass_importer(
+        self,
+        tier2_test_users: dict[str, int],
+        queue_session_maker: async_sessionmaker[AsyncSession],
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Core starvation-fix proof (260723-j6g, prod 2026-07-23 motivation): two
+        EQUALLY-RECENT non-guest users, user_a owning a needs-engine game and user_b
+        owning a lichess-eval-pv-incomplete game. Over ~200 draws, user_b's
+        lichess-eval game is picked with frequency > 0 — it no longer starves behind
+        the needs-engine population, which is exactly what happened under the OLD
+        residual-fallback precedence (lichess-eval only drawn when NO needs-engine
+        candidate existed ANYWHERE, i.e. for ANY user, not just this one).
+        """
+        import app.services.eval_queue_service as svc
+        from app.models.user import User
+
+        monkeypatch.setattr(svc, "async_session_maker", queue_session_maker)
+
+        user_a = tier2_test_users["tier3_a"]
+        user_b = tier2_test_users["tier3_b"]
+        now = datetime.now(timezone.utc)
+
+        # Both users equally recently active — no recency advantage either way.
+        async with queue_session_maker() as session:
+            await session.execute(
+                sa_update(User).where(User.id == user_a).values(last_activity=now)
+            )
+            await session.execute(
+                sa_update(User).where(User.id == user_b).values(last_activity=now)
+            )
+            await session.commit()
+
+        # user_a: needs-engine game (the "mass importer" population).
+        needs_engine_game = await _insert_game(
+            queue_session_maker,
+            user_a,
+            full_evals_completed_at=None,
+            lichess_evals_at=None,
+            played_at=now,
+        )
+        # user_b: lichess-eval-pv-incomplete game (the "returning user" population
+        # that used to starve behind the residual fallback precedence).
+        lichess_game = await _insert_game(
+            queue_session_maker,
+            user_b,
+            full_evals_completed_at=None,
+            full_pv_completed_at=None,
+            lichess_evals_at=now,
+            played_at=now,
+        )
+
+        from app.services.eval_queue_service import _claim_tier3_derived
+
+        n_draws = 200
+        count_a = 0
+        count_b = 0
+        try:
+            async with queue_session_maker() as session:
+                for _ in range(n_draws):
+                    result = await _claim_tier3_derived(session)
+                    if result is not None:
+                        picked_game_id = result[0]
+                        if picked_game_id == needs_engine_game:
+                            count_a += 1
+                        elif picked_game_id == lichess_game:
+                            count_b += 1
+
+            assert count_a > 0, (
+                f"user_a's needs-engine game {needs_engine_game} must win at least "
+                f"one draw of {n_draws}; got 0"
+            )
+            assert count_b > 0, (
+                f"user_b's lichess-eval game {lichess_game} must win at least one "
+                f"draw of {n_draws} — it must NOT starve behind user_a's "
+                "needs-engine game; got 0"
+            )
         finally:
             await _delete_games(queue_session_maker, [needs_engine_game, lichess_game])
 
@@ -862,10 +960,13 @@ class TestTier3Lottery:
         queue_session_maker: async_sessionmaker[AsyncSession],
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        """Residual fallback: when NO needs-engine game exists, the residual tier
-        returns a PV-backfill-only lichess game (lichess_evals_at IS NOT NULL).
+        """Behavior preserved under the unified lottery (260723-j6g): when the ONLY
+        candidate is a PV-backfill-only lichess game (lichess_evals_at IS NOT NULL),
+        the unified Step-1/Step-2 draw still returns it — there is no longer a
+        separate "residual tier", but a lone lichess-eval candidate still wins by
+        being the only match in the union.
 
-        is_lichess_eval_game must be True for such a residual pick.
+        is_lichess_eval_game must be True for such a pick.
         """
         import app.services.eval_queue_service as svc
         from app.models.user import User
@@ -906,10 +1007,13 @@ class TestTier3Lottery:
         finally:
             await _delete_games(queue_session_maker, [pv_only_game])
 
-    # ─── Phase 174-07 / SEED-109 item 2: residual fallback broadened ──────────
-    # full_evals_completed_at IS NULL -> full_pv_completed_at IS NULL, same
-    # precedence, strict superset population (backfills the ~43k lichess-eval
-    # backlog that's already eval-complete but PV/best-move-incomplete).
+    # ─── Phase 174-07 / SEED-109 item 2: lichess-eval predicate broadened ──────
+    # full_evals_completed_at IS NULL -> full_pv_completed_at IS NULL, strict
+    # superset population (backfills the ~43k lichess-eval backlog that's
+    # already eval-complete but PV/best-move-incomplete). This predicate is now
+    # branch (b) of the 260723-j6g unified lottery, not a separate residual
+    # lane — these tests still verify the predicate's own boundaries, which the
+    # unified draw preserves unchanged.
 
     async def test_residual_fallback_includes_full_evals_stamped_backlog_game(
         self,
