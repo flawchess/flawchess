@@ -46,12 +46,34 @@ A pure-function **interval ladder keyed by mastery streak**:
 Wrong answer → streak resets to 0, item returns next session. State per item: `streak`,
 `due_date` (plus a solve log). Fully testable, no dependency.
 
-### Session composition: exactly N, cap + backfill
+### Session composition: exactly N, cap + backfill, ~25% red herrings
 
-Session = min(N, due items), **most-overdue first**; if due < N, pad up to N by
-**introducing new flaws** from the pool (recent games preferred). Every session is
-exactly N while the pool lasts (Anki's model). Backlogs drain gradually; being caught up
-never yields an empty session.
+Every session is exactly N while material lasts:
+
+- **~75% of N — SR items**: due items **most-overdue first**; if due < slots, pad by
+  **introducing new flaws** from the pool (recent games preferred). Backlogs drain
+  gradually; being caught up never yields an empty session (Anki's model).
+- **~25% of N — red herrings**: one-off fillers drawn fresh from the herring source
+  (below), recency-weighted, no repeats until the source is exhausted. No streak/due
+  bookkeeping — they vaccinate against "there's always a killer move here"
+  pattern-gaming, they're not material to master. Failing one just shows the reveal.
+
+### Puzzle taxonomy: three types, one grading rule
+
+All puzzles look identical to the solver ("play the best move you can find") and share
+one grading rule; they differ only in sourcing and reveal messaging:
+
+1. **Sharp find-the-move** — own blunder where the blob's best-vs-second expected-score
+   gap is large: effectively only the best move grades correct.
+2. **Avoid-the-blunder** — own blunder where best-vs-second is close: several moves
+   grade correct; the point is not repeating the mistake.
+3. **Red herring** — a position the user handled *well* with several roughly-equal
+   options, sourced from **non-gem `game_best_moves` candidate rows** (user played the
+   stored best move out-of-book, best ≈ second — the exact complement of gem
+   detection). Winnability-floor applies. No new analysis needed.
+
+The best-vs-second gap is a **classifier, not an entry gate** — soft-answer blunders
+become type 2 instead of being excluded, so the pool grows.
 
 ### Pool entry (which flaws qualify)
 
@@ -61,11 +83,12 @@ never yields an empty session.
 - **Winnability floor** — exclude positions already lost before the blunder (expected
   score below ~20–25%, via `eval_cp_to_expected_score`). Drilling hopeless positions
   teaches nothing.
-- **Sharp answer key** — require a stored `best_move` + `pv` for the position, and a
-  clear gap between best and second-best continuation so one-attempt grading is fair.
-  **Open question:** MultiPV-2 second-best data only exists for gem-candidate plies
-  (`game_best_moves`); the sharpness filter needs either an approximation (e.g. blunder
-  swing magnitude as proxy) or a small backfill. Phase researcher decides.
+- **Answer key present** — require stored `best_move` + `pv` AND a non-empty
+  `game_flaws.missed_pv_lines` blob (node 0 carries best `b`/`bm` vs second-best
+  `s`/`sm`/`su` — MultiPV-2 at the decision position, Phase 141). The blob classifies
+  the puzzle as sharp vs avoid-the-blunder (see taxonomy above). Blobs are tier-4
+  opportunistic (new games ~100% inline, backlog still filling), so this is a
+  present-data filter, not a blocker.
 - **Recency-weighted introduction** — prefer flaws from recent games when padding
   sessions with new items. No Zobrist dedup (repeat blunders may coexist).
 
@@ -82,10 +105,14 @@ decides *when* reps happen; this counter decides *retirement*.
 - **Lichess-minimal solve screen**: board oriented to user's color, opponent's last move
   animated + highlighted, "White/Black to move" prompt. No eval bar, no game metadata —
   nothing that leaks the answer or severity.
-- **Grading is fully client-side**: exact match to stored `best_move` → instant correct;
-  any other move → the vendored client Stockfish WASM (shipped for Bot Play, v2.3)
-  evals it ~1s and grades by expected-score gap vs the best line. No grading endpoint,
-  no backend engine load. Backend only **records results** (streak, due date, solve log).
+- **Grading is fully client-side and uniform across all three puzzle types**: exact
+  match to stored `best_move` → instant correct; any other move → the vendored client
+  Stockfish WASM (shipped for Bot Play, v2.3) evals it ~1s. **Correct = the played
+  move's expected-score drop vs best stays below the project's existing MISTAKE
+  threshold** (reuse the flaw-taxonomy constants; inaccuracies pass). Sharp puzzles
+  still effectively require the best move because second-best is a mistake there by
+  construction. No grading endpoint, no backend engine load. Backend only **records
+  results** (streak, due date, solve log).
 - **Reveal (after the attempt)**: original blunder vs best line (pv shown passively as a
   playable/steppable line), plus the game card and a deep link into the analysis board
   ("see what actually happened"). Full game context lives here, not on the solve screen.
@@ -120,14 +147,24 @@ subscription storage, scheduled sender) is its own project; defer to v2.
 - **GM-coach collaboration loop** — dropped from this seed. The `/train-sketch`
   prototype built for it was deleted on 2026-07-23 (route + `frontend/src/pages/TrainSketch/`).
 - **Zobrist dedup of repeat blunders** — not necessary.
+- **Sharp answer key as an entry GATE** (round-1 decision) — superseded in round 2: the
+  best-vs-second gap classifies puzzle type instead of excluding soft-answer blunders.
+- **Per-type grading thresholds** — rejected; one uniform not-a-mistake rule keeps the
+  solver-facing contract honest and the grading code type-blind.
+- **SR-tracking red herrings** (streaks/due dates, or fail-promotes-to-pool) — rejected;
+  herrings are one-off fillers.
 
 ## Data Dependencies (all shipped)
 
 - `game_flaws` — materialized blunders/mistakes for both players (v1.24/v1.27); ply
   parity gives ownership.
 - `game_positions.best_move` / `.pv` — full-game eval pipeline (v1.26+); the answer key.
-- `game_best_moves` — MultiPV-2 best/second eval for gem-candidate plies (v2.4);
-  possible input to the sharpness filter.
+- `game_flaws.missed_pv_lines` — write-once JSONB blob (Phase 141); node 0 has best
+  (`b`/`bm`) + second-best (`s`/`sm`/`su`) — the sharp-vs-soft puzzle classifier.
+  Deferred column: load via `undefer()`. Tier-4 opportunistic coverage.
+- `game_best_moves` — MultiPV-2 best/second eval for plies where the user played the
+  stored best move out-of-book (v2.4); **non-gem rows (best ≈ second) are the red
+  herring source**. Same opportunistic-backfill caveat (two populations).
 - Client Stockfish WASM — vendored for Bot Play (v2.3); the grading engine.
 - `eval_cp_to_expected_score` (`app/services/eval_utils.py`) — expected-score mapping
   for the winnability floor and grading verdicts.
@@ -142,9 +179,10 @@ top-level page is **Train** (nav `Import · Openings · Endgames · Library · T
 ## Phase Decomposition (rough sketch — planner refines)
 
 1. **Pool + scheduler backend.** Drill-item data model (per-user per-flaw: streak,
-   due_date, solve log), pool-entry query (blunders, ownership, winnability, sharpness,
-   recency), interval ladder, session-composition endpoint, result-recording endpoint.
-   Includes resolving the sharpness-filter open question.
+   due_date, solve log), pool-entry query (blunders, ownership, winnability, blob
+   present, recency), sharp-vs-soft blob classifier, red-herring source query
+   (non-gem `game_best_moves`), interval ladder, session-composition endpoint
+   (75/25 mix), result-recording endpoint.
 2. **Train page + solve loop (frontend).** Route + nav, session flow
    (queue → solve → reveal → done), client-side grading via Stockfish WASM, reveal with
    pv + game card + analysis-board link.
@@ -153,8 +191,6 @@ top-level page is **Train** (nav `Import · Openings · Endgames · Library · T
 
 ## Deferred / v2
 
-- **Red herrings** — positions with no clear best move where the user did NOT err, mixed
-  in to prevent "there's always a tactic here" pattern-gaming.
 - **Mistakes tier** — expand pool entry beyond blunders.
 - **Push/email reminders** — PWA push subsystem or an email pipeline.
 - **Half-credit / retry variants** — if one-attempt proves too harsh in practice.
@@ -170,6 +206,12 @@ top-level page is **Train** (nav `Import · Openings · Endgames · Library · T
   eval swings into training positions (sharpness filtering ideas).
 
 ## Source / decision log
+
+**2026-07-23 round 2 (user + Claude):** red herrings promoted from v2 into v1 at ~25%
+of each session (one-off fillers, sourced from non-gem `game_best_moves` rows);
+avoid-the-blunder puzzle type added; sharp-answer-key gate demoted to a classifier fed
+by `missed_pv_lines` blob MultiPV-2 data (resolves the round-1 open question); grading
+unified to one not-a-mistake threshold across all types.
 
 **2026-07-23 refinement (user + Claude, gsd-explore):** all Settled Design decisions
 above; `/train-sketch` prototype deleted; GM-coach loop dropped; FSRS rejected in favor
