@@ -3,112 +3,180 @@ id: SEED-037
 status: dormant
 planted: 2026-06-04
 planted_during: 2026-06-04 split of SEED-010 into Library (SEED-036) + Train (this seed)
+refined: 2026-07-23 (gsd-explore session — full design settled, stale premises removed)
 lineage: split from SEED-010 (planted 2026-05-01, reworked 2026-06-03); SEED-010 closed
-trigger_when: AFTER the Library milestone (SEED-036) ships — Train reuses Library's mistake-detection layer and best-move endpoint — OR when user invokes `/gsd-new-milestone` for Train
+trigger_when: user invokes `/gsd-new-milestone` for Train (all data dependencies already shipped as of v2.5)
 scope: milestone (multi-phase)
-depends_on: SEED-036 (Library — mistake-detection service + single-position best-move endpoint)
+depends_on: none open — the original SEED-036 dependencies are satisfied or obsolete (see Data Dependencies)
 ---
 
 # SEED-037: Train — spaced-repetition blunder drills
 
-> **Lineage.** Split out of SEED-010 (now closed) on 2026-06-04. SEED-010's "Deferred extensions → Spaced-repetition blunder training (NEXT milestone)" section is the origin of this seed. The whole-game analysis page it depended on is **SEED-036 (Library)**.
+> **Lineage.** Split out of SEED-010 (closed) on 2026-06-04. Refined 2026-07-23 in a
+> gsd-explore session: the design below is *settled*, not provisional. The old seed's
+> premises (best-move endpoint dependency, FSRS adoption, GM-coach prototype loop) are
+> superseded — see Rejected Alternatives.
 
 ## Why This Matters
 
-This is the **retention play** — the feature that turns FlawChess from an analysis tool into a habit. Analysis tells a user *where* they went wrong; training makes them *stop* going wrong by re-presenting their own blunders on a spaced schedule until the pattern sticks. Aimchess monetizes essentially this at $7.99/mo; FlawChess differentiates on price (free/open) and on training from the user's *own* games rather than generic puzzles.
+The **retention play** — the feature that turns FlawChess from an analysis tool into a
+habit. Analysis tells a user *where* they went wrong; training makes them *stop* going
+wrong by re-presenting their own blunders on a spaced schedule until the pattern sticks.
+Aimchess monetizes essentially this at $7.99/mo; FlawChess differentiates on price
+(free/open) and on training from the user's *own* games rather than generic puzzles.
 
-The mechanism: present the user positions from their recent games where they blundered and ask them to play a better move; if they repeat the blunder or play another weak move, show the original blunder and the better move; re-present the position on a later spaced interval (FSRS).
+## Settled Design (2026-07-23)
 
-## When to Surface
+### Training model: true spaced repetition, session-gated
 
-- **After SEED-036 (Library) ships.** Train depends on Library's mistake-detection layer (which positions were blunders, with FEN + side + eval-before/after context) and on Library's single-position best-move endpoint (for move grading). Do not start Train before those exist.
-- OR when the user invokes `/gsd-new-milestone` for Train.
+Per-item due dates, but sessions happen on a **user-configured weekly schedule**
+(weekday picker + N puzzles per session). Due dates snap to the first scheduled session
+on/after the ideal date. The schedule is a commitment device, not a lock — an ad-hoc
+"train now" session on an off day is allowed and draws the same queue.
 
-## Hard dependency on SEED-036 (Library)
+### Scheduler: rolled our own (FSRS rejected)
 
-Train consumes two things Library builds, neither of which should be rebuilt here:
-- **Mistake-detection service** — returns mistake plies with enough context (FEN, side to move, eval before/after) for the trainer to construct a drill directly. Library is required to keep this service cleanly reusable (the SEED-036 seed records this as a data-layer-awareness constraint).
-- **Single-position best-move endpoint** (`POST /api/analysis/best-move`) — used for **move grading**: compare the user's chosen move's eval to the blunder and to the best line, evaluated server-side on demand, one position at a time. No client-side Stockfish required for v1. (Client-side engine remains a later option for offline/scale.) Because best move is computed on-demand (not stored), there is **no reimport risk** — the trainer just calls the same endpoint over the same derived mistake plies.
+A pure-function **interval ladder keyed by mastery streak**:
 
-## The `/train-sketch` prototype — ALREADY BUILT
+- streak 0 → due next scheduled session
+- streak 1 → due ~3 days out
+- streak 2 → due ~10 days out
+- each due date snapped forward to the next scheduled session day
 
-A throwaway clickable prototype exists and is wired up:
-- **Route:** `/train-sketch` — an **unlinked public route** (not in any nav), reachable by anyone with the URL once deployed. Registered in `frontend/src/App.tsx` (outside the protected layout, no auth).
-- **Code:** `frontend/src/pages/TrainSketch/` — `TrainSketchPage.tsx` (orchestrator), `QueueView.tsx`, `SolveView.tsx`, `FeedbackView.tsx`, `DoneView.tsx`, `EvalBar.tsx`, and `puzzles.ts` (mock/hard-coded data). Reuses the real chessboard component + Tailwind/theme so it's convincing.
-- **Purpose:** kickoff artifact for **GM-coach collaboration** — the user plans to recruit an experienced GM coach to co-design the training UX (what actually helps students). The unlinked https URL is shared directly with the coach; no account needed.
-- **Design intent (carried over):** build it as a real but **isolated** React route, deliberately diverging from `/gsd-sketch` (standalone HTML), because the prototype must be (a) reachable at a shareable https URL for an external person and (b) convincing via the real board/theme. Mock data only; no training backend exists yet. Self-contained under `frontend/src/pages/TrainSketch/` and clearly throwaway so it deletes cleanly once the design converges.
-- **Exposure note:** an unlinked route is still publicly reachable — fine for a mock (no real user data); don't wire it to anything sensitive.
-- **Cost note:** each iteration rides the normal prod deploy pipeline (PR `main → production`, `bin/deploy.sh`). Acceptable for a handful of iterations; if it churns a lot, consider a separate static host instead.
+Wrong answer → streak resets to 0, item returns next session. State per item: `streak`,
+`due_date` (plus a solve log). Fully testable, no dependency.
 
-## Core training loop (settle with coach BEFORE building the real feature)
+### Session composition: exactly N, cap + backfill
 
-The loop must be settled first so we iterate the idea, not the sketch. Loop sketch:
+Session = min(N, due items), **most-overdue first**; if due < N, pad up to N by
+**introducing new flaws** from the pool (recent games preferred). Every session is
+exactly N while the pool lasts (Anki's model). Backlogs drain gradually; being caught up
+never yields an empty session.
 
-> present position → user plays a move on the board → grade vs the single-position best-move endpoint → reveal (original blunder + better line) → schedule next rep (FSRS).
+### Pool entry (which flaws qualify)
 
-Open loop questions for the coach / discuss-phase:
-- One attempt vs retry on a wrong move.
-- Hint / give-up affordance.
-- Show or hide the eval during solving.
-- Daily-queue / streak surface.
-- Red herrings (see Deferred / v2 below).
+- **Blunders only** (v1). Mistakes are a later pool-expansion lever if active users run dry.
+- **User's own flaws only** — `game_flaws` stores both players; filter by ply parity vs
+  `user_color`.
+- **Winnability floor** — exclude positions already lost before the blunder (expected
+  score below ~20–25%, via `eval_cp_to_expected_score`). Drilling hopeless positions
+  teaches nothing.
+- **Sharp answer key** — require a stored `best_move` + `pv` for the position, and a
+  clear gap between best and second-best continuation so one-attempt grading is fair.
+  **Open question:** MultiPV-2 second-best data only exists for gem-candidate plies
+  (`game_best_moves`); the sharpness filter needs either an approximation (e.g. blunder
+  swing magnitude as proxy) or a small backfill. Phase researcher decides.
+- **Recency-weighted introduction** — prefer flaws from recent games when padding
+  sessions with new items. No Zobrist dedup (repeat blunders may coexist).
 
-The `/train-sketch` prototype is the vehicle for resolving these with the coach.
+### Pool exit (retirement)
 
-## Scheduler — FSRS
+Retire after **3 consecutive spaced correct solves** (correct solves in 3 separate
+sessions; a miss resets to 0). Simple to explain in UI ("2/3 mastered"). The ladder
+decides *when* reps happen; this counter decides *retirement*.
 
-Adopt **FSRS** (https://github.com/open-spaced-repetition/free-spaced-repetition-scheduler) rather than rolling our own spaced-repetition math. Needs review-scheduler state per blunder (per user, per position).
+### Solve loop
 
-## Move grading
+- **Single move, one attempt.** Play the move that avoids your blunder; done. No
+  multi-move lines (pv-line quality from eval data isn't curated like lichess puzzles).
+- **Lichess-minimal solve screen**: board oriented to user's color, opponent's last move
+  animated + highlighted, "White/Black to move" prompt. No eval bar, no game metadata —
+  nothing that leaks the answer or severity.
+- **Grading is fully client-side**: exact match to stored `best_move` → instant correct;
+  any other move → the vendored client Stockfish WASM (shipped for Bot Play, v2.3)
+  evals it ~1s and grades by expected-score gap vs the best line. No grading endpoint,
+  no backend engine load. Backend only **records results** (streak, due date, solve log).
+- **Reveal (after the attempt)**: original blunder vs best line (pv shown passively as a
+  playable/steppable line), plus the game card and a deep link into the analysis board
+  ("see what actually happened"). Full game context lives here, not on the solve screen.
 
-Reuse the **single-position best-move endpoint** from SEED-036. v1 of training accepts "did you find a clearly-better move" by comparing the user's chosen move's eval to the blunder and the best line — evaluated server-side on demand, one position at a time. No client-side Stockfish required for v1.
+### Schedule & reminders (v1: in-app only)
+
+Settings: weekday picker + N per session. Surfacing: nav badge / dashboard card on
+session days ("12 puzzles waiting") + a session-streak counter (consecutive scheduled
+sessions completed). **No push, no email in v1** — PWA push (service worker, VAPID,
+subscription storage, scheduled sender) is its own project; defer to v2.
+
+### Empty/cold states
+
+- No analyzed games yet → point to import/analysis (reuse Library readiness patterns).
+- Pool exhausted (everything mastered, nothing due) → celebrate + offer mistakes-tier
+  expansion later; never a dead screen.
+
+## Rejected Alternatives (decision log 2026-07-23)
+
+- **FSRS** — rejected. Item lifetime is ~3–6 reps, grading is binary, and due dates get
+  quantized to scheduled session days anyway; FSRS's per-user memory-model fitting has
+  nothing to bite on. The interval ladder is honest and testable.
+- **`POST /api/analysis/best-move` grading endpoint** (the original SEED-036 dependency,
+  never built) — obsolete. The full-game eval pipeline (v1.26+) already stores
+  `best_move`+`pv` per ply, and client Stockfish WASM grades arbitrary moves locally.
+- **Session-mastery / Leitner-lite model** (no due dates) — considered; user chose true
+  SR with per-item due dates.
+- **Retry on wrong move** — rejected; one attempt, matching "in the real game you got
+  one chance". Reveal follows immediately.
+- **Eval bar / game metadata during solving** — rejected (leaks answer/severity);
+  context moves to the reveal screen.
+- **GM-coach collaboration loop** — dropped from this seed. The `/train-sketch`
+  prototype built for it was deleted on 2026-07-23 (route + `frontend/src/pages/TrainSketch/`).
+- **Zobrist dedup of repeat blunders** — not necessary.
+
+## Data Dependencies (all shipped)
+
+- `game_flaws` — materialized blunders/mistakes for both players (v1.24/v1.27); ply
+  parity gives ownership.
+- `game_positions.best_move` / `.pv` — full-game eval pipeline (v1.26+); the answer key.
+- `game_best_moves` — MultiPV-2 best/second eval for gem-candidate plies (v2.4);
+  possible input to the sharpness filter.
+- Client Stockfish WASM — vendored for Bot Play (v2.3); the grading engine.
+- `eval_cp_to_expected_score` (`app/services/eval_utils.py`) — expected-score mapping
+  for the winnability floor and grading verdicts.
+- Analysis board — the reveal's deep-link target.
 
 ## Name — TBD
 
-Pick before the real feature build (the prototype route stays `/train-sketch` regardless). On-brand candidates lean into "flaws/fixing" (FlawChess — "humans play FlawChess"):
-- *Fix / FlawFix*
-- *Rematch / Comebacks* (replay your past mistake)
-- plain *Train / Drills / Practice* (credible, coach-facing)
+Pick before the build. On-brand candidates lean into "flaws/fixing": *Fix / FlawFix*,
+*Rematch / Comebacks*, or plain *Train / Drills / Practice*. Working name for the
+top-level page is **Train** (nav `Import · Openings · Endgames · Library · Train`).
 
-The current working name for the top-level page is **Train** (final nav `Import · Openings · Endgames · Library · Train`).
+## Phase Decomposition (rough sketch — planner refines)
 
-## Why this is a separate milestone, not part of Library
+1. **Pool + scheduler backend.** Drill-item data model (per-user per-flaw: streak,
+   due_date, solve log), pool-entry query (blunders, ownership, winnability, sharpness,
+   recency), interval ladder, session-composition endpoint, result-recording endpoint.
+   Includes resolving the sharpness-filter open question.
+2. **Train page + solve loop (frontend).** Route + nav, session flow
+   (queue → solve → reveal → done), client-side grading via Stockfish WASM, reveal with
+   pv + game card + analysis-board link.
+3. **Schedule + progress surface.** Weekday/N settings, nav badge + dashboard card,
+   session streak, mastered-count/retention stats, cold/empty states.
 
-It's a second product pillar — review-scheduler state per blunder, interactive grading UI, progress/streak surface — and bundling it would balloon the Library milestone. Sequencing it right after Library keeps momentum while letting the archive/stats ship first. The data-layer reuse (mistake-detection + best-move endpoint) means Train adds product surface, not a new analysis backend.
+## Deferred / v2
 
-## Deferred / v2 of training
-
-### Red herrings
-
-Positions with no clear single best move where the user did NOT err, mixed into the queue to avoid pattern-gaming (the user learning "there's always a tactic here" rather than reading the board). Treat as **training-v2**, not v1.
-
-## Phase Decomposition (rough sketch — planner refines, after coach input)
-
-The decomposition depends heavily on the coach-settled loop, so treat this as provisional:
-
-1. **Drill data model + FSRS scheduler.** Per-user, per-blunder review state; FSRS integration; queue construction from Library's mistake-detection output.
-2. **Grading service.** Wrap Library's best-move endpoint into a "was this move clearly better / still a blunder" verdict.
-3. **Train page + solve loop (frontend).** Real route (replacing the throwaway sketch's design), board solve interaction, feedback reveal, queue/streak surface — built from the coach-validated prototype.
-4. **Progress surface.** Streaks, due-today, retention-over-time.
-
-(May merge/split depending on the loop the coach lands on. Red herrings explicitly deferred to a later phase/milestone.)
+- **Red herrings** — positions with no clear best move where the user did NOT err, mixed
+  in to prevent "there's always a tactic here" pattern-gaming.
+- **Mistakes tier** — expand pool entry beyond blunders.
+- **Push/email reminders** — PWA push subsystem or an email pipeline.
+- **Half-credit / retry variants** — if one-attempt proves too harsh in practice.
 
 ## Breadcrumbs
 
-- `frontend/src/pages/TrainSketch/` — the existing clickable prototype (TrainSketchPage, QueueView, SolveView, FeedbackView, DoneView, EvalBar, puzzles.ts). Throwaway; the real feature replaces its design, not necessarily its file layout.
-- `frontend/src/App.tsx` — `/train-sketch` route registration (unlinked, public, outside ProtectedLayout).
-- **SEED-036 (Library)** — the milestone that must ship first; builds the mistake-detection service and the `POST /api/analysis/best-move` endpoint Train reuses.
-- `app/services/eval_utils.py` — `eval_cp_to_expected_score` (Lichess sigmoid); the grading verdict is built on expected-score comparison, same mapping Library uses.
-- **FSRS** — https://github.com/open-spaced-repetition/free-spaced-repetition-scheduler
-- **lichess-puzzler** — https://github.com/ornicar/lichess-puzzler — reference for turning eval swings into training positions.
+- `app/services/eval_utils.py` — `eval_cp_to_expected_score` (Lichess sigmoid).
+- `frontend/src/pages/Bots/` + vendored `stockfish-18-lite-single.js` — client engine
+  integration to reuse for grading.
+- `.planning/seeds/closed/SEED-036-library-page-milestone.md` — origin of the (now
+  obsolete) best-move-endpoint plan.
+- lichess-puzzler — https://github.com/ornicar/lichess-puzzler — reference for turning
+  eval swings into training positions (sharpness filtering ideas).
 
 ## Source / decision log
 
-**2026-06-04 split (user + Claude):**
-- SEED-010 split into **SEED-036 (Library)** + **SEED-037 (Train, this seed)**; SEED-010 closed.
-- Train owns: spaced-repetition trainer, FSRS scheduler, move grading, GM-coach collaboration, and the already-built `/train-sketch` prototype.
+**2026-07-23 refinement (user + Claude, gsd-explore):** all Settled Design decisions
+above; `/train-sketch` prototype deleted; GM-coach loop dropped; FSRS rejected in favor
+of the streak-keyed interval ladder; grading moved fully client-side.
 
-**2026-06-03 origin (carried over from SEED-010 "Deferred extensions"):**
-- SR blunder-training is the **next milestone after Library**, FSRS-based, reuses the best-move endpoint, no reimport risk; red herrings are training-v2.
-- GM coach to co-design the UX, kicked off with an iterable hosted prototype at the unlinked `/train-sketch` route (real isolated React route with mock data, reusing the real board/theme — not a gsd-sketch HTML file). Core training loop must be settled before building the real feature.
-- Training name TBD.
+**2026-06-04 split (user + Claude):** SEED-010 split into SEED-036 (Library) +
+SEED-037 (this seed); SEED-010 closed.
+
+**2026-06-03 origin (SEED-010 "Deferred extensions"):** SR blunder-training as the
+milestone after Library; red herrings deferred; name TBD.
