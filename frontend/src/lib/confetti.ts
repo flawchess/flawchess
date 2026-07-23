@@ -10,12 +10,12 @@
 
 import confetti from 'canvas-confetti';
 
-import { WDL_WIN } from '@/lib/theme';
+import { WDL_WIN, CELEBRATION_GOLD, CELEBRATION_AMBER } from '@/lib/theme';
 
 /** Confetti particle colors — reuses the WDL win color plus two warm accents
  * (gold/amber) so the burst reads as a celebratory palette rather than a
- * single flat green. No hardcoded hex outside theme.ts per CLAUDE.md. */
-const CONFETTI_COLORS = [WDL_WIN, '#FFD700', '#FFA500'];
+ * single flat green. All colors come from theme.ts per CLAUDE.md. */
+const CONFETTI_COLORS = [WDL_WIN, CELEBRATION_GOLD, CELEBRATION_AMBER];
 
 /** Origin y for both bursts — slightly below center so the confetti arcs
  * upward over the board rather than starting at the very top of the

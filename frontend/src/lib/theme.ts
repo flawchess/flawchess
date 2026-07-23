@@ -35,6 +35,12 @@ export const WDL_WIN = 'oklch(0.50 0.14 145)';
 export const WDL_DRAW = 'oklch(0.60 0.02 260)';
 export const WDL_LOSS = 'oklch(0.50 0.15 25)';
 
+// Celebration accents — warm gold/amber used alongside WDL_WIN for the
+// bot-win confetti burst (Quick 260723-tqn). Kept here so the celebration
+// palette lives with the other semantic colors, not hardcoded at the call site.
+export const CELEBRATION_GOLD = 'oklch(0.86 0.17 95)';
+export const CELEBRATION_AMBER = 'oklch(0.78 0.17 65)';
+
 // Solid WDL accent borders (e.g. game card left edges).
 // Matched to the strength/weakness card severity palette in arrowColor.ts.
 export const WDL_BORDER_WIN = '#036C22';
