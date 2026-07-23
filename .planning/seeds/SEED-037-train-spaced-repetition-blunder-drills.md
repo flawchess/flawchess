@@ -100,7 +100,13 @@ decides *when* reps happen; this counter decides *retirement*.
 
 ### Solve loop
 
-- **Single move, one attempt.** Play the move that avoids your blunder; done. No
+- **Assess first (binary guess)**: before moving, the user commits to *"one critical
+  move"* vs *"several fine moves"* — pure position judgment, worth a point. Ground
+  truth comes from the same blob classifier (sharp → critical; avoid-the-blunder and
+  herrings → several). Deliberately NOT a 3-way type guess: blunder-history vs herring
+  is episodic memory, not chess skill, and would add noise to the score.
+- **Then always play a move — single move, one attempt.** Even on a "several fine
+  moves" claim: choosing a concrete move in a quiet position is real training. No
   multi-move lines (pv-line quality from eval data isn't curated like lichess puzzles).
 - **Lichess-minimal solve screen**: board oriented to user's color, opponent's last move
   animated + highlighted, "White/Black to move" prompt. No eval bar, no game metadata —
@@ -113,9 +119,25 @@ decides *when* reps happen; this counter decides *retirement*.
   still effectively require the best move because second-best is a mistake there by
   construction. No grading endpoint, no backend engine load. Backend only **records
   results** (streak, due date, solve log).
-- **Reveal (after the attempt)**: original blunder vs best line (pv shown passively as a
-  playable/steppable line), plus the game card and a deep link into the analysis board
-  ("see what actually happened"). Full game context lives here, not on the solve screen.
+- **Reveal (after the attempt)**: guess verdict + move verdict, original blunder vs best
+  line (pv shown passively as a playable/steppable line), plus the game card and a deep
+  link into the analysis board ("see what actually happened"). Full game context lives
+  here, not on the solve screen. Herring reveal: "you handled this well in the game —
+  several moves are fine"; blunder reveal names the original mistake.
+
+### Scoring & gamification (solid learning, light game layer)
+
+- **Per puzzle: 0–2 points, independent** — +1 correct guess, +1 correct move. Correct
+  guess with a failed move still earns 1 (right judgment, failed execution).
+- **Session result**: total score / 2N as a percentage, mapped to a green/yellow/red
+  rating (theme.ts colors; band thresholds are named constants, planner tunes — e.g.
+  ≥80% green, ≥50% yellow).
+- **Scoring never touches the SR mechanics**: mastery streak and due dates are driven by
+  move correctness alone. The guess layer is metacognition + score only, so pool
+  behavior stays predictable.
+- **v1 gamification inventory**: per-puzzle points, session score + color rating,
+  scheduled-session streak, mastered count. No XP, leagues, or badges — the learning is
+  the product.
 
 ### Schedule & reminders (v1: in-app only)
 
@@ -153,6 +175,13 @@ subscription storage, scheduled sender) is its own project; defer to v2.
   solver-facing contract honest and the grading code type-blind.
 - **SR-tracking red herrings** (streaks/due dates, or fail-promotes-to-pool) — rejected;
   herrings are one-off fillers.
+- **3-way type guess** (sharp / avoid-blunder / herring) — rejected; types 2 and 3 are
+  indistinguishable from the board (they differ by user history, not position
+  character), so the third option would test memory, not judgment.
+- **"Declare herring = done, no move"** — rejected; a move is always required, the loop
+  stays uniform and quiet-position move choice is itself training.
+- **Move-gated scoring** (wrong move = 0 regardless of guess) — rejected in favor of
+  independent guess/move points.
 
 ## Data Dependencies (all shipped)
 
@@ -184,8 +213,9 @@ top-level page is **Train** (nav `Import · Openings · Endgames · Library · T
    (non-gem `game_best_moves`), interval ladder, session-composition endpoint
    (75/25 mix), result-recording endpoint.
 2. **Train page + solve loop (frontend).** Route + nav, session flow
-   (queue → solve → reveal → done), client-side grading via Stockfish WASM, reveal with
-   pv + game card + analysis-board link.
+   (queue → guess → solve → reveal → done), client-side grading via Stockfish WASM,
+   reveal with verdicts + pv + game card + analysis-board link, session-end score +
+   color rating screen.
 3. **Schedule + progress surface.** Weekday/N settings, nav badge + dashboard card,
    session streak, mastered-count/retention stats, cold/empty states.
 
@@ -206,6 +236,12 @@ top-level page is **Train** (nav `Import · Openings · Endgames · Library · T
   eval swings into training positions (sharpness filtering ideas).
 
 ## Source / decision log
+
+**2026-07-23 round 3 (user + Claude):** pre-move metacognition layer added — binary
+"one critical move vs several fine moves" guess (3-way type guess rejected as
+memory-testing), move always required, independent 0–2 scoring per puzzle, session
+score → green/yellow/red rating, guess layer isolated from SR mechanics; gamification
+capped at points/rating/streak/mastered-count.
 
 **2026-07-23 round 2 (user + Claude):** red herrings promoted from v2 into v1 at ~25%
 of each session (one-off fillers, sourced from non-gem `game_best_moves` rows);
