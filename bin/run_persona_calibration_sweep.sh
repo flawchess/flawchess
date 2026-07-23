@@ -93,17 +93,23 @@ if ps -C node -o args= 2>/dev/null | grep -q "calibration-harness\.mjs"; then
 fi
 
 CORES="$(nproc)"
-# CPU model (mirrors run_bot_curves_sweep.sh): 1 Maia (wasm, 1 thread) + the
-# harness's own STOCKFISH_POOL_DEFAULT_SIZE (4 procs, 1 thread each) per
-# concurrently-running persona.
-FOOTPRINT=$(( PARALLEL * (4 + 1) ))
+# CPU model: within a game the bot and anchor move ALTERNATELY (never at the same
+# time), and the bot's move is single-threaded Maia (wasm) which dominates move
+# time — the 4-proc Stockfish pool only bursts briefly for the anchor's reply. So
+# a persona averages ~1 busy core (transient peak ~4 during an anchor search),
+# NOT the naive 1+4=5. Steady-state footprint therefore tracks --parallel, and
+# this workload comfortably runs --parallel up to ~cores. (The earlier 5x model
+# warned to LOWER --parallel and was backwards: --parallel 6 sat at ~19% CPU on
+# 16 cores — the bottleneck was the batch-barrier scheduler, since replaced with
+# a rolling queue, not CPU saturation.)
+FOOTPRINT="$PARALLEL"
 LOAD1="$(awk '{print $1}' /proc/loadavg 2>/dev/null || echo '?')"
 echo "── Persona calibration sweep preflight ─────────────────────────────────"
 echo "  cores=${CORES}  current 1m-load=${LOAD1}"
 echo "  parallel=${PARALLEL}  games-per-cell=${GAMES_PER_CELL}"
-echo "  est. core footprint ≈ ${FOOTPRINT} (${PARALLEL} x (1 Maia + 4 Stockfish))"
+echo "  est. avg core footprint ≈ ${FOOTPRINT} (~1 core/persona; transient peaks higher)"
 if [ "$FOOTPRINT" -gt "$CORES" ]; then
-  echo "  ⚠ footprint ${FOOTPRINT} > ${CORES} cores — consider --parallel $(( CORES / 5 ))" >&2
+  echo "  ⚠ footprint ${FOOTPRINT} > ${CORES} cores — consider --parallel ${CORES}" >&2
 fi
 echo "─────────────────────────────────────────────────────────────────────────"
 
@@ -135,50 +141,70 @@ if [ -n "$PERSONAS_FILTER" ]; then
   ')"
 fi
 
+# ── Longest-first scheduling ────────────────────────────────────────────────
+# Persona runtimes vary ~10x: the deepest-search cells (blend>0, high rung —
+# e.g. rung-1800 blend=0.5) run ~6h while blend=0 cells finish in ~40min. Feed
+# the slow ones into the rolling queue FIRST so they overlap the entire sweep
+# instead of stranding a slot at the tail. Sort key: blend desc, then rung desc
+# (cols 4,3). The blank-line filter keeps the launch loop's slot accounting exact.
+PERSONA_TUPLES_TSV="$(printf '%s\n' "$PERSONA_TUPLES_TSV" \
+  | grep -v '^[[:space:]]*$' \
+  | sort -t"$(printf '\t')" -k4,4nr -k3,3nr)"
+
 TUPLE_COUNT="$(echo "$PERSONA_TUPLES_TSV" | grep -c . || true)"
 echo "  ${TUPLE_COUNT} persona cell(s) scheduled."
 
 # ── Launch each persona through the UNMODIFIED preset-supervisor.sh ─────────
 # (never the bare harness driver — Pitfall 3). CALIBRATION_HARNESS_STYLE is
 # exported in a subshell per persona so it never leaks across launches.
-# Launched in BATCHES of --parallel (wait for the whole batch before starting
-# the next) rather than a rolling `wait -n` — simpler and avoids re-waiting on
-# an already-reaped PID, which errors under `set -e`.
+#
+# ROLLING QUEUE (not batches): keep exactly --parallel personas in flight and
+# start the next one the instant any slot frees (`wait -n`). Because persona
+# runtimes vary ~10x, the previous batch barrier (wait for the WHOLE batch before
+# launching the next) stranded finished slots idle for hours behind a single
+# straggler — the box sat at ~19% CPU on 16 cores. A rolling queue keeps every
+# slot busy until the work runs out. `wait -n` (bash 4.3+) reaps whichever job
+# finishes next, so there is no re-waiting on an already-reaped PID.
 declare -A DIR_OF
 mapfile -t PERSONA_TUPLES <<<"$PERSONA_TUPLES_TSV"
 
+launch_persona() {
+  IFS=$'\t' read -r persona_id style rung blend bot_elo <<<"$1"
+  local outdir="${DATA_DIR}/persona-sweep-${persona_id}"
+  DIR_OF["$persona_id"]="$outdir"
+  mkdir -p "$outdir"
+  echo "  [${persona_id}] launching: style=${style} rung=${rung} blend=${blend} botElo=${bot_elo} → ${outdir}/run.log"
+  (
+    export CALIBRATION_HARNESS_STYLE="$style"
+    # preset-supervisor.sh derives its own out-dir from <name> unless told
+    # otherwise; without this export it would write to `sweep-<personaId>/` while
+    # we prepared `persona-sweep-<personaId>/`, and every redirect inside it would
+    # fail (the harness would never launch at all).
+    export PRESET_SUPERVISOR_DIR="$outdir"
+    export PRESET_SUPERVISOR_GAMES="$GAMES_PER_CELL"
+    exec "$SUPERVISOR" "$persona_id" "$blend" "$bot_elo"
+  ) >>"${outdir}/run.log" 2>&1 &
+  PIDS+=("$!")
+}
+
 FAILED=0
-batch_start=0
-while [ "$batch_start" -lt "${#PERSONA_TUPLES[@]}" ]; do
-  BATCH_PIDS=()
-  batch_end=$(( batch_start + PARALLEL ))
-  for ((i = batch_start; i < batch_end && i < ${#PERSONA_TUPLES[@]}; i++)); do
-    IFS=$'\t' read -r persona_id style rung blend bot_elo <<<"${PERSONA_TUPLES[$i]}"
-    [ -z "$persona_id" ] && continue
-    outdir="${DATA_DIR}/persona-sweep-${persona_id}"
-    DIR_OF["$persona_id"]="$outdir"
-    mkdir -p "$outdir"
-
-    echo "  [${persona_id}] launching: style=${style} rung=${rung} blend=${blend} botElo=${bot_elo} → ${outdir}/run.log"
-    (
-      export CALIBRATION_HARNESS_STYLE="$style"
-      # preset-supervisor.sh derives its own out-dir from <name> unless told
-      # otherwise; without this export it would write to `sweep-<personaId>/`
-      # while we prepared `persona-sweep-<personaId>/`, and every redirect
-      # inside it would fail (the harness would never launch at all).
-      export PRESET_SUPERVISOR_DIR="$outdir"
-      export PRESET_SUPERVISOR_GAMES="$GAMES_PER_CELL"
-      exec "$SUPERVISOR" "$persona_id" "$blend" "$bot_elo"
-    ) >>"${outdir}/run.log" 2>&1 &
-    PIDS+=("$!")
-    BATCH_PIDS+=("$!")
+running=0
+next=0
+n=${#PERSONA_TUPLES[@]}
+while [ "$next" -lt "$n" ] || [ "$running" -gt 0 ]; do
+  # Top the pool back up to --parallel.
+  while [ "$running" -lt "$PARALLEL" ] && [ "$next" -lt "$n" ]; do
+    launch_persona "${PERSONA_TUPLES[$next]}"
+    next=$(( next + 1 ))
+    running=$(( running + 1 ))
   done
-
-  echo "  batch [${batch_start}..$((batch_end - 1))] launched (PIDs: ${BATCH_PIDS[*]:-none}) — waiting..."
-  for p in "${BATCH_PIDS[@]}"; do
-    if ! wait "$p"; then FAILED=1; fi
-  done
-  batch_start=$batch_end
+  # Block until ANY one persona finishes, then free its slot. `wait -n` returns
+  # that job's exit status; a non-zero one flags FAILED but we keep draining the
+  # rest so their ledgers still land (completed personas auto-skip on re-run).
+  if [ "$running" -gt 0 ]; then
+    if ! wait -n; then FAILED=1; fi
+    running=$(( running - 1 ))
+  fi
 done
 trap - INT TERM
 
