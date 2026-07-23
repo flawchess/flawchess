@@ -12,6 +12,7 @@ from collections.abc import AsyncIterator, Callable
 import httpx
 import sentry_sdk
 
+from app.core.http import USER_AGENT
 from app.core.rate_limiters import get_lichess_semaphore
 from app.schemas.normalization import NormalizedGame
 from app.services.normalization import normalize_lichess_game
@@ -107,7 +108,10 @@ async def fetch_lichess_games(
         params["perfType"] = perf_type
 
     url = f"{LICHESS_API_URL}/{username}"
-    headers = {"Accept": "application/x-ndjson"}
+    # User-Agent is mandatory: since ~2026-07-22 lichess answers generic client UAs
+    # (python-httpx default) with a fake 404 on this endpoint, which the 404 branch
+    # below would misreport as "user not found" for users that exist.
+    headers = {"Accept": "application/x-ndjson", "User-Agent": USER_AGENT}
 
     # Initialize with a sentinel so raise always has a valid exception even if no
     # attempt captured a specific error (e.g., _MAX_RETRIES == 0).

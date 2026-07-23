@@ -19,13 +19,13 @@ from datetime import datetime, timezone
 import httpx
 import sentry_sdk
 
+from app.core.http import USER_AGENT
 from app.core.rate_limiters import get_chesscom_semaphore
 from app.schemas.normalization import NormalizedGame
 from app.services.normalization import normalize_chesscom_game
 
 logger = logging.getLogger(__name__)
 
-USER_AGENT = "FlawChess/1.0 (github.com/flawchess/flawchess)"
 BASE_URL = "https://api.chess.com/pub/player"
 
 _HEADERS = {"User-Agent": USER_AGENT}

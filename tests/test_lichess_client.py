@@ -9,6 +9,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+from app.core.http import USER_AGENT
 from app.services.lichess_client import fetch_lichess_games
 
 
@@ -252,6 +253,21 @@ class TestFetchLichessGames:
         call_kwargs = mock_client.stream.call_args[1]
         headers = call_kwargs.get("headers", {})
         assert headers.get("Accept") == "application/x-ndjson"
+
+    @pytest.mark.asyncio
+    async def test_user_agent_header_sent(self):
+        """Must send the identifying FlawChess User-Agent. Since ~2026-07-22 lichess
+        answers generic client UAs with a fake 404 on /api/games/user, which the
+        client reports as 'user not found' for users that exist."""
+        mock_client = MagicMock()
+        mock_client.stream = MagicMock(return_value=_make_streaming_response([]))
+
+        async for _ in fetch_lichess_games(mock_client, "testuser", user_id=1):
+            pass
+
+        call_kwargs = mock_client.stream.call_args[1]
+        headers = call_kwargs.get("headers", {})
+        assert headers.get("User-Agent") == USER_AGENT
 
     @pytest.mark.asyncio
     async def test_503_retries_then_raises_runtime_error(self):
