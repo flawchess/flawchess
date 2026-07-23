@@ -175,23 +175,22 @@ describe('PersonaDetailSurface — D-08/D-06 ELO disclosure popover copy', () =>
     expect(content.textContent).not.toContain('900');
   });
 
-  // The committed calibration is still the `--bootstrap` fit (approx_blitz =
-  // rung, ratings NaN), so PERSONA_CALIBRATION_MEASURED is false. These two
-  // assertions are the honesty contract: until a real sweep is fitted the
-  // popover must not claim a measurement, and must not print the ~900 floor
-  // line (which would contradict the visible "~800" label). Both flip to the
-  // measured copy automatically when the refit lands — see
-  // PersonaEloDisclosurePopover.test.tsx for the measured-state coverage.
-  it('withholds the measured claim while the calibration is provisional', async () => {
+  // CAL-04b filled the ~800/~1200 persona gaps and flipped
+  // PERSONA_CALIBRATION_MEASURED to true, so the real surface now shows the
+  // measured copy: the popover claims a measurement (never "provisional"), and
+  // for a floor-rung persona it appends the ~900 floor line. These assert that
+  // wiring through the real surface — the mocked both-states unit coverage
+  // lives in PersonaEloDisclosurePopover.test.tsx.
+  it('surfaces the measured claim now that the calibration is fitted', async () => {
     renderSurface();
 
     const content = await openEloDisclosure();
-    expect(PERSONA_CALIBRATION_MEASURED).toBe(false);
-    expect(content.textContent).toContain('provisional');
-    expect(content.textContent).not.toContain('measured in bot-vs-engine games');
+    expect(PERSONA_CALIBRATION_MEASURED).toBe(true);
+    expect(content.textContent).toContain('measured in bot-vs-engine games');
+    expect(content.textContent).not.toContain('provisional');
   });
 
-  it('withholds the ~900 floor line for a bottom-rung persona while provisional', async () => {
+  it('surfaces the ~900 floor line for a bottom-rung persona', async () => {
     const floorPersona = PERSONA_REGISTRY['grinder-800'];
     render(
       <PersonaDetailSurface
@@ -204,6 +203,6 @@ describe('PersonaDetailSurface — D-08/D-06 ELO disclosure popover copy', () =>
     );
 
     const content = await openEloDisclosure();
-    expect(content.textContent).not.toContain('900');
+    expect(content.textContent).toContain('900');
   });
 });

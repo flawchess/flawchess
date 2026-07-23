@@ -91,8 +91,27 @@ export function presetNameForBlend(blend) {
  * floor clamp — that would be a genuine data-integrity bug in
  * `bot-strength-lookup.json`, not a legitimate edge case to swallow.
  */
+// CAL-04b (probe-validated 2026-07-23): the style-less BOT_STRENGTH_LOOKUP
+// strands the floor/intermediate botElo tiers for STYLED human personas, so the
+// measured (with-style) strength ladder had gaps at ~800 and ~1200 — rungs
+// 800/1000 both landed ~1050 and 1200/1400 both ~1400, with nothing between.
+// A 2-point probe (Grinder, blend 0) confirmed the stranded tiers land in the
+// gaps once the style bundle is active: botElo 700 -> ~907, botElo 1500 -> ~1278.
+// These deliberate overrides route the affected human rungs onto those tiers.
+// The style-less inversion can't pick them itself (it doesn't see the style
+// offset), so the override lives here, not in the generated lookup. Re-measure
+// the 8 affected cells ({attacker,trickster,grinder,wall}-{800,1200}) after any
+// change. Note: rung 800 floors at ~900 (Maia+Stockfish can't reach a true 800).
+const STYLED_BOTELO_OVERRIDES = {
+  human: { 800: 700, 1200: 1500 },
+};
+
 export function retargetedBotEloFor(persona) {
   const preset = presetNameForBlend(persona.blend);
+
+  const override = STYLED_BOTELO_OVERRIDES[preset]?.[persona.rung];
+  if (override !== undefined) return override;
+
   const lookup = BOT_STRENGTH_LOOKUP[preset];
   if (lookup === undefined) {
     throw new Error(`retargetedBotEloFor: no BOT_STRENGTH_LOOKUP entry for preset "${preset}"`);

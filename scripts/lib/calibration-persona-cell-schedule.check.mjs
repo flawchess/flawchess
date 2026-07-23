@@ -65,7 +65,13 @@ console.log(
   'PASS: rung-1800 cells (all 4 styles) collide on (botElo=2300, blend=DEEP_BLEND) yet personaCellKey keeps 4 distinct keys',
 );
 
-// ─── (3) retargetedBotEloFor: Human-1200 -> 1900, 800-rung floor clamp -> 1100 ──
+// ─── (3) retargetedBotEloFor: CAL-04b styled overrides — Human-1200 -> 1500, ──
+// Human-800 -> 700 ────────────────────────────────────────────────────────────
+// The style-less BOT_STRENGTH_LOOKUP would give Human-1200 -> 1900 and clamp
+// Human-800 -> 1100, but that stranded the botElo 700/1500 tiers and left the
+// measured (with-style) ladder with gaps at ~800 and ~1200. STYLED_BOTELO_OVERRIDES
+// (probe-validated: botElo 700 -> ~907, 1500 -> ~1278 with a style bundle) routes
+// these two human rungs onto the validated tiers. This guards that override.
 
 const HUMAN_BLEND_FIXTURE = 0; // mirrors playStyle.ts's HUMAN_BLEND — the Human preset's blend value
 
@@ -75,32 +81,33 @@ assert.doesNotThrow(() => {
 }, 'retargetedBotEloFor must not throw for an ordinary in-range rung');
 assert.equal(
   human1200BotElo,
-  1900,
-  'a Human rung-1200 persona must retarget to botElo=1900 (BOT_STRENGTH_LOOKUP.human["1200"]), not rung=1200 itself',
+  1500,
+  'a Human rung-1200 persona must retarget to botElo=1500 (STYLED_BOTELO_OVERRIDES.human[1200], ' +
+    'the CAL-04b ~1200-gap fix), not the style-less lookup value 1900',
 );
 
 let human800BotElo;
 assert.doesNotThrow(() => {
   human800BotElo = retargetedBotEloFor({ blend: HUMAN_BLEND_FIXTURE, rung: 800 });
-}, 'retargetedBotEloFor must not throw for the 800-rung floor-clamp case');
+}, 'retargetedBotEloFor must not throw for the 800-rung override case');
 assert.equal(
   human800BotElo,
-  1100,
-  'the 800 rung (below every preset floor) must clamp to the lookup\'s lowest available key ' +
-    '(BOT_STRENGTH_LOOKUP.human["900"] = 1100)',
+  700,
+  'the 800 rung must retarget to botElo=700 (STYLED_BOTELO_OVERRIDES.human[800], the CAL-04b ~800-gap ' +
+    'fix, ~907 measured), not the style-less floor clamp 1100',
 );
 
 // Cross-check against the real registry-derived cells (ALL_PERSONA_CELLS
 // applies retargetedBotEloFor to every actual persona, not just this fixture).
 const humanRung1200Cell = ALL_PERSONA_CELLS.find((cell) => cell.rung === 1200 && cell.style === 'Attacker');
 assert.ok(humanRung1200Cell, 'expected an attacker-1200 (Human preset) cell to exist');
-assert.equal(humanRung1200Cell.botElo, 1900, 'attacker-1200 (a real registry entry) must match the fixture above');
+assert.equal(humanRung1200Cell.botElo, 1500, 'attacker-1200 (a real registry entry) must match the fixture above');
 
 const humanRung800Cell = ALL_PERSONA_CELLS.find((cell) => cell.rung === 800 && cell.style === 'Attacker');
 assert.ok(humanRung800Cell, 'expected an attacker-800 (Human preset) cell to exist');
-assert.equal(humanRung800Cell.botElo, 1100, 'attacker-800 (a real registry entry) must match the fixture above');
+assert.equal(humanRung800Cell.botElo, 700, 'attacker-800 (a real registry entry) must match the fixture above');
 
-console.log('PASS: retargetedBotEloFor — Human-1200 -> 1900, 800-rung floor clamp -> 1100, never throws');
+console.log('PASS: retargetedBotEloFor — CAL-04b overrides Human-1200 -> 1500, Human-800 -> 700, never throws');
 
 // ─── (4) presetNameForBlend: fail-loud on an unknown blend value ──────────
 

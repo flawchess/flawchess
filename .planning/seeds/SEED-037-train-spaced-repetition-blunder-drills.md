@@ -3,112 +3,332 @@ id: SEED-037
 status: dormant
 planted: 2026-06-04
 planted_during: 2026-06-04 split of SEED-010 into Library (SEED-036) + Train (this seed)
+refined: 2026-07-23 (gsd-explore session — full design settled, stale premises removed)
 lineage: split from SEED-010 (planted 2026-05-01, reworked 2026-06-03); SEED-010 closed
-trigger_when: AFTER the Library milestone (SEED-036) ships — Train reuses Library's mistake-detection layer and best-move endpoint — OR when user invokes `/gsd-new-milestone` for Train
+trigger_when: user invokes `/gsd-new-milestone` for Train (all data dependencies already shipped as of v2.5)
 scope: milestone (multi-phase)
-depends_on: SEED-036 (Library — mistake-detection service + single-position best-move endpoint)
+depends_on: none open — the original SEED-036 dependencies are satisfied or obsolete (see Data Dependencies)
 ---
 
 # SEED-037: Train — spaced-repetition blunder drills
 
-> **Lineage.** Split out of SEED-010 (now closed) on 2026-06-04. SEED-010's "Deferred extensions → Spaced-repetition blunder training (NEXT milestone)" section is the origin of this seed. The whole-game analysis page it depended on is **SEED-036 (Library)**.
+> **Lineage.** Split out of SEED-010 (closed) on 2026-06-04. Refined 2026-07-23 in a
+> gsd-explore session: the design below is *settled*, not provisional. The old seed's
+> premises (best-move endpoint dependency, FSRS adoption, GM-coach prototype loop) are
+> superseded — see Rejected Alternatives.
 
 ## Why This Matters
 
-This is the **retention play** — the feature that turns FlawChess from an analysis tool into a habit. Analysis tells a user *where* they went wrong; training makes them *stop* going wrong by re-presenting their own blunders on a spaced schedule until the pattern sticks. Aimchess monetizes essentially this at $7.99/mo; FlawChess differentiates on price (free/open) and on training from the user's *own* games rather than generic puzzles.
+The **retention play** — the feature that turns FlawChess from an analysis tool into a
+habit. Analysis tells a user *where* they went wrong; training makes them *stop* going
+wrong by re-presenting their own blunders on a spaced schedule until the pattern sticks.
+Aimchess monetizes essentially this at $7.99/mo; FlawChess differentiates on price
+(free/open) and on training from the user's *own* games rather than generic puzzles.
 
-The mechanism: present the user positions from their recent games where they blundered and ask them to play a better move; if they repeat the blunder or play another weak move, show the original blunder and the better move; re-present the position on a later spaced interval (FSRS).
+## Settled Design (2026-07-23)
 
-## When to Surface
+### Training model: true spaced repetition, session-gated
 
-- **After SEED-036 (Library) ships.** Train depends on Library's mistake-detection layer (which positions were blunders, with FEN + side + eval-before/after context) and on Library's single-position best-move endpoint (for move grading). Do not start Train before those exist.
-- OR when the user invokes `/gsd-new-milestone` for Train.
+Per-item due dates, but sessions happen on a **user-configured weekly schedule**
+(weekday picker + N puzzles per session). Due dates snap to the first scheduled session
+on/after the ideal date. The schedule is a commitment device, not a lock — an ad-hoc
+"train now" session on an off day is allowed and draws the same queue.
 
-## Hard dependency on SEED-036 (Library)
+### Scheduler: rolled our own (FSRS rejected)
 
-Train consumes two things Library builds, neither of which should be rebuilt here:
-- **Mistake-detection service** — returns mistake plies with enough context (FEN, side to move, eval before/after) for the trainer to construct a drill directly. Library is required to keep this service cleanly reusable (the SEED-036 seed records this as a data-layer-awareness constraint).
-- **Single-position best-move endpoint** (`POST /api/analysis/best-move`) — used for **move grading**: compare the user's chosen move's eval to the blunder and to the best line, evaluated server-side on demand, one position at a time. No client-side Stockfish required for v1. (Client-side engine remains a later option for offline/scale.) Because best move is computed on-demand (not stored), there is **no reimport risk** — the trainer just calls the same endpoint over the same derived mistake plies.
+A pure-function **interval ladder keyed by mastery streak**:
 
-## The `/train-sketch` prototype — ALREADY BUILT
+- streak 0 → due next scheduled session
+- streak 1 → due ~3 days out
+- streak 2 → due ~10 days out
+- each due date snapped forward to the next scheduled session day
 
-A throwaway clickable prototype exists and is wired up:
-- **Route:** `/train-sketch` — an **unlinked public route** (not in any nav), reachable by anyone with the URL once deployed. Registered in `frontend/src/App.tsx` (outside the protected layout, no auth).
-- **Code:** `frontend/src/pages/TrainSketch/` — `TrainSketchPage.tsx` (orchestrator), `QueueView.tsx`, `SolveView.tsx`, `FeedbackView.tsx`, `DoneView.tsx`, `EvalBar.tsx`, and `puzzles.ts` (mock/hard-coded data). Reuses the real chessboard component + Tailwind/theme so it's convincing.
-- **Purpose:** kickoff artifact for **GM-coach collaboration** — the user plans to recruit an experienced GM coach to co-design the training UX (what actually helps students). The unlinked https URL is shared directly with the coach; no account needed.
-- **Design intent (carried over):** build it as a real but **isolated** React route, deliberately diverging from `/gsd-sketch` (standalone HTML), because the prototype must be (a) reachable at a shareable https URL for an external person and (b) convincing via the real board/theme. Mock data only; no training backend exists yet. Self-contained under `frontend/src/pages/TrainSketch/` and clearly throwaway so it deletes cleanly once the design converges.
-- **Exposure note:** an unlinked route is still publicly reachable — fine for a mock (no real user data); don't wire it to anything sensitive.
-- **Cost note:** each iteration rides the normal prod deploy pipeline (PR `main → production`, `bin/deploy.sh`). Acceptable for a handful of iterations; if it churns a lot, consider a separate static host instead.
+Wrong answer → streak resets to 0, item returns next session. State per item: `streak`,
+`due_date` (plus a solve log). Fully testable, no dependency.
 
-## Core training loop (settle with coach BEFORE building the real feature)
+### Session composition: exactly N, cap + backfill, ~25% red herrings
 
-The loop must be settled first so we iterate the idea, not the sketch. Loop sketch:
+Every session is exactly N while material lasts:
 
-> present position → user plays a move on the board → grade vs the single-position best-move endpoint → reveal (original blunder + better line) → schedule next rep (FSRS).
+- **~75% of N — SR items**: due items **most-overdue first**; if due < slots, pad by
+  **introducing new flaws** from the pool (recent games preferred). Backlogs drain
+  gradually; being caught up never yields an empty session (Anki's model).
+- **~25% of N — red herrings**: one-off fillers drawn fresh from the herring source
+  (below), recency-weighted, no repeats until the source is exhausted. No streak/due
+  bookkeeping — they vaccinate against "there's always a killer move here"
+  pattern-gaming, they're not material to master. Failing one just shows the reveal.
 
-Open loop questions for the coach / discuss-phase:
-- One attempt vs retry on a wrong move.
-- Hint / give-up affordance.
-- Show or hide the eval during solving.
-- Daily-queue / streak surface.
-- Red herrings (see Deferred / v2 below).
+### Puzzle taxonomy: three types, one grading rule
 
-The `/train-sketch` prototype is the vehicle for resolving these with the coach.
+All puzzles look identical to the solver ("play the best move you can find") and share
+one grading rule; they differ only in sourcing and reveal messaging:
 
-## Scheduler — FSRS
+1. **Sharp find-the-move** — own blunder where the blob's best-vs-second expected-score
+   gap is large: effectively only the best move grades correct.
+2. **Avoid-the-blunder** — own blunder where best-vs-second is close: several moves
+   grade correct; the point is not repeating the mistake.
+3. **Red herring** — a position the user handled *well* with several roughly-equal
+   options, sourced from **non-gem `game_best_moves` candidate rows** (user played the
+   stored best move out-of-book, best ≈ second — the exact complement of gem
+   detection). Winnability-floor applies. No new analysis needed.
 
-Adopt **FSRS** (https://github.com/open-spaced-repetition/free-spaced-repetition-scheduler) rather than rolling our own spaced-repetition math. Needs review-scheduler state per blunder (per user, per position).
+The best-vs-second gap is a **classifier, not an entry gate** — soft-answer blunders
+become type 2 instead of being excluded, so the pool grows.
 
-## Move grading
+### Pool entry (which flaws qualify)
 
-Reuse the **single-position best-move endpoint** from SEED-036. v1 of training accepts "did you find a clearly-better move" by comparing the user's chosen move's eval to the blunder and the best line — evaluated server-side on demand, one position at a time. No client-side Stockfish required for v1.
+- **Blunders only** (v1). Mistakes are a later pool-expansion lever if active users run dry.
+- **User's own flaws only** — `game_flaws` stores both players; filter by ply parity vs
+  `user_color`.
+- **Winnability floor** — exclude positions already lost before the blunder (expected
+  score below ~20–25%, via `eval_cp_to_expected_score`). Drilling hopeless positions
+  teaches nothing.
+- **Answer key present** — require stored `best_move` + `pv` AND a non-empty
+  `game_flaws.missed_pv_lines` blob (node 0 carries best `b`/`bm` vs second-best
+  `s`/`sm`/`su` — MultiPV-2 at the decision position, Phase 141). The blob classifies
+  the puzzle as sharp vs avoid-the-blunder (see taxonomy above). Blobs are tier-4
+  opportunistic (new games ~100% inline, backlog still filling), so this is a
+  present-data filter, not a blocker.
+- **Recency-weighted introduction** — prefer flaws from recent games when padding
+  sessions with new items. No Zobrist dedup (repeat blunders may coexist).
+
+### Pool exit (retirement)
+
+Retire after **3 consecutive spaced correct solves** (correct solves in 3 separate
+sessions; a miss resets to 0). Simple to explain in UI ("2/3 mastered"). The ladder
+decides *when* reps happen; this counter decides *retirement*.
+
+### Solve loop
+
+- **Assess first (binary guess)**: before moving, the user commits to *"one critical
+  move"* vs *"several fine moves"* — pure position judgment, worth a point. Ground
+  truth comes from the same blob classifier (sharp → critical; avoid-the-blunder and
+  herrings → several). Deliberately NOT a 3-way type guess: blunder-history vs herring
+  is episodic memory, not chess skill, and would add noise to the score.
+- **Then always play a move — single move, one attempt.** Even on a "several fine
+  moves" claim: choosing a concrete move in a quiet position is real training. No
+  multi-move lines (pv-line quality from eval data isn't curated like lichess puzzles).
+- **Lichess-minimal solve screen**: board oriented to user's color, opponent's last move
+  animated + highlighted, "White/Black to move" prompt. No eval bar, no game metadata —
+  nothing that leaks the answer or severity.
+- **Grading is fully client-side and uniform across all three puzzle types**: exact
+  match to stored `best_move` → instant correct; any other move → the vendored client
+  Stockfish WASM (shipped for Bot Play, v2.3) evals it ~1s. **Correct = the played
+  move's expected-score drop vs best stays below the project's existing MISTAKE
+  threshold** (reuse the flaw-taxonomy constants; inaccuracies pass). Sharp puzzles
+  still effectively require the best move because second-best is a mistake there by
+  construction. No grading endpoint, no backend engine load. Backend only **records
+  results** (streak, due date, solve log).
+- **Reveal (after the attempt)**: guess verdict + move verdict, original blunder vs best
+  line (pv shown passively as a playable/steppable line), plus the game card and a deep
+  link into the analysis board ("see what actually happened"). Full game context lives
+  here, not on the solve screen. Herring reveal: "you handled this well in the game —
+  several moves are fine"; blunder reveal names the original mistake.
+
+### Motif layer (tactic-tagged flaws only — the schema-abstraction lever)
+
+Learning-theory rationale: repeating an identical position risks learning *the card,
+not the concept*. Two features force semantic processing, both conditional on tactic
+tags (many sharp puzzles have a single best move but no tag — those skip this layer):
+
+- **Motif multiple-choice quiz** — on **missed-tactic** flaws only (there the tactic IS
+  the solution; on allowed-tactic flaws the tactic lives in the refutation, handled
+  below). Shown after correct moves ("what did you just play?") AND after failed ones
+  post-reveal ("what tactic did you miss?") — failers need the schema most. True motif
+  + 2–3 plausible distractors from the motif enum (e.g. fork vs discovered attack),
+  never the full taxonomy. Naming the pattern is itself retrieval practice.
+- **Escalated active walkthrough on repeat-blunder** — trigger: the user plays their
+  *exact original blunder move* AND the flaw is tactic-tagged (the strongest signal the
+  pattern hasn't encoded; ration the user's time to that moment). Missed-tactic → step
+  through the tactic they missed again (`missed_pv_lines`); allowed-tactic → step
+  through the opponent's punishment (`allowed_pv_lines`, "this allowed a [fork] —
+  again"). **Click-through stepping, reusing the analysis board's existing
+  missed/allowed tactic line-stepping UI.** Any other wrong move, or untagged flaw →
+  normal passive reveal.
+
+### Scoring & gamification (solid learning, light game layer)
+
+- **Per puzzle: 0–2 points, independent** — +1 correct guess, +1 correct move. Correct
+  guess with a failed move still earns 1 (right judgment, failed execution).
+- **Session result**: total score / 2N as a percentage, mapped to a green/yellow/red
+  rating (theme.ts colors; band thresholds are named constants, planner tunes — e.g.
+  ≥80% green, ≥50% yellow).
+- **Scoring never touches the SR mechanics**: mastery streak and due dates are driven by
+  move correctness alone. The guess layer is metacognition + score only, so pool
+  behavior stays predictable.
+- **Motif quiz is a separate tally, not main-score points**: session end shows
+  "Patterns named: 4/5" as its own stat. Keeps 0–2 comparable across sessions
+  regardless of how many tactic-tagged puzzles appeared.
+- **Weekly streak** — N consecutive weeks with every scheduled session completed.
+  Naturally forgiving (the user sets their own schedule), so no freeze-token mechanics.
+  Guiding rule for all gamification here (self-determination theory): **competence
+  feedback yes, behavior control no** — no guilt mechanics, no decaying rewards.
+- **Two celebration moments (v1)**:
+  - **Confetti on a green-rated session** (session-end burst; `prefers-reduced-motion`
+    safe; canvas-confetti-class tiny lib or CSS).
+  - **"Flaw fixed!" moment** when an item hits 3/3 and retires — distinct celebration
+    with the position thumbnail. The core product promise made visceral; the higher-
+    leverage moment of the two.
+- **v1 gamification inventory**: per-puzzle points, session score + color rating,
+  patterns-named tally, weekly streak, mastered count, the two celebrations. No XP,
+  leagues, or badges — the learning is the product.
+
+### Schedule & reminders (v1: in-app only)
+
+Settings: weekday picker + N per session. Surfacing: nav badge / dashboard card on
+session days ("12 puzzles waiting") + the weekly-streak counter (see Scoring &
+gamification). **No push, no email in v1** — PWA push (service worker, VAPID,
+subscription storage, scheduled sender) is its own project; defer to v2.
+
+### Empty/cold states
+
+- No analyzed games yet → point to import/analysis (reuse Library readiness patterns).
+- Pool exhausted (everything mastered, nothing due) → celebrate + offer mistakes-tier
+  expansion later; never a dead screen.
+
+## Rejected Alternatives (decision log 2026-07-23)
+
+- **FSRS** — rejected. Item lifetime is ~3–6 reps, grading is binary, and due dates get
+  quantized to scheduled session days anyway; FSRS's per-user memory-model fitting has
+  nothing to bite on. The interval ladder is honest and testable.
+- **`POST /api/analysis/best-move` grading endpoint** (the original SEED-036 dependency,
+  never built) — obsolete. The full-game eval pipeline (v1.26+) already stores
+  `best_move`+`pv` per ply, and client Stockfish WASM grades arbitrary moves locally.
+- **Session-mastery / Leitner-lite model** (no due dates) — considered; user chose true
+  SR with per-item due dates.
+- **Retry on wrong move** — rejected; one attempt, matching "in the real game you got
+  one chance". Reveal follows immediately.
+- **Eval bar / game metadata during solving** — rejected (leaks answer/severity);
+  context moves to the reveal screen.
+- **GM-coach collaboration loop** — dropped from this seed. The `/train-sketch`
+  prototype built for it was deleted on 2026-07-23 (route + `frontend/src/pages/TrainSketch/`).
+- **Zobrist dedup of repeat blunders** — not necessary.
+- **Sharp answer key as an entry GATE** (round-1 decision) — superseded in round 2: the
+  best-vs-second gap classifies puzzle type instead of excluding soft-answer blunders.
+- **Per-type grading thresholds** — rejected; one uniform not-a-mistake rule keeps the
+  solver-facing contract honest and the grading code type-blind.
+- **SR-tracking red herrings** (streaks/due dates, or fail-promotes-to-pool) — rejected;
+  herrings are one-off fillers.
+- **3-way type guess** (sharp / avoid-blunder / herring) — rejected; types 2 and 3 are
+  indistinguishable from the board (they differ by user history, not position
+  character), so the third option would test memory, not judgment.
+- **"Declare herring = done, no move"** — rejected; a move is always required, the loop
+  stays uniform and quiet-position move choice is itself training.
+- **Move-gated scoring** (wrong move = 0 regardless of guess) — rejected in favor of
+  independent guess/move points.
+- **Per-session streak + freeze tokens** — rejected; the weekly streak over a
+  user-configured schedule is self-forgiving without freeze UX.
+- **Leaderboard in v1 (hidden-gated)** — rejected; infrastructure for a feature that
+  may idle for months. Deferred with an explicit active-user trigger instead.
+
+## Data Dependencies (all shipped)
+
+- `game_flaws` — materialized blunders/mistakes for both players (v1.24/v1.27); ply
+  parity gives ownership.
+- `game_positions.best_move` / `.pv` — full-game eval pipeline (v1.26+); the answer key.
+- `game_flaws.missed_pv_lines` / `.allowed_pv_lines` — write-once JSONB blobs
+  (Phase 141); `missed_pv_lines` node 0 has best (`b`/`bm`) + second-best
+  (`s`/`sm`/`su`) — the sharp-vs-soft puzzle classifier; both lines feed the escalated
+  walkthrough. Deferred columns: load via `undefer()`. Tier-4 opportunistic coverage.
+- `game_flaws.missed_tactic_motif` / `.allowed_tactic_motif` (+ confidence/depth/piece)
+  — gate and content of the motif layer; motif enum supplies quiz distractors.
+- Analysis board tactic line-stepping UI — reuse for the escalated click-through
+  walkthrough (already handles both missed and allowed orientations).
+- `game_best_moves` — MultiPV-2 best/second eval for plies where the user played the
+  stored best move out-of-book (v2.4); **non-gem rows (best ≈ second) are the red
+  herring source**. Same opportunistic-backfill caveat (two populations).
+- Client Stockfish WASM — vendored for Bot Play (v2.3); the grading engine.
+- `eval_cp_to_expected_score` (`app/services/eval_utils.py`) — expected-score mapping
+  for the winnability floor and grading verdicts.
+- Analysis board — the reveal's deep-link target.
 
 ## Name — TBD
 
-Pick before the real feature build (the prototype route stays `/train-sketch` regardless). On-brand candidates lean into "flaws/fixing" (FlawChess — "humans play FlawChess"):
-- *Fix / FlawFix*
-- *Rematch / Comebacks* (replay your past mistake)
-- plain *Train / Drills / Practice* (credible, coach-facing)
+Pick before the build. On-brand candidates lean into "flaws/fixing": *Fix / FlawFix*,
+*Rematch / Comebacks*, or plain *Train / Drills / Practice*. Working name for the
+top-level page is **Train** (nav `Import · Openings · Endgames · Library · Train`).
 
-The current working name for the top-level page is **Train** (final nav `Import · Openings · Endgames · Library · Train`).
+## Phase Decomposition (rough sketch — planner refines)
 
-## Why this is a separate milestone, not part of Library
+1. **Pool + scheduler backend.** Drill-item data model (per-user per-flaw: streak,
+   due_date, solve log), pool-entry query (blunders, ownership, winnability, blob
+   present, recency), sharp-vs-soft blob classifier, red-herring source query
+   (non-gem `game_best_moves`), interval ladder, session-composition endpoint
+   (75/25 mix), result-recording endpoint.
+2. **Train page + solve loop (frontend).** Route + nav, session flow
+   (queue → guess → solve → reveal → done), client-side grading via Stockfish WASM,
+   reveal with verdicts + pv + game card + analysis-board link, session-end score +
+   color rating screen.
+3. **Schedule + progress surface.** Weekday/N settings, nav badge + dashboard card,
+   weekly streak, celebrations (green confetti + flaw-fixed moment),
+   mastered-count/retention stats, cold/empty states.
 
-It's a second product pillar — review-scheduler state per blunder, interactive grading UI, progress/streak surface — and bundling it would balloon the Library milestone. Sequencing it right after Library keeps momentum while letting the archive/stats ship first. The data-layer reuse (mistake-detection + best-move endpoint) means Train adds product surface, not a new analysis backend.
+## Deferred / v2
 
-## Deferred / v2 of training
-
-### Red herrings
-
-Positions with no clear single best move where the user did NOT err, mixed into the queue to avoid pattern-gaming (the user learning "there's always a tactic here" rather than reading the board). Treat as **training-v2**, not v1.
-
-## Phase Decomposition (rough sketch — planner refines, after coach input)
-
-The decomposition depends heavily on the coach-settled loop, so treat this as provisional:
-
-1. **Drill data model + FSRS scheduler.** Per-user, per-blunder review state; FSRS integration; queue construction from Library's mistake-detection output.
-2. **Grading service.** Wrap Library's best-move endpoint into a "was this move clearly better / still a blunder" verdict.
-3. **Train page + solve loop (frontend).** Real route (replacing the throwaway sketch's design), board solve interaction, feedback reveal, queue/streak surface — built from the coach-validated prototype.
-4. **Progress surface.** Streaks, due-today, retention-over-time.
-
-(May merge/split depending on the loop the coach lands on. Red herrings explicitly deferred to a later phase/milestone.)
+- **Mistakes tier** — expand pool entry beyond blunders.
+- **Motif-aggregated progress** (candidate, not yet decided) — progress surface groups
+  mastery by motif ("forks: 1/4, two failed twice"), turning stats into a diagnosis of
+  conceptual weaknesses rather than an item counter.
+- **Motif-variation injection** — when a user keeps failing a motif, prefer introducing
+  *different* positions sharing that motif (variability of practice; the real cure for
+  card-memorization — motif mastery should be demonstrated on unseen positions).
+- **LLM one-line "why"** — pydantic-ai generated explanation sentence on the reveal
+  ("the knight was overloaded defending e5 and the back rank"). Capability exists
+  (endgame insights stack); cost/caching is the open question.
+- **Weekly leaderboard** — trigger: **≥10–15 weekly-active trainers** (a leaderboard of
+  4 advertises emptiness and permanently ranks the same person last). Opt-in, display
+  names, metric = points earned this week (session scores aren't comparable across
+  users' pools). Do not build hidden-gated in v1.
+- **Milestone counters / personal-best callouts** (candidates) — every-10-flaws-fixed
+  bursts, "best score in 4 weeks", score count-up. Considered in round 5, left out of
+  v1; revisit if the session-end screen feels flat.
+- **Push/email reminders** — PWA push subsystem or an email pipeline.
+- **Half-credit / retry variants** — if one-attempt proves too harsh in practice.
 
 ## Breadcrumbs
 
-- `frontend/src/pages/TrainSketch/` — the existing clickable prototype (TrainSketchPage, QueueView, SolveView, FeedbackView, DoneView, EvalBar, puzzles.ts). Throwaway; the real feature replaces its design, not necessarily its file layout.
-- `frontend/src/App.tsx` — `/train-sketch` route registration (unlinked, public, outside ProtectedLayout).
-- **SEED-036 (Library)** — the milestone that must ship first; builds the mistake-detection service and the `POST /api/analysis/best-move` endpoint Train reuses.
-- `app/services/eval_utils.py` — `eval_cp_to_expected_score` (Lichess sigmoid); the grading verdict is built on expected-score comparison, same mapping Library uses.
-- **FSRS** — https://github.com/open-spaced-repetition/free-spaced-repetition-scheduler
-- **lichess-puzzler** — https://github.com/ornicar/lichess-puzzler — reference for turning eval swings into training positions.
+- `app/services/eval_utils.py` — `eval_cp_to_expected_score` (Lichess sigmoid).
+- `frontend/src/pages/Bots/` + vendored `stockfish-18-lite-single.js` — client engine
+  integration to reuse for grading.
+- `.planning/seeds/closed/SEED-036-library-page-milestone.md` — origin of the (now
+  obsolete) best-move-endpoint plan.
+- lichess-puzzler — https://github.com/ornicar/lichess-puzzler — reference for turning
+  eval swings into training positions (sharpness filtering ideas).
 
 ## Source / decision log
 
-**2026-06-04 split (user + Claude):**
-- SEED-010 split into **SEED-036 (Library)** + **SEED-037 (Train, this seed)**; SEED-010 closed.
-- Train owns: spaced-repetition trainer, FSRS scheduler, move grading, GM-coach collaboration, and the already-built `/train-sketch` prototype.
+**2026-07-23 round 5 (user + Claude, gamification):** weekly streak (all scheduled
+sessions done that week; no freeze mechanics); v1 celebrations = confetti on green
+session + "Flaw fixed!" retirement moment; SDT guardrail recorded (competence feedback
+yes, behavior control no); weekly leaderboard deferred to v2 behind a ≥10–15
+weekly-active-trainers trigger (opt-in, points-earned metric); milestone counters and
+personal bests parked as candidates.
 
-**2026-06-03 origin (carried over from SEED-010 "Deferred extensions"):**
-- SR blunder-training is the **next milestone after Library**, FSRS-based, reuses the best-move endpoint, no reimport risk; red herrings are training-v2.
-- GM coach to co-design the UX, kicked off with an iterable hosted prototype at the unlinked `/train-sketch` route (real isolated React route with mock data, reusing the real board/theme — not a gsd-sketch HTML file). Core training loop must be settled before building the real feature.
-- Training name TBD.
+**2026-07-23 round 4 (user + Claude, learning-theory review):** motif layer added to
+counter card-memorization — multiple-choice motif quiz on missed-tactic flaws (correct
+AND failed attempts, separate "patterns named" tally, plausible distractors), escalated
+active walkthrough (click-through, reusing analysis-board line stepping) triggered only
+by replaying the exact original blunder on a tactic-tagged flaw. Motif-aggregated
+progress, motif-variation injection, and LLM explanations recorded as v2 candidates.
+
+**2026-07-23 round 3 (user + Claude):** pre-move metacognition layer added — binary
+"one critical move vs several fine moves" guess (3-way type guess rejected as
+memory-testing), move always required, independent 0–2 scoring per puzzle, session
+score → green/yellow/red rating, guess layer isolated from SR mechanics; gamification
+capped at points/rating/streak/mastered-count.
+
+**2026-07-23 round 2 (user + Claude):** red herrings promoted from v2 into v1 at ~25%
+of each session (one-off fillers, sourced from non-gem `game_best_moves` rows);
+avoid-the-blunder puzzle type added; sharp-answer-key gate demoted to a classifier fed
+by `missed_pv_lines` blob MultiPV-2 data (resolves the round-1 open question); grading
+unified to one not-a-mistake threshold across all types.
+
+**2026-07-23 refinement (user + Claude, gsd-explore):** all Settled Design decisions
+above; `/train-sketch` prototype deleted; GM-coach loop dropped; FSRS rejected in favor
+of the streak-keyed interval ladder; grading moved fully client-side.
+
+**2026-06-04 split (user + Claude):** SEED-010 split into SEED-036 (Library) +
+SEED-037 (this seed); SEED-010 closed.
+
+**2026-06-03 origin (SEED-010 "Deferred extensions"):** SR blunder-training as the
+milestone after Library; red herrings deferred; name TBD.
