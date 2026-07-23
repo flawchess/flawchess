@@ -159,15 +159,25 @@ tags (many sharp puzzles have a single best move but no tag — those skip this 
 - **Motif quiz is a separate tally, not main-score points**: session end shows
   "Patterns named: 4/5" as its own stat. Keeps 0–2 comparable across sessions
   regardless of how many tactic-tagged puzzles appeared.
+- **Weekly streak** — N consecutive weeks with every scheduled session completed.
+  Naturally forgiving (the user sets their own schedule), so no freeze-token mechanics.
+  Guiding rule for all gamification here (self-determination theory): **competence
+  feedback yes, behavior control no** — no guilt mechanics, no decaying rewards.
+- **Two celebration moments (v1)**:
+  - **Confetti on a green-rated session** (session-end burst; `prefers-reduced-motion`
+    safe; canvas-confetti-class tiny lib or CSS).
+  - **"Flaw fixed!" moment** when an item hits 3/3 and retires — distinct celebration
+    with the position thumbnail. The core product promise made visceral; the higher-
+    leverage moment of the two.
 - **v1 gamification inventory**: per-puzzle points, session score + color rating,
-  patterns-named tally, scheduled-session streak, mastered count. No XP, leagues, or
-  badges — the learning is the product.
+  patterns-named tally, weekly streak, mastered count, the two celebrations. No XP,
+  leagues, or badges — the learning is the product.
 
 ### Schedule & reminders (v1: in-app only)
 
 Settings: weekday picker + N per session. Surfacing: nav badge / dashboard card on
-session days ("12 puzzles waiting") + a session-streak counter (consecutive scheduled
-sessions completed). **No push, no email in v1** — PWA push (service worker, VAPID,
+session days ("12 puzzles waiting") + the weekly-streak counter (see Scoring &
+gamification). **No push, no email in v1** — PWA push (service worker, VAPID,
 subscription storage, scheduled sender) is its own project; defer to v2.
 
 ### Empty/cold states
@@ -206,6 +216,10 @@ subscription storage, scheduled sender) is its own project; defer to v2.
   stays uniform and quiet-position move choice is itself training.
 - **Move-gated scoring** (wrong move = 0 regardless of guess) — rejected in favor of
   independent guess/move points.
+- **Per-session streak + freeze tokens** — rejected; the weekly streak over a
+  user-configured schedule is self-forgiving without freeze UX.
+- **Leaderboard in v1 (hidden-gated)** — rejected; infrastructure for a feature that
+  may idle for months. Deferred with an explicit active-user trigger instead.
 
 ## Data Dependencies (all shipped)
 
@@ -246,7 +260,8 @@ top-level page is **Train** (nav `Import · Openings · Endgames · Library · T
    reveal with verdicts + pv + game card + analysis-board link, session-end score +
    color rating screen.
 3. **Schedule + progress surface.** Weekday/N settings, nav badge + dashboard card,
-   session streak, mastered-count/retention stats, cold/empty states.
+   weekly streak, celebrations (green confetti + flaw-fixed moment),
+   mastered-count/retention stats, cold/empty states.
 
 ## Deferred / v2
 
@@ -260,6 +275,13 @@ top-level page is **Train** (nav `Import · Openings · Endgames · Library · T
 - **LLM one-line "why"** — pydantic-ai generated explanation sentence on the reveal
   ("the knight was overloaded defending e5 and the back rank"). Capability exists
   (endgame insights stack); cost/caching is the open question.
+- **Weekly leaderboard** — trigger: **≥10–15 weekly-active trainers** (a leaderboard of
+  4 advertises emptiness and permanently ranks the same person last). Opt-in, display
+  names, metric = points earned this week (session scores aren't comparable across
+  users' pools). Do not build hidden-gated in v1.
+- **Milestone counters / personal-best callouts** (candidates) — every-10-flaws-fixed
+  bursts, "best score in 4 weeks", score count-up. Considered in round 5, left out of
+  v1; revisit if the session-end screen feels flat.
 - **Push/email reminders** — PWA push subsystem or an email pipeline.
 - **Half-credit / retry variants** — if one-attempt proves too harsh in practice.
 
@@ -274,6 +296,13 @@ top-level page is **Train** (nav `Import · Openings · Endgames · Library · T
   eval swings into training positions (sharpness filtering ideas).
 
 ## Source / decision log
+
+**2026-07-23 round 5 (user + Claude, gamification):** weekly streak (all scheduled
+sessions done that week; no freeze mechanics); v1 celebrations = confetti on green
+session + "Flaw fixed!" retirement moment; SDT guardrail recorded (competence feedback
+yes, behavior control no); weekly leaderboard deferred to v2 behind a ≥10–15
+weekly-active-trainers trigger (opt-in, points-earned metric); milestone counters and
+personal bests parked as candidates.
 
 **2026-07-23 round 4 (user + Claude, learning-theory review):** motif layer added to
 counter card-memorization — multiple-choice motif quiz on missed-tactic flaws (correct
