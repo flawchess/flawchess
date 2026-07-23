@@ -125,6 +125,27 @@ decides *when* reps happen; this counter decides *retirement*.
   here, not on the solve screen. Herring reveal: "you handled this well in the game —
   several moves are fine"; blunder reveal names the original mistake.
 
+### Motif layer (tactic-tagged flaws only — the schema-abstraction lever)
+
+Learning-theory rationale: repeating an identical position risks learning *the card,
+not the concept*. Two features force semantic processing, both conditional on tactic
+tags (many sharp puzzles have a single best move but no tag — those skip this layer):
+
+- **Motif multiple-choice quiz** — on **missed-tactic** flaws only (there the tactic IS
+  the solution; on allowed-tactic flaws the tactic lives in the refutation, handled
+  below). Shown after correct moves ("what did you just play?") AND after failed ones
+  post-reveal ("what tactic did you miss?") — failers need the schema most. True motif
+  + 2–3 plausible distractors from the motif enum (e.g. fork vs discovered attack),
+  never the full taxonomy. Naming the pattern is itself retrieval practice.
+- **Escalated active walkthrough on repeat-blunder** — trigger: the user plays their
+  *exact original blunder move* AND the flaw is tactic-tagged (the strongest signal the
+  pattern hasn't encoded; ration the user's time to that moment). Missed-tactic → step
+  through the tactic they missed again (`missed_pv_lines`); allowed-tactic → step
+  through the opponent's punishment (`allowed_pv_lines`, "this allowed a [fork] —
+  again"). **Click-through stepping, reusing the analysis board's existing
+  missed/allowed tactic line-stepping UI.** Any other wrong move, or untagged flaw →
+  normal passive reveal.
+
 ### Scoring & gamification (solid learning, light game layer)
 
 - **Per puzzle: 0–2 points, independent** — +1 correct guess, +1 correct move. Correct
@@ -135,9 +156,12 @@ decides *when* reps happen; this counter decides *retirement*.
 - **Scoring never touches the SR mechanics**: mastery streak and due dates are driven by
   move correctness alone. The guess layer is metacognition + score only, so pool
   behavior stays predictable.
+- **Motif quiz is a separate tally, not main-score points**: session end shows
+  "Patterns named: 4/5" as its own stat. Keeps 0–2 comparable across sessions
+  regardless of how many tactic-tagged puzzles appeared.
 - **v1 gamification inventory**: per-puzzle points, session score + color rating,
-  scheduled-session streak, mastered count. No XP, leagues, or badges — the learning is
-  the product.
+  patterns-named tally, scheduled-session streak, mastered count. No XP, leagues, or
+  badges — the learning is the product.
 
 ### Schedule & reminders (v1: in-app only)
 
@@ -188,9 +212,14 @@ subscription storage, scheduled sender) is its own project; defer to v2.
 - `game_flaws` — materialized blunders/mistakes for both players (v1.24/v1.27); ply
   parity gives ownership.
 - `game_positions.best_move` / `.pv` — full-game eval pipeline (v1.26+); the answer key.
-- `game_flaws.missed_pv_lines` — write-once JSONB blob (Phase 141); node 0 has best
-  (`b`/`bm`) + second-best (`s`/`sm`/`su`) — the sharp-vs-soft puzzle classifier.
-  Deferred column: load via `undefer()`. Tier-4 opportunistic coverage.
+- `game_flaws.missed_pv_lines` / `.allowed_pv_lines` — write-once JSONB blobs
+  (Phase 141); `missed_pv_lines` node 0 has best (`b`/`bm`) + second-best
+  (`s`/`sm`/`su`) — the sharp-vs-soft puzzle classifier; both lines feed the escalated
+  walkthrough. Deferred columns: load via `undefer()`. Tier-4 opportunistic coverage.
+- `game_flaws.missed_tactic_motif` / `.allowed_tactic_motif` (+ confidence/depth/piece)
+  — gate and content of the motif layer; motif enum supplies quiz distractors.
+- Analysis board tactic line-stepping UI — reuse for the escalated click-through
+  walkthrough (already handles both missed and allowed orientations).
 - `game_best_moves` — MultiPV-2 best/second eval for plies where the user played the
   stored best move out-of-book (v2.4); **non-gem rows (best ≈ second) are the red
   herring source**. Same opportunistic-backfill caveat (two populations).
@@ -222,6 +251,15 @@ top-level page is **Train** (nav `Import · Openings · Endgames · Library · T
 ## Deferred / v2
 
 - **Mistakes tier** — expand pool entry beyond blunders.
+- **Motif-aggregated progress** (candidate, not yet decided) — progress surface groups
+  mastery by motif ("forks: 1/4, two failed twice"), turning stats into a diagnosis of
+  conceptual weaknesses rather than an item counter.
+- **Motif-variation injection** — when a user keeps failing a motif, prefer introducing
+  *different* positions sharing that motif (variability of practice; the real cure for
+  card-memorization — motif mastery should be demonstrated on unseen positions).
+- **LLM one-line "why"** — pydantic-ai generated explanation sentence on the reveal
+  ("the knight was overloaded defending e5 and the back rank"). Capability exists
+  (endgame insights stack); cost/caching is the open question.
 - **Push/email reminders** — PWA push subsystem or an email pipeline.
 - **Half-credit / retry variants** — if one-attempt proves too harsh in practice.
 
@@ -236,6 +274,13 @@ top-level page is **Train** (nav `Import · Openings · Endgames · Library · T
   eval swings into training positions (sharpness filtering ideas).
 
 ## Source / decision log
+
+**2026-07-23 round 4 (user + Claude, learning-theory review):** motif layer added to
+counter card-memorization — multiple-choice motif quiz on missed-tactic flaws (correct
+AND failed attempts, separate "patterns named" tally, plausible distractors), escalated
+active walkthrough (click-through, reusing analysis-board line stepping) triggered only
+by replaying the exact original blunder on a tactic-tagged flaw. Motif-aggregated
+progress, motif-variation injection, and LLM explanations recorded as v2 candidates.
 
 **2026-07-23 round 3 (user + Claude):** pre-move metacognition layer added — binary
 "one critical move vs several fine moves" guess (3-way type guess rejected as
