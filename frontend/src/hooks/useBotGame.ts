@@ -109,6 +109,7 @@ import {
 } from '@/lib/botDrawGate';
 import { annotateClock, finalizeBotPgn, toBackendTcStr } from '@/lib/botGamePgn';
 import { playSound, unlockAudio } from '@/lib/sounds';
+import { fireWinConfetti, prefersReducedMotion } from '@/lib/confetti';
 import { createWorkerPool, type WorkerPool } from '@/lib/engine/workerPool';
 import { createMaiaQueue, type MaiaQueue } from '@/lib/engine/maiaQueue';
 import { selectBotMove, type BotMoveDeps } from '@/lib/engine/selectBotMove';
@@ -757,11 +758,13 @@ export function useBotGame(
   //
   // Sets `outcome` (stopping the clock tick via its outcome guard, see
   // below), computes the finished PGN via botGamePgn's finalizeBotPgn
-  // (PLAY-09), and fires the game-end sound (D-09). WR-03: the FIRST outcome
-  // wins — every caller (tick timeout, board end-detection, resign,
-  // draw-accept) can reach this concurrently or from a stale closure, so the
-  // `outcomeRef` latch (not the async `outcome` state) is the single source
-  // of truth for "has the game already ended."
+  // (PLAY-09), and fires the outcome-specific sound (D-09; Quick 260723-tqn:
+  // Victory/Defeat/Draw replacing the single undiscriminated game-end clip)
+  // plus a confetti burst on a human win (unless reduced-motion). WR-03: the
+  // FIRST outcome wins — every caller (tick timeout, board end-detection,
+  // resign, draw-accept) can reach this concurrently or from a stale
+  // closure, so the `outcomeRef` latch (not the async `outcome` state) is
+  // the single source of truth for "has the game already ended."
 
   const finalizeGame = useCallback(
     (finished: BotGameOutcome): void => {
@@ -789,7 +792,18 @@ export function useBotGame(
         enqueuedAt: Date.now(),
       });
       clearSnapshot(ownerKey);
-      playSound('game-end');
+
+      // Quick 260723-tqn: outcome-specific sound + win-only confetti. This is
+      // the SINGLE firing site — Bots.tsx does not also play a sound or fire
+      // confetti; it only reads `useWinCelebrationHold` to gate the modal.
+      if (finished.reason !== 'draw' && finished.winner === settings.userColor) {
+        playSound('game-win');
+        if (!prefersReducedMotion()) fireWinConfetti();
+      } else if (finished.reason === 'draw') {
+        playSound('game-draw');
+      } else {
+        playSound('game-loss');
+      }
     },
     [settings, gameUuid, ownerKey],
   );

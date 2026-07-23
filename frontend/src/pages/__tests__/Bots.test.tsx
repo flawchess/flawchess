@@ -193,6 +193,15 @@ vi.mock('@/hooks/useUserProfile', () => ({
   }),
 }));
 
+// Quick 260723-tqn: the celebration-hold delay is covered by its own
+// dedicated unit test (useWinCelebrationHold.test.ts, fake timers). Mocked
+// here to `false` (no hold) so this file's existing result-dialog assertions
+// (which use real timers) aren't coupled to the ~1.3s WIN_CELEBRATION_HOLD_MS
+// window.
+vi.mock('@/hooks/useWinCelebrationHold', () => ({
+  useWinCelebrationHold: () => false,
+}));
+
 // 171-09 (gap 2): a minimal ChessBoard stub exposing the lastMove prop as a
 // data attribute, so the last-move-highlight tests can assert on the wiring
 // boundary without pulling in real react-chessboard rendering. Safe here:

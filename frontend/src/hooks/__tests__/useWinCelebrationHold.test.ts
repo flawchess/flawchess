@@ -14,7 +14,7 @@
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { renderHook } from '@testing-library/react';
+import { renderHook, act } from '@testing-library/react';
 import type { BotGameOutcome } from '@/lib/botGameEnd';
 import type { MoverColor } from '@/lib/liveFlaw';
 
@@ -74,10 +74,14 @@ describe('useWinCelebrationHold', () => {
     rerender({ outcome: WIN_OUTCOME });
     expect(result.current).toBe(true);
 
-    vi.advanceTimersByTime(WIN_CELEBRATION_HOLD_MS - 1);
+    act(() => {
+      vi.advanceTimersByTime(WIN_CELEBRATION_HOLD_MS - 1);
+    });
     expect(result.current).toBe(true);
 
-    vi.advanceTimersByTime(1);
+    act(() => {
+      vi.advanceTimersByTime(1);
+    });
     expect(result.current).toBe(false);
   });
 
@@ -92,7 +96,9 @@ describe('useWinCelebrationHold', () => {
     rerender({ outcome: WIN_OUTCOME });
     expect(result.current).toBe(false);
 
-    vi.advanceTimersByTime(WIN_CELEBRATION_HOLD_MS);
+    act(() => {
+      vi.advanceTimersByTime(WIN_CELEBRATION_HOLD_MS);
+    });
     expect(result.current).toBe(false);
   });
 
@@ -104,7 +110,11 @@ describe('useWinCelebrationHold', () => {
     );
     rerender({ outcome: WIN_OUTCOME });
     expect(() => unmount()).not.toThrow();
-    expect(() => vi.advanceTimersByTime(WIN_CELEBRATION_HOLD_MS)).not.toThrow();
+    expect(() =>
+      act(() => {
+        vi.advanceTimersByTime(WIN_CELEBRATION_HOLD_MS);
+      }),
+    ).not.toThrow();
   });
 
   it('resets and re-triggers on a fresh win after outcome returns to null', () => {
@@ -116,7 +126,9 @@ describe('useWinCelebrationHold', () => {
 
     rerender({ outcome: WIN_OUTCOME });
     expect(result.current).toBe(true);
-    vi.advanceTimersByTime(WIN_CELEBRATION_HOLD_MS);
+    act(() => {
+      vi.advanceTimersByTime(WIN_CELEBRATION_HOLD_MS);
+    });
     expect(result.current).toBe(false);
 
     // New game: outcome resets to null, then a fresh win outcome arrives.
@@ -125,7 +137,9 @@ describe('useWinCelebrationHold', () => {
 
     rerender({ outcome: { reason: 'checkmate', winner: 'white' } });
     expect(result.current).toBe(true);
-    vi.advanceTimersByTime(WIN_CELEBRATION_HOLD_MS);
+    act(() => {
+      vi.advanceTimersByTime(WIN_CELEBRATION_HOLD_MS);
+    });
     expect(result.current).toBe(false);
   });
 });

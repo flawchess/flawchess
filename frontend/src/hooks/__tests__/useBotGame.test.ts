@@ -214,6 +214,15 @@ vi.mock('@/lib/sounds', () => ({
   unlockAudio: () => mockUnlockAudio(),
 }));
 
+// Quick 260723-tqn: mocked so a human-win test doesn't invoke the real
+// canvas-confetti (no canvas 2D context in jsdom) and to keep confetti-firing
+// independently assertable from the outcome sound.
+const mockFireWinConfetti = vi.fn();
+vi.mock('@/lib/confetti', () => ({
+  fireWinConfetti: () => mockFireWinConfetti(),
+  prefersReducedMotion: () => false,
+}));
+
 const mockCaptureException = vi.fn();
 vi.mock('@sentry/react', () => ({
   captureException: (...args: unknown[]) => mockCaptureException(...args),
@@ -1349,7 +1358,7 @@ describe('useBotGame', () => {
 
       expect(result.current.outcome).toEqual({ reason: 'checkmate', winner: 'black' }); // unchanged
       expect(result.current.pgn).toBe(pgnAfterMate); // not regenerated
-      expect(mockPlaySound).not.toHaveBeenCalledWith('game-end'); // no duplicate finalize
+      expect(mockPlaySound).not.toHaveBeenCalledWith('game-loss'); // no duplicate finalize
       expect(result.current.drawOfferPending).toBe(false); // effect still clears the pending flag
     });
   });
@@ -2075,7 +2084,7 @@ describe('useBotGame', () => {
       mockPlaySound.mockClear();
       await playRound(result, RESIGN_TEST_ROUNDS[19]!);
       expect(result.current.outcome).toEqual({ reason: 'resignation', winner: 'white' });
-      expect(mockPlaySound.mock.calls.filter((c) => c[0] === 'game-end')).toHaveLength(1);
+      expect(mockPlaySound.mock.calls.filter((c) => c[0] === 'game-win')).toHaveLength(1);
 
       // Idempotency: nothing further happens — the bot-turn-trigger effect
       // is gated on `!outcome`, so no additional move/grade/finalize occurs.
@@ -2083,7 +2092,7 @@ describe('useBotGame', () => {
       await advance(2000);
       expect(result.current.outcome).toEqual({ reason: 'resignation', winner: 'white' });
       expect(result.current.pgn).toBe(pgnAfterResign);
-      expect(mockPlaySound.mock.calls.filter((c) => c[0] === 'game-end')).toHaveLength(1);
+      expect(mockPlaySound.mock.calls.filter((c) => c[0] === 'game-win')).toHaveLength(1);
     });
 
     it('never resigns for an unstyled game (DEFAULT_SETTINGS) under the same low-score grade sequence', async () => {
