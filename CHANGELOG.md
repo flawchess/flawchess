@@ -24,6 +24,10 @@ in `YYYY-MM-DD` (Europe/Zurich).
 
 - The Bots roster is now organized as a strength ladder: six rung rows (~800 at the top, strongest at the bottom) by four style columns, with a single accent-colored style header row. Each card's own ELO label identifies its rung, so the grid needs no row labels, and the four style names fit on one line down to the narrowest phone widths (Phase 185).
 
+### Fixed
+
+- Lichess imports work again: lichess began rejecting requests without an identifying User-Agent (returning "user not found" for accounts that exist), which broke every lichess import from 2026-07-22. FlawChess now identifies itself on lichess API requests, as it always has on chess.com (hotfix 2026-07-23).
+
 ## [v2.6] Bot Strength Calibration — 2026-07-21
 
 ### Added
