@@ -18,6 +18,10 @@ in `YYYY-MM-DD` (Europe/Zurich).
 
 - Dev: bot play-style levers — four named styles (Attacker, Trickster, Grinder, Wall) can now steer a bot's play through new bot-only parameters: a curated per-style opening book, signed draw contempt plus a hysteresis-gated resign policy, Maia policy reweighting by move features (checks, captures, pawn advances, trades) on the Human rungs, and additive score shaping with a variance preference on the Light/Deep rungs. A headless measurement script (`scripts/style-lever-measurement.mjs`) backs the per-style tuning with committed evidence. Every lever is optional and gated: with no style set, bot play and Custom mode are byte-identical to before. Dev-only, nothing selects a style yet (the Bots page personas land in Phase 183) (Phase 182).
 
+### Fixed
+
+- Lichess games imported with lichess evals no longer wait behind the entire analysis backlog: they now take part in the same fair per-user scheduling as everything else, so your fresh imports get their engine pass promptly even while another user's huge import is being worked through (Quick 260723-j6g).
+
 ### Changed
 
 - Finished bot games are now saved with the persona's name and its calibrated strength (e.g. ~800) as the opponent's name and rating, in both the PGN header and the game record, instead of the generic "FlawChess Bot" and the bot's internal engine setting. Custom-setup games are unchanged (Quick 260722-ucc).
