@@ -53,10 +53,13 @@ export const MUTE_KEY = 'flawchess_bot_sound_muted';
  * (including the never-written `'0'`) reads as unmuted (default ON, D-10). */
 const MUTED_VALUE = '1';
 
-/** Maps each SoundEvent to its vendored clip filename (without extension)
- * under `frontend/public/sound/`. `game-end` still uses `Checkmate` (kept for
- * any remaining undiscriminated caller); `game-win`/`game-loss`/`game-draw`
- * (Quick 260723-tqn) use the vendored Victory/Defeat/Draw clips. */
+/** Maps each SoundEvent to its clip filename (without extension) under
+ * `frontend/public/sound/`. `game-end` still uses `Checkmate` (kept for any
+ * remaining undiscriminated caller); `game-loss`/`game-draw` (Quick 260723-tqn)
+ * use the vendored lila Defeat/Draw clips. `game-win` uses `WinChime` — a
+ * gentle, self-authored (CC0, no attribution) chime chosen over the vendored
+ * `Victory` fanfare, which read as too aggressive; `Victory.mp3` stays in the
+ * folder for any future surface that wants the fuller sound. */
 const SOUND_FILES: Record<SoundEvent, string> = {
   move: 'Move',
   capture: 'Capture',
@@ -64,7 +67,7 @@ const SOUND_FILES: Record<SoundEvent, string> = {
   'game-end': 'Checkmate',
   'low-time': 'LowTime',
   'draw-declined': 'GenericNotify',
-  'game-win': 'Victory',
+  'game-win': 'WinChime',
   'game-loss': 'Defeat',
   'game-draw': 'Draw',
 };

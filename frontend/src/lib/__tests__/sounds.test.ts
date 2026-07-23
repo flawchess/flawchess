@@ -83,7 +83,7 @@ describe('sounds', () => {
     ['game-end', 'Checkmate.mp3'],
     ['low-time', 'LowTime.mp3'],
     ['draw-declined', 'GenericNotify.mp3'],
-    ['game-win', 'Victory.mp3'],
+    ['game-win', 'WinChime.mp3'],
     ['game-loss', 'Defeat.mp3'],
     ['game-draw', 'Draw.mp3'],
   ] satisfies [SoundEvent, string][])(
