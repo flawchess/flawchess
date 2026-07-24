@@ -15,7 +15,7 @@ from collections.abc import AsyncIterator, Callable, Sequence
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from enum import Enum
-from typing import Any, Literal
+from typing import Any, Literal, cast
 
 import httpx
 import sentry_sdk
@@ -26,9 +26,15 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import async_session_maker, engine
 from app.models.game import Game
-from app.repositories import game_repository, import_job_repository
+from app.repositories import (
+    game_repository,
+    import_job_repository,
+    user_import_settings_repository,
+    user_repository,
+)
 from app.repositories.import_job_repository import ImportJobNotFound
-from app.schemas.normalization import NormalizedGame
+from app.repositories.user_import_settings_repository import ImportSettingsRow
+from app.schemas.normalization import NormalizedGame, TimeControlBucket
 from app.services import chesscom_client, lichess_client, percentile_compute_registry
 from app.services.eval_entry import (
     _classify_and_insert_flaws,
@@ -80,6 +86,34 @@ _RETRIABLE_DB_OUTAGE_ERRORS: tuple[type[BaseException], ...] = (
 # 12 -> 30 for fewer transactions during fetch+import with comfortable headroom.
 _BATCH_SIZE = 30
 IMPORT_TIMEOUT_SECONDS = 3 * 60 * 60  # 3 hours per D-24
+
+# Phase 186 Plan 02 (IMPORT-03): how many games to request per backward-walk
+# lichess chunk. Lichess bounds by (until, max), not by TC bucket, so a chunk
+# may contain a mix of enabled/disabled buckets; TC-filtering happens
+# post-fetch like the forward pass (D-02). Larger than _BATCH_SIZE (a DB-insert
+# batching unit) since this is a fetch-chunk size aimed at reducing round trips.
+_BACKWARD_LICHESS_CHUNK_SIZE = 200
+
+# WR-03 fix (code-review 186): how many backward-walk fetch units (chess.com
+# attempted months / lichess fetched chunks) elapse between persisted-cursor
+# writes. Previously every single unit opened its own session/commit purely
+# to persist a 2-column cursor -- a long-tenured chess.com account can attempt
+# 180+ months in one walk. Pitfall 1 only requires the cursor to advance
+# EVENTUALLY, not after every unit, so batching this reduces session churn
+# without weakening resumability (the trailing not-yet-persisted progress is
+# always flushed before the walk returns).
+_CURSOR_PERSIST_EVERY_N_UNITS = 6
+
+# D-14: lichess perfType excludes correspondence when only "classical" is
+# requested, so classical-enabled backward chunks must request both. The
+# always-on post-fetch TC filter means correctness never depends on this
+# mapping (Assumption A1 de-risking) -- it's purely a bandwidth optimization.
+_LICHESS_PERF_TYPE_MAP: dict[TimeControlBucket, str] = {
+    "bullet": "bullet",
+    "blitz": "blitz",
+    "rapid": "rapid",
+    "classical": "classical,correspondence",
+}
 
 # Phase 90 / SEED-017 resilience constants — no magic numbers (CLAUDE.md).
 _REAPER_INTERVAL_SECONDS = 5 * 60  # 5 minutes between periodic reaper ticks
@@ -456,14 +490,26 @@ async def _record_failure_with_retry(
         sentry_sdk.capture_exception(last_exc)
 
 
-async def _bootstrap_import_job(job: JobState, job_id: str) -> datetime | None:
-    """Bootstrap scope: previous-job lookup for the incremental-sync cursor.
+@dataclass(slots=True, frozen=True)
+class _BootstrapResult:
+    """Scalars extracted inside the bootstrap session scope (Pitfall 2 mitigation).
+
+    Phase 186 Plan 02: `created_at` is the per-user backlog anchor (D-02) --
+    used by both the forward pass (never-unbounded floor, Pitfall 2) and the
+    backward pass (budget query scope).
+    """
+
+    previous_last_synced_at: datetime | None
+    created_at: datetime
+
+
+async def _bootstrap_import_job(job: JobState, job_id: str) -> _BootstrapResult:
+    """Bootstrap scope: previous-job lookup + account-creation anchor (D-02).
 
     Extracted from run_import (WR-01: nesting-depth reduction). Owns its own
     AsyncSession so the session is closed before the batch loop begins. Only
-    the plain scalar `previous_last_synced_at` crosses the boundary, avoiding
-    any DetachedInstanceError risk on cross-scope ORM attribute access
-    (Pitfall 2, 90-RESEARCH.md).
+    plain scalars cross the boundary, avoiding any DetachedInstanceError risk
+    on cross-scope ORM attribute access (Pitfall 2, 90-RESEARCH.md).
 
     Bug fix (Phase 149 PRUNE-05): this used to ALSO create the durable
     import_jobs row here — strictly after the HTTP response for start_import
@@ -472,6 +518,11 @@ async def _bootstrap_import_job(job: JobState, job_id: str) -> datetime | None:
     start_import (app/routers/imports.py), before asyncio.create_task
     schedules run_import, backed by the uq_import_jobs_user_platform_active
     partial unique index. Only the previous-job lookup remains here.
+
+    Phase 186 Plan 02: also fetches `users.created_at` inside the SAME session
+    scope (no additional `async_session_maker()` call) -- the two-pass Sync
+    (D-05) needs it for both the forward pass's never-unbounded floor
+    (Pitfall 2) and the backward pass's per-(platform, TC) budget query.
     """
     async with async_session_maker() as bootstrap_session:
         previous_job = await import_job_repository.get_latest_for_user_platform(
@@ -481,7 +532,75 @@ async def _bootstrap_import_job(job: JobState, job_id: str) -> datetime | None:
         previous_last_synced_at: datetime | None = (
             previous_job.last_synced_at if previous_job is not None else None
         )
-    return previous_last_synced_at
+        created_at = await user_repository.get_created_at(bootstrap_session, job.user_id)
+    return _BootstrapResult(previous_last_synced_at=previous_last_synced_at, created_at=created_at)
+
+
+def _enabled_tc_buckets(settings: ImportSettingsRow) -> frozenset[TimeControlBucket]:
+    """Derive the set of enabled TC buckets from a settings row.
+
+    Phase 186 Plan 01 (IMPORT-02, D-02). Correspondence games are NOT a
+    separate bucket here -- normalization.py already normalizes them into
+    "classical" (D-14), so gating them under tc_classical is automatic.
+    """
+    enabled: set[TimeControlBucket] = set()
+    if settings.tc_bullet:
+        enabled.add("bullet")
+    if settings.tc_blitz:
+        enabled.add("blitz")
+    if settings.tc_rapid:
+        enabled.add("rapid")
+    if settings.tc_classical:
+        enabled.add("classical")
+    return frozenset(enabled)
+
+
+def _game_time_control_bucket(game: NormalizedGame) -> TimeControlBucket | None:
+    """Return `game`'s TC bucket, tolerating dict-shaped test doubles.
+
+    Shared by `_passes_tc_filter` and the backward pass's live budget-counter
+    update -- mirrors `_collect_position_rows`' isinstance pattern below;
+    production always yields real NormalizedGame instances.
+    """
+    return (
+        game.time_control_bucket
+        if isinstance(game, NormalizedGame)
+        else game.get("time_control_bucket")  # type: ignore[union-attr] — dict fallback for test mocks
+    )
+
+
+def _passes_tc_filter(
+    game: NormalizedGame, enabled_tc_buckets: frozenset[TimeControlBucket]
+) -> bool:
+    """Return True if `game` should be imported given the enabled TC set.
+
+    D-15: a game with `time_control_bucket=None` (no derivable TC bucket)
+    ALWAYS passes -- it bypasses the filter entirely and counts against no
+    budget. D-14: correspondence games ride the classical bucket upstream in
+    normalization.py, so this needs no special case for them.
+    """
+    bucket = _game_time_control_bucket(game)
+    if bucket is None:
+        return True
+    return bucket in enabled_tc_buckets
+
+
+async def _load_import_settings(user_id: int) -> ImportSettingsRow:
+    """Load (or create-on-first-touch, D-16) the user's import settings.
+
+    Owns its own AsyncSession scope, mirroring `_bootstrap_import_job` (Phase 90
+    / SEED-018: bounded per-scope session lifetime). Loaded once per job, not
+    once per game -- forward Sync respects whatever settings were current when
+    the job started (D-04: a running job finishes with the settings it started
+    with; the next Sync applies new values). Phase 186 Plan 02: also the
+    source of `game_cap` for the backward pass's per-(platform, TC) budget.
+    """
+    async with async_session_maker() as session:
+        settings = await user_import_settings_repository.get_or_create_settings(
+            session, user_id=user_id
+        )
+        await session.commit()
+    return settings
 
 
 async def _flush_batch_with_progress(
@@ -571,10 +690,16 @@ async def _complete_import_job(job: JobState, job_id: str) -> None:
 async def run_import(job_id: str) -> None:
     """Background import orchestrator — launched via asyncio.create_task.
 
-    Orchestrates the full import pipeline:
-    1. Checks for previous completed job to determine incremental sync boundary.
-    2. Fetches games from the platform client (chess.com or lichess).
-    3. Batches games, bulk inserts to DB, computes Zobrist hashes, stores positions.
+    Orchestrates the full import pipeline as ONE job, TWO passes (Phase 186
+    Plan 02, D-05):
+    1. Checks for previous completed job / users.created_at to determine the
+       forward-pass sync boundary and the backward-pass backlog anchor.
+    2. FORWARD pass: fetches + TC-filters + inserts post-anchor games,
+       uncapped (D-02). Bounded below by users.created_at so a first sync
+       never fetches unbounded history (Pitfall 2).
+    3. BACKWARD pass: fetches + TC-filters + inserts older backlog games,
+       capped per-(platform, TC) budget (D-01/D-07), resumable via a
+       persisted per-platform cursor (Pitfall 1).
     4. Updates job to COMPLETED or FAILED with final counts.
 
     This function never re-raises exceptions — failures are captured in the job state.
@@ -596,24 +721,41 @@ async def run_import(job_id: str) -> None:
             # completion) so session lifetime is bounded — the old single-session
             # pattern was the secondary accumulation surface alongside the Stage 5
             # unique-SQL leak fixed in Plan 90-01.
-            previous_last_synced_at = await _bootstrap_import_job(job, job_id)
+            bootstrap = await _bootstrap_import_job(job, job_id)
+            # Phase 186 Plan 01/02 (IMPORT-02): loaded once per job, not once per
+            # game -- see _load_import_settings docstring for the D-04 rationale.
+            # D-04: a running job finishes with the settings (TC + cap) it
+            # started with; the next Sync applies any mid-run PATCH.
+            settings = await _load_import_settings(job.user_id)
+            enabled_tc_buckets = _enabled_tc_buckets(settings)
 
             def _on_game_fetched() -> None:
                 job.games_fetched += 1
 
             async with httpx.AsyncClient(timeout=60.0) as client:
-                game_iter = _make_game_iterator(
-                    client, job, previous_last_synced_at, _on_game_fetched
+                # FORWARD PASS (D-02/D-05/D-06): post-anchor games, uncapped,
+                # TC-filtered. Bounded below by users.created_at -- since=None
+                # never reaches a platform client for a capped fetch (Pitfall 2).
+                forward_since = (
+                    bootstrap.previous_last_synced_at
+                    if bootstrap.previous_last_synced_at is not None
+                    else bootstrap.created_at
                 )
-                batch: list[NormalizedGame] = []
-                async for game_dict in game_iter:
-                    batch.append(game_dict)
-                    if len(batch) >= _BATCH_SIZE:
-                        await _flush_batch_with_progress(batch, job, job_id)
-                        batch = []
-                if batch:
-                    # Trailing batch < _BATCH_SIZE.
-                    await _flush_batch_with_progress(batch, job, job_id)
+                await _run_forward_pass(
+                    client, job, job_id, forward_since, enabled_tc_buckets, _on_game_fetched
+                )
+
+                # BACKWARD PASS (D-01/D-05/D-06/D-07): capped per-(platform, TC)
+                # backfill, resumable via a persisted cursor (Pitfall 1).
+                await _run_backward_pass(
+                    client,
+                    job,
+                    job_id,
+                    bootstrap.created_at,
+                    enabled_tc_buckets,
+                    settings.game_cap,
+                    _on_game_fetched,
+                )
 
             await _complete_import_job(job, job_id)
             job.status = JobStatus.COMPLETED
@@ -668,19 +810,55 @@ async def run_import(job_id: str) -> None:
         )
 
 
+async def _run_forward_pass(
+    client: httpx.AsyncClient,
+    job: JobState,
+    job_id: str,
+    forward_since: datetime,
+    enabled_tc_buckets: frozenset[TimeControlBucket],
+    on_game_fetched: Callable[[], None],
+) -> None:
+    """Forward pass (D-02/D-05/D-06): fetch + TC-filter + batch-insert post-anchor games.
+
+    `forward_since` is always a real datetime (never None) -- Pitfall 2:
+    max(last_synced_at, users.created_at), computed by run_import. Uncapped:
+    the TC filter is the only gate, matching Plan 01's forward/incremental
+    sync behavior.
+    """
+    game_iter = _make_game_iterator(client, job, forward_since, on_game_fetched)
+    batch: list[NormalizedGame] = []
+    async for game_dict in game_iter:
+        # D-02/D-14/D-15: drop games in a deselected TC bucket before insert;
+        # None-bucket and correspondence(classical) games always pass.
+        if not _passes_tc_filter(game_dict, enabled_tc_buckets):
+            continue
+        batch.append(game_dict)
+        if len(batch) >= _BATCH_SIZE:
+            await _flush_batch_with_progress(batch, job, job_id)
+            batch = []
+    if batch:
+        # Trailing batch < _BATCH_SIZE.
+        await _flush_batch_with_progress(batch, job, job_id)
+
+
 async def _make_game_iterator(
     client: httpx.AsyncClient,
     job: JobState,
     previous_last_synced_at: datetime | None,
     on_game_fetched: Callable[[], None],
 ) -> AsyncIterator[NormalizedGame]:
-    """Return the appropriate platform async iterator based on job.platform.
+    """Return the appropriate FORWARD-direction platform async iterator.
 
     Bug fix (Phase 90, SEED-018, Pitfall 2): accepts `previous_last_synced_at`
     as a plain scalar (datetime | None) instead of a `previous_job` ORM instance.
     The scalar is extracted inside the bootstrap session scope in `run_import`,
     so no ORM instance crosses the bootstrap-to-batch-loop boundary (eliminating
     any risk of DetachedInstanceError from cross-scope ORM attribute access).
+
+    Phase 186 Plan 02: called only by `_run_forward_pass`, which always passes
+    a real datetime (`forward_since`, never None) -- the type stays `| None`
+    for the benchmark `since_ms_override` bypass path below, which ignores
+    this parameter entirely.
     """
     if job.platform == "chess.com":
         since_timestamp: datetime | None = previous_last_synced_at
@@ -721,6 +899,323 @@ async def _make_game_iterator(
 
     else:
         raise ValueError(f"Unknown platform: {job.platform!r}")
+
+
+def _lichess_backward_perf_type(enabled_tc_buckets: frozenset[TimeControlBucket]) -> str | None:
+    """Build the lichess `perfType` CSV for a backward-walk chunk (D-14).
+
+    Returns None when no TC bucket is selected (caller short-circuits before
+    reaching this in that case; kept total for defensiveness).
+    """
+    if not enabled_tc_buckets:
+        return None
+    return ",".join(_LICHESS_PERF_TYPE_MAP[tc] for tc in sorted(enabled_tc_buckets))
+
+
+async def _run_backward_pass(
+    client: httpx.AsyncClient,
+    job: JobState,
+    job_id: str,
+    created_at: datetime,
+    enabled_tc_buckets: frozenset[TimeControlBucket],
+    game_cap: int,
+    on_game_fetched: Callable[[], None],
+) -> None:
+    """Backward pass (D-01/D-05/D-06/D-07): capped per-(platform, TC) backfill.
+
+    A no-op when no TC bucket is selected -- there is nothing to backfill.
+    Seeds an in-memory `live_counts` dict from ONE live pre-anchor backlog
+    query (Pattern 1) and short-circuits before opening a cursor session or
+    touching any platform client when every enabled TC's budget is already
+    full -- an idle-budget Sync performs zero backward-walk work. If the walk
+    does proceed, a second query (CR-01 fix) loads the full set of already-
+    imported platform_game_ids for this (user, platform) so the walk's
+    per-game budget counter never double-counts a duplicate re-fetch.
+    """
+    if not enabled_tc_buckets:
+        return
+
+    async with async_session_maker() as session:
+        backlog = await game_repository.count_backlog_by_platform_and_tc(
+            session, job.user_id, created_at
+        )
+    # count_backlog_by_platform_and_tc returns dict[str, dict[str, int]] (the DB
+    # column isn't Literal-typed) -- the values are always valid TC buckets
+    # (D-15's None-bucket rows are already excluded by that query).
+    live_counts: dict[TimeControlBucket, int] = cast(
+        "dict[TimeControlBucket, int]", dict(backlog.get(job.platform, {}))
+    )
+
+    def _should_stop() -> bool:
+        return all(live_counts.get(tc, 0) >= game_cap for tc in enabled_tc_buckets)
+
+    if _should_stop():
+        return
+
+    # Bug fix (CR-01, code-review 186): load the full set of already-imported
+    # platform_game_ids for this (user, platform) ONCE, up front, so the
+    # per-game budget gate below (_admit_backward_game) can tell a genuinely new
+    # backlog game apart from a duplicate the forward pass (or a prior sync)
+    # already imported. Without this, every TC-matching game the backward walk
+    # *fetches* inflated the budget regardless of whether bulk_insert_games's
+    # ON CONFLICT DO NOTHING later no-op'd it -- and since the first-ever
+    # backward walk starts at "now" and re-walks the forward pass's
+    # already-imported window, duplicates could exhaust game_cap before ever
+    # reaching real pre-anchor backlog (worst for grandfathered users with
+    # large existing history). A single indexed query, not a per-batch or
+    # per-game round trip -- the stop condition must react in real time as
+    # games are fetched (D-07), which rules out deferring the dedup check to
+    # batch-flush time.
+    async with async_session_maker() as session:
+        existing_platform_game_ids = await game_repository.get_platform_game_ids_for_user(
+            session, job.user_id, job.platform
+        )
+
+    if job.platform == "chess.com":
+        await _run_chesscom_backward_pass(
+            client,
+            job,
+            job_id,
+            enabled_tc_buckets,
+            live_counts,
+            _should_stop,
+            on_game_fetched,
+            existing_platform_game_ids,
+            game_cap,
+        )
+    elif job.platform == "lichess":
+        await _run_lichess_backward_pass(
+            client,
+            job,
+            job_id,
+            enabled_tc_buckets,
+            live_counts,
+            _should_stop,
+            on_game_fetched,
+            existing_platform_game_ids,
+            game_cap,
+        )
+    else:
+        raise ValueError(f"Unknown platform: {job.platform!r}")
+
+
+def _admit_backward_game(
+    game: NormalizedGame,
+    enabled_tc_buckets: frozenset[TimeControlBucket],
+    live_counts: dict[TimeControlBucket, int],
+    existing_platform_game_ids: frozenset[str],
+    game_cap: int,
+) -> bool:
+    """Return True if `game` may be inserted; increment its bucket's budget.
+
+    Bug fix (UAT 186): this used to only *count* games (feeding the D-07
+    global stop condition) while the caller inserted every TC-passing game
+    unconditionally. Because the walk keeps going until ALL selected budgets
+    fill, a selected TC with less history than the cap (e.g. 816 rapid games,
+    cap 1000) drove the walk to full history exhaustion and imported the
+    *entire* history of the already-full buckets (blitz ended at 2705 with a
+    1000 cap). The budget must gate insertion per game, not just the walk's
+    stop condition: a game whose bucket is already at `game_cap` is dropped.
+    Dropped over-cap games become fetchable again after a cap raise because
+    the settings PATCH resets the backfill cursors on scope expansion.
+
+    D-15: a None bucket (or a bucket outside the enabled set, which
+    `_passes_tc_filter` would already have dropped) never counts and is
+    always admitted.
+
+    Bug fix (CR-01, code-review 186): a game whose platform_game_id is already
+    in `existing_platform_game_ids` (already imported by the forward pass or a
+    prior sync) never counts either -- it will be silently no-op'd by
+    bulk_insert_games's ON CONFLICT DO NOTHING, so counting it here would
+    inflate the budget with a duplicate instead of tracking genuine new
+    backlog.
+    """
+    platform_game_id = (
+        game.platform_game_id if isinstance(game, NormalizedGame) else game.get("platform_game_id")  # type: ignore[union-attr] — dict fallback for test mocks
+    )
+    if platform_game_id in existing_platform_game_ids:
+        return True
+    bucket = _game_time_control_bucket(game)
+    if bucket is None or bucket not in enabled_tc_buckets:
+        return True
+    if live_counts.get(bucket, 0) >= game_cap:
+        return False
+    live_counts[bucket] = live_counts.get(bucket, 0) + 1
+    return True
+
+
+async def _run_chesscom_backward_pass(
+    client: httpx.AsyncClient,
+    job: JobState,
+    job_id: str,
+    enabled_tc_buckets: frozenset[TimeControlBucket],
+    live_counts: dict[TimeControlBucket, int],
+    should_stop: Callable[[], bool],
+    on_game_fetched: Callable[[], None],
+    existing_platform_game_ids: frozenset[str],
+    game_cap: int,
+) -> None:
+    """chess.com half of the backward pass: one walk, batched-persist cursor."""
+    async with async_session_maker() as session:
+        cursor = await user_import_settings_repository.get_chesscom_backfill_cursor(
+            session, user_id=job.user_id
+        )
+
+    # WR-03 fix (code-review 186): persist the cursor every
+    # _CURSOR_PERSIST_EVERY_N_UNITS attempted months instead of after EVERY
+    # single one -- a long-tenured account can attempt 180+ months in one
+    # backward walk, each previously opening its own session/commit purely to
+    # persist a 2-column cursor. Pitfall 1 only requires the cursor to advance
+    # EVENTUALLY (not after every single month), so batching is safe as long
+    # as the last attempted month is always flushed before returning (below) --
+    # otherwise a crash mid-batch would re-attempt up to N-1 already-attempted
+    # months next Sync (wasted work, not a correctness bug: CR-01's fix makes
+    # re-attempts budget-safe regardless).
+    months_since_persist = 0
+    last_attempted_ym: tuple[int, int] | None = None
+
+    async def _on_month_attempted(ym: tuple[int, int]) -> None:
+        nonlocal months_since_persist, last_attempted_ym
+        last_attempted_ym = ym
+        months_since_persist += 1
+        if months_since_persist < _CURSOR_PERSIST_EVERY_N_UNITS:
+            return
+        months_since_persist = 0
+        async with async_session_maker() as cursor_session:
+            await user_import_settings_repository.update_chesscom_backfill_cursor(
+                cursor_session, user_id=job.user_id, year=ym[0], month=ym[1]
+            )
+            await cursor_session.commit()
+
+    batch: list[NormalizedGame] = []
+    async for game in chesscom_client.fetch_chesscom_games_backward(
+        client,
+        username=job.username,
+        user_id=job.user_id,
+        oldest_attempted_ym=cursor,
+        should_stop=should_stop,
+        on_game_fetched=on_game_fetched,
+        on_month_attempted=_on_month_attempted,
+    ):
+        if not _passes_tc_filter(game, enabled_tc_buckets):
+            continue
+        if not _admit_backward_game(
+            game, enabled_tc_buckets, live_counts, existing_platform_game_ids, game_cap
+        ):
+            continue
+        batch.append(game)
+        if len(batch) >= _BATCH_SIZE:
+            await _flush_batch_with_progress(batch, job, job_id)
+            batch = []
+    if batch:
+        await _flush_batch_with_progress(batch, job, job_id)
+
+    # Always flush any not-yet-persisted trailing progress before returning.
+    if months_since_persist > 0 and last_attempted_ym is not None:
+        async with async_session_maker() as cursor_session:
+            await user_import_settings_repository.update_chesscom_backfill_cursor(
+                cursor_session,
+                user_id=job.user_id,
+                year=last_attempted_ym[0],
+                month=last_attempted_ym[1],
+            )
+            await cursor_session.commit()
+
+
+async def _run_lichess_backward_pass(
+    client: httpx.AsyncClient,
+    job: JobState,
+    job_id: str,
+    enabled_tc_buckets: frozenset[TimeControlBucket],
+    live_counts: dict[TimeControlBucket, int],
+    should_stop: Callable[[], bool],
+    on_game_fetched: Callable[[], None],
+    existing_platform_game_ids: frozenset[str],
+    game_cap: int,
+) -> None:
+    """lichess half of the backward pass: orchestrator-level chunked loop.
+
+    Unlike chess.com (one generator call walking every month), lichess's
+    `until`+`max` fetch is a single bounded chunk -- the orchestrator loops,
+    advancing `until_ms` to the oldest game's `played_at` after each chunk,
+    until `should_stop()` is True or a chunk yields nothing (history exhausted).
+    """
+    async with async_session_maker() as session:
+        until_ms = await user_import_settings_repository.get_lichess_backfill_cursor(
+            session, user_id=job.user_id
+        )
+
+    perf_type = _lichess_backward_perf_type(enabled_tc_buckets)
+
+    # WR-03 fix (code-review 186): persist the cursor every
+    # _CURSOR_PERSIST_EVERY_N_UNITS fetched chunks instead of after EVERY
+    # single one -- see the chess.com half's docstring comment for the
+    # rationale (Pitfall 1 only requires eventual persistence). `until_ms`
+    # itself still advances in memory every chunk (it feeds the next fetch);
+    # only the DB write is batched.
+    chunks_since_persist = 0
+    pending_until_ms: int | None = None
+
+    while not should_stop():
+        batch: list[NormalizedGame] = []
+        oldest_played_at_ms: int | None = None
+        got_any = False
+
+        async for game in lichess_client.fetch_lichess_games(
+            client,
+            username=job.username,
+            user_id=job.user_id,
+            until_ms=until_ms,
+            max_games=_BACKWARD_LICHESS_CHUNK_SIZE,
+            perf_type=perf_type,
+            on_game_fetched=on_game_fetched,
+        ):
+            got_any = True
+            played_at = (
+                game.played_at if isinstance(game, NormalizedGame) else game.get("played_at")
+            )
+            if played_at is not None:
+                if played_at.tzinfo is None:
+                    played_at = played_at.replace(tzinfo=timezone.utc)
+                ms = int(played_at.timestamp() * 1000)
+                if oldest_played_at_ms is None or ms < oldest_played_at_ms:
+                    oldest_played_at_ms = ms
+            if _passes_tc_filter(game, enabled_tc_buckets) and _admit_backward_game(
+                game, enabled_tc_buckets, live_counts, existing_platform_game_ids, game_cap
+            ):
+                batch.append(game)
+
+        if batch:
+            await _flush_batch_with_progress(batch, job, job_id)
+
+        if not got_any:
+            break  # History exhausted for this platform.
+
+        # Guard against a non-decreasing cursor causing an infinite re-fetch
+        # of the same chunk (should not happen given lichess's dateDesc order,
+        # but a stalled cursor must not hang the job).
+        if oldest_played_at_ms is not None and (until_ms is None or oldest_played_at_ms < until_ms):
+            until_ms = oldest_played_at_ms
+            pending_until_ms = until_ms
+            chunks_since_persist += 1
+            if chunks_since_persist >= _CURSOR_PERSIST_EVERY_N_UNITS:
+                chunks_since_persist = 0
+                async with async_session_maker() as cursor_session:
+                    await user_import_settings_repository.update_lichess_backfill_cursor(
+                        cursor_session, user_id=job.user_id, until_ms=until_ms
+                    )
+                    await cursor_session.commit()
+                pending_until_ms = None
+        else:
+            break
+
+    # Always flush any not-yet-persisted trailing progress before returning.
+    if pending_until_ms is not None:
+        async with async_session_maker() as cursor_session:
+            await user_import_settings_repository.update_lichess_backfill_cursor(
+                cursor_session, user_id=job.user_id, until_ms=pending_until_ms
+            )
+            await cursor_session.commit()
 
 
 async def _flush_batch(

@@ -1,6 +1,7 @@
 """Pydantic v2 schemas for user profile API."""
 
 from datetime import datetime
+from typing import Literal
 
 from pydantic import BaseModel
 
@@ -50,3 +51,35 @@ class GameCountResponse(BaseModel):
     """Response for GET /users/games/count."""
 
     count: int
+
+
+class ImportSettingsResponse(BaseModel):
+    """Response for GET/PATCH /users/me/import-settings.
+
+    Phase 186 Plan 01 (IMPORT-01/IMPORT-04). `game_cap` is a `Literal`, never
+    a bare `int` (CLAUDE.md V5 rule) -- mirrors the DB
+    `ck_user_import_settings_cap` CHECK constraint at the schema boundary.
+    """
+
+    tc_bullet: bool
+    tc_blitz: bool
+    tc_rapid: bool
+    tc_classical: bool
+    game_cap: Literal[1000, 3000, 5000]
+    # Per-(platform, TC) count of ALL imported games (not just the pre-anchor
+    # backlog), e.g. {"chess.com": {"blitz": 2705, "rapid": 1643}}. Populated by
+    # count_imported_by_platform_and_tc so the per-TC chips read as an honest
+    # breakdown of the header's total game count (UAT follow-up to Plan 03).
+    # NULL-bucket games are omitted (no TC chip); empty dict is a valid "no
+    # games yet" response, not a sentinel for "not computed".
+    imported_counts: dict[str, dict[str, int]]
+
+
+class ImportSettingsUpdate(BaseModel):
+    """Request body for PATCH /users/me/import-settings."""
+
+    tc_bullet: bool
+    tc_blitz: bool
+    tc_rapid: bool
+    tc_classical: bool
+    game_cap: Literal[1000, 3000, 5000]

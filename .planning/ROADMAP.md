@@ -43,6 +43,7 @@
 - ✅ **v2.5 Move Statistics** — Phases 178–179 (shipped 2026-07-18) — one uniform, lichess-compatible per-game accuracy & ACPL methodology written into repurposed canonical `games` columns so games are comparable across chess.com/lichess/self-analyzed (Phase 178, SEED-110), then a single shared **two-sided Move Stats** component (accuracy strip + a 7-category per-player move-classification table) replacing the badge rows on both the Library game card and the analysis board tags panel (Phase 179, SEED-112) — see [milestones/v2.5-ROADMAP.md](milestones/v2.5-ROADMAP.md)
 - ✅ **v2.6 Bot Strength Calibration** — Phases 173, 180, 181 (shipped 2026-07-21; dev-only, no deploy) — put the bot's play-style presets on a measured strength scale without ever playing a human. Phase 173 (SEED-101) round-robins the calibration anchors into one internal rating scale (verdict: the Maia-3 argmax ladder is ~2.8x compressed); Phase 180 (SEED-102) measures the three-preset (Human/Light/Deep) strength curves on that scale plus the cross-family style-inflation gap `G_preset`; Phase 181 (SEED-104) inverts those curves into per-preset `target_blitz_elo → bot_elo` lookups with honest measured ranges (Human 900–1400, Light 1500–1600, Deep 1600–1800) and an approximate-ELO disclaimer. Nothing in the product reads the lookup yet — see [milestones/v2.6-ROADMAP.md](milestones/v2.6-ROADMAP.md)
 - ✅ **v2.7 Bot Personas & Playstyle Layer** — Phases 182–185 (shipped 2026-07-23; deployed to production, PRs through #275) — a roster of 24 named bot personas (4 styles × 6 ELO rungs, 800–1800) on the Bots page, each a complete pinned opponent (preset, calibrated ELO, style params, opening book, resign/draw-offer policy, avatar, bio). Style levers land first (Phase 182), then the persona registry + Bots page UI (Phase 183), then per-persona harness calibration replaces the provisional labels with measured values (Phase 184, `PERSONA_CALIBRATION_MEASURED=true`), then the roster is re-laid-out as a rung-ladder grid with per-persona win stars (Phase 185) (SEED-098) — see [milestones/v2.7-ROADMAP.md](milestones/v2.7-ROADMAP.md)
+- ⏳ **v2.8 Import Filters** — Phase 186 (in progress) — user-facing import filters (time-control multiselect + per-platform game cap) on the Import tab to keep storage and Stockfish compute in check, with backward backfill on filter upgrades and grandfathering for existing users (SEED-117)
 
 ## Progress
 
@@ -140,6 +141,7 @@
 | 183. Persona Registry & Bots Page (SEED-098, v2.7) | 5/5 | Complete | 2026-07-22 |
 | 184. Persona Calibration & Strength Honesty (SEED-098, v2.7) | 4/4 | Complete | 2026-07-23 |
 | 185. Bots Roster Transpose + Win Stars (SEED-098, v2.7) | 3/3 | Complete | 2026-07-22 |
+| 186. Import Filters — Time Controls + Game Cap (SEED-117, v2.8) | 0/? | Not planned | — |
 
 ## Backlog
 
@@ -693,3 +695,32 @@ A roster of 24 named bot personas (4 styles × 6 ELO rungs, 800–1800) on the B
 See [milestones/v2.7-ROADMAP.md](milestones/v2.7-ROADMAP.md) for full phase detail.
 
 </details>
+
+## v2.8 Import Filters (in progress)
+
+Let users choose on the Import tab which time controls to import and how many games, so casual users don't pull (and FlawChess doesn't store/analyze) tens of thousands of bullet games nobody will look at. Storage and Stockfish compute are the real constraints; the filter UI is the lever. Sourced from SEED-117 (explore session 2026-07-24); the three load-bearing design decisions (filter mutability, cap accounting, existing-user grandfathering) are locked in the seed. Lightweight milestone opened 2026-07-24 without a `/gsd-new-milestone` requirements cycle (same pattern as v2.6); flesh out or extend at will.
+
+- [x] **Phase 186: Import Filters — Time Controls + Game Cap** - TC multiselect + per-platform game cap on the Import tab, backward backfill on filter upgrades, grandfathering for existing users (SEED-117) (completed 2026-07-24)
+
+### Phase 186: Import Filters — Time Controls + Game Cap
+
+**Goal**: Users control what gets imported via a time-control multiselect (default: all except bullet) and a per-platform backlog game cap (1000/3000/5000, default 1000) on the Import tab; raising the cap or enabling a TC backfills older history, lowering never deletes, and existing users are grandfathered (all TCs + 5000 cap) with unchanged sync behavior.
+**Depends on**: Nothing hard (touches `app/services/import_service.py`, `chesscom_client.py`, `lichess_client.py`; generalizes the lichess client's existing benchmark-only `max_games`/`perf_type` pass-through)
+**Requirements**: TBD (locked design decisions in [SEED-117](seeds/SEED-117-import-filters-tc-and-game-cap.md))
+**Success Criteria** (what must be TRUE):
+
+  1. User can set a TC multiselect (bullet/blitz/rapid/classical, default all except bullet) and a game cap (1000/3000/5000, default 1000) on the Import tab; one shared setting per user, cap counted per platform.
+  2. The cap applies only to the pre-signup backlog anchored at the user's FlawChess account creation date; games played after the anchor always import and never count toward the cap. The TC filter applies to BOTH backfill and incremental sync.
+  3. Raising the cap or enabling a TC while under cap backfills older history via a backward-fetch path (lichess `until`+`max`, chess.com newest-to-oldest monthly archives) with a per-platform oldest-imported boundary; deselecting a TC or lowering the cap never deletes existing games or analysis.
+  4. At-cap state is legible in the UI (e.g. "1000/1000 imported" per platform), so enabling a TC while at cap doesn't look broken.
+  5. Existing users are grandfathered to all four TCs + the 5000 cap via a backfill migration; their sync behavior is unchanged.
+
+**Plans**: 3/3 plans executed
+**Wave 1**
+
+- [x] 186-01-PLAN.md — Settings foundation + tracer: user_import_settings table + grandfathering migration, settings repo + GET/PATCH endpoints, derived per-(platform,TC) backlog-count query, forward-sync TC filter (IMPORT-01/02/04; D-01/02/13/14/15/16)
+
+**Wave 2** *(blocked on Wave 1 completion)*
+
+- [x] 186-02-PLAN.md — Backward-fetch backfill: lichess `until`+`max` / chess.com newest→oldest walk, two-pass Sync orchestration with per-platform cursor + budget stop, delete-all cursor reset (IMPORT-03; D-03/04/05/06/07/14)
+- [x] 186-03-PLAN.md — Import tab UI: ImportFilterCard (TC multiselect + cap + copy + info popover), useImportSettings auto-save hook, per-TC budget chips (IMPORT-01/04; D-08/09/10/11/12/16)

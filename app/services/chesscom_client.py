@@ -13,7 +13,7 @@ the existing per-archive loop.
 
 import asyncio
 import logging
-from collections.abc import AsyncIterator, Callable
+from collections.abc import AsyncIterator, Awaitable, Callable
 from datetime import datetime, timezone
 
 import httpx
@@ -137,6 +137,27 @@ def _archive_before_timestamp(archive_url: str, since: datetime) -> bool:
 
     archive_end = datetime(end_year, end_month, 1, tzinfo=timezone.utc)
     return archive_end <= since
+
+
+def _month_before(ym: tuple[int, int]) -> tuple[int, int]:
+    """Return the (year, month) immediately preceding ``ym``.
+
+    Phase 186 Plan 02: used to compute the backward walk's end boundary --
+    "just before the persisted oldest-attempted cursor" (Pitfall 1).
+    """
+    year, month = ym
+    if month == 1:
+        return year - 1, 12
+    return year, month - 1
+
+
+def _parse_archive_year_month(archive_url: str) -> tuple[int, int]:
+    """Extract the (year, month) tuple from a chess.com monthly-archive URL.
+
+    Mirrors the path-parsing logic in ``_archive_before_timestamp``.
+    """
+    parts = archive_url.rstrip("/").split("/")
+    return int(parts[-2]), int(parts[-1])
 
 
 def _current_year_month() -> tuple[int, int]:
@@ -339,6 +360,111 @@ async def fetch_chesscom_games(
                 yield normalized
                 if on_game_fetched is not None:
                     on_game_fetched()
+
+
+async def fetch_chesscom_games_backward(
+    client: httpx.AsyncClient,
+    username: str,
+    user_id: int,
+    oldest_attempted_ym: tuple[int, int] | None,
+    should_stop: Callable[[], bool],
+    on_game_fetched: Callable[[], None] | None = None,
+    on_month_attempted: Callable[[tuple[int, int]], Awaitable[None]] | None = None,
+) -> AsyncIterator[NormalizedGame]:
+    """Async generator that walks chess.com monthly archives newest -> oldest.
+
+    Phase 186 Plan 02 (IMPORT-03, D-06/D-07). Mirror-image of
+    ``fetch_chesscom_games``'s forward (oldest -> newest) walk: this directly
+    enumerates archive months (via ``_enumerate_archive_urls``, same as the
+    archives-list-404 fallback) rather than consulting the ``/games/archives``
+    index, since we need to iterate in reverse from an arbitrary resume point.
+
+    Starts just before ``oldest_attempted_ym`` (or at the current month when the
+    cursor is ``None`` -- first backward walk for this user+platform) and walks
+    down to the player's joined month. ``should_stop`` is checked BEFORE every
+    month fetch (including the very first) so a caller whose budgets are
+    already full performs zero HTTP requests. ``on_month_attempted`` fires
+    after EVERY attempted month, regardless of whether it yielded any
+    TC-matching games -- Pitfall 1: the persisted cursor must track fetch
+    ATTEMPTS, not successful inserts, or a month with zero matches would be
+    re-fetched forever.
+
+    Args:
+        client: Shared httpx.AsyncClient instance.
+        username: The chess.com username to fetch games for.
+        user_id: Internal database user ID (denormalized into each game dict).
+        oldest_attempted_ym: The (year, month) of the oldest month already
+            attempted in a previous walk, or None on the very first backward
+            walk for this user+platform.
+        should_stop: Synchronous closure returning True once the caller's
+            per-(platform, TC) budgets are all full (D-07). Checked at month
+            granularity only -- a single month's archive may push a budget
+            from under-cap to over-cap in one shot (Pitfall 3, accepted).
+        on_game_fetched: Optional callback called once per yielded game.
+        on_month_attempted: Optional ASYNC callback awaited with the
+            (year, month) of each month AFTER it has been fetched (or
+            skipped), so the caller can persist the new oldest-attempted
+            cursor incrementally (typically an awaited DB write).
+
+    Raises:
+        RuntimeError: If a per-archive fetch fails persistently (5xx after
+            retries, 429 after retries, or unexpected non-200) -- mirrors
+            ``fetch_chesscom_games``'s failure contract so the import job is
+            marked failed and the previously-persisted cursor is preserved.
+    """
+    if should_stop():
+        return
+
+    api_username = username.lower()
+
+    joined_at = await _fetch_chesscom_player_joined(client, api_username)
+    if joined_at is not None:
+        start_ym: tuple[int, int] = (joined_at.year, joined_at.month)
+    else:
+        start_ym = _CHESSCOM_EARLIEST_ARCHIVE_YEAR_MONTH
+
+    end_ym = (
+        _month_before(oldest_attempted_ym)
+        if oldest_attempted_ym is not None
+        else _current_year_month()
+    )
+
+    if start_ym > end_ym:
+        # Cursor already sits at (or before) the player's joined month --
+        # history for this user is fully attempted.
+        return
+
+    archive_urls = _enumerate_archive_urls(api_username, start_ym, end_ym)
+
+    for archive_url in reversed(archive_urls):
+        if should_stop():
+            break
+
+        # Shared rate limiter: limits concurrent archive fetches across all users.
+        async with get_chesscom_semaphore():
+            resp = await _fetch_archive_with_retries(client, archive_url)
+
+        year, month = _parse_archive_year_month(archive_url)
+
+        # _fetch_archive_with_retries returns None only for skippable client
+        # errors (404/410) -- treat as an attempted-but-empty month, not a stop.
+        if resp is not None:
+            games = resp.json().get("games", [])
+            for game in games:
+                try:
+                    normalized = normalize_chesscom_game(game, username, user_id)
+                except Exception as exc:
+                    logger.warning("Failed to normalize chess.com game for user_id=%s", user_id)
+                    sentry_sdk.set_context("import", {"platform": "chess.com", "user_id": user_id})
+                    sentry_sdk.capture_exception(exc)
+                    continue
+                if normalized is not None:
+                    yield normalized
+                    if on_game_fetched is not None:
+                        on_game_fetched()
+
+        if on_month_attempted is not None:
+            await on_month_attempted((year, month))
 
 
 async def _fetch_archive_with_retries(

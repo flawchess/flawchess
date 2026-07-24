@@ -1,7 +1,8 @@
 import { useState, useEffect, useCallback } from 'react';
 import * as Sentry from '@sentry/react';
-import { X, DoorOpen, Swords, BookOpen, Trophy, type LucideIcon } from 'lucide-react';
+import { X, DoorOpen, Infinity as InfinityIcon } from 'lucide-react';
 import { Alert } from '@/components/ui/alert';
+import { Card, CardHeader, CardBody } from '@/components/ui/card';
 import { PlatformIcon } from '@/components/icons/PlatformIcon';
 import {
   Dialog,
@@ -16,13 +17,14 @@ import { Tooltip } from '@/components/ui/tooltip';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { useImportTrigger, useImportPolling } from '@/hooks/useImport';
+import { useImportSettings, IMPORT_SETTINGS_QUERY_KEY, type ImportSettings } from '@/hooks/useImportSettings';
+import { ImportFilterCard, TIME_CONTROLS, TIME_CONTROL_LABELS, isTcActive } from '@/components/filters/ImportFilterCard';
+import { TimeControlIcon } from '@/components/icons/TimeControlIcon';
 import { EvalCoverageHeader } from '@/components/EvalCoverageHeader';
 import { useUserProfile } from '@/hooks/useUserProfile';
 import { useAuth } from '@/hooks/useAuth';
 import { useQueryClient } from '@tanstack/react-query';
-import { useReadiness } from '@/hooks/useReadiness';
 import { apiClient } from '@/api/client';
-import { useNavigate } from 'react-router-dom';
 
 
 // Refresh cadence for the eval-coverage ("Quick Scan") banner and readiness
@@ -52,6 +54,68 @@ function formatLastSync(iso: string | null): string | null {
   }
   const days = Math.floor(diffMs / DAY_MS);
   return `last sync: ${days} ${days === 1 ? 'day' : 'days'} ago`;
+}
+
+/**
+ * Per-(platform, TC) chip row (D-11/D-12): one chip per currently-selected TC,
+ * showing "{icon} {count}" where count is the total imported games in that TC (UAT
+ * follow-up to Plan 03 — the chips now read as an honest breakdown of the header's
+ * total game count, not just the cap-eligible pre-signup backlog, which silently
+ * omitted post-signup games). Icon instead of label, no cap denominator — compact
+ * mobile display; the cap itself stays visible in the Import filters card. Deselected
+ * TCs render no chip at all — no dimmed placeholder. A chip at or over the cap uses
+ * text-foreground/font-semibold (reads as "well-populated", never destructive/red);
+ * a chip below the cap uses text-muted-foreground. The count can exceed the cap (a
+ * grandfathered account keeps games imported before the cap existed). The TC name is
+ * kept as sr-only text so the icon-only chip stays screen-reader legible.
+ *
+ * Untimed games (clock-less chess.com bot/coach games, D-15) always import and
+ * count against no budget, so they get a trailing infinity chip — shown only
+ * when the count is nonzero — so the chips still sum to the header's total.
+ */
+function BudgetChipRow({
+  platform,
+  platformSlug,
+  settings,
+}: {
+  platform: 'chess.com' | 'lichess';
+  platformSlug: string;
+  settings: ImportSettings;
+}) {
+  const activeTcs = TIME_CONTROLS.filter((tc) => isTcActive(settings, tc));
+  if (activeTcs.length === 0) return null;
+
+  const untimedCount = settings.imported_counts[platform]?.untimed ?? 0;
+
+  return (
+    <div className="flex flex-wrap gap-x-3 gap-y-1 text-sm" data-testid={`import-budget-chip-row-${platformSlug}`}>
+      {activeTcs.map((tc) => {
+        const count = settings.imported_counts[platform]?.[tc] ?? 0;
+        const isFull = count >= settings.game_cap;
+        return (
+          <span
+            key={tc}
+            data-testid={`import-budget-chip-${platformSlug}-${tc}`}
+            className={`inline-flex items-center gap-1 ${isFull ? 'text-foreground font-semibold' : 'text-muted-foreground'}`}
+          >
+            <TimeControlIcon timeControl={tc} className="h-3.5 w-3.5" />
+            <span className="sr-only">{TIME_CONTROL_LABELS[tc]} </span>
+            {count}
+          </span>
+        );
+      })}
+      {untimedCount > 0 && (
+        <span
+          data-testid={`import-budget-chip-${platformSlug}-untimed`}
+          className="inline-flex items-center gap-1 text-muted-foreground"
+        >
+          <InfinityIcon className="h-3.5 w-3.5" aria-label="untimed" />
+          <span className="sr-only">Untimed </span>
+          {untimedCount}
+        </span>
+      )}
+    </div>
+  );
 }
 
 export interface ImportPageProps {
@@ -92,6 +156,10 @@ function ImportProgressBar({ jobId, onDismiss, platformFilter, onProgress }: { j
     const interval = setInterval(() => {
       queryClient.invalidateQueries({ queryKey: ['userProfile'] });
       queryClient.invalidateQueries({ queryKey: ['gameCount'] });
+      // Live-refresh the per-(platform, TC) chip counts during import. Backed by
+      // a cheap indexed GROUP BY on games (count_imported_by_platform_and_tc) —
+      // no new backend infra — so it's fine to piggy-back on the 3s import tick.
+      queryClient.invalidateQueries({ queryKey: IMPORT_SETTINGS_QUERY_KEY });
       queryClient.invalidateQueries({ queryKey: ['imports', 'eval-coverage'] });
       // Phase 96: also invalidate the readiness query so the import page reacts
       // to tier transitions (Tier 1 CTA and analyzing-endgames state) alongside
@@ -106,6 +174,16 @@ function ImportProgressBar({ jobId, onDismiss, platformFilter, onProgress }: { j
     }, GAME_COUNT_REFRESH_INTERVAL_MS);
     return () => clearInterval(interval);
   }, [isActive, queryClient]);
+
+  // Refresh the per-(platform, TC) chip counts once the import finishes. The
+  // periodic interval above stops the moment isActive flips false, so its last
+  // tick can miss the final batch of saved games; this final invalidation makes
+  // the chips settle on the true count without a page reload.
+  useEffect(() => {
+    if (isDone) {
+      queryClient.invalidateQueries({ queryKey: IMPORT_SETTINGS_QUERY_KEY });
+    }
+  }, [isDone, queryClient]);
 
   if (!data) return null;
   if (platformFilter && data.platform !== platformFilter) return null;
@@ -158,60 +236,14 @@ function ImportProgressBar({ jobId, onDismiss, platformFilter, onProgress }: { j
   );
 }
 
-/**
- * Primary (brand-brown) Explore CTA. Enabled only when its analysis tier is
- * ready; otherwise rendered disabled with a hover tooltip explaining why. The
- * disabled button is wrapped in a span so the tooltip still opens on hover
- * (a disabled button has pointer-events-none and would swallow the hover).
- */
-function ExploreButton({ label, Icon, ready, hint, testId, onGo }: {
-  label: string;
-  Icon: LucideIcon;
-  ready: boolean;
-  hint: string;
-  testId: string;
-  onGo: () => void;
-}) {
-  if (ready) {
-    return (
-      <Button
-        variant="brand-outline"
-        className="flex-1 sm:flex-none"
-        data-testid={testId}
-        onClick={onGo}
-      >
-        <Icon className="hidden h-4 w-4 sm:mr-1.5 sm:inline-block" />
-        {label}
-      </Button>
-    );
-  }
-  return (
-    <Tooltip content={hint}>
-      <span className="inline-flex flex-1 cursor-not-allowed sm:flex-none" tabIndex={0}>
-        <Button variant="brand-outline" className="w-full sm:w-auto" disabled data-testid={testId}>
-          <Icon className="hidden h-4 w-4 sm:mr-1.5 sm:inline-block" />
-          {label}
-        </Button>
-      </span>
-    </Tooltip>
-  );
-}
-
 export function ImportPage({ onImportStarted, activeJobIds, onJobDismissed }: ImportPageProps) {
   const { logoutForPromotion } = useAuth();
   const { data: profile, isLoading: profileLoading } = useUserProfile();
+  // ImportFilterCard (mounted below) surfaces the CLAUDE.md-mandated isError copy
+  // for this same query — only need the data here, for the per-platform budget chips.
+  const { data: importSettings } = useImportSettings();
   const trigger = useImportTrigger();
   const queryClient = useQueryClient();
-  const navigate = useNavigate();
-  const { tier1, tier2 } = useReadiness();
-  const hasGames = profile != null && profile.chess_com_game_count + profile.lichess_game_count > 0;
-  const gamesHint = 'Import your games first to browse them.';
-  const openingsHint = !hasGames
-    ? 'Import your games first to explore openings.'
-    : 'Openings will be ready once your import finishes.';
-  const endgamesHint = !hasGames
-    ? 'Import your games first to explore endgames.'
-    : 'Endgames unlock once Stockfish finishes analyzing your games.';
 
   // Username state — always editable, synced from profile on first load only
   const [chessComUsername, setChessComUsername] = useState('');
@@ -296,9 +328,17 @@ export function ImportPage({ onImportStarted, activeJobIds, onJobDismissed }: Im
     try {
       await apiClient.delete('/imports/games');
       setDeleteDialogOpen(false);
+      // Bug fix: the header count is Math.max(profile count, liveImported), so a
+      // same-session import's live counter would keep the old number on screen
+      // after delete-all even once the profile refetches 0. Clear it first.
+      setLiveImported({});
       queryClient.invalidateQueries({ queryKey: ['games'] });
       queryClient.invalidateQueries({ queryKey: ['gameCount'] });
       queryClient.invalidateQueries({ queryKey: ['userProfile'] });
+      // Bug fix: the per-(platform, TC) chip counts live in imported_counts on
+      // the import-settings query — invalidate so the chips drop to 0 without
+      // a page reload.
+      queryClient.invalidateQueries({ queryKey: IMPORT_SETTINGS_QUERY_KEY });
       // Bug fix (quick 260611): Library queries cache for 5 minutes — drop
       // them so the Games/Flaws tabs empty out immediately after delete-all.
       queryClient.invalidateQueries({ queryKey: ['library-games'] });
@@ -341,7 +381,7 @@ export function ImportPage({ onImportStarted, activeJobIds, onJobDismissed }: Im
             >
               Sign up free
             </button>{' '}
-            to use FlawChess on any device and unlock deep Stockfish analysis of your games.
+            to use FlawChess on any device and unlock automatic Stockfish analysis of your games.
           </p>
         </Alert>
       )}
@@ -349,142 +389,116 @@ export function ImportPage({ onImportStarted, activeJobIds, onJobDismissed }: Im
       {profileLoading ? (
         <p className="text-sm text-muted-foreground">Loading profile...</p>
       ) : (
-        <div className="space-y-4">
-          {/* chess.com platform row */}
-          <div
-            data-testid="import-platform-chess-com"
-            className="charcoal-texture space-y-2 rounded-md px-3 py-2"
-          >
-            <div className="flex items-center gap-3">
-              <div className="flex-1 space-y-1">
-                <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
-                  <PlatformIcon platform="chess.com" className="h-4 w-4" />
-                  <Label htmlFor="chess-com-username" className="text-sm font-medium">chess.com</Label>
-                  {profile && (
-                    <span className="text-xs text-muted-foreground basis-full sm:basis-auto" data-testid="import-game-count-chess-com">
-                      {chessComGameCount} games
-                      {formatLastSync(profile.chess_com_last_sync_at) && (
-                        <> ({formatLastSync(profile.chess_com_last_sync_at)})</>
-                      )}
-                    </span>
-                  )}
-                </div>
-                <Input
-                  id="chess-com-username"
-                  type="text"
-                  placeholder="chess.com username"
-                  value={chessComUsername}
-                  onChange={(e) => { setChessComUsername(e.target.value); setChessComError(null); }}
-                  onKeyDown={(e) => e.key === 'Enter' && handleSync('chess.com')}
-                  autoComplete="off"
-                  className="h-8 text-sm"
-                  data-testid="import-username-chess-com"
-                />
-              </div>
-              <Button
-                onClick={() => handleSync('chess.com')}
-                disabled={trigger.isPending || !chessComUsername.trim() || activePlatforms.has('chess.com')}
-                data-testid="btn-sync-chess-com"
-                className="self-end"
-              >
-                Sync
-              </Button>
-            </div>
-            {chessComError && (
-              <p className="text-sm text-destructive" data-testid="import-error-chess-com">{chessComError}</p>
-            )}
-            {activeJobIds.map((id) => (
-              <ImportProgressBar key={id} jobId={id} onDismiss={handleDismiss} platformFilter="chess.com" onProgress={handleProgress} />
-            ))}
+        <>
+          {/* Tighten the gap above this card on mobile only. Tailwind v4 space-y-8
+              puts the 2rem as margin-bottom on the PRECEDING element, so we pull
+              the card up with a negative top margin; desktop keeps the full gap. */}
+          <div className="-mt-6 sm:mt-0">
+            <ImportFilterCard />
           </div>
+          <div className="space-y-4">
+          {/* chess.com platform card */}
+          <Card data-testid="import-platform-chess-com">
+            <CardHeader size="compact" className="gap-x-2">
+              <PlatformIcon platform="chess.com" className="h-4 w-4" />
+              <Label htmlFor="chess-com-username" className="font-semibold">chess.com</Label>
+            </CardHeader>
+            <CardBody className="space-y-2 p-3">
+              {profile && (
+                <p className="text-xs text-muted-foreground" data-testid="import-game-count-chess-com">
+                  {chessComGameCount} games
+                  {formatLastSync(profile.chess_com_last_sync_at) && (
+                    <> ({formatLastSync(profile.chess_com_last_sync_at)})</>
+                  )}
+                </p>
+              )}
+              <div className="flex items-center gap-3">
+                <div className="flex-1 space-y-1">
+                  {importSettings && (
+                    <BudgetChipRow platform="chess.com" platformSlug="chess-com" settings={importSettings} />
+                  )}
+                  <Input
+                    id="chess-com-username"
+                    type="text"
+                    placeholder="chess.com username"
+                    value={chessComUsername}
+                    onChange={(e) => { setChessComUsername(e.target.value); setChessComError(null); }}
+                    onKeyDown={(e) => e.key === 'Enter' && handleSync('chess.com')}
+                    autoComplete="off"
+                    className="h-8 text-sm"
+                    data-testid="import-username-chess-com"
+                  />
+                </div>
+                <Button
+                  onClick={() => handleSync('chess.com')}
+                  disabled={trigger.isPending || !chessComUsername.trim() || activePlatforms.has('chess.com')}
+                  data-testid="btn-sync-chess-com"
+                  className="self-end"
+                >
+                  Sync
+                </Button>
+              </div>
+              {chessComError && (
+                <p className="text-sm text-destructive" data-testid="import-error-chess-com">{chessComError}</p>
+              )}
+              {activeJobIds.map((id) => (
+                <ImportProgressBar key={id} jobId={id} onDismiss={handleDismiss} platformFilter="chess.com" onProgress={handleProgress} />
+              ))}
+            </CardBody>
+          </Card>
 
-          {/* lichess platform row */}
-          <div
-            data-testid="import-platform-lichess"
-            className="charcoal-texture space-y-2 rounded-md px-3 py-2"
-          >
-            <div className="flex items-center gap-3">
-              <div className="flex-1 space-y-1">
-                <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
-                  <PlatformIcon platform="lichess" className="h-4 w-4" />
-                  <Label htmlFor="lichess-username" className="text-sm font-medium">lichess</Label>
-                  {profile && (
-                    <span className="text-xs text-muted-foreground basis-full sm:basis-auto" data-testid="import-game-count-lichess">
-                      {lichessGameCount} games
-                      {formatLastSync(profile.lichess_last_sync_at) && (
-                        <> ({formatLastSync(profile.lichess_last_sync_at)})</>
-                      )}
-                    </span>
+          {/* lichess platform card */}
+          <Card data-testid="import-platform-lichess">
+            <CardHeader size="compact" className="gap-x-2">
+              <PlatformIcon platform="lichess" className="h-4 w-4" />
+              <Label htmlFor="lichess-username" className="font-semibold">lichess</Label>
+            </CardHeader>
+            <CardBody className="space-y-2 p-3">
+              {profile && (
+                <p className="text-xs text-muted-foreground" data-testid="import-game-count-lichess">
+                  {lichessGameCount} games
+                  {formatLastSync(profile.lichess_last_sync_at) && (
+                    <> ({formatLastSync(profile.lichess_last_sync_at)})</>
                   )}
+                </p>
+              )}
+              <div className="flex items-center gap-3">
+                <div className="flex-1 space-y-1">
+                  {importSettings && (
+                    <BudgetChipRow platform="lichess" platformSlug="lichess" settings={importSettings} />
+                  )}
+                  <Input
+                    id="lichess-username"
+                    type="text"
+                    placeholder="lichess username"
+                    value={lichessUsername}
+                    onChange={(e) => { setLichessUsername(e.target.value); setLichessError(null); }}
+                    onKeyDown={(e) => e.key === 'Enter' && handleSync('lichess')}
+                    autoComplete="off"
+                    className="h-8 text-sm"
+                    data-testid="import-username-lichess"
+                  />
                 </div>
-                <Input
-                  id="lichess-username"
-                  type="text"
-                  placeholder="lichess username"
-                  value={lichessUsername}
-                  onChange={(e) => { setLichessUsername(e.target.value); setLichessError(null); }}
-                  onKeyDown={(e) => e.key === 'Enter' && handleSync('lichess')}
-                  autoComplete="off"
-                  className="h-8 text-sm"
-                  data-testid="import-username-lichess"
-                />
+                <Button
+                  onClick={() => handleSync('lichess')}
+                  disabled={trigger.isPending || !lichessUsername.trim() || activePlatforms.has('lichess')}
+                  data-testid="btn-sync-lichess"
+                  className="self-end"
+                >
+                  Sync
+                </Button>
               </div>
-              <Button
-                onClick={() => handleSync('lichess')}
-                disabled={trigger.isPending || !lichessUsername.trim() || activePlatforms.has('lichess')}
-                data-testid="btn-sync-lichess"
-                className="self-end"
-              >
-                Sync
-              </Button>
-            </div>
-            {lichessError && (
-              <p className="text-sm text-destructive" data-testid="import-error-lichess">{lichessError}</p>
-            )}
-            {activeJobIds.map((id) => (
-              <ImportProgressBar key={id} jobId={id} onDismiss={handleDismiss} platformFilter="lichess" onProgress={handleProgress} />
-            ))}
+              {lichessError && (
+                <p className="text-sm text-destructive" data-testid="import-error-lichess">{lichessError}</p>
+              )}
+              {activeJobIds.map((id) => (
+                <ImportProgressBar key={id} jobId={id} onDismiss={handleDismiss} platformFilter="lichess" onProgress={handleProgress} />
+              ))}
+            </CardBody>
+          </Card>
           </div>
-        </div>
+        </>
       )}
-
-      {/* Explore CTAs: always visible as primary (brand-brown) buttons. Each is
-          enabled only when the user has games and its analysis tier is ready
-          (Games as soon as any games exist, Openings at Tier 1, Endgames at
-          Tier 2); otherwise it is disabled with a hover tooltip explaining why. */}
-      <div className="flex items-center gap-3" data-testid="import-readiness-section">
-        <ExploreButton
-          label="Games"
-          Icon={Swords}
-          ready={hasGames}
-          hint={gamesHint}
-          testId="btn-explore-games"
-          onGo={() => navigate('/library/games')}
-        />
-        <ExploreButton
-          label="Openings"
-          Icon={BookOpen}
-          ready={hasGames && tier1}
-          hint={openingsHint}
-          testId="btn-explore-openings"
-          onGo={() => navigate('/openings')}
-        />
-        <ExploreButton
-          label="Endgames"
-          Icon={Trophy}
-          ready={hasGames && tier2}
-          hint={endgamesHint}
-          testId="btn-explore-endgames"
-          onGo={() => {
-            // Percentiles (Stage B) are written asynchronously after eval drain,
-            // so the cached endgame overview predates them. Invalidate before
-            // navigating so the page refetches and the percentile badges render
-            // without a manual reload.
-            queryClient.invalidateQueries({ queryKey: ['endgameOverview'] });
-            navigate('/endgames');
-          }}
-        />
-      </div>
 
       <Alert variant="info" data-testid="import-info">
         {profile && (profile.chess_com_last_sync_at || profile.lichess_last_sync_at) &&
@@ -495,7 +509,11 @@ export function ImportPage({ onImportStarted, activeJobIds, onJobDismissed }: Im
             </p>
         )}
         <p>
-          <strong className="text-foreground">First Sync:</strong> imports all your games. Later syncs only fetch new games since the last import.
+          {/* Bug fix (WR-01, code-review 186): Phase 186 made the first sync's
+              pre-signup backlog capped (see Import filters above), so "imports
+              all your games" is no longer accurate for any account whose real
+              history exceeds the cap or excludes a deselected time control. */}
+          <strong className="text-foreground">First Sync:</strong> imports your recent games, plus a bounded amount of older history (see Import filters above). Later syncs only fetch new games since the last import.
         </p>
       </Alert>
 

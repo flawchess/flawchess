@@ -22,6 +22,7 @@ from app.repositories import (
     game_repository,
     import_job_repository,
     user_benchmark_percentiles_repository,
+    user_import_settings_repository,
     user_rating_anchors_repository,
     user_repository,
 )
@@ -467,5 +468,12 @@ async def delete_all_games(
         delete(UserBenchmarkPercentile).where(UserBenchmarkPercentile.user_id == user.id)
     )
     await session.execute(delete(UserRatingAnchor).where(UserRatingAnchor.user_id == user.id))
+    # Phase 186 Plan 02 (IMPORT-03, Pitfall 4): the backward-walk cursor is NOT
+    # derived from `games` rows (it tracks fetch ATTEMPTS, not stored games),
+    # so it would otherwise still point at wherever a previous walk reached --
+    # a post-delete resync would then skip straight to that stale boundary
+    # instead of backfilling the fresh account's full budget. TC toggles and
+    # game_cap PREFERENCES are left untouched (only progress cursors reset).
+    await user_import_settings_repository.reset_backfill_cursors(session, user_id=user.id)
     await session.commit()
     return DeleteGamesResponse(deleted_count=deleted_count)

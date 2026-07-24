@@ -53,6 +53,7 @@ async def fetch_lichess_games(
     username: str,
     user_id: int,
     since_ms: int | None = None,
+    until_ms: int | None = None,
     max_games: int | None = None,
     perf_type: str | None = None,
     on_game_fetched: Callable[[], None] | None = None,
@@ -70,14 +71,26 @@ async def fetch_lichess_games(
         user_id: Internal database user ID (denormalized into each game dict).
         since_ms: If provided, only games created at or after this Unix millisecond
             timestamp are returned (lichess ``since`` parameter).
+        until_ms: If provided, only games played at or before this Unix millisecond
+            timestamp are returned (lichess ``until`` parameter). Phase 186 Plan 02
+            (IMPORT-03, D-06): used by the backward-fetch backlog walk. Purely
+            additive to the existing streaming/retry loop — lichess defaults to
+            ``sort=dateDesc`` (newest-first), so combined with ``max_games`` the
+            LAST game yielded in a bounded call is the OLDEST one in that chunk;
+            its ``played_at`` becomes the next ``until_ms`` cursor for the caller's
+            next backward-walk iteration.
         max_games: If provided, caps the number of games lichess returns
             (server-side ``max`` parameter). Used by benchmark ingest to truncate
-            per-(user, TC) volume; user-facing imports leave this ``None``.
-        perf_type: If provided, restricts results to one perfType
-            (``bullet``/``blitz``/``rapid``/``classical``/...). Opt-in because
-            this filter silently truncates: it excludes correspondence, chess960,
-            and imported (fromPosition) games server-side. Benchmark ingest wants
-            exactly that behavior; user-facing imports leave this ``None``.
+            per-(user, TC) volume, and by the backward-walk to bound each chunk;
+            forward/incremental user-facing imports leave this ``None``.
+        perf_type: If provided, restricts results to one or more comma-separated
+            perfTypes (``bullet``/``blitz``/``rapid``/``classical``/``correspondence``/...).
+            Opt-in because this filter silently truncates: e.g. a bare
+            ``perfType=classical`` excludes correspondence, chess960, and imported
+            (fromPosition) games server-side (D-14). Benchmark ingest and the
+            backward-walk want that server-side truncation as a bandwidth
+            optimization; forward/incremental user-facing imports leave this
+            ``None`` and rely solely on the post-fetch TC filter (D-02).
         on_game_fetched: Optional callback called once per yielded game.
 
     Raises:
@@ -102,6 +115,8 @@ async def fetch_lichess_games(
 
     if since_ms is not None:
         params["since"] = str(since_ms)
+    if until_ms is not None:
+        params["until"] = str(until_ms)
     if max_games is not None:
         params["max"] = str(max_games)
     if perf_type is not None:

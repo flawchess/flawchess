@@ -16,7 +16,10 @@ async def _create_test_users(db_session: AsyncSession) -> None:
     from tests.conftest import ensure_test_user
 
     # 601-606: TestGetCurrentRatingByPlatform (MAIA-04 / 151-03).
-    for uid in [1, 2, 42, 55, 601, 602, 603, 604, 605, 606]:
+    # 701-702: TestCountBacklogByPlatformAndTc (Phase 186 Plan 01 / IMPORT-04).
+    # 711-713: TestCountImportedByPlatformAndTc (Plan 03 UAT follow-up).
+    # 801-802: TestGetPlatformGameIdsForUser (Phase 186 CR-01 fix).
+    for uid in [1, 2, 42, 55, 601, 602, 603, 604, 605, 606, 701, 702, 711, 712, 713, 801, 802]:
         await ensure_test_user(db_session, uid)
 
 
@@ -685,3 +688,259 @@ class TestGetCurrentRatingByPlatform:
 
         ratings = await get_current_rating_by_platform(db_session, user_id)
         assert ratings == {"chess.com": None}
+
+
+# ---------------------------------------------------------------------------
+# Phase 186 Plan 01 (IMPORT-04): count_backlog_by_platform_and_tc
+# ---------------------------------------------------------------------------
+
+
+class TestCountBacklogByPlatformAndTc:
+    """Tests for count_backlog_by_platform_and_tc (D-01/D-02/D-15)."""
+
+    def _make_game_row(
+        self,
+        platform_game_id: str,
+        user_id: int,
+        platform: str,
+        time_control_bucket: str | None,
+        played_at: datetime.datetime,
+    ) -> dict:
+        return {
+            "user_id": user_id,
+            "platform": platform,
+            "platform_game_id": platform_game_id,
+            "platform_url": f"https://example.com/{platform_game_id}",
+            "pgn": '[Event "Test"]\n\n1. e4 *',
+            "result": "1-0",
+            "user_color": "white",
+            "time_control_str": "600+0",
+            "time_control_bucket": time_control_bucket,
+            "time_control_seconds": 600,
+            "rated": True,
+            "white_username": "testuser",
+            "black_username": "Opponent",
+            "white_rating": 1500,
+            "black_rating": 1500,
+            "opening_name": None,
+            "opening_eco": None,
+            "played_at": played_at,
+        }
+
+    async def test_counts_pre_anchor_games_per_platform_and_tc(self, db_session):
+        """Pre-anchor games across two platforms and multiple TCs yield correct
+        per-(platform, TC) counts; a NULL-bucket game is omitted entirely (D-15).
+        """
+        from app.repositories.game_repository import (
+            bulk_insert_games,
+            count_backlog_by_platform_and_tc,
+        )
+
+        user_id = 701
+        anchor = datetime.datetime(2026, 1, 1, tzinfo=datetime.timezone.utc)
+        pre_anchor = datetime.datetime(2025, 6, 1, tzinfo=datetime.timezone.utc)
+
+        rows = [
+            self._make_game_row(f"cc-blitz-{i}", user_id, "chess.com", "blitz", pre_anchor)
+            for i in range(2)
+        ] + [
+            self._make_game_row("cc-rapid-1", user_id, "chess.com", "rapid", pre_anchor),
+            self._make_game_row("lc-blitz-1", user_id, "lichess", "blitz", pre_anchor),
+            # NULL-bucket game: must NOT appear in any platform's dict (D-15).
+            self._make_game_row("cc-null-1", user_id, "chess.com", None, pre_anchor),
+        ]
+        await bulk_insert_games(db_session, rows)
+
+        counts = await count_backlog_by_platform_and_tc(db_session, user_id, anchor)
+
+        assert counts == {
+            "chess.com": {"blitz": 2, "rapid": 1},
+            "lichess": {"blitz": 1},
+        }
+
+    async def test_excludes_post_anchor_games(self, db_session):
+        """Games played AT/AFTER the anchor are excluded from the counts (D-02)."""
+        from app.repositories.game_repository import (
+            bulk_insert_games,
+            count_backlog_by_platform_and_tc,
+        )
+
+        user_id = 702
+        anchor = datetime.datetime(2026, 1, 1, tzinfo=datetime.timezone.utc)
+        pre_anchor = datetime.datetime(2025, 6, 1, tzinfo=datetime.timezone.utc)
+        post_anchor = datetime.datetime(2026, 3, 1, tzinfo=datetime.timezone.utc)
+        at_anchor = anchor  # played_at == anchor is NOT "before" -> excluded too
+
+        rows = [
+            self._make_game_row("pre-1", user_id, "chess.com", "blitz", pre_anchor),
+            self._make_game_row("post-1", user_id, "chess.com", "blitz", post_anchor),
+            self._make_game_row("at-1", user_id, "chess.com", "blitz", at_anchor),
+        ]
+        await bulk_insert_games(db_session, rows)
+
+        counts = await count_backlog_by_platform_and_tc(db_session, user_id, anchor)
+
+        assert counts == {"chess.com": {"blitz": 1}}
+
+    async def test_no_pre_anchor_games_returns_empty_dict(self, db_session):
+        """A user with no games at all yields an empty dict, not KeyErrors downstream."""
+        from app.repositories.game_repository import count_backlog_by_platform_and_tc
+
+        anchor = datetime.datetime(2026, 1, 1, tzinfo=datetime.timezone.utc)
+        counts = await count_backlog_by_platform_and_tc(db_session, 999_999, anchor)
+        assert counts == {}
+
+
+# ---------------------------------------------------------------------------
+# UAT follow-up to Plan 03: count_imported_by_platform_and_tc
+# ---------------------------------------------------------------------------
+
+
+class TestCountImportedByPlatformAndTc:
+    """Tests for count_imported_by_platform_and_tc (chip data source)."""
+
+    def _make_game_row(
+        self,
+        platform_game_id: str,
+        user_id: int,
+        platform: str,
+        time_control_bucket: str | None,
+        played_at: datetime.datetime,
+    ) -> dict:
+        return {
+            "user_id": user_id,
+            "platform": platform,
+            "platform_game_id": platform_game_id,
+            "platform_url": f"https://example.com/{platform_game_id}",
+            "pgn": '[Event "Test"]\n\n1. e4 *',
+            "result": "1-0",
+            "user_color": "white",
+            "time_control_str": "600+0",
+            "time_control_bucket": time_control_bucket,
+            "time_control_seconds": 600,
+            "rated": True,
+            "white_username": "testuser",
+            "black_username": "Opponent",
+            "white_rating": 1500,
+            "black_rating": 1500,
+            "opening_name": None,
+            "opening_eco": None,
+            "played_at": played_at,
+        }
+
+    async def test_counts_all_games_regardless_of_played_at(self, db_session):
+        """Unlike the backlog count, this includes post-signup games (no anchor
+        filter); a NULL-bucket game is reported under the "untimed" pseudo-key.
+        """
+        from app.repositories.game_repository import (
+            bulk_insert_games,
+            count_imported_by_platform_and_tc,
+        )
+
+        user_id = 711
+        early = datetime.datetime(2020, 1, 1, tzinfo=datetime.timezone.utc)
+        late = datetime.datetime(2099, 1, 1, tzinfo=datetime.timezone.utc)
+
+        rows = [
+            self._make_game_row("cc-blitz-early", user_id, "chess.com", "blitz", early),
+            # Post-signup game the backlog count would have excluded -- must count here.
+            self._make_game_row("cc-blitz-late", user_id, "chess.com", "blitz", late),
+            self._make_game_row("cc-rapid-1", user_id, "chess.com", "rapid", late),
+            self._make_game_row("lc-blitz-1", user_id, "lichess", "blitz", early),
+            # NULL-bucket game: reported under the "untimed" pseudo-bucket key.
+            self._make_game_row("cc-null-1", user_id, "chess.com", None, early),
+        ]
+        await bulk_insert_games(db_session, rows)
+
+        counts = await count_imported_by_platform_and_tc(db_session, user_id)
+
+        assert counts == {
+            "chess.com": {"blitz": 2, "rapid": 1, "untimed": 1},
+            "lichess": {"blitz": 1},
+        }
+
+    async def test_scoped_to_user_and_empty_when_no_games(self, db_session):
+        """Counts are per-user; a user with no games yields an empty dict."""
+        from app.repositories.game_repository import (
+            bulk_insert_games,
+            count_imported_by_platform_and_tc,
+        )
+
+        owner_id = 712
+        other_id = 713
+        played_at = datetime.datetime(2025, 6, 1, tzinfo=datetime.timezone.utc)
+        await bulk_insert_games(
+            db_session,
+            [self._make_game_row("owner-1", owner_id, "chess.com", "blitz", played_at)],
+        )
+
+        assert await count_imported_by_platform_and_tc(db_session, owner_id) == {
+            "chess.com": {"blitz": 1}
+        }
+        assert await count_imported_by_platform_and_tc(db_session, other_id) == {}
+
+
+# ---------------------------------------------------------------------------
+# Phase 186 CR-01 fix: get_platform_game_ids_for_user
+# ---------------------------------------------------------------------------
+
+
+class TestGetPlatformGameIdsForUser:
+    """Tests for get_platform_game_ids_for_user (CR-01 backward-walk dedup fix)."""
+
+    def _make_game_row(
+        self,
+        platform_game_id: str,
+        user_id: int,
+        platform: str,
+    ) -> dict:
+        return {
+            "user_id": user_id,
+            "platform": platform,
+            "platform_game_id": platform_game_id,
+            "platform_url": f"https://example.com/{platform_game_id}",
+            "pgn": '[Event "Test"]\n\n1. e4 *',
+            "result": "1-0",
+            "user_color": "white",
+            "time_control_str": "600+0",
+            "time_control_bucket": "blitz",
+            "time_control_seconds": 600,
+            "rated": True,
+            "white_username": "testuser",
+            "black_username": "Opponent",
+            "white_rating": 1500,
+            "black_rating": 1500,
+            "opening_name": None,
+            "opening_eco": None,
+            "played_at": datetime.datetime(2025, 1, 1, tzinfo=datetime.timezone.utc),
+        }
+
+    async def test_returns_platform_game_ids_scoped_to_user_and_platform(self, db_session):
+        """Only ids for the given (user_id, platform) are returned -- a same-id
+        game on a different platform, or a game for a different user, must not
+        leak in."""
+        from app.repositories.game_repository import (
+            bulk_insert_games,
+            get_platform_game_ids_for_user,
+        )
+
+        user_id = 801
+        other_user_id = 802
+        rows = [
+            self._make_game_row("cc-1", user_id, "chess.com"),
+            self._make_game_row("cc-2", user_id, "chess.com"),
+            self._make_game_row("lc-1", user_id, "lichess"),
+            self._make_game_row("cc-1", other_user_id, "chess.com"),
+        ]
+        await bulk_insert_games(db_session, rows)
+
+        ids = await get_platform_game_ids_for_user(db_session, user_id, "chess.com")
+
+        assert ids == frozenset({"cc-1", "cc-2"})
+
+    async def test_no_games_returns_empty_frozenset(self, db_session):
+        """A user with no games for this platform yields an empty frozenset."""
+        from app.repositories.game_repository import get_platform_game_ids_for_user
+
+        ids = await get_platform_game_ids_for_user(db_session, 999_999, "chess.com")
+        assert ids == frozenset()

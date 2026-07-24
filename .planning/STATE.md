@@ -1,31 +1,31 @@
 ---
 gsd_state_version: 1.0
-milestone: v2.7
-milestone_name: Bot Personas & Playstyle Layer
-milestone_status: closed
-current_phase: 185
-current_phase_name: bots-roster-transpose-win-stars
-status: v2.7 Bot Personas & Playstyle Layer CLOSED 2026-07-24 (override_closeout) — awaiting /gsd-new-milestone
-stopped_at: "v2.7 milestone closed and tagged"
-last_updated: "2026-07-24T00:00:00.000Z"
+milestone: v2.8
+milestone_name: Import Filters
+status: completed
+stopped_at: Completed 186-03-PLAN.md (Phase 186 complete)
+last_updated: "2026-07-24T09:24:49.447Z"
 last_activity: 2026-07-24
-last_activity_desc: "Closed v2.7 milestone: archived roadmap + requirements, tagged v2.7"
+last_activity_desc: Phase 186 complete
 progress:
-  total_phases: 4
-  completed_phases: 4
-  total_plans: 19
-  completed_plans: 19
+  total_phases: 1
+  completed_phases: 1
+  total_plans: 3
+  completed_plans: 3
   percent: 100
+current_phase: 186
+current_phase_name: import-filters-tc-and-game-cap
+milestone_status: in_progress
 ---
 
 # Project State: FlawChess
 
 ## Current Position
 
-Milestone: v2.7 Bot Personas & Playstyle Layer — CLOSED 2026-07-24 (override_closeout)
-Phases: 182–185 all complete + verified (19/19 plans)
-Status: Archived to milestones/v2.7-*, tagged v2.7. **Awaiting `/gsd-new-milestone`.**
-Last activity: 2026-07-24 - Closed v2.7 milestone
+Milestone: v2.8 Import Filters — opened 2026-07-24 (lightweight regroup, no `/gsd-new-milestone` requirements cycle; same pattern as v2.6)
+Phases: 186 (Import Filters — Time Controls + Game Cap, SEED-117) — Plan 03/3 complete (phase complete)
+Status: All phases complete
+Last activity: 2026-07-24 — Phase 186 complete
 Deployed: production is current through PR #275 (v2.7 shipped incrementally)
 
 ## Project Reference
@@ -94,6 +94,7 @@ v1.29 Live-Engine Analysis Page shipped 2026-06-29 — 5 phases (136–140), 14 
 
 ### Roadmap Evolution
 
+- Milestone v2.8 Import Filters created 2026-07-24 (explicit user request via `/gsd-phase 186 @SEED-117`) with **Phase 186: Import Filters — Time Controls + Game Cap** as its first phase. Lightweight manual open (no `/gsd-new-milestone` requirements cycle — same pattern as v2.6's creation): top Milestones bullet (⏳), `## v2.8` section + Phase 186 block appended, Progress row added, STATE flipped v2.7-closed → v2.8-in-progress, phase dir `.planning/phases/186-import-filters-tc-and-game-cap/` created, SEED-117 marked promoted. Numbered 186 manually — `phase.add` would have miscounted (active phases dir is empty post-archive; known mature-ROADMAP behavior, see Phase 164/172/177/180 entries). Seed carries the locked design decisions (backlog-only cap anchored at account creation, TC filter on both directions, cap = total imported backlog per platform, upgrades backfill / downgrades never delete, existing users grandfathered to all TCs + 5000).
 - Milestone v2.6 Bot Strength Calibration created 2026-07-19 (explicit user request) — regroups the two standalone post-v2.3 calibration phases under one milestone: **Phase 173** (SEED-101, ✅ complete — internal anchor rating scale) and **Phase 180** (SEED-102, not planned — three-preset bot strength curves + cross-family `G_preset`). Both had been floating as bare `### Phase` headings after v2.5's close with no milestone parent. Changes: top Milestones bullet (⏳ in progress), a `## v2.6 …` grouping heading above Phase 173, a missing Progress-table row for 173 (172→174 gap filled), 180 row tagged v2.6, STATE milestone fields flipped v2.5→v2.6 / Awaiting→In progress. No `/gsd-new-milestone` requirements cycle run — this was a lightweight ROADMAP regroup, not a fresh requirements-gathering milestone. Unblocks SEED-104.
 - Phase 180 added 2026-07-19: Three-preset bot strength curves on the internal anchor scale (SEED-102) — measure the bot's strength vs `bot_elo` at three blend presets (Human=0 no-search, Light=0.05, Deep=0.5) on the SEED-101/Phase-173 internal anchor scale. Harness fixes first: integrate `calibration-internal-scale.mjs` into `calibration-harness.mjs` so anchors window by `INTERNAL_RATING` not nominal `bot_elo` (the bug that clamped the 2026-07-12 run), enable BOTH anchor families (Maia-argmax rungs + Stockfish skill levels), locate-then-measure two-pass over a ~5×3 grid at 24–30 games/cell, per-cell CIs. Load-bearing new output is the cross-family split `G_preset = rating_vs_Maia − rating_vs_SF` (the no-human style-inflation gap) — with a literature constant `C≈+40` it replaces the closed SEED-103 (play real humans). Unblocks SEED-104. **Numbering fix:** `phase.add` computed 174 (it scans only active `.planning/phases/`, where 173 is the max; 174–179 are archived into shipped v2.4/v2.5 milestones) — that would collide with shipped Phase 174, so renumbered to 180 by hand (dir renamed, ROADMAP heading + Progress row + goal patched). Standalone phase like 173/177; NOT yet assigned to a milestone (v2.5 closed, awaiting `/gsd-new-milestone`).
 - Phase 178 added 2026-07-18: Lichess-compatible accuracy & ACPL computed columns (SEED-110) — compute per-game accuracy + ACPL for every analyzed game with one uniform lichess formula (confirmed from scalachess/lila source: `-0.00368208` sigmoid, `103.1668100711649·exp(...)` per-move accuracy with the `+1` uncertainty bonus, windowed-stddev-weighted `(weightedMean+harmonicMean)/2` aggregation seeded at 15cp, ±1000 cp ceiling) into four NEW `games` columns, leaving the existing chess.com-accuracy / lichess-acpl columns untouched as a comparison/validation signal. Per-ply eval comes from whatever analyzed the game (`game_positions.eval_cp`), so the uniform formula reproduces lichess's own accuracy for lichess games (validation surface) and gives our-Stockfish-through-lichess-formula for chess.com/self-analyzed games. Single Python path shared by the live hook (full-eval completion) and a `scripts/backfill_*.py`; complete-sequence gate (eval holes → leave NULL, since the sliding volatility window silently distorts on a hole). Placed after Phase 177 in the v2.4 milestone; `phase.add` numbered 178 sequentially. Open plan-time questions in the seed: exact live-hook seam, `eval_cp` sign + post-move-shift mapping, terminal-ply/0–1-move handling, column names+migration (SMALLINT acpl / REAL accuracy), ~718k-game backfill batching.
@@ -419,6 +420,11 @@ v1.29 Live-Engine Analysis Page shipped 2026-06-29 — 5 phases (136–140), 14 
 - [Phase ?]: PersonaStars renders via a filled-count/empty-count split (not a single MAX_DISPLAY_STARS-length loop) so the Math.min cap is genuinely load-bearing for the required mutation check
 - [Phase ?]: STAR_FILLED/STAR_EMPTY declared as independent theme.ts constants, not an alias of FLAWCHESS_ENGINE_ACCENT, despite the matching gold value
 - [Phase ?]: [Quick 260722-ucc]: normalize_flawchess_game's new bot_username param made keyword-only (default FLAWCHESS_BOT_USERNAME) rather than inserted positionally, to avoid breaking ~12 existing positional call sites
+- [Phase ?]: [Phase 186-01]: D-13 confirmed via checkpoint — existing users grandfathered to all 4 TCs + game_cap=5000 (one-way migration)
+- [Phase ?]: Phase 186 Plan 02: on_month_attempted is an async callback (not the plan's illustrative sync signature) since the only real caller persists the backfill cursor via an awaited DB write
+- [Phase ?]: Phase 186 Plan 02: backward-walk should_stop stays a plain synchronous closure over an in-memory live_counts dict seeded from one backlog query, avoiding a DB round trip on every per-month/per-chunk stop check
+- [Phase 186-03]: Settings-fetch isError handling lives once, inside ImportFilterCard — removed a duplicate page-level error branch added mid-Task-2 (both components share the same `['import-settings']` queryKey and would otherwise render the identical error message twice)
+- [Phase 186-03]: tcSettingsKey's return type narrowed to a `tc_${TimeControl}` template-literal union (not the broader `keyof ImportSettingsUpdate`, which includes the numeric `game_cap` field) so indexed access resolves to `boolean` with no cast
 
 ### Pending Todos
 
@@ -515,9 +521,9 @@ Items acknowledged and deferred at **v1.29 milestone close on 2026-06-29** (user
 
 ## Session Continuity
 
-**Stopped at:** Completed quick task 260722-ucc: bot persona name + calibrated ELO
+**Stopped at:** Completed 186-03-PLAN.md (Phase 186 complete)
 
-**Last session:** 2026-07-22T20:03:04.464Z
+**Last session:** 2026-07-24T05:53:36.000Z
 
 **Resume file:**
 
@@ -573,6 +579,9 @@ None
 | Phase 185 P01 | 35min | 2 tasks | 8 files |
 | Phase 185 P02 | 8min | 2 tasks | 3 files |
 | Phase 185 P03 | 28min | 2 tasks | 10 files |
+| Phase 186 P01 | 25min | 2 tasks | 12 files |
+| Phase 186 P02 | 40min | 3 tasks | 10 files |
+| Phase 186 P03 | 20min | 3 tasks | 5 files |
 
 ## Performance Metrics
 

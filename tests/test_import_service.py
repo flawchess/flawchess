@@ -6,6 +6,7 @@ and error handling. All external dependencies are mocked.
 
 import asyncio
 from datetime import datetime, timedelta, timezone
+from types import SimpleNamespace
 from typing import cast
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -13,7 +14,8 @@ import pytest
 from sqlalchemy.exc import OperationalError
 
 import app.services.import_service as import_service
-from app.schemas.normalization import NormalizedGame
+from app.repositories.user_import_settings_repository import GameCap, ImportSettingsRow
+from app.schemas.normalization import NormalizedGame, Platform, TimeControlBucket
 from app.services.import_service import (
     IMPORT_TIMEOUT_SECONDS,
     JobStatus,
@@ -22,6 +24,42 @@ from app.services.import_service import (
     get_job,
     run_import,
 )
+
+# Phase 186 Plan 02: fixed users.created_at used by every session-mock helper's
+# session.get(User, ...) stub below -- a real, concrete datetime so the new
+# bootstrap-scope created_at fetch (Pitfall 2 anchor) never leaks a MagicMock
+# into datetime arithmetic (forward_since.timestamp(), etc.).
+_TEST_USER_CREATED_AT = datetime(2020, 1, 1, tzinfo=timezone.utc)
+
+# Phase 186 Plan 02: default settings for tests that only exercise the
+# forward-pass / job-lifecycle machinery below and don't care about TC
+# filtering or the new backward pass. All-TC-disabled means enabled_tc_buckets
+# is empty, so _run_backward_pass short-circuits before touching any session
+# or platform client -- a true no-op for the ~16 pre-existing run_import tests
+# that don't mock backward-specific functions. Games in those tests are bare
+# dicts with no time_control_bucket key, so the forward-pass TC filter always
+# passes them regardless of this setting (D-15 None-bucket bypass).
+_DEFAULT_TEST_IMPORT_SETTINGS = ImportSettingsRow(
+    tc_bullet=False, tc_blitz=False, tc_rapid=False, tc_classical=False, game_cap=1000
+)
+
+
+@pytest.fixture(autouse=True)
+def _default_import_settings_noop_backward():
+    """Default get_or_create_settings so run_import's backward pass (Phase 186
+    Plan 02, D-05) is a no-op unless a test explicitly opts in.
+
+    Tests exercising TC filtering or the backward pass patch
+    `user_import_settings_repository.get_or_create_settings` themselves inside
+    their own `with patch(...)` block, which correctly overrides this default
+    for the scope of that block (mock.patch nests: the inner patch's teardown
+    restores to this fixture's patch, not the true unpatched function).
+    """
+    with patch(
+        "app.services.import_service.user_import_settings_repository.get_or_create_settings",
+        new=AsyncMock(return_value=_DEFAULT_TEST_IMPORT_SETTINGS),
+    ):
+        yield
 
 
 def _make_mock_processing_result(
@@ -194,6 +232,12 @@ def _make_mock_session():
     result_mock = MagicMock()
     result_mock.fetchall.return_value = []
     session.execute.return_value = result_mock
+    # Phase 186 Plan 02: session.get(User, user_id) backs
+    # user_repository.get_created_at (bootstrap-scope anchor fetch). A
+    # concrete SimpleNamespace, not an unconfigured AsyncMock -- an
+    # AsyncMock's auto-attribute chain (.created_at, then .timestamp()) would
+    # return more mocks/coroutines instead of usable datetime values.
+    session.get = AsyncMock(return_value=SimpleNamespace(created_at=_TEST_USER_CREATED_AT))
     return session
 
 
@@ -2331,6 +2375,8 @@ class TestRunImportSessionPerBatch:
                 self.execute = AsyncMock(
                     return_value=MagicMock(fetchall=MagicMock(return_value=[]))
                 )
+                # Phase 186 Plan 02: bootstrap-scope created_at fetch (Pitfall 2 anchor).
+                self.get = AsyncMock(return_value=SimpleNamespace(created_at=_TEST_USER_CREATED_AT))
 
             async def __aenter__(self):
                 events.append(f"open:{self._name}")
@@ -2359,6 +2405,10 @@ class TestRunImportSessionPerBatch:
             result_mock = MagicMock()
             result_mock.fetchall.return_value = []
             mock_session.execute = AsyncMock(return_value=result_mock)
+            # Phase 186 Plan 02: bootstrap-scope created_at fetch (Pitfall 2 anchor).
+            mock_session.get = AsyncMock(
+                return_value=SimpleNamespace(created_at=_TEST_USER_CREATED_AT)
+            )
             ctx.__aenter__ = AsyncMock(return_value=mock_session)
             ctx.__aexit__ = AsyncMock(return_value=False)
             n_calls[0] += 1
@@ -2419,11 +2469,13 @@ class TestRunImportSessionPerBatch:
 
     @pytest.mark.asyncio
     async def test_one_session_per_batch(self):
-        """run_import opens one session for each logical scope: bootstrap + per-batch + completion + Stage-B gate.
+        """run_import opens one session for each logical scope: bootstrap + TC-settings
+        load + per-batch + completion + Stage-B gate.
 
         With N=30 games and _BATCH_SIZE=12:
           12 (batch 1) + 12 (batch 2) + 6 (trailing) = 3 batch sessions
-          + 1 bootstrap + 1 completion + 1 Stage-B gate read session (quick-260527-u3u) = 6 total session opens.
+          + 1 bootstrap + 1 TC-settings load (Phase 186 Plan 01, _load_enabled_tc_buckets)
+          + 1 completion + 1 Stage-B gate read session (quick-260527-u3u) = 7 total session opens.
 
         The trailing +1 is the fresh read session opened inside _complete_import_job to
         evaluate users_with_zero_pending before firing compute_stage_b — see
@@ -2435,8 +2487,8 @@ class TestRunImportSessionPerBatch:
         n_full_batches = total_games // _BATCH_SIZE  # = 2
         n_trailing = total_games % _BATCH_SIZE  # = 6
         n_batch_sessions = n_full_batches + (1 if n_trailing > 0 else 0)  # = 3
-        # bootstrap + batches + completion + Stage-B gate read session = 6
-        expected_session_calls = 1 + n_batch_sessions + 1 + 1
+        # bootstrap + TC-settings load + batches + completion + Stage-B gate read session = 7
+        expected_session_calls = 1 + 1 + n_batch_sessions + 1 + 1
 
         call_count = [0]
         mock_maker = self._make_simple_session_maker(call_count)
@@ -3251,3 +3303,1154 @@ class TestRecordFailureWithRetryDbOutage:
 
         await _record_failure_with_retry(**self._make_failure_kwargs())
         assert call_count == 3
+
+
+# ---------------------------------------------------------------------------
+# Phase 186 Plan 01 (IMPORT-02): forward/incremental-sync TC filter
+# ---------------------------------------------------------------------------
+
+
+_tc_filter_game_counter = 0
+
+
+def _make_normalized_game(
+    *,
+    time_control_bucket: TimeControlBucket | None,
+    platform_game_id: str | None = None,
+    user_id: int = 1,
+    platform: Platform = "chess.com",
+    played_at: datetime | None = None,
+) -> NormalizedGame:
+    """Build a minimal NormalizedGame with the given TC bucket for filter tests.
+
+    All calls in these tests go through mocked sessions (no real DB insert), so
+    platform_game_id only needs to be distinct within a single test run, not
+    globally unique. `platform`/`played_at` are overridable (Phase 186 Plan 02)
+    for backward-pass tests that need a specific platform or a decreasing
+    played_at sequence to drive the lichess cursor.
+    """
+    global _tc_filter_game_counter
+    _tc_filter_game_counter += 1
+    return NormalizedGame(
+        user_id=user_id,
+        platform=platform,
+        platform_game_id=platform_game_id or f"tc-filter-{_tc_filter_game_counter}",
+        platform_url=None,
+        pgn="1. e4 e5 *",
+        result="1-0",
+        user_color="white",
+        termination_raw="win",
+        termination="checkmate",
+        time_control_str="600+0",
+        time_control_bucket=time_control_bucket,
+        time_control_seconds=600,
+        rated=True,
+        is_computer_game=False,
+        white_username="u",
+        black_username="o",
+        white_rating=1600,
+        black_rating=1550,
+        opening_name=None,
+        opening_eco=None,
+        white_accuracy=None,
+        black_accuracy=None,
+        played_at=played_at if played_at is not None else datetime(2024, 1, 1, tzinfo=timezone.utc),
+    )
+
+
+class TestEnabledTcBuckets:
+    """Unit tests for _enabled_tc_buckets."""
+
+    def test_enabled_tc_buckets_reflects_settings_booleans(self):
+        settings = ImportSettingsRow(
+            tc_bullet=False, tc_blitz=True, tc_rapid=True, tc_classical=False, game_cap=1000
+        )
+        assert import_service._enabled_tc_buckets(settings) == frozenset({"blitz", "rapid"})
+
+    def test_enabled_tc_buckets_all_true(self):
+        settings = ImportSettingsRow(
+            tc_bullet=True, tc_blitz=True, tc_rapid=True, tc_classical=True, game_cap=5000
+        )
+        assert import_service._enabled_tc_buckets(settings) == frozenset(
+            {"bullet", "blitz", "rapid", "classical"}
+        )
+
+    def test_enabled_tc_buckets_all_false(self):
+        settings = ImportSettingsRow(
+            tc_bullet=False, tc_blitz=False, tc_rapid=False, tc_classical=False, game_cap=1000
+        )
+        assert import_service._enabled_tc_buckets(settings) == frozenset()
+
+
+class TestPassesTcFilter:
+    """Unit tests for _passes_tc_filter (D-02/D-14/D-15)."""
+
+    def test_tc_filter_drops_deselected_bucket(self):
+        game = _make_normalized_game(time_control_bucket="bullet")
+        enabled: frozenset[TimeControlBucket] = frozenset({"blitz", "rapid", "classical"})
+        assert import_service._passes_tc_filter(game, enabled) is False
+
+    def test_tc_filter_keeps_selected_bucket(self):
+        game = _make_normalized_game(time_control_bucket="blitz")
+        enabled: frozenset[TimeControlBucket] = frozenset({"blitz", "rapid", "classical"})
+        assert import_service._passes_tc_filter(game, enabled) is True
+
+    def test_tc_filter_always_keeps_none_bucket(self):
+        """D-15: a game with no derivable TC bucket bypasses the filter entirely,
+        even when nothing is enabled.
+        """
+        game = _make_normalized_game(time_control_bucket=None)
+        assert import_service._passes_tc_filter(game, frozenset()) is True
+
+    def test_tc_filter_keeps_correspondence_under_classical(self):
+        """D-14: correspondence games normalize to the classical bucket upstream
+        (normalization.py) -- gating them under tc_classical is automatic.
+        """
+        # Represents a correspondence game post-normalization: bucket == "classical".
+        game = _make_normalized_game(time_control_bucket="classical")
+        assert import_service._passes_tc_filter(game, frozenset({"classical"})) is True
+        assert import_service._passes_tc_filter(game, frozenset({"blitz"})) is False
+
+
+class TestRunImportTcFilter:
+    """Integration test: the forward-pass TC filter wired into run_import."""
+
+    @pytest.mark.asyncio
+    async def test_forward_sync_drops_deselected_tc_keeps_none_and_classical(self):
+        """End-to-end: tc_bullet=False drops a bullet game before insert; a
+        None-bucket game and a classical-bucket game are both kept.
+        """
+        job_id = create_job(user_id=1, platform="chess.com", username="alice")
+
+        games = [
+            _make_normalized_game(time_control_bucket="bullet"),
+            _make_normalized_game(time_control_bucket="blitz"),
+            _make_normalized_game(time_control_bucket=None),
+            _make_normalized_game(time_control_bucket="classical"),
+        ]
+
+        async def _game_gen(*args, **kwargs):
+            for game in games:
+                yield game
+
+        settings = ImportSettingsRow(
+            tc_bullet=False, tc_blitz=True, tc_rapid=True, tc_classical=True, game_cap=1000
+        )
+
+        mock_session = _make_mock_session()
+        mock_maker = _mock_session_maker(mock_session)
+
+        captured_batches: list[list[NormalizedGame]] = []
+
+        async def _capture_flush(session, batch, user_id):
+            captured_batches.append(list(batch))
+            return len(batch)
+
+        with (
+            patch("app.services.import_service.async_session_maker", mock_maker),
+            patch(
+                "app.services.import_service.import_job_repository.get_latest_for_user_platform",
+                new=AsyncMock(return_value=None),
+            ),
+            patch(
+                "app.services.import_service.import_job_repository.create_import_job",
+                new=AsyncMock(),
+            ),
+            patch(
+                "app.services.import_service.import_job_repository.update_import_job",
+                new=AsyncMock(),
+            ),
+            patch(
+                "app.services.import_service.user_import_settings_repository.get_or_create_settings",
+                new=AsyncMock(return_value=settings),
+            ),
+            patch(
+                "app.services.import_service.chesscom_client.fetch_chesscom_games",
+                side_effect=_game_gen,
+            ),
+            # Phase 186 Plan 02: this test's settings enable blitz/rapid/classical
+            # (non-empty enabled_tc_buckets), so the NEW backward pass would
+            # otherwise try to run for real. It's out of scope for this
+            # forward-pass-filter test -- keep it a no-op.
+            patch(
+                "app.services.import_service.chesscom_client.fetch_chesscom_games_backward",
+                side_effect=_empty_async_gen,
+            ),
+            patch(
+                "app.services.import_service._flush_batch",
+                new=AsyncMock(side_effect=_capture_flush),
+            ),
+            patch("app.services.import_service.httpx.AsyncClient") as mock_client_cls,
+        ):
+            mock_http_ctx = AsyncMock()
+            mock_http_ctx.__aenter__ = AsyncMock(return_value=AsyncMock())
+            mock_http_ctx.__aexit__ = AsyncMock(return_value=False)
+            mock_client_cls.return_value = mock_http_ctx
+
+            await run_import(job_id)
+
+        job = get_job(job_id)
+        assert job is not None
+        assert job.status == JobStatus.COMPLETED
+
+        imported_buckets = [g.time_control_bucket for batch in captured_batches for g in batch]
+        # bullet dropped; blitz/None/classical all kept.
+        assert imported_buckets == ["blitz", None, "classical"]
+
+
+# ---------------------------------------------------------------------------
+# Phase 186 Plan 02: two-pass Sync + backward-fetch backfill orchestration
+# ---------------------------------------------------------------------------
+
+
+class TestAdmitBackwardGame:
+    """Unit tests for the per-bucket budget insert gate (UAT-186 fix): the
+    budget must gate insertion per game, not just feed the D-07 stop
+    condition."""
+
+    def test_admits_and_counts_under_cap(self):
+        live_counts: dict = {"blitz": 2}
+        game = _make_normalized_game(time_control_bucket="blitz", platform_game_id="g1")
+        assert import_service._admit_backward_game(
+            game, frozenset({"blitz"}), live_counts, frozenset(), 3
+        )
+        assert live_counts["blitz"] == 3
+
+    def test_rejects_when_bucket_at_cap(self):
+        live_counts: dict = {"blitz": 3}
+        game = _make_normalized_game(time_control_bucket="blitz", platform_game_id="g1")
+        assert not import_service._admit_backward_game(
+            game, frozenset({"blitz"}), live_counts, frozenset(), 3
+        )
+        assert live_counts["blitz"] == 3, "a rejected game must not consume budget"
+
+    def test_duplicate_admitted_without_counting(self):
+        """CR-01: an already-imported game flows through to the ON CONFLICT
+        no-op insert but never consumes budget -- even when the bucket is full."""
+        live_counts: dict = {"blitz": 3}
+        game = _make_normalized_game(time_control_bucket="blitz", platform_game_id="dup")
+        assert import_service._admit_backward_game(
+            game, frozenset({"blitz"}), live_counts, frozenset({"dup"}), 3
+        )
+        assert live_counts["blitz"] == 3
+
+    def test_none_bucket_admitted_without_counting(self):
+        """D-15: a None-bucket game always passes and never counts."""
+        live_counts: dict = {}
+        game = _make_normalized_game(time_control_bucket=None, platform_game_id="g1")
+        assert import_service._admit_backward_game(
+            game, frozenset({"blitz"}), live_counts, frozenset(), 3
+        )
+        assert live_counts == {}
+
+
+class TestBackwardPass:
+    """Integration tests for run_import's backward-fetch backlog walk (D-01/
+    D-05/D-06/D-07) -- covers IMPORT-03's first-sync bound, budget stop
+    condition, two-pass ordering + cursor resumability, and the D-04 settings
+    snapshot.
+    """
+
+    @pytest.mark.asyncio
+    async def test_first_sync_backlog_bounded_not_full_history(self):
+        """A fresh user's first Sync ends with backlog == game_cap for the
+        single selected TC -- NOT the full mocked history (Pitfall 2
+        regression guard: since=None must never reach a capped fetch).
+        """
+        job_id = create_job(user_id=1, platform="lichess", username="alice")
+
+        settings = ImportSettingsRow(
+            tc_bullet=False, tc_blitz=True, tc_rapid=False, tc_classical=False, game_cap=1000
+        )
+
+        mock_session = _make_mock_session()
+        mock_maker = _mock_session_maker(mock_session)
+
+        # Each backward chunk returns a full _BACKWARD_LICHESS_CHUNK_SIZE
+        # (200) blitz games with strictly decreasing played_at -- simulating
+        # a user with years of history, far more than the 1000-game cap.
+        call_index = [0]
+        base_ms = 1_700_000_000_000
+
+        async def _lichess_side_effect(*args, **kwargs):
+            if kwargs.get("max_games") != import_service._BACKWARD_LICHESS_CHUNK_SIZE:
+                return  # forward-pass call: nothing new since the anchor
+                yield  # pragma: no cover
+            idx = call_index[0]
+            call_index[0] += 1
+            for i in range(200):
+                offset = idx * 200 + i
+                yield _make_normalized_game(
+                    time_control_bucket="blitz",
+                    platform="lichess",
+                    platform_game_id=f"backward-{idx}-{i}",
+                    played_at=datetime.fromtimestamp(
+                        (base_ms - offset * 1000) / 1000, tz=timezone.utc
+                    ),
+                )
+
+        captured_batches: list[list[NormalizedGame]] = []
+
+        async def _capture_flush(session, batch, user_id):
+            captured_batches.append(list(batch))
+            return len(batch)
+
+        with (
+            patch("app.services.import_service.async_session_maker", mock_maker),
+            patch(
+                "app.services.import_service.import_job_repository.get_latest_for_user_platform",
+                new=AsyncMock(return_value=None),
+            ),
+            patch(
+                "app.services.import_service.import_job_repository.create_import_job",
+                new=AsyncMock(),
+            ),
+            patch(
+                "app.services.import_service.import_job_repository.update_import_job",
+                new=AsyncMock(),
+            ),
+            patch(
+                "app.services.import_service.user_import_settings_repository.get_or_create_settings",
+                new=AsyncMock(return_value=settings),
+            ),
+            patch(
+                "app.services.import_service.game_repository.count_backlog_by_platform_and_tc",
+                new=AsyncMock(return_value={}),
+            ),
+            # CR-01 fix: _run_backward_pass now loads the existing platform_game_id
+            # set once up front. Default empty here means "nothing pre-existing" --
+            # every fetched game in these tests' scenarios is genuinely new, matching
+            # their prior (pre-fix) assumptions. Tests exercising the duplicate-dedup
+            # behavior itself override this patch's return value explicitly.
+            patch(
+                "app.services.import_service.game_repository.get_platform_game_ids_for_user",
+                new=AsyncMock(return_value=frozenset()),
+            ),
+            patch(
+                "app.services.import_service.user_import_settings_repository.get_lichess_backfill_cursor",
+                new=AsyncMock(return_value=None),
+            ),
+            patch(
+                "app.services.import_service.user_import_settings_repository.update_lichess_backfill_cursor",
+                new=AsyncMock(),
+            ),
+            patch(
+                "app.services.import_service.lichess_client.fetch_lichess_games",
+                side_effect=_lichess_side_effect,
+            ),
+            patch(
+                "app.services.import_service._flush_batch",
+                new=AsyncMock(side_effect=_capture_flush),
+            ),
+            patch("app.services.import_service.httpx.AsyncClient") as mock_client_cls,
+        ):
+            mock_http_ctx = AsyncMock()
+            mock_http_ctx.__aenter__ = AsyncMock(return_value=AsyncMock())
+            mock_http_ctx.__aexit__ = AsyncMock(return_value=False)
+            mock_client_cls.return_value = mock_http_ctx
+
+            await run_import(job_id)
+
+        job = get_job(job_id)
+        assert job is not None
+        assert job.status == JobStatus.COMPLETED
+        assert call_index[0] == 5, (
+            f"Expected exactly 5 backward chunks (5*200=1000=cap), got {call_index[0]}"
+        )
+
+        total_imported = sum(len(b) for b in captured_batches)
+        assert total_imported == 1000, (
+            f"First sync must end with backlog == game_cap (1000) for the single "
+            f"selected TC, not the full mocked history. Got {total_imported}."
+        )
+
+    @pytest.mark.asyncio
+    async def test_budget_stops_only_when_all_selected_tc_full(self):
+        """The backward walk does NOT stop once just one selected TC's budget
+        fills -- it continues until ALL selected TCs are full (D-07)."""
+        job_id = create_job(user_id=1, platform="chess.com", username="alice")
+
+        # game_cap is normally restricted to {1000, 3000, 5000} (GameCap
+        # Literal, DB CHECK-enforced) -- this mock uses a small value purely
+        # to keep the fake source's sequence short; mocks aren't DB-constrained.
+        settings = ImportSettingsRow(
+            tc_bullet=False,
+            tc_blitz=True,
+            tc_rapid=True,
+            tc_classical=False,
+            game_cap=cast(GameCap, 3),
+        )
+
+        # blitz fills first (5 games fetched, cap=3); rapid catches up after
+        # (3 games, landing exactly at cap). should_stop() is checked before
+        # each yield, so the walk keeps consuming the source past blitz's own
+        # cap while waiting for rapid -- but the UAT-186 budget gate drops the
+        # over-cap blitz games instead of inserting them.
+        sequence: list[TimeControlBucket] = ["blitz"] * 5 + ["rapid"] * 5
+
+        async def _fake_backward(
+            client, username, user_id, oldest_attempted_ym, should_stop, **kwargs
+        ):
+            on_game_fetched = kwargs.get("on_game_fetched")
+            for i, bucket in enumerate(sequence):
+                if should_stop():
+                    break
+                yield _make_normalized_game(time_control_bucket=bucket, platform_game_id=f"cc-{i}")
+                if on_game_fetched is not None:
+                    on_game_fetched()
+
+        captured_batches: list[list[NormalizedGame]] = []
+
+        async def _capture_flush(session, batch, user_id):
+            captured_batches.append(list(batch))
+            return len(batch)
+
+        mock_session = _make_mock_session()
+        mock_maker = _mock_session_maker(mock_session)
+
+        with (
+            patch("app.services.import_service.async_session_maker", mock_maker),
+            patch(
+                "app.services.import_service.import_job_repository.get_latest_for_user_platform",
+                new=AsyncMock(return_value=None),
+            ),
+            patch(
+                "app.services.import_service.import_job_repository.create_import_job",
+                new=AsyncMock(),
+            ),
+            patch(
+                "app.services.import_service.import_job_repository.update_import_job",
+                new=AsyncMock(),
+            ),
+            patch(
+                "app.services.import_service.user_import_settings_repository.get_or_create_settings",
+                new=AsyncMock(return_value=settings),
+            ),
+            patch(
+                "app.services.import_service.game_repository.count_backlog_by_platform_and_tc",
+                new=AsyncMock(return_value={}),
+            ),
+            # CR-01 fix: _run_backward_pass now loads the existing platform_game_id
+            # set once up front. Default empty here means "nothing pre-existing" --
+            # every fetched game in these tests' scenarios is genuinely new, matching
+            # their prior (pre-fix) assumptions. Tests exercising the duplicate-dedup
+            # behavior itself override this patch's return value explicitly.
+            patch(
+                "app.services.import_service.game_repository.get_platform_game_ids_for_user",
+                new=AsyncMock(return_value=frozenset()),
+            ),
+            patch(
+                "app.services.import_service.chesscom_client.fetch_chesscom_games",
+                side_effect=_empty_async_gen,
+            ),
+            patch(
+                "app.services.import_service.chesscom_client.fetch_chesscom_games_backward",
+                side_effect=_fake_backward,
+            ),
+            patch(
+                "app.services.import_service._flush_batch",
+                new=AsyncMock(side_effect=_capture_flush),
+            ),
+            patch("app.services.import_service.httpx.AsyncClient") as mock_client_cls,
+        ):
+            mock_http_ctx = AsyncMock()
+            mock_http_ctx.__aenter__ = AsyncMock(return_value=AsyncMock())
+            mock_http_ctx.__aexit__ = AsyncMock(return_value=False)
+            mock_client_cls.return_value = mock_http_ctx
+
+            await run_import(job_id)
+
+        job = get_job(job_id)
+        assert job is not None
+        assert job.status == JobStatus.COMPLETED
+
+        imported_buckets = [g.time_control_bucket for batch in captured_batches for g in batch]
+        blitz_count = imported_buckets.count("blitz")
+        rapid_count = imported_buckets.count("rapid")
+        # rapid reached its cap even though it only appears AFTER all 5 blitz
+        # games in the source -- proves the walk did NOT stop the moment blitz
+        # alone reached cap (D-07). blitz stays AT cap because the UAT-186
+        # budget gate drops its 2 over-cap games instead of inserting them.
+        assert blitz_count == 3, (
+            f"Expected blitz to be capped at 3 by the per-bucket insert gate, got {blitz_count}"
+        )
+        assert rapid_count == 3, f"Expected rapid to stop exactly at cap, got {rapid_count}"
+
+    @pytest.mark.asyncio
+    async def test_full_bucket_capped_when_other_bucket_never_fills(self):
+        """UAT-186 regression: a selected TC with less history than the cap
+        (rapid here) drives the walk to full history exhaustion -- the
+        already-full bucket (blitz) must stay AT cap, not absorb its entire
+        remaining history along the way.
+
+        This is the exact reported scenario: cap 1000, blitz full at ~1000,
+        rapid history only ~816 -- the pre-fix walk imported ALL 2705 blitz
+        games because the budget only fed the stop condition, never gated
+        insertion.
+        """
+        job_id = create_job(user_id=1, platform="chess.com", username="alice")
+
+        settings = ImportSettingsRow(
+            tc_bullet=False,
+            tc_blitz=True,
+            tc_rapid=True,
+            tc_classical=False,
+            game_cap=cast(GameCap, 3),
+        )
+
+        # rapid has only 2 games in the whole history (< cap=3), so
+        # should_stop() never fires and the source runs dry. The 7 blitz games
+        # interleaved after blitz's cap point must be dropped, not inserted.
+        sequence: list[TimeControlBucket] = (
+            ["blitz"] * 3 + ["rapid"] + ["blitz"] * 4 + ["rapid"] + ["blitz"] * 3
+        )
+
+        async def _fake_backward(
+            client, username, user_id, oldest_attempted_ym, should_stop, **kwargs
+        ):
+            on_game_fetched = kwargs.get("on_game_fetched")
+            for i, bucket in enumerate(sequence):
+                if should_stop():
+                    break
+                yield _make_normalized_game(time_control_bucket=bucket, platform_game_id=f"cc-{i}")
+                if on_game_fetched is not None:
+                    on_game_fetched()
+
+        captured_batches: list[list[NormalizedGame]] = []
+
+        async def _capture_flush(session, batch, user_id):
+            captured_batches.append(list(batch))
+            return len(batch)
+
+        mock_session = _make_mock_session()
+        mock_maker = _mock_session_maker(mock_session)
+
+        with (
+            patch("app.services.import_service.async_session_maker", mock_maker),
+            patch(
+                "app.services.import_service.import_job_repository.get_latest_for_user_platform",
+                new=AsyncMock(return_value=None),
+            ),
+            patch(
+                "app.services.import_service.import_job_repository.create_import_job",
+                new=AsyncMock(),
+            ),
+            patch(
+                "app.services.import_service.import_job_repository.update_import_job",
+                new=AsyncMock(),
+            ),
+            patch(
+                "app.services.import_service.user_import_settings_repository.get_or_create_settings",
+                new=AsyncMock(return_value=settings),
+            ),
+            patch(
+                "app.services.import_service.game_repository.count_backlog_by_platform_and_tc",
+                new=AsyncMock(return_value={}),
+            ),
+            patch(
+                "app.services.import_service.game_repository.get_platform_game_ids_for_user",
+                new=AsyncMock(return_value=frozenset()),
+            ),
+            patch(
+                "app.services.import_service.chesscom_client.fetch_chesscom_games",
+                side_effect=_empty_async_gen,
+            ),
+            patch(
+                "app.services.import_service.chesscom_client.fetch_chesscom_games_backward",
+                side_effect=_fake_backward,
+            ),
+            patch(
+                "app.services.import_service._flush_batch",
+                new=AsyncMock(side_effect=_capture_flush),
+            ),
+            patch("app.services.import_service.httpx.AsyncClient") as mock_client_cls,
+        ):
+            mock_http_ctx = AsyncMock()
+            mock_http_ctx.__aenter__ = AsyncMock(return_value=AsyncMock())
+            mock_http_ctx.__aexit__ = AsyncMock(return_value=False)
+            mock_client_cls.return_value = mock_http_ctx
+
+            await run_import(job_id)
+
+        job = get_job(job_id)
+        assert job is not None
+        assert job.status == JobStatus.COMPLETED
+
+        imported_buckets = [g.time_control_bucket for batch in captured_batches for g in batch]
+        blitz_count = imported_buckets.count("blitz")
+        rapid_count = imported_buckets.count("rapid")
+        assert blitz_count == 3, (
+            f"blitz must stay at cap (3) while rapid's never-filling budget drives "
+            f"the walk to history exhaustion, got {blitz_count} (pre-fix: 10)"
+        )
+        assert rapid_count == 2, (
+            f"rapid should import its entire (sub-cap) history, got {rapid_count}"
+        )
+
+    @pytest.mark.asyncio
+    async def test_budget_deselected_tc_never_accrues_backlog(self):
+        """A deselected TC bucket is filtered out before insert and never
+        counts toward (or blocks on) any budget, even when a platform source
+        yields it interleaved with selected-TC games."""
+        job_id = create_job(user_id=1, platform="chess.com", username="alice")
+
+        settings = ImportSettingsRow(
+            tc_bullet=False,
+            tc_blitz=True,
+            tc_rapid=False,
+            tc_classical=False,
+            game_cap=cast(GameCap, 3),
+        )
+
+        # bullet is NOT selected -- interleaved with blitz, it must never be
+        # imported and must never contribute to (or block) the blitz budget.
+        sequence: list[TimeControlBucket] = ["bullet", "blitz"] * 10
+
+        async def _fake_backward(
+            client, username, user_id, oldest_attempted_ym, should_stop, **kwargs
+        ):
+            on_game_fetched = kwargs.get("on_game_fetched")
+            for i, bucket in enumerate(sequence):
+                if should_stop():
+                    break
+                yield _make_normalized_game(time_control_bucket=bucket, platform_game_id=f"cc-{i}")
+                if on_game_fetched is not None:
+                    on_game_fetched()
+
+        captured_batches: list[list[NormalizedGame]] = []
+
+        async def _capture_flush(session, batch, user_id):
+            captured_batches.append(list(batch))
+            return len(batch)
+
+        mock_session = _make_mock_session()
+        mock_maker = _mock_session_maker(mock_session)
+
+        with (
+            patch("app.services.import_service.async_session_maker", mock_maker),
+            patch(
+                "app.services.import_service.import_job_repository.get_latest_for_user_platform",
+                new=AsyncMock(return_value=None),
+            ),
+            patch(
+                "app.services.import_service.import_job_repository.create_import_job",
+                new=AsyncMock(),
+            ),
+            patch(
+                "app.services.import_service.import_job_repository.update_import_job",
+                new=AsyncMock(),
+            ),
+            patch(
+                "app.services.import_service.user_import_settings_repository.get_or_create_settings",
+                new=AsyncMock(return_value=settings),
+            ),
+            patch(
+                "app.services.import_service.game_repository.count_backlog_by_platform_and_tc",
+                new=AsyncMock(return_value={}),
+            ),
+            # CR-01 fix: _run_backward_pass now loads the existing platform_game_id
+            # set once up front. Default empty here means "nothing pre-existing" --
+            # every fetched game in these tests' scenarios is genuinely new, matching
+            # their prior (pre-fix) assumptions. Tests exercising the duplicate-dedup
+            # behavior itself override this patch's return value explicitly.
+            patch(
+                "app.services.import_service.game_repository.get_platform_game_ids_for_user",
+                new=AsyncMock(return_value=frozenset()),
+            ),
+            patch(
+                "app.services.import_service.chesscom_client.fetch_chesscom_games",
+                side_effect=_empty_async_gen,
+            ),
+            patch(
+                "app.services.import_service.chesscom_client.fetch_chesscom_games_backward",
+                side_effect=_fake_backward,
+            ),
+            patch(
+                "app.services.import_service._flush_batch",
+                new=AsyncMock(side_effect=_capture_flush),
+            ),
+            patch("app.services.import_service.httpx.AsyncClient") as mock_client_cls,
+        ):
+            mock_http_ctx = AsyncMock()
+            mock_http_ctx.__aenter__ = AsyncMock(return_value=AsyncMock())
+            mock_http_ctx.__aexit__ = AsyncMock(return_value=False)
+            mock_client_cls.return_value = mock_http_ctx
+
+            await run_import(job_id)
+
+        job = get_job(job_id)
+        assert job is not None
+        assert job.status == JobStatus.COMPLETED
+
+        imported_buckets = [g.time_control_bucket for batch in captured_batches for g in batch]
+        assert "bullet" not in imported_buckets, "Deselected bullet games must never be imported"
+        assert imported_buckets.count("blitz") == 3, (
+            f"Expected exactly 3 blitz games (== cap), got {imported_buckets.count('blitz')}"
+        )
+
+    @pytest.mark.asyncio
+    async def test_two_pass_forward_runs_before_backward_with_resumable_cursor(self):
+        """Forward pass runs before backward pass within one job; the
+        backward-walk cursor is persisted after each attempted month, and a
+        mid-walk stop leaves a resumable (not fully-advanced) cursor."""
+        job_id = create_job(user_id=1, platform="chess.com", username="alice")
+
+        # game_cap=1: the single blitz game fetched in month (2024, 3) fills
+        # the only selected TC's budget immediately, so should_stop() halts
+        # BEFORE month (2024, 2) is ever attempted -- the persisted cursor
+        # must reflect only the ATTEMPTED month, leaving (2024, 2) for the
+        # next Sync to resume from.
+        settings = ImportSettingsRow(
+            tc_bullet=False,
+            tc_blitz=True,
+            tc_rapid=False,
+            tc_classical=False,
+            game_cap=cast(GameCap, 1),
+        )
+
+        call_order: list[str] = []
+
+        async def _forward_games(*args, **kwargs):
+            call_order.append("forward")
+            yield _make_normalized_game(time_control_bucket=None, platform_game_id="fwd-1")
+
+        async def _fake_backward(
+            client, username, user_id, oldest_attempted_ym, should_stop, **kwargs
+        ):
+            call_order.append("backward")
+            on_game_fetched = kwargs.get("on_game_fetched")
+            on_month_attempted = kwargs.get("on_month_attempted")
+            for i, ym in enumerate([(2024, 3), (2024, 2)]):
+                if should_stop():
+                    break
+                yield _make_normalized_game(
+                    time_control_bucket="blitz", platform_game_id=f"bwd-{i}"
+                )
+                if on_game_fetched is not None:
+                    on_game_fetched()
+                if on_month_attempted is not None:
+                    await on_month_attempted(ym)
+
+        cursor_calls: list[tuple[int, int]] = []
+
+        async def _capture_cursor_update(session, *, user_id, year, month):
+            cursor_calls.append((year, month))
+
+        captured_batches: list[list[NormalizedGame]] = []
+
+        async def _capture_flush(session, batch, user_id):
+            captured_batches.append(list(batch))
+            return len(batch)
+
+        mock_session = _make_mock_session()
+        mock_maker = _mock_session_maker(mock_session)
+
+        with (
+            patch("app.services.import_service.async_session_maker", mock_maker),
+            patch(
+                "app.services.import_service.import_job_repository.get_latest_for_user_platform",
+                new=AsyncMock(return_value=None),
+            ),
+            patch(
+                "app.services.import_service.import_job_repository.create_import_job",
+                new=AsyncMock(),
+            ),
+            patch(
+                "app.services.import_service.import_job_repository.update_import_job",
+                new=AsyncMock(),
+            ),
+            patch(
+                "app.services.import_service.user_import_settings_repository.get_or_create_settings",
+                new=AsyncMock(return_value=settings),
+            ),
+            patch(
+                "app.services.import_service.game_repository.count_backlog_by_platform_and_tc",
+                new=AsyncMock(return_value={}),
+            ),
+            # CR-01 fix: _run_backward_pass now loads the existing platform_game_id
+            # set once up front. Default empty here means "nothing pre-existing" --
+            # every fetched game in these tests' scenarios is genuinely new, matching
+            # their prior (pre-fix) assumptions. Tests exercising the duplicate-dedup
+            # behavior itself override this patch's return value explicitly.
+            patch(
+                "app.services.import_service.game_repository.get_platform_game_ids_for_user",
+                new=AsyncMock(return_value=frozenset()),
+            ),
+            patch(
+                "app.services.import_service.user_import_settings_repository.get_chesscom_backfill_cursor",
+                new=AsyncMock(return_value=None),
+            ),
+            patch(
+                "app.services.import_service.user_import_settings_repository.update_chesscom_backfill_cursor",
+                new=AsyncMock(side_effect=_capture_cursor_update),
+            ),
+            patch(
+                "app.services.import_service.chesscom_client.fetch_chesscom_games",
+                side_effect=_forward_games,
+            ),
+            patch(
+                "app.services.import_service.chesscom_client.fetch_chesscom_games_backward",
+                side_effect=_fake_backward,
+            ),
+            patch(
+                "app.services.import_service._flush_batch",
+                new=AsyncMock(side_effect=_capture_flush),
+            ),
+            patch("app.services.import_service.httpx.AsyncClient") as mock_client_cls,
+        ):
+            mock_http_ctx = AsyncMock()
+            mock_http_ctx.__aenter__ = AsyncMock(return_value=AsyncMock())
+            mock_http_ctx.__aexit__ = AsyncMock(return_value=False)
+            mock_client_cls.return_value = mock_http_ctx
+
+            await run_import(job_id)
+
+        job = get_job(job_id)
+        assert job is not None
+        assert job.status == JobStatus.COMPLETED
+
+        assert call_order == ["forward", "backward"], (
+            f"Forward pass must run before backward pass within one job, got {call_order}"
+        )
+
+        # Only (2024, 3) was attempted -- should_stop() halted before (2024, 2)
+        # was ever fetched, so the persisted cursor must NOT include it.
+        assert cursor_calls == [(2024, 3)], (
+            f"Expected exactly one persisted cursor for the attempted month, got {cursor_calls}"
+        )
+
+        imported_ids = [g.platform_game_id for batch in captured_batches for g in batch]
+        assert imported_ids == ["fwd-1", "bwd-0"], (
+            f"Expected the forward-pass game then the one backward-pass game "
+            f"before the mid-walk stop, got {imported_ids}"
+        )
+
+    @pytest.mark.asyncio
+    async def test_mid_run_settings_patch_does_not_affect_active_job(self):
+        """A settings PATCH issued while a job is active does NOT alter that
+        job's TC filter or cap -- run_import reads settings once at job start
+        (D-04); only the NEXT Sync would observe the new values."""
+        job_id = create_job(user_id=1, platform="chess.com", username="alice")
+
+        initial_settings = ImportSettingsRow(
+            tc_bullet=False, tc_blitz=True, tc_rapid=True, tc_classical=True, game_cap=1000
+        )
+        # Simulates a concurrent PATCH enabling bullet + raising the cap mid-run.
+        # If run_import re-read settings anywhere other than job start, this
+        # would leak through and change the forward-pass filter outcome below.
+        changed_settings = ImportSettingsRow(
+            tc_bullet=True, tc_blitz=True, tc_rapid=True, tc_classical=True, game_cap=5000
+        )
+        settings_queue = [initial_settings, changed_settings]
+
+        async def _get_or_create_settings(session, *, user_id):
+            return settings_queue.pop(0) if settings_queue else changed_settings
+
+        games = [
+            _make_normalized_game(time_control_bucket="bullet", platform_game_id="fwd-bullet"),
+            _make_normalized_game(time_control_bucket="blitz", platform_game_id="fwd-blitz"),
+        ]
+
+        async def _forward_games(*args, **kwargs):
+            for g in games:
+                yield g
+
+        captured_batches: list[list[NormalizedGame]] = []
+
+        async def _capture_flush(session, batch, user_id):
+            captured_batches.append(list(batch))
+            return len(batch)
+
+        mock_session = _make_mock_session()
+        mock_maker = _mock_session_maker(mock_session)
+
+        with (
+            patch("app.services.import_service.async_session_maker", mock_maker),
+            patch(
+                "app.services.import_service.import_job_repository.get_latest_for_user_platform",
+                new=AsyncMock(return_value=None),
+            ),
+            patch(
+                "app.services.import_service.import_job_repository.create_import_job",
+                new=AsyncMock(),
+            ),
+            patch(
+                "app.services.import_service.import_job_repository.update_import_job",
+                new=AsyncMock(),
+            ),
+            patch(
+                "app.services.import_service.user_import_settings_repository.get_or_create_settings",
+                side_effect=_get_or_create_settings,
+            ) as mock_get_settings,
+            patch(
+                "app.services.import_service.game_repository.count_backlog_by_platform_and_tc",
+                new=AsyncMock(return_value={}),
+            ),
+            # CR-01 fix: _run_backward_pass now loads the existing platform_game_id
+            # set once up front. Default empty here means "nothing pre-existing" --
+            # every fetched game in these tests' scenarios is genuinely new, matching
+            # their prior (pre-fix) assumptions. Tests exercising the duplicate-dedup
+            # behavior itself override this patch's return value explicitly.
+            patch(
+                "app.services.import_service.game_repository.get_platform_game_ids_for_user",
+                new=AsyncMock(return_value=frozenset()),
+            ),
+            patch(
+                "app.services.import_service.chesscom_client.fetch_chesscom_games",
+                side_effect=_forward_games,
+            ),
+            patch(
+                "app.services.import_service.chesscom_client.fetch_chesscom_games_backward",
+                side_effect=_empty_async_gen,
+            ),
+            patch(
+                "app.services.import_service._flush_batch",
+                new=AsyncMock(side_effect=_capture_flush),
+            ),
+            patch("app.services.import_service.httpx.AsyncClient") as mock_client_cls,
+        ):
+            mock_http_ctx = AsyncMock()
+            mock_http_ctx.__aenter__ = AsyncMock(return_value=AsyncMock())
+            mock_http_ctx.__aexit__ = AsyncMock(return_value=False)
+            mock_client_cls.return_value = mock_http_ctx
+
+            await run_import(job_id)
+
+        job = get_job(job_id)
+        assert job is not None
+        assert job.status == JobStatus.COMPLETED
+
+        # Settings loaded exactly once for the whole job (D-04 snapshot) --
+        # if run_import re-read settings mid-run, this would be >= 2.
+        assert mock_get_settings.call_count == 1
+
+        imported_buckets = [g.time_control_bucket for batch in captured_batches for g in batch]
+        # bullet dropped per the INITIAL (not the concurrently-changed)
+        # settings -- proves the job-start snapshot, not the live row, governs.
+        assert imported_buckets == ["blitz"]
+
+    @pytest.mark.asyncio
+    async def test_backward_walk_duplicates_do_not_consume_budget(self):
+        """CR-01 regression: games the forward pass already imported this run
+        must NOT count toward the backward walk's per-(platform, TC) budget
+        when the backward walk re-fetches them.
+
+        Simulates the exact overlap scenario the bug depended on: the forward
+        pass "imports" 3 blitz games (their platform_game_ids end up in
+        `get_platform_game_ids_for_user`'s live result, mirroring what a real
+        DB would report after the forward-pass insert), then the backward walk
+        re-fetches those same 3 games FIRST (as it would on a first-ever walk
+        that starts at "now" and walks back through the forward pass's window)
+        before reaching 3 genuinely new backlog games. With the pre-fix
+        fetch-time counter, the 3 duplicates alone would have filled a
+        game_cap=3 budget and the walk would stop having imported zero new
+        backlog games. With the fix, the duplicates are excluded from
+        `live_counts` and the walk continues to import exactly the 3 new
+        games.
+        """
+        job_id = create_job(user_id=1, platform="chess.com", username="alice")
+
+        settings = ImportSettingsRow(
+            tc_bullet=False,
+            tc_blitz=True,
+            tc_rapid=False,
+            tc_classical=False,
+            game_cap=cast(GameCap, 3),
+        )
+
+        # The forward pass "already imported" these 3 platform_game_ids this run.
+        duplicate_ids = frozenset({"dup-0", "dup-1", "dup-2"})
+
+        # Backward walk re-encounters the 3 duplicates FIRST, then 3 new games.
+        sequence = ["dup-0", "dup-1", "dup-2", "new-0", "new-1", "new-2"]
+
+        async def _fake_backward(
+            client, username, user_id, oldest_attempted_ym, should_stop, **kwargs
+        ):
+            on_game_fetched = kwargs.get("on_game_fetched")
+            for platform_game_id in sequence:
+                if should_stop():
+                    break
+                yield _make_normalized_game(
+                    time_control_bucket="blitz", platform_game_id=platform_game_id
+                )
+                if on_game_fetched is not None:
+                    on_game_fetched()
+
+        captured_batches: list[list[NormalizedGame]] = []
+
+        async def _capture_flush(session, batch, user_id):
+            captured_batches.append(list(batch))
+            return len(batch)
+
+        mock_session = _make_mock_session()
+        mock_maker = _mock_session_maker(mock_session)
+
+        with (
+            patch("app.services.import_service.async_session_maker", mock_maker),
+            patch(
+                "app.services.import_service.import_job_repository.get_latest_for_user_platform",
+                new=AsyncMock(return_value=None),
+            ),
+            patch(
+                "app.services.import_service.import_job_repository.create_import_job",
+                new=AsyncMock(),
+            ),
+            patch(
+                "app.services.import_service.import_job_repository.update_import_job",
+                new=AsyncMock(),
+            ),
+            patch(
+                "app.services.import_service.user_import_settings_repository.get_or_create_settings",
+                new=AsyncMock(return_value=settings),
+            ),
+            patch(
+                "app.services.import_service.game_repository.count_backlog_by_platform_and_tc",
+                new=AsyncMock(return_value={}),
+            ),
+            patch(
+                "app.services.import_service.game_repository.get_platform_game_ids_for_user",
+                new=AsyncMock(return_value=duplicate_ids),
+            ),
+            patch(
+                "app.services.import_service.chesscom_client.fetch_chesscom_games",
+                side_effect=_empty_async_gen,
+            ),
+            patch(
+                "app.services.import_service.chesscom_client.fetch_chesscom_games_backward",
+                side_effect=_fake_backward,
+            ),
+            patch(
+                "app.services.import_service._flush_batch",
+                new=AsyncMock(side_effect=_capture_flush),
+            ),
+            patch("app.services.import_service.httpx.AsyncClient") as mock_client_cls,
+        ):
+            mock_http_ctx = AsyncMock()
+            mock_http_ctx.__aenter__ = AsyncMock(return_value=AsyncMock())
+            mock_http_ctx.__aexit__ = AsyncMock(return_value=False)
+            mock_client_cls.return_value = mock_http_ctx
+
+            await run_import(job_id)
+
+        job = get_job(job_id)
+        assert job is not None
+        assert job.status == JobStatus.COMPLETED
+
+        imported_ids = [g.platform_game_id for batch in captured_batches for g in batch]
+        # All 6 fetched games reach the flush call (duplicates still flow through
+        # to bulk_insert_games's ON CONFLICT DO NOTHING in production) -- the fix
+        # is about the BUDGET counter, not about skipping duplicates pre-flush.
+        assert imported_ids == sequence, (
+            f"Expected the walk to fetch all 3 duplicates then all 3 new games "
+            f"without stopping early, got {imported_ids}"
+        )
+
+    @pytest.mark.asyncio
+    async def test_chesscom_cursor_persisted_in_batches_not_every_month(self):
+        """WR-03 regression: the chess.com backward-walk cursor is persisted
+        every `_CURSOR_PERSIST_EVERY_N_UNITS` attempted months, not after
+        every single one -- with a forced final flush for the trailing
+        not-yet-persisted months so no progress is lost when the walk ends.
+        """
+        job_id = create_job(user_id=1, platform="chess.com", username="alice")
+
+        # game_cap high enough that the budget never fills -- this test is only
+        # about cursor-persist cadence, not the stop condition.
+        settings = ImportSettingsRow(
+            tc_bullet=False, tc_blitz=True, tc_rapid=False, tc_classical=False, game_cap=1000
+        )
+
+        attempted_months = [(2024, m) for m in range(8, 0, -1)]  # 8 months, newest first
+
+        async def _fake_backward(
+            client, username, user_id, oldest_attempted_ym, should_stop, **kwargs
+        ):
+            on_game_fetched = kwargs.get("on_game_fetched")
+            on_month_attempted = kwargs.get("on_month_attempted")
+            for i, ym in enumerate(attempted_months):
+                if should_stop():
+                    break
+                yield _make_normalized_game(time_control_bucket="blitz", platform_game_id=f"cc-{i}")
+                if on_game_fetched is not None:
+                    on_game_fetched()
+                if on_month_attempted is not None:
+                    await on_month_attempted(ym)
+
+        cursor_calls: list[tuple[int, int]] = []
+
+        async def _capture_cursor_update(session, *, user_id, year, month):
+            cursor_calls.append((year, month))
+
+        async def _capture_flush(session, batch, user_id):
+            return len(batch)
+
+        mock_session = _make_mock_session()
+        mock_maker = _mock_session_maker(mock_session)
+
+        with (
+            patch("app.services.import_service.async_session_maker", mock_maker),
+            patch(
+                "app.services.import_service.import_job_repository.get_latest_for_user_platform",
+                new=AsyncMock(return_value=None),
+            ),
+            patch(
+                "app.services.import_service.import_job_repository.create_import_job",
+                new=AsyncMock(),
+            ),
+            patch(
+                "app.services.import_service.import_job_repository.update_import_job",
+                new=AsyncMock(),
+            ),
+            patch(
+                "app.services.import_service.user_import_settings_repository.get_or_create_settings",
+                new=AsyncMock(return_value=settings),
+            ),
+            patch(
+                "app.services.import_service.game_repository.count_backlog_by_platform_and_tc",
+                new=AsyncMock(return_value={}),
+            ),
+            patch(
+                "app.services.import_service.game_repository.get_platform_game_ids_for_user",
+                new=AsyncMock(return_value=frozenset()),
+            ),
+            patch(
+                "app.services.import_service.user_import_settings_repository.get_chesscom_backfill_cursor",
+                new=AsyncMock(return_value=None),
+            ),
+            patch(
+                "app.services.import_service.user_import_settings_repository.update_chesscom_backfill_cursor",
+                new=AsyncMock(side_effect=_capture_cursor_update),
+            ),
+            patch(
+                "app.services.import_service.chesscom_client.fetch_chesscom_games",
+                side_effect=_empty_async_gen,
+            ),
+            patch(
+                "app.services.import_service.chesscom_client.fetch_chesscom_games_backward",
+                side_effect=_fake_backward,
+            ),
+            patch(
+                "app.services.import_service._flush_batch",
+                new=AsyncMock(side_effect=_capture_flush),
+            ),
+            patch("app.services.import_service.httpx.AsyncClient") as mock_client_cls,
+        ):
+            mock_http_ctx = AsyncMock()
+            mock_http_ctx.__aenter__ = AsyncMock(return_value=AsyncMock())
+            mock_http_ctx.__aexit__ = AsyncMock(return_value=False)
+            mock_client_cls.return_value = mock_http_ctx
+
+            await run_import(job_id)
+
+        job = get_job(job_id)
+        assert job is not None
+        assert job.status == JobStatus.COMPLETED
+
+        # 8 months attempted, batch size 6: one persist at month 6 (index 5,
+        # (2024, 3)), one forced final-flush persist at month 8 (index 7,
+        # (2024, 1)) -- NOT 8 individual persists.
+        assert cursor_calls == [(2024, 3), (2024, 1)], (
+            f"Expected exactly 2 batched cursor persists (every 6 + final flush), "
+            f"got {cursor_calls}"
+        )

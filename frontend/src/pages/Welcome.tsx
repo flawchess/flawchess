@@ -34,7 +34,22 @@ const VALUE_ROWS: ValueRow[] = [
     signedUpHas: true,
   },
   {
-    feature: 'FlawChess deep Stockfish analysis (per-game blunder / mistake / inaccuracy detection)',
+    feature: 'FlawChess deep Stockfish analysis and move statistics',
+    guestHas: true,
+    signedUpHas: true,
+  },
+  {
+    feature: 'Missed/allowed tactic tagging',
+    guestHas: true,
+    signedUpHas: true,
+  },
+  {
+    feature: 'FlawChess engine and bots',
+    guestHas: true,
+    signedUpHas: true,
+  },
+  {
+    feature: 'Automatic analysis of imported games (no per-game Analyze clicks)',
     guestHas: false,
     signedUpHas: true,
     highlight: true,
@@ -104,13 +119,15 @@ export function WelcomePage() {
       <div className="space-y-3">
         <h1 className="text-2xl font-bold">Welcome to FlawChess</h1>
         <p className="text-sm text-muted-foreground leading-relaxed">
-          All of FlawChess is free, for guests and signed-up users alike. Most of it works
-          without an account at all.
+          All of FlawChess is free, for guests and signed-up users alike. Most of it works without an account at all.
+          That includes FlawChess's own deep Stockfish analysis, which detects blunders,
+          mistakes, inaccuracies, and missed/allowed tactics in your games.
         </p>
         <p className="text-sm text-muted-foreground leading-relaxed">
-          One capability is reserved for signed-up accounts: FlawChess's own deep Stockfish
-          analysis that detects blunders, mistakes, and inaccuracies in your games. Here is the
-          full picture before you dive in.
+          As a guest you trigger game analysis manually, one
+          game at a time. With an account, your imported games are analyzed automatically in
+          the background. Inactive guest data may eventually be cleared.
+          Here is the full picture before you dive in.
         </p>
       </div>
 
@@ -142,13 +159,6 @@ export function WelcomePage() {
           </tbody>
         </table>
       </div>
-
-      {/* Rationale note */}
-      <p className="text-sm text-muted-foreground leading-relaxed">
-        We don't run our deep Stockfish analysis on guest games because inactive guest data
-        may eventually be cleared. Signing up preserves your games, bookmarks, and eval
-        history in place, with no migration needed.
-      </p>
 
       {/* Dismissal checkbox */}
       <div className="flex items-center gap-2">

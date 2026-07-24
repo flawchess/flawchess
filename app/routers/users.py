@@ -16,18 +16,42 @@ from app.models.user_rating_anchors import TimeControlBucket
 from app.repositories import (
     game_repository,
     import_job_repository,
+    user_import_settings_repository,
     user_rating_anchors_repository,
     user_repository,
 )
+from app.repositories.user_import_settings_repository import ImportSettingsRow
 from app.repositories.user_rating_anchors_repository import RatingAnchorRow
 from app.schemas.admin import ImpersonationContext
-from app.schemas.users import GameCountResponse, UserProfileResponse, UserProfileUpdate
+from app.schemas.users import (
+    GameCountResponse,
+    ImportSettingsResponse,
+    ImportSettingsUpdate,
+    UserProfileResponse,
+    UserProfileUpdate,
+)
 from app.users import current_active_user
 
 router = APIRouter(prefix="/users", tags=["users"])
 
 # Matches the audience baked into JWTStrategy (FastAPI-Users default).
 _JWT_AUDIENCE = ["fastapi-users:auth"]
+
+
+def _import_scope_expanded(previous: ImportSettingsRow, updated: ImportSettingsRow) -> bool:
+    """True when the new import settings want MORE backlog than the old ones.
+
+    Scope expands when any TC bucket flips off->on or the cap increases --
+    exactly the cases where the per-platform backfill cursor may have already
+    walked past games the new scope wants (see the PATCH handler's reset
+    comment). Pure preference reshuffles, narrowing, or no-op saves never
+    reset progress.
+    """
+    tc_enabled = any(
+        getattr(updated, field) and not getattr(previous, field)
+        for field in ("tc_bullet", "tc_blitz", "tc_rapid", "tc_classical")
+    )
+    return tc_enabled or updated.game_cap > previous.game_cap
 
 
 def _primary_current_rating(ratings_by_platform: dict[str, int | None]) -> int | None:
@@ -156,6 +180,68 @@ async def update_profile(
         beta_enabled=updated.beta_enabled,
         current_rating=_primary_current_rating(ratings),
         lichess_blitz_equivalent_rating=_lichess_blitz_equivalent_rating(anchors),
+    )
+
+
+@router.get("/me/import-settings", response_model=ImportSettingsResponse)
+async def get_import_settings(
+    session: Annotated[AsyncSession, Depends(get_async_session)],
+    user: Annotated[User, Depends(current_active_user)],
+) -> ImportSettingsResponse:
+    """Return the authenticated user's import settings (create-on-first-touch, D-16).
+
+    A user with no settings row yet gets the app-layer defaults (bullet=false,
+    blitz/rapid/classical=true, game_cap=1000) persisted and returned in one
+    call -- same code path for guests and registered users.
+    """
+    settings_row = await user_import_settings_repository.get_or_create_settings(
+        session, user_id=user.id
+    )
+    imported_counts = await game_repository.count_imported_by_platform_and_tc(session, user.id)
+    return ImportSettingsResponse(
+        tc_bullet=settings_row.tc_bullet,
+        tc_blitz=settings_row.tc_blitz,
+        tc_rapid=settings_row.tc_rapid,
+        tc_classical=settings_row.tc_classical,
+        game_cap=settings_row.game_cap,
+        imported_counts=imported_counts,
+    )
+
+
+@router.patch("/me/import-settings", response_model=ImportSettingsResponse)
+async def update_import_settings(
+    body: ImportSettingsUpdate,
+    session: Annotated[AsyncSession, Depends(get_async_session)],
+    user: Annotated[User, Depends(current_active_user)],
+) -> ImportSettingsResponse:
+    """Persist the authenticated user's import settings (D-09 auto-save on toggle).
+
+    Never accepts a user id from the body or path -- always scoped to
+    `current_active_user.id` (T-186-01 mitigation).
+    """
+    previous = await user_import_settings_repository.get_settings(session, user_id=user.id)
+    settings_row = await user_import_settings_repository.upsert_settings(
+        session, user_id=user.id, **body.model_dump()
+    )
+    # Bug fix (UAT 186): the backfill cursor is per-platform, not per-(platform,
+    # TC), so months/chunks already attempted under the OLD scope silently
+    # skipped games that only the NEW scope wants (a newly enabled TC's games in
+    # already-walked months, or over-cap games dropped by the backward pass's
+    # budget gate). Reset the cursors whenever the scope EXPANDS (a TC turned
+    # on, or the cap raised) so the next Sync re-walks from the top; re-fetching
+    # is budget-safe because already-imported games are deduped (CR-01) and
+    # no-op'd on insert. Narrowing (TC off, cap lowered) keeps the cursors --
+    # nothing previously skipped becomes wanted.
+    if previous is not None and _import_scope_expanded(previous, settings_row):
+        await user_import_settings_repository.reset_backfill_cursors(session, user_id=user.id)
+    imported_counts = await game_repository.count_imported_by_platform_and_tc(session, user.id)
+    return ImportSettingsResponse(
+        tc_bullet=settings_row.tc_bullet,
+        tc_blitz=settings_row.tc_blitz,
+        tc_rapid=settings_row.tc_rapid,
+        tc_classical=settings_row.tc_classical,
+        game_cap=settings_row.game_cap,
+        imported_counts=imported_counts,
     )
 
 

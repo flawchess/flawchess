@@ -10,6 +10,7 @@ import pytest
 
 from app.services.chesscom_client import (
     fetch_chesscom_games,
+    fetch_chesscom_games_backward,
     _archive_before_timestamp,
     _fetch_chesscom_player_joined,
 )
@@ -792,6 +793,181 @@ class TestFetchChesscomGames:
         tags = call_kwargs.get("tags", {})
         assert tags.get("source") == "import"
         assert tags.get("platform") == "chess.com"
+
+
+# ---------------------------------------------------------------------------
+# fetch_chesscom_games_backward (Phase 186 Plan 02, IMPORT-03, D-06/D-07)
+# ---------------------------------------------------------------------------
+
+
+def _make_async_recorder(sink: list[tuple[int, int]]):
+    """Build an async on_month_attempted callback that appends to `sink`.
+
+    fetch_chesscom_games_backward awaits on_month_attempted (it typically
+    persists the cursor via a DB write), so a plain sync list.append cannot
+    be passed directly.
+    """
+
+    async def _record(ym: tuple[int, int]) -> None:
+        sink.append(ym)
+
+    return _record
+
+
+class TestFetchChesscomGamesBackward:
+    @pytest.mark.asyncio
+    async def test_backward_visits_archives_newest_to_oldest(self):
+        """With should_stop always False and joined at 2024-01, the backward walk
+        visits 2024/03, 2024/02, 2024/01 in that order (newest -> oldest, D-06)."""
+        joined_ts = int(datetime(2024, 1, 15, tzinfo=timezone.utc).timestamp())
+        joined_resp = _make_response({"joined": joined_ts})
+        march_resp = _make_response({"games": [_make_game(uuid="march-game")]})
+        feb_resp = _make_response({"games": [_make_game(uuid="feb-game")]})
+        jan_resp = _make_response({"games": [_make_game(uuid="jan-game")]})
+
+        mock_client = AsyncMock()
+        mock_client.get = AsyncMock(side_effect=[joined_resp, march_resp, feb_resp, jan_resp])
+
+        visited_months: list[tuple[int, int]] = []
+
+        with (
+            patch("app.services.chesscom_client.asyncio.sleep", new=AsyncMock()),
+            patch("app.services.chesscom_client._current_year_month", return_value=(2024, 3)),
+        ):
+            results = []
+            async for game in fetch_chesscom_games_backward(
+                mock_client,
+                "testuser",
+                user_id=1,
+                oldest_attempted_ym=None,
+                should_stop=lambda: False,
+                on_month_attempted=_make_async_recorder(visited_months),
+            ):
+                results.append(game)
+
+        assert [g.platform_game_id for g in results] == ["march-game", "feb-game", "jan-game"]
+        assert visited_months == [(2024, 3), (2024, 2), (2024, 1)]
+
+    @pytest.mark.asyncio
+    async def test_backward_on_month_attempted_fires_for_zero_match_month(self):
+        """A month whose archive yields zero games still fires on_month_attempted
+        (Pitfall 1 -- persist attempts, not stored rows, or Sync would re-fetch
+        the same empty period forever)."""
+        joined_ts = int(datetime(2024, 2, 1, tzinfo=timezone.utc).timestamp())
+        joined_resp = _make_response({"joined": joined_ts})
+        empty_month_resp = _make_response({"games": []})
+
+        mock_client = AsyncMock()
+        mock_client.get = AsyncMock(side_effect=[joined_resp, empty_month_resp])
+
+        visited_months: list[tuple[int, int]] = []
+
+        with (
+            patch("app.services.chesscom_client.asyncio.sleep", new=AsyncMock()),
+            patch("app.services.chesscom_client._current_year_month", return_value=(2024, 2)),
+        ):
+            results = []
+            async for game in fetch_chesscom_games_backward(
+                mock_client,
+                "testuser",
+                user_id=1,
+                oldest_attempted_ym=None,
+                should_stop=lambda: False,
+                on_month_attempted=_make_async_recorder(visited_months),
+            ):
+                results.append(game)
+
+        assert results == []
+        assert visited_months == [(2024, 2)]
+
+    @pytest.mark.asyncio
+    async def test_backward_should_stop_halts_before_next_month_fetch(self):
+        """should_stop() returning True after the first month halts the walk
+        before the second (older) month is fetched (D-07, month granularity)."""
+        joined_ts = int(datetime(2024, 1, 1, tzinfo=timezone.utc).timestamp())
+        joined_resp = _make_response({"joined": joined_ts})
+        march_resp = _make_response({"games": [_make_game(uuid="march-game")]})
+
+        mock_client = AsyncMock()
+        mock_client.get = AsyncMock(side_effect=[joined_resp, march_resp])
+
+        # should_stop() is checked once up front (cheap short-circuit) and once
+        # per month in the loop -- allow the first two calls through (pre-check +
+        # 2024/03) and stop on the third (before 2024/02 would be fetched).
+        call_count = [0]
+
+        def _should_stop() -> bool:
+            call_count[0] += 1
+            return call_count[0] > 2
+
+        with (
+            patch("app.services.chesscom_client.asyncio.sleep", new=AsyncMock()),
+            patch("app.services.chesscom_client._current_year_month", return_value=(2024, 3)),
+        ):
+            results = []
+            async for game in fetch_chesscom_games_backward(
+                mock_client,
+                "testuser",
+                user_id=1,
+                oldest_attempted_ym=None,
+                should_stop=_should_stop,
+            ):
+                results.append(game)
+
+        assert [g.platform_game_id for g in results] == ["march-game"]
+        # joined-probe + one archive fetch (2024/03) only -- 2024/02 never fetched.
+        assert mock_client.get.call_count == 2
+
+    @pytest.mark.asyncio
+    async def test_backward_should_stop_true_immediately_performs_zero_requests(self):
+        """When should_stop() is already True, the walk performs zero HTTP calls --
+        not even the player-joined probe -- so a Sync with full budgets is cheap."""
+        mock_client = AsyncMock()
+        mock_client.get = AsyncMock()
+
+        results = []
+        async for game in fetch_chesscom_games_backward(
+            mock_client,
+            "testuser",
+            user_id=1,
+            oldest_attempted_ym=None,
+            should_stop=lambda: True,
+        ):
+            results.append(game)
+
+        assert results == []
+        mock_client.get.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_backward_resumes_just_before_oldest_attempted_ym(self):
+        """A persisted cursor at (2024, 2) resumes at 2024/01, skipping the
+        already-attempted 2024/02 and 2024/03 months."""
+        joined_ts = int(datetime(2024, 1, 1, tzinfo=timezone.utc).timestamp())
+        joined_resp = _make_response({"joined": joined_ts})
+        jan_resp = _make_response({"games": [_make_game(uuid="jan-game")]})
+
+        mock_client = AsyncMock()
+        mock_client.get = AsyncMock(side_effect=[joined_resp, jan_resp])
+
+        visited_months: list[tuple[int, int]] = []
+
+        with (
+            patch("app.services.chesscom_client.asyncio.sleep", new=AsyncMock()),
+            patch("app.services.chesscom_client._current_year_month", return_value=(2024, 3)),
+        ):
+            results = []
+            async for game in fetch_chesscom_games_backward(
+                mock_client,
+                "testuser",
+                user_id=1,
+                oldest_attempted_ym=(2024, 2),
+                should_stop=lambda: False,
+                on_month_attempted=_make_async_recorder(visited_months),
+            ):
+                results.append(game)
+
+        assert [g.platform_game_id for g in results] == ["jan-game"]
+        assert visited_months == [(2024, 1)]
 
 
 # ---------------------------------------------------------------------------
