@@ -603,6 +603,29 @@ async def _load_import_settings(user_id: int) -> ImportSettingsRow:
     return settings
 
 
+async def _reset_cursors_if_scope_expanded_mid_run(
+    user_id: int, job_start_settings: ImportSettingsRow
+) -> None:
+    """Reset backfill cursors if a PATCH mid-run expanded scope (UAT-186-RACE).
+
+    Reloads the current settings row (read-only -- does NOT create-on-first-
+    touch, unlike `_load_import_settings`) and compares it against the
+    job-start snapshot (`job_start_settings`, loaded once at the top of
+    `run_import` per D-04). A None reload (row deleted mid-run -- should not
+    happen in practice) or unexpanded scope is a no-op. Own session scope,
+    called after the backward pass's own final cursor flush so this reset is
+    the last write and always wins over the run's own cursor persistence.
+    """
+    async with async_session_maker() as read_session:
+        reloaded = await user_import_settings_repository.get_settings(read_session, user_id=user_id)
+    if reloaded is None:
+        return
+    if user_import_settings_repository._import_scope_expanded(job_start_settings, reloaded):
+        async with async_session_maker() as session:
+            await user_import_settings_repository.reset_backfill_cursors(session, user_id=user_id)
+            await session.commit()
+
+
 async def _flush_batch_with_progress(
     batch: list[NormalizedGame], job: JobState, job_id: str
 ) -> None:
@@ -756,6 +779,21 @@ async def run_import(job_id: str) -> None:
                     settings.game_cap,
                     _on_game_fetched,
                 )
+
+            # Bug fix (UAT-186-RACE): a scope-expanding settings PATCH (TC turned
+            # on, or cap raised) issued WHILE this job is running has its cursor
+            # reset (the PATCH handler's own reset_backfill_cursors call) clobbered
+            # by this job's OWN cursor writes -- the backward pass persists its
+            # cursor incrementally (WR-03 batching) and _complete_import_job below
+            # advances last_synced_at, both of which happen AFTER the PATCH's
+            # reset and so silently win, leaving the next Sync resuming from
+            # "before the last-walked month" instead of re-walking the backlog the
+            # new scope wants. Re-check the job-start snapshot (`settings`, loaded
+            # above) against the current row now, after the backward pass's own
+            # final cursor flush, and reset again if it expanded during the run --
+            # this reset is the last write, so it always wins. Covers both
+            # platforms' cursors since reset_backfill_cursors NULLs all three.
+            await _reset_cursors_if_scope_expanded_mid_run(job.user_id, settings)
 
             await _complete_import_job(job, job_id)
             job.status = JobStatus.COMPLETED
@@ -982,6 +1020,7 @@ async def _run_backward_pass(
             on_game_fetched,
             existing_platform_game_ids,
             game_cap,
+            created_at,
         )
     elif job.platform == "lichess":
         await _run_lichess_backward_pass(
@@ -994,6 +1033,7 @@ async def _run_backward_pass(
             on_game_fetched,
             existing_platform_game_ids,
             game_cap,
+            created_at,
         )
     else:
         raise ValueError(f"Unknown platform: {job.platform!r}")
@@ -1005,6 +1045,7 @@ def _admit_backward_game(
     live_counts: dict[TimeControlBucket, int],
     existing_platform_game_ids: frozenset[str],
     game_cap: int,
+    anchor: datetime,
 ) -> bool:
     """Return True if `game` may be inserted; increment its bucket's budget.
 
@@ -1029,6 +1070,16 @@ def _admit_backward_game(
     bulk_insert_games's ON CONFLICT DO NOTHING, so counting it here would
     inflate the budget with a duplicate instead of tracking genuine new
     backlog.
+
+    Bug fix (UAT-186-BUDGET): a TC enabled AFTER the first sync can only get
+    its post-anchor (played_at >= users.created_at) games via this backward
+    walk -- the forward pass is bounded below by `last_synced_at`, which for
+    a newly-enabled TC starts after the account's creation, so it never sees
+    those games. The forward pass's post-anchor games are uncapped (D-02);
+    this branch mirrors that same uncapped semantics here so a late-enabled
+    TC gets the same treatment a TC enabled at first sync would, instead of
+    its post-creation games silently eating the backlog cap meant only for
+    genuinely pre-anchor games.
     """
     platform_game_id = (
         game.platform_game_id if isinstance(game, NormalizedGame) else game.get("platform_game_id")  # type: ignore[union-attr] — dict fallback for test mocks
@@ -1037,6 +1088,9 @@ def _admit_backward_game(
         return True
     bucket = _game_time_control_bucket(game)
     if bucket is None or bucket not in enabled_tc_buckets:
+        return True
+    played_at = game.played_at if isinstance(game, NormalizedGame) else game.get("played_at")  # type: ignore[union-attr] — dict fallback for test mocks
+    if played_at is not None and played_at >= anchor:
         return True
     if live_counts.get(bucket, 0) >= game_cap:
         return False
@@ -1054,6 +1108,7 @@ async def _run_chesscom_backward_pass(
     on_game_fetched: Callable[[], None],
     existing_platform_game_ids: frozenset[str],
     game_cap: int,
+    anchor: datetime,
 ) -> None:
     """chess.com half of the backward pass: one walk, batched-persist cursor."""
     async with async_session_maker() as session:
@@ -1100,7 +1155,7 @@ async def _run_chesscom_backward_pass(
         if not _passes_tc_filter(game, enabled_tc_buckets):
             continue
         if not _admit_backward_game(
-            game, enabled_tc_buckets, live_counts, existing_platform_game_ids, game_cap
+            game, enabled_tc_buckets, live_counts, existing_platform_game_ids, game_cap, anchor
         ):
             continue
         batch.append(game)
@@ -1132,6 +1187,7 @@ async def _run_lichess_backward_pass(
     on_game_fetched: Callable[[], None],
     existing_platform_game_ids: frozenset[str],
     game_cap: int,
+    anchor: datetime,
 ) -> None:
     """lichess half of the backward pass: orchestrator-level chunked loop.
 
@@ -1181,7 +1237,7 @@ async def _run_lichess_backward_pass(
                 if oldest_played_at_ms is None or ms < oldest_played_at_ms:
                     oldest_played_at_ms = ms
             if _passes_tc_filter(game, enabled_tc_buckets) and _admit_backward_game(
-                game, enabled_tc_buckets, live_counts, existing_platform_game_ids, game_cap
+                game, enabled_tc_buckets, live_counts, existing_platform_game_ids, game_cap, anchor
             ):
                 batch.append(game)
 

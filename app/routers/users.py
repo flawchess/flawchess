@@ -20,7 +20,7 @@ from app.repositories import (
     user_rating_anchors_repository,
     user_repository,
 )
-from app.repositories.user_import_settings_repository import ImportSettingsRow
+from app.repositories.user_import_settings_repository import _import_scope_expanded
 from app.repositories.user_rating_anchors_repository import RatingAnchorRow
 from app.schemas.admin import ImpersonationContext
 from app.schemas.users import (
@@ -36,22 +36,6 @@ router = APIRouter(prefix="/users", tags=["users"])
 
 # Matches the audience baked into JWTStrategy (FastAPI-Users default).
 _JWT_AUDIENCE = ["fastapi-users:auth"]
-
-
-def _import_scope_expanded(previous: ImportSettingsRow, updated: ImportSettingsRow) -> bool:
-    """True when the new import settings want MORE backlog than the old ones.
-
-    Scope expands when any TC bucket flips off->on or the cap increases --
-    exactly the cases where the per-platform backfill cursor may have already
-    walked past games the new scope wants (see the PATCH handler's reset
-    comment). Pure preference reshuffles, narrowing, or no-op saves never
-    reset progress.
-    """
-    tc_enabled = any(
-        getattr(updated, field) and not getattr(previous, field)
-        for field in ("tc_bullet", "tc_blitz", "tc_rapid", "tc_classical")
-    )
-    return tc_enabled or updated.game_cap > previous.game_cap
 
 
 def _primary_current_rating(ratings_by_platform: dict[str, int | None]) -> int | None:

@@ -60,6 +60,26 @@ DEFAULT_IMPORT_SETTINGS = ImportSettingsRow(
 )
 
 
+def _import_scope_expanded(previous: ImportSettingsRow, updated: ImportSettingsRow) -> bool:
+    """True when the new import settings want MORE backlog than the old ones.
+
+    Scope expands when any TC bucket flips off->on or the cap increases --
+    exactly the cases where the per-platform backfill cursor may have already
+    walked past games the new scope wants (see the PATCH handler's reset
+    comment). Pure preference reshuffles, narrowing, or no-op saves never
+    reset progress.
+
+    Moved here from app/routers/users.py (quick 260724-gnd) so both the PATCH
+    endpoint and import_service.run_import's end-of-run scope re-check share
+    ONE implementation instead of two copies drifting apart.
+    """
+    tc_enabled = any(
+        getattr(updated, field) and not getattr(previous, field)
+        for field in ("tc_bullet", "tc_blitz", "tc_rapid", "tc_classical")
+    )
+    return tc_enabled or updated.game_cap > previous.game_cap
+
+
 def _to_row(row: UserImportSettings) -> ImportSettingsRow:
     # row.game_cap is DB CHECK-enforced to {1000, 3000, 5000} (ck_user_import_settings_cap)
     # but SQLAlchemy maps SmallInteger -> plain int; cast narrows to the Literal at the
@@ -292,6 +312,7 @@ __all__ = [
     "DEFAULT_IMPORT_SETTINGS",
     "GameCap",
     "ImportSettingsRow",
+    "_import_scope_expanded",
     "get_chesscom_backfill_cursor",
     "get_lichess_backfill_cursor",
     "get_or_create_settings",
