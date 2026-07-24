@@ -8,7 +8,7 @@ import asyncio
 from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 from typing import cast
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import ANY, AsyncMock, MagicMock, patch
 
 import pytest
 from sqlalchemy.exc import OperationalError
@@ -46,18 +46,42 @@ _DEFAULT_TEST_IMPORT_SETTINGS = ImportSettingsRow(
 
 @pytest.fixture(autouse=True)
 def _default_import_settings_noop_backward():
-    """Default get_or_create_settings so run_import's backward pass (Phase 186
-    Plan 02, D-05) is a no-op unless a test explicitly opts in.
+    """Default get_or_create_settings/get_settings so run_import's backward
+    pass (Phase 186 Plan 02, D-05) is a no-op AND the end-of-run scope
+    re-check (quick 260724-gnd, UAT-186-RACE) never spuriously fires, unless
+    a test explicitly opts in.
 
     Tests exercising TC filtering or the backward pass patch
-    `user_import_settings_repository.get_or_create_settings` themselves inside
-    their own `with patch(...)` block, which correctly overrides this default
-    for the scope of that block (mock.patch nests: the inner patch's teardown
-    restores to this fixture's patch, not the true unpatched function).
+    `user_import_settings_repository.get_or_create_settings`/`get_settings`
+    themselves inside their own `with patch(...)` block, which correctly
+    overrides this default for the scope of that block (mock.patch nests: the
+    inner patch's teardown restores to this fixture's patch, not the true
+    unpatched function).
+
+    Bug fix (quick 260724-gnd): `get_settings` (the end-of-run reload) had no
+    default here, unlike `get_or_create_settings` -- so any test not
+    explicitly mocking it fell through to the REAL function against the
+    generic mocked session, whose unconfigured `scalar_one_or_none()` returns
+    a truthy MagicMock row instead of None. Compared against the real
+    all-False `_DEFAULT_TEST_IMPORT_SETTINGS` job-start snapshot, EVERY field
+    of that bogus row reads as "just turned on", so `_import_scope_expanded`
+    deterministically evaluated True and fired a spurious
+    `reset_backfill_cursors` call (2 extra `async_session_maker()` opens) in
+    every test that didn't override it -- surfaced as an exact-session-count
+    mismatch in `TestRunImportSessionPerBatch.test_one_session_per_batch`.
+    Defaulting `get_settings` to the SAME row as `get_or_create_settings`
+    keeps the reload a no-op (unexpanded scope) by default, symmetric with
+    the existing `get_or_create_settings` default above.
     """
-    with patch(
-        "app.services.import_service.user_import_settings_repository.get_or_create_settings",
-        new=AsyncMock(return_value=_DEFAULT_TEST_IMPORT_SETTINGS),
+    with (
+        patch(
+            "app.services.import_service.user_import_settings_repository.get_or_create_settings",
+            new=AsyncMock(return_value=_DEFAULT_TEST_IMPORT_SETTINGS),
+        ),
+        patch(
+            "app.services.import_service.user_import_settings_repository.get_settings",
+            new=AsyncMock(return_value=_DEFAULT_TEST_IMPORT_SETTINGS),
+        ),
     ):
         yield
 
@@ -2470,12 +2494,17 @@ class TestRunImportSessionPerBatch:
     @pytest.mark.asyncio
     async def test_one_session_per_batch(self):
         """run_import opens one session for each logical scope: bootstrap + TC-settings
-        load + per-batch + completion + Stage-B gate.
+        load + per-batch + end-of-run scope-reset reload + completion + Stage-B gate.
 
         With N=30 games and _BATCH_SIZE=12:
           12 (batch 1) + 12 (batch 2) + 6 (trailing) = 3 batch sessions
           + 1 bootstrap + 1 TC-settings load (Phase 186 Plan 01, _load_enabled_tc_buckets)
-          + 1 completion + 1 Stage-B gate read session (quick-260527-u3u) = 7 total session opens.
+          + 1 end-of-run scope-reset reload (UAT-186-RACE, quick 260724-gnd --
+            `_reset_cursors_if_scope_expanded_mid_run`'s own read session; the
+            autouse `get_settings` default matches the job-start snapshot so
+            scope never expands here, meaning no SECOND session for an actual
+            `reset_backfill_cursors` call)
+          + 1 completion + 1 Stage-B gate read session (quick-260527-u3u) = 8 total session opens.
 
         The trailing +1 is the fresh read session opened inside _complete_import_job to
         evaluate users_with_zero_pending before firing compute_stage_b — see
@@ -2487,8 +2516,9 @@ class TestRunImportSessionPerBatch:
         n_full_batches = total_games // _BATCH_SIZE  # = 2
         n_trailing = total_games % _BATCH_SIZE  # = 6
         n_batch_sessions = n_full_batches + (1 if n_trailing > 0 else 0)  # = 3
-        # bootstrap + TC-settings load + batches + completion + Stage-B gate read session = 7
-        expected_session_calls = 1 + 1 + n_batch_sessions + 1 + 1
+        # bootstrap + TC-settings load + batches + scope-reset reload + completion
+        # + Stage-B gate read session = 8
+        expected_session_calls = 1 + 1 + n_batch_sessions + 1 + 1 + 1
 
         call_count = [0]
         mock_maker = self._make_simple_session_maker(call_count)
@@ -3328,6 +3358,18 @@ def _make_normalized_game(
     globally unique. `platform`/`played_at` are overridable (Phase 186 Plan 02)
     for backward-pass tests that need a specific platform or a decreasing
     played_at sequence to drive the lichess cursor.
+
+    Bug fix (quick 260724-gnd): the default `played_at` used to be
+    datetime(2024, 1, 1) -- AFTER `_TEST_USER_CREATED_AT` (2020-01-01), the
+    anchor every backward-pass test's mocked `session.get` reports. Once
+    `_admit_backward_game` gained its anchor-aware post-anchor bypass
+    (UAT-186-BUDGET), every backward-walk test game defaulted to "post-anchor"
+    and bypassed the cap entirely -- silently breaking the cap assertions in
+    `TestBackwardPass` and hanging `TestBackwardPass`'s lichess-cursor test in
+    an infinite `while not should_stop()` loop (live_counts never advanced).
+    The default now sits well BEFORE the anchor, matching the real-world shape
+    of backlog games (played before the FlawChess account existed) that the
+    backward pass's cap is meant to gate.
     """
     global _tc_filter_game_counter
     _tc_filter_game_counter += 1
@@ -3354,7 +3396,9 @@ def _make_normalized_game(
         opening_eco=None,
         white_accuracy=None,
         black_accuracy=None,
-        played_at=played_at if played_at is not None else datetime(2024, 1, 1, tzinfo=timezone.utc),
+        played_at=played_at
+        if played_at is not None
+        else datetime(2015, 6, 15, tzinfo=timezone.utc),
     )
 
 
@@ -3506,13 +3550,19 @@ class TestRunImportTcFilter:
 class TestAdmitBackwardGame:
     """Unit tests for the per-bucket budget insert gate (UAT-186 fix): the
     budget must gate insertion per game, not just feed the D-07 stop
-    condition."""
+    condition. Also covers the anchor-aware post-anchor bypass
+    (UAT-186-BUDGET, quick 260724-gnd)."""
+
+    # _make_normalized_game's default played_at (2015-06-15) sits before this
+    # anchor, so pre-anchor cases below rely on the default; post-anchor cases
+    # pass an explicit played_at after this anchor.
+    _ANCHOR = _TEST_USER_CREATED_AT
 
     def test_admits_and_counts_under_cap(self):
         live_counts: dict = {"blitz": 2}
         game = _make_normalized_game(time_control_bucket="blitz", platform_game_id="g1")
         assert import_service._admit_backward_game(
-            game, frozenset({"blitz"}), live_counts, frozenset(), 3
+            game, frozenset({"blitz"}), live_counts, frozenset(), 3, self._ANCHOR
         )
         assert live_counts["blitz"] == 3
 
@@ -3520,7 +3570,7 @@ class TestAdmitBackwardGame:
         live_counts: dict = {"blitz": 3}
         game = _make_normalized_game(time_control_bucket="blitz", platform_game_id="g1")
         assert not import_service._admit_backward_game(
-            game, frozenset({"blitz"}), live_counts, frozenset(), 3
+            game, frozenset({"blitz"}), live_counts, frozenset(), 3, self._ANCHOR
         )
         assert live_counts["blitz"] == 3, "a rejected game must not consume budget"
 
@@ -3530,7 +3580,7 @@ class TestAdmitBackwardGame:
         live_counts: dict = {"blitz": 3}
         game = _make_normalized_game(time_control_bucket="blitz", platform_game_id="dup")
         assert import_service._admit_backward_game(
-            game, frozenset({"blitz"}), live_counts, frozenset({"dup"}), 3
+            game, frozenset({"blitz"}), live_counts, frozenset({"dup"}), 3, self._ANCHOR
         )
         assert live_counts["blitz"] == 3
 
@@ -3539,9 +3589,65 @@ class TestAdmitBackwardGame:
         live_counts: dict = {}
         game = _make_normalized_game(time_control_bucket=None, platform_game_id="g1")
         assert import_service._admit_backward_game(
-            game, frozenset({"blitz"}), live_counts, frozenset(), 3
+            game, frozenset({"blitz"}), live_counts, frozenset(), 3, self._ANCHOR
         )
         assert live_counts == {}
+
+    def test_post_anchor_game_admitted_without_counting_even_at_cap(self):
+        """UAT-186-BUDGET: a post-anchor game (played_at >= anchor) is admitted
+        UNCAPPED -- even when its bucket is already at game_cap -- mirroring the
+        forward pass's uncapped post-anchor semantics for a TC enabled after
+        the account's first sync.
+        """
+        live_counts: dict = {"blitz": 3}  # already at cap
+        game = _make_normalized_game(
+            time_control_bucket="blitz",
+            platform_game_id="post-anchor-1",
+            played_at=self._ANCHOR + timedelta(days=1),
+        )
+        assert import_service._admit_backward_game(
+            game, frozenset({"blitz"}), live_counts, frozenset(), 3, self._ANCHOR
+        )
+        assert live_counts["blitz"] == 3, "a post-anchor game must never consume budget"
+
+    def test_post_anchor_exactly_at_anchor_is_uncapped(self):
+        """played_at == anchor counts as post-anchor (`>=`, not `>`)."""
+        live_counts: dict = {"blitz": 3}
+        game = _make_normalized_game(
+            time_control_bucket="blitz", platform_game_id="at-anchor", played_at=self._ANCHOR
+        )
+        assert import_service._admit_backward_game(
+            game, frozenset({"blitz"}), live_counts, frozenset(), 3, self._ANCHOR
+        )
+        assert live_counts["blitz"] == 3
+
+    def test_pre_anchor_game_under_cap_still_counts_normally(self):
+        """A pre-anchor game (played_at < anchor) is unaffected by the anchor
+        branch -- it still counts against the backlog budget normally."""
+        live_counts: dict = {"blitz": 1}
+        game = _make_normalized_game(
+            time_control_bucket="blitz",
+            platform_game_id="pre-anchor-1",
+            played_at=self._ANCHOR - timedelta(days=1),
+        )
+        assert import_service._admit_backward_game(
+            game, frozenset({"blitz"}), live_counts, frozenset(), 3, self._ANCHOR
+        )
+        assert live_counts["blitz"] == 2
+
+    def test_pre_anchor_game_at_cap_still_rejected(self):
+        """A pre-anchor game at cap is still dropped -- the anchor bypass must
+        not leak into genuinely pre-anchor backlog games."""
+        live_counts: dict = {"blitz": 3}
+        game = _make_normalized_game(
+            time_control_bucket="blitz",
+            platform_game_id="pre-anchor-2",
+            played_at=self._ANCHOR - timedelta(days=1),
+        )
+        assert not import_service._admit_backward_game(
+            game, frozenset({"blitz"}), live_counts, frozenset(), 3, self._ANCHOR
+        )
+        assert live_counts["blitz"] == 3
 
 
 class TestBackwardPass:
@@ -3569,8 +3675,12 @@ class TestBackwardPass:
         # Each backward chunk returns a full _BACKWARD_LICHESS_CHUNK_SIZE
         # (200) blitz games with strictly decreasing played_at -- simulating
         # a user with years of history, far more than the 1000-game cap.
+        # Bug fix (quick 260724-gnd): base_ms must predate `_TEST_USER_CREATED_AT`
+        # (2020-01-01) -- otherwise every fetched game is "post-anchor" and the
+        # UAT-186-BUDGET fix admits it uncapped, hanging this test's
+        # `while not should_stop()` loop forever (live_counts never advances).
         call_index = [0]
-        base_ms = 1_700_000_000_000
+        base_ms = 1_262_304_000_000  # 2010-01-01T00:00:00Z, well before the anchor
 
         async def _lichess_side_effect(*args, **kwargs):
             if kwargs.get("max_games") != import_service._BACKWARD_LICHESS_CHUNK_SIZE:
@@ -4454,3 +4564,250 @@ class TestBackwardPass:
             f"Expected exactly 2 batched cursor persists (every 6 + final flush), "
             f"got {cursor_calls}"
         )
+
+
+# ---------------------------------------------------------------------------
+# Quick 260724-gnd (UAT-186-RACE): end-of-run scope re-check + cursor reset
+# ---------------------------------------------------------------------------
+
+
+class TestResetCursorsIfScopeExpandedMidRun:
+    """Unit tests for `_reset_cursors_if_scope_expanded_mid_run` -- the helper
+    run_import calls after the backward pass's own final cursor flush to
+    re-check the job-start settings snapshot against the current row and
+    reset cursors again if a mid-run PATCH expanded scope. Also exercises the
+    shared `_import_scope_expanded` truth table (moved to
+    user_import_settings_repository in this same fix) through this call path.
+    """
+
+    async def _run(
+        self,
+        job_start: ImportSettingsRow,
+        reloaded: ImportSettingsRow | None,
+    ) -> AsyncMock:
+        mock_session = _make_mock_session()
+        mock_maker = _mock_session_maker(mock_session)
+        with (
+            patch("app.services.import_service.async_session_maker", mock_maker),
+            patch(
+                "app.services.import_service.user_import_settings_repository.get_settings",
+                new=AsyncMock(return_value=reloaded),
+            ),
+            patch(
+                "app.services.import_service.user_import_settings_repository.reset_backfill_cursors",
+                new=AsyncMock(),
+            ) as mock_reset,
+        ):
+            await import_service._reset_cursors_if_scope_expanded_mid_run(1, job_start)
+        return mock_reset
+
+    @pytest.mark.asyncio
+    async def test_tc_enabled_mid_run_resets_cursors(self):
+        job_start = ImportSettingsRow(
+            tc_bullet=False, tc_blitz=True, tc_rapid=True, tc_classical=True, game_cap=1000
+        )
+        reloaded = ImportSettingsRow(
+            tc_bullet=True, tc_blitz=True, tc_rapid=True, tc_classical=True, game_cap=1000
+        )
+        mock_reset = await self._run(job_start, reloaded)
+        mock_reset.assert_awaited_once_with(ANY, user_id=1)
+
+    @pytest.mark.asyncio
+    async def test_cap_raised_mid_run_resets_cursors(self):
+        job_start = ImportSettingsRow(
+            tc_bullet=False, tc_blitz=True, tc_rapid=True, tc_classical=True, game_cap=1000
+        )
+        reloaded = ImportSettingsRow(
+            tc_bullet=False, tc_blitz=True, tc_rapid=True, tc_classical=True, game_cap=3000
+        )
+        mock_reset = await self._run(job_start, reloaded)
+        mock_reset.assert_awaited_once_with(ANY, user_id=1)
+
+    @pytest.mark.asyncio
+    async def test_unchanged_settings_do_not_reset_cursors(self):
+        job_start = ImportSettingsRow(
+            tc_bullet=False, tc_blitz=True, tc_rapid=True, tc_classical=True, game_cap=1000
+        )
+        reloaded = ImportSettingsRow(
+            tc_bullet=False, tc_blitz=True, tc_rapid=True, tc_classical=True, game_cap=1000
+        )
+        mock_reset = await self._run(job_start, reloaded)
+        mock_reset.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_narrowing_mid_run_does_not_reset_cursors(self):
+        job_start = ImportSettingsRow(
+            tc_bullet=True, tc_blitz=True, tc_rapid=True, tc_classical=True, game_cap=3000
+        )
+        reloaded = ImportSettingsRow(
+            tc_bullet=False, tc_blitz=True, tc_rapid=True, tc_classical=True, game_cap=1000
+        )
+        mock_reset = await self._run(job_start, reloaded)
+        mock_reset.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_reloaded_none_does_not_reset_cursors(self):
+        """A missing settings row (should not happen once a job has run) is a
+        no-op, not a crash."""
+        job_start = ImportSettingsRow(
+            tc_bullet=False, tc_blitz=True, tc_rapid=True, tc_classical=True, game_cap=1000
+        )
+        mock_reset = await self._run(job_start, None)
+        mock_reset.assert_not_awaited()
+
+
+class TestRunImportEndOfRunScopeReset:
+    """Integration test: a scope-expanding PATCH mid-run (simulated by the
+    settings-reload mock returning a wider row than the job-start snapshot)
+    drives run_import's end-of-run reset, wired through the real function --
+    not just the extracted helper in isolation."""
+
+    @pytest.mark.asyncio
+    async def test_mid_run_patch_widening_scope_resets_cursors_after_backward_pass(self):
+        job_id = create_job(user_id=1, platform="chess.com", username="alice")
+
+        job_start_settings = ImportSettingsRow(
+            tc_bullet=False, tc_blitz=True, tc_rapid=False, tc_classical=False, game_cap=1000
+        )
+        # Simulates a concurrent PATCH turning bullet on mid-run -- widened
+        # scope the settings-reload (get_settings) sees, distinct from the
+        # get_or_create_settings job-start snapshot.
+        reloaded_settings = ImportSettingsRow(
+            tc_bullet=True, tc_blitz=True, tc_rapid=False, tc_classical=False, game_cap=1000
+        )
+
+        mock_session = _make_mock_session()
+        mock_maker = _mock_session_maker(mock_session)
+
+        with (
+            patch("app.services.import_service.async_session_maker", mock_maker),
+            patch(
+                "app.services.import_service.import_job_repository.get_latest_for_user_platform",
+                new=AsyncMock(return_value=None),
+            ),
+            patch(
+                "app.services.import_service.import_job_repository.create_import_job",
+                new=AsyncMock(),
+            ),
+            patch(
+                "app.services.import_service.import_job_repository.update_import_job",
+                new=AsyncMock(),
+            ),
+            patch(
+                "app.services.import_service.user_import_settings_repository.get_or_create_settings",
+                new=AsyncMock(return_value=job_start_settings),
+            ),
+            patch(
+                "app.services.import_service.user_import_settings_repository.get_settings",
+                new=AsyncMock(return_value=reloaded_settings),
+            ),
+            patch(
+                "app.services.import_service.user_import_settings_repository.reset_backfill_cursors",
+                new=AsyncMock(),
+            ) as mock_reset,
+            patch(
+                "app.services.import_service.game_repository.count_backlog_by_platform_and_tc",
+                new=AsyncMock(return_value={}),
+            ),
+            patch(
+                "app.services.import_service.game_repository.get_platform_game_ids_for_user",
+                new=AsyncMock(return_value=frozenset()),
+            ),
+            patch(
+                "app.services.import_service.user_import_settings_repository.get_chesscom_backfill_cursor",
+                new=AsyncMock(return_value=None),
+            ),
+            patch(
+                "app.services.import_service.chesscom_client.fetch_chesscom_games",
+                side_effect=_empty_async_gen,
+            ),
+            patch(
+                "app.services.import_service.chesscom_client.fetch_chesscom_games_backward",
+                side_effect=_empty_async_gen,
+            ),
+            patch("app.services.import_service.httpx.AsyncClient") as mock_client_cls,
+        ):
+            mock_http_ctx = AsyncMock()
+            mock_http_ctx.__aenter__ = AsyncMock(return_value=AsyncMock())
+            mock_http_ctx.__aexit__ = AsyncMock(return_value=False)
+            mock_client_cls.return_value = mock_http_ctx
+
+            await run_import(job_id)
+
+        job = get_job(job_id)
+        assert job is not None
+        assert job.status == JobStatus.COMPLETED
+        mock_reset.assert_awaited_once_with(ANY, user_id=1)
+
+    @pytest.mark.asyncio
+    async def test_no_mid_run_patch_does_not_reset_cursors(self):
+        """Baseline: when the reloaded settings match the job-start snapshot
+        (no PATCH occurred mid-run), the end-of-run re-check is a no-op."""
+        job_id = create_job(user_id=1, platform="chess.com", username="alice")
+
+        settings = ImportSettingsRow(
+            tc_bullet=False, tc_blitz=True, tc_rapid=False, tc_classical=False, game_cap=1000
+        )
+
+        mock_session = _make_mock_session()
+        mock_maker = _mock_session_maker(mock_session)
+
+        with (
+            patch("app.services.import_service.async_session_maker", mock_maker),
+            patch(
+                "app.services.import_service.import_job_repository.get_latest_for_user_platform",
+                new=AsyncMock(return_value=None),
+            ),
+            patch(
+                "app.services.import_service.import_job_repository.create_import_job",
+                new=AsyncMock(),
+            ),
+            patch(
+                "app.services.import_service.import_job_repository.update_import_job",
+                new=AsyncMock(),
+            ),
+            patch(
+                "app.services.import_service.user_import_settings_repository.get_or_create_settings",
+                new=AsyncMock(return_value=settings),
+            ),
+            patch(
+                "app.services.import_service.user_import_settings_repository.get_settings",
+                new=AsyncMock(return_value=settings),
+            ),
+            patch(
+                "app.services.import_service.user_import_settings_repository.reset_backfill_cursors",
+                new=AsyncMock(),
+            ) as mock_reset,
+            patch(
+                "app.services.import_service.game_repository.count_backlog_by_platform_and_tc",
+                new=AsyncMock(return_value={}),
+            ),
+            patch(
+                "app.services.import_service.game_repository.get_platform_game_ids_for_user",
+                new=AsyncMock(return_value=frozenset()),
+            ),
+            patch(
+                "app.services.import_service.user_import_settings_repository.get_chesscom_backfill_cursor",
+                new=AsyncMock(return_value=None),
+            ),
+            patch(
+                "app.services.import_service.chesscom_client.fetch_chesscom_games",
+                side_effect=_empty_async_gen,
+            ),
+            patch(
+                "app.services.import_service.chesscom_client.fetch_chesscom_games_backward",
+                side_effect=_empty_async_gen,
+            ),
+            patch("app.services.import_service.httpx.AsyncClient") as mock_client_cls,
+        ):
+            mock_http_ctx = AsyncMock()
+            mock_http_ctx.__aenter__ = AsyncMock(return_value=AsyncMock())
+            mock_http_ctx.__aexit__ = AsyncMock(return_value=False)
+            mock_client_cls.return_value = mock_http_ctx
+
+            await run_import(job_id)
+
+        job = get_job(job_id)
+        assert job is not None
+        assert job.status == JobStatus.COMPLETED
+        mock_reset.assert_not_awaited()
