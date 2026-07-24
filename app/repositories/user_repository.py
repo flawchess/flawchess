@@ -1,6 +1,7 @@
 """User repository: profile read/write and platform username update."""
 
 import logging
+from datetime import datetime
 
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -22,6 +23,30 @@ async def get_profile(session: AsyncSession, user_id: int) -> User:
     """
     result = await session.execute(select(User).where(User.id == user_id))
     return result.unique().scalar_one()
+
+
+async def get_created_at(session: AsyncSession, user_id: int) -> datetime:
+    """Return the user's account-creation timestamp.
+
+    Phase 186 Plan 02 (IMPORT-02/IMPORT-03, D-02): this is the per-user import
+    backlog anchor -- the forward pass never fetches before it (Pitfall 2) and
+    the backward pass's per-(platform, TC) budget query is scoped to games
+    played before it. Uses ``AsyncSession.get()`` (PK lookup) rather than
+    ``get_profile``'s full SELECT -- this is called once per import job and
+    only needs one column.
+
+    Args:
+        session: AsyncSession to use.
+        user_id: Primary key of the user.
+
+    Raises:
+        ValueError: If no user with this id exists (should not happen for an
+            authenticated, already-validated import job).
+    """
+    user = await session.get(User, user_id)
+    if user is None:
+        raise ValueError(f"User {user_id} not found")
+    return user.created_at
 
 
 async def update_profile(session: AsyncSession, user_id: int, data: dict) -> User:

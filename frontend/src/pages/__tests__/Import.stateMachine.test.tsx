@@ -1,13 +1,13 @@
 // @vitest-environment jsdom
 /**
- * Phase 96 Plan 02 — Import page readiness state machine tests.
+ * Phase 96 Plan 02 — Import page polling/copy contract tests.
  *
  * Verifies (post-UAT):
- * 1. Both Explore CTAs always render; each is enabled only once its tier is ready
- *    (Openings at Tier 1, Endgames at Tier 2).
- * 2. The "Analyzing endgames (X / Y)" indicator is gone (Stockfish banner covers it).
- * 3. The hot-import "done" message no longer says "Imported N games from {platform}".
- * 4. The polling invalidation set includes ['imports','readiness'].
+ * 1. The hot-import "done" message no longer says "Imported N games from {platform}".
+ * 2. The polling invalidation set includes ['imports','readiness'].
+ *
+ * (The Explore quick-access CTAs were removed from the Import page; their
+ * rendering tests are gone with them.)
  */
 
 import { readFileSync } from 'node:fs';
@@ -86,6 +86,31 @@ vi.mock('@/hooks/useImport', () => ({
   useImportPolling: () => ({ data: null }),
 }));
 
+// Phase 186 Plan 03: ImportPage (and the ImportFilterCard it now mounts) call
+// useImportSettings/useUpdateImportSettings, which use the real @tanstack/react-query
+// useQuery/useMutation — mock them so this test file's QueryClient-less render still works.
+vi.mock('@/hooks/useImportSettings', async () => {
+  const actual = await vi.importActual<typeof import('@/hooks/useImportSettings')>(
+    '@/hooks/useImportSettings',
+  );
+  return {
+    ...actual,
+    useImportSettings: () => ({
+      data: {
+        tc_bullet: false,
+        tc_blitz: true,
+        tc_rapid: true,
+        tc_classical: true,
+        game_cap: 1000,
+        imported_counts: {},
+      },
+      isLoading: false,
+      isError: false,
+    }),
+    useUpdateImportSettings: () => ({ mutate: vi.fn() }),
+  };
+});
+
 vi.mock('@/hooks/useEvalCoverage', () => ({
   useEvalCoverage: () => ({
     pendingCount: 0,
@@ -150,47 +175,14 @@ function renderImport() {
 
 // ── Tests ──────────────────────────────────────────────────────────────────────
 
-describe('Import page readiness state machine', () => {
-  it('always renders both Explore CTAs regardless of tier', () => {
-    readinessState.tier1 = false;
-    readinessState.tier2 = false;
-
+describe('Import page render contract', () => {
+  it('does not render the removed Explore quick-access CTAs', () => {
     renderImport();
 
-    const openings = screen.getByTestId('btn-explore-openings');
-    const endgames = screen.getByTestId('btn-explore-endgames');
-    expect(openings.textContent).toBe('Openings');
-    expect(endgames.textContent).toBe('Endgames');
-  });
-
-  it('disables both CTAs before either tier is ready', () => {
-    readinessState.tier1 = false;
-    readinessState.tier2 = false;
-
-    renderImport();
-
-    expect(screen.getByTestId('btn-explore-openings')).toHaveProperty('disabled', true);
-    expect(screen.getByTestId('btn-explore-endgames')).toHaveProperty('disabled', true);
-  });
-
-  it('enables Explore Openings at Tier 1 while Endgames stays disabled', () => {
-    readinessState.tier1 = true;
-    readinessState.tier2 = false;
-
-    renderImport();
-
-    expect(screen.getByTestId('btn-explore-openings')).toHaveProperty('disabled', false);
-    expect(screen.getByTestId('btn-explore-endgames')).toHaveProperty('disabled', true);
-  });
-
-  it('enables both CTAs at Tier 2', () => {
-    readinessState.tier1 = true;
-    readinessState.tier2 = true;
-
-    renderImport();
-
-    expect(screen.getByTestId('btn-explore-openings')).toHaveProperty('disabled', false);
-    expect(screen.getByTestId('btn-explore-endgames')).toHaveProperty('disabled', false);
+    expect(screen.queryByTestId('import-readiness-section')).toBeNull();
+    expect(screen.queryByTestId('btn-explore-games')).toBeNull();
+    expect(screen.queryByTestId('btn-explore-openings')).toBeNull();
+    expect(screen.queryByTestId('btn-explore-endgames')).toBeNull();
   });
 
   it('no longer renders the analyzing-endgames indicator', () => {

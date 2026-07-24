@@ -325,6 +325,57 @@ class TestFetchLichessGames:
         assert mock_client.stream.call_count == 4
 
     @pytest.mark.asyncio
+    async def test_backward_until_ms_passed_in_params(self):
+        """Phase 186 Plan 02 (IMPORT-03, D-06): until_ms should include 'until='
+        in request params for the backward-fetch backlog walk."""
+        mock_client = MagicMock()
+        mock_client.stream = MagicMock(return_value=_make_streaming_response([]))
+
+        async for _ in fetch_lichess_games(
+            mock_client, "testuser", user_id=1, until_ms=1600000000000
+        ):
+            pass
+
+        call_kwargs = mock_client.stream.call_args[1]
+        params = call_kwargs.get("params", {})
+        assert "until" in params
+        assert params["until"] == "1600000000000"
+
+    @pytest.mark.asyncio
+    async def test_backward_until_ms_absent_when_not_provided(self):
+        """When until_ms is None, the 'until' key should not appear in params."""
+        mock_client = MagicMock()
+        mock_client.stream = MagicMock(return_value=_make_streaming_response([]))
+
+        async for _ in fetch_lichess_games(mock_client, "testuser", user_id=1):
+            pass
+
+        call_kwargs = mock_client.stream.call_args[1]
+        params = call_kwargs.get("params", {})
+        assert "until" not in params
+
+    @pytest.mark.asyncio
+    async def test_backward_games_streamed_newest_first_oldest_last(self):
+        """A bounded (until, max) backward chunk streams newest-first (lichess
+        API default sort=dateDesc) -- the LAST yielded game in the chunk is the
+        OLDEST one, whose played_at becomes the caller's next until cursor."""
+        newest = _make_lichess_game(game_id="newest")
+        middle = _make_lichess_game(game_id="middle")
+        oldest = _make_lichess_game(game_id="oldest")
+        lines = [json.dumps(newest), json.dumps(middle), json.dumps(oldest)]
+
+        mock_client = MagicMock()
+        mock_client.stream = MagicMock(return_value=_make_streaming_response(lines))
+
+        results = []
+        async for g in fetch_lichess_games(
+            mock_client, "testuser", user_id=1, until_ms=1700000000000, max_games=3
+        ):
+            results.append(g)
+
+        assert [g.platform_game_id for g in results] == ["newest", "middle", "oldest"]
+
+    @pytest.mark.asyncio
     async def test_unexpected_status_raises_runtime_error_immediately(self):
         """Unexpected non-200 (e.g. 401) must fail loudly without retrying.
 

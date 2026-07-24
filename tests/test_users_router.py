@@ -516,3 +516,352 @@ class TestProfileLichessBlitzEquivalentRating:
         body = resp.json()
         assert "lichess_blitz_equivalent_rating" in body
         assert body["lichess_blitz_equivalent_rating"] == 1680
+
+
+# ---------------------------------------------------------------------------
+# Phase 186 Plan 01 (IMPORT-01): GET/PATCH /users/me/import-settings
+# ---------------------------------------------------------------------------
+
+
+class TestGetImportSettings:
+    @pytest.mark.asyncio
+    async def test_import_settings_defaults_for_new_user(self):
+        """D-16: a user with no settings row gets app-layer defaults on first GET
+        (bullet=false, blitz/rapid/classical=true, cap=1000) -- create-on-first-touch,
+        same code path for guests and registered users.
+        """
+        email = unique_email("import_settings_default")
+        password = "testpassword123"
+
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=app), base_url="http://test"
+        ) as client:
+            token = await _register_and_login(client, email, password)
+            resp = await client.get(
+                "/api/users/me/import-settings",
+                headers={"Authorization": f"Bearer {token}"},
+            )
+
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["tc_bullet"] is False
+        assert body["tc_blitz"] is True
+        assert body["tc_rapid"] is True
+        assert body["tc_classical"] is True
+        assert body["game_cap"] == 1000
+        assert body["imported_counts"] == {}
+
+
+class TestImportSettingsImportedCounts:
+    @pytest.mark.asyncio
+    async def test_imported_counts_include_all_games_for_own_user_only(self):
+        """GET returns imported_counts matching ALL of the authenticated user's
+        games -- including post-signup ones -- not just the pre-anchor backlog.
+
+        UAT follow-up to Plan 03: the chips must read as an honest breakdown of
+        the total game count. The seeded set includes a post-anchor rapid game;
+        the old pre-anchor backlog count would have reported rapid:1, this must
+        report rapid:2.
+        """
+        import datetime
+
+        from app.core.database import async_session_maker
+        from app.repositories.game_repository import bulk_insert_games
+
+        def _row(
+            user_id: int,
+            platform_game_id: str,
+            tc_bucket: str,
+            played_at: datetime.datetime,
+        ) -> dict:
+            return {
+                "user_id": user_id,
+                "platform": "chess.com",
+                "platform_game_id": platform_game_id,
+                "platform_url": None,
+                "pgn": '[Event "Test"]\n\n1. e4 *',
+                "result": "1-0",
+                "user_color": "white",
+                "time_control_str": "600+0",
+                "time_control_bucket": tc_bucket,
+                "time_control_seconds": 600,
+                "rated": True,
+                "white_username": "u",
+                "black_username": "o",
+                "white_rating": 1600,
+                "black_rating": 1550,
+                "opening_name": None,
+                "opening_eco": None,
+                "played_at": played_at,
+            }
+
+        pre_anchor = datetime.datetime(2020, 1, 1, tzinfo=datetime.timezone.utc)
+        # Well after account creation -> excluded from the pre-anchor backlog
+        # count, but MUST be included in imported_counts.
+        post_anchor = datetime.datetime(2099, 1, 1, tzinfo=datetime.timezone.utc)
+
+        email_a = unique_email("import_settings_imported_a")
+        email_b = unique_email("import_settings_imported_b")
+        password = "testpassword123"
+
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=app), base_url="http://test"
+        ) as client:
+            user_id_a, token_a = await _register_login_and_get_id(client, email_a, password)
+            token_b = await _register_and_login(client, email_b, password)
+
+            async with async_session_maker() as session:
+                await bulk_insert_games(
+                    session,
+                    [
+                        _row(user_id_a, f"blitz-{uuid.uuid4().hex}", "blitz", pre_anchor),
+                        _row(user_id_a, f"blitz-{uuid.uuid4().hex}", "blitz", pre_anchor),
+                        _row(user_id_a, f"rapid-{uuid.uuid4().hex}", "rapid", pre_anchor),
+                        _row(user_id_a, f"rapid-{uuid.uuid4().hex}", "rapid", post_anchor),
+                    ],
+                )
+                await session.commit()
+
+            resp_a = await client.get(
+                "/api/users/me/import-settings",
+                headers={"Authorization": f"Bearer {token_a}"},
+            )
+            resp_b = await client.get(
+                "/api/users/me/import-settings",
+                headers={"Authorization": f"Bearer {token_b}"},
+            )
+
+        assert resp_a.status_code == 200
+        assert resp_a.json()["imported_counts"] == {"chess.com": {"blitz": 2, "rapid": 2}}
+
+        # User B has no games -- must not see user A's imported counts.
+        assert resp_b.status_code == 200
+        assert resp_b.json()["imported_counts"] == {}
+
+
+class TestPatchImportSettings:
+    @pytest.mark.asyncio
+    async def test_import_settings_patch_then_get_roundtrip(self):
+        """D-09 persistence contract: PATCH persists and a subsequent GET returns
+        exactly those values for that user only.
+        """
+        email = unique_email("import_settings_roundtrip")
+        password = "testpassword123"
+
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=app), base_url="http://test"
+        ) as client:
+            token = await _register_and_login(client, email, password)
+            headers = {"Authorization": f"Bearer {token}"}
+
+            patch_resp = await client.patch(
+                "/api/users/me/import-settings",
+                json={
+                    "tc_bullet": False,
+                    "tc_blitz": True,
+                    "tc_rapid": True,
+                    "tc_classical": True,
+                    "game_cap": 3000,
+                },
+                headers=headers,
+            )
+            assert patch_resp.status_code == 200
+            assert patch_resp.json()["game_cap"] == 3000
+
+            get_resp = await client.get("/api/users/me/import-settings", headers=headers)
+
+        assert get_resp.status_code == 200
+        get_body = get_resp.json()
+        assert get_body["tc_bullet"] is False
+        assert get_body["tc_blitz"] is True
+        assert get_body["tc_rapid"] is True
+        assert get_body["tc_classical"] is True
+        assert get_body["game_cap"] == 3000
+
+    @pytest.mark.asyncio
+    async def test_import_settings_patch_invalid_game_cap_returns_422(self):
+        """game_cap=2500 (not in {1000,3000,5000}) is rejected by Pydantic's Literal
+        before it can reach the DB.
+        """
+        email = unique_email("import_settings_invalid_cap")
+        password = "testpassword123"
+
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=app), base_url="http://test"
+        ) as client:
+            token = await _register_and_login(client, email, password)
+            resp = await client.patch(
+                "/api/users/me/import-settings",
+                json={
+                    "tc_bullet": False,
+                    "tc_blitz": True,
+                    "tc_rapid": True,
+                    "tc_classical": True,
+                    "game_cap": 2500,
+                },
+                headers={"Authorization": f"Bearer {token}"},
+            )
+
+        assert resp.status_code == 422
+
+
+class TestPatchImportSettingsCursorReset:
+    """UAT-186 regression: the per-platform backfill cursor has already walked
+    past months/chunks the OLD scope skipped, so a PATCH that EXPANDS scope
+    (a TC turned on, or the cap raised) must reset the cursors -- otherwise a
+    newly enabled TC's games in already-walked months are never fetched.
+    Narrowing or no-op saves must NOT throw away walk progress.
+    """
+
+    _DEFAULTS = {
+        "tc_bullet": False,
+        "tc_blitz": True,
+        "tc_rapid": True,
+        "tc_classical": True,
+        "game_cap": 1000,
+    }
+
+    async def _seed_settings_and_cursors(self, user_id: int) -> None:
+        from app.core.database import async_session_maker
+        from app.repositories import user_import_settings_repository
+
+        async with async_session_maker() as session:
+            await user_import_settings_repository.get_or_create_settings(session, user_id=user_id)
+            await user_import_settings_repository.update_chesscom_backfill_cursor(
+                session, user_id=user_id, year=2020, month=5
+            )
+            await user_import_settings_repository.update_lichess_backfill_cursor(
+                session, user_id=user_id, until_ms=1_500_000_000_000
+            )
+            await session.commit()
+
+    async def _read_cursors(self, user_id: int) -> tuple[tuple[int, int] | None, int | None]:
+        from app.core.database import async_session_maker
+        from app.repositories import user_import_settings_repository
+
+        async with async_session_maker() as session:
+            chesscom = await user_import_settings_repository.get_chesscom_backfill_cursor(
+                session, user_id=user_id
+            )
+            lichess = await user_import_settings_repository.get_lichess_backfill_cursor(
+                session, user_id=user_id
+            )
+        return chesscom, lichess
+
+    @pytest.mark.asyncio
+    async def test_enabling_a_tc_resets_backfill_cursors(self):
+        email = unique_email("import_settings_cursor_tc")
+        password = "testpassword123"
+
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=app), base_url="http://test"
+        ) as client:
+            user_id, token = await _register_login_and_get_id(client, email, password)
+            await self._seed_settings_and_cursors(user_id)
+
+            resp = await client.patch(
+                "/api/users/me/import-settings",
+                json={**self._DEFAULTS, "tc_bullet": True},
+                headers={"Authorization": f"Bearer {token}"},
+            )
+            assert resp.status_code == 200
+
+        chesscom, lichess = await self._read_cursors(user_id)
+        assert chesscom is None, f"chess.com cursor must reset on TC enable, got {chesscom}"
+        assert lichess is None, f"lichess cursor must reset on TC enable, got {lichess}"
+
+    @pytest.mark.asyncio
+    async def test_raising_cap_resets_backfill_cursors(self):
+        email = unique_email("import_settings_cursor_cap")
+        password = "testpassword123"
+
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=app), base_url="http://test"
+        ) as client:
+            user_id, token = await _register_login_and_get_id(client, email, password)
+            await self._seed_settings_and_cursors(user_id)
+
+            resp = await client.patch(
+                "/api/users/me/import-settings",
+                json={**self._DEFAULTS, "game_cap": 3000},
+                headers={"Authorization": f"Bearer {token}"},
+            )
+            assert resp.status_code == 200
+
+        chesscom, lichess = await self._read_cursors(user_id)
+        assert chesscom is None, f"chess.com cursor must reset on cap raise, got {chesscom}"
+        assert lichess is None, f"lichess cursor must reset on cap raise, got {lichess}"
+
+    @pytest.mark.asyncio
+    async def test_narrowing_and_noop_keep_backfill_cursors(self):
+        email = unique_email("import_settings_cursor_keep")
+        password = "testpassword123"
+
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=app), base_url="http://test"
+        ) as client:
+            user_id, token = await _register_login_and_get_id(client, email, password)
+            await self._seed_settings_and_cursors(user_id)
+            headers = {"Authorization": f"Bearer {token}"}
+
+            # Narrowing: disable a TC (rapid). Nothing previously skipped
+            # becomes wanted, so walk progress must survive.
+            narrowed = {**self._DEFAULTS, "tc_rapid": False}
+            resp = await client.patch(
+                "/api/users/me/import-settings", json=narrowed, headers=headers
+            )
+            assert resp.status_code == 200
+
+            chesscom, lichess = await self._read_cursors(user_id)
+            assert chesscom == (2020, 5), f"cursor must survive narrowing, got {chesscom}"
+            assert lichess == 1_500_000_000_000, f"cursor must survive narrowing, got {lichess}"
+
+            # No-op save of identical settings must also keep the cursors.
+            resp = await client.patch(
+                "/api/users/me/import-settings", json=narrowed, headers=headers
+            )
+            assert resp.status_code == 200
+
+        chesscom, lichess = await self._read_cursors(user_id)
+        assert chesscom == (2020, 5), f"cursor must survive a no-op save, got {chesscom}"
+        assert lichess == 1_500_000_000_000, f"cursor must survive a no-op save, got {lichess}"
+
+
+class TestImportSettingsUserIsolation:
+    @pytest.mark.asyncio
+    async def test_import_settings_cannot_read_or_write_another_users(self):
+        """T-186-01: a GET/PATCH can never read or write another user's settings."""
+        email_a = unique_email("import_settings_iso_a")
+        email_b = unique_email("import_settings_iso_b")
+        password = "testpassword123"
+
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=app), base_url="http://test"
+        ) as client:
+            token_a = await _register_and_login(client, email_a, password)
+            token_b = await _register_and_login(client, email_b, password)
+
+            # User A sets a distinctive game_cap.
+            patch_resp = await client.patch(
+                "/api/users/me/import-settings",
+                json={
+                    "tc_bullet": True,
+                    "tc_blitz": True,
+                    "tc_rapid": True,
+                    "tc_classical": True,
+                    "game_cap": 5000,
+                },
+                headers={"Authorization": f"Bearer {token_a}"},
+            )
+            assert patch_resp.status_code == 200
+
+            # User B's GET must still see their own defaults, not A's values.
+            resp_b = await client.get(
+                "/api/users/me/import-settings",
+                headers={"Authorization": f"Bearer {token_b}"},
+            )
+
+        assert resp_b.status_code == 200
+        body_b = resp_b.json()
+        assert body_b["tc_bullet"] is False
+        assert body_b["game_cap"] == 1000

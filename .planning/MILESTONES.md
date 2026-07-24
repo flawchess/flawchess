@@ -1,5 +1,28 @@
 # Milestones: FlawChess
 
+## v2.7 Bot Personas & Playstyle Layer (Shipped: 2026-07-23)
+
+**Phases completed:** 4 phases (182, 183, 184, 185), 19 plans
+
+**Delivered:** a roster of 24 named bot personas (4 styles × 6 ELO rungs, 800–1800) on the Bots page, each a complete pinned opponent — preset, calibrated ELO, style params, opening book, resign/draw-offer policy, avatar, bio — with no persona × strength picker. Custom mode keeps the raw (ELO, preset) knobs for power users.
+
+**Key accomplishments:**
+
+- **Phase 182 — Style Levers (SEED-098):** engine-only steering added as new bot-only fields, with `botSampling.ts` kept pure and bot play byte-identical when no style is set. Curated per-style×color opening books (`styleOpeningLines.ts`), signed draw contempt + a hysteresis-gated resign predicate (`botDrawGate.ts`), Maia-policy prior reweighting via a cheap chess.js move classifier (checks/captures/pawn advances/trades) on the Human rungs, and additive score shaping + a `childScoreSpread` variance preference on the Light/Deep rungs before the existing softmax in `selectBotMove`. A headless measurement script backs the per-style tuning with committed evidence.
+- **Phase 183 — Persona Registry & Bots Page:** a single typed 24-slot registry mapping each persona to its full config (rung→preset per the measured ranges), a Bots page grid/card/detail UI with placeholder emoji-on-tint avatars + committed generation prompts, one-action Play, and an unchanged Custom mode. In-game persona presence: avatar+name in the clock strip, a draw-offer banner with Accept/Decline, persona-named result copy, and Rematch/New opponent. UAT (roster content, desktop+mobile browse, end-to-end playtest) operator-confirmed passed on the shipped-to-prod roster.
+- **Phase 184 — Persona Calibration & Strength Honesty:** the operator overnight calibration sweep (24 cells, supervised resume-on-crash) measured each persona's real strength on the Phase-173 internal anchor scale; `calibration_persona_fit.py` + `gen_persona_calibration.py` refit measured ELO labels from the real ledger (`PERSONA_CALIBRATION_MEASURED=true`), with the D-07 ~1800 ceiling clamp, D-06 floor-acknowledgment popover, and D-04 within-style monotonicity. The CAL-04b gap-fill (`813acd0a`) closed the ~800/~1200 rungs; shipped via PR #274.
+- **Phase 185 — Bots roster transpose + win stars:** the grid re-laid-out as a rung ladder (6 rung rows, easiest ~800 on top, × 4 style columns with a single accent-colored style header row) and server-tracked per-persona win stars — a nullable `games.persona_id` (Alembic migration; persona games only), a small aggregation endpoint, and min(wins, 3) gold stars + grey outlines on each card. Added mid-milestone from a 2026-07-22 /gsd-explore session and folded into v2.7 scope at close.
+
+**Scope note:** deployed to production incrementally (PRs through #275) rather than as a single release tied to the `v2.7` tag.
+
+**Requirements:** 12/13 complete; AVAT-01 (24 real AI-generated portraits) deferred per locked D-16 — placeholder emoji-on-tint avatars + committed prompts shipped instead. CAL-04/CAL-05 were completed after the initial "provisional labels" framing via the operator sweep + CAL-04b gap-fill.
+
+**Known verification overrides:** closed as `override_closeout` — cross-milestone carryover acknowledged and deferred (2 benign debug sessions, 19 stale quick-task audit miscounts, 3 todos, 8 dormant seeds; see STATE.md → Deferred Items). All four v2.7 phases carry a passing VERIFICATION.md; Phase 184's `184-04` SUMMARY + phase VERIFICATION were reconstructed at close from the committed measured calibration artifacts (24 cells, drift-clean, shipped via #274). No `/gsd-audit-milestone` doc was generated (seed-driven milestone).
+
+**Deferred (tracked fast-follows):** Phase 183 WR-01 (dangling bot draw-offer banner when a game ends via resign/flag while an offer is live), IN-02 (wall-1200/1800 share a turtle emoji + tint), AVAT-01 (real portraits). SEED-114 (ladder extension above ~1900) stays dormant.
+
+---
+
 ## v2.6 Bot Strength Calibration (Shipped: 2026-07-21)
 
 **Phases completed:** 3 phases (173, 180, 181), 10 plans

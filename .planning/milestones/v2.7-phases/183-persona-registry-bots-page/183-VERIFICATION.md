@@ -1,7 +1,8 @@
 ---
 phase: 183-persona-registry-bots-page
 verified: 2026-07-22T10:26:33Z
-status: human_needed
+status: passed
+human_review_resolved: 2026-07-24  # operator confirmed all 3 human_verification items passed on the shipped-to-prod roster at v2.7 close (see 183-UAT.md Resolution); WR-01/IN-02/AVAT-01 accepted as tracked non-blocking follow-ups
 score: 5/5 must-haves verified
 behavior_unverified: 0
 overrides_applied: 0

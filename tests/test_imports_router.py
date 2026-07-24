@@ -14,7 +14,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import httpx
 import pytest
 import pytest_asyncio
-from sqlalchemy import delete
+from sqlalchemy import delete, text
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
 import app.services.import_service as import_service
@@ -528,3 +528,126 @@ class TestGetImportStatus:
                 resp = await client.get("/api/imports/some-db-job-id", headers=headers)
 
         assert resp.status_code == 404
+
+
+# ---------------------------------------------------------------------------
+# DELETE /imports/games -- backfill-cursor reset (Phase 186 Plan 02,
+# IMPORT-03, Pitfall 4)
+# ---------------------------------------------------------------------------
+
+
+class TestDeleteAllGamesCursorReset:
+    @pytest.mark.asyncio
+    async def test_delete_and_cursor_reset_preserves_tc_and_cap(self, test_engine):
+        """After DELETE /imports/games, the backfill-cursor columns are NULL
+        while tc_* and game_cap retain their pre-delete values (Pitfall 4:
+        the cursor is not derived from `games` rows, so it must be reset
+        explicitly, but the user's preferences must survive delete-all).
+        """
+        user_id, headers = await _register_and_login()
+
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=app), base_url="http://test"
+        ) as client:
+            # Set non-default TC/cap preferences via the real settings endpoint.
+            patch_resp = await client.patch(
+                "/api/users/me/import-settings",
+                json={
+                    "tc_bullet": True,
+                    "tc_blitz": True,
+                    "tc_rapid": False,
+                    "tc_classical": True,
+                    "game_cap": 3000,
+                },
+                headers=headers,
+            )
+            assert patch_resp.status_code == 200
+
+            # Seed backfill-cursor columns directly -- no API writes them yet;
+            # in production only the internal Sync backward walk does (186-02
+            # Task 2). Confirms a pre-existing cursor from a prior walk.
+            async with test_engine.begin() as conn:
+                await conn.execute(
+                    text(
+                        "UPDATE user_import_settings SET "
+                        "chesscom_backfill_oldest_year = 2024, "
+                        "chesscom_backfill_oldest_month = 3, "
+                        "lichess_backfill_oldest_ms = 1700000000000 "
+                        "WHERE user_id = :uid"
+                    ),
+                    {"uid": user_id},
+                )
+
+            delete_resp = await client.delete("/api/imports/games", headers=headers)
+
+        assert delete_resp.status_code == 200
+
+        async with test_engine.connect() as conn:
+            result = await conn.execute(
+                text(
+                    "SELECT tc_bullet, tc_blitz, tc_rapid, tc_classical, game_cap, "
+                    "chesscom_backfill_oldest_year, chesscom_backfill_oldest_month, "
+                    "lichess_backfill_oldest_ms "
+                    "FROM user_import_settings WHERE user_id = :uid"
+                ),
+                {"uid": user_id},
+            )
+            row = result.fetchone()
+
+        assert row is not None, "Expected the settings row to survive delete-all"
+        tc_bullet, tc_blitz, tc_rapid, tc_classical, game_cap, cc_year, cc_month, li_ms = row
+        assert (tc_bullet, tc_blitz, tc_rapid, tc_classical) == (True, True, False, True), (
+            f"TC toggles must survive delete-all -- only progress cursors reset, got {row}"
+        )
+        assert game_cap == 3000, f"game_cap must survive delete-all, got {game_cap}"
+        assert cc_year is None, "chesscom_backfill_oldest_year must be NULLed by delete-all"
+        assert cc_month is None, "chesscom_backfill_oldest_month must be NULLed by delete-all"
+        assert li_ms is None, "lichess_backfill_oldest_ms must be NULLed by delete-all"
+
+    @pytest.mark.asyncio
+    async def test_delete_and_cursor_reset_returns_deleted_game_count(self, test_engine):
+        """DELETE /imports/games still returns the correct deleted_count
+        alongside the new cursor-reset behavior (no regression to the
+        existing delete-count contract)."""
+        import datetime
+
+        from app.core.database import async_session_maker
+        from app.repositories.game_repository import bulk_insert_games
+
+        user_id, headers = await _register_and_login()
+
+        async with async_session_maker() as session:
+            await bulk_insert_games(
+                session,
+                [
+                    {
+                        "user_id": user_id,
+                        "platform": "chess.com",
+                        "platform_game_id": f"cursor-reset-{uuid.uuid4().hex}",
+                        "platform_url": None,
+                        "pgn": '[Event "Test"]\n\n1. e4 *',
+                        "result": "1-0",
+                        "user_color": "white",
+                        "time_control_str": "600+0",
+                        "time_control_bucket": "blitz",
+                        "time_control_seconds": 600,
+                        "rated": True,
+                        "white_username": "u",
+                        "black_username": "o",
+                        "white_rating": 1600,
+                        "black_rating": 1550,
+                        "opening_name": None,
+                        "opening_eco": None,
+                        "played_at": datetime.datetime(2020, 1, 1, tzinfo=datetime.timezone.utc),
+                    },
+                ],
+            )
+            await session.commit()
+
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=app), base_url="http://test"
+        ) as client:
+            delete_resp = await client.delete("/api/imports/games", headers=headers)
+
+        assert delete_resp.status_code == 200
+        assert delete_resp.json()["deleted_count"] == 1

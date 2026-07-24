@@ -1,5 +1,6 @@
 """Game repository: bulk insert with ON CONFLICT DO NOTHING and position insertion."""
 
+import datetime
 from collections.abc import Sequence
 
 import sqlalchemy as sa
@@ -332,6 +333,116 @@ async def count_games_by_platform(session: AsyncSession, user_id: int) -> dict[s
         .group_by(Game.platform)
     )
     return {row[0]: row[1] for row in result.all()}
+
+
+async def count_backlog_by_platform_and_tc(
+    session: AsyncSession, user_id: int, anchor: datetime.datetime
+) -> dict[str, dict[str, int]]:
+    """Return {platform: {tc_bucket: count}} for the user's PRE-ANCHOR backlog.
+
+    Phase 186 Plan 01 (IMPORT-04, D-01/D-02/D-15). `anchor` is `users.created_at`
+    -- the per-user backlog boundary (D-02): games played AT/AFTER the anchor are
+    always imported uncapped and never counted here. Derived aggregate over the
+    existing `games` table -- no denormalized counter (186-RESEARCH.md Pattern 1,
+    Don't-Hand-Roll). Used for the settings response's backlog-count chips (Plan
+    03 UI) and, later, the backward walk's per-(platform, TC) stop condition.
+
+    NULL-bucket games are omitted entirely from the result (D-15 -- they bypass
+    the TC filter and count against no budget).
+
+    Args:
+        session: AsyncSession.
+        user_id: Internal database user ID.
+        anchor: users.created_at for this user.
+
+    Returns:
+        Dict keyed by platform, values are dicts keyed by TC bucket -> count.
+        A platform/TC combination with zero pre-anchor games is simply absent,
+        not present as 0.
+    """
+    result = await session.execute(
+        select(Game.platform, Game.time_control_bucket, func.count())
+        .select_from(Game)
+        .where(Game.user_id == user_id, Game.played_at < anchor)
+        .group_by(Game.platform, Game.time_control_bucket)
+    )
+    out: dict[str, dict[str, int]] = {}
+    for platform, tc_bucket, count in result.all():
+        if tc_bucket is None:
+            continue  # D-15: NULL-bucket games count against no budget
+        out.setdefault(platform, {})[tc_bucket] = count
+    return out
+
+
+async def count_imported_by_platform_and_tc(
+    session: AsyncSession, user_id: int
+) -> dict[str, dict[str, int]]:
+    """Return {platform: {tc_bucket: count}} for ALL of the user's imported games.
+
+    UAT follow-up to Phase 186 Plan 03: unlike
+    ``count_backlog_by_platform_and_tc`` (which counts only the pre-anchor,
+    cap-eligible backlog and drives the backward-walk stop condition), this is
+    the true per-(platform, TC) distribution of everything the user has
+    imported -- no `created_at` anchor filter. It backs the settings response's
+    per-TC chips so those numbers read as an honest breakdown of the header's
+    total game count, not a subset that silently omits post-signup games. The
+    two functions are intentionally distinct: the display wants "what do I
+    have", the import walk wants "what still counts against the cap".
+
+    NULL-bucket games (untimed chess.com bot/coach games with no clock, D-15)
+    are reported under the pseudo-bucket key "untimed" so the chips sum to the
+    header's raw total. "untimed" is a display-only key — it is NOT a value of
+    the time_control_bucket enum and never enters the TC filter or cap budgets.
+
+    Args:
+        session: AsyncSession.
+        user_id: Internal database user ID.
+
+    Returns:
+        Dict keyed by platform, values are dicts keyed by TC bucket (or
+        "untimed") -> count. A platform/TC combination with zero games is
+        simply absent, not 0.
+    """
+    result = await session.execute(
+        select(Game.platform, Game.time_control_bucket, func.count())
+        .select_from(Game)
+        .where(Game.user_id == user_id)
+        .group_by(Game.platform, Game.time_control_bucket)
+    )
+    out: dict[str, dict[str, int]] = {}
+    for platform, tc_bucket, count in result.all():
+        out.setdefault(platform, {})[tc_bucket or "untimed"] = count
+    return out
+
+
+async def get_platform_game_ids_for_user(
+    session: AsyncSession, user_id: int, platform: str
+) -> frozenset[str]:
+    """Return every `platform_game_id` already stored for (user_id, platform).
+
+    Bug fix (CR-01, code-review 186): the backward-walk budget counter used to
+    increment for every TC-matching game *fetched*, even ones the forward pass
+    (or a prior sync) had already imported -- `bulk_insert_games`'s
+    `ON CONFLICT DO NOTHING` silently no-ops those, but the fetch-time counter
+    had no way to know that. Loading the full existing-id set once per backward
+    pass (this query) lets the per-game counter (`_record_backward_game`) skip
+    true duplicates in real time, which the D-07 stop-condition semantics
+    require (the walk must react mid-fetch, not only after a batch flush).
+    Served by the `uq_games_user_platform_game_id` unique index (user_id,
+    platform, platform_game_id prefix), so this is a single indexed scan.
+
+    Args:
+        session: AsyncSession.
+        user_id: Internal database user ID.
+        platform: 'chess.com' or 'lichess'.
+
+    Returns:
+        Frozenset of platform_game_id strings already stored for this user+platform.
+    """
+    result = await session.execute(
+        select(Game.platform_game_id).where(Game.user_id == user_id, Game.platform == platform)
+    )
+    return frozenset(row[0] for row in result.all())
 
 
 async def get_current_rating_by_platform(
