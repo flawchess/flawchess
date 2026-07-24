@@ -3,8 +3,8 @@ gsd_state_version: 1.0
 milestone: v2.8
 milestone_name: Import Filters
 status: completed
-stopped_at: Completed 186-03-PLAN.md (Phase 186 complete)
-last_updated: "2026-07-24T09:24:49.447Z"
+stopped_at: Completed quick 260724-gnd (fix-backfill-cursor-reset-race-and-budget)
+last_updated: "2026-07-24T10:36:20.750Z"
 last_activity: 2026-07-24
 last_activity_desc: Phase 186 complete
 progress:
@@ -425,6 +425,7 @@ v1.29 Live-Engine Analysis Page shipped 2026-06-29 — 5 phases (136–140), 14 
 - [Phase ?]: Phase 186 Plan 02: backward-walk should_stop stays a plain synchronous closure over an in-memory live_counts dict seeded from one backlog query, avoiding a DB round trip on every per-month/per-chunk stop check
 - [Phase 186-03]: Settings-fetch isError handling lives once, inside ImportFilterCard — removed a duplicate page-level error branch added mid-Task-2 (both components share the same `['import-settings']` queryKey and would otherwise render the identical error message twice)
 - [Phase 186-03]: tcSettingsKey's return type narrowed to a `tc_${TimeControl}` template-literal union (not the broader `keyof ImportSettingsUpdate`, which includes the numeric `game_cap` field) so indexed access resolves to `boolean` with no cast
+- [Phase ?]: Quick 260724-gnd: moved _import_scope_expanded into user_import_settings_repository.py (single shared implementation); added run_import end-of-run cursor reset for the UAT-186-RACE cursor-clobber race; added anchor param to _admit_backward_game for UAT-186-BUDGET uncapped post-anchor admission
 
 ### Pending Todos
 
@@ -521,9 +522,9 @@ Items acknowledged and deferred at **v1.29 milestone close on 2026-06-29** (user
 
 ## Session Continuity
 
-**Stopped at:** Completed 186-03-PLAN.md (Phase 186 complete)
+**Stopped at:** Completed quick 260724-gnd (fix-backfill-cursor-reset-race-and-budget)
 
-**Last session:** 2026-07-24T05:53:36.000Z
+**Last session:** 2026-07-24T10:36:20.727Z
 
 **Resume file:**
 
