@@ -20,24 +20,13 @@ Mobile-first PWA, installable on iOS/Android, with drawer-based filter and bookm
 
 Users get position-precise WDL analysis (openings + endgames + time pressure) on top of their actual chess.com and lichess games, with personalized LLM commentary on endgame performance and an auto-generated opening-strengths/weaknesses report. No per-platform fragmentation, no manual opening tagging.
 
-## Current Milestone: v2.7 Bot Personas & Playstyle Layer
+## Current Milestone: none active — v2.7 shipped 2026-07-23
 
-**Goal:** Ship a roster of 24 named bot personas (4 styles × 6 ELO rungs) on the Bots page — each persona a complete pinned opponent (preset, calibrated ELO, style params, opening book, resign/draw-offer policy, avatar, bio) with honest strength labels from the v2.6 lookup.
+**v2.7 Bot Personas & Playstyle Layer closed 2026-07-24** (Phases 182–185, 19 plans; deployed to production, PRs through #275). Shipped a roster of 24 named bot personas (4 styles × 6 ELO rungs, 800–1800) on the Bots page — each a complete pinned opponent (preset, measured ELO, style params, opening book, resign/draw-offer policy, avatar, bio), with no persona × strength picker; Custom mode keeps the raw (ELO, preset) knobs. Persona ELO labels are measured on the Phase-173 internal anchor scale (`PERSONA_CALIBRATION_MEASURED=true`), with honest ~900 floor / ~1800 ceiling constraints. See [MILESTONES.md](MILESTONES.md) and [milestones/v2.7-ROADMAP.md](milestones/v2.7-ROADMAP.md).
 
-**Target features:**
-- 24-persona roster: The Attacker / The Trickster / The Grinder / The Solid Wall × rungs 800–1800 (200-ELO steps), every slot its own named character with avatar and bio
-- Style levers, built in perceptibility-per-effort order: per-persona opening books (Trickster reuses `frontend/src/lib/trollOpenings.ts`), draw contempt + resign/draw-offer policy, prior reweighting by move features (Human rungs, needs a cheap chess.js move classifier), score shaping + variance bonus in `selectBotMove` (Light/Deep rungs)
-- Per-persona ELO calibration on the Phase-173 internal anchor scale — labeled ELO = calibrated ELO, style-induced strength delta absorbed via per-persona offset (~24 cells × ~4 anchors × ~24 games ≈ 2 overnight Phase-180 harness runs)
-- Bots page persona grid UI; Custom mode keeps the raw (ELO, preset) knobs for power users
-- AI-generated avatar portrait set (one consistent style prompt, 24 characters, manually curated, committed static assets)
+Deferred at v2.7 close: AVAT-01 (real AI portraits — placeholders + prompts shipped per D-16); Phase 183 fast-follows WR-01 / IN-02; SEED-114 (bots above ~1900) stays dormant.
 
-**Key context (locked decisions from explore 2026-07-21, SEED-098):**
-- **Persona pins everything** — no persona × strength picker; the persona frame carries the personality (cf. chess.com bots)
-- Goal is **perceived** personality, not measurably distinct play — cheap levers, small strength deltas
-- Rung dictates preset per measured ranges: 800–1400 Human (prior-reweighting lever), 1600 Light/Deep, 1800 Deep (score-shaping lever); regime-agnostic levers (book, contempt, resign policy) carry style identity across all rungs
-- Strength honesty: the 800 rung is below the measured floor (~900 approx blitz); 1800 is exactly Deep's measured ceiling (SEED-114 ladder extension deliberately left dormant)
-- Invariants: style params are NEW fields (D-02/WR-04 — never the analysis-board `policyTemperature`), and bot-only inputs (BOT-03 — never derived from the player); `botSampling.ts` helpers stay pure, no new search machinery
-- Maia-3 sac-blindness is accepted flavor for the Attacker (don't market "sound attacks"); NOT in scope: positional-theme steering (WASM Stockfish returns one cp number)
+**Next:** `/gsd-new-milestone`.
 
 
 ## Requirements
@@ -243,8 +232,8 @@ Users get position-precise WDL analysis (openings + endgames + time pressure) on
 
 ### Backlog candidates (future-milestone candidates)
 
-- [ ] **SEED-098 Bot personas & playstyle layer** — a 24-persona roster (4 styles × 6 ELO rungs) where the persona pins every bot setting; the natural consumer of v2.6's `botStrengthCurves.ts` lookup, which currently ships unread. An exploration was captured 2026-07-21 (`bot-personas-roster-redesign`)
-- [ ] **SEED-114 Stronger bots above ~1900** — v2.6's measured Deep ceiling landed at ~1800 approx-blitz because the anchor ladder tops out; extending the ladder plus raising the search budget is the path to genuinely stronger presets
+- ✓ **SEED-098 Bot personas & playstyle layer** — shipped as v2.7 (Phases 182–185, closed 2026-07-23): a 24-persona roster where the persona pins every bot setting, with measured per-persona ELO labels
+- [ ] **SEED-114 Stronger bots above ~1900** — v2.6's measured Deep ceiling landed at ~1800 approx-blitz because the anchor ladder tops out; extending the ladder plus raising the search budget is the path to genuinely stronger presets (surfaced strongly by v2.7 — the persona roster tops out at the 1800 rung)
 - [ ] **SEED-084 Flaw Overlay (Pillars A + B)** — on a flaw move, a salience × trainability verdict banner + a Maia-WDL practical-severity reframe, on top of the shipped v1.32 Maia surfaces (FLAW-01..04, demoted from Phase 152 at v1.32 close; `.planning/seeds/SEED-084-*.md`)
 - [ ] **SEED-086 played-move-vs-practical-best game review** — the "what you played vs what was practically best for you" comparison loop on the game-review board, split out of v2.0 Phase 157 at reframe (`.planning/seeds/SEED-086-*.md`)
 - [ ] **FlawChess Engine follow-ons** — per-ELO leaf sigmoids fit from the benchmark DB (CAL-01, a clean ENGINE-05 swap), trap-finder / branch-point UI, time-pressure clock conditioning, SharedArrayBuffer multithreading (all deferred by design at v2.0 close; SEED-082 shipped as v2.0)

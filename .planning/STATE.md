@@ -2,52 +2,57 @@
 gsd_state_version: 1.0
 milestone: v2.7
 milestone_name: Bot Personas & Playstyle Layer
+milestone_status: closed
 current_phase: 185
 current_phase_name: bots-roster-transpose-win-stars
-status: Phase 185 shipped — squash-merged to main (f5ff3ff4)
-stopped_at: "Completed quick task 260722-ucc: bot persona name + calibrated ELO"
-last_updated: "2026-07-22T20:03:04.579Z"
-last_activity: 2026-07-22
-last_activity_desc: "Completed quick task 260722-r7t: bot persona avatar generation pipeline (prompts doc + script + seam swap)"
+status: v2.7 Bot Personas & Playstyle Layer CLOSED 2026-07-24 (override_closeout) — awaiting /gsd-new-milestone
+stopped_at: "v2.7 milestone closed and tagged"
+last_updated: "2026-07-24T00:00:00.000Z"
+last_activity: 2026-07-24
+last_activity_desc: "Closed v2.7 milestone: archived roadmap + requirements, tagged v2.7"
 progress:
   total_phases: 4
-  completed_phases: 3
+  completed_phases: 4
   total_plans: 19
-  completed_plans: 18
-  percent: 75
+  completed_plans: 19
+  percent: 100
 ---
 
 # Project State: FlawChess
 
 ## Current Position
 
-Phase: 185 (bots-roster-transpose-win-stars) — EXECUTING
-Plan: 3 of 3
-Status: Phase 185 shipped — squash-merged to main (f5ff3ff4)
-Last activity: 2026-07-23 - Completed quick task 260723-tqn: bot-win celebration (confetti + Victory sound, outcome-specific Defeat/Draw clips)
+Milestone: v2.7 Bot Personas & Playstyle Layer — CLOSED 2026-07-24 (override_closeout)
+Phases: 182–185 all complete + verified (19/19 plans)
+Status: Archived to milestones/v2.7-*, tagged v2.7. **Awaiting `/gsd-new-milestone`.**
+Last activity: 2026-07-24 - Closed v2.7 milestone
+Deployed: production is current through PR #275 (v2.7 shipped incrementally)
 
 ## Project Reference
 
 See: .planning/PROJECT.md (updated 2026-07-14 after Phase 170)
 Core value: Position-precise WDL across openings + endgames + time pressure on top of users' actual chess.com / lichess games, with personalized LLM commentary and an auto-generated opening-strengths/weaknesses report.
-Current focus: **v2.7 Bot Personas & Playstyle Layer — ROADMAP.md created (2026-07-21)**, ready to plan Phase 182. Ships a roster of 24 named bot personas (4 styles × 6 ELO rungs, 800–1800) on the Bots page wiring the v2.6 measured-strength lookup into pinned opponents (preset, calibrated ELO, style params, opening book, resign/draw-offer policy, avatar, bio). 3 phases: **182 Style Levers** (opening books, draw contempt/resign policy, prior reweighting on Human rungs, score shaping on Light/Deep rungs — new bot-only fields, `botSampling.ts` stays pure), **183 Persona Registry & Bots Page** (typed 24-slot registry + grid UI + avatars/bios, provisional ELO labels, depends on 182), **184 Persona Calibration & Strength Honesty** (per-persona harness offsets replace provisional labels via ~2 overnight Phase-180 harness runs, honors the 800-floor/1800-ceiling honesty constraints, depends on 183). Production is at release #267; user-facing fixes accumulated since (three quicks incl. 260721-sgb Maia ORT disposal) ride the next release. Next: `/gsd-plan-phase 182`.
+Current focus: **v2.7 Bot Personas & Playstyle Layer CLOSED 2026-07-24.** Shipped a roster of 24 named bot personas (4 styles × 6 ELO rungs, 800–1800) on the Bots page, each a complete pinned opponent (preset, calibrated ELO, style params, opening book, resign/draw-offer policy, avatar, bio). Phases: **182 Style Levers**, **183 Persona Registry & Bots Page**, **184 Persona Calibration & Strength Honesty** (measured labels, `PERSONA_CALIBRATION_MEASURED=true`), **185 Bots Roster Transpose + Win Stars**. Deployed to production incrementally (PRs through #275). Next: `/gsd-new-milestone`.
 
 ## Deferred Items
 
-Items acknowledged and deferred at milestone close on 2026-07-21 (35 total, `override_closeout`):
+Items acknowledged and deferred at milestone close on 2026-07-24 (v2.7, `override_closeout`). All four v2.7 phases (182–185) are complete + verified; these are cross-milestone carryover items, not v2.7 gaps:
 
 | Category | Count | Notes |
 |----------|-------|-------|
-| Debug sessions | 2 | `entry-submit-n-plus-1` (fixed_awaiting_deploy), `insights-diskfull-shm` (awaiting_human_verify) |
-| Quick tasks | 20 | 19 stale carryover (2026-05-31 → 2026-06-16 era, missing SUMMARY artifacts rather than unfinished work) + `260612-bdr` flagged missing |
+| Debug sessions | 2 | `entry-submit-n-plus-1` (fixed_awaiting_deploy), `insights-diskfull-shm` (awaiting_human_verify) — both benign, unchanged since v2.6 |
+| Quick tasks | 19 | Stale carryover (2026-05-31 → 2026-06-16 era) — the known gsd-sdk audit miscount (missing SUMMARY artifacts, not unfinished work; see `project_stale_gsd_sdk_audit_bug`) |
 | Pending todos | 3 | `172-deferred-review-findings`, bitboard-storage note, WR-01 Tailwind axis label |
-| Dormant seeds | 10 | SEED-037/042/067/069/077/078/098/105/114 + others; all intentionally dormant, surfaced at `/gsd-new-milestone` |
+| Dormant seeds | 8 | SEED-037/042/067/069/077/078/105/114; all intentionally dormant, surfaced at `/gsd-new-milestone` (SEED-098 closed at v2.7 — it was this milestone) |
+| v2.7 tracked follow-ups | 3 | Phase 183 fast-follows accepted at close: WR-01 (dangling bot draw-offer banner on non-move game end), IN-02 (wall-1200/1800 shared turtle emoji), AVAT-01 (real AI portraits deferred per locked D-16) |
 
-No v2.6 milestone audit was run: the milestone is seed-driven with no mapped requirements (all "TBD"), and both interactive phases carry a VERIFICATION.md.
+No v2.7 milestone audit doc was generated (`/gsd-audit-milestone` not run): the milestone is seed-driven (SEED-098) and all four phases carry a passing VERIFICATION.md; Phase 183 UAT was operator-confirmed passed at close. Phase 184's `184-04` SUMMARY + phase VERIFICATION were reconstructed at close from the committed measured calibration artifacts (`PERSONA_CALIBRATION_MEASURED=true`, 24 cells, drift-clean, shipped via PR #274).
 
 ## Milestone Progress
 
-Thirty-nine milestones complete (v1.0–v2.6). **v2.6 Bot Strength Calibration closed 2026-07-21.**
+Forty milestones complete (v1.0–v2.7). **v2.7 Bot Personas & Playstyle Layer closed 2026-07-24.**
+
+v2.7 Bot Personas & Playstyle Layer closed 2026-07-24 — 4 phases (182, 183, 184, 185), 19 plans. A roster of 24 named bot personas (4 styles × 6 ELO rungs, 800–1800) on the Bots page, each a complete pinned opponent with no persona × strength picker. **Phase 182 (SEED-098)** added the engine-only style levers — curated per-style×color opening books (`styleOpeningLines.ts`), signed draw contempt + hysteresis-gated resign policy (`botDrawGate.ts`), Maia-policy prior reweighting by a cheap chess.js move classifier on the Human rungs, and additive score shaping + a `childScoreSpread` variance preference on the Light/Deep rungs — all new bot-only fields, `botSampling.ts` kept pure, byte-identical with no style set. **Phase 183** shipped the typed 24-slot persona registry + Bots page grid/card/detail UI + placeholder avatars/bios, one-action Play, unchanged Custom mode, and in-game persona presence (clock avatar+name, draw-offer banner, persona-named result copy, Rematch/New opponent). **Phase 184** ran the operator overnight calibration sweep (24 cells, supervised resume-on-crash) and refit measured ELO labels from the real ledger, flipping `PERSONA_CALIBRATION_MEASURED` true with the D-07 ~1800 ceiling clamp, D-06 floor-acknowledgment popover, and D-04 within-style monotonicity; the CAL-04b gap-fill (`813acd0a`) closed the ~800/~1200 rungs. **Phase 185** re-laid-out the grid as a rung ladder (6 rung rows × 4 style columns, accent header row) and added server-tracked per-persona win stars (nullable `games.persona_id` + aggregation endpoint + min(wins,3) gold stars). Archived to milestones/v2.7-ROADMAP.md + v2.7-REQUIREMENTS.md, phases to milestones/v2.7-phases/, CHANGELOG promoted, tagged v2.7, SEED-098 closed. **Deployed to production** incrementally (PRs through #275). Closed `override_closeout` — cross-milestone carryover (2 benign debug sessions, 19 stale quick-task miscounts, 3 todos, 8 dormant seeds) acknowledged as deferred; 3 Phase-183 UI fast-follows (WR-01/IN-02/AVAT-01) tracked. Phase 184's `184-04` SUMMARY + phase VERIFICATION were reconstructed at close from the committed measured artifacts.
 
 v2.6 Bot Strength Calibration closed 2026-07-21 — 3 phases (173, 180, 181), 10 plans. Put the bot's play-style presets on a measured strength scale end to end without a single human game. **Phase 173 (SEED-101)** round-robins all 10 Maia-argmax + Stockfish-skill anchors against each other (`scripts/calibration-anchor-ladder.mjs`, probe→measure with connectivity guard + resumable ledger) and fits a stdlib Bradley-Terry model (`scripts/calibration_anchor_fit.py`) placing them on one internal scale published as `INTERNAL_RATING`; headline verdict: the Maia-3 argmax ladder is **~2.8x compressed** vs its nominal labels, worst at the top. **Phase 180 (SEED-102)** measures the three presets (Human=0, Light=0.05, Deep=0.5) on that scale via an engine-free two-pass bot-cell scheduler that windows anchors by *measured* `INTERNAL_RATING` (fixing the nominal-scale bug that clamped the 2026-07-12 run) plus a single-parameter pinned-anchor MLE (`fit_bot_cell_rating`) yielding per-cell `rating_vs_maia`/`rating_vs_sf` with CIs and the style-inflation gap `G_preset`; gate green + pilot operator-approved 2026-07-19, full 15-cell sweep landed 2026-07-21. **Phase 181 (SEED-104)** fits each preset with hand-rolled PAVA isotonic regression, converts to approximate blitz ELO via pooled `G_preset` + shared `BLITZ_OFFSET_C = 40`, and inverts lowest-`bot_elo`-wins into 100-step lookups: `reports/data/bot-strength-lookup.json` + generated `frontend/src/generated/botStrengthCurves.ts` (both CI drift-checked), plus 7 off-grid confirmation-cell predictions with inverse-variance-pooled 95% CI bands. **The honest numbers: Human 900–1400, Light 1500–1600, Deep 1600–1800** — far below the seed's expected ~2600; Deep plateaus at ~1950–1970 internal and Light's raw curve is genuinely non-monotone (real measured dip at bot_elo 1300, pooled into a PAVA plateau rather than smoothed). Raising the ceiling captured as SEED-114. Also bundled: quick 260721-sgb (dispose Maia ORT tensors in `maia-worker.js`, SEED-113 app half). Archived to milestones/v2.6-ROADMAP.md, phases to milestones/v2.6-phases/, CHANGELOG promoted, tagged v2.6. **Dev-only, no deploy** — nothing reads the lookup yet. Deferred: the overnight off-grid confirmation run (operator HUMAN-UAT; runbook committed in the prediction JSON).
 
@@ -112,6 +117,7 @@ v1.29 Live-Engine Analysis Page shipped 2026-06-29 — 5 phases (136–140), 14 
 - Phase 181 added: Per-preset strength lookup curves (SEED-104) — invert Phase-180 curves into target_blitz_elo → bot_elo lookups
 - v2.7 Bot Personas & Playstyle Layer roadmap created 2026-07-21 — 3 phases (182–184) in a linear dependency chain (182 → 183 → 184), continuing absolute numbering from v2.6's Phase 181. All 13 requirements (PERS-01..04, STYLE-01..05, CAL-04..05, AVAT-01..02) mapped 1:1, no orphans. Ordering chosen deliberately: **182 Style Levers** builds the engine-only capability (opening books, contempt/resign, prior reweighting, score shaping) with no UI; **183 Persona Registry & Bots Page** wires those levers into 24 named personas with a real UI, shipped with provisional (raw preset) ELO labels — independently playable on its own; **184 Persona Calibration & Strength Honesty** then runs the Phase-180 harness against the finished personas and swaps in measured ELO labels. Each phase is independently shippable; labels simply get more honest over the sequence, per SEED-098's locked "persona pins everything" decision. UI hint on Phase 183 (Bots page grid).
 - Phase 185 added: Bots roster transpose + win stars — from a 2026-07-22 /gsd-explore session on post-184 Bots page follow-ups (grid transpose to rung-rows × style-columns, stars-row persona cards, server-side per-persona win tracking via nullable persona_id + aggregation endpoint)
+- v2.7 Bot Personas & Playstyle Layer closed 2026-07-24 (Phases 182–185; tag v2.7). Phase 185 (added mid-milestone, a post-184 Bots-page follow-up) folded into v2.7 scope at close — roadmap description updated 182–184 → 182–185. Phase 183 UAT operator-confirmed passed; Phase 184's `184-04` SUMMARY + phase VERIFICATION reconstructed at close from the committed measured calibration artifacts. Roadmap + requirements archived to `milestones/v2.7-*`, phases to `milestones/v2.7-phases/`. `override_closeout`. Reset for the next milestone.
 
 ### Decisions
 

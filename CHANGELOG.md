@@ -8,19 +8,17 @@ in `YYYY-MM-DD` (Europe/Zurich).
 
 ## [Unreleased]
 
+## [v2.7] Bot Personas & Playstyle Layer — 2026-07-23
+
 ### Added
 
 - Persona win stars — winning a game against a bot persona now earns a gold star on that persona's roster card (up to three shown per persona), tracked per user on the server and updated as soon as you return to the roster after a win. Custom-setup games don't earn stars (Phase 185).
 
 - **Bot personas on the Bots page** — a roster of 24 named opponents, four play styles (Attacker, Trickster, Grinder, Wall) across six strength rungs each. Every persona is a complete pinned opponent: its own preset and style parameters, opening book, resign and draw-offer policy, avatar and bio. Browse the grid, open a persona for its bio and colour/time-control chips, and start a game in one action; your last colour and time control are remembered per persona. Personas are present in-game too — avatar and name in the clock strip, a draw-offer banner when the bot offers, persona-named result copy, and Rematch / New opponent when the game ends. Custom setup is still there for a hand-tuned bot (Phase 183).
 
-- Persona strength labels now come from a single generated calibration file, with a disclosure popover on the detail surface explaining what the number means. The labels are currently **provisional estimates from each persona's target rung** and the popover says so; a per-persona measurement sweep against the internal anchor ladder replaces them with measured values, at which point the popover switches to the measured wording on its own. Also adds the operator sweep runbook, the fit and codegen pipeline, and a CI drift gate on the generated file (Phase 184).
+- Persona strength labels are **measured**, not guessed: an overnight calibration sweep played each persona against the internal anchor ladder, and the fitted result feeds a single generated calibration file with a disclosure popover on the detail surface explaining what the number means. Labels honor honest floor/ceiling constraints — the weakest rung acknowledges the measured ~900 floor and no persona claims strength above the ~1800 ceiling. Also adds the operator sweep runbook, the fit and codegen pipeline, and a CI drift gate on the generated file (Phase 184).
 
 - Dev: bot play-style levers — four named styles (Attacker, Trickster, Grinder, Wall) can now steer a bot's play through new bot-only parameters: a curated per-style opening book, signed draw contempt plus a hysteresis-gated resign policy, Maia policy reweighting by move features (checks, captures, pawn advances, trades) on the Human rungs, and additive score shaping with a variance preference on the Light/Deep rungs. A headless measurement script (`scripts/style-lever-measurement.mjs`) backs the per-style tuning with committed evidence. Every lever is optional and gated: with no style set, bot play and Custom mode are byte-identical to before. Dev-only, nothing selects a style yet (the Bots page personas land in Phase 183) (Phase 182).
-
-### Fixed
-
-- Lichess games imported with lichess evals no longer wait behind the entire analysis backlog: they now take part in the same fair per-user scheduling as everything else, so your fresh imports get their engine pass promptly even while another user's huge import is being worked through (Quick 260723-j6g).
 
 ### Changed
 
@@ -29,6 +27,8 @@ in `YYYY-MM-DD` (Europe/Zurich).
 - The Bots roster is now organized as a strength ladder: six rung rows (~800 at the top, strongest at the bottom) by four style columns, with a single accent-colored style header row. Each card's own ELO label identifies its rung, so the grid needs no row labels, and the four style names fit on one line down to the narrowest phone widths (Phase 185).
 
 ### Fixed
+
+- Lichess games imported with lichess evals no longer wait behind the entire analysis backlog: they now take part in the same fair per-user scheduling as everything else, so your fresh imports get their engine pass promptly even while another user's huge import is being worked through (Quick 260723-j6g).
 
 - Lichess imports work again: lichess began rejecting requests without an identifying User-Agent (returning "user not found" for accounts that exist), which broke every lichess import from 2026-07-22. FlawChess now identifies itself on lichess API requests, as it always has on chess.com (hotfix 2026-07-23).
 
@@ -1141,7 +1141,8 @@ bookmarks, game cards, and rating / stats pages.
 - Rating history, global stats, openings W/D/L charts.
 - Multi-user auth with data isolation.
 
-[Unreleased]: https://github.com/flawchess/flawchess/compare/v2.6...HEAD
+[Unreleased]: https://github.com/flawchess/flawchess/compare/v2.7...HEAD
+[v2.7]: https://github.com/flawchess/flawchess/compare/v2.6...v2.7
 [v2.6]: https://github.com/flawchess/flawchess/compare/v2.5...v2.6
 [v2.5]: https://github.com/flawchess/flawchess/compare/v2.4...v2.5
 [v2.4]: https://github.com/flawchess/flawchess/compare/v2.3...v2.4
