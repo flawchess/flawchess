@@ -8,6 +8,10 @@ in `YYYY-MM-DD` (Europe/Zurich).
 
 ## [Unreleased]
 
+### Added
+
+- Import filters — choose exactly which games get imported per platform: filter by color, opponent type, time controls, and a recency window, plus a per-time-control game cap so you can bound how many bullet/blitz/rapid/classical games each import pulls. The Import tab shows a filter card per platform with budget and backlog chips (untimed games appear as an uncapped bucket), settings auto-save as you toggle them, and a save failure surfaces inline near the control (Phase 186).
+
 ## [v2.7] Bot Personas & Playstyle Layer — 2026-07-23
 
 ### Added
