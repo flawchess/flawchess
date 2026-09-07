@@ -27,10 +27,50 @@ import {
   subscribeEngineAssets,
 } from '../engineAssetProgress';
 import { useEngineAssets } from '@/hooks/useEngineAssets';
+import * as Sentry from '@sentry/react';
+
+vi.mock('@sentry/react', () => ({ captureException: vi.fn() }));
 
 beforeEach(() => {
   resetEngineAssetsForTests();
   localStorage.clear();
+  vi.mocked(Sentry.captureException).mockClear();
+});
+
+describe('markEngineAssetsUnsupported — Sentry capture at the store choke point (SEED-158, 2026-09-07)', () => {
+  // Bug fix: the capture used to live in EngineReadyGate's effect, so an
+  // iPhone whose model was already cached (gate never mounts) or that opened
+  // /analysis (gate suppressed for `unsupported`) produced NO event at all.
+  it('captures once, with the reason tag, device context, and the page, on the first call', () => {
+    markEngineAssetsUnsupported('ios-webkit');
+
+    expect(Sentry.captureException).toHaveBeenCalledTimes(1);
+    expect(Sentry.captureException).toHaveBeenCalledWith(
+      expect.objectContaining({ message: 'Engine cold start: device cannot run the Maia model' }),
+      expect.objectContaining({
+        tags: { source: 'engine-asset-store', engine_failure: 'unsupported', unsupported_reason: 'ios-webkit' },
+        contexts: expect.objectContaining({
+          engine_device: expect.any(Object),
+          engine_page: { pathname: expect.any(String) },
+        }),
+      }),
+    );
+  });
+
+  it('does not capture again on a repeated call in the same page session (both gate reasons)', () => {
+    markEngineAssetsUnsupported('no-wasm-simd');
+    markEngineAssetsUnsupported('no-wasm-simd');
+    markEngineAssetsUnsupported('ios-webkit');
+
+    expect(Sentry.captureException).toHaveBeenCalledTimes(1);
+    expect(getEngineAssetsSnapshot().unsupportedReason).toBe('ios-webkit');
+  });
+
+  it('never interpolates the reason into the message (grouping rule)', () => {
+    markEngineAssetsUnsupported('no-wasm-simd');
+    const [err] = vi.mocked(Sentry.captureException).mock.calls[0] ?? [];
+    expect((err as Error).message).not.toContain('no-wasm-simd');
+  });
 });
 
 describe('requiredEngineAssets — G-213-19b referential stability', () => {

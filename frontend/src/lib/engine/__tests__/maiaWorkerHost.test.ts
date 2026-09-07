@@ -629,6 +629,109 @@ describe('maiaWorkerHost', () => {
     expect(vi.mocked(probeOrtBackendOnce)).not.toHaveBeenCalled();
   });
 
+  // ─── SEED-158 (2026-09-07): dev bisect switches + the page-kill sentinel ──
+  //
+  // `import.meta.env.DEV` is true under vitest, so the localStorage-backed
+  // switches in devEngineSwitches.ts are live here exactly as on the dev
+  // server. Every case clears them again (afterEach below runs
+  // `localStorage.clear()` via the sentinel/switch cleanup).
+
+  const DEV_SWITCH_IOS_GATE = 'flawchess:dev:ios-gate';
+  const DEV_SWITCH_MAIA_RUNTIME = 'flawchess:dev:maia-runtime';
+  const SENTINEL_KEY = 'flawchess:maia:page-session';
+
+  /** This file runs in the node environment (no jsdom): a Map-backed stand-in, torn down by `vi.unstubAllGlobals()`. */
+  function stubLocalStorage(): void {
+    const store = new Map<string, string>();
+    vi.stubGlobal('localStorage', {
+      getItem: (key: string) => store.get(key) ?? null,
+      setItem: (key: string, value: string) => void store.set(key, value),
+      removeItem: (key: string) => void store.delete(key),
+      clear: () => store.clear(),
+    });
+  }
+
+  it('dev switch ios-gate=off: an iPhone whose probe picks webgpu DOES spawn (no runtime fetch is skipped; the normal spawn follows)', () => {
+    stubLocalStorage();
+    stubIphone();
+    localStorage.setItem(DEV_SWITCH_IOS_GATE, 'off');
+    probeAnswers('webgpu');
+    vi.spyOn(console, 'info').mockImplementation(() => {});
+
+    const lease = acquireMaiaWorker({ source: 'maia-worker', priority: true });
+    void lease.whenReady();
+
+    expect(vi.mocked(probeOrtBackendOnce)).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(ensureOrtRuntime)).toHaveBeenCalledTimes(1);
+    expect(createdWorkers).toHaveLength(1);
+    expect(createdWorkers[0]!.messages).toContainEqual(expect.objectContaining({ type: 'init', backend: 'webgpu' }));
+    expect(getEngineAssetsSnapshot().status).not.toBe('unsupported');
+  });
+
+  it('dev switch ios-gate=off: an iPhone whose probe picks wasm is STILL gated off, with no runtime fetch (wasm kills the page)', async () => {
+    stubLocalStorage();
+    stubIphone();
+    localStorage.setItem(DEV_SWITCH_IOS_GATE, 'off');
+    probeAnswers('wasm');
+    vi.spyOn(console, 'info').mockImplementation(() => {});
+
+    const lease = acquireMaiaWorker({ source: 'maia-worker', priority: true });
+    const ready = lease.whenReady();
+
+    expect(createdWorkers).toHaveLength(0);
+    expect(vi.mocked(ensureOrtRuntime)).not.toHaveBeenCalled();
+    expect(vi.mocked(fetchWasmOnlyOrtRuntime)).not.toHaveBeenCalled();
+    expect(getEngineAssetsSnapshot().unsupportedReason).toBe('ios-webkit');
+    await expect(ready).rejects.toMatchObject({ kind: 'unsupported' });
+  });
+
+  it('dev switch maia-runtime=worker: the Worker is constructed with NO runtime buffer and ensureOrtRuntime is never called', () => {
+    stubLocalStorage();
+    localStorage.setItem(DEV_SWITCH_MAIA_RUNTIME, 'worker');
+    probeAnswers('webgpu');
+    vi.spyOn(console, 'info').mockImplementation(() => {});
+
+    const lease = acquireMaiaWorker({ source: 'maia-worker', priority: true });
+    void lease.whenReady();
+
+    expect(vi.mocked(ensureOrtRuntime)).not.toHaveBeenCalled();
+    expect(createdWorkers).toHaveLength(1);
+    const init = createdWorkers[0]!.messages.find((m) => m.type === 'init');
+    expect(init).toMatchObject({ backend: 'webgpu' });
+    expect(init).not.toHaveProperty('runtimeBuffer');
+  });
+
+  it('page-kill sentinel: armed on ready, records each dispatch, disarmed when the last lease releases', () => {
+    stubLocalStorage();
+    vi.spyOn(console, 'info').mockImplementation(() => {});
+    const lease = acquireMaiaWorker({ source: 'maia-worker', priority: true });
+    void lease.whenReady();
+    expect(localStorage.getItem(SENTINEL_KEY)).toBeNull();
+
+    driveReady(createdWorkers[0]!, 'webgpu');
+    const armed = JSON.parse(localStorage.getItem(SENTINEL_KEY) ?? 'null');
+    expect(armed).toMatchObject({ backend: 'webgpu', numThreads: 1, dispatches: 0, last: null });
+
+    void lease.analyze(TEST_FEN, [1500, 1600]).catch(() => {}); // rejected by release() below
+    const afterDispatch = JSON.parse(localStorage.getItem(SENTINEL_KEY) ?? 'null');
+    expect(afterDispatch).toMatchObject({ dispatches: 1, last: { batch: 2, fen: TEST_FEN } });
+
+    lease.release();
+    expect(localStorage.getItem(SENTINEL_KEY)).toBeNull();
+  });
+
+  it('page-kill sentinel: disarmed on a fatal worker death too', () => {
+    stubLocalStorage();
+    vi.spyOn(console, 'info').mockImplementation(() => {});
+    const lease = acquireMaiaWorker({ source: 'maia-worker', priority: true });
+    void lease.whenReady().catch(() => {});
+    driveReady(createdWorkers[0]!);
+    expect(localStorage.getItem(SENTINEL_KEY)).not.toBeNull();
+
+    createdWorkers[0]!.simulateError();
+    expect(localStorage.getItem(SENTINEL_KEY)).toBeNull();
+  });
+
   // ─── Phase 213-04 D-14/D-15: failure routing into engineAssetProgress ────
 
   it('a pre-ready error (second consecutive fetch failure) marks the store failed', () => {

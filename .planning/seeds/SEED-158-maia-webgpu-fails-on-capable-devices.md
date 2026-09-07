@@ -2,7 +2,7 @@
 id: SEED-158
 status: parked — blanket iOS gate restored on main 2026-09-07 (Maia alone kills /analysis on iOS, no earlier build ever ran it there); Linux leg resolved; Firefox/Windows Clip shader left as-is; iOS Maia is NEW work with two concrete suspects (see "Next steps 2026-09-07")
 planted: 2026-08-29
-updated: 2026-09-07 (on-device bisect: Maia ALONE kills /analysis on iOS; the pre-219 build never ran Maia on this phone either (graceful oom); prod with the blanket gate survives. See "Status 2026-09-07")
+updated: 2026-09-07 evening (observability + bisect switches shipped on branch seed-158-ios-maia-observability; the gated iOS population is now visible in Sentry, a silent page kill is reported on the next load, and the two suspects each have a dev switch. See "Status 2026-09-07 evening")
 planted_during: Sentry triage of the 2026-08-29 18:54 UTC iPad OOM cascade
   (FLAWCHESS-9V regression + new FLAWCHESS-A2/A3), same session as quick task
   260829-tku (oom terminal variant in EngineReadyGate)
@@ -129,6 +129,55 @@ first step of the plan above.
 Prior art from the ORT tracker: microsoft/onnxruntime#22776 ("Support iOS devices") and
 #22086 (wasm load failures on iOS 17) are open with no maintainer guidance; WebGPU on iOS was
 not an option there either at the time.
+
+## Status 2026-09-07 evening: the gated population was invisible; now instrumented, bisect ready
+
+Two facts found while picking the "Next steps" up (branch `seed-158-ios-maia-observability`):
+
+1. **Prod produced ZERO Sentry events for the iOS gate on /analysis, and none on /bots for a returning
+   device.** The only `unsupported` capture lived in `EngineReadyGate`'s D-17 effect. That modal is
+   suppressed on /analysis whenever the status is `unsupported` (Analysis.tsx, G-213-34), and on both
+   surfaces `engineGateRequired()` skips the modal entirely once the assets were seen once (a device whose
+   model was already cached). So an iPhone on /analysis got an eternal pulsing Maia skeleton and an empty
+   FlawChess card, with no event. Fix: the capture moved to the store choke point
+   (`markEngineAssetsUnsupported` in `engineAssetProgress.ts`, once per page session, tags
+   `source:engine-asset-store engine_failure:unsupported unsupported_reason:<ios-webkit|no-wasm-simd>`,
+   contexts `engine_device` + `engine_page.pathname`). Same message string as before, so the dashboard
+   question "how many iOS users hit the gate" is answerable from the first deploy onwards.
+2. **A page kill is now visible on the next load.** `maiaPageKillSentinel.ts` writes a small localStorage
+   record when the Maia worker reports `ready` (backend, threads, route, dispatch count, last batch), keeps
+   it only while the page is visible, removes it on `pagehide`/hidden/worker teardown, and `main.tsx`
+   reports a leftover record on startup: Sentry `Maia worker: page was killed while Maia was active`, tags
+   `maia_failure:page-killed backend:<..> ios:<true|false>`, context `maia_page_kill` with the record plus
+   `sessionAgeMs`/`sinceLastDispatchMs`. Unreachable in prod under the blanket gate (no `ready` on iOS), but
+   it makes every phone run self-reporting and covers Android/desktop kills today.
+
+Bisect switches (dev server only, `devEngineSwitches.ts`, all persist in localStorage until reset, badge
+lists the active ones):
+
+| Switch | Effect |
+|---|---|
+| `?dev-ios-gate=off` | bypass the blanket gate; spawn only when the fetch-free probe picks `webgpu`, else the `ios-webkit` terminal with no download (`spawnOnIosWebKit()` in the host, the shape a narrowing would ship) |
+| `?dev-maia-runtime=worker` | Suspect A: no main-thread runtime bytes; worker resolves the `.wasm` via `wasmPaths` |
+| `?dev-maia-ladder=single` | Suspect B: one 21-rung batch per position (no exact rung, no prefetch, no coarse/fill) |
+| `?dev-stockfish=off` | inert Stockfish workers (unchanged) |
+
+Note on Suspect A: the MODEL bytes never touch the main thread today (`fetchModelBuffer` in
+`maia-worker.js` reads CacheStorage inside the worker), so the switch only removes the 25.7 MB runtime
+transfer. If A survives, the fix is `buffer: null` on iOS, a two-line branch.
+
+Phone protocol (reference iPhone, Safari, clear site data first, dev server via the tunnel), each cell is
+one URL then stepping through a game on /analysis for ~60 s:
+
+1. `/analysis?dev-ios-gate=off&dev-stockfish=off` (baseline, expected: killed; the reload shows the badge
+   `KILLED last session: webgpu t=1 after N dispatches, last batch=B` and a Sentry event)
+2. `...&dev-maia-runtime=worker` (Suspect A)
+3. `...&dev-maia-runtime=main&dev-maia-ladder=single` (Suspect B)
+4. `...&dev-maia-runtime=worker&dev-maia-ladder=single` (both)
+5. Reset: `/analysis?dev-ios-gate=on&dev-stockfish=on&dev-maia-runtime=main&dev-maia-ladder=full`
+
+Record the four cells here. The `dispatches`/`last batch` numbers in the kill report say how far each cell
+got, which the old runs could not tell.
 
 ## Status 2026-09-07: three measurements that reframe the seed
 

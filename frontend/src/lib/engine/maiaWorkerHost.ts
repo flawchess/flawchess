@@ -50,7 +50,13 @@ import {
 } from '@/lib/maiaWorkerErrors';
 import { supportsWasmSimd } from './wasmSimd';
 import { isIosWebKit } from './iosWebKit';
-import { showDevEngineBadge } from './devEngineSwitches';
+import { isDevIosGateBypassed, isDevMaiaRuntimeWorkerFetched, showDevEngineBadge } from './devEngineSwitches';
+import {
+  armMaiaPageKillSentinel,
+  disarmMaiaPageKillSentinel,
+  noteMaiaDispatch,
+  previousMaiaPageKillSummary,
+} from './maiaPageKillSentinel';
 import {
   getEngineAssetsSnapshot,
   markEngineAssetFailed,
@@ -60,7 +66,7 @@ import {
   reportEngineAssetProgress,
   resetEngineAssetForRefetch,
 } from './engineAssetProgress';
-import { ensureOrtRuntime, fetchWasmOnlyOrtRuntime, type OrtBackend } from './ortRuntimeSource';
+import { ensureOrtRuntime, fetchWasmOnlyOrtRuntime, probeOrtBackendOnce, type OrtBackend } from './ortRuntimeSource';
 import { ENGINE_ASSET_CACHE_NAME, ENGINE_ASSET_VERSION_QUERY, versionedEngineAssetUrl } from './engineAssetCache';
 
 // ─── Constants ───────────────────────────────────────────────────────────────
@@ -300,10 +306,26 @@ function dispatchNext(): void {
   const next = queue.shift();
   if (!next) return;
   inFlight = next;
+  // SEED-158: the sentinel names the last dispatch if the page gets killed.
+  noteMaiaDispatch(next.fen, next.eloInputs.length);
   worker.postMessage({ type: 'analyze', fen: next.fen, eloInputs: next.eloInputs });
 }
 
 // ─── Worker lifecycle ───────────────────────────────────────────────────────
+
+/**
+ * Detaches the handlers on the current worker and terminates it. The one
+ * place every teardown funnels through, so the page-kill sentinel
+ * (SEED-158) is disarmed on EVERY path a worker stops running — a fatal
+ * error, a respawn, the last lease releasing, a test reset.
+ */
+function terminateWorker(): void {
+  disarmMaiaPageKillSentinel();
+  if (!worker) return;
+  worker.onmessage = null;
+  worker.onerror = null;
+  worker.terminate();
+}
 
 /**
  * Lazily spawns the worker on the first `analyze()`/`whenReady()` call — never
@@ -330,8 +352,9 @@ function ensureSpawned(source: MaiaErrorSource): void {
   }
   if (!simdSupported) {
     markEngineAssetsUnsupported('no-wasm-simd');
-    // Reported by EngineReadyGate's `unsupported` capture (D-17), not here —
-    // the MaiaWorkerError marker keeps useFlawChessEngine from reporting the
+    // Reported by the store's own `unsupported` capture (SEED-158, moved
+    // there from EngineReadyGate's D-17 effect), not here — the
+    // MaiaWorkerError marker keeps useFlawChessEngine from reporting the
     // same rejection a second time as "a provider failed to become ready".
     failAllLeasesAndDropWorker(new MaiaWorkerError('Maia worker: device lacks WASM SIMD', 'unsupported'));
     return;
@@ -423,6 +446,15 @@ function spawn(source: MaiaErrorSource, mode: 'auto' | 'wasm', forceSingleThread
     return;
   }
 
+  if (isIosWebKit() && isDevIosGateBypassed()) {
+    // SEED-158 dev bisect switch (`?dev-ios-gate=off`, dev server only):
+    // the shape a future narrowing would ship — spawn on iOS only when the
+    // probe picks WebGPU, gate off (no runtime download) when it picks wasm.
+    console.info('[maia-worker] iOS WebKit gate BYPASSED by dev switch — spawning if the probe picks webgpu');
+    spawnOnIosWebKit(source, myGeneration, forceSingleThread);
+    return;
+  }
+
   if (isIosWebKit()) {
     // SEED-158 (2026-09-07, measured on the reference iPhone 14 Pro, iOS
     // 26.6.1): Maia kills the /analysis page on iOS on its OWN — with every
@@ -446,12 +478,51 @@ function spawn(source: MaiaErrorSource, mode: 'auto' | 'wasm', forceSingleThread
   spawnFromRuntime(source, myGeneration, forceSingleThread);
 }
 
-/** The tail of an `'auto'` spawn: resolve the probed backend's runtime bytes, then construct the Worker (unless the module was torn down mid-fetch). */
+/**
+ * The tail of an `'auto'` spawn: resolve the probed backend's runtime bytes,
+ * then construct the Worker (unless the module was torn down mid-fetch).
+ *
+ * SEED-158 dev bisect switch (`?dev-maia-runtime=worker`, Suspect A): skips
+ * the main-thread runtime resolution entirely — only the fetch-free probe
+ * runs, and the worker is constructed with NO runtime buffer, so
+ * onnxruntime-web resolves the `.wasm` from `wasmPaths` inside the worker
+ * (the same degraded path a failed runtime fetch already takes; `ready`
+ * still marks `ort-runtime` done). Production bundles never take this branch.
+ */
 function spawnFromRuntime(source: MaiaErrorSource, myGeneration: number, forceSingleThread: boolean): void {
+  if (isDevMaiaRuntimeWorkerFetched()) {
+    console.info('[maia-worker] dev switch: runtime resolved inside the worker (no main-thread buffer)');
+    probeOrtBackendOnce().then((chosenBackend) => {
+      if (myGeneration !== spawnGeneration) return;
+      spawnInFlight = false;
+      constructWorker(source, chosenBackend, null, forceSingleThread);
+    });
+    return;
+  }
   ensureOrtRuntime().then(({ backend: chosenBackend, buffer: runtimeBuffer }) => {
     if (myGeneration !== spawnGeneration) return;
     spawnInFlight = false;
     constructWorker(source, chosenBackend, runtimeBuffer, forceSingleThread);
+  });
+}
+
+/**
+ * The iOS/iPadOS spawn shape (SEED-158): consult the fetch-free backend
+ * probe FIRST and spawn only when it picks `webgpu`; a `wasm` answer is the
+ * `unsupported` terminal with no runtime download on the way (wasm inference
+ * kills the page there, see `iosWebKit.ts`). Reached today only behind the
+ * `?dev-ios-gate=off` dev switch in `spawn()`; it is the exact branch a
+ * measured-safe narrowing of the blanket gate would route every iOS device
+ * through.
+ */
+function spawnOnIosWebKit(source: MaiaErrorSource, myGeneration: number, forceSingleThread: boolean): void {
+  probeOrtBackendOnce().then((chosenBackend) => {
+    if (myGeneration !== spawnGeneration) return;
+    if (chosenBackend === 'wasm') {
+      gateOffIosWebKit('iOS WebKit: probe picked wasm — Maia stays off (wasm inference kills the page, SEED-158)');
+      return;
+    }
+    spawnFromRuntime(source, myGeneration, forceSingleThread);
   });
 }
 
@@ -583,11 +654,7 @@ function respawnPinnedToWasm(rawMessage: string, breadcrumbMessage: string): voi
   console.info(`[maia-worker] ${breadcrumbMessage} — ${rawMessage}`);
   // G-213-8: WebGPU has now failed for this page session — never re-probe it.
   webgpuFailed = true;
-  if (worker) {
-    worker.onmessage = null;
-    worker.onerror = null;
-    worker.terminate();
-  }
+  terminateWorker();
   worker = null;
   isReady = false;
   backend = null;
@@ -653,11 +720,7 @@ function respawnPinnedToSingleThread(source: MaiaErrorSource, rawMessage: string
     message: 'Maia worker: threaded wasm init timed out — respawning pinned to single-thread',
     data: { rawMessage, numThreads: lastReportedNumThreads },
   });
-  if (worker) {
-    worker.onmessage = null;
-    worker.onerror = null;
-    worker.terminate();
-  }
+  terminateWorker();
   worker = null;
   isReady = false;
   backend = null;
@@ -684,8 +747,13 @@ function handleMessage(msg: WorkerMessage): void {
     // whenReady()'s Promise<'webgpu' | 'wasm'> signature is deliberately not
     // widened to carry it (would ripple through every caller for no gain).
     console.info(`[maia-worker] ready — backend=${msg.backend} numThreads=${msg.numThreads}`);
+    // SEED-158: from here on a silent page kill leaves a record for the next load.
+    armMaiaPageKillSentinel({ backend: msg.backend, numThreads: msg.numThreads });
     // SEED-158: the same line on screen, for devices without a console (dev only).
-    showDevEngineBadge(`maia ${msg.backend} threads=${msg.numThreads} coi=${String(globalThis.crossOriginIsolated)}`);
+    showDevEngineBadge(
+      `maia ${msg.backend} threads=${msg.numThreads} coi=${String(globalThis.crossOriginIsolated)}` +
+        (previousMaiaPageKillSummary() ? ` | ${previousMaiaPageKillSummary()}` : ''),
+    );
     markEngineAssetReady('maia-model');
     // Phase 213-09 (G-213-35): 'ready' fires only after the worker's
     // `InferenceSession.create()` has already succeeded — on EVERY path,
@@ -863,11 +931,7 @@ function failAllLeasesAndDropWorker(err: MaiaWorkerError): void {
     );
   }
 
-  if (worker) {
-    worker.onmessage = null;
-    worker.onerror = null;
-    worker.terminate();
-  }
+  terminateWorker();
   worker = null;
   isReady = false;
   backend = null;
@@ -898,12 +962,8 @@ function releaseLease(leaseId: number): void {
   if (leases.size === 0) {
     // Last lease gone — terminate outright and reset every module var so
     // navigating away from /analysis really does free the ~226 MB heap.
-    if (worker) {
-      worker.postMessage({ type: 'terminate' });
-      worker.onmessage = null;
-      worker.onerror = null;
-      worker.terminate();
-    }
+    if (worker) worker.postMessage({ type: 'terminate' });
+    terminateWorker();
     resetModuleState();
   }
 }
@@ -958,14 +1018,10 @@ export function acquireMaiaWorker(opts: AcquireMaiaWorkerOptions): MaiaWorkerLea
 
 /** Test-only: drops the singleton so each vitest case starts clean. */
 export function resetMaiaWorkerHostForTests(): void {
-  if (worker) {
-    worker.onmessage = null;
-    worker.onerror = null;
-    try {
-      worker.terminate();
-    } catch {
-      // best-effort — a mock Worker in tests may not implement terminate()
-    }
+  try {
+    terminateWorker();
+  } catch {
+    // best-effort — a mock Worker in tests may not implement terminate()
   }
   worker = null;
   isReady = false;

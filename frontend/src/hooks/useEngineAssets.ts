@@ -114,3 +114,13 @@ export function useEngineAssets(required: readonly EngineAssetId[]): EngineAsset
 export function useEngineAssetStatus(): EngineAssetStatus {
   return useSyncExternalStore(subscribeEngineAssets, () => getEngineAssetsSnapshot().status);
 }
+
+/**
+ * The gate reason behind an `unsupported` status, `null` in every other
+ * status (SEED-158, 2026-09-07). A primitive, for the same `Object.is`
+ * reason as `useEngineAssetStatus` above — the Maia and FlawChess cards read
+ * it on every render of /analysis.
+ */
+export function useEngineUnsupportedReason(): EngineUnsupportedReason | null {
+  return useSyncExternalStore(subscribeEngineAssets, () => getEngineAssetsSnapshot().unsupportedReason);
+}

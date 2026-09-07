@@ -71,6 +71,7 @@ import {
 } from '../lib/maiaEncoding';
 import type { WdlVector } from '../lib/maiaEncoding';
 import { acquireMaiaWorker } from '../lib/engine/maiaWorkerHost';
+import { isDevMaiaSinglePassLadder } from '../lib/engine/devEngineSwitches';
 import type { MaiaAnalyzeResult, MaiaWorkerLease } from '../lib/engine/maiaWorkerHost';
 import { failPolicyPending, markPolicyPending, setCachedPolicy } from '../lib/engine/maiaPolicyCache';
 
@@ -302,9 +303,18 @@ function planNextRequest(
   selectedElo: number,
   cache: ReadonlyMap<string, MaiaResult>,
   ladderOnly: boolean,
+  singlePass = false,
 ): PlannedRequest | null {
   const current = cache.get(fen);
   const ladderDone = isLadderComplete(current);
+  if (singlePass) {
+    // SEED-158 dev bisect switch (`?dev-maia-ladder=single`, Suspect B): the
+    // pre-Phase-219 shape — the whole remaining ladder in ONE batch, no
+    // exact rung, no prefetch, no coarse/fill split. Dev server only.
+    if (ladderDone) return null;
+    const missingAll = MAIA_ELO_LADDER.filter((elo) => !hasRung(current, elo));
+    return { fen, elos: missingAll, live: true, phase: MAIA_TIMING_PHASE_FILL };
+  }
   if (!ladderOnly) {
     if (!ladderDone && !hasRung(current, selectedElo)) {
       return { fen, elos: [selectedElo], live: true, phase: MAIA_TIMING_PHASE_EXACT_RUNG };
@@ -528,6 +538,7 @@ export function useMaiaEngine({
       selectedEloRef.current,
       cacheRef.current,
       ladderOnlyRef.current,
+      isDevMaiaSinglePassLadder(),
     );
     if (req) issue(lease, req);
   }, [issue]);
