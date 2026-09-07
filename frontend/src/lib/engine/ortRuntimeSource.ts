@@ -235,20 +235,15 @@ export function ensureOrtRuntime(): Promise<OrtRuntimeResult> {
 }
 
 /**
- * The memoised backend decision on its own, WITHOUT the runtime fetch
- * (SEED-158, 2026-09-06). `maiaWorkerHost.ts` consults this on iOS/iPadOS
- * WebKit before spawning anything: there the wasm path is fatal (Safari
- * kills the page mid-inference, see `iosWebKit.ts`), so a `'wasm'` answer
- * means "gate Maia off" and must not cost the 14.0 MB wasm-only runtime
- * download that `ensureOrtRuntime()` would issue on the way to that answer.
- * Shares `ensureOrtRuntime()`'s single memoised promise, so a later
- * `ensureOrtRuntime()` call joins the same decision instead of re-probing.
+ * The memoised backend decision on its own, WITHOUT the runtime fetch.
+ * (SEED-158 briefly exported it for a fetch-free iOS probe; iOS now spawns
+ * the wasm backend without probing, so it is internal again.)
  *
  * CR-02: `'ort-runtime'` is registered as pending synchronously here, before
  * the (async) adapter probe begins, in the exact same tick as the first
- * caller's request — regardless of which of the two entry points runs first.
+ * caller's request.
  */
-export function probeOrtBackendOnce(): Promise<OrtBackend> {
+function probeOrtBackendOnce(): Promise<OrtBackend> {
   if (!backendPromise) {
     markEngineAssetPending(ORT_RUNTIME_ASSET_ID);
     backendPromise = probeOrtBackend();

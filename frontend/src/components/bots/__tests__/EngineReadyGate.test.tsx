@@ -322,21 +322,6 @@ describe('EngineReadyGate', () => {
     expect(gate.textContent).not.toContain('Please try again in a moment');
   });
 
-  it('the iOS-gated terminal state (hotfix 2026-09-06, SEED-158) renders its own copy and, like unsupported, no button of any kind', () => {
-    act(() => {
-      markEngineAssetsUnsupported('ios-webkit');
-    });
-    render(<EngineReadyGate surface="bots" onStart={vi.fn()} onRetry={vi.fn()} />);
-
-    const gate = screen.getByTestId('engine-ready-gate');
-    expect(within(gate).queryAllByRole('button')).toHaveLength(0);
-    expect(screen.getByTestId('engine-gate-unsupported-ios')).toBeTruthy();
-    expect(screen.queryByTestId('engine-gate-unsupported')).toBeNull();
-    expect(gate.textContent).toContain('switched off on iPhone and iPad');
-    // Must not claim the device lacks a capability it actually has.
-    expect(gate.textContent).not.toContain("doesn't support the technology");
-  });
-
   it('the failed terminal state renders a Retry button that clears the failed status and calls onRetry exactly once', () => {
     markEngineAssetFailed('maia-model');
     const onRetry = vi.fn();
@@ -532,16 +517,6 @@ describe('EngineReadyGate', () => {
       render(<EngineReadyGate surface="bots" onStart={vi.fn()} onRetry={vi.fn()} />);
       expect(screen.getByTestId('engine-gate-unsupported')).toBeTruthy();
       // Mounting the gate (and re-rendering it) must not add a second event.
-      expect(Sentry.captureException).toHaveBeenCalledTimes(1);
-    });
-
-    it('renders the iOS variant for the ios-webkit reason without a second capture', () => {
-      act(() => {
-        markEngineAssetsUnsupported('ios-webkit');
-      });
-      render(<EngineReadyGate surface="bots" onStart={vi.fn()} onRetry={vi.fn()} />);
-
-      expect(screen.getByTestId('engine-gate-unsupported-ios')).toBeTruthy();
       expect(Sentry.captureException).toHaveBeenCalledTimes(1);
     });
 

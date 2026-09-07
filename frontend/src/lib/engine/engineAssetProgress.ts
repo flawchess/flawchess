@@ -31,14 +31,13 @@ export type EngineAssetId = 'maia-model' | 'stockfish-wasm' | 'ort-runtime';
 export type EngineAssetStatus = 'idle' | 'unsupported' | 'downloading' | 'ready' | 'failed';
 
 /**
- * Why the store reports `'unsupported'` (SEED-158, 2026-09-06):
- * `'no-wasm-simd'` is the D-13 probe (the device can never run the model);
- * `'ios-webkit'` is the iOS/iPadOS gate (the device COULD run it, but Safari
- * kills the page when it does — see `iosWebKit.ts`). `EngineReadyGate` shows
- * different copy for each, so the iOS user is not told their device lacks a
- * capability it actually has.
+ * Why the store reports `'unsupported'`: `'no-wasm-simd'` is the D-13 probe
+ * (the device can never run the model). Kept as a union so the Sentry
+ * `unsupported_reason` tag and the gate copy stay reason-keyed: SEED-158
+ * carried a second member (`'ios-webkit'`, the 2026-09-06 blanket iOS gate)
+ * for one day, withdrawn once iOS ran Maia on the CPU wasm backend.
  */
-export type EngineUnsupportedReason = 'no-wasm-simd' | 'ios-webkit';
+export type EngineUnsupportedReason = 'no-wasm-simd';
 
 interface EngineAssetEntry {
   loaded: number;
@@ -346,11 +345,6 @@ export function markEngineAssetReady(id: EngineAssetId): void {
  * D-13: the device cannot run any engine asset at all (WASM-SIMD probe
  * failed). Plan 04 owns this state's UI; Task 1 calls it from the
  * `wasmSimd.ts` choke point in `maiaWorkerHost.ts`.
- *
- * SEED-158: also reached from the iOS/iPadOS gate at the same choke point in
- * `maiaWorkerHost.ts` (every iOS device, before any probe or download) with
- * `reason: 'ios-webkit'`, so the gate's copy can say what is actually going
- * on instead of "your device lacks the technology".
  */
 export function markEngineAssetsUnsupported(reason: EngineUnsupportedReason): void {
   currentStatus = 'unsupported';
@@ -379,8 +373,8 @@ let unsupportedCaptured = false;
  * model already cached). Result: every iPhone that hit the iOS gate on
  * /analysis, and every returning iPhone on /bots, produced an empty Maia
  * card and an empty FlawChess card with ZERO Sentry events, so the size of
- * the gated population was invisible. The store is the one choke point both
- * gate reasons pass through (`maiaWorkerHost.ts`), so the capture lives here.
+ * the gated population was invisible. The store is the one choke point every
+ * gate reason passes through (`maiaWorkerHost.ts`), so the capture lives here.
  */
 function captureUnsupportedOnce(reason: EngineUnsupportedReason): void {
   if (unsupportedCaptured) return;

@@ -10,8 +10,7 @@
  * this: the chart renders, the user steps through a few moves, the tab dies.
  * The only place that survives the kill is storage, so this module keeps a
  * small record there while Maia is running in the foreground and reports it
- * on the NEXT page load, the way `/maia-diag.html`'s localStorage journal did
- * during the on-device bisect.
+ * on the NEXT page load.
  *
  * Contract:
  *  - `armMaiaPageKillSentinel()` is called by `maiaWorkerHost.ts` on the
@@ -51,11 +50,17 @@ interface MaiaPageSession {
   armedAt: number;
   backend: 'webgpu' | 'wasm';
   numThreads: number;
+  /** SEED-158: `ort.env.versions.web` of the loaded build (`null` when the worker could not read it). */
+  ortVersion: string | null;
   ios: boolean;
   /** Route the worker was armed on (`/analysis` vs `/bots`). */
   pathname: string;
   /** `analyze` dispatches since `armedAt`. */
   dispatches: number;
+  /** `result` messages received since `armedAt` — `dispatches - results` is the in-flight count at the kill. */
+  results: number;
+  /** `Date.now()` of the last `result` message: a kill long after the last dispatch with `results < dispatches` is a worker that never answered. */
+  lastResultAt: number | null;
   /** The most recent dispatch — the last thing Maia was doing before a kill. */
   last: { at: number; batch: number; fen: string } | null;
 }
@@ -63,8 +68,6 @@ interface MaiaPageSession {
 /** In-memory copy while the worker is alive; `null` when disarmed. */
 let active: MaiaPageSession | null = null;
 let listenersInstalled = false;
-/** One-line summary of the previous session's kill, for the dev badge (`null` when there was none). */
-let previousKillSummary: string | null = null;
 
 function isDocumentHidden(): boolean {
   try {
@@ -115,14 +118,21 @@ function installListeners(): void {
 }
 
 /** Called on the worker's `ready` message: starts (or restarts, after a respawn) the record. */
-export function armMaiaPageKillSentinel(info: { backend: 'webgpu' | 'wasm'; numThreads: number }): void {
+export function armMaiaPageKillSentinel(info: {
+  backend: 'webgpu' | 'wasm';
+  numThreads: number;
+  ortVersion?: string | null;
+}): void {
   active = {
     armedAt: Date.now(),
     backend: info.backend,
     numThreads: info.numThreads,
+    ortVersion: info.ortVersion ?? null,
     ios: isIosWebKit(),
     pathname: readPathname(),
     dispatches: 0,
+    results: 0,
+    lastResultAt: null,
     last: null,
   };
   installListeners();
@@ -134,6 +144,14 @@ export function noteMaiaDispatch(fen: string, batch: number): void {
   if (!active) return;
   active.dispatches += 1;
   active.last = { at: Date.now(), batch, fen };
+  persist();
+}
+
+/** Called on every `result` message — with `noteMaiaDispatch` this dates the worker's last sign of life. */
+export function noteMaiaResult(): void {
+  if (!active) return;
+  active.results += 1;
+  active.lastResultAt = Date.now();
   persist();
 }
 
@@ -158,13 +176,12 @@ function readPreviousSession(): MaiaPageSession | null {
 /**
  * Startup check (once per page load, after Sentry is initialised): a
  * leftover record means the previous page session died in the foreground
- * with Maia active. Captures it, clears it, and returns a one-line summary
- * for the dev badge (`null` when there was nothing to report).
+ * with Maia active. Captures it and clears it; returns whether one was found.
  */
-export function reportMaiaPageKillFromPreviousSession(): string | null {
+export function reportMaiaPageKillFromPreviousSession(): boolean {
   const session = readPreviousSession();
   removeRecord();
-  if (!session) return null;
+  if (!session) return false;
   const now = Date.now();
   const sinceLastDispatchMs = session.last ? now - session.last.at : null;
   Sentry.captureException(new Error(SENTRY_MESSAGE_PAGE_KILLED), {
@@ -183,20 +200,11 @@ export function reportMaiaPageKillFromPreviousSession(): string | null {
       engine_device: readDeviceContext(session.numThreads),
     },
   });
-  previousKillSummary =
-    `KILLED last session: ${session.backend} t=${session.numThreads} ` +
-    `after ${session.dispatches} dispatches, last batch=${session.last?.batch ?? '-'}`;
-  return previousKillSummary;
-}
-
-/** The summary `reportMaiaPageKillFromPreviousSession()` produced this page load, for the dev badge. */
-export function previousMaiaPageKillSummary(): string | null {
-  return previousKillSummary;
+  return true;
 }
 
 /** Test-only: clears in-memory state (listeners stay installed; they are idempotent). */
 export function resetMaiaPageKillSentinelForTests(): void {
   active = null;
-  previousKillSummary = null;
   removeRecord();
 }

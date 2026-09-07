@@ -379,26 +379,6 @@ describe('useMaiaEngine', () => {
     expect(analyzeMessages(currentLease)).toHaveLength(2);
   });
 
-  it('dev switch maia-ladder=single (SEED-158 Suspect B): ONE 21-rung batch per position, no exact rung, no prefetch, no coarse/fill split', async () => {
-    localStorage.setItem('flawchess:dev:maia-ladder', 'single');
-    try {
-      renderHook(() => useMaiaEngine({ fen: TEST_FEN, enabled: true, selectedElo: 1550, prefetchFen: TEST_FEN_2 }));
-      await driveReady(currentLease);
-      await act(async () => {
-        vi.advanceTimersByTime(1000);
-      });
-
-      expect(analyzeMessages(currentLease)).toEqual([{ fen: TEST_FEN, eloInputs: [...MAIA_ELO_LADDER] }]);
-
-      await resolveLatestExact(currentLease);
-      // Ladder complete after the single batch: nothing more for this
-      // position, and NO prefetch of TEST_FEN_2 either.
-      expect(currentLease.analyzeCalls).toHaveLength(1);
-    } finally {
-      localStorage.removeItem('flawchess:dev:maia-ladder');
-    }
-  });
-
   it('a FEN change while the exact rung is in flight re-plans for the new position instead of finishing the old ladder', async () => {
     vi.advanceTimersByTime(200);
     const { rerender } = renderHook(

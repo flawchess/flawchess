@@ -17,7 +17,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import * as Sentry from '@sentry/react';
 import { acquireMaiaWorker, resetMaiaWorkerHostForTests, ENGINE_PATH } from '../maiaWorkerHost';
 import { getEngineAssetsSnapshot, resetEngineAssetsForTests } from '../engineAssetProgress';
-import { ensureOrtRuntime, fetchWasmOnlyOrtRuntime, probeOrtBackendOnce } from '../ortRuntimeSource';
+import { ensureOrtRuntime, fetchWasmOnlyOrtRuntime } from '../ortRuntimeSource';
 import { ENGINE_ASSET_CACHE_NAME, ENGINE_ASSET_VERSION_QUERY } from '../engineAssetCache';
 
 vi.mock('@sentry/react', () => ({ captureException: vi.fn(), addBreadcrumb: vi.fn(), setContext: vi.fn() }));
@@ -53,8 +53,6 @@ function syncThenable<T>(value: T): PromiseLike<T> {
 vi.mock('../ortRuntimeSource', () => ({
   ensureOrtRuntime: vi.fn(() => syncThenable({ backend: 'wasm' as const, buffer: null })),
   fetchWasmOnlyOrtRuntime: vi.fn(() => syncThenable<ArrayBuffer | null>(null)),
-  // SEED-158: the fetch-free probe the host consults on iOS before spawning.
-  probeOrtBackendOnce: vi.fn(() => syncThenable<'webgpu' | 'wasm'>('wasm')),
 }));
 
 // ─── Mock Worker ─────────────────────────────────────────────────────────────
@@ -154,7 +152,6 @@ describe('maiaWorkerHost', () => {
     // local to itself.
     vi.mocked(ensureOrtRuntime).mockImplementation(() => syncThenable({ backend: 'wasm' as const, buffer: null }));
     vi.mocked(fetchWasmOnlyOrtRuntime).mockImplementation(() => syncThenable<ArrayBuffer | null>(null));
-    vi.mocked(probeOrtBackendOnce).mockImplementation(() => syncThenable<'webgpu' | 'wasm'>('wasm'));
     vi.unstubAllGlobals();
     vi.restoreAllMocks();
     vi.clearAllMocks();
@@ -529,12 +526,12 @@ describe('maiaWorkerHost', () => {
     expect(getEngineAssetsSnapshot().status).not.toBe('unsupported');
   });
 
-  // ─── SEED-158 (2026-09-07): iOS WebKit -> zero Workers, ever ─────────────
+  // ─── SEED-158 (2026-09-07): iOS WebKit -> wasm backend, ORT 1.23.0, one thread ──
   //
-  // Measured on the reference iPhone: Maia alone (Stockfish stubbed out,
-  // FlawChess Engine off, WebGPU, one wasm thread, isolated) kills the
-  // /analysis page, and no earlier build ever ran it there. So iOS is gated
-  // BEFORE the backend probe and before either runtime binary is requested.
+  // Measured on the reference iPhone: every WebGPU shape (1.27.0 and 1.23.0)
+  // is killed by WebKit seconds after `ready`; the CPU wasm backend on the
+  // 1.23.0 build with one thread survives a full /analysis session. So iOS
+  // never probes WebGPU and never requests the asyncify binary.
 
   const IPHONE_UA =
     'Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.7 Mobile/15E148 Safari/604.1';
@@ -546,78 +543,128 @@ describe('maiaWorkerHost', () => {
     vi.stubGlobal('navigator', { userAgent: IPHONE_UA, platform: 'iPhone', maxTouchPoints: IPAD_TOUCH_POINTS });
   }
 
+  /** The adapter the WebGPU probe would report on a non-iOS spawn (`ensureOrtRuntime` is what carries it). */
   function probeAnswers(backend: 'webgpu' | 'wasm'): void {
-    vi.mocked(probeOrtBackendOnce).mockImplementation(() => syncThenable<'webgpu' | 'wasm'>(backend));
     vi.mocked(ensureOrtRuntime).mockImplementation(() => syncThenable({ backend, buffer: null }));
   }
 
-  it('an iPhone never constructs a Worker, never probes, fetches no runtime, and reports unsupported with the ios-webkit reason', async () => {
+  // ─── SEED-158 (2026-09-07): the iOS spawn shape — CPU wasm, no WebGPU probe ──
+  //
+  // Measured on the reference iPhone: every WebGPU shape is killed by WebKit
+  // seconds after `ready`; the wasm backend survives at one AND two threads.
+  // So iOS never touches `ensureOrtRuntime()` (the probe + asyncify fetch) and
+  // is NOT pinned to one thread — `chooseWasmThreadCount()` applies.
+
+  it('an iPhone spawns the CPU wasm backend and never probes WebGPU', () => {
     stubIphone();
-    // Even a device whose adapter WOULD pass the probe is gated: the probe
-    // must not run, because a 'webgpu' answer is exactly what killed the page.
-    probeAnswers('webgpu');
-    const info = vi.spyOn(console, 'info').mockImplementation(() => {});
+    probeAnswers('webgpu'); // even a device whose adapter WOULD pass must not be probed
+    vi.mocked(fetchWasmOnlyOrtRuntime).mockImplementation(() => syncThenable<ArrayBuffer | null>(null));
 
     const lease = acquireMaiaWorker({ source: 'maia-worker', priority: true });
-    const ready = lease.whenReady();
+    void lease.whenReady();
 
-    expect(createdWorkers).toHaveLength(0);
-    expect(vi.mocked(probeOrtBackendOnce)).not.toHaveBeenCalled();
     expect(vi.mocked(ensureOrtRuntime)).not.toHaveBeenCalled();
-    expect(vi.mocked(fetchWasmOnlyOrtRuntime)).not.toHaveBeenCalled();
-    expect(getEngineAssetsSnapshot().status).toBe('unsupported');
-    expect(getEngineAssetsSnapshot().unsupportedReason).toBe('ios-webkit');
-    // Rejected with the 'unsupported' marker so useFlawChessEngine/the gate
-    // do not re-report it — same contract as the SIMD case.
-    await expect(ready).rejects.toMatchObject({ kind: 'unsupported' });
-    // The console line for browser UAT (the seed's trigger condition).
-    expect(info).toHaveBeenCalledWith(expect.stringContaining('[maia-worker] iOS WebKit detected'));
-
-    // And the page session stays gated: a fresh lease spawns nothing more.
-    const lease2 = acquireMaiaWorker({ source: 'maia-queue-worker', priority: false });
-    void lease2.whenReady().catch(() => {});
-    expect(createdWorkers).toHaveLength(0);
+    expect(vi.mocked(fetchWasmOnlyOrtRuntime)).toHaveBeenCalledTimes(1);
+    expect(createdWorkers).toHaveLength(1);
+    expect(createdWorkers[0]!.messages).toContainEqual(
+      expect.objectContaining({ type: 'init', backend: 'wasm', forceSingleThread: false }),
+    );
+    expect(getEngineAssetsSnapshot().status).not.toBe('unsupported');
   });
 
-  it('a non-iOS device spawns normally and is NOT pinned to one thread by any iOS rule', () => {
+  it('a PRODUCTION build (import.meta.env.DEV false) spawns the same iOS shape — no dev switch involved', () => {
+    vi.stubEnv('DEV', false);
+    stubIphone();
+    probeAnswers('webgpu');
+    vi.mocked(fetchWasmOnlyOrtRuntime).mockImplementation(() => syncThenable<ArrayBuffer | null>(null));
+
+    const lease = acquireMaiaWorker({ source: 'maia-worker', priority: true });
+    void lease.whenReady();
+
+    expect(vi.mocked(ensureOrtRuntime)).not.toHaveBeenCalled();
+    expect(createdWorkers).toHaveLength(1);
+    expect(createdWorkers[0]!.messages).toContainEqual(
+      expect.objectContaining({ type: 'init', backend: 'wasm', forceSingleThread: false }),
+    );
+    vi.unstubAllEnvs();
+  });
+
+  it('an iPhone worker that reports ready serves analyze() like any other — the wasm shape is a normal worker, not a terminal', async () => {
+    stubIphone();
+    vi.spyOn(console, 'info').mockImplementation(() => {});
+
+    const lease = acquireMaiaWorker({ source: 'maia-worker', priority: true });
+    const pending = lease.analyze(TEST_FEN, [1500]);
+    driveReady(createdWorkers[0]!, 'wasm');
+    expect(analyzeMessages(createdWorkers[0]!)).toHaveLength(1);
+
+    createdWorkers[0]!.simulateMessage(buildResultMessage(TEST_FEN));
+    await expect(pending).resolves.toMatchObject({ fen: TEST_FEN, backend: 'wasm' });
+  });
+
+  it('WR-01 still applies on iOS: a threaded wasm init timeout retries ONCE pinned to single-thread, on the wasm-only runtime', () => {
+    stubIphone();
+    vi.spyOn(console, 'info').mockImplementation(() => {});
+
+    const lease = acquireMaiaWorker({ source: 'maia-worker', priority: true });
+    void lease.whenReady().catch(() => {});
+    createdWorkers[0]!.simulateMessage({ type: 'error', message: 'WebAssembly backend initializing failed due to timeout.' });
+
+    expect(createdWorkers).toHaveLength(2);
+    expect(vi.mocked(ensureOrtRuntime)).not.toHaveBeenCalled();
+    expect(vi.mocked(fetchWasmOnlyOrtRuntime)).toHaveBeenCalledTimes(2);
+    expect(createdWorkers[1]!.messages).toContainEqual(
+      expect.objectContaining({ type: 'init', backend: 'wasm', forceSingleThread: true }),
+    );
+  });
+
+  it('a non-iOS device spawns through the WebGPU probe and is NOT pinned to one thread by any iOS rule', () => {
     probeAnswers('webgpu');
 
     const lease = acquireMaiaWorker({ source: 'maia-worker', priority: true });
     void lease.whenReady();
 
+    expect(vi.mocked(ensureOrtRuntime)).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(fetchWasmOnlyOrtRuntime)).not.toHaveBeenCalled();
     expect(createdWorkers).toHaveLength(1);
     expect(createdWorkers[0]!.messages).toContainEqual(
       expect.objectContaining({ type: 'init', backend: 'webgpu', forceSingleThread: false }),
     );
   });
 
-  it('an iPad in desktop-site mode (macOS UA + touch points) is gated the same way', () => {
+  it('an iPad in desktop-site mode (macOS UA + touch points) takes the same iOS wasm shape', () => {
     vi.stubGlobal('navigator', {
       userAgent: IPAD_DESKTOP_MODE_UA,
       platform: 'MacIntel',
       maxTouchPoints: IPAD_TOUCH_POINTS,
     });
-    vi.spyOn(console, 'info').mockImplementation(() => {});
-
-    const lease = acquireMaiaWorker({ source: 'maia-worker', priority: true });
-    void lease.whenReady().catch(() => {});
-
-    expect(createdWorkers).toHaveLength(0);
-    expect(getEngineAssetsSnapshot().unsupportedReason).toBe('ios-webkit');
-  });
-
-  it('a real Mac (same UA, zero touch points) DOES construct a Worker — proves the iPad tell is the touch count', () => {
-    vi.stubGlobal('navigator', { userAgent: IPAD_DESKTOP_MODE_UA, platform: 'MacIntel', maxTouchPoints: 0 });
-    probeAnswers('wasm');
+    probeAnswers('webgpu');
+    vi.mocked(fetchWasmOnlyOrtRuntime).mockImplementation(() => syncThenable<ArrayBuffer | null>(null));
 
     const lease = acquireMaiaWorker({ source: 'maia-worker', priority: true });
     void lease.whenReady();
 
+    expect(vi.mocked(ensureOrtRuntime)).not.toHaveBeenCalled();
     expect(createdWorkers).toHaveLength(1);
+    expect(createdWorkers[0]!.messages).toContainEqual(
+      expect.objectContaining({ type: 'init', backend: 'wasm', forceSingleThread: false }),
+    );
+  });
+
+  it('a real Mac (same UA, zero touch points) spawns normally — proves the iPad tell is the touch count', () => {
+    vi.stubGlobal('navigator', { userAgent: IPAD_DESKTOP_MODE_UA, platform: 'MacIntel', maxTouchPoints: 0 });
+    probeAnswers('webgpu');
+
+    const lease = acquireMaiaWorker({ source: 'maia-worker', priority: true });
+    void lease.whenReady();
+
+    expect(vi.mocked(ensureOrtRuntime)).toHaveBeenCalledTimes(1);
+    expect(createdWorkers).toHaveLength(1);
+    expect(createdWorkers[0]!.messages).toContainEqual(expect.objectContaining({ type: 'init', backend: 'webgpu' }));
     expect(getEngineAssetsSnapshot().status).not.toBe('unsupported');
   });
 
-  it('the SIMD probe wins over the iOS gate when both apply (a no-SIMD iOS device reports no-wasm-simd)', () => {
+  it('the SIMD probe wins over the iOS shape when both apply (a no-SIMD iOS device reports no-wasm-simd, no fetch)', () => {
     vi.spyOn(WebAssembly, 'validate').mockReturnValue(false);
     stubIphone();
 
@@ -626,18 +673,11 @@ describe('maiaWorkerHost', () => {
 
     expect(createdWorkers).toHaveLength(0);
     expect(getEngineAssetsSnapshot().unsupportedReason).toBe('no-wasm-simd');
-    expect(vi.mocked(probeOrtBackendOnce)).not.toHaveBeenCalled();
+    expect(vi.mocked(fetchWasmOnlyOrtRuntime)).not.toHaveBeenCalled();
   });
 
-  // ─── SEED-158 (2026-09-07): dev bisect switches + the page-kill sentinel ──
-  //
-  // `import.meta.env.DEV` is true under vitest, so the localStorage-backed
-  // switches in devEngineSwitches.ts are live here exactly as on the dev
-  // server. Every case clears them again (afterEach below runs
-  // `localStorage.clear()` via the sentinel/switch cleanup).
+  // ─── SEED-158 (2026-09-07): the page-kill sentinel ──────────────────────
 
-  const DEV_SWITCH_IOS_GATE = 'flawchess:dev:ios-gate';
-  const DEV_SWITCH_MAIA_RUNTIME = 'flawchess:dev:maia-runtime';
   const SENTINEL_KEY = 'flawchess:maia:page-session';
 
   /** This file runs in the node environment (no jsdom): a Map-backed stand-in, torn down by `vi.unstubAllGlobals()`. */
@@ -650,56 +690,6 @@ describe('maiaWorkerHost', () => {
       clear: () => store.clear(),
     });
   }
-
-  it('dev switch ios-gate=off: an iPhone whose probe picks webgpu DOES spawn (no runtime fetch is skipped; the normal spawn follows)', () => {
-    stubLocalStorage();
-    stubIphone();
-    localStorage.setItem(DEV_SWITCH_IOS_GATE, 'off');
-    probeAnswers('webgpu');
-    vi.spyOn(console, 'info').mockImplementation(() => {});
-
-    const lease = acquireMaiaWorker({ source: 'maia-worker', priority: true });
-    void lease.whenReady();
-
-    expect(vi.mocked(probeOrtBackendOnce)).toHaveBeenCalledTimes(1);
-    expect(vi.mocked(ensureOrtRuntime)).toHaveBeenCalledTimes(1);
-    expect(createdWorkers).toHaveLength(1);
-    expect(createdWorkers[0]!.messages).toContainEqual(expect.objectContaining({ type: 'init', backend: 'webgpu' }));
-    expect(getEngineAssetsSnapshot().status).not.toBe('unsupported');
-  });
-
-  it('dev switch ios-gate=off: an iPhone whose probe picks wasm is STILL gated off, with no runtime fetch (wasm kills the page)', async () => {
-    stubLocalStorage();
-    stubIphone();
-    localStorage.setItem(DEV_SWITCH_IOS_GATE, 'off');
-    probeAnswers('wasm');
-    vi.spyOn(console, 'info').mockImplementation(() => {});
-
-    const lease = acquireMaiaWorker({ source: 'maia-worker', priority: true });
-    const ready = lease.whenReady();
-
-    expect(createdWorkers).toHaveLength(0);
-    expect(vi.mocked(ensureOrtRuntime)).not.toHaveBeenCalled();
-    expect(vi.mocked(fetchWasmOnlyOrtRuntime)).not.toHaveBeenCalled();
-    expect(getEngineAssetsSnapshot().unsupportedReason).toBe('ios-webkit');
-    await expect(ready).rejects.toMatchObject({ kind: 'unsupported' });
-  });
-
-  it('dev switch maia-runtime=worker: the Worker is constructed with NO runtime buffer and ensureOrtRuntime is never called', () => {
-    stubLocalStorage();
-    localStorage.setItem(DEV_SWITCH_MAIA_RUNTIME, 'worker');
-    probeAnswers('webgpu');
-    vi.spyOn(console, 'info').mockImplementation(() => {});
-
-    const lease = acquireMaiaWorker({ source: 'maia-worker', priority: true });
-    void lease.whenReady();
-
-    expect(vi.mocked(ensureOrtRuntime)).not.toHaveBeenCalled();
-    expect(createdWorkers).toHaveLength(1);
-    const init = createdWorkers[0]!.messages.find((m) => m.type === 'init');
-    expect(init).toMatchObject({ backend: 'webgpu' });
-    expect(init).not.toHaveProperty('runtimeBuffer');
-  });
 
   it('page-kill sentinel: armed on ready, records each dispatch, disarmed when the last lease releases', () => {
     stubLocalStorage();

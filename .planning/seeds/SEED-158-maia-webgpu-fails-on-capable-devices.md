@@ -1,8 +1,8 @@
 ---
 id: SEED-158
-status: parked — blanket iOS gate restored on main 2026-09-07 (Maia alone kills /analysis on iOS, no earlier build ever ran it there); Linux leg resolved; Firefox/Windows Clip shader left as-is; iOS Maia is NEW work with two concrete suspects (see "Next steps 2026-09-07")
+status: RESOLVED for iOS, SHIPPED 2026-09-07 (squash of branch seed-158-ios-maia-bisect to main; released the same evening). iOS/iPadOS runs Maia on the CPU wasm backend on the current ORT 1.27.0 build, thread count left to chooseWasmThreadCount() (1 AND 2 both measured surviving real /analysis sessions on the reference iPhone); every WebGPU shape is killed by WebKit. Bisect tooling stripped, ios-webkit gate/copy removed, page-kill sentinel kept. Reopen ONLY on an iOS `maia_failure:page-killed` Sentry event with `backend:wasm`. Desktop WebGPU per-GPU failures remain the original seed question (separate)
 planted: 2026-08-29
-updated: 2026-09-07 evening (observability + bisect switches shipped on branch seed-158-ios-maia-observability; the gated iOS population is now visible in Sentry, a silent page kill is reported on the next load, and the two suspects each have a dev switch. See "Status 2026-09-07 evening")
+updated: 2026-09-07 late evening (cleanup done, shipped; see "Shipped" at the top of the body)
 planted_during: Sentry triage of the 2026-08-29 18:54 UTC iPad OOM cascade
   (FLAWCHESS-9V regression + new FLAWCHESS-A2/A3), same session as quick task
   260829-tku (oom terminal variant in EngineReadyGate)
@@ -10,11 +10,7 @@ re-scoped: 2026-09-06, after the FLAWCHESS-9V root cause was measured on the
   reporter's iPhone 14 Pro and fixed by quick task 260906-p54 (ORT wasm memory
   ceiling 4 GB -> 1 GB). The OOM question below is CLOSED; what remains is why
   WebGPU fails on WebGPU-capable devices and silently costs every user the fast path.
-trigger_when: when iOS Maia is picked up as scoped work (start at "Next steps 2026-09-07", each step is one dev switch + one phone run); or the console fallback line `[maia-worker] ... WebGPU ... respawn` shows
-  up on a device that should run WebGPU (any Windows/macOS Chromium, iOS 26 Safari),
-  or the next phase that touches maiaWorkerHost.ts / maia-worker.js backend selection,
-  or when Maia chart latency on desktop is revisited (WebGPU is the only lever left
-  after the Phase 219 thread ceiling of 4).
+trigger_when: an iOS `maia_failure:page-killed` event appears in Sentry with `backend:wasm`, or when desktop WebGPU per-GPU failures are picked up
 scope: investigation first (collect the raw webgpu-unavailable messages per device
   class via the console trace shipped in d215f8d8a), then a targeted fix in
   maia-worker.js initSession / ortRuntimeSource.ts (adapter probe, required
@@ -24,6 +20,84 @@ supersedes: nothing
 ---
 
 # SEED-158: Maia WebGPU fails on capable devices, everyone silently runs the wasm fallback
+
+## Shipped 2026-09-07 late evening
+
+The cleanup below was done in one pass and squash-merged to `main`: bisect runner + its test + `main.tsx`
+call deleted; `devEngineSwitches.ts` deleted ENTIRELY (every switch, the inert Stockfish worker, the corner
+badge) per Adrian's "remove all the things we built for debugging"; `/maia-diag.html` deleted; `maiaWorkerHost.ts`
+iOS branch is `spawnOnIosWebKit()` = `fetchWasmOnlyOrtRuntime()` + `constructWorker(…, 'wasm', …)` with NO
+single-thread pin (WR-01's post-timeout retry still pins); `probeOrtBackendOnce` is internal again;
+`'ios-webkit'` reason, `gateOffIosWebKit()`, the `unsupported-ios` gate copy and the notice copy are gone
+(`EngineUnsupportedReason` is `'no-wasm-simd'` only); the page-kill sentinel stays (minus the dev-run
+`activeMaiaSessionDispatches` and `previousMaiaPageKillSummary` readers; it is the prod reopen signal, not
+a debug aid); `ortVersion` stays on the `ready` message (console line + kill record context, cheap).
+NOT run: the seed's standing "one more phone session from the squashed main" rule (no phone in the loop
+at ship time; the exact shape — wasm, 2 threads, 1.27.0 — was measured by hand on the branch the same
+evening). The reopen signal is Sentry `maia_failure:page-killed` with `backend:wasm` and `ios:true`.
+
+## Handoff for the cleanup + ship session (written 2026-09-07 late evening, DONE — kept for the inventory)
+
+**Result.** iOS Maia works. The lever was the BACKEND: WebKit kills the page on every WebGPU shape
+(ORT 1.27.0 and 1.23.0, 1 or 2 threads, idle or stepping), while the CPU wasm backend survives full
+/analysis sessions by hand on the reference iPhone 14 Pro (iOS 26.6.1) with Stockfish and the FlawChess
+Engine on, in every shape tried the same evening:
+
+| ORT | backend | wasm threads | result |
+|---|---|---|---|
+| 1.23.0 | webgpu | 1 | KILLED x3 (FLAWCHESS-AW 16:36-17:01 UTC, `ortVersion` in context) and x3 more 19:51-19:58 |
+| 1.23.0 | wasm | 1 | survives |
+| 1.27.0 | wasm | 1 | survives (`?dev-maia-ort=1.27`) |
+| 1.27.0 | wasm | 2 (ORT default on 4 cores) | survives (`?dev-maia-threads=auto`) |
+
+Neither the ORT version nor page footprint mattered (maiachess.com's page holds a 160 MB Stockfish heap
+plus the 79 MB big NNUE and survives). The 1.23.0 vendoring was added and removed the same evening.
+The 2026-09-06 "1.27 wasm dies at one thread" reading predates the 1 GB reservation fix and is superseded.
+Bisect-runner verdicts were unreliable (it reported every cell killed while the same shape survived by hand).
+
+**What the working tree on `seed-158-ios-maia-bisect` contains (uncommitted).** `spawn()` in
+`maiaWorkerHost.ts` routes iOS/iPadOS to `spawnOnIosWebKit()`: `fetchWasmOnlyOrtRuntime()` then
+`constructWorker(source, 'wasm', buffer, IOS_FORCE_SINGLE_THREAD && !isDevMaiaThreadsAuto())`. No WebGPU
+probe, no asyncify download on iOS. The `ready` message carries `ortVersion` (console line, dev badge,
+kill-sentinel record). CHANGELOG has the Unreleased bullet. Memory file
+`project_maia_ios_two_failure_populations` is current.
+
+**Cleanup inventory (remove unless marked keep):**
+
+1. `frontend/src/lib/engine/devBisectRunner.ts` + `__tests__/devBisectRunner.test.ts` + its call in
+   `main.tsx` (`runDevBisectRunner`) — remove.
+2. `frontend/src/lib/engine/devEngineSwitches.ts` — remove the switches `ios-gate`, `maia-runtime`
+   (Suspect A), `maia-ladder` (Suspect B), `maia-backend`, `maia-threads`, and their readers in
+   `maiaWorkerHost.ts` (`isDevIosGateBypassed` gates `captureDevPhoneRunProgress`, the two dev-run Sentry
+   markers "ready (dev phone run)" / "still alive after the probe interval" — remove both),
+   `useMaiaEngine.ts` (`isDevMaiaSinglePassLadder` branch), and `ortRuntimeSource`/host
+   (`isDevMaiaRuntimeWorkerFetched` branch in `spawnFromRuntime`). Decide on `stockfish=off` and the
+   corner badge (`showDevEngineBadge`): both are generic phone-UAT aids; keeping the module with just those
+   two is reasonable, deleting it entirely is also fine.
+3. Single-thread pin — DROP it: delete `IOS_FORCE_SINGLE_THREAD` and pass `forceSingleThread = false` on
+   iOS so `chooseWasmThreadCount()` applies (2 on the reference phone, measured surviving). Keep the WR-01
+   post-timeout single-thread retry as is.
+4. `ios-webkit` unsupported reason — now reachable only via the WebGPU dev switch's iOS terminal in
+   `respawnPinnedToWasm`. With the switch gone, remove the terminal branch, `gateOffIosWebKit()`, the
+   `'ios-webkit'` member of the unsupported-reason union in `engineAssetProgress.ts`, the `unsupported-ios`
+   copy in `EngineReadyGate.tsx`, the `unsupported_reason` tag handling that names it, and their tests.
+   `isIosWebKit()` itself STAYS (it selects the wasm spawn); trim its header to the final finding.
+5. `maiaPageKillSentinel.ts` — KEEP (prod-useful: a silent kill on any platform reports on the next load).
+   Remove only `previousMaiaPageKillSummary()`'s badge use if the badge goes.
+6. `frontend/public/maia-diag.html` — dev tool, keep or delete at will (it produced three false "safe"
+   verdicts; if kept, add that caveat to its header).
+7. `frontend/public/maia/README.md` "iOS/iPadOS: wasm backend only" section — keep, adjust the thread
+   sentence after step 3. `iosWebKit.ts` header — rewrite to the final finding only.
+8. Tests to rewrite after 1-4: `maiaWorkerHost.test.ts` iOS block (assert: iPhone spawns `backend:'wasm'`,
+   no probe, no `ensureOrtRuntime`; iPad desktop-mode UA same; real Mac spawns normally; no-SIMD iOS still
+   `no-wasm-simd`), `EngineReadyGate.test.tsx` ios cases, `engineAssetProgress.test.ts` if it names the
+   reason.
+
+**Ship steps.** Full pre-merge gate (CLAUDE.md), squash-merge to `main`, then the release flow
+(`/deploy`). Before the release PR: one more real /analysis session on the phone from the deployed preview
+or dev build of the squashed `main` (the seed's standing rule), and check Sentry for `maia_failure:page-killed`
+with `backend:wasm` afterwards — that is the only signal that would reopen this.
+
 
 ## Status of the original question (CLOSED 2026-09-06)
 
@@ -178,6 +252,186 @@ one URL then stepping through a game on /analysis for ~60 s:
 
 Record the four cells here. The `dispatches`/`last batch` numbers in the kill report say how far each cell
 got, which the old runs could not tell.
+
+**Self-driving runner (2026-09-07, no data cable available so no Web Inspector from Linux):**
+`frontend/src/lib/engine/devBisectRunner.ts` runs the four cells above on its own. One URL on the phone:
+`/analysis?dev-bisect=start` (needs a signed-in or guest session; `?dev-bisect=stop` aborts and restores
+every switch). Per cell it applies the switches, loads `/analysis?line=<Kasparov–Topalov 1999, 87 plies>`,
+steps the board with synthetic ArrowLeft/ArrowRight keydowns every 1.5 s for 60 s, then reloads onto the
+next cell. The outcome is decided on the NEXT load from the runner's own `running` phase (no `pagehide` =
+silent death) plus the page-kill sentinel's record (`killed` vs `killed-before-ready`); `survived` means the
+60 s elapsed. Each result goes to Sentry as `Maia iOS bisect: cell result` (tags `bisect_cell`,
+`bisect_outcome`) and the top-left red badge shows progress and the final table. Safari's "A problem
+repeatedly occurred" page needs one tap on reload per killed cell; the run resumes from localStorage. Keep
+Safari in the foreground for the ~5 min (background throttling would stall the stepping). Verified on
+desktop headless Chrome via CDP: all four cells run, the board walks the game, the reload chain and the
+switches per cell are correct.
+
+**Result 2026-09-07 (reference iPhone 14 Pro, iOS 26.6.1, Safari, dev server via the tunnel, runner):**
+
+| Cell | ios-gate | stockfish | maia-runtime | maia-ladder | Outcome |
+|---|---|---|---|---|---|
+| baseline | off | off | main | full | **killed** (Maia was `ready`) |
+| A-runtime-worker | off | off | worker | full | **killed** (Maia was `ready`) |
+| B-ladder-single | off | off | main | single | **killed** (Maia was `ready`) |
+| A+B | off | off | worker | single | **killed** (Maia was `ready`) |
+
+**CONFOUNDED (found in the Sentry kill records the same evening, FLAWCHESS-AW/AV):** every kill record says
+`numThreads: 2`. The iOS single-thread pin (`IOS_FORCE_SINGLE_THREAD`, a4a1f4f6d) was deleted together with
+the WebGPU-only iOS branch in 28945b851, and the `?dev-ios-gate=off` bypass path (`spawnOnIosWebKit`) inherited
+`spawn()`'s default `forceSingleThread = false`. So all four cells ran the 2-thread shape the diag page had
+already shown to die, and the A/B verdicts above do NOT test the protocol's intended shape (WebGPU + 1 wasm
+thread). Pin restored on the bypass path (constant back, with the history in its comment); re-run required.
+
+What the four records DO say (all WebGPU, t=2, Stockfish inert, from the sentinel's `maia_page_kill` context):
+
+| Cell | dispatches | last dispatch after `ready` | page lived after `ready` | last batch |
+|---|---|---|---|---|
+| baseline | 19 | 3.3 s | 9.1 s | 10 |
+| A-runtime-worker | 18 | 4.8 s | 45.7 s | 10 |
+| B-ladder-single | 8 | 3.5 s | 7.7 s | 1 |
+| A+B | 10 | 3.5 s | 10.9 s | 21 |
+
+Dispatching STOPS 3-5 s after `ready` in every cell (requests are serialised on `inFlight`, so a worker that
+never answers freezes the queue), and the kill follows seconds to 40 s later. That is a hang-then-kill, not a
+death mid-burst, and it matches ORT #26827's shape (WebKit pinned in `JSC::Wasm::parseAndCompileOMG`, 1 GB+
+growth) better than "the ladder is too heavy". Two timestamps were added to tell a worker hang from a
+main-thread freeze on the next run: the sentinel now records `results`/`lastResultAt` (worker's last sign of
+life) and the runner writes a one-second main-thread heartbeat (`mainThreadAliveMs` in the cell result).
+
+**Re-run 2026-09-07 13:45 UTC with the pin (`t=1` in every record): all four cells killed again.** Timeline per
+cell, reconstructed from the sentinel record + the runner's main-thread heartbeat (all times after Maia `ready`):
+
+| Cell | ready after cell start | dispatches / results | last dispatch | last result | main thread last tick | verdict |
+|---|---|---|---|---|---|---|
+| baseline | 11.2 s | 22 / 22 | +5.1 s | +5.3 s | +5.7 s | died at ~+5.7 s, queue EMPTY |
+| A-runtime-worker | 7.5 s | 20 / 19 | +4.2 s | +4.2 s | +3.4 s (next tick due +4.4 s) | died at ~+4.3 s, 1 in flight |
+| B-ladder-single | 2.1 s | 10 / 9 | +4.7 s | +3.8 s | +4.6 s | died at ~+4.7 s, 1 in flight |
+| A+B | 6.9 s | 13 / 12 | +4.7 s | +3.8 s | +4.2 s | died at ~+4.7 s, 1 in flight |
+
+The earlier "hang-then-kill" reading was wrong: the long `sessionAgeMs` values were Safari's "problem repeatedly
+occurred" page waiting for a tap. The real shape is a SUDDEN kill 4.3-5.7 s after `ready` with everything
+responsive up to the last second: the worker answered every request within ~1 s (22/22 in the baseline cell),
+the main thread ticked to the end, no hang anywhere. Independent of wasm thread count (2 vs 1), the runtime
+byte path, and the ladder shape. The diag page is cross-origin isolated exactly like the app (Vite/Caddy send
+COOP/COEP on every response), so isolation is not the difference either.
+
+What is consistent with "~5 s after ready regardless of workload": JavaScriptCore's optimising wasm tier
+(OMG) compiling the 25.7 MB ORT module once inference makes it hot, on compiler threads, with a footprint far
+above the heap (ORT #26827's 1 GB+ growth on WebKit 26). The diag page runs the SAME module and survives, so
+the working hypothesis is "app baseline + tier-up spike > WebKit's per-page limit; diag baseline + the same
+spike < limit". Not proven from the page. Discriminating next steps, cheapest first:
+
+1. **Idle test (no code):** `/analysis?dev-ios-gate=off&dev-stockfish=off`, do NOT step, wait 60 s. Maia does one
+   or two dispatches for the initial position. Dies → time/compile-driven after `ready`, workload irrelevant.
+   Survives → inference-driven (per-run GPU/CPU growth), and a rate cap on iOS is worth one run.
+2. **Kill reason from the device** (USB data cable + `pymobiledevice3` syslog): memory-limit vs GPU-process vs
+   watchdog. Still the only way to read WebKit's own verdict.
+3. **Shrink what gets tier-compiled:** a minimal onnxruntime-web build (WebGPU EP + only the CPU ops the Maia
+   graph needs; `--include_ops_by_config` / `--minimal_build`) cuts the wasm from 25.7 MB to a few MB and the
+   OMG footprint with it. Separate seed, sits next to the smaller-model-export idea.
+
+**Idle test 2026-09-07 13:55-14:09 UTC (`?dev-ios-gate=off&dev-stockfish=off`, no stepping, branch
+`seed-158-ios-maia-bisect` with `ready` / `alive after 60 s` Sentry markers, FLAWCHESS-B0/B1):** six sessions,
+each with exactly 4 dispatches / 4 results inside the first 0.7 s after `ready` (the start-position ladder)
+and NOTHING after. Four were killed while completely idle (upper bounds from the next load's `sessionAgeMs`:
+≤15 s, ≤27 s, ≤6 s, ≤35 s after `ready`); two survived the 60 s probe. So the kill is **workload-independent
+and intermittent**: it happens with zero inference in flight and no page activity, and it does not happen
+every time. That closes the page-side bisect for good — no switch we own changes the outcome, and neither does
+idleness. Everything still consistent: a transient spike after `ready` (JSC's OMG compile of the ORT module is
+the named candidate) on top of the app's resting footprint, caught or missed by WebKit's periodic footprint
+check. The diag page surviving is then "smaller resting footprint, same spike".
+
+Next step that is a MEASUREMENT rather than a knob: give `/maia-diag.html` a ballast input (allocate N MB of
+`ArrayBuffer`s before the WebGPU session) and find the N at which the idle diag page starts dying. That (a)
+proves or kills the "resting footprint + spike" model, (b) measures the headroom the app would need to shed,
+(c) is a self-contained WebKit bug repro. After that: the USB syslog for the kill reason, and the minimal ORT
+build if the model holds.
+
+### maiachess.com comparison + ORT 1.23.0 downgrade on iOS (2026-09-07, branch `seed-158-ios-maia-bisect`)
+
+Adrian confirmed maiachess.com's analysis page runs Maia on the iPhone 14 Pro (and Android, Linux). Read from
+their live bundle and the open-source `CSSLab/maia-platform-frontend`:
+
+- Same model file (`/maia3/maia3_simplified.onnx`, 45,683,686 bytes), one batch of ALL 21 ratings per
+  position on every device (the mobile page only hides the Moves-by-Rating chart; `useEngineAnalysis.ts`
+  has no mobile branch). So a 21-rung ladder per position is NOT too heavy for the phone.
+- onnxruntime-web **1.23.0**, plain CPU wasm backend (`ort.wasm.min.js`, no WebGPU), classic worker with
+  `importScripts`, ORT's default thread count on a cross-origin-isolated page (COOP/COEP are set), STOCK
+  glue with the 4 GB reservation, model cached in IndexedDB, plus one lila-stockfish-web sf17-79 worker.
+- That falsifies "executing ORT wasm kernels on this graph is fatal on iOS WebKit" as a platform truth. The
+  untested difference is the ORT version (1.23.0 vs our 1.27.0; their wasm module is 11.8 MB vs 13.5/24.3 MB).
+
+Shipped on the branch (Adrian's call: keep our setup, only swap the runtime bytes on iOS): 1.23.0 vendored under
+`frontend/public/maia/ort-1.23/` (same six file names, 1 GB patch applied), `runtimeDir` field on the worker
+init message, `ensureOrtRuntime('ios-legacy')` + `runtimeDir: '/maia/ort-1.23'` whenever `isIosWebKit()`,
+`ortVersion` on the `ready` message (console line, dev badge `maia webgpu ort=1.23.0 ...`, and the kill
+sentinel record / Sentry context). Everything else on iOS is as before: WebGPU-first via the probe, one
+wasm thread, blanket gate still on in prod. Phone protocol: clear site data, `/analysis?dev-ios-gate=off`,
+check the badge says `ort=1.23.0`, run the idle test and then the runner (`?dev-bisect=start`). A surviving
+run isolates the ORT version; a kill with `ort=1.23.0` in the record closes this lead and leaves the
+page-footprint difference (their page has no MCTS, no gem grading, one small Stockfish) as the remaining one.
+
+**2026-09-07 later: blanket gate replaced.** Adrian tested the 1.23.0 build by hand on the phone ("seems to
+work") while the self-driving runner still reported every cell killed, so the runner's verdict is now suspect
+(it decides "killed" from its own `running` phase on the next load; a Safari reload without `pagehide`, or
+the `?dev-bisect` state surviving a manual reload, produces the same signal). Per Adrian's call the iOS
+branch in `spawn()` is now `spawnOnIosWebKit()` unconditionally: probe picks `webgpu` → spawn with
+`forceSingleThread` and the 1.23.0 files; probe picks `wasm` → `ios-webkit` terminal (copy now says
+"needs iOS 26 or newer"). `?dev-ios-gate` only gates the dev-run Sentry markers. Stop the runner and restore
+its switches with `/analysis?dev-bisect=stop` before a manual session (it may have left `dev-stockfish=off`
+persisted).
+
+**Result of the ORT 1.23.0 test (2026-09-07 evening, FLAWCHESS-AW events 16:36, 17:01:14, 17:01:44 UTC):
+KILLED, three real /analysis sessions by hand.** Every record: `ortVersion: "1.23.0"`, `backend: webgpu`,
+`numThreads: 1`, last batch 1 (FlawChess Engine policy calls), 39 / 101 / 131 dispatches with exactly one in
+flight at the kill, 10-22 s after `ready`. Same shape as 1.27.0. **The ORT version is not the difference to
+maiachess.com.** Consequences: the blanket gate is back for PRODUCTION builds (`import.meta.env.DEV` decides in
+`spawn()`, no switch needed on the dev server), the changelog bullet was withdrawn, the 1.23.0 vendoring stays
+(it is the base for the next step). Remaining differences to maiachess.com, one switch each:
+
+1. **Backend: CPU wasm instead of WebGPU** — `?dev-maia-backend=wasm` (new): iOS spawns the wasm backend on the
+   1.23.0 build, no probe, 1 thread. That is maiachess's exact ORT shape on our page. Our only wasm-on-iOS
+   measurements were 1.27.0 (killed at 1 thread, `session.run` bypass survived); wasm on 1.23.0 has never run.
+2. **Page footprint** — their analysis page has no MCTS / gem grading and a 472 KB Stockfish; run 1 with
+   `?dev-stockfish=off` and the FlawChess Engine card off if 1 alone still dies.
+3. **Thread count** — they use ORT's default (2-4 threads on the phone); irrelevant unless 1+2 survive.
+
+**RESOLVED 2026-09-07 evening: the difference was the BACKEND, not the version.** Confirmed twice over: `?dev-maia-ort=1.27` (wasm backend on the current 1.27.0 build) also survived by hand, so the 1.23.0 vendoring, the `runtimeDir` init field and the `OrtRuntimeVariant` machinery were removed the same evening; the 2026-09-06 "1.27 wasm dies at one thread" reading was taken next to the 4 GB reservation and is superseded. Their Stockfish holds a
+160 MB initial heap plus the 79 MB big NNUE in one instance, so page footprint was never the lever. With
+`?dev-maia-backend=wasm` (CPU wasm on the 1.23.0 build, one thread) a full /analysis session by hand
+survived on the reference iPhone with Stockfish and the FlawChess Engine on, while three more WebGPU
+sessions the same hour were killed (FLAWCHESS-AW, 19:51-19:58 UTC). Shipped shape (`spawnOnIosWebKit()`,
+every build): no WebGPU probe, `fetchWasmOnlyOrtRuntime('ios-legacy')`, `backend: 'wasm'`,
+`forceSingleThread`, `runtimeDir: '/maia/ort-1.23'`. The `ios-webkit` terminal now fires only behind
+`?dev-maia-backend=webgpu` (kept as the kill repro). Two dev switches decide what is dead weight:
+`?dev-maia-ort=1.27` (is the version downgrade needed? the 1.27.0 wasm build died at one thread on
+2026-09-06, but that predates the rest of the shape) and, later, a second wasm thread (maiachess runs
+ORT's default, 2 on this phone; our 2-thread death was WebGPU next to 3 Stockfish workers). Speed on one
+CPU thread is the cost: ~200 ms per rung, so a 21-rung ladder takes seconds; the ladder's coarse/fill
+split already lands the chart progressively.
+
+### Options after the idle test (2026-09-07, ranked by expected value per effort)
+
+Facts they rest on: the kill is workload-independent and intermittent; both wasm and WebGPU paths die; every
+iOS browser is WebKit, so there is no browser-side escape; assets today are `maia3_simplified.onnx` 45.7 MB
+(fp32) + the 24.3 MB asyncify runtime wasm (ORT 1.27 pinned).
+
+| # | Option | What it buys | Effort / risk |
+|---|---|---|---|
+| 1 | **Server-side Maia for iOS** — run the ONNX model on the backend (CPU ORT, batch of 21 ≈ tens of ms), one endpoint returning the ladder for a FEN; cache ladders by position hash (the DB is Zobrist-keyed already, common positions hit across users) | iOS gets the feature with ZERO WebKit dependency; also removes the 70 MB download on phones | Medium: endpoint + repository cache + an iOS branch in `useMaiaEngine`/the host; server CPU is a known quantity (remote-worker fleet exists); latency 100-300 ms is fine for a card that already waits on ladders |
+| 2 | **Ballast measurement on `/maia-diag.html`** — allocate N MB before the WebGPU session, find the N where the idle diag page starts dying | Proves/kills "resting footprint + spike", measures headroom, is a WebKit bug repro | Small (one input on the existing page); a measurement, not a fix |
+| 3 | **WebGPU without wasm** — convert the model to TF.js (onnx2tf) and run the TF.js WebGPU backend (pure JS + WGSL, no 24 MB wasm module, nothing for JSC to tier-compile) as the iOS-only worker | Keeps on-device inference on iOS if the wasm module IS the spike | Medium-large: conversion + second worker + parity tests against ORT outputs; op coverage risk; keeps two runtimes forever |
+| 4 | **Minimal onnxruntime-web build** — WebGPU EP + only the ops in the Maia graph (`--minimal_build extended`, `--include_ops_by_config`) | Wasm from 24 MB to a few MB, shrinks the compile spike and the resting footprint | Large: Emscripten toolchain + ORT source build, re-vendor on every bump; unproven that WebGPU EP builds minimal |
+| 5 | **Kill reason from the device** — USB data cable + `pymobiledevice3 syslog` | WebKit's own verdict (memory limit vs GPU process vs watchdog); the only way to stop guessing | Small once a cable exists; needs Developer Mode revealed by the tool |
+| 6 | **Shed app resting footprint on iOS** — lazy-mount recharts/eval chart while Maia runs, trim the page tree | Might restore headroom if #2 shows the margin is small | Unknown savings, cannot be measured on the phone without a Mac; do only after #2 |
+| 7 | **Smaller model export** — fp16/int8 Maia | Halves the 45.7 MB model and its GPU buffers, faster download | Does not touch the wasm-module spike; parity risk; separate seed |
+| 8 | **Upstream** — WebKit bug with the #2 repro, data on ORT #26827 | Long-term fix for everyone | Slow, out of our hands |
+| 9 | **Keep the gate** — Maia is desktop/Android-only on iOS, copy already shipped | Zero cost, current state | The population is now visible in Sentry (`unsupported_reason:ios-webkit`), so the cost of waiting is measurable |
+
+Recommendation: #1 is the only option that makes iOS Maia RELIABLE rather than "survives more often", and it
+reuses infrastructure the project already has; #2 and #5 are the cheap measurements to run regardless, because
+they decide whether #3/#4/#6 are worth anything.
 
 ## Status 2026-09-07: three measurements that reframe the seed
 

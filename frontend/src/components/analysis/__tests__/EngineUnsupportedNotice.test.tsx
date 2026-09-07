@@ -71,21 +71,21 @@ describe('EngineUnsupportedNotice in the analysis cards', () => {
     resetEngineAssetsForTests();
   });
 
-  it('Maia card: shows the iOS copy instead of the chart skeleton once the store reports the ios-webkit gate', () => {
+  it('Maia card: shows the notice instead of the chart skeleton once the store reports unsupported', () => {
     renderMaiaCard();
     expect(screen.getByTestId('moves-by-rating-chart-skeleton')).toBeTruthy();
     expect(screen.queryByTestId('analysis-maia-unsupported')).toBeNull();
 
     act(() => {
-      markEngineAssetsUnsupported('ios-webkit');
+      markEngineAssetsUnsupported('no-wasm-simd');
     });
 
     const notice = screen.getByTestId('analysis-maia-unsupported');
-    expect(notice.textContent).toContain('Maia is switched off on iPhone and iPad');
+    expect(notice.textContent).toContain("This device can't run Maia");
     expect(screen.queryByTestId('moves-by-rating-chart-skeleton')).toBeNull();
   });
 
-  it('Maia card: the no-SIMD reason gets the generic copy', () => {
+  it('Maia card: a store already unsupported at mount renders the notice straight away', () => {
     act(() => {
       markEngineAssetsUnsupported('no-wasm-simd');
     });
@@ -93,17 +93,15 @@ describe('EngineUnsupportedNotice in the analysis cards', () => {
     expect(screen.getByTestId('analysis-maia-unsupported').textContent).toContain("This device can't run Maia");
   });
 
-  it('FlawChess card: shows the iOS copy instead of the loading skeleton', () => {
+  it('FlawChess card: shows the notice instead of the loading skeleton', () => {
     renderFlawChessCard();
     expect(screen.getByTestId('analysis-flawchess-loading')).toBeTruthy();
 
     act(() => {
-      markEngineAssetsUnsupported('ios-webkit');
+      markEngineAssetsUnsupported('no-wasm-simd');
     });
 
-    expect(screen.getByTestId('analysis-flawchess-unsupported').textContent).toContain(
-      'Maia is switched off on iPhone and iPad',
-    );
+    expect(screen.getByTestId('analysis-flawchess-unsupported').textContent).toContain("This device can't run Maia");
     expect(screen.queryByTestId('analysis-flawchess-loading')).toBeNull();
   });
 });

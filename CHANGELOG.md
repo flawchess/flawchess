@@ -10,6 +10,7 @@ in `YYYY-MM-DD` (Europe/Zurich).
 
 ### Fixed
 
+- Maia (the Human Move Probability chart, FlawChess Engine and the practice bots) is back on iPhone and iPad. Safari kept killing the page whenever Maia ran on the GPU path, so iOS now runs Maia on the CPU path, as maiachess.com does; every other platform is unchanged.
 - Openings statistics and the bookmarked "Score over Time" chart no longer count FlawChess practice-bot games or pasted PGNs, which were already excluded from every other analytics surface.
 - Fixed the chess engine failing to start for everyone after an update, because a caching layer kept serving old engine files instead of the new ones. Every engine file request now carries a version marker so an update can never be served stale files again.
 - Low-memory Android devices that cannot allocate the Maia model now see the "your device ran out of memory" message instead of a misleading download-failure message.

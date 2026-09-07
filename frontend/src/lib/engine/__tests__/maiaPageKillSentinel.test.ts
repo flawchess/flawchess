@@ -12,7 +12,6 @@ import {
   armMaiaPageKillSentinel,
   disarmMaiaPageKillSentinel,
   noteMaiaDispatch,
-  previousMaiaPageKillSummary,
   reportMaiaPageKillFromPreviousSession,
   resetMaiaPageKillSentinelForTests,
 } from '../maiaPageKillSentinel';
@@ -92,10 +91,7 @@ describe('maiaPageKillSentinel', () => {
     };
     localStorage.setItem(KEY, JSON.stringify(leftover));
 
-    const summary = reportMaiaPageKillFromPreviousSession();
-
-    expect(summary).toContain('KILLED last session');
-    expect(previousMaiaPageKillSummary()).toBe(summary);
+    expect(reportMaiaPageKillFromPreviousSession()).toBe(true);
     expect(record()).toBeNull();
     expect(Sentry.captureException).toHaveBeenCalledTimes(1);
     expect(Sentry.captureException).toHaveBeenCalledWith(
@@ -117,11 +113,11 @@ describe('maiaPageKillSentinel', () => {
   });
 
   it('reports nothing when there is no record, and never throws on a garbage record', () => {
-    expect(reportMaiaPageKillFromPreviousSession()).toBeNull();
+    expect(reportMaiaPageKillFromPreviousSession()).toBe(false);
     expect(Sentry.captureException).not.toHaveBeenCalled();
 
     localStorage.setItem(KEY, '{not json');
-    expect(reportMaiaPageKillFromPreviousSession()).toBeNull();
+    expect(reportMaiaPageKillFromPreviousSession()).toBe(false);
     expect(record()).toBeNull();
     expect(Sentry.captureException).not.toHaveBeenCalled();
   });

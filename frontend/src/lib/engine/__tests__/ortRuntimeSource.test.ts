@@ -15,7 +15,6 @@ import * as Sentry from '@sentry/react';
 import {
   ensureOrtRuntime,
   fetchWasmOnlyOrtRuntime,
-  probeOrtBackendOnce,
   resetOrtRuntimeSourceForTests,
   ORT_RUNTIME_WASM_ONLY_PATH,
   ORT_RUNTIME_ASYNCIFY_PATH,
@@ -659,34 +658,5 @@ describe('ensureOrtRuntime — f16 predicate is load-bearing (see mutation proof
     await ensureOrtRuntime();
 
     expect(fetchMock).not.toHaveBeenCalledWith(ORT_RUNTIME_ASYNCIFY_PATH);
-  });
-});
-
-// ─── probeOrtBackendOnce — the fetch-free iOS entry point (SEED-158) ───────
-
-describe('probeOrtBackendOnce — decides without fetching and shares the memoised decision', () => {
-  it('answers the backend, registers ort-runtime as pending synchronously, and issues NO fetch', async () => {
-    stubGpuWithFeature(false);
-    const fetchMock = vi.fn();
-    vi.stubGlobal('fetch', fetchMock);
-
-    const pending = probeOrtBackendOnce();
-    // CR-02: registered in the same synchronous call, before the adapter probe resolves.
-    expect(getEngineAssetsSnapshot().assets['ort-runtime']).toMatchObject({ loaded: 0, done: false });
-
-    await expect(pending).resolves.toBe('wasm');
-    expect(fetchMock).not.toHaveBeenCalled();
-  });
-
-  it('a later ensureOrtRuntime() joins the same decision instead of re-probing', async () => {
-    stubGpuWithFeature(true);
-    vi.stubGlobal('fetch', vi.fn().mockImplementation(async () => makeImmediateResponse(new Uint8Array([1, 2, 3]))));
-
-    await expect(probeOrtBackendOnce()).resolves.toBe('webgpu');
-    const result = await ensureOrtRuntime();
-
-    expect(result.backend).toBe('webgpu');
-    const gpu = (navigator as Navigator & { gpu: { requestAdapter: ReturnType<typeof vi.fn> } }).gpu;
-    expect(gpu.requestAdapter).toHaveBeenCalledTimes(1);
   });
 });

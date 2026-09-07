@@ -712,7 +712,15 @@ self.onmessage = async (e) => {
       // Phase 219 (D-10, Pitfall 9): numThreads is `ort.env.wasm.numThreads`,
       // already assigned by chooseWasmThreadCount() inside initSession() —
       // the only surface reporting the chosen thread count on the happy path.
-      self.postMessage({ type: 'ready', backend, numThreads: ort.env.wasm.numThreads });
+      // SEED-158: `ortVersion` makes the loaded build visible on devices
+      // without a console (the dev badge on the phone) — `ort.env.versions.web`
+      // is the package version string of whichever bundle importScripts loaded.
+      self.postMessage({
+        type: 'ready',
+        backend,
+        numThreads: ort.env.wasm.numThreads,
+        ortVersion: ort.env.versions?.web ?? null,
+      });
       return;
     }
 
