@@ -15,6 +15,12 @@
  *    used to play) and the two events that deliberately SHARE one clip
  *    ('draw-declined' and 'game-draw' both play Notify.mp3, Quick 260814-b).
  *
+ * 6. Web Audio path (iOS rapid-retrigger fix): with an AudioContext present,
+ *    every playSound is a fresh AudioBufferSourceNode, NO media element is
+ *    ever constructed (not by playSound, not by unlockAudio — the iOS
+ *    sample-rate trap, see sounds.ts), clips decode once at load, and a
+ *    suspended context is resumed rather than routed around.
+ *
  * Each test re-imports the module fresh via vi.resetModules() + dynamic
  * import — sounds.ts caches Audio instances and listeners at module scope,
  * which would otherwise bleed a prior test's mocked Audio constructor across
@@ -229,6 +235,171 @@ describe('sounds', () => {
       expect(instance.play).toHaveBeenCalledTimes(1);
       expect(instance.pause).toHaveBeenCalledTimes(1);
     }
+  });
+
+  describe('Web Audio path', () => {
+    interface MockSource {
+      buffer: unknown;
+      connect: ReturnType<typeof vi.fn>;
+      start: ReturnType<typeof vi.fn>;
+    }
+
+    let sources: MockSource[];
+    let contextState: 'suspended' | 'running';
+    let resume: ReturnType<typeof vi.fn>;
+
+    /** Stubs AudioContext + fetch so decoding succeeds. `state` is read live
+     * from `contextState`, so a test can flip it between plays. */
+    function stubWebAudio(): void {
+      sources = [];
+      resume = vi.fn(() => {
+        contextState = 'running';
+        return Promise.resolve();
+      });
+      vi.stubGlobal(
+        'AudioContext',
+        vi.fn(function (this: Record<string, unknown>) {
+          Object.defineProperty(this, 'state', { get: () => contextState });
+          this.destination = {};
+          this.sampleRate = 48000;
+          this.currentTime = 0;
+          this.resume = resume;
+          this.decodeAudioData = vi.fn((bytes: ArrayBuffer) =>
+            Promise.resolve({ decodedFrom: bytes.byteLength }),
+          );
+          this.createBuffer = vi.fn(() => ({ silent: true }));
+          this.createBufferSource = vi.fn(() => {
+            const source: MockSource = { buffer: null, connect: vi.fn(), start: vi.fn() };
+            sources.push(source);
+            return source;
+          });
+          return this;
+        }),
+      );
+      vi.stubGlobal(
+        'fetch',
+        vi.fn(() => Promise.resolve({ arrayBuffer: () => Promise.resolve(new ArrayBuffer(8)) })),
+      );
+    }
+
+    /** Loads the module with Web Audio stubbed BEFORE import, the way a real
+     * browser sees it, so the load-time decode runs. */
+    async function loadWithWebAudio(): Promise<typeof import('../sounds')> {
+      vi.resetModules();
+      stubAudio();
+      stubWebAudio();
+      return import('../sounds');
+    }
+
+    /** Lets the fetch → arrayBuffer → decode → set chain settle. */
+    async function flushDecode(): Promise<void> {
+      for (let i = 0; i < 6; i++) await Promise.resolve();
+    }
+
+    it('decodes every clip once at module load, without any gesture', async () => {
+      contextState = 'suspended';
+      await loadWithWebAudio();
+      await flushDecode();
+
+      expect(AudioContext).toHaveBeenCalledTimes(1);
+      expect(fetch).toHaveBeenCalledTimes(12);
+      // Decoding does not need the context to be running.
+      expect(resume).not.toHaveBeenCalled();
+    });
+
+    it('plays each rapid call as its own buffer source and never constructs a media element', async () => {
+      // The iPhone symptom: four fast-forward ticks, one audible sound. With
+      // the element path the second call restarted the still-busy element;
+      // here every call must produce a fresh, started source.
+      contextState = 'running';
+      const { playSound, unlockAudio } = await loadWithWebAudio();
+      await flushDecode();
+
+      unlockAudio();
+      const kicks = sources.length; // the silent unlock source
+      playSound('move');
+      playSound('move');
+      playSound('capture');
+      playSound('move');
+
+      expect(sources).toHaveLength(kicks + 4);
+      for (const source of sources.slice(kicks)) {
+        expect(source.buffer).not.toBeNull();
+        expect(source.connect).toHaveBeenCalledTimes(1);
+        expect(source.start).toHaveBeenCalledTimes(1);
+      }
+      // The iOS sample-rate trap: with Web Audio present, no HTMLAudioElement
+      // may ever be created — not by playSound, not by unlockAudio.
+      expect(instances).toHaveLength(0);
+    });
+
+    it('unlockAudio resumes a suspended context and starts a silent source inside the gesture', async () => {
+      contextState = 'suspended';
+      const { unlockAudio } = await loadWithWebAudio();
+
+      unlockAudio();
+
+      expect(resume).toHaveBeenCalledTimes(1);
+      expect(sources).toHaveLength(1);
+      expect(sources[0]?.start).toHaveBeenCalledTimes(1);
+      expect(instances).toHaveLength(0);
+    });
+
+    it('a play on a suspended context asks it to resume and still starts the source', async () => {
+      // A source started while suspended plays the moment the context resumes;
+      // routing it through a media element instead is exactly the trap.
+      contextState = 'suspended';
+      resume.mockImplementation(() => Promise.resolve()); // stays suspended
+      const { playSound } = await loadWithWebAudio();
+      await flushDecode();
+      resume.mockClear();
+
+      playSound('move');
+
+      expect(resume).toHaveBeenCalledTimes(1);
+      expect(sources).toHaveLength(1);
+      expect(instances).toHaveLength(0);
+    });
+
+    it('drops a play whose clip has not decoded yet rather than using an element', async () => {
+      contextState = 'running';
+      vi.resetModules();
+      stubAudio();
+      stubWebAudio();
+      // Fetches that never settle: the buffers stay in flight for good.
+      vi.stubGlobal('fetch', vi.fn(() => new Promise<never>(() => {})));
+      const { playSound } = await import('../sounds');
+
+      playSound('move');
+
+      expect(sources).toHaveLength(0);
+      expect(instances).toHaveLength(0);
+    });
+
+    it('a second unlock or init never re-fetches or re-creates the context', async () => {
+      contextState = 'running';
+      const { unlockAudio, initWebAudio } = await loadWithWebAudio();
+      await flushDecode();
+
+      unlockAudio();
+      initWebAudio();
+      unlockAudio();
+
+      expect(fetch).toHaveBeenCalledTimes(12);
+      expect(AudioContext).toHaveBeenCalledTimes(1);
+    });
+
+    it('stays on the element path when the environment has no AudioContext', async () => {
+      const { playSound, unlockAudio } = await loadSounds();
+      // jsdom: no AudioContext global at all.
+      expect(typeof AudioContext).toBe('undefined');
+
+      unlockAudio();
+      playSound('move');
+
+      const moveElement = instances.find((i) => i.src.includes('/sound/Move.mp3'));
+      expect(moveElement?.play).toHaveBeenCalledTimes(2); // unlock + play
+    });
   });
 
   it('a localStorage failure degrades to default-unmuted rather than throwing', async () => {

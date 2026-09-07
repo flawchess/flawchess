@@ -10,6 +10,7 @@ in `YYYY-MM-DD` (Europe/Zurich).
 
 ### Fixed
 
+- Move sounds on iPhone and iPad no longer drop out when moves come quickly: fast-forwarding through a game, or tapping Next in rapid succession, used to play only about one sound in four. Sounds are now played through the Web Audio API, the same way lichess plays its move sounds, and the page asks iOS for the same audio session it already used before, so sounds still play with the ring/silent switch on silent.
 - Maia (the Human Move Probability chart, FlawChess Engine and the practice bots) is back on iPhone and iPad. Safari kept killing the page whenever Maia ran on the GPU path, so iOS now runs Maia on the CPU path, as maiachess.com does; every other platform is unchanged.
 - Openings statistics and the bookmarked "Score over Time" chart no longer count FlawChess practice-bot games or pasted PGNs, which were already excluded from every other analytics surface.
 - Fixed the chess engine failing to start for everyone after an update, because a caching layer kept serving old engine files instead of the new ones. Every engine file request now carries a version marker so an update can never be served stale files again.

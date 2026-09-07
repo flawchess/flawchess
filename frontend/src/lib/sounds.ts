@@ -1,11 +1,37 @@
 /**
  * Client-side sound-effect module for bot play (Phase 169, PLAY-08).
  *
- * Thin wrapper around `HTMLAudioElement` playing the vendored, license-correct
- * AGPLv3+ lila `sfx` clips (see README.md "## Sound Assets" and RESEARCH.md
- * Pitfall 1 — NOT the non-free "standard" set D-08 originally named). No new
- * npm dependency: nine independent, non-overlapping, non-spatial one-shot
- * clips are exactly `HTMLAudioElement`'s designed use case.
+ * Plays the vendored, license-correct AGPLv3+ lila `sfx` clips (see README.md
+ * "## Sound Assets" and RESEARCH.md Pitfall 1 — NOT the non-free "standard"
+ * set D-08 originally named). No new npm dependency.
+ *
+ * Playback goes through the Web Audio API wherever it exists: each clip is
+ * decoded ONCE into an `AudioBuffer` (eagerly, at module load) and every play
+ * is a fresh, throwaway `AudioBufferSourceNode`. A per-event
+ * `HTMLAudioElement` path remains ONLY for environments without Web Audio
+ * (jsdom, ancient browsers) — the two are never mixed on one page.
+ *
+ * Bug fix (iPhone 14): the module used to be element-only, restarting one
+ * shared element per event via `currentTime = 0; play()`. iOS Safari drops
+ * most of those retriggers when they arrive faster than the element's own
+ * async seek/play pipeline turns around, so the 200ms fast-forward cadence
+ * (and quick taps on Next) produced roughly one audible move sound in four. A
+ * buffer source has no such pipeline: overlapping one-shots are its designed
+ * use, and lila plays its sfx the same way.
+ *
+ * The iOS half of the fix is the audio-session category (see
+ * `requestPlaybackAudioSession`): on the phone every Web Audio play was silent
+ * — even a bare oscillator on a fresh context created inside a tap — while a
+ * media element stayed audible, because a page that only uses Web Audio is
+ * put in the "ambient" category. Asking for "playback" made it audible.
+ *
+ * Why the element path is not kept as a fallback when Web Audio exists: the
+ * first attempt at this fix routed the plays that arrived before decoding
+ * finished through the elements, which muddled the iPhone diagnosis (element
+ * plays audible, buffer plays silent looked like a broken context rather than
+ * a session category). Decoding now starts at module load instead, so the
+ * buffers are ready long before the first click and one page uses exactly one
+ * playback mechanism.
  *
  * Quick 260723-tqn: added `game-win`/`game-loss`/`game-draw`, which play
  * outcome-specific clips instead of the single undiscriminated `game-end`
@@ -175,11 +201,134 @@ export function setMuted(muted: boolean): void {
   listeners.forEach((listener) => listener());
 }
 
+// ─── Web Audio one-shot playback ────────────────────────────────────────────
+
+/** Created at module load (see the bottom of this file) so decoding can start
+ * immediately. A context constructed outside a gesture starts suspended;
+ * `unlockAudio`, called from the first real gesture, resumes it. `null` only
+ * in environments without Web Audio, where every play takes the element path.
+ * Browsers log a one-line "not allowed to start" warning for the early
+ * construction — expected and harmless. */
+let audioContext: AudioContext | null = null;
+
+/** Decoded clips, keyed by event (not filename) for the same reason
+ * `audioCache` is: the two Notify-sharing events stay independent. */
+const bufferCache = new Map<SoundEvent, AudioBuffer>();
+
+/** Events whose fetch+decode is in flight — guards against a second unlock
+ * (each `useAnalysisBoard` instance unlocks once) re-fetching every clip. */
+const decodePending = new Set<SoundEvent>();
+
+function clipUrl(event: SoundEvent): string {
+  return `/sound/${SOUND_FILES[event]}.mp3`;
+}
+
+/** Audio Session API (WebKit, iOS 17+; not in lib.dom yet). */
+interface NavigatorWithAudioSession extends Navigator {
+  audioSession?: { type: string };
+}
+
+/**
+ * Bug fix (iPhone 14, third round): with media elements gone, EVERY Web Audio
+ * sound was silent on the phone — even a bare oscillator on a fresh context
+ * created inside a tap — while a `new Audio(...).play()` control was audible.
+ * That is iOS's audio-session category: media elements play in the "playback"
+ * category, but a page that only uses Web Audio is put in "ambient", which
+ * iOS silences under the ring/silent switch and in several Focus / routing
+ * states. Asking for "playback" ourselves makes Web Audio behave exactly as
+ * the old element path did (audible on silent too, and it pauses other apps'
+ * audio while a clip plays, as the elements already did). iOS 16 and earlier
+ * lack the API and keep the ambient behaviour.
+ */
+const AUDIO_SESSION_TYPE = 'playback';
+
+function requestPlaybackAudioSession(): void {
+  const session = (navigator as NavigatorWithAudioSession).audioSession;
+  if (session === undefined) return;
+  try {
+    session.type = AUDIO_SESSION_TYPE;
+  } catch {
+    // Not settable here: ambient behaviour remains.
+  }
+}
+
+function createAudioContext(): AudioContext | null {
+  if (typeof AudioContext !== 'function') return null;
+  requestPlaybackAudioSession();
+  try {
+    return new AudioContext();
+  } catch {
+    return null;
+  }
+}
+
+/** Best-effort: the context starts `suspended` and iOS parks it there again
+ * (or in the non-standard `interrupted`) after a phone call / backgrounding;
+ * only a `resume()` brings it back. Rejections are not actionable: a source
+ * started on a suspended context simply plays once the context resumes. */
+function resumeAudioContext(context: AudioContext): void {
+  if (context.state === 'running') return;
+  context.resume().catch(() => {
+    // Not resumable right now (no gesture yet).
+  });
+}
+
+function preloadBuffer(context: AudioContext, event: SoundEvent): void {
+  if (bufferCache.has(event) || decodePending.has(event)) return;
+  decodePending.add(event);
+  fetch(clipUrl(event))
+    .then((response) => response.arrayBuffer())
+    .then((bytes) => context.decodeAudioData(bytes))
+    .then((buffer) => {
+      bufferCache.set(event, buffer);
+    })
+    .catch(() => {
+      // Fetch/decode failure: this event stays silent (the element path is
+      // deliberately never mixed in, see the module comment).
+    })
+    .finally(() => {
+      decodePending.delete(event);
+    });
+}
+
+/** One throwaway source per play — that is what lets rapid, overlapping
+ * one-shots all sound instead of restarting a single element. The node
+ * garbage-collects itself once it has finished. */
+function playBuffer(context: AudioContext, buffer: AudioBuffer): void {
+  resumeAudioContext(context);
+  const source = context.createBufferSource();
+  source.buffer = buffer;
+  source.connect(context.destination);
+  source.start();
+}
+
+/** Belt-and-braces iOS unlock: older WebKit only treated a context as
+ * user-started once a source had actually been STARTED inside the gesture,
+ * `resume()` alone not counting. One sample of silence costs nothing. */
+function kickAudioContext(context: AudioContext): void {
+  try {
+    playBuffer(context, context.createBuffer(1, 1, context.sampleRate));
+  } catch {
+    // A context that cannot even allocate a one-sample buffer is unusable;
+    // nothing to do.
+  }
+}
+
 // ─── Playback ────────────────────────────────────────────────────────────────
 
-/** Plays the clip for `event` unless muted. No-ops silently when muted. */
+/** Plays the clip for `event` unless muted. No-ops silently when muted.
+ *
+ * Web Audio when it exists (a play that arrives before its clip is decoded —
+ * only possible in the first instants after page load — is dropped rather
+ * than routed through a media element, see the module comment); the element
+ * path otherwise. */
 export function playSound(event: SoundEvent): void {
   if (readMuted()) return;
+  if (audioContext !== null) {
+    const buffer = bufferCache.get(event);
+    if (buffer !== undefined) playBuffer(audioContext, buffer);
+    return;
+  }
   safePlay(getAudio(event));
 }
 
@@ -191,6 +340,16 @@ export function playSound(event: SoundEvent): void {
  * the session — plays then immediately pauses each preloaded clip.
  */
 export function unlockAudio(): void {
+  // Web Audio: resume the (load-time) context inside the gesture and start a
+  // silent source through it. NO media element is touched on this path — see
+  // the module comment for the iOS sample-rate trap that rules that out.
+  const context = audioContext;
+  if (context !== null) {
+    requestPlaybackAudioSession();
+    resumeAudioContext(context);
+    kickAudioContext(context);
+    return;
+  }
   for (const event of SOUND_EVENTS) {
     const audio = getAudio(event);
     // Never interrupt a clip that is already sounding. `game-start` (Quick
@@ -204,3 +363,18 @@ export function unlockAudio(): void {
     audio.pause();
   }
 }
+
+// ─── Module-load initialisation ─────────────────────────────────────────────
+
+/** Decoding starts now, not at the first gesture, so the buffers are ready by
+ * the time a user can click anything. Exported for tests only: it lets a test
+ * that stubs `AudioContext` AFTER importing the module re-run the load-time
+ * step (a real page never calls it). */
+export function initWebAudio(): void {
+  audioContext ??= createAudioContext();
+  const context = audioContext;
+  if (context === null) return;
+  for (const event of SOUND_EVENTS) preloadBuffer(context, event);
+}
+
+initWebAudio();
