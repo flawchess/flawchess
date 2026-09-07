@@ -17,7 +17,6 @@ import { readDeviceContext } from '@/lib/maiaWorkerErrors';
 import { useEngineAssets } from '@/hooks/useEngineAssets';
 import { trackEvent } from '@/lib/analytics';
 import type { MaiaFailureKind } from '@/lib/maiaWorkerErrors';
-import type { EngineUnsupportedReason } from '@/lib/engine/engineAssetProgress';
 
 // ─── Named constants (CLAUDE.md no-magic-numbers) ──────────────────────────
 
@@ -129,10 +128,10 @@ const ENGINE_FAILURE_TAG_DOWNLOAD = 'download';
  * below). `unsupported` renders NO button of any kind; `failed` and `oom`
  * (quick 260829-tku) each render exactly one, Retry.
  */
-type TerminalVariant = 'unsupported' | 'unsupported-ios' | 'failed' | 'oom';
+type TerminalVariant = 'unsupported' | 'failed' | 'oom';
 
-/** The two dead-end variants: no button of any kind, since neither a retry nor a reload can change the outcome. */
-const NO_RETRY_VARIANTS: ReadonlySet<TerminalVariant> = new Set(['unsupported', 'unsupported-ios']);
+/** The dead-end variant: no button of any kind, since neither a retry nor a reload can change the outcome. */
+const NO_RETRY_VARIANTS: ReadonlySet<TerminalVariant> = new Set(['unsupported']);
 
 const TERMINAL_COPY: Record<TerminalVariant, { title: string; body: string; testId: string }> = {
   // G-213-34: reachable ONLY from the bots surface — the analysis mount
@@ -149,21 +148,6 @@ const TERMINAL_COPY: Record<TerminalVariant, { title: string; body: string; test
       "that isn't something a retry can fix. You can still use the free analysis board " +
       'and import your games from chess.com or lichess.',
     testId: 'engine-gate-unsupported',
-  },
-  // SEED-158: iOS/iPadOS WebKit CAN run the model but Safari kills the page
-  // while it does (see `iosWebKit.ts`; re-measured 2026-09-07 on WebGPU with
-  // Stockfish off, still killed), so the generic "your device doesn't support
-  // the technology" copy would be untrue here. Same dead-end shape (no
-  // button): a retry or reload runs straight into the same kill. Only the
-  // bots surface ever shows this (Analysis.tsx suppresses every `unsupported`
-  // mount, see the note above).
-  'unsupported-ios': {
-    title: 'The bot engine is switched off on iPhone and iPad',
-    body:
-      'Safari on iOS shuts the page down while the bot engine is thinking, so FlawChess ' +
-      "doesn't start it there for now. You can still use the analysis board and import " +
-      'your games from chess.com or lichess, or play the bots on a desktop or Android browser.',
-    testId: 'engine-gate-unsupported-ios',
   },
   failed: {
     // Surface-neutral (G-213-34): both bots and analysis mount this state,
@@ -210,12 +194,8 @@ export interface EngineReadyGateProps {
  * `'failed'` status splits into `'oom'` for a classified memory exhaustion
  * and `'failed'` for every other case (`'load'`, `'inference'`, or `null`).
  */
-function pickTerminalVariant(
-  status: 'unsupported' | 'failed',
-  failureKind: MaiaFailureKind | null,
-  unsupportedReason: EngineUnsupportedReason | null,
-): TerminalVariant {
-  if (status === 'unsupported') return unsupportedReason === 'ios-webkit' ? 'unsupported-ios' : 'unsupported';
+function pickTerminalVariant(status: 'unsupported' | 'failed', failureKind: MaiaFailureKind | null): TerminalVariant {
+  if (status === 'unsupported') return 'unsupported';
   return failureKind === 'oom' ? 'oom' : 'failed';
 }
 
@@ -337,7 +317,7 @@ export function EngineReadyGate({ surface, onStart, onRetry }: EngineReadyGatePr
   }, [surface, assets.ready, handleStart]);
 
   if (assets.status === 'unsupported' || assets.status === 'failed') {
-    const variant = pickTerminalVariant(assets.status, assets.failureKind, assets.unsupportedReason);
+    const variant = pickTerminalVariant(assets.status, assets.failureKind);
     const copy = TERMINAL_COPY[variant];
     return (
       <Dialog open onOpenChange={() => {}}>

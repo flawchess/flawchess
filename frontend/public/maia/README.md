@@ -329,3 +329,12 @@ route only strips `utm_*`/`fbclid` when matching a request against the manifest 
 matches a versioned request against an entry keyed on the bare path. Precaching the remaining
 `*.js`/`*.mjs` glue/loader files under their unversioned URLs would therefore add install cost
 for entries nothing can ever request again.
+
+## iOS/iPadOS: wasm backend only (SEED-158, 2026-09-07)
+
+Measured on the reference iPhone 14 Pro (iOS 26.6.1): every WebGPU shape (this 1.27.0 build and a
+temporarily vendored 1.23.0 build alike) is killed by WebKit seconds after `ready`; the CPU wasm backend
+survives full `/analysis` sessions on BOTH versions, at one and at two wasm threads. iOS therefore spawns
+`backend: 'wasm'` directly (`maiaWorkerHost.ts` `spawnOnIosWebKit()`), never probes WebGPU, never
+requests the asyncify pair, and leaves the thread count to `chooseWasmThreadCount()` (2 on a 4-core
+iPhone). The 1.23.0 vendoring was removed the same day; the version was not the lever.

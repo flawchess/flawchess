@@ -50,12 +50,11 @@ import {
 } from '@/lib/maiaWorkerErrors';
 import { supportsWasmSimd } from './wasmSimd';
 import { isIosWebKit } from './iosWebKit';
-import { isDevIosGateBypassed, isDevMaiaRuntimeWorkerFetched, showDevEngineBadge } from './devEngineSwitches';
 import {
   armMaiaPageKillSentinel,
   disarmMaiaPageKillSentinel,
   noteMaiaDispatch,
-  previousMaiaPageKillSummary,
+  noteMaiaResult,
 } from './maiaPageKillSentinel';
 import {
   getEngineAssetsSnapshot,
@@ -66,7 +65,7 @@ import {
   reportEngineAssetProgress,
   resetEngineAssetForRefetch,
 } from './engineAssetProgress';
-import { ensureOrtRuntime, fetchWasmOnlyOrtRuntime, probeOrtBackendOnce, type OrtBackend } from './ortRuntimeSource';
+import { ensureOrtRuntime, fetchWasmOnlyOrtRuntime, type OrtBackend } from './ortRuntimeSource';
 import { ENGINE_ASSET_CACHE_NAME, ENGINE_ASSET_VERSION_QUERY, versionedEngineAssetUrl } from './engineAssetCache';
 
 // ─── Constants ───────────────────────────────────────────────────────────────
@@ -132,7 +131,7 @@ interface WorkerResultMessage {
 type WorkerMessage =
   // Phase 219 (D-08/D-10): `numThreads` is the wasm thread count
   // `chooseWasmThreadCount()` chose on the worker side — see maia-worker.js.
-  | { type: 'ready'; backend: 'webgpu' | 'wasm'; numThreads: number }
+  | { type: 'ready'; backend: 'webgpu' | 'wasm'; numThreads: number; ortVersion?: string | null }
   | { type: 'progress'; loaded: number; total: number }
   | WorkerResultMessage
   | { type: 'error'; message: string }
@@ -359,38 +358,7 @@ function ensureSpawned(source: MaiaErrorSource): void {
     failAllLeasesAndDropWorker(new MaiaWorkerError('Maia worker: device lacks WASM SIMD', 'unsupported'));
     return;
   }
-  // SEED-158: iOS/iPadOS WebKit is gated off entirely inside `spawn()` (see
-  // the comment there for the 2026-09-07 measurement). This earlier check is
-  // the defensive twin for the page-session flag: if a future narrowing lets
-  // a WebGPU worker spawn on iOS again, a wasm-pinned respawn must still
-  // never happen there. Same terminal shape as the SIMD case above (no
-  // Retry: a reload runs into the same answer). Stockfish is unaffected: it
-  // lives in `workerPool.ts` and never reaches this host.
-  if (webgpuFailed && isIosWebKit()) {
-    gateOffIosWebKit('iOS WebKit: WebGPU already failed this page session — Maia stays off (wasm inference kills the page, SEED-158)');
-    return;
-  }
   spawn(source, webgpuFailed ? 'wasm' : 'auto');
-}
-
-/**
- * The iOS/iPadOS terminal (SEED-158): no Worker is (or stays) constructed,
- * the store reports `unsupported` with the `'ios-webkit'` reason so
- * `EngineReadyGate` shows the iOS-specific copy, and every lease is settled
- * with the `'unsupported'` marker (same contract as the SIMD case: the gate's
- * D-17 capture reports it, this host does not). Reached from `spawn()` for
- * every iOS device (the blanket gate) and, defensively, from the two
- * WebGPU-failure paths should a future narrowing spawn on iOS again — all of
- * which would otherwise fall through to the fatal wasm spawn. `iosWebKit.ts`
- * carries the device evidence.
- */
-function gateOffIosWebKit(consoleLine: string): void {
-  console.info(`[maia-worker] ${consoleLine}`);
-  spawnInFlight = false;
-  markEngineAssetsUnsupported('ios-webkit');
-  failAllLeasesAndDropWorker(
-    new MaiaWorkerError('Maia worker: gated off on iOS WebKit (no usable WebGPU; wasm inference kills the page)', 'unsupported'),
-  );
 }
 
 /**
@@ -446,59 +414,20 @@ function spawn(source: MaiaErrorSource, mode: 'auto' | 'wasm', forceSingleThread
     return;
   }
 
-  if (isIosWebKit() && isDevIosGateBypassed()) {
-    // SEED-158 dev bisect switch (`?dev-ios-gate=off`, dev server only):
-    // the shape a future narrowing would ship — spawn on iOS only when the
-    // probe picks WebGPU, gate off (no runtime download) when it picks wasm.
-    console.info('[maia-worker] iOS WebKit gate BYPASSED by dev switch — spawning if the probe picks webgpu');
+  if (isIosWebKit()) {
+    // SEED-158 (2026-09-07, measured on the reference iPhone 14 Pro, iOS
+    // 26.6.1): iOS/iPadOS WebKit runs Maia on the CPU wasm backend — the
+    // backend maiachess.com ships to the same phone. Every WebGPU shape died
+    // seconds after `ready` (onnxruntime-web 1.27.0 and 1.23.0 alike, idle or
+    // stepping; FLAWCHESS-AW records carry `ortVersion`), while the wasm
+    // backend survived full /analysis sessions by hand with Stockfish and the
+    // FlawChess Engine on, at one AND two wasm threads, so
+    // `chooseWasmThreadCount()` applies unchanged. No WebGPU probe, no
+    // asyncify download on iOS.
     spawnOnIosWebKit(source, myGeneration, forceSingleThread);
     return;
   }
 
-  if (isIosWebKit()) {
-    // SEED-158 (2026-09-07, measured on the reference iPhone 14 Pro, iOS
-    // 26.6.1): Maia kills the /analysis page on iOS on its OWN — with every
-    // Stockfish worker replaced by an inert stub and the FlawChess Engine
-    // off, the WebGPU worker (probe-confirmed `webgpu`, one wasm thread,
-    // cross-origin isolated) still gets the page terminated within seconds
-    // of stepping through moves. The WebGPU-only rule that stood here from
-    // 78276d717 to a4a1f4f6d relied on /maia-diag.html surviving the same
-    // shapes, which turned out not to model the app. The pre-Phase-219 build
-    // never ran Maia on this device either (its 4 GB reservation landed in
-    // the graceful `oom` terminal next to three Stockfish workers), so this
-    // is not a regression to bisect but a platform that has never carried
-    // Maia on /analysis. Gate BEFORE any probe or runtime fetch: zero
-    // Workers, zero engine bytes. Narrow again only after a REAL /analysis
-    // session survives on the device (see the seed's remaining suspects:
-    // main-thread runtime/model byte copies, the 219 ladder workload).
-    gateOffIosWebKit('iOS WebKit detected — Maia gated off (it kills the page on /analysis, SEED-158)');
-    return;
-  }
-
-  spawnFromRuntime(source, myGeneration, forceSingleThread);
-}
-
-/**
- * The tail of an `'auto'` spawn: resolve the probed backend's runtime bytes,
- * then construct the Worker (unless the module was torn down mid-fetch).
- *
- * SEED-158 dev bisect switch (`?dev-maia-runtime=worker`, Suspect A): skips
- * the main-thread runtime resolution entirely — only the fetch-free probe
- * runs, and the worker is constructed with NO runtime buffer, so
- * onnxruntime-web resolves the `.wasm` from `wasmPaths` inside the worker
- * (the same degraded path a failed runtime fetch already takes; `ready`
- * still marks `ort-runtime` done). Production bundles never take this branch.
- */
-function spawnFromRuntime(source: MaiaErrorSource, myGeneration: number, forceSingleThread: boolean): void {
-  if (isDevMaiaRuntimeWorkerFetched()) {
-    console.info('[maia-worker] dev switch: runtime resolved inside the worker (no main-thread buffer)');
-    probeOrtBackendOnce().then((chosenBackend) => {
-      if (myGeneration !== spawnGeneration) return;
-      spawnInFlight = false;
-      constructWorker(source, chosenBackend, null, forceSingleThread);
-    });
-    return;
-  }
   ensureOrtRuntime().then(({ backend: chosenBackend, buffer: runtimeBuffer }) => {
     if (myGeneration !== spawnGeneration) return;
     spawnInFlight = false;
@@ -507,22 +436,15 @@ function spawnFromRuntime(source: MaiaErrorSource, myGeneration: number, forceSi
 }
 
 /**
- * The iOS/iPadOS spawn shape (SEED-158): consult the fetch-free backend
- * probe FIRST and spawn only when it picks `webgpu`; a `wasm` answer is the
- * `unsupported` terminal with no runtime download on the way (wasm inference
- * kills the page there, see `iosWebKit.ts`). Reached today only behind the
- * `?dev-ios-gate=off` dev switch in `spawn()`; it is the exact branch a
- * measured-safe narrowing of the blanket gate would route every iOS device
- * through.
+ * The iOS/iPadOS spawn shape (SEED-158, 2026-09-07): CPU wasm backend, no
+ * WebGPU probe, so the `webgpu-unavailable` respawn cannot fire on this path.
+ * `forceSingleThread` is only ever true here on the WR-01 post-timeout retry.
  */
 function spawnOnIosWebKit(source: MaiaErrorSource, myGeneration: number, forceSingleThread: boolean): void {
-  probeOrtBackendOnce().then((chosenBackend) => {
+  fetchWasmOnlyOrtRuntime().then((runtimeBuffer) => {
     if (myGeneration !== spawnGeneration) return;
-    if (chosenBackend === 'wasm') {
-      gateOffIosWebKit('iOS WebKit: probe picked wasm — Maia stays off (wasm inference kills the page, SEED-158)');
-      return;
-    }
-    spawnFromRuntime(source, myGeneration, forceSingleThread);
+    spawnInFlight = false;
+    constructWorker(source, 'wasm', runtimeBuffer, forceSingleThread);
   });
 }
 
@@ -629,22 +551,6 @@ function constructWorker(
  */
 function respawnPinnedToWasm(rawMessage: string, breadcrumbMessage: string): void {
   const source = spawnSource ?? 'maia-worker';
-  // SEED-158 (2026-09-06): on iOS/iPadOS WebKit the wasm replacement would
-  // kill the page (see `iosWebKit.ts`), so a WebGPU failure there is the
-  // TERMINAL `unsupported` state, not a respawn. Captured once per page
-  // session (`webgpuFailed` below guarantees no second pass) because it is
-  // exactly the population the seed wants visible: an iOS device that has
-  // WebGPU yet lost Maia to it. Variable data goes in context, not the
-  // message, so the events group (CLAUDE.md Sentry rules).
-  if (isIosWebKit()) {
-    webgpuFailed = true;
-    Sentry.setContext('maia', { rawMessage, breadcrumbMessage });
-    Sentry.captureException(new Error('Maia worker: WebGPU failed on iOS WebKit — gated off (no wasm fallback there)'), {
-      tags: { source, backend: 'webgpu', maia_failure: 'webgpu-ios-terminal' },
-    });
-    gateOffIosWebKit(`${breadcrumbMessage} — iOS WebKit: no wasm respawn (it kills the page) — ${rawMessage}`);
-    return;
-  }
   // Announce the fallback in the console. maia-worker.js's header has always
   // promised "the fallback itself is announced with a single console.info
   // line", but until Phase 219 UAT only a Sentry breadcrumb was recorded — a
@@ -746,14 +652,9 @@ function handleMessage(msg: WorkerMessage): void {
     // wasm thread count — read during browser UAT via the console, since
     // whenReady()'s Promise<'webgpu' | 'wasm'> signature is deliberately not
     // widened to carry it (would ripple through every caller for no gain).
-    console.info(`[maia-worker] ready — backend=${msg.backend} numThreads=${msg.numThreads}`);
+    console.info(`[maia-worker] ready — backend=${msg.backend} numThreads=${msg.numThreads} ort=${msg.ortVersion ?? '?'}`);
     // SEED-158: from here on a silent page kill leaves a record for the next load.
-    armMaiaPageKillSentinel({ backend: msg.backend, numThreads: msg.numThreads });
-    // SEED-158: the same line on screen, for devices without a console (dev only).
-    showDevEngineBadge(
-      `maia ${msg.backend} threads=${msg.numThreads} coi=${String(globalThis.crossOriginIsolated)}` +
-        (previousMaiaPageKillSummary() ? ` | ${previousMaiaPageKillSummary()}` : ''),
-    );
+    armMaiaPageKillSentinel({ backend: msg.backend, numThreads: msg.numThreads, ortVersion: msg.ortVersion ?? null });
     markEngineAssetReady('maia-model');
     // Phase 213-09 (G-213-35): 'ready' fires only after the worker's
     // `InferenceSession.create()` has already succeeded — on EVERY path,
@@ -772,6 +673,7 @@ function handleMessage(msg: WorkerMessage): void {
   if (msg.type === 'result') {
     const req = inFlight;
     inFlight = null;
+    noteMaiaResult();
     if (req) {
       // wdlByElo is computed by the worker and transferred on EVERY
       // analyze() call, yet nothing in the engine core reads it today —

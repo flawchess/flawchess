@@ -278,7 +278,7 @@ describe('maiaWorkerScript — backend: wasm', () => {
     // must be cleared — retaining the duplicate buffer past this point is
     // pure waste on the worker's heap (T-213-09-06).
     expect(handle.sandbox.ort?.env.wasm.wasmBinary).toBeUndefined();
-    expect(handle.postMessages).toContainEqual({ type: 'ready', backend: 'wasm', numThreads: 1 });
+    expect(handle.postMessages).toContainEqual(expect.objectContaining({ type: 'ready', backend: 'wasm', numThreads: 1 }));
   });
 
   it('an absent runtimeBuffer leaves wasmBinary unset throughout', async () => {
@@ -325,7 +325,7 @@ describe('maiaWorkerScript — backend: webgpu', () => {
     expect((snapshot as Uint8Array).length).toBe(3);
 
     expect(handle.sandbox.ort?.env.wasm.wasmBinary).toBeUndefined();
-    expect(handle.postMessages).toContainEqual({ type: 'ready', backend: 'webgpu', numThreads: 1 });
+    expect(handle.postMessages).toContainEqual(expect.objectContaining({ type: 'ready', backend: 'webgpu', numThreads: 1 }));
   });
 
   it('an absent runtimeBuffer leaves wasmBinary unset throughout the webgpu path too', async () => {
@@ -375,7 +375,7 @@ describe('maiaWorkerScript — chooseWasmThreadCount() (Phase 219, D-08)', () =>
     const handle = setupSandbox({ crossOriginIsolated: true, hardwareConcurrency: 8 });
     await sendInit(handle, { backend: 'wasm' });
 
-    expect(handle.postMessages).toContainEqual({ type: 'ready', backend: 'wasm', numThreads: 4 });
+    expect(handle.postMessages).toContainEqual(expect.objectContaining({ type: 'ready', backend: 'wasm', numThreads: 4 }));
   });
 });
 
@@ -399,7 +399,7 @@ describe('maiaWorkerScript — WR-01 (Phase 219 review): bounded threaded init +
     await sendInit(handle, { backend: 'wasm', forceSingleThread: true });
 
     expect(handle.createCalls[0]?.numThreadsAtCreate).toBe(1);
-    expect(handle.postMessages).toContainEqual({ type: 'ready', backend: 'wasm', numThreads: 1 });
+    expect(handle.postMessages).toContainEqual(expect.objectContaining({ type: 'ready', backend: 'wasm', numThreads: 1 }));
   });
 
   it('forceSingleThread pins numThreads to 1 on the webgpu/asyncify path too', async () => {
@@ -407,7 +407,7 @@ describe('maiaWorkerScript — WR-01 (Phase 219 review): bounded threaded init +
     await sendInit(handle, { backend: 'webgpu', forceSingleThread: true });
 
     expect(handle.createCalls[0]?.numThreadsAtCreate).toBe(1);
-    expect(handle.postMessages).toContainEqual({ type: 'ready', backend: 'webgpu', numThreads: 1 });
+    expect(handle.postMessages).toContainEqual(expect.objectContaining({ type: 'ready', backend: 'webgpu', numThreads: 1 }));
   });
 
   it('an absent forceSingleThread leaves chooseWasmThreadCount()\'s normal formula in effect (no regression)', async () => {
@@ -424,7 +424,7 @@ describe('maiaWorkerScript — backend defaulting', () => {
     await sendInit(handle, { backend: 'not-a-real-backend' });
 
     expect(handle.importScriptsCalls).toEqual([WASM_ONLY_GLUE_PATH]);
-    expect(handle.postMessages).toContainEqual({ type: 'ready', backend: 'wasm', numThreads: 1 });
+    expect(handle.postMessages).toContainEqual(expect.objectContaining({ type: 'ready', backend: 'wasm', numThreads: 1 }));
   });
 
   it('an absent backend field falls safe to wasm', async () => {
@@ -446,7 +446,7 @@ describe('maiaWorkerScript — asset cache (Phase 213-12, D-20, closing G-213-37
     expect(handle.cacheOpenCalls).toEqual([TEST_ASSET_CACHE_NAME]);
     const progressEvents = handle.postMessages.filter((m) => m.type === 'progress');
     expect(progressEvents).toEqual([{ type: 'progress', loaded: bytes.length, total: bytes.length }]);
-    expect(handle.postMessages).toContainEqual({ type: 'ready', backend: 'wasm', numThreads: 1 });
+    expect(handle.postMessages).toContainEqual(expect.objectContaining({ type: 'ready', backend: 'wasm', numThreads: 1 }));
   });
 
   it('an EMPTY cache: exactly one model fetch, and the complete body is written to the cache under MODEL_PATH', async () => {
@@ -460,7 +460,7 @@ describe('maiaWorkerScript — asset cache (Phase 213-12, D-20, closing G-213-37
     const stored = handle.cacheStore.get(MODEL_PATH);
     expect(stored).toBeDefined();
     expect(Array.from(stored!)).toEqual(Array.from(bytes));
-    expect(handle.postMessages).toContainEqual({ type: 'ready', backend: 'wasm', numThreads: 1 });
+    expect(handle.postMessages).toContainEqual(expect.objectContaining({ type: 'ready', backend: 'wasm', numThreads: 1 }));
   });
 
   it('NO assetCacheName: byte-for-byte todays behavior — one fetch, no cache access at all, even when caches IS available', async () => {
@@ -469,7 +469,7 @@ describe('maiaWorkerScript — asset cache (Phase 213-12, D-20, closing G-213-37
 
     expect(handle.fetchCalls).toEqual([MODEL_PATH]);
     expect(handle.cacheOpenCalls).toEqual([]); // never opened — no assetCacheName means no cache access
-    expect(handle.postMessages).toContainEqual({ type: 'ready', backend: 'wasm', numThreads: 1 });
+    expect(handle.postMessages).toContainEqual(expect.objectContaining({ type: 'ready', backend: 'wasm', numThreads: 1 }));
   });
 
   it('a model stream ending short of its declared content-length is retried and NEVER written to the cache (CR-01)', async () => {
@@ -498,7 +498,7 @@ describe('maiaWorkerScript — asset cache (Phase 213-12, D-20, closing G-213-37
 
     expect(handle.fetchCalls).toEqual([MODEL_PATH]);
     expect(handle.cacheStore.has(MODEL_PATH)).toBe(false);
-    expect(handle.postMessages).toContainEqual({ type: 'ready', backend: 'wasm', numThreads: 1 });
+    expect(handle.postMessages).toContainEqual(expect.objectContaining({ type: 'ready', backend: 'wasm', numThreads: 1 }));
   });
 
   it('assetCacheName present but caches undefined (Safari private mode / insecure context): degrades to a plain fetch, never throws', async () => {
@@ -506,7 +506,7 @@ describe('maiaWorkerScript — asset cache (Phase 213-12, D-20, closing G-213-37
     await sendInit(handle, { backend: 'wasm', assetCacheName: TEST_ASSET_CACHE_NAME });
 
     expect(handle.fetchCalls).toEqual([MODEL_PATH]);
-    expect(handle.postMessages).toContainEqual({ type: 'ready', backend: 'wasm', numThreads: 1 });
+    expect(handle.postMessages).toContainEqual(expect.objectContaining({ type: 'ready', backend: 'wasm', numThreads: 1 }));
     expect(handle.postMessages.some((m) => m.type === 'error')).toBe(false);
   });
 });
@@ -569,6 +569,6 @@ describe('maiaWorkerScript — asset versioning (quick 260905-rhc)', () => {
     const wasmPaths = handle.sandbox.ort?.env.wasm.wasmPaths as { mjs: string; wasm: string };
     expect(wasmPaths.mjs).toBe('/maia/ort-wasm-simd-threaded.mjs');
     expect(wasmPaths.wasm).toBe('/maia/ort-wasm-simd-threaded.wasm');
-    expect(handle.postMessages).toContainEqual({ type: 'ready', backend: 'wasm', numThreads: 1 });
+    expect(handle.postMessages).toContainEqual(expect.objectContaining({ type: 'ready', backend: 'wasm', numThreads: 1 }));
   });
 });

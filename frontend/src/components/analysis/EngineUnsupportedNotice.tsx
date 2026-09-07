@@ -2,29 +2,23 @@
  * EngineUnsupportedNotice — the in-card copy for a device on which Maia can
  * never start (SEED-158, 2026-09-07).
  *
- * Why a card-level notice: `EngineReadyGate` carries the same two messages,
- * but it is deliberately suppressed on /analysis for the `unsupported`
- * status (it would lock the board out), and it never mounts on a returning
- * device whose engine assets were already cached. So on every iPhone the
- * Maia card showed a pulsing skeleton forever and the FlawChess Engine card
- * sat empty, with no explanation. Both cards now render this instead of
- * their loading state whenever the store reports `unsupported`.
+ * Why a card-level notice: `EngineReadyGate` carries the same message, but
+ * it is deliberately suppressed on /analysis for the `unsupported` status
+ * (it would lock the board out), and it never mounts on a returning device
+ * whose engine assets were already cached. So a gated device saw the Maia
+ * card's pulsing skeleton forever and an empty FlawChess Engine card, with no
+ * explanation (found on iPhones while the 2026-09-06 blanket iOS gate was
+ * in force). Both cards now render this instead of their loading state
+ * whenever the store reports `unsupported`.
  *
- * Copy mirrors the gate's `unsupported-ios` / `unsupported` variants, minus
- * the "you can still use the analysis board" pointer (the reader is on it).
+ * Copy mirrors the gate's `unsupported` variant, minus the "you can still
+ * use the analysis board" pointer (the reader is on it).
  */
 import type { ReactElement } from 'react';
 import { useEngineUnsupportedReason } from '@/hooks/useEngineAssets';
 import type { EngineUnsupportedReason } from '@/lib/engine/engineAssetProgress';
 
 const NOTICE_COPY: Record<EngineUnsupportedReason, { title: string; body: string }> = {
-  'ios-webkit': {
-    title: 'Maia is switched off on iPhone and iPad',
-    body:
-      'Safari on iOS shuts the page down while Maia is thinking, so FlawChess ' +
-      "doesn't start it here for now. Stockfish analysis keeps working; for the " +
-      'human-move chart and the FlawChess Engine use a desktop or Android browser.',
-  },
   'no-wasm-simd': {
     title: "This device can't run Maia",
     body:

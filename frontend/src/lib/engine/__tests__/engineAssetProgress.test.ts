@@ -42,13 +42,13 @@ describe('markEngineAssetsUnsupported — Sentry capture at the store choke poin
   // iPhone whose model was already cached (gate never mounts) or that opened
   // /analysis (gate suppressed for `unsupported`) produced NO event at all.
   it('captures once, with the reason tag, device context, and the page, on the first call', () => {
-    markEngineAssetsUnsupported('ios-webkit');
+    markEngineAssetsUnsupported('no-wasm-simd');
 
     expect(Sentry.captureException).toHaveBeenCalledTimes(1);
     expect(Sentry.captureException).toHaveBeenCalledWith(
       expect.objectContaining({ message: 'Engine cold start: device cannot run the Maia model' }),
       expect.objectContaining({
-        tags: { source: 'engine-asset-store', engine_failure: 'unsupported', unsupported_reason: 'ios-webkit' },
+        tags: { source: 'engine-asset-store', engine_failure: 'unsupported', unsupported_reason: 'no-wasm-simd' },
         contexts: expect.objectContaining({
           engine_device: expect.any(Object),
           engine_page: { pathname: expect.any(String) },
@@ -57,13 +57,13 @@ describe('markEngineAssetsUnsupported — Sentry capture at the store choke poin
     );
   });
 
-  it('does not capture again on a repeated call in the same page session (both gate reasons)', () => {
+  it('does not capture again on a repeated call in the same page session', () => {
     markEngineAssetsUnsupported('no-wasm-simd');
     markEngineAssetsUnsupported('no-wasm-simd');
-    markEngineAssetsUnsupported('ios-webkit');
+    markEngineAssetsUnsupported('no-wasm-simd');
 
     expect(Sentry.captureException).toHaveBeenCalledTimes(1);
-    expect(getEngineAssetsSnapshot().unsupportedReason).toBe('ios-webkit');
+    expect(getEngineAssetsSnapshot().unsupportedReason).toBe('no-wasm-simd');
   });
 
   it('never interpolates the reason into the message (grouping rule)', () => {
@@ -597,9 +597,9 @@ describe('unsupportedReason', () => {
   it('is null until a gate fires, records the reason with the unsupported status, and resets to null', () => {
     expect(getEngineAssetsSnapshot().unsupportedReason).toBeNull();
 
-    markEngineAssetsUnsupported('ios-webkit');
+    markEngineAssetsUnsupported('no-wasm-simd');
     expect(getEngineAssetsSnapshot().status).toBe('unsupported');
-    expect(getEngineAssetsSnapshot().unsupportedReason).toBe('ios-webkit');
+    expect(getEngineAssetsSnapshot().unsupportedReason).toBe('no-wasm-simd');
 
     resetEngineAssetsForTests();
     expect(getEngineAssetsSnapshot().unsupportedReason).toBeNull();
@@ -627,16 +627,16 @@ describe('unsupported status survives other assets\' traffic', () => {
   // terminal status alone, or the analysis gate un-suppresses and sits at
   // the Stockfish share (~11%) forever.
   it('a Stockfish progress report does NOT flip unsupported to downloading', () => {
-    markEngineAssetsUnsupported('ios-webkit');
+    markEngineAssetsUnsupported('no-wasm-simd');
     markEngineAssetPending('stockfish-wasm');
     reportEngineAssetProgress('stockfish-wasm', 1_000_000, STOCKFISH_WASM_BYTES_FALLBACK);
 
     expect(getEngineAssetsSnapshot().status).toBe('unsupported');
-    expect(getEngineAssetsSnapshot().unsupportedReason).toBe('ios-webkit');
+    expect(getEngineAssetsSnapshot().unsupportedReason).toBe('no-wasm-simd');
   });
 
   it('a Stockfish ready (the only registered asset) does NOT flip unsupported to ready', () => {
-    markEngineAssetsUnsupported('ios-webkit');
+    markEngineAssetsUnsupported('no-wasm-simd');
     markEngineAssetPending('stockfish-wasm');
     markEngineAssetReady('stockfish-wasm');
 
