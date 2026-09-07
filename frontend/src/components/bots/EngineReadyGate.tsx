@@ -110,9 +110,12 @@ function waitBucket(elapsedMs: number): WaitBucketLabel {
 }
 
 // ─── D-17 Sentry — fixed, variable-free messages (grouping rule); device
-// details travel via `contexts`, never interpolated into the message. ──────
+// details travel via `contexts`, never interpolated into the message. The
+// `unsupported` capture is NOT here any more (SEED-158, 2026-09-07): it moved
+// to `engineAssetProgress.ts`'s `markEngineAssetsUnsupported`, because this
+// modal never mounts on a returning device (cached assets) and is suppressed
+// on /analysis, so the iOS-gated population was invisible in Sentry. ────────
 
-const SENTRY_MESSAGE_UNSUPPORTED = 'Engine cold start: device cannot run the Maia model';
 const SENTRY_MESSAGE_FAILED = 'Engine cold start: engine failed to start';
 
 /** Named constant for the Sentry `engine_failure` tag value, so the string
@@ -243,7 +246,6 @@ export function EngineReadyGate({ surface, onStart, onRetry }: EngineReadyGatePr
   const shownFiredRef = useRef(false);
   const startedFiredRef = useRef(false);
   const abandonedFiredRef = useRef(false);
-  const unsupportedCapturedRef = useRef(false);
   const failedCapturedRef = useRef(false);
 
   // D-16: gate-shown fires exactly once, the first time this component
@@ -271,24 +273,11 @@ export function EngineReadyGate({ surface, onStart, onRetry }: EngineReadyGatePr
     };
   }, [surface]);
 
-  // D-17: terminal-failure Sentry captures, at most once per mount per
-  // terminal state. A clean downloading -> ready run never enters either
-  // branch, so it produces zero Sentry calls.
+  // D-17: terminal-failure Sentry capture for the `failed` state, at most
+  // once per mount. A clean downloading -> ready run never enters this
+  // branch, so it produces zero Sentry calls. (`unsupported` is captured by
+  // the store itself — see the header note above.)
   useEffect(() => {
-    if (assets.status === 'unsupported' && !unsupportedCapturedRef.current) {
-      unsupportedCapturedRef.current = true;
-      // Hotfix 2026-09-06 (SEED-158): `unsupported_reason` splits the D-13
-      // no-SIMD population from the iOS gate in the dashboard without
-      // changing the (grouping-relevant) message.
-      Sentry.captureException(new Error(SENTRY_MESSAGE_UNSUPPORTED), {
-        tags: {
-          source: 'engine-ready-gate',
-          engine_failure: 'unsupported',
-          unsupported_reason: assets.unsupportedReason ?? 'unknown',
-        },
-        contexts: { engine_device: readDeviceContext() },
-      });
-    }
     if (assets.status === 'failed' && !failedCapturedRef.current) {
       failedCapturedRef.current = true;
       // Dedupe (FLAWCHESS-A5): a non-null `failureKind` means the Maia worker
@@ -304,7 +293,7 @@ export function EngineReadyGate({ surface, onStart, onRetry }: EngineReadyGatePr
         contexts: { engine_device: readDeviceContext() },
       });
     }
-  }, [assets.status, assets.failureKind, assets.unsupportedReason]);
+  }, [assets.status, assets.failureKind]);
 
   // D-18: the single start path for BOTH surfaces — a bots-surface click and
   // an analysis-surface auto-close both funnel through this one function, so

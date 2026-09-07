@@ -11,6 +11,7 @@ import { EngineToggleHeader } from '@/components/analysis/EngineToggleHeader';
 import { EngineLines, EngineLinesSkeleton, LINES_MIN_HEIGHT } from '@/components/analysis/EngineLines';
 import { FlawChessEngineLines } from '@/components/analysis/FlawChessEngineLines';
 import { FlawChessAgreementVerdict } from '@/components/analysis/FlawChessAgreementVerdict';
+import { useEngineUnsupportedNotice } from '@/components/analysis/EngineUnsupportedNotice';
 import { MaiaHumanPanel } from '@/components/analysis/MaiaHumanPanel';
 import { EloSelector } from '@/components/analysis/EloSelector';
 import { TemperatureSelector } from '@/components/analysis/TemperatureSelector';
@@ -406,6 +407,9 @@ export function FlawChessCard({
   temperature,
   setTemperature,
 }: FlawChessCardProps): ReactElement {
+  // SEED-158: the FlawChess Engine needs Maia; on a device that can never
+  // start it the card stayed blank (or on its skeleton) forever.
+  const unsupportedNotice = useEngineUnsupportedNotice('flawchess');
   return (
     <Card data-testid="analysis-flawchess-panel">
       <CardHeader size="compact" data-testid="analysis-flawchess-info" className="font-normal text-muted-foreground">
@@ -428,7 +432,9 @@ export function FlawChessCard({
         <FlawChessInfoTooltip />
       </CardHeader>
       <CardBody className={`${LINES_MIN_HEIGHT} p-2`}>
-        {flawChessLoading ? (
+        {unsupportedNotice ? (
+          unsupportedNotice
+        ) : flawChessLoading ? (
           <EngineLinesSkeleton testId="analysis-flawchess-loading" rows={2} />
         ) : !flawChessEnabled ? (
           <div className="flex h-full items-center px-2 text-sm text-muted-foreground">

@@ -518,35 +518,31 @@ describe('EngineReadyGate', () => {
       expect(Sentry.captureException).not.toHaveBeenCalled();
     });
 
-    it('captures exactly one Sentry exception for the unsupported terminal state, with device context and no interpolated message', () => {
+    it('adds NO capture of its own for the unsupported terminal state — the store captured it once already (SEED-158, 2026-09-07)', () => {
       act(() => {
         markEngineAssetsUnsupported('no-wasm-simd');
       });
-      render(<EngineReadyGate surface="bots" onStart={vi.fn()} onRetry={vi.fn()} />);
-
+      // The store's own capture (see engineAssetProgress.test.ts) is the one call.
       expect(Sentry.captureException).toHaveBeenCalledTimes(1);
       expect(Sentry.captureException).toHaveBeenCalledWith(
         expect.objectContaining({ message: 'Engine cold start: device cannot run the Maia model' }),
-        expect.objectContaining({
-          tags: expect.objectContaining({ source: 'engine-ready-gate', engine_failure: 'unsupported' }),
-          contexts: expect.objectContaining({ engine_device: expect.any(Object) }),
-        }),
+        expect.objectContaining({ tags: expect.objectContaining({ source: 'engine-asset-store' }) }),
       );
+
+      render(<EngineReadyGate surface="bots" onStart={vi.fn()} onRetry={vi.fn()} />);
+      expect(screen.getByTestId('engine-gate-unsupported')).toBeTruthy();
+      // Mounting the gate (and re-rendering it) must not add a second event.
+      expect(Sentry.captureException).toHaveBeenCalledTimes(1);
     });
 
-    it('tags the unsupported capture with the gate reason so the iOS population is separable from no-SIMD (same grouping message)', () => {
+    it('renders the iOS variant for the ios-webkit reason without a second capture', () => {
       act(() => {
         markEngineAssetsUnsupported('ios-webkit');
       });
       render(<EngineReadyGate surface="bots" onStart={vi.fn()} onRetry={vi.fn()} />);
 
+      expect(screen.getByTestId('engine-gate-unsupported-ios')).toBeTruthy();
       expect(Sentry.captureException).toHaveBeenCalledTimes(1);
-      expect(Sentry.captureException).toHaveBeenCalledWith(
-        expect.objectContaining({ message: 'Engine cold start: device cannot run the Maia model' }),
-        expect.objectContaining({
-          tags: expect.objectContaining({ engine_failure: 'unsupported', unsupported_reason: 'ios-webkit' }),
-        }),
-      );
     });
 
     it('captures exactly one Sentry exception for the failed terminal state, distinct from the unsupported message', () => {

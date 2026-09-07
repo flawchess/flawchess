@@ -14,6 +14,8 @@
  * special path a second asset has to be bolted onto later.
  */
 
+import * as Sentry from '@sentry/react';
+import { readDeviceContext } from '@/lib/maiaWorkerErrors';
 import type { MaiaFailureKind } from '@/lib/maiaWorkerErrors';
 
 // ─── Types ──────────────────────────────────────────────────────────────────
@@ -354,6 +356,55 @@ export function markEngineAssetsUnsupported(reason: EngineUnsupportedReason): vo
   currentStatus = 'unsupported';
   currentUnsupportedReason = reason;
   commit();
+  captureUnsupportedOnce(reason);
+}
+
+/**
+ * Sentry — fixed, variable-free message (grouping rule); device details and
+ * the page travel via `contexts`/`tags`, never interpolated into the message.
+ * Moved here from `EngineReadyGate` (D-17) on 2026-09-07 (SEED-158).
+ */
+const SENTRY_MESSAGE_UNSUPPORTED = 'Engine cold start: device cannot run the Maia model';
+/** Named so the `source` tag value is not a bare literal at the call site. */
+const SENTRY_SOURCE_ENGINE_ASSET_STORE = 'engine-asset-store';
+/** One capture per page session — every later `markEngineAssetsUnsupported` call is the same fact. */
+let unsupportedCaptured = false;
+
+/**
+ * Bug fix (SEED-158, 2026-09-07): the ONLY `unsupported` capture used to live
+ * in `EngineReadyGate`'s D-17 effect, so it fired only while that modal was
+ * mounted. On /analysis the modal is suppressed for `unsupported` (it would
+ * lock the board out), and on BOTH surfaces `engineGateRequired()` skips the
+ * modal entirely once the assets were seen once (a returning device with the
+ * model already cached). Result: every iPhone that hit the iOS gate on
+ * /analysis, and every returning iPhone on /bots, produced an empty Maia
+ * card and an empty FlawChess card with ZERO Sentry events, so the size of
+ * the gated population was invisible. The store is the one choke point both
+ * gate reasons pass through (`maiaWorkerHost.ts`), so the capture lives here.
+ */
+function captureUnsupportedOnce(reason: EngineUnsupportedReason): void {
+  if (unsupportedCaptured) return;
+  unsupportedCaptured = true;
+  Sentry.captureException(new Error(SENTRY_MESSAGE_UNSUPPORTED), {
+    tags: {
+      source: SENTRY_SOURCE_ENGINE_ASSET_STORE,
+      engine_failure: 'unsupported',
+      unsupported_reason: reason,
+    },
+    contexts: {
+      engine_device: readDeviceContext(),
+      engine_page: { pathname: readPathname() },
+    },
+  });
+}
+
+/** Which route hit the gate (`/analysis` vs `/bots`) — best-effort, never throws. */
+function readPathname(): string {
+  try {
+    return window.location.pathname;
+  } catch {
+    return 'unknown';
+  }
 }
 
 /**
@@ -528,6 +579,7 @@ export function resetEngineAssetsForTests(): void {
   currentAssets = {};
   currentFailureKind = null;
   currentUnsupportedReason = null;
+  unsupportedCaptured = false;
   cachedSnapshot = {
     status: currentStatus,
     assets: currentAssets,

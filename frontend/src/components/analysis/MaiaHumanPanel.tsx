@@ -18,6 +18,7 @@ import { User } from 'lucide-react';
 import { MovesByRatingChart } from '@/components/analysis/MovesByRatingChart';
 import type { MoveQualityEval, EngineLine } from '@/components/analysis/MovesByRatingChart';
 import { MaiaMoveQualityBar } from '@/components/analysis/MaiaMoveQualityBar';
+import { useEngineUnsupportedNotice } from '@/components/analysis/EngineUnsupportedNotice';
 import type { HoveredQualityMove } from '@/components/analysis/MaiaMoveQualityBar';
 import { Card, CardHeader, CardBody } from '@/components/ui/card';
 import { Switch } from '@/components/ui/switch';
@@ -154,6 +155,9 @@ export function MaiaHumanPanel({
   // pre-155 unit tests below do) reproduces the exact prior header/no-header
   // behavior, so the locked "compact drops the header" test stays green.
   const showToggle = onToggleEnabled !== undefined;
+  // SEED-158: on a device that can never start Maia (iOS gate, no WASM SIMD)
+  // the chart's skeleton would pulse forever — say why instead.
+  const unsupportedNotice = useEngineUnsupportedNotice('maia');
   const toggleSwitch = showToggle && (
     <Switch
       checked={enabled ?? true}
@@ -181,29 +185,33 @@ export function MaiaHumanPanel({
       {/* The ELO slider sits between this card and the FlawChess card on desktop; on
           mobile the caller passes it as `footer` so it lives inside the card (164 UAT). */}
       <CardBody className="flex flex-col gap-3 p-3">
-        <MovesByRatingChart
-          perElo={perElo}
-          playedSan={playedSan}
-          bestSan={bestSan}
-          selectedElo={selectedElo}
-          shownSans={shownSans}
-          qualityBySan={qualityBySan}
-          engineTopLines={engineTopLines}
-          heightClass={compact ? COMPACT_CHART_HEIGHT_CLASS : undefined}
-        />
-        {/* Move-quality bar below the chart (quick 260705-kfg): the shown
-            candidates' Maia mass split by Stockfish-graded severity. */}
-        <MaiaMoveQualityBar
-          perElo={perElo}
-          isLadderComplete={isLadderComplete}
-          selectedElo={selectedElo}
-          shownSans={shownSans}
-          qualityBySan={qualityBySan}
-          mover={mover}
-          onHoverMovesChange={onHoverMovesChange}
-          isOpponentToMove={isOpponentToMove}
-          onPlayMove={onPlayMove}
-        />
+        {unsupportedNotice ?? (
+          <>
+            <MovesByRatingChart
+              perElo={perElo}
+              playedSan={playedSan}
+              bestSan={bestSan}
+              selectedElo={selectedElo}
+              shownSans={shownSans}
+              qualityBySan={qualityBySan}
+              engineTopLines={engineTopLines}
+              heightClass={compact ? COMPACT_CHART_HEIGHT_CLASS : undefined}
+            />
+            {/* Move-quality bar below the chart (quick 260705-kfg): the shown
+                candidates' Maia mass split by Stockfish-graded severity. */}
+            <MaiaMoveQualityBar
+              perElo={perElo}
+              isLadderComplete={isLadderComplete}
+              selectedElo={selectedElo}
+              shownSans={shownSans}
+              qualityBySan={qualityBySan}
+              mover={mover}
+              onHoverMovesChange={onHoverMovesChange}
+              isOpponentToMove={isOpponentToMove}
+              onPlayMove={onPlayMove}
+            />
+          </>
+        )}
         {footer}
       </CardBody>
     </Card>

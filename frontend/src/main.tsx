@@ -5,6 +5,14 @@ import * as Sentry from "@sentry/react";
 import "./index.css";
 import App from "./App.tsx";
 import { createSwUpdateChecker, SW_UPDATE_INTERVAL_MS } from "@/lib/swUpdate";
+import { reportMaiaPageKillFromPreviousSession } from "@/lib/engine/maiaPageKillSentinel";
+import { showDevEngineBadge } from "@/lib/engine/devEngineSwitches";
+
+// SEED-158: a page killed while Maia was running (iOS Safari's silent
+// per-page memory-limit termination) leaves a record in localStorage — report
+// it now that Sentry is initialised, and put it on screen on the dev server.
+const previousPageKill = reportMaiaPageKillFromPreviousSession();
+if (previousPageKill) showDevEngineBadge(previousPageKill);
 
 // ── Service Worker update handling ────────────────────────────────────────
 // When a new service worker activates (after deploy), reload the page so the
