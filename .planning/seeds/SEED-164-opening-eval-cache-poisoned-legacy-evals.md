@@ -57,6 +57,13 @@ inside the first 20 plies, classified as a "lucky" blunder immediately followed 
    lease-submit path was still misaligning in July (see memory
    `atomic-eval-submit-incremental-lease`). Consequence: **no date cut identifies the
    bad rows**, and there are no provenance columns. Every row has to be screened.
+7. **Only the server pool writes the cache.** `_upsert_opening_cache` is invoked solely
+   from `_full_drain_tick` (`eval_drain.py` ~1119 via `eval_apply.py`
+   `update_opening_cache=True`). Remote-worker submits never insert rows; they only
+   consume the dedup fill. Two consequences: the poisoned donors were server-pool
+   writes (or the backfill), and any confirmation scheme (hardening item 3) that counts
+   only tick-path writes as sources will starve, because remote workers carry ~85% of
+   full-eval throughput (memory `worker-fleet-topology`).
 
 ## Blast radius (lower bound; the total is unknowable without screening)
 
@@ -255,6 +262,13 @@ Prints and writes `reports/opening-cache-repair/opening-cache-repair-YYYY-MM-DD.
   the opening bounce rate (`|eval_P - eval_{P-1}| >= 200 AND |eval_{P+1} - eval_{P-1}|
   <= 60`, plies 2-19) before/after, and the status of game 2356581 plies 5/6 and the 9
   named hashes (must read `confirmed_bad` → `repaired`).
+  Bounce-rate noise floor from the cache-free benchmark DB (engine games, 1-in-8
+  sample, 198k rows, 2026-09-09): 0.618% any bounce, 0.235% in the 250-360cp band.
+  Prod engine games on the same definition (1-in-16 sample): legacy pre-cutoff 0.798% /
+  0.298%, mid 0.625% / 0.243%, recent 0.844% / 0.271%. The poison is ~0.1-0.2pp on top
+  of a ~0.6% legitimate blunder-then-miss rate, so the bounce rate is a coarse sanity
+  check only; the audit table counts and the lichess cross-check are the real
+  verification.
 - Timing per stage from `opening_cache_repair_progress`.
 
 Run order: seed → screen → confirm → propagate → rederive → report. Each step is
@@ -273,11 +287,17 @@ independently re-runnable and refuses to run out of order (checks the previous s
   positions refill, and there is no provenance to truncate selectively. Screening the
   2.57M unique positions is also the minimal set: repairing from the game side would be
   95k legacy games x ~20 plies.
-- Benchmark DB is a clone with the same poison. After the prod repair, re-clone it
-  (`bin/benchmark_db.sh`), re-run `gen_benchmarks` and diff `reports/benchmarks-latest.md`
-  flaw sections and any story that uses opening flaw rates (`stories/`). Expected
-  sub-noise, but verify; do not narrate from stale numbers (memory
-  `diff-gate-not-narration`).
+- **Benchmark DB is NOT affected** (verified 2026-09-09, correcting an earlier draft of
+  this seed that called it "a clone with the same poison"). It is an independent import
+  with its own engine evals, its `opening_position_eval` table is empty, and the
+  discovery position has 693 carriers there with median eval 0 and zero rows at 305.
+  Reason: only the server full-drain tick writes the cache (`_full_drain_tick` passes
+  `update_opening_cache=True` with `_upsert_opening_cache`); the remote-worker
+  lease/submit path (`routers/eval_remote.py`) only READS it for the dedup fill, and the
+  benchmark lane is evaluated through remote workers. So benchmarks and stories need no
+  re-clone or re-run because of this seed. The benchmark DB is also useless as a
+  per-game reference for prod: 7 of 1,500 sampled legacy prod lichess games exist
+  there, 1 of them engine-evaluated.
 - Changelog: user-facing bullet (early users, game ids < ~620k, will see opening flaw
   counts drop slightly and a few gems/greats appear or vanish).
 - Dev DB: run the same pipeline against dev first (`--db dev`) for the smoke test; the
@@ -315,6 +335,13 @@ independently re-runnable and refuses to run out of order (checks the previous s
      `_fetch_cached_opening_hashes` in `routers/eval_remote.py`): transplant and
      lease-omit **only `confirmed` rows**. A candidate position is evaluated again by
      the next game that reaches it; that second evaluation is what promotes it.
+   - **The submit path must be a source too.** Today only the server tick writes the
+     cache (diagnosis item 7). Under two-source confirmation the remote-worker submit
+     (`routers/eval_remote.py`) must run the same candidate/promote logic on the
+     opening-region evals it receives, otherwise candidates reached mostly by
+     remote-evaluated games never promote. Same function, two call sites; the
+     trust-boundary note in that router (D-123/SEED-076) still applies to which
+     workers count as a source.
    - Cost: one extra eval per distinct position ever cached, ~2.6M against the ~10M
      saved, so about three quarters of the benefit survives. A misaligned hash-to-eval
      pair would have to repeat identically to poison anything.
@@ -342,7 +369,8 @@ independently re-runnable and refuses to run out of order (checks the previous s
    200 of those games at depth 15 across all plies; if the disagreement rate at
    ply > 20 is above the fresh-game noise floor, add a `--legacy-cohort` mode to the
    screen that walks whole games instead of the cache. Decide from the sample, not
-   from this seed.
+   from this seed. (The benchmark DB cannot answer this by diffing: cross-DB game
+   overlap is ~0.5%.)
 
 ## Acceptance check: the game this was discovered in
 
