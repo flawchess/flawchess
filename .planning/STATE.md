@@ -31,6 +31,7 @@ Open threads carried forward (not blockers):
 - Phase 217 device legs (iOS <16.4 no-SIMD, low-memory OOM, WebGPU adapter) deferred for lack of hardware (`v2.16-phases/217-.../217-UAT.md`).
 - Phase 215's `Train.guestGate.test.tsx` full-run flake still deferred (`v2.15-phases/215-.../deferred-items.md`).
 - SEED-163 (analytics population excludes bot games) captured 2026-09-04, unscheduled.
+- SEED-164 (opening eval cache poisoned with legacy wrong-position evals; spurious opening blunder pairs, discovered in game 2356581 plies 5/6) captured 2026-09-09, unscheduled. Blocks any flaw-based benchmark refresh until repaired.
 - SEED-158 re-scoped 2026-09-06: the iOS OOM half is closed (quick task 260906-p54); what remains is WebGPU failing on capable devices (iPhone 14 Pro iOS 26, Linux Brave/Chrome, a Windows 11 notebook), everyone silently on the wasm fallback. Collect the `[maia-worker]` console fallback lines first.
 
 ## Project Reference
