@@ -5,7 +5,7 @@ planted: 2026-09-09
 updated: 2026-09-09 (promoted to Phase 220; two-source confirmation added to hardening)
 planted_during: ad-hoc investigation of game 2356581 (spurious blunders at ply 5/6), branch study/tilt
 trigger_when: next maintenance window; MUST land before the next flaw-based benchmark refresh or any data story that uses opening flaw rates
-scope: one repair phase (audit table + resumable screen/confirm/propagate/re-derive scripts + metrics report), one hardening plan (two-source confirmation replacing first-write-wins, provenance, backfill SQL, nightly cross-check), one open sample-screen question for the legacy cohort beyond ply 20
+scope: one repair phase (audit table + resumable screen/confirm/propagate/re-derive scripts + metrics report), one hardening plan (two-source confirmation replacing first-write-wins, submit path writes the cache so remote-worker lanes incl. the benchmark DB get opening dedup, provenance, backfill SQL, nightly cross-check), one open sample-screen question for the legacy cohort beyond ply 20
 ---
 
 # SEED-164: `opening_position_eval` is poisoned with legacy wrong-position evals
@@ -60,10 +60,16 @@ inside the first 20 plies, classified as a "lucky" blunder immediately followed 
 7. **Only the server pool writes the cache.** `_upsert_opening_cache` is invoked solely
    from `_full_drain_tick` (`eval_drain.py` ~1119 via `eval_apply.py`
    `update_opening_cache=True`). Remote-worker submits never insert rows; they only
-   consume the dedup fill. Two consequences: the poisoned donors were server-pool
-   writes (or the backfill), and any confirmation scheme (hardening item 3) that counts
-   only tick-path writes as sources will starve, because remote workers carry ~85% of
-   full-eval throughput (memory `worker-fleet-topology`).
+   consume the dedup fill. This is a gap in its own right, not just a diagnosis fact:
+   remote workers carry ~85% of full-eval throughput (memory `worker-fleet-topology`),
+   so most fresh opening evals never reach the cache, and a lane evaluated entirely by
+   remote workers (the benchmark DB) gets no dedup at all. Its cache is empty after
+   ~91k engine games, which is why the benchmark DB is clean but also why every one of
+   those games paid full price for its opening plies. Consequences: the poisoned donors
+   were server-pool writes (or the backfill); a confirmation scheme that counts only
+   tick-path writes as sources would starve; and **the phase must make the submit path
+   write the cache** (hardening item 4) so the benchmark lane, and prod's remote-heavy
+   periods, benefit from opening dedup.
 
 ## Blast radius (lower bound; the total is unknowable without screening)
 
@@ -297,7 +303,8 @@ independently re-runnable and refuses to run out of order (checks the previous s
   benchmark lane is evaluated through remote workers. So benchmarks and stories need no
   re-clone or re-run because of this seed. The benchmark DB is also useless as a
   per-game reference for prod: 7 of 1,500 sampled legacy prod lichess games exist
-  there, 1 of them engine-evaluated.
+  there, 1 of them engine-evaluated. Its empty cache is the symptom of hardening
+  item 4; after that fix the benchmark lane gains opening dedup for the first time.
 - Changelog: user-facing bullet (early users, game ids < ~620k, will see opening flaw
   counts drop slightly and a few gems/greats appear or vanish).
 - Dev DB: run the same pipeline against dev first (`--db dev`) for the smoke test; the
@@ -335,13 +342,8 @@ independently re-runnable and refuses to run out of order (checks the previous s
      `_fetch_cached_opening_hashes` in `routers/eval_remote.py`): transplant and
      lease-omit **only `confirmed` rows**. A candidate position is evaluated again by
      the next game that reaches it; that second evaluation is what promotes it.
-   - **The submit path must be a source too.** Today only the server tick writes the
-     cache (diagnosis item 7). Under two-source confirmation the remote-worker submit
-     (`routers/eval_remote.py`) must run the same candidate/promote logic on the
-     opening-region evals it receives, otherwise candidates reached mostly by
-     remote-evaluated games never promote. Same function, two call sites; the
-     trust-boundary note in that router (D-123/SEED-076) still applies to which
-     workers count as a source.
+   - **The submit path must be a source too**: see hardening item 4, which is a
+     prerequisite for this item to promote anything in remote-heavy lanes.
    - Cost: one extra eval per distinct position ever cached, ~2.6M against the ~10M
      saved, so about three quarters of the benefit survives. A misaligned hash-to-eval
      pair would have to repeat identically to poison anything.
@@ -359,9 +361,28 @@ independently re-runnable and refuses to run out of order (checks the previous s
      eval scale (new NNUE net), and decide per bump.
    - Optional canary (1 in N confirmed hits re-evaluated, N ~ 500) only if trivial to
      add on top; it is no longer the safety mechanism.
-4. **Nightly integrity check**: add the lichess cross-check query and the opening bounce
+4. **Submit path writes the cache (bug fix, required).** `_upsert_opening_cache` is
+   called only from `_full_drain_tick`; the remote-worker submit in
+   `routers/eval_remote.py` (`_apply_*_submit` paths that merge worker results into
+   `engine_result_map`) never inserts opening-region rows. Fix: after a submit is
+   accepted and applied, run the same cache write (candidate/promote logic from item 3,
+   or the plain upsert if item 3 ships later) over the submitted opening-region targets,
+   restricted to `ply <= DEDUP_MAX_PLY`, non-terminal, non-null evals, exactly as the
+   tick path filters. One shared function, two call sites; do not duplicate the
+   dedup-by-hash collapse. Trusted-operator gating stays as it is in that router: only
+   submissions the server already accepts as evals count, so this adds no new trust
+   surface. The cache-aware lease (`_fetch_cached_opening_hashes`) already omits cached
+   positions, so once rows exist the benchmark lane's workers stop re-grinding openings
+   with no further change. Acceptance: on the benchmark DB, `opening_position_eval`
+   grows as the lane progresses (it is 0 rows today after ~91k engine games), and a
+   leased game whose opening positions are cached carries fewer engine targets than an
+   uncached one. Test with the existing submit-endpoint fixtures in
+   `tests/test_eval_worker_endpoints.py`: a submit for a game with opening plies leaves
+   rows in the cache; a second game reaching the same positions gets them omitted from
+   its lease.
+5. **Nightly integrity check**: add the lichess cross-check query and the opening bounce
    rate to the `db-report` skill's sanity section with a threshold (n_bad > 5 flags).
-5. **Legacy cohort beyond ply 20 (open question)**: the misalignment was not
+6. **Legacy cohort beyond ply 20 (open question)**: the misalignment was not
    cache-specific, only amplified by it. The 95k games fully evaluated before
    2026-06-18 may carry the same wrong-position evals at plies > 20 where nothing
    transplants them but the flaws are equally spurious (e.g. game 480700 ply 13 shows
@@ -420,4 +441,4 @@ FROM game_flaws WHERE game_id = 2356581 ORDER BY ply;   -- expect only ply 21
 - Rebuilding `herring_pool` or drill scheduling beyond pruning orphans.
 - Any frontend change.
 - Pinning down the exact June/July misalignment mechanism; only worth doing if the
-  legacy-cohort sample (hardening item 5) shows it also hit plies > 20 at scale.
+  legacy-cohort sample (hardening item 6) shows it also hit plies > 20 at scale.
