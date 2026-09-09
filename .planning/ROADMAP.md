@@ -282,17 +282,30 @@ cluster at a piece: 285..349cp) transplants into every later engine game reachin
 as a lucky blunder followed by a squandered/miss blunder. Lower bound: 87 of 25,444
 lichess-checkable rows off by >150cp, 4,361 carrier games for those alone; the discovery
 fixture is game 2356581 plies 5/6. The current write path is clean (18/18 rows written
-after 2026-08-20 agree with a fresh 1M-node run), so nothing is paused. Deliver (a) a
-resumable, DB-state-driven repair pipeline (`seed -> screen -> confirm -> propagate ->
-rederive -> report`) with an audit table that stays as the trail, run against dev then
-prod from the local 4-worker box through the tunnel; (b) hardening that replaces
-first-write-wins with two-source confirmation plus provenance columns, so only
-`confirmed` rows are transplanted or lease-omitted; (c) a nightly integrity check; and
-(d) a decision, from a 200-game depth-15 sample, on whether the pre-2026-06-18 legacy
-cohort also needs screening beyond ply 20. Full design, blast-radius numbers, reference
-queries and conventions: `.planning/seeds/SEED-164-opening-eval-cache-poisoned-legacy-evals.md`.
+after 2026-08-20 agree with a fresh 1M-node run), so nothing is paused. A second gap
+surfaced while verifying blast radius: only the server full-drain tick
+(`_full_drain_tick` -> `_upsert_opening_cache`) writes the cache; the remote-worker
+lease/submit path in `routers/eval_remote.py` only reads it for the dedup fill. Remote
+workers carry ~85% of full-eval throughput, so most fresh opening evals never reach the
+cache, and a lane evaluated entirely by remote workers gets no opening dedup at all.
+That is why the **benchmark DB is NOT affected** (independent import, empty
+`opening_position_eval` after ~91k engine games, discovery position median 0 there; no
+re-clone or benchmark re-run is needed for this seed), and also why every one of those
+games paid full price for its opening plies. Deliver (a) a resumable, DB-state-driven
+repair pipeline (`seed -> screen -> confirm -> propagate -> rederive -> report`) with an
+audit table that stays as the trail, run against dev then prod from the local 4-worker
+box through the tunnel; (b) hardening that replaces first-write-wins with two-source
+confirmation plus provenance columns, so only `confirmed` rows are transplanted or
+lease-omitted; (c) the submit path writing the cache through the same shared function as
+the tick, so remote-heavy lanes (prod during backfills, the benchmark DB) get opening
+dedup and count as confirmation sources (without this, two-source confirmation would
+starve in those lanes); (d) a nightly integrity check; and (e) a decision, from a
+200-game depth-15 sample, on whether the pre-2026-06-18 legacy cohort also needs
+screening beyond ply 20. Full design, blast-radius numbers, bounce-rate noise floors,
+reference queries and conventions:
+`.planning/seeds/SEED-164-opening-eval-cache-poisoned-legacy-evals.md`.
 
-**Requirements:** CACHEFIX-01, CACHEFIX-02, CACHEFIX-03, CACHEFIX-04, CACHEFIX-05, CACHEFIX-06, CACHEFIX-07, CACHEFIX-08, CACHEFIX-09, CACHEFIX-10, CACHEFIX-11
+**Requirements:** CACHEFIX-01, CACHEFIX-02, CACHEFIX-03, CACHEFIX-04, CACHEFIX-05, CACHEFIX-06, CACHEFIX-07, CACHEFIX-08, CACHEFIX-09, CACHEFIX-10, CACHEFIX-11, CACHEFIX-12
 
 Requirement definitions (phase-local IDs; no open milestone REQUIREMENTS.md):
 
@@ -340,7 +353,11 @@ Requirement definitions (phase-local IDs; no open milestone REQUIREMENTS.md):
   rewritten by ply, affected games by platform/user, flaw before/after by severity
   (spurious flaws removed, flaws added, blunder-count-changed games, drill items pruned,
   herrings touched, accuracy/ACPL shift), per-stage timings, and a verification block: the
-  lichess cross-check (baseline 25,444 / 87), the opening bounce rate before/after, game
+  lichess cross-check (baseline 25,444 / 87), the opening bounce rate before/after
+  against the recorded noise floors (cache-free benchmark DB 0.618% any bounce / 0.235%
+  in the 250-360cp band; prod legacy 0.798% / 0.298%, so the poison is ~0.1-0.2pp on top
+  of a legitimate blunder-then-miss rate and the bounce rate is a coarse sanity check
+  only, the audit counts and the lichess cross-check are the real verification), game
   2356581 plies 5/6 and the 9 named hashes reading `repaired`.
 - CACHEFIX-08 — Two-source confirmation replaces first-write-wins: cache gains
   `confirmed BOOL NOT NULL DEFAULT false`, `n_sources`, `engine_version`, `written_at`,
@@ -348,7 +365,9 @@ Requirement definitions (phase-local IDs; no open milestone REQUIREMENTS.md):
   result (within 50cp, mate/non-mate match, keep the longer pv), replaces a disagreeing
   candidate with a `disagreements` bump and a grouped Sentry message, and never overwrites
   confirmed rows; `_fetch_dedup_evals` and `_fetch_cached_opening_hashes` transplant and
-  lease-omit only `confirmed` rows; the migration marks rows that come out of the repair as
+  lease-omit only `confirmed` rows; accepted remote-worker submits count as sources
+  exactly like tick writes (CACHEFIX-12 is a prerequisite, otherwise remote-heavy lanes
+  never promote anything); the migration marks rows that come out of the repair as
   `screened_clean` / `confirmed_clean` / `repaired` as `confirmed=true, n_sources=2`;
   `OPENING_CACHE_BACKFILL_SQL` is deleted or given a deterministic `ORDER BY` with the gate
   predicate and its tests kept; a documented `--demote-engine-version` path exists and
@@ -363,10 +382,22 @@ Requirement definitions (phase-local IDs; no open milestone REQUIREMENTS.md):
   `repaired`; game 2356581 ply 5 reads ~+9 with plies 4/6 unchanged, `game_flaws` at plies
   5/6 gone, ply 21 kept, `white_blunders` 1 -> 0, `black_blunders` 2 -> 1; carriers of 305
   at that hash go 226 -> 0; the 9 named hashes read `repaired`; the lichess cross-check
-  `n_bad` drops from 87 to a handful of genuine trap-line depth disagreements; the
-  benchmark DB is re-cloned, `gen_benchmarks` re-run and the flaw sections of
-  `reports/benchmarks-latest.md` plus any story using opening flaw rates are diffed (not
-  narrated from stale numbers); `CHANGELOG.md` `[Unreleased]` carries a user-facing bullet.
+  `n_bad` drops from 87 to a handful of genuine trap-line depth disagreements; no
+  benchmark re-clone or `gen_benchmarks` re-run is performed for this seed (the benchmark
+  DB is cache-free and unaffected, verified 2026-09-09); `CHANGELOG.md` `[Unreleased]`
+  carries a user-facing bullet.
+- CACHEFIX-12 — Submit path writes the cache (bug fix, required): after a remote-worker
+  submit in `routers/eval_remote.py` is accepted and applied, the same shared cache-write
+  function the tick uses (candidate/promote logic from CACHEFIX-08, or the plain upsert if
+  it ships first) runs over the submitted opening-region targets with the tick's exact
+  filters (`ply <= DEDUP_MAX_PLY`, non-terminal, non-null evals, dedup-by-hash collapse
+  not duplicated). One function, two call sites; trusted-operator gating in that router is
+  unchanged, so no new trust surface. Tests on the existing fixtures in
+  `tests/test_eval_worker_endpoints.py`: a submit for a game with opening plies leaves
+  rows in the cache, and a second game reaching the same positions gets them omitted from
+  its lease via `_fetch_cached_opening_hashes`. Acceptance on the benchmark DB:
+  `opening_position_eval` grows as the lane progresses (0 rows today), and a leased game
+  whose opening positions are cached carries fewer engine targets than an uncached one.
 
 **Success criteria**:
 
@@ -380,14 +411,17 @@ Requirement definitions (phase-local IDs; no open milestone REQUIREMENTS.md):
 3. Hardening lands as its own squash-merge (it may ship before the repair; if so, the
    repair's `confirm` step sets `confirmed` itself): tests prove candidate -> promote,
    candidate -> replace + Sentry, confirmed never overwritten, and that both read paths
-   ignore candidates; the lease/submit invariants in memory
+   ignore candidates, and that an accepted remote submit writes/promotes cache rows
+   through the same function as the tick (CACHEFIX-12) with the benchmark-lane lease
+   shrinking accordingly; the lease/submit invariants in memory
    `atomic-eval-submit-incremental-lease` (post-move shift, diff-not-delete, pv on
    transplants) are respected and stated in the plan.
 4. The legacy-cohort sample (CACHEFIX-10) is run and its numbers and decision are recorded
    in the summary, whichever way it goes.
 5. No `bin/reset_db.sh`, no cache truncation, no change to flaw thresholds, the post-move
    storage convention or `DEDUP_MAX_PLY`; lichess-analysed games are never re-evaluated
-   (only step 4's value predicate touches their 2 carrier rows).
+   (only step 4's value predicate touches their 2 carrier rows); no benchmark DB
+   re-clone or benchmark/story re-run is triggered by this phase.
 
 **Out of scope**: changing flaw thresholds, the post-move storage convention or
 `DEDUP_MAX_PLY`; re-evaluating lichess-analysed games; rebuilding `herring_pool` or drill
@@ -402,8 +436,9 @@ decomposition and the Phase 188 `db_url_for_target` script pattern)
 Plans:
 
 - [ ] TBD (run /gsd-plan-phase 220 to break down; expected seams: hardening
-  squash-merge, migration + repair script + dev smoke, prod run as an operator stage with
-  the screen taking ~2 days wall clock, rederive/report/benchmark refresh)
+  squash-merge (two-source confirmation + submit-path cache write, CACHEFIX-08/12),
+  migration + repair script + dev smoke, prod run as an operator stage with the screen
+  taking ~2 days wall clock, rederive/report)
 
 **Cross-cutting constraints:**
 
