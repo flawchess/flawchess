@@ -2,10 +2,10 @@
 id: SEED-164
 status: open
 planted: 2026-09-09
-updated: 2026-09-09
+updated: 2026-09-09 (two-source confirmation added to hardening)
 planted_during: ad-hoc investigation of game 2356581 (spurious blunders at ply 5/6), branch study/tilt
 trigger_when: next maintenance window; MUST land before the next flaw-based benchmark refresh or any data story that uses opening flaw rates
-scope: one repair phase (audit table + resumable screen/confirm/propagate/re-derive scripts + metrics report), one hardening plan (cache provenance, backfill SQL, canary, nightly cross-check), one open sample-screen question for the legacy cohort beyond ply 20
+scope: one repair phase (audit table + resumable screen/confirm/propagate/re-derive scripts + metrics report), one hardening plan (two-source confirmation replacing first-write-wins, provenance, backfill SQL, nightly cross-check), one open sample-screen question for the legacy cohort beyond ply 20
 ---
 
 # SEED-164: `opening_position_eval` is poisoned with legacy wrong-position evals
@@ -291,11 +291,47 @@ independently re-runnable and refuses to run out of order (checks the previous s
 2. **`OPENING_CACHE_BACKFILL_SQL`**: delete it (the backfill is archived) or give it a
    deterministic `ORDER BY nxt.full_hash, g.full_evals_completed_at DESC, cur.pv IS NULL`
    so the newest pv-bearing donor wins. Tests reference it as the "gate"; keep the gate
-   predicate, fix the ordering.
-3. **Canary in the drain**: for 1 in N dedup hits (N ~ 200), also run the engine on the
-   position and compare; `|delta| > 150cp` → overwrite the cache row, `set_context` the
-   hash + both values, `sentry_sdk.capture_message`. Bounded cost, and it turns the
-   first-write-wins table into a slowly self-correcting one.
+   predicate, fix the ordering. Under item 3 any backfilled row is a candidate, never
+   confirmed.
+3. **Two-source confirmation (replaces first-write-wins; the main measure).** Decision
+   2026-09-09 after weighing keep-vs-drop: the cache saves roughly 20-25% of per-game
+   engine cost (about 12.7M opening-ply evals over 633k games collapse onto 2.57M
+   distinct positions, so ~4 in 5 opening evals are hits) and lets weak remote workers
+   skip the opening. Dropping it would push that cost onto a fleet whose backfill
+   lotteries already never finish. The risk is asymmetric: one bad write on a popular
+   position taints hundreds of games forever, and a canary only catches it late. So keep
+   the cache but stop trusting a single write:
+   - Schema: add `confirmed BOOL NOT NULL DEFAULT false`, `n_sources SMALLINT`,
+     `engine_version TEXT`, `written_at`, `confirmed_at` (folds item 1 in).
+   - Write path (`_upsert_opening_cache`): no row → insert as **candidate**
+     (`confirmed=false`, `n_sources=1`). Candidate exists and the new engine result
+     agrees within 50cp (mate/non-mate must match) → promote (`confirmed=true`,
+     `n_sources=2`, keep the pv-bearing/longer pv). Candidate exists and disagrees →
+     replace the candidate with the new value, bump a `disagreements` counter,
+     `sentry_sdk.capture_message` with `set_context(hash, both values)` so a recurring
+     misalignment is visible within a day instead of a quarter. Confirmed rows are never
+     overwritten by the tick path (only by the repair script or a future re-audit).
+   - Read path (`_fetch_dedup_evals` in `eval_apply.py` and
+     `_fetch_cached_opening_hashes` in `routers/eval_remote.py`): transplant and
+     lease-omit **only `confirmed` rows**. A candidate position is evaluated again by
+     the next game that reaches it; that second evaluation is what promotes it.
+   - Cost: one extra eval per distinct position ever cached, ~2.6M against the ~10M
+     saved, so about three quarters of the benefit survives. A misaligned hash-to-eval
+     pair would have to repeat identically to poison anything.
+   - Interplay with the repair: rows that come out of the repair as `screened_clean`,
+     `confirmed_clean` or `repaired` had their board hash-asserted and were evaluated
+     twice (old value + screen, or screen + full), so the migration marks them
+     `confirmed=true, n_sources=2`. Rows never screened (inserted after the audit seed)
+     start as candidates. Nothing in the repair depends on this item, and this item
+     can ship first; if it ships first, the repair's confirm step must set `confirmed`
+     itself.
+   - Engine version is recorded, not enforced. Demoting 2.57M rows on a Stockfish bump
+     would double opening cost for months; evals are already non-reproducible across
+     machines at sub-percentile magnitude (note in `engine.py`). Keep a documented
+     `--demote-engine-version <v>` path in the repair script for a bump that changes the
+     eval scale (new NNUE net), and decide per bump.
+   - Optional canary (1 in N confirmed hits re-evaluated, N ~ 500) only if trivial to
+     add on top; it is no longer the safety mechanism.
 4. **Nightly integrity check**: add the lichess cross-check query and the opening bounce
    rate to the `db-report` skill's sanity section with a threshold (n_bad > 5 flags).
 5. **Legacy cohort beyond ply 20 (open question)**: the misalignment was not
