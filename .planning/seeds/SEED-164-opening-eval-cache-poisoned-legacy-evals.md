@@ -1,8 +1,8 @@
 ---
 id: SEED-164
-status: open
+status: promoted (→ Phase 220, 2026-09-09)
 planted: 2026-09-09
-updated: 2026-09-09 (two-source confirmation added to hardening)
+updated: 2026-09-09 (promoted to Phase 220; two-source confirmation added to hardening)
 planted_during: ad-hoc investigation of game 2356581 (spurious blunders at ply 5/6), branch study/tilt
 trigger_when: next maintenance window; MUST land before the next flaw-based benchmark refresh or any data story that uses opening flaw rates
 scope: one repair phase (audit table + resumable screen/confirm/propagate/re-derive scripts + metrics report), one hardening plan (two-source confirmation replacing first-write-wins, provenance, backfill SQL, nightly cross-check), one open sample-screen question for the legacy cohort beyond ply 20

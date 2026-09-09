@@ -184,10 +184,11 @@
 | 217. Frontend Major Bumps — Vitest 5 / jsdom 30 + onnxruntime-web 1.29 (SEED-162, v2.16) | 2/2 | Complete    | 2026-09-05 |
 | 218. Backend onnxruntime Parity Spike → Python 3.14 Chain (SEED-162, v2.16) | 3/3 | Complete    | 2026-09-05 |
 | 219. Maia Chart Latency — ORT 1.27 Re-pin, Cross-Origin Isolation & Progressive Ladder Paint (standalone) | 3/3 | Complete    | 2026-09-06 |
+| 220. Opening Eval Cache Repair & Two-Source Confirmation (SEED-164, standalone) | 0/0 | Not started | — |
 
 ## Active Phases
 
-Standalone phase (no open milestone). Continues absolute numbering from v2.16's Phase 218.
+Standalone phases (no open milestone). Continue absolute numbering from v2.16's Phase 218.
 
 ### Phase 219: Maia Chart Latency — ORT 1.27 Re-pin, Cross-Origin Isolation & Progressive Ladder Paint
 
@@ -266,6 +267,153 @@ Plans:
 - No backend, migration or dev-database work is performed by this plan (D-16); `bin/reset_db.sh` is never run.
 
 **Context:** `.planning/phases/219-maia-chart-latency-ort-repin-cross-origin-isolation-progressive-ladder/219-CONTEXT.md`
+
+### Phase 220: Opening Eval Cache Repair & Two-Source Confirmation (SEED-164)
+
+**Goal**: Repair the poisoned `opening_position_eval` dedup cache and every game it tainted,
+then stop a single engine write from ever poisoning it again. Diagnosis (SEED-164,
+2026-09-09 against prod): the cache is first-write-wins on `eval_cp`; the 2026-06-17
+backfill (`OPENING_CACHE_BACKFILL_SQL`, `DISTINCT ON` with no `ORDER BY`) enshrined
+wrong-position evals from the first days of the full-game drain (games ~469k-620k,
+2026-06-14..16), and the suspect window runs to at least 2026-07-26, so no date cut
+identifies bad rows and there is no provenance. Every popular poisoned position (values
+cluster at a piece: 285..349cp) transplants into every later engine game reaching it
+(ply <= `DEDUP_MAX_PLY` = 20), producing the `~0 -> +300 -> ~0` opening bounce classified
+as a lucky blunder followed by a squandered/miss blunder. Lower bound: 87 of 25,444
+lichess-checkable rows off by >150cp, 4,361 carrier games for those alone; the discovery
+fixture is game 2356581 plies 5/6. The current write path is clean (18/18 rows written
+after 2026-08-20 agree with a fresh 1M-node run), so nothing is paused. Deliver (a) a
+resumable, DB-state-driven repair pipeline (`seed -> screen -> confirm -> propagate ->
+rederive -> report`) with an audit table that stays as the trail, run against dev then
+prod from the local 4-worker box through the tunnel; (b) hardening that replaces
+first-write-wins with two-source confirmation plus provenance columns, so only
+`confirmed` rows are transplanted or lease-omitted; (c) a nightly integrity check; and
+(d) a decision, from a 200-game depth-15 sample, on whether the pre-2026-06-18 legacy
+cohort also needs screening beyond ply 20. Full design, blast-radius numbers, reference
+queries and conventions: `.planning/seeds/SEED-164-opening-eval-cache-poisoned-legacy-evals.md`.
+
+**Requirements:** CACHEFIX-01, CACHEFIX-02, CACHEFIX-03, CACHEFIX-04, CACHEFIX-05, CACHEFIX-06, CACHEFIX-07, CACHEFIX-08, CACHEFIX-09, CACHEFIX-10, CACHEFIX-11
+
+Requirement definitions (phase-local IDs; no open milestone REQUIREMENTS.md):
+
+- CACHEFIX-01 — Alembic migration adds and keeps the audit trail: `opening_cache_audit`
+  (one row per cache row: status CHECK over `pending / screened_clean / flagged /
+  confirmed_bad / confirmed_clean / orphan / hash_mismatch / repaired`, `old_*` snapshot,
+  sample carrier, `screen_*`, `full_*`, `delta_cp`, `engine_version`, `repaired_at`),
+  `opening_cache_repair_rows` (PK `(game_id, ply)`), `opening_cache_repair_games`
+  (per-game before/after flaw, accuracy, ACPL, drill and herring counters, `status`
+  `pending|reclassified|failed`, `error`), `opening_cache_repair_progress` (walk cursor +
+  per-stage timings). Column types follow the CLAUDE.md database rules.
+- CACHEFIX-02 — `scripts/opening_cache_repair.py` exposes the six stages as subcommands;
+  `--db {dev,benchmark,prod}` is required (`db_url_for_target` pattern), every stage has
+  `--dry-run` and `--limit`, every stage refuses to run before the previous stage's
+  `finished_at` is set, and every stage is resumable by construction: all progress lives in
+  the audit/progress tables as status transitions, commits happen per batch, and re-running
+  after a kill continues from the status columns with no in-memory-only state.
+- CACHEFIX-03 — `screen` walks engine games by id from `last_game_id_walked`, rebuilds
+  each opening board by replaying `move_san` (honouring `games.initial_fen`), asserts the
+  replayed hash equals the cache key via `compute_hashes` (mismatch => `hash_mismatch`,
+  never evaluated), runs the depth-15 `evaluate` through the project `EnginePool`, and sets
+  `screened_clean` (|delta| <= 100cp, mate/non-mate agree) or `flagged`. Rows still
+  `pending` after the walk become `orphan` and are deleted from the cache.
+- CACHEFIX-04 — `confirm` re-evaluates every `flagged` row with `evaluate_nodes_with_pv`
+  (the drain's call), writes `full_*`, and either overwrites the cache row
+  (`confirmed_bad`, |delta| > 100cp) or leaves it untouched (`confirmed_clean`).
+- CACHEFIX-05 — `propagate` rewrites `game_positions` only where the stored value equals
+  the old cached value (`IS NOT DISTINCT FROM` on `eval_cp` and `eval_mate`, row P for hash
+  on row P+1, ply 1..20 via `ix_gp_full_hash_opening`), replaces `best_move`/`pv` on the
+  next row only when they equal the old cached ones, records one
+  `opening_cache_repair_rows` row per rewritten row, upserts the game as `pending`, and
+  sets `repaired_at` in the same transaction. Independently evaluated rows are never
+  touched.
+- CACHEFIX-06 — `rederive` reclassifies each `pending` game in one transaction through the
+  drain's own path (`classify_game_flaws` + `flaw_record_to_row` + the 4-way diff/upsert,
+  via `scripts/backfill_flaws.py --from-repair-table`, no second classifier call site), a
+  shared `refresh_game_oracle_counts(...)` extracted from `eval_apply.py` (drain and script
+  use the same function), re-arms games with new PV-less flaws for the existing PV/blob
+  lottery, prunes `drill_items` whose flaw is gone (keeps `drill_solves`), applies the
+  planned delete-vs-keep decision for `herring_pool` rows at repaired plies, and records
+  before/after counters; exceptions mark the game `failed` with Sentry capture and continue.
+- CACHEFIX-07 — `report` (read-only) writes
+  `reports/opening-cache-repair/opening-cache-repair-YYYY-MM-DD.md` with the cache status
+  breakdown and delta histogram, top-30 confirmed_bad positions with SAN lines, rows
+  rewritten by ply, affected games by platform/user, flaw before/after by severity
+  (spurious flaws removed, flaws added, blunder-count-changed games, drill items pruned,
+  herrings touched, accuracy/ACPL shift), per-stage timings, and a verification block: the
+  lichess cross-check (baseline 25,444 / 87), the opening bounce rate before/after, game
+  2356581 plies 5/6 and the 9 named hashes reading `repaired`.
+- CACHEFIX-08 — Two-source confirmation replaces first-write-wins: cache gains
+  `confirmed BOOL NOT NULL DEFAULT false`, `n_sources`, `engine_version`, `written_at`,
+  `confirmed_at`; `_upsert_opening_cache` inserts candidates, promotes on a second agreeing
+  result (within 50cp, mate/non-mate match, keep the longer pv), replaces a disagreeing
+  candidate with a `disagreements` bump and a grouped Sentry message, and never overwrites
+  confirmed rows; `_fetch_dedup_evals` and `_fetch_cached_opening_hashes` transplant and
+  lease-omit only `confirmed` rows; the migration marks rows that come out of the repair as
+  `screened_clean` / `confirmed_clean` / `repaired` as `confirmed=true, n_sources=2`;
+  `OPENING_CACHE_BACKFILL_SQL` is deleted or given a deterministic `ORDER BY` with the gate
+  predicate and its tests kept; a documented `--demote-engine-version` path exists and
+  engine version is recorded, not enforced.
+- CACHEFIX-09 — The `db-report` skill's sanity section runs the lichess cross-check and the
+  opening bounce rate with a threshold (`n_bad > 5` flags).
+- CACHEFIX-10 — A depth-15 sample screen of 200 games fully evaluated before 2026-06-18
+  across all plies is run and recorded; if the ply > 20 disagreement rate exceeds the
+  fresh-game noise floor, `screen --legacy-cohort` (walk whole games) is added and run,
+  otherwise the decision and numbers are written down and no legacy mode is built.
+- CACHEFIX-11 — Acceptance on prod: cache row `-3185735734450884963` reads ~+9 and
+  `repaired`; game 2356581 ply 5 reads ~+9 with plies 4/6 unchanged, `game_flaws` at plies
+  5/6 gone, ply 21 kept, `white_blunders` 1 -> 0, `black_blunders` 2 -> 1; carriers of 305
+  at that hash go 226 -> 0; the 9 named hashes read `repaired`; the lichess cross-check
+  `n_bad` drops from 87 to a handful of genuine trap-line depth disagreements; the
+  benchmark DB is re-cloned, `gen_benchmarks` re-run and the flaw sections of
+  `reports/benchmarks-latest.md` plus any story using opening flaw rates are diffed (not
+  narrated from stale numbers); `CHANGELOG.md` `[Unreleased]` carries a user-facing bullet.
+
+**Success criteria**:
+
+1. Dev smoke: the full pipeline runs end to end against the dev DB (`--db dev`) and a
+   second invocation of every stage after a simulated kill (SIGTERM mid-batch) resumes
+   without duplicating or skipping rows; tests cover the status transitions, the
+   old-value predicate, hash-mismatch skipping, and the out-of-order refusal.
+2. Prod repair: all six stages finish, the report lands under
+   `reports/opening-cache-repair/`, and every CACHEFIX-11 assertion holds against prod
+   (queried, pasted into the summary).
+3. Hardening lands as its own squash-merge (it may ship before the repair; if so, the
+   repair's `confirm` step sets `confirmed` itself): tests prove candidate -> promote,
+   candidate -> replace + Sentry, confirmed never overwritten, and that both read paths
+   ignore candidates; the lease/submit invariants in memory
+   `atomic-eval-submit-incremental-lease` (post-move shift, diff-not-delete, pv on
+   transplants) are respected and stated in the plan.
+4. The legacy-cohort sample (CACHEFIX-10) is run and its numbers and decision are recorded
+   in the summary, whichever way it goes.
+5. No `bin/reset_db.sh`, no cache truncation, no change to flaw thresholds, the post-move
+   storage convention or `DEDUP_MAX_PLY`; lichess-analysed games are never re-evaluated
+   (only step 4's value predicate touches their 2 carrier rows).
+
+**Out of scope**: changing flaw thresholds, the post-move storage convention or
+`DEDUP_MAX_PLY`; re-evaluating lichess-analysed games; rebuilding `herring_pool` or drill
+scheduling beyond pruning orphans; any frontend change; pinning down the exact June/July
+misalignment mechanism (only if the CACHEFIX-10 sample shows it hit plies > 20 at scale).
+
+**Depends on:** none (standalone; builds on the Phase 214 `eval_drain.py` / `eval_apply.py`
+decomposition and the Phase 188 `db_url_for_target` script pattern)
+
+**Plans:** 0 plans
+
+Plans:
+
+- [ ] TBD (run /gsd-plan-phase 220 to break down; expected seams: hardening
+  squash-merge, migration + repair script + dev smoke, prod run as an operator stage with
+  the screen taking ~2 days wall clock, rederive/report/benchmark refresh)
+
+**Cross-cutting constraints:**
+
+- Engine work runs on the local 4-worker box through `bin/prod_db_tunnel.sh`
+  (`STOCKFISH_POOL_SIZE=4`); only hashes and evals cross the wire.
+- One `AsyncSession` per worker coroutine, never `asyncio.gather` on one session; batches
+  of ~500 rows per commit.
+- Never write an eval for a board whose replayed hash was not asserted equal to the cache key.
+
+**Seed:** `.planning/seeds/SEED-164-opening-eval-cache-poisoned-legacy-evals.md`
 
 ## Backlog
 
