@@ -301,8 +301,14 @@ the tick, so remote-heavy lanes (prod during backfills, the benchmark DB) get op
 dedup and count as confirmation sources (without this, two-source confirmation would
 starve in those lanes); (d) a nightly integrity check; and (e) a decision, from a
 200-game depth-15 sample, on whether the pre-2026-06-18 legacy cohort also needs
-screening beyond ply 20. Full design, blast-radius numbers, bounce-rate noise floors,
-reference queries and conventions:
+screening beyond ply 20. Thresholds are not hand-picked cp cuts: deltas are measured in
+expected-score units, the screen/confirm floors come from a calibration sample of
+known-clean rows, confirm overwrites anything beyond the measured floor, and acceptance
+is the residual delta histogram matching the lichess-internal noise control in every
+band (a 150cp cut only sizes the blast radius; the prod histogram shows no hidden
+sub-100cp population but sharp lines are underrepresented there). Full design,
+blast-radius numbers, histogram, bounce-rate noise floors, reference queries and
+conventions:
 `.planning/seeds/SEED-164-opening-eval-cache-poisoned-legacy-evals.md`.
 
 **Requirements:** CACHEFIX-01, CACHEFIX-02, CACHEFIX-03, CACHEFIX-04, CACHEFIX-05, CACHEFIX-06, CACHEFIX-07, CACHEFIX-08, CACHEFIX-09, CACHEFIX-10, CACHEFIX-11, CACHEFIX-12
@@ -312,26 +318,38 @@ Requirement definitions (phase-local IDs; no open milestone REQUIREMENTS.md):
 - CACHEFIX-01 — Alembic migration adds and keeps the audit trail: `opening_cache_audit`
   (one row per cache row: status CHECK over `pending / screened_clean / flagged /
   confirmed_bad / confirmed_clean / orphan / hash_mismatch / repaired`, `old_*` snapshot,
-  sample carrier, `screen_*`, `full_*`, `delta_cp`, `engine_version`, `repaired_at`),
+  sample carrier, `screen_*`, `full_*`, `delta_score` (decision column, expected-score
+  units) + `delta_cp` (display), `engine_version`, `repaired_at`),
   `opening_cache_repair_rows` (PK `(game_id, ply)`), `opening_cache_repair_games`
   (per-game before/after flaw, accuracy, ACPL, drill and herring counters, `status`
-  `pending|reclassified|failed`, `error`), `opening_cache_repair_progress` (walk cursor +
+  `pending|reclassified|failed`, `error`), `opening_cache_repair_progress` (walk cursor,
+  measured `screen_floor` / `confirm_floor` + calibration sample size and timestamp,
   per-stage timings). Column types follow the CLAUDE.md database rules.
-- CACHEFIX-02 — `scripts/opening_cache_repair.py` exposes the six stages as subcommands;
+- CACHEFIX-02 — `scripts/opening_cache_repair.py` exposes the seven stages (`seed`,
+  `calibrate`, `screen`, `confirm`, `propagate`, `rederive`, `report`) as subcommands;
   `--db {dev,benchmark,prod}` is required (`db_url_for_target` pattern), every stage has
   `--dry-run` and `--limit`, every stage refuses to run before the previous stage's
   `finished_at` is set, and every stage is resumable by construction: all progress lives in
   the audit/progress tables as status transitions, commits happen per batch, and re-running
   after a kill continues from the status columns with no in-memory-only state.
-- CACHEFIX-03 — `screen` walks engine games by id from `last_game_id_walked`, rebuilds
-  each opening board by replaying `move_san` (honouring `games.initial_fen`), asserts the
-  replayed hash equals the cache key via `compute_hashes` (mismatch => `hash_mismatch`,
-  never evaluated), runs the depth-15 `evaluate` through the project `EnginePool`, and sets
-  `screened_clean` (|delta| <= 100cp, mate/non-mate agree) or `flagged`. Rows still
-  `pending` after the walk become `orphan` and are deleted from the cache.
+- CACHEFIX-03 — `calibrate` measures the noise floors before any screening: ~500 cache
+  rows written after 2026-08-20 (known clean), board rebuilt and hash-asserted, evaluated
+  at depth 15 and at the drain's 1M-node budget; `screen_floor` and `confirm_floor` are
+  the p99 expected-score deltas against the stored value (via
+  `eval_cp_to_expected_score` / `eval_mate_to_expected_score`), stored in the progress
+  table; `screen` refuses to run with an unset floor. `screen` then walks engine games by
+  id from `last_game_id_walked`, rebuilds each opening board by replaying `move_san`
+  (honouring `games.initial_fen`), asserts the replayed hash equals the cache key via
+  `compute_hashes` (mismatch => `hash_mismatch`, never evaluated), runs the depth-15
+  `evaluate` through the project `EnginePool`, and sets `screened_clean` (expected-score
+  delta within `screen_floor`, mate/non-mate agree) or `flagged`. No hand-picked cp cut
+  anywhere in the decision path. Rows still `pending` after the walk become `orphan` and
+  are deleted from the cache.
 - CACHEFIX-04 — `confirm` re-evaluates every `flagged` row with `evaluate_nodes_with_pv`
-  (the drain's call), writes `full_*`, and either overwrites the cache row
-  (`confirmed_bad`, |delta| > 100cp) or leaves it untouched (`confirmed_clean`).
+  (the drain's call), writes `full_*`, and overwrites the cache row (`confirmed_bad`)
+  whenever the expected-score delta exceeds `confirm_floor` or mate/non-mate disagree,
+  else leaves it untouched (`confirmed_clean`). The fresh value is at least as good by
+  construction, so nothing beyond the measured floor is kept for being "small".
 - CACHEFIX-05 — `propagate` rewrites `game_positions` only where the stored value equals
   the old cached value (`IS NOT DISTINCT FROM` on `eval_cp` and `eval_mate`, row P for hash
   on row P+1, ply 1..20 via `ix_gp_full_hash_opening`), replaces `best_move`/`pv` on the
@@ -353,7 +371,10 @@ Requirement definitions (phase-local IDs; no open milestone REQUIREMENTS.md):
   rewritten by ply, affected games by platform/user, flaw before/after by severity
   (spurious flaws removed, flaws added, blunder-count-changed games, drill items pruned,
   herrings touched, accuracy/ACPL shift), per-stage timings, and a verification block: the
-  lichess cross-check (baseline 25,444 / 87), the opening bounce rate before/after
+  lichess cross-check (baseline 25,444 / 87), the cache-delta histogram against the
+  lichess-internal IQR control before/after (primary acceptance: every band above the
+  noise floor matches the control; baseline in the seed), the measured floors, the
+  opening bounce rate before/after
   against the recorded noise floors (cache-free benchmark DB 0.618% any bounce / 0.235%
   in the 250-360cp band; prod legacy 0.798% / 0.298%, so the poison is ~0.1-0.2pp on top
   of a legitimate blunder-then-miss rate and the bounce rate is a coarse sanity check
@@ -382,8 +403,9 @@ Requirement definitions (phase-local IDs; no open milestone REQUIREMENTS.md):
   `repaired`; game 2356581 ply 5 reads ~+9 with plies 4/6 unchanged, `game_flaws` at plies
   5/6 gone, ply 21 kept, `white_blunders` 1 -> 0, `black_blunders` 2 -> 1; carriers of 305
   at that hash go 226 -> 0; the 9 named hashes read `repaired`; the lichess cross-check
-  `n_bad` drops from 87 to a handful of genuine trap-line depth disagreements; no
-  benchmark re-clone or `gen_benchmarks` re-run is performed for this seed (the benchmark
+  `n_bad` drops from 87 to a handful of genuine trap-line depth disagreements and the
+  delta histogram matches the lichess-internal control in every band above the noise
+  floor (baseline: 50 vs control 20 at 150-250cp, 35 vs 6 at 250-400cp); no benchmark re-clone or `gen_benchmarks` re-run is performed for this seed (the benchmark
   DB is cache-free and unaffected, verified 2026-09-09); `CHANGELOG.md` `[Unreleased]`
   carries a user-facing bullet.
 - CACHEFIX-12 — Submit path writes the cache (bug fix, required): after a remote-worker

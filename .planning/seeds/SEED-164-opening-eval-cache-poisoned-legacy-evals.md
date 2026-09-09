@@ -2,7 +2,7 @@
 id: SEED-164
 status: promoted (→ Phase 220, 2026-09-09)
 planted: 2026-09-09
-updated: 2026-09-09 (promoted to Phase 220; two-source confirmation added to hardening)
+updated: 2026-09-09 (promoted to Phase 220; two-source confirmation added to hardening; screen/confirm thresholds now derived from a measured noise floor in expected-score units, histogram-vs-control acceptance)
 planted_during: ad-hoc investigation of game 2356581 (spurious blunders at ply 5/6), branch study/tilt
 trigger_when: next maintenance window; MUST land before the next flaw-based benchmark refresh or any data story that uses opening flaw rates
 scope: one repair phase (audit table + resumable screen/confirm/propagate/re-derive scripts + metrics report), one hardening plan (two-source confirmation replacing first-write-wins, submit path writes the cache so remote-worker lanes incl. the benchmark DB get opening dedup, provenance, backfill SQL, nightly cross-check), one open sample-screen question for the legacy cohort beyond ply 20
@@ -108,6 +108,50 @@ WHERE o.eval_mate IS NULL;
 -- genuine depth disagreements in trap lines, e.g. the Qf3xa8 rook grab at +300 vs +500).
 ```
 
+The 150cp cut above is a **sizing and verification** statistic, not the detector (the
+repair screens every cache row against a fresh engine eval, see step 2). To answer
+"what about poison below 150cp", the same query as a histogram, with the spread of
+lichess's own evals per position (IQR across the >=3 lichess games) as the noise control
+(prod, 2026-09-09):
+
+| abs(delta) band | cache vs lichess median | lichess-internal IQR (control) |
+|---|---|---|
+| < 25 | 21,987 | 24,000 |
+| 25-50 | 3,064 | 1,132 |
+| 50-75 | 203 | 183 |
+| 75-100 | 52 | 66 |
+| 100-150 | 49 | 37 |
+| 150-250 | 50 | 20 |
+| 250-400 | 35 | 6 |
+| > 400 | 4 | 0 |
+
+Reading: the 25-50 excess is the systematic offset between our 1M-node Stockfish and
+lichess cloud evals (a 25cp screen cut would flag ~12% of the cache for nothing). Between
+50 and 100cp the cache matches the control, so this check sees no hidden sub-100
+population; the excess sits at piece magnitude, consistent with misalignment around a
+capture. Caveat: these are popular ply-1-12 positions, mostly quiet mainlines. Sharp
+lines with pawn grabs, where a one-ply misalignment yields ~100cp, are underrepresented,
+so the repair must not rely on a hand-picked cp threshold (see "Thresholds" below).
+
+```sql
+-- histogram + control (report verification block, before and after)
+WITH l AS (
+  SELECT gp.full_hash,
+         percentile_cont(0.5) WITHIN GROUP (ORDER BY prev.eval_cp) AS med,
+         percentile_cont(0.75) WITHIN GROUP (ORDER BY prev.eval_cp)
+           - percentile_cont(0.25) WITHIN GROUP (ORDER BY prev.eval_cp) AS iqr
+  FROM games g
+  JOIN game_positions gp   ON gp.game_id = g.id AND gp.ply BETWEEN 1 AND 12
+  JOIN game_positions prev ON prev.game_id = g.id AND prev.ply = gp.ply - 1
+  WHERE g.lichess_evals_at IS NOT NULL AND prev.eval_cp IS NOT NULL AND prev.eval_mate IS NULL
+  GROUP BY gp.full_hash HAVING count(*) >= 3),
+d AS (SELECT abs(o.eval_cp - l.med) AS delta, l.iqr
+      FROM l JOIN opening_position_eval o ON o.full_hash = l.full_hash WHERE o.eval_mate IS NULL),
+h AS (SELECT width_bucket(delta, ARRAY[25,50,75,100,150,250,400]) AS b, count(*) AS n_cache FROM d GROUP BY 1),
+c AS (SELECT width_bucket(iqr,   ARRAY[25,50,75,100,150,250,400]) AS b, count(*) AS n_ctrl  FROM d GROUP BY 1)
+SELECT coalesce(h.b, c.b) AS bucket, n_cache, n_ctrl FROM h FULL JOIN c ON c.b = h.b ORDER BY 1;
+```
+
 Conventions the scripts must respect (see `_post_move_eval` in `eval_apply.py` and
 memory `atomic-eval-submit-incremental-lease`):
 
@@ -135,6 +179,40 @@ has `--dry-run` and `--limit`. Engine work uses the project `EnginePool`
 (`STOCKFISH_POOL_SIZE`) so it can run from the local 4-worker box against prod through
 `bin/prod_db_tunnel.sh`; only hashes and evals cross the wire.
 
+### Thresholds (measured, in expected-score units; decision 2026-09-09)
+
+A hand-picked 100cp cut is wrong twice over: 100cp at +600 changes nothing while 100cp
+at 0 is a mistake (severity boundaries near equality under the Lichess sigmoid:
+~54cp inaccuracy, ~110cp mistake, ~168cp blunder, from `INACCURACY_DROP` 0.05 /
+`MISTAKE_DROP` 0.10 / `BLUNDER_DROP` 0.15 in `flaws_service.py`), and a cache error of
+55-100cp can still manufacture a spurious inaccuracy pair. So:
+
+- **Units**: every delta in the audit table is `abs(expected_score(new) -
+  expected_score(old))` via `eval_cp_to_expected_score` /
+  `eval_mate_to_expected_score` (`app/services/eval_utils.py`); keep `delta_cp` as a
+  display column only. Mate vs non-mate disagreement is always a flag.
+- **Noise floor is measured, not assumed** (a `calibrate` subcommand, run once before
+  `screen`, result stored in `opening_cache_repair_progress`): take ~500 cache rows
+  written after 2026-08-20 (known clean, diagnosis point 5), rebuild + hash-assert the
+  board, run both the depth-15 `evaluate` and the 1M-node `evaluate_nodes_with_pv`,
+  and record p99 of the expected-score delta for each budget against the stored value.
+  `screen_floor` = p99(depth-15 vs stored); `confirm_floor` = p99(1M vs stored).
+  Expect roughly 50cp-equivalent near equality; refuse to run `screen` with an
+  unset floor.
+- **Screen** flags when the expected-score delta exceeds `screen_floor` (screening is
+  cheap either way; only the confirm stage scales with the flag count, and ~1% flagged
+  is ~26k 1M-node evals, about a day on the 4-worker box).
+- **Confirm overwrites whenever the 1M-node value differs from the stored one by more
+  than `confirm_floor`**. The fresh value is at least as good by construction (same
+  budget as the drain, hash-asserted board), so there is no reason to keep an old
+  value that merely fell under an arbitrary cut. Propagate stays cheap (old-value
+  predicate); rederive is a diff, so games whose classification does not change cost
+  one classify call and no writes.
+- **Acceptance is the residual distribution, not a count at one cut**: after repair the
+  cache-delta histogram above must match the lichess-internal control in every band
+  above the noise floor. That is the check that also covers positions below any single
+  threshold, and it needs no threshold to state.
+
 ### Tables (Alembic migration, kept after the repair as the audit trail)
 
 `opening_cache_audit` (one row per cache row):
@@ -147,7 +225,7 @@ has `--dry-run` and `--limit`. Engine work uses the project `EnginePool`
 | sample_game_id, sample_ply | carrier used to rebuild the board |
 | screen_cp, screen_mate, screened_at | depth-15 result |
 | full_cp, full_mate, full_best_move, full_pv, confirmed_at | 1M-node result |
-| delta_cp SMALLINT | cp-equivalent difference (mate mapped through the existing sigmoid helper) |
+| delta_score REAL, delta_cp SMALLINT | expected-score difference (the decision column) and its cp-equivalent for display; mate mapped through the existing sigmoid helpers |
 | engine_version TEXT | from `uci` `id name` |
 | repaired_at | set by the propagate step |
 
@@ -161,8 +239,9 @@ flaws_before_inacc/mist/blund, flaws_after_inacc/mist/blund, flaws_removed,
 flaws_added, drill_items_pruned, herrings_touched, white_acpl_before/after,
 black_acpl_before/after, reclassified_at, error TEXT`.
 
-`opening_cache_repair_progress` (single row): `last_game_id_walked` for step 2 plus
-`stage_started_at/finished_at` per stage for the report's timing.
+`opening_cache_repair_progress` (single row): `last_game_id_walked` for step 2,
+`screen_floor`, `confirm_floor`, `calibration_n`, `calibrated_at` from the calibrate
+step, plus `stage_started_at/finished_at` per stage for the report's timing.
 
 ### Step 1: seed (`scripts/opening_cache_repair.py seed`)
 
@@ -170,28 +249,36 @@ black_acpl_before/after, reclassified_at, error TEXT`.
 opening_position_eval ON CONFLICT (full_hash) DO NOTHING`. One statement, idempotent.
 Rows inserted into the cache after seeding are clean by (5) and are ignored.
 
+### Step 1b: calibrate (`... calibrate`)
+
+Measures `screen_floor` / `confirm_floor` as described under "Thresholds" and writes
+them to `opening_cache_repair_progress`. Idempotent (re-running overwrites with a fresh
+sample); `--n` defaults to 500. `screen` refuses to run until this has finished.
+
 ### Step 2: screen (`... screen`)
 
 Walk engine games by `id` ascending from `last_game_id_walked`, batches of ~200 games,
 replay the first `min(DEDUP_MAX_PLY + 1, ply_count)` plies, and for each position whose
 audit row is `pending`: assert the hash, run the depth-15 `evaluate` (~0.09s), write
-`screen_*`, set `screened_clean` when `|delta| <= 100cp` and mate/non-mate agree, else
-`flagged`. Advance `last_game_id_walked` per batch in the same transaction as the
+`screen_*`, set `screened_clean` when the expected-score delta is within `screen_floor`
+and mate/non-mate agree, else `flagged`. Advance `last_game_id_walked` per batch in the same transaction as the
 rows. Re-walking a game after a kill is harmless because rows are status-gated.
 When the walk finishes, any row still `pending` has no carrier: mark `orphan` and
 delete it from the cache (a future game will re-evaluate it once; cheap).
 Budget: 2.57M x 0.09s ~ 65 CPU-hours; ~16h on the 4-worker box.
 
-Why depth-15 for the screen and not the 1M-node call: 10x cheaper and the poison is a
-piece, not a nuance. A screen false negative would need a legitimately +300-vs-0
-depth disagreement, which is what step 3 exists for in the other direction.
+Why depth-15 for the screen and not the 1M-node call: 10x cheaper, and with the flag
+cut at the measured depth-15 noise floor nothing that could move a flaw boundary
+survives the screen unflagged. Step 3 exists to turn the screen's false positives
+back into clean rows.
 
 ### Step 3: confirm (`... confirm`)
 
 For `flagged` rows: rebuild the board from the recorded sample, run
-`evaluate_nodes_with_pv` (the same call the drain uses), write `full_*`. `|delta| > 100cp`
-→ `confirmed_bad` and overwrite the cache row (`eval_cp, eval_mate, best_move, pv`);
-else `confirmed_clean` (screen noise, cache untouched). Both branches are a status
+`evaluate_nodes_with_pv` (the same call the drain uses), write `full_*`. Expected-score
+delta beyond `confirm_floor` (or mate/non-mate disagreement) → `confirmed_bad` and
+overwrite the cache row (`eval_cp, eval_mate, best_move, pv`); else `confirmed_clean`
+(screen noise, cache untouched). Both branches are a status
 transition per row, so a kill mid-batch loses at most the uncommitted batch.
 
 ### Step 4: propagate (`... propagate`)
@@ -265,7 +352,9 @@ Prints and writes `reports/opening-cache-repair/opening-cache-repair-YYYY-MM-DD.
   games whose blunder count changed; drill items pruned; herrings touched; accuracy
   and ACPL mean shift for affected games.
 - Verification block: the lichess cross-check query above re-run (n_checked / n_bad),
-  the opening bounce rate (`|eval_P - eval_{P-1}| >= 200 AND |eval_{P+1} - eval_{P-1}|
+  the delta histogram with the lichess-internal control (must match in every band above
+  the noise floor after repair; this is the primary acceptance signal), the measured
+  `screen_floor` / `confirm_floor`, the opening bounce rate (`|eval_P - eval_{P-1}| >= 200 AND |eval_{P+1} - eval_{P-1}|
   <= 60`, plies 2-19) before/after, and the status of game 2356581 plies 5/6 and the 9
   named hashes (must read `confirmed_bad` → `repaired`).
   Bounce-rate noise floor from the cache-free benchmark DB (engine games, 1-in-8
@@ -277,7 +366,7 @@ Prints and writes `reports/opening-cache-repair/opening-cache-repair-YYYY-MM-DD.
   verification.
 - Timing per stage from `opening_cache_repair_progress`.
 
-Run order: seed → screen → confirm → propagate → rederive → report. Each step is
+Run order: seed → calibrate → screen → confirm → propagate → rederive → report. Each step is
 independently re-runnable and refuses to run out of order (checks the previous stage's
 `finished_at`). Expect a couple of days wall clock for screen; the rest is hours.
 
