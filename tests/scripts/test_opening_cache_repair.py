@@ -1172,6 +1172,75 @@ class TestScreen:
             await _delete_opening_cache(session_maker, [hash_a, hash_b])
             await _reset_progress(session_maker)
 
+    async def test_screen_screens_every_game_in_one_batch(self, test_engine: AsyncEngine) -> None:
+        """Two carrier games in the SAME batch (default SCREEN_GAMES_PER_BATCH,
+        no monkeypatch) both get screened.
+
+        Guards the batched read phase: `_collect_screen_candidates` resolves the
+        page's PGNs, ply rows and pending-hash filter with one query each, so a
+        scoping bug that built any of those from only the first game of the page
+        would leave later games' hashes silently `pending`. The
+        SCREEN_GAMES_PER_BATCH=1 sibling test cannot catch that -- it puts each
+        game in its own batch, where first-game-only scoping is indistinguishable
+        from correct behaviour.
+        """
+        session_maker = _session_maker(test_engine)
+        await _ensure_user(session_maker, _TEST_USER_ID)
+        hash_a = _real_hashes_by_ply(_RUY_LOPEZ_PGN)[2]
+        hash_b = _real_hashes_by_ply(_SICILIAN_PGN)[2]
+        max_game_id = await _current_max_game_id(session_maker)
+        game_a = await _insert_carrier_game(session_maker, pgn=_RUY_LOPEZ_PGN)
+        game_b = await _insert_carrier_game(session_maker, pgn=_SICILIAN_PGN)
+        assert game_a < game_b
+        try:
+
+            def _fen_at_ply2(pgn: str) -> str:
+                game = chess.pgn.read_game(io.StringIO(pgn))
+                assert game is not None
+                board = game.board()
+                fen: str | None = None
+                for ply, node in enumerate(game.mainline()):
+                    if ply == 2:
+                        fen = board.fen()
+                    board.push(node.move)
+                assert fen is not None
+                return fen
+
+            fen_a = _fen_at_ply2(_RUY_LOPEZ_PGN)
+            fen_b = _fen_at_ply2(_SICILIAN_PGN)
+
+            async with session_maker() as session:
+                session.add(OpeningCacheAudit(full_hash=hash_a, status="pending", old_cp=0))
+                session.add(OpeningCacheAudit(full_hash=hash_b, status="pending", old_cp=0))
+                await session.commit()
+            await _seed_calibrate_finished(
+                session_maker, screen_floor=0.5, last_game_id_walked=max_game_id
+            )
+
+            fake_pool = _FakePool(result_by_fen={fen_a: (2, None), fen_b: (2, None)})
+            await run_screen(
+                db="dev",
+                dry_run=False,
+                limit=None,
+                session_maker=session_maker,
+                pool=fake_pool,  # ty: ignore[invalid-argument-type]  # test stub duck-types EnginePool
+            )
+
+            # Both games sat in ONE batch (SCREEN_GAMES_PER_BATCH is 200), so a
+            # first-game-only read phase would evaluate fen_a and leave hash_b pending.
+            assert set(fake_pool.evaluated_fens) == {fen_a, fen_b}
+            async with session_maker() as session:
+                audit_a = await session.get(OpeningCacheAudit, hash_a)
+                audit_b = await session.get(OpeningCacheAudit, hash_b)
+                assert audit_a is not None and audit_a.status == "screened_clean"
+                assert audit_b is not None and audit_b.status == "screened_clean"
+                assert audit_a.sample_game_id == game_a
+                assert audit_b.sample_game_id == game_b
+        finally:
+            await _delete_games(session_maker, [game_a, game_b])
+            await _delete_opening_cache(session_maker, [hash_a, hash_b])
+            await _reset_progress(session_maker)
+
     async def test_screen_stamps_started_and_finished_at_on_exhaustion(
         self, test_engine: AsyncEngine
     ) -> None:

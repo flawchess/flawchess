@@ -628,10 +628,48 @@ async def _collect_screen_candidates(
     mismatch_last_game_id: dict[int, int] = {}
     seen_hashes: set[int] = set()
     async with session_maker() as session:
+        # Perf (prod run 2026-09-10): one query for the page's PGNs and one for
+        # the page's ply-1..20 rows, instead of a `session.get(Game)` +
+        # `select(GamePosition)` pair per game. That pair cost 2 round-trips per
+        # game (400 per 200-game batch) and, over the prod SSH tunnel (~40ms
+        # RTT), dominated the whole stage while the engine pool sat idle
+        # (depth-15 mean is ~0.09s, so 28 workers finish a batch's evals in ~4s
+        # of a ~71s batch).
+        pgn_by_game: dict[int, str] = {
+            r[0]: r[1]
+            for r in (
+                await session.execute(select(Game.id, Game.pgn).where(Game.id.in_(game_ids)))
+            ).all()
+        }
+        pos_result = await session.execute(
+            select(
+                GamePosition.game_id,
+                GamePosition.ply,
+                GamePosition.full_hash,
+                GamePosition.eval_cp,
+                GamePosition.eval_mate,
+            ).where(GamePosition.game_id.in_(game_ids), GamePosition.ply.between(1, 20))
+        )
+        gp_rows_by_game: dict[int, list[tuple[int, int, int | None, int | None]]] = {}
+        stored_hashes: set[int] = set()
+        for r in pos_result.all():
+            gp_rows_by_game.setdefault(r[0], []).append((r[1], r[2], r[3], r[4]))
+            stored_hashes.add(r[2])
+        if not stored_hashes:
+            return [], {}, {}
+        # Scoped to THIS page's stored hashes. Every target's full_hash is a
+        # stored game_positions.full_hash -- non-terminal ones come straight from
+        # _collect_full_ply_targets' ply_meta, terminal ones are overwritten from
+        # stored_hash_by_ply in _carrier_targets -- so this is equivalent to the
+        # old unfiltered `status = 'pending'` scan, which pulled every one of the
+        # 2.4M pending hashes (~19MB, ~4.4GB total over 231 batches) EACH batch.
         pending_hashes = set(
             (
                 await session.execute(
-                    select(OpeningCacheAudit.full_hash).where(OpeningCacheAudit.status == "pending")
+                    select(OpeningCacheAudit.full_hash).where(
+                        OpeningCacheAudit.status == "pending",
+                        OpeningCacheAudit.full_hash.in_(stored_hashes),
+                    )
                 )
             )
             .scalars()
@@ -640,21 +678,15 @@ async def _collect_screen_candidates(
         if not pending_hashes:
             return [], {}, {}
         for game_id in game_ids:
-            game = await session.get(Game, game_id)
-            if game is None:
+            # Game.pgn is NOT NULL, so a missing key is exactly the old
+            # `session.get(Game, game_id) is None` (game row gone).
+            pgn = pgn_by_game.get(game_id)
+            if pgn is None:
                 continue
-            pos_result = await session.execute(
-                select(
-                    GamePosition.ply,
-                    GamePosition.full_hash,
-                    GamePosition.eval_cp,
-                    GamePosition.eval_mate,
-                ).where(GamePosition.game_id == game_id, GamePosition.ply.between(1, 20))
-            )
-            gp_rows = [(r[0], r[1], r[2], r[3]) for r in pos_result.all()]
+            gp_rows = gp_rows_by_game.get(game_id)
             if not gp_rows:
                 continue
-            targets = _carrier_targets(game_id, game.pgn, gp_rows)
+            targets = _carrier_targets(game_id, pgn, gp_rows)
             for target in targets:
                 if target.full_hash not in pending_hashes or target.full_hash in seen_hashes:
                     continue
@@ -710,10 +742,32 @@ async def _run_screen_batch(
     )
 
     async with session_maker() as write_session:
+        # Perf (prod run 2026-09-10): load every audit row this batch touches in
+        # ONE query. The per-row `session.get(OpeningCacheAudit, full_hash)` this
+        # replaces was a sequential round-trip each (~1350 per batch, 310k over
+        # the first 4.6h) -- server-side mean 0.056ms, but ~40ms of prod-tunnel
+        # RTT apiece, which is where the stage's wall time actually went.
+        needed_hashes = {c[0] for c in candidates} | {
+            full_hash for full_hash in mismatch_attempts if full_hash not in resolved_hashes
+        }
+        audit_by_hash: dict[int, OpeningCacheAudit] = {}
+        if needed_hashes:
+            audit_by_hash = {
+                row.full_hash: row
+                for row in (
+                    await write_session.execute(
+                        select(OpeningCacheAudit).where(
+                            OpeningCacheAudit.full_hash.in_(needed_hashes)
+                        )
+                    )
+                )
+                .scalars()
+                .all()
+            }
         for (full_hash, sample_game_id, sample_ply, _board), (eval_cp, eval_mate) in zip(
             candidates, eval_results, strict=True
         ):
-            audit = await write_session.get(OpeningCacheAudit, full_hash)
+            audit = audit_by_hash.get(full_hash)
             if audit is None:
                 continue  # cache row's audit entry vanished between read and write
             _apply_screen_fields(
@@ -728,7 +782,7 @@ async def _run_screen_batch(
         for full_hash, attempts in mismatch_attempts.items():
             if full_hash in resolved_hashes:
                 continue  # a later carrier in this same batch resolved it -- not a mismatch
-            audit = await write_session.get(OpeningCacheAudit, full_hash)
+            audit = audit_by_hash.get(full_hash)
             if audit is None:
                 continue
             _apply_mismatch_attempts(
