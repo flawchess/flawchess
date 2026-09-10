@@ -461,7 +461,7 @@ Plans:
 - [x] 220-02-PLAN.md — Submit path writes the cache, deterministic backfill donor, lichess tick guard, db-report Checks C+D (wave 1)
 - [x] 220-03-PLAN.md — `confirm` / `propagate` / `rederive`, D-04 advisory lock on both sides, `refresh_game_oracle_counts` (wave 2)
 - [x] 220-04-PLAN.md — `report` and `legacy-sample` with the D-07 decision rule (wave 3)
-- [ ] 220-05-PLAN.md — Dev smoke with a literal SIGTERM, changelog, pre-merge gate, Release 1 merge + deploy (wave 4)
+- [x] 220-05-PLAN.md — Dev smoke with a literal SIGTERM, changelog, pre-merge gate, Release 1 merge + deploy (wave 4)
 - [ ] 220-06-PLAN.md — Prod repair operator stages, 14 acceptance queries, legacy-cohort decision (wave 5)
 - [ ] 220-07-PLAN.md — Release 2 hardening: provenance migration, candidate/promote/replace, confirmed-only reads (wave 6)
 - [ ] 220-08-PLAN.md — Release 2 gate, merge, deploy and post-deploy verification (wave 7)
