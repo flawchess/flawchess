@@ -4879,6 +4879,133 @@ class TestFlawBlobSubmitEndpoint:
         finally:
             await _delete_games(eval_worker_session_maker, [game_id])
 
+    @pytest.mark.asyncio
+    async def test_blob_submit_no_resurrect(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        eval_worker_session_maker: async_sessionmaker[AsyncSession],
+        eval_worker_test_user: int,
+    ) -> None:
+        """D-04 (SEED-164 / FLAWCHESS-8D): a concurrent rederive DELETE landing
+        between the submit's read and write phases must not resurrect the
+        removed flaw or 500 -- the advisory lock's in-lock re-read filters
+        BOTH write payloads (blob_map, tactic updates) down to plies still
+        present."""
+        import app.routers.eval_remote as eval_remote_module
+        from app.models.game_flaw import GameFlaw
+        from app.schemas.eval_remote import FlawBlobLeasePosition
+
+        monkeypatch.setattr(settings, "EVAL_OPERATOR_TOKEN", _TEST_TOKEN)
+        monkeypatch.setattr(settings, "EXPECTED_SF_VERSION", "")
+        _patch_router_session(monkeypatch, eval_worker_session_maker)
+
+        user_id = eval_worker_test_user
+        game_id = await _insert_game(
+            eval_worker_session_maker,
+            user_id,
+            pgn=_FLAW_LEASE_PGN,
+            full_evals_completed_at=datetime.now(timezone.utc),
+        )
+        await _insert_flaw_for_lease_test(eval_worker_session_maker, user_id, game_id, ply=2)
+        await _insert_flaw_for_lease_test(eval_worker_session_maker, user_id, game_id, ply=4)
+        # ply=4 needs its own GamePosition row too: the CPU-phase tactic gate
+        # runs for every ply in null_flaw_plies (captured BEFORE the
+        # concurrent delete below), including ply=4, and indexes
+        # positions[flaw_ply] unconditionally.
+        for ply, pv in [
+            (0, None),
+            (1, None),
+            (2, _WALKABLE_PV_PLY2),
+            (3, _WALKABLE_PV_PLY3),
+            (4, None),
+        ]:
+            await _insert_game_position_pv(eval_worker_session_maker, user_id, game_id, ply, pv)
+
+        monkeypatch.setattr(
+            eval_remote_module, "_claim_tier4_blob", AsyncMock(return_value=(game_id, user_id))
+        )
+
+        try:
+            # Lease while BOTH flaws (ply=2, ply=4) still exist.
+            async with _make_client() as client:
+                lease_resp = await client.post(
+                    _FLAW_BLOB_LEASE_URL, headers={"X-Operator-Token": _TEST_TOKEN}
+                )
+            assert lease_resp.status_code == 200, f"Lease failed: {lease_resp.text}"
+            lease_positions = lease_resp.json()["positions"]
+            ply2_tokens = [pos for pos in lease_positions if pos["token"].startswith("2:")]
+            assert ply2_tokens, "Expected at least one ply=2 token"
+
+            # Simulate rederive deleting the ply=4 flaw DURING the submit's
+            # read->write window: monkeypatch the submit's own re-derive call
+            # (_build_flaw_blob_lease_positions, invoked AFTER the submit's
+            # read session closes and BEFORE its write session opens) to
+            # delete the row as a side effect, then delegate to the real
+            # implementation (which now correctly sees only ply=2).
+            real_build = eval_remote_module._build_flaw_blob_lease_positions
+
+            async def _build_and_concurrently_delete(
+                gid: int,
+            ) -> tuple[list[FlawBlobLeasePosition], set[tuple[int, str]]]:
+                async with eval_worker_session_maker() as del_session:
+                    await del_session.execute(
+                        sa.delete(GameFlaw).where(GameFlaw.game_id == gid, GameFlaw.ply == 4)
+                    )
+                    await del_session.commit()
+                return await real_build(gid)
+
+            monkeypatch.setattr(
+                eval_remote_module,
+                "_build_flaw_blob_lease_positions",
+                _build_and_concurrently_delete,
+            )
+
+            # Submit only the SURVIVING ply=2 tokens -- the server's own
+            # null_flaw_plies snapshot (captured in the read phase, BEFORE
+            # the concurrent delete above runs) is what must not resurrect
+            # ply=4, independent of what the worker submits.
+            submit_evals = [
+                {
+                    "token": pos["token"],
+                    "best_cp": 60,
+                    "best_mate": None,
+                    "second_cp": None,
+                    "second_mate": None,
+                    "second_uci": None,
+                }
+                for pos in ply2_tokens
+            ]
+            async with _make_client() as client:
+                submit_resp = await client.post(
+                    _FLAW_BLOB_SUBMIT_URL,
+                    json={
+                        "game_id": game_id,
+                        "sf_version": "Stockfish 18",
+                        "evals": submit_evals,
+                    },
+                    headers={"X-Operator-Token": _TEST_TOKEN},
+                )
+            assert submit_resp.status_code == 200, (
+                f"Submit must not 500 on a concurrently-deleted flaw ply "
+                f"(FLAWCHESS-8D): {submit_resp.status_code} {submit_resp.text}"
+            )
+
+            async with eval_worker_session_maker() as verify:
+                flaw_rows = (
+                    await verify.execute(
+                        sa.select(GameFlaw.ply, GameFlaw.allowed_pv_lines).where(
+                            GameFlaw.game_id == game_id
+                        )
+                    )
+                ).all()
+            by_ply = {row.ply: row.allowed_pv_lines for row in flaw_rows}
+            assert 4 not in by_ply, "deleted ply=4 flaw must stay gone -- not resurrected"
+            assert 2 in by_ply and by_ply[2] is not None, (
+                "surviving ply=2 flaw must still get its blob written"
+            )
+        finally:
+            await _delete_games(eval_worker_session_maker, [game_id])
+
 
 # ─── SEED-076: cache-aware incremental lease + blob-preserving classify ────────
 #
@@ -5311,6 +5438,16 @@ async def test_atomic_retry_snapshotted_ply_no_longer_flaw_does_not_raise(
             )
             await s.commit()
 
+        # CACHEFIX-12 (220-02): attempt 1's submit now ALSO seeds the opening cache
+        # for this game's own opening plies. _resolve_full_eval's dedup-hit-wins
+        # priority (pre-existing, unchanged here) would otherwise resurrect attempt
+        # 1's blunder-era eval for the SAME position on attempt 2's dedup_map fetch,
+        # masking this test's actual concern (StaleDataError in blob restore) behind
+        # an unrelated cache-vs-fresh-resubmit interaction. Clear it so attempt 2's
+        # FLAT evals genuinely take effect, isolating this regression test from the
+        # cache-write behavior CACHEFIX-12 adds.
+        await _delete_opening_cache(eval_worker_session_maker, [base + p for p in range(6)])
+
         # Attempt 2: FLAT evals → reclassify drops the ply-2 flaw. Pre-fix this raised
         # StaleDataError inside _restore_preserved_flaw_blobs; post-fix it is a clean no-op.
         resp = await _apply_atomic_submit(
@@ -5330,6 +5467,7 @@ async def test_atomic_retry_snapshotted_ply_no_longer_flaw_does_not_raise(
         assert still_flaw is None, "ply 2 must no longer be a flaw after the flat retry"
     finally:
         await _delete_games(eval_worker_session_maker, [game_id])
+        await _delete_opening_cache(eval_worker_session_maker, [base + p for p in range(6)])
 
 
 # ─── SEED-076 follow-up: cache the pv alongside the eval (Task 3) ─────────────
@@ -5532,6 +5670,258 @@ async def test_upsert_opening_cache_backfills_pv_without_overwriting_eval_or_exi
         )
     finally:
         await _delete_opening_cache(eval_worker_session_maker, [hash_pv_less, hash_pv_bearing])
+
+
+# ─── CACHEFIX-12 (Phase 220-02): remote-worker submit writes the opening cache ─
+#
+# The atomic-submit lane now populates opening_position_eval through the SAME
+# shared _upsert_opening_cache the drain tick uses (one function, two call
+# sites), via a `_cache_targets` list built from a pre-merge snapshot of the
+# plies the worker itself evaluated (`_worker_evaluated_plies`). These tests
+# cover: a submit writes the cache, a second game's lease shrinks as a result,
+# a dedup-sourced ply never round-trips back into the cache, and a lichess-eval
+# game writes no cache row at all.
+
+
+async def _fetch_cache_rows(
+    session_maker: async_sessionmaker[AsyncSession],
+    full_hashes: list[int],
+) -> dict[int, tuple[int | None, int | None, str | None, str | None]]:
+    """Return {full_hash: (eval_cp, eval_mate, best_move, pv)} for the given hashes."""
+    from app.models.opening_position_eval import OpeningPositionEval
+
+    async with session_maker() as session:
+        rows = (
+            await session.execute(
+                select(
+                    OpeningPositionEval.full_hash,
+                    OpeningPositionEval.eval_cp,
+                    OpeningPositionEval.eval_mate,
+                    OpeningPositionEval.best_move,
+                    OpeningPositionEval.pv,
+                ).where(OpeningPositionEval.full_hash.in_(full_hashes))
+            )
+        ).all()
+    return {r[0]: (r[1], r[2], r[3], r[4]) for r in rows}
+
+
+@pytest.mark.asyncio
+async def test_submit_writes_cache(
+    monkeypatch: pytest.MonkeyPatch,
+    eval_worker_session_maker: async_sessionmaker[AsyncSession],
+    eval_worker_test_user: int,
+) -> None:
+    """CACHEFIX-12: an accepted atomic submit for a game with non-terminal opening
+    plies leaves one opening_position_eval row per distinct opening hash the
+    worker evaluated, written through _upsert_opening_cache (the tick's own
+    write function)."""
+    from app.routers.eval_remote import _apply_atomic_submit
+
+    monkeypatch.setattr(settings, "EVAL_OPERATOR_TOKEN", _TEST_TOKEN)
+    _patch_router_session(monkeypatch, eval_worker_session_maker)
+
+    user_id = eval_worker_test_user
+    base = 76700
+    game_id = await _insert_game(eval_worker_session_maker, user_id, pgn=_SIX_PLY_PGN_142)
+    await _insert_game_positions(
+        eval_worker_session_maker,
+        user_id,
+        game_id,
+        [{"ply": p, "full_hash": base + p, "eval_cp": None, "eval_mate": None} for p in range(6)],
+    )
+    hashes = [base + p for p in range(6)]
+
+    try:
+        resp = await _apply_atomic_submit(
+            game_id,
+            _atomic_request(game_id, list(_BLUNDER_SUBMIT_EVALS_142)),
+            worker_id="test-worker",
+            last_ip=None,
+        )
+        assert resp.failed_ply_count == 0
+
+        cached = await _fetch_cache_rows(eval_worker_session_maker, hashes)
+        assert set(cached) == set(hashes), (
+            f"every non-terminal opening ply's hash must be cached, got {set(cached)}"
+        )
+        # ply 2's submitted eval: eval_cp=30, best_move="g1f3" (row hash base+2).
+        assert cached[base + 2][0] == 30
+        assert cached[base + 2][2] == "g1f3"
+    finally:
+        await _delete_games(eval_worker_session_maker, [game_id])
+        await _delete_opening_cache(eval_worker_session_maker, hashes)
+
+
+@pytest.mark.asyncio
+async def test_lease_shrinks_after_submit(
+    monkeypatch: pytest.MonkeyPatch,
+    eval_worker_session_maker: async_sessionmaker[AsyncSession],
+    eval_worker_test_user: int,
+) -> None:
+    """CACHEFIX-12: a second game whose game_positions reach a hash the first
+    submit cached (with a pv) gets it back from _fetch_cached_opening_hashes,
+    so _lease_position_redundant drops that position from its lease."""
+    import chess
+
+    from app.routers.eval_remote import (
+        _apply_atomic_submit,
+        _fetch_cached_opening_hashes,
+        _lease_position_redundant,
+    )
+    from app.services.eval_apply import _FullPlyEvalTarget
+
+    monkeypatch.setattr(settings, "EVAL_OPERATOR_TOKEN", _TEST_TOKEN)
+    _patch_router_session(monkeypatch, eval_worker_session_maker)
+
+    user_id = eval_worker_test_user
+    base = 76800
+    game_id = await _insert_game(eval_worker_session_maker, user_id, pgn=_SIX_PLY_PGN_142)
+    await _insert_game_positions(
+        eval_worker_session_maker,
+        user_id,
+        game_id,
+        [{"ply": p, "full_hash": base + p, "eval_cp": None, "eval_mate": None} for p in range(6)],
+    )
+    # Ply 2's submitted eval carries a real pv so the resulting cache row is
+    # omittable from a later lease (_fetch_cached_opening_hashes gates on pv).
+    with_pv = [dict(e) for e in _BLUNDER_SUBMIT_EVALS_142]
+    for e in with_pv:
+        if e["ply"] == 2:
+            e["pv"] = "g1f3 b8c6"
+    hashes = [base + p for p in range(6)]
+
+    try:
+        resp = await _apply_atomic_submit(
+            game_id, _atomic_request(game_id, with_pv), worker_id="test-worker", last_ip=None
+        )
+        assert resp.failed_ply_count == 0
+
+        # A second game whose game_positions reach the same hash at some other ply.
+        second_gp_rows: list[tuple[int, int, int | None, int | None]] = [(3, base + 2, None, None)]
+        board = chess.Board()
+        async with eval_worker_session_maker() as session:
+            cached_hashes = await _fetch_cached_opening_hashes(session, second_gp_rows)
+        assert base + 2 in cached_hashes, (
+            "a pv-bearing cache row from the first submit must be omittable from a "
+            "second game's lease"
+        )
+
+        target = _FullPlyEvalTarget(
+            game_id=99, ply=3, full_hash=base + 2, board=board, eval_cp=None, eval_mate=None
+        )
+        assert _lease_position_redundant(target, {}, cached_hashes) is True, (
+            "the cached, pv-bearing opening position must be dropped from the lease"
+        )
+    finally:
+        await _delete_games(eval_worker_session_maker, [game_id])
+        await _delete_opening_cache(eval_worker_session_maker, hashes)
+
+
+@pytest.mark.asyncio
+async def test_submit_no_self_write(
+    monkeypatch: pytest.MonkeyPatch,
+    eval_worker_session_maker: async_sessionmaker[AsyncSession],
+    eval_worker_test_user: int,
+) -> None:
+    """CACHEFIX-12 (Pitfall 2): a ply the worker did NOT evaluate — whose value the
+    dedup merge injected into engine_result_map — must not round-trip back into
+    the cache. Seed a cache row, submit a game whose opening ply is a dedup hit
+    (omitted by the worker), and assert the cache row is byte-identical and no
+    other row appeared."""
+    from app.routers.eval_remote import _apply_atomic_submit
+
+    monkeypatch.setattr(settings, "EVAL_OPERATOR_TOKEN", _TEST_TOKEN)
+    _patch_router_session(monkeypatch, eval_worker_session_maker)
+
+    user_id = eval_worker_test_user
+    base = 76900
+    game_id = await _insert_game(eval_worker_session_maker, user_id, pgn=_SIX_PLY_PGN_142)
+    await _insert_game_positions(
+        eval_worker_session_maker,
+        user_id,
+        game_id,
+        [{"ply": p, "full_hash": base + p, "eval_cp": None, "eval_mate": None} for p in range(6)],
+    )
+    # Seed the cache for ply 1's hash (== _BLUNDER_SUBMIT_EVALS_142's own eval, so a
+    # cache write of the same values would be indistinguishable from a self-write
+    # unless the pre-merge snapshot is doing the excluding).
+    await _insert_opening_cache(eval_worker_session_maker, [(base + 1, 20, None, "e2e4")])
+    hashes = [base + p for p in range(6)]
+    # Worker omits ply 1 entirely — its value only reaches engine_result_map via
+    # the dedup merge, never via the worker's own submission.
+    partial = [e for e in _BLUNDER_SUBMIT_EVALS_142 if e["ply"] != 1]
+
+    try:
+        before = await _fetch_cache_rows(eval_worker_session_maker, [base + 1])
+
+        resp = await _apply_atomic_submit(
+            game_id, _atomic_request(game_id, partial), worker_id="test-worker", last_ip=None
+        )
+        assert resp.failed_ply_count == 0, "cached opening must fill the hole server-side"
+
+        after = await _fetch_cache_rows(eval_worker_session_maker, [base + 1])
+        assert after == before, (
+            f"the dedup-sourced ply's cache row must be byte-identical, before={before}, "
+            f"after={after}"
+        )
+        # The other five plies WERE freshly evaluated by the worker and must still be
+        # cached — proving the exclusion is scoped to the dedup-sourced ply only.
+        other_hashes = [base + p for p in range(6) if p != 1]
+        cached_others = await _fetch_cache_rows(eval_worker_session_maker, other_hashes)
+        assert set(cached_others) == set(other_hashes)
+    finally:
+        await _delete_games(eval_worker_session_maker, [game_id])
+        await _delete_opening_cache(eval_worker_session_maker, hashes)
+
+
+@pytest.mark.asyncio
+async def test_submit_lichess_game_no_cache_write(
+    monkeypatch: pytest.MonkeyPatch,
+    eval_worker_session_maker: async_sessionmaker[AsyncSession],
+    eval_worker_test_user: int,
+) -> None:
+    """CACHEFIX-12: a submit for a lichess-eval game writes no opening cache row,
+    matching the provenance rule already enforced for the backfill/tick lanes."""
+    from app.routers.eval_remote import _apply_atomic_submit
+
+    monkeypatch.setattr(settings, "EVAL_OPERATOR_TOKEN", _TEST_TOKEN)
+    _patch_router_session(monkeypatch, eval_worker_session_maker)
+
+    user_id = eval_worker_test_user
+    base = 77000
+    game_id = await _insert_game(
+        eval_worker_session_maker,
+        user_id,
+        pgn=_SIX_PLY_PGN_142,
+        lichess_evals_at=datetime.now(timezone.utc),
+    )
+    await _insert_game_positions(
+        eval_worker_session_maker,
+        user_id,
+        game_id,
+        [{"ply": p, "full_hash": base + p, "eval_cp": 15 + p, "eval_mate": None} for p in range(6)],
+    )
+    hashes = [base + p for p in range(6)]
+    # No terminal donor for a lichess-eval game (include_terminal=False) — submit
+    # evals for the real plies only, best_move matching the played moves so no
+    # ply is left holed.
+    played_uci = ["e2e4", "e7e5", "g1f3", "b8c6", "f1c4", "f8c5"]
+    partial: list[dict[str, object]] = [
+        {"ply": p, "eval_cp": 15 + p, "eval_mate": None, "best_move": played_uci[p], "pv": None}
+        for p in range(6)
+    ]
+
+    try:
+        resp = await _apply_atomic_submit(
+            game_id, _atomic_request(game_id, partial), worker_id="test-worker", last_ip=None
+        )
+        assert resp.failed_ply_count == 0
+
+        cached = await _fetch_cache_rows(eval_worker_session_maker, hashes)
+        assert cached == {}, f"a lichess-eval game must write NO opening cache rows, got {cached}"
+    finally:
+        await _delete_games(eval_worker_session_maker, [game_id])
+        await _delete_opening_cache(eval_worker_session_maker, hashes)
 
 
 # ─── Phase 177 BACK-02/03: tier-4b bestmove-lease/submit endpoint tests ──────

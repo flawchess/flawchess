@@ -1,16 +1,17 @@
 ---
 gsd_state_version: 1.0
 milestone: v2.16
-current_phase: 219
-status: completed
-stopped_at: Phase 219 complete — all phases complete
-last_updated: "2026-09-06T15:51:11.424Z"
-state_head: 4d9eceff7259c84a74372e2f7622a59fc4aa8b39
+current_phase: 220
+current_phase_name: Opening Eval Cache Repair & Two-Source Confirmation (SEED-164)
+status: executing
+stopped_at: Completed 220-04-PLAN.md
+last_updated: "2026-09-09T22:52:19.161Z"
+state_head: 9ba09e0fc6148c188d86557185238c14b9af8fa4
 progress:
-  total_phases: 1
+  total_phases: 2
   completed_phases: 1
-  total_plans: 3
-  completed_plans: 3
+  total_plans: 11
+  completed_plans: 7
 milestone_name: Audit Hardening & Dependency Currency
 last_activity: 2026-09-06
 last_activity_desc: Completed quick task 260906-i5e — FlawChess Engine card header shows a running node count (main at 1b5060661, unreleased)
@@ -20,10 +21,10 @@ last_activity_desc: Completed quick task 260906-i5e — FlawChess Engine card he
 
 ## Current Position
 
-Phase: 219
-Plan: Not started
+Phase: 220 (Opening Eval Cache Repair & Two-Source Confirmation (SEED-164)) — EXECUTING
+Plan: 5 of 8
 
-Status: All phases complete
+Status: Ready to execute
 
 Open threads carried forward (not blockers):
 
@@ -716,6 +717,13 @@ v1.29 Live-Engine Analysis Page shipped 2026-06-29 — 5 phases (136–140), 14 
 - [Phase 219]: Executor had no claude-in-chrome tool — all six D-10 UAT legs and wave-2 D-15 numbers recorded pending in 219-UAT.md, not fabricated; orchestrator to complete via browser pass
 - [Phase 219]: D-11/D-12/D-13: useMaiaEngine's phase-3 ladder request splits into an 11-rung coarse pass and a 10-rung fill pass; perElo becomes ascending-and-possibly-partial with an explicit isLadderComplete flag as the sole completeness signal, replacing the retired perElo.length/resultFen-equality proxies. All eight perElo/maia. consumers classified paint-live vs wait-for-complete; the four wait-for-complete ones gated on isLadderComplete, each proven load-bearing via a revert-to-red mutation test.
 - [Phase 219]: Ref-to-state correction to RESEARCH.md's freeze-mechanism example: reading a ref inside a useMemo factory tripped eslint-plugin-react-hooks 7.1+'s react-hooks/refs rule (error level). MaiaMoveQualityBar's frozen-ladder value is now held in useState with a conditional setState-during-render, React's documented "adjust state during render" idiom, not a ref.
+- [Phase 220]: opening_cache_audit.status is TEXT+CHECK not SMALLINT+IntEnum (OQ4, 2.57M-row table, operator-facing values)
+- [Phase 220]: orphan detection is a separate orphans subcommand gated on screen_finished_at, never an implicit tail of screen (Pitfall 6: naive rule would delete 14.2% of dev cache with a good board)
+- [Phase 220]: screen rearchitected from task-1 per-hash carrier search to a per-game batched id-ASC walk with a resumable last_game_id_walked cursor, required for CACHEFIX-02 kill-resume
+- [Phase 220]: Task 1 exposed that _resolve_full_eval's pre-existing dedup-hit-wins-over-fresh priority now interacts with the submit path's new cache write on same-game resubmission; fixed via test-side cache cleanup rather than touching shared read-path semantics
+- [Phase 220]: D-04 closed on both sides: rederive takes the same pg_advisory_xact_lock apply_full_eval uses; the blob-submit write path takes the same lock plus an in-lock re-read filtering both write payloads to surviving plies. — The advisory lock alone does not close the read-then-write race window (FLAWCHESS-8D StaleDataError); the in-lock re-read is the load-bearing half.
+- [Phase 220]: 220-04: legacy-sample gates on calibrate_finished_at/screen_floor directly, not the generic _STAGE_ORDER walk (which would incorrectly require report_finished_at now that report is tracked).
+- [Phase 220]: 220-04: report's delta histogram vs lichess-internal IQR control is labelled the phase's PRIMARY acceptance signal; the opening bounce rate is explicitly a coarse sanity check only.
 
 ### Pending Todos
 
@@ -877,9 +885,9 @@ Items acknowledged and deferred at **v1.29 milestone close on 2026-06-29** (user
 
 ## Session Continuity
 
-**Stopped at:** Phase 219 complete — all phases complete
+**Stopped at:** Completed 220-04-PLAN.md
 
-**Last session:** 2026-09-06T14:08:31.261Z
+**Last session:** 2026-09-09T22:52:19.022Z
 
 **Resume file:** None
 
@@ -1047,6 +1055,10 @@ Items acknowledged and deferred at **v1.29 milestone close on 2026-06-29** (user
 | Phase 219 P01 | 19min | 4 tasks | 14 files |
 | Phase 219 P02 | 15min | 4 tasks | 13 files |
 | Phase 219 P03 | ~7min (git-visible commit span) | 4 tasks | 14 files |
+| Phase 220 P01 | 125min | 3 tasks | 7 files |
+| Phase 220 P02 | 55min | 3 tasks | 5 files |
+| Phase 220 P03 | 170min | 4 tasks | 7 files |
+| Phase 220 P04 | 70min | 2 tasks | 2 files |
 
 ## Performance Metrics
 

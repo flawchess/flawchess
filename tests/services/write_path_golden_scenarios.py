@@ -171,6 +171,11 @@ _PRESERVED_ALLOWED: list[dict[str, Any]] = [{"b": 10, "bm": None, "s": 5, "sm": 
 _PRESERVED_MISSED: list[dict[str, Any]] = [{"b": 20, "bm": None, "s": 8, "sm": None, "su": "d2d4"}]
 
 
+# Plies 0-5 of _SIX_PLY_PGN_142 — every scenario seeds exactly this many rows, and the
+# Phase 220 cache-clear in scenarios 3/4 must cover the same hash range.
+_SIX_PLY_COUNT: Final[int] = 6
+
+
 async def _insert_six_ply_positions(
     session_maker: async_sessionmaker[AsyncSession],
     user_id: int,
@@ -183,7 +188,7 @@ async def _insert_six_ply_positions(
         game_id,
         [
             {"ply": p, "full_hash": base_hash + p, "eval_cp": None, "eval_mate": None}
-            for p in range(6)
+            for p in range(_SIX_PLY_COUNT)
         ],
     )
 
@@ -251,6 +256,12 @@ async def _scenario_3(
             .values(allowed_pv_lines=_PRESERVED_ALLOWED)
         )
         await s.commit()
+    # Phase 220 (CACHEFIX-12): the submit lane now writes the opening cache, and
+    # `_resolve_full_eval` lets a dedup hit beat the fresh engine result, so attempt 2
+    # would otherwise read attempt 1's own cached blunder evals and never flip. Clear
+    # the six cache rows so this scenario keeps testing the reclassify path it exists
+    # for (in production the cache-aware lease omits cached plies on a retry anyway).
+    await _delete_opening_cache(session_maker, [base + p for p in range(_SIX_PLY_COUNT)])
     # Attempt 2: FLAT evals -> reclassify drops the ply-2 flaw entirely.
     await _run_atomic_submit(session_maker, game_id, list(_FLAT_SUBMIT_EVALS_142))
     return game_id, []
@@ -267,6 +278,9 @@ async def _scenario_4(
 
     # Attempt 1: FLAT evals -> no flaw exists.
     await _run_atomic_submit(session_maker, game_id, list(_FLAT_SUBMIT_EVALS_142))
+    # Phase 220 (CACHEFIX-12): clear attempt 1's cache writes so attempt 2's fresh
+    # evals are what gets classified (see the matching note in _scenario_3).
+    await _delete_opening_cache(session_maker, [base + p for p in range(_SIX_PLY_COUNT)])
     # Attempt 2: BLUNDER evals -> a fresh flaw row is inserted at ply 2 (no prior
     # blob to preserve — this is the "insert new" branch, not "update existing").
     await _run_atomic_submit(session_maker, game_id, list(_BLUNDER_SUBMIT_EVALS_142))

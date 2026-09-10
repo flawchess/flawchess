@@ -105,6 +105,7 @@ from app.services.eval_apply import (
     _collect_full_ply_targets,
     _derive_atomic_sentinel_lines,
     _fetch_dedup_evals,
+    _game_write_lock_key,
     _parse_token,
     _refresh_blobs_completed,
     _signal_flaw_completion,
@@ -133,6 +134,7 @@ from app.services.eval_drain import (
     ENTRY_LEASE_BATCH_SIZE,
     ENTRY_LEASE_TTL_SECONDS,
     _load_pgns_for_games,
+    _upsert_opening_cache,
 )
 from app.models.game_flaw import GameFlaw
 from app.repositories.game_flaws_repository import bulk_update_tactic_tags
@@ -1063,6 +1065,37 @@ async def _apply_flaw_blob_submit(
 
     # ── Write phase: blobs + tactic tags in one transaction ──────────────────
     async with async_session_maker() as write_session:
+        # D-04 (SEED-164 / FLAWCHESS-8D): `null_flaw_plies` above was computed in
+        # a read session that CLOSED before this write session opened. If
+        # scripts/opening_cache_repair.py's `rederive` stage deletes one of
+        # those plies in the window between that read and this write, `updates`
+        # (built from null_flaw_plies, independent of which tokens the worker
+        # submitted) still carries an entry for the now-vanished ply, and
+        # bulk_update_tactic_tags's ORM bulk-update-by-PK asserts exactly one
+        # row matched per parameter set — raising StaleDataError on that ply
+        # and turning this 200 into a 500 that loses every blob in the batch.
+        # The advisory lock alone does not close the window (the stale read
+        # already happened); the in-lock re-read below, filtering BOTH write
+        # payloads down to plies still present, is the load-bearing half.
+        await write_session.execute(
+            sa.text("SELECT pg_advisory_xact_lock(:lock_key)"),
+            {"lock_key": _game_write_lock_key(game_id)},
+        )
+        surviving_plies: set[int] = set(
+            (
+                await write_session.execute(
+                    sa.select(GameFlaw.ply).where(
+                        GameFlaw.game_id == game_id,
+                        GameFlaw.user_id == game.user_id,
+                    )
+                )
+            )
+            .scalars()
+            .all()
+        )
+        blob_map = {ply: blob for ply, blob in blob_map.items() if ply in surviving_plies}
+        updates = [u for u in updates if u["ply"] in surviving_plies]
+
         await _batch_update_flaw_pv_lines(write_session, game_id, blob_map)
         await bulk_update_tactic_tags(write_session, updates)
         await _refresh_blobs_completed(write_session, game_id)  # SEED-125
@@ -1283,6 +1316,15 @@ async def _apply_atomic_submit(
         e.ply: (e.eval_cp, e.eval_mate, e.best_move, e.pv) for e in body.evals
     }
 
+    # CACHEFIX-12: snapshot the plies the worker itself evaluated BEFORE the dedup-pv
+    # merge below mutates engine_result_map with CACHED tuples for opening plies the
+    # worker did NOT evaluate. This snapshot is the load-bearing filter for the cache
+    # write built later (_cache_targets) — feeding a dedup-transplanted ply to the
+    # shared upsert would write the cache's own value back into itself (Pitfall 2,
+    # 220-RESEARCH.md). Harmless under release-1 first-write-wins, but a self-
+    # promotion once CACHEFIX-08 lands.
+    _worker_evaluated_plies: frozenset[int] = frozenset(engine_result_map)
+
     # SEED-076 follow-up: fetch the opening-cache dedup_map in its own short read
     # session and merge cached pv into engine_result_map BEFORE
     # _derive_atomic_sentinel_lines below — the sentinel derivation must see the
@@ -1360,14 +1402,36 @@ async def _apply_atomic_submit(
         game_id, targets, engine_result_map, second_best_map, source="worker-submit-fallback"
     )
 
+    # CACHEFIX-12: build the opening-cache write targets BEFORE the write session
+    # opens, reproducing the tick's own `engine_targets` semantics ("targets the
+    # engine actually evaluated, dedup hits excluded") without duplicating
+    # `_upsert_opening_cache`'s filter/collapse logic (one shared function, two call
+    # sites — eval_drain.py's `_full_drain_tick` is the other). A lichess-eval game
+    # writes no cache rows, matching the provenance rule enforced elsewhere for that
+    # source (dedup_map is already {} for it above).
+    _cache_targets: list[_FullPlyEvalTarget] = (
+        []
+        if is_lichess_eval_game
+        else [
+            t
+            for t in targets
+            if not t.is_terminal
+            and t.ply <= DEDUP_MAX_PLY
+            and t.ply in _worker_evaluated_plies
+            and t.full_hash not in dedup_map
+        ]
+    )
+
     # ── Write phase — ONE late session, all UPDATEs + commit atomic (T-117-11) ──
     # Phase 150 R7: the shared write-session body (evals -> classify/oracle/
     # diff-upsert -> Path A/B/C completion decision -> heartbeat) is now
     # eval_apply.apply_full_eval, also called by _full_drain_tick (eval_drain.py).
     # This function still owns session lifecycle (mirrors the pre-move code, and
     # keeps this module's own async_session_maker test monkeypatches routing
-    # correctly). update_opening_cache stays False here (Pitfall 4 / D-05 — the
-    # atomic-submit lane does not populate the opening cache, unlike the drain tick).
+    # correctly). CACHEFIX-12: the atomic-submit lane now populates the opening
+    # cache through the same shared _upsert_opening_cache the drain tick uses —
+    # see _cache_targets above (built from a pre-merge snapshot of the plies the
+    # worker itself evaluated, Pitfall 2 / 220-RESEARCH.md).
     async with async_session_maker() as write_session:
         # SEED-076: dedup_map (fetched above, pre-write-session — SEED-076 follow-up
         # moved this earlier so the pv merge could run before sentinel derivation)
@@ -1413,6 +1477,9 @@ async def _apply_atomic_submit(
             heartbeat_worker_schema_version=body.worker_schema_version,
             heartbeat_n_evals=len(body.evals),
             best_move_rows=best_move_rows,
+            update_opening_cache=bool(_cache_targets),
+            upsert_opening_cache_fn=_upsert_opening_cache,
+            engine_targets_for_cache=_cache_targets,
         )
 
         await write_session.commit()

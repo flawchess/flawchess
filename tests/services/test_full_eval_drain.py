@@ -30,7 +30,7 @@ import ast
 import asyncio
 import inspect
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any
 from unittest.mock import AsyncMock, patch
 
@@ -521,6 +521,100 @@ class TestDedupHitsParity:
             result = await _fetch_dedup_evals(session, [])
 
         assert result == {}
+
+    async def test_backfill_prefers_newest_pv_bearing_donor(
+        self,
+        full_drain_test_user: int,
+        full_drain_session_maker: async_sessionmaker[AsyncSession],
+    ) -> None:
+        """Phase 220 CACHEFIX-12 (SEED-164 diagnosis 3): given two eligible donors for
+        the same full_hash, OPENING_CACHE_BACKFILL_SQL's deterministic ORDER BY picks
+        the one whose game has the newest full_evals_completed_at — not an arbitrary
+        row a plan-dependent scan happened to visit first.
+        """
+        from app.models.game_position import DEDUP_MAX_PLY
+        from app.services.eval_drain import OPENING_CACHE_BACKFILL_SQL
+
+        older = datetime.now(timezone.utc) - timedelta(days=1)
+        newer = datetime.now(timezone.utc)
+        target_hash = 0xC0FFEE_0001
+        older_predecessor_hash = 0xC0FFEE_00A1
+        newer_predecessor_hash = 0xC0FFEE_00B1
+
+        older_game_id = await _insert_game(
+            full_drain_session_maker,
+            full_drain_test_user,
+            evals_completed_at=older,
+            full_evals_completed_at=older,
+        )
+        await _insert_game_positions(
+            full_drain_session_maker,
+            full_drain_test_user,
+            older_game_id,
+            [
+                {"ply": 4, "full_hash": older_predecessor_hash, "eval_cp": 42, "eval_mate": None},
+                {
+                    "ply": 5,
+                    "full_hash": target_hash,
+                    "eval_cp": 1,
+                    "eval_mate": None,
+                    "best_move": "g1f3",
+                },
+            ],
+        )
+        newer_game_id = await _insert_game(
+            full_drain_session_maker,
+            full_drain_test_user,
+            evals_completed_at=newer,
+            full_evals_completed_at=newer,
+        )
+        await _insert_game_positions(
+            full_drain_session_maker,
+            full_drain_test_user,
+            newer_game_id,
+            [
+                {"ply": 4, "full_hash": newer_predecessor_hash, "eval_cp": 99, "eval_mate": None},
+                {
+                    "ply": 5,
+                    "full_hash": target_hash,
+                    "eval_cp": 2,
+                    "eval_mate": None,
+                    "best_move": "e7e5",
+                },
+            ],
+        )
+        await _delete_opening_eval_rows(
+            full_drain_session_maker,
+            [target_hash, older_predecessor_hash, newer_predecessor_hash],
+        )
+        try:
+            async with full_drain_session_maker() as session:
+                await session.execute(OPENING_CACHE_BACKFILL_SQL, {"dedup_max_ply": DEDUP_MAX_PLY})
+                await session.commit()
+
+            from app.models.opening_position_eval import OpeningPositionEval
+
+            async with full_drain_session_maker() as session:
+                row = (
+                    await session.execute(
+                        select(OpeningPositionEval.eval_cp, OpeningPositionEval.best_move).where(
+                            OpeningPositionEval.full_hash == target_hash
+                        )
+                    )
+                ).one_or_none()
+
+            assert row is not None, "the backfill must insert exactly one row for the hash"
+            assert row[0] == 99, (
+                f"the newest donor's eval (99, from full_evals_completed_at={newer}) must "
+                f"win over the older donor's (42), got eval_cp={row[0]}"
+            )
+            assert row[1] == "e7e5", f"the newest donor's best_move must win, got {row[1]!r}"
+        finally:
+            await _delete_games(full_drain_session_maker, [older_game_id, newer_game_id])
+            await _delete_opening_eval_rows(
+                full_drain_session_maker,
+                [target_hash, older_predecessor_hash, newer_predecessor_hash],
+            )
 
 
 # ─── EVAL-05: marker write ────────────────────────────────────────────────────
@@ -1335,6 +1429,79 @@ class TestBestMove:
             await _delete_opening_eval_rows(
                 full_drain_session_maker, [dedup_hash, dedup_predecessor_hash]
             )
+
+    async def test_tick_lichess_no_cache_donation(
+        self,
+        full_drain_test_user: int,
+        full_drain_session_maker: async_sessionmaker[AsyncSession],
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Phase 220 CACHEFIX-12: a drain tick over a lichess-eval game leaves
+        opening_position_eval empty for that game's opening hashes — the tick's own
+        dedup-partition comment already states lichess games neither seed nor draw
+        from the cache (SEED-109 item 4); before this fix, dedup_hashes being always
+        [] for a lichess-eval game meant every one of its opening plies landed in
+        engine_targets and was unconditionally donated.
+
+        Uses _TWO_MOVE_PGN ("1. e4 e5 *", plies 0-1, no terminal donor for a
+        lichess-eval game — include_terminal=False).
+        """
+        now = datetime.now(timezone.utc)
+        target_hashes = [0xC0FFEE_1001, 0xC0FFEE_1002]
+        game_id = await _insert_game(
+            full_drain_session_maker,
+            full_drain_test_user,
+            pgn=_TWO_MOVE_PGN,
+            evals_completed_at=now,
+            full_evals_completed_at=None,
+            lichess_evals_at=now,
+        )
+        await _insert_game_positions(
+            full_drain_session_maker,
+            full_drain_test_user,
+            game_id,
+            [
+                {"ply": 0, "full_hash": target_hashes[0], "eval_cp": 15, "eval_mate": None},
+                {"ply": 1, "full_hash": target_hashes[1], "eval_cp": 18, "eval_mate": None},
+            ],
+        )
+        await _delete_opening_eval_rows(full_drain_session_maker, target_hashes)
+
+        drain_module = _patch_drain_for_tick_tests(
+            monkeypatch,
+            full_drain_session_maker,
+            game_id,
+            full_drain_test_user,
+            is_lichess_eval_game=True,
+        )
+        mock_evaluate = AsyncMock(
+            side_effect=[
+                (15, None, "e2e4", None, None, None, ""),
+                (18, None, "e7e5", None, None, None, ""),
+            ]
+        )
+        monkeypatch.setattr(drain_module.engine_service, "evaluate_nodes_multipv2", mock_evaluate)
+
+        from app.models.opening_position_eval import OpeningPositionEval
+
+        try:
+            processed = await drain_module._full_drain_tick()
+            assert processed is True, "Tick must report a processed game"
+
+            async with full_drain_session_maker() as verify:
+                rows = (
+                    await verify.execute(
+                        select(OpeningPositionEval.full_hash).where(
+                            OpeningPositionEval.full_hash.in_(target_hashes)
+                        )
+                    )
+                ).all()
+            assert rows == [], (
+                f"a lichess-eval game's opening plies must NOT be donated to the cache, got {rows}"
+            )
+        finally:
+            await _delete_games(full_drain_session_maker, [game_id])
+            await _delete_opening_eval_rows(full_drain_session_maker, target_hashes)
 
 
 # ─── EVAL-04: flaw PV written at ply N+1 (D-117-02) ──────────────────────────

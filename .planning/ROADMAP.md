@@ -453,14 +453,18 @@ misalignment mechanism (only if the CACHEFIX-10 sample shows it hit plies > 20 a
 **Depends on:** none (standalone; builds on the Phase 214 `eval_drain.py` / `eval_apply.py`
 decomposition and the Phase 188 `db_url_for_target` script pattern)
 
-**Plans:** 0 plans
+**Plans:** 8 plans
 
 Plans:
 
-- [ ] TBD (run /gsd-plan-phase 220 to break down; expected seams: hardening
-  squash-merge (two-source confirmation + submit-path cache write, CACHEFIX-08/12),
-  migration + repair script + dev smoke, prod run as an operator stage with the screen
-  taking ~2 days wall clock, rederive/report)
+- [x] 220-01-PLAN.md — Audit tables, repair-script skeleton, `seed` / `calibrate` / `screen` / `orphans` (wave 1, tracer)
+- [x] 220-02-PLAN.md — Submit path writes the cache, deterministic backfill donor, lichess tick guard, db-report Checks C+D (wave 1)
+- [x] 220-03-PLAN.md — `confirm` / `propagate` / `rederive`, D-04 advisory lock on both sides, `refresh_game_oracle_counts` (wave 2)
+- [x] 220-04-PLAN.md — `report` and `legacy-sample` with the D-07 decision rule (wave 3)
+- [ ] 220-05-PLAN.md — Dev smoke with a literal SIGTERM, changelog, pre-merge gate, Release 1 merge + deploy (wave 4)
+- [ ] 220-06-PLAN.md — Prod repair operator stages, 14 acceptance queries, legacy-cohort decision (wave 5)
+- [ ] 220-07-PLAN.md — Release 2 hardening: provenance migration, candidate/promote/replace, confirmed-only reads (wave 6)
+- [ ] 220-08-PLAN.md — Release 2 gate, merge, deploy and post-deploy verification (wave 7)
 
 **Cross-cutting constraints:**
 

@@ -192,10 +192,12 @@ If pg_stat_statements has never been reset (check `stats_reset` from `pg_stat_da
 
 ## Section 3: Sanity Checks
 
-Data-integrity checks. Run both unless the user asks for one.
+Data-integrity checks. Run all four unless the user asks for a specific one.
 
 - **Check A — Flaw counts: `games` oracle columns vs `game_flaws`.** Are the per-color move-quality count columns on `games` (`white/black_mistakes`, `white/black_blunders`) consistent with the derived `game_flaws` table?
 - **Check B — Eval coverage vs oracle-column presence.** Are there games with ≥90% per-ply eval coverage (`game_positions`) whose `games` oracle columns are NULL? This guards the **Flaws Timeline** feature, which reads the precomputed `games` oracle columns directly (`fetch_flaw_trend_rows`, no `game_positions` join) and gates on "oracle present". A game that is "analyzed" by eval coverage but has NULL oracle columns is silently dropped from the Timeline.
+- **Check C — Opening cache vs lichess median.** Does the position-keyed `opening_position_eval` dedup cache agree with the median eval of independent lichess-analysed games reaching the same position? A persistent disagreement is a write-path misalignment (SEED-164 / Phase 220), not depth noise.
+- **Check D — Opening bounce rate.** A coarse sanity check only: how often does a big early-game eval drop immediately reverse (`|eval_P - eval_{P-1}| >= 200 AND |eval_{P+1} - eval_{P-1}| <= 60`)? Never fails a repair on its own — Check C and the repair's own audit-table counts are the real verification.
 
 ---
 
@@ -357,6 +359,131 @@ Report `ge90_but_oracle_null` per platform (the headline number for this check),
 Verdict line (Check B): **PASS** if `ge90_but_oracle_null = 0` on every platform (or only a small lichess remainder); **INVESTIGATE** if any platform shows a material count.
 
 > Reference (prod snapshot 2026-07-31): `ge90_but_oracle_null = 0` on all three platforms — chess.com 340,832 covered / 0 null, lichess 177,498 / 0, flawchess 211 / 0. Verdict: PASS.
+
+---
+
+### Check C — Opening cache vs lichess median
+
+#### Background (read before interpreting results)
+
+- `opening_position_eval` is a position-keyed dedup cache (key: `full_hash`), written by
+  the full-eval drain tick and the remote-worker atomic submit (Phase 220 CACHEFIX-12) via
+  the single shared `_upsert_opening_cache`, plus a one-time `OPENING_CACHE_BACKFILL_SQL`
+  seed. It is first-write-wins in release 1 (no two-source confirmation yet).
+- Lichess-analysed games (`lichess_evals_at IS NOT NULL`) are a genuinely **independent
+  reference**: their `%eval` values are never derived from, and never written into, the
+  cache (SEED-109 item 4). Comparing the cache against the median of ≥3 independent
+  lichess games reaching the same position is therefore a real cross-check, not a
+  tautology.
+- SEED-164 (2026-09-09) found the cache poisoned by the 2026-06-17 `OPENING_CACHE_BACKFILL_SQL`
+  backfill (an arbitrary `DISTINCT ON` donor with no `ORDER BY` — fixed in Phase 220
+  CACHEFIX-12) and the first days of the full-game drain: 87 of 25,444 checkable cache
+  rows (0.34%) disagreed with the lichess median by more than 150cp. A **persistent**
+  non-zero `n_bad` after Phase 220's repair (CACHEFIX-01..07) means a write-path
+  misalignment, not normal depth-vs-depth disagreement — Stockfish-vs-lichess-cloud noise
+  concentrates below 100cp (see the histogram in `SEED-164-opening-eval-cache-poisoned-legacy-evals.md`
+  §Blast radius), so a >150cp gap is a real signal, not engine noise.
+
+### Query 12 — Opening cache vs lichess-median cross-check
+> Heavier query: joins `game_positions` twice over every lichess-analysed game. Run it last, alongside Query 11.
+```sql
+WITH l AS (
+  SELECT gp.full_hash,
+         percentile_cont(0.5) WITHIN GROUP (ORDER BY prev.eval_cp) AS med, count(*) AS n
+  FROM games g
+  JOIN game_positions gp   ON gp.game_id = g.id AND gp.ply BETWEEN 1 AND 12
+  JOIN game_positions prev ON prev.game_id = g.id AND prev.ply = gp.ply - 1
+  WHERE g.lichess_evals_at IS NOT NULL AND prev.eval_cp IS NOT NULL AND prev.eval_mate IS NULL
+  GROUP BY gp.full_hash HAVING count(*) >= 3)
+SELECT count(*) AS n_checked,
+       count(*) FILTER (WHERE abs(o.eval_cp - l.med) > 150) AS n_bad
+FROM l JOIN opening_position_eval o ON o.full_hash = l.full_hash
+WHERE o.eval_mate IS NULL;
+```
+
+Once `opening_position_eval.disagreements` exists (Phase 220 release 2, CACHEFIX-08),
+also run and report:
+```sql
+SELECT count(*) FILTER (WHERE disagreements >= 1) AS n_disagreed,
+       count(*) FILTER (WHERE NOT confirmed) AS n_unconfirmed
+FROM opening_position_eval;
+```
+
+#### Check C output format
+
+1. **Cross-check** — report `n_checked` and `n_bad` from Query 12.
+2. **Two-source columns** (only once they exist) — report `n_disagreed` and `n_unconfirmed`
+   from the second query. A large `n_unconfirmed` on a mature cache is itself worth a note
+   (candidates awaiting a second source), separate from `n_bad`.
+
+Verdict line (Check C): **PASS** if n_bad <= 5; **INVESTIGATE** otherwise.
+
+> Reference (prod snapshot 2026-09-09): 25,444 / 87 (Phase 220 repaired this — see
+> `SEED-164-opening-eval-cache-poisoned-legacy-evals.md`). Expect near-zero after the
+> repair ships; a handful of genuine depth disagreements in trap lines (e.g. a rook-grab
+> line evaluated +300 at one depth and +500 at another) is not a regression.
+
+---
+
+### Check D — Opening bounce rate
+
+#### Background (read before interpreting results)
+
+- **This is a coarse sanity check only, never a repair gate on its own.** SEED-164
+  measured the poison at roughly ~0.1-0.2 percentage points on top of a ~0.6%
+  legitimate blunder-then-miss rate (a real blunder followed by a real missed
+  punishment produces the same eval shape as a misaligned cache write). The audit-table
+  counts (`opening_cache_audit.status` breakdown) and Check C above are the real
+  verification; this check exists to catch a gross regression, not to prove a repair.
+- Definition: `abs(eval_P - eval_{P-1}) >= 200 AND abs(eval_{P+1} - eval_{P-1}) <= 60`,
+  over plies 2-19 of **engine games only** (`full_evals_completed_at IS NOT NULL AND
+  lichess_evals_at IS NULL`) — a big eval swing that immediately reverses back near its
+  starting point, which is what a wrong-position (misaligned) eval write looks like.
+  Sample if the full table is slow (a fixed modulo on `game_id` is fine; note the sample
+  rate used in the report).
+
+### Query 13 — Opening bounce rate (plies 2-19, engine games)
+```sql
+WITH b AS (
+  SELECT abs(p.eval_cp - prev.eval_cp) AS drop_cp,
+         abs(nxt.eval_cp - prev.eval_cp) AS bounce_cp
+  FROM game_positions p
+  JOIN game_positions prev ON prev.game_id = p.game_id AND prev.ply = p.ply - 1
+  JOIN game_positions nxt  ON nxt.game_id  = p.game_id AND nxt.ply  = p.ply + 1
+  JOIN games g ON g.id = p.game_id
+  WHERE p.ply BETWEEN 2 AND 19
+    AND g.full_evals_completed_at IS NOT NULL
+    AND g.lichess_evals_at IS NULL
+    AND p.eval_mate IS NULL AND prev.eval_mate IS NULL AND nxt.eval_mate IS NULL
+    AND p.eval_cp IS NOT NULL AND prev.eval_cp IS NOT NULL AND nxt.eval_cp IS NOT NULL
+)
+SELECT
+  count(*) AS n_checked,
+  count(*) FILTER (WHERE drop_cp >= 200 AND bounce_cp <= 60) AS n_bounce_any,
+  round(100.0 * count(*) FILTER (WHERE drop_cp >= 200 AND bounce_cp <= 60)
+        / nullif(count(*), 0), 3) AS bounce_pct_any,
+  count(*) FILTER (WHERE drop_cp BETWEEN 250 AND 360) AS n_band,
+  count(*) FILTER (WHERE drop_cp BETWEEN 250 AND 360 AND bounce_cp <= 60) AS n_bounce_band,
+  round(100.0 * count(*) FILTER (WHERE drop_cp BETWEEN 250 AND 360 AND bounce_cp <= 60)
+        / nullif(count(*) FILTER (WHERE drop_cp BETWEEN 250 AND 360), 0), 3) AS bounce_pct_band
+FROM b;
+```
+
+#### Check D output format
+
+Report `bounce_pct_any` (rate over all plies-2-19 rows) and `bounce_pct_band` (rate
+restricted to the 250-360cp drop band, where the poison concentrated) to 3 decimal
+places, alongside their raw `n_checked` / `n_band` denominators.
+
+Verdict line (Check D): **PASS** if the rate is at or below the recorded reference for
+the same DB; **INVESTIGATE** if it rises. This is a coarse sanity check only — a PASS
+here does not itself prove a repair, and an INVESTIGATE here does not itself prove
+poison; corroborate with Check C.
+
+> Reference (recorded floors, engine games, plies 2-19): cache-free benchmark DB
+> (1-in-8 sample, 198k rows, 2026-09-09) 0.618% any bounce / 0.235% in the 250-360cp
+> band. Prod engine games on the same definition (1-in-16 sample, 2026-09-09): legacy
+> pre-cutoff 0.798% / 0.298%, mid 0.625% / 0.243%, recent 0.844% / 0.271%.
 
 ---
 

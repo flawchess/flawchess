@@ -1136,7 +1136,7 @@ async def _classify_and_fill_oracle(
         flaw_pv_blobs,
     )
 
-    oracle_counts_written = await _write_oracle_counts(session, game, positions)
+    oracle_counts_written = await refresh_game_oracle_counts(session, game, positions)
     if not oracle_counts_written:
         # Shouldn't happen (same coverage gate as classify_game_flaws), but be defensive.
         return
@@ -1308,11 +1308,19 @@ async def _diff_upsert_flaw_rows(
         await _batch_update_flaw_pv_lines(session, game.id, blobs_to_write)
 
 
-async def _write_oracle_counts(
+async def refresh_game_oracle_counts(
     session: AsyncSession, game: Game, positions: list[GamePosition]
 ) -> bool:
     """Stage 4 of `_classify_and_fill_oracle`: the two `count_game_severities` calls
     and the single `UPDATE games` oracle-column write.
+
+    Public since Phase 220 (CACHEFIX-06, promoted from a private helper):
+    Phase 214 already extracted this block from the inline body; making it
+    public is what lets `scripts/opening_cache_repair.py`'s `rederive` stage
+    and the live drain both refresh a game's oracle counts through the SAME
+    function (in practice `rederive` calls it indirectly via
+    `_classify_and_fill_oracle`, which is the one call site here too — there is
+    no second, independent implementation to keep in sync).
 
     Returns False (skipping the UPDATE) when either color's counts carry a "reason"
     key -- the orchestrator's own guard mirrors this return value, matching the
