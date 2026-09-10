@@ -648,3 +648,58 @@ test stays green under that revert, which is exactly why this one had to exist.
 The old post-hoc check remains valid if you ever need it: for any game processed before
 its snapshot finished, its snapshot values must **differ** from current
 `game_positions`.
+
+### 2026-08-29 → 2026-09-08: the rapid tranche run, and the blitz start
+
+**Tranche**: rapid, both arms. **Date range**: started 2026-08-29 ~04:48 UTC,
+closed 2026-09-08 ~15:44 UTC. **Worker boxes**: one, the local 8-engine `ai-slim`
+invocation with the benchmark backend as prod-first fallback. No deviations:
+`STOCKFISH_POOL_SIZE` unchanged, no restart, Maia loaded (best moves tracked PV
+throughout).
+
+**Final `status`**: lichess arm 34,777 / 34,777 on every axis. Never-analyzed arm
+60,759 / 60,846. Headline 99.9%. Report:
+`reports/benchmark-lane/benchmark-lane-rapid-2026-09-08.md`.
+
+**Residual**: 86 of the 87 unfinished never-analyzed games are zero-movetext
+forfeits (no `game_positions` rows), the same population classical had (55).
+Analyzable denominator is therefore 95,537. **One analyzable game (user 3707)
+was still pending at close** and was deliberately NOT waited for, see the
+lottery-dilution note below; it stays claimable under the gate and will land
+during the blitz run. Re-run `record --tranche rapid` afterwards if an exact
+final table matters.
+
+**Prod-priority pauses**: 2026-09-08 ~07:10–11:00 UTC a ~2,800-game prod import
+(1,109 explicit jobs + tier-3 backlog) reclaimed the fleet; the drain resumed on
+its own. Steady-state ~450–560 best-moves/hour; blobs ran behind best moves by
+~5,500 games mid-run and caught up at ~1,000–3,000/hour once the eval lanes
+emptied (the expected end-of-tranche flaw-blob burst).
+
+**Lottery dilution at the tail (new, worth knowing for blitz/bullet).** The
+tier-3 claim is a user lottery, then a game lottery within the user. The
+zero-movetext forfeits are `full_evals_completed_at IS NULL AND lichess_evals_at
+IS NULL`, selected and armed, so they sit in the candidate pool forever and each
+pick of one returns 204 (`_collect_full_ply_targets` finds no targets). At the
+rapid tail the pool was 143 candidates across 82 users, 141 of them forfeits, and
+the worker runs one lease cycle at a time (~2 s), so the last two real games
+were drawn at roughly 1 in 400 per cycle: ~15 min expected per game, hours in
+the tail. Verified offline that both games lease fine (43 and 51 positions) and
+that `_claim_tier3_derived` returns forfeit ids 20/20 draws. Nothing is broken;
+the last few games of every tranche will just be slow. Do not stamp the forfeits
+by hand to fix this: it is the same "looser meaning of a completion column"
+trade-off rejected in the 2026-08-22 record.
+
+**Invariants**: `stamped_but_unselected` held at **1,735,048** (the post-rapid-
+select baseline) from 2026-08-29 through close, delta zero. Post-run
+`VACUUM (ANALYZE) game_positions, game_flaws, game_best_moves, games` ran
+2026-09-08 15:45 UTC.
+
+**Blitz start, 2026-09-08 15:45 UTC.** `select` inserted 98,514 (23,928 lichess
+arm / 74,586 never-analyzed); `snapshot` captured 1,782,967 rows, coverage gap 0,
+and armed the tranche itself (the D-05 window is closed structurally, see the
+2026-08-29 entry). Pre-existing coverage on the lichess arm: 19,010 full evals,
+482 blobs. 91 selected games have zero positions, so the analyzable denominator
+is 98,423. **Re-based leak baseline after `select`: 1,671,700** (down from
+1,735,048 by the 63,348 already-stamped games that moved into the selection,
+arithmetic, not a leak). The entry-ply saturation burst stamped 12,290 games in
+the first 10 minutes with `of_which_unselected = 0`.

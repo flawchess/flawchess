@@ -5,9 +5,18 @@ the threshold-change recompute tool (D-09): run it after a severity threshold
 change to rebuild all rows, or at rollout to populate game_flaws for existing
 users whose games were imported before Phase 108.
 
-All three write paths (import hook in eval_drain.py, reclassify_positions.py,
-and this script) call the SAME classify_game_flaws + flaw_record_to_row
-functions so the materialized table never drifts (D-10).
+The classifier (classify_game_flaws) is the single shared implementation
+across every write path (the import hook in eval_drain.py and this script's
+own default branch), so materialized flaw severities never drift. The WRITE
+SHAPE is not shared, though: this script's own default branch below is a
+full delete-then-insert recompute (correct for a threshold change, since it
+starts every game from a clean slate), while the live drain and
+`--from-repair-table` (Phase 220, CACHEFIX-06) both go through
+`eval_apply._classify_and_fill_oracle`'s 4-way diff/upsert, which preserves
+blob (`allowed_pv_lines`/`missed_pv_lines`) and tactic-tag columns by
+omission. Running the delete-then-insert branch over a repaired game would
+wipe months of tier-4 blob work for no reason -- `--from-repair-table` exists
+specifically to avoid ever taking that branch for those games.
 
 Batching is MANDATORY given the project's OOM history (CLAUDE.md). Commit
 every BACKFILL_GAMES_PER_BATCH games; no asyncio.gather on the same session.
@@ -25,6 +34,7 @@ Usage:
     uv run python scripts/backfill_flaws.py --db dev --user-id 28
     uv run python scripts/backfill_flaws.py --db benchmark
     uv run python scripts/backfill_flaws.py --db prod
+    uv run python scripts/backfill_flaws.py --db dev --from-repair-table
 """
 
 from __future__ import annotations
@@ -56,6 +66,7 @@ from app.repositories.game_flaws_repository import (  # noqa: E402
     flaw_record_to_row,
 )
 from app.services.flaws_service import classify_game_flaws  # noqa: E402
+from scripts.opening_cache_repair import run_rederive  # noqa: E402
 
 # No magic numbers (CLAUDE.md rule).
 # Commit every N games to keep memory bounded (OOM history — see CLAUDE.md).
@@ -106,6 +117,19 @@ def _parse_args() -> argparse.Namespace:
             "skips the rest). Use for prod backfills to avoid reading all positions."
         ),
     )
+    parser.add_argument(
+        "--from-repair-table",
+        action="store_true",
+        dest="from_repair_table",
+        help=(
+            "Phase 220 CACHEFIX-06: reclassify exactly the 'pending' games in "
+            "opening_cache_repair_games, through scripts/opening_cache_repair.py's "
+            "run_rederive (the single rederive implementation, blob-preserving "
+            "4-way diff/upsert). Never enters this script's own delete-then-insert "
+            "branch. --user-id is not compatible with this flag (the repair table "
+            "already scopes the game set)."
+        ),
+    )
     return parser.parse_args()
 
 
@@ -116,6 +140,7 @@ async def run_backfill(
     dry_run: bool,
     limit: int | None,
     full_evald_only: bool = False,
+    from_repair_table: bool = False,
     session_maker: async_sessionmaker[AsyncSession] | None = None,
 ) -> None:
     """Run the game_flaws backfill.
@@ -128,9 +153,23 @@ async def run_backfill(
         full_evald_only: If True, scan only games with full_evals_completed_at
             set — the flaw-eligible set. Avoids loading positions for the ~95%
             of games that lack full-game evals (prod-load-friendly).
+        from_repair_table: Phase 220 CACHEFIX-06 — when True, delegates entirely
+            to `scripts.opening_cache_repair.run_rederive` (the single rederive
+            implementation) and returns WITHOUT ever reaching this function's
+            own delete-then-insert branch below, which would destroy blob and
+            tactic-tag columns for a repaired game.
         session_maker: Injectable session factory for testing. When None,
             a real engine is created from db_url_for_target(db).
     """
+    if from_repair_table:
+        # Thin delegating wrapper (CACHEFIX-06's "no second classifier call
+        # site"): scripts/opening_cache_repair.py owns the one rederive
+        # implementation. --user-id has no meaning here (the repair table
+        # already scopes the game set); --full-evald-only is a no-op for the
+        # same reason.
+        await run_rederive(db=db, dry_run=dry_run, limit=limit, session_maker=session_maker)
+        return
+
     # Initialize Sentry for error tracking in scripts
     if settings.SENTRY_DSN:
         sentry_sdk.init(dsn=settings.SENTRY_DSN, environment=settings.ENVIRONMENT)

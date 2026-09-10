@@ -1,0 +1,937 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Three Losses in a Row: Should You Stop? | Chess Data Stories</title>
+<meta name="description" content="What 2.67 million Lichess games say about tilt: how much a losing streak really costs, whether a break helps, which losses hurt, and why your own stats exaggerate it four times over.">
+<link rel="canonical" href="https://stories.flawchess.com/tilt/">
+<link rel="icon" href="/favicon.ico" sizes="32x32">
+<link rel="icon" type="image/png" sizes="128x128" href="/logo.png">
+<meta property="og:type" content="article">
+<meta property="og:site_name" content="Chess Data Stories">
+<meta property="og:title" content="You've lost three in a row. Should you stop?">
+<meta property="og:description" content="What 2.67 million Lichess games say about tilt: how much a losing streak really costs, whether a break helps, and why your own stats exaggerate it four times over.">
+<meta property="og:url" content="https://stories.flawchess.com/tilt/">
+<meta property="og:image" content="https://stories.flawchess.com/tilt/social-card.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:image:alt" content="You've lost three in a row. Should you stop? Next-game score 49.6%, expected 50.4%: tilt costs 0.8 points.">
+<meta property="article:published_time" content="2026-09-08">
+<meta property="article:author" content="Adrian Imfeld">
+<meta property="article:section" content="Chess">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="You've lost three in a row. Should you stop?">
+<meta name="twitter:description" content="What 2.67 million Lichess games say about tilt: how much a losing streak really costs, whether a break helps, and why your own stats exaggerate it four times over.">
+<meta name="twitter:image" content="https://stories.flawchess.com/tilt/social-card.png">
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "Article",
+  "headline": "You've lost three in a row. Should you stop?",
+  "description": "What 2.67 million Lichess games say about tilt: how much a losing streak really costs, whether a break helps, which losses hurt, and why your own stats exaggerate it four times over.",
+  "datePublished": "2026-09-08",
+  "dateModified": "2026-09-08",
+  "url": "https://stories.flawchess.com/tilt/",
+  "mainEntityOfPage": {"@type": "WebPage", "@id": "https://stories.flawchess.com/tilt/"},
+  "image": {"@type": "ImageObject", "url": "https://stories.flawchess.com/tilt/social-card.png", "width": 1200, "height": 630},
+  "isPartOf": {"@type": "Blog", "name": "Chess Data Stories", "url": "https://stories.flawchess.com/"},
+  "author": {"@type": "Person", "name": "Adrian Imfeld", "url": "https://www.linkedin.com/in/aimfeld/",
+    "sameAs": ["https://www.linkedin.com/in/aimfeld/", "https://github.com/aimfeld"]},
+  "publisher": {
+    "@type": "Organization", "name": "FlawChess", "url": "https://flawchess.com",
+    "logo": {"@type": "ImageObject", "url": "https://stories.flawchess.com/logo.png"}
+  }
+}
+</script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@600&display=swap" rel="stylesheet">
+<!-- Umami analytics (self-hosted, privacy-friendly, no cookies) -->
+<script defer src="https://analytics.flawchess.com/script.js" data-website-id="62d4b783-3457-45f2-8098-f3f1e14a8fa4" data-domains="stories.flawchess.com"></script>
+<style>
+  :root{
+    --brown:#8B5E3C; --brown-dark:#6B4226; --brown-light:#A07850; --cream:#FAF7F0;
+    --card:#FFFFFF; --ink:#2A2118; --ink-2:#5C5246; --ink-3:#8A7F71; --line:#E8E0D2;
+    --ink-mid:#6E6355; /* between ink-2 and ink-3: small text needs >=4.5:1 on white, ink-3 is 3.9:1 */
+    --win:#166534; --win2:#5F901A; --draw:#8A7F71; --loss:#B02A2A;
+    --blitz:#C97A00; --rapid:#3B82F6; --classical:#166534;
+    --hl:#F0DBB9;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html{scroll-behavior:smooth}
+  body{
+    background:var(--cream); color:var(--ink);
+    font-family:ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    font-size:18px; line-height:1.6;
+  }
+  a{color:var(--brown-dark)}
+  .wrap{max-width:960px;margin:0 auto;padding:0 20px}
+  header.site{border-bottom:1px solid var(--line)}
+  header.site .wrap{display:flex;align-items:center;gap:12px;padding-top:16px;padding-bottom:16px}
+  header.site .brand{display:flex;align-items:center;gap:12px;text-decoration:none;color:inherit}
+  header.site img{width:44px;height:44px;border-radius:10px}
+  header.site .name{font-family:'Fredoka',sans-serif;font-weight:600;font-size:22px;letter-spacing:-.02em}
+  header.site .sect{font-family:'Fredoka',sans-serif;font-weight:600;font-size:22px;letter-spacing:-.02em;
+    color:var(--brown);text-decoration:none;border-left:1px solid var(--line);padding-left:12px;line-height:1.15}
+  header.site .sect:hover{color:var(--brown-dark)}
+  header.site .tag{color:var(--ink-3);font-size:15px;margin-left:auto;text-align:right}
+  .hero{padding:26px 0 6px}
+  .kicker{color:var(--brown);font-weight:700;text-transform:uppercase;letter-spacing:.12em;font-size:14px}
+  .kicker a{color:inherit;text-decoration:underline dotted;text-decoration-thickness:1.5px;text-underline-offset:4px}
+  .kicker a:hover{color:var(--brown-dark)}
+  h1{font-size:clamp(32px,5.5vw,52px);line-height:1.12;letter-spacing:-.025em;margin:10px 0 14px;color:var(--ink)}
+  h1 .accent{color:var(--brown)}
+  .sub{font-size:clamp(17px,2.3vw,21px);color:var(--ink-2);max-width:44em}
+  .hero-stats{display:flex;gap:14px;flex-wrap:wrap;margin:30px 0 8px}
+  .tile{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:18px 22px;flex:1 1 160px;min-width:150px}
+  .tile .big{font-size:clamp(30px,4.5vw,44px);font-weight:800;letter-spacing:-.03em;line-height:1.1}
+  .tile .lbl{color:var(--ink-2);font-size:15px;margin-top:2px}
+  .tile.win .big{color:var(--win)} .tile.draw .big{color:var(--draw)} .tile.loss .big{color:var(--loss)} .tile.tilt .big{color:var(--brown)}
+  .hero-note{color:var(--ink-mid);font-size:15px;margin-bottom:8px}
+  section.card{background:var(--card);border:1px solid var(--line);border-radius:20px;padding:30px clamp(18px,4vw,38px);margin:26px 0;scroll-margin-top:14px}
+  .card-head{display:flex;align-items:center;gap:12px;margin-bottom:10px}
+  .card-head h2{margin-bottom:0}
+  .card-head .anchor{margin-left:auto;align-self:flex-start;color:var(--ink-3);text-decoration:none;
+    font-weight:800;font-size:20px;line-height:1;padding:4px 6px;opacity:0;transition:opacity .15s}
+  .card-head:hover .anchor,.card-head .anchor:focus-visible{opacity:1}
+  .card-head .anchor:hover{color:var(--brown-dark)}
+  @media (hover:none){.card-head .anchor{opacity:.5}}
+  .num{display:inline-flex;flex:none;align-items:center;justify-content:center;width:34px;height:34px;border-radius:50%;
+       background:var(--hl);color:var(--brown-dark);font-weight:800;font-size:17px}
+  h2{font-size:clamp(23px,3.4vw,31px);letter-spacing:-.02em;line-height:1.2;margin-bottom:10px}
+  .lede{color:var(--ink-2);max-width:46em;margin-bottom:6px}
+  .lede + .lede{margin-top:10px}
+  .callout{background:var(--hl);border-radius:12px;padding:12px 16px;margin-top:16px;font-size:16.5px}
+  .callout b{color:var(--brown-dark)}
+  figure{margin:10px 0 4px}
+  .ctitle{color:var(--ink-2);font-size:18px;font-weight:700;line-height:1.35;margin:20px 0 6px}
+  .callout .tk{color:var(--brown-dark);font-weight:800}
+  .duo{display:flex;gap:20px;flex-wrap:wrap}
+  .duo>div{flex:1 1 280px;min-width:250px}
+  .psub{text-align:center;font-size:15.5px;font-weight:700;color:var(--ink-2);margin:6px 0 0}
+  .legend{display:flex;gap:18px;flex-wrap:wrap;margin:6px 0 10px;font-size:15px;color:var(--ink-2)}
+  .legend .it{display:inline-flex;align-items:center;gap:7px}
+  .chip{width:13px;height:13px;border-radius:4px;display:inline-block}
+  .chip.dash{height:0;width:22px;border-top:3px dashed var(--draw);border-radius:0}
+  .chart-svg{width:100%;height:auto;display:block}
+  .chart-svg text{font-family:inherit}
+  .axis{fill:var(--ink-mid);font-size:14px}
+  .gridline{stroke:var(--line);stroke-width:1}
+  .zero{stroke:var(--ink-3);stroke-width:1.5}
+  .dlabel{font-size:15px;font-weight:700}
+  .adv-list{list-style:none;margin:12px 0 4px;display:grid;gap:10px}
+  .adv-list li{padding-left:24px;position:relative;color:var(--ink-2)}
+  .adv-list li::before{content:"";position:absolute;left:0;top:.55em;width:10px;height:10px;border-radius:3px;background:var(--brown-light)}
+  .adv-list b{color:var(--ink)}
+  details.tbl{margin-top:12px;font-size:15px}
+  details.tbl summary{cursor:pointer;color:var(--ink-mid)}
+  details.tbl > div{overflow-x:auto}
+  details.tbl table{border-collapse:collapse;margin-top:10px;width:100%}
+  details.tbl th,details.tbl td{border:1px solid var(--line);padding:6px 10px;text-align:right}
+  details.tbl th:first-child,details.tbl td:first-child{text-align:left}
+  #tip{
+    position:fixed;pointer-events:none;z-index:10;display:none;max-width:min(280px,calc(100vw - 24px));
+    background:var(--ink);color:#FFF;border-radius:10px;padding:9px 12px;font-size:14.5px;line-height:1.45;
+    box-shadow:0 6px 24px rgba(0,0,0,.25)
+  }
+  #tip .t{font-weight:700}
+  footer.site{padding:10px 0 60px;color:var(--ink-2);font-size:16px}
+  footer.site .box{background:var(--card);border:1px solid var(--line);border-radius:20px;padding:26px clamp(18px,4vw,38px)}
+  footer.site h2{font-size:22px}
+  .cta{display:inline-block;margin-top:14px;background:var(--brown);color:#fff;text-decoration:none;
+       font-weight:700;padding:12px 22px;border-radius:12px}
+  .cta:hover{background:var(--brown-dark)}
+  .fineprint{color:var(--ink-mid);font-size:14.5px;margin-top:16px}
+  .promo{background:var(--card);border:1px solid var(--line);border-radius:20px;
+         padding:26px clamp(18px,4vw,38px);margin-top:18px}
+  .promo-head{display:flex;align-items:center;gap:14px}
+  .promo-head img{width:52px;height:52px;border-radius:12px}
+  .promo-head .pname{font-family:'Fredoka',sans-serif;font-weight:600;font-size:24px;letter-spacing:-.02em}
+  .promo-head .ptag{color:var(--ink-3);font-size:15px}
+  .promo .plede{color:var(--ink-2);margin-top:12px}
+  .author{display:flex;align-items:center;gap:20px;background:var(--card);border:1px solid var(--line);
+          border-radius:20px;padding:20px clamp(18px,4vw,38px);margin-top:18px}
+  .author img{width:72px;height:72px;border-radius:50%;flex:none}
+  .author .who{font-weight:700;color:var(--ink)}
+  .author .bio{color:var(--ink-2);font-size:16px;margin-top:2px}
+  .author .links{font-size:15px;margin-top:6px}
+  .num.bulb{background:var(--brown-dark);color:#FFD34D}
+  .adv{list-style:none;margin-top:14px;display:grid;gap:14px}
+  .adv li{padding-left:26px;position:relative;color:var(--ink-2)}
+  .adv li::before{content:"";position:absolute;left:0;top:.5em;width:11px;height:11px;border-radius:3px;background:var(--brown)}
+  .adv b{color:var(--ink)}
+  @media (max-width:560px){
+    header.site .tag{display:none}
+    header.site .name,header.site .sect{font-size:19px}
+    .author{align-items:flex-start;gap:14px}
+  }
+</style>
+</head>
+<body>
+<div id="tip" role="tooltip"></div>
+
+<header class="site">
+  <div class="wrap">
+    <a class="brand" href="https://flawchess.com" data-umami-event="outbound-flawchess-header">
+      <img src="../logo.png" alt="FlawChess logo">
+      <span class="name">FlawChess</span>
+    </a>
+    <a class="sect" href="../">Chess Data Stories</a>
+    <span class="tag">Engines are flawless,<br>humans play FlawChess.</span>
+  </div>
+</header>
+
+<main class="wrap">
+
+<div class="hero">
+  <div class="kicker"><a href="../" data-testid="link-stories-index">A Chess Data Story</a> &middot; <time datetime="2026-09-08">September 8, 2026</time> &middot; 2,670,215 Lichess games analyzed</div>
+  <h1>You've lost three in a row.<br><span class="accent">Should you stop?</span></h1>
+  <p class="sub">Every chess player knows the feeling: a couple of losses, and the next game already feels lost
+  before it starts. Tilt has a name, a forum genre and a standard piece of advice attached to it, usually some
+  version of "stop after two losses". So I took the FlawChess benchmark database, <b>2.67 million rated Lichess
+  games</b> from 4,487 players across bullet, blitz, rapid and classical, lined up each player's games in order,
+  and looked at what actually happens in the game <i>after</i> a losing streak. The short version: tilt is real,
+  it is far smaller than your own stats make it look, and the standard advice barely moves the needle.</p>
+  <div class="hero-stats" aria-label="The game after three straight losses">
+    <div class="tile loss"><div class="big">49.6%</div><div class="lbl">your score in the game after <b>three straight losses</b></div></div>
+    <div class="tile draw"><div class="big">50.4%</div><div class="lbl">what your rating says it should be</div></div>
+    <div class="tile tilt"><div class="big">&minus;0.8</div><div class="lbl">points of score lost to tilt: <b>one extra loss per 120 games</b></div></div>
+  </div>
+  <p class="hero-note">40,858 games played right after exactly three losses in one sitting, against an opponent
+  within 100 rating points. Tilt grows with the streak: after <b>six or more</b> straight losses the next game runs
+  <b>2.6 points</b> below expectation, about one extra loss per 40 games. Your raw game history shows a swing four
+  times bigger than that, and <a href="#raw-stats">section 1</a> explains where the rest comes from.</p>
+</div>
+
+<section class="card" id="raw-stats">
+  <div class="card-head"><div class="num">1</div>
+  <h2>Your stats say tilt is huge. They are wrong.</h2>
+  <a class="anchor" href="#raw-stats" aria-label="Link to this section">#</a></div>
+  <p class="lede">Take any player's game history and look at the game right after a streak. After six or more
+  straight losses the next game scores <b>43%</b>. After six or more straight wins, <b>65%</b>. That is a 22-point
+  swing, and it is the kind of number most articles about tilt report. Almost none of it is tilt. Three things
+  inflate it:</p>
+  <ul class="adv-list">
+    <li><b>Opponents.</b> A long streak is partly a story about who you were paired with: the next opponent is on
+    average <b>175 rating points weaker</b> after six wins and 61 points stronger after six losses. Streaks happen
+    against weak opposition, in rematch series against the same player, in arenas, and at the thin top of the pool.
+    Keep only games against an opponent within 100 points and the swing shrinks to 48&ndash;54%.</li>
+    <li><b>The calendar.</b> Seven in ten streaks of six or more span more than one sitting, and four in ten more than
+    a day. That is a slump or a climb, not a state of mind. Keep only streaks that happened in one sitting.</li>
+    <li><b>Accounts.</b> Players far from their usual level (second accounts, rating resets, three years of drift) are
+    over-represented in long streaks. Drop each player's first 100 games in the record and any game played more than
+    150 points from their long-run rating.</li>
+  </ul>
+  <p class="lede" style="margin-top:12px">What survives all three: <b>47%</b> after six losses, <b>54%</b> after six
+  wins. Even that is not all tilt. The pairing system still leaves you slightly the weaker player after losses and
+  slightly the stronger after wins, so what your rating <i>predicts</i> for the next game is 49.8% and 51.5%. The gap
+  between the solid line and the dotted line is tilt, or its opposite: <b>&minus;2.6</b> and <b>+2.6</b> points.</p>
+  <p class="ctitle">Score in the next game, by the streak that just ended</p>
+  <div class="legend" id="lg1"></div>
+  <figure aria-label="Line chart: next-game score by streak length, as it appears in raw game history versus after controlling for opponent rating, session and account state, with the rating-based expectation">
+    <div id="c1"></div>
+  </figure>
+  <div class="callout"><span class="tk">Takeaway:</span> of the 22-point swing in your raw stats, about 17 points
+  are opponents, calendar and account effects. The five that remain are what the rest of this story is about.</div>
+  <details class="tbl"><summary>View the data</summary><div>
+    <table>
+      <thead><tr><th>Streak just ended</th><th>Games (raw)</th><th>Raw history</th><th>Same rating</th><th>+ one sitting, settled accounts</th><th>Expected from ratings</th><th>Tilt (difference)</th></tr></thead>
+      <tbody>
+        <tr><td>6+ losses</td><td>37,603</td><td>43.4%</td><td>47.6%</td><td>47.2%</td><td>49.8%</td><td>&minus;2.6</td></tr>
+        <tr><td>5 losses</td><td>33,786</td><td>47.5%</td><td>49.1%</td><td>48.4%</td><td>50.1%</td><td>&minus;1.8</td></tr>
+        <tr><td>4 losses</td><td>68,470</td><td>48.5%</td><td>49.4%</td><td>49.6%</td><td>50.3%</td><td>&minus;0.7</td></tr>
+        <tr><td>3 losses</td><td>140,752</td><td>49.1%</td><td>49.6%</td><td>49.6%</td><td>50.4%</td><td>&minus;0.8</td></tr>
+        <tr><td>2 losses</td><td>294,444</td><td>49.9%</td><td>49.7%</td><td>49.6%</td><td>50.6%</td><td>&minus;1.0</td></tr>
+        <tr><td>1 loss</td><td>636,836</td><td>51.1%</td><td>50.4%</td><td>50.5%</td><td>50.8%</td><td>&minus;0.3</td></tr>
+        <tr><td>1 win</td><td>646,580</td><td>52.2%</td><td>51.0%</td><td>51.1%</td><td>50.8%</td><td>+0.3</td></tr>
+        <tr><td>2 wins</td><td>319,654</td><td>53.4%</td><td>51.5%</td><td>51.6%</td><td>51.0%</td><td>+0.6</td></tr>
+        <tr><td>3 wins</td><td>162,473</td><td>54.6%</td><td>52.0%</td><td>52.4%</td><td>51.1%</td><td>+1.2</td></tr>
+        <tr><td>4 wins</td><td>84,464</td><td>55.7%</td><td>52.0%</td><td>52.4%</td><td>51.3%</td><td>+1.1</td></tr>
+        <tr><td>5 wins</td><td>44,804</td><td>57.7%</td><td>53.0%</td><td>53.2%</td><td>51.4%</td><td>+1.8</td></tr>
+        <tr><td>6+ wins</td><td>65,848</td><td>65.4%</td><td>53.9%</td><td>54.1%</td><td>51.5%</td><td>+2.6</td></tr>
+      </tbody>
+    </table>
+    <p style="margin-top:10px;color:var(--ink-mid)">"Same rating" keeps only next games against an opponent within
+    100 points. "One sitting" requires the whole streak to fall inside one session (no break of an hour or more) and
+    the next game to follow within the hour; "settled accounts" drops each player's first 100 games in the time control
+    and games played more than 150 points from their long-run rating. The expectation is the average score of players
+    of the same rating, time control, colour and rating gap, measured on the same kind of games (settled accounts, not
+    the first game of a sitting). Draws end a streak and are not shown.</p>
+  </div></details>
+</section>
+
+<section class="card" id="how-big">
+  <div class="card-head"><div class="num">2</div>
+  <h2>What is left is real, small, and grows with the streak</h2>
+  <a class="anchor" href="#how-big" aria-label="Link to this section">#</a></div>
+  <p class="lede">Score minus expectation, one streak length at a time. A single loss costs 0.3 points, barely
+  measurable. Two to four losses cost <b>0.7 to 1.0 points</b>, five cost 1.8, six or more cost 2.6. Wins mirror
+  it: three straight wins add 1.2 points, six or more add 2.6. To put those
+  numbers in perspective, after three straight losses you still <b>win the next game 47.6%</b> of the time and lose
+  48.4%. The odds of losing the next game only cross 50% at the sixth loss in a row.</p>
+  <p class="ctitle">Tilt, and its opposite: score minus expectation in the next game</p>
+  <figure aria-label="Bar chart: score minus expectation in the next game, by streak length from six-plus losses to six-plus wins, with confidence intervals">
+    <div id="c2"></div>
+  </figure>
+  <div class="callout"><span class="tk">Takeaway:</span> one point of score is one extra loss per 100 games.
+  Tilt after three losses is worth about <b>one game in 120</b>; after six or more, one in 40. The hot hand is about
+  the same size as tilt at every streak length. Part of the hot hand is players on a winning streak being temporarily
+  under-rated: removing each player's own long-run tendency to beat or trail their rating trims it by about a third
+  and leaves tilt intact (technical report, section 2).</div>
+  <details class="tbl"><summary>View the data</summary><div>
+    <table>
+      <thead><tr><th>Streak just ended</th><th>Games</th><th>Next-game score</th><th>Expected</th><th>Tilt</th><th>95% interval</th><th>Lose the next game</th></tr></thead>
+      <tbody>
+        <tr><td>6+ losses</td><td>5,236</td><td>47.2%</td><td>49.8%</td><td>&minus;2.6</td><td>&minus;4.2 to &minus;1.2</td><td>51.0%</td></tr>
+        <tr><td>5 losses</td><td>6,618</td><td>48.4%</td><td>50.1%</td><td>&minus;1.8</td><td>&minus;2.9 to &minus;0.4</td><td>49.8%</td></tr>
+        <tr><td>4 losses</td><td>16,215</td><td>49.6%</td><td>50.3%</td><td>&minus;0.7</td><td>&minus;1.5 to 0.0</td><td>48.4%</td></tr>
+        <tr><td>3 losses</td><td>40,858</td><td>49.6%</td><td>50.4%</td><td>&minus;0.8</td><td>&minus;1.3 to &minus;0.4</td><td>48.4%</td></tr>
+        <tr><td>2 losses</td><td>107,600</td><td>49.6%</td><td>50.6%</td><td>&minus;1.0</td><td>&minus;1.3 to &minus;0.7</td><td>48.3%</td></tr>
+        <tr><td>1 loss</td><td>301,483</td><td>50.5%</td><td>50.8%</td><td>&minus;0.3</td><td>&minus;0.5 to &minus;0.1</td><td>47.2%</td></tr>
+        <tr><td>1 win</td><td>316,677</td><td>51.1%</td><td>50.8%</td><td>+0.3</td><td>+0.1 to +0.4</td><td></td></tr>
+        <tr><td>2 wins</td><td>122,979</td><td>51.6%</td><td>51.0%</td><td>+0.6</td><td>+0.3 to +0.9</td><td></td></tr>
+        <tr><td>3 wins</td><td>50,630</td><td>52.4%</td><td>51.1%</td><td>+1.2</td><td>+0.8 to +1.6</td><td></td></tr>
+        <tr><td>4 wins</td><td>21,685</td><td>52.4%</td><td>51.3%</td><td>+1.1</td><td>+0.4 to +1.7</td><td></td></tr>
+        <tr><td>5 wins</td><td>9,558</td><td>53.2%</td><td>51.4%</td><td>+1.8</td><td>+0.8 to +2.8</td><td></td></tr>
+        <tr><td>6+ wins</td><td>8,182</td><td>54.1%</td><td>51.5%</td><td>+2.6</td><td>+1.5 to +3.7</td><td></td></tr>
+      </tbody>
+    </table>
+    <p style="margin-top:10px;color:var(--ink-mid)">Same games as the "one sitting, settled accounts" line in section 1.
+    Intervals come from resampling players, not games, because one player's games are not independent.</p>
+  </div></details>
+</section>
+
+<section class="card" id="who-tilts">
+  <div class="card-head"><div class="num">3</div>
+  <h2>Slow games tilt harder. Beginners tilt most.</h2>
+  <a class="anchor" href="#who-tilts" aria-label="Link to this section">#</a></div>
+  <p class="lede">After three or more losses in a row, bullet players score <b>0.9 points</b> below expectation,
+  blitz players 0.8, rapid players <b>1.9</b>. The longer the game you just lost, the longer it stays with you. The
+  hot hand does not care: +1.4 to +1.6 in all three. By rating, tilt is mostly a beginner's problem:
+  <b>&minus;2.2</b> at 800, then flat at around &minus;0.6 to &minus;0.9 from 1200 all the way to 2400. The hot hand is
+  the same size everywhere, +1.3 to +1.7.</p>
+  <p class="ctitle">Score minus expectation after 3+ losses and after 3+ wins</p>
+  <div class="legend" id="lg3"></div>
+  <figure aria-label="Two bar charts: score minus expectation after three or more losses and after three or more wins, by time control and by rating">
+    <div class="duo">
+      <div><p class="psub">By time control</p><div id="c3a"></div></div>
+      <div><p class="psub">By rating</p><div id="c3b"></div></div>
+    </div>
+  </figure>
+  <div class="callout"><span class="tk">Takeaway:</span> if you play rapid, tilt is a real line item: two points
+  after three losses, one extra loss per 50 games. In bullet and blitz it is under a point, one extra loss per 110
+  to 130 games, and the hot hand after three wins is worth more than the tilt after three losses.</div>
+  <details class="tbl"><summary>View the data</summary><div>
+    <table>
+      <thead><tr><th>Group</th><th>Games after 3+ losses</th><th>Score</th><th>Expected</th><th>Tilt</th><th>Games after 3+ wins</th><th>Score</th><th>Expected</th><th>Hot hand</th></tr></thead>
+      <tbody>
+        <tr><td>Bullet</td><td>32,861</td><td>49.2%</td><td>50.1%</td><td>&minus;0.9 (&minus;1.5 to &minus;0.4)</td><td>44,115</td><td>52.5%</td><td>51.1%</td><td>+1.4 (+0.9 to +1.9)</td></tr>
+        <tr><td>Blitz</td><td>23,262</td><td>49.6%</td><td>50.3%</td><td>&minus;0.8 (&minus;1.5 to &minus;0.1)</td><td>30,746</td><td>52.7%</td><td>51.3%</td><td>+1.4 (+0.8 to +1.8)</td></tr>
+        <tr><td>Rapid</td><td>12,175</td><td>48.9%</td><td>50.8%</td><td>&minus;1.9 (&minus;2.8 to &minus;1.0)</td><td>14,258</td><td>52.8%</td><td>51.2%</td><td>+1.6 (+0.8 to +2.4)</td></tr>
+        <tr><td>Classical*</td><td>629</td><td>49.4%</td><td>51.1%</td><td>&minus;1.6 (&minus;5.3 to +1.8)</td><td>936</td><td>51.2%</td><td>51.9%</td><td>&minus;0.6 (&minus;4.2 to +2.1)</td></tr>
+        <tr><td>800</td><td>10,493</td><td>48.3%</td><td>50.4%</td><td>&minus;2.2 (&minus;3.3 to &minus;1.3)</td><td>12,585</td><td>52.3%</td><td>50.6%</td><td>+1.7 (+0.8 to +2.5)</td></tr>
+        <tr><td>1200</td><td>15,807</td><td>49.4%</td><td>50.3%</td><td>&minus;0.9 (&minus;1.7 to &minus;0.2)</td><td>19,061</td><td>51.8%</td><td>50.6%</td><td>+1.3 (+0.6 to +2.0)</td></tr>
+        <tr><td>1600</td><td>19,362</td><td>49.1%</td><td>50.0%</td><td>&minus;0.9 (&minus;1.6 to &minus;0.2)</td><td>21,843</td><td>51.9%</td><td>50.6%</td><td>+1.3 (+0.7 to +1.8)</td></tr>
+        <tr><td>2000</td><td>14,898</td><td>50.0%</td><td>50.7%</td><td>&minus;0.6 (&minus;1.5 to +0.1)</td><td>21,253</td><td>53.0%</td><td>51.7%</td><td>+1.3 (+0.5 to +2.0)</td></tr>
+        <tr><td>2400</td><td>8,367</td><td>49.4%</td><td>50.2%</td><td>&minus;0.8 (&minus;1.7 to +0.2)</td><td>15,313</td><td>54.3%</td><td>52.8%</td><td>+1.5 (+0.5 to +2.3)</td></tr>
+      </tbody>
+    </table>
+    <p style="margin-top:10px;color:var(--ink-mid)">* Classical has too few same-sitting streaks to chart (its
+    intervals span seven points); the table keeps it for completeness. Intervals in brackets are 95%.</p>
+  </div></details>
+</section>
+
+<section class="card" id="breaks">
+  <div class="card-head"><div class="num">4</div>
+  <h2>Does a break help? Not a short one.</h2>
+  <a class="anchor" href="#breaks" aria-label="Link to this section">#</a></div>
+  <p class="lede">The obvious remedy is to walk away, and the data on what happens next is awkward. Players who
+  start their next game within a minute of a second straight loss score <b>0.6 points</b> below expectation. Players
+  who pause for 10&ndash;30 minutes score <b>2.5 below</b>. That is not a causal claim: the player who steps away after
+  two losses is often the one who is more upset, more tired or more distracted, and a ten-minute break is more likely
+  to be a phone call than a meditation. The honest comparison is the <b>gap</b> between players coming off wins and
+  players coming off losses at the same break length: it is about two points for any break under 30 minutes, and gone
+  after 30 minutes to an hour. The two sides do not fade the same way, though: the hot hand is gone after a break of a
+  few minutes (+1.4 within a minute, +0.5 after one to three, nothing beyond ten), while the cold effect deepens for
+  the first half hour. By the gap, whatever a streak does to you lasts about half an hour whether you pause or not;
+  the half-hour cells are small enough that the true fade could sit anywhere between ten minutes and a couple of
+  hours.</p>
+  <p class="lede">Bullet has a twist. Playing straight on after two losses costs 0.4 points, a 3&ndash;10 minute
+  pause is followed by <b>&minus;2.9</b>, and the first game of <i>any</i> bullet session runs <b>&minus;2.2</b>. A cold
+  start costs a bullet player more than tilt ever does.</p>
+  <p class="ctitle">Score minus expectation after 2+ losses or 2+ wins, by the break before the next game</p>
+  <div class="legend" id="lg4"></div>
+  <figure aria-label="Line chart: score minus expectation in the next game after two or more losses and after two or more wins, by the length of the break before it, all time controls">
+    <div id="c4"></div>
+  </figure>
+  <div class="callout"><span class="tk">Takeaway:</span> a "stop after two losses" rule, applied to every player in
+  this dataset, would have saved <b>0.10 points per 100 games</b> (0.13 in rapid): about one point per thousand games.
+  That is the saving for the players who kept playing; what would have happened to those who did stop is not in the
+  data. If you take a break, take it for your mood, not for your rating.</div>
+  <details class="tbl"><summary>View the data</summary><div>
+    <table>
+      <thead><tr><th>Break before the next game</th><th>After 2+ losses (all)</th><th>After 2+ wins (all)</th><th>Gap</th><th>Bullet, after losses</th><th>Bullet, after wins</th><th>Rapid, after losses</th><th>Rapid, after wins</th></tr></thead>
+      <tbody>
+        <tr><td>Under 1 minute</td><td>&minus;0.6 (n 120,750)</td><td>+1.4 (n 138,556)</td><td>+2.0</td><td>&minus;0.4</td><td>+1.5</td><td>&minus;1.6</td><td>+1.5</td></tr>
+        <tr><td>1&ndash;3 minutes</td><td>&minus;1.2 (n 19,447)</td><td>+0.5 (n 31,076)</td><td>+1.7</td><td>&minus;1.0</td><td>&minus;0.3</td><td>&minus;1.6</td><td>+0.7</td></tr>
+        <tr><td>3&ndash;10 minutes</td><td>&minus;2.1 (n 14,074)</td><td>+0.3 (n 19,969)</td><td>+2.4</td><td>&minus;2.9</td><td>&minus;0.7</td><td>&minus;1.6</td><td>+1.7</td></tr>
+        <tr><td>10&ndash;30 minutes</td><td>&minus;2.5 (n 13,083)</td><td>0.0 (n 14,313)</td><td>+2.5</td><td>&minus;2.3</td><td>&minus;0.9</td><td>&minus;3.1</td><td>+0.4</td></tr>
+        <tr><td>30&ndash;60 minutes</td><td>&minus;1.9 (n 9,180)</td><td>&minus;1.8 (n 9,125)</td><td>+0.1</td><td>&minus;2.1</td><td>&minus;2.5</td><td>&minus;2.5</td><td>&minus;0.9</td></tr>
+        <tr><td>1&ndash;6 hours</td><td>&minus;1.2 (n 22,143)</td><td>&minus;0.6 (n 21,334)</td><td>+0.7</td><td>&minus;2.9</td><td>&minus;2.1</td><td>&minus;0.4</td><td>+0.6</td></tr>
+        <tr><td>6&ndash;24 hours</td><td>&minus;1.6 (n 21,056)</td><td>&minus;1.5 (n 20,534)</td><td>+0.1</td><td>&minus;3.4</td><td>&minus;3.0</td><td>+0.9</td><td>&minus;0.7</td></tr>
+        <tr><td>1&ndash;7 days</td><td>+0.2 (n 7,955)</td><td>&minus;0.4 (n 7,915)</td><td>&minus;0.6</td><td>&minus;2.1</td><td>&minus;0.5</td><td>+0.8</td><td>+0.4</td></tr>
+      </tbody>
+    </table>
+    <p style="margin-top:10px;color:var(--ink-mid)">The streak (two or more) happened in one sitting; the break is
+    measured from the end of the last game of the streak to the start of the next one. Breaks over 30 minutes are
+    followed by a cold-start penalty that hits both groups alike (first game of a session: bullet &minus;2.2, blitz
+    &minus;0.7, rapid &minus;0.1). Intervals are about &plusmn;0.3 for the under-a-minute cells and &plusmn;1 for the
+    smaller ones.</p>
+  </div></details>
+</section>
+
+<section class="card" id="which-loss">
+  <div class="card-head"><div class="num">5</div>
+  <h2>Which loss tilts you? Not the one you think.</h2>
+  <a class="anchor" href="#which-loss" aria-label="Link to this section">#</a></div>
+  <p class="lede">Folklore says the blown win hurts most. Split losses by what they looked like and the data cannot
+  find it. A loss in which you had entered the endgame <b>two pawns up</b> (Stockfish +2 or better, and still lost) is
+  followed by a game at expectation (<b>+0.2</b>; +0.5 among long games). Two thirds of those are flags in a won
+  endgame; the blown win by resignation, the kind that really stings, is rarer and its interval (&minus;1.3 to +0.5)
+  rules out anything large. A long fight of more than 30 moves: no effect at all (&minus;0.1). What hurts is the quick
+  collapse. A loss in under eleven moves is followed by <b>&minus;2.1</b>, a game that never reached an endgame by
+  &minus;1.3, and a loss by disconnection by <b>&minus;3.5</b>. Resigning (&minus;0.9) is worse than getting checkmated
+  (&minus;0.3) or flagged (&minus;0.4).</p>
+  <p class="lede">A plausible reading is not that quick losses <i>cause</i> tilt but that they reveal it: a ten-move
+  loss is often a distracted, pre-moving, phone-in-hand game, and that state carries into the next one. One caveat:
+  a game thrown away before the endgame, a hung queen at move 20, lands in the "never reached an endgame" cell with
+  every other short loss, so this cut cannot tell that kind of blown win from a collapse. What it can say is that the
+  game you fought hard and lost is not the one to worry about.</p>
+  <p class="ctitle">Score minus expectation in the next game, by what the loss looked like</p>
+  <figure aria-label="Bar chart: score minus expectation in the game after a loss, split by how the loss ended, how long it lasted, and the position when it entered the endgame">
+    <div id="c5"></div>
+  </figure>
+  <div class="callout"><span class="tk">Mirror image:</span> long wins are followed by better games than short ones
+  (+0.9 after more than 30 moves, +0.3 under eleven), and a comeback win from an endgame you entered two pawns
+  <i>down</i> is followed by <b>+0.9</b> points (bullet: +1.7).</div>
+  <details class="tbl"><summary>View the data</summary><div>
+    <table>
+      <thead><tr><th>The loss was&hellip;</th><th>Games</th><th>All time controls</th><th>Bullet</th><th>Blitz</th><th>Rapid</th></tr></thead>
+      <tbody>
+        <tr><td>by checkmate</td><td>136,661</td><td>&minus;0.3 (&minus;0.5 to 0.0)</td><td>&minus;0.2</td><td>&minus;0.2</td><td>&minus;0.4</td></tr>
+        <tr><td>by resignation</td><td>263,162</td><td>&minus;0.9 (&minus;1.1 to &minus;0.7)</td><td>&minus;1.0</td><td>&minus;0.6</td><td>&minus;1.0</td></tr>
+        <tr><td>on time</td><td>163,842</td><td>&minus;0.4 (&minus;0.7 to &minus;0.2)</td><td>&minus;0.3</td><td>&minus;0.6</td><td>&minus;1.1</td></tr>
+        <tr><td>by disconnection</td><td>5,520</td><td>&minus;3.5 (&minus;4.7 to &minus;2.1)</td><td>&minus;5.0</td><td>&minus;3.7</td><td>&minus;2.5</td></tr>
+        <tr><td>under 11 moves</td><td>22,179</td><td>&minus;2.1 (&minus;2.7 to &minus;1.4)</td><td>&minus;2.6</td><td>&minus;2.5</td><td>&minus;1.3</td></tr>
+        <tr><td>11 to 30 moves</td><td>249,906</td><td>&minus;1.1 (&minus;1.3 to &minus;0.9)</td><td>&minus;1.3</td><td>&minus;1.0</td><td>&minus;1.0</td></tr>
+        <tr><td>over 30 moves</td><td>297,112</td><td>&minus;0.1 (&minus;0.2 to +0.1)</td><td>+0.3</td><td>&minus;0.1</td><td>&minus;0.7</td></tr>
+        <tr><td>never reached an endgame</td><td>212,185</td><td>&minus;1.3 (&minus;1.5 to &minus;1.1)</td><td>&minus;1.6</td><td>&minus;1.1</td><td>&minus;1.0</td></tr>
+        <tr><td>entered the endgame two pawns down</td><td>187,145</td><td>&minus;0.4 (&minus;0.6 to &minus;0.1)</td><td>+0.1</td><td>&minus;0.4</td><td>&minus;0.9</td></tr>
+        <tr><td>entered the endgame level</td><td>116,041</td><td>&minus;0.2 (&minus;0.5 to 0.0)</td><td>&minus;0.1</td><td>0.0</td><td>&minus;0.9</td></tr>
+        <tr><td>entered the endgame two pawns up (blown)</td><td>53,826</td><td>+0.2 (&minus;0.2 to +0.6)</td><td>+0.4</td><td>+0.1</td><td>+0.2</td></tr>
+      </tbody>
+    </table>
+    <p style="margin-top:10px;color:var(--ink-mid)">Next game within the hour, same-rating opponent, settled accounts.
+    "Two pawns up" is a Stockfish evaluation of at least +2.0 at the first move of the endgame (Lichess's own phase
+    rule). The pattern survives restricting to single losses, so it is not streak length in disguise, and the endgame
+    cut holds inside long losses alone, so it is not length in disguise either (technical report, section 5).
+    Classical is in the report only.</p>
+  </div></details>
+</section>
+
+<section class="card" id="behaviour">
+  <div class="card-head"><div class="num">6</div>
+  <h2>What tilt actually looks like: faster, angrier, gone</h2>
+  <a class="anchor" href="#behaviour" aria-label="Link to this section">#</a></div>
+  <p class="lede">If the score barely moves, where does the feeling go? Into behaviour. After a loss, players:</p>
+  <ul class="adv-list">
+    <li><b>Speed up.</b> Time per move in the opening and early middlegame (moves 3 to 20) falls <b>2 to 4%</b> after a loss
+    compared with after a win, for two thirds to three quarters of all players.</li>
+    <li><b>Blunder a little more, eventually.</b> In rapid games with full engine analysis, <b>6.4 blunders per 100
+    moves</b> after a loss and 6.4 after a win; after three or more losses, 7.0. The opponent's rate rises in those
+    same games, so part of it is the sharper, faster game a tilted player gets into. Tilt shows up on the clock after
+    one loss, and on the board after three.</li>
+    <li><b>Quit, or rush.</b> A bullet session ends after <b>21.7%</b> of losses and 16.2% of wins; 55% of bullet
+    sessions end on a loss, against a 47% loss rate. Rapid players do the opposite: 53% start the next game within a
+    minute after a loss, 43% after a win.</li>
+    <li><b>Take revenge.</b> One next game in eleven is a rematch against the opponent who just won. Those games score
+    <b>47.9%</b> against an expectation of 49.7%: <b>&minus;1.7 points</b>, against &minus;0.5 for the next game against
+    someone new, so the rematch itself costs about 1.2 points. Some of that is the matchup: the player who just beat
+    you is, on the evidence of that game, a little better than their rating, and the mirror shows it (the first rematch
+    against someone you just <i>beat</i> runs +0.5 above a fresh opponent). The rest, roughly a point, is the mood.
+    The revenge penalty grows with the game length: &minus;1.1 in bullet, &minus;1.7 in blitz, <b>&minus;2.9</b> in rapid,
+    &minus;4.0 in classical.</li>
+  </ul>
+  <p class="ctitle">The revenge rematch, and who quits on a loss</p>
+  <div class="legend" id="lg6"></div>
+  <figure aria-label="Two bar charts: score minus expectation when rematching the same opponent versus playing a new one, after a loss and after a win; and the share of sessions that end after a loss versus after a win, by time control">
+    <div class="duo">
+      <div><p class="psub">Score minus expectation in the next game</p><div id="c6a"></div></div>
+      <div><p class="psub">Chance the session ends after this game</p><div id="c6b"></div></div>
+    </div>
+  </figure>
+  <div class="callout"><span class="tk">Takeaway:</span> the revenge rematch is the one tilt decision with a visible
+  price: about <b>a point</b> beyond an ordinary post-loss game, as much as three straight losses cost, and unlike a
+  losing streak it is a choice. Decline it, or at least wait a game.</div>
+  <details class="tbl"><summary>View the data</summary><div>
+    <table>
+      <thead><tr><th>Time control</th><th>Rematch rate after a loss</th><th>Revenge rematch: score</th><th>Expected</th><th>Revenge rematch</th><th>New opponent after a loss</th><th>Rematch after a win</th><th>Session ends after a loss</th><th>&hellip;after a win</th><th>Next game within 60 s after a loss / win</th></tr></thead>
+      <tbody>
+        <tr><td>Bullet</td><td>10.0%</td><td>48.6%</td><td>49.7%</td><td>&minus;1.1 (&minus;2.0 to &minus;0.5)</td><td>&minus;0.4</td><td>0.0</td><td>21.7%</td><td>16.2%</td><td>70% / 73%</td></tr>
+        <tr><td>Blitz</td><td>9.7%</td><td>47.9%</td><td>49.5%</td><td>&minus;1.7 (&minus;2.4 to &minus;1.0)</td><td>&minus;0.4</td><td>+0.8</td><td>27.8%</td><td>23.2%</td><td>65% / 60%</td></tr>
+        <tr><td>Rapid</td><td>7.6%</td><td>46.9%</td><td>49.9%</td><td>&minus;2.9 (&minus;4.0 to &minus;1.9)</td><td>&minus;0.7</td><td>+1.6</td><td>38.3%</td><td>35.6%</td><td>53% / 43%</td></tr>
+        <tr><td>Classical</td><td>11.3%</td><td>45.3%</td><td>49.4%</td><td>&minus;4.0 (&minus;6.7 to &minus;1.2)</td><td>&minus;0.5</td><td>+3.5</td><td>59.2%</td><td>57.6%</td><td>41% / 39%</td></tr>
+        <tr><td>All</td><td>9.4%</td><td>47.9%</td><td>49.7%</td><td>&minus;1.7 (&minus;2.2 to &minus;1.2)</td><td>&minus;0.5</td><td>+0.6</td><td></td><td></td><td></td></tr>
+      </tbody>
+    </table>
+    <p style="margin-top:10px;color:var(--ink-mid)">Rematch: the next game, within the hour, against the same opponent.
+    Rematch rates rise with rating (7% at 800, 15% at 2400); the revenge penalty is largest at 800 and 1200
+    (&minus;2.1, &minus;3.4) and smallest at 2400 (&minus;0.4). Session-end and rush rates use every rated game; the
+    rest use same-rating games only. Time per move, blunder rates and the first-rematch split: technical report,
+    section 6.</p>
+  </div></details>
+</section>
+
+<section class="card" id="takeaways">
+  <div class="card-head">
+    <div class="num bulb" aria-hidden="true"><svg width="19" height="19" viewBox="0 0 24 24" fill="none"
+      stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path
+      fill="currentColor" d="M15 14c.2-1 .7-1.7 1.5-2.5 1-.9 1.5-2.2 1.5-3.5A6 6 0 0 0 6 8c0 1 .2 2.2 1.5 3.5.7.7 1.3 1.5 1.5 2.5"/><path
+      d="M9 18h6"/><path d="M10 22h4"/></svg></div>
+    <h2>What to take to your next session</h2>
+    <a class="anchor" href="#takeaways" aria-label="Link to this section">#</a>
+  </div>
+  <ul class="adv">
+    <li><b>Tilt is real, and small.</b> After three straight losses your next game runs 0.8 points below what your
+    rating predicts, about one extra loss per 120 games; after six or more, one per 40. Your raw stats show a swing
+    four times bigger, and that part is who you were paired with and when, not you.</li>
+    <li><b>Forget the stop-loss rule.</b> Stopping after every second loss saves about one point per thousand games.
+    Whatever a streak does to you fades in about half an hour whether you pause or not, and in bullet a cold start
+    costs more than tilt does: if anything, keep playing.</li>
+    <li><b>Decline the revenge rematch.</b> The immediate rematch against the player who just beat you is the one
+    tilt decision with a visible price: about a point beyond an ordinary post-loss game, as much as three losses in a
+    row. In rapid it is two points.</li>
+    <li><b>Do not fear the long loss.</b> Losing a game you fought for, even from a won endgame, leaves no mark on the
+    next one. The losses that do are the ten-move collapses and the disconnects, which mostly tell you that you were
+    not really playing in the first place.</li>
+    <li><b>Watch the clock first.</b> After a loss you play 2 to 4% faster and are more likely to quit or to rush into
+    the next game; the blunder rate only moves after three losses in a row. If you notice yourself pre-moving through
+    the opening, that is what tilt looks like in the data.</li>
+  </ul>
+</section>
+
+<footer class="site">
+  <div class="box">
+    <h2>About this analysis</h2>
+    <p style="margin-top:8px">I analyzed <b>2,670,215 rated Lichess games</b> played between March 2023 and May 2026 by
+    the 4,487 players in the FlawChess benchmark database, roughly 200 players in each of twenty rating (800 to 2400)
+    and time-control (bullet, blitz, rapid, classical) cells, about 300 games each. Each player's games were ordered in
+    time within a time control; a break of an hour or more from the end of one game to the start of the next (game
+    ends come from the clock times in the game record) starts a new session. Only games between opponents within 100
+    rating points are scored (78% of games; the sequence features, streaks, breaks and rematches, use the full
+    history). "Expected" is the average score of players in the same time control, 400-point rating band, colour and
+    25-point rating-gap bin, measured on the same kind of games (settled accounts, not the first game of a sitting),
+    because Lichess ratings are not quite Elo-calibrated: a 100 to 150-point favourite scores about 63%, not the 67%
+    the Elo formula predicts. Every interval is a bootstrap over players. Every tilt number describes players who kept
+    playing within the hour; the players who stopped are, by construction, not observed.
+    Full methodology, all controls (colour, trailing form, player fixed effects), every table, and a comparison with
+    the published literature are in the technical report.</p>
+    <p style="margin-top:10px">
+      <a href="https://github.com/flawchess/flawchess/blob/main/stories/tilt/tilt-report.md" data-umami-event="outbound-report-tilt">Read the technical report</a>
+      &middot;
+      <a href="https://github.com/flawchess/flawchess/blob/main/reports/benchmark/benchmarks-latest.md" data-umami-event="outbound-report-benchmarks">Browse the benchmark database</a>
+    </p>
+    <p class="fineprint">Data: Lichess players selected for having a long history in one time control, so this is a
+    sample of regular players, not of everyone on Lichess. Everything here is observational: who continues, who takes
+    a break and who accepts a rematch is self-selected, which is why the story leans on differences between groups
+    facing the same selection (hot versus cold at the same break length) rather than on single cells. Two published
+    studies that condition on ratings the way this one does (Gee et al. 2025 on Lichess, Rosenthal 2025 on chess.com)
+    also find next-game effects of at most a few points; analyses reporting 10 to 20 point swings do not control for
+    opponent rating or rating lag. Time of day is not analysed (the data has no player time zone). Tilt-proneness
+    differs between players, but weakly: a player's own tilt number from 300 games is about 80% noise (split-half
+    reliability 0.19), so this story reports population averages rather than a personal tilt score. Unrated games and
+    games against bots are excluded.</p>
+  </div>
+  <div class="promo">
+    <div class="promo-head">
+      <img src="../logo.png" alt="FlawChess logo">
+      <div>
+        <div class="pname">FlawChess</div>
+        <div class="ptag">Engines are flawless, humans play FlawChess.</div>
+      </div>
+    </div>
+    <p class="plede">Wondering where your own points actually go? FlawChess runs Stockfish over your chess.com and
+    lichess game history and shows the blunders that cost you, how you perform under time pressure compared with your
+    opponents, and your flag rate per time control. Most of what feels like tilt turns out to be something with a
+    name, and a fix.</p>
+    <a class="cta" href="https://flawchess.com" data-umami-event="outbound-flawchess-cta">Analyze your own games free at flawchess.com &rarr;</a>
+    <p class="fineprint">All features free &middot; no signup required &middot; open source</p>
+  </div>
+  <div class="author">
+    <img src="../author.jpg" alt="Portrait of Adrian Imfeld" width="72" height="72">
+    <div>
+      <div class="who">Adrian Imfeld</div>
+      <p class="bio">Data scientist, software engineer, and creator of FlawChess. </p>
+      <p class="links">
+        <a href="https://www.linkedin.com/in/aimfeld/" data-umami-event="outbound-linkedin">LinkedIn</a> &middot;
+        <a href="https://github.com/aimfeld" data-umami-event="outbound-github">GitHub</a>
+      </p>
+    </div>
+  </div>
+</footer>
+
+</main>
+
+<script>
+"use strict";
+/* ---------- data (analysis/out/tilt/story/*.csv, generated by analysis/tilt_study/gen_story.py) ---------- */
+const COL={win:"#166534",loss:"#B02A2A",draw:"#8A7F71",brown:"#8B5E3C",ink:"#2A2118",brownLight:"#BC9560"};
+// Streak axis without the draw cell: -6 = six or more losses ... +6 = six or more wins.
+const XS=[-6,-5,-4,-3,-2,-1,1,2,3,4,5,6];
+const xLabel=x=>(x>0?"+":"")+x+(Math.abs(x)===6?"+":"");
+const xPhrase=x=>{const k=Math.abs(x),noun=x<0?(k>1?"losses":"loss"):(k>1?"wins":"win");
+  return `${k}${k===6?" or more":""} ${noun}${k>1?" in a row":""}`;};
+/* ladder6.csv: raw history -> equal footing -> one sitting + settled accounts, plus the expectation */
+const LADDER={
+  raw:      [43.423,47.490,48.494,49.123,49.874,51.094,52.158,53.411,54.586,55.692,57.690,65.380],
+  equal:    [47.643,49.099,49.429,49.556,49.720,50.393,51.034,51.545,51.964,52.039,53.045,53.932],
+  ctrl:     [47.193,48.361,49.556,49.600,49.595,50.492,51.094,51.591,52.357,52.361,53.212,54.094],
+  ctrlLo:   [45.661,47.204,48.817,49.109,49.294,50.299,50.911,51.309,51.945,51.644,52.255,53.023],
+  ctrlHi:   [48.554,49.725,50.311,50.057,49.911,50.674,51.273,51.868,52.761,52.979,54.172,55.176],
+  expected: [49.797,50.122,50.302,50.428,50.583,50.778,50.832,51.001,51.137,51.258,51.400,51.476],
+  nRaw:     [37603,33786,68470,140752,294444,636836,646580,319654,162473,84464,44804,65848],
+  nCtrl:    [5236,6618,16215,40858,107600,301483,316677,122979,50630,21685,9558,8182]
+};
+/* streak_curve.csv: residual (score minus expectation) with 95% intervals */
+const TILT={
+  v: [-2.605,-1.762,-0.746,-0.829,-0.988,-0.286,0.262,0.590,1.220,1.103,1.812,2.618],
+  lo:[-4.157,-2.946,-1.493,-1.309,-1.273,-0.458,0.086,0.325,0.822,0.417,0.845,1.529],
+  hi:[-1.229,-0.430,0.011,-0.384,-0.679,-0.127,0.434,0.864,1.625,1.717,2.796,3.745]
+};
+/* streak3_by_tc.csv / streak3_by_rating.csv: residual after 3+ losses (cold) and 3+ wins (hot). Classical is
+   left to the table: 629 / 936 games, intervals seven points wide. */
+const BY_TC={labels:["Bullet","Blitz","Rapid"],
+  cold:[-0.903,-0.761,-1.876],coldLo:[-1.463,-1.475,-2.762],coldHi:[-0.381,-0.096,-0.994],coldN:[32861,23262,12175],
+  hot:[1.380,1.357,1.574],hotLo:[0.947,0.791,0.829],hotHi:[1.859,1.809,2.388],hotN:[44115,30746,14258]};
+const BY_RATING={labels:["800","1200","1600","2000","2400"],
+  cold:[-2.174,-0.937,-0.907,-0.643,-0.775],coldLo:[-3.277,-1.711,-1.554,-1.497,-1.718],coldHi:[-1.311,-0.190,-0.246,0.118,0.247],coldN:[10493,15807,19362,14898,8367],
+  hot:[1.659,1.278,1.306,1.301,1.504],hotLo:[0.781,0.615,0.675,0.506,0.511],hotHi:[2.521,1.960,1.823,1.999,2.339],hotN:[12585,19061,21843,21253,15313]};
+/* break_test.csv, "all" rows: residual after 2+ losses / 2+ wins by the break before the next game */
+const BREAKS={labels:["<1 min","1–3 min","3–10 min","10–30 min","30–60 min","1–6 h","6–24 h","1–7 d"],
+  cold:[-0.605,-1.235,-2.130,-2.517,-1.918,-1.242,-1.591,0.244],coldLo:[-0.908,-2.009,-2.935,-3.293,-2.965,-1.871,-2.141,-0.813],coldHi:[-0.350,-0.554,-1.411,-1.725,-0.895,-0.554,-0.886,1.244],
+  coldN:[120750,19447,14074,13083,9180,22143,21056,7955],
+  hot:[1.394,0.457,0.291,0.001,-1.786,-0.570,-1.456,-0.357],hotLo:[1.106,-0.042,-0.357,-0.770,-2.761,-1.243,-2.093,-1.323],hotHi:[1.647,0.999,0.922,0.874,-0.844,0.078,-0.888,0.672],
+  hotN:[138556,31076,19969,14313,9125,21334,20534,7915]};
+/* loss_by_termination / loss_by_length / loss_by_endgame .csv, "all" columns */
+const ANATOMY=[
+  {group:"How it ended",items:[
+    {l:"check-|mated",v:-0.256,lo:-0.509,hi:0.014,n:136661},
+    {l:"resigned",v:-0.854,lo:-1.052,hi:-0.659,n:263162},
+    {l:"on|time",v:-0.425,lo:-0.666,hi:-0.182,n:163842},
+    {l:"discon-|nected",v:-3.455,lo:-4.681,hi:-2.077,n:5520}]},
+  {group:"How long it lasted",items:[
+    {l:"under 11|moves",v:-2.117,lo:-2.726,hi:-1.360,n:22179},
+    {l:"11–30|moves",v:-1.121,lo:-1.316,hi:-0.924,n:249906},
+    {l:"over 30|moves",v:-0.072,lo:-0.232,hi:0.111,n:297112}]},
+  {group:"The endgame it reached",items:[
+    {l:"none",v:-1.261,lo:-1.461,hi:-1.063,n:212185},
+    {l:"2 pawns|down",v:-0.358,lo:-0.583,hi:-0.126,n:187145},
+    {l:"level",v:-0.227,lo:-0.455,hi:0.047,n:116041},
+    {l:"2 pawns up|(blown)",s:"blown win",v:0.233,lo:-0.187,hi:0.639,n:53826}]}
+];
+/* revenge.csv "all" row; quit_rush.csv */
+const REVENGE=[
+  {l:"After a loss",items:[{l:"rematch",v:-1.738,lo:-2.199,hi:-1.237,n:53470,c:COL.loss},{l:"new|opponent",v:-0.495,lo:-0.631,hi:-0.357,n:null,c:COL.draw}]},
+  {l:"After a win",items:[{l:"rematch",v:0.645,lo:0.212,hi:1.048,n:54838,c:COL.win},{l:"new|opponent",v:0.543,lo:0.424,hi:0.675,n:null,c:COL.draw}]}
+];
+const QUIT={labels:["Bullet","Blitz","Rapid","Classical"],loss:[21.678,27.817,38.254,59.250],win:[16.185,23.213,35.623,57.611]};
+
+/* ---------- helpers ---------- */
+const NS="http://www.w3.org/2000/svg";
+function el(n,attrs,parent){const e=document.createElementNS(NS,n);
+  for(const k in attrs)e.setAttribute(k,attrs[k]); if(parent)parent.appendChild(e); return e;}
+function txt(parent,x,y,s,attrs){const t=el("text",Object.assign({x,y},attrs||{}),parent);t.textContent=s;return t;}
+/* Two-line axis labels: "a|b" renders b on a second line. */
+function txt2(parent,x,y,s,attrs){const t=el("text",Object.assign({x,y},attrs||{}),parent);
+  const parts=String(s).split("|");
+  parts.forEach((p,i)=>{const ts=el("tspan",{x,dy:i?"1.15em":0},t);ts.textContent=p;});return t;}
+function chartWidth(id,maxW){const w=document.getElementById(id).getBoundingClientRect().width;
+  return Math.max(300,Math.min(maxW||900,Math.round(w)||900));}
+function svgRoot(id,w,h,label){const host=document.getElementById(id);
+  host.innerHTML="";
+  const s=el("svg",{viewBox:`0 0 ${w} ${h}`,class:"chart-svg",role:"img","aria-label":label});
+  host.appendChild(s);return s;}
+const tip=document.getElementById("tip");
+const TIP_PAD=14,TIP_MARGIN=8;
+function placeTip(cx,cy){
+  const tw=tip.offsetWidth,th=tip.offsetHeight;
+  let x=cx+TIP_PAD; if(x+tw>window.innerWidth-TIP_MARGIN)x=cx-tw-TIP_PAD;
+  x=Math.min(Math.max(x,TIP_MARGIN),Math.max(TIP_MARGIN,window.innerWidth-tw-TIP_MARGIN));
+  let y=cy+TIP_PAD; if(y+th>window.innerHeight-TIP_MARGIN)y=cy-th-TIP_PAD;
+  y=Math.min(Math.max(y,TIP_MARGIN),Math.max(TIP_MARGIN,window.innerHeight-th-TIP_MARGIN));
+  tip.style.left=x+"px"; tip.style.top=y+"px";
+}
+function hideTip(){tip.style.display="none";}
+function bindTip(node,html){
+  node.addEventListener("mousemove",ev=>{tip.innerHTML=html;tip.style.display="block";
+    placeTip(ev.clientX,ev.clientY);});
+  node.addEventListener("mouseleave",hideTip);
+}
+document.addEventListener("touchstart",hideTip,{passive:true,capture:true});
+window.addEventListener("scroll",hideTip,{passive:true});
+const fmt=n=>n.toLocaleString("en-US");
+const signed=(v,d)=>(v>0?"+":v<0?"−":"")+Math.abs(v).toFixed(d===undefined?1:d);
+function grid(svg,x0,x1,yFor,ticks,fmtTick){
+  for(const v of ticks){const y=yFor(v);
+    el("line",{x1:x0,x2:x1,y1:y,y2:y,class:v===0?"zero":"gridline"},svg);
+    txt(svg,x0-10,y+5,fmtTick(v),{class:"axis","text-anchor":"end"});}
+}
+function legend(id,items){document.getElementById(id).innerHTML=
+  items.map(i=>`<span class="it"><span class="chip${i[2]||""}" style="${i[2]?"":"background:"+i[1]}"></span>${i[0]}</span>`).join("");}
+function whisker(svg,x,yLo,yHi,c){
+  el("line",{x1:x,x2:x,y1:yLo,y2:yHi,stroke:c,"stroke-width":1.5},svg);
+  el("line",{x1:x-4,x2:x+4,y1:yLo,y2:yLo,stroke:c,"stroke-width":1.5},svg);
+  el("line",{x1:x-4,x2:x+4,y1:yHi,y2:yHi,stroke:c,"stroke-width":1.5},svg);
+}
+function linePath(pts){return pts.map((p,i)=>(i?"L":"M")+p[0]+","+p[1]).join(" ");}
+
+/* ---------- chart 1: the control ladder ----------
+   Three lines on the same axis: the raw history (what a player sees in their stats), the
+   controlled line (same rating, one sitting, settled accounts) with its interval band, and
+   the rating-based expectation. The vertical distance between the last two is tilt. */
+function renderC1(){
+  const W=chartWidth("c1"),wide=W>=700,L=W<560?46:60,R=wide?150:20,T=18,B=64,H=430,min=40,max=68;
+  const svg=svgRoot("c1",W,H,"Next-game score by streak: raw history, controlled, and expected");
+  const yFor=v=>T+(H-T-B)*(1-(v-min)/(max-min));
+  const xFor=i=>L+(W-L-R)*(i/(XS.length-1));
+  grid(svg,L,W-R,yFor,[40,45,50,55,60,65],v=>v+"%");
+  XS.forEach((x,i)=>txt(svg,xFor(i),H-36,xLabel(x),{class:"axis","text-anchor":"middle"}));
+  txt(svg,L+(W-L-R)/2,H-12,"Streak just ended (losses on the left, wins on the right)",{class:"axis","text-anchor":"middle"});
+  // interval band for the controlled line
+  const band=XS.map((x,i)=>[xFor(i),yFor(LADDER.ctrlHi[i])]).concat(XS.map((x,i)=>[xFor(i),yFor(LADDER.ctrlLo[i])]).reverse());
+  el("path",{d:linePath(band)+" Z",fill:COL.ink,opacity:0.1},svg);
+  const series=[
+    {k:"raw",name:"In your raw game history",c:COL.brown,w:3,dash:null},
+    {k:"expected",name:"Expected from ratings",c:COL.draw,w:2.5,dash:"7 5"},
+    {k:"ctrl",name:"Same rating, one sitting, settled accounts",c:COL.ink,w:3,dash:null}
+  ];
+  series.forEach(s=>{
+    const pts=XS.map((x,i)=>[xFor(i),yFor(LADDER[s.k][i])]);
+    const p=el("path",{d:linePath(pts),fill:"none",stroke:s.c,"stroke-width":s.w,"stroke-linecap":"round","stroke-linejoin":"round"},svg);
+    if(s.dash)p.setAttribute("stroke-dasharray",s.dash);
+    if(s.k!=="expected")pts.forEach((pt,i)=>{
+      el("circle",{cx:pt[0],cy:pt[1],r:4.5,fill:s.c,stroke:"#fff","stroke-width":2},svg);
+    });
+  });
+  // hit targets: one per streak, describing all three lines
+  XS.forEach((x,i)=>{
+    const hit=el("rect",{x:xFor(i)-14,y:T,width:28,height:H-T-B,fill:"transparent"},svg);
+    bindTip(hit,`<div class="t">After ${xPhrase(x)}</div>Raw history: <b>${LADDER.raw[i].toFixed(1)}%</b> (${fmt(LADDER.nRaw[i])} games)<br>`+
+      `Same rating only: ${LADDER.equal[i].toFixed(1)}%<br>Controlled: <b>${LADDER.ctrl[i].toFixed(1)}%</b> (${fmt(LADDER.nCtrl[i])} games)<br>`+
+      `Expected: ${LADDER.expected[i].toFixed(1)}%<br>Tilt: <b>${signed(LADDER.ctrl[i]-LADDER.expected[i])}</b>`);
+  });
+  if(wide){
+    const last=XS.length-1;
+    txt2(svg,xFor(last)+12,yFor(LADDER.raw[last])+5,"Raw history",{class:"dlabel",fill:COL.brown});
+    txt2(svg,xFor(last)+12,yFor(LADDER.ctrl[last])-6,"Controlled",{class:"dlabel",fill:COL.ink});
+    txt2(svg,xFor(last)+12,yFor(LADDER.expected[last])+16,"Expected",{class:"dlabel",fill:COL.draw});
+  }
+}
+
+/* ---------- chart 2: tilt bars (score minus expectation) ---------- */
+function renderC2(){
+  const W=chartWidth("c2"),L=W<560?46:60,R=20,T=22,B=64,H=400,min=-4.5,max=4.5;
+  const svg=svgRoot("c2",W,H,"Score minus expectation in the next game, by streak length");
+  const yFor=v=>T+(H-T-B)*(1-(v-min)/(max-min));
+  grid(svg,L,W-R,yFor,[-4,-2,0,2,4],v=>signed(v,0));
+  const bw=(W-L-R)/XS.length;
+  XS.forEach((x,i)=>{
+    const v=TILT.v[i],c=v<0?COL.loss:COL.win,cx=L+bw*i+bw/2,w=bw*0.62;
+    const y0=yFor(0),y1=yFor(v);
+    const rect=el("rect",{x:cx-w/2,y:Math.min(y0,y1),width:w,height:Math.max(Math.abs(y0-y1),1),rx:3,fill:c},svg);
+    whisker(svg,cx,yFor(TILT.lo[i]),yFor(TILT.hi[i]),COL.ink);
+    txt(svg,cx,v<0?yFor(TILT.lo[i])+18:yFor(TILT.hi[i])-8,signed(v),{class:"dlabel","text-anchor":"middle",fill:c,"font-size":W<560?"12":"15"});
+    txt(svg,cx,H-36,xLabel(x),{class:"axis","text-anchor":"middle"});
+    bindTip(rect,`<div class="t">After ${xPhrase(x)}</div>Next game scores <b>${LADDER.ctrl[i].toFixed(1)}%</b> against an expected `+
+      `${LADDER.expected[i].toFixed(1)}%: <b>${signed(v)}</b> points (95% interval ${signed(TILT.lo[i])} to ${signed(TILT.hi[i])}), ${fmt(LADDER.nCtrl[i])} games.`);
+  });
+  txt(svg,L+(W-L-R)/2,H-12,"Streak just ended (losses on the left, wins on the right)",{class:"axis","text-anchor":"middle"});
+}
+
+/* ---------- chart 3: cold / hot bars by time control and by rating (two panels) ---------- */
+function coldHotPanel(id,d,what){
+  const w0=document.getElementById(id).getBoundingClientRect().width;
+  const W=Math.max(250,Math.min(560,Math.round(w0)||430));
+  const L=44,R=12,T=22,B=58,H=340,min=-3.5,max=3.5;
+  const svg=svgRoot(id,W,H,`Score minus expectation after 3+ losses and 3+ wins, by ${what}`);
+  const yFor=v=>T+(H-T-B)*(1-(v-min)/(max-min));
+  grid(svg,L,W-R,yFor,[-3,-2,-1,0,1,2,3],v=>signed(v,0));
+  const gw=(W-L-R)/d.labels.length,bw=gw*0.3;
+  d.labels.forEach((lab,i)=>{
+    const gx=L+gw*i+gw/2;
+    [["cold",COL.loss,"3+ losses"],["hot",COL.win,"3+ wins"]].forEach(([k,c,name],j)=>{
+      const v=d[k][i],cx=gx+(j?bw*0.6:-bw*0.6),y0=yFor(0),y1=yFor(v);
+      const rect=el("rect",{x:cx-bw/2,y:Math.min(y0,y1),width:bw,height:Math.max(Math.abs(y0-y1),1),rx:3,fill:c},svg);
+      whisker(svg,cx,yFor(d[k+"Lo"][i]),yFor(d[k+"Hi"][i]),COL.ink);
+      txt(svg,cx,v<0?yFor(d[k+"Lo"][i])+16:yFor(d[k+"Hi"][i])-7,signed(v),{class:"dlabel","text-anchor":"middle",fill:c,"font-size":"13"});
+      bindTip(rect,`<div class="t">${lab} &middot; after ${name}</div><b>${signed(v)}</b> points against expectation `+
+        `(${signed(d[k+"Lo"][i])} to ${signed(d[k+"Hi"][i])}), ${fmt(d[k+"N"][i])} games.`);
+    });
+    txt(svg,gx,H-34,lab,{class:"axis","text-anchor":"middle"});
+  });
+  txt(svg,L+(W-L-R)/2,H-10,what==="time control"?"Time control":"Rating",{class:"axis","text-anchor":"middle"});
+}
+function renderC3(){coldHotPanel("c3a",BY_TC,"time control");coldHotPanel("c3b",BY_RATING,"rating");}
+
+/* ---------- chart 4: the break test (two lines with whiskers) ---------- */
+function renderC4(){
+  const W=chartWidth("c4"),narrow=W<560,L=narrow?46:60,R=20,T=22,B=narrow?78:64,H=narrow?410:400,min=-4,max=3;
+  const svg=svgRoot("c4",W,H,"Score minus expectation after two or more losses or wins, by break length");
+  const yFor=v=>T+(H-T-B)*(1-(v-min)/(max-min));
+  const n=BREAKS.labels.length,xFor=i=>L+(W-L-R)*((i+0.5)/n);
+  grid(svg,L,W-R,yFor,[-4,-3,-2,-1,0,1,2,3],v=>signed(v,0));
+  // shade the region where the two lines have converged
+  const xs=xFor(4)-(W-L-R)/n/2;
+  el("rect",{x:xs,y:T,width:(W-R)-xs,height:H-T-B,fill:"#F0DBB9",opacity:0.35},svg);
+  txt2(svg,(xs+W-R)/2,T+14,narrow?"the streak no|longer matters":"the streak no longer matters",{class:"axis","text-anchor":"middle","font-style":"italic","font-size":narrow?"12":"14"});
+  // Narrow screens: eight labels do not fit on one row, so alternate them over two rows.
+  BREAKS.labels.forEach((lab,i)=>{
+    const short=narrow?lab.replace(" min","m").replace(" h","h").replace(" d","d"):lab;
+    txt(svg,xFor(i),H-(narrow?62:36)+(narrow?(i%2)*15:0),short,{class:"axis","text-anchor":"middle","font-size":narrow?"12":"14"});
+  });
+  txt(svg,L+(W-L-R)/2,H-12,"Break before the next game",{class:"axis","text-anchor":"middle"});
+  [["hot",COL.win,"2+ wins"],["cold",COL.loss,"2+ losses"]].forEach(([k,c,name])=>{
+    const pts=BREAKS[k].map((v,i)=>[xFor(i)+(k==="hot"?4:-4),yFor(v)]);
+    el("path",{d:linePath(pts),fill:"none",stroke:c,"stroke-width":3,"stroke-linecap":"round","stroke-linejoin":"round"},svg);
+    pts.forEach((p,i)=>{
+      whisker(svg,p[0],yFor(BREAKS[k+"Lo"][i]),yFor(BREAKS[k+"Hi"][i]),c);
+      el("circle",{cx:p[0],cy:p[1],r:5,fill:c,stroke:"#fff","stroke-width":2},svg);
+      const hit=el("circle",{cx:p[0],cy:p[1],r:13,fill:"transparent"},svg);
+      bindTip(hit,`<div class="t">After ${name}, break of ${BREAKS.labels[i]}</div><b>${signed(BREAKS[k][i])}</b> points against expectation `+
+        `(${signed(BREAKS[k+"Lo"][i])} to ${signed(BREAKS[k+"Hi"][i])}), ${fmt(BREAKS[k+"N"][i])} games.`);
+    });
+  });
+}
+
+/* ---------- chart 5: which loss tilts you (three groups of bars) ---------- */
+function renderC5(){
+  const W=chartWidth("c5");
+  if(W<560){renderC5Narrow(W);return;}
+  const narrow=false,L=60,R=16,T=44,B=76,H=420,min=-5,max=1.5;
+  const svg=svgRoot("c5",W,H,"Score minus expectation after a loss, by what the loss looked like");
+  const yFor=v=>T+(H-T-B)*(1-(v-min)/(max-min));
+  grid(svg,L,W-R,yFor,[-5,-4,-3,-2,-1,0,1],v=>signed(v,0));
+  const total=ANATOMY.reduce((a,g)=>a+g.items.length,0),gaps=ANATOMY.length-1;
+  const slot=(W-L-R)/(total+gaps*0.6);
+  let pos=0;
+  ANATOMY.forEach((g,gi)=>{
+    const x0=L+slot*pos;
+    g.items.forEach((it,i)=>{
+      const cx=L+slot*(pos+i+0.5),w=slot*0.62,v=it.v,c=v<0?COL.loss:COL.win,y0=yFor(0),y1=yFor(v);
+      const rect=el("rect",{x:cx-w/2,y:Math.min(y0,y1),width:w,height:Math.max(Math.abs(y0-y1),1),rx:3,fill:c},svg);
+      whisker(svg,cx,yFor(it.lo),yFor(it.hi),COL.ink);
+      txt(svg,cx,v<0?yFor(it.lo)+16:yFor(it.hi)-7,signed(v),{class:"dlabel","text-anchor":"middle",fill:c,"font-size":narrow?"11":"14"});
+      txt2(svg,cx,yFor(min)+20,it.l,{class:"axis","text-anchor":"middle","font-size":narrow?"11":"13"});
+      bindTip(rect,`<div class="t">The loss ${g.group==="How it ended"?"ended by "+it.l.replace("-|",""):g.group==="How long it lasted"?"lasted "+it.l.replace("|"," "):"reached "+(it.l==="none"?"no endgame":"an endgame "+it.l.replace("|"," "))}</div>`+
+        `Next game: <b>${signed(v)}</b> points against expectation (${signed(it.lo)} to ${signed(it.hi)}), ${fmt(it.n)} games, all time controls.`);
+    });
+    const gx1=L+slot*(pos+g.items.length);
+    txt(svg,(x0+gx1)/2,T-18,g.group,{class:"dlabel","text-anchor":"middle",fill:COL.ink2||"#5C5246","font-size":narrow?"13":"15"});
+    if(gi<ANATOMY.length-1)el("line",{x1:gx1+slot*0.3,x2:gx1+slot*0.3,y1:T-8,y2:yFor(min),class:"gridline"},svg);
+    pos+=g.items.length+0.6;
+  });
+}
+
+/* Phones: eleven vertical bars with two-line labels cannot fit in ~350px, so the same
+   data is drawn as horizontal bars with the labels in a left-hand column. */
+function renderC5Narrow(W){
+  const L=126,R=48,T=8,rowH=26,groupH=30,min=-5,max=1.5;
+  const rows=ANATOMY.reduce((a,g)=>a+g.items.length,0);
+  const H=T+rows*rowH+ANATOMY.length*groupH+36;
+  const svg=svgRoot("c5",W,H,"Score minus expectation after a loss, by what the loss looked like");
+  const xFor=v=>L+(W-L-R)*((v-min)/(max-min));
+  [-4,-2,0].forEach(v=>{el("line",{x1:xFor(v),x2:xFor(v),y1:T,y2:H-30,class:v===0?"zero":"gridline"},svg);
+    txt(svg,xFor(v),H-12,signed(v,0),{class:"axis","text-anchor":"middle"});});
+  let y=T;
+  ANATOMY.forEach(g=>{
+    txt(svg,4,y+18,g.group,{class:"dlabel","text-anchor":"start",fill:"#5C5246","font-size":"13"});
+    y+=groupH;
+    g.items.forEach(it=>{
+      const c=it.v<0?COL.loss:COL.win,x0=xFor(0),x1=xFor(it.v),cy=y+rowH/2;
+      const rect=el("rect",{x:Math.min(x0,x1),y:cy-8,width:Math.max(Math.abs(x1-x0),1),height:16,rx:3,fill:c},svg);
+      el("line",{x1:xFor(it.lo),x2:xFor(it.hi),y1:cy,y2:cy,stroke:COL.ink,"stroke-width":1.5},svg);
+      txt(svg,L-6,cy+4,(it.s||it.l).replace("-|","").replace("|"," "),{class:"axis","text-anchor":"end","font-size":"12.5"});
+      // value labels sit just right of the zero line for negative bars (the empty side) and past the whisker for positive ones
+      txt(svg,it.v<0?xFor(0)+6:xFor(it.hi)+5,cy+4,signed(it.v),{class:"dlabel","text-anchor":"start",fill:c,"font-size":"12"});
+      bindTip(rect,`<div class="t">${g.group}: ${it.l.replace("-|","").replace("|"," ")}</div>Next game: <b>${signed(it.v)}</b> points against expectation (${signed(it.lo)} to ${signed(it.hi)}), ${fmt(it.n)} games.`);
+      y+=rowH;
+    });
+  });
+}
+
+/* ---------- chart 6: revenge rematch (left) and quit-on-loss (right) ---------- */
+function renderC6a(){
+  const id="c6a",w0=document.getElementById(id).getBoundingClientRect().width;
+  const W=Math.max(250,Math.min(560,Math.round(w0)||430));
+  const L=44,R=12,T=22,B=84,H=350,min=-2.5,max=1.5;
+  const svg=svgRoot(id,W,H,"Score minus expectation: rematch versus new opponent, after a loss and after a win");
+  const yFor=v=>T+(H-T-B)*(1-(v-min)/(max-min));
+  grid(svg,L,W-R,yFor,[-2,-1,0,1],v=>signed(v,0));
+  const gw=(W-L-R)/REVENGE.length,bw=gw*0.26;
+  REVENGE.forEach((g,i)=>{
+    const gx=L+gw*i+gw/2;
+    g.items.forEach((it,j)=>{
+      const cx=gx+(j?bw*0.8:-bw*0.8),y0=yFor(0),y1=yFor(it.v);
+      const rect=el("rect",{x:cx-bw/2,y:Math.min(y0,y1),width:bw,height:Math.max(Math.abs(y0-y1),1),rx:3,fill:it.c},svg);
+      whisker(svg,cx,yFor(it.lo),yFor(it.hi),COL.ink);
+      txt(svg,cx,it.v<0?yFor(it.lo)+16:yFor(it.hi)-7,signed(it.v),{class:"dlabel","text-anchor":"middle",fill:it.c,"font-size":"13"});
+      txt2(svg,cx,yFor(min)+20,it.l,{class:"axis","text-anchor":"middle","font-size":"12"});
+      bindTip(rect,`<div class="t">${g.l} &middot; ${it.l.replace("|"," ")}</div><b>${signed(it.v)}</b> points against expectation (${signed(it.lo)} to ${signed(it.hi)})`+
+        (it.n?`, ${fmt(it.n)} rematches.`:"."));
+    });
+    txt(svg,gx,H-14,g.l,{class:"dlabel","text-anchor":"middle",fill:"#5C5246","font-size":"14"});
+  });
+}
+function renderC6b(){
+  const id="c6b",w0=document.getElementById(id).getBoundingClientRect().width;
+  const W=Math.max(250,Math.min(560,Math.round(w0)||430));
+  const L=44,R=12,T=22,B=58,H=340,max=70;
+  const svg=svgRoot(id,W,H,"Share of sessions that end after a loss versus after a win, by time control");
+  const yFor=v=>T+(H-T-B)*(1-v/max);
+  grid(svg,L,W-R,yFor,[0,20,40,60],v=>v+"%");
+  const gw=(W-L-R)/QUIT.labels.length,bw=gw*0.3;
+  QUIT.labels.forEach((lab,i)=>{
+    const gx=L+gw*i+gw/2;
+    [["loss",COL.loss,"after a loss"],["win",COL.win,"after a win"]].forEach(([k,c,name],j)=>{
+      const v=QUIT[k][i],cx=gx+(j?bw*0.6:-bw*0.6),y=yFor(v);
+      const rect=el("rect",{x:cx-bw/2,y,width:bw,height:yFor(0)-y,rx:3,fill:c},svg);
+      txt(svg,cx,y-7,v.toFixed(0)+"%",{class:"dlabel","text-anchor":"middle",fill:c,"font-size":W<400?"11":"13"});
+      bindTip(rect,`<div class="t">${lab} &middot; ${name}</div>The session ends after <b>${v.toFixed(1)}%</b> of these games.`);
+    });
+    txt(svg,gx,H-34,lab,{class:"axis","text-anchor":"middle"});
+  });
+  txt(svg,L+(W-L-R)/2,H-10,"Time control",{class:"axis","text-anchor":"middle"});
+}
+
+/* ---------- static setup: legends ---------- */
+/* The "View the data" tables are static HTML in the page body (not JS-rendered):
+   most AI crawlers don't execute JS, and the tables are the citable data. */
+legend("lg1",[["In your raw game history",COL.brown],["Same rating, one sitting, settled accounts",COL.ink],["Expected from ratings",null," dash"]]);
+legend("lg3",[["After 3+ losses",COL.loss],["After 3+ wins",COL.win]]);
+legend("lg4",[["After 2+ losses",COL.loss],["After 2+ wins",COL.win]]);
+legend("lg6",[["After a loss",COL.loss],["After a win",COL.win],["New opponent",COL.draw]]);
+
+/* ---------- responsive render: redraw at container width ---------- */
+function renderAll(){renderC1();renderC2();renderC3();renderC4();renderC5();renderC6a();renderC6b();}
+renderAll();
+let resizeTimer=null,lastVW=window.innerWidth;
+window.addEventListener("resize",()=>{
+  if(window.innerWidth===lastVW)return; // mobile URL-bar show/hide fires height-only resizes
+  lastVW=window.innerWidth;
+  clearTimeout(resizeTimer);
+  resizeTimer=setTimeout(renderAll,150);
+});
+</script>
+</body>
+</html>

@@ -1,16 +1,17 @@
 ---
 gsd_state_version: 1.0
 milestone: v2.16
-current_phase: 219
-status: completed
-stopped_at: Phase 219 complete — all phases complete
-last_updated: "2026-09-06T15:51:11.424Z"
-state_head: 4d9eceff7259c84a74372e2f7622a59fc4aa8b39
+current_phase: 220
+current_phase_name: Opening Eval Cache Repair & Two-Source Confirmation (SEED-164)
+status: executing
+stopped_at: Completed 220-04-PLAN.md
+last_updated: "2026-09-09T22:52:19.161Z"
+state_head: 9ba09e0fc6148c188d86557185238c14b9af8fa4
 progress:
-  total_phases: 1
+  total_phases: 2
   completed_phases: 1
-  total_plans: 3
-  completed_plans: 3
+  total_plans: 11
+  completed_plans: 7
 milestone_name: Audit Hardening & Dependency Currency
 last_activity: 2026-09-06
 last_activity_desc: Completed quick task 260906-i5e — FlawChess Engine card header shows a running node count (main at 1b5060661, unreleased)
@@ -20,10 +21,10 @@ last_activity_desc: Completed quick task 260906-i5e — FlawChess Engine card he
 
 ## Current Position
 
-Phase: 219
-Plan: Not started
+Phase: 220 (Opening Eval Cache Repair & Two-Source Confirmation (SEED-164)) — EXECUTING
+Plan: 5 of 8
 
-Status: All phases complete
+Status: Ready to execute
 
 Open threads carried forward (not blockers):
 
@@ -31,6 +32,7 @@ Open threads carried forward (not blockers):
 - Phase 217 device legs (iOS <16.4 no-SIMD, low-memory OOM, WebGPU adapter) deferred for lack of hardware (`v2.16-phases/217-.../217-UAT.md`).
 - Phase 215's `Train.guestGate.test.tsx` full-run flake still deferred (`v2.15-phases/215-.../deferred-items.md`).
 - SEED-163 (analytics population excludes bot games) captured 2026-09-04, unscheduled.
+- SEED-164 (opening eval cache poisoned with legacy wrong-position evals; spurious opening blunder pairs, discovered in game 2356581 plies 5/6) captured 2026-09-09, scheduled as **Phase 220** the same day (not planned yet). Blocks any flaw-based benchmark refresh until repaired.
 - SEED-158 re-scoped 2026-09-06: the iOS OOM half is closed (quick task 260906-p54); what remains is WebGPU failing on capable devices (iPhone 14 Pro iOS 26, Linux Brave/Chrome, a Windows 11 notebook), everyone silently on the wasm fallback. Collect the `[maia-worker]` console fallback lines first.
 
 ## Project Reference
@@ -151,6 +153,7 @@ v1.29 Live-Engine Analysis Page shipped 2026-06-29 — 5 phases (136–140), 14 
 
 ### Roadmap Evolution
 
+- Phase 220 added 2026-09-09 (explicit user request via `/gsd-phase @SEED-164`): **Opening Eval Cache Repair & Two-Source Confirmation** (SEED-164, planted the same day from an ad-hoc investigation of game 2356581's spurious ply-5/6 blunders). Standalone, appended after Phase 219. Scope: audit tables + resumable six-stage repair script (seed/screen/confirm/propagate/rederive/report) run dev-then-prod from the local 4-worker box; hardening replaces first-write-wins in `opening_position_eval` with two-source confirmation + provenance and restricts transplants/lease-omits to `confirmed` rows, and makes the remote-worker submit path write the cache through the tick's shared function (today only the server drain tick writes it, so remote-heavy lanes get no opening dedup; this is also why the benchmark DB is cache-free and unaffected, no re-clone needed); nightly cross-check in `db-report`; a 200-game depth-15 sample decides whether the pre-2026-06-18 legacy cohort needs screening beyond ply 20. Must land before the next flaw-based benchmark refresh.
 - Phase 213 added 2026-08-28 (explicit user request via `/gsd-phase @SEED-155`): **First-Run Engine Cold Start — Asset-Check Gate & Download Progress UI** (SEED-155, planted 2026-08-27 from a real first-time user report — guest account on an Android phone, bot took very long to play its first move, persona avatars loaded slowly; decision revised 2026-08-28). Appended to the neutral `## Active Phases (unassigned milestone)` section. Core decision: every engine consumer asset-checks first and downloads behind a progress UI; bot play additionally gates the clock on per-persona readiness via the existing `confirmLive()` seam (a fresh game must never run a clock against an engine that does not exist — generalizes Phase 170's "nobody pays for the engine cold-start" from resumes to all games); warmup is conditional (<~1s) with the opening book covering first moves otherwise; owned streaming model fetch is required (progress needs it), prefetch demoted to optimization; mandatory terminal failure path for dead/no-WASM-SIMD workers; avatars resized to ~128px + lazy (keep 512px sources). Out of scope: INT8 shrink (invalidates persona calibration), bullet TC constraints (recorded in the seed as separate scope), server-side option.
 
 - Phase 212 added 2026-08-22 (explicit user request via `/gsd-phase @SEED-152`): **Benchmark Full-Game Analysis Lane** (SEED-152, planted the same day from `/gsd-explore` — "should we run our full game analysis on benchmark games that have no lichess analysis, to support a series of chess data stories?", then revised the same day when the originally-planned topology was rejected). Appended to the neutral `## Active Phases (unassigned milestone)` section; naming the next milestone stays deferred to `/gsd-new-milestone`. **The gap is total**: all 641,855 benchmark games marked analyzed carry lichess `%eval` only — 50,338,518 positions have `eval_cp` while `best_move` and `pv` are NULL for every single one and `game_best_moves` is empty — so best moves, PV, flaw blobs, tactic tags and gem/great tiers are unavailable on the whole population, which rules out gem/great stories entirely and forced the two-pawns-up report's §6 selection-bias check out of the population onto ~98 borrowed prod accounts. **The blocker was assumed to be compute; measured, it isn't** — at the observed fleet peak of ~16k games/day the capped program is 24.8 days for all four TCs. **Locked in the seed and not to be re-opened**: equal-footing population only (`abs(white_rating - black_rating) <= 100`); **cap 100 games per user per TC** (the cap IS the plan — uncapped bullet alone costs 44.6 days vs 24.8 for the entire capped four-TC program, and bullet is the cell the benchmarks care least about); **random selection within a user, never `ORDER BY played_at DESC`** (every benchmark metric buckets on rating-at-game-time, so a recency-biased cap would systematically shift users toward their peak rating and away from the `median_elo` their cell was selected on); TC order classical → rapid → blitz → bullet with each completing before the next, so the program is stoppable at any boundary; both arms run. **Build shape is four small pieces, none prod-side**: a `benchmark_selection` table materialized per tranche (the table IS the reproducibility record a story cites, not a seed+query that must replay), one config-gated `WHERE EXISTS` on the tier-3 candidate query (without it the global lottery sees all 2.1M eq-footing games as pending), a dual-URL fallback in `scripts/remote_eval_worker.py` giving strict per-claim prod priority (a leased benchmark game just finishes, ~60s — no requeue logic), and a second `uvicorn` on port 8001 against the benchmark DB on 5433. **The sibling-DB-on-prod topology was explored and rejected** — the queue service is bound to the single app DB via `async_session_maker`, so a sibling-DB claim lane means dual-DB routing through every worker-facing path (claim, atomic submit, flaw classify, best-move write, lease expiry), the riskiest place in the codebase, plus slice-out/slice-back merge scripts and prod MVCC exposure; the "remote workers can't reach Adrian's box" objection that motivated it evaporated once the worker machines turned out to be on the same LAN. Do not re-litigate it. **Two code facts that change the cost model**: lichess-eval games are NOT cheaper but slightly *more* expensive (Phase 174-06 retired the targets filter, so `eval_drain.py:951` gives them the same full-ply MultiPV-2 pass and `:968` sets `dedup_hashes = []`, making them the only games that cannot use the opening dedup cache — and half of classical, 63,411 / 127,586, is in that arm); and **the seed's Maia claim needs correcting before the local backend is sized** — it reads `eval_queue_service.py:34` as making all of tier-4b backend work, but that docstring is half-stale: Phase 177 BACK-02/03 added `/bestmove-lease` + `/bestmove-submit` and the worker computes the runner-up **Stockfish** evals (`remote_eval_worker.py:1058-1150`), leaving only Maia inference (`app/services/maia_engine.py`) in the backend process on submit. Also verified at add-phase time: `BEST_MOVE_BACKFILL_ENABLED` is checked *together with* `EVAL_AUTO_DRAIN_ENABLED` (`app/core/config.py:83-98`), so the local instance must set both. **The decision the classical tranche cannot outrun**: eval-source homogeneity — as designed the analyzed arm keeps lichess `%eval` and classifies flaws from it while the never-analyzed arm gets ours, so the very §6 analyzed-vs-unanalyzed comparison this phase exists to enable would confound selection bias with eval source; the MultiPV-2 pass computes our evals for that arm anyway and discards them, and this is a research DB, so fixing it is cheap — decide before classical runs. **Storage**: ~15 KB/game net (≈ 6 GB for cap-100), but these are `UPDATE`s so each touched position leaves a dead row version (~13 KB/game) — budget ~2× local disk headroom and plan a vacuum pass; prod disk is untouched. One open question carried to `/gsd-discuss-phase`: whether to re-analyze the lichess arm at all in the first tranche (deferring halves classical to ~27k games / 1.7 days but leaves gem tiers unavailable on exactly the games that already have evals). **Adjacent finding, explicitly not in scope**: `benchmark_selected_users` holds 9,450 distinct users but only 4,760 exist in `users` — recovering the other half costs an *import*, not Stockfish, and CI width scales with account count, so it may be the cheaper statistical-power purchase; check it before spending fleet weeks. Written by hand as 212 rather than via `phase.add`, which computes Phase 1 past the archived `<details>` history (the same known mature-ROADMAP behavior as Phases 164/172/177/180/186/204/205/206/207). Next: `/gsd-plan-phase 212`.
@@ -714,6 +717,13 @@ v1.29 Live-Engine Analysis Page shipped 2026-06-29 — 5 phases (136–140), 14 
 - [Phase 219]: Executor had no claude-in-chrome tool — all six D-10 UAT legs and wave-2 D-15 numbers recorded pending in 219-UAT.md, not fabricated; orchestrator to complete via browser pass
 - [Phase 219]: D-11/D-12/D-13: useMaiaEngine's phase-3 ladder request splits into an 11-rung coarse pass and a 10-rung fill pass; perElo becomes ascending-and-possibly-partial with an explicit isLadderComplete flag as the sole completeness signal, replacing the retired perElo.length/resultFen-equality proxies. All eight perElo/maia. consumers classified paint-live vs wait-for-complete; the four wait-for-complete ones gated on isLadderComplete, each proven load-bearing via a revert-to-red mutation test.
 - [Phase 219]: Ref-to-state correction to RESEARCH.md's freeze-mechanism example: reading a ref inside a useMemo factory tripped eslint-plugin-react-hooks 7.1+'s react-hooks/refs rule (error level). MaiaMoveQualityBar's frozen-ladder value is now held in useState with a conditional setState-during-render, React's documented "adjust state during render" idiom, not a ref.
+- [Phase 220]: opening_cache_audit.status is TEXT+CHECK not SMALLINT+IntEnum (OQ4, 2.57M-row table, operator-facing values)
+- [Phase 220]: orphan detection is a separate orphans subcommand gated on screen_finished_at, never an implicit tail of screen (Pitfall 6: naive rule would delete 14.2% of dev cache with a good board)
+- [Phase 220]: screen rearchitected from task-1 per-hash carrier search to a per-game batched id-ASC walk with a resumable last_game_id_walked cursor, required for CACHEFIX-02 kill-resume
+- [Phase 220]: Task 1 exposed that _resolve_full_eval's pre-existing dedup-hit-wins-over-fresh priority now interacts with the submit path's new cache write on same-game resubmission; fixed via test-side cache cleanup rather than touching shared read-path semantics
+- [Phase 220]: D-04 closed on both sides: rederive takes the same pg_advisory_xact_lock apply_full_eval uses; the blob-submit write path takes the same lock plus an in-lock re-read filtering both write payloads to surviving plies. — The advisory lock alone does not close the read-then-write race window (FLAWCHESS-8D StaleDataError); the in-lock re-read is the load-bearing half.
+- [Phase 220]: 220-04: legacy-sample gates on calibrate_finished_at/screen_floor directly, not the generic _STAGE_ORDER walk (which would incorrectly require report_finished_at now that report is tracked).
+- [Phase 220]: 220-04: report's delta histogram vs lichess-internal IQR control is labelled the phase's PRIMARY acceptance signal; the opening bounce rate is explicitly a coarse sanity check only.
 
 ### Pending Todos
 
@@ -875,9 +885,9 @@ Items acknowledged and deferred at **v1.29 milestone close on 2026-06-29** (user
 
 ## Session Continuity
 
-**Stopped at:** Phase 219 complete — all phases complete
+**Stopped at:** Completed 220-04-PLAN.md
 
-**Last session:** 2026-09-06T14:08:31.261Z
+**Last session:** 2026-09-09T22:52:19.022Z
 
 **Resume file:** None
 
@@ -1045,6 +1055,10 @@ Items acknowledged and deferred at **v1.29 milestone close on 2026-06-29** (user
 | Phase 219 P01 | 19min | 4 tasks | 14 files |
 | Phase 219 P02 | 15min | 4 tasks | 13 files |
 | Phase 219 P03 | ~7min (git-visible commit span) | 4 tasks | 14 files |
+| Phase 220 P01 | 125min | 3 tasks | 7 files |
+| Phase 220 P02 | 55min | 3 tasks | 5 files |
+| Phase 220 P03 | 170min | 4 tasks | 7 files |
+| Phase 220 P04 | 70min | 2 tasks | 2 files |
 
 ## Performance Metrics
 

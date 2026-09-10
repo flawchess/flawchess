@@ -178,6 +178,16 @@ _GAME_ENDING_PLY_OFFSET: int = 1
 #   eval_cp IS NOT NULL OR eval_mate IS NOT NULL — donor row must have an eval
 #   nxt.ply <= :dedup_max_ply           — opening region only (D-116-02 / EVAL-03)
 # Idempotent: ON CONFLICT (full_hash) DO NOTHING.
+#
+# SEED-164 diagnosis 3 (Phase 220 CACHEFIX-12): `SELECT DISTINCT ON` with no ORDER
+# BY picks an ARBITRARY donor row per position — Postgres is free to return
+# whichever candidate its scan happens to visit first. The 2026-06-17 backfill ran
+# this SQL unordered and enshrined whatever donor the planner visited first per
+# position, some of them stale/wrong-position legacy evals. `ORDER BY
+# nxt.full_hash, g.full_evals_completed_at DESC, cur.pv IS NULL` makes the choice
+# deterministic: newest-evaluated donor wins, and at equal timestamps a
+# pv-bearing donor wins over a pv-less one (`false` sorts before `true`). Do not
+# simplify this ordering away — it is the fix, not incidental tidiness.
 OPENING_CACHE_BACKFILL_SQL: TextClause = text(
     """
     INSERT INTO opening_position_eval (full_hash, eval_cp, eval_mate, best_move)
@@ -196,6 +206,7 @@ OPENING_CACHE_BACKFILL_SQL: TextClause = text(
       AND  g.full_evals_completed_at IS NOT NULL
       AND  g.lichess_evals_at IS NULL
       AND  (cur.eval_cp IS NOT NULL OR cur.eval_mate IS NOT NULL)
+    ORDER BY nxt.full_hash, g.full_evals_completed_at DESC, cur.pv IS NULL
     ON CONFLICT (full_hash) DO NOTHING
     """
 )
@@ -1113,11 +1124,22 @@ async def _full_drain_tick() -> bool:
             # []-sentinel / mate-adjacent FINAL cases.
             blobs_pending=True,
             # SEED-053 / D-123.1-04: fill the opening-eval cache with freshly-computed
-            # misses (this lane only — Pitfall 4 / D-05: the atomic-submit lane does
-            # NOT populate the cache, see eval_apply.apply_full_eval's docstring).
-            update_opening_cache=True,
+            # misses. Phase 220 CACHEFIX-12: the atomic-submit lane (eval_remote.py)
+            # now populates the cache too, through this SAME _upsert_opening_cache
+            # (one function, two call sites).
+            #
+            # Phase 220 (SEED-164 / this phase): guarded on `not is_lichess_eval_game`.
+            # Before this fix, dedup_hashes is always [] for a lichess-eval game (see
+            # the partition comment above), so EVERY one of its non-terminal opening
+            # plies lands in engine_targets and was being donated to the cache — which
+            # contradicts the invariant that same partition comment already states
+            # (SEED-109 item 4: lichess games neither seed nor draw from the cache).
+            # The donated values were genuine engine results on hash-asserted boards
+            # (not misaligned/poisoned), so this was a provenance-rule violation, not
+            # a poison source — counted in the CACHEFIX-07 report.
+            update_opening_cache=not is_lichess_eval_game,
             upsert_opening_cache_fn=_upsert_opening_cache,
-            engine_targets_for_cache=engine_targets,
+            engine_targets_for_cache=[] if is_lichess_eval_game else engine_targets,
             best_move_rows=best_move_rows,
         )
 

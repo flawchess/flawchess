@@ -23,16 +23,21 @@ from __future__ import annotations
 
 import uuid
 from collections.abc import AsyncGenerator
+from datetime import datetime, timezone
 
 import pytest
 import pytest_asyncio
 from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
+from sqlalchemy.orm import undefer
 
 from app.models.game import Game
 from app.models.game_flaw import GameFlaw
 from app.models.game_position import GamePosition
+from app.models.opening_cache_audit import OpeningCacheRepairGame, OpeningCacheRepairProgress
 from app.models.user import User
+from app.repositories.flaws_repository import fetch_game_positions_ordered
+from app.repositories.game_flaws_repository import flaw_record_to_row
 from app.services.flaws_service import classify_game_flaws
 from app.services.tactic_detector import TACTIC_CONFIDENCE_HIGH, TacticMotifInt
 
@@ -616,3 +621,97 @@ class TestBackfillTacticColumns:
             f"Expected allowed_tactic_confidence == {TACTIC_CONFIDENCE_HIGH} at ply "
             f"{blunder_ply}, got {blunder_row.allowed_tactic_confidence}."
         )
+
+
+# ---------------------------------------------------------------------------
+# TestFromRepairTable (Phase 220, CACHEFIX-06)
+# ---------------------------------------------------------------------------
+
+
+class TestFromRepairTable:
+    """--from-repair-table delegates entirely to
+    scripts.opening_cache_repair.run_rederive -- it must NEVER enter this
+    script's own delete-then-insert branch, which would wipe blob/tactic-tag
+    columns for a repaired game."""
+
+    @pytest.mark.asyncio
+    async def test_from_repair_table_delegates(
+        self,
+        session_factory: async_sessionmaker[AsyncSession],
+        committed_analyzed_game: tuple[Game, int, int],
+    ) -> None:
+        """--from-repair-table reclassifies exactly the one 'pending'
+        opening_cache_repair_games row and leaves a surviving flaw's blob
+        columns intact (proving the diff/upsert path ran, not delete-then-insert)."""
+        from scripts.backfill_flaws import run_backfill
+
+        game, blunder_ply, _mistake_ply = committed_analyzed_game
+
+        async with session_factory() as session:
+            positions = await fetch_game_positions_ordered(
+                session, game_id=game.id, user_id=game.user_id
+            )
+            flaw_result = classify_game_flaws(game, positions)
+        assert isinstance(flaw_result, list) and flaw_result, "fixture must produce flaws"
+
+        async with session_factory() as session:
+            for flaw in flaw_result:
+                row = flaw_record_to_row(user_id=game.user_id, game_id=game.id, flaw=flaw)
+                if flaw["ply"] == blunder_ply:
+                    # A pre-existing blob on the ply that must SURVIVE rederive
+                    # -- the tell for "diff/upsert ran", not delete-then-insert.
+                    row["allowed_pv_lines"] = [
+                        {"b": 1, "bm": None, "s": None, "sm": None, "su": ""}
+                    ]
+                    row["allowed_tactic_motif"] = 5
+                session.add(GameFlaw(**row))
+            session.add(
+                OpeningCacheRepairGame(game_id=game.id, user_id=game.user_id, status="pending")
+            )
+            # Satisfy run_rederive's stage gate: propagate_finished_at must be
+            # non-NULL. This progress row is a genuinely global singleton
+            # (id=1), so it is torn down in the finally block below.
+            now = datetime.now(timezone.utc)
+            session.add(
+                OpeningCacheRepairProgress(
+                    id=1,
+                    seed_finished_at=now,
+                    calibrate_finished_at=now,
+                    screen_finished_at=now,
+                    confirm_finished_at=now,
+                    propagate_finished_at=now,
+                )
+            )
+            await session.commit()
+
+        try:
+            await run_backfill(
+                db="dev",
+                user_id=None,
+                dry_run=False,
+                limit=None,
+                session_maker=session_factory,
+                from_repair_table=True,
+            )
+
+            async with session_factory() as session:
+                blunder_row = (
+                    await session.execute(
+                        select(GameFlaw)
+                        .where(GameFlaw.game_id == game.id, GameFlaw.ply == blunder_ply)
+                        .options(undefer(GameFlaw.allowed_pv_lines))
+                    )
+                ).scalar_one_or_none()
+                assert blunder_row is not None, "the blunder ply must survive rederive"
+                assert blunder_row.allowed_pv_lines == [
+                    {"b": 1, "bm": None, "s": None, "sm": None, "su": ""}
+                ], "a surviving flaw's blob must be preserved by omission, not wiped"
+                assert blunder_row.allowed_tactic_motif == 5
+
+                repair_game = await session.get(OpeningCacheRepairGame, game.id)
+                assert repair_game is not None
+                assert repair_game.status == "reclassified"
+        finally:
+            async with session_factory() as session:
+                await session.execute(delete(OpeningCacheRepairProgress))
+                await session.commit()

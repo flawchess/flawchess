@@ -214,7 +214,12 @@ def _engine_popen_kwargs() -> dict[str, Any]:
     return {}
 
 
-def _read_pool_size() -> int:
+def read_pool_size() -> int:
+    """Pool size from STOCKFISH_POOL_SIZE (default 1, floor 1, non-integer -> default).
+
+    Public so operator scripts that own their own EnginePool (Phase 220
+    opening_cache_repair.py) size it from the same env var the server uses.
+    """
     raw = os.environ.get(_POOL_SIZE_ENV)
     if raw is None or raw == "":
         return _DEFAULT_POOL_SIZE
@@ -230,7 +235,7 @@ async def start_engine() -> None:
     global _pool
     if _pool is not None:
         return
-    pool = EnginePool(size=_read_pool_size())
+    pool = EnginePool(size=read_pool_size())
     await pool.start()
     _pool = pool
     # Startup confirmation. Deliberately logged on SUCCESS, not only on failure:
