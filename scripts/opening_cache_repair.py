@@ -938,6 +938,16 @@ async def run_screen(
 # Pitfall 6 report sample size: enough to eyeball the shape of what got
 # deleted without dumping the whole orphan set to stdout.
 _ORPHAN_SAMPLE_SIZE: int = 20
+# asyncpg refuses a statement with more than 32,767 bind parameters. Prod's
+# first `orphans` run (2026-09-11) put all 352k still-pending hashes into one
+# `IN (...)` and died on exactly that; the dev smoke's 24k orphans never hit
+# the cap. Every hash-list predicate in this stage is chunked to this size.
+_ORPHAN_IN_CHUNK: int = 10_000
+
+
+def _chunked(items: Sequence[int], size: int) -> list[Sequence[int]]:
+    """Split `items` into consecutive slices of at most `size` elements."""
+    return [items[i : i + size] for i in range(0, len(items), size)]
 
 
 async def run_orphans(
@@ -995,20 +1005,22 @@ async def run_orphans(
                 print("orphans: no pending row(s) to consider.")
                 return
 
-            carrier_hashes = set(
-                (
-                    await session.execute(
-                        select(GamePosition.full_hash)
-                        .where(
-                            GamePosition.full_hash.in_(pending_hashes),
-                            GamePosition.ply.between(1, 20),
+            carrier_hashes: set[int] = set()
+            for chunk in _chunked(pending_hashes, _ORPHAN_IN_CHUNK):
+                carrier_hashes.update(
+                    (
+                        await session.execute(
+                            select(GamePosition.full_hash)
+                            .where(
+                                GamePosition.full_hash.in_(chunk),
+                                GamePosition.ply.between(1, 20),
+                            )
+                            .distinct()
                         )
-                        .distinct()
                     )
+                    .scalars()
+                    .all()
                 )
-                .scalars()
-                .all()
-            )
             orphan_hashes = [h for h in pending_hashes if h not in carrier_hashes]
             unscreened_with_carrier = len(pending_hashes) - len(orphan_hashes)
             print(
@@ -1033,14 +1045,15 @@ async def run_orphans(
                 print("orphans: --dry-run, nothing deleted." if dry_run else "orphans: done.")
                 return
 
-            await session.execute(
-                update(OpeningCacheAudit)
-                .where(OpeningCacheAudit.full_hash.in_(orphan_hashes))
-                .values(status="orphan")
-            )
-            await session.execute(
-                delete(OpeningPositionEval).where(OpeningPositionEval.full_hash.in_(orphan_hashes))
-            )
+            for chunk in _chunked(orphan_hashes, _ORPHAN_IN_CHUNK):
+                await session.execute(
+                    update(OpeningCacheAudit)
+                    .where(OpeningCacheAudit.full_hash.in_(chunk))
+                    .values(status="orphan")
+                )
+                await session.execute(
+                    delete(OpeningPositionEval).where(OpeningPositionEval.full_hash.in_(chunk))
+                )
             await session.commit()
             print(f"orphans: deleted {len(orphan_hashes)} orphaned cache row(s).")
     finally:
