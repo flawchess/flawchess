@@ -641,13 +641,13 @@
     {
       "number": "220",
       "name": "Opening Eval Cache Repair & Two-Source Confirmation (SEED-164, standalone)",
-      "status": "pending"
+      "status": "complete"
     }
   ],
   "next": {
-    "command": "/gsd:progress --next",
-    "label": "Advance to the next step",
-    "reason": "Phase 220 of 2 · executing"
+    "command": "/gsd:progress",
+    "label": "Show progress",
+    "reason": "Unsure of state — showing progress"
   },
-  "updated_at": "2026-09-11T15:27:06.509Z"
+  "updated_at": "2026-09-11T20:35:57.704Z"
 }

@@ -184,7 +184,7 @@
 | 217. Frontend Major Bumps — Vitest 5 / jsdom 30 + onnxruntime-web 1.29 (SEED-162, v2.16) | 2/2 | Complete    | 2026-09-05 |
 | 218. Backend onnxruntime Parity Spike → Python 3.14 Chain (SEED-162, v2.16) | 3/3 | Complete    | 2026-09-05 |
 | 219. Maia Chart Latency — ORT 1.27 Re-pin, Cross-Origin Isolation & Progressive Ladder Paint (standalone) | 3/3 | Complete    | 2026-09-06 |
-| 220. Opening Eval Cache Repair & Two-Source Confirmation (SEED-164, standalone) | 0/0 | Not started | — |
+| 220. Opening Eval Cache Repair & Two-Source Confirmation (SEED-164, standalone) | 8/8 | Complete    | 2026-09-11 |
 
 ## Active Phases
 
@@ -453,7 +453,7 @@ misalignment mechanism (only if the CACHEFIX-10 sample shows it hit plies > 20 a
 **Depends on:** none (standalone; builds on the Phase 214 `eval_drain.py` / `eval_apply.py`
 decomposition and the Phase 188 `db_url_for_target` script pattern)
 
-**Plans:** 8 plans
+**Plans:** 8/8 plans complete
 
 Plans:
 
