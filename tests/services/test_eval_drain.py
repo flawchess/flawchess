@@ -993,6 +993,18 @@ _CACHE_HASH_TERMINAL: int = 9_900_000_004  # terminal donor hash — must NOT be
 _CACHE_HASH_DEEP: int = 9_900_000_005  # ply > DEDUP_MAX_PLY — must NOT be cached
 _CACHE_HASH_MISS: int = 9_900_000_099  # a hash that is NOT in the cache
 
+# Phase 220 CACHEFIX-08: additional hashes for the two-source confirmation
+# write-path tests (promote/replace/self-promotion/immutability).
+_CACHE_HASH_PROMOTE: int = 9_900_000_101
+_CACHE_HASH_BOUNDARY: int = 9_900_000_102
+_CACHE_HASH_DISAGREE: int = 9_900_000_103
+_CACHE_HASH_DISAGREE_2: int = 9_900_000_104
+_CACHE_HASH_CONFIRMED: int = 9_900_000_105
+_CACHE_HASH_SELF: int = 9_900_000_106
+_SOURCE_GAME_ORIGINAL: int = 88_800_001  # the candidate's original source_game_id
+_SOURCE_GAME_SECOND: int = 88_800_002  # a genuinely different second game
+_SOURCE_GAME_THIRD: int = 88_800_003  # a third, also-different game (disagree_second)
+
 
 async def _seed_opening_eval_cache(
     session_maker: async_sessionmaker[AsyncSession],
@@ -1034,6 +1046,66 @@ async def _delete_opening_eval_rows(
         await session.commit()
 
 
+async def _seed_opening_eval_cache_full(
+    session_maker: async_sessionmaker[AsyncSession],
+    full_hash: int,
+    *,
+    eval_cp: int | None = None,
+    eval_mate: int | None = None,
+    best_move: str | None = None,
+    pv: str | None = None,
+    confirmed: bool = False,
+    n_sources: int = 1,
+    disagreements: int = 0,
+    source_game_id: int | None = None,
+) -> None:
+    """Phase 220 CACHEFIX-08: insert one opening_position_eval row with the full
+    provenance-column set and commit. ON CONFLICT DO NOTHING (safe to call
+    repeatedly with the same full_hash)."""
+    async with session_maker() as session:
+        await session.execute(
+            sa.text(
+                "INSERT INTO opening_position_eval"
+                " (full_hash, eval_cp, eval_mate, best_move, pv, confirmed,"
+                "  n_sources, disagreements, source_game_id)"
+                " VALUES (:fh, :cp, :mate, :bm, :pv, :confirmed, :n_sources,"
+                "  :disagreements, :source_game_id)"
+                " ON CONFLICT (full_hash) DO NOTHING"
+            ),
+            {
+                "fh": full_hash,
+                "cp": eval_cp,
+                "mate": eval_mate,
+                "bm": best_move,
+                "pv": pv,
+                "confirmed": confirmed,
+                "n_sources": n_sources,
+                "disagreements": disagreements,
+                "source_game_id": source_game_id,
+            },
+        )
+        await session.commit()
+
+
+async def _fetch_opening_eval_row(
+    session_maker: async_sessionmaker[AsyncSession],
+    full_hash: int,
+) -> sa.Row[Any] | None:
+    """Phase 220 CACHEFIX-08: read back one opening_position_eval row's full
+    provenance-column set for assertion."""
+    async with session_maker() as session:
+        return (
+            await session.execute(
+                sa.text(
+                    "SELECT eval_cp, eval_mate, best_move, pv, confirmed, n_sources,"
+                    " disagreements, source_game_id, written_at, confirmed_at"
+                    " FROM opening_position_eval WHERE full_hash = :fh"
+                ),
+                {"fh": full_hash},
+            )
+        ).one_or_none()
+
+
 class TestOpeningEvalCacheRead:
     """SEED-053 / D-123.1-05: _fetch_dedup_evals reads the opening_position_eval cache.
 
@@ -1047,16 +1119,32 @@ class TestOpeningEvalCacheRead:
         self,
         drain_test_session_maker: async_sessionmaker[AsyncSession],
     ) -> None:
-        """_fetch_dedup_evals returns cache contents for present hashes; absent hashes omitted."""
+        """_fetch_dedup_evals returns cache contents for present hashes; absent hashes omitted.
+
+        Phase 220 CACHEFIX-08: seeds CONFIRMED rows -- _fetch_dedup_evals now filters
+        to confirmed=true, so a plain candidate (the pre-CACHEFIX-08 seeding shape)
+        would no longer be returned here. This test is about the read/column mapping,
+        not the confirmation scheme (covered by TestOpeningEvalCacheWrite)."""
         from app.services.eval_drain import _fetch_dedup_evals
 
         # Seed: hash A has a cp eval + best_move; hash B has a mate-only eval.
-        seed_rows: list[tuple[int, int | None, int | None, str | None]] = [
-            (_CACHE_HASH_A, 42, None, "e2e4"),
-            (_CACHE_HASH_B, None, 3, "d1h5"),
-        ]
         cleanup_hashes = [_CACHE_HASH_A, _CACHE_HASH_B]
-        await _seed_opening_eval_cache(drain_test_session_maker, seed_rows)
+        await _seed_opening_eval_cache_full(
+            drain_test_session_maker,
+            _CACHE_HASH_A,
+            eval_cp=42,
+            best_move="e2e4",
+            confirmed=True,
+            n_sources=2,
+        )
+        await _seed_opening_eval_cache_full(
+            drain_test_session_maker,
+            _CACHE_HASH_B,
+            eval_mate=3,
+            best_move="d1h5",
+            confirmed=True,
+            n_sources=2,
+        )
         try:
             # Request hash A, hash B, and a hash that is not in the cache (_CACHE_HASH_MISS).
             request_hashes = [_CACHE_HASH_A, _CACHE_HASH_B, _CACHE_HASH_MISS]
@@ -1091,14 +1179,18 @@ class TestOpeningEvalCacheRead:
 
 
 class TestOpeningEvalCacheWrite:
-    """SEED-053 / D-123.1-04: _upsert_opening_cache fills the cache from engine results.
+    """SEED-053 / D-123.1-04, extended by Phase 220 CACHEFIX-08 (D-11/D-12/D-13):
+    _upsert_opening_cache writes through the two-source confirmation path.
 
     Write-population test: construct engine_targets and engine_result_map representing
     a mix of cacheable positions, excluded positions (terminal, deep ply, null eval),
-    and verify the correct subset lands in opening_position_eval.
+    and verify the correct subset lands in opening_position_eval as candidates.
 
-    Idempotency test: calling _upsert_opening_cache a second time (or pre-seeding the
-    table with a conflicting value for the same hash) leaves the original row unchanged.
+    Candidate/promote/replace tests (Phase 220): a second agreeing source from a
+    DIFFERENT game promotes; a disagreeing one replaces and bumps disagreements; a
+    result from the SAME source game neither promotes nor disagrees (D-13); a
+    confirmed row is immutable except for the pv self-heal; disagreements reaching
+    exactly 2 fires Sentry once (D-12); an empty target list is a true no-op.
     """
 
     async def _make_engine_targets_and_results(
@@ -1186,7 +1278,8 @@ class TestOpeningEvalCacheWrite:
         self,
         drain_test_session_maker: async_sessionmaker[AsyncSession],
     ) -> None:
-        """Freshly-computed opening misses land in the cache; excluded targets do not."""
+        """Freshly-computed opening misses land in the cache as CANDIDATES; excluded
+        targets do not (Phase 220 CACHEFIX-08: confirmed=false, n_sources=1)."""
         from app.services.eval_drain import _upsert_opening_cache
 
         engine_targets, engine_result_map = await self._make_engine_targets_and_results()
@@ -1202,7 +1295,9 @@ class TestOpeningEvalCacheWrite:
 
         try:
             async with drain_test_session_maker() as session:
-                await _upsert_opening_cache(session, engine_targets, engine_result_map)
+                await _upsert_opening_cache(
+                    session, engine_targets, engine_result_map, _SOURCE_GAME_ORIGINAL
+                )
                 await session.commit()
 
             # Verify inclusions — hash A and B must now be in the cache.
@@ -1216,20 +1311,28 @@ class TestOpeningEvalCacheWrite:
                             OpeningPositionEval.eval_cp,
                             OpeningPositionEval.eval_mate,
                             OpeningPositionEval.best_move,
+                            OpeningPositionEval.confirmed,
+                            OpeningPositionEval.n_sources,
+                            OpeningPositionEval.source_game_id,
                         ).where(OpeningPositionEval.full_hash.in_(cleanup_hashes))
                     )
                 ).all()
-            cached = {r[0]: (r[1], r[2], r[3]) for r in rows}
+            cached = {r[0]: (r[1], r[2], r[3], r[4], r[5], r[6]) for r in rows}
 
-            # Included: fresh engine opening misses
+            # Included: fresh engine opening misses, as unconfirmed candidates.
             assert _CACHE_HASH_A in cached, "hash A (ply=2, cp eval) must be cached"
-            assert cached[_CACHE_HASH_A] == (77, None, "e2e4"), (
+            assert cached[_CACHE_HASH_A] == (77, None, "e2e4", False, 1, _SOURCE_GAME_ORIGINAL), (
                 f"hash A values wrong: {cached[_CACHE_HASH_A]}"
             )
             assert _CACHE_HASH_B in cached, "hash B (ply=4, mate eval) must be cached"
-            assert cached[_CACHE_HASH_B] == (None, 2, "d1h5"), (
-                f"hash B values wrong: {cached[_CACHE_HASH_B]}"
-            )
+            assert cached[_CACHE_HASH_B] == (
+                None,
+                2,
+                "d1h5",
+                False,
+                1,
+                _SOURCE_GAME_ORIGINAL,
+            ), f"hash B values wrong: {cached[_CACHE_HASH_B]}"
 
             # Excluded: null eval, deep ply, terminal donor
             assert _CACHE_HASH_C not in cached, "null-eval hash must NOT be cached"
@@ -1239,67 +1342,63 @@ class TestOpeningEvalCacheWrite:
         finally:
             await _delete_opening_eval_rows(drain_test_session_maker, cleanup_hashes)
 
-    async def test_idempotency_first_write_wins(
+    async def test_disagree_replaces_unconfirmed_candidate(
         self,
         drain_test_session_maker: async_sessionmaker[AsyncSession],
     ) -> None:
-        """ON CONFLICT DO NOTHING: a second upsert leaves the original cached row unchanged."""
+        """Phase 220 CACHEFIX-08 replaces first-write-wins: a second, disagreeing
+        result from a DIFFERENT game replaces the candidate's value wholesale and
+        bumps disagreements — it stays unconfirmed (n_sources=1). (Formerly
+        test_idempotency_first_write_wins, which pinned the pre-CACHEFIX-08
+        first-write-wins semantics this test now replaces.)"""
         from app.services.eval_drain import _upsert_opening_cache
-        from app.models.opening_position_eval import OpeningPositionEval
         import chess
 
         from app.services.eval_drain import _FullPlyEvalTarget
 
         board = chess.Board()
-        # Pre-seed hash A with the original value.
+        # Pre-seed hash A with the original candidate value (legacy row: no
+        # recorded source_game_id).
         original_value: tuple[int, None, str] = (42, None, "e2e4")
         await _seed_opening_eval_cache(
             drain_test_session_maker,
             [(_CACHE_HASH_A, original_value[0], original_value[1], original_value[2])],
         )
 
-        # Now run _upsert_opening_cache with a DIFFERENT value for the same hash.
-        conflicting_cp = 99
-        conflicting_bm = "a2a4"
-        t_conflict = _FullPlyEvalTarget(
-            game_id=99999,
+        # A genuinely different source (_SOURCE_GAME_SECOND) disagrees widely
+        # (42cp vs 99cp — well beyond OPENING_CACHE_AGREE_MAX_SCORE_DELTA).
+        disagreeing_cp = 99
+        disagreeing_bm = "a2a4"
+        t_disagree = _FullPlyEvalTarget(
+            game_id=_SOURCE_GAME_SECOND,
             ply=2,
             full_hash=_CACHE_HASH_A,
             board=board,
             eval_cp=None,
             eval_mate=None,
         )
-        conflict_result_map: dict[int, tuple[int | None, int | None, str | None, str | None]] = {
-            2: (conflicting_cp, None, conflicting_bm, None),
+        disagree_result_map: dict[int, tuple[int | None, int | None, str | None, str | None]] = {
+            2: (disagreeing_cp, None, disagreeing_bm, None),
         }
 
         try:
             async with drain_test_session_maker() as session:
-                await _upsert_opening_cache(session, [t_conflict], conflict_result_map)
+                await _upsert_opening_cache(
+                    session, [t_disagree], disagree_result_map, _SOURCE_GAME_SECOND
+                )
                 await session.commit()
 
-            # Original value must be unchanged.
-            async with drain_test_session_maker() as session:
-                row = (
-                    await session.execute(
-                        select(
-                            OpeningPositionEval.eval_cp,
-                            OpeningPositionEval.eval_mate,
-                            OpeningPositionEval.best_move,
-                        ).where(OpeningPositionEval.full_hash == _CACHE_HASH_A)
-                    )
-                ).one_or_none()
-
-            assert row is not None, "cache row must still exist after conflict"
-            assert row[0] == original_value[0], (
-                f"eval_cp changed: expected {original_value[0]}, got {row[0]}"
+            row = await _fetch_opening_eval_row(drain_test_session_maker, _CACHE_HASH_A)
+            assert row is not None, "cache row must still exist after the disagreement"
+            assert row.eval_cp == disagreeing_cp, (
+                f"eval_cp must be REPLACED (CACHEFIX-08), got {row.eval_cp}"
             )
-            assert row[1] == original_value[1], (
-                f"eval_mate changed: expected {original_value[1]}, got {row[1]}"
-            )
-            assert row[2] == original_value[2], (
-                f"best_move changed: expected {original_value[2]!r}, got {row[2]!r}"
-            )
+            assert row.best_move == disagreeing_bm
+            assert row.confirmed is False, "a lone disagreement must not confirm the row"
+            assert row.n_sources == 1
+            assert row.disagreements == 1
+            assert row.source_game_id == _SOURCE_GAME_SECOND
+            assert row.written_at is not None
         finally:
             await _delete_opening_eval_rows(drain_test_session_maker, [_CACHE_HASH_A])
 
@@ -1347,7 +1446,9 @@ class TestOpeningEvalCacheWrite:
         try:
             async with drain_test_session_maker() as session:
                 # Must not raise CardinalityViolationError.
-                await _upsert_opening_cache(session, [t_first, t_second], result_map)
+                await _upsert_opening_cache(
+                    session, [t_first, t_second], result_map, _SOURCE_GAME_ORIGINAL
+                )
                 await session.commit()
 
             async with drain_test_session_maker() as session:
@@ -1366,6 +1467,269 @@ class TestOpeningEvalCacheWrite:
             assert row[2] == "e2e4 e7e5", f"dedup must prefer the pv-bearing row, got pv={row[2]!r}"
         finally:
             await _delete_opening_eval_rows(drain_test_session_maker, [_CACHE_HASH_A])
+
+    async def test_empty_targets_is_noop(
+        self,
+        drain_test_session_maker: async_sessionmaker[AsyncSession],
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """An empty target list writes nothing -- no SQL is emitted, not even the
+        existing-rows SELECT (must_haves: 'writes nothing and touches no
+        provenance column')."""
+        from app.services.eval_drain import _upsert_opening_cache
+
+        async with drain_test_session_maker() as session:
+            execute_spy = AsyncMock(wraps=session.execute)
+            monkeypatch.setattr(session, "execute", execute_spy)
+            await _upsert_opening_cache(session, [], {}, _SOURCE_GAME_ORIGINAL)
+            execute_spy.assert_not_called()
+
+    async def test_promote_confirms_on_agreement(
+        self,
+        drain_test_session_maker: async_sessionmaker[AsyncSession],
+    ) -> None:
+        """Second, agreeing result from a DIFFERENT game promotes the candidate:
+        confirmed=true, n_sources=2, confirmed_at set, eval UNCHANGED (the
+        candidate's own value stays the confirmed one), the longer pv kept."""
+        from app.services.eval_drain import _upsert_opening_cache, _FullPlyEvalTarget
+        import chess
+
+        await _delete_opening_eval_rows(drain_test_session_maker, [_CACHE_HASH_PROMOTE])
+        await _seed_opening_eval_cache_full(
+            drain_test_session_maker,
+            _CACHE_HASH_PROMOTE,
+            eval_cp=50,
+            best_move="e2e4",
+            pv=None,
+            confirmed=False,
+            n_sources=1,
+            disagreements=0,
+            source_game_id=_SOURCE_GAME_ORIGINAL,
+        )
+        board = chess.Board()
+        target = _FullPlyEvalTarget(
+            game_id=_SOURCE_GAME_SECOND,
+            ply=2,
+            full_hash=_CACHE_HASH_PROMOTE,
+            board=board,
+            eval_cp=None,
+            eval_mate=None,
+        )
+        # cp=52 -- a tiny delta, well within OPENING_CACHE_AGREE_MAX_SCORE_DELTA.
+        result_map: dict[int, tuple[int | None, int | None, str | None, str | None]] = {
+            2: (52, None, "e2e4", "e2e4 e7e5"),
+        }
+
+        try:
+            async with drain_test_session_maker() as session:
+                await _upsert_opening_cache(session, [target], result_map, _SOURCE_GAME_SECOND)
+                await session.commit()
+
+            row = await _fetch_opening_eval_row(drain_test_session_maker, _CACHE_HASH_PROMOTE)
+            assert row is not None
+            assert row.confirmed is True
+            assert row.n_sources == 2
+            assert row.confirmed_at is not None
+            assert row.eval_cp == 50, "promotion must NOT change the candidate's own value"
+            assert row.pv == "e2e4 e7e5", "the only (and thus longer) pv must be kept"
+        finally:
+            await _delete_opening_eval_rows(drain_test_session_maker, [_CACHE_HASH_PROMOTE])
+
+    async def test_agree_boundary_promotes_exactly_at_constant(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """D-11: the comparison is `<=` -- a delta exactly at
+        OPENING_CACHE_AGREE_MAX_SCORE_DELTA promotes; the smallest representable
+        float step above it replaces. Tested against _cache_values_agree directly
+        with the sigmoid conversion monkeypatched to fixed scores, since an exact
+        expected-score delta is not reliably reachable from integer centipawn
+        inputs through the real sigmoid."""
+        import math
+
+        import app.services.eval_drain as eval_drain_module
+
+        boundary = eval_drain_module.OPENING_CACHE_AGREE_MAX_SCORE_DELTA
+
+        # existing_score pinned to 0.0 so abs(new - existing) == new EXACTLY (no
+        # floating-point rounding from the subtraction) -- 0.5 + boundary - 0.5
+        # is NOT bit-identical to boundary in IEEE 754, which would make this
+        # test flaky rather than a true boundary probe.
+        def _score_at_boundary(eval_cp: int, user_color: str) -> float:
+            return 0.0 if eval_cp == 0 else boundary
+
+        monkeypatch.setattr(eval_drain_module, "eval_cp_to_expected_score", _score_at_boundary)
+        assert eval_drain_module._cache_values_agree(0, None, 1, None) is True, (
+            "a delta exactly at the constant must promote (<=, not <)"
+        )
+
+        def _score_over_boundary(eval_cp: int, user_color: str) -> float:
+            return 0.0 if eval_cp == 0 else math.nextafter(boundary, math.inf)
+
+        monkeypatch.setattr(eval_drain_module, "eval_cp_to_expected_score", _score_over_boundary)
+        assert eval_drain_module._cache_values_agree(0, None, 1, None) is False, (
+            "the smallest float step above the constant must NOT promote"
+        )
+
+    async def test_disagree_second_fires_sentry_at_two(
+        self,
+        drain_test_session_maker: async_sessionmaker[AsyncSession],
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """D-12: Sentry fires exactly once, on the write that takes disagreements
+        from 1 to 2 -- two CONSECUTIVE misses on the same position, not the first
+        one (which is the expected ~1% p99-floor rate of an honest disagreement)."""
+        import chess
+        from unittest.mock import MagicMock
+
+        import app.services.eval_drain as eval_drain_module
+        from app.services.eval_drain import _upsert_opening_cache, _FullPlyEvalTarget
+
+        await _delete_opening_eval_rows(drain_test_session_maker, [_CACHE_HASH_DISAGREE_2])
+        await _seed_opening_eval_cache_full(
+            drain_test_session_maker,
+            _CACHE_HASH_DISAGREE_2,
+            eval_cp=100,
+            best_move="e2e4",
+            confirmed=False,
+            n_sources=1,
+            disagreements=1,  # one honest disagreement already happened
+            source_game_id=_SOURCE_GAME_ORIGINAL,
+        )
+        board = chess.Board()
+        target = _FullPlyEvalTarget(
+            game_id=_SOURCE_GAME_THIRD,
+            ply=2,
+            full_hash=_CACHE_HASH_DISAGREE_2,
+            board=board,
+            eval_cp=None,
+            eval_mate=None,
+        )
+        result_map: dict[int, tuple[int | None, int | None, str | None, str | None]] = {
+            2: (900, None, "a2a4", None),
+        }
+
+        capture_mock = MagicMock()
+        monkeypatch.setattr(eval_drain_module.sentry_sdk, "capture_message", capture_mock)
+
+        try:
+            async with drain_test_session_maker() as session:
+                await _upsert_opening_cache(session, [target], result_map, _SOURCE_GAME_THIRD)
+                await session.commit()
+
+            row = await _fetch_opening_eval_row(drain_test_session_maker, _CACHE_HASH_DISAGREE_2)
+            assert row is not None
+            assert row.disagreements == 2, f"disagreements should reach 2, got {row.disagreements}"
+            assert row.confirmed is False
+            capture_mock.assert_called_once()
+            message = capture_mock.call_args.args[0]
+            assert "disagreed" in message, f"unexpected Sentry message: {message!r}"
+        finally:
+            await _delete_opening_eval_rows(drain_test_session_maker, [_CACHE_HASH_DISAGREE_2])
+
+    async def test_confirmed_immutable_except_pv_heal(
+        self,
+        drain_test_session_maker: async_sessionmaker[AsyncSession],
+    ) -> None:
+        """A write against a confirmed=true row changes nothing except the pv
+        self-heal when pv IS NULL -- the one permitted mutation of a confirmed row."""
+        from app.services.eval_drain import _upsert_opening_cache, _FullPlyEvalTarget
+        import chess
+
+        await _delete_opening_eval_rows(drain_test_session_maker, [_CACHE_HASH_CONFIRMED])
+        await _seed_opening_eval_cache_full(
+            drain_test_session_maker,
+            _CACHE_HASH_CONFIRMED,
+            eval_cp=200,
+            best_move="e2e4",
+            pv=None,
+            confirmed=True,
+            n_sources=2,
+            disagreements=0,
+            source_game_id=_SOURCE_GAME_ORIGINAL,
+        )
+        board = chess.Board()
+        target = _FullPlyEvalTarget(
+            game_id=_SOURCE_GAME_SECOND,
+            ply=2,
+            full_hash=_CACHE_HASH_CONFIRMED,
+            board=board,
+            eval_cp=None,
+            eval_mate=None,
+        )
+        # A wildly disagreeing value -- must be entirely ignored except the pv heal.
+        result_map: dict[int, tuple[int | None, int | None, str | None, str | None]] = {
+            2: (999, None, "a7a8q", "a7a8q h7h6"),
+        }
+
+        try:
+            async with drain_test_session_maker() as session:
+                await _upsert_opening_cache(session, [target], result_map, _SOURCE_GAME_SECOND)
+                await session.commit()
+
+            row = await _fetch_opening_eval_row(drain_test_session_maker, _CACHE_HASH_CONFIRMED)
+            assert row is not None
+            assert row.eval_cp == 200, "confirmed row's eval must not change"
+            assert row.best_move == "e2e4", "confirmed row's best_move must not change"
+            assert row.confirmed is True
+            assert row.n_sources == 2
+            assert row.disagreements == 0, (
+                "a write against a confirmed row must not bump disagreements"
+            )
+            assert row.pv == "a7a8q h7h6", "a NULL pv must self-heal even on a confirmed row"
+        finally:
+            await _delete_opening_eval_rows(drain_test_session_maker, [_CACHE_HASH_CONFIRMED])
+
+    async def test_self_promotion_guarded_by_source_game_id(
+        self,
+        drain_test_session_maker: async_sessionmaker[AsyncSession],
+    ) -> None:
+        """D-13: a result whose game_id equals the candidate's own source_game_id
+        (a re-drained or resubmitted game) neither promotes nor counts as a
+        disagreement -- one game can never confirm itself."""
+        from app.services.eval_drain import _upsert_opening_cache, _FullPlyEvalTarget
+        import chess
+
+        await _delete_opening_eval_rows(drain_test_session_maker, [_CACHE_HASH_SELF])
+        await _seed_opening_eval_cache_full(
+            drain_test_session_maker,
+            _CACHE_HASH_SELF,
+            eval_cp=50,
+            best_move="e2e4",
+            pv=None,
+            confirmed=False,
+            n_sources=1,
+            disagreements=0,
+            source_game_id=_SOURCE_GAME_ORIGINAL,
+        )
+        board = chess.Board()
+        # Same source game re-evaluating with a wildly disagreeing value + a pv.
+        target = _FullPlyEvalTarget(
+            game_id=_SOURCE_GAME_ORIGINAL,
+            ply=2,
+            full_hash=_CACHE_HASH_SELF,
+            board=board,
+            eval_cp=None,
+            eval_mate=None,
+        )
+        result_map: dict[int, tuple[int | None, int | None, str | None, str | None]] = {
+            2: (900, None, "a2a4", "a2a4 b7b6"),
+        }
+
+        try:
+            async with drain_test_session_maker() as session:
+                await _upsert_opening_cache(session, [target], result_map, _SOURCE_GAME_ORIGINAL)
+                await session.commit()
+
+            row = await _fetch_opening_eval_row(drain_test_session_maker, _CACHE_HASH_SELF)
+            assert row is not None
+            assert row.confirmed is False, "same-source write must never self-promote"
+            assert row.n_sources == 1
+            assert row.disagreements == 0, "same-source write must never count as a disagreement"
+            assert row.eval_cp == 50, "same-source write must not replace the value either"
+            assert row.pv == "a2a4 b7b6", "pv self-heal still applies to a same-source (skip) row"
+        finally:
+            await _delete_opening_eval_rows(drain_test_session_maker, [_CACHE_HASH_SELF])
 
 
 # ─── Phase 145 Plan 03: _build_flaw_blob_lease_positions tests ────────────────

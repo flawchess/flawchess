@@ -240,6 +240,28 @@ async def _delete_opening_eval_rows(
         await session.commit()
 
 
+async def _confirm_cache_row(
+    session_maker: async_sessionmaker[AsyncSession],
+    full_hash: int,
+) -> None:
+    """Phase 220 CACHEFIX-08: OPENING_CACHE_BACKFILL_SQL deliberately produces a
+    CANDIDATE row (confirmed=false, one source), never a confirmed one -- a
+    single backfill donor is exactly the kind of single-source write the
+    two-source confirmation scheme exists to distrust. These gate tests pin
+    the backfill's SELECT/JOIN/WHERE predicates, not the confirmation scheme,
+    so they confirm the seeded row explicitly to keep asserting what they were
+    written to assert (a transplant/inclusion outcome)."""
+    async with session_maker() as session:
+        await session.execute(
+            sa.text(
+                "UPDATE opening_position_eval SET confirmed = true, n_sources = 2"
+                " WHERE full_hash = :fh"
+            ),
+            {"fh": full_hash},
+        )
+        await session.commit()
+
+
 # ─── EVAL-01: all-ply collector ───────────────────────────────────────────────
 
 
@@ -374,6 +396,10 @@ class TestDedupHitsParity:
         async with full_drain_session_maker() as session:
             await session.execute(OPENING_CACHE_BACKFILL_SQL, {"dedup_max_ply": DEDUP_MAX_PLY})
             await session.commit()
+        # Phase 220 CACHEFIX-08: the backfill deliberately produces a candidate
+        # (confirmed=false) -- confirm it explicitly so this test still pins the
+        # gate's SELECT/JOIN/WHERE predicates rather than the confirmation scheme.
+        await _confirm_cache_row(full_drain_session_maker, target_hash)
         try:
             async with full_drain_session_maker() as session:
                 result = await _fetch_dedup_evals(session, [target_hash])
@@ -386,6 +412,75 @@ class TestDedupHitsParity:
             # OPENING_CACHE_BACKFILL_SQL does not populate pv (SEED-076 follow-up scope
             # is _upsert_opening_cache's incremental write path, not the one-time backfill).
             assert result[target_hash] == (42, None, "g1f3", None)
+        finally:
+            await _delete_games(full_drain_session_maker, [source_game_id])
+            await _delete_opening_eval_rows(
+                full_drain_session_maker, [target_hash, predecessor_hash]
+            )
+
+    async def test_confirmed_only_candidate_not_returned_by_fetch_dedup_evals(
+        self,
+        full_drain_test_user: int,
+        full_drain_session_maker: async_sessionmaker[AsyncSession],
+    ) -> None:
+        """Phase 220 CACHEFIX-08 reverse of test_dedup_hits_parity_source: a row the
+        backfill gate inserted and NOBODY confirmed is a candidate
+        (confirmed=false), and `_fetch_dedup_evals` must NOT return it -- a
+        candidate is invisible to the transplant path until a second,
+        independent source agrees with it."""
+        from app.models.game_position import DEDUP_MAX_PLY
+        from app.services.eval_drain import (
+            OPENING_CACHE_BACKFILL_SQL,
+            _fetch_dedup_evals,
+        )
+
+        now = datetime.now(timezone.utc)
+        source_game_id = await _insert_game(
+            full_drain_session_maker,
+            full_drain_test_user,
+            full_evals_completed_at=now,
+            evals_completed_at=now,
+        )
+        target_hash = 0xDEAD_BEEF_00A1
+        predecessor_hash = 0xDEAD_BEEF_00AF
+        await _insert_game_positions(
+            full_drain_session_maker,
+            full_drain_test_user,
+            source_game_id,
+            [
+                {"ply": 4, "full_hash": predecessor_hash, "eval_cp": 42, "eval_mate": None},
+                {
+                    "ply": 5,
+                    "full_hash": target_hash,
+                    "eval_cp": 99,
+                    "eval_mate": None,
+                    "best_move": "g1f3",
+                },
+            ],
+        )
+        await _delete_opening_eval_rows(full_drain_session_maker, [target_hash, predecessor_hash])
+        async with full_drain_session_maker() as session:
+            await session.execute(OPENING_CACHE_BACKFILL_SQL, {"dedup_max_ply": DEDUP_MAX_PLY})
+            await session.commit()
+        # Deliberately NOT confirmed -- this is the reverse-direction assertion.
+        try:
+            async with full_drain_session_maker() as session:
+                row = (
+                    await session.execute(
+                        sa.text(
+                            "SELECT confirmed FROM opening_position_eval WHERE full_hash = :fh"
+                        ),
+                        {"fh": target_hash},
+                    )
+                ).one_or_none()
+                assert row is not None, "the backfill must still insert the candidate row"
+                assert row[0] is False, "a fresh backfill row must be a candidate, not confirmed"
+
+                result = await _fetch_dedup_evals(session, [target_hash])
+            assert target_hash not in result, (
+                "An unconfirmed candidate must NOT be returned by _fetch_dedup_evals "
+                "(Phase 220 CACHEFIX-08 T-220-18 — candidates are invisible to transplant)."
+            )
         finally:
             await _delete_games(full_drain_session_maker, [source_game_id])
             await _delete_opening_eval_rows(
@@ -1134,6 +1229,9 @@ class TestWr02Repointed:
         async with full_drain_session_maker() as session:
             await session.execute(OPENING_CACHE_BACKFILL_SQL, {"dedup_max_ply": DEDUP_MAX_PLY})
             await session.commit()
+        # Phase 220 CACHEFIX-08: confirm the seeded candidate -- see
+        # _confirm_cache_row's docstring for why.
+        await _confirm_cache_row(full_drain_session_maker, target_hash)
         try:
             async with full_drain_session_maker() as session:
                 result = await _fetch_dedup_evals(session, [target_hash])
@@ -1392,6 +1490,9 @@ class TestBestMove:
         async with full_drain_session_maker() as session:
             await session.execute(OPENING_CACHE_BACKFILL_SQL, {"dedup_max_ply": DEDUP_MAX_PLY})
             await session.commit()
+        # Phase 220 CACHEFIX-08: confirm the seeded candidate -- see
+        # _confirm_cache_row's docstring for why.
+        await _confirm_cache_row(full_drain_session_maker, dedup_hash)
 
         drain_module = _patch_drain_for_tick_tests(
             monkeypatch, full_drain_session_maker, target_game_id, full_drain_test_user_117

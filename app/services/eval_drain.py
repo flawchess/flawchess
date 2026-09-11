@@ -36,6 +36,7 @@ Quick 260521-d6o follow-up:
 import asyncio
 import logging
 from collections.abc import Sequence
+from dataclasses import dataclass, field
 
 import asyncpg
 import sentry_sdk
@@ -49,6 +50,7 @@ from app.models.eval_jobs import TIER_BESTMOVE_BACKFILL
 from app.models.game import Game
 from app.models.game_position import DEDUP_MAX_PLY, GamePosition
 from app.models.import_job import ImportJob
+from app.models.opening_position_eval import OpeningPositionEval
 from app.repositories.game_repository import users_with_zero_pending
 from app.schemas.eval_remote import MAX_SUBMIT_EVALS
 from app.services import engine as engine_service
@@ -101,7 +103,11 @@ from app.services.eval_entry import (
     _mark_evals_completed,
 )
 from app.services.eval_queue_service import WORKER_ID_SERVER_POOL, claim_eval_job
-from app.services.eval_utils import derive_is_lichess_eval_game
+from app.services.eval_utils import (
+    derive_is_lichess_eval_game,
+    eval_cp_to_expected_score,
+    eval_mate_to_expected_score,
+)
 from app.services.user_benchmark_percentiles_service import compute_stage_b
 
 logger = logging.getLogger(__name__)
@@ -188,14 +194,21 @@ _GAME_ENDING_PLY_OFFSET: int = 1
 # deterministic: newest-evaluated donor wins, and at equal timestamps a
 # pv-bearing donor wins over a pv-less one (`false` sorts before `true`). Do not
 # simplify this ordering away — it is the fix, not incidental tidiness.
+#
+# Phase 220 CACHEFIX-08: the INSERT gains an explicit `confirmed = false` — any
+# backfilled row is a candidate (one source: this backfill's own donor row), never
+# confirmed. Only the release-2 migration's status-derived marking or a genuine
+# second independent game can confirm a row; the backfill itself is exactly the
+# kind of single-source write that started the poisoning this phase fixes.
 OPENING_CACHE_BACKFILL_SQL: TextClause = text(
     """
-    INSERT INTO opening_position_eval (full_hash, eval_cp, eval_mate, best_move)
+    INSERT INTO opening_position_eval (full_hash, eval_cp, eval_mate, best_move, confirmed)
     SELECT DISTINCT ON (nxt.full_hash)
            nxt.full_hash,
            cur.eval_cp,
            cur.eval_mate,
-           nxt.best_move
+           nxt.best_move,
+           false
     FROM   game_positions cur
     JOIN   game_positions nxt
            ON  nxt.game_id = cur.game_id
@@ -210,6 +223,50 @@ OPENING_CACHE_BACKFILL_SQL: TextClause = text(
     ON CONFLICT (full_hash) DO NOTHING
     """
 )
+
+# ─── Phase 220 CACHEFIX-08 (D-11/D-12/D-13): two-source confirmation constants ───
+
+# D-11: two-source agreement tolerance in EXPECTED-SCORE units, never a fixed
+# centipawn cut — a fixed cp cut is wrong twice over (100cp at +600 changes
+# nothing while 55cp at equality is an inaccuracy boundary), the same argument
+# SEED-164 makes for the repair's own thresholds. Comparisons always go
+# through eval_cp_to_expected_score / eval_mate_to_expected_score
+# (app/services/eval_utils.py), never centipawns directly.
+#
+# Value is the PROD-MEASURED confirm_floor from the Phase 220 repair's
+# calibrate stage (p99 of the 1M-node delta against a known-clean stored
+# value), rounded UP to a readable precision:
+#   confirm_floor = 0.029419322, calibration_n = 500,
+#   calibrated 2026-09-10 11:47:37Z, Stockfish 18 (220-06-SUMMARY.md).
+# Must be a module constant, never a runtime lookup into
+# opening_cache_repair_progress — the app cannot depend on that row existing
+# (the benchmark DB, dev, and the test DB all lack it; D-11).
+OPENING_CACHE_AGREE_MAX_SCORE_DELTA: float = 0.03
+
+# D-12: how many times a candidate must disagree with a second source before
+# Sentry fires — 2, not 1. A p99 floor means roughly 1% of honest second
+# sources look like disagreements; over 2.6M positions a per-event signal
+# would be ~26k Sentry events for nothing. Two CONSECUTIVE misses on the same
+# position is the misalignment signature.
+_DISAGREEMENT_SENTRY_THRESHOLD: int = 2
+
+# Phase 220 CACHEFIX-08: process-local memo for the Stockfish version string.
+# get_stockfish_version() (app/services/engine.py) opens and quits its own UCI
+# connection — calling it on every opening-region cache write (every tick,
+# every atomic submit) would open a fresh subprocess connection per write.
+# Memoized once per worker process; a mid-process Stockfish upgrade is not
+# picked up until restart, which is acceptable (the engine process already
+# restarts on every deploy).
+_cached_engine_version: str | None = None
+
+
+async def _get_cached_engine_version() -> str | None:
+    """Resolve and memoize the Stockfish version string for this process."""
+    global _cached_engine_version
+    if _cached_engine_version is None:
+        _cached_engine_version = await engine_service.get_stockfish_version()
+    return _cached_engine_version
+
 
 # ─── Phase 123 SEED-051: entry-ply remote-fan-out lease constants (D-03/D-04/D-05) ───
 
@@ -445,41 +502,398 @@ async def run_eval_drain() -> None:
                 await asyncio.sleep(_DRAIN_IDLE_SLEEP_SECONDS)
 
 
+@dataclass(slots=True)
+class _ExistingCacheRow:
+    """One opening_position_eval row as read before this batch's writes (Phase 220
+    CACHEFIX-08, D-11/D-12/D-13) — the snapshot both the partition decision and the
+    optimistic-concurrency WHERE guard in the write helpers are built from."""
+
+    eval_cp: int | None
+    eval_mate: int | None
+    pv: str | None
+    confirmed: bool
+    source_game_id: int | None
+
+
+@dataclass(slots=True)
+class _InsertWrite:
+    full_hash: int
+    eval_cp: int | None
+    eval_mate: int | None
+    best_move: str | None
+    pv: str | None
+
+
+@dataclass(slots=True)
+class _PromoteWrite:
+    full_hash: int
+    pv: str | None
+    expected_source: int | None
+
+
+@dataclass(slots=True)
+class _ReplaceWrite:
+    full_hash: int
+    eval_cp: int | None
+    eval_mate: int | None
+    best_move: str | None
+    pv: str | None
+    expected_source: int | None
+    old_eval_cp: int | None
+    old_eval_mate: int | None
+
+
+@dataclass(slots=True)
+class _CacheWriteBuckets:
+    """A batch of freshly-computed opening evals, partitioned by what write each one
+    needs (Phase 220 CACHEFIX-08). See `_partition_cache_writes`'s docstring for the
+    four buckets' meaning."""
+
+    insert: list[_InsertWrite] = field(default_factory=list)
+    skip_pv_heal: list[tuple[int, str]] = field(default_factory=list)
+    promote: list[_PromoteWrite] = field(default_factory=list)
+    replace: list[_ReplaceWrite] = field(default_factory=list)
+
+
+def _cache_values_agree(
+    existing_cp: int | None,
+    existing_mate: int | None,
+    new_cp: int | None,
+    new_mate: int | None,
+) -> bool:
+    """D-11: two sources agree iff mate/non-mate status matches AND the
+    expected-score delta is at or below OPENING_CACHE_AGREE_MAX_SCORE_DELTA — the
+    comparison is `<=`, so a delta exactly at the constant promotes (agree_boundary).
+
+    Always measured in expected-score units via eval_cp_to_expected_score /
+    eval_mate_to_expected_score with user_color="white" on both sides: the cache is
+    keyed by position, not by any user, so "white" is a fixed, arbitrary-but-consistent
+    perspective — the delta between two white-perspective scores is identical no
+    matter which perspective both sides use, as long as both use the SAME one.
+    """
+    if (existing_mate is not None) != (new_mate is not None):
+        return False
+    if existing_mate is not None and new_mate is not None:
+        existing_score = eval_mate_to_expected_score(existing_mate, "white")
+        new_score = eval_mate_to_expected_score(new_mate, "white")
+        return abs(new_score - existing_score) <= OPENING_CACHE_AGREE_MAX_SCORE_DELTA
+    if existing_cp is None or new_cp is None:
+        return False
+    existing_score = eval_cp_to_expected_score(existing_cp, "white")
+    new_score = eval_cp_to_expected_score(new_cp, "white")
+    return abs(new_score - existing_score) <= OPENING_CACHE_AGREE_MAX_SCORE_DELTA
+
+
+def _partition_cache_writes(
+    cache_rows: list[tuple[int, int | None, int | None, str | None, str | None]],
+    existing_by_hash: dict[int, _ExistingCacheRow],
+    source_game_id: int,
+) -> _CacheWriteBuckets:
+    """Partition a batch of freshly-computed opening evals into write buckets
+    (Phase 220 CACHEFIX-08, D-11/D-13). Pure — no I/O — split out of
+    _upsert_opening_cache so both halves stay under CLAUDE.md's nesting-depth/LOC
+    limits.
+
+    insert: no existing row for this full_hash yet — a brand-new candidate.
+    skip_pv_heal: existing row is confirmed, OR its source_game_id equals this
+        batch's source_game_id (D-13's self-promotion guard — a re-drained or
+        resubmitted game is the same source, not a second one). The one permitted
+        mutation in either case is filling a NULL pv from this write.
+    promote: unconfirmed, a genuinely different source, and the two values agree
+        within OPENING_CACHE_AGREE_MAX_SCORE_DELTA — becomes confirmed.
+    replace: unconfirmed, a genuinely different source, and the two values disagree
+        — the candidate's value is replaced wholesale and disagreements increments.
+    """
+    buckets = _CacheWriteBuckets()
+    for full_hash, cp, mate, bm, pv in cache_rows:
+        existing = existing_by_hash.get(full_hash)
+        if existing is None:
+            buckets.insert.append(_InsertWrite(full_hash, cp, mate, bm, pv))
+            continue
+        same_source = existing.source_game_id == source_game_id
+        if existing.confirmed or same_source:
+            if existing.pv is None and pv is not None:
+                buckets.skip_pv_heal.append((full_hash, pv))
+            continue
+        if _cache_values_agree(existing.eval_cp, existing.eval_mate, cp, mate):
+            kept_pv = (
+                pv
+                if existing.pv is None or (pv is not None and len(pv) > len(existing.pv))
+                else existing.pv
+            )
+            buckets.promote.append(_PromoteWrite(full_hash, kept_pv, existing.source_game_id))
+        else:
+            buckets.replace.append(
+                _ReplaceWrite(
+                    full_hash,
+                    cp,
+                    mate,
+                    bm,
+                    pv,
+                    existing.source_game_id,
+                    existing.eval_cp,
+                    existing.eval_mate,
+                )
+            )
+    return buckets
+
+
+def _capture_opening_cache_disagreement(
+    *,
+    full_hash: int,
+    old_eval_cp: int | None,
+    old_eval_mate: int | None,
+    new_eval_cp: int | None,
+    new_eval_mate: int | None,
+    disagreements: int,
+    new_game_id: int,
+    previous_game_id: int | None,
+) -> None:
+    """D-12: fires exactly once per position, on the write that takes
+    `disagreements` from 1 to 2 — two CONSECUTIVE misses on the same position, the
+    misalignment signature, not the expected ~1% p99-floor rate of a single honest
+    disagreement. Fixed message string for Sentry grouping (CLAUDE.md: never embed
+    variables in the message); all variable data goes in set_context.
+    """
+    sentry_sdk.set_context(
+        "opening_cache",
+        {
+            "full_hash": full_hash,
+            "old_eval_cp": old_eval_cp,
+            "old_eval_mate": old_eval_mate,
+            "new_eval_cp": new_eval_cp,
+            "new_eval_mate": new_eval_mate,
+            "disagreements": disagreements,
+            "new_game_id": new_game_id,
+            "previous_game_id": previous_game_id,
+        },
+    )
+    sentry_sdk.set_tag("source", "opening-cache")
+    sentry_sdk.capture_message(
+        "opening-cache: two consecutive evaluations disagreed with the cached value",
+        level="warning",
+    )
+
+
+async def _insert_cache_candidates(
+    session: AsyncSession,
+    rows: list[_InsertWrite],
+    source_game_id: int,
+) -> None:
+    """Batched INSERT ... ON CONFLICT DO NOTHING for brand-new candidate rows
+    (Phase 220 CACHEFIX-08 algorithm step 3). DO NOTHING, not a merge: a
+    concurrent insert from another game simply wins the race, and this result
+    becomes the second source next time this position is reached.
+
+    Uses CAST() instead of :: cast syntax for asyncpg compatibility (same reason
+    as _batch_update_eval_rows).
+    """
+    engine_version = await _get_cached_engine_version()
+    params: dict[str, int | str | None] = {
+        "engine_version": engine_version,
+        "source_game_id": source_game_id,
+    }
+    values_parts: list[str] = []
+    for i, row in enumerate(rows):
+        params[f"fh_{i}"] = row.full_hash
+        params[f"cp_{i}"] = row.eval_cp
+        params[f"mt_{i}"] = row.eval_mate
+        params[f"bm_{i}"] = row.best_move
+        params[f"pv_{i}"] = row.pv
+        values_parts.append(
+            f"(CAST(:fh_{i} AS bigint),"
+            f" CAST(:cp_{i} AS smallint),"
+            f" CAST(:mt_{i} AS smallint),"
+            f" CAST(:bm_{i} AS varchar),"
+            f" CAST(:pv_{i} AS text),"
+            " false, 1, 0,"
+            " CAST(:engine_version AS text),"
+            " now(),"
+            " CAST(:source_game_id AS bigint))"
+        )
+    values_sql = ", ".join(values_parts)
+    sql = sa.text(
+        "INSERT INTO opening_position_eval"
+        " (full_hash, eval_cp, eval_mate, best_move, pv, confirmed, n_sources,"  # noqa: S608
+        "  disagreements, engine_version, written_at, source_game_id)"
+        f" VALUES {values_sql}"
+        " ON CONFLICT (full_hash) DO NOTHING"
+    )
+    await session.execute(sql, params)
+
+
+async def _heal_cache_pv(session: AsyncSession, rows: list[tuple[int, str]]) -> None:
+    """Batched pv self-heal: fill a NULL pv from a later write. The one permitted
+    mutation of a confirmed (or same-source) row — pre-existing SEED-076 behavior,
+    unchanged by CACHEFIX-08's write-path rewrite."""
+    params: dict[str, int | str] = {}
+    values_parts: list[str] = []
+    for i, (fh, pv) in enumerate(rows):
+        params[f"fh_{i}"] = fh
+        params[f"pv_{i}"] = pv
+        values_parts.append(f"(CAST(:fh_{i} AS bigint), CAST(:pv_{i} AS text))")
+    values_sql = ", ".join(values_parts)
+    await session.execute(
+        sa.text(
+            "UPDATE opening_position_eval AS o SET pv = v.pv"  # noqa: S608
+            f" FROM (VALUES {values_sql}) AS v(full_hash, pv)"
+            " WHERE o.full_hash = v.full_hash AND o.pv IS NULL"
+        ),
+        params,
+    )
+
+
+async def _promote_cache_rows(session: AsyncSession, rows: list[_PromoteWrite]) -> None:
+    """Optimistic promote (Phase 220 CACHEFIX-08 algorithm step 4): a candidate
+    becomes confirmed only if it is still exactly the row this batch read
+    (confirmed = false AND source_game_id IS NOT DISTINCT FROM the snapshot). If
+    another lane changed the row in between, the WHERE matches nothing and this
+    result is simply not counted. The eval itself is NOT changed on promotion —
+    the candidate's own value is the confirmed one."""
+    for row in rows:
+        await session.execute(
+            sa.text(
+                "UPDATE opening_position_eval SET confirmed = true, n_sources = 2,"
+                " confirmed_at = now(), pv = CAST(:pv AS text)"
+                " WHERE full_hash = CAST(:fh AS bigint) AND confirmed = false"
+                " AND source_game_id IS NOT DISTINCT FROM CAST(:expected_source AS bigint)"
+            ),
+            {"pv": row.pv, "fh": row.full_hash, "expected_source": row.expected_source},
+        )
+
+
+async def _replace_cache_rows(
+    session: AsyncSession,
+    rows: list[_ReplaceWrite],
+    source_game_id: int,
+) -> None:
+    """Optimistic replace (Phase 220 CACHEFIX-08 algorithm step 5): a disagreeing
+    candidate's value is replaced wholesale and disagreements incremented, guarded
+    the same way as promote. D-12: Sentry fires exactly once, on the write that
+    takes disagreements from 1 to 2."""
+    engine_version = await _get_cached_engine_version()
+    for row in rows:
+        result = await session.execute(
+            sa.text(
+                "UPDATE opening_position_eval SET eval_cp = CAST(:cp AS smallint),"
+                " eval_mate = CAST(:mate AS smallint), best_move = CAST(:bm AS varchar),"
+                " pv = CAST(:pv AS text), source_game_id = CAST(:gid AS bigint),"
+                " written_at = now(), engine_version = CAST(:ver AS text),"
+                " disagreements = disagreements + 1"
+                " WHERE full_hash = CAST(:fh AS bigint) AND confirmed = false"
+                " AND source_game_id IS NOT DISTINCT FROM CAST(:expected_source AS bigint)"
+                " RETURNING full_hash, disagreements"
+            ),
+            {
+                "cp": row.eval_cp,
+                "mate": row.eval_mate,
+                "bm": row.best_move,
+                "pv": row.pv,
+                "gid": source_game_id,
+                "ver": engine_version,
+                "fh": row.full_hash,
+                "expected_source": row.expected_source,
+            },
+        )
+        written = result.one_or_none()
+        if written is not None and written[1] == _DISAGREEMENT_SENTRY_THRESHOLD:
+            _capture_opening_cache_disagreement(
+                full_hash=written[0],
+                old_eval_cp=row.old_eval_cp,
+                old_eval_mate=row.old_eval_mate,
+                new_eval_cp=row.eval_cp,
+                new_eval_mate=row.eval_mate,
+                disagreements=written[1],
+                new_game_id=source_game_id,
+                previous_game_id=row.expected_source,
+            )
+
+
+async def _apply_cache_writes(
+    session: AsyncSession,
+    buckets: _CacheWriteBuckets,
+    source_game_id: int,
+) -> None:
+    """Execute the partitioned batch's write-bucket statements (Phase 220
+    CACHEFIX-08). Split out of _upsert_opening_cache so the caller stays under
+    CLAUDE.md's nesting-depth/LOC limits. All statements run inside the caller's
+    write transaction — same contract as the pre-CACHEFIX-08 upsert."""
+    if buckets.insert:
+        await _insert_cache_candidates(session, buckets.insert, source_game_id)
+    if buckets.skip_pv_heal:
+        await _heal_cache_pv(session, buckets.skip_pv_heal)
+    if buckets.promote:
+        await _promote_cache_rows(session, buckets.promote)
+    if buckets.replace:
+        await _replace_cache_rows(session, buckets.replace, source_game_id)
+
+
+async def _fetch_existing_cache_rows(
+    session: AsyncSession, hashes: list[int]
+) -> dict[int, _ExistingCacheRow]:
+    """Read the current state of every cache row this batch's hashes touch, before
+    any write — the snapshot _partition_cache_writes decides against and the write
+    helpers' optimistic-concurrency guards are built from."""
+    result = await session.execute(
+        select(
+            OpeningPositionEval.full_hash,
+            OpeningPositionEval.eval_cp,
+            OpeningPositionEval.eval_mate,
+            OpeningPositionEval.pv,
+            OpeningPositionEval.confirmed,
+            OpeningPositionEval.source_game_id,
+        ).where(OpeningPositionEval.full_hash.in_(hashes))
+    )
+    return {
+        row[0]: _ExistingCacheRow(
+            eval_cp=row[1],
+            eval_mate=row[2],
+            pv=row[3],
+            confirmed=row[4],
+            source_game_id=row[5],
+        )
+        for row in result.all()
+    }
+
+
 async def _upsert_opening_cache(
     session: AsyncSession,
     engine_targets: list[_FullPlyEvalTarget],
     engine_result_map: dict[int, tuple[int | None, int | None, str | None, str | None]],
+    source_game_id: int,
 ) -> None:
-    """Batch-insert freshly-computed opening-region engine evals into the dedup cache (D-123.1-04).
+    """Write freshly-computed opening-region engine evals through the two-source
+    confirmation write path (Phase 220 CACHEFIX-08, replacing the former
+    first-write-wins upsert — D-01/D-11/D-12/D-13).
 
-    Populates opening_position_eval with results from this tick's engine evaluations,
-    restricted to the opening region (ply <= _DEDUP_MAX_PLY), non-terminal targets, and
-    rows that have a real eval (at least one of eval_cp/eval_mate is non-NULL).
+    Restricted to the opening region (ply <= _DEDUP_MAX_PLY), non-terminal
+    targets, and rows that have a real eval (at least one of eval_cp/eval_mate is
+    non-NULL). Excludes dedup transplants (already in the cache; only
+    engine_targets are passed in), terminal donors (is_terminal=True; no
+    game_positions row, eval is post-move only), and null-eval holes (engine
+    failure — nothing to cache).
 
-    Excludes:
-    - Dedup transplants (already in the cache; only engine_targets are passed in)
-    - Terminal donors (is_terminal=True; no game_positions row, eval is post-move only)
-    - Null-eval holes (engine failure — nothing to cache)
+    A first write for an unseen hash inserts a candidate (confirmed=false,
+    n_sources=1). A second, agreeing result from a DIFFERENT game promotes it
+    (confirmed=true, n_sources=2). A second, disagreeing result from a different
+    game replaces its value and bumps disagreements. A result whose game_id
+    equals the candidate's own source_game_id (D-13) neither promotes nor counts
+    as a disagreement — the caller passes `source_game_id` for exactly this
+    guard. A confirmed row is never overwritten by this path; its only permitted
+    mutation is the pre-existing pv self-heal.
 
-    eval_cp/eval_mate/best_move stay first-write-wins (ON CONFLICT DO NOTHING semantics
-    via the WHERE guard below). pv alone self-heals: SEED-076 follow-up — a pre-existing
-    cache row written before the pv column existed (or whose engine pass raced without a
-    pv) stays pv-less forever without this backfill, which permanently blocks the
-    atomic-submit path from carrying a walkable PV for any flaw that lands on that
-    position. DO UPDATE SET pv = EXCLUDED.pv only fires when the existing row's pv IS
-    NULL AND the new value is non-NULL, so it never clobbers a real cached pv and never
-    touches eval_cp/eval_mate/best_move on conflict.
+    source_game_id: the game this batch's engine results came from — either
+    _full_drain_tick's own game_id, or apply_full_eval's game_id parameter for
+    the atomic-submit lane (one function, two call sites, threaded through
+    apply_full_eval's upsert_opening_cache_fn call — CACHEFIX-12).
 
-    Insert volume is self-limiting: as the cache fills, fewer misses reach here each tick.
+    Runs inside the caller's write transaction. If it fails the whole txn rolls
+    back and the game is re-picked next tick — acceptable, as the eval writes
+    have not committed either. No outer try/except is added (we do not swallow
+    cache errors).
 
-    The INSERT is inside the existing Step-4 write transaction. If it fails the whole txn
-    rolls back and the game is re-picked next tick — acceptable, as the eval writes have
-    not committed either. No outer try/except is added (we do not swallow cache errors).
-
-    Uses CAST() instead of :: cast syntax for asyncpg compatibility (same reason as
-    _batch_update_eval_rows).
-
-    Guard: empty cache_rows is a no-op — no SQL emitted.
+    Guard: an empty target list is a no-op — no SQL emitted, not even the
+    existing-rows SELECT.
     """
     cache_rows = [
         (t.full_hash, cp, mate, bm, pv)
@@ -496,36 +910,17 @@ async def _upsert_opening_cache(
     # share the conflict key ("ON CONFLICT DO UPDATE command cannot affect row a
     # second time" — FLAWCHESS-8E), so collapse duplicates by full_hash here. The
     # eval is identical for a given position; prefer a pv-bearing row so the pv
-    # backfill (ON CONFLICT DO UPDATE SET pv) still fires.
+    # backfill still fires.
     deduped: dict[int, tuple[int, int | None, int | None, str | None, str | None]] = {}
     for row in cache_rows:
         existing = deduped.get(row[0])
         if existing is None or (existing[4] is None and row[4] is not None):
             deduped[row[0]] = row
     cache_rows = list(deduped.values())
-    params: dict[str, int | str | None] = {}
-    values_parts: list[str] = []
-    for i, (fh, cp, mate, bm, pv) in enumerate(cache_rows):
-        params[f"fh_{i}"] = fh
-        params[f"cp_{i}"] = cp
-        params[f"mt_{i}"] = mate
-        params[f"bm_{i}"] = bm
-        params[f"pv_{i}"] = pv
-        values_parts.append(
-            f"(CAST(:fh_{i} AS bigint),"
-            f" CAST(:cp_{i} AS smallint),"
-            f" CAST(:mt_{i} AS smallint),"
-            f" CAST(:bm_{i} AS varchar),"
-            f" CAST(:pv_{i} AS text))"
-        )
-    values_sql = ", ".join(values_parts)
-    sql = sa.text(
-        f"INSERT INTO opening_position_eval (full_hash, eval_cp, eval_mate, best_move, pv)"  # noqa: S608
-        f" VALUES {values_sql}"
-        f" ON CONFLICT (full_hash) DO UPDATE SET pv = EXCLUDED.pv"
-        f" WHERE opening_position_eval.pv IS NULL AND EXCLUDED.pv IS NOT NULL"
-    )
-    await session.execute(sql, params)
+
+    existing_by_hash = await _fetch_existing_cache_rows(session, [row[0] for row in cache_rows])
+    buckets = _partition_cache_writes(cache_rows, existing_by_hash, source_game_id)
+    await _apply_cache_writes(session, buckets, source_game_id)
 
 
 async def _missing_flaw_pv_targets(

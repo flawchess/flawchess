@@ -401,8 +401,7 @@ FROM l JOIN opening_position_eval o ON o.full_hash = l.full_hash
 WHERE o.eval_mate IS NULL;
 ```
 
-Once `opening_position_eval.disagreements` exists (Phase 220 release 2, CACHEFIX-08),
-also run and report:
+### Query 12b — Two-source confirmation counters (Phase 220 release 2, CACHEFIX-08)
 ```sql
 SELECT count(*) FILTER (WHERE disagreements >= 1) AS n_disagreed,
        count(*) FILTER (WHERE NOT confirmed) AS n_unconfirmed
@@ -412,9 +411,13 @@ FROM opening_position_eval;
 #### Check C output format
 
 1. **Cross-check** — report `n_checked` and `n_bad` from Query 12.
-2. **Two-source columns** (only once they exist) — report `n_disagreed` and `n_unconfirmed`
-   from the second query. A large `n_unconfirmed` on a mature cache is itself worth a note
-   (candidates awaiting a second source), separate from `n_bad`.
+2. **Two-source columns** — report `n_disagreed` and `n_unconfirmed` from Query 12b.
+   A large `n_unconfirmed` right after the release-2 deploy is EXPECTED, not a bug: the
+   migration marks the repair's verified rows (`screened_clean`/`confirmed_clean`/
+   `repaired`) confirmed, but every position reached for the first time afterward starts
+   as a fresh one-source candidate again. The unconfirmed share shrinks over time as
+   positions are re-reached by a second independent game; it does not indicate poison
+   on its own — `n_bad` and `n_disagreed` are the signals that do.
 
 Verdict line (Check C): **PASS** if n_bad <= 5; **INVESTIGATE** otherwise.
 
@@ -464,16 +467,18 @@ SELECT
         / nullif(count(*), 0), 3) AS bounce_pct_any,
   count(*) FILTER (WHERE drop_cp BETWEEN 250 AND 360) AS n_band,
   count(*) FILTER (WHERE drop_cp BETWEEN 250 AND 360 AND bounce_cp <= 60) AS n_bounce_band,
+  -- over ALL checked rows, matching the seed's 0.235% / 0.298% baselines (not per-band)
   round(100.0 * count(*) FILTER (WHERE drop_cp BETWEEN 250 AND 360 AND bounce_cp <= 60)
-        / nullif(count(*) FILTER (WHERE drop_cp BETWEEN 250 AND 360), 0), 3) AS bounce_pct_band
+        / nullif(count(*), 0), 3) AS bounce_pct_band
 FROM b;
 ```
 
 #### Check D output format
 
-Report `bounce_pct_any` (rate over all plies-2-19 rows) and `bounce_pct_band` (rate
-restricted to the 250-360cp drop band, where the poison concentrated) to 3 decimal
-places, alongside their raw `n_checked` / `n_band` denominators.
+Report `bounce_pct_any` (rate over all plies-2-19 rows) and `bounce_pct_band` (bounces
+whose drop sits in the 250-360cp band, where the poison concentrated, ALSO over all
+plies-2-19 rows so it is comparable to the recorded baselines) to 3 decimal places,
+alongside `n_checked` and the raw `n_band` drop count.
 
 Verdict line (Check D): **PASS** if the rate is at or below the recorded reference for
 the same DB; **INVESTIGATE** if it rises. This is a coarse sanity check only — a PASS

@@ -44,7 +44,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import chess  # noqa: E402
 import sentry_sdk  # noqa: E402
-from sqlalchemy import delete, func, select, text, update  # noqa: E402
+from sqlalchemy import delete, func, select, text, tuple_, update  # noqa: E402
 from sqlalchemy.ext.asyncio import (  # noqa: E402
     AsyncEngine,
     AsyncSession,
@@ -64,6 +64,7 @@ import app.models.oauth_account  # noqa: E402, F401
 import app.models.user  # noqa: E402, F401
 from app.models.game import Game  # noqa: E402
 from app.models.game_flaw import GameFlaw  # noqa: E402
+from app.models.game_best_move import GameBestMove  # noqa: E402
 from app.models.game_position import DEDUP_MAX_PLY, GamePosition  # noqa: E402
 from app.models.opening_cache_audit import (  # noqa: E402
     OpeningCacheAudit,
@@ -84,6 +85,10 @@ from app.services.eval_apply import (  # noqa: E402
 from app.services.eval_utils import (  # noqa: E402
     eval_cp_to_expected_score,
     eval_mate_to_expected_score,
+)
+from app.services.best_move_candidates import (  # noqa: E402
+    mover_color_for_ply,
+    passes_inaccuracy_gate,
 )
 from app.services.flaws_service import classify_game_flaws  # noqa: E402
 from app.services.zobrist import EVAL_CP_MAX_ABS, compute_hashes  # noqa: E402
@@ -127,6 +132,7 @@ Stage = Literal[
     "orphans",
     "confirm",
     "propagate",
+    "propagate_best_moves",
     "rederive",
     "report",
     "legacy_sample",
@@ -139,6 +145,8 @@ Stage = Literal[
 # lacking those columns to find "the nearest tracked predecessor", so
 # `orphans` itself gates on `screen_finished_at` and `confirm` still gates on
 # `screen_finished_at` too (unaffected by orphans having run or not).
+# `propagate_best_moves` is the same kind of untracked one-shot member: it
+# gates on `propagate_finished_at` and `rederive` skips past it.
 _STAGE_ORDER: tuple[Stage, ...] = (
     "seed",
     "calibrate",
@@ -146,6 +154,7 @@ _STAGE_ORDER: tuple[Stage, ...] = (
     "orphans",
     "confirm",
     "propagate",
+    "propagate_best_moves",
     "rederive",
     "report",
     "legacy_sample",
@@ -628,10 +637,48 @@ async def _collect_screen_candidates(
     mismatch_last_game_id: dict[int, int] = {}
     seen_hashes: set[int] = set()
     async with session_maker() as session:
+        # Perf (prod run 2026-09-10): one query for the page's PGNs and one for
+        # the page's ply-1..20 rows, instead of a `session.get(Game)` +
+        # `select(GamePosition)` pair per game. That pair cost 2 round-trips per
+        # game (400 per 200-game batch) and, over the prod SSH tunnel (~40ms
+        # RTT), dominated the whole stage while the engine pool sat idle
+        # (depth-15 mean is ~0.09s, so 28 workers finish a batch's evals in ~4s
+        # of a ~71s batch).
+        pgn_by_game: dict[int, str] = {
+            r[0]: r[1]
+            for r in (
+                await session.execute(select(Game.id, Game.pgn).where(Game.id.in_(game_ids)))
+            ).all()
+        }
+        pos_result = await session.execute(
+            select(
+                GamePosition.game_id,
+                GamePosition.ply,
+                GamePosition.full_hash,
+                GamePosition.eval_cp,
+                GamePosition.eval_mate,
+            ).where(GamePosition.game_id.in_(game_ids), GamePosition.ply.between(1, 20))
+        )
+        gp_rows_by_game: dict[int, list[tuple[int, int, int | None, int | None]]] = {}
+        stored_hashes: set[int] = set()
+        for r in pos_result.all():
+            gp_rows_by_game.setdefault(r[0], []).append((r[1], r[2], r[3], r[4]))
+            stored_hashes.add(r[2])
+        if not stored_hashes:
+            return [], {}, {}
+        # Scoped to THIS page's stored hashes. Every target's full_hash is a
+        # stored game_positions.full_hash -- non-terminal ones come straight from
+        # _collect_full_ply_targets' ply_meta, terminal ones are overwritten from
+        # stored_hash_by_ply in _carrier_targets -- so this is equivalent to the
+        # old unfiltered `status = 'pending'` scan, which pulled every one of the
+        # 2.4M pending hashes (~19MB, ~4.4GB total over 231 batches) EACH batch.
         pending_hashes = set(
             (
                 await session.execute(
-                    select(OpeningCacheAudit.full_hash).where(OpeningCacheAudit.status == "pending")
+                    select(OpeningCacheAudit.full_hash).where(
+                        OpeningCacheAudit.status == "pending",
+                        OpeningCacheAudit.full_hash.in_(stored_hashes),
+                    )
                 )
             )
             .scalars()
@@ -640,21 +687,15 @@ async def _collect_screen_candidates(
         if not pending_hashes:
             return [], {}, {}
         for game_id in game_ids:
-            game = await session.get(Game, game_id)
-            if game is None:
+            # Game.pgn is NOT NULL, so a missing key is exactly the old
+            # `session.get(Game, game_id) is None` (game row gone).
+            pgn = pgn_by_game.get(game_id)
+            if pgn is None:
                 continue
-            pos_result = await session.execute(
-                select(
-                    GamePosition.ply,
-                    GamePosition.full_hash,
-                    GamePosition.eval_cp,
-                    GamePosition.eval_mate,
-                ).where(GamePosition.game_id == game_id, GamePosition.ply.between(1, 20))
-            )
-            gp_rows = [(r[0], r[1], r[2], r[3]) for r in pos_result.all()]
+            gp_rows = gp_rows_by_game.get(game_id)
             if not gp_rows:
                 continue
-            targets = _carrier_targets(game_id, game.pgn, gp_rows)
+            targets = _carrier_targets(game_id, pgn, gp_rows)
             for target in targets:
                 if target.full_hash not in pending_hashes or target.full_hash in seen_hashes:
                     continue
@@ -710,10 +751,32 @@ async def _run_screen_batch(
     )
 
     async with session_maker() as write_session:
+        # Perf (prod run 2026-09-10): load every audit row this batch touches in
+        # ONE query. The per-row `session.get(OpeningCacheAudit, full_hash)` this
+        # replaces was a sequential round-trip each (~1350 per batch, 310k over
+        # the first 4.6h) -- server-side mean 0.056ms, but ~40ms of prod-tunnel
+        # RTT apiece, which is where the stage's wall time actually went.
+        needed_hashes = {c[0] for c in candidates} | {
+            full_hash for full_hash in mismatch_attempts if full_hash not in resolved_hashes
+        }
+        audit_by_hash: dict[int, OpeningCacheAudit] = {}
+        if needed_hashes:
+            audit_by_hash = {
+                row.full_hash: row
+                for row in (
+                    await write_session.execute(
+                        select(OpeningCacheAudit).where(
+                            OpeningCacheAudit.full_hash.in_(needed_hashes)
+                        )
+                    )
+                )
+                .scalars()
+                .all()
+            }
         for (full_hash, sample_game_id, sample_ply, _board), (eval_cp, eval_mate) in zip(
             candidates, eval_results, strict=True
         ):
-            audit = await write_session.get(OpeningCacheAudit, full_hash)
+            audit = audit_by_hash.get(full_hash)
             if audit is None:
                 continue  # cache row's audit entry vanished between read and write
             _apply_screen_fields(
@@ -728,7 +791,7 @@ async def _run_screen_batch(
         for full_hash, attempts in mismatch_attempts.items():
             if full_hash in resolved_hashes:
                 continue  # a later carrier in this same batch resolved it -- not a mismatch
-            audit = await write_session.get(OpeningCacheAudit, full_hash)
+            audit = audit_by_hash.get(full_hash)
             if audit is None:
                 continue
             _apply_mismatch_attempts(
@@ -884,6 +947,16 @@ async def run_screen(
 # Pitfall 6 report sample size: enough to eyeball the shape of what got
 # deleted without dumping the whole orphan set to stdout.
 _ORPHAN_SAMPLE_SIZE: int = 20
+# asyncpg refuses a statement with more than 32,767 bind parameters. Prod's
+# first `orphans` run (2026-09-11) put all 352k still-pending hashes into one
+# `IN (...)` and died on exactly that; the dev smoke's 24k orphans never hit
+# the cap. Every hash-list predicate in this stage is chunked to this size.
+_ORPHAN_IN_CHUNK: int = 10_000
+
+
+def _chunked(items: Sequence[int], size: int) -> list[Sequence[int]]:
+    """Split `items` into consecutive slices of at most `size` elements."""
+    return [items[i : i + size] for i in range(0, len(items), size)]
 
 
 async def run_orphans(
@@ -941,20 +1014,22 @@ async def run_orphans(
                 print("orphans: no pending row(s) to consider.")
                 return
 
-            carrier_hashes = set(
-                (
-                    await session.execute(
-                        select(GamePosition.full_hash)
-                        .where(
-                            GamePosition.full_hash.in_(pending_hashes),
-                            GamePosition.ply.between(1, 20),
+            carrier_hashes: set[int] = set()
+            for chunk in _chunked(pending_hashes, _ORPHAN_IN_CHUNK):
+                carrier_hashes.update(
+                    (
+                        await session.execute(
+                            select(GamePosition.full_hash)
+                            .where(
+                                GamePosition.full_hash.in_(chunk),
+                                GamePosition.ply.between(1, 20),
+                            )
+                            .distinct()
                         )
-                        .distinct()
                     )
+                    .scalars()
+                    .all()
                 )
-                .scalars()
-                .all()
-            )
             orphan_hashes = [h for h in pending_hashes if h not in carrier_hashes]
             unscreened_with_carrier = len(pending_hashes) - len(orphan_hashes)
             print(
@@ -979,14 +1054,15 @@ async def run_orphans(
                 print("orphans: --dry-run, nothing deleted." if dry_run else "orphans: done.")
                 return
 
-            await session.execute(
-                update(OpeningCacheAudit)
-                .where(OpeningCacheAudit.full_hash.in_(orphan_hashes))
-                .values(status="orphan")
-            )
-            await session.execute(
-                delete(OpeningPositionEval).where(OpeningPositionEval.full_hash.in_(orphan_hashes))
-            )
+            for chunk in _chunked(orphan_hashes, _ORPHAN_IN_CHUNK):
+                await session.execute(
+                    update(OpeningCacheAudit)
+                    .where(OpeningCacheAudit.full_hash.in_(chunk))
+                    .values(status="orphan")
+                )
+                await session.execute(
+                    delete(OpeningPositionEval).where(OpeningPositionEval.full_hash.in_(chunk))
+                )
             await session.commit()
             print(f"orphans: deleted {len(orphan_hashes)} orphaned cache row(s).")
     finally:
@@ -1312,6 +1388,78 @@ _PROPAGATE_PV_SQL = text(
     " RETURNING n.game_id, n.user_id, n.ply"
 )
 
+# Gem/Great candidate rows (`game_best_moves`) copy the position's eval into
+# `best_cp`/`best_mate` when the candidate is built (eval_apply
+# `_build_best_move_candidates`, stage 5), so a poisoned cache value lands
+# there too and the query-time tier (classify_best_move) keeps reading it
+# after `game_positions` has been repaired. Prod 2026-09-11: 1,617 candidate
+# rows in 1,573 games still carried the old value after `propagate`, 365 of
+# them rendering a spurious gem/great badge (game 2356581 ply 6, e3: best_cp
+# 305 vs second_cp -4 -> "great" with the true margin being ~0.01 ES).
+# The candidate for the move played FROM the position with hash on row `n`
+# lives at ply `n` = repair row `p + 1`. Rewrite is gated on the exact old
+# value like every other propagate statement, and a rewritten row that no
+# longer passes the build-time inaccuracy gate is deleted -- the builder
+# would never have stored it.
+_PROPAGATE_CANDIDATE_SQL_ALL = (
+    "UPDATE game_best_moves b"
+    " SET best_cp = r.new_cp, best_mate = r.new_mate"
+    " FROM opening_cache_repair_rows r"
+    " WHERE r.game_id = b.game_id"
+    "   AND b.ply = r.ply + 1"
+    "   AND b.best_cp IS NOT DISTINCT FROM r.old_cp"
+    "   AND b.best_mate IS NOT DISTINCT FROM r.old_mate"
+)
+_PROPAGATE_CANDIDATE_RETURNING = (
+    " RETURNING b.game_id, b.ply, b.best_cp, b.best_mate, b.second_cp, b.second_mate"
+)
+_PROPAGATE_CANDIDATE_SQL_ONE_HASH = text(
+    _PROPAGATE_CANDIDATE_SQL_ALL
+    + "   AND r.full_hash = CAST(:full_hash AS bigint)"
+    + _PROPAGATE_CANDIDATE_RETURNING
+)
+_PROPAGATE_CANDIDATE_SQL_TRAIL = text(_PROPAGATE_CANDIDATE_SQL_ALL + _PROPAGATE_CANDIDATE_RETURNING)
+_STALE_CANDIDATE_COUNT_SQL = text(
+    "SELECT count(*) FROM game_best_moves b"
+    " JOIN opening_cache_repair_rows r"
+    "   ON r.game_id = b.game_id AND b.ply = r.ply + 1"
+    " WHERE b.best_cp IS NOT DISTINCT FROM r.old_cp"
+    "   AND b.best_mate IS NOT DISTINCT FROM r.old_mate"
+)
+
+
+async def _propagate_candidates(session: AsyncSession, *, full_hash: int | None) -> tuple[int, int]:
+    """Rewrite stale `game_best_moves.best_cp/best_mate` from the repair-row
+    trail (one hash, or the whole trail when `full_hash` is None) and delete
+    every rewritten candidate that fails `passes_inaccuracy_gate` with its
+    corrected margin. Returns (rewritten, deleted). Idempotent: the exact-old-
+    value predicate matches nothing on a second run.
+    """
+    if full_hash is None:
+        rows = (await session.execute(_PROPAGATE_CANDIDATE_SQL_TRAIL)).all()
+    else:
+        rows = (
+            await session.execute(_PROPAGATE_CANDIDATE_SQL_ONE_HASH, {"full_hash": full_hash})
+        ).all()
+    failing: list[tuple[int, int]] = [
+        (r.game_id, r.ply)
+        for r in rows
+        if not passes_inaccuracy_gate(
+            r.best_cp, r.best_mate, r.second_cp, r.second_mate, mover_color_for_ply(r.ply)
+        )
+    ]
+    for chunk in _chunked_pairs(failing, _ORPHAN_IN_CHUNK):
+        await session.execute(
+            delete(GameBestMove).where(tuple_(GameBestMove.game_id, GameBestMove.ply).in_(chunk))
+        )
+    return len(rows), len(failing)
+
+
+def _chunked_pairs(items: list[tuple[int, int]], size: int) -> list[list[tuple[int, int]]]:
+    """`_chunked` for (game_id, ply) pairs (two bind params per element)."""
+    return [items[i : i + size] for i in range(0, len(items), size)]
+
+
 _REPAIR_GAME_UPSERT_SQL = text(
     "INSERT INTO opening_cache_repair_games (game_id, user_id, status, rows_repaired)"
     " VALUES (CAST(:game_id AS bigint), CAST(:user_id AS integer), 'pending', CAST(:rows AS integer))"
@@ -1321,7 +1469,7 @@ _REPAIR_GAME_UPSERT_SQL = text(
 )
 
 
-async def _propagate_one_hash(session: AsyncSession, audit: OpeningCacheAudit) -> None:
+async def _propagate_one_hash(session: AsyncSession, audit: OpeningCacheAudit) -> tuple[int, int]:
     """Propagate one `confirmed_bad` audit row's new value into every carrier
     `game_positions` row that still holds the OLD cached value, on the correct
     side of the post-move shift (CACHEFIX-05). Runs three statements against
@@ -1334,7 +1482,8 @@ async def _propagate_one_hash(session: AsyncSession, audit: OpeningCacheAudit) -
     upserts `opening_cache_repair_games` `pending` for every game touched by
     ANY of the three statements, and always stamps `repaired_at` -- even when
     zero rows matched (idempotent: a hash whose carriers were already
-    rewritten, or that never had one, still gets step 5).
+    rewritten, or that never had one, still gets step 5). Returns the
+    (rewritten, deleted) `game_best_moves` candidate counts for this hash.
     """
     params = {
         "full_hash": audit.full_hash,
@@ -1422,15 +1571,18 @@ async def _propagate_one_hash(session: AsyncSession, audit: OpeningCacheAudit) -
     # only, so every repaired prod row would have become an untrusted candidate.
     audit.status = "repaired"
     audit.repaired_at = datetime.now(timezone.utc)
+    # Same transaction as the repair rows it reads (UPDATE ... FROM sees them).
+    return await _propagate_candidates(session, full_hash=audit.full_hash)
 
 
 async def _run_propagate_batch(
     session_maker: async_sessionmaker[AsyncSession], batch_size: int
-) -> int:
+) -> tuple[int, int, int]:
     """Process one page of `confirmed_bad`, unpropagated audit rows: propagate
     each hash's new value in the SAME transaction as the batch commit (no
     engine calls in this stage, so no read/gather/write split is needed).
-    Returns the number of hashes processed this batch, or 0 when none remain."""
+    Returns (hashes processed, candidates rewritten, candidates deleted);
+    hashes is 0 when none remain."""
     async with session_maker() as session:
         audits = (
             (
@@ -1448,11 +1600,14 @@ async def _run_propagate_batch(
             .all()
         )
         if not audits:
-            return 0
+            return 0, 0, 0
+        rewritten = deleted = 0
         for audit in audits:
-            await _propagate_one_hash(session, audit)
+            n_rewritten, n_deleted = await _propagate_one_hash(session, audit)
+            rewritten += n_rewritten
+            deleted += n_deleted
         await session.commit()
-    return len(audits)
+    return len(audits), rewritten, deleted
 
 
 async def run_propagate(
@@ -1513,11 +1668,13 @@ async def run_propagate(
                 await session.commit()
 
         _install_signal_handlers()
-        processed_total = 0
+        processed_total = rewritten_total = deleted_total = 0
         while not _stop_requested:
             if limit is not None and processed_total >= limit:
                 break
-            batch_count = await _run_propagate_batch(session_maker, REPAIR_BATCH_ROWS)
+            batch_count, rewritten, deleted = await _run_propagate_batch(
+                session_maker, REPAIR_BATCH_ROWS
+            )
             if batch_count == 0:
                 async with session_maker() as fin_session:
                     fin_progress = await _ensure_progress_row(fin_session)
@@ -1525,7 +1682,207 @@ async def run_propagate(
                     await fin_session.commit()
                 break
             processed_total += batch_count
-        print(f"propagate: processed {processed_total} row(s).")
+            rewritten_total += rewritten
+            deleted_total += deleted
+        print(
+            f"propagate: processed {processed_total} row(s); game_best_moves candidates:"
+            f" {rewritten_total} rewritten, {deleted_total} deleted (failed the inaccuracy gate)."
+        )
+    finally:
+        if owns_engine and engine is not None:
+            await engine.dispose()
+
+
+# ─── `propagate-best-moves` ──────────────────────────────────────────────────
+#
+# One-shot, untracked (like `orphans`): replays the `opening_cache_repair_rows`
+# trail against `game_best_moves` for a database whose `propagate` ran before
+# the candidate rewrite existed (prod, 2026-09-11). A `propagate` run on
+# current code already does this per hash, so on such a database this stage
+# rewrites nothing and is safe to run any number of times.
+
+
+async def run_propagate_best_moves(
+    *,
+    db: str,
+    dry_run: bool,
+    append_report: bool = False,
+    session_maker: async_sessionmaker[AsyncSession] | None = None,
+) -> None:
+    """Rewrite stale `game_best_moves.best_cp/best_mate` from the repair-row
+    trail and delete rewritten candidates that fail the build-time inaccuracy
+    gate. Gated on `propagate_finished_at`.
+
+    Args:
+        db: DB target string ("dev", "benchmark", "prod").
+        dry_run: If True, report how many candidate rows still hold a repaired
+            cell's OLD value and write nothing.
+        append_report: Also append the result block to the dated report file
+            (today's date), if it exists.
+        session_maker: Injectable session factory for testing.
+    """
+    if settings.SENTRY_DSN:
+        sentry_sdk.init(dsn=settings.SENTRY_DSN, environment=settings.ENVIRONMENT)
+
+    session_maker, engine, owns_engine = _resolve_session_maker(db, session_maker)
+
+    try:
+        async with session_maker() as session:
+            await _stage_gate(session, "propagate_best_moves")
+            if dry_run:
+                stale = (await session.execute(_STALE_CANDIDATE_COUNT_SQL)).scalar_one()
+                print(
+                    f"propagate-best-moves: {stale} game_best_moves row(s) still hold a"
+                    " repaired cell's old best_cp/best_mate (--dry-run, nothing written)."
+                )
+                return
+            rewritten, deleted = await _propagate_candidates(session, full_hash=None)
+            await session.commit()
+
+        lines = [
+            "## 3b. Gem/Great candidates (`game_best_moves`) re-based on the repaired evals",
+            "",
+            f"- Candidate rows whose `best_cp`/`best_mate` still held the old value: {rewritten:,}"
+            " (rewritten to the repaired value)",
+            f"- Of those, deleted because the corrected margin fails the inaccuracy gate: {deleted:,}",
+            f"- Kept as candidates with the corrected margin: {rewritten - deleted:,}",
+        ]
+        for line in lines:
+            print(line)
+        if append_report:
+            out_dir = Path(__file__).resolve().parent.parent / "reports" / "opening-cache-repair"
+            today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+            report_path = out_dir / f"opening-cache-repair-{today}.md"
+            if report_path.exists():
+                with report_path.open("a", encoding="utf-8") as f:
+                    f.write("\n" + "\n".join(lines) + "\n")
+            else:
+                print(
+                    f"propagate-best-moves: --append-report given but {report_path} does not exist."
+                )
+    finally:
+        if owns_engine and engine is not None:
+            await engine.dispose()
+
+
+# ─── `demote` (Phase 220 Release 2, CACHEFIX-08 — operator escape hatch) ─────
+#
+# NOT a member of _STAGE_ORDER: it is not a pipeline stage and takes no
+# _stage_gate call. It exists for exactly one situation -- an engine bump that
+# changes the eval SCALE (a new NNUE net), where trust in every row confirmed
+# against the old engine version needs to be operator-revoked. It is not run
+# automatically by anything else in this repair pipeline or by the write path.
+
+
+async def _demote_affected_count(session: AsyncSession, engine_version: str) -> int:
+    """Count confirmed rows recorded against `engine_version` -- the --dry-run
+    report and the pre-write sanity check share this single query."""
+    return (
+        await session.execute(
+            select(func.count())
+            .select_from(OpeningPositionEval)
+            .where(
+                OpeningPositionEval.confirmed.is_(True),
+                OpeningPositionEval.engine_version == engine_version,
+            )
+        )
+    ).scalar_one()
+
+
+async def _demote_apply(session: AsyncSession, engine_version: str, limit: int | None) -> int:
+    """Un-confirm rows recorded against `engine_version`. When `limit` is given,
+    a capped hash list is fetched first and the UPDATE targets exactly those
+    rows -- bounded by the operator's own limit, so this never risks asyncpg's
+    32,767-bind-parameter cap (Phase 220 plan 06's `orphans` defect). With no
+    limit, the UPDATE runs directly against the WHERE predicate -- no hash list
+    is ever materialized in Python for the (expected rare, potentially
+    2.57M-row) unbounded case."""
+    if limit is not None:
+        target_hashes = (
+            (
+                await session.execute(
+                    select(OpeningPositionEval.full_hash)
+                    .where(
+                        OpeningPositionEval.confirmed.is_(True),
+                        OpeningPositionEval.engine_version == engine_version,
+                    )
+                    .order_by(OpeningPositionEval.full_hash)
+                    .limit(limit)
+                )
+            )
+            .scalars()
+            .all()
+        )
+        if not target_hashes:
+            return 0
+        result = await session.execute(
+            update(OpeningPositionEval)
+            .where(OpeningPositionEval.full_hash.in_(target_hashes))
+            .values(confirmed=False, n_sources=1, confirmed_at=None)
+        )
+    else:
+        result = await session.execute(
+            update(OpeningPositionEval)
+            .where(
+                OpeningPositionEval.confirmed.is_(True),
+                OpeningPositionEval.engine_version == engine_version,
+            )
+            .values(confirmed=False, n_sources=1, confirmed_at=None)
+        )
+    return result.rowcount or 0  # ty: ignore[unresolved-attribute]  # DML result carries rowcount
+
+
+async def run_demote(
+    *,
+    db: str,
+    dry_run: bool,
+    limit: int | None,
+    engine_version: str,
+    session_maker: async_sessionmaker[AsyncSession] | None = None,
+) -> None:
+    """Un-confirm cache rows recorded against `engine_version` (operator escape
+    hatch, NOT a pipeline stage -- takes no _STAGE_ORDER gate).
+
+    CACHEFIX-08's position: engine version is RECORDED on every cache write,
+    never ENFORCED at read time. A confirmed row survives a routine Stockfish
+    bump untouched -- demoting all 2.57M rows on every routine bump would
+    double opening engine cost for months, and evals are already
+    non-reproducible across machines at sub-percentile magnitude (memory
+    `eval_nondeterminism`), so a version mismatch alone is not evidence of a
+    bad value. Demotion is a per-bump OPERATOR decision, reserved for a bump
+    that changes the eval SCALE (a new NNUE net) -- never run automatically by
+    the write path or by any other stage in this pipeline.
+
+    D-01 note (repeated from the model/migration docstrings): a post-hardening
+    re-audit mode that would set confirmed/n_sources from THIS script directly
+    is deliberately NOT built in this phase; documented here only.
+
+    Args:
+        db: DB target string ("dev", "benchmark", "prod").
+        dry_run: If True, report the affected count and write nothing.
+        limit: Cap the number of rows un-confirmed this run (None = all).
+        engine_version: exact engine_version string to un-confirm (e.g. "Stockfish 18").
+        session_maker: Injectable session factory for testing.
+    """
+    if settings.SENTRY_DSN:
+        sentry_sdk.init(dsn=settings.SENTRY_DSN, environment=settings.ENVIRONMENT)
+
+    session_maker, engine, owns_engine = _resolve_session_maker(db, session_maker)
+    try:
+        async with session_maker() as session:
+            if dry_run:
+                affected = await _demote_affected_count(session, engine_version)
+                print(
+                    f"demote: {affected} confirmed row(s) recorded against"
+                    f" engine_version={engine_version!r} would be un-confirmed"
+                    " (--dry-run, nothing written)."
+                )
+                return
+            un_confirmed = await _demote_apply(session, engine_version, limit)
+            await session.commit()
+            print(
+                f"demote: {un_confirmed} row(s) un-confirmed (engine_version={engine_version!r})."
+            )
     finally:
         if owns_engine and engine is not None:
             await engine.dispose()
@@ -2436,8 +2793,12 @@ async def _report_section_verification(
         "",
         f"- Observed: {_format_pct(n_bounce_any, n_checked_b)} any bounce"
         f" ({n_bounce_any:,}/{n_checked_b:,}),"
-        f" {_format_pct(n_bounce_band, n_band)} in the 250-360cp band"
-        f" ({n_bounce_band:,}/{n_band:,})",
+        # Band rate is over ALL checked rows (n_checked), not over the band's
+        # own drops: that is the convention the seed's 0.235% / 0.298%
+        # baselines were measured with. The first prod report (2026-09-11)
+        # divided by n_band and printed 18.15% against a 0.298% baseline.
+        f" {_format_pct(n_bounce_band, n_checked_b)} in the 250-360cp band"
+        f" ({n_bounce_band:,}/{n_checked_b:,}; {n_band:,} drops in band)",
         f"- Baseline: benchmark DB (cache-free) {_BOUNCE_BASELINE_BENCHMARK[0]}%"
         f" / {_BOUNCE_BASELINE_BENCHMARK[1]}%; prod legacy"
         f" {_BOUNCE_BASELINE_LEGACY[0]}% / {_BOUNCE_BASELINE_LEGACY[1]}%; mid"
@@ -3018,6 +3379,27 @@ def _add_propagate_subparser(
     _add_common_args(sub)
 
 
+def _add_propagate_best_moves_subparser(
+    subparsers: "argparse._SubParsersAction[argparse.ArgumentParser]",
+) -> None:
+    sub = subparsers.add_parser(
+        "propagate-best-moves",
+        help=(
+            "Re-base game_best_moves (Gem/Great candidates) on the repaired evals via the"
+            " repair-row trail; for a DB whose propagate ran before this rewrite existed."
+        ),
+    )
+    _add_db_arg(sub)
+    sub.add_argument("--dry-run", action="store_true", default=False)
+    sub.add_argument(
+        "--append-report",
+        action="store_true",
+        default=False,
+        dest="append_report",
+        help="Also append the result block to today's dated report file, if it exists.",
+    )
+
+
 def _add_rederive_subparser(
     subparsers: "argparse._SubParsersAction[argparse.ArgumentParser]",
 ) -> None:
@@ -3026,6 +3408,26 @@ def _add_rederive_subparser(
         help="Reclassify every pending repaired game through the drain's own classifier.",
     )
     _add_common_args(sub)
+
+
+def _add_demote_subparser(
+    subparsers: "argparse._SubParsersAction[argparse.ArgumentParser]",
+) -> None:
+    sub = subparsers.add_parser(
+        "demote",
+        help=(
+            "Operator escape hatch (Release 2, CACHEFIX-08): un-confirm cache rows"
+            " recorded against --engine-version. NOT a pipeline stage."
+        ),
+    )
+    _add_common_args(sub)
+    sub.add_argument(
+        "--engine-version",
+        required=True,
+        dest="engine_version",
+        metavar="VERSION",
+        help='Exact engine_version string to un-confirm, e.g. "Stockfish 18".',
+    )
 
 
 def _add_db_arg(sub: argparse.ArgumentParser) -> None:
@@ -3082,9 +3484,11 @@ def build_parser() -> argparse.ArgumentParser:
     _add_orphans_subparser(subparsers)
     _add_confirm_subparser(subparsers)
     _add_propagate_subparser(subparsers)
+    _add_propagate_best_moves_subparser(subparsers)
     _add_rederive_subparser(subparsers)
     _add_report_subparser(subparsers)
     _add_legacy_sample_subparser(subparsers)
+    _add_demote_subparser(subparsers)
     return parser
 
 
@@ -3111,6 +3515,10 @@ async def _dispatch(args: argparse.Namespace) -> None:
         )
     elif args.command == "propagate":
         await run_propagate(db=args.db, dry_run=args.dry_run, limit=args.limit)
+    elif args.command == "propagate-best-moves":
+        await run_propagate_best_moves(
+            db=args.db, dry_run=args.dry_run, append_report=args.append_report
+        )
     elif args.command == "rederive":
         await run_rederive(db=args.db, dry_run=args.dry_run, limit=args.limit)
     elif args.command == "report":
@@ -3118,6 +3526,13 @@ async def _dispatch(args: argparse.Namespace) -> None:
     elif args.command == "legacy-sample":
         await run_legacy_sample(
             db=args.db, append_report=args.append_report, pool_size=args.pool_size
+        )
+    elif args.command == "demote":
+        await run_demote(
+            db=args.db,
+            dry_run=args.dry_run,
+            limit=args.limit,
+            engine_version=args.engine_version,
         )
     else:  # pragma: no cover — unreachable while argparse enforces a known command set
         raise ValueError(f"Unknown command: {args.command!r}")

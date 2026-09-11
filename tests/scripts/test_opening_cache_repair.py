@@ -71,6 +71,7 @@ from sqlalchemy.orm import undefer
 
 from app.models.drill_item import DrillItem
 from app.models.game import Game
+from app.models.game_best_move import GameBestMove
 from app.models.game_flaw import GameFlaw
 from app.models.game_position import GamePosition
 from app.models.herring_pool import HerringPool
@@ -101,9 +102,11 @@ from scripts.opening_cache_repair import (
     _rederive_one_game,
     run_calibrate,
     run_confirm,
+    run_demote,
     run_legacy_sample,
     run_orphans,
     run_propagate,
+    run_propagate_best_moves,
     run_rederive,
     run_report,
     run_screen,
@@ -1167,6 +1170,75 @@ class TestScreen:
             progress = await _get_progress(session_maker)
             assert progress is not None
             assert progress.last_game_id_walked == game_b
+        finally:
+            await _delete_games(session_maker, [game_a, game_b])
+            await _delete_opening_cache(session_maker, [hash_a, hash_b])
+            await _reset_progress(session_maker)
+
+    async def test_screen_screens_every_game_in_one_batch(self, test_engine: AsyncEngine) -> None:
+        """Two carrier games in the SAME batch (default SCREEN_GAMES_PER_BATCH,
+        no monkeypatch) both get screened.
+
+        Guards the batched read phase: `_collect_screen_candidates` resolves the
+        page's PGNs, ply rows and pending-hash filter with one query each, so a
+        scoping bug that built any of those from only the first game of the page
+        would leave later games' hashes silently `pending`. The
+        SCREEN_GAMES_PER_BATCH=1 sibling test cannot catch that -- it puts each
+        game in its own batch, where first-game-only scoping is indistinguishable
+        from correct behaviour.
+        """
+        session_maker = _session_maker(test_engine)
+        await _ensure_user(session_maker, _TEST_USER_ID)
+        hash_a = _real_hashes_by_ply(_RUY_LOPEZ_PGN)[2]
+        hash_b = _real_hashes_by_ply(_SICILIAN_PGN)[2]
+        max_game_id = await _current_max_game_id(session_maker)
+        game_a = await _insert_carrier_game(session_maker, pgn=_RUY_LOPEZ_PGN)
+        game_b = await _insert_carrier_game(session_maker, pgn=_SICILIAN_PGN)
+        assert game_a < game_b
+        try:
+
+            def _fen_at_ply2(pgn: str) -> str:
+                game = chess.pgn.read_game(io.StringIO(pgn))
+                assert game is not None
+                board = game.board()
+                fen: str | None = None
+                for ply, node in enumerate(game.mainline()):
+                    if ply == 2:
+                        fen = board.fen()
+                    board.push(node.move)
+                assert fen is not None
+                return fen
+
+            fen_a = _fen_at_ply2(_RUY_LOPEZ_PGN)
+            fen_b = _fen_at_ply2(_SICILIAN_PGN)
+
+            async with session_maker() as session:
+                session.add(OpeningCacheAudit(full_hash=hash_a, status="pending", old_cp=0))
+                session.add(OpeningCacheAudit(full_hash=hash_b, status="pending", old_cp=0))
+                await session.commit()
+            await _seed_calibrate_finished(
+                session_maker, screen_floor=0.5, last_game_id_walked=max_game_id
+            )
+
+            fake_pool = _FakePool(result_by_fen={fen_a: (2, None), fen_b: (2, None)})
+            await run_screen(
+                db="dev",
+                dry_run=False,
+                limit=None,
+                session_maker=session_maker,
+                pool=fake_pool,  # ty: ignore[invalid-argument-type]  # test stub duck-types EnginePool
+            )
+
+            # Both games sat in ONE batch (SCREEN_GAMES_PER_BATCH is 200), so a
+            # first-game-only read phase would evaluate fen_a and leave hash_b pending.
+            assert set(fake_pool.evaluated_fens) == {fen_a, fen_b}
+            async with session_maker() as session:
+                audit_a = await session.get(OpeningCacheAudit, hash_a)
+                audit_b = await session.get(OpeningCacheAudit, hash_b)
+                assert audit_a is not None and audit_a.status == "screened_clean"
+                assert audit_b is not None and audit_b.status == "screened_clean"
+                assert audit_a.sample_game_id == game_a
+                assert audit_b.sample_game_id == game_b
         finally:
             await _delete_games(session_maker, [game_a, game_b])
             await _delete_opening_cache(session_maker, [hash_a, hash_b])
@@ -2241,6 +2313,164 @@ class TestPropagate:
             await _reset_progress(session_maker)
 
 
+async def _insert_candidate(
+    session_maker: async_sessionmaker[AsyncSession],
+    *,
+    game_id: int,
+    ply: int,
+    best_cp: int | None,
+    second_cp: int | None,
+    best_mate: int | None = None,
+    second_mate: int | None = None,
+    maia_prob: float = 0.3,
+) -> None:
+    """One `game_best_moves` (Gem/Great candidate) row with explicit evals."""
+    async with session_maker() as session:
+        session.add(
+            GameBestMove(
+                game_id=game_id,
+                ply=ply,
+                maia_prob=maia_prob,
+                best_cp=best_cp,
+                best_mate=best_mate,
+                second_cp=second_cp,
+                second_mate=second_mate,
+            )
+        )
+        await session.commit()
+
+
+async def _candidate(
+    session_maker: async_sessionmaker[AsyncSession], game_id: int, ply: int
+) -> tuple[int | None, int | None] | None:
+    """(best_cp, best_mate) of a candidate row, or None when the row is gone."""
+    async with session_maker() as session:
+        row = await session.get(GameBestMove, (game_id, ply))
+        return None if row is None else (row.best_cp, row.best_mate)
+
+
+class TestPropagateBestMoves:
+    """Follow-up to the prod run (2026-09-11): `game_best_moves.best_cp` is a
+    copy of the position eval, so propagate must re-base the candidate at
+    ply `p + 1` and drop it when the corrected margin fails the build-time
+    inaccuracy gate (game 2356581 ply 6: 305 -> 10 vs second -4)."""
+
+    async def _poisoned_game(
+        self,
+        session_maker: async_sessionmaker[AsyncSession],
+        *,
+        target_hash: int,
+        carrier_hash: int,
+        old_cp: int,
+        new_cp: int,
+    ) -> int:
+        """A game whose row 2 holds `old_cp` (the eval of the position with
+        `target_hash` on row 3) and whose audit row repairs it to `new_cp`."""
+        game_id = await _insert_game_for_propagate(session_maker)
+        await _insert_position(
+            session_maker,
+            user_id=_TEST_USER_ID,
+            game_id=game_id,
+            ply=2,
+            full_hash=carrier_hash,
+            eval_cp=old_cp,
+            eval_mate=None,
+        )
+        await _insert_position(
+            session_maker, user_id=_TEST_USER_ID, game_id=game_id, ply=3, full_hash=target_hash
+        )
+        async with session_maker() as session:
+            session.add(
+                OpeningCacheAudit(
+                    full_hash=target_hash,
+                    status="confirmed_bad",
+                    old_cp=old_cp,
+                    old_mate=None,
+                    full_cp=new_cp,
+                    full_mate=None,
+                )
+            )
+            await session.commit()
+        return game_id
+
+    async def test_propagate_rebases_and_prunes_candidates(self, test_engine: AsyncEngine) -> None:
+        """Three candidates at the repaired ply: one whose corrected margin
+        fails the gate (deleted), one that still passes (rewritten, kept),
+        one whose best_cp never matched the old value (untouched)."""
+        session_maker = _session_maker(test_engine)
+        await _ensure_user(session_maker, _TEST_USER_ID)
+        hash_prune, hash_keep, hash_skip = 556_001, 556_002, 556_003
+        # Ply 3 is Black to move (odd ply): mover-POV margin flips sign, so the
+        # "poison" is a large NEGATIVE cp (good for Black) corrected to ~0.
+        game_prune = await self._poisoned_game(
+            session_maker, target_hash=hash_prune, carrier_hash=41, old_cp=-305, new_cp=-10
+        )
+        game_keep = await self._poisoned_game(
+            session_maker, target_hash=hash_keep, carrier_hash=42, old_cp=-600, new_cp=-300
+        )
+        game_skip = await self._poisoned_game(
+            session_maker, target_hash=hash_skip, carrier_hash=43, old_cp=-305, new_cp=-10
+        )
+        try:
+            # prune: -305 vs 4 passes today; -10 vs 4 is ~0.01 ES -> fails.
+            await _insert_candidate(
+                session_maker, game_id=game_prune, ply=3, best_cp=-305, second_cp=4
+            )
+            # keep: -300 vs 0 is still ~0.24 ES -> passes with the corrected value.
+            await _insert_candidate(
+                session_maker, game_id=game_keep, ply=3, best_cp=-600, second_cp=0
+            )
+            # skip: candidate was built from some other value; not ours to touch.
+            await _insert_candidate(
+                session_maker, game_id=game_skip, ply=3, best_cp=-150, second_cp=4
+            )
+            await _seed_confirm_finished(session_maker)
+
+            await run_propagate(db="dev", dry_run=False, limit=None, session_maker=session_maker)
+
+            assert await _candidate(session_maker, game_prune, 3) is None
+            assert await _candidate(session_maker, game_keep, 3) == (-300, None)
+            assert await _candidate(session_maker, game_skip, 3) == (-150, None)
+        finally:
+            await _delete_games(session_maker, [game_prune, game_keep, game_skip])
+            await _delete_opening_cache(session_maker, [hash_prune, hash_keep, hash_skip])
+            await _reset_progress(session_maker)
+
+    async def test_standalone_stage_replays_trail(self, test_engine: AsyncEngine) -> None:
+        """A DB whose `propagate` ran before the candidate rewrite existed:
+        the trail row is there, the candidate is stale. `propagate-best-moves`
+        gates on propagate_finished_at, reports the stale count on --dry-run
+        without writing, then re-bases and prunes; a second run is a no-op."""
+        session_maker = _session_maker(test_engine)
+        await _ensure_user(session_maker, _TEST_USER_ID)
+        target_hash = 556_010
+        game_id = await self._poisoned_game(
+            session_maker, target_hash=target_hash, carrier_hash=44, old_cp=-305, new_cp=-10
+        )
+        try:
+            await _seed_confirm_finished(session_maker)
+            with pytest.raises(StageOrderError):
+                await run_propagate_best_moves(db="dev", dry_run=True, session_maker=session_maker)
+
+            # Old-code propagate: carrier + trail written, candidate left stale.
+            await run_propagate(db="dev", dry_run=False, limit=None, session_maker=session_maker)
+            await _insert_candidate(
+                session_maker, game_id=game_id, ply=3, best_cp=-305, second_cp=4
+            )
+
+            await run_propagate_best_moves(db="dev", dry_run=True, session_maker=session_maker)
+            assert await _candidate(session_maker, game_id, 3) == (-305, None)
+
+            await run_propagate_best_moves(db="dev", dry_run=False, session_maker=session_maker)
+            assert await _candidate(session_maker, game_id, 3) is None
+
+            await run_propagate_best_moves(db="dev", dry_run=False, session_maker=session_maker)
+        finally:
+            await _delete_games(session_maker, [game_id])
+            await _delete_opening_cache(session_maker, [target_hash])
+            await _reset_progress(session_maker)
+
+
 class TestRederive:
     """CACHEFIX-06: `rederive` reclassifies every affected game under the
     per-game advisory lock, through the drain's own diff/upsert classifier,
@@ -2574,6 +2804,184 @@ class TestRederive:
                 task.cancel()
             await holder.close()
             await _delete_games(session_maker, [game_id])
+
+
+# ---------------------------------------------------------------------------
+# `demote` (Phase 220 Release 2, CACHEFIX-08 -- operator escape hatch)
+# ---------------------------------------------------------------------------
+
+
+class TestDemote:
+    """`demote` un-confirms cache rows recorded against a named engine_version.
+    NOT a pipeline stage: takes no _STAGE_ORDER gate, so no _reset_progress
+    cleanup is needed (only the cache rows themselves)."""
+
+    async def test_demote_unconfirms_named_engine_version(self, test_engine: AsyncEngine) -> None:
+        """A confirmed row at the named engine_version is un-confirmed; a
+        confirmed row at a DIFFERENT engine_version is left untouched."""
+        session_maker = _session_maker(test_engine)
+        target_hash = -910001
+        other_hash = -910002
+        try:
+            async with session_maker() as session:
+                session.add(
+                    OpeningPositionEval(
+                        full_hash=target_hash,
+                        eval_cp=42,
+                        confirmed=True,
+                        n_sources=2,
+                        engine_version="Stockfish 18",
+                        confirmed_at=datetime.datetime.now(datetime.timezone.utc),
+                    )
+                )
+                session.add(
+                    OpeningPositionEval(
+                        full_hash=other_hash,
+                        eval_cp=10,
+                        confirmed=True,
+                        n_sources=2,
+                        engine_version="Stockfish 17",
+                        confirmed_at=datetime.datetime.now(datetime.timezone.utc),
+                    )
+                )
+                await session.commit()
+
+            await run_demote(
+                db="dev",
+                dry_run=False,
+                limit=None,
+                engine_version="Stockfish 18",
+                session_maker=session_maker,
+            )
+
+            async with session_maker() as session:
+                target = await session.get(OpeningPositionEval, target_hash)
+                other = await session.get(OpeningPositionEval, other_hash)
+            assert target is not None
+            assert target.confirmed is False, "named-version row must be un-confirmed"
+            assert target.n_sources == 1
+            assert target.confirmed_at is None
+            assert other is not None
+            assert other.confirmed is True, "a different engine_version must be untouched"
+            assert other.n_sources == 2
+        finally:
+            await _delete_opening_cache(session_maker, [target_hash, other_hash])
+
+    async def test_demote_dry_run_writes_nothing(self, test_engine: AsyncEngine) -> None:
+        """--dry-run reports the affected count and changes no row."""
+        session_maker = _session_maker(test_engine)
+        target_hash = -910003
+        try:
+            async with session_maker() as session:
+                session.add(
+                    OpeningPositionEval(
+                        full_hash=target_hash,
+                        eval_cp=5,
+                        confirmed=True,
+                        n_sources=2,
+                        engine_version="Stockfish 18",
+                        confirmed_at=datetime.datetime.now(datetime.timezone.utc),
+                    )
+                )
+                await session.commit()
+
+            await run_demote(
+                db="dev",
+                dry_run=True,
+                limit=None,
+                engine_version="Stockfish 18",
+                session_maker=session_maker,
+            )
+
+            async with session_maker() as session:
+                row = await session.get(OpeningPositionEval, target_hash)
+            assert row is not None
+            assert row.confirmed is True, "--dry-run must not un-confirm anything"
+        finally:
+            await _delete_opening_cache(session_maker, [target_hash])
+
+    async def test_demote_only_confirmed_rows_at_version_are_counted(
+        self, test_engine: AsyncEngine
+    ) -> None:
+        """An already-unconfirmed row at the named engine_version is a no-op
+        (nothing to demote) and does not inflate the affected count."""
+        session_maker = _session_maker(test_engine)
+        already_candidate_hash = -910004
+        try:
+            async with session_maker() as session:
+                session.add(
+                    OpeningPositionEval(
+                        full_hash=already_candidate_hash,
+                        eval_cp=7,
+                        confirmed=False,
+                        n_sources=1,
+                        engine_version="Stockfish 18",
+                    )
+                )
+                await session.commit()
+
+            await run_demote(
+                db="dev",
+                dry_run=False,
+                limit=None,
+                engine_version="Stockfish 18",
+                session_maker=session_maker,
+            )
+
+            async with session_maker() as session:
+                row = await session.get(OpeningPositionEval, already_candidate_hash)
+            assert row is not None
+            assert row.confirmed is False
+            assert row.n_sources == 1
+        finally:
+            await _delete_opening_cache(session_maker, [already_candidate_hash])
+
+    async def test_demote_limit_caps_affected_rows(self, test_engine: AsyncEngine) -> None:
+        """--limit caps how many confirmed rows at the named version are un-confirmed
+        this run; the rest stay confirmed for a follow-up invocation."""
+        session_maker = _session_maker(test_engine)
+        hashes = [-910010, -910011, -910012]
+        try:
+            async with session_maker() as session:
+                for fh in hashes:
+                    session.add(
+                        OpeningPositionEval(
+                            full_hash=fh,
+                            eval_cp=1,
+                            confirmed=True,
+                            n_sources=2,
+                            engine_version="Stockfish 18",
+                            confirmed_at=datetime.datetime.now(datetime.timezone.utc),
+                        )
+                    )
+                await session.commit()
+
+            await run_demote(
+                db="dev",
+                dry_run=False,
+                limit=1,
+                engine_version="Stockfish 18",
+                session_maker=session_maker,
+            )
+
+            async with session_maker() as session:
+                rows = (
+                    (
+                        await session.execute(
+                            select(OpeningPositionEval).where(
+                                OpeningPositionEval.full_hash.in_(hashes)
+                            )
+                        )
+                    )
+                    .scalars()
+                    .all()
+                )
+            un_confirmed_count = sum(1 for r in rows if r.confirmed is False)
+            assert un_confirmed_count == 1, (
+                f"--limit 1 must un-confirm exactly one row, got {un_confirmed_count}"
+            )
+        finally:
+            await _delete_opening_cache(session_maker, hashes)
 
 
 # ---------------------------------------------------------------------------
