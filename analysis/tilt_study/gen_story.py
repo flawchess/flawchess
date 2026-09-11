@@ -53,6 +53,7 @@ ENDGAME_LEAD_CP = 200
 MIN_THINK_MOVES = 10
 MIN_PAIRED_GAMES = 20
 FAST_TC = ["bullet", "blitz", "rapid"]
+DEEP_SESSION_IDX = (6, 15)  # session games used for the depth-controlled analysis rate
 md: list[str] = []
 
 
@@ -862,6 +863,56 @@ emit(
     )
     .sort("k"),
     "p_loss_after_k",
+)
+
+# analysis requests: was the LAST game of the streak analysed (lichess_evals_at set, i.e. either
+# player requested lichess computer analysis)? Each game is the last game of its own run so far,
+# so the streak here is (dir, run_len) of the game itself, not the streak before it; no
+# next-game condition, because requesting analysis takes minutes and would bias "next within
+# the hour". Frame: all rated games with hygiene (a rate, so no equal footing), and the run
+# within one session (a 6-loss run spread over days is not a tilt state).
+analyzed = pl.read_parquet(OUT / "acc.parquet").select("game_id", "analyzed")
+an = (
+    beh.join(analyzed, on="game_id", how="left")
+    .filter(pl.col("analyzed").is_not_null())
+    .with_columns(
+        xo=(pl.col("dir") * pl.col("run_len").clip(upper_bound=6)).cast(pl.Int32),
+        run_same_session=pl.col("run_start_session") == pl.col("session_id"),
+        a=pl.col("analyzed").cast(pl.Float64),
+    )
+)
+# user-demeaned rate: long streaks come from high-volume players, who may analyse less in
+# general; subtracting each user x TC mean rate removes that composition
+an = an.with_columns(a_dm=pl.col("a") - pl.col("a").mean().over(USER_W))
+an_ss = an.filter(pl.col("run_same_session"))
+# session-depth control: a k-streak game sits at least k games into its session, and the
+# per-game analysis rate falls with session length whatever the result (rapid: 40% in
+# one-game sessions, 25% at 8+). Comparing streak lengths only among games 6-15 of a session
+# puts every cell at the same depth (and the same share of session-ending games).
+an_deep = an_ss.filter(pl.col("session_idx").is_between(*DEEP_SESSION_IDX))
+rows = []
+for x in XS6:
+    c = an_ss.filter(pl.col("xo") == x)
+    r = {"x": x, "n": c.height}
+    m, lo, hi = boot_mean(c, "a", reps=REPS)
+    r.update({"analysed_pct": pct(m), "analysed_lo": pct(lo), "analysed_hi": pct(hi)})
+    m, lo, hi = boot_mean(c, "a_dm", reps=REPS)
+    r.update({"demeaned_pp": pct(m), "demeaned_lo": pct(lo), "demeaned_hi": pct(hi)})
+    cd = an_deep.filter(pl.col("xo") == x)
+    m, lo, hi = boot_mean(cd, "a_dm", reps=REPS)
+    r.update({"deep_n": cd.height, "deep_pp": pct(m), "deep_lo": pct(lo), "deep_hi": pct(hi)})
+    r["rapid_deep_pp"] = mean_pct(cd.filter(pl.col("tc") == "rapid"), "a_dm")
+    r["analysed_pct_any_session"] = mean_pct(an.filter(pl.col("xo") == x), "a")
+    r["n_any_session"] = an.filter(pl.col("xo") == x).height
+    for tc in TC_ORDER:
+        ct = c.filter(pl.col("tc") == tc)
+        r[f"{tc}_n"] = ct.height
+        r[f"{tc}_analysed_pct"] = mean_pct(ct, "a")
+    rows.append(r)
+emit(
+    "6g. Share of streak-ending games with lichess analysis (last game of the streak), -6 = 6+ losses ... +6 = 6+ wins",
+    pl.DataFrame(rows),
+    "analysed_by_streak",
 )
 
 # ---- 7. trait: split-half reliability of a player's post-loss minus post-win residual -----

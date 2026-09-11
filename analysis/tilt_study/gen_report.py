@@ -113,6 +113,22 @@ rev_elo = load("revenge_by_rating")
 speed = load("speed")
 blunders = load("blunders")
 shape = load("next_loss_shape")
+analysed = ci(
+    ci(
+        load("analysed_by_streak").with_columns(
+            pl.col("x").map_elements(xlab, return_dtype=pl.Utf8).alias("streak")
+        ),
+        "analysed_pct",
+        "analysed_lo",
+        "analysed_hi",
+        "analysed % [95% CI]",
+    ),
+    "demeaned_pp",
+    "demeaned_lo",
+    "demeaned_hi",
+    "vs player's own rate, pp [95% CI]",
+).with_columns(pl.col("analysed % [95% CI]").str.replace_all(r"\+", ""))  # rates are unsigned
+analysed = ci(analysed, "deep_pp", "deep_lo", "deep_hi", "same, session games 6–15 only [95% CI]")
 
 
 def anat(name: str) -> str:
@@ -405,8 +421,42 @@ is the complement of the user-requested-analysis set and inherits that selection
 {table(blunders, [("tc", "time control"), ("blunders_per_100_LLL+", "own, after LLL+"), ("opp_blunders_LLL+", "opponent, after LLL+"), ("blunders_per_100_L", "own, after L"), ("opp_blunders_L", "opponent, after L"), ("blunders_per_100_W", "own, after W"), ("opp_blunders_W", "opponent, after W"), ("blunders_per_100_WWW+", "own, after WWW+"), ("opp_blunders_WWW+", "opponent, after WWW+"), ("n_L", "games after L")])}
 
 The lichess-analysed (user-requested) evaluations are not used for this: analysis requests are
-themselves tilt-dependent (players request analysis less often after losing streaks), which produces a
-spurious +15–20% ACPL after LLL+ (FINDINGS.md, additional probes).
+themselves tilt-dependent (§6a), which produces a spurious +15–20% ACPL after LLL+ (FINDINGS.md,
+additional probes).
+
+### 6a. Analysis requests: does a tilted player still look at the game?
+
+Share of games with a Lichess computer analysis (`lichess_evals_at` set; either player can request
+it), by the streak the game *completes*: the row "3 losses" is the third straight loss itself, not the
+game after it. All rated games with hygiene, the run within one session, ±6 pooled, intervals from the
+user bootstrap. Two controls: "vs player's own rate" subtracts each user × time-control mean analysis
+rate from the game's flag, which removes who reaches long streaks; "session games 6–15 only" additionally
+compares streak lengths at the same session depth, because a k-game streak sits at least k games into
+its session and the per-game analysis rate falls with session length whatever the result (rapid: 40%
+in one-game sessions, 25% at 8+), and because the game a player stops on is analysed more often (rapid
+losses: 37% vs 32%) while a streak game is by construction less often the stopping game (37% → 18%
+from 1 to 6+ losses). The last two columns are the rapid raw rate and the rapid depth-controlled rate:
+
+{table(analysed, [("streak", "streak completed"), ("n", "games"), ("analysed % [95% CI]", "analysed % [95% CI]"), ("vs player's own rate, pp [95% CI]", "vs player's own rate, pp [95% CI]"), ("same, session games 6–15 only [95% CI]", "same, session games 6–15 only [95% CI]"), ("bullet_analysed_pct", "bullet %"), ("blitz_analysed_pct", "blitz %"), ("rapid_analysed_pct", "rapid %"), ("rapid_deep_pp", "rapid, controlled pp")])}
+
+The raw column falls from 22.7% after a single loss to 14.7% after 6+ straight losses (rapid: 34.1% →
+21.4%), but most of that is not a decision to look away. Three mechanical things drive it: who reaches
+long same-session streaks (bullet players at 8% whatever the streak, high-volume accounts, and in rapid
+a rating that drifts from 1,700 in the 1-loss cell to 1,480 at 6+; lower-rated players analyse less),
+session depth, and the stop-and-analyse selection above. Game shape is not one of them: length (62–68
+plies) and abandonment rate (2.6%) are flat across the loss cells, and dropping rematches changes
+nothing. Demeaning by user removes about two thirds of the drop; holding session depth fixed removes
+most of the rest. What survives is small and consistent in sign: at equal depth, within a player, a
+single loss is analysed 1.4 pp more often than that player's average game, 6+ losses 0.2 pp (rapid:
++3.0 → +0.4), while wins sit 1.2–2.1 pp below the player's mean at every streak length (rapid: −4.8 →
+−5.8). The loss-specific part of the decline is ≈ 1 pp pooled and ≈ 2 pp in rapid, on bases of 20%
+and 28%; the trend is monotonic from 1 to 5 losses, but the 6+ cell alone has an interval of ± 1 pp
+pooled and ± 3 pp in rapid, so this is suggestive rather than established. The rising raw rate after
+long winning streaks is the mirror artefact (rapid 6+-win streaks come from 1,980-rated players who
+analyse more; within player the win rate is flat). Draws are the most analysed result in raw terms
+(28.2%) but −1.5 pp within player: draw-heavy players are the rapid and classical crowd. The
+population-level fact the blunder analysis in §6 relies on (analysis requests are tilt-dependent)
+stands, mostly through composition and session depth rather than mood.
 
 ## 7. Is tilt a personal trait?
 
