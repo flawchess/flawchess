@@ -44,7 +44,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import chess  # noqa: E402
 import sentry_sdk  # noqa: E402
-from sqlalchemy import delete, func, select, text, update  # noqa: E402
+from sqlalchemy import delete, func, select, text, tuple_, update  # noqa: E402
 from sqlalchemy.ext.asyncio import (  # noqa: E402
     AsyncEngine,
     AsyncSession,
@@ -64,6 +64,7 @@ import app.models.oauth_account  # noqa: E402, F401
 import app.models.user  # noqa: E402, F401
 from app.models.game import Game  # noqa: E402
 from app.models.game_flaw import GameFlaw  # noqa: E402
+from app.models.game_best_move import GameBestMove  # noqa: E402
 from app.models.game_position import DEDUP_MAX_PLY, GamePosition  # noqa: E402
 from app.models.opening_cache_audit import (  # noqa: E402
     OpeningCacheAudit,
@@ -84,6 +85,10 @@ from app.services.eval_apply import (  # noqa: E402
 from app.services.eval_utils import (  # noqa: E402
     eval_cp_to_expected_score,
     eval_mate_to_expected_score,
+)
+from app.services.best_move_candidates import (  # noqa: E402
+    mover_color_for_ply,
+    passes_inaccuracy_gate,
 )
 from app.services.flaws_service import classify_game_flaws  # noqa: E402
 from app.services.zobrist import EVAL_CP_MAX_ABS, compute_hashes  # noqa: E402
@@ -127,6 +132,7 @@ Stage = Literal[
     "orphans",
     "confirm",
     "propagate",
+    "propagate_best_moves",
     "rederive",
     "report",
     "legacy_sample",
@@ -139,6 +145,8 @@ Stage = Literal[
 # lacking those columns to find "the nearest tracked predecessor", so
 # `orphans` itself gates on `screen_finished_at` and `confirm` still gates on
 # `screen_finished_at` too (unaffected by orphans having run or not).
+# `propagate_best_moves` is the same kind of untracked one-shot member: it
+# gates on `propagate_finished_at` and `rederive` skips past it.
 _STAGE_ORDER: tuple[Stage, ...] = (
     "seed",
     "calibrate",
@@ -146,6 +154,7 @@ _STAGE_ORDER: tuple[Stage, ...] = (
     "orphans",
     "confirm",
     "propagate",
+    "propagate_best_moves",
     "rederive",
     "report",
     "legacy_sample",
@@ -1379,6 +1388,78 @@ _PROPAGATE_PV_SQL = text(
     " RETURNING n.game_id, n.user_id, n.ply"
 )
 
+# Gem/Great candidate rows (`game_best_moves`) copy the position's eval into
+# `best_cp`/`best_mate` when the candidate is built (eval_apply
+# `_build_best_move_candidates`, stage 5), so a poisoned cache value lands
+# there too and the query-time tier (classify_best_move) keeps reading it
+# after `game_positions` has been repaired. Prod 2026-09-11: 1,617 candidate
+# rows in 1,573 games still carried the old value after `propagate`, 365 of
+# them rendering a spurious gem/great badge (game 2356581 ply 6, e3: best_cp
+# 305 vs second_cp -4 -> "great" with the true margin being ~0.01 ES).
+# The candidate for the move played FROM the position with hash on row `n`
+# lives at ply `n` = repair row `p + 1`. Rewrite is gated on the exact old
+# value like every other propagate statement, and a rewritten row that no
+# longer passes the build-time inaccuracy gate is deleted -- the builder
+# would never have stored it.
+_PROPAGATE_CANDIDATE_SQL_ALL = (
+    "UPDATE game_best_moves b"
+    " SET best_cp = r.new_cp, best_mate = r.new_mate"
+    " FROM opening_cache_repair_rows r"
+    " WHERE r.game_id = b.game_id"
+    "   AND b.ply = r.ply + 1"
+    "   AND b.best_cp IS NOT DISTINCT FROM r.old_cp"
+    "   AND b.best_mate IS NOT DISTINCT FROM r.old_mate"
+)
+_PROPAGATE_CANDIDATE_RETURNING = (
+    " RETURNING b.game_id, b.ply, b.best_cp, b.best_mate, b.second_cp, b.second_mate"
+)
+_PROPAGATE_CANDIDATE_SQL_ONE_HASH = text(
+    _PROPAGATE_CANDIDATE_SQL_ALL
+    + "   AND r.full_hash = CAST(:full_hash AS bigint)"
+    + _PROPAGATE_CANDIDATE_RETURNING
+)
+_PROPAGATE_CANDIDATE_SQL_TRAIL = text(_PROPAGATE_CANDIDATE_SQL_ALL + _PROPAGATE_CANDIDATE_RETURNING)
+_STALE_CANDIDATE_COUNT_SQL = text(
+    "SELECT count(*) FROM game_best_moves b"
+    " JOIN opening_cache_repair_rows r"
+    "   ON r.game_id = b.game_id AND b.ply = r.ply + 1"
+    " WHERE b.best_cp IS NOT DISTINCT FROM r.old_cp"
+    "   AND b.best_mate IS NOT DISTINCT FROM r.old_mate"
+)
+
+
+async def _propagate_candidates(session: AsyncSession, *, full_hash: int | None) -> tuple[int, int]:
+    """Rewrite stale `game_best_moves.best_cp/best_mate` from the repair-row
+    trail (one hash, or the whole trail when `full_hash` is None) and delete
+    every rewritten candidate that fails `passes_inaccuracy_gate` with its
+    corrected margin. Returns (rewritten, deleted). Idempotent: the exact-old-
+    value predicate matches nothing on a second run.
+    """
+    if full_hash is None:
+        rows = (await session.execute(_PROPAGATE_CANDIDATE_SQL_TRAIL)).all()
+    else:
+        rows = (
+            await session.execute(_PROPAGATE_CANDIDATE_SQL_ONE_HASH, {"full_hash": full_hash})
+        ).all()
+    failing: list[tuple[int, int]] = [
+        (r.game_id, r.ply)
+        for r in rows
+        if not passes_inaccuracy_gate(
+            r.best_cp, r.best_mate, r.second_cp, r.second_mate, mover_color_for_ply(r.ply)
+        )
+    ]
+    for chunk in _chunked_pairs(failing, _ORPHAN_IN_CHUNK):
+        await session.execute(
+            delete(GameBestMove).where(tuple_(GameBestMove.game_id, GameBestMove.ply).in_(chunk))
+        )
+    return len(rows), len(failing)
+
+
+def _chunked_pairs(items: list[tuple[int, int]], size: int) -> list[list[tuple[int, int]]]:
+    """`_chunked` for (game_id, ply) pairs (two bind params per element)."""
+    return [items[i : i + size] for i in range(0, len(items), size)]
+
+
 _REPAIR_GAME_UPSERT_SQL = text(
     "INSERT INTO opening_cache_repair_games (game_id, user_id, status, rows_repaired)"
     " VALUES (CAST(:game_id AS bigint), CAST(:user_id AS integer), 'pending', CAST(:rows AS integer))"
@@ -1388,7 +1469,7 @@ _REPAIR_GAME_UPSERT_SQL = text(
 )
 
 
-async def _propagate_one_hash(session: AsyncSession, audit: OpeningCacheAudit) -> None:
+async def _propagate_one_hash(session: AsyncSession, audit: OpeningCacheAudit) -> tuple[int, int]:
     """Propagate one `confirmed_bad` audit row's new value into every carrier
     `game_positions` row that still holds the OLD cached value, on the correct
     side of the post-move shift (CACHEFIX-05). Runs three statements against
@@ -1401,7 +1482,8 @@ async def _propagate_one_hash(session: AsyncSession, audit: OpeningCacheAudit) -
     upserts `opening_cache_repair_games` `pending` for every game touched by
     ANY of the three statements, and always stamps `repaired_at` -- even when
     zero rows matched (idempotent: a hash whose carriers were already
-    rewritten, or that never had one, still gets step 5).
+    rewritten, or that never had one, still gets step 5). Returns the
+    (rewritten, deleted) `game_best_moves` candidate counts for this hash.
     """
     params = {
         "full_hash": audit.full_hash,
@@ -1489,15 +1571,18 @@ async def _propagate_one_hash(session: AsyncSession, audit: OpeningCacheAudit) -
     # only, so every repaired prod row would have become an untrusted candidate.
     audit.status = "repaired"
     audit.repaired_at = datetime.now(timezone.utc)
+    # Same transaction as the repair rows it reads (UPDATE ... FROM sees them).
+    return await _propagate_candidates(session, full_hash=audit.full_hash)
 
 
 async def _run_propagate_batch(
     session_maker: async_sessionmaker[AsyncSession], batch_size: int
-) -> int:
+) -> tuple[int, int, int]:
     """Process one page of `confirmed_bad`, unpropagated audit rows: propagate
     each hash's new value in the SAME transaction as the batch commit (no
     engine calls in this stage, so no read/gather/write split is needed).
-    Returns the number of hashes processed this batch, or 0 when none remain."""
+    Returns (hashes processed, candidates rewritten, candidates deleted);
+    hashes is 0 when none remain."""
     async with session_maker() as session:
         audits = (
             (
@@ -1515,11 +1600,14 @@ async def _run_propagate_batch(
             .all()
         )
         if not audits:
-            return 0
+            return 0, 0, 0
+        rewritten = deleted = 0
         for audit in audits:
-            await _propagate_one_hash(session, audit)
+            n_rewritten, n_deleted = await _propagate_one_hash(session, audit)
+            rewritten += n_rewritten
+            deleted += n_deleted
         await session.commit()
-    return len(audits)
+    return len(audits), rewritten, deleted
 
 
 async def run_propagate(
@@ -1580,11 +1668,13 @@ async def run_propagate(
                 await session.commit()
 
         _install_signal_handlers()
-        processed_total = 0
+        processed_total = rewritten_total = deleted_total = 0
         while not _stop_requested:
             if limit is not None and processed_total >= limit:
                 break
-            batch_count = await _run_propagate_batch(session_maker, REPAIR_BATCH_ROWS)
+            batch_count, rewritten, deleted = await _run_propagate_batch(
+                session_maker, REPAIR_BATCH_ROWS
+            )
             if batch_count == 0:
                 async with session_maker() as fin_session:
                     fin_progress = await _ensure_progress_row(fin_session)
@@ -1592,7 +1682,84 @@ async def run_propagate(
                     await fin_session.commit()
                 break
             processed_total += batch_count
-        print(f"propagate: processed {processed_total} row(s).")
+            rewritten_total += rewritten
+            deleted_total += deleted
+        print(
+            f"propagate: processed {processed_total} row(s); game_best_moves candidates:"
+            f" {rewritten_total} rewritten, {deleted_total} deleted (failed the inaccuracy gate)."
+        )
+    finally:
+        if owns_engine and engine is not None:
+            await engine.dispose()
+
+
+# ─── `propagate-best-moves` ──────────────────────────────────────────────────
+#
+# One-shot, untracked (like `orphans`): replays the `opening_cache_repair_rows`
+# trail against `game_best_moves` for a database whose `propagate` ran before
+# the candidate rewrite existed (prod, 2026-09-11). A `propagate` run on
+# current code already does this per hash, so on such a database this stage
+# rewrites nothing and is safe to run any number of times.
+
+
+async def run_propagate_best_moves(
+    *,
+    db: str,
+    dry_run: bool,
+    append_report: bool = False,
+    session_maker: async_sessionmaker[AsyncSession] | None = None,
+) -> None:
+    """Rewrite stale `game_best_moves.best_cp/best_mate` from the repair-row
+    trail and delete rewritten candidates that fail the build-time inaccuracy
+    gate. Gated on `propagate_finished_at`.
+
+    Args:
+        db: DB target string ("dev", "benchmark", "prod").
+        dry_run: If True, report how many candidate rows still hold a repaired
+            cell's OLD value and write nothing.
+        append_report: Also append the result block to the dated report file
+            (today's date), if it exists.
+        session_maker: Injectable session factory for testing.
+    """
+    if settings.SENTRY_DSN:
+        sentry_sdk.init(dsn=settings.SENTRY_DSN, environment=settings.ENVIRONMENT)
+
+    session_maker, engine, owns_engine = _resolve_session_maker(db, session_maker)
+
+    try:
+        async with session_maker() as session:
+            await _stage_gate(session, "propagate_best_moves")
+            if dry_run:
+                stale = (await session.execute(_STALE_CANDIDATE_COUNT_SQL)).scalar_one()
+                print(
+                    f"propagate-best-moves: {stale} game_best_moves row(s) still hold a"
+                    " repaired cell's old best_cp/best_mate (--dry-run, nothing written)."
+                )
+                return
+            rewritten, deleted = await _propagate_candidates(session, full_hash=None)
+            await session.commit()
+
+        lines = [
+            "## 3b. Gem/Great candidates (`game_best_moves`) re-based on the repaired evals",
+            "",
+            f"- Candidate rows whose `best_cp`/`best_mate` still held the old value: {rewritten:,}"
+            " (rewritten to the repaired value)",
+            f"- Of those, deleted because the corrected margin fails the inaccuracy gate: {deleted:,}",
+            f"- Kept as candidates with the corrected margin: {rewritten - deleted:,}",
+        ]
+        for line in lines:
+            print(line)
+        if append_report:
+            out_dir = Path(__file__).resolve().parent.parent / "reports" / "opening-cache-repair"
+            today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+            report_path = out_dir / f"opening-cache-repair-{today}.md"
+            if report_path.exists():
+                with report_path.open("a", encoding="utf-8") as f:
+                    f.write("\n" + "\n".join(lines) + "\n")
+            else:
+                print(
+                    f"propagate-best-moves: --append-report given but {report_path} does not exist."
+                )
     finally:
         if owns_engine and engine is not None:
             await engine.dispose()
@@ -3089,6 +3256,27 @@ def _add_propagate_subparser(
     _add_common_args(sub)
 
 
+def _add_propagate_best_moves_subparser(
+    subparsers: "argparse._SubParsersAction[argparse.ArgumentParser]",
+) -> None:
+    sub = subparsers.add_parser(
+        "propagate-best-moves",
+        help=(
+            "Re-base game_best_moves (Gem/Great candidates) on the repaired evals via the"
+            " repair-row trail; for a DB whose propagate ran before this rewrite existed."
+        ),
+    )
+    _add_db_arg(sub)
+    sub.add_argument("--dry-run", action="store_true", default=False)
+    sub.add_argument(
+        "--append-report",
+        action="store_true",
+        default=False,
+        dest="append_report",
+        help="Also append the result block to today's dated report file, if it exists.",
+    )
+
+
 def _add_rederive_subparser(
     subparsers: "argparse._SubParsersAction[argparse.ArgumentParser]",
 ) -> None:
@@ -3153,6 +3341,7 @@ def build_parser() -> argparse.ArgumentParser:
     _add_orphans_subparser(subparsers)
     _add_confirm_subparser(subparsers)
     _add_propagate_subparser(subparsers)
+    _add_propagate_best_moves_subparser(subparsers)
     _add_rederive_subparser(subparsers)
     _add_report_subparser(subparsers)
     _add_legacy_sample_subparser(subparsers)
@@ -3182,6 +3371,10 @@ async def _dispatch(args: argparse.Namespace) -> None:
         )
     elif args.command == "propagate":
         await run_propagate(db=args.db, dry_run=args.dry_run, limit=args.limit)
+    elif args.command == "propagate-best-moves":
+        await run_propagate_best_moves(
+            db=args.db, dry_run=args.dry_run, append_report=args.append_report
+        )
     elif args.command == "rederive":
         await run_rederive(db=args.db, dry_run=args.dry_run, limit=args.limit)
     elif args.command == "report":
