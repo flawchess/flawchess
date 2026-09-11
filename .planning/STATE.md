@@ -4,14 +4,14 @@ milestone: v2.16
 current_phase: 220
 current_phase_name: Opening Eval Cache Repair & Two-Source Confirmation (SEED-164)
 status: executing
-stopped_at: Completed 220-05-PLAN.md (Release 1 deployed to prod)
-last_updated: "2026-09-10T10:34:54.013Z"
+stopped_at: Completed 220-06-PLAN.md (prod repair run, 14 acceptance queries, legacy-cohort NO BUILD)
+last_updated: "2026-09-11T13:26:30.000Z"
 state_head: 3c471a54b3893b24ad3980bfdfcbe8c6b9641d2d
 progress:
   total_phases: 2
   completed_phases: 1
   total_plans: 11
-  completed_plans: 8
+  completed_plans: 9
 milestone_name: Audit Hardening & Dependency Currency
 last_activity: 2026-09-06
 last_activity_desc: Completed quick task 260906-i5e — FlawChess Engine card header shows a running node count (main at 1b5060661, unreleased)
@@ -22,7 +22,7 @@ last_activity_desc: Completed quick task 260906-i5e — FlawChess Engine card he
 ## Current Position
 
 Phase: 220 (Opening Eval Cache Repair & Two-Source Confirmation (SEED-164)) — EXECUTING
-Plan: 6 of 8
+Plan: 7 of 8
 
 Status: Ready to execute
 
