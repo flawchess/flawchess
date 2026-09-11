@@ -1,12 +1,24 @@
 ---
 phase: 220-opening-eval-cache-repair-two-source-confirmation
 verified: 2026-09-11T20:15:00Z
-status: human_needed
+status: passed
 score: 5/5 roadmap success criteria verified; 12/12 CACHEFIX requirements verified
 covered_files: [".claude/skills/db-report/SKILL.md", ".planning/phases/220-opening-eval-cache-repair-two-source-confirmation/220-01-PLAN.md", ".planning/phases/220-opening-eval-cache-repair-two-source-confirmation/220-01-SUMMARY.md", ".planning/phases/220-opening-eval-cache-repair-two-source-confirmation/220-02-PLAN.md", ".planning/phases/220-opening-eval-cache-repair-two-source-confirmation/220-02-SUMMARY.md", ".planning/phases/220-opening-eval-cache-repair-two-source-confirmation/220-03-PLAN.md", ".planning/phases/220-opening-eval-cache-repair-two-source-confirmation/220-03-SUMMARY.md", ".planning/phases/220-opening-eval-cache-repair-two-source-confirmation/220-04-PLAN.md", ".planning/phases/220-opening-eval-cache-repair-two-source-confirmation/220-04-SUMMARY.md", ".planning/phases/220-opening-eval-cache-repair-two-source-confirmation/220-05-PLAN.md", ".planning/phases/220-opening-eval-cache-repair-two-source-confirmation/220-05-SUMMARY.md", ".planning/phases/220-opening-eval-cache-repair-two-source-confirmation/220-06-PLAN.md", ".planning/phases/220-opening-eval-cache-repair-two-source-confirmation/220-06-SUMMARY.md", ".planning/phases/220-opening-eval-cache-repair-two-source-confirmation/220-07-PLAN.md", ".planning/phases/220-opening-eval-cache-repair-two-source-confirmation/220-07-SUMMARY.md", ".planning/phases/220-opening-eval-cache-repair-two-source-confirmation/220-08-PLAN.md", ".planning/phases/220-opening-eval-cache-repair-two-source-confirmation/220-08-SUMMARY.md", ".planning/phases/220-opening-eval-cache-repair-two-source-confirmation/220-CONTEXT.md", "CHANGELOG.md", "alembic/versions/20260909_120000_a1c2e3f40001_phase_220_opening_cache_audit.py", "alembic/versions/20260912_120000_b7d4f5a60002_phase_220_cache_provenance.py", "app/models/opening_cache_audit.py", "app/models/opening_position_eval.py", "app/routers/eval_remote.py", "app/services/eval_apply.py", "app/services/eval_drain.py", "scripts/backfill_flaws.py", "scripts/opening_cache_repair.py"]
-covered_digest: "v1:sha256:ee8c060907c9cae2004c1abee392277531ceac26dc8d9cda1cb5ecd4c4a74165"
+covered_digest: "v1:sha256:a82d3b83e3e69a477fd0812654dbd20aa0f3bca67094d30526e5e90160483ed4"
 behavior_unverified: 0
-overrides_applied: 0
+overrides_applied: 1
+override:
+  by: owner (Adrian Imfeld, via /gsd-execute-phase 220 session, 2026-09-11T20:20Z)
+  from: human_needed
+  to: passed
+  reason: |
+    Item 1 (db-report Check C/D render) closed by the orchestrator against prod on 2026-09-11 20:07Z:
+    Query 12b -> n_disagreed 0 / n_unconfirmed 5,584 / n_total 2,221,454; 49 post-deploy rows all
+    landed as candidates with source_game_id and engine_version populated. Stale first-write-wins line
+    in SKILL.md fixed (de19fd99b).
+    Item 2 (four judgment-tier prohibitions P1-P4) signed off by the owner with the evidence table below.
+    Item 3 (few-days disagreement watch) is a follow-up by construction, recorded in STATE.md and
+    220-08-SUMMARY.md; not a gate on phase completion.
 behavior_unverified_items: []
 coincidental_reliance_items: []
 human_verification:
