@@ -464,7 +464,7 @@ Plans:
 - [x] 220-05-PLAN.md — Dev smoke with a literal SIGTERM, changelog, pre-merge gate, Release 1 merge + deploy (wave 4)
 - [x] 220-06-PLAN.md — Prod repair operator stages, 14 acceptance queries, legacy-cohort decision (wave 5)
 - [x] 220-07-PLAN.md — Release 2 hardening: provenance migration, candidate/promote/replace, confirmed-only reads (wave 6)
-- [ ] 220-08-PLAN.md — Release 2 gate, merge, deploy and post-deploy verification (wave 7)
+- [x] 220-08-PLAN.md — Release 2 gate, merge, deploy and post-deploy verification (wave 7)
 
 **Cross-cutting constraints:**
 
