@@ -227,3 +227,9 @@ legacy-sample: D-07 decision
 - control cohort: 50 games, 930 rows ply<=20 (6 disagree), 1949 rows ply>20 (176 disagree, 9.03%)
 - rule: build only when legacy_rate_ply_gt_20 > LEGACY_BUILD_RATIO * control_rate_ply_gt_20 AND (legacy_rate - control_rate) >= LEGACY_BUILD_MIN_EXCESS_PP
 LEGACY-COHORT-DECISION: NO BUILD
+
+## 3b. Gem/Great candidates (`game_best_moves`) re-based on the repaired evals
+
+- Candidate rows whose `best_cp`/`best_mate` still held the old value: 1,617 (rewritten to the repaired value)
+- Of those, deleted because the corrected margin fails the inaccuracy gate: 828
+- Kept as candidates with the corrected margin: 789
