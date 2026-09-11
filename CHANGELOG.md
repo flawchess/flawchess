@@ -27,6 +27,7 @@ in `YYYY-MM-DD` (Europe/Zurich).
 
 ### Changed
 
+- The shared cache of opening-position evaluations now requires two independent engine evaluations from different games to agree before a position is trusted, and records where each value came from (source game, engine version, timestamps). Positions verified by the repair above are trusted from the start; anything new starts as a candidate.
 - The Maia "Human Move Probability" chart on the analysis board now appears roughly 7x faster on devices without WebGPU: the chart paints a coarse curve about 0.6 s after you land on a position and refines in place, instead of waiting 4-5 s for the full rating ladder. Behind it, the Maia engine runs on up to four threads (the site now ships cross-origin isolation headers), and its runtime was pinned back to a faster onnxruntime-web release.
 - The move-quality bar and the one-line position verdict wait for the complete rating ladder before showing, so they never flip from a rough reading to a final one, and navigating to a new position clears them immediately instead of briefly showing the previous position's numbers.
 - If the Maia engine's multi-threaded start ever stalls (for example behind a proxy that strips the isolation headers), it now retries single-threaded after 20 s instead of spinning forever.

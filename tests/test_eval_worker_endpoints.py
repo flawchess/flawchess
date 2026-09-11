@@ -5051,14 +5051,29 @@ def _atomic_request(
 async def _insert_opening_cache(
     session_maker: async_sessionmaker[AsyncSession],
     rows: list[tuple[int, int | None, int | None, str | None]],
+    *,
+    confirmed: bool = True,
 ) -> None:
-    """Insert opening_position_eval rows: (full_hash, eval_cp, eval_mate, best_move)."""
+    """Insert opening_position_eval rows: (full_hash, eval_cp, eval_mate, best_move).
+
+    Phase 220 CACHEFIX-08: defaults confirmed=True (n_sources=2) -- every
+    pre-existing caller of this helper assumes the row is immediately usable
+    for transplant/lease-omission, i.e. an already-established two-source cache
+    entry. Pass confirmed=False to seed a still-unconfirmed candidate (the
+    confirmed_only tests)."""
     from app.models.opening_position_eval import OpeningPositionEval
 
     async with session_maker() as session:
         for full_hash, cp, mate, bm in rows:
             session.add(
-                OpeningPositionEval(full_hash=full_hash, eval_cp=cp, eval_mate=mate, best_move=bm)
+                OpeningPositionEval(
+                    full_hash=full_hash,
+                    eval_cp=cp,
+                    eval_mate=mate,
+                    best_move=bm,
+                    confirmed=confirmed,
+                    n_sources=2 if confirmed else 1,
+                )
             )
         await session.commit()
 
@@ -5066,17 +5081,28 @@ async def _insert_opening_cache(
 async def _insert_opening_cache_with_pv(
     session_maker: async_sessionmaker[AsyncSession],
     rows: list[tuple[int, int | None, int | None, str | None, str | None]],
+    *,
+    confirmed: bool = True,
 ) -> None:
     """Insert opening_position_eval rows incl. pv: (full_hash, eval_cp, eval_mate,
     best_move, pv). SEED-076 follow-up: pv-bearing variant of _insert_opening_cache
-    for tests exercising the pv-gated lease omission / merge mechanism."""
+    for tests exercising the pv-gated lease omission / merge mechanism.
+
+    Phase 220 CACHEFIX-08: defaults confirmed=True -- see _insert_opening_cache's
+    docstring for why."""
     from app.models.opening_position_eval import OpeningPositionEval
 
     async with session_maker() as session:
         for full_hash, cp, mate, bm, pv in rows:
             session.add(
                 OpeningPositionEval(
-                    full_hash=full_hash, eval_cp=cp, eval_mate=mate, best_move=bm, pv=pv
+                    full_hash=full_hash,
+                    eval_cp=cp,
+                    eval_mate=mate,
+                    best_move=bm,
+                    pv=pv,
+                    confirmed=confirmed,
+                    n_sources=2 if confirmed else 1,
                 )
             )
         await session.commit()
@@ -5519,6 +5545,51 @@ async def test_fetch_cached_opening_hashes_gates_on_pv_presence(
 
 
 @pytest.mark.asyncio
+async def test_fetch_cached_opening_hashes_confirmed_only(
+    monkeypatch: pytest.MonkeyPatch,
+    eval_worker_session_maker: async_sessionmaker[AsyncSession],
+) -> None:
+    """Phase 220 CACHEFIX-08 (T-220-18): a CANDIDATE cache row (confirmed=false,
+    even with a real pv) must NOT be omitted from the lease — its ply still
+    carries an engine target until a second, independent source confirms it.
+    `_fetch_cached_opening_hashes` delegates to `_fetch_dedup_evals`, so this
+    covers the lease-omit path's inherited confirmed filter (no second filter
+    lives in the router)."""
+    from app.routers.eval_remote import _fetch_cached_opening_hashes
+
+    _patch_router_session(monkeypatch, eval_worker_session_maker)
+
+    base = 76450
+    candidate_hash = base
+    confirmed_hash = base + 1
+    await _insert_opening_cache_with_pv(
+        eval_worker_session_maker,
+        [(candidate_hash, 30, None, "g1f3", "g1f3 b8c6")],
+        confirmed=False,
+    )
+    await _insert_opening_cache_with_pv(
+        eval_worker_session_maker,
+        [(confirmed_hash, 10, None, "d2d4", "d2d4 d7d5")],
+        confirmed=True,
+    )
+
+    gp_rows: list[tuple[int, int, int | None, int | None]] = [
+        (2, candidate_hash, None, None),
+        (4, confirmed_hash, None, None),
+    ]
+    try:
+        async with eval_worker_session_maker() as session:
+            cached = await _fetch_cached_opening_hashes(session, gp_rows)
+        assert candidate_hash not in cached, (
+            "an unconfirmed candidate must NOT be omitted from the lease — its ply "
+            "must still carry an engine target (transplant is confirmed-only)"
+        )
+        assert confirmed_hash in cached, "a confirmed row (with pv) is still omittable"
+    finally:
+        await _delete_opening_cache(eval_worker_session_maker, [candidate_hash, confirmed_hash])
+
+
+@pytest.mark.asyncio
 async def test_atomic_submit_merges_cached_pv_into_flaw_line_not_sentineled(
     monkeypatch: pytest.MonkeyPatch,
     eval_worker_session_maker: async_sessionmaker[AsyncSession],
@@ -5644,7 +5715,11 @@ async def test_upsert_opening_cache_backfills_pv_without_overwriting_eval_or_exi
 
     try:
         async with eval_worker_session_maker() as session:
-            await _upsert_opening_cache(session, [t_a, t_b], engine_result_map)
+            # source_game_id=1 differs from both rows' pre-existing (unset/NULL)
+            # source, but both are pre-seeded confirmed=True -- Phase 220
+            # CACHEFIX-08 makes a confirmed row immutable except the pv self-heal
+            # under test here, regardless of the incoming game's source.
+            await _upsert_opening_cache(session, [t_a, t_b], engine_result_map, 1)
             await session.commit()
 
         async with eval_worker_session_maker() as session:
@@ -5760,7 +5835,14 @@ async def test_lease_shrinks_after_submit(
 ) -> None:
     """CACHEFIX-12: a second game whose game_positions reach a hash the first
     submit cached (with a pv) gets it back from _fetch_cached_opening_hashes,
-    so _lease_position_redundant drops that position from its lease."""
+    so _lease_position_redundant drops that position from its lease.
+
+    Phase 220 CACHEFIX-08: a single submit's write is a CANDIDATE (one source),
+    invisible to the lease-omit path until a second, independent source agrees.
+    This test's point is the submit-writes-the-cache mechanism (CACHEFIX-12),
+    not the confirmation scheme (covered by test_fetch_cached_opening_hashes_
+    confirmed_only), so it explicitly confirms the resulting row before
+    asserting the lease-omission behavior."""
     import chess
 
     from app.routers.eval_remote import (
@@ -5795,6 +5877,19 @@ async def test_lease_shrinks_after_submit(
             game_id, _atomic_request(game_id, with_pv), worker_id="test-worker", last_ip=None
         )
         assert resp.failed_ply_count == 0
+
+        # Phase 220 CACHEFIX-08: the submit's own write is only a candidate.
+        # Confirm it explicitly so the lease-omission assertion below still
+        # exercises the mechanism this test is actually about.
+        async with eval_worker_session_maker() as session:
+            await session.execute(
+                sa.text(
+                    "UPDATE opening_position_eval SET confirmed = true, n_sources = 2"
+                    " WHERE full_hash = :fh"
+                ),
+                {"fh": base + 2},
+            )
+            await session.commit()
 
         # A second game whose game_positions reach the same hash at some other ply.
         second_gp_rows: list[tuple[int, int, int | None, int | None]] = [(3, base + 2, None, None)]

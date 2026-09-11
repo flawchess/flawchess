@@ -1,12 +1,12 @@
 ---
-gsd_state_version: 1.0
+gsd_state_version: "1.0"
 milestone: v2.16
 current_phase: 220
 current_phase_name: Opening Eval Cache Repair & Two-Source Confirmation (SEED-164)
 status: executing
 stopped_at: Completed 220-06-PLAN.md (prod repair run, 14 acceptance queries, legacy-cohort NO BUILD)
-last_updated: "2026-09-11T13:26:30.000Z"
-state_head: 3c471a54b3893b24ad3980bfdfcbe8c6b9641d2d
+last_updated: "2026-09-11T15:27:06.454Z"
+state_head: 175fcc0bf7705abb25aac820703778d644566530
 progress:
   total_phases: 2
   completed_phases: 1
@@ -22,9 +22,9 @@ last_activity_desc: Completed quick task 260906-i5e — FlawChess Engine card he
 ## Current Position
 
 Phase: 220 (Opening Eval Cache Repair & Two-Source Confirmation (SEED-164)) — EXECUTING
-Plan: 7 of 8
+Plan: 1 of 8
 
-Status: Ready to execute
+Status: Executing Phase 220
 
 Open threads carried forward (not blockers):
 

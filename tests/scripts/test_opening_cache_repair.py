@@ -102,6 +102,7 @@ from scripts.opening_cache_repair import (
     _rederive_one_game,
     run_calibrate,
     run_confirm,
+    run_demote,
     run_legacy_sample,
     run_orphans,
     run_propagate,
@@ -2803,6 +2804,184 @@ class TestRederive:
                 task.cancel()
             await holder.close()
             await _delete_games(session_maker, [game_id])
+
+
+# ---------------------------------------------------------------------------
+# `demote` (Phase 220 Release 2, CACHEFIX-08 -- operator escape hatch)
+# ---------------------------------------------------------------------------
+
+
+class TestDemote:
+    """`demote` un-confirms cache rows recorded against a named engine_version.
+    NOT a pipeline stage: takes no _STAGE_ORDER gate, so no _reset_progress
+    cleanup is needed (only the cache rows themselves)."""
+
+    async def test_demote_unconfirms_named_engine_version(self, test_engine: AsyncEngine) -> None:
+        """A confirmed row at the named engine_version is un-confirmed; a
+        confirmed row at a DIFFERENT engine_version is left untouched."""
+        session_maker = _session_maker(test_engine)
+        target_hash = -910001
+        other_hash = -910002
+        try:
+            async with session_maker() as session:
+                session.add(
+                    OpeningPositionEval(
+                        full_hash=target_hash,
+                        eval_cp=42,
+                        confirmed=True,
+                        n_sources=2,
+                        engine_version="Stockfish 18",
+                        confirmed_at=datetime.datetime.now(datetime.timezone.utc),
+                    )
+                )
+                session.add(
+                    OpeningPositionEval(
+                        full_hash=other_hash,
+                        eval_cp=10,
+                        confirmed=True,
+                        n_sources=2,
+                        engine_version="Stockfish 17",
+                        confirmed_at=datetime.datetime.now(datetime.timezone.utc),
+                    )
+                )
+                await session.commit()
+
+            await run_demote(
+                db="dev",
+                dry_run=False,
+                limit=None,
+                engine_version="Stockfish 18",
+                session_maker=session_maker,
+            )
+
+            async with session_maker() as session:
+                target = await session.get(OpeningPositionEval, target_hash)
+                other = await session.get(OpeningPositionEval, other_hash)
+            assert target is not None
+            assert target.confirmed is False, "named-version row must be un-confirmed"
+            assert target.n_sources == 1
+            assert target.confirmed_at is None
+            assert other is not None
+            assert other.confirmed is True, "a different engine_version must be untouched"
+            assert other.n_sources == 2
+        finally:
+            await _delete_opening_cache(session_maker, [target_hash, other_hash])
+
+    async def test_demote_dry_run_writes_nothing(self, test_engine: AsyncEngine) -> None:
+        """--dry-run reports the affected count and changes no row."""
+        session_maker = _session_maker(test_engine)
+        target_hash = -910003
+        try:
+            async with session_maker() as session:
+                session.add(
+                    OpeningPositionEval(
+                        full_hash=target_hash,
+                        eval_cp=5,
+                        confirmed=True,
+                        n_sources=2,
+                        engine_version="Stockfish 18",
+                        confirmed_at=datetime.datetime.now(datetime.timezone.utc),
+                    )
+                )
+                await session.commit()
+
+            await run_demote(
+                db="dev",
+                dry_run=True,
+                limit=None,
+                engine_version="Stockfish 18",
+                session_maker=session_maker,
+            )
+
+            async with session_maker() as session:
+                row = await session.get(OpeningPositionEval, target_hash)
+            assert row is not None
+            assert row.confirmed is True, "--dry-run must not un-confirm anything"
+        finally:
+            await _delete_opening_cache(session_maker, [target_hash])
+
+    async def test_demote_only_confirmed_rows_at_version_are_counted(
+        self, test_engine: AsyncEngine
+    ) -> None:
+        """An already-unconfirmed row at the named engine_version is a no-op
+        (nothing to demote) and does not inflate the affected count."""
+        session_maker = _session_maker(test_engine)
+        already_candidate_hash = -910004
+        try:
+            async with session_maker() as session:
+                session.add(
+                    OpeningPositionEval(
+                        full_hash=already_candidate_hash,
+                        eval_cp=7,
+                        confirmed=False,
+                        n_sources=1,
+                        engine_version="Stockfish 18",
+                    )
+                )
+                await session.commit()
+
+            await run_demote(
+                db="dev",
+                dry_run=False,
+                limit=None,
+                engine_version="Stockfish 18",
+                session_maker=session_maker,
+            )
+
+            async with session_maker() as session:
+                row = await session.get(OpeningPositionEval, already_candidate_hash)
+            assert row is not None
+            assert row.confirmed is False
+            assert row.n_sources == 1
+        finally:
+            await _delete_opening_cache(session_maker, [already_candidate_hash])
+
+    async def test_demote_limit_caps_affected_rows(self, test_engine: AsyncEngine) -> None:
+        """--limit caps how many confirmed rows at the named version are un-confirmed
+        this run; the rest stay confirmed for a follow-up invocation."""
+        session_maker = _session_maker(test_engine)
+        hashes = [-910010, -910011, -910012]
+        try:
+            async with session_maker() as session:
+                for fh in hashes:
+                    session.add(
+                        OpeningPositionEval(
+                            full_hash=fh,
+                            eval_cp=1,
+                            confirmed=True,
+                            n_sources=2,
+                            engine_version="Stockfish 18",
+                            confirmed_at=datetime.datetime.now(datetime.timezone.utc),
+                        )
+                    )
+                await session.commit()
+
+            await run_demote(
+                db="dev",
+                dry_run=False,
+                limit=1,
+                engine_version="Stockfish 18",
+                session_maker=session_maker,
+            )
+
+            async with session_maker() as session:
+                rows = (
+                    (
+                        await session.execute(
+                            select(OpeningPositionEval).where(
+                                OpeningPositionEval.full_hash.in_(hashes)
+                            )
+                        )
+                    )
+                    .scalars()
+                    .all()
+                )
+            un_confirmed_count = sum(1 for r in rows if r.confirmed is False)
+            assert un_confirmed_count == 1, (
+                f"--limit 1 must un-confirm exactly one row, got {un_confirmed_count}"
+            )
+        finally:
+            await _delete_opening_cache(session_maker, hashes)
 
 
 # ---------------------------------------------------------------------------

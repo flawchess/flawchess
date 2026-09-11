@@ -15,16 +15,26 @@ Coverage:
   CHECK accepts only the eight literals; a ninth raises IntegrityError.
 - test_opening_cache_repair_progress_rejects_second_row : the id=1 CHECK
   makes the table a true singleton; a second row (id=2) raises IntegrityError.
+- TestMigrationMarking::test_migration_marking_matches_status : Phase 220
+  release-2 migration (b7d4f5a60002) MARK_CONFIRMED_SQL, executed via its own
+  exported constant (not a paraphrase), against a cache row seeded for each of
+  the eight opening_cache_audit statuses -- confirms exactly the three
+  post-repair statuses (screened_clean, confirmed_clean, repaired) and leaves
+  every other status a candidate.
+- TestMigrationMarking::test_new_columns_default_on_plain_insert : the seven
+  CACHEFIX-08 columns' defaults on a plain OpeningPositionEval insert.
 """
 
 from __future__ import annotations
 
+import importlib.util
+import pathlib
 import uuid
 from datetime import datetime, timezone
 
 import pytest
 import pytest_asyncio
-from sqlalchemy import select
+from sqlalchemy import select, text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -35,6 +45,39 @@ from app.models.opening_cache_audit import (
     OpeningCacheRepairProgress,
     OpeningCacheRepairRow,
 )
+from app.models.opening_position_eval import OpeningPositionEval
+
+# All eight opening_cache_audit statuses (ck_opening_cache_audit_status). Only
+# the first three are the release-1 repair's post-repair "verified" statuses;
+# the migration must mark exactly those confirmed=true.
+_CONFIRMED_STATUSES = ("screened_clean", "confirmed_clean", "repaired")
+_CANDIDATE_STATUSES = (
+    "pending",
+    "flagged",
+    "confirmed_bad",
+    "orphan",
+    "hash_mismatch",
+)
+_ALL_STATUSES = _CONFIRMED_STATUSES + _CANDIDATE_STATUSES
+
+
+def _load_migration_module():
+    """Load the Phase 220 release-2 migration by path (not an importable package --
+    alembic/versions filenames start with a digit, same pattern as
+    tests/test_normalization.py::TestMigrationBackfillSqlMatchesPythonHelper).
+    """
+    migration_path = (
+        pathlib.Path(__file__).parent.parent.parent
+        / "alembic"
+        / "versions"
+        / "20260912_120000_b7d4f5a60002_phase_220_cache_provenance.py"
+    )
+    spec = importlib.util.spec_from_file_location("_phase_220_r2_migration", migration_path)
+    assert spec is not None and spec.loader is not None
+    migration = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(migration)
+    return migration
+
 
 _TEST_USER_ID = 77801
 
@@ -243,3 +286,76 @@ class TestOpeningCacheRepairProgressRoundTrip:
         db_session.add(row)
         with pytest.raises(IntegrityError):
             await db_session.flush()
+
+
+class TestMigrationMarking:
+    """Phase 220 release-2 migration (b7d4f5a60002): MARK_CONFIRMED_SQL, executed
+    as the exact statement the migration runs, must mark confirmed=true only for
+    the three post-repair audit statuses.
+    """
+
+    @pytest.mark.asyncio
+    async def test_migration_marking_matches_status(self, db_session: AsyncSession) -> None:
+        migration = _load_migration_module()
+
+        # Seed one opening_position_eval + opening_cache_audit pair per status,
+        # keyed by a distinct full_hash per status so the assertion below can
+        # attribute each outcome unambiguously.
+        hash_by_status = {status: -(1000 + i) for i, status in enumerate(_ALL_STATUSES)}
+        for status, full_hash in hash_by_status.items():
+            db_session.add(OpeningPositionEval(full_hash=full_hash, eval_cp=10, best_move="e2e4"))
+            db_session.add(OpeningCacheAudit(full_hash=full_hash, status=status))
+        await db_session.flush()
+
+        # Execute the migration's own exported statement -- not a paraphrase --
+        # with a single unbounded pass (cursor=None, a generous batch size),
+        # exactly as the migration's keyset walk executes it per-pass.
+        await db_session.execute(
+            text(migration.MARK_CONFIRMED_SQL),
+            {"cursor": None, "batch_size": 1000},
+        )
+
+        rows = (
+            await db_session.execute(
+                select(
+                    OpeningPositionEval.full_hash,
+                    OpeningPositionEval.confirmed,
+                    OpeningPositionEval.n_sources,
+                    OpeningPositionEval.confirmed_at,
+                ).where(OpeningPositionEval.full_hash.in_(hash_by_status.values()))
+            )
+        ).all()
+        assert len(rows) == len(_ALL_STATUSES)
+
+        by_hash = {
+            full_hash: (confirmed, n_sources, confirmed_at)
+            for full_hash, confirmed, n_sources, confirmed_at in rows
+        }
+
+        for status in _CONFIRMED_STATUSES:
+            confirmed, n_sources, confirmed_at = by_hash[hash_by_status[status]]
+            assert confirmed is True, f"status={status} should be marked confirmed"
+            assert n_sources == 2, f"status={status} should have n_sources=2"
+            assert confirmed_at is not None, f"status={status} should have confirmed_at set"
+
+        for status in _CANDIDATE_STATUSES:
+            confirmed, n_sources, confirmed_at = by_hash[hash_by_status[status]]
+            assert confirmed is False, f"status={status} must stay a candidate"
+            assert n_sources == 1, f"status={status} must stay n_sources=1"
+            assert confirmed_at is None, f"status={status} must not have confirmed_at set"
+
+    @pytest.mark.asyncio
+    async def test_new_columns_default_on_plain_insert(self, db_session: AsyncSession) -> None:
+        """The seven CACHEFIX-08 columns default correctly on a plain insert."""
+        row = OpeningPositionEval(full_hash=-999999, eval_cp=5)
+        db_session.add(row)
+        await db_session.flush()
+        await db_session.refresh(row)
+
+        assert row.confirmed is False
+        assert row.n_sources == 1
+        assert row.disagreements == 0
+        assert row.engine_version is None
+        assert row.written_at is None
+        assert row.confirmed_at is None
+        assert row.source_game_id is None

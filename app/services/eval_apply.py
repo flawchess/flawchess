@@ -348,9 +348,17 @@ async def _fetch_dedup_evals(
     remain entirely in the caller — UNCHANGED. This function only changes which table
     backs the lookup.
 
-    Returns {full_hash: (eval_cp, eval_mate, best_move, pv)} for hashes present in the
-    cache. pv is the cached PV string FROM the position (SEED-076 follow-up); it may
-    be None for cache rows written before the pv column existed or not yet backfilled.
+    Phase 220 CACHEFIX-08: filters to `confirmed IS TRUE` — a candidate row (one
+    source so far, not yet agreed by a second independent game) is never transplanted
+    into another game. This is the ONLY place the confirmed filter lives:
+    eval_remote._fetch_cached_opening_hashes delegates to this function for the
+    lease-omit path, so it inherits the filter for free. Do not add a second filter
+    there, or the two read paths can drift (T-220-18).
+
+    Returns {full_hash: (eval_cp, eval_mate, best_move, pv)} for CONFIRMED hashes
+    present in the cache. pv is the cached PV string FROM the position (SEED-076
+    follow-up); it may be None for cache rows written before the pv column existed
+    or not yet backfilled.
     """
     if not full_hashes:
         return {}
@@ -361,7 +369,10 @@ async def _fetch_dedup_evals(
             OpeningPositionEval.eval_mate,
             OpeningPositionEval.best_move,
             OpeningPositionEval.pv,
-        ).where(OpeningPositionEval.full_hash.in_(full_hashes))
+        ).where(
+            OpeningPositionEval.full_hash.in_(full_hashes),
+            OpeningPositionEval.confirmed.is_(True),
+        )
     )
     return {row[0]: (row[1], row[2], row[3], row[4]) for row in result.all()}
 
@@ -2787,6 +2798,7 @@ async def apply_full_eval(
                 AsyncSession,
                 list[_FullPlyEvalTarget],
                 dict[int, tuple[int | None, int | None, str | None, str | None]],
+                int,
             ],
             Coroutine[Any, Any, None],
         ]
@@ -2941,8 +2953,13 @@ async def apply_full_eval(
         # SEED-053 / D-123.1-04: fill the opening-eval cache with freshly-computed
         # misses. Runs inside the same write txn — cache write + eval write commit
         # atomically. Skipped for lichess-eval games (no engine_targets generated).
+        #
+        # Phase 220 CACHEFIX-08: game_id is threaded through as source_game_id —
+        # the D-13 self-promotion guard needs to know which game this batch's
+        # results came from, so a re-drained or resubmitted game never confirms
+        # its own earlier write.
         await upsert_opening_cache_fn(
-            write_session, list(engine_targets_for_cache), engine_result_map
+            write_session, list(engine_targets_for_cache), engine_result_map, game_id
         )
 
     # SEED-139 D-01: the no-progress carve-out is threaded ONLY for the atomic

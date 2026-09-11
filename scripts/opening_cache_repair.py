@@ -1765,6 +1765,129 @@ async def run_propagate_best_moves(
             await engine.dispose()
 
 
+# ─── `demote` (Phase 220 Release 2, CACHEFIX-08 — operator escape hatch) ─────
+#
+# NOT a member of _STAGE_ORDER: it is not a pipeline stage and takes no
+# _stage_gate call. It exists for exactly one situation -- an engine bump that
+# changes the eval SCALE (a new NNUE net), where trust in every row confirmed
+# against the old engine version needs to be operator-revoked. It is not run
+# automatically by anything else in this repair pipeline or by the write path.
+
+
+async def _demote_affected_count(session: AsyncSession, engine_version: str) -> int:
+    """Count confirmed rows recorded against `engine_version` -- the --dry-run
+    report and the pre-write sanity check share this single query."""
+    return (
+        await session.execute(
+            select(func.count())
+            .select_from(OpeningPositionEval)
+            .where(
+                OpeningPositionEval.confirmed.is_(True),
+                OpeningPositionEval.engine_version == engine_version,
+            )
+        )
+    ).scalar_one()
+
+
+async def _demote_apply(session: AsyncSession, engine_version: str, limit: int | None) -> int:
+    """Un-confirm rows recorded against `engine_version`. When `limit` is given,
+    a capped hash list is fetched first and the UPDATE targets exactly those
+    rows -- bounded by the operator's own limit, so this never risks asyncpg's
+    32,767-bind-parameter cap (Phase 220 plan 06's `orphans` defect). With no
+    limit, the UPDATE runs directly against the WHERE predicate -- no hash list
+    is ever materialized in Python for the (expected rare, potentially
+    2.57M-row) unbounded case."""
+    if limit is not None:
+        target_hashes = (
+            (
+                await session.execute(
+                    select(OpeningPositionEval.full_hash)
+                    .where(
+                        OpeningPositionEval.confirmed.is_(True),
+                        OpeningPositionEval.engine_version == engine_version,
+                    )
+                    .order_by(OpeningPositionEval.full_hash)
+                    .limit(limit)
+                )
+            )
+            .scalars()
+            .all()
+        )
+        if not target_hashes:
+            return 0
+        result = await session.execute(
+            update(OpeningPositionEval)
+            .where(OpeningPositionEval.full_hash.in_(target_hashes))
+            .values(confirmed=False, n_sources=1, confirmed_at=None)
+        )
+    else:
+        result = await session.execute(
+            update(OpeningPositionEval)
+            .where(
+                OpeningPositionEval.confirmed.is_(True),
+                OpeningPositionEval.engine_version == engine_version,
+            )
+            .values(confirmed=False, n_sources=1, confirmed_at=None)
+        )
+    return result.rowcount or 0  # ty: ignore[unresolved-attribute]  # DML result carries rowcount
+
+
+async def run_demote(
+    *,
+    db: str,
+    dry_run: bool,
+    limit: int | None,
+    engine_version: str,
+    session_maker: async_sessionmaker[AsyncSession] | None = None,
+) -> None:
+    """Un-confirm cache rows recorded against `engine_version` (operator escape
+    hatch, NOT a pipeline stage -- takes no _STAGE_ORDER gate).
+
+    CACHEFIX-08's position: engine version is RECORDED on every cache write,
+    never ENFORCED at read time. A confirmed row survives a routine Stockfish
+    bump untouched -- demoting all 2.57M rows on every routine bump would
+    double opening engine cost for months, and evals are already
+    non-reproducible across machines at sub-percentile magnitude (memory
+    `eval_nondeterminism`), so a version mismatch alone is not evidence of a
+    bad value. Demotion is a per-bump OPERATOR decision, reserved for a bump
+    that changes the eval SCALE (a new NNUE net) -- never run automatically by
+    the write path or by any other stage in this pipeline.
+
+    D-01 note (repeated from the model/migration docstrings): a post-hardening
+    re-audit mode that would set confirmed/n_sources from THIS script directly
+    is deliberately NOT built in this phase; documented here only.
+
+    Args:
+        db: DB target string ("dev", "benchmark", "prod").
+        dry_run: If True, report the affected count and write nothing.
+        limit: Cap the number of rows un-confirmed this run (None = all).
+        engine_version: exact engine_version string to un-confirm (e.g. "Stockfish 18").
+        session_maker: Injectable session factory for testing.
+    """
+    if settings.SENTRY_DSN:
+        sentry_sdk.init(dsn=settings.SENTRY_DSN, environment=settings.ENVIRONMENT)
+
+    session_maker, engine, owns_engine = _resolve_session_maker(db, session_maker)
+    try:
+        async with session_maker() as session:
+            if dry_run:
+                affected = await _demote_affected_count(session, engine_version)
+                print(
+                    f"demote: {affected} confirmed row(s) recorded against"
+                    f" engine_version={engine_version!r} would be un-confirmed"
+                    " (--dry-run, nothing written)."
+                )
+                return
+            un_confirmed = await _demote_apply(session, engine_version, limit)
+            await session.commit()
+            print(
+                f"demote: {un_confirmed} row(s) un-confirmed (engine_version={engine_version!r})."
+            )
+    finally:
+        if owns_engine and engine is not None:
+            await engine.dispose()
+
+
 # ─── `rederive` (CACHEFIX-06) ────────────────────────────────────────────────
 
 
@@ -3287,6 +3410,26 @@ def _add_rederive_subparser(
     _add_common_args(sub)
 
 
+def _add_demote_subparser(
+    subparsers: "argparse._SubParsersAction[argparse.ArgumentParser]",
+) -> None:
+    sub = subparsers.add_parser(
+        "demote",
+        help=(
+            "Operator escape hatch (Release 2, CACHEFIX-08): un-confirm cache rows"
+            " recorded against --engine-version. NOT a pipeline stage."
+        ),
+    )
+    _add_common_args(sub)
+    sub.add_argument(
+        "--engine-version",
+        required=True,
+        dest="engine_version",
+        metavar="VERSION",
+        help='Exact engine_version string to un-confirm, e.g. "Stockfish 18".',
+    )
+
+
 def _add_db_arg(sub: argparse.ArgumentParser) -> None:
     sub.add_argument(
         "--db",
@@ -3345,6 +3488,7 @@ def build_parser() -> argparse.ArgumentParser:
     _add_rederive_subparser(subparsers)
     _add_report_subparser(subparsers)
     _add_legacy_sample_subparser(subparsers)
+    _add_demote_subparser(subparsers)
     return parser
 
 
@@ -3382,6 +3526,13 @@ async def _dispatch(args: argparse.Namespace) -> None:
     elif args.command == "legacy-sample":
         await run_legacy_sample(
             db=args.db, append_report=args.append_report, pool_size=args.pool_size
+        )
+    elif args.command == "demote":
+        await run_demote(
+            db=args.db,
+            dry_run=args.dry_run,
+            limit=args.limit,
+            engine_version=args.engine_version,
         )
     else:  # pragma: no cover — unreachable while argparse enforces a known command set
         raise ValueError(f"Unknown command: {args.command!r}")
