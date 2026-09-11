@@ -464,16 +464,18 @@ SELECT
         / nullif(count(*), 0), 3) AS bounce_pct_any,
   count(*) FILTER (WHERE drop_cp BETWEEN 250 AND 360) AS n_band,
   count(*) FILTER (WHERE drop_cp BETWEEN 250 AND 360 AND bounce_cp <= 60) AS n_bounce_band,
+  -- over ALL checked rows, matching the seed's 0.235% / 0.298% baselines (not per-band)
   round(100.0 * count(*) FILTER (WHERE drop_cp BETWEEN 250 AND 360 AND bounce_cp <= 60)
-        / nullif(count(*) FILTER (WHERE drop_cp BETWEEN 250 AND 360), 0), 3) AS bounce_pct_band
+        / nullif(count(*), 0), 3) AS bounce_pct_band
 FROM b;
 ```
 
 #### Check D output format
 
-Report `bounce_pct_any` (rate over all plies-2-19 rows) and `bounce_pct_band` (rate
-restricted to the 250-360cp drop band, where the poison concentrated) to 3 decimal
-places, alongside their raw `n_checked` / `n_band` denominators.
+Report `bounce_pct_any` (rate over all plies-2-19 rows) and `bounce_pct_band` (bounces
+whose drop sits in the 250-360cp band, where the poison concentrated, ALSO over all
+plies-2-19 rows so it is comparable to the recorded baselines) to 3 decimal places,
+alongside `n_checked` and the raw `n_band` drop count.
 
 Verdict line (Check D): **PASS** if the rate is at or below the recorded reference for
 the same DB; **INVESTIGATE** if it rises. This is a coarse sanity check only — a PASS

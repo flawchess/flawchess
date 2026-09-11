@@ -2503,8 +2503,12 @@ async def _report_section_verification(
         "",
         f"- Observed: {_format_pct(n_bounce_any, n_checked_b)} any bounce"
         f" ({n_bounce_any:,}/{n_checked_b:,}),"
-        f" {_format_pct(n_bounce_band, n_band)} in the 250-360cp band"
-        f" ({n_bounce_band:,}/{n_band:,})",
+        # Band rate is over ALL checked rows (n_checked), not over the band's
+        # own drops: that is the convention the seed's 0.235% / 0.298%
+        # baselines were measured with. The first prod report (2026-09-11)
+        # divided by n_band and printed 18.15% against a 0.298% baseline.
+        f" {_format_pct(n_bounce_band, n_checked_b)} in the 250-360cp band"
+        f" ({n_bounce_band:,}/{n_checked_b:,}; {n_band:,} drops in band)",
         f"- Baseline: benchmark DB (cache-free) {_BOUNCE_BASELINE_BENCHMARK[0]}%"
         f" / {_BOUNCE_BASELINE_BENCHMARK[1]}%; prod legacy"
         f" {_BOUNCE_BASELINE_LEGACY[0]}% / {_BOUNCE_BASELINE_LEGACY[1]}%; mid"
