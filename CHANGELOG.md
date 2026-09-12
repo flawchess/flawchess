@@ -10,6 +10,7 @@ in `YYYY-MM-DD` (Europe/Zurich).
 
 ### Fixed
 
+- Train: the thin white "played in game" arrow on the solution board no longer goes missing when you return to a solved puzzle from Analyze. The legend card always named the move, but the arrow was dropped whenever the solution was still cached from the first visit.
 - Some opening moves in older games (roughly the first 620,000 games imported) were marked as blunders because a shared cache of opening-position evaluations held a wrong value for a handful of positions. Those positions have been re-evaluated, the affected games have had their flaw counts, accuracy and centipawn loss recalculated, and a few gem and great-move badges in those games appear or disappear accordingly.
 - Move sounds on iPhone and iPad no longer drop out when moves come quickly: fast-forwarding through a game, or tapping Next in rapid succession, used to play only about one sound in four. Sounds are now played through the Web Audio API, the same way lichess plays its move sounds, and the page asks iOS for the same audio session it already used before, so sounds still play with the ring/silent switch on silent.
 - Maia (the Human Move Probability chart, FlawChess Engine and the practice bots) is back on iPhone and iPad. Safari kept killing the page whenever Maia ran on the GPU path, so iOS now runs Maia on the CPU path, as maiachess.com does; every other platform is unchanged.
