@@ -35,6 +35,7 @@ from app.services.flaws_service import (
     FlawRecord,
     GameFlawsResult,
     GameNotAnalyzed,
+    _build_missed_board_with_stack,
     _classify_impact,
     _classify_mate_ladder,
     classify_severity,
@@ -50,7 +51,7 @@ from app.services.flaws_service import (
     classify_game_flaws,
 )
 from app.services.forcing_line_gate import PvNode
-from app.services.tactic_detector import TACTIC_CONFIDENCE_HIGH, TacticMotifInt
+from app.services.tactic_detector import TACTIC_CONFIDENCE_HIGH, TacticMotifInt, detect_tactic_motif
 
 
 def _make_pos(
@@ -2792,6 +2793,254 @@ class TestClassifyTacticGated:
         assert conf is None
         assert depth is None
 
+    # -----------------------------------------------------------------
+    # Phase 221 TAGFIX-02 (D-04): the gate no longer skips merely because
+    # pre_flaw_eval_cp is None -- the already-winning reject is derived from
+    # eval_mate instead.
+    # -----------------------------------------------------------------
+
+    def test_tagfix02_gate_runs_on_none_cp_non_forcing_blob_suppressed(self) -> None:
+        """Behavioural proof the gate-skip conjunct is gone (T-221-04-02 acceptance).
+
+        Before this task: pre_flaw_eval_cp=None skipped the gate entirely, so a
+        non-forcing blob was credited raw. After: the gate always runs on a
+        non-empty blob, so the same non-forcing blob is now SUPPRESSED.
+        """
+        positions = _make_positions_128()
+        non_forcing_blob: list[PvNode] = [
+            {"b": 200, "bm": None, "s": 120, "sm": None, "su": "f3g4"},
+            {"b": -100, "bm": None, "s": -150, "sm": None, "su": "g8f6"},
+            {"b": 200, "bm": None, "s": 120, "sm": None, "su": "d1h5"},
+        ]
+        motif, piece, conf, depth = _classify_tactic_gated(
+            n=5,
+            fen_map=_FEN_MAP_128,
+            positions=positions,
+            orientation="allowed",
+            pv_blob=non_forcing_blob,
+            pre_flaw_eval_cp=None,
+        )
+        assert motif is None, (
+            "TAGFIX-02: the gate must run (and reject a non-forcing blob) even when "
+            "pre_flaw_eval_cp is None"
+        )
+        assert piece is None
+        assert conf is None
+        assert depth is None
+
+    def test_tagfix02_forced_mate_for_solver_rejects_non_mate_motif_white(self) -> None:
+        """A forced mate for the (white) solver before the flaw already-winning rejects (D-04)."""
+        positions = _make_positions_128()
+        positions[4].eval_mate = 3  # white-perspective +3 = white (the solver) mates
+        forced_blob: list[PvNode] = [
+            {"b": 800, "bm": None, "s": 0, "sm": None, "su": "f3g4"},
+            {"b": -300, "bm": None, "s": -350, "sm": None, "su": "g8f6"},
+            {"b": 800, "bm": None, "s": 0, "sm": None, "su": "d1h5"},
+        ]
+        motif, piece, conf, depth = _classify_tactic_gated(
+            n=5,
+            fen_map=_FEN_MAP_128,
+            positions=positions,
+            orientation="allowed",
+            pv_blob=forced_blob,
+            pre_flaw_eval_cp=None,
+        )
+        assert motif is None, (
+            "a forced mate for the solver before the flaw must reject a non-mate motif"
+        )
+
+    def test_tagfix02_forced_mate_for_solver_rejects_non_mate_motif_black(self) -> None:
+        """Same as above, mirrored to a black solver (n=4, allowed -> solver='black')."""
+        positions = _make_positions_128()
+        positions[3].eval_mate = -3  # white-perspective -3 = black (the solver) mates
+        forced_blob: list[PvNode] = [
+            {"b": -800, "bm": None, "s": 0, "sm": None, "su": "d5c4"},
+            {"b": 300, "bm": None, "s": 350, "sm": None, "su": "e1e2"},
+            {"b": -800, "bm": None, "s": 0, "sm": None, "su": "c4b3"},
+        ]
+        motif, piece, conf, depth = _classify_tactic_gated(
+            n=4,
+            fen_map=_FEN_MAP_128,
+            positions=positions,
+            orientation="allowed",
+            pv_blob=forced_blob,
+            pre_flaw_eval_cp=None,
+        )
+        assert motif is None, "mirrored black-solver case: a forced mate for the solver must reject"
+
+    def test_tagfix02_mate_motif_exempt_via_forced_mate_firing_node(self) -> None:
+        """A firing node that is ITSELF a forced mate is exempt from the already-winning reject.
+
+        Mirrors the gate's own forced-mate carve-out (Phase 144): the mate-adjacent
+        already-winning reject from eval_mate must not fire when the blob's own
+        firing node delivers a forced mate for the solver.
+        """
+        positions = _make_positions_128()
+        positions[4].eval_mate = 3  # would otherwise reject via D-04
+        mate_firing_blob: list[PvNode] = [
+            {"b": None, "bm": 2, "s": 500, "sm": None, "su": "d1h5"},  # firing node: mate-in-2
+            {"b": 0, "bm": None, "s": -100, "sm": None, "su": "g8f6"},
+        ]
+        motif, piece, conf, depth = _classify_tactic_gated(
+            n=5,
+            fen_map=_FEN_MAP_128,
+            positions=positions,
+            orientation="allowed",
+            pv_blob=mate_firing_blob,
+            pre_flaw_eval_cp=None,
+        )
+        assert motif == TacticMotifInt.HANGING_PIECE, (
+            "a forced-mate firing node is exempt from the already-winning-by-mate reject"
+        )
+        assert piece is not None
+        assert conf == TACTIC_CONFIDENCE_HIGH
+        assert depth == 0
+
+    def test_tagfix02_both_pre_flaw_cp_and_mate_none_gate_still_runs(self) -> None:
+        """Both cp and mate absent: no already-winning reject fires, but the gate still runs."""
+        positions = _make_positions_128()
+        # positions[4].eval_mate is already None by default in _make_positions_128.
+        non_forcing_blob: list[PvNode] = [
+            {"b": 200, "bm": None, "s": 120, "sm": None, "su": "f3g4"},
+            {"b": -100, "bm": None, "s": -150, "sm": None, "su": "g8f6"},
+            {"b": 200, "bm": None, "s": 120, "sm": None, "su": "d1h5"},
+        ]
+        motif, piece, conf, depth = _classify_tactic_gated(
+            n=5,
+            fen_map=_FEN_MAP_128,
+            positions=positions,
+            orientation="allowed",
+            pv_blob=non_forcing_blob,
+            pre_flaw_eval_cp=None,
+        )
+        assert motif is None, "the gate must still run and reject a non-forcing blob"
+
+    def test_tagfix02_mate_against_solver_not_an_already_winning_reject(self) -> None:
+        """A pre-flaw mate favoring the OPPONENT is not an already-winning reject (sign check)."""
+        positions = _make_positions_128()
+        positions[4].eval_mate = -3  # black (opponent) mates; white is the solver
+        forced_blob: list[PvNode] = [
+            {"b": 800, "bm": None, "s": 0, "sm": None, "su": "f3g4"},
+            {"b": -300, "bm": None, "s": -350, "sm": None, "su": "g8f6"},
+            {"b": 800, "bm": None, "s": 0, "sm": None, "su": "d1h5"},
+        ]
+        motif, piece, conf, depth = _classify_tactic_gated(
+            n=5,
+            fen_map=_FEN_MAP_128,
+            positions=positions,
+            orientation="allowed",
+            pv_blob=forced_blob,
+            pre_flaw_eval_cp=None,
+        )
+        assert motif == TacticMotifInt.HANGING_PIECE, (
+            "a mate favoring the opponent must NOT trigger the already-winning reject"
+        )
+
+    # -----------------------------------------------------------------
+    # Phase 221 TAGFIX-01 / D-03: blob-missing fallback floor from
+    # game_positions, applied via the same tier-floor map as the blob path.
+    # -----------------------------------------------------------------
+
+    def test_d03_fallback_allowed_below_floor_suppressed(self) -> None:
+        """Blob None, allowed orientation: positions[n] below the tier floor -> suppressed."""
+        positions = _make_positions_128()
+        positions[5].eval_cp = -50  # solver='white' at n=5 allowed; below 0-floor
+        motif, piece, conf, depth = _classify_tactic_gated(
+            n=5,
+            fen_map=_FEN_MAP_128,
+            positions=positions,
+            orientation="allowed",
+            pv_blob=None,
+            pre_flaw_eval_cp=None,
+        )
+        assert motif is None, "D-03: a below-floor allowed fallback eval must suppress"
+
+    def test_d03_fallback_missed_below_floor_suppressed(self) -> None:
+        """Blob None, missed orientation: positions[n-1] below the tier floor -> suppressed.
+
+        Uses a DIFFERENT stored value than the allowed test above at the OTHER
+        index (positions[4], not positions[5]) so a swapped orientation index
+        would flip these two tests' outcomes rather than coincidentally passing.
+        """
+        positions = _make_positions_128()
+        positions[4].eval_cp = 50  # white-perspective +50; solver='black' at n=5 missed -> -50
+        motif, piece, conf, depth = _classify_tactic_gated(
+            n=5,
+            fen_map=_FEN_MAP_128,
+            positions=positions,
+            orientation="missed",
+            pv_blob=None,
+            pre_flaw_eval_cp=None,
+            pv_by_ply={5: "d5c4"},
+        )
+        assert motif is None, "D-03: a below-floor missed fallback eval must suppress"
+
+    def test_d03_fallback_allowed_winning_eval_credited(self) -> None:
+        """Blob None, allowed orientation: a winning fallback eval is credited."""
+        positions = _make_positions_128()
+        # positions[5].eval_cp is already 300 (winning for white solver) by default.
+        motif, piece, conf, depth = _classify_tactic_gated(
+            n=5,
+            fen_map=_FEN_MAP_128,
+            positions=positions,
+            orientation="allowed",
+            pv_blob=None,
+            pre_flaw_eval_cp=None,
+        )
+        assert motif == TacticMotifInt.HANGING_PIECE, (
+            "D-03: a winning fallback eval must be credited"
+        )
+
+    def test_d03_fallback_missed_winning_eval_credited(self) -> None:
+        """Blob None, missed orientation: a winning fallback eval is credited."""
+        positions = _make_positions_128()
+        # positions[4].eval_cp is -500 (white-perspective); solver='black' -> solver_cp=500.
+        motif, piece, conf, depth = _classify_tactic_gated(
+            n=5,
+            fen_map=_FEN_MAP_128,
+            positions=positions,
+            orientation="missed",
+            pv_blob=None,
+            pre_flaw_eval_cp=None,
+            pv_by_ply={5: "d5c4"},
+        )
+        assert motif == TacticMotifInt.HANGING_PIECE, (
+            "D-03: a winning missed-orientation fallback eval must be credited"
+        )
+
+    def test_d03_fallback_both_columns_none_credited(self) -> None:
+        """Blob None, no fallback eval available at all: never suppressed for lacking data."""
+        positions = _make_positions_128()
+        positions[5].eval_cp = None
+        positions[5].eval_mate = None
+        motif, piece, conf, depth = _classify_tactic_gated(
+            n=5,
+            fen_map=_FEN_MAP_128,
+            positions=positions,
+            orientation="allowed",
+            pv_blob=None,
+            pre_flaw_eval_cp=None,
+        )
+        assert motif == TacticMotifInt.HANGING_PIECE, (
+            "D-03: an unreadable fallback (both columns None) must never suppress"
+        )
+
+    def test_d03_sentinel_empty_blob_with_losing_eval_still_credited(self) -> None:
+        """pv_blob=[] keeps its unconditional skip-everything semantics (D-03 does not apply)."""
+        positions = _make_positions_128()
+        positions[5].eval_cp = -500  # would fail the floor if the fallback ran
+        motif, piece, conf, depth = _classify_tactic_gated(
+            n=5,
+            fen_map=_FEN_MAP_128,
+            positions=positions,
+            orientation="allowed",
+            pv_blob=[],
+            pre_flaw_eval_cp=300,
+        )
+        assert motif == TacticMotifInt.HANGING_PIECE, (
+            "the [] sentinel must skip BOTH the gate and the D-03 fallback floor"
+        )
+
 
 # ---------------------------------------------------------------------------
 # Phase 147 Plan 01 Task 2: blobs_pending suppression branch (D-01, D-03)
@@ -2895,3 +3144,196 @@ class TestClassifyTacticGatedBlobsPending:
         assert piece is not None
         assert conf == TACTIC_CONFIDENCE_HIGH
         assert depth == 0
+
+
+# ---------------------------------------------------------------------------
+# Phase 221 TAGFIX-06 (D-09, D-10): missed-orientation parity -- the missed
+# pass carries a one-move stack (the opponent's previous move), unblocking
+# detect_intermezzo's k=2 branch and detect_hanging_piece's recapture
+# exclusion on the missed side. These tests MUST live here (not in
+# test_tactic_detector.py): the detector-level fixture harness builds bare
+# stackless boards and structurally cannot observe a move stack (Pitfall 3).
+# ---------------------------------------------------------------------------
+
+
+class TestMissedOrientationParity:
+    """The missed pass builds board_before the way the allowed pass does: position
+    plus a one-move stack (the opponent's previous move, D-09), so cook's two
+    move-stack predicates (intermezzo k=2, hanging-piece recapture exclusion)
+    can fire on the missed side exactly as they do on the allowed side.
+    """
+
+    def test_stacked_board_carries_previous_move(self) -> None:
+        """The constructed board has len(move_stack) == 1 and peek() == the previous move."""
+        fen_map = {0: chess.STARTING_FEN}
+        positions = [
+            _make_pos(ply=0, move_san="e4"),
+            _make_pos(ply=1, move_san="e5"),  # filler; only index 0 is read for n=1
+        ]
+        board = _build_missed_board_with_stack(1, fen_map, positions)
+        assert board is not None
+        assert len(board.move_stack) == 1
+        assert board.peek() == chess.Move.from_uci("e2e4")
+
+    def test_stacked_board_turn_matches_ply_parity(self) -> None:
+        """The built board's turn equals chess.WHITE if n % 2 == 0 else chess.BLACK."""
+        fen_map = {0: chess.STARTING_FEN}
+        positions = [
+            _make_pos(ply=0, move_san="e4"),
+            _make_pos(ply=1, move_san="e5"),
+        ]
+        board = _build_missed_board_with_stack(1, fen_map, positions)
+        assert board is not None
+        assert board.turn == chess.BLACK  # n=1 is odd
+
+    def test_intermezzo_fires_at_k2_on_missed_line(self) -> None:
+        """detect_intermezzo's k=2 branch fires on a missed line that needs the stacked
+        previous move -- returns not-fired on a stackless board (proven inline below),
+        fires INTERMEZZO at depth 2 once the stack is present.
+
+        Setup: black's previous move (Rxd4, ply 1) captures White's d4 pawn. White's
+        missed line is a zwischenzug (Kf1 wait-check-adjacent, ply 2's PV move 1),
+        black's forced-looking reply (Kg7), then White's delayed recapture (Rxd4 with
+        the a4 rook, PV move 3) -- the SAME square black's original capture landed on.
+        detect_intermezzo's k=2 branch reads this "original capture" off
+        boards[0].move_stack, which is empty on a bare chess.Board(fen_map[2]) and
+        populated only once _build_missed_board_with_stack carries the ply-1 move.
+        """
+        n = 2
+        fen_map = {
+            1: "3r2k1/8/8/8/R2P4/8/8/3QK3 b - - 0 1",
+            2: "6k1/8/8/8/R2r4/8/8/3QK3 w - - 0 2",
+        }
+        positions = [
+            _make_pos(ply=0),
+            _make_pos(ply=1, move_san="Rxd4"),  # black's original capture (the "prev_op")
+            _make_pos(ply=2, move_san="Ke2"),  # the actual flaw move (unused destination)
+        ]
+        pv_by_ply = {2: "e1f1 g8g7 a4d4"}
+
+        # Control: on the stackless board (today's behavior), intermezzo/detect_tactic_motif
+        # does not fire at all -- proves the fixture genuinely depends on the stack.
+        stackless_board = chess.Board(fen_map[2])
+        stackless_result = detect_tactic_motif(stackless_board, pv_by_ply[2])
+        assert stackless_result == (None, None, None, None), (
+            "control: without a move stack, no motif should fire on this PV"
+        )
+
+        motif_int, piece, conf, depth = _detect_tactic_for_flaw(
+            n, fen_map, positions, pv_by_ply=pv_by_ply, orientation="missed"
+        )
+        assert motif_int == TacticMotifInt.INTERMEZZO, (
+            f"expected INTERMEZZO once the missed board carries the previous move, "
+            f"got {motif_int!r}"
+        )
+        assert depth == 2
+
+    def test_missed_hanging_piece_suppressed_on_equal_value_recapture(self) -> None:
+        """D-10: a missed hanging-piece whose previous move was an equal-or-greater-value
+        recapture is suppressed to NULL (cook's recapture exclusion, now reachable on
+        the missed side).
+
+        Black captures White's KNIGHT (value 3) with a knight (Nxe4, ply 1). White's
+        missed line recaptures the SAME square with a pawn (dxe4) -- op_capture
+        (knight, 3) >= target (knight, 3), so this is a fair recapture, not a
+        "hanging piece" windfall.
+        """
+        n = 2
+        fen_map = {
+            1: "4k3/8/8/2n5/4N3/3P4/8/4K3 b - - 0 1",
+            2: "4k3/8/8/8/4n3/3P4/8/4K3 w - - 0 2",
+        }
+        positions = [
+            _make_pos(ply=0),
+            _make_pos(ply=1, move_san="Nxe4"),  # black's original capture of the KNIGHT
+            _make_pos(ply=2, move_san="Ke2"),  # the actual flaw move (unused destination)
+        ]
+        pv_by_ply = {2: "d3e4"}  # White's missed recapture: dxe4
+
+        motif_int, piece, conf, depth = _detect_tactic_for_flaw(
+            n, fen_map, positions, pv_by_ply=pv_by_ply, orientation="missed"
+        )
+        assert motif_int is None, (
+            f"D-10: an equal-value recapture must be suppressed, got motif {motif_int!r}"
+        )
+
+    def test_missed_hanging_piece_credited_when_not_a_recapture(self) -> None:
+        """A missed hanging-piece whose previous move was NOT an equal/greater-value
+        recapture is still credited -- the recapture exclusion does not over-suppress.
+
+        Black captures White's PAWN (value 1) with a knight (Nxe4, ply 1), leaving an
+        undefended knight on e4. White's missed line captures that knight with a
+        DIFFERENT knight (Nxe4 via g3) -- op_capture (pawn, 1) < target (knight, 3),
+        so this is a genuine hanging-piece windfall, not a fair trade.
+        """
+        n = 2
+        fen_map = {
+            1: "4k3/8/8/2n5/4P3/6N1/8/4K3 b - - 0 1",
+            2: "4k3/8/8/8/4n3/6N1/8/4K3 w - - 0 2",
+        }
+        positions = [
+            _make_pos(ply=0),
+            _make_pos(ply=1, move_san="Nxe4"),  # black's original capture of the PAWN
+            _make_pos(ply=2, move_san="Ke2"),  # the actual flaw move (unused destination)
+        ]
+        pv_by_ply = {2: "g3e4"}  # White's missed recapture: Nxe4
+
+        motif_int, piece, conf, depth = _detect_tactic_for_flaw(
+            n, fen_map, positions, pv_by_ply=pv_by_ply, orientation="missed"
+        )
+        assert motif_int == TacticMotifInt.HANGING_PIECE, (
+            f"a non-recapture windfall must still be credited, got {motif_int!r}"
+        )
+        assert depth == 0
+
+    def test_missed_flaw_at_ply_zero_falls_back_to_stackless(self) -> None:
+        """A missed flaw at ply 0 has no prior move -- falls back to the stackless build."""
+        assert (
+            _build_missed_board_with_stack(0, {0: chess.STARTING_FEN}, [_make_pos(ply=0)]) is None
+        )
+
+    def test_missed_flaw_malformed_previous_san_falls_back_to_stackless(self) -> None:
+        """A malformed positions[n-1].move_san falls back to the stackless build (no raise)."""
+        fen_map = {0: chess.STARTING_FEN}
+        positions = [
+            _make_pos(ply=0, move_san="Zz9"),  # malformed SAN
+            _make_pos(ply=1),
+        ]
+        assert _build_missed_board_with_stack(1, fen_map, positions) is None
+
+    def test_missed_flaw_missing_fen_map_entry_falls_back_to_stackless(self) -> None:
+        """A fen_map lacking the n-1 entry falls back to the stackless build (no raise)."""
+        positions = [_make_pos(ply=0, move_san="e4"), _make_pos(ply=1)]
+        assert _build_missed_board_with_stack(1, {}, positions) is None
+
+    def test_degradation_paths_return_same_result_as_stackless(self) -> None:
+        """All three degradation cases (ply 0, malformed SAN, missing fen_map entry) return
+        the SAME four-tuple the stackless build returns -- asserted explicitly, not merely
+        by absence of an exception (T-221-04-03 acceptance criterion).
+        """
+        n = 5
+        positions = _make_positions_128()
+        pv_by_ply = {5: "d5c4"}
+
+        # Baseline: today's stackless result for this fixture (missed orientation, n=5).
+        baseline = _detect_tactic_for_flaw(
+            n, _FEN_MAP_128, positions, pv_by_ply=pv_by_ply, orientation="missed"
+        )
+        assert baseline[0] == TacticMotifInt.HANGING_PIECE  # sanity: fixture still fires
+
+        # Degradation 1: malformed positions[n-1].move_san -- _build_missed_board_with_stack
+        # returns None, _detect_tactic_for_flaw falls back to the stackless board_before.
+        positions_malformed = _make_positions_128()
+        positions_malformed[4].move_san = "Zz9"
+        result_malformed = _detect_tactic_for_flaw(
+            n, _FEN_MAP_128, positions_malformed, pv_by_ply=pv_by_ply, orientation="missed"
+        )
+        assert result_malformed == baseline
+
+        # Degradation 2: fen_map missing the n-1 entry.
+        fen_map_missing = dict(_FEN_MAP_128)
+        del fen_map_missing[4]
+        result_missing = _detect_tactic_for_flaw(
+            n, fen_map_missing, positions, pv_by_ply=pv_by_ply, orientation="missed"
+        )
+        assert result_missing == baseline

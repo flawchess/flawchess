@@ -440,7 +440,15 @@ export function TrainSolveScreen({
     setGradingError(false);
     setLastPlayedUci(restoredSolve?.playedMoveUci ?? null);
     setGradeResult(restoredSolve?.gradeResult ?? null);
-    setGameMoveUci(null);
+    // Bug fix: `gameMoveUci` is deliberately NOT reset here. TrainReveal owns
+    // it (its onGameMoveUciChange effect reports the reveal query's UCI and
+    // nulls it on cleanup/puzzle transition). When the reveal query resolves
+    // synchronously from the TanStack cache (restored reveal via Analyze ->
+    // back, staleTime Infinity), TrainReveal's child effect fired FIRST with
+    // the UCI and this parent effect then overwrote it with null in the same
+    // commit, so the white played-in-game arrow was missing while the legend
+    // card still rendered. `gameMoveLine` is safe to reset: it only ever
+    // arrives asynchronously, after this effect has run.
     setGameMoveLine(null);
     setLineStep(null);
     setSpotlight(null);

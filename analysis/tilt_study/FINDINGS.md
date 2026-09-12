@@ -5,6 +5,17 @@
 > games and off-median ratings dropped, colour-aware calibration, deterministic user bootstrap),
 > assembled into `stories/tilt/tilt-report.md` by `gen_report.py`, and pushed into the page's
 > tables and chart data by `sync_story_html.py`. This file is the exploration that led there.
+>
+> **Fresh-opponent control (2026-09-12).** Every streak-conditioned number in the story now also
+> requires the next opponent not to appear in any game of the streak (`fresh_opponent` in
+> `story_data.py`, `SERIES_LOOKBACK = 12`). Rematches are 10–14% of the same-session streak frame
+> and carry about twice the streak effect (−5.3 / +4.6 pp after 6+ vs −2.1 / +2.1 for fresh
+> opponents): a same-opponent game is not an independent draw from the pool. Headline moved from
+> −2.6 / +2.6 to −2.1 / +2.1 (6+), −0.8 to −0.6 (3 losses); the §5 loss-anatomy pattern (short
+> losses and disconnects tilt, blown endgames don't) is unchanged, so it was not rematch behaviour.
+> Revenge rematches keep their own section (story §6) on the all-in-session frame. Also verified:
+> the +175 raw opponent gap after 6+ wins is selection, not matchmaking (gap *during* the streak
+> is larger than after it, own rating moves ≈30 points; +163 without rematch series).
 
 Question: after a loss (or a streak of them), does the next game go worse, and does a
 break help? Exploration of story candidate §1 in

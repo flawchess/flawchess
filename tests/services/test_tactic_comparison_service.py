@@ -159,7 +159,7 @@ async def _create_test_users(db_session: AsyncSession) -> None:
 
 
 def test_family_mapping_ten_families() -> None:
-    """FAMILY_TO_MOTIF_INTS has 10 canonical + 7 tier-3 + 3 move-type families = 20.
+    """FAMILY_TO_MOTIF_INTS has 10 canonical + 6 tier-3 + 3 move-type families = 19.
 
     Quick 260623-6pd surfaced the shipped Phase-132 tier-3 motifs (deflection, intermezzo,
     interference, clearance, capturing_defender) as filterable families, expanding the
@@ -167,7 +167,9 @@ def test_family_mapping_ten_families() -> None:
     Quick 260623 added the move-type families en_passant + under_promotion (17 → 19) after
     they unsuppressed at P=1.000 on the Phase-134 expanded fixture. promotion (28) was then
     surfaced when D-09 was reversed (19 → 20) — perfect-precision residual move-type motif,
-    sibling of under_promotion.
+    sibling of under_promotion. Phase 221 plan 06 (D-07) then REMOVED "clearance" (20 → 19)
+    — the real-game keep/suppress bar measured real_share=0.667 with only 3 of 16
+    surviving rows, below both REALGAME_MIN_ROWS_FOR_FLOOR and the 0.80 keep bar.
     """
     from app.repositories.library_repository import FAMILY_TO_MOTIF_INTS
 
@@ -182,11 +184,11 @@ def test_family_mapping_ten_families() -> None:
         "trapped_piece",
         "hanging",
         "mate",
-        # Tier-3 "Advanced" families (Quick 260623-6pd)
+        # Tier-3 "Advanced" families (Quick 260623-6pd). "clearance" REMOVED
+        # (Phase 221 plan 06, D-07 suppression).
         "deflection",
         "intermezzo",
         "interference",
-        "clearance",
         "capturing_defender",
         # Phase 133 (plan 133-02): attraction + sacrifice unsuppressed
         "attraction",
@@ -201,15 +203,17 @@ def test_family_mapping_ten_families() -> None:
 
 
 def test_family_mapping_excludes_suppressed_tier3() -> None:
-    """Only self-interference (14) remains unmapped among the tier-3 ints.
+    """self-interference (14) and clearance (15) are unmapped among the tier-3 ints.
 
     attraction (10) and sacrifice (17) were unsuppressed in Phase 133 (plan 133-02) and are
     now mapped as "Advanced" families. self-interference (14) still has no lichess theme
-    equivalent and 0 TP — it stays unmapped.
+    equivalent and 0 TP — it stays unmapped. clearance (15) JOINED it in Phase 221 plan 06
+    (D-07): the real-game keep/suppress bar measured real_share=0.667 with only 3 of 16
+    surviving rows, below both REALGAME_MIN_ROWS_FOR_FLOOR and the 0.80 keep bar.
     """
     from app.repositories.library_repository import FAMILY_TO_MOTIF_INTS
 
-    suppressed_tier3_ints = {14}
+    suppressed_tier3_ints = {14, 15}
     all_mapped_ints = {m for ints in FAMILY_TO_MOTIF_INTS.values() for m in ints}
     overlap = suppressed_tier3_ints & all_mapped_ints
     assert overlap == set(), (
@@ -232,11 +236,13 @@ def test_family_mapping_covers_selected_motifs() -> None:
     assert FAMILY_TO_MOTIF_INTS["trapped_piece"] == [26]
     # Mate set unchanged: ints 7-8, 18-24
     assert set(FAMILY_TO_MOTIF_INTS["mate"]) == {7, 8, 18, 19, 20, 21, 22, 23, 24}
-    # Tier-3 "Advanced" families (Quick 260623-6pd)
+    # Tier-3 "Advanced" families (Quick 260623-6pd). "clearance" (15) REMOVED
+    # in Phase 221 plan 06 (D-07 suppression) — see test_family_mapping_
+    # excludes_suppressed_tier3.
     assert FAMILY_TO_MOTIF_INTS["deflection"] == [9]
     assert FAMILY_TO_MOTIF_INTS["intermezzo"] == [11]
     assert FAMILY_TO_MOTIF_INTS["interference"] == [13]
-    assert FAMILY_TO_MOTIF_INTS["clearance"] == [15]
+    assert "clearance" not in FAMILY_TO_MOTIF_INTS
     assert FAMILY_TO_MOTIF_INTS["capturing_defender"] == [16]
     # Phase 133 (plan 133-02): attraction + sacrifice unsuppressed
     assert FAMILY_TO_MOTIF_INTS["attraction"] == [10]
@@ -254,23 +260,23 @@ def test_family_mapping_fork() -> None:
 
 
 def test_family_mapping_produces_overflow() -> None:
-    """With 20 families, the top-6 selection leaves 14 overflow families (G-01 resolved).
+    """With 19 families, the top-6 selection leaves 13 overflow families (G-01 resolved).
 
     This is the data-layer proof that the 'More Tactics' accordion (D-14) is
     now reachable — it was previously blocked because 6 families == top-6 cap.
     Quick 260623-6pd expanded the taxonomy from 10 to 15 (tier-3 Advanced families);
     Phase 133 (plan 133-02) added attraction + sacrifice (→ 17); Quick 260623 added the
     move-type families en_passant + under_promotion (→ 19); promotion was surfaced when
-    D-09 was reversed (→ 20).
+    D-09 was reversed (→ 20). Phase 221 plan 06 (D-07) then REMOVED "clearance" (→ 19).
     """
     from app.repositories.library_repository import FAMILY_TO_MOTIF_INTS
 
     total = len(FAMILY_TO_MOTIF_INTS)
-    assert total == 20, f"Expected 20 families; got {total}"
-    # top-6 + 14 overflow
-    assert total > 6, "With 20 families, top-6 selection always produces overflow families"
+    assert total == 19, f"Expected 19 families; got {total}"
+    # top-6 + 13 overflow
+    assert total > 6, "With 19 families, top-6 selection always produces overflow families"
     overflow_count = total - 6
-    assert overflow_count == 14, f"Expected 14 overflow families; got {overflow_count}"
+    assert overflow_count == 13, f"Expected 13 overflow families; got {overflow_count}"
 
 
 # ---------------------------------------------------------------------------

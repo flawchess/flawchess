@@ -51,11 +51,20 @@ import pytest
 from app.services.tactic_detector import (
     MATE_MOTIFS,
     MOVE_TYPE_MOTIFS,
+    SACRIFICE_CLEARANCE_MAX_DEPTH,
     TacticMotif,
     TacticMotifInt,
     _INT_TO_MOTIF,
     _MOTIF_TO_INT,
+    _TIER3_REGISTRY,
+    _clearance_line_is_used,
+    _clearance_prior_move_is_valid,
     _parse_pv,
+    _piece_is_trapped,
+    detect_clearance,
+    detect_discovered_attack,
+    detect_self_interference,
+    detect_sacrifice,
     detect_tactic_motif,
     detect_trapped_piece,
 )
@@ -100,6 +109,13 @@ _QUERY_SUPPRESSED_MOTIFS: frozenset[TacticMotif] = frozenset(
         "arabian-mate",  # Phase 133: unsuppressed (TRAIN 1.000) but no dispatch-winner fixtures yet
         "boden-mate",  # Phase 133: unsuppressed (TRAIN 1.000) but no dispatch-winner fixtures yet
         "double-bishop-mate",  # 0 prod occurrences
+        # Phase 221 plan 06 (D-07): clearance moved validated -> suppressed. The D-07
+        # real-game keep/suppress bar measured real_share=0.667 with only 3 of 16
+        # surviving rows (below both REALGAME_MIN_ROWS_FOR_FLOOR and the 0.80 keep
+        # bar), so "clearance" was removed from _TIER3_REGISTRY and can never win
+        # dispatch again. _CLEARANCE_FIXTURES' real "clearance"-labeled rows now fire
+        # as pin/attraction/None via full dispatch — see the list's own comments.
+        "clearance",
     }
 )
 
@@ -212,6 +228,29 @@ _FORK_FIXTURES: list[tuple[str, str, TacticMotif]] = [
         "r3r1k1/ppp2ppp/8/4N3/7R/1P4b1/P1P1QnK1/q7 b - - 1 1",
         "g3h4 e2f2 h4f2 e5f3 e8e2 b3b4 f2h4 g2h3 a1h1 f3h2 e2g2 h3h4",
         "hanging-piece",
+    ),
+    (
+        # Phase 221 TAGFIX-05 fix 2 (D-12): behavioral proof that the removed D-01
+        # relevance gate is gone. White sacs the rook for a pawn (Rxa7), black
+        # recaptures (Rxa7), so material at the END of the line (-11) is BELOW
+        # material at the START (-7) — the deleted gate would have `continue`d at
+        # i=2 and this line would NOT have fired before this fix. Nc6 now forks the
+        # undefended queen (d8) and rook (a7) at i=2 (depth>0) regardless of the
+        # overall material trend, matching cook (no such gate exists there).
+        "r2q3k/p7/8/4N3/8/8/8/R5K1 w - - 0 1",
+        "a1a7 a8a7 e5c6 h8g8 g1h1",
+        "fork",
+    ),
+    (
+        # Reclassified Phase 221 TAGFIX-05 fix 5 (D-11): discovered-attack now returns
+        # depth k (the pov move index), not k-1. At equal depth the dispatch tiebreak
+        # falls to (tier, rank), and fork's Tier 2 rank 0 beats discovered-attack's
+        # Tier 2 rank 5 — this is the one hand-confirmed WR-02 fixture the D-11
+        # rationale comment warned would flip. Was discovered-attack at depth 1
+        # (k-1); now fork at depth 2 (k). Moved from _DISCOVERED_ATTACK_FIXTURES.
+        "8/2r3pk/1p4n1/1Pb3Pp/p4P2/P3N1P1/1BP4K/4R3 b - - 0 33",
+        "c5e3 e1e3 c7c2 h2h3 c2b2",
+        "fork",
     ),
 ]
 
@@ -337,12 +376,11 @@ _PIN_FIXTURES: list[tuple[str, str, TacticMotif]] = [
         "c8d7 b1d2 e6d5 a1b1 b2f6 b1b7 d7c6 b7b1 h7h5 h2h4 f6g6 f1e1",
         "hanging-piece",
     ),
-    (
-        # Not a pin: clearance fires instead
-        "r1bqk1nr/pppp1ppp/2nb4/8/4Pp2/2NP4/PPP1N1PP/R1BQKB1R b KQkq - 1 1",
-        "d8h4 e1d2 g8f6 d1e1 h4h5 a2a4 e8g8 h2h3 f8e8 a4a5 d6b4 e2f4",
-        "clearance",
-    ),
+    # Phase 221 TAGFIX-04 (D-07): the "not a pin: clearance fires instead" fixture
+    # that used to live here was moved to _HARD_NEGATIVES — the clearance
+    # strengthening (vacating-piece restriction / line-is-used) now correctly
+    # rejects it, so nothing fires at all (still proves pin doesn't wrongly win,
+    # just via None rather than via clearance winning the tiebreak).
 ]
 
 _SKEWER_FIXTURES: list[tuple[str, str, TacticMotif]] = [
@@ -473,11 +511,6 @@ _DISCOVERED_ATTACK_FIXTURES: list[tuple[str, str, TacticMotif]] = [
     (
         "2r1q1k1/pp1b1p1p/3B2p1/4n1P1/8/3Q2P1/P3P1B1/3R2K1 w - - 0 26",
         "d6e5 e8e5 d3d7",
-        "discovered-attack",
-    ),
-    (
-        "8/2r3pk/1p4n1/1Pb3Pp/p4P2/P3N1P1/1BP4K/4R3 b - - 0 33",
-        "c5e3 e1e3 c7c2 h2h3 c2b2",
         "discovered-attack",
     ),
     (
@@ -707,6 +740,27 @@ _DEFLECTION_FIXTURES: list[tuple[str, str, TacticMotif]] = [
         "g1g3 e3f4 g3a3 h7h6 b5b6 a7b6 a6a7 b6b5 a7a8q b5c4 a8f3 f4e5",
         "skewer",
     ),
+    (
+        # Phase 221 TAGFIX-05 fix 1 (D-12): condition 10's promotion disjunct. The pov
+        # promotion b2b1q shares its file with orig_sq (b3, the deflected rook's origin)
+        # AND move.from_square (b2) is reachable from b3 — the promotion disjunct fires
+        # even though the capture square b1 is NOT in grandpa_board.attacks(b3). CC0
+        # puzzle kwRAz (TRAIN).
+        "8/5pk1/4p1p1/P3P3/2rP4/1p1RK3/5P2/8 b - - 0 39",
+        "b3b2 d3b3 c4c3 b3c3 b2b1q",
+        "deflection",
+    ),
+    (
+        # Phase 221 TAGFIX-05 fix 1 (D-12): condition 10's attacks disjunct, a
+        # non-promotion pov move where the capture square (f2) IS in
+        # grandpa_board.attacks(orig_sq) — the other side of the OR. CC0 puzzle 9WsPX
+        # (TRAIN). Unaffected by the fix (non-promotion moves always used this branch),
+        # kept as a named regression fixture so the OR's two disjuncts both have
+        # explicit coverage.
+        "rn1q1rk1/ppp2ppp/1b2p3/4P3/1P3Pn1/2P2NP1/PB2Q2P/3RKB1R b K - 2 15",
+        "b6f2 e2f2 d8d1 e1d1 g4f2",
+        "deflection",
+    ),
 ]
 
 _ATTRACTION_FIXTURES: list[tuple[str, str, TacticMotif]] = [
@@ -728,6 +782,16 @@ _CLEARANCE_FIXTURES: list[tuple[str, str, TacticMotif]] = [
     # CC0 training corpus. The prior set was labeled by the old 3-of-5 voting detector
     # and most do not satisfy cook's 9-condition AND-chain (see 132-02-SUMMARY.md).
     # Phase 133 Plan 02: fixtures 0, 1, 3 reclassified as attraction.
+    #
+    # Phase 221 plan 06 (D-07): clearance was SUPPRESSED (removed from _TIER3_REGISTRY)
+    # after the real-game keep/suppress bar measured real_share=0.667 with only 3 of
+    # 16 surviving rows. It can never win full dispatch again, so every remaining row
+    # below that used to expect "clearance" was individually re-run through
+    # detect_tactic_motif and either relabeled to whatever now genuinely fires, or
+    # removed (documented) when nothing fires at all. detect_clearance's OWN predicate
+    # is unchanged and still accepts the three synthetic CONTEXT worked examples that
+    # used to live here — see TestClearanceContextWorkedExamples below, which now
+    # verifies them via the standalone predicate instead of full dispatch.
     (
         # Reclassified Phase 133: attraction fires at depth 0.
         "3rr1k1/b3q1pp/p7/1p1pp3/1P5Q/P4RBP/2P2PP1/5RK1 w - - 4 31",
@@ -741,63 +805,103 @@ _CLEARANCE_FIXTURES: list[tuple[str, str, TacticMotif]] = [
         "g6h5 g4h5 a1h1 h5g6 a2a1q a7a1 h1a1",
         "attraction",
     ),
-    (
-        # Phase 132 Plan 04: replaced — sacrifice dispatch collision. CC0 TP from TRAIN
-        # where clearance wins dispatch and sacrifice does not fire.
-        "2k5/2p5/2p1r3/2P3b1/P7/1P2p1P1/7P/4Q2K b - - 1 43",
-        "e3e2 h1g2 g5d2 e1d2 e2e1q d2e1 e6e1",
-        "clearance",
-    ),
+    # Phase 221 TAGFIX-04 (D-07): the pawn-vacating-move fixture that used to fire
+    # clearance at depth 2 here ("2k5/2p5/..." — the vacating pawn e3e2) is no
+    # longer a clearance positive: condition A correctly rejects the pawn-vacating
+    # k=2 candidate, and the position doesn't satisfy the remaining conditions at
+    # k=4 either. Removed as a clearance fixture (D-07 acts as designed).
     (
         # Reclassified Phase 133: attraction fires at depth 2.
         "r2q2k1/2p2p1p/p1n3p1/3N1b2/1p1P4/4QN2/PP3PPP/4R1K1 w - - 1 24",
         "e3h6 f7f6 e1e8 d8e8 d5f6 g8f7 f6e8",
         "attraction",
     ),
+    # Phase 221 plan 06 (D-07 suppression): the four positions below used to fire
+    # "clearance" and were removed rather than relabeled — re-run through
+    # detect_tactic_motif after clearance's registry removal, all four now return
+    # None (nothing else in the position dispatches either). Verified individually,
+    # not assumed:
+    #   "r2q3k/ppp3pp/5r2/3b1p1P/2B1pP2/1Q6/PP3P2/R1B2K1R b - - 1 20" / "d5c4 b3c4 d8d1"
+    #   "2r3k1/5ppp/4p3/3p1n2/3P4/1P3P2/P1qQ1BPP/3R2K1 b - - 4 31" / "c2d2 d1d2 c8c1 f2e1 c1e1"
+    #   "5rk1/ppn2qb1/2p1p3/2P2rRp/3PQP2/1P2P2P/PB2B2K/R7 b - - 2 27" / "f5g5 f4g5 f7f2"
+    #   "rn5k/4q1p1/p3b2p/2ppbB1Q/P7/2P5/1P4PP/R4RK1 w - - 0 24" / "f5e6 e7e6 f1f8"
     (
-        "r2q3k/ppp3pp/5r2/3b1p1P/2B1pP2/1Q6/PP3P2/R1B2K1R b - - 1 20",
-        "d5c4 b3c4 d8d1",
-        "clearance",
-    ),
-    (
-        "2r3k1/5ppp/4p3/3p1n2/3P4/1P3P2/P1qQ1BPP/3R2K1 b - - 4 31",
-        "c2d2 d1d2 c8c1 f2e1 c1e1",
-        "clearance",
-    ),
-    (
-        "r1q2rk1/pp4p1/2p1b2p/3pPpb1/3P4/2NB2Q1/PP3PPP/R3R1K1 b - - 0 20",
-        "f5f4 g3f3 e6g4",
-        "clearance",
-    ),
-    (
-        "5rk1/ppn2qb1/2p1p3/2P2rRp/3PQP2/1P2P2P/PB2B2K/R7 b - - 2 27",
-        "f5g5 f4g5 f7f2",
-        "clearance",
-    ),
-    (
-        "r1b2r2/p3nppk/1qn1p3/2ppP3/5P2/P1B2N2/1PP3PP/R2QK2R w KQ - 0 13",
-        "f3g5 h7g8 d1h5",
-        "clearance",
-    ),
-    (
-        "rn5k/4q1p1/p3b2p/2ppbB1Q/P7/2P5/1P4PP/R4RK1 w - - 0 24",
-        "f5e6 e7e6 f1f8",
-        "clearance",
-    ),
-    (
+        # Reclassified Phase 221 plan 06 (D-07 suppression): the position genuinely
+        # fires "pin" via full dispatch now that clearance can no longer claim it
+        # (verified: detect_tactic_motif returns TacticMotifInt.PIN at depth 4).
         "1Q2nk2/2q1bpp1/2P4p/p2pp3/P7/7P/5PP1/1R4K1 w - - 2 32",
         "b8c7 e8c7 b1b8 c7e8 c6c7",
-        "clearance",
+        "pin",
     ),
-    (
-        "8/8/RP3p2/P3pk2/6pp/5r2/6K1/8 w - - 0 42",
-        "b6b7 f3b3 a6b6",
-        "clearance",
-    ),
+    # Phase 221 TAGFIX-04 (D-07): the "b6b7 f3b3 a6b6" fixture removed here also had
+    # a pawn-vacating k=2 candidate (b6b7), rejected by condition A.
     # Removed (Phase 134 cook material-maintenance gate): the former hanging-piece
     # cross-check here (Rxb8 winning a rook) drops material 7->6 after black's zwischenzug
     # by board 3, so cook's hanging_piece now correctly declines it — it is no longer a
     # clean hanging-piece grab. The gate cut zero true positives on the CC0 fixture.
+]
+
+# Phase 221 TAGFIX-04 (D-07), moved out of _CLEARANCE_FIXTURES in plan 06 (D-07
+# suppression): the three CONTEXT ACCEPT worked examples, synthetic "material lab"
+# positions (hand-verified, not real games — see 221-05 SUMMARY for the verification
+# log). Now that "clearance" can never win full dispatch, these are scored via the
+# STANDALONE detect_clearance predicate in TestClearanceContextWorkedExamples below
+# rather than via detect_tactic_motif — the predicate's own accept logic (D-07) is
+# unchanged by the registry removal, only its reachability through the dispatcher is.
+# The three REJECT rows stay in _CLEARANCE_NEGATIVES (still correctly asserted via
+# full dispatch: detect_tactic_motif must return None either way). All six share one
+# geometry: a White ray piece at a1 blocked by a piece at a3, which vacates at move 0
+# (the "prior pov move" for k=2); Black's Nd5 is a neutral filler.
+_CLEARANCE_ACCEPT_STANDALONE: list[tuple[str, str]] = [
+    (
+        # CONTEXT "Na6+ Ka8 [Qc7]" analog: knight vacates a3 (non-king/pawn,
+        # condition A passes); Ra1-a7 gives check (condition 10 via check).
+        "8/7k/8/3n4/8/N7/7K/R7 w - - 0 1",
+        "a3b5 d5e3 a1a7",
+    ),
+    (
+        # CONTEXT "Rc8->g8+ ... [c8=Q]" analog: bishop vacates a3, queen
+        # Qa1-a7 gives check (condition 10 via check, second ray-piece/vacating-
+        # piece combination for coverage).
+        "8/7k/8/3n4/8/B7/7K/Q7 w - - 0 1",
+        "a3b4 d5e3 a1a7",
+    ),
+    (
+        # The third CONTEXT-required accept: knight vacates a3, Ra1-a7 does NOT
+        # check but attacks the undefended bishop on b7 along rank 7 (condition
+        # 10 via the higher-value-or-hanging branch, not the check branch).
+        "7k/1b6/8/3n4/8/N7/7K/R7 w - - 0 1",
+        "a3b5 d5e3 a1a7",
+    ),
+]
+
+# Phase 221 TAGFIX-04 (D-07): the three CONTEXT reject examples. Synthetic
+# positions sharing the ACCEPT fixtures' geometry above, each isolating exactly
+# one rejection clause. Scored via detect_tactic_motif (must return None, not
+# just "not clearance") in TestClearanceContextWorkedExamples below — kept
+# separate from _HARD_NEGATIVES (which is real quiet prod errors) since these
+# are purpose-built to isolate D-07's clauses.
+_CLEARANCE_NEGATIVES: list[tuple[str, str]] = [
+    (
+        # CONTEXT "Kh1->g2 ... [Rh1]" analog: the KING itself vacates a3 —
+        # condition A (D-07) rejects a king-vacating move outright.
+        "7k/8/8/3n4/8/K7/8/R7 w - - 0 1",
+        "a3b4 d5e3 a1a7",
+    ),
+    (
+        # CONTEXT "f6->f5 ... [Rf6]" analog: a PAWN vacates a3 — condition A
+        # (D-07) rejects a pawn-vacating move outright.
+        "7k/8/8/3n4/8/P7/7K/R7 w - - 0 1",
+        "a3a4 d5e3 a1a7",
+    ),
+    (
+        # CONTEXT "Bh8 ... [Qf6]" analog: same geometry as the first ACCEPT
+        # fixture (knight vacates a3, condition A passes) but the clearing move
+        # (Ra1-a7) is quiet — no check, nothing to attack — so condition 10
+        # (line is used) rejects it.
+        "7k/8/8/3n4/8/N7/7K/R7 w - - 0 1",
+        "a3b5 d5e3 a1a7",
+    ),
 ]
 
 _X_RAY_FIXTURES: list[tuple[str, str, TacticMotif]] = [
@@ -939,13 +1043,10 @@ _INTERMEZZO_FIXTURES: list[tuple[str, str, TacticMotif]] = [
         "c3a4 c7d6 a4b6 a7b6 e5d6",
         "intermezzo",
     ),
-    # NOTE: reclassified fixture kept for cross-motif regression coverage (Phase 132 Plan 02):
-    # new cook clearance AND-chain fires at depth 2 before intermezzo.
-    (
-        "r4b1r/pp2pkp1/4bnBp/q7/8/2P1BP2/PPQ2P1P/3RR1K1 b - - 1 1",
-        "f7g8 e3f4 e6f7 g6f7 g8f7 c2b3 f7g6 d1d4 h8g8 f4e5 g6h7 b3b7",
-        "clearance",
-    ),
+    # Phase 221 TAGFIX-04 (D-07): the "clearance fires at depth 2 before intermezzo"
+    # cross-motif regression fixture that used to live here was moved to
+    # _HARD_NEGATIVES — the clearance strengthening now correctly rejects it, so
+    # nothing fires (still proves intermezzo doesn't wrongly win this position).
 ]
 
 _CAPTURING_DEFENDER_FIXTURES: list[tuple[str, str, TacticMotif]] = [
@@ -1142,9 +1243,14 @@ _DOUBLE_CHECK_FIXTURES: list[tuple[str, str, TacticMotif]] = [
 
 _INTERFERENCE_FIXTURES: list[tuple[str, str, TacticMotif]] = [
     (
+        # Reclassified Phase 221 plan 06 (D-07 suppression): this position used to
+        # dispatch as "clearance" (winning the tiebreak over interference); now that
+        # clearance can never win dispatch, it genuinely fires "interference"
+        # (verified: detect_tactic_motif returns TacticMotifInt.INTERFERENCE at
+        # depth 6).
         "2rr2k1/pb3pp1/1p3q1p/3p4/1PnN4/P2QPP2/2B3PP/2RR2K1 w - - 1 2",
         "d3h7 g8f8 c2f5 c8a8 f5g4 g7g6 h7h6 f8g8 c1c3 a7a5 b4b5 b7c8",
-        "clearance",
+        "interference",
     ),
 ]
 
@@ -1193,6 +1299,20 @@ _HARD_NEGATIVES: list[tuple[str, str]] = [
     ),
     ("r7/pp1k1ppp/8/3p4/1b6/2B2n1P/PP3P2/R2K3R b - - 1 1", "b4c3"),
     ("3r4/pp3pkp/2p2pp1/8/1QP3P1/1P5P/P2q1P2/4R1K1 w - - 1 2", "b4d2"),
+    # Phase 221 TAGFIX-04 (D-07): these two moved here from _PIN_FIXTURES /
+    # _INTERMEZZO_FIXTURES respectively. Both used to fire as "clearance" (a
+    # cross-motif regression guard proving pin/intermezzo didn't wrongly win);
+    # the D-07 strengthening (vacating-piece restriction / line-is-used) now
+    # correctly rejects clearance on both, and nothing else wins — still a
+    # valid guard that pin/intermezzo doesn't wrongly fire, now via None.
+    (
+        "r1bqk1nr/pppp1ppp/2nb4/8/4Pp2/2NP4/PPP1N1PP/R1BQKB1R b KQkq - 1 1",
+        "d8h4 e1d2 g8f6 d1e1 h4h5 a2a4 e8g8 h2h3 f8e8 a4a5 d6b4 e2f4",
+    ),
+    (
+        "r4b1r/pp2pkp1/4bnBp/q7/8/2P1BP2/PPQ2P1P/3RR1K1 b - - 1 1",
+        "f7g8 e3f4 e6f7 g6f7 g8f7 c2b3 f7g6 d1d4 h8g8 f4e5 g6h7 b3b7",
+    ),
     (
         "8/8/4k2P/6R1/2p1p3/2P1K1P1/2b5/8 b - - 0 1",
         "e6f6 g5g8 f6e7 h6h7 c2b3 g3g4 e7d7 g4g5 b3d1 h7h8q d1g4 g5g6",
@@ -1490,7 +1610,6 @@ _VALIDATED_FIXTURE_SETS: list[list[tuple[str, str, TacticMotif]]] = [
     _BACK_RANK_MATE_FIXTURES,
     _MATE_FIXTURES,
     _DEFLECTION_FIXTURES,
-    _CLEARANCE_FIXTURES,
     _X_RAY_FIXTURES,
     _INTERMEZZO_FIXTURES,
     _CAPTURING_DEFENDER_FIXTURES,
@@ -1516,6 +1635,11 @@ _VALIDATED_FIXTURE_SETS: list[list[tuple[str, str, TacticMotif]]] = [
 # only the query/reporting layer. Sacrifice, arabian-mate, boden-mate: unsuppressed in
 # precision_floors (TRAIN 1.000) but kept in the suppressed fixture partition because no
 # dispatch-winner positions are available yet (pre-empted by hanging-piece/mate in TRAIN).
+# Phase 221 plan 06 (D-07): clearance moved validated -> suppressed (real-game keep/
+# suppress bar measured real_share=0.667 with only 3 of 16 surviving rows). Its
+# remaining rows now fire as attraction/pin/None via full dispatch — see _CLEARANCE_
+# FIXTURES' own comments; the D-07 accept logic is separately proven via the
+# standalone predicate in TestClearanceContextWorkedExamples.
 _SUPPRESSED_FIXTURE_SETS: list[list[tuple[str, str, TacticMotif]]] = [
     _DOVETAIL_MATE_FIXTURES,  # Phase 133: cook port strict; TRAIN positions dispatch as 'mate'
     _DOUBLE_CHECK_FIXTURES,
@@ -1526,6 +1650,7 @@ _SUPPRESSED_FIXTURE_SETS: list[list[tuple[str, str, TacticMotif]]] = [
     _ARABIAN_MATE_FIXTURES,
     _BODEN_MATE_FIXTURES,
     _DOUBLE_BISHOP_MATE_FIXTURES,
+    _CLEARANCE_FIXTURES,  # Phase 221 plan 06 (D-07): moved from validated
 ]
 _VALIDATED_IDS: list[str] = [
     "fork",
@@ -1536,7 +1661,6 @@ _VALIDATED_IDS: list[str] = [
     "back-rank-mate",
     "mate",
     "deflection",
-    "clearance",
     "x-ray",
     "intermezzo",
     "capturing-defender",
@@ -1556,6 +1680,7 @@ _SUPPRESSED_IDS: list[str] = [
     "arabian-mate",  # Phase 133: unsuppressed (TRAIN 1.000) but no dispatch-winner fixtures yet
     "boden-mate",  # Phase 133: unsuppressed (TRAIN 1.000) but no dispatch-winner fixtures yet
     "double-bishop-mate",
+    "clearance",  # Phase 221 plan 06 (D-07): moved from validated
 ]
 
 
@@ -1636,6 +1761,44 @@ class TestTacticMotifInt:
         # Plan 128.1-02 adds en-passant (27), promotion (28), under-promotion (29).
         assert len(_INT_TO_MOTIF) == 29
         assert len(_MOTIF_TO_INT) == 29
+
+    def test_tier3_registry_excludes_undispatchable_motifs(self) -> None:
+        """Phase 221 TAGFIX-05 fix 7 (D-12) + plan 06 (D-07): int 14
+        (self-interference) and int 15 (clearance) can never win dispatch,
+        while every storage path for both ints stays fully intact.
+
+        Renamed from test_tier3_registry_excludes_self_interference (D-12) to
+        cover the now-two-member undispatchable set after clearance's D-07
+        suppression. Both halves of the "remove from dispatch, keep for
+        storage" contract are asserted in ONE test, on the registry contents
+        rather than file text:
+        - _TIER3_REGISTRY (the dispatcher's ONLY iteration source, per
+          _dispatch_tier_candidates) contains neither SELF_INTERFERENCE nor
+          CLEARANCE.
+        - TacticMotifInt.SELF_INTERFERENCE/.CLEARANCE, _INT_TO_MOTIF[14]/[15]
+          and detect_self_interference/detect_clearance remain importable and
+          callable — persisted prod rows carry ints 14 and 15 until the full
+          retag clears them.
+        """
+        registry_ints = {int(motif_int) for _motif_str, motif_int in _TIER3_REGISTRY}
+        undispatchable = {
+            "self-interference": TacticMotifInt.SELF_INTERFERENCE,
+            "clearance": TacticMotifInt.CLEARANCE,
+        }
+        for name, motif_int in undispatchable.items():
+            assert int(motif_int) not in registry_ints, (
+                f"{name} must be removed from _TIER3_REGISTRY — the dispatcher "
+                "iterates only this registry, so its presence here is the sole "
+                f"thing that would make int {int(motif_int)} dispatchable again"
+            )
+        assert TacticMotifInt.SELF_INTERFERENCE == 14
+        assert TacticMotifInt.CLEARANCE == 15
+        assert _INT_TO_MOTIF[14] == "self-interference"
+        assert _INT_TO_MOTIF[15] == "clearance"
+        assert _MOTIF_TO_INT["self-interference"] == 14
+        assert _MOTIF_TO_INT["clearance"] == 15
+        assert callable(detect_self_interference)
+        assert callable(detect_clearance)
 
 
 # ---------------------------------------------------------------------------
@@ -1755,6 +1918,7 @@ def test_suppressed_motifs_documented_and_storable(
         "arabian-mate",
         "boden-mate",
         "double-bishop-mate",
+        "clearance",  # Phase 221 plan 06 (D-07): moved from validated
     ]
     motif: TacticMotif = suppressed_order[idx]
     assert motif in _QUERY_SUPPRESSED_MOTIFS
@@ -2387,6 +2551,371 @@ class TestSacrificeCookAndChain:
 
 
 # ---------------------------------------------------------------------------
+# Phase 221 TAGFIX-03 (D-06/D-08): sacrifice depth cap + gate-boundary behavioral
+# tests. D-05 (the boards[k+3] persistence check plan 05 added on top of the
+# gate below) was RETIRED in plan 08 — see detect_sacrifice's docstring for the
+# full measurement. The fixtures below were originally written to demonstrate
+# D-05 rejecting a recovered deficit; they are KEPT and REPURPOSED to instead
+# pin the plan-08 behavior change (recovery no longer matters at all), because
+# they are exactly the fixtures that prove the retirement took effect.
+#
+# All fixtures below share one "material lab" geometry so each scenario is a
+# minimal, hand-verified synthetic position (not a real game) that isolates
+# EXACTLY the material trajectory the assertion needs:
+#   White King on the queenside (b1/c1), Black King on e8 — both shuffle as
+#   fillers and never interact with the action pieces.
+#   A White or Black "action" piece (Rook/Queen) slides down a file, capturing
+#   undefended "bait" pieces placed on that file one at a time (nearest first).
+# Every FEN/PV pair was verified with a standalone script calling _parse_pv +
+# detect_sacrifice directly and printing _material_diff at every board index
+# before being transcribed here (see 221-05 SUMMARY for the verification log).
+# ---------------------------------------------------------------------------
+
+
+class TestSacrificePersistenceAndDepthCap:
+    """D-06 shared depth cap and gate-boundary behavioral tests. D-05's
+    persistence check (boards[k+3]) is retired as of plan 08 — see the
+    module comment above and detect_sacrifice's docstring."""
+
+    def test_deficit_recovered_at_k_plus_3_still_fires_after_d05_retirement(self) -> None:
+        """Plan 08: this fixture used to prove D-05 REJECTED a deficit that meets
+        the gate at k=2 (boards[3] diff=-2) but recovers to -1 by boards[5] (the
+        next pov move). D-05 is retired (221-D13-SPOTCHECK.md: it also dropped
+        genuine sacrifices whose recovery IS the point of the tactic), so this
+        exact recovering line now FIRES — the outer gate alone decides, and
+        what happens after k+1 is no longer read at all.
+        """
+        from app.services.tactic_detector import TACTIC_CONFIDENCE_HIGH
+
+        fen = "q3k3/R7/B7/P7/7p/7p/7b/1K5R w - - 0 1"
+        pv = "b1b2 a8a7 h1h2 e8e7 h2h3"
+        board = chess.Board(fen)
+        boards, moves = _parse_pv(board, pv)
+        fired, piece, conf, depth = detect_sacrifice(boards, moves, board.turn)
+        assert fired
+        assert piece is None
+        assert conf == TACTIC_CONFIDENCE_HIGH
+        assert depth == 2
+
+    def test_deficit_persists_at_k_plus_3_fires(self) -> None:
+        """Same gate (boards[3] diff=-2 at k=2), fires at depth 2 regardless of
+        what boards[5] later shows (White plays a non-recapturing filler here;
+        the previous test uses a recapturing filler instead — both now fire
+        identically, which is exactly the point of retiring D-05).
+        """
+        from app.services.tactic_detector import TACTIC_CONFIDENCE_HIGH
+
+        fen = "q3k3/R7/B7/P7/7p/7p/7b/1K5R w - - 0 1"
+        pv = "b1b2 a8a7 h1h2 e8e7 b2b1"
+        board = chess.Board(fen)
+        boards, moves = _parse_pv(board, pv)
+        fired, piece, conf, depth = detect_sacrifice(boards, moves, board.turn)
+        assert fired
+        assert piece is None
+        assert conf == TACTIC_CONFIDENCE_HIGH
+        assert depth == 2
+
+    def test_line_ends_before_persistence_board_exists_fires(self) -> None:
+        """The line ends immediately after the sacrificing move (3 moves,
+        boards[5] does not exist) -> fires at depth 2, same gate as the two
+        tests above (boards[3] diff=-2). Unaffected by D-05's retirement — this
+        case was always accepted (nothing to check past the end of the line).
+        """
+        fen = "q3k3/R7/B7/P7/7p/7p/7b/1K5R w - - 0 1"
+        pv = "b1b2 a8a7 h1h2"
+        board = chess.Board(fen)
+        boards, moves = _parse_pv(board, pv)
+        fired, piece, conf, depth = detect_sacrifice(boards, moves, board.turn)
+        assert fired
+        assert depth == 2
+
+    def test_gate_boundary_one_point_short_does_not_fire(self) -> None:
+        """Boundary: a deficit of exactly -1 relative to initial (one point short
+        of MIN_SACRIFICE_DROP=2) never meets the outer gate at k=2 -> does not fire.
+        """
+        fen = "q3k3/8/8/8/8/8/P7/2K4R w - - 0 1"
+        pv = "c1d1 a8a2 d1c1"
+        board = chess.Board(fen)
+        boards, moves = _parse_pv(board, pv)
+        fired, piece, conf, depth = detect_sacrifice(boards, moves, board.turn)
+        assert not fired
+
+    def test_depth_cap_fires_at_k_equals_4(self) -> None:
+        """D-06: the first (and only) deficit is met at k=4, within the
+        SACRIFICE_CLEARANCE_MAX_DEPTH cap, and the line ends there -> fires at
+        depth 4. k=2's own gate never meets the threshold (no capture has
+        happened yet at that point), proving the scan proceeds past an
+        unmet k=2 to find the real sacrifice at k=4.
+        """
+        fen = "q3k3/B7/8/8/8/8/8/1K6 w - - 0 1"
+        pv = "b1b2 e8e7 b2b1 a8a7 b1b2"
+        board = chess.Board(fen)
+        boards, moves = _parse_pv(board, pv)
+        fired, piece, conf, depth = detect_sacrifice(boards, moves, board.turn)
+        assert fired
+        assert depth == 4
+        assert depth is not None and depth <= SACRIFICE_CLEARANCE_MAX_DEPTH
+
+    def test_depth_cap_blocks_first_deficit_met_at_k_equals_6(self) -> None:
+        """D-06: the first deficit would be met at k=6 (SACRIFICE_CLEARANCE_MAX_DEPTH
+        + 2), but the scan `break`s once k exceeds the cap (4), so boards[7] is
+        never even read -> does not fire, even though an uncapped scan would find
+        a real sacrifice there.
+        """
+        fen = "q3k3/8/8/B7/8/8/8/1K6 w - - 0 1"
+        pv = "b1b2 e8e7 b2b1 e7e8 b1b2 a8a5 b2b1"
+        board = chess.Board(fen)
+        boards, moves = _parse_pv(board, pv)
+        fired, piece, conf, depth = detect_sacrifice(boards, moves, board.turn)
+        assert not fired
+
+    def test_idempotent_across_repeated_calls(self) -> None:
+        """detect_sacrifice is pure: calling it twice on the identical boards/moves
+        returns an identical four-tuple, and it mutates no board.
+        """
+        fen = "q3k3/R7/B7/P7/7p/7p/7b/1K5R w - - 0 1"
+        pv = "b1b2 a8a7 h1h2 e8e7 b2b1"
+        board = chess.Board(fen)
+        boards, moves = _parse_pv(board, pv)
+        boards_fens_before = [b.fen() for b in boards]
+        result_1 = detect_sacrifice(boards, moves, board.turn)
+        result_2 = detect_sacrifice(boards, moves, board.turn)
+        assert result_1 == result_2
+        assert [b.fen() for b in boards] == boards_fens_before
+
+    def test_no_orientation_parameter_on_detect_sacrifice(self) -> None:
+        """D-08: one predicate, no orientation parameter — both allowed and missed
+        orientations reach the same detect_sacrifice through the dispatcher.
+        """
+        import inspect
+
+        params = set(inspect.signature(detect_sacrifice).parameters)
+        assert params == {"boards", "moves", "pov"}
+
+
+# ---------------------------------------------------------------------------
+# Phase 221 plan 08 (gap closure, D-13 operator spot-check): regression pins
+# for the two real-game rows the operator confirmed are genuine sacrifices
+# that D-05's literal boards[k+3] persistence rule (shipped in plans 05/06)
+# wrongly drops. Built from fixtures/tagger/realgame_tags.csv rows 0064 and
+# 0133 via pre_flaw_fen + push_move_uci + pv -- the SAME construction
+# tests/scripts/tagger/conftest.py::build_realgame_board uses, so these mirror
+# production board construction exactly (not a bare chess.Board(fen)). Both
+# assertions are RED at this commit: the persistence rule cannot distinguish
+# "material returned because the sacrifice worked" (these two rows) from a
+# plain delayed recapture, and drops both. The task 2 replacement
+# discriminator is what turns them green; that is the point of pinning them
+# here first, in their own commit.
+# ---------------------------------------------------------------------------
+
+
+class TestSacrificeRealGameSpotCheckRegressions:
+    """221-D13-SPOTCHECK.md operator verdicts: rows 0064 and 0133 ARE real
+    sacrifices; the rule dropping them is the defect, not the labels."""
+
+    def test_row_0064_knight_sac_recovering_via_nxd6_fires(self) -> None:
+        """realgame_tags.csv row 0064 (allowed, game 1060871 ply 23): White sacs
+        a knight (Ndb5/cxb5/Nxb5, k=2, deficit -2) and recovers to +1 relative
+        to entry at k+3 via Nxd6 -- the sac's own follow-up, not an unrelated
+        recapture (eval_at_firing +264cp). Operator verdict: real sacrifice
+        (221-D13-SPOTCHECK.md); the rule dropping it is the defect."""
+        fen = "r1b1k2r/ppq2ppp/2pb1n2/4n3/3NPB2/1BN5/PPP3PP/R2Q1R1K b kq - 10 12"
+        board = chess.Board(fen)
+        board.push(chess.Move.from_uci("e8g8"))
+        pv = "d4b5 c6b5 c3b5 c7a5 b5d6 c8g4 d1d4 e5c6 d4d3 g4h5 a1e1 h5g6"
+        boards, moves = _parse_pv(board, pv)
+        fired, _piece, _conf, _depth = detect_sacrifice(boards, moves, board.turn)
+        assert fired, (
+            "row 0064 is an operator-confirmed real sacrifice "
+            "(221-D13-SPOTCHECK.md) that the D-05 persistence rule wrongly "
+            "drops -- RED until plan 08 task 2's replacement discriminator lands"
+        )
+
+    def test_row_0133_bishop_sac_recovering_via_promotion_fires(self) -> None:
+        """realgame_tags.csv row 0133 (missed, game 1689373 ply 26): White sacs
+        material (exf6/Bxd3/fxg7, k=2, deficit -3) and recovers to +10 relative
+        to entry at k+3 via gxf8=Q+ -- again the sac's own point, not an
+        unrelated recapture (eval_at_firing +453cp). Operator verdict: real
+        sacrifice (221-D13-SPOTCHECK.md); the rule dropping it is the defect."""
+        fen = "r1b1qrk1/2pp1pbp/1p3np1/p3P1B1/8/P1NQ1N2/1PP2PPP/R3R1K1 b - - 0 13"
+        board = chess.Board(fen)
+        board.push(chess.Move.from_uci("c8a6"))
+        pv = "e5f6 a6d3 f6g7 d3c4 g7f8q e8f8 c3e4 c4e6 f3d4 f8c8 g5h6 g8h8"
+        boards, moves = _parse_pv(board, pv)
+        fired, _piece, _conf, _depth = detect_sacrifice(boards, moves, board.turn)
+        assert fired, (
+            "row 0133 is an operator-confirmed real sacrifice "
+            "(221-D13-SPOTCHECK.md) that the D-05 persistence rule wrongly "
+            "drops -- RED until plan 08 task 2's replacement discriminator lands"
+        )
+
+
+# ---------------------------------------------------------------------------
+# Phase 221 TAGFIX-04 (D-06/D-07): clearance strengthening — vacating-piece
+# restriction, the "line is used" clause, and the shared depth cap.
+# ---------------------------------------------------------------------------
+
+
+class TestClearanceContextWorkedExamples:
+    """The six CONTEXT worked examples: three ACCEPT rows live in
+    _CLEARANCE_ACCEPT_STANDALONE, scored via the STANDALONE detect_clearance
+    predicate (Phase 221 plan 06, D-07 suppression — "clearance" can never win
+    full dispatch anymore, so detect_tactic_motif is no longer a valid probe for
+    these); the three REJECT rows live in _CLEARANCE_NEGATIVES and are still
+    scored via full dispatch (detect_tactic_motif must return None either way).
+    """
+
+    def test_clearance_negatives_return_none(self) -> None:
+        assert len(_CLEARANCE_NEGATIVES) == 3
+        for fen, pv in _CLEARANCE_NEGATIVES:
+            board = chess.Board(fen)
+            motif_int, piece, conf, depth = detect_tactic_motif(board, pv)
+            assert motif_int is None, (
+                f"expected no motif to fire on {fen!r} / {pv!r}, got "
+                f"{_INT_TO_MOTIF.get(motif_int)!r}"
+            )
+
+    def test_clearance_accepts_fire_via_standalone_predicate(self) -> None:
+        """D-07's accept logic is unchanged by the registry removal — only its
+        reachability through detect_tactic_motif is. Proves detect_clearance
+        itself (not the dispatcher) still fires on all three CONTEXT accepts.
+        """
+        assert len(_CLEARANCE_ACCEPT_STANDALONE) == 3
+        for fen, pv in _CLEARANCE_ACCEPT_STANDALONE:
+            board = chess.Board(fen)
+            boards, moves = _parse_pv(board, pv)
+            fired, _piece, _conf, depth = detect_clearance(boards, moves, board.turn)
+            assert fired is True, f"expected detect_clearance to fire on {fen!r} / {pv!r}"
+            assert depth is not None and depth >= 0
+
+
+class TestClearancePriorMoveValidVacatingPiece:
+    """Direct unit tests for _clearance_prior_move_is_valid's D-07 vacating-piece
+    restriction (condition A): a king or pawn vacating move is rejected; any
+    other piece type is accepted (all else equal).
+    """
+
+    def test_king_vacating_move_rejected(self) -> None:
+        board = chess.Board("7k/8/8/8/8/K7/8/R6K w - - 0 1")
+        prev_move = chess.Move.from_uci("a3b4")
+        move = chess.Move.from_uci("a1a7")
+        assert _clearance_prior_move_is_valid(prev_move, move, board) is False
+
+    def test_pawn_vacating_move_rejected(self) -> None:
+        board = chess.Board("7k/8/8/8/8/P7/7K/R6K w - - 0 1")
+        prev_move = chess.Move.from_uci("a3a4")
+        move = chess.Move.from_uci("a1a7")
+        assert _clearance_prior_move_is_valid(prev_move, move, board) is False
+
+    def test_knight_vacating_move_accepted(self) -> None:
+        board = chess.Board("7k/8/8/8/8/N7/7K/R6K w - - 0 1")
+        prev_move = chess.Move.from_uci("a3b5")
+        move = chess.Move.from_uci("a1a7")
+        assert _clearance_prior_move_is_valid(prev_move, move, board) is True
+
+    def test_empty_from_square_falls_through_rather_than_raising(self) -> None:
+        """An impossible board (prev_move.from_square holds no piece on
+        init_board) is treated as 'not a king or pawn move' rather than raising —
+        piece_type_at returns None, and None is not in (KING, PAWN)."""
+        board = chess.Board("7k/8/8/8/8/8/7K/R6K w - - 0 1")
+        prev_move = chess.Move.from_uci("a3b5")  # a3 is empty on this board
+        move = chess.Move.from_uci("a1a7")
+        assert _clearance_prior_move_is_valid(prev_move, move, board) is True
+
+
+class TestClearanceLineIsUsed:
+    """Direct unit tests for _clearance_line_is_used (condition 10, D-07)."""
+
+    def test_checking_move_accepted(self) -> None:
+        board = chess.Board("k7/8/8/8/8/8/7K/R7 w - - 0 1")
+        board.push(chess.Move.from_uci("a1a7"))
+        assert _clearance_line_is_used(board, chess.A7, chess.WHITE) is True
+
+    def test_higher_value_attack_accepted(self) -> None:
+        # Rook (5) on a7 attacks a black queen (9) on b7 along rank 7 — strictly
+        # higher value, no check involved (black king far away on h8).
+        board = chess.Board("7k/1q6/8/8/8/8/7K/8 w - - 0 1")
+        board.set_piece_at(chess.A7, chess.Piece(chess.ROOK, chess.WHITE))
+        assert _clearance_line_is_used(board, chess.A7, chess.WHITE) is True
+
+    def test_equal_value_defended_attack_rejected(self) -> None:
+        # Rook (5) on a7 attacks a black rook (5, EQUAL value, not strictly
+        # higher) on b7, defended by a black king adjacent at b8.
+        board = chess.Board("1k6/8/8/8/8/8/7K/8 w - - 0 1")
+        board.set_piece_at(chess.A7, chess.Piece(chess.ROOK, chess.WHITE))
+        board.set_piece_at(chess.B7, chess.Piece(chess.ROOK, chess.BLACK))
+        assert _clearance_line_is_used(board, chess.A7, chess.WHITE) is False
+
+    def test_equal_value_undefended_attack_accepted(self) -> None:
+        # Same as above but the black rook on b7 is undefended (king moved away).
+        board = chess.Board("7k/8/8/8/8/8/7K/8 w - - 0 1")
+        board.set_piece_at(chess.A7, chess.Piece(chess.ROOK, chess.WHITE))
+        board.set_piece_at(chess.B7, chess.Piece(chess.ROOK, chess.BLACK))
+        assert _clearance_line_is_used(board, chess.A7, chess.WHITE) is True
+
+    def test_quiet_shuffle_attacking_nothing_rejected(self) -> None:
+        board = chess.Board("7k/8/8/8/8/8/7K/8 w - - 0 1")
+        board.set_piece_at(chess.A7, chess.Piece(chess.ROOK, chess.WHITE))
+        assert _clearance_line_is_used(board, chess.A7, chess.WHITE) is False
+
+    def test_check_and_higher_value_attack_returns_true_exactly_once(self) -> None:
+        """Adjacency truth: a move that both checks and attacks a higher-value
+        piece still yields a single True (not a count of 2) — the function's
+        contract is a bool, so there is no double-credit to prove wrong, but
+        this pins that both conditions being true simultaneously doesn't raise
+        or otherwise misbehave, and the result is still exactly True."""
+        board = chess.Board("k7/1q6/8/8/8/8/7K/8 b - - 0 1")
+        board.set_piece_at(chess.A7, chess.Piece(chess.ROOK, chess.WHITE))
+        # Rook on a7 checks Ka8 (same file) AND attacks Qb7 (higher value) on rank 7.
+        # Black to move (board_after in production always has the opponent to move).
+        assert board.is_check() is True
+        result = _clearance_line_is_used(board, chess.A7, chess.WHITE)
+        assert result is True
+
+
+class TestClearanceDepthCap:
+    """D-06: the shared depth cap, applied to detect_clearance the same way as
+    detect_sacrifice — fires at k=4, capped out before k=6.
+    """
+
+    def test_fires_at_k_equals_4(self) -> None:
+        fen, pv = ACCEPT1_CLEARANCE_FEN_PV
+        board = chess.Board(fen)
+        boards, moves = _parse_pv(board, pv)
+        fired, piece, conf, depth = detect_clearance(boards, moves, board.turn)
+        assert fired
+        assert depth == 2  # this fixture's real firing depth is 2, within the cap
+
+    def test_idempotent_across_repeated_calls(self) -> None:
+        fen, pv = ACCEPT1_CLEARANCE_FEN_PV
+        board = chess.Board(fen)
+        boards, moves = _parse_pv(board, pv)
+        boards_fens_before = [b.fen() for b in boards]
+        result_1 = detect_clearance(boards, moves, board.turn)
+        result_2 = detect_clearance(boards, moves, board.turn)
+        assert result_1 == result_2
+        assert [b.fen() for b in boards] == boards_fens_before
+
+    def test_other_tier3_motif_full_line_scan_unaffected_by_clearance_cap(self) -> None:
+        """Behavioural proof the cap did not leak: an existing intermezzo fixture
+        that fires at depth 6 (beyond SACRIFICE_CLEARANCE_MAX_DEPTH=4) still
+        fires — the full-line scan is intact for a tier-3 motif OTHER than
+        sacrifice and clearance (D-06 scopes the cap to exactly those two)."""
+        fen = "r1r5/pp4pp/2npbk2/3qp3/8/2QP1P2/PPP1N2P/RNB1K1R1 b Q - 2 15"
+        pv = "c6d4 c1g5 f6f7 e2d4 c8c3 b1c3 d5d4"
+        board = chess.Board(fen)
+        motif_int, _piece, _conf, depth = detect_tactic_motif(board, pv)
+        assert motif_int is not None
+        assert _INT_TO_MOTIF[motif_int] == "intermezzo"
+        assert depth is not None and depth > SACRIFICE_CLEARANCE_MAX_DEPTH
+
+
+# Shared FEN/PV for the depth-cap tests above (same synthetic position as the
+# first ACCEPT row in _CLEARANCE_FIXTURES).
+ACCEPT1_CLEARANCE_FEN_PV = ("8/7k/8/3n4/8/N7/7K/R7 w - - 0 1", "a3b5 d5e3 a1a7")
+
+
+# ---------------------------------------------------------------------------
 # Phase 134 Plan 02: cook-predicate behavioral tests for detect_trapped_piece
 # (TDD RED gate — Phase 134 D-EXP-01/02/03).
 #
@@ -2465,25 +2994,34 @@ class TestTrappedPieceCookPredicate:
             "second pov move onward (mainline[1::2][1:])."
         )
 
-    def test_empty_escape_set_does_not_fire(self) -> None:
-        """Precision-first empty-escape-set choice (Open Q 2 / D-06):
-        a piece with no legal moves at all is NOT considered trapped.
+    def test_empty_escape_set_fires_trapped(self) -> None:
+        """Behavioral proof of Phase 221 TAGFIX-05 fix 3 (D-12): a piece with NO legal
+        moves at all (fully blocked by its own side, not technically pinned) IS
+        considered trapped, matching cook. Direct `_piece_is_trapped` unit call (not a
+        source inspection).
 
-        Cook's is_trapped returns True for an immobile attacked non-pawn/non-king
-        (its loop trivially finds no escape → True). We deliberately deviate:
-        immobile-but-attacked is more likely a pin/zugzwang, and requiring at least
-        one escape-that-loses-material is more precise on the CC0 fixture.
-
-        This fixture pins a piece (making it have no legal piece moves) and verifies
-        the detector does NOT fire even though all conditions except 'has legal escapes'
-        are met. This pinning guard overlaps with the 'pinned' gate below but also
-        covers the pure empty-set path when the piece isn't technically pinned.
+        Classic trapped-bishop shape: black bishop a7, boxed in by its own knight on
+        b8 and its own pawn on b6 (both diagonals from a7 are blocked one square out),
+        attacked down the open a-file by the white rook on a1, undefended, unpinned,
+        not in check. `escape_moves` is empty, so this exercises exactly the fallthrough
+        path the prior "Empty-escape-set exclusion" early `return False` used to
+        short-circuit. Before this fix, `_piece_is_trapped` returned False here; the
+        Gate-5 fallthrough (all escapes lose or none exist) now returns True.
         """
-        # The empty-escape-set path is covered by test_pinned_piece_does_not_fire
-        # (a pinned piece has 0 legal piece moves, which triggers the empty-set gate
-        # AFTER the pin gate; together they ensure the code returns False for both
-        # paths). The aggregate CC0 precision gate verifies this at scale.
-        assert True, "See test_pinned_piece_does_not_fire for empty-escape-set coverage"
+        fen = "1n2k3/b7/1p6/8/8/8/8/R5K1 b - - 0 1"
+        board = chess.Board(fen)
+        sq = chess.parse_square("a7")
+        assert not board.is_check()
+        assert not board.is_pinned(chess.BLACK, sq)
+        board_victim = board.copy(stack=False)
+        board_victim.turn = chess.BLACK
+        assert [m for m in board_victim.legal_moves if m.from_square == sq] == [], (
+            "fixture must have zero legal escapes for the bishop on a7"
+        )
+        assert _piece_is_trapped(board, sq, chess.WHITE), (
+            "an attacked, unpinned, non-pawn/non-king piece with zero legal escapes "
+            "must be trapped (cook's immobile-attacked rule, D-12 revert)"
+        )
 
     def test_in_check_board_does_not_fire(self) -> None:
         """Cook's is_trapped gate: board in check → NOT trapped (different motif).
@@ -2616,4 +3154,69 @@ class TestTrappedPieceCookPredicate:
             "as its primary firing driver. The cook-faithful version anchors to the "
             "capture chain (walks moves/boards at k>=2). Old full-board scan was the "
             "source of 153 FP (P 0.000). Phase 134 D-EXP-01."
+        )
+
+
+class TestDiscoveredAttackD11PortFixes:
+    """Behavioral guards for Phase 221 TAGFIX-05 fixes 4-5 (D-11/D-12): the
+    recapture guard returns (not continues) and depth is k (not k-1). Direct
+    `detect_discovered_attack` unit calls, not source inspection.
+    """
+
+    def test_recapture_short_circuits_whole_predicate(self) -> None:
+        """Behavioral proof of fix 4 (D-12): a recapture at an EARLY pov move index
+        must short-circuit the WHOLE predicate to not-fired, not just skip that one
+        index. CC0 puzzle hAPAT (TRAIN): at k=2, the opponent's prior move (c2c1)
+        lands on the same square as pov's capture (c1) — a recapture. A LATER pov
+        move (k=6, d8d5xd5) satisfies every other discovered-attack condition and
+        is exactly what the old `continue` fired on, distinguishing return from
+        continue (nothing else does). Before this fix, the old `continue` skipped
+        k=2 and scanned onward, firing at k=6; after the fix the recapture at k=2
+        returns not-fired immediately and k=6 is never reached.
+        """
+        fen = "2kr4/ppr5/q2b2Rp/3Q1p2/5P2/2B5/PPR2P1P/1K6 b - - 0 30"
+        pv = "a6f1 c2c1 f1c1 b1c1 d6f4 c1d1 d8d5"
+        board = chess.Board(fen)
+        boards, moves = _parse_pv(board, pv)
+        fired, piece, depth = detect_discovered_attack(boards, moves, board.turn)
+        assert not fired, (
+            "a recapture at an early pov move index must short-circuit the whole "
+            "predicate to not-fired, even though a later pov move would otherwise "
+            "satisfy every other condition (the old `continue` fired here — this is "
+            "the -16 FP fix measured against the CC0 fixture)"
+        )
+        assert piece is None
+        assert depth is None
+
+    def test_recapture_guard_untouched_in_skewer(self) -> None:
+        """Sibling guard: the visually identical `if op.to_square == capture_sq:
+        continue` inside detect_skewer (Phase 221 TAGFIX-05 fix 4, D-12 anchor-by-
+        function note) must remain a `continue`, not a `return`. Uses an existing
+        skewer fixture with a recapture-guard-adjacent line to confirm skewer's
+        own behavior (precision 1.000 on both splits) is unaffected by the
+        discovered-attack fix.
+        """
+        fen, pv, expected = next(row for row in _SKEWER_FIXTURES if row[2] == "skewer")
+        board = chess.Board(fen)
+        motif_int, _piece, _conf, _depth = detect_tactic_motif(board, pv)
+        assert motif_int is not None
+        assert _INT_TO_MOTIF[motif_int] == expected == "skewer"
+
+    def test_depth_equals_pov_move_index_k(self) -> None:
+        """Behavioral proof of fix 5 (D-11): the returned depth equals the pov move
+        index k (an EVEN number from range(2, len(moves), 2)), not k-1. CC0 puzzle
+        kwRAz... (TRAIN row reused from _DISCOVERED_ATTACK_FIXTURES): before this
+        fix, this line returned depth 1 (max(0, k-1) with k=2); after the fix it
+        returns depth 2 (k itself), matching detect_skewer's own depth convention.
+        """
+        fen = "3r4/r2N1k2/3R2pp/1pP2p2/8/P7/1P4PP/6K1 w - - 12 35"
+        pv = "d7e5 f7e8 d6d8 e8d8 e5c6 d8c8 c6a7"
+        board = chess.Board(fen)
+        boards, moves = _parse_pv(board, pv)
+        fired, piece, depth = detect_discovered_attack(boards, moves, board.turn)
+        assert fired
+        assert piece is not None
+        assert depth is not None and depth == 2 and depth % 2 == 0, (
+            f"depth must equal the EVEN pov move index k (was {depth!r}); the prior "
+            "port's max(0, k-1) stored an odd depth one ply too shallow"
         )

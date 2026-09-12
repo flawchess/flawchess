@@ -63,8 +63,9 @@ describe('FlawFilterControl', () => {
     });
 
     // Advanced tier-3 group (Quick 260623-6pd) — now a normal always-visible section.
+    // "clearance" REMOVED (Phase 221 plan 06, D-07 suppression).
     const ADVANCED_FAMILIES = [
-      'trapped_piece', 'x_ray', 'deflection', 'intermezzo', 'interference', 'clearance',
+      'trapped_piece', 'x_ray', 'deflection', 'intermezzo', 'interference',
       'capturing_defender', 'en_passant', 'under_promotion',
     ];
 

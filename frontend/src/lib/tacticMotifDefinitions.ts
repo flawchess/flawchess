@@ -4,8 +4,9 @@
  * Keys match the TacticMotif Literal strings in app/services/tactic_detector.py.
  * The backend enum has 29 members; en-passant, under-promotion, and promotion are
  * surfaced as "Advanced" chip families (promotion added when D-09 was reversed —
- * perfect-precision residual motif, sibling of under-promotion). Only self-interference
- * (14) stays family-less. Used by TacticMotifChip popover bodies.
+ * perfect-precision residual motif, sibling of under-promotion). self-interference
+ * (14) and clearance (15, suppressed Phase 221 plan 06 D-07) stay family-less.
+ * Used by TacticMotifChip popover bodies.
  *
  * Copy guidelines: WHAT the motif is, no jargon, no em-dashes, no p-values.
  */
@@ -41,7 +42,11 @@ export const TACTIC_MOTIF_DEFINITIONS: Record<string, string> = {
   intermezzo: 'An in-between move is played before completing an expected sequence, often gaining tempo.',
   interference: 'A piece is placed on a square that disrupts the coordination between two of the opponent\'s pieces.',
   'self-interference': 'One of the opponent\'s own pieces blocks another, creating a weakness that can be exploited.',
-  clearance: 'A piece vacates a square or line so another piece can use it more effectively.',
+  // clearance REMOVED (Phase 221 plan 06, D-07 suppression) — the real-game
+  // keep/suppress bar measured real_share=0.667 with only 3 of 16 surviving
+  // rows, below both REALGAME_MIN_ROWS_FOR_FLOOR and the 0.80 keep bar.
+  // tacticMotifDefinition() falls back to the raw motif string for any
+  // still-persisted "clearance" row until the prod retag clears int 15.
   'capturing-defender': 'The piece defending a key square or piece is captured to remove that protection.',
   // Move-type families (Quick 260623): en-passant + under-promotion surfaced as Advanced chips.
   'en-passant': 'A pawn captures an enemy pawn that has just advanced two squares, as if it had moved only one.',

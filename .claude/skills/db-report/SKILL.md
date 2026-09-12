@@ -369,7 +369,8 @@ Verdict line (Check B): **PASS** if `ge90_but_oracle_null = 0` on every platform
 - `opening_position_eval` is a position-keyed dedup cache (key: `full_hash`), written by
   the full-eval drain tick and the remote-worker atomic submit (Phase 220 CACHEFIX-12) via
   the single shared `_upsert_opening_cache`, plus a one-time `OPENING_CACHE_BACKFILL_SQL`
-  seed. It is first-write-wins in release 1 (no two-source confirmation yet).
+  seed. Since Phase 220 release 2 (2026-09-11) it is two-source confirmed: a row is
+  `confirmed` only once two different games agree; candidates are never transplanted.
 - Lichess-analysed games (`lichess_evals_at IS NOT NULL`) are a genuinely **independent
   reference**: their `%eval` values are never derived from, and never written into, the
   cache (SEED-109 item 4). Comparing the cache against the median of ≥3 independent

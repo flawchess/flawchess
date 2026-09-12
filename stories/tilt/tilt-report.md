@@ -10,28 +10,29 @@ story, including a review of the published literature, is in `analysis/tilt_stud
 
 1. **In raw game history the streak effect looks enormous**: the game after 6+ straight losses scores
    43.4%, after 6+ straight wins 65.4% (a 22-point swing). Almost all of it is opponent selection (long
-   streaks happen against weaker opponents: rematch series, arenas, the thin top of the pool), streaks that
-   span more than one sitting, and account artefacts (rating drift, second accounts). Holding those fixed
-   leaves 47.2% vs 54.1%, and against the rating-based expectation (49.8% / 51.5%) the residual is
-   **−2.6 / +2.6 points** (§1).
-2. **Tilt is real, small and grows with the streak.** Residual after 1, 2, 3, 4, 5, 6+ losses: −0.3, −1.0,
-   −0.8, −0.7, −1.8, −2.6 points of score; after wins +0.3, +0.6, +1.2, +1.1, +1.8, +2.6. The probability of
+   streaks happen against weaker opponents: arenas, fresh accounts, the thin top of the pool; the pairing
+   system itself moves the rating only ≈30 points over six wins), streaks that span more than one sitting,
+   rematch series against the same opponent, and account artefacts (rating drift, second accounts). Holding
+   those fixed leaves 48.1% vs 53.2%, and against the rating-based expectation (50.2% / 51.1%) the residual
+   is **−2.1 / +2.1 points** (§1).
+2. **Tilt is real, small and grows with the streak.** Residual after 1, 2, 3, 4, 5, 6+ losses: −0.2, −0.8,
+   −0.6, −0.5, −1.6, −2.1 points of score; after wins +0.3, +0.6, +1.1, +1.0, +2.0, +2.1. The probability of
    losing the next game crosses 50% only after six straight losses (§2).
-3. **Slow games tilt harder; beginners tilt most.** After 3+ losses: bullet −0.9, blitz −0.8, rapid −1.9;
-   800-rated players −2.2, everyone from 1200 up −0.6 to −0.9. The hot hand is +1.3 to +1.7 everywhere (§3).
+3. **Slow games tilt harder; beginners tilt most.** After 3+ losses: bullet −0.6, blitz −0.4, rapid −1.8;
+   800-rated players −1.9, everyone from 1200 up between 0.0 and −0.9. The hot hand is +1.0 to +1.5 everywhere (§3).
 4. **A break does not reset the state; time does.** The hot-minus-cold gap after a 2+ streak is ≈2 points
    for any break under 30 minutes and ≈0 beyond, though the two sides fade differently: the hot hand is
    gone after a few minutes, the cold effect deepens for half an hour. A "stop after two losses" rule
-   would have saved 0.10 points per 100 games (§4).
+   would have saved 0.07 points per 100 games (§4).
 5. **Blown endgames do not tilt you; quick collapses and disconnects do.** Next-game residual after a loss
-   that entered the endgame at ≥ +2: +0.2 (two thirds are flags; blown by resignation −0.3 with a wide
-   interval); after a loss in ≤ 20 plies: −2.1; after an abandoned game: −3.5. Games thrown away before
+   that entered the endgame at ≥ +2: +0.3 (two thirds are flags; blown by resignation 0.0 with a wide
+   interval); after a loss in ≤ 20 plies: −2.0; after an abandoned game: −3.5. Games thrown away before
    the endgame are not separable from other short losses in this cut (§5).
 6. **Tilt is behavioural first.** After a loss players move 2–4% faster, quit sessions more often (bullet:
    21.7% vs 16.2%), rush the next game (rapid: 53% vs 43% within a minute), and lose the revenge rematch
    (−1.7 vs −0.5 against a new opponent, about a point of which is mood rather than matchup). Blunder
    rates are unchanged after one loss and up ≈0.5 per 100 moves after three (§6).
-7. **Tilt-proneness is a weak trait**: split-half r = 0.10, so an individual's
+7. **Tilt-proneness is a weak trait**: split-half r = 0.06, so an individual's
    own tilt number from ~300 games is mostly noise (§7).
 
 ## Data and method
@@ -68,9 +69,18 @@ story, including a review of the published literature, is in `analysis/tilt_stud
   residual +0.5 pp), plus the odd new account. The rating-deviation filter conditions on the outcome (a long
   streak moves the rating) but drops only 2–4% of games;
   1,739,714 games remain. Streak statistics also require the streak to lie
-  within one session and the next game to start within the hour: 1,062,169
-  games (bullet 440,767, blitz 372,109, rapid
-  226,257, classical 23,036).
+  within one session, the next game to start within the hour, and a **fresh opponent** (see below):
+  956,585 games (bullet 392,805, blitz 334,965, rapid
+  208,313, classical 20,502).
+- **Fresh opponent** (every streak-conditioned number in §1–§5 and §7): the next opponent did not
+  appear in any game of the streak that just ended (checked over the last 12 games). A rematch series is
+  not an independent draw from the pool: the same opponent carries an opponent-specific mismatch the
+  rating-gap calibration cannot see, and their state is correlated with yours (they just lost to you k
+  times). Within a rematch the streak effect is about twice the fresh-opponent effect (−5.3 / +4.6 pp after
+  6+ vs −2.1 / +2.1), which is why the rematch is treated as a decision of its own in §6 rather than
+  folded into the streak curve. Rematches are 10–14% of the same-session streak frame, so the control
+  moves the 6+ cells by about half a point. The behaviour statistics in §6 (quit, rush, speed, blunders,
+  revenge) use all in-session games, rematches included.
 - **Intervals**: 95% bootstrap over users (a user's games are correlated), 1,000 resamples for the
   headline curve, 300 elsewhere. Differences between groups (break test gap) resample users jointly.
 - **Streak-selection bias** (Miller–Sanjurjo) does not apply: statistics are pooled over games, not
@@ -80,49 +90,56 @@ story, including a review of the published literature, is in `analysis/tilt_stud
 
 Next-game score (%) by the streak that just ended. Columns left to right add one control each:
 any opponent and any gap (raw history) → equal-footing next game → streak within one session and next
-game within the hour → account hygiene. "Expected" is the calibrated expectation for the controlled
-games; "tilt" is the residual with its 95% interval.
+game within the hour → fresh opponent (no rematch of anyone from the streak) → account hygiene.
+"Expected" is the calibrated expectation for the controlled games; "tilt" is the residual with its 95%
+interval.
 
-| streak | games (raw) | raw history | + equal footing | + one session | + hygiene (controlled) | games (controlled) | expected | tilt [95% CI] |
-|---|---|---|---|---|---|---|---|---|
-| 6+ losses | 37,603 | 43.4 | 47.6 | 46.7 | 47.2 | 5,236 | 49.8 | -2.6 [-4.2, -1.2] |
-| 5 losses | 33,786 | 47.5 | 49.1 | 48.7 | 48.4 | 6,618 | 50.1 | -1.8 [-2.9, -0.4] |
-| 4 losses | 68,470 | 48.5 | 49.4 | 49.4 | 49.6 | 16,215 | 50.3 | -0.7 [-1.5, +0.0] |
-| 3 losses | 140,752 | 49.1 | 49.6 | 49.6 | 49.6 | 40,858 | 50.4 | -0.8 [-1.3, -0.4] |
-| 2 losses | 294,444 | 49.9 | 49.7 | 49.6 | 49.6 | 107,600 | 50.6 | -1.0 [-1.3, -0.7] |
-| 1 loss | 636,836 | 51.1 | 50.4 | 50.5 | 50.5 | 301,483 | 50.8 | -0.3 [-0.5, -0.1] |
-| 1 win | 646,580 | 52.2 | 51.0 | 51.2 | 51.1 | 316,677 | 50.8 | +0.3 [+0.1, +0.4] |
-| 2 wins | 319,654 | 53.4 | 51.5 | 51.8 | 51.6 | 122,979 | 51.0 | +0.6 [+0.3, +0.9] |
-| 3 wins | 162,473 | 54.6 | 52.0 | 52.5 | 52.4 | 50,630 | 51.1 | +1.2 [+0.8, +1.6] |
-| 4 wins | 84,464 | 55.7 | 52.0 | 52.6 | 52.4 | 21,685 | 51.3 | +1.1 [+0.4, +1.7] |
-| 5 wins | 44,804 | 57.7 | 53.0 | 53.4 | 53.2 | 9,558 | 51.4 | +1.8 [+0.8, +2.8] |
-| 6+ wins | 65,848 | 65.4 | 53.9 | 54.5 | 54.1 | 8,182 | 51.5 | +2.6 [+1.5, +3.7] |
+| streak | games (raw) | raw history | + equal footing | + one session | + fresh opponent | + hygiene (controlled) | games (controlled) | expected | tilt [95% CI] |
+|---|---|---|---|---|---|---|---|---|---|
+| 6+ losses | 37,603 | 43.4 | 47.6 | 46.7 | 47.7 | 48.1 | 4,509 | 50.2 | -2.1 [-3.6, -0.6] |
+| 5 losses | 33,786 | 47.5 | 49.1 | 48.7 | 49.2 | 48.9 | 5,738 | 50.5 | -1.6 [-2.9, -0.3] |
+| 4 losses | 68,470 | 48.5 | 49.4 | 49.4 | 50.0 | 50.1 | 14,195 | 50.6 | -0.5 [-1.3, +0.2] |
+| 3 losses | 140,752 | 49.1 | 49.6 | 49.6 | 50.1 | 50.1 | 36,091 | 50.6 | -0.6 [-1.1, -0.1] |
+| 2 losses | 294,444 | 49.9 | 49.7 | 49.6 | 50.0 | 50.0 | 96,221 | 50.7 | -0.8 [-1.1, -0.4] |
+| 1 loss | 636,836 | 51.1 | 50.4 | 50.5 | 50.7 | 50.6 | 272,676 | 50.8 | -0.2 [-0.4, -0.1] |
+| 1 win | 646,580 | 52.2 | 51.0 | 51.2 | 51.2 | 51.1 | 288,456 | 50.8 | +0.3 [+0.1, +0.5] |
+| 2 wins | 319,654 | 53.4 | 51.5 | 51.8 | 51.7 | 51.5 | 110,741 | 50.8 | +0.6 [+0.3, +0.9] |
+| 3 wins | 162,473 | 54.6 | 52.0 | 52.5 | 52.2 | 52.0 | 45,164 | 50.9 | +1.1 [+0.6, +1.6] |
+| 4 wins | 84,464 | 55.7 | 52.0 | 52.6 | 52.2 | 52.0 | 19,172 | 51.0 | +1.0 [+0.3, +1.6] |
+| 5 wins | 44,804 | 57.7 | 53.0 | 53.4 | 53.4 | 53.1 | 8,391 | 51.1 | +2.0 [+0.9, +3.1] |
+| 6+ wins | 65,848 | 65.4 | 53.9 | 54.5 | 53.7 | 53.2 | 7,027 | 51.1 | +2.1 [+0.9, +3.3] |
 
 Why the raw curve is steep (all games, by streak; the 6+ cells are pooled from the 7+ axis in
 `ladder_diagnostics.csv`): after 6+ wins the next opponent is on average 175 points weaker, after 6+
-losses 61 points stronger (the rating sits only 8–10 points above its long-run median at that point, so
-this is selection, not rating lag: streaks happen against weak opposition, in rematch series, in arenas
-and at the thin top of the pool); only 27–30% of 6+ streaks lie within one session (41% span more than a
-day); 17–19% of the games after a 6+ streak fall in the user's first 100 games (baseline 15%); 3.5–4.2%
+losses 61 points stronger. This is selection, not matchmaking: the user's rating sits only 8–10 points
+above its long-run median at that point and six wins move it by ≈30 points, while the opponents *during*
+the streak were on average even weaker than the next one (111 points for exactly six wins, 253 for 7+).
+Streaks are produced by lopsided pairings and the next opponent comes from the same context. The mean is
+a fat tail rather than a shift (median gap +28 after exactly six wins, +104 after 7+; 38% of post-7+ games
+are against an opponent more than 200 points weaker): split 6+ win streaks by whether the streak's own
+opponents averaged >100 points weaker and the half that did face a next opponent 365 points weaker, the
+other half +16, the population baseline. Dropping rematch series changes little here (+163 after 6+
+wins), so the drivers are arenas, fresh or under-rated accounts and the thin top of the pool. Only
+27–30% of 6+ streaks lie within one session (41% span more than a day); 17–19% of the games after a 6+ streak fall in the user's first 100 games (baseline 15%); 3.5–4.2%
 are played more than 150 points off the user's median rating (baseline 2%).
 
-| streak (−7 = 7+ losses) | games | mean rating gap, next game | share equal footing | share streak in one session | share in first 100 games | rating − long-run median |
-|---|---|---|---|---|---|---|
-| -7 | 20,525 | -86.4 | 0.7 | 0.2 | 0.2 | -20.7 |
-| -6 | 17,078 | -31.1 | 0.8 | 0.3 | 0.2 | -15.7 |
-| -5 | 33,786 | -21.0 | 0.8 | 0.3 | 0.2 | -13.5 |
-| -4 | 68,470 | -13.6 | 0.8 | 0.4 | 0.1 | -10.8 |
-| -3 | 140,752 | -6.8 | 0.8 | 0.5 | 0.1 | -7.9 |
-| -2 | 294,444 | 1.1 | 0.8 | 0.7 | 0.1 | -5.0 |
-| -1 | 636,836 | 10.7 | 0.8 | 1.0 | 0.2 | -2.2 |
-| 0 | 129,070 | 27.3 | 0.7 | 1.0 | 0.2 | 0.4 |
-| 1 | 646,580 | 15.5 | 0.8 | 1.0 | 0.2 | -1.9 |
-| 2 | 319,654 | 26.0 | 0.8 | 0.7 | 0.2 | 0.7 |
-| 3 | 162,473 | 36.3 | 0.8 | 0.6 | 0.2 | 3.0 |
-| 4 | 84,464 | 49.1 | 0.7 | 0.5 | 0.2 | 4.9 |
-| 5 | 44,804 | 66.9 | 0.7 | 0.4 | 0.2 | 6.4 |
-| 6 | 24,627 | 89.1 | 0.7 | 0.4 | 0.2 | 7.9 |
-| 7 | 41,221 | 226.2 | 0.5 | 0.3 | 0.2 | 9.5 |
+| streak (−7 = 7+ losses) | games | mean rating gap, next game | median gap | share equal footing | share streak in one session | share rematch series | share in first 100 games | rating − long-run median |
+|---|---|---|---|---|---|---|---|---|
+| -7 | 20,525 | -86.4 | -23.0 | 0.7 | 0.2 | 0.1 | 0.2 | -20.7 |
+| -6 | 17,078 | -31.1 | -9.0 | 0.8 | 0.3 | 0.1 | 0.2 | -15.7 |
+| -5 | 33,786 | -21.0 | -6.0 | 0.8 | 0.3 | 0.1 | 0.2 | -13.5 |
+| -4 | 68,470 | -13.6 | -4.0 | 0.8 | 0.4 | 0.1 | 0.1 | -10.8 |
+| -3 | 140,752 | -6.8 | -2.0 | 0.8 | 0.5 | 0.1 | 0.1 | -7.9 |
+| -2 | 294,444 | 1.1 | 0.0 | 0.8 | 0.7 | 0.1 | 0.1 | -5.0 |
+| -1 | 636,836 | 10.7 | 3.0 | 0.8 | 1.0 | 0.1 | 0.2 | -2.2 |
+| 0 | 129,070 | 27.3 | 9.0 | 0.7 | 1.0 | 0.1 | 0.2 | 0.4 |
+| 1 | 646,580 | 15.5 | 5.0 | 0.8 | 1.0 | 0.1 | 0.2 | -1.9 |
+| 2 | 319,654 | 26.0 | 8.0 | 0.8 | 0.7 | 0.1 | 0.2 | 0.7 |
+| 3 | 162,473 | 36.3 | 11.0 | 0.8 | 0.6 | 0.1 | 0.2 | 3.0 |
+| 4 | 84,464 | 49.1 | 15.0 | 0.7 | 0.5 | 0.1 | 0.2 | 4.9 |
+| 5 | 44,804 | 66.9 | 20.0 | 0.7 | 0.4 | 0.1 | 0.2 | 6.4 |
+| 6 | 24,627 | 89.1 | 28.0 | 0.7 | 0.4 | 0.1 | 0.2 | 7.9 |
+| 7 | 41,221 | 226.2 | 104.0 | 0.5 | 0.3 | 0.1 | 0.2 | 9.5 |
 
 ## 2. The controlled streak curve
 
@@ -131,47 +148,47 @@ length, ±6 pooled (6 or more).
 
 | streak | games | next-game score | score lo | score hi | expected | tilt [95% CI] |
 |---|---|---|---|---|---|---|
-| 6+ losses | 5,236 | 47.2 | 45.7 | 48.6 | 49.8 | -2.6 [-4.2, -1.2] |
-| 5 losses | 6,618 | 48.4 | 47.2 | 49.7 | 50.1 | -1.8 [-2.9, -0.4] |
-| 4 losses | 16,215 | 49.6 | 48.8 | 50.3 | 50.3 | -0.7 [-1.5, +0.0] |
-| 3 losses | 40,858 | 49.6 | 49.1 | 50.1 | 50.4 | -0.8 [-1.3, -0.4] |
-| 2 losses | 107,600 | 49.6 | 49.3 | 49.9 | 50.6 | -1.0 [-1.3, -0.7] |
-| 1 loss | 301,483 | 50.5 | 50.3 | 50.7 | 50.8 | -0.3 [-0.5, -0.1] |
-| 1 win | 316,677 | 51.1 | 50.9 | 51.3 | 50.8 | +0.3 [+0.1, +0.4] |
-| 2 wins | 122,979 | 51.6 | 51.3 | 51.9 | 51.0 | +0.6 [+0.3, +0.9] |
-| 3 wins | 50,630 | 52.4 | 51.9 | 52.8 | 51.1 | +1.2 [+0.8, +1.6] |
-| 4 wins | 21,685 | 52.4 | 51.6 | 53.0 | 51.3 | +1.1 [+0.4, +1.7] |
-| 5 wins | 9,558 | 53.2 | 52.3 | 54.2 | 51.4 | +1.8 [+0.8, +2.8] |
-| 6+ wins | 8,182 | 54.1 | 53.0 | 55.2 | 51.5 | +2.6 [+1.5, +3.7] |
+| 6+ losses | 4,509 | 48.1 | 46.6 | 49.7 | 50.2 | -2.1 [-3.6, -0.6] |
+| 5 losses | 5,738 | 48.9 | 47.6 | 50.2 | 50.5 | -1.6 [-2.9, -0.3] |
+| 4 losses | 14,195 | 50.1 | 49.3 | 50.9 | 50.6 | -0.5 [-1.3, +0.2] |
+| 3 losses | 36,091 | 50.1 | 49.5 | 50.6 | 50.6 | -0.6 [-1.1, -0.1] |
+| 2 losses | 96,221 | 50.0 | 49.7 | 50.3 | 50.7 | -0.8 [-1.1, -0.4] |
+| 1 loss | 272,676 | 50.6 | 50.4 | 50.8 | 50.8 | -0.2 [-0.4, -0.1] |
+| 1 win | 288,456 | 51.1 | 50.9 | 51.2 | 50.8 | +0.3 [+0.1, +0.5] |
+| 2 wins | 110,741 | 51.5 | 51.2 | 51.8 | 50.8 | +0.6 [+0.3, +0.9] |
+| 3 wins | 45,164 | 52.0 | 51.6 | 52.5 | 50.9 | +1.1 [+0.6, +1.6] |
+| 4 wins | 19,172 | 52.0 | 51.3 | 52.7 | 51.0 | +1.0 [+0.3, +1.6] |
+| 5 wins | 8,391 | 53.1 | 52.1 | 54.3 | 51.1 | +2.0 [+0.9, +3.1] |
+| 6+ wins | 7,027 | 53.2 | 52.0 | 54.4 | 51.1 | +2.1 [+0.9, +3.3] |
 
 Raw probability of losing the next game after k straight losses (same games):
 
 | k losses in a row | games | P(lose next) % | P(win next) % | score % | expected % |
 |---|---|---|---|---|---|
-| 1 | 301,483 | 47.2 | 48.2 | 50.5 | 50.8 |
-| 2 | 107,600 | 48.3 | 47.5 | 49.6 | 50.6 |
-| 3 | 40,858 | 48.4 | 47.6 | 49.6 | 50.4 |
-| 4 | 16,215 | 48.4 | 47.5 | 49.6 | 50.3 |
-| 5 | 6,618 | 49.8 | 46.5 | 48.4 | 50.1 |
-| 6 | 5,236 | 51.0 | 45.4 | 47.2 | 49.8 |
+| 1 | 272,676 | 47.1 | 48.3 | 50.6 | 50.8 |
+| 2 | 96,221 | 47.9 | 47.9 | 50.0 | 50.7 |
+| 3 | 36,091 | 47.9 | 48.1 | 50.1 | 50.6 |
+| 4 | 14,195 | 47.9 | 48.1 | 50.1 | 50.6 |
+| 5 | 5,738 | 49.3 | 47.0 | 48.9 | 50.5 |
+| 6 | 4,509 | 50.1 | 46.3 | 48.1 | 50.2 |
 
 ### 2a. By time control (residual, pp)
 
 | tc | 6+ losses | 5 losses | 4 losses | 3 losses | 2 losses | 1 loss | 1 win | 2 wins | 3 wins | 4 wins | 5 wins | 6+ wins |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|
-| bullet | -2.4 | -1.6 | -0.1 | -0.9 | -0.8 | -0.1 | 0.0 | 0.5 | 1.2 | 1.1 | 1.8 | 2.5 |
-| blitz | -2.5 | -2.1 | -0.8 | -0.3 | -0.7 | -0.3 | 0.3 | 0.5 | 1.4 | 0.7 | 1.6 | 2.5 |
-| rapid | -3.0 | -1.4 | -2.5 | -1.6 | -1.7 | -0.5 | 0.6 | 0.8 | 1.0 | 2.1 | 2.5 | 3.4 |
-| classical | -18.3 | -2.0 | 2.6 | -2.0 | -3.4 | -1.0 | 0.6 | 1.4 | -0.6 | -2.8 | 2.9 | 5.0 |
+| bullet | -1.6 | -1.4 | 0.1 | -0.7 | -0.6 | -0.1 | 0.1 | 0.6 | 1.2 | 1.1 | 1.7 | 2.0 |
+| blitz | -2.4 | -1.8 | -0.6 | 0.1 | -0.4 | -0.3 | 0.3 | 0.6 | 1.3 | 0.6 | 1.9 | 1.9 |
+| rapid | -3.1 | -2.1 | -2.3 | -1.5 | -1.5 | -0.4 | 0.6 | 0.7 | 0.7 | 1.7 | 3.4 | 3.3 |
+| classical | -14.1 | 6.1 | 4.4 | -0.3 | -2.9 | -0.9 | 0.2 | 1.5 | -0.4 | -2.1 | -0.6 | 0.8 |
 
 Cell sizes (games):
 
 | tc | 6+ losses | 5 losses | 4 losses | 3 losses | 2 losses | 1 loss | 1 win | 2 wins | 3 wins | 4 wins | 5 wins | 6+ wins |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|
-| bullet | 2,791 | 3,348 | 7,864 | 18,858 | 46,762 | 120,330 | 126,642 | 53,781 | 23,834 | 10,736 | 4,991 | 4,554 |
-| blitz | 1,667 | 2,154 | 5,450 | 13,991 | 37,191 | 105,045 | 111,143 | 43,013 | 17,510 | 7,409 | 3,188 | 2,639 |
-| rapid | 755 | 1,087 | 2,768 | 7,565 | 21,843 | 68,336 | 70,757 | 24,074 | 8,670 | 3,321 | 1,320 | 947 |
-| classical | 23 | 29 | 133 | 444 | 1,804 | 7,772 | 8,135 | 2,111 | 616 | 219 | 59 | 42 |
+| bullet | 2,374 | 2,865 | 6,813 | 16,486 | 41,357 | 107,971 | 114,414 | 47,944 | 21,008 | 9,372 | 4,345 | 3,853 |
+| blitz | 1,431 | 1,858 | 4,739 | 12,300 | 33,172 | 94,880 | 101,330 | 38,686 | 15,627 | 6,561 | 2,795 | 2,275 |
+| rapid | 689 | 993 | 2,524 | 6,921 | 20,122 | 62,972 | 65,357 | 22,213 | 7,968 | 3,035 | 1,198 | 863 |
+| classical | 15 | 22 | 119 | 384 | 1,570 | 6,853 | 7,355 | 1,898 | 561 | 204 | 53 | 36 |
 
 Classical has 10–60 games per tail cell after the same-session requirement (its regular players play
 one or two games per sitting) and is reported here only; the story charts bullet, blitz and rapid.
@@ -180,19 +197,19 @@ one or two games per sitting) and is reported here only; the story charts bullet
 
 | elo_bucket | 6+ losses | 5 losses | 4 losses | 3 losses | 2 losses | 1 loss | 1 win | 2 wins | 3 wins | 4 wins | 5 wins | 6+ wins |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|
-| 800 | -7.9 | -2.1 | -0.8 | -2.0 | -1.6 | -0.4 | 0.5 | 1.1 | 1.1 | 2.7 | 1.7 | 2.6 |
-| 1,200 | -1.9 | -1.7 | -1.0 | -0.7 | -0.9 | -0.5 | 0.5 | 0.9 | 1.3 | 0.1 | 2.0 | 3.4 |
-| 1,600 | -2.3 | -1.8 | -0.9 | -0.6 | -0.8 | -0.3 | 0.1 | 0.3 | 1.4 | 0.8 | 2.0 | 1.2 |
-| 2,000 | -2.3 | 0.5 | -0.5 | -0.7 | -1.1 | -0.1 | 0.1 | 0.6 | 0.8 | 1.6 | 2.7 | 1.8 |
-| 2,400 | 1.2 | -5.4 | -0.3 | -0.5 | -0.6 | -0.2 | 0.1 | 0.1 | 1.5 | 0.7 | 0.3 | 4.3 |
+| 800 | -7.4 | -0.9 | -0.8 | -1.8 | -1.5 | -0.3 | 0.5 | 1.0 | 0.9 | 2.6 | 1.8 | 2.3 |
+| 1,200 | -1.8 | -1.8 | -0.3 | -0.5 | -0.6 | -0.4 | 0.5 | 0.9 | 1.1 | -0.1 | 1.7 | 2.6 |
+| 1,600 | -1.9 | -2.0 | -1.0 | -0.3 | -0.6 | -0.2 | 0.2 | 0.3 | 1.4 | 0.5 | 2.7 | 0.8 |
+| 2,000 | -0.3 | 1.5 | 0.2 | -0.2 | -0.8 | -0.1 | 0.2 | 0.7 | 0.9 | 1.7 | 3.1 | 1.6 |
+| 2,400 | 0.3 | -7.2 | -0.7 | -0.2 | -0.2 | -0.3 | 0.1 | 0.2 | 0.9 | 0.7 | 0.1 | 3.6 |
 
 | elo_bucket | 6+ losses | 5 losses | 4 losses | 3 losses | 2 losses | 1 loss | 1 win | 2 wins | 3 wins | 4 wins | 5 wins | 6+ wins |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|
-| 800 | 803 | 977 | 2,450 | 6,263 | 16,660 | 47,144 | 50,309 | 18,641 | 7,352 | 2,985 | 1,281 | 967 |
-| 1,200 | 1,173 | 1,533 | 3,655 | 9,446 | 25,013 | 71,573 | 75,999 | 28,176 | 11,159 | 4,532 | 1,880 | 1,490 |
-| 1,600 | 1,550 | 1,918 | 4,627 | 11,267 | 29,002 | 79,242 | 82,145 | 31,458 | 12,591 | 5,303 | 2,254 | 1,695 |
-| 2,000 | 1,048 | 1,410 | 3,563 | 8,877 | 23,361 | 64,771 | 66,631 | 26,961 | 11,592 | 5,126 | 2,375 | 2,160 |
-| 2,400 | 662 | 780 | 1,920 | 5,005 | 13,564 | 38,753 | 41,593 | 17,743 | 7,936 | 3,739 | 1,768 | 1,870 |
+| 800 | 724 | 895 | 2,260 | 5,806 | 15,407 | 43,673 | 46,905 | 17,265 | 6,806 | 2,723 | 1,178 | 889 |
+| 1,200 | 1,052 | 1,381 | 3,340 | 8,665 | 23,071 | 66,384 | 70,958 | 26,152 | 10,268 | 4,128 | 1,692 | 1,330 |
+| 1,600 | 1,309 | 1,656 | 4,010 | 9,894 | 25,880 | 71,422 | 74,624 | 28,374 | 11,262 | 4,723 | 1,989 | 1,484 |
+| 2,000 | 859 | 1,201 | 3,077 | 7,753 | 20,750 | 58,349 | 60,204 | 23,963 | 10,189 | 4,501 | 2,063 | 1,807 |
+| 2,400 | 565 | 605 | 1,508 | 3,973 | 11,113 | 32,848 | 35,765 | 14,987 | 6,639 | 3,097 | 1,469 | 1,517 |
 
 ### 2c. Robustness checks
 
@@ -201,18 +218,18 @@ than 0.1 pp:
 
 | streak | residual (colour-aware) | residual (colour-blind) |
 |---|---|---|
-| -6 | -2.6 | -2.6 |
-| -5 | -1.8 | -1.7 |
-| -4 | -0.7 | -0.7 |
-| -3 | -0.8 | -0.8 |
-| -2 | -1.0 | -1.0 |
-| -1 | -0.3 | -0.3 |
-| 1 | 0.3 | 0.2 |
+| -6 | -2.1 | -2.1 |
+| -5 | -1.6 | -1.6 |
+| -4 | -0.5 | -0.5 |
+| -3 | -0.6 | -0.6 |
+| -2 | -0.8 | -0.7 |
+| -1 | -0.2 | -0.2 |
+| 1 | 0.3 | 0.3 |
 | 2 | 0.6 | 0.6 |
-| 3 | 1.2 | 1.2 |
-| 4 | 1.1 | 1.1 |
-| 5 | 1.8 | 1.8 |
-| 6 | 2.6 | 2.6 |
+| 3 | 1.1 | 1.1 |
+| 4 | 1.0 | 1.0 |
+| 5 | 2.0 | 2.0 |
+| 6 | 2.1 | 2.1 |
 
 **Trailing form.** Form = mean residual over the 20 scored games ending four games before the current
 one (never overlapping the 3-game streak window), split into terciles. The streak effect has the same
@@ -220,28 +237,30 @@ size inside every tercile, so it is not a 20-game form window in disguise:
 
 | form tercile | mean form (pp) | after LLL+ | after L | after W | after WWW+ |
 |---|---|---|---|---|---|
-| cold form | -12.2 | -1.2 | -0.0 | 0.6 | 1.6 |
-| mid form | -0.2 | -1.3 | -0.1 | -0.1 | 1.1 |
+| cold form | -12.2 | -0.9 | 0.0 | 0.7 | 1.4 |
+| mid form | -0.2 | -0.9 | -0.1 | -0.0 | 0.9 |
 | hot form | 11.8 | -0.4 | -0.7 | 0.1 | 1.3 |
 
 **Player fixed effects.** Subtracting each user × time-control mean residual (over all their scored
 games) from the residual removes the part of the tail that comes from players who generally beat or
-trail their rating. The cold tail survives; the hot tail shrinks by about a third:
+trail their rating. Both tails shrink by about a third (−2.1 → −1.4, +2.1 → +1.5); on the cold side the
+demeaned 3+ cells' intervals then include zero, so the demeaned cold tail is a monotone trend rather than a
+set of individually significant cells:
 
 | streak | games | residual | residual, player-demeaned | lo | hi | mean player effect |
 |---|---|---|---|---|---|---|
-| -6 | 5,236 | -2.6 | -1.8 | -3.4 | -0.4 | -0.8 |
-| -5 | 6,618 | -1.8 | -1.1 | -2.2 | 0.1 | -0.6 |
-| -4 | 16,215 | -0.7 | -0.2 | -0.9 | 0.5 | -0.5 |
-| -3 | 40,858 | -0.8 | -0.4 | -0.9 | -0.0 | -0.4 |
-| -2 | 107,600 | -1.0 | -0.7 | -1.0 | -0.4 | -0.3 |
-| -1 | 301,483 | -0.3 | -0.1 | -0.3 | 0.1 | -0.2 |
-| 1 | 316,677 | 0.3 | 0.5 | 0.3 | 0.6 | -0.2 |
-| 2 | 122,979 | 0.6 | 0.7 | 0.5 | 1.0 | -0.1 |
-| 3 | 50,630 | 1.2 | 1.3 | 0.9 | 1.7 | -0.1 |
-| 4 | 21,685 | 1.1 | 1.0 | 0.3 | 1.7 | 0.1 |
-| 5 | 9,558 | 1.8 | 1.6 | 0.7 | 2.6 | 0.2 |
-| 6 | 8,182 | 2.6 | 2.0 | 1.0 | 3.2 | 0.6 |
+| -6 | 4,509 | -2.1 | -1.4 | -2.8 | 0.1 | -0.7 |
+| -5 | 5,738 | -1.6 | -1.0 | -2.2 | 0.1 | -0.6 |
+| -4 | 14,195 | -0.5 | -0.0 | -0.7 | 0.7 | -0.5 |
+| -3 | 36,091 | -0.6 | -0.2 | -0.7 | 0.3 | -0.4 |
+| -2 | 96,221 | -0.8 | -0.5 | -0.7 | -0.2 | -0.3 |
+| -1 | 272,676 | -0.2 | -0.1 | -0.2 | 0.1 | -0.2 |
+| 1 | 288,456 | 0.3 | 0.5 | 0.3 | 0.7 | -0.2 |
+| 2 | 110,741 | 0.6 | 0.8 | 0.5 | 1.0 | -0.2 |
+| 3 | 45,164 | 1.1 | 1.2 | 0.8 | 1.6 | -0.1 |
+| 4 | 19,172 | 1.0 | 0.9 | 0.3 | 1.6 | 0.1 |
+| 5 | 8,391 | 2.0 | 1.8 | 0.8 | 2.9 | 0.2 |
+| 6 | 7,027 | 2.1 | 1.5 | 0.2 | 2.8 | 0.6 |
 
 ## 3. Who tilts: rating and time control
 
@@ -249,43 +268,43 @@ Residual after 3+ straight losses (cold) and 3+ straight wins (hot), same-sessio
 
 | time control | games after 3+ L | score after L | expected after L | tilt [95% CI] | games after 3+ W | score after W | expected after W | hot hand [95% CI] |
 |---|---|---|---|---|---|---|---|---|
-| bullet | 32,861 | 49.2 | 50.1 | -0.9 [-1.5, -0.4] | 44,115 | 52.5 | 51.1 | +1.4 [+0.9, +1.9] |
-| blitz | 23,262 | 49.6 | 50.3 | -0.8 [-1.5, -0.1] | 30,746 | 52.7 | 51.3 | +1.4 [+0.8, +1.8] |
-| rapid | 12,175 | 48.9 | 50.8 | -1.9 [-2.8, -1.0] | 14,258 | 52.8 | 51.2 | +1.6 [+0.8, +2.4] |
-| classical | 629 | 49.4 | 51.1 | -1.6 [-5.3, +1.8] | 936 | 51.2 | 51.9 | -0.6 [-4.2, +2.1] |
+| bullet | 28,538 | 49.8 | 50.4 | -0.6 [-1.2, -0.1] | 38,578 | 52.1 | 50.9 | +1.3 [+0.8, +1.8] |
+| blitz | 20,328 | 50.2 | 50.6 | -0.4 [-1.1, +0.3] | 27,258 | 52.3 | 51.1 | +1.2 [+0.6, +1.8] |
+| rapid | 11,127 | 49.1 | 50.9 | -1.8 [-2.7, -0.9] | 13,064 | 52.4 | 51.1 | +1.4 [+0.4, +2.2] |
+| classical | 540 | 52.0 | 51.5 | +0.6 [-3.4, +4.4] | 854 | 50.9 | 51.7 | -0.8 [-4.0, +2.2] |
 
 | rating | games after 3+ L | score after L | expected after L | tilt [95% CI] | games after 3+ W | score after W | expected after W | hot hand [95% CI] |
 |---|---|---|---|---|---|---|---|---|
-| 800 | 10,493 | 48.3 | 50.4 | -2.2 [-3.3, -1.3] | 12,585 | 52.3 | 50.6 | +1.7 [+0.8, +2.5] |
-| 1,200 | 15,807 | 49.4 | 50.3 | -0.9 [-1.7, -0.2] | 19,061 | 51.8 | 50.6 | +1.3 [+0.6, +2.0] |
-| 1,600 | 19,362 | 49.1 | 50.0 | -0.9 [-1.6, -0.2] | 21,843 | 51.9 | 50.6 | +1.3 [+0.7, +1.8] |
-| 2,000 | 14,898 | 50.0 | 50.7 | -0.6 [-1.5, +0.1] | 21,253 | 53.0 | 51.7 | +1.3 [+0.5, +2.0] |
-| 2,400 | 8,367 | 49.4 | 50.2 | -0.8 [-1.7, +0.2] | 15,313 | 54.3 | 52.8 | +1.5 [+0.5, +2.3] |
+| 800 | 9,685 | 48.7 | 50.6 | -1.9 [-2.9, -0.9] | 11,596 | 52.0 | 50.5 | +1.5 [+0.6, +2.4] |
+| 1,200 | 14,438 | 49.8 | 50.5 | -0.7 [-1.5, +0.3] | 17,418 | 51.4 | 50.4 | +1.0 [+0.2, +1.8] |
+| 1,600 | 16,869 | 49.6 | 50.3 | -0.8 [-1.4, -0.1] | 19,458 | 51.7 | 50.4 | +1.3 [+0.6, +1.9] |
+| 2,000 | 12,890 | 51.0 | 51.0 | +0.0 [-0.9, +0.9] | 18,560 | 52.8 | 51.4 | +1.4 [+0.7, +2.2] |
+| 2,400 | 6,651 | 49.8 | 50.7 | -0.9 [-2.1, +0.2] | 12,722 | 53.6 | 52.5 | +1.1 [+0.2, +2.0] |
 
 Rating × time control (cells under 1,000 games are noise-level; classical 2400 has no same-session
 3+ streaks after the equal-footing filter):
 
 | cell | games after 3+ L | tilt [95% CI] | games after 3+ W | hot hand [95% CI] |
 |---|---|---|---|---|
-| bullet-800 | 4,546 | -1.7 [-3.2, -0.2] | 5,324 | +2.7 [+1.2, +3.8] |
-| bullet-1200 | 6,999 | -0.7 [-2.0, +0.6] | 8,642 | +0.7 [-0.5, +1.8] |
-| bullet-1600 | 8,552 | -0.8 [-1.8, +0.3] | 9,843 | +0.9 [-0.0, +1.9] |
-| bullet-2000 | 7,185 | -0.8 [-2.0, +0.1] | 10,991 | +1.8 [+0.7, +2.9] |
-| bullet-2400 | 5,579 | -0.8 [-1.9, +0.6] | 9,315 | +1.3 [+0.0, +2.3] |
-| blitz-800 | 3,294 | -1.6 [-3.3, +0.4] | 4,139 | +0.6 [-0.8, +2.1] |
-| blitz-1200 | 5,449 | -1.2 [-2.9, +0.2] | 6,489 | +1.7 [+0.4, +2.9] |
-| blitz-1600 | 6,677 | -0.4 [-1.4, +0.7] | 7,564 | +1.9 [+0.9, +2.9] |
-| blitz-2000 | 5,442 | -0.2 [-1.5, +1.2] | 7,393 | +0.8 [-0.3, +2.2] |
-| blitz-2400 | 2,400 | -0.9 [-2.7, +0.9] | 5,161 | +1.4 [-0.0, +2.8] |
-| rapid-800 | 2,541 | -3.5 [-5.2, -1.9] | 2,933 | +1.3 [-0.7, +3.3] |
-| rapid-1200 | 3,084 | -1.0 [-2.8, +0.7] | 3,507 | +2.5 [+1.0, +4.1] |
-| rapid-1600 | 3,914 | -2.0 [-3.6, -0.3] | 4,165 | +1.3 [-0.1, +2.6] |
-| rapid-2000 | 2,248 | -1.2 [-3.0, +0.6] | 2,816 | +0.5 [-1.3, +2.4] |
-| rapid-2400 | 388 | -0.0 [-6.0, +4.9] | 837 | +3.9 [+1.1, +7.1] |
-| classical-800 | 112 | -7.0 [-15.2, +0.6] | 189 | +3.0 [-2.2, +7.4] |
-| classical-1200 | 275 | -0.2 [-6.9, +5.3] | 423 | -4.2 [-10.6, +0.4] |
-| classical-1600 | 219 | -2.3 [-7.2, +3.0] | 271 | +1.8 [-4.4, +7.4] |
-| classical-2000 | 23 | +13.0 [+2.2, +37.8] | 53 | +2.3 [-8.6, +8.7] |
+| bullet-800 | 4,206 | -1.4 [-3.0, +0.3] | 4,889 | +2.5 [+1.0, +3.6] |
+| bullet-1200 | 6,422 | -0.3 [-1.5, +1.0] | 7,910 | +0.6 [-0.6, +1.7] |
+| bullet-1600 | 7,390 | -0.7 [-1.6, +0.4] | 8,763 | +0.7 [-0.2, +1.7] |
+| bullet-2000 | 6,083 | -0.1 [-1.3, +0.9] | 9,458 | +2.0 [+0.8, +3.2] |
+| bullet-2400 | 4,437 | -1.3 [-2.7, +0.1] | 7,558 | +1.0 [-0.1, +2.2] |
+| blitz-800 | 2,997 | -1.4 [-3.4, +0.4] | 3,768 | +0.4 [-1.1, +2.0] |
+| blitz-1200 | 4,968 | -1.0 [-2.5, +0.6] | 5,905 | +1.4 [-0.0, +2.6] |
+| blitz-1600 | 5,714 | +0.0 [-1.3, +1.2] | 6,652 | +2.1 [+0.9, +3.1] |
+| blitz-2000 | 4,783 | +0.3 [-1.1, +1.8] | 6,536 | +1.0 [-0.5, +2.4] |
+| blitz-2400 | 1,866 | -0.3 [-2.7, +1.9] | 4,397 | +0.8 [-0.5, +2.0] |
+| rapid-800 | 2,390 | -3.5 [-5.3, -1.6] | 2,764 | +1.2 [-0.7, +3.2] |
+| rapid-1200 | 2,812 | -1.2 [-3.1, +0.9] | 3,211 | +1.8 [+0.2, +3.7] |
+| rapid-1600 | 3,573 | -2.2 [-3.7, -0.4] | 3,799 | +1.2 [-0.3, +2.7] |
+| rapid-2000 | 2,004 | -0.6 [-3.2, +1.6] | 2,523 | +0.4 [-1.6, +2.3] |
+| rapid-2400 | 348 | +1.0 [-4.7, +6.9] | 767 | +3.8 [+0.9, +7.0] |
+| classical-800 | 92 | -0.3 [-8.8, +9.0] | 175 | +1.5 [-3.3, +5.5] |
+| classical-1200 | 236 | +1.7 [-6.2, +9.5] | 392 | -3.0 [-9.6, +2.0] |
+| classical-1600 | 192 | -2.2 [-8.2, +4.2] | 244 | +0.9 [-6.2, +6.4] |
+| classical-2000 | 20 | +17.2 [+6.5, +36.3] | 43 | +0.5 [-9.9, +8.5] |
 | classical-2400 | 0 |  | 0 |  |
 
 ## 4. Breaks, the stop rule, warm-up and fatigue
@@ -297,51 +316,51 @@ between the two groups at the same break length is the robust quantity.
 
 | time control | break | games (cold) | after 2+ losses [CI] | games (hot) | after 2+ wins [CI] | gap [CI] |
 |---|---|---|---|---|---|---|
-| bullet | <1 min | 57,205 | -0.4 [-0.8, +0.0] | 73,519 | +1.5 [+1.1, +1.8] | +1.8 [+1.3, +2.4] |
-| bullet | 1-3 min | 6,397 | -1.0 [-2.3, +0.3] | 9,455 | -0.3 [-1.3, +0.8] | +0.8 [-0.9, +2.4] |
-| bullet | 3-10 min | 6,168 | -2.9 [-4.1, -1.7] | 6,355 | -0.7 [-1.8, +0.4] | +2.3 [+0.8, +4.2] |
-| bullet | 10-30 min | 5,957 | -2.3 [-3.5, -1.1] | 5,322 | -0.9 [-2.2, +0.2] | +1.3 [-0.2, +3.0] |
-| bullet | 30-60 min | 3,900 | -2.1 [-3.6, -0.4] | 3,246 | -2.5 [-4.2, -0.9] | -0.4 [-2.9, +1.6] |
-| bullet | 1-6 h | 8,310 | -2.9 [-3.9, -2.0] | 6,988 | -2.1 [-3.1, -1.0] | +0.8 [-0.6, +2.3] |
-| bullet | 6-24 h | 6,612 | -3.4 [-4.5, -2.1] | 5,503 | -3.0 [-4.2, -1.5] | +0.4 [-1.6, +2.5] |
-| bullet | 1-7 d | 2,047 | -2.1 [-4.0, -0.0] | 1,740 | -0.5 [-2.8, +1.6] | +1.5 [-1.3, +4.6] |
+| bullet | <1 min | 47,720 | +0.1 [-0.3, +0.4] | 62,416 | +1.6 [+1.2, +2.0] | +1.5 [+0.9, +2.2] |
+| bullet | 1-3 min | 6,261 | -0.9 [-2.2, +0.4] | 9,304 | -0.4 [-1.4, +0.8] | +0.6 [-1.1, +2.2] |
+| bullet | 3-10 min | 6,096 | -3.0 [-4.2, -1.8] | 6,280 | -0.7 [-1.8, +0.4] | +2.3 [+0.7, +3.8] |
+| bullet | 10-30 min | 5,928 | -2.2 [-3.3, -1.0] | 5,289 | -0.9 [-2.2, +0.3] | +1.3 [-0.4, +3.0] |
+| bullet | 30-60 min | 3,894 | -2.2 [-3.8, -0.7] | 3,234 | -2.6 [-4.3, -0.9] | -0.4 [-3.0, +1.8] |
+| bullet | 1-6 h | 8,298 | -2.9 [-3.9, -1.8] | 6,974 | -2.1 [-3.1, -1.0] | +0.7 [-0.6, +2.2] |
+| bullet | 6-24 h | 6,608 | -3.3 [-4.5, -2.0] | 5,493 | -3.0 [-4.3, -1.8] | +0.4 [-1.6, +2.5] |
+| bullet | 1-7 d | 2,045 | -2.1 [-4.0, -0.1] | 1,737 | -0.5 [-2.7, +1.6] | +1.6 [-1.3, +4.8] |
 | bullet | >7 d | 194 | +1.8 [-5.9, +8.3] | 193 | +1.8 [-6.0, +8.6] | +0.0 [-8.8, +9.5] |
-| blitz | <1 min | 42,103 | -0.4 [-0.9, +0.1] | 46,118 | +1.3 [+0.8, +1.8] | +1.7 [+1.0, +2.4] |
-| blitz | 1-3 min | 6,673 | -1.0 [-2.3, +0.0] | 12,348 | +0.7 [-0.2, +1.6] | +1.7 [+0.1, +3.3] |
-| blitz | 3-10 min | 4,322 | -1.3 [-3.0, +0.1] | 7,080 | -0.2 [-1.4, +0.8] | +1.1 [-0.6, +2.9] |
-| blitz | 10-30 min | 4,242 | -2.1 [-3.6, -1.0] | 4,986 | +0.8 [-0.5, +2.2] | +2.9 [+1.2, +4.7] |
-| blitz | 30-60 min | 3,114 | -1.6 [-3.1, -0.0] | 3,231 | -1.8 [-3.4, -0.4] | -0.2 [-2.5, +2.0] |
-| blitz | 1-6 h | 7,843 | -0.3 [-1.4, +0.7] | 7,559 | -0.3 [-1.3, +0.7] | -0.1 [-1.5, +1.4] |
-| blitz | 6-24 h | 7,142 | -2.3 [-3.4, -1.3] | 7,149 | -1.5 [-2.5, -0.3] | +0.9 [-0.7, +2.5] |
-| blitz | 1-7 d | 2,549 | +0.2 [-1.5, +2.3] | 2,662 | -1.1 [-3.1, +0.6] | -1.3 [-4.0, +1.2] |
-| blitz | >7 d | 310 | +2.8 [-2.8, +7.9] | 336 | +2.3 [-2.8, +6.7] | -0.5 [-9.0, +7.8] |
-| rapid | <1 min | 20,367 | -1.6 [-2.2, -0.9] | 17,637 | +1.5 [+0.9, +2.2] | +3.1 [+2.1, +4.2] |
-| rapid | 1-3 min | 5,985 | -1.6 [-3.0, -0.4] | 8,793 | +0.7 [-0.2, +1.5] | +2.3 [+0.9, +3.9] |
-| rapid | 3-10 min | 3,149 | -1.6 [-3.4, -0.0] | 5,928 | +1.7 [+0.6, +2.8] | +3.3 [+1.2, +5.4] |
-| rapid | 10-30 min | 2,589 | -3.1 [-4.9, -1.4] | 3,590 | +0.4 [-1.4, +1.8] | +3.5 [+1.2, +5.7] |
-| rapid | 30-60 min | 1,930 | -2.5 [-4.9, -0.3] | 2,384 | -0.9 [-2.6, +0.9] | +1.5 [-1.8, +4.5] |
-| rapid | 1-6 h | 5,338 | -0.4 [-1.8, +1.0] | 6,033 | +0.6 [-0.6, +1.7] | +0.9 [-1.1, +2.6] |
-| rapid | 6-24 h | 6,181 | +0.9 [-0.3, +2.1] | 6,784 | -0.7 [-1.9, +0.4] | -1.6 [-3.2, -0.1] |
-| rapid | 1-7 d | 2,800 | +0.8 [-1.0, +2.5] | 2,926 | +0.4 [-1.4, +2.0] | -0.4 [-3.1, +2.0] |
-| rapid | >7 d | 327 | +2.4 [-2.9, +7.5] | 361 | -0.8 [-5.4, +3.5] | -3.2 [-10.1, +3.4] |
-| classical | <1 min | 1,075 | -3.3 [-6.2, -0.7] | 1,282 | -0.6 [-3.3, +2.1] | +2.7 [-1.1, +6.1] |
-| classical | 1-3 min | 392 | -2.2 [-6.9, +2.3] | 480 | +4.4 [+0.3, +8.9] | +6.6 [+0.3, +12.6] |
-| classical | 3-10 min | 435 | -2.6 [-8.4, +2.3] | 606 | +2.4 [-0.5, +5.2] | +5.1 [-0.7, +11.0] |
-| classical | 10-30 min | 295 | -7.3 [-12.6, -2.7] | 415 | -0.6 [-5.2, +3.4] | +6.7 [+0.9, +12.8] |
-| classical | 30-60 min | 236 | +2.0 [-6.1, +8.9] | 264 | -0.7 [-8.3, +6.0] | -2.7 [-12.4, +7.1] |
-| classical | 1-6 h | 652 | +0.6 [-2.7, +4.2] | 754 | +2.2 [-0.9, +5.1] | +1.5 [-2.8, +5.9] |
-| classical | 6-24 h | 1,121 | -0.1 [-3.1, +2.8] | 1,098 | +1.7 [-1.5, +4.8] | +1.8 [-2.6, +5.3] |
-| classical | 1-7 d | 559 | +6.3 [+2.6, +10.2] | 587 | -0.1 [-3.6, +4.3] | -6.4 [-12.1, -0.7] |
-| classical | >7 d | 80 | -4.0 [-14.1, +5.9] | 79 | -4.3 [-15.3, +7.1] | -0.3 [-15.4, +14.8] |
-| all | <1 min | 120,750 | -0.6 [-0.9, -0.3] | 138,556 | +1.4 [+1.1, +1.6] | +2.0 [+1.6, +2.4] |
-| all | 1-3 min | 19,447 | -1.2 [-2.0, -0.6] | 31,076 | +0.5 [-0.0, +1.0] | +1.7 [+0.7, +2.5] |
-| all | 3-10 min | 14,074 | -2.1 [-2.9, -1.4] | 19,969 | +0.3 [-0.4, +0.9] | +2.4 [+1.4, +3.5] |
-| all | 10-30 min | 13,083 | -2.5 [-3.3, -1.7] | 14,313 | +0.0 [-0.8, +0.9] | +2.5 [+1.4, +3.6] |
-| all | 30-60 min | 9,180 | -1.9 [-3.0, -0.9] | 9,125 | -1.8 [-2.8, -0.8] | +0.1 [-1.3, +1.5] |
-| all | 1-6 h | 22,143 | -1.2 [-1.9, -0.6] | 21,334 | -0.6 [-1.2, +0.1] | +0.7 [-0.2, +1.6] |
-| all | 6-24 h | 21,056 | -1.6 [-2.1, -0.9] | 20,534 | -1.5 [-2.1, -0.9] | +0.1 [-0.7, +1.0] |
-| all | 1-7 d | 7,955 | +0.2 [-0.8, +1.2] | 7,915 | -0.4 [-1.3, +0.7] | -0.6 [-2.1, +0.9] |
-| all | >7 d | 911 | +1.8 [-1.3, +5.0] | 969 | +0.5 [-1.8, +3.8] | -1.3 [-5.7, +3.3] |
+| blitz | <1 min | 35,394 | +0.1 [-0.5, +0.5] | 38,665 | +1.3 [+0.8, +1.7] | +1.2 [+0.6, +1.9] |
+| blitz | 1-3 min | 6,501 | -0.8 [-1.9, +0.4] | 12,080 | +0.6 [-0.1, +1.5] | +1.5 [-0.1, +3.1] |
+| blitz | 3-10 min | 4,278 | -1.3 [-2.8, +0.3] | 7,017 | -0.1 [-1.2, +1.1] | +1.2 [-0.6, +3.0] |
+| blitz | 10-30 min | 4,224 | -2.0 [-3.4, -0.7] | 4,967 | +0.7 [-0.5, +2.0] | +2.7 [+1.1, +4.8] |
+| blitz | 30-60 min | 3,104 | -1.6 [-3.2, -0.1] | 3,219 | -1.7 [-3.3, +0.2] | -0.1 [-2.7, +2.2] |
+| blitz | 1-6 h | 7,830 | -0.3 [-1.4, +0.7] | 7,549 | -0.3 [-1.3, +0.7] | -0.1 [-1.5, +1.3] |
+| blitz | 6-24 h | 7,135 | -2.3 [-3.4, -1.3] | 7,137 | -1.4 [-2.5, -0.2] | +0.9 [-0.7, +2.4] |
+| blitz | 1-7 d | 2,543 | +0.3 [-1.4, +2.4] | 2,661 | -1.1 [-3.1, +0.5] | -1.4 [-4.0, +1.2] |
+| blitz | >7 d | 310 | +2.8 [-2.8, +7.9] | 333 | +2.3 [-3.2, +7.1] | -0.5 [-8.5, +6.8] |
+| rapid | <1 min | 17,967 | -1.4 [-2.2, -0.7] | 14,953 | +1.2 [+0.3, +2.1] | +2.6 [+1.5, +3.7] |
+| rapid | 1-3 min | 5,704 | -1.4 [-2.8, -0.3] | 8,530 | +0.6 [-0.5, +1.7] | +2.0 [+0.5, +3.7] |
+| rapid | 3-10 min | 3,093 | -1.6 [-3.4, +0.2] | 5,863 | +1.7 [+0.4, +2.8] | +3.3 [+1.0, +5.6] |
+| rapid | 10-30 min | 2,567 | -2.9 [-4.5, -0.9] | 3,562 | +0.4 [-1.3, +1.7] | +3.3 [+1.1, +5.3] |
+| rapid | 30-60 min | 1,920 | -2.5 [-4.7, -0.2] | 2,369 | -0.9 [-2.6, +0.9] | +1.6 [-1.5, +4.6] |
+| rapid | 1-6 h | 5,323 | -0.4 [-1.8, +0.9] | 6,014 | +0.5 [-0.6, +1.5] | +0.9 [-0.9, +2.5] |
+| rapid | 6-24 h | 6,159 | +0.9 [-0.2, +2.1] | 6,760 | -0.7 [-1.8, +0.5] | -1.6 [-3.1, -0.1] |
+| rapid | 1-7 d | 2,785 | +0.8 [-1.2, +2.6] | 2,912 | +0.3 [-1.7, +2.1] | -0.4 [-2.8, +1.8] |
+| rapid | >7 d | 326 | +2.6 [-2.0, +8.4] | 360 | -0.9 [-5.4, +3.4] | -3.4 [-10.6, +3.3] |
+| classical | <1 min | 824 | -0.6 [-3.6, +3.0] | 1,051 | -1.1 [-4.6, +2.2] | -0.4 [-4.6, +3.6] |
+| classical | 1-3 min | 350 | -3.5 [-8.7, +1.5] | 449 | +4.4 [-0.3, +9.0] | +7.9 [+1.1, +14.5] |
+| classical | 3-10 min | 418 | -2.0 [-7.8, +2.8] | 585 | +2.8 [-0.7, +5.8] | +4.8 [-1.3, +11.5] |
+| classical | 10-30 min | 287 | -7.1 [-13.0, -3.0] | 412 | -0.7 [-4.9, +3.3] | +6.5 [-0.5, +14.2] |
+| classical | 30-60 min | 231 | +1.8 [-4.9, +8.0] | 255 | -0.5 [-8.1, +6.7] | -2.3 [-12.1, +7.4] |
+| classical | 1-6 h | 640 | +0.5 [-2.7, +4.6] | 742 | +2.3 [-0.4, +5.3] | +1.8 [-2.1, +5.2] |
+| classical | 6-24 h | 1,095 | +0.2 [-2.1, +2.9] | 1,084 | +1.6 [-1.3, +4.7] | +1.4 [-3.5, +5.4] |
+| classical | 1-7 d | 529 | +5.7 [+1.8, +9.6] | 557 | +0.1 [-4.0, +4.0] | -5.6 [-12.3, +0.7] |
+| classical | >7 d | 74 | -3.7 [-14.6, +5.7] | 69 | -0.2 [-12.2, +11.7] | +3.6 [-12.9, +18.9] |
+| all | <1 min | 101,905 | -0.2 [-0.5, +0.0] | 117,085 | +1.4 [+1.1, +1.7] | +1.6 [+1.2, +2.0] |
+| all | 1-3 min | 18,816 | -1.1 [-1.8, -0.4] | 30,363 | +0.4 [-0.2, +0.9] | +1.5 [+0.5, +2.3] |
+| all | 3-10 min | 13,885 | -2.1 [-2.9, -1.3] | 19,745 | +0.3 [-0.3, +1.1] | +2.5 [+1.2, +3.5] |
+| all | 10-30 min | 13,006 | -2.4 [-3.3, -1.6] | 14,230 | -0.0 [-0.8, +0.8] | +2.4 [+1.3, +3.5] |
+| all | 30-60 min | 9,149 | -2.0 [-2.8, -0.9] | 9,077 | -1.8 [-2.8, -0.8] | +0.2 [-1.3, +1.4] |
+| all | 1-6 h | 22,091 | -1.2 [-1.9, -0.6] | 21,279 | -0.6 [-1.3, -0.0] | +0.6 [-0.2, +1.7] |
+| all | 6-24 h | 20,997 | -1.6 [-2.2, -0.9] | 20,474 | -1.5 [-2.0, -0.8] | +0.1 [-0.8, +1.0] |
+| all | 1-7 d | 7,902 | +0.2 [-0.9, +1.2] | 7,867 | -0.4 [-1.4, +0.6] | -0.5 [-2.1, +0.8] |
+| all | >7 d | 904 | +1.9 [-1.2, +5.0] | 955 | +0.8 [-2.3, +4.0] | -1.1 [-5.6, +3.1] |
 
 Who takes which break (share of next games, %; `break_shares.csv`): after 2+ losses, 72% of bullet and
 60% of rapid next games start within a minute; after 2+ wins 75% and 46%. Rapid players are the ones
@@ -353,11 +372,11 @@ extra losses per 100 games):
 
 | time control | games after LL | share of games % | residual | lo | hi | points saved / 100 games |
 |---|---|---|---|---|---|---|
-| bullet | 79,623 | 12.8 | -0.9 | -1.2 | -0.5 | 0.11 |
-| blitz | 60,453 | 10.2 | -0.7 | -1.1 | -0.3 | 0.07 |
-| rapid | 34,018 | 7.6 | -1.7 | -2.2 | -1.3 | 0.13 |
-| classical | 2,433 | 3.1 | -3.0 | -5.1 | -1.1 | 0.09 |
-| all | 176,527 | 10.1 | -1.0 | -1.2 | -0.8 | 0.10 |
+| bullet | 69,895 | 11.3 | -0.6 | -0.9 | -0.2 | 0.07 |
+| blitz | 53,500 | 9.0 | -0.4 | -0.9 | -0.0 | 0.04 |
+| rapid | 31,249 | 7.0 | -1.6 | -2.2 | -1.1 | 0.11 |
+| classical | 2,110 | 2.7 | -2.0 | -3.9 | -0.1 | 0.05 |
+| all | 156,754 | 9.0 | -0.8 | -1.0 | -0.5 | 0.07 |
 
 This is the saving for players who continued within the hour; players who did stop are unobserved.
 
@@ -377,7 +396,8 @@ first-game cells are negative and the in-session cells sit near zero.)
 
 ## 5. Which loss tilts you
 
-Next-game residual after a loss (previous game lost, next game within the hour, equal footing, hygiene),
+Next-game residual after a loss (previous game lost, next game within the hour against a fresh opponent,
+equal footing, hygiene),
 by how the loss ended, how long it lasted, and the Stockfish evaluation when it entered the endgame
 (Lichess phase rule; ≥ +2.0 for the player = "blown"; no endgame = the game ended in the opening or
 middlegame). "all" pools the four time controls.
@@ -386,27 +406,27 @@ By termination:
 
 | previous loss | games | all | bullet | blitz | rapid | classical |
 |---|---|---|---|---|---|---|
-| checkmated | 136,661 | -0.3 [-0.5, +0.0] | -0.2 [-0.6, +0.1] | -0.2 [-0.6, +0.2] | -0.4 [-0.9, +0.1] | -0.8 [-2.2, +0.5] |
-| resigned | 263,162 | -0.9 [-1.1, -0.7] | -1.0 [-1.3, -0.6] | -0.6 [-0.9, -0.4] | -1.0 [-1.4, -0.7] | -1.0 [-2.1, +0.0] |
-| on time | 163,842 | -0.4 [-0.7, -0.2] | -0.3 [-0.6, -0.1] | -0.6 [-1.0, -0.1] | -1.1 [-2.0, -0.1] | -0.3 [-6.1, +3.0] |
-| abandoned (disconnect) | 5,520 | -3.5 [-4.7, -2.1] | -5.0 [-7.3, -2.5] | -3.7 [-5.9, -1.4] | -2.5 [-4.8, -0.2] | -1.3 [-6.4, +4.4] |
+| checkmated | 122,324 | -0.2 [-0.5, +0.1] | -0.1 [-0.5, +0.3] | -0.2 [-0.7, +0.3] | -0.3 [-0.9, +0.3] | -0.1 [-1.8, +1.4] |
+| resigned | 238,167 | -0.7 [-0.9, -0.5] | -0.9 [-1.3, -0.5] | -0.5 [-0.8, -0.2] | -0.8 [-1.1, -0.4] | -0.6 [-1.6, +0.5] |
+| on time | 148,409 | -0.3 [-0.6, -0.1] | -0.2 [-0.6, +0.1] | -0.4 [-0.9, +0.1] | -1.1 [-2.2, +0.0] | -0.3 [-5.9, +2.9] |
+| abandoned (disconnect) | 5,476 | -3.5 [-4.7, -2.2] | -4.9 [-7.3, -2.4] | -3.8 [-5.9, -1.9] | -2.6 [-4.8, -0.3] | -1.2 [-6.1, +5.1] |
 
 By length:
 
 | previous loss | games | all | bullet | blitz | rapid | classical |
 |---|---|---|---|---|---|---|
-| short (<=20 plies) | 22,179 | -2.1 [-2.7, -1.4] | -2.6 [-3.9, -1.5] | -2.5 [-3.6, -1.5] | -1.3 [-2.5, +0.0] | -1.4 [-4.4, +1.6] |
-| mid (21-60 plies) | 249,906 | -1.1 [-1.3, -0.9] | -1.3 [-1.6, -1.0] | -1.0 [-1.3, -0.6] | -1.0 [-1.4, -0.6] | -0.9 [-1.8, +0.2] |
-| long (>60 plies) | 297,112 | -0.1 [-0.2, +0.1] | +0.3 [+0.0, +0.6] | -0.1 [-0.4, +0.1] | -0.7 [-1.1, -0.3] | -0.9 [-2.1, +0.3] |
+| short (<=20 plies) | 20,463 | -2.0 [-2.6, -1.4] | -2.6 [-3.8, -1.5] | -2.4 [-3.7, -1.2] | -1.0 [-2.4, +0.1] | -1.4 [-4.5, +1.9] |
+| mid (21-60 plies) | 228,122 | -1.0 [-1.2, -0.8] | -1.3 [-1.6, -1.0] | -0.9 [-1.2, -0.5] | -0.8 [-1.2, -0.4] | -0.1 [-1.2, +1.1] |
+| long (>60 plies) | 265,799 | +0.1 [-0.1, +0.3] | +0.5 [+0.2, +0.8] | +0.1 [-0.3, +0.3] | -0.6 [-1.0, -0.2] | -0.7 [-2.0, +0.5] |
 
 By endgame state:
 
 | previous loss | games | all | bullet | blitz | rapid | classical |
 |---|---|---|---|---|---|---|
-| never reached an endgame | 212,185 | -1.3 [-1.5, -1.1] | -1.6 [-2.0, -1.3] | -1.1 [-1.4, -0.8] | -1.0 [-1.5, -0.6] | -0.7 [-1.8, +0.6] |
-| entered the endgame losing (<= -2) | 187,145 | -0.4 [-0.6, -0.1] | +0.1 [-0.3, +0.4] | -0.4 [-0.8, -0.1] | -0.9 [-1.3, -0.5] | -1.3 [-2.8, +0.6] |
-| entered the endgame balanced | 116,041 | -0.2 [-0.5, +0.0] | -0.1 [-0.6, +0.4] | -0.0 [-0.5, +0.4] | -0.9 [-1.5, -0.2] | -0.8 [-2.5, +1.1] |
-| blown: entered the endgame winning (>= +2) | 53,826 | +0.2 [-0.2, +0.6] | +0.4 [-0.2, +0.9] | +0.1 [-0.8, +1.0] | +0.2 [-0.9, +1.3] | -1.5 [-5.0, +1.8] |
+| never reached an endgame | 193,603 | -1.2 [-1.4, -0.9] | -1.6 [-2.0, -1.3] | -1.0 [-1.4, -0.7] | -0.8 [-1.2, -0.4] | -0.2 [-1.6, +1.0] |
+| entered the endgame losing (<= -2) | 167,694 | -0.2 [-0.4, +0.0] | +0.2 [-0.1, +0.5] | -0.3 [-0.7, +0.1] | -0.8 [-1.3, -0.4] | -0.8 [-2.3, +0.8] |
+| entered the endgame balanced | 104,475 | -0.1 [-0.4, +0.2] | +0.1 [-0.3, +0.6] | +0.1 [-0.3, +0.6] | -0.7 [-1.4, -0.2] | -0.7 [-2.5, +1.3] |
+| blown: entered the endgame winning (>= +2) | 48,612 | +0.3 [-0.1, +0.8] | +0.4 [-0.1, +1.0] | +0.2 [-0.6, +1.0] | +0.3 [-1.0, +1.4] | -0.3 [-4.0, +3.7] |
 
 Blown wins by how the blown game ended. Two thirds are flags in a won endgame; the blown win by
 resignation, the folklore case, is 11k games with an interval that excludes anything large but not a
@@ -415,62 +435,62 @@ and lands in the "never reached an endgame" cell, so this cut cannot separate it
 
 | previous loss | games | all | bullet | blitz | rapid | classical |
 |---|---|---|---|---|---|---|
-| on time | 34,843 | +0.4 [-0.2, +0.9] | +0.5 [-0.1, +1.1] | +0.2 [-0.8, +1.3] | -0.4 [-2.9, +2.0] | +6.8 [-12.3, +18.3] |
-| resigned | 11,212 | -0.3 [-1.3, +0.5] | -0.9 [-3.0, +1.5] | -0.5 [-1.8, +0.9] | +0.2 [-1.4, +1.7] | -1.8 [-6.2, +2.9] |
-| checkmated | 7,613 | +0.5 [-0.5, +1.7] | +0.4 [-1.3, +2.1] | +0.9 [-1.0, +2.7] | +0.5 [-1.4, +2.4] | -2.8 [-9.9, +3.3] |
+| on time | 31,430 | +0.4 [-0.1, +0.9] | +0.5 [-0.0, +1.2] | +0.2 [-1.1, +1.4] | -0.5 [-2.8, +1.8] | +6.8 [-12.3, +18.3] |
+| resigned | 10,194 | -0.0 [-0.9, +0.8] | -1.0 [-3.4, +0.9] | -0.1 [-1.7, +1.5] | +0.5 [-1.3, +1.9] | -0.5 [-5.6, +4.7] |
+| checkmated | 6,831 | +0.5 [-0.6, +1.5] | +0.6 [-1.4, +2.5] | +0.4 [-1.5, +2.6] | +0.4 [-1.6, +2.4] | -1.5 [-8.5, +4.9] |
 
 Endgame state inside long losses only (> 60 plies), so the endgame cut is not length in disguise:
 
 | previous loss | games | all | bullet | blitz | rapid | classical |
 |---|---|---|---|---|---|---|
-| never reached an endgame | 22,918 | +0.1 [-0.5, +0.7] | +0.8 [-0.1, +1.9] | +0.2 [-0.7, +1.2] | -1.3 [-2.5, +0.2] | -1.5 [-6.0, +3.6] |
-| entered the endgame losing (<= -2) | 132,483 | -0.2 [-0.5, +0.1] | +0.3 [-0.1, +0.8] | -0.4 [-0.8, -0.0] | -0.8 [-1.3, -0.3] | -1.2 [-3.2, +0.8] |
-| entered the endgame balanced | 97,086 | -0.2 [-0.5, +0.1] | -0.1 [-0.6, +0.4] | +0.1 [-0.4, +0.5] | -0.8 [-1.4, -0.1] | -0.2 [-2.2, +1.9] |
-| blown: entered the endgame winning (>= +2) | 44,625 | +0.4 [+0.0, +0.9] | +0.7 [-0.1, +1.3] | +0.2 [-0.7, +1.1] | +0.2 [-0.9, +1.4] | -0.2 [-3.9, +3.2] |
+| never reached an endgame | 20,568 | +0.2 [-0.5, +0.8] | +0.8 [-0.4, +1.9] | +0.4 [-0.7, +1.5] | -1.2 [-2.6, +0.1] | -2.9 [-7.7, +2.4] |
+| entered the endgame losing (<= -2) | 118,203 | -0.0 [-0.4, +0.3] | +0.6 [+0.1, +1.0] | -0.2 [-0.7, +0.2] | -0.7 [-1.2, -0.2] | -0.9 [-2.5, +0.9] |
+| entered the endgame balanced | 86,967 | -0.0 [-0.3, +0.3] | +0.1 [-0.4, +0.6] | +0.2 [-0.3, +0.7] | -0.6 [-1.2, +0.1] | -0.2 [-2.2, +2.0] |
+| blown: entered the endgame winning (>= +2) | 40,061 | +0.6 [+0.1, +1.1] | +0.7 [+0.2, +1.4] | +0.4 [-0.5, +1.3] | +0.3 [-1.1, +1.7] | +1.0 [-2.8, +4.7] |
 
 Single losses only (streak length exactly 1), to show the cut is not streak length in disguise:
 
 | previous loss | games | all | bullet | blitz | rapid | classical |
 |---|---|---|---|---|---|---|
-| short (<=20 plies) | 10,249 | -1.7 [-2.5, -0.8] | -2.0 [-3.9, -0.3] | -2.3 [-4.1, -0.7] | -1.0 [-2.7, +0.4] | -1.0 [-5.2, +3.3] |
-| mid (21-60 plies) | 128,479 | -0.7 [-1.0, -0.5] | -1.0 [-1.4, -0.6] | -0.6 [-1.1, -0.2] | -0.4 [-1.0, +0.2] | -1.1 [-2.4, +0.3] |
-| long (>60 plies) | 162,755 | +0.2 [-0.1, +0.4] | +0.7 [+0.3, +1.0] | +0.0 [-0.4, +0.4] | -0.5 [-1.0, -0.1] | -0.8 [-2.5, +1.2] |
+| short (<=20 plies) | 9,464 | -1.8 [-2.6, -0.7] | -1.8 [-3.6, -0.1] | -2.3 [-3.8, -0.8] | -1.0 [-2.8, +0.8] | -2.9 [-8.1, +2.7] |
+| mid (21-60 plies) | 117,379 | -0.7 [-1.0, -0.4] | -1.1 [-1.5, -0.6] | -0.5 [-1.0, -0.1] | -0.2 [-0.8, +0.3] | -0.7 [-2.1, +0.8] |
+| long (>60 plies) | 145,833 | +0.2 [-0.0, +0.5] | +0.7 [+0.4, +1.1] | +0.0 [-0.4, +0.5] | -0.4 [-0.9, -0.0] | -0.8 [-2.6, +0.9] |
 
 | previous loss | games | all | bullet | blitz | rapid | classical |
 |---|---|---|---|---|---|---|
-| never reached an endgame | 107,918 | -0.8 [-1.0, -0.5] | -1.0 [-1.5, -0.6] | -0.6 [-1.1, -0.2] | -0.5 [-1.1, -0.0] | -0.9 [-2.6, +1.0] |
-| entered the endgame losing (<= -2) | 101,292 | -0.2 [-0.5, +0.1] | +0.1 [-0.3, +0.5] | -0.2 [-0.7, +0.2] | -0.7 [-1.4, -0.2] | -1.5 [-3.4, +0.7] |
-| entered the endgame balanced | 63,610 | +0.1 [-0.2, +0.5] | +0.3 [-0.4, +0.9] | +0.1 [-0.4, +0.7] | -0.4 [-1.2, +0.4] | -0.0 [-3.0, +2.8] |
-| blown: entered the endgame winning (>= +2) | 28,663 | +0.4 [-0.1, +1.0] | +1.0 [+0.1, +1.8] | -0.5 [-1.5, +0.4] | +0.4 [-1.1, +1.8] | -0.8 [-5.9, +4.2] |
+| never reached an endgame | 98,572 | -0.7 [-1.0, -0.4] | -1.1 [-1.7, -0.7] | -0.5 [-1.0, -0.1] | -0.4 [-1.0, +0.3] | -1.0 [-2.7, +0.8] |
+| entered the endgame losing (<= -2) | 90,880 | -0.2 [-0.5, +0.1] | +0.1 [-0.3, +0.6] | -0.2 [-0.7, +0.3] | -0.6 [-1.2, +0.0] | -1.7 [-3.5, +0.2] |
+| entered the endgame balanced | 57,307 | +0.2 [-0.2, +0.6] | +0.5 [-0.2, +1.1] | +0.1 [-0.6, +0.6] | -0.3 [-1.1, +0.5] | +0.5 [-2.5, +3.3] |
+| blown: entered the endgame winning (>= +2) | 25,917 | +0.4 [-0.2, +1.0] | +0.9 [+0.1, +1.7] | -0.5 [-1.5, +0.4] | +0.4 [-0.8, +1.8] | +0.8 [-4.2, +6.6] |
 
 Mirror: the game after a **win**, by endgame state and length:
 
 | previous loss | games | all | bullet | blitz | rapid | classical |
 |---|---|---|---|---|---|---|
-| never reached an endgame | 242,979 | +0.2 [+0.0, +0.4] | -0.6 [-1.0, -0.3] | +0.3 [-0.0, +0.7] | +1.0 [+0.7, +1.4] | +1.4 [+0.4, +2.5] |
-| comeback: entered the endgame losing (<= -2) | 56,323 | +0.8 [+0.5, +1.3] | +1.7 [+1.1, +2.2] | -0.1 [-0.7, +0.7] | -0.4 [-1.4, +0.8] | -3.7 [-7.8, +0.2] |
-| entered the endgame balanced | 123,034 | +0.6 [+0.4, +0.9] | +0.7 [+0.3, +1.1] | +0.6 [+0.1, +1.0] | +0.8 [+0.1, +1.3] | -0.5 [-2.7, +2.2] |
-| entered the endgame winning (>= +2) | 200,001 | +0.8 [+0.6, +1.0] | +1.0 [+0.6, +1.3] | +0.7 [+0.3, +1.1] | +0.8 [+0.3, +1.2] | +0.8 [-0.7, +2.2] |
+| never reached an endgame | 223,915 | +0.1 [-0.1, +0.3] | -0.7 [-1.0, -0.3] | +0.3 [-0.1, +0.6] | +0.9 [+0.4, +1.3] | +1.2 [+0.2, +2.3] |
+| comeback: entered the endgame losing (<= -2) | 51,244 | +1.0 [+0.5, +1.4] | +1.9 [+1.4, +2.5] | -0.1 [-0.8, +0.7] | -0.2 [-1.3, +1.0] | -3.7 [-8.0, +0.6] |
+| entered the endgame balanced | 111,029 | +0.7 [+0.4, +1.0] | +0.9 [+0.4, +1.3] | +0.5 [+0.1, +1.0] | +0.7 [+0.2, +1.4] | -0.4 [-2.9, +2.2] |
+| entered the endgame winning (>= +2) | 179,489 | +0.8 [+0.6, +1.0] | +0.9 [+0.5, +1.3] | +0.8 [+0.3, +1.2] | +0.7 [+0.2, +1.2] | +0.2 [-1.3, +1.8] |
 
 | previous loss | games | all | bullet | blitz | rapid | classical |
 |---|---|---|---|---|---|---|
-| short (<=20 plies) | 32,063 | +0.3 [-0.2, +0.8] | -1.1 [-2.2, -0.2] | +0.1 [-1.0, +1.0] | +1.0 [+0.2, +2.0] | +2.4 [+0.8, +3.9] |
-| mid (21-60 plies) | 276,006 | +0.2 [+0.0, +0.4] | -0.5 [-0.9, -0.2] | +0.5 [+0.2, +0.8] | +1.1 [+0.7, +1.4] | +0.4 [-0.8, +1.4] |
-| long (>60 plies) | 314,268 | +0.9 [+0.7, +1.0] | +1.4 [+1.1, +1.6] | +0.5 [+0.2, +0.8] | +0.5 [+0.2, +0.9] | +0.5 [-0.9, +1.9] |
+| short (<=20 plies) | 30,254 | +0.1 [-0.4, +0.6] | -1.3 [-2.2, -0.3] | +0.1 [-1.0, +1.1] | +0.5 [-0.4, +1.5] | +2.4 [+0.6, +4.1] |
+| mid (21-60 plies) | 253,779 | +0.2 [+0.0, +0.4] | -0.5 [-0.8, -0.2] | +0.5 [+0.2, +0.8] | +1.0 [+0.5, +1.4] | -0.1 [-1.2, +0.9] |
+| long (>60 plies) | 281,644 | +0.9 [+0.7, +1.1] | +1.5 [+1.1, +1.8] | +0.5 [+0.2, +0.8] | +0.6 [+0.2, +1.0] | +0.6 [-0.7, +2.0] |
 
 Shape of the next loss after a streak (conditional on losing the next game): after a losing streak the
 loss is shorter, more often abandoned and more often resigned:
 
 | time control | after | losses | ≤ 20 plies % | abandoned % | resigned % | flagged % | mean plies |
 |---|---|---|---|---|---|---|---|
-| blitz | after 3+ losses | 11,192 | 5.2 | 1.9 | 57.2 | 20.0 | 66.0 |
-| blitz | after 3+ wins | 13,716 | 2.7 | 1.3 | 52.4 | 23.5 | 71.7 |
-| bullet | after 3+ losses | 16,182 | 3.7 | 0.9 | 27.9 | 49.2 | 64.0 |
-| bullet | after 3+ wins | 20,191 | 2.3 | 0.6 | 23.3 | 51.5 | 68.3 |
-| classical | after 3+ losses | 300 | 11.4 | 5.7 | 69.3 | 1.3 | 58.2 |
-| classical | after 3+ wins | 426 | 8.9 | 3.5 | 58.7 | 4.0 | 62.9 |
-| rapid | after 3+ losses | 5,902 | 6.8 | 2.8 | 66.2 | 6.5 | 62.7 |
-| rapid | after 3+ wins | 6,338 | 3.7 | 2.6 | 60.1 | 8.3 | 69.8 |
+| blitz | after 3+ losses | 9,657 | 5.5 | 2.0 | 57.4 | 20.0 | 65.4 |
+| blitz | after 3+ wins | 12,258 | 2.7 | 1.4 | 52.8 | 23.2 | 71.1 |
+| bullet | after 3+ losses | 13,903 | 3.7 | 0.9 | 27.4 | 49.3 | 63.3 |
+| bullet | after 3+ wins | 17,816 | 2.4 | 0.6 | 23.4 | 51.5 | 67.6 |
+| classical | after 3+ losses | 245 | 11.5 | 6.1 | 71.0 | 1.6 | 57.9 |
+| classical | after 3+ wins | 391 | 9.2 | 3.6 | 59.1 | 3.6 | 62.9 |
+| rapid | after 3+ losses | 5,375 | 6.9 | 2.8 | 66.6 | 6.4 | 62.4 |
+| rapid | after 3+ wins | 5,857 | 3.8 | 2.6 | 60.3 | 8.3 | 69.5 |
 
 ## 6. Behaviour: quitting, rushing, revenge, speed, blunders
 
@@ -484,8 +504,9 @@ after this one ends):
 | rapid | 38.3 | 35.6 | 53.3 | 43.4 | 53.0 | 76.0 | 46.2 | 44.5 |
 | classical | 59.2 | 57.6 | 41.2 | 39.0 | 116.0 | 135.0 | 44.8 | 43.2 |
 
-**Revenge rematch**: next game, within the hour, against the same opponent. Residual for the rematch
-vs a fresh opponent, after a loss and after a win (equal footing, hygiene). The rematch-minus-fresh
+**Revenge rematch**: next game, within the hour, against the same opponent. The streak curve in §1–§5
+requires a fresh opponent, so this is where the rematch comes back in. Residual for the rematch vs a
+fresh opponent, after a loss and after a win (equal footing, hygiene). The rematch-minus-fresh
 difference is the cost of the decision (−1.2 pooled, −1.4 for the first rematch of a pairing). Opponent
 selection (the player who just beat you is, on that evidence, a little better than their rating) predicts
 a symmetric bonus after wins, and the first post-win rematch shows one (+0.5 over a fresh opponent),
@@ -602,15 +623,16 @@ correlation are taken over the same streams (both halves qualifying).
 
 | statistic | value |
 |---|---|
-| user × time-control streams | 2,408 (users: 2,403) |
-| mean Δ (pp) | -0.91 |
-| observed SD of Δ across users (pp) | 5.6 |
-| split-half correlation r | 0.103 |
-| Spearman–Brown reliability of a full ~300-game Δ | 0.19 |
-| implied true SD of the trait (pp) | 2.4 |
+| user × time-control streams | 2,346 (users: 2,343) |
+| mean Δ (pp) | -0.68 |
+| observed SD of Δ across users (pp) | 5.7 |
+| split-half correlation r | 0.060 |
+| Spearman–Brown reliability of a full ~300-game Δ | 0.11 |
+| implied true SD of the trait (pp) | 1.9 |
 
-Tilt-proneness is a real but weak trait: a player one SD above the mean loses ≈ 3.3 pp more after losses
-than after wins. A single player's own Δ from ~300 games is ≈ 80% noise, so a per-user "tilt score" would
+Tilt-proneness is a real but weak trait: a player one SD above the mean loses ≈ 1.9 pp
+more after losses than after wins. A single player's own Δ from ~300 games is
+≈ 89% noise, so a per-user "tilt score" would
 mislead most users; the story reports population averages.
 
 ## 8. Relation to published work
@@ -623,15 +645,20 @@ Summarised from the literature review in `analysis/tilt_study/FINDINGS.md` §8.
   (−0.3 / +0.3) is below their detection floor; our 3+ and 6+ effects sit inside their credible range.
 - **Rosenthal (2025)**, Harvard Data Science Review 7(2), 293k chess.com games of seven top players:
   autocorrelation of excess score ≈ 0 at every lag, raw-score autocorrelation ≈ 0.1 attributed to rating
-  updates. Our 2000–2400 cells (tilt ≈ −0.7, CI including zero) agree, and his raw-vs-excess gap is our §1
+  updates. Our 2000–2400 cells (tilt 0.0 and −0.9, CIs including zero) agree, and his raw-vs-excess gap is our §1
   ladder.
 - **Chowdhary, Iacopini & Battiston (2023)**, Sci. Rep. 13:2113, 123M Lichess blitz games: real streaks
   are longer than shuffled ones, cold streaks longer than hot, beginners streakier than experts. Same
   direction as ours; a shuffle test cannot separate state from rating drift, which is why their effect
   looks larger.
-- **Popular analyses** (e.g. chessanalysis.co, 39% after five losses vs 58% after five wins at
-  1200–1400) do not control for opponent rating, session or account state; §1 reproduces a swing of that
-  size on our raw data and shows where it goes.
+- **Popular analyses** do not control for opponent rating, session or account state; §1 reproduces a
+  swing of that size on our raw data and shows where it goes. Two examples:
+  [chessanalysis.co (2026)](https://chessanalysis.co/research/chess-improvement-rating-trajectories),
+  ~840k Lichess games from ~80k players: 39.1% next-game win rate after five losses vs 58.1% after five
+  wins at 1200–1400; [Devine, "Tilt and Hype in Online Chess"](http://seandevine.org/blog/chessBlog.html),
+  ~1M Lichess games from 2014, mixed-effects logit with a player intercept but no opponent-rating term:
+  the previous result shifts the log-odds of winning by 0.25, with results up to seven games back still
+  predictive. Neither excludes rematches against the same opponent.
 - Break length, loss anatomy, revenge rematches and quit-on-loss have no quantitative chess precedent
   that we found. The closest analogue is Jack J (2020) on League of Legends, where re-queuing immediately
   after two losses is worst for mid-rank players and best for top-rank players: the same inversion as our
@@ -647,8 +674,9 @@ Summarised from the literature review in `analysis/tilt_study/FINDINGS.md` §8.
 - The expectation is calibrated on the pooled population; user-level rating lag remains, and it can cut
   either way (a constant-strength player is under-rated after losses, which hides tilt; an improving player
   is under-rated after wins, which inflates the hot hand). The trailing-form and player-fixed-effect checks
-  (§2c) bound it: the cold tail survives both, the hot tail shrinks by about a third.
-- The 30-minute fade in §4 rests on the 30–60 min cells (gap +0.1, CI −1.3 to +1.5); the true transition
+  (§2c) bound it: the streak effect has the same size in every form tercile, and player demeaning shrinks
+  both tails by about a third.
+- The 30-minute fade in §4 rests on the 30–60 min cells (gap +0.2, CI −1.3 to +1.4); the true transition
   could sit anywhere between ten minutes and a few hours.
 - Time of day is UTC only (no user time zone) and not analysed.
 - The benchmark cohort is regular players (~300 games per time control over three years), not a uniform

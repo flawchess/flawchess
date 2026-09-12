@@ -55,6 +55,7 @@ from app.services.eval_utils import (
     eval_cp_to_expected_score,
     eval_mate_to_expected_score,
 )
+from app.services.tactic_detector import floor_cp_for_motif
 
 # D-07: starting only-move margin (lichess-puzzler's +0.7 in -1..+1 win-chance space
 # equals +0.35 in our 0..1 win-prob space). Treat as the provisional starting value;
@@ -125,20 +126,37 @@ class PvNode(TypedDict):
 
 
 def _is_already_winning(
-    pre_flaw_eval_cp: int,
+    pre_flaw_eval_cp: int | None,
+    pre_flaw_eval_mate: int | None,
     solver_color: Literal["white", "black"],
 ) -> bool:
-    """Return True if the pre-flaw position exceeded ALREADY_WINNING_CP_THRESHOLD (D-08).
+    """Return True if the pre-flaw position was already winning for the solver (D-08/D-04).
+
+    Two-branch (TAGFIX-02, D-04): a forced mate for the solver before the flaw
+    is already winning regardless of any cp value (mate-motif tags stay exempt
+    via the caller's forced_mate check, same as today); otherwise compare cp
+    against ALREADY_WINNING_CP_THRESHOLD exactly as before. Both None means no
+    reject (the rest of the gate still runs) -- this is the mate-adjacent,
+    cp-absent case TAGFIX-02 stops skipping the gate for entirely.
 
     Args:
         pre_flaw_eval_cp: White-perspective centipawn eval at the flaw ply
-            (game_positions.eval_cp at the position before the flaw move).
+            (game_positions.eval_cp at the position before the flaw move), or
+            None when only a mate score is available.
+        pre_flaw_eval_mate: White-perspective mate-in-N eval at the flaw ply
+            (game_positions.eval_mate at the position before the flaw move),
+            or None when the position was not a forced mate.
         solver_color: Color of the tactic-delivering side.
 
     Returns:
-        True if the solver was already winning by more than
-        ALREADY_WINNING_CP_THRESHOLD before the tactic (motif rejected).
+        True if the solver was already winning before the tactic (motif
+        rejected) -- either by a forced mate, or by more than
+        ALREADY_WINNING_CP_THRESHOLD centipawns.
     """
+    if pre_flaw_eval_mate is not None:
+        return eval_mate_to_expected_score(pre_flaw_eval_mate, solver_color) == 1.0
+    if pre_flaw_eval_cp is None:
+        return False
     solver_cp = pre_flaw_eval_cp if solver_color == "white" else -pre_flaw_eval_cp
     return solver_cp > ALREADY_WINNING_CP_THRESHOLD
 
@@ -302,22 +320,119 @@ def _is_forced_mate_firing(
     The firing node is at index firing_depth (the detector's tactic depth); None defaults
     to index 0 (mate motifs fire at depth 0 in practice).
 
-    SEED-079 accepted degradation (slim blobs): blobs built after SEED-079 carry all-None
-    placeholder PvNodes at odd (defender) indices — defender nodes are no longer
-    engine-evaluated. When the detector reports an ODD firing_depth (the WR-02 k-1 quirk,
-    mainly DISCOVERED_ATTACK depth 1, ~5% of gated tags), this function reads a
-    placeholder, bm is None, and it returns False: the forced-mate exemption (D-08/D-10)
-    is conservatively lost for those motifs on slim blobs. We deliberately do NOT
-    normalize an odd firing_depth to an adjacent even index: that would read a DIFFERENT
-    node's mate value, changing credit decisions on the ~460k existing fat blobs and
-    touching the gate read surface — both non-goals. Fat blobs are unaffected: their odd
-    nodes carry real data, so the exemption keeps working on them exactly as before.
+    Phase 221 TAGFIX-01 (D-11 consequence): odd firing depths are now essentially
+    extinct (discovered-attack's depth is k, not the old k-1 WR-02 quirk this
+    function's docstring used to document at length). The odd-firing-depth
+    rounding rule the winning floor needs lives in the sibling function
+    _solver_eval_at_firing below, not here -- this function is intentionally
+    unchanged and still reads the RAW (unrounded) index.
     """
     idx = firing_depth if firing_depth is not None else 0
     if idx < 0 or idx >= len(line):
         return False
     bm = line[idx]["bm"]
     return bm is not None and eval_mate_to_expected_score(bm, solver_color) == 1.0
+
+
+def _solver_eval_at_firing(
+    line: Sequence[PvNode],
+    solver_color: Literal["white", "black"],
+    firing_depth: int | None,
+) -> tuple[int | None, int | None]:
+    """Return (solver_mate, solver_cp) at the firing node, at most one non-None (D-01).
+
+    Direct sibling of _is_forced_mate_firing (same parameter order, same bounds
+    guard) but for the TAGFIX-01 winning floor rather than the mate-priority
+    exemption: this function ROUNDS an odd firing_depth UP to the solver node
+    that produced it (odd index = defender ply; the solver's own move is one
+    index later), because the floor is a property of the solver's move, not the
+    defender's reply. Post-D-11, odd firing depths are nearly extinct (226/226
+    dev discovered-attack rows carried one before D-11 landed; the only other
+    odd-depth rows are mate-motif rows, which are floor-exempt via
+    floor_cp_for_motif returning None) -- the rounding is implemented for
+    correctness and is almost a no-op in practice.
+
+    bm is read before b (D-01: a mate on the best move always wins over a cp
+    reading). Both values are converted to solver perspective with the same
+    sign form used everywhere else in this module (cp if solver_color ==
+    "white" else -cp), so a positive result of either kind means "good for the
+    solver" -- consistent with the rest of the module's sign convention.
+
+    Returns:
+        (None, None) when idx is outside the line, or when the node at idx is
+        an all-None placeholder (slim-blob defender node, D-03: an unreadable
+        node must never suppress a tag -- the caller treats (None, None) as
+        "credited").
+    """
+    idx = 0 if firing_depth is None else firing_depth + (firing_depth % 2)
+    if idx < 0 or idx >= len(line):
+        return None, None
+    node = line[idx]
+    bm = node["bm"]
+    if bm is not None:
+        return (bm if solver_color == "white" else -bm), None
+    b = node["b"]
+    if b is None:
+        return None, None
+    return None, (b if solver_color == "white" else -b)
+
+
+def _passes_winning_floor(
+    line: Sequence[PvNode],
+    solver_color: Literal["white", "black"],
+    firing_depth: int | None,
+    motif_int: int | None,
+) -> bool:
+    """Return True if the firing node clears this motif's per-tier winning floor (D-01).
+
+    Return True immediately when floor_cp_for_motif(motif_int) is None (no
+    motif passed, an unknown int, or a mate motif -- a mate line is winning by
+    definition, D-01). Return True when the solver has a mate at the firing
+    node (decisive regardless of the floor). Return True when no cp reading is
+    available (D-03: an unreadable or placeholder node must never suppress a
+    tag -- a slim blob never suppresses). Otherwise compare the solver-
+    perspective cp reading against the floor with >= (Open Question 2
+    resolved: a dead-equal firing node is credited).
+    """
+    floor = floor_cp_for_motif(motif_int)
+    if floor is None:
+        return True
+    solver_mate, solver_cp = _solver_eval_at_firing(line, solver_color, firing_depth)
+    if solver_mate is not None:
+        return True
+    if solver_cp is None:
+        return True
+    return solver_cp >= floor
+
+
+def passes_winning_floor_fallback(
+    eval_cp: int | None,
+    eval_mate: int | None,
+    solver_color: Literal["white", "black"],
+    motif_int: int | None = None,
+) -> bool:
+    """Return True if a game_positions fallback eval clears this motif's floor (D-03).
+
+    The public entry _classify_tactic_gated uses when there is no PV blob
+    (pv_blob is None). Same decision order as _passes_winning_floor, but reads
+    directly from an already-white-perspective game_positions column (eval_cp /
+    eval_mate) instead of a PvNode: floor None -> credited; a mate for the
+    solver -> credited; no eval at all -> credited (D-03: nothing is
+    suppressed merely for lacking data); otherwise cp >= floor.
+
+    It is the CALLER's job (flaws_service._firing_floor_fallback_eval), not
+    this function's, to pick which game_positions row to read for each
+    orientation (allowed: positions[n]; missed: positions[n-1]).
+    """
+    floor = floor_cp_for_motif(motif_int)
+    if floor is None:
+        return True
+    if eval_mate is not None:
+        return True
+    if eval_cp is None:
+        return True
+    solver_cp = eval_cp if solver_color == "white" else -eval_cp
+    return solver_cp >= floor
 
 
 def _strip_trailing_only_moves(line: Sequence[PvNode]) -> list[PvNode]:
@@ -385,17 +500,23 @@ def _solver_nodes_through_firing_depth(
 def apply_forcing_line_filter(
     line: Sequence[PvNode],
     solver_color: Literal["white", "black"],
-    pre_flaw_eval_cp: int,
+    pre_flaw_eval_cp: int | None,
     firing_depth: int | None = None,
     margin: float = ONLY_MOVE_WIN_PROB_MARGIN,
+    motif_int: int | None = None,
+    pre_flaw_eval_mate: int | None = None,
 ) -> bool:
     """Return True if the forcing-line gate passes for this PV blob (GATE-01, GATE-02).
 
     A motif is credited only when:
-      1. The pre-flaw position was not already winning by a large margin (D-08).
+      1. The pre-flaw position was not already winning by a large margin (D-08),
+         whether by cp or by a forced mate (D-04, TAGFIX-02).
       2. The effective line (after still-winning floor truncation and trailing
          only-move strip) has at least two solver nodes (one-mover discard, D-10).
-      3. Every solver node up to and including the firing depth -- the firing node
+      3. The firing node clears this motif's per-tier winning floor (D-01,
+         TAGFIX-01) -- 0cp for tier-1/2 geometric motifs, +200cp for tier-3 and
+         move-type motifs, exempt for mate motifs and when motif_int is None.
+      4. Every solver node up to and including the firing depth -- the firing node
          and all solver nodes leading to it -- passes the only-move gate (D-07).
          The conversion AFTER the tactic fires is NOT required to be forced (Bug B):
          once material is won, the technical follow-up commonly has several
@@ -409,7 +530,8 @@ def apply_forcing_line_filter(
         solver_color: Color of the tactic-delivering side ("white" or "black").
         pre_flaw_eval_cp: White-perspective centipawn eval at the flaw position
             (game_positions.eval_cp at the flaw ply), used for the already-winning
-            reject (D-08).
+            reject (D-08). None when only pre_flaw_eval_mate is available
+            (TAGFIX-02: the gate no longer skips for this alone).
         firing_depth: The detector's tactic depth (half-moves from the firing
             position; node index i == depth i). Only solver nodes at index
             <= firing_depth must be forced. None (default) preserves the legacy
@@ -419,6 +541,14 @@ def apply_forcing_line_filter(
             call (default: ONLY_MOVE_WIN_PROB_MARGIN). Lets the re-tagger CLI sweep
             different thresholds without mutating the module constant (D-03,
             worker-pool-safe).
+        motif_int: The detected TacticMotifInt value, used to look up the
+            per-tier winning floor (D-01, TAGFIX-01). Defaulted keyword so
+            every pre-existing call site (tests, scripts/ab_validate_gate.py)
+            keeps compiling unchanged -- None skips the floor check entirely.
+        pre_flaw_eval_mate: White-perspective mate-in-N eval at the flaw
+            position (game_positions.eval_mate at the flaw ply), used for the
+            already-winning-by-mate reject (D-04, TAGFIX-02) when cp is absent.
+            Defaulted keyword for the same call-site-compatibility reason.
 
     Returns:
         True if the line passes all gate criteria and the motif should be credited.
@@ -429,8 +559,9 @@ def apply_forcing_line_filter(
     # subject to the only-move check on its firing node (mate priority, D-01).
     forced_mate = _is_forced_mate_firing(line, solver_color, firing_depth)
 
-    # D-08: already-winning reject (forced mates exempt).
-    if not forced_mate and _is_already_winning(pre_flaw_eval_cp, solver_color):
+    # D-08 / D-04: already-winning reject (forced mates exempt; TAGFIX-02 widens this
+    # to derive the reject from eval_mate when cp is absent).
+    if not forced_mate and _is_already_winning(pre_flaw_eval_cp, pre_flaw_eval_mate, solver_color):
         return False
 
     # D-09: truncate at still-winning floor (conversion tail only — firing node exempt).
@@ -452,6 +583,12 @@ def apply_forcing_line_filter(
     # move and would have passed anyway -- does not cause a false reject. A None
     # firing_depth skips this (legacy whole-line check).
     if firing_depth is not None and firing_depth >= len(truncated):
+        return False
+
+    # D-01 / TAGFIX-01: the firing node must clear this motif's per-tier winning
+    # floor (0cp geometric / +200cp tier-3+move-type; mate motifs and motif_int=None
+    # are exempt via floor_cp_for_motif returning None).
+    if not _passes_winning_floor(line, solver_color, firing_depth, motif_int):
         return False
 
     # D-07 / GATE-01: every solver node through the firing depth must be forced.

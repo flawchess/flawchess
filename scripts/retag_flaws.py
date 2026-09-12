@@ -21,8 +21,11 @@ Why a dedicated script instead of backfill_flaws.py:
     that is wasteful. This script instead:
       * walks game_flaws directly in PK-ordered pages (a flaw with no detector input is
         the unit of work — games without flaws are never touched),
-      * loads only the positions at each flaw's ply and ply+1 (the exact PV / mate inputs
-        the detector needs), one batched query per page, not per game,
+      * loads only the positions at each flaw's ply-1, ply and ply+1 (the exact PV / mate
+        inputs the detector needs), one batched query per page, not per game,
+      * loads each page's distinct games' PGNs in one batched query and recomputes a real
+        full-FEN map per game (castling rights, en-passant target — Phase 221 TAGFIX-09;
+        game_flaws.fen itself is piece-placement-only and is never used to build a map),
       * loads the stored allowed_pv_lines / missed_pv_lines JSONB blobs and flaw-ply
         eval_cp from game_positions in the same page query,
       * recomputes the tactic tags via _classify_tactic_gated (the SAME single classify
@@ -73,8 +76,15 @@ Parallelism & where to run (RECOMMENDED: on the server, NOT a laptop over the tu
        run off-peak, never during a large import, and use --throttle-ms if it overlaps live
        traffic. Remote Stockfish workers cover the analysis pool, so local CPU starvation
        during the run is acceptable.
-    => T-143-05: --db prod writes require running on the prod server. The local SSH tunnel
-       (bin/prod_db_tunnel.sh) is read-only. Pass --db prod only from the prod server.
+    => T-143-05 UPDATE (Phase 220 precedent, D-14): writes over the local SSH tunnel
+       (bin/prod_db_tunnel.sh) from the local box are proven at multi-million-row scale —
+       Phase 220 screened 2.57M rows and wrote ~11k cells over the tunnel in ~10h48m
+       (220-06-SUMMARY.md). The tunnel is NOT read-only; --db prod writes are no longer
+       restricted to running on the prod server. The round-trip-latency argument above for
+       preferring the prod server when convenient still stands and is unchanged by this —
+       prefer it for a full-scale run, but a local-box tunnel run is a proven fallback.
+       Prod remains memory- and write-sensitive regardless of where the script runs: use
+       --throttle-ms and run off-peak either way.
 
     Scale reference (prod ~3.18M flaws, dev-extrapolated at ~950 flaws/s with 8 workers):
     a full refresh is ~55 min and writes ~1M rows (~32% carry a tag; the rest recompute to
@@ -131,7 +141,12 @@ from app.services.tactic_detector import TacticMotifInt  # noqa: E402
 # drain (app/services/flaws_service.py, D-02). Importing it here — rather than calling
 # _detect_tactic_for_flaw directly — guarantees the re-tagged columns match exactly what
 # a fresh analysis pass would produce at the same --margin (SC4 no-drift posture).
-from app.services.flaws_service import _classify_tactic_gated  # noqa: E402
+# _recompute_fen_map is the ONE sanctioned full-FEN producer (Phase 148 D-02): it replays
+# a game's PGN and returns {ply: full FEN} (side-to-move, castling rights, en-passant
+# target). Importing it here — rather than re-implementing PGN replay — keeps the retag
+# on the same code path eval_remote.py's live per-game retag already uses (Phase 221
+# TAGFIX-09, Pitfall 2).
+from app.services.flaws_service import _classify_tactic_gated, _recompute_fen_map  # noqa: E402
 
 # No magic numbers (CLAUDE.md rule).
 # Commit every N flaw rows to keep memory bounded (OOM history — see CLAUDE.md).
@@ -206,7 +221,8 @@ def _parse_args() -> argparse.Namespace:
         dest="dry_run",
         help=(
             "Recompute and count changed rows without writing to the database. "
-            "Writes a per-motif tag-delta report to reports/retag/retag-YYYY-MM-DD.md."
+            "A per-motif tag-delta report is written to "
+            "reports/retag/retag-YYYY-MM-DD.md on every run, dry-run or not."
         ),
     )
     parser.add_argument(
@@ -257,12 +273,13 @@ def _tactic_tuple(row: object) -> tuple[int | None, ...]:
 class _FlawWork:
     """Picklable, DB-free unit of detection work handed to a pool worker.
 
-    Carries only what the classify kernel reads — the flaw's ply/fen, the two positions
-    it indexes (ply and ply+1), the stored PV blobs for both orientations, and the
-    margin — plus the current tactic tuple so the worker can return the no-op signal
-    (None) without the parent re-reading anything. ORM rows and full position lists
-    never cross the process boundary: the IPC payload is a handful of scalars + small
-    JSONB blobs per flaw, so spawn workers stay tiny and pickling stays cheap.
+    Carries only what the classify kernel reads — the flaw's ply, the two positions
+    it indexes (ply-1, ply and ply+1), a real full-FEN slice (fen_map), the stored PV
+    blobs for both orientations, and the margin — plus the current tactic tuple so the
+    worker can return the no-op signal (None) without the parent re-reading anything.
+    ORM rows and full position lists never cross the process boundary: the IPC payload
+    is a handful of scalars + small JSONB blobs + three short FEN strings per flaw, so
+    spawn workers stay tiny and pickling stays cheap.
 
     margin rides on the work unit (not the module global) so spawn workers re-import
     the module with the original constant and never see a mutated global (worker-pool-safe,
@@ -272,10 +289,20 @@ class _FlawWork:
     user_id: int
     game_id: int
     ply: int
-    fen: str  # game_flaws.fen is NOT NULL (board_fen before the flaw)
+    # game_flaws.fen (NOT NULL) — piece-placement only (board_fen_only), retained ONLY for
+    # report/context/logging. It is NOT used to build fen_map (Phase 221 TAGFIX-09 fix):
+    # chess.Board() on a piece-placement-only string has no castling rights and no
+    # en-passant target, so a castling flaw SAN is unparseable and an en-passant PV move
+    # is illegal — the exact bug class the Phase-148 D-02 fix removed from the live path
+    # (app.services.flaws_service._recompute_fen_map), still present here until this fix.
+    fen: str
     prv: _PosRow | None  # position at ply-1 (board BEFORE the flaw move — pre_flaw_eval_cp source)
     cur: _PosRow | None  # position at ply (missed pass reads this)
     nxt: _PosRow | None  # position at ply+1 (allowed pass reads this)
+    # Real full-FEN slice from _recompute_fen_map(game.pgn), sliced to only the plies the
+    # kernel can read: ply-1 (when ply >= 1), ply, and ply+1. Replaces the old synthetic
+    # single-entry `{ply: work.fen}` map (Phase 221 TAGFIX-09 / RESEARCH.md Pitfall 2).
+    fen_map: dict[int, str]
     old_tuple: tuple[int | None, ...]
     allowed_pv_blob: list[Any] | None  # allowed_pv_lines JSONB (list[dict] | None)
     missed_pv_blob: list[Any] | None  # missed_pv_lines JSONB (list[dict] | None)
@@ -285,12 +312,20 @@ class _FlawWork:
 def _worker_recompute(work: _FlawWork) -> tuple[int | None, ...] | None:
     """Pure-CPU classify kernel (no DB) — runs inline or in a pool worker.
 
-    Rebuilds the sparse ply-indexed positions list the kernel expects (only `ply` and
-    `ply + 1` carry data; the rest are _EMPTY_POS so integer indexing and the
-    `ply + 1 < len(positions)` guard behave; length ply + 2 keeps positions[ply + 1] valid),
-    runs the allowed + missed passes through _classify_tactic_gated (the single gated
-    classify path, SC4), and returns the new 8-tuple — or None when it equals the stored
-    tuple (the no-op fast path that skips a needless WAL-writing UPDATE).
+    Rebuilds the sparse ply-indexed positions list the kernel expects. The list now
+    carries THREE plies (Phase 221 TAGFIX-09, RESEARCH.md Pitfall 2): `ply-1`, `ply` and
+    `ply+1`; the rest are _EMPTY_POS so integer indexing and the `ply + 1 < len(positions)`
+    guard behave (length ply + 2 keeps positions[ply + 1] valid). `ply-1` is required
+    because the gate's pre-flaw eval reads it (the existing Bug-A fix, below) and because
+    the missed-orientation board build reads `positions[n-1].move_san` and `fen_map[n-1]`
+    (a future D-09 change; this task only threads the input through so that change has
+    something real to read instead of _EMPTY_POS / a synthetic single-entry fen_map).
+
+    Runs the allowed + missed passes through _classify_tactic_gated (the single gated
+    classify path, SC4) using work.fen_map — the real full-FEN slice from
+    _recompute_fen_map(game.pgn), NOT the placement-only game_flaws.fen — and returns the
+    new 8-tuple, or None when it equals the stored tuple (the no-op fast path that skips a
+    needless WAL-writing UPDATE).
 
     pre_flaw_eval_cp is derived from work.prv.eval_cp (the position BEFORE the flaw move,
     ply-1), used by the gate's already-winning reject. Bug A fix: this previously read
@@ -308,8 +343,13 @@ def _worker_recompute(work: _FlawWork) -> tuple[int | None, ...] | None:
         positions[ply] = work.cur
     if work.nxt is not None:
         positions[ply + 1] = work.nxt
-    # fen_map only needs the flaw's own ply — the kernel reads fen_map.get(ply).
-    fen_map = {ply: work.fen}
+    # Fill positions[ply-1] from work.prv (Phase 221 TAGFIX-09 fix): the gate's pre-flaw
+    # eval read and the missed-orientation board build both need the SAME game_positions
+    # row the live drain sees — a sparse list that skips ply-1 silently diverges from a
+    # fresh analysis (RESEARCH.md Pitfall 2, "positions gap").
+    if ply >= 1 and work.prv is not None:
+        positions[ply - 1] = work.prv
+    fen_map = work.fen_map
     # pre_flaw_eval_cp: white-perspective eval_cp at ply-1 (the board BEFORE the flaw move),
     # used by the gate's already-winning reject (Bug A fix — was work.cur.eval_cp at the flaw ply).
     pre_flaw_eval_cp = work.prv.eval_cp if work.prv is not None else None
@@ -340,12 +380,27 @@ def _worker_recompute(work: _FlawWork) -> tuple[int | None, ...] | None:
 def _make_works(
     flaws: list[Row[Any]],
     pos_by_key: dict[tuple[int, int, int], _PosRow],
+    fen_maps_by_game: dict[int, dict[int, str]],
     margin: float,
 ) -> list[_FlawWork]:
-    """Build picklable work units for a page, pre-extracting each flaw's two positions."""
+    """Build picklable work units for a page, pre-extracting each flaw's positions + FENs.
+
+    Each flaw's fen_map is a slice of its game's full fen_map (from
+    _load_fen_maps_for_page), carrying only the plies the kernel can read: ply-1 (when
+    ply >= 1), ply, and ply+1. Three short strings per flaw keeps the IPC payload small —
+    the dataclass's own documented property (Phase 221 TAGFIX-09).
+    """
     works: list[_FlawWork] = []
     for flaw in flaws:
         ply = flaw.ply
+        game_fen_map = fen_maps_by_game.get(flaw.game_id, {})
+        flaw_fen_map: dict[int, str] = {}
+        if ply >= 1 and (prev_fen := game_fen_map.get(ply - 1)) is not None:
+            flaw_fen_map[ply - 1] = prev_fen
+        if (cur_fen := game_fen_map.get(ply)) is not None:
+            flaw_fen_map[ply] = cur_fen
+        if (nxt_fen := game_fen_map.get(ply + 1)) is not None:
+            flaw_fen_map[ply + 1] = nxt_fen
         works.append(
             _FlawWork(
                 user_id=flaw.user_id,
@@ -355,6 +410,7 @@ def _make_works(
                 prv=pos_by_key.get((flaw.user_id, flaw.game_id, ply - 1)),
                 cur=pos_by_key.get((flaw.user_id, flaw.game_id, ply)),
                 nxt=pos_by_key.get((flaw.user_id, flaw.game_id, ply + 1)),
+                fen_map=flaw_fen_map,
                 old_tuple=_tactic_tuple(flaw),
                 allowed_pv_blob=flaw.allowed_pv_lines,  # JSONB list[dict] | None
                 missed_pv_blob=flaw.missed_pv_lines,  # JSONB list[dict] | None
@@ -443,6 +499,33 @@ async def _load_positions_for_page(
     }
 
 
+async def _load_fen_maps_for_page(
+    session: AsyncSession,
+    flaws: list[Row[Any]],
+) -> dict[int, dict[int, str]]:
+    """Load {game_id: {ply: full FEN}} for every distinct game in a page, in one query.
+
+    Phase 221 TAGFIX-09 fix (RESEARCH.md Pitfall 2 / Open Question 1): the retag used to
+    build a single-entry, placement-only fen_map from game_flaws.fen. That map cannot
+    supply the kernel a board with castling rights or an en-passant target — the exact
+    bug class the Phase-148 D-02 fix removed from the live path
+    (app.services.flaws_service._recompute_fen_map). This function instead loads each
+    page's distinct games' PGNs in ONE query and recomputes a real full-FEN map per game
+    by replaying it — the ONE sanctioned full-FEN source (game_flaws.fen stays
+    piece-placement-only by contract; see _recompute_fen_map's own docstring). A game
+    whose PGN fails to replay yields an empty or partial map (capped to Sentry by
+    _recompute_fen_map itself); a flaw with no usable FEN entry recomputes to all-NULL,
+    exactly the pre-existing behaviour for a missing FEN. This makes the retag
+    structurally identical to app/routers/eval_remote.py's per-game gated retag.
+    """
+    game_ids = {flaw.game_id for flaw in flaws}
+    if not game_ids:
+        return {}
+    stmt = select(Game.id, Game.pgn).where(Game.id.in_(game_ids))
+    result = await session.execute(stmt)
+    return {game_id: _recompute_fen_map(pgn) for game_id, pgn in result.all()}
+
+
 def _updates_from_results(
     flaws: list[Row[Any]],
     results: list[tuple[int | None, ...] | None],
@@ -469,19 +552,67 @@ def _updates_from_results(
     return updates
 
 
+def _bucket_motif_change(
+    old_motif: int | None,
+    new_motif: int | None,
+    old_depth: int | None,
+    new_depth: int | None,
+    removed: Counter[str],
+    survived: Counter[str],
+    motif_shifted: Counter[str],
+    depth_shifted: Counter[str],
+) -> None:
+    """Classify one flaw's one orientation into exactly one of four buckets.
+
+    - new motif is None -> removed (gate-suppressed)
+    - new motif differs from old -> motif_shifted
+    - new motif equals old AND new depth differs from old depth -> depth_shifted
+    - otherwise (motif and depth both unchanged) -> survived
+
+    An if/elif chain (not four independent ifs) makes "exactly one bucket per row" a
+    structural property, not an invariant the caller must maintain by hand — this is
+    the adjacency truth TAGFIX-09's must_haves pins.
+
+    D-11 (Phase 221, plan 02): discovered-attack's depth changes for every surviving
+    row without changing motif. A motif-only removed/survived split would silently fold
+    that into "survived", masking exactly the depth claim TAGFIX-09's acceptance
+    criterion checks ("zero rows with an odd stored depth for motif 6") — depth_shifted
+    exists so that claim has a counter to point at.
+    """
+    if old_motif is None:
+        return
+    try:
+        name = TacticMotifInt(old_motif).name
+    except ValueError:
+        name = str(old_motif)
+    if new_motif is None:
+        removed[name] += 1
+    elif new_motif != old_motif:
+        motif_shifted[name] += 1
+    elif new_depth != old_depth:
+        depth_shifted[name] += 1
+    else:
+        survived[name] += 1
+
+
 def _accumulate_motif_counts(
     flaws: list[Row[Any]],
     results: list[tuple[int | None, ...] | None],
     motif_removed_allowed: Counter[str],
     motif_survived_allowed: Counter[str],
+    motif_shifted_allowed: Counter[str],
+    depth_shifted_allowed: Counter[str],
     motif_removed_missed: Counter[str],
     motif_survived_missed: Counter[str],
+    motif_shifted_missed: Counter[str],
+    depth_shifted_missed: Counter[str],
 ) -> None:
-    """Accumulate per-motif removed/survived counts from a page of results.
+    """Accumulate per-motif removed/survived/motif-shifted/depth-shifted counts.
 
-    Decodes tactic motif integers to names via TacticMotifInt. For each flaw with an
-    existing tag: if the new tuple suppresses the motif (None), it counts as removed;
-    if the motif is retained, it counts as survived.
+    Decodes tactic motif integers to names via TacticMotifInt. Delegates the
+    exactly-one-bucket-per-row classification to _bucket_motif_change, once per
+    orientation (Phase 221 TAGFIX-09 — removed/survived/shifted, D-11's depth-shift
+    bucket added on top).
 
     old_tuple layout (TACTIC_TAG_COLUMNS order):
         [0] allowed_tactic_motif, [1] allowed_tactic_piece, [2] allowed_tactic_confidence,
@@ -493,31 +624,26 @@ def _accumulate_motif_counts(
         # Effective new tuple: if worker returned None (no-op), old tuple is unchanged.
         effective_new = new_tuple if new_tuple is not None else old_tuple
 
-        # Allowed orientation: old_tuple[0] / effective_new[0]
-        old_allowed_motif: int | None = old_tuple[0]  # type: ignore[assignment]
-        if old_allowed_motif is not None:
-            try:
-                name = TacticMotifInt(old_allowed_motif).name
-            except ValueError:
-                name = str(old_allowed_motif)
-            new_allowed_motif: int | None = effective_new[0]  # type: ignore[assignment]
-            if new_allowed_motif is None:
-                motif_removed_allowed[name] += 1
-            else:
-                motif_survived_allowed[name] += 1
-
-        # Missed orientation: old_tuple[4] / effective_new[4]
-        old_missed_motif: int | None = old_tuple[4]  # type: ignore[assignment]
-        if old_missed_motif is not None:
-            try:
-                name = TacticMotifInt(old_missed_motif).name
-            except ValueError:
-                name = str(old_missed_motif)
-            new_missed_motif: int | None = effective_new[4]  # type: ignore[assignment]
-            if new_missed_motif is None:
-                motif_removed_missed[name] += 1
-            else:
-                motif_survived_missed[name] += 1
+        _bucket_motif_change(
+            old_tuple[0],  # allowed_tactic_motif
+            effective_new[0],
+            old_tuple[3],  # allowed_tactic_depth
+            effective_new[3],
+            motif_removed_allowed,
+            motif_survived_allowed,
+            motif_shifted_allowed,
+            depth_shifted_allowed,
+        )
+        _bucket_motif_change(
+            old_tuple[4],  # missed_tactic_motif
+            effective_new[4],
+            old_tuple[7],  # missed_tactic_depth
+            effective_new[7],
+            motif_removed_missed,
+            motif_survived_missed,
+            motif_shifted_missed,
+            depth_shifted_missed,
+        )
 
 
 def _write_retag_report(
@@ -527,16 +653,25 @@ def _write_retag_report(
     total_changed: int,
     motif_removed_allowed: Counter[str],
     motif_survived_allowed: Counter[str],
+    motif_shifted_allowed: Counter[str],
+    depth_shifted_allowed: Counter[str],
     motif_removed_missed: Counter[str],
     motif_survived_missed: Counter[str],
+    motif_shifted_missed: Counter[str],
+    depth_shifted_missed: Counter[str],
+    dry_run: bool,
     report_dir: Path | None = None,
 ) -> None:
     """Write a per-motif tag-delta report to reports/retag/retag-YYYY-MM-DD.md.
 
-    Called only when --dry-run is active. The report is re-runnable so a --margin sweep
-    or /loop regenerates it (feeds Phase 144's A/B analysis directly).
+    Called on EVERY run now — dry-run AND a real writing run (Phase 221 TAGFIX-09;
+    previously dry-run only). The report is re-runnable so a --margin sweep or /loop
+    regenerates it (feeds Phase 144's A/B analysis and TAGFIX-09's acceptance queries).
 
     Args:
+        dry_run: Whether the run that produced these counts wrote to the DB. Only
+            changes the report's own **Mode:**/provenance text — the counters
+            themselves are gathered identically either way.
         report_dir: Output directory for the report. Defaults to the committed
             reports/retag/ path. Tests inject a tmp dir so the suite never writes
             into the version-controlled tree. The directory is created if missing.
@@ -552,31 +687,58 @@ def _write_retag_report(
     report_path = report_dir / f"retag-{date_str}.md"
     report_path.parent.mkdir(parents=True, exist_ok=True)
 
-    def _motif_table(removed: Counter[str], survived: Counter[str]) -> str:
-        """Build a per-motif pipe table from removed/survived counters."""
-        all_motifs = sorted(set(removed) | set(survived))
+    def _motif_table(
+        removed: Counter[str],
+        survived: Counter[str],
+        motif_shifted: Counter[str],
+        depth_shifted: Counter[str],
+    ) -> str:
+        """Build a per-motif pipe table from the four bucket counters.
+
+        D-11 (Phase 221): the report needs a depth-only bucket separate from
+        motif-shifted because discovered-attack's depth changes for every surviving
+        row without changing motif — "zero rows with an odd stored depth for motif 6"
+        is a depth claim a motif-only split cannot support.
+        """
+        all_motifs = sorted(set(removed) | set(survived) | set(motif_shifted) | set(depth_shifted))
         if not all_motifs:
             return "_No previously-tagged flaws in this scope._\n"
         lines = [
-            "| Motif | Previously tagged | Gate suppressed | Survived | Suppression % |",
-            "|-------|------------------|-----------------|----------|---------------|",
+            "| Motif | Previously tagged | Gate suppressed | Survived | "
+            "Motif shifted | Depth shifted | Suppression % |",
+            "|-------|------------------|-----------------|----------|"
+            "---------------|---------------|---------------|",
         ]
         for motif in all_motifs:
             r = removed[motif]
             s = survived[motif]
-            total = r + s
+            ms = motif_shifted[motif]
+            ds = depth_shifted[motif]
+            total = r + s + ms + ds
             pct = f"{100 * r / total:.1f}%" if total > 0 else "n/a"
-            lines.append(f"| {motif} | {total} | {r} | {s} | {pct} |")
+            lines.append(f"| {motif} | {total} | {r} | {s} | {ms} | {ds} | {pct} |")
         return "\n".join(lines) + "\n"
 
-    allowed_table = _motif_table(motif_removed_allowed, motif_survived_allowed)
-    missed_table = _motif_table(motif_removed_missed, motif_survived_missed)
+    allowed_table = _motif_table(
+        motif_removed_allowed, motif_survived_allowed, motif_shifted_allowed, depth_shifted_allowed
+    )
+    missed_table = _motif_table(
+        motif_removed_missed, motif_survived_missed, motif_shifted_missed, depth_shifted_missed
+    )
 
-    total_allowed_tagged = sum(motif_removed_allowed.values()) + sum(
-        motif_survived_allowed.values()
+    total_allowed_tagged = (
+        sum(motif_removed_allowed.values())
+        + sum(motif_survived_allowed.values())
+        + sum(motif_shifted_allowed.values())
+        + sum(depth_shifted_allowed.values())
     )
     total_allowed_removed = sum(motif_removed_allowed.values())
-    total_missed_tagged = sum(motif_removed_missed.values()) + sum(motif_survived_missed.values())
+    total_missed_tagged = (
+        sum(motif_removed_missed.values())
+        + sum(motif_survived_missed.values())
+        + sum(motif_shifted_missed.values())
+        + sum(depth_shifted_missed.values())
+    )
     total_missed_removed = sum(motif_removed_missed.values())
 
     pct_allowed = (
@@ -590,14 +752,18 @@ def _write_retag_report(
         else "n/a"
     )
 
+    mode_line = "dry-run (no writes to DB)" if dry_run else f"write ({total_changed} rows changed)"
+    changed_label = "would change" if dry_run else "changed"
+    invocation = f"--dry-run --margin {margin}" if dry_run else f"--margin {margin}"
+
     content = f"""# FlawChess Re-tagger Report
 
 **Generated:** {ts_str}
 **Margin:** {margin} (ONLY_MOVE_WIN_PROB_MARGIN default: {ONLY_MOVE_WIN_PROB_MARGIN})
 **Scope:** {scope}
-**Mode:** dry-run (no writes to DB)
+**Mode:** {mode_line}
 **Flaws examined:** {total_examined}
-**Flaw rows that would change:** {total_changed}
+**Flaw rows that {changed_label}:** {total_changed}
 
 ## Allowed-orientation tag changes
 
@@ -610,12 +776,93 @@ def _write_retag_report(
 **Total allowed tags suppressed:** {total_allowed_removed} / {total_allowed_tagged} ({pct_allowed})
 **Total missed tags suppressed:** {total_missed_removed} / {total_missed_tagged} ({pct_missed})
 
-*Generated by `scripts/retag_flaws.py --dry-run --margin {margin}`. Re-run at a different*
-*margin to regenerate. Feeds Phase 144 A/B sweep.*
+*Generated by `scripts/retag_flaws.py {invocation}`. Re-run to regenerate.*
+*Feeds Phase 144 A/B sweep and Phase 221 TAGFIX-09 acceptance.*
 """
 
     report_path.write_text(content)
-    _log(f"Dry-run report written to {report_path}")
+    _log(f"Retag report written to {report_path}")
+
+
+async def _process_page(
+    session_maker: async_sessionmaker[AsyncSession],
+    *,
+    user_id: int | None,
+    only_tagged: bool,
+    after: tuple[int, int, int] | None,
+    page_size: int,
+    margin: float,
+    executor: ProcessPoolExecutor | None,
+    worker_count: int,
+    dry_run: bool,
+    page_num: int,
+    motif_counters: tuple[Counter[str], ...],
+) -> tuple[list[Row[Any]], list[dict[str, object]]]:
+    """Fetch, detect, and (if not dry_run) write one keyset-paged page of flaws.
+
+    Extracted from run_backfill (Phase 221 TAGFIX-09 refactor — the added counter
+    plumbing pushed the function past the nesting-depth-4 hard cap; CLAUDE.md requires
+    refactoring bloated code encountered while editing a file, not adding to it). Returns
+    (flaws, updates); an empty `flaws` list is the caller's "no more pages" signal.
+
+    Raises on any page failure after recording Sentry context (WR-01) — a whole-page DB
+    error is not recoverable mid-stream, so the caller's while-loop simply propagates it.
+
+    motif_counters is the 8 Counters in the exact positional order
+    _accumulate_motif_counts expects (removed/survived/motif-shifted/depth-shifted, per
+    orientation) — passed as a tuple rather than 8 named parameters since every one of
+    them flows straight through unchanged; this is an accumulator group, not unrelated
+    state bundled to fit a signature.
+    """
+    async with session_maker() as session:
+        # flaws is bound to [] up front so the except handler below can build Sentry
+        # context even if _fetch_flaw_page itself is what raised (WR-01).
+        flaws: list[Row[Any]] = []
+        try:
+            flaws = await _fetch_flaw_page(
+                session,
+                user_id=user_id,
+                only_tagged=only_tagged,
+                after=after,
+                limit=page_size,
+            )
+            if not flaws:
+                return [], []
+
+            pos_by_key = await _load_positions_for_page(session, flaws)
+            fen_maps_by_game = await _load_fen_maps_for_page(session, flaws)
+            # Detection is pure CPU and DB-free: fan it out to the worker pool (or run
+            # inline when serial). The DB stays here in the parent, one connection.
+            works = _make_works(flaws, pos_by_key, fen_maps_by_game, margin)
+            if executor is None:
+                results = [_worker_recompute(w) for w in works]
+            else:
+                # chunksize amortizes per-task IPC: a worker grabs a slice, not 1 flaw.
+                chunksize = max(1, len(works) // (worker_count * 4))
+                results = list(executor.map(_worker_recompute, works, chunksize=chunksize))
+            updates = _updates_from_results(flaws, results)
+            # Accumulate motif counts for the tag-delta report (D-04). Gathered
+            # unconditionally now (Phase 221 TAGFIX-09) — a writing run reports its own
+            # delta too, not just a --dry-run preview.
+            _accumulate_motif_counts(flaws, results, *motif_counters)
+            if not dry_run:
+                await bulk_update_tactic_tags(session, updates)
+                await session.commit()
+            return flaws, updates
+        except Exception as exc:
+            # A page failure (fetch, position load, or update) must not silently
+            # corrupt the run. IDs go to Sentry context, never the message, to preserve
+            # issue grouping (CLAUDE.md). Re-raise: a whole-page DB error is not
+            # recoverable mid-stream. flaws may be empty if the fetch itself raised
+            # (WR-01), so guard the last-row context.
+            ctx: dict[str, int] = {"page": page_num}
+            if flaws:
+                last = flaws[-1]
+                ctx["last_game_id"] = last.game_id
+                ctx["last_ply"] = last.ply
+            sentry_sdk.set_context("retag_flaws", ctx)
+            sentry_sdk.capture_exception(exc)
+            raise
 
 
 async def run_backfill(
@@ -638,7 +885,6 @@ async def run_backfill(
         user_id: Scope to this user's flaws (None = all users).
         only_tagged: Only refresh flaws that already carry a tactic tag (see module docstring).
         dry_run: If True, recompute and count changed rows but do NOT write or commit.
-            Also writes a per-motif tag-delta report to reports/retag/retag-YYYY-MM-DD.md.
         limit: Maximum number of flaw rows to process (None = no limit).
         workers: Parallel detection worker processes (None = CPU count, 1 = serial). Workers
             run pure-CPU detection only; DB access stays in the parent (one connection).
@@ -647,9 +893,10 @@ async def run_backfill(
             Flows via _FlawWork.margin into every worker — no global mutation (D-03).
         session_maker: Injectable session factory for testing. When None, a real engine
             is created from db_url_for_target(db).
-        report_dir: Injectable output dir for the dry-run report. When None, defaults to
-            the committed reports/retag/ path; tests pass a tmp dir to avoid writing into
-            the version-controlled tree.
+        report_dir: Injectable output dir for the per-motif tag-delta report. When None,
+            defaults to the committed reports/retag/ path; tests pass a tmp dir to avoid
+            writing into the version-controlled tree. Written on EVERY run — dry-run AND
+            a real writing run (Phase 221 TAGFIX-09; previously dry-run only).
     """
     if settings.SENTRY_DSN:
         sentry_sdk.init(dsn=settings.SENTRY_DSN, environment=settings.ENVIRONMENT)
@@ -678,11 +925,17 @@ async def run_backfill(
     after: tuple[int, int, int] | None = None
     page_num = 0
 
-    # Per-motif counters for the dry-run report (D-04).
+    # Per-motif counters for the tag-delta report (D-04; four buckets per orientation
+    # since Phase 221 TAGFIX-09 — removed/survived/motif-shifted/depth-shifted).
+    # Gathered on EVERY run now, not just --dry-run (previously guarded by `if dry_run:`).
     motif_removed_allowed: Counter[str] = Counter()
     motif_survived_allowed: Counter[str] = Counter()
+    motif_shifted_allowed: Counter[str] = Counter()
+    depth_shifted_allowed: Counter[str] = Counter()
     motif_removed_missed: Counter[str] = Counter()
     motif_survived_missed: Counter[str] = Counter()
+    motif_shifted_missed: Counter[str] = Counter()
+    depth_shifted_missed: Counter[str] = Counter()
 
     # Pool of pure-CPU detection workers. "spawn" (not fork) keeps children from inheriting
     # this process's asyncio loop and open DB connections — workers never touch the DB, so a
@@ -700,59 +953,30 @@ async def run_backfill(
                     break
                 page_size = min(page_size, remaining)
 
-            async with session_maker() as session:
-                # flaws is bound to [] up front so the except handler below can build
-                # Sentry context even if _fetch_flaw_page itself is what raised (WR-01).
-                flaws: list[Row[Any]] = []
-                try:
-                    flaws = await _fetch_flaw_page(
-                        session,
-                        user_id=user_id,
-                        only_tagged=only_tagged,
-                        after=after,
-                        limit=page_size,
-                    )
-                    if not flaws:
-                        break
-
-                    pos_by_key = await _load_positions_for_page(session, flaws)
-                    # Detection is pure CPU and DB-free: fan it out to the worker pool (or run
-                    # inline when serial). The DB stays here in the parent, one connection.
-                    works = _make_works(flaws, pos_by_key, margin)
-                    if executor is None:
-                        results = [_worker_recompute(w) for w in works]
-                    else:
-                        # chunksize amortizes per-task IPC: a worker grabs a slice, not 1 flaw.
-                        chunksize = max(1, len(works) // (worker_count * 4))
-                        results = list(executor.map(_worker_recompute, works, chunksize=chunksize))
-                    updates = _updates_from_results(flaws, results)
-                    # Accumulate motif counts for the dry-run delta report (D-04).
-                    if dry_run:
-                        _accumulate_motif_counts(
-                            flaws,
-                            results,
-                            motif_removed_allowed,
-                            motif_survived_allowed,
-                            motif_removed_missed,
-                            motif_survived_missed,
-                        )
-                    if not dry_run:
-                        await bulk_update_tactic_tags(session, updates)
-                        await session.commit()
-                except Exception as exc:
-                    # A page failure (fetch, position load, or update) must not silently
-                    # corrupt the run. IDs go to Sentry context, never the message, to
-                    # preserve issue grouping (CLAUDE.md). Re-raise: a whole-page DB error
-                    # is not recoverable mid-stream. flaws may be empty if the fetch itself
-                    # raised (WR-01), so guard the last-row context.
-                    ctx: dict[str, int] = {"page": page_num}
-                    if flaws:
-                        last = flaws[-1]
-                        ctx["last_game_id"] = last.game_id
-                        ctx["last_ply"] = last.ply
-                    sentry_sdk.set_context("retag_flaws", ctx)
-                    sentry_sdk.capture_exception(exc)
-                    raise
+            flaws, updates = await _process_page(
+                session_maker,
+                user_id=user_id,
+                only_tagged=only_tagged,
+                after=after,
+                page_size=page_size,
+                margin=margin,
+                executor=executor,
+                worker_count=worker_count,
+                dry_run=dry_run,
+                page_num=page_num,
+                motif_counters=(
+                    motif_removed_allowed,
+                    motif_survived_allowed,
+                    motif_shifted_allowed,
+                    depth_shifted_allowed,
+                    motif_removed_missed,
+                    motif_survived_missed,
+                    motif_shifted_missed,
+                    depth_shifted_missed,
+                ),
+            )
+            if not flaws:
+                break
 
             page_num += 1
             total_examined += len(flaws)
@@ -777,18 +1001,23 @@ async def run_backfill(
     _log(f"  Flaw rows examined: {total_examined}")
     _log(f"  Flaw rows {'that would change' if dry_run else 'changed'}: {total_changed}")
 
-    if dry_run:
-        _write_retag_report(
-            margin,
-            user_id,
-            total_examined,
-            total_changed,
-            motif_removed_allowed,
-            motif_survived_allowed,
-            motif_removed_missed,
-            motif_survived_missed,
-            report_dir=report_dir,
-        )
+    # Written on every run now (Phase 221 TAGFIX-09) — previously guarded by `if dry_run:`.
+    _write_retag_report(
+        margin,
+        user_id,
+        total_examined,
+        total_changed,
+        motif_removed_allowed,
+        motif_survived_allowed,
+        motif_shifted_allowed,
+        depth_shifted_allowed,
+        motif_removed_missed,
+        motif_survived_missed,
+        motif_shifted_missed,
+        depth_shifted_missed,
+        dry_run=dry_run,
+        report_dir=report_dir,
+    )
 
 
 if __name__ == "__main__":

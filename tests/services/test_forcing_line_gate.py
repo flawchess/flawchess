@@ -31,6 +31,15 @@ from app.services.forcing_line_gate import (
     apply_forcing_line_filter,
     is_solver_node_forced,
 )
+from app.services.tactic_detector import (
+    FIRING_FLOOR_GEOMETRIC_CP,
+    FIRING_FLOOR_TIER3_CP,
+    TacticMotifInt,
+    _GEOMETRIC_REGISTRY,
+    _MOVE_TYPE_REGISTRY,
+    _TIER3_REGISTRY,
+    floor_cp_for_motif,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -72,6 +81,28 @@ class TestConstants:
     def test_still_winning_floor_cp(self) -> None:
         """STILL_WINNING_FLOOR_CP is 200 cp (D-09 still-winning floor)."""
         assert STILL_WINNING_FLOOR_CP == 200
+
+    def test_firing_floor_constants(self) -> None:
+        """FIRING_FLOOR_TIER3_CP is 200, FIRING_FLOOR_GEOMETRIC_CP is 0 (D-01, TAGFIX-01)."""
+        assert FIRING_FLOOR_TIER3_CP == 200
+        assert FIRING_FLOOR_GEOMETRIC_CP == 0
+
+    def test_floor_cp_for_motif_representative_ints(self) -> None:
+        """floor_cp_for_motif returns 0 / 200 / None for one representative int each (D-01)."""
+        assert floor_cp_for_motif(int(TacticMotifInt.FORK)) == 0  # geometric
+        assert floor_cp_for_motif(int(TacticMotifInt.SACRIFICE)) == 200  # tier-3
+        assert floor_cp_for_motif(int(TacticMotifInt.PROMOTION)) == 200  # move-type
+        assert floor_cp_for_motif(int(TacticMotifInt.MATE)) is None  # mate motif
+        assert floor_cp_for_motif(int(TacticMotifInt.HANGING_PIECE)) == 0  # appended by hand
+
+    def test_floor_cp_for_motif_covers_every_registry_motif(self) -> None:
+        """Every motif in the three registries has a floor -- a future addition can't arrive floor-less."""
+        for _, motif_int in (
+            list(_GEOMETRIC_REGISTRY) + list(_TIER3_REGISTRY) + list(_MOVE_TYPE_REGISTRY)
+        ):
+            assert floor_cp_for_motif(int(motif_int)) is not None, (
+                f"motif int {int(motif_int)} is registered but has no floor"
+            )
 
 
 # ---------------------------------------------------------------------------
@@ -766,6 +797,265 @@ class TestFloorScopedToConversionTail:
         assert (
             apply_forcing_line_filter(line, "white", pre_flaw_eval_cp=0, firing_depth=None) is False
         )
+
+
+# ---------------------------------------------------------------------------
+# TestWinningFloorAtFiring: Phase 221 TAGFIX-01 (D-01) -- per-tier floor at the
+# firing node, on top of the pre-existing gate criteria.
+# ---------------------------------------------------------------------------
+
+
+class TestWinningFloorAtFiring:
+    """The firing node must clear its motif's per-tier winning floor (D-01).
+
+    Every test builds a line that already passes every OTHER gate criterion
+    (only-move, truncation, one-mover discard) so a failure isolates the floor
+    check. motif_int selects the floor; None or a mate int exempts it entirely
+    (back-compat with every pre-existing call site).
+    """
+
+    # --- direct _solver_eval_at_firing / _passes_winning_floor coverage ---
+
+    def test_solver_eval_at_firing_reads_bm_before_b(self) -> None:
+        """bm wins over b when both are present (D-01)."""
+        from app.services.forcing_line_gate import _solver_eval_at_firing
+
+        node = PvNode(b=100, bm=3, s=None, sm=None, su="")
+        assert _solver_eval_at_firing([node], "white", firing_depth=0) == (3, None)
+
+    def test_solver_eval_at_firing_rounds_odd_depth_up(self) -> None:
+        """An odd firing_depth reads idx = firing_depth + 1, the solver node (D-01)."""
+        from app.services.forcing_line_gate import _solver_eval_at_firing
+
+        line: list[PvNode] = [
+            _cp_node(b=800, s=0),  # idx0 solver
+            _cp_node(b=-1000, s=-999),  # idx1 defender -- would fail if read directly
+            _cp_node(b=250, s=0),  # idx2 solver -- the node the rounding should land on
+        ]
+        assert _solver_eval_at_firing(line, "white", firing_depth=1) == (None, 250)
+
+    def test_solver_eval_at_firing_placeholder_node_unreadable(self) -> None:
+        """An all-None placeholder node (slim blob) returns (None, None) -- unreadable (D-03)."""
+        from app.services.forcing_line_gate import _solver_eval_at_firing
+
+        placeholder = PvNode(b=None, bm=None, s=None, sm=None, su="")
+        assert _solver_eval_at_firing([placeholder], "white", firing_depth=0) == (None, None)
+
+    def test_solver_eval_at_firing_out_of_range_unreadable(self) -> None:
+        """A firing_depth past the end of the line returns (None, None) -- unreadable."""
+        from app.services.forcing_line_gate import _solver_eval_at_firing
+
+        line: list[PvNode] = [_cp_node(b=800, s=0)]
+        assert _solver_eval_at_firing(line, "white", firing_depth=6) == (None, None)
+
+    def test_passes_winning_floor_unreadable_node_never_rejects(self) -> None:
+        """An unreadable firing node (out of range) never causes the floor to reject (D-03).
+
+        The out-of-range firing_depth IS rejected end-to-end by the pre-existing
+        firing-node-survives-truncation check in apply_forcing_line_filter, not
+        by the floor -- verified directly here on _passes_winning_floor alone.
+        """
+        from app.services.forcing_line_gate import _passes_winning_floor
+
+        line: list[PvNode] = [_cp_node(b=800, s=0)]
+        assert (
+            _passes_winning_floor(
+                line, "white", firing_depth=6, motif_int=int(TacticMotifInt.SACRIFICE)
+            )
+            is True
+        )
+
+    def test_firing_depth_past_end_rejected_by_truncation_check_not_floor(self) -> None:
+        """End-to-end: an out-of-range firing_depth is rejected by the pre-existing check."""
+        line: list[PvNode] = [_cp_node(b=800, s=0)]
+        assert (
+            apply_forcing_line_filter(
+                line,
+                "white",
+                pre_flaw_eval_cp=0,
+                firing_depth=6,
+                motif_int=int(TacticMotifInt.SACRIFICE),
+            )
+            is False
+        )
+
+    # --- tier-3 boundary: 200 credited, 199 rejected ---
+
+    def _tier3_boundary_line(self, firing_b: int) -> list[PvNode]:
+        return [
+            _cp_node(b=firing_b, s=firing_b - 700),  # S0 firing -- large gap, forced
+            _cp_node(b=0, s=-100),  # D0 defender
+            _cp_node(b=800, s=0),  # S1 conversion -- above floor, forced (not checked past firing)
+        ]
+
+    def test_tier3_at_floor_credited_white(self) -> None:
+        """A tier-3 motif whose firing node reads exactly 200cp (white solver) is credited."""
+        line = self._tier3_boundary_line(200)
+        assert (
+            apply_forcing_line_filter(
+                line,
+                "white",
+                pre_flaw_eval_cp=0,
+                firing_depth=0,
+                motif_int=int(TacticMotifInt.SACRIFICE),
+            )
+            is True
+        )
+
+    def test_tier3_below_floor_rejected_white(self) -> None:
+        """A tier-3 motif whose firing node reads 199cp (white solver) is rejected."""
+        line = self._tier3_boundary_line(199)
+        assert (
+            apply_forcing_line_filter(
+                line,
+                "white",
+                pre_flaw_eval_cp=0,
+                firing_depth=0,
+                motif_int=int(TacticMotifInt.SACRIFICE),
+            )
+            is False
+        )
+
+    def test_tier3_at_floor_credited_black(self) -> None:
+        """Mirrored for a black solver: white-perspective -200 -> solver_cp 200 -> credited."""
+        line = [
+            _cp_node(b=-200, s=500),  # S0: solver(black)_cp = 200; gap 700 for only-move
+            _cp_node(b=0, s=100),
+            _cp_node(b=-800, s=0),
+        ]
+        assert (
+            apply_forcing_line_filter(
+                line,
+                "black",
+                pre_flaw_eval_cp=0,
+                firing_depth=0,
+                motif_int=int(TacticMotifInt.SACRIFICE),
+            )
+            is True
+        )
+
+    def test_tier3_below_floor_rejected_black(self) -> None:
+        """Mirrored: white-perspective -199 -> solver(black)_cp 199 -> rejected."""
+        line = [
+            _cp_node(b=-199, s=501),
+            _cp_node(b=0, s=100),
+            _cp_node(b=-800, s=0),
+        ]
+        assert (
+            apply_forcing_line_filter(
+                line,
+                "black",
+                pre_flaw_eval_cp=0,
+                firing_depth=0,
+                motif_int=int(TacticMotifInt.SACRIFICE),
+            )
+            is False
+        )
+
+    # --- tier-1/2 boundary: 0 credited, -1 rejected ---
+
+    def test_geometric_at_floor_credited_white(self) -> None:
+        """A tier-1/2 motif whose firing node reads exactly 0cp (white solver) is credited."""
+        line = self._tier3_boundary_line(0)
+        assert (
+            apply_forcing_line_filter(
+                line,
+                "white",
+                pre_flaw_eval_cp=0,
+                firing_depth=0,
+                motif_int=int(TacticMotifInt.FORK),
+            )
+            is True
+        )
+
+    def test_geometric_below_floor_rejected_white(self) -> None:
+        """A tier-1/2 motif whose firing node reads -1cp (white solver) is rejected."""
+        line = self._tier3_boundary_line(-1)
+        assert (
+            apply_forcing_line_filter(
+                line,
+                "white",
+                pre_flaw_eval_cp=0,
+                firing_depth=0,
+                motif_int=int(TacticMotifInt.FORK),
+            )
+            is False
+        )
+
+    def test_geometric_at_floor_credited_black(self) -> None:
+        """Mirrored for a black solver: white-perspective 0 -> solver_cp 0 -> credited."""
+        line = [
+            _cp_node(b=0, s=700),
+            _cp_node(b=0, s=100),
+            _cp_node(b=-800, s=0),
+        ]
+        assert (
+            apply_forcing_line_filter(
+                line,
+                "black",
+                pre_flaw_eval_cp=0,
+                firing_depth=0,
+                motif_int=int(TacticMotifInt.FORK),
+            )
+            is True
+        )
+
+    def test_geometric_below_floor_rejected_black(self) -> None:
+        """Mirrored: white-perspective +1 -> solver(black)_cp -1 -> rejected."""
+        line = [
+            _cp_node(b=1, s=701),
+            _cp_node(b=0, s=100),
+            _cp_node(b=-800, s=0),
+        ]
+        assert (
+            apply_forcing_line_filter(
+                line,
+                "black",
+                pre_flaw_eval_cp=0,
+                firing_depth=0,
+                motif_int=int(TacticMotifInt.FORK),
+            )
+            is False
+        )
+
+    # --- exemptions ---
+
+    def test_solver_mate_at_firing_credited_below_floor(self) -> None:
+        """A solver mate at the firing node is credited for a tier-3 motif below the floor."""
+        line: list[PvNode] = [
+            PvNode(b=None, bm=3, s=None, sm=None, su=""),  # S0 firing -- mate-in-3, only-move
+            _cp_node(b=0, s=-100),  # D0
+            _cp_node(b=800, s=0),  # S1
+        ]
+        assert (
+            apply_forcing_line_filter(
+                line,
+                "white",
+                pre_flaw_eval_cp=0,
+                firing_depth=0,
+                motif_int=int(TacticMotifInt.SACRIFICE),
+            )
+            is True
+        )
+
+    def test_mate_motif_int_credited_below_any_floor(self) -> None:
+        """A mate motif int is exempt from the floor entirely, even at a very low cp reading."""
+        line = self._tier3_boundary_line(-500)
+        assert (
+            apply_forcing_line_filter(
+                line,
+                "white",
+                pre_flaw_eval_cp=0,
+                firing_depth=0,
+                motif_int=int(TacticMotifInt.MATE),
+            )
+            is True
+        )
+
+    def test_motif_int_none_credited_below_any_floor(self) -> None:
+        """motif_int=None (default, back-compat) skips the floor entirely."""
+        line = self._tier3_boundary_line(-500)
+        assert apply_forcing_line_filter(line, "white", pre_flaw_eval_cp=0, firing_depth=0) is True
 
 
 # ---------------------------------------------------------------------------

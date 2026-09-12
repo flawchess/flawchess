@@ -296,14 +296,25 @@ class TestUngatedArmBypassesGate:
         def _spy_gate(
             line: object,
             solver_color: str,
-            pre_flaw_eval_cp: int,
+            pre_flaw_eval_cp: int | None,
             firing_depth: int | None = None,
             margin: float = 0.35,
+            motif_int: int | None = None,
+            pre_flaw_eval_mate: int | None = None,
         ) -> bool:
             gate_calls.append(solver_color)
             from app.services.forcing_line_gate import apply_forcing_line_filter as _real
 
-            return _real(line, solver_color, pre_flaw_eval_cp, firing_depth, margin)  # ty: ignore[invalid-argument-type]  # spy wrapper accepts object/str for broad capture
+            # spy wrapper accepts object/str for broad capture
+            return _real(
+                line,  # ty: ignore[invalid-argument-type]
+                solver_color,  # ty: ignore[invalid-argument-type]
+                pre_flaw_eval_cp,
+                firing_depth,
+                margin,
+                motif_int,
+                pre_flaw_eval_mate,
+            )
 
         monkeypatch.setattr("app.services.flaws_service.apply_forcing_line_filter", _spy_gate)
 

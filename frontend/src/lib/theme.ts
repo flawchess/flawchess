@@ -228,8 +228,8 @@ export const TAC_INTERMEZZO = TAC_BLUE;
 export const TAC_INTERMEZZO_BG = TAC_BLUE_BG;
 export const TAC_INTERFERENCE = TAC_BLUE;
 export const TAC_INTERFERENCE_BG = TAC_BLUE_BG;
-export const TAC_CLEARANCE = TAC_BLUE;
-export const TAC_CLEARANCE_BG = TAC_BLUE_BG;
+// TAC_CLEARANCE / TAC_CLEARANCE_BG REMOVED (Phase 221 plan 06, D-07 suppression) —
+// "clearance" no longer has a family (see tacticComparisonMeta.ts).
 export const TAC_CAPTURING_DEFENDER = TAC_BLUE;
 export const TAC_CAPTURING_DEFENDER_BG = TAC_BLUE_BG;
 // Phase 133 (plan 133-02): attraction + sacrifice unsuppressed. Same single-blue convention.

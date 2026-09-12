@@ -1,17 +1,17 @@
 ---
 gsd_state_version: "1.0"
 milestone: v2.16
-current_phase: 220
-current_phase_name: Opening Eval Cache Repair & Two-Source Confirmation (SEED-164)
+current_phase: 221
+current_phase_name: Tactic-Tagger Real-Game Precision — Winning Floor, Predicate Tightening & Port Fixes (SEED-165)
 status: executing
-stopped_at: Completed 220-06-PLAN.md (prod repair run, 14 acceptance queries, legacy-cohort NO BUILD)
-last_updated: "2026-09-11T15:27:06.454Z"
-state_head: 175fcc0bf7705abb25aac820703778d644566530
+stopped_at: Completed 221-08-PLAN.md (gap closure)
+last_updated: "2026-09-12T22:34:16.694Z"
+state_head: b5eb5f44f8f650e14ea4184710a4e7cf6787028b
 progress:
-  total_phases: 2
+  total_phases: 3
   completed_phases: 1
-  total_plans: 11
-  completed_plans: 9
+  total_plans: 19
+  completed_plans: 18
 milestone_name: Audit Hardening & Dependency Currency
 last_activity: 2026-09-06
 last_activity_desc: Completed quick task 260906-i5e — FlawChess Engine card header shows a running node count (main at 1b5060661, unreleased)
@@ -21,10 +21,10 @@ last_activity_desc: Completed quick task 260906-i5e — FlawChess Engine card he
 
 ## Current Position
 
-Phase: 220 (Opening Eval Cache Repair & Two-Source Confirmation (SEED-164)) — EXECUTING
-Plan: 1 of 8
+Phase: 221 (Tactic-Tagger Real-Game Precision — Winning Floor, Predicate Tightening & Port Fixes (SEED-165)) — EXECUTING
+Plan: 7 of 7
 
-Status: Executing Phase 220
+Status: Ready to execute
 
 Open threads carried forward (not blockers):
 
@@ -724,6 +724,23 @@ v1.29 Live-Engine Analysis Page shipped 2026-06-29 — 5 phases (136–140), 14 
 - [Phase 220]: D-04 closed on both sides: rederive takes the same pg_advisory_xact_lock apply_full_eval uses; the blob-submit write path takes the same lock plus an in-lock re-read filtering both write payloads to surviving plies. — The advisory lock alone does not close the read-then-write race window (FLAWCHESS-8D StaleDataError); the in-lock re-read is the load-bearing half.
 - [Phase 220]: 220-04: legacy-sample gates on calibrate_finished_at/screen_floor directly, not the generic _STAGE_ORDER walk (which would incorrectly require report_finished_at now that report is tracked).
 - [Phase 220]: 220-04: report's delta histogram vs lichess-internal IQR control is labelled the phase's PRIMARY acceptance signal; the opening bounce rate is explicitly a coarse sanity check only.
+- [Phase 221]: Stratification rates PER_STRATUM_OVERSAMPLED=8/PER_STRATUM_CONTROL=2, landing at 164 rows — Keeps the four oversampled motifs' floors gate-able (>= REALGAME_MIN_ROWS_FOR_FLOOR=8) while staying inside the plan's 120-200 acceptance bar
+- [Phase 221]: REALGAME_MIN_ROWS_FOR_FLOOR=8 set to exactly match PER_STRATUM_OVERSAMPLED — Only the four target motifs (16 surviving rows each) clear the gating bar; every other motif (4 rows) is reported but not gated
+- [Phase 221]: Boden/double-bishop fix implemented from cook's oracle-verified asymmetric file formula, not the plan's hypothesized symmetric XOR — scripts/research/oracle_compare.py showed a much larger 684-row firing gap unrelated to file geometry; only 1 row was a genuine bucket mismatch, resolved by matching cook's true (asymmetric, iteration-order-dependent) formula. The larger gap is documented in 221-02-SUMMARY.md as an out-of-scope finding for a future phase.
+- [Phase 221]: Refactored run_backfill's pre-existing nesting-depth-5 breach into _process_page while adding the report counter plumbing (CLAUDE.md refactor-on-sight rule) — The breach pre-dated this plan; the task's own edits landed in the same function
+- [Phase 221]: Phase 221 Plan 04: tier-to-floor map derived from tactic_detector's own registries; gate widened with defaulted keywords for byte-identical back-compat — D-01 placement requirement + ~50 pre-existing gate call sites must keep compiling
+- [Phase 221]: Phase 221 Plan 04: forcing-line gate always runs on a non-empty blob now; mate-derived already-winning reject via _pre_flaw_eval_mate when cp is absent (TAGFIX-02/D-04) — mate-adjacent flaws were previously entirely ungated
+- [Phase 221]: Phase 221 Plan 04: missed pass now builds board_before with a one-move stack (opponent's previous move), unblocking detect_intermezzo k=2 and detect_hanging_piece recapture exclusion on the missed side (TAGFIX-06/D-09/D-10) — parity with the allowed pass, which always carried the flaw move
+- [Phase 221]: Sacrifice/clearance strengthened per D-05/D-06/D-07/D-08; CC0 precision holds
+
+at 1.000 on both, but the real-game gate now fails for BOTH motifs
+(sacrifice below its frozen floor, clearance below the min-rows bar) --
+REALGAME_REAL_SHARE_FLOOR deliberately left untouched per plan constraint;
+flagged as an open decision for plan 06 / a human, not auto-fixed.
+
+- [Phase 221]: D-07: clearance SUPPRESSED (real_share 0.667, surviving 3 rows, both below the keep bar); all eight touchpoints landed in one commit.
+- [Phase 221]: Sacrifice REALGAME_REAL_SHARE_FLOOR re-seeded 0.32->0.17 from the post-fix measurement (0.222) -- a legitimate downward re-seed, not a code patch, distinct from PRECISION_FLOOR's never-lower rule.
+- [Phase 221]: 221-08: Retired detect_sacrifice's D-05 persistence check after measuring that no board-derivable discriminator separates operator-confirmed real sacrifices (realgame_tags.csv rows 0064, 0133) from a confirmed-mislabelled row (0134) -- reverted to cook's unguarded predicate + D-06 depth cap; D-01's existing winning floor covers the case D-05 was partially redundant with. Real-game floor re-seeded 0.17 -> 0.33 from a measurement (0.385) that clears even the pre-fix baseline (0.375).
 
 ### Pending Todos
 
@@ -739,7 +756,15 @@ None active.
 - [Phase 214 review, 214-REVIEW.md] Two BLOCKER findings in the new `scripts/check_function_size.py` gate, neither flipping a verdict for the six in-scope files but both load-bearing for the tool going forward: CR-01 `_depth_of_try` undercounts depth by one when a block sits directly inside a `try` body/handler (false negative; reproduced: `try` + four nested `if`s passes `--fail-over-depth 4`), and CR-02 `logic_loc` counts multi-line signature continuation lines as body (overcounts 201/283 functions, conservative direction). Fix via `/gsd-code-review 214 --fix` before the squash-merge to `main`.
 - [Phase 214, resolved by Phase 216] The six out-of-scope depth breaches are fixed (216-06) and `check_function_size.py` now gates all of `app/` in CI and the pre-merge block with zero breaches; the 31 baselined ruff complexity findings outside the six files remain baselined, not fixed.
 - active. (v1.31 and v1.32 are both deployed to production.)
-- [Phase 194] CACHE-01's "a 400-node search evicts none of its own working set" remains inferred, not measured — `GRADE_CACHE_MAX = 1024` against a 352-386 distinct-FEN ceiling measured *before* the change. Accepted as an acknowledged gap at UAT (2026-07-30); risk is extra Stockfish grading work, not wrong results. Closeable cheaply by counting distinct FENs reaching `providers.grade` in a 400-node run through the existing `mctsSearch` test harness. Worth doing if Phase 196's cache-replay design ends up depending on residency.
+- [Phase 194] CACHE-01's "a 400-node search evicts of its own working set" remains inferred, not measured — `GRADE_CACHE_MAX = 1024` against a 352-386 distinct-FEN ceiling measured *before* the change. Accepted as an acknowledged gap at UAT (2026-07-30); risk is extra Stockfish grading work, not wrong results. Closeable cheaply by counting distinct FENs reaching `providers.grade` in a 400-node run through the existing `mctsSearch` test harness. Worth doing if Phase 196's cache-replay design ends up depending on residency.
+- `uv run pytest tests/scripts/tagger -q` fails (test_realgame_real_share_floor):
+
+sacrifice real_share 0.222 < frozen floor 0.32; clearance surviving=3 <
+REALGAME_MIN_ROWS_FOR_FLOOR=8. Both are measured, D-05/D-07-faithful
+consequences of plan 05; resolving requires touching REALGAME_REAL_SHARE_FLOOR,
+explicitly out of scope for plan 05. Needs plan 06 (clearance keep/suppress,
+already anticipated) plus a new decision for sacrifice (floor revision or
+D-05 re-review) before the phase can ship. See 221-05-SUMMARY.md "Known Issues".
 
 ### Quick Tasks Completed
 
@@ -885,9 +910,9 @@ Items acknowledged and deferred at **v1.29 milestone close on 2026-06-29** (user
 
 ## Session Continuity
 
-**Stopped at:** Completed 220-05-PLAN.md (Release 1 deployed to prod)
+**Stopped at:** Completed 221-08-PLAN.md (gap closure)
 
-**Last session:** 2026-09-10T10:34:53.908Z
+**Last session:** 2026-09-12T22:34:16.480Z
 
 **Resume file:** None
 
@@ -1060,6 +1085,13 @@ Items acknowledged and deferred at **v1.29 milestone close on 2026-06-29** (user
 | Phase 220 P03 | 170min | 4 tasks | 7 files |
 | Phase 220 P04 | 70min | 2 tasks | 2 files |
 | Phase 220 P05 | 5h40m | 3 tasks | 5 files |
+| Phase 221 P01 | 4h 10min | 3 tasks | 11 files |
+| Phase 221 P02 | ~2h 15min | 3 tasks | 3 files |
+| Phase 221 P03 | 20min | 3 tasks | 2 files |
+| Phase 221 P04 | 185min | 3 tasks | 7 files |
+| Phase 221 P05 | ~2h | 3 tasks | 4 files |
+| Phase 221 P06 | ~1h30min | 3 tasks | 12 files |
+| Phase 221 P08 | 55min | 3 tasks | 6 files |
 
 ## Performance Metrics
 

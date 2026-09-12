@@ -159,22 +159,23 @@ story, including a review of the published literature, is in `analysis/tilt_stud
 
 1. **In raw game history the streak effect looks enormous**: the game after 6+ straight losses scores
    43.4%, after 6+ straight wins 65.4% (a 22-point swing). Almost all of it is opponent selection (long
-   streaks happen against weaker opponents: rematch series, arenas, the thin top of the pool), streaks that
-   span more than one sitting, and account artefacts (rating drift, second accounts). Holding those fixed
-   leaves 47.2% vs 54.1%, and against the rating-based expectation (49.8% / 51.5%) the residual is
-   **−2.6 / +2.6 points** (§1).
-2. **Tilt is real, small and grows with the streak.** Residual after 1, 2, 3, 4, 5, 6+ losses: −0.3, −1.0,
-   −0.8, −0.7, −1.8, −2.6 points of score; after wins +0.3, +0.6, +1.2, +1.1, +1.8, +2.6. The probability of
+   streaks happen against weaker opponents: arenas, fresh accounts, the thin top of the pool; the pairing
+   system itself moves the rating only ≈30 points over six wins), streaks that span more than one sitting,
+   rematch series against the same opponent, and account artefacts (rating drift, second accounts). Holding
+   those fixed leaves 48.1% vs 53.2%, and against the rating-based expectation (50.2% / 51.1%) the residual
+   is **−2.1 / +2.1 points** (§1).
+2. **Tilt is real, small and grows with the streak.** Residual after 1, 2, 3, 4, 5, 6+ losses: −0.2, −0.8,
+   −0.6, −0.5, −1.6, −2.1 points of score; after wins +0.3, +0.6, +1.1, +1.0, +2.0, +2.1. The probability of
    losing the next game crosses 50% only after six straight losses (§2).
-3. **Slow games tilt harder; beginners tilt most.** After 3+ losses: bullet −0.9, blitz −0.8, rapid −1.9;
-   800-rated players −2.2, everyone from 1200 up −0.6 to −0.9. The hot hand is +1.3 to +1.7 everywhere (§3).
+3. **Slow games tilt harder; beginners tilt most.** After 3+ losses: bullet −0.6, blitz −0.4, rapid −1.8;
+   800-rated players −1.9, everyone from 1200 up between 0.0 and −0.9. The hot hand is +1.0 to +1.5 everywhere (§3).
 4. **A break does not reset the state; time does.** The hot-minus-cold gap after a 2+ streak is ≈2 points
    for any break under 30 minutes and ≈0 beyond, though the two sides fade differently: the hot hand is
    gone after a few minutes, the cold effect deepens for half an hour. A "stop after two losses" rule
-   would have saved 0.10 points per 100 games (§4).
+   would have saved 0.07 points per 100 games (§4).
 5. **Blown endgames do not tilt you; quick collapses and disconnects do.** Next-game residual after a loss
-   that entered the endgame at ≥ +2: +0.2 (two thirds are flags; blown by resignation −0.3 with a wide
-   interval); after a loss in ≤ 20 plies: −2.1; after an abandoned game: −3.5. Games thrown away before
+   that entered the endgame at ≥ +2: +0.3 (two thirds are flags; blown by resignation 0.0 with a wide
+   interval); after a loss in ≤ 20 plies: −2.0; after an abandoned game: −3.5. Games thrown away before
    the endgame are not separable from other short losses in this cut (§5).
 6. **Tilt is behavioural first.** After a loss players move 2–4% faster, quit sessions more often (bullet:
    21.7% vs 16.2%), rush the next game (rapid: 53% vs 43% within a minute), and lose the revenge rematch
@@ -217,9 +218,18 @@ story, including a review of the published literature, is in `analysis/tilt_stud
   residual +0.5 pp), plus the odd new account. The rating-deviation filter conditions on the outcome (a long
   streak moves the rating) but drops only 2–4% of games;
   {pop["games_scored_story_hygiene"]:,} games remain. Streak statistics also require the streak to lie
-  within one session and the next game to start within the hour: {pop["games_after_same_session_streak"]:,}
-  games (bullet {pop["after_streak_bullet"]:,}, blitz {pop["after_streak_blitz"]:,}, rapid
+  within one session, the next game to start within the hour, and a **fresh opponent** (see below):
+  {pop["games_after_same_session_streak"]:,} games (bullet {pop["after_streak_bullet"]:,}, blitz {pop["after_streak_blitz"]:,}, rapid
   {pop["after_streak_rapid"]:,}, classical {pop["after_streak_classical"]:,}).
+- **Fresh opponent** (every streak-conditioned number in §1–§5 and §7): the next opponent did not
+  appear in any game of the streak that just ended (checked over the last 12 games). A rematch series is
+  not an independent draw from the pool: the same opponent carries an opponent-specific mismatch the
+  rating-gap calibration cannot see, and their state is correlated with yours (they just lost to you k
+  times). Within a rematch the streak effect is about twice the fresh-opponent effect (−5.3 / +4.6 pp after
+  6+ vs −2.1 / +2.1), which is why the rematch is treated as a decision of its own in §6 rather than
+  folded into the streak curve. Rematches are 10–14% of the same-session streak frame, so the control
+  moves the 6+ cells by about half a point. The behaviour statistics in §6 (quit, rush, speed, blunders,
+  revenge) use all in-session games, rematches included.
 - **Intervals**: 95% bootstrap over users (a user's games are correlated), 1,000 resamples for the
   headline curve, 300 elsewhere. Differences between groups (break test gap) resample users jointly.
 - **Streak-selection bias** (Miller–Sanjurjo) does not apply: statistics are pooled over games, not
@@ -229,20 +239,27 @@ story, including a review of the published literature, is in `analysis/tilt_stud
 
 Next-game score (%) by the streak that just ended. Columns left to right add one control each:
 any opponent and any gap (raw history) → equal-footing next game → streak within one session and next
-game within the hour → account hygiene. "Expected" is the calibrated expectation for the controlled
-games; "tilt" is the residual with its 95% interval.
+game within the hour → fresh opponent (no rematch of anyone from the streak) → account hygiene.
+"Expected" is the calibrated expectation for the controlled games; "tilt" is the residual with its 95%
+interval.
 
-{table(lad, [("streak", "streak"), ("n_any", "games (raw)"), ("any_opponent", "raw history"), ("equal_footing", "+ equal footing"), ("same_session", "+ one session"), ("controlled", "+ hygiene (controlled)"), ("n_controlled", "games (controlled)"), ("expected", "expected"), ("tilt", "tilt [95% CI]")])}
+{table(lad, [("streak", "streak"), ("n_any", "games (raw)"), ("any_opponent", "raw history"), ("equal_footing", "+ equal footing"), ("same_session", "+ one session"), ("fresh_opponent", "+ fresh opponent"), ("controlled", "+ hygiene (controlled)"), ("n_controlled", "games (controlled)"), ("expected", "expected"), ("tilt", "tilt [95% CI]")])}
 
 Why the raw curve is steep (all games, by streak; the 6+ cells are pooled from the 7+ axis in
 `ladder_diagnostics.csv`): after 6+ wins the next opponent is on average 175 points weaker, after 6+
-losses 61 points stronger (the rating sits only 8–10 points above its long-run median at that point, so
-this is selection, not rating lag: streaks happen against weak opposition, in rematch series, in arenas
-and at the thin top of the pool); only 27–30% of 6+ streaks lie within one session (41% span more than a
-day); 17–19% of the games after a 6+ streak fall in the user's first 100 games (baseline 15%); 3.5–4.2%
+losses 61 points stronger. This is selection, not matchmaking: the user's rating sits only 8–10 points
+above its long-run median at that point and six wins move it by ≈30 points, while the opponents *during*
+the streak were on average even weaker than the next one (111 points for exactly six wins, 253 for 7+).
+Streaks are produced by lopsided pairings and the next opponent comes from the same context. The mean is
+a fat tail rather than a shift (median gap +28 after exactly six wins, +104 after 7+; 38% of post-7+ games
+are against an opponent more than 200 points weaker): split 6+ win streaks by whether the streak's own
+opponents averaged >100 points weaker and the half that did face a next opponent 365 points weaker, the
+other half +16, the population baseline. Dropping rematch series changes little here (+163 after 6+
+wins), so the drivers are arenas, fresh or under-rated accounts and the thin top of the pool. Only
+27–30% of 6+ streaks lie within one session (41% span more than a day); 17–19% of the games after a 6+ streak fall in the user's first 100 games (baseline 15%); 3.5–4.2%
 are played more than 150 points off the user's median rating (baseline 2%).
 
-{table(load("ladder_diagnostics"), [("x", "streak (−7 = 7+ losses)"), ("n", "games"), ("mean_rating_gap_next_game", "mean rating gap, next game"), ("share_equal_footing", "share equal footing"), ("share_streak_in_one_session", "share streak in one session"), ("share_in_first_100_games", "share in first 100 games"), ("rating_minus_long_run_median", "rating − long-run median")])}
+{table(load("ladder_diagnostics"), [("x", "streak (−7 = 7+ losses)"), ("n", "games"), ("mean_rating_gap_next_game", "mean rating gap, next game"), ("median_rating_gap_next_game", "median gap"), ("share_equal_footing", "share equal footing"), ("share_streak_in_one_session", "share streak in one session"), ("share_rematch_series", "share rematch series"), ("share_in_first_100_games", "share in first 100 games"), ("rating_minus_long_run_median", "rating − long-run median")])}
 
 ## 2. The controlled streak curve
 
@@ -287,7 +304,9 @@ size inside every tercile, so it is not a 20-game form window in disguise:
 
 **Player fixed effects.** Subtracting each user × time-control mean residual (over all their scored
 games) from the residual removes the part of the tail that comes from players who generally beat or
-trail their rating. The cold tail survives; the hot tail shrinks by about a third:
+trail their rating. Both tails shrink by about a third (−2.1 → −1.4, +2.1 → +1.5); on the cold side the
+demeaned 3+ cells' intervals then include zero, so the demeaned cold tail is a monotone trend rather than a
+set of individually significant cells:
 
 {table(fe, [("x", "streak"), ("n", "games"), ("resid", "residual"), ("resid_player_fe", "residual, player-demeaned"), ("lo", "lo"), ("hi", "hi"), ("mean_player_fe", "mean player effect")])}
 
@@ -336,7 +355,8 @@ first-game cells are negative and the in-session cells sit near zero.)
 
 ## 5. Which loss tilts you
 
-Next-game residual after a loss (previous game lost, next game within the hour, equal footing, hygiene),
+Next-game residual after a loss (previous game lost, next game within the hour against a fresh opponent,
+equal footing, hygiene),
 by how the loss ended, how long it lasted, and the Stockfish evaluation when it entered the endgame
 (Lichess phase rule; ≥ +2.0 for the player = "blown"; no endgame = the game ended in the opening or
 middlegame). "all" pools the four time controls.
@@ -388,8 +408,9 @@ after this one ends):
 
 {table(quit_, [("tc", "time control"), ("quit_after_loss", "P(session ends) after a loss %"), ("quit_after_win", "P(session ends) after a win %"), ("next_within_60s_after_loss", "next game < 60 s after a loss %"), ("next_within_60s_after_win", "next game < 60 s after a win %"), ("median_gap_after_loss_s", "median gap after a loss (s)"), ("median_gap_after_win_s", "after a win (s)"), ("sessions_ending_on_loss_pct", "sessions ending on a loss %"), ("base_loss_rate_pct", "base loss rate %")])}
 
-**Revenge rematch**: next game, within the hour, against the same opponent. Residual for the rematch
-vs a fresh opponent, after a loss and after a win (equal footing, hygiene). The rematch-minus-fresh
+**Revenge rematch**: next game, within the hour, against the same opponent. The streak curve in §1–§5
+requires a fresh opponent, so this is where the rematch comes back in. Residual for the rematch vs a
+fresh opponent, after a loss and after a win (equal footing, hygiene). The rematch-minus-fresh
 difference is the cost of the decision (−1.2 pooled, −1.4 for the first rematch of a pairing). Opponent
 selection (the player who just beat you is, on that evidence, a little better than their rating) predicts
 a symmetric bonus after wins, and the first post-win rematch shows one (+0.5 over a fresh opponent),
@@ -473,8 +494,9 @@ correlation are taken over the same streams (both halves qualifying).
 | Spearman–Brown reliability of a full ~300-game Δ | {trait["spearman_brown_reliability"]:.2f} |
 | implied true SD of the trait (pp) | {trait["implied_true_sd_pp"]:.1f} |
 
-Tilt-proneness is a real but weak trait: a player one SD above the mean loses ≈ 3.3 pp more after losses
-than after wins. A single player's own Δ from ~300 games is ≈ 80% noise, so a per-user "tilt score" would
+Tilt-proneness is a real but weak trait: a player one SD above the mean loses ≈ {trait["implied_true_sd_pp"]:.1f} pp
+more after losses than after wins. A single player's own Δ from ~300 games is
+≈ {100 - 100 * trait["spearman_brown_reliability"]:.0f}% noise, so a per-user "tilt score" would
 mislead most users; the story reports population averages.
 
 ## 8. Relation to published work
@@ -487,15 +509,20 @@ Summarised from the literature review in `analysis/tilt_study/FINDINGS.md` §8.
   (−0.3 / +0.3) is below their detection floor; our 3+ and 6+ effects sit inside their credible range.
 - **Rosenthal (2025)**, Harvard Data Science Review 7(2), 293k chess.com games of seven top players:
   autocorrelation of excess score ≈ 0 at every lag, raw-score autocorrelation ≈ 0.1 attributed to rating
-  updates. Our 2000–2400 cells (tilt ≈ −0.7, CI including zero) agree, and his raw-vs-excess gap is our §1
+  updates. Our 2000–2400 cells (tilt 0.0 and −0.9, CIs including zero) agree, and his raw-vs-excess gap is our §1
   ladder.
 - **Chowdhary, Iacopini & Battiston (2023)**, Sci. Rep. 13:2113, 123M Lichess blitz games: real streaks
   are longer than shuffled ones, cold streaks longer than hot, beginners streakier than experts. Same
   direction as ours; a shuffle test cannot separate state from rating drift, which is why their effect
   looks larger.
-- **Popular analyses** (e.g. chessanalysis.co, 39% after five losses vs 58% after five wins at
-  1200–1400) do not control for opponent rating, session or account state; §1 reproduces a swing of that
-  size on our raw data and shows where it goes.
+- **Popular analyses** do not control for opponent rating, session or account state; §1 reproduces a
+  swing of that size on our raw data and shows where it goes. Two examples:
+  [chessanalysis.co (2026)](https://chessanalysis.co/research/chess-improvement-rating-trajectories),
+  ~840k Lichess games from ~80k players: 39.1% next-game win rate after five losses vs 58.1% after five
+  wins at 1200–1400; [Devine, "Tilt and Hype in Online Chess"](http://seandevine.org/blog/chessBlog.html),
+  ~1M Lichess games from 2014, mixed-effects logit with a player intercept but no opponent-rating term:
+  the previous result shifts the log-odds of winning by 0.25, with results up to seven games back still
+  predictive. Neither excludes rematches against the same opponent.
 - Break length, loss anatomy, revenge rematches and quit-on-loss have no quantitative chess precedent
   that we found. The closest analogue is Jack J (2020) on League of Legends, where re-queuing immediately
   after two losses is worst for mid-rank players and best for top-rank players: the same inversion as our
@@ -511,8 +538,9 @@ Summarised from the literature review in `analysis/tilt_study/FINDINGS.md` §8.
 - The expectation is calibrated on the pooled population; user-level rating lag remains, and it can cut
   either way (a constant-strength player is under-rated after losses, which hides tilt; an improving player
   is under-rated after wins, which inflates the hot hand). The trailing-form and player-fixed-effect checks
-  (§2c) bound it: the cold tail survives both, the hot tail shrinks by about a third.
-- The 30-minute fade in §4 rests on the 30–60 min cells (gap +0.1, CI −1.3 to +1.5); the true transition
+  (§2c) bound it: the streak effect has the same size in every form tercile, and player demeaning shrinks
+  both tails by about a third.
+- The 30-minute fade in §4 rests on the 30–60 min cells (gap +0.2, CI −1.3 to +1.4); the true transition
   could sit anywhere between ten minutes and a few hours.
 - Time of day is UTC only (no user time zone) and not analysed.
 - The benchmark cohort is regular players (~300 games per time control over three years), not a uniform
