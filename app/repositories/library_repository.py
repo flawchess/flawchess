@@ -166,7 +166,8 @@ FAMILY_TO_MOTIF_INTS: dict[str, list[int]] = {
     # TACTIC_CONFIDENCE_HIGH (100) so they pass the _TACTIC_CHIP_CONFIDENCE_MIN lever.
     # Surfaced here so they are filterable + counted in the comparison grid, mirroring the
     # frontend "advanced" TACTIC_GROUPS section. Phase 133 added attraction (10) and
-    # sacrifice (17) as families; only self-interference (14) remains unmapped.
+    # sacrifice (17) as families. self-interference (14) and clearance (15,
+    # suppressed plan 06 D-07) remain unmapped.
     "deflection": [
         int(TacticMotifInt.DEFLECTION),
     ],
@@ -176,14 +177,19 @@ FAMILY_TO_MOTIF_INTS: dict[str, list[int]] = {
     "interference": [
         int(TacticMotifInt.INTERFERENCE),
     ],
-    "clearance": [
-        int(TacticMotifInt.CLEARANCE),
-    ],
+    # Phase 221 plan 06 (2026-09-12, D-07): "clearance" family REMOVED — the
+    # real-game keep/suppress bar measured real_share=0.667 with only 3 of 16
+    # surviving rows (below REALGAME_MIN_ROWS_FOR_FLOOR=8 and the 0.80 keep
+    # bar). See tests/scripts/tagger/precision_floors.py's SUPPRESSED_MOTIFS
+    # entry for the full record. int 15 (TacticMotifInt.CLEARANCE) remains
+    # encodable/decodable/storable for existing persisted rows; it simply maps
+    # to no family now, same as self-interference (14).
     "capturing_defender": [
         int(TacticMotifInt.CAPTURING_DEFENDER),
     ],
     # Phase 133 (plan 133-02): attraction and sacrifice unsuppressed and given families.
     # self-interference (14) remains unmapped (no lichess theme equivalent, 0 TP).
+    # clearance (15) also unmapped as of plan 06 (D-07 suppression, see above).
     "attraction": [
         int(TacticMotifInt.ATTRACTION),
     ],
@@ -195,7 +201,8 @@ FAMILY_TO_MOTIF_INTS: dict[str, list[int]] = {
     # the expanded fixture. Surfaced behind the "Advanced" filter group. promotion (28)
     # surfaced when D-09 was reversed (perfect-precision, sibling of under-promotion;
     # the "allowed" orientation = "you let the opponent queen" is an instructive endgame
-    # mistake). self-interference (14) remains the only unmapped tier-3 int.
+    # mistake). self-interference (14) and clearance (15, suppressed plan 06
+    # D-07) are the two unmapped tier-3 ints.
     "en_passant": [
         int(TacticMotifInt.EN_PASSANT),
     ],

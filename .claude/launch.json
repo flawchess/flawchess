@@ -1,0 +1,23 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "flawchess",
+      "runtimeExecutable": "bin/run_local.sh",
+      "runtimeArgs": [],
+      "port": 5173
+    },
+    {
+      "name": "stories",
+      "runtimeExecutable": "python3",
+      "runtimeArgs": [
+        "-m",
+        "http.server",
+        "8765",
+        "--directory",
+        "stories"
+      ],
+      "port": 8765
+    }
+  ]
+}

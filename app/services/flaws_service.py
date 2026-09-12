@@ -31,6 +31,7 @@ from app.services.forcing_line_gate import (
     ONLY_MOVE_WIN_PROB_MARGIN,
     PvNode,
     apply_forcing_line_filter,
+    passes_winning_floor_fallback,
 )
 from app.services.normalization import parse_base_and_increment
 from app.services.openings_service import derive_user_result
@@ -420,6 +421,63 @@ def _same_dest_as_best_line(board_before: chess.Board, flaw_san: str, pv: str) -
         return False  # malformed SAN or UCI → fall through to normal detection
 
 
+def _build_missed_board_with_stack(
+    n: int,
+    fen_map: dict[int, str],
+    positions: list[GamePosition],
+) -> chess.Board | None:
+    """Build the missed-orientation board WITH a one-move stack (D-09, TAGFIX-06).
+
+    The missed pass has always evaluated the mover's decision position from a
+    bare `chess.Board(fen_map[n])` — position-correct but with an EMPTY move
+    stack. Two cook-ported predicates read `board.move_stack` (or
+    `boards[0].move_stack` after the detector's own PV replay):
+    `detect_intermezzo`'s k=2 branch and `detect_hanging_piece`'s recapture
+    exclusion. On a stackless board both silently behave as if there were no
+    prior move at all — dev showed 64 allowed intermezzo tags against only 2
+    missed (32x; prod 188 against 6), because the allowed pass DOES carry a
+    stack (it pushes the flaw move) and the missed pass never did.
+
+    This builds an EQUIVALENT position with a real one-move stack instead:
+    `fen_map[k]` is the board AFTER k half-moves (_recompute_fen_map), so
+    `fen_map[n-1]` plus the move played FROM ply n-1 (`positions[n-1].move_san`
+    — the opponent's immediately-preceding move) is byte-identical in POSITION
+    to `chess.Board(fen_map[n])`, but the push leaves `board.move_stack` with
+    length 1 and `board.peek()` equal to that opponent move — exactly what
+    `tests/scripts/tagger/conftest.py::build_detector_board` already
+    reproduces for the fixture harness (the allowed pass's parity reference).
+
+    Returns None (never raises) when: n < 1 (a missed flaw at ply 0 has no
+    prior move to carry); `fen_map` lacks the n-1 entry; `positions` lacks the
+    n-1 entry; or `positions[n-1].move_san` is absent or fails to parse/push
+    on the n-1 board (malformed data). The caller falls back to the existing
+    stackless build in every one of these cases — this function degrades, it
+    never breaks the missed pass.
+    """
+    if n < 1:
+        return None
+    prev_fen = fen_map.get(n - 1, "")
+    if not prev_fen:
+        return None
+    if not (1 <= n < len(positions)):
+        return None
+    prev_san = positions[n - 1].move_san
+    if not prev_san:
+        return None
+    try:
+        board = chess.Board(prev_fen)
+        board.push(board.parse_san(prev_san))
+    except ValueError, chess.IllegalMoveError:
+        return None  # malformed previous SAN or FEN → caller falls back to stackless
+    # Same defense-in-depth turn assertion the stackless build applies (see the
+    # comment at its call site): re-asserted here after the push in case the
+    # push itself somehow left turn inconsistent with ply parity (it should
+    # never — chess.Board.push always flips turn — but this mirrors the
+    # existing guard's posture rather than silently trusting a new code path).
+    board.turn = chess.WHITE if n % 2 == 0 else chess.BLACK
+    return board
+
+
 def _detect_tactic_for_flaw(
     n: int,
     fen_map: dict[int, str],
@@ -503,7 +561,16 @@ def _detect_tactic_for_flaw(
             _pov_mate(_pos_missed, _solver_color_for(n, "missed")) if _pos_missed else None
         )
         has_forced_mate_missed = _pov_mate_missed is not None and _pov_mate_missed > 0
-        return detect_tactic_motif(board_before, pv, has_forced_mate=has_forced_mate_missed)
+        # D-09 (TAGFIX-06): detect against a board carrying the opponent's previous
+        # move on the stack — parity with the allowed pass, which always carries the
+        # flaw move. Falls back to the stackless board_before (identical position,
+        # empty stack) on any degradation (ply 0, partial fen_map, malformed SAN) so
+        # this never changes behavior for those cases. The dest-square gate above
+        # deliberately keeps reading board_before, NOT this board — pushing the
+        # previous move doesn't change the position, but re-binding that gate risks a
+        # subtle SAN-disambiguation difference (RESEARCH Implementation Map 6).
+        detection_board = _build_missed_board_with_stack(n, fen_map, positions) or board_before
+        return detect_tactic_motif(detection_board, pv, has_forced_mate=has_forced_mate_missed)
 
     # orientation == "allowed" (default):
     # Allowed pass: board_after_flaw + refutation PV (flaw_ply+1); pov = refuting side.
@@ -557,6 +624,46 @@ def _solver_color_for(
     return "white" if n % 2 == 0 else "black"
 
 
+def _pre_flaw_eval_mate(n: int, positions: list[GamePosition]) -> int | None:
+    """White-perspective mate-in-N eval BEFORE the flaw move, or None (D-04, TAGFIX-02).
+
+    Same index as _build_flaw_record's pre_flaw_eval_cp (positions[n - 1]) --
+    see that function's "eval-AFTER landmine" note. Raw white-perspective
+    value; the gate (via apply_forcing_line_filter -> _is_already_winning)
+    converts it to solver perspective.
+    """
+    if 1 <= n < len(positions):
+        return positions[n - 1].eval_mate
+    return None
+
+
+def _firing_floor_fallback_eval(
+    n: int,
+    orientation: Literal["allowed", "missed"],
+    positions: list[GamePosition],
+) -> tuple[int | None, int | None]:
+    """Return (eval_cp, eval_mate) white-perspective raw for the D-03 blob-missing fallback.
+
+    Which position each orientation reads is the whole content of this function
+    (Pitfall 1 / T-221-16: an off-by-one here is the exact bug class Phase 143
+    already fixed once for pre_flaw_eval_cp) — keeping the orientation switch
+    INSIDE one function is what prevents the two indices drifting apart:
+      allowed: positions[n]   -- the eval AFTER the flaw move (refuter to move).
+      missed:  positions[n-1] -- the eval after move n-1, i.e. the board BEFORE
+               the flaw move (mover to move).
+    Both indices are bounds-guarded; an out-of-range index returns (None, None)
+    rather than raising (D-03: nothing is suppressed merely for lacking data).
+
+    Warning sign: if the allowed fallback rejects nothing while the missed
+    fallback rejects everything (or the reverse), this index is off by one --
+    check here first.
+    """
+    idx = n if orientation == "allowed" else n - 1
+    if 0 <= idx < len(positions):
+        return positions[idx].eval_cp, positions[idx].eval_mate
+    return None, None
+
+
 def _classify_tactic_gated(
     n: int,
     fen_map: dict[int, str],
@@ -571,23 +678,34 @@ def _classify_tactic_gated(
     """Run tactic detection then apply the forcing-line gate (D-02, SC4 single classify path).
 
     Calls _detect_tactic_for_flaw, then — only when a motif was detected AND
-    pv_blob is a non-empty list AND pre_flaw_eval_cp is not None — applies
-    apply_forcing_line_filter at the given margin. If the line is non-forcing,
-    returns (None, None, None, None) to suppress the motif.
+    pv_blob is a non-empty list — applies apply_forcing_line_filter at the
+    given margin. If the line is non-forcing, returns (None, None, None, None)
+    to suppress the motif.
 
-    When pv_blob is None (pre-Phase-142 rows with no stored blob), the gate is
-    skipped and the raw detect result is returned unchanged (backward compat).
-    The gate is likewise skipped when pre_flaw_eval_cp is None — mate-adjacent
-    flaw plies carry eval_mate (not eval_cp), and the forcing-line gate's
-    already-winning / still-winning thresholds are cp-based, so it has nothing to
-    compare against; the raw detect result stands (RESEARCH A1, accepted).
+    TAGFIX-02 (D-04): the gate ALWAYS runs on a non-empty blob now -- it is no
+    longer skipped merely because pre_flaw_eval_cp is None. The already-winning
+    reject is derived from _pre_flaw_eval_mate when cp is absent: a forced mate
+    for the solver before the flaw is already winning and rejects a non-mate
+    motif (mate-motif tags stay exempt via the gate's existing forced-mate
+    carve-out). The rest of the gate (only-move, the per-tier winning floor,
+    strips, one-mover discard) runs on the blob exactly as for cp-scored flaws.
+
+    When pv_blob is None (pre-Phase-142 rows with no stored blob, or a flaw
+    whose continuation blob has not yet been computed), the gate itself is
+    still skipped -- but TAGFIX-01 / D-03 now applies the motif's per-tier
+    winning floor directly from game_positions (_firing_floor_fallback_eval +
+    forcing_line_gate.passes_winning_floor_fallback): no tag is skipped or
+    suppressed merely for lacking a blob, but a blobless tag still faces the
+    same "solver must be winning at the firing node" bar as a blob-backed one.
 
     D-06 sentinel: an empty list [] means the blob could not be assembled for this
-    flaw (e.g. single-legal-move position, analysis gap). The gate is SKIPPED for
-    [] — same outcome as pv_blob is None (no suppression, raw kernel result returned).
-    Gate condition is `pv_blob is not None and len(pv_blob) > 0`, superseding the
-    Phase-143 Pitfall-2 wording that treated [] as a gate-eligible blob requiring
-    the one-mover discard. apply_forcing_line_filter itself still rejects [] when
+    flaw (e.g. single-legal-move position, analysis gap). BOTH the gate and the
+    D-03 fallback floor are SKIPPED for [] — same outcome as before (no
+    suppression, raw kernel result returned). Gate condition is
+    `pv_blob is not None and len(pv_blob) > 0`; the fallback condition is
+    `pv_blob is None` exactly (never for []) — superseding the Phase-143
+    Pitfall-2 wording that treated [] as a gate-eligible blob requiring the
+    one-mover discard. apply_forcing_line_filter itself still rejects [] when
     called directly; the skip here is intentional and upstream of that call.
 
     blobs_pending (Phase 147, D-01/D-03): an independent, explicitly-passed signal
@@ -597,22 +715,38 @@ def _classify_tactic_gated(
     the motif cannot yet be gate-checked, so it is suppressed to NULL rather than
     persisted raw/ungated. This self-heals when the tier-4 D-07 gated retag lands
     with the real blob. Mate-adjacent (pre_flaw_eval_cp is None) and the D-06 []
-    sentinel are FINAL cases and are NEVER suppressed by this branch.
+    sentinel are FINAL cases and are NEVER suppressed by this branch. T-221-20:
+    this pre_flaw_eval_cp is not None conjunct is DELIBERATELY independent of the
+    conjunct TAGFIX-02 removed from the gate-run condition above — it is the
+    "mate-adjacent is a FINAL case, never suppressed by blobs_pending" carve-out,
+    not the same condition. Do not consolidate the two.
     """
     motif, piece, conf, depth = _detect_tactic_for_flaw(
         n, fen_map, positions, pv_by_ply, orientation
     )
-    if (
-        motif is not None
-        and pv_blob is not None
-        and len(pv_blob) > 0
-        and pre_flaw_eval_cp is not None
-    ):
+    if motif is not None and pv_blob is not None and len(pv_blob) > 0:
         solver_color = _solver_color_for(n, orientation)
         # Bug B: pass the detected firing depth so only the solver nodes up to the
         # tactic's firing point need be forced (the conversion tail is exempt).
         if not apply_forcing_line_filter(
-            pv_blob, solver_color, pre_flaw_eval_cp, firing_depth=depth, margin=margin
+            pv_blob,
+            solver_color,
+            pre_flaw_eval_cp,
+            firing_depth=depth,
+            margin=margin,
+            motif_int=motif,
+            pre_flaw_eval_mate=_pre_flaw_eval_mate(n, positions),
+        ):
+            return None, None, None, None
+    elif motif is not None and pv_blob is None:
+        # TAGFIX-01 / D-03: no blob -> apply the tier floor to the game_positions
+        # fallback eval instead of skipping the tag entirely. [] is NOT this
+        # branch (len(pv_blob) > 0 is False for [] too, but pv_blob is None is
+        # also False for [] -- [] keeps its skip-everything semantics).
+        solver_color = _solver_color_for(n, orientation)
+        fallback_cp, fallback_mate = _firing_floor_fallback_eval(n, orientation, positions)
+        if not passes_winning_floor_fallback(
+            fallback_cp, fallback_mate, solver_color, motif_int=motif
         ):
             return None, None, None, None
     if blobs_pending and motif is not None and pv_blob is None and pre_flaw_eval_cp is not None:

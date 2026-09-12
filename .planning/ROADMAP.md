@@ -185,6 +185,7 @@
 | 218. Backend onnxruntime Parity Spike → Python 3.14 Chain (SEED-162, v2.16) | 3/3 | Complete    | 2026-09-05 |
 | 219. Maia Chart Latency — ORT 1.27 Re-pin, Cross-Origin Isolation & Progressive Ladder Paint (standalone) | 3/3 | Complete    | 2026-09-06 |
 | 220. Opening Eval Cache Repair & Two-Source Confirmation (SEED-164, standalone) | 8/8 | Complete    | 2026-09-11 |
+| 221. Tactic-Tagger Real-Game Precision — Winning Floor, Predicate Tightening & Port Fixes (SEED-165, standalone) | 0/0 | Not started | — |
 
 ## Active Phases
 
@@ -475,6 +476,135 @@ Plans:
 - Never write an eval for a board whose replayed hash was not asserted equal to the cache key.
 
 **Seed:** `.planning/seeds/SEED-164-opening-eval-cache-poisoned-legacy-evals.md`
+
+### Phase 221: Tactic-Tagger Real-Game Precision — Winning Floor, Predicate Tightening & Port Fixes (SEED-165)
+
+**Goal**: Make the tactic-motif tags describe tactics the user could actually have used or
+avoided. The 2026-09-12 review (`reports/tactic-tagger/tactic-tagger-review-2026-09-12.md`,
+SEED-165) established that the detector is a near-exact cook.py clone on puzzle lines
+(oracle run over all 26,649 fixture rows), and that the remaining errors come from the
+lines it runs on: the forcing gate never checks that the tagging side is winning where
+the tactic fires, and it is skipped outright whenever the pre-flaw position carries
+`eval_mate`. Result in prod (3% sample of 777k allowed tags): 78% of `sacrifice` (~60k
+rows), 47% of `clearance`, 23% of `intermezzo` and 11% of all allowed tags fire in lines
+where the tagging side is losing, often getting mated ("you allowed a sacrifice" = the
+opponent's best defence sheds material while lost). On top of that, cook's `sacrifice`
+("down ≥2 at any pov move ≥2", no recovery test, no depth limit; 32% of cook's own
+sacrifice puzzles are delayed recaptures) and `clearance` (9 of 12 hand-reviewed dev
+tags were king retreats / pawn pushes / piece shuffles) are too weak for 12-ply engine
+continuations. Seven fixture-verified port divergences cost recall for no precision
+(deflection −297, fork −130, trapped-piece −107) or add false positives (discovered-attack
++16), a dead `self-interference` motif can still win dispatch and persist an invisible
+tag, discovered-attack stores depth k−1 on 100% of rows, and the missed orientation runs
+without a move stack so intermezzo cannot fire at k=2 (prod 188 allowed vs 6 missed).
+Deliver (a) the gate fixes and a solver-winning floor at the firing node; (b) a
+sacrifice predicate with persistence and a depth cap, and a clearance decision
+(strengthen or suppress) backed by a real-game hand check; (c) the port fixes;
+(d) missed-orientation parity; (e) a small hand-labelled real-game gate scored beside
+the fixture gate so this failure class is measurable from now on; (f) an offline prod
+retag through the existing `scripts/retag_flaws.py` with a before/after report. No
+engine pass, no migration, no schema change. Full evidence, tables and simulations:
+the review report; distilled in `.planning/seeds/SEED-165-tactic-tagger-real-game-precision.md`.
+
+**Requirements:** TAGFIX-01, TAGFIX-02, TAGFIX-03, TAGFIX-04, TAGFIX-05, TAGFIX-06, TAGFIX-07, TAGFIX-08, TAGFIX-09
+
+Requirement definitions (phase-local IDs; no open milestone REQUIREMENTS.md):
+
+- TAGFIX-01 — Solver-winning floor at the firing node. `apply_forcing_line_filter` reads
+  the solver-perspective eval of the blob node at the firing depth (odd depths rounded up
+  to the solver node; `bm` before `b`) and rejects the motif unless it is a mate for the
+  solver or cp ≥ a per-tier floor constant (proposed: `STILL_WINNING_FLOOR_CP` = +200 for
+  tier-3 and move-type motifs, 0 for tier-1/2 geometric motifs; final values are a
+  discuss-phase decision). Mates stay exempt. When the blob is missing the same check runs
+  on `game_positions` evals (allowed: eval after the flaw; missed: eval before the flaw,
+  mover's perspective). Named constants, unit tests per branch.
+- TAGFIX-02 — The gate is never skipped because `pre_flaw_eval_cp` is None. The
+  already-winning reject is derived from `eval_mate` when cp is absent (mate for the
+  solver before the flaw ⇒ already winning ⇒ reject unless the tag is a mate), and the
+  rest of the gate runs on the blob as usual. The `blobs_pending` and `[]` sentinel
+  behaviours are unchanged.
+- TAGFIX-03 — `detect_sacrifice` requires the deficit to persist (still ≥ `MIN_SACRIFICE_DROP`
+  after the next pov move, or the line ends) and fires only at depth ≤ a named cap
+  (proposed 4). Documented as a deliberate divergence from cook in `precision_floors.py`;
+  the fixture floor is re-measured (precision must not drop; recall will, and the report
+  says why).
+- TAGFIX-04 — Clearance decision. Strengthen (`detect_clearance` additionally requires the
+  vacating move not to be a king or pawn move, the ray piece's move to give check or
+  attack a higher-value or hanging piece, and depth ≤ the same cap) and re-measure on the
+  fixture and on the TAGFIX-07 real-game set; if real-game precision stays below 0.8,
+  suppress the motif instead (remove from the shipped families, keep the int). Either
+  outcome is recorded with numbers.
+- TAGFIX-05 — Port fixes, each fixture-verified against the oracle comparison: deflection
+  promotion OR-branch; remove fork's D-01 relevance gate; revert trapped-piece's
+  empty-escape exclusion; discovered-attack returns (not continues) on a recapture;
+  discovered-attack depth = k (with the WR-02 fixture re-tuned); boden/double-bishop file
+  edge; `self-interference` removed from `_TIER3_REGISTRY` (int 14 kept for existing rows,
+  retag clears them). Floors in `precision_floors.py` still pass; measured values updated.
+- TAGFIX-06 — Missed-orientation parity: `_detect_tactic_for_flaw("missed")` builds
+  `board_before` from `fen_map[n-1]` + the opponent's previous move so the move stack
+  carries it exactly like the allowed pass; intermezzo k=2 fires on missed lines; an
+  explicit decision (discuss phase) on whether cook's hanging-piece recapture exclusion
+  applies to missed tags, applied consistently either way and unit-tested.
+- TAGFIX-07 — Real-game gate: `fixtures/tagger/realgame_tags.csv` with ~150 prod tags
+  stratified by motif × orientation (game_id, ply, orientation, fen, pv, blob eval at
+  firing, motif, depth, label ∈ {real, incidental, wrong}), labelled during the phase (the
+  operator spot-checks); `scripts/tactic_tagger_report.py` scores it (per-motif real-share
+  before/after the phase) and prints a "solver eval at firing" column from the dev DB
+  blobs; `tests/scripts/tagger/test_detector_precision.py` asserts a per-motif real-share
+  floor on it (set from the post-fix measurement, D-09 style).
+- TAGFIX-08 — Harness hygiene: `precision_floors.py` documents that `discoveredCheck`
+  labels are not cook output and how `discovered-check` is scored; the oracle-comparison
+  and dev-probe scripts live under `scripts/research/` (analysis-only, import the local
+  lichess-puzzler clone by path, skip cleanly when absent, copy no source).
+- TAGFIX-09 — Prod retag and acceptance: after deploy, `scripts/retag_flaws.py` re-derives
+  every tag offline (no engine) and writes a per-motif removed/survived/shifted report
+  under `reports/retag/`; the §2.1 prod sample query then shows losing-line share < 5% for
+  every motif and < 2% overall, allowed sacrifice count down by the predicted order of
+  magnitude, missed intermezzo within 3× of allowed, zero rows with motif 14;
+  `CHANGELOG.md` `[Unreleased]` carries a user-facing bullet.
+
+**Success criteria**:
+
+1. Fixture gate green with updated floors; the oracle comparison shows 0 "cook only" rows
+   for deflection, fork, trapped-piece and 0 "ours only" for discovered-attack; sacrifice
+   and clearance divergences are the documented deliberate ones.
+2. Real-game gate (TAGFIX-07) scored before and after: sacrifice and clearance real-share
+   ≥ 0.8 (or clearance suppressed), no other motif drops.
+3. Dev retag delta matches the review's simulation within reason (sacrifice ≈ −90%,
+   clearance ≈ −40% or suppressed, tier-2 motifs ≤ −5%), spot-checked survivors read as
+   real tactics.
+4. Prod retag done, TAGFIX-09 acceptance queries pasted into the summary.
+5. No `bin/reset_db.sh`, no migration, no MultiPV re-evaluation, no change to
+   `PV_CAP_PLIES`, `ONLY_MOVE_CP_GAP_THRESHOLD` or the D-05 depth-primary dispatch.
+
+**Out of scope**: new motifs, ML, multi-label storage, changing `PV_CAP_PLIES`, re-running
+the MultiPV engine pass, frontend changes beyond copy, re-scoring `discovered-check`
+against a different label source (documented only).
+
+**Depends on:** none (standalone; builds on Phase 143's `_classify_tactic_gated` /
+`retag_flaws.py` and the Phase 127 fixture harness)
+
+**Plans:** 7 plans
+
+Plans:
+
+- [x] 221-01-PLAN.md — Freeze the prod real-game sample, CSV loader, real-share scoring, baseline floors, `scripts/research/` relocation (wave 1, tracer) [TAGFIX-07, TAGFIX-08]
+- [x] 221-02-PLAN.md — Seven cook-port fixes; `self-interference` out of dispatch (wave 2) [TAGFIX-05]
+- [x] 221-03-PLAN.md — Retag fidelity (real full-FEN map + `positions[ply-1]`), four report buckets on the writing run (wave 2) [TAGFIX-09]
+- [x] 221-04-PLAN.md — Winning floor at the firing node, gate never skipped on a None cp, missed-orientation parity (wave 3) [TAGFIX-01, TAGFIX-02, TAGFIX-06]
+- [x] 221-05-PLAN.md — Sacrifice persistence + depth cap; clearance strengthened and measured (wave 4) [TAGFIX-03, TAGFIX-04]
+- [x] 221-06-PLAN.md — Oracle parity, final floors, clearance keep-or-suppress branch, dev retag smoke, changelog (wave 5) [TAGFIX-04, TAGFIX-05, TAGFIX-07, TAGFIX-09]
+- [ ] 221-07-PLAN.md — Deploy gate, full prod retag, TAGFIX-09 acceptance queries (wave 6, not autonomous) [TAGFIX-09]
+
+**Cross-cutting constraints:**
+
+- AGPL boundary: cook.py heuristics only, no source copied; the oracle script imports the
+  local clone at analysis time and is not part of the app or CI.
+- Every threshold is a named constant; every detector change is measured on TRAIN, judged
+  on TEST + ΔP, and on the real-game set.
+- The retag is idempotent and offline (single classify path, SC4).
+
+**Seed:** `.planning/seeds/SEED-165-tactic-tagger-real-game-precision.md`
 
 ## Backlog
 

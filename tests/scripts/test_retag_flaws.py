@@ -8,6 +8,9 @@ Tests that run_backfill (from scripts/retag_flaws.py):
       real run at the SAME margin changes 0 rows (second run is a no-op).
   (c) Margin sensitivity — a larger margin suppresses more tags than a smaller one on
       the same fixture (--margin threads through correctly, RETAG-01 tunability).
+  (d) TestRetagLiveClassifyParity (Phase 221 TAGFIX-09) — the retag's 8-tuple must equal
+      a direct live _classify_tactic_gated call on a castling flaw and an en-passant PV,
+      the two shapes a placement-only FEN (game_flaws.fen) provably corrupts.
 
 Uses session-maker injection against the per-run test DB so run_backfill never touches a
 real --db target. The game must have committed data (not rollback-scoped) since run_backfill
@@ -22,6 +25,7 @@ from __future__ import annotations
 import uuid
 from collections.abc import AsyncGenerator
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 
 import pytest
@@ -410,6 +414,7 @@ class TestRetagIdempotency:
         self,
         session_factory: async_sessionmaker[AsyncSession],
         retag_fixture: tuple[int, int, int, int],
+        tmp_path: Path,
     ) -> None:
         """SC4: a second real run at the same margin is a no-op (idempotent)."""
         from scripts.retag_flaws import run_backfill
@@ -426,6 +431,7 @@ class TestRetagIdempotency:
             workers=1,
             margin=ONLY_MOVE_WIN_PROB_MARGIN,
             session_maker=session_factory,
+            report_dir=tmp_path,
         )
 
         tags_after_first = await _read_flaw_tags(session_factory, user_id, game_id, flaw_ply)
@@ -440,6 +446,7 @@ class TestRetagIdempotency:
             workers=1,
             margin=ONLY_MOVE_WIN_PROB_MARGIN,
             session_maker=session_factory,
+            report_dir=tmp_path,
         )
 
         tags_after_second = await _read_flaw_tags(session_factory, user_id, game_id, flaw_ply)
@@ -453,6 +460,7 @@ class TestRetagIdempotency:
         self,
         session_factory: async_sessionmaker[AsyncSession],
         retag_fixture: tuple[int, int, int, int],
+        tmp_path: Path,
     ) -> None:
         """First real run must suppress the non-forcing missed blob tag.
 
@@ -474,6 +482,7 @@ class TestRetagIdempotency:
             workers=1,
             margin=ONLY_MOVE_WIN_PROB_MARGIN,
             session_maker=session_factory,
+            report_dir=tmp_path,
         )
 
         tags = await _read_flaw_tags(session_factory, user_id, game_id, flaw_ply)
@@ -498,6 +507,7 @@ class TestRetagMarginSensitivity:
         self,
         session_factory: async_sessionmaker[AsyncSession],
         retag_fixture: tuple[int, int, int, int],
+        tmp_path: Path,
     ) -> None:
         """margin sensitivity: a larger margin suppresses strictly more tags than a smaller one.
 
@@ -550,6 +560,7 @@ class TestRetagMarginSensitivity:
             workers=1,
             margin=0.1,
             session_maker=session_factory,
+            report_dir=tmp_path,
         )
         tags_small_margin = await _read_flaw_tags(session_factory, user_id, game_id, flaw_ply)
         # At least one motif should survive (allowed or missed, depends on detector).
@@ -585,6 +596,7 @@ class TestRetagMarginSensitivity:
             workers=1,
             margin=0.5,
             session_maker=session_factory,
+            report_dir=tmp_path,
         )
         tags_large_margin = await _read_flaw_tags(session_factory, user_id, game_id, flaw_ply)
 
@@ -697,6 +709,10 @@ class TestPreFlawEvalParity:
         )
 
         # Re-tagger path: _worker_recompute reads work.prv.eval_cp for pre_flaw_eval_cp.
+        # fen_map mirrors the live path's `{ply: fen}` blobs dict above exactly (both
+        # sides use the SAME bare fen string) -- this test targets Bug-A pre_flaw_eval_cp
+        # parity specifically, not fen_map full-FEN correctness (that is
+        # TestRetagLiveClassifyParity's job, Phase 221 TAGFIX-09).
         work = _FlawWork(
             user_id=1,
             game_id=1,
@@ -705,6 +721,7 @@ class TestPreFlawEvalParity:
             prv=prv,
             cur=cur,
             nxt=nxt,
+            fen_map={ply: fen},
             old_tuple=(-1,) * 8,  # sentinel != any real tuple -> always returns the new tuple
             allowed_pv_blob=self._FORCING_ALLOWED,
             missed_pv_blob=[],
@@ -730,7 +747,15 @@ class TestPreFlawEvalParity:
         # so the parity above is meaningful (not vacuously suppressed for another reason).
         from app.services.flaws_service import _classify_tactic_gated
 
-        unused_positions: list[Any] = [object(), object(), object()]  # detector is patched
+        # Phase 221 TAGFIX-02: _classify_tactic_gated now reads positions[n-1].eval_mate
+        # directly (for the already-winning-by-mate reject), even though the detector
+        # itself is patched below -- so these stand-ins need a real eval_mate attribute,
+        # not a bare object(). None -> no mate-derived reject (matches pre_flaw_eval_cp=0).
+        unused_positions: list[Any] = [
+            SimpleNamespace(eval_mate=None),
+            SimpleNamespace(eval_mate=None),
+            SimpleNamespace(eval_mate=None),
+        ]
         blob: Any = self._FORCING_ALLOWED
         credited = _classify_tactic_gated(
             1,
@@ -749,3 +774,515 @@ class TestPreFlawEvalParity:
         assert live == retag, f"live {live} != retag {retag}"
         assert live[0] == 2, f"allowed tag should be credited, got {live}"
         assert live[3] == 0, "firing depth should be 0"
+
+
+# ---------------------------------------------------------------------------
+# TestRetagLiveClassifyParity: SC4 no-drift guard (Phase 221, TAGFIX-09).
+#
+# The retag must reproduce the live classify path EXACTLY (RESEARCH.md Pitfall 2). Two
+# fixture games probe the two shapes a placement-only FEN (game_flaws.fen) provably
+# corrupts:
+#   (a) a castling flaw move — the ALLOWED orientation's board_before.parse_san() needs
+#       castling rights, which chess.Board(placement_only_fen) never carries.
+#   (b) a PV containing an en-passant capture — the MISSED orientation's board is built
+#       directly from fen_map[n-1] with NO push (unlike the allowed pass, which pushes
+#       the flaw move and gets a FRESH ep_square regardless of the input FEN), so its
+#       en-passant target must come from the FEN string itself.
+# ---------------------------------------------------------------------------
+
+# Unique user IDs for this test class — no conflict with other test module IDs.
+_CASTLING_TEST_USER_ID = 221_030_01
+_EN_PASSANT_TEST_USER_ID = 221_030_02
+
+# Bare eval_cp placeholder for every seeded position in this class — neither fixture's
+# assertion depends on eval values (both flaws carry allowed_pv_lines=missed_pv_lines=
+# None, so apply_forcing_line_filter is skipped entirely; these tests isolate the
+# fen_map/positions divergence, not gate behaviour).
+_PARITY_EVAL_CP = 0
+
+# White's O-O at ply 8 is the FLAW: it ignores the hanging knight on g5 (attacked by the
+# h6 pawn, undefended — the d2 pawn blocks Bc1's would-be defence of g5), which Black's
+# refutation ("hxg5", ply 9) captures for free — HANGING_PIECE at depth 0 — but ONLY if
+# parse_san("O-O") can see White still holds kingside castling rights, which a
+# placement-only FEN cannot record.
+_CASTLING_MOVES: list[str] = ["e4", "e5", "Nf3", "Nc6", "Bc4", "Bc5", "Ng5", "h6", "O-O", "hxg5"]
+_CASTLING_PGN = "1. e4 e5 2. Nf3 Nc6 3. Bc4 Bc5 4. Ng5 h6 5. O-O hxg5 *"
+_CASTLING_FLAW_PLY = 8
+_CASTLING_ALLOWED_PV = "h6g5"  # Black's refutation: hxg5, winning the hanging knight
+
+# White's g3 at ply 12 is the FLAW: White fails to capture en passant. The MISSED line
+# ("e5d6 ...") recommends exd6 e.p., landing the pawn on d6 where it forks the
+# undeveloped knight (c7) and bishop (e7) — detected as EN_PASSANT (Tier-5, depth 0) —
+# but ONLY if the pre-flaw board still carries the en-passant target d6, set by Black's
+# immediately-preceding double push ("d5", ply 11). Unlike the castling case, this board
+# is used AS-IS (no push precedes the PV replay in the MISSED orientation), so a
+# placement-only FEN's missing ep field is fatal here regardless of what created it.
+_EN_PASSANT_MOVES: list[str] = [
+    "Nf3",
+    "c6",
+    "e4",
+    "e6",
+    "e5",
+    "Na6",
+    "Nc3",
+    "Nc7",
+    "a3",
+    "Be7",
+    "h3",
+    "d5",
+    "g3",
+]
+_EN_PASSANT_PGN = "1. Nf3 c6 2. e4 e6 3. e5 Na6 4. Nc3 Nc7 5. a3 Be7 6. h3 d5 7. g3 *"
+_EN_PASSANT_FLAW_PLY = 12
+_EN_PASSANT_MISSED_PV = "e5d6 g8h6 f3g5"
+
+
+async def _seed_parity_game(
+    session_factory: async_sessionmaker[AsyncSession],
+    user_id: int,
+    pgn: str,
+    move_sans: list[str],
+    flaw_ply: int,
+    allowed_pv: str | None,
+    missed_pv: str | None,
+    *,
+    seeded_allowed_motif: int | None = None,
+    seeded_allowed_piece: int | None = None,
+    seeded_allowed_confidence: int | None = None,
+    seeded_allowed_depth: int | None = None,
+    eval_cp_overrides: dict[int, int] | None = None,
+) -> int:
+    """Seed a committed User/Game/GamePosition-per-ply/one-GameFlaw fixture.
+
+    Shared by TestRetagLiveClassifyParity (castling/en-passant) and
+    TestRetagReportShiftBuckets (the depth-shifted report bucket) — same shape, only the
+    PGN/ply/PV/pre-seeded-tag inputs differ.
+
+    move_sans[k] becomes GamePosition(ply=k).move_san (the move played FROM ply k, per
+    the project convention — zobrist.py). allowed_pv is stored on GamePosition(ply=
+    flaw_ply + 1).pv (the ALLOWED orientation reads pv_by_ply.get(n+1) / positions[n+1].pv);
+    missed_pv is stored on GamePosition(ply=flaw_ply).pv (the MISSED orientation reads
+    positions[n].pv). The GameFlaw's own `fen` column is seeded piece-placement-only
+    (game_flaws.fen's real, documented contract — flaws_service.py:682-690) via
+    _recompute_fen_map(pgn)[flaw_ply].split(" ")[0], never a full FEN.
+
+    allowed_pv_lines / missed_pv_lines are left None on the seeded GameFlaw: every test
+    using this helper isolates the fen_map/positions/report-bucket divergence, not the
+    forcing-line gate itself. seeded_allowed_* pre-seeds a stale ALLOWED tag on the
+    GameFlaw (default None — untagged) so a caller can probe the retag's before/after
+    bucketing.
+
+    eval_cp_overrides: {ply: eval_cp} exceptions to the uniform _PARITY_EVAL_CP
+    placeholder (Phase 221 TAGFIX-01/D-03: pv_blob=None now still faces the motif's
+    per-tier winning floor from game_positions, so a move-type motif like EN_PASSANT
+    (floor +200) needs its fallback-read ply to clear that floor even with no blob —
+    unlike a geometric motif, which clears the 0-floor at the shared placeholder).
+
+    Returns the created game_id.
+    """
+    from app.services.flaws_service import _recompute_fen_map
+
+    async with session_factory() as session:
+        existing = (
+            (await session.execute(select(User).where(User.id == user_id)))
+            .unique()
+            .scalar_one_or_none()
+        )
+        if existing is None:
+            session.add(
+                User(
+                    id=user_id,
+                    email=f"test-retag-parity-{user_id}@example.com",
+                    hashed_password="x",
+                )
+            )
+            await session.flush()
+
+        game = Game(
+            user_id=user_id,
+            platform="lichess",
+            platform_game_id=str(uuid.uuid4()),
+            platform_url="https://lichess.org/retag-parity-test",
+            pgn=pgn,
+            result="1-0",
+            user_color="white",
+            time_control_str="600+0",
+            time_control_bucket="blitz",
+            time_control_seconds=600,
+            base_time_seconds=600,
+            increment_seconds=0.0,
+            rated=True,
+            is_computer_game=False,
+        )
+        session.add(game)
+        await session.flush()
+        game_id = game.id
+
+        for ply, move_san in enumerate(move_sans):
+            pv: str | None = None
+            if ply == flaw_ply:
+                pv = missed_pv
+            elif ply == flaw_ply + 1:
+                pv = allowed_pv
+            ply_eval_cp = (
+                eval_cp_overrides[ply]
+                if eval_cp_overrides is not None and ply in eval_cp_overrides
+                else _PARITY_EVAL_CP
+            )
+            session.add(
+                GamePosition(
+                    user_id=user_id,
+                    game_id=game_id,
+                    ply=ply,
+                    eval_cp=ply_eval_cp,
+                    eval_mate=None,
+                    clock_seconds=None,
+                    phase=1,
+                    full_hash=ply + 1000,
+                    white_hash=ply + 2000,
+                    black_hash=ply + 3000,
+                    endgame_class=None,
+                    move_san=move_san,
+                    pv=pv,
+                )
+            )
+
+        flaw_fen_map = _recompute_fen_map(pgn)
+        placement_only_fen = flaw_fen_map[flaw_ply].split(" ")[0]
+        session.add(
+            GameFlaw(
+                user_id=user_id,
+                game_id=game_id,
+                ply=flaw_ply,
+                severity=2,  # blunder
+                tempo=None,
+                phase=1,
+                is_miss=False,
+                is_lucky=False,
+                is_reversed=False,
+                is_squandered=False,
+                fen=placement_only_fen,
+                allowed_tactic_motif=seeded_allowed_motif,
+                allowed_tactic_piece=seeded_allowed_piece,
+                allowed_tactic_confidence=seeded_allowed_confidence,
+                allowed_tactic_depth=seeded_allowed_depth,
+                missed_tactic_motif=None,
+                missed_tactic_piece=None,
+                missed_tactic_confidence=None,
+                missed_tactic_depth=None,
+                allowed_pv_lines=None,
+                missed_pv_lines=None,
+            )
+        )
+        await session.commit()
+
+    return game_id
+
+
+async def _live_classify_tuple(
+    session_factory: async_sessionmaker[AsyncSession],
+    user_id: int,
+    game_id: int,
+    pgn: str,
+    flaw_ply: int,
+) -> tuple[int | None, ...]:
+    """Direct live-path call: _recompute_fen_map(pgn) + the real ply-indexed positions
+    list + _classify_tactic_gated once per orientation — the SAME sanctioned inputs
+    flaws_service._build_flaw_record uses, built independently of the retag under test.
+    """
+    from app.services.flaws_service import _classify_tactic_gated, _recompute_fen_map
+
+    fen_map = _recompute_fen_map(pgn)
+    async with session_factory() as session:
+        rows = (
+            (
+                await session.execute(
+                    select(GamePosition)
+                    .where(
+                        GamePosition.user_id == user_id,
+                        GamePosition.game_id == game_id,
+                    )
+                    .order_by(GamePosition.ply)
+                )
+            )
+            .scalars()
+            .all()
+        )
+    positions = list(rows)
+    pre_flaw_eval_cp = positions[flaw_ply - 1].eval_cp if flaw_ply >= 1 else None
+    allowed = _classify_tactic_gated(
+        flaw_ply,
+        fen_map,
+        positions,
+        "allowed",
+        pv_blob=None,
+        pre_flaw_eval_cp=pre_flaw_eval_cp,
+        margin=ONLY_MOVE_WIN_PROB_MARGIN,
+    )
+    missed = _classify_tactic_gated(
+        flaw_ply,
+        fen_map,
+        positions,
+        "missed",
+        pv_blob=None,
+        pre_flaw_eval_cp=pre_flaw_eval_cp,
+        margin=ONLY_MOVE_WIN_PROB_MARGIN,
+    )
+    return (*allowed, *missed)
+
+
+class TestRetagLiveClassifyParity:
+    """The retag must not diverge from a fresh analysis (SC4). Two fixture games are the
+    shapes a placement-only FEN provably corrupts: castling rights and the en-passant
+    target. Each is torn down in a finally block (non-guest Game inserts must not leak
+    into the eval-queue lottery test).
+    """
+
+    @pytest.mark.asyncio
+    async def test_castling_flaw_parity(
+        self,
+        session_factory: async_sessionmaker[AsyncSession],
+        tmp_path: Path,
+    ) -> None:
+        """ALLOWED orientation: the flaw's own SAN is a castling move (O-O)."""
+        from scripts.retag_flaws import run_backfill
+
+        user_id = _CASTLING_TEST_USER_ID
+        game_id: int | None = None
+        try:
+            game_id = await _seed_parity_game(
+                session_factory,
+                user_id,
+                _CASTLING_PGN,
+                _CASTLING_MOVES,
+                _CASTLING_FLAW_PLY,
+                allowed_pv=_CASTLING_ALLOWED_PV,
+                missed_pv=None,
+            )
+
+            await run_backfill(
+                db="dev",
+                user_id=user_id,
+                only_tagged=False,
+                dry_run=False,
+                limit=None,
+                workers=1,
+                margin=ONLY_MOVE_WIN_PROB_MARGIN,
+                session_maker=session_factory,
+                report_dir=tmp_path,
+            )
+            retag_tuple = await _read_flaw_tags(
+                session_factory, user_id, game_id, _CASTLING_FLAW_PLY
+            )
+            live_tuple = await _live_classify_tuple(
+                session_factory, user_id, game_id, _CASTLING_PGN, _CASTLING_FLAW_PLY
+            )
+
+            assert retag_tuple == live_tuple, (
+                f"SC4 violated on the castling fixture: retag {retag_tuple} != live {live_tuple}"
+            )
+            # Discrimination guard: the fixture must actually exercise the castling-SAN
+            # code path (a parity test that cannot fail is not a guard) — the ALLOWED
+            # motif is HANGING_PIECE (index 0 of the 8-tuple).
+            from app.services.tactic_detector import TacticMotifInt
+
+            assert live_tuple[0] == TacticMotifInt.HANGING_PIECE, (
+                f"expected the castling fixture to detect HANGING_PIECE, got {live_tuple}"
+            )
+        finally:
+            if game_id is not None:
+                async with session_factory() as session:
+                    await session.execute(delete(Game).where(Game.id == game_id))
+                    await session.commit()
+
+    @pytest.mark.asyncio
+    async def test_en_passant_missed_parity(
+        self,
+        session_factory: async_sessionmaker[AsyncSession],
+        tmp_path: Path,
+    ) -> None:
+        """MISSED orientation: the recommended line's first move is an en-passant capture."""
+        from scripts.retag_flaws import run_backfill
+
+        user_id = _EN_PASSANT_TEST_USER_ID
+        game_id: int | None = None
+        try:
+            game_id = await _seed_parity_game(
+                session_factory,
+                user_id,
+                _EN_PASSANT_PGN,
+                _EN_PASSANT_MOVES,
+                _EN_PASSANT_FLAW_PLY,
+                allowed_pv=None,
+                missed_pv=_EN_PASSANT_MISSED_PV,
+                # Phase 221 TAGFIX-01/D-03: pv_blob=None now still faces EN_PASSANT's
+                # +200 move-type floor via the game_positions fallback. The MISSED
+                # orientation's solver is white (flaw_ply=12 is even), reading
+                # positions[flaw_ply - 1] = ply 11 -- override it to a clearly-winning
+                # white-perspective eval so this fixture keeps isolating the
+                # fen_map/positions divergence (its actual purpose), not gate/floor
+                # behaviour.
+                eval_cp_overrides={_EN_PASSANT_FLAW_PLY - 1: 300},
+            )
+
+            await run_backfill(
+                db="dev",
+                user_id=user_id,
+                only_tagged=False,
+                dry_run=False,
+                limit=None,
+                workers=1,
+                margin=ONLY_MOVE_WIN_PROB_MARGIN,
+                session_maker=session_factory,
+                report_dir=tmp_path,
+            )
+            retag_tuple = await _read_flaw_tags(
+                session_factory, user_id, game_id, _EN_PASSANT_FLAW_PLY
+            )
+            live_tuple = await _live_classify_tuple(
+                session_factory, user_id, game_id, _EN_PASSANT_PGN, _EN_PASSANT_FLAW_PLY
+            )
+
+            assert retag_tuple == live_tuple, (
+                f"SC4 violated on the en-passant fixture: retag {retag_tuple} != live {live_tuple}"
+            )
+            # Discrimination guard: the MISSED motif is EN_PASSANT (index 4 of the
+            # 8-tuple) — proves the fixture actually needs the ep target, not just that
+            # both sides agree on a vacuous None.
+            from app.services.tactic_detector import TacticMotifInt
+
+            assert live_tuple[4] == TacticMotifInt.EN_PASSANT, (
+                f"expected the en-passant fixture to detect EN_PASSANT, got {live_tuple}"
+            )
+        finally:
+            if game_id is not None:
+                async with session_factory() as session:
+                    await session.execute(delete(Game).where(Game.id == game_id))
+                    await session.commit()
+
+
+# ---------------------------------------------------------------------------
+# TestRetagReportWrittenOnEveryRun / TestRetagReportShiftBuckets (Phase 221, TAGFIX-09):
+# the per-motif tag-delta report is written on a WRITING run too (not just --dry-run),
+# and it now carries four bucket families per orientation instead of two.
+# ---------------------------------------------------------------------------
+
+
+class TestRetagReportWrittenOnEveryRun:
+    """The report used to be written only under --dry-run; TAGFIX-09 requires it on a
+    real writing run too, since the acceptance instrument reads it after the prod run.
+    """
+
+    @pytest.mark.asyncio
+    async def test_write_run_also_writes_report_file(
+        self,
+        session_factory: async_sessionmaker[AsyncSession],
+        retag_fixture: tuple[int, int, int, int],
+        tmp_path: Path,
+    ) -> None:
+        """A non-dry-run (writing) run produces a report whose Mode line says so."""
+        from scripts.retag_flaws import run_backfill
+
+        user_id, game_id, flaw_ply, _ = retag_fixture
+
+        await run_backfill(
+            db="dev",
+            user_id=user_id,
+            only_tagged=False,
+            dry_run=False,
+            limit=None,
+            workers=1,
+            margin=ONLY_MOVE_WIN_PROB_MARGIN,
+            session_maker=session_factory,
+            report_dir=tmp_path,
+        )
+
+        report_files = list(tmp_path.glob("retag-*.md"))
+        assert len(report_files) >= 1, f"Expected a retag report in {tmp_path}, found none"
+        latest = max(report_files, key=lambda p: p.stat().st_mtime)
+        content = latest.read_text()
+
+        assert "Allowed-orientation tag changes" in content, "Report missing allowed table"
+        assert "Missed-orientation tag changes" in content, "Report missing missed table"
+        assert "Motif shifted" in content and "Depth shifted" in content, (
+            f"Report missing the new bucket columns:\n{content}"
+        )
+        assert "dry-run" not in content.lower(), (
+            f"Mode line must not say dry-run for a writing run:\n{content}"
+        )
+        assert "**Mode:** write" in content, f"Mode line must say a write happened:\n{content}"
+
+
+# White's O-O...a3 depth-shift fixture reuses the same hanging-knight shape as the
+# castling parity fixture, but the flaw move is "a3" (not a castling move — depth-shift
+# is orthogonal to the fen_map fix) and the GameFlaw is pre-seeded with a STALE depth so
+# the retag's motif-unchanged-but-depth-changed case has something to detect.
+_DEPTH_SHIFT_TEST_USER_ID = 221_030_03
+_DEPTH_SHIFT_MOVES: list[str] = ["e4", "e5", "Nf3", "Nc6", "Bc4", "Bc5", "Ng5", "h6", "a3", "hxg5"]
+_DEPTH_SHIFT_PGN = "1. e4 e5 2. Nf3 Nc6 3. Bc4 Bc5 4. Ng5 h6 5. a3 hxg5 *"
+_DEPTH_SHIFT_FLAW_PLY = 8
+_DEPTH_SHIFT_ALLOWED_PV = "h6g5"  # recomputes to HANGING_PIECE at depth 0 (verified)
+_DEPTH_SHIFT_SEEDED_MOTIF = 2  # TacticMotifInt.HANGING_PIECE — SAME as the recomputed motif
+_DEPTH_SHIFT_SEEDED_PIECE = 2  # chess.KNIGHT
+_DEPTH_SHIFT_SEEDED_CONFIDENCE = 100
+_DEPTH_SHIFT_STALE_DEPTH = 5  # deliberately WRONG vs the real recomputed depth (0)
+
+
+class TestRetagReportShiftBuckets:
+    """D-11 (Phase 221): a row whose motif is unchanged but whose depth changed must be
+    counted in the report's depth-shifted bucket, not survived/motif-shifted/removed —
+    the adjacency truth this plan's must_haves pins.
+    """
+
+    @pytest.mark.asyncio
+    async def test_depth_only_change_counted_as_depth_shifted(
+        self,
+        session_factory: async_sessionmaker[AsyncSession],
+        tmp_path: Path,
+    ) -> None:
+        from scripts.retag_flaws import run_backfill
+
+        user_id = _DEPTH_SHIFT_TEST_USER_ID
+        game_id: int | None = None
+        try:
+            game_id = await _seed_parity_game(
+                session_factory,
+                user_id,
+                _DEPTH_SHIFT_PGN,
+                _DEPTH_SHIFT_MOVES,
+                _DEPTH_SHIFT_FLAW_PLY,
+                allowed_pv=_DEPTH_SHIFT_ALLOWED_PV,
+                missed_pv=None,
+                seeded_allowed_motif=_DEPTH_SHIFT_SEEDED_MOTIF,
+                seeded_allowed_piece=_DEPTH_SHIFT_SEEDED_PIECE,
+                seeded_allowed_confidence=_DEPTH_SHIFT_SEEDED_CONFIDENCE,
+                seeded_allowed_depth=_DEPTH_SHIFT_STALE_DEPTH,
+            )
+
+            await run_backfill(
+                db="dev",
+                user_id=user_id,
+                only_tagged=False,
+                dry_run=True,
+                limit=None,
+                workers=1,
+                margin=ONLY_MOVE_WIN_PROB_MARGIN,
+                session_maker=session_factory,
+                report_dir=tmp_path,
+            )
+
+            latest = max(tmp_path.glob("retag-*.md"), key=lambda p: p.stat().st_mtime)
+            content = latest.read_text()
+            # Previously tagged=1, Gate suppressed=0, Survived=0, Motif shifted=0,
+            # Depth shifted=1, Suppression %=0.0% — the motif stayed HANGING_PIECE, only
+            # the depth changed (5 -> 0), so it must land in Depth shifted alone.
+            expected_row = "| HANGING_PIECE | 1 | 0 | 0 | 0 | 1 | 0.0% |"
+            assert expected_row in content, (
+                f"Expected the depth-only change attributed to Depth shifted (not "
+                f"survived/motif-shifted/removed): {expected_row!r} not found in:\n{content}"
+            )
+        finally:
+            if game_id is not None:
+                async with session_factory() as session:
+                    await session.execute(delete(Game).where(Game.id == game_id))
+                    await session.commit()

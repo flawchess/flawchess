@@ -642,12 +642,17 @@
       "number": "220",
       "name": "Opening Eval Cache Repair & Two-Source Confirmation (SEED-164, standalone)",
       "status": "complete"
+    },
+    {
+      "number": "221",
+      "name": "Tactic-Tagger Real-Game Precision — Winning Floor, Predicate Tightening & Port Fixes (SEED-165, standalone)",
+      "status": "pending"
     }
   ],
   "next": {
-    "command": "/gsd:progress",
-    "label": "Show progress",
-    "reason": "Unsure of state — showing progress"
+    "command": "/gsd:progress --next",
+    "label": "Advance to the next step",
+    "reason": "Phase 221 of 3 · executing"
   },
-  "updated_at": "2026-09-11T20:35:57.704Z"
+  "updated_at": "2026-09-12T19:34:39.382Z"
 }

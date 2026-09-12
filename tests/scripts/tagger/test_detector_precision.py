@@ -51,6 +51,7 @@ Suppressed motifs (D-09 / SUPPRESSED_MOTIFS):
 
 from __future__ import annotations
 
+import csv
 import math
 import statistics
 from collections import defaultdict
@@ -58,9 +59,22 @@ from collections import defaultdict
 import pytest
 
 from app.services.tactic_detector import _INT_TO_MOTIF, detect_tactic_motif
-from tests.scripts.tagger.conftest import PuzzleRow, build_detector_board
+from scripts.research.sample_realgame_tags import OVERSAMPLED_MOTIF_INTS, REALGAME_CSV_HEADER
+from tests.scripts.tagger.conftest import (
+    _REALGAME_PATH,
+    PuzzleRow,
+    RealGameRow,
+    REALGAME_USER_IDENTITY_DENYLIST,
+    build_detector_board,
+    build_realgame_board,
+)
 from tests.scripts.tagger.motif_theme_map import MOTIF_TO_THEMES, UNVALIDATED_MOTIFS
-from tests.scripts.tagger.precision_floors import PRECISION_FLOOR, SUPPRESSED_MOTIFS
+from tests.scripts.tagger.precision_floors import (
+    PRECISION_FLOOR,
+    REALGAME_MIN_ROWS_FOR_FLOOR,
+    REALGAME_REAL_SHARE_FLOOR,
+    SUPPRESSED_MOTIFS,
+)
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -122,6 +136,127 @@ def _precision(tp: int, fp: int) -> float:
 def _recall(tp: int, fn: int) -> float:
     """Recall = TP / (TP + FN). Returns NaN when no ground-truth positives."""
     return tp / (tp + fn) if (tp + fn) > 0 else float("nan")
+
+
+# ---------------------------------------------------------------------------
+# Real-game scoring (TAGFIX-07 / D-13)
+#
+# Different bucket semantics from the puzzle harness above — there is NO
+# false-negative column. A suppressed `incidental`/`wrong` row is a WIN, not a
+# miss, so reusing _compute_metrics's FN branch would read backwards. See
+# tests/scripts/tagger/precision_floors.py's module docstring for why these
+# floors are orthogonal to PRECISION_FLOOR.
+# ---------------------------------------------------------------------------
+
+
+class RealGameMotifStats:
+    """Per-motif real-game scoring. `before_*` are computed from the LABEL and
+    the stored `motif` alone (board-independent, frozen forever). `surviving` /
+    `real_surviving` / `suppressed` are computed by re-running the detector on
+    `build_realgame_board(row)` — they change every time the detector changes."""
+
+    def __init__(self, motif: str) -> None:
+        self.motif = motif
+        self.before_real = 0
+        self.before_total = 0
+        self.surviving = 0
+        self.real_surviving = 0
+        self.suppressed = 0
+
+    @property
+    def before_share(self) -> float:
+        return self.before_real / self.before_total if self.before_total else float("nan")
+
+    @property
+    def real_share(self) -> float:
+        return self.real_surviving / self.surviving if self.surviving else float("nan")
+
+
+def _compute_realgame_metrics(rows: list[RealGameRow]) -> dict[str, RealGameMotifStats]:
+    """Score the real-game fixture. For each row: `before_total`/`before_real` are
+    tallied from the label alone (no detector call). Then `build_realgame_board`
+    + `detect_tactic_motif` re-derive the motif; if it still equals the row's
+    stored motif, the row is `surviving` (and `real_surviving` when labelled
+    `real`). Otherwise the row is `suppressed` for the STORED motif only — never
+    credit the newly-detected motif, and never increment both buckets for one
+    row (the no-double-count invariant test_realgame_real_share_floor asserts)."""
+    stats: dict[str, RealGameMotifStats] = {}
+    for row in rows:
+        motif_name = row["motif_name"]
+        s = stats.setdefault(motif_name, RealGameMotifStats(motif_name))
+        s.before_total += 1
+        if row["label"] == "real":
+            s.before_real += 1
+
+        board = build_realgame_board(row)
+        detected_int, _piece, _confidence, _depth = detect_tactic_motif(board, row["pv"])
+        detected_name = _INT_TO_MOTIF.get(detected_int) if detected_int is not None else None
+        if detected_name == motif_name:
+            s.surviving += 1
+            if row["label"] == "real":
+                s.real_surviving += 1
+        else:
+            s.suppressed += 1
+    return stats
+
+
+def _print_realgame_table(stats: dict[str, RealGameMotifStats]) -> list[str]:
+    """Print the real-game per-motif table, sorted by motif name (unique keys,
+    so this alone gives a deterministic, byte-identical table body across runs),
+    and collect (never raise) one failure line per motif whose real_share is
+    below its REALGAME_REAL_SHARE_FLOOR entry — the same collect-then-fail shape
+    `_print_set_table` uses for `PRECISION_FLOOR`, so one run reports every
+    breach. A motif with a floor entry but zero surviving rows is a NO-ROWS
+    failure (never a silent pass); a motif with no floor entry prints a dash in
+    the floor column and is never gated."""
+    col_w = 22
+    total_rows = sum(s.before_total for s in stats.values())
+    print()
+    print("=" * 100)
+    print(f"TAGGER REAL-GAME REAL-SHARE — {len(stats)} motifs ({total_rows} rows)")
+    print("=" * 100)
+    header = (
+        f"{'Motif':<{col_w}} "
+        f"{'before_n':>9} {'before_share':>12}  "
+        f"{'surviving':>9} {'real_surv':>9} {'suppressed':>10}  "
+        f"{'real_share':>10}  {'floor':>8}  Status"
+    )
+    print(header)
+    print("-" * len(header))
+
+    floor_failures: list[str] = []
+    for motif in sorted(stats):
+        s = stats[motif]
+        bs_str = f"{s.before_share:.3f}" if not math.isnan(s.before_share) else "NaN"
+        rs_str = f"{s.real_share:.3f}" if not math.isnan(s.real_share) else "NaN"
+
+        if motif not in REALGAME_REAL_SHARE_FLOOR:
+            floor_str, status = "—", "—"
+        else:
+            floor_val = REALGAME_REAL_SHARE_FLOOR[motif]
+            floor_str = f"{floor_val:.3f}"
+            if s.surviving == 0:
+                status = "NO-ROWS"
+                floor_failures.append(
+                    f"  {motif}: NO-ROWS (0 surviving rows; floor {floor_val:.3f})"
+                )
+            elif s.real_share >= floor_val:
+                status = "PASS"
+            else:
+                status = "FAIL"
+                floor_failures.append(
+                    f"  {motif}: measured {s.real_share:.3f} < floor {floor_val:.3f}"
+                    f" (real_surviving={s.real_surviving}, surviving={s.surviving})"
+                )
+
+        print(
+            f"{motif:<{col_w}} "
+            f"{s.before_total:9} {bs_str:>12}  "
+            f"{s.surviving:9} {s.real_surviving:9} {s.suppressed:10}  "
+            f"{rs_str:>10}  {floor_str:>8}  {status}"
+        )
+
+    return floor_failures
 
 
 # ---------------------------------------------------------------------------
@@ -265,4 +400,89 @@ def test_detector_precision_and_recall(
         pytest.fail(
             f"TRAIN precision floor(s) not met (D-08 gate — fix detector or lower floor "
             f"with a documented measurement):\n{failure_text}"
+        )
+
+
+# ---------------------------------------------------------------------------
+# Real-game fixture schema (TAGFIX-07 / D-13)
+# ---------------------------------------------------------------------------
+
+
+def test_realgame_fixture_schema(realgame_fixture: list[RealGameRow]) -> None:
+    """The committed real-game CSV loads, its header matches REALGAME_CSV_HEADER
+    exactly (a positive equality — a stray column cannot silently slip in), no
+    user-identifying column name is present (T-221-01), every motif int decodes,
+    every row's board is built the SAME way production builds it post-D-09 (a
+    one-move stack, never the stackless fallback), and every oversampled motif
+    (D-13 stratification) has at least one sampled row.
+    """
+    assert realgame_fixture, "fixtures/tagger/realgame_tags.csv must be non-empty"
+
+    with open(_REALGAME_PATH, newline="", encoding="utf-8") as f:
+        header = next(csv.reader(f))
+    assert header == REALGAME_CSV_HEADER, (
+        f"realgame_tags.csv header {header} != REALGAME_CSV_HEADER {REALGAME_CSV_HEADER}"
+    )
+    for denied in REALGAME_USER_IDENTITY_DENYLIST:
+        assert denied not in header, (
+            f"realgame_tags.csv header leaks a user-identity column: {denied!r}"
+        )
+
+    oversampled_motifs_seen: set[int] = set()
+    for row in realgame_fixture:
+        assert row["motif"] in _INT_TO_MOTIF, (
+            f"row {row['row_id']} has an unknown motif int {row['motif']}"
+        )
+        assert row["orientation"] in ("allowed", "missed")
+        board = build_realgame_board(row)
+        assert len(board.move_stack) == 1, (
+            f"row {row['row_id']} ({row['orientation']}) built a board with "
+            f"move_stack length {len(board.move_stack)} (expected 1 — production "
+            "always pushes a move post-D-09; the stackless fallback fired)"
+        )
+        if row["motif"] in OVERSAMPLED_MOTIF_INTS:
+            oversampled_motifs_seen.add(row["motif"])
+
+    assert oversampled_motifs_seen == OVERSAMPLED_MOTIF_INTS, (
+        "expected at least one row for each oversampled motif "
+        f"{sorted(OVERSAMPLED_MOTIF_INTS)}, got {sorted(oversampled_motifs_seen)}"
+    )
+
+
+def test_realgame_real_share_floor(realgame_fixture: list[RealGameRow]) -> None:
+    """TAGFIX-07: score the real-game fixture with the SAME scorer
+    `scripts/tactic_tagger_report.py` imports (they can never disagree), print
+    the per-motif table, prove the no-double-count invariant `surviving +
+    suppressed == before_total` for every motif, and assert the
+    `REALGAME_REAL_SHARE_FLOOR` never-regress gate (D-13). A motif with a floor
+    entry but zero surviving rows fails as NO-ROWS rather than passing
+    vacuously; a motif with no floor entry is reported but never gated.
+    """
+    stats = _compute_realgame_metrics(realgame_fixture)
+    floor_failures = _print_realgame_table(stats)
+
+    for motif, s in sorted(stats.items()):
+        assert s.surviving + s.suppressed == s.before_total, (
+            f"{motif}: surviving({s.surviving}) + suppressed({s.suppressed}) "
+            f"!= before_total({s.before_total}) — a row was double-counted or dropped"
+        )
+
+    # Every floor entry must key a motif with a thick-enough denominator —
+    # REALGAME_MIN_ROWS_FOR_FLOOR is exactly the bar a floor entry must clear.
+    for motif in REALGAME_REAL_SHARE_FLOOR:
+        assert motif in stats, (
+            f"REALGAME_REAL_SHARE_FLOOR has an entry for {motif!r}, which is not "
+            "present in fixtures/tagger/realgame_tags.csv"
+        )
+        assert stats[motif].surviving >= REALGAME_MIN_ROWS_FOR_FLOOR, (
+            f"REALGAME_REAL_SHARE_FLOOR has an entry for {motif!r} with only "
+            f"{stats[motif].surviving} surviving rows — below "
+            f"REALGAME_MIN_ROWS_FOR_FLOOR ({REALGAME_MIN_ROWS_FOR_FLOOR})"
+        )
+
+    if floor_failures:
+        failure_text = "\n".join(floor_failures)
+        pytest.fail(
+            "Real-game real-share floor(s) not met (D-13 gate — fix the detector "
+            f"or lower the floor with a documented measurement):\n{failure_text}"
         )

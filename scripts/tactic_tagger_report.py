@@ -38,9 +38,19 @@ from pathlib import Path
 
 
 from app.services.tactic_detector import _INT_TO_MOTIF, detect_tactic_motif
-from tests.scripts.tagger.conftest import PuzzleRow, _load_split, build_detector_board
+from tests.scripts.tagger.conftest import (
+    PuzzleRow,
+    RealGameRow,
+    _load_realgame,
+    _load_split,
+    build_detector_board,
+)
 from tests.scripts.tagger.motif_theme_map import MOTIF_TO_THEMES, UNVALIDATED_MOTIFS
 from tests.scripts.tagger.precision_floors import SUPPRESSED_MOTIFS
+from tests.scripts.tagger.test_detector_precision import (
+    RealGameMotifStats,
+    _compute_realgame_metrics,
+)
 
 # Dispatch tier + intra-tier priority order, mirroring detect_tactic_motif's
 # registries (Tier 1 mates dominate -> 2 geometric -> 3 fuzzy -> 4 hanging-piece
@@ -238,9 +248,65 @@ def _status(motif: str) -> str:
     return "suppressed" if motif in SUPPRESSED_MOTIFS else "shipped"
 
 
+def _score_realgame(rows: list[RealGameRow]) -> dict[str, RealGameMotifStats]:
+    """Score the real-game fixture with the SAME scorer the CI gate uses (imported
+    from the harness module, never duplicated — exactly as this script already
+    imports `_load_split`, `MOTIF_TO_THEMES` and the floors) so the report and
+    `tests/scripts/tagger/test_detector_precision.py` can never disagree."""
+    return _compute_realgame_metrics(rows)
+
+
+def _realgame_table(stats: dict[str, RealGameMotifStats]) -> list[str]:
+    """Real-game gate section (TAGFIX-07): its own section, after the per-tactic
+    tables above, with a legend explaining the bucket semantics."""
+    lines: list[str] = []
+    lines.append("## Real-Game Gate (TAGFIX-07)")
+    lines.append("")
+    lines.append(
+        "Hand-labelled sample of prod tags (~150 rows stratified by motif x "
+        "orientation, frozen BEFORE any detector/gate predicate in this phase "
+        "changed — D-13). Scored with the SAME scorer as the CI gate "
+        "(`tests/scripts/tagger/test_detector_precision.py::_compute_realgame_metrics`), "
+        "so the numbers here and the `REALGAME_REAL_SHARE_FLOOR` floor can never "
+        "disagree."
+    )
+    lines.append("")
+    lines.append(
+        "Bucket semantics differ from the puzzle-fixture tables above: there is "
+        "NO false-negative column. `surviving` = the row's stored motif is still "
+        "detected by the current code; `real_surviving` = surviving AND labelled "
+        "`real`; `suppressed` = the row's motif is no longer detected (a "
+        "suppressed `incidental`/`wrong` row is a WIN, not a miss). "
+        "`before_share` is the frozen label-only share (`before_real / "
+        "before_total`, independent of any code change); `real_share` = "
+        "`real_surviving / surviving` is the current-code measurement the "
+        "never-regress floor asserts on."
+    )
+    lines.append("")
+    lines.append(
+        "The `missed`-orientation rows' board is built with the previous move "
+        "pushed onto the stack (post-D-09 production behaviour), by design — see "
+        "`tests/scripts/tagger/conftest.py::build_realgame_board`."
+    )
+    lines.append("")
+    lines.append(
+        "| Motif | before_n | before_share | surviving | real_surviving | suppressed | real_share |"
+    )
+    lines.append("|---|---:|---:|---:|---:|---:|---:|")
+    for motif in sorted(stats):
+        s = stats[motif]
+        lines.append(
+            f"| {motif} | {s.before_total} | {_fmt(s.before_share)} | {s.surviving} | "
+            f"{s.real_surviving} | {s.suppressed} | {_fmt(s.real_share)} |"
+        )
+    lines.append("")
+    return lines
+
+
 def _build_report(
     train_rows: list[PuzzleRow],
     test_rows: list[PuzzleRow],
+    realgame_rows: list[RealGameRow],
     generated: datetime,
 ) -> str:
     train, _ = _score(train_rows)
@@ -368,6 +434,8 @@ def _build_report(
         "difficulty proxy, so this relationship is load-bearing."
     )
     lines.append("")
+
+    lines.extend(_realgame_table(_score_realgame(realgame_rows)))
 
     lines.append(_interpretation(train, test, corr))
     return "\n".join(lines) + "\n"
@@ -561,8 +629,9 @@ def main() -> None:
 
     train_rows = _load_split("train")
     test_rows = _load_split("test")
+    realgame_rows = _load_realgame()
     generated = datetime.now(timezone.utc)
-    report = _build_report(train_rows, test_rows, generated)
+    report = _build_report(train_rows, test_rows, realgame_rows, generated)
 
     _REPORT_DIR.mkdir(parents=True, exist_ok=True)
     out_path = _REPORT_DIR / f"tactic-tagger-{generated.strftime('%Y-%m-%d')}.md"

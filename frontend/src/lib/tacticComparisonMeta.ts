@@ -2,7 +2,8 @@
  * Shared metadata for the tactic-motif family comparison bullets (Phase 126, updated
  * Phase 129; tier-3 Advanced families added Quick 260623-6pd → 15 families; Phase 133
  * plan 133-02 added attraction + sacrifice → 17 families; Quick 260623 added the move-type
- * families en-passant + under-promotion → 19 families).
+ * families en-passant + under-promotion → 19 families; Phase 221 plan 06 (D-07) then
+ * REMOVED clearance → 19 families).
  *
  * Single source of truth consumed by TacticComparisonGrid (family cards + rows),
  * TacticMotifChip (family color + icon), and the FilterPanel tactic-motif filter.
@@ -15,8 +16,11 @@
  * Quick 260623-6pd surfaced the shipped Phase-132 tier-3 motifs (x-ray, deflection,
  * intermezzo, interference, clearance, capturing-defender) under an "Advanced" group.
  * Phase 133 (plan 133-02) added attraction and sacrifice as Advanced families.
- * Only self-interference belongs to no family. Old ?tactic=pin_skewer / discovery /
- * combinations URL params are inert (backend .get(fam, []) no-op; union excludes them).
+ * Phase 221 plan 06 (D-07) suppressed clearance (real-game keep/suppress bar measured
+ * real_share=0.667 with only 3 of 16 surviving rows — below both
+ * REALGAME_MIN_ROWS_FOR_FLOOR and the 0.80 keep bar); it belongs to no family now, same
+ * as self-interference. Old ?tactic=pin_skewer / discovery / combinations URL params
+ * are inert (backend .get(fam, []) no-op; union excludes them).
  */
 
 import type { ComponentType, CSSProperties } from 'react';
@@ -34,7 +38,6 @@ import {
   Magnet,
   Shuffle,
   Split,
-  DoorOpen,
   ShieldOff,
   Wind,
   Gift,
@@ -70,8 +73,6 @@ import {
   TAC_INTERMEZZO_BG,
   TAC_INTERFERENCE,
   TAC_INTERFERENCE_BG,
-  TAC_CLEARANCE,
-  TAC_CLEARANCE_BG,
   TAC_CAPTURING_DEFENDER,
   TAC_CAPTURING_DEFENDER_BG,
   TAC_ATTRACTION,
@@ -120,7 +121,11 @@ export type TacticIcon = ComponentType<{
  * Filter display order (mechanism-grouped, Quick 260620-onv; Advanced added 260623-6pd):
  *   Piece Attacks: fork → pin → skewer → hanging
  *   Checkmate, Checks & Discoveries: mate → double_check → discovered_check → discovered_attack
- *   Advanced (tier-3): trapped_piece → x_ray → deflection → intermezzo → interference → clearance → capturing_defender → attraction → sacrifice
+ *   Advanced (tier-3): trapped_piece → x_ray → deflection → intermezzo → interference → capturing_defender → attraction → sacrifice
+ *
+ * "clearance" REMOVED (Phase 221 plan 06, D-07 suppression) — the real-game keep/
+ * suppress bar measured real_share=0.667 with only 3 of 16 surviving rows, below
+ * both REALGAME_MIN_ROWS_FOR_FLOOR and the 0.80 keep bar.
  */
 export type TacticFamily =
   | 'fork'
@@ -137,7 +142,6 @@ export type TacticFamily =
   | 'deflection'
   | 'intermezzo'
   | 'interference'
-  | 'clearance'
   | 'capturing_defender'
   // Phase 133 (plan 133-02): attraction + sacrifice unsuppressed
   | 'attraction'
@@ -169,7 +173,6 @@ export const TACTIC_FAMILY_COLORS: Record<TacticFamily, TacticFamilyColors> = {
   deflection: { color: TAC_DEFLECTION, bg: TAC_DEFLECTION_BG },
   intermezzo: { color: TAC_INTERMEZZO, bg: TAC_INTERMEZZO_BG },
   interference: { color: TAC_INTERFERENCE, bg: TAC_INTERFERENCE_BG },
-  clearance: { color: TAC_CLEARANCE, bg: TAC_CLEARANCE_BG },
   capturing_defender: { color: TAC_CAPTURING_DEFENDER, bg: TAC_CAPTURING_DEFENDER_BG },
   // Phase 133 (plan 133-02): attraction + sacrifice
   attraction: { color: TAC_ATTRACTION, bg: TAC_ATTRACTION_BG },
@@ -194,7 +197,6 @@ export const TACTIC_FAMILY_ICON: Record<TacticFamily, TacticIcon> = {
   deflection: Wind,
   intermezzo: Shuffle,
   interference: Split,
-  clearance: DoorOpen,
   capturing_defender: ShieldOff,
   // Phase 133 (plan 133-02): attraction + sacrifice
   attraction: Magnet,
@@ -247,13 +249,14 @@ export interface TacticFamilyDef {
 /**
  * The 19 tactic families in filter display order (mechanism-grouped, Quick 260620-onv;
  * tier-3 Advanced group added Quick 260623-6pd; attraction + sacrifice added Phase 133;
- * en-passant + under-promotion added Quick 260623).
+ * en-passant + under-promotion added Quick 260623; clearance REMOVED Phase 221 plan 06
+ * D-07 — see the TacticFamily union doc comment above).
  * Array order doubles as the chip order within each group — the filter panel groups
  * these by `group` preserving this order. The comparison grid resolves families by
  * `.find(f => f.family === ...)` and renders in server order, so it is unaffected by
  * this ordering. The motifs arrays mirror the backend FAMILY_TO_MOTIF_INTS mapping in
- * library_repository.py (plan 129-04 contract). Only self-interference belongs to no family
- * (promotion was added here when D-09 was reversed).
+ * library_repository.py (plan 129-04 contract). self-interference and clearance belong
+ * to no family (promotion was added here when D-09 was reversed).
  */
 export const TACTIC_COMPARISON_FAMILIES: TacticFamilyDef[] = [
   // ── Piece Attacks ──
@@ -337,7 +340,8 @@ export const TACTIC_COMPARISON_FAMILIES: TacticFamilyDef[] = [
   },
   // ── Advanced (tier-3, Quick 260623-6pd) ──
   // Shipped Phase-132 cook-aligned motifs surfaced behind the collapsible "Advanced"
-  // filter section. trapped-piece leads, then x-ray (geometric), then the lure/disruption motifs.
+  // filter section. trapped-piece leads, then x-ray (geometric), then the lure/disruption
+  // motifs. "clearance" REMOVED (Phase 221 plan 06, D-07 suppression).
   {
     name: 'Trapped piece',
     family: 'trapped_piece',
@@ -377,14 +381,6 @@ export const TACTIC_COMPARISON_FAMILIES: TacticFamilyDef[] = [
     chipLabel: 'interference',
     definition: 'A piece is placed on a square that disrupts the coordination between two of the opponent\'s pieces.',
     motifs: ['interference'],
-  },
-  {
-    name: 'Clearance',
-    family: 'clearance',
-    group: 'advanced',
-    chipLabel: 'clearance',
-    definition: 'A piece vacates a square or line so another piece can use it more effectively.',
-    motifs: ['clearance'],
   },
   {
     name: 'Capturing defender',
