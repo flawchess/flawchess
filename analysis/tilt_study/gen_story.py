@@ -135,7 +135,10 @@ print("features", g.shape, f"{time.time() - t0:.0f}s")
 scored = g.filter(pl.col("equal_footing"))
 story = scored.filter(pl.col("hygiene"))  # the frame every story number is scored on
 after = story.filter(
-    pl.col("in_session") & pl.col("streak_same_session") & pl.col("streak_dir").is_not_null()
+    pl.col("in_session")
+    & pl.col("streak_same_session")
+    & pl.col("fresh_opponent")
+    & pl.col("streak_dir").is_not_null()
 )
 pop = {
     "games_total": g.height,
@@ -158,14 +161,16 @@ base = g.filter(pl.col("streak_dir").is_not_null())
 L0 = base
 L1 = base.filter(pl.col("equal_footing"))
 L2 = L1.filter(pl.col("in_session") & pl.col("streak_same_session"))
-L3 = L2.filter(pl.col("hygiene"))
+L3 = L2.filter(pl.col("fresh_opponent"))
+L4 = L3.filter(pl.col("hygiene"))
 lad = (
     curve(L0, XS)
     .select("x", pl.col("n").alias("n_any"), pl.col("score").alias("any_opponent"))
     .join(curve(L1, XS).select("x", pl.col("score").alias("equal_footing")), on="x")
     .join(curve(L2, XS).select("x", pl.col("score").alias("same_session")), on="x")
+    .join(curve(L3, XS).select("x", pl.col("score").alias("fresh_opponent")), on="x")
     .join(
-        curve(L3, XS, REPS_HEAD).select(
+        curve(L4, XS, REPS_HEAD).select(
             "x",
             pl.col("n").alias("n_controlled"),
             pl.col("score").alias("controlled"),
@@ -189,8 +194,9 @@ lad6 = (
     .select("x", pl.col("n").alias("n_any"), pl.col("score").alias("any_opponent"))
     .join(curve(L1, XS6).select("x", pl.col("score").alias("equal_footing")), on="x")
     .join(curve(L2, XS6).select("x", pl.col("score").alias("same_session")), on="x")
+    .join(curve(L3, XS6).select("x", pl.col("score").alias("fresh_opponent")), on="x")
     .join(
-        curve(L3, XS6, REPS_HEAD).select(
+        curve(L4, XS6, REPS_HEAD).select(
             "x",
             pl.col("n").alias("n_controlled"),
             pl.col("score").alias("controlled"),
@@ -215,6 +221,8 @@ diag = (
         pl.col("r_dev").mean().round(1).alias("rating_minus_long_run_median"),
         pl.col("in_session").mean().round(3).alias("share_next_game_in_session"),
         pl.col("streak_same_session").mean().round(3).alias("share_streak_in_one_session"),
+        (~pl.col("fresh_opponent")).mean().round(3).alias("share_rematch_series"),
+        (pl.col("my_r") - pl.col("opp_r")).median().round(0).alias("median_rating_gap_next_game"),
         (pl.col("hist_idx") < 100).mean().round(3).alias("share_in_first_100_games"),
     )
     .sort("x")
@@ -226,20 +234,20 @@ emit(
 )
 
 # ---- 2. the controlled streak curve (hero) -----------------------------------------
-hero = curve(L3, XS6, REPS_HEAD)
+hero = curve(L4, XS6, REPS_HEAD)
 emit("2. Controlled streak curve, pooled, -6 = 6+ losses ... +6 = 6+ wins", hero, "streak_curve")
 emit(
     "2b. Controlled streak curve by time control",
-    curve(L3, XS6, REPS, "tc", TC_ORDER),
+    curve(L4, XS6, REPS, "tc", TC_ORDER),
     "streak_curve_tc",
 )
 emit(
     "2c. Controlled streak curve by rating",
-    curve(L3, XS6, REPS, "elo_bucket", list(ELO_ANCHORS)),
+    curve(L4, XS6, REPS, "elo_bucket", list(ELO_ANCHORS)),
     "streak_curve_elo",
 )
 # colour check: residual against a colour-blind calibration
-cc = curve(L3.with_columns(resid=pl.col("resid_nocolour")), XS6, 100).select(
+cc = curve(L4.with_columns(resid=pl.col("resid_nocolour")), XS6, 100).select(
     "x", pl.col("resid").alias("resid_nocolour")
 )
 emit(
@@ -255,7 +263,12 @@ fc = (
     .with_columns(
         form=pl.col("resid").shift(4).rolling_mean(window_size=20, min_samples=20).over(w)
     )
-    .filter(pl.col("form").is_not_null() & pl.col("in_session") & pl.col("streak_same_session"))
+    .filter(
+        pl.col("form").is_not_null()
+        & pl.col("in_session")
+        & pl.col("streak_same_session")
+        & pl.col("fresh_opponent")
+    )
 )
 q1, q2 = fc["form"].quantile(1 / 3), fc["form"].quantile(2 / 3)
 fc = fc.with_columns(
@@ -283,7 +296,7 @@ emit(
 )
 # player fixed effects: demean residual within user x TC (over all scored games)
 um = scored.group_by(w).agg(pl.col("resid").mean().alias("user_mean_resid"))
-fe = L3.join(um, on=w).with_columns(resid_fe=pl.col("resid") - pl.col("user_mean_resid"))
+fe = L4.join(um, on=w).with_columns(resid_fe=pl.col("resid") - pl.col("user_mean_resid"))
 rows = []
 for x in XS6:
     c = fe.with_columns(xc=pl.col("x").clip(-6, 6)).filter(pl.col("xc") == x)
@@ -355,6 +368,7 @@ emit(
 # ---- 4. does a break help? -------------------------------------------------------
 brk = story.filter(
     pl.col("streak_same_session")
+    & pl.col("fresh_opponent")
     & (pl.col("streak_len") >= 2)
     & (pl.col("streak_dir") != 0)
     & pl.col("gap_before_s").is_not_null()
@@ -403,6 +417,7 @@ for tc in TC_ORDER + ["all"]:
     a = d.filter(
         pl.col("in_session")
         & pl.col("streak_same_session")
+        & pl.col("fresh_opponent")
         & (pl.col("streak_dir") == -1)
         & (pl.col("streak_len") >= 2)
     )
@@ -467,7 +482,9 @@ pl_ = pl_.with_columns(
     .then(pl.col("prev_eg_cp"))
     .otherwise(-pl.col("prev_eg_cp")),
 )
-anat = pl_.filter(pl.col("in_session") & (pl.col("prev_score") == 0)).with_columns(
+anat = pl_.filter(
+    pl.col("in_session") & pl.col("fresh_opponent") & (pl.col("prev_score") == 0)
+).with_columns(
     length=pl.when(pl.col("prev_ply") <= SHORT_PLIES)
     .then(pl.lit("short (<=20 plies)"))
     .when(pl.col("prev_ply") <= LONG_PLIES)
@@ -587,7 +604,9 @@ anatomy(
     "5e3. Endgame cut, long losses (> 60 plies) only",
 )
 # mirror for wins
-wins = pl_.filter(pl.col("in_session") & (pl.col("prev_score") == 1)).with_columns(
+wins = pl_.filter(
+    pl.col("in_session") & pl.col("fresh_opponent") & (pl.col("prev_score") == 1)
+).with_columns(
     endgame=pl.when(pl.col("prev_eg_my").is_null())
     .then(pl.lit("never reached an endgame"))
     .when(pl.col("prev_eg_my") >= ENDGAME_LEAD_CP)
@@ -916,9 +935,9 @@ emit(
 )
 
 # ---- 7. trait: split-half reliability of a player's post-loss minus post-win residual -----
-tr = story.filter(pl.col("in_session") & pl.col("streak_dir").is_in([-1, 1])).with_columns(
-    half=(pl.col("session_id") % 2), dirn=pl.col("streak_dir")
-)
+tr = story.filter(
+    pl.col("in_session") & pl.col("fresh_opponent") & pl.col("streak_dir").is_in([-1, 1])
+).with_columns(half=(pl.col("session_id") % 2), dirn=pl.col("streak_dir"))
 pu = tr.group_by(["user_id", "tc", "half", "dirn"]).agg(
     pl.col("resid").mean().alias("m"), pl.len().alias("n")
 )

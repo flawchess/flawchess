@@ -64,7 +64,7 @@ html = HTML.read_text()
 lad = load("ladder6").filter(pl.col("x") != 0).sort("x")
 rows = [
     f"<tr><td>{xlab(r['x'])}</td><td>{n(r['n_any'])}</td><td>{pc(r['any_opponent'])}</td><td>{pc(r['equal_footing'])}</td>"
-    f"<td>{pc(r['controlled'])}</td><td>{pc(r['expected'])}</td><td>{s1(r['resid'])}</td></tr>"
+    f"<td>{pc(r['fresh_opponent'])}</td><td>{pc(r['controlled'])}</td><td>{pc(r['expected'])}</td><td>{s1(r['resid'])}</td></tr>"
     for r in lad.iter_rows(named=True)
 ]
 html = replace_tbody(html, "raw-stats", rows)

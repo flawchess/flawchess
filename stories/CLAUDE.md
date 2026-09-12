@@ -50,6 +50,7 @@ Umami does **not** track outbound clicks automatically (that's Plausible). Every
 
 - **Tag every external `<a>`**: the header brand link, the footer CTA, report/GitHub links, author links, and any site named in the story body. Internal links between stories need nothing — they already produce a pageview.
 - **Naming**: `outbound-<destination>`, kebab-case (`outbound-github`, `outbound-linkedin`, `outbound-next-level-chess`). When the same destination appears more than once on a page, suffix the placement so the two are distinguishable in the dashboard (`outbound-flawchess-header` vs `outbound-flawchess-cta`). Reuse the exact same event name across stories for the same link, so totals aggregate.
+- **Citations share one event.** Links to sources cited in the story body (other people's analyses, papers, blog posts) all use `data-umami-event="outbound-citation"` with the destination as event data, `data-umami-event-url="<host>"`, so the dashboard keeps one event row and the per-source breakdown lives under that event's properties. Per-destination names are for links with a role of their own (brand, CTA, report, author).
 - No `target="_blank"` is needed: for a same-tab link the tracker intercepts the click, sends the event, then navigates.
 - Clicks land in the stories Umami site under **Events**, not under pageviews, and are subject to the same `data-domains` gate — local preview clicks are never recorded.
 

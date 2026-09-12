@@ -45,6 +45,10 @@ TC_ORDER = ["bullet", "blitz", "rapid", "classical"]
 MIN_HISTORY_GAMES = 100  # hygiene C: first 100 games of a user-TC history are dropped
 MAX_RATING_DEV = 150  # hygiene D: |rating - long-run median| > 150 dropped
 MAX_STREAK = 7  # story axis: -7 = 7 or more losses ... +7 = 7 or more wins
+# Fresh-opponent control: the next opponent must not appear in any game of the streak that just
+# ended. Scanning this many games back covers every streak the story axis distinguishes; longer
+# streaks are checked over their last SERIES_LOOKBACK games only.
+SERIES_LOOKBACK = 12
 USER_W = ["user_id", "tc"]
 
 
@@ -96,6 +100,21 @@ def load_games() -> pl.DataFrame:
     g = g.with_columns(
         streak_dir=pl.col("dir").shift(1).over(w),
         streak_len=pl.col("run_len").shift(1).over(w),
+    )
+    # A rematch series is not an independent draw from the pool: the same opponent carries an
+    # opponent-specific mismatch the rating-gap calibration cannot see, and their state is
+    # correlated with yours (they just lost to you k times). Within a rematch the streak effect
+    # is about twice the fresh-opponent effect, so the streak frame requires a fresh opponent;
+    # rematches are analysed on their own in section 6.
+    g = g.with_columns(
+        fresh_opponent=~pl.any_horizontal(
+            [
+                (
+                    (pl.col("opp") == pl.col("opp").shift(i).over(w)) & (pl.col("streak_len") >= i)
+                ).fill_null(False)
+                for i in range(1, SERIES_LOOKBACK + 1)
+            ]
+        )
     )
     g = g.with_columns(
         new_session=pl.col("gap_before_s").is_null()
