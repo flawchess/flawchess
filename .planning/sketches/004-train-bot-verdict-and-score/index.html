@@ -1,0 +1,282 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sketch 004 — Train bot verdict + score screen</title>
+<link rel="stylesheet" href="../themes/default.css">
+<style>
+  * { box-sizing: border-box; }
+  body { margin: 0; background: #0b0b0b; color: var(--color-text); font-family: var(--font-sans); padding-top: 56px; }
+  #variant-nav { position: fixed; top: 0; left: 0; right: 0; z-index: 9998; background: var(--color-surface); border-bottom: 1px solid var(--color-border); padding: 8px 16px; display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+  .variant-tab { background: transparent; color: var(--color-text-muted); border: 1px solid var(--color-border-strong); border-radius: var(--radius-full); padding: 6px 12px; font: 600 13px var(--font-sans); cursor: pointer; transition: all .15s ease; }
+  .variant-tab:hover { color: var(--color-text); border-color: var(--brand-brown-light); }
+  .variant-tab.active { background: var(--brand-brown); border-color: var(--brand-brown); color: #fff; }
+  .stage { display: flex; gap: 28px; justify-content: center; align-items: flex-start; padding: 24px 16px 80px; flex-wrap: wrap; }
+  .phone { width: 375px; min-height: 780px; background: var(--color-bg); border: 10px solid #222; border-radius: 36px; overflow: hidden; box-shadow: var(--shadow-lg); position: relative; }
+  .phone .screen { padding: 12px 12px 24px; }
+  .topbar { display: flex; align-items: center; justify-content: space-between; font-size: var(--text-sm); color: var(--color-text-muted); padding: 4px 4px 10px; }
+  .topbar b { color: var(--color-text); font-family: var(--font-brand); font-weight: 600; font-size: 16px; }
+  .boardwrap { position: relative; }
+  .board { width: 100%; aspect-ratio: 1; display: grid; grid-template-columns: repeat(8, 1fr); border-radius: 4px; overflow: hidden; user-select: none; }
+  .sq { display: flex; align-items: center; justify-content: center; font-size: 30px; line-height: 1; position: relative; }
+  .sq.l { background: #f0d9b5; } .sq.d { background: #b58863; }
+  .sq.hl { box-shadow: inset 0 0 0 100px rgba(155,199,0,.45); }
+  .sq .p { filter: drop-shadow(0 1px 0 rgba(0,0,0,.25)); }
+  .sq.w .p { color: #fff; text-shadow: 0 0 2px #000, 0 0 1px #000; }
+  .sq.b .p { color: #1a1a1a; }
+  .pop { position: absolute; left: 50%; top: 50%; transform: translate(-50%,-50%); z-index: 5; display: flex; align-items: center; gap: 10px; background: #fff; color: #111; border-radius: 999px; padding: 6px 18px 6px 6px; font: 800 24px var(--font-sans); box-shadow: var(--shadow-lg); pointer-events: none; opacity: 0; }
+  .pop.go { animation: pop 1.6s ease forwards; }
+  .pop.bad { background: #3a1d1d; color: #ffb4b4; } .pop.good { background: #e9f7e9; color: #0f5a2a; }
+  @keyframes pop { 0%{opacity:0;transform:translate(-50%,-50%) scale(.6)} 15%{opacity:1;transform:translate(-50%,-50%) scale(1.05)} 25%{transform:translate(-50%,-50%) scale(1)} 75%{opacity:1} 100%{opacity:0;transform:translate(-50%,-70%) scale(1)} }
+  .below { margin-top: 12px; display: flex; flex-direction: column; gap: 10px; }
+  .btnrow { display: flex; gap: 8px; }
+  .btn { flex: 1; height: 48px; border-radius: var(--radius-md); border: 1px solid rgba(160,120,80,.6); background: rgba(255,255,255,.03); color: var(--brand-brown-light); font: 700 14px var(--font-sans); cursor: pointer; transition: all .15s ease; }
+  .btn:hover { background: rgba(139,94,60,.15); color: var(--brand-brown-highlight); border-color: var(--brand-brown-highlight); }
+  .btn.primary { background: var(--brand-brown); border-color: var(--brand-brown); color: #fff; } .btn.primary:hover { background: var(--brand-brown-hover); }
+  .btn.icon { flex: 0 0 48px; }
+  .avatar { border-radius: 50%; object-fit: cover; background: #222; flex: 0 0 auto; border: 2px solid rgba(255,255,255,.12); }
+  .avatar.lg { width: 56px; height: 56px; } .avatar.md { width: 40px; height: 40px; } .avatar.sm { width: 28px; height: 28px; border-width: 1px; } .avatar.xl { width: 72px; height: 72px; }
+  .botname { font-family: var(--font-brand); font-weight: 600; font-size: 12px; color: var(--color-text-muted); letter-spacing: .3px; }
+  .bubble { position: relative; background: var(--color-surface); border: 1px solid var(--color-border-strong); border-radius: 14px; padding: 12px 14px; font-size: var(--text-sm); line-height: 1.45; }
+  .bubble p { margin: 0 0 8px; } .bubble p:last-child { margin-bottom: 0; }
+  .bubble.tail-left::before { content:''; position:absolute; left:-9px; top:18px; border: 8px solid transparent; border-right-color: var(--color-border-strong); border-left: 0; }
+  .bubble.tail-left::after { content:''; position:absolute; left:-7px; top:19px; border: 7px solid transparent; border-right-color: var(--color-surface); border-left: 0; }
+  .bubble.tail-up::before { content:''; position:absolute; left:50%; margin-left:-8px; top:-9px; border: 8px solid transparent; border-bottom-color: var(--color-border-strong); border-top: 0; }
+  .bubble.tail-up::after { content:''; position:absolute; left:50%; margin-left:-7px; top:-7px; border: 7px solid transparent; border-bottom-color: var(--color-surface); border-top: 0; }
+  .chatrow { display: flex; gap: 10px; align-items: flex-start; }
+  .chatrow .who { display: flex; flex-direction: column; align-items: center; gap: 4px; width: 60px; }
+  .chatrow .bubble { flex: 1; }
+  /* cards (mirror app Card/CardHeader compact) */
+  .card { background: var(--color-surface); border: 1px solid var(--color-border); border-radius: var(--radius-lg); overflow: hidden; }
+  .card .hd { display: flex; align-items: center; gap: 8px; padding: 8px 12px; font-size: var(--text-sm); font-weight: 700; border-bottom: 1px solid var(--color-border); }
+  .card .hd .t { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .card .bd { padding: 10px 12px; font-size: var(--text-sm); color: var(--color-text); }
+  .card .bd .muted { color: var(--color-text-muted); }
+  .chip { font: 700 12px var(--font-sans); color: #fff; border-radius: 999px; padding: 2px 8px; }
+  .chip.ok { background: #1f7a3a; } .chip.bad { background: #8f2a2a; }
+  .evalc { font: 600 12px var(--font-mono, monospace); color: var(--color-text-muted); }
+  .san { font-family: var(--font-mono, monospace); }
+  /* score screen */
+  .score { display: flex; flex-direction: column; align-items: center; gap: 14px; text-align: center; padding-top: 12px; }
+  .score h1 { font-size: 20px; font-weight: 700; margin: 0; }
+  .badge { width: 144px; height: 144px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font: 800 44px var(--font-sans); border: 6px solid var(--band); background: color-mix(in oklch, var(--band) 18%, transparent); color: var(--band); }
+  .score .pts { font-size: 17px; font-weight: 700; color: var(--color-text-muted); margin: 0; }
+  .score .next { font-size: 13px; font-weight: 700; color: var(--color-text-muted); margin: 0; }
+  .score .btnrow { width: 100%; }
+  .score .bubble { text-align: left; width: 100%; }
+  .score .chatrow { width: 100%; text-align: left; }
+  .retlist { margin: 6px 0 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 4px; }
+  .retlist li { display: flex; justify-content: space-between; gap: 8px; }
+  .retlist li span:last-child { color: var(--color-text-muted); white-space: nowrap; }
+  .statebar { display: flex; gap: 6px; justify-content: center; flex-wrap: wrap; margin: 0 0 12px; }
+  .statebar button { font: 600 12px var(--font-sans); padding: 5px 10px; border-radius: 999px; border: 1px solid #444; background: #1a1a1a; color: #bbb; cursor: pointer; }
+  .statebar button.on { background: #333; color: #fff; border-color: #888; }
+  .note { max-width: 320px; font-size: 13px; color: #aaa; line-height: 1.5; }
+  .note h3 { color: #eee; font-size: 14px; margin: 0 0 6px; } .note ul { padding-left: 18px; margin: 6px 0; }
+  .variant { display: none; } .variant.active { display: block; }
+  .phonelabel { text-align: center; font: 600 12px var(--font-sans); color: #888; margin-bottom: 8px; }
+</style>
+</head>
+<body>
+<div id="variant-nav">
+  <span style="font:600 13px var(--font-sans);color:#aaa;margin-right:6px">004 · verdict + score</span>
+  <button class="variant-tab active" onclick="showVariant('s', this)">Synthesis: A + buttons in the bubble + inline pills ★ Selected</button>
+  <button class="variant-tab" onclick="showVariant('a', this)">A: Bot row above the verdict cards</button>
+  <button class="variant-tab" onclick="showVariant('b', this)">B: Bot folded into the guess card</button>
+</div>
+
+<div id="variant-s" class="variant active">
+  <div class="stage">
+    <div>
+      <div class="phonelabel">Reveal</div>
+      <div class="phone" data-variant="s" data-screen="reveal"></div>
+    </div>
+    <div>
+      <div class="phonelabel">Score screen</div>
+      <div class="phone" data-variant="s" data-screen="score"></div>
+    </div>
+    <div class="note">
+      <h3>Synthesis (selected)</h3>
+      <p>Bot row sits directly under the board. The bubble carries the verdict with the point pills inline ("Good call on the position <b>+1</b>, wrong move <b>+0</b>."), the return date, and the action buttons on their own row inside the bubble. Solution appears only once the board has departed the reveal position (tap a card to simulate). No sound toggle: it moves to a settings page later.</p>
+      <p>First session: a second bubble from Hilda, between the verdict and the cards, explains the cards (tap to highlight the line on the board, step through it) and the buttons.</p>
+      <ul><li>Pills: "1 pt · first session" shows the Hilda tip.</li><li>Score screen is variant A's.</li></ul>
+    </div>
+  </div>
+</div>
+
+<div id="variant-a" class="variant">
+  <div class="stage">
+    <div>
+      <div class="phonelabel">Reveal</div>
+      <div class="phone" data-variant="a" data-screen="reveal"></div>
+    </div>
+    <div>
+      <div class="phonelabel">Score screen</div>
+      <div class="phone" data-variant="a" data-screen="score"></div>
+    </div>
+    <div class="note">
+      <h3>A: Bot row above the cards</h3>
+      <p>The same chat row as sketch 003 (winner A), now spoken by the outcome bot. It sits between the Solution / Analyze / Next row and the verdict cards, so it is the first thing under the board. The points pop over the board carries the bot's face.</p>
+      <p>Score screen: the bot bubble replaces the "Session complete" heading; badge and points move below it; the bubble lists what returns and when, then "Remind me" follows.</p>
+      <ul><li>Cycle outcomes with the pills; 0/1 = stern bots, 2/3 = friendly; "warm-up" = herring/filler, no return promise.</li><li>Score screen: first session (full explanation) vs later (one line).</li></ul>
+    </div>
+  </div>
+</div>
+
+<div id="variant-b" class="variant">
+  <div class="stage">
+    <div>
+      <div class="phonelabel">Reveal</div>
+      <div class="phone" data-variant="b" data-screen="reveal"></div>
+    </div>
+    <div>
+      <div class="phonelabel">Score screen</div>
+      <div class="phone" data-variant="b" data-screen="score"></div>
+    </div>
+    <div class="note">
+      <h3>B: Bot folded into the cards</h3>
+      <p>No extra row. The outcome bot becomes a 40px avatar in the header of the Guess card and its one line is the card's first body line. Denser, one fewer block, but the bot is now "inside" a stats card.</p>
+      <p>Score screen: badge stays on top as today; the bot bubble (tail up, avatar centred above it) sits between the points line and the buttons.</p>
+      <ul><li>Watch: does the bot still feel like a voice, or like an icon?</li></ul>
+    </div>
+  </div>
+</div>
+
+<div id="sketch-tools" style="position:fixed;bottom:12px;right:12px;z-index:9999;font-family:system-ui;font-size:12px;background:rgba(0,0,0,0.7);color:white;padding:8px 12px;border-radius:8px;opacity:0.4;transition:opacity 0.2s;display:flex;gap:8px;align-items:center" onmouseenter="this.style.opacity='1'" onmouseleave="this.style.opacity='0.4'">
+  <span>theme</span>
+  <select onchange="document.querySelector('link[href*=themes]').href='../themes/'+this.value+'.css'"><option value="default">Default</option></select>
+  <span style="opacity:.6">· 375px phone frame</span>
+</div>
+
+<script>
+const AV = '../../../frontend/src/assets/personas/';
+const BOT = {
+  tank:   { name: 'Tank the Ox',      src: AV + 'grinder-1600.webp' },
+  diesel: { name: 'Diesel the Bull',  src: AV + 'attacker-1800.webp' },
+  gus:    { name: 'Gus the Gorilla',  src: AV + 'grinder-1800.webp' },
+  hilda:  { name: 'Hilda the Hippo',  src: AV + 'wall-1800.webp' },
+  shelly: { name: 'Shelly the Turtle',src: AV + 'wall-1200.webp' },
+  pip:    { name: 'Pip the Ant',      src: AV + 'grinder-800.webp' },
+  bruno:  { name: 'Bruno the Badger', src: AV + 'wall-1400.webp' },
+  rocco:  { name: 'Rocco the Armadillo', src: AV + 'wall-1600.webp' },
+};
+const FEN = 'r2q1rk1/pp2bppp/2n1bn2/3p4/3P4/2N1BN2/PPQ1BPPP/R4RK1';
+const GLYPH = { k:'♚',q:'♛',r:'♜',b:'♝',n:'♞',p:'♟' };
+
+// reveal outcomes — points = guess(0/1) + move(0/1/2)
+const PARTS = {
+  p0:   { g: 'Not the moment for several fine moves', gp: 0, m: 'and the move let it slip', mp: 0 },
+  p1:   { g: 'Good call on the position', gp: 1, m: 'wrong move', mp: 0 },
+  p2:   { g: 'Good move', gp: 2, m: 'but it was the critical one, not one of several', mp: 0 },
+  p3:   { g: 'Right call', gp: 1, m: 'right move', mp: 2 },
+  warm: { g: 'Right call', gp: 1, m: 'right move', mp: 2 },
+};
+const TAIL = { p0: 'We\'ll try this one again in the next session.', p1: 'We\'ll try this one again in the next session.', p2: 'Let\'s see if you remember this in 4 days.', p3: 'Let\'s see if you remember this in 4 days.', warm: 'That one was a warm-up, so it won\'t come back. Your own positions will.' };
+const HILDA_TIP = '<p><b>How to read this.</b> Tap a card to see its line on the board, then step through the moves. <b>Analyze</b> opens the full game one move before the mistake. <b>Next</b> moves on.</p>';
+const OUTCOMES = {
+  p0: { label: '0 pts', bot: 'tank', guessOk: false, move: 'Nb5', tier: 'wrong', evalTxt: '−1.4', pts: 0,
+        line: 'Not quite right. We\'ll try this one again in the next session.', due: 'next session' },
+  p1: { label: '1 pt', bot: 'diesel', guessOk: true, move: 'Ne5', tier: 'wrong', evalTxt: '−0.9', pts: 1,
+        line: 'Good call on the position, wrong move. We\'ll try this one again in the next session.', due: 'next session' },
+  p2: { label: '2 pts', bot: 'pip', guessOk: false, move: 'Nxd5', tier: 'good', evalTxt: '+1.8', pts: 2,
+        line: 'Good move. It was the critical one, though. Let\'s see if you remember this in 4 days.', due: '4 days' },
+  p3: { label: '3 pts', bot: 'bruno', guessOk: true, move: 'Nxd5', tier: 'good', evalTxt: '+1.8', pts: 3,
+        line: 'Good job! Let\'s see if you remember this in 4 days.', due: '4 days' },
+  p1first: { label: '1 pt · first session', first: true, bot: 'diesel', guessOk: true, move: 'Ne5', tier: 'wrong', evalTxt: '−0.9', pts: 1,
+        line: 'Good call on the position, wrong move. We\'ll try this one again in the next session.', due: 'next session' },
+  warm: { label: 'warm-up (no return)', bot: 'shelly', guessOk: true, move: 'Nxd5', tier: 'good', evalTxt: '+1.8', pts: 3,
+        line: 'Good job! That one was a warm-up, so it won\'t come back. Your own positions will.', due: null },
+};
+const SCORES = {
+  first: { label: 'First session', bot: 'hilda', pct: 67, band: 'oklch(0.82 0.13 95)', pts: '14/21', next: 'Sep 14',
+    html: '<p><b>Session done.</b> Three positions got away from you. They come back, and keep coming back at longer gaps until you get them cold. That is the point: your own mistakes, repeated until they stop being yours.</p><ul class="retlist"><li><span class="san">Nb5 · 12.</span><span>next session</span></li><li><span class="san">Rxe6 · 23.</span><span>next session</span></li><li><span class="san">Kf1 · 31.</span><span>next session</span></li></ul><p style="margin-top:8px">The four you got are parked until they are due again. Want a nudge when the next session is ready? That is what "Remind me" is for. It is for you, not for us.</p>' },
+  later: { label: 'Later session', bot: 'rocco', pct: 81, band: 'oklch(0.60 0.14 145)', pts: '17/21', next: 'Sep 14',
+    html: '<p><b>Solid.</b> Two come back next session, the rest are parked. See you tomorrow.</p>' },
+};
+
+function renderBoard(el) {
+  el.innerHTML = '';
+  FEN.split('/').forEach((row, r) => { let f = 0; for (const ch of row) { if (/\d/.test(ch)) { for (let i = 0; i < +ch; i++) el.appendChild(sq(r, f++, null)); } else el.appendChild(sq(r, f++, ch)); } });
+  function sq(r, f, piece) { const d = document.createElement('div'); d.className = 'sq ' + (((r + f) % 2) ? 'd' : 'l'); if ((r===5&&f===2)||(r===3&&f===3)) d.classList.add('hl'); if (piece) { d.classList.add(piece === piece.toUpperCase() ? 'w' : 'b'); d.innerHTML = '<span class="p">' + GLYPH[piece.toLowerCase()] + '</span>'; } return d; }
+}
+
+function revealHtml(v, o) {
+  const bot = BOT[o.bot];
+  const chip = (ok, n) => `<span class="chip ${ok ? 'ok' : 'bad'}">+${n}</span>`;
+  if (v === 's') {
+    const rawKey = Object.entries(OUTCOMES).find(([k, x]) => x === o)[0];
+    const key = rawKey === 'p1first' ? 'p1' : rawKey;
+    const pr = PARTS[key];
+    const gchip = chip(pr.gp > 0, pr.gp), mchip = chip(pr.mp > 0, pr.mp);
+    const verdict = `${pr.g} ${gchip}, ${pr.m} ${mchip}. ${TAIL[key]}`;
+    const actions = `<div class="btnrow" data-actions><button class="btn" data-solution hidden>Solution</button><button class="btn">Analyze</button><button class="btn primary">Next</button></div>`;
+    const botRow = `<div class="chatrow"><div class="who"><img class="avatar lg" src="${bot.src}" alt=""><span class="botname">${bot.name}</span></div><div class="bubble tail-left"><p>${verdict}</p>${actions}</div></div>`;
+    const hilda = o.first ? `<div class="chatrow"><div class="who"><img class="avatar lg" src="${BOT.hilda.src}" alt=""><span class="botname">${BOT.hilda.name}</span></div><div class="bubble tail-left">${HILDA_TIP}</div></div>` : '';
+    return `
+    <div class="topbar"><b>Train</b><span>Puzzle 3 of 9</span></div>
+    <div class="boardwrap"><div class="board" data-board></div><div class="pop ${o.pts >= 2 ? 'good' : 'bad'}" data-pop><img class="avatar md" src="${bot.src}" alt="">+${o.pts}</div></div>
+    <div class="below">
+      <div class="statebar" data-statebar></div>
+      ${botRow}
+      ${hilda}
+      <div class="card" data-linecard><div class="hd"><span class="t">Guess: One critical move</span>${gchip}</div><div class="bd">${o.guessOk ? 'Right: only one move holds the position.' : 'This position had one critical move.'}<div class="muted" style="margin-top:6px">Motif: fork</div></div></div>
+      <div class="card" data-linecard style="cursor:pointer"><div class="hd"><span class="t">Your move: <span class="san">${o.move}</span></span><span class="evalc">${o.evalTxt}</span>${mchip}</div></div>
+      <div class="card" data-linecard style="cursor:pointer"><div class="hd"><span class="t">Best move: <span class="san">Nxd5</span></span><span class="evalc">+1.8</span></div></div>
+      <div class="card" data-linecard style="cursor:pointer"><div class="hd"><span class="t">Played in game: <span class="san">Nb5</span></span><span class="evalc">−1.4</span></div></div>
+      <button class="btn" style="width:100%" data-replay>▶ replay points pop</button>
+    </div>`;
+  }
+  const botRow = `<div class="chatrow"><div class="who"><img class="avatar lg" src="${bot.src}" alt=""><span class="botname">${bot.name}</span></div><div class="bubble tail-left"><p>${o.line}</p></div></div>`;
+  const guessCard = v === 'a'
+    ? `<div class="card"><div class="hd"><span class="t">Guess: One critical move</span>${chip(o.guessOk, o.guessOk ? 1 : 0)}</div><div class="bd">${o.guessOk ? 'Right: only one move holds the position.' : 'This position had one critical move; several fine moves was the wrong call.'}<div class="muted" style="margin-top:6px">Motif: fork</div></div></div>`
+    : `<div class="card"><div class="hd"><img class="avatar md" src="${bot.src}" alt=""><span class="t" style="white-space:normal;line-height:1.3">${o.line}</span>${chip(o.guessOk, o.guessOk ? 1 : 0)}</div><div class="bd"><span class="botname">${bot.name}</span><div style="margin-top:4px">Guess: One critical move — ${o.guessOk ? 'right.' : 'this position had one critical move.'}</div><div class="muted" style="margin-top:6px">Motif: fork</div></div></div>`;
+  return `
+    <div class="topbar"><b>Train</b><span>Puzzle 3 of 9</span></div>
+    <div class="boardwrap"><div class="board" data-board></div><div class="pop ${o.pts >= 2 ? 'good' : 'bad'}" data-pop><img class="avatar md" src="${bot.src}" alt="">+${o.pts}</div></div>
+    <div class="below">
+      <div class="statebar" data-statebar></div>
+      <div class="btnrow"><button class="btn">Solution</button><button class="btn">Analyze</button><button class="btn primary">Next</button><button class="btn icon" title="mute">🔈</button></div>
+      ${v === 'a' ? botRow : ''}
+      ${guessCard}
+      <div class="card"><div class="hd"><span class="t">Your move: <span class="san">${o.move}</span></span><span class="evalc">${o.evalTxt}</span>${chip(o.tier === 'good', o.tier === 'good' ? 2 : o.tier === 'inaccuracy' ? 1 : 0)}</div></div>
+      <div class="card"><div class="hd"><span class="t">Best move: <span class="san">Nxd5</span></span><span class="evalc">+1.8</span></div></div>
+      <div class="card"><div class="hd"><span class="t">Played in game: <span class="san">Nb5</span></span><span class="evalc">−1.4</span></div></div>
+      <button class="btn" style="width:100%" data-replay>▶ replay points pop</button>
+    </div>`;
+}
+
+function scoreHtml(v, s) {
+  const bot = BOT[s.bot];
+  const badge = `<div class="badge" style="--band:${s.band}">${s.pct}%</div><p class="pts">Points: ${s.pts}</p><p class="next">Next session: ${s.next}, 2026</p>`;
+  const buttons = `<div class="btnrow"><button class="btn" data-remind>Remind me</button><button class="btn primary">Done</button></div>`;
+  const rowBubble = `<div class="chatrow"><div class="who"><img class="avatar lg" src="${bot.src}" alt=""><span class="botname">${bot.name}</span></div><div class="bubble tail-left">${s.html}</div></div>`;
+  const upBubble = `<img class="avatar xl" src="${bot.src}" alt="" style="margin-bottom:-4px"><span class="botname">${bot.name}</span><div class="bubble tail-up">${s.html}</div>`;
+  return `
+    <div class="topbar"><b>Train</b><span></span></div>
+    <div class="statebar" data-statebar></div>
+    <div class="score">
+      ${v !== 'b' ? rowBubble + badge + buttons : '<h1>Session complete</h1>' + badge + upBubble + buttons}
+    </div>`;
+}
+
+function setState(phone, key) {
+  phone._key = key;
+  const v = phone.dataset.variant, screen = phone.dataset.screen;
+  const set = screen === 'reveal' ? OUTCOMES : SCORES;
+  phone.innerHTML = '<div class="screen">' + (screen === 'reveal' ? revealHtml(v, set[key]) : scoreHtml(v, set[key])) + '</div>';
+  const bar = phone.querySelector('[data-statebar]');
+  Object.entries(set).forEach(([k, o]) => { const b = document.createElement('button'); b.textContent = o.label; b.className = k === key ? 'on' : ''; b.onclick = () => setState(phone, k); bar.appendChild(b); });
+  const board = phone.querySelector('[data-board]'); if (board) renderBoard(board);
+  const pop = phone.querySelector('[data-pop]'); if (pop) { requestAnimationFrame(() => pop.classList.add('go')); phone.querySelector('[data-replay]').onclick = () => { pop.classList.remove('go'); void pop.offsetWidth; pop.classList.add('go'); }; }
+  phone.querySelectorAll('[data-linecard][style]').forEach(c => c.onclick = () => { const sol = phone.querySelector('[data-solution]'); if (sol) sol.hidden = false; c.style.outline = '2px solid var(--brand-brown)'; });
+  const rem = phone.querySelector('[data-remind]'); if (rem) rem.onclick = () => { rem.textContent = 'Reminder on ✓'; rem.classList.add('primary'); };
+}
+
+document.querySelectorAll('.phone').forEach(ph => setState(ph, ph.dataset.screen === 'reveal' ? 'p0' : 'first'));
+function showVariant(id, tab) { document.querySelectorAll('.variant').forEach(v => v.classList.remove('active')); document.querySelectorAll('.variant-tab').forEach(t => t.classList.remove('active')); document.getElementById('variant-' + id).classList.add('active'); tab.classList.add('active'); }
+(() => { const q = new URLSearchParams(location.search); const v = q.get('variant'); if (v) { const tab = document.querySelector(`.variant-tab[onclick*="'${v}'"]`); if (tab) showVariant(v, tab); }
+  const o = q.get('outcome'), s = q.get('score'); document.querySelectorAll('.phone').forEach(ph => { if (ph.dataset.screen === 'reveal' && o && OUTCOMES[o]) setState(ph, o); if (ph.dataset.screen === 'score' && s && SCORES[s]) setState(ph, s); }); })();
+</script>
+</body>
+</html>

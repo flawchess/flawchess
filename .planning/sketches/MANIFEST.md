@@ -22,6 +22,7 @@ impact) — chips are display-only in 107 (the Flaws deep-link target ships late
 | 001 | analyzed-game-card | Where do B/M/I counts + family tag chips + the no-analysis state sit on the existing card? | **A — Header + 3-col body** | card, library, games, flaws, mobile |
 | 002 | flaw-stats-panel | How to arrange severity rates + tag distribution + trend + the analyzed denominator? | **A — Band → trend → tags** | panel, stats, library, charts, mobile |
 | 003 | train-bot-guess-bubble | Where does the bot avatar + speech bubble carrying the guess prompt sit on a phone? | **A — Chat row under board, buttons inside the bubble** | train, bots, onboarding, mobile, SEED-166 |
+| 004 | train-bot-verdict-and-score | How does a bot deliver the per-puzzle verdict with its return date, and sum up the session ahead of the reminder ask? | **Synthesis — bot row under the board, pills + action buttons inside the bubble; score bubble above the badge** | train, bots, reveal, score-screen, SEED-166 |
 
 ## Decisions (winners)
 
@@ -57,3 +58,16 @@ Hilda closes and the buttons appear), regular sessions = one bubble. A piece dro
 guess nudges the bubble and swaps the copy to "Decide first, then move". Refinement noted: the two
 buttons wrap to two lines at 375px inside the bubble; stack full-width or shorten labels. Prose
 is placeholder, to be settled in discuss-phase.
+
+**004 → Synthesis (A + buttons in the bubble + inline pills).** Reveal: the outcome bot's chat row
+sits DIRECTLY under the board (above every card). The bubble = verdict sentence with the guess
+and move point pills inline ("Good call on the position [+1], wrong move [+0]. We'll try this
+one again in the next session."), then Analyze / Next (and Solution once the board departs the
+reveal) on their own row INSIDE the bubble. Stern bots (Tank, Diesel, Gus) front 0–1 points,
+friendly bots (Pip, Bruno, Shelly) 2–3; herring/filler verdicts never promise a return. The sound
+toggle is dropped from the reveal (future settings page). First session: a second bubble from
+Hilda between the verdict and the cards explains the cards (tap to highlight the line, step
+through it) and the buttons. Score screen: the bot bubble REPLACES the "Session complete"
+heading, lists what returns and when, explains spaced repetition and the reminder's purpose;
+badge, points, next-session line and Remind me / Done follow. Later sessions get a one-line
+bubble. Prose is placeholder, to be settled in discuss-phase.
