@@ -1,12 +1,31 @@
 ---
 phase: 221-tactic-tagger-real-game-precision-winning-floor-predicate-ti
 verified: 2026-09-13T00:00:00Z
-status: human_needed
-score: 12/14 must-haves verified
+status: passed
+score: 12/14 must-haves verified (+2 closed by owner override, see below)
 covered_files: [".planning/phases/221-tactic-tagger-real-game-precision-winning-floor-predicate-ti/221-01-PLAN.md", ".planning/phases/221-tactic-tagger-real-game-precision-winning-floor-predicate-ti/221-01-SUMMARY.md", ".planning/phases/221-tactic-tagger-real-game-precision-winning-floor-predicate-ti/221-02-PLAN.md", ".planning/phases/221-tactic-tagger-real-game-precision-winning-floor-predicate-ti/221-02-SUMMARY.md", ".planning/phases/221-tactic-tagger-real-game-precision-winning-floor-predicate-ti/221-03-PLAN.md", ".planning/phases/221-tactic-tagger-real-game-precision-winning-floor-predicate-ti/221-03-SUMMARY.md", ".planning/phases/221-tactic-tagger-real-game-precision-winning-floor-predicate-ti/221-04-PLAN.md", ".planning/phases/221-tactic-tagger-real-game-precision-winning-floor-predicate-ti/221-04-SUMMARY.md", ".planning/phases/221-tactic-tagger-real-game-precision-winning-floor-predicate-ti/221-05-PLAN.md", ".planning/phases/221-tactic-tagger-real-game-precision-winning-floor-predicate-ti/221-05-SUMMARY.md", ".planning/phases/221-tactic-tagger-real-game-precision-winning-floor-predicate-ti/221-06-PLAN.md", ".planning/phases/221-tactic-tagger-real-game-precision-winning-floor-predicate-ti/221-06-SUMMARY.md", ".planning/phases/221-tactic-tagger-real-game-precision-winning-floor-predicate-ti/221-07-PLAN.md", ".planning/phases/221-tactic-tagger-real-game-precision-winning-floor-predicate-ti/221-07-SUMMARY.md", ".planning/phases/221-tactic-tagger-real-game-precision-winning-floor-predicate-ti/221-08-PLAN.md", ".planning/phases/221-tactic-tagger-real-game-precision-winning-floor-predicate-ti/221-08-SUMMARY.md", ".planning/phases/221-tactic-tagger-real-game-precision-winning-floor-predicate-ti/221-CONTEXT.md", ".planning/phases/221-tactic-tagger-real-game-precision-winning-floor-predicate-ti/221-D13-SPOTCHECK.md", ".planning/phases/221-tactic-tagger-real-game-precision-winning-floor-predicate-ti/221-DISCUSSION-LOG.md", ".planning/phases/221-tactic-tagger-real-game-precision-winning-floor-predicate-ti/221-PATTERNS.md", ".planning/phases/221-tactic-tagger-real-game-precision-winning-floor-predicate-ti/221-RESEARCH.md", ".planning/phases/221-tactic-tagger-real-game-precision-winning-floor-predicate-ti/221-VALIDATION.md", "CHANGELOG.md", "app/repositories/library_repository.py", "app/services/flaws_service.py", "app/services/forcing_line_gate.py", "app/services/tactic_detector.py", "fixtures/tagger/realgame_tags.csv", "frontend/src/components/filters/__tests__/FlawFilterControl.test.tsx", "frontend/src/lib/tacticComparisonMeta.ts", "frontend/src/lib/tacticMotifDefinitions.ts", "frontend/src/lib/theme.ts", "reports/retag/retag-2026-09-12.md", "reports/retag/retag-2026-09-13.md", "reports/tactic-tagger/tactic-tagger-2026-09-12.md", "scripts/research/dev_probe.py", "scripts/research/oracle_compare.py", "scripts/research/sample_realgame_tags.py", "scripts/retag_flaws.py", "scripts/tactic_tagger_report.py", "tests/scripts/tagger/conftest.py", "tests/scripts/tagger/precision_floors.py", "tests/scripts/tagger/test_detector_precision.py", "tests/scripts/test_ab_validate_gate.py", "tests/scripts/test_retag_flaws.py", "tests/services/test_flaws_service.py", "tests/services/test_forcing_line_gate.py", "tests/services/test_tactic_comparison_service.py", "tests/services/test_tactic_detector.py"]
-covered_digest: "v1:sha256:65dfee4c9b6f17fe04cce0d5fa704012234dff19badf1cd120d1cee31f354710"
+covered_digest: "v1:sha256:e1f26853ddd9cfb03a5aa48c64b7d3059302b1576739a255dce04e5f86f8818a"
 behavior_unverified: 0
-overrides_applied: 0
+overrides_applied: 1
+override:
+  by: owner (Adrian Imfeld, via /gsd-verify-work 221 session, 2026-09-13)
+  from: human_needed
+  to: passed
+  reason: |
+    Item 1 (SC2 sacrifice real-share 0.385 vs the ROADMAP's literal ">= 0.8 or suppressed" bar): ACCEPTED by
+    the owner on 2026-09-13 after a ~20-row review of post-retag allowed/missed sacrifice tags on flawchess.com.
+    Rationale on record in 221-08-SUMMARY.md and 221-D13-SPOTCHECK.md: D-01's winning floor independently
+    eliminates losing-line sacrifices (allowed 77.9% -> 0.4%, missed 32.8% -> 0.0%), and no board-derivable
+    rule separates a compensated sacrifice from a delayed recapture. One edge case (forced only-move shedding
+    a piece read as a sacrifice) captured as .planning/notes/2026-09-13-forced-only-move-tagged-sacrifice.md,
+    no action requested.
+    Item 2 (TAGFIX-09 claim 5, 6.9x vs predicted ~10x): ACCEPTED together with item 1; no lever pulled.
+    Item 3 (live-site check): clearance leg proven from the deployed artifacts on 2026-09-13. Every served JS
+    asset (index-B2U8jGd9.js plus 10 lazy chunks) contains zero "clearance" strings while the tactic labels
+    live in the main bundle; origin/production == main for frontend/src (release PR #358); prod game_flaws
+    has 0 rows with motif 15 in either column, sacrifice 8,568 allowed / 7,979 missed, spot rows 0064 and
+    0133 carry motif 17. The tactic-chip realism leg is the owner's item-1 review. Browser screenshot leg
+    not taken (Chrome extension disconnected). Full evidence in 221-UAT.md test 3.
 human_verification:
   - test: "Sacrifice real-game real-share (SC2): decide whether 0.385 (measured, floor 0.33) is acceptable to ship against the ROADMAP's literal '>= 0.8 or suppressed' bar for sacrifice."
     expected: "An explicit accept/reject decision on record. If accepted, add a VERIFICATION.md override entry naming why 0.385 is acceptable (D-01's winning floor independently eliminates losing-line sacrifices; no board-derivable rule separates a compensated sacrifice from a delayed recapture; see 221-08-SUMMARY.md and 221-D13-SPOTCHECK.md)."
@@ -23,7 +42,7 @@ human_verification:
 
 **Phase Goal:** Make the tactic-motif tags describe tactics the user could actually have used or avoided — gate fixes (winning floor, never-skip-on-None-cp), a sacrifice/clearance predicate decision, seven cook-port fixes, missed-orientation parity, a real-game gate, and an offline prod retag with a before/after report.
 **Verified:** 2026-09-13
-**Status:** human_needed
+**Status:** passed (owner override 2026-09-13 closing the three human_verification items; see frontmatter `override`)
 **Re-verification:** No — initial verification
 
 ## Goal Achievement

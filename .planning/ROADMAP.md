@@ -594,7 +594,8 @@ Plans:
 - [x] 221-04-PLAN.md — Winning floor at the firing node, gate never skipped on a None cp, missed-orientation parity (wave 3) [TAGFIX-01, TAGFIX-02, TAGFIX-06]
 - [x] 221-05-PLAN.md — Sacrifice persistence + depth cap; clearance strengthened and measured (wave 4) [TAGFIX-03, TAGFIX-04]
 - [x] 221-06-PLAN.md — Oracle parity, final floors, clearance keep-or-suppress branch, dev retag smoke, changelog (wave 5) [TAGFIX-04, TAGFIX-05, TAGFIX-07, TAGFIX-09]
-- [ ] 221-07-PLAN.md — Deploy gate, full prod retag, TAGFIX-09 acceptance queries (wave 6, not autonomous) [TAGFIX-09]
+- [x] 221-07-PLAN.md — Deploy gate, full prod retag, TAGFIX-09 acceptance queries (wave 6, not autonomous) [TAGFIX-09]
+- [x] 221-08-PLAN.md — Gap closure: retire D-05 sacrifice persistence (real sacrifices dropped because the material came back), re-measure, second prod retag [TAGFIX-03, TAGFIX-09]
 
 **Cross-cutting constraints:**
 
