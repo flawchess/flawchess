@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import collections
 import json
+import os
 import sys
 from pathlib import Path
 from typing import Any
@@ -29,8 +30,12 @@ sys.path.insert(0, str(_PROJECT_ROOT))
 
 # The local AGPL lichess-puzzler clone (analysis-only; not part of this repository).
 # Skip cleanly when absent — TAGFIX-08 requires every scripts/research/*.py to be
-# runnable (and exit 0) on a box that never cloned it.
-_PUZZLER_CLONE = Path("/home/aimfeld/Projects/Python/lichess-puzzler/tagger")
+# runnable (and exit 0) on a box that never cloned it. Override the location via
+# LICHESS_PUZZLER_TAGGER_PATH so other machines can point at their own clone
+# without editing committed source (code review WR-01).
+_PUZZLER_CLONE_ENV_VAR = "LICHESS_PUZZLER_TAGGER_PATH"
+_PUZZLER_CLONE_DEFAULT = "/home/aimfeld/Projects/Python/lichess-puzzler/tagger"
+_PUZZLER_CLONE = Path(os.environ.get(_PUZZLER_CLONE_ENV_VAR, _PUZZLER_CLONE_DEFAULT))
 if not _PUZZLER_CLONE.is_dir():
     print("lichess-puzzler clone not found — skipping (analysis-only script).")
     raise SystemExit(0)
