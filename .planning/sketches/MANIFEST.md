@@ -66,8 +66,9 @@ one again in the next session."), then Analyze / Next (and Solution once the boa
 reveal) on their own row INSIDE the bubble. Stern bots (Tank, Diesel, Gus) front 0–1 points,
 friendly bots (Pip, Bruno, Shelly) 2–3; herring/filler verdicts never promise a return. The sound
 toggle is dropped from the reveal (future settings page). First session: a second bubble from
-Hilda between the verdict and the cards explains the cards (tap to highlight the line, step
-through it) and the buttons. Score screen: the bot bubble REPLACES the "Session complete"
+Hilda between the verdict and the cards walks the solution screen step by step with Next
+(feedback + points → line cards → Analyze/Next), each step spotlighting its element, same
+stepper shape as the 003 intro; "Got it" dismisses it. Score screen: the bot bubble REPLACES the "Session complete"
 heading, lists what returns and when, explains spaced repetition and the reminder's purpose;
 badge, points, next-session line and Remind me / Done follow. Later sessions get a one-line
 bubble. Prose is placeholder, to be settled in discuss-phase.

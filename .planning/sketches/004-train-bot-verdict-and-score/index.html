@@ -35,6 +35,10 @@
   .btn:hover { background: rgba(139,94,60,.15); color: var(--brand-brown-highlight); border-color: var(--brand-brown-highlight); }
   .btn.primary { background: var(--brand-brown); border-color: var(--brand-brown); color: #fff; } .btn.primary:hover { background: var(--brand-brown-hover); }
   .btn.icon { flex: 0 0 48px; }
+  .btn.small { height: 36px; flex: 0 0 auto; padding: 0 14px; font-size: 13px; }
+  .spot { outline: 2px solid var(--brand-brown-highlight); outline-offset: 2px; box-shadow: 0 0 0 4px rgba(240,219,185,.15); transition: outline-color .2s; }
+  .stepdots { display: flex; gap: 5px; justify-content: flex-end; margin-top: 8px; }
+  .stepdots i { width: 6px; height: 6px; border-radius: 50%; background: #444; } .stepdots i.on { background: var(--brand-brown-light); }
   .avatar { border-radius: 50%; object-fit: cover; background: #222; flex: 0 0 auto; border: 2px solid rgba(255,255,255,.12); }
   .avatar.lg { width: 56px; height: 56px; } .avatar.md { width: 40px; height: 40px; } .avatar.sm { width: 28px; height: 28px; border-width: 1px; } .avatar.xl { width: 72px; height: 72px; }
   .botname { font-family: var(--font-brand); font-weight: 600; font-size: 12px; color: var(--color-text-muted); letter-spacing: .3px; }
@@ -173,7 +177,13 @@ const PARTS = {
   warm: { g: 'Right call', gp: 1, m: 'right move', mp: 2 },
 };
 const TAIL = { p0: 'We\'ll try this one again in the next session.', p1: 'We\'ll try this one again in the next session.', p2: 'Let\'s see if you remember this in 4 days.', p3: 'Let\'s see if you remember this in 4 days.', warm: 'That one was a warm-up, so it won\'t come back. Your own positions will.' };
-const HILDA_TIP = '<p><b>How to read this.</b> Tap a card to see its line on the board, then step through the moves. <b>Analyze</b> opens the full game one move before the mistake. <b>Next</b> moves on.</p>';
+// First-session reveal walkthrough: one Hilda bubble, stepped with Next, each
+// step spotlights the part of the solution screen it talks about.
+const HILDA_STEPS = [
+  { hl: '[data-verdict]', html: '<p><b>This is your feedback.</b> One point for the decision, up to two for the move. And when this position comes back.</p>' },
+  { hl: '[data-linecard]', html: '<p><b>The cards are the lines.</b> Your move, the best move, and what was played in the game. Tap one to see it on the board, then step through the moves.</p>' },
+  { hl: '[data-actions]', html: '<p><b>Analyze</b> opens the whole game one move before the mistake. <b>Next</b> takes you to the next puzzle.</p>' },
+];
 const OUTCOMES = {
   p0: { label: '0 pts', bot: 'tank', guessOk: false, move: 'Nb5', tier: 'wrong', evalTxt: '−1.4', pts: 0,
         line: 'Not quite right. We\'ll try this one again in the next session.', due: 'next session' },
@@ -211,8 +221,8 @@ function revealHtml(v, o) {
     const gchip = chip(pr.gp > 0, pr.gp), mchip = chip(pr.mp > 0, pr.mp);
     const verdict = `${pr.g} ${gchip}, ${pr.m} ${mchip}. ${TAIL[key]}`;
     const actions = `<div class="btnrow" data-actions><button class="btn" data-solution hidden>Solution</button><button class="btn">Analyze</button><button class="btn primary">Next</button></div>`;
-    const botRow = `<div class="chatrow"><div class="who"><img class="avatar lg" src="${bot.src}" alt=""><span class="botname">${bot.name}</span></div><div class="bubble tail-left"><p>${verdict}</p>${actions}</div></div>`;
-    const hilda = o.first ? `<div class="chatrow"><div class="who"><img class="avatar lg" src="${BOT.hilda.src}" alt=""><span class="botname">${BOT.hilda.name}</span></div><div class="bubble tail-left">${HILDA_TIP}</div></div>` : '';
+    const botRow = `<div class="chatrow"><div class="who"><img class="avatar lg" src="${bot.src}" alt=""><span class="botname">${bot.name}</span></div><div class="bubble tail-left" data-verdict><p>${verdict}</p>${actions}</div></div>`;
+    const hilda = o.first ? `<div class="chatrow" data-hilda><div class="who"><img class="avatar lg" src="${BOT.hilda.src}" alt=""><span class="botname">${BOT.hilda.name}</span></div><div class="bubble tail-left" data-hilda-bubble></div></div>` : '';
     return `
     <div class="topbar"><b>Train</b><span>Puzzle 3 of 9</span></div>
     <div class="boardwrap"><div class="board" data-board></div><div class="pop ${o.pts >= 2 ? 'good' : 'bad'}" data-pop><img class="avatar md" src="${bot.src}" alt="">+${o.pts}</div></div>
@@ -269,10 +279,23 @@ function setState(phone, key) {
   Object.entries(set).forEach(([k, o]) => { const b = document.createElement('button'); b.textContent = o.label; b.className = k === key ? 'on' : ''; b.onclick = () => setState(phone, k); bar.appendChild(b); });
   const board = phone.querySelector('[data-board]'); if (board) renderBoard(board);
   const pop = phone.querySelector('[data-pop]'); if (pop) { requestAnimationFrame(() => pop.classList.add('go')); phone.querySelector('[data-replay]').onclick = () => { pop.classList.remove('go'); void pop.offsetWidth; pop.classList.add('go'); }; }
+  if (phone.querySelector('[data-hilda]')) { phone._hstep = 0; renderHilda(phone); }
   phone.querySelectorAll('[data-linecard][style]').forEach(c => c.onclick = () => { const sol = phone.querySelector('[data-solution]'); if (sol) sol.hidden = false; c.style.outline = '2px solid var(--brand-brown)'; });
   const rem = phone.querySelector('[data-remind]'); if (rem) rem.onclick = () => { rem.textContent = 'Reminder on ✓'; rem.classList.add('primary'); };
 }
 
+function renderHilda(phone) {
+  const i = phone._hstep, st = HILDA_STEPS[i];
+  phone.querySelectorAll('.spot').forEach(e => e.classList.remove('spot'));
+  const row = phone.querySelector('[data-hilda]');
+  if (!st) { row.remove(); return; }
+  phone.querySelectorAll(st.hl).forEach(e => e.classList.add('spot'));
+  const last = i === HILDA_STEPS.length - 1;
+  row.querySelector('[data-hilda-bubble]').innerHTML = st.html
+    + `<div class="btnrow" style="justify-content:flex-end"><button class="btn small primary" data-hnext>${last ? 'Got it' : 'Next'}</button></div>`
+    + '<div class="stepdots">' + HILDA_STEPS.map((_, k) => '<i class="' + (k === i ? 'on' : '') + '"></i>').join('') + '</div>';
+  row.querySelector('[data-hnext]').onclick = () => { phone._hstep++; renderHilda(phone); };
+}
 document.querySelectorAll('.phone').forEach(ph => setState(ph, ph.dataset.screen === 'reveal' ? 'p0' : 'first'));
 function showVariant(id, tab) { document.querySelectorAll('.variant').forEach(v => v.classList.remove('active')); document.querySelectorAll('.variant-tab').forEach(t => t.classList.remove('active')); document.getElementById('variant-' + id).classList.add('active'); tab.classList.add('active'); }
 (() => { const q = new URLSearchParams(location.search); const v = q.get('variant'); if (v) { const tab = document.querySelector(`.variant-tab[onclick*="'${v}'"]`); if (tab) showVariant(v, tab); }
