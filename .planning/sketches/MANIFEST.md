@@ -21,6 +21,7 @@ impact) — chips are display-only in 107 (the Flaws deep-link target ships late
 |---|------|----------------|--------|------|
 | 001 | analyzed-game-card | Where do B/M/I counts + family tag chips + the no-analysis state sit on the existing card? | **A — Header + 3-col body** | card, library, games, flaws, mobile |
 | 002 | flaw-stats-panel | How to arrange severity rates + tag distribution + trend + the analyzed denominator? | **A — Band → trend → tags** | panel, stats, library, charts, mobile |
+| 003 | train-bot-guess-bubble | Where does the bot avatar + speech bubble carrying the guess prompt sit on a phone? | **A — Chat row under board, buttons inside the bubble** | train, bots, onboarding, mobile, SEED-166 |
 
 ## Decisions (winners)
 
@@ -46,3 +47,13 @@ impact) — chips are display-only in 107 (the Flaws deep-link target ships late
 - Bottom: the full **tag distribution** — tempo split (stacked violet bar), phase histogram,
   opportunity + impact rates.
 - Order reads **how often → over time → of what kind**. Mobile reflows the band to stacked cells.
+
+**003 → Variant A (Chat row under board).** Sketched 2026-09-13 for SEED-166 (Train first-session
+retention, bot-narrated). 56px avatar + name on the left, speech bubble with a left tail on the
+right, the two guess buttons live INSIDE the bubble so the prompt and the action read as one
+message from the bot. Board stays fully visible above (no overlay: the position must be readable
+to decide). First session = 3-bubble stepper (Tank welcomes → Hilda defines the two buttons →
+Hilda closes and the buttons appear), regular sessions = one bubble. A piece dropped before the
+guess nudges the bubble and swaps the copy to "Decide first, then move". Refinement noted: the two
+buttons wrap to two lines at 375px inside the bubble; stack full-width or shorten labels. Prose
+is placeholder, to be settled in discuss-phase.
