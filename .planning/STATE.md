@@ -2,43 +2,48 @@
 gsd_state_version: "1.0"
 milestone: v2.16
 current_phase: 221
-current_phase_name: Tactic-Tagger Real-Game Precision — Winning Floor, Predicate Tightening & Port Fixes (SEED-165)
-status: executing
-stopped_at: Completed 221-08-PLAN.md (gap closure)
-last_updated: "2026-09-12T22:34:16.694Z"
-state_head: b5eb5f44f8f650e14ea4184710a4e7cf6787028b
+status: completed
+stopped_at: Phase 221 complete — all phases complete
+last_updated: "2026-09-13T08:15:02.415Z"
+state_head: ea6a03caeba0441de058821b0d0b25506c170847
 progress:
   total_phases: 3
-  completed_phases: 1
+  completed_phases: 2
   total_plans: 19
-  completed_plans: 18
+  completed_plans: 19
 milestone_name: Audit Hardening & Dependency Currency
-last_activity: 2026-09-06
-last_activity_desc: Completed quick task 260906-i5e — FlawChess Engine card header shows a running node count (main at 1b5060661, unreleased)
+last_activity: 2026-09-13
+last_activity_desc: Phase 221 (Tactic-Tagger Real-Game Precision, SEED-165) complete — UAT 3/3, verification passed via owner override, deployed as PR #358 with the full prod retag done
 ---
 
 # Project State: FlawChess
 
 ## Current Position
 
-Phase: 221 (Tactic-Tagger Real-Game Precision — Winning Floor, Predicate Tightening & Port Fixes (SEED-165)) — EXECUTING
-Plan: 7 of 7
+Phase: 221 (Tactic-Tagger Real-Game Precision — Winning Floor, Predicate Tightening & Port Fixes, SEED-165) — COMPLETE 2026-09-13
+Plan: 8 of 8
 
-Status: Ready to execute
+Status: All standalone phases complete; no open milestone. Next: `/gsd-new-milestone`, or another standalone phase from the backlog.
 
 Open threads carried forward (not blockers):
+
+- Phase 221: a forced only-move that sheds a piece can read as a sacrifice (game 1459049 ply 21); captured in `.planning/notes/2026-09-13-forced-only-move-tagged-sacrifice.md`, no action requested. Lever if sacrifice noise ever matters: lower `SACRIFICE_CLEARANCE_MAX_DEPTH` (4) and retag.
 
 - SEED-162 cluster 3 (TypeScript 7) blocked upstream until a `typescript-eslint` release accepts it.
 - Phase 217 device legs (iOS <16.4 no-SIMD, low-memory OOM, WebGPU adapter) deferred for lack of hardware (`v2.16-phases/217-.../217-UAT.md`).
 - Phase 215's `Train.guestGate.test.tsx` full-run flake still deferred (`v2.15-phases/215-.../deferred-items.md`).
 - SEED-163 (analytics population excludes bot games) captured 2026-09-04, unscheduled.
-- SEED-164 (opening eval cache poisoned with legacy wrong-position evals; spurious opening blunder pairs, discovered in game 2356581 plies 5/6) captured 2026-09-09, scheduled as **Phase 220** the same day (not planned yet). Blocks any flaw-based benchmark refresh until repaired.
+- SEED-164 resolved by Phase 220 (deployed 2026-09-11); the `disagreements >= 2` few-days watch on `opening_position_eval` is still open.
 - SEED-158 re-scoped 2026-09-06: the iOS OOM half is closed (quick task 260906-p54); what remains is WebGPU failing on capable devices (iPhone 14 Pro iOS 26, Linux Brave/Chrome, a Windows 11 notebook), everyone silently on the wasm fallback. Collect the `[maia-worker]` console fallback lines first.
 
 ## Project Reference
 
-See: .planning/PROJECT.md (updated 2026-09-06 after Phase 219)
+See: .planning/PROJECT.md (updated 2026-09-13 after Phase 221)
 Core value: Position-precise WDL across openings + endgames + time pressure on top of users' actual chess.com / lichess games, with personalized LLM commentary and an auto-generated opening-strengths/weaknesses report.
+Current focus: **Phase 221 (Tactic-Tagger Real-Game Precision, SEED-165) complete and deployed 2026-09-13**: 8/8 plans, verified 12/14 + owner override on the two judgment items (SC2 sacrifice real_share 0.385 accepted; 6.9x sacrifice reduction accepted), UAT 3/3, code review 0 critical / 1 warning fixed, release PR #358, full prod retag done (4.76M flaws, 246,112 rows changed, losing-line share 10.7% -> 0.01%). No open milestone: next is `/gsd-new-milestone` or another standalone phase.
+
+### Superseded: focus after Phase 219
+
 Current focus: **Phase 219 (Maia Chart Latency — ORT 1.27 re-pin, cross-origin isolation, progressive ladder paint) complete 2026-09-06**: verified 7/7, UAT 7/7 (leg 2 owner override), code review 1 critical / 3 warnings all fixed. All three D-15 targets met on the reference box (exact rung 81 ms, ladder 0.94 s, first paint 639 ms). Phase branch `gsd/phase-219-...` NOT yet squash-merged to `main`; Phases 217-219 unreleased. Next: pre-merge gate + squash-merge, then `/deploy`, then close milestone v2.16 via `/gsd-complete-milestone`.
 
 ### Superseded: focus after the v2.11 close
@@ -199,6 +204,13 @@ v1.29 Live-Engine Analysis Page shipped 2026-06-29 — 5 phases (136–140), 14 
 ### Decisions
 
 (Cleared at v1.31 close — full log in `.planning/PROJECT.md` Key Decisions + the milestone archives.)
+
+- [Phase 221, D-01/D-04]: per-tier winning floor at the firing node (+200 tier-3/tier-5, 0 lower tiers), checked on the blob node at the firing depth; a None `pre_flaw_eval_cp` falls back to `game_positions` evals and never skips the gate.
+- [Phase 221, D-07 + plan 06]: clearance SUPPRESSED (never reached the measurable-row threshold on the real-game sample); `_TIER3_REGISTRY` has 7 entries, `FAMILY_TO_MOTIF_INTS` and the frontend `TacticFamily` union exclude it.
+- [Phase 221, plan 08 gap closure]: D-05 sacrifice persistence RETIRED, not narrowed — it dropped operator-confirmed real sacrifices whose material came back because the sac worked, and no board-derivable discriminator separates that from a delayed recapture; D-01's floor keeps the losing-line case. `REALGAME_REAL_SHARE_FLOOR['sacrifice']` re-seeded 0.17 -> 0.33.
+- [Phase 221, D-13]: precision is scored on a frozen operator-labelled prod sample (`fixtures/tagger/realgame_tags.csv`, ~150 rows) as a CI `real_share` floor per motif; the CC0 puzzle gate alone cannot see incidental-geometry false positives.
+- [Phase 221, D-14 + plan 07]: one release, one retag — full prod refresh (no `--only-tagged`) through the tunnel from the local box; 4.76M rows in ~3h17m, log looks frozen under Python 3.14 (monitor `n_tup_upd`), report is date-keyed so commit it before any same-day re-run.
+- [Phase 221 UAT]: SC2 literal bar (sacrifice real_share >= 0.8) NOT met at 0.385 and ACCEPTED by owner override after a ~20-row review; the 6.9x-vs-10x sacrifice shortfall accepted with it, no depth-cap lever pulled.
 
 - [Phase 219-01]: onnxruntime-web re-pinned 1.29.0 -> 1.27.0 on measured evidence (headless bench: 1.29 ~2x slower single-thread wasm); Renovate pins the package with a bench-before-merge note so a future bump must re-measure.
 - [Phase 219-02]: COOP `same-origin` + COEP `require-corp` ship site-wide (Caddy + Vite dev/preview) with a CI header guard; the Maia worker picks `min(4, ceil(cores/2))` wasm threads only when `self.crossOriginIsolated`, else 1 (fail-safe for stale cached shells / stripping proxies). Every cross-origin subresource was audited (Umami `crossorigin`, Google Fonts CORP, Sentry, CF Insights).
@@ -757,14 +769,7 @@ None active.
 - [Phase 214, resolved by Phase 216] The six out-of-scope depth breaches are fixed (216-06) and `check_function_size.py` now gates all of `app/` in CI and the pre-merge block with zero breaches; the 31 baselined ruff complexity findings outside the six files remain baselined, not fixed.
 - active. (v1.31 and v1.32 are both deployed to production.)
 - [Phase 194] CACHE-01's "a 400-node search evicts of its own working set" remains inferred, not measured — `GRADE_CACHE_MAX = 1024` against a 352-386 distinct-FEN ceiling measured *before* the change. Accepted as an acknowledged gap at UAT (2026-07-30); risk is extra Stockfish grading work, not wrong results. Closeable cheaply by counting distinct FENs reaching `providers.grade` in a 400-node run through the existing `mctsSearch` test harness. Worth doing if Phase 196's cache-replay design ends up depending on residency.
-- `uv run pytest tests/scripts/tagger -q` fails (test_realgame_real_share_floor):
-
-sacrifice real_share 0.222 < frozen floor 0.32; clearance surviving=3 <
-REALGAME_MIN_ROWS_FOR_FLOOR=8. Both are measured, D-05/D-07-faithful
-consequences of plan 05; resolving requires touching REALGAME_REAL_SHARE_FLOOR,
-explicitly out of scope for plan 05. Needs plan 06 (clearance keep/suppress,
-already anticipated) plus a new decision for sacrifice (floor revision or
-D-05 re-review) before the phase can ship. See 221-05-SUMMARY.md "Known Issues".
+- [Phase 221, resolved] The plan-05 tagger-gate failure (sacrifice real_share 0.222 < 0.32; clearance under the row threshold) was closed by plan 06 (clearance suppressed) and gap-closure plan 08 (D-05 retired, sacrifice floor re-seeded to 0.33); `uv run pytest tests/scripts/tagger -q` is green on the shipped detector.
 
 ### Quick Tasks Completed
 
@@ -910,9 +915,9 @@ Items acknowledged and deferred at **v1.29 milestone close on 2026-06-29** (user
 
 ## Session Continuity
 
-**Stopped at:** Completed 221-08-PLAN.md (gap closure)
+**Stopped at:** Phase 221 complete — all phases complete
 
-**Last session:** 2026-09-12T22:34:16.480Z
+**Last session:** 2026-09-13T08:20:00Z
 
 **Resume file:** None
 

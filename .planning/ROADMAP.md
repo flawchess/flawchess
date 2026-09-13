@@ -185,7 +185,7 @@
 | 218. Backend onnxruntime Parity Spike → Python 3.14 Chain (SEED-162, v2.16) | 3/3 | Complete    | 2026-09-05 |
 | 219. Maia Chart Latency — ORT 1.27 Re-pin, Cross-Origin Isolation & Progressive Ladder Paint (standalone) | 3/3 | Complete    | 2026-09-06 |
 | 220. Opening Eval Cache Repair & Two-Source Confirmation (SEED-164, standalone) | 8/8 | Complete    | 2026-09-11 |
-| 221. Tactic-Tagger Real-Game Precision — Winning Floor, Predicate Tightening & Port Fixes (SEED-165, standalone) | 0/0 | Not started | — |
+| 221. Tactic-Tagger Real-Game Precision — Winning Floor, Predicate Tightening & Port Fixes (SEED-165, standalone) | 8/8 | Complete    | 2026-09-13 |
 
 ## Active Phases
 
@@ -584,7 +584,7 @@ against a different label source (documented only).
 **Depends on:** none (standalone; builds on Phase 143's `_classify_tactic_gated` /
 `retag_flaws.py` and the Phase 127 fixture harness)
 
-**Plans:** 7 plans
+**Plans:** 8/8 plans complete
 
 Plans:
 
