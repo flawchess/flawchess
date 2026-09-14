@@ -26,17 +26,16 @@ import type { TrainRevealStep } from '@/components/train/TrainReveal';
 const WALKTHROUGH_STEP_TAP_CARD: WalkthroughStep = 1;
 const WALKTHROUGH_STEP_STEP_LINE: WalkthroughStep = 2;
 
-/** Gap left between the pane's top edge and the first line card when the
+/** Gap left between the pinned board block and the first line card when the
  * walkthrough scrolls the cards into view on phones. */
 const WALKTHROUGH_CARD_SCROLL_GAP_PX = 12;
 
 /**
- * Quick task 260914-uer (D-A, QUICK-03): Phase 222 shipped the browser's
- * native `behavior: 'smooth'` for this scroll, whose duration is UA-owned
- * (~300-400ms in Chrome for this delta) and not tunable. This quick task
- * asked for roughly half the speed, so the scroll is now an explicit
- * `animateScrollTop` tween and this number is the single knob — if it still
- * reads wrong in UAT, change this one value.
+ * Duration of the phone scroll-to-cards tween. Quick task 260914-uer
+ * (QUICK-03): Phase 222 shipped the browser's native `behavior: 'smooth'`,
+ * whose duration is UA-owned (~350ms in Chrome for this delta) and not
+ * tunable; the ask was half that speed, so the scroll is now an explicit
+ * rAF tween (`animateScrollTop`) and this number is the single knob.
  */
 const WALKTHROUGH_CARD_SCROLL_DURATION_MS = 700;
 
@@ -58,9 +57,8 @@ export interface UseTrainWalkthroughInput {
   isDesktop: boolean;
   /** The solve screen root — the first line card is looked up inside it. */
   screenRef: RefObject<HTMLDivElement | null>;
-  /** The bounded feedback pane (quick task 260914-uer); the walkthrough
-   * scrolls THIS, never the window. */
-  paneRef: RefObject<HTMLDivElement | null>;
+  /** The phone-pinned progress + board block. */
+  pinnedRef: RefObject<HTMLDivElement | null>;
   /** The caller's own spotlight / line-step setters, wrapped by the hook's
    * handlers so the reveal keeps a single channel for each. Must be
    * referentially stable (React state setters are). */
@@ -109,7 +107,7 @@ function advanceFrom(from: WalkthroughStep): (step: WalkthroughStep) => Walkthro
 }
 
 export function useTrainWalkthrough(input: UseTrainWalkthroughInput): UseTrainWalkthroughResult {
-  const { settings, hasVerdict, hasAnalyze, hasSolution, isDesktop, screenRef, paneRef } = input;
+  const { settings, hasVerdict, hasAnalyze, hasSolution, isDesktop, screenRef, pinnedRef } = input;
   const { setSpotlight, setLineStep, stamp } = input;
   // Only meaningful while `resolveWalkthroughStep` reports it active;
   // otherwise ignored. The caller resets it per puzzle so an abandoned
@@ -150,26 +148,29 @@ export function useTrainWalkthrough(input: UseTrainWalkthroughInput): UseTrainWa
     [setLineStep],
   );
 
-  // UAT round 3 (reworked by quick task 260914-uer, QUICK-03/QUICK-04):
-  // entering the tap-a-card step on a phone scrolls the first line card up
-  // to just under the pane's top edge, so the cards the step talks about are
-  // on screen. Desktop already shows them in their own column. The delta now
-  // measures card-top against PANE-top: the pane starts below the board, so
-  // the old "subtract the pinned block's height" correction is gone with it.
-  // The scroll itself is now an explicit rAF tween rather than the browser's
-  // native `behavior: 'smooth'`, so its duration is tunable (see
-  // `WALKTHROUGH_CARD_SCROLL_DURATION_MS`); reduced motion still jumps
-  // instantly via a 0ms duration.
+  // UAT round 3: entering the tap-a-card step on a phone scrolls the first
+  // line card up to just under the pinned board block, so the cards the step
+  // talks about are on screen. Desktop already shows them in their own
+  // column. Measured from the pinned block's own height (not its current
+  // bottom edge) because the block re-anchors to the viewport top as the
+  // page scrolls.
   useEffect(() => {
     if (activeStep !== WALKTHROUGH_STEP_TAP_CARD || isDesktop) return;
     const card = screenRef.current?.querySelector('[data-testid^="train-line-box-"]');
-    const pane = paneRef.current;
-    if (!(card instanceof HTMLElement) || pane === null) return;
+    const pinned = pinnedRef.current;
+    if (!(card instanceof HTMLElement) || pinned === null) return;
     const delta =
-      card.getBoundingClientRect().top - pane.getBoundingClientRect().top - WALKTHROUGH_CARD_SCROLL_GAP_PX;
+      card.getBoundingClientRect().top -
+      pinned.getBoundingClientRect().height -
+      WALKTHROUGH_CARD_SCROLL_GAP_PX;
     if (delta <= 0) return;
-    animateScrollTop(pane, delta, prefersReducedMotion() ? 0 : WALKTHROUGH_CARD_SCROLL_DURATION_MS);
-  }, [activeStep, isDesktop, screenRef, paneRef]);
+    // The page itself is the scroller here (the feedback scrolls behind the
+    // pinned board); `document.scrollingElement` is the element whose
+    // `scrollTop` moves it (`documentElement` is the standards-mode fallback,
+    // and what jsdom offers). Reduced motion jumps instantly via a 0ms duration.
+    const scroller = document.scrollingElement ?? document.documentElement;
+    animateScrollTop(scroller as HTMLElement, delta, prefersReducedMotion() ? 0 : WALKTHROUGH_CARD_SCROLL_DURATION_MS);
+  }, [activeStep, isDesktop, screenRef, pinnedRef]);
 
   // D-12 (UAT round 3): the walkthrough is stamped as seen when the user
   // LEAVES the first reveal through its last step's action row (Next or
