@@ -13,7 +13,7 @@ progress:
   completed_plans: 6
 milestone_name: Train Bot-Narrated Onboarding & Verdicts
 last_activity: 2026-09-14
-last_activity_desc: Completed quick task 260914-uer (Train onboarding tutorial tweaks: phone avatar +20%, intro copy, slower walkthrough scroll; feedback scroll pane reverted after UAT)
+last_activity_desc: Completed quick task 260914-w1m (FLAWCHESS-BE: Stockfish crashed on impossible chess.com custom-position boards; engine is_valid() guard + invalid-root games skipped at target collection)
 ---
 
 # Project State: FlawChess
@@ -879,6 +879,7 @@ None active.
 | 260906-p54 | Maia iOS OOM (FLAWCHESS-9V): cap ORT wasm memory reservation at 1 GB in both vendored glue files (WebKit allows ~3 large wasm reservations per page; Stockfish x2 + WebGPU worker + wasm respawn = 4), vitest gate, cache version 4→5; Vite dev/preview now send COOP/COEP on 304s (WebKit 245346 killed the second same-URL Stockfish worker) | 2026-09-06 | d7c3fa436 | [260906-p54-cap-maia-ort-wasm-memory-at-1-gb-ios-oom](./quick/260906-p54-cap-maia-ort-wasm-memory-at-1-gb-ios-oom/) |
 | 85 | bot cards: per-style border + glow, brighter on hover | 2026-09-05 | c6e957ff1 | — |
 | 260914-uer | Puzzle training onboarding tutorial tweaks: phone-only 20% larger avatars, "Every puzzle starts with one question" copy, 50% slower scroll after "This is your feedback", feedback in its own scroll container with visible right scrollbar (feedback scroll container reverted after UAT, a4c809ae1) | 2026-09-14 | a4c809ae1 | [260914-uer-puzzle-training-onboarding-tutorial-twea](./quick/260914-uer-puzzle-training-onboarding-tutorial-twea/) |
+| 260914-w1m | Fix FLAWCHESS-BE: Stockfish died on impossible chess.com custom-position boards (16-pawn roots); engine-pool is_valid() guard + invalid-root games excluded at _collect_full_ply_targets so the drain stamps them complete | 2026-09-14 | b96da37a7 | [260914-w1m-fix-flawchess-be-guard-stockfish-against](./quick/260914-w1m-fix-flawchess-be-guard-stockfish-against/) |
 
 ## Deferred Items
 
