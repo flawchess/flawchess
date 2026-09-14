@@ -112,6 +112,10 @@ describe('introCopy', () => {
   it('steps 1-2 are hosted by Hilda and define the guess vocabulary', () => {
     expect(introCopy(1, 'white', false).personaId).toBe(HILDA_ID);
     expect(introCopy(1, 'white', false).copy).toContain('only one good move');
+    // Quick task 260914-uer: reworded opening clause (was "Every move in a
+    // game starts with..."); this assertion is what makes the reword
+    // regression-proof.
+    expect(introCopy(1, 'white', false).copy).toContain('Every puzzle starts with one question:');
     const step = introCopy(2, 'white', false);
     expect(step.personaId).toBe(HILDA_ID);
     expect(step.copy).toContain('Only one');

@@ -25,9 +25,11 @@ import type { TrainBubbleState } from '@/components/train/trainBubbleState';
  * Phone layout (plan 06 SC2 fix, `max-sm`): the avatar column collapses into
  * a compact avatar + name header ABOVE the bubble instead of a column BESIDE
  * it, so the copy gets the whole bubble width. 32px originally, 42px after
- * the first UAT bump, 46px after the round 3 one.
+ * the first UAT bump, 46px after the round 3 one, 55px after quick task
+ * 260914-uer (another 20% on phones only — 46 * 1.2 = 55.2, rounded down);
+ * the `sm+` step (80px) is deliberately frozen.
  */
-const TRAIN_BOT_AVATAR_CLASS = 'size-[46px] sm:size-20';
+const TRAIN_BOT_AVATAR_CLASS = 'size-[55px] sm:size-20';
 
 /**
  * 222 UAT round 6: the /train landing page replaced its "Train" heading with

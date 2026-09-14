@@ -132,7 +132,7 @@ const INTRO_WELCOME: IntroStepCopy = {
 const INTRO_QUESTION: IntroStepCopy = {
   personaId: HILDA_ID,
   copy:
-    'Every move in a game starts with one question: is there only one good move ' +
+    'Every puzzle starts with one question: is there only one good move ' +
     'here, or several?',
 };
 const INTRO_VOCABULARY: IntroStepCopy = {
