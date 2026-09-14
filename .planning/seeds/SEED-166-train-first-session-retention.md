@@ -1,6 +1,6 @@
 ---
 id: SEED-166
-status: planted
+status: complete (promoted → Phase 222; shipped in v2.19, release #359, 2026-09-14)
 planted: 2026-09-12
 planted_during: /gsd-explore "Train retention" (prod funnel cut + research pass); amended 2026-09-13 by /gsd-explore "Train bot introductions" (bot-narrated delivery, tone rules, corrections)
 trigger_when: next Train window; both fixes share one metric pair and should ship together so the second one has a population to act on

@@ -8,16 +8,58 @@ in `YYYY-MM-DD` (Europe/Zurich).
 
 ## [Unreleased]
 
+## [v2.19] Train Bot-Narrated Onboarding & Verdicts — 2026-09-14
+
 ### Added
 
 - Train now explains itself the first time you use it: a couple of quick tips from the practice bots walk you through the guess question and the two buttons on your very first puzzle, then walk you through your first feedback screen — what the score means, what the move cards show, and what the buttons below them do.
 - On phones the Train board now fills the screen width, the progress line is a single compact row, and the bot's message scrolls away under the pinned board instead of taking up fixed space. The move prompt repeats the call you just made, the first-feedback tips now cover tapping a card, stepping through its line with the arrows, and trying your own moves against the eval bar, and the points pop over the board shows the bot who is about to speak.
+
+### Changed
+
+- Dragging a piece on Train before you have made your guess now tells you why the board is locked instead of silently snapping the piece back.
+- Every Train solution screen is now narrated by one of the practice bots, who states your points for the guess and the move, tells you when the position is coming back for another round, and never promises a comeback for a warm-up puzzle or one you have already mastered.
+- The Solution, Analyze and Next buttons on the Train solution screen now live inside that bot's message instead of below the board.
+- The end-of-session summary on Train now says which positions are coming back and when, and the first time you ever finish a session it also explains the idea behind bringing missed positions back later.
+- The mute button that used to sit on the Train solution screen has moved to the Bots page for now; muting there also mutes Train.
+- The Train tab carries a red dot again for everyone, including people who used Train before, until they open the reworked version once. The waiting-puzzles count still takes the slot when it applies.
+
+## [v2.18] Flaw Data Integrity — Opening Eval Cache Repair & Tactic-Tagger Precision — 2026-09-13
+
+### Added
+
+- New data story on stories.flawchess.com: "Three Losses in a Row: Should You Stop?" measures the game after a losing streak on the benchmark population, with a fresh-opponent control and selection framing for the opponent gap.
+
+### Changed
+
+- The shared cache of opening-position evaluations now requires two independent engine evaluations from different games to agree before a position is trusted, and records where each value came from (source game, engine version, timestamps). Positions verified by the repair above are trusted from the start; anything new starts as a candidate.
 
 ### Fixed
 
 - Train: the thin white "played in game" arrow on the solution board no longer goes missing when you return to a solved puzzle from Analyze. The legend card always named the move, but the arrow was dropped whenever the solution was still cached from the first visit.
 - Tactic tags on your games (fork, pin, sacrifice and the rest) are now checked to make sure your side was actually winning at the point the tactic fires, so a tag no longer appears on a line that was already lost or stayed lost afterward. Missed-tactic detection now reaches lines it previously couldn't see, and the clearance tag has been retired (it fired too often on ordinary repositioning moves that didn't set up anything).
 - Some opening moves in older games (roughly the first 620,000 games imported) were marked as blunders because a shared cache of opening-position evaluations held a wrong value for a handful of positions. Those positions have been re-evaluated, the affected games have had their flaw counts, accuracy and centipawn loss recalculated, and a few gem and great-move badges in those games appear or disappear accordingly.
+
+## [v2.17] Maia Latency & iOS Return — 2026-09-07
+
+### Added
+
+- The FlawChess Engine card header shows a running node count while the engine searches.
+
+### Changed
+
+- The Maia "Human Move Probability" chart on the analysis board now appears roughly 7x faster on devices without WebGPU: the chart paints a coarse curve about 0.6 s after you land on a position and refines in place, instead of waiting 4-5 s for the full rating ladder. Behind it, the Maia engine runs on up to four threads (the site now ships cross-origin isolation headers), and its runtime was pinned back to a faster onnxruntime-web release.
+- The move-quality bar and the one-line position verdict wait for the complete rating ladder before showing, so they never flip from a rough reading to a final one, and navigating to a new position clears them immediately instead of briefly showing the previous position's numbers.
+- If the Maia engine's multi-threaded start ever stalls (for example behind a proxy that strips the isolation headers), it now retries single-threaded after 20 s instead of spinning forever.
+- The analysis board's eval bar and the FlawChess Engine card now appear about 200 ms after navigating to a new position instead of waiting for the full Maia rating ladder (about 2–4 s on devices without WebGPU). Maia infers your selected rating first, then quietly pre-computes the next move on the line, so stepping forward through a game is instant; the Human Move Probability chart still fills in over the next few seconds.
+- The Human Move Probability chart is roughly twice as fast on devices without WebGPU, because the browser inference runtime that computes it was returned to a faster earlier version. (Phase 219)
+- The Maia chart is faster on machines without a GPU because the analysis now uses several CPU cores. (Phase 219)
+- The Maia chart now appears almost immediately and sharpens as the remaining ratings finish, instead of staying blank until every rating has been computed. (Phase 219)
+- Practice-bot persona cards now carry a colored border and glow matching each bot's playing style, brightening on hover.
+- Openings, Endgames and Stats now default to rated games against human opponents on a fresh load, matching the population the percentile benchmarks compare against — the Opponent and Rated filters still switch it back to any opponent or any rated status. The Library keeps showing FlawChess practice-bot games and pasted PGNs regardless of those two filters.
+
+### Fixed
+
 - Move sounds on iPhone and iPad no longer drop out when moves come quickly: fast-forwarding through a game, or tapping Next in rapid succession, used to play only about one sound in four. Sounds are now played through the Web Audio API, the same way lichess plays its move sounds, and the page asks iOS for the same audio session it already used before, so sounds still play with the ring/silent switch on silent.
 - Maia (the Human Move Probability chart, FlawChess Engine and the practice bots) is back on iPhone and iPad. Safari kept killing the page whenever Maia ran on the GPU path, so iOS now runs Maia on the CPU path, as maiachess.com does; every other platform is unchanged.
 - Openings statistics and the bookmarked "Score over Time" chart no longer count FlawChess practice-bot games or pasted PGNs, which were already excluded from every other analytics surface.
@@ -31,27 +73,7 @@ in `YYYY-MM-DD` (Europe/Zurich).
 - Maia stays switched off on iPhone and iPad for now. A WebGPU-only attempt at bringing it back was measured on an iPhone 14 Pro and still crashed the analysis page, even with the Stockfish workers disabled, so the iOS gate from the hotfix remains in place; the analysis board, Stockfish evaluation and game imports keep working there.
 - iPhones and iPads that hit the "Maia is switched off on iOS" gate on the analysis board are now reported to error monitoring. The report used to fire only from the engine start dialog, which never appears on a device that had already downloaded the engine files and is suppressed on the analysis board, so the Maia and FlawChess Engine cards sat empty on iOS with no trace of how many users were affected. A page that Safari kills while Maia is running is now reported on the next visit as well. The Maia and FlawChess Engine cards on the analysis board now say that Maia is switched off on iPhone and iPad instead of showing an empty or endlessly loading card.
 - The WebGPU check before the Maia download now inspects the same graphics adapter the inference runtime will use. On machines with two GPUs the check could pass on one adapter while the runtime picked the other and failed, downloading the 25 MB WebGPU build for nothing before falling back to the CPU build.
-
-### Changed
-
-- The shared cache of opening-position evaluations now requires two independent engine evaluations from different games to agree before a position is trusted, and records where each value came from (source game, engine version, timestamps). Positions verified by the repair above are trusted from the start; anything new starts as a candidate.
-- The Maia "Human Move Probability" chart on the analysis board now appears roughly 7x faster on devices without WebGPU: the chart paints a coarse curve about 0.6 s after you land on a position and refines in place, instead of waiting 4-5 s for the full rating ladder. Behind it, the Maia engine runs on up to four threads (the site now ships cross-origin isolation headers), and its runtime was pinned back to a faster onnxruntime-web release.
-- The move-quality bar and the one-line position verdict wait for the complete rating ladder before showing, so they never flip from a rough reading to a final one, and navigating to a new position clears them immediately instead of briefly showing the previous position's numbers.
-- If the Maia engine's multi-threaded start ever stalls (for example behind a proxy that strips the isolation headers), it now retries single-threaded after 20 s instead of spinning forever.
-- The analysis board's eval bar and the FlawChess Engine card now appear about 200 ms after navigating to a new position instead of waiting for the full Maia rating ladder (about 2–4 s on devices without WebGPU). Maia infers your selected rating first, then quietly pre-computes the next move on the line, so stepping forward through a game is instant; the Human Move Probability chart still fills in over the next few seconds.
-
-- The Human Move Probability chart is roughly twice as fast on devices without WebGPU, because the browser inference runtime that computes it was returned to a faster earlier version. (Phase 219)
-- The Maia chart is faster on machines without a GPU because the analysis now uses several CPU cores. (Phase 219)
-- The Maia chart now appears almost immediately and sharpens as the remaining ratings finish, instead of staying blank until every rating has been computed. (Phase 219)
-- Practice-bot persona cards now carry a colored border and glow matching each bot's playing style, brightening on hover.
-- Openings, Endgames and Stats now default to rated games against human opponents on a fresh load, matching the population the percentile benchmarks compare against — the Opponent and Rated filters still switch it back to any opponent or any rated status. The Library keeps showing FlawChess practice-bot games and pasted PGNs regardless of those two filters.
-
-- Dragging a piece on Train before you have made your guess now tells you why the board is locked instead of silently snapping the piece back.
-- Every Train solution screen is now narrated by one of the practice bots, who states your points for the guess and the move, tells you when the position is coming back for another round, and never promises a comeback for a warm-up puzzle or one you have already mastered.
-- The Solution, Analyze and Next buttons on the Train solution screen now live inside that bot's message instead of below the board.
-- The end-of-session summary on Train now says which positions are coming back and when, and the first time you ever finish a session it also explains the idea behind bringing missed positions back later.
-- The mute button that used to sit on the Train solution screen has moved to the Bots page for now; muting there also mutes Train.
-- The Train tab carries a red dot again for everyone, including people who used Train before, until they open the reworked version once. The waiting-puzzles count still takes the slot when it applies.
+- The analysis board no longer prompts "Turn on Stockfish" while Stockfish is already running.
 
 ## [v2.16] Audit Hardening & Dependency Currency — 2026-09-05
 
@@ -1460,7 +1482,10 @@ bookmarks, game cards, and rating / stats pages.
 - Rating history, global stats, openings W/D/L charts.
 - Multi-user auth with data isolation.
 
-[Unreleased]: https://github.com/flawchess/flawchess/compare/v2.16...HEAD
+[Unreleased]: https://github.com/flawchess/flawchess/compare/v2.19...HEAD
+[v2.19]: https://github.com/flawchess/flawchess/compare/v2.18...v2.19
+[v2.18]: https://github.com/flawchess/flawchess/compare/v2.17...v2.18
+[v2.17]: https://github.com/flawchess/flawchess/compare/v2.16...v2.17
 [v2.16]: https://github.com/flawchess/flawchess/compare/v2.15...v2.16
 [v2.15]: https://github.com/flawchess/flawchess/compare/v2.14...v2.15
 [v2.14]: https://github.com/flawchess/flawchess/compare/v2.13...v2.14

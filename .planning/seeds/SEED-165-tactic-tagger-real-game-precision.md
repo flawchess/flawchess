@@ -1,6 +1,6 @@
 ---
 id: SEED-165
-status: promoted (→ Phase 221, 2026-09-12)
+status: complete (→ Phase 221, 2026-09-12; shipped in v2.18, release #358)
 planted: 2026-09-12
 planted_during: ad-hoc tactic-tagger review (reports/tactic-tagger/tactic-tagger-review-2026-09-12.md)
 trigger_when: next tactic-quality window; MUST land before any data story or benchmark that uses tactic-motif rates (sacrifice/clearance rates are ~50-80% noise today)
