@@ -49,7 +49,8 @@ key-decisions:
 patterns-established:
   - "Pattern 1: destructure a hook's {ref, value} return immediately at the call site rather than passing the whole object around — sidesteps a react-hooks/refs false positive and matches useBoardStageSize's existing convention."
 
-requirements-completed: [QUICK-01, QUICK-02, QUICK-03, QUICK-04]
+requirements-completed: [QUICK-01, QUICK-02, QUICK-03]
+requirements-reverted: [QUICK-04]
 
 coverage:
   - id: D1
@@ -110,6 +111,21 @@ status: complete
 # Phase 260914-uer Plan 01: Train Onboarding Tutorial Tweaks Summary
 
 **Phone-only 20% bigger Train bot avatar, reworded intro line, a tunable 700ms rAF scroll tween replacing the untunable native smooth-scroll, and a bounded `train-feedback-pane` scroll container (measured by a new `useFitPaneToViewport` hook) so the reveal no longer scrolls the whole page behind the pinned board.**
+
+## Post-UAT revert (2026-09-14, `a4c809ae1`)
+
+**QUICK-04 was reverted at the owner's request ("it doesn't work well").** The
+bounded `train-feedback-pane` scroll container and `useFitPaneToViewport` (hook +
+test) are gone; the reveal scrolls the page behind the pinned board again, exactly
+as Phase 222 shipped it. Decisions D-B and D-C are therefore moot.
+
+QUICK-01, QUICK-02 and QUICK-03 stand. The 700ms tween (`animateScrollTop`,
+`WALKTHROUGH_CARD_SCROLL_DURATION_MS`) now drives `document.scrollingElement`
+(falling back to `documentElement`, which is also what jsdom offers) instead of
+the pane, with the original pinned-block delta arithmetic restored.
+
+Everything below this section describes the state BEFORE the revert and is kept
+as the execution record.
 
 ## Performance
 
