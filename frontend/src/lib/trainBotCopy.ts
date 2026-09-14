@@ -8,7 +8,10 @@
  * D-06 (LOCKED): copy is authored PER OUTCOME BUCKET with a few variants,
  * never per persona/bot. Bot identity carries only the face and name —
  * `pickBot` selects WHO speaks; the copy tables below say WHAT is said,
- * completely independent of the picked persona.
+ * completely independent of the picked persona. ONE scoped exception
+ * (2026-09-14, owner's call): the /train LANDING greeting (`landingHost`)
+ * is per-persona — a rotating daily host with a line in its own voice.
+ * Every other surface (prompts, verdicts, score bubble) stays per-outcome.
  *
  * Casting (D-01..D-05): `BY_TEMPERAMENT` groups all 24 `PERSONA_REGISTRY`
  * entries by their `temperament` field — never a hand-maintained id list, so
@@ -34,6 +37,90 @@ export const HILDA_ID: PersonaId = 'wall-1800';
  * cast.
  */
 export const TANK_ID: PersonaId = 'grinder-1600';
+
+/**
+ * The /train landing greeting per persona (the D-06 exception documented in
+ * the module header). Each line is TWO sentences in the bot's own voice: a
+ * personal opener, then an in-voice statement that the puzzles come from
+ * the user's own games — the landing bubble is the only explanation of what
+ * the page is, so the second half is load-bearing, not decoration.
+ * `trainBotCopy.test.ts` enforces that every entry names the user's own
+ * games/blunders/mistakes. `Record<PersonaId, string>` makes a missing
+ * persona a compile error, so the daily rotation (`landingHost`) can never
+ * land on a bot with nothing to say.
+ */
+export const LANDING_GREETINGS: Record<PersonaId, string> = {
+  'attacker-800': 'Bzzz! Sting first, plan later. Today we sting the blunders from your own games.',
+  'attacker-1000': "Woof! I sniffed out every hanging piece in your games. Let's chase them down.",
+  'attacker-1200': "I've been circling your games. Every mistake I spotted is a puzzle now.",
+  'attacker-1400': "Show me a weakness and I'll tear into it. Today's weaknesses come from your own games.",
+  'attacker-1600': "Head down, horns out. Your own blunders are the wall we're charging today.",
+  'attacker-1800': "In your games the pressure came too late to feel. Today you'll feel it early.",
+  'trickster-800': "Ooh, shiny! I collected every trap from your games. Let's see if you spot them this time.",
+  'trickster-1000': "Psst. I slipped your own mistakes into today's puzzles. Notice them this time.",
+  'trickster-1200': "In your games you never quite knew which game you were in. Today's puzzles will tell you.",
+  'trickster-1400': 'I dug through your games and stole your mistakes. You can have them back as puzzles.',
+  'trickster-1600': "Sure about that move? You were last time, too. Let's replay the moments in your games that fooled you.",
+  'trickster-1800': 'Ha! Your games are a goldmine of chaos. I turned the best bits into puzzles.',
+  'grinder-800': "One small step at a time. Today's steps are the mistakes from your own games.",
+  'grinder-1000': "I dug up the old positions from your games. The leaky ones are today's puzzles.",
+  'grinder-1200': "Nice and calm now. We'll paddle back to the spots where your games went under.",
+  'grinder-1400': "Take your time. Your own mistakes are waiting, and they aren't going anywhere.",
+  'grinder-1600': "Welcome to boot camp, recruit! Your own blunders are today's drill.",
+  'grinder-1800': 'A long fight is the good part. Today we fight the positions your games lost.',
+  'wall-800': 'No rush. Slow and solid beats fast and sorry, and your games have a few sorry moments to fix.',
+  'wall-1000': "Curl up, stay sharp. Today's puzzles are the moments your games weren't.",
+  'wall-1200': 'Same routine every day: replay the mistakes from your own games until they stop happening.',
+  'wall-1400': "I'd offer you a draw, but this is training. Your own mistakes are on the board today.",
+  'wall-1600': "Everything under control? Your games say otherwise. Let's tidy up those positions.",
+  'wall-1800': "Quiet position, clear head. Let's think through the moments your games went wrong.",
+};
+
+/** Rotation order for `landingHost`: the authored order of `LANDING_GREETINGS`. */
+const LANDING_HOST_IDS: readonly PersonaId[] = Object.keys(LANDING_GREETINGS) as PersonaId[];
+
+/** Day-zero for the landing rotation's day counter. Any fixed date works;
+ * the epoch keeps the arithmetic obvious. */
+const LANDING_ROTATION_EPOCH = parseISO('1970-01-01');
+
+export interface LandingHostInput {
+  /** `TrainSessionResponse.session_date` (ISO `YYYY-MM-DD`), or null while
+   * the session is loading/errored. Server-supplied so this module keeps its
+   * D-15 "no `new Date()`" rule and the Train dev clock drives the pick. */
+  sessionDate: string | null;
+  /** `TrainSettingsResponse.intro_seen_at`; null (or undefined while the
+   * settings query is pending/failed) means the intro has not been seen. */
+  introSeenAt: string | null | undefined;
+}
+
+export interface LandingHost {
+  persona: Persona;
+  copy: string;
+}
+
+/**
+ * Picks the /train landing host + greeting. Tank (D-05) until the intro
+ * stepper has been completed, so the landing page introduces the same host
+ * who opens intro step 1 ("my chess boot camp") — after that, one persona
+ * per calendar day, cycling through all 24 in `LANDING_GREETINGS` order via
+ * days-since-epoch modulo the roster size. Every user sees the same host on
+ * a given day, which keeps the rotation explainable. Tank also covers the
+ * no-date case (session still loading or errored).
+ */
+export function landingHost(input: LandingHostInput): LandingHost {
+  const tank: LandingHost = {
+    persona: PERSONA_REGISTRY[TANK_ID],
+    copy: LANDING_GREETINGS[TANK_ID],
+  };
+  if (input.introSeenAt == null) return tank;
+  if (input.sessionDate === null) return tank;
+  const day = differenceInCalendarDays(parseISO(input.sessionDate), LANDING_ROTATION_EPOCH);
+  if (Number.isNaN(day)) return tank;
+  const index = ((day % LANDING_HOST_IDS.length) + LANDING_HOST_IDS.length) % LANDING_HOST_IDS.length;
+  const id = LANDING_HOST_IDS[index];
+  if (id === undefined) return tank;
+  return { persona: PERSONA_REGISTRY[id], copy: LANDING_GREETINGS[id] };
+}
 
 /**
  * All 24 `PERSONA_REGISTRY` entries partitioned by `temperament` (D-01).
@@ -132,7 +219,7 @@ const INTRO_WELCOME: IntroStepCopy = {
 const INTRO_QUESTION: IntroStepCopy = {
   personaId: HILDA_ID,
   copy:
-    'Every move in a game starts with one question: is there only one good move ' +
+    'Every puzzle starts with one question: is there only one good move ' +
     'here, or several?',
 };
 const INTRO_VOCABULARY: IntroStepCopy = {

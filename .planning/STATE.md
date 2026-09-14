@@ -1,19 +1,19 @@
 ---
 gsd_state_version: "1.0"
-milestone: v2.16
+milestone: v2.19
 current_phase: 222
 status: completed
 stopped_at: Phase 222 complete — all phases complete
-last_updated: "2026-09-14T16:43:28.994Z"
-state_head: 09348472b80e0722478f811f398ea8d469b8b08e
+last_updated: "2026-09-14T20:31:29.594Z"
+state_head: f1df3bf0713bae6f67be462ae8f518fea94c03c0
 progress:
-  total_phases: 4
-  completed_phases: 2
-  total_plans: 25
-  completed_plans: 25
-milestone_name: Audit Hardening & Dependency Currency
-last_activity: 2026-09-13
-last_activity_desc: Phase 221 (Tactic-Tagger Real-Game Precision, SEED-165) complete — UAT 3/3, verification passed via owner override, deployed as PR
+  total_phases: 1
+  completed_phases: 1
+  total_plans: 6
+  completed_plans: 6
+milestone_name: Train Bot-Narrated Onboarding & Verdicts
+last_activity: 2026-09-14
+last_activity_desc: Completed quick task 260914-w1m (FLAWCHESS-BE: Stockfish crashed on impossible chess.com custom-position boards; engine is_valid() guard + invalid-root games skipped at target collection)
 ---
 
 # Project State: FlawChess
@@ -40,7 +40,7 @@ Open threads carried forward (not blockers):
 
 See: .planning/PROJECT.md (updated 2026-09-13 after Phase 221)
 Core value: Position-precise WDL across openings + endgames + time pressure on top of users' actual chess.com / lichess games, with personalized LLM commentary and an auto-generated opening-strengths/weaknesses report.
-Current focus: **Phase 221 (Tactic-Tagger Real-Game Precision, SEED-165) complete and deployed 2026-09-13**: 8/8 plans, verified 12/14 + owner override on the two judgment items (SC2 sacrifice real_share 0.385 accepted; 6.9x sacrifice reduction accepted), UAT 3/3, code review 0 critical / 1 warning fixed, release PR #358, full prod retag done (4.76M flaws, 246,112 rows changed, losing-line share 10.7% -> 0.01%). No open milestone: next is `/gsd-new-milestone` or another standalone phase.
+Current focus: **v2.19 closed 2026-09-14 and deployed (release #359)**; phases 219–222 regrouped into milestones v2.17–v2.19, each with a GitHub release. No open milestone: next is `/gsd-new-milestone` or another standalone phase. Read the Train funnel (first-session 0-solve, baseline 42%; second-session return, baseline 49%) after a couple of weeks of bot-narrated sessions.
 
 ### Superseded: focus after Phase 219
 
@@ -98,7 +98,13 @@ No v2.7 milestone audit doc was generated (`/gsd-audit-milestone` not run): the 
 
 ## Milestone Progress
 
-Forty-nine milestones complete (v1.0–v2.16). **v2.16 Audit Hardening & Dependency Currency closed 2026-09-05.**
+Fifty-two milestones complete (v1.0–v2.19). **v2.19 Train Bot-Narrated Onboarding & Verdicts closed 2026-09-14.**
+
+v2.19 Train Bot-Narrated Onboarding & Verdicts closed 2026-09-14 — 1 phase (222), 6 plans, 9 commits on `main` since the `v2.18` tag (55 non-planning files, +6,004/−421). Lightweight close of a standalone phase sourced from SEED-166. **Phase 222**: Bots personas as the permanent voice of Train (bubble under the board with the guess buttons inside, first-session Tank/Hilda intro stepper, decide-first nudge, outcome-matched verdict bots with point pills and the SR return date, actions inside the bubble, first-reveal Hilda walkthrough, bot-led score screen explaining spaced repetition before the reminder ask with desktop asking for the phone install first), server-side onboarding-seen columns + stamp endpoint, Train funnel card on `/activity`, and a reworked-Train nav dot on a new `train_bots_visited` flag so every existing account sees it once. Six live UAT rounds; VERIFICATION 7/7, UAT 3/3 owner-accepted, code review 1 warning fixed. Archived to `milestones/v2.19-ROADMAP.md`, phase to `milestones/v2.19-phases/`, CHANGELOG promoted, tagged v2.19, GitHub release published; SEED-166 closed, SEED-167 planted. **Deployed at close** via release #359.
+
+v2.18 Flaw Data Integrity — Opening Eval Cache Repair & Tactic-Tagger Precision closed 2026-09-13 — 2 phases (220, 221), 16 plans, 42 commits on `main` since the `v2.17` tag (63 non-planning files, +19,386/−537; the range also carries the tilt data story and the Train restored-reveal arrow fix). A **retroactive lightweight close** sourced from SEED-164 (Phase 220) and SEED-165 (Phase 221). **Phase 220**: resumable audit-trailed repair pipeline run on dev then prod (2,215,868 rows audited, 4,097 repaired, blunders 67,339 -> 60,741 across 4,079 games, 1,617 best-move candidates rewritten / 828 deleted), then two-source confirmation with provenance (2,215,868 confirmed, 5,537 candidates, 0 self-confirmed; benchmark lane 42,921 cache rows from 0), submit path writes the cache, legacy cohort NO BUILD; VERIFICATION 5/5 + 12/12 CACHEFIX; released as #356/#357. **Phase 221**: solver-winning floor at the firing node, gate never skipped on None cp, seven port fixes, missed-orientation parity, real-game gate beside the fixture gate, clearance retired, D-05 sacrifice persistence retired by gap-closure plan 08; two prod retags (4.76M flaws, 246,112 rows changed), losing-line share 10.7% -> 0.01%; VERIFICATION 12/14 + 2 owner overrides, UAT 3/3; released as #358. Archived to `milestones/v2.18-ROADMAP.md`, phases to `milestones/v2.18-phases/`, CHANGELOG promoted, tagged v2.18 on the Phase 221 close commit, GitHub release published; SEED-164 and SEED-165 closed. **Deployed throughout** via releases #356–#358.
+
+v2.17 Maia Latency & iOS Return closed 2026-09-07 — 1 phase (219), 3 plans, 75 commits on `main` since the `v2.16` tag (95 non-planning files, +6,009/−807; the range also carries the SEED-158 iOS bisect and return, the iOS Web Audio sound fix, SEED-163's rated-human analytics default, versioned engine URLs, persona glow, the insights 400 fix and the engine-card node counter). A **retroactive lightweight close** sourced from `219-MEASUREMENTS.md` (Phase 219) and SEED-158 (iOS). **Phase 219**: onnxruntime-web re-pinned to 1.27.0 with a headless benchmark gate, COOP/COEP site-wide with up to four wasm threads and a 20 s single-thread retry, 11-rung coarse paint refined in place; D-15 targets met (exact rung 81 ms, ladder 0.94 s, first paint 639 ms); VERIFICATION 7/7, UAT 7/7, code review 1 critical / 3 warnings fixed; released as #346/#347. **SEED-158**: hotfixes #348/#349 gated Maia off on iOS and kept the unsupported status sticky; releases #350–#353 bisected on-device (WebGPU-only, one-thread pin, 1 GB cap, page-kill sentinel); #354 shipped Maia on the CPU wasm backend on iOS; #355 moved iOS move sounds to Web Audio. Archived to `milestones/v2.17-ROADMAP.md`, phase to `milestones/v2.17-phases/`, CHANGELOG promoted, tagged v2.17 on the #355 forward-port, GitHub release published; SEED-158 resolved for iOS, SEED-163 complete. **Deployed throughout** via releases #342–#355.
 
 v2.16 Audit Hardening & Dependency Currency closed 2026-09-05 — 3 phases (216, 217, 218), 12 plans, 35 commits on `main` since the `v2.15` tag (94 non-planning files, +6,399/−4,783; the range also carries the Tier A dependency work of PR #340, a dev-only Google OAuth callback fix and the CI pip-strip fix). A **retroactive lightweight close** sourced from SEED-161 (Phase 216) and SEED-162 clusters 1/2/4 (Phases 217–218). **Phase 216**: Cloudflare client IPs restored (`Cf-Connecting-Ip` + range-drift script), five security headers + report-only CSP asserted in CI and at deploy, Renovate un-silenced (#338), DB-backed `/api/health` with 503, uv/npm CI caches, function-size gate in CI with eight nesting breaches fixed, housekeeping bundle; UAT 4/4, VERIFICATION 7/7, released as #339. **Phase 217**: vitest 5 / jsdom 30 (3,894 tests green first run, `undici` override deleted), onnxruntime-web 1.29 re-vendored with cache-version bump; WASM leg passed on device, three legs deferred for hardware and owner-overridden; VERIFICATION 5/5. **Phase 218**: parity spike clean at onnxruntime 1.29.0 (max drift 0.004237 < 0.010, no tier flip), both native pins raised, Python 3.14 everywhere in one commit, held on `main` by human choice then released as #341 after stripping pip from the runtime images for Trivy; VERIFICATION 8/8. SC-4 CI after-median measured at close: 517 s / 523 s vs 567 s before (n=2, inconclusive). Archived to `milestones/v2.16-ROADMAP.md`, phases to `milestones/v2.16-phases/`, CHANGELOG promoted, tagged v2.16, GitHub release published; SEED-161 closed, SEED-162 open for cluster 3 only. **Deployed throughout** via releases #339 and #341.
 
@@ -872,6 +878,8 @@ None active.
 | 260906-i5e | FlawChess Engine card header shows a running node count: "FlawChess, x ELO, n Nodes" (analogue of the Stockfish card's Depth) | 2026-09-06 | 1b5060661 | [260906-i5e-in-the-flawchess-engine-card-of-the-anal](./quick/260906-i5e-in-the-flawchess-engine-card-of-the-anal/) |
 | 260906-p54 | Maia iOS OOM (FLAWCHESS-9V): cap ORT wasm memory reservation at 1 GB in both vendored glue files (WebKit allows ~3 large wasm reservations per page; Stockfish x2 + WebGPU worker + wasm respawn = 4), vitest gate, cache version 4→5; Vite dev/preview now send COOP/COEP on 304s (WebKit 245346 killed the second same-URL Stockfish worker) | 2026-09-06 | d7c3fa436 | [260906-p54-cap-maia-ort-wasm-memory-at-1-gb-ios-oom](./quick/260906-p54-cap-maia-ort-wasm-memory-at-1-gb-ios-oom/) |
 | 85 | bot cards: per-style border + glow, brighter on hover | 2026-09-05 | c6e957ff1 | — |
+| 260914-uer | Puzzle training onboarding tutorial tweaks: phone-only 20% larger avatars, "Every puzzle starts with one question" copy, 50% slower scroll after "This is your feedback", feedback in its own scroll container with visible right scrollbar (feedback scroll container reverted after UAT, a4c809ae1) | 2026-09-14 | a4c809ae1 | [260914-uer-puzzle-training-onboarding-tutorial-twea](./quick/260914-uer-puzzle-training-onboarding-tutorial-twea/) |
+| 260914-w1m | Fix FLAWCHESS-BE: Stockfish died on impossible chess.com custom-position boards (16-pawn roots); engine-pool is_valid() guard + invalid-root games excluded at _collect_full_ply_targets so the drain stamps them complete | 2026-09-14 | b96da37a7 | [260914-w1m-fix-flawchess-be-guard-stockfish-against](./quick/260914-w1m-fix-flawchess-be-guard-stockfish-against/) |
 
 ## Deferred Items
 

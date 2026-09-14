@@ -260,6 +260,17 @@ def _collect_full_ply_targets(
 
     stored_bm = stored_best_move_by_ply or {}
     board = game.board()
+    if not board.is_valid():
+        # Bug fix (quick 260914-w1m / FLAWCHESS-BE): a chess.com custom-position game
+        # can start from a root that no legal game reaches (e.g. 16 white pawns).
+        # Stockfish crashes on such boards and returns garbage on the rest, so the
+        # game is unanalyzable end to end. Returning [] here is the single choke
+        # point for every lane (local drain, tier-4b bestmove, remote lease/submit,
+        # opening_cache_repair): with no targets the drain stamps the game complete
+        # through the no-holes path and it leaves the eval lottery for good, exactly
+        # like a game whose stored PGN fails to parse. Not a Sentry event — the data
+        # is what chess.com served, and the games are still importable and viewable.
+        return []
     targets: list[_FullPlyEvalTarget] = []
     ply_count = 0
     for ply, node in enumerate(game.mainline()):

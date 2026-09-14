@@ -15,6 +15,7 @@ import type { RefObject } from 'react';
 import { WALKTHROUGH_STEP_COUNT, walkthroughCopy } from '@/lib/trainBotCopy';
 import type { WalkthroughStep, WalkthroughStepCopy } from '@/lib/trainBotCopy';
 import { prefersReducedMotion } from '@/lib/confetti';
+import { animateScrollTop } from '@/lib/animatedScroll';
 import type { TrainSettingsResponse } from '@/types/train';
 import type { OnboardingStep } from '@/hooks/useTrainOnboarding';
 import type { TrainRevealStep } from '@/components/train/TrainReveal';
@@ -28,6 +29,15 @@ const WALKTHROUGH_STEP_STEP_LINE: WalkthroughStep = 2;
 /** Gap left between the pinned board block and the first line card when the
  * walkthrough scrolls the cards into view on phones. */
 const WALKTHROUGH_CARD_SCROLL_GAP_PX = 12;
+
+/**
+ * Duration of the phone scroll-to-cards tween. Quick task 260914-uer
+ * (QUICK-03): Phase 222 shipped the browser's native `behavior: 'smooth'`,
+ * whose duration is UA-owned (~350ms in Chrome for this delta) and not
+ * tunable; the ask was half that speed, so the scroll is now an explicit
+ * rAF tween (`animateScrollTop`) and this number is the single knob.
+ */
+const WALKTHROUGH_CARD_SCROLL_DURATION_MS = 700;
 
 /** The reveal's spotlight entry shape (`TrainReveal`'s `onSpotlightChange`). */
 export interface SpotlightEntry {
@@ -154,7 +164,12 @@ export function useTrainWalkthrough(input: UseTrainWalkthroughInput): UseTrainWa
       pinned.getBoundingClientRect().height -
       WALKTHROUGH_CARD_SCROLL_GAP_PX;
     if (delta <= 0) return;
-    window.scrollBy({ top: delta, behavior: prefersReducedMotion() ? 'auto' : 'smooth' });
+    // The page itself is the scroller here (the feedback scrolls behind the
+    // pinned board); `document.scrollingElement` is the element whose
+    // `scrollTop` moves it (`documentElement` is the standards-mode fallback,
+    // and what jsdom offers). Reduced motion jumps instantly via a 0ms duration.
+    const scroller = document.scrollingElement ?? document.documentElement;
+    animateScrollTop(scroller as HTMLElement, delta, prefersReducedMotion() ? 0 : WALKTHROUGH_CARD_SCROLL_DURATION_MS);
   }, [activeStep, isDesktop, screenRef, pinnedRef]);
 
   // D-12 (UAT round 3): the walkthrough is stamped as seen when the user

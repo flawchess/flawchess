@@ -24,8 +24,8 @@ import { TrainScheduleSettings } from '@/components/train/TrainScheduleSettings'
 import { TrainStatsCard } from '@/components/train/TrainStatsCard';
 import { TrainStreakCard } from '@/components/train/TrainStreakCard';
 import { useTrainProgress } from '@/hooks/useTrainProgress';
-import { PERSONA_REGISTRY } from '@/lib/personas/personaRegistry';
-import { TANK_ID } from '@/lib/trainBotCopy';
+import { useTrainSettings } from '@/hooks/useTrainSettings';
+import { landingHost } from '@/lib/trainBotCopy';
 import { TRAIN_POINTS_PER_PUZZLE } from '@/lib/trainScore';
 import type { TrainSessionResponse } from '@/types/train';
 
@@ -174,22 +174,32 @@ function resolveLandingState(
 }
 
 /**
- * The landing page's opener: Tank the Ox speaking the tagline in the same
- * `TrainBotBubble` the solve loop and score screen use, so the landing page
- * introduces the host before the first puzzle does. Tank is the fixed
- * welcome host (D-05, `TANK_ID`), never a random pick.
+ * The landing page's opener: a bot speaking a greeting in the same
+ * `TrainBotBubble` the solve loop and score screen use. Tank the Ox hosts
+ * until the intro stepper has been completed (D-05: he also opens intro
+ * step 1, so the landing page introduces the same host the first puzzle
+ * does); afterwards the host rotates daily through all 24 personas, keyed
+ * on the server-supplied `session_date` (see `landingHost`). Only the
+ * session date is read, so the header renders identically for every
+ * landing state on a given day.
  *
  * History: this was an `<h1>Train</h1>` plus a muted tagline line beneath it
  * (191.1 UAT: tagline directly under the title in EVERY landing state;
  * 193 UAT round 3: the two grouped as one `gap-1` unit). 222 UAT round 6
- * replaced the tagline with the bubble and then dropped the heading
+ * replaced the tagline with a fixed Tank bubble and then dropped the heading
  * outright: the bubble already says what the page is, and the nav tab
- * carries the "Train" label.
+ * carries the "Train" label. 2026-09-14: the fixed Tank line became the
+ * per-persona daily rotation.
  */
-function TrainHeader(): ReactElement {
+function TrainHeader({ session }: { session: TrainSessionResponse | null }): ReactElement {
+  const { data: settings } = useTrainSettings();
+  const host = landingHost({
+    sessionDate: session?.session_date ?? null,
+    introSeenAt: settings?.intro_seen_at,
+  });
   return (
-    <TrainBotBubble persona={PERSONA_REGISTRY[TANK_ID]} state="prompt" avatarSize="large">
-      <p data-testid="train-tagline">Learn from the mistakes in your games with personalized puzzles.</p>
+    <TrainBotBubble persona={host.persona} state="prompt" avatarSize="large">
+      <p data-testid="train-tagline">{host.copy}</p>
     </TrainBotBubble>
   );
 }
@@ -298,7 +308,7 @@ export function TrainStartScreen({
     return (
       <div className={LANDING_CONTAINER_CLASS} data-testid="train-start-screen">
         <TrainReminderResurfaceBanner />
-        <TrainHeader />
+        <TrainHeader session={session} />
         <div className={LANDING_CARD_GRID_CLASS}>
           <TrainStreakCard />
           <TrainStatsCard todayScore={{ total: state.score, max: state.totalPoints }} />
@@ -340,7 +350,7 @@ export function TrainStartScreen({
   return (
     <div className={LANDING_CONTAINER_CLASS} data-testid="train-start-screen">
       <TrainReminderResurfaceBanner />
-      <TrainHeader />
+      <TrainHeader session={session} />
       {isWarmupState && (
         <Card className="w-full p-4" data-testid="train-warmup-banner">
           <div className="flex items-center gap-2">

@@ -56,7 +56,14 @@ vi.mock('@/hooks/useTrainProgress', () => ({
 // `data` would keep reporting stale values forever after a save, and
 // TrainScheduleSettings's "already matches what the server confirmed" guard
 // would never trip — re-firing `save()` on every unrelated re-render.
-let mockTrainSettingsData = { timezone: 'UTC', weekday_mask: 127, puzzles_per_session: 6 };
+// 2026-09-14 (rotating landing host): `intro_seen_at` is read by the header;
+// null keeps Tank as the host so the pre-existing assertions stay put.
+let mockTrainSettingsData: {
+  timezone: string;
+  weekday_mask: number;
+  puzzles_per_session: number;
+  intro_seen_at: string | null;
+} = { timezone: 'UTC', weekday_mask: 127, puzzles_per_session: 6, intro_seen_at: null };
 
 const saveMock = vi.fn(
   (
@@ -126,6 +133,7 @@ vi.mock('@/hooks/useReminderResurface', () => ({
 }));
 
 import { TrainStartScreen } from '@/components/train/TrainStartScreen';
+import { TANK_ID, landingHost } from '@/lib/trainBotCopy';
 import { TRAIN_SETTINGS_SAVE_DEBOUNCE_MS } from '@/components/train/TrainScheduleSettings';
 import type { TrainProgressResponse, TrainPuzzle, TrainSessionResponse } from '@/types/train';
 
@@ -133,7 +141,7 @@ afterEach(() => {
   cleanup();
   trainProgressMock = { data: DEFAULT_TRAIN_PROGRESS, isPending: false, isError: false };
   saveMock.mockClear();
-  mockTrainSettingsData = { timezone: 'UTC', weekday_mask: 127, puzzles_per_session: 6 };
+  mockTrainSettingsData = { timezone: 'UTC', weekday_mask: 127, puzzles_per_session: 6, intro_seen_at: null };
   resurfaceMock = { shouldResurface: false };
   // WR-01: restore the file-wide default so the banner block's opt-in cannot
   // leak into the six landing-state assertions above it.
@@ -282,13 +290,37 @@ describe('TrainStartScreen — six landing states', () => {
     expect(screen.queryByTestId('btn-train-resume')).toBeNull();
   });
 
-  it('222 UAT round 6: Tank the Ox speaks the tagline in a bot bubble, and the old "Train" heading is gone', () => {
+  it('222 UAT round 6: Tank the Ox speaks the greeting in a bot bubble, and the old "Train" heading is gone', () => {
     renderScreen();
     expect(screen.getByTestId('train-bot-name').textContent).toBe('Tank the Ox');
     expect(screen.getByTestId('train-tagline').textContent).toBe(
-      'Learn from the mistakes in your games with personalized puzzles.',
+      "Welcome to boot camp, recruit! Your own blunders are today's drill.",
     );
     expect(screen.queryByRole('heading', { name: 'Train' })).toBeNull();
+  });
+
+  it('once the intro is seen, the host rotates by session_date via landingHost (same persona + copy)', () => {
+    mockTrainSettingsData = { ...mockTrainSettingsData, intro_seen_at: '2026-07-01T10:00:00Z' };
+    const expected = landingHost({
+      sessionDate: BASE_SESSION.session_date,
+      introSeenAt: mockTrainSettingsData.intro_seen_at,
+    });
+    renderScreen();
+    expect(screen.getByTestId('train-bot-name').textContent).toBe(expected.persona.name);
+    expect(screen.getByTestId('train-tagline').textContent).toBe(expected.copy);
+    // Rotation must actually have moved off the fixed host for this date, or
+    // the test would pass trivially against Tank.
+    expect(expected.persona.id).not.toBe(TANK_ID);
+  });
+
+  it('once the intro is seen, a different session_date can produce a different host', () => {
+    mockTrainSettingsData = { ...mockTrainSettingsData, intro_seen_at: '2026-07-01T10:00:00Z' };
+    renderScreen({ session: { ...BASE_SESSION, session_date: '2026-07-26' } });
+    const nextDay = landingHost({ sessionDate: '2026-07-26', introSeenAt: 'x' });
+    expect(screen.getByTestId('train-bot-name').textContent).toBe(nextDay.persona.name);
+    expect(nextDay.persona.id).not.toBe(
+      landingHost({ sessionDate: BASE_SESSION.session_date, introSeenAt: 'x' }).persona.id,
+    );
   });
 
   it('D-13: the schedule settings block renders after the Start CTA in the fresh state', () => {

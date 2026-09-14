@@ -1,6 +1,6 @@
 ---
 id: SEED-164
-status: promoted (→ Phase 220, 2026-09-09)
+status: complete (→ Phase 220, 2026-09-09; shipped in v2.18, releases #356/#357)
 planted: 2026-09-09
 updated: 2026-09-09 (promoted to Phase 220; two-source confirmation added to hardening; screen/confirm thresholds now derived from a measured noise floor in expected-score units, histogram-vs-control acceptance)
 planted_during: ad-hoc investigation of game 2356581 (spurious blunders at ply 5/6), branch study/tilt

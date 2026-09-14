@@ -26,6 +26,7 @@ import { TooltipProvider } from '@/components/ui/tooltip';
 import { TRAIN_STEP_HIGHLIGHT } from '@/lib/trainArrows';
 import { MOVE_QUALITY_BLUNDER, MOVE_QUALITY_GOOD, TRAIN_BEST_MOVE_ARROW } from '@/lib/theme';
 import { buildGameAnalysisUrl } from '@/lib/analysisUrl';
+import { animateScrollTop } from '@/lib/animatedScroll';
 import { BY_TEMPERAMENT, introStepCount, WALKTHROUGH_STEP_COUNT } from '@/lib/trainBotCopy';
 import { PERSONA_REGISTRY } from '@/lib/personas/personaRegistry';
 import { useTrainSession } from '@/hooks/useTrainSession';
@@ -213,6 +214,10 @@ vi.mock('@/api/client', async () => {
 // added once useAnalysisBoard/useTrainFreePlay started calling it on every
 // gesture-driven command — free play on this screen wraps that hook.
 const mockSetMuted = vi.fn();
+vi.mock('@/lib/animatedScroll', () => ({
+  animateScrollTop: vi.fn(),
+}));
+
 vi.mock('@/lib/sounds', () => ({
   playSound: vi.fn(),
   unlockAudio: vi.fn(),
@@ -2783,8 +2788,8 @@ describe('TrainSolveScreen — progress, last move, grading state, engine failur
 
     it('on a phone, entering the tap step scrolls the first line card to just under the pinned board block', async () => {
       matchMediaMatches = false;
-      const scrollBy = vi.fn();
-      vi.stubGlobal('scrollBy', scrollBy);
+      const scrollTween = vi.mocked(animateScrollTop);
+      scrollTween.mockClear();
       getSettings.mockResolvedValue(makeSettings({ reveal_walkthrough_seen_at: null }));
       await renderScreen(makePuzzle());
       fireEvent.click(screen.getByTestId('btn-train-guess-critical'));
@@ -2799,12 +2804,13 @@ describe('TrainSolveScreen — progress, last move, grading state, engine failur
       const cardRect = { top: 700, bottom: 780, height: 80 } as DOMRect;
       vi.spyOn(pinned, 'getBoundingClientRect').mockReturnValue(pinnedRect);
       vi.spyOn(card, 'getBoundingClientRect').mockReturnValue(cardRect);
-      expect(scrollBy).not.toHaveBeenCalled();
+      expect(scrollTween).not.toHaveBeenCalled();
       fireEvent.click(screen.getByTestId('btn-train-bot-walkthrough-next'));
-      await waitFor(() => expect(scrollBy).toHaveBeenCalledTimes(1));
-      // 700 (card top) - 300 (pinned height) - 12 (gap).
-      expect(scrollBy).toHaveBeenCalledWith({ top: 388, behavior: 'smooth' });
-      vi.unstubAllGlobals();
+      await waitFor(() => expect(scrollTween).toHaveBeenCalledTimes(1));
+      // Scrolls the PAGE (document.scrollingElement) by
+      // 700 (card top) - 300 (pinned height) - 12 (gap), over the explicit
+      // 700ms tween (quick task 260914-uer, QUICK-03).
+      expect(scrollTween).toHaveBeenCalledWith(document.documentElement, 388, 700);
     });
 
     it('with reveal_walkthrough_seen_at already stamped, no walkthrough renders and the verdict shows immediately', async () => {

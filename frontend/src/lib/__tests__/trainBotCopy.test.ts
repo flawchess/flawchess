@@ -13,6 +13,7 @@ import {
   BY_TEMPERAMENT,
   GRADING_COPY,
   HILDA_ID,
+  LANDING_GREETINGS,
   STEPPER_COPY_MAX_CHARS,
   TANK_ID,
   WALKTHROUGH_STEP_COUNT,
@@ -20,6 +21,7 @@ import {
   introCopy,
   introStepCount,
   introSteps,
+  landingHost,
   lookCloserCopy,
   movePromptCopy,
   pickBot,
@@ -30,7 +32,8 @@ import {
   walkthroughCopy,
 } from '@/lib/trainBotCopy';
 import type { IntroStep, ScoreBubbleInput, ScoreBubbleOutcome, WalkthroughStep } from '@/lib/trainBotCopy';
-import { personaForId } from '@/lib/personas/personaRegistry';
+import { PERSONA_REGISTRY, personaForId } from '@/lib/personas/personaRegistry';
+import type { PersonaId } from '@/lib/personas/personaRegistry';
 
 describe('pickBot', () => {
   it('with an injected rng returning 0, resolves to a member of the requested pool', () => {
@@ -76,6 +79,67 @@ describe('HILDA_ID / TANK_ID', () => {
   });
 });
 
+describe('LANDING_GREETINGS / landingHost', () => {
+  const ALL_IDS = Object.keys(PERSONA_REGISTRY) as PersonaId[];
+  const SEEN = { introSeenAt: '2026-07-01T10:00:00Z' };
+  // The landing bubble is the page's only explanation of what Train is, so
+  // every voice must still say the puzzles come from the user's own games.
+  const OWN_GAMES = /your (own )?(games|blunders|mistakes)/i;
+
+  it('has a greeting for every registry persona that names the user\'s own games', () => {
+    for (const id of ALL_IDS) {
+      expect(LANDING_GREETINGS[id], id).toMatch(OWN_GAMES);
+      expect(LANDING_GREETINGS[id].trim().length, id).toBeGreaterThan(0);
+    }
+  });
+
+  it("Tank's greeting is the boot-camp line", () => {
+    expect(LANDING_GREETINGS[TANK_ID]).toBe(
+      "Welcome to boot camp, recruit! Your own blunders are today's drill.",
+    );
+  });
+
+  it('is Tank until the intro has been seen (null or undefined), whatever the date', () => {
+    for (const date of ['2026-07-25', '2026-07-26', '2026-08-13']) {
+      expect(landingHost({ sessionDate: date, introSeenAt: null }).persona.id).toBe(TANK_ID);
+      expect(landingHost({ sessionDate: date, introSeenAt: undefined }).persona.id).toBe(TANK_ID);
+    }
+  });
+
+  it('is Tank with no session date (loading/error) or an unparseable one', () => {
+    expect(landingHost({ sessionDate: null, ...SEEN }).persona.id).toBe(TANK_ID);
+    expect(landingHost({ sessionDate: 'not-a-date', ...SEEN }).persona.id).toBe(TANK_ID);
+  });
+
+  it('always pairs the persona with that persona\'s own greeting', () => {
+    for (let offset = 0; offset < ALL_IDS.length; offset += 1) {
+      const date = new Date(Date.UTC(2026, 6, 1 + offset)).toISOString().slice(0, 10);
+      const host = landingHost({ sessionDate: date, ...SEEN });
+      expect(host.copy).toBe(LANDING_GREETINGS[host.persona.id]);
+    }
+  });
+
+  it('is deterministic per date and cycles through all 24 personas over 24 consecutive days', () => {
+    const seen = new Set<PersonaId>();
+    for (let offset = 0; offset < ALL_IDS.length; offset += 1) {
+      const date = new Date(Date.UTC(2026, 6, 1 + offset)).toISOString().slice(0, 10);
+      const first = landingHost({ sessionDate: date, ...SEEN });
+      const again = landingHost({ sessionDate: date, ...SEEN });
+      expect(again.persona.id).toBe(first.persona.id);
+      seen.add(first.persona.id);
+    }
+    expect(seen.size).toBe(ALL_IDS.length);
+  });
+
+  it('changes host between consecutive days and repeats after a full cycle', () => {
+    const day0 = landingHost({ sessionDate: '2026-07-01', ...SEEN }).persona.id;
+    const day1 = landingHost({ sessionDate: '2026-07-02', ...SEEN }).persona.id;
+    const day24 = landingHost({ sessionDate: '2026-07-25', ...SEEN }).persona.id;
+    expect(day1).not.toBe(day0);
+    expect(day24).toBe(day0);
+  });
+});
+
 describe('promptCopy / movePromptCopy / GRADING_COPY', () => {
   it('promptCopy states the side to move and asks the D-09 vocabulary question', () => {
     expect(promptCopy('white')).toContain('white');
@@ -112,6 +176,10 @@ describe('introCopy', () => {
   it('steps 1-2 are hosted by Hilda and define the guess vocabulary', () => {
     expect(introCopy(1, 'white', false).personaId).toBe(HILDA_ID);
     expect(introCopy(1, 'white', false).copy).toContain('only one good move');
+    // Quick task 260914-uer: reworded opening clause (was "Every move in a
+    // game starts with..."); this assertion is what makes the reword
+    // regression-proof.
+    expect(introCopy(1, 'white', false).copy).toContain('Every puzzle starts with one question:');
     const step = introCopy(2, 'white', false);
     expect(step.personaId).toBe(HILDA_ID);
     expect(step.copy).toContain('Only one');
