@@ -8,6 +8,10 @@ in `YYYY-MM-DD` (Europe/Zurich).
 
 ## [Unreleased]
 
+### Changed
+
+- The Train landing page is now hosted by a different practice bot each day, each greeting you in its own voice. Tank the Ox keeps hosting until you have finished the first-puzzle walkthrough, so the page introduces the same bot who opens it.
+
 ### Fixed
 
 - Chess.com custom-position games that start from an impossible setup (for example two full ranks of pawns) no longer crash the analysis engine or receive nonsense evaluations. They are imported and viewable as before, but skipped by the engine analysis.
