@@ -60,6 +60,11 @@ const ActivityPage = lazy(() => import('./pages/activity/ActivityPage'));
 
 const FLAG_OPENINGS_VISITED = 'openings_visited';
 const FLAG_ENDGAMES_VISITED = 'endgames_visited';
+// Phase 222 ship: a NEW key (not the retired pre-Phase-191 first-visit dot's)
+// so every existing account, including ones that already used Train, sees the
+// dot once more and gets drawn to the reworked bot-narrated Train. Cleared on
+// the first /train visit after this release.
+const FLAG_TRAIN_BOTS_VISITED = 'train_bots_visited';
 const IMPORT_REQUIRED_MESSAGE = 'Import your games first to unlock this feature.';
 // SCHD-02/D-06/D-07: waiting-count badge display cap — anything above this
 // renders as `${NAV_BADGE_MAX_DISPLAY}+` rather than the exact count.
@@ -174,9 +179,21 @@ function isActive(to: string, pathname: string): boolean {
 // Exported (additive) so App.test.tsx can render each nav surface directly —
 // a full <App /> render owns its own BrowserRouter/AuthProvider/QueryClientProvider,
 // which makes route control and hook mocking impractical from the outside.
-export function NavHeader() {
-  const location = useLocation();
-  const { logout } = useAuth();
+// ─── Nav indicators (red dots + Train badge) ──────────────────────────────────
+
+interface NavIndicators {
+  navUnlocked: boolean;
+  noGames: boolean;
+  showOpeningsDot: boolean;
+  showEndgamesDot: boolean;
+  showTrainDot: boolean;
+  /** Rendered waiting-count label, or null when the numeric badge is hidden. */
+  trainBadgeLabel: string | null;
+}
+
+// Shared by NavHeader and MobileBottomBar so the two nav surfaces can never
+// disagree about which item carries a dot or a badge.
+function useNavIndicators(): NavIndicators {
   const { data: profile } = useUserProfile();
   const totalGames = profile != null ? profile.chess_com_game_count + profile.lichess_game_count : 0;
   const noGames = profile != null && totalGames === 0;
@@ -188,6 +205,7 @@ export function NavHeader() {
   const navUnlocked = totalGames > 0 && tier1;
   const openingsVisited = useUserFlag(FLAG_OPENINGS_VISITED, profile?.email);
   const endgamesVisited = useUserFlag(FLAG_ENDGAMES_VISITED, profile?.email);
+  const trainBotsVisited = useUserFlag(FLAG_TRAIN_BOTS_VISITED, profile?.email);
   const showOpeningsDot = navUnlocked && !openingsVisited;
   // Endgames dot is gated behind the Openings dot — we want users to discover
   // Openings first, then Endgames after that dot is cleared.
@@ -203,6 +221,96 @@ export function NavHeader() {
   // while pending/errored, or a payload missing the field) rather than guessing.
   // No client-side schedule-mask/timezone math is performed here.
   const trainBadgeVisible = trainProgressQuery.data?.badge_visible ?? false;
+  const showTrainBadge = trainWaitingCount > 0 && trainBadgeVisible;
+  const trainBadgeLabel = showTrainBadge
+    ? (trainWaitingCount > NAV_BADGE_MAX_DISPLAY ? `${NAV_BADGE_MAX_DISPLAY}+` : String(trainWaitingCount))
+    : null;
+  // Phase 222 ship: "reworked Train" dot. The numeric waiting badge wins the
+  // slot when both apply — it is already red and already says "go to Train".
+  const showTrainDot = navUnlocked && !trainBotsVisited && !showTrainBadge;
+  return { navUnlocked, noGames, showOpeningsDot, showEndgamesDot, showTrainDot, trainBadgeLabel };
+}
+
+function NavDot({ testid, mobile, ariaHidden }: { testid: string; mobile: boolean; ariaHidden?: boolean }) {
+  return (
+    <span
+      className={mobile ? 'absolute top-1.5 right-[30%] flex h-2 w-2' : 'absolute top-0.5 right-0.5 flex h-2.5 w-2.5'}
+      data-testid={testid}
+      aria-hidden={ariaHidden || undefined}
+    >
+      <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-red-500 opacity-75" />
+      <span className={cn('relative inline-flex rounded-full bg-red-500', mobile ? 'h-2 w-2' : 'h-2.5 w-2.5')} />
+    </span>
+  );
+}
+
+function TrainBadge({ label, mobile }: { label: string; mobile: boolean }) {
+  if (mobile) {
+    return (
+      <span
+        // `leading-none` + `text-xs` for the same centering/fit reason as
+        // the desktop badge below.
+        className="absolute top-1.5 right-[30%] flex h-4 min-w-4 items-center justify-center rounded-full bg-red-500 px-1 pt-0.5 text-xs leading-none font-semibold text-white"
+        data-testid="train-notification-badge-mobile"
+      >
+        {label}
+      </span>
+    );
+  }
+  return (
+    <span
+      // UAT bug fix (191-06): the desktop `<header>` has
+      // `overflow-hidden`; the old `-top-1` offset
+      // pushed the badge above the stretched Link's top edge —
+      // i.e. above the header's own content box — where it got
+      // clipped. `top-0` keeps it inside those bounds ("a bit
+      // lower"); the smaller h-3.5/min-w-3.5/px-0.5 footprint
+      // ("a bit smaller") is a size-only reduction — `text-sm`
+      // is unchanged (CLAUDE.md's font-size floor). Mobile's
+      // badge (above) is unaffected: it was
+      // reported fine and sits inside a differently-shaped
+      // column item with no clipping ancestor.
+      // `leading-none` is required for the digit to sit centered:
+      // the default line-height overflowed the 14px circle, so the
+      // glyph rode high. Collapsing the line box to the font size
+      // lets `items-center` actually centre it. `text-xs` is a
+      // deliberate exception to CLAUDE.md's text-sm floor — the
+      // digit has to fit a 14px counter badge.
+      // `pt-0.5` is an optical nudge: digits sit above the em box's
+      // vertical middle (the descender space is unused), so exact
+      // box-centering still reads high.
+      className="absolute top-0 -right-1 flex h-3.5 min-w-3.5 items-center justify-center rounded-full bg-red-500 px-0.5 pt-0.5 text-xs leading-none font-semibold text-white"
+      data-testid="train-notification-badge"
+    >
+      {label}
+    </span>
+  );
+}
+
+// The dot or badge a nav item carries, if any. `mobile` picks the bottom-bar
+// geometry and the `-mobile` testid suffix.
+function NavIndicator({ to, ind, mobile }: { to: string; ind: NavIndicators; mobile: boolean }) {
+  const suffix = mobile ? '-mobile' : '';
+  if (to === '/library') {
+    return ind.noGames ? <NavDot testid={`library-notification-dot${suffix}`} mobile={mobile} ariaHidden /> : null;
+  }
+  if (to === '/openings') {
+    return ind.showOpeningsDot ? <NavDot testid={`openings-notification-dot${suffix}`} mobile={mobile} /> : null;
+  }
+  if (to === '/endgames') {
+    return ind.showEndgamesDot ? <NavDot testid={`endgames-notification-dot${suffix}`} mobile={mobile} /> : null;
+  }
+  if (to !== '/train') return null;
+  if (ind.trainBadgeLabel != null) return <TrainBadge label={ind.trainBadgeLabel} mobile={mobile} />;
+  return ind.showTrainDot ? <NavDot testid={`train-notification-dot${suffix}`} mobile={mobile} /> : null;
+}
+
+export function NavHeader() {
+  const location = useLocation();
+  const { logout } = useAuth();
+  const { data: profile } = useUserProfile();
+  const ind = useNavIndicators();
+  const { navUnlocked } = ind;
   // D-16: Admin tab rightmost for superusers, absent otherwise.
   const navItems = profile?.is_superuser ? [...NAV_ITEMS, ADMIN_NAV_ITEM, ACTIVITY_NAV_ITEM] : NAV_ITEMS;
 
@@ -235,62 +343,7 @@ export function NavHeader() {
               >
                 <Icon className="h-4 w-4" aria-hidden="true" />
                 {label}
-                {to === '/library' && noGames && (
-                  <span
-                    className="absolute top-0.5 right-0.5 flex h-2.5 w-2.5"
-                    data-testid="library-notification-dot"
-                    aria-hidden="true"
-                  >
-                    <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-red-500 opacity-75" />
-                    <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-red-500" />
-                  </span>
-                )}
-                {to === '/openings' && showOpeningsDot && (
-                  <span
-                    className="absolute top-0.5 right-0.5 flex h-2.5 w-2.5"
-                    data-testid="openings-notification-dot"
-                  >
-                    <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-red-500 opacity-75" />
-                    <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-red-500" />
-                  </span>
-                )}
-                {to === '/endgames' && showEndgamesDot && (
-                  <span
-                    className="absolute top-0.5 right-0.5 flex h-2.5 w-2.5"
-                    data-testid="endgames-notification-dot"
-                  >
-                    <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-red-500 opacity-75" />
-                    <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-red-500" />
-                  </span>
-                )}
-                {to === '/train' && trainWaitingCount > 0 && trainBadgeVisible && (
-                  <span
-                    // UAT bug fix (191-06): the desktop `<header>` has
-                    // `overflow-hidden` (line ~167); the old `-top-1` offset
-                    // pushed the badge above the stretched Link's top edge —
-                    // i.e. above the header's own content box — where it got
-                    // clipped. `top-0` keeps it inside those bounds ("a bit
-                    // lower"); the smaller h-3.5/min-w-3.5/px-0.5 footprint
-                    // ("a bit smaller") is a size-only reduction — `text-sm`
-                    // is unchanged (CLAUDE.md's font-size floor). Mobile's
-                    // badge (MobileBottomBar below) is unaffected: it was
-                    // reported fine and sits inside a differently-shaped
-                    // column item with no clipping ancestor.
-                    // `leading-none` is required for the digit to sit centered:
-                    // the default line-height overflowed the 14px circle, so the
-                    // glyph rode high. Collapsing the line box to the font size
-                    // lets `items-center` actually centre it. `text-xs` is a
-                    // deliberate exception to CLAUDE.md's text-sm floor — the
-                    // digit has to fit a 14px counter badge.
-                    // `pt-0.5` is an optical nudge: digits sit above the em box's
-                    // vertical middle (the descender space is unused), so exact
-                    // box-centering still reads high.
-                    className="absolute top-0 -right-1 flex h-3.5 min-w-3.5 items-center justify-center rounded-full bg-red-500 px-0.5 pt-0.5 text-xs leading-none font-semibold text-white"
-                    data-testid="train-notification-badge"
-                  >
-                    {trainWaitingCount > NAV_BADGE_MAX_DISPLAY ? `${NAV_BADGE_MAX_DISPLAY}+` : trainWaitingCount}
-                  </span>
-                )}
+                <NavIndicator to={to} ind={ind} mobile={false} />
               </Link>
               );
             })}
@@ -400,21 +453,8 @@ export function MobileBottomBar({ onMoreClick }: { onMoreClick: () => void }) {
   // payload is published, board controls replace the main nav buttons.
   const boardControls = useMobileBoardControls();
   const location = useLocation();
-  const { data: profile } = useUserProfile();
-  const totalGames = profile != null ? profile.chess_com_game_count + profile.lichess_game_count : 0;
-  const noGames = profile != null && totalGames === 0;
-  // See NavHeader — unlock only once games exist AND import phase 1 is complete.
-  const { tier1 } = useReadiness();
-  const navUnlocked = totalGames > 0 && tier1;
-  const openingsVisited = useUserFlag(FLAG_OPENINGS_VISITED, profile?.email);
-  const endgamesVisited = useUserFlag(FLAG_ENDGAMES_VISITED, profile?.email);
-  const showOpeningsDot = navUnlocked && !openingsVisited;
-  const showEndgamesDot = navUnlocked && openingsVisited && !endgamesVisited;
-  // SCHD-02/D-06/D-07/D-08 — see NavHeader for the gating rationale.
-  const trainProgressQuery = useTrainProgress({ enabled: navUnlocked && profile != null && !profile.is_guest });
-  const trainWaitingCount = trainProgressQuery.data?.waiting_count ?? 0;
-  // Phase 193 D-09/D-10 — see NavHeader for the fail-closed badge_visible rationale.
-  const trainBadgeVisible = trainProgressQuery.data?.badge_visible ?? false;
+  const ind = useNavIndicators();
+  const { navUnlocked } = ind;
 
   if (boardControls != null) {
     return (
@@ -464,44 +504,7 @@ export function MobileBottomBar({ onMoreClick }: { onMoreClick: () => void }) {
         >
           <Icon className="h-5 w-5" aria-hidden="true" />
           <span className="text-xs">{label}</span>
-          {to === '/library' && noGames && (
-            <span
-              className="absolute top-1.5 right-[30%] flex h-2 w-2"
-              data-testid="library-notification-dot-mobile"
-              aria-hidden="true"
-            >
-              <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-red-500 opacity-75" />
-              <span className="relative inline-flex h-2 w-2 rounded-full bg-red-500" />
-            </span>
-          )}
-          {to === '/openings' && showOpeningsDot && (
-            <span
-              className="absolute top-1.5 right-[30%] flex h-2 w-2"
-              data-testid="openings-notification-dot-mobile"
-            >
-              <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-red-500 opacity-75" />
-              <span className="relative inline-flex h-2 w-2 rounded-full bg-red-500" />
-            </span>
-          )}
-          {to === '/endgames' && showEndgamesDot && (
-            <span
-              className="absolute top-1.5 right-[30%] flex h-2 w-2"
-              data-testid="endgames-notification-dot-mobile"
-            >
-              <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-red-500 opacity-75" />
-              <span className="relative inline-flex h-2 w-2 rounded-full bg-red-500" />
-            </span>
-          )}
-          {to === '/train' && trainWaitingCount > 0 && trainBadgeVisible && (
-            <span
-              // `leading-none` + `text-xs` for the same centering/fit reason as
-              // the desktop badge above.
-              className="absolute top-1.5 right-[30%] flex h-4 min-w-4 items-center justify-center rounded-full bg-red-500 px-1 pt-0.5 text-xs leading-none font-semibold text-white"
-              data-testid="train-notification-badge-mobile"
-            >
-              {trainWaitingCount > NAV_BADGE_MAX_DISPLAY ? `${NAV_BADGE_MAX_DISPLAY}+` : trainWaitingCount}
-            </span>
-          )}
+          <NavIndicator to={to} ind={ind} mobile />
         </Link>
         );
       })}
@@ -600,6 +603,7 @@ function ProtectedLayout() {
   const [moreOpen, setMoreOpen] = useState(false);
   const isOpeningsRoute = location.pathname.startsWith('/openings');
   const isEndgamesRoute = location.pathname.startsWith('/endgames');
+  const isTrainRoute = location.pathname.startsWith('/train');
   // The analysis page takes over the mobile shell (back-button header + board-controls
   // footer owned by the page), so it gets a full-height flex chain on mobile and the
   // standard mobile header / bottom nav are suppressed. Desktop (sm+) is unaffected.
@@ -640,6 +644,12 @@ function ProtectedLayout() {
       setUserFlag(FLAG_ENDGAMES_VISITED, profile.email);
     }
   }, [isEndgamesRoute, profile?.email]);
+
+  useEffect(() => {
+    if (isTrainRoute && profile?.email) {
+      setUserFlag(FLAG_TRAIN_BOTS_VISITED, profile.email);
+    }
+  }, [isTrainRoute, profile?.email]);
 
   // Show deferred toast from OAuth callback — checked here because ProtectedLayout
   // is the stable destination after the redirect chain (callback → / → /openings).

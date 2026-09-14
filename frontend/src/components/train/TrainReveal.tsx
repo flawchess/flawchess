@@ -64,7 +64,7 @@ import { BEST_MOVE_ARROW, TRAIN_VERDICT_CORRECT, TRAIN_VERDICT_INCORRECT } from 
 import { toDisplayQuality, trainGlyphColor } from '@/lib/trainArrows';
 import type { TrainFineMove, TrainMoveQuality } from '@/lib/trainArrows';
 import { GUESS_POINTS, MOVE_TIER_POINTS } from '@/lib/trainScore';
-import { GUESS_LABELS, guessFeedbackProse } from '@/lib/trainGuessLabels';
+import { GUESS_CALL_LABELS, guessFeedbackProse } from '@/lib/trainGuessLabels';
 import type { Guess } from '@/lib/trainGuessLabels';
 import { cn, formatDateWithYear } from '@/lib/utils';
 import { formatTimeControl } from '@/lib/formatTimeControl';
@@ -316,7 +316,13 @@ function buildLineBoxes(
  * inaccuracy, or 2), so the reveal and the "Points: +N" flash over the board
  * add up to the same total. Green whenever anything was earned, red at zero.
  */
-function TrainScoreChip({ points, testid }: { points: number; testid: string }): ReactElement {
+/**
+ * Phase 222 (D-23): exported so `TrainSolveScreen`'s verdict bubble can reuse
+ * this SAME pill shape for its inline guess/move point chips — the shared
+ * "+N" scoring language RESEARCH's Don't-Hand-Roll table calls for, rather
+ * than a second styled span.
+ */
+export function TrainScoreChip({ points, testid }: { points: number; testid: string }): ReactElement {
   return (
     <span
       // rounded-full + slightly wider padding: the same pill shape as the
@@ -673,6 +679,17 @@ export interface TrainRevealProps {
   /** Toggles the shared board's orientation — the free-play board-controls
    * strip's flip button. */
   onFlipBoard?: () => void;
+  /**
+   * Phase 222 plan 06 (D-24): true while the first-reveal walkthrough's
+   * active step spotlights the line cards. The step index itself is owned by
+   * the board owner (`TrainSolveScreen`) since the walkthrough's spotlight
+   * targets span two columns on desktop; this component only needs to know
+   * whether to ring the `renderLineBox` cards. Deliberately independent of
+   * `spotlightKey`/`onSpotlightChange` — those drive which board ARROWS
+   * `applyTrainSpotlight` draws, not element highlighting, and the
+   * walkthrough must never touch them.
+   */
+  walkthroughLinesRing?: boolean;
 }
 
 /** UCI ("e2e4"/"e7e8q") -> SAN via chess.js from `fen`, or null on a null/
@@ -722,6 +739,13 @@ export function TrainReveal({
   onExitExploration,
   flipped = false,
   onFlipBoard,
+  // Deliberately NO default value here (unlike this component's other
+  // optional props): TrainReveal is pinned at the eslint `complexity: 68`
+  // ceiling, and ESLint's complexity rule counts a destructured default's
+  // `AssignmentPattern` as a decision point — `undefined !== 1` already
+  // reads correctly below, so a default would cost a complexity point for
+  // no behavioral gain.
+  walkthroughLinesRing,
 }: TrainRevealProps): ReactElement | null {
   const { startGameMoveSearch } = gradingEngine;
   // Phase 200 (D-06/D-08, retuned by the Phase 200 UAT): desktop spotlights on
@@ -1032,7 +1056,13 @@ export function TrainReveal({
     // (hover spotlights it, a click brings the board back), and a cursor that
     // flipped between hand and arrow as the board state changed would read as
     // a glitch rather than an affordance.
-    const cardClass = cn('cursor-pointer', isSpotlit && 'ring-2 ring-brand-brown');
+    // Phase 222 plan 06 (D-24): the walkthrough's line-card ring rides the
+    // SAME class as the hover/tap spotlight ring, on every rendered line card
+    // (your/best/game) — `walkthroughLinesRing` never touches `spotlightKey`.
+    const cardClass = cn(
+      'cursor-pointer',
+      (isSpotlit || walkthroughLinesRing) && 'ring-2 ring-brand-brown',
+    );
     // Testid precedence mirrors ROLE_TESTIDS: roles[0] is always the
     // highest-precedence role present (your > best > game).
     const glyphRole = box.roles[0] ?? 'game';
@@ -1213,7 +1243,7 @@ export function TrainReveal({
             </span>
           )}
           <span className="min-w-0 truncate">
-            Guess: {guess !== null ? GUESS_LABELS[guess] : ''}
+            Your call: {guess !== null ? GUESS_CALL_LABELS[guess] : ''}
           </span>
           <TrainScoreChip
             points={verdict.correct_guess ? GUESS_POINTS : 0}

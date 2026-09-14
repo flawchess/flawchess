@@ -1,29 +1,29 @@
 ---
 gsd_state_version: "1.0"
 milestone: v2.16
-current_phase: 221
+current_phase: 222
 status: completed
-stopped_at: Phase 221 complete — all phases complete
-last_updated: "2026-09-13T08:15:02.415Z"
-state_head: ea6a03caeba0441de058821b0d0b25506c170847
+stopped_at: Phase 222 complete — all phases complete
+last_updated: "2026-09-14T16:43:28.994Z"
+state_head: 09348472b80e0722478f811f398ea8d469b8b08e
 progress:
-  total_phases: 3
+  total_phases: 4
   completed_phases: 2
-  total_plans: 19
-  completed_plans: 19
+  total_plans: 25
+  completed_plans: 25
 milestone_name: Audit Hardening & Dependency Currency
 last_activity: 2026-09-13
-last_activity_desc: Phase 221 (Tactic-Tagger Real-Game Precision, SEED-165) complete — UAT 3/3, verification passed via owner override, deployed as PR #358 with the full prod retag done
+last_activity_desc: Phase 221 (Tactic-Tagger Real-Game Precision, SEED-165) complete — UAT 3/3, verification passed via owner override, deployed as PR
 ---
 
 # Project State: FlawChess
 
 ## Current Position
 
-Phase: 221 (Tactic-Tagger Real-Game Precision — Winning Floor, Predicate Tightening & Port Fixes, SEED-165) — COMPLETE 2026-09-13
-Plan: 8 of 8
+Phase: 222
+Plan: Not started
 
-Status: Phase 222 (Train Bot-Narrated Onboarding & Verdicts, SEED-166) added 2026-09-13, not yet discussed or planned. Next: `/gsd-discuss-phase 222`.
+Status: All phases complete
 
 Open threads carried forward (not blockers):
 
@@ -754,6 +754,14 @@ flagged as an open decision for plan 06 / a human, not auto-fixed.
 - [Phase 221]: D-07: clearance SUPPRESSED (real_share 0.667, surviving 3 rows, both below the keep bar); all eight touchpoints landed in one commit.
 - [Phase 221]: Sacrifice REALGAME_REAL_SHARE_FLOOR re-seeded 0.32->0.17 from the post-fix measurement (0.222) -- a legitimate downward re-seed, not a code patch, distinct from PRECISION_FLOOR's never-lower rule.
 - [Phase 221]: 221-08: Retired detect_sacrifice's D-05 persistence check after measuring that no board-derivable discriminator separates operator-confirmed real sacrifices (realgame_tags.csv rows 0064, 0133) from a confirmed-mislabelled row (0134) -- reverted to cook's unguarded predicate + D-06 depth cap; D-01's existing winning floor covers the case D-05 was partially redundant with. Real-game floor re-seeded 0.17 -> 0.33 from a measurement (0.385) that clears even the pre-fix baseline (0.375).
+- [Phase 222]: Temperament mapping applied verbatim from the reviewed CONTEXT.md table (8 stern/7 smart/9 friendly) — Casting pools must derive from a registry field, never a hand-maintained id list (D-01)
+- [Phase 222]: TrainReveal's complexity reduction deferred to plan 04 — Task 1's own action steps only touch TrainReveal's one-line D-09 header swap; TrainReveal's verdict/action-row removal (its complexity-lowering edit) is explicitly plan 04's job per RESEARCH's project structure table
+- [Phase 222]: Phase 222 Plan 02: train_settings onboarding-seen columns landed exactly per D-11 (user confirmed 'confirm-as-locked'); upsert_settings RETURNING/reflects the three columns (deviation from a literal but regression-causing acceptance criterion). — Avoids a client-visible bug where any settings PUT would reset the onboarding-seen cache to null; mirrors the existing reminder_last_sent_on precedent in the same function.
+- [Phase 222]: Combined T-222-04-01/02/03 into one commit (8b37d4624) rather than three atomic per-task commits, since all three states dispatch from the same renderTrainBotBubbleBody helper by design.
+- [Phase 222]: D-16 terminal tails (mastered/parked/herring/filler) render their text but omit the train-bot-return-tail testid, reserved for the two genuine return promises (next-session / in-N-days) only.
+- [Phase 222]: 222-05: showsFullExplanation gate mirrors scoreBubbleCopy's precedence locally so an explanation that never rendered is never stamped (D-12).
+- [Phase 222]: 222-05: live solvedOutcomes accumulator (seed + append) makes the score bubble truthful for a straight-through session, not just a resumed one (RESEARCH Finding C).
+- [Phase 222]: Phase 222 closed: the first-reveal walkthrough (TrainReveal.walkthroughStep) rings the bubble/line-cards/action-row in turn without touching the board-arrow spotlight channel; TrainReveal stayed at its pinned complexity 68 by keeping the ring logic inside the already-nested renderLineBox helper. Live browser UAT (orchestrator) found and fixed 3 defects: SC2's 375px board/bubble fit, a missing intro-state drop-nudge reaction, and warm-up-unaware walkthrough copy.
 
 ### Pending Todos
 
@@ -916,9 +924,9 @@ Items acknowledged and deferred at **v1.29 milestone close on 2026-06-29** (user
 
 ## Session Continuity
 
-**Stopped at:** Phase 221 complete — all phases complete
+**Stopped at:** Phase 222 complete — all phases complete
 
-**Last session:** 2026-09-13T08:20:00Z
+**Last session:** 2026-09-13T17:42:23.651Z
 
 **Resume file:** None
 
@@ -1098,6 +1106,12 @@ Items acknowledged and deferred at **v1.29 milestone close on 2026-06-29** (user
 | Phase 221 P05 | ~2h | 3 tasks | 4 files |
 | Phase 221 P06 | ~1h30min | 3 tasks | 12 files |
 | Phase 221 P08 | 55min | 3 tasks | 6 files |
+| Phase 222 P01 | 105min | 3 tasks | 22 files |
+| Phase 222 P02 | 62min | 4 tasks | 9 files |
+| Phase 222 P03 | 55min | 2 tasks | 7 files |
+| Phase 222 P04 | 130min | 3 tasks | 4 files |
+| Phase 222 P05 | 55min | 2 tasks | 5 files |
+| Phase 222 P06 | 95min | 3 tasks | 13 files |
 
 ## Performance Metrics
 

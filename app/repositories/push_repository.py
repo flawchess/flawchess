@@ -14,11 +14,18 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from sqlalchemy import delete, select
+from sqlalchemy import delete, exists, select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.push_subscription import PushSubscription
+
+
+#: Phase 222 UAT round 5: the device-class regex the frontend's
+#: `useInstallPrompt.isMobile` uses, applied server-side (case-insensitive) to
+#: the stored User-Agent so the desktop score screen can learn whether the
+#: ACCOUNT already has reminders on a phone — a fact no single device knows.
+MOBILE_USER_AGENT_PATTERN = "Android|iPhone|iPad|iPod"
 
 
 @dataclass(frozen=True)
@@ -112,6 +119,22 @@ async def list_subscriptions(session: AsyncSession, *, user_id: int) -> list[Pus
         )
         for row in result.all()
     ]
+
+
+async def has_mobile_subscription(session: AsyncSession, *, user_id: int) -> bool:
+    """True when the user has at least one subscription from a mobile browser.
+
+    Args:
+        session: AsyncSession.
+        user_id: Authenticated user's internal PK (V4: never client-supplied).
+    """
+    stmt = select(
+        exists().where(
+            PushSubscription.user_id == user_id,
+            PushSubscription.user_agent.op("~*")(MOBILE_USER_AGENT_PATTERN),
+        )
+    )
+    return bool(await session.scalar(stmt))
 
 
 async def delete_subscription_by_endpoint(

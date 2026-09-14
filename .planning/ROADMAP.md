@@ -186,7 +186,7 @@
 | 219. Maia Chart Latency — ORT 1.27 Re-pin, Cross-Origin Isolation & Progressive Ladder Paint (standalone) | 3/3 | Complete    | 2026-09-06 |
 | 220. Opening Eval Cache Repair & Two-Source Confirmation (SEED-164, standalone) | 8/8 | Complete    | 2026-09-11 |
 | 221. Tactic-Tagger Real-Game Precision — Winning Floor, Predicate Tightening & Port Fixes (SEED-165, standalone) | 8/8 | Complete    | 2026-09-13 |
-| 222. Train Bot-Narrated Onboarding & Verdicts (SEED-166, standalone) | 0/? | Not started | — |
+| 222. Train Bot-Narrated Onboarding & Verdicts (SEED-166, standalone) | 6/6 | Complete    | 2026-09-14 |
 
 ## Active Phases
 
@@ -662,7 +662,16 @@ page, harsh verdict copy, mapping bots to puzzle type, changing the daily remind
 push-channel changes, a pre-session spaced-repetition onboarding page, the settings page
 that will re-home the sound toggle (record the toggle's retirement as a follow-up seed).
 
-**Plans:** TBD (run `/gsd-discuss-phase 222`, then `/gsd-plan-phase 222`)
+**Plans:** 6/6 plans complete
+
+Plans:
+
+- [x] 222-01-PLAN.md — Bot chat row foundation + guess-bubble tracer: `temperament` on all 24 personas, the pure copy/state modules, `TrainBotBubble`/`TrainBotStepper`, the D-09 vocabulary, the seen-state client plumbing (wave 1, tracer) [TRAINBOT-01, TRAINBOT-02, TRAINBOT-03, TRAINBOT-04, TRAINBOT-07, TRAINBOT-08]
+- [x] 222-02-PLAN.md — Server-side seen state: three nullable timestamptz columns, `POST /train/onboarding/{step}`, the D-17 `SolvedResult` extension, the dev-reset clear (wave 1, not autonomous) [TRAINBOT-04, TRAINBOT-05]
+- [x] 222-03-PLAN.md — Train funnel card on `/activity`: `fetch_train_funnel`, payload key, DOM-id seam, right-censoring caveat (wave 1) [TRAINBOT-06]
+- [x] 222-04-PLAN.md — Solve screen: first-session intro stepper, drop-before-guess nudge, verdict bubble with the action row inside it, mute toggle retired (wave 2) [TRAINBOT-01, TRAINBOT-02, TRAINBOT-03, TRAINBOT-05, TRAINBOT-09]
+- [x] 222-05-PLAN.md — Live per-solve outcome accumulator + the score-screen bot bubble with its four copy variants (wave 2) [TRAINBOT-04, TRAINBOT-05]
+- [x] 222-06-PLAN.md — First-reveal Hilda walkthrough, changelog, sound-toggle follow-up seed, full pre-merge gate and device UAT (wave 3) [TRAINBOT-02, TRAINBOT-05, TRAINBOT-09, TRAINBOT-10]
 
 **Cross-cutting constraints:**
 

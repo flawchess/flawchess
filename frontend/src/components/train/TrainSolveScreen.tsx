@@ -3,8 +3,9 @@
  * Train solve loop (SOLV-01/02/03/04, D-05/D-06/D-13, Phase 190 Plans 01+04).
  *
  * D-05 (LOCKED): the board is fully visible for study but rejects every
- * piece input until the user commits a binary guess ("One critical move" /
- * "Several fine moves"); the guess buttons sit where the move prompt lives.
+ * piece input until the user commits a binary guess ("Only one" /
+ * "Several", Phase 222 D-09); the guess buttons sit where the move prompt
+ * lives.
  * After the guess, exactly one move is accepted (SOLV-02) — every subsequent
  * drop is rejected.
  *
@@ -35,20 +36,20 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { CSSProperties, ReactElement } from 'react';
 import { Chess, type Move } from 'chess.js';
-import { Loader2, Search, Volume2, VolumeX } from 'lucide-react';
+import { Loader2, Search } from 'lucide-react';
 import { Link } from 'react-router';
 import { buildGameAnalysisUrl } from '@/lib/analysisUrl';
-import { cn } from '@/lib/utils';
 import { ChessBoard } from '@/components/board/ChessBoard';
 import { Button } from '@/components/ui/button';
 import { LoadError } from '@/components/ui/load-error';
 import { TRAIN_BUTTON_CLASS } from '@/components/train/buttonStyles';
-import { TrainReveal } from '@/components/train/TrainReveal';
+import { TrainReveal, TrainScoreChip } from '@/components/train/TrainReveal';
 import type { TrainRevealStep } from '@/components/train/TrainReveal';
 import { EvalBar } from '@/components/analysis/EvalBar';
-import type { SolveResponse, TrainPuzzle, VettedMove } from '@/types/train';
+import type { SolveResponse, TrainPuzzle, TrainSettingsResponse, VettedMove } from '@/types/train';
 import type { UseTrainSessionResult } from '@/hooks/useTrainSession';
 import { useFitBoardToViewport } from '@/hooks/useFitBoardToViewport';
+import { useIsDesktop } from '@/hooks/useIsDesktop';
 import { useTrainFreePlay, uciFromDrop } from '@/hooks/useTrainFreePlay';
 import { useStockfishEngine, type StockfishEngineState } from '@/hooks/useStockfishEngine';
 import type { PvLine } from '@/hooks/uciParser';
@@ -57,11 +58,37 @@ import type { GradeResult, TrainEngineLine, TrainGradingEngine } from '@/hooks/u
 import { evalToExpectedScore, sideToMoveFromFen, terminalPositionEval } from '@/lib/liveFlaw';
 import { useMarkPlayActive } from '@/lib/playActive';
 import { usePublishMobileBoardControls } from '@/lib/mobileBoardControls';
-import { playSound, useMuted, setMuted } from '@/lib/sounds';
+import { playSound } from '@/lib/sounds';
 import { saveTrainRevealCache } from '@/lib/trainRevealCache';
 import type { CachedTrainReveal } from '@/lib/trainRevealCache';
 import { GUESS_LABELS } from '@/lib/trainGuessLabels';
 import type { Guess } from '@/lib/trainGuessLabels';
+import { TrainBotBubble } from '@/components/train/TrainBotBubble';
+import { resolveBubbleState } from '@/components/train/trainBubbleState';
+import type { TrainBubbleState } from '@/components/train/trainBubbleState';
+import {
+  GRADING_COPY,
+  HILDA_ID,
+  introStepCount,
+  WALKTHROUGH_STEP_COUNT,
+  dropNudgeCopy,
+  introCopy,
+  movePromptCopy,
+  pickBot,
+  promptCopy,
+  returnPhrase,
+  verdictCopy,
+  walkthroughCopy,
+} from '@/lib/trainBotCopy';
+import type { IntroStep, VerdictCopy, WalkthroughStep } from '@/lib/trainBotCopy';
+import { cn } from '@/lib/utils';
+import { personaForId } from '@/lib/personas/personaRegistry';
+import type { Persona } from '@/lib/personas/personaRegistry';
+import { placeholderAvatarFor, resolveAvatarSrc } from '@/lib/personas/personaAvatars';
+import { useTrainSettings } from '@/hooks/useTrainSettings';
+import { useTrainOnboarding } from '@/hooks/useTrainOnboarding';
+import { useTrainWalkthrough } from '@/hooks/useTrainWalkthrough';
+import { TrainBotStepper } from '@/components/train/TrainBotStepper';
 import {
   applyTrainSpotlight,
   buildTrainFreePlayArrows,
@@ -72,7 +99,8 @@ import {
   TRAIN_STEP_HIGHLIGHT,
 } from '@/lib/trainArrows';
 import type { TrainMoveQuality, TrainOverlayMove } from '@/lib/trainArrows';
-import { scorePuzzle, TRAIN_POINTS_PER_PUZZLE } from '@/lib/trainScore';
+import { scorePuzzle, MOVE_TIER_POINTS, GUESS_POINTS, TRAIN_POINTS_PER_PUZZLE } from '@/lib/trainScore';
+import type { TrainMoveTier } from '@/lib/trainScore';
 import {
   SEV_INACCURACY,
   SEV_MISTAKE,
@@ -138,6 +166,22 @@ const TRAIN_BOARD_MIN_WIDTH_PX = 240;
  * Solution/Analyze/Next row is never flush against the viewport edge.
  */
 const TRAIN_BOARD_BOTTOM_GUTTER_PX = 40;
+/*
+ * Phase 222 UAT: below Tailwind's `lg` breakpoint the board is WIDTH-bound
+ * only — the height fit (`useFitBoardToViewport`) runs on desktop alone
+ * (`useIsDesktop`). Plan 06 had folded the phone bottom bar into the fit's
+ * gutter instead, which on a 375x667 phone shrank the board to its 240px
+ * floor and left wide empty margins beside it; the user's call is a
+ * full-width board with the bot bubble scrolling underneath the pinned board.
+ * Below `lg` the measured column is also `display: contents` (see the JSX),
+ * so the fit could not measure it there anyway.
+ */
+/*
+ * Plan 06 UAT: stepper bubbles never scroll internally — the intro and
+ * first-reveal walkthrough copy is instead split into short steps that each
+ * fit above the fold at 375x667 (see `STEPPER_COPY_MAX_CHARS` in
+ * trainBotCopy.ts for the calibrated budget).
+ */
 
 /**
  * 190.1 UAT round 7 / SEED-119: pill background+foreground for the
@@ -199,6 +243,430 @@ function resolveTrainEvalBarReading(
   return { evalCp: engine.evalCp, evalMate: engine.evalMate, depth: engine.depth };
 }
 
+/**
+ * Phase 222 (D-12/RESEARCH Finding D): resolves whether the first-session
+ * intro stepper is active this render, and whether the WHOLE bubble must
+ * stay silent because the outcome is still ambiguous (first puzzle, settings
+ * not yet loaded — RESEARCH's "render no bubble copy until data !== undefined"
+ * rule, so a first-timer never sees the regular prompt flash before the intro
+ * replaces it). Module-level so the settings-shape branching never touches
+ * `TrainSolveScreen`'s own pinned complexity (FINDING B).
+ */
+function resolveIntroState(
+  settings: TrainSettingsResponse | undefined,
+  settingsFailed: boolean,
+  isFirstPuzzle: boolean,
+  introStep: IntroStep,
+): { activeIntroStep: IntroStep | null; suppressPrompt: boolean } {
+  // Bug fix (phase 222 code review CR-01): `settings === undefined` covers
+  // BOTH "still loading" and "the fetch failed for good" (TanStack settles
+  // into `isError` with `data` still undefined). Suppressing the prompt in
+  // the failed case hid the guess buttons on every session's first puzzle
+  // with no error shown. A failed fetch now degrades to the regular prompt
+  // (no intro — the stamp state is unknown, so it simply replays next time).
+  if (settingsFailed) return { activeIntroStep: null, suppressPrompt: false };
+  if (settings === undefined) return { activeIntroStep: null, suppressPrompt: isFirstPuzzle };
+  if (!isFirstPuzzle) return { activeIntroStep: null, suppressPrompt: false };
+  if (settings.intro_seen_at !== null) return { activeIntroStep: null, suppressPrompt: false };
+  return { activeIntroStep: introStep, suppressPrompt: false };
+}
+
+/** D-07: the two guess buttons, shared by the regular prompt, the drop-nudge
+ * copy, and the intro stepper's closing step (D-05) — one render site so the
+ * three call sites can never drift on labels/testids/styling. */
+function guessButtons(onGuess: (guess: Guess) => void): ReactElement {
+  return (
+    // Phase 222 UAT: both buttons the same width — a two-column grid with
+    // `auto-cols-fr` sizes every column to the widest label, and the grid
+    // itself shrink-wraps so the bubble's `justify-end` row still right-aligns it.
+    <div className="grid grid-flow-col auto-cols-fr gap-2" data-testid="train-guess-buttons">
+      <Button
+        variant="brand-outline"
+        className={TRAIN_BUTTON_CLASS}
+        data-testid="btn-train-guess-critical"
+        onClick={() => onGuess('critical')}
+      >
+        {GUESS_LABELS.critical}
+      </Button>
+      <Button
+        variant="brand-outline"
+        className={TRAIN_BUTTON_CLASS}
+        data-testid="btn-train-guess-several"
+        onClick={() => onGuess('several')}
+      >
+        {GUESS_LABELS.several}
+      </Button>
+    </div>
+  );
+}
+
+/** D-23: the verdict clause's two labeled phrases (guess/move) with their
+ * point values — mirrors `trainBotCopy.ts`'s `verdictClause` wording exactly,
+ * but split apart so the caller can render each point value as a real
+ * `TrainScoreChip` pill instead of literal "[+N]" bracket text (plan 01 kept
+ * the bracket text in the pure copy module; wiring live pills is this plan's
+ * job). Lives here (not `trainBotCopy.ts`) because it exists only to feed
+ * JSX pills — the pure module stays React-free. */
+function verdictClauseParts(
+  correctGuess: boolean,
+  moveQuality: TrainMoveTier,
+): { guessLabel: string; guessPoints: 0 | 1; moveLabel: string; movePoints: 0 | 1 | 2 } {
+  const guessLabel = correctGuess ? 'Right call' : 'Wrong call';
+  const guessPoints: 0 | 1 = correctGuess ? GUESS_POINTS : 0;
+  const movePoints = MOVE_TIER_POINTS[moveQuality] as 0 | 1 | 2;
+  if (moveQuality === 'good') {
+    const moveLabel = correctGuess ? 'right move' : 'but the right move';
+    return { guessLabel, guessPoints, moveLabel, movePoints };
+  }
+  if (moveQuality === 'inaccuracy') {
+    return { guessLabel, guessPoints, moveLabel: 'decent move', movePoints };
+  }
+  return { guessLabel, guessPoints, moveLabel: 'wrong move', movePoints };
+}
+
+/**
+ * Phase 222 (D-23): resolves the verdict bubble's body — opener + clause with
+ * inline `TrainScoreChip` pills + optional look-closer line (0-1 pts) + the
+ * D-15/D-16 return tail. Module-level (RESEARCH Finding B) so this state's
+ * own decision points never raise `TrainSolveScreen`'s pinned complexity.
+ *
+ * RESEARCH Pitfall 7: a `trainRevealCache` entry written by a pre-206 bundle
+ * restores a verdict without `source` at runtime despite the TS type calling
+ * it required. Per D-16, a return tail can only be trusted once the item's
+ * SOURCE is known (herring/filler never return; sr_item's tail depends on
+ * item_status/due_date) — so a missing `source` renders no return tail at
+ * all, the one nullish default at this consumption site, rather than
+ * guessing from a possibly-unrelated due_date.
+ */
+function renderVerdictBubbleBody(
+  verdict: SolveResponse,
+  opening: VerdictCopy,
+  sessionDate: string | undefined,
+  expiresOn: string | undefined,
+  actions: ReactElement,
+): { copy: ReactElement; actions: ReactElement } {
+  const clause = verdictClauseParts(verdict.correct_guess, verdict.move_quality);
+  const returnTail =
+    verdict.source === undefined
+      ? ''
+      : returnPhrase({
+          source: verdict.source,
+          item_status: verdict.item_status,
+          due_date: verdict.due_date,
+          session_date: sessionDate,
+          expires_on: expiresOn,
+        });
+  // D-16: a mastered/parked/herring/filler item's tail explains WHY it won't
+  // return — it is not itself a return promise. `train-bot-return-tail`
+  // (the testid a future date-check UI could key off) is reserved for the
+  // two genuine promises (next-session / in-N-days); the terminal variants
+  // still render their explanatory text, just without that testid.
+  const isReturnPromise =
+    verdict.source === 'sr_item' &&
+    verdict.item_status !== 'mastered' &&
+    verdict.item_status !== 'parked' &&
+    returnTail !== '';
+  return {
+    copy: (
+      <div data-testid="train-bot-verdict-line">
+        <p>
+          {opening.opener} {clause.guessLabel}{' '}
+          <TrainScoreChip points={clause.guessPoints} testid="train-bot-pill-guess" />,{' '}
+          {clause.moveLabel}{' '}
+          <TrainScoreChip points={clause.movePoints} testid="train-bot-pill-move" />.
+        </p>
+        {opening.lookCloser !== null && (
+          <p data-testid="train-bot-look-closer">{opening.lookCloser}</p>
+        )}
+        {returnTail !== '' && isReturnPromise && (
+          <p data-testid="train-bot-return-tail">{returnTail}</p>
+        )}
+        {returnTail !== '' && !isReturnPromise && <p>{returnTail}</p>}
+      </div>
+    ),
+    actions,
+  };
+}
+
+/**
+ * Phase 222 (D-24): resolves the first-reveal walkthrough's bubble body — one
+ * of the Hilda steps, each with its own copy and a Next control. The real
+ * Solution/Analyze/Next row (`verdictActions`) IS the last step's control —
+ * the last step's copy explains those buttons, so they must be visible (and
+ * ringed) while Hilda's line about them is on screen. Phase 222 UAT round 3
+ * dropped the separate "Got it": leaving the reveal through that row (Next or
+ * Analyze) is what completes the walkthrough. Module-level (RESEARCH Finding
+ * B) so this state's own branching never raises `TrainSolveScreen`'s own
+ * pinned complexity.
+ */
+function renderWalkthroughBubbleBody(
+  step: WalkthroughStep,
+  onNext: () => void,
+  verdictActions: ReactElement,
+  hasAnalyze: boolean,
+  hasSolution: boolean,
+): { copy: ReactElement; actions: ReactElement } {
+  const { copy } = walkthroughCopy(step, hasAnalyze, hasSolution);
+  // Phase 222 UAT round 3: the last step's control IS the real action row —
+  // no separate "Got it". Next/Analyze there both end the walkthrough (and
+  // stamp it, see `handleWalkthroughLeave` in TrainSolveScreen).
+  // UAT round 4: no spotlight ring around the action row — the buttons
+  // themselves are the obvious target of the last step's copy.
+  const lastControl = <div className="flex flex-wrap justify-end gap-2">{verdictActions}</div>;
+  return {
+    copy: (
+      <p data-testid="train-bot-walkthrough">{copy}</p>
+    ),
+    actions: (
+      <TrainBotStepper
+        stepCount={WALKTHROUGH_STEP_COUNT}
+        step={step}
+        onNext={onNext}
+        nextTestId="btn-train-bot-walkthrough-next"
+        lastControl={lastControl}
+      >
+        {null}
+      </TrainBotStepper>
+    ),
+  };
+}
+
+/** Sketch 004 (phase 222 UAT): the verdict bot's face inside the points pop
+ * over the board. 40px — the sketch's `avatar md`. */
+const POINTS_FLASH_AVATAR_CLASS = 'size-10';
+
+function PointsFlashAvatar({ persona }: { persona: Persona }): ReactElement {
+  const avatar = placeholderAvatarFor(persona);
+  const avatarSrc = resolveAvatarSrc(persona);
+  return (
+    <span
+      aria-hidden="true"
+      className={cn(
+        'flex shrink-0 items-center justify-center overflow-hidden rounded-full text-xl',
+        POINTS_FLASH_AVATAR_CLASS,
+      )}
+      style={{ backgroundColor: avatar.tint }}
+      data-testid="train-points-flash-avatar"
+    >
+      {avatarSrc !== undefined ? (
+        <img src={avatarSrc} alt="" className="h-full w-full object-cover" />
+      ) : (
+        avatar.emoji
+      )}
+    </span>
+  );
+}
+
+/**
+ * Phase 200 (D-11)-era action row (Solution/Analyze/Next), relocated (D-10)
+ * from the below-board sibling into the verdict bubble's own actions slot.
+ * A real component (rendered via JSX at the call site below), NOT a plain
+ * helper function called directly — `handleShowSolution` reads
+ * `keepSpotlightRef.current` transitively (via `returnToSolution`), and
+ * `react-hooks/refs` flags a ref-reading closure passed into an ordinary
+ * function call during render; passing it as a JSX prop (the same pattern
+ * already used for `onReturnToSolution`/`onClick` elsewhere in this file) is
+ * the sanctioned shape. Module-level so the `isBoardDeparted`/`gameId`/`ply`
+ * branching never raises `TrainSolveScreen`'s own pinned complexity (FINDING
+ * B) — this is exactly the branch removal the plan's headroom accounting
+ * relies on.
+ */
+function VerdictActions({
+  isBoardDeparted,
+  gameId,
+  ply,
+  onShowSolution,
+  onAnalyzeClick,
+  onNext,
+}: {
+  isBoardDeparted: boolean;
+  gameId: number | null;
+  ply: number;
+  onShowSolution: () => void;
+  onAnalyzeClick: () => void;
+  onNext: () => void;
+}): ReactElement {
+  return (
+    <>
+      {isBoardDeparted && (
+        <Button
+          variant="brand-outline"
+          className={TRAIN_BUTTON_CLASS}
+          data-testid="btn-train-solution"
+          onClick={onShowSolution}
+        >
+          Solution
+        </Button>
+      )}
+      {gameId !== null && (
+        <Button asChild variant="brand-outline" className={TRAIN_BUTTON_CLASS}>
+          <Link
+            to={buildGameAnalysisUrl(gameId, ply > 0 ? ply - 1 : null)}
+            data-testid="btn-train-analyze"
+            aria-label="Analyze this position"
+            onClick={onAnalyzeClick}
+          >
+            <Search className="h-4 w-4 mr-1" />
+            Analyze
+          </Link>
+        </Button>
+      )}
+      <Button
+        variant="default"
+        className={TRAIN_BUTTON_CLASS}
+        data-testid="btn-train-next"
+        onClick={onNext}
+      >
+        Next
+      </Button>
+    </>
+  );
+}
+
+/** Inputs `renderTrainBotBubbleBody` needs beyond `bubbleState` itself —
+ * bundled so growing the state machine (intro, drop-nudge, verdict) never
+ * grows a raw parameter list. */
+interface BubbleBodyDeps {
+  sideToMove: 'white' | 'black';
+  /** The committed call, echoed by the move prompt (phase 222 UAT). */
+  guess: Guess | null;
+  onGuess: (guess: Guess) => void;
+  /** RESEARCH Finding D: true only while the FIRST puzzle's intro-or-not
+   * outcome is still ambiguous (settings not yet loaded) — suppresses the
+   * regular prompt so it can never flash before the intro replaces it. */
+  suppressPrompt: boolean;
+  onIntroNext: () => void;
+  onIntroGuess: (guess: Guess) => void;
+  /** Non-null exactly when `bubbleState.kind === 'verdict'` (hasVerdict is
+   * the top precedence rung in `resolveBubbleState`, so the two are always
+   * in lockstep). */
+  verdict: SolveResponse | null;
+  /** UAT round 4: resolved ONCE per verdict by the caller (`useMemo`), never
+   * inside this render helper — `verdictCopy` draws a random opener, and a
+   * per-render draw flipped "Nice."/"Solid." on every board interaction,
+   * re-wrapping the bubble and twitching the layout. */
+  verdictOpening: VerdictCopy | null;
+  sessionDate: string | undefined;
+  expiresOn: string | undefined;
+  verdictActions: ReactElement;
+  /** Phase 222 (D-24): non-null exactly while the first-reveal walkthrough is
+   * active for this verdict — see `resolveWalkthroughStep`. */
+  activeWalkthroughStep: WalkthroughStep | null;
+  onWalkthroughNext: () => void;
+  /** Phase 222 UAT round 3: whether the action row carries Solution (the
+   * board was departed — a free-play move or a stepped line). */
+  hasSolution: boolean;
+  /** Phase 222 UAT round 3: a warm-up first session gets one extra intro step. */
+  isWarmup: boolean;
+  /** Plan 06 UAT: whether the action row carries Analyze (own-game puzzle,
+   * `game_id` set) — walkthrough step 3 must not describe a missing button. */
+  hasAnalyze: boolean;
+}
+
+/**
+ * Phase 222 (D-07/D-09/D-22/D-23): resolves the single chat-row bubble's
+ * copy and action row for every state — `prompt`, `move`, `grading`,
+ * `intro`, `drop-nudge`, `verdict`. Kept as a flat, non-exported module-level
+ * helper (mirrors `resolveTrainEvalBarReading` above) so growing the bubble
+ * state machine adds a guard clause HERE, never a branch inside
+ * `TrainSolveScreen` itself — the mechanism that keeps the component's own
+ * cyclomatic complexity from rising as more states are added.
+ */
+function renderTrainBotBubbleBody(
+  bubbleState: TrainBubbleState,
+  deps: BubbleBodyDeps,
+): { copy: ReactElement; actions?: ReactElement } | null {
+  if (bubbleState.kind === 'prompt') {
+    if (deps.suppressPrompt) return null;
+    return {
+      copy: <p data-testid="train-guess-prompt">{promptCopy(deps.sideToMove)}</p>,
+      actions: guessButtons(deps.onGuess),
+    };
+  }
+  if (bubbleState.kind === 'move') {
+    return {
+      copy: <p data-testid="train-move-prompt">{movePromptCopy(deps.sideToMove, deps.guess)}</p>,
+    };
+  }
+  if (bubbleState.kind === 'grading') {
+    return {
+      copy: (
+        <span className="flex items-center gap-2" data-testid="train-grading-indicator">
+          <Loader2 className="size-4 animate-spin text-muted-foreground" aria-hidden="true" />
+          {GRADING_COPY}
+        </span>
+      ),
+    };
+  }
+  if (bubbleState.kind === 'intro') {
+    return {
+      copy: <p>{introCopy(bubbleState.step, deps.sideToMove, deps.isWarmup).copy}</p>,
+      actions: (
+        <TrainBotStepper
+          stepCount={introStepCount(deps.isWarmup)}
+          step={bubbleState.step}
+          onNext={deps.onIntroNext}
+          lastControl={guessButtons(deps.onIntroGuess)}
+        >
+          {null}
+        </TrainBotStepper>
+      ),
+    };
+  }
+  if (bubbleState.kind === 'drop-nudge') {
+    return {
+      copy: <p data-testid="train-guess-prompt">{dropNudgeCopy(deps.sideToMove)}</p>,
+      actions: guessButtons(deps.onGuess),
+    };
+  }
+  if (bubbleState.kind === 'verdict' && deps.verdict !== null && deps.verdictOpening !== null) {
+    if (deps.activeWalkthroughStep !== null) {
+      return renderWalkthroughBubbleBody(
+        deps.activeWalkthroughStep,
+        deps.onWalkthroughNext,
+        deps.verdictActions,
+        deps.hasAnalyze,
+        deps.hasSolution,
+      );
+    }
+    return renderVerdictBubbleBody(
+      deps.verdict,
+      deps.verdictOpening,
+      deps.sessionDate,
+      deps.expiresOn,
+      deps.verdictActions,
+    );
+  }
+  return null;
+}
+
+/**
+ * Phase 222 (D-02/D-03/D-05): the persona that should speak the current
+ * bubble state — Hilda/Tank during the intro stepper (fixed hosts, never
+ * randomly cast), the outcome-matched stern/friendly bot during the verdict,
+ * else the regular-session random smart host. Module-level so this dispatch
+ * never raises `TrainSolveScreen`'s own pinned complexity (FINDING B).
+ */
+function resolveBubblePersona(
+  bubbleState: TrainBubbleState,
+  sideToMove: 'white' | 'black',
+  regularBot: Persona,
+  verdictBot: Persona | null,
+  activeWalkthroughStep: WalkthroughStep | null,
+  isWarmup: boolean,
+): Persona {
+  if (bubbleState.kind === 'intro') {
+    return personaForId(introCopy(bubbleState.step, sideToMove, isWarmup).personaId) ?? regularBot;
+  }
+  // Phase 222 (D-05/D-24): the first-reveal walkthrough is always taught by
+  // Hilda, never the outcome-matched verdict bot.
+  if (bubbleState.kind === 'verdict' && activeWalkthroughStep !== null) {
+    return personaForId(HILDA_ID) ?? regularBot;
+  }
+  if (bubbleState.kind === 'verdict' && verdictBot !== null) return verdictBot;
+  return regularBot;
+}
+
 export function TrainSolveScreen({
   puzzle,
   trainSession,
@@ -218,14 +686,31 @@ export function TrainSolveScreen({
   // should get their normal auto-lock).
   useWakeLock();
 
-  // 190.1 UAT round 4: reveal-line stepping plays move sounds — same shared
-  // mute preference (and toggle iconography) as bot games.
-  const muted = useMuted();
+  // Phase 222 (D-10): the reveal's mute toggle is retired — `/bots` is now
+  // the app's only mute control (re-homing recorded as a follow-up seed at
+  // phase close). Reveal-line stepping still plays move sounds via the
+  // shared `playSound`/mute preference; only the toggle affordance is gone.
+
+  // Phase 222 (D-12): the shared settings cache — already warm app-wide for
+  // every non-guest (RESEARCH Finding D: `useReminderResurrectRedirect`/
+  // `useDevicePushResync` mount `useTrainSettings` from `App.tsx`), so this
+  // costs no extra request. `stamp` posts the one-shot onboarding watermark.
+  const { data: settings, isError: settingsFailed } = useTrainSettings();
+  const { stamp } = useTrainOnboarding();
 
   // Initial state seeds from `restoredSolve` (190.1 UAT round 5) so a
   // restored reveal never flashes the guess prompt before the mount effect
   // runs; the per-puzzle effect below re-seeds identically on transitions.
   const [guess, setGuess] = useState<Guess | null>(restoredSolve?.guess ?? null);
+  // Phase 222 (D-05): the first-session intro stepper's active step. Only
+  // meaningful while `resolveIntroState` reports it active (first puzzle,
+  // settings loaded, `intro_seen_at === null`) — otherwise ignored.
+  const [introStep, setIntroStep] = useState<IntroStep>(0);
+  // Phase 222 (D-08): bumped on every drop rejected for lack of a guess.
+  // Fed to `TrainBotBubble` as its remount `key` so a REPEATED nudge replays
+  // the pulse (RESEARCH Pitfall 3) — a class toggle alone cannot restart an
+  // already-running CSS animation on a node that never unmounts.
+  const [nudgeNonce, setNudgeNonce] = useState(0);
   const [boardFen, setBoardFen] = useState(puzzle.fen);
   const [moveApplied, setMoveApplied] = useState(restoredSolve !== null);
   const [isGrading, setIsGrading] = useState(false);
@@ -377,12 +862,43 @@ export function TrainSolveScreen({
   // gutter no matter what else the page renders above the column.
   const columnRef = useRef<HTMLDivElement>(null);
   const boardRef = useRef<HTMLDivElement>(null);
+  // Phase 222 UAT round 3: the solve screen root and the phone-pinned
+  // progress+board block, for the walkthrough's scroll-to-cards effect.
+  const screenRef = useRef<HTMLDivElement>(null);
+  const pinnedRef = useRef<HTMLDivElement>(null);
+  const isDesktop = useIsDesktop();
+
+  // Phase 200 (D-11) + UAT round 9: the board has left the pristine reveal —
+  // a line is stepped, or exploration is running. Gates the Solution button's
+  // visibility, and tells the reveal panel that a card click must first bring
+  // the board back before spotlighting itself.
+  const isBoardDeparted = lineStep !== null || freePlay.isExploring;
+
+  // Phase 222 (D-24): the first-reveal walkthrough — step state, Next, the
+  // interaction auto-advances, the phone scroll-to-cards effect and the
+  // leave-stamp all live in the hook; this component only reads `activeStep`
+  // / `target` (the bubble ring, the board-row ring, the `<TrainReveal>`
+  // lines ring) and threads the handlers through.
+  const walkthrough = useTrainWalkthrough({
+    settings,
+    hasVerdict: verdict !== null,
+    hasAnalyze: puzzle.game_id !== null,
+    hasSolution: isBoardDeparted,
+    isDesktop,
+    screenRef,
+    pinnedRef,
+    setSpotlight,
+    setLineStep,
+    stamp,
+  });
+  const walkthroughTarget = walkthrough.target;
   const boardMaxWidthPx = useFitBoardToViewport({
     columnRef,
     boardRef,
     maxPx: TRAIN_BOARD_MAX_WIDTH_PX,
     minPx: TRAIN_BOARD_MIN_WIDTH_PX,
     gutterPx: TRAIN_BOARD_BOTTOM_GUTTER_PX,
+    enabled: isDesktop,
   });
   const [engineTimedOut, setEngineTimedOut] = useState(false);
   // Bumped by a manual engine retry so the readiness-timeout effect below
@@ -454,6 +970,13 @@ export function TrainSolveScreen({
     setSpotlight(null);
     setPointsFlash(null);
     setFlipped(puzzle.side_to_move === 'black');
+    // Phase 222 (D-12): an abandoned intro stepper replays next time — reset
+    // the step index on every puzzle transition, not just the first.
+    // `nudgeNonce` resets too, so a drop rejected on the PREVIOUS puzzle
+    // never leaves the new one's bubble showing a stale nudge pulse.
+    setIntroStep(0);
+    walkthrough.reset();
+    setNudgeNonce(0);
     // Phase 200 (EXPLORE-05): a puzzle transition tears down any active
     // exploration session (and, via the hook's `enabled: isExploring` engine
     // in task 3, its Worker) — the next puzzle always starts in the pristine
@@ -465,7 +988,7 @@ export function TrainSolveScreen({
       abortGrading();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps -- trainSession.resetSolve is a stable useCallback from the hook (it closes over the mutation's own `.reset`, bound once per observer — see useTrainSession's stability comment; it was NOT stable before that fix, so this line's original claim was aspirational). Including the whole trainSession object would re-fire this effect every render. restoredSolve only ever changes together with puzzle.fen (Train.tsx pairs them), so puzzle.fen already covers it — as does puzzle.side_to_move, which is a function of the FEN. freePlay.reset's identity is keyed on puzzle.fen alone, so it changes with (and only with) that dep.
-  }, [puzzle.fen, startGrading, abortGrading, freePlay.reset]);
+  }, [puzzle.fen, startGrading, abortGrading, freePlay.reset, walkthrough.reset]);
 
   async function gradeAndSolve(playedGuess: Guess, playedUci: string): Promise<void> {
     setIsGrading(true);
@@ -540,7 +1063,15 @@ export function TrainSolveScreen({
 
   function handlePieceDrop(source: string, target: string): boolean {
     // D-05: board locked until the binary guess is committed.
-    if (guess === null) return false;
+    // Phase 222 (D-08): the drop is still rejected — react-chessboard reads
+    // `true` as "the move was accepted" and would leave the piece on the
+    // target square — but never SILENTLY: bumping the nonce swaps the
+    // bubble's copy to the "Decide first, then move" line and (via the
+    // bubble's remount key) replays the pulse even on a repeated drop.
+    if (guess === null) {
+      setNudgeNonce((n) => n + 1);
+      return false;
+    }
     // SOLV-02: exactly one attempt per puzzle.
     if (moveApplied) {
       // Phase 200 (EXPLORE-01/02/D-12): once the verdict has landed, a
@@ -872,11 +1403,6 @@ export function TrainSolveScreen({
 
   const handleNext = onNext ?? trainSession.advance;
 
-  // Phase 200 (D-11) + UAT round 9: the board has left the pristine reveal —
-  // a line is stepped, or exploration is running. Gates the Solution button's
-  // visibility, and tells the reveal panel that a card click must first bring
-  // the board back before spotlighting itself.
-  const isBoardDeparted = lineStep !== null || freePlay.isExploring;
 
   // SEED-119: the badge's color pair for the current pointsFlash tier,
   // falling back to the 0-point entry (never an unreadable bg/fg pair) when
@@ -937,11 +1463,133 @@ export function TrainSolveScreen({
       sessionId,
       puzzle,
       verdict,
+      verdictBotId: verdictBot?.id,
       guess,
       playedMoveUci: lastPlayedUci,
       gradeResult,
     });
   }
+
+  // Phase 222 (D-02): a random smart bot hosts the regular-session guess
+  // bubble, memoised per puzzle (`puzzle.position` — Math.random, not seeded,
+  // not persisted; a reload may recast, which D-02 accepts). Hilda/Tank
+  // (the fixed intro-stepper hosts) and the outcome-matched verdict bot are
+  // resolved separately below.
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- `puzzle.position` is intentionally NOT read inside the callback: it exists purely to re-run `pickBot` (a fresh Math.random draw) on every puzzle transition, per D-02.
+  const bot = useMemo(() => pickBot('smart'), [puzzle.position]);
+
+  // Phase 222 (D-05): the session's FIRST puzzle only — later puzzles always
+  // show the regular prompt even if `intro_seen_at` is somehow still null
+  // (e.g. a stamp request still in flight when the user reaches puzzle 2).
+  const isFirstPuzzle = currentPosition1Based === 1;
+  const { activeIntroStep, suppressPrompt } = resolveIntroState(
+    settings,
+    settingsFailed,
+    isFirstPuzzle,
+    introStep,
+  );
+
+  // Phase 222 UAT round 3: a warm-up first session (games still being
+  // analyzed) gets one extra intro step explaining that, right before the
+  // closing guess step.
+  const isWarmup = trainSession.session?.is_warmup ?? false;
+
+  function handleIntroNext(): void {
+    setIntroStep((step) => Math.min(step + 1, introStepCount(isWarmup) - 1) as IntroStep);
+  }
+
+  // Phase 222 (D-12): fires the one-shot stamp alongside the existing guess
+  // commit — guarded on `intro_seen_at` still being null (the plan's own
+  // stated "ref OR settings-null" option; the server's first-write-wins
+  // guard, plan 02, is the actual belt-and-braces layer for a same-render
+  // double-click race). Nothing stamps on unmount — an abandoned stepper
+  // replays next time (D-12).
+  function handleIntroGuess(guessValue: Guess): void {
+    if (settings?.intro_seen_at == null) {
+      stamp('intro');
+    }
+    setGuess(guessValue);
+  }
+
+  // Phase 222 (D-03): points come from `scorePuzzle` — never re-derived —
+  // and the verdict bot is memoised per VERDICT (not per points) so a
+  // re-render never recasts mid-read.
+  const verdictPoints = useMemo<0 | 1 | 2 | 3 | null>(() => {
+    if (verdict === null) return null;
+    return scorePuzzle(verdict.correct_guess, verdict.move_quality) as 0 | 1 | 2 | 3;
+  }, [verdict]);
+  // UAT round 4: a reveal restored after the Analyze round trip keeps the bot
+  // that spoke the verdict before leaving (`verdictBotId` rides along in the
+  // reveal cache) instead of recasting on remount.
+  const verdictBot = useMemo<Persona | null>(() => {
+    if (verdictPoints === null) return null;
+    const restoredBot = personaForId(restoredSolve?.verdictBotId);
+    if (restoredBot !== undefined) return restoredBot;
+    return pickBot(verdictPoints <= 1 ? 'stern' : 'friendly');
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- recast exactly when `verdict` itself changes (D-03), not when `verdictPoints`/`restoredSolve` alone are read; both are fully determined by `verdict` (same memo dep above / nulled on the same puzzle transition), so this can never drift.
+  }, [verdict]);
+  // UAT round 4: the opener is a random draw, so it is resolved once per
+  // verdict here rather than on every render inside the bubble body.
+  const verdictOpening = useMemo<VerdictCopy | null>(() => {
+    if (verdict === null || verdictPoints === null) return null;
+    return verdictCopy(verdictPoints, verdict.correct_guess, verdict.move_quality);
+  }, [verdict, verdictPoints]);
+
+  function handleNextFromReveal(): void {
+    walkthrough.leave();
+    handleNext();
+  }
+  function handleAnalyzeFromReveal(): void {
+    walkthrough.leave();
+    handleAnalyzeClick();
+  }
+
+  // Phase 222 (D-10): the Solution/Analyze/Next row, now rendered INSIDE the
+  // verdict bubble's actions slot rather than the below-board sibling.
+  const verdictActions = (
+    <VerdictActions
+      isBoardDeparted={isBoardDeparted}
+      gameId={puzzle.game_id}
+      ply={puzzle.ply}
+      onShowSolution={handleShowSolution}
+      onAnalyzeClick={handleAnalyzeFromReveal}
+      onNext={handleNextFromReveal}
+    />
+  );
+
+  const bubbleState = resolveBubbleState({
+    hasVerdict: verdict !== null,
+    isGrading,
+    guessMade: guess !== null,
+    introStep: activeIntroStep,
+    nudgeActive: nudgeNonce > 0,
+  });
+  const bubbleBody = renderTrainBotBubbleBody(bubbleState, {
+    sideToMove: puzzle.side_to_move,
+    guess,
+    onGuess: setGuess,
+    suppressPrompt,
+    onIntroNext: handleIntroNext,
+    onIntroGuess: handleIntroGuess,
+    verdict,
+    verdictOpening,
+    sessionDate: trainSession.session?.session_date,
+    expiresOn: trainSession.session?.expires_on,
+    verdictActions,
+    activeWalkthroughStep: walkthrough.activeStep,
+    hasAnalyze: puzzle.game_id !== null,
+    hasSolution: isBoardDeparted,
+    isWarmup,
+    onWalkthroughNext: walkthrough.next,
+  });
+  const bubblePersona = resolveBubblePersona(
+    bubbleState,
+    puzzle.side_to_move,
+    bot,
+    verdictBot,
+    walkthrough.activeStep,
+    isWarmup,
+  );
 
   return (
     <div
@@ -953,45 +1601,65 @@ export function TrainSolveScreen({
       // depends on: a wider reveal would scroll past the pinned column's
       // background and show two strips of moving cards flanking the board.
       style={{ '--train-col-max': `${boardMaxWidthPx}px` } as CSSProperties}
+      ref={screenRef}
       className="mx-auto flex w-full max-w-[var(--train-col-max)] flex-col items-center gap-4 lg:mx-0 lg:max-w-none lg:flex-row lg:items-start lg:justify-center lg:gap-8"
       data-testid="train-solve-screen"
     >
       <div
         ref={columnRef}
-        // Mobile: the board column (progress + board + Solution/Analyze/Next)
-        // pins to the top of the viewport so the board never scrolls out of
-        // sight while the reveal panel is read beneath it — the reveal's
-        // arrows/spotlight are meaningless when the board they annotate is off
-        // screen. Desktop already sits the reveal in its own column, so the
-        // whole treatment is `max-lg:`. The opaque background is what the
-        // scrolled-under content passes behind; `pb-3` keeps the first reveal
-        // card off the button row (and, being inside the measured column, is
-        // honestly accounted for by `useFitBoardToViewport`).
-        className="flex w-full flex-col items-center gap-4 max-lg:sticky max-lg:top-0 max-lg:z-10 max-lg:bg-background max-lg:pb-3"
+        // Desktop: the left column (progress + board + bot bubble), measured
+        // by `useFitBoardToViewport`. Below `lg` it is `display: contents` so
+        // the pinned block below becomes a direct child of the page-long outer
+        // container — a sticky element only sticks within its parent's box,
+        // and this column ends at the bubble, which is exactly where the board
+        // must stay pinned while the reveal beneath it is read (phase 222 UAT).
+        className="max-lg:contents lg:flex lg:w-full lg:flex-col lg:items-center lg:gap-3"
         style={{ maxWidth: boardMaxWidthPx }}
       >
-      <div className="flex w-full flex-col gap-1">
-        <div className="flex w-full items-center justify-between">
-          <p className="text-sm font-semibold" data-testid="train-progress">
-            {currentPosition1Based} of {totalPuzzles}
-          </p>
-          {/* SOLV-04/D-04: the running session score, top-right of the progress
-              row — only once at least one puzzle has actually been scored, so
-              the first puzzle of a fresh session never shows "0 / 0 pts". */}
-          {trainSession.sessionSolvedCount > 0 && (
-            <p className="text-sm font-semibold" data-testid="train-session-score">
-              {trainSession.sessionScore} / {trainSession.sessionSolvedCount * TRAIN_POINTS_PER_PUZZLE} pts
-            </p>
-          )}
-        </div>
-        <div className="h-1.5 w-full rounded-full bg-muted" data-testid="train-progress-bar">
+      <div
+        // Mobile: the progress row + board pin to the top of the viewport so
+        // the board never scrolls out of sight while the bot bubble and the
+        // reveal panel are read beneath it — the reveal's arrows/spotlight are
+        // meaningless when the board they annotate is off screen. Desktop
+        // already sits the reveal in its own column, so the whole treatment is
+        // `max-lg:`. The opaque background is what the scrolled-under content
+        // passes behind. Phase 222 UAT: the bot bubble is deliberately OUTSIDE
+        // this pinned block (it scrolls away behind the board) so the pinned
+        // strip stays short on phones. UAT round 3 dropped the block's own
+        // bottom padding: the outer container's gap alone now separates the
+        // board from the bubble's avatar.
+        ref={pinnedRef}
+        className="flex w-full flex-col items-center gap-3 max-lg:sticky max-lg:top-0 max-lg:z-10 max-lg:bg-background"
+        data-testid="train-pinned-board"
+      >
+      {/* Phase 222 UAT: one compact row — "n of m", the bar, "x / y pts". */}
+      <div className="flex w-full items-center gap-3">
+        <p className="shrink-0 text-sm font-semibold" data-testid="train-progress">
+          {currentPosition1Based} of {totalPuzzles}
+        </p>
+        <div className="h-1.5 min-w-0 flex-1 rounded-full bg-muted" data-testid="train-progress-bar">
           <div
             className="h-1.5 rounded-full bg-brand-brown"
             style={{ width: `${progressFraction * 100}%` }}
           />
         </div>
+        {/* SOLV-04/D-04: the running session score, right end of the progress
+            row — only once at least one puzzle has actually been scored, so
+            the first puzzle of a fresh session never shows "0 / 0 pts". */}
+        {trainSession.sessionSolvedCount > 0 && (
+          <p className="shrink-0 text-sm font-semibold" data-testid="train-session-score">
+            {trainSession.sessionScore} / {trainSession.sessionSolvedCount * TRAIN_POINTS_PER_PUZZLE} pts
+          </p>
+        )}
       </div>
-      <div ref={boardRef} className="flex w-full flex-row items-stretch gap-2">
+      <div
+        ref={boardRef}
+        className={cn(
+          'flex w-full flex-row items-stretch gap-2',
+          // Phase 222 UAT: the walkthrough's free-play step rings the board row.
+          walkthroughTarget === 'board' && 'rounded-md ring-2 ring-brand-brown ring-offset-4 ring-offset-background',
+        )}
+      >
         <div className="relative min-w-0 flex-1">
           <ChessBoard
             position={displayFen}
@@ -1012,19 +1680,31 @@ export function TrainSolveScreen({
               pointer-events-none) until the next puzzle clears the state. */}
           {pointsFlash !== null && (
             <div
-              className="animate-train-points-pop pointer-events-none absolute left-1/2 top-1/2 z-10 select-none whitespace-nowrap rounded-full px-6 py-2 text-2xl font-bold shadow-lg"
+              className="animate-train-points-pop pointer-events-none absolute left-1/2 top-1/2 z-10 flex select-none items-center gap-3 whitespace-nowrap rounded-full py-1.5 pl-1.5 pr-6 text-2xl font-bold shadow-lg"
               style={{ backgroundColor: pointsFlashColors?.bg, color: pointsFlashColors?.fg }}
               data-testid="train-points-flash"
             >
-              Points: +{pointsFlash}
+              {/* Sketch 004 (phase 222 UAT): the pop carries the verdict bot's
+                  face — the same bot that speaks the verdict bubble below. */}
+              {verdictBot !== null && <PointsFlashAvatar persona={verdictBot} />}
+              <span>+{pointsFlash}</span>
             </div>
           )}
         </div>
         {/* Quick 260803-iv6 (Task 1): the slot is ALWAYS present — that is
             what keeps the board from resizing mid-puzzle when the reveal
             opens (the board's own maxWidth already reserves this column's
-            width). Only the EvalBar inside it is conditional on showEvalBar. */}
+            width). Only the EvalBar inside it is conditional on showEvalBar;
+            before the reveal an empty frame (phase 222 UAT round 3) fills the
+            slot so the board's right edge never reads as an odd gap. */}
         <div className="w-5 shrink-0">
+          {!showEvalBar && (
+            <div
+              aria-hidden="true"
+              className="h-full w-full rounded border border-border bg-muted"
+              data-testid="train-eval-bar-placeholder"
+            />
+          )}
           {showEvalBar && (
             <EvalBar
               evalCp={evalBarReading.evalCp}
@@ -1038,71 +1718,7 @@ export function TrainSolveScreen({
           )}
         </div>
       </div>
-      {/* 190.1 UAT round 3: Solution + Analyze + Next directly below the
-          board, sharing its width evenly (plus the round-4 mute icon at the
-          right edge). Solution resets every
-          reveal stepper (and the board) back to the puzzle position. Analyze
-          deep-links one ply BEFORE the mistake: the analysis board's mainline
-          index k holds the position AFTER k+1 half-moves, so passing
-          puzzle.ply itself would land one half-move too late. */}
-      {verdict !== null && (
-        <div className="flex w-full items-center gap-2">
-          {/* Phase 200 (D-11): visibility-gated, not always present — shown
-              only once the board has departed the pristine reveal (a line is
-              stepped, or exploration is active). Both of Solution's jobs
-              still fire together on a press (handleShowSolution): exit
-              exploration AND the existing stepper reset. Label stays
-              "Solution" — no relabel, no hint line. */}
-          {isBoardDeparted && (
-            <Button
-              variant="brand-outline"
-              className={cn('flex-1', TRAIN_BUTTON_CLASS)}
-              data-testid="btn-train-solution"
-              onClick={handleShowSolution}
-            >
-              Solution
-            </Button>
-          )}
-          {/* D-09 (Phase 192): hidden — not disabled — when the herring's
-              source game link is null. Nothing else on the reveal
-              references the game at that point, so a disabled control
-              would be an unexplained stub. `buildGameAnalysisUrl` keeps its
-              `(gameId: number, ...)` signature unwidened; this gate is what
-              guarantees it is never called with null. */}
-          {puzzle.game_id !== null && (
-            <Button asChild variant="brand-outline" className={cn('flex-1', TRAIN_BUTTON_CLASS)}>
-              <Link
-                to={buildGameAnalysisUrl(puzzle.game_id, puzzle.ply > 0 ? puzzle.ply - 1 : null)}
-                data-testid="btn-train-analyze"
-                aria-label="Analyze this position"
-                onClick={handleAnalyzeClick}
-              >
-                <Search className="h-4 w-4 mr-1" />
-                Analyze
-              </Link>
-            </Button>
-          )}
-          <Button
-            variant="default"
-            className={cn('flex-1', TRAIN_BUTTON_CLASS)}
-            data-testid="btn-train-next"
-            onClick={handleNext}
-          >
-            Next
-          </Button>
-          {/* 190.1 UAT round 4: stepping plays move sounds — same mute
-              toggle as bot games (GameControls), same persisted preference. */}
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={() => setMuted(!muted)}
-            aria-label={muted ? 'Unmute sounds' : 'Mute sounds'}
-            data-testid="board-btn-mute"
-          >
-            {muted ? <VolumeX /> : <Volume2 />}
-          </Button>
-        </div>
-      )}
+      </div>
       {engineFailed ? (
         <div className="flex flex-col items-center gap-2" data-testid="train-engine-error">
           <LoadError resource="the grading engine" />
@@ -1129,45 +1745,28 @@ export function TrainSolveScreen({
         </div>
       ) : (
         <>
-          {guess === null && !moveApplied && (
-            <div className="flex flex-col items-center gap-2">
-              {/* 190 UAT: some positions don't make the player's color obvious —
-                  state it explicitly right where the guess is committed. */}
-              <p className="text-sm font-semibold" data-testid="train-guess-prompt">
-                Before you move with {puzzle.side_to_move}, decide:
-              </p>
-              <div className="flex gap-2">
-                <Button
-                  variant="brand-outline"
-                  className={TRAIN_BUTTON_CLASS}
-                  data-testid="btn-train-guess-critical"
-                  onClick={() => setGuess('critical')}
-                >
-                  {GUESS_LABELS.critical}
-                </Button>
-                <Button
-                  variant="brand-outline"
-                  className={TRAIN_BUTTON_CLASS}
-                  data-testid="btn-train-guess-several"
-                  onClick={() => setGuess('several')}
-                >
-                  {GUESS_LABELS.several}
-                </Button>
-              </div>
-            </div>
-          )}
-          {/* 190.1 UAT: once the guess is committed the board unlocks — say so
-              explicitly, in the same slot the guess buttons occupied. */}
-          {guess !== null && !moveApplied && (
-            <p className="text-sm font-semibold" data-testid="train-move-prompt">
-              Now play a move for {puzzle.side_to_move}
-            </p>
-          )}
-          {moveApplied && isGrading && (
-            <div className="flex items-center gap-2" data-testid="train-grading-indicator">
-              <Loader2 className="size-4 animate-spin text-muted-foreground" aria-hidden="true" />
-              <p className="text-sm font-semibold text-muted-foreground">Checking your move…</p>
-            </div>
+          {/* Phase 222 (D-07/D-10): the one chat-row bubble slot for every
+              state — guess prompt/buttons, intro stepper, drop-nudge, move
+              prompt, grading indicator, and the verdict (with the
+              Solution/Analyze/Next row inside its actions slot) — all render
+              from `bubbleBody`, resolved outside this component
+              (`renderTrainBotBubbleBody`) so growing the state machine never
+              adds a branch here. `bubbleBody === null` only while settings
+              are still loading on the session's first puzzle (RESEARCH
+              Finding D) — nothing renders in this slot then. `nudgeNonce` is
+              the bubble's own remount key (Pitfall 3: a repeated nudge must
+              replay the pulse, not be swallowed as an already-running
+              animation). */}
+          {bubbleBody !== null && (
+            <TrainBotBubble
+              persona={bubblePersona}
+              state={bubbleState.kind}
+              nudgeNonce={nudgeNonce}
+              actions={bubbleBody.actions}
+              ring={walkthroughTarget === 'verdict'}
+            >
+              {bubbleBody.copy}
+            </TrainBotBubble>
           )}
           {gradingError && (
             <div className="flex flex-col items-center gap-2" data-testid="train-grading-error">
@@ -1203,10 +1802,10 @@ export function TrainSolveScreen({
           onGameMoveUciChange={setGameMoveUci}
           onAnalyzeClick={handleAnalyzeClick}
           onGameMoveLineChange={setGameMoveLine}
-          onLineStep={setLineStep}
+          onLineStep={walkthrough.handleLineStep}
           solutionNonce={solutionNonce}
           spotlightKey={spotlight?.key ?? null}
-          onSpotlightChange={setSpotlight}
+          onSpotlightChange={walkthrough.handleSpotlightChange}
           isBoardDeparted={isBoardDeparted}
           onReturnToSolution={returnToSolution}
           alsoFineMoves={revealOverlay.alsoFineMoves}
@@ -1215,6 +1814,7 @@ export function TrainSolveScreen({
           onExitExploration={handleShowSolution}
           flipped={flipped}
           onFlipBoard={handleFlipBoard}
+          walkthroughLinesRing={walkthroughTarget === 'lines'}
         />
       )}
     </div>

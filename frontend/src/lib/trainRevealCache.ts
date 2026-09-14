@@ -18,6 +18,7 @@
  */
 
 import type { GradeResult } from '@/hooks/useTrainGradingEngine';
+import type { PersonaId } from '@/lib/personas/personaRegistry';
 import type { Guess } from '@/lib/trainGuessLabels';
 import type { SolveResponse, TrainPuzzle } from '@/types/train';
 
@@ -27,6 +28,10 @@ export interface CachedTrainReveal {
   sessionId: number;
   puzzle: TrainPuzzle;
   verdict: SolveResponse;
+  /** Phase 222 UAT round 4: the persona that spoke the verdict, so the
+   * restored reveal shows the same bot instead of recasting. Optional: an
+   * entry written before this field existed simply recasts. */
+  verdictBotId?: PersonaId;
   guess: Guess;
   playedMoveUci: string;
   gradeResult: GradeResult;

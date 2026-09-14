@@ -42,6 +42,11 @@ const QRCodeSVG = lazy(() =>
  * current origin at render time. */
 export const HANDOFF_QR_PATH = '/train?src=handoff';
 
+/** Phase 222 UAT round 5: names the whole handoff (install + reminders),
+ * since on desktop this block is now the primary ask, not a post-subscribe
+ * upsell. Shared by both mount points. */
+export const QR_CAPTION = 'Scan to install FlawChess on your phone and turn on reminders there.';
+
 /** D-10: 128x128, matching `qrcode.react`'s own default render size. */
 export const QR_SIZE_PX = 128;
 
@@ -68,9 +73,7 @@ export function TrainInstallQr({ testId }: TrainInstallQrProps): ReactElement {
           <QRCodeSVG value={payload} size={QR_SIZE_PX} />
         </Suspense>
       </div>
-      <p className="mt-2 text-sm text-muted-foreground">
-        Scan with your phone to open FlawChess there
-      </p>
+      <p className="mt-2 text-sm text-muted-foreground">{QR_CAPTION}</p>
     </div>
   );
 }

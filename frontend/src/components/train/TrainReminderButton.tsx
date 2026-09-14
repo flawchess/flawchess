@@ -55,6 +55,19 @@
  * `useTrainReminderSlot` returns both pieces from ONE hook call so
  * `TrainScoreScreen` can lay them out in a `flex-col` wrapper with exactly
  * one state instance backing both rows.
+ *
+ * Phase 222 UAT round 5 (desktop install-first): desktop web push only fires
+ * while the browser is running, so on desktop (not mobile, not standalone)
+ * there is NO "Remind me" button on the score screen at all — desktop push
+ * stays reachable from Train settings only. The row holds just "Done" and
+ * `belowRow` is decided by the ACCOUNT-level `has_mobile_subscription` fact
+ * from the settings response (a per-device probe cannot know about the
+ * phone): reminders on a phone → a "Reminders on … on your phone" line;
+ * otherwise → the phone QR handoff, in every desktop state including
+ * `hidden` (push unsupported or unconfigured, e.g. desktop Safari). A
+ * desktop device that already subscribed before this round keeps its
+ * confirmed line. Android and iOS are unchanged: Android tabbed push works
+ * without an install, and iOS is already install-first.
  */
 import { useEffect, useState, type ReactElement } from 'react';
 import { Bell, Check, Share, Smartphone } from 'lucide-react';
@@ -68,6 +81,7 @@ import { useInstallPrompt } from '@/hooks/useInstallPrompt';
 import { resolveReminderSlotState } from '@/lib/reminderSlotState';
 import { ensureDeviceSubscribed, formatReminderHour, getDeviceSubscription } from '@/lib/push';
 import type { DeviceSubscribeResult } from '@/lib/push';
+import type { TrainSettingsResponse } from '@/types/train';
 
 type ReminderButtonState = 'idle' | 'pending' | 'confirmed' | 'error';
 
@@ -158,50 +172,13 @@ export function useTrainReminderSlot(): TrainReminderSlotResult {
   });
 
   const isConfirmed = state === 'confirmed' || slotState === 'subscribed';
+  const platform = resolvePlatformFlags({ isMobile, isIOS, isStandalone, canInstall, data });
 
   if (isConfirmed && data !== undefined) {
-    // Android tabbed (mobile, not iOS, not standalone) is the only platform
-    // that gets the install offer; desktop (not mobile at all) gets the QR;
-    // standalone gets neither (OFFER-04 — deliberate, not an oversight).
-    const showAndroidOffer = isMobile && !isIOS && !isStandalone && canInstall;
-    const showDesktopQr = !isMobile && !isStandalone;
-
-    let upsell: ReactElement | null = null;
-    if (showAndroidOffer) {
-      upsell = (
-        <Button
-          variant="ghost"
-          size="sm"
-          data-testid="btn-install-android-offer"
-          onClick={() => void triggerInstall()}
-        >
-          <Smartphone className="size-4" aria-hidden="true" />
-          Install FlawChess
-        </Button>
-      );
-    } else if (showDesktopQr) {
-      upsell = <TrainInstallQr testId="qr-handoff-score" />;
-    }
-
-    // Plan 04 UAT round 3: the confirmed line is non-interactive (nothing
-    // left to press), so per the "row only ever holds a pressable control"
-    // invariant it moves below the row too — `control` is `null` here,
-    // leaving "Done" as the row's sole (full-width) child. Reading order
-    // preserved: confirmation line first, then its platform upsell.
-    const belowRow = (
-      <div className="flex w-full flex-col items-center gap-2">
-        <span
-          data-testid="train-reminder-confirmed"
-          className="flex items-center justify-center gap-1 text-sm text-muted-foreground"
-        >
-          <Check className="size-4" aria-hidden="true" />
-          Reminders on — {formatReminderHour(data.reminder_hour)} on your training days
-        </span>
-        {upsell}
-      </div>
-    );
-
-    return { control: null, belowRow };
+    return {
+      control: null,
+      belowRow: confirmedBelowRow({ reminderHour: data.reminder_hour, platform, triggerInstall }),
+    };
   }
 
   if (slotState === 'ios-tabbed') {
@@ -270,6 +247,14 @@ export function useTrainReminderSlot(): TrainReminderSlotResult {
     ) : null;
 
     return { control, belowRow };
+  }
+
+  // UAT round 5: desktop never renders "Remind me" here (see module
+  // docstring). The phone block does not depend on push at all, so a desktop
+  // with no usable push (denied, unsupported, VAPID unconfigured) still gets
+  // it — the only reminder path such a browser has.
+  if (platform.isDesktop) {
+    return { control: null, belowRow: desktopPhoneBlock({ platform, data }) };
   }
 
   if (slotState === 'hidden') {
@@ -349,4 +334,129 @@ export function useTrainReminderSlot(): TrainReminderSlotResult {
     ) : null;
 
   return { control, belowRow };
+}
+
+interface PlatformFlags {
+  /** Not mobile at all, not standalone (UAT round 5: gets the phone block
+   * in every state, never "Remind me"). */
+  isDesktop: boolean;
+  /** Android tabbed (mobile, not iOS, not standalone) with a live captured
+   * `beforeinstallprompt` — the only platform that gets the install offer. */
+  showAndroidOffer: boolean;
+  /** Desktop and the account has no phone reminders yet — the QR handoff
+   * only makes sense until it does. */
+  showDesktopQr: boolean;
+  /** Account-level fact from the settings response (server-side User-Agent
+   * check), unknown-as-false until settings resolve. */
+  hasMobileSubscription: boolean;
+}
+
+/** The platform-only inputs, resolved once per render. Standalone gets
+ * neither the QR nor the install offer (OFFER-04 — deliberate, not an
+ * oversight). */
+function resolvePlatformFlags({
+  isMobile,
+  isIOS,
+  isStandalone,
+  canInstall,
+  data,
+}: {
+  isMobile: boolean;
+  isIOS: boolean;
+  isStandalone: boolean;
+  canInstall: boolean;
+  data: TrainSettingsResponse | undefined;
+}): PlatformFlags {
+  const isDesktop = !isMobile && !isStandalone;
+  const hasMobileSubscription = data?.has_mobile_subscription ?? false;
+  return {
+    isDesktop,
+    showAndroidOffer: isMobile && !isIOS && !isStandalone && canInstall,
+    showDesktopQr: isDesktop && !hasMobileSubscription,
+    hasMobileSubscription,
+  };
+}
+
+/** Plan 04 UAT round 3: the confirmed line is non-interactive (nothing left
+ * to press), so per the "row only ever holds a pressable control" invariant
+ * it lives below the row — `control` is `null`, leaving "Done" as the row's
+ * sole (full-width) child. Reading order: confirmation line first, then its
+ * platform upsell. */
+function confirmedBelowRow({
+  reminderHour,
+  platform,
+  triggerInstall,
+}: {
+  reminderHour: number;
+  platform: PlatformFlags;
+  triggerInstall: () => Promise<void>;
+}): ReactElement {
+  return (
+    <div className="flex w-full flex-col items-center gap-2">
+      <span
+        data-testid="train-reminder-confirmed"
+        className="flex items-center justify-center gap-1 text-sm text-muted-foreground"
+      >
+        <Check className="size-4" aria-hidden="true" />
+        Reminders on — {formatReminderHour(reminderHour)} on your training days
+      </span>
+      {confirmedUpsell({
+        showAndroidOffer: platform.showAndroidOffer,
+        showDesktopQr: platform.showDesktopQr,
+        triggerInstall,
+      })}
+    </div>
+  );
+}
+
+/** Desktop below-row content while this device has no subscription of its
+ * own: the account already has reminders on a phone → say so (the bubble's
+ * "yours are already on" line points here); otherwise → the QR handoff, the
+ * primary desktop ask (the bubble's "scan the code below" points here). */
+function desktopPhoneBlock({
+  platform,
+  data,
+}: {
+  platform: PlatformFlags;
+  data: TrainSettingsResponse | undefined;
+}): ReactElement {
+  if (!platform.hasMobileSubscription) return <TrainInstallQr testId="qr-handoff-score" />;
+  const hour = data === undefined ? '' : ` — ${formatReminderHour(data.reminder_hour)}`;
+  return (
+    <span
+      data-testid="train-reminder-phone-confirmed"
+      className="flex w-full items-center justify-center gap-1 text-sm text-muted-foreground"
+    >
+      <Check className="size-4" aria-hidden="true" />
+      Reminders on{hour} on your phone
+    </span>
+  );
+}
+
+/** The confirmed state's platform upsell: the Android install offer, the
+ * desktop QR, or nothing (standalone / Android with no live event). */
+function confirmedUpsell({
+  showAndroidOffer,
+  showDesktopQr,
+  triggerInstall,
+}: {
+  showAndroidOffer: boolean;
+  showDesktopQr: boolean;
+  triggerInstall: () => Promise<void>;
+}): ReactElement | null {
+  if (showAndroidOffer) {
+    return (
+      <Button
+        variant="ghost"
+        size="sm"
+        data-testid="btn-install-android-offer"
+        onClick={() => void triggerInstall()}
+      >
+        <Smartphone className="size-4" aria-hidden="true" />
+        Install FlawChess
+      </Button>
+    );
+  }
+  if (showDesktopQr) return <TrainInstallQr testId="qr-handoff-score" />;
+  return null;
 }

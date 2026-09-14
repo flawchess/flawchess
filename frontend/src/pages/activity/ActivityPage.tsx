@@ -476,6 +476,27 @@ export default function ActivityPage() {
               <div className="tblwrap" id="t-train"></div>
             </details>
           </div>
+          <div className="card">
+            <h3>First-session drop-off and return rate</h3>
+            <p className="note">
+              Cohort: users whose FIRST Train session started inside the selected window. A user
+              whose first session lands near the end of the window has had no opportunity to
+              return yet, so the return share below is a floor for recent windows.
+            </p>
+            <div className="grid2">
+              <div className="hero">
+                <span className="cap">First session, zero solved</span>
+                <span className="big" id="trf-zero-big"></span>
+                <span className="exp" id="trf-zero-exp"></span>
+              </div>
+              <div className="hero">
+                <span className="cap">Returned for a 2nd completed session</span>
+                <span className="big" id="trf-return-big"></span>
+                <span className="exp" id="trf-return-exp"></span>
+              </div>
+            </div>
+            <p className="note" id="trf-alltime" style={{ marginTop: '12px' }}></p>
+          </div>
           <div className="grid2">
             <div className="card">
               <h3>Puzzles solved per day</h3>

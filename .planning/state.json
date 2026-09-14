@@ -647,6 +647,11 @@
       "number": "221",
       "name": "Tactic-Tagger Real-Game Precision — Winning Floor, Predicate Tightening & Port Fixes (SEED-165, standalone)",
       "status": "complete"
+    },
+    {
+      "number": "222",
+      "name": "Train Bot-Narrated Onboarding & Verdicts (SEED-166, standalone)",
+      "status": "complete"
     }
   ],
   "next": {
@@ -654,5 +659,5 @@
     "label": "Show progress",
     "reason": "Unsure of state — showing progress"
   },
-  "updated_at": "2026-09-13T08:15:02.471Z"
+  "updated_at": "2026-09-14T16:43:29.045Z"
 }

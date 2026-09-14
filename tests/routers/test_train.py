@@ -94,6 +94,26 @@ key-move grading on the solve response:
   reveal body's key set stays byte-identical to its pre-211 nine fields —
   no vetted-move material moves through the reveal GET (discharges RESEARCH
   Assumption A4: the 409 race stays moot)
+
+Phase 222 Plan 02 (TRAINBOT-05, D-11/D-12/D-13/D-14) —
+POST /train/onboarding/{step} + GET/PUT /train/settings extension:
+- test_get_settings_creates_defaults_on_first_touch (extended) : the three
+  onboarding-seen fields default to None (no backfill)
+- test_put_settings_persists_and_round_trips (extended) : the three fields
+  appear on the PUT response body, still None
+- test_onboarding_403_guest : D-14 — a guest is rejected 403 before any
+  state is read or written
+- test_onboarding_unknown_step_422_no_db_write : an unrecognized step name
+  422s via FastAPI's Literal path-param validation, no DB write
+- test_onboarding_stamps_matching_column_others_stay_null : a valid POST
+  sets exactly the matching column
+- test_onboarding_replay_leaves_first_timestamp_unchanged : first-write-wins
+- test_onboarding_each_step_writes_only_its_own_column : all three steps,
+  independently
+- test_get_settings_exposes_all_three_onboarding_timestamps
+- test_put_settings_cannot_smuggle_onboarding_seen_timestamp : D-12 — the
+  write schema cannot smuggle a server-owned field
+- test_onboarding_stamp_scoped_to_caller : ASVS V4/IDOR
 """
 
 from __future__ import annotations
@@ -1104,6 +1124,60 @@ async def test_compose_twice_returns_same_session_id(test_engine) -> None:
         assert first.json()["session_id"] == second.json()["session_id"]
     finally:
         await _delete_games(test_engine, [game_id])
+
+
+@pytest.mark.asyncio
+async def test_resume_solved_results_carry_source_item_status_due_date_no_answer_key(
+    test_engine,
+) -> None:
+    """Phase 222 (TRAINBOT-04, D-17): the resume response body carries
+    source/item_status/due_date per solved_results entry, and every entry's
+    key set still excludes position/game_id/ply/best_move — no new
+    answer-key exposure."""
+    email = f"train-resume-source-{uuid.uuid4().hex[:8]}@example.com"
+    user_id, token = await _register_and_login(email)
+    sr_game_id = await _seed_game_with_blunder(test_engine, user_id)
+    await _seed_drill_item(test_engine, user_id, sr_game_id, _FLAW_PLY_WHITE)
+    herring_game_id = await _seed_bare_game(test_engine, user_id, "resume-source-herring")
+    pool_id = await _seed_herring_pool_row(test_engine, user_id, herring_game_id, 8)
+    session_id = await _seed_session(
+        test_engine,
+        user_id,
+        [
+            (sr_game_id, _FLAW_PLY_WHITE, int(DrillSource.SR_ITEM)),
+            (herring_game_id, 8, int(DrillSource.RED_HERRING)),
+        ],
+        herring_pool_ids={1: pool_id},
+    )
+
+    try:
+        solved_sr = await _solve(token, session_id, 0, guess="critical", move_quality="good")
+        assert solved_sr.status_code == 200
+        solved_herring = await _solve(token, session_id, 1, guess="several", move_quality="good")
+        assert solved_herring.status_code == 200
+
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=app), base_url="http://test"
+        ) as client:
+            resume_resp = await client.post(ENDPOINT, headers={"Authorization": f"Bearer {token}"})
+        assert resume_resp.status_code == 200
+        solved_results = resume_resp.json()["solved_results"]
+        assert len(solved_results) == 2
+
+        sr_entry, herring_entry = solved_results
+        assert sr_entry["source"] == "sr_item"
+        assert sr_entry["item_status"] == "active"
+        assert sr_entry["due_date"] is not None
+        assert herring_entry["source"] == "red_herring"
+        assert herring_entry["item_status"] is None
+        assert herring_entry["due_date"] is None
+
+        forbidden_keys = {"position", "game_id", "ply", "best_move"}
+        for entry in solved_results:
+            assert set(entry.keys()).isdisjoint(forbidden_keys)
+    finally:
+        await _delete_herring_pool_rows(test_engine, [pool_id])
+        await _delete_games(test_engine, [sr_game_id, herring_game_id])
 
 
 @pytest.mark.asyncio
@@ -2304,6 +2378,9 @@ async def test_get_settings_creates_defaults_on_first_touch(test_engine) -> None
     # False/18 — see DEFAULT_REMINDER_ENABLED/DEFAULT_REMINDER_HOUR.
     # Phase 203 (OFFER-03): reminder_intent_at defaults to None — a brand-new
     # user has never expressed install intent.
+    # Phase 222 (TRAINBOT-05): intro_seen_at/reveal_walkthrough_seen_at/
+    # sr_explained_at default to None — a brand-new user has never seen any
+    # of the three onboarding steppers (D-13, no backfill).
     assert resp.json() == {
         "timezone": "UTC",
         "weekday_mask": 127,
@@ -2311,7 +2388,48 @@ async def test_get_settings_creates_defaults_on_first_touch(test_engine) -> None
         "reminder_enabled": False,
         "reminder_hour": 18,
         "reminder_intent_at": None,
+        "intro_seen_at": None,
+        "reveal_walkthrough_seen_at": None,
+        "sr_explained_at": None,
+        "has_mobile_subscription": False,
     }
+
+
+@pytest.mark.asyncio
+async def test_get_settings_reports_mobile_subscription_from_user_agent(test_engine) -> None:
+    """Phase 222 UAT round 5: `has_mobile_subscription` is derived from the
+    stored User-Agent of the account's push subscriptions — a desktop UA keeps
+    it False, a phone UA flips it True, and the fact is account-wide (the GET
+    carries no device context of its own)."""
+    from app.repositories import push_repository
+
+    email = f"train-settings-mobile-{uuid.uuid4().hex[:8]}@example.com"
+    user_id, token = await _register_and_login(email)
+    session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
+
+    async with session_maker() as session:
+        await push_repository.upsert_subscription(
+            session,
+            user_id=user_id,
+            endpoint=f"https://push.example/{uuid.uuid4().hex}",
+            p256dh="p",
+            auth="a",
+            user_agent="Mozilla/5.0 (X11; Linux x86_64) Chrome/140",
+        )
+        await session.commit()
+    assert (await _get_settings(token)).json()["has_mobile_subscription"] is False
+
+    async with session_maker() as session:
+        await push_repository.upsert_subscription(
+            session,
+            user_id=user_id,
+            endpoint=f"https://push.example/{uuid.uuid4().hex}",
+            p256dh="p",
+            auth="a",
+            user_agent="Mozilla/5.0 (Linux; Android 15) Chrome/140 Mobile",
+        )
+        await session.commit()
+    assert (await _get_settings(token)).json()["has_mobile_subscription"] is True
 
 
 @pytest.mark.asyncio
@@ -2362,6 +2480,10 @@ async def test_put_settings_persists_and_round_trips(test_engine) -> None:
         "reminder_enabled": True,
         "reminder_hour": 7,
         "reminder_intent_at": None,
+        "intro_seen_at": None,
+        "reveal_walkthrough_seen_at": None,
+        "sr_explained_at": None,
+        "has_mobile_subscription": False,
     }
 
     get_resp = await _get_settings(token)
@@ -2437,6 +2559,184 @@ async def test_settings_403_guest(test_engine) -> None:
 
     put_resp = await _put_settings(token, timezone="UTC", weekday_mask=0, puzzles_per_session=12)
     assert put_resp.status_code == 403
+
+
+# ---------------------------------------------------------------------------
+# Phase 222 Plan 02 Task 2 (TRAINBOT-05, D-11/D-12/D-13/D-14) —
+# POST /train/onboarding/{step}
+# ---------------------------------------------------------------------------
+
+
+async def _stamp_onboarding(token: str, step: str) -> httpx.Response:
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app), base_url="http://test"
+    ) as client:
+        return await client.post(
+            f"/api/train/onboarding/{step}", headers={"Authorization": f"Bearer {token}"}
+        )
+
+
+@pytest.mark.asyncio
+async def test_onboarding_403_guest(test_engine) -> None:
+    """D-14: a guest is rejected 403 on the stamp endpoint before any state
+    is read or written."""
+    email = f"train-onboarding-guest-{uuid.uuid4().hex[:8]}@example.com"
+    user_id, token = await _register_and_login(email)
+    await _set_guest(test_engine, user_id)
+
+    resp = await _stamp_onboarding(token, "intro")
+    assert resp.status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_onboarding_unknown_step_422_no_db_write(test_engine) -> None:
+    """An unknown step name is rejected 422 by FastAPI's Literal path-param
+    validation before the handler body runs — no DB write, all three
+    columns stay NULL."""
+    email = f"train-onboarding-bogus-{uuid.uuid4().hex[:8]}@example.com"
+    _user_id, token = await _register_and_login(email)
+
+    resp = await _stamp_onboarding(token, "bogus")
+    assert resp.status_code == 422
+
+    get_resp = await _get_settings(token)
+    assert get_resp.json()["intro_seen_at"] is None
+    assert get_resp.json()["reveal_walkthrough_seen_at"] is None
+    assert get_resp.json()["sr_explained_at"] is None
+
+
+@pytest.mark.asyncio
+async def test_onboarding_stamps_matching_column_others_stay_null(test_engine) -> None:
+    """A valid POST sets the matching column and returns it on the response
+    body; the other two stay NULL."""
+    email = f"train-onboarding-single-{uuid.uuid4().hex[:8]}@example.com"
+    _user_id, token = await _register_and_login(email)
+
+    resp = await _stamp_onboarding(token, "reveal_walkthrough")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["reveal_walkthrough_seen_at"] is not None
+    assert body["intro_seen_at"] is None
+    assert body["sr_explained_at"] is None
+
+
+@pytest.mark.asyncio
+async def test_onboarding_replay_leaves_first_timestamp_unchanged(test_engine) -> None:
+    """A replayed POST for the same step leaves the first recorded timestamp
+    unchanged (first-write-wins)."""
+    email = f"train-onboarding-replay-{uuid.uuid4().hex[:8]}@example.com"
+    _user_id, token = await _register_and_login(email)
+
+    first = await _stamp_onboarding(token, "intro")
+    assert first.status_code == 200
+    first_stamp = first.json()["intro_seen_at"]
+    assert first_stamp is not None
+
+    second = await _stamp_onboarding(token, "intro")
+    assert second.status_code == 200
+    assert second.json()["intro_seen_at"] == first_stamp
+
+
+@pytest.mark.asyncio
+async def test_onboarding_each_step_writes_only_its_own_column(test_engine) -> None:
+    """Each of the three step names writes its own column and no other."""
+    email = f"train-onboarding-allthree-{uuid.uuid4().hex[:8]}@example.com"
+    _user_id, token = await _register_and_login(email)
+
+    intro_resp = await _stamp_onboarding(token, "intro")
+    assert intro_resp.status_code == 200
+    body = intro_resp.json()
+    assert body["intro_seen_at"] is not None
+    assert body["reveal_walkthrough_seen_at"] is None
+    assert body["sr_explained_at"] is None
+
+    walkthrough_resp = await _stamp_onboarding(token, "reveal_walkthrough")
+    assert walkthrough_resp.status_code == 200
+    body = walkthrough_resp.json()
+    assert body["intro_seen_at"] is not None
+    assert body["reveal_walkthrough_seen_at"] is not None
+    assert body["sr_explained_at"] is None
+
+    sr_resp = await _stamp_onboarding(token, "sr_explained")
+    assert sr_resp.status_code == 200
+    body = sr_resp.json()
+    assert body["intro_seen_at"] is not None
+    assert body["reveal_walkthrough_seen_at"] is not None
+    assert body["sr_explained_at"] is not None
+
+
+@pytest.mark.asyncio
+async def test_get_settings_exposes_all_three_onboarding_timestamps(test_engine) -> None:
+    """GET /train/settings exposes all three onboarding-seen timestamps."""
+    email = f"train-onboarding-get-{uuid.uuid4().hex[:8]}@example.com"
+    _user_id, token = await _register_and_login(email)
+
+    await _stamp_onboarding(token, "intro")
+    await _stamp_onboarding(token, "sr_explained")
+
+    get_resp = await _get_settings(token)
+    assert get_resp.status_code == 200
+    body = get_resp.json()
+    assert body["intro_seen_at"] is not None
+    assert body["reveal_walkthrough_seen_at"] is None
+    assert body["sr_explained_at"] is not None
+
+
+@pytest.mark.asyncio
+async def test_put_settings_cannot_smuggle_onboarding_seen_timestamp(test_engine) -> None:
+    """D-12: a PUT /train/settings body carrying intro_seen_at (a field the
+    write schema does not even declare) does not change the stored value —
+    the write schema cannot smuggle a server-owned field."""
+    email = f"train-onboarding-smuggle-{uuid.uuid4().hex[:8]}@example.com"
+    _user_id, token = await _register_and_login(email)
+
+    stamped = await _stamp_onboarding(token, "intro")
+    assert stamped.status_code == 200
+    stamped_at = stamped.json()["intro_seen_at"]
+    assert stamped_at is not None
+
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app), base_url="http://test"
+    ) as client:
+        put_resp = await client.put(
+            "/api/train/settings",
+            headers={"Authorization": f"Bearer {token}"},
+            json={
+                "timezone": "UTC",
+                "weekday_mask": 0,
+                "puzzles_per_session": 12,
+                "reminder_enabled": False,
+                "reminder_hour": 18,
+                "reminder_intent_at": None,
+                # Not declared on TrainSettingsUpdate — Pydantic silently
+                # ignores an extra key by default; this proves it has no
+                # effect even so.
+                "intro_seen_at": None,
+            },
+        )
+    assert put_resp.status_code == 200
+    assert put_resp.json()["intro_seen_at"] == stamped_at
+
+    get_resp = await _get_settings(token)
+    assert get_resp.json()["intro_seen_at"] == stamped_at
+
+
+@pytest.mark.asyncio
+async def test_onboarding_stamp_scoped_to_caller(test_engine) -> None:
+    """ASVS V4/IDOR: stamping one user's onboarding step never touches a
+    second registered user's row."""
+    email_a = f"train-onboarding-idor-a-{uuid.uuid4().hex[:8]}@example.com"
+    email_b = f"train-onboarding-idor-b-{uuid.uuid4().hex[:8]}@example.com"
+    _user_id_a, token_a = await _register_and_login(email_a)
+    _user_id_b, token_b = await _register_and_login(email_b)
+
+    resp_a = await _stamp_onboarding(token_a, "intro")
+    assert resp_a.status_code == 200
+    assert resp_a.json()["intro_seen_at"] is not None
+
+    get_b = await _get_settings(token_b)
+    assert get_b.status_code == 200
+    assert get_b.json()["intro_seen_at"] is None
 
 
 # ---------------------------------------------------------------------------

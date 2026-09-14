@@ -72,6 +72,7 @@ class Payload(TypedDict):
     signups: list[list[Any]]
     bot: list[list[Any]]
     train: list[list[Any]]
+    train_funnel: dict[str, Any]
     solves: list[list[Any]]
     imports: list[list[Any]]
     persona: list[list[Any]]
@@ -297,6 +298,67 @@ async def fetch_train(conn: AsyncConnection, window_start: datetime.date) -> lis
             cutoff=window_start,
         )
     )
+
+
+async def fetch_train_funnel(
+    conn: AsyncConnection, window_start: datetime.date, data_start: datetime.date
+) -> dict[str, Any]:
+    """First-session 0-solve share and second-session return share (SEED-166, D-19).
+
+    Cohort = users whose FIRST-EVER `drill_sessions` row (by `session_date`,
+    then `id` to break ties) started on or after the cutoff date. A user whose
+    first session predates the cutoff is excluded entirely, even if a later
+    session of theirs falls inside the window (RESEARCH Finding J).
+
+    `no_solve` looks only at that first session's own `drill_solves` rows
+    (`solved_at IS NOT NULL`); `completed_count` looks at ALL of the user's
+    sessions with `status = 'completed'` -- the same definition `fetch_train`
+    already uses. Runs the identical query twice: once with `window_start`
+    (the windowed reading) and once with `data_start` (the live all-time
+    control line), so the two numbers can never drift apart from each other.
+
+    Right-censoring caveat (surfaced on the card, not here): a user whose
+    first session lands near the end of the window has had no opportunity to
+    return, so the windowed return share is a floor for recent windows.
+    """
+    sql = """
+        WITH first_session AS (
+            SELECT DISTINCT ON (user_id) user_id, id AS session_id, session_date
+            FROM drill_sessions
+            ORDER BY user_id, session_date, id
+        ),
+        cohort AS (
+            SELECT user_id, session_id FROM first_session
+            WHERE session_date >= CAST(:cutoff AS date)
+        ),
+        flags AS (
+            SELECT c.user_id,
+                   NOT EXISTS (
+                       SELECT 1 FROM drill_solves s
+                       WHERE s.session_id = c.session_id AND s.solved_at IS NOT NULL
+                   ) AS no_solve,
+                   (SELECT count(*) FROM drill_sessions d
+                     WHERE d.user_id = c.user_id AND d.status = 'completed') AS completed_count
+            FROM cohort c
+        )
+        SELECT count(*)                                     AS openers,
+               count(*) FILTER (WHERE no_solve)              AS zero_solve_users,
+               count(*) FILTER (WHERE completed_count >= 1)  AS finishers,
+               count(*) FILTER (WHERE completed_count >= 2)  AS returners
+        FROM flags
+        """
+    windowed = (await _rows(conn, sql, cutoff=window_start))[0]
+    all_time = (await _rows(conn, sql, cutoff=data_start))[0]
+    return {
+        "openers": int(windowed[0]),
+        "zero_solve_users": int(windowed[1]),
+        "finishers": int(windowed[2]),
+        "returners": int(windowed[3]),
+        "all_time_openers": int(all_time[0]),
+        "all_time_zero_solve_users": int(all_time[1]),
+        "all_time_finishers": int(all_time[2]),
+        "all_time_returners": int(all_time[3]),
+    }
 
 
 async def fetch_solves(conn: AsyncConnection, lead_in_start: datetime.date) -> list[list[Any]]:

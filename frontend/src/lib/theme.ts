@@ -575,6 +575,13 @@ export const TRAIN_POINTS_FG_ON_LIGHT = 'oklch(0.20 0 0)'; // near-black, for th
 // is only used on Library miniboards).
 export const TRAIN_BEST_MOVE_ARROW = BEST_MOVE_ARROW;
 
+// Train bot chat-row bubble (Phase 222, D-07/D-08). Two named borders, not
+// one: the nudge state (a piece dropped before the guess) must read as a
+// visually distinct "pay attention" moment from the bubble's resting state,
+// without introducing a whole new hue family for a single-purpose outline.
+export const TRAIN_BUBBLE_BORDER = 'oklch(0.55 0.02 40)'; // neutral warm grey-brown
+export const TRAIN_BUBBLE_NUDGE_BORDER = 'oklch(0.75 0.15 85)'; // amber, same family as TRAIN_RATING_YELLOW
+
 // Shield flame meter, 7 slots (Phase 193 D-01, 193-UI-SPEC.md `## Color`;
 // amended at 193 UAT — the 3-band pip meter became a per-slot flame ramp).
 // Indexed by SLOT, not by shield_level: slot i always renders the same

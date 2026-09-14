@@ -124,6 +124,29 @@ class TrainSettings(Base):
     reminder_intent_at: Mapped[datetime.datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
+    # Phase 222 (TRAINBOT-05, D-11/D-12/D-13). Three server-side "explanation
+    # seen" watermarks for the Train bot onboarding steppers (guess-bubble
+    # intro, first-reveal walkthrough, first-completed-session SR
+    # explanation). Opposite access pattern from reminder_intent_at directly
+    # above: these three are Response-ONLY (D-12) -- the closer access-
+    # pattern sibling is reminder_last_sent_on, which is likewise absent
+    # from TrainSettingsUpdate. Each is stamped exactly once, first-write-
+    # wins, by POST /train/onboarding/{step} on stepper completion; an
+    # abandoned stepper leaves its column NULL and replays next time. An
+    # instant, not a calendar watermark, so DateTime(timezone=True) (mirrors
+    # the codebase's nullable-instant convention, never a naive DateTime).
+    # No backfill (D-13): every row that predates these columns reads back
+    # NULL on all three, meaning "never seen" -- regulars, one-timers and
+    # never-finishers alike see each stepper once.
+    intro_seen_at: Mapped[datetime.datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    reveal_walkthrough_seen_at: Mapped[datetime.datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    sr_explained_at: Mapped[datetime.datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
 
 
 __all__ = ["TrainSettings"]

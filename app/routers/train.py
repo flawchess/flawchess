@@ -24,8 +24,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.database import get_async_session
 from app.core.dev_clock import dev_now_utc
 from app.models.user import User
-from app.repositories import train_repository
+from app.repositories import push_repository, train_repository
+from app.repositories.train_repository import TrainSettingsRow
 from app.schemas.train import (
+    OnboardingStep,
     PuzzleRevealResponse,
     SolveRequest,
     SolveResponse,
@@ -96,7 +98,13 @@ async def compose_or_resume_session(
             )
         )
     solved_results = [
-        SolvedResult(correct_guess=r.correct_guess, move_quality=r.move_quality)
+        SolvedResult(
+            correct_guess=r.correct_guess,
+            move_quality=r.move_quality,
+            source=r.source,
+            item_status=r.item_status,
+            due_date=r.due_date,
+        )
         for r in composed.solved_results
     ]
     return TrainSessionResponse(
@@ -243,6 +251,30 @@ async def get_train_progress(
     )
 
 
+async def _settings_response(
+    session: AsyncSession, settings_row: TrainSettingsRow, *, user_id: int
+) -> TrainSettingsResponse:
+    """Project a settings row plus the account-level mobile-subscription fact.
+
+    Shared by GET/PUT /settings and POST /onboarding/{step} so all three return
+    the identical shape the client `setQueryData`s into one cache (D-12).
+    """
+    return TrainSettingsResponse(
+        timezone=settings_row.timezone,
+        weekday_mask=settings_row.weekday_mask,
+        puzzles_per_session=settings_row.puzzles_per_session,
+        reminder_enabled=settings_row.reminder_enabled,
+        reminder_hour=settings_row.reminder_hour,
+        reminder_intent_at=settings_row.reminder_intent_at,
+        intro_seen_at=settings_row.intro_seen_at,
+        reveal_walkthrough_seen_at=settings_row.reveal_walkthrough_seen_at,
+        sr_explained_at=settings_row.sr_explained_at,
+        has_mobile_subscription=await push_repository.has_mobile_subscription(
+            session, user_id=user_id
+        ),
+    )
+
+
 @router.get("/settings", response_model=TrainSettingsResponse)
 async def get_train_settings(
     session: Annotated[AsyncSession, Depends(get_async_session)],
@@ -252,14 +284,7 @@ async def get_train_settings(
     _reject_guest(user)
     settings_row = await train_repository.get_or_create_settings(session, user_id=user.id)
     await session.commit()
-    return TrainSettingsResponse(
-        timezone=settings_row.timezone,
-        weekday_mask=settings_row.weekday_mask,
-        puzzles_per_session=settings_row.puzzles_per_session,
-        reminder_enabled=settings_row.reminder_enabled,
-        reminder_hour=settings_row.reminder_hour,
-        reminder_intent_at=settings_row.reminder_intent_at,
-    )
+    return await _settings_response(session, settings_row, user_id=user.id)
 
 
 @router.put("/settings", response_model=TrainSettingsResponse)
@@ -309,14 +334,45 @@ async def update_train_settings(
         now_utc=now_utc,
     )
     await session.commit()
-    return TrainSettingsResponse(
-        timezone=settings_row.timezone,
-        weekday_mask=settings_row.weekday_mask,
-        puzzles_per_session=settings_row.puzzles_per_session,
-        reminder_enabled=settings_row.reminder_enabled,
-        reminder_hour=settings_row.reminder_hour,
-        reminder_intent_at=settings_row.reminder_intent_at,
-    )
+    return await _settings_response(session, settings_row, user_id=user.id)
+
+
+@router.post("/onboarding/{step}", response_model=TrainSettingsResponse)
+async def stamp_onboarding_step(
+    step: OnboardingStep,
+    session: Annotated[AsyncSession, Depends(get_async_session)],
+    user: Annotated[User, Depends(current_active_user)],
+    now_utc: NowUtc,
+) -> TrainSettingsResponse:
+    """Stamp one bot-onboarding "explanation seen" watermark (D-11/D-12).
+
+    Only a COMPLETED stepper counts: the client calls this once the user
+    reaches the stepper's last step, never on an abandoned/partial one — an
+    abandoned stepper leaves its column NULL and replays next time. Returns
+    the full `TrainSettingsResponse` so the client can `setQueryData` on the
+    shared `['train','settings']` cache without a second fetch (D-12,
+    RESEARCH Finding D).
+
+    `step` arrives as a `Literal` path parameter — FastAPI 422s any value
+    outside `OnboardingStep`'s three names before this body ever runs, so
+    there is no hand-rolled validation and no body schema at all.
+
+    The user id always comes from `current_active_user.id` — never from a
+    request body or path parameter (V4/IDOR guard), mirroring every other
+    `/train/*` handler in this file.
+    """
+    _reject_guest(user)
+    try:
+        settings_row = await train_repository.stamp_onboarding_step(
+            session, user_id=user.id, step=step, now_utc=now_utc
+        )
+        await session.commit()
+    except Exception:
+        await session.rollback()
+        sentry_sdk.set_context("train", {"user_id": str(user.id)})
+        sentry_sdk.capture_exception()
+        raise
+    return await _settings_response(session, settings_row, user_id=user.id)
 
 
 __all__ = ["router"]

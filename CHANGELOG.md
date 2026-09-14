@@ -8,6 +8,11 @@ in `YYYY-MM-DD` (Europe/Zurich).
 
 ## [Unreleased]
 
+### Added
+
+- Train now explains itself the first time you use it: a couple of quick tips from the practice bots walk you through the guess question and the two buttons on your very first puzzle, then walk you through your first feedback screen — what the score means, what the move cards show, and what the buttons below them do.
+- On phones the Train board now fills the screen width, the progress line is a single compact row, and the bot's message scrolls away under the pinned board instead of taking up fixed space. The move prompt repeats the call you just made, the first-feedback tips now cover tapping a card, stepping through its line with the arrows, and trying your own moves against the eval bar, and the points pop over the board shows the bot who is about to speak.
+
 ### Fixed
 
 - Train: the thin white "played in game" arrow on the solution board no longer goes missing when you return to a solved puzzle from Analyze. The legend card always named the move, but the arrow was dropped whenever the solution was still cached from the first visit.
@@ -40,6 +45,13 @@ in `YYYY-MM-DD` (Europe/Zurich).
 - The Maia chart now appears almost immediately and sharpens as the remaining ratings finish, instead of staying blank until every rating has been computed. (Phase 219)
 - Practice-bot persona cards now carry a colored border and glow matching each bot's playing style, brightening on hover.
 - Openings, Endgames and Stats now default to rated games against human opponents on a fresh load, matching the population the percentile benchmarks compare against — the Opponent and Rated filters still switch it back to any opponent or any rated status. The Library keeps showing FlawChess practice-bot games and pasted PGNs regardless of those two filters.
+
+- Dragging a piece on Train before you have made your guess now tells you why the board is locked instead of silently snapping the piece back.
+- Every Train solution screen is now narrated by one of the practice bots, who states your points for the guess and the move, tells you when the position is coming back for another round, and never promises a comeback for a warm-up puzzle or one you have already mastered.
+- The Solution, Analyze and Next buttons on the Train solution screen now live inside that bot's message instead of below the board.
+- The end-of-session summary on Train now says which positions are coming back and when, and the first time you ever finish a session it also explains the idea behind bringing missed positions back later.
+- The mute button that used to sit on the Train solution screen has moved to the Bots page for now; muting there also mutes Train.
+- The Train tab carries a red dot again for everyone, including people who used Train before, until they open the reworked version once. The waiting-puzzles count still takes the slot when it applies.
 
 ## [v2.16] Audit Hardening & Dependency Currency — 2026-09-05
 

@@ -18,11 +18,14 @@ import { Card } from '@/components/ui/card';
 import { EmptyState } from '@/components/ui/empty-state';
 import { LoadError } from '@/components/ui/load-error';
 import { TRAIN_CTA_BUTTON_CLASS } from '@/components/train/buttonStyles';
+import { TrainBotBubble } from '@/components/train/TrainBotBubble';
 import { TrainReminderResurfaceBanner } from '@/components/train/TrainReminderResurfaceBanner';
 import { TrainScheduleSettings } from '@/components/train/TrainScheduleSettings';
 import { TrainStatsCard } from '@/components/train/TrainStatsCard';
 import { TrainStreakCard } from '@/components/train/TrainStreakCard';
 import { useTrainProgress } from '@/hooks/useTrainProgress';
+import { PERSONA_REGISTRY } from '@/lib/personas/personaRegistry';
+import { TANK_ID } from '@/lib/trainBotCopy';
 import { TRAIN_POINTS_PER_PUZZLE } from '@/lib/trainScore';
 import type { TrainSessionResponse } from '@/types/train';
 
@@ -171,22 +174,23 @@ function resolveLandingState(
 }
 
 /**
- * The "Train" heading plus the tagline directly beneath it.
+ * The landing page's opener: Tank the Ox speaking the tagline in the same
+ * `TrainBotBubble` the solve loop and score screen use, so the landing page
+ * introduces the host before the first puzzle does. Tank is the fixed
+ * welcome host (D-05, `TANK_ID`), never a random pick.
  *
- * 191.1 UAT: the tagline sits directly under the title in EVERY landing
- * state — the completed state used to push it below the progress row.
- * 193 UAT round 3: the two are one `gap-1` unit rather than two children of
- * the container's uniform `gap-4`, which spaced title, tagline, and CTA
- * identically so nothing read as a group.
+ * History: this was an `<h1>Train</h1>` plus a muted tagline line beneath it
+ * (191.1 UAT: tagline directly under the title in EVERY landing state;
+ * 193 UAT round 3: the two grouped as one `gap-1` unit). 222 UAT round 6
+ * replaced the tagline with the bubble and then dropped the heading
+ * outright: the bubble already says what the page is, and the nav tab
+ * carries the "Train" label.
  */
 function TrainHeader(): ReactElement {
   return (
-    <div className="flex flex-col gap-1">
-      <h1 className="text-xl font-semibold">Train</h1>
-      <p className="text-sm text-muted-foreground" data-testid="train-tagline">
-        Learn from the mistakes in your games with personalized puzzles.
-      </p>
-    </div>
+    <TrainBotBubble persona={PERSONA_REGISTRY[TANK_ID]} state="prompt" avatarSize="large">
+      <p data-testid="train-tagline">Learn from the mistakes in your games with personalized puzzles.</p>
+    </TrainBotBubble>
   );
 }
 

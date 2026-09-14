@@ -1,20 +1,40 @@
 /**
- * Shared "critical vs several fine moves" guess vocabulary (190.1-03 D-03).
+ * Shared "only one good move vs several" guess vocabulary (190.1-03 D-03;
+ * revocabularized Phase 222 D-09).
  *
  * Single source of truth for the exact wording so `TrainSolveScreen`'s guess
  * buttons and `TrainReveal`'s verdict row can never drift apart — extracted
  * to its own module (rather than exported from either component) to avoid a
  * parent/child circular import between the two (`TrainSolveScreen` renders
  * `TrainReveal`).
+ *
+ * D-09 (Phase 222): the short button-label form became "Only one" / "Several"
+ * (`GUESS_LABELS`) — the old "One critical move" / "Several fine moves" pair
+ * read as two full sentences stacked in a 375px button row. The reveal's
+ * guess card header needs its own longer call-form ("Your call: only one
+ * good move" / "Your call: several good moves") because the short label
+ * alone is unreadable out of context there — `GUESS_CALL_LABELS` is a
+ * SEPARATE map, not an overload of `GUESS_LABELS`. `guessFeedbackProse`'s six
+ * sentences below are untouched LOCKED wording — they already spell out
+ * "only one move works" / "several moves are fine" in full prose and do not
+ * read `GUESS_LABELS` at all.
  */
 
 import type { TrainMoveTier } from '@/lib/trainScore';
 
 export type Guess = 'critical' | 'several';
 
+/** Short guess-button labels (D-09). Read by `TrainSolveScreen`'s guess pair. */
 export const GUESS_LABELS: Record<Guess, string> = {
-  critical: 'One critical move',
-  several: 'Several fine moves',
+  critical: 'Only one',
+  several: 'Several',
+};
+
+/** Long call-form for the reveal's guess card header (D-09) — "Only one" read
+ * alone as `Guess: Only one` was unreadable out of context. */
+export const GUESS_CALL_LABELS: Record<Guess, string> = {
+  critical: 'only one good move',
+  several: 'several good moves',
 };
 
 /**

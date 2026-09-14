@@ -270,7 +270,7 @@ describe('TrainReveal', () => {
   it('verdict-guess row states the spelled-out critical-option wording and a +0 chip for a wrong critical guess', () => {
     renderReveal({ guess: 'critical', verdict: makeVerdict({ correct_guess: false }) });
     const text = screen.getByTestId('train-verdict-guess').textContent ?? '';
-    expect(text).toContain('One critical move');
+    expect(text).toContain('only one good move');
     expect(text).not.toContain('✗');
     expect(screen.getByTestId('train-verdict-guess-points').textContent).toBe('+0');
   });
@@ -278,7 +278,7 @@ describe('TrainReveal', () => {
   it('verdict-guess row states the spelled-out several-fine wording with a +1 chip for a correct guess', () => {
     renderReveal({ guess: 'several', verdict: makeVerdict({ correct_guess: true }) });
     const text = screen.getByTestId('train-verdict-guess').textContent ?? '';
-    expect(text).toContain('Several fine moves');
+    expect(text).toContain('several good moves');
     expect(text).not.toContain('✓');
     expect(screen.getByTestId('train-verdict-guess-points').textContent).toBe('+1');
   });
@@ -620,6 +620,34 @@ describe('TrainReveal', () => {
     expect(box.textContent).toContain('Your move');
     expect(box.textContent).toContain('Best move');
     expect(screen.queryByTestId('train-line-box-best-move')).toBeNull();
+  });
+
+  describe('Phase 222 plan 06: first-reveal walkthrough ring (D-24/TRAINBOT-10)', () => {
+    it('rings the line-card group when walkthroughLinesRing is true', async () => {
+      const gradeResult = makeGradeResult({
+        bestLine: makeEngineLine({ moves: ['e2e4'], evalCp: 50, evalMate: null }),
+        playedLine: makeEngineLine({ moves: ['e2e4'], evalCp: 50, evalMate: null }),
+      });
+      renderReveal({ guess: 'critical', playedMoveUci: 'e2e4', gradeResult, walkthroughLinesRing: true });
+      const box = await waitFor(() => screen.getByTestId('train-line-box-your-move'));
+      expect(box.className).toContain('ring-2');
+      expect(box.className).toContain('ring-brand-brown');
+    });
+
+    it('renders no ring on the line cards when walkthroughLinesRing is false', async () => {
+      const gradeResult = makeGradeResult({
+        bestLine: makeEngineLine({ moves: ['e2e4'], evalCp: 50, evalMate: null }),
+        playedLine: makeEngineLine({ moves: ['e2e4'], evalCp: 50, evalMate: null }),
+      });
+      renderReveal({
+        guess: 'critical',
+        playedMoveUci: 'e2e4',
+        gradeResult,
+        walkthroughLinesRing: false,
+      });
+      const box = await waitFor(() => screen.getByTestId('train-line-box-your-move'));
+      expect(box.className).not.toContain('ring-2');
+    });
   });
 
   // ─── Phase 200 (LEGEND-01/D-01): one glyph per box, Card/CardHeader shell ──
@@ -1498,7 +1526,7 @@ describe('TrainReveal', () => {
       alsoFineMoves: [{ uci: 'd2d4', quality: 'good' }],
     });
     const card = screen.getByTestId('train-verdict-guess');
-    expect(card.textContent).toContain('Guess:');
+    expect(card.textContent).toContain('Your call:');
     expect(within(card).getByTestId('train-verdict-guess-points').textContent).toBe('+1');
     await waitFor(() => expect(getGame).toHaveBeenCalled());
     expect(within(card).queryByTestId('train-outcome-copy')).toBeNull();

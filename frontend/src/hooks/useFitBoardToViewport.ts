@@ -37,10 +37,17 @@ export interface FitBoardToViewportOptions {
    * than shrink the board into unusability. */
   minPx: number;
   /** Space kept free between the column's bottom edge and the viewport bottom.
-   * Covers the page container's own bottom padding plus visual breathing room.
-   * Does NOT account for the mobile fixed bottom bar: below `sm` the board is
-   * width-bound by the screen anyway, and a scrolling page is the norm there. */
+   * Covers the page container's own bottom padding plus visual breathing room. */
   gutterPx: number;
+  /**
+   * `false` switches the height fit off and returns `maxPx` — the board is
+   * then width-bound by its container alone. Phase 222 UAT: on phones the
+   * Train column under the board (bot bubble, action row) is tall enough that
+   * a height fit shrank the board to its floor and left wide empty margins
+   * beside it; the page is expected to scroll there instead. Defaults to
+   * `true`.
+   */
+  enabled?: boolean;
 }
 
 export function useFitBoardToViewport({
@@ -49,10 +56,12 @@ export function useFitBoardToViewport({
   maxPx,
   minPx,
   gutterPx,
+  enabled = true,
 }: FitBoardToViewportOptions): number {
   const [fitPx, setFitPx] = useState(maxPx);
 
   const measure = useCallback(() => {
+    if (!enabled) return;
     const column = columnRef.current;
     const board = boardRef.current;
     if (column === null || board === null) return;
@@ -72,7 +81,7 @@ export function useFitBoardToViewport({
     const available =
       document.documentElement.clientHeight - columnTop - nonBoardHeight - gutterPx;
     setFitPx(Math.round(Math.min(maxPx, Math.max(minPx, available))));
-  }, [columnRef, boardRef, maxPx, minPx, gutterPx]);
+  }, [columnRef, boardRef, maxPx, minPx, gutterPx, enabled]);
 
   useLayoutEffect(() => {
     measure();
@@ -89,5 +98,5 @@ export function useFitBoardToViewport({
     };
   }, [measure, columnRef]);
 
-  return fitPx;
+  return enabled ? fitPx : maxPx;
 }
