@@ -50,6 +50,18 @@ _TEST_USER_ID_117: int = 99201  # separate range for Phase 117 tests to avoid FK
 _CHECKMATE_PGN: str = "1. e4 e5 2. Qh5 Nc6 3. Bc4 Nf6?? 4. Qxf7# 1-0"
 # A simple non-terminal PGN used for general tests.
 _SIMPLE_PGN: str = "1. e4 e5 2. Nf3 Nc6 3. Bc4 *"
+# Quick 260914-w1m / FLAWCHESS-BE: chess.com custom-position roots. The first is one
+# prod's Stockfish died on (16 white pawns); the second is a legal "from position" root.
+_SIXTEEN_PAWNS_PGN: str = (
+    '[SetUp "1"]\n'
+    '[FEN "rnbqkbnr/pppppppp/8/8/8/PPPPPPPP/PPPPPPPP/RNBQKBNR w KQkq - 0 1"]\n'
+    "\n1. a4 e5 2. b4 *"
+)
+_LEGAL_CUSTOM_ROOT_PGN: str = (
+    '[SetUp "1"]\n'
+    '[FEN "rnbqkbnr/p1pppppp/8/1p6/2B5/8/PPPP1PPP/RNBQK1NR w KQkq - 0 1"]\n'
+    "\n1. Bxb5 a6 *"
+)
 # A minimal PGN with only 2 moves (4 half-moves).
 _TWO_MOVE_PGN: str = "1. e4 e5 *"
 # A 6-half-move PGN (3 moves each, 6 non-terminal positions).
@@ -318,6 +330,33 @@ class TestCollectAllPliesExcludesTerminal:
         gp_rows = [(0, 12345, None, None)]
         targets = _collect_full_ply_targets(game_id=1, pgn_text="", game_positions_rows=gp_rows)
         assert targets == [], "Empty PGN (None game) must return []"
+
+    def test_collect_invalid_root_returns_no_targets(self) -> None:
+        """Quick 260914-w1m / FLAWCHESS-BE: a chess.com custom-position game whose
+        root no legal game reaches (16 white pawns) yields NO targets, so nothing
+        is ever handed to Stockfish (which dies on such boards) and the drain
+        stamps the game complete through the no-holes path."""
+        from app.services.eval_drain import _collect_full_ply_targets
+
+        gp_rows = [(0, 111, None, None), (1, 222, None, None)]
+        targets = _collect_full_ply_targets(
+            game_id=1,
+            pgn_text=_SIXTEEN_PAWNS_PGN,
+            game_positions_rows=gp_rows,
+            include_terminal=True,
+        )
+        assert targets == [], "an invalid root must produce no engine targets"
+
+    def test_collect_valid_custom_root_still_yields_targets(self) -> None:
+        """Contrast: a legal non-standard root ("from position") is analyzable and
+        keeps its per-ply targets — the guard is about validity, not custom roots."""
+        from app.services.eval_drain import _collect_full_ply_targets
+
+        gp_rows = [(0, 111, None, None), (1, 222, None, None)]
+        targets = _collect_full_ply_targets(
+            game_id=1, pgn_text=_LEGAL_CUSTOM_ROOT_PGN, game_positions_rows=gp_rows
+        )
+        assert [t.ply for t in targets] == [0, 1]
 
     def test_collect_missing_gp_rows_skipped(self) -> None:
         """Plies not in game_positions_rows are silently skipped."""

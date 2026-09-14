@@ -8,6 +8,10 @@ in `YYYY-MM-DD` (Europe/Zurich).
 
 ## [Unreleased]
 
+### Fixed
+
+- Chess.com custom-position games that start from an impossible setup (for example two full ranks of pawns) no longer crash the analysis engine or receive nonsense evaluations. They are imported and viewable as before, but skipped by the engine analysis.
+
 ## [v2.19] Train Bot-Narrated Onboarding & Verdicts — 2026-09-14
 
 ### Added

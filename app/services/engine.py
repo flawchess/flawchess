@@ -533,6 +533,17 @@ class EnginePool:
         """
         if not self._started:
             return None
+        # Bug fix (quick 260914-w1m / FLAWCHESS-BE): Stockfish dies (SIGABRT in prod,
+        # SIGSEGV locally) on positions that cannot arise in a legal game. chess.com
+        # custom-position games ship roots such as two full ranks of white pawns, and
+        # every ply of such a game used to be fed here by the eval drain — each crash
+        # killed a pool worker (respawned, but with a cold NNUE net) and the evals
+        # that did come back were meaningless. Refuse the search before taking a
+        # worker slot; `Board.is_valid()` is a cheap piece-count / king-count check.
+        # The drain-side exclusion lives in eval_apply._collect_full_ply_targets; this
+        # guard is defence in depth for every other caller (PV walks, scripts, bots).
+        if not board.is_valid():
+            return None
         idx = await self._available.get()
         try:
             protocol = self._protocols[idx]

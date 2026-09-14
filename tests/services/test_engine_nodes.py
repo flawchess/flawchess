@@ -34,6 +34,8 @@ KQ_VS_K_WHITE_WINS = "8/8/8/8/8/8/4Q3/4K2k w - - 0 1"
 DENSE_MIDDLEGAME_FEN = "r1bqkb1r/pppp1ppp/2n2n2/4p3/2B1P3/5N2/PPPP1PPP/RNBQK2R w KQkq - 0 1"
 
 # ─── Constants (CLAUDE.md: no magic numbers) ──────────────────────────────────
+# Quick 260914-w1m / FLAWCHESS-BE: a chess.com custom-position root Stockfish dies on.
+SIXTEEN_WHITE_PAWNS_FEN = "rnbqkbnr/pppppppp/8/8/8/PPPPPPPP/PPPPPPPP/RNBQKBNR w KQkq - 0 1"
 EXPECTED_NONE_RESULT: tuple[None, None] = (None, None)
 MOCK_EVAL_CP: int = 150
 MOCK_EVAL_MATE: int = 3
@@ -222,6 +224,45 @@ class TestEvaluateNodesWithMock:
         assert restart_called
         assert capture.call_count == 1
         assert isinstance(capture.call_args.args[0], chess.engine.EngineError)
+
+    async def test_invalid_board_never_reaches_the_engine(self) -> None:
+        """An impossible position (16 white pawns) returns (None, None) without
+        calling protocol.analyse and without consuming the worker slot.
+
+        Quick task 260914-w1m / FLAWCHESS-BE: Stockfish dies on such boards
+        (chess.com custom-position games), taking a pool worker with it.
+        """
+        from app.services.engine import EnginePool
+
+        pool = EnginePool(size=1)
+        pool._started = True
+
+        analyse_calls: list[chess.Board] = []
+
+        async def mock_analyse(
+            board: chess.Board,
+            limit: chess.engine.Limit,
+            *args: object,
+            **kwargs: object,
+        ) -> chess.engine.InfoDict:
+            analyse_calls.append(board)
+            return chess.engine.InfoDict()
+
+        mock_protocol = MagicMock(spec=chess.engine.UciProtocol)
+        mock_protocol.analyse = mock_analyse
+
+        pool._transports = [None]
+        pool._protocols = [mock_protocol]
+        pool._available.put_nowait(0)
+
+        board = chess.Board(SIXTEEN_WHITE_PAWNS_FEN)
+        assert not board.is_valid()
+
+        result = await pool.evaluate_nodes(board)
+
+        assert result == EXPECTED_NONE_RESULT
+        assert analyse_calls == [], "invalid board must never reach protocol.analyse"
+        assert pool._available.qsize() == 1, "worker slot must not be consumed"
 
     async def test_restart_worker_spawn_failure_captures_and_marks_slot_dead(self) -> None:
         """A failed respawn returns False, nulls the slot, and reaches Sentry.
