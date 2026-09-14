@@ -11,6 +11,7 @@ in `YYYY-MM-DD` (Europe/Zurich).
 ### Changed
 
 - The Train landing page is now hosted by a different practice bot each day, each greeting you in its own voice. Tank the Ox keeps hosting until you have finished the first-puzzle walkthrough, so the page introduces the same bot who opens it.
+- Train first-puzzle walkthrough: the bot avatars are larger on phones, the opening tip now says "Every puzzle starts with one question", and the scroll to the feedback screen is slower so it is easier to follow.
 
 ### Fixed
 
