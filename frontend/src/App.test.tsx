@@ -783,7 +783,7 @@ describe('191-05: Train waiting badge (SCHD-02/D-06..D-08)', () => {
     expect(screen.getByTestId('train-notification-badge-mobile').textContent).toBe('99+');
   });
 
-  it('the old Train dot is gone regardless of visited flags, even with waiting_count: 12', () => {
+  it('the numeric badge wins over the reworked-Train dot when both apply (waiting_count: 12, flag unset)', () => {
     profileState = UNLOCKED_PROFILE;
     tier1State = true;
     trainProgressData = { waiting_count: 12, badge_visible: true };
@@ -791,11 +791,55 @@ describe('191-05: Train waiting badge (SCHD-02/D-06..D-08)', () => {
     localStorage.setItem(`user_flag:endgames_visited:${UNLOCKED_PROFILE.email}`, '1');
 
     const { unmount } = renderNavHeader();
+    expect(screen.getByTestId('train-notification-badge').textContent).toBe('12');
+    expect(screen.queryByTestId('train-notification-dot')).toBeNull();
+    unmount();
+
+    renderMobileBottomBar();
+    expect(screen.getByTestId('train-notification-badge-mobile').textContent).toBe('12');
+    expect(screen.queryByTestId('train-notification-dot-mobile')).toBeNull();
+  });
+
+  // Phase 222 ship: the reworked-Train dot uses a NEW localStorage key so
+  // accounts that already cleared the old Openings/Endgames dots (and used
+  // Train before) still see it once.
+  it('reworked-Train dot shows for an unlocked account with no badge, even with the older visited flags set', () => {
+    profileState = UNLOCKED_PROFILE;
+    tier1State = true;
+    trainProgressData = { waiting_count: 0, badge_visible: false };
+    localStorage.setItem(`user_flag:openings_visited:${UNLOCKED_PROFILE.email}`, '1');
+    localStorage.setItem(`user_flag:endgames_visited:${UNLOCKED_PROFILE.email}`, '1');
+
+    const { unmount } = renderNavHeader();
+    expect(screen.queryByTestId('train-notification-dot')).not.toBeNull();
+    expect(screen.queryByTestId('train-notification-badge')).toBeNull();
+    unmount();
+
+    renderMobileBottomBar();
+    expect(screen.queryByTestId('train-notification-dot-mobile')).not.toBeNull();
+  });
+
+  it('reworked-Train dot is gone once train_bots_visited is set for that account', () => {
+    profileState = UNLOCKED_PROFILE;
+    tier1State = true;
+    trainProgressData = { waiting_count: 0, badge_visible: false };
+    localStorage.setItem(`user_flag:train_bots_visited:${UNLOCKED_PROFILE.email}`, '1');
+
+    const { unmount } = renderNavHeader();
     expect(screen.queryByTestId('train-notification-dot')).toBeNull();
     unmount();
 
     renderMobileBottomBar();
     expect(screen.queryByTestId('train-notification-dot-mobile')).toBeNull();
+  });
+
+  it('reworked-Train dot never shows on a locked (zero-game) account', () => {
+    profileState = ZERO_GAME_PROFILE;
+    tier1State = false;
+    trainProgressData = undefined;
+
+    renderNavHeader();
+    expect(screen.queryByTestId('train-notification-dot')).toBeNull();
   });
 
   it('zero-game locked profile: useTrainProgress called with enabled: false, no badge renders', () => {

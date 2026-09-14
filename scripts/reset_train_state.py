@@ -24,6 +24,11 @@ WHAT IT DELETES / RESETS (for ONE user)
       — leaving a stale ``pool_eligible_since`` behind would let a
       time-travelled run silently treat "the OLD material-discovery date" as
       still valid after the drill_items that earned it were just deleted.
+      Phase 222 (TRAINBOT-05, D-13): the three bot-onboarding "seen"
+      watermarks (``intro_seen_at``, ``reveal_walkthrough_seen_at``,
+      ``sr_explained_at``) are ALSO reset to NULL here, so every stepper
+      replays on the next session — without this, each one shows exactly
+      once per account, ever.
       ``timezone``/``weekday_mask``/``puzzles_per_session`` are DELIBERATELY
       kept: they are the schedule under test, and re-picking them in the UI
       after every reset would be pure friction. Pass ``--reset-settings`` to
@@ -196,6 +201,14 @@ async def _reset(session: AsyncSession, user_id: int, *, reset_settings: bool) -
                 shield_level=0,
                 streak_settled_through=None,
                 pool_eligible_since=None,
+                # Phase 222 (TRAINBOT-05, D-13/RESEARCH Finding I): without
+                # clearing these, a dev account can see each onboarding
+                # stepper exactly once, ever, making iterative UAT of the
+                # intro/walkthrough/SR-explanation flows impossible without
+                # bin/reset_db.sh (forbidden without explicit permission).
+                intro_seen_at=None,
+                reveal_walkthrough_seen_at=None,
+                sr_explained_at=None,
             )
         )
 

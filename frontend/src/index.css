@@ -362,8 +362,9 @@
   100% { opacity: 0; transform: translate(-50%, -50%) scale(1); }
 }
 
+/* Phase 222 UAT round 4: 2.4s, 50% slower than the original 1.6s. */
 .animate-train-points-pop {
-  animation: train-points-pop 1.6s ease-in-out forwards;
+  animation: train-points-pop 2.4s ease-in-out forwards;
 }
 
 /* Train score-screen result badge entrance. Unlike train-points-pop above,
@@ -380,6 +381,26 @@
 
 .animate-train-score-badge-pop {
   animation: train-score-badge-pop 0.55s cubic-bezier(0.34, 1.4, 0.64, 1) forwards;
+}
+
+/* Train bot bubble drop-nudge (Phase 222, D-08): a piece dropped before the
+   guess keeps the board locked and pulses the bubble into view rather than
+   silently snapping back. `TrainBotBubble` gates this class on
+   `!prefersReducedMotion()` (TrainScoreScreen.tsx:116,126 precedent) AND
+   re-keys the element on every nudge (RESEARCH Pitfall 3) so a REPEATED
+   nudge remounts and replays it — a class toggle alone would not restart an
+   already-running CSS animation on the same node. */
+@keyframes train-bubble-nudge {
+  0%   { transform: translateX(0); }
+  20%  { transform: translateX(-4px); }
+  40%  { transform: translateX(4px); }
+  60%  { transform: translateX(-3px); }
+  80%  { transform: translateX(3px); }
+  100% { transform: translateX(0); }
+}
+
+.animate-train-bubble-nudge {
+  animation: train-bubble-nudge 0.4s ease-in-out;
 }
 
 /* Mobile typography bump.

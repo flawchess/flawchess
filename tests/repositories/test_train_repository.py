@@ -1723,6 +1723,142 @@ async def test_resume_solved_results_degrades_legacy_null_move_quality(
 
 
 @pytest.mark.asyncio
+async def test_resume_solved_results_include_source_item_status_due_date(
+    db_session: AsyncSession,
+) -> None:
+    """Phase 222 (TRAINBOT-04, D-17): a resumed session's solved_results
+    carries the joined source/item_status/due_date for an sr_item solve
+    (matched against its own drill_items row), and NULL/NULL for a
+    red_herring and a sharp_filler solve — neither ever has a matching
+    drill_items row (that table holds only the user's own qualifying
+    blunders), so the LEFT JOIN naturally yields NULL for both, exactly
+    `SolveResponse`'s own nullability rule for those sources."""
+    await ensure_test_user(db_session, _USER_ID)
+    sr_game_id = await _seed_bare_game(db_session, _USER_ID, "solved-source-sr")
+    herring_game_id = await _seed_bare_game(db_session, _USER_ID, "solved-source-herring")
+    due = _TODAY + datetime.timedelta(days=3)
+    db_session.add(
+        DrillItem(
+            user_id=_USER_ID,
+            game_id=sr_game_id,
+            ply=2,
+            status=DrillStatus.ACTIVE,
+            streak=1,
+            due_date=due,
+            fail_count=0,
+            ever_correct=True,
+        )
+    )
+    drill_session = DrillSession(
+        user_id=_USER_ID,
+        session_date=_TODAY,
+        status="open",
+        puzzle_count=3,
+        expires_on=_TODAY + datetime.timedelta(days=1),
+    )
+    db_session.add(drill_session)
+    await db_session.flush()
+    db_session.add_all(
+        [
+            DrillSolve(
+                session_id=drill_session.id,
+                position=0,
+                user_id=_USER_ID,
+                game_id=sr_game_id,
+                ply=2,
+                source=DrillSource.SR_ITEM,
+                solved_at=_NOW,
+                correct_guess=True,
+                correct_move=True,
+                move_quality=int(DrillMoveQuality.GOOD),
+            ),
+            DrillSolve(
+                session_id=drill_session.id,
+                position=1,
+                user_id=_USER_ID,
+                game_id=herring_game_id,
+                ply=4,
+                source=DrillSource.RED_HERRING,
+                solved_at=_NOW,
+                correct_guess=True,
+                correct_move=True,
+                move_quality=int(DrillMoveQuality.GOOD),
+            ),
+            DrillSolve(
+                session_id=drill_session.id,
+                position=2,
+                user_id=_USER_ID,
+                game_id=None,
+                ply=0,
+                source=DrillSource.SHARP_FILLER,
+                sharp_puzzle_id="sharp-source-test-01",
+                solved_at=_NOW,
+                correct_guess=True,
+                correct_move=True,
+                move_quality=int(DrillMoveQuality.GOOD),
+            ),
+        ]
+    )
+    await db_session.flush()
+
+    resumed = await train_repository.compose_and_materialize_session(
+        db_session, user_id=_USER_ID, now_utc=_NOW
+    )
+
+    assert [(r.source, r.item_status, r.due_date) for r in resumed.solved_results] == [
+        ("sr_item", "active", due),
+        ("red_herring", None, None),
+        ("sharp_filler", None, None),
+    ]
+
+
+@pytest.mark.asyncio
+async def test_resume_solved_results_degrades_null_for_orphaned_drill_item(
+    db_session: AsyncSession,
+) -> None:
+    """RESEARCH Assumptions Log A6: an sr_item solve whose backing
+    drill_items row no longer exists (the game-deletion path, which
+    orphans drill_solves.game_id to NULL via ON DELETE SET NULL) degrades
+    to NULL item_status/due_date rather than an error — the LEFT JOIN
+    simply finds no match when game_id is NULL."""
+    await ensure_test_user(db_session, _USER_ID)
+    drill_session = DrillSession(
+        user_id=_USER_ID,
+        session_date=_TODAY,
+        status="open",
+        puzzle_count=1,
+        expires_on=_TODAY + datetime.timedelta(days=1),
+    )
+    db_session.add(drill_session)
+    await db_session.flush()
+    db_session.add(
+        DrillSolve(
+            session_id=drill_session.id,
+            position=0,
+            user_id=_USER_ID,
+            game_id=None,  # Orphaned: the source game was deleted (D-05).
+            ply=2,
+            source=DrillSource.SR_ITEM,
+            solved_at=_NOW,
+            correct_guess=True,
+            correct_move=True,
+            move_quality=int(DrillMoveQuality.GOOD),
+        )
+    )
+    await db_session.flush()
+
+    resumed = await train_repository.compose_and_materialize_session(
+        db_session, user_id=_USER_ID, now_utc=_NOW
+    )
+
+    assert len(resumed.solved_results) == 1
+    result = resumed.solved_results[0]
+    assert result.source == "sr_item"
+    assert result.item_status is None
+    assert result.due_date is None
+
+
+@pytest.mark.asyncio
 async def test_completed_session_in_window_blocks_recompose(db_session: AsyncSession) -> None:
     """190.1 bug fix: finishing a session must not unlock a fresh one within
     the same D-10 window. A `status='completed'` row is invisible to the
@@ -3778,6 +3914,100 @@ async def test_upsert_settings_leaves_reminder_last_sent_on_unchanged(
         await db_session.execute(select(TrainSettings).where(TrainSettings.user_id == _USER_ID))
     ).scalar_one()
     assert row.reminder_last_sent_on == claimed_date
+
+
+@pytest.mark.asyncio
+async def test_get_or_create_settings_onboarding_seen_defaults_null(
+    db_session: AsyncSession,
+) -> None:
+    """Phase 222 (TRAINBOT-05, D-13): a freshly created settings row reads
+    back NULL on all three onboarding-seen columns via get_or_create_settings
+    — no backfill, every brand-new user starts unseen on all three."""
+    await ensure_test_user(db_session, _USER_ID)
+
+    settings_row = await train_repository.get_or_create_settings(db_session, user_id=_USER_ID)
+
+    assert settings_row.intro_seen_at is None
+    assert settings_row.reveal_walkthrough_seen_at is None
+    assert settings_row.sr_explained_at is None
+
+    row = (
+        await db_session.execute(select(TrainSettings).where(TrainSettings.user_id == _USER_ID))
+    ).scalar_one()
+    assert row.intro_seen_at is None
+    assert row.reveal_walkthrough_seen_at is None
+    assert row.sr_explained_at is None
+
+
+@pytest.mark.asyncio
+async def test_get_settings_round_trips_onboarding_seen_timestamps(
+    db_session: AsyncSession,
+) -> None:
+    """get_settings round-trips a manually stamped onboarding-seen value
+    exactly, for each of the three columns independently."""
+    await ensure_test_user(db_session, _USER_ID)
+    await train_repository.get_or_create_settings(db_session, user_id=_USER_ID)
+    stamped_at = datetime.datetime(2026, 9, 13, 10, 0, tzinfo=datetime.timezone.utc)
+    await db_session.execute(
+        update(TrainSettings)
+        .where(TrainSettings.user_id == _USER_ID)
+        .values(
+            intro_seen_at=stamped_at,
+            reveal_walkthrough_seen_at=stamped_at,
+            sr_explained_at=stamped_at,
+        )
+    )
+
+    settings_row = await train_repository.get_settings(db_session, user_id=_USER_ID)
+
+    assert settings_row is not None
+    assert settings_row.intro_seen_at == stamped_at
+    assert settings_row.reveal_walkthrough_seen_at == stamped_at
+    assert settings_row.sr_explained_at == stamped_at
+
+
+@pytest.mark.asyncio
+async def test_upsert_settings_leaves_onboarding_seen_unchanged(db_session: AsyncSession) -> None:
+    """Phase 222 (TRAINBOT-05, D-12): upsert_settings (PUT /train/settings)
+    must never move any of the three onboarding-seen watermarks — the same
+    "leaves it unchanged" contract as reminder_last_sent_on above. This is
+    the assertion that would fail if the PUT handler's settings save ever
+    caused a completed stepper to silently replay."""
+    await ensure_test_user(db_session, _USER_ID)
+    await train_repository.get_or_create_settings(db_session, user_id=_USER_ID)
+    stamped_at = datetime.datetime(2026, 9, 13, 10, 0, tzinfo=datetime.timezone.utc)
+    await db_session.execute(
+        update(TrainSettings)
+        .where(TrainSettings.user_id == _USER_ID)
+        .values(
+            intro_seen_at=stamped_at,
+            reveal_walkthrough_seen_at=stamped_at,
+            sr_explained_at=stamped_at,
+        )
+    )
+
+    updated = await train_repository.upsert_settings(
+        db_session,
+        user_id=_USER_ID,
+        timezone="UTC",
+        weekday_mask=0,
+        puzzles_per_session=12,
+        reminder_enabled=True,
+        reminder_hour=9,
+        reminder_intent_at=None,
+        now_utc=_PROGRESS_NOW,
+    )
+
+    assert updated.intro_seen_at == stamped_at
+    assert updated.reveal_walkthrough_seen_at == stamped_at
+    assert updated.sr_explained_at == stamped_at
+
+    row = (
+        await db_session.execute(select(TrainSettings).where(TrainSettings.user_id == _USER_ID))
+    ).scalar_one()
+    assert row.intro_seen_at == stamped_at
+    assert row.reveal_walkthrough_seen_at == stamped_at
+    assert row.sr_explained_at == stamped_at
 
 
 @pytest.mark.asyncio

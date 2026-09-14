@@ -16,7 +16,7 @@ vi.mock('qrcode.react', () => ({
   ),
 }));
 
-import { TrainInstallQr, HANDOFF_QR_PATH } from '@/components/train/TrainInstallQr';
+import { TrainInstallQr, HANDOFF_QR_PATH, QR_CAPTION } from '@/components/train/TrainInstallQr';
 
 afterEach(() => {
   cleanup();
@@ -38,7 +38,7 @@ describe('TrainInstallQr', () => {
     render(<TrainInstallQr testId="qr-handoff-test" />);
 
     await waitFor(() => {
-      expect(screen.getByText('Scan with your phone to open FlawChess there')).not.toBeNull();
+      expect(screen.getByText(QR_CAPTION)).not.toBeNull();
     });
   });
 

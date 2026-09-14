@@ -26,7 +26,7 @@ const pctText=(n,d)=>d?Math.round(100*n/d)+"%":DASH;
 /* Everything below is filled by update(payload) on every refresh — the page
    holds no baked-in numbers, so a reload always reflects the live database.
    ActivityPage.tsx owns the fetching and calls update(). */
-let D=null, DAYS=[], NDAYS=0, ACT=[], SIGNUPS=[], BOT=[], TRAIN=[], SOLVES=[],
+let D=null, DAYS=[], NDAYS=0, ACT=[], SIGNUPS=[], BOT=[], TRAIN=[], TRAINFUN={}, SOLVES=[],
     IMPORTS=[], PERSONA=[], ELO=[], FUNNEL=[], TTI=[], STICK=[], CONV=null, CONVCMP=[];
 
 function apply(payload){
@@ -37,6 +37,7 @@ function apply(payload){
   ACT=payload.activity.map(([u,d,g,h,e])=>({u,d,g,h,e}));
   SIGNUPS=payload.signups; BOT=payload.bot; TRAIN=payload.train; SOLVES=payload.solves;
   IMPORTS=payload.imports; PERSONA=payload.persona; ELO=payload.elo;
+  TRAINFUN=payload.train_funnel;
   FUNNEL=payload.funnel; TTI=payload.tti; STICK=payload.stick;
   CONV=payload.conversion; CONVCMP=payload.conversion_compare;
 }
@@ -313,6 +314,34 @@ function renderTrainCard(){
     TRAIN.map(r=>[long(r[0]),r[1],r[2],r[3],r[4],r[5],r[6]]).reverse());
 }
 
+// SEED-166 (D-19): first-session 0-solve share and second-session return
+// share, cohorted by first-session date inside the selected window, plus a
+// live all-time control line. Point-in-time ratios, not a time series, so
+// this is text/big-number only -- no chart primitive, no new layout-harness
+// fixture (RESEARCH Assumptions Log A3).
+function renderTrainFunnelCard(){
+  const f=TRAINFUN||{};
+  const openers=f.openers||0, zero=f.zero_solve_users||0;
+  const finishers=f.finishers||0, returners=f.returners||0;
+  const atOpeners=f.all_time_openers||0, atZero=f.all_time_zero_solve_users||0;
+  const atFinishers=f.all_time_finishers||0, atReturners=f.all_time_returners||0;
+
+  $("#trf-zero-big").textContent=pctText(zero,openers);
+  $("#trf-zero-exp").innerHTML=openers
+    ? `<b>${zero}</b> of <b>${openers}</b> users solved zero puzzles in their first Train session.`
+    : "No first Train sessions started in the selected range.";
+
+  $("#trf-return-big").textContent=pctText(returners,finishers);
+  $("#trf-return-exp").innerHTML=finishers
+    ? `<b>${returners}</b> of <b>${finishers}</b> users who completed a first session came back and
+      completed a second.`
+    : "No completed first sessions in the selected range.";
+
+  $("#trf-alltime").textContent=`All-time control: ${pctText(atZero,atOpeners)} zero-solve `+
+    `(${atZero} of ${atOpeners}), ${pctText(atReturners,atFinishers)} return rate `+
+    `(${atReturners} of ${atFinishers}).`;
+}
+
 function renderSolvesCard(){
   const c=C();
   if(!SOLVES.length){
@@ -366,6 +395,7 @@ function render(){
   renderConversionCard();
   renderBotCard();
   renderTrainCard();
+  renderTrainFunnelCard();
   renderSolvesCard();
   renderImportsCard();
 }

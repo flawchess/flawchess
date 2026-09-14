@@ -79,9 +79,11 @@ function ReminderSlotHarness(): ReactElement | null {
   );
 }
 
-/** A desktop-shaped default: not iOS, not standalone, not mobile at all —
- * matches jsdom's own UA in this test environment, so pre-existing tests
- * that never touch platform behavior need no override. */
+/** An Android-tabbed default (mobile, not iOS, not standalone, no live
+ * install event). Phase 222 UAT round 5 moved it off the old desktop shape:
+ * desktop no longer renders "Remind me" at all, and the pre-existing button
+ * tests below exercise the mobile path. Desktop cases mock `desktopPrompt()`
+ * explicitly. */
 function defaultInstallPrompt(): ReturnType<typeof useInstallPrompt> {
   return {
     showAndroidPrompt: false,
@@ -89,11 +91,16 @@ function defaultInstallPrompt(): ReturnType<typeof useInstallPrompt> {
     canInstall: false,
     isIOS: false,
     isStandalone: false,
-    isMobile: false,
+    isMobile: true,
     triggerInstall: vi.fn(),
     dismissAndroid: vi.fn(),
     dismissIOS: vi.fn(),
   };
+}
+
+/** Desktop: not mobile at all, not standalone. */
+function desktopPrompt(): ReturnType<typeof useInstallPrompt> {
+  return { ...defaultInstallPrompt(), isMobile: false };
 }
 
 const BASE_SETTINGS: TrainSettingsResponse = {
@@ -106,6 +113,10 @@ const BASE_SETTINGS: TrainSettingsResponse = {
   // echo-through assertion below can distinguish "sent the real value" from
   // "sent undefined/null by accident".
   reminder_intent_at: '2026-08-02T12:00:00Z',
+  intro_seen_at: null,
+  reveal_walkthrough_seen_at: null,
+  sr_explained_at: null,
+  has_mobile_subscription: false,
 };
 
 const VAPID_KEY = 'test-vapid-key';
@@ -498,7 +509,7 @@ describe('TrainReminderButton', () => {
       vi.mocked(trainApi.getSettings).mockResolvedValue(BASE_SETTINGS);
       vi.mocked(pushApi.getVapidPublicKey).mockResolvedValue({ application_server_key: VAPID_KEY });
       stubBrowserGlobals({ getSubscription: vi.fn().mockResolvedValue(fakeSubscription) });
-      // Default install-prompt mock is desktop-shaped (isIOS/isStandalone/isMobile all false).
+      vi.mocked(useInstallPrompt).mockReturnValue(desktopPrompt());
 
       renderWithClient();
 
@@ -581,6 +592,113 @@ describe('TrainReminderButton', () => {
 
   // ── Phase 203 Plan 04: the ios-tabbed branch — install affordance,
   // synchronous intent write, honest two-step instructions (OFFER-03) ──
+
+  // Phase 222 UAT round 5: desktop never renders "Remind me" on the score
+  // screen. The phone block below the row is decided by the account-level
+  // has_mobile_subscription fact, in every desktop slot state.
+  describe('desktop phone block (Phase 222 UAT round 5)', () => {
+    it('desktop, push usable, no phone reminders: no button, the QR block renders', async () => {
+      vi.mocked(trainApi.getSettings).mockResolvedValue(BASE_SETTINGS);
+      vi.mocked(pushApi.getVapidPublicKey).mockResolvedValue({ application_server_key: VAPID_KEY });
+      stubBrowserGlobals();
+
+      vi.mocked(useInstallPrompt).mockReturnValue(desktopPrompt());
+
+      renderWithClient();
+
+      await waitFor(() => {
+        expect(screen.getByTestId('qr-handoff-score')).not.toBeNull();
+      });
+      expect(screen.queryByTestId('btn-train-remind-me')).toBeNull();
+      expect(screen.queryByTestId('train-reminder-phone-confirmed')).toBeNull();
+    });
+
+    it('desktop, reminders already on a phone: the phone-confirmed line names the hour, no QR, no button', async () => {
+      vi.mocked(trainApi.getSettings).mockResolvedValue({
+        ...BASE_SETTINGS,
+        reminder_enabled: true,
+        has_mobile_subscription: true,
+      });
+      vi.mocked(pushApi.getVapidPublicKey).mockResolvedValue({ application_server_key: VAPID_KEY });
+      stubBrowserGlobals();
+
+      vi.mocked(useInstallPrompt).mockReturnValue(desktopPrompt());
+
+      renderWithClient();
+
+      await waitFor(() => {
+        expect(screen.getByTestId('train-reminder-phone-confirmed')).not.toBeNull();
+      });
+      expect(screen.getByText('Reminders on — 18:00 on your phone')).not.toBeNull();
+      expect(screen.queryByTestId('qr-handoff-score')).toBeNull();
+      expect(screen.queryByTestId('btn-train-remind-me')).toBeNull();
+    });
+
+    it('desktop, permission already denied: the QR still renders (the block does not depend on push)', async () => {
+      vi.mocked(trainApi.getSettings).mockResolvedValue(BASE_SETTINGS);
+      vi.mocked(pushApi.getVapidPublicKey).mockResolvedValue({ application_server_key: VAPID_KEY });
+      stubBrowserGlobals({ permission: 'denied' });
+
+      vi.mocked(useInstallPrompt).mockReturnValue(desktopPrompt());
+
+      renderWithClient();
+
+      await waitFor(() => {
+        expect(screen.getByTestId('qr-handoff-score')).not.toBeNull();
+      });
+      expect(screen.queryByTestId('btn-train-remind-me')).toBeNull();
+    });
+
+    it('desktop, push unsupported: the QR still renders', async () => {
+      vi.mocked(trainApi.getSettings).mockResolvedValue(BASE_SETTINGS);
+      stubBrowserGlobals({ omitPushManager: true });
+
+      vi.mocked(useInstallPrompt).mockReturnValue(desktopPrompt());
+
+      renderWithClient();
+
+      await waitFor(() => {
+        expect(screen.getByTestId('qr-handoff-score')).not.toBeNull();
+      });
+      expect(screen.queryByTestId('btn-train-remind-me')).toBeNull();
+    });
+
+    it('desktop device already subscribed before this round: confirmed line, QR upsell only while the phone has no reminders', async () => {
+      vi.mocked(trainApi.getSettings).mockResolvedValue({
+        ...BASE_SETTINGS,
+        has_mobile_subscription: true,
+      });
+      vi.mocked(pushApi.getVapidPublicKey).mockResolvedValue({ application_server_key: VAPID_KEY });
+      stubBrowserGlobals({ getSubscription: vi.fn().mockResolvedValue(fakeSubscription) });
+
+      vi.mocked(useInstallPrompt).mockReturnValue(desktopPrompt());
+
+      renderWithClient();
+
+      await waitFor(() => {
+        expect(screen.getByTestId('train-reminder-confirmed')).not.toBeNull();
+      });
+      expect(screen.queryByTestId('qr-handoff-score')).toBeNull();
+    });
+
+    it('Android tabbed, unsubscribed: "Remind me" as before, no QR (mobile unchanged)', async () => {
+      vi.mocked(trainApi.getSettings).mockResolvedValue(BASE_SETTINGS);
+      vi.mocked(pushApi.getVapidPublicKey).mockResolvedValue({ application_server_key: VAPID_KEY });
+      stubBrowserGlobals();
+      vi.mocked(useInstallPrompt).mockReturnValue({
+        ...defaultInstallPrompt(),
+        isMobile: true,
+        canInstall: true,
+      });
+
+      renderWithClient();
+
+      await waitFor(() => {
+        expect(screen.getByTestId('btn-train-remind-me')).not.toBeNull();
+      });
+      expect(screen.queryByTestId('qr-handoff-score')).toBeNull();
+    });
+  });
 
   describe('iOS-tabbed slot (OFFER-03, D-14/D-15)', () => {
     function mockIosTabbed(): void {

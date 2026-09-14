@@ -1,0 +1,7 @@
+---
+date: "2026-09-13 05:05"
+promoted: false
+---
+Phase 221 post-retag operator spot-check — a forced only-move that sheds material is tagged as an allowed "sacrifice". flawchess.com/analysis?game_id=1459049&ply=21 (user 28, severity 2, allowed motif 17 sacrifice depth 2 conf 100, missed null). Black's blunder Bxh2+ forces Kh1 (White's only legal move), then exf5 wins the knight. Allowed PV: Kh1 exf5 g3 Bxg3 fxg3 Qxg3 Nf4 Qh3 Nh2 g6 Rf3 Qh6. Detector reads White's forced material loss at k=2 as a sacrifice by White; a sacrifice requires a choice, and here Kh1 was the only legal move. Bxh2+ reads more like an intermezzo (check before taking on f5) that happens to be worse than the direct exf5. Firing-node eval +199 to +224 for White, so the D-01 winning floor passes. Operator reviewed ~20 post-retag allowed/missed sacrifice tags and this was the only questionable one — edge case, recorded for the record, no action requested. Possible future discriminator if it recurs: skip the sacrifice predicate when the pov move at the deficit node was the only legal move (or the material loss was already forced).
+
+Operator's words (2026-09-13): "Here, the blunder Bxh2+ forces the opponent to play Kh1 (only legal move), thereby giving up a knight which is then taken with exf5. This can't really be called 'allowing a sacrifice'. Bxh2+ is more of an intermezzo move (instead of taking the knight directly with exf5). However, Bxh2+ is a blunder, compared to the direct capture exf5. But this is quite the edge-case."

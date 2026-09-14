@@ -36,6 +36,7 @@ import type {
   SolveResponse,
   SolvedResult,
   TrainProgressResponse,
+  TrainSettingsResponse,
 } from '@/types/train';
 import type { UserProfile } from '@/types/users';
 
@@ -126,8 +127,26 @@ const SOLVE_RESPONSE: SolveResponse = {
   session_complete: true,
 };
 
+// Phase 222 (D-12): this tracer doesn't exercise the intro stepper, so the
+// default fixture reports "already seen" (a past timestamp) — otherwise the
+// solve screen's first puzzle would render the intro instead of the regular
+// guess prompt this file's assertions expect.
+const SETTINGS_RESPONSE: TrainSettingsResponse = {
+  timezone: 'UTC',
+  weekday_mask: 127,
+  puzzles_per_session: 5,
+  reminder_enabled: false,
+  reminder_hour: 9,
+  reminder_intent_at: null,
+  intro_seen_at: '2026-01-01T00:00:00Z',
+  reveal_walkthrough_seen_at: '2026-01-01T00:00:00Z',
+  sr_explained_at: '2026-01-01T00:00:00Z',
+  has_mobile_subscription: false,
+};
+
 const composeOrResumeSession = vi.fn(async () => SESSION_RESPONSE);
 const solvePuzzle = vi.fn(async () => SOLVE_RESPONSE);
+const getSettings = vi.fn(async () => SETTINGS_RESPONSE);
 const revealPuzzle = vi.fn(async () => ({
   game_id: 100,
   ply: 20,
@@ -172,7 +191,7 @@ vi.mock('@/api/client', async () => {
       composeOrResumeSession: () => composeOrResumeSession(),
       solvePuzzle: (sessionId: number, body: unknown) => solvePuzzle(sessionId, body),
       revealPuzzle: (sessionId: number, position: number) => revealPuzzle(sessionId, position),
-      getSettings: vi.fn(),
+      getSettings: () => getSettings(),
       updateSettings: vi.fn(),
       getProgress: () => getProgress(),
     },
@@ -431,13 +450,13 @@ describe('Train solve loop (end-to-end tracer)', () => {
     // wrong move), matching the total this test used to seed via
     // localStorage before the fix.
     const RESUMED_SOLVED_RESULTS: SolvedResult[] = [
-      { correct_guess: true, move_quality: 'inaccuracy' },
-      { correct_guess: true, move_quality: 'inaccuracy' },
-      { correct_guess: true, move_quality: 'inaccuracy' },
-      { correct_guess: true, move_quality: 'wrong' },
-      { correct_guess: true, move_quality: 'wrong' },
-      { correct_guess: true, move_quality: 'wrong' },
-      { correct_guess: true, move_quality: 'wrong' },
+      { correct_guess: true, move_quality: 'inaccuracy', source: 'sr_item', item_status: 'active', due_date: '2026-07-28' },
+      { correct_guess: true, move_quality: 'inaccuracy', source: 'sr_item', item_status: 'active', due_date: '2026-07-28' },
+      { correct_guess: true, move_quality: 'inaccuracy', source: 'sr_item', item_status: 'active', due_date: '2026-07-28' },
+      { correct_guess: true, move_quality: 'wrong', source: 'sr_item', item_status: 'active', due_date: '2026-07-28' },
+      { correct_guess: true, move_quality: 'wrong', source: 'sr_item', item_status: 'active', due_date: '2026-07-28' },
+      { correct_guess: true, move_quality: 'wrong', source: 'sr_item', item_status: 'active', due_date: '2026-07-28' },
+      { correct_guess: true, move_quality: 'wrong', source: 'sr_item', item_status: 'active', due_date: '2026-07-28' },
     ];
     composeOrResumeSession.mockResolvedValueOnce({
       session_id: RESUMED_SESSION_ID,
@@ -479,12 +498,12 @@ describe('Train solve loop (end-to-end tracer)', () => {
     // constant 0 makes this assertion fail).
     expect(localStorage.length).toBe(0);
     const PROD_REPRO_SOLVED_RESULTS: SolvedResult[] = [
-      { correct_guess: true, move_quality: 'good' }, // 1 + 2 = 3
-      { correct_guess: true, move_quality: 'good' }, // 3
-      { correct_guess: true, move_quality: 'good' }, // 3
-      { correct_guess: true, move_quality: 'inaccuracy' }, // 1 + 1 = 2
-      { correct_guess: true, move_quality: 'inaccuracy' }, // 2
-      { correct_guess: false, move_quality: 'inaccuracy' }, // 0 + 1 = 1
+      { correct_guess: true, move_quality: 'good', source: 'sr_item', item_status: 'active', due_date: '2026-07-28' }, // 1 + 2 = 3
+      { correct_guess: true, move_quality: 'good', source: 'sr_item', item_status: 'active', due_date: '2026-07-28' }, // 3
+      { correct_guess: true, move_quality: 'good', source: 'sr_item', item_status: 'active', due_date: '2026-07-28' }, // 3
+      { correct_guess: true, move_quality: 'inaccuracy', source: 'sr_item', item_status: 'active', due_date: '2026-07-28' }, // 1 + 1 = 2
+      { correct_guess: true, move_quality: 'inaccuracy', source: 'sr_item', item_status: 'active', due_date: '2026-07-28' }, // 2
+      { correct_guess: false, move_quality: 'inaccuracy', source: 'sr_item', item_status: 'active', due_date: '2026-07-28' }, // 0 + 1 = 1
     ]; // total = 3+3+3+2+2+1 = 14, max = 6 * TRAIN_POINTS_PER_PUZZLE (3) = 18
     composeOrResumeSession.mockResolvedValueOnce({
       session_id: 27,
@@ -567,7 +586,7 @@ describe('Train solve loop (end-to-end tracer)', () => {
       puzzles: [
         { position: 2, game_id: 200, ply: 30, fen: RESTORE_REMAINING_FEN, side_to_move: 'white', last_move_uci: 'c8e6' },
       ],
-      solved_results: [{ correct_guess: true, move_quality: 'wrong' }],
+      solved_results: [{ correct_guess: true, move_quality: 'wrong', source: 'sr_item', item_status: 'active', due_date: '2026-07-28' }],
       is_warmup: false,
     });
 

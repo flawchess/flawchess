@@ -92,6 +92,38 @@ assertion group at a time; the default is `all`.
   rate, and any promotion-timing metric is only meaningful for rows promoted on
   or after that date.
 
+### Train first-session funnel (SEED-166, D-19)
+
+The "First-session drop-off and return rate" card in the Train sessions section
+(`fetch_train_funnel` in `app/services/activity_queries.py`, `train_funnel` on
+the payload) turns SEED-166's one-off production readings into a live,
+repeatable query: moving the global window filter before and after a release
+IS the before/after comparison, with no second tool and no manually re-run SQL.
+
+- **Cohort:** users whose FIRST-EVER `drill_sessions` row (by `session_date`,
+  ties broken by `id`) started on or after the selected window's start date. A
+  user whose first session predates the window is excluded entirely, even when
+  a later session of theirs falls inside the window.
+- **First-session 0-solve share:** of that cohort, the share whose first
+  session has no `drill_solves` row with `solved_at IS NOT NULL`.
+- **Second-session return share:** users with >= 2 `drill_sessions` rows at
+  `status = 'completed'`, over users with >= 1 — i.e. of everyone in the
+  cohort who *finished* a first session, how many came back and finished a
+  second.
+- **All-time control line:** the identical query run a second time with
+  `data_start` (the dataset's first tracked day) as the cutoff instead of the
+  window start, so it can never drift out of sync with the windowed numbers —
+  it is computed live from the same code path, never hardcoded.
+- **Right-censoring caveat:** a user whose first session lands near the end of
+  the selected window has had no opportunity to return yet, so the windowed
+  return share is a floor for recent windows, not a settled rate.
+
+The SEED-166 frozen production baselines (52/123 = 42% first-session 0-solve;
+26/53 = 49% second-session return; read 2026-09-12) remain in
+`.planning/seeds/SEED-166-train-first-session-retention.md` as the historical
+record of the one-off manual reading this card replaces — they are
+deliberately not hardcoded anywhere on the card itself.
+
 ## Query cost
 
 `build_payload()` runs ~16 sequential aggregate queries over the full tracked

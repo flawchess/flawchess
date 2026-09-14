@@ -32,6 +32,7 @@ import type {
   TrainSettingsUpdate,
   TrainProgressResponse,
 } from '@/types/train';
+import type { OnboardingStep } from '@/hooks/useTrainOnboarding';
 import type {
   DevTriggerReminderResponse,
   PushSubscribeRequest,
@@ -287,6 +288,13 @@ export const trainApi = {
     apiClient.put<TrainSettingsResponse>('/train/settings', data).then(r => r.data),
   getProgress: () =>
     apiClient.get<TrainProgressResponse>('/train/progress').then(r => r.data),
+  /** Phase 222 (D-11/D-12): stamps one of the three onboarding "seen"
+   * watermarks on stepper completion. Returns the full settings response so
+   * `useTrainOnboarding`'s `onSuccess` can refresh the shared cache with no
+   * extra fetch (RESEARCH Finding D). Plan 02 implements the matching
+   * server-side handler with the same three step names. */
+  stampOnboarding: (step: OnboardingStep) =>
+    apiClient.post<TrainSettingsResponse>(`/train/onboarding/${step}`).then(r => r.data),
 };
 
 // ─── Push API ─────────────────────────────────────────────────────────────────

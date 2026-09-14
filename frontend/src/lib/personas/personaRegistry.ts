@@ -70,6 +70,15 @@ export const RUNGS: readonly Rung[] = [800, 1000, 1200, 1400, 1600, 1800];
  * valid id is enumerable and a typo is a compile error. */
 export type PersonaId = `${Lowercase<Style>}-${Rung}`;
 
+/**
+ * Phase 222 (D-01): the Train bot-casting axis. Deliberately orthogonal to
+ * `style`/`rung` — a persona's playstyle identity (Attacker/Trickster/etc.)
+ * says nothing about the VOICE it should speak with when narrating a Train
+ * puzzle. `trainBotCopy.ts`'s `BY_TEMPERAMENT` pools are derived from this
+ * field alone; there is no separate hand-maintained id list to keep in sync.
+ */
+export type Temperament = 'stern' | 'friendly' | 'smart';
+
 /** A single persona slot: a complete, named, pinned opponent identity. */
 export interface Persona {
   id: PersonaId;
@@ -102,6 +111,15 @@ export interface Persona {
    * consumes it as the single seam the future PR will need to touch.
    */
   avatarSrc?: string;
+  /**
+   * Phase 222 (D-01): the Train bot-casting voice. Required on every entry —
+   * `Record<PersonaId, Persona>` makes a missed slot a compile error, which
+   * is the guarantee that keeps the three casting pools (stern/friendly/
+   * smart) always non-empty and exhaustive without a hand-maintained id
+   * list. Set per the reviewed table in 222-CONTEXT.md `<specifics>`
+   * (8 stern, 7 smart, 9 friendly).
+   */
+  temperament: Temperament;
 }
 
 /**
@@ -144,6 +162,7 @@ const ATTACKER_PERSONAS: Record<`attacker-${Rung}`, Persona> = {
     species: 'Wasp',
     bio: 'Ziggy buzzes toward your king the moment the position opens, sting first, plan later. At this level the checks and captures come fast and reckless — watch for a hanging piece mid-swarm.',
     avatarEmoji: '🐝',
+    temperament: 'friendly',
   },
   'attacker-1000': {
     id: personaId('Attacker', 1000),
@@ -156,6 +175,7 @@ const ATTACKER_PERSONAS: Record<`attacker-${Rung}`, Persona> = {
     species: 'Terrier',
     bio: 'Duke barks first and calculates second, snapping up any pawn within reach. He is getting better at picking his fights, but a loose piece still tempts him more than it should.',
     avatarEmoji: '🐕',
+    temperament: 'friendly',
   },
   'attacker-1200': {
     id: personaId('Attacker', 1200),
@@ -168,6 +188,7 @@ const ATTACKER_PERSONAS: Record<`attacker-${Rung}`, Persona> = {
     species: 'Falcon',
     bio: 'Talon circles quietly before diving — checks and captures are chosen, not just thrown. Watch for a sudden pawn storm the moment your king looks exposed.',
     avatarEmoji: '🦅',
+    temperament: 'stern',
   },
   'attacker-1400': {
     id: personaId('Attacker', 1400),
@@ -180,6 +201,7 @@ const ATTACKER_PERSONAS: Record<`attacker-${Rung}`, Persona> = {
     species: 'Wolverine',
     bio: 'Fury does not wait for a clean opening; she tears into any weakness she can find. Her attacks carry real teeth now, but she can still overextend chasing one more sacrifice.',
     avatarEmoji: '🐺',
+    temperament: 'stern',
   },
   // 1600 -> Light (Claude's discretion): an attacker's identity is carried
   // mostly by the feature multipliers + gambit book, not by heavy search —
@@ -195,6 +217,7 @@ const ATTACKER_PERSONAS: Record<`attacker-${Rung}`, Persona> = {
     species: 'Ram',
     bio: 'Butch charges with real calculation behind the horns, softmax-picking the sharpest line on the board. He is comfortable trading material for initiative — and usually right to.',
     avatarEmoji: '🐏',
+    temperament: 'stern',
   },
   'attacker-1800': {
     id: personaId('Attacker', 1800),
@@ -207,6 +230,7 @@ const ATTACKER_PERSONAS: Record<`attacker-${Rung}`, Persona> = {
     species: 'Bull',
     bio: 'Diesel calculates deep before he charges, and by the time you feel the pressure it is already too late to retreat cleanly. He accepts the odd wild sacrifice as the price of a relentless attack.',
     avatarEmoji: '🐂',
+    temperament: 'stern',
   },
 };
 
@@ -226,6 +250,7 @@ const TRICKSTER_PERSONAS: Record<`trickster-${Rung}`, Persona> = {
     species: 'Magpie',
     bio: 'Miko loves a shiny trap — Bongclouds, Grobs, anything that looks silly but bites back. At this level the traps are simple, but they catch more players than you would expect.',
     avatarEmoji: '🐦',
+    temperament: 'friendly',
   },
   'trickster-1000': {
     id: personaId('Trickster', 1000),
@@ -238,6 +263,7 @@ const TRICKSTER_PERSONAS: Record<`trickster-${Rung}`, Persona> = {
     species: 'Ferret',
     bio: 'Slinky slips into an odd opening and waits to see if you notice. His traps are still fairly easy to spot if you are paying attention, but plenty of players are not.',
     avatarEmoji: '🐿️',
+    temperament: 'friendly',
   },
   'trickster-1200': {
     id: personaId('Trickster', 1200),
@@ -250,6 +276,7 @@ const TRICKSTER_PERSONAS: Record<`trickster-${Rung}`, Persona> = {
     species: 'Fox',
     bio: 'Vix mixes real openings with the occasional trick line, keeping you guessing about which game you are actually in. She is patient enough to wait for the swindle to ripen.',
     avatarEmoji: '🦊',
+    temperament: 'smart',
   },
   'trickster-1400': {
     id: personaId('Trickster', 1400),
@@ -262,6 +289,7 @@ const TRICKSTER_PERSONAS: Record<`trickster-${Rung}`, Persona> = {
     species: 'Raccoon',
     bio: 'Riko digs through the position looking for something to steal — a fork, a pin, a moment of confusion. He plays a real game, but never quite gives up on the trap underneath it.',
     avatarEmoji: '🦝',
+    temperament: 'smart',
   },
   // 1600 -> Deep (Claude's discretion): SEED-098's "swindle mode + high
   // variance at 1600+" reads as needing real search to conjure a genuine
@@ -278,6 +306,7 @@ const TRICKSTER_PERSONAS: Record<`trickster-${Rung}`, Persona> = {
     species: 'Coyote',
     bio: 'Sly enters swindle mode here, favoring sharp, high-variance lines that are easy to misplay under pressure. She is not always objectively best, but she is very good at making you second-guess yourself.',
     avatarEmoji: '🐺',
+    temperament: 'smart',
   },
   'trickster-1800': {
     id: personaId('Trickster', 1800),
@@ -290,6 +319,7 @@ const TRICKSTER_PERSONAS: Record<`trickster-${Rung}`, Persona> = {
     species: 'Hyena',
     bio: 'Cackle hunts for chaos, steering into the sharpest, most unbalanced positions the book allows. By this level the swindles are backed by real calculation — underestimate her at your own risk.',
     avatarEmoji: '🐆',
+    temperament: 'stern',
   },
 };
 
@@ -309,6 +339,7 @@ const GRINDER_PERSONAS: Record<`grinder-${Rung}`, Persona> = {
     species: 'Ant',
     bio: 'Pip trades pieces the moment she gets the chance, happiest when the board is empty and simple. She is not fighting for the initiative — she is fighting for the endgame.',
     avatarEmoji: '🐜',
+    temperament: 'friendly',
   },
   'grinder-1000': {
     id: personaId('Grinder', 1000),
@@ -321,6 +352,7 @@ const GRINDER_PERSONAS: Record<`grinder-${Rung}`, Persona> = {
     species: 'Mole',
     bio: 'Dig burrows toward a simplified position, offering trades whenever the exchange is even. He rarely storms forward — he would rather grind you down one pawn at a time.',
     avatarEmoji: '🐹',
+    temperament: 'smart',
   },
   'grinder-1200': {
     id: personaId('Grinder', 1200),
@@ -333,6 +365,7 @@ const GRINDER_PERSONAS: Record<`grinder-${Rung}`, Persona> = {
     species: 'Otter',
     bio: 'Otto swims calmly toward the endgame, trading down whenever the position allows it. He never resigns early, choosing to paddle on even in a difficult position.',
     avatarEmoji: '🦦',
+    temperament: 'smart',
   },
   'grinder-1400': {
     id: personaId('Grinder', 1400),
@@ -345,6 +378,7 @@ const GRINDER_PERSONAS: Record<`grinder-${Rung}`, Persona> = {
     species: 'Penguin',
     bio: 'Nell simply outlasts people. She trades down without fuss and settles into the endgame like it is the part she was waiting for, unbothered by how long it takes.',
     avatarEmoji: '🐧',
+    temperament: 'stern',
   },
   // 1600 -> Deep (Claude's discretion): Grinder's identity is fundamentally
   // calculation-driven (steering toward favorable trades and endgames), so
@@ -360,6 +394,7 @@ const GRINDER_PERSONAS: Record<`grinder-${Rung}`, Persona> = {
     species: 'Ox',
     bio: 'Tank plows through complications by simplifying them away, trading pieces until only the essentials remain. He is stubborn in a lost position, playing on long past the point most bots would resign.',
     avatarEmoji: '🐂',
+    temperament: 'stern',
   },
   'grinder-1800': {
     id: personaId('Grinder', 1800),
@@ -372,6 +407,7 @@ const GRINDER_PERSONAS: Record<`grinder-${Rung}`, Persona> = {
     species: 'Gorilla',
     bio: 'Gus calculates his way into favorable trades, steering the game toward the flat, grounded endgames he measures best in. He genuinely enjoys a long fight and will not give up a difficult position without one.',
     avatarEmoji: '🦍',
+    temperament: 'stern',
   },
 };
 
@@ -391,6 +427,7 @@ const WALL_PERSONAS: Record<`wall-${Rung}`, Persona> = {
     species: 'Snail',
     bio: 'Sheldon retreats into his shell at the first sign of trouble, preferring a slow, solid setup over any early adventure. He is happy to trade down toward a draw well before things get complicated.',
     avatarEmoji: '🐌',
+    temperament: 'friendly',
   },
   'wall-1000': {
     id: personaId('Wall', 1000),
@@ -403,6 +440,7 @@ const WALL_PERSONAS: Record<`wall-${Rung}`, Persona> = {
     species: 'Hedgehog',
     bio: 'Spike curls into a tight, prickly system and dares you to break through it. He welcomes an early draw more readily than most, content to hold rather than fight.',
     avatarEmoji: '🦔',
+    temperament: 'friendly',
   },
   'wall-1200': {
     id: personaId('Wall', 1200),
@@ -415,6 +453,7 @@ const WALL_PERSONAS: Record<`wall-${Rung}`, Persona> = {
     species: 'Turtle',
     bio: 'Shelly plays the same fixed system regardless of what you throw at her, trading pieces whenever the position allows it. She never storms forward — patience is the whole plan.',
     avatarEmoji: '🐢',
+    temperament: 'friendly',
   },
   'wall-1400': {
     id: personaId('Wall', 1400),
@@ -427,6 +466,7 @@ const WALL_PERSONAS: Record<`wall-${Rung}`, Persona> = {
     species: 'Badger',
     bio: 'Bruno digs into his favorite system openings and holds his ground, trading down at every opportunity. He is a touch too eager to offer a draw, even from a perfectly fine position.',
     avatarEmoji: '🦡',
+    temperament: 'friendly',
   },
   // 1600 -> Light (Claude's discretion): Wall's identity is carried mainly by
   // its system book + simplifying trades rather than deep calculation, so
@@ -443,6 +483,7 @@ const WALL_PERSONAS: Record<`wall-${Rung}`, Persona> = {
     species: 'Armadillo',
     bio: 'Rocco calculates deep to keep everything under control, curling into the least chaotic line available whenever the position allows it. By this level his system openings and simplifying trades add up to a genuinely difficult wall to crack.',
     avatarEmoji: '🐢',
+    temperament: 'smart',
   },
   'wall-1800': {
     id: personaId('Wall', 1800),
@@ -455,6 +496,7 @@ const WALL_PERSONAS: Record<`wall-${Rung}`, Persona> = {
     species: 'Hippo',
     bio: 'Hilda calculates carefully to keep the position as flat and quiet as possible, smothering complications before they start. She is genuinely comfortable steering toward a solid, simplified draw, and by this level she is very hard to talk out of one.',
     avatarEmoji: '🦛',
+    temperament: 'smart',
   },
 };
 

@@ -19,7 +19,7 @@ import datetime
 import random
 from collections import Counter
 from dataclasses import dataclass
-from typing import Literal, cast
+from typing import Any, Literal, cast
 
 import chess
 from sqlalchemy import and_, delete, exists, func, or_, select, update
@@ -36,6 +36,7 @@ from app.models.game_flaw import GameFlaw
 from app.models.game_position import GamePosition
 from app.models.herring_pool import HerringPool
 from app.models.train_settings import TrainSettings
+from app.schemas.train import OnboardingStep
 from app.services.best_move_candidates import mover_color_for_ply
 from app.services.sharp_filler import (
     SHARP_SET_BY_ID,
@@ -162,6 +163,13 @@ class TrainSettingsRow:
     reminder_hour: int
     reminder_last_sent_on: datetime.date | None
     reminder_intent_at: datetime.datetime | None
+    # Phase 222 (TRAINBOT-05, D-11/D-12). Response-only onboarding-seen
+    # watermarks -- exposed on this row because the stamp endpoint and
+    # GET/PUT /train/settings all read it, never because a client writes it
+    # through the PUT body (that is `stamp_onboarding_step`'s job instead).
+    intro_seen_at: datetime.datetime | None
+    reveal_walkthrough_seen_at: datetime.datetime | None
+    sr_explained_at: datetime.datetime | None
 
 
 @dataclass(frozen=True)
@@ -195,10 +203,19 @@ class ComposedSolvedResult:
     an attempt (the same values `record_solve` already wrote to this row),
     never a server-computed score — this dataclass carries no score field and
     the repository must not import from `app.schemas`.
+
+    Phase 222 (TRAINBOT-04, D-17): `source`/`item_status`/`due_date` mirror
+    `SolveResponse`'s own nullability exactly — `item_status`/`due_date` are
+    `None` for a red-herring or sharp-filler solve (no SR bookkeeping),
+    populated via the same `_STATUS_LITERAL`/`_wire_source` mappings
+    `record_solve`/`reveal_for_puzzle` already use, never re-derived.
     """
 
     correct_guess: bool
     move_quality: Literal["good", "inaccuracy", "wrong"]
+    source: Literal["sr_item", "red_herring", "sharp_filler"]
+    item_status: Literal["active", "mastered", "parked"] | None
+    due_date: datetime.date | None
 
 
 @dataclass(frozen=True)
@@ -267,6 +284,9 @@ async def get_settings(session: AsyncSession, *, user_id: int) -> TrainSettingsR
         reminder_hour=row.reminder_hour,
         reminder_last_sent_on=row.reminder_last_sent_on,
         reminder_intent_at=row.reminder_intent_at,
+        intro_seen_at=row.intro_seen_at,
+        reveal_walkthrough_seen_at=row.reveal_walkthrough_seen_at,
+        sr_explained_at=row.sr_explained_at,
     )
 
 
@@ -309,6 +329,12 @@ async def get_or_create_settings(session: AsyncSession, *, user_id: int) -> Trai
         # intent -- NULL, same create-on-first-touch seam as every other
         # default here.
         reminder_intent_at=None,
+        # Phase 222 (TRAINBOT-05, D-13): a brand-new user has never seen any
+        # of the three onboarding steppers -- NULL, same create-on-first-
+        # touch seam as every other default here.
+        intro_seen_at=None,
+        reveal_walkthrough_seen_at=None,
+        sr_explained_at=None,
     )
     # ON CONFLICT DO NOTHING: a concurrent first-touch may have already
     # inserted the row between the get_settings check above and this insert;
@@ -327,6 +353,9 @@ async def get_or_create_settings(session: AsyncSession, *, user_id: int) -> Trai
         reminder_hour=DEFAULT_REMINDER_HOUR,
         reminder_last_sent_on=None,
         reminder_intent_at=None,
+        intro_seen_at=None,
+        reveal_walkthrough_seen_at=None,
+        sr_explained_at=None,
     )
 
 
@@ -443,12 +472,21 @@ async def upsert_settings(
     # is included here too for the same reason: this UPSERT never writes it
     # (T-201-13), so the returned row must reflect whatever is already
     # persisted, not a fabricated value.
+    # Phase 222 (TRAINBOT-05, D-12): the three onboarding-seen columns are
+    # ALSO absent from values()/set_ above -- this UPSERT structurally
+    # cannot write them (D-12's PUT-can-never-smuggle-them rule) -- so they
+    # are RETURNING'd here for the identical reason reminder_last_sent_on is:
+    # the returned row must reflect whatever is already persisted, never a
+    # fabricated value.
     stmt = stmt.returning(
         TrainSettings.streak_count,
         TrainSettings.shield_level,
         TrainSettings.streak_settled_through,
         TrainSettings.pool_eligible_since,
         TrainSettings.reminder_last_sent_on,
+        TrainSettings.intro_seen_at,
+        TrainSettings.reveal_walkthrough_seen_at,
+        TrainSettings.sr_explained_at,
     )
     result = await session.execute(stmt)
     (
@@ -457,6 +495,9 @@ async def upsert_settings(
         streak_settled_through,
         pool_eligible_since,
         reminder_last_sent_on,
+        intro_seen_at,
+        reveal_walkthrough_seen_at,
+        sr_explained_at,
     ) = result.one()
     return TrainSettingsRow(
         timezone=timezone,
@@ -470,6 +511,9 @@ async def upsert_settings(
         reminder_hour=reminder_hour,
         reminder_last_sent_on=reminder_last_sent_on,
         reminder_intent_at=reminder_intent_at,
+        intro_seen_at=intro_seen_at,
+        reveal_walkthrough_seen_at=reveal_walkthrough_seen_at,
+        sr_explained_at=sr_explained_at,
     )
 
 
@@ -593,6 +637,57 @@ async def _stamp_pool_eligibility(
         .values(pool_eligible_since=today)
     )
     return today
+
+
+# Phase 222 (TRAINBOT-05, D-11/D-12): the step->column lookup for
+# `stamp_onboarding_step`. A fixed dict, never a string interpolated into
+# SQL and never `getattr` on a request-supplied name (T-222-02-03 threat
+# register). Typed `Any` because `ty` does not recognise `InstrumentedAttribute`
+# as a `ColumnElement` subtype, mirroring `app/repositories/query_utils.py`'s
+# documented widening for the same reason.
+_ONBOARDING_COLUMNS: dict[OnboardingStep, Any] = {
+    "intro": TrainSettings.intro_seen_at,
+    "reveal_walkthrough": TrainSettings.reveal_walkthrough_seen_at,
+    "sr_explained": TrainSettings.sr_explained_at,
+}
+
+
+async def stamp_onboarding_step(
+    session: AsyncSession, *, user_id: int, step: OnboardingStep, now_utc: datetime.datetime
+) -> TrainSettingsRow:
+    """D-12: stamp one onboarding-seen watermark, first-write-wins, the first
+    time a stepper is completed; never overwrite an existing one.
+
+    Mirrors `_stamp_pool_eligibility`'s "stamp once, never overwrite" shape.
+    `get_or_create_settings` runs first so a user who has never touched Train
+    still gets a row before the stamp UPDATE — mirroring that function's own
+    create-on-first-touch precedent.
+
+    Args:
+        session: AsyncSession. Caller commits.
+        user_id: Authenticated user's internal PK (V4: never client-supplied).
+        step: The `Literal` step name (validated by FastAPI at the path-
+            parameter boundary before this function is ever called).
+        now_utc: The current UTC instant. Never `datetime.now()` (the caller
+            takes it from the `dev_now_utc` dependency).
+
+    Returns:
+        The refreshed `TrainSettingsRow` — unchanged on a replayed POST
+        (first-write-wins), stamped on the first call for this step.
+    """
+    await get_or_create_settings(session, user_id=user_id)
+    column = _ONBOARDING_COLUMNS[step]
+    # Guarded on IS NULL: a replayed POST (or a concurrent one racing this
+    # one) can never move an already-stamped timestamp — the same
+    # first-write-wins shape as `_stamp_pool_eligibility`'s guarded UPDATE.
+    await session.execute(
+        update(TrainSettings)
+        .where(TrainSettings.user_id == user_id, column.is_(None))
+        .values({column: now_utc})
+    )
+    refreshed = await get_settings(session, user_id=user_id)
+    assert refreshed is not None  # get_or_create_settings above guarantees the row exists.
+    return refreshed
 
 
 async def settle_streak_snapshot(
@@ -720,6 +815,9 @@ async def get_progress(
             reminder_hour=settings_row.reminder_hour,
             reminder_last_sent_on=settings_row.reminder_last_sent_on,
             reminder_intent_at=settings_row.reminder_intent_at,
+            intro_seen_at=settings_row.intro_seen_at,
+            reveal_walkthrough_seen_at=settings_row.reveal_walkthrough_seen_at,
+            sr_explained_at=settings_row.sr_explained_at,
         )
 
     view = await settle_streak_snapshot(
@@ -1310,10 +1408,35 @@ async def _resume_session(
     `correct_guess`/`move_quality`/`correct_move`, ordered by `position` —
     still ONE query, no second round-trip. `solved_count` is now derived as
     `len(solved_results)` rather than a separate COUNT.
+
+    Phase 222 (TRAINBOT-04, D-17): further widened with a set-based LEFT
+    JOIN to `drill_items` on `(user_id, game_id, ply)` — never N per-row
+    `_read_drill_item_state` calls — so `item_status`/`due_date` ride along
+    for free. A non-`sr_item` row (red herring / sharp filler) never has a
+    matching `drill_items` row (that table holds only the user's own
+    qualifying blunders), so the join naturally yields NULL for both, which
+    is exactly `SolveResponse`'s own nullability rule for those sources. A
+    deleted-game orphan (Assumptions Log A6) degrades the same way: no
+    matching row, NULL/NULL, never an error.
     """
     puzzles = await load_session_puzzles(session, user_id=user_id, session_id=drill_session.id)
     solved_rows_stmt = (
-        select(DrillSolve.correct_guess, DrillSolve.move_quality, DrillSolve.correct_move)
+        select(
+            DrillSolve.correct_guess,
+            DrillSolve.move_quality,
+            DrillSolve.correct_move,
+            DrillSolve.source,
+            DrillItem.status,
+            DrillItem.due_date,
+        )
+        .outerjoin(
+            DrillItem,
+            and_(
+                DrillItem.user_id == DrillSolve.user_id,
+                DrillItem.game_id == DrillSolve.game_id,
+                DrillItem.ply == DrillSolve.ply,
+            ),
+        )
         .where(DrillSolve.session_id == drill_session.id, DrillSolve.solved_at.isnot(None))
         .order_by(DrillSolve.position)
     )
@@ -1322,6 +1445,11 @@ async def _resume_session(
         ComposedSolvedResult(
             correct_guess=bool(row.correct_guess),
             move_quality=_resolve_move_quality_tier(row.move_quality, bool(row.correct_move)),
+            source=_wire_source(row.source),
+            item_status=_STATUS_LITERAL[DrillStatus(row.status)]
+            if row.status is not None
+            else None,
+            due_date=row.due_date,
         )
         for row in solved_rows
     ]

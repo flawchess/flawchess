@@ -77,6 +77,9 @@ async def build_payload(
             signups=await queries.fetch_signups(conn, window.window_start),
             bot=await queries.fetch_bot_games(conn, window.window_start),
             train=await queries.fetch_train(conn, window.window_start),
+            train_funnel=await queries.fetch_train_funnel(
+                conn, window.window_start, window.data_start
+            ),
             solves=await queries.fetch_solves(conn, window.lead_in_start),
             imports=await queries.fetch_imports(conn, window.window_start),
             persona=await queries.fetch_persona(conn, window.window_start),

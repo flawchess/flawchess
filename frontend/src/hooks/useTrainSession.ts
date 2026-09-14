@@ -77,7 +77,13 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { trainApi } from '@/api/client';
 import { TRAIN_PROGRESS_QUERY_KEY } from '@/hooks/useTrainProgress';
 import { aggregateSessionScore, scorePuzzle } from '@/lib/trainScore';
-import type { SolveRequest, SolveResponse, TrainPuzzle, TrainSessionResponse } from '@/types/train';
+import type {
+  SolveRequest,
+  SolveResponse,
+  SolvedResult,
+  TrainPuzzle,
+  TrainSessionResponse,
+} from '@/types/train';
 
 export interface UseTrainSessionResult {
   session: TrainSessionResponse | null;
@@ -113,6 +119,20 @@ export interface UseTrainSessionResult {
    * can no longer disagree across devices.
    */
   sessionSolvedCount: number;
+  /**
+   * Every item solved this session (Phase 222 D-17/D-18, RESEARCH Finding
+   * C) — the score screen's sole source for "what returns and when". Seeded
+   * from `data.solved_results` in the session mutation's `onSuccess` and
+   * appended in the solve mutation's `onSuccess` from the live
+   * `SolveResponse`, which already carries `source`/`item_status`/
+   * `due_date`. The server's `solved_results` is EMPTY for a session
+   * composed and completed in one sitting (the exact first-time-user
+   * population this phase serves), so the live append is what makes the
+   * score screen truthful there; the seed is what makes it survive a
+   * reload or a phone handoff. Reseeded (never accumulated) on every fresh
+   * `startSession()` call, exactly like `solvedPositions` above.
+   */
+  solvedOutcomes: SolvedResult[];
   solvePuzzle: (body: SolveRequest) => Promise<SolveResponse>;
   isSolvePending: boolean;
   isSolveError: boolean;
@@ -156,6 +176,9 @@ export function useTrainSession(): UseTrainSessionResult {
   const [solvedPositions, setSolvedPositions] = useState<ReadonlySet<number>>(new Set());
   // T-190-15: the exact payload to re-submit on retry — never re-derived.
   const [lastSolvePayload, setLastSolvePayload] = useState<SolveRequest | null>(null);
+  // Phase 222 (D-17/D-18, RESEARCH Finding C): the live per-solve outcome
+  // accumulator — see the `UseTrainSessionResult.solvedOutcomes` doc comment.
+  const [solvedOutcomes, setSolvedOutcomes] = useState<SolvedResult[]>([]);
 
   const sessionMutation = useMutation({
     mutationFn: trainApi.composeOrResumeSession,
@@ -183,6 +206,13 @@ export function useTrainSession(): UseTrainSessionResult {
       // block-and-retry gate (T-190-12), since the puzzle in front of the
       // user was never in solvedPositions to begin with.
       setSolvedPositions(new Set());
+      // Phase 222 (RESEARCH Finding C): reseed, never accumulate — same
+      // discipline as `setSolvedPositions` above, for the same reason
+      // (startSession only fires from the landing screen, never mid-puzzle).
+      // This covers the resume/reload/phone-handoff path; a session played
+      // straight through in one sitting starts here at `[]` and is filled
+      // live below.
+      setSolvedOutcomes(data.solved_results);
     },
   });
 
@@ -202,6 +232,19 @@ export function useTrainSession(): UseTrainSessionResult {
         next.add(variables.body.position);
         return next;
       });
+      // Phase 222 (RESEARCH Finding C, Example 4): appended straight from the
+      // live SolveResponse — never re-derived, mirrors the "never re-derived
+      // here" discipline `sessionScore` already follows above.
+      setSolvedOutcomes((prev) => [
+        ...prev,
+        {
+          correct_guess: data.correct_guess,
+          move_quality: data.move_quality,
+          source: data.source,
+          item_status: data.item_status,
+          due_date: data.due_date,
+        },
+      ]);
       // 193 UAT: invalidate on EVERY solve, not just the last one. The nav
       // badge's waiting_count is `puzzle_count - solved_count` server-side
       // (get_waiting_puzzle_count branch 1), so it drops by one on each
@@ -294,6 +337,7 @@ export function useTrainSession(): UseTrainSessionResult {
     // (TrainStartScreen's landing-state resolution) but is no longer the
     // base here.
     sessionSolvedCount: (session?.solved_results.length ?? 0) + solvedPositions.size,
+    solvedOutcomes,
     solvePuzzle,
     isSolvePending: solveMutation.isPending,
     isSolveError: solveMutation.isError,

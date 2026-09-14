@@ -185,7 +185,8 @@
 | 218. Backend onnxruntime Parity Spike → Python 3.14 Chain (SEED-162, v2.16) | 3/3 | Complete    | 2026-09-05 |
 | 219. Maia Chart Latency — ORT 1.27 Re-pin, Cross-Origin Isolation & Progressive Ladder Paint (standalone) | 3/3 | Complete    | 2026-09-06 |
 | 220. Opening Eval Cache Repair & Two-Source Confirmation (SEED-164, standalone) | 8/8 | Complete    | 2026-09-11 |
-| 221. Tactic-Tagger Real-Game Precision — Winning Floor, Predicate Tightening & Port Fixes (SEED-165, standalone) | 0/0 | Not started | — |
+| 221. Tactic-Tagger Real-Game Precision — Winning Floor, Predicate Tightening & Port Fixes (SEED-165, standalone) | 8/8 | Complete    | 2026-09-13 |
+| 222. Train Bot-Narrated Onboarding & Verdicts (SEED-166, standalone) | 6/6 | Complete    | 2026-09-14 |
 
 ## Active Phases
 
@@ -584,7 +585,7 @@ against a different label source (documented only).
 **Depends on:** none (standalone; builds on Phase 143's `_classify_tactic_gated` /
 `retag_flaws.py` and the Phase 127 fixture harness)
 
-**Plans:** 7 plans
+**Plans:** 8/8 plans complete
 
 Plans:
 
@@ -594,7 +595,8 @@ Plans:
 - [x] 221-04-PLAN.md — Winning floor at the firing node, gate never skipped on a None cp, missed-orientation parity (wave 3) [TAGFIX-01, TAGFIX-02, TAGFIX-06]
 - [x] 221-05-PLAN.md — Sacrifice persistence + depth cap; clearance strengthened and measured (wave 4) [TAGFIX-03, TAGFIX-04]
 - [x] 221-06-PLAN.md — Oracle parity, final floors, clearance keep-or-suppress branch, dev retag smoke, changelog (wave 5) [TAGFIX-04, TAGFIX-05, TAGFIX-07, TAGFIX-09]
-- [ ] 221-07-PLAN.md — Deploy gate, full prod retag, TAGFIX-09 acceptance queries (wave 6, not autonomous) [TAGFIX-09]
+- [x] 221-07-PLAN.md — Deploy gate, full prod retag, TAGFIX-09 acceptance queries (wave 6, not autonomous) [TAGFIX-09]
+- [x] 221-08-PLAN.md — Gap closure: retire D-05 sacrifice persistence (real sacrifices dropped because the material came back), re-measure, second prod retag [TAGFIX-03, TAGFIX-09]
 
 **Cross-cutting constraints:**
 
@@ -605,6 +607,83 @@ Plans:
 - The retag is idempotent and offline (single classify path, SC4).
 
 **Seed:** `.planning/seeds/SEED-165-tactic-tagger-real-game-precision.md`
+
+### Phase 222: Train Bot-Narrated Onboarding & Verdicts (SEED-166)
+
+**Goal**: Stop Train losing 57% of first-timers before their first move and half of the
+rest after one session (prod funnel 2026-09-12: 52 of 70 never-finishers left the first
+puzzle without playing a move; 26 of 53 finishers came back). Root cause: the product
+never states its premise. The guess step ("One critical move" / "Several fine moves") is
+the skill Train exists to build, but a newcomer sees an unexplained quiz under a locked
+board that snaps a dragged piece back silently, and the score screen closes a loop instead
+of opening one (nothing says the missed positions come back, when, or why). Deliver the
+fix through the Bots personas as the permanent voice of Train, using the reusable
+avatar + speech-bubble component settled in sketches 003/004: (A) on every puzzle the
+guess prompt and its two buttons live inside a bot's bubble under the board, with a
+first-session three-step intro (Tank welcomes, Hilda defines the buttons, Hilda closes)
+and a "decide first, then move" nudge on any drop before the guess, board never covered;
+(B) every verdict is spoken by an outcome-matched bot (stern set for 0–1 points, friendly
+set for 2–3, encouraging voice always) with the guess and move point pills inline and the
+return date from `SolveResponse.due_date` at the end (herring/filler never promise a
+return), the Analyze / Next / Solution actions inside the bubble and the reveal's sound
+toggle retired to a future settings page, plus a first-session three-step Hilda
+walkthrough of the solution screen (feedback → line cards → actions, each spotlighted);
+(C) the score screen opens with a bot bubble that says which positions return and when,
+explains spaced repetition and the reminder's purpose, and only then asks "Remind me";
+(D) a server-side first-session/explanation-seen flag (never device-local: the phone
+handoff moves users between devices) and the two funnel metrics recorded before and after
+(first-session 0-solve rate, baseline 42%; second-session return, baseline 49%).
+
+**Requirements:** to be minted at planning time (TRAINBOT-01..), no active REQUIREMENTS.md
+(same pattern as Phases 204–221).
+
+**Success criteria**:
+
+1. A first-time user cannot reach a silent failure: the first puzzle opens with the bot
+   intro stepper, the guess buttons sit inside the last bubble, and a piece dropped before
+   the guess visibly nudges the bubble and changes its copy.
+2. Every puzzle in every session shows the guess prompt inside a bot bubble; the board is
+   fully visible above it on a 375px viewport with the longest first-session copy loaded.
+3. Every reveal shows an outcome-matched bot line with inline point pills ending in the
+   return date for SR items ("in the next session" / "in N days" from `due_date`), and a
+   no-return variant for herring and sharp-filler puzzles; the copy never comments on the
+   user.
+4. The score screen states what returns and when before the reminder ask; the first
+   completed session gets the full spaced-repetition explanation, later ones a single line.
+5. The explanation-seen state is stored server-side and survives a device switch.
+6. Both funnel metrics have a recorded baseline and a repeatable query (SQL in the seed or
+   `db-report`), so the post-change reading is a single run.
+7. Bot copy is authored per outcome bucket with a few variants, never per persona; the
+   stern/friendly sets are explicit lists (or a temperament field) drawn from personas with
+   curated art.
+
+**Out of scope**: renaming the feature ("Boot Camp"), bot images on the Train landing
+page, harsh verdict copy, mapping bots to puzzle type, changing the daily reminder default,
+push-channel changes, a pre-session spaced-repetition onboarding page, the settings page
+that will re-home the sound toggle (record the toggle's retirement as a follow-up seed).
+
+**Plans:** 6/6 plans complete
+
+Plans:
+
+- [x] 222-01-PLAN.md — Bot chat row foundation + guess-bubble tracer: `temperament` on all 24 personas, the pure copy/state modules, `TrainBotBubble`/`TrainBotStepper`, the D-09 vocabulary, the seen-state client plumbing (wave 1, tracer) [TRAINBOT-01, TRAINBOT-02, TRAINBOT-03, TRAINBOT-04, TRAINBOT-07, TRAINBOT-08]
+- [x] 222-02-PLAN.md — Server-side seen state: three nullable timestamptz columns, `POST /train/onboarding/{step}`, the D-17 `SolvedResult` extension, the dev-reset clear (wave 1, not autonomous) [TRAINBOT-04, TRAINBOT-05]
+- [x] 222-03-PLAN.md — Train funnel card on `/activity`: `fetch_train_funnel`, payload key, DOM-id seam, right-censoring caveat (wave 1) [TRAINBOT-06]
+- [x] 222-04-PLAN.md — Solve screen: first-session intro stepper, drop-before-guess nudge, verdict bubble with the action row inside it, mute toggle retired (wave 2) [TRAINBOT-01, TRAINBOT-02, TRAINBOT-03, TRAINBOT-05, TRAINBOT-09]
+- [x] 222-05-PLAN.md — Live per-solve outcome accumulator + the score-screen bot bubble with its four copy variants (wave 2) [TRAINBOT-04, TRAINBOT-05]
+- [x] 222-06-PLAN.md — First-reveal Hilda walkthrough, changelog, sound-toggle follow-up seed, full pre-merge gate and device UAT (wave 3) [TRAINBOT-02, TRAINBOT-05, TRAINBOT-09, TRAINBOT-10]
+
+**Cross-cutting constraints:**
+
+- No board overlay: the position must be readable to make the decision (sketch 003).
+- Prose in the sketches is placeholder; final copy is settled in discuss-phase.
+- Frontend complexity gates stay at 15 for new code (`TrainSolveScreen.tsx` and
+  `TrainReveal.tsx` are already large; the bubble is a new shared component, not more
+  branches in either).
+
+**Seed:** `.planning/seeds/SEED-166-train-first-session-retention.md`
+**Sketches:** `.planning/sketches/003-train-bot-guess-bubble/` (winner A),
+`.planning/sketches/004-train-bot-verdict-and-score/` (winner Synthesis)
 
 ## Backlog
 

@@ -25,6 +25,8 @@ from sqlalchemy.exc import DBAPIError
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
 from app.main import app
+from app.models.drill_session import DrillSession
+from app.models.drill_solve import DrillSolve, DrillSource
 from app.models.user import User
 from app.routers import admin_activity
 from app.services import activity_queries as queries
@@ -112,6 +114,7 @@ def fake_payload(range_key: queries.RangeKey = "all") -> queries.Payload:
         signups=[],
         bot=[],
         train=[],
+        train_funnel={},
         solves=[],
         imports=[],
         persona=[],
@@ -556,3 +559,219 @@ def test_resolve_window_range_mapping_covers_every_literal_value():
     """Every RangeKey value has an entry in RANGE_WINDOW_DAYS."""
     for range_key in typing.get_args(queries.RangeKey):
         assert range_key in queries.RANGE_WINDOW_DAYS
+
+
+# ---------------------------------------------------------------------------
+# fetch_train_funnel (SEED-166, D-19) — direct query test against test_engine.
+# Self-contained seeding, per this file's own convention (see module
+# docstring): a drill_sessions row plus one drill_solves row per session,
+# duplicated here rather than importing tests/routers/test_train.py's
+# `_seed_session`, which pre-materializes a whole puzzle-per-position batch
+# this test does not need.
+# ---------------------------------------------------------------------------
+
+
+async def _seed_funnel_session(
+    test_engine,
+    user_id: int,
+    session_date: datetime.date,
+    *,
+    status: str,
+    solved: bool,
+) -> None:
+    """Seed one drill_sessions row plus one drill_solves row.
+
+    `solved=True` stamps `solved_at` on the lone solve row (the session was
+    solved); `solved=False` leaves it NULL, which is exactly the "no_solve"
+    condition `fetch_train_funnel` tests for on a user's FIRST session.
+    """
+    session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
+    async with session_maker() as session:
+        async with session.begin():
+            drill_session = DrillSession(
+                user_id=user_id,
+                session_date=session_date,
+                status=status,
+                puzzle_count=1,
+                expires_on=session_date + datetime.timedelta(days=7),
+            )
+            session.add(drill_session)
+            await session.flush()
+            session.add(
+                DrillSolve(
+                    session_id=drill_session.id,
+                    position=0,
+                    user_id=user_id,
+                    game_id=None,
+                    ply=0,
+                    source=int(DrillSource.RED_HERRING),
+                    solved_at=(
+                        datetime.datetime.combine(
+                            session_date, datetime.time(12, 0), tzinfo=datetime.timezone.utc
+                        )
+                        if solved
+                        else None
+                    ),
+                )
+            )
+
+
+@pytest.mark.asyncio
+async def test_fetch_train_funnel_seeded_cohort(test_engine):
+    """Pins every branch of the FINDING J cohort query on a seeded fixture.
+
+    Window/data-start dates are fixed constants (not wall-clock), since
+    fetch_train_funnel only ever compares `session_date` to a bound cutoff
+    parameter -- the query has no dependency on "today".
+
+      - user_zero: one session inside the window, unsolved -> zero_solve_users.
+      - user_one_completed: one completed session inside the window ->
+        finishers only (not returners).
+      - user_returner: two completed sessions inside the window -> both
+        finishers and returners.
+      - user_predates_window: FIRST session predates the window (but is still
+        inside the all-time data range), with a SECOND session inside the
+        window -> excluded from the windowed cohort entirely, but present in
+        the all-time cohort (and contributes to all_time finishers/returners
+        via that same two-completed-session shape as user_returner).
+    """
+    window_start = datetime.date(2026, 6, 1)
+    data_start = window_start - datetime.timedelta(days=60)
+
+    # Baseline BEFORE seeding: this test file's shared test_engine can carry
+    # rows from other tests (in this file or, under -n auto, other files
+    # scheduled onto the same xdist worker). Asserting on the DELTA this
+    # fixture introduces, rather than an absolute count, is what keeps the
+    # assertions correct regardless of what else landed in this date range.
+    async with test_engine.connect() as conn:
+        baseline = await queries.fetch_train_funnel(conn, window_start, data_start)
+
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app), base_url="http://test"
+    ) as client:
+        user_zero, _ = await register_and_login(client, unique_email("funnel-zero"))
+        user_one_completed, _ = await register_and_login(client, unique_email("funnel-one"))
+        user_returner, _ = await register_and_login(client, unique_email("funnel-ret"))
+        user_predates_window, _ = await register_and_login(client, unique_email("funnel-pre"))
+
+    # user_zero: single unsolved session inside the window.
+    await _seed_funnel_session(
+        test_engine,
+        user_zero,
+        window_start + datetime.timedelta(days=5),
+        status="expired",
+        solved=False,
+    )
+
+    # user_one_completed: single completed, solved session inside the window.
+    await _seed_funnel_session(
+        test_engine,
+        user_one_completed,
+        window_start + datetime.timedelta(days=3),
+        status="completed",
+        solved=True,
+    )
+
+    # user_returner: two completed, solved sessions inside the window.
+    await _seed_funnel_session(
+        test_engine,
+        user_returner,
+        window_start + datetime.timedelta(days=2),
+        status="completed",
+        solved=True,
+    )
+    await _seed_funnel_session(
+        test_engine,
+        user_returner,
+        window_start + datetime.timedelta(days=10),
+        status="completed",
+        solved=True,
+    )
+
+    # user_predates_window: FIRST session predates window_start (but is still
+    # inside data_start..window_start), second session lands inside the
+    # window. Both completed+solved, so this user also feeds all_time
+    # finishers/returners -- proving the all_time_* >= windowed_* property
+    # below is not a coincidence of a single-session fixture.
+    await _seed_funnel_session(
+        test_engine,
+        user_predates_window,
+        window_start - datetime.timedelta(days=30),
+        status="completed",
+        solved=True,
+    )
+    await _seed_funnel_session(
+        test_engine,
+        user_predates_window,
+        window_start + datetime.timedelta(days=5),
+        status="completed",
+        solved=True,
+    )
+
+    async with test_engine.connect() as conn:
+        result = await queries.fetch_train_funnel(conn, window_start, data_start)
+
+    delta = {key: result[key] - baseline[key] for key in result}
+
+    # Windowed cohort: user_zero, user_one_completed, user_returner (3 openers).
+    # user_predates_window is excluded -- its FIRST session predates the window.
+    assert delta["openers"] == 3
+    assert delta["zero_solve_users"] == 1  # user_zero only
+    assert delta["finishers"] == 2  # user_one_completed + user_returner
+    assert delta["returners"] == 1  # user_returner only
+
+    # All-time cohort additionally includes user_predates_window (4 openers),
+    # who also has 2 completed sessions -> contributes to both finishers and
+    # returners there.
+    assert delta["all_time_openers"] == 4
+    assert delta["all_time_zero_solve_users"] == 1
+    assert delta["all_time_finishers"] == 3
+    assert delta["all_time_returners"] == 2
+
+    # All-time is a superset of the windowed cohort for every metric.
+    assert delta["all_time_openers"] >= delta["openers"]
+    assert delta["all_time_zero_solve_users"] >= delta["zero_solve_users"]
+    assert delta["all_time_finishers"] >= delta["finishers"]
+    assert delta["all_time_returners"] >= delta["returners"]
+
+
+@pytest.mark.asyncio
+async def test_fetch_train_funnel_excludes_opener_whose_first_session_predates_window(
+    test_engine,
+):
+    """A user whose first session predates the window never counts as an
+    opener for that window, even though the same user has a later session
+    that falls squarely inside it (RESEARCH Finding J's defining case)."""
+    window_start = datetime.date(2026, 7, 1)
+    data_start = window_start - datetime.timedelta(days=90)
+
+    async with test_engine.connect() as conn:
+        baseline = await queries.fetch_train_funnel(conn, window_start, data_start)
+
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app), base_url="http://test"
+    ) as client:
+        user_id, _ = await register_and_login(client, unique_email("funnel-excl"))
+
+    await _seed_funnel_session(
+        test_engine,
+        user_id,
+        window_start - datetime.timedelta(days=1),
+        status="expired",
+        solved=False,
+    )
+    await _seed_funnel_session(
+        test_engine,
+        user_id,
+        window_start + datetime.timedelta(days=1),
+        status="expired",
+        solved=False,
+    )
+
+    async with test_engine.connect() as conn:
+        result = await queries.fetch_train_funnel(conn, window_start, data_start)
+
+    delta = {key: result[key] - baseline[key] for key in result}
+
+    assert delta["openers"] == 0
+    assert delta["all_time_openers"] == 1

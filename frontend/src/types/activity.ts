@@ -27,6 +27,16 @@ export interface ActivityStatsPayload {
   signups: (string | number | null)[][];
   bot: (string | number | null)[][];
   train: (string | number | null)[][];
+  train_funnel: {
+    openers: number;
+    zero_solve_users: number;
+    finishers: number;
+    returners: number;
+    all_time_openers: number;
+    all_time_zero_solve_users: number;
+    all_time_finishers: number;
+    all_time_returners: number;
+  };
   solves: (string | number | null)[][];
   imports: (string | number | null)[][];
   persona: (string | number | null)[][];

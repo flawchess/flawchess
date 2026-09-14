@@ -46,6 +46,9 @@ async def _seed_settings(db_session, user_id: int) -> None:
             shield_level=5,
             streak_settled_through=datetime.date(2026, 7, 20),
             pool_eligible_since=datetime.date(2026, 6, 1),
+            intro_seen_at=datetime.datetime(2026, 7, 1, tzinfo=datetime.timezone.utc),
+            reveal_walkthrough_seen_at=datetime.datetime(2026, 7, 2, tzinfo=datetime.timezone.utc),
+            sr_explained_at=datetime.datetime(2026, 7, 3, tzinfo=datetime.timezone.utc),
         )
     )
     await db_session.flush()
@@ -69,6 +72,12 @@ async def test_reset_clears_streak_snapshot_but_keeps_schedule(fresh_test_user, 
     assert row.shield_level == 0
     assert row.streak_settled_through is None
     assert row.pool_eligible_since is None
+    # Phase 222 (TRAINBOT-05, D-13): the three bot-onboarding "seen"
+    # watermarks reset alongside the tick snapshot, so onboarding UAT is
+    # repeatable on dev without bin/reset_db.sh.
+    assert row.intro_seen_at is None
+    assert row.reveal_walkthrough_seen_at is None
+    assert row.sr_explained_at is None
     assert row.timezone == _CUSTOM_TIMEZONE
     assert row.weekday_mask == _CUSTOM_WEEKDAY_MASK
     assert row.puzzles_per_session == _CUSTOM_PUZZLES_PER_SESSION

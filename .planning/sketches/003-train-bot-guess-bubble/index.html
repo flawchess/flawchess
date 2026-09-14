@@ -1,0 +1,316 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sketch 003 — Train guess bubble</title>
+<link rel="stylesheet" href="../themes/default.css">
+<style>
+  * { box-sizing: border-box; }
+  body { margin: 0; background: #0b0b0b; color: var(--color-text); font-family: var(--font-sans); padding-top: 56px; }
+  #variant-nav { position: fixed; top: 0; left: 0; right: 0; z-index: 9998; background: var(--color-surface); border-bottom: 1px solid var(--color-border); padding: 8px 16px; display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+  .variant-tab { background: transparent; color: var(--color-text-muted); border: 1px solid var(--color-border-strong); border-radius: var(--radius-full); padding: 6px 12px; font: 600 13px var(--font-sans); cursor: pointer; transition: all .15s ease; }
+  .variant-tab:hover { color: var(--color-text); border-color: var(--brand-brown-light); }
+  .variant-tab.active { background: var(--brand-brown); border-color: var(--brand-brown); color: #fff; }
+  .stage { display: flex; gap: 32px; justify-content: center; align-items: flex-start; padding: 24px 16px 80px; flex-wrap: wrap; }
+  .phone { width: 375px; min-height: 740px; background: var(--color-bg); border: 10px solid #222; border-radius: 36px; overflow: hidden; box-shadow: var(--shadow-lg); position: relative; }
+  .phone .screen { padding: 12px 12px 24px; }
+  .topbar { display: flex; align-items: center; justify-content: space-between; font-size: var(--text-sm); color: var(--color-text-muted); padding: 4px 4px 10px; }
+  .topbar b { color: var(--color-text); font-family: var(--font-brand); font-weight: 600; font-size: 16px; letter-spacing: .2px; }
+  .progress { font-size: 13px; }
+  .board { width: 100%; aspect-ratio: 1; display: grid; grid-template-columns: repeat(8, 1fr); border-radius: 4px; overflow: hidden; user-select: none; }
+  .sq { display: flex; align-items: center; justify-content: center; font-size: 30px; line-height: 1; cursor: grab; position: relative; }
+  .sq.l { background: #f0d9b5; } .sq.d { background: #b58863; }
+  .sq .p { filter: drop-shadow(0 1px 0 rgba(0,0,0,.25)); transition: transform .12s ease; }
+  .sq.w .p { color: #fff; text-shadow: 0 0 2px #000, 0 0 1px #000; }
+  .sq.b .p { color: #1a1a1a; }
+  .sq.lifted .p { transform: translateY(-6px) scale(1.08); }
+  .sq.snap .p { animation: snap .35s ease; }
+  @keyframes snap { 0%{transform:translate(18px,-22px)} 100%{transform:translate(0,0)} }
+  .below { margin-top: 12px; display: flex; flex-direction: column; gap: 10px; }
+  .prompt { font-size: var(--text-sm); font-weight: 700; text-align: center; }
+  .btnrow { display: flex; gap: 8px; }
+  .btn { flex: 1; height: 48px; border-radius: var(--radius-md); border: 1px solid rgba(160,120,80,.6); background: rgba(255,255,255,.03); color: var(--brand-brown-light); font: 700 14px var(--font-sans); cursor: pointer; transition: all .15s ease; }
+  .btn:hover { background: rgba(139,94,60,.15); color: var(--brand-brown-highlight); border-color: var(--brand-brown-highlight); }
+  .btn.primary { background: var(--brand-brown); border-color: var(--brand-brown); color: #fff; }
+  .btn.primary:hover { background: var(--brand-brown-hover); }
+  .btn.small { height: 36px; flex: 0 0 auto; padding: 0 14px; font-size: 13px; }
+  .hint { font-size: 13px; color: var(--color-text-muted); text-align: center; }
+  /* avatar */
+  .avatar { border-radius: 50%; object-fit: cover; background: #222; flex: 0 0 auto; border: 2px solid rgba(255,255,255,.12); }
+  .avatar.lg { width: 56px; height: 56px; }
+  .avatar.md { width: 44px; height: 44px; }
+  .avatar.sm { width: 28px; height: 28px; border-width: 1px; }
+  .botname { font-family: var(--font-brand); font-weight: 600; font-size: 12px; color: var(--color-text-muted); letter-spacing: .3px; }
+  /* bubble */
+  .bubble { position: relative; background: var(--color-surface); border: 1px solid var(--color-border-strong); border-radius: 14px; padding: 12px 14px; font-size: var(--text-sm); line-height: 1.45; transition: all .2s ease; }
+  .bubble p { margin: 0 0 10px; } .bubble p:last-child { margin-bottom: 0; }
+  .bubble .btnrow { margin-top: 10px; }
+  .bubble.attn { border-color: var(--brand-brown-highlight); box-shadow: 0 0 0 3px rgba(240,219,185,.18); animation: nudge .5s ease; }
+  @keyframes nudge { 0%{transform:translateX(0)} 25%{transform:translateX(-5px)} 50%{transform:translateX(5px)} 75%{transform:translateX(-3px)} 100%{transform:translateX(0)} }
+  .bubble.tail-left::before { content:''; position:absolute; left:-9px; top:18px; border: 8px solid transparent; border-right-color: var(--color-border-strong); border-left: 0; }
+  .bubble.tail-left::after { content:''; position:absolute; left:-7px; top:19px; border: 7px solid transparent; border-right-color: var(--color-surface); border-left: 0; }
+  .bubble.tail-up::before { content:''; position:absolute; left:34px; top:-9px; border: 8px solid transparent; border-bottom-color: var(--color-border-strong); border-top: 0; }
+  .bubble.tail-up::after { content:''; position:absolute; left:35px; top:-7px; border: 7px solid transparent; border-bottom-color: var(--color-surface); border-top: 0; }
+  .chatrow { display: flex; gap: 10px; align-items: flex-start; }
+  .chatrow .who { display: flex; flex-direction: column; align-items: center; gap: 4px; width: 60px; }
+  .chatrow .bubble { flex: 1; }
+  /* variant B: board-attached */
+  .attached { position: relative; margin-top: 18px; padding-top: 0; }
+  .attached .avatar { position: absolute; left: 10px; top: -22px; z-index: 2; }
+  .attached .bubble { padding-left: 14px; padding-top: 30px; }
+  .attached .bubble .botname { position: absolute; left: 62px; top: 8px; }
+  /* variant C: inline chip */
+  .inline { display: flex; align-items: center; justify-content: center; gap: 8px; }
+  /* states bar */
+  .statebar { display: flex; gap: 6px; justify-content: center; flex-wrap: wrap; margin: 0 0 14px; }
+  .statebar button { font: 600 12px var(--font-sans); padding: 5px 10px; border-radius: 999px; border: 1px solid #444; background: #1a1a1a; color: #bbb; cursor: pointer; }
+  .statebar button.on { background: #333; color: #fff; border-color: #888; }
+  .stepdots { display: flex; gap: 5px; justify-content: flex-end; margin-top: 8px; }
+  .stepdots i { width: 6px; height: 6px; border-radius: 50%; background: #444; } .stepdots i.on { background: var(--brand-brown-light); }
+  .note { max-width: 375px; font-size: 13px; color: #aaa; line-height: 1.5; }
+  .note h3 { color: #eee; font-size: 14px; margin: 0 0 6px; }
+  .note ul { padding-left: 18px; margin: 6px 0; }
+  .variant { display: none; } .variant.active { display: block; }
+  .toast { position: absolute; left: 50%; bottom: 30px; transform: translateX(-50%); background: #fff; color: #111; font: 600 13px var(--font-sans); padding: 8px 14px; border-radius: 999px; opacity: 0; transition: opacity .2s; pointer-events: none; }
+  .toast.show { opacity: 1; }
+</style>
+</head>
+<body>
+<div id="variant-nav">
+  <span style="font:600 13px var(--font-sans);color:#aaa;margin-right:6px">003 · guess bubble</span>
+  <button class="variant-tab active" onclick="showVariant('a', this)">A: Chat row under board ★ Selected</button>
+  <button class="variant-tab" onclick="showVariant('b', this)">B: Bubble docked to board, buttons outside</button>
+  <button class="variant-tab" onclick="showVariant('c', this)">C: Avatar chip inline (least change)</button>
+</div>
+
+<!-- ============ VARIANT A ============ -->
+<div id="variant-a" class="variant active">
+  <div class="stage">
+    <div class="phone" data-variant="a">
+      <div class="screen">
+        <div class="topbar"><b>Train</b><span class="progress">Puzzle 1 of 9</span></div>
+        <div class="board" data-board></div>
+        <div class="below">
+          <div class="statebar" data-statebar></div>
+          <div class="chatrow" data-slot>
+            <div class="who"><img class="avatar lg" data-av><span class="botname" data-name></span></div>
+            <div class="bubble tail-left" data-bubble></div>
+          </div>
+        </div>
+      </div>
+      <div class="toast" data-toast></div>
+    </div>
+    <div class="note">
+      <h3>A: Chat row</h3>
+      <p>Avatar 56px on the left, name under it, the bubble carries the prompt <em>and</em> the two buttons. Reads like a message from the bot. First session: Tank → Hilda → Hilda, then the buttons appear in the last bubble.</p>
+      <ul><li>Tap a piece before deciding → bubble nudges + highlights, copy changes to "Decide first".</li><li>Watch: bubble height with the first-session copy vs the board still fully visible.</li></ul>
+    </div>
+  </div>
+</div>
+
+<!-- ============ VARIANT B ============ -->
+<div id="variant-b" class="variant">
+  <div class="stage">
+    <div class="phone" data-variant="b">
+      <div class="screen">
+        <div class="topbar"><b>Train</b><span class="progress">Puzzle 1 of 9</span></div>
+        <div class="board" data-board></div>
+        <div class="below">
+          <div class="statebar" data-statebar></div>
+          <div class="attached" data-slot>
+            <img class="avatar md" data-av>
+            <div class="bubble" data-bubble><span class="botname" data-name></span></div>
+          </div>
+          <div class="btnrow" data-outer-buttons>
+            <button class="btn" data-guess="critical">One critical move</button>
+            <button class="btn" data-guess="several">Several fine moves</button>
+          </div>
+        </div>
+      </div>
+      <div class="toast" data-toast></div>
+    </div>
+    <div class="note">
+      <h3>B: Docked bubble, buttons stay put</h3>
+      <p>The avatar overlaps the bubble's top-left corner like a badge; the bubble is a full-width callout; the existing button row stays exactly where it is today, outside the bubble. Less "chat", more "coach's note".</p>
+      <ul><li>Cheapest to build on the current JSX (bubble is a new block above the unchanged button row).</li><li>Question: do the buttons read as belonging to the bot's question when they sit outside the bubble?</li></ul>
+    </div>
+  </div>
+</div>
+
+<!-- ============ VARIANT C ============ -->
+<div id="variant-c" class="variant">
+  <div class="stage">
+    <div class="phone" data-variant="c">
+      <div class="screen">
+        <div class="topbar"><b>Train</b><span class="progress">Puzzle 1 of 9</span></div>
+        <div class="board" data-board></div>
+        <div class="below">
+          <div class="statebar" data-statebar></div>
+          <div data-slot>
+            <div class="inline"><img class="avatar sm" data-av><span class="prompt" data-bubble></span></div>
+          </div>
+          <div class="btnrow" data-outer-buttons>
+            <button class="btn" data-guess="critical">One critical move</button>
+            <button class="btn" data-guess="several">Several fine moves</button>
+          </div>
+        </div>
+      </div>
+      <div class="toast" data-toast></div>
+    </div>
+    <div class="note">
+      <h3>C: Inline chip (least change)</h3>
+      <p>Today's prompt line with a 28px avatar in front of it. No bubble. The first-session explanation has to become a small card above the prompt since one line cannot hold it.</p>
+      <ul><li>Almost zero layout risk, but the avatar is decoration: it does not make the prompt harder to skip.</li></ul>
+    </div>
+  </div>
+</div>
+
+<div id="sketch-tools" style="position:fixed;bottom:12px;right:12px;z-index:9999;font-family:system-ui;font-size:12px;background:rgba(0,0,0,0.7);color:white;padding:8px 12px;border-radius:8px;opacity:0.4;transition:opacity 0.2s;display:flex;gap:8px;align-items:center" onmouseenter="this.style.opacity='1'" onmouseleave="this.style.opacity='0.4'">
+  <span>theme</span>
+  <select onchange="document.querySelector('link[href*=themes]').href='../themes/'+this.value+'.css'"><option value="default">Default</option></select>
+  <span style="opacity:.6">· 375px phone frame</span>
+</div>
+
+<script>
+const AV = '../../../frontend/src/assets/personas/';
+const BOT = {
+  tank:   { name: 'Tank the Ox',      src: AV + 'grinder-1600.webp' },
+  hilda:  { name: 'Hilda the Hippo',  src: AV + 'wall-1800.webp' },
+  shelly: { name: 'Shelly the Turtle',src: AV + 'wall-1200.webp' },
+  pip:    { name: 'Pip the Ant',      src: AV + 'grinder-800.webp' },
+  bruno:  { name: 'Bruno the Badger', src: AV + 'wall-1400.webp' },
+};
+const FEN = 'r2q1rk1/pp2bppp/2n1bn2/3p4/3P4/2N1BN2/PPQ1BPPP/R4RK1';
+const GLYPH = { k:'♚',q:'♛',r:'♜',b:'♝',n:'♞',p:'♟' };
+
+// ---------- states ----------
+// Each state is a list of "steps"; a step = { bot, html, buttons: 'guess'|'next'|null }
+const STATES = {
+  regular: { label: 'Regular session', steps: [
+    { bot: 'shelly', html: '<p>Before you move with <b>white</b>, decide:</p>', buttons: 'guess' },
+  ]},
+  first: { label: 'First session', steps: [
+    { bot: 'tank', html: '<p>Welcome to Train. Real positions, from real games. Yours, once enough of them are analyzed.</p><p>Nobody tells you whether a tactic is on the board. That is the point.</p>', buttons: 'next' },
+    { bot: 'hilda', html: '<p>Before every move, decide: is this a moment that demands precision, or a normal position?</p><p><b>One critical move</b> = a single move matters, everything else loses something.<br><b>Several fine moves</b> = several moves are fine, just play sensibly.</p>', buttons: 'next' },
+    { bot: 'hilda', html: '<p>Deciding is the skill. The move comes second.</p><p>Positions you miss come back in a few days. That is how it sticks.</p><p>Your turn. Before you move with <b>white</b>, decide:</p>', buttons: 'guess' },
+  ]},
+  drop: { label: 'Piece dropped before guessing', steps: [
+    { bot: 'shelly', html: '<p><b>Decide first, then move.</b> Is there one critical move here, or are several fine?</p>', buttons: 'guess', attn: true },
+  ]},
+  decided: { label: 'After the guess', steps: [
+    { bot: 'shelly', html: '<p>Now play a move for <b>white</b>.</p>', buttons: null },
+  ]},
+};
+
+function renderBoard(el) {
+  el.innerHTML = '';
+  const rows = FEN.split('/');
+  rows.forEach((row, r) => {
+    let f = 0;
+    for (const ch of row) {
+      if (/\d/.test(ch)) { for (let i = 0; i < +ch; i++) { el.appendChild(sq(r, f++, null)); } }
+      else { el.appendChild(sq(r, f++, ch)); }
+    }
+  });
+  function sq(r, f, piece) {
+    const d = document.createElement('div');
+    d.className = 'sq ' + (((r + f) % 2) ? 'd' : 'l');
+    if (piece) {
+      d.classList.add(piece === piece.toUpperCase() ? 'w' : 'b');
+      d.innerHTML = '<span class="p">' + GLYPH[piece.toLowerCase()] + '</span>';
+      d.addEventListener('pointerdown', () => onPieceTouch(el.closest('.phone'), d));
+    }
+    return d;
+  }
+}
+
+function onPieceTouch(phone, sqEl) {
+  const st = phone._state;
+  if (st.guess !== null) { toast(phone, 'Board unlocked — a move would be graded here'); return; }
+  sqEl.classList.add('lifted');
+  setTimeout(() => { sqEl.classList.remove('lifted'); sqEl.classList.add('snap'); setTimeout(() => sqEl.classList.remove('snap'), 400); }, 180);
+  setState(phone, 'drop');
+}
+
+function toast(phone, msg) {
+  const t = phone.querySelector('[data-toast]'); t.textContent = msg; t.classList.add('show');
+  clearTimeout(t._h); t._h = setTimeout(() => t.classList.remove('show'), 1400);
+}
+
+function setState(phone, key, step = 0) {
+  phone._state = { key, step, guess: null };
+  phone.querySelectorAll('[data-statebar] button').forEach(b => b.classList.toggle('on', b.dataset.key === key));
+  renderStep(phone);
+}
+
+function renderStep(phone) {
+  const { key, step } = phone._state;
+  const s = STATES[key].steps[step];
+  const variant = phone.dataset.variant;
+  const bot = BOT[s.bot];
+  phone.querySelectorAll('[data-av]').forEach(i => { i.src = bot.src; i.alt = bot.name; });
+  phone.querySelectorAll('[data-name]').forEach(n => n.textContent = bot.name);
+  const bubble = phone.querySelector('[data-bubble]');
+  const outer = phone.querySelector('[data-outer-buttons]');
+
+  if (variant === 'c') {
+    // one-line prompt; first-session copy becomes a card above it
+    const slot = phone.querySelector('[data-slot]');
+    let card = slot.querySelector('.bubble');
+    if (key === 'first' && s.buttons === 'next') {
+      if (!card) { card = document.createElement('div'); card.className = 'bubble'; slot.prepend(card); }
+      card.innerHTML = '<span class="botname">' + bot.name + '</span>' + s.html + nextRow(phone);
+      bubble.textContent = '';
+    } else {
+      if (card) card.remove();
+      bubble.innerHTML = s.html.replace(/<\/?p>/g, ' ');
+    }
+    if (outer) outer.style.display = s.buttons === 'guess' ? 'flex' : 'none';
+    return;
+  }
+
+  let inner = (variant === 'b') ? '<span class="botname" data-name>' + bot.name + '</span>' : '';
+  inner += s.html;
+  if (s.buttons === 'next') inner += nextRow(phone);
+  if (s.buttons === 'guess' && variant === 'a') inner += '<div class="btnrow"><button class="btn" data-guess="critical">One critical move</button><button class="btn" data-guess="several">Several fine moves</button></div>';
+  if (key === 'first') inner += '<div class="stepdots">' + STATES.first.steps.map((_, i) => '<i class="' + (i === step ? 'on' : '') + '"></i>').join('') + '</div>';
+  bubble.innerHTML = inner;
+  bubble.classList.remove('attn'); void bubble.offsetWidth; if (s.attn) bubble.classList.add('attn');
+  if (outer) outer.style.display = s.buttons === 'guess' ? 'flex' : 'none';
+  wire(phone);
+}
+
+function nextRow(phone) {
+  return '<div class="btnrow" style="justify-content:flex-end"><button class="btn small primary" data-next>Next</button></div>';
+}
+
+function wire(phone) {
+  phone.querySelectorAll('[data-next]').forEach(b => b.onclick = () => { phone._state.step++; renderStep(phone); });
+  phone.querySelectorAll('[data-guess]').forEach(b => b.onclick = () => { phone._state.guess = b.dataset.guess; toast(phone, 'Guess: ' + b.textContent); setTimeout(() => { setState(phone, 'decided'); phone._state.guess = b.dataset.guess; }, 250); });
+}
+
+document.querySelectorAll('.phone').forEach(phone => {
+  renderBoard(phone.querySelector('[data-board]'));
+  const bar = phone.querySelector('[data-statebar]');
+  Object.entries(STATES).forEach(([k, v]) => { const b = document.createElement('button'); b.textContent = v.label; b.dataset.key = k; b.onclick = () => setState(phone, k); bar.appendChild(b); });
+  setState(phone, 'regular');
+  wire(phone);
+});
+
+// URL params for headless screenshots: ?variant=a&state=first&step=2
+(() => {
+  const q = new URLSearchParams(location.search);
+  const v = q.get('variant'); if (v) { const tab = document.querySelector(`.variant-tab[onclick*="'${v}'"]`); if (tab) showVariant(v, tab); }
+  const st = q.get('state'); if (st && STATES[st]) document.querySelectorAll('.phone').forEach(ph => setState(ph, st, +(q.get('step') || 0)));
+})();
+
+function showVariant(id, tab) {
+  document.querySelectorAll('.variant').forEach(v => v.classList.remove('active'));
+  document.querySelectorAll('.variant-tab').forEach(t => t.classList.remove('active'));
+  document.getElementById('variant-' + id).classList.add('active');
+  tab.classList.add('active');
+}
+</script>
+</body>
+</html>

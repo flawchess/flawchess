@@ -646,13 +646,18 @@
     {
       "number": "221",
       "name": "Tactic-Tagger Real-Game Precision — Winning Floor, Predicate Tightening & Port Fixes (SEED-165, standalone)",
-      "status": "pending"
+      "status": "complete"
+    },
+    {
+      "number": "222",
+      "name": "Train Bot-Narrated Onboarding & Verdicts (SEED-166, standalone)",
+      "status": "complete"
     }
   ],
   "next": {
-    "command": "/gsd:progress --next",
-    "label": "Advance to the next step",
-    "reason": "Phase 221 of 3 · executing"
+    "command": "/gsd:progress",
+    "label": "Show progress",
+    "reason": "Unsure of state — showing progress"
   },
-  "updated_at": "2026-09-12T19:34:39.382Z"
+  "updated_at": "2026-09-14T16:43:29.045Z"
 }

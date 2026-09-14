@@ -65,7 +65,7 @@ const FEATURES: {
     heading: 'Personalized Puzzle Training',
     desc: [
         'Every puzzle is built from your own blunders, not a generic puzzle set.',
-        'One critical move, or several fine moves? Commit before you play. Quiet positions are mixed in, so there isn\'t always a tactic waiting.',
+        'Is there only one good move, or several? Commit before you play. Quiet positions are mixed in, so there isn\'t always a tactic waiting.',
         'Spaced repetition brings each position back next session, then after three days, then ten, until you\'ve solved it three times.',
         'Pick your training days and build a session streak.',
     ],

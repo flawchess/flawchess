@@ -51,6 +51,15 @@ import { clearTrainRevealCache, readTrainRevealCache } from '@/lib/trainRevealCa
 import type { CachedTrainReveal } from '@/lib/trainRevealCache';
 import { DEV_CLOCK_ENABLED } from '@/lib/devClock';
 import { TRAIN_POINTS_PER_PUZZLE } from '@/lib/trainScore';
+import { cn } from '@/lib/utils';
+
+/** The page wrapper's classes; a puzzle on screen (the loop or a restored
+ * reveal) drops the phone top padding (see the comment at the call site).
+ * Module-level so the branching stays out of `TrainPage`'s own gated
+ * complexity. */
+function trainPageClass(showLoop: boolean, restoredActive: boolean): string {
+  return cn('px-4 py-6 md:px-6', (showLoop || restoredActive) && 'max-sm:pt-0');
+}
 
 export default function TrainPage(): ReactElement {
   const trainSession = useTrainSession();
@@ -195,8 +204,12 @@ export default function TrainPage(): ReactElement {
 
   return (
     // 191.1 UAT: same horizontal padding as the Import page content
-    // (`px-4 py-6 md:px-6` in Import.tsx) instead of a flat `p-6`.
-    <div className="px-4 py-6 md:px-6" data-testid="train-page">
+    // (`px-4 py-6 md:px-6` in Import.tsx) instead of a flat `p-6`. Phase 222
+    // UAT round 3: while a puzzle is on screen the phone header is suppressed
+    // (`useMarkPlayActive`), so the top padding would only push the pinned
+    // progress row + board down — drop it below `sm`, the header's own
+    // breakpoint.
+    <div className={trainPageClass(showLoop, restoredActive)} data-testid="train-page">
       {/* Landing screen only: the strip is vertical chrome above the solve
           screen's board column, which on mobile is pinned and sized to the
           viewport — every row above it comes straight out of the board. Time
@@ -241,6 +254,10 @@ export default function TrainPage(): ReactElement {
           }}
           nextSessionDate={trainSession.session.expires_on}
           onDone={returnToLanding}
+          solvedOutcomes={trainSession.solvedOutcomes}
+          sessionDate={trainSession.session.session_date}
+          expiresOn={trainSession.session.expires_on}
+          isWarmup={trainSession.session.is_warmup}
         />
       )}
     </div>

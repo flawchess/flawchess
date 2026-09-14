@@ -33,6 +33,18 @@ export interface TrainPuzzle {
 export interface SolvedResult {
   correct_guess: boolean;
   move_quality: TrainMoveTier;
+  /**
+   * Phase 222 (D-17): the same three values `SolveResponse` already returned
+   * for this exact position at the moment it was attempted — NOT a new
+   * answer-key leak (mirrors this interface's own docstring rule above).
+   * Entries here still carry no `position`, `game_id`, `ply` or best-move
+   * field. `source` mirrors `SolveResponse.source` (required); `item_status`
+   * and `due_date` mirror `SolveResponse.item_status`/`due_date` (nullable —
+   * `null` for `red_herring`/`sharp_filler` sources).
+   */
+  source: 'sr_item' | 'red_herring' | 'sharp_filler';
+  item_status: 'active' | 'mastered' | 'parked' | null;
+  due_date: string | null;
 }
 
 /**
@@ -187,6 +199,24 @@ export interface TrainSettingsResponse {
   reminder_enabled: boolean;
   reminder_hour: number;
   reminder_intent_at: string | null;
+  /**
+   * Phase 222 (D-11/D-12): server-stamped, read-only "seen" watermarks for
+   * the three onboarding steppers — stamped by `POST /train/onboarding/
+   * {step}` only on a COMPLETED stepper (an abandoned one replays). Never
+   * writable via `TrainSettingsUpdate` (D-12) — a PUT body can never smuggle
+   * a server-owned field, same rule as `reminder_last_sent_on`. `null` for
+   * every existing row (D-13: no backfill) until the client stamps it once.
+   */
+  intro_seen_at: string | null;
+  reveal_walkthrough_seen_at: string | null;
+  sr_explained_at: string | null;
+  /**
+   * Phase 222 UAT round 5: whether ANY of the account's push subscriptions
+   * came from a mobile browser (server-side User-Agent check). Account-wide,
+   * unlike the per-device subscription probe — the desktop score screen uses
+   * it to swap the phone QR handoff for a "reminders on your phone" line.
+   */
+  has_mobile_subscription: boolean;
 }
 
 /** Body for PUT /train/settings — a separate shape so a PUT can never smuggle

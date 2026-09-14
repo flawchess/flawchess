@@ -54,7 +54,14 @@ function makePuzzle(overrides: Partial<TrainPuzzle> = {}): TrainPuzzle {
 }
 
 function makeSolvedResult(overrides: Partial<SolvedResult> = {}): SolvedResult {
-  return { correct_guess: true, move_quality: 'good', ...overrides };
+  return {
+    correct_guess: true,
+    move_quality: 'good',
+    source: 'sr_item',
+    item_status: 'active',
+    due_date: '2026-07-28',
+    ...overrides,
+  };
 }
 
 function makeSession(overrides: Partial<TrainSessionResponse> = {}): TrainSessionResponse {
@@ -78,6 +85,7 @@ const SOLVE_RESPONSE: SolveResponse = {
   correct_move: true,
   move_quality: 'good',
   puzzle_type: 'sharp',
+  source: 'sr_item',
   item_status: 'active',
   streak: 1,
   due_date: '2026-07-28',
@@ -179,6 +187,107 @@ describe('useTrainSession — sessionSolvedCount (190.1-04 D-04)', () => {
       await expect(result.current.solvePuzzle(body)).rejects.toThrow();
     });
     expect(result.current.sessionSolvedCount).toBe(0);
+  });
+});
+
+/**
+ * Phase 222 (D-17/D-18, RESEARCH Finding C): `solvedOutcomes`, the score
+ * screen's sole source for "what returns and when" — seeded from
+ * `solved_results` on compose/resume, appended live from each solve's
+ * `SolveResponse`. Required because `solved_results` is EMPTY for a session
+ * composed and completed in one sitting (§Finding C).
+ */
+describe('useTrainSession — solvedOutcomes accumulator (Phase 222 D-17/D-18)', () => {
+  beforeEach(() => {
+    vi.mocked(trainApi.composeOrResumeSession).mockReset();
+    vi.mocked(trainApi.solvePuzzle).mockReset();
+  });
+
+  it('starts at [] for a fresh session (empty solved_results)', async () => {
+    vi.mocked(trainApi.composeOrResumeSession).mockResolvedValue(makeSession({ solved_results: [] }));
+    const { result } = renderHook(() => useTrainSession(), { wrapper: makeWrapper() });
+    act(() => result.current.startSession());
+    await waitFor(() => expect(result.current.session).not.toBeNull());
+    expect(result.current.solvedOutcomes).toEqual([]);
+  });
+
+  it('appends one live outcome per successful solve, carrying source/item_status/due_date straight from the SolveResponse', async () => {
+    vi.mocked(trainApi.composeOrResumeSession).mockResolvedValue(makeSession({ solved_results: [] }));
+    vi.mocked(trainApi.solvePuzzle).mockResolvedValue({
+      ...SOLVE_RESPONSE,
+      source: 'sr_item',
+      item_status: 'active',
+      due_date: '2026-08-05',
+    });
+    const { result } = renderHook(() => useTrainSession(), { wrapper: makeWrapper() });
+    act(() => result.current.startSession());
+    await waitFor(() => expect(result.current.session).not.toBeNull());
+
+    await act(async () => {
+      await result.current.solvePuzzle({
+        position: 1,
+        guess: 'critical',
+        played_move: 'e2e4',
+        move_quality: 'good',
+      });
+    });
+
+    expect(result.current.solvedOutcomes).toEqual([
+      {
+        correct_guess: true,
+        move_quality: 'good',
+        source: 'sr_item',
+        item_status: 'active',
+        due_date: '2026-08-05',
+      },
+    ]);
+  });
+
+  it('seeds solvedOutcomes from solved_results on a completed-session resume, without duplicating the seed against the live append', async () => {
+    // A fresh compose against a COMPLETED session returns populated
+    // solved_results via _resume_session (RESEARCH Open Question 4) — the
+    // seed path must not double-count against anything the live append
+    // would otherwise add (nothing does here, since no solvePuzzle call
+    // follows the resume).
+    const seeded: SolvedResult[] = [
+      makeSolvedResult({ due_date: '2026-07-26' }),
+      makeSolvedResult({ correct_guess: false, move_quality: 'wrong', due_date: '2026-08-01' }),
+    ];
+    vi.mocked(trainApi.composeOrResumeSession).mockResolvedValue(
+      makeSession({ puzzles: [], solved_count: 2, solved_results: seeded }),
+    );
+    const { result } = renderHook(() => useTrainSession(), { wrapper: makeWrapper() });
+    act(() => result.current.startSession());
+    await waitFor(() => expect(result.current.session).not.toBeNull());
+
+    expect(result.current.solvedOutcomes).toEqual(seeded);
+    expect(result.current.solvedOutcomes).toHaveLength(2);
+  });
+
+  it('reseeds (never accumulates) on a fresh compose call — three live appends followed by a new startSession() reset to the new session\'s own seed', async () => {
+    vi.mocked(trainApi.composeOrResumeSession).mockResolvedValue(makeSession({ solved_results: [] }));
+    vi.mocked(trainApi.solvePuzzle).mockResolvedValue(SOLVE_RESPONSE);
+    const { result } = renderHook(() => useTrainSession(), { wrapper: makeWrapper() });
+    act(() => result.current.startSession());
+    await waitFor(() => expect(result.current.session).not.toBeNull());
+
+    for (const position of [1, 2, 3]) {
+      await act(async () => {
+        await result.current.solvePuzzle({
+          position,
+          guess: 'critical',
+          played_move: 'e2e4',
+          move_quality: 'good',
+        });
+      });
+    }
+    expect(result.current.solvedOutcomes).toHaveLength(3);
+
+    // The landing-screen re-fire (e.g. after a schedule-settings save):
+    // startSession() again, composing a session with its own empty seed.
+    vi.mocked(trainApi.composeOrResumeSession).mockResolvedValue(makeSession({ solved_results: [] }));
+    act(() => result.current.startSession());
+    await waitFor(() => expect(result.current.solvedOutcomes).toHaveLength(0));
   });
 });
 

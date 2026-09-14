@@ -2,9 +2,9 @@
 id: SEED-166
 status: planted
 planted: 2026-09-12
-planted_during: /gsd-explore "Train retention" (prod funnel cut + research pass)
+planted_during: /gsd-explore "Train retention" (prod funnel cut + research pass); amended 2026-09-13 by /gsd-explore "Train bot introductions" (bot-narrated delivery, tone rules, corrections)
 trigger_when: next Train window; both fixes share one metric pair and should ship together so the second one has a population to act on
-scope: one phase — (A) first-ever-puzzle premise explanation inline at the guess step, (B) first-completed-session close that explains spaced repetition and frames the reminder as being for the user; plus two funnel metrics recorded before/after
+scope: one phase — (A) first-session premise explanation delivered by bot avatars in speech bubbles, then a persistent bot bubble carrying the guess buttons on every puzzle, (B) per-puzzle bot feedback that always states when the position returns, plus a bot-delivered session close that frames the reminder as being for the user; plus two funnel metrics recorded before/after
 ---
 
 # SEED-166: Train loses 57% of first-timers before their first move, and half of the rest after one session
@@ -62,10 +62,11 @@ Compounding it, and probably the dominant mechanism for the 52: **the locked boa
 gives no feedback.** Pieces are draggable before the guess, and `handlePieceDrop`
 returns `false` silently while `guess === null`
 (`frontend/src/components/train/TrainSolveScreen.tsx:535`), so a dragged piece snaps
-back with no explanation. On a phone the board fills the viewport and the prompt plus
-the two buttons sit below it in small text. The natural first action on a chessboard
-is to move a piece; here that action fails silently, and the instruction that would
-have explained it is the thing the user skipped.
+back with no explanation. The natural first action on a chessboard is to move a piece;
+here that action fails silently. The prompt and the two buttons DO fit below the board
+on a phone (correction 2026-09-13: the original "below the fold" claim was wrong), but
+nothing draws the eye to them, so a plain text prompt under a chessboard is easy to
+skip past.
 
 **Leak 2 (after one completed session, ~half of finishers).** The score screen says
 "Session complete" plus stats and a "Remind me" button. It closes a loop instead of
@@ -94,32 +95,62 @@ Unresolved (do not cite as fact): Chessable surfacing next-due in-product (inter
 is primary, display claim unsourced); "ask for push at session 4–6" opt-in figures (all
 trace to a dead vendor post); any day-1→day-2 return benchmark.
 
+## Delivery vehicle: the bot personas narrate Train (decided 2026-09-13)
+
+The 24 Bots personas (`frontend/src/lib/personas/personaRegistry.ts`, avatars via
+`personaAvatars.ts`, 128px WebP) become the voice of Train. Every explanation, prompt
+and verdict below is spoken by a bot avatar with a speech bubble. Rationale: the bubble
+makes the guess prompt look like a question someone is asking rather than a widget to
+scroll past, it reuses characters and art that already exist (no new register for the
+product), and the bots plus Train are the two features that bring users back, so tying
+them together is cheap. The bot layer is permanent, not a first-session-only device;
+only the *explanation* content is first-session-only.
+
+Roles and tone:
+
+- **Tank the Ox introduces the drill** (first session only). Friendlier bots (e.g. Hilda
+  the Hippo) do the actual explaining.
+- **Bot identity carries tone, not puzzle type.** Two curated sets, chosen per outcome:
+  stern set (Tank, Diesel, Nell, Talon, Gus) fronts 0–1 point verdicts, friendly set
+  (Shelly, Pip, Bruno, Rocco, Hilda) fronts 2–3 point verdicts. The registry has styles
+  (Attacker/Grinder/Trickster/Wall) but no temperament field; add one or keep two
+  explicit id lists.
+- **Stern face, encouraging voice.** Copy never comments on the user and always looks
+  forward. Reference lines: 0–1 points: "Not quite right. We'll try this again in the
+  next session." 2–3 points: "Good job! Let's see if you remember this in 4 days."
+- **Copy is written per outcome bucket with a few variants, never per bot.** 24 bots ×
+  per-bot voice does not scale and is not needed.
+
 ## Scope
 
-**A. First-ever puzzle: explain the premise, inline, once.** Before the first guess is
-committed, state in a few lines: this is a real position from a real game (yours, once
-enough are analyzed); unlike a puzzle, nobody has told you whether a tactic exists;
-decide first, then play. Define the two buttons: *one critical move* = a single move
-matters and everything else loses something; *several fine moves* = a normal position,
-several moves are fine, just play sensibly. Say that the guess is the point, not a
-formality. Storm-style: at the buttons, not a pre-session page. Shown once per user
-(server-side flag, not device-local).
+**A. First-ever puzzle: explain the premise, inline, once, in bot bubbles.** Before the
+first guess is committed: this is a real position from a real game (yours, once enough
+are analyzed); unlike a puzzle, nobody has told you whether a tactic exists; decide
+first, then play. Define the two buttons: *one critical move* = a single move matters
+and everything else loses something; *several fine moves* = a normal position, several
+moves are fine, just play sensibly. Say that the guess is the point, not a formality,
+and (briefly) that missed positions come back at growing intervals. Storm-style: at the
+buttons, not a pre-session page. Shown once per user (server-side flag, not
+device-local).
 
-The locked board must react to a move attempt. Options, in order of preference: on a
-drop while `guess === null`, pull the guess prompt into view and make it impossible to
-miss (overlay on the board, or shake/pulse the two buttons and scroll them into view);
-or put the guess prompt *on* the board from the start (an overlay the user dismisses by
-choosing) so the first tap is the guess and there is no silent failure to have. Either
-way, no drag may ever snap back with nothing said. Decide in the UI phase; the mobile
-viewport (board fills the screen, prompt below the fold) is the layout to design for.
+After the first session the explanation goes away but the bubble stays: **on every
+puzzle a bot avatar with a speech bubble carries the guess prompt and the two decision
+buttons inside it.** The buttons are ones the user needs anyway, so this adds no
+friction. The board stays fully visible: the position must be readable to make the
+decision, so the bubble sits below/next to the board, never over it (the earlier
+"overlay on the board" option is withdrawn). A drop while `guess === null` must still
+react (pull the bubble into view, pulse it); no drag may ever snap back with nothing
+said. Design for the phone viewport first.
 
-**B. First completed session: explain spaced repetition and the reminder's purpose.**
-On the score screen of the first completed session (and lighter on later ones): the N
-positions you missed come back, and when (Anki-style "returns in 3 days", from the
-actual SR schedule); the ones you got are parked until later; why repeating your own
-blunders at growing intervals beats one-off puzzles; and that "Remind me" exists so
-this works for you, not for us. The reminder ask comes *after* that explanation, in
-the same view.
+**B. Per-puzzle verdict and session close, spoken by bots, always with the return
+date.** The reveal shows the outcome-matched bot (stern for 0–1, friendly for 2–3) with
+one line that ends with when the position returns, Anki-style, from the actual SR
+schedule. The score screen then has a bot sum it up: the N positions you missed come
+back (and when), the ones you got are parked until later, why repeating your own
+blunders at growing intervals beats one-off puzzles, and that "Remind me" exists so
+this works for you, not for us. The reminder ask comes *after* that, in the same view.
+Lighter copy on later sessions. Bots may also appear in the point animation over the
+board; nice-to-have, decide in the UI phase.
 
 **C. Metrics, recorded before and after** (SQL in this seed's history, or add to
 `db-report`):
@@ -128,9 +159,28 @@ the same view.
 - Second-session return: users with ≥2 completed / users with ≥1 completed. Baseline
   **26/53 = 49%**.
 
-## Out of scope
+## Planning notes (verified 2026-09-13)
+
+- `SolveResponse.due_date` (`app/schemas/train.py`) already carries the next due date
+  for SR items, so "in x days" needs no schema change. It is `None` for red herrings and
+  sharp filler, which carry no SR bookkeeping: the verdict copy for those must not
+  promise a return ("this one was a warm-up" style variant).
+- No server-side "first session" / "explanation seen" flag exists yet
+  (`session_streak_count` is the only progress counter surfaced). Add one; do not use
+  device-local storage, the phone-handoff flow moves users between devices.
+- Avatar art resolves per persona id via `resolveAvatarSrc`; personas without curated
+  art fall back to an emoji placeholder, so the stern/friendly sets should be drawn from
+  personas that have real art.
+
+## Out of scope / decided against
 
 - Changing the daily default cadence (decided: keep).
 - Push channel changes (email, etc.). The button isn't pressed; the channel isn't the
   problem yet.
 - A pre-session spaced-repetition onboarding page.
+- Renaming the feature to "FlawChess Boot Camp" (dropped 2026-09-13: cost across nav,
+  route, Umami events, push and handoff copy, and "boot camp" signals the harsh register
+  decided against). Tank may still *call* it a boot camp in his intro line.
+- Bot images on the Train landing page (decoration; only returning users see it and they
+  are not the leak). Revisit after the metrics have a post-change reading.
+- Harsh or judgmental verdict copy, and mapping bots to puzzle type instead of outcome.

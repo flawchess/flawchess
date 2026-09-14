@@ -19,6 +19,7 @@ import {
   type Persona,
   type PersonaId,
   type Rung,
+  type Temperament,
 } from '../personaRegistry';
 import { BOT_STYLE_BUNDLES, ATTACKER_STYLE, TRICKSTER_STYLE, GRINDER_STYLE, WALL_STYLE } from '@/lib/engine/botStyleBundles';
 import type { Style } from '@/lib/engine/styleOpeningLines';
@@ -126,6 +127,42 @@ describe('PERSONA_REGISTRY', () => {
   });
 });
 
+// Phase 222 (D-01, TRAINBOT-07): the Train bot-casting temperament axis.
+describe('temperament (Phase 222 D-01)', () => {
+  const ALL_TEMPERAMENTS: Temperament[] = ['stern', 'friendly', 'smart'];
+
+  it('every persona carries a valid temperament', () => {
+    for (const persona of Object.values(PERSONA_REGISTRY)) {
+      expect(ALL_TEMPERAMENTS, persona.id).toContain(persona.temperament);
+    }
+  });
+
+  it('each of the three temperament pools is non-empty', () => {
+    for (const temperament of ALL_TEMPERAMENTS) {
+      const pool = Object.values(PERSONA_REGISTRY).filter((p) => p.temperament === temperament);
+      expect(pool.length, temperament).toBeGreaterThan(0);
+    }
+  });
+
+  it('the 24 entries split 8 stern / 7 smart / 9 friendly (reviewed CONTEXT.md table)', () => {
+    const counts: Record<Temperament, number> = { stern: 0, smart: 0, friendly: 0 };
+    for (const persona of Object.values(PERSONA_REGISTRY)) {
+      counts[persona.temperament] += 1;
+    }
+    expect(counts).toEqual({ stern: 8, smart: 7, friendly: 9 });
+  });
+
+  it("wall-1800 (Hilda, the fixed D-05 teacher) is 'smart'", () => {
+    const persona = personaForId('wall-1800' as PersonaId);
+    expect(persona?.temperament).toBe('smart');
+  });
+
+  it("grinder-1600 (Tank, the D-05 intro-step-1 host) is 'stern'", () => {
+    const persona = personaForId('grinder-1600' as PersonaId);
+    expect(persona?.temperament).toBe('stern');
+  });
+});
+
 describe('CAL-05 calibrated label honesty (Phase 184)', () => {
   /** Parses a `~NNNN` calibrated label back to its numeric value. */
   function parseLabel(label: string): number {
@@ -224,6 +261,7 @@ function assertPersonaShape(p: Persona): void {
   void p.species;
   void p.bio;
   void p.avatarEmoji;
+  void p.temperament;
 }
 for (const persona of Object.values(PERSONA_REGISTRY)) {
   assertPersonaShape(persona);

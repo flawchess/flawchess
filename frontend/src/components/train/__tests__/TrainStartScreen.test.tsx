@@ -282,9 +282,13 @@ describe('TrainStartScreen — six landing states', () => {
     expect(screen.queryByTestId('btn-train-resume')).toBeNull();
   });
 
-  it('every state shares the "Train" heading text sizing floor (no text-xs/sub-floor usage)', () => {
+  it('222 UAT round 6: Tank the Ox speaks the tagline in a bot bubble, and the old "Train" heading is gone', () => {
     renderScreen();
-    expect(screen.getByText('Train')).not.toBeNull();
+    expect(screen.getByTestId('train-bot-name').textContent).toBe('Tank the Ox');
+    expect(screen.getByTestId('train-tagline').textContent).toBe(
+      'Learn from the mistakes in your games with personalized puzzles.',
+    );
+    expect(screen.queryByRole('heading', { name: 'Train' })).toBeNull();
   });
 
   it('D-13: the schedule settings block renders after the Start CTA in the fresh state', () => {

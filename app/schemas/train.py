@@ -62,19 +62,31 @@ class SolvedResult(BaseModel):
     `app.models.drill_solve.DrillMoveQuality`'s docstring, which explicitly
     forbids using its enum values to compute a score directly).
 
-    Not an answer-key leak: both `correct_guess` and `move_quality` were
-    already returned by `SolveResponse` for each of these same positions at
-    the moment they were attempted — this endpoint just re-serves outcomes
-    the client already saw once, from the server instead of a device-local
+    Not an answer-key leak: `correct_guess`, `move_quality`, and (Phase 222,
+    TRAINBOT-04/D-17) `source`/`item_status`/`due_date` were ALL already
+    returned by `SolveResponse` for each of these same positions at the
+    moment they were attempted — this endpoint just re-serves outcomes the
+    client already saw once, from the server instead of a device-local
     cache. The `PuzzleRevealResponse` 409 gate (which protects the actual
     answer key — best move, PV, puzzle type) is untouched and continues to
     protect UNSOLVED positions only. Entries here carry no `position`,
     `game_id`, `ply`, or best-move field, so they reveal nothing about
     puzzles still to be attempted in the session.
+
+    `due_date` (D-17 caveat): this is the item's CURRENT value, not a frozen
+    at-solve-time snapshot — identical within one session, and arguably more
+    truthful for a "when does it come back" statement across a re-composed
+    one (e.g. after a later solve in the same session re-advanced the ladder).
+    `item_status`/`due_date` are `None` for `source in ("red_herring",
+    "sharp_filler")`, which carry no SR bookkeeping (mirrors `SolveResponse`'s
+    own nullability).
     """
 
     correct_guess: bool
     move_quality: Literal["good", "inaccuracy", "wrong"]
+    source: Literal["sr_item", "red_herring", "sharp_filler"]
+    item_status: Literal["active", "mastered", "parked"] | None
+    due_date: date | None
 
 
 class TrainSessionResponse(BaseModel):
@@ -271,6 +283,14 @@ class PuzzleRevealResponse(BaseModel):
     motif: str | None
 
 
+#: Phase 222 (TRAINBOT-05, D-11/D-12): the path parameter for
+#: POST /train/onboarding/{step}. FastAPI 422s any value outside this set
+#: before the handler body runs — no hand-rolled validation, and the
+#: repository maps each member through a fixed column lookup (never a
+#: string interpolated into SQL, never `getattr` on a request-supplied name).
+OnboardingStep = Literal["intro", "reveal_walkthrough", "sr_explained"]
+
+
 class TrainSettingsResponse(BaseModel):
     """Response for GET/PUT /train/settings.
 
@@ -282,6 +302,22 @@ class TrainSettingsResponse(BaseModel):
     `reminder_intent_at` (Phase 203, OFFER-03/OFFER-05/D-02/D-15) is the
     OPPOSITE of `reminder_last_sent_on`: it IS client-writable (stamped when
     the user taps the iOS install affordance), so it appears here.
+
+    `intro_seen_at`/`reveal_walkthrough_seen_at`/`sr_explained_at` (Phase 222,
+    TRAINBOT-05, D-11/D-12/D-13) are the three bot-onboarding "explanation
+    seen" watermarks. Like `reminder_last_sent_on`, each is a server-owned
+    fact — but unlike it, all three ARE readable here (so the client can
+    branch on them without a second fetch) while remaining absent from
+    `TrainSettingsUpdate`: they are stamped ONLY by the dedicated
+    `POST /train/onboarding/{step}` endpoint on stepper completion, never by
+    a settings PUT. No backfill (D-13): every row that predates these
+    columns reads back NULL on all three, meaning "never seen."
+
+    `has_mobile_subscription` (Phase 222 UAT round 5) is a derived, read-only
+    fact: whether ANY of the account's push subscriptions came from a mobile
+    browser (`push_repository.MOBILE_USER_AGENT_PATTERN`). The desktop score
+    screen uses it to replace the phone QR handoff with a "reminders on your
+    phone" line — a per-device subscription probe can never answer that.
     """
 
     timezone: str
@@ -290,6 +326,10 @@ class TrainSettingsResponse(BaseModel):
     reminder_enabled: bool
     reminder_hour: int
     reminder_intent_at: datetime | None
+    intro_seen_at: datetime | None
+    reveal_walkthrough_seen_at: datetime | None
+    sr_explained_at: datetime | None
+    has_mobile_subscription: bool
 
 
 class TrainSettingsUpdate(BaseModel):
