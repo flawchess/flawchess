@@ -220,6 +220,16 @@ vi.mock('@/lib/sounds', () => ({
   setMuted: (muted: boolean) => mockSetMuted(muted),
 }));
 
+// Quick 260914-uer (QUICK-03): the walkthrough's step-1 scroll now drives a
+// tunable rAF tween (see useTrainWalkthrough.ts) instead of the native
+// `window.scrollBy`. `animatedScroll.ts` has its own unit tests; here only
+// the CALL — element, delta, duration — matters.
+const mockAnimateScrollTop = vi.fn();
+vi.mock('@/lib/animatedScroll', () => ({
+  animateScrollTop: (element: HTMLElement, deltaPx: number, durationMs: number) =>
+    mockAnimateScrollTop(element, deltaPx, durationMs),
+}));
+
 // ─── Fake Worker ────────────────────────────────────────────────────────────
 
 // 190.1-02: tracks the width from the last `setoption name MultiPV value N`
@@ -533,6 +543,7 @@ describe('TrainSolveScreen — progress, last move, grading state, engine failur
     getSettings.mockReset();
     getSettings.mockResolvedValue(makeSettings());
     stampOnboarding.mockClear();
+    mockAnimateScrollTop.mockClear();
   });
 
   afterEach(() => {
@@ -2781,10 +2792,8 @@ describe('TrainSolveScreen — progress, last move, grading state, engine failur
       expect(screen.getByTestId('train-bot-walkthrough').textContent).toContain('eval bar');
     });
 
-    it('on a phone, entering the tap step scrolls the first line card to just under the pinned board block', async () => {
+    it('on a phone, entering the tap step scrolls the feedback pane via animateScrollTop', async () => {
       matchMediaMatches = false;
-      const scrollBy = vi.fn();
-      vi.stubGlobal('scrollBy', scrollBy);
       getSettings.mockResolvedValue(makeSettings({ reveal_walkthrough_seen_at: null }));
       await renderScreen(makePuzzle());
       fireEvent.click(screen.getByTestId('btn-train-guess-critical'));
@@ -2793,18 +2802,19 @@ describe('TrainSolveScreen — progress, last move, grading state, engine failur
       });
       await waitFor(() => expect(screen.getByTestId('train-bot-walkthrough')).not.toBeNull());
       await waitFor(() => expect(screen.getByTestId('train-line-box-your-move')).not.toBeNull());
-      const pinned = screen.getByTestId('train-pinned-board');
+      const pane = screen.getByTestId('train-feedback-pane');
       const card = screen.getByTestId('train-line-box-your-move');
-      const pinnedRect = { top: 0, bottom: 300, height: 300 } as DOMRect;
+      const paneRect = { top: 300, bottom: 480, height: 180 } as DOMRect;
       const cardRect = { top: 700, bottom: 780, height: 80 } as DOMRect;
-      vi.spyOn(pinned, 'getBoundingClientRect').mockReturnValue(pinnedRect);
+      vi.spyOn(pane, 'getBoundingClientRect').mockReturnValue(paneRect);
       vi.spyOn(card, 'getBoundingClientRect').mockReturnValue(cardRect);
-      expect(scrollBy).not.toHaveBeenCalled();
+      expect(mockAnimateScrollTop).not.toHaveBeenCalled();
       fireEvent.click(screen.getByTestId('btn-train-bot-walkthrough-next'));
-      await waitFor(() => expect(scrollBy).toHaveBeenCalledTimes(1));
-      // 700 (card top) - 300 (pinned height) - 12 (gap).
-      expect(scrollBy).toHaveBeenCalledWith({ top: 388, behavior: 'smooth' });
-      vi.unstubAllGlobals();
+      await waitFor(() => expect(mockAnimateScrollTop).toHaveBeenCalledTimes(1));
+      // 700 (card top) - 300 (pane top) - 12 (gap) = 388, same delta as before
+      // the pane replaced the pinned block as the scroll target. 700ms is
+      // WALKTHROUGH_CARD_SCROLL_DURATION_MS (not reduced-motion here).
+      expect(mockAnimateScrollTop).toHaveBeenCalledWith(pane, 388, 700);
     });
 
     it('with reveal_walkthrough_seen_at already stamped, no walkthrough renders and the verdict shows immediately', async () => {
@@ -2818,6 +2828,49 @@ describe('TrainSolveScreen — progress, last move, grading state, engine failur
       });
       await waitFor(() => expect(screen.getByTestId('train-bot-verdict-line')).not.toBeNull());
       expect(screen.queryByTestId('train-bot-walkthrough')).toBeNull();
+    });
+
+    it('on a phone the reveal feedback pane carries both the bubble and the reveal; on desktop it carries only the reveal (D-C)', async () => {
+      getSettings.mockResolvedValue(
+        makeSettings({ reveal_walkthrough_seen_at: '2026-01-01T00:00:00Z' }),
+      );
+      matchMediaMatches = false; // phone
+      await renderScreen(makePuzzle());
+      fireEvent.click(screen.getByTestId('btn-train-guess-critical'));
+      await act(async () => {
+        fireEvent.click(screen.getByTestId('drop-e2e4'));
+      });
+      const phonePane = await waitFor(() => screen.getByTestId('train-feedback-pane'));
+      expect(within(phonePane).getByTestId('train-bot-bubble')).not.toBeNull();
+      expect(within(phonePane).getByTestId('train-reveal')).not.toBeNull();
+      cleanup();
+
+      matchMediaMatches = true; // desktop
+      await renderScreen(makePuzzle());
+      fireEvent.click(screen.getByTestId('btn-train-guess-critical'));
+      await act(async () => {
+        fireEvent.click(screen.getByTestId('drop-e2e4'));
+      });
+      const desktopPane = await waitFor(() => screen.getByTestId('train-feedback-pane'));
+      expect(within(desktopPane).queryByTestId('train-bot-bubble')).toBeNull();
+      expect(within(desktopPane).getByTestId('train-reveal')).not.toBeNull();
+      // The bubble stays under the board on desktop (D-C) — it is still on
+      // screen, just outside the pane.
+      expect(screen.getByTestId('train-bot-bubble')).not.toBeNull();
+    });
+
+    it('the reveal feedback pane carries thin-scrollbar and overflow-y-auto so its scrollbar stays visible', async () => {
+      getSettings.mockResolvedValue(
+        makeSettings({ reveal_walkthrough_seen_at: '2026-01-01T00:00:00Z' }),
+      );
+      await renderScreen(makePuzzle());
+      fireEvent.click(screen.getByTestId('btn-train-guess-critical'));
+      await act(async () => {
+        fireEvent.click(screen.getByTestId('drop-e2e4'));
+      });
+      const pane = await waitFor(() => screen.getByTestId('train-feedback-pane'));
+      expect(pane.className).toContain('thin-scrollbar');
+      expect(pane.className).toContain('overflow-y-auto');
     });
 
     it('the board arrow set is identical across all walkthrough steps — spotlightKey is never touched', async () => {

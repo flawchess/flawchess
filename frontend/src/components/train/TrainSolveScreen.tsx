@@ -49,6 +49,7 @@ import { EvalBar } from '@/components/analysis/EvalBar';
 import type { SolveResponse, TrainPuzzle, TrainSettingsResponse, VettedMove } from '@/types/train';
 import type { UseTrainSessionResult } from '@/hooks/useTrainSession';
 import { useFitBoardToViewport } from '@/hooks/useFitBoardToViewport';
+import { useFitPaneToViewport } from '@/hooks/useFitPaneToViewport';
 import { useIsDesktop } from '@/hooks/useIsDesktop';
 import { useTrainFreePlay, uciFromDrop } from '@/hooks/useTrainFreePlay';
 import { useStockfishEngine, type StockfishEngineState } from '@/hooks/useStockfishEngine';
@@ -166,6 +167,19 @@ const TRAIN_BOARD_MIN_WIDTH_PX = 240;
  * Solution/Analyze/Next row is never flush against the viewport edge.
  */
 const TRAIN_BOARD_BOTTOM_GUTTER_PX = 40;
+/**
+ * Quick task 260914-uer (QUICK-04): breathing room between the reveal
+ * feedback pane's bottom edge and the chrome below it (the chrome itself is
+ * measured by `useFitPaneToViewport`, not estimated here).
+ */
+const TRAIN_FEEDBACK_PANE_GUTTER_PX = 8;
+/**
+ * Quick task 260914-uer (QUICK-04): floor for the feedback pane's height —
+ * below it the page is allowed to scroll again rather than squeezing the
+ * feedback into a slot nobody can read. The phone-pinned board keeps its
+ * `max-lg:sticky` classes precisely so that fallback still behaves.
+ */
+const TRAIN_FEEDBACK_PANE_MIN_HEIGHT_PX = 160;
 /*
  * Phase 222 UAT: below Tailwind's `lg` breakpoint the board is WIDTH-bound
  * only — the height fit (`useFitBoardToViewport`) runs on desktop alone
@@ -862,11 +876,23 @@ export function TrainSolveScreen({
   // gutter no matter what else the page renders above the column.
   const columnRef = useRef<HTMLDivElement>(null);
   const boardRef = useRef<HTMLDivElement>(null);
-  // Phase 222 UAT round 3: the solve screen root and the phone-pinned
-  // progress+board block, for the walkthrough's scroll-to-cards effect.
+  // Phase 222 UAT round 3: the solve screen root, for the walkthrough's
+  // scroll-to-cards effect.
   const screenRef = useRef<HTMLDivElement>(null);
-  const pinnedRef = useRef<HTMLDivElement>(null);
   const isDesktop = useIsDesktop();
+  // Quick task 260914-uer (QUICK-03/QUICK-04): the bounded reveal feedback
+  // pane — the walkthrough scrolls THIS, never the window (see
+  // useTrainWalkthrough.ts). Declared above the hook call so the ref exists
+  // before it is passed in. Destructured immediately (not kept as
+  // `feedbackPane.paneRef`/`.maxHeightPx` property access) — eslint's
+  // react-hooks/refs rule flags ANY later property access on an object that
+  // bundles a ref as "accessing a ref during render", even for the sibling
+  // non-ref field; separate bindings sidestep the false positive (same
+  // pattern as `useBoardStageSize`'s callers).
+  const { paneRef: feedbackPaneRef, maxHeightPx: feedbackPaneMaxHeightPx } = useFitPaneToViewport({
+    gutterPx: TRAIN_FEEDBACK_PANE_GUTTER_PX,
+    minPx: TRAIN_FEEDBACK_PANE_MIN_HEIGHT_PX,
+  });
 
   // Phase 200 (D-11) + UAT round 9: the board has left the pristine reveal —
   // a line is stepped, or exploration is running. Gates the Solution button's
@@ -886,7 +912,7 @@ export function TrainSolveScreen({
     hasSolution: isBoardDeparted,
     isDesktop,
     screenRef,
-    pinnedRef,
+    paneRef: feedbackPaneRef,
     setSpotlight,
     setLineStep,
     stamp,
@@ -1590,6 +1616,22 @@ export function TrainSolveScreen({
     walkthrough.activeStep,
     isWarmup,
   );
+  // Quick task 260914-uer (QUICK-04, D-B/D-C): hoisted so the SAME bubble
+  // markup can render from either slot below — under the board on desktop
+  // and in every pre-reveal state, or inside the feedback pane on phones
+  // during a reveal — without duplicating the JSX.
+  const bubbleNode =
+    bubbleBody === null ? null : (
+      <TrainBotBubble
+        persona={bubblePersona}
+        state={bubbleState.kind}
+        nudgeNonce={nudgeNonce}
+        actions={bubbleBody.actions}
+        ring={walkthroughTarget === 'verdict'}
+      >
+        {bubbleBody.copy}
+      </TrainBotBubble>
+    );
 
   return (
     <div
@@ -1628,7 +1670,6 @@ export function TrainSolveScreen({
         // strip stays short on phones. UAT round 3 dropped the block's own
         // bottom padding: the outer container's gap alone now separates the
         // board from the bubble's avatar.
-        ref={pinnedRef}
         className="flex w-full flex-col items-center gap-3 max-lg:sticky max-lg:top-0 max-lg:z-10 max-lg:bg-background"
         data-testid="train-pinned-board"
       >
@@ -1756,18 +1797,12 @@ export function TrainSolveScreen({
               Finding D) — nothing renders in this slot then. `nudgeNonce` is
               the bubble's own remount key (Pitfall 3: a repeated nudge must
               replay the pulse, not be swallowed as an already-running
-              animation). */}
-          {bubbleBody !== null && (
-            <TrainBotBubble
-              persona={bubblePersona}
-              state={bubbleState.kind}
-              nudgeNonce={nudgeNonce}
-              actions={bubbleBody.actions}
-              ring={walkthroughTarget === 'verdict'}
-            >
-              {bubbleBody.copy}
-            </TrainBotBubble>
-          )}
+              animation). Quick task 260914-uer (D-B/D-C): during a phone
+              reveal (`!isDesktop && showResultRow`) the bubble moves into the
+              feedback pane below instead of rendering here, so it scrolls
+              with the feedback rather than behind the pinned board; on
+              desktop, and in every pre-reveal state, it stays in this slot. */}
+          {(isDesktop || !showResultRow) && bubbleNode}
           {gradingError && (
             <div className="flex flex-col items-center gap-2" data-testid="train-grading-error">
               <LoadError resource="your move grading" />
@@ -1785,37 +1820,54 @@ export function TrainSolveScreen({
       )}
       </div>
       {showResultRow && (
-        <TrainReveal
-          puzzle={puzzle}
-          sessionId={trainSession.session?.session_id ?? null}
-          verdict={verdict}
-          isSolveError={trainSession.isSolveError}
-          onRetrySolve={trainSession.retrySolve}
-          onNext={handleNext}
-          onFenChange={setBoardFen}
-          gradingEngine={gradingEngine}
-          guess={guess}
-          playedMoveUci={lastPlayedUci}
-          gradeResult={gradeResult}
-          playedMoveQuality={playedMoveQuality}
-          gameMoveQuality={gameMoveQuality}
-          onGameMoveUciChange={setGameMoveUci}
-          onAnalyzeClick={handleAnalyzeClick}
-          onGameMoveLineChange={setGameMoveLine}
-          onLineStep={walkthrough.handleLineStep}
-          solutionNonce={solutionNonce}
-          spotlightKey={spotlight?.key ?? null}
-          onSpotlightChange={walkthrough.handleSpotlightChange}
-          isBoardDeparted={isBoardDeparted}
-          onReturnToSolution={returnToSolution}
-          alsoFineMoves={revealOverlay.alsoFineMoves}
-          isExploring={freePlay.isExploring}
-          freePlay={freePlay}
-          onExitExploration={handleShowSolution}
-          flipped={flipped}
-          onFlipBoard={handleFlipBoard}
-          walkthroughLinesRing={walkthroughTarget === 'lines'}
-        />
+        // Quick task 260914-uer (QUICK-04): the reveal feedback (bubble on
+        // phones + line cards) gets its own bounded scroll container instead
+        // of scrolling the whole page behind the pinned board. `thin-scrollbar`
+        // (index.css) is what makes the scrollbar visible on the pane's right
+        // edge — nothing had to be removed to reveal it, the scrolling element
+        // simply used to be the page. `p-1` keeps the walkthrough's spotlight
+        // ring off the clipped edges; `overflow-x-hidden` is explicit because
+        // an `overflow-y-auto` box otherwise computes `overflow-x` to `auto`,
+        // and the line stepper already owns its own horizontal scroller.
+        <div
+          ref={feedbackPaneRef}
+          style={{ maxHeight: feedbackPaneMaxHeightPx ?? undefined }}
+          className="flex w-full min-w-0 flex-col gap-4 overflow-y-auto overflow-x-hidden thin-scrollbar p-1 lg:max-w-sm"
+          data-testid="train-feedback-pane"
+        >
+          {!isDesktop && bubbleNode}
+          <TrainReveal
+            puzzle={puzzle}
+            sessionId={trainSession.session?.session_id ?? null}
+            verdict={verdict}
+            isSolveError={trainSession.isSolveError}
+            onRetrySolve={trainSession.retrySolve}
+            onNext={handleNext}
+            onFenChange={setBoardFen}
+            gradingEngine={gradingEngine}
+            guess={guess}
+            playedMoveUci={lastPlayedUci}
+            gradeResult={gradeResult}
+            playedMoveQuality={playedMoveQuality}
+            gameMoveQuality={gameMoveQuality}
+            onGameMoveUciChange={setGameMoveUci}
+            onAnalyzeClick={handleAnalyzeClick}
+            onGameMoveLineChange={setGameMoveLine}
+            onLineStep={walkthrough.handleLineStep}
+            solutionNonce={solutionNonce}
+            spotlightKey={spotlight?.key ?? null}
+            onSpotlightChange={walkthrough.handleSpotlightChange}
+            isBoardDeparted={isBoardDeparted}
+            onReturnToSolution={returnToSolution}
+            alsoFineMoves={revealOverlay.alsoFineMoves}
+            isExploring={freePlay.isExploring}
+            freePlay={freePlay}
+            onExitExploration={handleShowSolution}
+            flipped={flipped}
+            onFlipBoard={handleFlipBoard}
+            walkthroughLinesRing={walkthroughTarget === 'lines'}
+          />
+        </div>
       )}
     </div>
   );
