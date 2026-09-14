@@ -66,6 +66,13 @@ function emptyNote(host,message){
    explicitly (not derived from rows[0]) so an empty row set can still return
    the right number of empty columns instead of throwing on rows[0]. */
 function expand(rows,width){
+  // Drop rows dated outside DAYS. DAYS ends at the last user_activity day
+  // (UTC), but drill_sessions.session_date is the user's LOCAL day, so a
+  // session composed just after local midnight can sit one day past DAYS.
+  // Before this guard that row made indexOf() return -1, the slice below
+  // came back empty and the Train chart rendered with no bars or x-axis
+  // (the table under it still listed the row).
+  rows=rows.filter(r=>DAYS.includes(r[0]));
   if(!rows.length) return {labels:[],cols:Array.from({length:width},()=>[])};
   const first=rows[0][0], last=rows[rows.length-1][0];
   const i0=DAYS.indexOf(first), i1=DAYS.indexOf(last);
