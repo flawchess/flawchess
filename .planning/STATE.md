@@ -4,8 +4,8 @@ milestone: v2.19
 current_phase: 222
 status: completed
 stopped_at: Phase 222 complete — all phases complete
-last_updated: "2026-09-14T16:43:28.994Z"
-state_head: 09348472b80e0722478f811f398ea8d469b8b08e
+last_updated: "2026-09-14T20:31:29.594Z"
+state_head: f1df3bf0713bae6f67be462ae8f518fea94c03c0
 progress:
   total_phases: 1
   completed_phases: 1
@@ -13,7 +13,7 @@ progress:
   completed_plans: 6
 milestone_name: Train Bot-Narrated Onboarding & Verdicts
 last_activity: 2026-09-14
-last_activity_desc: Phase 222 shipped as release #359 and closed; phases 219–222 regrouped into milestones v2.17–v2.19 with GitHub releases
+last_activity_desc: Completed quick task 260914-uer (Train onboarding tutorial tweaks: phone avatar +20%, intro copy, slower walkthrough scroll, feedback scroll pane)
 ---
 
 # Project State: FlawChess
@@ -878,6 +878,7 @@ None active.
 | 260906-i5e | FlawChess Engine card header shows a running node count: "FlawChess, x ELO, n Nodes" (analogue of the Stockfish card's Depth) | 2026-09-06 | 1b5060661 | [260906-i5e-in-the-flawchess-engine-card-of-the-anal](./quick/260906-i5e-in-the-flawchess-engine-card-of-the-anal/) |
 | 260906-p54 | Maia iOS OOM (FLAWCHESS-9V): cap ORT wasm memory reservation at 1 GB in both vendored glue files (WebKit allows ~3 large wasm reservations per page; Stockfish x2 + WebGPU worker + wasm respawn = 4), vitest gate, cache version 4→5; Vite dev/preview now send COOP/COEP on 304s (WebKit 245346 killed the second same-URL Stockfish worker) | 2026-09-06 | d7c3fa436 | [260906-p54-cap-maia-ort-wasm-memory-at-1-gb-ios-oom](./quick/260906-p54-cap-maia-ort-wasm-memory-at-1-gb-ios-oom/) |
 | 85 | bot cards: per-style border + glow, brighter on hover | 2026-09-05 | c6e957ff1 | — |
+| 260914-uer | Puzzle training onboarding tutorial tweaks: phone-only 20% larger avatars, "Every puzzle starts with one question" copy, 50% slower scroll after "This is your feedback", feedback in its own scroll container with visible right scrollbar | 2026-09-14 | f1df3bf07 | [260914-uer-puzzle-training-onboarding-tutorial-twea](./quick/260914-uer-puzzle-training-onboarding-tutorial-twea/) |
 
 ## Deferred Items
 
