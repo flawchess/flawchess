@@ -374,7 +374,7 @@ const WARMUP_TAIL = "That one was a warm-up, so it won't come back. Your own pos
  * Warm-up is a SESSION property (`TrainSessionResponse.is_warmup`), not a
  * per-puzzle one. */
 const HERRING_TAIL = "That one was a red herring, so it won't come back.";
-const FILLER_TAIL = "That one was a filler position, so it won't come back.";
+const FILLER_TAIL = "That one was a tactics puzzle, not from your games, so it won't come back.";
 
 /** Inputs for `returnPhrase` — every field optional so a pre-206 cached
  * reveal (RESEARCH Pitfall 7) or an incomplete fixture degrades to an empty

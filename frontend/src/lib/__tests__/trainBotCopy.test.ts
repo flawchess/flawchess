@@ -339,9 +339,9 @@ describe('returnPhrase (D-15/D-16 truth table)', () => {
     },
   );
 
-  it('a red_herring names itself; a sharp_filler is a filler position', () => {
+  it('a red_herring names itself; a sharp_filler is a tactics puzzle', () => {
     expect(returnPhrase({ source: 'red_herring', is_warmup: false })).toContain('red herring');
-    expect(returnPhrase({ source: 'sharp_filler', is_warmup: false })).toContain('filler position');
+    expect(returnPhrase({ source: 'sharp_filler', is_warmup: false })).toContain('tactics puzzle');
   });
 
   it('an absent is_warmup (pre-fix cached reveal) degrades to the neutral line, not the warm-up claim', () => {

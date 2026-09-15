@@ -13,8 +13,8 @@ commit: 2b77f0009
 - `frontend/src/lib/trainBotCopy.ts`: `ReturnPhraseInput.is_warmup` added.
   `returnPhrase` returns `WARMUP_TAIL` for herring/filler sources only when
   `is_warmup === true`; otherwise `HERRING_TAIL` ("That one was a red
-  herring, so it won't come back.") or `FILLER_TAIL` ("That one was a filler
-  position, so it won't come back."). An absent flag (pre-fix cached reveal)
+  herring, so it won't come back.") or `FILLER_TAIL` ("That one was a tactics
+  puzzle, not from your games, so it won't come back."). An absent flag (pre-fix cached reveal)
   degrades to the neutral line, never the warm-up claim.
 - `frontend/src/components/train/TrainSolveScreen.tsx`: `deps.isWarmup`
   (already computed from `trainSession.session?.is_warmup` for the intro

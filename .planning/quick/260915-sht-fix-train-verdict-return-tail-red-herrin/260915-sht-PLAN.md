@@ -28,8 +28,8 @@ the per-puzzle verdict tail.
 1. `trainBotCopy.ts`: add `is_warmup?: boolean` to `ReturnPhraseInput`. For
    herring/filler sources return the warm-up tail only when `is_warmup` is
    true; otherwise a neutral non-return line per source ("That one was a red
-   herring, so it won't come back." / "That one was a filler position, so it
-   won't come back."). Update the D-16 doc comment.
+   herring, so it won't come back." / "That one was a tactics puzzle, not from
+   your games, so it won't come back."). Update the D-16 doc comment.
 2. `TrainSolveScreen.tsx`: thread `deps.isWarmup` into
    `renderVerdictBubbleBody` and on into `returnPhrase`.
 3. Tests in `frontend/src/lib/__tests__/trainBotCopy.test.ts`: pin both
