@@ -136,9 +136,13 @@ jobs:
       - name: Tagger precision gate
         run: uv run pytest tests/scripts/tagger -v
 
+      # Node version comes from .nvmrc so CI and developer machines cannot
+      # drift apart. The floor that actually matters (>=24.15.0, set by
+      # jsdom) lives in frontend/package.json engines; npm warns rather than
+      # errors on a mismatch, so it surfaces in the npm ci log below.
       - uses: actions/setup-node@v7
         with:
-          node-version: "24"
+          node-version-file: .nvmrc
           cache: 'npm'
           cache-dependency-path: frontend/package-lock.json
 
