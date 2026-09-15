@@ -1,6 +1,6 @@
 ---
 id: SEED-167
-status: planted
+status: promoted → Phase 223 (2026-09-15, ships inside SEED-168's phase)
 planted: 2026-09-13
 planted_during: /gsd-execute-phase 222 (Train Bot-Narrated Onboarding & Verdicts), plan 06 phase close, per D-10 and the ROADMAP's explicit "record a follow-up seed" instruction
 trigger_when: BEFORE or WITH SEED-168 (bot voice + immersive bot game layout), which removes the LAST in-game mute button (Bots.tsx); until then no urgency, the shared preference still works from the Bots page

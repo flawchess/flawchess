@@ -1,8 +1,8 @@
 ---
 gsd_state_version: "1.0"
 milestone: v2.19
-current_phase: 222
-status: completed
+current_phase: 223
+status: not_started
 stopped_at: Phase 222 complete — all phases complete
 last_updated: "2026-09-14T20:31:29.594Z"
 state_head: f1df3bf0713bae6f67be462ae8f518fea94c03c0
@@ -20,12 +20,13 @@ last_activity_desc: Completed quick task 260914-w1m (FLAWCHESS-BE: Stockfish cra
 
 ## Current Position
 
-Phase: 222
+Phase: 223
 Plan: Not started
 
-Status: All phases complete
+Status: Phase 223 (Bot Voice & Immersive Bot Game Layout, SEED-168 + SEED-167) added 2026-09-15, not yet discussed or planned. Next: `/gsd-discuss-phase 223`.
 
 Open threads carried forward (not blockers):
+- Phase 223 added 2026-09-15 (explicit user request, `/gsd-explore` "bots page welcome avatars + in-game trash-talk" → SEED-168 → promote): **Bot Voice & Immersive Bot Game Layout**. Per-persona in-game lines in a persistent two-line bubble under the board-truth rule (speak only after the bot's own move, only about cashed-in swings, WDL-based detection), mobile game screen rebuilt in the chess.com shape with a fixed Resign/Back/Forward/Flip bar replacing the nav, desktop `PlayerBar` rows + side-column bubble, roster intro card replaced by a welcome bubble, and SEED-167's settings-page sound switch folded in (no in-game mute remains). Written by hand as 223 rather than via `phase.add` (known mature-ROADMAP behavior). Next: `/gsd-discuss-phase 223`.
 
 - Phase 221: a forced only-move that sheds a piece can read as a sacrifice (game 1459049 ply 21); captured in `.planning/notes/2026-09-13-forced-only-move-tagged-sacrifice.md`, no action requested. Lever if sacrifice noise ever matters: lower `SACRIFICE_CLEARANCE_MAX_DEPTH` (4) and retag.
 

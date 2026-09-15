@@ -1,6 +1,6 @@
 ---
 id: SEED-168
-status: planted
+status: promoted → Phase 223 (2026-09-15)
 planted: 2026-09-15
 planted_during: /gsd-explore "bots page welcome avatars + in-game trash-talk" (follow-on to Phase 222's bot-narrated Train onboarding, shipped v2.19)
 trigger_when: next Bots window; phase-sized (copy authoring + layout rework on both breakpoints + swing detection); promote as ONE phase, the layout rework and the voice lines share the same bubble slot and should not ship separately
