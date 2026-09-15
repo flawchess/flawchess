@@ -882,6 +882,7 @@ None active.
 | 85 | bot cards: per-style border + glow, brighter on hover | 2026-09-05 | c6e957ff1 | — |
 | 260914-uer | Puzzle training onboarding tutorial tweaks: phone-only 20% larger avatars, "Every puzzle starts with one question" copy, 50% slower scroll after "This is your feedback", feedback in its own scroll container with visible right scrollbar (feedback scroll container reverted after UAT, a4c809ae1) | 2026-09-14 | a4c809ae1 | [260914-uer-puzzle-training-onboarding-tutorial-twea](./quick/260914-uer-puzzle-training-onboarding-tutorial-twea/) |
 | 260914-w1m | Fix FLAWCHESS-BE: Stockfish died on impossible chess.com custom-position boards (16-pawn roots); engine-pool is_valid() guard + invalid-root games excluded at _collect_full_ply_targets so the drain stamps them complete | 2026-09-14 | b96da37a7 | [260914-w1m-fix-flawchess-be-guard-stockfish-against](./quick/260914-w1m-fix-flawchess-be-guard-stockfish-against/) |
+| 260915-sht | Train verdict tail: a red herring/sharp filler solved in a regular session no longer gets the warm-up line; returnPhrase now takes TrainSessionResponse.is_warmup and uses a neutral non-return line otherwise | 2026-09-15 | 2b77f0009 | [260915-sht-fix-train-verdict-return-tail-red-herrin](./quick/260915-sht-fix-train-verdict-return-tail-red-herrin/) |
 | 91 | Unblock AI crawlers: Cloudflare managed robots.txt is dashboard-only, documented the toggle in production-runbook.md | 2026-09-15 | 9f7a3a811 | — |
 
 ## Deferred Items
