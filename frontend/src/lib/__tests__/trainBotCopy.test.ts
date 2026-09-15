@@ -297,24 +297,55 @@ describe('verdictCopy', () => {
 });
 
 describe('returnPhrase (D-15/D-16 truth table)', () => {
-  it('a red_herring source returns the warm-up tail regardless of due_date', () => {
+  it('a red_herring source in a warm-up session returns the warm-up tail regardless of due_date', () => {
     const phrase = returnPhrase({
       source: 'red_herring',
+      is_warmup: true,
       due_date: '2020-01-01', // arbitrary, must be ignored
+      session_date: '2026-09-13',
+      expires_on: '2026-09-14',
+    });
+    expect(phrase).toContain('warm-up');
+    expect(phrase).toContain('Your own positions will');
+  });
+
+  it('a sharp_filler source in a warm-up session with a non-null due_date still returns the warm-up tail', () => {
+    const phrase = returnPhrase({
+      source: 'sharp_filler',
+      is_warmup: true,
+      due_date: '2026-12-25',
       session_date: '2026-09-13',
       expires_on: '2026-09-14',
     });
     expect(phrase).toContain('warm-up');
   });
 
-  it('a sharp_filler source with a non-null due_date still returns the warm-up tail', () => {
-    const phrase = returnPhrase({
-      source: 'sharp_filler',
-      due_date: '2026-12-25',
-      session_date: '2026-09-13',
-      expires_on: '2026-09-14',
-    });
-    expect(phrase).toContain('warm-up');
+  // Quick 260915-sht: a red herring is a regular part of every session. A
+  // user with plenty of SR items was told a routine herring "was a warm-up"
+  // and that "your own positions will" come — warm-up is a SESSION property.
+  it.each(['red_herring', 'sharp_filler'] as const)(
+    'a %s source in a REGULAR session gets a neutral non-return line, never the warm-up tail',
+    (source) => {
+      const phrase = returnPhrase({
+        source,
+        is_warmup: false,
+        due_date: '2020-01-01', // arbitrary, must be ignored
+        session_date: '2026-09-13',
+        expires_on: '2026-09-14',
+      });
+      expect(phrase).toContain("won't come back");
+      expect(phrase).not.toContain('warm-up');
+      expect(phrase).not.toContain('own positions');
+    },
+  );
+
+  it('a red_herring names itself; a sharp_filler is a tactics puzzle', () => {
+    expect(returnPhrase({ source: 'red_herring', is_warmup: false })).toContain('red herring');
+    expect(returnPhrase({ source: 'sharp_filler', is_warmup: false })).toContain('tactics puzzle');
+  });
+
+  it('an absent is_warmup (pre-fix cached reveal) degrades to the neutral line, not the warm-up claim', () => {
+    expect(returnPhrase({ source: 'red_herring' })).not.toContain('warm-up');
   });
 
   it("item_status 'mastered' returns the mastered tail even when due_date is <= expires_on (stale-date trap)", () => {

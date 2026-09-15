@@ -190,10 +190,91 @@
 | 220. Opening Eval Cache Repair & Two-Source Confirmation (SEED-164, v2.18) | 8/8 | Complete    | 2026-09-11 |
 | 221. Tactic-Tagger Real-Game Precision — Winning Floor, Predicate Tightening & Port Fixes (SEED-165, v2.18) | 8/8 | Complete    | 2026-09-13 |
 | 222. Train Bot-Narrated Onboarding & Verdicts (SEED-166, v2.19) | 6/6 | Complete    | 2026-09-14 |
+| 223. Bot Voice & Immersive Bot Game Layout (SEED-168 + SEED-167, standalone) | 0/? | Not started | — |
 
 ## Active Phases
 
 No open milestone. Standalone phases continue absolute numbering from v2.19's Phase 222.
+
+### Phase 223: Bot Voice & Immersive Bot Game Layout (SEED-168 + SEED-167)
+
+**Goal**: Give the 24 Bots personas a voice during the game and on the roster, and rebuild
+the game screen so the voice has room. Phase 222 made the personas the voice of Train; the
+Bots page still introduces them with a bland prose card and the game itself is silent.
+(A) Every persona gets its own authored lines (own voice per bot, `Record<PersonaId, ...>`
+like `LANDING_GREETINGS`, one variant per trigger) shown in a persistent two-line speech
+bubble beside the avatar that stays until the player moves. Lines fire only right after
+the bot's own move and only about what the board already shows (the board-truth rule):
+the earned tease after the bot has actually punished a blunder, the self-deprecating line
+after the player has cashed in the bot's mistake, the first capture, the bot's own check
+or capture, a visible threat the player made, the game-start hello, the bot's draw offer
+(accept/decline inside the bubble, `BotDrawOfferBanner` retired), and win/loss/draw.
+Swings are detected from the WDL delta across the realizing ply pair, never raw material
+(Attacker sacrifices). (B) The mobile game screen takes the chess.com shape: back arrow
+and gear on top, avatar + bubble row (no bot name, style, ELO or player name), board,
+clock strip below the board (white left, black right, material beside each clock), and a
+fixed bottom bar replacing the main nav via `usePublishMobileBoardControls` with exactly
+Resign / Back / Forward / Flip (Reset, user-side Offer draw and the sound toggle removed).
+(C) Desktop keeps its side column with the avatar and gains the bubble above the move
+list; the player rows become `PlayerBar` above and below the board (name and ELO left,
+clock and material right, the analysis-board shape). (D) The roster page's intro card is
+replaced by a welcoming bot bubble (`TrainBotBubble` large, per-persona line) that keeps
+the engine info popover inline and the "Your estimated blitz rating" row beneath it.
+(E) SEED-167 ships inside this phase: one "board sounds" switch on the settings page,
+because after (B) and (C) no in-game mute control remains anywhere.
+
+**Requirements:** to be minted at planning time (BOTVOICE-01..), no active
+REQUIREMENTS.md (same pattern as Phases 204–222).
+
+**Success criteria**:
+
+1. Every one of the 24 personas has a line for every trigger; a missing entry is a
+   compile error, and a copy test rejects any line longer than two bubble lines at the
+   375px width.
+2. No line ever reveals engine knowledge: a bot never comments on a player blunder it has
+   not punished, on its own blunder before the player has cashed it in, or on a threat it
+   has set up but not executed. Lines appear only after the bot's own move and clear on
+   the player's next move.
+3. An Attacker persona that sacrifices a piece on purpose does not apologize for it
+   (swing detection is WDL-based, with a named threshold).
+4. On a 375px viewport the mobile game screen shows top bar, bubble row, board, clock
+   strip and the fixed four-action bar with no main nav and no scrolling; the board is
+   measurably wider than before the phase.
+5. Desktop shows `PlayerBar` rows above and below the board and the bubble in the side
+   column; the bot's draw offer is accepted or declined from the bubble on both
+   breakpoints.
+6. The roster page opens with a bot bubble instead of the prose card; the engine
+   explainer popover and the estimated-rating row are still reachable, guests see the
+   bubble without the rating row.
+7. Sound can be muted and unmuted from the settings page, and nowhere else in a game.
+
+**Out of scope**: per-style or per-temperament shared copy tables; timed, animated or
+transient bubbles; clock-low or long-think lines (they would fire on the player's turn);
+an in-game mute or settings sheet; changing the desktop side-column structure beyond the
+bubble; a sketch step (owner declined 2026-09-15).
+
+**Plans:** 0 plans
+
+Plans:
+
+- [ ] TBD (`/gsd-discuss-phase 223`, then `/gsd-plan-phase 223`)
+
+**Cross-cutting constraints:**
+
+- Copy tone: entertaining, sometimes teasing, never mean; the tease must read the same for
+  an 800-rung beginner as for an 1800 player (SEED-166 tone rules carry over).
+- The `HumanLikeOpponentsCard` copy-accuracy constraint stays: 16 of 24 personas never
+  search, so no line may claim the bot "calculated" or "saw it coming".
+- Frontend complexity gates stay at 15 for new code; `Bots.tsx` is already a large page
+  component, so the bubble state machine and swing detection are new pure modules
+  (`lib/` style, like `trainBotCopy.ts` / `trainBubbleState.ts`), not more branches in
+  the page.
+- Open at discuss time: whether the roster host is Train's `landingHost` (same bot on both
+  pages that day) or its own rotation; one or two greeting tables; the swing threshold and
+  whether the 1600/1800 rungs use `evalCp` instead of WDL.
+
+**Seeds:** `.planning/seeds/SEED-168-bot-voice-and-immersive-bot-game-layout.md`,
+`.planning/seeds/SEED-167-train-sound-toggle-rehoming.md`
 
 ## Backlog
 

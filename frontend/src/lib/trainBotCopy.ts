@@ -366,6 +366,15 @@ const NEXT_SESSION_TAIL = "We'll try this one again in the next session.";
 const MASTERED_TAIL = "Three in a row. You have this one down, it won't come back.";
 const PARKED_TAIL = 'This one keeps slipping, so it is parked for now. On to positions that stick.';
 const WARMUP_TAIL = "That one was a warm-up, so it won't come back. Your own positions will.";
+/** Quick 260915-sht: the non-return lines for a herring/filler solved in a
+ * REGULAR session. Bug: `returnPhrase` used to return `WARMUP_TAIL` for these
+ * sources unconditionally, so a user with plenty of SR items was told a
+ * routine red herring "was a warm-up" and that "your own positions will"
+ * come, while the surrounding puzzles already were their own positions.
+ * Warm-up is a SESSION property (`TrainSessionResponse.is_warmup`), not a
+ * per-puzzle one. */
+const HERRING_TAIL = "That one was a red herring, so it won't come back.";
+const FILLER_TAIL = "That one was a tactics puzzle, not from your games, so it won't come back.";
 
 /** Inputs for `returnPhrase` — every field optional so a pre-206 cached
  * reveal (RESEARCH Pitfall 7) or an incomplete fixture degrades to an empty
@@ -374,6 +383,10 @@ export interface ReturnPhraseInput {
   source?: 'sr_item' | 'red_herring' | 'sharp_filler';
   item_status?: 'active' | 'mastered' | 'parked' | null;
   due_date?: string | null;
+  /** `TrainSessionResponse.is_warmup` — the SESSION is a warm-up (zero
+   * surviving SR items at composition, Phase 206 D-06/D-07). Decides whether
+   * a herring/filler tail says "warm-up" or just "won't come back". */
+  is_warmup?: boolean;
   /** `TrainSessionResponse.session_date` — the session's own calendar date. */
   session_date?: string;
   /** `TrainSessionResponse.expires_on` — the first scheduled day strictly
@@ -382,7 +395,9 @@ export interface ReturnPhraseInput {
 }
 
 /**
- * D-15/D-16: the return-date phrase for a single solved item. Status is
+ * D-15/D-16: the return-date phrase for a single solved item. Herrings and
+ * fillers never return: they get the warm-up line only in a warm-up SESSION
+ * (`is_warmup`), else a neutral non-return line. Status is
  * checked strictly BEFORE any date comparison — `due_date` is a STALE value
  * for mastered/parked items (RESEARCH Finding E: `apply_result` leaves it
  * untouched on both branches), so phrasing it as a return date would lie.
@@ -391,7 +406,10 @@ export interface ReturnPhraseInput {
  * `parseISO`, which are DST-exact (verified in RESEARCH §Finding E).
  */
 export function returnPhrase(input: ReturnPhraseInput): string {
-  if (input.source === 'red_herring' || input.source === 'sharp_filler') return WARMUP_TAIL;
+  const neverReturns = input.source === 'red_herring' || input.source === 'sharp_filler';
+  if (neverReturns && input.is_warmup === true) return WARMUP_TAIL;
+  if (input.source === 'red_herring') return HERRING_TAIL;
+  if (input.source === 'sharp_filler') return FILLER_TAIL;
   if (input.item_status === 'mastered') return MASTERED_TAIL;
   if (input.item_status === 'parked') return PARKED_TAIL;
   if (input.due_date == null) return '';

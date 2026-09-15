@@ -4,9 +4,50 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 REPO_ROOT="$(pwd)"
 
-# Kill existing backend/frontend processes if running.
-# Use fuser to kill anything on the ports directly — pkill -f can miss
-# orphaned uvicorn child processes (--reload spawns a watcher + worker).
+# Free the dev ports, but only from processes belonging to THIS checkout.
+#
+# This used to be `fuser -k 8000/tcp`. macOS ships BSD fuser, which has no
+# `-k` and no `<port>/tcp` syntax, so on a Mac the command only ever printed
+# its usage text and freed nothing — leaving uvicorn to die with
+# "[Errno 48] Address already in use" a hundred lines further down the log.
+# lsof behaves the same on macOS and Linux, so the backstop now works on both.
+#
+# `-sTCP:LISTEN` is not optional: a bare `lsof -ti tcp:5173` also matches
+# ESTABLISHED client sockets, which means the browser tab connected to the
+# dev server shows up as a "port holder" and would get killed.
+#
+# A listener that is not ours is reported and fatal, never killed. Port 8000
+# is a popular default and another project's server is not this script's to
+# terminate; failing fast here beats the old silent-then-confusing failure.
+# Ownership is decided by the absolute repo path appearing in the command
+# line, which covers both `<repo>/.venv/bin/python <repo>/.venv/bin/uvicorn`
+# and `node <repo>/frontend/node_modules/.bin/vite --host`.
+free_port() {
+  local port="$1" label="$2" pid cmd foreign=0
+  for pid in $(lsof -ti "tcp:${port}" -sTCP:LISTEN 2>/dev/null); do
+    cmd="$(ps -p "$pid" -o command= 2>/dev/null || true)"
+    if [[ "$cmd" == *"$REPO_ROOT"* ]]; then
+      kill "$pid" 2>/dev/null || true
+    else
+      echo "Error: port ${port} (${label}) is held by a process outside this checkout:"
+      echo "  PID ${pid}: ${cmd:-<unknown>}"
+      foreign=1
+    fi
+  done
+  if [ "$foreign" -eq 1 ]; then
+    echo "Stop that process (or free the port) before running this script."
+    exit 1
+  fi
+  # Give the kill a moment to land so the rebind below does not race it.
+  for _ in 1 2 3 4 5; do
+    [ -z "$(lsof -ti "tcp:${port}" -sTCP:LISTEN 2>/dev/null)" ] && return 0
+    sleep 1
+  done
+}
+
+# Kill existing backend/frontend processes if running. pkill -f can miss
+# orphaned uvicorn child processes (--reload spawns a watcher + worker), so
+# free_port above remains the backstop for anything still holding the port.
 #
 # The vite pattern is deliberately scoped to THIS checkout's node_modules
 # rather than the bare string "vite". `pkill -f "vite"` matched any process
@@ -15,13 +56,10 @@ REPO_ROOT="$(pwd)"
 # shell running this script — and silently killed them. The real dev server
 # runs as `node <repo>/frontend/node_modules/.bin/vite --host`, so anchoring
 # on the absolute repo path kills exactly our own server and nothing else.
-# `fuser -k 5173/tcp` below remains the backstop for anything still holding
-# the port.
 pkill -f "uvicorn app.main:app" 2>/dev/null || true
 pkill -f "${REPO_ROOT}/frontend/node_modules/.bin/vite" 2>/dev/null || true
-fuser -k 8000/tcp 2>/dev/null || true
-fuser -k 5173/tcp 2>/dev/null || true
-sleep 1
+free_port 8000 backend
+free_port 5173 frontend
 
 # Fail fast if a local postgres process is already holding port 5432.
 # Docker's port-forward shows up as "com.docke", not "postgres", so this

@@ -216,6 +216,9 @@ cython_debug/
 
 # Claude Code
 .claude/worktrees/
+# Per-machine overrides. .claude/settings.json is the shared, checked-in
+# config; settings.local.json is personal and must never be committed.
+.claude/settings.local.json
 
 # Cursor
 #  Cursor is an AI-powered code editor. `.cursorignore` specifies files/directories to

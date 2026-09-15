@@ -1,31 +1,33 @@
 ---
 gsd_state_version: "1.0"
 milestone: v2.19
-current_phase: 222
-status: completed
+current_phase: 223
+status: not_started
 stopped_at: Phase 222 complete — all phases complete
-last_updated: "2026-09-14T20:31:29.594Z"
-state_head: f1df3bf0713bae6f67be462ae8f518fea94c03c0
+last_updated: "2026-09-15T18:17:22.313Z"
+state_head: 9f7a3a8119e9a0a5a75f597ee404e8e517171938
 progress:
   total_phases: 1
   completed_phases: 1
   total_plans: 6
   completed_plans: 6
 milestone_name: Train Bot-Narrated Onboarding & Verdicts
-last_activity: 2026-09-14
-last_activity_desc: Completed quick task 260914-w1m (FLAWCHESS-BE: Stockfish crashed on impossible chess.com custom-position boards; engine is_valid() guard + invalid-root games skipped at target collection)
+last_activity: 2026-09-15
+last_activity_desc: "Completed quick task 260915-sht (Train verdict tail: a red herring in a regular session is no longer called a warm-up; returnPhrase takes is_warmup)"
 ---
 
 # Project State: FlawChess
 
 ## Current Position
 
-Phase: 222
+Phase: 223
 Plan: Not started
 
-Status: All phases complete
+Status: Phase 223 (Bot Voice & Immersive Bot Game Layout, SEED-168 + SEED-167) added 2026-09-15, not yet discussed or planned. Next: `/gsd-discuss-phase 223`.
 
 Open threads carried forward (not blockers):
+
+- Phase 223 added 2026-09-15 (explicit user request, `/gsd-explore` "bots page welcome avatars + in-game trash-talk" → SEED-168 → promote): **Bot Voice & Immersive Bot Game Layout**. Per-persona in-game lines in a persistent two-line bubble under the board-truth rule (speak only after the bot's own move, only about cashed-in swings, WDL-based detection), mobile game screen rebuilt in the chess.com shape with a fixed Resign/Back/Forward/Flip bar replacing the nav, desktop `PlayerBar` rows + side-column bubble, roster intro card replaced by a welcome bubble, and SEED-167's settings-page sound switch folded in (no in-game mute remains). Written by hand as 223 rather than via `phase.add` (known mature-ROADMAP behavior). Next: `/gsd-discuss-phase 223`.
 
 - Phase 221: a forced only-move that sheds a piece can read as a sacrifice (game 1459049 ply 21); captured in `.planning/notes/2026-09-13-forced-only-move-tagged-sacrifice.md`, no action requested. Lever if sacrifice noise ever matters: lower `SACRIFICE_CLEARANCE_MAX_DEPTH` (4) and retag.
 
@@ -880,6 +882,8 @@ None active.
 | 85 | bot cards: per-style border + glow, brighter on hover | 2026-09-05 | c6e957ff1 | — |
 | 260914-uer | Puzzle training onboarding tutorial tweaks: phone-only 20% larger avatars, "Every puzzle starts with one question" copy, 50% slower scroll after "This is your feedback", feedback in its own scroll container with visible right scrollbar (feedback scroll container reverted after UAT, a4c809ae1) | 2026-09-14 | a4c809ae1 | [260914-uer-puzzle-training-onboarding-tutorial-twea](./quick/260914-uer-puzzle-training-onboarding-tutorial-twea/) |
 | 260914-w1m | Fix FLAWCHESS-BE: Stockfish died on impossible chess.com custom-position boards (16-pawn roots); engine-pool is_valid() guard + invalid-root games excluded at _collect_full_ply_targets so the drain stamps them complete | 2026-09-14 | b96da37a7 | [260914-w1m-fix-flawchess-be-guard-stockfish-against](./quick/260914-w1m-fix-flawchess-be-guard-stockfish-against/) |
+| 260915-sht | Train verdict tail: a red herring/sharp filler solved in a regular session no longer gets the warm-up line; returnPhrase now takes TrainSessionResponse.is_warmup and uses a neutral non-return line otherwise | 2026-09-15 | 2b77f0009 | [260915-sht-fix-train-verdict-return-tail-red-herrin](./quick/260915-sht-fix-train-verdict-return-tail-red-herrin/) |
+| 91 | Unblock AI crawlers: Cloudflare managed robots.txt is dashboard-only, documented the toggle in production-runbook.md | 2026-09-15 | 9f7a3a811 | — |
 
 ## Deferred Items
 
