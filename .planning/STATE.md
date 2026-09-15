@@ -12,8 +12,8 @@ progress:
   total_plans: 6
   completed_plans: 6
 milestone_name: Train Bot-Narrated Onboarding & Verdicts
-last_activity: 2026-09-14
-last_activity_desc: "Completed quick task 260914-w1m (FLAWCHESS-BE: Stockfish crashed on impossible chess.com custom-position boards; engine is_valid() guard + invalid-root games skipped at target collection)"
+last_activity: 2026-09-15
+last_activity_desc: "Completed quick task 260915-sht (Train verdict tail: a red herring in a regular session is no longer called a warm-up; returnPhrase takes is_warmup)"
 ---
 
 # Project State: FlawChess
