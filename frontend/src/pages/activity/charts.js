@@ -122,6 +122,11 @@ function xAxis(svg,labels,x,yBot,c,every,xfmt){
     t.textContent=f(lb,i); svg.appendChild(t); });
 }
 function hover(svg,x0,x1,yTop,yBot,n,xAt,onIdx,c){
+  // Bug fix (FLAWCHESS-BG): with zero data points the nearest-index search
+  // below still yields i=0, so a pointermove formatted `values[0]` (undefined)
+  // and crashed the page with "Cannot read properties of undefined (reading
+  // 'toLocaleString')". A chart with no x positions has nothing to hover.
+  if(n<=0) return;
   const cross=el("line",{y1:yTop,y2:yBot,stroke:c.ink3,"stroke-width":1,opacity:0});
   const dots=el("g",{opacity:0}); svg.appendChild(cross); svg.appendChild(dots);
   const rect=el("rect",{x:x0,y:yTop,width:Math.max(1,x1-x0),height:yBot-yTop,fill:"transparent"});
