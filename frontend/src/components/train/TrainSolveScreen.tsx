@@ -343,6 +343,7 @@ function renderVerdictBubbleBody(
   opening: VerdictCopy,
   sessionDate: string | undefined,
   expiresOn: string | undefined,
+  isWarmup: boolean,
   actions: ReactElement,
 ): { copy: ReactElement; actions: ReactElement } {
   const clause = verdictClauseParts(verdict.correct_guess, verdict.move_quality);
@@ -353,6 +354,7 @@ function renderVerdictBubbleBody(
           source: verdict.source,
           item_status: verdict.item_status,
           due_date: verdict.due_date,
+          is_warmup: isWarmup,
           session_date: sessionDate,
           expires_on: expiresOn,
         });
@@ -634,6 +636,7 @@ function renderTrainBotBubbleBody(
       deps.verdictOpening,
       deps.sessionDate,
       deps.expiresOn,
+      deps.isWarmup,
       deps.verdictActions,
     );
   }
