@@ -16,6 +16,7 @@ in `YYYY-MM-DD` (Europe/Zurich).
 ### Fixed
 
 - Chess.com custom-position games that start from an impossible setup (for example two full ranks of pawns) no longer crash the analysis engine or receive nonsense evaluations. They are imported and viewable as before, but skipped by the engine analysis.
+- Activity dashboard: the Train sessions chart no longer goes blank when a session was composed for a calendar day that the site-wide activity range has not reached yet (users ahead of UTC composing just after local midnight).
 
 ## [v2.19] Train Bot-Narrated Onboarding & Verdicts — 2026-09-14
 
