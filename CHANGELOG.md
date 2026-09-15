@@ -17,6 +17,7 @@ in `YYYY-MM-DD` (Europe/Zurich).
 
 - Chess.com custom-position games that start from an impossible setup (for example two full ranks of pawns) no longer crash the analysis engine or receive nonsense evaluations. They are imported and viewable as before, but skipped by the engine analysis.
 - Activity dashboard: the Train sessions chart no longer goes blank when a session was composed for a calendar day that the site-wide activity range has not reached yet (users ahead of UTC composing just after local midnight).
+- Activity dashboard: hovering over a chart that has no data points in the selected range no longer crashes the page (FLAWCHESS-BG).
 - Train feedback: a red herring solved in a regular session is no longer called a warm-up ("Your own positions will" come). The warm-up line now appears only in a real warm-up session; otherwise the feedback simply says the position won't come back.
 
 ## [v2.19] Train Bot-Narrated Onboarding & Verdicts — 2026-09-14
