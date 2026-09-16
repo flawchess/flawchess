@@ -1,0 +1,41 @@
+<!doctype html>
+<!-- Source of stories/tilt/social-card.png (1200x630 Open Graph image). Render with:
+     google-chrome --headless=new --window-size=1200,630 --screenshot=stories/tilt/social-card.png \
+       file://$PWD/analysis/tilt_study/social_card.html
+     Numbers: the hero tiles of stories/tilt/index.html (streak_curve.csv, x = -3). -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@600&display=swap" rel="stylesheet">
+<style>
+  :root{--brown:#8B5E3C;--cream:#FAF7F0;--card:#FFFFFF;--ink:#2A2118;--ink-2:#5C5246;--ink-3:#8A7F71;--line:#E8E0D2;--loss:#B02A2A}
+  *{box-sizing:border-box;margin:0;padding:0}
+  html,body{width:1200px;height:630px;overflow:hidden}
+  body{background:var(--cream);color:var(--ink);font-family:ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;padding:52px 66px}
+  .brand{display:flex;align-items:center;gap:14px}
+  .brand img{width:56px;height:56px;border-radius:12px}
+  .brand .name{font-family:'Fredoka',sans-serif;font-weight:600;font-size:28px;letter-spacing:-.02em}
+  .brand .sect{font-family:'Fredoka',sans-serif;font-weight:600;font-size:28px;letter-spacing:-.02em;color:var(--brown);border-left:2px solid var(--line);padding-left:16px;line-height:1.1}
+  h1{font-size:74px;line-height:1.08;letter-spacing:-.03em;margin-top:46px;font-weight:800}
+  h1 .accent{color:var(--brown)}
+  .tiles{display:flex;gap:32px;margin-top:52px}
+  .tile{flex:1;background:var(--card);border:2px solid var(--line);border-radius:18px;padding:26px 32px}
+  .tile .big{font-size:52px;font-weight:800;letter-spacing:-.03em;line-height:1.05}
+  .tile .lbl{color:var(--ink-2);font-size:24px;margin-top:8px;line-height:1.25}
+  .tile.loss .big{color:var(--loss)} .tile.draw .big{color:var(--ink-3)} .tile.tilt .big{color:var(--brown)}
+</style>
+</head>
+<body>
+  <div class="brand">
+    <img src="../../stories/logo.png" alt="">
+    <span class="name">FlawChess</span>
+    <span class="sect">Chess Data Stories</span>
+  </div>
+  <h1>You've lost three in a row.<br><span class="accent">Should you stop?</span></h1>
+  <div class="tiles">
+    <div class="tile loss"><div class="big">50.1%</div><div class="lbl">your score in the next game</div></div>
+    <div class="tile draw"><div class="big">50.7%</div><div class="lbl">what your rating predicts</div></div>
+    <div class="tile tilt"><div class="big">&minus;0.5</div><div class="lbl">points: one loss per 190 games</div></div>
+  </div>
+</body>
+</html>

@@ -13,7 +13,11 @@ calibration. Everything reads the cached parquet extracts in analysis/out/tilt/:
 
 Definitions (the technical report quotes these):
 - Unit: consecutive rated games of one user in one time-control bucket, by start time.
-- Game end = start + time used by both sides from %clk; fallback median seconds/ply.
+- Game end (approximate) = start + clock time used by both sides, from the first and
+  LAST %clk of each side (first clocks + inc * (plies - 2) - last clocks), plus the
+  loser's remaining clock for losses on time. No end timestamp exists in the data.
+  Incomplete or non-standard clock records get no end time (no median fallback); the
+  gaps around such a game are unknown, which starts a new session.
 - Session: a break of >= 60 min (from the END of the previous game) starts a new one.
 - Streak: run of same-result games ending at the previous game; draws break streaks.
 - Equal footing: |my rating - opponent rating| <= 100. Only such games are SCORED;
@@ -29,6 +33,8 @@ Definitions (the technical report quotes these):
   +0.5 pp), plus the odd new account. The streak must lie within one session.
 """
 
+import hashlib
+import json
 from pathlib import Path
 
 import numpy as np
@@ -45,36 +51,55 @@ TC_ORDER = ["bullet", "blitz", "rapid", "classical"]
 MIN_HISTORY_GAMES = 100  # hygiene C: first 100 games of a user-TC history are dropped
 MAX_RATING_DEV = 150  # hygiene D: |rating - long-run median| > 150 dropped
 MAX_STREAK = 7  # story axis: -7 = 7 or more losses ... +7 = 7 or more wins
-# Fresh-opponent control: the next opponent must not appear in any game of the streak that just
-# ended. Scanning this many games back covers every streak the story axis distinguishes; longer
-# streaks are checked over their last SERIES_LOOKBACK games only.
-SERIES_LOOKBACK = 12
 USER_W = ["user_id", "tc"]
 
 
-def load_games() -> pl.DataFrame:
+def load_games(
+    session_gap_min: int = 60,
+    min_history: int = 100,
+    max_rating_dev: int | None = 150,
+    end_delay_s: int = 0,
+) -> pl.DataFrame:
     """Full feature frame over every rated human game (not yet filtered)."""
     raw = pl.read_parquet(OUT / "games.parquet")
     clocks = pl.read_parquet(OUT / "clock_ends.parquet")
     colour = pl.read_parquet(OUT / "acc.parquet").select("game_id", "user_color")
     g = raw.join(clocks, on="game_id", how="left").join(colour, on="game_id", how="left")
 
-    g = g.with_columns(
-        dur_clk=(
-            2 * pl.col("base_s").cast(pl.Float64)
-            + pl.col("inc_s") * pl.col("ply_count")
+    if "w_first_clk" not in clocks.columns:
+        raise RuntimeError("Re-extract clocks with the ordered-endpoint extractor first")
+    g = (
+        g.with_columns(
+            # First moves in these exports have the starting clock, without increment.
+            # Unsupported first clocks (including inferred berserk) are excluded from timing.
+            clock_complete=(pl.col("n_clk") == pl.col("ply_count"))
+            & (pl.col("last_ply") == pl.col("ply_count") - 1)
+            & (pl.col("ply_count") >= 2)
+            & ((pl.col("w_first_clk") - pl.col("base_s")).abs() <= 1)
+            & ((pl.col("b_first_clk") - pl.col("base_s")).abs() <= 1),
+            loser_white=((pl.col("score") == 0) & (pl.col("user_color") == "white"))
+            | ((pl.col("score") == 1) & (pl.col("user_color") == "black")),
+        )
+        .with_columns(
+            clock_elapsed=pl.col("w_first_clk")
+            + pl.col("b_first_clk")
+            + pl.col("inc_s") * (pl.col("ply_count") - 2)
             - pl.col("w_last_clk")
-            - pl.col("b_last_clk")
-        ).clip(lower_bound=0)
-    )
-    spp = (
-        g.filter(pl.col("dur_clk").is_not_null() & (pl.col("ply_count") > 0))
-        .group_by("tc")
-        .agg((pl.col("dur_clk") / pl.col("ply_count")).median().alias("sec_per_ply"))
-    )
-    g = g.join(spp, on="tc").with_columns(
-        dur_s=pl.coalesce(pl.col("dur_clk"), pl.col("ply_count") * pl.col("sec_per_ply")),
-        has_clock=pl.col("dur_clk").is_not_null(),
+            - pl.col("b_last_clk"),
+            terminal_wait=pl.when(pl.col("termination") == "timeout")
+            .then(
+                pl.when(pl.col("loser_white"))
+                .then(pl.col("w_last_clk"))
+                .otherwise(pl.col("b_last_clk"))
+            )
+            .otherwise(0),
+        )
+        .with_columns(
+            dur_clk=pl.when(pl.col("clock_complete") & (pl.col("clock_elapsed") >= 0)).then(
+                pl.col("clock_elapsed") + pl.col("terminal_wait")
+            )
+        )
+        .with_columns(dur_s=pl.col("dur_clk"), has_clock=pl.col("dur_clk").is_not_null())
     )
     g = g.with_columns(end_at=pl.col("played_at") + pl.duration(seconds=pl.col("dur_s")))
 
@@ -91,34 +116,48 @@ def load_games() -> pl.DataFrame:
         hist_idx=pl.int_range(pl.len()).over(w),
         med_r=pl.col("my_r").median().over(w),
     )
+    # Negative intervals are invalid timing, not zero-length pauses. Keep raw values
+    # for diagnostics; unknown gaps break a session and are excluded from break rates.
+    # `end_delay_s` (sensitivity only) models an unrecorded delay between the last move
+    # and the true end (resignation, disconnect): it shortens every VALID gap, floored at
+    # zero, rather than turning short gaps into invalid ones.
+    g = g.with_columns(
+        raw_gap_before_s=pl.col("gap_before_s"),
+        raw_gap_after_s=pl.col("gap_after_s"),
+        next_observed=pl.col("game_id").shift(-1).over(w).is_not_null(),
+        previous_opponent_idx=pl.col("hist_idx").shift(1).over(w + ["opp"]),
+    ).with_columns(
+        gap_before_s=pl.when(pl.col("gap_before_s") >= 0).then(
+            (pl.col("gap_before_s") - end_delay_s).clip(lower_bound=0)
+        ),
+        gap_after_s=pl.when(pl.col("gap_after_s") >= 0).then(
+            (pl.col("gap_after_s") - end_delay_s).clip(lower_bound=0)
+        ),
+    )
     g = g.with_columns(
         dir=pl.when(pl.col("score") == 1).then(1).when(pl.col("score") == 0).then(-1).otherwise(0)
     ).with_columns(
-        run_id=(pl.col("dir") != pl.col("dir").shift(1)).cast(pl.Int32).cum_sum().over(w)
+        run_id=(pl.col("dir") != pl.col("dir").shift(1))
+        .fill_null(True)
+        .cast(pl.Int32)
+        .cum_sum()
+        .over(w)
     )
     g = g.with_columns(run_len=pl.int_range(pl.len()).over(w + ["run_id"]) + 1)
     g = g.with_columns(
         streak_dir=pl.col("dir").shift(1).over(w),
         streak_len=pl.col("run_len").shift(1).over(w),
     )
-    # A rematch series is not an independent draw from the pool: the same opponent carries an
-    # opponent-specific mismatch the rating-gap calibration cannot see, and their state is
-    # correlated with yours (they just lost to you k times). Within a rematch the streak effect
-    # is about twice the fresh-opponent effect, so the streak frame requires a fresh opponent;
-    # rematches are analysed on their own in section 6.
+    # The last appearance of this opponent must precede the entire prior run.
     g = g.with_columns(
-        fresh_opponent=~pl.any_horizontal(
-            [
-                (
-                    (pl.col("opp") == pl.col("opp").shift(i).over(w)) & (pl.col("streak_len") >= i)
-                ).fill_null(False)
-                for i in range(1, SERIES_LOOKBACK + 1)
-            ]
-        )
+        fresh_opponent=(
+            pl.col("previous_opponent_idx").is_null()
+            | (pl.col("previous_opponent_idx") < pl.col("hist_idx") - pl.col("streak_len"))
+        ).fill_null(True)
     )
     g = g.with_columns(
         new_session=pl.col("gap_before_s").is_null()
-        | (pl.col("gap_before_s") >= SESSION_GAP_MIN * 60)
+        | (pl.col("gap_before_s") >= session_gap_min * 60)
     ).with_columns(session_id=pl.col("new_session").cast(pl.Int32).cum_sum().over(w))
     s = w + ["session_id"]
     g = g.with_columns(
@@ -127,8 +166,9 @@ def load_games() -> pl.DataFrame:
         session_elapsed_min=(
             pl.col("played_at") - pl.col("played_at").min().over(s)
         ).dt.total_minutes(),
-        last_of_session=pl.col("gap_after_s").is_null()
-        | (pl.col("gap_after_s") >= SESSION_GAP_MIN * 60),
+        last_of_session=pl.when(pl.col("next_observed") & pl.col("gap_after_s").is_not_null()).then(
+            pl.col("gap_after_s") >= session_gap_min * 60
+        ),
         run_start_session=pl.col("session_id").first().over(w + ["run_id"]),
     ).with_columns(
         # The streak that just ended lay entirely within ONE session (the previous game's).
@@ -137,7 +177,7 @@ def load_games() -> pl.DataFrame:
         # break test. The previous game's session is the right anchor.
         streak_same_session=pl.col("run_start_session").shift(1).over(w)
         == pl.col("session_id").shift(1).over(w),
-        in_session=pl.col("gap_before_s") < SESSION_GAP_MIN * 60,
+        in_session=pl.col("gap_before_s") < session_gap_min * 60,
         r_dev=pl.col("my_r") - pl.col("med_r"),
     )
     floor = ELO_ANCHORS[0]
@@ -145,8 +185,8 @@ def load_games() -> pl.DataFrame:
         elo_bucket=(((pl.col("my_r") - floor) // 400) * 400 + floor).clip(floor, ELO_ANCHORS[-1]),
         gap_bin=((pl.col("my_r") - pl.col("opp_r")) / CAL_BIN_ELO).floor(),
         equal_footing=(pl.col("my_r") - pl.col("opp_r")).abs() <= EQUAL_FOOTING_TOLERANCE,
-        hygiene=(pl.col("hist_idx") >= MIN_HISTORY_GAMES)
-        & (pl.col("r_dev").abs() <= MAX_RATING_DEV),
+        hygiene=(pl.col("hist_idx") >= min_history)
+        & (pl.lit(True) if max_rating_dev is None else pl.col("r_dev").abs() <= max_rating_dev),
         score=pl.col("score").cast(pl.Float64),
     )
     cal_keys = ["tc", "elo_bucket", "gap_bin", "user_color"]
@@ -175,7 +215,7 @@ def load_games() -> pl.DataFrame:
         )
         .sort(w + ["played_at"])
     )
-    return g
+    return g.with_columns(prev_rematch=pl.col("rematch").shift(1).over(w))
 
 
 def streak_label(d: str = "streak_dir", n: str = "streak_len") -> pl.Expr:
@@ -246,3 +286,21 @@ def boot_diff(
     )
     point = sa.sum() / max(na.sum(), 1) - sb.sum() / max(nb.sum(), 1)
     return (float(point), float(np.percentile(d, 2.5)), float(np.percentile(d, 97.5)))
+
+
+def cached_games() -> pl.DataFrame:
+    """Invalidate features when either their code or a source extract changes."""
+    sources = [Path(__file__)] + [
+        OUT / n for n in ("games.parquet", "clock_ends.parquet", "acc.parquet")
+    ]
+    signature = hashlib.sha256(
+        Path(__file__).read_bytes()
+        + json.dumps([(str(p), p.stat().st_size, p.stat().st_mtime_ns) for p in sources]).encode()
+    ).hexdigest()
+    cache, meta = OUT / "features.parquet", OUT / "features.signature"
+    if cache.exists() and meta.exists() and meta.read_text() == signature:
+        return pl.read_parquet(cache)
+    frame = load_games()
+    frame.write_parquet(cache)
+    meta.write_text(signature)
+    return frame

@@ -16,6 +16,7 @@ import numpy as np
 import polars as pl
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+from robustness import refit_bootstrap  # noqa: E402
 from story_data import (  # noqa: E402
     ELO_ANCHORS,
     MAX_STREAK,
@@ -24,7 +25,7 @@ from story_data import (  # noqa: E402
     USER_W,
     boot_diff,
     boot_mean,
-    load_games,
+    cached_games,
     streak_label,
 )
 
@@ -124,10 +125,7 @@ def curve(
 
 
 t0 = time.time()
-cache = OUT / "features.parquet"
-g = pl.read_parquet(cache) if cache.exists() else load_games()
-if not cache.exists():
-    g.write_parquet(cache)
+g = cached_games()
 g = g.with_columns(streak=streak_label())
 print("features", g.shape, f"{time.time() - t0:.0f}s")
 
@@ -235,6 +233,12 @@ emit(
 
 # ---- 2. the controlled streak curve (hero) -----------------------------------------
 hero = curve(L4, XS6, REPS_HEAD)
+# The headline intervals resample users AND refit the benchmark inside each resample
+# (methods review: boot_mean treats the expectation as known).
+refit = refit_bootstrap(g, reps=REPS_HEAD)
+hero = hero.drop("resid_lo", "resid_hi").join(refit, on="x")
+lad6 = lad6.drop("resid_lo", "resid_hi").join(refit, on="x")
+lad6.write_csv(STORY / "ladder6.csv")
 emit("2. Controlled streak curve, pooled, -6 = 6+ losses ... +6 = 6+ wins", hero, "streak_curve")
 emit(
     "2b. Controlled streak curve by time control",
@@ -410,7 +414,9 @@ emit(
     .sort(["tc", "streak_dir", "gap_bucket"]),
     "break_shares",
 )
-# stop-after-two-losses counterfactual
+# Observed aggregate shortfall after 2+ same-session losses: share of scored games in that
+# state times their mean residual. A scale comparison only; it is NOT what a "stop after two
+# losses" rule would save (that needs the outcomes of games that were never played).
 rows = []
 for tc in TC_ORDER + ["all"]:
     d = story if tc == "all" else story.filter(pl.col("tc") == tc)
@@ -431,11 +437,14 @@ for tc in TC_ORDER + ["all"]:
             "resid_pp": pct(m),
             "lo": pct(lo),
             "hi": pct(hi),
-            "score_pts_saved_per_100_games": round(share * m * 100, 3),
-            "extra_losses_per_100_games": round(share * m * 100, 3),
+            "aggregate_shortfall_per_100_games": round(-share * m * 100, 3),
         }
     )
-emit("4c. Stop-after-two-losses counterfactual", pl.DataFrame(rows), "stop_rule")
+emit(
+    "4c. Observed post-loss shortfall (not a stopping-policy estimate)",
+    pl.DataFrame(rows),
+    "stop_rule",
+)
 # warm-up and fatigue
 rows = []
 el_edges = [0, 30, 60, 120, 240, 10**9]
@@ -667,13 +676,15 @@ emit(
 )
 
 # ---- 6. behaviour: quit, rush, revenge, speed, blunders ------------------------------
-beh = g.filter(pl.col("hygiene"))  # behaviour uses every game (no equal-footing needed for a rate)
+# Behaviour rates condition on the result of the game just played, so that game must pass
+# equal footing too (stories/CLAUDE.md: the outcome that enters a statistic is filtered).
+beh = g.filter(pl.col("hygiene") & pl.col("equal_footing"))
 rows = []
 for tc in TC_ORDER:
     d = beh.filter(pl.col("tc") == tc)
     r = {"tc": tc}
     for lab, sc in [("loss", 0.0), ("win", 1.0)]:
-        c = d.filter(pl.col("score") == sc)
+        c = d.filter((pl.col("score") == sc) & pl.col("last_of_session").is_not_null())
         m, lo, hi = boot_mean(
             c.with_columns(q=pl.col("last_of_session").cast(pl.Float64)), "q", reps=REPS
         )
@@ -689,6 +700,7 @@ for tc in TC_ORDER:
             cont.with_columns(q=(pl.col("gap_after_s") < 60).cast(pl.Float64)), "q", reps=100
         )[0]
         r[f"next_within_60s_after_{lab}"] = pct(m2)
+        r[f"next_within_60s_unconditional_{lab}"] = pct(fmean(c["gap_after_s"] < 60))
         r[f"median_gap_after_{lab}_s"] = round(fmedian(cont["gap_after_s"]), 0)
         r[f"n_{lab}"] = c.height
     # sessions ending on a loss vs base loss rate
@@ -735,7 +747,7 @@ emit(
 # first rematch of a pairing vs a later game in a series against the same opponent: the
 # opponent-strength selection story (the player who just beat you is under-rated) predicts a
 # symmetric bonus after wins, which only the first rematch shows
-rm = rm.with_columns(prev_rematch=pl.col("rematch").shift(1).over(USER_W))
+# prev_rematch was computed on full history before filtering.
 rows = []
 for lab, sc in [("after_loss", 0.0), ("after_win", 1.0)]:
     for pos, cond in [
@@ -888,8 +900,8 @@ emit(
 # player requested lichess computer analysis)? Each game is the last game of its own run so far,
 # so the streak here is (dir, run_len) of the game itself, not the streak before it; no
 # next-game condition, because requesting analysis takes minutes and would bias "next within
-# the hour". Frame: all rated games with hygiene (a rate, so no equal footing), and the run
-# within one session (a 6-loss run spread over days is not a tilt state).
+# the hour". Frame: equal-footing games with hygiene (the streak's results condition the
+# rate), and the run within one session (a 6-loss run spread over days is not a tilt state).
 analyzed = pl.read_parquet(OUT / "acc.parquet").select("game_id", "analyzed")
 an = (
     beh.join(analyzed, on="game_id", how="left")
