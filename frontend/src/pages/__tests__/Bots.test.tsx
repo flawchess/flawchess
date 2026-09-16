@@ -127,6 +127,7 @@ interface FakeGameHandle {
    * outgoing draw-offer banner without any real grade-callback machinery. */
   setBotDrawOffer: (offer: boolean) => void;
   acceptBotDraw: ReturnType<typeof vi.fn>;
+  offerDraw: ReturnType<typeof vi.fn>;
   declineBotDraw: ReturnType<typeof vi.fn>;
 }
 
@@ -139,6 +140,7 @@ const fakeGame: FakeGameHandle = {
   lastMove: null,
   setBotDrawOffer: () => {},
   acceptBotDraw: vi.fn(),
+  offerDraw: vi.fn(),
   declineBotDraw: vi.fn(),
 };
 
@@ -182,7 +184,7 @@ vi.mock('@/hooks/useBotGame', () => ({
       viewPly: vi.fn(),
       returnToLive: vi.fn(),
       resign: vi.fn(),
-      offerDraw: vi.fn(),
+      offerDraw: fakeGame.offerDraw,
       newGame: fakeGame.newGame,
       // Phase 223 (BOTVOICE-01/02): an untyped object literal, so a missing
       // field here would silently yield `undefined` at runtime rather than
@@ -391,6 +393,7 @@ beforeEach(() => {
   fakeGame.moveHistory = [];
   fakeGame.lastMove = null;
   fakeGame.acceptBotDraw.mockClear();
+  fakeGame.offerDraw.mockClear();
   fakeGame.declineBotDraw.mockClear();
   navigateSpy.mockClear();
   vi.mocked(botsApi.storeGame).mockReset();
@@ -743,8 +746,10 @@ describe('Bots — mobile chrome removed, back arrow wired (Phase 223, BOTVOICE-
     expect(screen.queryByTestId('board-btn-reset')).toBeNull();
     expect(screen.queryByTestId('board-btn-resign')).toBeNull();
     expect(screen.queryByTestId('resign-confirm-dialog')).toBeNull();
-    // The user-side Offer draw button and the in-game mute toggle are gone
-    // from the tree entirely (D-10/D-12/SC7) — not just hidden on mobile.
+    // The user-side Draw button (back since quick 260916) lives in the same
+    // desktop-only `GameControls` row / mobile `BotGameMobileBar` as Resign,
+    // so it is absent from this page-level mobile tree for the same reason.
+    // The in-game mute toggle is gone entirely (D-10/D-12/SC7).
     expect(screen.queryByTestId('board-btn-offer-draw')).toBeNull();
     expect(screen.queryByTestId('board-btn-mute')).toBeNull();
   });
@@ -850,6 +855,27 @@ describe('Bots — desktop layout (Phase 223, BOTVOICE-05, D-11/D-12)', () => {
     await startFromSetup();
 
     expect(screen.queryByTestId('board-btn-mute')).toBeNull();
+  });
+
+  // Quick 260916: the user's own draw offer is back, behind a confirm dialog.
+  it('the Draw button opens a confirm dialog whose confirm calls offerDraw, and is disabled while the bot\'s own offer is live', async () => {
+    renderBots();
+    await startFromSetup();
+
+    const drawBtn = screen.getByTestId('board-btn-offer-draw');
+    expect(drawBtn).toHaveProperty('disabled', false);
+
+    fireEvent.click(drawBtn);
+    expect(screen.getByTestId('draw-offer-confirm-dialog')).toBeTruthy();
+    expect(fakeGame.offerDraw).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByTestId('board-btn-offer-draw-confirm'));
+    expect(fakeGame.offerDraw).toHaveBeenCalledTimes(1);
+    expect(screen.queryByTestId('draw-offer-confirm-dialog')).toBeNull();
+
+    act(() => {
+      fakeGame.setBotDrawOffer(true);
+    });
+    expect(screen.getByTestId('board-btn-offer-draw')).toHaveProperty('disabled', true);
   });
 });
 

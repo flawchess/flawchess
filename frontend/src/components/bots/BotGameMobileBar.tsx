@@ -1,8 +1,9 @@
 import { useState } from 'react';
 import type { ReactElement } from 'react';
-import { ChevronLeft, ChevronRight, Flag, Repeat2 } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Flag, Handshake, Repeat2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { BOT_ACTION_BUTTON_CLASS } from '@/components/bots/chipStyles';
+import { DrawOfferConfirmDialog } from '@/components/bots/DrawOfferConfirmDialog';
 import {
   Dialog,
   DialogContent,
@@ -14,6 +15,10 @@ import {
 
 export interface BotGameMobileBarProps {
   onResign: () => void;
+  onOfferDraw: () => void;
+  /** Net disabled state of the Draw action (offer pending, game over, or
+   * the D-04 cooldown). No tooltip on touch — disabled is the whole signal. */
+  offerDrawDisabled: boolean;
   onBack: () => void;
   onForward: () => void;
   onFlip: () => void;
@@ -23,8 +28,11 @@ export interface BotGameMobileBarProps {
 
 /**
  * BotGameMobileBar — Phase 223 (BOTVOICE-05, D-10): the mobile bot game's
- * fixed four-action bottom bar (Resign / Back / Forward / Flip), published
+ * fixed bottom action bar (Draw / Resign / Back / Forward / Flip), published
  * through the `usePublishMobileBoardControls` seam in place of the main nav.
+ * Draw (quick 260916) is the user's own draw offer, brought back after Phase
+ * 223 removed it; it opens the same `DrawOfferConfirmDialog` the desktop
+ * `GameControls` row uses.
  *
  * A NEW component, never a prop on the shared `BoardControls` row — that row
  * measures cyclomatic complexity 16 against its own pinned ceiling of 16
@@ -51,6 +59,8 @@ const BOT_BAR_BUTTON_CLASS = 'h-auto flex-1 flex-col gap-1 px-1 py-2';
 
 export function BotGameMobileBar({
   onResign,
+  onOfferDraw,
+  offerDrawDisabled,
   onBack,
   onForward,
   onFlip,
@@ -58,6 +68,7 @@ export function BotGameMobileBar({
   canGoForward,
 }: BotGameMobileBarProps): ReactElement {
   const [resignDialogOpen, setResignDialogOpen] = useState(false);
+  const [drawDialogOpen, setDrawDialogOpen] = useState(false);
 
   const handleConfirmResign = (): void => {
     setResignDialogOpen(false);
@@ -69,6 +80,21 @@ export function BotGameMobileBar({
     // bar's own `pb-safe` is 0, so Resign sat flush against the browser's
     // bottom toolbar; this keeps a small gap under the buttons.
     <div data-testid="bot-game-mobile-bar" className="flex flex-1 items-center gap-1 pb-2">
+      <Button
+        variant="ghost"
+        className={BOT_BAR_BUTTON_CLASS}
+        onClick={() => setDrawDialogOpen(true)}
+        disabled={offerDrawDisabled}
+        data-testid="board-btn-offer-draw"
+      >
+        <Handshake className="size-5" aria-hidden="true" />
+        <span className="text-sm">Draw</span>
+      </Button>
+      <DrawOfferConfirmDialog
+        open={drawDialogOpen}
+        onOpenChange={setDrawDialogOpen}
+        onConfirm={onOfferDraw}
+      />
       <Button
         variant="ghost"
         className={BOT_BAR_BUTTON_CLASS}

@@ -35,6 +35,14 @@ export interface MobileBoardControls {
    * bar.
    */
   onResign?: () => void;
+  /**
+   * Quick 260916: the bot game's user-side draw offer, alongside `onResign`.
+   * Optional and defaultless for the same reason as `onResign` — only the
+   * bot game publishes it; the bot bar is the only reader.
+   */
+  onOfferDraw?: () => void;
+  /** Net disabled state of the bot bar's Draw action (see `onOfferDraw`). */
+  offerDrawDisabled?: boolean;
 }
 
 const NOOP_PAYLOAD: MobileBoardControls = Object.freeze({
@@ -85,12 +93,25 @@ export function usePublishMobileBoardControls(controls: MobileBoardControls | nu
     canReset = NOOP_PAYLOAD.canReset,
     // No default — undefined is the meaningful "not the bot bar" value.
     onResign,
+    onOfferDraw,
+    offerDrawDisabled,
   } = controls ?? {};
   const hasControls = controls != null;
 
   useEffect(() => {
     if (!hasControls) return;
-    setPayload({ onBack, onForward, onReset, onFlip, canGoBack, canGoForward, canReset, onResign });
+    setPayload({
+      onBack,
+      onForward,
+      onReset,
+      onFlip,
+      canGoBack,
+      canGoForward,
+      canReset,
+      onResign,
+      onOfferDraw,
+      offerDrawDisabled,
+    });
     return () => setPayload(null);
   }, [
     hasControls,
@@ -102,5 +123,7 @@ export function usePublishMobileBoardControls(controls: MobileBoardControls | nu
     canGoForward,
     canReset,
     onResign,
+    onOfferDraw,
+    offerDrawDisabled,
   ]);
 }
