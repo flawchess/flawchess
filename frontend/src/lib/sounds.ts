@@ -46,8 +46,12 @@
  * shape but inverts the storage sense: `'1'` = muted, absence/`'0'` = unmuted
  * (default ON per D-10), and `setMuted` accepts both `true` and `false`.
  *
- * `useBotGame` (plan 04) fires these events on game state transitions;
- * `GameControls` (plan 05) renders the mute toggle via `useMuted`/`setMuted`.
+ * `useBotGame` (plan 04) fires these events on game state transitions.
+ * `useMuted`/`setMuted` currently have NO production caller: Phase 223 moved
+ * the mute toggle out of the game and then, at UAT, retired the account-menu
+ * switch as well. Sounds always play until a later phase ships a proper
+ * disable option; the plumbing stays so that phase does not rebuild it, and
+ * `playSound` still honours a persisted `'1'` from before the switch left.
  */
 
 import { useSyncExternalStore } from 'react';

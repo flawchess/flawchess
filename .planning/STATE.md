@@ -2,10 +2,10 @@
 gsd_state_version: "1.0"
 milestone: v2.19
 current_phase: 223
-status: not_started
-stopped_at: Phase 222 complete — all phases complete
-last_updated: "2026-09-15T18:17:22.313Z"
-state_head: 9f7a3a8119e9a0a5a75f597ee404e8e517171938
+status: completed
+stopped_at: Phase 223 complete — all phases complete
+last_updated: "2026-09-16T09:07:56.698Z"
+state_head: f1f8c274c95f33a489a1be8906ca8b976c73e552
 progress:
   total_phases: 1
   completed_phases: 1
@@ -23,7 +23,7 @@ last_activity_desc: "Completed quick task 260915-sht (Train verdict tail: a red 
 Phase: 223
 Plan: Not started
 
-Status: Phase 223 (Bot Voice & Immersive Bot Game Layout, SEED-168 + SEED-167) added 2026-09-15, not yet discussed or planned. Next: `/gsd-discuss-phase 223`.
+Status: All phases complete
 
 Open threads carried forward (not blockers):
 
@@ -770,6 +770,12 @@ flagged as an open decision for plan 06 / a human, not auto-fixed.
 - [Phase 222]: 222-05: showsFullExplanation gate mirrors scoreBubbleCopy's precedence locally so an explanation that never rendered is never stamped (D-12).
 - [Phase 222]: 222-05: live solvedOutcomes accumulator (seed + append) makes the score bubble truthful for a straight-through session, not just a resumed one (RESEARCH Finding C).
 - [Phase 222]: Phase 222 closed: the first-reveal walkthrough (TrainReveal.walkthroughStep) rings the bubble/line-cards/action-row in turn without touching the board-arrow spotlight channel; TrainReveal stayed at its pinned complexity 68 by keeping the ring logic inside the already-nested renderLineBox helper. Live browser UAT (orchestrator) found and fixed 3 defects: SC2's 375px board/bubble fit, a missing intro-state drop-nudge reaction, and warm-up-unaware walkthrough copy.
+- [Phase 223]: resolveBotLine implements the FULL locked precedence chain now (not just the game-start arm), so precedence holds even if a future caller passes multiple signals true at once — Every non-game-start field defaults to false/null from the current caller, so this costs nothing today and means BOTVOICE-02/03 convert existing guard clauses rather than adding branches.
+- [Phase 223]: 223-03: BoardSoundsSwitch binds directly to the existing useMuted/setMuted preference (no new store/key), rendered on both NavHeader and MobileMoreDrawer — Discharges SEED-167's hard prerequisite before the in-game mute button is removed later in this phase
+- [Phase 223]: 223-02: rosterHost shares landingHost's exact LANDING_ROTATION_EPOCH/LANDING_HOST_IDS (exported from trainBotCopy.ts) so the roster and /train hosts agree structurally for a given date, proven by a 24-day full-cycle test.
+- [Phase 223]: 223-02: All ten in-game BOT_LINE_TABLES keys plus ROSTER_GREETINGS (264 authored lines) are exhaustive Record<PersonaId,string> tables guarded by one shared invariant test (budget/em-dash/forbidden-claim/insult/numeric-disclosure/no-duplication).
+- [Phase 223]: 223-05: handleBackToRoster added as a deliberate near-duplicate of handleNewGame (separate doc comment) rather than shared, so the two callbacks can diverge independently.
+- [Phase 223]: playerCapturedRef/threatCreatedRef now overwrite (not accumulate) each player commit — plan 01's shipped latch never reset to false on a non-capturing move — A stale true from an earlier move pair would have permanently mislabeled every later D-04 capture/no-capture split
 
 ### Pending Todos
 
@@ -936,9 +942,9 @@ Items acknowledged and deferred at **v1.29 milestone close on 2026-06-29** (user
 
 ## Session Continuity
 
-**Stopped at:** Phase 222 complete — all phases complete
+**Stopped at:** Phase 223 complete — all phases complete
 
-**Last session:** 2026-09-13T17:42:23.651Z
+**Last session:** 2026-09-15T21:45:21.983Z
 
 **Resume file:** None
 
@@ -1124,6 +1130,11 @@ Items acknowledged and deferred at **v1.29 milestone close on 2026-06-29** (user
 | Phase 222 P04 | 130min | 3 tasks | 4 files |
 | Phase 222 P05 | 55min | 2 tasks | 5 files |
 | Phase 222 P06 | 95min | 3 tasks | 13 files |
+| Phase 223 P01 | 55min | 2 tasks | 12 files |
+| Phase 223 P03 | 20min | 2 tasks | 4 files |
+| Phase 223 P02 | 70min | 3 tasks | 6 files |
+| Phase 223 P05 | 45min | 3 tasks | 16 files |
+| Phase 223 P04 | 55 min | 3 tasks | 7 files |
 
 ## Performance Metrics
 

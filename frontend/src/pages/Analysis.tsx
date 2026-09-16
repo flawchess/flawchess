@@ -2624,6 +2624,7 @@ export default function Analysis() {
             onFastForwardStart={fastForward.start}
             canFastForward={fastForward.canFastForward}
             flat
+            labels
           />
         </div>
       </div>

@@ -56,3 +56,5 @@ Source of truth, not historical. The repeated 2026 OOM-kills traced to import me
   ```
 
   The zone id is in the dashboard's own API calls (Network tab). Edge blocking of AI crawlers is a separate per-crawler switch under **AI Crawl Control → Security** and was already off. Verify with `curl -s https://flawchess.com/robots.txt` (the block is gone once the file starts with `User-agent: *` from the repo file; Cloudflare caches robots.txt, so purge it if the old copy lingers).
+
+  **Re-verify after the Sept 2026 crawler-control migration.** Cloudflare announced on 2026-09-15 that zones which had "Managed Robots.txt" enabled are auto-migrated over the following week to the new Search / Training / Agent controls, with Training defaulting to "Disallow AI Training", which is the same robots.txt block by another name. Once the "Block AI Bots" switch is gone from the dashboard, confirm the new controls read Search: Allow, Training: Allow, Agent: Allow and re-run the curl check above; if the block is back, repeat the `bot_management` PUT and purge robots.txt.

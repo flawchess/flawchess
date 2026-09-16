@@ -24,6 +24,28 @@ const CONFETTI_PARTICLE_COUNT = 60;
 /** Spread (degrees) of each full-celebration burst. */
 const CONFETTI_SPREAD = 55;
 
+/** Lifetime of every particle, in canvas-confetti "ticks" (one tick per
+ * animation frame). Passed EXPLICITLY rather than left at the library
+ * default so the burst's duration is a number this module owns and can
+ * export — `useWinCelebrationHold` holds the bot-game result modal closed
+ * for exactly `CONFETTI_DURATION_MS`, and that coupling has to be a shared
+ * constant, not a guess. Phase 223 UAT: the previous 1300ms hold was
+ * derived from a guess and expired with roughly half the burst still on
+ * screen, so the modal covered the board mid-celebration. */
+const CONFETTI_TICKS = 180;
+
+/** Frames per second the ticks above are spent at. Browsers animate
+ * requestAnimationFrame at ~60fps; a 120Hz display finishes the burst
+ * sooner, which only ever makes the hold slightly generous. */
+const CONFETTI_FPS = 60;
+
+/**
+ * How long a burst from this module stays on screen, in milliseconds.
+ * Exported so the bot-game result modal can wait the celebration out
+ * instead of guessing at it.
+ */
+export const CONFETTI_DURATION_MS = Math.ceil((CONFETTI_TICKS / CONFETTI_FPS) * 1000);
+
 /** Particle count for the muted burst — a visibly smaller celebration for a
  * partial result (the Train score screen's yellow band), so a "decent but not
  * great" session reads as acknowledged rather than celebrated. */
@@ -38,6 +60,7 @@ function fireBursts(particleCount: number, spread: number): void {
     particleCount,
     angle: 60,
     spread,
+    ticks: CONFETTI_TICKS,
     origin: { x: 0, y: CONFETTI_ORIGIN_Y },
     colors: CONFETTI_COLORS,
   });
@@ -45,6 +68,7 @@ function fireBursts(particleCount: number, spread: number): void {
     particleCount,
     angle: 120,
     spread,
+    ticks: CONFETTI_TICKS,
     origin: { x: 1, y: CONFETTI_ORIGIN_Y },
     colors: CONFETTI_COLORS,
   });

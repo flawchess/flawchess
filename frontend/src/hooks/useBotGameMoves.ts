@@ -74,6 +74,13 @@ export interface UseBotGameMovesOptions {
   botDrawOfferRef: RefObject<boolean>;
   setBotDrawOffer: Dispatch<SetStateAction<boolean>>;
   movesSinceLastDeclineRef: RefObject<number>;
+  /** From `useBotGameVoice` (Phase 223, BOTVOICE-01/02 seam A) — fires for
+   * every committed move, player and bot alike, so the voice hook can clear
+   * the bubble on the player's own commit and latch the board-truth facts
+   * (capture, mover) its resolver needs. Receives the live `Chess` instance
+   * because BOTVOICE-02's threat probe needs the exact post-move position
+   * at both the player's and the bot's commit. */
+  onMoveCommitted: (move: Move, mover: MoverColor, chess: Chess) => void;
 }
 
 export interface UseBotGameMovesResult {
@@ -119,6 +126,7 @@ export function useBotGameMoves(options: UseBotGameMovesOptions): UseBotGameMove
     botDrawOfferRef,
     setBotDrawOffer,
     movesSinceLastDeclineRef,
+    onMoveCommitted,
   } = options;
 
   /** WR-05: the ply currently displayed, kept in sync with the `viewedPly`
@@ -161,6 +169,13 @@ export function useBotGameMoves(options: UseBotGameMovesOptions): UseBotGameMove
         botDrawOfferRef.current = false;
         setBotDrawOffer(false);
       }
+
+      // Phase 223 (BOTVOICE-01/02 seam A): `useBotGameVoice` clears the
+      // bubble on the player's own commit and latches the board-truth
+      // facts (capture, mover) its resolver needs — the exact same seam
+      // the draw-offer expiry above already uses, and deliberately no
+      // second commit path.
+      onMoveCommitted(move, mover, chess);
 
       // CR-02 fix: a plain subtraction, no floor-at-zero, inside
       // applyMoveDebit (useBotGameClock). By construction both callers
@@ -251,6 +266,7 @@ export function useBotGameMoves(options: UseBotGameMovesOptions): UseBotGameMove
       outcomeRef,
       setMoveHistory,
       setActiveColor,
+      onMoveCommitted,
     ],
   );
 

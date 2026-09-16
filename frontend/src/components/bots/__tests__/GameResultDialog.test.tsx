@@ -23,12 +23,18 @@ import {
   GUEST_NOT_AUTO_ANALYZED_COPY,
 } from '../GameResultDialog';
 import type { BotGameOutcome } from '@/lib/botGameEnd';
+import { personaForId } from '@/lib/personas/personaRegistry';
+import { botLineCopy } from '@/lib/botGameCopy';
 
 afterEach(() => {
   cleanup();
 });
 
 const OUTCOME: BotGameOutcome = { reason: 'resignation', winner: 'white' };
+
+/** A real registry persona — the copy tables are keyed by `PersonaId`, so a
+ * hand-rolled fixture could not be looked up. */
+const PERSONA_FIXTURE = personaForId('attacker-800')!;
 
 function renderDialog(overrides: Partial<Parameters<typeof GameResultDialog>[0]> = {}) {
   const onDismiss = vi.fn();
@@ -48,6 +54,8 @@ function renderDialog(overrides: Partial<Parameters<typeof GameResultDialog>[0]>
         isGuest={false}
         analyzeBusy={false}
         personaName={null}
+        persona={null}
+        botLine={null}
         onRematch={onRematch}
         {...overrides}
       />
@@ -166,5 +174,23 @@ describe('GameResultDialog — footer stacks the actions (Quick 260722-nlm)', ()
     expect(classes).not.toContain('sm:flex-row');
     expect(classes).not.toContain('sm:justify-end');
     expect(classes).toContain('sm:flex-col-reverse');
+  });
+});
+
+describe('GameResultDialog — the bot\'s parting line lives in here (Phase 223 UAT)', () => {
+  it('renders the persona bubble when both a persona and a terminal line are supplied', () => {
+    renderDialog({ persona: PERSONA_FIXTURE, botLine: 'bot-won', personaName: PERSONA_FIXTURE.name });
+    expect(screen.queryByTestId('result-dialog-bubble')).not.toBeNull();
+    expect(screen.queryByText(botLineCopy('bot-won', PERSONA_FIXTURE.id))).not.toBeNull();
+  });
+
+  it('renders no bubble for a Custom game, which has no persona to speak with', () => {
+    renderDialog({ persona: null, botLine: 'bot-won' });
+    expect(screen.queryByTestId('result-dialog-bubble')).toBeNull();
+  });
+
+  it('renders no bubble when no terminal line resolved', () => {
+    renderDialog({ persona: PERSONA_FIXTURE, botLine: null });
+    expect(screen.queryByTestId('result-dialog-bubble')).toBeNull();
   });
 });

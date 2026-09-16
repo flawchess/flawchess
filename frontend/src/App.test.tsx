@@ -1055,6 +1055,80 @@ describe('Quick 260809-g0n: MobileBottomBar swaps main nav for board controls', 
   });
 });
 
+// Phase 223 (BOTVOICE-05, D-10): a payload carrying a resign action is the
+// bot game's — MobileBottomBar swaps in the four-action BotGameMobileBar
+// instead of the shared BoardControls row.
+describe('Phase 223 (BOTVOICE-05): MobileBottomBar swaps to the bot four-action bar', () => {
+  const FULL_PROFILE = {
+    email: 'full@example.com',
+    is_superuser: false,
+    is_guest: false,
+    chess_com_game_count: 50,
+    lichess_game_count: 0,
+    impersonation: null,
+  } as Partial<UserProfile>;
+
+  function MobileBoardControlsResignProbe(props: {
+    onResign: () => void;
+    onBack: () => void;
+    onForward: () => void;
+    onFlip: () => void;
+    canGoBack: boolean;
+    canGoForward: boolean;
+  }) {
+    usePublishMobileBoardControls(props);
+    return null;
+  }
+
+  it('renders the bot bar with no main-nav links when the payload carries onResign', () => {
+    profileState = FULL_PROFILE;
+    tier1State = true;
+
+    renderMobileBottomBar(
+      '/bots',
+      <MobileBoardControlsResignProbe
+        onResign={vi.fn()}
+        onBack={vi.fn()}
+        onForward={vi.fn()}
+        onFlip={vi.fn()}
+        canGoBack
+        canGoForward
+      />,
+    );
+
+    expect(screen.getByTestId('mobile-board-controls-bar')).toBeTruthy();
+    expect(screen.getByTestId('bot-game-mobile-bar')).toBeTruthy();
+    expect(screen.getByTestId('board-btn-resign')).toBeTruthy();
+    expect(screen.queryByTestId('mobile-bottom-bar')).toBeNull();
+    expect(screen.queryByTestId('mobile-nav-bots')).toBeNull();
+    expect(screen.queryByTestId('mobile-nav-more')).toBeNull();
+    expect(screen.queryByTestId('board-btn-reset')).toBeNull();
+  });
+
+  it('regression: a payload WITHOUT onResign still renders the shared BoardControls row', () => {
+    profileState = FULL_PROFILE;
+    tier1State = true;
+
+    renderMobileBottomBar(
+      '/library',
+      <MobileBoardControlsProbe
+        onBack={vi.fn()}
+        onForward={vi.fn()}
+        onReset={vi.fn()}
+        onFlip={vi.fn()}
+        canGoBack
+        canGoForward
+        canReset
+      />,
+    );
+
+    expect(screen.getByTestId('mobile-board-controls-bar')).toBeTruthy();
+    expect(screen.getByTestId('board-btn-reset')).toBeTruthy();
+    expect(screen.queryByTestId('bot-game-mobile-bar')).toBeNull();
+    expect(screen.queryByTestId('board-btn-resign')).toBeNull();
+  });
+});
+
 // Quick 260824-qaz (D-7/D-8): the hosted Activity Pulse dashboard's nav entry
 // mirrors ADMIN_NAV_ITEM's conditional-append pattern on both nav surfaces —
 // present for superusers on both NavHeader and MobileMoreDrawer, absent on

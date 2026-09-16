@@ -39,6 +39,7 @@ import type { MoverColor } from '@/lib/liveFlaw';
 import { evalToExpectedScore } from '@/lib/liveFlaw';
 import { computeThinkDeadlineMs, computeRevealDelayMs } from '@/lib/chessClock';
 import { wouldBotResign } from '@/lib/botDrawGate';
+import { clampedMoverPovCp } from '@/lib/botLineTrigger';
 import { createWorkerPool, type WorkerPool } from '@/lib/engine/workerPool';
 import { createMaiaQueue, type MaiaQueue } from '@/lib/engine/maiaQueue';
 import { selectBotMove, type BotMoveDeps } from '@/lib/engine/selectBotMove';
@@ -202,6 +203,15 @@ export interface UseBotGameEngineDispatchOptions {
     style: BotStyleParams,
     gameAlreadyOver: boolean,
   ) => void;
+  /** From `useBotGameVoice` (Phase 223, BOTVOICE-01/02/03 seam B) — fires
+   * once per SEARCHED (non-book) bot move whose grade resolved, with that
+   * move's bot-POV CLAMPED CENTIPAWN score and the ply it was played at, so
+   * the voice hook can compute a one-move-pair swing delta with zero extra
+   * engine calls (D-01 — no second engine grading RPC is ever added here).
+   * Centipawns rather than the expected score the draw gate uses: see
+   * `botLineTrigger.ts`'s header for why the sigmoid cannot carry this
+   * signal. The voice hook keeps the previous value itself. */
+  onBotMoveGraded: (cp: number, ply: number) => void;
 }
 
 export interface UseBotGameEngineDispatchResult {
@@ -240,6 +250,7 @@ export function useBotGameEngineDispatch(
     finalizeGame,
     bumpConsecutiveLowScoreTurns,
     applyDrawOfferUpdate,
+    onBotMoveGraded,
   } = options;
 
   const poolRef = useRef<WorkerPool | null>(null);
@@ -433,6 +444,14 @@ export function useBotGameEngineDispatch(
         }
 
         setIsBotThinking(false);
+        // Phase 223 UAT: latch the ply HERE, on the same synchronous tick the
+        // move was pushed, never inside the grade continuation below. That
+        // continuation can resolve after the player has already replied, and
+        // reading `chessRef.current.history().length` there recorded the
+        // player's ply instead of the bot's — which broke the voice hook's
+        // exact `BOT_LINE_PAIR_PLY_SPAN` adjacency check and silently
+        // suppressed the swing line for the next TWO move pairs.
+        const gradedPly = chess.history().length;
         // A book move is CHEAP, not FREE: it reaches this same commit through
         // the same chargeableElapsedMs() -> flagIfOutOfTime() -> commitMove()
         // pipeline as a searched move (169 D-15/D-16/D-20), so it is debited its
@@ -475,6 +494,7 @@ export function useBotGameEngineDispatch(
             if (grade) {
               const score = evalToExpectedScore(grade.evalCp, grade.evalMate, mover);
               lastRootPracticalScoreRef.current = score;
+              onBotMoveGraded(clampedMoverPovCp(grade.evalCp, grade.evalMate, mover), gradedPly);
 
               // D-07/D-08 (Phase 182, STYLE-02): the resign hysteresis
               // counter and wouldBotResign check live entirely inside this
@@ -528,6 +548,10 @@ export function useBotGameEngineDispatch(
       lastRootPracticalScoreRef,
       bumpConsecutiveLowScoreTurns,
       applyDrawOfferUpdate,
+      // onBotMoveGraded added (Phase 223, BOTVOICE-01/02): a stable
+      // useCallback from useBotGameVoice (via useBotGame.ts) — listing it
+      // changes nothing about when runBotTurn is recreated.
+      onBotMoveGraded,
       // abortControllerRef/setIsBotThinking added (215-03 Task 2): pre-split
       // these were direct same-scope useRef/useState access, exempt from
       // exhaustive-deps. Now stable cross-hook props passed in as options

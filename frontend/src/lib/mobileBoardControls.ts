@@ -15,11 +15,26 @@ import { useEffect, useSyncExternalStore } from 'react';
 export interface MobileBoardControls {
   onBack: () => void;
   onForward: () => void;
-  onReset: () => void;
+  /**
+   * Phase 223 (BOTVOICE-05, D-10): optional because the bot game's
+   * four-action payload (Resign/Back/Forward/Flip) has no reset control.
+   * Every other publisher (Train, Analysis, Openings) still supplies it.
+   */
+  onReset?: () => void;
   onFlip: () => void;
   canGoBack: boolean;
   canGoForward: boolean;
-  canReset: boolean;
+  /** Optional alongside `onReset` — see that field's comment. */
+  canReset?: boolean;
+  /**
+   * Phase 223 (BOTVOICE-05, D-10): presence (not a default) is the signal
+   * `MobileBottomBar` uses to swap in the bot game's four-action bar instead
+   * of the shared `BoardControls` row — deliberately NOT given a NOOP
+   * default below, unlike every other field, because a default would make
+   * `onResign != null` true for every publisher and always render the bot
+   * bar.
+   */
+  onResign?: () => void;
 }
 
 const NOOP_PAYLOAD: MobileBoardControls = Object.freeze({
@@ -68,12 +83,24 @@ export function usePublishMobileBoardControls(controls: MobileBoardControls | nu
     canGoBack = NOOP_PAYLOAD.canGoBack,
     canGoForward = NOOP_PAYLOAD.canGoForward,
     canReset = NOOP_PAYLOAD.canReset,
+    // No default — undefined is the meaningful "not the bot bar" value.
+    onResign,
   } = controls ?? {};
   const hasControls = controls != null;
 
   useEffect(() => {
     if (!hasControls) return;
-    setPayload({ onBack, onForward, onReset, onFlip, canGoBack, canGoForward, canReset });
+    setPayload({ onBack, onForward, onReset, onFlip, canGoBack, canGoForward, canReset, onResign });
     return () => setPayload(null);
-  }, [hasControls, onBack, onForward, onReset, onFlip, canGoBack, canGoForward, canReset]);
+  }, [
+    hasControls,
+    onBack,
+    onForward,
+    onReset,
+    onFlip,
+    canGoBack,
+    canGoForward,
+    canReset,
+    onResign,
+  ]);
 }

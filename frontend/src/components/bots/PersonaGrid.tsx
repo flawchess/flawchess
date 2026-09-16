@@ -10,11 +10,13 @@
  */
 
 import type { ReactElement } from 'react';
+import { format } from 'date-fns';
 import { PersonaCard } from '@/components/bots/PersonaCard';
+import { TrainBotBubble } from '@/components/train/TrainBotBubble';
 import { Button } from '@/components/ui/button';
-import { Card, CardHeader, CardBody } from '@/components/ui/card';
 import { InfoPopover } from '@/components/ui/info-popover';
-import { currentStrengthCopy } from '@/lib/currentStrengthCopy';
+import { rosterHost, ROSTER_HUMAN_LIKE_LINE } from '@/lib/botGameCopy';
+import { devClockNow, readDevClockOffsetMinutes } from '@/lib/devClock';
 import {
   STYLE_SECTION_ORDER,
   RUNGS,
@@ -23,7 +25,6 @@ import {
 } from '@/lib/personas/personaRegistry';
 import type { Style } from '@/lib/engine/styleOpeningLines';
 import { ATTACKER_ACCENT, TRICKSTER_ACCENT, GRINDER_ACCENT, WALL_ACCENT } from '@/lib/theme';
-import type { CurrentStrength } from '@/types/users';
 
 /** Per-style section-heading accent (D-14: the heading text is the style's
  * own display name — "Wall", never "Solid Wall"/"Great Wall"). Mirrors
@@ -38,12 +39,6 @@ const STYLE_ACCENT: Record<Style, string> = {
 export interface PersonaGridProps {
   onSelectPersona: (persona: Persona) => void;
   onSelectCustom: () => void;
-  /** Quick 260811-u11 (SEED-147): the player's current-strength estimate,
-   * resolved by `Bots.tsx` from its single `useUserProfile()` call. `null`
-   * for guests / users with neither a qualifying recent-games rung nor an
-   * anchor — the reference line is then omitted entirely rather than
-   * showing a placeholder. */
-  currentStrength: CurrentStrength | null;
   /** Phase 185: per-persona-id raw win counts, fetched ONCE by `Bots.tsx`
    * (`useBotPersonaWins`) and prop-drilled here — this component never calls
    * `useQuery` itself (Pattern 3, single-fetch-then-prop-drill), which would
@@ -54,96 +49,81 @@ export interface PersonaGridProps {
 }
 
 /**
- * Intro card explaining what makes these opponents different from a dialed-down
- * engine, with the player's own strength reference as a separated second row.
+ * BotWelcomeCard — the roster page's per-persona welcome (D-13,
+ * 223-CONTEXT). Replaces the retired `HumanLikeOpponentsCard`'s prose
+ * paragraph with the SAME rotating `TrainBotBubble` the /train landing page
+ * uses (`TrainStartScreen.tsx`'s `landingHost` call site is the register
+ * this bubble matches) — `rosterHost` (`botGameCopy.ts`) shares its epoch
+ * and id order with `landingHost`, so the two pages agree on today's host
+ * structurally. Phase 223 UAT: no card around it any more — the bubble sits
+ * directly on the page like the Train landing's.
  *
- * The CARD itself renders unconditionally (guests included — they get no rating
- * row, and are exactly who needs the explanation most); only the rating row
- * inside it is gated on `currentStrength`, which also gates its separator so a
- * guest never sees a rule with nothing under it.
+ * The bubble renders unconditionally, guests included — they are exactly who
+ * needs the explanation most. Phase 223 UAT also retired the player's
+ * estimated-rating line that used to sit beneath it: a bot's calibrated ELO
+ * is measured against engines, not humans, so putting a human number next to
+ * it invited a comparison the two scales do not support.
  *
  * Copy accuracy constraint: 16 of the 24 personas run at `HUMAN_BLEND` (rungs
  * 800-1400), where `selectBotMove` makes exactly ONE Maia policy call and never
- * searches. So this copy must never claim the bots "calculate" or "think" — it
+ * searches. So the greeting this bubble hosts (and every table in
+ * `botGameCopy.ts`) must never claim the bots "calculate" or "think" — it
  * describes human move PREDICTION, which is what all 24 have in common. The
- * style sentence stays directional for the same reason: `varianceBonus` and
- * `contempt` only bite on the Light/Deep rungs, while the prior reweighting and
- * opening books tilt every rung.
+ * style sentence in the popover body stays directional for the same reason:
+ * `varianceBonus` and `contempt` only bite on the Light/Deep rungs, while the
+ * prior reweighting and opening books tilt every rung.
  */
-function HumanLikeOpponentsCard({
-  currentStrength,
-}: {
-  currentStrength: CurrentStrength | null;
-}): ReactElement {
-  return (
-    <Card as="section" data-testid="bots-intro-card">
-      <CardHeader size="compact">Human-like Opponents</CardHeader>
-      <CardBody className="space-y-3 text-sm text-muted-foreground">
-        {/* The info trigger sits inline at the END of the sentence it expands,
-            not up in the header — it explains this claim, and the rating row
-            below uses the same trailing-trigger shape. `align-middle` keeps the
-            16px glyph on the text baseline when the sentence wraps. */}
-        <p>
-          These bots are driven by the FlawChess Engine and play like
-          human players, not like weakened engines.{' '}
-          <span className="inline-flex align-middle">
-            <InfoPopover ariaLabel="About the bot opponents" testId="bots-intro-info">
-              <div className="max-w-xs space-y-2">
-                {/* Non-technical engine explainer, kept in the register of
-                    Analysis.tsx's FlawChessInfoTooltip: no "Maia", no "MCTS",
-                    no "expectimax". It describes what the engine KNOWS (how
-                    players at a rating move), never that the bot calculates —
-                    16 of the 24 personas run no search at all. */}
-                <p>
-                  The FlawChess Engine is our own engine. Beyond which move is objectively best, it
-                  models how real players at a given rating actually move: which moves they find,
-                  and which they miss.
-                </p>
-                <p>
-                  So a bot never plays perfectly and then throws in a random blunder, the way a
-                  dialed-down engine does. Its mistakes look like the ones you meet online.
-                </p>
-                <p>
-                  Each style tilts that further: Attackers press, Tricksters play for
-                  complications, Grinders trade down and never resign, Walls keep it quiet.
-                </p>
-              </div>
-            </InfoPopover>
-          </span>
-        </p>
+function BotWelcomeCard(): ReactElement {
+  // Rotation day is computed HERE, in the component, from the dev clock —
+  // `rosterHost` is a pure module and never reads a clock itself.
+  const today = format(devClockNow(readDevClockOffsetMinutes()), 'yyyy-MM-dd');
+  const host = rosterHost({ today });
 
-        {/* Strength reference for picking an opponent: the persona cards all
-            carry a `~ELO` label, but without the player's own number those
-            labels have nothing to be "similar" to. A null `rung` (anchor
-            fallback) does NOT suppress this row — only currentStrength ===
-            null does. The rule lives on this row (not as a standalone sibling)
-            so it disappears with the row it separates. */}
-        {currentStrength !== null && (
-          <div
-            className="flex items-center gap-1 border-t border-border/40 pt-3"
-            data-testid="bots-player-rating"
-          >
-            <p>
-              Your estimated blitz rating:{' '}
-              <span className="font-semibold text-foreground">{`~${Math.round(currentStrength.rating)}`}</span>
-            </p>
-            <InfoPopover
-              ariaLabel="About your estimated blitz rating"
-              testId="bots-player-rating-info"
-            >
-              <p>{currentStrengthCopy(currentStrength)}</p>
-            </InfoPopover>
-          </div>
-        )}
-      </CardBody>
-    </Card>
+  return (
+    <section data-testid="bots-intro" className="space-y-3 text-sm text-muted-foreground">
+      <div data-testid="bots-welcome-bubble">
+        <TrainBotBubble persona={host.persona} state="prompt" avatarSize="large">
+          {/* The info trigger sits inline at the END of the greeting it
+              expands (Train landing pattern). `align-middle` keeps the 16px
+              glyph on the text baseline when the sentence wraps. */}
+          <p>
+            {host.copy} {ROSTER_HUMAN_LIKE_LINE}{' '}
+            <span className="inline-flex align-middle">
+              <InfoPopover ariaLabel="About the bot opponents" testId="bots-intro-info">
+                <div className="max-w-xs space-y-2">
+                  {/* Non-technical engine explainer, kept in the register
+                      of Analysis.tsx's FlawChessInfoTooltip: no "Maia", no
+                      "MCTS", no "expectimax". It describes what the engine
+                      KNOWS (how players at a rating move), never that the
+                      bot calculates — 16 of the 24 personas run no search
+                      at all. */}
+                  <p>
+                    These bots are driven by the FlawChess Engine and play like human players, not
+                    like weakened engines. Beyond which move is objectively best, it models how real
+                    players at a given rating actually move: which moves they find, and which they
+                    miss.
+                  </p>
+                  <p>
+                    So a bot never plays perfectly and then throws in a random blunder, the way a
+                    dialed-down engine does. Its mistakes look like the ones you meet online.
+                  </p>
+                  <p>
+                    Each style tilts that further: Attackers press, Tricksters play for
+                    complications, Grinders trade down and never resign, Walls keep it quiet.
+                  </p>
+                </div>
+              </InfoPopover>
+            </span>
+          </p>
+        </TrainBotBubble>
+      </div>
+    </section>
   );
 }
 
 export function PersonaGrid({
   onSelectPersona,
   onSelectCustom,
-  currentStrength,
   winsByPersona,
 }: PersonaGridProps): ReactElement {
   return (
@@ -153,7 +133,7 @@ export function PersonaGrid({
       data-testid="bots-persona-grid"
       className="mx-auto flex max-w-2xl flex-col gap-6 p-4 pb-20 sm:pb-4"
     >
-      <HumanLikeOpponentsCard currentStrength={currentStrength} />
+      <BotWelcomeCard />
 
       {/* Single grid-cols-4 container for the header row + all 6 rung body
           rows, so columns align exactly and row/column gaps stay uniform

@@ -14,6 +14,8 @@ import {
   GRADING_COPY,
   HILDA_ID,
   LANDING_GREETINGS,
+  LANDING_HOST_IDS,
+  LANDING_ROTATION_EPOCH,
   STEPPER_COPY_MAX_CHARS,
   TANK_ID,
   WALKTHROUGH_STEP_COUNT,
@@ -137,6 +139,23 @@ describe('LANDING_GREETINGS / landingHost', () => {
     const day24 = landingHost({ sessionDate: '2026-07-25', ...SEEN }).persona.id;
     expect(day1).not.toBe(day0);
     expect(day24).toBe(day0);
+  });
+
+  // 223-02: LANDING_ROTATION_EPOCH/LANDING_HOST_IDS were promoted from
+  // module-private to exported so `botGameCopy.ts`'s `rosterHost` can import
+  // this SAME epoch and id order rather than declaring a second copy of
+  // either. This is the import-side half of that contract: the primitives
+  // are importable, and landingHost's own behavior (already pinned by every
+  // other test in this describe block) is unchanged by the export.
+  it('LANDING_ROTATION_EPOCH and LANDING_HOST_IDS are importable and landingHost is unchanged by exporting them', () => {
+    expect(LANDING_HOST_IDS).toEqual(Object.keys(LANDING_GREETINGS));
+    expect(LANDING_ROTATION_EPOCH).toBeInstanceOf(Date);
+    // Same host resolved the un-exported way (Tank gate) and, once the
+    // exported id list is consulted directly, a member of that SAME list —
+    // proves the export changed nothing about which id resolves.
+    const host = landingHost({ sessionDate: '2026-07-01', ...SEEN });
+    expect(LANDING_HOST_IDS).toContain(host.persona.id);
+    expect(host.copy).toBe(LANDING_GREETINGS[host.persona.id]);
   });
 });
 

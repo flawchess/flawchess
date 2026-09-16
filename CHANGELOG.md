@@ -8,13 +8,26 @@ in `YYYY-MM-DD` (Europe/Zurich).
 
 ## [Unreleased]
 
+### Added
+
+- The bot opponents now talk during a game and greet you on the roster page, each in its own voice and personality, reacting to captures, big swings and draw offers as the game unfolds.
+
 ### Changed
 
+- The phone game screen against a bot has been rebuilt around the board: a labelled four-button bar for Resign, Back, Next and Flip now sits at the bottom in place of the main navigation while you are playing, and the board is flanked by the same player rows as the analysis board, on phone and desktop alike. Each row shows the name and rating on the left, and the material lead and the clock on the right; the clock sits in a badge painted in that player's own board colour, so it says whose clock it is at a glance, and turns red when time gets short. The clock icon marks whose move it is, the bot's avatar is bigger during the game, and its speech bubble stays out of the way while it has nothing to say.
+- A bot's offer to draw is now accepted or declined right from its own speech bubble on both phone and desktop, instead of a separate banner.
+- The mute toggle is gone from the bot game screen; board sounds always play for now, and a proper option to turn them off is planned for a later release.
+- The board buttons under the analysis board on phones now carry a label under each icon (Start, Back, Next, Jump, Flip), matching the bot game's bar.
 - The Train landing page is now hosted by a different practice bot each day, each greeting you in its own voice. Tank the Ox keeps hosting until you have finished the first-puzzle walkthrough, so the page introduces the same bot who opens it.
 - Train first-puzzle walkthrough: the bot avatars are larger on phones, the opening tip now says "Every puzzle starts with one question", and the scroll to the feedback screen is slower so it is easier to follow.
 
 ### Fixed
 
+- Bot games: the bot now actually comments on the swings it was meant to. It was judging a swing by win probability, which stops moving once a game is decided, so in the games with the biggest blunders it said nothing at all; it now judges by the evaluation itself. A long test game went from one comment to five. A minor line about the first capture can also no longer silence a real blunder moments later.
+- Bot games: the bot reacts when you take the piece, not when it hangs it. It used to comment the instant its own position dropped, which both gave the mistake away and landed a move early. Now it stays quiet and owns up when you actually punish it, says so if it wriggles out of it, and never claims to have escaped while the piece is still hanging.
+- Bot games: the result dialog now waits for the winning confetti to finish before it opens, and carries the bot's face and its parting line, so the line is read instead of flashing past behind the dialog.
+
+- The material lead beside a player's name now carries a pawn icon on phones, where the individual piece icons do not fit, so the number is no longer a bare "+3". Affects both the analysis board and bot games.
 - Chess.com custom-position games that start from an impossible setup (for example two full ranks of pawns) no longer crash the analysis engine or receive nonsense evaluations. They are imported and viewable as before, but skipped by the engine analysis.
 - Activity dashboard: the Train sessions chart no longer goes blank when a session was composed for a calendar day that the site-wide activity range has not reached yet (users ahead of UTC composing just after local midnight).
 - Activity dashboard: hovering over a chart that has no data points in the selected range no longer crashes the page (FLAWCHESS-BG).
