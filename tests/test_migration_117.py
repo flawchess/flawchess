@@ -6,6 +6,7 @@ Regression suite for the migration that adds:
 - `games.lichess_evals_at TIMESTAMPTZ NULL` (D-117-06 provenance)
 - `games.full_pv_completed_at TIMESTAMPTZ NULL` (D-117-12)
 - partial index `ix_games_full_pv_pending ON games(id) WHERE full_pv_completed_at IS NULL`
+  (dropped again at head by c3a9e1f70003, quick-260916-gj7: it was dead in prod)
 - `eval_jobs` table with columns: id, tier, user_id, game_id, status, leased_by,
   lease_expiry, created_at, completed_at
 - partial unique `uq_eval_jobs_game_active ON eval_jobs(game_id) WHERE status IN ('pending','leased')`
@@ -42,6 +43,9 @@ TARGET_REVISION: str = "head"
 BASE_REVISION: str = "20260612120000"  # down_revision of our migration (Phase 116 head)
 
 # Index names added by this migration
+# ix_games_full_pv_pending is created here but dropped again by c3a9e1f70003
+# (quick-260916-gj7, dead index), so at head it must be ABSENT. The tests below
+# run at head (TARGET_REVISION), hence the negative assertions for it.
 GAMES_PV_PENDING_INDEX: str = "ix_games_full_pv_pending"
 EVAL_JOBS_GAME_ACTIVE_INDEX: str = "uq_eval_jobs_game_active"
 EVAL_JOBS_PICK_INDEX: str = "ix_eval_jobs_pick"
@@ -291,11 +295,12 @@ async def test_migration_adds_columns_and_eval_jobs_table(test_engine) -> None:
 
 
 async def test_migration_adds_all_indexes(test_engine) -> None:
-    """After upgrade, all four new partial indexes exist; after downgrade, all gone."""
+    """After upgrade, the three eval_jobs partial indexes exist (the games PV index
+    is dropped again at head by c3a9e1f70003); after downgrade, all gone."""
     await _run_upgrade(TARGET_REVISION)
 
-    assert await _index_exists(test_engine, GAMES_PV_PENDING_INDEX), (
-        f"Expected index '{GAMES_PV_PENDING_INDEX}' after upgrade"
+    assert not await _index_exists(test_engine, GAMES_PV_PENDING_INDEX), (
+        f"Index '{GAMES_PV_PENDING_INDEX}' should be absent at head (dropped by c3a9e1f70003)"
     )
     assert await _index_exists(test_engine, EVAL_JOBS_GAME_ACTIVE_INDEX), (
         f"Expected index '{EVAL_JOBS_GAME_ACTIVE_INDEX}' after upgrade"
@@ -325,8 +330,8 @@ async def test_migration_adds_all_indexes(test_engine) -> None:
     # Restore
     await _run_upgrade(TARGET_REVISION)
 
-    assert await _index_exists(test_engine, GAMES_PV_PENDING_INDEX), (
-        f"Expected index '{GAMES_PV_PENDING_INDEX}' after re-upgrade"
+    assert not await _index_exists(test_engine, GAMES_PV_PENDING_INDEX), (
+        f"Index '{GAMES_PV_PENDING_INDEX}' should be absent at head (dropped by c3a9e1f70003)"
     )
     assert await _index_exists(test_engine, EVAL_JOBS_GAME_ACTIVE_INDEX), (
         f"Expected index '{EVAL_JOBS_GAME_ACTIVE_INDEX}' after re-upgrade"
