@@ -136,32 +136,50 @@ export const BOT_LINE_TABLES: Record<BotLineKey, Record<PersonaId, string>> = {
    * what is now visible on the board. Never claims the bot planned,
    * calculated or foresaw it — 16 of the 24 personas make exactly one
    * policy call and never search (module header constraint, above).
+   *
+   * Two further accuracy constraints, both forced by how the trigger is
+   * measured (`botLineTrigger.ts`, `BOT_LINE_PAIR_PLY_SPAN`), and both
+   * guarded by `TEASE_TIMING_CLAIM_PATTERN` in `botGameCopy.test.ts`:
+   *
+   *  - NO DURATION CLAIM. The swing is a delta over exactly ONE move pair,
+   *    so the mistake it reacts to is always the player's LAST move. The
+   *    original table said "loose for a while" / "a whole move" / "far too
+   *    long", which was false every single time it fired (the piece was hung
+   *    one ply ago and is being remarked on now). Every line below describes
+   *    an instant: "that last move", "just now", "there it is".
+   *  - NO CAPTURE CLAIM. A depth-14 grade prices a hanging piece the ply it
+   *    is hung, so the tease fires on the bot's reply whether or not that
+   *    reply captured anything (a capture one move later is an engine
+   *    non-event, exactly as the file header of `botLineTrigger.ts` records
+   *    for the regret arm). So no line may say "I took it" or name a piece
+   *    as taken; "that piece is loose" (present tense, still on the board)
+   *    is the strongest a line goes.
    */
   'earned-tease': {
-    'attacker-800': 'Bzzz! That piece was just sitting there.',
-    'attacker-1000': 'Woof! You left that hanging a while.',
-    'attacker-1200': 'That piece was open for a whole move.',
-    'attacker-1400': 'You left a gap and I took it.',
-    'attacker-1600': 'That piece was loose for a while, you know.',
-    'attacker-1800': 'That piece sat open far too long.',
-    'trickster-800': 'Ooh! That was just sitting there for me.',
-    'trickster-1000': 'Tsk. That piece was unguarded a while.',
-    'trickster-1200': 'You left that hanging, and I noticed.',
-    'trickster-1400': "That piece was loose. Couldn't resist.",
-    'trickster-1600': 'That was hanging for a whole move, sure enough.',
-    'trickster-1800': 'Ha! That piece was wide open.',
-    'grinder-800': 'That piece was just sitting there for me.',
-    'grinder-1000': 'That piece was loose a while, you know.',
-    'grinder-1200': 'Nice and calm, and that piece was open.',
-    'grinder-1400': 'That piece was unguarded a whole move.',
-    'grinder-1600': 'That piece was loose, recruit. Noted.',
-    'grinder-1800': 'That piece sat open, and I took it.',
-    'wall-800': 'That piece was just sitting there, oddly.',
-    'wall-1000': "That piece was loose a while, wasn't it?",
-    'wall-1200': 'Same routine, but that piece was open.',
-    'wall-1400': 'That piece was hanging. I noticed anyway.',
-    'wall-1600': 'That piece sat open a whole move, you know.',
-    'wall-1800': 'That piece was loose. Calm as ever.',
+    'attacker-800': 'Bzzz! That last move left a piece just sitting there.',
+    'attacker-1000': 'Woof! Something is hanging after that one.',
+    'attacker-1200': 'That last move opened a gap. Diving in.',
+    'attacker-1400': 'You left a gap just now. Claws in.',
+    'attacker-1600': 'That last move dropped your guard. Horns down.',
+    'attacker-1800': 'That move cost you. Pressing right away.',
+    'trickster-800': 'Ooh! That last move left something out for me.',
+    'trickster-1000': 'Tsk. That one just came loose.',
+    'trickster-1200': 'You left that hanging just now, and I noticed.',
+    'trickster-1400': "That piece is loose after that move. Can't resist.",
+    'trickster-1600': 'Sure about that last move? Something is loose.',
+    'trickster-1800': 'Ha! That last move left the door wide open.',
+    'grinder-800': 'That last move left a piece just sitting there.',
+    'grinder-1000': 'That one just came loose, you know.',
+    'grinder-1200': 'Nice and calm, but that last move left a gap.',
+    'grinder-1400': 'That piece is unguarded after that move.',
+    'grinder-1600': 'That last move left a piece loose, recruit. Noted.',
+    'grinder-1800': 'That move left something open. Pressing on.',
+    'wall-800': 'That last move left a piece just sitting there, oddly.',
+    'wall-1000': "That one just came loose, didn't it?",
+    'wall-1200': 'Same routine, but that last move left a gap.',
+    'wall-1400': 'That piece is hanging after that move. I noticed.',
+    'wall-1600': 'That last move left a piece open, you know.',
+    'wall-1800': 'That move left something loose. Calm as ever.',
   },
 
   /**

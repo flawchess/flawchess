@@ -68,6 +68,20 @@ const INSULT_PATTERN =
  */
 const NUMERIC_DISCLOSURE_PATTERN = /\d+\s*(cp|centipawns?|pawns?)\b|\d+\s*%|\bengine\b|\bevaluation\b/i;
 
+/**
+ * Tease timing/capture rule (bug fix, 2026-09-16): `'earned-tease'` fires on
+ * a swing over exactly ONE move pair (`BOT_LINE_PAIR_PLY_SPAN`), so the
+ * mistake it reacts to is always the player's LAST move, and the bot's reply
+ * need not have captured anything (the grade prices a hanging piece the ply
+ * it is hung). The original table said "loose for a while" / "a whole move"
+ * / "far too long" and "I took it", all false by construction. No tease line
+ * may claim a duration or a completed capture. Scoped to that one table:
+ * the `'first-capture'` and `'punished-mistake'` tables legitimately talk
+ * about captures that DID happen.
+ */
+const TEASE_TIMING_CLAIM_PATTERN =
+  /\b(for a while|a while|a whole move|too long|sat open|was (loose|open|hanging|unguarded)|i took|took it)\b/i;
+
 /** No em-dash anywhere in an authored bot line (223-CONTEXT D-08). */
 const EM_DASH_PATTERN = /—/;
 
@@ -138,6 +152,13 @@ describe('ALL_SURFACES (BOT_LINE_TABLES + ROSTER_GREETINGS) — shared invariant
         const line = ALL_SURFACES[key][id];
         expect(line, `${key}/${id}`).not.toMatch(FORBIDDEN_CLAIM_PATTERN);
       }
+    }
+  });
+
+  it('earned-tease never claims a duration or a completed capture', () => {
+    for (const id of ALL_IDS) {
+      const line = BOT_LINE_TABLES['earned-tease'][id];
+      expect(line, `earned-tease/${id}`).not.toMatch(TEASE_TIMING_CLAIM_PATTERN);
     }
   });
 
