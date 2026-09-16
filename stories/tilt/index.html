@@ -105,6 +105,7 @@
   h2{font-size:clamp(23px,3.4vw,31px);letter-spacing:-.02em;line-height:1.2;margin-bottom:10px}
   .lede{color:var(--ink-2);max-width:46em;margin-bottom:6px}
   .lede + .lede{margin-top:10px}
+  .cnote{color:var(--ink-mid);font-size:14.5px;max-width:46em;margin:6px 0 0}
   .callout{background:var(--hl);border-radius:12px;padding:12px 16px;margin-top:16px;font-size:16.5px}
   .callout b{color:var(--brown-dark)}
   figure{margin:10px 0 4px}
@@ -383,18 +384,23 @@
   away after two losses is often the one who is more upset, more tired or more distracted, and a ten-minute break is
   more likely to be a phone call than a meditation. Players coming off <i>wins</i> show the same dip after a pause, and
   the gap between the two groups closes after half an hour or so, but mostly because the winners come down too,
-  not because the losers recover. How long a streak's effect lasts for a given player, and what a break does to it, the
-  data cannot say.</p>
+  not because the losers recover. Past an hour, both lines settle <i>below</i> normal for a reason that has nothing to
+  do with the streak: a break that long starts a new session, and the first game of a session carries a cold-start
+  penalty of its own (bullet &minus;2.1, blitz &minus;0.7, rapid &minus;0.1 points per 100 games). "Normal" here is
+  the level of games played mid-session, so a session opener sits below it whether the last game was a win or a loss.
+  How long a streak's effect lasts for a given player, and what a break does to it, the data cannot say.</p>
   <p class="lede">Two more things the data do say. Almost nobody stops: after a loss, seven in ten players start
   another game within the hour, and after six or more losses nearly nine in ten, mostly because long same-sitting
   streaks happen deep in long sessions. And bullet has a twist: playing straight on after two losses costs nothing, a
   3&ndash;10 minute pause is followed by <b>&minus;2.9</b>, and the first game of <i>any</i> bullet session runs
   <b>&minus;2.1</b>. A cold start costs a bullet player more than a losing streak ever does.</p>
-  <p class="ctitle">Points above or below normal after 2+ losses or 2+ wins, by the break before the next game, per 100 games</p>
+  <p class="ctitle">Points per 100 games above or below normal, after 2+ losses or 2+ wins, by the break before the next game</p>
   <div class="legend" id="lg4"></div>
   <figure aria-label="Line chart: points above or below normal in the next game after two or more losses and after two or more wins, by the length of the break before it, all time controls">
     <div id="c4"></div>
   </figure>
+  <p class="cnote">Breaks of an hour or more start a new session. From there on both lines show the cold-start
+  penalty of a session's first game, not an after-effect of the streak.</p>
   <div class="callout"><span class="tk">Takeaway:</span> a "stop after two losses" rule cannot be tested here, because
   the games it would have prevented were never played. What the data give is a sense of scale: games played right
   after two or more losses in one sitting are 9% of all games and run 0.7 points per 100 games below normal. Spread over
