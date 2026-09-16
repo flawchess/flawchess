@@ -16,7 +16,7 @@
 <meta property="og:image" content="https://stories.flawchess.com/tilt/social-card.png">
 <meta property="og:image:width" content="1200">
 <meta property="og:image:height" content="630">
-<meta property="og:image:alt" content="You've lost three in a row. Should you stop? Half a point per 100 games below normal in the next game: one win turned into a loss every 190 games.">
+<meta property="og:image:alt" content="You've lost three in a row. Should you stop? Half a point per 100 games below normal in the next game: about one draw turned into a loss per 100 games.">
 <meta property="article:published_time" content="2026-09-08">
 <meta property="article:author" content="Adrian Imfeld">
 <meta property="article:section" content="Chess">
@@ -197,8 +197,8 @@
   and looked at what happens in the game <i>after</i> a losing streak. The short version: <b>your own stats overstate
   tilt badly</b> and <b>what is left once you compare like with like is small</b>.</p>
   <div class="hero-stats" aria-label="The cost of a losing streak in the next game">
-    <div class="tile tilt"><div class="big">&minus;0.5</div><div class="lbl">points per 100 games below normal in the game after <b>three straight losses</b>: one win turned into a loss every 190 games</div></div>
-    <div class="tile loss"><div class="big">&minus;2.0</div><div class="lbl">after <b>six or more</b> straight losses: one win turned into a loss every 50 games</div></div>
+    <div class="tile tilt"><div class="big">&minus;0.5</div><div class="lbl">points per 100 games below normal in the game after <b>three straight losses</b>: about one draw turned into a loss per 100 games</div></div>
+    <div class="tile loss"><div class="big">&minus;2.0</div><div class="lbl">after <b>six or more</b> straight losses: two wins turned into losses per 100 games</div></div>
   </div>
   <p class="hero-note">Score is the usual chess average: a win counts 1, a draw &frac12;, a loss 0, so 50% means wins and losses balance
   out. Differences are in points per 100 games: &minus;0.5 means half a point less per 100 games than normal (the same thing as
@@ -306,8 +306,8 @@
     <div id="c2"></div>
   </figure>
   <div class="callout"><span class="tk">Takeaway:</span> one point per 100 games is, for illustration, one
-  win turned into a loss. After three losses the shortfall is worth about <b>one game in 190</b>; after six or more,
-  one in 50. The surplus after wins is about the same size at every streak length. What these numbers are not is a
+  win turned into a loss, or two draws turned into losses. After three losses the shortfall is worth about <b>one draw turned into a
+  loss per 100 games</b>; after six or more, two wins turned into losses. The surplus after wins is about the same size at every streak length. What these numbers are not is a
   measurement of mood: the controls remove opponents, calendar, accounts and each player's own level, but they cannot
   tell tilt from fatigue or distraction, and they only see the players who kept playing.</div>
   <details class="tbl"><summary>View the data</summary><div>
@@ -351,8 +351,8 @@
     </div>
   </figure>
   <div class="callout"><span class="tk">Takeaway:</span> if you play rapid, the shortfall after three losses is nearly
-  two points, the equivalent of one win turned into a loss every 55 games. In bullet and blitz it is under a point, one
-  per 150 to 300 games, and the surplus after three wins is larger than the shortfall after three losses.</div>
+  two points, about two wins turned into losses per 100 games. In bullet and blitz it is under a point, at most one
+  draw turned into a loss per 100 games, and the surplus after three wins is larger than the shortfall after three losses.</div>
   <details class="tbl"><summary>View the data</summary><div>
     <table>
       <thead><tr><th>Group</th><th>Games after 3+ losses</th><th>Score</th><th>Expected</th><th>Difference (points per 100 games)</th><th>Games after 3+ wins</th><th>Score</th><th>Expected</th><th>Difference (points per 100 games)</th></tr></thead>
@@ -544,7 +544,7 @@
   </div>
   <ul class="adv">
     <li><b>Your stats overstate tilt.</b> After three straight losses your next game runs 0.5 points per 100 games below what your
-    rating predicts, the equivalent of one win turned into a loss every 190 games; after six or more, one per 50. Your
+    rating predicts, about one draw turned into a loss per 100 games; after six or more, two wins turned into losses. Your
     raw stats show a swing several times bigger, and that part is who you were playing and when, not you.</li>
     <li><b>The stop-loss rule is untested, not disproven.</b> Games played right after two losses in one sitting cost
     0.07 points per 100 games you play in total, and whether stopping would recover any of that, no game history can show,

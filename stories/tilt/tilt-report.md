@@ -119,8 +119,8 @@ streak is supposed to cause, not as a claim to have isolated it.
   favourite scores 63%, not the 67% the Elo formula gives; the logistic scale is ≈520 in blitz, not 400),
   so the Elo formula would fake a hot hand for favourites. **Residual = score − expected**, in percentage
   points (pp) of score; the story writes the same quantity as game-points per 100 games. One point of score per 100 games can be one win turned into a loss, two wins turned
-  into draws, or two draws turned into losses; the story's "one extra loss per N games" is that first
-  reading, used as an illustration.
+  into draws, or two draws turned into losses; the story illustrates each figure on the per-100-games base with whichever
+  reading fits (0.5 pp = one draw turned into a loss per 100 games; 2 pp = two wins turned into losses).
 - **Story hygiene** (applied to every scored number in the story unless stated): drop each user's first
   100 imported games in the time control and games played more than 150 points from the user's long-run
   median rating in that time control (second accounts, resets, rating drift). The import is the most recent
