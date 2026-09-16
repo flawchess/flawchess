@@ -245,7 +245,8 @@ function BotsGame({
   const hasUnlockedAudioRef = useRef(false);
   // Quick 260723-tqn: holds the result modal closed for a short window after
   // a human win so the confetti (fired from useBotGame's finalizeGame) plays
-  // over the board first; false (no hold) for loss/draw/reduced-motion.
+  // over the board first, and after a bot checkmate so the mating position
+  // can be seen before the dialog covers it; false (no hold) otherwise.
   const celebrationHold = useWinCelebrationHold(game.outcome, settings.userColor);
 
   // D-21 (the CONTEXT amendment): store the finished game ON FINISH, not

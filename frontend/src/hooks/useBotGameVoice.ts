@@ -185,11 +185,11 @@ export function useBotGameVoice(options: UseBotGameVoiceOptions): UseBotGameVoic
     if (outcome === null) return;
     if (outcomeLineLatchRef.current) return;
     outcomeLineLatchRef.current = true;
-    // Phase 223 UAT: the 223-02 trade-off that let this line go unread on a
-    // loss or a draw is gone — `useWinCelebrationHold` now holds
-    // `GameResultDialog` closed after EVERY ending (the confetti lifetime on
-    // a win, a shorter read window otherwise), so the terminal line below is
-    // on screen before the dialog covers it in all three cases.
+    // Phase 223 UAT: the terminal line is rendered INSIDE `GameResultDialog`
+    // (with the persona's avatar), so whether or not `useWinCelebrationHold`
+    // delays the dialog for this ending (it does for a human win and a bot
+    // checkmate, not for other losses or draws), the line is read in the
+    // dialog and never goes unread.
     const kind = outcomeKindFor(outcome, userColor);
     if (kind === null) return;
     const line = resolveBotLine({ ...defaultResolveBotLineInput(), outcomeKind: kind });

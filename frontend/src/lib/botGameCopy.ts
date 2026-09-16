@@ -20,11 +20,12 @@
  * never the bot's own reasoning process.
  *
  * Terminal-line visibility (the three tables `'bot-won'`/`'bot-lost'`/
- * `'game-drawn'`): `useWinCelebrationHold` holds `GameResultDialog` closed
- * after EVERY ending — the full confetti lifetime on a human win, a shorter
- * read window on a loss, a draw, or a reduced-motion win — so these lines
- * are on screen before the dialog covers them. This module still introduces
- * no timing logic of its own; the hold lives entirely in that hook.
+ * `'game-drawn'`): these lines are rendered INSIDE `GameResultDialog` (with
+ * the persona's avatar), so they are read in the dialog whether or not
+ * `useWinCelebrationHold` delays it for that ending (it does after a human
+ * win and after a bot checkmate; not after other losses or draws). This
+ * module introduces no timing logic of its own; the hold lives entirely in
+ * that hook.
  */
 
 import { differenceInCalendarDays, parseISO } from 'date-fns';
@@ -320,9 +321,9 @@ export const BOT_LINE_TABLES: Record<BotLineKey, Record<PersonaId, string>> = {
 
   /**
    * The three terminal tables below (`'bot-won'`/`'bot-lost'`/
-   * `'game-drawn'`). `useWinCelebrationHold` holds `GameResultDialog` closed
-   * after every ending, so each of these is on screen before the dialog
-   * covers it; see this file's header. No timing logic is introduced here.
+   * `'game-drawn'`). Each is rendered inside `GameResultDialog`, so it is
+   * read there regardless of whether `useWinCelebrationHold` delays the
+   * dialog; see this file's header. No timing logic is introduced here.
    */
 
   /** `'bot-won'`: gracious in the persona's own register, never gloating. */

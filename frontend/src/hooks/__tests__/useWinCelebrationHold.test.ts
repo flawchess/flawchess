@@ -7,11 +7,15 @@
  * 1. Returns false for a null outcome.
  * 2. A win holds for the FULL confetti lifetime (CONFETTI_DURATION_MS), not
  *    a shorter guess — the UAT regression this rewrite fixes.
- * 3. A loss and a draw do NOT hold: no confetti is playing, and the bot's
- *    terminal line now lives inside the dialog rather than behind it.
+ * 3. A loss on time or by resignation and a draw do NOT hold: no confetti is
+ *    playing, and the bot's terminal line now lives inside the dialog rather
+ *    than behind it.
  * 4. A win WITH reduced-motion does not hold either (no burst).
  * 5. Clears its timeout on unmount.
  * 6. Resets (and re-triggers) once outcome goes back to null then a new win.
+ * 7. A BOT CHECKMATE holds for BOT_CHECKMATE_VIEW_HOLD_MS so the mating
+ *    position is seen before the dialog covers it, and does so even under
+ *    reduced motion (it is a read window, not an animation).
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
@@ -27,11 +31,13 @@ vi.mock('@/lib/confetti', () => ({
   CONFETTI_DURATION_MS: 3000,
 }));
 
-import { useWinCelebrationHold } from '../useWinCelebrationHold';
+import { useWinCelebrationHold, BOT_CHECKMATE_VIEW_HOLD_MS } from '../useWinCelebrationHold';
 
 const USER_COLOR: MoverColor = 'white';
 const WIN_OUTCOME: BotGameOutcome = { reason: 'checkmate', winner: 'white' };
-const LOSS_OUTCOME: BotGameOutcome = { reason: 'checkmate', winner: 'black' };
+const MATED_OUTCOME: BotGameOutcome = { reason: 'checkmate', winner: 'black' };
+const TIMEOUT_LOSS_OUTCOME: BotGameOutcome = { reason: 'timeout', winner: 'black' };
+const RESIGNED_OUTCOME: BotGameOutcome = { reason: 'resignation', winner: 'black' };
 const DRAW_OUTCOME: BotGameOutcome = { reason: 'draw', drawReason: 'stalemate' };
 
 /** Mounts the hook with no outcome, then lands `outcome` as a fresh one —
@@ -78,14 +84,41 @@ describe('useWinCelebrationHold', () => {
   });
 
   it.each([
-    ['loss', LOSS_OUTCOME],
+    ['loss on time', TIMEOUT_LOSS_OUTCOME],
+    ['loss by resignation', RESIGNED_OUTCOME],
     ['draw', DRAW_OUTCOME],
-  ])('does not hold on a %s — no confetti to wait out', (_label, outcome) => {
+  ])('does not hold on a %s — nothing on the board to wait for', (_label, outcome) => {
     const { result } = renderWithOutcome(outcome);
     expect(result.current).toBe(false);
 
     act(() => {
-      vi.advanceTimersByTime(CONFETTI_DURATION_MS);
+      vi.advanceTimersByTime(Math.max(CONFETTI_DURATION_MS, BOT_CHECKMATE_VIEW_HOLD_MS));
+    });
+    expect(result.current).toBe(false);
+  });
+
+  it('holds a bot checkmate for BOT_CHECKMATE_VIEW_HOLD_MS so the mating position is seen', () => {
+    const { result } = renderWithOutcome(MATED_OUTCOME);
+    expect(result.current).toBe(true);
+
+    act(() => {
+      vi.advanceTimersByTime(BOT_CHECKMATE_VIEW_HOLD_MS - 1);
+    });
+    expect(result.current).toBe(true);
+
+    act(() => {
+      vi.advanceTimersByTime(1);
+    });
+    expect(result.current).toBe(false);
+  });
+
+  it('holds a bot checkmate even under reduced motion — a read window, not an animation', () => {
+    prefersReducedMotionMock.mockReturnValue(true);
+    const { result } = renderWithOutcome(MATED_OUTCOME);
+    expect(result.current).toBe(true);
+
+    act(() => {
+      vi.advanceTimersByTime(BOT_CHECKMATE_VIEW_HOLD_MS);
     });
     expect(result.current).toBe(false);
   });
