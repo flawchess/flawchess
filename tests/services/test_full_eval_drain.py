@@ -32,7 +32,7 @@ import inspect
 import uuid
 from datetime import datetime, timedelta, timezone
 from typing import Any
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import chess
 import pytest
@@ -64,6 +64,8 @@ _LEGAL_CUSTOM_ROOT_PGN: str = (
 )
 # A minimal PGN with only 2 moves (4 half-moves).
 _TWO_MOVE_PGN: str = "1. e4 e5 *"
+# Quick 260916-g38: a single half-move — ply 0 + terminal donor = exactly two engine targets.
+_ONE_MOVE_PGN: str = "1. e4 *"
 # A 6-half-move PGN (3 moves each, 6 non-terminal positions).
 # Used for oracle/classify/flaw-PV tests where coverage >= 90% is required and
 # we need enough plies for the blunder-eval-sequence (plies 0..5).
@@ -4018,6 +4020,135 @@ class TestHoleAwareCompletionGate:
             assert g is not None
             assert g[0] is None, "full_evals_completed_at must stay NULL (all-fail circuit breaker)"
             assert g[1] == 0, f"full_eval_attempts must NOT be incremented by all-fail, got {g[1]}"
+        finally:
+            await _delete_games(full_drain_session_maker, [game_id])
+
+    async def test_single_failed_target_does_not_trip_breaker(
+        self,
+        full_drain_test_user_119: int,
+        full_drain_session_maker: async_sessionmaker[AsyncSession],
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Quick 260916-g38 / FLAWCHESS-5Q: with exactly ONE engine target, a failed
+        call must NOT trip the WR-05 breaker (no Sentry message) — it is a plain
+        transient hole: stamp withheld, full_eval_attempts becomes 1, game re-picked.
+
+        Reproduces prod game 2494493: a 2-ply game whose plies both dedup-hit the
+        opening cache, leaving only the terminal donor for the engine.
+        """
+        from app.models.game import Game
+
+        now = datetime.now(timezone.utc)
+        game_id = await _insert_game(
+            full_drain_session_maker,
+            full_drain_test_user_119,
+            pgn=_TWO_MOVE_PGN,
+            evals_completed_at=now,
+            full_evals_completed_at=None,
+            full_eval_attempts=0,
+        )
+        ply0_hash, ply1_hash = 0xF119_0050, 0xF119_0051
+        await _insert_game_positions(
+            full_drain_session_maker,
+            full_drain_test_user_119,
+            game_id,
+            [
+                {"ply": 0, "full_hash": ply0_hash, "eval_cp": None, "eval_mate": None},
+                {"ply": 1, "full_hash": ply1_hash, "eval_cp": None, "eval_mate": None},
+            ],
+        )
+
+        drain_module = _patch_drain_for_tick_tests(
+            monkeypatch, full_drain_session_maker, game_id, full_drain_test_user_119
+        )
+        # Both non-terminal plies dedup-hit → the terminal donor is the ONLY engine target.
+        dedup_map = {
+            ply0_hash: (30, None, "e2e4", "e2e4"),
+            ply1_hash: (20, None, "e7e5", "e7e5"),
+        }
+        monkeypatch.setattr(drain_module, "_fetch_dedup_evals", AsyncMock(return_value=dedup_map))
+        mock_evaluate = AsyncMock(return_value=(None, None, None, None, None, None, None))
+        monkeypatch.setattr(drain_module.engine_service, "evaluate_nodes_multipv2", mock_evaluate)
+        capture_message = MagicMock()  # any call = breaker fired
+        monkeypatch.setattr(drain_module.sentry_sdk, "capture_message", capture_message)
+
+        try:
+            processed = await drain_module._full_drain_tick()
+            assert mock_evaluate.await_count == 1, "exactly one engine target expected"
+            assert processed is False, "hole present under cap → not processed"
+            capture_message.assert_not_called()
+
+            async with full_drain_session_maker() as verify:
+                row = await verify.execute(
+                    select(Game.full_evals_completed_at, Game.full_eval_attempts).where(
+                        Game.id == game_id
+                    )
+                )
+                g = row.one_or_none()
+            assert g is not None
+            assert g[0] is None, "stamp must be withheld for the terminal hole"
+            assert g[1] == 1, (
+                f"single-target failure must take the mark-and-continue path "
+                f"(attempts → 1), got {g[1]}"
+            )
+        finally:
+            await _delete_games(full_drain_session_maker, [game_id])
+
+    async def test_two_failed_targets_still_trip_breaker(
+        self,
+        full_drain_test_user_119: int,
+        full_drain_session_maker: async_sessionmaker[AsyncSession],
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Quick 260916-g38: FULL_DRAIN_BREAKER_MIN_TARGETS boundary — exactly two
+        failed targets (ply 0 + terminal donor, no dedup) still trip WR-05: one Sentry
+        message, no write session, full_eval_attempts stays 0."""
+        from app.models.game import Game
+        from app.services.eval_drain import FULL_DRAIN_BREAKER_MIN_TARGETS
+
+        assert FULL_DRAIN_BREAKER_MIN_TARGETS == 2, "test pins the boundary at 2"
+
+        now = datetime.now(timezone.utc)
+        game_id = await _insert_game(
+            full_drain_session_maker,
+            full_drain_test_user_119,
+            pgn=_ONE_MOVE_PGN,
+            evals_completed_at=now,
+            full_evals_completed_at=None,
+            full_eval_attempts=0,
+        )
+        await _insert_game_positions(
+            full_drain_session_maker,
+            full_drain_test_user_119,
+            game_id,
+            [{"ply": 0, "full_hash": 0xF119_0052, "eval_cp": None, "eval_mate": None}],
+        )
+
+        drain_module = _patch_drain_for_tick_tests(
+            monkeypatch, full_drain_session_maker, game_id, full_drain_test_user_119
+        )
+        monkeypatch.setattr(drain_module, "_fetch_dedup_evals", AsyncMock(return_value={}))
+        mock_evaluate = AsyncMock(return_value=(None, None, None, None, None, None, None))
+        monkeypatch.setattr(drain_module.engine_service, "evaluate_nodes_multipv2", mock_evaluate)
+        capture_message = MagicMock()
+        monkeypatch.setattr(drain_module.sentry_sdk, "capture_message", capture_message)
+
+        try:
+            processed = await drain_module._full_drain_tick()
+            assert mock_evaluate.await_count == 2, "ply 0 + terminal donor = two targets"
+            assert processed is False
+            capture_message.assert_called_once()
+
+            async with full_drain_session_maker() as verify:
+                row = await verify.execute(
+                    select(Game.full_evals_completed_at, Game.full_eval_attempts).where(
+                        Game.id == game_id
+                    )
+                )
+                g = row.one_or_none()
+            assert g is not None
+            assert g[0] is None
+            assert g[1] == 0, f"breaker path must not touch attempts, got {g[1]}"
         finally:
             await _delete_games(full_drain_session_maker, [game_id])
 

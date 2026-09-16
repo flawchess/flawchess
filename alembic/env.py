@@ -101,7 +101,7 @@ _AUTOGEN_INDEX_IGNORELIST = {
     # must not be dropped. Phase 122 migration correctly excludes them (see note in upgrade()).
     "ix_games_evals_pending",
     "ix_games_full_evals_pending",
-    "ix_games_full_pv_pending",
+    # ix_games_full_pv_pending was dropped by c3a9e1f70003 (quick-260916-gj7).
     "ix_games_needs_engine_full_evals",
     # Partial index from the Phase 145 tier-4 blob-backfill migration (c3f5d1e8a092),
     # WHERE allowed_pv_lines IS NULL. Like the others above it is migration-only (not

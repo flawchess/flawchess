@@ -36,6 +36,7 @@ import {
   render,
   screen,
   waitFor,
+  within,
 } from '@testing-library/react';
 import { useState } from 'react';
 import { MemoryRouter } from 'react-router';
@@ -183,6 +184,10 @@ vi.mock('@/hooks/useBotGame', () => ({
       resign: vi.fn(),
       offerDraw: vi.fn(),
       newGame: fakeGame.newGame,
+      // Phase 223 (BOTVOICE-01/02): an untyped object literal, so a missing
+      // field here would silently yield `undefined` at runtime rather than
+      // a compile error (RESEARCH Pitfall 12) — added deliberately.
+      botLine: null,
     };
   },
 }));
@@ -258,19 +263,28 @@ vi.mock('@/components/board/ChessBoard', () => ({
 
 // jsdom shims required by react-chessboard and responsive components
 // (mirrors Analysis.test.tsx / SetupScreen.test.tsx precedent).
-Object.defineProperty(window, 'matchMedia', {
-  writable: true,
-  value: vi.fn().mockImplementation((query: string) => ({
-    matches: false,
-    media: query,
-    onchange: null,
-    addEventListener: vi.fn(),
-    removeEventListener: vi.fn(),
-    addListener: vi.fn(),
-    removeListener: vi.fn(),
-    dispatchEvent: vi.fn(),
-  })),
-});
+//
+// Phase 223 (BOTVOICE-05): extracted to a named installer, not just an
+// inline `Object.defineProperty` call, so the desktop-mode describe block
+// below can flip `matches` to `true` for its own tests and restore this
+// file's mobile-reporting default afterward — every other suite in this file
+// relies on `useIsDesktop()` reporting `false`.
+function installMatchMediaStub(matches: boolean): void {
+  Object.defineProperty(window, 'matchMedia', {
+    writable: true,
+    value: vi.fn().mockImplementation((query: string) => ({
+      matches,
+      media: query,
+      onchange: null,
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+      addListener: vi.fn(),
+      removeListener: vi.fn(),
+      dispatchEvent: vi.fn(),
+    })),
+  });
+}
+installMatchMediaStub(false);
 
 class ResizeObserverStub {
   observe() {}
@@ -601,8 +615,8 @@ describe('Bots — setup/resume/new-game convergence (V-11)', () => {
   });
 });
 
-describe('Bots — bot clock persona presence (D-06)', () => {
-  it('shows the persona avatar + name in the bot clock strip for a persona game', async () => {
+describe('Bots — mobile player rows (Phase 223 UAT: same rows as the analysis board)', () => {
+  it('renders the bot row (name + calibrated label) and the user row on mobile for a persona game', async () => {
     renderBots();
 
     await waitFor(() => expect(screen.getByTestId('bots-persona-grid')).toBeTruthy());
@@ -613,27 +627,58 @@ describe('Bots — bot clock persona presence (D-06)', () => {
     fireEvent.click(screen.getByTestId('btn-persona-play'));
 
     await waitFor(() => expect(screen.getByTestId('bots-page')).toBeTruthy());
-    const clock = screen.getByTestId('clock-bot');
-    expect(clock.textContent).toContain('Ziggy the Wasp');
-    // The estimated ELO label renders below the name.
-    expect(clock.textContent).toContain('~800');
-    // The avatar node renders: either the real-art <img> (when the asset
-    // exists) or the emoji placeholder — both live in the one aria-hidden
-    // avatar circle.
-    expect(clock.querySelectorAll('span[aria-hidden="true"]').length).toBe(1);
+
+    // This suite renders the mobile layout by default (the matchMedia stub
+    // above reports a non-matching query); the retired nameless clock strip
+    // is gone from the tree.
+    expect(screen.queryByTestId('bot-clock-strip')).toBeNull();
+
+    const botRow = screen.getByTestId('clock-bot');
+    expect(botRow.textContent).toContain('Ziggy the Wasp');
+    expect(botRow.textContent).toContain('~800');
+    const userRow = screen.getByTestId('clock-user');
+    expect(userRow.textContent).toContain('You');
+    expect(userRow.textContent).toContain('~1600');
   });
 
-  it('shows the generic "FlawChess Bot" label for a Custom game (no persona)', async () => {
+  it('renders both rows on mobile for a Custom game with the generic bot name and no bot rating label', async () => {
     renderBots();
     await startFromSetup();
 
-    const clock = screen.getByTestId('clock-bot');
-    expect(clock.textContent).toContain('FlawChess Bot');
+    const botRow = screen.getByTestId('clock-bot');
+    expect(botRow.textContent).toContain('FlawChess Bot');
+    expect(botRow.textContent).not.toContain('~');
+    expect(screen.getByTestId('clock-user')).toBeTruthy();
+  });
+
+  it('shows the clock icon only on the row of the side to move', async () => {
+    renderBots();
+    await startFromSetup();
+
+    // fakeGame's activeColor is 'white' and the user plays white here.
+    expect(screen.getByTestId('clock-user-clock-icon').getAttribute('class')).not.toContain('invisible');
+    expect(screen.getByTestId('clock-bot-clock-icon').getAttribute('class')).toContain('invisible');
   });
 });
 
-describe('Bots — bot draw-offer banner wiring (D-07)', () => {
-  it('shows the persona-named draw offer and Accept/Decline call through to the hook', async () => {
+describe('Bots — in-game bubble wiring (Phase 223, BOTVOICE-01/02)', () => {
+  it('renders the bubble with its copy node for a persona game', async () => {
+    renderBots();
+
+    await waitFor(() => expect(screen.getByTestId('bots-persona-grid')).toBeTruthy());
+    fireEvent.click(screen.getByTestId('bots-persona-card-attacker-800'));
+    await waitFor(() => expect(screen.getByTestId('persona-detail-surface')).toBeTruthy());
+    fireEvent.click(screen.getByTestId('persona-color-white'));
+    fireEvent.click(screen.getByTestId('btn-persona-play'));
+
+    await waitFor(() => expect(screen.getByTestId('bots-page')).toBeTruthy());
+    expect(screen.getByTestId('bot-game-bubble')).toBeTruthy();
+    expect(screen.getByTestId('bot-game-bubble-copy')).toBeTruthy();
+  });
+});
+
+describe('Bots — bot draw-offer actions render inside the bubble (Phase 223, BOTVOICE-05, D-12)', () => {
+  it('renders Accept/Decline inside the bubble for a persona game and both call through to the hook', async () => {
     renderBots();
 
     await waitFor(() => expect(screen.getByTestId('bots-persona-grid')).toBeTruthy());
@@ -643,23 +688,27 @@ describe('Bots — bot draw-offer banner wiring (D-07)', () => {
     fireEvent.click(screen.getByTestId('btn-persona-play'));
     await waitFor(() => expect(screen.getByTestId('bots-page')).toBeTruthy());
 
-    expect(screen.queryByTestId('bot-draw-offer-banner')).toBeNull();
+    // The retired banner is gone entirely — the offer now renders inside
+    // `BotGameBubble`'s actions slot instead.
+    expect(screen.queryByTestId('btn-accept-bot-draw')).toBeNull();
+    expect(screen.queryByTestId('btn-decline-bot-draw')).toBeNull();
 
     act(() => {
       fakeGame.setBotDrawOffer(true);
     });
 
-    const banner = screen.getByTestId('bot-draw-offer-banner');
-    expect(banner.textContent).toContain('Ziggy the Wasp offers a draw');
+    const bubble = screen.getByTestId('bot-game-bubble');
+    const acceptBtn = within(bubble).getByTestId('btn-accept-bot-draw');
+    const declineBtn = within(bubble).getByTestId('btn-decline-bot-draw');
 
-    fireEvent.click(screen.getByTestId('btn-accept-bot-draw'));
+    fireEvent.click(acceptBtn);
     expect(fakeGame.acceptBotDraw).toHaveBeenCalledTimes(1);
 
-    fireEvent.click(screen.getByTestId('btn-decline-bot-draw'));
+    fireEvent.click(declineBtn);
     expect(fakeGame.declineBotDraw).toHaveBeenCalledTimes(1);
   });
 
-  it('falls back to the generic draw-offer copy for a Custom game (no persona)', async () => {
+  it('renders the generic fallback offer copy plus both preserved testids for a Custom game (no persona)', async () => {
     renderBots();
     await startFromSetup();
 
@@ -667,9 +716,140 @@ describe('Bots — bot draw-offer banner wiring (D-07)', () => {
       fakeGame.setBotDrawOffer(true);
     });
 
-    expect(screen.getByTestId('bot-draw-offer-banner').textContent).toContain(
-      'The bot offers a draw',
-    );
+    const bubble = screen.getByTestId('bot-game-bubble');
+    expect(bubble.textContent).toContain('The bot offers a draw');
+
+    const acceptBtn = within(bubble).getByTestId('btn-accept-bot-draw');
+    const declineBtn = within(bubble).getByTestId('btn-decline-bot-draw');
+
+    fireEvent.click(acceptBtn);
+    expect(fakeGame.acceptBotDraw).toHaveBeenCalledTimes(1);
+
+    fireEvent.click(declineBtn);
+    expect(fakeGame.declineBotDraw).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('Bots — mobile chrome removed, back arrow wired (Phase 223, BOTVOICE-05, D-10/D-12/SC7)', () => {
+  it('renders no in-page board-control row, resign row, offer-draw button or mute button on mobile', async () => {
+    renderBots();
+    await startFromSetup();
+
+    // `BoardControls` (desktop-only "xl" row, incl. its view-Reset button)
+    // and `GameControls` (desktop-only resign row) are not rendered inside
+    // this suite's mobile layout at all — their mobile equivalents live in
+    // `BotGameMobileBar`, mounted from `App.tsx` above the router, which
+    // this page-level render tree never reaches.
+    expect(screen.queryByTestId('board-btn-reset')).toBeNull();
+    expect(screen.queryByTestId('board-btn-resign')).toBeNull();
+    expect(screen.queryByTestId('resign-confirm-dialog')).toBeNull();
+    // The user-side Offer draw button and the in-game mute toggle are gone
+    // from the tree entirely (D-10/D-12/SC7) — not just hidden on mobile.
+    expect(screen.queryByTestId('board-btn-offer-draw')).toBeNull();
+    expect(screen.queryByTestId('board-btn-mute')).toBeNull();
+  });
+
+  it('the mobile back arrow calls the new handler and returns to the roster without an instant restart', async () => {
+    renderBots();
+    await startFromSetup();
+
+    fireEvent.click(screen.getByTestId('bots-back'));
+
+    await waitFor(() => expect(screen.getByTestId('bots-persona-grid')).toBeTruthy());
+    expect(screen.queryByTestId('bots-page')).toBeNull();
+    // Mechanically the same non-instant-restart contract as "New game"
+    // (D-11): the back arrow never calls game.newGame() to restart in place.
+    expect(fakeGame.newGame).not.toHaveBeenCalled();
+  });
+});
+
+describe('Bots — desktop layout (Phase 223, BOTVOICE-05, D-11/D-12)', () => {
+  beforeEach(() => {
+    installMatchMediaStub(true);
+  });
+
+  afterEach(() => {
+    // Restore this file's mobile-reporting default for every other suite.
+    installMatchMediaStub(false);
+  });
+
+  it('renders two player rows: the bot with its name and calibrated label, the player with its name and rounded estimate', async () => {
+    renderBots();
+
+    await waitFor(() => expect(screen.getByTestId('bots-persona-grid')).toBeTruthy());
+    fireEvent.click(screen.getByTestId('bots-persona-card-attacker-800'));
+    await waitFor(() => expect(screen.getByTestId('persona-detail-surface')).toBeTruthy());
+    fireEvent.click(screen.getByTestId('persona-color-white'));
+    fireEvent.click(screen.getByTestId('btn-persona-play'));
+    await waitFor(() => expect(screen.getByTestId('bots-page')).toBeTruthy());
+
+    // D-11: the honest tilde-prefixed calibrated label, never a
+    // parenthesised integer — attacker-800's PERSONA_CALIBRATION label.
+    const botRow = screen.getByTestId('clock-bot');
+    expect(botRow.textContent).toContain('Ziggy the Wasp');
+    expect(botRow.textContent).toContain('~800');
+    expect(botRow.textContent).not.toContain('(800)');
+
+    // The player's own rounded, tilde-prefixed estimate — same expression
+    // the roster row renders (profileState's current_strength.rating is 1600).
+    const userRow = screen.getByTestId('clock-user');
+    expect(userRow.textContent).toContain('You');
+    expect(userRow.textContent).toContain('~1600');
+  });
+
+  it('renders the user row with a name and no rating text for a guest (no currentStrength)', async () => {
+    profileState.data = { email: null, is_guest: true, current_strength: null };
+    renderBots();
+    await startFromSetup();
+
+    const userRow = screen.getByTestId('clock-user');
+    expect(userRow.textContent).toContain('You');
+    expect(userRow.textContent).not.toContain('~');
+    expect(userRow.textContent).not.toContain('(');
+  });
+
+  it('renders the bubble at the top of the side column, above the move list', async () => {
+    renderBots();
+
+    // A persona game — a Custom game's bubble renders nothing at all while
+    // no draw offer is live (BotGameBubble.tsx: `persona === null && actions
+    // === undefined` returns null), so this needs a persona to have
+    // anything to assert the position of.
+    await waitFor(() => expect(screen.getByTestId('bots-persona-grid')).toBeTruthy());
+    fireEvent.click(screen.getByTestId('bots-persona-card-attacker-800'));
+    await waitFor(() => expect(screen.getByTestId('persona-detail-surface')).toBeTruthy());
+    fireEvent.click(screen.getByTestId('persona-color-white'));
+    fireEvent.click(screen.getByTestId('btn-persona-play'));
+    await waitFor(() => expect(screen.getByTestId('bots-page')).toBeTruthy());
+
+    const bubble = screen.getByTestId('bot-game-bubble');
+    expect(bubble.parentElement?.firstElementChild).toBe(bubble);
+  });
+
+  it('renders the draw offer Accept/Decline buttons inside the bubble and both call through', async () => {
+    renderBots();
+    await startFromSetup();
+
+    act(() => {
+      fakeGame.setBotDrawOffer(true);
+    });
+
+    const bubble = screen.getByTestId('bot-game-bubble');
+    const acceptBtn = within(bubble).getByTestId('btn-accept-bot-draw');
+    const declineBtn = within(bubble).getByTestId('btn-decline-bot-draw');
+
+    fireEvent.click(acceptBtn);
+    expect(fakeGame.acceptBotDraw).toHaveBeenCalledTimes(1);
+
+    fireEvent.click(declineBtn);
+    expect(fakeGame.declineBotDraw).toHaveBeenCalledTimes(1);
+  });
+
+  it('renders no in-page mute control on this breakpoint either', async () => {
+    renderBots();
+    await startFromSetup();
+
+    expect(screen.queryByTestId('board-btn-mute')).toBeNull();
   });
 });
 

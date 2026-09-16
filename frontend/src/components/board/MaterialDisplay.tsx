@@ -47,6 +47,15 @@ export function MaterialDisplay({ fen, side, className }: MaterialDisplayProps):
 
   return (
     <span data-testid={`material-${side}`} className={cn('flex items-center gap-1.5', className)}>
+      {/* Phase 223 UAT: below `sm` the per-piece icon row is hidden (D-04), which
+          left a bare "+3" with nothing saying what it counted. A single pawn
+          glyph — the universal material shorthand — labels the number there, and
+          is itself hidden at `sm+` where the real surplus icons take over. */}
+      <ChessPawn
+        aria-hidden="true"
+        data-testid={`material-${side}-mobile-icon`}
+        className="h-4 w-4 text-muted-foreground sm:hidden"
+      />
       <span
         data-testid={`material-${side}-icons`}
         className="hidden items-center gap-1.5 sm:flex"

@@ -123,6 +123,8 @@ export function VariationTreePanel({
 
 export type BoardControlsProps = {
   flat?: boolean;
+  /** Phase 223 UAT: icon-over-label columns for the mobile footer. */
+  labels?: boolean;
   size?: 'sm' | 'md' | 'lg';
   onBack: () => void;
   onForward: () => void;
@@ -147,6 +149,7 @@ export type BoardControlsProps = {
 // with no size so the buttons fill the width like the main nav (Quick 260628-dgv).
 export function BoardControls({
   flat = false,
+  labels = false,
   size,
   onBack,
   onForward,
@@ -171,6 +174,7 @@ export function BoardControls({
       onFastForward={isGameMode ? onFastForwardStart : undefined}
       canFastForward={canFastForward}
       flat={flat}
+      labels={labels}
       size={size}
     />
   );

@@ -11,8 +11,8 @@
  * counts, which drift under background-tab throttling — see
  * useFlawChessEngine.ts's identical `Date.now() - anchor` discipline used for
  * its FEN debounce). `useBotGame` (plan 04, amended plan 09) and
- * `ClockDisplay` (plan 05) compose these helpers; neither owns its own timing
- * math.
+ * `botPlayerRow.ts` (Phase 223, replacing the retired `ClockDisplay` from
+ * plan 05) compose these helpers; neither owns its own timing math.
  *
  * D-15 (2026-07-13, SUPERSEDES 168.5 D-02/D-04/D-05 — reversed, not
  * refined): the bot's clock is HONEST. Its debit is exactly the real

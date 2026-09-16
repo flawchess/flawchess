@@ -190,7 +190,7 @@
 | 220. Opening Eval Cache Repair & Two-Source Confirmation (SEED-164, v2.18) | 8/8 | Complete    | 2026-09-11 |
 | 221. Tactic-Tagger Real-Game Precision — Winning Floor, Predicate Tightening & Port Fixes (SEED-165, v2.18) | 8/8 | Complete    | 2026-09-13 |
 | 222. Train Bot-Narrated Onboarding & Verdicts (SEED-166, v2.19) | 6/6 | Complete    | 2026-09-14 |
-| 223. Bot Voice & Immersive Bot Game Layout (SEED-168 + SEED-167, standalone) | 0/? | Not started | — |
+| 223. Bot Voice & Immersive Bot Game Layout (SEED-168 + SEED-167, standalone) | 6/6 | Complete    | 2026-09-16 |
 
 ## Active Phases
 
@@ -253,11 +253,19 @@ transient bubbles; clock-low or long-think lines (they would fire on the player'
 an in-game mute or settings sheet; changing the desktop side-column structure beyond the
 bubble; a sketch step (owner declined 2026-09-15).
 
-**Plans:** 0 plans
+**Plans:** 6/6 plans complete
 
 Plans:
 
-- [ ] TBD (`/gsd-discuss-phase 223`, then `/gsd-plan-phase 223`)
+- [x] 223-01-PLAN.md — Tracer: the voice spine end to end (copy module, trigger resolver, voice hook, both engine seams, the bubble mounted on both breakpoints) [wave 1]
+- [x] 223-02-PLAN.md — All ten per-persona line tables, the roster greeting table and rotation, and the roster welcome bubble [wave 2]
+- [x] 223-03-PLAN.md — SEED-167: the "Board sounds" switch on the mobile More drawer and the desktop header account area [wave 1]
+- [x] 223-04-PLAN.md — Triggers: practical-score swing in both directions, the engine-free threat probe, pacing and terminal lines [wave 3]
+- [x] 223-05-PLAN.md — Mobile layout: four-action bar, clock strip, back arrow, draw offer into the bubble, banner and in-game mute retired [wave 3]
+- [x] 223-06-PLAN.md — Desktop layout: PlayerBar rows and side-column bubble, clock card deleted, changelog and human verification [wave 4]
+
+**Requirements (minted at planning time):** BOTVOICE-01..BOTVOICE-07, one per success
+criterion above. The canonical table lives in `223-01-PLAN.md`.
 
 **Cross-cutting constraints:**
 

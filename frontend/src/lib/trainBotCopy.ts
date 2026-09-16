@@ -8,10 +8,16 @@
  * D-06 (LOCKED): copy is authored PER OUTCOME BUCKET with a few variants,
  * never per persona/bot. Bot identity carries only the face and name —
  * `pickBot` selects WHO speaks; the copy tables below say WHAT is said,
- * completely independent of the picked persona. ONE scoped exception
- * (2026-09-14, owner's call): the /train LANDING greeting (`landingHost`)
- * is per-persona — a rotating daily host with a line in its own voice.
- * Every other surface (prompts, verdicts, score bubble) stays per-outcome.
+ * completely independent of the picked persona. This was ONE scoped
+ * exception (2026-09-14, owner's call) for the /train LANDING greeting
+ * (`landingHost`); Phase 223 generalised per-persona copy into the RULE for
+ * every bot-voice surface (`lib/botGameCopy.ts` owns the `/bots` game and
+ * roster surfaces), so `landingHost` is no longer this module's one
+ * exception — it is simply /train's OWN per-persona rotation, sharing its
+ * epoch and id order (below, both exported) with `botGameCopy.ts`'s
+ * `rosterHost` so the same bot greets a user on /train and /bots on a given
+ * day structurally, not coincidentally. Every OTHER /train surface
+ * (prompts, verdicts, score bubble) still stays per-outcome, unaffected.
  *
  * Casting (D-01..D-05): `BY_TEMPERAMENT` groups all 24 `PERSONA_REGISTRY`
  * entries by their `temperament` field — never a hand-maintained id list, so
@@ -76,12 +82,22 @@ export const LANDING_GREETINGS: Record<PersonaId, string> = {
   'wall-1800': "Quiet position, clear head. Let's think through the moments your games went wrong.",
 };
 
-/** Rotation order for `landingHost`: the authored order of `LANDING_GREETINGS`. */
-const LANDING_HOST_IDS: readonly PersonaId[] = Object.keys(LANDING_GREETINGS) as PersonaId[];
+/**
+ * Rotation order for `landingHost`: the authored order of `LANDING_GREETINGS`.
+ * Exported (223-02) so `botGameCopy.ts`'s `rosterHost` imports this SAME id
+ * order rather than declaring its own — "the same bot greets you on /train
+ * and /bots today" is then structural, not two coincidentally-identical
+ * lists that could silently drift apart.
+ */
+export const LANDING_HOST_IDS: readonly PersonaId[] = Object.keys(LANDING_GREETINGS) as PersonaId[];
 
-/** Day-zero for the landing rotation's day counter. Any fixed date works;
- * the epoch keeps the arithmetic obvious. */
-const LANDING_ROTATION_EPOCH = parseISO('1970-01-01');
+/**
+ * Day-zero for the landing rotation's day counter. Any fixed date works;
+ * the epoch keeps the arithmetic obvious. Exported (223-02) for the same
+ * reason as `LANDING_HOST_IDS` above — `rosterHost` imports this exact
+ * epoch so the two rotations can never disagree about which day is which.
+ */
+export const LANDING_ROTATION_EPOCH = parseISO('1970-01-01');
 
 export interface LandingHostInput {
   /** `TrainSessionResponse.session_date` (ISO `YYYY-MM-DD`), or null while

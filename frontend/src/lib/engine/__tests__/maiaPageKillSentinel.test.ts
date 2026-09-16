@@ -80,14 +80,17 @@ describe('maiaPageKillSentinel', () => {
   });
 
   it('a leftover record on the next load is captured once, with fixed message, tags and context, then cleared', () => {
+    // Timestamps are relative to now: a dispatch older than the idle threshold
+    // is deliberately not reported (see the FLAWCHESS-BM test below).
+    const now = Date.now();
     const leftover = {
-      armedAt: 1000,
+      armedAt: now - 60_000,
       backend: 'webgpu',
       numThreads: 1,
       ios: true,
       pathname: '/analysis',
       dispatches: 7,
-      last: { at: 5000, batch: 10, fen: FEN },
+      last: { at: now - 5_000, batch: 10, fen: FEN },
     };
     localStorage.setItem(KEY, JSON.stringify(leftover));
 
@@ -110,6 +113,65 @@ describe('maiaPageKillSentinel', () => {
         }),
       }),
     );
+  });
+
+  it('a record whose last dispatch is older than the idle threshold is cleared without a report (FLAWCHESS-BM)', () => {
+    // Quick 260916-g38: Android tablet, 53 min idle in a 55 min session — an idle
+    // foreground kill (app swiped away, OS reclaim) is not a Maia memory kill.
+    const now = Date.now();
+    const idle = {
+      armedAt: now - 55 * 60 * 1000,
+      backend: 'wasm',
+      numThreads: 4,
+      ios: false,
+      pathname: '/analysis',
+      dispatches: 127,
+      results: 127,
+      lastResultAt: now - 53 * 60 * 1000,
+      last: { at: now - 53 * 60 * 1000, batch: 10, fen: FEN },
+    };
+    localStorage.setItem(KEY, JSON.stringify(idle));
+
+    expect(reportMaiaPageKillFromPreviousSession()).toBe(false);
+    expect(record()).toBeNull();
+    expect(Sentry.captureException).not.toHaveBeenCalled();
+  });
+
+  it('a record killed shortly after its last dispatch is still reported', () => {
+    const now = Date.now();
+    const recent = {
+      armedAt: now - 5 * 60 * 1000,
+      backend: 'webgpu',
+      numThreads: 1,
+      ios: true,
+      pathname: '/analysis',
+      dispatches: 3,
+      results: 2,
+      lastResultAt: now - 20_000,
+      last: { at: now - 15_000, batch: 10, fen: FEN },
+    };
+    localStorage.setItem(KEY, JSON.stringify(recent));
+
+    expect(reportMaiaPageKillFromPreviousSession()).toBe(true);
+    expect(Sentry.captureException).toHaveBeenCalledTimes(1);
+  });
+
+  it('a record that was armed but never dispatched is still reported (arm-then-kill)', () => {
+    const armedOnly = {
+      armedAt: Date.now() - 60 * 60 * 1000,
+      backend: 'webgpu',
+      numThreads: 1,
+      ios: true,
+      pathname: '/analysis',
+      dispatches: 0,
+      results: 0,
+      lastResultAt: null,
+      last: null,
+    };
+    localStorage.setItem(KEY, JSON.stringify(armedOnly));
+
+    expect(reportMaiaPageKillFromPreviousSession()).toBe(true);
+    expect(Sentry.captureException).toHaveBeenCalledTimes(1);
   });
 
   it('reports nothing when there is no record, and never throws on a garbage record', () => {

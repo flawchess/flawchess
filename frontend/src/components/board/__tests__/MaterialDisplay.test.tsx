@@ -16,6 +16,14 @@ const MIXED_IMBALANCE_FEN = '1nbqkbnr/pppppppp/8/8/8/8/PPPPPP2/RNBQKBNR w - - 0 
 const MALFORMED_FEN = 'not-a-fen-at-all';
 
 describe('MaterialDisplay', () => {
+  // Phase 223 UAT: the mobile-only pawn glyph labels the bare "+N" at the
+  // breakpoint where the per-piece surplus icons are hidden.
+  it('renders a mobile-only pawn glyph alongside the point total', () => {
+    render(<MaterialDisplay fen={WHITE_UP_QUEEN_FEN} side="white" />);
+    const icon = screen.getByTestId('material-white-mobile-icon');
+    expect(icon.getAttribute('class')).toContain('sm:hidden');
+  });
+
   afterEach(() => {
     cleanup();
   });

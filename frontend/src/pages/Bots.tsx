@@ -40,10 +40,12 @@ import { ArrowLeft } from 'lucide-react';
 import { ChessBoard } from '@/components/board/ChessBoard';
 import { BoardControls } from '@/components/board/BoardControls';
 import { Button } from '@/components/ui/button';
-import { ClockDisplay } from '@/components/bots/ClockDisplay';
+import { BotGameBubble } from '@/components/bots/BotGameBubble';
+import { BotDrawOfferActions } from '@/components/bots/BotDrawOfferActions';
+import { BotGameMobileLayout } from '@/components/bots/BotGameMobileLayout';
+import { BotGameDesktopLayout } from '@/components/bots/BotGameDesktopLayout';
 import { MoveListPanel } from '@/components/bots/MoveListPanel';
 import { GameControls } from '@/components/bots/GameControls';
-import { BotDrawOfferBanner } from '@/components/bots/BotDrawOfferBanner';
 import { GameResultDialog } from '@/components/bots/GameResultDialog';
 import { ResumeGate } from '@/components/bots/ResumeGate';
 import { EngineReadyGate } from '@/components/bots/EngineReadyGate';
@@ -63,8 +65,9 @@ import { useMarkPlayActive } from '@/lib/playActive';
 import { removePendingStore } from '@/lib/botPendingStore';
 import { isStorableBotGame } from '@/lib/botGamePgn';
 import { resolvePlayerName } from '@/lib/playerName';
-import { playSound, setMuted, unlockAudio, useMuted } from '@/lib/sounds';
+import { playSound, unlockAudio } from '@/lib/sounds';
 import { buildAnalysisLineUrl, buildGameAnalysisUrl } from '@/lib/analysisUrl';
+import type { CurrentStrength } from '@/types/users';
 
 /** Width at which the two-column desktop layout kicks in. Below this the
  * board / clocks / controls stack in a single column (bot clock above the
@@ -98,9 +101,6 @@ const BOT_BOARD_MIN_WIDTH_PX = 240;
  * container's className) rather than letting them eat the board's width. */
 const BOT_BOARD_BOTTOM_GUTTER_PX = 12;
 
-/** Fixed width of the desktop right column (clocks + move list + controls). */
-const DESKTOP_SIDE_COLUMN_PX = 320;
-
 function useIsDesktop(): boolean {
   const [isDesktop, setIsDesktop] = useState(
     () =>
@@ -116,80 +116,34 @@ function useIsDesktop(): boolean {
   return isDesktop;
 }
 
-/** Single column (below DESKTOP_BREAKPOINT_PX): bot clock above the board,
- * board, user clock below (lichess convention), then the board controls, then
- * the game controls / result strip. The whole stack is capped at the board's
- * max width and centered, so the clock strips and board controls always match
- * the board's width exactly. The move list is intentionally omitted here — it
- * only appears in the desktop side column. */
-function renderMobileLayout(
-  botClock: ReactElement,
-  userClock: ReactElement,
-  board: ReactElement,
-  boardControls: ReactElement,
-  controls: ReactElement,
-  boardPx: number,
-): ReactElement {
-  return (
-    <div
-      className="mx-auto flex w-full flex-col gap-2"
-      style={{ maxWidth: boardPx }}
-    >
-      {botClock}
-      {board}
-      {userClock}
-      {boardControls}
-      {controls}
-    </div>
-  );
+/**
+ * Phase 223 (BOTVOICE-01/02): `personaFor` returns `undefined` for a
+ * Custom-mode game; `BotGameBubble`'s `persona` prop is typed `| null` to
+ * match `BOT_LINE_TABLES`'s `PersonaId`-keyed shape (RESEARCH: a Custom game
+ * has no persona to key copy off). A tiny module-scope conversion — never
+ * inlined into `BotsGame`'s own body — keeps this one `??` out of the
+ * page's pinned complexity budget (RESEARCH Pitfall 1: `BotsGame` sits AT
+ * its eslint ceiling).
+ */
+function personaOrNull(persona: Persona | undefined): Persona | null {
+  return persona ?? null;
 }
 
-/** Desktop: two stacked rows sharing the same board-column + side-column
- * widths. The top row is the board beside the two clocks over a move list that
- * flex-fills the remaining height — `items-stretch` makes the side column
- * exactly the board's height, so the move-list box bottom lines up with the
- * board's bottom. The bottom row puts the board controls under the board and
- * the game controls / result strip under the side column.
- *
- * The board column is `flex-1` capped at `boardPx` rather than a fixed width:
- * between DESKTOP_BREAKPOINT_PX and the width the full-size board needs, it
- * shrinks to whatever room the side column leaves instead of overflowing the
- * page. Both rows resolve to the same width (same parent, same side column),
- * so the board controls keep spanning exactly the board. */
-function renderDesktopLayout(
-  botClock: ReactElement,
-  userClock: ReactElement,
-  board: ReactElement,
-  boardControls: ReactElement,
-  moveList: ReactElement,
-  controls: ReactElement,
-  boardPx: number,
-): ReactElement {
-  return (
-    <div className="flex flex-col gap-2">
-      <div className="flex flex-row items-stretch justify-center gap-2">
-        <div className="min-w-0 flex-1" style={{ maxWidth: boardPx }}>
-          {board}
-        </div>
-        <div
-          className="flex shrink-0 flex-col gap-3"
-          style={{ width: DESKTOP_SIDE_COLUMN_PX }}
-        >
-          {botClock}
-          {userClock}
-          {moveList}
-        </div>
-      </div>
-      <div className="flex flex-row justify-center gap-2">
-        <div className="min-w-0 flex-1" style={{ maxWidth: boardPx }}>
-          {boardControls}
-        </div>
-        <div className="shrink-0" style={{ width: DESKTOP_SIDE_COLUMN_PX }}>
-          {controls}
-        </div>
-      </div>
-    </div>
-  );
+/**
+ * Phase 223 (BOTVOICE-05, D-12): the draw-offer actions element, or
+ * `undefined` when no offer is live — kept out of `BotsGame`'s own
+ * complexity budget (RESEARCH Pitfall 1), mirroring `personaOrNull` above.
+ * `undefined` (not a rendered-but-empty element) is what lets
+ * `BotGameBubble`'s `actions !== undefined` check skip its wrapper row
+ * entirely while no offer is live.
+ */
+function drawOfferActionsOrUndefined(
+  offerLive: boolean,
+  onAccept: () => void,
+  onDecline: () => void,
+): ReactElement | undefined {
+  if (!offerLive) return undefined;
+  return <BotDrawOfferActions offerLive={offerLive} onAccept={onAccept} onDecline={onDecline} />;
 }
 
 interface BotsGameProps {
@@ -207,6 +161,15 @@ interface BotsGameProps {
    * `BotsPage` from its own `useUserProfile()` call (lichess_username ->
    * chess_com_username -> "You"), never a second hook call here. */
   playerName: string;
+  /**
+   * Phase 223 (BOTVOICE-05, D-11): the player's own current-strength
+   * estimate, resolved by `BotsPage` from its single `useUserProfile()` call
+   * (the same one `PersonaGrid`'s roster row already reads) — never a second
+   * hook call here. `null` for guests / users with no qualifying estimate;
+   * the desktop `PlayerBar`'s ratingLabel is then omitted entirely rather
+   * than showing a placeholder.
+   */
+  currentStrength: CurrentStrength | null;
   /** Discard-confirmed: clears the snapshot and remounts a fresh game
    * (BotsPage's `handleDiscard`, via the `key`-changed remount). */
   onDiscard: () => void;
@@ -217,6 +180,10 @@ interface BotsGameProps {
    * settings, via `BotsPage`'s existing `handleStart` — the single existing
    * start path (never a second one, never `game.newGame()`). */
   onRematch: (settings: BotGameSettings) => void;
+  /** BOTVOICE-05 (D-10): the mobile back arrow — returns to the roster
+   * WITHOUT clearing the in-progress snapshot (see `BotsPage`'s
+   * `handleBackToRoster` doc comment for the accepted trade-off). */
+  onBackToRoster: () => void;
 }
 
 /**
@@ -233,19 +200,20 @@ function BotsGame({
   settings,
   isGuest,
   playerName,
+  currentStrength,
   onDiscard,
   onNewGame,
   onRematch,
+  onBackToRoster,
 }: BotsGameProps): ReactElement {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const isDesktop = useIsDesktop();
-  const muted = useMuted();
   // The board shrinks to whatever vertical room the viewport actually leaves
   // (same measured-chrome approach as the Train solve screen). `pageRef` is the
   // page container — a stable element across the desktop/mobile layout switch,
   // and its height minus the board's is exactly the chrome (clocks, controls,
-  // draw banner, bottom padding) the board has to share the viewport with.
+  // bottom padding) the board has to share the viewport with.
   const pageRef = useRef<HTMLDivElement>(null);
   const boardRef = useRef<HTMLDivElement>(null);
   const boardPx = useFitBoardToViewport({
@@ -277,7 +245,8 @@ function BotsGame({
   const hasUnlockedAudioRef = useRef(false);
   // Quick 260723-tqn: holds the result modal closed for a short window after
   // a human win so the confetti (fired from useBotGame's finalizeGame) plays
-  // over the board first; false (no hold) for loss/draw/reduced-motion.
+  // over the board first, and after a bot checkmate so the mating position
+  // can be seen before the dialog covers it; false (no hold) otherwise.
   const celebrationHold = useWinCelebrationHold(game.outcome, settings.userColor);
 
   // D-21 (the CONTEXT amendment): store the finished game ON FINISH, not
@@ -369,10 +338,6 @@ function BotsGame({
     unlockAudio();
   }, []);
 
-  const handleToggleMute = useCallback((): void => {
-    setMuted(!muted);
-  }, [muted]);
-
   // D-21 RETIRED (Quick 260714-rj5): Analyze now needs the server-assigned
   // game_id from the finish-time store (`store`, above) to enqueue tier-1
   // analysis and land on the game-mode board directly, so it's gated on the
@@ -413,7 +378,6 @@ function BotsGame({
   // path (BotsPage's handleStart, passed down as onRematch).
   const handleRematch = useCallback((): void => onRematch(settings), [onRematch, settings]);
 
-  const botColor = settings.userColor === 'white' ? 'black' : 'white';
   // Board orientation defaults to the user's own side facing them, but is now a
   // manual toggle driven by the flip board control (a live-game convenience —
   // it never affects the game itself, only which way the board is drawn).
@@ -434,35 +398,34 @@ function BotsGame({
   const handleResetView = useCallback((): void => viewPly(0), [viewPly]);
 
   // Phase 183 (D-06): the ONE shared `personaFor` lookup — resolved once per
-  // render and reused by the clock strip, the draw-offer banner, and the
+  // render and reused by both layouts' player rows, the bubble, and the
   // result surfaces below, rather than each re-implementing the
   // `settings.personaId -> PERSONA_REGISTRY` ternary inline.
   const persona = personaFor(settings);
-  const botClock = (
-    <ClockDisplay
-      sideLabel={persona?.name ?? 'FlawChess Bot'}
-      persona={persona ?? undefined}
-      remainingMs={botColor === 'white' ? game.whiteClockMs : game.blackClockMs}
-      isActive={game.activeColor === botColor}
-      isThinking={game.isBotThinking}
-      // Quick 260809-jzz (D-02): game.position is the viewed-ply FEN — the
-      // same value handed to ChessBoard below — so material tracks the
-      // board when the user steps back through the game, not just the live
-      // ply.
-      fen={game.position}
-      side={botColor}
-      testId="clock-bot"
-    />
+  // Phase 223 (BOTVOICE-05, D-12): the draw offer's Accept/Decline pair now
+  // renders INSIDE the bubble (both breakpoints) — `drawOfferActionsOrUndefined`
+  // returns `undefined` while no offer is live, which is what lets
+  // `BotGameBubble` skip its actions wrapper entirely (no branch needed here).
+  const drawOfferActions = drawOfferActionsOrUndefined(
+    game.botDrawOffer,
+    game.acceptBotDraw,
+    game.declineBotDraw,
   );
-  const userClock = (
-    <ClockDisplay
-      sideLabel={playerName}
-      remainingMs={settings.userColor === 'white' ? game.whiteClockMs : game.blackClockMs}
-      isActive={game.activeColor === settings.userColor}
-      isThinking={false}
-      fen={game.position}
-      side={settings.userColor}
-      testId="clock-user"
+  // Phase 223 (BOTVOICE-01/02/05): the in-game speech bubble, one more
+  // pre-built element beside botClock/board/controls. `game.botLine` drives
+  // its content; `BotGameBubble` itself renders null for a null persona with
+  // no actions (a Custom game with no live offer), so no branch is needed
+  // here either.
+  // Phase 223 UAT: once the game has an outcome the terminal line moves INTO
+  // `GameResultDialog` (with the avatar), so the board-side bubble goes
+  // silent rather than showing the same sentence twice. It still occupies its
+  // fixed slot — `BotGameBubble` lays the box out invisibly for a null line
+  // (D-07), so the board does not resize at the moment the game ends.
+  const bubble = (
+    <BotGameBubble
+      persona={personaOrNull(persona)}
+      line={game.outcome === null ? game.botLine : null}
+      actions={drawOfferActions}
     />
   );
   const board = (
@@ -502,21 +465,11 @@ function BotsGame({
       fillHeight
     />
   );
-  const controls = (
-    <GameControls
-      // WR-04: the props now mean what their names/docs say — `canOfferDraw`
-      // is the D-01 "not already pending, game not over" gate;
-      // `drawCooldownActive` is the D-04 cooldown throttle, which is what the
-      // hook's own `canOfferDraw` (a cooldown-gate boolean) actually reports
-      // (inverted). The net disabled state is unchanged.
-      canOfferDraw={!game.drawOfferPending && game.outcome === null}
-      drawCooldownActive={!game.canOfferDraw}
-      muted={muted}
-      onResignConfirmed={game.resign}
-      onOfferDraw={game.offerDraw}
-      onToggleMute={handleToggleMute}
-    />
-  );
+  // Phase 223 (BOTVOICE-05, D-10/D-12): reduced to the resign trigger — the
+  // user-side Offer draw button (with its cooldown) and the in-game mute
+  // toggle are gone from every breakpoint. Desktop-only now (`BotGameDesktopLayout`);
+  // mobile's equivalent resign trigger lives inside `BotGameMobileBar`.
+  const controls = <GameControls onResignConfirmed={game.resign} />;
 
   return (
     <div
@@ -538,28 +491,54 @@ function BotsGame({
       // mind before adding height anywhere in this column.
       className="mx-auto flex max-w-5xl flex-col gap-4 px-2 py-2 pb-20 sm:py-4 sm:pb-4"
     >
-      {isDesktop
-        ? renderDesktopLayout(botClock, userClock, board, boardControls, moveList, controls, boardPx)
-        : renderMobileLayout(botClock, userClock, board, boardControls, controls, boardPx)}
-
-      {/* D-07: non-blocking — rendered as a sibling near the board/clocks,
-          never a Dialog. Play continues underneath it; the hook auto-expires
-          the offer on the user's next committed move. Capped to the same
-          width as the board+side-column group on desktop / the board alone
-          on mobile, so it never sprawls to the page's max-w-5xl. */}
-      <div
-        className="mx-auto w-full"
-        style={{
-          maxWidth: isDesktop ? boardPx + DESKTOP_SIDE_COLUMN_PX : boardPx,
-        }}
-      >
-        <BotDrawOfferBanner
-          offerLive={game.botDrawOffer}
-          personaName={persona?.name ?? null}
-          onAccept={game.acceptBotDraw}
-          onDecline={game.declineBotDraw}
+      {isDesktop ? (
+        <BotGameDesktopLayout
+          persona={personaOrNull(persona)}
+          playerName={playerName}
+          currentStrength={currentStrength}
+          userColor={settings.userColor}
+          activeColor={game.activeColor}
+          flipped={flipped}
+          whiteClockMs={game.whiteClockMs}
+          blackClockMs={game.blackClockMs}
+          fen={game.position}
+          botLine={game.outcome === null ? game.botLine : null}
+          drawOfferLive={game.botDrawOffer}
+          onAcceptDraw={game.acceptBotDraw}
+          onDeclineDraw={game.declineBotDraw}
+          board={board}
+          boardControls={boardControls}
+          moveList={moveList}
+          controls={controls}
+          boardPx={boardPx}
         />
-      </div>
+      ) : (
+        // Phase 223 (BOTVOICE-05): replaces the old renderMobileLayout helper
+        // (deleted) — back arrow, bubble, board flanked by the two player
+        // rows (223 UAT: same rows as desktop / the analysis board), and the
+        // four-action bar published from this component's own mount.
+        <BotGameMobileLayout
+          persona={personaOrNull(persona)}
+          playerName={playerName}
+          currentStrength={currentStrength}
+          userColor={settings.userColor}
+          activeColor={game.activeColor}
+          whiteClockMs={game.whiteClockMs}
+          blackClockMs={game.blackClockMs}
+          flipped={flipped}
+          fen={game.position}
+          onBackToRoster={onBackToRoster}
+          bubble={bubble}
+          board={board}
+          onResign={game.resign}
+          onBack={handleBack}
+          onForward={handleForward}
+          onFlip={handleFlip}
+          canGoBack={viewedPly > 0}
+          canGoForward={viewedPly < liveGamePly}
+          boardPx={boardPx}
+        />
+      )}
 
       {resume !== null && !game.live && (
         <ResumeGate
@@ -591,6 +570,8 @@ function BotsGame({
           isGuest={isGuest}
           analyzeBusy={analyzeBusy}
           personaName={persona?.name ?? null}
+          persona={personaOrNull(persona)}
+          botLine={game.botLine}
           onRematch={handleRematch}
         />
       )}
@@ -624,6 +605,10 @@ export default function BotsPage(): ReactElement {
   // the single `useUserProfile()` call above (never a second hook call in
   // BotsGame) — lichess_username -> chess_com_username -> "You".
   const playerName = resolvePlayerName(profile);
+  // Phase 223 (BOTVOICE-05, D-11): the SAME single-fetch source PersonaGrid's
+  // roster row already reads — prop-drilled into BotsGame's desktop
+  // PlayerBar rather than a second hook call there.
+  const currentStrength = profile?.current_strength ?? null;
 
   const [boot, setBoot] = useState<{ resume: BotGameSnapshot | null; nonce: number } | null>(
     null,
@@ -703,6 +688,21 @@ export default function BotsPage(): ReactElement {
     setBoot((prev) => ({ resume: null, nonce: (prev?.nonce ?? 0) + 1 }));
   }, []);
 
+  // BOTVOICE-05 (D-10): the mobile back arrow — mechanically identical to
+  // `handleNewGame` above (unmounts `BotsGame`, falls through to the setup
+  // view), but a DIFFERENT intent: this is a mid-game exit, not a post-
+  // result "play again". Deliberately does NOT call `clearSnapshot`, so the
+  // in-progress snapshot survives — navigating away from the page and back,
+  // or reloading, restores the game through the existing `ResumeGate`
+  // (D-04 precedence, unchanged). There is no in-session resume affordance
+  // on the roster itself; adding one is out of scope for this plan.
+  const handleBackToRoster = useCallback((): void => {
+    setStartedSettings(null);
+    setShowCustomSetup(false);
+    setDetailPersona(null);
+    setBoot((prev) => ({ resume: null, nonce: (prev?.nonce ?? 0) + 1 }));
+  }, []);
+
   // D-05: discard clears ONLY the in-progress snapshot (never the
   // pending-store queue — D-12's separate key) and falls through to the
   // setup view (D-13) rather than auto-starting a fresh game.
@@ -744,9 +744,11 @@ export default function BotsPage(): ReactElement {
         ownerKey={ownerKey}
         isGuest={isGuest}
         playerName={playerName}
+        currentStrength={currentStrength}
         onDiscard={handleDiscard}
         onNewGame={handleNewGame}
         onRematch={handleStart}
+        onBackToRoster={handleBackToRoster}
       />
     );
   }
@@ -787,7 +789,6 @@ export default function BotsPage(): ReactElement {
         <PersonaGrid
           onSelectPersona={setDetailPersona}
           onSelectCustom={() => setShowCustomSetup(true)}
-          currentStrength={profile?.current_strength ?? null}
           winsByPersona={winsByPersona}
         />
         <PersonaDetailSurface
@@ -811,9 +812,11 @@ export default function BotsPage(): ReactElement {
       ownerKey={ownerKey}
       isGuest={isGuest}
       playerName={playerName}
+      currentStrength={currentStrength}
       onDiscard={handleDiscard}
       onNewGame={handleNewGame}
       onRematch={handleStart}
+      onBackToRoster={handleBackToRoster}
     />
   );
 }

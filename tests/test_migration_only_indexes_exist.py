@@ -23,7 +23,6 @@ pytestmark = pytest.mark.asyncio
 MIGRATION_ONLY_INDEXES: tuple[str, ...] = (
     "ix_games_evals_pending",
     "ix_games_full_evals_pending",
-    "ix_games_full_pv_pending",
     "ix_games_needs_engine_full_evals",
     "ix_game_flaws_blob_backfill",
 )

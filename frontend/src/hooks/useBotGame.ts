@@ -106,6 +106,8 @@ import { useBotGameDrawOffer } from '@/hooks/useBotGameDrawOffer';
 import { useBotGameEngineDispatch } from '@/hooks/useBotGameEngineDispatch';
 import { useBotGameSnapshot } from '@/hooks/useBotGameSnapshot';
 import { useBotGameMoves } from '@/hooks/useBotGameMoves';
+import { useBotGameVoice } from '@/hooks/useBotGameVoice';
+import type { BotLineKey } from '@/lib/botGameCopy';
 
 // ─── Named constants ─────────────────────────────────────────────────────────
 
@@ -260,6 +262,12 @@ export interface UseBotGameState {
   offerDraw: () => void;
   /** Reset to a fresh game with the same settings. */
   newGame: () => void;
+  /** Phase 223 (BOTVOICE-01/02): the in-game speech bubble's current line
+   * key, or `null` for an empty (but still reserved-height, D-07) slot. A
+   * line is shown only right after the bot's own move and about board-truth
+   * already cashed in (D-06); it clears the instant the player commits a
+   * move, never on a timer. */
+  botLine: BotLineKey | null;
 }
 
 // ─── Pure helpers ────────────────────────────────────────────────────────────
@@ -558,6 +566,24 @@ export function useBotGame(
   // file header for why (breaking a circular hook-call dependency between
   // this hook and useBotGameDrawOffer).
 
+  // ─── Voice sub-hook (Phase 223, BOTVOICE-01/02/03) ────────────────────────
+  //
+  // Wired AFTER useBotGameDrawOffer (feeds it the live `botDrawOffer` flag
+  // from there — the draw-offer arm and its immediate-fire effect) and
+  // BEFORE useBotGameMoves (which needs `onMoveCommitted`) and therefore
+  // before useBotGameEngineDispatch (which needs `onBotMoveGraded`).
+  // `outcome` (state, above) feeds the terminal arm and its own effect —
+  // both the async grade seam AND a game ending with no grade in flight at
+  // all (a flag, a resignation, a stalemate).
+
+  const { botLine, onMoveCommitted, onBotMoveGraded } = useBotGameVoice({
+    userColor: settings.userColor,
+    initialPly: restoredLivePly,
+    live,
+    botDrawOffer,
+    outcome,
+  });
+
   // ─── Move-commit sub-hook (215-03 Task 3) ─────────────────────────────────
   //
   // Wired after useBotGameSnapshot/useBotGameClock/useBotGameDrawOffer (all
@@ -592,6 +618,7 @@ export function useBotGame(
     botDrawOfferRef,
     setBotDrawOffer,
     movesSinceLastDeclineRef,
+    onMoveCommitted,
   });
 
   // The drawOfferPending resolution effect and offerDraw/acceptBotDraw/
@@ -756,6 +783,7 @@ export function useBotGame(
     finalizeGame,
     bumpConsecutiveLowScoreTurns,
     applyDrawOfferUpdate,
+    onBotMoveGraded,
   });
 
   // ─── Bot-turn trigger ────────────────────────────────────────────────────────
@@ -812,5 +840,6 @@ export function useBotGame(
     acceptBotDraw,
     declineBotDraw,
     newGame,
+    botLine,
   };
 }

@@ -13,6 +13,9 @@ import { resultCopy, type BotGameOutcome } from '@/lib/botGameEnd';
 import type { MoverColor } from '@/lib/liveFlaw';
 import { WDL_DRAW, WDL_LOSS, WDL_WIN } from '@/lib/theme';
 import { BOT_ACTION_BUTTON_CLASS } from '@/components/bots/chipStyles';
+import { BotGameBubble } from '@/components/bots/BotGameBubble';
+import type { Persona } from '@/lib/personas/personaRegistry';
+import type { BotLineKey } from '@/lib/botGameCopy';
 
 /** D-20/D-21 copy, exported so `GameResultStrip` renders the EXACT same
  * strings rather than re-typing them — a divergence risk on the "apply
@@ -36,6 +39,16 @@ interface GameResultDialogProps {
    * `personaFor` lookup. Drives both the persona-named title (via
    * `resultCopy`) and whether the "Rematch <Persona>" action renders. */
   personaName: string | null;
+  /** Phase 223 UAT: the persona itself (not just its name), so the dialog can
+   * carry the bot's face and its parting line. `null` for a Custom game,
+   * which renders no bubble at all. */
+  persona: Persona | null;
+  /** The terminal line (`'bot-won'`/`'bot-lost'`/`'game-drawn'`) the voice
+   * hook resolved for this ending. The board-side bubble hides once the game
+   * is over, so this dialog is the ONLY place the line is read — that is the
+   * whole point of moving it in here (Phase 223 UAT: "put the avatar with the
+   * speech bubble inside the modal, so the player can read the phrase"). */
+  botLine: BotLineKey | null;
   /** D-08: starts a new game with the SAME pinned settings (same
    * personaId/botElo/blend/color/TC) via the caller's `handleStart` — the
    * single existing start path, never a second one. Only rendered/callable
@@ -83,6 +96,8 @@ export function GameResultDialog({
   isGuest,
   analyzeBusy,
   personaName,
+  persona,
+  botLine,
   onRematch,
 }: GameResultDialogProps): ReactElement {
   const title = resultCopy(outcome, userColor, personaName);
@@ -102,6 +117,16 @@ export function GameResultDialog({
         <DialogHeader>
           <DialogTitle style={{ color: titleColor }}>{title}</DialogTitle>
         </DialogHeader>
+        {/* The bot's parting line, with its face, where the player will
+            actually read it. No `actions` is ever passed here: a draw offer
+            cannot be live once the game has an outcome, and BotGameBubble's
+            persona-less form exists only for that case — so a Custom game
+            (persona null) correctly renders nothing at all. */}
+        {persona !== null && botLine !== null && (
+          <div className="pt-1" data-testid="result-dialog-bubble">
+            <BotGameBubble persona={persona} line={botLine} />
+          </div>
+        )}
         {/* D-20: only renders once the finish-time store has CONFIRMED (never
             on idle/pending/error). Must stay ABOVE DialogFooter: the footer
             bleeds to the dialog edges (-mx-4 -mb-4, rounded-b-xl, border-t)

@@ -635,22 +635,27 @@
     },
     {
       "number": "219",
-      "name": "Maia Chart Latency — ORT 1.27 Re-pin, Cross-Origin Isolation & Progressive Ladder Paint (standalone)",
+      "name": "Maia Chart Latency — ORT 1.27 Re-pin, Cross-Origin Isolation & Progressive Ladder Paint (v2.17)",
       "status": "complete"
     },
     {
       "number": "220",
-      "name": "Opening Eval Cache Repair & Two-Source Confirmation (SEED-164, standalone)",
+      "name": "Opening Eval Cache Repair & Two-Source Confirmation (SEED-164, v2.18)",
       "status": "complete"
     },
     {
       "number": "221",
-      "name": "Tactic-Tagger Real-Game Precision — Winning Floor, Predicate Tightening & Port Fixes (SEED-165, standalone)",
+      "name": "Tactic-Tagger Real-Game Precision — Winning Floor, Predicate Tightening & Port Fixes (SEED-165, v2.18)",
       "status": "complete"
     },
     {
       "number": "222",
-      "name": "Train Bot-Narrated Onboarding & Verdicts (SEED-166, standalone)",
+      "name": "Train Bot-Narrated Onboarding & Verdicts (SEED-166, v2.19)",
+      "status": "complete"
+    },
+    {
+      "number": "223",
+      "name": "Bot Voice & Immersive Bot Game Layout (SEED-168 + SEED-167, standalone)",
       "status": "complete"
     }
   ],
@@ -659,5 +664,5 @@
     "label": "Show progress",
     "reason": "Unsure of state — showing progress"
   },
-  "updated_at": "2026-09-14T16:43:29.045Z"
+  "updated_at": "2026-09-16T09:07:56.762Z"
 }

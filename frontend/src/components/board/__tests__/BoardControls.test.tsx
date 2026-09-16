@@ -63,3 +63,35 @@ describe('BoardControls', () => {
     expect((screen.getByTestId('board-btn-fast-forward') as HTMLButtonElement).disabled).toBe(true);
   });
 });
+
+// Phase 223 UAT: the mobile /analysis footer renders icon-over-label columns,
+// the same shape as BotGameMobileBar and the main nav.
+describe('BoardControls labels mode', () => {
+  afterEach(cleanup);
+
+  it('renders no visible label text by default', () => {
+    renderControls({ flat: true });
+    expect(screen.getByTestId('board-btn-reset').textContent).toBe('');
+    expect(screen.getByTestId('board-btn-flip').textContent).toBe('');
+  });
+
+  it('labels every control, fast-forward included, when labels is set', () => {
+    renderControls({ flat: true, labels: true, onFastForward: vi.fn(), canFastForward: true });
+    expect(screen.getByTestId('board-btn-reset').textContent).toContain('Start');
+    expect(screen.getByTestId('board-btn-back').textContent).toContain('Back');
+    expect(screen.getByTestId('board-btn-forward').textContent).toContain('Next');
+    expect(screen.getByTestId('board-btn-fast-forward').textContent).toContain('Jump');
+    expect(screen.getByTestId('board-btn-flip').textContent).toContain('Flip');
+  });
+
+  it('keeps the full aria-label wording a visible short label never replaces', () => {
+    renderControls({ flat: true, labels: true, onFastForward: vi.fn(), canFastForward: true });
+    expect(screen.getByLabelText('Reset to start')).toBeTruthy();
+    expect(screen.getByLabelText('Fast forward to next key moment')).toBeTruthy();
+  });
+
+  it('never uses a sub-text-sm font-size utility on a label', () => {
+    const { container } = renderControls({ flat: true, labels: true });
+    expect(container.innerHTML).not.toContain('text-xs');
+  });
+});
