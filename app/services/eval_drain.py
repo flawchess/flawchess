@@ -162,6 +162,15 @@ _RESWEEP_TICK_LIMIT = 5000
 # stop dedup lookups from using the index.
 _DEDUP_MAX_PLY: int = DEDUP_MAX_PLY
 
+# Quick 260916-g38 / FLAWCHESS-5Q: the WR-05 all-fail circuit breaker (see
+# _full_drain_tick) needs at least this many engine targets before "every call
+# failed" is read as a pool outage. With ONE target (a 2-ply game whose plies
+# both dedup-hit the opening cache leaves only the terminal donor for the
+# engine) a single transient failure is indistinguishable from an outage; the
+# per-position mark-and-continue path (hole, stamp withheld, attempts += 1,
+# re-picked next tick) already handles that case without a Sentry event.
+FULL_DRAIN_BREAKER_MIN_TARGETS: int = 2
+
 # SEED-049: under post-move storage, the game-ending move row (ply = max_ply - 1) stores
 # the eval of the terminal game-over position, which is legitimately unevaluable. This
 # offset defines "the game-ending move sits 1 ply before the maximum stored ply", used
@@ -1423,7 +1432,9 @@ async def _full_drain_tick() -> bool:
     # silent loss of full-eval coverage across the whole backlog at maximum
     # loop speed. Leave the game pending (re-picked next tick) and report ONE
     # Sentry event. Per-position holes remain mark-and-continue per D-116-07.
-    if engine_targets and all(
+    # Quick 260916-g38 / FLAWCHESS-5Q: a lone failed target is NOT an outage
+    # signal — it falls through to mark-and-continue (FULL_DRAIN_BREAKER_MIN_TARGETS).
+    if len(engine_targets) >= FULL_DRAIN_BREAKER_MIN_TARGETS and all(
         cp is None and mt is None for cp, mt, _bm, _pv, _scp, _smt, _suci in engine_results_raw
     ):
         sentry_sdk.set_context(
