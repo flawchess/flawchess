@@ -3,6 +3,13 @@ name: Deploy data stories to GitHub Pages
 # Publishes the stories/ directory (public data stories) to
 # https://stories.flawchess.com/ whenever it changes on main.
 # Source of truth lives on main; there is no gh-pages branch.
+#
+# Only the story directories listed in stories/published.txt are uploaded. A study branch
+# that lands on main before its story is ready therefore stays unpublished until the slug
+# is added to that file (the tilt story went live by accident on 2026-09-09 because every
+# push to main deployed the whole directory). The staging step also fails the deploy when
+# index.html or sitemap.xml links to an unlisted story, so a card cannot dangle; a failed
+# run leaves the previous deployment online.
 
 on:
   push:
@@ -29,9 +36,11 @@ jobs:
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - uses: actions/checkout@v7
+      - name: Stage published stories only
+        run: bash stories/stage.sh stories _site
       - uses: actions/configure-pages@v6
       - uses: actions/upload-pages-artifact@v5
         with:
-          path: stories
+          path: _site
       - id: deployment
         uses: actions/deploy-pages@v5

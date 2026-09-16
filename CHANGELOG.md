@@ -20,6 +20,7 @@ in `YYYY-MM-DD` (Europe/Zurich).
 - The board buttons under the analysis board on phones now carry a label under each icon (Start, Back, Next, Jump, Flip), matching the bot game's bar.
 - The Train landing page is now hosted by a different practice bot each day, each greeting you in its own voice. Tank the Ox keeps hosting until you have finished the first-puzzle walkthrough, so the page introduces the same bot who opens it.
 - Train first-puzzle walkthrough: the bot avatars are larger on phones, the opening tip now says "Every puzzle starts with one question", and the scroll to the feedback screen is slower so it is easier to follow.
+- The home page now has a Human-like Bots section, placed after Game and Tactic Analysis and Puzzle Training, and the Opening Comparison section has been folded into Opening Explorer & Insights so the page stays at seven features. The Train screenshot is refreshed.
 
 ### Fixed
 

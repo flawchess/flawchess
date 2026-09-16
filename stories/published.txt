@@ -1,0 +1,5 @@
+# Stories that .github/workflows/pages.yml deploys to stories.flawchess.com, one slug per line.
+# A story directory that is not listed here is NOT uploaded, even if it sits on main; the
+# deploy also fails if index.html or sitemap.xml links to an unlisted slug. Publishing a story
+# is the explicit act of adding its slug here (see stories/README.md, "Publishing a story").
+two-pawns-up
