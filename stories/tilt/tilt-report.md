@@ -118,7 +118,7 @@ streak is supposed to cause, not as a claim to have isolated it.
   contrast in §3 largely a warm-up artefact. Lichess ratings are not quite Elo-calibrated (a 100–149-point
   favourite scores 63%, not the 67% the Elo formula gives; the logistic scale is ≈520 in blitz, not 400),
   so the Elo formula would fake a hot hand for favourites. **Residual = score − expected**, in percentage
-  points (pp) of score. One point of score per 100 games can be one win turned into a loss, two wins turned
+  points (pp) of score; the story writes the same quantity as game-points per 100 games. One point of score per 100 games can be one win turned into a loss, two wins turned
   into draws, or two draws turned into losses; the story's "one extra loss per N games" is that first
   reading, used as an illustration.
 - **Story hygiene** (applied to every scored number in the story unless stated): drop each user's first
