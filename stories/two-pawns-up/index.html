@@ -75,7 +75,9 @@
   header.site .sect{font-family:'Fredoka',sans-serif;font-weight:600;font-size:22px;letter-spacing:-.02em;
     color:var(--brown);text-decoration:none;border-left:1px solid var(--line);padding-left:12px;line-height:1.15}
   header.site .sect:hover{color:var(--brown-dark)}
-  header.site .tag{color:var(--ink-3);font-size:15px;margin-left:auto;text-align:right}
+  header.site .hcta{margin-left:auto;flex-shrink:0;background:var(--brown);color:#fff;text-decoration:none;font-weight:700;
+    font-size:14px;padding:9px 14px;border-radius:10px;white-space:nowrap}
+  header.site .hcta:hover{background:var(--brown-dark)}
   .hero{padding:26px 0 6px}
   .kicker{color:var(--brown);font-weight:700;text-transform:uppercase;letter-spacing:.12em;font-size:14px}
   .kicker a{color:inherit;text-decoration:underline dotted;text-decoration-thickness:1.5px;text-underline-offset:4px}
@@ -163,10 +165,16 @@
   .adv li::before{content:"";position:absolute;left:0;top:.5em;width:11px;height:11px;border-radius:3px;background:var(--brown)}
   .adv b{color:var(--ink)}
   @media (max-width:560px){
-    header.site .tag{display:none}
+    header.site .wrap{gap:8px}
+    header.site .brand{gap:8px}
+    header.site img{width:36px;height:36px}
     header.site .name,header.site .sect{font-size:19px}
+    header.site .sect{padding-left:8px;min-width:110px}
+    header.site .hcta{font-size:13px;padding:8px 10px}
+    header.site .hcta .long{display:none}
     .author{align-items:flex-start;gap:14px}
   }
+  @media (max-width:400px){header.site img{display:none}}
 </style>
 </head>
 <body>
@@ -179,7 +187,7 @@
       <span class="name">FlawChess</span>
     </a>
     <a class="sect" href="../">Chess Data Stories</a>
-    <span class="tag">Engines are flawless,<br>humans play FlawChess.</span>
+    <a class="hcta" href="https://flawchess.com" data-umami-event="outbound-flawchess-header-cta">Analyze<span class="long"> your games</span> &rarr;</a>
   </div>
 </header>
 

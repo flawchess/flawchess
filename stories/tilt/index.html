@@ -75,7 +75,9 @@
   header.site .sect{font-family:'Fredoka',sans-serif;font-weight:600;font-size:22px;letter-spacing:-.02em;
     color:var(--brown);text-decoration:none;border-left:1px solid var(--line);padding-left:12px;line-height:1.15}
   header.site .sect:hover{color:var(--brown-dark)}
-  header.site .tag{color:var(--ink-3);font-size:15px;margin-left:auto;text-align:right}
+  header.site .hcta{margin-left:auto;flex-shrink:0;background:var(--brown);color:#fff;text-decoration:none;font-weight:700;
+    font-size:14px;padding:9px 14px;border-radius:10px;white-space:nowrap}
+  header.site .hcta:hover{background:var(--brown-dark)}
   .hero{padding:26px 0 6px}
   .kicker{color:var(--brown);font-weight:700;text-transform:uppercase;letter-spacing:.12em;font-size:14px}
   .kicker a{color:inherit;text-decoration:underline dotted;text-decoration-thickness:1.5px;text-underline-offset:4px}
@@ -163,10 +165,16 @@
   .adv li::before{content:"";position:absolute;left:0;top:.5em;width:11px;height:11px;border-radius:3px;background:var(--brown)}
   .adv b{color:var(--ink)}
   @media (max-width:560px){
-    header.site .tag{display:none}
+    header.site .wrap{gap:8px}
+    header.site .brand{gap:8px}
+    header.site img{width:36px;height:36px}
     header.site .name,header.site .sect{font-size:19px}
+    header.site .sect{padding-left:8px;min-width:110px}
+    header.site .hcta{font-size:13px;padding:8px 10px}
+    header.site .hcta .long{display:none}
     .author{align-items:flex-start;gap:14px}
   }
+  @media (max-width:400px){header.site img{display:none}}
 </style>
 </head>
 <body>
@@ -179,7 +187,7 @@
       <span class="name">FlawChess</span>
     </a>
     <a class="sect" href="../">Chess Data Stories</a>
-    <span class="tag">Engines are flawless,<br>humans play FlawChess.</span>
+    <a class="hcta" href="https://flawchess.com" data-umami-event="outbound-flawchess-header-cta">Analyze<span class="long"> your games</span> &rarr;</a>
   </div>
 </header>
 
@@ -246,7 +254,7 @@
   below (the dashed line in the chart). Both numbers are small. This story calls the shortfall after losses tilt for
   short, but it is a shortfall against a benchmark, not a reading of anyone's mood: fatigue, distraction and a bad
   connection all feed into it, and only players who kept playing are counted.</p>
-  <p class="ctitle">Score in the next game, by the streak that just ended</p>
+  <p class="ctitle">Score in the next game (points per 100 games), by the streak that just ended</p>
   <div class="legend" id="lg1"></div>
   <figure aria-label="Line chart: next-game score by streak length, as it appears in raw game history versus after controlling for opponent rating, session and account state, with the rating-based expectation">
     <div id="c1"></div>
@@ -256,20 +264,20 @@
   rematches and account effects. The two that remain are what the rest of this story is about.</div>
   <details class="tbl"><summary>View the data</summary><div>
     <table>
-      <thead><tr><th>Streak just ended</th><th>Games (raw)</th><th>Raw history</th><th>Same rating</th><th>+ one sitting, fresh opponent</th><th>+ settled accounts</th><th>Expected from ratings</th><th>Difference (points per 100 games)</th></tr></thead>
+      <thead><tr><th>Streak just ended</th><th>Games (raw)</th><th>Raw history (points per 100 games)</th><th>Same rating</th><th>+ one sitting, fresh opponent</th><th>+ settled accounts</th><th>Expected from ratings</th><th>Difference (points per 100 games)</th></tr></thead>
       <tbody>
-        <tr><td>6+ losses</td><td>37,724</td><td>43.4%</td><td>47.6%</td><td>47.8%</td><td>48.3%</td><td>50.3%</td><td>&minus;2.0</td></tr>
-        <tr><td>5 losses</td><td>33,889</td><td>47.5%</td><td>49.1%</td><td>49.2%</td><td>48.9%</td><td>50.5%</td><td>&minus;1.6</td></tr>
-        <tr><td>4 losses</td><td>68,646</td><td>48.5%</td><td>49.4%</td><td>49.9%</td><td>50.1%</td><td>50.7%</td><td>&minus;0.5</td></tr>
-        <tr><td>3 losses</td><td>141,045</td><td>49.1%</td><td>49.5%</td><td>50.1%</td><td>50.1%</td><td>50.7%</td><td>&minus;0.5</td></tr>
-        <tr><td>2 losses</td><td>295,044</td><td>49.9%</td><td>49.7%</td><td>50.1%</td><td>50.0%</td><td>50.7%</td><td>&minus;0.8</td></tr>
-        <tr><td>1 loss</td><td>635,543</td><td>51.1%</td><td>50.4%</td><td>50.7%</td><td>50.6%</td><td>50.8%</td><td>&minus;0.2</td></tr>
-        <tr><td>1 win</td><td>645,176</td><td>52.1%</td><td>51.0%</td><td>51.2%</td><td>51.1%</td><td>50.8%</td><td>+0.3</td></tr>
-        <tr><td>2 wins</td><td>320,255</td><td>53.4%</td><td>51.5%</td><td>51.6%</td><td>51.5%</td><td>50.8%</td><td>+0.6</td></tr>
-        <tr><td>3 wins</td><td>162,786</td><td>54.6%</td><td>52.0%</td><td>52.1%</td><td>51.9%</td><td>50.9%</td><td>+1.0</td></tr>
-        <tr><td>4 wins</td><td>84,622</td><td>55.7%</td><td>52.1%</td><td>52.1%</td><td>51.8%</td><td>51.0%</td><td>+0.9</td></tr>
-        <tr><td>5 wins</td><td>44,915</td><td>57.7%</td><td>53.1%</td><td>53.5%</td><td>53.1%</td><td>51.1%</td><td>+2.1</td></tr>
-        <tr><td>6+ wins</td><td>66,069</td><td>65.4%</td><td>54.0%</td><td>53.4%</td><td>52.7%</td><td>51.0%</td><td>+1.7</td></tr>
+        <tr><td>6+ losses</td><td>37,724</td><td>43.4</td><td>47.6</td><td>47.8</td><td>48.3</td><td>50.3</td><td>&minus;2.0</td></tr>
+        <tr><td>5 losses</td><td>33,889</td><td>47.5</td><td>49.1</td><td>49.2</td><td>48.9</td><td>50.5</td><td>&minus;1.6</td></tr>
+        <tr><td>4 losses</td><td>68,646</td><td>48.5</td><td>49.4</td><td>49.9</td><td>50.1</td><td>50.7</td><td>&minus;0.5</td></tr>
+        <tr><td>3 losses</td><td>141,045</td><td>49.1</td><td>49.5</td><td>50.1</td><td>50.1</td><td>50.7</td><td>&minus;0.5</td></tr>
+        <tr><td>2 losses</td><td>295,044</td><td>49.9</td><td>49.7</td><td>50.1</td><td>50.0</td><td>50.7</td><td>&minus;0.8</td></tr>
+        <tr><td>1 loss</td><td>635,543</td><td>51.1</td><td>50.4</td><td>50.7</td><td>50.6</td><td>50.8</td><td>&minus;0.2</td></tr>
+        <tr><td>1 win</td><td>645,176</td><td>52.1</td><td>51.0</td><td>51.2</td><td>51.1</td><td>50.8</td><td>+0.3</td></tr>
+        <tr><td>2 wins</td><td>320,255</td><td>53.4</td><td>51.5</td><td>51.6</td><td>51.5</td><td>50.8</td><td>+0.6</td></tr>
+        <tr><td>3 wins</td><td>162,786</td><td>54.6</td><td>52.0</td><td>52.1</td><td>51.9</td><td>50.9</td><td>+1.0</td></tr>
+        <tr><td>4 wins</td><td>84,622</td><td>55.7</td><td>52.1</td><td>52.1</td><td>51.8</td><td>51.0</td><td>+0.9</td></tr>
+        <tr><td>5 wins</td><td>44,915</td><td>57.7</td><td>53.1</td><td>53.5</td><td>53.1</td><td>51.1</td><td>+2.1</td></tr>
+        <tr><td>6+ wins</td><td>66,069</td><td>65.4</td><td>54.0</td><td>53.4</td><td>52.7</td><td>51.0</td><td>+1.7</td></tr>
       </tbody>
     </table>
     <p style="margin-top:10px;color:var(--ink-mid)">"Same rating" keeps only next games against an opponent within
@@ -303,20 +311,20 @@
   tell tilt from fatigue or distraction, and they only see the players who kept playing.</div>
   <details class="tbl"><summary>View the data</summary><div>
     <table>
-      <thead><tr><th>Streak just ended</th><th>Games</th><th>Next-game score</th><th>Expected</th><th>Difference (points per 100 games)</th><th>95% interval</th><th>Lose the next game</th></tr></thead>
+      <thead><tr><th>Streak just ended</th><th>Games</th><th>Next-game score (points per 100 games)</th><th>Expected</th><th>Difference</th><th>95% interval</th><th>Lose the next game</th></tr></thead>
       <tbody>
-        <tr><td>6+ losses</td><td>4,306</td><td>48.3%</td><td>50.3%</td><td>&minus;2.0</td><td>&minus;3.6 to &minus;0.4</td><td>49.9%</td></tr>
-        <tr><td>5 losses</td><td>5,569</td><td>48.9%</td><td>50.5%</td><td>&minus;1.6</td><td>&minus;2.9 to &minus;0.4</td><td>49.3%</td></tr>
-        <tr><td>4 losses</td><td>13,817</td><td>50.1%</td><td>50.7%</td><td>&minus;0.5</td><td>&minus;1.3 to +0.2</td><td>47.9%</td></tr>
-        <tr><td>3 losses</td><td>35,281</td><td>50.1%</td><td>50.7%</td><td>&minus;0.5</td><td>&minus;1.1 to 0.0</td><td>47.9%</td></tr>
-        <tr><td>2 losses</td><td>94,514</td><td>50.0%</td><td>50.7%</td><td>&minus;0.8</td><td>&minus;1.0 to &minus;0.4</td><td>47.9%</td></tr>
-        <tr><td>1 loss</td><td>269,534</td><td>50.6%</td><td>50.8%</td><td>&minus;0.2</td><td>&minus;0.4 to &minus;0.1</td><td>47.1%</td></tr>
-        <tr><td>1 win</td><td>284,714</td><td>51.1%</td><td>50.8%</td><td>+0.3</td><td>+0.1 to +0.5</td><td></td></tr>
-        <tr><td>2 wins</td><td>108,358</td><td>51.5%</td><td>50.8%</td><td>+0.6</td><td>+0.3 to +0.9</td><td></td></tr>
-        <tr><td>3 wins</td><td>43,697</td><td>51.9%</td><td>50.9%</td><td>+1.0</td><td>+0.5 to +1.5</td><td></td></tr>
-        <tr><td>4 wins</td><td>18,326</td><td>51.8%</td><td>51.0%</td><td>+0.9</td><td>+0.2 to +1.6</td><td></td></tr>
-        <tr><td>5 wins</td><td>7,882</td><td>53.1%</td><td>51.1%</td><td>+2.1</td><td>+1.0 to +3.2</td><td></td></tr>
-        <tr><td>6+ wins</td><td>6,317</td><td>52.7%</td><td>51.0%</td><td>+1.7</td><td>+0.4 to +2.9</td><td></td></tr>
+        <tr><td>6+ losses</td><td>4,306</td><td>48.3</td><td>50.3</td><td>&minus;2.0</td><td>&minus;3.6 to &minus;0.4</td><td>49.9%</td></tr>
+        <tr><td>5 losses</td><td>5,569</td><td>48.9</td><td>50.5</td><td>&minus;1.6</td><td>&minus;2.9 to &minus;0.4</td><td>49.3%</td></tr>
+        <tr><td>4 losses</td><td>13,817</td><td>50.1</td><td>50.7</td><td>&minus;0.5</td><td>&minus;1.3 to +0.2</td><td>47.9%</td></tr>
+        <tr><td>3 losses</td><td>35,281</td><td>50.1</td><td>50.7</td><td>&minus;0.5</td><td>&minus;1.1 to 0.0</td><td>47.9%</td></tr>
+        <tr><td>2 losses</td><td>94,514</td><td>50.0</td><td>50.7</td><td>&minus;0.8</td><td>&minus;1.0 to &minus;0.4</td><td>47.9%</td></tr>
+        <tr><td>1 loss</td><td>269,534</td><td>50.6</td><td>50.8</td><td>&minus;0.2</td><td>&minus;0.4 to &minus;0.1</td><td>47.1%</td></tr>
+        <tr><td>1 win</td><td>284,714</td><td>51.1</td><td>50.8</td><td>+0.3</td><td>+0.1 to +0.5</td><td></td></tr>
+        <tr><td>2 wins</td><td>108,358</td><td>51.5</td><td>50.8</td><td>+0.6</td><td>+0.3 to +0.9</td><td></td></tr>
+        <tr><td>3 wins</td><td>43,697</td><td>51.9</td><td>50.9</td><td>+1.0</td><td>+0.5 to +1.5</td><td></td></tr>
+        <tr><td>4 wins</td><td>18,326</td><td>51.8</td><td>51.0</td><td>+0.9</td><td>+0.2 to +1.6</td><td></td></tr>
+        <tr><td>5 wins</td><td>7,882</td><td>53.1</td><td>51.1</td><td>+2.1</td><td>+1.0 to +3.2</td><td></td></tr>
+        <tr><td>6+ wins</td><td>6,317</td><td>52.7</td><td>51.0</td><td>+1.7</td><td>+0.4 to +2.9</td><td></td></tr>
       </tbody>
     </table>
     <p style="margin-top:10px;color:var(--ink-mid)">Same games as the "settled accounts" column in section 1.
@@ -346,17 +354,17 @@
   draw turned into a loss per 100 games, and the surplus after three wins is larger than the shortfall after three losses.</div>
   <details class="tbl"><summary>View the data</summary><div>
     <table>
-      <thead><tr><th>Group</th><th>Games after 3+ losses</th><th>Score</th><th>Expected</th><th>Difference (points per 100 games)</th><th>Games after 3+ wins</th><th>Score</th><th>Expected</th><th>Difference (points per 100 games)</th></tr></thead>
+      <thead><tr><th>Group</th><th>Games after 3+ losses</th><th>Score (points per 100 games)</th><th>Expected</th><th>Difference</th><th>Games after 3+ wins</th><th>Score</th><th>Expected</th><th>Difference</th></tr></thead>
       <tbody>
-        <tr><td>Bullet</td><td>27,927</td><td>49.8%</td><td>50.5%</td><td>&minus;0.7 (&minus;1.1 to &minus;0.2)</td><td>37,378</td><td>52.0%</td><td>50.8%</td><td>+1.2 (+0.7 to +1.6)</td></tr>
-        <tr><td>Blitz</td><td>19,719</td><td>50.3%</td><td>50.6%</td><td>&minus;0.3 (&minus;0.9 to +0.4)</td><td>25,743</td><td>52.2%</td><td>51.0%</td><td>+1.1 (+0.5 to +1.7)</td></tr>
-        <tr><td>Rapid</td><td>10,820</td><td>49.2%</td><td>50.9%</td><td>&minus;1.8 (&minus;2.7 to &minus;1.0)</td><td>12,366</td><td>52.3%</td><td>51.1%</td><td>+1.3 (+0.4 to +2.3)</td></tr>
-        <tr><td>Classical*</td><td>507</td><td>52.1%</td><td>51.4%</td><td>+0.7 (&minus;3.5 to +5.0)</td><td>735</td><td>51.4%</td><td>51.4%</td><td>&minus;0.1 (&minus;3.5 to +3.1)</td></tr>
-        <tr><td>800</td><td>9,557</td><td>48.6%</td><td>50.6%</td><td>&minus;1.9 (&minus;2.9 to &minus;0.8)</td><td>11,487</td><td>52.0%</td><td>50.5%</td><td>+1.5 (+0.7 to +2.5)</td></tr>
-        <tr><td>1200</td><td>14,097</td><td>49.8%</td><td>50.5%</td><td>&minus;0.7 (&minus;1.4 to +0.2)</td><td>17,202</td><td>51.4%</td><td>50.4%</td><td>+1.0 (+0.3 to +1.7)</td></tr>
-        <tr><td>1600</td><td>16,247</td><td>49.6%</td><td>50.4%</td><td>&minus;0.8 (&minus;1.4 to 0.0)</td><td>18,875</td><td>51.7%</td><td>50.4%</td><td>+1.2 (+0.6 to +1.9)</td></tr>
-        <tr><td>2000</td><td>12,554</td><td>51.1%</td><td>51.0%</td><td>0.0 (&minus;0.9 to +0.8)</td><td>17,051</td><td>52.7%</td><td>51.4%</td><td>+1.3 (+0.5 to +2.0)</td></tr>
-        <tr><td>2400</td><td>6,518</td><td>50.1%</td><td>50.7%</td><td>&minus;0.6 (&minus;1.7 to +0.5)</td><td>11,607</td><td>53.1%</td><td>52.4%</td><td>+0.7 (&minus;0.1 to +1.6)</td></tr>
+        <tr><td>Bullet</td><td>27,927</td><td>49.8</td><td>50.5</td><td>&minus;0.7 (&minus;1.1 to &minus;0.2)</td><td>37,378</td><td>52.0</td><td>50.8</td><td>+1.2 (+0.7 to +1.6)</td></tr>
+        <tr><td>Blitz</td><td>19,719</td><td>50.3</td><td>50.6</td><td>&minus;0.3 (&minus;0.9 to +0.4)</td><td>25,743</td><td>52.2</td><td>51.0</td><td>+1.1 (+0.5 to +1.7)</td></tr>
+        <tr><td>Rapid</td><td>10,820</td><td>49.2</td><td>50.9</td><td>&minus;1.8 (&minus;2.7 to &minus;1.0)</td><td>12,366</td><td>52.3</td><td>51.1</td><td>+1.3 (+0.4 to +2.3)</td></tr>
+        <tr><td>Classical*</td><td>507</td><td>52.1</td><td>51.4</td><td>+0.7 (&minus;3.5 to +5.0)</td><td>735</td><td>51.4</td><td>51.4</td><td>&minus;0.1 (&minus;3.5 to +3.1)</td></tr>
+        <tr><td>800</td><td>9,557</td><td>48.6</td><td>50.6</td><td>&minus;1.9 (&minus;2.9 to &minus;0.8)</td><td>11,487</td><td>52.0</td><td>50.5</td><td>+1.5 (+0.7 to +2.5)</td></tr>
+        <tr><td>1200</td><td>14,097</td><td>49.8</td><td>50.5</td><td>&minus;0.7 (&minus;1.4 to +0.2)</td><td>17,202</td><td>51.4</td><td>50.4</td><td>+1.0 (+0.3 to +1.7)</td></tr>
+        <tr><td>1600</td><td>16,247</td><td>49.6</td><td>50.4</td><td>&minus;0.8 (&minus;1.4 to 0.0)</td><td>18,875</td><td>51.7</td><td>50.4</td><td>+1.2 (+0.6 to +1.9)</td></tr>
+        <tr><td>2000</td><td>12,554</td><td>51.1</td><td>51.0</td><td>0.0 (&minus;0.9 to +0.8)</td><td>17,051</td><td>52.7</td><td>51.4</td><td>+1.3 (+0.5 to +2.0)</td></tr>
+        <tr><td>2400</td><td>6,518</td><td>50.1</td><td>50.7</td><td>&minus;0.6 (&minus;1.7 to +0.5)</td><td>11,607</td><td>53.1</td><td>52.4</td><td>+0.7 (&minus;0.1 to +1.6)</td></tr>
       </tbody>
     </table>
     <p style="margin-top:10px;color:var(--ink-mid)">* Classical has too few same-sitting streaks to chart (its
@@ -501,13 +509,13 @@
   declining it would recover that, this comparison cannot prove, but unlike a losing streak it is a choice.</div>
   <details class="tbl"><summary>View the data</summary><div>
     <table>
-      <thead><tr><th>Time control</th><th>Rematch rate after a loss</th><th>Revenge rematch: score</th><th>Expected</th><th>Revenge rematch</th><th>New opponent after a loss</th><th>Rematch after a win</th><th>Session ends after a loss</th><th>&hellip;after a win</th><th>Next game within 60 s after a loss / win, of those who continue</th></tr></thead>
+      <thead><tr><th>Time control</th><th>Rematch rate after a loss</th><th>Revenge rematch: score (points per 100 games)</th><th>Expected</th><th>Revenge rematch</th><th>New opponent after a loss</th><th>Rematch after a win</th><th>Session ends after a loss</th><th>&hellip;after a win</th><th>Next game within 60 s after a loss / win, of those who continue</th></tr></thead>
       <tbody>
-        <tr><td>Bullet</td><td>9.9%</td><td>48.6%</td><td>49.8%</td><td>&minus;1.2 (&minus;1.9 to &minus;0.4)</td><td>&minus;0.4</td><td>0.0</td><td>22.3%</td><td>17.2%</td><td>68% / 72%</td></tr>
-        <tr><td>Blitz</td><td>9.8%</td><td>47.9%</td><td>49.5%</td><td>&minus;1.7 (&minus;2.4 to &minus;0.9)</td><td>&minus;0.4</td><td>+0.7</td><td>28.6%</td><td>24.5%</td><td>64% / 59%</td></tr>
-        <tr><td>Rapid</td><td>7.7%</td><td>46.9%</td><td>49.9%</td><td>&minus;3.0 (&minus;4.0 to &minus;2.0)</td><td>&minus;0.7</td><td>+1.6</td><td>38.2%</td><td>36.6%</td><td>51% / 40%</td></tr>
-        <tr><td>Classical</td><td>11.3%</td><td>44.9%</td><td>49.2%</td><td>&minus;4.3 (&minus;7.1 to &minus;1.8)</td><td>&minus;0.5</td><td>+2.8</td><td>60.0%</td><td>59.7%</td><td>15% / 12%</td></tr>
-        <tr><td>All</td><td>9.4%</td><td>47.9%</td><td>49.7%</td><td>&minus;1.8 (&minus;2.2 to &minus;1.3)</td><td>&minus;0.5</td><td>+0.6</td><td></td><td></td><td></td></tr>
+        <tr><td>Bullet</td><td>9.9%</td><td>48.6</td><td>49.8</td><td>&minus;1.2 (&minus;1.9 to &minus;0.4)</td><td>&minus;0.4</td><td>0.0</td><td>22.3%</td><td>17.2%</td><td>68% / 72%</td></tr>
+        <tr><td>Blitz</td><td>9.8%</td><td>47.9</td><td>49.5</td><td>&minus;1.7 (&minus;2.4 to &minus;0.9)</td><td>&minus;0.4</td><td>+0.7</td><td>28.6%</td><td>24.5%</td><td>64% / 59%</td></tr>
+        <tr><td>Rapid</td><td>7.7%</td><td>46.9</td><td>49.9</td><td>&minus;3.0 (&minus;4.0 to &minus;2.0)</td><td>&minus;0.7</td><td>+1.6</td><td>38.2%</td><td>36.6%</td><td>51% / 40%</td></tr>
+        <tr><td>Classical</td><td>11.3%</td><td>44.9</td><td>49.2</td><td>&minus;4.3 (&minus;7.1 to &minus;1.8)</td><td>&minus;0.5</td><td>+2.8</td><td>60.0%</td><td>59.7%</td><td>15% / 12%</td></tr>
+        <tr><td>All</td><td>9.4%</td><td>47.9</td><td>49.7</td><td>&minus;1.8 (&minus;2.2 to &minus;1.3)</td><td>&minus;0.5</td><td>+0.6</td><td></td><td></td><td></td></tr>
       </tbody>
     </table>
     <p style="margin-top:10px;color:var(--ink-mid)">Rematch: the next game, within the hour, against the same opponent.
@@ -739,7 +747,7 @@ function renderC1(){
   const svg=svgRoot("c1",W,H,"Next-game score by streak: raw history, controlled, and expected, with the gap between raw and controlled shaded as explained by the controls and the gap between controlled and expected shaded as left over");
   const yFor=v=>T+(H-T-B)*(1-(v-min)/(max-min));
   const xFor=i=>L+(W-L-R)*(i/(XS.length-1));
-  grid(svg,L,W-R,yFor,[40,45,50,55,60,65],v=>v+"%");
+  grid(svg,L,W-R,yFor,[40,45,50,55,60,65],v=>String(v));
   XS.forEach((x,i)=>txt(svg,xFor(i),H-36,xLabel(x),{class:"axis","text-anchor":"middle"}));
   txt(svg,L+(W-L-R)/2,H-12,W<560?"Streak just ended (losses left, wins right)":"Streak just ended (losses on the left, wins on the right)",{class:"axis","text-anchor":"middle"});
   const pts=k=>XS.map((x,i)=>[xFor(i),yFor(LADDER[k][i])]);
@@ -767,9 +775,9 @@ function renderC1(){
   // hit targets: one per streak, describing all three lines
   XS.forEach((x,i)=>{
     const hit=el("rect",{x:xFor(i)-14,y:T,width:28,height:H-T-B,fill:"transparent"},svg);
-    bindTip(hit,`<div class="t">After ${xPhrase(x)}</div>Raw history: <b>${LADDER.raw[i].toFixed(1)}%</b> (${fmt(LADDER.nRaw[i])} games)<br>`+
-      `Same rating only: ${LADDER.equal[i].toFixed(1)}%<br>Controlled: <b>${LADDER.ctrl[i].toFixed(1)}%</b> (${fmt(LADDER.nCtrl[i])} games)<br>`+
-      `Expected: ${LADDER.expected[i].toFixed(1)}%<br>Maybe tilt: <b>${signed(LADDER.ctrl[i]-LADDER.expected[i])}</b>`);
+    bindTip(hit,`<div class="t">After ${xPhrase(x)} (points per 100 games)</div>Raw history: <b>${LADDER.raw[i].toFixed(1)}</b> (${fmt(LADDER.nRaw[i])} games)<br>`+
+      `Same rating only: ${LADDER.equal[i].toFixed(1)}<br>Controlled: <b>${LADDER.ctrl[i].toFixed(1)}</b> (${fmt(LADDER.nCtrl[i])} games)<br>`+
+      `Expected: ${LADDER.expected[i].toFixed(1)}<br>Maybe tilt: <b>${signed(LADDER.ctrl[i]-LADDER.expected[i])}</b>`);
   });
   annotateLossEnd(svg,xFor,yFor,L,W);
 }
@@ -809,8 +817,8 @@ function renderC2(){
     whisker(svg,cx,yFor(TILT.lo[i]),yFor(TILT.hi[i]),COL.ink);
     txt(svg,cx,v<0?yFor(TILT.lo[i])+18:yFor(TILT.hi[i])-8,signed(v),{class:"dlabel","text-anchor":"middle",fill:c,"font-size":W<560?"12":"15"});
     txt(svg,cx,H-36,xLabel(x),{class:"axis","text-anchor":"middle"});
-    bindTip(rect,`<div class="t">After ${xPhrase(x)}</div>Average score in the next game: <b>${LADDER.ctrl[i].toFixed(1)}%</b> against an expected `+
-      `${LADDER.expected[i].toFixed(1)}%: <b>${signed(v)}</b> points per 100 games (95% interval ${signed(TILT.lo[i])} to ${signed(TILT.hi[i])}), ${fmt(LADDER.nCtrl[i])} games.`);
+    bindTip(rect,`<div class="t">After ${xPhrase(x)}</div>Average score in the next game: <b>${LADDER.ctrl[i].toFixed(1)}</b> points per 100 games against an expected `+
+      `${LADDER.expected[i].toFixed(1)}: <b>${signed(v)}</b> (95% interval ${signed(TILT.lo[i])} to ${signed(TILT.hi[i])}), ${fmt(LADDER.nCtrl[i])} games.`);
   });
   txt(svg,L+(W-L-R)/2,H-12,W<560?"Streak just ended (losses left, wins right)":"Streak just ended (losses on the left, wins on the right)",{class:"axis","text-anchor":"middle"});
 }
