@@ -837,8 +837,9 @@ emit(
     "speed",
 )
 
-# move quality: blunders per 100 own moves in the uniformly analysed arm (rapid/classical)
-fl = pl.read_parquet(OUT / "flaws_byus.parquet").drop("tc")
+# move quality: blunders per 100 own moves in every game with a full engine evaluation
+# (lichess-analysed or evaluated by the benchmark pipeline), rapid/classical
+fl = pl.read_parquet(OUT / "flaws.parquet").drop("tc")
 bq = (
     story.join(fl, on="game_id", how="inner")
     .with_columns(
@@ -854,7 +855,11 @@ bq = (
         opp_bl100=pl.col("opp_bl") / (pl.col("ply_count") / 2) * 100,
     )
 )
-bq = bq.filter(pl.col("in_session") & (pl.col("ply_count") >= 20))
+bq = bq.filter(
+    pl.col("in_session")
+    & (pl.col("ply_count") >= 20)
+    & pl.col("tc").is_in(["rapid", "classical"])
+)
 rows = []
 for tc in ["rapid", "classical", "all"]:
     d = bq if tc == "all" else bq.filter(pl.col("tc") == tc)
@@ -873,7 +878,7 @@ for tc in ["rapid", "classical", "all"]:
         )
     rows.append(r)
 emit(
-    "6e. Move quality: blunders per 100 own moves after a streak (uniformly analysed arm, rapid/classical)",
+    "6e. Move quality: blunders per 100 own moves after a streak (all games with a full engine evaluation, rapid/classical)",
     pl.DataFrame(rows),
     "blunders",
 )

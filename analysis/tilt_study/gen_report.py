@@ -389,8 +389,8 @@ streak is supposed to cause, not as a claim to have isolated it.
    {q("rapid", "next_within_60s_unconditional_win"):.0f}%). The revenge rematch scores {rv("all", "rematch_resid_after_loss"):+.1f}
    against {rv("all", "fresh_resid_after_loss"):+.1f} for a fresh opponent; the post-win mirror shows a symmetric
    rematch bonus for the first rematch, so opponent selection explains part of the penalty, and the split between
-   matchup and state is not identified. Blunder rates in the engine-analysed subset are unchanged after one loss
-   and ≈0.5 per 100 moves higher after three, with the opponents' rate rising too (§6).
+   matchup and state is not identified. Blunder rates in games with an engine evaluation are essentially unchanged after one loss
+   and ≈0.6 per 100 moves higher after three, with the opponents' rate rising about half as much (§6).
 7. **The post-loss-minus-post-win difference varies between players, but weakly**: split-half
    r = {trait["split_half_r"]:.2f}, so an individual's own number from ~300 games is mostly noise (§7).
 
@@ -770,22 +770,22 @@ in seconds per move after a loss vs after a win (users with ≥ 20 games in each
 
 {table(speed, [("tc", "time control"), ("think_s_LLL+", "s/move after LLL+"), ("think_s_L", "after L"), ("think_s_W", "after W"), ("think_s_WWW+", "after WWW+"), ("fast_moves_pct_L", "≤ 1 s moves after L %"), ("fast_moves_pct_W", "≤ 1 s moves after W %"), ("paired_users", "paired users"), ("paired_rel_change_pct", "paired change after L vs W %"), ("share_users_faster_after_loss", "share of users faster after L %")])}
 
-**Move quality**: blunders per 100 own moves in the uniformly analysed arm (games with full FlawChess
-Stockfish evaluation, rapid and classical, ≥ 20 plies), own and opponent's, by streak. After a single
-loss the rate is unchanged ({pick(blunders, "blunders_per_100_L", tc="all"):.1f} vs {pick(blunders, "blunders_per_100_W", tc="all"):.1f}
+**Move quality**: blunders per 100 own moves in every game with a full engine evaluation (a Lichess
+computer analysis requested by either player, or a Stockfish evaluation run by the FlawChess benchmark
+pipeline; rapid and classical, ≥ 20 plies), own and opponent's, by streak. After a single
+loss the rate is essentially unchanged ({pick(blunders, "blunders_per_100_L", tc="all"):.1f} vs {pick(blunders, "blunders_per_100_W", tc="all"):.1f}
 after a win, where the score effect is also ≈ 0). After 3+ losses it is higher by
 ≈{pick(blunders, "blunders_per_100_LLL+", tc="rapid") - pick(blunders, "blunders_per_100_W", tc="rapid"):.1f} per
 100 moves (rapid {pick(blunders, "blunders_per_100_LLL+", tc="rapid"):.1f} [{pick(blunders, "lo_LLL+", tc="rapid"):.1f}, {pick(blunders, "hi_LLL+", tc="rapid"):.1f}]
 vs {pick(blunders, "blunders_per_100_W", tc="rapid"):.1f} [{pick(blunders, "lo_W", tc="rapid"):.1f}, {pick(blunders, "hi_W", tc="rapid"):.1f}]).
-The opponent's rate rises in the same games, which fits a game-mix effect (sharper, faster games) as well
-as a change in the player; the data cannot separate the two, and the arm is a selected subset (the
-complement of the user-requested-analysis set), so this is an observation about that subset:
+The opponent's rate rises in the same games, by about half as much, which fits a game-mix effect
+(sharper, faster games) as well as a change in the player; the data cannot separate the two. Whether a
+game has an evaluation at all is not independent of the streak (§6a: the analysis rate is a few points
+lower after long losing streaks, and Lichess-analysed games carry fewer blunders per move than the
+benchmark-evaluated ones), but the analysed share moves by about 6 points between LLL+ and WWW+ against a
+level gap of about 1.4 per 100 moves, so the mix can account for at most ≈0.1 of the difference below:
 
 {table(blunders, [("tc", "time control"), ("blunders_per_100_LLL+", "own, after LLL+"), ("opp_blunders_LLL+", "opponent, after LLL+"), ("blunders_per_100_L", "own, after L"), ("opp_blunders_L", "opponent, after L"), ("blunders_per_100_W", "own, after W"), ("opp_blunders_W", "opponent, after W"), ("blunders_per_100_WWW+", "own, after WWW+"), ("opp_blunders_WWW+", "opponent, after WWW+"), ("n_L", "games after L")])}
-
-The lichess-analysed (user-requested) evaluations are not used for this: analysis requests are
-themselves streak-dependent (§6a), which produces a spurious +15–20% ACPL after LLL+ (FINDINGS.md,
-additional probes).
 
 ### 6a. Analysis requests: does a player on a losing streak still look at the game?
 
@@ -818,8 +818,8 @@ pooled and ± 3 pp in rapid, so this is suggestive rather than established. The 
 long winning streaks is the mirror artefact (win streaks in rapid come from higher-rated players who
 analyse more; within player the win rate is flat). Draws are the most analysed result in raw terms
 ({av(0, "analysed_pct"):.1f}%) but {av(0, "deep_pp"):+.1f} pp within player: draw-heavy players are the rapid and
-classical crowd. The population-level fact the blunder analysis in §6 relies on (analysis requests are
-streak-dependent) stands, mostly through composition and session depth rather than mood.
+classical crowd. Analysis requests are mildly streak-dependent, mostly through composition and session depth rather
+than mood; §6 bounds the mix effect this has on the blunder comparison.
 
 ## 7. Does the post-loss dip vary between players?
 
@@ -915,7 +915,7 @@ bin/benchmark_db.sh start
 uv run --project analysis python analysis/tilt_study/extract_clocks.py           # clock_ends.parquet
 uv run --project analysis python analysis/tilt_study/probes/extract_acc.py       # acc.parquet (colour)
 uv run --project analysis python analysis/tilt_study/probes/extract_moves.py     # move_feats.parquet
-uv run --project analysis python analysis/tilt_study/probes/extract_flaws.py     # flaws_byus.parquet
+uv run --project analysis python analysis/tilt_study/probes/extract_flaws.py     # flaws.parquet
 uv run --project analysis python analysis/tilt_study/extract_endgame_entry.py    # endgame_entry.parquet
 uv run --project analysis python analysis/tilt_study/gen_story.py                # analysis/out/tilt/story/*.csv
 uv run --project analysis python analysis/tilt_study/robustness.py               # sensitivity, model, continuation

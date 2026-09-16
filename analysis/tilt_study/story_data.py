@@ -8,7 +8,7 @@ calibration. Everything reads the cached parquet extracts in analysis/out/tilt/:
     clock_ends.parquet     final clocks per side (extract_clocks.py)
     acc.parquet            user colour + lichess-imported accuracy (probes/extract_acc.py)
     move_feats.parquet     per-side think-time features (probes/extract_moves.py)
-    flaws_byus.parquet     blunders/mistakes in the uniformly analysed arm (probes/extract_flaws.py)
+    flaws.parquet          blunders/mistakes in every game with a full engine evaluation (probes/extract_flaws.py)
     endgame_entry.parquet  eval at endgame entry (extract_endgame_entry.py)
 
 Definitions (the technical report quotes these):

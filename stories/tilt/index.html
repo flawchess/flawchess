@@ -195,8 +195,7 @@
   <p class="sub">To find out, I took the FlawChess benchmark database, <b>2.67 million rated Lichess
   games</b> from 4,487 players across bullet, blitz, rapid and classical, lined up each player's games in order,
   and looked at what happens in the game <i>after</i> a losing streak. The short version: <b>your own stats overstate
-  tilt badly</b>, <b>what is left once you compare like with like is small</b>, and <b>the data cannot tell you whether
-  stopping helps</b>.</p>
+  tilt badly</b> and <b>what is left once you compare like with like is small</b>.</p>
   <div class="hero-stats" aria-label="The game after three straight losses">
     <div class="tile loss"><div class="big">50.1%</div><div class="lbl">your score in the game after <b>three straight losses</b></div></div>
     <div class="tile draw"><div class="big">50.7%</div><div class="lbl">what your rating says it should be</div></div>
@@ -242,8 +241,12 @@
     <a href="#behaviour">section 6</a>.</li>
   </ul>
   <p class="lede" style="margin-top:12px">What survives all four: <b>48%</b> after six losses, <b>53%</b> after six
-  wins. Even that is not all tilt. Within 100 points, the opponent after a losing streak is still slightly stronger on average and
-  the one after a winning streak slightly weaker (the streak came from that pool, and so does the next game), so what your rating <i>predicts</i> for the next game is 50.3% and 51.0%. The gap
+  wins. Even that is not all tilt. Within 100 points, the next game is still not quite an even pairing. Streaks tend to
+  come from lopsided stretches, a run of games against people rated a little above you or a little below you, and the next
+  game usually comes from the same stretch. So, relative to your own rating at that moment, the opponent after a losing
+  streak is on average a few points above you and the one after a winning streak a few points below, and what your rating
+  <i>predicts</i> for the next game is 50.3% and 51.0%, against 50.8% for an ordinary game in this sample (the dotted line
+  is that prediction, and its zero point is the sample's own average, not 50%). The gap
   between the solid line and the dotted line is what is left: <b>&minus;2.0</b> points after losses, and after wins its
   mirror image, what sports science calls the <b>hot hand</b>: <b>+1.7</b>. Both are small. This story calls the gap
   after losses tilt for short, but it is a shortfall against a benchmark, not a reading of anyone's mood: fatigue,
@@ -296,7 +299,7 @@
   <p class="lede">The same picture holds when each player is compared only with themselves. A model that holds the
   player, the exact clock setting, the rating gap and the colour fixed puts the game after six or more losses
   <b>2.3 points</b> below that player's game after a single loss, and the swing from six wins to six losses at 4.4
-  points (technical report, section 2d). Changing the definition of a sitting or the account filters moves the tails
+  points (<a href="https://github.com/flawchess/flawchess/blob/main/stories/tilt/tilt-report.md#2d-within-player-model" data-umami-event="outbound-report-tilt">technical report, section 2d</a>). Changing the definition of a sitting or the account filters moves the tails
   by a few tenths of a point.</p>
   <p class="ctitle">Score minus expectation in the next game</p>
   <figure aria-label="Bar chart: score minus expectation in the next game, by streak length from six-plus losses to six-plus wins, with confidence intervals">
@@ -479,11 +482,13 @@
   <p class="lede">If the score barely moves, where does the feeling go? Into behaviour. After a loss, players:</p>
   <ul class="adv-list">
     <li><b>Speed up.</b> Time per move in the opening and early middlegame (moves 3 to 20) falls <b>2 to 4%</b> after a loss
-    compared with after a win, for two thirds to three quarters of all players.</li>
-    <li><b>Blunder a little more, eventually, maybe.</b> In rapid games with full engine analysis, <b>6.5 blunders per
-    100 moves</b> after a loss and 6.4 after a win; after three or more losses, 7.0. The opponent's rate rises in those
-    same games, so this may be the kind of game rather than the player, and only the games FlawChess happened to analyse
-    are counted. On the clock the change shows after one loss; on the board, if at all, after three.</li>
+    compared with after a win, comparing each player with themselves. It is not a few people driving the average:
+    two thirds to three quarters of players are individually faster after a loss.</li>
+    <li><b>Blunder a little more, eventually, maybe.</b> In rapid games with an engine evaluation (a Lichess analysis
+    requested by either player, or Stockfish run by the study), <b>5.8 blunders per 100 moves</b> after a loss and 5.7
+    after a win; after three or more losses, 6.3. The opponent's rate rises in those same games too, by about half as
+    much, so part of this may be the kind of game rather than the player. On the clock the change shows after one
+    loss; on the board, if at all, after three.</li>
     <li><b>Quit, or rush.</b> A bullet session ends after <b>22.3%</b> of losses and 17.2% of wins; 55% of bullet
     sessions end on a loss, against a 48% loss rate. Rapid players who carry on do it faster after a loss: of those who
     play again within the hour, 51% start within a minute after a loss and 40% after a win (counting everyone, quitters
@@ -781,7 +786,7 @@ function renderC1(){
     const hit=el("rect",{x:xFor(i)-14,y:T,width:28,height:H-T-B,fill:"transparent"},svg);
     bindTip(hit,`<div class="t">After ${xPhrase(x)}</div>Raw history: <b>${LADDER.raw[i].toFixed(1)}%</b> (${fmt(LADDER.nRaw[i])} games)<br>`+
       `Same rating only: ${LADDER.equal[i].toFixed(1)}%<br>Controlled: <b>${LADDER.ctrl[i].toFixed(1)}%</b> (${fmt(LADDER.nCtrl[i])} games)<br>`+
-      `Expected: ${LADDER.expected[i].toFixed(1)}%<br>Left over: <b>${signed(LADDER.ctrl[i]-LADDER.expected[i])}</b>`);
+      `Expected: ${LADDER.expected[i].toFixed(1)}%<br>Maybe tilt: <b>${signed(LADDER.ctrl[i]-LADDER.expected[i])}</b>`);
   });
   annotateLossEnd(svg,xFor,yFor,L,W);
 }
@@ -798,11 +803,11 @@ function annotateLossEnd(svg,xFor,yFor,L,W){
   const tilt=LADDER.ctrl[0]-LADDER.expected[0],notTilt=LADDER.raw[0]-LADDER.ctrl[0];
   // tilt sliver: label in the blank top-left, leader down into the red region at its thick end
   const yT=yFor(54.5);
-  txt(svg,tx,yT,`Left over: ${signed(tilt)} points`,{class:"dlabel",fill:COL.loss});
+  txt(svg,tx,yT,`Maybe tilt: ${signed(tilt)} points`,{class:"dlabel",fill:COL.loss});
   leader(hx,yT-5,yFor((LADDER.ctrl[0]+LADDER.expected[0])/2),COL.loss);
   // brown wedge: label under the raw line, leader up into the wedge between raw and controlled
   const yN=yFor(42.0);
-  txt(svg,tx,yN,`Explained: ${signed(notTilt)} points`,{class:"dlabel",fill:COL.brown});
+  txt(svg,tx,yN,`Not tilt: ${signed(notTilt)} points`,{class:"dlabel",fill:COL.brown});
   txt(svg,tx,yN+15,"opponents, calendar, rematches, accounts",{class:"axis","font-size":"13"});
   leader(hx,yN-5,yFor((lerp("raw")+lerp("ctrl"))/2),COL.brown);
 }

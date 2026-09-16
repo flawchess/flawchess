@@ -76,8 +76,8 @@ streak is supposed to cause, not as a claim to have isolated it.
    25%). The revenge rematch scores -1.8
    against -0.5 for a fresh opponent; the post-win mirror shows a symmetric
    rematch bonus for the first rematch, so opponent selection explains part of the penalty, and the split between
-   matchup and state is not identified. Blunder rates in the engine-analysed subset are unchanged after one loss
-   and ≈0.5 per 100 moves higher after three, with the opponents' rate rising too (§6).
+   matchup and state is not identified. Blunder rates in games with an engine evaluation are essentially unchanged after one loss
+   and ≈0.6 per 100 moves higher after three, with the opponents' rate rising about half as much (§6).
 7. **The post-loss-minus-post-win difference varies between players, but weakly**: split-half
    r = 0.06, so an individual's own number from ~300 games is mostly noise (§7).
 
@@ -776,26 +776,26 @@ in seconds per move after a loss vs after a win (users with ≥ 20 games in each
 | rapid | 10.7 | 11.0 | 11.3 | 11.5 | 12.3 | 11.2 | 701 | -3.5 | 70.2 |
 | classical | 33.0 | 34.4 | 36.7 | 37.0 | 2.7 | 2.4 | 89 | -4.0 | 66.3 |
 
-**Move quality**: blunders per 100 own moves in the uniformly analysed arm (games with full FlawChess
-Stockfish evaluation, rapid and classical, ≥ 20 plies), own and opponent's, by streak. After a single
-loss the rate is unchanged (6.4 vs 6.4
+**Move quality**: blunders per 100 own moves in every game with a full engine evaluation (a Lichess
+computer analysis requested by either player, or a Stockfish evaluation run by the FlawChess benchmark
+pipeline; rapid and classical, ≥ 20 plies), own and opponent's, by streak. After a single
+loss the rate is essentially unchanged (5.8 vs 5.7
 after a win, where the score effect is also ≈ 0). After 3+ losses it is higher by
 ≈0.6 per
-100 moves (rapid 7.0 [6.7, 7.3]
-vs 6.4 [6.1, 6.6]).
-The opponent's rate rises in the same games, which fits a game-mix effect (sharper, faster games) as well
-as a change in the player; the data cannot separate the two, and the arm is a selected subset (the
-complement of the user-requested-analysis set), so this is an observation about that subset:
+100 moves (rapid 6.3 [6.1, 6.5]
+vs 5.7 [5.5, 5.9]).
+The opponent's rate rises in the same games, by about half as much, which fits a game-mix effect
+(sharper, faster games) as well as a change in the player; the data cannot separate the two. Whether a
+game has an evaluation at all is not independent of the streak (§6a: the analysis rate is a few points
+lower after long losing streaks, and Lichess-analysed games carry fewer blunders per move than the
+benchmark-evaluated ones), but the analysed share moves by about 6 points between LLL+ and WWW+ against a
+level gap of about 1.4 per 100 moves, so the mix can account for at most ≈0.1 of the difference below:
 
 | time control | own, after LLL+ | opponent, after LLL+ | own, after L | opponent, after L | own, after W | opponent, after W | own, after WWW+ | opponent, after WWW+ | games after L |
 |---|---|---|---|---|---|---|---|---|---|
-| rapid | 7.0 | 7.0 | 6.5 | 6.6 | 6.4 | 6.6 | 6.5 | 6.6 | 4,539 |
-| classical | 6.8 | 7.1 | 6.2 | 6.6 | 6.5 | 7.2 | 6.1 | 7.1 | 929 |
-| all | 7.0 | 7.0 | 6.4 | 6.6 | 6.4 | 6.7 | 6.5 | 6.7 | 5,468 |
-
-The lichess-analysed (user-requested) evaluations are not used for this: analysis requests are
-themselves streak-dependent (§6a), which produces a spurious +15–20% ACPL after LLL+ (FINDINGS.md,
-additional probes).
+| rapid | 6.3 | 6.0 | 5.8 | 5.7 | 5.7 | 5.7 | 5.6 | 5.7 | 21,019 |
+| classical | 6.1 | 5.8 | 5.8 | 5.5 | 5.8 | 5.7 | 5.8 | 5.7 | 3,721 |
+| all | 6.2 | 6.0 | 5.8 | 5.7 | 5.7 | 5.7 | 5.6 | 5.7 | 24,740 |
 
 ### 6a. Analysis requests: does a player on a losing streak still look at the game?
 
@@ -842,8 +842,8 @@ pooled and ± 3 pp in rapid, so this is suggestive rather than established. The 
 long winning streaks is the mirror artefact (win streaks in rapid come from higher-rated players who
 analyse more; within player the win rate is flat). Draws are the most analysed result in raw terms
 (25.4%) but -1.7 pp within player: draw-heavy players are the rapid and
-classical crowd. The population-level fact the blunder analysis in §6 relies on (analysis requests are
-streak-dependent) stands, mostly through composition and session depth rather than mood.
+classical crowd. Analysis requests are mildly streak-dependent, mostly through composition and session depth rather
+than mood; §6 bounds the mix effect this has on the blunder comparison.
 
 ## 7. Does the post-loss dip vary between players?
 
@@ -939,7 +939,7 @@ bin/benchmark_db.sh start
 uv run --project analysis python analysis/tilt_study/extract_clocks.py           # clock_ends.parquet
 uv run --project analysis python analysis/tilt_study/probes/extract_acc.py       # acc.parquet (colour)
 uv run --project analysis python analysis/tilt_study/probes/extract_moves.py     # move_feats.parquet
-uv run --project analysis python analysis/tilt_study/probes/extract_flaws.py     # flaws_byus.parquet
+uv run --project analysis python analysis/tilt_study/probes/extract_flaws.py     # flaws.parquet
 uv run --project analysis python analysis/tilt_study/extract_endgame_entry.py    # endgame_entry.parquet
 uv run --project analysis python analysis/tilt_study/gen_story.py                # analysis/out/tilt/story/*.csv
 uv run --project analysis python analysis/tilt_study/robustness.py               # sensitivity, model, continuation
