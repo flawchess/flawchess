@@ -8,6 +8,8 @@ The blog is named **Chess Data Stories** (not "FlawChess Data Stories"): use tha
 
 Data-story work is exempt from GSD phase planning: no roadmap phase, no PLAN.md, no executor agents. Work directly on a long-lived `study/<slug>` branch (e.g. `study/game-review-study`) covering the whole study — EDA notebook, generation scripts, report, and story — and squash-merge it to `main` when the story ships. Seeds under `.planning/seeds/` may still track story ideas and findings; they just don't spawn phases.
 
+**Landing on `main` does not publish.** `.github/workflows/pages.yml` deploys only the story directories listed in `stories/published.txt` (via `stories/stage.sh`), and the deploy fails if `stories/index.html` or `stories/sitemap.xml` links to an unlisted slug. Publishing a story is one explicit commit: add the slug to `published.txt`, add the landing-page card and the sitemap entry. Never add a slug to `published.txt` without the user's explicit go-ahead. Preview what `main` would deploy with `bash stories/stage.sh stories /tmp/site`.
+
 ## Analysis rules (every study, from the first EDA query on)
 
 - **Always apply the equal-footing filter**: only score games where the two players are within 100 rating points (`abs(white_rating - black_rating) <= 100`, the canonical `EQUAL_FOOTING_FILTER` in `scripts/benchmarks/sql.py`). The 2400 bucket faces systematically weaker opponents (thin pool at the top), which biases every per-bucket outcome; the filter removes that. Sequence features (streaks, sessions, breaks, rematches) may be computed over the full game history, but the games whose *outcome* enters a statistic must pass the filter, and calibration/expected-score tables must be fitted on filtered games only.
