@@ -18,7 +18,7 @@ import {
 import { cn } from '@/lib/utils';
 import { FLAWCHESS_ENGINE_ACCENT } from '@/lib/theme';
 import { trackEvent } from '@/lib/analytics';
-import { Search, Scale, Dumbbell, TrophyIcon, Timer, Compass, Loader2, UserPlus, DoorOpen, ChessKnight } from 'lucide-react';
+import { Search, Bot, Dumbbell, TrophyIcon, Timer, Compass, Loader2, UserPlus, DoorOpen, ChessKnight } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 
 // Feature sections — the first entry is rendered in the hero (desktop right column +
@@ -40,7 +40,6 @@ const FEATURES: {
         'The FlawChess Engine shows your best practical move, not just the objective one: every move is scored by how likely you are to find and execute it, including the follow-ups.',
         'Judged against a typical human opponent, not perfect defense: each move is scored against the replies a player at their level would realistically pick, so the practical best can differ from the Stockfish best.',
         'Tuned to your level: powered by Stockfish + Maia, with a “Play style” dial that shifts from human-realistic to engine-precise.',
-        'Play games against human-like bots with different playstyles, then analyze the result with Stockfish, Maia, and the FlawChess Engine.',
     ],
     screenshot: { src: '/screenshots/flawchess-engine.png', alt: 'FlawChess Engine board view showing the practical score and objective Stockfish evaluation for each candidate move' },
     imagePosition: 'right',
@@ -73,6 +72,18 @@ const FEATURES: {
     imagePosition: 'right',
   },
   {
+    slug: 'bots',
+    icon: Bot,
+    heading: 'Human-like Bots',
+    desc: [
+        'Play against 24 named opponents driven by the FlawChess Engine: they blunder, overpress, and grind like real players, not like a computer with a handicap.',
+        'Four playing styles (Attacker, Trickster, Grinder, Wall) across six rating rungs from 800 to 1800, each with its own opening book and personality.',
+        'Every finished game lands in your library, ready for Stockfish, Maia, and FlawChess Engine analysis like any other game.',
+    ],
+    screenshot: { src: '/screenshots/bots.png', alt: 'Bots page showing four playing-style columns (Attacker, Trickster, Grinder, Wall) with named animal opponents, approximate ratings, and difficulty stars' },
+    imagePosition: 'left',
+  },
+  {
     slug: 'opening-explorer',
     icon: Compass,
     heading: 'Opening Explorer & Insights',
@@ -80,10 +91,11 @@ const FEATURES: {
         'Get a detailed statistical analysis for every move you’ve played.',
         'Compare your win/draw/loss rate to the Stockfish evaluation at the end of the opening.',
         'Scan the first 8 moves of all your games to surface opening strengths and weaknesses.',
+        'Bookmark your favorite openings, compare their performance, and see how your opening study impacts your win rate over time.',
         'Scout your opponent\'s repertoire before a match.',
     ],
     screenshot: { src: '/screenshots/opening-explorer.png', alt: 'Board with move explorer showing win/draw/loss rate and stockfish evaluation per candidate move' },
-    imagePosition: 'left',
+    imagePosition: 'right',
   },
   {
     slug: 'endgame-analytics',
@@ -95,7 +107,7 @@ const FEATURES: {
       'Get personalized feedback on what your stats mean.',
     ],
     screenshot: { src: '/screenshots/endgame-metrics-and-elo-llm-badge.png', alt: 'Endgame metrics and Endgame ELO timeline over time' },
-    imagePosition: 'right',
+    imagePosition: 'left',
   },
   {
     slug: 'time-management',
@@ -107,18 +119,6 @@ const FEATURES: {
         'Compare your flag rate to your opponents\' per time control.',
     ],
     screenshot: { src: '/screenshots/time-management-stats.png', alt: 'Average clock difference over time and time-pressure-vs-performance charts' },
-    imagePosition: 'left',
-  },
-  {
-    slug: 'opening-comparison',
-    icon: Scale,
-    heading: 'Opening Comparison and Tracking',
-    desc: [
-        'Bookmark your favorite openings and compare their performance.',
-        'See how your opening study impacts your win rate over time.',
-        'Filter by time control to find which openings work best where.',
-    ],
-    screenshot: { src: '/screenshots/opening-comparison.png', alt: 'Win rate trends over time for multiple openings' },
     imagePosition: 'right',
   },
 ];
