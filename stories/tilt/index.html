@@ -16,7 +16,7 @@
 <meta property="og:image" content="https://stories.flawchess.com/tilt/social-card.png">
 <meta property="og:image:width" content="1200">
 <meta property="og:image:height" content="630">
-<meta property="og:image:alt" content="You've lost three in a row. Should you stop? Next-game score 50.1%, expected 50.6%: tilt costs 0.6 points.">
+<meta property="og:image:alt" content="You've lost three in a row. Should you stop? Next-game score 50.08%, expected 50.64%: tilt costs 0.56 points.">
 <meta property="article:published_time" content="2026-09-08">
 <meta property="article:author" content="Adrian Imfeld">
 <meta property="article:section" content="Chess">
@@ -190,16 +190,16 @@
   <h1>You've lost three in a row.<br><span class="accent">Should you stop?</span></h1>
   <p class="sub">Every chess player knows the feeling: a couple of losses, and the next game already feels lost
   before it starts. Tilt has a name, endless forum threads devoted to it, and a standard piece of advice attached to it, usually some
-  version of "stop after two losses". Many players have strong opinions about tilt, but what does the data
+  version of "stop after three losses". Many players have strong opinions about tilt, but what does the data
   actually say?</p>
   <p class="sub">To find out, I took the FlawChess benchmark database, <b>2.67 million rated Lichess
   games</b> from 4,487 players across bullet, blitz, rapid and classical, lined up each player's games in order,
   and looked at what happens in the game <i>after</i> a losing streak. The short version: <b>tilt is real</b>,
   <b>it is far smaller than your own stats make it look</b>, and <b>the standard advice barely moves the needle</b>.</p>
   <div class="hero-stats" aria-label="The game after three straight losses">
-    <div class="tile loss"><div class="big">50.1%</div><div class="lbl">your score in the game after <b>three straight losses</b></div></div>
-    <div class="tile draw"><div class="big">50.6%</div><div class="lbl">what your rating says it should be</div></div>
-    <div class="tile tilt"><div class="big">&minus;0.6</div><div class="lbl">points of score lost to tilt: <b>one extra loss per 180 games</b></div></div>
+    <div class="tile loss"><div class="big">50.08%</div><div class="lbl">your score in the game after <b>three straight losses</b></div></div>
+    <div class="tile draw"><div class="big">50.64%</div><div class="lbl">what your rating says it should be</div></div>
+    <div class="tile tilt"><div class="big">&minus;0.56</div><div class="lbl">points of score lost to tilt: <b>one extra loss per 180 games</b></div></div>
   </div>
   <p class="hero-note">"Score" is the usual chess average: a win counts 1, a draw &frac12;, a loss 0, averaged over
   every game in the group, so 50% means wins and losses balance out. 36,091 games played right after exactly three losses in one sitting, against a fresh
@@ -212,8 +212,9 @@
   <div class="card-head"><div class="num">1</div>
   <h2>Your stats say tilt is huge. They are wrong.</h2>
   <a class="anchor" href="#raw-stats" aria-label="Link to this section">#</a></div>
-  <p class="lede">Take any player's game history and look at the game right after a streak. After six or more
-  straight losses, players average a <b>43%</b> score in the next game. After six or more straight wins, <b>65%</b>. That is a 22-point
+  <p class="lede">Let's start with the naive version of the question: line up each player's games and look at the one right after a streak.
+  In the 2.67 million games here, players average a <b>43%</b> score in the game after six or more
+  straight losses, and <b>65%</b> after six or more straight wins. That is a 22-point
   swing, and it is the kind of number articles about tilt usually report: one <a href="https://chessanalysis.co/research/chess-improvement-rating-trajectories" data-umami-event="outbound-citation" data-umami-event-url="chessanalysis.co">analysis of 840,000 Lichess games</a>
   puts the next game at 39% after five straight losses and 58% after five straight wins, and a <a href="http://seandevine.org/blog/chessBlog.html" data-umami-event="outbound-citation" data-umami-event-url="seandevine.org">regression on a
   million games</a> finds that even the result from seven games back still predicts the current one. Almost none of it
@@ -223,10 +224,13 @@
     moves (six straight wins lift your rating by about 30 points), but half of all streaks of six or more were played
     against opponents averaging more than 100 points weaker: arenas, fresh accounts, the thin top of the pool, a
     friend who keeps accepting. The next opponent comes from the same place, on average <b>175 rating points weaker</b>
-    after six or more wins and 61 points stronger after six or more losses. Keep only games against an opponent within
+    after six or more wins and 61 points stronger after six or more losses. Keep only next games against an opponent within
     100 points and the swing shrinks to 48&ndash;54%.</li>
-    <li><b>The calendar.</b> Seven in ten streaks of six or more span more than one sitting, and four in ten more than
-    a day. That is a slump or a climb, not a state of mind. Keep only streaks that happened in one sitting.</li>
+    <li><b>The calendar.</b> Seven in ten streaks of six or more span more than one sitting (a break of an hour or
+    more starts a new sitting), and four in ten more than a day. A bad mood can certainly last that long, but over days a streak also picks up everything else that
+    drifts: your form, your rating, the pool you are being paired from. There is no way to tell those apart from
+    the mood, so this study asks the narrower question the "stop after three losses" advice is about: what a streak
+    does to your next game while you are still at the board. Keep only streaks that happened in one sitting.</li>
     <li><b>Accounts.</b> Players far from their usual level (second accounts, rating resets, three years of drift) are
     over-represented in long streaks. Drop each player's first 100 games in the record and any game played more than
     150 points from their long-run rating.</li>
@@ -237,9 +241,10 @@
     <a href="#behaviour">section 6</a>.</li>
   </ul>
   <p class="lede" style="margin-top:12px">What survives all four: <b>48%</b> after six losses, <b>53%</b> after six
-  wins. Even that is not all tilt. The pairing system still leaves you slightly the weaker player after losses and
-  slightly the stronger after wins, so what your rating <i>predicts</i> for the next game is 50.2% and 51.1%. The gap
-  between the solid line and the dotted line is tilt, or its opposite: <b>&minus;2.1</b> and <b>+2.1</b> points.</p>
+  wins. Even that is not all tilt. Within 100 points, the opponent after a losing streak is still slightly stronger on average and
+  the one after a winning streak slightly weaker (the streak came from that pool, and so does the next game), so what your rating <i>predicts</i> for the next game is 50.2% and 51.1%. The gap
+  between the solid line and the dotted line is tilt after losses, and after wins its mirror image, what sports
+  science calls the <b>hot hand</b>: <b>&minus;2.1</b> and <b>+2.1</b> points. Both are real, and both are small.</p>
   <p class="ctitle">Score in the next game, by the streak that just ended</p>
   <div class="legend" id="lg1"></div>
   <figure aria-label="Line chart: next-game score by streak length, as it appears in raw game history versus after controlling for opponent rating, session and account state, with the rating-based expectation">
@@ -280,11 +285,11 @@
   <h2>What is left is real, small, and grows with the streak</h2>
   <a class="anchor" href="#how-big" aria-label="Link to this section">#</a></div>
   <p class="lede">Score minus expectation, one streak length at a time. A single loss costs 0.2 points, barely
-  measurable. Two to four losses cost <b>0.5 to 0.8 points</b>, five cost 1.6, six or more cost 2.1. Wins mirror
-  it: three straight wins add 1.1 points, six or more add 2.1. To put those
+  measurable. Two to four losses cost <b>0.5 to 0.8 points</b>, five cost 1.6, six or more cost 2.1. The hot hand
+  mirrors it: three straight wins add 1.1 points, six or more add 2.1. To put those
   numbers in perspective, after three straight losses you still <b>win the next game 48.1%</b> of the time and lose
   47.9%. The odds of losing the next game only cross 50% at the sixth loss in a row.</p>
-  <p class="ctitle">Tilt, and its opposite: score minus expectation in the next game</p>
+  <p class="ctitle">Tilt and the hot hand: score minus expectation in the next game</p>
   <figure aria-label="Bar chart: score minus expectation in the next game, by streak length from six-plus losses to six-plus wins, with confidence intervals">
     <div id="c2"></div>
   </figure>
@@ -715,29 +720,40 @@ function linePath(pts){return pts.map((p,i)=>(i?"L":"M")+p[0]+","+p[1]).join(" "
 
 /* ---------- chart 1: the control ladder ----------
    Three lines on the same axis: the raw history (what a player sees in their stats), the
-   controlled line (same rating, one sitting, settled accounts) with its interval band, and
-   the rating-based expectation. The vertical distance between the last two is tilt. */
+   controlled line (same rating, one sitting, fresh opponent, settled accounts) and the
+   rating-based expectation. The two regions between them carry the message: the wide brown
+   wedge (raw minus controlled) is not tilt, the thin red/green sliver (controlled minus
+   expected) is. Both gaps are labelled in-plot at the losing end (annotateLossEnd). The 95% band on the controlled line is left to chart 2, which shows it as
+   whiskers; here it would sit on top of the sliver and hide it. */
+const FILL_NOT_TILT="rgba(188,149,96,.32)",FILL_TILT_LOSS="rgba(176,42,42,.38)",FILL_TILT_WIN="rgba(22,101,52,.32)";
+function region(svg,upper,lower,fill){el("path",{d:linePath(upper.concat(lower.slice().reverse()))+" Z",fill,stroke:"none"},svg);}
 function renderC1(){
-  const W=chartWidth("c1"),wide=W>=700,L=W<560?46:60,R=wide?150:20,T=18,B=64,H=430,min=40,max=68;
-  const svg=svgRoot("c1",W,H,"Next-game score by streak: raw history, controlled, and expected");
+  const W=chartWidth("c1"),L=W<560?46:60,R=20,T=18,B=64,H=430,min=40,max=68;
+  const svg=svgRoot("c1",W,H,"Next-game score by streak: raw history, controlled, and expected, with the gap between raw and controlled shaded as not tilt and the gap between controlled and expected shaded as tilt");
   const yFor=v=>T+(H-T-B)*(1-(v-min)/(max-min));
   const xFor=i=>L+(W-L-R)*(i/(XS.length-1));
   grid(svg,L,W-R,yFor,[40,45,50,55,60,65],v=>v+"%");
   XS.forEach((x,i)=>txt(svg,xFor(i),H-36,xLabel(x),{class:"axis","text-anchor":"middle"}));
-  txt(svg,L+(W-L-R)/2,H-12,"Streak just ended (losses on the left, wins on the right)",{class:"axis","text-anchor":"middle"});
-  // interval band for the controlled line
-  const band=XS.map((x,i)=>[xFor(i),yFor(LADDER.ctrlHi[i])]).concat(XS.map((x,i)=>[xFor(i),yFor(LADDER.ctrlLo[i])]).reverse());
-  el("path",{d:linePath(band)+" Z",fill:COL.ink,opacity:0.1},svg);
+  txt(svg,L+(W-L-R)/2,H-12,W<560?"Streak just ended (losses left, wins right)":"Streak just ended (losses on the left, wins on the right)",{class:"axis","text-anchor":"middle"});
+  const pts=k=>XS.map((x,i)=>[xFor(i),yFor(LADDER[k][i])]);
+  const raw=pts("raw"),ctrl=pts("ctrl"),exp=pts("expected");
+  // not tilt: everything between the raw history and the controlled line
+  region(svg,raw,ctrl,FILL_NOT_TILT);
+  // tilt: between the controlled line and the expectation, red on the loss side, green on the win side,
+  // split at the midpoint between -1 and +1 (there is no zero cell on the axis)
+  const half=XS.length/2,mid=(a,b)=>[(a[0]+b[0])/2,(a[1]+b[1])/2];
+  const cMid=mid(ctrl[half-1],ctrl[half]),eMid=mid(exp[half-1],exp[half]);
+  region(svg,ctrl.slice(0,half).concat([cMid]),exp.slice(0,half).concat([eMid]),FILL_TILT_LOSS);
+  region(svg,[cMid].concat(ctrl.slice(half)),[eMid].concat(exp.slice(half)),FILL_TILT_WIN);
   const series=[
-    {k:"raw",name:"In your raw game history",c:COL.brown,w:3,dash:null},
-    {k:"expected",name:"Expected from ratings",c:COL.draw,w:2.5,dash:"7 5"},
-    {k:"ctrl",name:"Same rating, one sitting, fresh opponent, settled accounts",c:COL.ink,w:3,dash:null}
+    {k:"raw",c:COL.brown,w:3,dash:null},
+    {k:"expected",c:COL.draw,w:2.5,dash:"7 5"},
+    {k:"ctrl",c:COL.ink,w:3,dash:null}
   ];
   series.forEach(s=>{
-    const pts=XS.map((x,i)=>[xFor(i),yFor(LADDER[s.k][i])]);
-    const p=el("path",{d:linePath(pts),fill:"none",stroke:s.c,"stroke-width":s.w,"stroke-linecap":"round","stroke-linejoin":"round"},svg);
+    const p=el("path",{d:linePath(pts(s.k)),fill:"none",stroke:s.c,"stroke-width":s.w,"stroke-linecap":"round","stroke-linejoin":"round"},svg);
     if(s.dash)p.setAttribute("stroke-dasharray",s.dash);
-    if(s.k!=="expected")pts.forEach((pt,i)=>{
+    if(s.k!=="expected")pts(s.k).forEach(pt=>{
       el("circle",{cx:pt[0],cy:pt[1],r:4.5,fill:s.c,stroke:"#fff","stroke-width":2},svg);
     });
   });
@@ -748,12 +764,28 @@ function renderC1(){
       `Same rating only: ${LADDER.equal[i].toFixed(1)}%<br>Controlled: <b>${LADDER.ctrl[i].toFixed(1)}%</b> (${fmt(LADDER.nCtrl[i])} games)<br>`+
       `Expected: ${LADDER.expected[i].toFixed(1)}%<br>Tilt: <b>${signed(LADDER.ctrl[i]-LADDER.expected[i])}</b>`);
   });
-  if(wide){
-    const last=XS.length-1;
-    txt2(svg,xFor(last)+12,yFor(LADDER.raw[last])+5,"Raw history",{class:"dlabel",fill:COL.brown});
-    txt2(svg,xFor(last)+12,yFor(LADDER.ctrl[last])-6,"Controlled",{class:"dlabel",fill:COL.ink});
-    txt2(svg,xFor(last)+12,yFor(LADDER.expected[last])+16,"Expected",{class:"dlabel",fill:COL.draw});
-  }
+  annotateLossEnd(svg,xFor,yFor,L,W);
+}
+/* In-plot annotations at the -6+ end, the side the story is about. Both labels sit in the
+   plot's empty corners (above the raw line top-left, below it bottom-left), so they cost no
+   margin and survive phone widths; an L-shaped leader ends with a dot inside the region it
+   names. Each leader crosses only the boundary of its own region (the dashed expectation for
+   the tilt sliver, the raw line for the wedge), never another series. */
+function annotateLossEnd(svg,xFor,yFor,L,W){
+  const slot=xFor(1)-xFor(0),ex=L+10,f=(ex-L)/slot,lerp=(k)=>LADDER[k][0]+(LADDER[k][1]-LADDER[k][0])*f;
+  const tx=L+34,hx=L+30,leader=(x0,y0,y1,c)=>{
+    el("path",{d:`M${hx},${y0} H${ex} V${y1}`,fill:"none",stroke:COL.draw,"stroke-width":1.2},svg);
+    el("circle",{cx:ex,cy:y1,r:3,fill:c},svg);};
+  const tilt=LADDER.ctrl[0]-LADDER.expected[0],notTilt=LADDER.raw[0]-LADDER.ctrl[0];
+  // tilt sliver: label in the blank top-left, leader down into the red region at its thick end
+  const yT=yFor(54.5);
+  txt(svg,tx,yT,`Tilt: ${signed(tilt)} points`,{class:"dlabel",fill:COL.loss});
+  leader(hx,yT-5,yFor((LADDER.ctrl[0]+LADDER.expected[0])/2),COL.loss);
+  // brown wedge: label under the raw line, leader up into the wedge between raw and controlled
+  const yN=yFor(42.0);
+  txt(svg,tx,yN,`Not tilt: ${signed(notTilt)} points`,{class:"dlabel",fill:COL.brown});
+  txt(svg,tx,yN+15,"opponents, calendar, accounts",{class:"axis","font-size":"13"});
+  leader(hx,yN-5,yFor((lerp("raw")+lerp("ctrl"))/2),COL.brown);
 }
 
 /* ---------- chart 2: tilt bars (score minus expectation) ---------- */
@@ -773,7 +805,7 @@ function renderC2(){
     bindTip(rect,`<div class="t">After ${xPhrase(x)}</div>Average score in the next game: <b>${LADDER.ctrl[i].toFixed(1)}%</b> against an expected `+
       `${LADDER.expected[i].toFixed(1)}%: <b>${signed(v)}</b> points (95% interval ${signed(TILT.lo[i])} to ${signed(TILT.hi[i])}), ${fmt(LADDER.nCtrl[i])} games.`);
   });
-  txt(svg,L+(W-L-R)/2,H-12,"Streak just ended (losses on the left, wins on the right)",{class:"axis","text-anchor":"middle"});
+  txt(svg,L+(W-L-R)/2,H-12,W<560?"Streak just ended (losses left, wins right)":"Streak just ended (losses on the left, wins on the right)",{class:"axis","text-anchor":"middle"});
 }
 
 /* ---------- chart 3: cold / hot bars by time control and by rating (two panels) ---------- */
@@ -934,7 +966,8 @@ function renderC6b(){
 /* ---------- static setup: legends ---------- */
 /* The "View the data" tables are static HTML in the page body (not JS-rendered):
    most AI crawlers don't execute JS, and the tables are the citable data. */
-legend("lg1",[["In your raw game history",COL.brown],["Same rating, one sitting, fresh opponent, settled accounts",COL.ink],["Expected from ratings",null," dash"]]);
+legend("lg1",[["In your raw game history",COL.brown],["Same rating, one sitting, fresh opponent, settled accounts",COL.ink],["Expected from ratings",null," dash"],
+  ["Looks like tilt or a hot hand, isn't: opponents, calendar, accounts",FILL_NOT_TILT],["Tilt (after losses)",FILL_TILT_LOSS],["Hot hand (after wins)",FILL_TILT_WIN]]);
 legend("lg3",[["After 3+ losses",COL.loss],["After 3+ wins",COL.win]]);
 legend("lg4",[["After 2+ losses",COL.loss],["After 2+ wins",COL.win]]);
 legend("lg6",[["After a loss",COL.loss],["After a win",COL.win],["New opponent",COL.draw]]);
