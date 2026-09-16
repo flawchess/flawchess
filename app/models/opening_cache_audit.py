@@ -49,6 +49,7 @@ from sqlalchemy import (
     String,
     Text,
     func,
+    text,
 )
 from sqlalchemy.dialects.postgresql import REAL
 from sqlalchemy.orm import Mapped, mapped_column
@@ -74,6 +75,15 @@ class OpeningCacheAudit(Base):
             name="ck_opening_cache_audit_status",
         ),
         Index("ix_opening_cache_audit_status", "status"),
+        # Supports the `sample_game_id -> games.id ON DELETE SET NULL` FK. Without
+        # it every user delete / re-import batch seq-scanned the 2.5M-row table
+        # (prod 2026-09-16 db report: 3,266 scans x 158 ms, 9B tuples read).
+        # Partial: only ~a third of rows carry a sample game.
+        Index(
+            "ix_opening_cache_audit_sample_game_id",
+            "sample_game_id",
+            postgresql_where=text("sample_game_id IS NOT NULL"),
+        ),
     )
 
     # Same key as opening_position_eval.full_hash — the cache row this audits.
