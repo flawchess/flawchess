@@ -13,7 +13,7 @@ progress:
   completed_plans: 6
 milestone_name: Train Bot-Narrated Onboarding & Verdicts
 last_activity: 2026-09-16
-last_activity_desc: "Completed quick task 260916-g38 (Sentry noise: Maia page-kill sentinel idle guard FLAWCHESS-BM, full-drain breaker single-target guard FLAWCHESS-5Q)"
+last_activity_desc: "Completed quick task 260916-gj7 (DB report follow-ups: index opening_cache_audit.sample_game_id, drop ix_games_full_pv_pending, tighten Check C rule)"
 ---
 
 # Project State: FlawChess
@@ -891,6 +891,7 @@ None active.
 | 260915-sht | Train verdict tail: a red herring/sharp filler solved in a regular session no longer gets the warm-up line; returnPhrase now takes TrainSessionResponse.is_warmup and uses a neutral non-return line otherwise | 2026-09-15 | 2b77f0009 | [260915-sht-fix-train-verdict-return-tail-red-herrin](./quick/260915-sht-fix-train-verdict-return-tail-red-herrin/) |
 | 91 | Unblock AI crawlers: Cloudflare managed robots.txt is dashboard-only, documented the toggle in production-runbook.md | 2026-09-15 | 9f7a3a811 | — |
 | 260916-g38 | Sentry noise: Maia page-kill sentinel idle guard (FLAWCHESS-BM) and full-drain breaker single-target guard (FLAWCHESS-5Q) | 2026-09-16 | 4a547a769 | [260916-g38-sentry-noise-maia-page-kill-sentinel-idl](./quick/260916-g38-sentry-noise-maia-page-kill-sentinel-idl/) |
+| 260916-gj7 | DB report follow-ups: index opening_cache_audit.sample_game_id, drop ix_games_full_pv_pending, tighten Check C rule | 2026-09-16 | 1b60cadd | [260916-gj7-db-report-follow-ups-index-opening-cache](./quick/260916-gj7-db-report-follow-ups-index-opening-cache/) |
 
 ## Deferred Items
 
