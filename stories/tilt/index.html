@@ -16,7 +16,7 @@
 <meta property="og:image" content="https://stories.flawchess.com/tilt/social-card.png">
 <meta property="og:image:width" content="1200">
 <meta property="og:image:height" content="630">
-<meta property="og:image:alt" content="You've lost three in a row. Should you stop? Next-game score 50.1%, expected 50.7%: half a point below.">
+<meta property="og:image:alt" content="You've lost three in a row. Should you stop? Half a percentage point below normal in the next game: one win turned into a loss every 190 games.">
 <meta property="article:published_time" content="2026-09-08">
 <meta property="article:author" content="Adrian Imfeld">
 <meta property="article:section" content="Chess">
@@ -196,16 +196,15 @@
   games</b> from 4,487 players across bullet, blitz, rapid and classical, lined up each player's games in order,
   and looked at what happens in the game <i>after</i> a losing streak. The short version: <b>your own stats overstate
   tilt badly</b> and <b>what is left once you compare like with like is small</b>.</p>
-  <div class="hero-stats" aria-label="The game after three straight losses">
-    <div class="tile loss"><div class="big">50.1%</div><div class="lbl">your score in the game after <b>three straight losses</b></div></div>
-    <div class="tile draw"><div class="big">50.7%</div><div class="lbl">what your rating says it should be</div></div>
-    <div class="tile tilt"><div class="big">&minus;0.5</div><div class="lbl">points below expectation: the equivalent of <b>one win turned into a loss every 190 games</b></div></div>
+  <div class="hero-stats" aria-label="The cost of a losing streak in the next game">
+    <div class="tile tilt"><div class="big">&minus;0.5</div><div class="lbl">percentage points below normal in the game after <b>three straight losses</b>: one win turned into a loss every 190 games</div></div>
+    <div class="tile loss"><div class="big">&minus;2.0</div><div class="lbl">after <b>six or more</b> straight losses: one win turned into a loss every 50 games</div></div>
   </div>
-  <p class="hero-note">"Score" is the usual chess average: a win counts 1, a draw &frac12;, a loss 0, averaged over
-  every game in the group, so 50% means wins and losses balance out. 35,281 games played right after exactly three losses in one sitting, against a fresh
-  opponent within 100 rating points. The shortfall grows with the streak: after <b>six or more</b> straight losses the next game runs
-  <b>2.0 points</b> below expectation, about one win turned into a loss every 50 games. Your raw game history shows a
-  swing several times bigger than that, and <a href="#raw-stats">section 1</a> explains where the rest comes from.</p>
+  <p class="hero-note">Score is the usual chess average: a win counts 1, a draw &frac12;, a loss 0, so 50% means wins and losses balance
+  out. Differences are in percentage points of that average: &minus;0.5 is half a game-point per 100 games. "Normal" is what players at the
+  same rating score in the same kind of game. 35,281 games played right after exactly three losses in one sitting, against a fresh
+  opponent within 100 rating points. Your raw game history shows a swing several times bigger, and <a href="#raw-stats">section 1</a>
+  explains where the rest comes from.</p>
 </div>
 
 <section class="card" id="raw-stats">
@@ -247,7 +246,7 @@
   streak is on average a few points above you and the one after a winning streak a few points below, and what your rating
   <i>predicts</i> for the next game is 50.3% and 51.0%, against 50.8% for an ordinary game in this sample (the dotted line
   is that prediction, and its zero point is the sample's own average, not 50%). The gap
-  between the solid line and the dotted line is what is left: <b>&minus;2.0</b> points after losses, and after wins its
+  between the solid line and the dotted line is what is left: <b>&minus;2.0</b> percentage points after losses, and after wins its
   mirror image, what sports science calls the <b>hot hand</b>: <b>+1.7</b>. Both are small. This story calls the gap
   after losses tilt for short, but it is a shortfall against a benchmark, not a reading of anyone's mood: fatigue,
   distraction, a bad connection and the fact that only players who kept playing are counted all feed into it.</p>
@@ -305,7 +304,7 @@
   <figure aria-label="Bar chart: score minus expectation in the next game, by streak length from six-plus losses to six-plus wins, with confidence intervals">
     <div id="c2"></div>
   </figure>
-  <div class="callout"><span class="tk">Takeaway:</span> one point of score per 100 games is, for illustration, one
+  <div class="callout"><span class="tk">Takeaway:</span> one percentage point of score, one game-point per 100 games, is, for illustration, one
   win turned into a loss. After three losses the shortfall is worth about <b>one game in 190</b>; after six or more,
   one in 50. The surplus after wins is about the same size at every streak length. What these numbers are not is a
   measurement of mood: the controls remove opponents, calendar, accounts and each player's own level, but they cannot

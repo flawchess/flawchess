@@ -2,7 +2,7 @@
 <!-- Source of stories/tilt/social-card.png (1200x630 Open Graph image). Render with:
      google-chrome --headless=new --window-size=1200,630 --screenshot=stories/tilt/social-card.png \
        file://$PWD/analysis/tilt_study/social_card.html
-     Numbers: the hero tiles of stories/tilt/index.html (streak_curve.csv, x = -3). -->
+     Numbers: the hero tiles of stories/tilt/index.html (streak_curve.csv, x = -3 and x = -6). -->
 <html lang="en">
 <head>
 <meta charset="utf-8">
@@ -33,9 +33,8 @@
   </div>
   <h1>You've lost three in a row.<br><span class="accent">Should you stop?</span></h1>
   <div class="tiles">
-    <div class="tile loss"><div class="big">50.1%</div><div class="lbl">your score in the next game</div></div>
-    <div class="tile draw"><div class="big">50.7%</div><div class="lbl">what your rating predicts</div></div>
-    <div class="tile tilt"><div class="big">&minus;0.5</div><div class="lbl">points: one loss per 190 games</div></div>
+    <div class="tile tilt"><div class="big">&minus;0.5</div><div class="lbl">percentage points below normal after three straight losses: one loss per 190 games</div></div>
+    <div class="tile loss"><div class="big">&minus;2.0</div><div class="lbl">after six or more straight losses: one loss per 50 games</div></div>
   </div>
 </body>
 </html>
