@@ -89,7 +89,7 @@
   .hero-stats{display:flex;gap:14px;flex-wrap:wrap;margin:30px 0 8px}
   .tile{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:18px 22px;flex:1 1 160px;min-width:150px}
   .tile .big{font-size:clamp(30px,4.5vw,44px);font-weight:800;letter-spacing:-.03em;line-height:1.1}
-  .tile .lbl{color:var(--ink-2);font-size:15px;margin-top:2px}
+  .tile .lbl{color:var(--ink-2);font-size:17px;margin-top:6px;line-height:1.4}
   .tile.win .big{color:var(--win)} .tile.draw .big{color:var(--draw)} .tile.loss .big{color:var(--loss)} .tile.tilt .big{color:var(--brown)}
   .hero-note{color:var(--ink-mid);font-size:15px;margin-bottom:8px}
   section.card{background:var(--card);border:1px solid var(--line);border-radius:20px;padding:30px clamp(18px,4vw,38px);margin:26px 0;scroll-margin-top:14px}
@@ -172,6 +172,7 @@
     header.site .sect{padding-left:8px;min-width:110px}
     header.site .hcta{font-size:13px;padding:8px 10px}
     header.site .hcta .long{display:none}
+    .tile{flex-basis:100%}
     .author{align-items:flex-start;gap:14px}
   }
   @media (max-width:400px){header.site img{display:none}}
