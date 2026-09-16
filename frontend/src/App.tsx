@@ -67,8 +67,6 @@ const FLAG_ENDGAMES_VISITED = 'endgames_visited';
 // the first /train visit after this release.
 const FLAG_TRAIN_BOTS_VISITED = 'train_bots_visited';
 const IMPORT_REQUIRED_MESSAGE = 'Import your games first to unlock this feature.';
-/** Quick 260916: fallback for a bot-bar payload published without a draw handler. */
-const NOOP_OFFER_DRAW = (): void => {};
 // SCHD-02/D-06/D-07: waiting-count badge display cap — anything above this
 // renders as `${NAV_BADGE_MAX_DISPLAY}+` rather than the exact count.
 const NAV_BADGE_MAX_DISPLAY = 99;
@@ -483,11 +481,6 @@ export function MobileBottomBar({ onMoreClick }: { onMoreClick: () => void }) {
           // see resolveBoardControlsReset's comment above).
           <BotGameMobileBar
             onResign={boardControls.onResign}
-            // Quick 260916: a payload that carries onResign but no
-            // onOfferDraw (only a test probe does this) renders a disabled
-            // Draw action rather than a dead one.
-            onOfferDraw={boardControls.onOfferDraw ?? NOOP_OFFER_DRAW}
-            offerDrawDisabled={boardControls.offerDrawDisabled ?? true}
             onBack={boardControls.onBack}
             onForward={boardControls.onForward}
             onFlip={boardControls.onFlip}

@@ -10,7 +10,6 @@ in `YYYY-MM-DD` (Europe/Zurich).
 
 ### Added
 
-- You can offer a draw to a bot again: a Draw button sits beside Resign on desktop and in the bottom bar on phones, and asks you to confirm before the offer goes out. The bot accepts only when it judges the position level, and you can offer again a few moves after a decline.
 - The bot opponents now talk during a game and greet you on the roster page, each in its own voice and personality, reacting to captures, big swings and draw offers as the game unfolds.
 
 ### Changed

@@ -465,24 +465,11 @@ function BotsGame({
       fillHeight
     />
   );
-  // Quick 260916: the user-side Draw offer is back on both breakpoints
-  // (Phase 223 D-10/D-12 had removed it; the in-game mute toggle stays gone).
-  // `drawCooldownActive` is the D-04 post-decline throttle (what the hook's
-  // `canOfferDraw` reports, inverted — WR-04); `offerDrawDisabled` is the net
-  // state that also covers a pending offer in EITHER direction and a finished
-  // game. Desktop renders `GameControls`; mobile's equivalent triggers live
-  // inside `BotGameMobileBar`, fed through `BotGameMobileLayout`'s publish.
-  const drawCooldownActive = !game.canOfferDraw;
-  const offerDrawDisabled =
-    drawCooldownActive || game.drawOfferPending || game.botDrawOffer || game.outcome !== null;
-  const controls = (
-    <GameControls
-      offerDrawDisabled={offerDrawDisabled}
-      drawCooldownActive={drawCooldownActive}
-      onOfferDrawConfirmed={game.offerDraw}
-      onResignConfirmed={game.resign}
-    />
-  );
+  // Phase 223 (BOTVOICE-05, D-10/D-12): reduced to the resign trigger — the
+  // user-side Offer draw button (with its cooldown) and the in-game mute
+  // toggle are gone from every breakpoint. Desktop-only now (`BotGameDesktopLayout`);
+  // mobile's equivalent resign trigger lives inside `BotGameMobileBar`.
+  const controls = <GameControls onResignConfirmed={game.resign} />;
 
   return (
     <div
@@ -544,8 +531,6 @@ function BotsGame({
           bubble={bubble}
           board={board}
           onResign={game.resign}
-          onOfferDraw={game.offerDraw}
-          offerDrawDisabled={offerDrawDisabled}
           onBack={handleBack}
           onForward={handleForward}
           onFlip={handleFlip}

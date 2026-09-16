@@ -19,8 +19,6 @@ export interface BotGameMobileLayoutProps extends BotPlayerRowInputs {
    * scroll-back. */
   fen: string;
   onResign: () => void;
-  onOfferDraw: () => void;
-  offerDrawDisabled: boolean;
   onBack: () => void;
   onForward: () => void;
   onFlip: () => void;
@@ -68,8 +66,6 @@ export function BotGameMobileLayout({
   flipped,
   fen,
   onResign,
-  onOfferDraw,
-  offerDrawDisabled,
   onBack,
   onForward,
   onFlip,
@@ -79,8 +75,6 @@ export function BotGameMobileLayout({
 }: BotGameMobileLayoutProps): ReactElement {
   usePublishMobileBoardControls({
     onResign,
-    onOfferDraw,
-    offerDrawDisabled,
     onBack,
     onForward,
     onFlip,
