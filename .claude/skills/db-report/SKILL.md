@@ -397,10 +397,22 @@ WITH l AS (
   WHERE g.lichess_evals_at IS NOT NULL AND prev.eval_cp IS NOT NULL AND prev.eval_mate IS NULL
   GROUP BY gp.full_hash HAVING count(*) >= 3)
 SELECT count(*) AS n_checked,
-       count(*) FILTER (WHERE abs(o.eval_cp - l.med) > 150) AS n_bad
+       -- gate: >150cp AND (sign flip OR one side near-equal) — the poison shape
+       count(*) FILTER (WHERE abs(o.eval_cp - l.med) > 150
+                          AND (sign(o.eval_cp) <> sign(l.med)
+                               OR least(abs(o.eval_cp), abs(l.med)) < 100)) AS n_bad,
+       -- secondary: every >150cp gap, including same-sign decisive depth disagreements
+       count(*) FILTER (WHERE abs(o.eval_cp - l.med) > 150) AS n_gross
 FROM l JOIN opening_position_eval o ON o.full_hash = l.full_hash
 WHERE o.eval_mate IS NULL;
 ```
+
+`n_bad` counts only the two poison shapes SEED-164 documented: a **sign flip** (cache
+says White is better, independent games say Black is) or **equal-vs-decisive** (one side
+within ±100cp, the other >150cp away). A same-sign gap where both sides are already
+decisive (e.g. lichess −1217 / cache −485) is depth disagreement in a won position, not a
+wrong donor eval; it stays in `n_gross` but no longer trips the verdict. Added 2026-09-16
+after the first post-Phase-220 report found 19/19 `n_gross` rows of exactly that shape.
 
 ### Query 12b — Two-source confirmation counters (Phase 220 release 2, CACHEFIX-08)
 ```sql
@@ -411,7 +423,7 @@ FROM opening_position_eval;
 
 #### Check C output format
 
-1. **Cross-check** — report `n_checked` and `n_bad` from Query 12.
+1. **Cross-check** — report `n_checked`, `n_bad` (gate) and `n_gross` (>150cp, secondary) from Query 12.
 2. **Two-source columns** — report `n_disagreed` and `n_unconfirmed` from Query 12b.
    A large `n_unconfirmed` right after the release-2 deploy is EXPECTED, not a bug: the
    migration marks the repair's verified rows (`screened_clean`/`confirmed_clean`/
@@ -420,12 +432,15 @@ FROM opening_position_eval;
    positions are re-reached by a second independent game; it does not indicate poison
    on its own — `n_bad` and `n_disagreed` are the signals that do.
 
-Verdict line (Check C): **PASS** if n_bad <= 5; **INVESTIGATE** otherwise.
+Verdict line (Check C): **PASS** if n_bad <= 5; **INVESTIGATE** otherwise. `n_gross` never
+fails the check on its own; mention it if it jumps by more than ~2x between reports.
 
-> Reference (prod snapshot 2026-09-09): 25,444 / 87 (Phase 220 repaired this — see
-> `SEED-164-opening-eval-cache-poisoned-legacy-evals.md`). Expect near-zero after the
-> repair ships; a handful of genuine depth disagreements in trap lines (e.g. a rook-grab
-> line evaluated +300 at one depth and +500 at another) is not a regression.
+> Reference (prod snapshot 2026-09-09, pre-repair): 25,444 checked / 87 over 150cp (Phase 220
+> repaired this — see `SEED-164-opening-eval-cache-poisoned-legacy-evals.md`).
+> Reference (prod snapshot 2026-09-16, first post-repair): 25,576 checked / `n_gross` 19,
+> all same-sign decisive, i.e. `n_bad` 0 under the gated definition. A handful of genuine
+> depth disagreements in trap lines (e.g. a rook-grab line evaluated +300 at one depth and
+> +500 at another) is not a regression.
 
 ---
 
