@@ -438,7 +438,7 @@ export const BOT_LINE_MAX_CHARS = 64;
  * `BOT_LINE_MAX_CHARS`: that budget calibrates the IN-GAME bubble's
  * two-line slot, while the roster bubble wraps freely.
  */
-export const ROSTER_HUMAN_LIKE_LINE = 'We play like humans, not like computers.';
+export const ROSTER_HUMAN_LIKE_LINE = 'Careful, we play like humans, not like computers!';
 
 export const ROSTER_GREETINGS: Record<PersonaId, string> = {
   'attacker-800': "Bzzz! Ziggy here. Pick a fight, any fight.",
