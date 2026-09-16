@@ -571,6 +571,34 @@ anatomy(
     "loss_by_endgame",
     "5c. ... by the position when the lost game entered its endgame",
 )
+
+# Within-player version of the three cuts (no bootstrap): the residual minus the player x
+# time-control mean residual over all their scored games. Answers the objection that a cell
+# like "abandoned" is a between-player composition effect (players with bad connections
+# scoring below their rating in every game) rather than a next-game effect.
+_player_mean = story.group_by(USER_W).agg(pl.col("resid").mean().alias("player_mean_resid"))
+_anat_dm = anat.join(_player_mean, on=USER_W, how="left").with_columns(
+    resid_dm=pl.col("resid") - pl.col("player_mean_resid")
+)
+_dm_rows = []
+for _cut, _col in [("how it ended", "how"), ("length", "length"), ("endgame state", "endgame")]:
+    for _cat, _sub in _anat_dm.group_by(_col, maintain_order=False):
+        if _cat[0] == "other":
+            continue
+        _dm_rows.append(
+            {
+                "cut": _cut,
+                "previous loss": _cat[0],
+                "games": _sub.height,
+                "resid": pct(fmean(_sub["resid"])),
+                "resid_within_player": pct(fmean(_sub["resid_dm"])),
+            }
+        )
+emit(
+    "5f. Loss anatomy, pooled vs within-player (residual minus the player's own mean residual)",
+    pl.DataFrame(_dm_rows).sort(["cut", "previous loss"]),
+    "loss_anatomy_within_player",
+)
 # single-loss variant (streak_len == 1) to show the cut is not streak length in disguise
 anatomy(
     anat.filter(pl.col("streak_len") == 1),
@@ -856,9 +884,7 @@ bq = (
     )
 )
 bq = bq.filter(
-    pl.col("in_session")
-    & (pl.col("ply_count") >= 20)
-    & pl.col("tc").is_in(["rapid", "classical"])
+    pl.col("in_session") & (pl.col("ply_count") >= 20) & pl.col("tc").is_in(["rapid", "classical"])
 )
 rows = []
 for tc in ["rapid", "classical", "all"]:

@@ -85,7 +85,8 @@ streak is supposed to cause, not as a claim to have isolated it.
 
 - **Population**: 2,670,215 rated games against humans with both ratings known, played by
   4,487 Lichess users in the FlawChess benchmark database (≈200 users per rating × time-control
-  cell, ≈300 games each, 2023-03-30 to 2026-05-26). Games with a usable
+  cell, ≈595 games each on average, up to 1,000, 2023-03-30 to
+  2026-05-26). Games with a usable
   clock record for end-time reconstruction: 96.9% (§2f).
 - **Unit**: consecutive games of one user in one time-control bucket (bullet / blitz / rapid / classical),
   ordered by start time. A user's games in other buckets are a separate stream.
@@ -683,6 +684,26 @@ Single losses only (streak length exactly 1), to show the cut is not streak leng
 | entered the endgame losing (<= -2) | 89,691 | -0.2 [-0.5, +0.1] | +0.1 [-0.4, +0.6] | -0.2 [-0.7, +0.3] | -0.5 [-1.1, +0.1] | -1.8 [-3.5, +0.1] |
 | entered the endgame balanced | 56,590 | +0.2 [-0.2, +0.6] | +0.5 [-0.1, +1.2] | +0.1 [-0.6, +0.8] | -0.3 [-1.1, +0.6] | +0.1 [-2.6, +2.8] |
 | blown: entered the endgame winning (>= +2) | 25,656 | +0.4 [-0.2, +1.0] | +0.9 [+0.1, +1.7] | -0.5 [-1.7, +0.7] | +0.6 [-0.8, +2.0] | -0.0 [-4.9, +5.5] |
+
+Within player: the same three cuts with each player's own mean residual (over all their scored games in
+the time control) subtracted, so a cell cannot be a between-player composition effect (players with a bad
+connection, or players who resign early, scoring below their rating in every game). Point estimates only,
+no bootstrap. The ordering survives: disconnects and short losses stay the worst, long losses stay at or
+above the player's own level; checkmate and flag move to slightly positive, resignation stays negative:
+
+| cut | previous loss | games | residual, pooled | residual, within player |
+|---|---|---|---|---|
+| endgame state | blown: entered the endgame winning (>= +2) | 48,132 | 0.4 | 0.8 |
+| endgame state | entered the endgame balanced | 103,204 | -0.0 | 0.2 |
+| endgame state | entered the endgame losing (<= -2) | 165,591 | -0.2 | 0.1 |
+| endgame state | never reached an endgame | 191,673 | -1.1 | -0.7 |
+| how it ended | abandoned (disconnect) | 5,219 | -3.7 | -3.2 |
+| how it ended | checkmated | 120,570 | -0.2 | 0.1 |
+| how it ended | on time | 146,940 | -0.3 | 0.2 |
+| how it ended | resigned | 235,863 | -0.6 | -0.4 |
+| length | long (>60 plies) | 262,429 | 0.1 | 0.3 |
+| length | mid (21-60 plies) | 226,144 | -1.0 | -0.6 |
+| length | short (<=20 plies) | 20,027 | -2.1 | -1.6 |
 
 Mirror: the game after a **win**, by endgame state and length:
 

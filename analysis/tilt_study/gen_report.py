@@ -398,7 +398,8 @@ streak is supposed to cause, not as a claim to have isolated it.
 
 - **Population**: {pop["games_total"]:,} rated games against humans with both ratings known, played by
   {pop["users"]:,} Lichess users in the FlawChess benchmark database (≈200 users per rating × time-control
-  cell, ≈300 games each, {pop["first_game_at"][:10]} to {pop["last_game_at"][:10]}). Games with a usable
+  cell, ≈{pop["games_total"] / pop["users"]:.0f} games each on average, up to 1,000, {pop["first_game_at"][:10]} to
+  {pop["last_game_at"][:10]}). Games with a usable
   clock record for end-time reconstruction: {pop["share_with_clock_duration"]:.1f}% (§2f).
 - **Unit**: consecutive games of one user in one time-control bucket (bullet / blitz / rapid / classical),
   ordered by start time. A user's games in other buckets are a separate stream.
@@ -431,9 +432,9 @@ streak is supposed to cause, not as a claim to have isolated it.
   contrast in §3 largely a warm-up artefact. Lichess ratings are not quite Elo-calibrated (a 100–149-point
   favourite scores 63%, not the 67% the Elo formula gives; the logistic scale is ≈520 in blitz, not 400),
   so the Elo formula would fake a hot hand for favourites. **Residual = score − expected**, in percentage
-  points (pp) of score. One point of score per 100 games can be one win turned into a loss, two wins turned
-  into draws, or two draws turned into losses; the story's "one extra loss per N games" is that first
-  reading, used as an illustration.
+  points (pp) of score; the story writes the same quantity as game-points per 100 games. One point of score per 100 games can be one win turned into a loss, two wins turned
+  into draws, or two draws turned into losses; the story illustrates each figure on the per-100-games base with whichever
+  reading fits (0.5 pp = one draw turned into a loss per 100 games; 2 pp = two wins turned into losses).
 - **Story hygiene** (applied to every scored number in the story unless stated): drop each user's first
   100 imported games in the time control and games played more than 150 points from the user's long-run
   median rating in that time control (second accounts, resets, rating drift). The import is the most recent
@@ -722,6 +723,14 @@ Single losses only (streak length exactly 1), to show the cut is not streak leng
 {anat("loss_by_length_single")}
 
 {anat("loss_by_endgame_single")}
+
+Within player: the same three cuts with each player's own mean residual (over all their scored games in
+the time control) subtracted, so a cell cannot be a between-player composition effect (players with a bad
+connection, or players who resign early, scoring below their rating in every game). Point estimates only,
+no bootstrap. The ordering survives: disconnects and short losses stay the worst, long losses stay at or
+above the player's own level; checkmate and flag move to slightly positive, resignation stays negative:
+
+{table(load("loss_anatomy_within_player"), [("cut", "cut"), ("previous loss", "previous loss"), ("games", "games"), ("resid", "residual, pooled"), ("resid_within_player", "residual, within player")])}
 
 Mirror: the game after a **win**, by endgame state and length:
 
