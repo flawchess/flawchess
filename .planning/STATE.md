@@ -12,8 +12,8 @@ progress:
   total_plans: 6
   completed_plans: 6
 milestone_name: Train Bot-Narrated Onboarding & Verdicts
-last_activity: 2026-09-15
-last_activity_desc: "Completed quick task 260915-sht (Train verdict tail: a red herring in a regular session is no longer called a warm-up; returnPhrase takes is_warmup)"
+last_activity: 2026-09-16
+last_activity_desc: "Completed quick task 260916-g38 (Sentry noise: Maia page-kill sentinel idle guard FLAWCHESS-BM, full-drain breaker single-target guard FLAWCHESS-5Q)"
 ---
 
 # Project State: FlawChess
@@ -890,6 +890,7 @@ None active.
 | 260914-w1m | Fix FLAWCHESS-BE: Stockfish died on impossible chess.com custom-position boards (16-pawn roots); engine-pool is_valid() guard + invalid-root games excluded at _collect_full_ply_targets so the drain stamps them complete | 2026-09-14 | b96da37a7 | [260914-w1m-fix-flawchess-be-guard-stockfish-against](./quick/260914-w1m-fix-flawchess-be-guard-stockfish-against/) |
 | 260915-sht | Train verdict tail: a red herring/sharp filler solved in a regular session no longer gets the warm-up line; returnPhrase now takes TrainSessionResponse.is_warmup and uses a neutral non-return line otherwise | 2026-09-15 | 2b77f0009 | [260915-sht-fix-train-verdict-return-tail-red-herrin](./quick/260915-sht-fix-train-verdict-return-tail-red-herrin/) |
 | 91 | Unblock AI crawlers: Cloudflare managed robots.txt is dashboard-only, documented the toggle in production-runbook.md | 2026-09-15 | 9f7a3a811 | — |
+| 260916-g38 | Sentry noise: Maia page-kill sentinel idle guard (FLAWCHESS-BM) and full-drain breaker single-target guard (FLAWCHESS-5Q) | 2026-09-16 | 4a547a769 | [260916-g38-sentry-noise-maia-page-kill-sentinel-idl](./quick/260916-g38-sentry-noise-maia-page-kill-sentinel-idl/) |
 
 ## Deferred Items
 
