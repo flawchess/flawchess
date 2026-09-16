@@ -44,6 +44,15 @@ const STORAGE_KEY = 'flawchess:maia:page-session';
 const SENTRY_MESSAGE_PAGE_KILLED = 'Maia worker: page was killed while Maia was active';
 const SENTRY_SOURCE = 'maia-page-kill-sentinel';
 const SENTRY_FAILURE_TAG = 'page-killed';
+/**
+ * Quick 260916-g38 / FLAWCHESS-BM: a record whose last dispatch is older than
+ * this is NOT reported. The failure this sentinel exists for (the iOS per-page
+ * memory kill) lands seconds after a dispatch. A foreground death long after
+ * Maia last ran — the app swiped from recents, the OS reclaiming an idle page
+ * (the BM event: Android tablet, 53 min idle in a 55 min session) — carries
+ * no information about Maia and only adds noise to the `page-killed` issue.
+ */
+const MAIA_PAGE_KILL_IDLE_THRESHOLD_MS = 10 * 60 * 1000;
 
 interface MaiaPageSession {
   /** `Date.now()` when the worker reported `ready`. */
@@ -176,7 +185,11 @@ function readPreviousSession(): MaiaPageSession | null {
 /**
  * Startup check (once per page load, after Sentry is initialised): a
  * leftover record means the previous page session died in the foreground
- * with Maia active. Captures it and clears it; returns whether one was found.
+ * with Maia active. Captures it and clears it; returns whether one was
+ * reported. A record whose last dispatch is older than
+ * `MAIA_PAGE_KILL_IDLE_THRESHOLD_MS` is cleared without a report (idle kill,
+ * see the constant). A record that was armed but never dispatched
+ * (`last: null`) is still reported: arm-then-kill is the iOS shape.
  */
 export function reportMaiaPageKillFromPreviousSession(): boolean {
   const session = readPreviousSession();
@@ -184,6 +197,9 @@ export function reportMaiaPageKillFromPreviousSession(): boolean {
   if (!session) return false;
   const now = Date.now();
   const sinceLastDispatchMs = session.last ? now - session.last.at : null;
+  if (sinceLastDispatchMs !== null && sinceLastDispatchMs > MAIA_PAGE_KILL_IDLE_THRESHOLD_MS) {
+    return false;
+  }
   Sentry.captureException(new Error(SENTRY_MESSAGE_PAGE_KILLED), {
     tags: {
       source: SENTRY_SOURCE,
