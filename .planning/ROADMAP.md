@@ -191,10 +191,11 @@
 | 221. Tactic-Tagger Real-Game Precision — Winning Floor, Predicate Tightening & Port Fixes (SEED-165, v2.18) | 8/8 | Complete    | 2026-09-13 |
 | 222. Train Bot-Narrated Onboarding & Verdicts (SEED-166, v2.19) | 6/6 | Complete    | 2026-09-14 |
 | 223. Bot Voice & Immersive Bot Game Layout (SEED-168 + SEED-167, standalone) | 6/6 | Complete    | 2026-09-16 |
+| 224. Guest Activation — Welcome Removal & Guest Train (SEED-169, standalone) | 0/? | Not started | — |
 
 ## Active Phases
 
-No open milestone. Standalone phases continue absolute numbering from v2.19's Phase 222.
+No open milestone. Standalone phases continue absolute numbering from v2.19's Phase 222 (223 complete, 224 open).
 
 ### Phase 223: Bot Voice & Immersive Bot Game Layout (SEED-168 + SEED-167)
 
@@ -283,6 +284,103 @@ criterion above. The canonical table lives in `223-01-PLAN.md`.
 
 **Seeds:** `.planning/seeds/SEED-168-bot-voice-and-immersive-bot-game-layout.md`,
 `.planning/seeds/SEED-167-train-sound-toggle-rehoming.md`
+
+### Phase 224: Guest Activation — Welcome Removal & Guest Train (SEED-169)
+
+**Goal**: Stop new guests from hitting an upsell-shaped interstitial before the product,
+and open Train, the one feature built to bring the same person back daily, to guests.
+Prod, 90-day window (growth report 2026-09-15 finding 2, corrected 2026-09-17): 85% of
+registered users start an import vs 48% of guests (226/468); the whole gap is at that
+first step. `Home.tsx` force-redirects every 0-game guest to `/welcome`, a 10-row
+"Guest vs Signed up" table (six rows "both have it") that 390 of 1,051 clicking home
+visitors landed on. Meanwhile Phase 206's warm-up path (sharp CC0 filler + red herrings)
+means a guest with zero games could run a real Train session today; only Phase 189's
+`_reject_guest` gate stops them. Two levers, two funnel steps, measured separately:
+
+- **Lever A, guest → start an import.** Drop the forced `/welcome` redirect. `Home.tsx`
+  sends 0-game guests to `/library/import` like everyone else; `welcomeDismissal.ts`
+  and its `welcome_dismissed` flag go away. `/welcome` stays routable but is never forced.
+- **Lever B, guest → register.** Open Train to guests as the FULL daily loop (sessions,
+  streaks, `drill_sessions`/`train_settings` rows, the weekday cadence), not a one-shot
+  demo; every guest session is a warm-up until they import and analyze games. This
+  **reverses Phase 189 D-05 (LOCKED)**: `_reject_guest` in `app/routers/train.py` (all
+  seven handlers) and `TrainGuestGate.tsx` are removed. The sign-up ask moves to the
+  moment the product has just delivered value: on the score screen the guest branch
+  REPLACES the reminder ask (`WARMUP_REMINDER_ASK_COPY`) with a sign-up ask naming the
+  concrete payoff (your own blunders come back instead of warm-ups; streak and history
+  carry over, since promotion is in-place). No reminder slot, QR/install block or push
+  subscription for guests (a push promise for an account purged after 30 idle days
+  cannot be kept). Buttons live in `TrainBotBubble`'s existing `actions` slot: **"Why?"**
+  (`brand-outline`, links to `/welcome`) + **"Sign up free"** (primary, existing
+  `logoutForPromotion()` + `/login?tab=register` flow); Done stays alone below. The
+  nudge repeats every session.
+- **Import page.** The guest `Alert` (`import-guest-promo-info`) becomes a `TrainBotBubble`
+  hosted by a random friendly bot (`pickBot('friendly')`; the score screen uses
+  `pickBot('smart')`), shown on every guest visit, same "Why?" + "Sign up free" pair.
+  First time the personas speak outside a game/puzzle context; accepted deliberately.
+- **`/welcome` rewrite.** Short "What changes when you sign up" page, table dropped. Four
+  deltas only: automatic Stockfish analysis of imported games, Train from your own
+  mistakes, use on any device, no 30-day inactivity purge. One "Sign up free" button.
+  Reachable only via the "Why?" buttons and a plain URL.
+
+**Requirements:** to be minted at planning time (GUESTACT-01..), no active
+REQUIREMENTS.md (same pattern as Phases 204–223).
+
+**Success criteria**:
+
+1. A fresh 0-game guest who clicks the home CTA lands on `/library/import`; no code path
+   forces `/welcome`, and `welcomeDismissal.ts` no longer exists.
+2. A guest with zero games completes a full Train warm-up session end to end (start,
+   solve, score) with no gate, and a `drill_sessions` row plus streak state persist for
+   that guest; the same guest gets the weekday cadence on the next visit.
+3. On the guest score screen the bot bubble carries the sign-up ask with "Why?" and
+   "Sign up free" in its `actions` slot, and no reminder ask, QR/install block or push
+   prompt renders; the registered-user score screen is byte-identical to before.
+4. Signing up from that button promotes the guest in place: `drill_sessions`,
+   `train_settings`, streak and solves are still attached to the user afterwards.
+5. The Import page shows a friendly-bot `TrainBotBubble` with the same button pair on
+   every guest visit; the old `Alert` and its testids are gone.
+6. `/welcome` renders the four-delta page with a single "Sign up free" button, and the
+   old comparison table is gone.
+7. Guest warm-up copy no longer promises "your own positions"; the guest branch of
+   `WARMUP_TAIL`/`INTRO_WARMUP` says import, then sign up, in that order.
+8. Guest cleanup is re-reasoned and documented: `guest_cleanup_service.py` and
+   `test_purge_guest_cascades_drill_rows` state explicitly what happens to a purged
+   guest's `drill_sessions`/`train_settings`/warm-up solves, and the test proves it.
+9. Umami `signup-cta` events carry `data-umami-event-source` `train-score` and
+   `import-promo`, so lever B is attributable per surface.
+10. Baselines are recorded before merge and the same two metrics are readable after:
+    lever A = guest import-start rate (48%, 226/468) and `/welcome` landings (390 of
+    1,051); lever B = guest promotion rate (`users.promoted_at IS NOT NULL` among guests
+    created in the window) and guest Train sessions completed. No combined "guest
+    conversion" number is reported.
+
+**Out of scope**: push reminders for guests; any change to the registered-user score
+bubble, reminder slot or QR block; a one-shot "demo session" variant (rejected: full
+loop or nothing); a new milestone or roadmap regrouping.
+
+**Plans:** 0 plans
+
+Plans:
+
+- [ ] TBD (`/gsd-plan-phase 224`)
+
+**Cross-cutting constraints:**
+
+- `is_guest` comes from `useUserProfile().data`, never `useAuth().user` (FLAWCHESS-64,
+  `Train.tsx`).
+- The herring pool is cross-user (~91% of served herrings come from another user's game)
+  and guests are cheap to create; confirm the Cf-Connecting-Ip-aware guest-creation
+  limiter (Phase 216) is the backstop before the gate opens.
+- Promotion is in-place (`promote_guest_with_password` / `promote_guest_with_google`
+  UPDATE the same row); the copy may promise that history carries over.
+- Frontend tests to rewrite or delete: `Train.guestGate.test.tsx` (also the deferred
+  cross-test contamination flake, `215/deferred-items.md`), `Welcome.test.tsx`, the
+  `Home.tsx` redirect coverage, the Import guest-alert testids.
+- Decision 1 (drop the redirect) is independent and could ship first if the import-start
+  lever is wanted before the rest; the metrics stay separate either way.
+
+**Seed:** `.planning/seeds/SEED-169-guest-activation-welcome-removal-and-guest-train.md`
 
 ## Backlog
 

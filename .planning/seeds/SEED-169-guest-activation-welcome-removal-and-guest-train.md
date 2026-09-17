@@ -1,6 +1,6 @@
 ---
 id: SEED-169
-status: planted
+status: promoted → Phase 224 (2026-09-17)
 planted: 2026-09-17
 planted_during: /gsd-explore "guest drop-off" — follow-up to reports/growth/growth-recommendations-2026-09-15.md finding 2 (corrected 2026-09-17)
 trigger_when: next growth or Train window. Decision 1 (drop the forced /welcome redirect) is independent and could ship alone as a quick task if the import-start lever is wanted before the rest.
