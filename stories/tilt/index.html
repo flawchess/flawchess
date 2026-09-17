@@ -4,32 +4,32 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Three Losses in a Row: Should You Stop? | Chess Data Stories</title>
-<meta name="description" content="What 2.67 million Lichess games say about tilt: how much a losing streak really costs, whether a break helps, which losses hurt, and why your own stats exaggerate it five times over.">
+<meta name="description" content="What 2.67 million Lichess games say about tilt: how much a losing streak really costs, whether a break helps, which losses hurt, and why your own stats overstate it.">
 <link rel="canonical" href="https://stories.flawchess.com/tilt/">
 <link rel="icon" href="/favicon.ico" sizes="32x32">
 <link rel="icon" type="image/png" sizes="128x128" href="/logo.png">
 <meta property="og:type" content="article">
 <meta property="og:site_name" content="Chess Data Stories">
 <meta property="og:title" content="You've lost three in a row. Should you stop?">
-<meta property="og:description" content="What 2.67 million Lichess games say about tilt: how much a losing streak really costs, whether a break helps, and why your own stats exaggerate it five times over.">
+<meta property="og:description" content="What 2.67 million Lichess games say about tilt: how much a losing streak really costs, whether a break helps, and why your own stats overstate it.">
 <meta property="og:url" content="https://stories.flawchess.com/tilt/">
 <meta property="og:image" content="https://stories.flawchess.com/tilt/social-card.png">
 <meta property="og:image:width" content="1200">
 <meta property="og:image:height" content="630">
-<meta property="og:image:alt" content="You've lost three in a row. Should you stop? Next-game score 50.08%, expected 50.64%: tilt costs 0.56 points.">
+<meta property="og:image:alt" content="You've lost three in a row. Should you stop? Half a point per 100 games below normal in the next game: about one draw turned into a loss per 100 games.">
 <meta property="article:published_time" content="2026-09-08">
 <meta property="article:author" content="Adrian Imfeld">
 <meta property="article:section" content="Chess">
 <meta name="twitter:card" content="summary_large_image">
 <meta name="twitter:title" content="You've lost three in a row. Should you stop?">
-<meta name="twitter:description" content="What 2.67 million Lichess games say about tilt: how much a losing streak really costs, whether a break helps, and why your own stats exaggerate it five times over.">
+<meta name="twitter:description" content="What 2.67 million Lichess games say about tilt: how much a losing streak really costs, whether a break helps, and why your own stats overstate it.">
 <meta name="twitter:image" content="https://stories.flawchess.com/tilt/social-card.png">
 <script type="application/ld+json">
 {
   "@context": "https://schema.org",
   "@type": "Article",
   "headline": "You've lost three in a row. Should you stop?",
-  "description": "What 2.67 million Lichess games say about tilt: how much a losing streak really costs, whether a break helps, which losses hurt, and why your own stats exaggerate it five times over.",
+  "description": "What 2.67 million Lichess games say about tilt: how much a losing streak really costs, whether a break helps, which losses hurt, and why your own stats overstate it.",
   "datePublished": "2026-09-08",
   "dateModified": "2026-09-08",
   "url": "https://stories.flawchess.com/tilt/",
@@ -75,7 +75,9 @@
   header.site .sect{font-family:'Fredoka',sans-serif;font-weight:600;font-size:22px;letter-spacing:-.02em;
     color:var(--brown);text-decoration:none;border-left:1px solid var(--line);padding-left:12px;line-height:1.15}
   header.site .sect:hover{color:var(--brown-dark)}
-  header.site .tag{color:var(--ink-3);font-size:15px;margin-left:auto;text-align:right}
+  header.site .hcta{margin-left:auto;flex-shrink:0;background:var(--brown);color:#fff;text-decoration:none;font-weight:700;
+    font-size:14px;padding:9px 14px;border-radius:10px;white-space:nowrap}
+  header.site .hcta:hover{background:var(--brown-dark)}
   .hero{padding:26px 0 6px}
   .kicker{color:var(--brown);font-weight:700;text-transform:uppercase;letter-spacing:.12em;font-size:14px}
   .kicker a{color:inherit;text-decoration:underline dotted;text-decoration-thickness:1.5px;text-underline-offset:4px}
@@ -87,7 +89,7 @@
   .hero-stats{display:flex;gap:14px;flex-wrap:wrap;margin:30px 0 8px}
   .tile{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:18px 22px;flex:1 1 160px;min-width:150px}
   .tile .big{font-size:clamp(30px,4.5vw,44px);font-weight:800;letter-spacing:-.03em;line-height:1.1}
-  .tile .lbl{color:var(--ink-2);font-size:15px;margin-top:2px}
+  .tile .lbl{color:var(--ink-2);font-size:17px;margin-top:6px;line-height:1.4}
   .tile.win .big{color:var(--win)} .tile.draw .big{color:var(--draw)} .tile.loss .big{color:var(--loss)} .tile.tilt .big{color:var(--brown)}
   .hero-note{color:var(--ink-mid);font-size:15px;margin-bottom:8px}
   section.card{background:var(--card);border:1px solid var(--line);border-radius:20px;padding:30px clamp(18px,4vw,38px);margin:26px 0;scroll-margin-top:14px}
@@ -103,6 +105,7 @@
   h2{font-size:clamp(23px,3.4vw,31px);letter-spacing:-.02em;line-height:1.2;margin-bottom:10px}
   .lede{color:var(--ink-2);max-width:46em;margin-bottom:6px}
   .lede + .lede{margin-top:10px}
+  .cnote{color:var(--ink-mid);font-size:14.5px;max-width:46em;margin:6px 0 0}
   .callout{background:var(--hl);border-radius:12px;padding:12px 16px;margin-top:16px;font-size:16.5px}
   .callout b{color:var(--brown-dark)}
   figure{margin:10px 0 4px}
@@ -163,10 +166,17 @@
   .adv li::before{content:"";position:absolute;left:0;top:.5em;width:11px;height:11px;border-radius:3px;background:var(--brown)}
   .adv b{color:var(--ink)}
   @media (max-width:560px){
-    header.site .tag{display:none}
+    header.site .wrap{gap:8px}
+    header.site .brand{gap:8px}
+    header.site img{width:36px;height:36px}
     header.site .name,header.site .sect{font-size:19px}
+    header.site .sect{padding-left:8px;min-width:110px}
+    header.site .hcta{font-size:13px;padding:8px 10px}
+    header.site .hcta .long{display:none}
+    .tile{flex-basis:100%}
     .author{align-items:flex-start;gap:14px}
   }
+  @media (max-width:400px){header.site img{display:none}}
 </style>
 </head>
 <body>
@@ -179,7 +189,7 @@
       <span class="name">FlawChess</span>
     </a>
     <a class="sect" href="../">Chess Data Stories</a>
-    <span class="tag">Engines are flawless,<br>humans play FlawChess.</span>
+    <a class="hcta" href="https://flawchess.com" data-umami-event="outbound-flawchess-header-cta">Analyze<span class="long"> your games</span> &rarr;</a>
   </div>
 </header>
 
@@ -194,18 +204,19 @@
   actually say?</p>
   <p class="sub">To find out, I took the FlawChess benchmark database, <b>2.67 million rated Lichess
   games</b> from 4,487 players across bullet, blitz, rapid and classical, lined up each player's games in order,
-  and looked at what happens in the game <i>after</i> a losing streak. The short version: <b>tilt is real</b>,
-  <b>it is far smaller than your own stats make it look</b>, and <b>the standard advice barely moves the needle</b>.</p>
-  <div class="hero-stats" aria-label="The game after three straight losses">
-    <div class="tile loss"><div class="big">50.08%</div><div class="lbl">your score in the game after <b>three straight losses</b></div></div>
-    <div class="tile draw"><div class="big">50.64%</div><div class="lbl">what your rating says it should be</div></div>
-    <div class="tile tilt"><div class="big">&minus;0.56</div><div class="lbl">points of score lost to tilt: <b>one extra loss per 180 games</b></div></div>
+  and looked at what happens in the game <i>after</i> a losing streak. The short version: <b>your own stats overstate
+  tilt badly</b> and <b>what is left once you compare like with like is small</b>.</p>
+  <div class="hero-stats" aria-label="The cost of a losing streak in the next game">
+    <div class="tile tilt"><div class="big">&minus;0.5</div><div class="lbl">points per 100 games below normal in the game after <b>three straight losses</b>: about one draw turned into a loss per 100 games</div></div>
+    <div class="tile loss"><div class="big">&minus;2.0</div><div class="lbl">after <b>six or more</b> straight losses: two wins turned into losses per 100 games</div></div>
   </div>
-  <p class="hero-note">"Score" is the usual chess average: a win counts 1, a draw &frac12;, a loss 0, averaged over
-  every game in the group, so 50% means wins and losses balance out. 36,091 games played right after exactly three losses in one sitting, against a fresh
-  opponent within 100 rating points. Tilt grows with the streak: after <b>six or more</b> straight losses the next game runs
-  <b>2.1 points</b> below expectation, about one extra loss per 50 games. Your raw game history shows a swing five
-  times bigger than that, and <a href="#raw-stats">section 1</a> explains where the rest comes from.</p>
+  <p class="hero-note">Score is the usual chess average: a win counts 1, a draw &frac12;, a loss 0, so 50% means wins and losses balance
+  out. Differences are in points per 100 games: &minus;0.5 means half a point less per 100 games than normal (the same thing as
+  half a percentage point of score). "Normal" is what players at the
+  same rating score in the same kind of game. The first number comes from 35,281 games played right after exactly three losses in one sitting, against a fresh
+  opponent within 100 rating points, give or take half a point: anything from no shortfall to one point per 100 games
+  fits the data. Your raw game history shows a swing several times bigger, and <a href="#raw-stats">section 1</a>
+  explains where the rest comes from.</p>
 </div>
 
 <section class="card" id="raw-stats">
@@ -213,68 +224,72 @@
   <h2>Your stats say tilt is huge. They are wrong.</h2>
   <a class="anchor" href="#raw-stats" aria-label="Link to this section">#</a></div>
   <p class="lede">Let's start with the naive version of the question: line up each player's games and look at the one right after a streak.
-  In the 2.67 million games here, players average a <b>43%</b> score in the game after six or more
-  straight losses, and <b>65%</b> after six or more straight wins. That is a 22-point
-  swing, and it is the kind of number articles about tilt usually report: one <a href="https://chessanalysis.co/research/chess-improvement-rating-trajectories" data-umami-event="outbound-citation" data-umami-event-url="chessanalysis.co">analysis of 840,000 Lichess games</a>
-  puts the next game at 39% after five straight losses and 58% after five straight wins, and a <a href="http://seandevine.org/blog/chessBlog.html" data-umami-event="outbound-citation" data-umami-event-url="seandevine.org">regression on a
+  In the 2.67 million games here, the game after six or more straight losses scores <b>22 points per 100 games</b> less
+  than the game after six or more straight wins (43% against 65%). That is the kind of number articles about tilt usually
+  report: one <a href="https://chessanalysis.co/research/chess-improvement-rating-trajectories" data-umami-event="outbound-citation" data-umami-event-url="chessanalysis.co">analysis of 840,000 Lichess games</a>
+  finds a 19-point swing in win rate between five straight losses and five straight wins, and a <a href="http://seandevine.org/blog/chessBlog.html" data-umami-event="outbound-citation" data-umami-event-url="seandevine.org">study of a
   million games</a> finds that even the result from seven games back still predicts the current one. Almost none of it
-  is tilt. Four things inflate it:</p>
+  survives four checks:</p>
   <ul class="adv-list">
-    <li><b>Opponents.</b> A long streak is mostly a story about who you were playing. The pairing system barely
-    moves (six straight wins lift your rating by about 30 points), but half of all streaks of six or more were played
-    against opponents averaging more than 100 points weaker: arenas, fresh accounts, the thin top of the pool, a
+    <li><b>Opponents.</b> A long streak is mostly a story about who you were playing. Nearly half of all winning
+    streaks of six or more were played against opponents more than 100 points weaker (and a quarter of the losing
+    streaks against opponents more than 100 points stronger): arenas, fresh accounts, the thin top of the pool, a
     friend who keeps accepting. The next opponent comes from the same place, on average <b>175 rating points weaker</b>
     after six or more wins and 61 points stronger after six or more losses. Keep only next games against an opponent within
-    100 points and the swing shrinks to 48&ndash;54%.</li>
+    100 points and the 22-point swing shrinks to 6.</li>
     <li><b>The calendar.</b> Seven in ten streaks of six or more span more than one sitting (a break of an hour or
-    more starts a new sitting), and four in ten more than a day. A bad mood can certainly last that long, but over days a streak also picks up everything else that
-    drifts: your form, your rating, the pool you are being paired from. There is no way to tell those apart from
-    the mood, so this study asks the narrower question the "stop after three losses" advice is about: what a streak
-    does to your next game while you are still at the board. Keep only streaks that happened in one sitting.</li>
+    more starts a new sitting), and four in ten more than a day. A bad mood can last that long, but over days a streak also
+    picks up everything else that drifts: your form, your rating, the pool you are being paired from. So this study asks
+    the narrower question the "stop after three losses" advice is about: what a streak does to your next game while you
+    are still at the board. Keep only streaks that happened in one sitting.</li>
     <li><b>Accounts.</b> Players far from their usual level (second accounts, rating resets, three years of drift) are
     over-represented in long streaks. Drop each player's first 100 games in the record and any game played more than
     150 points from their long-run rating.</li>
-    <li><b>The rematch.</b> One next game in nine is against someone you already played during the streak, usually
-    the same opponent again and again. That is not a fresh draw from the pool: the matchup that produced the streak is
-    still on the board, and the opponent is in a state of their own. Inside a rematch the streak effect is about twice
-    as large. Keep only next games against a fresh opponent; the rematch gets its own treatment in
-    <a href="#behaviour">section 6</a>.</li>
+    <li><b>The rematch.</b> About one next game in ten is against someone you already played during the streak, usually
+    the same opponent again and again. The matchup that produced the streak is still on the board, and the opponent is in
+    a state of their own; inside a rematch the streak effect is about twice as large. Keep only next games against a
+    fresh opponent; the rematch gets its own treatment in <a href="#behaviour">section 6</a>.</li>
   </ul>
-  <p class="lede" style="margin-top:12px">What survives all four: <b>48%</b> after six losses, <b>53%</b> after six
-  wins. Even that is not all tilt. Within 100 points, the opponent after a losing streak is still slightly stronger on average and
-  the one after a winning streak slightly weaker (the streak came from that pool, and so does the next game), so what your rating <i>predicts</i> for the next game is 50.2% and 51.1%. The gap
-  between the solid line and the dotted line is tilt after losses, and after wins its mirror image, what sports
-  science calls the <b>hot hand</b>: <b>&minus;2.1</b> and <b>+2.1</b> points. Both are real, and both are small.</p>
-  <p class="ctitle">Score in the next game, by the streak that just ended</p>
+  <p class="lede" style="margin-top:12px">What survives all four is a drop of about <b>2 points per 100 games</b> below normal
+  in the game after six or more losses, the sliver labelled "maybe tilt" in the chart. After six or more wins its mirror
+  image, <b>+1.7</b>, what sports science calls the <b>hot hand</b>. "Normal" is what players at your rating score against
+  that opponent. It sits a little above 50% because the players in this database score 50.8% on these games on
+  average (they are slightly more often the higher-rated side), and it tilts with the streak: streaks come from
+  lopsided stretches, and the next opponent usually comes from the same stretch, after a losing streak rated a few
+  points above you, after a winning streak a few points below (the dashed line in the chart). Both numbers are small. This story calls the shortfall after losses tilt for
+  short, but it is a shortfall against a benchmark, not a reading of anyone's mood: fatigue, distraction and a bad
+  connection all feed into it, and only players who kept playing are counted.</p>
+  <p class="ctitle">Score in the next game (points per 100 games), by the streak that just ended</p>
   <div class="legend" id="lg1"></div>
   <figure aria-label="Line chart: next-game score by streak length, as it appears in raw game history versus after controlling for opponent rating, session and account state, with the rating-based expectation">
     <div id="c1"></div>
   </figure>
-  <div class="callout"><span class="tk">Takeaway:</span> of the 22-point swing in your raw stats, about 18 points
-  are opponents, calendar, rematches and account effects. The four that remain are what the rest of this story is about.</div>
+  <div class="callout"><span class="tk">Takeaway:</span> after six or more losses your raw stats show the next game about
+  7 points per 100 games below your average. About 5 of those disappear once you compare like with like: opponents, calendar,
+  rematches and account effects. The two that remain are what the rest of this story is about.</div>
   <details class="tbl"><summary>View the data</summary><div>
     <table>
-      <thead><tr><th>Streak just ended</th><th>Games (raw)</th><th>Raw history</th><th>Same rating</th><th>+ one sitting, fresh opponent</th><th>+ settled accounts</th><th>Expected from ratings</th><th>Tilt (difference)</th></tr></thead>
+      <thead><tr><th>Streak just ended</th><th>Games (raw)</th><th>Raw history (points per 100 games)</th><th>Same rating</th><th>+ one sitting, fresh opponent</th><th>+ settled accounts</th><th>Expected from ratings</th><th>Difference (points per 100 games)</th></tr></thead>
       <tbody>
-        <tr><td>6+ losses</td><td>37,603</td><td>43.4%</td><td>47.6%</td><td>47.7%</td><td>48.1%</td><td>50.2%</td><td>&minus;2.1</td></tr>
-        <tr><td>5 losses</td><td>33,786</td><td>47.5%</td><td>49.1%</td><td>49.2%</td><td>48.9%</td><td>50.5%</td><td>&minus;1.6</td></tr>
-        <tr><td>4 losses</td><td>68,470</td><td>48.5%</td><td>49.4%</td><td>50.0%</td><td>50.1%</td><td>50.6%</td><td>&minus;0.5</td></tr>
-        <tr><td>3 losses</td><td>140,752</td><td>49.1%</td><td>49.6%</td><td>50.1%</td><td>50.1%</td><td>50.6%</td><td>&minus;0.6</td></tr>
-        <tr><td>2 losses</td><td>294,444</td><td>49.9%</td><td>49.7%</td><td>50.0%</td><td>50.0%</td><td>50.7%</td><td>&minus;0.8</td></tr>
-        <tr><td>1 loss</td><td>636,836</td><td>51.1%</td><td>50.4%</td><td>50.7%</td><td>50.6%</td><td>50.8%</td><td>&minus;0.2</td></tr>
-        <tr><td>1 win</td><td>646,580</td><td>52.2%</td><td>51.0%</td><td>51.2%</td><td>51.1%</td><td>50.8%</td><td>+0.3</td></tr>
-        <tr><td>2 wins</td><td>319,654</td><td>53.4%</td><td>51.5%</td><td>51.7%</td><td>51.5%</td><td>50.8%</td><td>+0.6</td></tr>
-        <tr><td>3 wins</td><td>162,473</td><td>54.6%</td><td>52.0%</td><td>52.2%</td><td>52.0%</td><td>50.9%</td><td>+1.1</td></tr>
-        <tr><td>4 wins</td><td>84,464</td><td>55.7%</td><td>52.0%</td><td>52.2%</td><td>52.0%</td><td>51.0%</td><td>+1.0</td></tr>
-        <tr><td>5 wins</td><td>44,804</td><td>57.7%</td><td>53.0%</td><td>53.4%</td><td>53.1%</td><td>51.1%</td><td>+2.0</td></tr>
-        <tr><td>6+ wins</td><td>65,848</td><td>65.4%</td><td>53.9%</td><td>53.7%</td><td>53.2%</td><td>51.1%</td><td>+2.1</td></tr>
+        <tr><td>6+ losses</td><td>37,724</td><td>43.4</td><td>47.6</td><td>47.8</td><td>48.3</td><td>50.3</td><td>&minus;2.0</td></tr>
+        <tr><td>5 losses</td><td>33,889</td><td>47.5</td><td>49.1</td><td>49.2</td><td>48.9</td><td>50.5</td><td>&minus;1.6</td></tr>
+        <tr><td>4 losses</td><td>68,646</td><td>48.5</td><td>49.4</td><td>49.9</td><td>50.1</td><td>50.7</td><td>&minus;0.5</td></tr>
+        <tr><td>3 losses</td><td>141,045</td><td>49.1</td><td>49.5</td><td>50.1</td><td>50.1</td><td>50.7</td><td>&minus;0.5</td></tr>
+        <tr><td>2 losses</td><td>295,044</td><td>49.9</td><td>49.7</td><td>50.1</td><td>50.0</td><td>50.7</td><td>&minus;0.8</td></tr>
+        <tr><td>1 loss</td><td>635,543</td><td>51.1</td><td>50.4</td><td>50.7</td><td>50.6</td><td>50.8</td><td>&minus;0.2</td></tr>
+        <tr><td>1 win</td><td>645,176</td><td>52.1</td><td>51.0</td><td>51.2</td><td>51.1</td><td>50.8</td><td>+0.3</td></tr>
+        <tr><td>2 wins</td><td>320,255</td><td>53.4</td><td>51.5</td><td>51.6</td><td>51.5</td><td>50.8</td><td>+0.6</td></tr>
+        <tr><td>3 wins</td><td>162,786</td><td>54.6</td><td>52.0</td><td>52.1</td><td>51.9</td><td>50.9</td><td>+1.0</td></tr>
+        <tr><td>4 wins</td><td>84,622</td><td>55.7</td><td>52.1</td><td>52.1</td><td>51.8</td><td>51.0</td><td>+0.9</td></tr>
+        <tr><td>5 wins</td><td>44,915</td><td>57.7</td><td>53.1</td><td>53.5</td><td>53.1</td><td>51.1</td><td>+2.1</td></tr>
+        <tr><td>6+ wins</td><td>66,069</td><td>65.4</td><td>54.0</td><td>53.4</td><td>52.7</td><td>51.0</td><td>+1.7</td></tr>
       </tbody>
     </table>
     <p style="margin-top:10px;color:var(--ink-mid)">"Same rating" keeps only next games against an opponent within
     100 points. "One sitting" requires the whole streak to fall inside one session (no break of an hour or more) and
     the next game to follow within the hour; "fresh opponent" drops next games against anyone you played during the
     streak; "settled accounts" drops each player's first 100 games in the time control
-    and games played more than 150 points from their long-run rating. The expectation is the average score of players
+    and games played more than 150 points from their long-run rating. "Normal" (the expectation) is the average score of players
     of the same rating, time control, colour and rating gap, measured on the same kind of games (settled accounts, not
     the first game of a sitting). Draws end a streak and are not shown.</p>
   </div></details>
@@ -282,38 +297,42 @@
 
 <section class="card" id="how-big">
   <div class="card-head"><div class="num">2</div>
-  <h2>What is left is real, small, and grows with the streak</h2>
+  <h2>What is left is small, and grows only with long streaks</h2>
   <a class="anchor" href="#how-big" aria-label="Link to this section">#</a></div>
-  <p class="lede">Score minus expectation, one streak length at a time. A single loss costs 0.2 points, barely
-  measurable. Two to four losses cost <b>0.5 to 0.8 points</b>, five cost 1.6, six or more cost 2.1. The hot hand
-  mirrors it: three straight wins add 1.1 points, six or more add 2.1. To put those
-  numbers in perspective, after three straight losses you still <b>win the next game 48.1%</b> of the time and lose
-  47.9%. The odds of losing the next game only cross 50% at the sixth loss in a row.</p>
-  <p class="ctitle">Tilt and the hot hand: score minus expectation in the next game</p>
-  <figure aria-label="Bar chart: score minus expectation in the next game, by streak length from six-plus losses to six-plus wins, with confidence intervals">
+  <p class="lede">Points above or below normal, one streak length at a time. A single loss costs almost nothing. Two to
+  four losses cost <b>half a point to just under one point per 100 games</b>, with no clear order among them (the
+  intervals overlap), five cost 1.6, six or more cost 2.0. The hot
+  hand mirrors it, at up to 1.7 after six or more wins. To put those numbers in perspective, after three straight losses
+  you still <b>win the next game as often as you lose it</b>, and even after six losses in a row the chance of losing the
+  next one is about 50%, against 47% after a single loss. Comparing each player only with their own games, at the same clock setting and rating
+  gap, gives the same picture (<a href="https://github.com/flawchess/flawchess/blob/main/stories/tilt/tilt-report.md#2d-within-player-model" data-umami-event="outbound-report-tilt">technical report, section 2d</a>).
+  If anything the shortfall is understated: six losses pull your rating below your real strength, so against an
+  equal-rated opponent you should then score slightly <i>above</i> normal, not below.</p>
+  <p class="ctitle">Points above or below normal in the next game, per 100 games</p>
+  <figure aria-label="Bar chart: points above or below normal in the next game, by streak length from six-plus losses to six-plus wins, with confidence intervals">
     <div id="c2"></div>
   </figure>
-  <div class="callout"><span class="tk">Takeaway:</span> one point of score is one extra loss per 100 games.
-  Tilt after three losses is worth about <b>one game in 180</b>; after six or more, one in 50. The hot hand is about
-  the same size as tilt at every streak length. Part of both is players on a streak being temporarily under- or
-  over-rated: removing each player's own long-run tendency to beat or trail their rating trims both tails by about a
-  third (technical report, section 2).</div>
+  <div class="callout"><span class="tk">Takeaway:</span> one point per 100 games is, for illustration, one
+  win turned into a loss, or two draws turned into losses. After three losses the shortfall is worth about <b>one draw turned into a
+  loss per 100 games</b>; after six or more, two wins turned into losses. The surplus after wins is about the same size at every streak length. What these numbers are not is a
+  measurement of mood: the controls remove opponents, calendar, accounts and each player's own level, but they cannot
+  tell tilt from fatigue or distraction, and they only see the players who kept playing.</div>
   <details class="tbl"><summary>View the data</summary><div>
     <table>
-      <thead><tr><th>Streak just ended</th><th>Games</th><th>Next-game score</th><th>Expected</th><th>Tilt</th><th>95% interval</th><th>Lose the next game</th></tr></thead>
+      <thead><tr><th>Streak just ended</th><th>Games</th><th>Next-game score (points per 100 games)</th><th>Expected</th><th>Difference</th><th>95% interval</th><th>Lose the next game</th></tr></thead>
       <tbody>
-        <tr><td>6+ losses</td><td>4,509</td><td>48.1%</td><td>50.2%</td><td>&minus;2.1</td><td>&minus;3.6 to &minus;0.6</td><td>50.1%</td></tr>
-        <tr><td>5 losses</td><td>5,738</td><td>48.9%</td><td>50.5%</td><td>&minus;1.6</td><td>&minus;2.9 to &minus;0.3</td><td>49.3%</td></tr>
-        <tr><td>4 losses</td><td>14,195</td><td>50.1%</td><td>50.6%</td><td>&minus;0.5</td><td>&minus;1.3 to +0.2</td><td>47.9%</td></tr>
-        <tr><td>3 losses</td><td>36,091</td><td>50.1%</td><td>50.6%</td><td>&minus;0.6</td><td>&minus;1.1 to &minus;0.1</td><td>47.9%</td></tr>
-        <tr><td>2 losses</td><td>96,221</td><td>50.0%</td><td>50.7%</td><td>&minus;0.8</td><td>&minus;1.1 to &minus;0.4</td><td>47.9%</td></tr>
-        <tr><td>1 loss</td><td>272,676</td><td>50.6%</td><td>50.8%</td><td>&minus;0.2</td><td>&minus;0.4 to &minus;0.1</td><td>47.1%</td></tr>
-        <tr><td>1 win</td><td>288,456</td><td>51.1%</td><td>50.8%</td><td>+0.3</td><td>+0.1 to +0.5</td><td></td></tr>
-        <tr><td>2 wins</td><td>110,741</td><td>51.5%</td><td>50.8%</td><td>+0.6</td><td>+0.3 to +0.9</td><td></td></tr>
-        <tr><td>3 wins</td><td>45,164</td><td>52.0%</td><td>50.9%</td><td>+1.1</td><td>+0.6 to +1.6</td><td></td></tr>
-        <tr><td>4 wins</td><td>19,172</td><td>52.0%</td><td>51.0%</td><td>+1.0</td><td>+0.3 to +1.6</td><td></td></tr>
-        <tr><td>5 wins</td><td>8,391</td><td>53.1%</td><td>51.1%</td><td>+2.0</td><td>+0.9 to +3.1</td><td></td></tr>
-        <tr><td>6+ wins</td><td>7,027</td><td>53.2%</td><td>51.1%</td><td>+2.1</td><td>+0.9 to +3.3</td><td></td></tr>
+        <tr><td>6+ losses</td><td>4,306</td><td>48.3</td><td>50.3</td><td>&minus;2.0</td><td>&minus;3.6 to &minus;0.4</td><td>49.9%</td></tr>
+        <tr><td>5 losses</td><td>5,569</td><td>48.9</td><td>50.5</td><td>&minus;1.6</td><td>&minus;2.9 to &minus;0.4</td><td>49.3%</td></tr>
+        <tr><td>4 losses</td><td>13,817</td><td>50.1</td><td>50.7</td><td>&minus;0.5</td><td>&minus;1.3 to +0.2</td><td>47.9%</td></tr>
+        <tr><td>3 losses</td><td>35,281</td><td>50.1</td><td>50.7</td><td>&minus;0.5</td><td>&minus;1.1 to 0.0</td><td>47.9%</td></tr>
+        <tr><td>2 losses</td><td>94,514</td><td>50.0</td><td>50.7</td><td>&minus;0.8</td><td>&minus;1.0 to &minus;0.4</td><td>47.9%</td></tr>
+        <tr><td>1 loss</td><td>269,534</td><td>50.6</td><td>50.8</td><td>&minus;0.2</td><td>&minus;0.4 to &minus;0.1</td><td>47.1%</td></tr>
+        <tr><td>1 win</td><td>284,714</td><td>51.1</td><td>50.8</td><td>+0.3</td><td>+0.1 to +0.5</td><td></td></tr>
+        <tr><td>2 wins</td><td>108,358</td><td>51.5</td><td>50.8</td><td>+0.6</td><td>+0.3 to +0.9</td><td></td></tr>
+        <tr><td>3 wins</td><td>43,697</td><td>51.9</td><td>50.9</td><td>+1.0</td><td>+0.5 to +1.5</td><td></td></tr>
+        <tr><td>4 wins</td><td>18,326</td><td>51.8</td><td>51.0</td><td>+0.9</td><td>+0.2 to +1.6</td><td></td></tr>
+        <tr><td>5 wins</td><td>7,882</td><td>53.1</td><td>51.1</td><td>+2.1</td><td>+1.0 to +3.2</td><td></td></tr>
+        <tr><td>6+ wins</td><td>6,317</td><td>52.7</td><td>51.0</td><td>+1.7</td><td>+0.4 to +2.9</td><td></td></tr>
       </tbody>
     </table>
     <p style="margin-top:10px;color:var(--ink-mid)">Same games as the "settled accounts" column in section 1.
@@ -323,37 +342,37 @@
 
 <section class="card" id="who-tilts">
   <div class="card-head"><div class="num">3</div>
-  <h2>Slow games tilt harder. Beginners tilt most.</h2>
+  <h2>Rapid players, and beginners, fall furthest</h2>
   <a class="anchor" href="#who-tilts" aria-label="Link to this section">#</a></div>
-  <p class="lede">After three or more losses in a row, bullet players score <b>0.6 points</b> below expectation,
-  blitz players 0.4, rapid players <b>1.8</b>. The longer the game you just lost, the longer it stays with you. The
-  hot hand does not care: +1.2 to +1.4 in all three. By rating, tilt is mostly a beginner's problem:
-  <b>&minus;1.9</b> at 800, then between 0 and &minus;0.9 from 1200 all the way to 2400. The hot hand is
-  the same size everywhere, +1.0 to +1.5.</p>
-  <p class="ctitle">Score minus expectation after 3+ losses and after 3+ wins</p>
+  <p class="lede">After three or more losses in a row, rapid players fall <b>1.8 points per 100 games</b> below normal,
+  bullet and blitz players under one point. By rating, the shortfall is largest at the bottom, about <b>2 points at 800</b>,
+  and under a point from 1200 all the way to 2400. The hot hand is about one point everywhere. These are descriptions of
+  groups, not of causes: rapid players and bullet players are different people playing at different clocks, and
+  neighbouring groups are too close to tell apart.</p>
+  <p class="ctitle">Points above or below normal after 3+ losses and after 3+ wins, per 100 games</p>
   <div class="legend" id="lg3"></div>
-  <figure aria-label="Two bar charts: score minus expectation after three or more losses and after three or more wins, by time control and by rating">
+  <figure aria-label="Two bar charts: points above or below normal after three or more losses and after three or more wins, by time control and by rating">
     <div class="duo">
       <div><p class="psub">By time control</p><div id="c3a"></div></div>
       <div><p class="psub">By rating</p><div id="c3b"></div></div>
     </div>
   </figure>
-  <div class="callout"><span class="tk">Takeaway:</span> if you play rapid, tilt is a real line item: nearly two points
-  after three losses, one extra loss per 55 games. In bullet and blitz it is half a point or less, one extra loss per
-  150 to 250 games, and the hot hand after three wins is worth more than the tilt after three losses.</div>
+  <div class="callout"><span class="tk">Takeaway:</span> if you play rapid, the shortfall after three losses is nearly
+  two points, about two wins turned into losses per 100 games. In bullet and blitz it is under a point, about one
+  draw turned into a loss per 100 games, and the surplus after three wins is larger than the shortfall after three losses.</div>
   <details class="tbl"><summary>View the data</summary><div>
     <table>
-      <thead><tr><th>Group</th><th>Games after 3+ losses</th><th>Score</th><th>Expected</th><th>Tilt</th><th>Games after 3+ wins</th><th>Score</th><th>Expected</th><th>Hot hand</th></tr></thead>
+      <thead><tr><th>Group</th><th>Games after 3+ losses</th><th>Score (points per 100 games)</th><th>Expected</th><th>Difference</th><th>Games after 3+ wins</th><th>Score</th><th>Expected</th><th>Difference</th></tr></thead>
       <tbody>
-        <tr><td>Bullet</td><td>28,538</td><td>49.8%</td><td>50.4%</td><td>&minus;0.6 (&minus;1.2 to &minus;0.1)</td><td>38,578</td><td>52.1%</td><td>50.9%</td><td>+1.3 (+0.8 to +1.8)</td></tr>
-        <tr><td>Blitz</td><td>20,328</td><td>50.2%</td><td>50.6%</td><td>&minus;0.4 (&minus;1.1 to +0.3)</td><td>27,258</td><td>52.3%</td><td>51.1%</td><td>+1.2 (+0.6 to +1.8)</td></tr>
-        <tr><td>Rapid</td><td>11,127</td><td>49.1%</td><td>50.9%</td><td>&minus;1.8 (&minus;2.7 to &minus;0.9)</td><td>13,064</td><td>52.4%</td><td>51.1%</td><td>+1.4 (+0.4 to +2.2)</td></tr>
-        <tr><td>Classical*</td><td>540</td><td>52.0%</td><td>51.5%</td><td>+0.6 (&minus;3.4 to +4.4)</td><td>854</td><td>50.9%</td><td>51.7%</td><td>&minus;0.8 (&minus;4.0 to +2.2)</td></tr>
-        <tr><td>800</td><td>9,685</td><td>48.7%</td><td>50.6%</td><td>&minus;1.9 (&minus;2.9 to &minus;0.9)</td><td>11,596</td><td>52.0%</td><td>50.5%</td><td>+1.5 (+0.6 to +2.4)</td></tr>
-        <tr><td>1200</td><td>14,438</td><td>49.8%</td><td>50.5%</td><td>&minus;0.7 (&minus;1.5 to +0.3)</td><td>17,418</td><td>51.4%</td><td>50.4%</td><td>+1.0 (+0.2 to +1.8)</td></tr>
-        <tr><td>1600</td><td>16,869</td><td>49.6%</td><td>50.3%</td><td>&minus;0.8 (&minus;1.4 to &minus;0.1)</td><td>19,458</td><td>51.7%</td><td>50.4%</td><td>+1.3 (+0.6 to +1.9)</td></tr>
-        <tr><td>2000</td><td>12,890</td><td>51.0%</td><td>51.0%</td><td>0.0 (&minus;0.9 to +0.9)</td><td>18,560</td><td>52.8%</td><td>51.4%</td><td>+1.4 (+0.7 to +2.2)</td></tr>
-        <tr><td>2400</td><td>6,651</td><td>49.8%</td><td>50.7%</td><td>&minus;0.9 (&minus;2.1 to +0.2)</td><td>12,722</td><td>53.6%</td><td>52.5%</td><td>+1.1 (+0.2 to +2.0)</td></tr>
+        <tr><td>Bullet</td><td>27,927</td><td>49.8</td><td>50.5</td><td>&minus;0.7 (&minus;1.1 to &minus;0.2)</td><td>37,378</td><td>52.0</td><td>50.8</td><td>+1.2 (+0.7 to +1.6)</td></tr>
+        <tr><td>Blitz</td><td>19,719</td><td>50.3</td><td>50.6</td><td>&minus;0.3 (&minus;0.9 to +0.4)</td><td>25,743</td><td>52.2</td><td>51.0</td><td>+1.1 (+0.5 to +1.7)</td></tr>
+        <tr><td>Rapid</td><td>10,820</td><td>49.2</td><td>50.9</td><td>&minus;1.8 (&minus;2.7 to &minus;1.0)</td><td>12,366</td><td>52.3</td><td>51.1</td><td>+1.3 (+0.4 to +2.3)</td></tr>
+        <tr><td>Classical*</td><td>507</td><td>52.1</td><td>51.4</td><td>+0.7 (&minus;3.5 to +5.0)</td><td>735</td><td>51.4</td><td>51.4</td><td>&minus;0.1 (&minus;3.5 to +3.1)</td></tr>
+        <tr><td>800</td><td>9,557</td><td>48.6</td><td>50.6</td><td>&minus;1.9 (&minus;2.9 to &minus;0.8)</td><td>11,487</td><td>52.0</td><td>50.5</td><td>+1.5 (+0.7 to +2.5)</td></tr>
+        <tr><td>1200</td><td>14,097</td><td>49.8</td><td>50.5</td><td>&minus;0.7 (&minus;1.4 to +0.2)</td><td>17,202</td><td>51.4</td><td>50.4</td><td>+1.0 (+0.3 to +1.7)</td></tr>
+        <tr><td>1600</td><td>16,247</td><td>49.6</td><td>50.4</td><td>&minus;0.8 (&minus;1.4 to 0.0)</td><td>18,875</td><td>51.7</td><td>50.4</td><td>+1.2 (+0.6 to +1.9)</td></tr>
+        <tr><td>2000</td><td>12,554</td><td>51.1</td><td>51.0</td><td>0.0 (&minus;0.9 to +0.8)</td><td>17,051</td><td>52.7</td><td>51.4</td><td>+1.3 (+0.5 to +2.0)</td></tr>
+        <tr><td>2400</td><td>6,518</td><td>50.1</td><td>50.7</td><td>&minus;0.6 (&minus;1.7 to +0.5)</td><td>11,607</td><td>53.1</td><td>52.4</td><td>+0.7 (&minus;0.1 to +1.6)</td></tr>
       </tbody>
     </table>
     <p style="margin-top:10px;color:var(--ink-mid)">* Classical has too few same-sitting streaks to chart (its
@@ -363,97 +382,107 @@
 
 <section class="card" id="breaks">
   <div class="card-head"><div class="num">4</div>
-  <h2>Does a break help? Not a short one.</h2>
+  <h2>Does a break help? The data cannot say.</h2>
   <a class="anchor" href="#breaks" aria-label="Link to this section">#</a></div>
-  <p class="lede">The obvious remedy is to walk away, and the data on what happens next is awkward. Players who
-  start their next game within a minute of a second straight loss score <b>0.2 points</b> below expectation. Players
-  who pause for 10&ndash;30 minutes score <b>2.4 below</b>. That is not a causal claim: the player who steps away after
-  two losses is often the one who is more upset, more tired or more distracted, and a ten-minute break is more likely
-  to be a phone call than a meditation. The honest comparison is the <b>gap</b> between players coming off wins and
-  players coming off losses at the same break length: it is about two points for any break under 30 minutes, and gone
-  after 30 minutes to an hour. The two sides do not fade the same way, though: the hot hand is gone after a break of a
-  few minutes (+1.4 within a minute, +0.4 after one to three, nothing beyond ten), while the cold effect deepens for
-  the first half hour. By the gap, whatever a streak does to you lasts about half an hour whether you pause or not;
-  the half-hour cells are small enough that the true fade could sit anywhere between ten minutes and a couple of
-  hours.</p>
-  <p class="lede">Bullet has a twist. Playing straight on after two losses costs nothing (+0.1), a 3&ndash;10 minute
-  pause is followed by <b>&minus;3.0</b>, and the first game of <i>any</i> bullet session runs <b>&minus;2.2</b>. A cold
-  start costs a bullet player more than tilt ever does.</p>
-  <p class="ctitle">Score minus expectation after 2+ losses or 2+ wins, by the break before the next game</p>
+  <p class="lede">The obvious remedy is to walk away, and the data on what happens next is awkward: players who
+  start their next game within a minute of a second straight loss score about normal, while players who pause for
+  10&ndash;30 minutes score <b>2.4 points per 100 games below</b> it. That is not a verdict on breaks. The player who steps
+  away after two losses is often the one who is more upset, more tired or more distracted, and a ten-minute break is
+  more likely to be a phone call than a meditation. Players coming off <i>wins</i> show a similar, smaller dip after a pause, and
+  the gap between the two groups closes after half an hour or so, but mostly because the winners come down too,
+  not because the losers recover. From half an hour on, both lines sit about two points <i>below</i> normal whatever
+  the last result, for a reason that has nothing to do with the streak: coming back cold. In this study a break of an
+  hour or more starts a new session, and the first game of a session carries a cold-start penalty of its own (bullet
+  &minus;2.1, blitz &minus;0.7, rapid &minus;0.1 points per 100 games); the 30&ndash;60 minute cells show that the
+  warm-up cost already sets in before the hour is up. "Normal" here is
+  the level of games played mid-session, so a game after a long pause sits below it whether the last game was a win or a loss.
+  How long a streak's effect lasts for a given player, and what a break does to it, the data cannot say.</p>
+  <p class="lede">Two more things the data do say. Most players keep going: after a loss, seven in ten games are followed by
+  another within the hour, and after six or more losses nearly nine in ten, mostly because long same-sitting
+  streaks happen deep in long sessions. And bullet has a twist: playing straight on after two losses costs nothing, a
+  3&ndash;10 minute pause is followed by <b>&minus;2.9</b>, and the first game of <i>any</i> bullet session runs
+  <b>&minus;2.1</b>. A cold start costs a bullet player more than a losing streak ever does.</p>
+  <p class="ctitle">Points per 100 games above or below normal, after 2+ losses or 2+ wins, by the break before the next game</p>
   <div class="legend" id="lg4"></div>
-  <figure aria-label="Line chart: score minus expectation in the next game after two or more losses and after two or more wins, by the length of the break before it, all time controls">
+  <figure aria-label="Line chart: points above or below normal in the next game after two or more losses and after two or more wins, by the length of the break before it, all time controls">
     <div id="c4"></div>
   </figure>
-  <div class="callout"><span class="tk">Takeaway:</span> a "stop after two losses" rule, applied to every player in
-  this dataset, would have saved <b>0.07 points per 100 games</b> (0.11 in rapid): less than one point per thousand games.
-  That is the saving for the players who kept playing; what would have happened to those who did stop is not in the
-  data. If you take a break, take it for your mood, not for your rating.</div>
+  <p class="cnote">From half an hour on, both lines show the warm-up cost of coming back cold, not an after-effect
+  of the streak; breaks of an hour or more start a new session.</p>
+  <div class="callout"><span class="tk">Takeaway:</span> a "stop after two losses" rule cannot be tested here, because
+  the games it would have prevented were never played. What the data give is a sense of scale: games played right
+  after two or more losses in one sitting are 9% of all games and run 0.7 points per 100 games below normal. Spread over
+  everything you play, that is <b>less than one point per thousand games</b> (about one per thousand in rapid). Whether stopping would
+  recover any of that, no game history can show. If you take a break, take it for your mood.</div>
   <details class="tbl"><summary>View the data</summary><div>
     <table>
       <thead><tr><th>Break before the next game</th><th>After 2+ losses (all)</th><th>After 2+ wins (all)</th><th>Gap</th><th>Bullet, after losses</th><th>Bullet, after wins</th><th>Rapid, after losses</th><th>Rapid, after wins</th></tr></thead>
       <tbody>
-        <tr><td>Under 1 minute</td><td>&minus;0.2 (n 101,905)</td><td>+1.4 (n 117,085)</td><td>+1.6</td><td>+0.1</td><td>+1.6</td><td>&minus;1.4</td><td>+1.2</td></tr>
-        <tr><td>1&ndash;3 minutes</td><td>&minus;1.1 (n 18,816)</td><td>+0.4 (n 30,363)</td><td>+1.5</td><td>&minus;0.9</td><td>&minus;0.4</td><td>&minus;1.4</td><td>+0.6</td></tr>
-        <tr><td>3&ndash;10 minutes</td><td>&minus;2.1 (n 13,885)</td><td>+0.3 (n 19,745)</td><td>+2.5</td><td>&minus;3.0</td><td>&minus;0.7</td><td>&minus;1.6</td><td>+1.7</td></tr>
-        <tr><td>10&ndash;30 minutes</td><td>&minus;2.4 (n 13,006)</td><td>0.0 (n 14,230)</td><td>+2.4</td><td>&minus;2.2</td><td>&minus;0.9</td><td>&minus;2.9</td><td>+0.4</td></tr>
-        <tr><td>30&ndash;60 minutes</td><td>&minus;2.0 (n 9,149)</td><td>&minus;1.8 (n 9,077)</td><td>+0.2</td><td>&minus;2.2</td><td>&minus;2.6</td><td>&minus;2.5</td><td>&minus;0.9</td></tr>
-        <tr><td>1&ndash;6 hours</td><td>&minus;1.2 (n 22,091)</td><td>&minus;0.6 (n 21,279)</td><td>+0.6</td><td>&minus;2.9</td><td>&minus;2.1</td><td>&minus;0.4</td><td>+0.5</td></tr>
-        <tr><td>6&ndash;24 hours</td><td>&minus;1.6 (n 20,997)</td><td>&minus;1.5 (n 20,474)</td><td>+0.1</td><td>&minus;3.3</td><td>&minus;3.0</td><td>+0.9</td><td>&minus;0.7</td></tr>
-        <tr><td>1&ndash;7 days</td><td>+0.2 (n 7,902)</td><td>&minus;0.4 (n 7,867)</td><td>&minus;0.5</td><td>&minus;2.1</td><td>&minus;0.5</td><td>+0.8</td><td>+0.3</td></tr>
+        <tr><td>Under 1 minute</td><td>&minus;0.1 (n 98,140)</td><td>+1.4 (n 111,677)</td><td>+1.5</td><td>+0.1</td><td>+1.5</td><td>&minus;1.2</td><td>+1.2</td></tr>
+        <tr><td>1&ndash;3 minutes</td><td>&minus;1.2 (n 19,433)</td><td>+0.3 (n 30,174)</td><td>+1.5</td><td>&minus;0.9</td><td>&minus;0.2</td><td>&minus;1.8</td><td>+0.6</td></tr>
+        <tr><td>3&ndash;10 minutes</td><td>&minus;2.0 (n 14,012)</td><td>+0.3 (n 19,572)</td><td>+2.4</td><td>&minus;2.9</td><td>&minus;0.8</td><td>&minus;1.6</td><td>+1.8</td></tr>
+        <tr><td>10&ndash;30 minutes</td><td>&minus;2.4 (n 12,874)</td><td>0.0 (n 14,136)</td><td>+2.5</td><td>&minus;2.2</td><td>&minus;0.9</td><td>&minus;2.6</td><td>+0.5</td></tr>
+        <tr><td>30&ndash;60 minutes</td><td>&minus;2.0 (n 9,033)</td><td>&minus;1.8 (n 9,027)</td><td>+0.2</td><td>&minus;2.2</td><td>&minus;2.7</td><td>&minus;2.6</td><td>&minus;1.2</td></tr>
+        <tr><td>1&ndash;6 hours</td><td>&minus;1.3 (n 21,712)</td><td>&minus;0.6 (n 21,039)</td><td>+0.7</td><td>&minus;2.9</td><td>&minus;2.2</td><td>&minus;0.4</td><td>+0.5</td></tr>
+        <tr><td>6&ndash;24 hours</td><td>&minus;1.6 (n 20,491)</td><td>&minus;1.6 (n 20,113)</td><td>0.0</td><td>&minus;3.4</td><td>&minus;3.2</td><td>+0.8</td><td>&minus;0.9</td></tr>
+        <tr><td>1&ndash;7 days</td><td>+0.1 (n 7,518)</td><td>&minus;0.3 (n 7,568)</td><td>&minus;0.4</td><td>&minus;2.1</td><td>&minus;0.6</td><td>+0.6</td><td>+0.3</td></tr>
       </tbody>
     </table>
     <p style="margin-top:10px;color:var(--ink-mid)">The streak (two or more) happened in one sitting; the break is
-    measured from the end of the last game of the streak to the start of the next one. Breaks over 30 minutes are
-    followed by a cold-start penalty that hits both groups alike (first game of a session: bullet &minus;2.2, blitz
-    &minus;0.7, rapid &minus;0.1). Intervals are about &plusmn;0.3 for the under-a-minute cells and &plusmn;1 for the
+    measured from the end of the last game of the streak to the start of the next one. From 30 minutes on, both groups
+    show the warm-up dip of coming back cold (the first game of a new session, an hour or more later, runs bullet
+    &minus;2.1, blitz &minus;0.7, rapid &minus;0.1). Intervals are about &plusmn;0.3 for the under-a-minute cells and &plusmn;1 for the
     smaller ones.</p>
   </div></details>
 </section>
 
 <section class="card" id="which-loss">
   <div class="card-head"><div class="num">5</div>
-  <h2>Which loss tilts you? Not the one you think.</h2>
+  <h2>Which loss hurts the next game? Not the one you think.</h2>
   <a class="anchor" href="#which-loss" aria-label="Link to this section">#</a></div>
   <p class="lede">Folklore says the blown win hurts most. Split losses by what they looked like and the data cannot
-  find it. A loss in which you had entered the endgame <b>two pawns up</b> (Stockfish +2 or better, and still lost) is
-  followed by a game at or above expectation (<b>+0.3</b>; +0.6 among long games). Two thirds of those are flags in a won
-  endgame; the blown win by resignation, the kind that really stings, is rarer and its interval (&minus;0.9 to +0.8)
-  rules out anything large. A long fight of more than 30 moves: no effect at all (+0.1). What hurts is the quick
-  collapse. A loss in under eleven moves is followed by <b>&minus;2.0</b>, a game that never reached an endgame by
-  &minus;1.2, and a loss by disconnection by <b>&minus;3.5</b>. Resigning (&minus;0.7) is worse than getting checkmated
-  (&minus;0.2) or flagged (&minus;0.3).</p>
-  <p class="lede">A plausible reading is not that quick losses <i>cause</i> tilt but that they reveal it: a ten-move
-  loss is often a distracted, pre-moving, phone-in-hand game, and that state carries into the next one. One caveat:
-  a game thrown away before the endgame, a hung queen at move 20, lands in the "never reached an endgame" cell with
-  every other short loss, so this cut cannot tell that kind of blown win from a collapse. What it can say is that the
-  game you fought hard and lost is not the one to worry about.</p>
-  <p class="ctitle">Score minus expectation in the next game, by what the loss looked like</p>
-  <figure aria-label="Bar chart: score minus expectation in the game after a loss, split by how the loss ended, how long it lasted, and the position when it entered the endgame">
+  find it. A loss in which you had entered the endgame <b>two pawns up</b> (a Stockfish evaluation of +2 or better, and
+  still lost) is followed by a game at or above normal (<b>+0.4</b>). Two thirds of those are
+  flags in a won endgame; the blown win by resignation, the kind that really stings, is rarer, too rare to pin down
+  exactly, but nothing large is hiding there. A long fight of more than 30 moves: no effect at all (+0.1). What is followed by a
+  worse game is the quick collapse. A loss in under eleven moves is followed by <b>&minus;2.1</b>, a game that never
+  reached an endgame by &minus;1.2, and a loss by disconnection by <b>&minus;3.7</b>. Resigning (&minus;0.6) is worse
+  than getting checkmated (&minus;0.2) or flagged (&minus;0.3).</p>
+  <p class="lede">A plausible reading is not that quick losses <i>cause</i> tilt but that they reveal something: a
+  ten-move loss is often a distracted, pre-moving, phone-in-hand game, or a bad connection, and whatever it was is
+  still there in the next one. One caveat: a game thrown away before the endgame, a hung queen at move 20, lands in
+  the "never reached an endgame" cell with every other short loss, so this cut cannot tell that kind of blown win from
+  a collapse. What it can say is that among players who kept playing, the game you fought hard and lost is not
+  followed by a worse one. The pattern holds when each player is compared only with their own games (disconnect
+  &minus;3.2, under eleven moves &minus;1.6, over 30 moves +0.3), so it is not simply that players with bad
+  connections score below their rating in every game.</p>
+  <p class="ctitle">Points above or below normal in the next game, by what the loss looked like, per 100 games</p>
+  <figure aria-label="Bar chart: points above or below normal in the game after a loss, split by how the loss ended, how long it lasted, and the position when it entered the endgame">
     <div id="c5"></div>
   </figure>
   <div class="callout"><span class="tk">Mirror image:</span> long wins are followed by better games than short ones
-  (+0.9 after more than 30 moves, +0.1 under eleven), and a comeback win from an endgame you entered two pawns
-  <i>down</i> is followed by <b>+1.0</b> points (bullet: +1.9).</div>
+  (+0.9 after more than 30 moves, +0.2 under eleven), and a comeback win from an endgame you entered two pawns
+  <i>down</i> is followed by <b>+1.0</b> points.</div>
   <details class="tbl"><summary>View the data</summary><div>
     <table>
       <thead><tr><th>The loss was&hellip;</th><th>Games</th><th>All time controls</th><th>Bullet</th><th>Blitz</th><th>Rapid</th></tr></thead>
       <tbody>
-        <tr><td>by checkmate</td><td>122,324</td><td>&minus;0.2 (&minus;0.5 to +0.1)</td><td>&minus;0.1</td><td>&minus;0.2</td><td>&minus;0.3</td></tr>
-        <tr><td>by resignation</td><td>238,167</td><td>&minus;0.7 (&minus;0.9 to &minus;0.5)</td><td>&minus;0.9</td><td>&minus;0.5</td><td>&minus;0.8</td></tr>
-        <tr><td>on time</td><td>148,409</td><td>&minus;0.3 (&minus;0.6 to &minus;0.1)</td><td>&minus;0.2</td><td>&minus;0.4</td><td>&minus;1.1</td></tr>
-        <tr><td>by disconnection</td><td>5,476</td><td>&minus;3.5 (&minus;4.7 to &minus;2.2)</td><td>&minus;4.9</td><td>&minus;3.8</td><td>&minus;2.6</td></tr>
-        <tr><td>under 11 moves</td><td>20,463</td><td>&minus;2.0 (&minus;2.6 to &minus;1.4)</td><td>&minus;2.6</td><td>&minus;2.4</td><td>&minus;1.0</td></tr>
-        <tr><td>11 to 30 moves</td><td>228,122</td><td>&minus;1.0 (&minus;1.2 to &minus;0.8)</td><td>&minus;1.3</td><td>&minus;0.9</td><td>&minus;0.8</td></tr>
-        <tr><td>over 30 moves</td><td>265,799</td><td>+0.1 (&minus;0.1 to +0.3)</td><td>+0.5</td><td>+0.1</td><td>&minus;0.6</td></tr>
-        <tr><td>never reached an endgame</td><td>193,603</td><td>&minus;1.2 (&minus;1.4 to &minus;0.9)</td><td>&minus;1.6</td><td>&minus;1.0</td><td>&minus;0.8</td></tr>
-        <tr><td>entered the endgame two pawns down</td><td>167,694</td><td>&minus;0.2 (&minus;0.4 to 0.0)</td><td>+0.2</td><td>&minus;0.3</td><td>&minus;0.8</td></tr>
-        <tr><td>entered the endgame level</td><td>104,475</td><td>&minus;0.1 (&minus;0.4 to +0.2)</td><td>+0.1</td><td>+0.1</td><td>&minus;0.7</td></tr>
-        <tr><td>entered the endgame two pawns up (blown)</td><td>48,612</td><td>+0.3 (&minus;0.1 to +0.8)</td><td>+0.4</td><td>+0.2</td><td>+0.3</td></tr>
+        <tr><td>by checkmate</td><td>120,570</td><td>&minus;0.2 (&minus;0.4 to +0.1)</td><td>&minus;0.1</td><td>&minus;0.2</td><td>&minus;0.2</td></tr>
+        <tr><td>by resignation</td><td>235,863</td><td>&minus;0.6 (&minus;0.8 to &minus;0.5)</td><td>&minus;0.9</td><td>&minus;0.4</td><td>&minus;0.8</td></tr>
+        <tr><td>on time</td><td>146,940</td><td>&minus;0.3 (&minus;0.6 to &minus;0.1)</td><td>&minus;0.2</td><td>&minus;0.5</td><td>&minus;1.1</td></tr>
+        <tr><td>by disconnection</td><td>5,219</td><td>&minus;3.7 (&minus;5.0 to &minus;2.3)</td><td>&minus;5.2</td><td>&minus;4.0</td><td>&minus;2.9</td></tr>
+        <tr><td>under 11 moves</td><td>20,027</td><td>&minus;2.1 (&minus;2.8 to &minus;1.4)</td><td>&minus;2.8</td><td>&minus;2.4</td><td>&minus;1.2</td></tr>
+        <tr><td>11 to 30 moves</td><td>226,144</td><td>&minus;1.0 (&minus;1.2 to &minus;0.8)</td><td>&minus;1.3</td><td>&minus;0.8</td><td>&minus;0.8</td></tr>
+        <tr><td>over 30 moves</td><td>262,429</td><td>+0.1 (&minus;0.1 to +0.3)</td><td>+0.5</td><td>+0.1</td><td>&minus;0.6</td></tr>
+        <tr><td>never reached an endgame</td><td>191,673</td><td>&minus;1.1 (&minus;1.4 to &minus;0.9)</td><td>&minus;1.6</td><td>&minus;1.0</td><td>&minus;0.8</td></tr>
+        <tr><td>entered the endgame two pawns down</td><td>165,591</td><td>&minus;0.2 (&minus;0.4 to 0.0)</td><td>+0.2</td><td>&minus;0.3</td><td>&minus;0.8</td></tr>
+        <tr><td>entered the endgame level</td><td>103,204</td><td>0.0 (&minus;0.3 to +0.3)</td><td>+0.2</td><td>+0.2</td><td>&minus;0.7</td></tr>
+        <tr><td>entered the endgame two pawns up (blown)</td><td>48,132</td><td>+0.4 (&minus;0.1 to +0.8)</td><td>+0.5</td><td>+0.1</td><td>+0.5</td></tr>
       </tbody>
     </table>
     <p style="margin-top:10px;color:var(--ink-mid)">Next game within the hour, fresh same-rating opponent, settled accounts.
     "Two pawns up" is a Stockfish evaluation of at least +2.0 at the first move of the endgame (Lichess's own phase
-    rule). The pattern survives restricting to single losses, so it is not streak length in disguise, and the endgame
+    rule); an evaluation lead, not necessarily two pawns of material, and not necessarily still winning at the end. The pattern survives restricting to single losses, so it is not streak length in disguise, and the endgame
     cut holds inside long losses alone, so it is not length in disguise either (technical report, section 5).
     Classical is in the report only.</p>
   </div></details>
@@ -461,55 +490,56 @@
 
 <section class="card" id="behaviour">
   <div class="card-head"><div class="num">6</div>
-  <h2>What tilt actually looks like: faster, angrier, gone</h2>
+  <h2>What changes after a loss: faster, angrier, gone</h2>
   <a class="anchor" href="#behaviour" aria-label="Link to this section">#</a></div>
   <p class="lede">If the score barely moves, where does the feeling go? Into behaviour. After a loss, players:</p>
   <ul class="adv-list">
-    <li><b>Speed up.</b> Time per move in the opening and early middlegame (moves 3 to 20) falls <b>2 to 4%</b> after a loss
-    compared with after a win, for two thirds to three quarters of all players.</li>
-    <li><b>Blunder a little more, eventually.</b> In rapid games with full engine analysis, <b>6.4 blunders per 100
-    moves</b> after a loss and 6.4 after a win; after three or more losses, 7.0. The opponent's rate rises in those
-    same games, so part of it is the sharper, faster game a tilted player gets into. Tilt shows up on the clock after
-    one loss, and on the board after three.</li>
-    <li><b>Quit, or rush.</b> A bullet session ends after <b>21.7%</b> of losses and 16.2% of wins; 55% of bullet
-    sessions end on a loss, against a 47% loss rate. Rapid players do the opposite: 53% start the next game within a
-    minute after a loss, 43% after a win.</li>
+    <li><b>Speed up.</b> Time per move in the opening and early middlegame (moves 3 to 20) falls <b>1.5 to 4%</b> after a loss
+    compared with after a win, comparing each player with themselves. It is not a few people driving the average:
+    two thirds to three quarters of players are individually faster after a loss.</li>
+    <li><b>Blunder a little more, eventually, maybe.</b> In rapid games with an engine evaluation (a Lichess analysis
+    requested by either player, or Stockfish run by the study), <b>5.8 blunders per 100 moves</b> after a loss and 5.7
+    after a win; after three or more losses, 6.3. The opponent's rate rises in those same games too, by about half as
+    much, so part of this may be the kind of game rather than the player. On the clock the change shows after one
+    loss; on the board, if at all, after three.</li>
+    <li><b>Quit, or rush.</b> A bullet session ends after <b>22%</b> of losses and 17% of wins. Rapid players who carry
+    on do it faster after a loss: of those who play again within the hour, half start within a minute after a loss and
+    four in ten after a win.</li>
     <li><b>Take revenge.</b> Sections 1 to 5 measured streaks against fresh opponents; here the rematch comes back.
-    One next game in eleven is a rematch against the opponent who just won. Those games average
-    <b>47.9%</b> against an expectation of 49.7%: <b>&minus;1.7 points</b>, against &minus;0.5 for the next game against
-    someone new, so the rematch itself costs about 1.2 points. Some of that is the matchup: the player who just beat
-    you is, on the evidence of that game, a little better than their rating, and the mirror shows it (the first rematch
-    against someone you just <i>beat</i> runs +0.5 above a fresh opponent). The rest, roughly a point, is the mood.
-    The revenge penalty grows with the game length: &minus;1.1 in bullet, &minus;1.7 in blitz, <b>&minus;2.9</b> in rapid,
-    &minus;4.0 in classical.</li>
+    One next game in eleven is a rematch against the opponent who just won. Those games run <b>1.8 points per 100 games
+    below normal</b>, against 0.5 for the next game against someone new, so the rematch itself costs about 1.3 points.
+    How much of that is the matchup and how much is you, the data cannot split: the player who just beat you is, on the
+    evidence of that game, a little better than their rating, and the rematch against someone you just <i>beat</i> shows
+    a matching bonus, but both players choose the rematch for reasons of their own. The penalty grows with the time
+    control: &minus;1.2 in bullet, &minus;1.7 in blitz, <b>&minus;3.0</b> in rapid, &minus;4.3 in classical.</li>
   </ul>
   <p class="ctitle">The revenge rematch, and who quits on a loss</p>
   <div class="legend" id="lg6"></div>
-  <figure aria-label="Two bar charts: score minus expectation when rematching the same opponent versus playing a new one, after a loss and after a win; and the share of sessions that end after a loss versus after a win, by time control">
+  <figure aria-label="Two bar charts: points above or below normal when rematching the same opponent versus playing a new one, after a loss and after a win; and the share of sessions that end after a loss versus after a win, by time control">
     <div class="duo">
-      <div><p class="psub">Score minus expectation in the next game</p><div id="c6a"></div></div>
+      <div><p class="psub">Points above or below normal in the next game, per 100 games</p><div id="c6a"></div></div>
       <div><p class="psub">Chance the session ends after this game</p><div id="c6b"></div></div>
     </div>
   </figure>
-  <div class="callout"><span class="tk">Takeaway:</span> the revenge rematch is the one tilt decision with a visible
-  price: about <b>a point</b> beyond an ordinary post-loss game, more than four straight losses cost, and unlike a
-  losing streak it is a choice. Decline it, or at least wait a game.</div>
+  <div class="callout"><span class="tk">Takeaway:</span> the immediate rematch is the one decision on this page with a
+  visible price: about <b>1.3 points</b> beyond an ordinary post-loss game, more than four straight losses cost. Whether
+  declining it would recover that, this comparison cannot prove, but unlike a losing streak it is a choice.</div>
   <details class="tbl"><summary>View the data</summary><div>
     <table>
-      <thead><tr><th>Time control</th><th>Rematch rate after a loss</th><th>Revenge rematch: score</th><th>Expected</th><th>Revenge rematch</th><th>New opponent after a loss</th><th>Rematch after a win</th><th>Session ends after a loss</th><th>&hellip;after a win</th><th>Next game within 60 s after a loss / win</th></tr></thead>
+      <thead><tr><th>Time control</th><th>Rematch rate after a loss</th><th>Revenge rematch: score (points per 100 games)</th><th>Expected</th><th>Revenge rematch</th><th>New opponent after a loss</th><th>Rematch after a win</th><th>Session ends after a loss</th><th>&hellip;after a win</th><th>Next game within 60 s after a loss / win, of those who continue</th></tr></thead>
       <tbody>
-        <tr><td>Bullet</td><td>10.0%</td><td>48.6%</td><td>49.7%</td><td>&minus;1.1 (&minus;2.0 to &minus;0.5)</td><td>&minus;0.4</td><td>0.0</td><td>21.7%</td><td>16.2%</td><td>70% / 73%</td></tr>
-        <tr><td>Blitz</td><td>9.7%</td><td>47.9%</td><td>49.5%</td><td>&minus;1.7 (&minus;2.4 to &minus;1.0)</td><td>&minus;0.4</td><td>+0.8</td><td>27.8%</td><td>23.2%</td><td>65% / 60%</td></tr>
-        <tr><td>Rapid</td><td>7.6%</td><td>46.9%</td><td>49.9%</td><td>&minus;2.9 (&minus;4.0 to &minus;1.9)</td><td>&minus;0.7</td><td>+1.6</td><td>38.3%</td><td>35.6%</td><td>53% / 43%</td></tr>
-        <tr><td>Classical</td><td>11.3%</td><td>45.3%</td><td>49.4%</td><td>&minus;4.0 (&minus;6.7 to &minus;1.2)</td><td>&minus;0.5</td><td>+3.5</td><td>59.2%</td><td>57.6%</td><td>41% / 39%</td></tr>
-        <tr><td>All</td><td>9.4%</td><td>47.9%</td><td>49.7%</td><td>&minus;1.7 (&minus;2.2 to &minus;1.2)</td><td>&minus;0.5</td><td>+0.6</td><td></td><td></td><td></td></tr>
+        <tr><td>Bullet</td><td>9.9%</td><td>48.6</td><td>49.8</td><td>&minus;1.2 (&minus;1.9 to &minus;0.4)</td><td>&minus;0.4</td><td>0.0</td><td>22.3%</td><td>17.2%</td><td>68% / 72%</td></tr>
+        <tr><td>Blitz</td><td>9.8%</td><td>47.9</td><td>49.5</td><td>&minus;1.7 (&minus;2.4 to &minus;0.9)</td><td>&minus;0.4</td><td>+0.7</td><td>28.6%</td><td>24.5%</td><td>64% / 59%</td></tr>
+        <tr><td>Rapid</td><td>7.7%</td><td>46.9</td><td>49.9</td><td>&minus;3.0 (&minus;4.0 to &minus;2.0)</td><td>&minus;0.7</td><td>+1.6</td><td>38.2%</td><td>36.6%</td><td>51% / 40%</td></tr>
+        <tr><td>Classical</td><td>11.3%</td><td>44.9</td><td>49.2</td><td>&minus;4.3 (&minus;7.1 to &minus;1.8)</td><td>&minus;0.5</td><td>+2.8</td><td>60.0%</td><td>59.7%</td><td>15% / 12%</td></tr>
+        <tr><td>All</td><td>9.4%</td><td>47.9</td><td>49.7</td><td>&minus;1.8 (&minus;2.2 to &minus;1.3)</td><td>&minus;0.5</td><td>+0.6</td><td></td><td></td><td></td></tr>
       </tbody>
     </table>
     <p style="margin-top:10px;color:var(--ink-mid)">Rematch: the next game, within the hour, against the same opponent.
     Rematch rates rise with rating (7% at 800, 15% at 2400); the revenge penalty is largest at 800 and 1200
-    (&minus;2.1, &minus;3.4) and smallest at 2400 (&minus;0.4). Session-end and rush rates use every rated game; the
-    rest use same-rating games only. Time per move, blunder rates and the first-rematch split: technical report,
-    section 6.</p>
+    (&minus;2.1, &minus;3.4) and smallest at 2400 (&minus;0.5). All rates use same-rating games with settled accounts;
+    session-end rates leave out each player's last recorded game, whose sequel is unknown. Time per move, blunder
+    rates and the first-rematch split: technical report, section 6.</p>
   </div></details>
 </section>
 
@@ -523,21 +553,20 @@
     <a class="anchor" href="#takeaways" aria-label="Link to this section">#</a>
   </div>
   <ul class="adv">
-    <li><b>Tilt is real, and small.</b> After three straight losses your next game runs 0.6 points below what your
-    rating predicts, about one extra loss per 180 games; after six or more, one per 50. Your raw stats show a swing
-    five times bigger, and that part is who you were playing and when, not you.</li>
-    <li><b>Forget the stop-loss rule.</b> Stopping after every second loss saves less than one point per thousand games.
-    Whatever a streak does to you fades in about half an hour whether you pause or not, and in bullet a cold start
-    costs more than tilt does: if anything, keep playing.</li>
-    <li><b>Decline the revenge rematch.</b> The immediate rematch against the player who just beat you is the one
-    tilt decision with a visible price: about a point beyond an ordinary post-loss game, more than four losses in a
-    row. In rapid it is two points.</li>
-    <li><b>Do not fear the long loss.</b> Losing a game you fought for, even from a won endgame, leaves no mark on the
-    next one. The losses that do are the ten-move collapses and the disconnects, which mostly tell you that you were
-    not really playing in the first place.</li>
-    <li><b>Watch the clock first.</b> After a loss you play 2 to 4% faster and are more likely to quit or to rush into
-    the next game; the blunder rate only moves after three losses in a row. If you notice yourself pre-moving through
-    the opening, that is what tilt looks like in the data.</li>
+    <li><b>Your stats overstate tilt.</b> After three straight losses your next game runs 0.5 points per 100 games below normal, about one draw turned into a loss per 100 games; after six or more, two wins turned into losses. Your
+    raw stats show a swing several times bigger, and that part is who you were playing and when, not you.</li>
+    <li><b>The stop-loss rule is untested, not disproven.</b> Games played right after two losses in one sitting cost
+    you less than one point per thousand games in total, and whether stopping would recover any of that, no game history can show,
+    because the games that stopped players would have played do not exist. What the data do show: in bullet, a cold
+    start (2.1 points for the first game of a sitting) is bigger than any losing streak.</li>
+    <li><b>Think twice about the revenge rematch.</b> The immediate rematch against the player who just beat you runs
+    about 1.3 points below an ordinary post-loss game, more than four losses in a row, and the price rises with the time control.</li>
+    <li><b>Do not fear the long loss.</b> Losing a game you fought for, even from a won endgame, is not followed by a
+    worse game on average. The losses that are: ten-move collapses and disconnects, which mostly tell you that you were
+    not really playing, or not really connected, in the first place.</li>
+    <li><b>Watch the clock first.</b> After a loss you play 1.5 to 4% faster and are more likely to quit or to rush into
+    the next game; the blunder rate only moves, if at all, after three losses in a row. If you notice yourself
+    pre-moving through the opening, that is what the data can see.</li>
   </ul>
 </section>
 
@@ -546,19 +575,22 @@
     <h2>About this analysis</h2>
     <p style="margin-top:8px">I analyzed <b>2,670,215 rated Lichess games</b> played between March 2023 and May 2026 by
     the 4,487 players in the FlawChess benchmark database, roughly 200 players in each of twenty rating (800 to 2400)
-    and time-control (bullet, blitz, rapid, classical) cells, about 300 games each. Each player's games were ordered in
+    and time-control (bullet, blitz, rapid, classical) cells, about 600 games each on average (at most 1,000). Each player's games were ordered in
     time within a time control; a break of an hour or more from the end of one game to the start of the next (game
-    ends come from the clock times in the game record) starts a new session. Only games between opponents within 100
+    ends are reconstructed from the clock times in the game record; there is no end timestamp) starts a new session. Only games between opponents within 100
     rating points are scored (78% of games; the sequence features, streaks, breaks and rematches, use the full
     history). Every streak number also requires a fresh opponent: the next game is against nobody from the streak,
     because a rematch series carries its own matchup and the streak effect inside one is about twice as large
-    (rematches are analyzed on their own in section 6). "Expected" is the average score of players in the same time control, 400-point rating band, colour and
+    (rematches are analyzed on their own in section 6). "Normal" (the expected score) is the average score of players in the same time control, 400-point rating band, colour and
     25-point rating-gap bin, measured on the same kind of games (settled accounts, not the first game of a sitting),
     because Lichess ratings are not quite Elo-calibrated: a 100 to 150-point favourite scores about 63%, not the 67%
-    the Elo formula predicts. Every interval is a bootstrap over players. Every tilt number describes players who kept
-    playing within the hour; the players who stopped are, by construction, not observed.
-    Full methodology, all controls (colour, trailing form, player fixed effects), every table, and a comparison with
-    the published literature are in the technical report.</p>
+    the Elo formula predicts. Differences between score and normal are given in points per 100 games (a win counts 1, a draw
+    &frac12;), which is the same quantity as percentage points of score. The uncertainty ranges in the tables come from resampling players rather than games, and for the main curve they
+    also allow for the uncertainty in that expectation. A model that compares each player only with themselves, at the same clock
+    setting and rating gap, reproduces the main curve. Every number describes players who kept playing within the
+    hour; the players who stopped are, by construction, not observed, and nothing here measures mood directly.
+    Full methodology, all controls (colour, trailing form, the within-player model, alternative session and account
+    rules), every table, and a comparison with the published literature are in the technical report.</p>
     <p style="margin-top:10px">
       <a href="https://github.com/flawchess/flawchess/blob/main/stories/tilt/tilt-report.md" data-umami-event="outbound-report-tilt">Read the technical report</a>
       &middot;
@@ -570,9 +602,9 @@
     facing the same selection (hot versus cold at the same break length) rather than on single cells. Two published
     studies that condition on ratings the way this one does (Gee et al. 2025 on Lichess, Rosenthal 2025 on chess.com)
     also find next-game effects of at most a few points; analyses reporting 10 to 20 point swings do not control for
-    opponent rating or rating lag. Time of day is not analysed (the data has no player time zone). Tilt-proneness
-    differs between players, but weakly: a player's own tilt number from 300 games is about 80% noise (split-half
-    reliability 0.19), so this story reports population averages rather than a personal tilt score. Unrated games and
+    opponent rating or rating lag. Time of day is not analysed (the data has no player time zone). The post-loss dip
+    differs between players, but weakly: estimates of a single player's own number from a few hundred games are about 90% noise
+    (reliability about 0.1), so this story reports population averages rather than a personal tilt score. Unrated games and
     games against bots are excluded.</p>
   </div>
   <div class="promo">
@@ -616,58 +648,58 @@ const xPhrase=x=>{const k=Math.abs(x),noun=x<0?(k>1?"losses":"loss"):(k>1?"wins"
   return `${k}${k===6?" or more":""} ${noun}${k>1?" in a row":""}`;};
 /* ladder6.csv: raw history -> equal footing -> one sitting + settled accounts, plus the expectation */
 const LADDER={
-  raw:      [43.423,47.490,48.494,49.123,49.874,51.094,52.158,53.411,54.586,55.692,57.690,65.380],
-  equal:    [47.643,49.099,49.429,49.556,49.720,50.393,51.034,51.545,51.964,52.039,53.045,53.932],
-  ctrl:     [48.093,48.867,50.113,50.079,49.980,50.584,51.051,51.462,52.028,51.979,53.122,53.223],
-  ctrlLo:   [46.623,47.553,49.341,49.540,49.661,50.411,50.861,51.179,51.566,51.327,52.063,52.019],
-  ctrlHi:   [49.705,50.161,50.892,50.553,50.297,50.763,51.244,51.759,52.519,52.652,54.254,54.431],
-  expected: [50.240,50.460,50.627,50.643,50.737,50.831,50.772,50.848,50.937,50.990,51.116,51.102],
-  nRaw:     [37603,33786,68470,140752,294444,636836,646580,319654,162473,84464,44804,65848],
-  nCtrl:    [4509,5738,14195,36091,96221,272676,288456,110741,45164,19172,8391,7027]
+  raw:      [43.403,47.499,48.469,49.099,49.865,51.112,52.139,53.415,54.589,55.718,57.712,65.405],
+  equal:    [47.624,49.102,49.423,49.533,49.714,50.404,51.027,51.539,51.975,52.061,53.062,53.968],
+  ctrl:     [48.293,48.851,50.130,50.118,49.996,50.595,51.063,51.454,51.944,51.831,53.146,52.699],
+  ctrlLo:   [46.704,47.603,49.334,49.632,49.665,50.410,50.870,51.154,51.495,51.183,52.073,51.467],
+  ctrlHi:   [49.884,50.202,50.947,50.598,50.316,50.791,51.279,51.739,52.420,52.535,54.289,53.946],
+  expected: [50.253,50.472,50.659,50.653,50.746,50.833,50.778,50.846,50.929,50.951,51.064,50.997],
+  nRaw:     [37724,33889,68646,141045,295044,635543,645176,320255,162786,84622,44915,66069],
+  nCtrl:    [4306,5569,13817,35281,94514,269534,284714,108358,43697,18326,7882,6317]
 };
 /* streak_curve.csv: residual (score minus expectation) with 95% intervals */
 const TILT={
-  v: [-2.147,-1.593,-0.514,-0.564,-0.757,-0.247,0.279,0.614,1.091,0.990,2.006,2.121],
-  lo:[-3.622,-2.861,-1.308,-1.095,-1.064,-0.410,0.103,0.339,0.647,0.329,0.948,0.873],
-  hi:[-0.585,-0.313,0.229,-0.092,-0.448,-0.072,0.457,0.910,1.559,1.646,3.109,3.293]
+  v: [-1.960,-1.621,-0.528,-0.535,-0.750,-0.238,0.285,0.608,1.015,0.880,2.082,1.702],
+  lo:[-3.588,-2.888,-1.250,-1.059,-1.037,-0.400,0.123,0.345,0.543,0.192,1.021,0.425],
+  hi:[-0.365,-0.397,0.226,-0.048,-0.447,-0.079,0.452,0.888,1.454,1.592,3.156,2.895]
 };
 /* streak3_by_tc.csv / streak3_by_rating.csv: residual after 3+ losses (cold) and 3+ wins (hot). Classical is
-   left to the table: 629 / 936 games, intervals seven points wide. */
+   left to the table: 507 / 735 games, intervals seven points wide. */
 const BY_TC={labels:["Bullet","Blitz","Rapid"],
-  cold:[-0.645,-0.386,-1.846],coldLo:[-1.224,-1.107,-2.708],coldHi:[-0.059,0.283,-0.913],coldN:[28538,20328,11127],
-  hot:[1.283,1.229,1.352],hotLo:[0.796,0.557,0.446],hotHi:[1.804,1.848,2.201],hotN:[38578,27258,13064]};
+  cold:[-0.671,-0.311,-1.770],coldLo:[-1.118,-0.940,-2.729],coldHi:[-0.169,0.407,-0.973],coldN:[27927,19719,10820],
+  hot:[1.164,1.107,1.270],hotLo:[0.667,0.497,0.389],hotHi:[1.623,1.675,2.331],hotN:[37378,25743,12366]};
 const BY_RATING={labels:["800","1200","1600","2000","2400"],
-  cold:[-1.900,-0.657,-0.771,0.019,-0.873],coldLo:[-2.862,-1.483,-1.450,-0.936,-2.133],coldHi:[-0.943,0.270,-0.108,0.882,0.169],coldN:[9685,14438,16869,12890,6651],
-  hot:[1.495,0.987,1.277,1.428,1.108],hotLo:[0.641,0.182,0.631,0.694,0.160],hotHi:[2.409,1.787,1.906,2.174,1.962],hotN:[11596,17418,19458,18560,12722]};
+  cold:[-1.911,-0.664,-0.779,0.035,-0.587],coldLo:[-2.878,-1.431,-1.404,-0.851,-1.678],coldHi:[-0.765,0.208,-0.049,0.776,0.475],coldN:[9557,14097,16247,12554,6518],
+  hot:[1.491,1.009,1.234,1.276,0.700],hotLo:[0.661,0.311,0.637,0.502,-0.111],hotHi:[2.496,1.709,1.924,2.016,1.585],hotN:[11487,17202,18875,17051,11607]};
 /* break_test.csv, "all" rows: residual after 2+ losses / 2+ wins by the break before the next game */
 const BREAKS={labels:["<1 min","1–3 min","3–10 min","10–30 min","30–60 min","1–6 h","6–24 h","1–7 d"],
-  cold:[-0.194,-1.089,-2.144,-2.418,-1.958,-1.248,-1.571,0.183],coldLo:[-0.482,-1.784,-2.895,-3.338,-2.842,-1.930,-2.230,-0.878],coldHi:[0.046,-0.379,-1.346,-1.593,-0.861,-0.551,-0.895,1.155],
-  coldN:[101905,18816,13885,13006,9149,22091,20997,7902],
-  hot:[1.425,0.373,0.317,-0.035,-1.768,-0.601,-1.459,-0.359],hotLo:[1.116,-0.213,-0.331,-0.765,-2.754,-1.269,-2.028,-1.402],hotHi:[1.713,0.861,1.083,0.785,-0.773,-0.038,-0.775,0.593],
-  hotN:[117085,30363,19745,14230,9077,21279,20474,7867]};
+  cold:[-0.143,-1.189,-2.014,-2.423,-2.004,-1.296,-1.611,0.123],coldLo:[-0.471,-1.914,-2.760,-3.255,-3.046,-1.874,-2.226,-0.886],coldHi:[0.122,-0.558,-1.133,-1.556,-1.016,-0.741,-0.957,1.196],
+  coldN:[98140,19433,14012,12874,9033,21712,20491,7518],
+  hot:[1.364,0.331,0.337,0.034,-1.770,-0.594,-1.634,-0.313],hotLo:[1.091,-0.121,-0.305,-0.826,-2.774,-1.138,-2.289,-1.496],hotHi:[1.613,0.893,1.008,0.787,-0.807,0.110,-0.991,0.870],
+  hotN:[111677,30174,19572,14136,9027,21039,20113,7568]};
 /* loss_by_termination / loss_by_length / loss_by_endgame .csv, "all" columns */
 const ANATOMY=[
   {group:"How it ended",items:[
-    {l:"check-|mated",v:-0.188,lo:-0.451,hi:0.072,n:136661},
-    {l:"resigned",v:-0.661,lo:-0.868,hi:-0.462,n:263162},
-    {l:"on|time",v:-0.341,lo:-0.614,hi:-0.080,n:163842},
-    {l:"discon-|nected",v:-3.470,lo:-4.671,hi:-2.160,n:5520}]},
+    {l:"check-|mated",v:-0.155,lo:-0.421,hi:0.102,n:120570},
+    {l:"resigned",v:-0.646,lo:-0.825,hi:-0.456,n:235863},
+    {l:"on|time",v:-0.339,lo:-0.579,hi:-0.090,n:146940},
+    {l:"discon-|nected",v:-3.682,lo:-4.962,hi:-2.316,n:5219}]},
   {group:"How long it lasted",items:[
-    {l:"under 11|moves",v:-2.017,lo:-2.581,hi:-1.365,n:22179},
-    {l:"11–30|moves",v:-1.003,lo:-1.199,hi:-0.791,n:249906},
-    {l:"over 30|moves",v:0.075,lo:-0.111,hi:0.261,n:297112}]},
+    {l:"under 11|moves",v:-2.094,lo:-2.754,hi:-1.353,n:20027},
+    {l:"11–30|moves",v:-0.984,lo:-1.182,hi:-0.788,n:226144},
+    {l:"over 30|moves",v:0.093,lo:-0.098,hi:0.278,n:262429}]},
   {group:"The endgame it reached",items:[
-    {l:"none",v:-1.155,lo:-1.395,hi:-0.943,n:212185},
-    {l:"2 pawns|down",v:-0.212,lo:-0.448,hi:0.007,n:187145},
-    {l:"level",v:-0.066,lo:-0.351,hi:0.225,n:116041},
-    {l:"2 pawns up|(blown)",s:"blown win",v:0.327,lo:-0.079,hi:0.792,n:53826}]}
+    {l:"none",v:-1.147,lo:-1.387,hi:-0.911,n:191673},
+    {l:"2 pawns|down",v:-0.209,lo:-0.412,hi:0.015,n:165591},
+    {l:"level",v:-0.029,lo:-0.339,hi:0.266,n:103204},
+    {l:"2 pawns up|(blown)",s:"blown win",v:0.356,lo:-0.066,hi:0.765,n:48132}]}
 ];
 /* revenge.csv "all" row; quit_rush.csv */
 const REVENGE=[
-  {l:"After a loss",items:[{l:"rematch",v:-1.738,lo:-2.199,hi:-1.237,n:53470,c:COL.loss},{l:"new|opponent",v:-0.495,lo:-0.631,hi:-0.357,n:null,c:COL.draw}]},
-  {l:"After a win",items:[{l:"rematch",v:0.645,lo:0.212,hi:1.048,n:54838,c:COL.win},{l:"new|opponent",v:0.543,lo:0.424,hi:0.675,n:null,c:COL.draw}]}
+  {l:"After a loss",items:[{l:"rematch",v:-1.774,lo:-2.244,hi:-1.271,n:52813,c:COL.loss},{l:"new|opponent",v:-0.481,lo:-0.621,hi:-0.355,n:null,c:COL.draw}]},
+  {l:"After a win",items:[{l:"rematch",v:0.619,lo:0.172,hi:1.074,n:54154,c:COL.win},{l:"new|opponent",v:0.536,lo:0.408,hi:0.674,n:null,c:COL.draw}]}
 ];
-const QUIT={labels:["Bullet","Blitz","Rapid","Classical"],loss:[21.678,27.817,38.254,59.250],win:[16.185,23.213,35.623,57.611]};
+const QUIT={labels:["Bullet","Blitz","Rapid","Classical"],loss:[22.314,28.583,38.214,59.969],win:[17.159,24.542,36.563,59.683]};
 
 /* ---------- helpers ---------- */
 const NS="http://www.w3.org/2000/svg";
@@ -722,17 +754,17 @@ function linePath(pts){return pts.map((p,i)=>(i?"L":"M")+p[0]+","+p[1]).join(" "
    Three lines on the same axis: the raw history (what a player sees in their stats), the
    controlled line (same rating, one sitting, fresh opponent, settled accounts) and the
    rating-based expectation. The two regions between them carry the message: the wide brown
-   wedge (raw minus controlled) is not tilt, the thin red/green sliver (controlled minus
-   expected) is. Both gaps are labelled in-plot at the losing end (annotateLossEnd). The 95% band on the controlled line is left to chart 2, which shows it as
+   wedge (raw minus controlled) is explained by the controls, the thin red/green sliver (controlled
+   minus expected) is what is left. Both gaps are labelled in-plot at the losing end (annotateLossEnd). The 95% band on the controlled line is left to chart 2, which shows it as
    whiskers; here it would sit on top of the sliver and hide it. */
 const FILL_NOT_TILT="rgba(188,149,96,.32)",FILL_TILT_LOSS="rgba(176,42,42,.38)",FILL_TILT_WIN="rgba(22,101,52,.32)";
 function region(svg,upper,lower,fill){el("path",{d:linePath(upper.concat(lower.slice().reverse()))+" Z",fill,stroke:"none"},svg);}
 function renderC1(){
   const W=chartWidth("c1"),L=W<560?46:60,R=20,T=18,B=64,H=430,min=40,max=68;
-  const svg=svgRoot("c1",W,H,"Next-game score by streak: raw history, controlled, and expected, with the gap between raw and controlled shaded as not tilt and the gap between controlled and expected shaded as tilt");
+  const svg=svgRoot("c1",W,H,"Next-game score by streak: raw history, controlled, and expected, with the gap between raw and controlled shaded as explained by the controls and the gap between controlled and expected shaded as left over");
   const yFor=v=>T+(H-T-B)*(1-(v-min)/(max-min));
   const xFor=i=>L+(W-L-R)*(i/(XS.length-1));
-  grid(svg,L,W-R,yFor,[40,45,50,55,60,65],v=>v+"%");
+  grid(svg,L,W-R,yFor,[40,45,50,55,60,65],v=>String(v));
   XS.forEach((x,i)=>txt(svg,xFor(i),H-36,xLabel(x),{class:"axis","text-anchor":"middle"}));
   txt(svg,L+(W-L-R)/2,H-12,W<560?"Streak just ended (losses left, wins right)":"Streak just ended (losses on the left, wins on the right)",{class:"axis","text-anchor":"middle"});
   const pts=k=>XS.map((x,i)=>[xFor(i),yFor(LADDER[k][i])]);
@@ -760,9 +792,9 @@ function renderC1(){
   // hit targets: one per streak, describing all three lines
   XS.forEach((x,i)=>{
     const hit=el("rect",{x:xFor(i)-14,y:T,width:28,height:H-T-B,fill:"transparent"},svg);
-    bindTip(hit,`<div class="t">After ${xPhrase(x)}</div>Raw history: <b>${LADDER.raw[i].toFixed(1)}%</b> (${fmt(LADDER.nRaw[i])} games)<br>`+
-      `Same rating only: ${LADDER.equal[i].toFixed(1)}%<br>Controlled: <b>${LADDER.ctrl[i].toFixed(1)}%</b> (${fmt(LADDER.nCtrl[i])} games)<br>`+
-      `Expected: ${LADDER.expected[i].toFixed(1)}%<br>Tilt: <b>${signed(LADDER.ctrl[i]-LADDER.expected[i])}</b>`);
+    bindTip(hit,`<div class="t">After ${xPhrase(x)} (points per 100 games)</div>Raw history: <b>${LADDER.raw[i].toFixed(1)}</b> (${fmt(LADDER.nRaw[i])} games)<br>`+
+      `Same rating only: ${LADDER.equal[i].toFixed(1)}<br>Controlled: <b>${LADDER.ctrl[i].toFixed(1)}</b> (${fmt(LADDER.nCtrl[i])} games)<br>`+
+      `Expected: ${LADDER.expected[i].toFixed(1)}<br>Maybe tilt: <b>${signed(LADDER.ctrl[i]-LADDER.expected[i])}</b>`);
   });
   annotateLossEnd(svg,xFor,yFor,L,W);
 }
@@ -779,19 +811,19 @@ function annotateLossEnd(svg,xFor,yFor,L,W){
   const tilt=LADDER.ctrl[0]-LADDER.expected[0],notTilt=LADDER.raw[0]-LADDER.ctrl[0];
   // tilt sliver: label in the blank top-left, leader down into the red region at its thick end
   const yT=yFor(54.5);
-  txt(svg,tx,yT,`Tilt: ${signed(tilt)} points`,{class:"dlabel",fill:COL.loss});
+  txt(svg,tx,yT,`Maybe tilt: ${signed(tilt)} points`,{class:"dlabel",fill:COL.loss});
   leader(hx,yT-5,yFor((LADDER.ctrl[0]+LADDER.expected[0])/2),COL.loss);
   // brown wedge: label under the raw line, leader up into the wedge between raw and controlled
   const yN=yFor(42.0);
   txt(svg,tx,yN,`Not tilt: ${signed(notTilt)} points`,{class:"dlabel",fill:COL.brown});
-  txt(svg,tx,yN+15,"opponents, calendar, accounts",{class:"axis","font-size":"13"});
+  txt(svg,tx,yN+15,"opponents, calendar, rematches, accounts",{class:"axis","font-size":"13"});
   leader(hx,yN-5,yFor((lerp("raw")+lerp("ctrl"))/2),COL.brown);
 }
 
 /* ---------- chart 2: tilt bars (score minus expectation) ---------- */
 function renderC2(){
   const W=chartWidth("c2"),L=W<560?46:60,R=20,T=22,B=64,H=400,min=-4.5,max=4.5;
-  const svg=svgRoot("c2",W,H,"Score minus expectation in the next game, by streak length");
+  const svg=svgRoot("c2",W,H,"Points above or below normal in the next game, by streak length");
   const yFor=v=>T+(H-T-B)*(1-(v-min)/(max-min));
   grid(svg,L,W-R,yFor,[-4,-2,0,2,4],v=>signed(v,0));
   const bw=(W-L-R)/XS.length;
@@ -802,8 +834,8 @@ function renderC2(){
     whisker(svg,cx,yFor(TILT.lo[i]),yFor(TILT.hi[i]),COL.ink);
     txt(svg,cx,v<0?yFor(TILT.lo[i])+18:yFor(TILT.hi[i])-8,signed(v),{class:"dlabel","text-anchor":"middle",fill:c,"font-size":W<560?"12":"15"});
     txt(svg,cx,H-36,xLabel(x),{class:"axis","text-anchor":"middle"});
-    bindTip(rect,`<div class="t">After ${xPhrase(x)}</div>Average score in the next game: <b>${LADDER.ctrl[i].toFixed(1)}%</b> against an expected `+
-      `${LADDER.expected[i].toFixed(1)}%: <b>${signed(v)}</b> points (95% interval ${signed(TILT.lo[i])} to ${signed(TILT.hi[i])}), ${fmt(LADDER.nCtrl[i])} games.`);
+    bindTip(rect,`<div class="t">After ${xPhrase(x)}</div>Average score in the next game: <b>${LADDER.ctrl[i].toFixed(1)}</b> points per 100 games against an expected `+
+      `${LADDER.expected[i].toFixed(1)}: <b>${signed(v)}</b> (95% interval ${signed(TILT.lo[i])} to ${signed(TILT.hi[i])}), ${fmt(LADDER.nCtrl[i])} games.`);
   });
   txt(svg,L+(W-L-R)/2,H-12,W<560?"Streak just ended (losses left, wins right)":"Streak just ended (losses on the left, wins on the right)",{class:"axis","text-anchor":"middle"});
 }
@@ -813,7 +845,7 @@ function coldHotPanel(id,d,what){
   const w0=document.getElementById(id).getBoundingClientRect().width;
   const W=Math.max(250,Math.min(560,Math.round(w0)||430));
   const L=44,R=12,T=22,B=58,H=340,min=-3.5,max=3.5;
-  const svg=svgRoot(id,W,H,`Score minus expectation after 3+ losses and 3+ wins, by ${what}`);
+  const svg=svgRoot(id,W,H,`Points above or below normal after 3+ losses and 3+ wins, by ${what}`);
   const yFor=v=>T+(H-T-B)*(1-(v-min)/(max-min));
   grid(svg,L,W-R,yFor,[-3,-2,-1,0,1,2,3],v=>signed(v,0));
   const gw=(W-L-R)/d.labels.length,bw=gw*0.3;
@@ -824,7 +856,7 @@ function coldHotPanel(id,d,what){
       const rect=el("rect",{x:cx-bw/2,y:Math.min(y0,y1),width:bw,height:Math.max(Math.abs(y0-y1),1),rx:3,fill:c},svg);
       whisker(svg,cx,yFor(d[k+"Lo"][i]),yFor(d[k+"Hi"][i]),COL.ink);
       txt(svg,cx,v<0?yFor(d[k+"Lo"][i])+16:yFor(d[k+"Hi"][i])-7,signed(v),{class:"dlabel","text-anchor":"middle",fill:c,"font-size":"13"});
-      bindTip(rect,`<div class="t">${lab} &middot; after ${name}</div><b>${signed(v)}</b> points against expectation `+
+      bindTip(rect,`<div class="t">${lab} &middot; after ${name}</div><b>${signed(v)}</b> points per 100 games against normal `+
         `(${signed(d[k+"Lo"][i])} to ${signed(d[k+"Hi"][i])}), ${fmt(d[k+"N"][i])} games.`);
     });
     txt(svg,gx,H-34,lab,{class:"axis","text-anchor":"middle"});
@@ -836,14 +868,14 @@ function renderC3(){coldHotPanel("c3a",BY_TC,"time control");coldHotPanel("c3b",
 /* ---------- chart 4: the break test (two lines with whiskers) ---------- */
 function renderC4(){
   const W=chartWidth("c4"),narrow=W<560,L=narrow?46:60,R=20,T=22,B=narrow?78:64,H=narrow?410:400,min=-4,max=3;
-  const svg=svgRoot("c4",W,H,"Score minus expectation after two or more losses or wins, by break length");
+  const svg=svgRoot("c4",W,H,"Points above or below normal after two or more losses or wins, by break length");
   const yFor=v=>T+(H-T-B)*(1-(v-min)/(max-min));
   const n=BREAKS.labels.length,xFor=i=>L+(W-L-R)*((i+0.5)/n);
   grid(svg,L,W-R,yFor,[-4,-3,-2,-1,0,1,2,3],v=>signed(v,0));
   // shade the region where the two lines have converged
   const xs=xFor(4)-(W-L-R)/n/2;
   el("rect",{x:xs,y:T,width:(W-R)-xs,height:H-T-B,fill:"#F0DBB9",opacity:0.35},svg);
-  txt2(svg,(xs+W-R)/2,T+14,narrow?"the streak no|longer matters":"the streak no longer matters",{class:"axis","text-anchor":"middle","font-style":"italic","font-size":narrow?"12":"14"});
+  txt2(svg,(xs+W-R)/2,T+14,narrow?"the two groups|converge":"the two groups converge",{class:"axis","text-anchor":"middle","font-style":"italic","font-size":narrow?"12":"14"});
   // Narrow screens: eight labels do not fit on one row, so alternate them over two rows.
   BREAKS.labels.forEach((lab,i)=>{
     const short=narrow?lab.replace(" min","m").replace(" h","h").replace(" d","d"):lab;
@@ -857,7 +889,7 @@ function renderC4(){
       whisker(svg,p[0],yFor(BREAKS[k+"Lo"][i]),yFor(BREAKS[k+"Hi"][i]),c);
       el("circle",{cx:p[0],cy:p[1],r:5,fill:c,stroke:"#fff","stroke-width":2},svg);
       const hit=el("circle",{cx:p[0],cy:p[1],r:13,fill:"transparent"},svg);
-      bindTip(hit,`<div class="t">After ${name}, break of ${BREAKS.labels[i]}</div><b>${signed(BREAKS[k][i])}</b> points against expectation `+
+      bindTip(hit,`<div class="t">After ${name}, break of ${BREAKS.labels[i]}</div><b>${signed(BREAKS[k][i])}</b> points per 100 games against normal `+
         `(${signed(BREAKS[k+"Lo"][i])} to ${signed(BREAKS[k+"Hi"][i])}), ${fmt(BREAKS[k+"N"][i])} games.`);
     });
   });
@@ -868,7 +900,7 @@ function renderC5(){
   const W=chartWidth("c5");
   if(W<560){renderC5Narrow(W);return;}
   const narrow=false,L=60,R=16,T=44,B=76,H=420,min=-5,max=1.5;
-  const svg=svgRoot("c5",W,H,"Score minus expectation after a loss, by what the loss looked like");
+  const svg=svgRoot("c5",W,H,"Points above or below normal after a loss, by what the loss looked like");
   const yFor=v=>T+(H-T-B)*(1-(v-min)/(max-min));
   grid(svg,L,W-R,yFor,[-5,-4,-3,-2,-1,0,1],v=>signed(v,0));
   const total=ANATOMY.reduce((a,g)=>a+g.items.length,0),gaps=ANATOMY.length-1;
@@ -883,7 +915,7 @@ function renderC5(){
       txt(svg,cx,v<0?yFor(it.lo)+16:yFor(it.hi)-7,signed(v),{class:"dlabel","text-anchor":"middle",fill:c,"font-size":narrow?"11":"14"});
       txt2(svg,cx,yFor(min)+20,it.l,{class:"axis","text-anchor":"middle","font-size":narrow?"11":"13"});
       bindTip(rect,`<div class="t">The loss ${g.group==="How it ended"?"ended by "+it.l.replace("-|",""):g.group==="How long it lasted"?"lasted "+it.l.replace("|"," "):"reached "+(it.l==="none"?"no endgame":"an endgame "+it.l.replace("|"," "))}</div>`+
-        `Next game: <b>${signed(v)}</b> points against expectation (${signed(it.lo)} to ${signed(it.hi)}), ${fmt(it.n)} games, all time controls.`);
+        `Next game: <b>${signed(v)}</b> points per 100 games against normal (${signed(it.lo)} to ${signed(it.hi)}), ${fmt(it.n)} games, all time controls.`);
     });
     const gx1=L+slot*(pos+g.items.length);
     txt(svg,(x0+gx1)/2,T-18,g.group,{class:"dlabel","text-anchor":"middle",fill:COL.ink2||"#5C5246","font-size":narrow?"13":"15"});
@@ -898,7 +930,7 @@ function renderC5Narrow(W){
   const L=126,R=48,T=8,rowH=26,groupH=30,min=-5,max=1.5;
   const rows=ANATOMY.reduce((a,g)=>a+g.items.length,0);
   const H=T+rows*rowH+ANATOMY.length*groupH+36;
-  const svg=svgRoot("c5",W,H,"Score minus expectation after a loss, by what the loss looked like");
+  const svg=svgRoot("c5",W,H,"Points above or below normal after a loss, by what the loss looked like");
   const xFor=v=>L+(W-L-R)*((v-min)/(max-min));
   [-4,-2,0].forEach(v=>{el("line",{x1:xFor(v),x2:xFor(v),y1:T,y2:H-30,class:v===0?"zero":"gridline"},svg);
     txt(svg,xFor(v),H-12,signed(v,0),{class:"axis","text-anchor":"middle"});});
@@ -913,7 +945,7 @@ function renderC5Narrow(W){
       txt(svg,L-6,cy+4,(it.s||it.l).replace("-|","").replace("|"," "),{class:"axis","text-anchor":"end","font-size":"12.5"});
       // value labels sit just right of the zero line for negative bars (the empty side) and past the whisker for positive ones
       txt(svg,it.v<0?xFor(0)+6:xFor(it.hi)+5,cy+4,signed(it.v),{class:"dlabel","text-anchor":"start",fill:c,"font-size":"12"});
-      bindTip(rect,`<div class="t">${g.group}: ${it.l.replace("-|","").replace("|"," ")}</div>Next game: <b>${signed(it.v)}</b> points against expectation (${signed(it.lo)} to ${signed(it.hi)}), ${fmt(it.n)} games.`);
+      bindTip(rect,`<div class="t">${g.group}: ${it.l.replace("-|","").replace("|"," ")}</div>Next game: <b>${signed(it.v)}</b> points per 100 games against normal (${signed(it.lo)} to ${signed(it.hi)}), ${fmt(it.n)} games.`);
       y+=rowH;
     });
   });
@@ -924,7 +956,7 @@ function renderC6a(){
   const id="c6a",w0=document.getElementById(id).getBoundingClientRect().width;
   const W=Math.max(250,Math.min(560,Math.round(w0)||430));
   const L=44,R=12,T=22,B=84,H=350,min=-2.5,max=1.5;
-  const svg=svgRoot(id,W,H,"Score minus expectation: rematch versus new opponent, after a loss and after a win");
+  const svg=svgRoot(id,W,H,"Points above or below normal: rematch versus new opponent, after a loss and after a win");
   const yFor=v=>T+(H-T-B)*(1-(v-min)/(max-min));
   grid(svg,L,W-R,yFor,[-2,-1,0,1],v=>signed(v,0));
   const gw=(W-L-R)/REVENGE.length,bw=gw*0.26;
@@ -936,7 +968,7 @@ function renderC6a(){
       whisker(svg,cx,yFor(it.lo),yFor(it.hi),COL.ink);
       txt(svg,cx,it.v<0?yFor(it.lo)+16:yFor(it.hi)-7,signed(it.v),{class:"dlabel","text-anchor":"middle",fill:it.c,"font-size":"13"});
       txt2(svg,cx,yFor(min)+20,it.l,{class:"axis","text-anchor":"middle","font-size":"12"});
-      bindTip(rect,`<div class="t">${g.l} &middot; ${it.l.replace("|"," ")}</div><b>${signed(it.v)}</b> points against expectation (${signed(it.lo)} to ${signed(it.hi)})`+
+      bindTip(rect,`<div class="t">${g.l} &middot; ${it.l.replace("|"," ")}</div><b>${signed(it.v)}</b> points per 100 games against normal (${signed(it.lo)} to ${signed(it.hi)})`+
         (it.n?`, ${fmt(it.n)} rematches.`:"."));
     });
     txt(svg,gx,H-14,g.l,{class:"dlabel","text-anchor":"middle",fill:"#5C5246","font-size":"14"});
@@ -966,8 +998,8 @@ function renderC6b(){
 /* ---------- static setup: legends ---------- */
 /* The "View the data" tables are static HTML in the page body (not JS-rendered):
    most AI crawlers don't execute JS, and the tables are the citable data. */
-legend("lg1",[["In your raw game history",COL.brown],["Same rating, one sitting, fresh opponent, settled accounts",COL.ink],["Expected from ratings",null," dash"],
-  ["Looks like tilt or a hot hand, isn't: opponents, calendar, accounts",FILL_NOT_TILT],["Tilt (after losses)",FILL_TILT_LOSS],["Hot hand (after wins)",FILL_TILT_WIN]]);
+legend("lg1",[["In your raw game history",COL.brown],["Same rating, one sitting, fresh opponent, settled accounts",COL.ink],["Normal (expected from ratings)",null," dash"],
+  ["Explained by opponents, calendar, rematches, accounts",FILL_NOT_TILT],["Left over after losses",FILL_TILT_LOSS],["Left over after wins (the hot hand)",FILL_TILT_WIN]]);
 legend("lg3",[["After 3+ losses",COL.loss],["After 3+ wins",COL.win]]);
 legend("lg4",[["After 2+ losses",COL.loss],["After 2+ wins",COL.win]]);
 legend("lg6",[["After a loss",COL.loss],["After a win",COL.win],["New opponent",COL.draw]]);

@@ -1,6 +1,6 @@
 import sys; sys.path.insert(0, ".")
 exec(open("/home/aimfeld/.claude/jobs/dccd7eab/tmp/probe2.py").read().split("print(\"\\n=== A1")[0])  # reuse feature engineering + helpers
-fl = pl.read_parquet(OUT + "flaws_byus.parquet").drop("tc")
+fl = pl.read_parquet(OUT + "flaws.parquet").drop("tc")
 uc = pl.read_parquet(OUT + "acc.parquet").select("game_id", "user_color")
 d = games.join(uc, on="game_id").join(fl, on="game_id", how="inner").with_columns(
     my_bl=pl.when(pl.col("user_color") == "white").then(pl.col("w_bl")).otherwise(pl.col("b_bl")),

@@ -29,7 +29,13 @@ def s1(v: float) -> str:
 
 
 def pc(v: float) -> str:
+    """Rates (rematch, quit, P(lose)) keep the percent sign."""
     return f"{v:.1f}%"
+
+
+def pts(v: float) -> str:
+    """Scores and expectations are shown as points per 100 games: one decimal, no percent sign."""
+    return f"{v:.1f}"
 
 
 def n(v: int) -> str:
@@ -63,8 +69,8 @@ html = HTML.read_text()
 # ---- section 1: control ladder ---------------------------------------------------------
 lad = load("ladder6").filter(pl.col("x") != 0).sort("x")
 rows = [
-    f"<tr><td>{xlab(r['x'])}</td><td>{n(r['n_any'])}</td><td>{pc(r['any_opponent'])}</td><td>{pc(r['equal_footing'])}</td>"
-    f"<td>{pc(r['fresh_opponent'])}</td><td>{pc(r['controlled'])}</td><td>{pc(r['expected'])}</td><td>{s1(r['resid'])}</td></tr>"
+    f"<tr><td>{xlab(r['x'])}</td><td>{n(r['n_any'])}</td><td>{pts(r['any_opponent'])}</td><td>{pts(r['equal_footing'])}</td>"
+    f"<td>{pts(r['fresh_opponent'])}</td><td>{pts(r['controlled'])}</td><td>{pts(r['expected'])}</td><td>{s1(r['resid'])}</td></tr>"
     for r in lad.iter_rows(named=True)
 ]
 html = replace_tbody(html, "raw-stats", rows)
@@ -76,7 +82,7 @@ rows = []
 for r in sc.iter_rows(named=True):
     lose = pc(pl_[abs(r["x"])]) if r["x"] < 0 else ""
     rows.append(
-        f"<tr><td>{xlab(r['x'])}</td><td>{n(r['n'])}</td><td>{pc(r['score'])}</td><td>{pc(r['expected'])}</td>"
+        f"<tr><td>{xlab(r['x'])}</td><td>{n(r['n'])}</td><td>{pts(r['score'])}</td><td>{pts(r['expected'])}</td>"
         f"<td>{s1(r['resid'])}</td><td>{s1(r['resid_lo'])} to {s1(r['resid_hi'])}</td><td>{lose}</td></tr>"
     )
 html = replace_tbody(html, "how-big", rows)
@@ -92,9 +98,9 @@ for df, key, label in [
         if name == "Classical":
             name = "Classical*"
         rows.append(
-            f"<tr><td>{name}</td><td>{n(r['cold_n'])}</td><td>{pc(r['cold_score'])}</td><td>{pc(r['cold_expected'])}</td>"
-            f"<td>{ci(r['cold_resid'], r['cold_lo'], r['cold_hi'])}</td><td>{n(r['hot_n'])}</td><td>{pc(r['hot_score'])}</td>"
-            f"<td>{pc(r['hot_expected'])}</td><td>{ci(r['hot_resid'], r['hot_lo'], r['hot_hi'])}</td></tr>"
+            f"<tr><td>{name}</td><td>{n(r['cold_n'])}</td><td>{pts(r['cold_score'])}</td><td>{pts(r['cold_expected'])}</td>"
+            f"<td>{ci(r['cold_resid'], r['cold_lo'], r['cold_hi'])}</td><td>{n(r['hot_n'])}</td><td>{pts(r['hot_score'])}</td>"
+            f"<td>{pts(r['hot_expected'])}</td><td>{ci(r['hot_resid'], r['hot_lo'], r['hot_hi'])}</td></tr>"
         )
 html = replace_tbody(html, "who-tilts", rows)
 
@@ -162,8 +168,8 @@ for tc in ["bullet", "blitz", "rapid", "classical", "all"]:
         else "<td></td><td></td><td></td>"
     )
     rows.append(
-        f"<tr><td>{tc.capitalize()}</td><td>{pc(r['rematch_rate_after_loss'])}</td><td>{pc(r['rematch_score_after_loss'])}</td>"
-        f"<td>{pc(r['rematch_expected_after_loss'])}</td><td>{ci(r['rematch_resid_after_loss'], r['rematch_lo_after_loss'], r['rematch_hi_after_loss'])}</td>"
+        f"<tr><td>{tc.capitalize()}</td><td>{pc(r['rematch_rate_after_loss'])}</td><td>{pts(r['rematch_score_after_loss'])}</td>"
+        f"<td>{pts(r['rematch_expected_after_loss'])}</td><td>{ci(r['rematch_resid_after_loss'], r['rematch_lo_after_loss'], r['rematch_hi_after_loss'])}</td>"
         f"<td>{s1(r['fresh_resid_after_loss'])}</td><td>{s1(r['rematch_resid_after_win'])}</td>{quit_cells}</tr>"
     )
 html = replace_tbody(html, "behaviour", rows)
@@ -184,16 +190,29 @@ def sub_arr(html: str, start: str, end: str, key: str, vals: list) -> str:
     return html[:i] + blk + html[j:]
 
 
-def sub_triples(html: str, start: str, end: str, triples: list[tuple[float, float, float]]) -> str:
+def sub_quads(
+    html: str, start: str, end: str, quads: list[tuple[float, float, float, int | None]]
+) -> str:
+    """Rewrite every `v:..,lo:..,hi:..,n:..` item in a JS data block, in order.
+
+    The game count is part of the item (the tooltips show it), so it is synced too. Bug fixed
+    2026-09-16: an earlier version rewrote only v/lo/hi and left the counts from the first
+    story run in the tooltips (~13% too high after the game-end timing fix).
+    """
     i = html.index(start)
     j = html.index(end, i)
-    it = iter(triples)
+    it = iter(quads)
+
+    def fmt(t: tuple[float, float, float, int | None]) -> str:
+        n_txt = "null" if t[3] is None else str(int(t[3]))
+        return f"v:{t[0]:.3f},lo:{t[1]:.3f},hi:{t[2]:.3f},n:{n_txt}"
+
     blk, cnt = re.subn(
-        r"v:(-?[\d.]+),lo:(-?[\d.]+),hi:(-?[\d.]+)",
-        lambda m: (lambda t: f"v:{t[0]:.3f},lo:{t[1]:.3f},hi:{t[2]:.3f}")(next(it)),
+        r"v:(-?[\d.]+),lo:(-?[\d.]+),hi:(-?[\d.]+),n:(\d+|null)",
+        lambda m: fmt(next(it)),
         html[i:j],
     )
-    assert cnt == len(triples), (cnt, len(triples))
+    assert cnt == len(quads), (cnt, len(quads))
     return html[:i] + blk + html[j:]
 
 
@@ -236,21 +255,31 @@ for k, c in [
     ("hotN", "hot_n"),
 ]:
     html = sub_arr(html, "const BREAKS", "const ANATOMY", k, ball[c].to_list())
-triples = []
+quads = []
 for f, cat, _ in ANAT:
     r = load(f).filter(pl.col("previous loss") == cat).row(0, named=True)
-    triples.append((r["all_resid"], r["all_lo"], r["all_hi"]))
-html = sub_triples(html, "const ANATOMY", "const REVENGE", triples)
+    quads.append((r["all_resid"], r["all_lo"], r["all_hi"], r["all_n"]))
+html = sub_quads(html, "const ANATOMY", "const REVENGE", quads)
 r = rev["all"]
-html = sub_triples(
+html = sub_quads(
     html,
     "const REVENGE",
     "const QUIT",
     [
-        (r["rematch_resid_after_loss"], r["rematch_lo_after_loss"], r["rematch_hi_after_loss"]),
-        (r["fresh_resid_after_loss"], r["fresh_lo_after_loss"], r["fresh_hi_after_loss"]),
-        (r["rematch_resid_after_win"], r["rematch_lo_after_win"], r["rematch_hi_after_win"]),
-        (r["fresh_resid_after_win"], r["fresh_lo_after_win"], r["fresh_hi_after_win"]),
+        (
+            r["rematch_resid_after_loss"],
+            r["rematch_lo_after_loss"],
+            r["rematch_hi_after_loss"],
+            r["rematch_n_after_loss"],
+        ),
+        (r["fresh_resid_after_loss"], r["fresh_lo_after_loss"], r["fresh_hi_after_loss"], None),
+        (
+            r["rematch_resid_after_win"],
+            r["rematch_lo_after_win"],
+            r["rematch_hi_after_win"],
+            r["rematch_n_after_win"],
+        ),
+        (r["fresh_resid_after_win"], r["fresh_lo_after_win"], r["fresh_hi_after_win"], None),
     ],
 )
 q = load("quit_rush")
