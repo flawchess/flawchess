@@ -895,6 +895,7 @@ None active.
 | 260916-g38 | Sentry noise: Maia page-kill sentinel idle guard (FLAWCHESS-BM) and full-drain breaker single-target guard (FLAWCHESS-5Q) | 2026-09-16 | 4a547a769 | [260916-g38-sentry-noise-maia-page-kill-sentinel-idl](./quick/260916-g38-sentry-noise-maia-page-kill-sentinel-idl/) |
 | 260916-gj7 | DB report follow-ups: index opening_cache_audit.sample_game_id, drop ix_games_full_pv_pending, tighten Check C rule | 2026-09-16 | 1b60cadd | [260916-gj7-db-report-follow-ups-index-opening-cache](./quick/260916-gj7-db-report-follow-ups-index-opening-cache/) |
 | 260917-qte | Activity funnel purge artifact: retained-fact user columns (first_import_started_at, lifetime_games_imported, games_purged_at), purged users excluded from funnel/TTI/stickiness/conversion-compare, phantom "Chess account linked" stage dropped, _GUEST_COHORT split | 2026-09-17 | 37e0a8c8b | [260917-qte-fix-activity-dashboard-guest-activation-](./quick/260917-qte-fix-activity-dashboard-guest-activation-/) |
+| 260917-sgw | Add `tzdata` to runtime deps so legacy IANA timezone aliases (Europe/Kiev, Asia/Calcutta, US/Pacific, …) resolve in the trimmed `python:3.14-slim` prod image — fixes the `PUT /train/settings` 422 in Sentry FLAWCHESS-9W and the scheduler's silent UTC fallback | 2026-09-17 | b17fda109 | [260917-sgw-add-tzdata-to-runtime-deps-so-legacy-ian](./quick/260917-sgw-add-tzdata-to-runtime-deps-so-legacy-ian/) |
 
 ## Deferred Items
 
