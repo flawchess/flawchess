@@ -90,6 +90,7 @@ async def build_payload(
             stick=await queries.fetch_stickiness(conn, window.window_start),
             conversion=await queries.fetch_conversion(conn, window.window_start),
             conversion_compare=await queries.fetch_conversion_compare(conn, window.window_start),
+            purged_excluded=await queries.fetch_purged_excluded(conn, window.window_start),
         )
 
 

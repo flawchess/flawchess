@@ -96,3 +96,41 @@ async def update_platform_username(
 
     await session.execute(update(User).where(User.id == user_id).values(**column_values))
     await session.flush()
+
+
+async def stamp_first_import_started_at(session: AsyncSession, user_id: int, now: datetime) -> None:
+    """First-write-wins stamp of the user's first-ever import start (QTE-02).
+
+    The ``IS NULL`` predicate in the WHERE clause is what makes this
+    first-write-wins -- a later call for the same user is a no-op UPDATE
+    matching zero rows, never overwriting the original timestamp. Does not
+    read-then-write: this is deliberately a blind conditional UPDATE.
+
+    Args:
+        session: AsyncSession to use.
+        user_id: Primary key of the user.
+        now: The instant to stamp (never read from the clock here).
+    """
+    await session.execute(
+        update(User)
+        .where(User.id == user_id, User.first_import_started_at.is_(None))
+        .values(first_import_started_at=now)
+    )
+    await session.flush()
+
+
+async def stamp_games_purged_at(session: AsyncSession, user_id: int, now: datetime) -> None:
+    """Unconditionally stamp when this user's games/import_jobs were purged (QTE-02).
+
+    Called from the same transaction as the games/import_jobs delete at both
+    purge sites (guest_cleanup_service._purge_guest and DELETE /api/games),
+    so the Activity dashboard can tell a purged user apart from one who
+    never imported.
+
+    Args:
+        session: AsyncSession to use.
+        user_id: Primary key of the user.
+        now: The instant to stamp (never read from the clock here).
+    """
+    await session.execute(update(User).where(User.id == user_id).values(games_purged_at=now))
+    await session.flush()

@@ -47,4 +47,5 @@ export interface ActivityStatsPayload {
   stick: (string | number | null)[][];
   conversion: Record<string, number | string>;
   conversion_compare: (string | number | null)[][];
+  purged_excluded: Record<string, number>;
 }

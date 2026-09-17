@@ -4,6 +4,7 @@ HTTP layer only — all orchestration logic lives in import_service.
 """
 
 import asyncio
+import datetime
 from typing import Annotated, cast
 
 import sentry_sdk
@@ -13,6 +14,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_async_session
+from app.core.dev_clock import dev_now_utc
 from app.models.game import Game
 from app.models.import_job import ImportJob
 from app.models.user import User
@@ -56,6 +58,7 @@ async def start_import(
     response: Response,
     user: Annotated[User, Depends(current_active_user)],
     session: Annotated[AsyncSession, Depends(get_async_session)],
+    now_utc: Annotated[datetime.datetime, Depends(dev_now_utc)],
 ) -> ImportStartedResponse:
     """Trigger a background import from chess.com or lichess.
 
@@ -86,6 +89,11 @@ async def start_import(
     await user_repository.update_platform_username(
         session, user_id, request.platform, request.username
     )
+    # QTE-02: first-write-wins stamp of this user's first-ever import start, in
+    # the same transaction as the username write above. The already-active-job
+    # early return above correctly skips this call: an active job means the
+    # first import already started and was already stamped.
+    await user_repository.stamp_first_import_started_at(session, user_id, now_utc)
     await session.commit()
 
     job_id = import_service.create_job(user_id, request.platform, request.username)
@@ -498,6 +506,7 @@ async def get_import_status(
 async def delete_all_games(
     user: Annotated[User, Depends(current_active_user)],
     session: Annotated[AsyncSession, Depends(get_async_session)],
+    now_utc: Annotated[datetime.datetime, Depends(dev_now_utc)],
 ) -> DeleteGamesResponse:
     """Delete all games, positions, import jobs, benchmark percentiles, and
     rating anchors for the authenticated user.
@@ -525,5 +534,9 @@ async def delete_all_games(
     # instead of backfilling the fresh account's full budget. TC toggles and
     # game_cap PREFERENCES are left untouched (only progress cursors reset).
     await user_import_settings_repository.reset_backfill_cursors(session, user_id=user.id)
+    # QTE-02: stamp the retained fact that lets the Activity dashboard tell a
+    # purged user apart from one who never imported. Commits atomically with
+    # the deletes above.
+    await user_repository.stamp_games_purged_at(session, user.id, now_utc)
     await session.commit()
     return DeleteGamesResponse(deleted_count=deleted_count)

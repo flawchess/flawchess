@@ -1,8 +1,8 @@
 ---
 gsd_state_version: "1.0"
 milestone: v2.19
-current_phase: 223
-status: completed
+current_phase: 224
+status: not_started
 stopped_at: Phase 223 complete — all phases complete
 last_updated: "2026-09-16T09:07:56.698Z"
 state_head: f1f8c274c95f33a489a1be8906ca8b976c73e552
@@ -20,13 +20,14 @@ last_activity_desc: "Completed quick task 260916-gj7 (DB report follow-ups: inde
 
 ## Current Position
 
-Phase: 223
+Phase: 224
 Plan: Not started
 
-Status: All phases complete
+Status: Phase 224 (Guest Activation — Welcome Removal & Guest Train, SEED-169) added 2026-09-17, not yet discussed or planned. Next: `/gsd-discuss-phase 224`.
 
 Open threads carried forward (not blockers):
 
+- Phase 224 added 2026-09-17 (explicit user request via `/gsd-phase @SEED-169`, after `/gsd-explore` "guest drop-off" on growth report 2026-09-15 finding 2): **Guest Activation — Welcome Removal & Guest Train**. Lever A: drop the forced `/welcome` redirect for 0-game guests (48% vs 85% import-start gap sits entirely at that step). Lever B: open Train to guests as the full daily warm-up loop (reverses Phase 189 D-05), guest sign-up nudges as bot bubbles with "Why?" + "Sign up free" on the score screen (replacing the reminder ask, no push for guests) and the Import page (random friendly bot), `/welcome` rewritten as a four-delta "What changes when you sign up" page. Guest cleanup must be re-reasoned for guest Train rows. Two metrics recorded separately before/after. Written by hand as 224 (known mature-ROADMAP behavior). Next: `/gsd-discuss-phase 224`.
 - Phase 223 added 2026-09-15 (explicit user request, `/gsd-explore` "bots page welcome avatars + in-game trash-talk" → SEED-168 → promote): **Bot Voice & Immersive Bot Game Layout**. Per-persona in-game lines in a persistent two-line bubble under the board-truth rule (speak only after the bot's own move, only about cashed-in swings, WDL-based detection), mobile game screen rebuilt in the chess.com shape with a fixed Resign/Back/Forward/Flip bar replacing the nav, desktop `PlayerBar` rows + side-column bubble, roster intro card replaced by a welcome bubble, and SEED-167's settings-page sound switch folded in (no in-game mute remains). Written by hand as 223 rather than via `phase.add` (known mature-ROADMAP behavior). Next: `/gsd-discuss-phase 223`.
 
 - Phase 221: a forced only-move that sheds a piece can read as a sacrifice (game 1459049 ply 21); captured in `.planning/notes/2026-09-13-forced-only-move-tagged-sacrifice.md`, no action requested. Lever if sacrifice noise ever matters: lower `SACRIFICE_CLEARANCE_MAX_DEPTH` (4) and retag.
@@ -166,6 +167,7 @@ v1.29 Live-Engine Analysis Page shipped 2026-06-29 — 5 phases (136–140), 14 
 
 ### Roadmap Evolution
 
+- Phase 224 added 2026-09-17 (explicit user request via `/gsd-phase @SEED-169`, after `/gsd-explore` "guest drop-off" on growth report 2026-09-15 finding 2): **Guest Activation — Welcome Removal & Guest Train**. Lever A: drop the forced `/welcome` redirect for 0-game guests (48% vs 85% import-start gap sits entirely at that step). Lever B: open Train to guests as the full daily warm-up loop (reverses Phase 189 D-05), guest sign-up nudges as bot bubbles with "Why?" + "Sign up free" on the score screen (replacing the reminder ask, no push for guests) and the Import page (random friendly bot), `/welcome` rewritten as a four-delta "What changes when you sign up" page. Guest cleanup must be re-reasoned for guest Train rows. Two metrics recorded separately before/after. Written by hand as 224 (known mature-ROADMAP behavior). Next: `/gsd-discuss-phase 224`.
 - Phase 222 added 2026-09-13 (explicit user request via `/gsd-phase add`, after `/gsd-explore` "Train bot introductions" and sketches 003/004): **Train Bot-Narrated Onboarding & Verdicts** (SEED-166, planted 2026-09-12 from the prod Train funnel, amended 2026-09-13). Standalone, appended after Phase 221. The Bots personas become the permanent voice of Train: guess prompt + buttons inside a bot bubble under the board (first-session Tank/Hilda intro stepper, drop-before-guess nudge, no board overlay), outcome-matched bot verdicts with inline point pills and the SR return date (stern bots 0–1 pts, friendly 2–3, always encouraging; herring/filler never promise a return), actions inside the bubble and the reveal's sound toggle retired, a first-session Hilda walkthrough of the solution screen, and a bot-led score screen that explains spaced repetition before the reminder ask. Server-side explanation-seen flag; two funnel metrics (first-session 0-solve 42%, second-session return 49%) recorded before/after. Dropped: "Boot Camp" rename, landing-page bot images. Written by hand as 222 rather than via `phase.add` (known mature-ROADMAP behavior). Next: `/gsd-discuss-phase 222`.
 - Phase 220 added 2026-09-09 (explicit user request via `/gsd-phase @SEED-164`): **Opening Eval Cache Repair & Two-Source Confirmation** (SEED-164, planted the same day from an ad-hoc investigation of game 2356581's spurious ply-5/6 blunders). Standalone, appended after Phase 219. Scope: audit tables + resumable six-stage repair script (seed/screen/confirm/propagate/rederive/report) run dev-then-prod from the local 4-worker box; hardening replaces first-write-wins in `opening_position_eval` with two-source confirmation + provenance and restricts transplants/lease-omits to `confirmed` rows, and makes the remote-worker submit path write the cache through the tick's shared function (today only the server drain tick writes it, so remote-heavy lanes get no opening dedup; this is also why the benchmark DB is cache-free and unaffected, no re-clone needed); nightly cross-check in `db-report`; a 200-game depth-15 sample decides whether the pre-2026-06-18 legacy cohort needs screening beyond ply 20. Must land before the next flaw-based benchmark refresh.
 - Phase 213 added 2026-08-28 (explicit user request via `/gsd-phase @SEED-155`): **First-Run Engine Cold Start — Asset-Check Gate & Download Progress UI** (SEED-155, planted 2026-08-27 from a real first-time user report — guest account on an Android phone, bot took very long to play its first move, persona avatars loaded slowly; decision revised 2026-08-28). Appended to the neutral `## Active Phases (unassigned milestone)` section. Core decision: every engine consumer asset-checks first and downloads behind a progress UI; bot play additionally gates the clock on per-persona readiness via the existing `confirmLive()` seam (a fresh game must never run a clock against an engine that does not exist — generalizes Phase 170's "nobody pays for the engine cold-start" from resumes to all games); warmup is conditional (<~1s) with the opening book covering first moves otherwise; owned streaming model fetch is required (progress needs it), prefetch demoted to optimization; mandatory terminal failure path for dead/no-WASM-SIMD workers; avatars resized to ~128px + lazy (keep 512px sources). Out of scope: INT8 shrink (invalidates persona calibration), bullet TC constraints (recorded in the seed as separate scope), server-side option.
@@ -892,6 +894,8 @@ None active.
 | 91 | Unblock AI crawlers: Cloudflare managed robots.txt is dashboard-only, documented the toggle in production-runbook.md | 2026-09-15 | 9f7a3a811 | — |
 | 260916-g38 | Sentry noise: Maia page-kill sentinel idle guard (FLAWCHESS-BM) and full-drain breaker single-target guard (FLAWCHESS-5Q) | 2026-09-16 | 4a547a769 | [260916-g38-sentry-noise-maia-page-kill-sentinel-idl](./quick/260916-g38-sentry-noise-maia-page-kill-sentinel-idl/) |
 | 260916-gj7 | DB report follow-ups: index opening_cache_audit.sample_game_id, drop ix_games_full_pv_pending, tighten Check C rule | 2026-09-16 | 1b60cadd | [260916-gj7-db-report-follow-ups-index-opening-cache](./quick/260916-gj7-db-report-follow-ups-index-opening-cache/) |
+| 260917-qte | Activity funnel purge artifact: retained-fact user columns (first_import_started_at, lifetime_games_imported, games_purged_at), purged users excluded from funnel/TTI/stickiness/conversion-compare, phantom "Chess account linked" stage dropped, _GUEST_COHORT split | 2026-09-17 | 37e0a8c8b | [260917-qte-fix-activity-dashboard-guest-activation-](./quick/260917-qte-fix-activity-dashboard-guest-activation-/) |
+| 260917-sgw | Add `tzdata` to runtime deps so legacy IANA timezone aliases (Europe/Kiev, Asia/Calcutta, US/Pacific, …) resolve in the trimmed `python:3.14-slim` prod image — fixes the `PUT /train/settings` 422 in Sentry FLAWCHESS-9W and the scheduler's silent UTC fallback | 2026-09-17 | b17fda109 | [260917-sgw-add-tzdata-to-runtime-deps-so-legacy-ian](./quick/260917-sgw-add-tzdata-to-runtime-deps-so-legacy-ian/) |
 
 ## Deferred Items
 

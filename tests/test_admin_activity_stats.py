@@ -31,6 +31,7 @@ from app.models.user import User
 from app.routers import admin_activity
 from app.services import activity_queries as queries
 from app.services.activity_stats import StatsCache, build_readonly_engine
+from app.services.guest_service import create_guest_user
 
 _DEFAULT_PASSWORD = "pw12345678"
 
@@ -125,6 +126,7 @@ def fake_payload(range_key: queries.RangeKey = "all") -> queries.Payload:
         stick=[],
         conversion={},
         conversion_compare=[],
+        purged_excluded={},
     )
 
 
@@ -775,3 +777,137 @@ async def test_fetch_train_funnel_excludes_opener_whose_first_session_predates_w
 
     assert delta["openers"] == 0
     assert delta["all_time_openers"] == 1
+
+
+# ---------------------------------------------------------------------------
+# QTE-01..04: purged-user exclusion across the game-derived cohort queries.
+# Direct-query tests against test_engine, baseline-delta pattern (see
+# test_fetch_train_funnel_seeded_cohort's module comment above): the shared
+# engine carries rows from other tests, so every assertion is on the DELTA
+# this fixture introduces.
+# ---------------------------------------------------------------------------
+
+
+async def _stamp_user(test_engine, user_id: int, **values: object) -> None:
+    """Direct UPDATE of retained-fact / cohort columns a test needs to seed.
+
+    These columns are stamped by production write sites (POST /imports,
+    DELETE /games, guest_cleanup_service, guest_service) that this test does
+    not want to drive end-to-end -- it only needs the resulting row shape.
+    """
+    session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
+    async with session_maker() as session:
+        await session.execute(sa_update(User).where(User.id == user_id).values(**values))
+        await session.commit()
+
+
+@pytest.mark.asyncio
+async def test_purged_user_excluded_from_game_derived_cohorts(test_engine):
+    """A purged user is dropped from fetch_funnel/fetch_time_to_import/
+    fetch_stickiness/fetch_conversion_compare instead of reading as "never
+    imported"; fetch_purged_excluded counts it under the right cohort key;
+    fetch_funnel has exactly 4 stages and no "Chess account linked" label.
+
+    Seeds a PURGED GUEST (the real-world shape: guest cleanup / DELETE
+    /games) rather than a purged registered user, so the same seed also
+    exercises the _GUEST_COHORT-scoped fetch_conversion_compare, whose
+    cohort predicate excludes anyone who is neither a guest nor promoted.
+    """
+    window_start = datetime.date(2019, 1, 1)
+
+    async with test_engine.connect() as conn:
+        baseline_funnel = await queries.fetch_funnel(conn, window_start)
+        baseline_tti = await queries.fetch_time_to_import(conn, window_start)
+        baseline_stick = await queries.fetch_stickiness(conn, window_start)
+        baseline_compare = await queries.fetch_conversion_compare(conn, window_start)
+        baseline_purged = await queries.fetch_purged_excluded(conn, window_start)
+
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app), base_url="http://test"
+    ) as client:
+        importer_id, _ = await register_and_login(client, unique_email("purge-importer"))
+        promoted_id, _ = await register_and_login(client, unique_email("purge-promoted"))
+
+    now = datetime.datetime.now(datetime.timezone.utc)
+
+    await _stamp_user(
+        test_engine,
+        importer_id,
+        chess_com_username="importer_cc",
+        first_import_started_at=now,
+        lifetime_games_imported=5,
+    )
+    await _stamp_user(
+        test_engine,
+        promoted_id,
+        promoted_at=now,
+        first_import_started_at=now,
+        lifetime_games_imported=3,
+    )
+
+    session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
+    async with session_maker() as session:
+        guest_never_imported, _token = await create_guest_user(session)
+        purged_guest, _token2 = await create_guest_user(session)
+
+    await _stamp_user(
+        test_engine,
+        purged_guest.id,
+        chess_com_username="purged_cc",
+        first_import_started_at=now,
+        lifetime_games_imported=5,
+        games_purged_at=now,
+    )
+
+    async with test_engine.connect() as conn:
+        funnel = await queries.fetch_funnel(conn, window_start)
+        tti = await queries.fetch_time_to_import(conn, window_start)
+        stick = await queries.fetch_stickiness(conn, window_start)
+        compare = await queries.fetch_conversion_compare(conn, window_start)
+        purged = await queries.fetch_purged_excluded(conn, window_start)
+
+    # fetch_funnel: exactly 4 stages, phantom "Chess account linked" stage gone.
+    assert len(funnel) == 4
+    assert all(row[0] != "Chess account linked" for row in funnel)
+
+    created_delta = [funnel[0][i] - baseline_funnel[0][i] for i in (1, 2)]
+    started_delta = [funnel[1][i] - baseline_funnel[1][i] for i in (1, 2)]
+    imported_delta = [funnel[2][i] - baseline_funnel[2][i] for i in (1, 2)]
+    # registered: importer_id only (purged_guest excluded regardless; promoted_id
+    # moved to the GUEST column via _GUEST_COHORT). guest: promoted_id +
+    # guest_never_imported for "created"; only promoted_id for started/imported.
+    assert created_delta == [1, 2]
+    assert started_delta == [1, 1]
+    assert imported_delta == [1, 1]
+
+    # fetch_time_to_import: "Under 5 min" (index 0) registered=importer_id,
+    # guest=promoted_id; "Never" (index 4) guest=guest_never_imported.
+    r0_delta = [tti[0][i] - baseline_tti[0][i] for i in (1, 2)]
+    g4_delta = tti[4][2] - baseline_tti[4][2]
+    assert r0_delta == [1, 1]
+    assert g4_delta == 1
+
+    # fetch_stickiness keeps RAW is_guest (not _GUEST_COHORT): promoted_id
+    # (is_guest=False) lands in the "Registered" row, not "Guest".
+    registered_row = next(r for r in stick if r[0] == "Registered")
+    guest_row = next(r for r in stick if r[0] == "Guest")
+    baseline_registered_row = next(r for r in baseline_stick if r[0] == "Registered")
+    baseline_guest_row = next(r for r in baseline_stick if r[0] == "Guest")
+    assert registered_row[1] - baseline_registered_row[1] == 2  # importer + promoted
+    # purged_guest excluded: without exclusion this would be 1 (itself), not 0.
+    assert guest_row[1] - baseline_guest_row[1] == 0
+    assert guest_row[3] - baseline_guest_row[3] == 1  # guest_never_imported only
+
+    # fetch_conversion_compare ("Imported games" row, index 0): cohort is
+    # _GUEST_COHORT-scoped. purged_guest excluded: without exclusion g_import
+    # (index 3) would be 1 (itself has lifetime_games_imported=5), not 0.
+    imported_row = compare[0]
+    baseline_imported_row = baseline_compare[0]
+    assert imported_row[1] - baseline_imported_row[1] == 1  # converted hits: promoted_id
+    assert imported_row[2] - baseline_imported_row[2] == 1  # converted total: promoted_id
+    assert imported_row[3] - baseline_imported_row[3] == 0  # guest hits: purged excluded
+    assert imported_row[4] - baseline_imported_row[4] == 1  # guest total: guest_never_imported
+
+    # fetch_purged_excluded: purged_guest counted under the GUEST key.
+    assert purged["registered"] - baseline_purged["registered"] == 0
+    assert purged["guest"] - baseline_purged["guest"] == 1

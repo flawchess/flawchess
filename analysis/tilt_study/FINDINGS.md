@@ -258,16 +258,19 @@ calibration ignores colour), berserk in arena games, fatigue/session depth, sub-
 ### Additional probes (2026-09-03): tilt is small on every other dimension too
 
 Scripts in `analysis/tilt_study/probes/`, run against the same games plus per-move clocks
-(`move_feats.parquet`) and, for move quality, the uniformly-analysed rapid/classical arm
-(`flaws_byus.parquet`, `full_evals_completed_at` set and `lichess_evals_at` null).
+(`move_feats.parquet`) and, for move quality, every rapid/classical game with a full engine evaluation
+(`flaws.parquet`, `full_evals_completed_at` set; originally the benchmark-evaluated arm only,
+`lichess_evals_at` null, widened 2026-09-16 to include Lichess-analysed games, see the story
+table `blunders.csv`).
 
 | probe | after L vs W (same session, equal footing) | verdict |
 |---|---|---|
 | P(loss) after k straight losses | 47–49% raw for k = 1…5; crosses 50% only at k ≥ 7 | flat |
 | "stop after LL" counterfactual | saves 0.2–0.4 losses per 100 games (≈0.01–0.02 rating pts) | ≈0 |
 | think time per move, moves 3–20 | −3% (blitz 4.99 vs 5.14 s, rapid 11.4 vs 11.7 s); 76% of blitz users faster after L | real, tiny |
-| blunders/100 own moves, uniform arm (rapid) | 6.51 vs 6.51 after L/W; 7.11 vs 6.36 after LLL+/WWW+, opponent's rate rises too (6.96 vs 6.57) | no move-quality tilt |
-| ACPL / blunders in the lichess-analysed arm | +15–20% after LLL+ | selection artefact: analysis rate 25.6% after LLL+ vs 31.5% after WWW+ |
+| blunders/100 own moves, benchmark-evaluated arm only (rapid) | 6.51 vs 6.51 after L/W; 7.11 vs 6.36 after LLL+/WWW+, opponent's rate rises too (6.96 vs 6.57) | no move-quality tilt |
+| blunders/100 own moves, all evaluated games (rapid, 2026-09-16) | 5.80 vs 5.70 after L/W; 6.29 vs 5.59 after LLL+/WWW+, opponent 6.04 vs 5.68 | same shape, 4× the games |
+| ACPL / blunders in the lichess-analysed arm | +15–20% after LLL+ | partly selection: analysis rate 25.6% after LLL+ vs 31.5% after WWW+; the pooled row above bounds the mix effect at ≈0.1/100 |
 | opening switch after a same-colour loss (move-2 line) | 87.9% vs 87.8% | none |
 | faster TC / casual game after a loss | ≈0 | cohort is selected per TC, unmeasurable here |
 

@@ -210,6 +210,88 @@ class TestPostImports:
         assert elapsed < 1.0, f"Response took too long: {elapsed:.2f}s"
 
     @pytest.mark.asyncio
+    async def test_first_post_imports_sets_first_import_started_at(self, test_engine):
+        """QTE-02: the first POST /imports for a user sets first_import_started_at."""
+        user_id, headers = await _register_and_login()
+
+        async def _noop(job_id: str) -> None:
+            pass
+
+        with patch("app.services.import_service.run_import", side_effect=_noop):
+            async with httpx.AsyncClient(
+                transport=httpx.ASGITransport(app=app), base_url="http://test"
+            ) as client:
+                resp = await client.post(
+                    "/api/imports",
+                    json={"platform": "chess.com", "username": "testuser"},
+                    headers=headers,
+                )
+        assert resp.status_code == 201
+
+        async with test_engine.connect() as conn:
+            result = await conn.execute(
+                text("SELECT first_import_started_at FROM users WHERE id = :uid"),
+                {"uid": user_id},
+            )
+            (first_import_started_at,) = result.fetchone()
+        assert first_import_started_at is not None
+
+    @pytest.mark.asyncio
+    async def test_later_post_imports_does_not_overwrite_first_import_started_at(self, test_engine):
+        """QTE-02: a later POST /imports (after the first job is no longer active)
+        does NOT overwrite the original first_import_started_at."""
+        user_id, headers = await _register_and_login()
+
+        async def _noop(job_id: str) -> None:
+            pass
+
+        with patch("app.services.import_service.run_import", side_effect=_noop):
+            async with httpx.AsyncClient(
+                transport=httpx.ASGITransport(app=app), base_url="http://test"
+            ) as client:
+                first_resp = await client.post(
+                    "/api/imports",
+                    json={"platform": "chess.com", "username": "testuser"},
+                    headers=headers,
+                )
+                assert first_resp.status_code == 201
+
+                async with test_engine.connect() as conn:
+                    result = await conn.execute(
+                        text("SELECT first_import_started_at FROM users WHERE id = :uid"),
+                        {"uid": user_id},
+                    )
+                    (original_ts,) = result.fetchone()
+                assert original_ts is not None
+
+                # The first job is no longer active: clear the in-memory registry
+                # (mirrors run_import completing and the reaper/status update
+                # removing it) AND the durable row (whose partial unique index
+                # would otherwise still block a second create_import_job insert
+                # while it sits at status="pending") so find_active_job no
+                # longer returns it and a second POST for the same platform
+                # runs the real write path instead of the existing-active-job
+                # early return.
+                import_service._jobs.clear()
+                async with test_engine.begin() as clear_conn:
+                    await clear_conn.execute(delete(ImportJob).where(ImportJob.user_id == user_id))
+
+                second_resp = await client.post(
+                    "/api/imports",
+                    json={"platform": "chess.com", "username": "testuser"},
+                    headers=headers,
+                )
+                assert second_resp.status_code == 201
+
+                async with test_engine.connect() as conn:
+                    result = await conn.execute(
+                        text("SELECT first_import_started_at FROM users WHERE id = :uid"),
+                        {"uid": user_id},
+                    )
+                    (later_ts,) = result.fetchone()
+        assert later_ts == original_ts, "first_import_started_at must not be overwritten"
+
+    @pytest.mark.asyncio
     async def test_post_imports_invalid_platform_returns_422(self, auth_headers):
         """POST /imports with invalid platform should return 422."""
         async with httpx.AsyncClient(
@@ -660,6 +742,25 @@ class TestDeleteAllGamesCursorReset:
 
         assert delete_resp.status_code == 200
         assert delete_resp.json()["deleted_count"] == 1
+
+    @pytest.mark.asyncio
+    async def test_delete_stamps_games_purged_at(self, test_engine):
+        """QTE-02: DELETE /imports/games stamps users.games_purged_at."""
+        user_id, headers = await _register_and_login()
+
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=app), base_url="http://test"
+        ) as client:
+            delete_resp = await client.delete("/api/imports/games", headers=headers)
+
+        assert delete_resp.status_code == 200
+
+        async with test_engine.connect() as conn:
+            result = await conn.execute(
+                text("SELECT games_purged_at FROM users WHERE id = :uid"), {"uid": user_id}
+            )
+            (games_purged_at,) = result.fetchone()
+        assert games_purged_at is not None
 
 
 # ---------------------------------------------------------------------------
