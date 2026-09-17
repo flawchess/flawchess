@@ -27,7 +27,7 @@ const pctText=(n,d)=>d?Math.round(100*n/d)+"%":DASH;
    holds no baked-in numbers, so a reload always reflects the live database.
    ActivityPage.tsx owns the fetching and calls update(). */
 let D=null, DAYS=[], NDAYS=0, ACT=[], SIGNUPS=[], BOT=[], TRAIN=[], TRAINFUN={}, SOLVES=[],
-    IMPORTS=[], PERSONA=[], ELO=[], FUNNEL=[], TTI=[], STICK=[], CONV=null, CONVCMP=[];
+    IMPORTS=[], PERSONA=[], ELO=[], FUNNEL=[], TTI=[], STICK=[], CONV=null, CONVCMP=[], PURGED=null;
 
 function apply(payload){
   D=payload;
@@ -39,7 +39,7 @@ function apply(payload){
   IMPORTS=payload.imports; PERSONA=payload.persona; ELO=payload.elo;
   TRAINFUN=payload.train_funnel;
   FUNNEL=payload.funnel; TTI=payload.tti; STICK=payload.stick;
-  CONV=payload.conversion; CONVCMP=payload.conversion_compare;
+  CONV=payload.conversion; CONVCMP=payload.conversion_compare; PURGED=payload.purged_excluded;
 }
 const keep=a=>AUD==="all"?true:AUD==="reg"?a.g===0:a.g===1;
 
@@ -166,6 +166,8 @@ function chrome(){
   const botPhrase=BOT.length?`bot play starts ${long(BOT[0][0])}`:"no bot games in the selected range";
   const trainPhrase=TRAIN.length?`Train sessions ${long(TRAIN[0][0])}`:"no Train sessions in the selected range";
   $("#cav-features").textContent=`${botPhrase}, ${trainPhrase}`;
+  $("#cav-purged-reg").textContent=PURGED?num(PURGED.registered):DASH;
+  $("#cav-purged-guest").textContent=PURGED?num(PURGED.guest):DASH;
 }
 
 function renderActivesCard(){

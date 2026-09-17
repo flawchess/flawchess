@@ -348,9 +348,8 @@ export default function ActivityPage() {
           <div className="card">
             <h3>Conversion funnel</h3>
             <p className="note">
-              Every account created since tracking began, followed through to a real game library.
-              Linking a chess.com or lichess username is the gate: once it is linked, the import
-              fires within seconds and almost never fails.
+              Every account created since tracking began, followed through an import start, at
+              least one game imported, and on to a real game library.
             </p>
             <div className="grid2" id="funnels">
               <div>
@@ -562,9 +561,9 @@ export default function ActivityPage() {
               two rows.
             </li>
             <li>
-              <b>A converted guest counts as a registered account in the funnel</b>, dated to when
-              the guest session started — promotion happens in place, so there is no second account
-              and no second creation date.
+              <b>A promoted guest stays in the guest funnel and guest time-to-import cohort</b>,
+              dated to when the guest session started — promotion happens in place on the same
+              row, so there is no second account and no second creation date.
             </li>
             <li>
               <b>
@@ -576,6 +575,16 @@ export default function ActivityPage() {
             <li>
               <b>Bot games and Train sessions arrived later</b> — <span id="cav-features"></span>,
               both after activity tracking began.
+            </li>
+            <li>
+              <b>
+                Purged accounts are excluded: <span id="cav-purged-reg">—</span> registered,{' '}
+                <span id="cav-purged-guest">—</span> guest sessions.
+              </b>{' '}
+              Accounts whose game history was purged (guest 30-day cleanup, or a user deleting
+              their games) are excluded from the funnel, time-to-import, stickiness and
+              converter-comparison cards, because their <span className="mono">import_jobs</span>{' '}
+              rows are gone and they would otherwise read as "never imported".
             </li>
           </ul>
         </footer>

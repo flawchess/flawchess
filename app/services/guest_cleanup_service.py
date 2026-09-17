@@ -27,7 +27,7 @@ from app.models.import_job import ImportJob
 from app.models.user import User
 from app.models.user_benchmark_percentile import UserBenchmarkPercentile
 from app.models.user_rating_anchors import UserRatingAnchor
-from app.repositories import game_repository, user_import_settings_repository
+from app.repositories import game_repository, user_import_settings_repository, user_repository
 
 logger = logging.getLogger(__name__)
 
@@ -126,6 +126,11 @@ async def _purge_guest(guest_id: int) -> int:
         # D-05: this only NULLs the 3 progress-cursor columns — the row
         # itself (and its tc_*/game_cap preferences) survives.
         await user_import_settings_repository.reset_backfill_cursors(session, user_id=guest_id)
+        # QTE-02: stamp the retained fact that lets the Activity dashboard tell
+        # a purged guest apart from one who never imported. Must stay inside
+        # this same transaction as the deletes above -- a guest purged without
+        # this stamp would otherwise read as "never imported" forever.
+        await user_repository.stamp_games_purged_at(session, guest_id, datetime.now(timezone.utc))
         await session.commit()
     return deleted_count
 

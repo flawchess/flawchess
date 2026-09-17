@@ -339,6 +339,35 @@ class TestPurgeGuestEndToEnd:
             assert user_row.is_guest is True
 
     @pytest.mark.asyncio
+    async def test_purge_stamps_games_purged_at_keeps_usernames(
+        self, real_session_maker: async_sessionmaker[AsyncSession]
+    ) -> None:
+        """QTE-02: _purge_guest stamps games_purged_at, keeps platform usernames intact."""
+        async with real_session_maker() as seed_session:
+            guest_id, _game_id = await _seed_eligible_guest_with_game(seed_session)
+            await seed_session.execute(
+                text(
+                    "UPDATE users SET chess_com_username = :cc, lichess_username = :li "
+                    "WHERE id = :uid"
+                ),
+                {"cc": "purge_test_cc", "li": "purge_test_li", "uid": guest_id},
+            )
+            await seed_session.commit()
+
+        deleted_count = await _purge_guest(guest_id)
+        assert deleted_count == 1
+
+        async with real_session_maker() as verify_session:
+            user_row = (
+                (await verify_session.execute(select(User).where(User.id == guest_id)))
+                .unique()
+                .scalar_one()
+            )
+            assert user_row.games_purged_at is not None
+            assert user_row.chess_com_username == "purge_test_cc"
+            assert user_row.lichess_username == "purge_test_li"
+
+    @pytest.mark.asyncio
     async def test_reactivated_guest_is_skipped_not_purged(
         self, real_session_maker: async_sessionmaker[AsyncSession]
     ) -> None:
@@ -367,6 +396,16 @@ class TestPurgeGuestEndToEnd:
                 )
             ).scalar_one()
         assert surviving_games == 1, "a reactivated guest's game must survive"
+
+        async with real_session_maker() as verify_session:
+            user_row = (
+                (await verify_session.execute(select(User).where(User.id == guest_id)))
+                .unique()
+                .scalar_one()
+            )
+        assert user_row.games_purged_at is None, (
+            "the ineligible-mid-tick early return must not stamp games_purged_at"
+        )
 
 
 # ---------------------------------------------------------------------------

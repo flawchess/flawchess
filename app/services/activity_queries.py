@@ -83,6 +83,7 @@ class Payload(TypedDict):
     stick: list[list[Any]]
     conversion: dict[str, Any]
     conversion_compare: list[list[Any]]
+    purged_excluded: dict[str, int]
 
 
 async def _scalar_date(conn: AsyncConnection, sql: str) -> datetime.date:
@@ -437,38 +438,55 @@ async def fetch_elo(conn: AsyncConnection, window_start: datetime.date) -> list[
 async def fetch_funnel(conn: AsyncConnection, window_start: datetime.date) -> list[list[Any]]:
     """Signup -> import funnel stages, counted for registered and guest cohorts.
 
-    A promoted guest keeps its original ``created_at`` and counts as registered,
-    because promotion happens in place on the same row.
+    Four stages -- the phantom platform-username-linked stage that used to
+    sit between "Account created" and "Import started" is gone: ``linked``
+    is written one line before the ``import_jobs`` row is created, inside
+    the same request (``app/routers/imports.py::start_import``), so it was
+    never a distinct user action. ``started`` keeps ``OR u.linked`` as the
+    legacy fallback for pre-migration rows, since ``linked`` provably
+    implies an import was started even though ``first_import_started_at``
+    was NULL at the time.
+
+    A user whose games/import_jobs were purged (guest 30-day cleanup or
+    ``DELETE /api/games``) is excluded entirely via
+    ``u.games_purged_at IS NULL`` -- see ``fetch_purged_excluded`` for the
+    footnoted per-cohort count of who this drops.
+
+    Cohort split uses ``_GUEST_COHORT`` (``is_guest OR promoted_at IS NOT
+    NULL``) rather than raw ``is_guest``, so a promoted guest stays in the
+    GUEST columns instead of jumping to the REGISTERED columns mid-cohort
+    (this is a deliberate behavior change -- see the commit message for the
+    historical-number-shift note).
 
     Cohort card (D3): only the ``users.created_at`` predicate below constrains
-    the window, by cohort ENTRY. The joined `import_jobs`/`games` CTEs stay
-    unfiltered so a user who entered inside the window is followed forward to
-    today — do not add a date filter to those CTEs.
+    the window, by cohort ENTRY. The joined `games` CTE stays unfiltered so a
+    user who entered inside the window is followed forward to today — do not
+    add a date filter to that CTE.
     """
     row = (
         await _rows(
             conn,
-            """
+            f"""
             WITH u AS (
-              SELECT id, is_guest,
-                     (chess_com_username IS NOT NULL OR lichess_username IS NOT NULL) AS linked
-              FROM users WHERE created_at >= CAST(:first AS date)),
-            j AS (SELECT user_id, coalesce(sum(games_imported), 0) AS total
-                  FROM import_jobs GROUP BY 1),
+              SELECT u.id, ({_GUEST_COHORT}) AS guest,
+                     (u.chess_com_username IS NOT NULL OR u.lichess_username IS NOT NULL) AS linked,
+                     u.first_import_started_at, u.lifetime_games_imported
+              FROM users u
+              WHERE u.created_at >= CAST(:first AS date) AND u.games_purged_at IS NULL),
             g AS (SELECT user_id, count(*) AS games FROM games
                   WHERE platform IN ('chess.com', 'lichess') GROUP BY 1)
             SELECT
-              count(*) FILTER (WHERE NOT u.is_guest) AS r_created,
-              count(*) FILTER (WHERE NOT u.is_guest AND u.linked) AS r_linked,
-              count(*) FILTER (WHERE NOT u.is_guest AND j.user_id IS NOT NULL) AS r_started,
-              count(*) FILTER (WHERE NOT u.is_guest AND coalesce(j.total, 0) > 0) AS r_imported,
-              count(*) FILTER (WHERE NOT u.is_guest AND coalesce(g.games, 0) >= :threshold) AS r_library,
-              count(*) FILTER (WHERE u.is_guest) AS g_created,
-              count(*) FILTER (WHERE u.is_guest AND u.linked) AS g_linked,
-              count(*) FILTER (WHERE u.is_guest AND j.user_id IS NOT NULL) AS g_started,
-              count(*) FILTER (WHERE u.is_guest AND coalesce(j.total, 0) > 0) AS g_imported,
-              count(*) FILTER (WHERE u.is_guest AND coalesce(g.games, 0) >= :threshold) AS g_library
-            FROM u LEFT JOIN j ON j.user_id = u.id LEFT JOIN g ON g.user_id = u.id
+              count(*) FILTER (WHERE NOT u.guest) AS r_created,
+              count(*) FILTER (WHERE NOT u.guest
+                               AND (u.first_import_started_at IS NOT NULL OR u.linked)) AS r_started,
+              count(*) FILTER (WHERE NOT u.guest AND u.lifetime_games_imported > 0) AS r_imported,
+              count(*) FILTER (WHERE NOT u.guest AND coalesce(g.games, 0) >= :threshold) AS r_library,
+              count(*) FILTER (WHERE u.guest) AS g_created,
+              count(*) FILTER (WHERE u.guest
+                               AND (u.first_import_started_at IS NOT NULL OR u.linked)) AS g_started,
+              count(*) FILTER (WHERE u.guest AND u.lifetime_games_imported > 0) AS g_imported,
+              count(*) FILTER (WHERE u.guest AND coalesce(g.games, 0) >= :threshold) AS g_library
+            FROM u LEFT JOIN g ON g.user_id = u.id
             """,
             first=window_start,
             threshold=FUNNEL_GAMES_THRESHOLD,
@@ -476,12 +494,40 @@ async def fetch_funnel(conn: AsyncConnection, window_start: datetime.date) -> li
     )[0]
     labels = [
         "Account created",
-        "Chess account linked",
         "Import started",
         "At least 1 game imported",
         f"{FUNNEL_GAMES_THRESHOLD}+ games imported",
     ]
-    return [[label, int(row[i]), int(row[i + 5])] for i, label in enumerate(labels)]
+    return [[label, int(row[i]), int(row[i + 4])] for i, label in enumerate(labels)]
+
+
+async def fetch_purged_excluded(
+    conn: AsyncConnection, window_start: datetime.date
+) -> dict[str, int]:
+    """Per-cohort count of users the four game-derived cards above dropped.
+
+    A user with ``games_purged_at`` set (guest 30-day cleanup, or
+    ``DELETE /api/games``) is excluded from ``fetch_funnel``,
+    ``fetch_time_to_import``, ``fetch_stickiness`` and
+    ``fetch_conversion_compare`` instead of reading as "never imported".
+    This is the count each of those cards dropped, so the page can footnote
+    it. One query covers all four cards because they share the same
+    ``users.created_at`` cohort window.
+    """
+    row = (
+        await _rows(
+            conn,
+            f"""
+            SELECT
+              count(*) FILTER (WHERE NOT ({_GUEST_COHORT})) AS registered,
+              count(*) FILTER (WHERE {_GUEST_COHORT}) AS guest
+            FROM users u
+            WHERE u.created_at >= CAST(:first AS date) AND u.games_purged_at IS NOT NULL
+            """,
+            first=window_start,
+        )
+    )[0]
+    return {"registered": int(row[0]), "guest": int(row[1])}
 
 
 async def fetch_time_to_import(
@@ -489,33 +535,50 @@ async def fetch_time_to_import(
 ) -> list[list[Any]]:
     """How long after account creation the first import job started.
 
-    Cohort card (D3): windowed on ``users.created_at`` (entry) only; the
-    joined `import_jobs` CTE stays unfiltered so entrants are followed
-    forward to today — do not add a date filter to that CTE.
+    Sourced from ``users.first_import_started_at`` -- a retained fact that
+    survives a games/import_jobs purge -- rather than
+    ``MIN(import_jobs.started_at)``, and purged users
+    (``games_purged_at IS NOT NULL``) are excluded from the cohort entirely
+    (see ``fetch_purged_excluded``) instead of silently falling into the
+    "Never" bucket.
+
+    Cohort split uses ``_GUEST_COHORT`` for the same reason ``fetch_funnel``
+    does: a promoted guest stays in the GUEST columns.
+
+    Cohort card (D3): windowed on ``users.created_at`` (entry) only.
     """
     row = (
         await _rows(
             conn,
-            """
-            WITH u AS (SELECT id, is_guest, created_at FROM users
-                       WHERE created_at >= CAST(:first AS date)),
-            j AS (SELECT user_id, min(started_at) AS first_job FROM import_jobs GROUP BY 1)
+            f"""
+            WITH u AS (
+              SELECT id, ({_GUEST_COHORT}) AS guest, created_at, first_import_started_at
+              FROM users u
+              WHERE created_at >= CAST(:first AS date) AND games_purged_at IS NULL)
             SELECT
-              count(*) FILTER (WHERE NOT u.is_guest AND j.first_job < u.created_at + interval '5 min') AS r0,
-              count(*) FILTER (WHERE NOT u.is_guest AND j.first_job >= u.created_at + interval '5 min'
-                               AND j.first_job < u.created_at + interval '1 hour') AS r1,
-              count(*) FILTER (WHERE NOT u.is_guest AND j.first_job >= u.created_at + interval '1 hour'
-                               AND j.first_job < u.created_at + interval '1 day') AS r2,
-              count(*) FILTER (WHERE NOT u.is_guest AND j.first_job >= u.created_at + interval '1 day') AS r3,
-              count(*) FILTER (WHERE NOT u.is_guest AND j.first_job IS NULL) AS r4,
-              count(*) FILTER (WHERE u.is_guest AND j.first_job < u.created_at + interval '5 min') AS g0,
-              count(*) FILTER (WHERE u.is_guest AND j.first_job >= u.created_at + interval '5 min'
-                               AND j.first_job < u.created_at + interval '1 hour') AS g1,
-              count(*) FILTER (WHERE u.is_guest AND j.first_job >= u.created_at + interval '1 hour'
-                               AND j.first_job < u.created_at + interval '1 day') AS g2,
-              count(*) FILTER (WHERE u.is_guest AND j.first_job >= u.created_at + interval '1 day') AS g3,
-              count(*) FILTER (WHERE u.is_guest AND j.first_job IS NULL) AS g4
-            FROM u LEFT JOIN j ON j.user_id = u.id
+              count(*) FILTER (WHERE NOT u.guest
+                               AND u.first_import_started_at < u.created_at + interval '5 min') AS r0,
+              count(*) FILTER (WHERE NOT u.guest
+                               AND u.first_import_started_at >= u.created_at + interval '5 min'
+                               AND u.first_import_started_at < u.created_at + interval '1 hour') AS r1,
+              count(*) FILTER (WHERE NOT u.guest
+                               AND u.first_import_started_at >= u.created_at + interval '1 hour'
+                               AND u.first_import_started_at < u.created_at + interval '1 day') AS r2,
+              count(*) FILTER (WHERE NOT u.guest
+                               AND u.first_import_started_at >= u.created_at + interval '1 day') AS r3,
+              count(*) FILTER (WHERE NOT u.guest AND u.first_import_started_at IS NULL) AS r4,
+              count(*) FILTER (WHERE u.guest
+                               AND u.first_import_started_at < u.created_at + interval '5 min') AS g0,
+              count(*) FILTER (WHERE u.guest
+                               AND u.first_import_started_at >= u.created_at + interval '5 min'
+                               AND u.first_import_started_at < u.created_at + interval '1 hour') AS g1,
+              count(*) FILTER (WHERE u.guest
+                               AND u.first_import_started_at >= u.created_at + interval '1 hour'
+                               AND u.first_import_started_at < u.created_at + interval '1 day') AS g2,
+              count(*) FILTER (WHERE u.guest
+                               AND u.first_import_started_at >= u.created_at + interval '1 day') AS g3,
+              count(*) FILTER (WHERE u.guest AND u.first_import_started_at IS NULL) AS g4
+            FROM u
             """,
             first=window_start,
         )
@@ -527,21 +590,31 @@ async def fetch_time_to_import(
 async def fetch_stickiness(conn: AsyncConnection, window_start: datetime.date) -> list[list[Any]]:
     """Return rate for importers vs non-importers, per cohort.
 
-    "Returned" means seen on at least two distinct days.
+    "Returned" means seen on at least two distinct days. "Imported" is
+    sourced from ``lifetime_games_imported`` (a retained fact) rather than
+    summing `import_jobs`, and purged users (``games_purged_at IS NOT
+    NULL``) are excluded from the cohort entirely (see
+    ``fetch_purged_excluded``).
+
+    This card keeps RAW ``is_guest`` -- unlike ``fetch_funnel`` /
+    ``fetch_time_to_import`` it is deliberately NOT part of the
+    ``_GUEST_COHORT`` switch, so a promoted guest still lands in the
+    "Registered" row here.
 
     Cohort card (D3): windowed on ``users.created_at`` (entry) only; the
-    joined `import_jobs`/`user_activity` CTEs stay unfiltered so entrants are
-    followed forward to today — do not add a date filter to those CTEs.
+    joined `user_activity` CTE stays unfiltered so entrants are followed
+    forward to today — do not add a date filter to that CTE.
     """
     rows = await _rows(
         conn,
         """
-        WITH u AS (SELECT id, is_guest FROM users WHERE created_at >= CAST(:first AS date)),
-        j AS (SELECT user_id, coalesce(sum(games_imported), 0) AS total FROM import_jobs GROUP BY 1),
+        WITH u AS (
+          SELECT id, is_guest, (lifetime_games_imported > 0) AS imported
+          FROM users WHERE created_at >= CAST(:first AS date) AND games_purged_at IS NULL),
         a AS (SELECT user_id, count(DISTINCT activity_date) AS days FROM user_activity GROUP BY 1)
-        SELECT u.is_guest, (coalesce(j.total, 0) > 0) AS imported, count(*) AS users,
+        SELECT u.is_guest, u.imported, count(*) AS users,
                count(*) FILTER (WHERE coalesce(a.days, 0) >= 2) AS returned
-        FROM u LEFT JOIN j ON j.user_id = u.id LEFT JOIN a ON a.user_id = u.id
+        FROM u LEFT JOIN a ON a.user_id = u.id
         GROUP BY 1, 2
         """,
         first=window_start,
@@ -593,32 +666,39 @@ async def fetch_conversion_compare(
 ) -> list[list[Any]]:
     """What converters did differently, as [metric, hits, total] per group.
 
+    "Imported games" is sourced from ``lifetime_games_imported`` (a retained
+    fact) rather than summing `import_jobs`, and purged users
+    (``games_purged_at IS NOT NULL``) are excluded from the cohort entirely.
+    This card's denominators therefore now differ from ``fetch_conversion``
+    (which deliberately keeps every guest, since ``promoted_at`` survives a
+    purge) -- see ``fetch_purged_excluded`` for the count this drops.
+
     Cohort card (D3): windowed on ``users.created_at`` (entry) only; the
-    joined `import_jobs`/`bot_game_settings`/`user_activity` CTEs stay
-    unfiltered so entrants are followed forward to today — do not add a date
-    filter to those CTEs.
+    joined `bot_game_settings`/`user_activity` CTEs stay unfiltered so
+    entrants are followed forward to today — do not add a date filter to
+    those CTEs.
     """
     row = (
         await _rows(
             conn,
             f"""
             WITH u AS (
-              SELECT id, ({_PROMOTED_GUEST}) AS converted
+              SELECT id, ({_PROMOTED_GUEST}) AS converted, lifetime_games_imported
               FROM users u
-              WHERE created_at >= CAST(:first AS date) AND {_GUEST_COHORT}),
-            j AS (SELECT user_id, coalesce(sum(games_imported), 0) AS total FROM import_jobs GROUP BY 1),
+              WHERE created_at >= CAST(:first AS date) AND {_GUEST_COHORT}
+                AND u.games_purged_at IS NULL),
             b AS (SELECT g.user_id, count(*) AS n FROM bot_game_settings s
                   JOIN games g ON g.id = s.game_id GROUP BY 1),
             a AS (SELECT user_id, count(DISTINCT activity_date) AS days FROM user_activity GROUP BY 1)
             SELECT count(*) FILTER (WHERE u.converted) AS c_total,
                    count(*) FILTER (WHERE NOT u.converted) AS g_total,
-                   count(*) FILTER (WHERE u.converted AND coalesce(j.total, 0) > 0) AS c_import,
-                   count(*) FILTER (WHERE NOT u.converted AND coalesce(j.total, 0) > 0) AS g_import,
+                   count(*) FILTER (WHERE u.converted AND u.lifetime_games_imported > 0) AS c_import,
+                   count(*) FILTER (WHERE NOT u.converted AND u.lifetime_games_imported > 0) AS g_import,
                    count(*) FILTER (WHERE u.converted AND coalesce(a.days, 0) >= 2) AS c_return,
                    count(*) FILTER (WHERE NOT u.converted AND coalesce(a.days, 0) >= 2) AS g_return,
                    count(*) FILTER (WHERE u.converted AND coalesce(b.n, 0) > 0) AS c_bot,
                    count(*) FILTER (WHERE NOT u.converted AND coalesce(b.n, 0) > 0) AS g_bot
-            FROM u LEFT JOIN j ON j.user_id = u.id LEFT JOIN b ON b.user_id = u.id
+            FROM u LEFT JOIN b ON b.user_id = u.id
                    LEFT JOIN a ON a.user_id = u.id
             """,
             first=window_start,

@@ -26,6 +26,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import async_session_maker, engine
 from app.models.game import Game
+from app.models.user import User
 from app.repositories import (
     game_repository,
     import_job_repository,
@@ -685,6 +686,18 @@ async def _flush_batch_with_progress(
     async with async_session_maker() as session:
         imported = await _flush_batch(session, batch, job.user_id)
         job.games_imported += imported
+        # QTE-02: this is the only place games actually land. Increment the
+        # user's lifetime counter in the SAME session/transaction as the
+        # job-counter persist below -- it is deliberately a lifetime total
+        # that survives a later purge (guest cleanup / DELETE /api/games),
+        # unlike the live `games` row count. Guarded by `if imported:` so a
+        # zero-import batch takes no row lock.
+        if imported:
+            await session.execute(
+                update(User)
+                .where(User.id == job.user_id)
+                .values(lifetime_games_imported=User.lifetime_games_imported + imported)
+            )
         # Persist incremental counters so orphaned-job cleanup and post-restart
         # status reads reflect accurate progress (not zero) if the server
         # crashes mid-import.
