@@ -7,9 +7,11 @@ import { useAuth } from '@/hooks/useAuth';
 /**
  * SignupAskActions: Phase 224 (S-4, D-05, D-07; GUESTACT-05, GUESTACT-07,
  * GUESTACT-11). The shared "What changes?" + "Sign up free" action pair rendered into
- * `TrainBotBubble`'s existing `actions` slot on two surfaces: the guest
- * branch of the Train score screen (`source="train-score"`) and the Import
- * page's guest promo bubble (`source="import-promo"`). Each surface carries
+ * `TrainBotBubble`'s existing `actions` slot on three surfaces: the guest
+ * branch of the Train score screen (`source="train-score"`), the Import
+ * page's guest promo bubble (`source="import-promo"`) and, since the 224 UAT
+ * (round 2), the guest Train landing bubble (`source="train-landing"`, which
+ * replaced the "Warm-up session" info card). Each surface carries
  * its own `data-umami-event-source` so lever B is attributable per surface
  * (S-7, ROADMAP SC 9).
  *
@@ -23,7 +25,7 @@ import { useAuth } from '@/hooks/useAuth';
  * heading it opens; the `btn-signup-why-*` testids are kept as-is.
  */
 
-export type SignupAskSource = 'train-score' | 'import-promo';
+export type SignupAskSource = 'train-score' | 'import-promo' | 'train-landing';
 
 export interface SignupAskActionsProps {
   source: SignupAskSource;

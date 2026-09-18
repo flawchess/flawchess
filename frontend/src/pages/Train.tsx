@@ -218,7 +218,6 @@ export default function TrainPage(): ReactElement {
           sessionScore={trainSession.sessionScore}
           onEnterLoop={() => setHasEnteredLoop(true)}
           onSettingsSaved={startSession}
-          hasGames={hasGames}
           isGuest={isGuest}
         />
       )}

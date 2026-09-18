@@ -98,6 +98,14 @@ describe('SignupAskActions', () => {
     expect(signUp.getAttribute('data-umami-event-source')).toBe('import-promo');
   });
 
+  it('with source="train-landing" (224 UAT round 2, guest Train landing bubble) the testids and umami source follow suit', () => {
+    render(<SignupAskActions source="train-landing" />);
+    expect(screen.getByTestId('btn-signup-why-train-landing')).not.toBeNull();
+    const signUp = screen.getByTestId('btn-signup-free-train-landing');
+    expect(signUp.getAttribute('data-umami-event')).toBe('signup-cta');
+    expect(signUp.getAttribute('data-umami-event-source')).toBe('train-landing');
+  });
+
   it('renders no wrapping element beyond the two buttons (fragment shape)', () => {
     const { container } = render(<SignupAskActions source="train-score" />);
     expect(container.children).toHaveLength(2);
