@@ -378,22 +378,29 @@ function renderVerdictBubbleBody(
     verdict.item_status !== 'parked' &&
     returnTail !== '';
   return {
+    // One flowing paragraph, not one <p> per sentence: the three stacked
+    // lines ate too much vertical space on phones, where the bubble sits
+    // above the board. The testids stay on inline spans.
     copy: (
-      <div data-testid="train-bot-verdict-line">
-        <p>
-          {opening.opener} {clause.guessLabel}{' '}
-          <TrainScoreChip points={clause.guessPoints} testid="train-bot-pill-guess" />,{' '}
-          {clause.moveLabel}{' '}
-          <TrainScoreChip points={clause.movePoints} testid="train-bot-pill-move" />.
-        </p>
+      <p data-testid="train-bot-verdict-line">
+        {opening.opener} {clause.guessLabel}{' '}
+        <TrainScoreChip points={clause.guessPoints} testid="train-bot-pill-guess" />,{' '}
+        {clause.moveLabel}{' '}
+        <TrainScoreChip points={clause.movePoints} testid="train-bot-pill-move" />.
         {opening.lookCloser !== null && (
-          <p data-testid="train-bot-look-closer">{opening.lookCloser}</p>
+          <>
+            {' '}
+            <span data-testid="train-bot-look-closer">{opening.lookCloser}</span>
+          </>
         )}
         {returnTail !== '' && isReturnPromise && (
-          <p data-testid="train-bot-return-tail">{returnTail}</p>
+          <>
+            {' '}
+            <span data-testid="train-bot-return-tail">{returnTail}</span>
+          </>
         )}
-        {returnTail !== '' && !isReturnPromise && <p>{returnTail}</p>}
-      </div>
+        {returnTail !== '' && !isReturnPromise && <> {returnTail}</>}
+      </p>
     ),
     actions,
   };

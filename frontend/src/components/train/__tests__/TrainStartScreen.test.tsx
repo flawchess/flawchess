@@ -6,7 +6,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import { MemoryRouter } from 'react-router';
-import { GUEST_SIGNUP_ASK_SCORE } from '@/lib/trainBotCopy';
+import { GUEST_SIGNUP_ASK_SCORE, REMINDER_INSTALL_ASK } from '@/lib/trainBotCopy';
 
 // 191-01/191-06: TrainStartScreen calls useTrainProgress() directly (for the
 // PROG-05/D-16 tailored empty states) AND renders <TrainStreakCard /> +
@@ -67,12 +67,21 @@ vi.mock('@/hooks/useAuth', () => ({
 // would never trip — re-firing `save()` on every unrelated re-render.
 // 2026-09-14 (rotating landing host): `intro_seen_at` is read by the header;
 // null keeps Tank as the host so the pre-existing assertions stay put.
+// 2026-09-18: `has_mobile_subscription` drives the landing reminder ask; the
+// default `true` keeps the pre-existing assertions' bubble text unchanged.
 let mockTrainSettingsData: {
   timezone: string;
   weekday_mask: number;
   puzzles_per_session: number;
   intro_seen_at: string | null;
-} = { timezone: 'UTC', weekday_mask: 127, puzzles_per_session: 6, intro_seen_at: null };
+  has_mobile_subscription: boolean;
+} = {
+  timezone: 'UTC',
+  weekday_mask: 127,
+  puzzles_per_session: 6,
+  intro_seen_at: null,
+  has_mobile_subscription: true,
+};
 
 const saveMock = vi.fn(
   (
@@ -150,7 +159,13 @@ afterEach(() => {
   cleanup();
   trainProgressMock = { data: DEFAULT_TRAIN_PROGRESS, isPending: false, isError: false };
   saveMock.mockClear();
-  mockTrainSettingsData = { timezone: 'UTC', weekday_mask: 127, puzzles_per_session: 6, intro_seen_at: null };
+  mockTrainSettingsData = {
+    timezone: 'UTC',
+    weekday_mask: 127,
+    puzzles_per_session: 6,
+    intro_seen_at: null,
+    has_mobile_subscription: true,
+  };
   resurfaceMock = { shouldResurface: false };
   // WR-01: restore the file-wide default so the banner block's opt-in cannot
   // leak into the six landing-state assertions above it.
@@ -393,6 +408,28 @@ describe('TrainStartScreen — 224 UAT round 2: no warm-up info card, guest sign
     renderScreen({ isGuest: false, session: { ...BASE_SESSION, is_warmup: false } });
     expect(screen.queryByTestId('train-landing-signup-ask')).toBeNull();
     expect(document.querySelectorAll('[data-testid^="btn-signup-"]')).toHaveLength(0);
+  });
+});
+
+describe('TrainStartScreen — landing reminder ask (no push subscription from a phone)', () => {
+  it('registered account without a phone subscription: the host bubble carries the reminder sentence', () => {
+    mockTrainSettingsData = { ...mockTrainSettingsData, has_mobile_subscription: false };
+    renderScreen({ isGuest: false, session: { ...BASE_SESSION, is_warmup: false } });
+    expect(screen.getByTestId('train-landing-reminder-ask').textContent).toBe(REMINDER_INSTALL_ASK);
+    expect(screen.queryByTestId('train-landing-signup-ask')).toBeNull();
+  });
+
+  it('registered account with a phone subscription: no reminder sentence', () => {
+    mockTrainSettingsData = { ...mockTrainSettingsData, has_mobile_subscription: true };
+    renderScreen({ isGuest: false, session: { ...BASE_SESSION, is_warmup: false } });
+    expect(screen.queryByTestId('train-landing-reminder-ask')).toBeNull();
+  });
+
+  it('guest without a phone subscription: the sign-up ask wins, no reminder sentence', () => {
+    mockTrainSettingsData = { ...mockTrainSettingsData, has_mobile_subscription: false };
+    renderScreen({ isGuest: true, session: { ...BASE_SESSION, is_warmup: true } });
+    expect(screen.getByTestId('train-landing-signup-ask')).not.toBeNull();
+    expect(screen.queryByTestId('train-landing-reminder-ask')).toBeNull();
   });
 });
 

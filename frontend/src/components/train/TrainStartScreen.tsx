@@ -24,7 +24,7 @@ import { TrainStatsCard } from '@/components/train/TrainStatsCard';
 import { TrainStreakCard } from '@/components/train/TrainStreakCard';
 import { useTrainProgress } from '@/hooks/useTrainProgress';
 import { useTrainSettings } from '@/hooks/useTrainSettings';
-import { GUEST_SIGNUP_ASK_SCORE, landingHost } from '@/lib/trainBotCopy';
+import { GUEST_SIGNUP_ASK_SCORE, REMINDER_INSTALL_ASK, landingHost } from '@/lib/trainBotCopy';
 import { TRAIN_POINTS_PER_PUZZLE } from '@/lib/trainScore';
 import type { TrainSessionResponse } from '@/types/train';
 
@@ -185,6 +185,13 @@ function resolveLandingState(
  * sees on landing and on finishing are literally the same words. This
  * replaced the "Warm-up session" info card, which told guests their games
  * were being analyzed although nothing is analyzed for a guest.
+ *
+ * 2026-09-18: a registered account with no push subscription from a phone
+ * (`has_mobile_subscription === false`, account-wide) gets the reminder ask
+ * instead. Desktop subscriptions deliberately don't count: the ask is about
+ * the phone app. Strict `=== false`: while settings are still loading the
+ * sentence stays hidden rather than flashing in and out. Guests never see it
+ * (they get the sign-up ask, and D-13 gives a guest no reminder slot).
  */
 function TrainHeader({
   session,
@@ -198,6 +205,7 @@ function TrainHeader({
     sessionDate: session?.session_date ?? null,
     introSeenAt: settings?.intro_seen_at,
   });
+  const showReminderAsk = !isGuest && settings?.has_mobile_subscription === false;
   return (
     <TrainBotBubble
       persona={host.persona}
@@ -207,6 +215,9 @@ function TrainHeader({
     >
       <p data-testid="train-tagline">{host.copy}</p>
       {isGuest && <p data-testid="train-landing-signup-ask">{GUEST_SIGNUP_ASK_SCORE}</p>}
+      {showReminderAsk && (
+        <p data-testid="train-landing-reminder-ask">{REMINDER_INSTALL_ASK}</p>
+      )}
     </TrainBotBubble>
   );
 }

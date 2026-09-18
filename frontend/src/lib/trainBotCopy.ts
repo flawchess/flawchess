@@ -669,6 +669,12 @@ export const GUEST_SIGNUP_ASK_SCORE =
   'Sign up free and your own blunders come back instead of warm-ups. Your streak and ' +
   'everything you have solved stay exactly where they are.';
 
+/** 2026-09-18: the landing bubble's reminder ask for a registered account with
+ * no push subscription from a phone (`has_mobile_subscription === false`). The
+ * only other landing CTA is the guest sign-up ask, so the two never co-occur. */
+export const REMINDER_INSTALL_ASK =
+  "Install the FlawChess app on your phone and set up reminders so you don't miss a session.";
+
 /** Every session's opener comments on the result (Phase 222 UAT round 5:
  * first, later and warm-up sessions alike; the nothing-missed variant is its
  * own comment), in D-21's voice: about the session, never about the user,
