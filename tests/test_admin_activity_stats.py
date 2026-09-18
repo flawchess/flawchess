@@ -126,6 +126,7 @@ def fake_payload(range_key: queries.RangeKey = "all") -> queries.Payload:
         stick=[],
         conversion={},
         conversion_compare=[],
+        guest_train={},
         purged_excluded={},
     )
 
@@ -911,3 +912,86 @@ async def test_purged_user_excluded_from_game_derived_cohorts(test_engine):
     # fetch_purged_excluded: purged_guest counted under the GUEST key.
     assert purged["registered"] - baseline_purged["registered"] == 0
     assert purged["guest"] - baseline_purged["guest"] == 1
+
+
+@pytest.mark.asyncio
+async def test_fetch_guest_train_d11_d12_semantics(test_engine):
+    """Pins D-11 (promotion cuts off guest-Train counting) and D-12 (purged
+    guests excluded) on seeded rows, baseline-delta pattern (see
+    test_fetch_train_funnel_seeded_cohort's module comment).
+
+      - guest_counts: never promoted, one completed session -> counts.
+      - guest_promoted: promoted mid-window; a completed session BEFORE
+        promoted_at counts, a completed session ON/AFTER promoted_at does not
+        (D-11 -- it is registered activity by then).
+      - purged_guest: games_purged_at set, one completed session -> excluded
+        entirely regardless of promotion state (D-12).
+      - guest_bad_status: one 'open' and one 'expired' session, neither
+        completed -> neither counts.
+    """
+    window_start = datetime.date(2019, 1, 1)
+
+    async with test_engine.connect() as conn:
+        baseline = await queries.fetch_guest_train(conn, window_start)
+
+    session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
+    async with session_maker() as session:
+        guest_counts, _ = await create_guest_user(session)
+        guest_promoted, _ = await create_guest_user(session)
+        purged_guest, _ = await create_guest_user(session)
+        guest_bad_status, _ = await create_guest_user(session)
+
+    promoted_at = datetime.datetime(2026, 1, 10, tzinfo=datetime.timezone.utc)
+    await _stamp_user(test_engine, guest_promoted.id, promoted_at=promoted_at)
+    await _stamp_user(
+        test_engine,
+        purged_guest.id,
+        games_purged_at=datetime.datetime.now(datetime.timezone.utc),
+    )
+
+    # guest_counts: one completed session -> counts.
+    await _seed_funnel_session(
+        test_engine, guest_counts.id, datetime.date(2026, 1, 1), status="completed", solved=True
+    )
+
+    # guest_promoted: one completed session BEFORE promoted_at (counts), one
+    # completed session ON promoted_at's date (does not -- D-11's cutoff is
+    # session_date < promoted_at::date).
+    await _seed_funnel_session(
+        test_engine,
+        guest_promoted.id,
+        datetime.date(2026, 1, 5),
+        status="completed",
+        solved=True,
+    )
+    await _seed_funnel_session(
+        test_engine,
+        guest_promoted.id,
+        datetime.date(2026, 1, 10),
+        status="completed",
+        solved=True,
+    )
+
+    # purged_guest: completed session, but games_purged_at excludes it (D-12).
+    await _seed_funnel_session(
+        test_engine, purged_guest.id, datetime.date(2026, 1, 1), status="completed", solved=True
+    )
+
+    # guest_bad_status: neither 'open' nor 'expired' is 'completed'.
+    await _seed_funnel_session(
+        test_engine, guest_bad_status.id, datetime.date(2026, 1, 1), status="open", solved=False
+    )
+    await _seed_funnel_session(
+        test_engine, guest_bad_status.id, datetime.date(2026, 1, 2), status="expired", solved=False
+    )
+
+    async with test_engine.connect() as conn:
+        result = await queries.fetch_guest_train(conn, window_start)
+
+    delta = {key: result[key] - baseline[key] for key in result}
+
+    # Counts: guest_counts's session + guest_promoted's pre-promotion session.
+    # guest_promoted's post-promotion session, purged_guest's session, and
+    # guest_bad_status's two non-completed sessions all excluded.
+    assert delta["sessions_completed"] == 2
+    assert delta["users"] == 2  # guest_counts + guest_promoted (distinct)

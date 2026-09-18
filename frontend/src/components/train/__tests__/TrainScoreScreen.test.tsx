@@ -13,6 +13,12 @@
  * stays free of a `QueryClientProvider`, mirroring the existing
  * `useTrainReminderSlot` mock immediately below) rather than reaching for
  * TrainSolveScreen.test.tsx's `trainApi.getSettings` + real-provider pattern.
+ *
+ * Phase 224 (S-3, S-4, GUESTACT-05): extended again with the guest branch —
+ * for a guest, the bubble's `actions` slot renders `SignupAskActions` (which
+ * calls `useNavigate` and `useAuth`, mocked below mirroring
+ * `SignupAskActions.test.tsx`'s own shape) and the reminder control/below-row
+ * are both suppressed.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
@@ -21,6 +27,23 @@ import { TrainScoreScreen } from '@/components/train/TrainScoreScreen';
 import type { TrainScoreScreenProps } from '@/components/train/TrainScoreScreen';
 import type { SolvedResult, TrainSettingsResponse } from '@/types/train';
 import type { TrainSessionScore } from '@/lib/trainScore';
+import { GUEST_SIGNUP_ASK_SCORE } from '@/lib/trainBotCopy';
+
+const mockNavigate = vi.fn();
+vi.mock('react-router', async () => {
+  const actual = await vi.importActual<typeof import('react-router')>('react-router');
+  return {
+    ...actual,
+    useNavigate: () => mockNavigate,
+  };
+});
+
+const mockLogoutForPromotion = vi.fn();
+vi.mock('@/hooks/useAuth', () => ({
+  useAuth: () => ({
+    logoutForPromotion: mockLogoutForPromotion,
+  }),
+}));
 
 // Phase 202 (Task 1 harness fix, Task 3 mutable extension): the reminder slot
 // depends on a QueryClientProvider (usePushCapability/useTrainSettings both
@@ -113,6 +136,8 @@ function renderScoreScreen(
       sessionDate={SESSION_DATE}
       expiresOn={NEXT_SESSION_DATE}
       isWarmup={false}
+      hasGames={true}
+      isGuest={false}
       {...overrides}
     />,
   );
@@ -131,6 +156,8 @@ describe('TrainScoreScreen', () => {
     getSettingsMock.mockReset();
     getSettingsMock.mockReturnValue({ data: SETTINGS_FIXTURE });
     stampMock.mockReset();
+    mockNavigate.mockReset();
+    mockLogoutForPromotion.mockReset();
   });
 
   afterEach(() => {
@@ -198,6 +225,8 @@ describe('TrainScoreScreen', () => {
         sessionDate={SESSION_DATE}
         expiresOn={NEXT_SESSION_DATE}
         isWarmup={false}
+        hasGames={true}
+        isGuest={false}
       />,
     );
     expect(fireWinConfetti).toHaveBeenCalledTimes(1);
@@ -402,6 +431,8 @@ describe('TrainScoreScreen', () => {
           sessionDate={SESSION_DATE}
           expiresOn={NEXT_SESSION_DATE}
           isWarmup={false}
+          hasGames={true}
+          isGuest={false}
         />,
       );
       const text = screen.getByTestId('train-score-bubble-returns').textContent ?? '';
@@ -483,6 +514,60 @@ describe('TrainScoreScreen', () => {
       expect(text).not.toMatch(/\bposition\s*\d/i);
       expect(text).not.toMatch(/\bgame\s*(id)?\s*\d/i);
       expect(text).not.toMatch(/\bply\s*\d/i);
+    });
+  });
+
+  // Phase 224 (S-3, S-4, GUESTACT-05): the guest branch replaces the reminder
+  // ask with the sign-up ask and drops the reminder slot/QR block entirely.
+  describe('the guest branch (S-3, S-4, GUESTACT-05)', () => {
+    it('a guest warm-up fixture renders the sign-up ask pair inside the bubble and neither reminder stub, with both reminder mocks configured non-null', () => {
+      reminderSlotMock.mockReturnValue(<div data-testid="btn-train-remind-me" />);
+      reminderBelowRowMock.mockReturnValue(
+        <p data-testid="train-reminder-guest-check-stub">stub</p>,
+      );
+      renderScoreScreen({ total: 0, max: 0 }, { isGuest: true, isWarmup: true });
+
+      const bubble = screen.getByTestId('train-score-bubble');
+      expect(bubble.querySelector('[data-testid="btn-signup-why-train-score"]')).not.toBeNull();
+      expect(bubble.querySelector('[data-testid="btn-signup-free-train-score"]')).not.toBeNull();
+      expect(screen.getByTestId('train-score-bubble-returns').textContent ?? '').toContain(
+        GUEST_SIGNUP_ASK_SCORE,
+      );
+      expect(screen.queryByTestId('btn-train-remind-me')).toBeNull();
+      expect(screen.queryByTestId('train-reminder-guest-check-stub')).toBeNull();
+    });
+
+    it('the same guest fixture still renders btn-train-done', () => {
+      reminderSlotMock.mockReturnValue(<div data-testid="btn-train-remind-me" />);
+      reminderBelowRowMock.mockReturnValue(
+        <p data-testid="train-reminder-guest-check-stub">stub</p>,
+      );
+      renderScoreScreen({ total: 0, max: 0 }, { isGuest: true, isWarmup: true });
+      expect(screen.getByTestId('btn-train-done')).not.toBeNull();
+    });
+
+    it('a registered fixture with the identical non-null reminder mocks renders the reminder control and below-row, and no btn-signup- element', () => {
+      reminderSlotMock.mockReturnValue(<div data-testid="btn-train-remind-me" />);
+      reminderBelowRowMock.mockReturnValue(
+        <p data-testid="train-reminder-guest-check-stub">stub</p>,
+      );
+      renderScoreScreen({ total: 20, max: 20 }, { isGuest: false });
+
+      expect(screen.getByTestId('btn-train-remind-me')).not.toBeNull();
+      expect(screen.getByTestId('train-reminder-guest-check-stub')).not.toBeNull();
+      const signupElements = document.querySelectorAll('[data-testid^="btn-signup-"]');
+      expect(signupElements.length).toBe(0);
+    });
+
+    it('the registered screen renders no bubble actions row (byte-identity: TrainBotBubble receives actions=undefined)', () => {
+      renderScoreScreen({ total: 20, max: 20 }, { isGuest: false });
+      const bubble = screen.getByTestId('train-score-bubble');
+      // TrainBotBubble only renders its actions row (class fragment
+      // `justify-end`, see TrainBotBubble.tsx) when `actions !== undefined`.
+      // For a registered user `actions` is `undefined`, so this row must be
+      // entirely absent — the registered DOM is unchanged from before this
+      // plan touched the file.
+      expect(bubble.querySelector('.justify-end')).toBeNull();
     });
   });
 });

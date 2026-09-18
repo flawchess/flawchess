@@ -56,7 +56,8 @@ import { useInstallPrompt } from '@/hooks/useInstallPrompt';
 import { fireWinConfetti, firePartialConfetti, prefersReducedMotion } from '@/lib/confetti';
 import { playSound, type SoundEvent } from '@/lib/sounds';
 import { TrainBotBubble } from '@/components/train/TrainBotBubble';
-import { pickBot, scoreBubbleCopy, type ReminderAsk } from '@/lib/trainBotCopy';
+import { SignupAskActions } from '@/components/train/SignupAskActions';
+import { pickBot, scoreBubbleCopy, type ReminderAsk, type TrainCopyAudience } from '@/lib/trainBotCopy';
 import { useTrainSettings } from '@/hooks/useTrainSettings';
 import { useTrainOnboarding } from '@/hooks/useTrainOnboarding';
 import type { SolvedResult } from '@/types/train';
@@ -137,6 +138,17 @@ export interface TrainScoreScreenProps {
   /** `TrainSessionResponse.is_warmup` — a warm-up session (zero surviving
    * SR items) gets its own D-25 variant regardless of `sr_explained_at`. */
   isWarmup: boolean;
+  /** D-03 (Phase 224): true when the account has at least one imported game
+   * (`hasImportedGames`, the shared user-profile hook's data), passed down
+   * from `Train.tsx`. Selects the warm-up bubble's zero-game copy variant. */
+  hasGames: boolean;
+  /** D-03/S-3 (Phase 224): sourced from the shared user-profile hook's data
+   * via `Train.tsx`, never the auth hook's user object (FLAWCHESS-64), and
+   * never read here directly — this component takes props only, so it
+   * gains no complexity from the profile query. Replaces the warm-up
+   * reminder ask with the sign-up ask (`GUEST_SIGNUP_ASK_SCORE`, D-13: a
+   * guest gets no reminder slot). */
+  isGuest: boolean;
 }
 
 export function TrainScoreScreen({
@@ -147,6 +159,8 @@ export function TrainScoreScreen({
   sessionDate,
   expiresOn,
   isWarmup,
+  hasGames,
+  isGuest,
 }: TrainScoreScreenProps): ReactElement {
   const percentage = displaySessionPercentage(score);
   const band = score.max > 0 ? resolveRatingBand(score.total / score.max) : null;
@@ -209,6 +223,7 @@ export function TrainScoreScreen({
           band,
           session_date: sessionDate,
           expires_on: expiresOn,
+          audience: { hasGames, isGuest } satisfies TrainCopyAudience,
         });
 
   // D-12: mirrors `scoreBubbleCopy`'s own precedence (isWarmup and
@@ -257,7 +272,11 @@ export function TrainScoreScreen({
           the old "Session complete" heading, which said nothing about the
           loop this screen is meant to open. */}
       <div className="w-full max-w-sm text-left" data-testid="train-score-bubble">
-        <TrainBotBubble persona={bot} state="verdict">
+        <TrainBotBubble
+          persona={bot}
+          state="verdict"
+          actions={isGuest ? <SignupAskActions source="train-score" /> : undefined}
+        >
           {bubbleCopy !== null && (
             <div data-testid="train-score-bubble-returns">
               {bubbleCopy.lines.map((line, index) => (
@@ -306,7 +325,7 @@ export function TrainScoreScreen({
           pieces stay inside the same max-w-sm column. */}
       <div className="flex w-full max-w-sm flex-col gap-2">
         <div className="flex w-full items-center gap-2" data-testid="train-score-button-row">
-          {reminderControl}
+          <GuardedReminderControl isGuest={isGuest} reminderControl={reminderControl} />
           <Button
             variant="default"
             className={cn('flex-1', TRAIN_BUTTON_CLASS)}
@@ -316,7 +335,7 @@ export function TrainScoreScreen({
             Done
           </Button>
         </div>
-        {reminderBelowRow}
+        <GuardedReminderBelowRow isGuest={isGuest} reminderBelowRow={reminderBelowRow} />
       </div>
     </div>
   );
@@ -334,4 +353,36 @@ function resolveReminderAsk({
 }): ReminderAsk {
   if (!isDesktop) return 'remind_me';
   return hasMobileSubscription ? 'none' : 'scan_qr';
+}
+
+/**
+ * GuardedReminderControl / GuardedReminderBelowRow — Phase 224 (S-3):
+ * suppress the reminder row's two pieces entirely for a guest (no reminder
+ * slot, no QR/install block, S-3). Each wraps exactly one guest-guard
+ * ternary in its own module-level function so it is measured against ITS
+ * OWN complexity, not `TrainScoreScreen`'s — which had only one branch of
+ * headroom left against CLAUDE.md's un-baselined complexity cap of 15 after
+ * the bubble's guest-guarded `actions` prop ternary above (baseline
+ * complexity 13, cap 15: only one more branch fits inline). Fragments are
+ * transparent in the DOM, so this changes no rendered markup and no
+ * existing TrainScoreScreen.test.tsx assertion.
+ */
+function GuardedReminderControl({
+  isGuest,
+  reminderControl,
+}: {
+  isGuest: boolean;
+  reminderControl: ReactElement | null;
+}): ReactElement {
+  return <>{isGuest ? null : reminderControl}</>;
+}
+
+function GuardedReminderBelowRow({
+  isGuest,
+  reminderBelowRow,
+}: {
+  isGuest: boolean;
+  reminderBelowRow: ReactElement | null;
+}): ReactElement {
+  return <>{isGuest ? null : reminderBelowRow}</>;
 }

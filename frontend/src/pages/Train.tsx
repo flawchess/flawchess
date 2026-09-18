@@ -41,12 +41,11 @@ import { useEffect, useState } from 'react';
 import type { ReactElement } from 'react';
 import { useTrainSession } from '@/hooks/useTrainSession';
 import { useTrainGradingEngine } from '@/hooks/useTrainGradingEngine';
-import { useUserProfile } from '@/hooks/useUserProfile';
+import { hasImportedGames, useUserProfile } from '@/hooks/useUserProfile';
 import { TrainStartScreen } from '@/components/train/TrainStartScreen';
 import { TrainSolveScreen } from '@/components/train/TrainSolveScreen';
 import { TrainScoreScreen } from '@/components/train/TrainScoreScreen';
 import { TrainDevClock } from '@/components/train/TrainDevClock';
-import { TrainGuestGate } from '@/components/train/TrainGuestGate';
 import { clearTrainRevealCache, readTrainRevealCache } from '@/lib/trainRevealCache';
 import type { CachedTrainReveal } from '@/lib/trainRevealCache';
 import { DEV_CLOCK_ENABLED } from '@/lib/devClock';
@@ -65,10 +64,17 @@ export default function TrainPage(): ReactElement {
   const trainSession = useTrainSession();
   // FLAWCHESS-64: is_guest read from useUserProfile(), never useAuth().user
   // (always null, carries no is_guest — D-02, cf. the Analysis.tsx:789
-  // free-play ELO source comment).
+  // free-play ELO source comment). Kept for Plan 04/Plan 06 (score-screen
+  // sign-up ask, settings card guest branch).
   const { data: profile, isError: profileError } = useUserProfile();
   const isGuest = profile?.is_guest === true;
-  const canTrain = profile != null && !isGuest;
+  // D-03 (Phase 224): the two orthogonal flags the games-less Train copy
+  // branches on. hasImportedGames is the SAME shared zero-game predicate
+  // Plan 02 added for Home.tsx — never re-derived here.
+  const hasGames = hasImportedGames(profile);
+  // Phase 224 (S-2): the 403 source (`_reject_guest`) is gone from every
+  // /train/* handler, so canTrain now only waits for the profile to resolve.
+  const canTrain = profile != null;
   const gradingEngine = useTrainGradingEngine({ enabled: canTrain });
   const [hasEnteredLoop, setHasEnteredLoop] = useState(false);
   const [showScoreScreen, setShowScoreScreen] = useState(false);
@@ -82,11 +88,8 @@ export default function TrainPage(): ReactElement {
 
   const { startSession } = trainSession;
   useEffect(() => {
-    // FLAWCHESS-64: every /train/* endpoint 403s guests via _reject_guest
-    // (app/routers/train.py:54, Phase 189 D-05 — correct, and it stays).
-    // Firing this status read for a guest, or before the profile has
-    // resolved, is a guaranteed 403 that reaches Sentry. canTrain requires
-    // BOTH a resolved and a non-guest profile.
+    // Phase 224: the 403 source is gone, so this only waits for the profile
+    // to resolve before firing the status read (canTrain = profile != null).
     //
     // NO ref latch here, deliberately. A "fire only once per mount" latch
     // looks harmless but hangs the page under StrictMode (dev): React mounts,
@@ -174,18 +177,6 @@ export default function TrainPage(): ReactElement {
     returnToLanding();
   }
 
-  // FLAWCHESS-64 D-04: a guest sees a sign-up CTA INSTEAD of TrainStartScreen
-  // — rendering TrainStartScreen at all re-triggers the /train/progress and
-  // /train/settings 403s. App.tsx is untouched (D-05): the Train nav item
-  // stays visible to guests, and this gate is the conversion moment.
-  if (isGuest) {
-    return (
-      <div className="px-4 py-6 md:px-6" data-testid="train-page">
-        <TrainGuestGate />
-      </div>
-    );
-  }
-
   if (profile == null) {
     return (
       <div className="px-4 py-6 md:px-6" data-testid="train-page">
@@ -227,6 +218,8 @@ export default function TrainPage(): ReactElement {
           sessionScore={trainSession.sessionScore}
           onEnterLoop={() => setHasEnteredLoop(true)}
           onSettingsSaved={startSession}
+          hasGames={hasGames}
+          isGuest={isGuest}
         />
       )}
       {restoredActive && restoredReveal && (
@@ -236,6 +229,8 @@ export default function TrainPage(): ReactElement {
           gradingEngine={gradingEngine}
           restoredSolve={restoredReveal}
           onNext={handleRestoredNext}
+          hasGames={hasGames}
+          isGuest={isGuest}
         />
       )}
       {showLoop && trainSession.currentPuzzle && (
@@ -244,6 +239,8 @@ export default function TrainPage(): ReactElement {
           trainSession={trainSession}
           gradingEngine={gradingEngine}
           onNext={handleNext}
+          hasGames={hasGames}
+          isGuest={isGuest}
         />
       )}
       {showScoreScreen && trainSession.session && (
@@ -258,6 +255,8 @@ export default function TrainPage(): ReactElement {
           sessionDate={trainSession.session.session_date}
           expiresOn={trainSession.session.expires_on}
           isWarmup={trainSession.session.is_warmup}
+          hasGames={hasGames}
+          isGuest={isGuest}
         />
       )}
     </div>

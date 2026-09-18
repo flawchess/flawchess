@@ -1,8 +1,15 @@
 """Train router: session composition (Phase 189).
 
-D-05 (LOCKED): Train is not available to guest accounts. Every handler calls
-`_reject_guest` as its FIRST statement — an explicit 403 gate, not an
-inference from an empty pool result (Pitfall 7 in 189-RESEARCH.md).
+Phase 224 (D-01/S-2): Train is open to guest accounts, reversing Phase 189
+D-05. Every handler still scopes strictly by `current_active_user.id` —
+never a client-supplied id (V4/IDOR guard) — so opening the route to guests
+widens WHO can call these handlers, not what any one caller can reach. The
+abuse backstop for guest-created accounts is `guest_create_limiter` in
+`app/core/ip_rate_limiter.py` (5 creates per hour per IP, keyed on the
+Cloudflare-resolved client IP: `Cf-Connecting-Ip` -> leftmost
+`X-Forwarded-For` -> `request.client.host`) plus the one-open-session-per-
+user partial unique index `uq_drill_sessions_user_open`, per Phase 224
+D-09. No Train-specific guest ceiling or filler-only mode is added.
 
 Every time-dependent handler takes "now" from the `dev_now_utc` dependency
 rather than calling `datetime.now()` inline, so the dev clock override can
@@ -47,16 +54,6 @@ router = APIRouter(prefix="/train", tags=["train"])
 NowUtc = Annotated[datetime.datetime, Depends(dev_now_utc)]
 
 
-def _reject_guest(user: User) -> None:
-    """D-05: explicit gate, not an empty-result inference.
-
-    Every /train/* handler calls this before touching any pool/session/
-    settings repository — centralized so no route can forget it (Pitfall 7).
-    """
-    if user.is_guest:
-        raise HTTPException(status_code=403, detail="Train requires a full account")
-
-
 @router.post("/sessions", response_model=TrainSessionResponse)
 async def compose_or_resume_session(
     session: Annotated[AsyncSession, Depends(get_async_session)],
@@ -68,7 +65,6 @@ async def compose_or_resume_session(
     The user id always comes from `current_active_user.id` — never from a
     request body or path parameter (V4/IDOR guard, T-189-01).
     """
-    _reject_guest(user)
     try:
         composed = await train_repository.compose_and_materialize_session(
             session, user_id=user.id, now_utc=now_utc
@@ -135,7 +131,6 @@ async def solve_puzzle(
     request body or path parameter (V4/IDOR guard, T-189-16), mirroring
     `app/routers/users.py`'s update handlers.
     """
-    _reject_guest(user)
     try:
         recorded = await train_repository.record_solve(
             session,
@@ -186,7 +181,6 @@ async def reveal_puzzle(
     409 while `solved_at` is still NULL (T-189-17): the answer key, puzzle
     type, and in-game move are unreachable before the attempt is recorded.
     """
-    _reject_guest(user)
     try:
         result = await train_repository.reveal_for_puzzle(
             session, user_id=user.id, session_id=session_id, position=position
@@ -227,7 +221,6 @@ async def get_train_progress(
     `train_repository.settle_streak_snapshot`/`_stamp_pool_eligibility`) in
     addition to the ordinary settings create-on-first-touch.
     """
-    _reject_guest(user)
     try:
         progress = await train_repository.get_progress(session, user_id=user.id, now_utc=now_utc)
         await session.commit()
@@ -281,7 +274,6 @@ async def get_train_settings(
     user: Annotated[User, Depends(current_active_user)],
 ) -> TrainSettingsResponse:
     """Return the user's Train settings, creating the D-06/D-07/D-08 defaults on first touch."""
-    _reject_guest(user)
     settings_row = await train_repository.get_or_create_settings(session, user_id=user.id)
     await session.commit()
     return await _settings_response(session, settings_row, user_id=user.id)
@@ -321,7 +313,6 @@ async def update_train_settings(
     previously-recorded install intent -- the full-replace contract's
     loud-failure guarantee.
     """
-    _reject_guest(user)
     settings_row = await train_repository.upsert_settings(
         session,
         user_id=user.id,
@@ -361,7 +352,6 @@ async def stamp_onboarding_step(
     request body or path parameter (V4/IDOR guard), mirroring every other
     `/train/*` handler in this file.
     """
-    _reject_guest(user)
     try:
         settings_row = await train_repository.stamp_onboarding_step(
             session, user_id=user.id, step=step, now_utc=now_utc

@@ -145,7 +145,9 @@ export function LibraryPage({
                 </TabsTrigger>
               </TabsList>
             </div>
-            <TabsContent value="import" className="mt-4">
+            {/* mt-1 like the sibling tabs (was mt-4): 224 UAT round 2 asked for the
+                bot bubble's avatar to sit as close to the tab bar as on the bot page. */}
+            <TabsContent value="import" className="mt-1">
               <ImportTab
                 onImportStarted={onImportStarted}
                 activeJobIds={activeJobIds}

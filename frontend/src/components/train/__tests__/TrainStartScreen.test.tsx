@@ -197,6 +197,8 @@ function renderScreen(props: Partial<Parameters<typeof TrainStartScreen>[0]> = {
         sessionScore={0}
         onEnterLoop={onEnterLoop}
         onSettingsSaved={onSettingsSaved}
+        hasGames={true}
+        isGuest={false}
         {...props}
       />
     </MemoryRouter>,

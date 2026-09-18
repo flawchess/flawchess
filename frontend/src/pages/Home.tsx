@@ -1,5 +1,4 @@
 import { Navigate, useNavigate } from 'react-router';
-import { isWelcomeDismissed } from '@/lib/welcomeDismissal';
 import { Link } from 'react-router';
 import * as Sentry from '@sentry/react';
 import { useQuery } from '@tanstack/react-query';
@@ -18,6 +17,7 @@ import {
 import { cn } from '@/lib/utils';
 import { FLAWCHESS_ENGINE_ACCENT } from '@/lib/theme';
 import { trackEvent } from '@/lib/analytics';
+import { hasImportedGames } from '@/hooks/useUserProfile';
 import { Search, Bot, Dumbbell, TrophyIcon, Timer, Compass, Loader2, UserPlus, DoorOpen, ChessKnight } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 
@@ -773,14 +773,10 @@ export function HomePage() {
         </div>
       );
     }
-    // Returning users with imported games land on their games library.
-    // First-time guests (0 games, welcome not dismissed) see the Welcome explainer.
-    // Dismissed guests and non-guests with 0 games go straight to /library/import.
-    const hasGames =
-      (profile?.chess_com_game_count ?? 0) + (profile?.lichess_game_count ?? 0) > 0;
-    if (!hasGames && profile?.is_guest && !isWelcomeDismissed()) {
-      return <Navigate to="/welcome" replace />;
-    }
+    // Every authenticated account, guest or registered, with games lands on the
+    // games library; every account without games lands on the import page,
+    // guest or not (Phase 224 S-1, ROADMAP SC 1).
+    const hasGames = hasImportedGames(profile);
     return <Navigate to={hasGames ? '/library/games' : '/library/import'} replace />;
   }
 

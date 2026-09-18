@@ -7,6 +7,15 @@ cascading children purged and their import cursor mechanisms reset, but
 their ``User`` row + auth + bookmarks + import-settings preferences survive
 (D-05) so a returning guest can log back in and simply re-import.
 
+Phase 224 (D-08): a guest's Train rows do NOT survive the purge. Once Train
+opened to guests (Phase 224 D-01, reversing Phase 189 D-05's guest gate) a
+guest can accumulate real ``drill_sessions``/``drill_solves``/
+``train_settings`` rows, and ``/welcome`` advertises "nothing is deleted
+after 30 days of inactivity" as a sign-up delta -- honest only if a purged
+guest's Train state goes with their games. See ``_purge_guest`` for the two
+deletes and ``tests/test_guest_cleanup_service.py::
+test_purge_guest_cascades_drill_rows`` for the proof.
+
 Plan 01 built the eligibility query, the per-guest purge, and the per-tick
 orchestration loop (``cleanup_inactive_guests``). Plan 02 (this module's
 ``run_periodic_guest_cleanup``) wraps that orchestration in a periodic
@@ -23,7 +32,9 @@ from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import async_session_maker
+from app.models.drill_session import DrillSession
 from app.models.import_job import ImportJob
+from app.models.train_settings import TrainSettings
 from app.models.user import User
 from app.models.user_benchmark_percentile import UserBenchmarkPercentile
 from app.models.user_rating_anchors import UserRatingAnchor
@@ -104,17 +115,25 @@ async def _purge_guest(guest_id: int) -> int:
             delete(UserBenchmarkPercentile).where(UserBenchmarkPercentile.user_id == guest_id)
         )
         await session.execute(delete(UserRatingAnchor).where(UserRatingAnchor.user_id == guest_id))
-        # Phase 189 Plan 02 (POOL-09, D-04/D-05): the Train tables need NO
-        # handling here either. `drill_items`/`drill_solves` ride the same
-        # `games` cascade `delete_all_games_for_user` already triggered above
-        # (D-02). `drill_sessions`/`train_settings` are preserved by design
-        # (D-04, session history is user progress, not game-derived data) --
-        # do NOT add a delete for them. And in practice a guest never
-        # accumulates Train rows in the first place: `_reject_guest` (Phase
-        # 189's D-05) rejects every /train/* request with 403 before any pool
-        # query runs, so this purge never needs to reason about a guest's
-        # drill state. See tests/test_guest_cleanup_service.py::
+        # Phase 224 D-08 supersedes the Phase 189 D-04 preservation FOR
+        # GUESTS ONLY: Phase 224 removed the Train guest gate (`_reject_guest`),
+        # so a guest now accumulates real drill_sessions/drill_solves/
+        # train_settings rows, and /welcome advertises "no 30-day inactivity
+        # purge" as a sign-up delta -- only honest if a purged guest's Train
+        # state goes with their games. Deleting drill_sessions is sufficient:
+        # drill_solves.session_id is ON DELETE CASCADE to drill_sessions, so
+        # this reaches every solve, including warm-up filler / red-herring
+        # rows whose game_id is NULL or points at a stranger's game -- rows
+        # the games cascade above cannot see. Do NOT add a separate
+        # DrillSolve-targeting delete statement. The streak has drained to 0
+        # by 30 idle days anyway (shield cap 7). Registered users' Phase 189 D-04
+        # preservation is untouched: the WR-01 re-check above already
+        # verified `User.is_guest.is_(True)` in this same transaction, so
+        # this code can never reach a registered user. See
+        # tests/test_guest_cleanup_service.py::
         # test_purge_guest_cascades_drill_rows.
+        await session.execute(delete(DrillSession).where(DrillSession.user_id == guest_id))
+        await session.execute(delete(TrainSettings).where(TrainSettings.user_id == guest_id))
         # Pitfall 1 (187-RESEARCH.md): deleting import_jobs alone does NOT
         # reset the backward-walk backlog cursor (chesscom_backfill_oldest_year
         # /_month, lichess_backfill_oldest_ms) — those live on

@@ -657,12 +657,17 @@
       "number": "223",
       "name": "Bot Voice & Immersive Bot Game Layout (SEED-168 + SEED-167, standalone)",
       "status": "complete"
+    },
+    {
+      "number": "224",
+      "name": "Guest Activation — Welcome Removal & Guest Train (SEED-169, standalone)",
+      "status": "pending"
     }
   ],
   "next": {
-    "command": "/gsd:progress",
-    "label": "Show progress",
-    "reason": "Unsure of state — showing progress"
+    "command": "/gsd:progress --next",
+    "label": "Advance to the next step",
+    "reason": "Phase 224 of 2 · executing"
   },
-  "updated_at": "2026-09-16T09:07:56.762Z"
+  "updated_at": "2026-09-17T22:25:05.393Z"
 }

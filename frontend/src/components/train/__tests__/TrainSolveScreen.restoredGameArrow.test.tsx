@@ -202,6 +202,8 @@ function Harness(): ReactElement {
       gradingEngine={gradingEngine}
       restoredSolve={restored}
       onNext={() => {}}
+      hasGames={true}
+      isGuest={false}
     />
   );
 }

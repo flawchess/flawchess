@@ -9,7 +9,9 @@ Coverage:
                                              missed_pv_lines (`[]`, the D-06 un-fillable
                                              sentinel) is excluded, same as a NULL blob
 - test_below_winnability_floor_excluded   : a hopeless pre-flaw position is excluded
-- test_403_guest                          : a guest account is rejected before any pool query
+- test_guest_composes_session_200         : Phase 224 (D-01/S-2) — a guest composes a
+                                             filler-only warm-up session like any zero-game
+                                             account, 200
 - test_401_unauthenticated                : no auth token returns 401
 - test_pre_attempt_payload_shape          : the puzzle dict's key set is exactly the POOL-10 six
 - test_drill_items_fk_targets             : drill_items' FK referenced-table set is {users, games}
@@ -51,7 +53,7 @@ Plan 05 (POOL-08/POOL-10, solve/reveal/settings):
       the reveal gate (T-189-17) and its POOL-02/tactic-lines-pointer fields
 - test_get_settings_creates_defaults_on_first_touch / test_get_settings_is_idempotent /
   test_put_settings_persists_and_round_trips / test_put_settings_rejects_bad_timezone_422 /
-  test_put_settings_rejects_out_of_range_mask_422 / test_settings_403_guest /
+  test_put_settings_rejects_out_of_range_mask_422 / test_guest_settings_round_trip_200 /
   test_session_size_follows_settings : the D-06/D-07/D-08 settings surface
 
 Phase 201 Plan 03 (REMIND-01, D-18) — reminder_enabled/reminder_hour on
@@ -62,8 +64,9 @@ GET/PUT /train/settings:
   round-trip through PUT then GET
 - test_put_settings_rejects_out_of_range_reminder_hour_422 : reminder_hour
   outside [0, 23] is rejected 422 on both boundaries (T-201-14)
-- test_settings_403_guest (unchanged) : the guest gate still blocks a guest
-  from ever setting reminder_enabled=True (REMIND-07 upstream guard)
+- test_guest_settings_round_trip_200 (Phase 224) : the guest gate is gone —
+  a guest may set reminder_enabled=True on the settings row, but the
+  reminder fan-out itself still excludes guests (train_reminder_repository.py)
 
 Phase 203 Plan 01 (OFFER-03/OFFER-05, D-02) — reminder_intent_at on
 GET/PUT /train/settings:
@@ -75,9 +78,10 @@ GET/PUT /train/settings:
   non-null PUT reads back null
 
 Phase 191 Plan 01 (PROG-01/PROG-04, D-18) — GET /train/progress:
-- test_progress_returns_200_with_all_seven_fields : an authenticated non-guest
-                                                     account gets a full payload
-- test_progress_403_guest                         : the D-05 guest gate applies here too
+- test_progress_returns_200_with_all_eleven_fields : an authenticated non-guest
+                                                      account gets a full payload
+- test_guest_progress_200                          : Phase 224 (D-01/S-2) — a guest
+                                                      gets the same full payload, 200
 
 Phase 211 (VETFINE-02/VETFINE-03, D-01/D-03/D-07) — server-vetted moves +
 key-move grading on the solve response:
@@ -101,8 +105,11 @@ POST /train/onboarding/{step} + GET/PUT /train/settings extension:
   onboarding-seen fields default to None (no backfill)
 - test_put_settings_persists_and_round_trips (extended) : the three fields
   appear on the PUT response body, still None
-- test_onboarding_403_guest : D-14 — a guest is rejected 403 before any
-  state is read or written
+- test_guest_onboarding_stamp_200 : Phase 224 (GUESTACT-14) — a guest gets
+  200 on the stamp endpoint, no D-05 gate any more
+- test_guest_zero_game_warmup_end_to_end : Phase 224 (GUESTACT-04, ROADMAP
+  SC 2) — a zero-game guest composes, solves to streak 1, and round-trips
+  the weekday cadence, all over HTTP in one test
 - test_onboarding_unknown_step_422_no_db_write : an unrecognized step name
   422s via FastAPI's Literal path-param validation, no DB write
 - test_onboarding_stamps_matching_column_others_stay_null : a valid POST
@@ -964,19 +971,104 @@ async def test_below_winnability_floor_excluded(test_engine) -> None:
 
 
 @pytest.mark.asyncio
-async def test_403_guest(test_engine) -> None:
-    """A guest account is rejected 403 before any pool query runs (D-05)."""
+async def test_guest_composes_session_200(test_engine, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Phase 224 (D-01/S-2): a guest account composes a session like any other
+    zero-game account — no 403 gate, filler-only warm-up session, 200."""
     email = f"train-guest-{uuid.uuid4().hex[:8]}@example.com"
     user_id, token = await _register_and_login(email)
     await _set_guest(test_engine, user_id)
+    _install_sharp_fixture(monkeypatch)
 
-    async with httpx.AsyncClient(
-        transport=httpx.ASGITransport(app=app), base_url="http://test"
-    ) as client:
-        resp = await client.post(ENDPOINT, headers={"Authorization": f"Bearer {token}"})
+    session_id: int | None = None
+    try:
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=app), base_url="http://test"
+        ) as client:
+            resp = await client.post(ENDPOINT, headers={"Authorization": f"Bearer {token}"})
 
-    assert resp.status_code == 403
-    assert resp.json()["detail"] == "Train requires a full account"
+        assert resp.status_code == 200, f"Expected 200, got {resp.status_code}: {resp.text}"
+        body = resp.json()
+        assert body["session_id"] is not None
+        session_id = body["session_id"]
+        assert body["is_warmup"] is True
+    finally:
+        if session_id is not None:
+            await _delete_sessions(test_engine, [session_id])
+
+
+@pytest.mark.asyncio
+async def test_guest_zero_game_warmup_end_to_end(
+    test_engine, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """GUESTACT-04, ROADMAP SC 2 (Phase 224 D-01/S-2): a zero-game guest
+    composes a warm-up session, completes it, sees its streak advance 0 -> 1
+    on /train/progress, and round-trips a weekday mask through
+    /train/settings — all over HTTP, no game and no drill item seeded.
+
+    `SolveResponse.streak` is null for every puzzle here by design (Finding
+    C / `test_solve_sharp_filler_touches_no_drill_item`): a herring or
+    sharp-filler solve carries no per-item SR bookkeeping, unlike an SR_ITEM
+    solve. The account-level streak this test proves lives on
+    `TrainProgressResponse.session_streak_count`, ticked by
+    `_apply_completion_tick` the instant the session's LAST puzzle is
+    solved (Finding C leg 1: `sharp_filler_available()` already counts as
+    material for `_stamp_pool_eligibility`, so a filler-only session ticks
+    the same as any other). Every puzzle in the composed session is solved
+    in a loop for exactly this reason — solving only the first of several
+    would never flip `session_complete` and the streak would stay at 0.
+
+    The guest user row itself is left behind deliberately, mirroring every
+    other guest row in this module (see `_register_and_login` callers
+    elsewhere — no user cleanup here or in `test_guest_composes_session_200`
+    et al.).
+    """
+    email = f"train-guest-e2e-{uuid.uuid4().hex[:8]}@example.com"
+    user_id, token = await _register_and_login(email)
+    await _set_guest(test_engine, user_id)
+    _install_sharp_fixture(monkeypatch)
+
+    session_id: int | None = None
+    try:
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=app), base_url="http://test"
+        ) as client:
+            resp = await client.post(ENDPOINT, headers={"Authorization": f"Bearer {token}"})
+        assert resp.status_code == 200, f"Expected 200, got {resp.status_code}: {resp.text}"
+        body = resp.json()
+        assert body["session_id"] is not None
+        session_id = body["session_id"]
+        assert body["puzzle_count"] > 0
+        assert body["is_warmup"] is True
+
+        last_solve_body: dict[str, object] = {}
+        for position in range(body["puzzle_count"]):
+            solve_resp = await _solve(
+                token, session_id, position, guess="critical", move_quality="good"
+            )
+            assert solve_resp.status_code == 200, solve_resp.text
+            last_solve_body = solve_resp.json()
+        assert last_solve_body["session_complete"] is True
+
+        progress_resp = await _get_progress(token)
+        assert progress_resp.status_code == 200
+        progress_body = progress_resp.json()
+        assert progress_body["session_streak_count"] == 1
+
+        settings_resp = await _get_settings(token)
+        assert settings_resp.status_code == 200
+
+        put_resp = await _put_settings(
+            token, timezone="UTC", weekday_mask=62, puzzles_per_session=10
+        )
+        assert put_resp.status_code == 200
+        assert put_resp.json()["weekday_mask"] == 62
+
+        fresh_settings_resp = await _get_settings(token)
+        assert fresh_settings_resp.status_code == 200
+        assert fresh_settings_resp.json()["weekday_mask"] == 62
+    finally:
+        if session_id is not None:
+            await _delete_sessions(test_engine, [session_id])
 
 
 @pytest.mark.asyncio
@@ -2548,17 +2640,22 @@ async def test_put_settings_rejects_out_of_range_reminder_hour_422(test_engine) 
 
 
 @pytest.mark.asyncio
-async def test_settings_403_guest(test_engine) -> None:
-    """A guest account is rejected 403 on both GET and PUT /train/settings."""
+async def test_guest_settings_round_trip_200(test_engine) -> None:
+    """Phase 224 (D-01/S-2): a guest account gets 200 on both GET and PUT
+    /train/settings, and the PUT's echoed weekday_mask/puzzles_per_session
+    match what was sent."""
     email = f"train-settings-guest-{uuid.uuid4().hex[:8]}@example.com"
     user_id, token = await _register_and_login(email)
     await _set_guest(test_engine, user_id)
 
     get_resp = await _get_settings(token)
-    assert get_resp.status_code == 403
+    assert get_resp.status_code == 200
 
-    put_resp = await _put_settings(token, timezone="UTC", weekday_mask=0, puzzles_per_session=12)
-    assert put_resp.status_code == 403
+    put_resp = await _put_settings(token, timezone="UTC", weekday_mask=17, puzzles_per_session=8)
+    assert put_resp.status_code == 200
+    put_body = put_resp.json()
+    assert put_body["weekday_mask"] == 17
+    assert put_body["puzzles_per_session"] == 8
 
 
 # ---------------------------------------------------------------------------
@@ -2577,15 +2674,20 @@ async def _stamp_onboarding(token: str, step: str) -> httpx.Response:
 
 
 @pytest.mark.asyncio
-async def test_onboarding_403_guest(test_engine) -> None:
-    """D-14: a guest is rejected 403 on the stamp endpoint before any state
-    is read or written."""
+async def test_guest_onboarding_stamp_200(test_engine) -> None:
+    """Phase 224 (D-01/S-2, GUESTACT-14): a guest gets 200 on the stamp
+    endpoint, and a second GET /train/settings shows the stamped column
+    non-null."""
     email = f"train-onboarding-guest-{uuid.uuid4().hex[:8]}@example.com"
     user_id, token = await _register_and_login(email)
     await _set_guest(test_engine, user_id)
 
     resp = await _stamp_onboarding(token, "intro")
-    assert resp.status_code == 403
+    assert resp.status_code == 200
+
+    get_resp = await _get_settings(token)
+    assert get_resp.status_code == 200
+    assert get_resp.json()["intro_seen_at"] is not None
 
 
 @pytest.mark.asyncio
@@ -2989,12 +3091,26 @@ async def test_put_settings_settles_elapsed_days_with_old_mask_before_get(test_e
 
 
 @pytest.mark.asyncio
-async def test_progress_403_guest(test_engine) -> None:
-    """A guest account is rejected 403 before any progress query runs (D-05)."""
+async def test_guest_progress_200(test_engine) -> None:
+    """Phase 224 (D-01/S-2): a guest account gets 200 with the documented
+    progress payload key set."""
     email = f"train-progress-guest-{uuid.uuid4().hex[:8]}@example.com"
     user_id, token = await _register_and_login(email)
     await _set_guest(test_engine, user_id)
 
     resp = await _get_progress(token)
-    assert resp.status_code == 403
-    assert resp.json()["detail"] == "Train requires a full account"
+    assert resp.status_code == 200
+    body = resp.json()
+    assert set(body.keys()) == {
+        "session_streak_count",
+        "shield_level",
+        "current_week_completed",
+        "current_week_required",
+        "streak_reset_notice",
+        "mastered_count",
+        "parked_count",
+        "waiting_count",
+        "pool_state",
+        "next_due_date",
+        "badge_visible",
+    }

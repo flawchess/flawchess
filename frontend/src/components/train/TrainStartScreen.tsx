@@ -26,6 +26,7 @@ import { TrainStreakCard } from '@/components/train/TrainStreakCard';
 import { useTrainProgress } from '@/hooks/useTrainProgress';
 import { useTrainSettings } from '@/hooks/useTrainSettings';
 import { landingHost } from '@/lib/trainBotCopy';
+import type { TrainCopyAudience } from '@/lib/trainBotCopy';
 import { TRAIN_POINTS_PER_PUZZLE } from '@/lib/trainScore';
 import type { TrainSessionResponse } from '@/types/train';
 
@@ -50,6 +51,15 @@ export interface TrainStartScreenProps {
    * load — see `TrainScheduleSettings`'s `onSaved` prop docstring.
    */
   onSettingsSaved: () => void;
+  /** D-03 (Phase 224): true when the account has at least one imported game
+   * (`hasImportedGames`, `useUserProfile().data`). Selects the warm-up
+   * banner's zero-game copy variant. */
+  hasGames: boolean;
+  /** D-03/D-13 (Phase 224): from `useUserProfile().data`, never
+   * `useAuth().user` (FLAWCHESS-64). Adds the sign-up clause to the warm-up
+   * banner's zero-game copy and hides the reminder/QR section on
+   * `TrainScheduleSettings`. */
+  isGuest: boolean;
 }
 
 /**
@@ -90,14 +100,45 @@ const LANDING_CARD_GRID_CLASS = 'grid w-full grid-cols-1 gap-4 sm:grid-cols-2';
  *
  * `next_due_date` discriminates them exactly: it is null only in the
  * cold-start case, and it is already read here for the "Next review" clause.
- * Keep these two strings mutually exclusive and each one true ONLY of its own
+ * Keep these strings mutually exclusive and each one true ONLY of its own
  * case — telling a caught-up user their games are being analyzed is false, and
  * that falsehood is the reason D-09 reached for one string in the first place.
+ *
+ * D-03 (Phase 224) adds two more cases to the same cold-start branch (a null
+ * `next_due_date`): a ZERO-GAME account has no games being analyzed at all
+ * (RESEARCH Finding C), so `WARMUP_BODY_COLD_START` would be false for it too
+ * — `WARMUP_BODY_NO_GAMES` says to import instead, and the guest variant
+ * (`WARMUP_BODY_NO_GAMES_GUEST`) adds sign-up after import, since a guest's
+ * imported games are not analyzed automatically either. All four strings stay
+ * true ONLY of their own case; `warmupBannerBody` is the single ordered
+ * resolver.
  */
 const WARMUP_BODY_COLD_START =
   "We're analyzing your games to find your blunders. In the meantime, here are some practice puzzles.";
 const WARMUP_BODY_CAUGHT_UP =
   "You're all caught up on your own mistakes. In the meantime, here are some practice puzzles.";
+const WARMUP_BODY_NO_GAMES =
+  'You have no games here yet. Import them and we will hunt down your blunders. In the ' +
+  'meantime, here are some practice puzzles.';
+const WARMUP_BODY_NO_GAMES_GUEST =
+  'You have no games here yet. Import them and sign up, and we will hunt down your ' +
+  'blunders. In the meantime, here are some practice puzzles.';
+
+/**
+ * D-03 (Phase 224): resolves the warm-up banner body. Moved out of the
+ * component body — `TrainStartScreen` is baselined at complexity 17 with zero
+ * headroom, so this branch must live in its own function, not an inline
+ * ternary. A non-null `nextDueDate` always keeps `WARMUP_BODY_CAUGHT_UP`
+ * (the caught-up cause is independent of the account's game count); a null
+ * `nextDueDate` resolves to `WARMUP_BODY_COLD_START` when the account has
+ * games, else to the zero-game registered or guest variant.
+ */
+function warmupBannerBody(nextDueDate: string | null, audience: TrainCopyAudience): string {
+  if (nextDueDate !== null) return WARMUP_BODY_CAUGHT_UP;
+  if (audience.hasGames) return WARMUP_BODY_COLD_START;
+  if (audience.isGuest) return WARMUP_BODY_NO_GAMES_GUEST;
+  return WARMUP_BODY_NO_GAMES;
+}
 
 type LandingState =
   | { kind: 'loading' }
@@ -273,6 +314,8 @@ export function TrainStartScreen({
   sessionScore,
   onEnterLoop,
   onSettingsSaved,
+  hasGames,
+  isGuest,
 }: TrainStartScreenProps): ReactElement {
   const state = resolveLandingState(session, isLoading, isError, sessionScore);
   const progress = useTrainProgress();
@@ -313,7 +356,11 @@ export function TrainStartScreen({
           <TrainStreakCard />
           <TrainStatsCard todayScore={{ total: state.score, max: state.totalPoints }} />
         </div>
-        <TrainScheduleSettings onSaved={onSettingsSaved} nextSessionDate={state.nextSessionDate} />
+        <TrainScheduleSettings
+          onSaved={onSettingsSaved}
+          nextSessionDate={state.nextSessionDate}
+          isGuest={isGuest}
+        />
       </div>
     );
   }
@@ -342,7 +389,7 @@ export function TrainStartScreen({
   // against varying copy). The split is load-bearing for honesty: a caught-up
   // user has nothing being analyzed, so the cold-start sentence would be a
   // false statement for them.
-  const warmupBody = nextDueDate === null ? WARMUP_BODY_COLD_START : WARMUP_BODY_CAUGHT_UP;
+  const warmupBody = warmupBannerBody(nextDueDate, { hasGames, isGuest });
 
   // 193 UAT round 2: the CTA moved ABOVE the cards. With the stats boxed into
   // card chrome, leaving Start/Resume underneath them pushed the one action on
@@ -377,7 +424,7 @@ export function TrainStartScreen({
         <TrainStreakCard />
         <TrainStatsCard />
       </div>
-      <TrainScheduleSettings onSaved={onSettingsSaved} />
+      <TrainScheduleSettings onSaved={onSettingsSaved} isGuest={isGuest} />
     </div>
   );
 }

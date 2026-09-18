@@ -58,6 +58,17 @@
  * structural absence, this phase's established fail-safe idiom, rather than
  * a dead button. `TrainInstallQr` itself only ever mounts on the desktop
  * branch now, at both its call sites (see that component's own docstring).
+ *
+ * D-13 (Phase 224): both the reminder block and the phone section are hidden
+ * from guest accounts. `app.repositories.train_reminder_repository`'s
+ * fan-out filters `User.is_guest.is_(False)` — a guest is never sent a
+ * reminder no matter what this card shows — so an enabled toggle or a QR
+ * code promising reminders would be a silent lie (the Phase 202 D-06 rule:
+ * the UI must never promise something the backend cannot keep). S-3's rule
+ * (no reminder slot, QR block or push prompt for a guest) therefore extends
+ * to this landing card, not only the score screen.
+ * `resolveScheduleCardVisibility` is the single place both `isGuest` terms
+ * live.
  */
 import { useEffect, useRef, useState } from 'react';
 import type { ReactElement } from 'react';
@@ -146,6 +157,15 @@ export interface TrainScheduleSettingsProps {
    * as a future date would be actively misleading.
    */
   nextSessionDate?: string;
+  /**
+   * D-13 (Phase 224): from `useUserProfile().data` via `TrainStartScreen`,
+   * never `useAuth().user` (FLAWCHESS-64). Not yet consumed in this task —
+   * the next task (D-13) hides the reminder block and the phone/QR section
+   * for a guest, since `train_reminder_repository`'s fan-out filters
+   * `User.is_guest.is_(False)` and an enabled toggle would be a promise the
+   * backend never keeps.
+   */
+  isGuest: boolean;
 }
 
 /**
@@ -276,9 +296,67 @@ function ReminderControls({
   );
 }
 
+/** D-13 (Phase 224) resolver inputs — the same signals the component already
+ * reads (`usePushCapability`'s resolved/available flags, `useInstallPrompt`'s
+ * mobile/standalone/canInstall) plus `isGuest`. */
+interface ScheduleCardVisibilityInput {
+  isGuest: boolean;
+  capabilityResolved: boolean;
+  capabilityAvailable: boolean;
+  isMobile: boolean;
+  isStandalone: boolean;
+  canInstall: boolean;
+}
+
+interface ScheduleCardVisibility {
+  showReminderBlock: boolean;
+  showQr: boolean;
+  showMobileInstallButton: boolean;
+  showPhoneSection: boolean;
+}
+
+/**
+ * D-13 (Phase 224): the four visibility booleans this card renders on,
+ * extracted to a module-level function so `TrainScheduleSettings` gains no
+ * complexity from the two new `isGuest` terms — the component measures
+ * complexity 15 against the un-baselined cap of 15 (frontend/CLAUDE.md
+ * forbids widening it), so the branch must live here, not inline.
+ *
+ * `showReminderBlock` and `showPhoneSection` are each false whenever
+ * `isGuest` is true (D-13/S-3): a guest is never sent a reminder
+ * (`train_reminder_repository`'s fan-out filter), so neither the toggle nor
+ * the phone/QR install ask may render for one. `showQr` and
+ * `showMobileInstallButton` are unchanged — they only ever matter once
+ * `showPhoneSection` has already let the section through.
+ */
+function resolveScheduleCardVisibility({
+  isGuest,
+  capabilityResolved,
+  capabilityAvailable,
+  isMobile,
+  isStandalone,
+  canInstall,
+}: ScheduleCardVisibilityInput): ScheduleCardVisibility {
+  // D-10/D-12: a clean structural absence, not a disabled placeholder, until
+  // both feature detection and the VAPID-key query have resolved.
+  const showReminderBlock = !isGuest && capabilityResolved && capabilityAvailable;
+  // UAT item 5 (post-review fix): three mutually exclusive branches, never
+  // more than one rendered. `showQr` and `showMobileInstallButton` decide
+  // WHICH content fills the "Reminders work better with FlawChess on your
+  // phone" section; `showPhoneSection` decides whether the section (heading
+  // included) renders at ALL — a standalone launch, or a mobile browser with
+  // no live `beforeinstallprompt` (iOS has none), gets nothing rather than an
+  // orphaned heading over a dead control.
+  const showQr = !isMobile && !isStandalone;
+  const showMobileInstallButton = isMobile && !isStandalone && canInstall;
+  const showPhoneSection = !isGuest && (showQr || showMobileInstallButton);
+  return { showReminderBlock, showQr, showMobileInstallButton, showPhoneSection };
+}
+
 export function TrainScheduleSettings({
   onSaved,
   nextSessionDate,
+  isGuest,
 }: TrainScheduleSettingsProps): ReactElement {
   const { data, isPending, isError, save } = useTrainSettings();
   const capability = usePushCapability();
@@ -353,9 +431,6 @@ export function TrainScheduleSettings({
     };
   }, []);
 
-  // D-10/D-12: a clean structural absence, not a disabled placeholder, until
-  // both feature detection and the VAPID-key query have resolved.
-  const showReminderBlock = capability.isResolved && capability.available;
   // D-11: a per-device block never mutates the account-wide reminder_enabled
   // (see the toggle handler below and the module docstring's D-06 note).
   const blocked = deniedNow || capability.permission === 'denied';
@@ -410,16 +485,15 @@ export function TrainScheduleSettings({
   const disabled = isPending || draft === null;
   const puzzlesSelected = draft !== null ? String(draft.puzzlesPerSession) : '';
 
-  // UAT item 5 (post-review fix): three mutually exclusive branches, never
-  // more than one rendered. `showQr` and `showMobileInstallButton` decide
-  // WHICH content fills the "Reminders work better with FlawChess on your
-  // phone" section; `showPhoneSection` decides whether the section (heading
-  // included) renders at ALL — a standalone launch, or a mobile browser with
-  // no live `beforeinstallprompt` (iOS has none), gets nothing rather than an
-  // orphaned heading over a dead control.
-  const showQr = !isMobile && !isStandalone;
-  const showMobileInstallButton = isMobile && !isStandalone && canInstall;
-  const showPhoneSection = showQr || showMobileInstallButton;
+  const { showReminderBlock, showQr, showMobileInstallButton, showPhoneSection } =
+    resolveScheduleCardVisibility({
+      isGuest,
+      capabilityResolved: capability.isResolved,
+      capabilityAvailable: capability.available,
+      isMobile,
+      isStandalone,
+      canInstall,
+    });
 
   return (
     <ScheduleCardShell indicator={indicator}>

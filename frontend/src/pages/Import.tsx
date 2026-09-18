@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import * as Sentry from '@sentry/react';
-import { X, DoorOpen, Infinity as InfinityIcon, ClipboardPaste } from 'lucide-react';
+import { X, Infinity as InfinityIcon, ClipboardPaste } from 'lucide-react';
 import { useNavigate } from 'react-router';
 import { Alert } from '@/components/ui/alert';
 import { Card, CardHeader, CardBody } from '@/components/ui/card';
@@ -23,7 +23,11 @@ import { ImportFilterCard, TIME_CONTROLS, TIME_CONTROL_LABELS, isTcActive } from
 import { TimeControlIcon } from '@/components/icons/TimeControlIcon';
 import { EvalCoverageHeader } from '@/components/EvalCoverageHeader';
 import { useUserProfile } from '@/hooks/useUserProfile';
-import { useAuth } from '@/hooks/useAuth';
+import { ImportBotBubble } from '@/components/import/ImportBotBubble';
+import type { ImportBotBubbleVariant } from '@/components/import/importBotBubbleCopy';
+import { TRAIN_BUTTON_CLASS } from '@/components/train/buttonStyles';
+import { cn } from '@/lib/utils';
+import type { UserProfile } from '@/types/users';
 import { useQueryClient } from '@tanstack/react-query';
 import { apiClient } from '@/api/client';
 import { extractPlatformUsername } from '@/lib/platformUsername';
@@ -124,6 +128,24 @@ function BudgetChipRow({
   );
 }
 
+/**
+ * Which bot bubble the Import page shows (224 UAT round 1: the sign-up CTA was
+ * "too early" on a fresh account). Before the first COMPLETED import (either
+ * platform's last_sync_at, i.e. the last completed import job) every account,
+ * guest or registered, gets the welcome bubble. After it, guests get the
+ * sign-up ask and registered accounts the same tab tour without the ask.
+ *
+ * Deliberately NOT `hasImportedGames` (D-03): that flips as soon as the first
+ * game lands, mid-import, while the profile refetches on the 3s import tick.
+ * The ask should appear once the import has finished, same signal the
+ * "First Sync" info alert below already keys off.
+ */
+function importBubbleVariant(profile: UserProfile): ImportBotBubbleVariant {
+  const hasImported = Boolean(profile.chess_com_last_sync_at || profile.lichess_last_sync_at);
+  if (!hasImported) return 'welcome';
+  return profile.is_guest ? 'signup-ask' : 'explore';
+}
+
 export interface ImportPageProps {
   onImportStarted: (jobId: string) => void;
   activeJobIds: string[];
@@ -191,9 +213,13 @@ function ImportProgressBar({ jobId, onDismiss, platformFilter, onProgress }: { j
   // periodic interval above stops the moment isActive flips false, so its last
   // tick can miss the final batch of saved games; this final invalidation makes
   // the chips settle on the true count without a page reload.
+  // Also the profile: its last_sync_at flips the bot bubble from the welcome
+  // copy to the sign-up ask (importBubbleVariant), and the periodic tick above
+  // may have stopped before the job's completed_at landed.
   useEffect(() => {
     if (isDone) {
       queryClient.invalidateQueries({ queryKey: IMPORT_SETTINGS_QUERY_KEY });
+      queryClient.invalidateQueries({ queryKey: ['userProfile'] });
     }
   }, [isDone, queryClient]);
 
@@ -256,7 +282,6 @@ function ImportProgressBar({ jobId, onDismiss, platformFilter, onProgress }: { j
 }
 
 export function ImportPage({ onImportStarted, activeJobIds, onJobDismissed }: ImportPageProps) {
-  const { logoutForPromotion } = useAuth();
   const { data: profile, isLoading: profileLoading } = useUserProfile();
   // ImportFilterCard (mounted below) surfaces the CLAUDE.md-mandated isError copy
   // for this same query — only need the data here, for the per-platform budget chips.
@@ -413,36 +438,20 @@ export function ImportPage({ onImportStarted, activeJobIds, onJobDismissed }: Im
 
   // ── Render ────────────────────────────────────────────────────────────────
 
+
   return (
-    <main data-testid="import-page" className="mx-auto w-full max-w-2xl px-4 py-6 md:px-6 space-y-8">
+    // Top gap matches the bot game page (`py-2 sm:py-4` in Bots.tsx), 224 UAT
+    // round 2. LibraryPage's TabsContent already adds mt-1 (mobile) / mt-4
+    // (desktop) above this element, so: phones 4+4 = 8px, desktop 16+0 = 16px.
+    // The bottom keeps the page's original 24px.
+    <main data-testid="import-page" className="mx-auto w-full max-w-2xl px-4 pt-1 pb-6 md:pt-0 md:px-6 space-y-8">
       <EvalCoverageHeader />
-      {profile?.is_guest && (
-        <Alert variant="info" icon={DoorOpen} data-testid="import-guest-promo-info" className="mb-4">
-          <p className="text-sm">
-            <button
-              onClick={() => { logoutForPromotion(); window.location.href = '/login?tab=register'; }}
-              className="font-medium underline underline-offset-2"
-              data-testid="import-guest-promo-link"
-              data-umami-event="signup-cta"
-              data-umami-event-source="import-promo"
-            >
-              Sign up free
-            </button>{' '}
-            to use FlawChess on any device and unlock automatic Stockfish analysis of your games.
-          </p>
-        </Alert>
-      )}
+      {profile && <ImportBotBubble variant={importBubbleVariant(profile)} />}
 
       {profileLoading ? (
         <p className="text-sm text-muted-foreground">Loading profile...</p>
       ) : (
         <>
-          {/* Tighten the gap above this card on mobile only. Tailwind v4 space-y-8
-              puts the 2rem as margin-bottom on the PRECEDING element, so we pull
-              the card up with a negative top margin; desktop keeps the full gap. */}
-          <div className="-mt-6 sm:mt-0">
-            <ImportFilterCard />
-          </div>
           <div className="space-y-4">
           {/* chess.com platform card */}
           <Card data-testid="import-platform-chess-com">
@@ -564,9 +573,16 @@ export function ImportPage({ onImportStarted, activeJobIds, onJobDismissed }: Im
             </CardBody>
           </Card>
 
+          {/* 224 UAT round 1: the filters card sits BELOW the two platform
+              cards it governs, so a first-time visitor sees the sync inputs
+              first. The info alert's "see Import filters above" still holds. */}
+          <ImportFilterCard />
+
+          {/* TRAIN_BUTTON_CLASS: 48px touch height on phones, compact desktop
+              default above `sm` (224 UAT round 1). */}
           <Button
             variant="brand-outline"
-            className="w-full"
+            className={cn('w-full', TRAIN_BUTTON_CLASS)}
             data-testid="btn-import-single-game"
             onClick={() => setPasteModalOpen(true)}
           >

@@ -11,6 +11,7 @@ in `YYYY-MM-DD` (Europe/Zurich).
 ### Added
 
 - The bot opponents now talk during a game and greet you on the roster page, each in its own voice and personality, reacting to captures, big swings and draw offers as the game unfolds.
+- Train is now open to everyone, including guests and accounts that have not imported a game yet: a daily warm-up session of sharp practice puzzles, with the same streak and weekday schedule as a full account, and the streak and solve history carry over when you sign up.
 
 ### Changed
 
@@ -21,6 +22,12 @@ in `YYYY-MM-DD` (Europe/Zurich).
 - The Train landing page is now hosted by a different practice bot each day, each greeting you in its own voice. Tank the Ox keeps hosting until you have finished the first-puzzle walkthrough, so the page introduces the same bot who opens it.
 - Train first-puzzle walkthrough: the bot avatars are larger on phones, the opening tip now says "Every puzzle starts with one question", and the scroll to the feedback screen is slower so it is easier to follow.
 - The home page now has a Human-like Bots section, placed after Game and Tactic Analysis and Puzzle Training, and the Opening Comparison section has been folded into Opening Explorer & Insights so the page stays at seven features. The Train screenshot is refreshed.
+- Signing in as a guest no longer routes you through an explainer page before you can import; you land straight on the import screen, and the page that compared guest and signed-up accounts is now a short four-point summary of what changes when you sign up, reachable from a "What changes?" button next to the sign-up prompt.
+- The sign-up prompt now comes from one of the FlawChess bots, on the training score screen and on the import page, instead of an information banner.
+- Before your first import, the import page greets you with a short welcome from one of the bots that points at the import cards (and dares you to a game); after the first import the bot points at the Games, Train, Bots, Opening and Endgame tabs, and for guests adds the sign-up prompt. The Import filters card now sits below the two platform cards, and the Import Single Game button is taller on phones.
+- The "What changes when you sign up" page shows Back and Sign up free side by side at full touch height on phones.
+- For a guest, training reminders and the phone install prompt are hidden, because reminders are only sent to signed-up accounts.
+- A guest account that stays inactive for 30 days now has its training sessions and settings removed along with its games, so "nothing is deleted after 30 days of inactivity" is a real difference between a guest and a signed-up account.
 
 ### Fixed
 

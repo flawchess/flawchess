@@ -191,11 +191,11 @@
 | 221. Tactic-Tagger Real-Game Precision — Winning Floor, Predicate Tightening & Port Fixes (SEED-165, v2.18) | 8/8 | Complete    | 2026-09-13 |
 | 222. Train Bot-Narrated Onboarding & Verdicts (SEED-166, v2.19) | 6/6 | Complete    | 2026-09-14 |
 | 223. Bot Voice & Immersive Bot Game Layout (SEED-168 + SEED-167, standalone) | 6/6 | Complete    | 2026-09-16 |
-| 224. Guest Activation — Welcome Removal & Guest Train (SEED-169, standalone) | 0/? | Not started | — |
+| 224. Guest Activation — Welcome Removal & Guest Train (SEED-169, standalone) | 6/6 | Complete | 2026-09-18 |
 
 ## Active Phases
 
-No open milestone. Standalone phases continue absolute numbering from v2.19's Phase 222 (223 complete, 224 open).
+No open milestone. Standalone phases continue absolute numbering from v2.19's Phase 222 (223 and 224 complete).
 
 ### Phase 223: Bot Voice & Immersive Bot Game Layout (SEED-168 + SEED-167)
 
@@ -359,11 +359,16 @@ REQUIREMENTS.md (same pattern as Phases 204–223).
 bubble, reminder slot or QR block; a one-shot "demo session" variant (rejected: full
 loop or nothing); a new milestone or roadmap regrouping.
 
-**Plans:** 0 plans
+**Plans:** 6 plans
 
 Plans:
 
-- [ ] TBD (`/gsd-plan-phase 224`)
+- [x] 224-01-PLAN.md — TRACER: open Train to every zero-game account (backend gate removal, route/nav exemption, guest end-to-end session)
+- [x] 224-02-PLAN.md — Lever A: single home redirect, dismissal module deleted, `/welcome` rewritten as four deltas
+- [x] 224-03-PLAN.md — Metrics: Activity guest-cohort Train reading plus the pre-merge baseline note (operator checkpoint)
+- [x] 224-04-PLAN.md — Games-less Train copy on `hasGames` × `isGuest`, and the reminder/QR block hidden from guests
+- [x] 224-05-PLAN.md — Guest lifecycle: the 30-day purge takes Train rows, promotion preserves them
+- [x] 224-06-PLAN.md — The sign-up ask: shared action pair, guest score screen, Import bot bubble, changelog
 
 **Cross-cutting constraints:**
 

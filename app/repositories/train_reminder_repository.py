@@ -40,10 +40,15 @@ async def list_reminder_candidate_user_ids(session: AsyncSession) -> list[int]:
     the boundary. The per-user claim UPDATE (`claim_reminder_day`), evaluated
     against that user's own already-resolved local date, is the real guard.
 
-    Guest exclusion (REMIND-07) is defence in depth: `/train/*` already 403s
-    guests, so a guest cannot reach `reminder_enabled=True` through the API
-    today, but this job runs behind no request-scoped gate -- the codebase's
-    convention is an explicit filter over a relied-upon upstream invariant.
+    Guest exclusion (REMIND-07): as of Phase 224, `/train/*` no longer 403s
+    guests -- `PUT /train/settings` (and every other Train endpoint) accepts
+    a guest bearer token, so a guest CAN reach `reminder_enabled=True`
+    through the API. This filter is therefore load-bearing, not defence in
+    depth: it is the only thing keeping a reminder from being scheduled for
+    an account the 30-day cleanup may purge out from under it. The frontend
+    also hides the reminder toggle from guests (Phase 224 D-13), but the UI
+    is not the guard -- this SQL filter is, since this job runs behind no
+    request-scoped gate.
     """
     subscription_exists = (
         select(PushSubscription.id)

@@ -474,6 +474,7 @@ export default function ActivityPage() {
               <summary data-testid="activity-details-train">Show the numbers</summary>
               <div className="tblwrap" id="t-train"></div>
             </details>
+            <p className="note" id="tr-guest-note"></p>
           </div>
           <div className="card">
             <h3>First-session drop-off and return rate</h3>

@@ -406,6 +406,8 @@ function Harness({
       trainSession={trainSession}
       gradingEngine={gradingEngine}
       restoredSolve={restoredSolve}
+      hasGames={true}
+      isGuest={false}
     />
   );
 }
@@ -450,6 +452,8 @@ function RemountHarness({
           puzzle={remounted ? nextPuzzle : puzzle}
           trainSession={trainSession}
           gradingEngine={gradingEngine}
+          hasGames={true}
+          isGuest={false}
         />
       )}
     </>
@@ -2286,7 +2290,7 @@ describe('TrainSolveScreen — progress, last move, grading state, engine failur
         expect(screen.getByTestId('train-bot-name').textContent).toBe('Hilda the Hippo'),
       );
       expect(screen.queryByTestId('btn-train-guess-critical')).toBeNull();
-      for (let click = 0; click < introStepCount(false) - 2; click += 1) {
+      for (let click = 0; click < introStepCount(false, { hasGames: true, isGuest: false }) - 2; click += 1) {
         expect(screen.queryByTestId('btn-train-guess-critical')).toBeNull();
         fireEvent.click(screen.getByTestId('btn-train-bot-step-next'));
       }
@@ -2303,7 +2307,7 @@ describe('TrainSolveScreen — progress, last move, grading state, engine failur
       getSettings.mockResolvedValue(makeSettings({ intro_seen_at: null }));
       await renderScreen(makePuzzle(), makeSession({ is_warmup: true }));
       await waitFor(() => expect(screen.getByTestId('btn-train-bot-step-next')).not.toBeNull());
-      for (let click = 0; click < introStepCount(true) - 2; click += 1) {
+      for (let click = 0; click < introStepCount(true, { hasGames: true, isGuest: false }) - 2; click += 1) {
         fireEvent.click(screen.getByTestId('btn-train-bot-step-next'));
       }
       await waitFor(() =>
@@ -2319,7 +2323,7 @@ describe('TrainSolveScreen — progress, last move, grading state, engine failur
     it('stamps intro exactly once on the closing-step guess click and commits the guess', async () => {
       getSettings.mockResolvedValue(makeSettings({ intro_seen_at: null }));
       await renderScreen(makePuzzle());
-      for (let click = 0; click < introStepCount(false) - 1; click += 1) {
+      for (let click = 0; click < introStepCount(false, { hasGames: true, isGuest: false }) - 1; click += 1) {
         fireEvent.click(screen.getByTestId('btn-train-bot-step-next'));
       }
       await waitFor(() => expect(screen.getByTestId('btn-train-guess-critical')).not.toBeNull());
