@@ -1,18 +1,21 @@
 // @vitest-environment jsdom
 /**
- * Tests for the Welcome page (quick task 260614-vy4).
+ * Tests for the /welcome page (Phase 224 S-5, GUESTACT-08).
  *
  * Covers:
- * 1. welcomeDismissal helper — localStorage round-trip
- * 2. Welcome page renders key testids and the Stockfish differentiator row
- * 3. Proceed without checkbox → navigates, no dismissal flag set
- * 4. Proceed with checkbox → navigates AND sets the dismissal flag
+ * 1. Page container and the four-delta list render
+ * 2. Guest fixture renders the Sign up free button; clicking it calls
+ *    logoutForPromotion
+ * 3. Registered fixture renders no Sign up free button
+ * 4. The Back affordance is present for both fixtures and carries no umami
+ *    attribute
+ * 5. The dismissal checkbox no longer exists
+ * 6. Button order (224 UAT round 1): Back on the left, Sign up free on the right
  */
 
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { MemoryRouter } from 'react-router';
-import { isWelcomeDismissed, setWelcomeDismissed } from '@/lib/welcomeDismissal';
 
 // ── Mocks ─────────────────────────────────────────────────────────────────────
 
@@ -33,13 +36,18 @@ vi.mock('@/hooks/useAuth', () => ({
   }),
 }));
 
+const profileState: { is_guest: boolean } = { is_guest: true };
+vi.mock('@/hooks/useUserProfile', () => ({
+  useUserProfile: () => ({ data: { ...profileState } }),
+}));
+
 // ── Setup / teardown ──────────────────────────────────────────────────────────
 
 afterEach(() => {
   cleanup();
-  localStorage.clear();
   mockNavigate.mockReset();
   mockLogoutForPromotion.mockReset();
+  profileState.is_guest = true;
 });
 
 // ── Import after mocks are set up ─────────────────────────────────────────────
@@ -58,60 +66,66 @@ function renderWelcome() {
 
 // ── Tests ─────────────────────────────────────────────────────────────────────
 
-describe('welcomeDismissal localStorage helper', () => {
-  it('returns false when no flag is stored', () => {
-    expect(isWelcomeDismissed()).toBe(false);
-  });
-
-  it('returns true after setWelcomeDismissed(true)', () => {
-    setWelcomeDismissed(true);
-    expect(isWelcomeDismissed()).toBe(true);
-  });
-
-  it('returns false after setWelcomeDismissed(false)', () => {
-    setWelcomeDismissed(true);
-    setWelcomeDismissed(false);
-    expect(isWelcomeDismissed()).toBe(false);
-  });
-});
-
 describe('WelcomePage rendering', () => {
-  it('renders the page container, Proceed button, and dismissal checkbox', () => {
+  it('renders the page container and exactly four delta items', () => {
     renderWelcome();
     expect(screen.getByTestId('welcome-page')).not.toBeNull();
-    expect(screen.getByTestId('welcome-btn-proceed')).not.toBeNull();
-    expect(screen.getByTestId('welcome-checkbox-dont-show')).not.toBeNull();
+    const list = screen.getByTestId('welcome-delta-list');
+    expect(list.querySelectorAll('li').length).toBe(4);
+    expect(screen.getByTestId('welcome-delta-1')).not.toBeNull();
+    expect(screen.getByTestId('welcome-delta-2')).not.toBeNull();
+    expect(screen.getByTestId('welcome-delta-3')).not.toBeNull();
+    expect(screen.getByTestId('welcome-delta-4')).not.toBeNull();
   });
 
-  it('renders the Sign up button', () => {
+  it('guest fixture renders the Sign up free button with signup-cta umami attrs', () => {
+    profileState.is_guest = true;
     renderWelcome();
-    expect(screen.getByTestId('welcome-btn-signup')).not.toBeNull();
+    const btn = screen.getByTestId('welcome-btn-signup');
+    expect(btn).not.toBeNull();
+    expect(btn.getAttribute('data-umami-event')).toBe('signup-cta');
+    expect(btn.getAttribute('data-umami-event-source')).toBe('welcome');
   });
 
-  it('mentions the FlawChess deep Stockfish analysis differentiator', () => {
+  it('clicking Sign up free calls logoutForPromotion', () => {
+    profileState.is_guest = true;
     renderWelcome();
-    expect(screen.getByText(/FlawChess deep Stockfish analysis/i)).not.toBeNull();
-  });
-});
-
-describe('WelcomePage Proceed interaction', () => {
-  it('navigates to /library/import without setting the flag when checkbox is unchecked', () => {
-    renderWelcome();
-
-    fireEvent.click(screen.getByTestId('welcome-btn-proceed'));
-
-    expect(mockNavigate).toHaveBeenCalledWith('/library/import');
-    expect(isWelcomeDismissed()).toBe(false);
+    fireEvent.click(screen.getByTestId('welcome-btn-signup'));
+    expect(mockLogoutForPromotion).toHaveBeenCalled();
   });
 
-  it('sets the dismissal flag and navigates when checkbox is checked before Proceed', () => {
+  it('registered fixture renders no Sign up free button', () => {
+    profileState.is_guest = false;
     renderWelcome();
+    expect(screen.queryByTestId('welcome-btn-signup')).toBeNull();
+  });
 
-    // Click the checkbox to check it
-    fireEvent.click(screen.getByTestId('welcome-checkbox-dont-show'));
-    fireEvent.click(screen.getByTestId('welcome-btn-proceed'));
+  it('renders the Back affordance for both fixtures with no umami attribute', () => {
+    profileState.is_guest = true;
+    const { unmount } = renderWelcome();
+    const backGuest = screen.getByTestId('welcome-btn-back');
+    expect(backGuest).not.toBeNull();
+    expect(backGuest.getAttribute('data-umami-event')).toBeNull();
+    unmount();
 
-    expect(isWelcomeDismissed()).toBe(true);
-    expect(mockNavigate).toHaveBeenCalledWith('/library/import');
+    profileState.is_guest = false;
+    renderWelcome();
+    const backRegistered = screen.getByTestId('welcome-btn-back');
+    expect(backRegistered).not.toBeNull();
+    expect(backRegistered.getAttribute('data-umami-event')).toBeNull();
+  });
+
+  it('renders Back before Sign up free in the actions row (UAT round 1: Back left, Sign up right)', () => {
+    profileState.is_guest = true;
+    renderWelcome();
+    const buttons = screen.getByTestId('welcome-actions').querySelectorAll('button');
+    expect(buttons).toHaveLength(2);
+    expect(buttons[0]?.getAttribute('data-testid')).toBe('welcome-btn-back');
+    expect(buttons[1]?.getAttribute('data-testid')).toBe('welcome-btn-signup');
+  });
+
+  it('has no dismissal checkbox', () => {
+    renderWelcome();
+    expect(screen.queryByTestId('welcome-checkbox-dont-show')).toBeNull();
   });
 });

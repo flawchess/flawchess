@@ -80,7 +80,7 @@ import {
   verdictCopy,
   walkthroughCopy,
 } from '@/lib/trainBotCopy';
-import type { IntroStep, VerdictCopy, WalkthroughStep } from '@/lib/trainBotCopy';
+import type { IntroStep, TrainCopyAudience, VerdictCopy, WalkthroughStep } from '@/lib/trainBotCopy';
 import { cn } from '@/lib/utils';
 import { personaForId } from '@/lib/personas/personaRegistry';
 import type { Persona } from '@/lib/personas/personaRegistry';
@@ -130,6 +130,13 @@ export interface TrainSolveScreenProps {
    * game-move search still runs — it is independent of the mount search.
    */
   restoredSolve?: CachedTrainReveal | null;
+  /** D-03 (Phase 224): true when the account has at least one imported game
+   * (`hasImportedGames`, `useUserProfile().data`). Selects the intro/verdict
+   * copy variant threaded through the bot bubble. */
+  hasGames: boolean;
+  /** D-03 (Phase 224): from `useUserProfile().data`, never `useAuth().user`
+   * (FLAWCHESS-64). Adds the sign-up clause to the games-less copy. */
+  isGuest: boolean;
 }
 
 /**
@@ -344,6 +351,7 @@ function renderVerdictBubbleBody(
   sessionDate: string | undefined,
   expiresOn: string | undefined,
   isWarmup: boolean,
+  audience: TrainCopyAudience,
   actions: ReactElement,
 ): { copy: ReactElement; actions: ReactElement } {
   const clause = verdictClauseParts(verdict.correct_guess, verdict.move_quality);
@@ -357,6 +365,7 @@ function renderVerdictBubbleBody(
           is_warmup: isWarmup,
           session_date: sessionDate,
           expires_on: expiresOn,
+          audience,
         });
   // D-16: a mastered/parked/herring/filler item's tail explains WHY it won't
   // return — it is not itself a return promise. `train-bot-return-tail`
@@ -369,22 +378,29 @@ function renderVerdictBubbleBody(
     verdict.item_status !== 'parked' &&
     returnTail !== '';
   return {
+    // One flowing paragraph, not one <p> per sentence: the three stacked
+    // lines ate too much vertical space on phones, where the bubble sits
+    // above the board. The testids stay on inline spans.
     copy: (
-      <div data-testid="train-bot-verdict-line">
-        <p>
-          {opening.opener} {clause.guessLabel}{' '}
-          <TrainScoreChip points={clause.guessPoints} testid="train-bot-pill-guess" />,{' '}
-          {clause.moveLabel}{' '}
-          <TrainScoreChip points={clause.movePoints} testid="train-bot-pill-move" />.
-        </p>
+      <p data-testid="train-bot-verdict-line">
+        {opening.opener} {clause.guessLabel}{' '}
+        <TrainScoreChip points={clause.guessPoints} testid="train-bot-pill-guess" />,{' '}
+        {clause.moveLabel}{' '}
+        <TrainScoreChip points={clause.movePoints} testid="train-bot-pill-move" />.
         {opening.lookCloser !== null && (
-          <p data-testid="train-bot-look-closer">{opening.lookCloser}</p>
+          <>
+            {' '}
+            <span data-testid="train-bot-look-closer">{opening.lookCloser}</span>
+          </>
         )}
         {returnTail !== '' && isReturnPromise && (
-          <p data-testid="train-bot-return-tail">{returnTail}</p>
+          <>
+            {' '}
+            <span data-testid="train-bot-return-tail">{returnTail}</span>
+          </>
         )}
-        {returnTail !== '' && !isReturnPromise && <p>{returnTail}</p>}
-      </div>
+        {returnTail !== '' && !isReturnPromise && <> {returnTail}</>}
+      </p>
     ),
     actions,
   };
@@ -563,6 +579,10 @@ interface BubbleBodyDeps {
   /** Plan 06 UAT: whether the action row carries Analyze (own-game puzzle,
    * `game_id` set) — walkthrough step 3 must not describe a missing button. */
   hasAnalyze: boolean;
+  /** D-03 (Phase 224): threaded into `introCopy`/`introStepCount` (the
+   * welcome/warm-up intro copy) and `returnPhrase` (the verdict's warm-up
+   * return tail) via `renderVerdictBubbleBody`. */
+  audience: TrainCopyAudience;
 }
 
 /**
@@ -602,10 +622,10 @@ function renderTrainBotBubbleBody(
   }
   if (bubbleState.kind === 'intro') {
     return {
-      copy: <p>{introCopy(bubbleState.step, deps.sideToMove, deps.isWarmup).copy}</p>,
+      copy: <p>{introCopy(bubbleState.step, deps.sideToMove, deps.isWarmup, deps.audience).copy}</p>,
       actions: (
         <TrainBotStepper
-          stepCount={introStepCount(deps.isWarmup)}
+          stepCount={introStepCount(deps.isWarmup, deps.audience)}
           step={bubbleState.step}
           onNext={deps.onIntroNext}
           lastControl={guessButtons(deps.onIntroGuess)}
@@ -637,6 +657,7 @@ function renderTrainBotBubbleBody(
       deps.sessionDate,
       deps.expiresOn,
       deps.isWarmup,
+      deps.audience,
       deps.verdictActions,
     );
   }
@@ -657,9 +678,12 @@ function resolveBubblePersona(
   verdictBot: Persona | null,
   activeWalkthroughStep: WalkthroughStep | null,
   isWarmup: boolean,
+  audience: TrainCopyAudience,
 ): Persona {
   if (bubbleState.kind === 'intro') {
-    return personaForId(introCopy(bubbleState.step, sideToMove, isWarmup).personaId) ?? regularBot;
+    return (
+      personaForId(introCopy(bubbleState.step, sideToMove, isWarmup, audience).personaId) ?? regularBot
+    );
   }
   // Phase 222 (D-05/D-24): the first-reveal walkthrough is always taught by
   // Hilda, never the outcome-matched verdict bot.
@@ -676,7 +700,12 @@ export function TrainSolveScreen({
   gradingEngine,
   onNext,
   restoredSolve = null,
+  hasGames,
+  isGuest,
 }: TrainSolveScreenProps): ReactElement {
+  // D-03 (Phase 224): built once per render, threaded through unchanged —
+  // no new branch is added HERE, the audience is only ever passed through.
+  const audience: TrainCopyAudience = { hasGames, isGuest };
   // Suppress the mobile app header while a puzzle is on screen — the board
   // needs the vertical space (ProtectedLayout reads this flag; same pattern
   // as BotsGame).
@@ -1498,7 +1527,7 @@ export function TrainSolveScreen({
   const isWarmup = trainSession.session?.is_warmup ?? false;
 
   function handleIntroNext(): void {
-    setIntroStep((step) => Math.min(step + 1, introStepCount(isWarmup) - 1) as IntroStep);
+    setIntroStep((step) => Math.min(step + 1, introStepCount(isWarmup, audience) - 1) as IntroStep);
   }
 
   // Phase 222 (D-12): fires the one-shot stamp alongside the existing guess
@@ -1584,6 +1613,7 @@ export function TrainSolveScreen({
     hasSolution: isBoardDeparted,
     isWarmup,
     onWalkthroughNext: walkthrough.next,
+    audience,
   });
   const bubblePersona = resolveBubblePersona(
     bubbleState,
@@ -1592,6 +1622,7 @@ export function TrainSolveScreen({
     verdictBot,
     walkthrough.activeStep,
     isWarmup,
+    audience,
   );
 
   return (

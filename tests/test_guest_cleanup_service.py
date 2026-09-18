@@ -46,7 +46,7 @@ import app.services.guest_cleanup_service as guest_cleanup_service
 from app.models.bot_game_settings import BotGameSettings
 from app.models.drill_item import DrillItem
 from app.models.drill_session import DrillSession
-from app.models.drill_solve import DrillSolve
+from app.models.drill_solve import DrillSolve, DrillSource
 from app.models.eval_jobs import TIER_IDLE_BACKLOG, EvalJob
 from app.models.game import Game
 from app.models.game_best_move import GameBestMove
@@ -54,6 +54,7 @@ from app.models.game_flaw import GameFlaw
 from app.models.game_position import GamePosition
 from app.models.import_job import ImportJob
 from app.models.position_bookmark import PositionBookmark
+from app.models.train_settings import TrainSettings
 from app.models.user import User
 from app.models.user_benchmark_percentile import UserBenchmarkPercentile
 from app.models.user_import_settings import UserImportSettings
@@ -409,7 +410,11 @@ class TestPurgeGuestEndToEnd:
 
 
 # ---------------------------------------------------------------------------
-# TestPurgeGuestDrillCascade (Phase 189 Plan 02, POOL-09, D-02/D-04/D-05)
+# TestPurgeGuestDrillCascade (Phase 224 D-08, GUESTACT-10, ROADMAP SC 8 —
+# supersedes the Phase 189 Plan 02 / POOL-09 preservation reading below,
+# FOR GUESTS ONLY. Registered users' Phase 189 D-04 preservation is
+# unchanged: _purge_guest re-verifies User.is_guest.is_(True) in the same
+# transaction (WR-01), so this code can never reach a registered user.)
 # ---------------------------------------------------------------------------
 
 
@@ -418,24 +423,33 @@ class TestPurgeGuestDrillCascade:
     async def test_purge_guest_cascades_drill_rows(
         self, real_session_maker: async_sessionmaker[AsyncSession]
     ) -> None:
-        """The 30-day guest purge cascades drill_items away via the games FK
-        (D-02, unchanged CASCADE), while the guest's drill_sessions row
-        survives (D-04).
+        """The 30-day guest purge deletes the guest's Train rows with the
+        games (Phase 224 D-08, GUESTACT-10, ROADMAP SC 8).
 
-        Phase 192 Plan 02 (D-05): `drill_solves.game_id` is now
-        `ON DELETE SET NULL`, not `CASCADE` — a global herring pool means a
-        *foreign* user's game deletion must never delete a row out of a
-        stranger's in-flight session, and that FK policy applies uniformly
-        regardless of who owns the row. So the guest's own `drill_solves`
-        row now SURVIVES this purge with `game_id` nulled (an orphaned
-        SR item, lazily evicted per `load_session_puzzles` — see
-        `app.models.drill_solve`'s module docstring) rather than being
-        deleted alongside `drill_items`.
+        `_purge_guest` deletes the guest's `drill_sessions` row, which
+        cascades every `drill_solves` row through `session_id` (`ON DELETE
+        CASCADE`), and the guest's `train_settings` row, in the same
+        transaction as the existing games cascade that removes `drill_items`.
+
+        This supersedes the Phase 189 D-04 "preserved by design" reading FOR
+        GUESTS ONLY: Phase 224 opened Train to guests (reversing Phase 189
+        D-05's guest gate), so a guest now accumulates real Train state, and
+        `/welcome` advertises "nothing is deleted after 30 days of
+        inactivity" as a sign-up delta -- honest only if a purged guest's
+        Train state goes with their games. Registered users' D-04
+        preservation is untouched (see class docstring above).
+
+        The seed includes a second `drill_solves` row with `game_id=None`
+        (a sharp-filler solve, `source=SHARP_FILLER`) on the SAME session as
+        the game-derived solve -- this is the row the games cascade
+        provably CANNOT reach (it has no `game_id` to cascade through), so
+        its deletion is the entire proof that the explicit
+        `delete(DrillSession)` statement, not the games cascade, is what
+        removes it.
 
         Guest-owned rows are cleaned up by the module's autouse
         `_cleanup_leaked_guest_rows` fixture (deletes the guest User row,
-        cascading every FK'd child including drill_sessions and the now-
-        orphaned drill_solves row) -- no separate finally block is needed
+        cascading every FK'd child) -- no separate finally block is needed
         since this test creates no non-guest rows.
         """
         async with real_session_maker() as seed_session:
@@ -444,7 +458,7 @@ class TestPurgeGuestDrillCascade:
             drill_session = DrillSession(
                 user_id=guest_id,
                 session_date=date(2026, 7, 25),
-                puzzle_count=1,
+                puzzle_count=2,
                 expires_on=date(2026, 8, 1),
             )
             seed_session.add(drill_session)
@@ -465,9 +479,24 @@ class TestPurgeGuestDrillCascade:
                     user_id=guest_id,
                     game_id=game_id,
                     ply=6,
-                    source=0,
+                    source=DrillSource.SR_ITEM,
                 )
             )
+            # The filler solve the games cascade cannot reach: game_id=None,
+            # sharp-filler source, backed by a static puzzle set rather than
+            # a game row (app.models.drill_solve module docstring).
+            seed_session.add(
+                DrillSolve(
+                    session_id=drill_session.id,
+                    position=1,
+                    user_id=guest_id,
+                    game_id=None,
+                    ply=0,
+                    source=DrillSource.SHARP_FILLER,
+                    sharp_puzzle_id="purge-test-sharp-filler",
+                )
+            )
+            seed_session.add(TrainSettings(user_id=guest_id))
             await seed_session.commit()
             drill_session_id = drill_session.id
 
@@ -479,23 +508,30 @@ class TestPurgeGuestDrillCascade:
         assert await _count(DrillItem, DrillItem.user_id == guest_id) == 1, (
             "seed setup must produce a non-zero drill_items count before the purge"
         )
-        assert await _count(DrillSolve, DrillSolve.user_id == guest_id) == 1, (
-            "seed setup must produce a non-zero drill_solves count before the purge"
+        assert await _count(DrillSolve, DrillSolve.user_id == guest_id) == 2, (
+            "seed setup must produce two drill_solves rows before the purge"
+        )
+        assert (
+            await _count(DrillSolve, DrillSolve.user_id == guest_id, DrillSolve.game_id.is_(None))
+            == 1
+        ), "seed setup must include the game_id-IS-NULL filler solve before the purge"
+        assert await _count(TrainSettings, TrainSettings.user_id == guest_id) == 1, (
+            "seed setup must produce a non-zero train_settings count before the purge"
         )
 
         deleted_count = await _purge_guest(guest_id)
         assert deleted_count == 1
 
         assert await _count(DrillItem, DrillItem.user_id == guest_id) == 0
-        assert await _count(DrillSession, DrillSession.id == drill_session_id) == 1, (
-            "drill_sessions must survive the guest purge (D-04)"
+        assert await _count(DrillSession, DrillSession.id == drill_session_id) == 0, (
+            "drill_sessions must be deleted by the guest purge (D-08)"
         )
-        # D-05: the drill_solves row survives with game_id nulled (SET NULL,
-        # not CASCADE) — never deleted alongside drill_items.
-        assert await _count(DrillSolve, DrillSolve.user_id == guest_id) == 1
-        assert (
-            await _count(DrillSolve, DrillSolve.user_id == guest_id, DrillSolve.game_id.is_(None))
-            == 1
+        assert await _count(DrillSolve, DrillSolve.user_id == guest_id) == 0, (
+            "drill_solves (including the game_id-IS-NULL filler) must be deleted via the "
+            "drill_sessions cascade (D-08)"
+        )
+        assert await _count(TrainSettings, TrainSettings.user_id == guest_id) == 0, (
+            "train_settings must be deleted by the guest purge (D-08)"
         )
 
     @pytest.mark.asyncio

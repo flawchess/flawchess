@@ -215,6 +215,35 @@ export const GRADING_COPY = 'Checking your move…';
 export const STEPPER_COPY_MAX_CHARS = 145;
 
 /**
+ * D-03 (Phase 224): the two orthogonal flags every games-less Train string
+ * branches on. `hasGames` (from `useUserProfile().data` game counts, via the
+ * shared `hasImportedGames` helper) selects "import your games" wording for
+ * ANY zero-game account; `isGuest` (also from `useUserProfile().data`, NEVER
+ * `useAuth().user` — FLAWCHESS-64) appends the sign-up ask on top of that.
+ * `hasGames` deliberately WINS over `isGuest` in `audienceKey`: a guest WITH
+ * games keeps today's strings verbatim, per D-03 — the sign-up ask never
+ * appears once an account has real games to analyze.
+ */
+export interface TrainCopyAudience {
+  hasGames: boolean;
+  isGuest: boolean;
+}
+
+/**
+ * The three audience buckets every D-03 copy record keys on. Module-private:
+ * callers pass a `TrainCopyAudience`, never this key, so `audienceKey` stays
+ * the single place the two flags collapse into one lookup key.
+ */
+type CopyAudienceKey = 'has_games' | 'no_games' | 'no_games_guest';
+
+/** D-03: `hasGames` wins over `isGuest` — see `TrainCopyAudience`'s doc. */
+function audienceKey(audience: TrainCopyAudience): CopyAudienceKey {
+  if (audience.hasGames) return 'has_games';
+  if (audience.isGuest) return 'no_games_guest';
+  return 'no_games';
+}
+
+/**
  * D-22 intro stepper step index. Five steps on a regular first session, six
  * on a warm-up one (`introStepCount`) — the union covers the longer run.
  */
@@ -226,11 +255,22 @@ export interface IntroStepCopy {
   copy: string;
 }
 
-const INTRO_WELCOME: IntroStepCopy = {
-  personaId: TANK_ID,
-  copy:
+/**
+ * D-03: the intro welcome's copy per audience. `has_games` is today's string,
+ * character for character — the existing (has-games) audience regresses
+ * nowhere. The zero-game variants name the import step before anything else;
+ * the guest variant additionally names sign-up, after import (ROADMAP SC 7).
+ */
+const INTRO_WELCOME_COPY: Record<CopyAudienceKey, string> = {
+  has_games:
     'Welcome to FlawChess Train, my chess boot camp! You will improve by solving puzzles ' +
     'created from your own games.',
+  no_games:
+    'Welcome to FlawChess Train, my chess boot camp! Import your games and you will improve ' +
+    'by solving puzzles created from your own mistakes.',
+  no_games_guest:
+    'Welcome to FlawChess Train, my chess boot camp! Import your games and sign up, and you ' +
+    'will improve by solving puzzles created from your own mistakes.',
 };
 const INTRO_QUESTION: IntroStepCopy = {
   personaId: HILDA_ID,
@@ -256,12 +296,23 @@ const INTRO_PRACTICE: IntroStepCopy = {
  * mistakes may still be running, so the session is served from warm-up
  * puzzles (`TrainSessionResponse.is_warmup`). On a first-ever session that is
  * the only cause of `is_warmup` — the "caught up" cause needs prior sessions.
+ *
+ * D-03 (Phase 224): `has_games` is today's string verbatim. A zero-game
+ * account is never told "we're analyzing your games" — nothing is being
+ * analyzed for an account with no games at all (RESEARCH Finding C); the
+ * zero-game variants say to import instead, and the guest variant adds
+ * sign-up after import.
  */
-const INTRO_WARMUP: IntroStepCopy = {
-  personaId: HILDA_ID,
-  copy:
+const INTRO_WARMUP_COPY: Record<CopyAudienceKey, string> = {
+  has_games:
     "We're still analyzing your games to find your mistakes. In the meantime, " +
     "let's start with a warm-up session.",
+  no_games:
+    'You have no games here yet, so this is a warm-up session. Import your games and your ' +
+    'own mistakes take over.',
+  no_games_guest:
+    'You have no games here yet, so this is a warm-up session. Import your games, then sign ' +
+    'up, and your own mistakes take over.',
 };
 
 /**
@@ -272,10 +323,21 @@ const INTRO_WARMUP: IntroStepCopy = {
  * tightened and split). The warm-up step is inserted right before the
  * closing step only when the session is a warm-up; the closing step asks
  * the actual guess question, so it takes `sideToMove` like `promptCopy`.
+ * `audience` (Phase 224 D-03) selects the welcome/warm-up copy variant.
  */
-export function introSteps(sideToMove: 'white' | 'black', isWarmup: boolean): IntroStepCopy[] {
-  const steps: IntroStepCopy[] = [INTRO_WELCOME, INTRO_QUESTION, INTRO_VOCABULARY, INTRO_PRACTICE];
-  if (isWarmup) steps.push(INTRO_WARMUP);
+export function introSteps(
+  sideToMove: 'white' | 'black',
+  isWarmup: boolean,
+  audience: TrainCopyAudience,
+): IntroStepCopy[] {
+  const key = audienceKey(audience);
+  const steps: IntroStepCopy[] = [
+    { personaId: TANK_ID, copy: INTRO_WELCOME_COPY[key] },
+    INTRO_QUESTION,
+    INTRO_VOCABULARY,
+    INTRO_PRACTICE,
+  ];
+  if (isWarmup) steps.push({ personaId: HILDA_ID, copy: INTRO_WARMUP_COPY[key] });
   steps.push({
     personaId: HILDA_ID,
     copy: `Decide first, then play. Your turn. ${promptCopy(sideToMove)}`,
@@ -283,9 +345,10 @@ export function introSteps(sideToMove: 'white' | 'black', isWarmup: boolean): In
   return steps;
 }
 
-/** Number of intro steps for this session (5 regular, 6 warm-up). */
-export function introStepCount(isWarmup: boolean): number {
-  return introSteps('white', isWarmup).length;
+/** Number of intro steps for this session (5 regular, 6 warm-up). The step
+ * COUNT never varies with audience — only the welcome/warm-up copy does. */
+export function introStepCount(isWarmup: boolean, audience: TrainCopyAudience): number {
+  return introSteps('white', isWarmup, audience).length;
 }
 
 /**
@@ -298,8 +361,9 @@ export function introCopy(
   step: IntroStep,
   sideToMove: 'white' | 'black',
   isWarmup: boolean,
+  audience: TrainCopyAudience,
 ): IntroStepCopy {
-  const steps = introSteps(sideToMove, isWarmup);
+  const steps = introSteps(sideToMove, isWarmup, audience);
   const closing = steps[steps.length - 1];
   if (closing === undefined) throw new Error('introSteps: unexpectedly empty');
   return steps[step] ?? closing;
@@ -381,7 +445,17 @@ export function lookCloserCopy(points: 0 | 1 | 2 | 3): string | null {
 const NEXT_SESSION_TAIL = "We'll try this one again in the next session.";
 const MASTERED_TAIL = "Three in a row. You have this one down, it won't come back.";
 const PARKED_TAIL = 'This one keeps slipping, so it is parked for now. On to positions that stick.';
-const WARMUP_TAIL = "That one was a warm-up, so it won't come back. Your own positions will.";
+/**
+ * D-23 warm-up return tail, per D-03 audience (Phase 224). `has_games` is
+ * today's string verbatim.
+ */
+const WARMUP_TAIL_COPY: Record<CopyAudienceKey, string> = {
+  has_games: "That one was a warm-up, so it won't come back. Your own positions will.",
+  no_games: "That one was a warm-up, so it won't come back. Import your games and your own " +
+    'positions will.',
+  no_games_guest: "That one was a warm-up, so it won't come back. Import your games, then sign " +
+    'up, and your own positions will.',
+};
 /** Quick 260915-sht: the non-return lines for a herring/filler solved in a
  * REGULAR session. Bug: `returnPhrase` used to return `WARMUP_TAIL` for these
  * sources unconditionally, so a user with plenty of SR items was told a
@@ -408,6 +482,11 @@ export interface ReturnPhraseInput {
   /** `TrainSessionResponse.expires_on` — the first scheduled day strictly
    * after `session_date` (`app/services/train_scheduler.py`). */
   expires_on?: string;
+  /** D-03 (Phase 224): selects the warm-up tail's audience variant. Every
+   * OTHER field on this interface stays optional for the pre-206 cached-
+   * reveal degrade path; `audience` is not optional because both call sites
+   * (`TrainSolveScreen`) always have it, built from `useUserProfile().data`. */
+  audience: TrainCopyAudience;
 }
 
 /**
@@ -423,7 +502,7 @@ export interface ReturnPhraseInput {
  */
 export function returnPhrase(input: ReturnPhraseInput): string {
   const neverReturns = input.source === 'red_herring' || input.source === 'sharp_filler';
-  if (neverReturns && input.is_warmup === true) return WARMUP_TAIL;
+  if (neverReturns && input.is_warmup === true) return WARMUP_TAIL_COPY[audienceKey(input.audience)];
   if (input.source === 'red_herring') return HERRING_TAIL;
   if (input.source === 'sharp_filler') return FILLER_TAIL;
   if (input.item_status === 'mastered') return MASTERED_TAIL;
@@ -565,6 +644,37 @@ const WARMUP_REMINDER_ASK_COPY: Record<ReminderAsk, string> = {
   none: 'Your reminders are on, so the habit will be there when they arrive.',
 };
 
+/**
+ * D-03 (Phase 224): the second half of the warm-up score bubble's opening
+ * line, keyed by audience. `has_games` is today's clause verbatim; the
+ * zero-game variants name import instead of a running analysis, and the
+ * guest variant adds sign-up after import (ROADMAP SC 7).
+ */
+const WARMUP_SCORE_CLAUSE: Record<CopyAudienceKey, string> = {
+  has_games: 'Once your games are analyzed, your own mistakes take over.',
+  no_games: 'Import your games and your own mistakes take over.',
+  no_games_guest: 'Import your games, then sign up, and your own mistakes take over.',
+};
+
+/**
+ * S-3/D-04 (Phase 224): replaces the warm-up reminder ask on the score screen
+ * for a guest — a guest gets no reminder slot (D-13), so the ask is sign-up
+ * instead. Persona-neutral (D-04): one tunable sentence, not a per-persona
+ * table. Truthful because promotion is an in-place `UPDATE users`
+ * (`promote_guest_with_password` / `promote_guest_with_google`,
+ * RESEARCH Finding F) — the same row, so the streak and every solved item
+ * genuinely stay exactly where they are.
+ */
+export const GUEST_SIGNUP_ASK_SCORE =
+  'Sign up free and your own blunders come back instead of warm-ups. Your streak and ' +
+  'everything you have solved stay exactly where they are.';
+
+/** 2026-09-18: the landing bubble's reminder ask for a registered account with
+ * no push subscription from a phone (`has_mobile_subscription === false`). The
+ * only other landing CTA is the guest sign-up ask, so the two never co-occur. */
+export const REMINDER_INSTALL_ASK =
+  "Install the FlawChess app on your phone and set up reminders so you don't miss a session.";
+
 /** Every session's opener comments on the result (Phase 222 UAT round 5:
  * first, later and warm-up sessions alike; the nothing-missed variant is its
  * own comment), in D-21's voice: about the session, never about the user,
@@ -616,6 +726,10 @@ export interface ScoreBubbleInput {
   band: TrainRatingBand | null;
   session_date: string;
   expires_on: string;
+  /** D-03/S-3 (Phase 224): selects the warm-up variant's copy AND, when
+   * `isGuest` is true, replaces the warm-up reminder ask with
+   * `GUEST_SIGNUP_ASK_SCORE` (D-13: a guest gets no reminder slot). */
+  audience: TrainCopyAudience;
 }
 
 export interface ScoreBubbleCopy {
@@ -682,8 +796,10 @@ export function scoreBubbleCopy(input: ScoreBubbleInput): ScoreBubbleCopy {
     return {
       lines: [
         `${sessionOpener(input.band)} Those were warm-ups, nothing to bring back yet. ` +
-          'Once your games are analyzed, your own mistakes take over.',
-        WARMUP_REMINDER_ASK_COPY[input.reminderAsk],
+          WARMUP_SCORE_CLAUSE[audienceKey(input.audience)],
+        input.audience.isGuest
+          ? GUEST_SIGNUP_ASK_SCORE
+          : WARMUP_REMINDER_ASK_COPY[input.reminderAsk],
       ],
     };
   }

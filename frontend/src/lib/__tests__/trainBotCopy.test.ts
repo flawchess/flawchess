@@ -12,6 +12,7 @@ import { describe, expect, it } from 'vitest';
 import {
   BY_TEMPERAMENT,
   GRADING_COPY,
+  GUEST_SIGNUP_ASK_SCORE,
   HILDA_ID,
   LANDING_GREETINGS,
   LANDING_HOST_IDS,
@@ -33,9 +34,22 @@ import {
   verdictCopy,
   walkthroughCopy,
 } from '@/lib/trainBotCopy';
-import type { IntroStep, ScoreBubbleInput, ScoreBubbleOutcome, WalkthroughStep } from '@/lib/trainBotCopy';
+import type {
+  IntroStep,
+  ScoreBubbleInput,
+  ScoreBubbleOutcome,
+  TrainCopyAudience,
+  WalkthroughStep,
+} from '@/lib/trainBotCopy';
 import { PERSONA_REGISTRY, personaForId } from '@/lib/personas/personaRegistry';
 import type { PersonaId } from '@/lib/personas/personaRegistry';
+
+// D-03 (Phase 224): the three audience fixtures every branched-copy test
+// selects between. `HAS_GAMES` is the pre-224 audience — every pre-existing
+// assertion below keeps exercising it, unchanged.
+const AUDIENCE_HAS_GAMES: TrainCopyAudience = { hasGames: true, isGuest: false };
+const AUDIENCE_NO_GAMES: TrainCopyAudience = { hasGames: false, isGuest: false };
+const AUDIENCE_NO_GAMES_GUEST: TrainCopyAudience = { hasGames: false, isGuest: true };
 
 describe('pickBot', () => {
   it('with an injected rng returning 0, resolves to a member of the requested pool', () => {
@@ -187,35 +201,35 @@ describe('promptCopy / movePromptCopy / GRADING_COPY', () => {
 
 describe('introCopy', () => {
   it('step 0 is hosted by Tank and welcomes the user to the boot camp', () => {
-    expect(introCopy(0, 'white', false).personaId).toBe(TANK_ID);
-    expect(introCopy(0, 'white', false).copy).toContain('boot camp');
-    expect(introCopy(0, 'white', false).copy).toContain('your own games');
+    expect(introCopy(0, 'white', false, AUDIENCE_HAS_GAMES).personaId).toBe(TANK_ID);
+    expect(introCopy(0, 'white', false, AUDIENCE_HAS_GAMES).copy).toContain('boot camp');
+    expect(introCopy(0, 'white', false, AUDIENCE_HAS_GAMES).copy).toContain('your own games');
   });
 
   it('steps 1-2 are hosted by Hilda and define the guess vocabulary', () => {
-    expect(introCopy(1, 'white', false).personaId).toBe(HILDA_ID);
-    expect(introCopy(1, 'white', false).copy).toContain('only one good move');
+    expect(introCopy(1, 'white', false, AUDIENCE_HAS_GAMES).personaId).toBe(HILDA_ID);
+    expect(introCopy(1, 'white', false, AUDIENCE_HAS_GAMES).copy).toContain('only one good move');
     // Quick task 260914-uer: reworded opening clause (was "Every move in a
     // game starts with..."); this assertion is what makes the reword
     // regression-proof.
-    expect(introCopy(1, 'white', false).copy).toContain('Every puzzle starts with one question:');
-    const step = introCopy(2, 'white', false);
+    expect(introCopy(1, 'white', false, AUDIENCE_HAS_GAMES).copy).toContain('Every puzzle starts with one question:');
+    const step = introCopy(2, 'white', false, AUDIENCE_HAS_GAMES);
     expect(step.personaId).toBe(HILDA_ID);
     expect(step.copy).toContain('Only one');
     expect(step.copy).toContain('Several');
   });
 
   it('step 3 carries the D-21 "when to spend time vs. play quickly" message', () => {
-    const step = introCopy(3, 'white', false);
+    const step = introCopy(3, 'white', false, AUDIENCE_HAS_GAMES);
     expect(step.personaId).toBe(HILDA_ID);
     expect(step.copy).toContain('slow down and calculate');
     expect(step.copy).toContain('good enough move played quickly');
   });
 
   it('the last step is hosted by Hilda and asks the actual guess question for the puzzle side', () => {
-    const count = introStepCount(false);
+    const count = introStepCount(false, AUDIENCE_HAS_GAMES);
     expect(count).toBe(5);
-    const step = introCopy((count - 1) as IntroStep, 'black', false);
+    const step = introCopy((count - 1) as IntroStep, 'black', false, AUDIENCE_HAS_GAMES);
     expect(step.personaId).toBe(HILDA_ID);
     expect(step.copy).toContain('black');
     expect(step.copy).toContain('only one good move, or several');
@@ -224,19 +238,19 @@ describe('introCopy', () => {
   // Phase 222 UAT round 3: a warm-up first session (games still being
   // analyzed) gets one extra step right before the closing guess step.
   it('a warm-up session inserts the "still analyzing" step before the closing step', () => {
-    expect(introStepCount(true)).toBe(6);
-    const warmup = introCopy(4, 'white', true);
+    expect(introStepCount(true, AUDIENCE_HAS_GAMES)).toBe(6);
+    const warmup = introCopy(4, 'white', true, AUDIENCE_HAS_GAMES);
     expect(warmup.personaId).toBe(HILDA_ID);
     expect(warmup.copy).toContain('still analyzing your games');
     expect(warmup.copy).toContain('warm-up session');
-    expect(introCopy(5, 'white', true).copy).toContain('only one good move, or several');
+    expect(introCopy(5, 'white', true, AUDIENCE_HAS_GAMES).copy).toContain('only one good move, or several');
     // The regular run never mentions the warm-up.
-    const regular = introSteps('white', false).map((step) => step.copy);
+    const regular = introSteps('white', false, AUDIENCE_HAS_GAMES).map((step) => step.copy);
     expect(regular.some((copy) => copy.includes('warm-up'))).toBe(false);
   });
 
   it('a step index past the end resolves to the closing step instead of throwing', () => {
-    expect(introCopy(5, 'white', false).copy).toBe(introCopy(4, 'white', false).copy);
+    expect(introCopy(5, 'white', false, AUDIENCE_HAS_GAMES).copy).toBe(introCopy(4, 'white', false, AUDIENCE_HAS_GAMES).copy);
   });
 
   // Plan 06 UAT: no internal scrolling in bubbles — every stepper step must
@@ -244,10 +258,61 @@ describe('introCopy', () => {
   it('every intro step, for both sides and both session kinds, fits the phone copy budget', () => {
     for (const isWarmup of [false, true]) {
       for (const side of ['white', 'black'] as const) {
-        for (const step of introSteps(side, isWarmup)) {
+        for (const step of introSteps(side, isWarmup, AUDIENCE_HAS_GAMES)) {
           expect(step.copy.length).toBeLessThanOrEqual(STEPPER_COPY_MAX_CHARS);
         }
       }
+    }
+  });
+});
+
+describe('introCopy / introSteps — D-03 games-less audience branch (Phase 224)', () => {
+  const NEVER_ANALYZED = /(are analyzed|analyzing your games)/i;
+
+  it('the has_games audience (any isGuest value) is byte-identical to today\'s welcome and warm-up copy', () => {
+    const guestWithGames: TrainCopyAudience = { hasGames: true, isGuest: true };
+    for (const audience of [AUDIENCE_HAS_GAMES, guestWithGames]) {
+      expect(introCopy(0, 'white', false, audience).copy).toBe(
+        'Welcome to FlawChess Train, my chess boot camp! You will improve by solving puzzles ' +
+          'created from your own games.',
+      );
+      expect(introCopy(4, 'white', true, audience).copy).toBe(
+        "We're still analyzing your games to find your mistakes. In the meantime, " +
+          "let's start with a warm-up session.",
+      );
+    }
+  });
+
+  it('no zero-game audience is ever told its games are being analyzed', () => {
+    for (const audience of [AUDIENCE_NO_GAMES, AUDIENCE_NO_GAMES_GUEST]) {
+      expect(introCopy(0, 'white', false, audience).copy).not.toMatch(NEVER_ANALYZED);
+      expect(introCopy(4, 'white', true, audience).copy).not.toMatch(NEVER_ANALYZED);
+    }
+  });
+
+  it('a registered zero-game account reads import-only copy, never a sign-up ask', () => {
+    expect(introCopy(0, 'white', false, AUDIENCE_NO_GAMES).copy).not.toContain('sign up');
+    expect(introCopy(4, 'white', true, AUDIENCE_NO_GAMES).copy).not.toContain('sign up');
+    expect(introCopy(0, 'white', false, AUDIENCE_NO_GAMES).copy).toContain('Import your games');
+  });
+
+  it('a zero-game guest reads import first, sign up second, in every branched string', () => {
+    for (const copy of [
+      introCopy(0, 'white', false, AUDIENCE_NO_GAMES_GUEST).copy,
+      introCopy(4, 'white', true, AUDIENCE_NO_GAMES_GUEST).copy,
+    ]) {
+      expect(copy).toContain('sign up');
+      const importIndex = copy.toLowerCase().indexOf('mport');
+      const signUpIndex = copy.toLowerCase().indexOf('sign up');
+      expect(importIndex).toBeGreaterThanOrEqual(0);
+      expect(signUpIndex).toBeGreaterThan(importIndex);
+    }
+  });
+
+  it('the step COUNT never changes with audience — only the welcome/warm-up copy does', () => {
+    for (const audience of [AUDIENCE_HAS_GAMES, AUDIENCE_NO_GAMES, AUDIENCE_NO_GAMES_GUEST]) {
+      expect(introStepCount(false, audience)).toBe(5);
+      expect(introStepCount(true, audience)).toBe(6);
     }
   });
 });
@@ -323,6 +388,7 @@ describe('returnPhrase (D-15/D-16 truth table)', () => {
       due_date: '2020-01-01', // arbitrary, must be ignored
       session_date: '2026-09-13',
       expires_on: '2026-09-14',
+      audience: AUDIENCE_HAS_GAMES,
     });
     expect(phrase).toContain('warm-up');
     expect(phrase).toContain('Your own positions will');
@@ -335,6 +401,7 @@ describe('returnPhrase (D-15/D-16 truth table)', () => {
       due_date: '2026-12-25',
       session_date: '2026-09-13',
       expires_on: '2026-09-14',
+      audience: AUDIENCE_HAS_GAMES,
     });
     expect(phrase).toContain('warm-up');
   });
@@ -351,6 +418,7 @@ describe('returnPhrase (D-15/D-16 truth table)', () => {
         due_date: '2020-01-01', // arbitrary, must be ignored
         session_date: '2026-09-13',
         expires_on: '2026-09-14',
+        audience: AUDIENCE_HAS_GAMES,
       });
       expect(phrase).toContain("won't come back");
       expect(phrase).not.toContain('warm-up');
@@ -359,12 +427,18 @@ describe('returnPhrase (D-15/D-16 truth table)', () => {
   );
 
   it('a red_herring names itself; a sharp_filler is a tactics puzzle', () => {
-    expect(returnPhrase({ source: 'red_herring', is_warmup: false })).toContain('red herring');
-    expect(returnPhrase({ source: 'sharp_filler', is_warmup: false })).toContain('tactics puzzle');
+    expect(
+      returnPhrase({ source: 'red_herring', is_warmup: false, audience: AUDIENCE_HAS_GAMES }),
+    ).toContain('red herring');
+    expect(
+      returnPhrase({ source: 'sharp_filler', is_warmup: false, audience: AUDIENCE_HAS_GAMES }),
+    ).toContain('tactics puzzle');
   });
 
   it('an absent is_warmup (pre-fix cached reveal) degrades to the neutral line, not the warm-up claim', () => {
-    expect(returnPhrase({ source: 'red_herring' })).not.toContain('warm-up');
+    expect(returnPhrase({ source: 'red_herring', audience: AUDIENCE_HAS_GAMES })).not.toContain(
+      'warm-up',
+    );
   });
 
   it("item_status 'mastered' returns the mastered tail even when due_date is <= expires_on (stale-date trap)", () => {
@@ -373,6 +447,7 @@ describe('returnPhrase (D-15/D-16 truth table)', () => {
       due_date: '2026-09-01', // stale — well before expires_on
       session_date: '2026-09-13',
       expires_on: '2026-09-14',
+      audience: AUDIENCE_HAS_GAMES,
     });
     expect(phrase).toContain("won't come back");
   });
@@ -383,6 +458,7 @@ describe('returnPhrase (D-15/D-16 truth table)', () => {
       due_date: '2026-09-14',
       session_date: '2026-09-13',
       expires_on: '2026-09-14',
+      audience: AUDIENCE_HAS_GAMES,
     });
     expect(phrase).toContain("won't come back");
   });
@@ -393,6 +469,7 @@ describe('returnPhrase (D-15/D-16 truth table)', () => {
       due_date: '2026-08-01', // long stale
       session_date: '2026-09-13',
       expires_on: '2026-09-14',
+      audience: AUDIENCE_HAS_GAMES,
     });
     expect(phrase).toContain('parked');
   });
@@ -403,6 +480,7 @@ describe('returnPhrase (D-15/D-16 truth table)', () => {
       due_date: '2026-09-14',
       session_date: '2026-09-13',
       expires_on: '2026-09-14',
+      audience: AUDIENCE_HAS_GAMES,
     });
     expect(phrase).toBe("We'll try this one again in the next session.");
   });
@@ -413,6 +491,7 @@ describe('returnPhrase (D-15/D-16 truth table)', () => {
       due_date: '2026-09-17',
       session_date: '2026-09-13',
       expires_on: '2026-09-14',
+      audience: AUDIENCE_HAS_GAMES,
     });
     expect(phrase).toBe("Let's see if you remember this in 4 days.");
   });
@@ -424,6 +503,7 @@ describe('returnPhrase (D-15/D-16 truth table)', () => {
         due_date: null,
         session_date: '2026-09-13',
         expires_on: '2026-09-14',
+        audience: AUDIENCE_HAS_GAMES,
       }),
     ).not.toThrow();
     expect(
@@ -432,12 +512,54 @@ describe('returnPhrase (D-15/D-16 truth table)', () => {
         due_date: null,
         session_date: '2026-09-13',
         expires_on: '2026-09-14',
+        audience: AUDIENCE_HAS_GAMES,
       }),
     ).toBe('');
   });
 
   it('source, item_status and due_date all undefined returns an empty string', () => {
-    expect(returnPhrase({})).toBe('');
+    expect(returnPhrase({ audience: AUDIENCE_HAS_GAMES })).toBe('');
+  });
+});
+
+describe('returnPhrase — D-03 games-less warm-up tail audience branch (Phase 224)', () => {
+  const NEVER_ANALYZED = /(are analyzed|analyzing your games)/i;
+  const warmupTail = (audience: TrainCopyAudience): string =>
+    returnPhrase({
+      source: 'red_herring',
+      is_warmup: true,
+      session_date: '2026-09-13',
+      expires_on: '2026-09-14',
+      audience,
+    });
+
+  it('the has_games audience (any isGuest value) is byte-identical to today\'s warm-up tail', () => {
+    expect(warmupTail(AUDIENCE_HAS_GAMES)).toBe(
+      "That one was a warm-up, so it won't come back. Your own positions will.",
+    );
+    expect(warmupTail({ hasGames: true, isGuest: true })).toBe(
+      "That one was a warm-up, so it won't come back. Your own positions will.",
+    );
+  });
+
+  it('no zero-game audience claims its games are being analyzed', () => {
+    expect(warmupTail(AUDIENCE_NO_GAMES)).not.toMatch(NEVER_ANALYZED);
+    expect(warmupTail(AUDIENCE_NO_GAMES_GUEST)).not.toMatch(NEVER_ANALYZED);
+  });
+
+  it('a registered zero-game account reads import-only copy, never a sign-up ask', () => {
+    const phrase = warmupTail(AUDIENCE_NO_GAMES);
+    expect(phrase).not.toContain('sign up');
+    expect(phrase).toContain('Import your games');
+  });
+
+  it('a zero-game guest reads import first, sign up second', () => {
+    const phrase = warmupTail(AUDIENCE_NO_GAMES_GUEST);
+    expect(phrase).toContain('sign up');
+    const importIndex = phrase.toLowerCase().indexOf('mport');
+    const signUpIndex = phrase.toLowerCase().indexOf('sign up');
+    expect(importIndex).toBeGreaterThanOrEqual(0);
+    expect(signUpIndex).toBeGreaterThan(importIndex);
   });
 });
 
@@ -516,6 +638,7 @@ describe('scoreBubbleCopy', () => {
     band: 'yellow',
     session_date: '2026-09-13',
     expires_on: '2026-09-14',
+    audience: AUDIENCE_HAS_GAMES,
   };
 
   const activeOutcome = (dueDate: string): ScoreBubbleOutcome => ({
@@ -720,5 +843,93 @@ describe('scoreBubbleCopy', () => {
       isFirstCompletedSession: false,
     });
     expect(copy.lines[0]).toContain('1 comes back next session');
+  });
+});
+
+describe('scoreBubbleCopy — D-03/S-3 games-less warm-up audience branch (Phase 224)', () => {
+  const WARM: ScoreBubbleInput = {
+    outcomes: [],
+    missedCount: 0,
+    isFirstCompletedSession: false,
+    isWarmup: true,
+    reminderAsk: 'remind_me',
+    band: 'yellow',
+    session_date: '2026-09-13',
+    expires_on: '2026-09-14',
+    audience: AUDIENCE_HAS_GAMES,
+  };
+  const NEVER_ANALYZED = /(are analyzed|analyzing your games)/i;
+
+  it('a guest sees GUEST_SIGNUP_ASK_SCORE as the second line whenever isGuest is true, for both hasGames values', () => {
+    const guestNoGames = scoreBubbleCopy({ ...WARM, audience: AUDIENCE_NO_GAMES_GUEST });
+    const guestWithGames = scoreBubbleCopy({ ...WARM, audience: { hasGames: true, isGuest: true } });
+    expect(guestNoGames.lines[1]).toBe(GUEST_SIGNUP_ASK_SCORE);
+    expect(guestWithGames.lines[1]).toBe(GUEST_SIGNUP_ASK_SCORE);
+  });
+
+  it('a non-guest (any hasGames value) keeps the WARMUP_REMINDER_ASK_COPY entry, never the sign-up ask', () => {
+    const registeredNoGames = scoreBubbleCopy({ ...WARM, audience: AUDIENCE_NO_GAMES });
+    const registeredWithGames = scoreBubbleCopy({ ...WARM, audience: AUDIENCE_HAS_GAMES });
+    expect(registeredNoGames.lines[1]).not.toBe(GUEST_SIGNUP_ASK_SCORE);
+    expect(registeredWithGames.lines[1]).not.toBe(GUEST_SIGNUP_ASK_SCORE);
+    expect(registeredWithGames.lines[1]).toContain('Turn on Remind me');
+  });
+
+  it('the has_games audience is byte-identical to today\'s warm-up opener clause', () => {
+    const copy = scoreBubbleCopy({ ...WARM, audience: AUDIENCE_HAS_GAMES });
+    expect(copy.lines[0]).toContain('Once your games are analyzed, your own mistakes take over.');
+  });
+
+  it('no zero-game audience is told its games are being analyzed', () => {
+    for (const audience of [AUDIENCE_NO_GAMES, AUDIENCE_NO_GAMES_GUEST]) {
+      const copy = scoreBubbleCopy({ ...WARM, audience });
+      expect(copy.lines[0]).not.toMatch(NEVER_ANALYZED);
+    }
+  });
+
+  it('a registered zero-game account reads import-only copy in the opener clause', () => {
+    const copy = scoreBubbleCopy({ ...WARM, audience: AUDIENCE_NO_GAMES });
+    expect(copy.lines[0]).not.toContain('sign up');
+    expect(copy.lines[0]).toContain('Import your games');
+  });
+
+  it('a zero-game guest opener clause reads import first, sign up second', () => {
+    const copy = scoreBubbleCopy({ ...WARM, audience: AUDIENCE_NO_GAMES_GUEST });
+    const importIndex = copy.lines[0].toLowerCase().indexOf('mport');
+    const signUpIndex = copy.lines[0].toLowerCase().indexOf('sign up');
+    expect(importIndex).toBeGreaterThanOrEqual(0);
+    expect(signUpIndex).toBeGreaterThan(importIndex);
+  });
+
+  it('the four non-warm-up scoreBubbleCopy variants are unchanged for every audience', () => {
+    const activeOutcome = (dueDate: string): ScoreBubbleOutcome => ({
+      source: 'sr_item',
+      item_status: 'active',
+      due_date: dueDate,
+    });
+    const nonWarmupInputs: ScoreBubbleInput[] = [
+      { ...WARM, isWarmup: false, missedCount: 0, outcomes: [activeOutcome('2026-09-14')] },
+      {
+        ...WARM,
+        isWarmup: false,
+        missedCount: 1,
+        isFirstCompletedSession: true,
+        outcomes: [activeOutcome('2026-09-14')],
+      },
+      {
+        ...WARM,
+        isWarmup: false,
+        missedCount: 1,
+        isFirstCompletedSession: false,
+        outcomes: [activeOutcome('2026-09-14')],
+      },
+    ];
+    for (const input of nonWarmupInputs) {
+      const hasGames = scoreBubbleCopy({ ...input, audience: AUDIENCE_HAS_GAMES });
+      const noGames = scoreBubbleCopy({ ...input, audience: AUDIENCE_NO_GAMES });
+      const noGamesGuest = scoreBubbleCopy({ ...input, audience: AUDIENCE_NO_GAMES_GUEST });
+      expect(noGames).toEqual(hasGames);
+      expect(noGamesGuest).toEqual(hasGames);
+    }
   });
 });

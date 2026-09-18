@@ -647,6 +647,131 @@ class TestGuestPromotion:
             assert created_at_before == created_at_after
 
     @pytest.mark.asyncio
+    async def test_train_state_preserved_after_promotion(self, test_engine) -> None:
+        """Promotion is an in-place UPDATE users (Phase 224 D-08, GUESTACT-06,
+        ROADMAP SC 4): a promoted guest's drill_sessions, drill_solves and
+        train_settings rows, plus its account-level streak, all survive
+        unchanged -- exactly what makes the score-screen sign-up ask's "your
+        streak and everything you have solved stay exactly where they are"
+        truthful. No row is created or deleted by promotion; only the
+        existing `users` row is UPDATEd (`is_guest=False`, `promoted_at`).
+        """
+        from sqlalchemy import delete, select
+        from sqlalchemy.ext.asyncio import async_sessionmaker
+
+        from app.models.drill_session import DrillSession
+        from app.models.drill_solve import DrillSolve
+        from app.models.train_settings import TrainSettings
+        from app.models.user import User
+
+        new_email = unique_email("trainpreserved")
+        session_id: int | None = None
+        try:
+            async with httpx.AsyncClient(
+                transport=httpx.ASGITransport(app=app), base_url="http://test"
+            ) as client:
+                guest_resp = await client.post("/api/auth/guest/create")
+                assert guest_resp.status_code == 201
+                guest_token = guest_resp.json()["access_token"]
+
+                compose_resp = await client.post(
+                    "/api/train/sessions", headers={"Authorization": f"Bearer {guest_token}"}
+                )
+                assert compose_resp.status_code == 200, compose_resp.text
+                compose_body = compose_resp.json()
+                session_id = compose_body["session_id"]
+                puzzle_count = compose_body["puzzle_count"]
+                assert puzzle_count > 0
+
+                last_solve_body: dict[str, object] = {}
+                for position in range(puzzle_count):
+                    solve_resp = await client.post(
+                        f"/api/train/sessions/{session_id}/solve",
+                        headers={"Authorization": f"Bearer {guest_token}"},
+                        json={
+                            "position": position,
+                            "guess": "critical",
+                            "played_move": "e2e4",
+                            "move_quality": "good",
+                        },
+                    )
+                    assert solve_resp.status_code == 200, solve_resp.text
+                    last_solve_body = solve_resp.json()
+                assert last_solve_body["session_complete"] is True
+
+                progress_before_resp = await client.get(
+                    "/api/train/progress", headers={"Authorization": f"Bearer {guest_token}"}
+                )
+                assert progress_before_resp.status_code == 200
+                streak_before = progress_before_resp.json()["session_streak_count"]
+                assert streak_before == 1
+
+                promo_resp = await client.post(
+                    "/api/auth/guest/promote/email",
+                    json={"email": new_email, "password": "TestPass123!"},
+                    headers={"Authorization": f"Bearer {guest_token}"},
+                )
+                assert promo_resp.status_code == 200
+                new_token = promo_resp.json()["access_token"]
+
+                profile_after_resp = await client.get(
+                    "/api/users/me/profile",
+                    headers={"Authorization": f"Bearer {new_token}"},
+                )
+                assert profile_after_resp.status_code == 200
+                assert profile_after_resp.json()["is_guest"] is False
+                assert profile_after_resp.json()["email"] == new_email
+
+                progress_after_resp = await client.get(
+                    "/api/train/progress", headers={"Authorization": f"Bearer {new_token}"}
+                )
+                assert progress_after_resp.status_code == 200
+                assert progress_after_resp.json()["session_streak_count"] == streak_before
+
+            # DB-level proof: the SAME drill_sessions/drill_solves/train_settings
+            # rows resolve for the SAME (unchanged) user id after promotion --
+            # promotion is UPDATE users, not a new row.
+            session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
+            async with session_maker() as verify_session:
+                drill_session_row = await verify_session.scalar(
+                    select(DrillSession).where(DrillSession.id == session_id)
+                )
+                assert drill_session_row is not None, "drill_sessions row must survive promotion"
+                guest_user_id = drill_session_row.user_id
+
+                solved_rows = (
+                    (
+                        await verify_session.execute(
+                            select(DrillSolve).where(DrillSolve.session_id == session_id)
+                        )
+                    )
+                    .scalars()
+                    .all()
+                )
+                assert len(solved_rows) == puzzle_count, (
+                    "every drill_solves row from the session must survive promotion"
+                )
+
+                settings_row = await verify_session.scalar(
+                    select(TrainSettings).where(TrainSettings.user_id == guest_user_id)
+                )
+                assert settings_row is not None, "train_settings row must survive promotion"
+
+                promoted_user = await verify_session.get(User, guest_user_id)
+                assert promoted_user is not None
+                assert promoted_user.id == guest_user_id, "user id must be unchanged by promotion"
+                assert promoted_user.is_guest is False
+                assert promoted_user.promoted_at is not None
+        finally:
+            if session_id is not None:
+                session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
+                async with session_maker() as cleanup_session:
+                    async with cleanup_session.begin():
+                        await cleanup_session.execute(
+                            delete(DrillSession).where(DrillSession.id == session_id)
+                        )
+
+    @pytest.mark.asyncio
     async def test_promoted_user_can_login_with_password(self):
         """After promotion, user can log in via /auth/jwt/login with new email and password."""
         new_email = unique_email("loginafterpromo")

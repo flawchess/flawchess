@@ -46,6 +46,10 @@ import type { UserProfile } from '@/types/users';
 // instance and useUserProfile would never resolve under jsdom — leaving
 // `profile` undefined and startSession() permanently unfired. A settled
 // non-guest profile keeps this tracer's existing assertions unchanged.
+// D-03 (Phase 224): `hasImportedGames` is also imported from this module by
+// Train.tsx, so the whole-module mock above must provide it too — the
+// literal `true` keeps this tracer on the has_games audience, matching every
+// pre-existing assertion in this file (defaults established in Plan 04).
 vi.mock('@/hooks/useUserProfile', () => ({
   useUserProfile: () => ({
     data: {
@@ -53,6 +57,7 @@ vi.mock('@/hooks/useUserProfile', () => ({
     } as UserProfile,
     isError: false,
   }),
+  hasImportedGames: () => true,
 }));
 
 // ─── ResizeObserver stub ────────────────────────────────────────────────────

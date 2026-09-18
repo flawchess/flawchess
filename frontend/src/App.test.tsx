@@ -493,7 +493,7 @@ describe('190-03: Train renders in all three surfaces, correctly placed (NAV-01)
 });
 
 describe('190-03: Train gating (NAV-02)', () => {
-  it('locked state: Train is aria-disabled with the import-required title on all three surfaces; Library/Bots stay reachable', () => {
+  it('locked state: Train is exempt (Phase 224 D-01) on all three surfaces; Openings/Endgames stay locked', () => {
     profileState = {
       email: 'zero@example.com',
       is_superuser: false,
@@ -506,24 +506,26 @@ describe('190-03: Train gating (NAV-02)', () => {
 
     const { unmount: unmountHeader } = renderNavHeader();
     const desktopLink = screen.getByTestId('nav-train');
-    expect(desktopLink.getAttribute('aria-disabled')).toBe('true');
-    expect(desktopLink.getAttribute('title')).toBe('Import your games first to unlock this feature.');
-    expect(screen.getByTestId('nav-library').getAttribute('aria-disabled')).toBeNull();
-    expect(screen.getByTestId('nav-bots').getAttribute('aria-disabled')).toBeNull();
+    expect(desktopLink.getAttribute('aria-disabled')).toBeNull();
+    expect(desktopLink.getAttribute('title')).toBeNull();
+    // Control assertion: the lock mechanism itself still works for routes
+    // that are NOT exempt.
+    expect(screen.getByTestId('nav-openings').getAttribute('aria-disabled')).toBe('true');
+    expect(screen.getByTestId('nav-endgames').getAttribute('aria-disabled')).toBe('true');
     unmountHeader();
 
     const { unmount: unmountBar } = renderMobileBottomBar();
     const mobileLink = screen.getByTestId('mobile-nav-train');
-    expect(mobileLink.getAttribute('aria-disabled')).toBe('true');
-    expect(screen.getByTestId('mobile-nav-library').getAttribute('aria-disabled')).toBeNull();
-    expect(screen.getByTestId('mobile-nav-bots').getAttribute('aria-disabled')).toBeNull();
+    expect(mobileLink.getAttribute('aria-disabled')).toBeNull();
+    expect(screen.getByTestId('mobile-nav-openings').getAttribute('aria-disabled')).toBe('true');
+    expect(screen.getByTestId('mobile-nav-endgames').getAttribute('aria-disabled')).toBe('true');
     unmountBar();
 
     renderMobileMoreDrawer();
     const drawerLink = screen.getByTestId('drawer-nav-train');
-    expect(drawerLink.getAttribute('aria-disabled')).toBe('true');
-    expect(screen.getByTestId('drawer-nav-library').getAttribute('aria-disabled')).toBeNull();
-    expect(screen.getByTestId('drawer-nav-bots').getAttribute('aria-disabled')).toBeNull();
+    expect(drawerLink.getAttribute('aria-disabled')).toBeNull();
+    expect(screen.getByTestId('drawer-nav-openings').getAttribute('aria-disabled')).toBe('true');
+    expect(screen.getByTestId('drawer-nav-endgames').getAttribute('aria-disabled')).toBe('true');
   });
 
   it('unlocked state: Train is NOT aria-disabled on all three surfaces', () => {
@@ -550,26 +552,32 @@ describe('190-03: Train gating (NAV-02)', () => {
   });
 });
 
-describe('190-03: empty profile does not crash and renders Train locked', () => {
-  it('all three surfaces render without throwing, Train locked, with a null profile', () => {
+describe('190-03: empty profile does not crash and renders Train exempt', () => {
+  it('all three surfaces render without throwing, Train exempt (Phase 224 D-01), with a null profile', () => {
     profileState = null;
     tier1State = false;
 
     expect(() => {
       const { unmount } = renderNavHeader();
-      expect(screen.getByTestId('nav-train').getAttribute('aria-disabled')).toBe('true');
+      expect(screen.getByTestId('nav-train').getAttribute('aria-disabled')).toBeNull();
+      expect(screen.getByTestId('nav-openings').getAttribute('aria-disabled')).toBe('true');
+      expect(screen.getByTestId('nav-endgames').getAttribute('aria-disabled')).toBe('true');
       unmount();
     }).not.toThrow();
 
     expect(() => {
       const { unmount } = renderMobileBottomBar();
-      expect(screen.getByTestId('mobile-nav-train').getAttribute('aria-disabled')).toBe('true');
+      expect(screen.getByTestId('mobile-nav-train').getAttribute('aria-disabled')).toBeNull();
+      expect(screen.getByTestId('mobile-nav-openings').getAttribute('aria-disabled')).toBe('true');
+      expect(screen.getByTestId('mobile-nav-endgames').getAttribute('aria-disabled')).toBe('true');
       unmount();
     }).not.toThrow();
 
     expect(() => {
       renderMobileMoreDrawer();
-      expect(screen.getByTestId('drawer-nav-train').getAttribute('aria-disabled')).toBe('true');
+      expect(screen.getByTestId('drawer-nav-train').getAttribute('aria-disabled')).toBeNull();
+      expect(screen.getByTestId('drawer-nav-openings').getAttribute('aria-disabled')).toBe('true');
+      expect(screen.getByTestId('drawer-nav-endgames').getAttribute('aria-disabled')).toBe('true');
     }).not.toThrow();
   });
 });

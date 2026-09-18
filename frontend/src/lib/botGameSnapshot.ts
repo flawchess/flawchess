@@ -2,8 +2,9 @@
  * botGameSnapshot — the versioned, owner-scoped in-progress bot-game
  * localStorage snapshot (Phase 170, RESUME-01).
  *
- * Pure module, no React import (mirrors welcomeDismissal.ts's zero-React
- * shape — Bots.tsx reads this once on mount, no live-subscription
+ * Pure module, no React import (a zero-React localStorage module with an SSR
+ * guard, the same shape as other pure localStorage helpers in this codebase)
+ * — Bots.tsx reads this once on mount, no live-subscription
  * requirement). Persists `chess.pgn()` as the move/clock source of truth
  * (D-08 RESOLVED: chess.js 1.4.0 round-trips `{[%clk ...]}` comments through
  * `pgn() -> loadPgn() -> pgn()` losslessly — verified in 170-RESEARCH.md).
@@ -13,7 +14,7 @@
  * into chess.js's own comment store, not a parallel structure).
  *
  * Every read/write is guarded against the two localStorage failure modes
- * (`welcomeDismissal.ts`'s SSR guard + `useUserFlag.ts`'s try/catch shape):
+ * (an SSR guard plus `useUserFlag.ts`'s try/catch shape):
  * an SSR/prerender environment with no `localStorage`, and a storage-API
  * throw (QuotaExceededError, Safari private mode). Both degrade to "no
  * resumable snapshot" — never a throw, never a crash (T-170-02).

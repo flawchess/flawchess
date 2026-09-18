@@ -157,7 +157,7 @@ const ROUTE_TITLES: Record<string, string> = {
  * 171 had to patch every one of them to add `/bots`. One definition now, so the
  * next exempt route is a one-line edit and the surfaces cannot disagree.
  */
-const IMPORT_EXEMPT_ROUTES: ReadonlySet<string> = new Set(['/library', '/admin', '/bots', '/analysis', '/activity']);
+const IMPORT_EXEMPT_ROUTES: ReadonlySet<string> = new Set(['/library', '/admin', '/bots', '/analysis', '/activity', '/train']);
 
 function isNavLocked(to: string, navUnlocked: boolean): boolean {
   return !IMPORT_EXEMPT_ROUTES.has(to) && !navUnlocked;
@@ -212,9 +212,10 @@ function useNavIndicators(): NavIndicators {
   // Openings first, then Endgames after that dot is cleared.
   const showEndgamesDot = navUnlocked && openingsVisited && !endgamesVisited;
   // SCHD-02/D-06/D-07/D-08: numeric waiting-puzzles badge replaces the old
-  // first-visit Train dot. Gated off for guests and locked-nav accounts so the
-  // global QueryCache.onError Sentry reporter never sees an expected 403
-  // (T-191-21) — a guest or zero-game account never issues this request.
+  // first-visit Train dot. Gated off for guests and locked-nav accounts —
+  // Phase 224 D-02 (Claude's discretion): kept as-is even though Train itself
+  // is now open to zero-game accounts, because `waiting_count` is provably 0
+  // for every warm-up-only account (no own blunders yet to surface).
   const trainProgressQuery = useTrainProgress({ enabled: navUnlocked && profile != null && !profile.is_guest });
   const trainWaitingCount = trainProgressQuery.data?.waiting_count ?? 0;
   // Phase 193 D-09/D-10: server-computed badge visibility (scheduled-day gating,
@@ -650,11 +651,12 @@ function ProtectedLayout() {
   //
   // CR-01 FIX (203-REVIEW.md): this runs on EVERY protected route for EVERY
   // account. Gate its underlying GET /train/settings off for guests (and
-  // while `profile` hasn't resolved yet) — guests get a guaranteed 403 from
-  // `_reject_guest` that the global QueryCache.onError reporter was
-  // capturing to Sentry on every page view and window refocus, mirroring
-  // the same fix `useTrainProgress`'s `enabled` option applies at the nav
-  // badge call sites (T-191-21).
+  // while `profile` hasn't resolved yet). Originally this avoided the
+  // guaranteed 403 from the since-removed `_reject_guest` gate that the
+  // global QueryCache.onError reporter was capturing to Sentry on every page
+  // view and refocus. Since Phase 224 guests get 200 from /train/settings,
+  // but the gate stays: guests have no reminder slot or push subscription
+  // (Phase 224 D-13), so neither hook has anything to do for them.
   useReminderResurfaceRedirect({ enabled: profile != null && !profile.is_guest });
   // Phase 204 D-07: a device whose push_subscriptions row was pruned
   // re-registers itself on the next app load, with no user gesture.
@@ -964,22 +966,23 @@ function AppRoutes() {
           <Route path="/welcome" element={<WelcomePage />} />
           <Route path="/openings/*" element={<ImportRequiredRoute><OpeningsPage /></ImportRequiredRoute>} />
           <Route path="/endgames/*" element={<ImportRequiredRoute><EndgamesPage /></ImportRequiredRoute>} />
-          {/* Phase 190 Plan 01: gated like Openings/Endgames (NAV-02) — NOT added
-              to IMPORT_EXEMPT_ROUTES. Nav wiring (NAV-01) is Plan 03's. */}
+          {/* Phase 224 (D-01): every account, guest or registered, may open Train
+              with zero games — composition already serves red herrings and sharp
+              filler with no rating and no game input, so there is nothing behind
+              this route that requires an import. Added to IMPORT_EXEMPT_ROUTES;
+              no ImportRequiredRoute wrapper. */}
           <Route
             path="/train/*"
             element={
-              <ImportRequiredRoute>
-                <Suspense
-                  fallback={
-                    <div className="p-6 text-sm text-muted-foreground" data-testid="train-loading">
-                      Loading your training session…
-                    </div>
-                  }
-                >
-                  <TrainPage />
-                </Suspense>
-              </ImportRequiredRoute>
+              <Suspense
+                fallback={
+                  <div className="p-6 text-sm text-muted-foreground" data-testid="train-loading">
+                    Loading your training session…
+                  </div>
+                }
+              >
+                <TrainPage />
+              </Suspense>
             }
           />
           <Route path="/admin" element={<SuperuserRoute><AdminPage /></SuperuserRoute>} />

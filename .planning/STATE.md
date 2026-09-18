@@ -2,15 +2,16 @@
 gsd_state_version: "1.0"
 milestone: v2.19
 current_phase: 224
-status: not_started
-stopped_at: Phase 223 complete — all phases complete
-last_updated: "2026-09-16T09:07:56.698Z"
-state_head: f1f8c274c95f33a489a1be8906ca8b976c73e552
+current_phase_name: Guest Activation — Welcome Removal & Guest Train (SEED-169)
+status: executing
+stopped_at: Completed 224-06-PLAN.md
+last_updated: "2026-09-17T22:25:19.681Z"
+state_head: 449285ca1400c35d6572eb03f5cd1232a2f5d330
 progress:
-  total_phases: 1
-  completed_phases: 1
-  total_plans: 6
-  completed_plans: 6
+  total_phases: 2
+  completed_phases: 0
+  total_plans: 12
+  completed_plans: 11
 milestone_name: Train Bot-Narrated Onboarding & Verdicts
 last_activity: 2026-09-16
 last_activity_desc: "Completed quick task 260916-gj7 (DB report follow-ups: index opening_cache_audit.sample_game_id, drop ix_games_full_pv_pending, tighten Check C rule)"
@@ -20,10 +21,10 @@ last_activity_desc: "Completed quick task 260916-gj7 (DB report follow-ups: inde
 
 ## Current Position
 
-Phase: 224
-Plan: Not started
+Phase: 224 (Guest Activation — Welcome Removal & Guest Train (SEED-169)) — EXECUTING
+Plan: 6 of 6
 
-Status: Phase 224 (Guest Activation — Welcome Removal & Guest Train, SEED-169) added 2026-09-17, not yet discussed or planned. Next: `/gsd-discuss-phase 224`.
+Status: Ready to execute
 
 Open threads carried forward (not blockers):
 
@@ -778,6 +779,16 @@ flagged as an open decision for plan 06 / a human, not auto-fixed.
 - [Phase 223]: 223-02: All ten in-game BOT_LINE_TABLES keys plus ROSTER_GREETINGS (264 authored lines) are exhaustive Record<PersonaId,string> tables guarded by one shared invariant test (budget/em-dash/forbidden-claim/insult/numeric-disclosure/no-duplication).
 - [Phase 223]: 223-05: handleBackToRoster added as a deliberate near-duplicate of handleNewGame (separate doc comment) rather than shared, so the two callbacks can diverge independently.
 - [Phase 223]: playerCapturedRef/threatCreatedRef now overwrite (not accumulate) each player commit — plan 01's shipped latch never reset to false on a non-capturing move — A stale true from an earlier move pair would have permanently mislabeled every later D-04 capture/no-capture split
+- [Phase 224]: Account-level streak proof reads /train/progress's session_streak_count, not SolveResponse.streak (null for herring/filler puzzles by design); the e2e test loops over every puzzle so the session completes and the eager same-day tick fires.
+- [Phase 224]: isGuest stays declared but explicitly unused (void isGuest;) in Train.tsx for Plan 04/06 to consume later, since tsc -b's noUnusedLocals would otherwise fail the build.
+- [Phase 224]: Registered visitor to /welcome renders the four deltas with no redirect and no sign-up button — A dead-end redirect on a page reachable only by a typed URL is worse than an honest explanation (Claude's Discretion, 224-CONTEXT.md)
+- [Phase 224]: TrainScheduleSettings gained isGuest a task early (Task 2), declared with a void placeholder mirroring Plan 01's pattern, so Task 3 could wire the real resolveScheduleCardVisibility resolver without breaking Task 2's own build gate.
+- [Phase 224]: ReturnPhraseInput.audience and ScoreBubbleInput.audience are required fields, not optional like their siblings, forcing every call site to state its audience explicitly.
+- [Phase 224]: GUEST_SIGNUP_ASK_SCORE branches on input.audience.isGuest directly (not audienceKey), so a guest with games still gets the sign-up ask on a caught-up warm-up session, per the plan's literal action text.
+- [Phase 224]: Phase 224 D-08 implemented: guest purge now deletes drill_sessions/drill_solves/train_settings alongside games, proven by an inverted test with a game_id-IS-NULL filler-solve case.
+- [Phase 224]: Promotion-preserves-Train-state proven by a new HTTP integration test (compose -> solve -> promote -> verify same session/solves/settings/streak survive under the same user id).
+- [Phase 224]: SignupAskActions built test-first: RED-phase stub (returns nothing) makes all 7 assertions fail on real behavior, then GREEN implements the real component
+- [Phase 224]: TrainScoreScreen's two reminder-row guest guards extracted into module-level GuardedReminderControl/GuardedReminderBelowRow to respect CLAUDE.md's complexity cap of 15 (plan's literal three inline ternaries would have breached it)
 
 ### Pending Todos
 
@@ -948,9 +959,9 @@ Items acknowledged and deferred at **v1.29 milestone close on 2026-06-29** (user
 
 ## Session Continuity
 
-**Stopped at:** Phase 223 complete — all phases complete
+**Stopped at:** Completed 224-06-PLAN.md
 
-**Last session:** 2026-09-15T21:45:21.983Z
+**Last session:** 2026-09-17T22:25:19.591Z
 
 **Resume file:** None
 
@@ -1141,6 +1152,11 @@ Items acknowledged and deferred at **v1.29 milestone close on 2026-06-29** (user
 | Phase 223 P02 | 70min | 3 tasks | 6 files |
 | Phase 223 P05 | 45min | 3 tasks | 16 files |
 | Phase 223 P04 | 55 min | 3 tasks | 7 files |
+| Phase 224 P01 | 45 min | 2 tasks | 5 files |
+| Phase 224 P02 | 40 min | 2 tasks | 6 files |
+| Phase 224 P04 | 30min | 3 tasks | 13 files |
+| Phase 224 P05 | 35 min | 3 tasks | 4 files |
+| Phase 224 P06 | 55min | 4 tasks | 8 files |
 
 ## Performance Metrics
 

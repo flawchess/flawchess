@@ -6,6 +6,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import { MemoryRouter } from 'react-router';
+import { GUEST_SIGNUP_ASK_SCORE, REMINDER_INSTALL_ASK } from '@/lib/trainBotCopy';
 
 // 191-01/191-06: TrainStartScreen calls useTrainProgress() directly (for the
 // PROG-05/D-16 tailored empty states) AND renders <TrainStreakCard /> +
@@ -42,6 +43,14 @@ vi.mock('@/hooks/useTrainProgress', () => ({
   useTrainProgress: () => trainProgressMock,
 }));
 
+// 224 UAT round 2: the guest landing bubble renders <SignupAskActions />,
+// which calls useAuth (mocked mirroring SignupAskActions.test.tsx's shape).
+vi.mock('@/hooks/useAuth', () => ({
+  useAuth: () => ({
+    logoutForPromotion: vi.fn(),
+  }),
+}));
+
 // 191-04: TrainStartScreen renders <TrainScheduleSettings /> internally,
 // which calls useTrainSettings() — mocked here with a resolved stub
 // (TrainScheduleSettings.test.tsx covers the hook's own loading/error/save
@@ -58,12 +67,21 @@ vi.mock('@/hooks/useTrainProgress', () => ({
 // would never trip — re-firing `save()` on every unrelated re-render.
 // 2026-09-14 (rotating landing host): `intro_seen_at` is read by the header;
 // null keeps Tank as the host so the pre-existing assertions stay put.
+// 2026-09-18: `has_mobile_subscription` drives the landing reminder ask; the
+// default `true` keeps the pre-existing assertions' bubble text unchanged.
 let mockTrainSettingsData: {
   timezone: string;
   weekday_mask: number;
   puzzles_per_session: number;
   intro_seen_at: string | null;
-} = { timezone: 'UTC', weekday_mask: 127, puzzles_per_session: 6, intro_seen_at: null };
+  has_mobile_subscription: boolean;
+} = {
+  timezone: 'UTC',
+  weekday_mask: 127,
+  puzzles_per_session: 6,
+  intro_seen_at: null,
+  has_mobile_subscription: true,
+};
 
 const saveMock = vi.fn(
   (
@@ -141,7 +159,13 @@ afterEach(() => {
   cleanup();
   trainProgressMock = { data: DEFAULT_TRAIN_PROGRESS, isPending: false, isError: false };
   saveMock.mockClear();
-  mockTrainSettingsData = { timezone: 'UTC', weekday_mask: 127, puzzles_per_session: 6, intro_seen_at: null };
+  mockTrainSettingsData = {
+    timezone: 'UTC',
+    weekday_mask: 127,
+    puzzles_per_session: 6,
+    intro_seen_at: null,
+    has_mobile_subscription: true,
+  };
   resurfaceMock = { shouldResurface: false };
   // WR-01: restore the file-wide default so the banner block's opt-in cannot
   // leak into the six landing-state assertions above it.
@@ -197,6 +221,7 @@ function renderScreen(props: Partial<Parameters<typeof TrainStartScreen>[0]> = {
         sessionScore={0}
         onEnterLoop={onEnterLoop}
         onSettingsSaved={onSettingsSaved}
+        isGuest={false}
         {...props}
       />
     </MemoryRouter>,
@@ -344,110 +369,67 @@ describe('TrainStartScreen — six landing states', () => {
   });
 });
 
-describe('TrainStartScreen — Phase 206 D-06/D-08/D-09 warm-up banner (replaces the dead "short" state)', () => {
-  it('is_warmup true, solved_count 0: renders exactly one warm-up banner with the locked title', () => {
+describe('TrainStartScreen — 224 UAT round 2: no warm-up info card, guest sign-up ask in the host bubble', () => {
+  it('is_warmup true: renders no warm-up card and the plain Start CTA', () => {
     renderScreen({
       session: { ...BASE_SESSION, puzzle_count: 8, requested_count: 8, is_warmup: true },
     });
-    expect(screen.getAllByTestId('train-warmup-banner')).toHaveLength(1);
-    expect(screen.getByTestId('train-warmup-banner-title').textContent).toBe('Warm-up session');
+    expect(screen.queryByTestId('train-warmup-banner')).toBeNull();
+    expect(screen.queryByText(/analyzing your games/)).toBeNull();
     expect(screen.getByTestId('btn-train-start').textContent).toBe('Start session — 8 puzzles');
   });
 
-  it('is_warmup false: renders no warm-up banner', () => {
+  it('guest: the host bubble carries the score-screen sign-up sentence and both action buttons', () => {
+    renderScreen({ isGuest: true, session: { ...BASE_SESSION, is_warmup: true } });
+    expect(screen.getByTestId('train-tagline')).not.toBeNull();
+    expect(screen.getByTestId('train-landing-signup-ask').textContent).toBe(GUEST_SIGNUP_ASK_SCORE);
+    expect(screen.getByTestId('btn-signup-why-train-landing')).not.toBeNull();
+    const signUp = screen.getByTestId('btn-signup-free-train-landing');
+    expect(signUp.getAttribute('data-umami-event')).toBe('signup-cta');
+    expect(signUp.getAttribute('data-umami-event-source')).toBe('train-landing');
+  });
+
+  it('guest: the ask also renders on the completed landing state', () => {
     renderScreen({
-      session: { ...BASE_SESSION, puzzle_count: 8, requested_count: 8, is_warmup: false },
-    });
-    expect(screen.queryByTestId('train-warmup-banner')).toBeNull();
-  });
-
-  it('next_due_date set: the caught-up body renders and ends with the "Next review: {date}." clause', () => {
-    trainProgressMock = {
-      data: { ...DEFAULT_TRAIN_PROGRESS, next_due_date: '2026-08-20' },
-      isPending: false,
-      isError: false,
-    };
-    renderScreen({ session: { ...BASE_SESSION, is_warmup: true } });
-    const body = screen.getByTestId('train-warmup-banner-body').textContent ?? '';
-    expect(body).toBe(
-      "You're all caught up on your own mistakes. In the meantime, here are some practice puzzles. Next review: Aug 20, 2026.",
-    );
-  });
-
-  it('next_due_date null: the cold-start body renders and the clause is omitted entirely — no "Next review" text, no dangling artifact', () => {
-    trainProgressMock = {
-      data: { ...DEFAULT_TRAIN_PROGRESS, next_due_date: null },
-      isPending: false,
-      isError: false,
-    };
-    renderScreen({ session: { ...BASE_SESSION, is_warmup: true } });
-    const body = screen.getByTestId('train-warmup-banner-body').textContent ?? '';
-    expect(body).toBe(
-      "We're analyzing your games to find your blunders. In the meantime, here are some practice puzzles.",
-    );
-    expect(body).not.toContain('Next review');
-  });
-
-  // 206 UAT round 1: the two warm-up causes get DIFFERENT body copy, branched
-  // on next_due_date. The pair below is the mutation guard — collapsing the
-  // branch back to one shared string turns both assertions red at once.
-  it('the two warm-up causes render different body copy, and neither leaks the other’s claim', () => {
-    trainProgressMock = {
-      data: { ...DEFAULT_TRAIN_PROGRESS, next_due_date: null },
-      isPending: false,
-      isError: false,
-    };
-    renderScreen({ session: { ...BASE_SESSION, is_warmup: true } });
-    const coldStartBody = screen.getByTestId('train-warmup-banner-body').textContent ?? '';
-    cleanup();
-
-    trainProgressMock = {
-      data: { ...DEFAULT_TRAIN_PROGRESS, next_due_date: '2026-08-20' },
-      isPending: false,
-      isError: false,
-    };
-    renderScreen({ session: { ...BASE_SESSION, is_warmup: true } });
-    const caughtUpBody = screen.getByTestId('train-warmup-banner-body').textContent ?? '';
-
-    expect(coldStartBody).not.toBe(caughtUpBody);
-    // A caught-up user has nothing being analyzed — that claim must never appear.
-    expect(caughtUpBody).not.toContain('analyzing your games');
-    // A cold-start user is not "caught up" — they have never had material.
-    expect(coldStartBody).not.toContain('caught up');
-  });
-
-  it('resumed warm-up session (solved_count > 0, is_warmup true): the banner still renders alongside the Resume CTA', () => {
-    renderScreen({
-      session: {
-        ...BASE_SESSION,
-        puzzle_count: 8,
-        solved_count: 3,
-        is_warmup: true,
-        puzzles: [STUB_PUZZLE],
-      },
-    });
-    expect(screen.getByTestId('train-warmup-banner')).not.toBeNull();
-    expect(screen.getByTestId('btn-train-resume')).not.toBeNull();
-  });
-
-  it('loading, error, empty, and completed states render zero warm-up banners', () => {
-    renderScreen({ isLoading: true, session: null });
-    expect(screen.queryByTestId('train-warmup-banner')).toBeNull();
-    cleanup();
-
-    renderScreen({ isError: true, session: null });
-    expect(screen.queryByTestId('train-warmup-banner')).toBeNull();
-    cleanup();
-
-    renderScreen({ session: EMPTY_SESSION });
-    expect(screen.queryByTestId('train-warmup-banner')).toBeNull();
-    cleanup();
-
-    renderScreen({
-      session: { ...BASE_SESSION, puzzle_count: 6, solved_count: 6, is_warmup: true },
+      isGuest: true,
+      session: { ...BASE_SESSION, puzzle_count: 6, solved_count: 6 },
       sessionScore: 6,
     });
-    expect(screen.queryByTestId('train-warmup-banner')).toBeNull();
+    expect(screen.getByTestId('train-landing-signup-ask')).not.toBeNull();
+    expect(screen.getByTestId('btn-signup-free-train-landing')).not.toBeNull();
+  });
+
+  it('registered account: no sign-up sentence and no btn-signup- element, warm-up or not', () => {
+    renderScreen({ isGuest: false, session: { ...BASE_SESSION, is_warmup: true } });
+    expect(screen.queryByTestId('train-landing-signup-ask')).toBeNull();
+    expect(document.querySelectorAll('[data-testid^="btn-signup-"]')).toHaveLength(0);
+    cleanup();
+
+    renderScreen({ isGuest: false, session: { ...BASE_SESSION, is_warmup: false } });
+    expect(screen.queryByTestId('train-landing-signup-ask')).toBeNull();
+    expect(document.querySelectorAll('[data-testid^="btn-signup-"]')).toHaveLength(0);
+  });
+});
+
+describe('TrainStartScreen — landing reminder ask (no push subscription from a phone)', () => {
+  it('registered account without a phone subscription: the host bubble carries the reminder sentence', () => {
+    mockTrainSettingsData = { ...mockTrainSettingsData, has_mobile_subscription: false };
+    renderScreen({ isGuest: false, session: { ...BASE_SESSION, is_warmup: false } });
+    expect(screen.getByTestId('train-landing-reminder-ask').textContent).toBe(REMINDER_INSTALL_ASK);
+    expect(screen.queryByTestId('train-landing-signup-ask')).toBeNull();
+  });
+
+  it('registered account with a phone subscription: no reminder sentence', () => {
+    mockTrainSettingsData = { ...mockTrainSettingsData, has_mobile_subscription: true };
+    renderScreen({ isGuest: false, session: { ...BASE_SESSION, is_warmup: false } });
+    expect(screen.queryByTestId('train-landing-reminder-ask')).toBeNull();
+  });
+
+  it('guest without a phone subscription: the sign-up ask wins, no reminder sentence', () => {
+    mockTrainSettingsData = { ...mockTrainSettingsData, has_mobile_subscription: false };
+    renderScreen({ isGuest: true, session: { ...BASE_SESSION, is_warmup: true } });
+    expect(screen.getByTestId('train-landing-signup-ask')).not.toBeNull();
+    expect(screen.queryByTestId('train-landing-reminder-ask')).toBeNull();
   });
 });
 

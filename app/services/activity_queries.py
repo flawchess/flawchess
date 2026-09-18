@@ -83,6 +83,7 @@ class Payload(TypedDict):
     stick: list[list[Any]]
     conversion: dict[str, Any]
     conversion_compare: list[list[Any]]
+    guest_train: dict[str, Any]
     purged_excluded: dict[str, int]
 
 
@@ -659,6 +660,45 @@ async def fetch_conversion(conn: AsyncConnection, window_start: datetime.date) -
         "avg_days_converted": float(row[2] or 0),
         "avg_days_guest": float(row[3] or 0),
     }
+
+
+async def fetch_guest_train(conn: AsyncConnection, window_start: datetime.date) -> dict[str, Any]:
+    """Train sessions completed while a user was still a guest (D-10b, D-11, D-12).
+
+    This is a NEW query rather than a filter tweak on ``fetch_train`` -- that
+    function's `drill_sessions` scan carries no `users` join at all, so it has
+    no way to know whether a session's owner was a guest at the time.
+
+    D-11: a "guest Train session completed" is `drill_sessions.status =
+    'completed'` for a user in `_GUEST_COHORT` (guest, or a guest who has
+    since been promoted) created in the window, dated STRICTLY BEFORE that
+    user's `promoted_at` (or forever, via the `'infinity'` coalesce, for a
+    user never promoted). A promoted user's later sessions -- dated on or
+    after `promoted_at` -- count as registered activity, not guest activity,
+    and are excluded here.
+
+    D-12: a user with `games_purged_at` set is excluded entirely, the same
+    predicate the funnel cards use. This card's exclusion count is already
+    footnoted by ``fetch_purged_excluded``'s ``guest`` key -- no separate
+    counter is kept.
+    """
+    row = (
+        await _rows(
+            conn,
+            f"""
+            SELECT count(*) AS sessions_completed, count(DISTINCT d.user_id) AS users
+            FROM drill_sessions d
+            JOIN users u ON u.id = d.user_id
+            WHERE u.created_at >= CAST(:first AS date)
+              AND {_GUEST_COHORT}
+              AND u.games_purged_at IS NULL
+              AND d.status = 'completed'
+              AND d.session_date < COALESCE(u.promoted_at::date, 'infinity'::date)
+            """,
+            first=window_start,
+        )
+    )[0]
+    return {"sessions_completed": int(row[0]), "users": int(row[1])}
 
 
 async def fetch_conversion_compare(

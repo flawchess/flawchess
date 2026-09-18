@@ -27,7 +27,8 @@ const pctText=(n,d)=>d?Math.round(100*n/d)+"%":DASH;
    holds no baked-in numbers, so a reload always reflects the live database.
    ActivityPage.tsx owns the fetching and calls update(). */
 let D=null, DAYS=[], NDAYS=0, ACT=[], SIGNUPS=[], BOT=[], TRAIN=[], TRAINFUN={}, SOLVES=[],
-    IMPORTS=[], PERSONA=[], ELO=[], FUNNEL=[], TTI=[], STICK=[], CONV=null, CONVCMP=[], PURGED=null;
+    IMPORTS=[], PERSONA=[], ELO=[], FUNNEL=[], TTI=[], STICK=[], CONV=null, CONVCMP=[], PURGED=null,
+    GUESTTRAIN=null;
 
 function apply(payload){
   D=payload;
@@ -40,6 +41,7 @@ function apply(payload){
   TRAINFUN=payload.train_funnel;
   FUNNEL=payload.funnel; TTI=payload.tti; STICK=payload.stick;
   CONV=payload.conversion; CONVCMP=payload.conversion_compare; PURGED=payload.purged_excluded;
+  GUESTTRAIN=payload.guest_train;
 }
 const keep=a=>AUD==="all"?true:AUD==="reg"?a.g===0:a.g===1;
 
@@ -307,10 +309,19 @@ function renderBotCard(){
 
 function renderTrainCard(){
   const c=C();
+  // D-10b/D-11/D-12: the guest-cohort reading is independent of whether the
+  // registered-only chart/table above has any rows, so it is written on both
+  // branches below rather than only on the populated path.
+  const g=GUESTTRAIN;
+  const guestNote=g
+    ? `${num(g.sessions_completed)} Train sessions completed by ${num(g.users)} guests while `+
+      `still guests. Purged guests excluded: ${PURGED?num(PURGED.guest):DASH}.`
+    : DASH;
   if(!TRAIN.length){
     emptyNote("#c-train","No Train sessions in the selected range.");
     emptyNote("#t-train","No Train sessions in the selected range.");
     $("#tr-legend").innerHTML="";
+    $("#tr-guest-note").textContent=guestNote;
     return;
   }
   const tr=expand(TRAIN,6), [,,tc,te,to,tp]=tr.cols;
@@ -321,6 +332,7 @@ function renderTrainCard(){
     extra:i=>[{k:"Puzzles served",v:tp[i]}]});
   table("#t-train",["Date","Sessions","Users","Completed","Expired","Open","Puzzles served"],
     TRAIN.map(r=>[long(r[0]),r[1],r[2],r[3],r[4],r[5],r[6]]).reverse());
+  $("#tr-guest-note").textContent=guestNote;
 }
 
 // SEED-166 (D-19): first-session 0-solve share and second-session return

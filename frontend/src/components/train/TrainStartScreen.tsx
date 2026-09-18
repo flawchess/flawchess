@@ -11,13 +11,12 @@
 
 import type { ReactElement } from 'react';
 import { format, parseISO } from 'date-fns';
-import { Dumbbell } from 'lucide-react';
 import { Link } from 'react-router';
 import { Button } from '@/components/ui/button';
-import { Card } from '@/components/ui/card';
 import { EmptyState } from '@/components/ui/empty-state';
 import { LoadError } from '@/components/ui/load-error';
 import { TRAIN_CTA_BUTTON_CLASS } from '@/components/train/buttonStyles';
+import { SignupAskActions } from '@/components/train/SignupAskActions';
 import { TrainBotBubble } from '@/components/train/TrainBotBubble';
 import { TrainReminderResurfaceBanner } from '@/components/train/TrainReminderResurfaceBanner';
 import { TrainScheduleSettings } from '@/components/train/TrainScheduleSettings';
@@ -25,7 +24,7 @@ import { TrainStatsCard } from '@/components/train/TrainStatsCard';
 import { TrainStreakCard } from '@/components/train/TrainStreakCard';
 import { useTrainProgress } from '@/hooks/useTrainProgress';
 import { useTrainSettings } from '@/hooks/useTrainSettings';
-import { landingHost } from '@/lib/trainBotCopy';
+import { GUEST_SIGNUP_ASK_SCORE, REMINDER_INSTALL_ASK, landingHost } from '@/lib/trainBotCopy';
 import { TRAIN_POINTS_PER_PUZZLE } from '@/lib/trainScore';
 import type { TrainSessionResponse } from '@/types/train';
 
@@ -50,6 +49,11 @@ export interface TrainStartScreenProps {
    * load — see `TrainScheduleSettings`'s `onSaved` prop docstring.
    */
   onSettingsSaved: () => void;
+  /** D-03/D-13 (Phase 224): from `useUserProfile().data`, never
+   * `useAuth().user` (FLAWCHESS-64). Puts the sign-up ask (sentence +
+   * "What changes?"/"Sign up free" buttons) into the host bubble and hides
+   * the reminder/QR section on `TrainScheduleSettings`. */
+  isGuest: boolean;
 }
 
 /**
@@ -78,27 +82,6 @@ const LANDING_CONTAINER_CLASS =
  */
 const LANDING_CARD_GRID_CLASS = 'grid w-full grid-cols-1 gap-4 sm:grid-cols-2';
 
-/**
- * The warm-up banner's two body strings (206 UAT round 1, refining D-09).
- *
- * `is_warmup` is a single server flag covering two causes (D-06): the
- * cold-start user whose games have not yielded analyzed blunders yet, and the
- * caught-up user who has reviewed everything and is waiting on the next due
- * date. D-09's original single string ("None of your own mistakes are due
- * today — these are practice puzzles.") was true for both but explained
- * neither.
- *
- * `next_due_date` discriminates them exactly: it is null only in the
- * cold-start case, and it is already read here for the "Next review" clause.
- * Keep these two strings mutually exclusive and each one true ONLY of its own
- * case — telling a caught-up user their games are being analyzed is false, and
- * that falsehood is the reason D-09 reached for one string in the first place.
- */
-const WARMUP_BODY_COLD_START =
-  "We're analyzing your games to find your blunders. In the meantime, here are some practice puzzles.";
-const WARMUP_BODY_CAUGHT_UP =
-  "You're all caught up on your own mistakes. In the meantime, here are some practice puzzles.";
-
 type LandingState =
   | { kind: 'loading' }
   | { kind: 'error' }
@@ -107,6 +90,11 @@ type LandingState =
   | { kind: 'resume'; solved: number; total: number; isWarmup: boolean }
   | { kind: 'warmup'; puzzleCount: number }
   | { kind: 'fresh'; puzzleCount: number };
+// 224 UAT round 2: 'warmup' and 'fresh' (and `resume.isWarmup`) now render
+// identically — the "Warm-up session" info card that branched on them is gone
+// (see `TrainHeader`). The discriminant is kept because the server flag is
+// still the documented contract and the warm-up copy lives on in the intro
+// stepper and the score screen.
 
 /**
  * Single explicit resolution of the six landing states. Order matters:
@@ -190,16 +178,46 @@ function resolveLandingState(
  * outright: the bubble already says what the page is, and the nav tab
  * carries the "Train" label. 2026-09-14: the fixed Tank line became the
  * per-persona daily rotation.
+ *
+ * 224 UAT round 2: for a guest the bubble also carries the sign-up ask, the
+ * SAME sentence and action pair the guest score screen ends on
+ * (`GUEST_SIGNUP_ASK_SCORE` + `SignupAskActions`), so the one prompt a guest
+ * sees on landing and on finishing are literally the same words. This
+ * replaced the "Warm-up session" info card, which told guests their games
+ * were being analyzed although nothing is analyzed for a guest.
+ *
+ * 2026-09-18: a registered account with no push subscription from a phone
+ * (`has_mobile_subscription === false`, account-wide) gets the reminder ask
+ * instead. Desktop subscriptions deliberately don't count: the ask is about
+ * the phone app. Strict `=== false`: while settings are still loading the
+ * sentence stays hidden rather than flashing in and out. Guests never see it
+ * (they get the sign-up ask, and D-13 gives a guest no reminder slot).
  */
-function TrainHeader({ session }: { session: TrainSessionResponse | null }): ReactElement {
+function TrainHeader({
+  session,
+  isGuest,
+}: {
+  session: TrainSessionResponse | null;
+  isGuest: boolean;
+}): ReactElement {
   const { data: settings } = useTrainSettings();
   const host = landingHost({
     sessionDate: session?.session_date ?? null,
     introSeenAt: settings?.intro_seen_at,
   });
+  const showReminderAsk = !isGuest && settings?.has_mobile_subscription === false;
   return (
-    <TrainBotBubble persona={host.persona} state="prompt" avatarSize="large">
+    <TrainBotBubble
+      persona={host.persona}
+      state="prompt"
+      avatarSize="large"
+      actions={isGuest ? <SignupAskActions source="train-landing" /> : undefined}
+    >
       <p data-testid="train-tagline">{host.copy}</p>
+      {isGuest && <p data-testid="train-landing-signup-ask">{GUEST_SIGNUP_ASK_SCORE}</p>}
+      {showReminderAsk && (
+        <p data-testid="train-landing-reminder-ask">{REMINDER_INSTALL_ASK}</p>
+      )}
     </TrainBotBubble>
   );
 }
@@ -273,6 +291,7 @@ export function TrainStartScreen({
   sessionScore,
   onEnterLoop,
   onSettingsSaved,
+  isGuest,
 }: TrainStartScreenProps): ReactElement {
   const state = resolveLandingState(session, isLoading, isError, sessionScore);
   const progress = useTrainProgress();
@@ -308,12 +327,16 @@ export function TrainStartScreen({
     return (
       <div className={LANDING_CONTAINER_CLASS} data-testid="train-start-screen">
         <TrainReminderResurfaceBanner />
-        <TrainHeader session={session} />
+        <TrainHeader session={session} isGuest={isGuest} />
         <div className={LANDING_CARD_GRID_CLASS}>
           <TrainStreakCard />
           <TrainStatsCard todayScore={{ total: state.score, max: state.totalPoints }} />
         </div>
-        <TrainScheduleSettings onSaved={onSettingsSaved} nextSessionDate={state.nextSessionDate} />
+        <TrainScheduleSettings
+          onSaved={onSettingsSaved}
+          nextSessionDate={state.nextSessionDate}
+          isGuest={isGuest}
+        />
       </div>
     );
   }
@@ -327,44 +350,13 @@ export function TrainStartScreen({
       ? `Resume session — ${state.solved} of ${state.total} done`
       : `Start session — ${state.puzzleCount} ${state.puzzleCount === 1 ? 'puzzle' : 'puzzles'}`;
 
-  // D-06/D-08: is_warmup and next_due_date are independent signals — is_warmup
-  // alone decides whether the banner renders, next_due_date alone decides
-  // whether the "Next review" clause appears inside it. Neither blocks nor
-  // defaults the other (UI-SPEC row 5).
-  const isWarmupState = state.kind === 'warmup' || (state.kind === 'resume' && state.isWarmup);
-  const nextDueDate = progress.isPending || progress.isError ? null : (progress.data?.next_due_date ?? null);
-  // 206 UAT round 1: D-09 shipped ONE body string covering both warm-up causes.
-  // It was true in both but explained neither, so the cold-start user — the
-  // case this phase exists for — was told what was absent rather than what was
-  // happening. The body now branches on the SAME `nextDueDate` signal the
-  // "Next review" clause already reads, so no new client-side state is
-  // consulted (D-06's actual constraint was against reading `pool_state`, not
-  // against varying copy). The split is load-bearing for honesty: a caught-up
-  // user has nothing being analyzed, so the cold-start sentence would be a
-  // false statement for them.
-  const warmupBody = nextDueDate === null ? WARMUP_BODY_COLD_START : WARMUP_BODY_CAUGHT_UP;
-
   // 193 UAT round 2: the CTA moved ABOVE the cards. With the stats boxed into
   // card chrome, leaving Start/Resume underneath them pushed the one action on
   // the page below a screenful of read-only numbers.
   return (
     <div className={LANDING_CONTAINER_CLASS} data-testid="train-start-screen">
       <TrainReminderResurfaceBanner />
-      <TrainHeader session={session} />
-      {isWarmupState && (
-        <Card className="w-full p-4" data-testid="train-warmup-banner">
-          <div className="flex items-center gap-2">
-            <Dumbbell className="size-4 shrink-0" aria-hidden="true" />
-            <p className="text-sm font-semibold" data-testid="train-warmup-banner-title">
-              Warm-up session
-            </p>
-          </div>
-          <p className="mt-1 text-sm text-muted-foreground" data-testid="train-warmup-banner-body">
-            {warmupBody}
-            {nextDueDate !== null && ` Next review: ${format(parseISO(nextDueDate), 'MMM d, yyyy')}.`}
-          </p>
-        </Card>
-      )}
+      <TrainHeader session={session} isGuest={isGuest} />
       <Button
         variant="default"
         className={TRAIN_CTA_BUTTON_CLASS}
@@ -377,7 +369,7 @@ export function TrainStartScreen({
         <TrainStreakCard />
         <TrainStatsCard />
       </div>
-      <TrainScheduleSettings onSaved={onSettingsSaved} />
+      <TrainScheduleSettings onSaved={onSettingsSaved} isGuest={isGuest} />
     </div>
   );
 }

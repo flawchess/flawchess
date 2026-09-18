@@ -1,114 +1,39 @@
-import { useState } from 'react';
 import { useNavigate } from 'react-router';
-import { Check, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { Checkbox } from '@/components/ui/checkbox';
-import { Label } from '@/components/ui/label';
+import { TRAIN_BUTTON_CLASS } from '@/components/train/buttonStyles';
+import { cn } from '@/lib/utils';
 import { useAuth } from '@/hooks/useAuth';
-import { setWelcomeDismissed } from '@/lib/welcomeDismissal';
-import { WDL_WIN, WDL_LOSS } from '@/lib/theme';
+import { useUserProfile } from '@/hooks/useUserProfile';
 
-// ─── Value-split table rows ────────────────────────────────────────────────────
+// ─── Four-delta copy (Phase 224 S-5) ──────────────────────────────────────────
 
-interface ValueRow {
-  feature: string;
-  guestHas: boolean;
-  signedUpHas: boolean;
-  highlight?: boolean;
-}
+const DELTA_1 =
+  'Every game you import is analyzed by Stockfish automatically, with no per-game Analyze click.';
+const DELTA_2 = 'Train switches from warm-up puzzles to the mistakes in your own games.';
+const DELTA_3 = 'Your account, your games and your streak work on any device you log in from.';
+const DELTA_4 = 'Nothing is deleted after 30 days of inactivity.';
 
-const VALUE_ROWS: ValueRow[] = [
-  {
-    feature: 'Opening explorer and statistics',
-    guestHas: true,
-    signedUpHas: true,
-  },
-  {
-    feature: 'Endgame analytics and time management',
-    guestHas: true,
-    signedUpHas: true,
-  },
-  {
-    feature: 'Import full game analyses (Lichess only)',
-    guestHas: true,
-    signedUpHas: true,
-  },
-  {
-    feature: 'FlawChess deep Stockfish analysis and move statistics',
-    guestHas: true,
-    signedUpHas: true,
-  },
-  {
-    feature: 'Missed/allowed tactic tagging',
-    guestHas: true,
-    signedUpHas: true,
-  },
-  {
-    feature: 'FlawChess engine and bots',
-    guestHas: true,
-    signedUpHas: true,
-  },
-  {
-    feature: 'Automatic analysis of imported games (no per-game Analyze clicks)',
-    guestHas: false,
-    signedUpHas: true,
-    highlight: true,
-  },
-  {
-    feature: 'Train with personalized puzzles from your mistakes',
-    guestHas: false,
-    signedUpHas: true,
-  },
-  {
-    feature: 'Cross-device access',
-    guestHas: false,
-    signedUpHas: true,
-  },
-  {
-    feature: 'Data durability (no inactivity cleanup)',
-    guestHas: false,
-    signedUpHas: true,
-  },
-];
-
-// ─── Sub-components ────────────────────────────────────────────────────────────
-
-function ValueCell({ has, label }: { has: boolean; label: string }) {
-  return (
-    <td className="px-3 py-2 text-center">
-      {has ? (
-        <Check
-          className="inline-block h-4 w-4"
-          style={{ color: WDL_WIN }}
-          aria-label="included"
-          aria-hidden={false}
-        />
-      ) : (
-        <X
-          className="inline-block h-4 w-4 text-muted-foreground"
-          style={{ color: WDL_LOSS }}
-          aria-label="not included"
-          aria-hidden={false}
-        />
-      )}
-      <span className="sr-only">{label}: {has ? 'included' : 'not included'}</span>
-    </td>
-  );
-}
+const DELTAS = [DELTA_1, DELTA_2, DELTA_3, DELTA_4];
 
 // ─── WelcomePage ──────────────────────────────────────────────────────────────
 
+// 224 UAT round 1: on phones the two buttons share one row (Back left, Sign
+// up free right) at the 48px Train touch height; desktop keeps the compact
+// auto-width buttons.
+const WELCOME_BUTTON_CLASS = cn(TRAIN_BUTTON_CLASS, 'flex-1 sm:flex-none');
+
+/**
+ * Reachable only from a "What changes?" button or a typed URL (Phase 224 S-1, D-05) —
+ * never a forced redirect. DISCRETION (this phase): a registered visitor
+ * renders the same four deltas with no sign-up button and no redirect; a
+ * dead-end redirect on a page reachable only by a typed URL is worse than an
+ * honest explanation.
+ */
 export function WelcomePage() {
   const navigate = useNavigate();
   const { logoutForPromotion } = useAuth();
-  const [dontShowAgain, setDontShowAgain] = useState(false);
-
-  const handleProceed = () => {
-    if (dontShowAgain) {
-      setWelcomeDismissed(true);
-    }
-    navigate('/library/import');
-  };
+  const { data: profile } = useUserProfile();
+  const isGuest = profile?.is_guest === true;
 
   const handleSignUp = () => {
     logoutForPromotion();
@@ -120,82 +45,37 @@ export function WelcomePage() {
       data-testid="welcome-page"
       className="mx-auto w-full max-w-2xl px-4 py-6 md:px-6 space-y-8"
     >
-      {/* Intro */}
-      <div className="space-y-3">
-        <h1 className="text-2xl font-bold">Welcome to FlawChess</h1>
-        <p className="text-sm text-muted-foreground leading-relaxed">
-          All of FlawChess is free, for guests and signed-up users alike. Most of it works without an account at all.
-          That includes FlawChess's own deep Stockfish analysis, which detects blunders,
-          mistakes, inaccuracies, and missed/allowed tactics in your games.
-        </p>
-        <p className="text-sm text-muted-foreground leading-relaxed">
-          As a guest you trigger game analysis manually, one
-          game at a time. With an account, your imported games are analyzed automatically in
-          the background. Inactive guest data may eventually be cleared.
-          Here is the full picture before you dive in.
-        </p>
-      </div>
+      <h1 className="text-2xl font-bold">What changes when you sign up</h1>
 
-      {/* Value-split table */}
-      <div className="overflow-x-auto thin-scrollbar rounded-md border border-border">
-        <table className="w-full text-sm">
-          <thead>
-            <tr className="border-b border-border bg-muted/30">
-              <th className="px-3 py-2 text-left font-medium">Feature</th>
-              <th className="px-3 py-2 text-center font-medium whitespace-nowrap">Guest</th>
-              <th className="px-3 py-2 text-center font-medium whitespace-nowrap">Signed up</th>
-            </tr>
-          </thead>
-          <tbody>
-            {VALUE_ROWS.map((row) => (
-              <tr
-                key={row.feature}
-                className={
-                  row.highlight
-                    ? 'border-b border-border bg-muted/20 font-medium'
-                    : 'border-b border-border last:border-0'
-                }
-              >
-                <td className="px-3 py-2">{row.feature}</td>
-                <ValueCell has={row.guestHas} label="Guest" />
-                <ValueCell has={row.signedUpHas} label="Signed up" />
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
+      <ul data-testid="welcome-delta-list" className="space-y-3">
+        {DELTAS.map((delta, index) => (
+          <li key={delta} data-testid={`welcome-delta-${index + 1}`} className="text-sm">
+            {delta}
+          </li>
+        ))}
+      </ul>
 
-      {/* Dismissal checkbox */}
-      <div className="flex items-center gap-2">
-        <Checkbox
-          id="welcome-dont-show"
-          data-testid="welcome-checkbox-dont-show"
-          checked={dontShowAgain}
-          onCheckedChange={(checked) => setDontShowAgain(checked === true)}
-        />
-        <Label htmlFor="welcome-dont-show" className="text-sm cursor-pointer">
-          Don't show this again
-        </Label>
-      </div>
-
-      {/* CTAs */}
-      <div className="flex flex-col sm:flex-row gap-3">
-        <Button
-          variant="default"
-          data-testid="welcome-btn-proceed"
-          onClick={handleProceed}
-        >
-          Continue to import
-        </Button>
+      <div className="flex flex-row gap-3" data-testid="welcome-actions">
         <Button
           variant="brand-outline"
-          data-testid="welcome-btn-signup"
-          data-umami-event="signup-cta"
-          data-umami-event-source="welcome"
-          onClick={handleSignUp}
+          className={WELCOME_BUTTON_CLASS}
+          data-testid="welcome-btn-back"
+          onClick={() => navigate(-1)}
         >
-          Sign up free
+          Back
         </Button>
+        {isGuest && (
+          <Button
+            variant="default"
+            className={WELCOME_BUTTON_CLASS}
+            data-testid="welcome-btn-signup"
+            data-umami-event="signup-cta"
+            data-umami-event-source="welcome"
+            onClick={handleSignUp}
+          >
+            Sign up free
+          </Button>
+        )}
       </div>
     </main>
   );

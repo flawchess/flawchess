@@ -160,14 +160,14 @@ function stubBrowserGlobals(options?: {
   return { subscriptionUnsubscribe };
 }
 
-function renderWithClient(onSaved?: () => void): QueryClient {
+function renderWithClient(onSaved?: () => void, isGuest = false): QueryClient {
   const client = new QueryClient({
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
   });
   function Wrapper({ children }: { children: ReactNode }) {
     return <QueryClientProvider client={client}>{children}</QueryClientProvider>;
   }
-  render(<TrainScheduleSettings onSaved={onSaved} />, { wrapper: Wrapper });
+  render(<TrainScheduleSettings onSaved={onSaved} isGuest={isGuest} />, { wrapper: Wrapper });
   return client;
 }
 
@@ -809,5 +809,62 @@ describe('TrainScheduleSettings', () => {
         await pendingSubscribe;
       });
     });
+  });
+});
+
+describe('TrainScheduleSettings — D-13 guest visibility (Phase 224)', () => {
+  it('isGuest=false with a resolved, available push capability: the reminder controls and the phone section render exactly as today', async () => {
+    vi.mocked(trainApi.getSettings).mockResolvedValue(BASE_SETTINGS);
+    mockVapidConfigured();
+    stubBrowserGlobals();
+
+    renderWithClient(undefined, false);
+
+    await waitFor(() => {
+      expect(screen.getByTestId('filter-reminder-enabled')).not.toBeNull();
+    });
+    expect(screen.getByTestId('qr-handoff-settings')).not.toBeNull();
+    expect(
+      screen.getByText('Reminders work better with FlawChess on your phone'),
+    ).not.toBeNull();
+    // The weekday cadence controls are untouched by D-13.
+    expect(screen.getByTestId('filter-weekday-mo')).not.toBeNull();
+  });
+
+  it('isGuest=true with the identical capability mocks: the reminder switch, hour picker, phone-section heading and qr-handoff-settings are all absent, while the weekday controls still render', async () => {
+    vi.mocked(trainApi.getSettings).mockResolvedValue(BASE_SETTINGS);
+    mockVapidConfigured();
+    stubBrowserGlobals();
+
+    renderWithClient(undefined, true);
+
+    await waitFor(() => {
+      expect(screen.getByTestId('filter-weekday-mo').hasAttribute('disabled')).toBe(false);
+    });
+    expect(screen.queryByTestId('filter-reminder-enabled')).toBeNull();
+    expect(screen.queryByTestId('filter-reminder-hour')).toBeNull();
+    expect(screen.queryByText('Reminders work better with FlawChess on your phone')).toBeNull();
+    expect(screen.queryByTestId('qr-handoff-settings')).toBeNull();
+    // D-13 removes only the reminder block and phone/QR section — the
+    // weekday cadence and puzzles-per-session controls stay for a guest.
+    expect(screen.getByTestId('filter-weekday-mo')).not.toBeNull();
+    expect(screen.getByTestId('filter-puzzles-12')).not.toBeNull();
+  });
+
+  it('isGuest=true on a mobile install-eligible device: the Install FlawChess button is also absent (showPhoneSection gates both branches)', async () => {
+    vi.mocked(trainApi.getSettings).mockResolvedValue(BASE_SETTINGS);
+    vi.mocked(useInstallPrompt).mockReturnValue({
+      ...defaultInstallPrompt(),
+      isMobile: true,
+      canInstall: true,
+    });
+
+    renderWithClient(undefined, true);
+
+    await waitFor(() => {
+      expect(screen.getByTestId('filter-weekday-mo').hasAttribute('disabled')).toBe(false);
+    });
+    expect(screen.queryByTestId('btn-install-mobile-settings')).toBeNull();
+    expect(screen.queryByText('Reminders work better with FlawChess on your phone')).toBeNull();
   });
 });
