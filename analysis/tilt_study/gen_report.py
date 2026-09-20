@@ -174,6 +174,32 @@ def anat_val(name: str, cat: str, col: str = "all_resid") -> float:
     return pick(load(name), col, **{"previous loss": cat})
 
 
+def next_abandoned_table() -> str:
+    d = load("loss_anatomy_next_abandoned").filter(pl.col("resid").is_not_null())
+    d = ci(
+        d,
+        "resid_next_not_abandoned",
+        "resid_next_not_abandoned_lo",
+        "resid_next_not_abandoned_hi",
+        "kept",
+    )
+    return table(
+        d,
+        [
+            ("previous loss", "previous loss"),
+            ("games", "games"),
+            ("next game abandoned %", "next game also abandoned %"),
+            ("resid", "residual, all"),
+            ("resid_next_abandoned", "residual, next game abandoned"),
+            ("kept", "residual, next game not abandoned"),
+        ],
+    )
+
+
+def nab(cat: str, col: str) -> float:
+    return pick(load("loss_anatomy_next_abandoned"), col, **{"previous loss": cat})
+
+
 def pivot_curve(df: pl.DataFrame, key: str, col: str) -> str:
     p = df.pivot(on="x", index=key, values=col)
     p = p.rename({c: xlab(int(c)) for c in p.columns if c != key})
@@ -373,14 +399,21 @@ streak is supposed to cause, not as a claim to have isolated it.
    "stop after two losses" rule would produce, which needs the outcomes of games that were never played (§4).
    At every streak length {cv(-1):.0f}–{cv(-6):.0f}% of players play on within the hour; the share *rises* with
    the streak because long same-session streaks happen deep in long sessions (§4a).
-5. **No detectable average shortfall after a blown endgame among continuers; short losses and disconnects are
-   followed by the worst games.** Next-game residual after a loss that entered the endgame at ≥ +2:
+5. **No detectable average shortfall after a blown endgame among continuers; short losses are followed by
+   the worst games, and the disconnect cell is the connection, not the player.** Next-game residual after a
+   loss that entered the endgame at ≥ +2:
    {anat_val("loss_by_endgame", "blown: entered the endgame winning (>= +2)"):+.1f} (two thirds are flags; blown
    by resignation {anat_val("loss_blown_by_termination", "resigned"):+.1f} with a wide interval); after a loss in
    ≤ 20 plies: {anat_val("loss_by_length", "short (<=20 plies)"):+.1f}; after an abandoned game:
-   {anat_val("loss_by_termination", "abandoned (disconnect)"):+.1f}. Games thrown away before the endgame are not
-   separable from other short losses in this cut, and a disconnect or a ten-move loss may mark a distracted
-   player or a bad connection rather than an emotional state (§5).
+   {anat_val("loss_by_termination", "abandoned (disconnect)"):+.1f}, but
+   {nab("abandoned (disconnect)", "next game abandoned %"):.1f}% of those next games are themselves abandoned
+   (base rate {nab("any scored game (base rate)", "next game abandoned %"):.1f}%) and score
+   {nab("abandoned (disconnect)", "resid_next_abandoned"):+.0f}; among next games that were played out the
+   residual is {nab("abandoned (disconnect)", "resid_next_not_abandoned"):+.1f}, in line with any other loss.
+   The short-loss cell does not move when those games are dropped
+   ({nab("short (<=20 plies)", "resid_next_not_abandoned"):+.1f}). Games thrown away before the endgame are not
+   separable from other short losses in this cut, and a ten-move loss may mark a distracted player rather
+   than an emotional state (§5).
 6. **After a loss, behaviour changes more than the score.** Players move 2–4% faster, end the session more
    often (bullet: {q("bullet", "quit_after_loss"):.1f}% vs {q("bullet", "quit_after_win"):.1f}%), and, among those
    who continue within the hour, start the next game within a minute more often (rapid:
@@ -690,7 +723,7 @@ cells sit near zero.)
 Next-game residual after a loss (previous game lost, next game within the hour against a fresh opponent,
 equal footing, hygiene), by how the loss ended, how long it lasted, and the Stockfish evaluation when it
 entered the endgame (Lichess phase rule; ≥ +2.0 for the player = "blown", an evaluation lead, not
-necessarily two pawns of material, and not necessarily still winning when the game ended; no endgame = the
+necessarily a material one, and not necessarily still winning when the game ended; no endgame = the
 game ended in the opening or middlegame). "all" pools the four time controls. All cells describe
 continuers; a disconnect or a ten-move loss may indicate a distracted player or a technical problem as
 readily as an emotional state.
@@ -725,12 +758,30 @@ Single losses only (streak length exactly 1), to show the cut is not streak leng
 {anat("loss_by_endgame_single")}
 
 Within player: the same three cuts with each player's own mean residual (over all their scored games in
-the time control) subtracted, so a cell cannot be a between-player composition effect (players with a bad
-connection, or players who resign early, scoring below their rating in every game). Point estimates only,
-no bootstrap. The ordering survives: disconnects and short losses stay the worst, long losses stay at or
-above the player's own level; checkmate and flag move to slightly positive, resignation stays negative:
+the time control) subtracted, so a cell cannot be a *stable* between-player composition effect (players
+who resign early, or whose connection is always bad, scoring below their rating in every game). Point
+estimates only, no bootstrap. The ordering survives: disconnects and short losses stay the worst, long
+losses stay at or above the player's own level; checkmate and flag move to slightly positive, resignation
+stays negative:
 
 {table(load("loss_anatomy_within_player"), [("cut", "cut"), ("previous loss", "previous loss"), ("games", "games"), ("resid", "residual, pooled"), ("resid_within_player", "residual, within player")])}
+
+Demeaning does not cover an *episode*: a connection that is bad for one evening produces a disconnect
+loss followed by another disconnect loss, and the second one lands in the residual exactly as tilt would.
+The direct check is how the next game ended. After a disconnect,
+{nab("abandoned (disconnect)", "next game abandoned %"):.1f}% of next games are themselves abandoned, four
+times the base rate of {nab("any scored game (base rate)", "next game abandoned %"):.1f}%, and those score
+{nab("abandoned (disconnect)", "resid_next_abandoned"):+.0f} (the player dropped again; after any other loss
+an abandoned next game scores about +7, the opponent dropped). Restricted to next games that were played
+out, the disconnect cell is {nab("abandoned (disconnect)", "resid_next_not_abandoned"):+.1f}
+[{nab("abandoned (disconnect)", "resid_next_not_abandoned_lo"):+.1f},
+{nab("abandoned (disconnect)", "resid_next_not_abandoned_hi"):+.1f}], no longer distinguishable from the
+other terminations. The short-loss cell is unchanged by the same restriction
+({nab("short (<=20 plies)", "resid_next_not_abandoned"):+.1f}); whether a short loss marks a distraction
+that carries into the next game cannot be tested the same way, since the next game's length is part of
+its result.
+
+{next_abandoned_table()}
 
 Mirror: the game after a **win**, by endgame state and length:
 

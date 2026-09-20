@@ -440,29 +440,38 @@
   <div class="card-head"><div class="num">5</div>
   <h2>Which loss hurts the next game? Not the one you think.</h2>
   <a class="anchor" href="#which-loss" aria-label="Link to this section">#</a></div>
-  <p class="lede">Folklore says the blown win hurts most. Split losses by what they looked like and the data cannot
-  find it. A loss in which you had entered the endgame <b>two pawns up</b> (a Stockfish evaluation of +2 or better, and
+  <p class="lede">This section sets the streak aside. It takes every loss, whatever came before it, and asks what the
+  next game looks like depending on how that one loss went. Folklore says the blown win hurts most. Split losses by
+  what they looked like and the data cannot find it. A loss in which you had entered the endgame <b>winning</b> (a Stockfish evaluation of +2 or better, and
   still lost) is followed by a game at or above normal (<b>+0.4</b>). Two thirds of those are
   flags in a won endgame; the blown win by resignation, the kind that really stings, is rarer, too rare to pin down
   exactly, but nothing large is hiding there. A long fight of more than 30 moves: no effect at all (+0.1). What is followed by a
   worse game is the quick collapse. A loss in under eleven moves is followed by <b>&minus;2.1</b>, a game that never
-  reached an endgame by &minus;1.2, and a loss by disconnection by <b>&minus;3.7</b>. Resigning (&minus;0.6) is worse
+  reached an endgame by &minus;1.2, and a loss by disconnection by <b>&minus;3.7</b> (though that last number is
+  mostly the connection, not the player; see below). Resigning (&minus;0.6) is worse
   than getting checkmated (&minus;0.2) or flagged (&minus;0.3).</p>
   <p class="lede">A plausible reading is not that quick losses <i>cause</i> tilt but that they reveal something: a
-  ten-move loss is often a distracted, pre-moving, phone-in-hand game, or a bad connection, and whatever it was is
-  still there in the next one. One caveat: a game thrown away before the endgame, a hung queen at move 20, lands in
+  ten-move loss is often a distracted, pre-moving, phone-in-hand game, and whatever it was is still there in the
+  next one. The disconnect cell shows this directly. After a loss by disconnection, one next game in twelve is
+  itself abandoned, four times the usual rate, and those games score 30 points per 100 below normal, four in five
+  lost: the connection was still flaky. Keep only next games that were played to a result and the cell drops to <b>&minus;1.1</b>, no
+  worse than any other loss. The short losses survive the same cut (&minus;2.1 either way), and they also hold when
+  each player is measured against their own usual performance rather than their rating (&minus;1.6), so the cell is
+  not a few chronic under-performers.
+  Whether a distracted evening carries into the next game, as a bad connection does, the data cannot separate from
+  tilt. One caveat: a game thrown away before the endgame, a hung queen at move 20, lands in
   the "never reached an endgame" cell with every other short loss, so this cut cannot tell that kind of blown win from
   a collapse. What it can say is that among players who kept playing, the game you fought hard and lost is not
-  followed by a worse one. The pattern holds when each player is compared only with their own games (disconnect
-  &minus;3.2, under eleven moves &minus;1.6, over 30 moves +0.3), so it is not simply that players with bad
-  connections score below their rating in every game.</p>
+  followed by a worse one. The wins mirror this: long wins are followed by better games than short ones (+0.9 after
+  more than 30 moves, +0.2 under eleven), and a comeback win from an endgame entered <i>losing</i> (Stockfish &minus;2 or
+  worse) by <b>+1.0</b>; both are in the <a href="https://github.com/flawchess/flawchess/blob/main/stories/tilt/tilt-report.md#5-the-game-after-a-loss-by-what-the-loss-looked-like" data-umami-event="outbound-report-tilt">technical report, section 5</a>.</p>
   <p class="ctitle">Points above or below normal in the next game, by what the loss looked like, per 100 games</p>
   <figure aria-label="Bar chart: points above or below normal in the game after a loss, split by how the loss ended, how long it lasted, and the position when it entered the endgame">
     <div id="c5"></div>
   </figure>
-  <div class="callout"><span class="tk">Mirror image:</span> long wins are followed by better games than short ones
-  (+0.9 after more than 30 moves, +0.2 under eleven), and a comeback win from an endgame you entered two pawns
-  <i>down</i> is followed by <b>+1.0</b> points.</div>
+  <div class="callout"><span class="tk">Takeaway:</span> the loss you fought hard for, even the blown won endgame, is
+  not followed by a worse game. The one that is, the ten-move collapse, mostly says you were not really playing
+  in the first place, and that carries over. A disconnect predicts another disconnect, not tilt.</div>
   <details class="tbl"><summary>View the data</summary><div>
     <table>
       <thead><tr><th>The loss was&hellip;</th><th>Games</th><th>All time controls</th><th>Bullet</th><th>Blitz</th><th>Rapid</th></tr></thead>
@@ -475,16 +484,17 @@
         <tr><td>11 to 30 moves</td><td>226,144</td><td>&minus;1.0 (&minus;1.2 to &minus;0.8)</td><td>&minus;1.3</td><td>&minus;0.8</td><td>&minus;0.8</td></tr>
         <tr><td>over 30 moves</td><td>262,429</td><td>+0.1 (&minus;0.1 to +0.3)</td><td>+0.5</td><td>+0.1</td><td>&minus;0.6</td></tr>
         <tr><td>never reached an endgame</td><td>191,673</td><td>&minus;1.1 (&minus;1.4 to &minus;0.9)</td><td>&minus;1.6</td><td>&minus;1.0</td><td>&minus;0.8</td></tr>
-        <tr><td>entered the endgame two pawns down</td><td>165,591</td><td>&minus;0.2 (&minus;0.4 to 0.0)</td><td>+0.2</td><td>&minus;0.3</td><td>&minus;0.8</td></tr>
-        <tr><td>entered the endgame level</td><td>103,204</td><td>0.0 (&minus;0.3 to +0.3)</td><td>+0.2</td><td>+0.2</td><td>&minus;0.7</td></tr>
-        <tr><td>entered the endgame two pawns up (blown)</td><td>48,132</td><td>+0.4 (&minus;0.1 to +0.8)</td><td>+0.5</td><td>+0.1</td><td>+0.5</td></tr>
+        <tr><td>entered the endgame losing (Stockfish &minus;2 or worse)</td><td>165,591</td><td>&minus;0.2 (&minus;0.4 to 0.0)</td><td>+0.2</td><td>&minus;0.3</td><td>&minus;0.8</td></tr>
+        <tr><td>entered the endgame balanced</td><td>103,204</td><td>0.0 (&minus;0.3 to +0.3)</td><td>+0.2</td><td>+0.2</td><td>&minus;0.7</td></tr>
+        <tr><td>entered the endgame winning (Stockfish +2 or better, blown)</td><td>48,132</td><td>+0.4 (&minus;0.1 to +0.8)</td><td>+0.5</td><td>+0.1</td><td>+0.5</td></tr>
       </tbody>
     </table>
     <p style="margin-top:10px;color:var(--ink-mid)">Next game within the hour, fresh same-rating opponent, settled accounts.
-    "Two pawns up" is a Stockfish evaluation of at least +2.0 at the first move of the endgame (Lichess's own phase
-    rule); an evaluation lead, not necessarily two pawns of material, and not necessarily still winning at the end. The pattern survives restricting to single losses, so it is not streak length in disguise, and the endgame
-    cut holds inside long losses alone, so it is not length in disguise either (technical report, section 5).
-    Classical is in the report only.</p>
+    "Winning" is a Stockfish evaluation of at least +2.0 at the first move of the endgame (Lichess's own phase
+    rule), "losing" is &minus;2.0 or worse; an evaluation lead, not necessarily a material one, and not necessarily still winning at the end. The pattern survives restricting to single losses, so it is not streak length in disguise, and the endgame
+    cut holds inside long losses alone, so it is not length in disguise either. The disconnect row keeps every next
+    game; restricted to next games that were not themselves abandoned it reads &minus;1.1 (&minus;2.4 to +0.1)
+    (technical report, section 5). Classical is in the report only.</p>
   </div></details>
 </section>
 
@@ -492,7 +502,9 @@
   <div class="card-head"><div class="num">6</div>
   <h2>What changes after a loss: faster, angrier, gone</h2>
   <a class="anchor" href="#behaviour" aria-label="Link to this section">#</a></div>
-  <p class="lede">If the score barely moves, where does the feeling go? Into behaviour. After a loss, players:</p>
+  <p class="lede">If the score barely moves, where does the feeling go? Into behaviour. Like section 5, this one sets
+  the streak aside: it compares what players do after any loss with what they do after any win, whatever came before.
+  After a loss, players:</p>
   <ul class="adv-list">
     <li><b>Speed up.</b> Time per move in the opening and early middlegame (moves 3 to 20) falls <b>1.5 to 4%</b> after a loss
     compared with after a win, comparing each player with themselves. It is not a few people driving the average:
@@ -505,7 +517,7 @@
     <li><b>Quit, or rush.</b> A bullet session ends after <b>22%</b> of losses and 17% of wins. Rapid players who carry
     on do it faster after a loss: of those who play again within the hour, half start within a minute after a loss and
     four in ten after a win.</li>
-    <li><b>Take revenge.</b> Sections 1 to 5 measured streaks against fresh opponents; here the rematch comes back.
+    <li><b>Take revenge.</b> Every analysis so far excluded rematches and counted only fresh opponents; here the rematch comes back.
     One next game in eleven is a rematch against the opponent who just won. Those games run <b>1.8 points per 100 games
     below normal</b>, against 0.5 for the next game against someone new, so the rematch itself costs about 1.3 points.
     How much of that is the matchup and how much is you, the data cannot split: the player who just beat you is, on the
@@ -562,8 +574,8 @@
     <li><b>Think twice about the revenge rematch.</b> The immediate rematch against the player who just beat you runs
     about 1.3 points below an ordinary post-loss game, more than four losses in a row, and the price rises with the time control.</li>
     <li><b>Do not fear the long loss.</b> Losing a game you fought for, even from a won endgame, is not followed by a
-    worse game on average. The losses that are: ten-move collapses and disconnects, which mostly tell you that you were
-    not really playing, or not really connected, in the first place.</li>
+    worse game on average. The losses that are: ten-move collapses, which mostly tell you that you were not really
+    playing in the first place. A disconnect only predicts another disconnect.</li>
     <li><b>Watch the clock first.</b> After a loss you play 1.5 to 4% faster and are more likely to quit or to rush into
     the next game; the blunder rate only moves, if at all, after three losses in a row. If you notice yourself
     pre-moving through the opening, that is what the data can see.</li>
@@ -590,7 +602,9 @@
     setting and rating gap, reproduces the main curve. Every number describes players who kept playing within the
     hour; the players who stopped are, by construction, not observed, and nothing here measures mood directly.
     Full methodology, all controls (colour, trailing form, the within-player model, alternative session and account
-    rules), every table, and a comparison with the published literature are in the technical report.</p>
+    rules), every table, and a comparison with the published literature are in the technical report. My thanks to
+    GM No&euml;l Studer of <a href="https://nextlevelchess.com/" data-umami-event="outbound-next-level-chess">Next Level
+    Chess</a> for his helpful feedback on a draft. The analysis, and any errors in it, are mine.</p>
     <p style="margin-top:10px">
       <a href="https://github.com/flawchess/flawchess/blob/main/stories/tilt/tilt-report.md" data-umami-event="outbound-report-tilt">Read the technical report</a>
       &middot;
@@ -690,9 +704,9 @@ const ANATOMY=[
     {l:"over 30|moves",v:0.093,lo:-0.098,hi:0.278,n:262429}]},
   {group:"The endgame it reached",items:[
     {l:"none",v:-1.147,lo:-1.387,hi:-0.911,n:191673},
-    {l:"2 pawns|down",v:-0.209,lo:-0.412,hi:0.015,n:165591},
-    {l:"level",v:-0.029,lo:-0.339,hi:0.266,n:103204},
-    {l:"2 pawns up|(blown)",s:"blown win",v:0.356,lo:-0.066,hi:0.765,n:48132}]}
+    {l:"eval −2|or worse",v:-0.209,lo:-0.412,hi:0.015,n:165591},
+    {l:"balanced",v:-0.029,lo:-0.339,hi:0.266,n:103204},
+    {l:"eval +2|(blown)",s:"blown win",v:0.356,lo:-0.066,hi:0.765,n:48132}]}
 ];
 /* revenge.csv "all" row; quit_rush.csv */
 const REVENGE=[

@@ -5,6 +5,13 @@ import { apiClient } from '@/api/client';
 import { LoadError } from '@/components/ui/load-error';
 import type { ActivityRangeKey, ActivityStatsPayload } from '@/types/activity';
 
+/** An explicit, Apply-committed start/end window (Quick 260920-frk). `null`
+ * means the page is in preset mode, driven by `range` instead. */
+interface AppliedWindow {
+  start: string;
+  end: string;
+}
+
 // Order matters and is load-bearing: charts.js publishes window.__fc, which
 // render.js binds when its mount() runs. Every rule in styles.css is scoped
 // under .activity-dash, so importing it here cannot restyle the rest of the SPA.
@@ -39,12 +46,23 @@ const FONTS_HREF =
 
 async function fetchActivityStats(
   range: ActivityRangeKey,
+  applied: AppliedWindow | null,
   refresh: boolean
 ): Promise<ActivityStatsPayload> {
+  const windowParams = applied ? { start: applied.start, end: applied.end } : { range };
   const { data } = await apiClient.get<ActivityStatsPayload>('/admin/activity/stats', {
-    params: refresh ? { range, refresh: 1 } : { range },
+    params: refresh ? { ...windowParams, refresh: 1 } : windowParams,
   });
   return data;
+}
+
+/** Local YYYY-MM-DD for today. Not `toISOString()`, which reads UTC and would
+ * shift the date across midnight for anyone west of Greenwich. */
+function todayIso(): string {
+  const now = new Date();
+  const month = String(now.getMonth() + 1).padStart(2, '0');
+  const day = String(now.getDate()).padStart(2, '0');
+  return `${now.getFullYear()}-${month}-${day}`;
 }
 
 /**
@@ -97,12 +115,20 @@ export default function ActivityPage() {
   // constant single-element array), so each range gets its own cache entry.
   const [range, setRange] = useState<ActivityRangeKey>('all');
 
+  // Quick 260920-frk: the two date inputs are uncommitted, edited freely; the
+  // fetch only reacts to `applied`, set by the Apply button. Starting both on
+  // today means the single most likely custom request -- analyse today -- is
+  // one click. `applied` stays null in preset mode.
+  const [startDate, setStartDate] = useState(todayIso());
+  const [endDate, setEndDate] = useState(todayIso());
+  const [applied, setApplied] = useState<AppliedWindow | null>(null);
+
   const { data, isPending, isError, refetch, isFetching } = useQuery({
-    queryKey: ['activity-stats', range],
+    queryKey: ['activity-stats', range, applied?.start ?? '', applied?.end ?? ''],
     queryFn: () => {
       const refresh = forceRefreshRef.current;
       forceRefreshRef.current = false;
-      return fetchActivityStats(range, refresh);
+      return fetchActivityStats(range, applied, refresh);
     },
     // Pinned explicitly (not left to queryClient's 30s default) so a future
     // change to those defaults can never reintroduce a poll on this page —
@@ -140,6 +166,14 @@ export default function ActivityPage() {
 
   const handleRangeChange = (key: ActivityRangeKey) => () => {
     setRange(key);
+    // A preset click always returns to preset mode, even while a custom
+    // window is showing -- otherwise the click would be a no-op (the query
+    // key is still driven by `applied`, not `range`).
+    setApplied(null);
+  };
+
+  const handleApplyRange = () => {
+    setApplied({ start: startDate, end: endDate });
   };
 
   const setAudience = (aud: 'all' | 'reg' | 'guest') => () => {
@@ -213,7 +247,7 @@ export default function ActivityPage() {
           <div className="seg" role="group" aria-label="Time range filter">
             <button
               type="button"
-              aria-pressed={range === 'all'}
+              aria-pressed={applied === null && range === 'all'}
               data-testid="filter-range-all"
               onClick={handleRangeChange('all')}
               disabled={isFetching}
@@ -222,7 +256,7 @@ export default function ActivityPage() {
             </button>
             <button
               type="button"
-              aria-pressed={range === 'd90'}
+              aria-pressed={applied === null && range === 'd90'}
               data-testid="filter-range-d90"
               onClick={handleRangeChange('d90')}
               disabled={isFetching}
@@ -231,7 +265,7 @@ export default function ActivityPage() {
             </button>
             <button
               type="button"
-              aria-pressed={range === 'd30'}
+              aria-pressed={applied === null && range === 'd30'}
               data-testid="filter-range-d30"
               onClick={handleRangeChange('d30')}
               disabled={isFetching}
@@ -240,7 +274,7 @@ export default function ActivityPage() {
             </button>
             <button
               type="button"
-              aria-pressed={range === 'd7'}
+              aria-pressed={applied === null && range === 'd7'}
               data-testid="filter-range-d7"
               onClick={handleRangeChange('d7')}
               disabled={isFetching}
@@ -248,7 +282,37 @@ export default function ActivityPage() {
               7 days
             </button>
           </div>
-          <span className="hint">Applies to every card on the page.</span>
+          <div className="seg" role="group" aria-label="Custom date range">
+            <input
+              type="date"
+              max={todayIso()}
+              aria-label="Range start date"
+              data-testid="filter-range-start"
+              disabled={isFetching}
+              value={startDate}
+              onChange={(e) => setStartDate(e.target.value)}
+            />
+            <input
+              type="date"
+              max={todayIso()}
+              aria-label="Range end date"
+              data-testid="filter-range-end"
+              disabled={isFetching}
+              value={endDate}
+              onChange={(e) => setEndDate(e.target.value)}
+            />
+            <button
+              type="button"
+              data-testid="btn-apply-range"
+              onClick={handleApplyRange}
+              disabled={isFetching || startDate > endDate}
+            >
+              Apply
+            </button>
+          </div>
+          <span className="hint">
+            Applies to every card on the page. Set both dates the same to view a single day.
+          </span>
         </div>
 
         <div className="controls">

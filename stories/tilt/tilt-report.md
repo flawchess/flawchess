@@ -60,14 +60,21 @@ streak is supposed to cause, not as a claim to have isolated it.
    "stop after two losses" rule would produce, which needs the outcomes of games that were never played (§4).
    At every streak length 71–87% of players play on within the hour; the share *rises* with
    the streak because long same-session streaks happen deep in long sessions (§4a).
-5. **No detectable average shortfall after a blown endgame among continuers; short losses and disconnects are
-   followed by the worst games.** Next-game residual after a loss that entered the endgame at ≥ +2:
+5. **No detectable average shortfall after a blown endgame among continuers; short losses are followed by
+   the worst games, and the disconnect cell is the connection, not the player.** Next-game residual after a
+   loss that entered the endgame at ≥ +2:
    +0.4 (two thirds are flags; blown
    by resignation +0.0 with a wide interval); after a loss in
    ≤ 20 plies: -2.1; after an abandoned game:
-   -3.7. Games thrown away before the endgame are not
-   separable from other short losses in this cut, and a disconnect or a ten-move loss may mark a distracted
-   player or a bad connection rather than an emotional state (§5).
+   -3.7, but
+   8.7% of those next games are themselves abandoned
+   (base rate 2.1%) and score
+   -30; among next games that were played out the
+   residual is -1.1, in line with any other loss.
+   The short-loss cell does not move when those games are dropped
+   (-2.1). Games thrown away before the endgame are not
+   separable from other short losses in this cut, and a ten-move loss may mark a distracted player rather
+   than an emotional state (§5).
 6. **After a loss, behaviour changes more than the score.** Players move 2–4% faster, end the session more
    often (bullet: 22.3% vs 17.2%), and, among those
    who continue within the hour, start the next game within a minute more often (rapid:
@@ -619,7 +626,7 @@ cells sit near zero.)
 Next-game residual after a loss (previous game lost, next game within the hour against a fresh opponent,
 equal footing, hygiene), by how the loss ended, how long it lasted, and the Stockfish evaluation when it
 entered the endgame (Lichess phase rule; ≥ +2.0 for the player = "blown", an evaluation lead, not
-necessarily two pawns of material, and not necessarily still winning when the game ended; no endgame = the
+necessarily a material one, and not necessarily still winning when the game ended; no endgame = the
 game ended in the opening or middlegame). "all" pools the four time controls. All cells describe
 continuers; a disconnect or a ten-move loss may indicate a distracted player or a technical problem as
 readily as an emotional state.
@@ -686,10 +693,11 @@ Single losses only (streak length exactly 1), to show the cut is not streak leng
 | blown: entered the endgame winning (>= +2) | 25,656 | +0.4 [-0.2, +1.0] | +0.9 [+0.1, +1.7] | -0.5 [-1.7, +0.7] | +0.6 [-0.8, +2.0] | -0.0 [-4.9, +5.5] |
 
 Within player: the same three cuts with each player's own mean residual (over all their scored games in
-the time control) subtracted, so a cell cannot be a between-player composition effect (players with a bad
-connection, or players who resign early, scoring below their rating in every game). Point estimates only,
-no bootstrap. The ordering survives: disconnects and short losses stay the worst, long losses stay at or
-above the player's own level; checkmate and flag move to slightly positive, resignation stays negative:
+the time control) subtracted, so a cell cannot be a *stable* between-player composition effect (players
+who resign early, or whose connection is always bad, scoring below their rating in every game). Point
+estimates only, no bootstrap. The ordering survives: disconnects and short losses stay the worst, long
+losses stay at or above the player's own level; checkmate and flag move to slightly positive, resignation
+stays negative:
 
 | cut | previous loss | games | residual, pooled | residual, within player |
 |---|---|---|---|---|
@@ -704,6 +712,29 @@ above the player's own level; checkmate and flag move to slightly positive, resi
 | length | long (>60 plies) | 262,429 | 0.1 | 0.3 |
 | length | mid (21-60 plies) | 226,144 | -1.0 | -0.6 |
 | length | short (<=20 plies) | 20,027 | -2.1 | -1.6 |
+
+Demeaning does not cover an *episode*: a connection that is bad for one evening produces a disconnect
+loss followed by another disconnect loss, and the second one lands in the residual exactly as tilt would.
+The direct check is how the next game ended. After a disconnect,
+8.7% of next games are themselves abandoned, four
+times the base rate of 2.1%, and those score
+-30 (the player dropped again; after any other loss
+an abandoned next game scores about +7, the opponent dropped). Restricted to next games that were played
+out, the disconnect cell is -1.1
+[-2.4,
++0.1], no longer distinguishable from the
+other terminations. The short-loss cell is unchanged by the same restriction
+(-2.1); whether a short loss marks a distraction
+that carries into the next game cannot be tested the same way, since the next game's length is part of
+its result.
+
+| previous loss | games | next game also abandoned % | residual, all | residual, next game abandoned | residual, next game not abandoned |
+|---|---|---|---|---|---|
+| checkmated | 120,570 | 2.2 | -0.2 | 7.0 | -0.3 [-0.6, -0.0] |
+| resigned | 235,863 | 2.2 | -0.6 | 7.4 | -0.8 [-1.0, -0.6] |
+| on time | 146,940 | 1.4 | -0.3 | 6.4 | -0.4 [-0.7, -0.2] |
+| abandoned (disconnect) | 5,219 | 8.7 | -3.7 | -30.4 | -1.1 [-2.4, +0.1] |
+| short (<=20 plies) | 20,027 | 3.3 | -2.1 | -1.5 | -2.1 [-2.8, -1.4] |
 
 Mirror: the game after a **win**, by endgame state and length:
 
