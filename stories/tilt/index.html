@@ -462,14 +462,16 @@
   tilt. One caveat: a game thrown away before the endgame, a hung queen at move 20, lands in
   the "never reached an endgame" cell with every other short loss, so this cut cannot tell that kind of blown win from
   a collapse. What it can say is that among players who kept playing, the game you fought hard and lost is not
-  followed by a worse one.</p>
+  followed by a worse one. The wins mirror this: long wins are followed by better games than short ones (+0.9 after
+  more than 30 moves, +0.2 under eleven), and a comeback win from an endgame entered <i>losing</i> (Stockfish &minus;2 or
+  worse) by <b>+1.0</b>; both are in the <a href="https://github.com/flawchess/flawchess/blob/main/stories/tilt/tilt-report.md#5-the-game-after-a-loss-by-what-the-loss-looked-like" data-umami-event="outbound-report-tilt">technical report, section 5</a>.</p>
   <p class="ctitle">Points above or below normal in the next game, by what the loss looked like, per 100 games</p>
   <figure aria-label="Bar chart: points above or below normal in the game after a loss, split by how the loss ended, how long it lasted, and the position when it entered the endgame">
     <div id="c5"></div>
   </figure>
-  <div class="callout"><span class="tk">Mirror image:</span> long wins are followed by better games than short ones
-  (+0.9 after more than 30 moves, +0.2 under eleven), and a comeback win from an endgame you entered
-  <i>losing</i> (Stockfish &minus;2 or worse) is followed by <b>+1.0</b> points.</div>
+  <div class="callout"><span class="tk">Takeaway:</span> the loss you fought hard for, even the blown won endgame, is
+  not followed by a worse game. The one that is, the ten-move collapse, mostly says you were not really playing
+  in the first place, and that carries over. A disconnect predicts another disconnect, not tilt.</div>
   <details class="tbl"><summary>View the data</summary><div>
     <table>
       <thead><tr><th>The loss was&hellip;</th><th>Games</th><th>All time controls</th><th>Bullet</th><th>Blitz</th><th>Rapid</th></tr></thead>
