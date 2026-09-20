@@ -441,7 +441,7 @@
   <h2>Which loss hurts the next game? Not the one you think.</h2>
   <a class="anchor" href="#which-loss" aria-label="Link to this section">#</a></div>
   <p class="lede">Folklore says the blown win hurts most. Split losses by what they looked like and the data cannot
-  find it. A loss in which you had entered the endgame <b>two pawns up</b> (a Stockfish evaluation of +2 or better, and
+  find it. A loss in which you had entered the endgame <b>winning</b> (a Stockfish evaluation of +2 or better, and
   still lost) is followed by a game at or above normal (<b>+0.4</b>). Two thirds of those are
   flags in a won endgame; the blown win by resignation, the kind that really stings, is rarer, too rare to pin down
   exactly, but nothing large is hiding there. A long fight of more than 30 moves: no effect at all (+0.1). What is followed by a
@@ -461,8 +461,8 @@
     <div id="c5"></div>
   </figure>
   <div class="callout"><span class="tk">Mirror image:</span> long wins are followed by better games than short ones
-  (+0.9 after more than 30 moves, +0.2 under eleven), and a comeback win from an endgame you entered two pawns
-  <i>down</i> is followed by <b>+1.0</b> points.</div>
+  (+0.9 after more than 30 moves, +0.2 under eleven), and a comeback win from an endgame you entered
+  <i>losing</i> (Stockfish &minus;2 or worse) is followed by <b>+1.0</b> points.</div>
   <details class="tbl"><summary>View the data</summary><div>
     <table>
       <thead><tr><th>The loss was&hellip;</th><th>Games</th><th>All time controls</th><th>Bullet</th><th>Blitz</th><th>Rapid</th></tr></thead>
@@ -475,14 +475,14 @@
         <tr><td>11 to 30 moves</td><td>226,144</td><td>&minus;1.0 (&minus;1.2 to &minus;0.8)</td><td>&minus;1.3</td><td>&minus;0.8</td><td>&minus;0.8</td></tr>
         <tr><td>over 30 moves</td><td>262,429</td><td>+0.1 (&minus;0.1 to +0.3)</td><td>+0.5</td><td>+0.1</td><td>&minus;0.6</td></tr>
         <tr><td>never reached an endgame</td><td>191,673</td><td>&minus;1.1 (&minus;1.4 to &minus;0.9)</td><td>&minus;1.6</td><td>&minus;1.0</td><td>&minus;0.8</td></tr>
-        <tr><td>entered the endgame two pawns down</td><td>165,591</td><td>&minus;0.2 (&minus;0.4 to 0.0)</td><td>+0.2</td><td>&minus;0.3</td><td>&minus;0.8</td></tr>
-        <tr><td>entered the endgame level</td><td>103,204</td><td>0.0 (&minus;0.3 to +0.3)</td><td>+0.2</td><td>+0.2</td><td>&minus;0.7</td></tr>
-        <tr><td>entered the endgame two pawns up (blown)</td><td>48,132</td><td>+0.4 (&minus;0.1 to +0.8)</td><td>+0.5</td><td>+0.1</td><td>+0.5</td></tr>
+        <tr><td>entered the endgame losing (Stockfish &minus;2 or worse)</td><td>165,591</td><td>&minus;0.2 (&minus;0.4 to 0.0)</td><td>+0.2</td><td>&minus;0.3</td><td>&minus;0.8</td></tr>
+        <tr><td>entered the endgame balanced</td><td>103,204</td><td>0.0 (&minus;0.3 to +0.3)</td><td>+0.2</td><td>+0.2</td><td>&minus;0.7</td></tr>
+        <tr><td>entered the endgame winning (Stockfish +2 or better, blown)</td><td>48,132</td><td>+0.4 (&minus;0.1 to +0.8)</td><td>+0.5</td><td>+0.1</td><td>+0.5</td></tr>
       </tbody>
     </table>
     <p style="margin-top:10px;color:var(--ink-mid)">Next game within the hour, fresh same-rating opponent, settled accounts.
-    "Two pawns up" is a Stockfish evaluation of at least +2.0 at the first move of the endgame (Lichess's own phase
-    rule); an evaluation lead, not necessarily two pawns of material, and not necessarily still winning at the end. The pattern survives restricting to single losses, so it is not streak length in disguise, and the endgame
+    "Winning" is a Stockfish evaluation of at least +2.0 at the first move of the endgame (Lichess's own phase
+    rule), "losing" is &minus;2.0 or worse; an evaluation lead, not necessarily a material one, and not necessarily still winning at the end. The pattern survives restricting to single losses, so it is not streak length in disguise, and the endgame
     cut holds inside long losses alone, so it is not length in disguise either (technical report, section 5).
     Classical is in the report only.</p>
   </div></details>
@@ -690,9 +690,9 @@ const ANATOMY=[
     {l:"over 30|moves",v:0.093,lo:-0.098,hi:0.278,n:262429}]},
   {group:"The endgame it reached",items:[
     {l:"none",v:-1.147,lo:-1.387,hi:-0.911,n:191673},
-    {l:"2 pawns|down",v:-0.209,lo:-0.412,hi:0.015,n:165591},
-    {l:"level",v:-0.029,lo:-0.339,hi:0.266,n:103204},
-    {l:"2 pawns up|(blown)",s:"blown win",v:0.356,lo:-0.066,hi:0.765,n:48132}]}
+    {l:"eval −2|or worse",v:-0.209,lo:-0.412,hi:0.015,n:165591},
+    {l:"balanced",v:-0.029,lo:-0.339,hi:0.266,n:103204},
+    {l:"eval +2|(blown)",s:"blown win",v:0.356,lo:-0.066,hi:0.765,n:48132}]}
 ];
 /* revenge.csv "all" row; quit_rush.csv */
 const REVENGE=[

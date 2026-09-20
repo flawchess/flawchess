@@ -619,7 +619,7 @@ cells sit near zero.)
 Next-game residual after a loss (previous game lost, next game within the hour against a fresh opponent,
 equal footing, hygiene), by how the loss ended, how long it lasted, and the Stockfish evaluation when it
 entered the endgame (Lichess phase rule; ≥ +2.0 for the player = "blown", an evaluation lead, not
-necessarily two pawns of material, and not necessarily still winning when the game ended; no endgame = the
+necessarily a material one, and not necessarily still winning when the game ended; no endgame = the
 game ended in the opening or middlegame). "all" pools the four time controls. All cells describe
 continuers; a disconnect or a ten-move loss may indicate a distracted player or a technical problem as
 readily as an emotional state.
