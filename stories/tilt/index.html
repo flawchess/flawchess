@@ -440,22 +440,28 @@
   <div class="card-head"><div class="num">5</div>
   <h2>Which loss hurts the next game? Not the one you think.</h2>
   <a class="anchor" href="#which-loss" aria-label="Link to this section">#</a></div>
-  <p class="lede">Folklore says the blown win hurts most. Split losses by what they looked like and the data cannot
-  find it. A loss in which you had entered the endgame <b>winning</b> (a Stockfish evaluation of +2 or better, and
+  <p class="lede">This section sets the streak aside. It takes every loss, whatever came before it, and asks what the
+  next game looks like depending on how that one loss went. Folklore says the blown win hurts most. Split losses by
+  what they looked like and the data cannot find it. A loss in which you had entered the endgame <b>winning</b> (a Stockfish evaluation of +2 or better, and
   still lost) is followed by a game at or above normal (<b>+0.4</b>). Two thirds of those are
   flags in a won endgame; the blown win by resignation, the kind that really stings, is rarer, too rare to pin down
   exactly, but nothing large is hiding there. A long fight of more than 30 moves: no effect at all (+0.1). What is followed by a
   worse game is the quick collapse. A loss in under eleven moves is followed by <b>&minus;2.1</b>, a game that never
-  reached an endgame by &minus;1.2, and a loss by disconnection by <b>&minus;3.7</b>. Resigning (&minus;0.6) is worse
+  reached an endgame by &minus;1.2, and a loss by disconnection by <b>&minus;3.7</b> (though that last number is
+  mostly the connection, not the player; see below). Resigning (&minus;0.6) is worse
   than getting checkmated (&minus;0.2) or flagged (&minus;0.3).</p>
   <p class="lede">A plausible reading is not that quick losses <i>cause</i> tilt but that they reveal something: a
-  ten-move loss is often a distracted, pre-moving, phone-in-hand game, or a bad connection, and whatever it was is
-  still there in the next one. One caveat: a game thrown away before the endgame, a hung queen at move 20, lands in
+  ten-move loss is often a distracted, pre-moving, phone-in-hand game, and whatever it was is still there in the
+  next one. The disconnect cell shows this directly. After a loss by disconnection, one next game in twelve is
+  itself abandoned, four times the usual rate, and those games are lost almost outright (&minus;30): the connection
+  was still down. Keep only next games that were played to a result and the cell drops to <b>&minus;1.1</b>, no
+  worse than any other loss. The short losses survive the same cut (&minus;2.1 either way), and they also hold when
+  each player is compared only with their own games (&minus;1.6), so the cell is not a few chronic under-performers.
+  Whether a distracted evening carries into the next game, as a bad connection does, the data cannot separate from
+  tilt. One caveat: a game thrown away before the endgame, a hung queen at move 20, lands in
   the "never reached an endgame" cell with every other short loss, so this cut cannot tell that kind of blown win from
   a collapse. What it can say is that among players who kept playing, the game you fought hard and lost is not
-  followed by a worse one. The pattern holds when each player is compared only with their own games (disconnect
-  &minus;3.2, under eleven moves &minus;1.6, over 30 moves +0.3), so it is not simply that players with bad
-  connections score below their rating in every game.</p>
+  followed by a worse one.</p>
   <p class="ctitle">Points above or below normal in the next game, by what the loss looked like, per 100 games</p>
   <figure aria-label="Bar chart: points above or below normal in the game after a loss, split by how the loss ended, how long it lasted, and the position when it entered the endgame">
     <div id="c5"></div>
@@ -483,8 +489,9 @@
     <p style="margin-top:10px;color:var(--ink-mid)">Next game within the hour, fresh same-rating opponent, settled accounts.
     "Winning" is a Stockfish evaluation of at least +2.0 at the first move of the endgame (Lichess's own phase
     rule), "losing" is &minus;2.0 or worse; an evaluation lead, not necessarily a material one, and not necessarily still winning at the end. The pattern survives restricting to single losses, so it is not streak length in disguise, and the endgame
-    cut holds inside long losses alone, so it is not length in disguise either (technical report, section 5).
-    Classical is in the report only.</p>
+    cut holds inside long losses alone, so it is not length in disguise either. The disconnect row keeps every next
+    game; restricted to next games that were not themselves abandoned it reads &minus;1.1 (&minus;2.4 to +0.1)
+    (technical report, section 5). Classical is in the report only.</p>
   </div></details>
 </section>
 
@@ -562,8 +569,8 @@
     <li><b>Think twice about the revenge rematch.</b> The immediate rematch against the player who just beat you runs
     about 1.3 points below an ordinary post-loss game, more than four losses in a row, and the price rises with the time control.</li>
     <li><b>Do not fear the long loss.</b> Losing a game you fought for, even from a won endgame, is not followed by a
-    worse game on average. The losses that are: ten-move collapses and disconnects, which mostly tell you that you were
-    not really playing, or not really connected, in the first place.</li>
+    worse game on average. The losses that are: ten-move collapses, which mostly tell you that you were not really
+    playing in the first place. A disconnect only predicts another disconnect.</li>
     <li><b>Watch the clock first.</b> After a loss you play 1.5 to 4% faster and are more likely to quit or to rush into
     the next game; the blunder rate only moves, if at all, after three losses in a row. If you notice yourself
     pre-moving through the opening, that is what the data can see.</li>

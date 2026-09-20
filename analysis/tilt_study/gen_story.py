@@ -599,6 +599,53 @@ emit(
     pl.DataFrame(_dm_rows).sort(["cut", "previous loss"]),
     "loss_anatomy_within_player",
 )
+
+# The within-player check only removes a STABLE player trait. A bad connection is usually an
+# episode that spans consecutive games, so the game after a disconnect may itself end by
+# disconnect; that would land in the "abandoned" cell exactly as tilt would. Split each
+# termination cell (and the short-loss cell) by whether the NEXT game was also abandoned.
+_next_dc = anat.with_columns(next_abandoned=pl.col("termination") == "abandoned")
+_dc_rows = []
+for _lab, _mask in [
+    ("checkmated", pl.col("how") == "checkmated"),
+    ("resigned", pl.col("how") == "resigned"),
+    ("on time", pl.col("how") == "on time"),
+    ("abandoned (disconnect)", pl.col("how") == "abandoned (disconnect)"),
+    ("short (<=20 plies)", pl.col("length") == "short (<=20 plies)"),
+]:
+    _c = _next_dc.filter(_mask)
+    _kept = _c.filter(~pl.col("next_abandoned"))
+    _dropped = _c.filter(pl.col("next_abandoned"))
+    _m, _lo, _hi = boot_mean(_kept, "resid", reps=REPS)
+    _dc_rows.append(
+        {
+            "previous loss": _lab,
+            "games": _c.height,
+            "next game abandoned %": round(float(_dropped.height / _c.height * 100), 2),
+            "resid": pct(fmean(_c["resid"])),
+            "resid_next_abandoned": pct(fmean(_dropped["resid"])),
+            "resid_next_not_abandoned": pct(_m),
+            "resid_next_not_abandoned_lo": pct(_lo),
+            "resid_next_not_abandoned_hi": pct(_hi),
+        }
+    )
+_dc_rows.append(
+    {
+        "previous loss": "any scored game (base rate)",
+        "games": story.height,
+        "next game abandoned %": round(fmean(story["termination"].eq("abandoned")) * 100, 2),
+        "resid": None,
+        "resid_next_abandoned": None,
+        "resid_next_not_abandoned": None,
+        "resid_next_not_abandoned_lo": None,
+        "resid_next_not_abandoned_hi": None,
+    }
+)
+emit(
+    "5g. Loss anatomy by whether the NEXT game was also abandoned (the connection persists)",
+    pl.DataFrame(_dc_rows),
+    "loss_anatomy_next_abandoned",
+)
 # single-loss variant (streak_len == 1) to show the cut is not streak length in disguise
 anatomy(
     anat.filter(pl.col("streak_len") == 1),

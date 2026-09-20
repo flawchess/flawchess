@@ -137,12 +137,16 @@ ANAT = [
     ("loss_by_length", "mid (21-60 plies)", "11 to 30 moves"),
     ("loss_by_length", "long (>60 plies)", "over 30 moves"),
     ("loss_by_endgame", "never reached an endgame", "never reached an endgame"),
-    ("loss_by_endgame", "entered the endgame losing (<= -2)", "entered the endgame two pawns down"),
-    ("loss_by_endgame", "entered the endgame balanced", "entered the endgame level"),
+    (
+        "loss_by_endgame",
+        "entered the endgame losing (<= -2)",
+        "entered the endgame losing (Stockfish &minus;2 or worse)",
+    ),
+    ("loss_by_endgame", "entered the endgame balanced", "entered the endgame balanced"),
     (
         "loss_by_endgame",
         "blown: entered the endgame winning (>= +2)",
-        "entered the endgame two pawns up (blown)",
+        "entered the endgame winning (Stockfish +2 or better, blown)",
     ),
 ]
 rows = []
