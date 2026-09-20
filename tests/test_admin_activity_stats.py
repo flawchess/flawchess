@@ -100,7 +100,7 @@ async def touch_user_activity(client: httpx.AsyncClient, token: str) -> None:
     assert resp.status_code == 200, f"{resp.status_code} {resp.text}"
 
 
-def fake_payload(range_key: queries.RangeKey = "all") -> queries.Payload:
+def fake_payload(range_key: queries.SelectedRange = "all") -> queries.Payload:
     """A minimal, schema-complete Payload for tests that monkeypatch build_payload
     and only care about call counts / the echoed range key, not real query data."""
     return queries.Payload(
@@ -238,7 +238,7 @@ async def test_stats_cached_for_ttl_then_refresh_forces_rebuild(test_engine, mon
     build_calls = 0
     payload = fake_payload()
 
-    async def fake_build_payload(_engine, _range_key, _now_utc):
+    async def fake_build_payload(_engine, _request, _now_utc):
         nonlocal build_calls
         build_calls += 1
         return payload
@@ -344,7 +344,8 @@ async def test_stats_cache_keys_range_independently(test_engine, monkeypatch):
     d30 GET still reads the (separate) d30 cache entry (D4)."""
     build_calls: dict[str, int] = {}
 
-    async def fake_build_payload(_engine, range_key, _now_utc):
+    async def fake_build_payload(_engine, request, _now_utc):
+        range_key = request.range_key
         build_calls[range_key] = build_calls.get(range_key, 0) + 1
         return fake_payload(range_key)
 
@@ -386,7 +387,8 @@ async def test_stats_refresh_invalidates_only_its_own_range(test_engine, monkeyp
     """?range=d30&refresh=1 rebuilds only the d30 entry; the d7 entry survives (D4)."""
     build_calls: dict[str, int] = {}
 
-    async def fake_build_payload(_engine, range_key, _now_utc):
+    async def fake_build_payload(_engine, request, _now_utc):
+        range_key = request.range_key
         build_calls[range_key] = build_calls.get(range_key, 0) + 1
         return fake_payload(range_key)
 
@@ -429,6 +431,38 @@ async def test_stats_refresh_invalidates_only_its_own_range(test_engine, monkeyp
                 "d30": 2,
                 "d7": 1,
             }, "d7's cache must survive a refresh scoped to d30"
+
+
+@pytest.mark.asyncio
+async def test_stats_custom_window_truncates_at_end_date(test_engine):
+    """start/end returns range == "custom", days ending on `end`, and truncates
+    signups so a user created "today" falls outside a window ending yesterday
+    (Quick 260920-frk, Task 1 — RED before the implementation exists)."""
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app), base_url="http://test"
+    ) as client:
+        _, admin_token = await make_superuser(client, test_engine)
+        await touch_user_activity(client, admin_token)
+
+        today = datetime.datetime.now(datetime.timezone.utc).date()
+        start = today - datetime.timedelta(days=3)
+        end = today - datetime.timedelta(days=1)
+
+        cache = StatsCache(test_engine, ttl_seconds=300)
+        async with cache_override(cache):
+            resp = await client.get(
+                "/api/admin/activity/stats",
+                params={"start": start.isoformat(), "end": end.isoformat()},
+                headers={"Authorization": f"Bearer {admin_token}"},
+            )
+
+    assert resp.status_code == 200, f"{resp.status_code} {resp.text}"
+    body = resp.json()
+    assert body["range"] == "custom"
+    assert body["days"][-1] == end.isoformat()
+    assert not any(row[0] == today.isoformat() for row in body["signups"]), (
+        "a signup dated after the selected end date leaked through"
+    )
 
 
 @pytest.mark.asyncio
@@ -640,6 +674,10 @@ async def test_fetch_train_funnel_seeded_cohort(test_engine):
     """
     window_start = datetime.date(2026, 6, 1)
     data_start = window_start - datetime.timedelta(days=60)
+    # Wide enough to keep every seeded session (up to window_start + 10 days)
+    # inside the window; the point of this fixture is the cohort's first-session
+    # ENTRY predicate, not the new end-date truncation.
+    window_end = window_start + datetime.timedelta(days=365)
 
     # Baseline BEFORE seeding: this test file's shared test_engine can carry
     # rows from other tests (in this file or, under -n auto, other files
@@ -647,7 +685,7 @@ async def test_fetch_train_funnel_seeded_cohort(test_engine):
     # fixture introduces, rather than an absolute count, is what keeps the
     # assertions correct regardless of what else landed in this date range.
     async with test_engine.connect() as conn:
-        baseline = await queries.fetch_train_funnel(conn, window_start, data_start)
+        baseline = await queries.fetch_train_funnel(conn, window_start, data_start, window_end)
 
     async with httpx.AsyncClient(
         transport=httpx.ASGITransport(app=app), base_url="http://test"
@@ -712,7 +750,7 @@ async def test_fetch_train_funnel_seeded_cohort(test_engine):
     )
 
     async with test_engine.connect() as conn:
-        result = await queries.fetch_train_funnel(conn, window_start, data_start)
+        result = await queries.fetch_train_funnel(conn, window_start, data_start, window_end)
 
     delta = {key: result[key] - baseline[key] for key in result}
 
@@ -747,9 +785,10 @@ async def test_fetch_train_funnel_excludes_opener_whose_first_session_predates_w
     that falls squarely inside it (RESEARCH Finding J's defining case)."""
     window_start = datetime.date(2026, 7, 1)
     data_start = window_start - datetime.timedelta(days=90)
+    window_end = window_start + datetime.timedelta(days=365)
 
     async with test_engine.connect() as conn:
-        baseline = await queries.fetch_train_funnel(conn, window_start, data_start)
+        baseline = await queries.fetch_train_funnel(conn, window_start, data_start, window_end)
 
     async with httpx.AsyncClient(
         transport=httpx.ASGITransport(app=app), base_url="http://test"
@@ -772,7 +811,7 @@ async def test_fetch_train_funnel_excludes_opener_whose_first_session_predates_w
     )
 
     async with test_engine.connect() as conn:
-        result = await queries.fetch_train_funnel(conn, window_start, data_start)
+        result = await queries.fetch_train_funnel(conn, window_start, data_start, window_end)
 
     delta = {key: result[key] - baseline[key] for key in result}
 
@@ -815,13 +854,17 @@ async def test_purged_user_excluded_from_game_derived_cohorts(test_engine):
     cohort predicate excludes anyone who is neither a guest nor promoted.
     """
     window_start = datetime.date(2019, 1, 1)
+    # Far enough in the future to keep every user seeded "now" (real wall
+    # clock) inside the window -- this test's point is the purged-user
+    # exclusion, not the new end-date truncation.
+    window_end = datetime.date(2099, 1, 1)
 
     async with test_engine.connect() as conn:
-        baseline_funnel = await queries.fetch_funnel(conn, window_start)
-        baseline_tti = await queries.fetch_time_to_import(conn, window_start)
-        baseline_stick = await queries.fetch_stickiness(conn, window_start)
-        baseline_compare = await queries.fetch_conversion_compare(conn, window_start)
-        baseline_purged = await queries.fetch_purged_excluded(conn, window_start)
+        baseline_funnel = await queries.fetch_funnel(conn, window_start, window_end)
+        baseline_tti = await queries.fetch_time_to_import(conn, window_start, window_end)
+        baseline_stick = await queries.fetch_stickiness(conn, window_start, window_end)
+        baseline_compare = await queries.fetch_conversion_compare(conn, window_start, window_end)
+        baseline_purged = await queries.fetch_purged_excluded(conn, window_start, window_end)
 
     async with httpx.AsyncClient(
         transport=httpx.ASGITransport(app=app), base_url="http://test"
@@ -861,11 +904,11 @@ async def test_purged_user_excluded_from_game_derived_cohorts(test_engine):
     )
 
     async with test_engine.connect() as conn:
-        funnel = await queries.fetch_funnel(conn, window_start)
-        tti = await queries.fetch_time_to_import(conn, window_start)
-        stick = await queries.fetch_stickiness(conn, window_start)
-        compare = await queries.fetch_conversion_compare(conn, window_start)
-        purged = await queries.fetch_purged_excluded(conn, window_start)
+        funnel = await queries.fetch_funnel(conn, window_start, window_end)
+        tti = await queries.fetch_time_to_import(conn, window_start, window_end)
+        stick = await queries.fetch_stickiness(conn, window_start, window_end)
+        compare = await queries.fetch_conversion_compare(conn, window_start, window_end)
+        purged = await queries.fetch_purged_excluded(conn, window_start, window_end)
 
     # fetch_funnel: exactly 4 stages, phantom "Chess account linked" stage gone.
     assert len(funnel) == 4
@@ -930,9 +973,13 @@ async def test_fetch_guest_train_d11_d12_semantics(test_engine):
         completed -> neither counts.
     """
     window_start = datetime.date(2019, 1, 1)
+    # Far enough in the future to keep every guest seeded "now" (real wall
+    # clock) inside the window -- this test's point is D-11/D-12, not the
+    # new end-date truncation.
+    window_end = datetime.date(2099, 1, 1)
 
     async with test_engine.connect() as conn:
-        baseline = await queries.fetch_guest_train(conn, window_start)
+        baseline = await queries.fetch_guest_train(conn, window_start, window_end)
 
     session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
     async with session_maker() as session:
@@ -986,7 +1033,7 @@ async def test_fetch_guest_train_d11_d12_semantics(test_engine):
     )
 
     async with test_engine.connect() as conn:
-        result = await queries.fetch_guest_train(conn, window_start)
+        result = await queries.fetch_guest_train(conn, window_start, window_end)
 
     delta = {key: result[key] - baseline[key] for key in result}
 

@@ -21,8 +21,15 @@ MIN_GAMES_PER_ELO: Final[int] = 10
 FUNNEL_GAMES_THRESHOLD: Final[int] = 100
 
 # The four presets the global time-range filter offers (Quick 260831-p7x, D1).
-# No custom range, no "Today", no fifth preset -- exactly these four, ever.
+# These are the only preset keys -- ?range= never accepts anything else. An
+# explicit start/end pair (Quick 260920-frk) is not a fifth preset key; it is
+# reported back to the client as SelectedRange's extra "custom" value.
 RangeKey = Literal["all", "d90", "d30", "d7"]
+
+# What the payload's `range` field reports back: the four presets, plus
+# "custom" when the caller supplied an explicit start/end pair instead of a
+# preset key (Quick 260920-frk).
+SelectedRange = Literal["all", "d90", "d30", "d7", "custom"]
 
 # Window length in calendar days per range key, `None` for the all-time key
 # (which has no fixed span -- its window always starts at the data's first
@@ -57,13 +64,40 @@ _PROMOTED_GUEST = "u.promoted_at IS NOT NULL"
 # converts fall out of the denominator and inflate the rate.
 _GUEST_COHORT = "(u.is_guest OR u.promoted_at IS NOT NULL)"
 
+# fetch_train_funnel's all-time control line must keep meaning "all time" even
+# when the windowed run is bounded to an explicit end date -- see step 6's
+# note on that helper.
+_ALL_TIME_END: Final[datetime.date] = datetime.date(9999, 12, 31)
+
+
+def _end_exclusive(window_end: datetime.date) -> datetime.date:
+    """The day AFTER `window_end`, for use as an exclusive upper bound.
+
+    The bounded columns across the fetch_* helpers below are a mix of `date`
+    (`activity_date`, `session_date`) and timestamp (`created_at`, `played_at`,
+    `solved_at`, `started_at`). `< CAST(:last AS date)` against the day after
+    the selected end is the one predicate form that is correct for both --
+    `<= :end` would drop every timestamped row after midnight on the end date.
+    """
+    return window_end + datetime.timedelta(days=1)
+
+
+class WindowRequest(NamedTuple):
+    """What a caller asked for: a preset key, or an explicit inclusive date
+    range. `start` and `end` are set together or not at all -- the router
+    enforces that before building this."""
+
+    range_key: RangeKey = "all"
+    start: datetime.date | None = None
+    end: datetime.date | None = None
+
 
 class Payload(TypedDict):
     """The complete dashboard dataset, as served to the page."""
 
     generated_at: str
     promoted_since: str
-    range: RangeKey
+    range: SelectedRange
     data_start: str
     days: list[str]
     window_start_index: int
@@ -118,12 +152,14 @@ def _table(rows: list[Any]) -> list[list[Any]]:
 
 
 class ResolvedWindow(NamedTuple):
-    """A range key turned into concrete dates against a real dataset."""
+    """A range key (or an explicit date pair) turned into concrete dates
+    against a real dataset."""
 
-    range_key: RangeKey
+    range_key: SelectedRange
     data_start: datetime.date
     lead_in_start: datetime.date
     window_start: datetime.date
+    window_end: datetime.date
     days: list[str]
     window_start_index: int
     last_complete_index: int
@@ -134,8 +170,12 @@ def resolve_window(
     now_utc: datetime.datetime,
     data_start: datetime.date,
     data_end: datetime.date,
+    *,
+    custom_start: datetime.date | None = None,
+    custom_end: datetime.date | None = None,
 ) -> ResolvedWindow:
-    """Turn a range key into concrete window dates.
+    """Turn a range key -- or an explicit `custom_start`/`custom_end` pair --
+    into concrete window dates.
 
     Two clamps make the result provably safe regardless of the dataset shape:
 
@@ -143,31 +183,53 @@ def resolve_window(
       90-day window over a 10-day-old dataset) never starts before any data
       exists -- the window degrades to "all the data there is" rather than
       producing a negative-width result (the short-dataset case).
-    - `window_start` is also clamped DOWN to `data_end` so a dataset with no
+    - `window_start` is also clamped DOWN to `window_end` so a dataset with no
       recent activity at all (e.g. a 7-day window requested weeks after the
       last tracked row) still yields a `window_start_index` inside
       `[0, len(days) - 1]` instead of pointing past the end of `days`
-      (the stale-dataset case).
+      (the stale-dataset case). For a preset, `window_end` is `data_end`; for
+      a custom window it is the caller's `custom_end`.
+
+    `lead_in_start` is ALSO clamped down to `window_start` -- a guard, not
+    cosmetics: a custom window that ends before `data_start` would otherwise
+    produce `lead_in_start > window_start`, an empty `days` list and an
+    out-of-range `window_start_index` that crashes the page. For every preset
+    this clamp is a no-op (`window_start` is already `>= lead_in_start`).
 
     `today` is taken from `now_utc`, never from an inline clock read, so the
     window is reproducible under the dev-clock override.
     """
     today = now_utc.date()
-    span = RANGE_WINDOW_DAYS[range_key]
-    raw_cutoff = data_start if span is None else today - datetime.timedelta(days=span - 1)
-    window_start = min(max(raw_cutoff, data_start), data_end)
-    lead_in_start = max(window_start - datetime.timedelta(days=ROLLING_LEAD_IN_DAYS), data_start)
+    if custom_start is not None and custom_end is not None:
+        selected_key: SelectedRange = "custom"
+        window_end = custom_end
+        raw_cutoff = custom_start
+    else:
+        selected_key = range_key
+        window_end = data_end
+        span = RANGE_WINDOW_DAYS[range_key]
+        raw_cutoff = data_start if span is None else today - datetime.timedelta(days=span - 1)
+    window_start = min(max(raw_cutoff, data_start), window_end)
+    lead_in_start = min(
+        max(window_start - datetime.timedelta(days=ROLLING_LEAD_IN_DAYS), data_start),
+        window_start,
+    )
     days = [
         (lead_in_start + datetime.timedelta(days=offset)).isoformat()
-        for offset in range((data_end - lead_in_start).days + 1)
+        for offset in range((window_end - lead_in_start).days + 1)
     ]
     window_start_index = (window_start - lead_in_start).days
-    last_complete_index = len(days) - (2 if data_end >= today and len(days) > 1 else 1)
+    # A today-only window still lands safely here: `days` carries the 30-day
+    # lead-in in front of today, so this index points at yesterday, and
+    # render.js's `Math.max(0, last_complete_index - window_start_index)`
+    # resolves the single visible day to index 0.
+    last_complete_index = len(days) - (2 if window_end >= today and len(days) > 1 else 1)
     return ResolvedWindow(
-        range_key=range_key,
+        range_key=selected_key,
         data_start=data_start,
         lead_in_start=lead_in_start,
         window_start=window_start,
+        window_end=window_end,
         days=days,
         window_start_index=window_start_index,
         last_complete_index=last_complete_index,
@@ -175,16 +237,26 @@ def resolve_window(
 
 
 async def fetch_window(
-    conn: AsyncConnection, range_key: RangeKey, now_utc: datetime.datetime
+    conn: AsyncConnection, request: WindowRequest, now_utc: datetime.datetime
 ) -> ResolvedWindow:
-    """Read the dataset's real span and resolve `range_key` against it."""
+    """Read the dataset's real span and resolve `request` against it."""
     data_start = await _scalar_date(conn, "SELECT min(activity_date) FROM user_activity")
     data_end = await _scalar_date(conn, "SELECT max(activity_date) FROM user_activity")
-    return resolve_window(range_key, now_utc, data_start, data_end)
+    return resolve_window(
+        request.range_key,
+        now_utc,
+        data_start,
+        data_end,
+        custom_start=request.start,
+        custom_end=request.end,
+    )
 
 
 async def fetch_activity(
-    conn: AsyncConnection, lead_in_start: datetime.date, window_start: datetime.date
+    conn: AsyncConnection,
+    lead_in_start: datetime.date,
+    window_start: datetime.date,
+    window_end: datetime.date,
 ) -> list[list[int]]:
     """One row per (user, day): [day_index, is_guest, active_hours, is_entrant].
 
@@ -215,10 +287,12 @@ async def fetch_activity(
         JOIN users u ON u.id = a.user_id
         JOIN first_seen f ON f.user_id = a.user_id
         WHERE a.activity_date >= CAST(:lead_in AS date)
+          AND a.activity_date < CAST(:last AS date)
         ORDER BY a.activity_date, a.user_id
         """,
         lead_in=lead_in_start,
         window_start=window_start,
+        last=_end_exclusive(window_end),
     )
     # user_id is kept only as a within-request identity for distinct counting;
     # it is renumbered densely so no real account id reaches the browser.
@@ -230,7 +304,9 @@ async def fetch_activity(
     return out
 
 
-async def fetch_signups(conn: AsyncConnection, window_start: datetime.date) -> list[list[Any]]:
+async def fetch_signups(
+    conn: AsyncConnection, window_start: datetime.date, window_end: datetime.date
+) -> list[list[Any]]:
     return _table(
         await _rows(
             conn,
@@ -238,15 +314,19 @@ async def fetch_signups(conn: AsyncConnection, window_start: datetime.date) -> l
             SELECT CAST(created_at AS date) AS day,
                    count(*) FILTER (WHERE NOT is_guest) AS registered,
                    count(*) FILTER (WHERE is_guest) AS guests
-            FROM users WHERE created_at >= CAST(:first AS date)
+            FROM users
+            WHERE created_at >= CAST(:first AS date) AND created_at < CAST(:last AS date)
             GROUP BY 1 ORDER BY 1
             """,
             first=window_start,
+            last=_end_exclusive(window_end),
         )
     )
 
 
-async def fetch_bot_games(conn: AsyncConnection, window_start: datetime.date) -> list[list[Any]]:
+async def fetch_bot_games(
+    conn: AsyncConnection, window_start: datetime.date, window_end: datetime.date
+) -> list[list[Any]]:
     """Daily bot games. Result is stored from White's side, so the human's
     score is recovered by comparing ``user_color`` against ``result``."""
     return _table(
@@ -260,29 +340,35 @@ async def fetch_bot_games(conn: AsyncConnection, window_start: datetime.date) ->
                                        OR (g.user_color::text = 'black' AND g.result::text = '0-1')) AS human_wins,
                    count(*) FILTER (WHERE g.result::text = '1/2-1/2') AS draws
             FROM bot_game_settings b JOIN games g ON g.id = b.game_id
-            WHERE g.played_at >= CAST(:cutoff AS date)
+            WHERE g.played_at >= CAST(:cutoff AS date) AND g.played_at < CAST(:last AS date)
             GROUP BY 1 ORDER BY 1
             """,
             cutoff=window_start,
+            last=_end_exclusive(window_end),
         )
     )
 
 
-async def fetch_bot_players(conn: AsyncConnection, window_start: datetime.date) -> int:
+async def fetch_bot_players(
+    conn: AsyncConnection, window_start: datetime.date, window_end: datetime.date
+) -> int:
     """Distinct humans who have played at least one bot game in the window."""
     rows = await _rows(
         conn,
         """
         SELECT count(DISTINCT g.user_id) FROM bot_game_settings b
         JOIN games g ON g.id = b.game_id
-        WHERE g.played_at >= CAST(:cutoff AS date)
+        WHERE g.played_at >= CAST(:cutoff AS date) AND g.played_at < CAST(:last AS date)
         """,
         cutoff=window_start,
+        last=_end_exclusive(window_end),
     )
     return int(rows[0][0])
 
 
-async def fetch_train(conn: AsyncConnection, window_start: datetime.date) -> list[list[Any]]:
+async def fetch_train(
+    conn: AsyncConnection, window_start: datetime.date, window_end: datetime.date
+) -> list[list[Any]]:
     return _table(
         await _rows(
             conn,
@@ -294,30 +380,37 @@ async def fetch_train(conn: AsyncConnection, window_start: datetime.date) -> lis
                    count(*) FILTER (WHERE status = 'open') AS still_open,
                    sum(puzzle_count) AS puzzles
             FROM drill_sessions
-            WHERE session_date >= CAST(:cutoff AS date)
+            WHERE session_date >= CAST(:cutoff AS date) AND session_date < CAST(:last AS date)
             GROUP BY 1 ORDER BY 1
             """,
             cutoff=window_start,
+            last=_end_exclusive(window_end),
         )
     )
 
 
 async def fetch_train_funnel(
-    conn: AsyncConnection, window_start: datetime.date, data_start: datetime.date
+    conn: AsyncConnection,
+    window_start: datetime.date,
+    data_start: datetime.date,
+    window_end: datetime.date,
 ) -> dict[str, Any]:
     """First-session 0-solve share and second-session return share (SEED-166, D-19).
 
     Cohort = users whose FIRST-EVER `drill_sessions` row (by `session_date`,
-    then `id` to break ties) started on or after the cutoff date. A user whose
-    first session predates the cutoff is excluded entirely, even if a later
-    session of theirs falls inside the window (RESEARCH Finding J).
+    then `id` to break ties) started on or after the cutoff date and on or
+    before the selected end date. A user whose first session predates the
+    cutoff, or falls after the selected end, is excluded entirely, even if a
+    later session of theirs falls inside the window (RESEARCH Finding J).
 
     `no_solve` looks only at that first session's own `drill_solves` rows
     (`solved_at IS NOT NULL`); `completed_count` looks at ALL of the user's
     sessions with `status = 'completed'` -- the same definition `fetch_train`
     already uses. Runs the identical query twice: once with `window_start`
-    (the windowed reading) and once with `data_start` (the live all-time
-    control line), so the two numbers can never drift apart from each other.
+    (the windowed reading, bounded above by `window_end`) and once with
+    `data_start` (the live all-time control line, bounded above by
+    `_ALL_TIME_END` so it keeps meaning all time regardless of the selected
+    window), so the two numbers can never drift apart from each other.
 
     Right-censoring caveat (surfaced on the card, not here): a user whose
     first session lands near the end of the window has had no opportunity to
@@ -331,7 +424,7 @@ async def fetch_train_funnel(
         ),
         cohort AS (
             SELECT user_id, session_id FROM first_session
-            WHERE session_date >= CAST(:cutoff AS date)
+            WHERE session_date >= CAST(:cutoff AS date) AND session_date < CAST(:last AS date)
         ),
         flags AS (
             SELECT c.user_id,
@@ -349,8 +442,8 @@ async def fetch_train_funnel(
                count(*) FILTER (WHERE completed_count >= 2)  AS returners
         FROM flags
         """
-    windowed = (await _rows(conn, sql, cutoff=window_start))[0]
-    all_time = (await _rows(conn, sql, cutoff=data_start))[0]
+    windowed = (await _rows(conn, sql, cutoff=window_start, last=_end_exclusive(window_end)))[0]
+    all_time = (await _rows(conn, sql, cutoff=data_start, last=_ALL_TIME_END))[0]
     return {
         "openers": int(windowed[0]),
         "zero_solve_users": int(windowed[1]),
@@ -363,7 +456,9 @@ async def fetch_train_funnel(
     }
 
 
-async def fetch_solves(conn: AsyncConnection, lead_in_start: datetime.date) -> list[list[Any]]:
+async def fetch_solves(
+    conn: AsyncConnection, lead_in_start: datetime.date, window_end: datetime.date
+) -> list[list[Any]]:
     return _table(
         await _rows(
             conn,
@@ -374,14 +469,18 @@ async def fetch_solves(conn: AsyncConnection, lead_in_start: datetime.date) -> l
                    count(*) FILTER (WHERE correct_guess) AS correct_guess
             FROM drill_solves
             WHERE solved_at IS NOT NULL AND solved_at >= CAST(:lead_in AS date)
+              AND solved_at < CAST(:last AS date)
             GROUP BY 1 ORDER BY 1
             """,
             lead_in=lead_in_start,
+            last=_end_exclusive(window_end),
         )
     )
 
 
-async def fetch_imports(conn: AsyncConnection, window_start: datetime.date) -> list[list[Any]]:
+async def fetch_imports(
+    conn: AsyncConnection, window_start: datetime.date, window_end: datetime.date
+) -> list[list[Any]]:
     return _table(
         await _rows(
             conn,
@@ -390,15 +489,19 @@ async def fetch_imports(conn: AsyncConnection, window_start: datetime.date) -> l
                    count(DISTINCT user_id) AS users,
                    coalesce(sum(games_imported), 0) AS games,
                    count(*) FILTER (WHERE status = 'failed') AS failed
-            FROM import_jobs WHERE started_at >= CAST(:first AS date)
+            FROM import_jobs
+            WHERE started_at >= CAST(:first AS date) AND started_at < CAST(:last AS date)
             GROUP BY 1 ORDER BY 1
             """,
             first=window_start,
+            last=_end_exclusive(window_end),
         )
     )
 
 
-async def fetch_persona(conn: AsyncConnection, window_start: datetime.date) -> list[list[Any]]:
+async def fetch_persona(
+    conn: AsyncConnection, window_start: datetime.date, window_end: datetime.date
+) -> list[list[Any]]:
     """Bot games by persona style. ``persona_id`` is NULL for custom-mode games."""
     return _table(
         await _rows(
@@ -410,15 +513,18 @@ async def fetch_persona(conn: AsyncConnection, window_start: datetime.date) -> l
                                        OR (g.user_color::text = 'black' AND g.result::text = '0-1')) AS human_wins,
                    count(*) FILTER (WHERE g.result::text = '1/2-1/2') AS draws
             FROM bot_game_settings b JOIN games g ON g.id = b.game_id
-            WHERE g.played_at >= CAST(:cutoff AS date)
+            WHERE g.played_at >= CAST(:cutoff AS date) AND g.played_at < CAST(:last AS date)
             GROUP BY 1 ORDER BY games DESC
             """,
             cutoff=window_start,
+            last=_end_exclusive(window_end),
         )
     )
 
 
-async def fetch_elo(conn: AsyncConnection, window_start: datetime.date) -> list[list[int]]:
+async def fetch_elo(
+    conn: AsyncConnection, window_start: datetime.date, window_end: datetime.date
+) -> list[list[int]]:
     rows = await _rows(
         conn,
         """
@@ -427,16 +533,19 @@ async def fetch_elo(conn: AsyncConnection, window_start: datetime.date) -> list[
                                    OR (g.user_color::text = 'black' AND g.result::text = '0-1')) AS human_wins,
                count(*) FILTER (WHERE g.result::text = '1/2-1/2') AS draws
         FROM bot_game_settings b JOIN games g ON g.id = b.game_id
-        WHERE g.played_at >= CAST(:cutoff AS date)
+        WHERE g.played_at >= CAST(:cutoff AS date) AND g.played_at < CAST(:last AS date)
         GROUP BY 1 HAVING count(*) >= :floor ORDER BY 1
         """,
         cutoff=window_start,
+        last=_end_exclusive(window_end),
         floor=MIN_GAMES_PER_ELO,
     )
     return [[int(v) for v in row] for row in rows]
 
 
-async def fetch_funnel(conn: AsyncConnection, window_start: datetime.date) -> list[list[Any]]:
+async def fetch_funnel(
+    conn: AsyncConnection, window_start: datetime.date, window_end: datetime.date
+) -> list[list[Any]]:
     """Signup -> import funnel stages, counted for registered and guest cohorts.
 
     Four stages -- the phantom platform-username-linked stage that used to
@@ -459,10 +568,10 @@ async def fetch_funnel(conn: AsyncConnection, window_start: datetime.date) -> li
     (this is a deliberate behavior change -- see the commit message for the
     historical-number-shift note).
 
-    Cohort card (D3): only the ``users.created_at`` predicate below constrains
-    the window, by cohort ENTRY. The joined `games` CTE stays unfiltered so a
-    user who entered inside the window is followed forward to today — do not
-    add a date filter to that CTE.
+    Cohort card (D3): the ``users.created_at`` predicate below constrains the
+    window on BOTH sides, by cohort ENTRY. The joined `games` CTE stays
+    unfiltered so a user who entered inside the window is followed forward to
+    today — do not add a date filter to that CTE.
     """
     row = (
         await _rows(
@@ -473,7 +582,8 @@ async def fetch_funnel(conn: AsyncConnection, window_start: datetime.date) -> li
                      (u.chess_com_username IS NOT NULL OR u.lichess_username IS NOT NULL) AS linked,
                      u.first_import_started_at, u.lifetime_games_imported
               FROM users u
-              WHERE u.created_at >= CAST(:first AS date) AND u.games_purged_at IS NULL),
+              WHERE u.created_at >= CAST(:first AS date) AND u.created_at < CAST(:last AS date)
+                AND u.games_purged_at IS NULL),
             g AS (SELECT user_id, count(*) AS games FROM games
                   WHERE platform IN ('chess.com', 'lichess') GROUP BY 1)
             SELECT
@@ -490,6 +600,7 @@ async def fetch_funnel(conn: AsyncConnection, window_start: datetime.date) -> li
             FROM u LEFT JOIN g ON g.user_id = u.id
             """,
             first=window_start,
+            last=_end_exclusive(window_end),
             threshold=FUNNEL_GAMES_THRESHOLD,
         )
     )[0]
@@ -503,7 +614,7 @@ async def fetch_funnel(conn: AsyncConnection, window_start: datetime.date) -> li
 
 
 async def fetch_purged_excluded(
-    conn: AsyncConnection, window_start: datetime.date
+    conn: AsyncConnection, window_start: datetime.date, window_end: datetime.date
 ) -> dict[str, int]:
     """Per-cohort count of users the four game-derived cards above dropped.
 
@@ -523,16 +634,18 @@ async def fetch_purged_excluded(
               count(*) FILTER (WHERE NOT ({_GUEST_COHORT})) AS registered,
               count(*) FILTER (WHERE {_GUEST_COHORT}) AS guest
             FROM users u
-            WHERE u.created_at >= CAST(:first AS date) AND u.games_purged_at IS NOT NULL
+            WHERE u.created_at >= CAST(:first AS date) AND u.created_at < CAST(:last AS date)
+              AND u.games_purged_at IS NOT NULL
             """,
             first=window_start,
+            last=_end_exclusive(window_end),
         )
     )[0]
     return {"registered": int(row[0]), "guest": int(row[1])}
 
 
 async def fetch_time_to_import(
-    conn: AsyncConnection, window_start: datetime.date
+    conn: AsyncConnection, window_start: datetime.date, window_end: datetime.date
 ) -> list[list[Any]]:
     """How long after account creation the first import job started.
 
@@ -546,7 +659,8 @@ async def fetch_time_to_import(
     Cohort split uses ``_GUEST_COHORT`` for the same reason ``fetch_funnel``
     does: a promoted guest stays in the GUEST columns.
 
-    Cohort card (D3): windowed on ``users.created_at`` (entry) only.
+    Cohort card (D3): windowed on ``users.created_at`` (entry) only, bounded
+    on both sides.
     """
     row = (
         await _rows(
@@ -555,7 +669,8 @@ async def fetch_time_to_import(
             WITH u AS (
               SELECT id, ({_GUEST_COHORT}) AS guest, created_at, first_import_started_at
               FROM users u
-              WHERE created_at >= CAST(:first AS date) AND games_purged_at IS NULL)
+              WHERE created_at >= CAST(:first AS date) AND created_at < CAST(:last AS date)
+                AND games_purged_at IS NULL)
             SELECT
               count(*) FILTER (WHERE NOT u.guest
                                AND u.first_import_started_at < u.created_at + interval '5 min') AS r0,
@@ -582,13 +697,16 @@ async def fetch_time_to_import(
             FROM u
             """,
             first=window_start,
+            last=_end_exclusive(window_end),
         )
     )[0]
     buckets = ["Under 5 min", "5–60 min", "1–24 h", "Later than a day", "Never"]
     return [[label, int(row[i]), int(row[i + 5])] for i, label in enumerate(buckets)]
 
 
-async def fetch_stickiness(conn: AsyncConnection, window_start: datetime.date) -> list[list[Any]]:
+async def fetch_stickiness(
+    conn: AsyncConnection, window_start: datetime.date, window_end: datetime.date
+) -> list[list[Any]]:
     """Return rate for importers vs non-importers, per cohort.
 
     "Returned" means seen on at least two distinct days. "Imported" is
@@ -602,16 +720,19 @@ async def fetch_stickiness(conn: AsyncConnection, window_start: datetime.date) -
     ``_GUEST_COHORT`` switch, so a promoted guest still lands in the
     "Registered" row here.
 
-    Cohort card (D3): windowed on ``users.created_at`` (entry) only; the
-    joined `user_activity` CTE stays unfiltered so entrants are followed
-    forward to today — do not add a date filter to that CTE.
+    Cohort card (D3): windowed on ``users.created_at`` (entry) only, bounded
+    on both sides; the joined `user_activity` CTE stays unfiltered so
+    entrants are followed forward to today — do not add a date filter to
+    that CTE.
     """
     rows = await _rows(
         conn,
         """
         WITH u AS (
           SELECT id, is_guest, (lifetime_games_imported > 0) AS imported
-          FROM users WHERE created_at >= CAST(:first AS date) AND games_purged_at IS NULL),
+          FROM users
+          WHERE created_at >= CAST(:first AS date) AND created_at < CAST(:last AS date)
+            AND games_purged_at IS NULL),
         a AS (SELECT user_id, count(DISTINCT activity_date) AS days FROM user_activity GROUP BY 1)
         SELECT u.is_guest, u.imported, count(*) AS users,
                count(*) FILTER (WHERE coalesce(a.days, 0) >= 2) AS returned
@@ -619,6 +740,7 @@ async def fetch_stickiness(conn: AsyncConnection, window_start: datetime.date) -
         GROUP BY 1, 2
         """,
         first=window_start,
+        last=_end_exclusive(window_end),
     )
     by_key = {(bool(r[0]), bool(r[1])): (int(r[2]), int(r[3])) for r in rows}
     out: list[list[Any]] = []
@@ -629,12 +751,15 @@ async def fetch_stickiness(conn: AsyncConnection, window_start: datetime.date) -
     return out
 
 
-async def fetch_conversion(conn: AsyncConnection, window_start: datetime.date) -> dict[str, Any]:
+async def fetch_conversion(
+    conn: AsyncConnection, window_start: datetime.date, window_end: datetime.date
+) -> dict[str, Any]:
     """Guest -> registered conversion, from the stamped promoted_at column.
 
-    Cohort card (D3): windowed on ``users.created_at`` (entry) only; the
-    joined `user_activity` CTE stays unfiltered so entrants are followed
-    forward to today — do not add a date filter to that CTE.
+    Cohort card (D3): windowed on ``users.created_at`` (entry) only, bounded
+    on both sides; the joined `user_activity` CTE stays unfiltered so
+    entrants are followed forward to today — do not add a date filter to
+    that CTE.
     """
     row = (
         await _rows(
@@ -643,7 +768,8 @@ async def fetch_conversion(conn: AsyncConnection, window_start: datetime.date) -
             WITH u AS (
               SELECT id, ({_PROMOTED_GUEST}) AS converted
               FROM users u
-              WHERE created_at >= CAST(:first AS date) AND {_GUEST_COHORT}),
+              WHERE created_at >= CAST(:first AS date) AND created_at < CAST(:last AS date)
+                AND {_GUEST_COHORT}),
             a AS (SELECT user_id, count(DISTINCT activity_date) AS days FROM user_activity GROUP BY 1)
             SELECT count(*) AS sessions,
                    count(*) FILTER (WHERE u.converted) AS converted,
@@ -652,6 +778,7 @@ async def fetch_conversion(conn: AsyncConnection, window_start: datetime.date) -
             FROM u LEFT JOIN a ON a.user_id = u.id
             """,
             first=window_start,
+            last=_end_exclusive(window_end),
         )
     )[0]
     return {
@@ -662,7 +789,9 @@ async def fetch_conversion(conn: AsyncConnection, window_start: datetime.date) -
     }
 
 
-async def fetch_guest_train(conn: AsyncConnection, window_start: datetime.date) -> dict[str, Any]:
+async def fetch_guest_train(
+    conn: AsyncConnection, window_start: datetime.date, window_end: datetime.date
+) -> dict[str, Any]:
     """Train sessions completed while a user was still a guest (D-10b, D-11, D-12).
 
     This is a NEW query rather than a filter tweak on ``fetch_train`` -- that
@@ -689,20 +818,21 @@ async def fetch_guest_train(conn: AsyncConnection, window_start: datetime.date) 
             SELECT count(*) AS sessions_completed, count(DISTINCT d.user_id) AS users
             FROM drill_sessions d
             JOIN users u ON u.id = d.user_id
-            WHERE u.created_at >= CAST(:first AS date)
+            WHERE u.created_at >= CAST(:first AS date) AND u.created_at < CAST(:last AS date)
               AND {_GUEST_COHORT}
               AND u.games_purged_at IS NULL
               AND d.status = 'completed'
               AND d.session_date < COALESCE(u.promoted_at::date, 'infinity'::date)
             """,
             first=window_start,
+            last=_end_exclusive(window_end),
         )
     )[0]
     return {"sessions_completed": int(row[0]), "users": int(row[1])}
 
 
 async def fetch_conversion_compare(
-    conn: AsyncConnection, window_start: datetime.date
+    conn: AsyncConnection, window_start: datetime.date, window_end: datetime.date
 ) -> list[list[Any]]:
     """What converters did differently, as [metric, hits, total] per group.
 
@@ -713,10 +843,10 @@ async def fetch_conversion_compare(
     (which deliberately keeps every guest, since ``promoted_at`` survives a
     purge) -- see ``fetch_purged_excluded`` for the count this drops.
 
-    Cohort card (D3): windowed on ``users.created_at`` (entry) only; the
-    joined `bot_game_settings`/`user_activity` CTEs stay unfiltered so
-    entrants are followed forward to today — do not add a date filter to
-    those CTEs.
+    Cohort card (D3): windowed on ``users.created_at`` (entry) only, bounded
+    on both sides; the joined `bot_game_settings`/`user_activity` CTEs stay
+    unfiltered so entrants are followed forward to today — do not add a date
+    filter to those CTEs.
     """
     row = (
         await _rows(
@@ -725,8 +855,8 @@ async def fetch_conversion_compare(
             WITH u AS (
               SELECT id, ({_PROMOTED_GUEST}) AS converted, lifetime_games_imported
               FROM users u
-              WHERE created_at >= CAST(:first AS date) AND {_GUEST_COHORT}
-                AND u.games_purged_at IS NULL),
+              WHERE created_at >= CAST(:first AS date) AND created_at < CAST(:last AS date)
+                AND {_GUEST_COHORT} AND u.games_purged_at IS NULL),
             b AS (SELECT g.user_id, count(*) AS n FROM bot_game_settings s
                   JOIN games g ON g.id = s.game_id GROUP BY 1),
             a AS (SELECT user_id, count(DISTINCT activity_date) AS days FROM user_activity GROUP BY 1)
@@ -742,6 +872,7 @@ async def fetch_conversion_compare(
                    LEFT JOIN a ON a.user_id = u.id
             """,
             first=window_start,
+            last=_end_exclusive(window_end),
         )
     )[0]
     converted_total, guest_total = int(row[0]), int(row[1])

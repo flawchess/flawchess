@@ -32,6 +32,11 @@ CACHE_TTL_SECONDS: Final[int] = 300
 # results are cached, so concurrency here would only add load on the database.
 _POOL_SIZE = 1
 
+# The key space is no longer four preset range keys but every (range_key,
+# start, end) a caller can name, so StatsCache bounds how many payloads stay
+# resident, evicting the oldest entry once a fresh build would exceed this.
+_MAX_ENTRIES: Final[int] = 16
+
 
 def build_readonly_engine(url: str, application_name: str) -> AsyncEngine:
     """Open a read-only engine against `url`.
@@ -55,16 +60,17 @@ def build_readonly_engine(url: str, application_name: str) -> AsyncEngine:
 
 
 async def build_payload(
-    engine: AsyncEngine, range_key: queries.RangeKey, now_utc: datetime.datetime
+    engine: AsyncEngine, request: queries.WindowRequest, now_utc: datetime.datetime
 ) -> queries.Payload:
-    """Run every dashboard query, for `range_key` alone, in one read-only connection.
+    """Run every dashboard query, for `request` alone, in one read-only connection.
 
     `now_utc` comes from the caller (ultimately `Depends(dev_now_utc)`), never
     an inline clock read, so the resolved window is reproducible under the
     dev-clock override.
     """
     async with engine.connect() as conn:
-        window = await queries.fetch_window(conn, range_key, now_utc)
+        window = await queries.fetch_window(conn, request, now_utc)
+        end = window.window_end
         return queries.Payload(
             generated_at=now_utc.isoformat(),
             promoted_since=PROMOTED_AT_SINCE,
@@ -73,71 +79,89 @@ async def build_payload(
             days=window.days,
             window_start_index=window.window_start_index,
             last_complete_index=window.last_complete_index,
-            activity=await queries.fetch_activity(conn, window.lead_in_start, window.window_start),
-            signups=await queries.fetch_signups(conn, window.window_start),
-            bot=await queries.fetch_bot_games(conn, window.window_start),
-            train=await queries.fetch_train(conn, window.window_start),
-            train_funnel=await queries.fetch_train_funnel(
-                conn, window.window_start, window.data_start
+            activity=await queries.fetch_activity(
+                conn, window.lead_in_start, window.window_start, end
             ),
-            solves=await queries.fetch_solves(conn, window.lead_in_start),
-            imports=await queries.fetch_imports(conn, window.window_start),
-            persona=await queries.fetch_persona(conn, window.window_start),
-            bot_players=await queries.fetch_bot_players(conn, window.window_start),
-            elo=await queries.fetch_elo(conn, window.window_start),
-            funnel=await queries.fetch_funnel(conn, window.window_start),
-            tti=await queries.fetch_time_to_import(conn, window.window_start),
-            stick=await queries.fetch_stickiness(conn, window.window_start),
-            conversion=await queries.fetch_conversion(conn, window.window_start),
-            conversion_compare=await queries.fetch_conversion_compare(conn, window.window_start),
-            guest_train=await queries.fetch_guest_train(conn, window.window_start),
-            purged_excluded=await queries.fetch_purged_excluded(conn, window.window_start),
+            signups=await queries.fetch_signups(conn, window.window_start, end),
+            bot=await queries.fetch_bot_games(conn, window.window_start, end),
+            train=await queries.fetch_train(conn, window.window_start, end),
+            train_funnel=await queries.fetch_train_funnel(
+                conn, window.window_start, window.data_start, end
+            ),
+            solves=await queries.fetch_solves(conn, window.lead_in_start, end),
+            imports=await queries.fetch_imports(conn, window.window_start, end),
+            persona=await queries.fetch_persona(conn, window.window_start, end),
+            bot_players=await queries.fetch_bot_players(conn, window.window_start, end),
+            elo=await queries.fetch_elo(conn, window.window_start, end),
+            funnel=await queries.fetch_funnel(conn, window.window_start, end),
+            tti=await queries.fetch_time_to_import(conn, window.window_start, end),
+            stick=await queries.fetch_stickiness(conn, window.window_start, end),
+            conversion=await queries.fetch_conversion(conn, window.window_start, end),
+            conversion_compare=await queries.fetch_conversion_compare(
+                conn, window.window_start, end
+            ),
+            guest_train=await queries.fetch_guest_train(conn, window.window_start, end),
+            purged_excluded=await queries.fetch_purged_excluded(conn, window.window_start, end),
         )
 
 
 class StatsCache:
-    """Serves one payload PER RANGE KEY, refreshing each key at most once per TTL.
+    """Serves one payload PER REQUESTED WINDOW, refreshing each window at most
+    once per TTL.
 
-    A SINGLE `asyncio.Lock` guards every key, not one lock per key. The
+    A SINGLE `asyncio.Lock` guards every window, not one lock per window. The
     read-only engine (`build_readonly_engine`) is opened with `pool_size=1` and
-    `max_overflow=0`, so if two range keys were allowed to build concurrently
-    under separate locks, two cold misses on different keys could each try to
-    check out the one available connection at once. Serialising every build —
-    including builds for DIFFERENT keys — behind one lock is what prevents
-    that contention; it costs throughput only when two different windows are
-    both requested cold at the same instant, which this manual-refresh,
-    superuser-only page essentially never does.
+    `max_overflow=0`, so if two windows were allowed to build concurrently
+    under separate locks, two cold misses on different windows could each try
+    to check out the one available connection at once. Serialising every
+    build — including builds for DIFFERENT windows — behind one lock is what
+    prevents that contention; it costs throughput only when two different
+    windows are both requested cold at the same instant, which this
+    manual-refresh, superuser-only page essentially never does.
+
+    The key space used to be the four preset `RangeKey` values; a `start`/
+    `end` pair (Quick 260920-frk) turns it into every distinct date pair a
+    caller can name, so `_MAX_ENTRIES` bounds how many payloads stay resident.
     """
 
     def __init__(self, engine: AsyncEngine, ttl_seconds: int) -> None:
         self._engine = engine
         self._ttl = ttl_seconds
         self._lock = asyncio.Lock()
-        # One (payload, fetched_at) entry per range key, so each key ages on
-        # its own TTL independently of the other three.
-        self._entries: dict[queries.RangeKey, tuple[queries.Payload, float]] = {}
+        # One (payload, fetched_at) entry per requested window, so each
+        # window ages on its own TTL independently of the others.
+        self._entries: dict[queries.WindowRequest, tuple[queries.Payload, float]] = {}
 
     async def get(
         self,
-        range_key: queries.RangeKey,
+        request: queries.WindowRequest,
         *,
         now_utc: datetime.datetime,
         force: bool = False,
     ) -> queries.Payload:
         loop = asyncio.get_running_loop()
         async with self._lock:
-            entry = self._entries.get(range_key)
+            entry = self._entries.get(request)
             fresh = entry is not None and loop.time() - entry[1] < self._ttl
             if fresh and not force:
                 assert entry is not None
                 return entry[0]
-            # `force` (from `?refresh=1`) rebuilds ONLY `range_key`'s entry.
-            # Dropping all four would force three future cold 16-query
-            # rebuilds for a refresh the operator only asked for on the one
-            # window in front of them.
-            payload = await build_payload(self._engine, range_key, now_utc)
-            self._entries[range_key] = (payload, loop.time())
+            # `force` (from `?refresh=1`) rebuilds ONLY `request`'s entry.
+            # Dropping every entry would force future cold rebuilds for a
+            # refresh the operator only asked for on the one window in front
+            # of them.
+            payload = await build_payload(self._engine, request, now_utc)
+            self._entries[request] = (payload, loop.time())
+            self._evict_oldest()
             return payload
+
+    def _evict_oldest(self) -> None:
+        """Drop the oldest entries (by fetched_at) until the cache is within
+        `_MAX_ENTRIES`. Bounds resident payloads now that the key space is
+        every date pair a caller can name, not just four preset keys."""
+        while len(self._entries) > _MAX_ENTRIES:
+            oldest_key = min(self._entries, key=lambda key: self._entries[key][1])
+            del self._entries[oldest_key]
 
     async def dispose(self) -> None:
         """Dispose the underlying engine's connection pool."""

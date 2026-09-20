@@ -62,26 +62,57 @@ async def dispose_activity_engine() -> None:
         _cache = None
 
 
+def _build_window_request(
+    range_key: queries.RangeKey,
+    start: datetime.date | None,
+    end: datetime.date | None,
+    today: datetime.date,
+) -> queries.WindowRequest:
+    """Turn the raw `range`/`start`/`end` query params into a `WindowRequest`.
+
+    Both dates omitted -> the preset alone. A `start` before the dataset
+    begins is NOT an error here — `resolve_window` clamps it up to
+    `data_start`, the existing preset behaviour for a window wider than the
+    data. Everything else that can make an explicit window nonsensical is
+    rejected with a 422 before a query ever runs.
+    """
+    if start is None and end is None:
+        return queries.WindowRequest(range_key=range_key)
+    if start is None or end is None:
+        raise HTTPException(status_code=422, detail="start and end must be given together")
+    if start > end:
+        raise HTTPException(status_code=422, detail="start must not be after end")
+    if end > today:
+        raise HTTPException(status_code=422, detail="end must not be after today")
+    return queries.WindowRequest(range_key=range_key, start=start, end=end)
+
+
 @router.get("/stats", response_model=None)
 async def activity_stats(
     _admin: Annotated[User, Depends(current_superuser)],
     cache: Annotated[StatsCache, Depends(get_activity_cache)],
     now_utc: Annotated[datetime.datetime, Depends(dev_now_utc)],
     range_key: Annotated[queries.RangeKey, Query(alias="range")] = "all",
+    start: Annotated[datetime.date | None, Query()] = None,
+    end: Annotated[datetime.date | None, Query()] = None,
     refresh: bool = False,
 ) -> JSONResponse:
-    """Return the Activity Pulse dataset for `range`, cached for CACHE_TTL_SECONDS.
+    """Return the Activity Pulse dataset for `range` (or an explicit `start`/
+    `end` pair), cached for CACHE_TTL_SECONDS.
 
     The payload is large and TypedDict, not a Pydantic model — re-validating it
     through Pydantic on every hit buys nothing (response_model=None). A
     SQLAlchemyError during the query pass IS a bug (unlike the 401/403 above),
     so it is captured to Sentry and surfaced as a 503. An unrecognised `range`
     value fails FastAPI's own `Literal` validation with a 422 before this
-    handler body ever runs — deliberately NOT captured to Sentry, because a
-    rejected query parameter is an expected validation failure, not a bug.
+    handler body ever runs, and `_build_window_request` raises the same kind
+    of 422 for a malformed `start`/`end` pair — both are deliberately NOT
+    captured to Sentry, because a rejected query parameter is an expected
+    validation failure, not a bug.
     """
+    request = _build_window_request(range_key, start, end, today=now_utc.date())
     try:
-        payload = await cache.get(range_key, now_utc=now_utc, force=refresh)
+        payload = await cache.get(request, now_utc=now_utc, force=refresh)
     except SQLAlchemyError as exc:
         sentry_sdk.capture_exception(exc)
         logger.warning("activity stats query failed: %s", type(exc).__name__)
