@@ -5,8 +5,8 @@ current_phase: 224
 current_phase_name: Guest Activation — Welcome Removal & Guest Train (SEED-169)
 status: executing
 stopped_at: Completed 224-06-PLAN.md
-last_updated: "2026-09-17T22:25:19.681Z"
-state_head: 449285ca1400c35d6572eb03f5cd1232a2f5d330
+last_updated: "2026-09-20T09:44:45.983Z"
+state_head: b244d0ebf3839742375723e1c83a661a447e18d4
 progress:
   total_phases: 2
   completed_phases: 0
@@ -907,6 +907,7 @@ None active.
 | 260916-gj7 | DB report follow-ups: index opening_cache_audit.sample_game_id, drop ix_games_full_pv_pending, tighten Check C rule | 2026-09-16 | 1b60cadd | [260916-gj7-db-report-follow-ups-index-opening-cache](./quick/260916-gj7-db-report-follow-ups-index-opening-cache/) |
 | 260917-qte | Activity funnel purge artifact: retained-fact user columns (first_import_started_at, lifetime_games_imported, games_purged_at), purged users excluded from funnel/TTI/stickiness/conversion-compare, phantom "Chess account linked" stage dropped, _GUEST_COHORT split | 2026-09-17 | 37e0a8c8b | [260917-qte-fix-activity-dashboard-guest-activation-](./quick/260917-qte-fix-activity-dashboard-guest-activation-/) |
 | 260917-sgw | Add `tzdata` to runtime deps so legacy IANA timezone aliases (Europe/Kiev, Asia/Calcutta, US/Pacific, …) resolve in the trimmed `python:3.14-slim` prod image — fixes the `PUT /train/settings` 422 in Sentry FLAWCHESS-9W and the scheduler's silent UTC fallback | 2026-09-17 | b17fda109 | [260917-sgw-add-tzdata-to-runtime-deps-so-legacy-ian](./quick/260917-sgw-add-tzdata-to-runtime-deps-so-legacy-ian/) |
+| 260920-frk | Activity dashboard: explicit start/end date selector (single day and today selectable) alongside the range presets; all 17 activity queries gain an inclusive upper bound; cache keyed on the resolved window | 2026-09-20 | b244d0ebf | [260920-frk-on-the-activity-dashboard-add-a-timespan](./quick/260920-frk-on-the-activity-dashboard-add-a-timespan/) |
 
 ## Deferred Items
 
