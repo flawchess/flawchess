@@ -12,6 +12,7 @@ in `YYYY-MM-DD` (Europe/Zurich).
 
 - The bot opponents now talk during a game and greet you on the roster page, each in its own voice and personality, reacting to captures, big swings and draw offers as the game unfolds.
 - Train is now open to everyone, including guests and accounts that have not imported a game yet: a daily warm-up session of sharp practice puzzles, with the same streak and weekday schedule as a full account, and the streak and solve history carry over when you sign up.
+- The Activity Pulse dashboard now has a start/end date selector alongside the four range presets, so an operator can read a specific historical window instead of only "the last N days ending now". Setting both dates the same analyses just that one day, and today is selectable. (quick 260920-frk)
 
 ### Changed
 

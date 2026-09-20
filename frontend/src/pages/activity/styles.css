@@ -73,6 +73,14 @@
 }
 .activity-dash .seg button[aria-pressed="true"]{background:var(--surface); color:var(--ink); box-shadow:var(--shadow)}
 .activity-dash .seg button:focus-visible{outline:2px solid var(--brand); outline-offset:2px}
+/* Custom date range inputs (Quick 260920-frk) live in their own .seg pill
+   next to the preset one, so they inherit the same font/size/padding scale
+   as the preset buttons rather than the browser's native date-input chrome. */
+.activity-dash .seg input[type="date"]{
+  font:inherit; font-size:.9375rem; color:var(--ink); background:var(--surface);
+  border:1px solid var(--rule); border-radius:999px; padding:7px 10px; cursor:pointer;
+}
+.activity-dash .seg input[type="date"]:focus-visible{outline:2px solid var(--brand); outline-offset:2px}
 .activity-dash .controls .hint{color:var(--ink-3); font-size:.9375rem}
 /* The range group has four options where the audience group has three, and
    .seg is a single inline-flex pill that cannot break internally — only the
@@ -82,11 +90,13 @@
    go below it. */
 @media (max-width:560px){
   .activity-dash .seg button{padding:7px 9px; font-size:.875rem}
+  .activity-dash .seg input[type="date"]{padding:7px 9px; font-size:.875rem}
 }
 /* 320px (iPhone SE) is the narrowest width check-activity-layout.mjs asserts
    against, and the four range buttons still overflow it at 9px padding. */
 @media (max-width:380px){
   .activity-dash .seg button{padding:7px 6px}
+  .activity-dash .seg input[type="date"]{padding:7px 6px}
 }
 
 /* ---- tiles ---- */

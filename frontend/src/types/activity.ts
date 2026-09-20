@@ -10,15 +10,24 @@
 
 /**
  * The four presets the global time-range filter offers (Quick 260831-p7x,
- * D1). Mirrors `app.services.activity_queries.RangeKey`. No custom range, no
- * "Today", no fifth preset — exactly these four, ever.
+ * D1). Mirrors `app.services.activity_queries.RangeKey`. These are the only
+ * preset keys — an explicit start/end pair (Quick 260920-frk) is not a fifth
+ * preset; it is reported back as `ActivitySelectedRange`'s extra "custom"
+ * value.
  */
 export type ActivityRangeKey = 'all' | 'd90' | 'd30' | 'd7';
+
+/**
+ * What the payload's `range` field reports back: the four presets, plus
+ * "custom" when the caller supplied an explicit start/end pair instead of a
+ * preset key. Mirrors `app.services.activity_queries.SelectedRange`.
+ */
+export type ActivitySelectedRange = ActivityRangeKey | 'custom';
 
 export interface ActivityStatsPayload {
   generated_at: string;
   promoted_since: string;
-  range: ActivityRangeKey;
+  range: ActivitySelectedRange;
   data_start: string;
   days: string[];
   window_start_index: number;
