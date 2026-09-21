@@ -513,7 +513,8 @@ Why the raw curve is steep (all games, by streak; the 6+ cells are pooled from t
 `ladder_diagnostics.csv`): after 6+ wins the next opponent is on average 175 points weaker, after 6+
 losses 61 points stronger. This is selection, not matchmaking: the user's rating sits only 8–10 points
 above its long-run median at that point and six wins move it by ≈30 points, while the opponents *during*
-the streak were on average even weaker than the next one (111 points for exactly six wins, 253 for 7+).
+the streak were on average even weaker than the next one (198 points pooled over 6+ wins: 111 for exactly six,
+253 for 7+; after 6+ losses the streak's opponents were 82 points stronger).
 Streaks are produced by lopsided pairings and the next opponent comes from the same context. The mean is
 a fat tail rather than a shift (median gap +28 after exactly six wins, +105 after 7+; 38% of post-7+ games
 are against an opponent more than 200 points weaker): split 6+ win streaks by whether the streak's own
