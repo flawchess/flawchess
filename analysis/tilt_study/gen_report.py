@@ -976,6 +976,17 @@ Summarised from the literature review in `analysis/tilt_study/FINDINGS.md` §8.
 
 ## Reproduction
 
+Inputs (either is enough for §1–§5, §6a and §7; the parquet archive is needed for the §6 blunder table):
+
+- **Benchmark DB dump** (2026-08-18): https://drive.google.com/file/d/1JWGPIvjAPIXsRowOy4IaHcDwSngnjxcC/view?usp=sharing.
+  Games, clocks, Lichess analysis flags and endgame-entry evals have been frozen since the last import on
+  2026-05-26, so every extract below except `flaws.parquet` re-derives identically from the dump.
+- **Source extracts** (`analysis/out/tilt/*.parquet`, 188 MB zipped, extracted 2026-09-02 to 2026-09-16):
+  https://drive.google.com/file/d/1pwj6jHX3wCTqzpVS2rjVlFxqD8wkyVEX/view?usp=sharing. Unzip into
+  `analysis/out/` and skip the extract steps. `flaws.parquet` depends on the benchmark Stockfish pipeline,
+  which kept evaluating games after the dump was taken (618,513 fully evaluated games on 2026-09-16 vs
+  ≈417,000 in the dump), so the §6 "Move quality" table is reproduced from the archive, not from the dump.
+
 ```bash
 bin/benchmark_db.sh start
 uv run --project analysis python analysis/tilt_study/extract_clocks.py           # clock_ends.parquet
