@@ -37,7 +37,7 @@ import polars as pl
 REPO = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO))
 sys.path.insert(0, str(REPO / "analysis" / "tilt_study"))
-from story_data import TC_ORDER, cached_games  # noqa: E402
+from story_data import TC_ORDER, cached_games  # noqa: E402  # ty: ignore[unresolved-import]  (resolved via sys.path.insert above)
 
 TILT_OUT = REPO / "analysis" / "out" / "tilt"
 OUT = REPO / "analysis" / "out" / "session_length"
