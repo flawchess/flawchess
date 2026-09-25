@@ -66,6 +66,7 @@ Umami does **not** track outbound clicks automatically (that's Plausible). Every
 
 ## Content & copy
 
+- **Prose follows `misc/story-writing-style.md`** . Read it before drafting or editing any story text.
 - **Publication date is mandatory**: show it in the hero kicker as `<time datetime="YYYY-MM-DD">Month D, YYYY</time>`, and repeat it on the landing-page card.
 - Plain-language copy for a non-technical audience ("two pawns up", not "200 cp").
 - **Terminology must match the underlying technical report.** Don't invent story-side synonyms for defined terms (e.g. the report's "sustained lead" stays "sustained lead", not "wire-to-wire").
