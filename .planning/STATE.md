@@ -908,6 +908,7 @@ None active.
 | 260917-qte | Activity funnel purge artifact: retained-fact user columns (first_import_started_at, lifetime_games_imported, games_purged_at), purged users excluded from funnel/TTI/stickiness/conversion-compare, phantom "Chess account linked" stage dropped, _GUEST_COHORT split | 2026-09-17 | 37e0a8c8b | [260917-qte-fix-activity-dashboard-guest-activation-](./quick/260917-qte-fix-activity-dashboard-guest-activation-/) |
 | 260917-sgw | Add `tzdata` to runtime deps so legacy IANA timezone aliases (Europe/Kiev, Asia/Calcutta, US/Pacific, …) resolve in the trimmed `python:3.14-slim` prod image — fixes the `PUT /train/settings` 422 in Sentry FLAWCHESS-9W and the scheduler's silent UTC fallback | 2026-09-17 | b17fda109 | [260917-sgw-add-tzdata-to-runtime-deps-so-legacy-ian](./quick/260917-sgw-add-tzdata-to-runtime-deps-so-legacy-ian/) |
 | 260920-frk | Activity dashboard: explicit start/end date selector (single day and today selectable) alongside the range presets; all 17 activity queries gain an inclusive upper bound; cache keyed on the resolved window | 2026-09-20 | b244d0ebf | [260920-frk-on-the-activity-dashboard-add-a-timespan](./quick/260920-frk-on-the-activity-dashboard-add-a-timespan/) |
+| 260925-ine | Fix Sentry FLAWCHESS-BQ/2A (empty-hash login 500) and FLAWCHESS-A0 (atomic-submit FK race on deleted game) | 2026-09-25 | 05195694 | [260925-ine-fix-sentry-flawchess-bq-2a-empty-hash-lo](./quick/260925-ine-fix-sentry-flawchess-bq-2a-empty-hash-lo/) |
 
 ## Deferred Items
 
