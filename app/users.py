@@ -63,6 +63,18 @@ async def get_user_db(
 # ---------------------------------------------------------------------------
 
 
+def _has_password(user: User) -> bool:
+    """Credential-state predicate: does this account hold a password hash?
+
+    Google-only and guest accounts store hashed_password="". This is the single
+    site that inspects the hash (enforced by
+    tests/test_users_account_type_invariant.py) so every caller shares the
+    credential-state reading, never an account-type one (is_guest /
+    oauth_accounts).
+    """
+    return user.hashed_password != ""
+
+
 class UserManager(IntegerIDMixin, BaseUserManager[User, int]):
     reset_password_token_secret = settings.SECRET_KEY
     verification_token_secret = settings.SECRET_KEY
@@ -78,8 +90,8 @@ class UserManager(IntegerIDMixin, BaseUserManager[User, int]):
         unguarded, so a password login against such an account 500'd instead
         of returning bad credentials.
 
-        The empty-hash predicate mirrors on_after_forgot_password's gate
-        below: credential state ("does this account have a password"), not
+        The empty-hash predicate (_has_password) is shared with
+        on_after_forgot_password's gate below: credential state ("does this account have a password"), not
         account type (is_guest / oauth_accounts). Both the missing-user and
         empty-hash branches run a dummy password_helper.hash() for timing
         parity and return None -> the router's existing 400
@@ -94,7 +106,7 @@ class UserManager(IntegerIDMixin, BaseUserManager[User, int]):
             self.password_helper.hash(credentials.password)
             return None
 
-        if not user.hashed_password:
+        if not _has_password(user):
             self.password_helper.hash(credentials.password)
             return None
 
@@ -151,7 +163,7 @@ class UserManager(IntegerIDMixin, BaseUserManager[User, int]):
         # the empty hash, so no separate is_guest check is needed. Do not
         # consult user.oauth_accounts, the oauth_account table, or
         # user.is_guest here, and do not inspect the hash's algorithm prefix.
-        if not user.hashed_password:
+        if not _has_password(user):
             return
 
         # 2. Per-email rate limit (D-06). Silent no-op on rejection — see
