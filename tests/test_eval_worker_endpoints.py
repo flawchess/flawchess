@@ -4359,6 +4359,112 @@ class TestAtomicSubmitEndpoint:
         finally:
             await _delete_games(eval_worker_session_maker, [game_id, sentinel_game_id])
 
+    @pytest.mark.asyncio
+    async def test_atomic_submit_game_deleted_mid_submit_returns_404(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        eval_worker_session_maker: async_sessionmaker[AsyncSession],
+        eval_worker_test_user: int,
+    ) -> None:
+        """FLAWCHESS-A0: a game deleted between the read phase and the write
+        session commit (the widest window is the CPU-heavy
+        _build_best_move_candidates call, which runs before the write session
+        opens) maps to 404 "Game not found" instead of an unhandled
+        IntegrityError on game_best_moves_game_id_fkey. Nothing is written:
+        the games row stays gone, zero game_best_moves rows, zero game_flaws
+        rows.
+
+        Reverting commit_unless_game_deleted's wiring in
+        app/routers/eval_remote.py reproduces the real prod IntegrityError
+        here (apply_full_eval's _upsert_best_move_rows tries to insert the
+        fake builder's row against the now-deleted game_id).
+        """
+        import app.routers.eval_remote as eval_remote_module
+        from app.models.game import Game
+        from app.models.game_flaw import GameFlaw
+
+        monkeypatch.setattr(settings, "EVAL_OPERATOR_TOKEN", _TEST_TOKEN)
+        monkeypatch.setattr(settings, "EXPECTED_SF_VERSION", "")
+        _patch_router_session(monkeypatch, eval_worker_session_maker)
+
+        user_id = eval_worker_test_user
+        game_id = await _insert_game(eval_worker_session_maker, user_id, pgn=_SIX_PLY_PGN_142)
+        await _insert_game_positions(
+            eval_worker_session_maker,
+            user_id,
+            game_id,
+            [
+                {"ply": p, "full_hash": 51400 + p, "eval_cp": None, "eval_mate": None}
+                for p in range(6)
+            ],
+        )
+
+        async def _fake_build_best_move_candidates(
+            game_id_arg: int,
+            targets: Any,
+            engine_result_map: Any,
+            second_best_map: Any,
+            source: str = "worker-submit-fallback",
+        ) -> list[dict[str, Any]]:
+            # Simulate the owner deleting the game while this CPU-heavy step
+            # (which runs BEFORE the write session opens) is in flight.
+            await _delete_games(eval_worker_session_maker, [game_id_arg])
+            return [
+                {
+                    "game_id": game_id_arg,
+                    "ply": 2,
+                    "maia_prob": 0.42,
+                    "best_cp": 30,
+                    "best_mate": None,
+                    "second_cp": -100,
+                    "second_mate": None,
+                }
+            ]
+
+        monkeypatch.setattr(
+            eval_remote_module, "_build_best_move_candidates", _fake_build_best_move_candidates
+        )
+
+        try:
+            payload = {
+                "game_id": game_id,
+                "sf_version": "Stockfish 18",
+                "worker_schema_version": 1,
+                "evals": list(_BLUNDER_SUBMIT_EVALS_142),
+                "blob_nodes": [],
+                "job_id": None,
+            }
+
+            async with _make_client() as client:
+                resp = await client.post(
+                    _ATOMIC_SUBMIT_URL,
+                    json=payload,
+                    headers={"X-Operator-Token": _TEST_TOKEN},
+                )
+
+            assert resp.status_code == 404, f"Expected 404, got {resp.status_code}: {resp.text}"
+            assert resp.json()["detail"] == "Game not found"
+
+            async with eval_worker_session_maker() as verify:
+                game_row = (
+                    await verify.execute(select(Game.id).where(Game.id == game_id))
+                ).scalar_one_or_none()
+                assert game_row is None, "games row must stay deleted"
+
+                flaw_count = (
+                    await verify.execute(
+                        select(func.count())
+                        .select_from(GameFlaw)
+                        .where(GameFlaw.game_id == game_id)
+                    )
+                ).scalar_one()
+                assert flaw_count == 0
+
+            assert await _count_game_best_moves(eval_worker_session_maker, game_id) == 0
+        finally:
+            # Idempotent — the game is already gone by the time we get here.
+            await _delete_games(eval_worker_session_maker, [game_id])
+
 
 # ─── Phase 145 Plan 04 Task 1: blob assembly from worker results (TDD RED) ───
 
