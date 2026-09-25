@@ -33,10 +33,10 @@ with apply_full_eval.
 import asyncio
 import io
 import json
-from collections.abc import Callable, Coroutine, Sequence
+from collections.abc import Awaitable, Callable, Coroutine, Sequence
 from dataclasses import dataclass
 from datetime import datetime, timezone
-from typing import Any, Literal, cast
+from typing import Any, Literal, TypeVar, cast
 
 import chess
 import chess.pgn
@@ -45,6 +45,7 @@ import sqlalchemy as sa
 from fastapi import HTTPException, status
 from sqlalchemy import select, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import async_session_maker
@@ -122,6 +123,11 @@ _GAME_WRITE_LOCK_NAMESPACE: int = 0x464C4157
 # Low-32-bit mask applied to game_id when packing the key (see
 # `_game_write_lock_key`).
 _GAME_WRITE_LOCK_MASK: int = 0xFFFFFFFF
+
+# FLAWCHESS-A0: PostgreSQL SQLSTATE for a foreign-key violation. Used by
+# `commit_unless_game_deleted` below to narrowly distinguish "the game this
+# write referenced was deleted mid-write" from any other integrity error.
+_PG_FOREIGN_KEY_VIOLATION_SQLSTATE = "23503"
 
 
 def _game_write_lock_key(game_id: int) -> int:
@@ -2784,6 +2790,86 @@ async def _apply_bestmove_submit(
         await write_session.commit()
 
     return BestMoveSubmitResponse(game_id=game_id, rows_written=len(best_move_rows))
+
+
+async def _game_row_exists(session: AsyncSession, game_id: int) -> bool:
+    """Plain existence check for `games.id`, no FOR UPDATE / FOR KEY SHARE.
+
+    Deliberately non-locking — see `commit_unless_game_deleted`'s docstring
+    for why a row lock is rejected here.
+    """
+    result = await session.execute(select(Game.id).where(Game.id == game_id))
+    return result.scalar_one_or_none() is not None
+
+
+_T = TypeVar("_T")
+
+
+async def commit_unless_game_deleted(
+    write_session: AsyncSession,
+    game_id: int,
+    write: Callable[[], Awaitable[_T]],
+) -> _T | None:
+    """Run `write()` and commit `write_session`, mapping a mid-write game
+    deletion to `None` instead of letting the FK violation propagate
+    (FLAWCHESS-A0).
+
+    What broke: a game deleted by its owner — typically via
+    `delete_all_games_for_user` or account deletion — between an eval lane's
+    read phase and its write-session commit made the next FK-checked insert
+    (`game_best_moves_game_id_fkey`) fail, and `/api/eval/remote/atomic-submit`
+    (and the drain lane's full and tier-4b paths, which share this helper)
+    500'd with an unhandled `IntegrityError`.
+
+    Why no row lock: a `SELECT ... FOR KEY SHARE` on the `games` row was
+    considered and rejected. `delete_all_games_for_user`
+    (app/repositories/game_repository.py) deletes `game_positions` FIRST and
+    `games` SECOND (children then parent). A write session holding a
+    `games` row lock while later touching child rows the deleter already
+    holds — while the deleter waits on the `games` row lock we hold — is a
+    deadlock cycle that PostgreSQL resolves by aborting one side (possibly
+    the user's own delete). It would also insert a lock acquisition ahead of
+    `apply_full_eval`'s `pg_advisory_xact_lock` call, which must stay the
+    FIRST lock taken on every path into that function (260825-v8g). So this
+    helper uses a non-locking existence pre-check plus a narrow in-transaction
+    FK-violation catch instead — a pre-check alone cannot close the race (the
+    deletion can land in the window between the pre-check and the commit),
+    hence the catch is required, not optional.
+
+    Why the catch is narrow: only a `write()` failure whose translated
+    `IntegrityError` carries SQLSTATE 23503 (foreign_key_violation) AND a
+    fresh post-rollback re-check confirms the `games` row is actually gone is
+    treated as "game deleted, discard silently". Any other `IntegrityError`
+    (wrong SQLSTATE, or 23503 against a row that still exists — a genuine
+    data-integrity bug) is re-raised so it still reaches the caller's normal
+    error handling / Sentry capture (T-ine-03).
+
+    `write` must never itself return `None` — `None` is this helper's
+    "game was deleted" signal, so a callable that legitimately returns
+    `None` on success cannot be distinguished from a discard. Callers own
+    all logging; this helper never logs and never Sentry-captures — a
+    discarded write is an expected outcome, not an error.
+
+    Returns `write()`'s result on success, or `None` when the game was
+    deleted (either found missing at the pre-check, or found missing after
+    an in-transaction FK violation).
+    """
+    if not await _game_row_exists(write_session, game_id):
+        return None
+
+    try:
+        result = await write()
+        await write_session.commit()
+    except IntegrityError as exc:
+        await write_session.rollback()
+        sqlstate = getattr(exc.orig, "sqlstate", None)
+        if sqlstate == _PG_FOREIGN_KEY_VIOLATION_SQLSTATE and not await _game_row_exists(
+            write_session, game_id
+        ):
+            return None
+        raise
+
+    return result
 
 
 async def apply_full_eval(

@@ -37,6 +37,7 @@ import asyncio
 import logging
 from collections.abc import Sequence
 from dataclasses import dataclass, field
+from typing import Any
 
 import asyncpg
 import sentry_sdk
@@ -84,6 +85,7 @@ from app.services.eval_apply import (
     _upsert_best_move_rows,
     _walk_pv_boards,  # noqa: F401 — backward-compat re-export (scripts)
     apply_full_eval,
+    commit_unless_game_deleted,
 )
 
 # Phase 150 R7 Task 2: entry-ply (import-time, no-shift) collection/write/classify
@@ -1100,6 +1102,28 @@ def _log_path_c_capacity_reached(
     )
 
 
+async def _write_tier4b_best_moves(
+    write_session: AsyncSession,
+    game_id: int,
+    best_move_rows: Sequence[dict[str, Any]],
+    maia_available: bool,
+) -> int:
+    """Write-session body for `_tier4b_minimal_drain_tick`'s write phase (FLAWCHESS-A0).
+
+    UPSERTs `best_move_rows` and, iff `maia_available`, stamps
+    `best_moves_completed_at` (Phase 176 D-01 guardrail — never inferred from
+    row count, see the caller's docstring). Extracted to a module-level
+    function so it can run through `commit_unless_game_deleted`, which needs
+    a zero-argument callable; the return value is never `None` by
+    construction (that value is reserved as the helper's "game deleted"
+    signal).
+    """
+    await _upsert_best_move_rows(write_session, best_move_rows)
+    if maia_available:
+        await _mark_best_moves_completed(write_session, game_id)
+    return len(best_move_rows)
+
+
 async def _tier4b_minimal_drain_tick(game_id: int, user_id: int) -> bool:
     """Phase 177 D-05: minimal candidate-only drain path for a TIER_BESTMOVE_BACKFILL
     claim — fixes the documented `_ = tier` no-op (177-RESEARCH.md Pitfall 3).
@@ -1278,11 +1302,28 @@ async def _tier4b_minimal_drain_tick(game_id: int, user_id: int) -> bool:
 
     # Write session — open LATE, UPSERT rows + stamp (iff Maia was available) +
     # commit. Nothing else.
+    #
+    # FLAWCHESS-A0: routed through commit_unless_game_deleted (eval_apply.py) —
+    # this lane writes game_best_moves directly (no apply_full_eval reclassify),
+    # so it hits the exact same deleted-game FK race on
+    # game_best_moves_game_id_fkey. A None outcome means the game was deleted
+    # mid-write; discard the tick instead of raising into run_full_eval_drain's
+    # Sentry catch-all.
     async with async_session_maker() as write_session:
-        await _upsert_best_move_rows(write_session, best_move_rows)
-        if maia_available:
-            await _mark_best_moves_completed(write_session, game_id)
-        await write_session.commit()
+        outcome = await commit_unless_game_deleted(
+            write_session,
+            game_id,
+            lambda: _write_tier4b_best_moves(
+                write_session, game_id, best_move_rows, maia_available
+            ),
+        )
+
+    if outcome is None:
+        logger.info(
+            "full_eval_drain (tier4b): game %s deleted before write, discarding tick",
+            game_id,
+        )
+        return False
 
     return True
 
@@ -1507,49 +1548,62 @@ async def _full_drain_tick() -> bool:
     # wrapper (eval_remote.py). This function still owns session lifecycle (mirrors
     # apply_completion_decision's pre-existing convention) so async_session_maker
     # test monkeypatches on THIS module continue to route correctly.
+    # FLAWCHESS-A0: routed through commit_unless_game_deleted (eval_apply.py) so a
+    # game deleted between the claim/load step above and this write session's
+    # commit maps to a no-op tick (return False) instead of an unhandled FK
+    # IntegrityError on game_best_moves_game_id_fkey — see the helper's
+    # docstring for the full race and why no row lock is taken.
     async with async_session_maker() as write_session:
-        failed_ply_count, stamp_complete, _flaws_written = await apply_full_eval(
-            write_session,
-            game_id=game_id,
-            job_id=job_id,
-            targets=targets,
-            dedup_map=dedup_map,
-            engine_result_map=engine_result_map,
-            is_lichess_eval_game=is_lichess_eval_game,
-            flaw_pv_blobs=flaw_pv_blobs,
-            current_attempts=current_attempts,
-            source="full_eval_drain",
-            on_path_c_capacity_reached=_log_path_c_capacity_reached,
-            # SEED-075: blobs_pending=True mirrors the atomic go-forward path
-            # (eval_remote.py atomic-submit). Without it the local drain defaulted to
-            # False and re-minted raw ungated cp-based tactic tags for any flaw whose
-            # continuation blob was NOT assembled into flaw_pv_blobs this pass
-            # (flaw_ply absent from the dict, pre_flaw_eval_cp present) — the exact
-            # Phase 147 strict-zero violation. It has ZERO effect on flaws that DID
-            # get a blob (the gate runs on pv_blob directly) and on the D-06
-            # []-sentinel / mate-adjacent FINAL cases.
-            blobs_pending=True,
-            # SEED-053 / D-123.1-04: fill the opening-eval cache with freshly-computed
-            # misses. Phase 220 CACHEFIX-12: the atomic-submit lane (eval_remote.py)
-            # now populates the cache too, through this SAME _upsert_opening_cache
-            # (one function, two call sites).
-            #
-            # Phase 220 (SEED-164 / this phase): guarded on `not is_lichess_eval_game`.
-            # Before this fix, dedup_hashes is always [] for a lichess-eval game (see
-            # the partition comment above), so EVERY one of its non-terminal opening
-            # plies lands in engine_targets and was being donated to the cache — which
-            # contradicts the invariant that same partition comment already states
-            # (SEED-109 item 4: lichess games neither seed nor draw from the cache).
-            # The donated values were genuine engine results on hash-asserted boards
-            # (not misaligned/poisoned), so this was a provenance-rule violation, not
-            # a poison source — counted in the CACHEFIX-07 report.
-            update_opening_cache=not is_lichess_eval_game,
-            upsert_opening_cache_fn=_upsert_opening_cache,
-            engine_targets_for_cache=[] if is_lichess_eval_game else engine_targets,
-            best_move_rows=best_move_rows,
-        )
 
-        await write_session.commit()
+        async def _write() -> tuple[int, bool, int]:
+            return await apply_full_eval(
+                write_session,
+                game_id=game_id,
+                job_id=job_id,
+                targets=targets,
+                dedup_map=dedup_map,
+                engine_result_map=engine_result_map,
+                is_lichess_eval_game=is_lichess_eval_game,
+                flaw_pv_blobs=flaw_pv_blobs,
+                current_attempts=current_attempts,
+                source="full_eval_drain",
+                on_path_c_capacity_reached=_log_path_c_capacity_reached,
+                # SEED-075: blobs_pending=True mirrors the atomic go-forward path
+                # (eval_remote.py atomic-submit). Without it the local drain defaulted to
+                # False and re-minted raw ungated cp-based tactic tags for any flaw whose
+                # continuation blob was NOT assembled into flaw_pv_blobs this pass
+                # (flaw_ply absent from the dict, pre_flaw_eval_cp present) — the exact
+                # Phase 147 strict-zero violation. It has ZERO effect on flaws that DID
+                # get a blob (the gate runs on pv_blob directly) and on the D-06
+                # []-sentinel / mate-adjacent FINAL cases.
+                blobs_pending=True,
+                # SEED-053 / D-123.1-04: fill the opening-eval cache with freshly-computed
+                # misses. Phase 220 CACHEFIX-12: the atomic-submit lane (eval_remote.py)
+                # now populates the cache too, through this SAME _upsert_opening_cache
+                # (one function, two call sites).
+                #
+                # Phase 220 (SEED-164 / this phase): guarded on `not is_lichess_eval_game`.
+                # Before this fix, dedup_hashes is always [] for a lichess-eval game (see
+                # the partition comment above), so EVERY one of its non-terminal opening
+                # plies lands in engine_targets and was being donated to the cache — which
+                # contradicts the invariant that same partition comment already states
+                # (SEED-109 item 4: lichess games neither seed nor draw from the cache).
+                # The donated values were genuine engine results on hash-asserted boards
+                # (not misaligned/poisoned), so this was a provenance-rule violation, not
+                # a poison source — counted in the CACHEFIX-07 report.
+                update_opening_cache=not is_lichess_eval_game,
+                upsert_opening_cache_fn=_upsert_opening_cache,
+                engine_targets_for_cache=[] if is_lichess_eval_game else engine_targets,
+                best_move_rows=best_move_rows,
+            )
+
+        outcome = await commit_unless_game_deleted(write_session, game_id, _write)
+
+    if outcome is None:
+        logger.info("full_eval_drain: game %s deleted before write, discarding tick", game_id)
+        return False
+
+    _failed_ply_count, stamp_complete, _flaws_written = outcome
 
     if not stamp_complete:
         # Path B: game is left pending — not a processed game by the WR-07 contract.

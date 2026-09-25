@@ -905,6 +905,107 @@ class TestMarkerWrite:
         finally:
             await _delete_games(full_drain_session_maker, [game_id])
 
+    async def test_full_drain_tick_game_deleted_mid_write_returns_false(
+        self,
+        full_drain_test_user: int,
+        full_drain_session_maker: async_sessionmaker[AsyncSession],
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """FLAWCHESS-A0: a game deleted while `_build_best_move_candidates`
+        (which runs before the write session opens) is in flight maps to a
+        no-op tick — `_full_drain_tick()` returns False, raises nothing, and
+        zero game_best_moves rows land.
+
+        Reverting commit_unless_game_deleted's wiring in
+        app/services/eval_drain.py reproduces the real prod IntegrityError on
+        game_best_moves_game_id_fkey here (apply_full_eval's
+        _upsert_best_move_rows tries to insert the fake builder's row against
+        the now-deleted game_id).
+        """
+        from app.models.game import Game
+        from app.models.game_best_move import GameBestMove
+
+        now = datetime.now(timezone.utc)
+        game_id = await _insert_game(
+            full_drain_session_maker,
+            full_drain_test_user,
+            pgn=_TWO_MOVE_PGN,
+            evals_completed_at=now,
+            full_evals_completed_at=None,
+        )
+        await _insert_game_positions(
+            full_drain_session_maker,
+            full_drain_test_user,
+            game_id,
+            [
+                {"ply": 0, "full_hash": 0xF0A0_0001, "eval_cp": None, "eval_mate": None},
+                {"ply": 1, "full_hash": 0xF0A0_0002, "eval_cp": None, "eval_mate": None},
+            ],
+        )
+
+        drain_module = _patch_drain_for_tick_tests(
+            monkeypatch, full_drain_session_maker, game_id, full_drain_test_user
+        )
+        mock_evaluate = AsyncMock(
+            side_effect=[
+                (99, None, "e2e4", "e2e4 e7e5", None, None, ""),
+                (50, None, "e7e5", "e7e5", None, None, ""),
+                (30, None, "g1f3", "g1f3", None, None, ""),
+            ]
+        )
+        monkeypatch.setattr(drain_module.engine_service, "evaluate_nodes_multipv2", mock_evaluate)
+
+        async def _fake_build_best_move_candidates(
+            game_id_arg: int,
+            targets: Any,
+            engine_result_map: Any,
+            second_best_map: Any,
+            source: str = "drain-local",
+        ) -> list[dict[str, Any]]:
+            # Simulate the owner deleting the game while this CPU-heavy step
+            # (which runs BEFORE the write session opens) is in flight.
+            await _delete_games(full_drain_session_maker, [game_id_arg])
+            return [
+                {
+                    "game_id": game_id_arg,
+                    "ply": 0,
+                    "maia_prob": 0.33,
+                    "best_cp": 20,
+                    "best_mate": None,
+                    "second_cp": -50,
+                    "second_mate": None,
+                }
+            ]
+
+        monkeypatch.setattr(
+            drain_module, "_build_best_move_candidates", _fake_build_best_move_candidates
+        )
+
+        try:
+            processed = await drain_module._full_drain_tick()
+            assert processed is False, (
+                "A game deleted mid-write must yield a no-op tick (False), not a "
+                "500-raising IntegrityError."
+            )
+
+            async with full_drain_session_maker() as verify_session:
+                game_row = (
+                    await verify_session.execute(select(Game.id).where(Game.id == game_id))
+                ).scalar_one_or_none()
+                assert game_row is None, "games row must stay deleted"
+
+                bm_count = (
+                    await verify_session.execute(
+                        sa.select(sa.func.count())
+                        .select_from(GameBestMove)
+                        .where(GameBestMove.game_id == game_id)
+                    )
+                ).scalar_one()
+                assert bm_count == 0
+        finally:
+            # Idempotent — the game is already gone by the time we get here.
+            await _delete_games(full_drain_session_maker, [game_id])
+
     async def test_marker_withheld_with_holes_under_cap(
         self,
         full_drain_test_user: int,
@@ -2635,6 +2736,91 @@ class TestBestMoveBackfill:
             )
             assert bm_rows[0].ply == 6
         finally:
+            await _delete_games(full_drain_session_maker, [game_id])
+
+    async def test_full_drain_tick_tier4b_game_deleted_mid_write_returns_false(
+        self,
+        full_drain_test_user_117: int,
+        full_drain_session_maker: async_sessionmaker[AsyncSession],
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """FLAWCHESS-A0: the tier-4b minimal path writes game_best_moves
+        directly (no apply_full_eval reclassify), so it hits the same
+        deleted-game FK race on game_best_moves_game_id_fkey. Wraps the REAL
+        `_build_best_move_candidates` (one row at ply 6, while the game still
+        exists) then deletes the game before returning — `_full_drain_tick()`
+        must return False and write nothing.
+
+        Reverting commit_unless_game_deleted's wiring in
+        app/services/eval_drain.py (the `_write_tier4b_best_moves` write path)
+        reproduces the real prod IntegrityError here.
+        """
+        from app.models.game import Game
+        from app.models.game_best_move import GameBestMove
+        import app.services.eval_apply as eval_apply_module
+        from app.models.eval_jobs import TIER_BESTMOVE_BACKFILL
+        from app.services import maia_engine
+
+        game_id = await self._seed_backfill_game(
+            full_drain_test_user_117, full_drain_session_maker, 0xB1F5_0000
+        )
+
+        drain_module = _patch_drain_for_tick_tests(
+            monkeypatch,
+            full_drain_session_maker,
+            game_id,
+            full_drain_test_user_117,
+            is_lichess_eval_game=False,
+            tier=TIER_BESTMOVE_BACKFILL,
+        )
+        monkeypatch.setattr(maia_engine, "_session", object())  # Maia present (sentinel)
+        monkeypatch.setattr(eval_apply_module, "score_move", lambda fen, elo, uci: 0.15)
+        monkeypatch.setattr(
+            drain_module.engine_service, "evaluate_nodes_multipv2", self._engine_mock()
+        )
+
+        real_build_best_move_candidates = drain_module._build_best_move_candidates
+
+        async def _delete_then_return(
+            game_id_arg: int,
+            targets: Any,
+            engine_result_map: Any,
+            second_best_map: Any,
+            source: str = "drain-local",
+        ) -> list[dict[str, Any]]:
+            rows = await real_build_best_move_candidates(
+                game_id_arg, targets, engine_result_map, second_best_map, source=source
+            )
+            # Simulate the owner deleting the game AFTER the real builder ran
+            # (while it still existed) but BEFORE the write session opens.
+            await _delete_games(full_drain_session_maker, [game_id_arg])
+            return rows
+
+        monkeypatch.setattr(drain_module, "_build_best_move_candidates", _delete_then_return)
+
+        try:
+            processed = await drain_module._full_drain_tick()
+            assert processed is False, (
+                "A game deleted mid-write must yield a no-op tick (False), not a "
+                "500-raising IntegrityError."
+            )
+
+            async with full_drain_session_maker() as verify:
+                game_row = (
+                    await verify.execute(select(Game.id).where(Game.id == game_id))
+                ).scalar_one_or_none()
+                assert game_row is None, "games row must stay deleted"
+
+                bm_count = (
+                    await verify.execute(
+                        sa.select(sa.func.count())
+                        .select_from(GameBestMove)
+                        .where(GameBestMove.game_id == game_id)
+                    )
+                ).scalar_one()
+                assert bm_count == 0
+        finally:
+            # Idempotent — the game is already gone by the time we get here.
             await _delete_games(full_drain_session_maker, [game_id])
 
     async def test_non_tier4b_claim_still_takes_full_path(

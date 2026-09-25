@@ -27,7 +27,8 @@ from unittest.mock import AsyncMock
 import chess
 import pytest
 import pytest_asyncio
-from sqlalchemy import delete, func, select, text
+from sqlalchemy import delete, func, insert, select, text
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.core.config import settings
@@ -43,6 +44,7 @@ from app.services.eval_apply import (
     _game_write_lock_key,
     _upsert_best_move_rows,
     apply_full_eval,
+    commit_unless_game_deleted,
 )
 from tests.test_eval_worker_endpoints import (
     _BLUNDER_SUBMIT_EVALS_142,
@@ -139,6 +141,13 @@ async def _delete_game(session_maker: async_sessionmaker[AsyncSession], game_id:
     async with session_maker() as session:
         await session.execute(delete(Game).where(Game.id == game_id))
         await session.commit()
+
+
+async def _game_exists(session_maker: async_sessionmaker[AsyncSession], game_id: int) -> bool:
+    from app.models.game import Game
+
+    async with session_maker() as session:
+        return (await session.scalar(select(Game.id).where(Game.id == game_id))) is not None
 
 
 async def _count_best_moves(session_maker: async_sessionmaker[AsyncSession], game_id: int) -> int:
@@ -1191,5 +1200,99 @@ class TestSameGameWriteLock:
             await asyncio.wait_for(
                 asyncio.gather(task_a, task_b), timeout=_LOCK_SERIALIZE_TIMEOUT_S
             )
+        finally:
+            await _delete_game(ea_session_maker, game_id)
+
+
+# ─── N. commit_unless_game_deleted (FLAWCHESS-A0) ───────────────────────────────
+
+
+def _best_move_insert_stmt(game_id: int, ply: int, *, maia_prob: float = 0.5) -> Any:
+    """Minimal GameBestMove INSERT — no ON CONFLICT, so a duplicate/foreign
+    game_id surfaces as a genuine IntegrityError."""
+    return insert(GameBestMove).values(
+        game_id=game_id,
+        ply=ply,
+        maia_prob=maia_prob,
+        best_cp=None,
+        best_mate=None,
+        second_cp=None,
+        second_mate=None,
+    )
+
+
+class TestCommitUnlessGameDeleted:
+    """FLAWCHESS-A0: commit_unless_game_deleted maps a game deleted before or
+    during the write to None instead of letting the FK IntegrityError on
+    game_best_moves_game_id_fkey propagate. Reverting the fix in
+    app/services/eval_apply.py reproduces the real prod IntegrityError for the
+    in-transaction-race and narrow-catch cases below.
+    """
+
+    async def test_precheck_deleted_returns_none_without_calling_write(
+        self,
+        ea_user: int,
+        ea_session_maker: async_sessionmaker[AsyncSession],
+    ) -> None:
+        """Game deleted BEFORE the call: the pre-check short-circuits and the
+        write callable is never awaited."""
+        game_id = await _insert_game(ea_session_maker, ea_user)
+        await _delete_game(ea_session_maker, game_id)
+
+        write = AsyncMock(return_value=42)
+        async with ea_session_maker() as write_session:
+            result = await commit_unless_game_deleted(write_session, game_id, write)
+
+        assert result is None
+        write.assert_not_awaited()
+
+    async def test_in_transaction_deletion_returns_none_and_writes_nothing(
+        self,
+        ea_user: int,
+        ea_session_maker: async_sessionmaker[AsyncSession],
+    ) -> None:
+        """Game exists at the pre-check; the write callable deletes it from a
+        SEPARATE session and commits, then inserts a game_best_moves row for
+        that same game_id in the passed write session -> the helper returns
+        None, raises nothing, and zero game_best_moves rows exist afterwards."""
+        game_id = await _insert_game(ea_session_maker, ea_user)
+        try:
+
+            async def write() -> int:
+                await _delete_game(ea_session_maker, game_id)
+                await write_session.execute(_best_move_insert_stmt(game_id, 2))
+                return 1
+
+            async with ea_session_maker() as write_session:
+                result = await commit_unless_game_deleted(write_session, game_id, write)
+
+            assert result is None
+            assert await _count_best_moves(ea_session_maker, game_id) == 0
+        finally:
+            await _delete_game(ea_session_maker, game_id)  # idempotent — already gone
+
+    async def test_narrow_catch_reraises_unrelated_integrity_error(
+        self,
+        ea_user: int,
+        ea_session_maker: async_sessionmaker[AsyncSession],
+    ) -> None:
+        """Game exists and stays; the write callable inserts a row for a
+        game_id that never existed (the seeded id plus a large offset) ->
+        IntegrityError propagates (the post-rollback re-check finds the
+        SEEDED game_id still present, so the narrow catch does not apply)."""
+        game_id = await _insert_game(ea_session_maker, ea_user)
+        try:
+            foreign_game_id = game_id + 9_000_000
+
+            async def write() -> int:
+                await write_session.execute(_best_move_insert_stmt(foreign_game_id, 0))
+                return 1
+
+            async with ea_session_maker() as write_session:
+                with pytest.raises(IntegrityError):
+                    await commit_unless_game_deleted(write_session, game_id, write)
+
+            assert await _game_exists(ea_session_maker, game_id)
+            assert await _count_best_moves(ea_session_maker, game_id) == 0
         finally:
             await _delete_game(ea_session_maker, game_id)

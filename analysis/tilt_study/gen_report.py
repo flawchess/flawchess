@@ -363,10 +363,13 @@ streak is supposed to cause, not as a claim to have isolated it.
 
 1. **In raw game history the streak effect looks enormous**: the game after 6+ straight losses scores
    {pick(lad, "any_opponent", x=-6):.1f}%, after 6+ straight wins {pick(lad, "any_opponent", x=6):.1f}% (a
-   {pick(lad, "any_opponent", x=6) - pick(lad, "any_opponent", x=-6):.0f}-point swing). Almost all of it is opponent
-   selection (long streaks happen against weaker opponents: arenas, fresh accounts, the thin top of the pool; the
-   pairing system itself moves the rating only ≈30 points over six wins), streaks that span more than one
-   sitting, rematch series against the same opponent, and account artefacts (rating drift, second accounts).
+   {pick(lad, "any_opponent", x=6) - pick(lad, "any_opponent", x=-6):.0f}-point swing). Almost all of it is selection: the
+   opponents inside a 6+ winning streak were on average 141 points weaker than the player (median game 48), inside
+   a 6+ losing streak 61 points stronger (median 17), and the next opponent comes from the same place. The mean
+   sits far above the median because a tail of lopsided pairings (arenas, fresh accounts, the thin top of the
+   pool) produces a disproportionate share of long streaks; the pairing system itself moves the rating only ≈30
+   points over six wins. Add streaks that span more than one sitting, rematch series against the same opponent,
+   and account artefacts (rating drift, second accounts).
    Holding those fixed leaves {pick(lad, "controlled", x=-6):.1f}% vs {pick(lad, "controlled", x=6):.1f}%, against a
    rating-based expectation of {sv(-6, "expected"):.1f}% / {sv(6, "expected"):.1f}%: a residual of
    **{sv(-6):+.1f} / {sv(6):+.1f} points** (§1). Each filter changes the population as well as the estimate,
@@ -510,16 +513,19 @@ survives each condition, not how much each mechanism contributes.
 {table(lad, [("streak", "streak"), ("n_any", "games (raw)"), ("any_opponent", "raw history"), ("equal_footing", "+ equal footing"), ("same_session", "+ one session"), ("fresh_opponent", "+ fresh opponent"), ("controlled", "+ hygiene (controlled)"), ("n_controlled", "games (controlled)"), ("expected", "expected"), ("residual", "residual [95% CI]")])}
 
 Why the raw curve is steep (all games, by streak; the 6+ cells are pooled from the 7+ axis in
-`ladder_diagnostics.csv`): after 6+ wins the next opponent is on average 175 points weaker, after 6+
-losses 61 points stronger. This is selection, not matchmaking: the user's rating sits only 8–10 points
+`ladder_diagnostics.csv`): after 6+ wins the next opponent is on average 175 points weaker (median 63),
+after 6+ losses 61 points stronger (median 16). This is selection, not matchmaking: the user's rating sits only 8–10 points
 above its long-run median at that point and six wins move it by ≈30 points, while the opponents *during*
-the streak were on average even weaker than the next one (111 points for exactly six wins, 253 for 7+).
-Streaks are produced by lopsided pairings and the next opponent comes from the same context. The mean is
-a fat tail rather than a shift (median gap +28 after exactly six wins, +105 after 7+; 38% of post-7+ games
-are against an opponent more than 200 points weaker): split 6+ win streaks by whether the streak's own
-opponents averaged >100 points weaker and the half that did face a next opponent 365 points weaker, the
-other half +16, the population baseline. Dropping rematch series changes little here (+163 after 6+
-wins), so the drivers are arenas, fresh or under-rated accounts and the thin top of the pool. Only
+the streak were about as lopsided: counting each 6+ streak once, the games inside a winning streak were played
+against opponents 141 points weaker on average (median game 48; quartiles −5 / +48 / +182), inside a losing
+streak 61 points stronger (median 17; quartiles −78 / −17 / +18).
+The mean is a fat tail rather than a shift: 70% of 6+ winning streaks and 84% of 6+ losing streaks have a
+mean gap within 100 points, and the next opponent after 6+ wins has a median gap of +28 after exactly six
+wins and +105 after 7+ (38% of post-7+ games are against an opponent more than 200 points weaker). The
+lopsided tail, not the typical streak, carries the raw curve: 6+ win streaks whose own opponents averaged
+more than 100 points weaker face a next opponent 368 points weaker and score 78.4% in the next game; the
+rest face a next opponent 12 points weaker and score 54.4%. Dropping rematch series changes little here
+(+163 after 6+ wins), so the drivers are arenas, fresh or under-rated accounts and the thin top of the pool. Only
 27–30% of 6+ streaks lie within one session (41% span more than a day); 16–20% of the games after a 6+
 streak fall in the user's first 100 games (baseline 15%); 3.5–4.2% are played more than 150 points off
 the user's median rating (baseline 2%).
@@ -969,6 +975,17 @@ Summarised from the literature review in `analysis/tilt_study/FINDINGS.md` §8.
   of break-test cells, so switching controls does not contaminate §4, but casual games in a gap are invisible.
 
 ## Reproduction
+
+Inputs (either is enough for §1–§5, §6a and §7; the parquet archive is needed for the §6 blunder table):
+
+- **Benchmark DB dump** (2026-08-18): https://drive.google.com/file/d/1JWGPIvjAPIXsRowOy4IaHcDwSngnjxcC/view?usp=sharing.
+  Games, clocks, Lichess analysis flags and endgame-entry evals have been frozen since the last import on
+  2026-05-26, so every extract below except `flaws.parquet` re-derives identically from the dump.
+- **Source extracts** (`analysis/out/tilt/*.parquet`, 188 MB zipped, extracted 2026-09-02 to 2026-09-16):
+  https://drive.google.com/file/d/1pwj6jHX3wCTqzpVS2rjVlFxqD8wkyVEX/view?usp=sharing. Unzip into
+  `analysis/out/` and skip the extract steps. `flaws.parquet` depends on the benchmark Stockfish pipeline,
+  which kept evaluating games after the dump was taken (618,513 fully evaluated games on 2026-09-16 vs
+  ≈417,000 in the dump), so the §6 "Move quality" table is reproduced from the archive, not from the dump.
 
 ```bash
 bin/benchmark_db.sh start

@@ -111,6 +111,7 @@ from app.services.eval_apply import (
     _signal_flaw_completion,
     _stamp_best_moves_completed_directly,
     apply_full_eval,
+    commit_unless_game_deleted,
 )
 
 # Entry-lane collection/write/classify primitives (Phase 150 R7 Task 2 split).
@@ -1448,41 +1449,57 @@ async def _apply_atomic_submit(
         # blob at all). Required — and safe — to satisfy the must_have "a flaw the server
         # found but the worker did not blob writes NULL (Part A net) and is left for
         # tier-4 backfill".
-        failed_ply_count, stamp_complete, flaws_written = await apply_full_eval(
-            write_session,
-            game_id=game_id,
-            job_id=body.job_id,
-            targets=targets,
-            dedup_map=dedup_map,
-            engine_result_map=engine_result_map,
-            is_lichess_eval_game=is_lichess_eval_game,
-            stored_eval_predates_engine=stored_eval_predates_engine,
-            flaw_pv_blobs=flaw_pv_blobs if flaw_pv_blobs else None,
-            current_attempts=current_attempts,
-            source="remote_eval_worker",
-            # 260725-da3: bind this lane's worker identity onto the shared callback
-            # rather than widening apply_completion_decision's
-            # `on_path_c_capacity_reached` signature — the drain lane has no worker
-            # identity to supply (and must keep its logger.warning, FLAWCHESS-5V).
-            on_path_c_capacity_reached=functools.partial(
-                _report_path_c_capacity_reached, worker_id=worker_id, last_ip=last_ip
-            ),
-            preserve_existing_evals=True,
-            blobs_pending=True,
-            count_flaws_written=True,
-            record_heartbeat=True,
-            heartbeat_worker_id=worker_id,
-            heartbeat_last_ip=last_ip,
-            heartbeat_sf_version=body.sf_version,
-            heartbeat_worker_schema_version=body.worker_schema_version,
-            heartbeat_n_evals=len(body.evals),
-            best_move_rows=best_move_rows,
-            update_opening_cache=bool(_cache_targets),
-            upsert_opening_cache_fn=_upsert_opening_cache,
-            engine_targets_for_cache=_cache_targets,
-        )
+        # FLAWCHESS-A0: routed through commit_unless_game_deleted (eval_apply.py) so
+        # a game deleted by its owner between the read phase above and this write
+        # session's commit maps to a 404 instead of an unhandled FK IntegrityError
+        # on game_best_moves_game_id_fkey — see the helper's docstring for the full
+        # race and why no row lock is taken.
+        async def _write() -> tuple[int, bool, int]:
+            return await apply_full_eval(
+                write_session,
+                game_id=game_id,
+                job_id=body.job_id,
+                targets=targets,
+                dedup_map=dedup_map,
+                engine_result_map=engine_result_map,
+                is_lichess_eval_game=is_lichess_eval_game,
+                stored_eval_predates_engine=stored_eval_predates_engine,
+                flaw_pv_blobs=flaw_pv_blobs if flaw_pv_blobs else None,
+                current_attempts=current_attempts,
+                source="remote_eval_worker",
+                # 260725-da3: bind this lane's worker identity onto the shared callback
+                # rather than widening apply_completion_decision's
+                # `on_path_c_capacity_reached` signature — the drain lane has no worker
+                # identity to supply (and must keep its logger.warning, FLAWCHESS-5V).
+                on_path_c_capacity_reached=functools.partial(
+                    _report_path_c_capacity_reached, worker_id=worker_id, last_ip=last_ip
+                ),
+                preserve_existing_evals=True,
+                blobs_pending=True,
+                count_flaws_written=True,
+                record_heartbeat=True,
+                heartbeat_worker_id=worker_id,
+                heartbeat_last_ip=last_ip,
+                heartbeat_sf_version=body.sf_version,
+                heartbeat_worker_schema_version=body.worker_schema_version,
+                heartbeat_n_evals=len(body.evals),
+                best_move_rows=best_move_rows,
+                update_opening_cache=bool(_cache_targets),
+                upsert_opening_cache_fn=_upsert_opening_cache,
+                engine_targets_for_cache=_cache_targets,
+            )
 
-        await write_session.commit()
+        outcome = await commit_unless_game_deleted(write_session, game_id, _write)
+
+    if outcome is None:
+        logger.info(
+            "atomic-submit: game deleted before write, discarding (game_id=%s worker_id=%s)",
+            game_id,
+            worker_id,
+        )
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Game not found")
+
+    failed_ply_count, stamp_complete, flaws_written = outcome
 
     # Signal after commit so the hook never fires for a partially-committed game.
     # IN-01: gate on stamp_complete — a Path-B late submit must not prematurely
@@ -1526,7 +1543,9 @@ async def atomic_submit_eval(
     net + a future tier-4 pass resolves.
 
     Expected status codes (do NOT Sentry-capture):
-      404 — game not found
+      404 — game not found, or deleted mid-submit (FLAWCHESS-A0: between the
+            read phase and the write-session commit — see
+            commit_unless_game_deleted's docstring in eval_apply.py)
       422 — SF version mismatch or foreign/out-of-range blob token (T-147-02)
     """
     # D-5 SF-version gate (same as /submit, /entry-submit, /flaw-blob-submit).
