@@ -20,7 +20,8 @@ from typing import Any
 
 import jwt as pyjwt
 from fastapi import Depends, Request, Response
-from fastapi_users import BaseUserManager, FastAPIUsers, IntegerIDMixin
+from fastapi.security import OAuth2PasswordRequestForm
+from fastapi_users import BaseUserManager, FastAPIUsers, IntegerIDMixin, exceptions
 from fastapi_users.authentication import AuthenticationBackend, BearerTransport, JWTStrategy
 from fastapi_users.db import SQLAlchemyUserDatabase
 from fastapi_users.jwt import decode_jwt, generate_jwt
@@ -65,6 +66,39 @@ async def get_user_db(
 class UserManager(IntegerIDMixin, BaseUserManager[User, int]):
     reset_password_token_secret = settings.SECRET_KEY
     verification_token_secret = settings.SECRET_KEY
+
+    async def authenticate(self, credentials: OAuth2PasswordRequestForm) -> User | None:
+        """Override upstream authenticate() to guard empty-hash accounts.
+
+        FLAWCHESS-BQ / FLAWCHESS-2A: Google-only and guest accounts store
+        hashed_password="" (see app/services/guest_service.py lines 41 and
+        173). pwdlib's password_helper.verify_and_update cannot identify an
+        empty hash and raises UnknownHashError, and upstream's authenticate()
+        (fastapi_users.manager.BaseUserManager.authenticate) calls it
+        unguarded, so a password login against such an account 500'd instead
+        of returning bad credentials.
+
+        The empty-hash predicate mirrors on_after_forgot_password's gate
+        below: credential state ("does this account have a password"), not
+        account type (is_guest / oauth_accounts). Both the missing-user and
+        empty-hash branches run a dummy password_helper.hash() for timing
+        parity and return None -> the router's existing 400
+        LOGIN_BAD_CREDENTIALS, identical to a wrong password, so the response
+        never discloses which accounts are Google-only or guest (T-ine-01).
+        Real verification and the hash-upgrade write stay owned by
+        super().authenticate() (T-ine-02).
+        """
+        try:
+            user = await self.get_by_email(credentials.username)
+        except exceptions.UserNotExists:
+            self.password_helper.hash(credentials.password)
+            return None
+
+        if not user.hashed_password:
+            self.password_helper.hash(credentials.password)
+            return None
+
+        return await super().authenticate(credentials)
 
     async def on_after_register(
         self,

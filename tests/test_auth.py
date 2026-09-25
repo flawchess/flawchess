@@ -13,6 +13,7 @@ import httpx
 import pytest
 
 from app.main import app
+from app.models.user import User
 
 
 # ---------------------------------------------------------------------------
@@ -39,6 +40,28 @@ async def login_user(client: httpx.AsyncClient, email: str, password: str) -> ht
         data={"username": email, "password": password},
     )
     return resp
+
+
+async def _create_empty_hash_user(email: str, *, is_guest: bool) -> User:
+    """Insert a user row with hashed_password="" directly via the DB, mirroring
+    Google-only and guest account field sets (see app/services/guest_service.py
+    lines 41 and 173, and tests/test_password_reset.py's _create_direct_user).
+    """
+    from app.core.database import async_session_maker
+
+    async with async_session_maker() as session:
+        user = User(
+            email=email,
+            hashed_password="",
+            is_active=True,
+            is_verified=True,
+            is_superuser=False,
+            is_guest=is_guest,
+        )
+        session.add(user)
+        await session.commit()
+        await session.refresh(user)
+        return user
 
 
 # ---------------------------------------------------------------------------
@@ -108,6 +131,26 @@ class TestLogin:
             resp = await login_user(client, email, "wrongpassword")
 
         assert resp.status_code == 400
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("is_guest", [False, True])
+    async def test_login_empty_hash_account_returns_400(self, is_guest: bool):
+        """POST /auth/jwt/login against a Google-only or guest account (hashed_password="")
+        must return 400 LOGIN_BAD_CREDENTIALS, never 500 (FLAWCHESS-BQ, FLAWCHESS-2A).
+
+        pwdlib's verify_and_update raises UnknownHashError on an empty hash;
+        fastapi-users' upstream authenticate() does not guard against it.
+        """
+        email = unique_email("empty-hash")
+        await _create_empty_hash_user(email, is_guest=is_guest)
+
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=app), base_url="http://test"
+        ) as client:
+            resp = await login_user(client, email, "any-password")
+
+        assert resp.status_code == 400
+        assert resp.json()["detail"] == "LOGIN_BAD_CREDENTIALS"
 
 
 # ---------------------------------------------------------------------------
