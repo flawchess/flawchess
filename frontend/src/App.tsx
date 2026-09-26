@@ -43,6 +43,7 @@ import { useTrainProgress } from '@/hooks/useTrainProgress';
 import { useReminderResurfaceRedirect } from '@/hooks/useReminderResurface';
 import { useDevicePushResync } from '@/hooks/useDevicePushResync';
 import { captureHandoffMarker } from '@/lib/handoffMarker';
+import { clearReturnTo, stashReturnTo } from '@/lib/returnTo';
 
 // First React.lazy boundary in the app — keeps the Stockfish JS/WASM bundle off
 // every other route (ROUTE-01 / D-07). Analysis.tsx uses export default (Pitfall 1).
@@ -712,8 +713,20 @@ function ProtectedLayout() {
     }
   }, [profile?.is_guest, refreshAuthToken]);
 
+  // Quick 260926-9bg: an authenticated protected page fulfils any stashed
+  // post-auth intent, so drop it before it can hijack a later home visit.
+  useEffect(() => {
+    if (token) clearReturnTo();
+  }, [token]);
+
   if (!token) {
-    return <Navigate to="/login" replace />;
+    // Quick 260926-9bg: a newsletter link to /train used to bounce cold
+    // visitors onto a bare /login form (no guest option, no way back). Send
+    // them to the home page instead and remember where they were heading;
+    // HomePage returns them there after guest start, login, or signup.
+    // Idempotent write, safe to run during render.
+    stashReturnTo(location.pathname + location.search);
+    return <Navigate to="/" replace />;
   }
   if (isAnalysisRoute) {
     return (

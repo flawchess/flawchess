@@ -13,6 +13,7 @@ import { MemoryRouter, Routes, Route, useLocation } from 'react-router';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { vi } from 'vitest';
 import { HomePage } from '@/pages/Home';
+import { RETURN_TO_STORAGE_KEY, stashReturnTo } from '@/lib/returnTo';
 
 // ── Auth mock — fixed token so HomePage takes the authenticated branch ────────
 
@@ -53,6 +54,7 @@ function renderHome(profile: ProfileFixture) {
 afterEach(() => {
   cleanup();
   localStorage.clear();
+  sessionStorage.clear();
 });
 
 // ── Tests ─────────────────────────────────────────────────────────────────────
@@ -84,5 +86,25 @@ describe('HomePage redirect (Phase 224 S-1)', () => {
       expect(screen.getByTestId('location').textContent).not.toBe('/welcome');
       unmount();
     }
+  });
+});
+
+describe('HomePage post-auth return path (quick 260926-9bg)', () => {
+  it('stashed /train wins over /library/import for a zero-game signup', () => {
+    stashReturnTo('/train');
+    renderHome({ is_guest: false, chess_com_game_count: 0, lichess_game_count: 0 });
+    expect(screen.getByTestId('location').textContent).toBe('/train');
+  });
+
+  it('stashed /bots wins over /library/games for an account with games', () => {
+    stashReturnTo('/bots');
+    renderHome({ is_guest: true, chess_com_game_count: 10, lichess_game_count: 0 });
+    expect(screen.getByTestId('location').textContent).toBe('/bots');
+  });
+
+  it('an unsafe stashed value falls back to the default landing', () => {
+    sessionStorage.setItem(RETURN_TO_STORAGE_KEY, '//evil.com');
+    renderHome({ is_guest: false, chess_com_game_count: 0, lichess_game_count: 0 });
+    expect(screen.getByTestId('location').textContent).toBe('/library/import');
   });
 });

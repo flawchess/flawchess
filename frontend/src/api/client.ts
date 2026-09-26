@@ -5,6 +5,7 @@ import {
   DEV_CLOCK_OFFSET_HEADER,
   readDevClockOffsetMinutes,
 } from '@/lib/devClock';
+import { stashReturnTo } from '@/lib/returnTo';
 import type {
   PositionBookmarkResponse, PositionBookmarkCreate, PositionBookmarkUpdate,
   PositionBookmarkReorderRequest, TimeSeriesRequest, TimeSeriesResponse,
@@ -96,6 +97,9 @@ apiClient.interceptors.response.use(
       if (!onLoginPage && !isAuthRoute) {
         queryClient.clear();
         localStorage.removeItem('auth_token');
+        // Quick 260926-9bg: an expired session (e.g. a Train reminder push to
+        // /train) returns to the page after re-login instead of the default landing.
+        stashReturnTo(window.location.pathname + window.location.search);
         window.location.href = '/login';
       }
     }
