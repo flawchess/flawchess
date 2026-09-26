@@ -13,8 +13,8 @@ progress:
   total_plans: 12
   completed_plans: 11
 milestone_name: Train Bot-Narrated Onboarding & Verdicts
-last_activity: 2026-09-16
-last_activity_desc: "Completed quick task 260916-gj7 (DB report follow-ups: index opening_cache_audit.sample_game_id, drop ix_games_full_pv_pending, tighten Check C rule)"
+last_activity: 2026-09-26
+last_activity_desc: "Completed quick task 260926-evd (consolidate static-analysis gates for agentic engineering)"
 ---
 
 # Project State: FlawChess
@@ -913,6 +913,7 @@ None active.
 | 260926-9bg | Return signed-out visitors to their intended page (home landing + post-auth return path, tokenless-401 fix) | 2026-09-26 | c8d85cb17 | [260926-9bg-return-logged-out-users-to-their-intende](./quick/260926-9bg-return-logged-out-users-to-their-intende/) |
 | 260926-agm | Fix Sentry noise: stale-chunk reload (C0), browser-aborted XHR filter (31), per-attempt 429 captures (BX) | 2026-09-26 | 038a4280c | [260926-agm-fix-sentry-noise-stale-chunk-reload-abor](./quick/260926-agm-fix-sentry-noise-stale-chunk-reload-abor/) |
 | 102 | Stop Umami from recording OAuth access tokens (data-exclude-hash) | 2026-09-26 | 4a804ed4d | — |
+| 260926-evd | Consolidate static-analysis gates: nesting depth the only hard complexity gate, ruff TID251/B/ASYNC/DTZ adopted with baselines, tsc build + knip in pre-merge gate | 2026-09-26 | a8a81362f | [260926-evd-consolidate-static-analysis-gates-for-ag](./quick/260926-evd-consolidate-static-analysis-gates-for-ag/) |
 
 ## Deferred Items
 
