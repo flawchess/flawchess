@@ -21,6 +21,7 @@ vi.mock('@sentry/react', () => ({
 interface AxiosLikeErrorInput {
   isAxiosError: true;
   code?: string;
+  message?: string;
   response?: { status: number; data?: unknown };
   config?: { url?: string; method?: string };
 }
@@ -199,7 +200,7 @@ describe('sentryBeforeSend (FLAWCHESS-24)', () => {
     expect((event as unknown as { fingerprint: string[] }).fingerprint).toEqual(['api-http-422']);
   });
 
-  it('fingerprints ECONNABORTED as api-timeout even while hidden/offline — a real attempted request', async () => {
+  it('fingerprints a timeout ECONNABORTED as api-timeout even while hidden/offline — a real attempted request', async () => {
     const { sentryBeforeSend } = await import('@/instrument');
     Object.defineProperty(navigator, 'onLine', { configurable: true, value: false });
     Object.defineProperty(document, 'visibilityState', { configurable: true, value: 'hidden' });
@@ -207,10 +208,29 @@ describe('sentryBeforeSend (FLAWCHESS-24)', () => {
 
     const event = sentryBeforeSend(
       makeEvent() as never,
-      makeHint({ isAxiosError: true, code: 'ECONNABORTED' }) as never,
+      makeHint({
+        isAxiosError: true,
+        code: 'ECONNABORTED',
+        message: 'timeout of 30000ms exceeded',
+      }) as never,
     );
     expect(event).not.toBeNull();
     expect((event as unknown as { fingerprint: string[] }).fingerprint).toEqual(['api-timeout']);
+  });
+
+  it('drops a browser-aborted request (FLAWCHESS-31) even while foreground and online', async () => {
+    const { sentryBeforeSend } = await import('@/instrument');
+
+    const result = sentryBeforeSend(
+      makeEvent() as never,
+      makeHint({
+        isAxiosError: true,
+        code: 'ECONNABORTED',
+        message: 'Request aborted',
+        config: { url: '/users/me/profile', method: 'get' },
+      }) as never,
+    );
+    expect(result).toBeNull();
   });
 
   it('returns a non-axios error untouched', async () => {

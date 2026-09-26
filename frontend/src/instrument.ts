@@ -6,6 +6,7 @@ interface AxiosLikeError {
   isAxiosError: true;
   response?: { status: number; data?: unknown };
   code?: string;
+  message?: string;
   config?: { url?: string; method?: string };
 }
 
@@ -48,6 +49,19 @@ function isSuppressibleNetworkNoise(): boolean {
   if (typeof navigator !== "undefined" && navigator.onLine === false) return true;
   if (typeof document !== "undefined" && document.visibilityState === "hidden") return true;
   return false;
+}
+
+// FLAWCHESS-31: axios raises ECONNABORTED with this exact message from its XHR
+// `onabort` handler (and Firefox's status-0 navigation-cancel path), i.e. the
+// BROWSER tore the request down: a navigation or redirect (every event was on
+// /login, /auth/google/authorize, or a page change), not a server problem. A
+// real timeout shares the code but says "timeout of Nms exceeded", so matching
+// the message keeps any future `timeout:` config reporting. Dropped
+// unconditionally: a server outage surfaces as ERR_NETWORK, never as an abort.
+const BROWSER_ABORT_MESSAGE = "Request aborted";
+
+function isBrowserAbortedRequest(error: AxiosLikeError): boolean {
+  return error.code === "ECONNABORTED" && error.message === BROWSER_ABORT_MESSAGE;
 }
 
 /** The one endpoint whose 422 is a deliberate, user-facing rejection (below). */
@@ -94,9 +108,14 @@ function sentryBeforeSend(
     if (isExpectedPastedPgnRejection(error)) {
       return null;
     }
+    // FLAWCHESS-31: a browser-aborted request is never actionable — see
+    // isBrowserAbortedRequest() above.
+    if (isBrowserAbortedRequest(error)) {
+      return null;
+    }
     // FLAWCHESS-24: drop unactionable network noise — see SUPPRESSIBLE_AXIOS_CODES
-    // and isSuppressibleNetworkNoise() docs above. ECONNABORTED (a real timeout —
-    // the request WAS attempted) is deliberately excluded and always ships below.
+    // and isSuppressibleNetworkNoise() docs above. A timeout ECONNABORTED (the
+    // request WAS attempted) is deliberately excluded and always ships below.
     if (
       error.code !== undefined &&
       (SUPPRESSIBLE_AXIOS_CODES as readonly string[]).includes(error.code) &&
