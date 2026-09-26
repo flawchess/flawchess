@@ -219,6 +219,7 @@ export default function TrainPage(): ReactElement {
           onEnterLoop={() => setHasEnteredLoop(true)}
           onSettingsSaved={startSession}
           isGuest={isGuest}
+          hasGames={hasGames}
         />
       )}
       {restoredActive && restoredReveal && (

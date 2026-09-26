@@ -16,6 +16,7 @@ import { Button } from '@/components/ui/button';
 import { EmptyState } from '@/components/ui/empty-state';
 import { LoadError } from '@/components/ui/load-error';
 import { TRAIN_CTA_BUTTON_CLASS } from '@/components/train/buttonStyles';
+import { ImportAskActions } from '@/components/train/ImportAskActions';
 import { SignupAskActions } from '@/components/train/SignupAskActions';
 import { TrainBotBubble } from '@/components/train/TrainBotBubble';
 import { TrainReminderResurfaceBanner } from '@/components/train/TrainReminderResurfaceBanner';
@@ -24,7 +25,12 @@ import { TrainStatsCard } from '@/components/train/TrainStatsCard';
 import { TrainStreakCard } from '@/components/train/TrainStreakCard';
 import { useTrainProgress } from '@/hooks/useTrainProgress';
 import { useTrainSettings } from '@/hooks/useTrainSettings';
-import { GUEST_SIGNUP_ASK_SCORE, REMINDER_INSTALL_ASK, landingHost } from '@/lib/trainBotCopy';
+import {
+  GUEST_SIGNUP_ASK_SCORE,
+  IMPORT_ASK_LANDING,
+  REMINDER_INSTALL_ASK,
+  landingHost,
+} from '@/lib/trainBotCopy';
 import { TRAIN_POINTS_PER_PUZZLE } from '@/lib/trainScore';
 import type { TrainSessionResponse } from '@/types/train';
 
@@ -54,6 +60,10 @@ export interface TrainStartScreenProps {
    * "What changes?"/"Sign up free" buttons) into the host bubble and hides
    * the reminder/QR section on `TrainScheduleSettings`. */
   isGuest: boolean;
+  /** Quick task 260926-8p5: `hasImportedGames(useUserProfile().data)`. A
+   * registered account without games gets the import ask + "Import games"
+   * button in the host bubble instead of the reminder ask. */
+  hasGames: boolean;
 }
 
 /**
@@ -196,30 +206,44 @@ function resolveLandingState(
 function TrainHeader({
   session,
   isGuest,
+  hasGames,
 }: {
   session: TrainSessionResponse | null;
   isGuest: boolean;
+  hasGames: boolean;
 }): ReactElement {
   const { data: settings } = useTrainSettings();
   const host = landingHost({
     sessionDate: session?.session_date ?? null,
     introSeenAt: settings?.intro_seen_at,
   });
-  const showReminderAsk = !isGuest && settings?.has_mobile_subscription === false;
+  // Quick task 260926-8p5: a registered zero-game account gets the import ask
+  // in place of the reminder ask, the first step before Train has anything of
+  // its own to serve.
+  const showImportAsk = !isGuest && !hasGames;
+  const showReminderAsk =
+    !isGuest && !showImportAsk && settings?.has_mobile_subscription === false;
   return (
     <TrainBotBubble
       persona={host.persona}
       state="prompt"
       avatarSize="large"
-      actions={isGuest ? <SignupAskActions source="train-landing" /> : undefined}
+      actions={landingActions(isGuest, showImportAsk)}
     >
       <p data-testid="train-tagline">{host.copy}</p>
       {isGuest && <p data-testid="train-landing-signup-ask">{GUEST_SIGNUP_ASK_SCORE}</p>}
+      {showImportAsk && <p data-testid="train-landing-import-ask">{IMPORT_ASK_LANDING}</p>}
       {showReminderAsk && (
         <p data-testid="train-landing-reminder-ask">{REMINDER_INSTALL_ASK}</p>
       )}
     </TrainBotBubble>
   );
+}
+
+function landingActions(isGuest: boolean, showImportAsk: boolean): ReactElement | undefined {
+  if (isGuest) return <SignupAskActions source="train-landing" />;
+  if (showImportAsk) return <ImportAskActions source="train-landing" />;
+  return undefined;
 }
 
 /**
@@ -292,6 +316,7 @@ export function TrainStartScreen({
   onEnterLoop,
   onSettingsSaved,
   isGuest,
+  hasGames,
 }: TrainStartScreenProps): ReactElement {
   const state = resolveLandingState(session, isLoading, isError, sessionScore);
   const progress = useTrainProgress();
@@ -327,7 +352,7 @@ export function TrainStartScreen({
     return (
       <div className={LANDING_CONTAINER_CLASS} data-testid="train-start-screen">
         <TrainReminderResurfaceBanner />
-        <TrainHeader session={session} isGuest={isGuest} />
+        <TrainHeader session={session} isGuest={isGuest} hasGames={hasGames} />
         <div className={LANDING_CARD_GRID_CLASS}>
           <TrainStreakCard />
           <TrainStatsCard todayScore={{ total: state.score, max: state.totalPoints }} />
@@ -356,7 +381,7 @@ export function TrainStartScreen({
   return (
     <div className={LANDING_CONTAINER_CLASS} data-testid="train-start-screen">
       <TrainReminderResurfaceBanner />
-      <TrainHeader session={session} isGuest={isGuest} />
+      <TrainHeader session={session} isGuest={isGuest} hasGames={hasGames} />
       <Button
         variant="default"
         className={TRAIN_CTA_BUTTON_CLASS}

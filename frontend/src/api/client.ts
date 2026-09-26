@@ -5,6 +5,7 @@ import {
   DEV_CLOCK_OFFSET_HEADER,
   readDevClockOffsetMinutes,
 } from '@/lib/devClock';
+import { stashReturnTo } from '@/lib/returnTo';
 import type {
   PositionBookmarkResponse, PositionBookmarkCreate, PositionBookmarkUpdate,
   PositionBookmarkReorderRequest, TimeSeriesRequest, TimeSeriesResponse,
@@ -92,10 +93,18 @@ apiClient.interceptors.response.use(
     ) {
       const onLoginPage = window.location.pathname === '/login';
       const isAuthRoute = (error.config?.url ?? '').startsWith('/api/auth/');
+      // Quick 260926-9bg: only a request that carried a token can mean "session
+      // expired". ProtectedLayout's profile query fires before its no-token
+      // redirect to the home page; its tokenless 401 used to hard-redirect a
+      // signed-out visitor to /login, overriding the home-page landing.
+      const sentToken = error.config?.headers?.Authorization != null;
 
-      if (!onLoginPage && !isAuthRoute) {
+      if (!onLoginPage && !isAuthRoute && sentToken) {
         queryClient.clear();
         localStorage.removeItem('auth_token');
+        // Quick 260926-9bg: an expired session (e.g. a Train reminder push to
+        // /train) returns to the page after re-login instead of the default landing.
+        stashReturnTo(window.location.pathname + window.location.search);
         window.location.href = '/login';
       }
     }

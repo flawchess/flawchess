@@ -18,6 +18,7 @@ import { cn } from '@/lib/utils';
 import { FLAWCHESS_ENGINE_ACCENT } from '@/lib/theme';
 import { trackEvent } from '@/lib/analytics';
 import { hasImportedGames } from '@/hooks/useUserProfile';
+import { peekReturnTo } from '@/lib/returnTo';
 import { Search, Bot, Dumbbell, TrophyIcon, Timer, Compass, Loader2, UserPlus, DoorOpen, ChessKnight } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 
@@ -772,6 +773,15 @@ export function HomePage() {
           <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
         </div>
       );
+    }
+    // Quick 260926-9bg: every post-auth flow (guest start, login, signup,
+    // Google callback) lands here, so this is the single place that returns a
+    // user to the protected page they originally opened (e.g. /train from a
+    // newsletter link). Without it, zero-game signups were dropped on the
+    // import page and the Train/Bots intent was lost.
+    const returnTo = peekReturnTo();
+    if (returnTo !== null) {
+      return <Navigate to={returnTo} replace />;
     }
     // Every authenticated account, guest or registered, with games lands on the
     // games library; every account without games lands on the import page,

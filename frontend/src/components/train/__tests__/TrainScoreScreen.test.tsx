@@ -23,6 +23,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import type { ReactElement } from 'react';
+import { MemoryRouter } from 'react-router';
 import { TrainScoreScreen } from '@/components/train/TrainScoreScreen';
 import type { TrainScoreScreenProps } from '@/components/train/TrainScoreScreen';
 import type { SolvedResult, TrainSettingsResponse } from '@/types/train';
@@ -127,6 +128,8 @@ function renderScoreScreen(
   score: TrainSessionScore,
   overrides: Partial<TrainScoreScreenProps> = {},
 ) {
+  // MemoryRouter as a `wrapper` (not inline) so the tests' own `rerender`
+  // calls keep it: the zero-game branch renders ImportAskActions, a <Link>.
   return render(
     <TrainScoreScreen
       score={score}
@@ -140,6 +143,7 @@ function renderScoreScreen(
       isGuest={false}
       {...overrides}
     />,
+    { wrapper: MemoryRouter },
   );
 }
 
@@ -557,6 +561,20 @@ describe('TrainScoreScreen', () => {
       expect(screen.getByTestId('train-reminder-guest-check-stub')).not.toBeNull();
       const signupElements = document.querySelectorAll('[data-testid^="btn-signup-"]');
       expect(signupElements.length).toBe(0);
+    });
+
+    it('quick 260926-8p5: a registered zero-game warm-up renders the Import games button in the bubble, no sign-up pair', () => {
+      renderScoreScreen({ total: 0, max: 0 }, { isGuest: false, hasGames: false, isWarmup: true });
+      const bubble = screen.getByTestId('train-score-bubble');
+      const link = bubble.querySelector('[data-testid="btn-import-games-train-score"]');
+      expect(link?.getAttribute('href')).toBe('/library/import');
+      expect(document.querySelectorAll('[data-testid^="btn-signup-"]').length).toBe(0);
+    });
+
+    it('a guest without games keeps the sign-up pair, no Import games button', () => {
+      renderScoreScreen({ total: 0, max: 0 }, { isGuest: true, hasGames: false, isWarmup: true });
+      expect(screen.queryByTestId('btn-import-games-train-score')).toBeNull();
+      expect(screen.getByTestId('btn-signup-free-train-score')).not.toBeNull();
     });
 
     it('the registered screen renders no bubble actions row (byte-identity: TrainBotBubble receives actions=undefined)', () => {

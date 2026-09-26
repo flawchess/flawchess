@@ -6,7 +6,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import { MemoryRouter } from 'react-router';
-import { GUEST_SIGNUP_ASK_SCORE, REMINDER_INSTALL_ASK } from '@/lib/trainBotCopy';
+import { GUEST_SIGNUP_ASK_SCORE, IMPORT_ASK_LANDING, REMINDER_INSTALL_ASK } from '@/lib/trainBotCopy';
 
 // 191-01/191-06: TrainStartScreen calls useTrainProgress() directly (for the
 // PROG-05/D-16 tailored empty states) AND renders <TrainStreakCard /> +
@@ -222,6 +222,7 @@ function renderScreen(props: Partial<Parameters<typeof TrainStartScreen>[0]> = {
         onEnterLoop={onEnterLoop}
         onSettingsSaved={onSettingsSaved}
         isGuest={false}
+        hasGames={true}
         {...props}
       />
     </MemoryRouter>,
@@ -430,6 +431,39 @@ describe('TrainStartScreen — landing reminder ask (no push subscription from a
     renderScreen({ isGuest: true, session: { ...BASE_SESSION, is_warmup: true } });
     expect(screen.getByTestId('train-landing-signup-ask')).not.toBeNull();
     expect(screen.queryByTestId('train-landing-reminder-ask')).toBeNull();
+  });
+});
+
+describe('TrainStartScreen — quick 260926-8p5: import ask for a registered zero-game account', () => {
+  it('registered, no games: import sentence + Import games button, and it replaces the reminder ask', () => {
+    mockTrainSettingsData = { ...mockTrainSettingsData, has_mobile_subscription: false };
+    renderScreen({ isGuest: false, hasGames: false, session: { ...BASE_SESSION, is_warmup: true } });
+    expect(screen.getByTestId('train-landing-import-ask').textContent).toBe(IMPORT_ASK_LANDING);
+    expect(screen.getByTestId('btn-import-games-train-landing').getAttribute('href')).toBe(
+      '/library/import',
+    );
+    expect(screen.queryByTestId('train-landing-reminder-ask')).toBeNull();
+  });
+
+  it('registered, no games, completed session: the import ask stays on the landing', () => {
+    renderScreen({
+      isGuest: false,
+      hasGames: false,
+      session: { ...BASE_SESSION, is_warmup: true, solved_count: BASE_SESSION.puzzle_count },
+    });
+    expect(screen.getByTestId('btn-import-games-train-landing')).not.toBeNull();
+  });
+
+  it('registered with games: no import ask', () => {
+    renderScreen({ isGuest: false, hasGames: true });
+    expect(screen.queryByTestId('train-landing-import-ask')).toBeNull();
+    expect(screen.queryByTestId('btn-import-games-train-landing')).toBeNull();
+  });
+
+  it('guest without games: the sign-up ask wins, no import button', () => {
+    renderScreen({ isGuest: true, hasGames: false, session: { ...BASE_SESSION, is_warmup: true } });
+    expect(screen.getByTestId('train-landing-signup-ask')).not.toBeNull();
+    expect(screen.queryByTestId('btn-import-games-train-landing')).toBeNull();
   });
 });
 

@@ -675,6 +675,13 @@ export const GUEST_SIGNUP_ASK_SCORE =
 export const REMINDER_INSTALL_ASK =
   "Install the FlawChess app on your phone and set up reminders so you don't miss a session.";
 
+/** Quick task 260926-8p5: the landing bubble's import ask for a registered
+ * account with zero imported games. Replaces the reminder ask there (a
+ * reminder is pointless until the user's own blunders exist), paired with
+ * `ImportAskActions`. Guests keep the sign-up ask instead. */
+export const IMPORT_ASK_LANDING =
+  'Import your games from chess.com or lichess, and your own mistakes become your puzzles.';
+
 /** Every session's opener comments on the result (Phase 222 UAT round 5:
  * first, later and warm-up sessions alike; the nothing-missed variant is its
  * own comment), in D-21's voice: about the session, never about the user,
@@ -793,10 +800,18 @@ function nothingMissedReminderAsk(input: ScoreBubbleInput): string[] {
  */
 export function scoreBubbleCopy(input: ScoreBubbleInput): ScoreBubbleCopy {
   if (input.isWarmup) {
+    const key = audienceKey(input.audience);
+    const opening =
+      `${sessionOpener(input.band)} Those were warm-ups, nothing to bring back yet. ` +
+      WARMUP_SCORE_CLAUSE[key];
+    // Quick task 260926-8p5: a registered zero-game account gets the
+    // "Import games" button in the bubble instead of a second line. The
+    // reminder ask ("so the habit is there when they arrive") promised
+    // mistakes that cannot arrive before an import exists.
+    if (key === 'no_games') return { lines: [opening] };
     return {
       lines: [
-        `${sessionOpener(input.band)} Those were warm-ups, nothing to bring back yet. ` +
-          WARMUP_SCORE_CLAUSE[audienceKey(input.audience)],
+        opening,
         input.audience.isGuest
           ? GUEST_SIGNUP_ASK_SCORE
           : WARMUP_REMINDER_ASK_COPY[input.reminderAsk],
