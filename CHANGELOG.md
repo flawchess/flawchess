@@ -48,6 +48,7 @@ in `YYYY-MM-DD` (Europe/Zurich).
 - Train feedback: a red herring solved in a regular session is no longer called a warm-up ("Your own positions will" come). The warm-up line now appears only in a real warm-up session; otherwise the feedback simply says the position won't come back.
 - Train settings can now be saved from devices that report an older timezone name, such as Europe/Kiev instead of Europe/Kyiv, or Asia/Calcutta instead of Asia/Kolkata. Saving used to fail outright on those devices, and any reminder time already stored under such a name was being worked out in UTC rather than the local timezone (FLAWCHESS-9W).
 - Signing in with an email and password on an account that was created through Google now shows the usual "Invalid email or password" message instead of failing with a server error (FLAWCHESS-BQ).
+- Moving to another page in a tab that was opened before a FlawChess update no longer shows an error screen when that page's files were replaced by the update; the tab now reloads once and opens the page from the new version. (quick 260926-agm)
 
 ## [v2.19] Train Bot-Narrated Onboarding & Verdicts — 2026-09-14
 
