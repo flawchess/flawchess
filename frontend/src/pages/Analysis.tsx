@@ -739,8 +739,7 @@ export default function Analysis() {
   // its exact selected-ELO rung inferred right after the live position's (one
   // ~200 ms wasm inference), so stepping forward lands on a cache hit for the
   // eval bar and the FlawChess Engine's root policy instead of a fresh
-  // inference. Computed inline (a string, cheap O(mainline) lookup) — this
-  // component sits at its max-statements/complexity baseline. Needs no
+  // inference. Computed inline (a string, cheap O(mainline) lookup). Needs no
   // fast-forward gate of its own: the hook never prefetches while `fen` is null.
   const maia = useMaiaEngine({
     fen: fastForwardRunning ? null : position,

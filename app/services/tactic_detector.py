@@ -2061,9 +2061,9 @@ def _clearance_check_move_is_valid(
     """Condition 7 (cook): if the clearing move gives check, the opponent's LAST
     move (the one just before this pov move — cook's moved_piece_type(node.parent))
     must NOT have been a king move. Extracted (not a D-07 addition) to keep
-    detect_clearance's branch count under the project's PLR0912 gate now that
-    D-07 adds a further condition. The prior port wrongly inspected the
-    opponent's FUTURE response, over-firing on discovered-attack/check lines.
+    detect_clearance's branching readable now that D-07 adds a further
+    condition. The prior port wrongly inspected the opponent's FUTURE response,
+    over-firing on discovered-attack/check lines.
     """
     if not board_after.is_check():
         return True
@@ -2173,8 +2173,7 @@ def detect_clearance(
             continue
 
         # Condition 7: extracted to _clearance_check_move_is_valid to keep this
-        # function's branch count under the project's PLR0912 gate (see its
-        # docstring for the full rule).
+        # function's branching readable (see its docstring for the full rule).
         if not _clearance_check_move_is_valid(board_before, board_after, moves[k - 1]):
             continue
 
