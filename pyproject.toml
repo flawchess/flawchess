@@ -116,7 +116,7 @@ select = ["E4", "E7", "E9", "F"]
 #
 # TID251, B, ASYNC and DTZ were adopted deliberately on 2026-09-26 (quick 260926-evd),
 # scoped per the per-file-ignores comment below.
-extend-select = ["TID251", "B"]
+extend-select = ["TID251", "B", "ASYNC"]
 
 [tool.ruff.lint.flake8-tidy-imports.banned-api]
 "requests" = { msg = "blocks the event loop, use httpx.AsyncClient" }
@@ -170,6 +170,7 @@ extend-immutable-calls = [
 # was verified to produce a ty invalid-assignment error on the alembic.context proxy,
 # so never autofix this entry.
 "tests/test_alembic_autogen_filter.py" = ["B010"]
+"app/services/engine.py" = ["ASYNC109"]
 
 [tool.ty.environment]
 # Scripts in scripts/ are run as `python scripts/foo.py`, so sibling modules
