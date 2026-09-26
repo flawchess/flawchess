@@ -108,7 +108,6 @@ export default defineConfig([
       'src/hooks/uciParser.ts',
       'src/hooks/useOpeningInsights.ts',
       'src/hooks/useStockfishGradingEngine.ts',
-      'src/instrument.ts',
     ],
     rules: { complexity: ['error', 19] },
   },

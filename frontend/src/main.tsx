@@ -6,11 +6,15 @@ import "./index.css";
 import App from "./App.tsx";
 import { createSwUpdateChecker, SW_UPDATE_INTERVAL_MS } from "@/lib/swUpdate";
 import { reportMaiaPageKillFromPreviousSession } from "@/lib/engine/maiaPageKillSentinel";
+import { installStalePreloadReload } from "@/lib/stalePreloadReload";
 
 // SEED-158: a page killed while Maia was running (iOS Safari's silent
 // per-page memory-limit termination) leaves a record in localStorage — report
 // it now that Sentry is initialised.
 reportMaiaPageKillFromPreviousSession();
+
+// FLAWCHESS-C0: reload once when a lazy chunk from the previous deploy is gone.
+installStalePreloadReload();
 
 // ── Service Worker update handling ────────────────────────────────────────
 // When a new service worker activates (after deploy), reload the page so the

@@ -5,8 +5,8 @@ current_phase: 224
 current_phase_name: Guest Activation — Welcome Removal & Guest Train (SEED-169)
 status: executing
 stopped_at: Completed 224-06-PLAN.md
-last_updated: "2026-09-26T04:22:15.117Z"
-state_head: 284cbcd42d651066f758cde4d4f0ea5493102605
+last_updated: "2026-09-26T07:34:52.534Z"
+state_head: 4a804ed4d2790541f6cdd85dd18bbd0a89922ef4
 progress:
   total_phases: 2
   completed_phases: 0
@@ -911,6 +911,8 @@ None active.
 | 260925-ine | Fix Sentry FLAWCHESS-BQ/2A (empty-hash login 500) and FLAWCHESS-A0 (atomic-submit FK race on deleted game) | 2026-09-25 | 05195694 | [260925-ine-fix-sentry-flawchess-bq-2a-empty-hash-lo](./quick/260925-ine-fix-sentry-flawchess-bq-2a-empty-hash-lo/) |
 | 260926-8p5 | Train: Import games CTA for zero-game accounts (landing + warm-up score bubble) | 2026-09-26 | 284cbcd42 | [260926-8p5-train-import-cta-for-zero-game-accounts-](./quick/260926-8p5-train-import-cta-for-zero-game-accounts-/) |
 | 260926-9bg | Return signed-out visitors to their intended page (home landing + post-auth return path, tokenless-401 fix) | 2026-09-26 | c8d85cb17 | [260926-9bg-return-logged-out-users-to-their-intende](./quick/260926-9bg-return-logged-out-users-to-their-intende/) |
+| 260926-agm | Fix Sentry noise: stale-chunk reload (C0), browser-aborted XHR filter (31), per-attempt 429 captures (BX) | 2026-09-26 | 038a4280c | [260926-agm-fix-sentry-noise-stale-chunk-reload-abor](./quick/260926-agm-fix-sentry-noise-stale-chunk-reload-abor/) |
+| 102 | Stop Umami from recording OAuth access tokens (data-exclude-hash) | 2026-09-26 | 4a804ed4d | — |
 
 ## Deferred Items
 

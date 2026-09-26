@@ -609,11 +609,9 @@ async def _fetch_archive_with_retries(
                 _MAX_RETRIES,
                 _RATE_LIMIT_BACKOFF_SECONDS,
             )
-            sentry_sdk.capture_message(
-                "chess.com 429 rate limit hit",
-                level="warning",
-                tags={"source": "import", "platform": "chess.com"},
-            )
+            # FLAWCHESS-BX: no per-attempt Sentry capture (it fired on every retry
+            # even when the next attempt succeeded). Exhaustion raises below and
+            # run_import() captures it once.
             if attempt < _MAX_RETRIES - 1:
                 await asyncio.sleep(_RATE_LIMIT_BACKOFF_SECONDS)
                 continue

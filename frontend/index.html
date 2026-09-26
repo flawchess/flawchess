@@ -30,12 +30,17 @@
          access-control-allow-origin: * and COEP accepts a successful CORS
          check as an alternative to CORP, so this makes dev/preview/pre-deploy
          production work before the Caddy CORP header (the durable fix) has
-         shipped there. Ships both mechanisms; see deploy/Caddyfile. -->
+         shipped there. Ships both mechanisms; see deploy/Caddyfile.
+         data-exclude-hash: the Google OAuth callback lands on
+         /auth/callback#token=<JWT>, and without it Umami stored every live
+         access token in website_event.url_path. It also strips the hash from
+         the referrer, so the next pageview is clean too. -->
     <script
       defer
       src="https://analytics.flawchess.com/script.js"
       data-website-id="0ca19960-2398-4caf-b321-8039708fa7ef"
       data-domains="flawchess.com"
+      data-exclude-hash="true"
       crossorigin="anonymous"
     ></script>
   </head>

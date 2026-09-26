@@ -6,6 +6,7 @@ interface AxiosLikeError {
   isAxiosError: true;
   response?: { status: number; data?: unknown };
   code?: string;
+  message?: string;
   config?: { url?: string; method?: string };
 }
 
@@ -50,6 +51,19 @@ function isSuppressibleNetworkNoise(): boolean {
   return false;
 }
 
+// FLAWCHESS-31: axios raises ECONNABORTED with this exact message from its XHR
+// `onabort` handler (and Firefox's status-0 navigation-cancel path), i.e. the
+// BROWSER tore the request down: a navigation or redirect (every event was on
+// /login, /auth/google/authorize, or a page change), not a server problem. A
+// real timeout shares the code but says "timeout of Nms exceeded", so matching
+// the message keeps any future `timeout:` config reporting. Dropped
+// unconditionally: a server outage surfaces as ERR_NETWORK, never as an abort.
+const BROWSER_ABORT_MESSAGE = "Request aborted";
+
+function isBrowserAbortedRequest(error: AxiosLikeError): boolean {
+  return error.code === "ECONNABORTED" && error.message === BROWSER_ABORT_MESSAGE;
+}
+
 /** The one endpoint whose 422 is a deliberate, user-facing rejection (below). */
 const PASTE_GAME_URL = "/imports/paste";
 
@@ -78,30 +92,37 @@ function isExpectedPastedPgnRejection(error: AxiosLikeError): boolean {
   return typeof (data as Record<string, unknown>)["detail"] === "string";
 }
 
+/**
+ * True for an axios failure that is expected and never a bug, so the event is
+ * dropped. Split out of sentryBeforeSend() to keep its complexity in bounds.
+ */
+function isDroppableAxiosError(error: AxiosLikeError): boolean {
+  // 401 Unauthorized is never a bug — it's a normal auth failure (expired session,
+  // wrong credentials). Drop it to avoid noise in Sentry.
+  if (error.response?.status === 401) return true;
+  // FLAWCHESS-9W: an unparseable pasted PGN is expected user input, not a
+  // bug — see isExpectedPastedPgnRejection() above.
+  if (isExpectedPastedPgnRejection(error)) return true;
+  // FLAWCHESS-31: a browser-aborted request is never actionable — see
+  // isBrowserAbortedRequest() above.
+  if (isBrowserAbortedRequest(error)) return true;
+  // FLAWCHESS-24: drop unactionable network noise — see SUPPRESSIBLE_AXIOS_CODES
+  // and isSuppressibleNetworkNoise() docs above. A timeout ECONNABORTED (the
+  // request WAS attempted) is deliberately excluded and always ships.
+  return (
+    error.code !== undefined &&
+    (SUPPRESSIBLE_AXIOS_CODES as readonly string[]).includes(error.code) &&
+    isSuppressibleNetworkNoise()
+  );
+}
+
 function sentryBeforeSend(
   event: Sentry.ErrorEvent,
   hint: Sentry.EventHint,
 ): Sentry.ErrorEvent | null {
   const error = hint.originalException;
   if (isAxiosLikeError(error)) {
-    // 401 Unauthorized is never a bug — it's a normal auth failure (expired session,
-    // wrong credentials). Drop it to avoid noise in Sentry.
-    if (error.response?.status === 401) {
-      return null;
-    }
-    // FLAWCHESS-9W: an unparseable pasted PGN is expected user input, not a
-    // bug — see isExpectedPastedPgnRejection() above.
-    if (isExpectedPastedPgnRejection(error)) {
-      return null;
-    }
-    // FLAWCHESS-24: drop unactionable network noise — see SUPPRESSIBLE_AXIOS_CODES
-    // and isSuppressibleNetworkNoise() docs above. ECONNABORTED (a real timeout —
-    // the request WAS attempted) is deliberately excluded and always ships below.
-    if (
-      error.code !== undefined &&
-      (SUPPRESSIBLE_AXIOS_CODES as readonly string[]).includes(error.code) &&
-      isSuppressibleNetworkNoise()
-    ) {
+    if (isDroppableAxiosError(error)) {
       return null;
     }
     // FLAWCHESS-64: the event previously recorded only the page transaction,
