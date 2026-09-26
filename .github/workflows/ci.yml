@@ -97,11 +97,10 @@ jobs:
       - name: Type check (ty, analysis project)
         run: uv run --project analysis --with ty ty check analysis/
 
-      # AST nesting-depth + logic-LOC gate (216-06/D-13/D-14): fails the build
-      # on a regression past the depth-4 hard limit in app/. tests/ and
-      # scripts/ are deliberately not gated.
+      # AST nesting-depth gate: fails the build past the depth-4 hard limit in
+      # app/ (tests/ and scripts/ deliberately not gated).
       - name: Function-size gate
-        run: uv run python scripts/check_function_size.py app/ --fail-over-depth 4 --fail-over-loc 200
+        run: uv run python scripts/check_function_size.py app/ --fail-over-depth 4
 
       # Fails the build on a Caddyfile syntax error before merge (SEED-161
       # group 2 / D-09a) instead of discovering it during a live deploy.

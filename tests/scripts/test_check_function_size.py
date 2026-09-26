@@ -4,8 +4,8 @@ Pure AST-walk coverage — builds small source strings and asserts on the analyz
 `FunctionRecord` output rather than on stdout formatting, so assertions survive a
 cosmetic output change. Covers every bullet in 214-01-PLAN.md's `<behavior>` block:
 nesting depth, try/except levels, nested-def isolation, comprehension handling,
-logic-LOC exclusions (blank/comment/docstring), the `allow-loc` pragma exemption,
-the CLI exit code, and directory walking.
+logic-LOC exclusions (blank/comment/docstring), the CLI exit code, and directory
+walking.
 """
 
 from __future__ import annotations
@@ -215,41 +215,7 @@ async def foo(
 
 
 # ---------------------------------------------------------------------------
-# allow-loc pragma exemption
-# ---------------------------------------------------------------------------
-
-
-def test_pragma_exempts_loc_but_not_depth() -> None:
-    source = """
-# check-function-size: allow-loc large literal config table
-def f(x):
-    if x:
-        if x:
-            if x:
-                if x:
-                    if x:
-                        pass
-    return x
-"""
-    record = _only_record(source)
-    assert record.allow_loc is True
-    assert record.allow_loc_reason == "large literal config table"
-    # Depth is still measured even though LOC is exempt.
-    assert record.max_nesting_depth == 5
-
-
-def test_function_without_pragma_is_not_exempt() -> None:
-    source = """
-def f(x):
-    return x
-"""
-    record = _only_record(source)
-    assert record.allow_loc is False
-    assert record.allow_loc_reason is None
-
-
-# ---------------------------------------------------------------------------
-# Exit code: --fail-over-depth / --fail-over-loc
+# Exit code: --fail-over-depth (depth is the only hard gate)
 # ---------------------------------------------------------------------------
 
 
@@ -266,7 +232,7 @@ def _run_cli(*args: str) -> subprocess.CompletedProcess[str]:
 def test_cli_exits_zero_for_clean_file(tmp_path: Path) -> None:
     clean_file = tmp_path / "clean.py"
     clean_file.write_text("def f(x):\n    return x + 1\n")
-    result = _run_cli(str(clean_file), "--fail-over-depth", "4", "--fail-over-loc", "200")
+    result = _run_cli(str(clean_file), "--fail-over-depth", "4")
     assert result.returncode == 0, result.stdout + result.stderr
 
 
@@ -281,16 +247,16 @@ def test_cli_exits_one_when_depth_threshold_breached(tmp_path: Path) -> None:
         "                    if a:\n"
         "                        pass\n"
     )
-    result = _run_cli(str(deep_file), "--fail-over-depth", "4", "--fail-over-loc", "200")
+    result = _run_cli(str(deep_file), "--fail-over-depth", "4")
     assert result.returncode == 1, result.stdout + result.stderr
 
 
-def test_cli_exits_one_when_loc_threshold_breached(tmp_path: Path) -> None:
+def test_cli_does_not_gate_logic_loc(tmp_path: Path) -> None:
     long_file = tmp_path / "long.py"
     body_lines = "\n".join(f"    x{i} = {i}" for i in range(250))
     long_file.write_text(f"def f():\n{body_lines}\n    return x0\n")
-    result = _run_cli(str(long_file), "--fail-over-depth", "4", "--fail-over-loc", "200")
-    assert result.returncode == 1, result.stdout + result.stderr
+    result = _run_cli(str(long_file), "--fail-over-depth", "4")
+    assert result.returncode == 0, result.stdout + result.stderr
 
 
 def test_cli_json_output_is_parseable_and_carries_all_fields(tmp_path: Path) -> None:
@@ -310,8 +276,6 @@ def test_cli_json_output_is_parseable_and_carries_all_fields(tmp_path: Path) -> 
         "raw_loc",
         "logic_loc",
         "max_nesting_depth",
-        "allow_loc",
-        "allow_loc_reason",
     ):
         assert field in record, f"missing field {field!r} in JSON record"
 

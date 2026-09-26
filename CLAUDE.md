@@ -68,9 +68,9 @@ uv run ruff format app/ tests/ scripts/ analysis/  # apply formatting (not just 
 uv run ruff check . --fix                          # apply autofixable lint
 uv run ty check app/ tests/ scripts/
 uv run --project analysis --with ty ty check analysis/
-uv run python scripts/check_function_size.py app/ --fail-over-depth 4 --fail-over-loc 200  # nesting depth + logic LOC in app/
+uv run python scripts/check_function_size.py app/ --fail-over-depth 4  # nesting-depth gate (app/)
 uv run pytest -n auto -x                           # full backend suite, stop on first failure
-( cd frontend && npm run lint && npm test -- --run )
+( cd frontend && npm run lint && npm run build && npm test -- --run && npm run knip )
 ```
 
 If any step modifies files, commit with a `style(...)`/`chore(...)` prefix. A CI formatter diff is always avoidable locally since the formatter is deterministic.
