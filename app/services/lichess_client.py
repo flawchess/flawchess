@@ -64,11 +64,10 @@ def _raise_for_status(response: httpx.Response, username: str) -> None:
     # would silently produce 0 games and advance last_synced_at.
     if response.status_code != 200:
         if response.status_code == 429:
-            sentry_sdk.capture_message(
-                "lichess 429 rate limit hit",
-                level="warning",
-                tags={"source": "import", "platform": "lichess"},
-            )
+            # FLAWCHESS-BX: no per-attempt Sentry capture. A signup burst sent 7
+            # warnings in 14 min for imports that all recovered on retry. The
+            # retry loop logs each attempt; only exhaustion reaches Sentry, via
+            # the RuntimeError that run_import() captures.
             raise _RetryableStatusError(
                 f"lichess returned 429 for {username}",
                 status_code=429,
@@ -288,7 +287,7 @@ async def fetch_lichess_games(
             # imported games.
             # Sentry capture omitted for stream errors — last-attempt error
             # propagates to run_import() top-level handler which calls
-            # capture_exception (per D-02). Status-429 captures a warning above.
+            # capture_exception (per D-02). The same holds for 429 (FLAWCHESS-BX).
             last_attempt_error = exc
             continue
 

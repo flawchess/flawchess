@@ -312,6 +312,32 @@ class TestFetchLichessGames:
         assert mock_client.stream.call_count == 2
 
     @pytest.mark.asyncio
+    async def test_429_then_200_succeeds_without_sentry_capture(self):
+        """FLAWCHESS-BX: a 429 that recovers on retry waits the full minute lichess
+        asks for and never reaches Sentry."""
+        game = _make_lichess_game()
+        mock_client = MagicMock()
+        mock_client.stream = MagicMock(
+            side_effect=[
+                _make_streaming_response([], status_code=429),
+                _make_streaming_response([json.dumps(game)], status_code=200),
+            ]
+        )
+
+        sleep_mock = AsyncMock()
+        results = []
+        with (
+            patch("app.services.lichess_client.asyncio.sleep", new=sleep_mock),
+            patch("app.services.lichess_client.sentry_sdk.capture_message") as capture_mock,
+        ):
+            async for g in fetch_lichess_games(mock_client, "testuser", user_id=1):
+                results.append(g)
+
+        assert len(results) == 1
+        assert [call.args[0] for call in sleep_mock.call_args_list] == [60]
+        capture_mock.assert_not_called()
+
+    @pytest.mark.asyncio
     async def test_429_persistent_raises_runtime_error(self):
         """Persistent 429 must raise after retries (not silently advance cursor)."""
         mock_client = MagicMock()

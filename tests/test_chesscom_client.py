@@ -367,7 +367,10 @@ class TestFetchChesscomGames:
         mock_client.get = AsyncMock(side_effect=[archives_resp, rate_limited_resp, games_resp])
 
         sleep_mock = AsyncMock()
-        with patch("app.services.chesscom_client.asyncio.sleep", new=sleep_mock):
+        with (
+            patch("app.services.chesscom_client.asyncio.sleep", new=sleep_mock),
+            patch("app.services.chesscom_client.sentry_sdk.capture_message") as capture_mock,
+        ):
             results = []
             async for game in fetch_chesscom_games(mock_client, "testuser", user_id=1):
                 results.append(game)
@@ -376,6 +379,8 @@ class TestFetchChesscomGames:
         sleep_calls = [call.args[0] for call in sleep_mock.call_args_list]
         assert 60 in sleep_calls
         assert len(results) == 1
+        # FLAWCHESS-BX: a 429 that recovers on retry must not reach Sentry.
+        capture_mock.assert_not_called()
 
     @pytest.mark.asyncio
     async def test_429_persistent_raises_runtime_error(self):
