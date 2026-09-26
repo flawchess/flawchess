@@ -32,6 +32,7 @@ in `YYYY-MM-DD` (Europe/Zurich).
 - The "What changes when you sign up" page shows Back and Sign up free side by side at full touch height on phones.
 - For a guest, training reminders and the phone install prompt are hidden, because reminders are only sent to signed-up accounts.
 - A guest account that stays inactive for 30 days now has its training sessions and settings removed along with its games, so "nothing is deleted after 30 days of inactivity" is a real difference between a guest and a signed-up account.
+- A signed-up account with no imported games now gets an "Import games" button from the bot on the Train landing page and on the warm-up score screen, in place of the reminder nudge, so the step that turns warm-ups into your own puzzles is one tap away. (quick 260926-8p5)
 
 ### Fixed
 

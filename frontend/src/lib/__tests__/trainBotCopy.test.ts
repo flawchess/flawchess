@@ -867,12 +867,18 @@ describe('scoreBubbleCopy — D-03/S-3 games-less warm-up audience branch (Phase
     expect(guestWithGames.lines[1]).toBe(GUEST_SIGNUP_ASK_SCORE);
   });
 
-  it('a non-guest (any hasGames value) keeps the WARMUP_REMINDER_ASK_COPY entry, never the sign-up ask', () => {
-    const registeredNoGames = scoreBubbleCopy({ ...WARM, audience: AUDIENCE_NO_GAMES });
+  it('a registered account with games keeps the WARMUP_REMINDER_ASK_COPY entry, never the sign-up ask', () => {
     const registeredWithGames = scoreBubbleCopy({ ...WARM, audience: AUDIENCE_HAS_GAMES });
-    expect(registeredNoGames.lines[1]).not.toBe(GUEST_SIGNUP_ASK_SCORE);
     expect(registeredWithGames.lines[1]).not.toBe(GUEST_SIGNUP_ASK_SCORE);
     expect(registeredWithGames.lines[1]).toContain('Turn on Remind me');
+  });
+
+  it('quick 260926-8p5: a registered zero-game account gets the opener only, no reminder or sign-up line', () => {
+    for (const reminderAsk of ['remind_me', 'scan_qr', 'none'] as const) {
+      const copy = scoreBubbleCopy({ ...WARM, reminderAsk, audience: AUDIENCE_NO_GAMES });
+      expect(copy.lines).toHaveLength(1);
+      expect(copy.lines[0]).toContain('Import your games');
+    }
   });
 
   it('the has_games audience is byte-identical to today\'s warm-up opener clause', () => {

@@ -56,6 +56,7 @@ import { useInstallPrompt } from '@/hooks/useInstallPrompt';
 import { fireWinConfetti, firePartialConfetti, prefersReducedMotion } from '@/lib/confetti';
 import { playSound, type SoundEvent } from '@/lib/sounds';
 import { TrainBotBubble } from '@/components/train/TrainBotBubble';
+import { ImportAskActions } from '@/components/train/ImportAskActions';
 import { SignupAskActions } from '@/components/train/SignupAskActions';
 import { pickBot, scoreBubbleCopy, type ReminderAsk, type TrainCopyAudience } from '@/lib/trainBotCopy';
 import { useTrainSettings } from '@/hooks/useTrainSettings';
@@ -149,6 +150,15 @@ export interface TrainScoreScreenProps {
    * reminder ask with the sign-up ask (`GUEST_SIGNUP_ASK_SCORE`, D-13: a
    * guest gets no reminder slot). */
   isGuest: boolean;
+}
+
+/** The score bubble's action row: guests get the sign-up ask (Phase 224
+ * S-3); a registered zero-game account gets the import ask (quick task
+ * 260926-8p5); everyone else gets none. */
+function scoreBubbleActions(isGuest: boolean, hasGames: boolean): ReactElement | undefined {
+  if (isGuest) return <SignupAskActions source="train-score" />;
+  if (!hasGames) return <ImportAskActions source="train-score" />;
+  return undefined;
 }
 
 export function TrainScoreScreen({
@@ -275,7 +285,7 @@ export function TrainScoreScreen({
         <TrainBotBubble
           persona={bot}
           state="verdict"
-          actions={isGuest ? <SignupAskActions source="train-score" /> : undefined}
+          actions={scoreBubbleActions(isGuest, hasGames)}
         >
           {bubbleCopy !== null && (
             <div data-testid="train-score-bubble-returns">
