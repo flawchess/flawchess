@@ -1,7 +1,7 @@
 ---
 quick_id: 260926-9bg
 status: complete
-commit: 5cee05817
+commit: c8d85cb17
 ---
 
 # Quick 260926-9bg Summary: Return signed-out visitors to their intended page
@@ -21,7 +21,10 @@ Executed inline (small frontend change, no subagents).
 ## Found in browser UAT (fixed, commit 5cee05817)
 - `useUserProfile` has no `enabled` guard, so ProtectedLayout fired a tokenless profile request before its redirect; the interceptor treated that 401 as an expired session and hard-redirected to `/login`, defeating the home landing. Interceptor now ignores 401s from requests without an `Authorization` header.
 
+## Found in user UAT (fixed)
+- Logging out from /train made /train the default post-login page: `logout()` clears the token before its hard redirect, so ProtectedLayout re-rendered token-less and re-stashed the current page. Stash/clear moved into `hooks/useReturnToTracking.ts`, which only stashes on a mount that never had a token (arrived signed out). Browser-verified: logout from /train stashes nothing and re-login lands on the default page; a fresh signed-out /train visit still returns to /train after guest start.
+
 ## Verification
-- New tests: `lib/__tests__/returnTo.test.ts`, 3 cases in `pages/__tests__/Home.redirect.test.tsx`, `api/__tests__/client.unauthorized.test.ts`. Reverting the Home read and the `sentToken` guard each makes the new tests fail.
+- New tests: `lib/__tests__/returnTo.test.ts`, 3 cases in `pages/__tests__/Home.redirect.test.tsx`, `api/__tests__/client.unauthorized.test.ts`, `hooks/__tests__/useReturnToTracking.test.ts` (logout case fails when the arrival guard is removed). Reverting the Home read and the `sentToken` guard each makes the new tests fail.
 - `npm run lint`, `npm test -- --run` (272 files / 4370 tests), `npm run build`, `npm run knip`: clean.
 - Browser (dev, 127.0.0.1 origin): stale token on `/train` → `/login` with `/train` stashed; signed-out `/train` → home with guest buttons, stash `/train`; Use as Guest → `/train`, stash cleared.

@@ -910,7 +910,7 @@ None active.
 | 260920-frk | Activity dashboard: explicit start/end date selector (single day and today selectable) alongside the range presets; all 17 activity queries gain an inclusive upper bound; cache keyed on the resolved window | 2026-09-20 | b244d0ebf | [260920-frk-on-the-activity-dashboard-add-a-timespan](./quick/260920-frk-on-the-activity-dashboard-add-a-timespan/) |
 | 260925-ine | Fix Sentry FLAWCHESS-BQ/2A (empty-hash login 500) and FLAWCHESS-A0 (atomic-submit FK race on deleted game) | 2026-09-25 | 05195694 | [260925-ine-fix-sentry-flawchess-bq-2a-empty-hash-lo](./quick/260925-ine-fix-sentry-flawchess-bq-2a-empty-hash-lo/) |
 | 260926-8p5 | Train: Import games CTA for zero-game accounts (landing + warm-up score bubble) | 2026-09-26 | 284cbcd42 | [260926-8p5-train-import-cta-for-zero-game-accounts-](./quick/260926-8p5-train-import-cta-for-zero-game-accounts-/) |
-| 260926-9bg | Return signed-out visitors to their intended page (home landing + post-auth return path, tokenless-401 fix) | 2026-09-26 | 5cee05817 | [260926-9bg-return-logged-out-users-to-their-intende](./quick/260926-9bg-return-logged-out-users-to-their-intende/) |
+| 260926-9bg | Return signed-out visitors to their intended page (home landing + post-auth return path, tokenless-401 fix) | 2026-09-26 | c8d85cb17 | [260926-9bg-return-logged-out-users-to-their-intende](./quick/260926-9bg-return-logged-out-users-to-their-intende/) |
 
 ## Deferred Items
 
