@@ -113,6 +113,18 @@ select = ["E4", "E7", "E9", "F"]
 # Ruff's complexity-count rules (cyclomatic/branch/statement counters) are deliberately
 # not enabled: nesting depth (scripts/check_function_size.py) is the only hard
 # complexity gate this project runs (quick 260926-evd, D-03).
+#
+# TID251, B, ASYNC and DTZ were adopted deliberately on 2026-09-26 (quick 260926-evd),
+# scoped per the per-file-ignores comment below.
+extend-select = ["TID251"]
+
+[tool.ruff.lint.flake8-tidy-imports.banned-api]
+"requests" = { msg = "blocks the event loop, use httpx.AsyncClient" }
+"berserk" = { msg = "use httpx.AsyncClient against the lichess API" }
+# datetime's `now`/`utcnow` are NOT banned here: tz-aware `datetime.now(timezone.utc)`
+# has legitimate use (app/middleware/last_activity.py, import-job and eval-lease code);
+# the naive form is caught by DTZ005 once DTZ is enabled below, and the
+# endpoint-only dev_now_utc convention is not expressible as an API ban.
 
 [tool.ruff.lint.per-file-ignores]
 "app/models/*.py" = ["F821"]  # SQLAlchemy forward references in relationship() strings
