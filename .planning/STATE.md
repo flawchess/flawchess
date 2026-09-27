@@ -5,8 +5,8 @@ current_phase: 224
 current_phase_name: Guest Activation — Welcome Removal & Guest Train (SEED-169)
 status: executing
 stopped_at: Completed 224-06-PLAN.md
-last_updated: "2026-09-26T07:34:52.534Z"
-state_head: 4a804ed4d2790541f6cdd85dd18bbd0a89922ef4
+last_updated: "2026-09-27T05:04:40.922Z"
+state_head: 853ab2dd572bf20506ecf48ffe72d48c98718434
 progress:
   total_phases: 2
   completed_phases: 0
@@ -14,7 +14,7 @@ progress:
   completed_plans: 11
 milestone_name: Train Bot-Narrated Onboarding & Verdicts
 last_activity: 2026-09-27
-last_activity_desc: "Completed quick task 260927-7u4 (insights dates in UTC, B904/B905 baseline burn-down)"
+last_activity_desc: Completed quick task 260927-8xn (engine behavior-neutral quick wins from engine review)
 ---
 
 # Project State: FlawChess
@@ -915,6 +915,7 @@ None active.
 | 102 | Stop Umami from recording OAuth access tokens (data-exclude-hash) | 2026-09-26 | 4a804ed4d | — |
 | 260926-evd | Consolidate static-analysis gates: nesting depth the only hard complexity gate, ruff TID251/B/ASYNC/DTZ adopted with baselines, tsc build + knip in pre-merge gate | 2026-09-26 | a8a81362f | [260926-evd-consolidate-static-analysis-gates-for-ag](./quick/260926-evd-consolidate-static-analysis-gates-for-ag/) |
 | 260927-7u4 | Insights/percentile dates in UTC; B904/B905 fixes; 7 ruff baseline entries dropped | 2026-09-27 | da22f72f4 | [260927-7u4-make-insights-dates-utc-and-fix-b904-b90](./quick/260927-7u4-make-insights-dates-utc-and-fix-b904-b90/) |
+| 260927-8xn | Engine behavior-neutral quick wins from engine review (failed-grade dead end, Maia abort/cache/transfer, chart merge guard) | 2026-09-27 | 853ab2dd5 | [260927-8xn-engine-behavior-neutral-quick-wins-from-](./quick/260927-8xn-engine-behavior-neutral-quick-wins-from-/) |
 
 ## Deferred Items
 
