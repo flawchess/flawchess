@@ -1,16 +1,16 @@
 ---
 gsd_state_version: "1.0"
 milestone: v2.19
-current_phase: 224
-current_phase_name: Guest Activation — Welcome Removal & Guest Train (SEED-169)
+current_phase: 225
+current_phase_name: Engine Search Fixes — Root Comparability, Round Underfill & Findability Fallback (SEED-170)
 status: executing
-stopped_at: Phase 225 context gathered
-last_updated: "2026-09-27T06:06:26.643Z"
-state_head: ee465dbf94545f54f2292503969b9f2d10a49634
+stopped_at: Phase 225 planned (8 plans)
+last_updated: "2026-09-27T06:44:42.604Z"
+state_head: 6fb58e99da2aade1a10c5d360439aea7a7bfb593
 progress:
   total_phases: 3
   completed_phases: 100
-  total_plans: 12
+  total_plans: 20
   completed_plans: 12
 milestone_name: Train Bot-Narrated Onboarding & Verdicts
 last_activity: 2026-09-27
@@ -21,8 +21,8 @@ last_activity_desc: Completed quick task 260927-8xn (engine behavior-neutral qui
 
 ## Current Position
 
-Phase: 224 (Guest Activation — Welcome Removal & Guest Train (SEED-169)) — EXECUTING
-Plan: 6 of 6
+Phase: 225 (Engine Search Fixes — Root Comparability, Round Underfill & Findability Fallback (SEED-170)) — READY TO EXECUTE
+Plan: 0 of 8
 
 Status: Ready to execute
 

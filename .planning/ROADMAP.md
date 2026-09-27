@@ -443,7 +443,30 @@ grade-cache set-mixing redesign in `workerPool.ts`.
 
 **Depends on:** quick task 260927-8xn (shipped to `main`).
 
-**Plans:** 0 plans (not planned yet)
+**Plans:** 8 plans
+
+Plans:
+**Wave 1**
+- [ ] 225-01-PLAN.md — Tooling I: stop-rule harness root trace + D-02 allowance calculator (tracer), maia-blindness move-quality runner
+- [ ] 225-02-PLAN.md — Tooling II: gate verdict script (accept-rule twin), calibration branch table, A0-cells converter
+
+**Wave 2** *(blocked on Wave 1 completion)*
+- [ ] 225-03-PLAN.md — D-02 measurement (orchestrator run), allowance record, pre-registered accept rule (its add-commit is arm A0)
+
+**Wave 3** *(blocked on Wave 2 completion)*
+- [ ] 225-04-PLAN.md — Item 2: round underfill fix in selectPath + permanent D-08 round-fill test (arm A2)
+
+**Wave 4** *(blocked on Wave 3 completion)*
+- [ ] 225-05-PLAN.md — Item 1: boost-aware visit guard on the clear-winner stop (arm A21)
+
+**Wave 5** *(blocked on Wave 4 completion)*
+- [ ] 225-06-PLAN.md — Item 3: findability V_fallback clamp, rewritten ordering tests, bot-invariance proof
+
+**Wave 6** *(blocked on Wave 5 completion)*
+- [ ] 225-07-PLAN.md — Gate runs from arm worktrees: lock, throughput / stop rule / move quality, calibration spot check (orchestrator)
+
+**Wave 7** *(blocked on Wave 6 completion)*
+- [ ] 225-08-PLAN.md — Verdict and report, D-14 ship/hold, engine doc + changelog, SEED-171 (item 4), pre-merge gate
 
 **Seed:** `.planning/seeds/SEED-170-engine-root-comparability-and-round-underfill.md`
 

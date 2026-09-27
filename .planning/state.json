@@ -661,13 +661,18 @@
     {
       "number": "224",
       "name": "Guest Activation — Welcome Removal & Guest Train (SEED-169, standalone)",
+      "status": "complete"
+    },
+    {
+      "number": "225",
+      "name": "Engine Search Fixes — Root Comparability, Round Underfill & Findability Fallback (SEED-170, standalone)",
       "status": "pending"
     }
   ],
   "next": {
     "command": "/gsd:progress --next",
     "label": "Advance to the next step",
-    "reason": "Phase 224 of 2 · executing"
+    "reason": "Phase 225 of 3 · executing"
   },
-  "updated_at": "2026-09-17T22:25:05.393Z"
+  "updated_at": "2026-09-27T06:44:42.704Z"
 }

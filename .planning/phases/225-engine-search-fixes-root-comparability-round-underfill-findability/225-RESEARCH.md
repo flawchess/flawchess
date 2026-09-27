@@ -549,16 +549,16 @@ const onSnapshot = (s) => {
 | A6 | Calibration A21 run ≈ 4.5 h wall with five concurrent cells on this 16-core box (Phase 199: 21:58→02:25, no crash) | Environment | Schedule only; crash resume is automatic |
 | A7 | The user wants item 3's semantics despite reversing Phase 159's fixture | C-3 | Shipping a UX change the user did not intend. **Needs confirmation.** |
 
-## Open Questions
+## Open Questions (RESOLVED)
 
-1. **Does the user accept item 3's reversal of Phase 159's findability behavior?** (C-3)
+1. **Does the user accept item 3's reversal of Phase 159's findability behavior?** (C-3) **RESOLVED** by D-10e (user accepted; tests rewritten in Plan 225-06).
    - Known: D-10a makes e2e4 (+7, 6.6% prior) outrank e2e3 (+1, 93% prior) at 600, and flips the @1000 D-03 case at any near-equal V_fallback.
    - Unclear: whether "hard-to-find winning move now ranks first at 600" is desired.
    - Recommendation: a checkpoint (`checkpoint:decision`) before the item 3 implementation task, with options (a) accept and rewrite the tests, (b) anchor re-derivation, (c) hold item 3. Item 3 is independent of the bot gates, so the other items proceed either way.
-2. **Calibration primary baseline: July-21 (label question) or A0 (attribution question)?** (C-6)
+2. **Calibration primary baseline: July-21 (label question) or A0 (attribution question)?** (C-6) **RESOLVED** by D-13 (amended): July-21 primary + pre-registered A0+A2 fail branch.
    - Recommendation: July-21 primary per D-13, plus the pre-registered A0+A2 fail branch.
-3. **Move-quality judged selector** (C-5): recommend `argmaxLine` for the bot arms, with `rankedLines[0]` report-only.
-4. **Allowance value:** unknown until the D-02 run. Fallback 0.10 per D-02 if the tracer fails.
+3. **Move-quality judged selector** (C-5) **RESOLVED** by D-13 (amended): `argmaxLine` judged, `rankedLines[0]` report-only. (Original: recommend `argmaxLine` for the bot arms, with `rankedLines[0]` report-only.)
+4. **Allowance value:** **RESOLVED procedurally** by Plan 225-03's D-02 measurement (fallback 0.10). Originally: unknown until the D-02 run. Fallback 0.10 per D-02 if the tracer fails.
 
 ## Environment Availability
 

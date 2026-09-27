@@ -41,20 +41,22 @@ created: "2026-09-27"
 
 Task IDs are filled by the planner; rows map decisions to their automated checks.
 
-| Decision | Behavior | Test Type | Automated Command | File Exists | Status |
-|----------|----------|-----------|-------------------|-------------|--------|
-| D-06/D-08 | Every non-tail round dispatches `c` expansions under one- and two-candidate peaked policies (50 nodes, c=4) | unit | `cd frontend && npx vitest run src/lib/engine/__tests__/mctsSearch.roundFill.test.ts` | ❌ W0 | ⬜ pending |
-| D-06 mutation | Reverting the restart makes D-08 fail | mutation | same command with the fix reverted | — | ⬜ pending |
-| D-06 determinism | Peaked fixture bit-identical under jitter; ENGINE-07 tests unchanged | unit | `cd frontend && npx vitest run src/lib/engine/__tests__/mctsSearch.test.ts -t "ENGINE-07"` | ✅ | ⬜ pending |
-| D-01 | Unsettled in-window child blocks clear-winner stop; out-of-window does not; closed top child counts as settled | unit + mutation | `cd frontend && npx vitest run src/lib/engine/__tests__/mctsSearch.test.ts -t "stop rule"` | ✅ rewrite + ❌ W0 additions | ⬜ pending |
-| D-03 | Flatness branch unchanged | unit | same | ✅ | ⬜ pending |
-| D-02 | Allowance constant present on bot stop rule, >= 0 | unit | `cd frontend && npx vitest run src/hooks/useFlawChessEngine.test.tsx` | ✅ extend | ⬜ pending |
-| D-10a/b/c/e | rankScore bounds, normalized Vfb, zero-prior guard, clamp case, rewritten D-03 + "demotes" tests | unit | `cd frontend && npx vitest run src/lib/engine/__tests__/findability.test.ts src/lib/engine/__tests__/fallbackExpectimax.test.ts src/lib/engine/__tests__/mctsSearch.test.ts` | ✅ rewrite | ⬜ pending |
-| D-10d | `selectBotMove` identical pick under any `rankedLines` permutation | unit | `cd frontend && npx vitest run src/lib/engine/__tests__/selectBotMove.test.ts` | ❌ W0 | ⬜ pending |
-| tooling | Stop-rule harness new flags parse | self-test | `node --import ./scripts/lib/frontend-alias-hook.mjs scripts/engine-dispatch-stop-rule.mjs --self-test` | ✅ extend | ⬜ pending |
-| tooling | Move-quality runner parseArgs + fixture integrity | self-test | `node --import ./scripts/lib/frontend-alias-hook.mjs scripts/engine-move-quality.mjs --self-test` | ❌ W0 | ⬜ pending |
-| verdict | Parity arithmetic | self-test | `uv run python scripts/calibration_parity_verdict.py --self-test` | ✅ | ⬜ pending |
-| gates | Throughput / stop-rule / move-quality / calibration per accept rule | measurement (orchestrator-inline) | per `reports/engine-search-fixes-225/accept-rule.md` | — | ⬜ pending |
+| Decision | Plan/Task | Behavior | Test Type | Automated Command | File Exists | Status |
+|----------|-----------|----------|-----------|-------------------|-------------|--------|
+| D-06/D-08 | 225-04 T1 | Every non-tail round dispatches `c` expansions under one- and two-candidate peaked policies (50 nodes, c=4) | unit | `cd frontend && npx vitest run src/lib/engine/__tests__/mctsSearch.roundFill.test.ts` | ❌ W0 | ⬜ pending |
+| D-06 mutation | 225-04 T2 | Reverting the restart makes D-08 fail | mutation | same command with the fix reverted | — | ⬜ pending |
+| D-06 determinism | 225-04 T2 | Peaked fixture bit-identical under jitter; ENGINE-07 tests unchanged | unit | `cd frontend && npx vitest run src/lib/engine/__tests__/mctsSearch.test.ts -t "ENGINE-07"` | ✅ | ⬜ pending |
+| D-01 | 225-05 T1/T2 | Unsettled in-window child blocks clear-winner stop; out-of-window does not; closed top child counts as settled | unit + mutation | `cd frontend && npx vitest run src/lib/engine/__tests__/mctsSearch.test.ts -t "stop rule"` | ✅ rewrite + ❌ W0 additions | ⬜ pending |
+| D-03 | 225-05 T2 | Flatness branch unchanged | unit | same | ✅ | ⬜ pending |
+| D-02 | 225-05 T2 | Allowance constant present on bot stop rule, >= 0 | unit | `cd frontend && npx vitest run src/hooks/useFlawChessEngine.test.tsx` | ✅ extend | ⬜ pending |
+| D-02 measurement | 225-01 T1, 225-03 T1 | Root-trace deltas to pooled-p90 allowance (fallback 0.10) | unit + orchestrator run | `uv run pytest tests/scripts/test_engine_search_fixes_allowance.py -x` | ❌ W0 | ⬜ pending |
+| D-10a/b/c/e | 225-06 T1/T2 | rankScore bounds, normalized Vfb, zero-prior guard, clamp case, rewritten D-03 + "demotes" tests | unit | `cd frontend && npx vitest run src/lib/engine/__tests__/findability.test.ts src/lib/engine/__tests__/fallbackExpectimax.test.ts src/lib/engine/__tests__/mctsSearch.test.ts` | ✅ rewrite | ⬜ pending |
+| D-10d | 225-06 T2 | `selectBotMove` identical pick under any `rankedLines` permutation | unit | `cd frontend && npx vitest run src/lib/engine/__tests__/selectBotMove.test.ts` | ❌ W0 | ⬜ pending |
+| tooling | 225-01 T1 | Stop-rule harness new flags parse | self-test | `node --import ./scripts/lib/frontend-alias-hook.mjs scripts/engine-dispatch-stop-rule.mjs --self-test` | ✅ extend | ⬜ pending |
+| tooling | 225-01 T2 | Move-quality runner parseArgs + fixture integrity | self-test | `node --import ./scripts/lib/frontend-alias-hook.mjs scripts/engine-move-quality.mjs --self-test` | ❌ W0 | ⬜ pending |
+| D-11/D-13/D-14 verdict | 225-02 T1/T2 | Gate criteria, calibration branch table, item decisions, cells-to-json | unit | `uv run pytest tests/scripts/test_engine_search_fixes_verdict.py -x` | ❌ W0 | ⬜ pending |
+| verdict | 225-02 T2 | Parity arithmetic | self-test | `uv run python scripts/calibration_parity_verdict.py --self-test` | ✅ | ⬜ pending |
+| gates | 225-07 T2/T3, 225-08 T1 | Throughput / stop-rule / move-quality / calibration per accept rule | measurement (orchestrator-inline) | per `reports/engine-search-fixes-225/accept-rule.md`; `uv run python scripts/engine_search_fixes_verdict.py gates` | — | ⬜ pending |
 
 *Status: ⬜ pending · ✅ green · ❌ red · ⚠️ flaky*
 
@@ -67,6 +69,8 @@ Task IDs are filled by the planner; rows map decisions to their automated checks
 - [ ] D-10d permutation test in `selectBotMove.test.ts`
 - [ ] `scripts/engine-move-quality.mjs` + `--self-test`
 - [ ] Stop-rule harness flags (no-stop-rule, root trace, guard window) + self-test cases
+- [ ] `tests/scripts/test_engine_search_fixes_allowance.py` — D-02 allowance calculator (225-01)
+- [ ] `tests/scripts/test_engine_search_fixes_verdict.py` — gate verdict, calibration branch table, cells-to-json (225-02)
 
 ---
 
