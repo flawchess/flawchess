@@ -26,13 +26,6 @@ vi.mock('@/hooks/useImport', () => ({
   useActiveJobs: vi.fn(() => ({ data: [] })),
 }));
 
-// Mock useUserProfile — block reads the email to scope the per-user
-// "Generate Insights used" flag. Tests don't care about the value, just that
-// the component doesn't crash without a QueryClientProvider.
-vi.mock('@/hooks/useUserProfile', () => ({
-  useUserProfile: vi.fn(() => ({ data: { email: 'test@example.com' } })),
-}));
-
 // Stub the Tooltip primitive so blocked-state renders don't need a
 // TooltipProvider wrapper in tests. The component under test only uses
 // Tooltip for accessibility hints; the wrapper's internal Radix context is
@@ -147,7 +140,6 @@ describe('EndgameInsightsBlock', () => {
     const generate = screen.getByTestId<HTMLButtonElement>('btn-generate-insights');
     expect(generate.disabled).toBe(true);
     expect(generate.getAttribute('aria-busy')).toBe('true');
-    expect(screen.queryByTestId('generate-insights-notification-dot')).toBeNull();
   });
 
   it.each([

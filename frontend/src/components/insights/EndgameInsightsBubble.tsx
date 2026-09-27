@@ -15,8 +15,6 @@ export type InsightsBubbleStatus = 'idle' | 'pending' | 'error';
 export interface EndgameInsightsBubbleProps {
   status: InsightsBubbleStatus;
   blockedReason: BlockedReason | null;
-  /** Red first-use dot on the Generate button (idle only). */
-  showDot: boolean;
   onGenerate: () => void;
 }
 
@@ -34,7 +32,6 @@ export interface EndgameInsightsBubbleProps {
 export function EndgameInsightsBubble({
   status,
   blockedReason,
-  showDot,
   onGenerate,
 }: EndgameInsightsBubbleProps): ReactElement {
   const isPending = status === 'pending';
@@ -57,7 +54,6 @@ export function EndgameInsightsBubble({
             <GenerateButton
               isPending={isPending}
               disabled={isPending || blockedReason !== null}
-              showDot={showDot}
               onGenerate={onGenerate}
             />
           )
@@ -82,12 +78,10 @@ function bubbleRegionProps(status: InsightsBubbleStatus): Record<string, string>
 function GenerateButton({
   isPending,
   disabled,
-  showDot,
   onGenerate,
 }: {
   isPending: boolean;
   disabled: boolean;
-  showDot: boolean;
   onGenerate: () => void;
 }): ReactElement {
   return (
@@ -97,7 +91,6 @@ function GenerateButton({
       disabled={disabled}
       aria-busy={isPending}
       data-testid="btn-generate-insights"
-      className="relative"
     >
       {isPending ? (
         <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
@@ -105,15 +98,6 @@ function GenerateButton({
         <Sparkles className="h-4 w-4" aria-hidden="true" />
       )}
       Generate Insights
-      {showDot && !disabled && (
-        <span
-          className="absolute -top-1 -right-1 flex h-2.5 w-2.5"
-          data-testid="generate-insights-notification-dot"
-        >
-          <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-red-500 opacity-75" />
-          <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-red-500" />
-        </span>
-      )}
     </Button>
   );
 }

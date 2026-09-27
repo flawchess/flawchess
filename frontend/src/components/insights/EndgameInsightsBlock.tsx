@@ -6,8 +6,6 @@ import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/
 import { DEFAULT_FILTERS, type FilterState } from '@/components/filters/FilterPanel';
 import { derivePreset } from '@/lib/opponentStrength';
 import { useActiveJobs } from '@/hooks/useImport';
-import { useUserProfile } from '@/hooks/useUserProfile';
-import { useUserFlag, setUserFlag } from '@/hooks/useUserFlag';
 import type {
   EndgameInsightsResponse,
   InsightsAxiosError,
@@ -20,8 +18,6 @@ import {
   BLOCKED_REASON_TOOLTIP,
   type BlockedReason,
 } from '@/components/insights/endgameInsightsCopy';
-
-const FLAG_INSIGHTS_USED = 'insights_used';
 
 // Curated endgame study resource (GM Noël Studer), shown as a static link in the
 // Recommendations card. Kept out of the LLM payload so the URL is always correct
@@ -96,8 +92,6 @@ export function EndgameInsightsBlock({
   onGenerate,
 }: EndgameInsightsBlockProps) {
   const { data: activeJobs } = useActiveJobs(true);
-  const { data: profile } = useUserProfile();
-  const insightsUsed = useUserFlag(FLAG_INSIGHTS_USED, profile?.email);
 
   const isPending = mutation.isPending;
   const isError = mutation.isError;
@@ -106,18 +100,12 @@ export function EndgameInsightsBlock({
   const hasActiveImport = (activeJobs?.length ?? 0) > 0;
   const blockedReason = getBlockedReason(appliedFilters, hasActiveImport);
 
-  const handleGenerateClick = () => {
-    if (profile?.email) setUserFlag(FLAG_INSIGHTS_USED, profile.email);
-    onGenerate();
-  };
-
   if (isError || !hasRendered) {
     return (
       <EndgameInsightsBubble
         status={bubbleStatus(isError, isPending)}
         blockedReason={blockedReason}
-        showDot={!insightsUsed}
-        onGenerate={handleGenerateClick}
+        onGenerate={onGenerate}
       />
     );
   }
@@ -145,7 +133,7 @@ export function EndgameInsightsBlock({
             response={rendered}
             isPending={isPending}
             blockedReason={blockedReason}
-            onRegenerate={handleGenerateClick}
+            onRegenerate={onGenerate}
           />
         </AccordionContent>
       </AccordionItem>
