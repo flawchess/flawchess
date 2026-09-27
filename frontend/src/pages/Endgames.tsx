@@ -1023,7 +1023,11 @@ export function EndgamesPage() {
               />
             </MobileFilterDrawer>
 
-            <TabsContent value="stats" className="mt-4">
+            {/* `-mt-2` cancels the Tabs root's `gap-2`, so the stats content
+                (Shelly's bubble, or the report card) starts right at the sticky
+                Filters row's bottom edge: the minimum gap under the button
+                without sliding beneath the row's backdrop. */}
+            <TabsContent value="stats" className="-mt-2">
               {statisticsContent}
             </TabsContent>
             <TabsContent value="games" className="mt-4">
