@@ -78,7 +78,7 @@ import {
   type SearchTreeNode,
   fenSide,
   terminalValue,
-  applyUciMoveFen,
+  expandChildPositions,
   recomputeValue,
   buildSnapshot,
   sideMatchesMover,
@@ -148,7 +148,7 @@ function createChildNode(
   objectiveEvalCp: number | null,
   objectiveEvalMate: number | null,
   rawMaiaProb: number | null,
-  rootMover: MoverColor,
+  terminal: number | null,
 ): EngineNode {
   const node: EngineNode = {
     fen,
@@ -169,7 +169,6 @@ function createChildNode(
     rootExplorationPrior: 0,
     children: new Map(),
   };
-  const terminal = terminalValue(fen, rootMover);
   if (terminal !== null) {
     node.isTerminal = true;
     node.isExpanded = true;
@@ -353,13 +352,17 @@ function applyExpansion(result: DispatchedExpansion, rootMover: MoverColor): voi
     propagateClosure(path);
     return;
   }
+  // 8XN-3: one chess.js instance for the whole expansion instead of one
+  // `new Chess(leaf.fen)` per candidate (`applyUciMoveFen` inside this loop) —
+  // see `expandChildPositions`'s doc comment for the bit-identical proof.
+  const positions = expandChildPositions(leaf.fen, candidateMap.keys(), rootMover);
   for (const [uci, prior] of candidateMap) {
-    const childFen = applyUciMoveFen(leaf.fen, uci);
-    if (childFen === null) continue; // illegal/malformed provider candidate — deterministic drop, never a crash (WR-07)
+    const position = positions.get(uci);
+    if (position === undefined) continue; // illegal/malformed provider candidate — deterministic drop, never a crash (WR-07)
     const grade = grades.get(uci);
     const value = grade ? leafExpectedScore(grade, rootMover) : NEUTRAL_EXPECTED_SCORE;
     const child = createChildNode(
-      childFen,
+      position.fen,
       leaf.depth + 1,
       uci,
       prior,
@@ -367,7 +370,7 @@ function applyExpansion(result: DispatchedExpansion, rootMover: MoverColor): voi
       grade?.evalCp ?? null,
       grade?.evalMate ?? null,
       rawPolicy[uci] ?? null,
-      rootMover,
+      position.terminal,
     );
     if (leaf.isRoot && rootExploration) {
       child.rootExplorationPrior = rootExploration.get(uci) ?? 0;
@@ -475,6 +478,38 @@ async function dispatchExpansion(
     signal,
     gradingDepthForTreeDepth(leaf.depth),
   );
+  // 8XN-7: a non-abort empty grade() Map means the pool resolved `new Map()`
+  // without grading anything — watchdog fire, a dead pool, or no live slot
+  // (workerPoolDispatch.ts / workerPoolWatchdog.ts / workerPoolLifecycle.ts).
+  // Before this fix, `applyExpansion` then created EVERY candidate child at
+  // NEUTRAL_EXPECTED_SCORE as if Stockfish had actually graded them — those
+  // fake 0.5 values backed up through `recomputeValue` into ancestor values
+  // and `RankedLine.practicalScore`, and the wasted expansion still spent
+  // node budget. The fix: close this leaf as a dead end (the WR-04 shape
+  // below) so it keeps the value its OWN parent's grade already gave it,
+  // instead of fabricating a value for its children. Excluded on abort: the
+  // apply loop discards an aborted result entirely (`if (signal.aborted)
+  // break`), and the pool also resolves empty on abort, so this branch would
+  // be redundant there. A PARTIAL map (some candidates ungraded) is left
+  // alone — those candidates keep the pre-existing NEUTRAL_EXPECTED_SCORE
+  // fallback in `applyExpansion`, unchanged.
+  //
+  // The ROOT is exempt (orchestrator decision, not in the original review
+  // finding): closing the root here would leave `rankedLines` empty and send
+  // `selectBotMove` to `fallbackMove` (a uniformly random legal move) instead
+  // of a Maia-informed one. Keeping today's behavior at the root — its
+  // Maia candidates surface at NEUTRAL_EXPECTED_SCORE — is the better
+  // degraded mode than "no move ranking at all".
+  if (grades.size === 0 && !signal.aborted && !leaf.isRoot) {
+    return {
+      leaf,
+      path,
+      candidateMap: new Map<string, number>(),
+      grades,
+      rawPolicy,
+      rootExploration: null,
+    };
+  }
   const rootExploration = leaf.isRoot ? rootExplorationPriors(candidateMap) : null;
   return { leaf, path, candidateMap, grades, rawPolicy, rootExploration };
 }
