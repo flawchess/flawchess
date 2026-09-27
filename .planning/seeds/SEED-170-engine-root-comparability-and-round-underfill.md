@@ -1,6 +1,6 @@
 ---
 id: SEED-170
-status: open
+status: promoted
 planted: 2026-09-27
 planted_during: FlawChess engine code review (session 2026-09-27); behavior-neutral findings shipped separately as a /gsd-quick
 trigger_when: next engine milestone, or any time bot-move latency or analysis-board suggestion quality is the priority

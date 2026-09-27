@@ -192,10 +192,11 @@
 | 222. Train Bot-Narrated Onboarding & Verdicts (SEED-166, v2.19) | 6/6 | Complete    | 2026-09-14 |
 | 223. Bot Voice & Immersive Bot Game Layout (SEED-168 + SEED-167, standalone) | 6/6 | Complete    | 2026-09-16 |
 | 224. Guest Activation — Welcome Removal & Guest Train (SEED-169, standalone) | 6/6 | Complete | 2026-09-18 |
+| 225. Engine Search Fixes — Root Comparability, Round Underfill & Findability Fallback (SEED-170, standalone) | 0/? | Not started | - |
 
 ## Active Phases
 
-No open milestone. Standalone phases continue absolute numbering from v2.19's Phase 222 (223 and 224 complete).
+No open milestone. Standalone phases continue absolute numbering from v2.19's Phase 222 (223 and 224 complete, 225 not planned).
 
 ### Phase 223: Bot Voice & Immersive Bot Game Layout (SEED-168 + SEED-167)
 
@@ -386,6 +387,65 @@ Plans:
   lever is wanted before the rest; the metrics stay separate either way.
 
 **Seed:** `.planning/seeds/SEED-169-guest-activation-welcome-removal-and-guest-train.md`
+
+### Phase 225: Engine Search Fixes — Root Comparability, Round Underfill & Findability Fallback (SEED-170)
+
+**Goal**: Fix three search-behavior defects in `frontend/src/lib/engine` found in the
+2026-09-27 engine review (the behavior-neutral findings already shipped as quick task
+260927-8xn), behind a pre-committed measurement gate, because every item changes what the
+search returns and the bot budget (50 nodes, concurrency 4) was calibrated against today's
+tree shapes in Phase 199.
+
+1. **Root comparability before early stop (affects bot play).** An unexpanded root child's
+   value is `sigmoid(Stockfish grade)`; its first expansion replaces that with a Maia-weighted
+   average over opponent replies, which is always >= the opponent's best reply, so the root
+   `backupRootMax` compares boosted and unboosted children. The clear-winner branch of
+   `stopRuleSatisfied` (minNodes 8, margin 0.05, stability 3) and the deadline cut
+   (`BOT_MIN_SEARCH_NODES` = 8) can fire with runners-up still unexpanded, quietly favoring
+   the first-searched high-prior move. Fix: a visit guard (`visits >= 1`) on the clear-winner
+   branch, and consider it as a deadline-cut precondition. No value corrections or blend
+   terms. Document the parity effect in `docs/flawchess-engine-explained-2026-07-06.md`.
+   Open question for discuss: guard all root children vs only the within-margin ones.
+2. **Round underfill in `selectPath` (perf bug, confirmed).** A walk that reaches a node with
+   no selectable child returns null and the fill loop breaks, even when other root subtrees
+   have expandable leaves. Harness evidence: effective concurrency collapses to 1-2 of 4 on
+   peaked non-root policies (14 → 38 rounds at 50 nodes). Fix: block that node for the rest
+   of the round and restart the walk from the root; clear the flags after the round's
+   `Promise.all`. Round structure and canonical apply order stay unchanged (independent of the
+   rejected continuous dispatch, Phase 198 / SEED-130). Make the harness a permanent unit test.
+3. **Findability fallback term (analysis UI ordering only).** `rankScore = min(1, P/Pref) * V`
+   scores "didn't find the move" as 0. Change to `f * V + (1 - f) * V_fallback` with
+   `V_fallback = sum(prior_i * value_i)` over root children. `practicalScore` and bot sampling
+   are untouched. Re-check the three D-03 regression cases in `findability.test.ts` and decide
+   whether `P_REF_ANCHORS` need retuning.
+4. **Optional: non-root candidate cap (~6-8)** in `truncateAndRenormalize`, only inside this
+   phase's measurement since it changes bot strength.
+
+**Measurement gate** (accept rule committed under `reports/<dir>/accept-rule.md` before any
+data, never edited after, overrides only; Phase 195/197/198 pattern):
+
+- Throughput: `scripts/engine-grading-depth-ab.mjs` at bot 50/c4 and analysis 400/c4, before
+  vs after item 2 (wall clock and grade CPU).
+- Move quality: `fixtures/engine/maia-blindness.tsv` (12 positions, d20 ground truth, §4b 0.05
+  margin) per `reports/grading-ladder/override-2026-07-31.md`; must not regress.
+- Stop rule: `scripts/engine-dispatch-stop-rule.mjs` nodes-at-stop distribution before/after
+  item 1; must stay inside the bot think deadline.
+- Calibration spot check: `reports/bot-parity-199/runbook.md` +
+  `bin/run_persona_calibration_sweep.sh` on a small cell subset. Question is "does the persona
+  curve shift enough to need a refit", not a full 24-persona recalibration.
+- Analysis ordering (item 3): qualitative check on winning positions where a hard-to-find move
+  currently ranks below a much worse findable one.
+- Attribute any calibration shift to items 1 / 2 / 4 separately.
+
+**Out of scope:** repetition / game-history awareness (deferred by the user 2026-09-27);
+continuous dispatch (Phase 198, SEED-130); cross-FEN Maia batching in `maiaQueue.ts`;
+grade-cache set-mixing redesign in `workerPool.ts`.
+
+**Depends on:** quick task 260927-8xn (shipped to `main`).
+
+**Plans:** 0 plans (not planned yet)
+
+**Seed:** `.planning/seeds/SEED-170-engine-root-comparability-and-round-underfill.md`
 
 ## Backlog
 
