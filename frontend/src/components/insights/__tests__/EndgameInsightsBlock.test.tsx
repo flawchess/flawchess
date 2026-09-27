@@ -8,6 +8,11 @@ import type {
   InsightsAxiosError,
 } from '@/types/insights';
 import { EndgameInsightsBlock } from '../EndgameInsightsBlock';
+import {
+  BLOCKED_REASON_BUBBLE_COPY,
+  INSIGHTS_BUBBLE_COPY,
+} from '../endgameInsightsCopy';
+import { useActiveJobs } from '@/hooks/useImport';
 
 // Vitest 4 does not auto-cleanup RTL mounts — rendered DOM from a previous
 // test bleeds into the next one's screen queries if we don't explicitly unmount.
@@ -46,6 +51,17 @@ const BASE_FILTERS: FilterState = DEFAULT_FILTERS;
 
 /** DEFAULT_FILTERS with one field pushed off its default → button blocked. */
 const RATED_FILTERED: FilterState = { ...DEFAULT_FILTERS, rated: false };
+
+/** Default filters with a custom (non-preset) opponent-strength range. */
+const CUSTOM_STRENGTH: FilterState = {
+  ...DEFAULT_FILTERS,
+  opponentStrength: { min: -37, max: 142 },
+};
+
+const PROVIDER_ERROR = {
+  isAxiosError: true,
+  response: { data: { error: 'provider_error' } },
+} as InsightsAxiosError;
 
 function makeMutation(
   overrides: Partial<{
@@ -94,7 +110,7 @@ const RESPONSE_FRESH: EndgameInsightsResponse = {
 };
 
 describe('EndgameInsightsBlock', () => {
-  it('renders hero state with Generate button when idle and no report', () => {
+  it('renders Shelly bubble with Generate button when idle and no report', () => {
     render(
       <EndgameInsightsBlock
         appliedFilters={BASE_FILTERS}
@@ -103,16 +119,19 @@ describe('EndgameInsightsBlock', () => {
         onGenerate={vi.fn()}
       />,
     );
-    const generate = screen.getByTestId('btn-generate-insights');
+    const bubble = screen.getByTestId('insights-bubble');
+    expect(bubble.getAttribute('data-status')).toBe('idle');
+    expect(screen.getByTestId('train-bot-name').textContent).toBe('Shelly the Turtle');
+    expect(screen.getByTestId('insights-bubble-copy').textContent).toBe(INSIGHTS_BUBBLE_COPY.idle);
+    const generate = screen.getByTestId<HTMLButtonElement>('btn-generate-insights');
     expect(generate.textContent).toContain('Generate Insights');
-    expect(
-      screen.queryByText(/Generate a player profile, endgame data analysis, and recommendations/),
-    ).not.toBeNull();
-    expect(screen.queryByTestId('insights-skeleton')).toBeNull();
-    expect(screen.queryByTestId('insights-overview')).toBeNull();
+    expect(generate.disabled).toBe(false);
+    expect(screen.queryByTestId('insights-blocked-reason')).toBeNull();
+    // No report card while there is no report.
+    expect(screen.queryByTestId('insights-block')).toBeNull();
   });
 
-  it('renders skeleton while pending with no prior report', () => {
+  it('pending with no prior report: bubble shows progress copy and a disabled busy button', () => {
     render(
       <EndgameInsightsBlock
         appliedFilters={BASE_FILTERS}
@@ -121,8 +140,79 @@ describe('EndgameInsightsBlock', () => {
         onGenerate={vi.fn()}
       />,
     );
-    expect(screen.queryByTestId('insights-skeleton')).not.toBeNull();
-    expect(screen.queryByTestId('btn-generate-insights')).toBeNull();
+    expect(screen.getByTestId('insights-bubble').getAttribute('data-status')).toBe('pending');
+    expect(screen.getByTestId('insights-bubble-copy').textContent).toBe(
+      INSIGHTS_BUBBLE_COPY.pending,
+    );
+    const generate = screen.getByTestId<HTMLButtonElement>('btn-generate-insights');
+    expect(generate.disabled).toBe(true);
+    expect(generate.getAttribute('aria-busy')).toBe('true');
+    expect(screen.queryByTestId('generate-insights-notification-dot')).toBeNull();
+  });
+
+  it.each([
+    ['filters-not-default', RATED_FILTERED],
+    ['custom-opponent-strength', CUSTOM_STRENGTH],
+  ] as const)('blocked (%s): Shelly says why and Generate is disabled', (reason, filters) => {
+    const onGenerate = vi.fn();
+    render(
+      <EndgameInsightsBlock
+        appliedFilters={filters}
+        rendered={null}
+        mutation={makeMutation()}
+        onGenerate={onGenerate}
+      />,
+    );
+    expect(screen.getByTestId('insights-blocked-reason').textContent).toBe(
+      BLOCKED_REASON_BUBBLE_COPY[reason],
+    );
+    const generate = screen.getByTestId<HTMLButtonElement>('btn-generate-insights');
+    expect(generate.disabled).toBe(true);
+    fireEvent.click(generate);
+    expect(onGenerate).not.toHaveBeenCalled();
+  });
+
+  it('blocked by a running import: Shelly asks to wait', () => {
+    vi.mocked(useActiveJobs).mockReturnValueOnce({ data: [{}] } as ReturnType<typeof useActiveJobs>);
+    render(
+      <EndgameInsightsBlock
+        appliedFilters={BASE_FILTERS}
+        rendered={null}
+        mutation={makeMutation()}
+        onGenerate={vi.fn()}
+      />,
+    );
+    expect(screen.getByTestId('insights-blocked-reason').textContent).toBe(
+      BLOCKED_REASON_BUBBLE_COPY['import-running'],
+    );
+    expect(screen.getByTestId<HTMLButtonElement>('btn-generate-insights').disabled).toBe(true);
+  });
+
+  it('hides the bubble once a report is rendered', () => {
+    render(
+      <EndgameInsightsBlock
+        appliedFilters={BASE_FILTERS}
+        rendered={RESPONSE_FRESH}
+        mutation={makeMutation()}
+        onGenerate={vi.fn()}
+      />,
+    );
+    expect(screen.queryByTestId('insights-bubble')).toBeNull();
+    expect(screen.queryByTestId('insights-block')).not.toBeNull();
+  });
+
+  it('regenerating keeps the report card with its inline spinner (no bubble)', () => {
+    render(
+      <EndgameInsightsBlock
+        appliedFilters={BASE_FILTERS}
+        rendered={RESPONSE_FRESH}
+        mutation={makeMutation({ isPending: true })}
+        onGenerate={vi.fn()}
+      />,
+    );
+    expect(screen.queryByTestId('insights-bubble')).toBeNull();
+    expect(screen.queryByTestId('insights-overview')).not.toBeNull();
+    expect(screen.getByTestId('btn-generate-insights').getAttribute('aria-busy')).toBe('true');
   });
 
   it('renders overview + Generate Insights button when report landed', () => {
@@ -198,41 +288,48 @@ describe('EndgameInsightsBlock', () => {
     expect(screen.queryByTestId('insights-outdated-indicator')).toBeNull();
   });
 
-  it('renders error state with locked copy and Try again button', () => {
-    const axiosError = {
-      isAxiosError: true,
-      response: { data: { error: 'provider_error' } },
-    } as InsightsAxiosError;
+  it('renders error state in the bubble with Try again', () => {
     render(
       <EndgameInsightsBlock
         appliedFilters={BASE_FILTERS}
         rendered={null}
-        mutation={makeMutation({ isError: true, error: axiosError })}
+        mutation={makeMutation({ isError: true, error: PROVIDER_ERROR })}
         onGenerate={vi.fn()}
       />,
     );
+    expect(screen.getByTestId('insights-bubble').getAttribute('data-status')).toBe('error');
     const errorBlock = screen.getByTestId('insights-error');
-    expect(errorBlock.textContent).toContain("Couldn't generate insights.");
-    expect(errorBlock.textContent).toContain('Please try again in a moment.');
-    expect(screen.getByTestId('btn-insights-retry').textContent).toContain('Try again');
-    expect(errorBlock.textContent).not.toMatch(/Try again in ~/);
-    expect(screen.getByTestId<HTMLButtonElement>('btn-insights-retry').disabled).toBe(false);
+    expect(errorBlock.getAttribute('role')).toBe('alert');
+    expect(errorBlock.textContent).toContain(INSIGHTS_BUBBLE_COPY.error);
+    const retry = screen.getByTestId<HTMLButtonElement>('btn-insights-retry');
+    expect(retry.textContent).toContain('Try again');
+    expect(retry.disabled).toBe(false);
+    expect(screen.queryByTestId('btn-generate-insights')).toBeNull();
+  });
+
+  it('error outranks a rendered report (failed regenerate falls back to the bubble)', () => {
+    render(
+      <EndgameInsightsBlock
+        appliedFilters={BASE_FILTERS}
+        rendered={RESPONSE_FRESH}
+        mutation={makeMutation({ isError: true, error: PROVIDER_ERROR })}
+        onGenerate={vi.fn()}
+      />,
+    );
+    expect(screen.queryByTestId('insights-error')).not.toBeNull();
+    expect(screen.queryByTestId('insights-overview')).toBeNull();
   });
 
   it('FLAWCHESS-AG: Try again is disabled while a filter blocks generation', () => {
     // The error state was the one path around getBlockedReason: once any
     // failure rendered it, Try again stayed enabled and kept POSTing requests
     // the router rejects with 400 filters_not_supported.
-    const axiosError = {
-      isAxiosError: true,
-      response: { data: { error: 'provider_error' } },
-    } as InsightsAxiosError;
     const onGenerate = vi.fn();
     render(
       <EndgameInsightsBlock
         appliedFilters={RATED_FILTERED}
         rendered={null}
-        mutation={makeMutation({ isError: true, error: axiosError })}
+        mutation={makeMutation({ isError: true, error: PROVIDER_ERROR })}
         onGenerate={onGenerate}
       />,
     );
@@ -240,6 +337,10 @@ describe('EndgameInsightsBlock', () => {
     expect(retry.disabled).toBe(true);
     fireEvent.click(retry);
     expect(onGenerate).not.toHaveBeenCalled();
+    // Shelly says why, instead of a hover tooltip phones never show.
+    expect(screen.getByTestId('insights-blocked-reason').textContent).toBe(
+      BLOCKED_REASON_BUBBLE_COPY['filters-not-default'],
+    );
   });
 
   it('enables Generate Insights on the default filter state (FLAWCHESS-AG)', () => {
