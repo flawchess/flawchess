@@ -16,8 +16,8 @@ export type BlockedReason = 'import-running' | 'filters-not-default' | 'custom-o
 
 export const INSIGHTS_BUBBLE_COPY = {
   idle:
-    'Endgames are where patience pays off. Want me to read through yours? ' +
-    "I'll write a player profile, analyze your endgame data, and suggest what to work on, using an LLM.",
+    'Want me to help you interpret your game data? ' +
+    "I'll create your player profile, analyze your endgame data, and suggest what to work on.",
   pending: 'Reading through your endgames now, slow and steady. This takes around 30 seconds.',
   error: "Something went wrong on my end and I couldn't finish your report. Try again in a moment.",
 } as const;
