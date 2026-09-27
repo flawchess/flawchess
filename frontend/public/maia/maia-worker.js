@@ -730,7 +730,19 @@ self.onmessage = async (e) => {
         throw new Error('maia-worker: analyze received before session init completed');
       }
       const { rawPolicyByElo, wdlByElo } = await analyze(msg.fen, msg.eloInputs);
-      self.postMessage({ type: 'result', fen: msg.fen, rawPolicyByElo, wdlByElo, backend });
+      // 8XN-5: each rung's `policy`/`wdl` Float32Array was allocated by
+      // analyze()'s own `.slice()` calls above — a fresh, owned, non-shared
+      // ArrayBuffer per rung, never a view into ORT/wasm memory (the wasm
+      // heap tensors were already disposed in analyze()'s `finally`, before
+      // this line runs). Nothing in this worker reads these arrays again
+      // after posting, so transferring their buffers instead of letting
+      // postMessage structured-clone-copy them is safe and avoids one full
+      // copy per rung. The warmup analyze() call in initSession() never
+      // posts its result, so it needs no transfer list of its own.
+      const transferList = [];
+      for (const { policy } of rawPolicyByElo) transferList.push(policy.buffer);
+      for (const { wdl } of wdlByElo) transferList.push(wdl.buffer);
+      self.postMessage({ type: 'result', fen: msg.fen, rawPolicyByElo, wdlByElo, backend }, transferList);
       return;
     }
 

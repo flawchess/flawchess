@@ -57,6 +57,8 @@ interface SandboxHandle {
   };
   importScriptsCalls: string[];
   postMessages: Record<string, unknown>[];
+  /** 8XN-5: the second (transfer list) argument of each `postMessage` call, index-aligned with `postMessages`. */
+  postTransfers: unknown[][];
   createCalls: CreateCall[];
   fetchCalls: string[];
   cacheStore: Map<string, Uint8Array>;
@@ -166,6 +168,7 @@ interface SetupSandboxOptions {
 function setupSandbox(opts: SetupSandboxOptions = {}): SandboxHandle {
   const importScriptsCalls: string[] = [];
   const postMessages: Record<string, unknown>[] = [];
+  const postTransfers: unknown[][] = [];
   const createCalls: CreateCall[] = [];
   const fetchCalls: string[] = [];
   const cacheStore = new Map<string, Uint8Array>();
@@ -189,8 +192,12 @@ function setupSandbox(opts: SetupSandboxOptions = {}): SandboxHandle {
   if (opts.hardwareConcurrency !== undefined) {
     (sandbox as unknown as Record<string, unknown>).navigator = { hardwareConcurrency: opts.hardwareConcurrency };
   }
-  (sandbox as unknown as Record<string, unknown>).postMessage = (msg: Record<string, unknown>): void => {
+  (sandbox as unknown as Record<string, unknown>).postMessage = (
+    msg: Record<string, unknown>,
+    transfer?: unknown[],
+  ): void => {
     postMessages.push(msg);
+    postTransfers.push(transfer ?? []);
   };
   (sandbox as unknown as Record<string, unknown>).importScripts = (path: string): void => {
     importScriptsCalls.push(path);
@@ -235,12 +242,17 @@ function setupSandbox(opts: SetupSandboxOptions = {}): SandboxHandle {
   vm.createContext(sandbox as unknown as vm.Context);
   vm.runInContext(WORKER_SCRIPT_SOURCE, sandbox as unknown as vm.Context, { filename: 'maia-worker.js' });
 
-  return { sandbox, importScriptsCalls, postMessages, createCalls, fetchCalls, cacheStore, cacheOpenCalls };
+  return { sandbox, importScriptsCalls, postMessages, postTransfers, createCalls, fetchCalls, cacheStore, cacheOpenCalls };
 }
 
 /** Dispatches a `type: 'init'` message and awaits the worker script's async handler. */
 async function sendInit(handle: SandboxHandle, msg: Record<string, unknown>): Promise<void> {
   await handle.sandbox.onmessage!({ data: { type: 'init', ...msg } });
+}
+
+/** Dispatches a `type: 'analyze'` message and awaits the worker script's async handler. */
+async function sendAnalyze(handle: SandboxHandle, msg: Record<string, unknown>): Promise<void> {
+  await handle.sandbox.onmessage!({ data: { type: 'analyze', ...msg } });
 }
 
 describe('maiaWorkerScript — backend: wasm', () => {
@@ -570,5 +582,46 @@ describe('maiaWorkerScript — asset versioning (quick 260905-rhc)', () => {
     expect(wasmPaths.mjs).toBe('/maia/ort-wasm-simd-threaded.mjs');
     expect(wasmPaths.wasm).toBe('/maia/ort-wasm-simd-threaded.wasm');
     expect(handle.postMessages).toContainEqual(expect.objectContaining({ type: 'ready', backend: 'wasm', numThreads: 1 }));
+  });
+});
+
+describe('maiaWorkerScript — 8XN-5 result buffer transfer', () => {
+  it('the analyze result postMessage carries a transfer list of exactly the per-rung policy and wdl ArrayBuffers', async () => {
+    const handle = setupSandbox();
+    await sendInit(handle, { backend: 'wasm' });
+
+    const startFen = 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1';
+    await sendAnalyze(handle, { fen: startFen, eloInputs: [1500] });
+
+    const resultMessage = handle.postMessages.find((m) => m.type === 'result') as
+      | { rawPolicyByElo: { elo: number; policy: Float32Array }[]; wdlByElo: { elo: number; wdl: Float32Array }[] }
+      | undefined;
+    expect(resultMessage).toBeDefined();
+    const resultIndex = handle.postMessages.indexOf(resultMessage as Record<string, unknown>);
+    const transfer = handle.postTransfers[resultIndex];
+    expect(transfer).toBeDefined();
+
+    const expectedBuffers = [
+      ...resultMessage!.rawPolicyByElo.map((r) => r.policy.buffer),
+      ...resultMessage!.wdlByElo.map((r) => r.wdl.buffer),
+    ];
+    expect(transfer).toHaveLength(expectedBuffers.length);
+    expect(transfer).toEqual(expectedBuffers);
+    // Every transferred buffer is a distinct, plain ArrayBuffer (never a
+    // shared/duplicate view) — Object.prototype.toString is realm-agnostic,
+    // unlike `instanceof ArrayBuffer` against the sandbox's own realm.
+    for (const buf of transfer!) {
+      expect(Object.prototype.toString.call(buf)).toBe('[object ArrayBuffer]');
+    }
+    expect(new Set(transfer)).toHaveProperty('size', transfer!.length); // all distinct
+  });
+
+  it('the init-time webgpu warmup analyze() call never posts its own result message', async () => {
+    const handle = setupSandbox();
+    await sendInit(handle, { backend: 'wasm' });
+
+    // Only the 'ready' message (and any 'progress' messages) are posted
+    // during init — no 'result' message for the warmup inference.
+    expect(handle.postMessages.some((m) => m.type === 'result')).toBe(false);
   });
 });

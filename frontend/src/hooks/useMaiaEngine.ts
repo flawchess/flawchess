@@ -62,6 +62,7 @@
  */
 
 import { useRef, useState, useCallback, useEffect, useMemo } from 'react';
+import * as Sentry from '@sentry/react';
 import {
   buildPolicyMoveContext,
   softmaxPolicyByContext,
@@ -469,26 +470,47 @@ export function useMaiaEngine({
       const issuedAt = performance.now();
       lease.analyze(req.fen, req.elos).then(
         (msg) => {
-          // Cache every completed inference, even one whose position was already
-          // superseded — the result is valid for msg.fen, so a later revisit is an
-          // instant cache hit. The write-through inside also settles the pending
-          // policy entries registered above.
-          const merged = mergeMaiaResult(cacheRef.current.get(msg.fen), msg);
-          cacheResult(msg.fen, merged);
-          if (leaseRef.current !== lease) return; // this lease has since been released/replaced
-          // A live request whose on-screen position moved on before it landed is
-          // stale — its elapsed time no longer describes anything visible. A
-          // prefetch has no such notion (it never targets the on-screen position
-          // at issue time, by design), so it always reports.
-          const isStaleLiveResult = req.live && msg.fen !== currentFenRef.current;
-          if (!isStaleLiveResult) logMaiaPhaseTiming(req.phase, performance.now() - issuedAt);
-          // Only paint it if it still matches the on-screen position (stale guard).
-          if (msg.fen === currentFenRef.current) setLatestResult(merged);
-          if (inFlightRef.current === req) {
-            inFlightRef.current = null;
-            setIsAnalyzing(false);
+          try {
+            // Cache every completed inference, even one whose position was already
+            // superseded — the result is valid for msg.fen, so a later revisit is an
+            // instant cache hit. The write-through inside also settles the pending
+            // policy entries registered above.
+            const merged = mergeMaiaResult(cacheRef.current.get(msg.fen), msg);
+            cacheResult(msg.fen, merged);
+            if (leaseRef.current !== lease) return; // this lease has since been released/replaced
+            // A live request whose on-screen position moved on before it landed is
+            // stale — its elapsed time no longer describes anything visible. A
+            // prefetch has no such notion (it never targets the on-screen position
+            // at issue time, by design), so it always reports.
+            const isStaleLiveResult = req.live && msg.fen !== currentFenRef.current;
+            if (!isStaleLiveResult) logMaiaPhaseTiming(req.phase, performance.now() - issuedAt);
+            // Only paint it if it still matches the on-screen position (stale guard).
+            if (msg.fen === currentFenRef.current) setLatestResult(merged);
+            if (inFlightRef.current === req) {
+              inFlightRef.current = null;
+              setIsAnalyzing(false);
+            }
+            pumpRef.current();
+          } catch (err) {
+            // 8XN-1: a throw here (e.g. a malformed rung crashing
+            // softmaxPolicyByContext inside mergeMaiaResult) previously left
+            // every (fen, elo) entry `markPolicyPending` registered above
+            // unsettled forever. maiaQueue.policy() awaits those entries via
+            // getPendingPolicy, so a chart-only failure silently hung the
+            // engine's search. Do NOT pump from here: the rejection branch
+            // below doesn't either, and pumping would re-issue the same
+            // deterministic throw in a hot loop.
+            const reason = err instanceof Error ? err : new Error('Maia result merge failed');
+            Sentry.captureException(reason, { tags: { source: 'maia-chart' } });
+            // A no-op for any rung setCachedPolicy already settled before the
+            // throw (e.g. a later rung in msg.rawPolicyByElo that processed
+            // fine before the one that threw).
+            for (const elo of req.elos) failPolicyPending(req.fen, elo, reason);
+            if (leaseRef.current === lease && inFlightRef.current === req) {
+              inFlightRef.current = null;
+              setIsAnalyzing(false);
+            }
           }
-          pumpRef.current();
         },
         (err: unknown) => {
           // Rejected — either this lease was released (unmount/enabled toggle,
