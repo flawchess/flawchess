@@ -2477,7 +2477,7 @@ def _assemble_user_prompt(findings: EndgameTabFindings) -> str:
     last_3mo_pairs: set[tuple[str, str]] = {
         (f.metric, f.subsection_id) for f in visible if f.window == "last_3mo"
     }
-    today = datetime.date.today()
+    today = datetime.datetime.now(datetime.UTC).date()
     all_time_cutoff = (today - datetime.timedelta(days=_ALL_TIME_CUTOFF_DAYS)).isoformat()
     all_time_series_pairs = _compute_all_time_series_pairs(
         visible, last_3mo_pairs=last_3mo_pairs, all_time_cutoff=all_time_cutoff

@@ -739,7 +739,7 @@ class TestGoldenUserPrompt:
     Determinism: `as_of` is a fixed `datetime.datetime`, and every series
     point's `bucket_start` is a fixed string -- no `datetime.now()`/`.today()`
     read inside the fixture itself. `_assemble_user_prompt` does read
-    `datetime.date.today()` once (for the C2 90-day `all_time_cutoff`), but
+    the UTC date once (for the C2 90-day `all_time_cutoff`), but
     every fixture point in the 50-point all_time series predates 2026-02-01,
     so as long as the suite runs on or after 2026-05-02 (today - 90d >
     2026-02-01) the C2 cutoff comparison's outcome (0 points trimmed) cannot
@@ -2409,7 +2409,7 @@ class TestSparseHistoryFixes:
         saw [summary] lines pointing at no series data.
         """
         filters = _sample_filter_context()
-        today = datetime.date.today()
+        today = datetime.datetime.now(datetime.UTC).date()
         # All all_time points fall inside the last 90 days → C2 trims to empty.
         recent_buckets = [
             (today - datetime.timedelta(days=days)).isoformat() for days in (60, 45, 30, 15)

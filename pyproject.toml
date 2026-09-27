@@ -158,10 +158,6 @@ extend-immutable-calls = [
 # Quick 260926-evd baseline (measured 2026-09-26, ruff 0.16.6): pre-existing findings
 # in newly adopted categories. Delete an entry when its file is fixed; never add one
 # for new code.
-"app/routers/auth.py" = ["B904"]
-"app/routers/imports.py" = ["B904"]
-"app/services/endgame_service.py" = ["B905"]
-"app/services/maia_encoding.py" = ["B905"]
 "tests/repositories/test_opening_insights_repository.py" = ["B007"]
 "tests/services/test_push_crypto.py" = ["B017"]
 "tests/test_eval_worker_endpoints.py" = ["B017"]
@@ -171,10 +167,7 @@ extend-immutable-calls = [
 # so never autofix this entry.
 "tests/test_alembic_autogen_filter.py" = ["B010"]
 "app/services/engine.py" = ["ASYNC109"]
-"app/services/insights_llm.py" = ["DTZ011"]
-"app/services/insights_service.py" = ["DTZ011"]
 "app/services/normalization.py" = ["DTZ007"]
-"app/services/user_benchmark_percentiles_service.py" = ["DTZ011"]
 
 [tool.ty.environment]
 # Scripts in scripts/ are run as `python scripts/foo.py`, so sibling modules
