@@ -200,4 +200,4 @@ def mask_and_softmax(policy: Sequence[float], fen: str) -> dict[str, float]:
     total = sum(exps)
     if total <= 0.0:
         return {uci: 0.0 for uci in ucis}
-    return {uci: exp / total for uci, exp in zip(ucis, exps)}
+    return {uci: exp / total for uci, exp in zip(ucis, exps, strict=True)}
