@@ -3,8 +3,7 @@ import { BarChart3, BookOpen, Lightbulb, ListChecks, Loader2, Sparkles, Target, 
 import { Button } from '@/components/ui/button';
 import { Tooltip } from '@/components/ui/tooltip';
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
-import { DEFAULT_FILTERS, type FilterState } from '@/components/filters/FilterPanel';
-import { derivePreset } from '@/lib/opponentStrength';
+import type { FilterState } from '@/components/filters/FilterPanel';
 import { useActiveJobs } from '@/hooks/useImport';
 import type {
   EndgameInsightsResponse,
@@ -42,42 +41,22 @@ const ENDGAME_PUZZLES_URL = 'https://lichess.org/training/endgame';
  * card only renders once a report exists. Error still outranks a rendered
  * report, so a failed regenerate falls back to the bubble.
  *
- * Button gating: Generate / Try again are disabled whenever any non-default
- * filter other than opponent_strength is set, or an import is running.
+ * Button gating: Generate / Try again are disabled only while an import is
+ * running. Non-default filters don't block; onGenerate resets them first.
  */
 export interface EndgameInsightsBlockProps {
-  appliedFilters: FilterState;
   rendered: EndgameInsightsResponse | null;
   mutation: UseMutationResult<EndgameInsightsResponse, InsightsAxiosError, FilterState>;
   onGenerate: () => void;
 }
 
 /**
- * Returns the first-blocking reason that prevents generating an insights
- * report, or null when the button should be enabled. opponent_strength is
- * intentionally allowed (it's a valid cross-section the prompt scopes to).
+ * Returns the reason that prevents generating an insights report, or null
+ * when the button should be enabled. Filters never block: the parent's
+ * onGenerate resets them to the insights-compatible state (toInsightsFilters).
  */
-function getBlockedReason(
-  filters: FilterState,
-  hasActiveImport: boolean,
-): BlockedReason | null {
-  if (hasActiveImport) return 'import-running';
-  if (
-    filters.recency !== DEFAULT_FILTERS.recency ||
-    filters.timeControls !== DEFAULT_FILTERS.timeControls ||
-    filters.platforms !== DEFAULT_FILTERS.platforms ||
-    filters.rated !== DEFAULT_FILTERS.rated ||
-    filters.opponentType !== DEFAULT_FILTERS.opponentType ||
-    filters.matchSide !== DEFAULT_FILTERS.matchSide
-  ) {
-    return 'filters-not-default';
-  }
-  // Insights only support the four opponent-strength presets. A custom slider
-  // range (not matching any preset) is rejected by the router.
-  if (derivePreset(filters.opponentStrength) === null) {
-    return 'custom-opponent-strength';
-  }
-  return null;
+function getBlockedReason(hasActiveImport: boolean): BlockedReason | null {
+  return hasActiveImport ? 'import-running' : null;
 }
 
 function bubbleStatus(isError: boolean, isPending: boolean): InsightsBubbleStatus {
@@ -86,7 +65,6 @@ function bubbleStatus(isError: boolean, isPending: boolean): InsightsBubbleStatu
 }
 
 export function EndgameInsightsBlock({
-  appliedFilters,
   rendered,
   mutation,
   onGenerate,
@@ -98,7 +76,7 @@ export function EndgameInsightsBlock({
   const hasRendered = rendered !== null;
 
   const hasActiveImport = (activeJobs?.length ?? 0) > 0;
-  const blockedReason = getBlockedReason(appliedFilters, hasActiveImport);
+  const blockedReason = getBlockedReason(hasActiveImport);
 
   if (isError || !hasRendered) {
     return (

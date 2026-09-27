@@ -2,7 +2,7 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { render, screen, cleanup, fireEvent } from '@testing-library/react';
 import type { UseMutationResult } from '@tanstack/react-query';
-import { DEFAULT_FILTERS, type FilterState } from '@/components/filters/FilterPanel';
+import type { FilterState } from '@/components/filters/FilterPanel';
 import type {
   EndgameInsightsResponse,
   InsightsAxiosError,
@@ -34,22 +34,6 @@ vi.mock('@/components/ui/tooltip', () => ({
   Tooltip: ({ children }: { children: ReactNode }) => children,
 }));
 import type { ReactNode } from 'react';
-
-// FLAWCHESS-AG: the unblocked baseline IS DEFAULT_FILTERS — getBlockedReason
-// compares against it field by field, so a hand-written literal silently
-// drifts into "blocked" the moment a default changes (SEED-163 2a flipped
-// `rated` null -> true) and every gating assertion below stops testing the
-// state real users are actually in.
-const BASE_FILTERS: FilterState = DEFAULT_FILTERS;
-
-/** DEFAULT_FILTERS with one field pushed off its default → button blocked. */
-const RATED_FILTERED: FilterState = { ...DEFAULT_FILTERS, rated: false };
-
-/** Default filters with a custom (non-preset) opponent-strength range. */
-const CUSTOM_STRENGTH: FilterState = {
-  ...DEFAULT_FILTERS,
-  opponentStrength: { min: -37, max: 142 },
-};
 
 const PROVIDER_ERROR = {
   isAxiosError: true,
@@ -106,7 +90,6 @@ describe('EndgameInsightsBlock', () => {
   it('renders Shelly bubble with Generate button when idle and no report', () => {
     render(
       <EndgameInsightsBlock
-        appliedFilters={BASE_FILTERS}
         rendered={null}
         mutation={makeMutation()}
         onGenerate={vi.fn()}
@@ -127,7 +110,6 @@ describe('EndgameInsightsBlock', () => {
   it('pending with no prior report: bubble shows progress copy and a disabled busy button', () => {
     render(
       <EndgameInsightsBlock
-        appliedFilters={BASE_FILTERS}
         rendered={null}
         mutation={makeMutation({ isPending: true })}
         onGenerate={vi.fn()}
@@ -142,33 +124,10 @@ describe('EndgameInsightsBlock', () => {
     expect(generate.getAttribute('aria-busy')).toBe('true');
   });
 
-  it.each([
-    ['filters-not-default', RATED_FILTERED],
-    ['custom-opponent-strength', CUSTOM_STRENGTH],
-  ] as const)('blocked (%s): Shelly says why and Generate is disabled', (reason, filters) => {
-    const onGenerate = vi.fn();
-    render(
-      <EndgameInsightsBlock
-        appliedFilters={filters}
-        rendered={null}
-        mutation={makeMutation()}
-        onGenerate={onGenerate}
-      />,
-    );
-    expect(screen.getByTestId('insights-blocked-reason').textContent).toBe(
-      BLOCKED_REASON_BUBBLE_COPY[reason],
-    );
-    const generate = screen.getByTestId<HTMLButtonElement>('btn-generate-insights');
-    expect(generate.disabled).toBe(true);
-    fireEvent.click(generate);
-    expect(onGenerate).not.toHaveBeenCalled();
-  });
-
   it('blocked by a running import: Shelly asks to wait', () => {
     vi.mocked(useActiveJobs).mockReturnValueOnce({ data: [{}] } as ReturnType<typeof useActiveJobs>);
     render(
       <EndgameInsightsBlock
-        appliedFilters={BASE_FILTERS}
         rendered={null}
         mutation={makeMutation()}
         onGenerate={vi.fn()}
@@ -183,7 +142,6 @@ describe('EndgameInsightsBlock', () => {
   it('hides the bubble once a report is rendered', () => {
     render(
       <EndgameInsightsBlock
-        appliedFilters={BASE_FILTERS}
         rendered={RESPONSE_FRESH}
         mutation={makeMutation()}
         onGenerate={vi.fn()}
@@ -196,7 +154,6 @@ describe('EndgameInsightsBlock', () => {
   it('regenerating keeps the report card with its inline spinner (no bubble)', () => {
     render(
       <EndgameInsightsBlock
-        appliedFilters={BASE_FILTERS}
         rendered={RESPONSE_FRESH}
         mutation={makeMutation({ isPending: true })}
         onGenerate={vi.fn()}
@@ -210,7 +167,6 @@ describe('EndgameInsightsBlock', () => {
   it('renders overview + Generate Insights button when report landed', () => {
     render(
       <EndgameInsightsBlock
-        appliedFilters={BASE_FILTERS}
         rendered={RESPONSE_FRESH}
         mutation={makeMutation()}
         onGenerate={vi.fn()}
@@ -226,7 +182,6 @@ describe('EndgameInsightsBlock', () => {
   it('v9: renders player profile, data analysis, and recommendations as stacked cards', () => {
     render(
       <EndgameInsightsBlock
-        appliedFilters={BASE_FILTERS}
         rendered={RESPONSE_FRESH}
         mutation={makeMutation()}
         onGenerate={vi.fn()}
@@ -254,7 +209,6 @@ describe('EndgameInsightsBlock', () => {
     };
     render(
       <EndgameInsightsBlock
-        appliedFilters={BASE_FILTERS}
         rendered={response}
         mutation={makeMutation()}
         onGenerate={vi.fn()}
@@ -271,7 +225,6 @@ describe('EndgameInsightsBlock', () => {
     // indicator.
     render(
       <EndgameInsightsBlock
-        appliedFilters={BASE_FILTERS}
         rendered={RESPONSE_FRESH}
         mutation={makeMutation()}
         onGenerate={vi.fn()}
@@ -283,7 +236,6 @@ describe('EndgameInsightsBlock', () => {
   it('renders error state in the bubble with Try again', () => {
     render(
       <EndgameInsightsBlock
-        appliedFilters={BASE_FILTERS}
         rendered={null}
         mutation={makeMutation({ isError: true, error: PROVIDER_ERROR })}
         onGenerate={vi.fn()}
@@ -302,7 +254,6 @@ describe('EndgameInsightsBlock', () => {
   it('error outranks a rendered report (failed regenerate falls back to the bubble)', () => {
     render(
       <EndgameInsightsBlock
-        appliedFilters={BASE_FILTERS}
         rendered={RESPONSE_FRESH}
         mutation={makeMutation({ isError: true, error: PROVIDER_ERROR })}
         onGenerate={vi.fn()}
@@ -312,14 +263,11 @@ describe('EndgameInsightsBlock', () => {
     expect(screen.queryByTestId('insights-overview')).toBeNull();
   });
 
-  it('FLAWCHESS-AG: Try again is disabled while a filter blocks generation', () => {
-    // The error state was the one path around getBlockedReason: once any
-    // failure rendered it, Try again stayed enabled and kept POSTing requests
-    // the router rejects with 400 filters_not_supported.
+  it('Try again is disabled while an import is running', () => {
+    vi.mocked(useActiveJobs).mockReturnValueOnce({ data: [{}] } as ReturnType<typeof useActiveJobs>);
     const onGenerate = vi.fn();
     render(
       <EndgameInsightsBlock
-        appliedFilters={RATED_FILTERED}
         rendered={null}
         mutation={makeMutation({ isError: true, error: PROVIDER_ERROR })}
         onGenerate={onGenerate}
@@ -329,21 +277,16 @@ describe('EndgameInsightsBlock', () => {
     expect(retry.disabled).toBe(true);
     fireEvent.click(retry);
     expect(onGenerate).not.toHaveBeenCalled();
-    // Shelly says why, instead of a hover tooltip phones never show.
     expect(screen.getByTestId('insights-blocked-reason').textContent).toBe(
-      BLOCKED_REASON_BUBBLE_COPY['filters-not-default'],
+      BLOCKED_REASON_BUBBLE_COPY['import-running'],
     );
   });
 
-  it('enables Generate Insights on the default filter state (FLAWCHESS-AG)', () => {
-    render(
-      <EndgameInsightsBlock
-        appliedFilters={DEFAULT_FILTERS}
-        rendered={null}
-        mutation={makeMutation()}
-        onGenerate={vi.fn()}
-      />,
-    );
-    expect(screen.getByTestId<HTMLButtonElement>('btn-generate-insights').disabled).toBe(false);
+  it('non-default filters do not block Generate (the parent resets them on click)', () => {
+    const onGenerate = vi.fn();
+    render(<EndgameInsightsBlock rendered={null} mutation={makeMutation()} onGenerate={onGenerate} />);
+    fireEvent.click(screen.getByTestId('btn-generate-insights'));
+    expect(onGenerate).toHaveBeenCalledOnce();
+    expect(screen.queryByTestId('insights-blocked-reason')).toBeNull();
   });
 });
