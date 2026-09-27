@@ -119,7 +119,10 @@ export default defineConfig({
         theme_color: '#0a0a0a',
         background_color: '#0a0a0a',
         display: 'standalone',
-        start_url: '/',
+        // Growth item 16: tag home-screen launches so Umami stops counting them as
+        // "direct" traffic. utm_source (not a custom param) so Umami's UTM report
+        // picks it up; the app ignores the query string.
+        start_url: '/?utm_source=pwa',
         scope: '/',
         icons: [
           {

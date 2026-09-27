@@ -78,7 +78,8 @@ MATE_LADDER_LOPSIDED_CP: int = 700  # |cp| beyond this: heavily lopsided -> mist
 # "analyzed". The terminal position (after the last move) always has null eval
 # (zobrist.py: no move annotated), so it is excluded from the denominator. A fully-
 # analyzed N-ply game thus scores N/N = 100% regardless of length — short games are
-# no longer penalized (see _compute_eval_coverage for the bug this corrected).
+# no longer penalized (see _compute_eval_coverage for the bug this corrected). The
+# unscorable mated position before a checkmating last move is excluded the same way.
 EVAL_COVERAGE_MIN: float = 0.90
 
 # Impact ladder thresholds (flaw-tag-definitions.md §Impact).
@@ -315,8 +316,27 @@ def _compute_eval_coverage(positions: list[GamePosition]) -> float:
     # coverage is undefined; return 0.0 (also guards the denominator against zero).
     if len(positions) <= 1:
         return 0.0
+    n_movable = len(positions) - 1
+    # BUG FIX (quick-task 260927-ajg): when the last move delivers checkmate, the
+    # last movable row carries the eval of the mated position, which the engine
+    # cannot score, so it is always null. Counting it capped a fully-analyzed 7-ply
+    # mate at 6/7 = 0.857 < EVAL_COVERAGE_MIN: 1,014 prod games of 4-9 plies ending
+    # in mate got no oracle counts and no flaws. Games of 10+ plies lose the same row
+    # but still clear 0.90, which is why only short mates were affected. The row is
+    # excluded from the denominator like the terminal row (it adds nothing to the
+    # numerator, being null).
+    last_movable = positions[-2]
+    if (
+        last_movable.move_san is not None
+        and last_movable.move_san.endswith("#")
+        and last_movable.eval_cp is None
+        and last_movable.eval_mate is None
+    ):
+        n_movable -= 1
+        if n_movable == 0:
+            return 0.0
     n_with_eval = sum(1 for p in positions if p.eval_cp is not None or p.eval_mate is not None)
-    return n_with_eval / (len(positions) - 1)
+    return n_with_eval / n_movable
 
 
 def _recompute_fen_map(pgn: str) -> dict[int, str]:

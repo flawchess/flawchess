@@ -248,8 +248,14 @@ export function createGradeCache(): GradeCache {
     // with a shifted candidate set (the root's candidate list can widen or
     // narrow across PUCT selection rounds) must not destroy grades already
     // accumulated for UCIs outside this call's request. Incoming values win
-    // on key collision — a re-grade of the same UCI at the same depth is the
-    // same computation, so overwriting is safe.
+    // on key collision — 8XN-6 (honesty fix, no behavior change): this is NOT
+    // because a re-grade of the same UCI at the same depth is the same
+    // computation. Per CACHE-04 below, `searchmoves` restriction makes the
+    // SAME UCI at the SAME depth grade differently depending on which OTHER
+    // candidates were in the set alongside it — overwriting is simply the
+    // simplest merge policy, not a correctness guarantee that the two values
+    // agree. This is exactly why a read() hit can be a union of grades from
+    // different candidate sets (see read()'s own CACHE-04 comment).
     const key = cacheKey(fen, gradingDepth);
     const existing = cache.get(key);
     const merged = existing ? new Map(existing) : new Map<string, MoveGrade>();
@@ -300,6 +306,18 @@ export function createGradeCache(): GradeCache {
     // grade even at matching depth. Keep this all-or-nothing read (scoped to
     // one (fen, depth) entry); do not add a partial-hit path. [CITED:
     // 194-RESEARCH.md Pattern 5, measured 2026-07-30]
+    //
+    // 8XN-6 (honesty fix, no behavior change): "all-or-nothing" describes the
+    // READ gate only — it guarantees every requested UCI has SOME grade at
+    // this depth, never that all of them came from the SAME search. write()
+    // above merges incoming grades into whatever (fen, depth) entry already
+    // exists, so a hit here can be assembled from grades written under
+    // DIFFERENT candidate sets across separate PUCT rounds — a union of
+    // different searches, not one coherent grading pass. That is exactly the
+    // subset/full-set non-interchangeability this comment measured above; a
+    // "coherent single search per read" guarantee would need per-candidate-set
+    // cache entries, which is out of scope here (see SEED-170, "Explicitly out
+    // of scope").
     if (cached && candidateUcis.every((uci) => cached.has(uci))) {
       // Pool-level cache hit (position-only, ELO-independent) — no new go.
       const subset = new Map<string, MoveGrade>();

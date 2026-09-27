@@ -37,14 +37,16 @@ export interface ActivityStatsPayload {
   bot: (string | number | null)[][];
   train: (string | number | null)[][];
   train_funnel: {
-    openers: number;
+    starters: number;
     zero_solve_users: number;
     finishers: number;
     returners: number;
-    all_time_openers: number;
+    all_time_starters: number;
     all_time_zero_solve_users: number;
     all_time_finishers: number;
     all_time_returners: number;
+    /** YYYY-MM-DD of the first recorded Start press, or null before any. */
+    entered_since: string | null;
   };
   solves: (string | number | null)[][];
   imports: (string | number | null)[][];

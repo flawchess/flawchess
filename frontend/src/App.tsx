@@ -42,6 +42,9 @@ import { useReadiness } from '@/hooks/useReadiness';
 import { useTrainProgress } from '@/hooks/useTrainProgress';
 import { useReminderResurfaceRedirect } from '@/hooks/useReminderResurface';
 import { useDevicePushResync } from '@/hooks/useDevicePushResync';
+import { useFirstTouchSync } from '@/hooks/useFirstTouchSync';
+import { identifyAccountType, type UmamiAccountType } from '@/lib/analytics';
+import type { UserProfile } from '@/types/users';
 import { captureHandoffMarker } from '@/lib/handoffMarker';
 import { useReturnToTracking } from '@/hooks/useReturnToTracking';
 
@@ -625,6 +628,11 @@ export function MobileMoreDrawer({ open, onOpenChange }: { open: boolean; onOpen
 
 // ─── Layout (protected pages) ─────────────────────────────────────────────────
 
+function umamiAccountTypeOf(profile: UserProfile | undefined): UmamiAccountType | null {
+  if (profile == null || profile.impersonation != null) return null;
+  return profile.is_guest ? 'guest' : 'registered';
+}
+
 function ProtectedLayout() {
   const { token, refreshAuthToken } = useAuth();
   const { data: profile } = useUserProfile();
@@ -662,6 +670,13 @@ function ProtectedLayout() {
   // Phase 204 D-07: a device whose push_subscriptions row was pruned
   // re-registers itself on the next app load, with no user gesture.
   useDevicePushResync({ enabled: profile != null && !profile.is_guest });
+
+  // Split Umami reports by guest vs registered. Skipped while impersonating so
+  // the admin's browser session is not relabelled with the target's type.
+  const umamiAccountType = umamiAccountTypeOf(profile);
+  useEffect(() => {
+    if (umamiAccountType !== null) identifyAccountType(umamiAccountType);
+  }, [umamiAccountType]);
 
   useEffect(() => {
     if (isOpeningsRoute && profile?.email) {
@@ -877,6 +892,9 @@ function AppRoutes() {
   const [completedJobIds, setCompletedJobIds] = useState<Set<string>>(new Set());
   const queryClient = useQueryClient();
   const { token } = useAuth();
+
+  // Growth item 16: submit the stored first touch once the visitor has an account.
+  useFirstTouchSync(token);
 
   // Restore active jobs from server on mount (and after re-login when token changes)
   const hasRestoredRef = useRef(false);

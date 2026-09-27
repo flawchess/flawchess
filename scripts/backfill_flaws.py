@@ -18,6 +18,12 @@ omission. Running the delete-then-insert branch over a repaired game would
 wipe months of tier-4 blob work for no reason -- `--from-repair-table` exists
 specifically to avoid ever taking that branch for those games.
 
+`--oracle-gap` (quick-task 260927-ajg) targets games whose full eval completed
+but whose oracle columns stayed NULL because the coverage gate rejected them at
+drain time (e.g. short checkmates before the fix). It reclassifies each one
+through the same `_classify_and_fill_oracle` diff/upsert the drain uses, which
+writes flaws, oracle counts and accuracy together.
+
 Batching is MANDATORY given the project's OOM history (CLAUDE.md). Commit
 every BACKFILL_GAMES_PER_BATCH games; no asyncio.gather on the same session.
 
@@ -35,6 +41,7 @@ Usage:
     uv run python scripts/backfill_flaws.py --db benchmark
     uv run python scripts/backfill_flaws.py --db prod
     uv run python scripts/backfill_flaws.py --db dev --from-repair-table
+    uv run python scripts/backfill_flaws.py --db prod --oracle-gap --dry-run
 """
 
 from __future__ import annotations
@@ -45,7 +52,7 @@ import sys
 from datetime import datetime, timezone
 from pathlib import Path
 import sentry_sdk
-from sqlalchemy import select
+from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 # Bootstrap project root so `app.*` imports resolve when running as a script.
@@ -64,6 +71,11 @@ from app.repositories.game_flaws_repository import (  # noqa: E402
     bulk_insert_game_flaws,
     delete_flaws_for_game,
     flaw_record_to_row,
+)
+from app.services.eval_apply import (  # noqa: E402
+    _classify_and_fill_oracle,
+    _game_write_lock_key,
+    _load_game_and_positions,
 )
 from app.services.flaws_service import classify_game_flaws  # noqa: E402
 from scripts.opening_cache_repair import run_rederive  # noqa: E402
@@ -130,7 +142,95 @@ def _parse_args() -> argparse.Namespace:
             "already scopes the game set)."
         ),
     )
+    parser.add_argument(
+        "--oracle-gap",
+        action="store_true",
+        dest="oracle_gap",
+        help=(
+            "Quick 260927-ajg: reclassify games with full_evals_completed_at set but "
+            "NULL oracle columns, through the drain's blob-preserving "
+            "_classify_and_fill_oracle (writes flaws + oracle counts + accuracy). "
+            "Games still below the coverage gate are skipped. Combines with --user-id, "
+            "--limit and --dry-run."
+        ),
+    )
     return parser.parse_args()
+
+
+async def _rederive_oracle_gap_game(
+    session_maker: async_sessionmaker[AsyncSession], game_id: int, dry_run: bool
+) -> bool:
+    """Reclassify one oracle-gap game in its own transaction, under the same
+    per-game advisory lock the drain takes. Returns False when the game is still
+    GameNotAnalyzed (expected: genuinely sparse evals), True when it was (or, in
+    dry-run, would be) filled."""
+    async with session_maker() as session:
+        await session.execute(
+            text("SELECT pg_advisory_xact_lock(:lock_key)"),
+            {"lock_key": _game_write_lock_key(game_id)},
+        )
+        loaded = await _load_game_and_positions(session, game_id)
+        if loaded is None:
+            return False
+        game, positions = loaded
+        if game.white_blunders is not None:
+            return False  # filled concurrently by the drain since selection
+        if "reason" in classify_game_flaws(game, positions):
+            return False
+        if dry_run:
+            return True
+        await _classify_and_fill_oracle(
+            session, game_id, {}, flaw_pv_blobs=None, blobs_pending=True
+        )
+        await session.commit()
+        return True
+
+
+async def run_oracle_gap(
+    *,
+    session_maker: async_sessionmaker[AsyncSession],
+    user_id: int | None,
+    dry_run: bool,
+    limit: int | None,
+) -> tuple[int, int, int]:
+    """Re-derive every oracle-gap game. Returns (filled, skipped, errors)."""
+    async with session_maker() as session:
+        stmt = select(Game.id).where(
+            Game.full_evals_completed_at.isnot(None),
+            Game.white_blunders.is_(None),
+            Game.ply_count.isnot(None),
+        )
+        if user_id is not None:
+            stmt = stmt.where(Game.user_id == user_id)
+        stmt = stmt.order_by(Game.id)
+        if limit is not None:
+            stmt = stmt.limit(limit)
+        game_ids = list((await session.execute(stmt)).scalars().all())
+
+    _log(f"Oracle-gap candidates: {len(game_ids)}")
+    filled = skipped = errors = 0
+    for i, game_id in enumerate(game_ids, start=1):
+        try:
+            ok = await _rederive_oracle_gap_game(session_maker, game_id, dry_run)
+        except Exception as exc:
+            # Per-game errors must not abort the run. No variables in the message.
+            sentry_sdk.set_context("oracle_gap_rederive", {"game_id": game_id})
+            sentry_sdk.capture_exception(exc)
+            _log(f"  ERROR: rederive failed for game_id={game_id}: {exc}")
+            errors += 1
+            continue
+        if ok:
+            filled += 1
+        else:
+            skipped += 1
+        if i % BACKFILL_GAMES_PER_BATCH == 0:
+            _log(f"  {i}/{len(game_ids)} games: {filled} filled, {skipped} skipped")
+
+    verb = "would fill" if dry_run else "filled"
+    _log(
+        f"Oracle gap done: {verb} {filled}, skipped (still not analyzed) {skipped}, errors {errors}"
+    )
+    return filled, skipped, errors
 
 
 async def run_backfill(
@@ -141,6 +241,7 @@ async def run_backfill(
     limit: int | None,
     full_evald_only: bool = False,
     from_repair_table: bool = False,
+    oracle_gap: bool = False,
     session_maker: async_sessionmaker[AsyncSession] | None = None,
 ) -> None:
     """Run the game_flaws backfill.
@@ -158,6 +259,9 @@ async def run_backfill(
             implementation) and returns WITHOUT ever reaching this function's
             own delete-then-insert branch below, which would destroy blob and
             tactic-tag columns for a repaired game.
+        oracle_gap: Quick 260927-ajg -- when True, delegates to `run_oracle_gap`
+            (drain-shaped diff/upsert of flaws + oracle + accuracy) and returns
+            without reaching the delete-then-insert branch below.
         session_maker: Injectable session factory for testing. When None,
             a real engine is created from db_url_for_target(db).
     """
@@ -178,6 +282,12 @@ async def run_backfill(
         url = db_url_for_target(db)
         engine = create_async_engine(url, pool_pre_ping=True)
         session_maker = async_sessionmaker(engine, expire_on_commit=False)
+
+    if oracle_gap:
+        await run_oracle_gap(
+            session_maker=session_maker, user_id=user_id, dry_run=dry_run, limit=limit
+        )
+        return
 
     target_label = f"user {user_id}" if user_id is not None else "all users"
     _log(f"Backfill target: {target_label}")

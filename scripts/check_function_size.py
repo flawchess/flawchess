@@ -1,4 +1,4 @@
-"""AST nesting-depth + logic-LOC gate (Phase 214, backend god-file decomposition).
+"""AST nesting-depth gate (Phase 214, quick 260926-evd: depth is the only hard rule).
 
 No ruff **stable** rule covers nesting depth: ruff's `PLR1702` (too-many-nested-blocks)
 exists but is preview-only, and enabling `--preview` silently expands the project's
@@ -6,24 +6,15 @@ effective rule set from ~5 rules to 914 and produces thousands of new violations
 project-wide (see 214-RESEARCH.md "PLR1702 was investigated and rejected"). This
 stdlib-only AST walker fills that specific gap without touching ruff's config.
 
-Logic-LOC intentionally does NOT auto-exclude large literal config objects/lookup
-tables (CLAUDE.md's own carve-out for those) -- detecting "is this a literal config"
-generically via AST is fragile. Instead, a function whose logic LOC is inflated purely
-by a multi-line literal (e.g. a 30-column SQLAlchemy `select()`) can be marked with a
-`# check-function-size: allow-loc <reason>` pragma on the line immediately above its
-`def`. Ruff's `PLR0915` (statement count, immune to multi-line literals since it counts
-statements not lines) is the tie-breaker signal that justifies granting the pragma: if
-a function is flagged here but not by `PLR0915`, it is long in lines but not long in
-logic.
+Logic and raw LOC are still measured and reported (via `--json`) for human/`/simplify`
+review, but LOC is not gated -- only nesting depth is.
 
-Exit code: 1 if any scanned function breaches `--fail-over-depth` or `--fail-over-loc`
-(the LOC threshold is skipped for a function carrying the `allow-loc` pragma; its depth
-is still checked), 0 otherwise. Mirrors `ruff check`'s convention so this composes into
-the same pre-merge gate chain.
+Exit code: 1 if any scanned function breaches `--fail-over-depth`, 0 otherwise. Mirrors
+`ruff check`'s convention so this composes into the same pre-merge gate chain.
 
 Usage:
     uv run python scripts/check_function_size.py app/services/endgame_service.py
-    uv run python scripts/check_function_size.py app/ --fail-over-depth 4 --fail-over-loc 200
+    uv run python scripts/check_function_size.py app/ --fail-over-depth 4
     uv run python scripts/check_function_size.py app/ --json > report.json
 """
 
@@ -42,9 +33,6 @@ from pathlib import Path
 # ---------------------------------------------------------------------------
 
 _DEFAULT_MAX_DEPTH = 4
-_DEFAULT_MAX_LOGIC_LOC = 200
-
-_PRAGMA_PREFIX = "# check-function-size: allow-loc"
 
 # Node types that increase nesting depth by one level. `ast.Try` is handled
 # separately (its body and each handler each count as one level, matching
@@ -79,8 +67,6 @@ class FunctionRecord:
     raw_loc: int
     logic_loc: int
     max_nesting_depth: int
-    allow_loc: bool
-    allow_loc_reason: str | None
 
 
 def iter_python_files(paths: Sequence[str]) -> list[Path]:
@@ -204,18 +190,6 @@ def logic_loc(node: ast.AST, lines: list[str]) -> int:
     return count
 
 
-def _pragma_for_def(lines: list[str], def_lineno: int) -> tuple[bool, str | None]:
-    """Check the source line immediately above `def_lineno` for the allow-loc pragma."""
-    idx = def_lineno - 2  # 0-indexed line immediately above the 1-indexed def line
-    if idx < 0 or idx >= len(lines):
-        return False, None
-    stripped = lines[idx].strip()
-    if stripped.startswith(_PRAGMA_PREFIX):
-        reason = stripped[len(_PRAGMA_PREFIX) :].strip()
-        return True, reason or None
-    return False, None
-
-
 def _build_record(
     node: ast.FunctionDef | ast.AsyncFunctionDef,
     path: str,
@@ -223,7 +197,6 @@ def _build_record(
     lines: list[str],
 ) -> FunctionRecord:
     end_line = node.end_lineno if node.end_lineno is not None else node.lineno
-    allow_loc, allow_loc_reason = _pragma_for_def(lines, node.lineno)
     return FunctionRecord(
         path=path,
         qualname=qualname,
@@ -232,8 +205,6 @@ def _build_record(
         raw_loc=end_line - node.lineno + 1,
         logic_loc=logic_loc(node, lines),
         max_nesting_depth=max_nesting_depth(node),
-        allow_loc=allow_loc,
-        allow_loc_reason=allow_loc_reason,
     )
 
 
@@ -271,12 +242,10 @@ def scan_file(path: Path) -> list[FunctionRecord]:
     return scan_source(source, str(path))
 
 
-def _breaches(record: FunctionRecord, fail_over_depth: int, fail_over_loc: int) -> list[str]:
+def _breaches(record: FunctionRecord, fail_over_depth: int) -> list[str]:
     reasons: list[str] = []
     if record.max_nesting_depth > fail_over_depth:
         reasons.append(f"depth {record.max_nesting_depth} > {fail_over_depth}")
-    if not record.allow_loc and record.logic_loc > fail_over_loc:
-        reasons.append(f"logic_loc {record.logic_loc} > {fail_over_loc}")
     return reasons
 
 
@@ -291,12 +260,6 @@ def main() -> int:
         default=_DEFAULT_MAX_DEPTH,
         help=f"Max nesting depth before failing (default: {_DEFAULT_MAX_DEPTH})",
     )
-    parser.add_argument(
-        "--fail-over-loc",
-        type=int,
-        default=_DEFAULT_MAX_LOGIC_LOC,
-        help=f"Max logic LOC before failing (default: {_DEFAULT_MAX_LOGIC_LOC})",
-    )
     parser.add_argument("--json", action="store_true", help="Emit JSON instead of text")
     args = parser.parse_args()
 
@@ -307,7 +270,7 @@ def main() -> int:
 
     violations: list[tuple[FunctionRecord, list[str]]] = []
     for record in all_records:
-        reasons = _breaches(record, args.fail_over_depth, args.fail_over_loc)
+        reasons = _breaches(record, args.fail_over_depth)
         if reasons:
             violations.append((record, reasons))
 

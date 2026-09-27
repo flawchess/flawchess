@@ -52,8 +52,31 @@ interface PendingPolicy {
 
 const pending = new Map<string, PendingPolicy>();
 
+/**
+ * Normalizes `fen` to its first four space-separated fields (board, side,
+ * castling, ep) before keying (8XN-4). This is the SINGLE normalization
+ * point — all five accessors below route through `cacheKey`, so a lookup can
+ * never miss because only one side of a comparison normalized.
+ *
+ * Maia's own encoding reads only fields 1-2 (`maiaEncoding.ts`'s
+ * `encodeBoard` and `maia-worker.js`'s `encodeBoardTokens`), and chess.js
+ * legal-move generation (which the mask/softmax step depends on, needing
+ * fields 3-4 for castling/en-passant legality) ignores the halfmove/fullmove
+ * counters entirely. Two FENs that differ only in those trailing counters
+ * therefore describe the exact same Maia inference and the exact same legal
+ * move set — a transposition, or the chart's own FEN vs. the engine's
+ * root FEN for the same position, previously missed the cache/pending
+ * registry purely on a counter mismatch.
+ *
+ * Deliberately NOT exported — T-194-07 (only `elo` is a required, separate
+ * parameter on every accessor, so no caller can build a FEN-only key that
+ * silently serves one ELO rung's distribution for another) extends to this
+ * normalizer: exporting it would let a caller build its own key and
+ * accidentally bypass the single-normalization-point guarantee.
+ */
 function cacheKey(fen: string, elo: number): string {
-  return `${fen}|${elo}`;
+  const [board, side, castling, ep] = fen.split(' ');
+  return `${board} ${side} ${castling} ${ep}|${elo}`;
 }
 
 /**

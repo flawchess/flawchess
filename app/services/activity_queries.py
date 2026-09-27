@@ -397,62 +397,85 @@ async def fetch_train_funnel(
 ) -> dict[str, Any]:
     """First-session 0-solve share and second-session return share (SEED-166, D-19).
 
-    Cohort = users whose FIRST-EVER `drill_sessions` row (by `session_date`,
-    then `id` to break ties) started on or after the cutoff date and on or
-    before the selected end date. A user whose first session predates the
-    cutoff, or falls after the selected end, is excluded entirely, even if a
-    later session of theirs falls inside the window (RESEARCH Finding J).
+    Two cohorts, both keyed on a user's FIRST session (by `session_date`, then
+    `id`) landing on or after the cutoff and on or before the selected end
+    date. A user whose first session predates the cutoff is excluded
+    entirely, even if a later session falls inside the window (RESEARCH
+    Finding J).
 
-    `no_solve` looks only at that first session's own `drill_solves` rows
-    (`solved_at IS NOT NULL`); `completed_count` looks at ALL of the user's
-    sessions with `status = 'completed'` -- the same definition `fetch_train`
-    already uses. Runs the identical query twice: once with `window_start`
-    (the windowed reading, bounded above by `window_end`) and once with
-    `data_start` (the live all-time control line, bounded above by
-    `_ALL_TIME_END` so it keeps meaning all time regardless of the selected
-    window), so the two numbers can never drift apart from each other.
+    Zero-solve cohort (`starters`): the first session the user actually
+    ENTERED, i.e. has `entered_at` (Start/Resume pressed) or a solved puzzle.
+    Bug fix: this used the first `drill_sessions` row, but /train composes and
+    persists a session on page mount as a status read, so every landing-page
+    visitor counted as a zero-solve first session (47% in prod, mostly
+    bounces). `entered_at` was not backfilled, so only entered sessions
+    composed on or after the earliest stamp (`entered_since`) count; before
+    any stamp exists the cohort is empty. `no_solve` looks only at that
+    session's own `drill_solves` rows (`solved_at IS NOT NULL`).
+
+    Return cohort (`finishers`/`returners`): the first-ever session, unchanged.
+    Completing a session implies entering it, so the page-mount rows cannot
+    inflate it. `completed_count` looks at ALL of the user's sessions with
+    `status = 'completed'` -- the same definition `fetch_train` uses.
+
+    Runs the identical query twice: once with `window_start` (the windowed
+    reading, bounded above by `window_end`) and once with `data_start` (the
+    live all-time control line, bounded above by `_ALL_TIME_END` so it keeps
+    meaning all time regardless of the selected window), so the two numbers
+    can never drift apart from each other.
 
     Right-censoring caveat (surfaced on the card, not here): a user whose
     first session lands near the end of the window has had no opportunity to
     return, so the windowed return share is a floor for recent windows.
     """
     sql = """
-        WITH first_session AS (
-            SELECT DISTINCT ON (user_id) user_id, id AS session_id, session_date
+        WITH since AS (SELECT min(entered_at) AS ts FROM drill_sessions),
+        solved AS (
+            SELECT DISTINCT session_id FROM drill_solves WHERE solved_at IS NOT NULL
+        ),
+        first_entered AS (
+            SELECT DISTINCT ON (d.user_id) d.user_id, d.id AS session_id, d.session_date,
+                   d.started_at
+            FROM drill_sessions d
+            WHERE d.entered_at IS NOT NULL OR d.id IN (SELECT session_id FROM solved)
+            ORDER BY d.user_id, d.session_date, d.id
+        ),
+        starters AS (
+            SELECT f.session_id FROM first_entered f, since
+            WHERE since.ts IS NOT NULL AND f.started_at >= since.ts
+              AND f.session_date >= CAST(:cutoff AS date) AND f.session_date < CAST(:last AS date)
+        ),
+        first_session AS (
+            SELECT DISTINCT ON (user_id) user_id, session_date
             FROM drill_sessions
             ORDER BY user_id, session_date, id
         ),
-        cohort AS (
-            SELECT user_id, session_id FROM first_session
-            WHERE session_date >= CAST(:cutoff AS date) AND session_date < CAST(:last AS date)
-        ),
-        flags AS (
-            SELECT c.user_id,
-                   NOT EXISTS (
-                       SELECT 1 FROM drill_solves s
-                       WHERE s.session_id = c.session_id AND s.solved_at IS NOT NULL
-                   ) AS no_solve,
-                   (SELECT count(*) FROM drill_sessions d
-                     WHERE d.user_id = c.user_id AND d.status = 'completed') AS completed_count
-            FROM cohort c
+        returners AS (
+            SELECT (SELECT count(*) FROM drill_sessions d
+                     WHERE d.user_id = f.user_id AND d.status = 'completed') AS completed_count
+            FROM first_session f
+            WHERE f.session_date >= CAST(:cutoff AS date) AND f.session_date < CAST(:last AS date)
         )
-        SELECT count(*)                                     AS openers,
-               count(*) FILTER (WHERE no_solve)              AS zero_solve_users,
-               count(*) FILTER (WHERE completed_count >= 1)  AS finishers,
-               count(*) FILTER (WHERE completed_count >= 2)  AS returners
-        FROM flags
+        SELECT (SELECT count(*) FROM starters)                                    AS starters,
+               (SELECT count(*) FROM starters
+                 WHERE session_id NOT IN (SELECT session_id FROM solved))         AS zero_solve,
+               (SELECT count(*) FROM returners WHERE completed_count >= 1)        AS finishers,
+               (SELECT count(*) FROM returners WHERE completed_count >= 2)        AS returners,
+               (SELECT ts FROM since)                                             AS entered_since
         """
     windowed = (await _rows(conn, sql, cutoff=window_start, last=_end_exclusive(window_end)))[0]
     all_time = (await _rows(conn, sql, cutoff=data_start, last=_ALL_TIME_END))[0]
+    entered_since = windowed[4]
     return {
-        "openers": int(windowed[0]),
+        "starters": int(windowed[0]),
         "zero_solve_users": int(windowed[1]),
         "finishers": int(windowed[2]),
         "returners": int(windowed[3]),
-        "all_time_openers": int(all_time[0]),
+        "all_time_starters": int(all_time[0]),
         "all_time_zero_solve_users": int(all_time[1]),
         "all_time_finishers": int(all_time[2]),
         "all_time_returners": int(all_time[3]),
+        "entered_since": entered_since.date().isoformat() if entered_since else None,
     }
 
 

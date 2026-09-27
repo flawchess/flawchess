@@ -1,28 +1,28 @@
 ---
 gsd_state_version: "1.0"
 milestone: v2.19
-current_phase: 224
-current_phase_name: Guest Activation — Welcome Removal & Guest Train (SEED-169)
+current_phase: 225
+current_phase_name: Engine Search Fixes — Root Comparability, Round Underfill & Findability Fallback (SEED-170)
 status: executing
-stopped_at: Completed 224-06-PLAN.md
-last_updated: "2026-09-26T07:34:52.534Z"
-state_head: 4a804ed4d2790541f6cdd85dd18bbd0a89922ef4
+stopped_at: Phase 225 planned (8 plans)
+last_updated: "2026-09-27T06:44:42.604Z"
+state_head: 6fb58e99da2aade1a10c5d360439aea7a7bfb593
 progress:
-  total_phases: 2
-  completed_phases: 0
-  total_plans: 12
-  completed_plans: 11
+  total_phases: 3
+  completed_phases: 100
+  total_plans: 20
+  completed_plans: 12
 milestone_name: Train Bot-Narrated Onboarding & Verdicts
-last_activity: 2026-09-16
-last_activity_desc: "Completed quick task 260916-gj7 (DB report follow-ups: index opening_cache_audit.sample_game_id, drop ix_games_full_pv_pending, tighten Check C rule)"
+last_activity: 2026-09-27
+last_activity_desc: Completed quick task 260927-ajg (short checkmate oracle fix + prod re-derive)
 ---
 
 # Project State: FlawChess
 
 ## Current Position
 
-Phase: 224 (Guest Activation — Welcome Removal & Guest Train (SEED-169)) — EXECUTING
-Plan: 6 of 6
+Phase: 225 (Engine Search Fixes — Root Comparability, Round Underfill & Findability Fallback (SEED-170)) — READY TO EXECUTE
+Plan: 0 of 8
 
 Status: Ready to execute
 
@@ -168,6 +168,7 @@ v1.29 Live-Engine Analysis Page shipped 2026-06-29 — 5 phases (136–140), 14 
 
 ### Roadmap Evolution
 
+- Phase 225 added 2026-09-27 (explicit user request via `/gsd-phase @SEED-170`, after the 2026-09-27 engine review whose behavior-neutral findings shipped as quick task 260927-8xn): **Engine Search Fixes — Root Comparability, Round Underfill & Findability Fallback**. Visit guard on the early-stop clear-winner branch (and possibly the deadline cut), `selectPath` block-and-restart instead of giving up mid-round, findability fallback term in `rankScore`, optional non-root candidate cap; gated by a pre-committed accept rule (throughput, maia-blindness, stop-rule, persona calibration spot check).
 - Phase 224 added 2026-09-17 (explicit user request via `/gsd-phase @SEED-169`, after `/gsd-explore` "guest drop-off" on growth report 2026-09-15 finding 2): **Guest Activation — Welcome Removal & Guest Train**. Lever A: drop the forced `/welcome` redirect for 0-game guests (48% vs 85% import-start gap sits entirely at that step). Lever B: open Train to guests as the full daily warm-up loop (reverses Phase 189 D-05), guest sign-up nudges as bot bubbles with "Why?" + "Sign up free" on the score screen (replacing the reminder ask, no push for guests) and the Import page (random friendly bot), `/welcome` rewritten as a four-delta "What changes when you sign up" page. Guest cleanup must be re-reasoned for guest Train rows. Two metrics recorded separately before/after. Written by hand as 224 (known mature-ROADMAP behavior). Next: `/gsd-discuss-phase 224`.
 - Phase 222 added 2026-09-13 (explicit user request via `/gsd-phase add`, after `/gsd-explore` "Train bot introductions" and sketches 003/004): **Train Bot-Narrated Onboarding & Verdicts** (SEED-166, planted 2026-09-12 from the prod Train funnel, amended 2026-09-13). Standalone, appended after Phase 221. The Bots personas become the permanent voice of Train: guess prompt + buttons inside a bot bubble under the board (first-session Tank/Hilda intro stepper, drop-before-guess nudge, no board overlay), outcome-matched bot verdicts with inline point pills and the SR return date (stern bots 0–1 pts, friendly 2–3, always encouraging; herring/filler never promise a return), actions inside the bubble and the reveal's sound toggle retired, a first-session Hilda walkthrough of the solution screen, and a bot-led score screen that explains spaced repetition before the reminder ask. Server-side explanation-seen flag; two funnel metrics (first-session 0-solve 42%, second-session return 49%) recorded before/after. Dropped: "Boot Camp" rename, landing-page bot images. Written by hand as 222 rather than via `phase.add` (known mature-ROADMAP behavior). Next: `/gsd-discuss-phase 222`.
 - Phase 220 added 2026-09-09 (explicit user request via `/gsd-phase @SEED-164`): **Opening Eval Cache Repair & Two-Source Confirmation** (SEED-164, planted the same day from an ad-hoc investigation of game 2356581's spurious ply-5/6 blunders). Standalone, appended after Phase 219. Scope: audit tables + resumable six-stage repair script (seed/screen/confirm/propagate/rederive/report) run dev-then-prod from the local 4-worker box; hardening replaces first-write-wins in `opening_position_eval` with two-source confirmation + provenance and restricts transplants/lease-omits to `confirmed` rows, and makes the remote-worker submit path write the cache through the tick's shared function (today only the server drain tick writes it, so remote-heavy lanes get no opening dedup; this is also why the benchmark DB is cache-free and unaffected, no re-clone needed); nightly cross-check in `db-report`; a 200-game depth-15 sample decides whether the pre-2026-06-18 legacy cohort needs screening beyond ply 20. Must land before the next flaw-based benchmark refresh.
@@ -913,6 +914,11 @@ None active.
 | 260926-9bg | Return signed-out visitors to their intended page (home landing + post-auth return path, tokenless-401 fix) | 2026-09-26 | c8d85cb17 | [260926-9bg-return-logged-out-users-to-their-intende](./quick/260926-9bg-return-logged-out-users-to-their-intende/) |
 | 260926-agm | Fix Sentry noise: stale-chunk reload (C0), browser-aborted XHR filter (31), per-attempt 429 captures (BX) | 2026-09-26 | 038a4280c | [260926-agm-fix-sentry-noise-stale-chunk-reload-abor](./quick/260926-agm-fix-sentry-noise-stale-chunk-reload-abor/) |
 | 102 | Stop Umami from recording OAuth access tokens (data-exclude-hash) | 2026-09-26 | 4a804ed4d | — |
+| 260926-evd | Consolidate static-analysis gates: nesting depth the only hard complexity gate, ruff TID251/B/ASYNC/DTZ adopted with baselines, tsc build + knip in pre-merge gate | 2026-09-26 | a8a81362f | [260926-evd-consolidate-static-analysis-gates-for-ag](./quick/260926-evd-consolidate-static-analysis-gates-for-ag/) |
+| 260927-7u4 | Insights/percentile dates in UTC; B904/B905 fixes; 7 ruff baseline entries dropped | 2026-09-27 | da22f72f4 | [260927-7u4-make-insights-dates-utc-and-fix-b904-b90](./quick/260927-7u4-make-insights-dates-utc-and-fix-b904-b90/) |
+| 260927-8xn | Engine behavior-neutral quick wins from engine review (failed-grade dead end, Maia abort/cache/transfer, chart merge guard) | 2026-09-27 | 853ab2dd5 | [260927-8xn-engine-behavior-neutral-quick-wins-from-](./quick/260927-8xn-engine-behavior-neutral-quick-wins-from-/) |
+| 260927-b05 | Replace Endgames Insights hero card with Shelly the Turtle bot bubble | 2026-09-27 | ee465dbf9 | [260927-b05-replace-endgames-insights-hero-card-with](./quick/260927-b05-replace-endgames-insights-hero-card-with/) |
+| 260927-ajg | Fix short checkmate oracle bug (mated position excluded from eval coverage) and re-derive 1,016 prod games | 2026-09-27 | 292e77489 | [260927-ajg-fix-short-checkmate-oracle-bug-and-re-de](./quick/260927-ajg-fix-short-checkmate-oracle-bug-and-re-de/) |
 
 ## Deferred Items
 
@@ -965,11 +971,11 @@ Items acknowledged and deferred at **v1.29 milestone close on 2026-06-29** (user
 
 ## Session Continuity
 
-**Stopped at:** Completed 224-06-PLAN.md
+**Stopped at:** Phase 225 context gathered
 
-**Last session:** 2026-09-17T22:25:19.591Z
+**Last session:** 2026-09-27T05:34:00.684Z
 
-**Resume file:** None
+**Resume file:** .planning/phases/225-engine-search-fixes-root-comparability-round-underfill-findability/225-CONTEXT.md
 
 ## Performance Metrics
 

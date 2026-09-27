@@ -49,6 +49,7 @@ from app.services.flaws_service import (
     _run_all_moves_pass,
     _solver_color_for,
     classify_game_flaws,
+    count_game_severities,
 )
 from app.services.forcing_line_gate import PvNode
 from app.services.tactic_detector import TACTIC_CONFIDENCE_HIGH, TacticMotifInt, detect_tactic_motif
@@ -531,6 +532,64 @@ class TestEvalCoverageGate:
         coverage = _compute_eval_coverage(positions)
         assert coverage == pytest.approx(1.0, abs=1e-9)
         assert coverage >= EVAL_COVERAGE_MIN
+
+    def test_short_checkmate_clears_gate(self) -> None:
+        """Regression (260927-ajg): a fully-analyzed Scholar's mate clears the gate.
+
+        The row before the mating move carries the eval of the mated position, which
+        the engine cannot score. Before the fix it counted against coverage: 6/7 =
+        0.857 < 0.90, so short mates never got oracle counts or flaws.
+        """
+        positions = _scholars_mate_positions()
+        coverage = _compute_eval_coverage(positions)
+        assert coverage == pytest.approx(1.0, abs=1e-9)
+
+        game = _make_game(pgn=_SCHOLARS_MATE_PGN, user_color="black", result="1-0")
+        counts = count_game_severities(game, positions)
+        assert "reason" not in counts
+        assert isinstance(classify_game_flaws(game, positions), list)
+
+    def test_sparse_checkmate_stays_below_gate(self) -> None:
+        """The mate exclusion does not excuse other missing evals.
+
+        Scholar's mate with one interior eval missing: 5/6 ≈ 0.833 < 0.90.
+        """
+        positions = _scholars_mate_positions()
+        positions[2].eval_cp = None
+        assert _compute_eval_coverage(positions) == pytest.approx(5 / 6, abs=1e-9)
+        assert _compute_eval_coverage(positions) < EVAL_COVERAGE_MIN
+
+    def test_missing_last_eval_without_mate_not_excused(self) -> None:
+        """Only a checkmating last move excuses the last movable row's missing eval."""
+        positions = _scholars_mate_positions()
+        positions[6].move_san = "Qxf7+"
+        assert _compute_eval_coverage(positions) == pytest.approx(6 / 7, abs=1e-9)
+        assert _compute_eval_coverage(positions) < EVAL_COVERAGE_MIN
+
+
+_SCHOLARS_MATE_PGN = "1. e4 e5 2. Bc4 Nc6 3. Qh5 Nf6 4. Qxf7# 1-0"
+
+
+def _scholars_mate_positions() -> list[GamePosition]:
+    """8 positions (7 plies) of a fully-analyzed Scholar's mate, as the drain stores it:
+    every movable row evaluated except the one before the mating move (the mated
+    position is unscorable), plus the terminal row."""
+    sans = ["e4", "e5", "Bc4", "Nc6", "Qh5", "Nf6", "Qxf7#"]
+    evals: list[tuple[int | None, int | None]] = [
+        (30, None),
+        (25, None),
+        (20, None),
+        (40, None),
+        (35, None),
+        (None, 1),  # after 3...Nf6 White mates in 1
+        (None, None),  # mated position: engine has no score
+    ]
+    positions = [
+        _make_pos(ply, eval_cp=cp, eval_mate=mate, move_san=san)
+        for ply, (san, (cp, mate)) in enumerate(zip(sans, evals, strict=True))
+    ]
+    positions.append(_make_pos(7))  # terminal row
+    return positions
 
 
 class TestFenRecompute:

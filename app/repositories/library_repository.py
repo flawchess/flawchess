@@ -2011,11 +2011,6 @@ async def analyzed_game_ids(
     return list(rows)
 
 
-# 214-RESEARCH.md "Pitfall 1: Raw line count is not logic LOC" -- this function is a
-# single select() with ~30 labelled COUNT(...).filter(...) column expressions (15
-# metrics x player/opp), not control-flow complexity; PLR0915 (statement count) does
-# not fire on it, which is the tie-breaker signal that grants the exemption below.
-# check-function-size: allow-loc one select() with ~30 labelled COUNT(...).filter(...) column expressions (15 metrics x player/opp); PLR0915 (statement count) does not fire, confirming the length is a literal-heavy column list, not control-flow complexity
 async def fetch_flaw_comparison(
     session: AsyncSession,
     user_id: int,

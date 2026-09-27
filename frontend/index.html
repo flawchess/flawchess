@@ -34,13 +34,17 @@
          data-exclude-hash: the Google OAuth callback lands on
          /auth/callback#token=<JWT>, and without it Umami stored every live
          access token in website_event.url_path. It also strips the hash from
-         the referrer, so the next pageview is clean too. -->
+         the referrer, so the next pageview is clean too.
+         data-before-send: window.umamiBeforeSend (lib/analytics.ts, installed
+         in main.tsx) strips ?token= (password reset) and blanks the
+         accounts.google.* OAuth referrer. -->
     <script
       defer
       src="https://analytics.flawchess.com/script.js"
       data-website-id="0ca19960-2398-4caf-b321-8039708fa7ef"
       data-domains="flawchess.com"
       data-exclude-hash="true"
+      data-before-send="umamiBeforeSend"
       crossorigin="anonymous"
     ></script>
   </head>

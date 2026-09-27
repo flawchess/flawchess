@@ -143,7 +143,7 @@ async def compute_findings(
 
     Makes two sequential calls to `endgame_service.get_endgame_overview`
     (all_time window with `from_date=None, to_date=None`, then last_3mo
-    window with `from_date=date.today() - 90d, to_date=None`) on the same
+    window with `from_date=<UTC today> - 90d, to_date=None`) on the same
     `AsyncSession` — never concurrent gather, per CLAUDE.md §Critical
     Constraints. The two-window shape is independent of the user's
     dashboard date filter (`filter_context.from_date` / `.to_date`): the
@@ -176,7 +176,7 @@ async def compute_findings(
             platform=filter_context.platforms or None,
             rated=True if filter_context.rated_only else None,
             opponent_type=_OPPONENT_TYPE,
-            from_date=datetime.date.today() - datetime.timedelta(days=90),
+            from_date=datetime.datetime.now(datetime.UTC).date() - datetime.timedelta(days=90),
             to_date=None,
             opponent_gap_min=gap_min,
             opponent_gap_max=gap_max,
@@ -443,7 +443,7 @@ def compute_player_profile(
     Returns None only when no combo has any weekly points at all (the user
     has imported games but somehow has zero endgame_elo timeline rows).
     """
-    today = datetime.date.today()
+    today = datetime.datetime.now(datetime.UTC).date()
     cutoff_last_3mo = today - datetime.timedelta(days=_PLAYER_PROFILE_LAST_3MO_DAYS)
 
     sparse_mode = not any(len(c.points) >= _PLAYER_PROFILE_MIN_POINTS for c in combos)

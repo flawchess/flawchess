@@ -31,6 +31,11 @@ export function PrivacyPage() {
               bcrypt, never stored in plain text)
             </li>
             <li>Google account email address if you sign in with Google</li>
+            <li>
+              How you first found FlawChess when your account was created: the referring
+              website&apos;s domain (not the full address), any campaign tags in the link, and the
+              first page you opened. We use this only to see which channels bring people here.
+            </li>
           </ul>
         </section>
 
@@ -50,7 +55,7 @@ export function PrivacyPage() {
           </ul>
           <p className="mt-4 text-muted-foreground">
             We do not sell, rent, or share your data with anyone else. We do not run advertising.
-            We use self-hosted, privacy-friendly, cookie-free analytics (Umami) to understand which pages are visited. No personal data is collected or shared.
+            We use self-hosted, privacy-friendly, cookie-free analytics (Umami) to understand which pages are visited, and whether by a guest or a registered account. No personal data is collected or shared.
           </p>
         </section>
 

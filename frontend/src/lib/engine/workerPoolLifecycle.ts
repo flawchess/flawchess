@@ -28,6 +28,7 @@
  */
 
 import * as Sentry from '@sentry/react';
+import { workerErrorContext } from '@/lib/engine/workerErrorContext';
 import {
   markEngineAssetPending,
   reportEngineAssetProgress,
@@ -177,9 +178,10 @@ export function createSlot(
   // error) never throws a catchable JS exception on the main thread — it
   // only surfaces here. Without this handler such a failure is completely
   // silent and any in-flight/future request on this slot hangs forever.
-  worker.onerror = () => {
+  worker.onerror = (event: ErrorEvent) => {
     Sentry.captureException(new Error('Stockfish worker pool: worker load failure'), {
       tags: { source: 'stockfish-worker-pool' },
+      contexts: { worker_error: workerErrorContext(event) },
     });
     // 195-06 review WR-01: this path settles the in-flight request but used
     // to leave the D-06 watchdog armed — the only one of the exit paths that

@@ -21,8 +21,8 @@ const num=n=>n>=10000?(n/1000).toFixed(n>=100000?0:1).replace(/\.0$/,"")+"k":n.t
 const pct=x=>Math.round(x*100)+"%";
 // Axis ticks need a formatter distinct from num(): num()'s thousands-comma
 // form ("1,000") is wider than the narrow y-axis gutter can hold, and any
-// chart whose max reaches four digits — trivially true for the log-scale
-// imports axis on an ordinary day — clipped past x=0. Axis ticks always
+// chart whose max reaches four digits (the imports axis on an ordinary day)
+// clipped past x=0. Axis ticks always
 // compress to a k/M suffix instead; tooltips (which use num() via each
 // chart's `fmt` prop) keep full precision.
 const axisNum=n=>n>=1e6?(n/1e6).toFixed(n>=1e7?0:1).replace(/\.0$/,"")+"M"
@@ -192,20 +192,15 @@ function lineChart(host,{labels,series,h=280,fmt=num,every=7,yMax=null,pctAxis=f
   },c);
 }
 /* ---------- stacked / plain bars ---------- */
-function barChart(host,{labels,series,h=240,fmt=num,every=7,log=false,extra=null}){
+function barChart(host,{labels,series,h=240,fmt=num,every=7,extra=null}){
   const c=C(), {svg,w,narrow}=frame(host,h);
   const x0=narrow?AXIS_LEFT_NARROW:AXIS_LEFT, x1=w-(narrow?AXIS_RIGHT_NARROW:AXIS_RIGHT), yTop=18,yBot=h-30;
   const totals=labels.map((_,i)=>series.reduce((a,s)=>a+s.values[i],0));
-  const tf=v=>log?Math.log10(v+1):v;
-  const max=log?Math.ceil(Math.max(1,...totals.map(tf))):niceMax(Math.max(1,...totals));
+  const max=niceMax(Math.max(1,...totals));
   const band=(x1-x0)/labels.length, bw=Math.max(2,Math.min(22,band-3));
   const X=i=>x0+band*i+band/2;
-  const Y=v=>yBot-(yBot-yTop)*(tf(v)/max);
-  if(log){ for(let k=0;k<=max;k++){ const y=yBot-(yBot-yTop)*(k/max);
-      svg.appendChild(el("line",{x1:x0,x2:x1,y1:y,y2:y,stroke:k?c.grid:c.rule}));
-      const t=el("text",{x:x0-8,y:y+4,"text-anchor":"end",fill:c.ink3,"font-size":12,"font-family":"IBM Plex Mono, monospace"});
-      t.textContent=axisNum(Math.pow(10,k)); svg.appendChild(t);} }
-  else yAxis(svg,x0,x1,yTop,yBot,max,axisNum,c);
+  const Y=v=>yBot-(yBot-yTop)*(v/max);
+  yAxis(svg,x0,x1,yTop,yBot,max,axisNum,c);
   xAxis(svg,labels,X,yBot,c,every);
   labels.forEach((_,i)=>{
     let acc=0;

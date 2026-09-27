@@ -151,6 +151,7 @@ const SETTINGS_RESPONSE: TrainSettingsResponse = {
 
 const composeOrResumeSession = vi.fn(async () => SESSION_RESPONSE);
 const solvePuzzle = vi.fn(async () => SOLVE_RESPONSE);
+const markSessionEntered = vi.fn<(sessionId: number) => Promise<void>>(async () => undefined);
 const getSettings = vi.fn(async () => SETTINGS_RESPONSE);
 const revealPuzzle = vi.fn(async () => ({
   game_id: 100,
@@ -194,6 +195,7 @@ vi.mock('@/api/client', async () => {
     ...actual,
     trainApi: {
       composeOrResumeSession: () => composeOrResumeSession(),
+      markSessionEntered: (sessionId: number) => markSessionEntered(sessionId),
       solvePuzzle: (sessionId: number, body: unknown) => solvePuzzle(sessionId, body),
       revealPuzzle: (sessionId: number, position: number) => revealPuzzle(sessionId, position),
       getSettings: () => getSettings(),
@@ -280,6 +282,7 @@ describe('Train solve loop (end-to-end tracer)', () => {
       }),
     );
     composeOrResumeSession.mockClear();
+    markSessionEntered.mockClear();
     solvePuzzle.mockClear();
     revealPuzzle.mockClear();
   });
@@ -309,12 +312,17 @@ describe('Train solve loop (end-to-end tracer)', () => {
     // separate preview endpoint, see useTrainSession.ts). The landing screen
     // shows its loading state until that resolves.
     await waitFor(() => expect(screen.getByTestId('btn-train-start')).not.toBeNull());
+    // The mount-time status read must not count as entering the session.
+    expect(markSessionEntered).not.toHaveBeenCalled();
     fireEvent.click(screen.getByTestId('btn-train-start'));
 
     await waitFor(() => expect(screen.getByTestId('chessboard')).not.toBeNull());
     // Exactly one call total: the automatic mount-time status fetch IS the
     // one call — pressing Start only reveals the already-loaded loop.
     expect(composeOrResumeSession).toHaveBeenCalledTimes(1);
+    // ...and stamps the press server-side for the activity dashboard.
+    expect(markSessionEntered).toHaveBeenCalledTimes(1);
+    expect(markSessionEntered).toHaveBeenCalledWith(SESSION_RESPONSE.session_id);
 
     // Board-lock: a drop attempt BEFORE any guess is committed leaves the
     // rendered position unchanged.

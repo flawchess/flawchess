@@ -85,7 +85,7 @@ from __future__ import annotations
 
 import asyncio
 import itertools
-from datetime import date
+from datetime import UTC, datetime
 from typing import Literal
 
 import sentry_sdk
@@ -462,7 +462,7 @@ async def _compute_and_upsert_cell(
             value=value,
             n_games=n_games,
             percentile=percentile,
-            cdf_snapshot=date.today(),
+            cdf_snapshot=datetime.now(UTC).date(),
         )
     except asyncio.CancelledError:
         raise

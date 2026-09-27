@@ -27,7 +27,7 @@ const pctText=(n,d)=>d?Math.round(100*n/d)+"%":DASH;
    holds no baked-in numbers, so a reload always reflects the live database.
    ActivityPage.tsx owns the fetching and calls update(). */
 let D=null, DAYS=[], NDAYS=0, ACT=[], SIGNUPS=[], BOT=[], TRAIN=[], TRAINFUN={}, SOLVES=[],
-    IMPORTS=[], PERSONA=[], ELO=[], FUNNEL=[], TTI=[], STICK=[], CONV=null, CONVCMP=[], PURGED=null,
+    IMPORTS=[], PERSONA=[], ELO=[], FUNNEL=[], TTI=[], CONV=null, PURGED=null,
     GUESTTRAIN=null;
 
 function apply(payload){
@@ -39,8 +39,8 @@ function apply(payload){
   SIGNUPS=payload.signups; BOT=payload.bot; TRAIN=payload.train; SOLVES=payload.solves;
   IMPORTS=payload.imports; PERSONA=payload.persona; ELO=payload.elo;
   TRAINFUN=payload.train_funnel;
-  FUNNEL=payload.funnel; TTI=payload.tti; STICK=payload.stick;
-  CONV=payload.conversion; CONVCMP=payload.conversion_compare; PURGED=payload.purged_excluded;
+  FUNNEL=payload.funnel; TTI=payload.tti;
+  CONV=payload.conversion; PURGED=payload.purged_excluded;
   GUESTTRAIN=payload.guest_train;
 }
 const keep=a=>AUD==="all"?true:AUD==="reg"?a.g===0:a.g===1;
@@ -190,8 +190,6 @@ function renderActivesCard(){
     {name:"DAU",values:tDau,color:c.s3}]});
   table("#t-actives",["Date","DAU","WAU","MAU","Active hours"],
     days.map((d,i)=>[long(d),tDau[i],tWau[i],tMau[i],tHrs[i]]).reverse());
-
-  barChart($("#c-hours"),{labels:days,h:220,every:10,series:[{name:"Active hours",values:tHrs,color:c.s4}]});
 }
 
 function renderSignupsCard(){
@@ -236,23 +234,16 @@ function renderFunnelCard(){
     FUNNEL.map(f=>[f[0],f[1],pctText(f[1],FUNNEL[0][1]),f[2],pctText(f[2],FUNNEL[0][2])]));
 }
 
-function renderTtiStickCards(){
+function renderTtiCard(){
   const c=C();
   legend("#tti-legend",[{name:"Registered accounts",color:c.s1},{name:"Guest sessions",color:c.s5}]);
   gbar($("#c-tti"),{labels:TTI.map(t=>t[0]),h:250,max:1,
     yFmt:v=>Math.round(v*100)+"%", fmt:v=>Math.round(v*100)+"%",
     series:[{name:"Registered accounts",color:c.s1,values:TTI.map(t=>ratio(t[1],FUNNEL[0][1]))},
             {name:"Guest sessions",color:c.s5,values:TTI.map(t=>ratio(t[2],FUNNEL[0][2]))}]});
-
-  legend("#stick-legend",[{name:"Imported games",color:c.s2},{name:"Never imported",color:c.draw}]);
-  gbar($("#c-stick"),{labels:STICK.map(r=>r[0]),h:250,max:1,
-    yFmt:v=>Math.round(v*100)+"%", fmt:v=>Math.round(v*100)+"%",
-    series:[{name:"Imported games",color:c.s2,values:STICK.map(r=>ratio(r[2],r[1]))},
-            {name:"Never imported",color:c.draw,values:STICK.map(r=>ratio(r[4],r[3]))}]});
 }
 
 function renderConversionCard(){
-  const c=C();
   $("#conv-big").textContent=CONV.sessions?(100*CONV.converted/CONV.sessions).toFixed(1)+"%":DASH;
   if(!CONV.sessions){
     $("#conv-exp").textContent="There were no guest sessions in the selected range.";
@@ -268,11 +259,6 @@ function renderConversionCard(){
       registered accounts. Converters stay active <b>${(CONV.avg_days_converted/CONV.avg_days_guest).toFixed(1)}&times;</b> longer
       than guests who never sign up &mdash; ${CONV.avg_days_converted} active days against ${CONV.avg_days_guest}.`;
   }
-  legend("#conv-legend",[{name:"Converted to an account",color:c.s2},{name:"Stayed a guest",color:c.s5}]);
-  gbar($("#c-conv"),{labels:CONVCMP.map(r=>r[0]),h:240,max:1,
-    yFmt:v=>Math.round(v*100)+"%", fmt:v=>Math.round(v*100)+"%",
-    series:[{name:"Converted to an account",color:c.s2,values:CONVCMP.map(r=>ratio(r[1],r[2]))},
-            {name:"Stayed a guest",color:c.s5,values:CONVCMP.map(r=>ratio(r[3],r[4]))}]});
 }
 
 function renderBotCard(){
@@ -342,15 +328,22 @@ function renderTrainCard(){
 // fixture (RESEARCH Assumptions Log A3).
 function renderTrainFunnelCard(){
   const f=TRAINFUN||{};
-  const openers=f.openers||0, zero=f.zero_solve_users||0;
+  const starters=f.starters||0, zero=f.zero_solve_users||0;
   const finishers=f.finishers||0, returners=f.returners||0;
-  const atOpeners=f.all_time_openers||0, atZero=f.all_time_zero_solve_users||0;
+  const atStarters=f.all_time_starters||0, atZero=f.all_time_zero_solve_users||0;
   const atFinishers=f.all_time_finishers||0, atReturners=f.all_time_returners||0;
+  const since=f.entered_since;
 
-  $("#trf-zero-big").textContent=pctText(zero,openers);
-  $("#trf-zero-exp").innerHTML=openers
-    ? `<b>${zero}</b> of <b>${openers}</b> users solved zero puzzles in their first Train session.`
-    : "No first Train sessions started in the selected range.";
+  // The denominator is users who pressed Start/Resume, not users who opened
+  // /train: the page composes a session on mount, so a row alone meant
+  // nothing. Start presses are only recorded from `entered_since` on.
+  $("#trf-zero-big").textContent=pctText(zero,starters);
+  $("#trf-zero-exp").innerHTML=!since
+    ? "Start presses are not recorded yet."
+    : starters
+      ? `<b>${zero}</b> of <b>${starters}</b> users who started their first Train session solved
+        zero puzzles in it. Counted since ${long(since)}.`
+      : `No first Train sessions started in the selected range (counted since ${long(since)}).`;
 
   $("#trf-return-big").textContent=pctText(returners,finishers);
   $("#trf-return-exp").innerHTML=finishers
@@ -358,8 +351,8 @@ function renderTrainFunnelCard(){
       completed a second.`
     : "No completed first sessions in the selected range.";
 
-  $("#trf-alltime").textContent=`All-time control: ${pctText(atZero,atOpeners)} zero-solve `+
-    `(${atZero} of ${atOpeners}), ${pctText(atReturners,atFinishers)} return rate `+
+  $("#trf-alltime").textContent=`All-time control: ${pctText(atZero,atStarters)} zero-solve `+
+    `(${atZero} of ${atStarters}), ${pctText(atReturners,atFinishers)} return rate `+
     `(${atReturners} of ${atFinishers}).`;
 }
 
@@ -398,7 +391,7 @@ function renderImportsCard(){
   }
   const c=C();
   const im=expand(IMPORTS,4);
-  barChart($("#c-imports"),{labels:im.labels,h:220,every:10,log:true,
+  barChart($("#c-imports"),{labels:im.labels,h:220,every:10,
     series:[{name:"Games imported",values:im.cols[2],color:c.s1}],
     extra:i=>[{k:"Jobs",v:im.cols[0][i]},{k:"Failed",v:im.cols[3][i]}]});
   barChart($("#c-impusers"),{labels:im.labels,h:220,every:10,
@@ -412,7 +405,7 @@ function render(){
   renderSignupsCard();
   renderRetentionCard();
   renderFunnelCard();
-  renderTtiStickCards();
+  renderTtiCard();
   renderConversionCard();
   renderBotCard();
   renderTrainCard();

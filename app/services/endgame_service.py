@@ -2064,7 +2064,7 @@ def _extract_entry_clocks(
     user_parity = 0 if user_color == "white" else 1
     user_clock: float | None = None
     opp_clock: float | None = None
-    for ply, clock in zip(plies, clocks):
+    for ply, clock in zip(plies, clocks, strict=True):
         if ply % 2 == user_parity and user_clock is None:
             user_clock = clock
         elif ply % 2 != user_parity and opp_clock is None:

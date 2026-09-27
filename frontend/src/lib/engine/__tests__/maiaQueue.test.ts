@@ -28,6 +28,7 @@ import {
   MAIA_POLICY_CACHE_MAX,
   clearMaiaPolicyCache,
   getCachedPolicy,
+  getPendingPolicy,
   setCachedPolicy,
   markPolicyPending,
   failPolicyPending,
@@ -139,9 +140,69 @@ const PROMOTION_FEN = '6k1/4P3/8/8/8/8/8/4K3 w - - 0 1';
 const CASTLE_FEN = 'rnbqkbnr/pppppppp/8/8/4P3/5N2/PPPPBPPP/RNBQK2R w KQkq - 0 1';
 const EN_PASSANT_FEN = 'rnbqkbnr/pp2pppp/8/2ppP3/8/8/PPPP1PPP/RNBQKBNR w KQkq d6 0 3';
 
-/** A valid, distinct starting-position FEN (only the fullmove counter varies) — used wherever a test needs many distinct-but-parseable cache keys. */
+const BOARD_FILES = ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h'] as const;
+const ALL_SQUARES: string[] = BOARD_FILES.flatMap((file) =>
+  Array.from({ length: 8 }, (_, i) => `${file}${i + 1}`),
+);
+
+function fileIndex(square: string): number {
+  return BOARD_FILES.indexOf(square[0] as (typeof BOARD_FILES)[number]);
+}
+
+function kingChebyshevDistance(a: string, b: string): number {
+  return Math.max(Math.abs(fileIndex(a) - fileIndex(b)), Math.abs(Number(a[1]) - Number(b[1])));
+}
+
+/** Kings-only board FEN for a (white king, black king) square pair, white to move. */
+function kingsOnlyFen(whiteSq: string, blackSq: string): string {
+  const board: (string | null)[][] = Array.from({ length: 8 }, () => Array<string | null>(8).fill(null));
+  const place = (square: string, piece: string): void => {
+    const rank = board[Number(square[1]) - 1];
+    if (rank) rank[fileIndex(square)] = piece;
+  };
+  place(whiteSq, 'K');
+  place(blackSq, 'k');
+  const rows: string[] = [];
+  for (let rank = 7; rank >= 0; rank -= 1) {
+    let empty = 0;
+    let row = '';
+    for (let file = 0; file < 8; file += 1) {
+      const piece = board[rank]?.[file];
+      if (piece) {
+        if (empty > 0) {
+          row += String(empty);
+          empty = 0;
+        }
+        row += piece;
+      } else {
+        empty += 1;
+      }
+    }
+    if (empty > 0) row += String(empty);
+    rows.push(row);
+  }
+  return `${rows.join('/')} w - - 0 1`;
+}
+
+/**
+ * A valid, distinct FEN whose BOARD field varies (8XN-4 collapsed the shared
+ * `maiaPolicyCache` key to the first four FEN fields, so a fullmove-only
+ * variant is no longer a distinct key — and `handleResult` runs
+ * `maskAndSoftmaxUci` on `msg.fen`, which needs a chess.js-parseable,
+ * legal-move-having position). Enumerates non-adjacent (white king, black
+ * king) square pairs in a fixed deterministic order — roughly 3600 such
+ * pairs, comfortably past `MAIA_POLICY_CACHE_MAX + 1`.
+ */
 function fenVariant(n: number): string {
-  return `rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 ${n + 1}`;
+  let count = 0;
+  for (const whiteSq of ALL_SQUARES) {
+    for (const blackSq of ALL_SQUARES) {
+      if (whiteSq === blackSq || kingChebyshevDistance(whiteSq, blackSq) <= 1) continue;
+      if (count === n) return kingsOnlyFen(whiteSq, blackSq);
+      count += 1;
+    }
+  }
+  throw new Error(`fenVariant: exhausted king-pair space before reaching index ${n}`);
 }
 
 // ─── Tests ───────────────────────────────────────────────────────────────────
@@ -273,6 +334,25 @@ describe('createMaiaQueue', () => {
     await p2;
 
     expect(analyzeMessages(lease)).toHaveLength(2);
+  });
+
+  // ─── 8XN-4: position-keyed cache (halfmove/fullmove-counter-insensitive) ──
+
+  it('resolves a second policy() call for the same position under different halfmove/fullmove counters from cache, with zero analyze() calls', async () => {
+    const queue = createMaiaQueue();
+    const fenCounterVariant = TEST_FEN.replace(' e3 0 1', ' e3 12 40');
+    expect(fenCounterVariant).not.toBe(TEST_FEN);
+
+    const p1 = queue.policy(TEST_FEN, 1500, 'w');
+    const lease = createdLeases[0]!;
+    await driveReady(lease);
+    await resolveLatest(lease, TEST_FEN, [1500]);
+    await p1;
+
+    const analyzeCountBefore = analyzeMessages(lease).length;
+    const result = await queue.policy(fenCounterVariant, 1500, 'w');
+    expect(analyzeMessages(lease).length).toBe(analyzeCountBefore); // no second analyze() call
+    expect(getCachedPolicy(fenCounterVariant, 1500)).toEqual(result);
   });
 
   it(
@@ -437,6 +517,84 @@ describe('createMaiaQueue', () => {
     await Promise.resolve();
 
     await expect(p1).resolves.toEqual({});
+  });
+
+  // ─── 8XN-2: policy() AbortSignal ────────────────────────────────────────
+
+  describe('8XN-2: policy() AbortSignal', () => {
+    it('an abort before the lease is ready resolves {}, and zero analyze() calls are issued after driveReady', async () => {
+      const queue = createMaiaQueue();
+      const controller = new AbortController();
+      const p = queue.policy(TEST_FEN, 1500, 'w', controller.signal);
+      controller.abort();
+
+      const lease = createdLeases[0]!;
+      await driveReady(lease);
+      await expect(p).resolves.toEqual({});
+      expect(analyzeMessages(lease)).toHaveLength(0);
+    });
+
+    it('two same-FEN requests at different ELOs where one aborts before dispatch: the single analyze() call carries only the live ELO, which resolves with the real distribution', async () => {
+      const queue = createMaiaQueue();
+      const liveController = new AbortController();
+      const abortedController = new AbortController();
+      const pLive = queue.policy(TEST_FEN, 1200, 'w', liveController.signal);
+      const pAborted = queue.policy(TEST_FEN, 1800, 'w', abortedController.signal);
+      abortedController.abort(); // removed from `pending` before the lease is even ready
+
+      await expect(pAborted).resolves.toEqual({});
+
+      const lease = createdLeases[0]!;
+      await driveReady(lease);
+      await resolveLatest(lease, TEST_FEN, [1200]);
+
+      expect(analyzeMessages(lease)).toEqual([{ fen: TEST_FEN, eloInputs: [1200] }]);
+      const liveResult = await pLive;
+      expect(Object.keys(liveResult).length).toBeGreaterThan(0); // a real, non-empty distribution
+      expect(getCachedPolicy(TEST_FEN, 1200)).toEqual(liveResult);
+    });
+
+    it('an abort after dispatch changes nothing: the promise stays unresolved until resolveLatest, then resolves with the real distribution, and getCachedPolicy sees it', async () => {
+      const queue = createMaiaQueue();
+      const controller = new AbortController();
+      const p = queue.policy(TEST_FEN, 1500, 'w', controller.signal);
+      const lease = createdLeases[0]!;
+      await driveReady(lease); // dispatches synchronously via the microtask hop — request now out of `pending`
+
+      controller.abort(); // already dispatched — must be a no-op
+
+      await resolveLatest(lease, TEST_FEN, [1500]);
+
+      const result = await p;
+      expect(Object.keys(result).length).toBeGreaterThan(0); // a real, non-empty distribution — never {}
+      expect(getCachedPolicy(TEST_FEN, 1500)).toEqual(result);
+    });
+
+    it('a signal already aborted at call time with no cache entry resolves {} with no analyze() call', async () => {
+      const queue = createMaiaQueue();
+      const controller = new AbortController();
+      controller.abort();
+
+      const p = queue.policy(TEST_FEN, 1500, 'w', controller.signal);
+      await expect(p).resolves.toEqual({});
+      expect(createdLeases).toHaveLength(0); // never even acquired a lease
+    });
+
+    it('join path: an abort does not cancel the chart-owned pending entry — a later setCachedPolicy still resolves the engine promise', async () => {
+      markPolicyPending(TEST_FEN, 1500);
+      const waiterBeforeAbort = getPendingPolicy(TEST_FEN, 1500);
+      const queue = createMaiaQueue();
+      const controller = new AbortController();
+      const p = queue.policy(TEST_FEN, 1500, 'w', controller.signal);
+
+      controller.abort();
+
+      // The chart's own pending entry is untouched by the engine's abort.
+      expect(getPendingPolicy(TEST_FEN, 1500)).toBe(waiterBeforeAbort);
+
+      setCachedPolicy(TEST_FEN, 1500, { e2e4: 0.5, d2d4: 0.5 });
+      await expect(p).resolves.toEqual({ e2e4: 0.5, d2d4: 0.5 });
+    });
   });
 
   // ─── Contract shape ─────────────────────────────────────────────────────

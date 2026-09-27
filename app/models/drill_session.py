@@ -94,6 +94,14 @@ class DrillSession(Base):
     # even if the ES lottery lands material in between. Written and read in
     # plan 03; this plan (206-01) only adds the column.
     is_warmup: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="false")
+    # First time the user pressed Start/Resume on this session (first-write-wins).
+    # Needed because /train composes and persists a session on page mount as a
+    # status read, so a row alone does not mean the user ever entered the
+    # solve loop. NULL on rows from before the column existed (no backfill);
+    # the activity dashboard's first-session funnel gates on MIN(entered_at).
+    entered_at: Mapped[datetime.datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
 
 
 __all__ = ["DrillSession"]

@@ -16,6 +16,7 @@
 
 import { useRef, useState, useCallback, useEffect } from 'react';
 import * as Sentry from '@sentry/react';
+import { workerErrorContext } from '@/lib/engine/workerErrorContext';
 import { parseInfoLine } from './uciParser';
 import type { PvLine } from './uciParser';
 import {
@@ -391,9 +392,10 @@ export function useStockfishEngine({
       // onerror). Without this handler such a failure was completely
       // invisible: no Sentry event, `isReady` never became `true`, and the
       // shared 'stockfish-wasm' asset store never learned about it either.
-      worker.onerror = () => {
+      worker.onerror = (event: ErrorEvent) => {
         Sentry.captureException(new Error('Stockfish engine worker: worker load failure'), {
           tags: { source: 'stockfish-engine' },
+          contexts: { worker_error: workerErrorContext(event) },
         });
         markEngineAssetFailed('stockfish-wasm');
       };

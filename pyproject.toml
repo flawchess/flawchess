@@ -110,43 +110,64 @@ extend-exclude = ["analysis/tilt_study/probes"]
 # future ruff release; adopting a new rule category is a deliberate future
 # decision, not an accident of a patch bump.
 select = ["E4", "E7", "E9", "F"]
-extend-select = ["C901", "PLR0912", "PLR0915"]
+# Ruff's complexity-count rules (cyclomatic/branch/statement counters) are deliberately
+# not enabled: nesting depth (scripts/check_function_size.py) is the only hard
+# complexity gate this project runs (quick 260926-evd, D-03).
+#
+# TID251, B, ASYNC and DTZ were adopted deliberately on 2026-09-26 (quick 260926-evd),
+# scoped per the per-file-ignores comment below.
+extend-select = ["TID251", "B", "ASYNC", "DTZ"]
 
-[tool.ruff.lint.mccabe]
-max-complexity = 15
+[tool.ruff.lint.flake8-tidy-imports.banned-api]
+"requests" = { msg = "blocks the event loop, use httpx.AsyncClient" }
+"berserk" = { msg = "use httpx.AsyncClient against the lichess API" }
+# datetime's `now`/`utcnow` are NOT banned here: tz-aware `datetime.now(timezone.utc)`
+# has legitimate use (app/middleware/last_activity.py, import-job and eval-lease code);
+# the naive form is caught by DTZ005 once DTZ is enabled below, and the
+# endpoint-only dev_now_utc convention is not expressible as an API ban.
 
-[tool.ruff.lint.pylint]
-max-branches = 12
-max-statements = 100
+[tool.ruff.lint.flake8-bugbear]
+# FastAPI's dependency-injection defaults are re-evaluated per-request by FastAPI
+# itself, not shared mutable state, so B008 (function-call-in-default-argument) is
+# a false positive for these. Clears ~60 pre-existing findings.
+extend-immutable-calls = [
+    "fastapi.Depends",
+    "fastapi.Query",
+    "fastapi.Path",
+    "fastapi.Body",
+    "fastapi.Header",
+    "fastapi.Cookie",
+    "fastapi.Security",
+    "fastapi.Form",
+    "fastapi.File",
+]
 
 [tool.ruff.lint.per-file-ignores]
 "app/models/*.py" = ["F821"]  # SQLAlchemy forward references in relationship() strings
 "alembic/versions/*.py" = ["F401"]  # Alembic auto-imports sa/op that may appear unused
-# Phase 214 baseline (measured 2026-09-02, ruff 0.15.15: 35 findings, 14 files) — each
-# entry is deleted by the plan that fixes that file. All six in-scope files (plans
-# 214-02..214-07) are now clean; only out-of-scope entries remain below.
-# Out of Phase 214 scope (stay until a future phase touches them):
-"app/main.py" = ["PLR0912"]
-"app/repositories/query_utils.py" = ["C901", "PLR0912"]
-"app/repositories/openings_repository.py" = ["PLR0912"]
-"app/services/chesscom_client.py" = ["C901", "PLR0912"]
-"app/services/library_service.py" = ["C901", "PLR0912"]
-"app/services/lichess_client.py" = ["C901", "PLR0912"]
-"app/services/normalization.py" = ["PLR0912"]
-"app/services/position_classifier.py" = ["C901", "PLR0912"]
-# Outside app/ entirely — `ruff check .` scans the whole repo, so these also need a
-# baseline entry to keep the gate green project-wide (measured 2026-09-02, 17 findings,
-# 10 files: alembic/, analysis/, scripts/). Not part of Phase 214's six in-scope files.
-"alembic/versions/20260403_203535_adfafb71bacc_repair_bookmark_fens_and_target_hashes.py" = ["C901", "PLR0912"]
-"analysis/engine_disagreement_study/seed153_tail_analysis.py" = ["C901", "PLR0912", "PLR0915"]
-"scripts/archive/backfill_best_move_pv.py" = ["PLR0912"]
-"scripts/archive/backfill_eval.py" = ["PLR0912"]
-"scripts/backfill_flaws.py" = ["C901", "PLR0912"]
-"scripts/engine_disagreement_study/seed153_verify_manifest.py" = ["PLR0912"]
-"scripts/import_benchmark_users.py" = ["C901", "PLR0912"]
-"scripts/import_stress_monitor.py" = ["PLR0912"]
-"scripts/retag_flaws.py" = ["C901", "PLR0912"]
-"scripts/two_pawns_up/gen_report_v2.py" = ["C901", "PLR0912"]
+# B, ASYNC and DTZ target app/ code (Quick 260926-evd, D-02). scripts/, analysis/ and
+# alembic/ ignore all three (CLI/research/migration code: blocking file I/O and naive
+# local dates are fine there, zip over known-equal sequences is noise). tests/ ignores
+# ASYNC, DTZ and B905 (async tests do blocking fixture I/O by design; naive fixture
+# datetimes; zip over fixture pairs), but bugbear otherwise stays on for tests because
+# B017/B904/B007 catch real test bugs. TID251 applies everywhere (no ignore needed).
+"scripts/**" = ["B", "ASYNC", "DTZ"]
+"analysis/**" = ["B", "ASYNC", "DTZ"]
+"alembic/**" = ["B", "ASYNC", "DTZ"]
+"tests/**" = ["ASYNC", "DTZ", "B905"]
+# Quick 260926-evd baseline (measured 2026-09-26, ruff 0.16.6): pre-existing findings
+# in newly adopted categories. Delete an entry when its file is fixed; never add one
+# for new code.
+"tests/repositories/test_opening_insights_repository.py" = ["B007"]
+"tests/services/test_push_crypto.py" = ["B017"]
+"tests/test_eval_worker_endpoints.py" = ["B017"]
+"tests/test_main_lifespan.py" = ["B904"]
+# The setattr calls deliberately bypass ty: converting to plain attribute assignment
+# was verified to produce a ty invalid-assignment error on the alembic.context proxy,
+# so never autofix this entry.
+"tests/test_alembic_autogen_filter.py" = ["B010"]
+"app/services/engine.py" = ["ASYNC109"]
+"app/services/normalization.py" = ["DTZ007"]
 
 [tool.ty.environment]
 # Scripts in scripts/ are run as `python scripts/foo.py`, so sibling modules

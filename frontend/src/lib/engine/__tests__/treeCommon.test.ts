@@ -16,12 +16,16 @@
 
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { Chess } from 'chess.js';
+import type { MoverColor } from '@/lib/liveFlaw';
 import {
   sideMatchesMover,
   buildSnapshot,
   modalPathBuilder,
   cloneRankedLineWith,
   applyRootCandidateHardCap,
+  applyUciMoveFen,
+  terminalValue,
+  expandChildPositions,
   type SearchTreeNode,
 } from '../treeCommon';
 import { mctsSearch } from '../mctsSearch';
@@ -43,6 +47,82 @@ describe('sideMatchesMover', () => {
 
   it("'w' does NOT match 'black'", () => {
     expect(sideMatchesMover('w', 'black')).toBe(false);
+  });
+});
+
+// ─── expandChildPositions parity with applyUciMoveFen + terminalValue (8XN-3) ──
+//
+// Fixtures verified against chess.js in a planning-time script (see the
+// PLAN.md context and `expandChildPositions`'s own doc comment): each covers
+// a distinct chess.js move-application edge case (en passant, promotion,
+// castling, mate, stalemate, fifty-move draw) so the shared-instance
+// move/fen/undo path is exercised against the exact behaviors that could
+// silently diverge from a fresh `new Chess(childFen)` per candidate.
+
+interface TreeCommonFixture {
+  name: string;
+  fen: string;
+  rootMover: MoverColor;
+}
+
+const TREE_COMMON_FIXTURES: TreeCommonFixture[] = [
+  {
+    name: 'en passant',
+    fen: 'rnbqkbnr/ppp1pppp/8/8/3pP3/8/PPPP1PPP/RNBQKBNR b KQkq e3 0 3',
+    rootMover: 'black',
+  },
+  { name: 'promotion', fen: '8/P3k3/8/8/8/8/8/4K3 w - - 0 1', rootMover: 'white' },
+  { name: 'castling', fen: 'r3k2r/8/8/8/8/8/8/R3K2R w KQkq - 0 1', rootMover: 'white' },
+  { name: 'mate-in-1 candidate', fen: '6k1/5ppp/8/8/8/8/8/4R2K w - - 0 1', rootMover: 'white' },
+  { name: 'stalemating candidate', fen: '7k/8/5KP1/8/8/8/8/8 w - - 0 1', rootMover: 'white' },
+  { name: 'fifty-move draw', fen: '4k3/8/8/8/8/8/4K3/8 w - - 99 60', rootMover: 'white' },
+];
+
+/** King+pawn ending, White to move — mirrors mctsSearch.test.ts's SIMPLE_WHITE_FEN. */
+const SIMPLE_WHITE_FEN_FOR_PARITY = '4k3/8/8/8/8/8/4P3/4K3 w - - 0 1';
+
+function legalUcisFor(fen: string): string[] {
+  const chess = new Chess(fen);
+  return chess.moves({ verbose: true }).map((m) => `${m.from}${m.to}${m.promotion ?? ''}`);
+}
+
+describe('expandChildPositions parity with applyUciMoveFen + terminalValue (8XN-3)', () => {
+  for (const fixture of TREE_COMMON_FIXTURES) {
+    it(`matches per-candidate applyUciMoveFen + terminalValue for every legal UCI — ${fixture.name}`, () => {
+      const ucis = legalUcisFor(fixture.fen);
+      expect(ucis.length).toBeGreaterThan(0);
+
+      const positions = expandChildPositions(fixture.fen, ucis, fixture.rootMover);
+
+      expect(positions.size).toBe(ucis.length);
+      for (const uci of ucis) {
+        const expectedFen = applyUciMoveFen(fixture.fen, uci);
+        expect(expectedFen).not.toBeNull();
+        const expectedTerminal = terminalValue(expectedFen as string, fixture.rootMover);
+        expect(positions.get(uci)).toEqual({ fen: expectedFen, terminal: expectedTerminal });
+      }
+    });
+  }
+
+  it('key order equals input order minus drops', () => {
+    const ucis = ['e2e4', 'zz', 'e2e3', 'e7e5', 'e1d2'];
+    const positions = expandChildPositions(SIMPLE_WHITE_FEN_FOR_PARITY, ucis, 'white');
+
+    // 'zz' is malformed and 'e7e5' is a BLACK move (illegal from a white-to-move
+    // FEN) — both absent; the surviving keys keep their relative input order.
+    expect([...positions.keys()]).toEqual(['e2e4', 'e2e3', 'e1d2']);
+  });
+
+  it('an illegal UCI (move for the side not to move) is absent from the map', () => {
+    const positions = expandChildPositions(SIMPLE_WHITE_FEN_FOR_PARITY, ['e7e5'], 'white');
+    expect(positions.has('e7e5')).toBe(false);
+    expect(positions.size).toBe(0);
+  });
+
+  it('a malformed UCI is absent from the map', () => {
+    const positions = expandChildPositions(SIMPLE_WHITE_FEN_FOR_PARITY, ['zz'], 'white');
+    expect(positions.has('zz')).toBe(false);
+    expect(positions.size).toBe(0);
   });
 });
 

@@ -24,6 +24,7 @@ from app.repositories import (
 from app.repositories.user_import_settings_repository import _import_scope_expanded
 from app.schemas.admin import ImpersonationContext
 from app.schemas.users import (
+    FirstTouchRequest,
     GameCountResponse,
     ImportSettingsResponse,
     ImportSettingsUpdate,
@@ -34,6 +35,11 @@ from app.services.current_strength_service import resolve_current_strength_for_u
 from app.users import current_active_user
 
 router = APIRouter(prefix="/users", tags=["users"])
+
+# POST /me/first-touch only attributes accounts created this recently. The client
+# submits right after guest start / register / Google sign-in, so seconds is the
+# norm; the margin covers a slow OAuth round-trip or a flaky first request.
+FIRST_TOUCH_MAX_ACCOUNT_AGE = datetime.timedelta(hours=1)
 
 # Matches the audience baked into JWTStrategy (FastAPI-Users default).
 _JWT_AUDIENCE = ["fastapi-users:auth"]
@@ -199,6 +205,28 @@ async def update_import_settings(
         tc_classical=settings_row.tc_classical,
         game_cap=settings_row.game_cap,
         imported_counts=imported_counts,
+    )
+
+
+@router.post("/me/first-touch", status_code=204)
+async def record_first_touch(
+    body: FirstTouchRequest,
+    session: Annotated[AsyncSession, Depends(get_async_session)],
+    user: Annotated[User, Depends(current_active_user)],
+    now_utc: Annotated[datetime.datetime, Depends(dev_now_utc)],
+) -> None:
+    """Record where this new account's browser first arrived from (growth item 16).
+
+    Always 204: a repeat call, or a call for an account older than
+    FIRST_TOUCH_MAX_ACCOUNT_AGE, is a silent no-op so the client can fire once
+    after any sign-in without knowing whether the account is new.
+    """
+    await user_repository.record_first_touch(
+        session,
+        user.id,
+        # exclude_none keeps the stored object to the keys that carry a value.
+        first_touch=body.model_dump(exclude_none=True),
+        created_after=now_utc - FIRST_TOUCH_MAX_ACCOUNT_AGE,
     )
 
 

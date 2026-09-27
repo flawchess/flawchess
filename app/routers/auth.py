@@ -214,10 +214,12 @@ async def google_callback(
     # Fail fast on bad state/CSRF without wasting an external API call.
     try:
         state_data = decode_jwt(state, settings.SECRET_KEY, [_OAUTH_STATE_AUDIENCE])
-    except Exception:
+    except Exception as exc:
         sentry_sdk.set_tag("source", "auth")
         sentry_sdk.capture_exception()
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid OAuth state")
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid OAuth state"
+        ) from exc
 
     # Validate CSRF double-submit cookie (CVE-2025-68481 fix)
     # The authorize endpoint set this cookie; the callback must confirm they match.
@@ -276,7 +278,7 @@ async def google_callback(
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="User already exists with a different OAuth account",
-        )
+        ) from None
 
     if not user.is_active:
         raise HTTPException(
@@ -411,10 +413,12 @@ async def google_callback_promote(
     # login state JWTs against this callback (and vice versa).
     try:
         state_data = decode_jwt(state, settings.SECRET_KEY, [_OAUTH_PROMOTE_STATE_AUDIENCE])
-    except Exception:
+    except Exception as exc:
         sentry_sdk.set_tag("source", "auth")
         sentry_sdk.capture_exception()
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid OAuth state")
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid OAuth state"
+        ) from exc
 
     # Validate CSRF double-submit cookie
     cookie_csrf = request.cookies.get(_CSRF_COOKIE)
@@ -487,13 +491,13 @@ async def google_callback_promote(
             url=f"{frontend_base}/auth/callback#error=EMAIL_ALREADY_REGISTERED",
             status_code=status.HTTP_302_FOUND,
         )
-    except Exception:
+    except Exception as exc:
         sentry_sdk.set_tag("source", "auth")
         sentry_sdk.capture_exception()
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Promotion failed",
-        )
+        ) from exc
 
     # Update last_login on the same session (promotion already committed it)
     await session.execute(
@@ -525,5 +529,5 @@ async def promote_guest_email(
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail="EMAIL_ALREADY_REGISTERED",
-        )
+        ) from None
     return GuestPromoteResponse(access_token=token, token_type="bearer")

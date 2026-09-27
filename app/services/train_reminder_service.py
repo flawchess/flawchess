@@ -68,8 +68,10 @@ _REMINDER_TICK_INTERVAL_SECONDS = 15 * 60
 #: a device that was offline and receives a backlog shows one notification.
 REMINDER_NOTIFICATION_TAG = "train-reminder"
 
-#: D-13: notificationclick opens/focuses this path.
-REMINDER_TARGET_PATH = "/train"
+#: D-13: notificationclick opens/focuses this path. The utm_* tags make reminder
+#: clicks visible in Umami: without them a click landed as a bare /train pageview,
+#: indistinguishable from direct traffic, so reminder effectiveness was unmeasurable.
+REMINDER_TARGET_PATH = "/train?utm_source=push&utm_medium=notification&utm_campaign=train-reminder"
 
 REMINDER_TITLE = "Time to train"
 

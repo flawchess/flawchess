@@ -433,7 +433,9 @@ class TestComputeFindingsLayering:
             except Exception:
                 pass
             second_kwargs = mocked.await_args_list[1].kwargs
-            expected_from_date = datetime.date.today() - datetime.timedelta(days=90)
+            expected_from_date = datetime.datetime.now(datetime.UTC).date() - datetime.timedelta(
+                days=90
+            )
             assert second_kwargs["from_date"] == expected_from_date
             assert second_kwargs["to_date"] is None
 

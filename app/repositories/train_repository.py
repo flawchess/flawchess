@@ -902,6 +902,38 @@ async def expire_stale_sessions(
     )
 
 
+async def stamp_session_entered(
+    session: AsyncSession, *, user_id: int, session_id: int, now_utc: datetime.datetime
+) -> bool:
+    """Stamp `entered_at` the first time the user presses Start/Resume.
+
+    First-write-wins: a replayed or concurrent call never moves an existing
+    stamp. Scoped to `user_id` so another user's session id is a miss.
+
+    Args:
+        session: AsyncSession. Caller commits.
+        user_id: Authenticated user's internal PK (V4: never client-supplied).
+        session_id: The `drill_sessions` row to stamp.
+        now_utc: The current UTC instant (from the `dev_now_utc` dependency).
+
+    Returns:
+        False when the session does not exist or belongs to another user.
+    """
+    owned = await session.scalar(
+        select(DrillSession.id).where(
+            DrillSession.id == session_id, DrillSession.user_id == user_id
+        )
+    )
+    if owned is None:
+        return False
+    await session.execute(
+        update(DrillSession)
+        .where(DrillSession.id == session_id, DrillSession.entered_at.is_(None))
+        .values(entered_at=now_utc)
+    )
+    return True
+
+
 async def open_session_for_user(session: AsyncSession, *, user_id: int) -> DrillSession | None:
     """Return the user's single `status='open'` `drill_sessions` row, or None.
 

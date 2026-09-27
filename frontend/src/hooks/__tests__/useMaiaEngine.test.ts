@@ -21,6 +21,7 @@
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { renderHook, act } from '@testing-library/react';
+import * as Sentry from '@sentry/react';
 import { useMaiaEngine } from '../useMaiaEngine';
 import { MAIA_ELO_LADDER, POLICY_VOCAB_SIZE } from '../../lib/maiaEncoding';
 import { acquireMaiaWorker } from '../../lib/engine/maiaWorkerHost';
@@ -30,6 +31,8 @@ import { getCachedPolicy, getPendingPolicy, clearMaiaPolicyCache } from '../../l
 vi.mock('../../lib/engine/maiaWorkerHost', () => ({
   acquireMaiaWorker: vi.fn(),
 }));
+
+vi.mock('@sentry/react', () => ({ captureException: vi.fn() }));
 
 // ─── Fake lease ────────────────────────────────────────────────────────────
 
@@ -421,6 +424,41 @@ describe('useMaiaEngine', () => {
     });
     await expect(waiter).rejects.toThrow('worker died');
     expect(getPendingPolicy(TEST_FEN, 1550)).toBeUndefined();
+  });
+
+  // ─── 8XN-1: throw in the fulfilment handler fails pending entries, not just a rejection ──
+
+  it('a throw inside the fulfilment handler (malformed rung) fails its pending policy entries, reports to Sentry once, and returns isAnalyzing to false', async () => {
+    vi.advanceTimersByTime(200);
+    const { result } = renderHook(() => useMaiaEngine({ fen: TEST_FEN, enabled: true, selectedElo: 1550 }));
+    await driveReady(currentLease);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(200);
+    });
+    const waiter = getPendingPolicy(TEST_FEN, 1550);
+    expect(waiter).toBeInstanceOf(Promise);
+    expect(result.current.isAnalyzing).toBe(true);
+
+    // A malformed rung: softmaxPolicyByContext reads `policy[idx]` and throws
+    // on a null policy array — this stands in for the realistic ONNX-output
+    // shape drift the fix guards against.
+    await act(async () => {
+      currentLease.latestAnalyzeCall()?.resolve({
+        fen: TEST_FEN,
+        rawPolicyByElo: [{ elo: 1550, policy: null as unknown as Float32Array }],
+        wdlByElo: [],
+        backend: 'wasm',
+      });
+      await Promise.resolve();
+    });
+
+    await expect(waiter).rejects.toThrow();
+    expect(getPendingPolicy(TEST_FEN, 1550)).toBeUndefined();
+    expect(Sentry.captureException).toHaveBeenCalledTimes(1);
+    expect(Sentry.captureException).toHaveBeenCalledWith(expect.any(Error), {
+      tags: { source: 'maia-chart' },
+    });
+    expect(result.current.isAnalyzing).toBe(false);
   });
 
   it('rapid successive FEN changes coalesce — only the final FEN is analyzed', async () => {

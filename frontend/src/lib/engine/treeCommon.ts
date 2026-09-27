@@ -190,13 +190,30 @@ export function applyRootCandidateHardCap(
 }
 
 /**
- * Fixed root-relative terminal value (Pitfall 6): checkmate is 1.0 when the
- * checkmated side is NOT `rootMover` (the root player delivered mate), 0.0
- * when it IS; stalemate/insufficient-material/threefold/draw is
- * DRAW_EXPECTED_SCORE. Returns null when `fen` is not a game-over position.
+ * Converts a UCI move string into the chess.js move argument shape. Single
+ * private normalization point (8XN-3) shared by `applyUciMoveFen` and
+ * `expandChildPositions` so the two can never diverge on how a UCI is parsed
+ * into a `{from, to, promotion}` move object.
  */
-export function terminalValue(fen: string, rootMover: MoverColor): number | null {
-  const chess = new Chess(fen);
+function uciToMoveArgs(uci: string): { from: string; to: string; promotion: string | undefined } {
+  const squares = uciToSquares(uci);
+  return {
+    from: squares?.from ?? uci.slice(0, 2),
+    to: squares?.to ?? uci.slice(2, 4),
+    promotion: uci.length > 4 ? uci[4] : undefined,
+  };
+}
+
+/**
+ * Root-relative terminal value (Pitfall 6) computed from an ALREADY-POSITIONED
+ * chess.js instance: checkmate is 1.0 when the checkmated side is NOT
+ * `rootMover` (the root player delivered mate), 0.0 when it IS;
+ * stalemate/insufficient-material/threefold/draw is DRAW_EXPECTED_SCORE.
+ * Returns null when `chess`'s current position is not game-over. Single copy
+ * of this sign logic (WR-06) — `terminalValue` and `expandChildPositions`
+ * both route through it.
+ */
+function terminalValueFromChess(chess: Chess, rootMover: MoverColor): number | null {
   if (!chess.isGameOver()) return null;
   if (chess.isCheckmate()) {
     // The side to move in a mated position IS the checkmated side —
@@ -205,6 +222,17 @@ export function terminalValue(fen: string, rootMover: MoverColor): number | null
     return checkmatedSide === rootMover ? 0 : 1;
   }
   return DRAW_EXPECTED_SCORE;
+}
+
+/**
+ * Fixed root-relative terminal value (Pitfall 6) for a `fen` string. Thin
+ * wrapper over `terminalValueFromChess` — kept exported and by-FEN because
+ * both `SearchRunner` implementations' `createRoot`/`createChildNode` call it
+ * with only a FEN in hand, not a live `Chess` instance (WR-06: keep ONE copy
+ * of the sign logic, not one per call shape).
+ */
+export function terminalValue(fen: string, rootMover: MoverColor): number | null {
+  return terminalValueFromChess(new Chess(fen), rootMover);
 }
 
 /**
@@ -220,18 +248,64 @@ export function terminalValue(fen: string, rootMover: MoverColor): number | null
  * partially consumed. Callers skip null (a deterministic drop, not a crash).
  */
 export function applyUciMoveFen(fen: string, uci: string): string | null {
-  const squares = uciToSquares(uci);
   const chess = new Chess(fen);
   try {
-    chess.move({
-      from: squares?.from ?? uci.slice(0, 2),
-      to: squares?.to ?? uci.slice(2, 4),
-      promotion: uci.length > 4 ? uci[4] : undefined,
-    });
+    chess.move(uciToMoveArgs(uci));
   } catch {
     return null;
   }
   return chess.fen();
+}
+
+/**
+ * Batched sibling of `applyUciMoveFen` + `terminalValue` (8XN-3): builds ONE
+ * `new Chess(parentFen)` and reuses it for every candidate UCI (move -> fen +
+ * terminal -> undo), instead of `applyExpansion`'s previous per-candidate
+ * `new Chess(parentFen)` construction. Values are bit-identical to calling
+ * `applyUciMoveFen` + `terminalValue` per UCI:
+ *
+ *   - chess.js 1.4.0's `undo`/`_undoMove` (`dist/esm/chess.js` ~2675-2700)
+ *     restores every FEN field (turn, castling, ep square, halfmove,
+ *     fullmove) and decrements the position-repetition count
+ *     (`_decPositionCount`, ~3272), so the instance is byte-identical to its
+ *     pre-move state for the next iteration.
+ *   - A position built via one `move()` off a loaded FEN has position count 1
+ *     for that position, same as `new Chess(childFen)` would report — `_moves`
+ *     (~2354) never reads `_halfMoves`/`_moveNumber` and `isThreefoldRepetition`
+ *     (~2330) only ever sees count 1 either way, so threefold cannot fire from
+ *     the shared instance when it would not fire from a fresh one.
+ *   - The halfmove clock and legal-move generation chess.js computes from the
+ *     moved instance match a fresh `new Chess(childFen)` exactly, because both
+ *     start from the same parent FEN fields and apply the same move.
+ *
+ * A planning-time script verified this empirically: 146 moves across en
+ * passant, promotion, castling, mate and fifty-move FENs, shared-instance
+ * move/fen/undo matched fresh `new Chess(childFen)` on fen(), isGameOver(),
+ * isCheckmate() and turn() with 0 mismatches.
+ *
+ * An illegal UCI (a move for the side not to move) or a malformed UCI is
+ * simply absent from the returned map (WR-07 deterministic drop, mirrors
+ * `applyUciMoveFen`'s null return) — callers must check `.has()`/`.get()`.
+ */
+export function expandChildPositions(
+  parentFen: string,
+  ucis: Iterable<string>,
+  rootMover: MoverColor,
+): Map<string, { fen: string; terminal: number | null }> {
+  const chess = new Chess(parentFen);
+  const positions = new Map<string, { fen: string; terminal: number | null }>();
+  for (const uci of ucis) {
+    try {
+      chess.move(uciToMoveArgs(uci));
+    } catch {
+      continue; // illegal/malformed provider candidate — deterministic drop (WR-07)
+    }
+    const fen = chess.fen();
+    const terminal = terminalValueFromChess(chess, rootMover);
+    chess.undo();
+    positions.set(uci, { fen, terminal });
+  }
+  return positions;
 }
 
 /** Recomputes `node.value` from its CURRENT children set (D-01/D-02): max at root, prior-weighted expectation otherwise. */

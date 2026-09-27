@@ -118,7 +118,7 @@ async def start_import(
             username=request.username,
         )
         await session.commit()
-    except IntegrityError:
+    except IntegrityError as integrity_exc:
         await session.rollback()
         # This request's in-memory JobState never got a background task
         # scheduled — discard it so it doesn't linger as a permanently-stuck
@@ -144,7 +144,7 @@ async def start_import(
                 "active row was found on re-fetch"
             )
             sentry_sdk.capture_exception(exc)
-            raise exc
+            raise exc from integrity_exc
         response.status_code = 200
         # ImportJob.status is a DB column typed Mapped[str] (SURGE-04/D-03: "queued"
         # is in-memory only and never written to this column, so the DB value is

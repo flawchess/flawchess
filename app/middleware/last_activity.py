@@ -1,6 +1,7 @@
 """Middleware to track last_activity on authenticated requests.
 
-Updates the users.last_activity column at most once per hour per user.
+Updates the users.last_activity column at most once per hour per user (plus
+one write on the first request of each new UTC day).
 Uses an in-memory cache to avoid any DB hit during the throttle window,
 and a single conditional UPDATE (no SELECT) when the window expires.
 
@@ -78,8 +79,7 @@ class LastActivityMiddleware:
 
         try:
             now = datetime.now(timezone.utc)
-            last = _last_updated.get(user_id)
-            if last is not None and (now - last) < _ACTIVITY_THROTTLE:
+            if not _throttle_expired(_last_updated.get(user_id), now):
                 return
 
             # Claim the throttle slot BEFORE the first `await` below. The gate read
@@ -121,6 +121,18 @@ class LastActivityMiddleware:
         except Exception:
             # Never let activity tracking break a request
             logger.debug("Failed to update last_activity for user %s", user_id, exc_info=True)
+
+
+def _throttle_expired(last: datetime | None, now: datetime) -> bool:
+    """Whether a request at `now` should write, given the previous write at `last`.
+
+    The UTC day check is a bug fix: with only the 1-hour window, a user active at
+    23:40 UTC who stopped before ~00:40 got no user_activity row for the new day,
+    so DAU/stickiness undercounted sessions straddling midnight UTC (US evening).
+    """
+    if last is None:
+        return True
+    return (now - last) >= _ACTIVITY_THROTTLE or now.date() != last.date()
 
 
 def _extract_user_id_and_impersonation(request: Request) -> tuple[int | None, bool]:

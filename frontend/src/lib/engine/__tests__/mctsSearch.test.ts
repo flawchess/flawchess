@@ -725,6 +725,32 @@ describe('mctsSearch — abort', () => {
     }
   });
 
+  it('8XN-2: every providers.policy() call receives the search\'s own AbortSignal, by reference, as its 4th argument', async () => {
+    const controller = new AbortController();
+    const budget: SearchBudget = { maxNodes: 5, elo: NEUTRAL_BUDGET_ELO, maxPlies: 3, concurrency: 1 };
+    const policyCalls: (AbortSignal | undefined)[] = [];
+    const providers: EngineProviders = {
+      policy: async (fen, elo, side, signal) => {
+        policyCalls.push(signal);
+        return (fen === SIMPLE_WHITE_FEN ? SIMPLE_WHITE_POLICY : uniformPolicyFromLegalMoves(fen)) as Record<
+          string,
+          number
+        >;
+      },
+      grade: makeFixedGrade({ [SIMPLE_WHITE_FEN]: SIMPLE_WHITE_GRADES }),
+    };
+
+    await mctsSearch(SIMPLE_WHITE_FEN, budget, providers, () => {}, controller.signal);
+
+    expect(policyCalls.length).toBeGreaterThan(0);
+    for (const signal of policyCalls) {
+      // Reference identity (not merely "defined") — same rationale as the
+      // grade() signal check above: maiaQueue's abort listener must see THIS
+      // search's real controller, not a lookalike.
+      expect(signal).toBe(controller.signal);
+    }
+  });
+
   it('LADDER-02: every providers.grade() call receives a resolved grading-depth 4th argument, never undefined', async () => {
     const controller = new AbortController();
     // Budget sized so the tree actually descends past the ladder table's
@@ -817,6 +843,104 @@ describe('mctsSearch — degenerate empty candidate set', () => {
     expect(gradeCalls).toEqual([]); // grade() never sees candidateUcis: []
     expect(snapshot.nodesEvaluated).toBe(0); // D-09: nothing was expanded
     expect(snapshot.rankedLines).toEqual([]);
+  });
+});
+
+// ─── 8XN-7: non-abort empty grade() Map closes the leaf as a dead end ───────
+//
+// Before this fix, `applyExpansion` created every candidate child at
+// NEUTRAL_EXPECTED_SCORE whenever `grade()` resolved an empty Map for a
+// non-empty candidate set (the pool's watchdog/dead-pool/no-live-slot
+// fallback) — fabricated 0.5 grades that then backed up into ancestor
+// values. The revert proof for this describe block is recorded in
+// 260927-8xn-SUMMARY.md: temporarily deleting the guard in
+// `dispatchExpansion` makes the non-root case below fail (practicalScore
+// becomes NEUTRAL_EXPECTED_SCORE-derived instead of the real grade), while
+// the root-exemption case keeps passing either way.
+
+/** The child FEN reached from SIMPLE_WHITE_FEN by e2e4 (black to move), verified with chess.js. */
+const SIMPLE_WHITE_AFTER_E2E4_FEN = '4k3/8/8/8/4P3/8/8/4K3 b - - 0 1';
+
+describe('mctsSearch — 8XN-7 empty non-abort grade() closes a dead end', () => {
+  it('non-root: a child leaf whose grade() resolves empty stays at its own grade, is never re-expanded, and does not consume node budget', async () => {
+    const budget: SearchBudget = { maxNodes: 5, elo: NEUTRAL_BUDGET_ELO, maxPlies: 4, concurrency: 1 };
+    const gradeCalls: GradeCall[] = [];
+    const grade: EngineProviders['grade'] = async (fen, candidateUcis) => {
+      gradeCalls.push({ fen, candidateUcis: [...candidateUcis] });
+      if (fen === SIMPLE_WHITE_AFTER_E2E4_FEN) return new Map<string, MoveGrade>(); // degenerate pool failure
+      const map = new Map<string, MoveGrade>();
+      for (const uci of candidateUcis) {
+        map.set(uci, SIMPLE_WHITE_GRADES[uci] ?? { evalCp: 0, evalMate: null, depth: 10 });
+      }
+      return map;
+    };
+    const providers: EngineProviders = {
+      policy: makeFixedPolicy({ [SIMPLE_WHITE_FEN]: SIMPLE_WHITE_POLICY }),
+      grade,
+    };
+
+    const snapshot = await mctsSearch(SIMPLE_WHITE_FEN, budget, providers, () => {}, freshSignal());
+
+    const e2e4Line = snapshot.rankedLines.find((l) => l.rootMove === 'e2e4');
+    expect(e2e4Line).toBeDefined();
+    // The leaf keeps the value ITS OWN parent's grade gave it — never a
+    // 0.5-derived value from fabricated children.
+    expect(e2e4Line!.practicalScore).toBeCloseTo(
+      evalToExpectedScore(SIMPLE_WHITE_GRADES.e2e4!.evalCp, SIMPLE_WHITE_GRADES.e2e4!.evalMate, 'white'),
+      10,
+    );
+    expect(e2e4Line!.modalPath).toEqual(['e2e4']); // no children were ever attached
+    // grade() is called exactly once for the failed FEN — selectPath's
+    // closure marking (isClosed/propagateClosure, reused from WR-04) means
+    // the dead leaf is never selected again.
+    const failedCalls = gradeCalls.filter((c) => c.fen === SIMPLE_WHITE_AFTER_E2E4_FEN);
+    expect(failedCalls.length).toBe(1);
+    // The failed expansion attempt is not counted (D-09): every OTHER
+    // dispatched leaf produced children and counted as one evaluated node,
+    // but the failed one did not — nodesEvaluated is exactly one less than
+    // the total number of dispatched (policy+grade) attempts. Without the
+    // 8XN-7 guard, the failed attempt would ALSO increment nodesEvaluated
+    // (this is the assertion the revert proof in the SUMMARY breaks).
+    expect(snapshot.nodesEvaluated).toBe(gradeCalls.length - failedCalls.length);
+  });
+
+  it('root exemption: an empty grade() Map at the root keeps today\'s behavior — candidates still rank at NEUTRAL_EXPECTED_SCORE', async () => {
+    const budget: SearchBudget = { maxNodes: 1, elo: NEUTRAL_BUDGET_ELO, maxPlies: 4, concurrency: 1 };
+    const providers: EngineProviders = {
+      policy: makeFixedPolicy({ [SIMPLE_WHITE_FEN]: SIMPLE_WHITE_POLICY }),
+      grade: async () => new Map<string, MoveGrade>(), // always empty, even for the root
+    };
+
+    const snapshot = await mctsSearch(SIMPLE_WHITE_FEN, budget, providers, () => {}, freshSignal());
+
+    // The root is NOT closed as a dead end: its Maia candidates still
+    // surface, each at the pre-existing NEUTRAL_EXPECTED_SCORE fallback.
+    expect(snapshot.rankedLines.length).toBeGreaterThan(0);
+    for (const line of snapshot.rankedLines) {
+      expect(line.practicalScore).toBe(0.5);
+    }
+  });
+
+  it('partial map: an omitted candidate keeps the pre-existing NEUTRAL_EXPECTED_SCORE fallback (locked, not part of 8XN-7)', async () => {
+    const budget: SearchBudget = { maxNodes: 1, elo: NEUTRAL_BUDGET_ELO, maxPlies: 4, concurrency: 1 };
+    const TWO_CANDIDATE_POLICY: Record<string, number> = { e2e4: 0.5, e2e3: 0.5 };
+    const providers: EngineProviders = {
+      policy: makeFixedPolicy({ [SIMPLE_WHITE_FEN]: TWO_CANDIDATE_POLICY }),
+      // Omits e2e3 — a partial (non-empty) map, distinct from the 8XN-7 empty case.
+      grade: async () => new Map<string, MoveGrade>([['e2e4', SIMPLE_WHITE_GRADES.e2e4!]]),
+    };
+
+    const snapshot = await mctsSearch(SIMPLE_WHITE_FEN, budget, providers, () => {}, freshSignal());
+
+    const e2e4Line = snapshot.rankedLines.find((l) => l.rootMove === 'e2e4');
+    const e2e3Line = snapshot.rankedLines.find((l) => l.rootMove === 'e2e3');
+    expect(e2e4Line).toBeDefined();
+    expect(e2e3Line).toBeDefined();
+    expect(e2e4Line!.practicalScore).toBeCloseTo(
+      evalToExpectedScore(SIMPLE_WHITE_GRADES.e2e4!.evalCp, SIMPLE_WHITE_GRADES.e2e4!.evalMate, 'white'),
+      10,
+    );
+    expect(e2e3Line!.practicalScore).toBe(0.5); // ungraded candidate keeps the NEUTRAL fallback
   });
 });
 

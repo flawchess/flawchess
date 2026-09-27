@@ -326,8 +326,9 @@ async def test_compute_stage_a_writes_row_for_qualifying_user(real_data_user) ->
     assert STAGE_A_METRIC in result and _TC_BUCKET in result[STAGE_A_METRIC] and result[STAGE_A_METRIC][_TC_BUCKET].value is not None, f"Stage A failed to write a row with non-null value for score_gap blitz (got {result.get(STAGE_A_METRIC)!r})"  # noqa: E501
     # fmt: on
     row = result[STAGE_A_METRIC][_TC_BUCKET]
-    assert row.cdf_snapshot == datetime.date.today(), (
-        f"cdf_snapshot expected date.today() ({datetime.date.today()}), got {row.cdf_snapshot!r}"
+    utc_today = datetime.datetime.now(datetime.UTC).date()
+    assert row.cdf_snapshot == utc_today, (
+        f"cdf_snapshot expected UTC today ({utc_today}), got {row.cdf_snapshot!r}"
     )
 
 

@@ -38,6 +38,7 @@ import { GameCardList } from '@/components/results/GameCardList';
 import { PositionResultsPanel } from '@/components/charts/PositionResultsPanel';
 import { useEndgameOverview, useEndgameGames } from '@/hooks/useEndgames';
 import { EndgameInsightsBlock } from '@/components/insights/EndgameInsightsBlock';
+import { toInsightsFilters } from '@/lib/insightsFilters';
 import { EvalCoverageHeader } from '@/components/EvalCoverageHeader';
 import { useCachedEndgameInsights, useEndgameInsights } from '@/hooks/useEndgameInsights';
 import { useActiveJobs } from '@/hooks/useImport';
@@ -213,24 +214,31 @@ export function EndgamesPage() {
     });
   }, [cachedInsights.data, appliedFilters]);
 
+  // Insights only support the default filters (opponent strength may stay on
+  // a preset), so Generate resets the page filters to that state first rather
+  // than blocking the button until the user resets them by hand.
   const handleGenerateInsights = useCallback(async () => {
+    const insightsFilters = toInsightsFilters(appliedFilters);
+    if (!areFiltersEqual(insightsFilters, appliedFilters)) {
+      setAppliedFilters(insightsFilters);
+    }
     try {
-      const result = await insightsMutation.mutateAsync(appliedFilters);
+      const result = await insightsMutation.mutateAsync(insightsFilters);
       setInsightsCache((prev) => {
-        const idx = prev.findIndex((entry) => areFiltersEqual(entry.filters, appliedFilters));
+        const idx = prev.findIndex((entry) => areFiltersEqual(entry.filters, insightsFilters));
         if (idx >= 0) {
           const next = [...prev];
-          next[idx] = { filters: appliedFilters, response: result };
+          next[idx] = { filters: insightsFilters, response: result };
           return next;
         }
-        return [...prev, { filters: appliedFilters, response: result }];
+        return [...prev, { filters: insightsFilters, response: result }];
       });
     } catch {
       // Error is surfaced via insightsMutation.isError → EndgameInsightsBlock error state.
       // Global MutationCache.onError in lib/queryClient.ts captures Sentry; do not
       // add a local capture here (would double-report).
     }
-  }, [insightsMutation, appliedFilters]);
+  }, [insightsMutation, appliedFilters, setAppliedFilters]);
 
   // The rendered report is whichever cached entry matches the current filter
   // state — switching back to a previously-generated filter set re-renders
@@ -442,7 +450,6 @@ export function EndgamesPage() {
   const statisticsContent = (
     <div className="flex flex-col gap-4">
       <EndgameInsightsBlock
-        appliedFilters={appliedFilters}
         rendered={matchingInsights}
         mutation={insightsMutation}
         onGenerate={handleGenerateInsights}
@@ -1023,7 +1030,11 @@ export function EndgamesPage() {
               />
             </MobileFilterDrawer>
 
-            <TabsContent value="stats" className="mt-4">
+            {/* `-mt-2` cancels the Tabs root's `gap-2`, so the stats content
+                (Shelly's bubble, or the report card) starts right at the sticky
+                Filters row's bottom edge: the minimum gap under the button
+                without sliding beneath the row's backdrop. */}
+            <TabsContent value="stats" className="-mt-2">
               {statisticsContent}
             </TabsContent>
             <TabsContent value="games" className="mt-4">
