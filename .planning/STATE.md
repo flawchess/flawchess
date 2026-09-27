@@ -5,8 +5,8 @@ current_phase: 224
 current_phase_name: Guest Activation — Welcome Removal & Guest Train (SEED-169)
 status: executing
 stopped_at: Phase 225 context gathered
-last_updated: "2026-09-27T05:34:00.794Z"
-state_head: f9004ff8c48a231c34669dd9e43f7de2aa81a3dc
+last_updated: "2026-09-27T06:06:26.643Z"
+state_head: ee465dbf94545f54f2292503969b9f2d10a49634
 progress:
   total_phases: 3
   completed_phases: 100
@@ -917,6 +917,7 @@ None active.
 | 260926-evd | Consolidate static-analysis gates: nesting depth the only hard complexity gate, ruff TID251/B/ASYNC/DTZ adopted with baselines, tsc build + knip in pre-merge gate | 2026-09-26 | a8a81362f | [260926-evd-consolidate-static-analysis-gates-for-ag](./quick/260926-evd-consolidate-static-analysis-gates-for-ag/) |
 | 260927-7u4 | Insights/percentile dates in UTC; B904/B905 fixes; 7 ruff baseline entries dropped | 2026-09-27 | da22f72f4 | [260927-7u4-make-insights-dates-utc-and-fix-b904-b90](./quick/260927-7u4-make-insights-dates-utc-and-fix-b904-b90/) |
 | 260927-8xn | Engine behavior-neutral quick wins from engine review (failed-grade dead end, Maia abort/cache/transfer, chart merge guard) | 2026-09-27 | 853ab2dd5 | [260927-8xn-engine-behavior-neutral-quick-wins-from-](./quick/260927-8xn-engine-behavior-neutral-quick-wins-from-/) |
+| 260927-b05 | Replace Endgames Insights hero card with Shelly the Turtle bot bubble | 2026-09-27 | ee465dbf9 | [260927-b05-replace-endgames-insights-hero-card-with](./quick/260927-b05-replace-endgames-insights-hero-card-with/) |
 
 ## Deferred Items
 
