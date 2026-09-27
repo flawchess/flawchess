@@ -13,8 +13,8 @@ progress:
   total_plans: 12
   completed_plans: 11
 milestone_name: Train Bot-Narrated Onboarding & Verdicts
-last_activity: 2026-09-26
-last_activity_desc: "Completed quick task 260926-evd (consolidate static-analysis gates for agentic engineering)"
+last_activity: 2026-09-27
+last_activity_desc: "Completed quick task 260927-7u4 (insights dates in UTC, B904/B905 baseline burn-down)"
 ---
 
 # Project State: FlawChess
@@ -914,6 +914,7 @@ None active.
 | 260926-agm | Fix Sentry noise: stale-chunk reload (C0), browser-aborted XHR filter (31), per-attempt 429 captures (BX) | 2026-09-26 | 038a4280c | [260926-agm-fix-sentry-noise-stale-chunk-reload-abor](./quick/260926-agm-fix-sentry-noise-stale-chunk-reload-abor/) |
 | 102 | Stop Umami from recording OAuth access tokens (data-exclude-hash) | 2026-09-26 | 4a804ed4d | — |
 | 260926-evd | Consolidate static-analysis gates: nesting depth the only hard complexity gate, ruff TID251/B/ASYNC/DTZ adopted with baselines, tsc build + knip in pre-merge gate | 2026-09-26 | a8a81362f | [260926-evd-consolidate-static-analysis-gates-for-ag](./quick/260926-evd-consolidate-static-analysis-gates-for-ag/) |
+| 260927-7u4 | Insights/percentile dates in UTC; B904/B905 fixes; 7 ruff baseline entries dropped | 2026-09-27 | da22f72f4 | [260927-7u4-make-insights-dates-utc-and-fix-b904-b90](./quick/260927-7u4-make-insights-dates-utc-and-fix-b904-b90/) |
 
 ## Deferred Items
 
