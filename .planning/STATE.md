@@ -4,14 +4,14 @@ milestone: v2.19
 current_phase: 224
 current_phase_name: Guest Activation — Welcome Removal & Guest Train (SEED-169)
 status: executing
-stopped_at: Completed 224-06-PLAN.md
-last_updated: "2026-09-27T05:04:40.922Z"
-state_head: 853ab2dd572bf20506ecf48ffe72d48c98718434
+stopped_at: Phase 225 context gathered
+last_updated: "2026-09-27T05:34:00.794Z"
+state_head: f9004ff8c48a231c34669dd9e43f7de2aa81a3dc
 progress:
-  total_phases: 2
-  completed_phases: 0
+  total_phases: 3
+  completed_phases: 100
   total_plans: 12
-  completed_plans: 11
+  completed_plans: 12
 milestone_name: Train Bot-Narrated Onboarding & Verdicts
 last_activity: 2026-09-27
 last_activity_desc: Completed quick task 260927-8xn (engine behavior-neutral quick wins from engine review)
@@ -969,11 +969,11 @@ Items acknowledged and deferred at **v1.29 milestone close on 2026-06-29** (user
 
 ## Session Continuity
 
-**Stopped at:** Completed 224-06-PLAN.md
+**Stopped at:** Phase 225 context gathered
 
-**Last session:** 2026-09-17T22:25:19.591Z
+**Last session:** 2026-09-27T05:34:00.684Z
 
-**Resume file:** None
+**Resume file:** .planning/phases/225-engine-search-fixes-root-comparability-round-underfill-findability/225-CONTEXT.md
 
 ## Performance Metrics
 
