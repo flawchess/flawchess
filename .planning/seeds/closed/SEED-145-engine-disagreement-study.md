@@ -1,6 +1,6 @@
 ---
 id: SEED-145
-status: active
+status: closed (study + reports done, see reports/engine-disagreement-study/; story page not pursued)
 planted: 2026-08-08
 revised: >-
   2026-08-20 — redesigned via /gsd-explore: hunted-corpus + sidecar design replaced

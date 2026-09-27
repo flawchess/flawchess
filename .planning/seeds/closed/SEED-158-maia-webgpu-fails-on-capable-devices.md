@@ -1,6 +1,6 @@
 ---
 id: SEED-158
-status: RESOLVED for iOS, SHIPPED 2026-09-07 (squash of branch seed-158-ios-maia-bisect to main; released the same evening). iOS/iPadOS runs Maia on the CPU wasm backend on the current ORT 1.27.0 build, thread count left to chooseWasmThreadCount() (1 AND 2 both measured surviving real /analysis sessions on the reference iPhone); every WebGPU shape is killed by WebKit. Bisect tooling stripped, ios-webkit gate/copy removed, page-kill sentinel kept. Reopen ONLY on an iOS `maia_failure:page-killed` Sentry event with `backend:wasm`. Desktop WebGPU per-GPU failures remain the original seed question (separate)
+status: closed. RESOLVED for iOS, SHIPPED 2026-09-07 (squash of branch seed-158-ios-maia-bisect to main; released the same evening). iOS/iPadOS runs Maia on the CPU wasm backend on the current ORT 1.27.0 build, thread count left to chooseWasmThreadCount() (1 AND 2 both measured surviving real /analysis sessions on the reference iPhone); every WebGPU shape is killed by WebKit. Bisect tooling stripped, ios-webkit gate/copy removed, page-kill sentinel kept. Reopen ONLY on an iOS `maia_failure:page-killed` Sentry event with `backend:wasm`. Desktop WebGPU per-GPU failures remain the original seed question (separate)
 planted: 2026-08-29
 updated: 2026-09-07 late evening (cleanup done, shipped; see "Shipped" at the top of the body)
 planted_during: Sentry triage of the 2026-08-29 18:54 UTC iPad OOM cascade
