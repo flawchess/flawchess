@@ -715,3 +715,148 @@ class TestFromRepairTable:
             async with session_factory() as session:
                 await session.execute(delete(OpeningCacheRepairProgress))
                 await session.commit()
+
+
+# ---------------------------------------------------------------------------
+# Quick 260927-ajg: --oracle-gap re-derive (short checkmates)
+# ---------------------------------------------------------------------------
+
+_ORACLE_GAP_USER_ID = 260927
+
+# Scholar's mate, laid out as the drain stores it (post-move evals): the row of the
+# mating move holds the mated position's eval, which the engine cannot score.
+_MATE_PGN = "1. e4 e5 2. Bc4 Nc6 3. Qh5 Nf6 4. Qxf7# 1-0"
+_MATE_SANS = ["e4", "e5", "Bc4", "Nc6", "Qh5", "Nf6", "Qxf7#", None]
+_MATE_EVALS: list[tuple[int | None, int | None]] = [
+    (30, None),
+    (25, None),
+    (20, None),
+    (40, None),
+    (35, None),
+    (None, 1),  # 3...Nf6?? allows mate in 1
+    (None, None),  # mated position
+    (None, None),  # terminal row
+]
+
+
+async def _seed_oracle_gap_game(
+    session: AsyncSession, user_id: int, evals: list[tuple[int | None, int | None]]
+) -> int:
+    game = Game(
+        user_id=user_id,
+        platform="chess.com",
+        platform_game_id=str(uuid.uuid4()),
+        pgn=_MATE_PGN,
+        result="1-0",
+        user_color="black",
+        time_control_str="600",
+        time_control_bucket="rapid",
+        time_control_seconds=600,
+        base_time_seconds=600,
+        increment_seconds=0.0,
+        rated=True,
+        is_computer_game=False,
+        ply_count=7,
+        # evals_completed_at too, as on every drained game: left NULL, the game is
+        # entry-lane work and the global LIFO lease tests running in parallel
+        # (test_eval_worker_endpoints.py::test_lease_lifo) claim it.
+        evals_completed_at=datetime.now(timezone.utc),
+        full_evals_completed_at=datetime.now(timezone.utc),
+        best_moves_completed_at=datetime.now(timezone.utc),
+        blobs_completed_at=datetime.now(timezone.utc),
+    )
+    session.add(game)
+    await session.flush()
+    for ply, (san, (cp, mate)) in enumerate(zip(_MATE_SANS, evals, strict=True)):
+        session.add(
+            GamePosition(
+                user_id=user_id,
+                game_id=game.id,
+                ply=ply,
+                eval_cp=cp,
+                eval_mate=mate,
+                phase=0,
+                full_hash=ply,
+                white_hash=ply,
+                black_hash=ply,
+                move_san=san,
+            )
+        )
+    return game.id
+
+
+class TestOracleGapRederive:
+    """`--oracle-gap` fills oracle columns + flaws for games the coverage gate
+    wrongly rejected at drain time, and leaves genuinely sparse games alone."""
+
+    @pytest.mark.asyncio
+    async def test_fills_short_checkmate_and_skips_sparse(
+        self, session_factory: async_sessionmaker[AsyncSession]
+    ) -> None:
+        from scripts.backfill_flaws import run_backfill
+
+        user_id = _ORACLE_GAP_USER_ID
+        sparse_evals = list(_MATE_EVALS)
+        sparse_evals[2] = (None, None)  # interior hole: stays GameNotAnalyzed
+        try:
+            async with session_factory() as session:
+                session.add(
+                    User(
+                        id=user_id,
+                        email=f"test-oracle-gap-{user_id}@example.com",
+                        hashed_password="x",
+                    )
+                )
+                await session.flush()
+                mate_id = await _seed_oracle_gap_game(session, user_id, _MATE_EVALS)
+                sparse_id = await _seed_oracle_gap_game(session, user_id, sparse_evals)
+                await session.commit()
+
+            await run_backfill(
+                db="dev",
+                user_id=user_id,
+                dry_run=True,
+                limit=None,
+                oracle_gap=True,
+                session_maker=session_factory,
+            )
+            async with session_factory() as session:
+                games = {
+                    g.id: g
+                    for g in (
+                        await session.execute(select(Game).where(Game.user_id == user_id))
+                    ).scalars()
+                }
+                assert games[mate_id].white_blunders is None, "dry run must not write"
+
+            await run_backfill(
+                db="dev",
+                user_id=user_id,
+                dry_run=False,
+                limit=None,
+                oracle_gap=True,
+                session_maker=session_factory,
+            )
+            async with session_factory() as session:
+                games = {
+                    g.id: g
+                    for g in (
+                        await session.execute(select(Game).where(Game.user_id == user_id))
+                    ).scalars()
+                }
+                flaw_plies = (
+                    (await session.execute(select(GameFlaw.ply).where(GameFlaw.game_id == mate_id)))
+                    .scalars()
+                    .all()
+                )
+            mate_game = games[mate_id]
+            assert mate_game.white_blunders is not None
+            assert mate_game.black_blunders is not None
+            assert mate_game.black_blunders >= 1, "3...Nf6?? allowing mate is a blunder"
+            assert 5 in flaw_plies
+            assert games[sparse_id].white_blunders is None
+        finally:
+            async with session_factory() as session:
+                await session.execute(delete(Game).where(Game.user_id == user_id))
+                await session.execute(delete(User).where(User.id == user_id))
+                await session.commit()

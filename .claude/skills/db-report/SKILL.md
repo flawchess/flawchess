@@ -360,6 +360,32 @@ Verdict line (Check B): **PASS** if `ge90_but_oracle_null = 0` on every platform
 
 > Reference (prod snapshot 2026-07-31): `ge90_but_oracle_null = 0` on all three platforms — chess.com 340,832 covered / 0 null, lichess 177,498 / 0, flawchess 211 / 0. Verdict: PASS.
 
+#### Query 11b — Oracle gap: full evals done, oracle NULL
+
+Query 11 is blind to games the app's own coverage gate rejects: its `count(*)` denominator
+differs from `_compute_eval_coverage` (which excludes the terminal row and, since quick-task
+260927-ajg, the mated position before a checkmating last move), so a game the drain marked
+complete but refused to classify drops out before the oracle check. This probe catches that
+class directly. It found 1,014 short checkmate games on the 2026-09-27 prod snapshot, all fixed
+by 260927-ajg and re-derived with `scripts/backfill_flaws.py --oracle-gap`.
+
+```sql
+SELECT platform,
+       count(*) AS full_evald_oracle_null,
+       count(*) FILTER (WHERE termination = 'checkmate' AND ply_count < 10) AS short_mates,
+       count(*) FILTER (WHERE initial_fen IS NOT NULL) AS nonstd_start,
+       max(full_evals_completed_at)::date AS latest
+FROM games
+WHERE full_evals_completed_at IS NOT NULL AND white_blunders IS NULL AND ply_count IS NOT NULL
+GROUP BY platform ORDER BY full_evald_oracle_null DESC;
+```
+
+Zero-move games (`ply_count IS NULL`) are excluded on purpose: they have no positions and can
+never be classified. Expected residue: a few dozen non-standard-start games (chess.com
+"from position", no evals). **INVESTIGATE** if `short_mates` is non-zero (regression of
+260927-ajg) or if any other bucket grows between reports; the repair is
+`uv run python scripts/backfill_flaws.py --db prod --oracle-gap` once the cause is fixed.
+
 ---
 
 ### Check C — Opening cache vs lichess median
