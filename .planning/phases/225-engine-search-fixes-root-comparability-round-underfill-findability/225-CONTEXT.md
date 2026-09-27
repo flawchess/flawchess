@@ -106,6 +106,27 @@ can only demote, never promote.
 - **D-10d:** Bot-invariance test: same search snapshot, old vs new rankScore, `selectBotMove`
   picks the identical move for a fixed rng (proves item 3 does not touch bot play).
 
+### Post-research amendments (2026-09-27, after 225-RESEARCH.md)
+
+- **D-10e (user decision):** Accept item 3's reversal of Phase 159's showcase ordering. Rewrite
+  the "demotes the low-prior/high-V move" tests (`mctsSearch.test.ts` ~444-497,
+  `fallbackExpectimax.test.ts` ~285-303) to the new semantics, fix the T=2 composition test
+  comments whose premise becomes false, and restate the @1000 D-03 case at a V gap where
+  findability still wins (e.g. 0.60 vs 0.58). Fixture `V_fallback` values are pinned by a rule
+  stated before running (unlisted prior mass valued at 0.5). `P_REF_ANCHORS` stay unchanged; no
+  anchor re-derivation.
+- **D-10b amended:** `V_fallback` is the prior-weighted **mean** (normalize by total prior; root
+  priors do not sum to 1 after the hard cap and injected moves), 0 when total prior is 0.
+- **D-01 amended:** "settled" = `visits >= 1 || isClosed` (not `isTerminal`); the top child is in
+  its own window and must be settled too. The existing clear-winner test that expects a stop at
+  node 1 is rewritten as an intended behavior change.
+- **D-13 amended (research recommendations adopted):** move-quality gate uses a committed
+  `scripts/engine-move-quality.mjs` scoring the bot's `argmaxLine` pick (stop rule off for A2 vs
+  A0, on for A21 vs A2), `rankedLines[0]` report-only; stop-rule criteria S1 (A21 max wall
+  <= 12,100 ms) + S2 (A21 early stops >= 50% of A2's); calibration primary = A21 vs July-21 curves
+  with a pre-registered A0+A2 fail branch for attribution. Harness tooling is committed first and
+  that commit is A0; arms run from detached worktrees.
+
 ### Item 4: Non-root candidate cap
 
 - **D-15:** **Deferred, not in this phase.** It is a third bot-strength change: it would need its
