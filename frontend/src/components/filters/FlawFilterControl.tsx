@@ -410,9 +410,10 @@ export function TagFilterLogicInfo({ side = 'bottom' }: { side?: 'top' | 'bottom
 
 /**
  * BestMovesInfo — help popover for the "Best Moves" (Gem / Great) filter section.
- * Explains how the two tiers are derived (objectively best move + how rare it is
- * among rating peers) and that rarity is measured relative to the player's
- * lichess-blitz-equivalent rating (the scale the Maia model is calibrated on).
+ * Explains the Stockfish + Maia combination (objectively best move + how rare it
+ * is among rating peers, measured on the lichess-blitz-equivalent rating Maia is
+ * calibrated on), gives the tier thresholds, and contrasts Gems with chess.com's
+ * sacrifice-only Brilliant moves.
  */
 function BestMovesInfo() {
   return (
@@ -422,20 +423,21 @@ function BestMovesInfo() {
       side="bottom"
     >
       <p>
-        <strong>Gem</strong> and <strong>Great</strong> highlight moves you played that
-        were the engine&apos;s top choice <em>and</em> clearly better than any
-        alternative.
-      </p>
-      <p className="mt-1.5">
-        The two tiers differ by how hard the move was to find. We estimate how often
-        players at your level would find it, measured against your rating converted to
-        a <strong>lichess blitz</strong> equivalent (the scale our model is calibrated
-        on), so a move is judged relative to your own strength.
+        Gems and Great moves combine two engines. <strong>Stockfish</strong> checks
+        that your move was the best one, clearly ahead of every alternative.{' '}
+        <strong>Maia</strong>, trained on millions of human games, estimates how many
+        players at your level (your rating as a <strong>lichess blitz</strong>{' '}
+        equivalent) would have found it.
       </p>
       <p className="mt-1.5">
         <strong>Gem</strong>: fewer than ~1 in 5 rating peers would find it.
         <br />
         <strong>Great</strong>: found by roughly 1 in 5 to 1 in 2 peers.
+      </p>
+      <p className="mt-1.5">
+        Unlike chess.com&apos;s <strong>Brilliant</strong> moves, which only reward
+        sacrifices, a Gem can just as well be a quiet or positional move, as long as
+        it is objectively best and hard for humans to find.
       </p>
     </InfoPopover>
   );
