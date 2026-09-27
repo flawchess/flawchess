@@ -49,6 +49,18 @@ import type { EndgameInsightsResponse, SectionId } from '@/types/insights';
 
 const PAGE_SIZE = 20;
 
+/**
+ * Phone layout (quick 260927-b05 UAT): Shelly's bubble is pulled up so her
+ * avatar + name header sits on the same line as the sticky Filters button,
+ * with the name vertically centred on the button. 76px = the measured
+ * distance between the two centres at 390px (48px Filters row, the stats
+ * tab's top margin, and half of the 56px avatar header). `max-sm` only:
+ * from `sm` up TrainBotBubble puts the avatar in a column beside the bubble,
+ * and the bubble would then run under the button. Only the bubble gets this;
+ * the report card keeps its normal place below the Filters row.
+ */
+const MOBILE_INSIGHTS_BUBBLE_PULL_UP = 'max-sm:-mt-[76px]';
+
 // SEED-163 2d: extracted to a standalone function (rather than inlined
 // booleans in EndgamesPage) so its branches count toward THIS function's
 // complexity, not EndgamesPage's — that page is already at the eslint
@@ -446,6 +458,7 @@ export function EndgamesPage() {
         rendered={matchingInsights}
         mutation={insightsMutation}
         onGenerate={handleGenerateInsights}
+        bubbleClassName={MOBILE_INSIGHTS_BUBBLE_PULL_UP}
       />
       {overviewLoading ? (
         <div className="charcoal-texture rounded-md p-12 flex items-center justify-center">
@@ -984,8 +997,13 @@ export function EndgamesPage() {
             </div>
 
             {/* Sticky Filters button, styled like the Library page. The full-width
-                subnav above is non-sticky; this button pins on scroll. */}
-            <div className="sticky top-0 z-20 flex justify-end gap-2 py-2 bg-background/80 backdrop-blur-sm">
+                subnav above is non-sticky; this button pins on scroll. The row
+                is only as wide as the button (`ml-auto w-fit`) so Shelly's
+                avatar + name header can sit beside it on the Stats tab
+                (MOBILE_INSIGHTS_BUBBLE_PULL_UP) without being covered. `mt-1`
+                keeps her 56px avatar, which is taller than the button, 8px
+                clear of the tab bar. */}
+            <div className="sticky top-0 z-20 ml-auto mt-1 flex w-fit justify-end gap-2 py-2 bg-background/80 backdrop-blur-sm">
               <Button
                 variant="brand-outline"
                 className="relative"

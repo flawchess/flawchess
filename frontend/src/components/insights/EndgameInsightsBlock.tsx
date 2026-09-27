@@ -50,6 +50,8 @@ export interface EndgameInsightsBlockProps {
   rendered: EndgameInsightsResponse | null;
   mutation: UseMutationResult<EndgameInsightsResponse, InsightsAxiosError, FilterState>;
   onGenerate: () => void;
+  /** Forwarded to Shelly's bubble wrapper; unused by the report card. */
+  bubbleClassName?: string;
 }
 
 /**
@@ -90,6 +92,7 @@ export function EndgameInsightsBlock({
   rendered,
   mutation,
   onGenerate,
+  bubbleClassName,
 }: EndgameInsightsBlockProps) {
   const { data: activeJobs } = useActiveJobs(true);
 
@@ -106,6 +109,7 @@ export function EndgameInsightsBlock({
         status={bubbleStatus(isError, isPending)}
         blockedReason={blockedReason}
         onGenerate={onGenerate}
+        className={bubbleClassName}
       />
     );
   }

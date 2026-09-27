@@ -16,6 +16,8 @@ export interface EndgameInsightsBubbleProps {
   status: InsightsBubbleStatus;
   blockedReason: BlockedReason | null;
   onGenerate: () => void;
+  /** Page-specific layout tweak for the wrapper (Endgames' phone pull-up). */
+  className?: string;
 }
 
 /**
@@ -33,6 +35,7 @@ export function EndgameInsightsBubble({
   status,
   blockedReason,
   onGenerate,
+  className,
 }: EndgameInsightsBubbleProps): ReactElement {
   const isPending = status === 'pending';
   const isError = status === 'error';
@@ -42,7 +45,7 @@ export function EndgameInsightsBubble({
     !isPending && blockedReason !== null ? BLOCKED_REASON_BUBBLE_COPY[blockedReason] : null;
 
   return (
-    <div data-testid="insights-bubble" data-status={status}>
+    <div data-testid="insights-bubble" data-status={status} className={className}>
       <TrainBotBubble
         persona={PERSONA_REGISTRY[INSIGHTS_HOST_ID]}
         state="prompt"
