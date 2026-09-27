@@ -31,6 +31,11 @@ export function PrivacyPage() {
               bcrypt, never stored in plain text)
             </li>
             <li>Google account email address if you sign in with Google</li>
+            <li>
+              How you first found FlawChess when your account was created: the referring
+              website&apos;s domain (not the full address), any campaign tags in the link, and the
+              first page you opened. We use this only to see which channels bring people here.
+            </li>
           </ul>
         </section>
 

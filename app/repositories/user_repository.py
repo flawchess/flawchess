@@ -119,6 +119,43 @@ async def stamp_first_import_started_at(session: AsyncSession, user_id: int, now
     await session.flush()
 
 
+async def record_first_touch(
+    session: AsyncSession,
+    user_id: int,
+    *,
+    first_touch: dict[str, str],
+    created_after: datetime,
+) -> bool:
+    """First-write-wins record of the account's acquisition first touch.
+
+    Blind conditional UPDATE, like ``stamp_first_import_started_at``: the
+    ``first_touch IS NULL`` predicate makes a repeat call a no-op, and
+    ``created_at >= created_after`` refuses to attribute an account that
+    already existed before this browser's first visit (an old user logging in
+    from a new device would otherwise be credited to today's referrer).
+
+    Args:
+        session: AsyncSession to use.
+        user_id: Primary key of the user.
+        first_touch: The sanitized first-touch object; ``{}`` for a direct visit.
+        created_after: Only accounts created at or after this instant are recorded.
+
+    Returns:
+        True if the row was recorded, False if it was already recorded or too old.
+    """
+    result = await session.execute(
+        update(User)
+        .where(
+            User.id == user_id,
+            User.first_touch.is_(None),
+            User.created_at >= created_after,
+        )
+        .values(first_touch=first_touch)
+    )
+    await session.flush()
+    return result.rowcount == 1  # ty: ignore[unresolved-attribute]  # SQLAlchemy DML result carries rowcount
+
+
 async def stamp_games_purged_at(session: AsyncSession, user_id: int, now: datetime) -> None:
     """Unconditionally stamp when this user's games/import_jobs were purged (QTE-02).
 

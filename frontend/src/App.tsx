@@ -42,6 +42,7 @@ import { useReadiness } from '@/hooks/useReadiness';
 import { useTrainProgress } from '@/hooks/useTrainProgress';
 import { useReminderResurfaceRedirect } from '@/hooks/useReminderResurface';
 import { useDevicePushResync } from '@/hooks/useDevicePushResync';
+import { useFirstTouchSync } from '@/hooks/useFirstTouchSync';
 import { captureHandoffMarker } from '@/lib/handoffMarker';
 import { useReturnToTracking } from '@/hooks/useReturnToTracking';
 
@@ -877,6 +878,9 @@ function AppRoutes() {
   const [completedJobIds, setCompletedJobIds] = useState<Set<string>>(new Set());
   const queryClient = useQueryClient();
   const { token } = useAuth();
+
+  // Growth item 16: submit the stored first touch once the visitor has an account.
+  useFirstTouchSync(token);
 
   // Restore active jobs from server on mount (and after re-login when token changes)
   const hasRestoredRef = useRef(false);

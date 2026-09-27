@@ -104,6 +104,54 @@ class UserProfileUpdate(BaseModel):
         return extract_platform_username(value, "lichess")
 
 
+# Length caps for the values stored in the users.first_touch JSONB object.
+FIRST_TOUCH_HOST_MAX_LEN = 255
+FIRST_TOUCH_UTM_MAX_LEN = 100
+FIRST_TOUCH_PATH_MAX_LEN = 255
+
+
+def _clip(value: object, max_len: int) -> str | None:
+    """Strip, blank-to-None and truncate a client-supplied attribution string.
+
+    Truncates instead of rejecting: the values come from arbitrary inbound URLs
+    (utm_campaign can be anything), and a 422 would lose the whole record.
+    """
+    if not isinstance(value, str):
+        return None
+    stripped = value.strip()
+    return stripped[:max_len] or None
+
+
+class FirstTouchRequest(BaseModel):
+    """Request body for POST /users/me/first-touch (growth report item 16)."""
+
+    referrer_host: str | None = None
+    utm_source: str | None = None
+    utm_medium: str | None = None
+    utm_campaign: str | None = None
+    landing_path: str | None = None
+
+    @field_validator("referrer_host", mode="before")
+    @classmethod
+    def _clip_host(cls, value: object) -> str | None:
+        clipped = _clip(value, FIRST_TOUCH_HOST_MAX_LEN)
+        return clipped.lower() if clipped else None
+
+    @field_validator("utm_source", "utm_medium", "utm_campaign", mode="before")
+    @classmethod
+    def _clip_utm(cls, value: object) -> str | None:
+        return _clip(value, FIRST_TOUCH_UTM_MAX_LEN)
+
+    @field_validator("landing_path", mode="before")
+    @classmethod
+    def _clip_path(cls, value: object) -> str | None:
+        # Pathname only: drop any query or fragment so a token-bearing URL can
+        # never be stored (cf. the OAuth #token leak into Umami, 2026-09-26).
+        if not isinstance(value, str) or not value.startswith("/"):
+            return None
+        return _clip(value.split("?", 1)[0].split("#", 1)[0], FIRST_TOUCH_PATH_MAX_LEN)
+
+
 class GameCountResponse(BaseModel):
     """Response for GET /users/games/count."""
 

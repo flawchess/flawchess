@@ -5,6 +5,7 @@ from typing import List
 
 from fastapi_users.db import SQLAlchemyBaseUserTable
 from sqlalchemy import Boolean, DateTime, Integer, String, func, text
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models.base import Base
@@ -83,6 +84,21 @@ class User(SQLAlchemyBaseUserTable[int], Base):
         DateTime(timezone=True),
         nullable=True,
         default=None,
+    )
+
+    # --- First-touch acquisition attribution (growth report 2026-09-15, item 16) ---
+    # Where this user's browser first arrived from, captured client-side on the first
+    # page load (lib/firstTouch.ts) and submitted once right after the account is
+    # created (guest, email or Google). Guest promotion keeps the row, so a promoted
+    # guest keeps the source of the original guest visit. Keys (all optional strings):
+    # referrer_host (external host only, never a full URL), utm_source, utm_medium,
+    # utm_campaign, landing_path (pathname, no query or fragment).
+    # SQL NULL = never recorded (pre-feature accounts, storage blocked); an object with
+    # no referrer_host/utm_* keys = recorded, arrived direct.
+    # none_as_null: without it a Python None is written as JSON null, which an
+    # `IS NULL` predicate does not match (the first-write-wins guard would break).
+    first_touch: Mapped[dict[str, str] | None] = mapped_column(
+        JSONB(none_as_null=True), nullable=True, default=None
     )
 
     oauth_accounts: Mapped[List["OAuthAccount"]] = relationship(  # ty: ignore[unresolved-reference]
