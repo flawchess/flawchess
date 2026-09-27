@@ -427,11 +427,14 @@ async function dispatchExpansion(
   rootMover: MoverColor,
   signal: AbortSignal,
 ): Promise<DispatchedExpansion> {
-  // Phase 194 ABORT-01: `policy()` is NOT signalled and never will be — an
-  // in-flight ONNX inference cannot be interrupted, and a stale resolution is
+  // Phase 194 ABORT-01, updated 8XN-2: `policy()` now receives the search's
+  // own signal too, so `maiaQueue` can drop this request from its own
+  // not-yet-dispatched backlog if the search aborts before it is batched to
+  // the shared worker. An in-flight ONNX inference is still not
+  // interruptible and runs to completion regardless — a stale resolution is
   // unused and harmless once this expansion's result is discarded (mirrors
   // useFlawChessEngine.ts's own Pitfall-1 comment on maiaQueue).
-  const rawPolicy = await providers.policy(leaf.fen, budget.elo[leaf.side], leaf.side);
+  const rawPolicy = await providers.policy(leaf.fen, budget.elo[leaf.side], leaf.side, signal);
   const temperature = budget.policyTemperature ?? DEFAULT_POLICY_TEMPERATURE;
   const effectivePolicy =
     sideMatchesMover(leaf.side, rootMover) && temperature !== DEFAULT_POLICY_TEMPERATURE

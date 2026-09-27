@@ -24,8 +24,17 @@ export type Side = 'w' | 'b';
 
 /** Fabricated-in-tests-today, real-workers-in-Phase-154 provider surface. */
 export interface EngineProviders {
-  /** UCI-keyed Maia move-probability distribution at `elo` for `side` to move (D-08). */
-  policy(fen: string, elo: number, side: Side): Promise<Record<string, number>>;
+  /**
+   * UCI-keyed Maia move-probability distribution at `elo` for `side` to move
+   * (D-08). `signal` (8XN-2) is OPTIONAL, following `grade`'s own precedent
+   * below — every existing 3-parameter implementation (test fakes, the
+   * `selectBotMove`/`openingBook` deps, and the Node calibration providers
+   * outside the frontend `tsc` project) stays structurally assignable to this
+   * interface. Only requests `maiaQueue`'s `policy()` has not yet dispatched
+   * to the shared worker are dropped on abort; an in-flight ONNX inference is
+   * not interruptible and runs to completion regardless.
+   */
+  policy(fen: string, elo: number, side: Side, signal?: AbortSignal): Promise<Record<string, number>>;
   /**
    * UCI-keyed Stockfish shallow-eval grades for the candidate UCI moves,
    * white-POV cp (D-08). `signal` (Phase 194 ABORT-01/03) is OPTIONAL so a

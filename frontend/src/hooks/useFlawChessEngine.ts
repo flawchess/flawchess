@@ -336,14 +336,17 @@ export function useFlawChessEngine({
     const queue = queueRef.current;
     if (!debouncedFen || !enabled || !pool || !queue) return;
 
-    // Pitfall 1 (STALE as of Phase 194 ABORT-01): dispatchExpansion now
-    // forwards this signal into providers.grade()'s 3rd param, so the abort()
-    // below already reaches WorkerPool.grade's dequeue/stop handling on its
+    // Pitfall 1 (STALE as of Phase 194 ABORT-01, updated 8XN-2):
+    // dispatchExpansion forwards this signal into BOTH providers.grade()'s
+    // and (as of 8XN-2) providers.policy()'s signal parameter, so the
+    // abort() below already reaches WorkerPool.grade's dequeue/stop handling
+    // AND maiaQueue.policy()'s own not-yet-dispatched-request drop on its
     // own. The explicit pool.stopAll() call is kept as redundant, idempotent
-    // defense in depth (not removed — that's out of scope for Phase 194), not
-    // because it is still load-bearing. maiaQueue has no stopAll (an
-    // in-flight ONNX inference cannot be interrupted) — a stale policy()
-    // resolution is unused and harmless.
+    // defense in depth (not removed — that's out of scope here), not because
+    // it is still load-bearing. maiaQueue still has no stopAll: an in-flight
+    // ONNX inference cannot be interrupted, and a stale resolution for an
+    // already-dispatched request is unused and harmless once this search's
+    // result is discarded.
     abortControllerRef.current?.abort();
     pool.stopAll();
 

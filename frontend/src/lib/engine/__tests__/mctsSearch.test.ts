@@ -725,6 +725,32 @@ describe('mctsSearch — abort', () => {
     }
   });
 
+  it('8XN-2: every providers.policy() call receives the search\'s own AbortSignal, by reference, as its 4th argument', async () => {
+    const controller = new AbortController();
+    const budget: SearchBudget = { maxNodes: 5, elo: NEUTRAL_BUDGET_ELO, maxPlies: 3, concurrency: 1 };
+    const policyCalls: (AbortSignal | undefined)[] = [];
+    const providers: EngineProviders = {
+      policy: async (fen, elo, side, signal) => {
+        policyCalls.push(signal);
+        return (fen === SIMPLE_WHITE_FEN ? SIMPLE_WHITE_POLICY : uniformPolicyFromLegalMoves(fen)) as Record<
+          string,
+          number
+        >;
+      },
+      grade: makeFixedGrade({ [SIMPLE_WHITE_FEN]: SIMPLE_WHITE_GRADES }),
+    };
+
+    await mctsSearch(SIMPLE_WHITE_FEN, budget, providers, () => {}, controller.signal);
+
+    expect(policyCalls.length).toBeGreaterThan(0);
+    for (const signal of policyCalls) {
+      // Reference identity (not merely "defined") — same rationale as the
+      // grade() signal check above: maiaQueue's abort listener must see THIS
+      // search's real controller, not a lookalike.
+      expect(signal).toBe(controller.signal);
+    }
+  });
+
   it('LADDER-02: every providers.grade() call receives a resolved grading-depth 4th argument, never undefined', async () => {
     const controller = new AbortController();
     // Budget sized so the tree actually descends past the ladder table's

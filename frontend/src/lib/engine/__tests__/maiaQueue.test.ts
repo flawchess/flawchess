@@ -28,6 +28,7 @@ import {
   MAIA_POLICY_CACHE_MAX,
   clearMaiaPolicyCache,
   getCachedPolicy,
+  getPendingPolicy,
   setCachedPolicy,
   markPolicyPending,
   failPolicyPending,
@@ -516,6 +517,84 @@ describe('createMaiaQueue', () => {
     await Promise.resolve();
 
     await expect(p1).resolves.toEqual({});
+  });
+
+  // ─── 8XN-2: policy() AbortSignal ────────────────────────────────────────
+
+  describe('8XN-2: policy() AbortSignal', () => {
+    it('an abort before the lease is ready resolves {}, and zero analyze() calls are issued after driveReady', async () => {
+      const queue = createMaiaQueue();
+      const controller = new AbortController();
+      const p = queue.policy(TEST_FEN, 1500, 'w', controller.signal);
+      controller.abort();
+
+      const lease = createdLeases[0]!;
+      await driveReady(lease);
+      await expect(p).resolves.toEqual({});
+      expect(analyzeMessages(lease)).toHaveLength(0);
+    });
+
+    it('two same-FEN requests at different ELOs where one aborts before dispatch: the single analyze() call carries only the live ELO, which resolves with the real distribution', async () => {
+      const queue = createMaiaQueue();
+      const liveController = new AbortController();
+      const abortedController = new AbortController();
+      const pLive = queue.policy(TEST_FEN, 1200, 'w', liveController.signal);
+      const pAborted = queue.policy(TEST_FEN, 1800, 'w', abortedController.signal);
+      abortedController.abort(); // removed from `pending` before the lease is even ready
+
+      await expect(pAborted).resolves.toEqual({});
+
+      const lease = createdLeases[0]!;
+      await driveReady(lease);
+      await resolveLatest(lease, TEST_FEN, [1200]);
+
+      expect(analyzeMessages(lease)).toEqual([{ fen: TEST_FEN, eloInputs: [1200] }]);
+      const liveResult = await pLive;
+      expect(Object.keys(liveResult).length).toBeGreaterThan(0); // a real, non-empty distribution
+      expect(getCachedPolicy(TEST_FEN, 1200)).toEqual(liveResult);
+    });
+
+    it('an abort after dispatch changes nothing: the promise stays unresolved until resolveLatest, then resolves with the real distribution, and getCachedPolicy sees it', async () => {
+      const queue = createMaiaQueue();
+      const controller = new AbortController();
+      const p = queue.policy(TEST_FEN, 1500, 'w', controller.signal);
+      const lease = createdLeases[0]!;
+      await driveReady(lease); // dispatches synchronously via the microtask hop — request now out of `pending`
+
+      controller.abort(); // already dispatched — must be a no-op
+
+      await resolveLatest(lease, TEST_FEN, [1500]);
+
+      const result = await p;
+      expect(Object.keys(result).length).toBeGreaterThan(0); // a real, non-empty distribution — never {}
+      expect(getCachedPolicy(TEST_FEN, 1500)).toEqual(result);
+    });
+
+    it('a signal already aborted at call time with no cache entry resolves {} with no analyze() call', async () => {
+      const queue = createMaiaQueue();
+      const controller = new AbortController();
+      controller.abort();
+
+      const p = queue.policy(TEST_FEN, 1500, 'w', controller.signal);
+      await expect(p).resolves.toEqual({});
+      expect(createdLeases).toHaveLength(0); // never even acquired a lease
+    });
+
+    it('join path: an abort does not cancel the chart-owned pending entry — a later setCachedPolicy still resolves the engine promise', async () => {
+      markPolicyPending(TEST_FEN, 1500);
+      const waiterBeforeAbort = getPendingPolicy(TEST_FEN, 1500);
+      const queue = createMaiaQueue();
+      const controller = new AbortController();
+      const p = queue.policy(TEST_FEN, 1500, 'w', controller.signal);
+
+      controller.abort();
+
+      // The chart's own pending entry is untouched by the engine's abort.
+      expect(getPendingPolicy(TEST_FEN, 1500)).toBe(waiterBeforeAbort);
+
+      setCachedPolicy(TEST_FEN, 1500, { e2e4: 0.5, d2d4: 0.5 });
+      await expect(p).resolves.toEqual({ e2e4: 0.5, d2d4: 0.5 });
+    });
   });
 
   // ─── Contract shape ─────────────────────────────────────────────────────

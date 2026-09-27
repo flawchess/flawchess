@@ -60,9 +60,14 @@ export interface MaiaQueue {
    * (EngineProviders.policy shape). `side` is accepted for contract-shape
    * parity only — it does not change the result independently of `fen`,
    * since side-to-move is already implicit in the FEN's own 'w'/'b' field
-   * (D-08).
+   * (D-08). `signal` (8XN-2) drops this request from the queue's own
+   * not-yet-dispatched `pending` backlog on abort, resolving it to `{}` — it
+   * does NOT cancel an in-flight ONNX inference (not interruptible) or the
+   * chart's own pending entry this call might be awaiting via
+   * `getPendingPolicy` (the chart owns that entry and still needs its
+   * result).
    */
-  policy(fen: string, elo: number, side: Side): Promise<Record<string, number>>;
+  policy(fen: string, elo: number, side: Side, signal?: AbortSignal): Promise<Record<string, number>>;
   /** Resolves every outstanding request to `{}` and releases the shared worker lease. */
   terminate(): void;
   /**
@@ -240,27 +245,73 @@ export function createMaiaQueue(): MaiaQueue {
     return lease;
   }
 
-  function requestPolicy(fen: string, elo: number): Promise<Record<string, number>> {
-    return new Promise<Record<string, number>>((resolve) => {
-      pending.push({ fen, elo, resolve });
+  /**
+   * `signal` (8XN-2): when present, registers a `{ once: true }` abort
+   * listener that — ONLY if this request is still sitting in the
+   * not-yet-dispatched `pending` backlog (`indexOf >= 0`) — splices it out
+   * and resolves it to `{}`, the same empty-record semantics
+   * terminate/onFatal/a rejected lease already use. If the request was
+   * already batched and dispatched to the lease, the listener is a no-op:
+   * an in-flight ONNX inference is not interruptible and runs to completion.
+   *
+   * Every `pending` entry has exactly one waiter (its own caller), so
+   * removing it here never strands another `policy()` call. Why `{}` is
+   * safe downstream: `dispatchExpansion` turns an empty policy distribution
+   * into an empty candidate set (the WR-04 early return, never calling
+   * `grade()`), and the orchestrator's own apply loop breaks on
+   * `signal.aborted` before applying anything — an aborted expansion's
+   * result is discarded either way.
+   */
+  function requestPolicy(fen: string, elo: number, signal?: AbortSignal): Promise<Record<string, number>> {
+    return new Promise<Record<string, number>>((resolvePromise) => {
+      // Every settlement path below calls `req.resolve(...)` — wrapping it
+      // once here means the abort listener is removed on EVERY one of them
+      // (handleResult, the WR-03 catch, a rejected lease, onFatal, terminate,
+      // and abort itself), so a long-lived search signal never accumulates
+      // one listener per policy() call it ever made.
+      let removeAbortListener: (() => void) | undefined;
+      const settle = (result: Record<string, number>): void => {
+        removeAbortListener?.();
+        resolvePromise(result);
+      };
+      const req: PendingPolicyRequest = { fen, elo, resolve: settle };
+      if (signal) {
+        const onAbort = (): void => {
+          const idx = pending.indexOf(req);
+          if (idx >= 0) {
+            pending.splice(idx, 1);
+            settle({});
+          }
+        };
+        signal.addEventListener('abort', onAbort, { once: true });
+        removeAbortListener = () => signal.removeEventListener('abort', onAbort);
+      }
+      pending.push(req);
       ensureLease();
       processQueue();
     });
   }
 
-  function policy(fen: string, elo: number, side: Side): Promise<Record<string, number>> {
+  function policy(fen: string, elo: number, side: Side, signal?: AbortSignal): Promise<Record<string, number>> {
     void side; // side is implicit in fen's own 'w'/'b' field (D-08); accepted for contract shape only.
     const cached = getCachedPolicy(fen, elo);
     if (cached) return Promise.resolve(cached);
+    // 8XN-2: an already-aborted signal with no cache entry never enqueues —
+    // resolve {} immediately, matching the pending-abort semantics below.
+    if (signal?.aborted) return Promise.resolve({});
     // Quick 260906-gu2: the chart hook (`useMaiaEngine`) already has this exact
     // `(fen, elo)` in flight on the shared worker (its priority request is
     // queued AHEAD of anything this lease would add) — await that result
     // instead of paying a duplicate ~200 ms wasm inference. If the producer's
-    // request fails, fall back to a request of our own.
+    // request fails, fall back to a request of our own. This join is
+    // deliberately NOT signal-aware (8XN-2): the chart OWNS that pending
+    // entry and still needs its own result, so an abort here must never
+    // cancel it — only a request THIS call itself enqueues (the fallback
+    // below) can be dropped.
     const inFlight = getPendingPolicy(fen, elo);
-    if (inFlight) return inFlight.catch(() => requestPolicy(fen, elo));
+    if (inFlight) return inFlight.catch(() => requestPolicy(fen, elo, signal));
 
-    return requestPolicy(fen, elo);
+    return requestPolicy(fen, elo, signal);
   }
 
   function terminate(): void {
