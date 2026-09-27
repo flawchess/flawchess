@@ -346,7 +346,7 @@ export default function ActivityPage() {
             </button>
           </div>
           <span className="hint">
-            Filters the active-user and engagement-depth charts. The retention chart always
+            Filters the active-user chart. The retention chart always
             compares both cohorts.
           </span>
         </div>
@@ -373,21 +373,11 @@ export default function ActivityPage() {
               <div className="tblwrap" id="t-actives"></div>
             </details>
           </div>
-          <div className="grid2">
-            <div className="card">
-              <h3>Engagement depth</h3>
-              <p className="note">
-                Active hours per day, summed across users. The writer is throttled to one row per
-                user per hour, so this counts distinct hours of real use.
-              </p>
-              <div className="chart" id="c-hours"></div>
-            </div>
-            <div className="card">
-              <h3>New accounts per day</h3>
-              <p className="note">Registered signups and guest sessions created, stacked.</p>
-              <div className="legend" id="su-legend"></div>
-              <div className="chart" id="c-signups"></div>
-            </div>
+          <div className="card">
+            <h3>New accounts per day</h3>
+            <p className="note">Registered signups and guest sessions created, stacked.</p>
+            <div className="legend" id="su-legend"></div>
+            <div className="chart" id="c-signups"></div>
           </div>
           <div className="card">
             <h3>Do they come back?</h3>
@@ -434,43 +424,26 @@ export default function ActivityPage() {
               <div className="tblwrap" id="t-funnel"></div>
             </details>
           </div>
-          <div className="grid2">
-            <div className="card">
-              <h3>How long until the first import?</h3>
-              <p className="note">
-                Time from account creation to the first import job, as a share of each cohort. The
-                decision is made in the first minutes or not at all.
-              </p>
-              <div className="legend" id="tti-legend"></div>
-              <div className="chart" id="c-tti"></div>
-            </div>
-            <div className="card">
-              <h3>Does importing make them stick?</h3>
-              <p className="note">
-                Share of each group seen on a second, separate day. Importing nearly doubles the
-                return rate for registered accounts and does nothing for guests.
-              </p>
-              <div className="legend" id="stick-legend"></div>
-              <div className="chart" id="c-stick"></div>
-            </div>
+          <div className="card">
+            <h3>How long until the first import?</h3>
+            <p className="note">
+              Time from account creation to the first import job, as a share of each cohort. The
+              decision is made in the first minutes or not at all.
+            </p>
+            <div className="legend" id="tti-legend"></div>
+            <div className="chart" id="c-tti"></div>
           </div>
           <div className="card">
             <h3>Guest → registered</h3>
             <p className="note">
               A guest who signs up is promoted in place: the same row keeps its games, its imports
               and its original creation date, and simply stops being a guest. That makes converters
-              countable, for the reason under the chart.
+              countable, with the caveat below.
             </p>
-            <div className="split">
-              <div className="hero">
-                <span className="cap">Guest → registered</span>
-                <span className="big" id="conv-big"></span>
-                <span className="exp" id="conv-exp"></span>
-              </div>
-              <div>
-                <div className="legend" id="conv-legend"></div>
-                <div className="chart" id="c-conv"></div>
-              </div>
+            <div className="hero">
+              <span className="cap">Guest → registered</span>
+              <span className="big" id="conv-big"></span>
+              <span className="exp" id="conv-exp"></span>
             </div>
             <p className="note" style={{ marginTop: '12px' }}>
               Both promotion paths have been counted since <span id="cav-promoted">—</span>: the
@@ -543,9 +516,11 @@ export default function ActivityPage() {
           <div className="card">
             <h3>First-session drop-off and return rate</h3>
             <p className="note">
-              Cohort: users whose FIRST Train session started inside the selected window. A user
-              whose first session lands near the end of the window has had no opportunity to
-              return yet, so the return share below is a floor for recent windows.
+              Cohort: users whose FIRST Train session started inside the selected window. Opening
+              the Train page creates a session, so the zero-solved share only counts users who
+              pressed Start or Resume. A user whose first session lands near the end of the window
+              has had no opportunity to return yet, so the return share is a floor for recent
+              windows.
             </p>
             <div className="grid2">
               <div className="hero">
@@ -590,10 +565,7 @@ export default function ActivityPage() {
           <div className="grid2">
             <div className="card">
               <h3>Games imported per day</h3>
-              <p className="note">
-                Log-scaled — the busiest day pulled in three orders of magnitude more games
-                than a quiet one.
-              </p>
+              <p className="note">Games imported by the import jobs started that day.</p>
               <div className="chart" id="c-imports"></div>
             </div>
             <div className="card">
@@ -647,8 +619,7 @@ export default function ActivityPage() {
                 <span id="cav-purged-guest">—</span> guest sessions.
               </b>{' '}
               Accounts whose game history was purged (guest 30-day cleanup, or a user deleting
-              their games) are excluded from the funnel, time-to-import, stickiness and
-              converter-comparison cards, because their <span className="mono">import_jobs</span>{' '}
+              their games) are excluded from the funnel and time-to-import cards, because their <span className="mono">import_jobs</span>{' '}
               rows are gone and they would otherwise read as "never imported".
             </li>
           </ul>

@@ -169,6 +169,34 @@ async def solve_puzzle(
     )
 
 
+@router.post("/sessions/{session_id}/enter", status_code=204)
+async def mark_session_entered(
+    session_id: int,
+    session: Annotated[AsyncSession, Depends(get_async_session)],
+    user: Annotated[User, Depends(current_active_user)],
+    now_utc: NowUtc,
+) -> None:
+    """Record that the user pressed Start/Resume on this session.
+
+    `POST /sessions` runs on every /train page mount as a status read, so it
+    cannot tell a visitor from someone who actually started. This stamp is
+    what the activity dashboard's first-session funnel counts instead.
+    """
+    try:
+        found = await train_repository.stamp_session_entered(
+            session, user_id=user.id, session_id=session_id, now_utc=now_utc
+        )
+    except Exception:
+        await session.rollback()
+        sentry_sdk.set_context("train", {"user_id": str(user.id), "session_id": session_id})
+        sentry_sdk.capture_exception()
+        raise
+    if not found:
+        await session.rollback()
+        raise HTTPException(status_code=404, detail="Session not found")
+    await session.commit()
+
+
 @router.get("/sessions/{session_id}/puzzles/{position}/reveal", response_model=PuzzleRevealResponse)
 async def reveal_puzzle(
     session_id: int,

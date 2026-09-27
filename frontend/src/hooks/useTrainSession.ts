@@ -99,6 +99,11 @@ export interface UseTrainSessionResult {
   /** Fetch/resume today's session. Called once automatically by `Train.tsx`
    * on mount (a status read, not a loop-entry action — see module docstring). */
   startSession: () => void;
+  /** Records the Start/Resume press server-side (fire-and-forget). The
+   * mount-time `startSession()` status read persists a session row too, so
+   * without this stamp the activity dashboard cannot tell a visitor from
+   * someone who started. */
+  markSessionEntered: () => void;
   isSessionPending: boolean;
   isSessionError: boolean;
   /** Session score, seeded from the response's `solved_results` (server data,
@@ -278,6 +283,12 @@ export function useTrainSession(): UseTrainSessionResult {
     mutateSession();
   }, [mutateSession]);
 
+  const { mutate: mutateEntered } = useMutation({ mutationFn: trainApi.markSessionEntered });
+  const sessionId = session?.session_id;
+  const markSessionEntered = useCallback(() => {
+    if (sessionId != null) mutateEntered(sessionId);
+  }, [sessionId, mutateEntered]);
+
   const advance = useCallback(() => {
     // T-190-12 block-and-retry: never advance past a puzzle whose solve has
     // not succeeded — a pending/errored mutation, or one that has not even
@@ -328,6 +339,7 @@ export function useTrainSession(): UseTrainSessionResult {
     currentIndex,
     currentPuzzle,
     startSession,
+    markSessionEntered,
     isSessionPending: sessionMutation.isPending,
     isSessionError: sessionMutation.isError,
     sessionScore,

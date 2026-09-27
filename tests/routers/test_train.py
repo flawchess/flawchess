@@ -3114,3 +3114,61 @@ async def test_guest_progress_200(test_engine) -> None:
         "next_due_date",
         "badge_visible",
     }
+
+
+# ---------------------------------------------------------------------------
+# POST /train/sessions/{id}/enter — Start/Resume press stamp
+# ---------------------------------------------------------------------------
+
+
+async def _entered_at(test_engine, session_id: int) -> datetime.datetime | None:
+    session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
+    async with session_maker() as session:
+        return await session.scalar(
+            select(DrillSession.entered_at).where(DrillSession.id == session_id)
+        )
+
+
+@pytest.mark.asyncio
+async def test_enter_session_stamps_once(test_engine) -> None:
+    """The first press stamps entered_at; a replay never moves it."""
+    user_id, token = await _register_and_login(f"train-enter-{uuid.uuid4().hex[:8]}@example.com")
+    session_id = await _seed_session(
+        test_engine, user_id, [(None, 0, int(DrillSource.RED_HERRING))]
+    )
+    assert await _entered_at(test_engine, session_id) is None
+
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app), base_url="http://test"
+    ) as client:
+        headers = {"Authorization": f"Bearer {token}"}
+        first = await client.post(f"{ENDPOINT}/{session_id}/enter", headers=headers)
+        assert first.status_code == 204
+        stamped = await _entered_at(test_engine, session_id)
+        assert stamped is not None
+
+        replay = await client.post(f"{ENDPOINT}/{session_id}/enter", headers=headers)
+        assert replay.status_code == 204
+    assert await _entered_at(test_engine, session_id) == stamped
+
+
+@pytest.mark.asyncio
+async def test_enter_session_rejects_other_users_session(test_engine) -> None:
+    """Another user's session id is a 404 and stays unstamped (IDOR guard)."""
+    owner_id, _ = await _register_and_login(f"train-enter-own-{uuid.uuid4().hex[:8]}@example.com")
+    _, intruder_token = await _register_and_login(
+        f"train-enter-oth-{uuid.uuid4().hex[:8]}@example.com"
+    )
+    session_id = await _seed_session(
+        test_engine, owner_id, [(None, 0, int(DrillSource.RED_HERRING))]
+    )
+
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app), base_url="http://test"
+    ) as client:
+        resp = await client.post(
+            f"{ENDPOINT}/{session_id}/enter",
+            headers={"Authorization": f"Bearer {intruder_token}"},
+        )
+    assert resp.status_code == 404
+    assert await _entered_at(test_engine, session_id) is None

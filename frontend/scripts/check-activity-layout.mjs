@@ -250,13 +250,12 @@ function buildCases(fc) {
     },
     {
       chart: "barChart",
-      name: "barChart every=10 log=true (imports)",
+      name: "barChart every=10 (imports)",
       invoke: (host) =>
         fc.barChart(host, {
           labels: DATE_LABELS,
           h: 220,
           every: 10,
-          log: true,
           series: [{ name: "Games imported", values: wave(n, 500, 300), color: "#8B5E3C" }],
           extra: () => [
             { k: "Jobs", v: 3 },
