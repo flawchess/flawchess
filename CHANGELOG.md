@@ -38,6 +38,7 @@ in `YYYY-MM-DD` (Europe/Zurich).
 
 ### Fixed
 
+- Short games that end in checkmate (a mate within the first five moves, such as Scholar's mate) are now analysed: they show their blunders and mistakes, accuracy and flaw markers, count in the Flaws timeline, and feed training puzzles. About a thousand existing games were re-analysed. (quick 260927-ajg)
 - The FlawChess engine no longer shows made-up 50% lines when a Stockfish grading request fails or times out, and a Maia error while drawing the move-probability chart can no longer leave the engine waiting forever. (quick 260927-8xn)
 - Bot games: the bot now actually comments on the swings it was meant to. It was judging a swing by win probability, which stops moving once a game is decided, so in the games with the biggest blunders it said nothing at all; it now judges by the evaluation itself. A long test game went from one comment to five. A minor line about the first capture can also no longer silence a real blunder moments later.
 - Bot games: the bot reacts when you take the piece, not when it hangs it. It used to comment the instant its own position dropped, which both gave the mistake away and landed a move early. Now it stays quiet and owns up when you actually punish it, says so if it wriggles out of it, and never claims to have escaped while the piece is still hanging.

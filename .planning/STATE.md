@@ -14,7 +14,7 @@ progress:
   completed_plans: 12
 milestone_name: Train Bot-Narrated Onboarding & Verdicts
 last_activity: 2026-09-27
-last_activity_desc: Completed quick task 260927-8xn (engine behavior-neutral quick wins from engine review)
+last_activity_desc: Completed quick task 260927-ajg (short checkmate oracle fix + prod re-derive)
 ---
 
 # Project State: FlawChess
@@ -918,6 +918,7 @@ None active.
 | 260927-7u4 | Insights/percentile dates in UTC; B904/B905 fixes; 7 ruff baseline entries dropped | 2026-09-27 | da22f72f4 | [260927-7u4-make-insights-dates-utc-and-fix-b904-b90](./quick/260927-7u4-make-insights-dates-utc-and-fix-b904-b90/) |
 | 260927-8xn | Engine behavior-neutral quick wins from engine review (failed-grade dead end, Maia abort/cache/transfer, chart merge guard) | 2026-09-27 | 853ab2dd5 | [260927-8xn-engine-behavior-neutral-quick-wins-from-](./quick/260927-8xn-engine-behavior-neutral-quick-wins-from-/) |
 | 260927-b05 | Replace Endgames Insights hero card with Shelly the Turtle bot bubble | 2026-09-27 | ee465dbf9 | [260927-b05-replace-endgames-insights-hero-card-with](./quick/260927-b05-replace-endgames-insights-hero-card-with/) |
+| 260927-ajg | Fix short checkmate oracle bug (mated position excluded from eval coverage) and re-derive 1,016 prod games | 2026-09-27 | 292e77489 | [260927-ajg-fix-short-checkmate-oracle-bug-and-re-de](./quick/260927-ajg-fix-short-checkmate-oracle-bug-and-re-de/) |
 
 ## Deferred Items
 
