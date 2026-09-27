@@ -27,6 +27,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import * as Sentry from '@sentry/react';
+import { workerErrorContext } from '@/lib/engine/workerErrorContext';
 import { Chess } from 'chess.js';
 import { parseInfoLine } from './uciParser';
 import { sanToUci, uciToSquares } from '@/lib/sanToSquares';
@@ -471,9 +472,10 @@ export function useStockfishGradingEngine({
       // depends on this instance) hangs forever. Capture to Sentry (CLAUDE.md
       // frontend rules — a classic Worker has no Sentry init of its own) and
       // surface `hasFailed` so the sweep can abandon a candidate stuck on it.
-      worker.onerror = () => {
+      worker.onerror = (event: ErrorEvent) => {
         Sentry.captureException(new Error('Stockfish grading worker: worker load failure'), {
           tags: { source: 'stockfish-grading-worker' },
+          contexts: { worker_error: workerErrorContext(event) },
         });
         setHasFailed(true);
         setIsReady(false);

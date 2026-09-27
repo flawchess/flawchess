@@ -42,6 +42,7 @@
  */
 
 import * as Sentry from '@sentry/react';
+import { workerErrorContext } from '@/lib/engine/workerErrorContext';
 import {
   captureMaiaWorkerError,
   classifyMaiaWorkerError,
@@ -513,9 +514,10 @@ function constructWorker(
   // instead, which the try/catch above can never catch. This is "worker
   // death": reject everything, fire every lease's onFatal, drop the worker so
   // the next analyze()/whenReady() re-spawns.
-  w.onerror = (): void => {
+  w.onerror = (event: ErrorEvent): void => {
     Sentry.captureException(new Error('Maia worker: worker load failure'), {
       tags: { source: spawnSource ?? source, backend: backend ?? 'unknown', maia_failure: 'load' },
+      contexts: { worker_error: workerErrorContext(event) },
     });
     failAllLeasesAndDropWorker(new MaiaWorkerError('Maia worker: worker load failure', 'load'));
   };
