@@ -34,6 +34,7 @@ in `YYYY-MM-DD` (Europe/Zurich).
 - A guest account that stays inactive for 30 days now has its training sessions and settings removed along with its games, so "nothing is deleted after 30 days of inactivity" is a real difference between a guest and a signed-up account.
 - A signed-up account with no imported games now gets an "Import games" button from the bot on the Train landing page and on the warm-up score screen, in place of the reminder nudge, so the step that turns warm-ups into your own puzzles is one tap away. (quick 260926-8p5)
 - Opening a link to a FlawChess page while signed out (for example a shared link to Train or Bots) now shows the home page, where you can try it as a guest or sign up, instead of a bare login form. After you start as a guest, sign in or sign up, you land on the page the link pointed to rather than the import screen, and an expired session returns you to the page you were on after you log back in. (quick 260926-9bg)
+- The Insights card at the top of the Endgames page is now hosted by Shelly the Turtle: she explains what Insights does, tells you how long it takes while the report is written, and says why the button is disabled (a running import, non-default filters, or a custom opponent-strength range) instead of hiding the reason in a hover tooltip. Once a report is ready it shows on its own, without the bubble. (quick 260927-b05)
 
 ### Fixed
 
