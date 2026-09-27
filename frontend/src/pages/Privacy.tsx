@@ -55,7 +55,7 @@ export function PrivacyPage() {
           </ul>
           <p className="mt-4 text-muted-foreground">
             We do not sell, rent, or share your data with anyone else. We do not run advertising.
-            We use self-hosted, privacy-friendly, cookie-free analytics (Umami) to understand which pages are visited. No personal data is collected or shared.
+            We use self-hosted, privacy-friendly, cookie-free analytics (Umami) to understand which pages are visited, and whether by a guest or a registered account. No personal data is collected or shared.
           </p>
         </section>
 

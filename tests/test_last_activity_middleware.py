@@ -18,7 +18,7 @@ from sqlalchemy import select, update as sa_update
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
 from app.main import app
-from app.middleware.last_activity import _extract_user_id, _last_updated
+from app.middleware.last_activity import _extract_user_id, _last_updated, _throttle_expired
 from app.models.user import User
 from app.models.user_activity import UserActivity
 from app.users import auth_backend
@@ -44,6 +44,29 @@ async def register_and_login(
         data={"username": email, "password": password},
     )
     return user_id, login_resp.json()["access_token"]
+
+
+# ---------------------------------------------------------------------------
+# Unit tests: _throttle_expired
+# ---------------------------------------------------------------------------
+
+
+class TestThrottleExpired:
+    def test_first_request_writes(self) -> None:
+        assert _throttle_expired(None, datetime(2026, 9, 27, 12, 0, tzinfo=timezone.utc))
+
+    def test_within_hour_same_day_is_throttled(self) -> None:
+        last = datetime(2026, 9, 27, 12, 0, tzinfo=timezone.utc)
+        assert not _throttle_expired(last, last + timedelta(minutes=59))
+
+    def test_after_hour_writes(self) -> None:
+        last = datetime(2026, 9, 27, 12, 0, tzinfo=timezone.utc)
+        assert _throttle_expired(last, last + timedelta(hours=1))
+
+    def test_new_utc_day_writes_within_hour(self) -> None:
+        """23:40 -> 00:10 UTC must still record the new day's user_activity row."""
+        last = datetime(2026, 9, 26, 23, 40, tzinfo=timezone.utc)
+        assert _throttle_expired(last, last + timedelta(minutes=30))
 
 
 # ---------------------------------------------------------------------------

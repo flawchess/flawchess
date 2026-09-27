@@ -8,6 +8,7 @@ import { createSwUpdateChecker, SW_UPDATE_INTERVAL_MS } from "@/lib/swUpdate";
 import { reportMaiaPageKillFromPreviousSession } from "@/lib/engine/maiaPageKillSentinel";
 import { installStalePreloadReload } from "@/lib/stalePreloadReload";
 import { captureFirstTouch } from "@/lib/firstTouch";
+import { installUmamiBeforeSend } from "@/lib/analytics";
 
 // SEED-158: a page killed while Maia was running (iOS Safari's silent
 // per-page memory-limit termination) leaves a record in localStorage — report
@@ -20,6 +21,11 @@ installStalePreloadReload();
 // Growth item 16: remember where this browser first arrived from (referrer host,
 // utm tags, landing path) before the router rewrites the URL.
 captureFirstTouch();
+
+// Scrub credentials and the Google OAuth referrer from every Umami payload.
+// The deferred tracker sends its first pageview only once the document is
+// complete, so registering the hook here always precedes it.
+installUmamiBeforeSend();
 
 // ── Service Worker update handling ────────────────────────────────────────
 // When a new service worker activates (after deploy), reload the page so the

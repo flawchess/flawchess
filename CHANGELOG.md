@@ -37,9 +37,11 @@ in `YYYY-MM-DD` (Europe/Zurich).
 - The Insights card at the top of the Endgames page is now hosted by Shelly the Turtle: she explains what Insights does, tells you how long it takes while the report is written, and says why the button is disabled (a running import, non-default filters, or a custom opponent-strength range) instead of hiding the reason in a hover tooltip. Once a report is ready it shows on its own, without the bubble. (quick 260927-b05)
 
 - New accounts now record how they first found FlawChess (the referring site's domain, campaign tags in the link, and the first page opened), so we can tell which channels bring people in; the privacy page lists this. Launches from the installed home-screen app are now tagged as such in page analytics instead of counting as direct visits.
+- Page analytics now note whether a visit comes from a guest or a signed-up account (no other account detail), and the privacy page says so. Clicks on a training reminder notification are now tagged, so reminder effectiveness is measurable.
 
 ### Fixed
 
+- Page analytics no longer record password-reset links with their reset token, and Google sign-ins no longer show up as visits referred by accounts.google.com. Daily activity is no longer missed for someone active just before and just after midnight UTC.
 - Short games that end in checkmate (a mate within the first five moves, such as Scholar's mate) are now analysed: they show their blunders and mistakes, accuracy and flaw markers, count in the Flaws timeline, and feed training puzzles. About a thousand existing games were re-analysed. (quick 260927-ajg)
 - The FlawChess engine no longer shows made-up 50% lines when a Stockfish grading request fails or times out, and a Maia error while drawing the move-probability chart can no longer leave the engine waiting forever. (quick 260927-8xn)
 - Bot games: the bot now actually comments on the swings it was meant to. It was judging a swing by win probability, which stops moving once a game is decided, so in the games with the biggest blunders it said nothing at all; it now judges by the evaluation itself. A long test game went from one comment to five. A minor line about the first capture can also no longer silence a real blunder moments later.
