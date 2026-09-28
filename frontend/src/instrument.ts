@@ -1,4 +1,5 @@
 import * as Sentry from "@sentry/react";
+import { isStalePreloadReloadPending } from "@/lib/stalePreloadReload";
 
 // Duck-typed interface for Axios errors — avoids importing axios in the Sentry
 // instrumentation file which loads before the app bundle is ready.
@@ -120,6 +121,10 @@ function sentryBeforeSend(
   event: Sentry.ErrorEvent,
   hint: Sentry.EventHint,
 ): Sentry.ErrorEvent | null {
+  // FLAWCHESS-C6: a stale-chunk recovery reload is in flight, so this page is
+  // about to be discarded and whatever broke in it (the lazy import resolved
+  // to undefined) is fixed by the reload itself.
+  if (isStalePreloadReloadPending()) return null;
   const error = hint.originalException;
   if (isAxiosLikeError(error)) {
     if (isDroppableAxiosError(error)) {
