@@ -1,6 +1,6 @@
 ---
 id: SEED-128
-status: rejected (2026-09-28, user decision: Maia's WDL head is not trusted as a leaf value; do not revisit. Its trigger, Phase 198 landing, never fired)
+status: rejected (2026-09-28, user decision, backed by reports/engine-disagreement-study/engine-disagreement-study.md: Maia's value head matches Stockfish on typical positions but loses badly exactly where the two disagree (Brier MG 0.2289 vs 0.2073, EG 0.2019 vs 0.1690), which are the sharp positions a leaf value decides moves on. Its trigger, Phase 198 landing, never fired)
 planted: 2026-07-31
 planted_during: Phase 197 (Maia WDL leaf values) — LEAF-04 rejection
 trigger_when: after Phase 198 (mctsSearch continuous dispatch) has landed, since it rewrites `dispatchExpansion` — the exact region any backup reweighting would touch, and the collision D-03 cited when rejecting in-search mitigations
