@@ -775,6 +775,12 @@ function returningCountsSentence(input: ScoreBubbleInput): string {
   return `${parts.join(', ')}.`;
 }
 
+/** 2026-09-28: closes a perfect later session when there is no reminder ask
+ * left to make (`none`). A clean sheet invites memorizing the answer, so the
+ * slot restates the walkthrough's "understand, don't memorize" goal. */
+const NOTHING_MISSED_UNDERSTANDING_TIP =
+  'Remember to analyze why the moves work or fail, not just memorize the best move.';
+
 /**
  * Phase 222 UAT round 6 bug fix: a perfect session used to end on the return
  * counts alone, so a desktop user who missed nothing never got the "scan the
@@ -788,7 +794,7 @@ function nothingMissedReminderAsk(input: ScoreBubbleInput): string[] {
   if (input.isFirstCompletedSession) {
     return [`${MUST_SURVIVE_HABIT} ${REMINDER_ASK_COPY[input.reminderAsk]}`];
   }
-  if (input.reminderAsk === 'none') return [];
+  if (input.reminderAsk === 'none') return [NOTHING_MISSED_UNDERSTANDING_TIP];
   return [REMINDER_ASK_COPY[input.reminderAsk]];
 }
 
