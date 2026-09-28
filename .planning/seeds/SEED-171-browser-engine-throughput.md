@@ -1,6 +1,7 @@
 ---
 id: SEED-171
-status: dormant
+status: active
+promoted_to: Phase 226
 planted: 2026-09-28
 planted_during: v2.19, Phase 225 planned (SEED-170); standalone performance review session
 trigger_when: whenever bot-move latency or analysis-board wall time becomes the priority, or the next engine milestone

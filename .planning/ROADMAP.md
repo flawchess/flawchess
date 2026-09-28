@@ -193,10 +193,11 @@
 | 223. Bot Voice & Immersive Bot Game Layout (SEED-168 + SEED-167, standalone) | 6/6 | Complete    | 2026-09-16 |
 | 224. Guest Activation — Welcome Removal & Guest Train (SEED-169, standalone) | 6/6 | Complete | 2026-09-18 |
 | 225. Engine Search Fixes — Root Comparability, Round Underfill & Findability Fallback (SEED-170, standalone) | 8/8 | Complete    | 2026-09-28 |
+| 226. Browser Engine Throughput — Round Underfill Re-land, Root Grade Split & Continuous Dispatch (SEED-171, standalone) | 0/0 | Not started | - |
 
 ## Active Phases
 
-No open milestone. Standalone phases continue absolute numbering from v2.19's Phase 222 (223 and 224 complete, 225 not planned).
+No open milestone. Standalone phases continue absolute numbering from v2.19's Phase 222 (223-225 complete, 226 not planned).
 
 ### Phase 223: Bot Voice & Immersive Bot Game Layout (SEED-168 + SEED-167)
 
@@ -469,6 +470,68 @@ Plans:
 - [x] 225-08-PLAN.md — Verdict and report, D-14 ship/hold, engine doc + changelog, SEED-173 (item 4), pre-merge gate
 
 **Seed:** `.planning/seeds/SEED-170-engine-root-comparability-and-round-underfill.md`
+
+### Phase 226: Browser Engine Throughput — Round Underfill Re-land, Root Grade Split & Continuous Dispatch (SEED-171)
+
+**Goal**: Cut bot-move latency (1.7-14 s at 50 nodes) and analysis wall time (43-98 s per
+position at 400 nodes) by fixing *scheduling*, not by porting code: TS search + chess.js glue
+is 0.5-1.1% of wall, the rest is ORT-wasm Maia and Stockfish-wasm, which idle a lot (SF pool
+utilisation 37-48%, round = 4 serialized Maia calls + slowest grade). Work in this order,
+since each step changes the idle profile the next one recovers:
+
+0. **Re-measure first** on an idle box (`.planning/research/perf-profiling-2026-09-28/`:
+   `profile_search.mjs` at `50 4 4 1` and `400 4 4 0`, `split_root.mjs` in both Clear-Hash and
+   a shipped-like warm-hash configuration). The 2026-09-28 numbers were taken at load 14-21.
+1. **Re-land the round underfill fix (seed item 6, Phase 225 item 2, arm A2 `a9d5113ef`)**
+   with the root comparability guard (arm A21 `27beff12f`) riding along. Before re-landing,
+   explain the `cBFTV` move-quality flip (tree-shape side effect vs. real bug) and judge on a
+   wider move-quality fixture than the 12-position maia-blindness set. Non-root candidate cap
+   only if profiling shows grade CPU dominated by high-candidate non-root nodes (own arm).
+2. **Split the round-1 root grade across idle SF workers (seed item 1).** Round 1 only, fan-out
+   and merge below the `providers.grade` boundary; round barrier, apply order and
+   `mctsSearch.ts` untouched. Measured 2.8x on that grade, expected ~10-25% of bot-move wall.
+   Must meet L-2 (any missing sub-grade = whole grade aborted, never a partial merge; unit
+   test), L-3 (merge before the single grade-cache write, idle slots only), L-4 (size from
+   live idle slots, pool can be 2 on mobile).
+3. **Continuous dispatch against a relaxed determinism target (seed item 5).** Remove the
+   round `Promise.all` barrier (virtual loss / pending marks). Discuss-phase picks the relaxed
+   target up front (same top move / same `rankedLines` order within top N / expected score
+   within a tolerance at c = 4) and whether a deterministic c = 1 or round-mode path is
+   retained for tests. Add the no-Clear-Hash arm to `calibration-determinism.check.mjs`
+   (SEED-130 Q2). Read `apply-order-design.md` §9b/§9d first. Measure WebGPU Maia on desktop
+   (seed item 3) before sizing this on desktop (L-6); iOS stays on wasm Maia.
+
+Discuss-phase decides whether step 3 splits off into its own phase (the seed estimates two
+phases: steps 0-2, then step 3).
+
+**Measurement gate** (accept rule committed under `reports/<dir>/accept-rule.md` before any
+data, never edited after, overrides only; Phase 195/197/198/225 pattern; "measured, not worth
+shipping" is a first-class outcome):
+
+- Compare against a **same-session A0 baseline**, not the July-21 persona curves: unchanged
+  `main` already fails SF parity (pooled shift -81.4 vs ±50, Phase 225). Investigate that drift
+  first or write the rule relative to A0.
+- Throughput at bot 50/c4 and analysis 400/c4 (wall clock, SF utilisation), desktop and a
+  2-worker mobile-like pool.
+- Move quality on a widened fixture; stop-rule nodes-at-stop inside the bot think deadline.
+- Persona calibration spot check (SEED-170 style) per shipped item, attributed separately.
+- Design for step 3 reviewed by independent-context reviewers told to attack named claims
+  with file:line evidence (L-7).
+
+**Out of scope:** Rust/WASM or chessops port (glue < 1%); multithreaded SF build (iOS wasm
+reservation budget); fp32/int8 Maia (no gain, breaks MAIA-01); Maia WDL leaf values (rejected
+2026-09-28); depth ladder / MultiPV width tuning (grading-ladder study); cross-FEN Maia
+batching unless WebGPU measurement makes it worthwhile; guarding the near-tie stop or the
+deadline cut (Phase 225 D-03/D-04); server-side Maia (SEED-172).
+
+**Depends on:** Phase 225 (complete).
+
+**Plans:** 0 plans
+
+Plans:
+- [ ] TBD (run /gsd-plan-phase 226 to break down)
+
+**Seed:** `.planning/seeds/SEED-171-browser-engine-throughput.md`
 
 ## Backlog
 
