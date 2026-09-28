@@ -931,6 +931,7 @@ None active.
 | 260927-b05 | Replace Endgames Insights hero card with Shelly the Turtle bot bubble | 2026-09-27 | ee465dbf9 | [260927-b05-replace-endgames-insights-hero-card-with](./quick/260927-b05-replace-endgames-insights-hero-card-with/) |
 | 260927-ajg | Fix short checkmate oracle bug (mated position excluded from eval coverage) and re-derive 1,016 prod games | 2026-09-27 | 292e77489 | [260927-ajg-fix-short-checkmate-oracle-bug-and-re-de](./quick/260927-ajg-fix-short-checkmate-oracle-bug-and-re-de/) |
 | 260928-85v | Move Maia score_move off the API event loop (SEED-172 item 1) | 2026-09-28 | 682127561 | [260928-85v-move-maia-score-move-off-the-api-event-l](./quick/260928-85v-move-maia-score-move-off-the-api-event-l/) |
+| 109 | Activity dashboard: default time range 30 days | 2026-09-28 | de7ce598b | — |
 
 ## Deferred Items
 
