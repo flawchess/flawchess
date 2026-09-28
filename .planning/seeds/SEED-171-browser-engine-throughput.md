@@ -3,8 +3,8 @@ id: SEED-171
 status: dormant
 planted: 2026-09-28
 planted_during: v2.19, Phase 225 planned (SEED-170); standalone performance review session
-trigger_when: after Phase 225 (SEED-170 round-underfill fix) ships, or whenever bot-move latency or analysis-board wall time becomes the priority
-scope: medium-to-large (likely two phases: root split, then continuous dispatch against a relaxed determinism target). Re-measure first; read the Phase 198 lessons section before designing.
+trigger_when: whenever bot-move latency or analysis-board wall time becomes the priority, or the next engine milestone
+scope: medium-to-large (likely two phases: root split plus the held round-underfill fix, then continuous dispatch against a relaxed determinism target). Re-measure first; read the calibration baseline drift and Phase 198 lessons sections before designing.
 ---
 
 # SEED-171: Browser FlawChess engine throughput (Stockfish/Maia scheduling, not a Rust port)
@@ -41,6 +41,18 @@ Microbenchmarks:
   t=1 174 ms (b1) / 142 ms (b16); t=4 63 ms (b1) / 45 ms (b16). fp32 copy: no gain at t=4.
 - chess.js: `expandChildPositions` 2.4 ms for 8 children; `encodeBoard` 4.6 us.
 
+## Read first: calibration baseline drift (Phase 225)
+
+Phase 225's calibration check found that **unchanged `main` (arm A0: engine code as shipped plus
+harness tooling only) already fails parity against the committed July-21 persona curves**: Maia
+pooled shift -71.9 (threshold ±85, within), SF pooled shift **-81.4** (se ~33, threshold ±50,
+outside). This conflicts with the full 24-persona recalibration of 2026-08-01/02, which found no
+shift. It may be noise (~2.5 se) or a harness-condition difference; nobody has investigated. Any
+unit here with a calibration gate will hit the same drift, so either investigate it first or write
+the accept rule to compare against a same-session A0 baseline (as Phase 225's decision branch did)
+rather than against July-21. Numbers: `reports/engine-search-fixes-225/report.md`,
+`verdict.json`.
+
 ## Candidate work (decide in discuss-phase)
 
 1. **Split the root grade across idle SF workers, in the single-expansion first round only.**
@@ -60,7 +72,7 @@ Microbenchmarks:
    sizes, which is a content change for the policy cache (L-3). Only worth revisiting together
    with WebGPU (dispatch-bound, likely bigger win, unmeasured).
 3. **WebGPU Maia on desktop** is unmeasured. If Maia stops being the bottleneck there, SF
-   utilisation (item 1, SEED-170 item 2) matters even more. Measure in a real browser.
+   utilisation (items 1 and 6) matters even more. Measure in a real browser.
 4. **Depth ladder / MultiPV width tuning** (depth 14 at tree plies 0-1): a strength trade-off
    owned by the grading-ladder study, not engineering. Listed for completeness.
 5. **Retry continuous dispatch against a relaxed determinism target** (user decision
@@ -91,14 +103,35 @@ Microbenchmarks:
      reviewers told to attack named claims (L-7). Read `apply-order-design.md` §9b/§9d first: the
      14 undispositioned findings are a checklist of what the last design got wrong.
 
+6. **Re-land the round underfill fix (Phase 225 item 2, held).** `selectPath` gives up instead of
+   backtracking, collapsing a round to 1-2 effective concurrency on peaked positions. The fix is
+   real and throughput-positive (T-50 ratio 0.945, T-400 0.953) but was held at Phase 225's gate
+   by a single confirmed move-quality flip on the 12-position maia-blindness fixture (`cBFTV`:
+   A0 plays `e4c6`, es 0.975; A2 plays `e2g4`, es 0.405) and by its own calibration attribution
+   (`a2_vs_a0` SF shift +117.2). Reverted in `225-08`; arm A2 is `a9d5113ef`. Before re-landing,
+   find out why `cBFTV` flips (tree-shape side effect vs. real bug in the fix) and use a wider
+   move-quality fixture so one flip is not the whole verdict. It changes the idle profile, so
+   land or reject it before sizing items 1 and 5.
+   - **Root comparability guard (Phase 225 item 1, arm A21 `27beff12f`)** rides along: guards the
+     bot's clear-winner early stop until every in-window root child has settled. It passed its
+     own criteria (max wall 8.3 s vs 12.1 s ceiling, kept all 10 early stops, no move-quality
+     flip) and was held only because it was stacked on item 2.
+   - **Non-root candidate cap** (SEED-170 item 4, unmeasured): `truncateAndRenormalize` caps only
+     the root (`ROOT_CANDIDATE_HARD_CAP = 15`); at policy temperature up to 2.0 a deep own-node can
+     keep 20+ candidates, and MultiPV cost is ~linear in candidate count. A cap of ~6-8 is one
+     constant but changes strength, so it needs its own arm. Only worth it if profiling shows
+     grade CPU dominated by high-candidate non-root nodes.
+
 ## Already decided elsewhere (do not re-litigate without new evidence)
 
 - **Maia WDL leaf values (SEED-128 / Phase 197)**: rejected by the user 2026-09-28 (does not
   trust Maia's WDL head). Do not propose WDL-based leaf values or backup reweighting as a
   throughput lever.
-- **Round underfill** (`selectPath` gives up instead of backtracking): being fixed in Phase 225
-  (SEED-170 item 2). It likely explains part of the measured low SF utilisation, so **re-run
-  `profile_search.mjs` after Phase 225** before sizing item 1.
+- **Early-stop residuals left unguarded on purpose (Phase 225 D-03/D-04):** the near-tie
+  (flatness) stop branch is low-stakes, and the wall-clock deadline cut must never wait (a guard
+  could make the bot flag; `botBudget.ts` documents the deadline-cut bot as intentionally
+  weaker). Measured deadline exposure: 18% of post-`minNodes` snapshots had an unsettled
+  in-window root child, report-only, not judged against any bar.
 
 ## Lessons from Phase 198 (continuous dispatch, closed measured-not-shipped 2026-07-31)
 
@@ -158,7 +191,8 @@ SEED-130) and what that means for any engine concurrency work here:
 
 ## Re-measurement plan
 
-1. Idle box (stop local `remote_eval_worker`), after Phase 225 lands.
+1. Idle box (stop local `remote_eval_worker`). Phase 225 shipped only the findability fallback,
+   so the tree shape still has round underfill (item 6).
 2. `profile_search.mjs` at `50 4 4 1` and `400 4 4 0`; compare SF utilisation to the table above.
 3. `split_root.mjs` for item 1's gain on the new tree shape, in both the harness (Clear Hash)
    and a shipped-like warm-hash configuration (L-1): the ±20 cp delta was measured on cleared
@@ -172,5 +206,6 @@ SEED-130) and what that means for any engine concurrency work here:
 - `frontend/src/lib/engine/workerPoolDispatch.ts:50`, `workerPoolState.ts:94-106`, `gradingLadder.ts:114,130`
 - `frontend/src/lib/engine/botBudget.ts`, `useFlawChessEngine.ts:40,368`, `select.ts:21`, `policyTemperature.ts:56`
 - `frontend/public/maia/maia-worker.js:474,620`, `maiaQueue.ts:166`, `maiaWorkerHost.ts:418`
-- SEED-127 (closed), SEED-130, SEED-170, `reports/continuous-dispatch/report.md`
+- SEED-127 (closed), SEED-130, SEED-170 (closed), `reports/continuous-dispatch/report.md`,
+  `reports/engine-search-fixes-225/report.md`
 - Server-side counterpart: SEED-172

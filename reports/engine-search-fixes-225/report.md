@@ -217,3 +217,6 @@ confirmed `cBFTV` flip; the calibration decision-branch numbers above), the four
 note that D-14 forbids a refit as the remedy. Item 4 (non-root candidate cap) and the deferred
 flatness/deadline-cut guarding idea are recorded separately in
 `.planning/seeds/SEED-173-engine-non-root-candidate-cap.md` per D-15.
+
+*Update 2026-09-28:* SEED-173 and SEED-174 were folded into SEED-171 (item 6 and the "calibration
+baseline drift" section) and deleted.
