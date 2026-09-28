@@ -4,7 +4,7 @@ status: dormant
 planted: 2026-09-28
 planted_during: v2.19, Phase 225 planned (SEED-170); standalone performance review session
 trigger_when: after Phase 225 (SEED-170 round-underfill fix) ships, or whenever bot-move latency or analysis-board wall time becomes the priority
-scope: medium (one phase; pick a subset in discuss-phase). Re-measure first; read the Phase 198 lessons section before designing.
+scope: medium-to-large (likely two phases: root split, then continuous dispatch against a relaxed determinism target). Re-measure first; read the Phase 198 lessons section before designing.
 ---
 
 # SEED-171: Browser FlawChess engine throughput (Stockfish/Maia scheduling, not a Rust port)
@@ -63,13 +63,39 @@ Microbenchmarks:
    utilisation (item 1, SEED-170 item 2) matters even more. Measure in a real browser.
 4. **Depth ladder / MultiPV width tuning** (depth 14 at tree plies 0-1): a strength trade-off
    owned by the grading-ladder study, not engineering. Listed for completeness.
+5. **Retry continuous dispatch against a relaxed determinism target** (user decision
+   2026-09-28; Phase 198 was attempted with a weaker model). Remove the round `Promise.all`
+   barrier so Maia and SF overlap: standard asynchronous tree search with virtual loss / pending
+   marks, as in Leela-style engines. Phase 198 measured 34.8% / 28.6% (pre-225 baseline); this
+   session's model put the ceiling at 1.7-2.1x, realistic 1.3-1.6x. Re-measure after Phase 225
+   and item 1, since both change the idle profile it recovers.
+   - **Relaxed target, decided up front (answers SEED-130 Q1).** Drop browser/harness bit-identity
+     as the contract. Candidates to pick from in discuss-phase: same top move; same
+     `rankedLines` order within the top N; expected score within a stated tolerance, checked
+     statistically over a fixture at c = 4. Most of 198's complexity (commit-ordered apply,
+     slot release, head-of-line stalls, finding Y-6) existed only to keep bit-identity, so
+     dropping it should shrink the design substantially.
+   - **Keep a deterministic mode for tests and debugging:** c = 1 (or a round-mode flag) must stay
+     bit-identical so unit tests and fixture gates remain exact. This is narrower than 198's
+     "no retained second runner" (D-11); decide which it is.
+   - **Honest gate:** add the no-Clear-Hash arm to `calibration-determinism.check.mjs` (SEED-130
+     Q2) and assert the relaxed property against the shipped-like configuration, not the harness.
+   - **Calibration:** the harness must run the same dispatch as the app (app == harness parity is
+     about algorithm, no longer about bit-identity). Persona calibration becomes timing-dependent;
+     it is already statistical, so check the persona curve shift with the SEED-170-style spot
+     check and budget a refit if it moves.
+   - **Still binding from 198:** abort applies zero results (L-2, finding Y-3); mobile pool of 2
+     vs c = 4 (L-4); iOS stays on wasm Maia, so the win there does not shrink with WebGPU (L-6
+     applies to desktop only).
+   - **Process:** accept rule committed before measuring; design reviewed by independent-context
+     reviewers told to attack named claims (L-7). Read `apply-order-design.md` §9b/§9d first: the
+     14 undispositioned findings are a checklist of what the last design got wrong.
 
 ## Already decided elsewhere (do not re-litigate without new evidence)
 
-- **Continuous dispatch / removing the round `Promise.all` barrier**: SEED-127 / Phase 198 measured
-  34.8%/28.6% but closed measured-not-shipped (apply-order design failed two independent reviews;
-  determinism + calibration parity). This session's agent recommended it again as #1 without
-  knowing that; its upper bound here was 1.7-2.1x, realistic 1.3-1.6x.
+- **Maia WDL leaf values (SEED-128 / Phase 197)**: rejected by the user 2026-09-28 (does not
+  trust Maia's WDL head). Do not propose WDL-based leaf values or backup reweighting as a
+  throughput lever.
 - **Round underfill** (`selectPath` gives up instead of backtracking): being fixed in Phase 225
   (SEED-170 item 2). It likely explains part of the measured low SF utilisation, so **re-run
   `profile_search.mjs` after Phase 225** before sizing item 1.
@@ -113,8 +139,9 @@ SEED-130) and what that means for any engine concurrency work here:
   rewrite of `mctsSearch.ts` without a retained old path.
 - **L-6: Faster Maia changes the economics.** 198's win was contingent on slow wasm Maia; its
   own retraction computed that at a WebGPU-plausible policy cost it drops below the 25% build
-  line. Evaluate WebGPU Maia (item 3) before anything whose value depends on Maia being slow
-  (item 2, and continuous dispatch generally). Item 1 is SF-bound and survives this.
+  line. Evaluate WebGPU Maia (item 3) before sizing anything whose value depends on Maia being
+  slow (item 2, item 5 on desktop). iOS stays on wasm Maia, so item 5's win there is unaffected.
+  Item 1 is SF-bound and survives this.
 - **L-7: Process.** Commit an accept rule before measuring (`reports/continuous-dispatch/accept-rule.md`
   is the template; "measured, not worth shipping" is a first-class outcome). Get the design
   reviewed by independent-context reviewers told to attack named claims with file:line evidence:
