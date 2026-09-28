@@ -210,7 +210,11 @@ describe('fallbackExpectimax — D-04 extraRootMoves', () => {
 
   it('INJECT-02 observable-ranking proof: a post-fix injected move with a real prior ranks ABOVE a known weaker organic candidate whose rankScore it beats', async () => {
     // Mirrors mctsSearch.test.ts's identical fixture and derivation — see
-    // that file for the full numeric rationale (ENGINE-06 parity).
+    // that file for the full numeric rationale (ENGINE-06 parity). Phase 225
+    // D-10a: organic grades SWAPPED from the original Phase 196 fixture
+    // (e1d2 now the higher-graded organic move) so the derivation depends on
+    // the actual rankScore comparison, not on which organic move happens to
+    // grade better.
     const POLICY: Record<string, number> = {
       e2e3: 0.55,
       e1d2: 0.35, // the "known weaker organic": kept, high prior, mediocre grade
@@ -220,11 +224,11 @@ describe('fallbackExpectimax — D-04 extraRootMoves', () => {
       e1f1: 0.01,
     };
     const GRADES: Record<string, MoveGrade> = {
-      e2e3: { evalCp: 50, evalMate: null, depth: 10 },
-      e1d2: { evalCp: 10, evalMate: null, depth: 10 },
+      e2e3: { evalCp: 10, evalMate: null, depth: 10 },
+      e1d2: { evalCp: 50, evalMate: null, depth: 10 },
       e2e4: { evalCp: 700, evalMate: null, depth: 10 },
     };
-    const ELO = 2200; // pRefForElo(2200) = 0.015, below both candidates' priors — saturates both
+    const ELO = 2200; // pRefForElo(2200) = 0.015, well below every candidate's prior — saturates all three
     const budget: SearchBudget = {
       maxNodes: 1,
       elo: { w: ELO, b: ELO },
@@ -243,19 +247,24 @@ describe('fallbackExpectimax — D-04 extraRootMoves', () => {
     const weakerOrganicIndex = snapshot.rankedLines.findIndex((l) => l.rootMove === 'e1d2');
     expect(injectedIndex).toBeGreaterThanOrEqual(0);
     expect(weakerOrganicIndex).toBeGreaterThanOrEqual(0);
-    // Pre-fix (prior 0): e2e4 would rank strictly LAST regardless of its
-    // 700cp grade — this assertion would fail.
+    // Phase 225 D-10a: with the injected seed prior forced to 0, e2e4 scores
+    // min(value, V_fallback) ≈ 0.523 instead of saturating to its own value
+    // — still below e1d2's saturated rankScore ≈0.546 — so this assertion
+    // would fail (mutation check recorded in the 225-06 SUMMARY).
     expect(injectedIndex).toBeLessThan(weakerOrganicIndex);
   });
 });
 
 // ─── Phase 159 D-01: findability ranking, identical across both runners ────
+// Phase 225 D-10a/D-10e: rankScore now blends toward V_fallback, never
+// toward 0 — a hard-to-find move far better than the findable alternative
+// is no longer suppressed toward the bottom (intentional, user-accepted
+// reversal of Phase 159's original showcase fixture).
 
-describe('fallbackExpectimax — Phase 159 D-01 findability ranking', () => {
+describe('fallbackExpectimax — Phase 159 D-01 findability ranking (Phase 225 D-10a/D-10e: blend toward V_fallback)', () => {
   // Mirrors mctsSearch.test.ts's identical fixture exactly: e2e4 (low prior
-  // 0.06, high V via evalCp=700) would win the OLD practicalScore-only sort
-  // against e2e3 (high prior 0.85, lower V via evalCp=100); at a low root
-  // ELO the findability-weighted sort reverses this.
+  // 0.06, high V via evalCp=700) vs e2e3 (high prior 0.85, lower V via
+  // evalCp=100) at a low root ELO.
   const FINDABILITY_POLICY: Record<string, number> = {
     e2e3: 0.85,
     e2e4: 0.06,
@@ -281,7 +290,7 @@ describe('fallbackExpectimax — Phase 159 D-01 findability ranking', () => {
     };
   }
 
-  it('demotes the low-prior/high-V move below the high-prior/lower-V move at low ELO, while practicalScore stays unchanged', async () => {
+  it('promotes the far-better hard-to-find move above the findable-but-worse move via the V_fallback pull, while practicalScore stays unchanged', async () => {
     const snapshot = await fallbackExpectimax(
       SIMPLE_WHITE_FEN,
       findabilityBudget(),
@@ -299,7 +308,10 @@ describe('fallbackExpectimax — Phase 159 D-01 findability ranking', () => {
     expect(e2e3Line!.practicalScore).toBe(evalToExpectedScore(100, null, 'white'));
     expect(e2e4Line!.practicalScore).toBeGreaterThan(e2e3Line!.practicalScore);
 
-    expect(snapshot.rankedLines[0]?.rootMove).toBe('e2e3');
+    // See mctsSearch.test.ts's identical fixture for the full numeric
+    // derivation (V_fallback ≈ 0.613, rankScore(e2e4) ≈ 0.787 > 0.591) — the
+    // Phase 159 showcase ordering is intentionally reversed here (D-10e).
+    expect(snapshot.rankedLines[0]?.rootMove).toBe('e2e4');
   });
 
   it('produces the IDENTICAL findability-reordered rootMove sequence as mctsSearch on the same fixture', async () => {
@@ -385,38 +397,44 @@ describe('fallbackExpectimax — Phase 159 policy temperature', () => {
     expect(rootCall!.candidateUcis.length).toBe(4);
   });
 
-  it('composes with D-01 findability: reverses the T=1 winner at T=2 via the SAME low-ELO fixture', async () => {
+  it('composes with D-01 findability: reverses the T=1 winner at T=2 via a three-candidate fixture (Phase 225 D-10a/D-10e)', async () => {
     // Identical to mctsSearch.test.ts's composition test — see that file for
-    // the full numeric derivation of why T=2 flips the winner.
+    // the full numeric derivation of why T=2 flips the winner. Phase 225
+    // D-10a/D-10e: the OLD two-candidate fixture no longer reverses (e2e4
+    // already wins at T=1 under the V_fallback pull), so this needs the same
+    // third candidate (e1d2) to keep V_fallback low enough at T=1.
     const POLICY: Record<string, number> = {
-      e2e3: 0.85,
+      e2e3: 0.5,
+      e1d2: 0.38,
       e2e4: 0.06,
-      e1d2: 0.04,
       e1f2: 0.03,
-      e1d1: 0.01,
+      e1d1: 0.02,
       e1f1: 0.01,
     };
     const GRADES: Record<string, MoveGrade> = {
       e2e4: { evalCp: 700, evalMate: null, depth: 10 },
-      e2e3: { evalCp: 100, evalMate: null, depth: 10 },
+      e2e3: { evalCp: 350, evalMate: null, depth: 10 },
+      e1d2: { evalCp: -300, evalMate: null, depth: 10 },
     };
     const LOW_ELO = 600;
 
-    const budgetT2: SearchBudget = {
+    const budgetT1: SearchBudget = {
       maxNodes: 1,
       elo: { w: LOW_ELO, b: LOW_ELO },
       maxPlies: 4,
       concurrency: 1,
-      policyTemperature: 2,
     };
+    const budgetT2: SearchBudget = { ...budgetT1, policyTemperature: 2 };
     const providers: EngineProviders = {
       policy: makeFixedPolicy({ [SIMPLE_WHITE_FEN]: POLICY }),
       grade: makeFixedGrade({ [SIMPLE_WHITE_FEN]: GRADES }),
     };
 
-    const snapshot = await fallbackExpectimax(SIMPLE_WHITE_FEN, budgetT2, providers, () => {}, freshSignal());
+    const snapshotT1 = await fallbackExpectimax(SIMPLE_WHITE_FEN, budgetT1, providers, () => {}, freshSignal());
+    expect(snapshotT1.rankedLines[0]?.rootMove).toBe('e2e3');
 
-    expect(snapshot.rankedLines[0]?.rootMove).toBe('e2e4');
+    const snapshotT2 = await fallbackExpectimax(SIMPLE_WHITE_FEN, budgetT2, providers, () => {}, freshSignal());
+    expect(snapshotT2.rankedLines[0]?.rootMove).toBe('e2e4');
   });
 
   it('an extreme-flatness fixture never produces more than ROOT_CANDIDATE_HARD_CAP root children (D-07/Pitfall 6)', async () => {

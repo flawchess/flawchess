@@ -49,6 +49,7 @@
  *     --dispatch-mode round|continuous \
  *     [--nodes 50] [--procs 4] [--plies 8] [--elo 1500] \
  *     [--openings 12] [--fens path/to/fens.txt] [--maia-fifo] \
+ *     [--no-stop-rule] [--root-trace] [--guard-window 0.15] \
  *     [--out-dir reports/data] [--self-test] [--help]
  *
  *   --dispatch-mode  REQUIRED, no default. "round" or "continuous" — which
@@ -63,6 +64,23 @@
  *   --fens           newline-delimited FEN file (`#` comments allowed) REPLACING the built-in set
  *   --maia-fifo      (D-03) serialise Maia to one inference in flight, mirroring the
  *                    app's `maiaWorkerHost` lease; OFF by default
+ *   --no-stop-rule   (Phase 225 D-02) omit `budget.stopRule` entirely so the search
+ *                    always runs the full `--nodes` budget — this is what the D-02
+ *                    root-trace measurement needs (more root children get expanded
+ *                    than with the shipped stop rule, which truncates at 8-24 nodes).
+ *                    OFF by default (the shipped `FLAWCHESS_BOT_STOP_RULE` applies).
+ *   --root-trace     (Phase 225 D-02) writes a second TSV,
+ *                    `engine-root-trace-{mode}-elo{elo}-stop{on|off}-{stamp}.tsv`, one
+ *                    row per root-child FIRST expansion (visits 0 -> 1), with the
+ *                    pre/post `practicalScore` and their delta — the D-02 allowance
+ *                    calculator's input. OFF by default.
+ *   --guard-window   (Phase 225 D-04) report-only exposure metric: counts, per
+ *                    post-`minNodes` snapshot, whether an unvisited root child sits
+ *                    within this window of the top `practicalScore`. Never feeds a
+ *                    gate (D-04) — always a number > 0, and always passed EXPLICITLY
+ *                    by the Phase 225 accept rule (never derived from the engine's own
+ *                    stop-rule object), so the window is identical across arms. Unset
+ *                    by default (no exposure columns).
  *   --out-dir        emit a TSV here; omit to print only
  *   --self-test      exercise parseArgs only (no engines spawned); exits non-zero on failure
  *   --help           print this header and exit
@@ -148,6 +166,20 @@ function parsePositiveIntFlag(value, key, min = 1) {
   return parsed;
 }
 
+/**
+ * Parses `--guard-window` (Phase 225 D-04): must be a finite number strictly
+ * greater than 0. The window is always passed explicitly by the accept rule
+ * (never derived from `FLAWCHESS_BOT_STOP_RULE`), so this only validates the
+ * shape of what the operator typed.
+ */
+function parsePositiveFloatFlag(value, key) {
+  const parsed = Number.parseFloat(requireFlagValue(value, key));
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    throw new Error(`Invalid --${key}: expected a number > 0, got ${JSON.stringify(value)}`);
+  }
+  return parsed;
+}
+
 export function parseArgs(argv) {
   const args = {
     nodes: FLAWCHESS_BOT_MAX_NODES,
@@ -157,6 +189,9 @@ export function parseArgs(argv) {
     openings: 0,
     fens: null,
     maiaFifo: false,
+    noStopRule: false,
+    rootTrace: false,
+    guardWindow: null,
     dispatchMode: null,
     outDir: null,
     help: false,
@@ -183,6 +218,9 @@ export function parseArgs(argv) {
       case 'openings': args.openings = parsePositiveIntFlag(value, key, 0); i++; break;
       case 'fens': args.fens = requireFlagValue(value, key); i++; break;
       case 'maia-fifo': args.maiaFifo = true; break; // boolean, consumes no value
+      case 'no-stop-rule': args.noStopRule = true; break; // boolean, consumes no value (D-02)
+      case 'root-trace': args.rootTrace = true; break; // boolean, consumes no value (D-02)
+      case 'guard-window': args.guardWindow = parsePositiveFloatFlag(value, key); i++; break; // D-04
       case 'out-dir': args.outDir = requireFlagValue(value, key); i++; break;
       case 'dispatch-mode': {
         const raw = requireFlagValue(value, key);
@@ -277,7 +315,7 @@ async function runOneGo(engine, depth, fen, candidateUcis) {
  * than a fixed comparison depth (unlike `engine-grading-depth-ab.mjs`, this
  * script never sweeps depths — it has exactly one grading path).
  */
-async function createGradePool(size) {
+export async function createGradePool(size) {
   // The SHARED pool (`lib/stockfish-pool.mjs`) rather than a private
   // acquire/release copy: it evicts and respawns an engine whose child process
   // dies, which a hand-rolled pool did not — one lost child used to poison the
@@ -296,6 +334,73 @@ async function createGradePool(size) {
   };
 
   return { grade, resetAll: () => pool.newGameAll(), quitAll: () => pool.quitAll() };
+}
+
+// ─── Root tracer (D-02 first-expansion deltas + D-04 exposure) ──────────────
+
+/**
+ * Per-position `onSnapshot` tracer for the Phase 225 D-02 measurement and the
+ * D-04 exposure metric. A root child's `visits` goes 0 -> 1 exactly at its
+ * OWN first expansion: visits are bumped at apply time along the whole path
+ * (`applyExpansion`, mctsSearch.ts), root children sit at depth 1 so they are
+ * never dead-end discoveries reached via some other node, and a closed
+ * (terminal) root child is never visited at all (`dispatchExpansion`'s
+ * `leaf.isRoot` exemption still requires an actual apply to bump visits). So
+ * comparing the previous and current snapshot's `practicalScore` for exactly
+ * the line(s) whose `visits` flipped 0 -> 1 gives the first-expansion value
+ * change (post minus pre) this script measures for D-02. A line absent from
+ * the previous snapshot (the very first one) never produces a delta.
+ *
+ * D-04 exposure caveat: `RankedLine` carries no `isClosed` flag, so a
+ * terminal root child (visits 0, an exact backed-up value) can be counted as
+ * "unvisited and in-window" here even though the real engine would never
+ * need to guard it — a known false positive, report-only, never a gate.
+ */
+function makeRootTracer({ position, elo, stopRuleLabel, guardWindow, minNodes }) {
+  let prev = new Map(); // rootMove -> { visits, value }
+  const rows = [];
+  let eligibleSnapshots = 0;
+  let exposedSnapshots = 0;
+
+  const onSnapshot = (snapshot) => {
+    for (const line of snapshot.rankedLines) {
+      const p = prev.get(line.rootMove);
+      if (p !== undefined && p.visits === 0 && line.visits >= 1) {
+        rows.push({
+          position,
+          elo,
+          stop_rule: stopRuleLabel,
+          root_move: line.rootMove,
+          snapshot_nodes: snapshot.nodesEvaluated,
+          pre_value: p.value,
+          post_value: line.practicalScore,
+          delta: line.practicalScore - p.value,
+        });
+      }
+    }
+
+    if (guardWindow !== null && snapshot.nodesEvaluated >= minNodes) {
+      eligibleSnapshots += 1;
+      let top = -Infinity;
+      for (const line of snapshot.rankedLines) {
+        if (line.practicalScore > top) top = line.practicalScore;
+      }
+      const exposed = snapshot.rankedLines.some(
+        (line) => line.visits === 0 && top - line.practicalScore <= guardWindow,
+      );
+      if (exposed) exposedSnapshots += 1;
+    }
+
+    prev = new Map(
+      snapshot.rankedLines.map((line) => [line.rootMove, { visits: line.visits, value: line.practicalScore }]),
+    );
+  };
+
+  return {
+    onSnapshot,
+    getRows: () => rows,
+    getExposure: () => ({ eligible: eligibleSnapshots, exposed: exposedSnapshots }),
+  };
 }
 
 // ─── Self-test (parseArgs only, no engines) ──────────────────────────────────
@@ -368,6 +473,69 @@ function runSelfTest() {
     `no --fens + --openings 3 yields ${BUILTIN_POSITIONS.length} + 3 positions, got ${withOpenings.length}`,
   );
 
+  // --no-stop-rule and --root-trace are booleans that still let the next flag parse.
+  const noStopRuleArgs = parseArgs(['--dispatch-mode', 'round', '--no-stop-rule', '--nodes', '4']);
+  check(
+    noStopRuleArgs.noStopRule === true && noStopRuleArgs.nodes === 4,
+    '--no-stop-rule parses as a boolean and still parses the following --nodes flag',
+  );
+  const rootTraceArgs = parseArgs(['--dispatch-mode', 'round', '--root-trace', '--nodes', '4']);
+  check(
+    rootTraceArgs.rootTrace === true && rootTraceArgs.nodes === 4,
+    '--root-trace parses as a boolean and still parses the following --nodes flag',
+  );
+
+  // --guard-window parses a valid positive float.
+  const guardWindowArgs = parseArgs(['--dispatch-mode', 'round', '--guard-window', '0.15']);
+  check(guardWindowArgs.guardWindow === 0.15, '--guard-window 0.15 parses to 0.15');
+
+  // --guard-window rejects zero, negative, and non-numeric values.
+  for (const bad of ['0', '-1', 'abc']) {
+    try {
+      parseArgs(['--dispatch-mode', 'round', '--guard-window', bad]);
+      check(false, `--guard-window ${bad} should throw`);
+    } catch (err) {
+      check(/guard-window/i.test(err.message), `--guard-window ${bad} throws mentioning guard-window`);
+    }
+  }
+
+  // Pure tracer check (no engines): three synthetic snapshots exercising both
+  // the D-02 first-expansion delta and the D-04 exposure metric.
+  {
+    const tracer = makeRootTracer({ position: 'synthetic', elo: 1500, stopRuleLabel: 'off', guardWindow: 0.15, minNodes: 1 });
+    tracer.onSnapshot({
+      nodesEvaluated: 1,
+      rankedLines: [
+        { rootMove: 'a', practicalScore: 0.40, visits: 0 },
+        { rootMove: 'b', practicalScore: 0.30, visits: 0 },
+      ],
+    });
+    tracer.onSnapshot({
+      nodesEvaluated: 2,
+      rankedLines: [
+        { rootMove: 'a', practicalScore: 0.47, visits: 1 },
+        { rootMove: 'b', practicalScore: 0.30, visits: 0 },
+      ],
+    });
+    tracer.onSnapshot({
+      nodesEvaluated: 3,
+      rankedLines: [
+        { rootMove: 'a', practicalScore: 0.47, visits: 1 },
+        { rootMove: 'b', practicalScore: 0.30, visits: 0 },
+      ],
+    });
+    const rows = tracer.getRows();
+    check(
+      rows.length === 1 && rows[0].root_move === 'a' && Math.abs(rows[0].delta - 0.07) < 1e-9,
+      `tracer records exactly one delta row for root_move a with delta ~0.07, got ${JSON.stringify(rows)}`,
+    );
+    const exposure = tracer.getExposure();
+    check(
+      exposure.eligible === 3 && exposure.exposed === 1,
+      `tracer reports exposure 1 of 3 eligible snapshots, got ${JSON.stringify(exposure)}`,
+    );
+  }
+
   return ok;
 }
 
@@ -389,13 +557,23 @@ async function main() {
   const { session, ort } = await createMaiaSession();
   const pool = await createGradePool(args.procs);
 
+  // D-02: --no-stop-rule omits budget.stopRule entirely so the search always
+  // runs the full node budget (more root children get expanded than with the
+  // shipped stop rule, which truncates at 8-24 nodes) — this is the run mode
+  // the root-trace measurement needs. stop_rule is stamped onto every row
+  // either way so a mixed A0/A2 directory can be told apart.
+  const stopRuleLabel = args.noStopRule ? 'off' : 'on';
+  const useRootTracer = args.rootTrace || args.guardWindow !== null;
+
   console.log(
     `\nDispatch stop-rule distribution — mode=${args.dispatchMode} nodes=${args.nodes} ` +
-      `plies=${args.plies} concurrency=${args.procs} elo=${args.elo} maia-fifo=${args.maiaFifo}\n` +
+      `plies=${args.plies} concurrency=${args.procs} elo=${args.elo} maia-fifo=${args.maiaFifo} ` +
+      `stop-rule=${stopRuleLabel}${args.guardWindow !== null ? ` guard-window=${args.guardWindow}` : ''}\n` +
       `positions=${positions.length}\n`,
   );
 
   const rows = [];
+  const rootTraceRows = [];
   for (const { label, fen } of positions) {
     await pool.resetAll();
     resetMaiaRunMemo(); // isolates this position's own inference cost (198-01 convention).
@@ -407,17 +585,39 @@ async function main() {
       maxPlies: args.plies,
       concurrency: args.procs,
       elo: { w: args.elo, b: args.elo },
-      stopRule: FLAWCHESS_BOT_STOP_RULE,
+      ...(args.noStopRule ? {} : { stopRule: FLAWCHESS_BOT_STOP_RULE }),
     };
 
+    const tracer = useRootTracer
+      ? makeRootTracer({
+          position: label,
+          elo: args.elo,
+          stopRuleLabel,
+          guardWindow: args.guardWindow,
+          minNodes: FLAWCHESS_BOT_STOP_RULE.minNodes,
+        })
+      : null;
+
     const startedAt = performance.now();
-    const snapshot = await mctsSearch(fen, budget, providers, () => {}, new AbortController().signal);
+    const snapshot = await mctsSearch(
+      fen,
+      budget,
+      providers,
+      tracer !== null ? tracer.onSnapshot : () => {},
+      new AbortController().signal,
+    );
     const wallMs = performance.now() - startedAt;
+
+    const firstExpansions = tracer !== null ? tracer.getRows().length : null;
+    const exposure = tracer !== null && args.guardWindow !== null ? tracer.getExposure() : null;
+    if (tracer !== null) rootTraceRows.push(...tracer.getRows());
 
     console.log(
       `── ${label}  wall ${(wallMs / 1000).toFixed(1)}s  nodes=${snapshot.nodesEvaluated}  ` +
         `stop=${snapshot.stopReason ?? 'none'}  maia_cpu=${(maiaCpuStats.totalMs / 1000).toFixed(1)}s  ` +
-        `peak_inflight=${maiaInflightStats.peak}`,
+        `peak_inflight=${maiaInflightStats.peak}` +
+        (firstExpansions !== null ? `  first_expansions=${firstExpansions}` : '') +
+        (exposure !== null ? `  exposure ${exposure.exposed}/${exposure.eligible}` : ''),
     );
 
     rows.push({
@@ -432,6 +632,12 @@ async function main() {
       maia_fifo: args.maiaFifo,
       concurrency: args.procs,
       max_nodes: args.nodes,
+      elo: args.elo,
+      stop_rule: stopRuleLabel,
+      guard_window: args.guardWindow !== null ? args.guardWindow : '',
+      first_expansions: firstExpansions !== null ? firstExpansions : '',
+      exposure_snapshots: exposure !== null ? exposure.exposed : '',
+      eligible_snapshots: exposure !== null ? exposure.eligible : '',
     });
   }
 
@@ -441,16 +647,43 @@ async function main() {
     const columns = [
       'position', 'fen', 'dispatch_mode', 'nodes_evaluated_at_stop', 'stop_reason', 'wall_ms',
       'maia_cpu_ms', 'maia_peak_inflight', 'maia_fifo', 'concurrency', 'max_nodes',
+      'elo', 'stop_rule', 'guard_window', 'first_expansions', 'exposure_snapshots', 'eligible_snapshots',
     ];
     // Timestamp is read once here, AFTER all measurement, so it never influences a run.
     const stamp = new Date().toISOString().replace(/[:.]/g, '-');
-    const outPath = path.join(outDir, `engine-dispatch-stop-rule-${args.dispatchMode}-${stamp}.tsv`);
+    const outPath = path.join(
+      outDir,
+      `engine-dispatch-stop-rule-${args.dispatchMode}-elo${args.elo}-stop${stopRuleLabel}-${stamp}.tsv`,
+    );
     const tsv = [
       columns.join('\t'),
       ...rows.map((row) => columns.map((c) => (row[c] === undefined ? '' : String(row[c]))).join('\t')),
     ].join('\n');
     fs.writeFileSync(outPath, `${tsv}\n`);
     console.log(`\nWrote ${outPath}`);
+
+    if (args.rootTrace) {
+      const traceColumns = ['position', 'elo', 'stop_rule', 'root_move', 'snapshot_nodes', 'pre_value', 'post_value', 'delta'];
+      const traceTsv = [
+        traceColumns.join('\t'),
+        ...rootTraceRows.map((row) =>
+          traceColumns
+            .map((c) => {
+              const v = row[c];
+              return typeof v === 'number' && (c === 'pre_value' || c === 'post_value' || c === 'delta')
+                ? v.toFixed(6)
+                : String(v);
+            })
+            .join('\t'),
+        ),
+      ].join('\n');
+      const tracePath = path.join(
+        outDir,
+        `engine-root-trace-${args.dispatchMode}-elo${args.elo}-stop${stopRuleLabel}-${stamp}.tsv`,
+      );
+      fs.writeFileSync(tracePath, `${traceTsv}\n`);
+      console.log(`Wrote ${tracePath}`);
+    }
   }
 
   pool.quitAll();

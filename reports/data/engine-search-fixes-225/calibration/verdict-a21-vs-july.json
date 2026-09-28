@@ -1,0 +1,99 @@
+{
+  "maia": {
+    "exposed_cells": [
+      {
+        "bot_blend": 0.05,
+        "bot_elo": 1300,
+        "outside_ci": false,
+        "se_shift": 66.45860976551772,
+        "shift": -30.761693264761107
+      },
+      {
+        "bot_blend": 0.5,
+        "bot_elo": 1500,
+        "outside_ci": true,
+        "se_shift": 95.92067702446225,
+        "shift": -262.04314160567196
+      },
+      {
+        "bot_blend": 0.05,
+        "bot_elo": 1900,
+        "outside_ci": false,
+        "se_shift": 83.53089438915688,
+        "shift": -96.55690172839786
+      },
+      {
+        "bot_blend": 0.5,
+        "bot_elo": 2300,
+        "outside_ci": false,
+        "se_shift": 97.8851002386618,
+        "shift": -74.70236421475738
+      }
+    ],
+    "null_control": {
+      "se_shift": 77.80878203929431,
+      "shift": 32.79769826347342,
+      "threshold": 165.0,
+      "within_threshold": true
+    },
+    "pooled": {
+      "n_cells": 4,
+      "se": 41.423407616000496,
+      "shift": -97.94411589088236,
+      "threshold": 85.0,
+      "within_threshold": false
+    }
+  },
+  "sf": {
+    "exposed_cells": [
+      {
+        "bot_blend": 0.05,
+        "bot_elo": 1300,
+        "outside_ci": false,
+        "se_shift": 61.82450342079798,
+        "shift": 60.42820455321839
+      },
+      {
+        "bot_blend": 0.5,
+        "bot_elo": 1500,
+        "outside_ci": true,
+        "se_shift": 64.38471930057123,
+        "shift": -170.56273068204177
+      },
+      {
+        "bot_blend": 0.05,
+        "bot_elo": 1900,
+        "outside_ci": true,
+        "se_shift": 59.838759555627234,
+        "shift": -65.1330238564949
+      },
+      {
+        "bot_blend": 0.5,
+        "bot_elo": 2300,
+        "outside_ci": false,
+        "se_shift": 83.32049080251211,
+        "shift": 44.862556377091096
+      }
+    ],
+    "null_control": {
+      "se_shift": 74.35509154334432,
+      "shift": -126.80646862969695,
+      "threshold": 149.0,
+      "within_threshold": true
+    },
+    "pooled": {
+      "n_cells": 4,
+      "se": 32.858888565311574,
+      "shift": -40.01777938783091,
+      "threshold": 50.0,
+      "within_threshold": true
+    }
+  },
+  "shape_guard_triggered": [
+    [
+      1500,
+      0.5
+    ]
+  ],
+  "verdict": "fails"
+}

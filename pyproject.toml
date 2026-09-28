@@ -96,7 +96,8 @@ addopts = "--ignore=tests/scripts/benchmarks --ignore=tests/scripts/tagger"
 line-length = 100
 # analysis/tilt_study/probes/ holds notebook-style REPL snippets that reuse the marimo
 # notebook's globals (F821 everywhere); they are scratch probes, not modules.
-extend-exclude = ["analysis/tilt_study/probes"]
+# .planning/research/perf-profiling-* holds throwaway profiling scripts kept for re-measurement.
+extend-exclude = ["analysis/tilt_study/probes", ".planning/research/perf-profiling-*"]
 
 [tool.ruff.lint]
 # Explicit `select` pins the rule set that was ruff's own implicit default under

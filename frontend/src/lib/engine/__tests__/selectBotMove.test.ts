@@ -434,3 +434,67 @@ describe('selectBotMove — styled search branch (STYLE-04 score shaping)', () =
     expect(calls[0]?.budget.elo).toEqual({ w: 1800, b: 1800 });
   });
 });
+
+// ─── D-10d: order-invariant under any rankedLines permutation (Phase 225) ──
+
+describe('selectBotMove — D-10d: order-invariant under any rankedLines permutation (item 3 proof)', () => {
+  // Phase 225 item 3 (the V_fallback findability pull) changes ONLY the
+  // SORT ORDER buildRankedLines produces — never practicalScore, never
+  // which moves are present. Bot play reads practicalScore through
+  // argmaxLine (scans every line, D-06) or botSampling.ts's UCI-sorted
+  // weightedPick (D-12) — neither trusts array order. Proving
+  // selectBotMove picks the IDENTICAL move for every permutation of the
+  // same lines is exactly the proof that item 3 cannot change bot moves.
+  // This permutation proof stands in for D-10d's literal "old vs new rankScore
+  // on the same snapshot" comparison: old and new rankScore only produce two
+  // different orders of the same lines, so invariance under every order is the
+  // more general claim and covers that comparison as a special case.
+  const IDENTITY = [makeLine('e2e3', 0.3), makeLine('e2e4', 0.9), makeLine('e1d2', 0.6)];
+  const REVERSED = [...IDENTITY].reverse();
+  const ROTATED = [IDENTITY[2]!, IDENTITY[0]!, IDENTITY[1]!];
+  // "findability-like": lowest practicalScore first — the shape item 3's
+  // sort can actually produce (a hard-to-find high-V move no longer always
+  // sorts first; a low-V move can precede a high-V one).
+  const FINDABILITY_LIKE = [...IDENTITY].sort((a, b) => a.practicalScore - b.practicalScore);
+  const ORDERS: Record<string, RankedLine[]> = {
+    identity: IDENTITY,
+    reversed: REVERSED,
+    rotated: ROTATED,
+    'findability-like': FINDABILITY_LIKE,
+  };
+
+  it('returns the same move at blend 1 (argmax) for every permutation', async () => {
+    const moves = new Set<string>();
+    for (const lines of Object.values(ORDERS)) {
+      const { search } = stubSearch(lines);
+      const settings: BotSettings = { elo: 1500, blend: 1, budget: baseBudget() };
+      const move = await selectBotMove(WHITE_FEN, settings, baseDeps({ search }));
+      moves.add(move);
+    }
+    expect(moves.size).toBe(1);
+    expect([...moves][0]).toBe('e2e4'); // sanity: the true practicalScore argmax
+  });
+
+  it('returns the same move at blend 0.5 for every permutation, under a fresh fixed-seed rng per call', async () => {
+    const SEED = 42;
+    const moves = new Set<string>();
+    for (const lines of Object.values(ORDERS)) {
+      const { search } = stubSearch(lines);
+      const settings: BotSettings = { elo: 1500, blend: 0.5, budget: baseBudget() };
+      const move = await selectBotMove(WHITE_FEN, settings, baseDeps({ search, rng: mulberry32(SEED) }));
+      moves.add(move);
+    }
+    expect(moves.size).toBe(1);
+  });
+
+  it('returns the same move at blend 1 with a style applied, for every permutation', async () => {
+    const moves = new Set<string>();
+    for (const lines of Object.values(ORDERS)) {
+      const { search } = stubSearch(lines);
+      const settings: BotSettings = { elo: 1500, blend: 1, budget: baseBudget(), style: makeStyle() };
+      const move = await selectBotMove(WHITE_FEN, settings, baseDeps({ search }));
+      moves.add(move);
+    }
+    expect(moves.size).toBe(1);
+  });
+});

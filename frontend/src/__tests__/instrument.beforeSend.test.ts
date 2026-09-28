@@ -394,3 +394,33 @@ describe('Sentry.init config (FLAWCHESS-24 / SEED-148 items 3)', () => {
     expect(denyUrls.some((p) => p.test(beaconUrl))).toBe(true);
   });
 });
+
+describe('sentryBeforeSend (FLAWCHESS-C6)', () => {
+  const originalLocation = window.location;
+
+  afterEach(() => {
+    Object.defineProperty(window, 'location', { configurable: true, value: originalLocation });
+    window.sessionStorage.clear();
+  });
+
+  it('keeps a plain error event when no stale-chunk reload is pending', async () => {
+    const { sentryBeforeSend } = await import('@/instrument');
+    const event = makeEvent();
+
+    expect(sentryBeforeSend(event as never, { originalException: new TypeError('x') } as never)).toBe(
+      event,
+    );
+  });
+
+  it('drops every event once a stale-chunk recovery reload has been triggered', async () => {
+    const { sentryBeforeSend } = await import('@/instrument');
+    const { handleVitePreloadError } = await import('@/lib/stalePreloadReload');
+    window.sessionStorage.clear();
+    Object.defineProperty(window, 'location', { configurable: true, value: { reload: vi.fn() } });
+
+    handleVitePreloadError(new Event('vite:preloadError', { cancelable: true }));
+
+    const lazyError = new TypeError("undefined is not an object (evaluating 'e._result.default')");
+    expect(sentryBeforeSend(makeEvent() as never, { originalException: lazyError } as never)).toBeNull();
+  });
+});

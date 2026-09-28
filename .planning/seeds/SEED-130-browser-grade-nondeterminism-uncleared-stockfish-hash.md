@@ -83,6 +83,10 @@ the harness.
 
 ## Related
 
+- **SEED-171 item 5 (2026-09-28)**: the user chose to retry continuous dispatch against a relaxed
+  (non-bit-identical) target. That phase's discuss step is where open question 1 gets answered
+  and question 2's no-Clear-Hash gate arm gets built.
+
 - Phase 198 (`.planning/phases/198-mctssearch-continuous-dispatch/`) — where this surfaced; paused
   at wave 5 partly because of it. `apply-order-design.md` §9d holds the full Y-1 finding.
 - Phase 195's grading ladder (`reports/grading-ladder/findings-stage-a.md` § hash probe, D-07) —

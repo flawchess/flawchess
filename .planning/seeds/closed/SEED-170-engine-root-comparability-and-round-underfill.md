@@ -1,6 +1,6 @@
 ---
 id: SEED-170
-status: promoted
+status: closed. Resolved by Phase 225 (items shipped: item 3 findability fallback; held: item 1 root comparability guard, item 2 round underfill fix, both reverted per D-14; item 4 non-root candidate cap deferred. All follow-ups now live in SEED-171 item 6)
 planted: 2026-09-27
 planted_during: FlawChess engine code review (session 2026-09-27); behavior-neutral findings shipped separately as a /gsd-quick
 trigger_when: next engine milestone, or any time bot-move latency or analysis-board suggestion quality is the priority

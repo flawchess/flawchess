@@ -1,0 +1,5 @@
+italian     nodes=400 wall=66555ms | maia 387 calls 42895ms (110.8/call, 13 cache hits) | grade 387 calls busy 89048ms (230/call, avg 4.2 cands, 13 hits) {"10":"381x 213ms 4.2c","14":"6x 1291ms 4.8c"} | JS glue replay 655ms
+middlegame  nodes=400 wall=98440ms | maia 385 calls 53603ms (139.2/call, 15 cache hits) | grade 385 calls busy 163626ms (425/call, avg 8.1 cands, 15 hits) {"10":"373x 346ms 8.0c","14":"12x 2865ms 10.0c"} | JS glue replay 1060ms
+sharp       nodes=400 wall=63930ms | maia 350 calls 33737ms (96.4/call, 50 cache hits) | grade 350 calls busy 98996ms (283/call, avg 6.2 cands, 50 hits) {"10":"344x 248ms 6.2c","14":"6x 2300ms 7.3c"} | JS glue replay 853ms
+endgame     nodes=400 wall=42737ms | maia 366 calls 29978ms (81.9/call, 34 cache hits) | grade 366 calls busy 51617ms (141/call, avg 3.1 cands, 34 hits) {"10":"363x 136ms 3.1c","14":"3x 751ms 2.0c"} | JS glue replay 366ms
+TOTAL nodes=400 conc=4 maiaThreads=4 stop=false: wall 271662ms; maia serialized 160214ms (59% of wall); SF busy 403287ms across 4 procs (37% pool utilisation); glue 2935ms (1.1%)

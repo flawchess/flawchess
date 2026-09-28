@@ -18,6 +18,7 @@ fallback is monkeypatched to a fixed 7-tuple (no real engine needed).
 from __future__ import annotations
 
 import asyncio
+import threading
 import time
 import uuid
 from datetime import datetime, timezone
@@ -244,6 +245,40 @@ class TestCandidateGate:
             assert row["maia_prob"] == 0.1
             assert row["best_cp"] == 300
             assert row["second_cp"] == -100
+        finally:
+            await _delete_game(ea_session_maker, game_id)
+
+    async def test_maia_scoring_runs_off_event_loop_thread(
+        self,
+        ea_user: int,
+        ea_session_maker: async_sessionmaker[AsyncSession],
+        monkeypatch,
+    ) -> None:
+        """SEED-172 item 1: score_move (~150 ms of ONNX inference per call) must run
+        in a worker thread, not on the event loop thread, or it stalls every other
+        request on the API process."""
+        monkeypatch.setattr(eval_apply, "async_session_maker", ea_session_maker)
+        score_threads: list[int] = []
+
+        def _recording_score_move(fen: str, elo: float, uci: str) -> float:
+            score_threads.append(threading.get_ident())
+            return 0.1
+
+        monkeypatch.setattr(eval_apply, "score_move", _recording_score_move)
+
+        game_id = await _insert_game(ea_session_maker, ea_user)
+        try:
+            targets = [_target(6, "e2e4", "Ne2")]
+            engine_result_map: _EngineResultMap = {6: (300, None, "e2e4", None)}
+            second_best_map: _SecondBestMap = {6: (-100, None, "d2d4")}
+
+            rows = await _build_best_move_candidates(
+                game_id, targets, engine_result_map, second_best_map
+            )
+
+            assert len(rows) == 1
+            assert len(score_threads) == 1
+            assert score_threads[0] != threading.get_ident()
         finally:
             await _delete_game(ea_session_maker, game_id)
 

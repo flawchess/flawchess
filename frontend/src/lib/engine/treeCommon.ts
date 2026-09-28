@@ -22,7 +22,7 @@ import type { MoverColor } from '@/lib/liveFlaw';
 import { uciToSquares } from '@/lib/sanToSquares';
 import type { EngineSnapshot, ModalPlyStat, RankedLine, Side } from './types';
 import { type BackupChild, backupExpectation, backupRootMax } from './backup';
-import { pRefForElo, rankScore } from './findability';
+import { pRefForElo, rankFallbackValue, rankScore } from './findability';
 import { ROOT_CANDIDATE_HARD_CAP } from './policyTemperature';
 
 /**
@@ -126,9 +126,15 @@ function compareCandidateEntries(a: readonly [string, number], b: readonly [stri
  * INJECT-01/INJECT-02 union + prior-seeding: merges `budget.extraRootMoves`
  * into the root's post-truncation candidate map, seeding each newly-added
  * UCI's prior from its share of the ALREADY-KEPT candidates' total mass
- * (never 0 — INJECT-02: a 0 prior made `rankScore = min(1,0/pRef)*value = 0`,
- * which sorted the injected candidate dead last and made it the hard cap's
- * first casualty, silently defeating the injection mechanism).
+ * (never 0 — INJECT-02: a 0 prior sorted the injected candidate dead last
+ * and made it the hard cap's first casualty, silently defeating the
+ * injection mechanism). Phase 225 D-10a: under the current formula a 0
+ * prior no longer scores exactly 0 — it scores `min(value, V_fallback)`,
+ * the SAME clamped floor a low-prior organic candidate below V_fallback
+ * gets — but that floor is still below every findable move whose value
+ * exceeds V_fallback, so seeding a real (non-zero) prior still matters:
+ * without it, an injected move can never saturate rankScore's findability
+ * factor and rank above the findable candidates it should beat.
  *
  * Code review WR-02 (196-REVIEW.md): this block was previously copy-pasted
  * byte-for-byte between `mctsSearch.ts`'s `dispatchExpansion` and
@@ -399,6 +405,12 @@ function computeChildScoreSpread<N extends SearchTreeNode<N>>(node: N): number |
  * byte-identical to before this phase (D-04). `pRef` is computed ONCE per
  * call from `rootElo` (Anti-Pattern: never recompute per child).
  *
+ * Phase 225 D-10a/D-10b (SEED-170 item 3): `rankScore` blends toward a
+ * fallback value instead of toward 0, so `fallbackValue` is ALSO computed
+ * ONCE per call — `rankFallbackValue` over every root child's own
+ * `{ prior, value }` — and passed to every `rankScore` call below, exactly
+ * like `pRef`. This never touches which children exist or `practicalScore`.
+ *
  * Phase 194 JANK-03: `modalPath`/`modalStats` are attached as lazy accessor
  * properties, not data properties — `modalPathBuilder.build(child)` (the
  * modal-path walk) only runs on first READ of either field, via a single
@@ -414,6 +426,16 @@ function computeChildScoreSpread<N extends SearchTreeNode<N>>(node: N): number |
  */
 function buildRankedLines<N extends SearchTreeNode<N>>(root: N, rootElo: number): RankedLine[] {
   const pRef = pRefForElo(rootElo);
+  // Phase 225 D-10a/D-10b: V_fallback is computed ONCE per call, from every
+  // root child's own { prior, value } — the SAME filter (`uci !== null`) as
+  // the scoring loop below, so the fallback average and the scored set are
+  // over the identical child population.
+  const fallbackChildren: { prior: number; value: number }[] = [];
+  for (const child of root.children.values()) {
+    if (child.uci === null) continue; // defensive; every root child has a uci
+    fallbackChildren.push({ prior: child.prior, value: child.value });
+  }
+  const fallbackValue = rankFallbackValue(fallbackChildren);
   // Sort-only pairing of each public RankedLine with its ephemeral rankScore
   // (never assigned onto RankedLine itself, D-04) — kept as parallel local
   // state rather than a spread-and-omit so no unused-binding placeholder is
@@ -437,7 +459,7 @@ function buildRankedLines<N extends SearchTreeNode<N>>(root: N, rootElo: number)
     Object.defineProperty(line, 'modalPath', { get: () => getModal().path, enumerable: true });
     Object.defineProperty(line, 'modalStats', { get: () => getModal().stats, enumerable: true });
 
-    scored.push({ line, sortRankScore: rankScore(child.prior, pRef, child.value) });
+    scored.push({ line, sortRankScore: rankScore(child.prior, pRef, child.value, fallbackValue) });
   }
   scored.sort((a, b) => {
     if (b.sortRankScore !== a.sortRankScore) return b.sortRankScore - a.sortRankScore;

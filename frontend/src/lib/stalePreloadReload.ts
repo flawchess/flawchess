@@ -19,6 +19,19 @@ export const PRELOAD_RELOAD_STORAGE_KEY = 'flawchess:preload-reload-at';
  */
 export const PRELOAD_RELOAD_COOLDOWN_MS = 60 * 1000;
 
+// FLAWCHESS-C6: once the handler cancels the event, Vite's preload helper
+// resolves the dynamic import to `undefined` instead of rejecting, so React's
+// lazy() throws "undefined is not an object (evaluating 'e._result.default')"
+// and the error boundary reports it before the reload has torn the page down.
+// sentryBeforeSend reads this flag to drop events from a page that is already
+// being replaced.
+let reloadPending = false;
+
+/** True once a stale-chunk recovery reload has been triggered in this page. */
+export function isStalePreloadReloadPending(): boolean {
+  return reloadPending;
+}
+
 function readLastReloadMs(): number | null {
   const raw = window.sessionStorage.getItem(PRELOAD_RELOAD_STORAGE_KEY);
   if (raw === null) return null;
@@ -41,6 +54,7 @@ export function handleVitePreloadError(event: Event, nowMs: number = Date.now())
     return;
   }
   event.preventDefault();
+  reloadPending = true;
   window.location.reload();
 }
 
