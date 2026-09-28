@@ -2281,7 +2281,13 @@ async def _build_best_move_candidates(
             return []
         white_rating, black_rating, platform, tc_bucket, is_correspondence = rating_metadata
 
-        return _assemble_candidate_rows(
+        # Run in a worker thread (SEED-172 item 1): the Maia score_move calls inside
+        # take ~150 ms each (6-13 per game) and used to run synchronously here,
+        # freezing the API event loop for 1-2 s per submitted game. The helper is
+        # pure (no session), onnxruntime releases the GIL, and InferenceSession.run
+        # is safe to call concurrently from several threads.
+        return await asyncio.to_thread(
+            _assemble_candidate_rows,
             game_id,
             candidate_targets,
             engine_result_map,
