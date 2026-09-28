@@ -44,8 +44,18 @@ Share of engine time: full pass ~45%, blob walks ~20-45%, second-best re-search 
 Quick wins (could be `/gsd-quick`):
 1. **Move Maia off the event loop**: `score_move` runs synchronously inside the async submit
    handler (`eval_apply.py` ~2443). Wrap in `asyncio.to_thread` (onnxruntime releases the GIL).
-   Pure latency fix, no behavior change.
-2. **Maia fp32 on the server: 2.8x at 1 thread, 5.3x at 4 threads.** Native CPU EP has poor fp16
+   Pure latency fix, no behavior change. **Independent of the Stockfish share and of the
+   re-measurement plan**: Maia runs on the API server, not the workers, and blocks the event loop
+   ~150 ms per call (1-2 s per analysed game; at 1k games/h that is 28-55% of loop time). Do it
+   first, standalone.
+3. `position_classifier.py:230` `_compute_mixedness`: `bin().count("1")` -> `int.bit_count()`
+   (~5-10% of import CPU). Trivial.
+
+Low priority (after item 1 and item 7):
+2. **Maia fp32 on the server: 2.8x at 1 thread, 5.3x at 4 threads.** Once item 1 lands, Maia no
+   longer adds user-visible latency, so fp32 only saves API-server CPU: ~1-2 CPU-s per game vs
+   ~160 CPU-s of Stockfish (~1%). Not worth the policy cost below unless item 7 shows the API box
+   CPU-bound on Maia. Native CPU EP has poor fp16
    kernels and fp16 does not scale with threads. Measured 146 -> 52 ms (t=1), 149 -> 28 ms (t=4).
    Played-move probability drift: max 0.0041, mean 0.0009, about the existing ORT parity epsilon
    (0.003844), far below gem/great cut-offs (0.20 / 0.50). **Policy decision needed:**
@@ -53,8 +63,6 @@ Quick wins (could be `/gsd-quick`):
    checks its SHA-256 (`_model_bytes_ok`), and D-04 relies on byte-identical bytes client/server.
    Preferred option: upcast fp16 -> fp32 **in memory at load time** (file and SHA untouched);
    alternative: pin a second derived file. Either way re-run the ORT parity check.
-3. `position_classifier.py:230` `_compute_mixedness`: `bin().count("1")` -> `int.bit_count()`
-   (~5-10% of import CPU). Trivial.
 
 Engine-call reductions (a phase; each changes outputs, so gate on quality):
 4. **Cheaper second-best search, ~20% of engine time.** The remote worker re-runs a full 1M-node
