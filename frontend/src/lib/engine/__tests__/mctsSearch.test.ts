@@ -394,6 +394,12 @@ describe('mctsSearch — D-04 extraRootMoves', () => {
     // D-04 test above (whose dropped-tail probability is a near-zero 0.01):
     // INJECT-02 needs the injected candidate's prior to be big enough, once
     // seeded correctly, to outrank a real organic competitor.
+    //
+    // Phase 225 D-10a: organic grades are SWAPPED from the original Phase
+    // 196 fixture (e2e3 now the WORSE organic grade, e1d2 the better one) so
+    // this test's derivation depends on the actual rankScore comparison, not
+    // merely on which organic candidate happens to have the lower grade —
+    // e1d2 is deliberately the higher-graded organic move here.
     const POLICY: Record<string, number> = {
       e2e3: 0.55,
       e1d2: 0.35, // the "known weaker organic": kept, high prior, mediocre grade
@@ -403,16 +409,16 @@ describe('mctsSearch — D-04 extraRootMoves', () => {
       e1f1: 0.01,
     };
     const GRADES: Record<string, MoveGrade> = {
-      e2e3: { evalCp: 50, evalMate: null, depth: 10 },
-      e1d2: { evalCp: 10, evalMate: null, depth: 10 }, // mediocre — the "known weaker organic"
+      e2e3: { evalCp: 10, evalMate: null, depth: 10 },
+      e1d2: { evalCp: 50, evalMate: null, depth: 10 }, // mediocre — the "known weaker organic"
       e2e4: { evalCp: 700, evalMate: null, depth: 10 }, // clearly better value
     };
-    // pRefForElo(2200) = 0.015, well below BOTH e1d2's renormalized prior
-    // (0.35/0.90 ≈ 0.389) and e2e4's post-fix seeded prior (0.07/0.90 ≈
-    // 0.078) — both saturate rankScore's findability factor to 1, so the
-    // ranking below reduces to a direct practicalScore comparison (700cp
-    // beats 10cp), an unambiguous derivation rather than a coincidence of the
-    // findability curve's shape at this ELO.
+    // pRefForElo(2200) = 0.015, well below e2e3's (0.55/0.90≈0.611), e1d2's
+    // (0.35/0.90≈0.389) AND e2e4's post-fix seeded prior (0.07/0.90≈0.078) —
+    // all three saturate rankScore's findability factor to 1, so the ranking
+    // below reduces to a direct practicalScore comparison: es(700cp)≈0.929 >
+    // es(50cp)≈0.546 > es(10cp)≈0.509 — an unambiguous derivation rather than
+    // a coincidence of the findability curve's shape at this ELO.
     const ELO = 2200;
     const budget: SearchBudget = {
       maxNodes: 1,
@@ -432,21 +438,28 @@ describe('mctsSearch — D-04 extraRootMoves', () => {
     const weakerOrganicIndex = snapshot.rankedLines.findIndex((l) => l.rootMove === 'e1d2');
     expect(injectedIndex).toBeGreaterThanOrEqual(0);
     expect(weakerOrganicIndex).toBeGreaterThanOrEqual(0);
-    // Pre-fix (prior 0): rankScore(e2e4) = min(1, 0/pRef) * value = 0, so
-    // e2e4 would rank strictly LAST regardless of its 700cp grade, below
-    // e1d2's positive (if mediocre) rankScore — this assertion would fail.
+    // Phase 225 D-10a: with the injected seed prior forced to 0, e2e4 scores
+    // min(value, V_fallback) instead of saturating to its own value —
+    // V_fallback over {e2e3, e1d2, e2e4-at-prior-0} ≈ 0.523, still BELOW
+    // e1d2's saturated rankScore ≈0.546 — so the mutation-checked assertion
+    // below would fail (e2e4 sorts AFTER e1d2), exactly the INJECT-02
+    // regression this test exists to catch (mutation check recorded in the
+    // 225-06 SUMMARY, per RESEARCH C-4/D-10a).
     expect(injectedIndex).toBeLessThan(weakerOrganicIndex);
   });
 });
 
 // ─── Phase 159 D-01: findability ranking reorders the root at low ELO ──────
+// Phase 225 D-10a/D-10e (SEED-170 item 3): rankScore now blends toward
+// V_fallback (the prior-weighted mean of the root's own children), never
+// toward 0 — so a hard-to-find move far better than the findable
+// alternative is no longer suppressed toward the bottom. This is an
+// intentional, user-accepted reversal of Phase 159's original showcase
+// fixture (D-10e), not a regression.
 
-describe('mctsSearch — Phase 159 D-01 findability ranking', () => {
-  // e2e4 (low prior 0.06, high V via evalCp=700) would win the OLD
-  // practicalScore-only sort against e2e3 (high prior 0.85, lower V via
-  // evalCp=100). At a low root ELO (600, pRefForElo(600)=0.12) e2e4's
-  // renormalized prior (~0.066) is well below pRef, so its findability
-  // factor suppresses it below e2e3's saturated (prior >> pRef) rankScore.
+describe('mctsSearch — Phase 159 D-01 findability ranking (Phase 225 D-10a/D-10e: blend toward V_fallback)', () => {
+  // e2e4 (low prior 0.06, high V via evalCp=700) vs e2e3 (high prior 0.85,
+  // lower V via evalCp=100), at a low root ELO (600, pRefForElo(600)=0.12).
   const FINDABILITY_FEN = SIMPLE_WHITE_FEN;
   const FINDABILITY_POLICY: Record<string, number> = {
     e2e3: 0.85,
@@ -462,7 +475,7 @@ describe('mctsSearch — Phase 159 D-01 findability ranking', () => {
   };
   const LOW_ELO = 600;
 
-  it('demotes the low-prior/high-V move below the high-prior/lower-V move at low ELO, while practicalScore stays unchanged', async () => {
+  it('promotes the far-better hard-to-find move above the findable-but-worse move via the V_fallback pull, while practicalScore stays unchanged', async () => {
     const budget: SearchBudget = {
       maxNodes: 1,
       elo: { w: LOW_ELO, b: LOW_ELO },
@@ -484,13 +497,18 @@ describe('mctsSearch — Phase 159 D-01 findability ranking', () => {
     // practicalScore (D-04) is untouched: still the raw leaf conversion.
     expect(e2e4Line!.practicalScore).toBe(evalToExpectedScore(700, null, 'white'));
     expect(e2e3Line!.practicalScore).toBe(evalToExpectedScore(100, null, 'white'));
-    // Sanity: e2e4 really does have the higher practicalScore (would have
-    // won the OLD sort) — the assertion below proves the NEW sort reverses it.
     expect(e2e4Line!.practicalScore).toBeGreaterThan(e2e3Line!.practicalScore);
 
-    // The findability-weighted sort puts e2e3 FIRST despite its lower
-    // practicalScore, because e2e4's prior is well below pRefForElo(600).
-    expect(snapshot.rankedLines[0]?.rootMove).toBe('e2e3');
+    // Truncation keeps exactly {e2e3: 0.85, e2e4: 0.06} (cumulative 0.91
+    // crosses the 0.9 mass threshold at e2e4) — renormalized priors
+    // e2e3≈0.934, e2e4≈0.066. V(e2e3)=es(100cp)≈0.591, V(e2e4)=es(700cp)≈
+    // 0.929, so V_fallback = rankFallbackValue over exactly these two
+    // children ≈ 0.613. rankScore(e2e3) saturates (prior 0.934 >> pRef600
+    // 0.12) to its own value ≈0.591. rankScore(e2e4): f = min(1,
+    // 0.066/0.12) ≈ 0.549 => 0.549*0.929 + 0.451*min(0.929, 0.613) ≈ 0.787.
+    // 0.787 > 0.591, so e2e4 now ranks FIRST — the Phase 159 showcase
+    // ordering is intentionally reversed here (D-10e, user-accepted).
+    expect(snapshot.rankedLines[0]?.rootMove).toBe('e2e4');
   });
 });
 
@@ -571,46 +589,60 @@ describe('mctsSearch — Phase 159 policy temperature', () => {
     expect(rootCall!.candidateUcis.length).toBe(4);
   });
 
-  it('composes with D-01 findability: reverses the T=1 winner at T=2 via the SAME low-ELO fixture', async () => {
-    // Identical fixture to the "Phase 159 D-01 findability ranking" describe
-    // above: e2e4 (low prior, high V) vs e2e3 (high prior, lower V) at a low
-    // root ELO. At T=1, e2e4's renormalized prior (~0.066) stays below
-    // pRefForElo(600)=0.12 — e2e3 wins (asserted above). At T=2, flattening
-    // raises e2e4's renormalized prior to ~0.149, ABOVE pRef — its
-    // findability factor saturates to 1, and its higher practicalScore then
-    // wins outright. This is D-06's "compose with zero extra glue" claim:
-    // the reorder happens purely because child.prior (what T=2 changed) is
-    // exactly what rankScore reads.
+  it('composes with D-01 findability: reverses the T=1 winner at T=2 via a three-candidate fixture (Phase 225 D-10a/D-10e)', async () => {
+    // Phase 225 D-10a/D-10e: the OLD two-candidate composition fixture (e2e3
+    // vs e2e4 only) no longer reverses at T=1->T=2 — under the V_fallback
+    // pull e2e4 already wins at T=1 (see the "Phase 159 D-01 findability
+    // ranking" describe above), so the "reverses" claim needs a THIRD
+    // candidate (e1d2) whose mediocre grade keeps V_fallback low enough at
+    // T=1 that e2e4 does NOT yet clear it, while T=2's flattening still
+    // pushes e2e4's renormalized prior over pRefForElo(600)=0.12.
     const FEN = SIMPLE_WHITE_FEN;
     const POLICY: Record<string, number> = {
-      e2e3: 0.85,
+      e2e3: 0.5,
+      e1d2: 0.38,
       e2e4: 0.06,
-      e1d2: 0.04,
       e1f2: 0.03,
-      e1d1: 0.01,
+      e1d1: 0.02,
       e1f1: 0.01,
     };
     const GRADES: Record<string, MoveGrade> = {
-      e2e4: { evalCp: 700, evalMate: null, depth: 10 },
-      e2e3: { evalCp: 100, evalMate: null, depth: 10 },
+      e2e4: { evalCp: 700, evalMate: null, depth: 10 }, // far better, low prior
+      e2e3: { evalCp: 350, evalMate: null, depth: 10 }, // findable, good
+      e1d2: { evalCp: -300, evalMate: null, depth: 10 }, // findable-ish, bad — keeps V_fallback low at T=1
     };
     const LOW_ELO = 600;
 
-    const budgetT2: SearchBudget = {
+    const budgetT1: SearchBudget = {
       maxNodes: 1,
       elo: { w: LOW_ELO, b: LOW_ELO },
       maxPlies: 4,
       concurrency: 1,
-      policyTemperature: 2,
     };
+    const budgetT2: SearchBudget = { ...budgetT1, policyTemperature: 2 };
     const providers = (): EngineProviders => ({
       policy: makeFixedPolicy({ [FEN]: POLICY }),
       grade: makeFixedGrade({ [FEN]: GRADES }),
     });
 
-    const snapshot = await mctsSearch(FEN, budgetT2, providers(), () => {}, freshSignal());
+    // T=1: truncation keeps exactly {e2e3: 0.50, e1d2: 0.38, e2e4: 0.06}
+    // (cumulative 0.94 crosses the 0.9 mass threshold at e2e4); renormalized
+    // priors ~0.532/0.404/0.064. V(e2e3)=es(350cp)~=0.784, V(e1d2)=es(-300cp)
+    // ~=0.249, V(e2e4)=es(700cp)~=0.929 => V_fallback ~=0.577 (pulled down by
+    // e1d2's bad grade). rankScore(e2e3) saturates (prior >> pRef) = 0.784.
+    // rankScore(e2e4): f = min(1, 0.064/0.12) ~=0.549 => 0.549*0.929 +
+    // 0.451*min(0.929, 0.577) ~=0.764 < 0.784 — e2e3 wins at T=1.
+    const snapshotT1 = await mctsSearch(FEN, budgetT1, providers(), () => {}, freshSignal());
+    expect(snapshotT1.rankedLines[0]?.rootMove).toBe('e2e3');
 
-    expect(snapshot.rankedLines[0]?.rootMove).toBe('e2e4');
+    // T=2: flattening raises e2e4's renormalized prior to ~0.130, ABOVE
+    // pRefForElo(600)=0.12 — its findability factor saturates to 1, and its
+    // own (unchanged) practicalScore (0.929) then wins outright over e2e3's
+    // saturated 0.784. This is D-06's "compose with zero extra glue" claim:
+    // the reorder happens purely because child.prior (what T=2 changed) is
+    // exactly what rankScore reads.
+    const snapshotT2 = await mctsSearch(FEN, budgetT2, providers(), () => {}, freshSignal());
+    expect(snapshotT2.rankedLines[0]?.rootMove).toBe('e2e4');
   });
 
   it('an extreme-flatness fixture never produces more than ROOT_CANDIDATE_HARD_CAP root children (D-07/Pitfall 6)', async () => {

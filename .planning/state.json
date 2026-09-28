@@ -666,13 +666,13 @@
     {
       "number": "225",
       "name": "Engine Search Fixes — Root Comparability, Round Underfill & Findability Fallback (SEED-170, standalone)",
-      "status": "pending"
+      "status": "complete"
     }
   ],
   "next": {
-    "command": "/gsd:progress --next",
-    "label": "Advance to the next step",
-    "reason": "Phase 225 of 3 · executing"
+    "command": "/gsd:progress",
+    "label": "Show progress",
+    "reason": "Unsure of state — showing progress"
   },
-  "updated_at": "2026-09-27T06:44:42.704Z"
+  "updated_at": "2026-09-28T02:29:02.375Z"
 }

@@ -1,0 +1,94 @@
+{
+  "maia": {
+    "exposed_cells": [
+      {
+        "bot_blend": 0.05,
+        "bot_elo": 1300,
+        "outside_ci": false,
+        "se_shift": 61.9724007860876,
+        "shift": -38.33731826713756
+      },
+      {
+        "bot_blend": 0.5,
+        "bot_elo": 1500,
+        "outside_ci": false,
+        "se_shift": 78.92196376345309,
+        "shift": 42.00521339880038
+      },
+      {
+        "bot_blend": 0.05,
+        "bot_elo": 1900,
+        "outside_ci": false,
+        "se_shift": 80.57043667381569,
+        "shift": 38.92168878592611
+      },
+      {
+        "bot_blend": 0.5,
+        "bot_elo": 2300,
+        "outside_ci": false,
+        "se_shift": 96.96441078079637,
+        "shift": 0.0
+      }
+    ],
+    "null_control": {
+      "se_shift": 70.64905815480407,
+      "shift": 0.0,
+      "threshold": 165.0,
+      "within_threshold": true
+    },
+    "pooled": {
+      "n_cells": 4,
+      "se": 38.31080795859529,
+      "shift": 4.047048252160088,
+      "threshold": 85.0,
+      "within_threshold": true
+    }
+  },
+  "sf": {
+    "exposed_cells": [
+      {
+        "bot_blend": 0.05,
+        "bot_elo": 1300,
+        "outside_ci": true,
+        "se_shift": 68.10706067971566,
+        "shift": 110.97835155345388
+      },
+      {
+        "bot_blend": 0.5,
+        "bot_elo": 1500,
+        "outside_ci": false,
+        "se_shift": 64.38516892842878,
+        "shift": 96.34402061679316
+      },
+      {
+        "bot_blend": 0.05,
+        "bot_elo": 1900,
+        "outside_ci": true,
+        "se_shift": 71.4602142723839,
+        "shift": 128.71465334218533
+      },
+      {
+        "bot_blend": 0.5,
+        "bot_elo": 2300,
+        "outside_ci": false,
+        "se_shift": 97.24648984474837,
+        "shift": 156.22605867036805
+      }
+    ],
+    "null_control": {
+      "se_shift": 79.93734307301428,
+      "shift": -45.725498526325055,
+      "threshold": 149.0,
+      "within_threshold": true
+    },
+    "pooled": {
+      "n_cells": 4,
+      "se": 36.31249826760403,
+      "shift": 117.21222672295642,
+      "threshold": 50.0,
+      "within_threshold": false
+    }
+  },
+  "shape_guard_triggered": [],
+  "verdict": "fails"
+}

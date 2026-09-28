@@ -1,0 +1,13 @@
+arm	stop_rule	id	fen	correct_move	bot_move	es_bot	es_correct	delta_bot	verdict_bot	analysis_move	es_analysis	delta_analysis	verdict_analysis	nodes_evaluated	stop_reason	wall_ms	grade_depth	elo	max_nodes
+final	off	g687537-p46	3r2k1/1pb2ppp/p2r3q/8/1PB5/2P2Q2/PB3PPP/3R1RK1 b - - 3 24	h6h2	d6d1	0.178817	0.500000	-0.321183	regression	d6d1	0.178817	-0.321183	regression	50	budget	10248	18	1500	50
+final	off	g687537-p48	3r2k1/1pb2ppp/p2r4/8/1PB5/2P2Q2/PB3PPK/3R1R2 b - - 0 25	d6h6	d6h6	0.500000	0.500000	0.000000	pass	d6h6	0.500000	0.000000	pass	50	budget	9316	18	1500	50
+final	off	qFkqJ	5rk1/p5pp/b1p1p3/2p1N3/3Pp1Qq/N1P5/PP4PP/R5K1 b - - 6 18	h4f2	h4f2	0.975447	0.975447	0.000000	pass	h4f2	0.975447	0.000000	pass	50	budget	10379	18	1500	50
+final	off	3pyT9	2k4r/ppq4p/5p2/2N2bp1/2PPr3/PQ2B3/P3nPPP/R4R1K b - - 7 20	c7h2	c7h2	0.975447	0.975447	0.000000	pass	c7h2	0.975447	0.000000	pass	50	budget	9396	18	1500	50
+final	off	Mhfvi	2k4r/ppp4p/1b2p3/1Nq4r/2P3n1/2Q3B1/PP4PP/R4R1K b - - 5 22	c5g1	h8g8	0.630393	0.975447	-0.345055	regression	h8g8	0.630393	-0.345055	regression	50	budget	18974	18	1500	50
+final	off	qRvUi	2r2r1k/p4Pp1/7p/1n1p4/7B/qP3N1B/P1p3PP/2Q4K w - - 1 32	c1h6	c1h6	0.975447	0.975447	0.000000	pass	c1h6	0.975447	0.000000	pass	50	budget	9619	18	1500	50
+final	off	mWhzd	2kr1b1r/1p1n1pp1/1Rn1p1p1/3p4/3P1BP1/2P1PP2/3N3P/4KB1R w K - 1 20	b6c6	b6b5	0.588353	0.975447	-0.387094	regression	b6b5	0.588353	-0.387094	regression	50	budget	14589	18	1500	50
+final	off	I3vZ1	r6k/1b2pR1p/4Q1p1/p1pq4/8/2PB4/P1P3PP/7K w - - 1 22	f7h7	f7h7	0.975447	0.975447	0.000000	pass	f7h7	0.975447	0.000000	pass	50	budget	9760	18	1500	50
+final	off	WwKKM	3r1r2/4Bpk1/p3b3/7Q/7P/2p5/qPP2PP1/2K4R w - - 2 26	e7f6	h5g5	0.500000	0.975447	-0.475447	regression	h5g5	0.500000	-0.475447	regression	50	budget	7804	18	1500	50
+final	off	cBFTV	3rk2r/2q2pp1/p4b1p/1pp5/4B1b1/1P6/P3QRPP/4R2K w k - 0 24	e4c6	e2g4	0.404532	0.975447	-0.570916	regression	e2g4	0.404532	-0.570916	regression	50	budget	11585	18	1500	50
+final	off	RKFRP	r5kr/5Nqp/3NpQp1/p2bPp1P/2p5/1n4P1/1P2K3/8 w - - 6 29	f7h6	f7h6	0.975447	0.975447	0.000000	pass	f7h6	0.975447	0.000000	pass	50	budget	11054	18	1500	50
+final	off	zskVk	1r1q1rk1/pb1p1Npp/1p6/3Q4/4R3/8/PP3PPP/4R1K1 w - - 1 19	f7h6	f7h6	0.975447	0.975447	0.000000	pass	f7h6	0.975447	0.000000	pass	50	budget	11428	18	1500	50

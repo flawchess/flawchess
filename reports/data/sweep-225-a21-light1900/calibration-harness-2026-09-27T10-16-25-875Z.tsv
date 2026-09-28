@@ -1,0 +1,97 @@
+pass	bot_elo	bot_blend	anchor	result	reason	plies	game_index	bot_is_white	opening	seed	git_sha	bot_eval_count	cp_loss_sum	blunder_count	sf_comparable	sf_agree	maia_comparable	maia_agree	elapsed_ms	mean_move_ms
+locate	1900	0.05	sf3	win	adjudicated_eval	73	0	1	Italian Game	1	27beff12f	36	1464.00	0	36	12	37	19	298302	7088.067018162166
+locate	1900	0.05	sf3	loss	checkmate	72	1	0	Ruy Lopez	1	27beff12f	35	2113.00	1	35	13	36	16	289782	7048.20539819444
+locate	1900	0.05	sf3	draw	threefold_repetition	101	2	1	Ruy Lopez, Morphy Defense	1	27beff12f	50	1594.00	2	50	17	50	23	250256	3983.890225659993
+locate	1900	0.05	sf3	win	adjudicated_eval	85	3	0	Scotch Game	1	27beff12f	42	1642.00	0	42	8	43	10	491337	10448.753975488367
+locate	1900	0.05	sf3	win	adjudicated_eval	65	4	1	Petrov Defense	1	27beff12f	32	966.00	0	32	13	33	12	471858	13328.17020557576
+locate	1900	0.05	sf3	win	adjudicated_eval	36	5	0	Four Knights Game	1	27beff12f	18	426.00	0	18	7	18	6	162049	8002.129051166664
+locate	1900	0.05	sf3	win	checkmate	62	6	1	Vienna Game	1	27beff12f	30	2379.00	3	31	15	31	13	442273	13297.91324077415
+locate	1900	0.05	sf3	loss	adjudicated_eval	28	7	0	King's Gambit	1	27beff12f	13	975.00	1	13	5	14	4	142310	9163.902626214283
+locate	1900	0.05	sf5	loss	adjudicated_eval	84	8	1	Sicilian Defense, Open	1	27beff12f	41	2256.00	0	41	14	42	15	520696	11396.007312642821
+locate	1900	0.05	sf5	draw	ply_cap_draw	120	9	0	Sicilian Defense, Najdorf	1	27beff12f	60	2428.00	1	60	22	60	29	479980	6998.818393799997
+locate	1900	0.05	sf5	draw	ply_cap_draw	120	10	1	Sicilian Defense, Dragon	1	27beff12f	59	1493.00	0	59	26	60	25	436344	6271.406757983364
+locate	1900	0.05	sf5	win	adjudicated_eval	68	11	0	French Defense	1	27beff12f	34	688.00	0	34	14	34	15	271320	6978.754884941189
+locate	1900	0.05	sf5	loss	ply_cap_decisive	120	12	1	French Defense, Advance	1	27beff12f	60	2287.00	1	60	15	60	25	481228	7019.734735666712
+locate	1900	0.05	sf5	draw	ply_cap_draw	120	13	0	Caro-Kann Defense	1	27beff12f	60	1073.00	0	60	21	60	25	390450	5506.818136866701
+locate	1900	0.05	sf5	loss	adjudicated_eval	92	14	1	Caro-Kann Defense, Advance	1	27beff12f	46	2360.00	1	46	15	46	22	242356	4267.914204956518
+locate	1900	0.05	sf5	loss	adjudicated_eval	83	15	0	Scandinavian Defense	1	27beff12f	41	2155.00	3	41	19	41	15	232234	4638.796580195245
+measure	1900	0.05	maia1500	win	checkmate	55	16	1	Pirc Defense	1	27beff12f	26	1127.00	1	27	16	28	15	155214	5412.838338392753
+measure	1900	0.05	maia1500	win	adjudicated_eval	54	17	0	Modern Defense	1	27beff12f	27	1324.00	2	27	12	27	10	149748	5404.081613148149
+measure	1900	0.05	maia1500	draw	threefold_repetition	93	18	1	Alekhine Defense	1	27beff12f	45	2552.00	3	46	10	47	17	334858	6984.077784170218
+measure	1900	0.05	maia1500	win	checkmate	58	19	0	Queen's Gambit Declined	1	27beff12f	28	904.00	0	29	13	29	9	189189	6370.308151827611
+measure	1900	0.05	maia1500	loss	adjudicated_eval	54	20	1	Queen's Gambit Accepted	1	27beff12f	26	1280.00	1	26	6	27	8	143036	5164.754852592497
+measure	1900	0.05	maia1500	loss	adjudicated_eval	67	21	0	Slav Defense	1	27beff12f	33	2349.00	1	33	11	33	10	196734	5803.695932575812
+measure	1900	0.05	maia1500	draw	threefold_repetition	92	22	1	King's Indian Defense	1	27beff12f	45	1071.00	1	45	17	46	21	208170	4384.026806847861
+measure	1900	0.05	maia1500	win	adjudicated_eval	43	23	0	Nimzo-Indian Defense	1	27beff12f	21	646.00	2	21	13	21	10	144482	6752.761738333364
+measure	1900	0.05	maia1500	win	checkmate	43	24	1	Gruenfeld Defense	1	27beff12f	20	625.00	0	21	10	22	15	86561	3792.026863090948
+measure	1900	0.05	maia1500	win	checkmate	72	25	0	Queen's Indian Defense	1	27beff12f	35	1013.00	1	36	17	36	19	187711	5071.516824999953
+measure	1900	0.05	maia1500	loss	adjudicated_eval	40	26	1	Bogo-Indian Defense	1	27beff12f	19	1093.00	2	19	4	20	6	144051	7049.890609949967
+measure	1900	0.05	maia1500	win	adjudicated_eval	103	27	0	Dutch Defense	1	27beff12f	51	2434.00	0	51	16	51	16	273034	5204.311692411701
+measure	1900	0.05	maia1500	win	checkmate	37	28	1	Benoni Defense	1	27beff12f	17	475.00	0	18	6	19	8	119389	6145.89486094726
+measure	1900	0.05	maia1500	win	checkmate	44	29	0	English Opening	1	27beff12f	21	766.00	1	22	5	22	7	109588	4835.183233181777
+measure	1900	0.05	maia1500	win	adjudicated_eval	74	30	1	English Opening, Reversed Sicilian	1	27beff12f	36	924.00	0	36	14	37	17	203096	5346.311200378312
+measure	1900	0.05	maia1500	win	checkmate	29	31	0	Reti Opening	1	27beff12f	13	758.00	1	14	6	15	8	102711	6721.387989733182
+measure	1900	0.05	maia1500	win	adjudicated_eval	76	32	1	London System	1	27beff12f	38	1083.00	0	38	15	38	18	153569	3906.2938853946857
+measure	1900	0.05	maia1500	win	adjudicated_eval	36	33	0	Italian Game	1	27beff12f	18	308.00	0	18	11	18	10	71265	3807.5386700005165
+measure	1900	0.05	maia1500	loss	adjudicated_eval	98	34	1	Ruy Lopez	1	27beff12f	49	1661.00	1	49	19	49	24	297375	5922.199765653217
+measure	1900	0.05	maia1500	win	adjudicated_eval	85	35	0	Ruy Lopez, Morphy Defense	1	27beff12f	42	1020.00	0	42	24	43	24	182489	4096.143384395384
+measure	1900	0.05	maia1500	win	adjudicated_eval	92	36	1	Scotch Game	1	27beff12f	46	1920.00	0	46	19	46	20	205382	4325.8261116305775
+measure	1900	0.05	maia1500	loss	adjudicated_eval	63	37	0	Petrov Defense	1	27beff12f	31	1668.00	2	31	15	31	12	146482	4574.1825898387015
+measure	1900	0.05	maia1500	win	adjudicated_eval	93	38	1	Four Knights Game	1	27beff12f	46	1678.00	1	46	20	47	23	206507	4258.705106063885
+measure	1900	0.05	maia1500	loss	adjudicated_eval	107	39	0	Vienna Game	1	27beff12f	53	1104.00	0	53	23	54	27	274705	4947.811345870366
+measure	1900	0.05	maia1100	draw	threefold_repetition	92	40	1	King's Gambit	1	27beff12f	45	1622.00	2	46	22	46	22	252373	5331.034233782764
+measure	1900	0.05	maia1100	win	adjudicated_eval	54	41	0	Sicilian Defense, Open	1	27beff12f	27	1036.00	0	27	14	27	19	122537	4376.177950592642
+measure	1900	0.05	maia1100	win	checkmate	41	42	1	Sicilian Defense, Najdorf	1	27beff12f	19	635.00	0	20	6	21	7	156312	7282.421264762059
+measure	1900	0.05	maia1100	win	checkmate	52	43	0	Sicilian Defense, Dragon	1	27beff12f	25	533.00	0	26	17	26	13	215596	8118.175311999682
+measure	1900	0.05	maia1100	win	adjudicated_eval	61	44	1	French Defense	1	27beff12f	30	1982.00	2	30	11	31	12	128492	4006.8629578710083
+measure	1900	0.05	maia1100	win	adjudicated_eval	37	45	0	French Defense, Advance	1	27beff12f	18	369.00	0	18	8	19	9	111338	5716.216459157729
+measure	1900	0.05	maia1100	win	adjudicated_eval	72	46	1	Caro-Kann Defense	1	27beff12f	35	1077.00	0	35	16	36	14	188269	5064.228412638884
+measure	1900	0.05	maia1100	draw	threefold_repetition	101	47	0	Caro-Kann Defense, Advance	1	27beff12f	49	1825.00	0	50	20	51	26	226921	4306.405821647057
+measure	1900	0.05	maia1100	win	adjudicated_eval	100	48	1	Scandinavian Defense	1	27beff12f	49	1503.00	2	49	27	50	26	183399	3524.556226440072
+measure	1900	0.05	maia1100	win	checkmate	34	49	0	Pirc Defense	1	27beff12f	16	565.00	1	17	10	17	10	95382	5465.894282176762
+measure	1900	0.05	maia1100	draw	ply_cap_draw	120	50	1	Modern Defense	1	27beff12f	59	1163.00	0	59	28	60	28	316577	5143.0839205498805
+measure	1900	0.05	maia1100	loss	adjudicated_eval	37	51	0	Alekhine Defense	1	27beff12f	18	949.00	1	18	2	18	4	132783	7230.810670000191
+measure	1900	0.05	maia1100	win	adjudicated_eval	49	52	1	Queen's Gambit Declined	1	27beff12f	24	429.00	0	24	11	25	9	150132	5852.927499479801
+measure	1900	0.05	maia1100	win	adjudicated_eval	48	53	0	Queen's Gambit Accepted	1	27beff12f	24	1522.00	0	24	11	24	17	117374	4740.069299458371
+measure	1900	0.05	maia1100	win	adjudicated_eval	53	54	1	Slav Defense	1	27beff12f	26	1265.00	1	26	11	27	15	100322	3573.30602655546
+measure	1900	0.05	maia1100	win	checkmate	32	55	0	King's Indian Defense	1	27beff12f	15	468.00	1	16	9	16	6	60875	3662.484617812559
+measure	1900	0.05	maia1100	win	adjudicated_eval	67	56	1	Nimzo-Indian Defense	1	27beff12f	33	1322.00	0	33	13	34	17	172661	4939.9143093822195
+measure	1900	0.05	maia1100	win	adjudicated_eval	90	57	0	Gruenfeld Defense	1	27beff12f	45	1304.00	0	45	17	45	15	159334	3403.0010614221296
+measure	1900	0.05	maia1100	win	checkmate	57	58	1	Queen's Indian Defense	1	27beff12f	27	814.00	1	28	16	29	14	174365	5866.123152172386
+measure	1900	0.05	maia1100	win	adjudicated_eval	64	59	0	Bogo-Indian Defense	1	27beff12f	32	562.00	1	32	16	32	17	185974	5669.80734787503
+measure	1900	0.05	maia1100	win	adjudicated_eval	63	60	1	Dutch Defense	1	27beff12f	31	828.00	1	31	11	32	12	189825	5792.9353981875465
+measure	1900	0.05	maia1100	win	adjudicated_eval	107	61	0	Benoni Defense	1	27beff12f	53	1350.00	0	53	24	53	29	247639	4516.377511698085
+measure	1900	0.05	maia1100	win	checkmate	49	62	1	English Opening	1	27beff12f	23	684.00	1	24	16	25	15	135692	5300.247755040154
+measure	1900	0.05	maia1100	win	checkmate	64	63	0	English Opening, Reversed Sicilian	1	27beff12f	31	520.00	0	32	15	32	15	207341	6337.50690915616
+measure	1900	0.05	sf5	win	adjudicated_eval	115	64	1	Reti Opening	1	27beff12f	57	2028.00	2	57	22	57	24	419198	6336.055320298234
+measure	1900	0.05	sf5	loss	adjudicated_eval	68	65	0	London System	1	27beff12f	33	2223.00	0	33	8	34	9	299122	7797.034273235127
+measure	1900	0.05	sf5	draw	ply_cap_draw	120	66	1	Italian Game	1	27beff12f	59	1481.00	1	59	20	60	23	380662	5343.524884449908
+measure	1900	0.05	sf5	loss	adjudicated_eval	58	67	0	Ruy Lopez	1	27beff12f	28	1580.00	2	28	9	29	13	204521	6051.144362206988
+measure	1900	0.05	sf5	win	adjudicated_eval	60	68	1	Ruy Lopez, Morphy Defense	1	27beff12f	30	924.00	0	30	11	30	11	165686	4521.918673366681
+measure	1900	0.05	sf5	loss	adjudicated_eval	52	69	0	Scotch Game	1	27beff12f	25	1445.00	0	25	5	26	7	224346	7627.682982384944
+measure	1900	0.05	sf5	win	adjudicated_eval	106	70	1	Petrov Defense	1	27beff12f	52	800.00	0	52	18	53	24	394616	6444.783847641622
+measure	1900	0.05	sf5	loss	adjudicated_eval	33	71	0	Four Knights Game	1	27beff12f	16	1236.00	1	16	4	16	7	119853	6427.6082085003145
+measure	1900	0.05	sf5	loss	adjudicated_eval	49	72	1	Vienna Game	1	27beff12f	24	1458.00	1	24	6	24	7	181133	6504.2550359166535
+measure	1900	0.05	sf5	loss	adjudicated_eval	100	73	0	King's Gambit	1	27beff12f	49	2482.00	3	49	20	50	18	286774	4734.602293979935
+measure	1900	0.05	sf5	loss	adjudicated_eval	99	74	1	Sicilian Defense, Open	1	27beff12f	49	2217.00	1	49	10	50	14	317867	5376.376183900275
+measure	1900	0.05	sf5	draw	ply_cap_draw	120	75	0	Sicilian Defense, Najdorf	1	27beff12f	60	2997.00	2	60	22	60	25	360273	5003.797876649909
+measure	1900	0.05	sf5	win	adjudicated_eval	86	76	1	Sicilian Defense, Dragon	1	27beff12f	42	1623.00	2	42	14	43	15	248534	4779.206169209075
+measure	1900	0.05	sf5	loss	checkmate	73	77	0	French Defense	1	27beff12f	36	2713.00	2	36	9	36	11	229381	5343.463257472238
+measure	1900	0.05	sf5	win	adjudicated_eval	55	78	1	French Defense, Advance	1	27beff12f	27	844.00	0	27	14	27	15	182193	5745.964208888925
+measure	1900	0.05	sf5	loss	adjudicated_eval	119	79	0	Caro-Kann Defense	1	27beff12f	59	2340.00	0	59	23	59	19	395939	5693.222750067964
+measure	1900	0.05	sf3	win	adjudicated_eval	96	80	1	Caro-Kann Defense, Advance	1	27beff12f	48	2462.00	1	48	17	48	14	358305	6464.031357666633
+measure	1900	0.05	sf3	win	adjudicated_eval	73	81	0	Scandinavian Defense	1	27beff12f	36	1417.00	0	36	9	36	10	290557	7042.468613499879
+measure	1900	0.05	sf3	win	adjudicated_eval	65	82	1	Pirc Defense	1	27beff12f	32	702.00	0	32	14	33	15	254200	6732.6395284545915
+measure	1900	0.05	sf3	win	adjudicated_eval	66	83	0	Modern Defense	1	27beff12f	33	741.00	0	33	14	33	14	222988	5756.562307302925
+measure	1900	0.05	sf3	win	adjudicated_eval	69	84	1	Alekhine Defense	1	27beff12f	34	1134.00	0	34	11	35	12	282798	7107.642148085577
+measure	1900	0.05	sf3	win	adjudicated_eval	72	85	0	Queen's Gambit Declined	1	27beff12f	36	1025.00	1	36	14	36	12	296579	7237.430909138897
+measure	1900	0.05	sf3	win	adjudicated_eval	59	86	1	Queen's Gambit Accepted	1	27beff12f	29	862.00	0	29	15	30	14	172293	4775.830290733402
+measure	1900	0.05	sf3	draw	ply_cap_draw	120	87	0	Slav Defense	1	27beff12f	60	2332.00	1	60	22	60	20	436981	6282.182033933203
+measure	1900	0.05	sf3	win	adjudicated_eval	69	88	1	King's Indian Defense	1	27beff12f	34	883.00	2	34	20	35	18	238430	5840.248460371792
+measure	1900	0.05	sf3	loss	adjudicated_eval	47	89	0	Nimzo-Indian Defense	1	27beff12f	23	2538.00	2	23	9	23	10	157550	5805.963263869933
+measure	1900	0.05	sf3	win	adjudicated_eval	51	90	1	Gruenfeld Defense	1	27beff12f	25	570.00	0	25	10	26	15	162114	5272.613159307493
+measure	1900	0.05	sf3	win	adjudicated_eval	69	91	0	Queen's Indian Defense	1	27beff12f	34	521.00	0	34	12	34	17	244032	6147.154258059119
+measure	1900	0.05	sf3	loss	adjudicated_eval	110	92	1	Bogo-Indian Defense	1	27beff12f	54	2858.00	2	54	13	55	14	349160	5347.481037563492
+measure	1900	0.05	sf3	loss	adjudicated_eval	60	93	0	Dutch Defense	1	27beff12f	30	1523.00	1	30	9	30	10	170464	4681.507749866694
+measure	1900	0.05	sf3	draw	ply_cap_draw	120	94	1	Benoni Defense	1	27beff12f	59	2439.00	1	59	28	60	26	352710	4877.760247866871
+measure	1900	0.05	sf3	win	adjudicated_eval	90	95	0	English Opening	1	27beff12f	45	1177.00	0	45	14	45	18	394688	7770.0685654444

@@ -2,16 +2,16 @@
 gsd_state_version: "1.0"
 milestone: v2.19
 current_phase: 225
-current_phase_name: Engine Search Fixes — Root Comparability, Round Underfill & Findability Fallback (SEED-170)
-status: executing
-stopped_at: Phase 225 planned (8 plans)
-last_updated: "2026-09-27T06:44:42.604Z"
-state_head: 6fb58e99da2aade1a10c5d360439aea7a7bfb593
+status: completed
+stopped_at: Phase 225 complete — all phases complete
+last_updated: "2026-09-28T02:29:02.309Z"
+state_head: e96f57be03d72d7505ce77fda2a5754edd7baa8b
 progress:
   total_phases: 3
-  completed_phases: 100
+  completed_phases: 101
   total_plans: 20
-  completed_plans: 12
+  completed_plans: 20
+  percent: 76
 milestone_name: Train Bot-Narrated Onboarding & Verdicts
 last_activity: 2026-09-27
 last_activity_desc: Completed quick task 260927-ajg (short checkmate oracle fix + prod re-derive)
@@ -21,10 +21,10 @@ last_activity_desc: Completed quick task 260927-ajg (short checkmate oracle fix 
 
 ## Current Position
 
-Phase: 225 (Engine Search Fixes — Root Comparability, Round Underfill & Findability Fallback (SEED-170)) — READY TO EXECUTE
-Plan: 0 of 8
+Phase: 225
+Plan: Not started
 
-Status: Ready to execute
+Status: All phases complete
 
 Open threads carried forward (not blockers):
 
@@ -790,6 +790,16 @@ flagged as an open decision for plan 06 / a human, not auto-fixed.
 - [Phase 224]: Promotion-preserves-Train-state proven by a new HTTP integration test (compose -> solve -> promote -> verify same session/solves/settings/streak survive under the same user id).
 - [Phase 224]: SignupAskActions built test-first: RED-phase stub (returns nothing) makes all 7 assertions fail on real behavior, then GREEN implements the real component
 - [Phase 224]: TrainScoreScreen's two reminder-row guest guards extracted into module-level GuardedReminderControl/GuardedReminderBelowRow to respect CLAUDE.md's complexity cap of 15 (plan's literal three inline ternaries would have breached it)
+- [Phase 225]: engine_search_fixes_verdict.py: Task 1 covers only the calibration 'none' branch inline; Task 2 adds the full decision table via TDD RED->GREEN
+- [Phase 225]: gates status complete/incomplete is orthogonal to item ship/hold — a computed hold is still status:complete/exit 0; only missing/duplicate/unrerun data drives incomplete/exit 2
+- [Phase 225]: D-02 allowance measured at 0.04 (guard window W=0.09), pooled p90 over 338 first-expansion deltas across 4 ELOs
+- [Phase 225]: Accept rule committed as arm A0 before any gate data exists (D-11); calibration branch table follows RESEARCH C-6's none/report-only/decision three-way split
+- [Phase 225]: D-06/D-07 (SEED-170 item 2): non-root dead-end nodes are blocked for the round and the walk restarts from root instead of collapsing the whole round (isBlocked, distinct from isPending, cleared after the fill loop)
+- [Phase 225]: D-09 fix-site comment: apply-order-design.md section 5 misread the old null-return as the saturated-tree case; report left unedited
+- [Phase 225]: Guarded the bot's clear-winner stop with a boost-aware visit window (rootGuardBoostAllowance=0.04, D-01/D-02); flatness and the deadline cut stay unguarded (D-03/D-04)
+- [Phase 225]: rankScore blends toward V_fallback (prior-weighted mean of root children) instead of toward 0 (D-10a/D-10b amended), fixing SEED-170 item 3
+- [Phase 225]: Phase 159 showcase reversal accepted (D-10e): a hard-to-find move far better than the findable alternative now ranks first in analysis suggestions
+- [Phase 225]: D-14 applied: item 1 and item 2 held and reverted (five (225-04)/(225-05) commits), item 3 ships; both revert boundaries auto-merged cleanly against Plan 225-06's edits with no manual conflict resolution
 
 ### Pending Todos
 
@@ -971,11 +981,11 @@ Items acknowledged and deferred at **v1.29 milestone close on 2026-06-29** (user
 
 ## Session Continuity
 
-**Stopped at:** Phase 225 context gathered
+**Stopped at:** Phase 225 complete — all phases complete
 
-**Last session:** 2026-09-27T05:34:00.684Z
+**Last session:** 2026-09-28T02:16:39.651Z
 
-**Resume file:** .planning/phases/225-engine-search-fixes-root-comparability-round-underfill-findability/225-CONTEXT.md
+**Resume file:** None
 
 ## Performance Metrics
 
@@ -1169,6 +1179,13 @@ Items acknowledged and deferred at **v1.29 milestone close on 2026-06-29** (user
 | Phase 224 P04 | 30min | 3 tasks | 13 files |
 | Phase 224 P05 | 35 min | 3 tasks | 4 files |
 | Phase 224 P06 | 55min | 4 tasks | 8 files |
+| Phase 225 P01 | 25min | 2 tasks | 4 files |
+| Phase 225 P02 | 55min | 2 tasks | 2 files |
+| Phase 225 P03 | 22min | 3 tasks | 11 files |
+| Phase 225 P04 | 20min | 2 tasks | 2 files |
+| Phase 225 P05 | 20min | 2 tasks | 5 files |
+| Phase 225 P06 | 20min | 2 tasks | 6 files |
+| Phase 225 P08 | 65min | 3 tasks | 13 files |
 
 ## Performance Metrics
 
