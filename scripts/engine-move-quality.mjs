@@ -35,7 +35,7 @@
  *   node --import ./scripts/lib/frontend-alias-hook.mjs scripts/engine-move-quality.mjs \
  *     --arm LABEL --stop-rule on|off \
  *     [--fixture fixtures/engine/maia-blindness.tsv] \
- *     [--nodes 50] [--plies 8] [--elo 1500] [--procs 4] [--grade-depth 18] \
+ *     [--nodes 50] [--plies 8] [--elo 1500] [--procs 4] [--pool-size 4] [--grade-depth 18] \
  *     [--out-dir reports/data] [--self-test] [--help]
  *
  *   --arm          REQUIRED for a real run. Label stamped onto every row —
@@ -46,12 +46,17 @@
  *                  2026-07-31 override procedure this fixture/margin is from).
  *   --fixture      tab-separated fixture (id/fen/correct_move/eval_gap_cp/
  *                  note/source, `#`-prefixed preamble allowed). Default
- *                  fixtures/engine/maia-blindness.tsv.
+ *                  fixtures/engine/maia-blindness.tsv. `--self-test --fixture PATH`
+ *                  also validates PATH's own integrity (in addition to the
+ *                  unchanged 12-row default-fixture check) when PATH differs
+ *                  from the default.
  *   --nodes        node-expansion budget (default FLAWCHESS_BOT_MAX_NODES = 50)
  *   --plies        search-tree ply cap (default FLAWCHESS_BOT_MAX_PLIES = 8)
  *   --elo          symmetric per-side ELO (default 1500)
- *   --procs        Stockfish search-pool size; also SearchBudget.concurrency
- *                  (default FLAWCHESS_BOT_CONCURRENCY = 4)
+ *   --procs        SearchBudget.concurrency ONLY (default FLAWCHESS_BOT_CONCURRENCY = 4)
+ *   --pool-size    Stockfish PROCESS pool size (Phase 226 D-04; default = --procs).
+ *                  Decoupled from --procs so a mobile-shaped run (concurrency 4 over a
+ *                  2-worker pool) can be measured.
  *   --grade-depth  independent Stockfish MultiPV grading depth (default 18)
  *   --out-dir      emit a TSV here; omit to print only
  *   --self-test    exercise parseArgs + fixture integrity only (no engines
@@ -118,6 +123,7 @@ export function parseArgs(argv) {
     plies: FLAWCHESS_BOT_MAX_PLIES,
     elo: DEFAULT_ELO,
     procs: FLAWCHESS_BOT_CONCURRENCY,
+    poolSize: null,
     gradeDepth: DEFAULT_GRADE_DEPTH,
     outDir: null,
     help: false,
@@ -152,6 +158,7 @@ export function parseArgs(argv) {
       case 'plies': args.plies = parsePositiveIntFlag(value, key); i++; break;
       case 'elo': args.elo = parsePositiveIntFlag(value, key); i++; break;
       case 'procs': args.procs = parsePositiveIntFlag(value, key); i++; break;
+      case 'pool-size': args.poolSize = parsePositiveIntFlag(value, key); i++; break; // Phase 226 D-04
       case 'grade-depth': args.gradeDepth = parsePositiveIntFlag(value, key); i++; break;
       case 'out-dir': args.outDir = requireFlagValue(value, key); i++; break;
       default:
@@ -167,6 +174,10 @@ export function parseArgs(argv) {
       throw new Error('Missing required --stop-rule on|off — states which budget mode this run measures');
     }
   }
+  // Phase 226 D-04: --pool-size decouples the Stockfish PROCESS count from
+  // SearchBudget.concurrency (--procs); defaulting it here (after the loop)
+  // preserves every existing caller's behavior when --pool-size is omitted.
+  if (args.poolSize === null) args.poolSize = args.procs;
   return args;
 }
 
@@ -268,7 +279,7 @@ async function gradePair(engine, fen, move, correctMove, gradeDepth) {
 
 // ─── Self-test (parseArgs + fixture integrity only, no engines) ────────────
 
-async function runSelfTest() {
+async function runSelfTest(fixturePath = DEFAULT_FIXTURE) {
   let ok = true;
   const check = (cond, label) => {
     if (!cond) {
@@ -329,6 +340,44 @@ async function runSelfTest() {
     check(false, `default fixture should pass validateFixtureIntegrity: ${err.message}`);
   }
 
+  // Phase 226 D-14: a non-default --fixture is ALSO validated for integrity
+  // at self-test time, so a widened fixture is checked before it is ever
+  // committed as the gate's own fixture — the unchanged 12-row default check
+  // above still runs regardless.
+  const resolvedFixturePath = resolvePath(fixturePath);
+  if (resolvedFixturePath !== resolvePath(DEFAULT_FIXTURE)) {
+    try {
+      const extraRows = loadFixtureRows(resolvedFixturePath);
+      console.log(`fixture rows=${extraRows.length}`);
+      await validateFixtureIntegrity(extraRows);
+      check(true, `--fixture ${fixturePath} passes validateFixtureIntegrity`);
+    } catch (err) {
+      check(false, `--fixture ${fixturePath} should pass validateFixtureIntegrity: ${err.message}`);
+    }
+  }
+
+  // --pool-size defaults to --procs when omitted (Phase 226 D-04).
+  const defaultPoolArgs = parseArgs(['--arm', 'a0', '--stop-rule', 'on']);
+  check(
+    defaultPoolArgs.poolSize === defaultPoolArgs.procs,
+    `--pool-size defaults to --procs (${defaultPoolArgs.procs}), got ${defaultPoolArgs.poolSize}`,
+  );
+
+  // --pool-size and --procs are independent when both are given.
+  const explicitPoolArgs = parseArgs(['--arm', 'a0', '--stop-rule', 'on', '--pool-size', '2', '--procs', '4']);
+  check(
+    explicitPoolArgs.poolSize === 2 && explicitPoolArgs.procs === 4,
+    `--pool-size 2 --procs 4 yields poolSize 2 and procs 4, got poolSize=${explicitPoolArgs.poolSize} procs=${explicitPoolArgs.procs}`,
+  );
+
+  // --pool-size 0 throws (Stockfish pool size must be a positive integer).
+  try {
+    parseArgs(['--arm', 'a0', '--stop-rule', 'on', '--pool-size', '0']);
+    check(false, '--pool-size 0 should throw');
+  } catch (err) {
+    check(/pool-size/i.test(err.message), '--pool-size 0 throws mentioning pool-size');
+  }
+
   // A corrupted temp copy (one row's correct_move replaced by an illegal
   // move) makes validateFixtureIntegrity throw a message containing that
   // row's id (T-225-01).
@@ -365,7 +414,7 @@ async function main() {
     return 0;
   }
   if (args.selfTest) {
-    const passed = await runSelfTest();
+    const passed = await runSelfTest(args.fixture);
     console.log(passed ? '\nSelf-test: ALL CHECKS PASSED' : '\nSelf-test: FAILURES ABOVE');
     return passed ? 0 : 1;
   }
@@ -380,7 +429,7 @@ async function main() {
   console.log(`Fixture integrity: ${fixtureRows.length}/${fixtureRows.length} rows legal (FEN + recorded move).`);
 
   const { session, ort } = await createMaiaSession();
-  const pool = await createGradePool(args.procs);
+  const pool = await createGradePool(args.poolSize);
   const gradeEngine = await spawnStockfish();
 
   // Review fix (WR-02): a per-row grading error used to escape main() before
@@ -397,7 +446,8 @@ async function main() {
 async function measureRows(args, fixtureRows, session, ort, pool, gradeEngine) {
   console.log(
     `\nengine-move-quality — arm=${args.arm} stop-rule=${args.stopRule} nodes=${args.nodes} plies=${args.plies} ` +
-      `elo=${args.elo} procs=${args.procs} grade-depth=${args.gradeDepth} margin=${REGRESSION_MARGIN}\n` +
+      `elo=${args.elo} procs=${args.procs} pool-size=${args.poolSize} grade-depth=${args.gradeDepth} ` +
+      `margin=${REGRESSION_MARGIN}\n` +
       `fixture=${args.fixture} rows=${fixtureRows.length}\n`,
   );
 
@@ -409,7 +459,7 @@ async function measureRows(args, fixtureRows, session, ort, pool, gradeEngine) {
   for (const row of fixtureRows) {
     await pool.resetAll();
     resetMaiaRunMemo();
-    const providers = makeNodeProviders(session, ort, pool.grade);
+    const providers = makeNodeProviders(session, ort, pool.grade, { gradeRootFn: pool.gradeRoot });
     const budget = {
       maxNodes: args.nodes,
       maxPlies: args.plies,
@@ -418,9 +468,13 @@ async function measureRows(args, fixtureRows, session, ort, pool, gradeEngine) {
       ...(args.stopRule === 'on' ? { stopRule: FLAWCHESS_BOT_STOP_RULE } : {}),
     };
 
+    // Phase 226 D-08: per-row delta of the pool's own rootSplit tripwire —
+    // the TSV's `root_split_calls` column.
+    const rootSplitCallsBefore = pool.rootSplitStats().calls;
     const startedAt = performance.now();
     const snapshot = await mctsSearch(row.fen, budget, providers, () => {}, new AbortController().signal);
     const wallMs = performance.now() - startedAt;
+    const rootSplitCallsDelta = pool.rootSplitStats().calls - rootSplitCallsBefore;
 
     const botMove = argmaxLine(snapshot.rankedLines);
     const analysisMove = snapshot.rankedLines[0]?.rootMove ?? null;
@@ -481,6 +535,8 @@ async function measureRows(args, fixtureRows, session, ort, pool, gradeEngine) {
       grade_depth: args.gradeDepth,
       elo: args.elo,
       max_nodes: args.nodes,
+      pool_size: args.poolSize,
+      root_split_calls: rootSplitCallsDelta,
     });
   }
 
@@ -496,6 +552,7 @@ async function measureRows(args, fixtureRows, session, ort, pool, gradeEngine) {
       'arm', 'stop_rule', 'id', 'fen', 'correct_move', 'bot_move', 'es_bot', 'es_correct',
       'delta_bot', 'verdict_bot', 'analysis_move', 'es_analysis', 'delta_analysis', 'verdict_analysis',
       'nodes_evaluated', 'stop_reason', 'wall_ms', 'grade_depth', 'elo', 'max_nodes',
+      'pool_size', 'root_split_calls',
     ];
     const stamp = new Date().toISOString().replace(/[:.]/g, '-');
     const outPath = path.join(outDir, `engine-move-quality-${args.arm}-stop${args.stopRule}-${stamp}.tsv`);

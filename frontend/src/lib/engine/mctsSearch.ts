@@ -30,12 +30,18 @@
  * cap's first casualty whenever the root exceeded it — the union survived
  * the mass cut but silently lost to the hard cap. And, at `concurrency > 1`,
  * multiple expansions are selected synchronously within one round (marking
- * each as `isPending` — the sole gate that keeps a later same-round
- * selection from re-picking it; visit counts increment only at APPLY time,
+ * each as `isPending` — the gate that keeps a later same-round selection
+ * from re-picking it directly; visit counts increment only at APPLY time,
  * so intermediate `onSnapshot` counts never depend on how many expansions
- * were dispatched together) then dispatched together and applied to the
- * tree strictly in their canonical dispatch order via `Promise.all`'s
- * order-preserving resolution — never raw promise-arrival order (Pattern 5).
+ * were dispatched together). SEED-170 item 2 (D-06/D-07): an INTERIOR node
+ * whose only children are pending (or closed) is not simply skipped in
+ * place — it is marked `isBlocked` for the rest of the round and the walk
+ * restarts from the root, so a peaked non-root policy that collapses one
+ * subtree to a single live child no longer starves every OTHER subtree's
+ * dispatch slot. Once selected (pending or freshly discovered), expansions
+ * are dispatched together and applied to the tree strictly in their
+ * canonical dispatch order via `Promise.all`'s order-preserving resolution —
+ * never raw promise-arrival order (Pattern 5).
  *
  * Determinism scope (ENGINE-07/D-03): output is deterministic PER
  * concurrency level — repeated runs at the same `budget.concurrency` are
@@ -46,6 +52,17 @@
  * at c>1 pending-exclusion forces same-round selections onto different
  * nodes. A c=1 vs c=2 output difference is therefore NOT a bug — do not
  * attempt to equalize the two levels.
+ *
+ * Phase 226 D-18/D-08: when a provider supplies `gradeRoot`, the root's one
+ * grade call is routed to it instead of `grade` (see `dispatchExpansion`'s
+ * provider-selection line) so a caller can fan that single call out across
+ * multiple idle workers/engines below the `EngineProviders` boundary — this
+ * file never sees the fan-out itself. Because the fan-out's shard count is
+ * bounded by how many workers/engines are free/exist, a harness's
+ * bit-identity claim for a `gradeRoot`-splitting run is now scoped per
+ * (concurrency, pool size) pair, not concurrency alone — the same
+ * `budget.concurrency` against two different pool sizes may legitimately
+ * split the root grade into a different number of shards.
  */
 
 import { sideToMoveFromFen, type MoverColor } from '@/lib/liveFlaw';
@@ -105,6 +122,19 @@ interface EngineNode extends SearchTreeNode<EngineNode> {
    * of magnitude and corrupting modalPath's most-visited-child choice.
    */
   isClosed: boolean;
+  /**
+   * True while this non-root node is blocked for the REST OF THE CURRENT
+   * dispatch round only (SEED-170 item 2, D-06/D-07): set when a walk
+   * reaches it and finds zero selectable children (every child pending or
+   * closed), so a later same-round walk restarts from the root instead of
+   * giving up on the whole round. Deliberately a SEPARATE flag from
+   * `isPending` — that one means "dispatched this round" and is read and
+   * reset at apply time (`applyExpansion`), while `isBlocked` is read only
+   * by `selectPath` and cleared in bulk right after the fill loop, before
+   * `Promise.all` (see the round loop below). Always false outside an
+   * active fill loop.
+   */
+  isBlocked: boolean;
   /** Root-only floor-boosted exploration prior (D-05) — meaningful only when this node is a direct child of root. */
   rootExplorationPrior: number;
 }
@@ -123,6 +153,7 @@ function createRoot(rootFen: string, rootMover: MoverColor): EngineNode {
     isTerminal: false,
     isExpanded: false,
     isClosed: false,
+    isBlocked: false,
     objectiveEvalCp: null,
     objectiveEvalMate: null,
     rawMaiaProb: null,
@@ -163,6 +194,7 @@ function createChildNode(
     isTerminal: false,
     isExpanded: false,
     isClosed: false,
+    isBlocked: false,
     objectiveEvalCp,
     objectiveEvalMate,
     rawMaiaProb,
@@ -188,19 +220,48 @@ function allChildrenClosed(node: EngineNode): boolean {
 
 /**
  * Root-children value extremes the stop-rule check needs (Phase 168.5
- * D-05/D-06): reads `root.children`'s own `.value` fields directly — the
- * same values `treeCommon.ts`'s `buildRankedLines` surfaces as
- * `RankedLine.practicalScore` — never the findability-sorted `rankScore`
- * (Pattern 2). Returns null when root has no children yet (nothing to
- * evaluate). `runnerUpValue` is `-Infinity` when there is only one child, so
- * a single-candidate root trivially satisfies the clear-winner margin.
+ * D-05/D-06, extended Phase 225 D-01/D-02): reads `root.children`'s own
+ * `.value` fields directly — the same values `treeCommon.ts`'s
+ * `buildRankedLines` surfaces as `RankedLine.practicalScore` — never the
+ * findability-sorted `rankScore` (Pattern 2). Returns null when root has no
+ * children yet (nothing to evaluate). `runnerUpValue` is `-Infinity` when
+ * there is only one child, so a single-candidate root trivially satisfies
+ * the clear-winner margin.
+ *
+ * `settled` (per entry) is `visits >= 1 || isClosed` — deliberately NOT
+ * `isTerminal`. A closed root child (terminal, or degenerate-empty-candidate
+ * WR-04 close) is filtered out of `selectPath`'s candidate set and can never
+ * receive a visit, so a visits-only settled test would stall a mate-in-1
+ * root's clear-winner stop forever (RESEARCH Pitfall 1).
+ *
+ * `hasUnsettledInWindow` (Phase 225 D-01, single pass, in the SAME collection
+ * loop above — never a second pass with different semantics) is true when
+ * any entry — the top child included, its own gap being 0 — is unsettled AND
+ * within `guardWindow` of the top's value. An unvisited child's own first
+ * expansion can raise its value by roughly the opponent's expected error
+ * (the "boost" — D-02 measures its typical size), so a child up to
+ * `marginThreshold + rootGuardBoostAllowance` below the CURRENT top can still
+ * overtake it once expanded; comparing it against the top before that happens
+ * is exactly the root-comparability bug SEED-170 item 1 reports. This guard
+ * only WITHHOLDS the clear-winner stop until every in-window child settles —
+ * it never corrects, blends, or otherwise touches any `.value`.
  */
 function rootChildValueExtremes(
   root: EngineNode,
-): { argmaxUci: string; topValue: number; runnerUpValue: number; minValue: number; maxValue: number } | null {
-  const entries: { uci: string; value: number }[] = [];
+  guardWindow: number,
+): {
+  argmaxUci: string;
+  topValue: number;
+  runnerUpValue: number;
+  minValue: number;
+  maxValue: number;
+  hasUnsettledInWindow: boolean;
+} | null {
+  const entries: { uci: string; value: number; settled: boolean }[] = [];
   for (const child of root.children.values()) {
-    if (child.uci !== null) entries.push({ uci: child.uci, value: child.value });
+    if (child.uci !== null) {
+      entries.push({ uci: child.uci, value: child.value, settled: child.visits >= 1 || child.isClosed });
+    }
   }
   const first = entries[0];
   if (first === undefined) return null;
@@ -217,7 +278,8 @@ function rootChildValueExtremes(
     if (entry.uci === top.uci) continue;
     if (entry.value > runnerUpValue) runnerUpValue = entry.value;
   }
-  return { argmaxUci: top.uci, topValue: top.value, runnerUpValue, minValue, maxValue };
+  const hasUnsettledInWindow = entries.some((entry) => !entry.settled && top.value - entry.value <= guardWindow);
+  return { argmaxUci: top.uci, topValue: top.value, runnerUpValue, minValue, maxValue, hasUnsettledInWindow };
 }
 
 /**
@@ -233,14 +295,18 @@ interface StopRuleState {
 }
 
 /**
- * Two-sided stop-rule check (Phase 168.5 D-05/D-06), evaluated once per
- * applied expansion in the canonical apply-order loop: updates `state`'s
- * rolling stability counter, then — gated by BOTH the shared min-nodes floor
- * and the stability window — fires on EITHER a clear winner (top-vs-runner-up
- * `.value` margin) or near-tie flatness (max-min `.value` spread). Reads
- * `root.children`'s own `.value` fields via `rootChildValueExtremes`, never
- * the findability-sorted `buildRankedLines` (Pattern 2). No wall-clock signal
- * anywhere — deterministic over the applied-expansion sequence.
+ * Two-sided stop-rule check (Phase 168.5 D-05/D-06, guarded Phase 225
+ * D-01/D-02), evaluated once per applied expansion in the canonical
+ * apply-order loop: updates `state`'s rolling stability counter
+ * UNCONDITIONALLY (the stability semantics themselves are unchanged), then —
+ * gated by BOTH the shared min-nodes floor and the stability window — fires
+ * on EITHER a clear winner (top-vs-runner-up `.value` margin, AND no
+ * unsettled root child within the guard window of the top) or near-tie
+ * flatness (max-min `.value` spread — deliberately left unguarded, D-03).
+ * Reads `root.children`'s own `.value` fields via `rootChildValueExtremes`,
+ * never the findability-sorted `buildRankedLines` (Pattern 2). No wall-clock
+ * signal anywhere — deterministic over the applied-expansion sequence, and
+ * `deadlineSearch.ts`'s wall-clock cut stays unguarded (D-04).
  */
 function stopRuleSatisfied(
   root: EngineNode,
@@ -248,13 +314,14 @@ function stopRuleSatisfied(
   nodesEvaluated: number,
   state: StopRuleState,
 ): boolean {
-  const extremes = rootChildValueExtremes(root);
+  const guardWindow = rule.marginThreshold + rule.rootGuardBoostAllowance;
+  const extremes = rootChildValueExtremes(root, guardWindow);
   if (!extremes) return false;
   state.stableCheckCount = extremes.argmaxUci === state.stableArgmaxUci ? state.stableCheckCount + 1 : 1;
   state.stableArgmaxUci = extremes.argmaxUci;
   if (nodesEvaluated < rule.minNodes || state.stableCheckCount < rule.stabilityWindow) return false;
   return (
-    extremes.topValue - extremes.runnerUpValue >= rule.marginThreshold ||
+    (extremes.topValue - extremes.runnerUpValue >= rule.marginThreshold && !extremes.hasUnsettledInWindow) ||
     extremes.maxValue - extremes.minValue <= rule.epsilonThreshold
   );
 }
@@ -277,21 +344,29 @@ function propagateClosure(path: readonly EngineNode[]): void {
 
 /**
  * Walks root -> leaf via deterministic PUCT (`select.ts`), skipping pending
- * (in-flight, same-round) and closed (fully searched, WR-01) children.
- * Returns the full path (root-inclusive), ending either at a genuine
- * leaf-to-expand (`isExpanded === false`) or a freshly discovered dead end
+ * (in-flight, same-round), closed (fully searched, WR-01), and blocked
+ * (dead-end-this-round, D-06/D-07) children. Returns the full path
+ * (root-inclusive), ending either at a genuine leaf-to-expand
+ * (`isExpanded === false`) or a freshly discovered dead end
  * (terminal/depth-capped — marked closed here, so it is returned at most
- * ONCE). Returns null when nothing is selectable: the root itself is closed
- * (tree fully searched) or every candidate is already dispatched this round.
+ * ONCE). A non-root node reached with zero selectable children is marked
+ * `isBlocked` and the walk RESTARTS from the root instead of giving up,
+ * because sibling subtrees may still have selectable work this round
+ * (SEED-170 item 2 — see `blockedThisRound` below). Returns null only when
+ * the ROOT itself has nothing selectable: it is closed (tree fully
+ * searched) or every root child is pending, closed, or blocked this round —
+ * mirroring the pre-fix behavior for the one node this restart can never
+ * route around.
  */
-function selectPath(root: EngineNode, maxPlies: number): EngineNode[] | null {
-  // Root is the one node the child-pending/closed filter below can never
-  // protect (it's the walk's starting point, not reached via a filtered
-  // `chosen` pick) — without this guard, two concurrent dispatch slots in
-  // the very first round would both select the pending root itself, and a
-  // terminal/fully-searched root would keep producing dead-end walks.
+function selectPath(root: EngineNode, maxPlies: number, blockedThisRound: EngineNode[]): EngineNode[] | null {
+  // Root is the one node the child-pending/closed/blocked filter below can
+  // never protect (it's the walk's starting point, not reached via a
+  // filtered `chosen` pick) — without this guard, two concurrent dispatch
+  // slots in the very first round would both select the pending root
+  // itself, and a terminal/fully-searched root would keep producing
+  // dead-end walks.
   if (root.isPending || root.isClosed) return null;
-  const path: EngineNode[] = [root];
+  let path: EngineNode[] = [root];
   let node = root;
   for (;;) {
     if (!node.isExpanded) {
@@ -307,9 +382,30 @@ function selectPath(root: EngineNode, maxPlies: number): EngineNode[] | null {
     }
     const candidates: EngineNode[] = [];
     for (const child of node.children.values()) {
-      if (!child.isPending && !child.isClosed) candidates.push(child);
+      if (!child.isPending && !child.isClosed && !child.isBlocked) candidates.push(child);
     }
-    if (candidates.length === 0) return null; // every child dispatched this round or fully searched
+    if (candidates.length === 0) {
+      // Nothing selectable below `node` this round. At the root, that means
+      // the round is genuinely out of work — return null exactly as before
+      // the fix (the fill loop's "nothing selectable" break).
+      if (node.isRoot) return null;
+      // D-06/D-07 fix (SEED-170 item 2): pre-fix, this branch was an
+      // unconditional `return null`, collapsing the WHOLE round to whatever
+      // had already been dispatched — even when other root subtrees still
+      // had selectable children. `apply-order-design.md` section 5 misread
+      // that null return as the saturated-tree case; it actually fired
+      // whenever ONE favored subtree's only children were pending, starving
+      // every OTHER subtree's dispatch slot for the round (do not edit that
+      // report — D-09). The fix: block this node for the rest of the round
+      // (its parent's filter above then excludes it) and restart the walk
+      // from the root, so a peaked non-root policy no longer throttles
+      // concurrency down to 1-2 of `budget.concurrency`.
+      node.isBlocked = true;
+      blockedThisRound.push(node);
+      path = [root];
+      node = root;
+      continue;
+    }
 
     const selectionChildren: SelectionChild[] = candidates.map((c) => ({
       uci: c.uci ?? '',
@@ -474,7 +570,19 @@ async function dispatchExpansion(
   // Phase 195 LADDER-02: the grading rung is resolved HERE, not inside
   // WorkerPool, because `leaf.depth` — the tree depth-from-root — is only
   // known inside the search orchestrator.
-  const gradeWithDepth = providers.grade as GradeWithLadderDepth;
+  // Phase 226 D-18: route the ROOT's one grade call to `providers.gradeRoot`
+  // when the provider offers one, else fall back to `grade` — the sole
+  // routing change this plan makes. Round 1 of a search is exactly the root
+  // expansion (`selectPath`'s root-pending guard), so this selects
+  // `gradeRoot` at most ONCE per search, and only for the root; every other
+  // leaf (and every provider that lacks `gradeRoot`) takes the unchanged
+  // `grade` path. The round barrier, selection (`selectPath`), apply order
+  // (`applyExpansion`'s canonical loop) and the stop rule
+  // (`stopRuleSatisfied`) are all untouched by this selection — the fan-out
+  // and merge live entirely below this call, inside whichever provider
+  // implements `gradeRoot`.
+  const gradeFn = (leaf.isRoot ? providers.gradeRoot : undefined) ?? providers.grade;
+  const gradeWithDepth = gradeFn as GradeWithLadderDepth;
   const grades = await gradeWithDepth(
     leaf.fen,
     candidateUcis,
@@ -541,17 +649,24 @@ export const mctsSearch: SearchRunner = async (rootFen, budget, providers, onSna
 
   while (nodesEvaluated < budget.maxNodes && !signal.aborted && !earlyStop) {
     const toExpand: { leaf: EngineNode; path: EngineNode[] }[] = [];
+    // D-06/D-07: nodes `selectPath` blocked-for-this-round only, owned by
+    // this round's fill loop — cleared right below, before `Promise.all`,
+    // so the flag never leaks into the next round.
+    const blockedThisRound: EngineNode[] = [];
 
-    // Termination is structural (WR-01), no retry cap needed: every
-    // iteration either breaks (nothing selectable), permanently closes a
-    // dead-end node (each node closes at most once), or fills a dispatch
-    // slot (bounded by concurrency).
+    // Termination is structural (WR-01/D-06), no retry cap needed: every
+    // iteration either breaks (nothing selectable at the root), permanently
+    // closes a dead-end node (each node closes at most once), blocks a
+    // dead-end-this-round node and restarts from the root (each node blocks
+    // at most once per round — its parent's filter then excludes it,
+    // mirroring `propagateClosure`'s closes-at-most-once argument), or fills
+    // a dispatch slot (bounded by concurrency).
     while (
       toExpand.length < budget.concurrency &&
       nodesEvaluated + toExpand.length < budget.maxNodes
     ) {
-      const path = selectPath(root, budget.maxPlies);
-      if (path === null) break; // nothing selectable this round (all pending or fully searched)
+      const path = selectPath(root, budget.maxPlies, blockedThisRound);
+      if (path === null) break; // nothing selectable this round (root closed, or every root child pending/closed/blocked)
       const leaf = path[path.length - 1];
       if (leaf === undefined) break; // defensive; selectPath always returns a non-empty path
 
@@ -581,6 +696,17 @@ export const mctsSearch: SearchRunner = async (rootFen, budget, providers, onSna
       leaf.isPending = true;
       toExpand.push({ leaf, path });
     }
+
+    // D-06/D-07: clear this round's block flags now, right after the fill
+    // loop and before `Promise.all` — `isBlocked` is read only by
+    // `selectPath`, which is called only inside the fill loop above, so
+    // clearing here is behaviorally identical to clearing "after
+    // Promise.all" while keeping the invariant fully local. This also
+    // covers the nothing-dispatched break immediately below: a round that
+    // ends up dispatching nothing must still not leak blocked nodes into
+    // the next round.
+    for (const node of blockedThisRound) node.isBlocked = false;
+    blockedThisRound.length = 0;
 
     if (toExpand.length === 0) {
       // Tree fully searched before maxNodes (WR-05): this is NOT budget

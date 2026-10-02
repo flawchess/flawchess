@@ -1,0 +1,99 @@
+{
+  "maia": {
+    "exposed_cells": [
+      {
+        "bot_blend": 0.05,
+        "bot_elo": 1300,
+        "outside_ci": false,
+        "se_shift": 46.85309399588783,
+        "shift": -54.19598760138365
+      },
+      {
+        "bot_blend": 0.5,
+        "bot_elo": 1500,
+        "outside_ci": true,
+        "se_shift": 47.8438564653777,
+        "shift": 75.42685333145914
+      },
+      {
+        "bot_blend": 0.05,
+        "bot_elo": 1900,
+        "outside_ci": false,
+        "se_shift": 60.12585678766986,
+        "shift": 60.25061111144555
+      },
+      {
+        "bot_blend": 0.5,
+        "bot_elo": 2300,
+        "outside_ci": false,
+        "se_shift": 78.24743652766601,
+        "shift": -28.85250926735057
+      }
+    ],
+    "null_control": {
+      "se_shift": 59.631149872429845,
+      "shift": 0.0,
+      "threshold": 165.0,
+      "within_threshold": true
+    },
+    "pooled": {
+      "n_cells": 4,
+      "se": 27.396273873647587,
+      "shift": 15.173980843406177,
+      "threshold": 85.0,
+      "within_threshold": true
+    }
+  },
+  "sf": {
+    "exposed_cells": [
+      {
+        "bot_blend": 0.05,
+        "bot_elo": 1300,
+        "outside_ci": true,
+        "se_shift": 51.02725201725318,
+        "shift": 134.08481836512874
+      },
+      {
+        "bot_blend": 0.5,
+        "bot_elo": 1500,
+        "outside_ci": true,
+        "se_shift": 50.043013870950276,
+        "shift": -101.75101311812045
+      },
+      {
+        "bot_blend": 0.05,
+        "bot_elo": 1900,
+        "outside_ci": true,
+        "se_shift": 48.9854345230637,
+        "shift": 83.29682102909396
+      },
+      {
+        "bot_blend": 0.5,
+        "bot_elo": 2300,
+        "outside_ci": false,
+        "se_shift": 82.41121681850059,
+        "shift": -28.974499839905093
+      }
+    ],
+    "null_control": {
+      "se_shift": 60.7753087627512,
+      "shift": 31.616750836234473,
+      "threshold": 149.0,
+      "within_threshold": true
+    },
+    "pooled": {
+      "n_cells": 4,
+      "se": 27.243294596806766,
+      "shift": 30.662171069887744,
+      "threshold": 50.0,
+      "within_threshold": true
+    }
+  },
+  "shape_guard_triggered": [
+    [
+      1500,
+      0.5
+    ]
+  ],
+  "verdict": "fails"
+}

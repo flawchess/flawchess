@@ -45,5 +45,10 @@ describe('useFlawChessEngine — bot-play budget profile (D-07/D-09)', () => {
     expect(FLAWCHESS_BOT_STOP_RULE.stabilityWindow).toBeGreaterThan(0);
     expect(FLAWCHESS_BOT_STOP_RULE.marginThreshold).toBeGreaterThanOrEqual(0);
     expect(FLAWCHESS_BOT_STOP_RULE.epsilonThreshold).toBeGreaterThanOrEqual(0);
+    // Phase 225 D-01/D-02: the guard-window allowance must be a real,
+    // non-negative number — a NaN/negative value would silently widen or
+    // corrupt the guard window every stopRuleSatisfied check computes.
+    expect(Number.isFinite(FLAWCHESS_BOT_STOP_RULE.rootGuardBoostAllowance)).toBe(true);
+    expect(FLAWCHESS_BOT_STOP_RULE.rootGuardBoostAllowance).toBeGreaterThanOrEqual(0);
   });
 });

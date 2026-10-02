@@ -1,0 +1,5 @@
+bot_elo	bot_blend	anchor	games	wins	draws	losses	score	white_games	white_wins	white_draws	white_losses	white_score	black_games	black_wins	black_draws	black_losses	black_score	seed	max_nodes	max_plies	stockfish_procs	git_sha	skip_reason	beyond_ladder	draw_rate	mean_game_length	acpl	blunder_rate	sf_agreement	maia_agreement
+1100	0	maia700	50	15	4	31	0.3400	25	8	2	15	0.3600	25	7	2	16	0.3200	1	50	8	4	f6c1f7a54		true	0.0800	49.96	65.2	0.0660	0.3957	0.5465
+1100	0	maia1100	50	1	0	49	0.0200	25	0	0	25	0.0000	25	1	0	24	0.0400	1	50	8	4	f6c1f7a54		true	0.0000	45.16	75.4	0.0714	0.3473	0.4987
+1100	0	sf0	50	22	2	26	0.4600	25	15	1	9	0.6200	25	7	1	17	0.3000	1	50	8	4	f6c1f7a54		true	0.0400	59.84	66.6	0.0675	0.3390	0.5207
+1100	0	sf3	50	2	2	46	0.0600	25	2	2	21	0.1200	25	0	0	25	0.0000	1	50	8	4	f6c1f7a54		true	0.0400	63.34	70.7	0.0601	0.2584	0.4657

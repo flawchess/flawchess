@@ -1,0 +1,3 @@
+PASS: a defined style bundle reaches selectBotMove and changes its output (STYLE-03 prior reweighting, deterministic stub)
+PASS: omitting `style` vs explicit `style: undefined` produce a byte-identical game (STYLE-05 absent-style invariant)
+PASS: calibration determinism — same seed reproduced an identical 30-ply blend=1 game (result=win, reason=adjudicated_eval, stockfish-procs=2, budget: FLAWCHESS_BOT_MAX_NODES=50 FLAWCHESS_BOT_MAX_PLIES=8 FLAWCHESS_BOT_CONCURRENCY=4 FLAWCHESS_BOT_STOP_RULE={"marginThreshold":0.05,"epsilonThreshold":0.02,"stabilityWindow":3,"minNodes":8,"rootGuardBoostAllowance":0.04})

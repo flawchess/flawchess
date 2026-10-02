@@ -47,7 +47,7 @@
  * Usage:
  *   node --import ./scripts/lib/frontend-alias-hook.mjs scripts/engine-dispatch-stop-rule.mjs \
  *     --dispatch-mode round|continuous \
- *     [--nodes 50] [--procs 4] [--plies 8] [--elo 1500] \
+ *     [--nodes 50] [--procs 4] [--pool-size 4] [--plies 8] [--elo 1500] \
  *     [--openings 12] [--fens path/to/fens.txt] [--maia-fifo] \
  *     [--no-stop-rule] [--root-trace] [--guard-window 0.15] \
  *     [--out-dir reports/data] [--self-test] [--help]
@@ -56,8 +56,11 @@
  *                    side of the D-11 rewrite this run measures. A label
  *                    stamped onto every row, never a code-path switch.
  *   --nodes          node-expansion budget (default FLAWCHESS_BOT_MAX_NODES = 50)
- *   --procs          Stockfish process pool size; also used as SearchBudget.concurrency
- *                     (default FLAWCHESS_BOT_CONCURRENCY = 4)
+ *   --procs          SearchBudget.concurrency ONLY (default FLAWCHESS_BOT_CONCURRENCY = 4)
+ *   --pool-size      Stockfish PROCESS pool size (Phase 226 D-04; default = --procs). Decoupled
+ *                    from --procs so a mobile-shaped run (concurrency 4 over a 2-worker pool)
+ *                    can be measured; with pool-size < procs, later grade calls queue in the
+ *                    pool's own FIFO instead of spawning more processes.
  *   --plies          search-tree ply cap (default FLAWCHESS_BOT_MAX_PLIES = 8)
  *   --elo            symmetric per-side ELO for the practical model (default 1500)
  *   --openings       additionally draw N positions from calibration-openings.mjs's OPENING_BOOK
@@ -96,7 +99,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 
 import { createMaiaSession } from './lib/node-engine-providers.mjs';
-import { createStockfishPool } from './lib/stockfish-pool.mjs';
+import { createStockfishPool, splitAcrossFreeEngines } from './lib/stockfish-pool.mjs';
 import {
   makeNodeProviders,
   maiaCpuStats,
@@ -184,6 +187,7 @@ export function parseArgs(argv) {
   const args = {
     nodes: FLAWCHESS_BOT_MAX_NODES,
     procs: FLAWCHESS_BOT_CONCURRENCY,
+    poolSize: null,
     plies: FLAWCHESS_BOT_MAX_PLIES,
     elo: DEFAULT_ELO,
     openings: 0,
@@ -213,6 +217,7 @@ export function parseArgs(argv) {
     switch (key) {
       case 'nodes': args.nodes = parsePositiveIntFlag(value, key); i++; break;
       case 'procs': args.procs = parsePositiveIntFlag(value, key); i++; break;
+      case 'pool-size': args.poolSize = parsePositiveIntFlag(value, key); i++; break; // Phase 226 D-04
       case 'plies': args.plies = parsePositiveIntFlag(value, key); i++; break;
       case 'elo': args.elo = parsePositiveIntFlag(value, key); i++; break;
       case 'openings': args.openings = parsePositiveIntFlag(value, key, 0); i++; break;
@@ -244,6 +249,10 @@ export function parseArgs(argv) {
         'side of the round/continuous rewrite this run measures (D-11: this cannot be inferred)',
     );
   }
+  // Phase 226 D-04: --pool-size decouples the Stockfish PROCESS count from
+  // SearchBudget.concurrency (--procs); defaulting it here (after the loop)
+  // preserves every existing caller's behavior when --pool-size is omitted.
+  if (args.poolSize === null) args.poolSize = args.procs;
   return args;
 }
 
@@ -333,7 +342,36 @@ export async function createGradePool(size) {
     return pool.run((engine) => runOneGo(engine, depth ?? GRADING_ROOT_DEPTH, fen, candidateUcis));
   };
 
-  return { grade, resetAll: () => pool.newGameAll(), quitAll: () => pool.quitAll() };
+  /**
+   * Root-grade fan-out (Phase 226 D-18/D-08), dormant until arm A21S's
+   * `mctsSearch.ts` routes a root's grade call through `providers.gradeRoot`
+   * — no arm before that ever calls this function, so `splitStats` (and the
+   * `rootSplitStats()` snapshot below) stay at zero on every run. The WR-05
+   * empty-candidates guard stays FIRST, exactly like `grade` above, so an
+   * empty candidate set never reaches `splitAcrossFreeEngines`. `runShard`
+   * reuses `runOneGo` — the same mirror of `workerPool.ts`'s `sendGo` that
+   * `grade` uses — so a shard's `go` shape is identical to a full grade's.
+   */
+  const splitStats = { calls: 0, splits: 0, premiseViolations: 0 };
+  const gradeRoot = async (fen, candidateUcis, signal, depth) => {
+    if (candidateUcis.length === 0) return new Map(); // WR-05 guard stays first
+    return splitAcrossFreeEngines({
+      freeCount: pool.freeCount,
+      size,
+      stats: splitStats,
+      candidateUcis,
+      runShard: (shard) => pool.run((engine) => runOneGo(engine, depth ?? GRADING_ROOT_DEPTH, fen, shard)),
+    });
+  };
+
+  return {
+    grade,
+    gradeRoot,
+    /** Copy of this pool's `gradeRoot` tripwire accumulator — never the live mutable object. */
+    rootSplitStats: () => ({ ...splitStats }),
+    resetAll: () => pool.newGameAll(),
+    quitAll: () => pool.quitAll(),
+  };
 }
 
 // ─── Root tracer (D-02 first-expansion deltas + D-04 exposure) ──────────────
@@ -499,6 +537,28 @@ function runSelfTest() {
     }
   }
 
+  // --pool-size defaults to --procs when omitted (Phase 226 D-04).
+  const defaultPoolArgs = parseArgs(['--dispatch-mode', 'round']);
+  check(
+    defaultPoolArgs.poolSize === defaultPoolArgs.procs,
+    `--pool-size defaults to --procs (${defaultPoolArgs.procs}), got ${defaultPoolArgs.poolSize}`,
+  );
+
+  // --pool-size and --procs are independent when both are given.
+  const explicitPoolArgs = parseArgs(['--dispatch-mode', 'round', '--pool-size', '2', '--procs', '4']);
+  check(
+    explicitPoolArgs.poolSize === 2 && explicitPoolArgs.procs === 4,
+    `--pool-size 2 --procs 4 yields poolSize 2 and procs 4, got poolSize=${explicitPoolArgs.poolSize} procs=${explicitPoolArgs.procs}`,
+  );
+
+  // --pool-size 0 throws (Stockfish pool size must be a positive integer).
+  try {
+    parseArgs(['--dispatch-mode', 'round', '--pool-size', '0']);
+    check(false, '--pool-size 0 should throw');
+  } catch (err) {
+    check(/pool-size/i.test(err.message), '--pool-size 0 throws mentioning pool-size');
+  }
+
   // Pure tracer check (no engines): three synthetic snapshots exercising both
   // the D-02 first-expansion delta and the D-04 exposure metric.
   {
@@ -555,7 +615,7 @@ async function main() {
 
   const positions = resolvePositions(args);
   const { session, ort } = await createMaiaSession();
-  const pool = await createGradePool(args.procs);
+  const pool = await createGradePool(args.poolSize);
 
   // D-02: --no-stop-rule omits budget.stopRule entirely so the search always
   // runs the full node budget (more root children get expanded than with the
@@ -567,8 +627,9 @@ async function main() {
 
   console.log(
     `\nDispatch stop-rule distribution — mode=${args.dispatchMode} nodes=${args.nodes} ` +
-      `plies=${args.plies} concurrency=${args.procs} elo=${args.elo} maia-fifo=${args.maiaFifo} ` +
-      `stop-rule=${stopRuleLabel}${args.guardWindow !== null ? ` guard-window=${args.guardWindow}` : ''}\n` +
+      `plies=${args.plies} concurrency=${args.procs} pool-size=${args.poolSize} elo=${args.elo} ` +
+      `maia-fifo=${args.maiaFifo} stop-rule=${stopRuleLabel}` +
+      `${args.guardWindow !== null ? ` guard-window=${args.guardWindow}` : ''}\n` +
       `positions=${positions.length}\n`,
   );
 
@@ -579,7 +640,10 @@ async function main() {
     resetMaiaRunMemo(); // isolates this position's own inference cost (198-01 convention).
     resetMaiaInstrumentationStats(); // co-located with resetMaiaRunMemo, same per-pass isolation reasoning.
 
-    const providers = makeNodeProviders(session, ort, pool.grade, { maiaFifo: args.maiaFifo });
+    const providers = makeNodeProviders(session, ort, pool.grade, {
+      maiaFifo: args.maiaFifo,
+      gradeRootFn: pool.gradeRoot,
+    });
     const budget = {
       maxNodes: args.nodes,
       maxPlies: args.plies,
@@ -587,6 +651,10 @@ async function main() {
       elo: { w: args.elo, b: args.elo },
       ...(args.noStopRule ? {} : { stopRule: FLAWCHESS_BOT_STOP_RULE }),
     };
+    // Phase 226 D-08: per-position delta of the pool's own rootSplit tripwire
+    // — the TSV's `root_split_calls` column — so a mixed-position run can
+    // tell WHICH row (if any) ever reached `providers.gradeRoot`.
+    const rootSplitCallsBefore = pool.rootSplitStats().calls;
 
     const tracer = useRootTracer
       ? makeRootTracer({
@@ -607,6 +675,7 @@ async function main() {
       new AbortController().signal,
     );
     const wallMs = performance.now() - startedAt;
+    const rootSplitCallsDelta = pool.rootSplitStats().calls - rootSplitCallsBefore;
 
     const firstExpansions = tracer !== null ? tracer.getRows().length : null;
     const exposure = tracer !== null && args.guardWindow !== null ? tracer.getExposure() : null;
@@ -638,6 +707,8 @@ async function main() {
       first_expansions: firstExpansions !== null ? firstExpansions : '',
       exposure_snapshots: exposure !== null ? exposure.exposed : '',
       eligible_snapshots: exposure !== null ? exposure.eligible : '',
+      pool_size: args.poolSize,
+      root_split_calls: rootSplitCallsDelta,
     });
   }
 
@@ -648,6 +719,7 @@ async function main() {
       'position', 'fen', 'dispatch_mode', 'nodes_evaluated_at_stop', 'stop_reason', 'wall_ms',
       'maia_cpu_ms', 'maia_peak_inflight', 'maia_fifo', 'concurrency', 'max_nodes',
       'elo', 'stop_rule', 'guard_window', 'first_expansions', 'exposure_snapshots', 'eligible_snapshots',
+      'pool_size', 'root_split_calls',
     ];
     // Timestamp is read once here, AFTER all measurement, so it never influences a run.
     const stamp = new Date().toISOString().replace(/[:.]/g, '-');

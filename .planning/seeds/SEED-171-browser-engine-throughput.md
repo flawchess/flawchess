@@ -1,7 +1,7 @@
 ---
 id: SEED-171
 status: active
-promoted_to: Phase 226
+promoted_to: Phase 226 (steps 0-2), Phase 227 (continuous dispatch)
 planted: 2026-09-28
 planted_during: v2.19, Phase 225 planned (SEED-170); standalone performance review session
 trigger_when: whenever bot-move latency or analysis-board wall time becomes the priority, or the next engine milestone
@@ -210,3 +210,55 @@ SEED-130) and what that means for any engine concurrency work here:
 - SEED-127 (closed), SEED-130, SEED-170 (closed), `reports/continuous-dispatch/report.md`,
   `reports/engine-search-fixes-225/report.md`
 - Server-side counterpart: SEED-172
+
+## Phase 226 outcome (2026-10-01)
+
+Measured against a pre-registered accept rule (`reports/engine-throughput-226/accept-rule.md`);
+mechanical verdict in `reports/engine-throughput-226/verdict.json`, narrative in
+`reports/engine-throughput-226/report.md`. **Nothing shipped; all three items held; refit decision
+no-refit.** The branch carries `main`'s engine behavior (arm commits reverted).
+
+| Item | Outcome | Deciding numbers | Follow-up |
+|---|---|---|---|
+| Item 6a, round underfill fix (arm A2 `756d2a4a1`) | hold | t400-p2 wall ratio 1.1252 > 1.05 (t50-p4 1.0376, t400-p4 0.9918, t50-p2 0.9833 pass); MQ passes (net 1, allowance 1, `cBFTV` side effect) | SEED-176 |
+| Item 6b, root comparability guard (arm A21 `29f543f27`) | hold (stacked on underfill) | its own S1 8,321 ms, S2 10 vs 10, MQ net 0 all pass | SEED-177 |
+| Item 1, root grade split (arm A21S `f6c1f7a54`) | hold | Clear-Hash content 0.02092 > 0.01680 (warm 0.01548 passes); also stacked on underfill; T-50 0.9694 passes | SEED-178 |
+| Candidate cap (A21SC) | not run | D-17: non-root >8-candidate grade share 0.463 (50 nodes), 0.359 (400 nodes), both < 0.5 | none |
+
+- **Idle-box re-measurement versus the loaded-box table.** Shares reproduce, absolute time about
+  halves. 50 nodes: Maia 26.8-26.9% of wall (27%), SF pool utilization 46.7-46.8% (48%), depth-14
+  grades 69.6-69.8% of grade time (70%), wall 13.8-14.3 s for four positions (27.1 s loaded). 400
+  nodes: Maia 55.4-55.6% of wall (59%), SF pool utilization 36.9-37.1% (37%), about 23 s per
+  position (43-98 s loaded).
+- **Calibration baseline drift.** Phase 225's July-21 drift is attributed to cross-session
+  non-comparability (the same-session A0a-vs-July comparison is void, SF null control -177.4
+  against 149), not to the underfill fix. Same-session A0b-vs-A0a noise is small (Maia +0.35 +-
+  26.1, SF +11.5 +- 27.3). Powered thresholds Maia 85.0, SF 53.5.
+- **Machine drift is the larger finding.** Raw wall in the gate runs tracks per-grade Stockfish
+  CPU, which drifted up to 1.75x between runs of identical work; see
+  `reports/engine-throughput-226/analysis-2026-10-01-cpu-normalized-throughput.md` (report-only).
+  Normalized, the stack is about 7-9% faster on the desktop pool and about 1% at t400-p2. Future
+  throughput gates should interleave A0 and the arm in one session so per-grade CPU cancels.
+- **Refit decision:** no-refit (nothing shipped; powered calibration verdicts for all three items
+  also show no real shift).
+- **Step 3, continuous dispatch (item 5), is Phase 227.** Prerequisite: the desktop WebGPU Maia
+  measurement (D-02), which needs a machine with a WebGPU adapter. Contract and inputs: expected
+  score within a tolerance over a fixture (D-05); round mode retained behind a budget flag (D-07);
+  the measured round-mode warm-hash noise floor is 0 of 60 plies differing (0.0 mean |des|) at A0,
+  A21 and A21S, with a separate content-instrument floor of 0.0168 (D-06 input). Phase 227's
+  baseline is `main`'s engine content unless the owner overrides the Phase 226 verdict.
+- **Owner decisions pending** are listed in `reports/engine-throughput-226/report.md` (three
+  override ratifications, whether to override the hold-everything verdict, the A21S shape-guard
+  cell).
+
+### Owner override (2026-10-02): all three items ship
+
+The owner ratified the three overrides and overrode the hold verdict
+(`reports/engine-throughput-226/override-2026-10-02-owner-ship-decision.md`). They reasoned from
+first principles: the pre-226 engine is not a gold standard, and playing slightly differently is
+fine for a substantial gain.
+- An interleaved re-test (3 rounds, stop rule on) confirmed the root split cuts bot-move wall time
+  to 0.82x of A21: about 8% from pure speed, about 10% from earlier confident stops.
+- Underfill, guard and root split are all on the branch now (`frontend/src` equals A21S).
+- SEED-176/177/178 are closed.
+- **Phase 227's baseline is therefore A21S, not `main`.**

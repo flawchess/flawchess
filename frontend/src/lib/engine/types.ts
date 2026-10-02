@@ -44,6 +44,21 @@ export interface EngineProviders {
    * the frontend `tsc` project (ABORT-03).
    */
   grade(fen: string, candidateUcis: string[], signal?: AbortSignal): Promise<Map<string, MoveGrade>>;
+  /**
+   * Root-only grade fan-out (Phase 226 D-18): same contract as `grade`, but
+   * implemented by a caller that can split the request across multiple idle
+   * workers/engines below this boundary (`rootSplit.ts`'s
+   * `partitionCandidates`/`mergeShardGrades`) — the fan-out itself is never
+   * visible here. OPTIONAL, following `grade`'s own `signal` precedent
+   * above: every existing provider (test fakes, `fallbackExpectimax`, and
+   * any caller that never sets this) stays structurally assignable to this
+   * interface and behaves byte-identically, since `mctsSearch.ts`'s
+   * `dispatchExpansion` falls back to `grade` whenever `gradeRoot` is
+   * absent. Round 1 of a search is exactly the root expansion
+   * (`selectPath`'s root-pending guard), so `gradeRoot` — when present — is
+   * called at most once per search, and only for the root.
+   */
+  gradeRoot?(fen: string, candidateUcis: string[], signal?: AbortSignal): Promise<Map<string, MoveGrade>>;
 }
 
 /**
@@ -63,6 +78,16 @@ export interface BotStopRule {
   stabilityWindow: number;
   /** D-05: shared floor gating BOTH the clear-winner and near-tie-flatness checks — neither fires before this many expansions. */
   minNodes: number;
+  /**
+   * Phase 225 D-01/D-02: the extra value gap beyond `marginThreshold` within
+   * which a root child that is neither visited nor closed blocks the
+   * clear-winner branch — it sizes the guard set only and never enters a
+   * value. Measured in `reports/engine-search-fixes-225/d02-allowance.md`.
+   * Required (not optional) so any `BotStopRule` literal that omits it is a
+   * `tsc -b` error (RESEARCH Pattern 3) — an accidentally-omitted allowance
+   * would silently reintroduce the SEED-170 item-1 comparability bug.
+   */
+  rootGuardBoostAllowance: number;
 }
 
 /** Bounds one `SearchRunner` invocation (ENGINE-06). */

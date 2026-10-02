@@ -32,6 +32,7 @@ import {
 import type { EngineProviders, SearchBudget } from '../types';
 import { mctsSearch } from '../mctsSearch';
 import { buildGradeGoCommand, GRADING_ROOT_DEPTH } from '../gradingLadder';
+import { partitionCandidates } from '../rootSplit';
 import {
   getEngineAssetsSnapshot,
   resetEngineAssetsForTests,
@@ -538,6 +539,505 @@ describe('createWorkerPool + mctsSearch: a tree node is graded at its ladder run
 
     expect(goLine).toBe(buildGradeGoCommand(GRADING_ROOT_DEPTH, receivedUcis));
     expect(goLine).not.toMatch(/movetime/);
+  });
+});
+
+// ─── createWorkerPool: gradeRoot() root split (Phase 226 D-18/L-2/L-3/L-4, arm A21S) ──
+
+describe('createWorkerPool: gradeRoot() root split (Phase 226 L-2/L-3/L-4)', () => {
+  beforeEach(() => {
+    stubDesktopSizing(6); // computePoolSize() -> 4 slots
+    stubWorkerCtor();
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  // 10 real legal black replies to 1. e4 (TEST_FEN), all surviving
+  // truncateAndRenormalize's 0.9 cumulative-mass cut at equal 0.05 weight
+  // each (cumulative never reaches 0.9), and all surviving
+  // applyRootCandidateHardCap (10 <= ROOT_CANDIDATE_HARD_CAP's 15).
+  const ROOT_CANDIDATES = [
+    'b8c6', 'c7c5', 'c7c6', 'd7d5', 'd7d6', 'e7e5', 'e7e6', 'g7g5', 'g7g6', 'g8f6',
+  ];
+  const ROOT_POLICY: Record<string, number> = Object.fromEntries(
+    ROOT_CANDIDATES.map((uci) => [uci, 0.05]),
+  );
+
+  /** Bring a freshly created pool's 4 mocked workers to readyok, all idle. */
+  function warmAllSlots(pool: WorkerPool): void {
+    pool.warm();
+    expect(createdWorkers.length).toBe(4);
+    for (const w of createdWorkers) driveInit(w);
+  }
+
+  it('a real mctsSearch root over a real createWorkerPool posts one go line per idle slot, disjoint round-robin shards covering all 10 candidates', async () => {
+    const pool = createWorkerPool();
+    warmAllSlots(pool);
+
+    const controller = new AbortController();
+    const budget: SearchBudget = {
+      maxNodes: 1,
+      maxPlies: 2,
+      concurrency: 1,
+      elo: { w: 1500, b: 1500 },
+    };
+    const providers: EngineProviders = {
+      policy: async (fen) => (fen === TEST_FEN ? ROOT_POLICY : {}),
+      grade: pool.grade,
+      gradeRoot: pool.gradeRoot,
+    };
+
+    const searchPromise = mctsSearch(TEST_FEN, budget, providers, () => {}, controller.signal);
+
+    await vi.waitFor(() => {
+      if (!createdWorkers.every((w) => w.messages.some((m) => m.startsWith('go ')))) {
+        throw new Error('not every worker has received a go line yet');
+      }
+    });
+
+    const shardUcisPerWorker = createdWorkers.map((w) => {
+      const goLines = w.messages.filter((m) => m.startsWith('go '));
+      expect(goLines).toHaveLength(1); // exactly one go per slot — never re-dispatched
+      const goLine = goLines[0]!;
+      const idx = goLine.indexOf('searchmoves ');
+      return goLine.slice(idx + 'searchmoves '.length).trim().split(' ');
+    });
+
+    // Disjoint and covering all 10 candidates.
+    const allAssigned = shardUcisPerWorker.flat();
+    expect(new Set(allAssigned).size).toBe(10);
+    expect([...allAssigned].sort()).toEqual([...ROOT_CANDIDATES].sort());
+    // Round-robin, one shard per slot, in slot (dispatch) order — matches
+    // `partitionCandidates` (Plan 226-10) exactly, the shared helper this
+    // implementation delegates to.
+    expect(shardUcisPerWorker).toEqual(partitionCandidates(ROOT_CANDIDATES, 4));
+
+    // Settle every shard so the search itself can finish cleanly.
+    createdWorkers.forEach((worker, i) => {
+      const shardUcis = shardUcisPerWorker[i]!;
+      shardUcis.forEach((uci, rank) => {
+        worker.simulateMessage(`info depth 14 multipv ${rank + 1} score cp 10 nodes 1000 pv ${uci}`);
+      });
+      worker.simulateMessage(`bestmove ${shardUcis[0]}`);
+    });
+
+    await searchPromise;
+  });
+
+  it('answering every shard with bestmove resolves the root with all 10 grades and caches one merged entry — later grade() calls are cache hits with no extra go line', async () => {
+    const pool = createWorkerPool();
+    warmAllSlots(pool);
+
+    const controller = new AbortController();
+    const budget: SearchBudget = {
+      maxNodes: 1,
+      maxPlies: 2,
+      concurrency: 1,
+      elo: { w: 1500, b: 1500 },
+    };
+    const providers: EngineProviders = {
+      policy: async (fen) => (fen === TEST_FEN ? ROOT_POLICY : {}),
+      grade: pool.grade,
+      gradeRoot: pool.gradeRoot,
+    };
+
+    const searchPromise = mctsSearch(TEST_FEN, budget, providers, () => {}, controller.signal);
+
+    await vi.waitFor(() => {
+      if (!createdWorkers.every((w) => w.messages.some((m) => m.startsWith('go ')))) {
+        throw new Error('not every worker has received a go line yet');
+      }
+    });
+
+    const shardUcisPerWorker = createdWorkers.map((w) => {
+      const goLine = w.messages.filter((m) => m.startsWith('go '))[0]!;
+      const idx = goLine.indexOf('searchmoves ');
+      return goLine.slice(idx + 'searchmoves '.length).trim().split(' ');
+    });
+    createdWorkers.forEach((worker, i) => {
+      const shardUcis = shardUcisPerWorker[i]!;
+      shardUcis.forEach((uci, rank) => {
+        worker.simulateMessage(`info depth 14 multipv ${rank + 1} score cp 10 nodes 1000 pv ${uci}`);
+      });
+      worker.simulateMessage(`bestmove ${shardUcis[0]}`);
+    });
+
+    const snapshot = await searchPromise;
+    // The root's own children — one RankedLine per candidate — proves the
+    // merged Map carried all 10 grades through applyExpansion, not a
+    // partial result silently backfilled with NEUTRAL_EXPECTED_SCORE.
+    expect(snapshot.rankedLines).toHaveLength(10);
+
+    const before = pool.cacheStats();
+    const goCountBefore = createdWorkers.reduce(
+      (sum, w) => sum + w.messages.filter((m) => m.startsWith('go ')).length,
+      0,
+    );
+
+    const allTen = await pool.grade(TEST_FEN, ROOT_CANDIDATES);
+    expect(allTen.size).toBe(10);
+    const one = await pool.grade(TEST_FEN, [ROOT_CANDIDATES[0]!]);
+    expect(one.size).toBe(1);
+
+    const after = pool.cacheStats();
+    expect(after.hits).toBe(before.hits + 2);
+    const goCountAfter = createdWorkers.reduce(
+      (sum, w) => sum + w.messages.filter((m) => m.startsWith('go ')).length,
+      0,
+    );
+    expect(goCountAfter).toBe(goCountBefore); // no additional go line — both were cache hits
+  });
+});
+
+// ─── createWorkerPool: gradeRoot() failure paths and edge cases (Phase 226 L-2/L-3/L-4, arm A21S) ──
+
+describe('createWorkerPool: gradeRoot() root split — failure paths and edge cases (Phase 226 L-2/L-3/L-4)', () => {
+  const ROOT_CANDIDATES = [
+    'b8c6', 'c7c5', 'c7c6', 'd7d5', 'd7d6', 'e7e5', 'e7e6', 'g7g5', 'g7g6', 'g8f6',
+  ];
+
+  beforeEach(() => {
+    stubDesktopSizing(6); // computePoolSize() -> 4 slots
+    stubWorkerCtor();
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.useRealTimers();
+  });
+
+  /** Bring a freshly created pool's 4 mocked workers to readyok, all idle. */
+  function warmAllSlots(pool: WorkerPool): void {
+    pool.warm();
+    expect(createdWorkers.length).toBe(4);
+    for (const w of createdWorkers) driveInit(w);
+  }
+
+  /** Reads the `searchmoves` token list off a worker's own (single) `go` line. */
+  function shardUcisOf(worker: MockWorker): string[] {
+    const goLine = worker.messages.filter((m) => m.startsWith('go '))[0]!;
+    const idx = goLine.indexOf('searchmoves ');
+    return goLine.slice(idx + 'searchmoves '.length).trim().split(' ');
+  }
+
+  it('an outer abort mid-flight resolves an empty Map, stops every thinking shard, and leaves a cache miss for a following grade()', async () => {
+    const pool = createWorkerPool();
+    warmAllSlots(pool);
+    const controller = new AbortController();
+
+    const promise = pool.gradeRoot(TEST_FEN, ROOT_CANDIDATES, controller.signal);
+    expect(createdWorkers.every((w) => w.messages.some((m) => m.startsWith('go ')))).toBe(true);
+
+    controller.abort();
+    const result = await promise;
+    expect(result.size).toBe(0);
+    for (const w of createdWorkers) expect(w.messages).toContain('stop');
+
+    const missesBefore = pool.cacheStats().misses;
+    void pool.grade(TEST_FEN, ROOT_CANDIDATES);
+    expect(pool.cacheStats().misses).toBe(missesBefore + 1);
+  });
+
+  it('L-2: 3 shards completing with real grades before a 4th is aborted still resolves the WHOLE group empty — never a partial merge', async () => {
+    const pool = createWorkerPool();
+    warmAllSlots(pool);
+    const controller = new AbortController();
+    const FOUR = ROOT_CANDIDATES.slice(0, 4);
+    const promise = pool.gradeRoot(TEST_FEN, FOUR, controller.signal);
+    const shardUcisPerWorker = createdWorkers.map(shardUcisOf);
+
+    // The first 3 shards complete NORMALLY with real, non-empty grades.
+    createdWorkers.slice(0, 3).forEach((w, i) => {
+      const ucis = shardUcisPerWorker[i]!;
+      ucis.forEach((uci, rank) => w.simulateMessage(`info depth 14 multipv ${rank + 1} score cp 9 nodes 1000 pv ${uci}`));
+      w.simulateMessage(`bestmove ${ucis[0]}`);
+    });
+
+    // The 4th never answers — abort the whole group while it is still
+    // thinking. Without the L-2 empty-on-failure gate, the 3 real shard
+    // results above would leak through as a non-empty partial merge.
+    controller.abort();
+
+    const result = await promise;
+    expect(result.size).toBe(0);
+
+    // L-3: shards skip cache writes entirely (writeCache: false) — even
+    // though 3 shards had real, non-empty grades, none of them may have
+    // written those directly to the cache. A subsequent grade() for those
+    // very candidates must still be a cache MISS, proving no partial data
+    // leaked into the shared GradeCache from the failed group.
+    const successfulUcis = shardUcisPerWorker.slice(0, 3).flat();
+    const missesBefore = pool.cacheStats().misses;
+    void pool.grade(TEST_FEN, successfulUcis, undefined, GRADING_ROOT_DEPTH);
+    expect(pool.cacheStats().misses).toBe(missesBefore + 1);
+  });
+
+  it('one shard slot watchdog-firing fails the whole group empty and stops the siblings', async () => {
+    vi.useFakeTimers();
+    const pool = createWorkerPool();
+    warmAllSlots(pool);
+    // Capture the 4 ORIGINAL shard workers before any watchdog fire can
+    // respawn a replacement into the shared `createdWorkers` array
+    // (`replaceDeadSlot` pushes a fresh MockWorker onto it) — asserting on
+    // `createdWorkers` itself after the fire would silently include those
+    // never-dispatched replacements too.
+    const originalWorkers = [...createdWorkers];
+
+    const promise = pool.gradeRoot(TEST_FEN, ROOT_CANDIDATES);
+    expect(originalWorkers.every((w) => w.messages.some((m) => m.startsWith('go ')))).toBe(true);
+
+    // No shard ever answers — every slot's grading watchdog is armed for the
+    // same GRADING_WATCHDOG_TIMEOUT_MS window; whichever fires first marks
+    // the group failed and stops the rest (each of THEIR watchdogs may also
+    // independently fire at the same virtual instant — either way every
+    // original slot ends up sent `stop`, either via its own fireWatchdog or
+    // via the group's abort-triggered stop path).
+    await vi.advanceTimersByTimeAsync(GRADING_WATCHDOG_TIMEOUT_MS);
+
+    const result = await promise;
+    expect(result.size).toBe(0);
+    for (const w of originalWorkers) expect(w.messages).toContain('stop');
+  });
+
+  // The outer-abort L-2 test above resolves empty through `finish()`'s own
+  // `signal.aborted` check, so it never exercised the per-shard failure flag:
+  // deleting the `groupFailed = true` assignment left every test green
+  // (226-VERIFICATION mutation check). This drives the real failure shape,
+  // where 3 shards finish with real grades and the 4th dies on its watchdog
+  // with no outer abort, so only the per-shard flag can keep the merge empty.
+  it('L-2: 3 shards completing before the 4th watchdog-fires (no outer abort) still resolves the whole group empty', async () => {
+    vi.useFakeTimers();
+    const pool = createWorkerPool();
+    warmAllSlots(pool);
+    const originalWorkers = [...createdWorkers];
+    const FOUR = ROOT_CANDIDATES.slice(0, 4);
+    const promise = pool.gradeRoot(TEST_FEN, FOUR);
+    const shardUcisPerWorker = originalWorkers.map(shardUcisOf);
+
+    originalWorkers.slice(0, 3).forEach((w, i) => {
+      const ucis = shardUcisPerWorker[i]!;
+      ucis.forEach((uci, rank) => w.simulateMessage(`info depth 14 multipv ${rank + 1} score cp 9 nodes 1000 pv ${uci}`));
+      w.simulateMessage(`bestmove ${ucis[0]}`);
+    });
+
+    await vi.advanceTimersByTimeAsync(GRADING_WATCHDOG_TIMEOUT_MS);
+
+    const result = await promise;
+    expect(result.size).toBe(0);
+
+    const successfulUcis = shardUcisPerWorker.slice(0, 3).flat();
+    const missesBefore = pool.cacheStats().misses;
+    void pool.grade(TEST_FEN, successfulUcis, undefined, GRADING_ROOT_DEPTH);
+    expect(pool.cacheStats().misses).toBe(missesBefore + 1);
+  });
+
+  it('one slot busy with another request leaves k = 3, and the busy request completes untouched with its own result', async () => {
+    const pool = createWorkerPool();
+    warmAllSlots(pool);
+
+    const busyPromise = pool.grade(TEST_FEN_2, ['d7d5']);
+    const busyWorker = createdWorkers.find((w) => w.messages.includes(`position fen ${TEST_FEN_2}`))!;
+    expect(busyWorker).toBeDefined();
+
+    const SIX = ROOT_CANDIDATES.slice(0, 6);
+    const rootPromise = pool.gradeRoot(TEST_FEN, SIX);
+    const idleWorkers = createdWorkers.filter((w) => w !== busyWorker);
+    expect(idleWorkers).toHaveLength(3);
+    for (const w of idleWorkers) expect(w.messages.filter((m) => m.startsWith('go '))).toHaveLength(1);
+    // The busy slot's own request is untouched — still exactly its one original go line.
+    expect(busyWorker.messages.filter((m) => m.startsWith('go '))).toHaveLength(1);
+
+    busyWorker.simulateMessage('info depth 14 multipv 1 score cp 7 nodes 1000 pv d7d5');
+    busyWorker.simulateMessage('bestmove d7d5');
+    const busyResult = await busyPromise;
+    expect(busyResult.get('d7d5')?.evalCp).toBe(-7);
+
+    idleWorkers.forEach((w) => {
+      const ucis = shardUcisOf(w);
+      ucis.forEach((uci, rank) => w.simulateMessage(`info depth 14 multipv ${rank + 1} score cp 3 nodes 1000 pv ${uci}`));
+      w.simulateMessage(`bestmove ${ucis[0]}`);
+    });
+    const rootResult = await rootPromise;
+    expect(rootResult.size).toBe(6);
+  });
+
+  it('a non-empty pending queue makes gradeRoot take the plain grade() path — exactly one go line for the whole root request', async () => {
+    const pool = createWorkerPool();
+    warmAllSlots(pool);
+
+    // Occupy all 4 slots with unrelated requests (a distinct FEN from the root's).
+    const busy = [
+      pool.grade(TEST_FEN_3, ['e2e4']),
+      pool.grade(TEST_FEN_3, ['e2e4']),
+      pool.grade(TEST_FEN_3, ['e2e4']),
+      pool.grade(TEST_FEN_3, ['e2e4']),
+    ];
+    // A genuinely stranded 5th request — the fact that makes `pending.length > 0`.
+    const stranded = pool.grade(TEST_FEN_2, ['g1f3']);
+    expect(createdWorkers).toHaveLength(4);
+
+    const SIX = ROOT_CANDIDATES.slice(0, 6);
+    const rootPromise = pool.gradeRoot(TEST_FEN, SIX);
+    // No new go line yet — every slot is still busy; the root request queued
+    // behind (or, per the tie-break below, ahead of) the stranded one.
+    expect(
+      createdWorkers.reduce((sum, w) => sum + w.messages.filter((m) => m.startsWith('go ')).length, 0),
+    ).toBe(4);
+
+    // Free every busy slot so the queue drains.
+    createdWorkers.forEach((w) => {
+      w.simulateMessage('info depth 14 multipv 1 score cp 5 nodes 1000 pv e2e4');
+      w.simulateMessage('bestmove e2e4');
+    });
+    await Promise.all(busy);
+
+    // dequeueHighestPriority's ascending-candidateUcis[0] tie-break: the
+    // root's 'b8c6' sorts before the stranded request's 'g1f3', so the root
+    // wins the first freed slot — proving it queued as ONE plain request,
+    // never split into shards.
+    const rootWorker = createdWorkers.find((w) => w.messages.includes(`position fen ${TEST_FEN}`));
+    expect(rootWorker).toBeDefined();
+    // Filter for the EXACT expected root go line, not just any 'go ' —
+    // this same worker slot also carries its now-resolved ORIGINAL busy go
+    // line (a different position/searchmoves), so a bare `startsWith('go ')`
+    // filter would over-count. Exactly one occurrence of the full 6-candidate
+    // go line proves the root was queued as ONE plain request, never split.
+    const expectedRootGoLine = buildGradeGoCommand(GRADING_ROOT_DEPTH, SIX);
+    const rootGoLines = rootWorker!.messages.filter((m) => m === expectedRootGoLine);
+    expect(rootGoLines).toHaveLength(1);
+
+    rootWorker!.simulateMessage(`bestmove ${SIX[0]}`);
+    await rootPromise;
+
+    const strandedWorker = createdWorkers.find((w) => w.messages.includes(`position fen ${TEST_FEN_2}`));
+    expect(strandedWorker).toBeDefined();
+    strandedWorker!.simulateMessage('info depth 14 multipv 1 score cp 5 nodes 1000 pv g1f3');
+    strandedWorker!.simulateMessage('bestmove g1f3');
+    await stranded;
+  });
+
+  it('a mobile-sized pool (MOBILE_POOL_SIZE 2 slots) fans the root out to exactly 2 shards', async () => {
+    stubDesktopSizing(4); // computePoolSize() -> MOBILE_POOL_SIZE (2) slots — overrides this describe's beforeEach
+    const pool = createWorkerPool();
+    pool.warm();
+    expect(createdWorkers.length).toBe(MOBILE_POOL_SIZE);
+    for (const w of createdWorkers) driveInit(w);
+
+    const promise = pool.gradeRoot(TEST_FEN, ROOT_CANDIDATES);
+    expect(createdWorkers.every((w) => w.messages.some((m) => m.startsWith('go ')))).toBe(true);
+    const shardUcisPerWorker = createdWorkers.map(shardUcisOf);
+    expect(shardUcisPerWorker).toEqual(partitionCandidates(ROOT_CANDIDATES, MOBILE_POOL_SIZE));
+
+    createdWorkers.forEach((w, i) => {
+      const ucis = shardUcisPerWorker[i]!;
+      ucis.forEach((uci, rank) => w.simulateMessage(`info depth 14 multipv ${rank + 1} score cp 5 nodes 1000 pv ${uci}`));
+      w.simulateMessage(`bestmove ${ucis[0]}`);
+    });
+    const result = await promise;
+    expect(result.size).toBe(10);
+  });
+
+  it('k <= 1 (one idle slot, others busy) takes the unchanged grade() path — one go line, matching grade()\'s own command', async () => {
+    const pool = createWorkerPool();
+    warmAllSlots(pool);
+    pool.grade(TEST_FEN_3, ['e2e4']);
+    pool.grade(TEST_FEN_3, ['e2e4']);
+    pool.grade(TEST_FEN_3, ['e2e4']);
+    const goCountBefore = createdWorkers.reduce(
+      (sum, w) => sum + w.messages.filter((m) => m.startsWith('go ')).length,
+      0,
+    );
+
+    const TWO = ROOT_CANDIDATES.slice(0, 2);
+    void pool.gradeRoot(TEST_FEN, TWO);
+
+    const goCountAfter = createdWorkers.reduce(
+      (sum, w) => sum + w.messages.filter((m) => m.startsWith('go ')).length,
+      0,
+    );
+    expect(goCountAfter).toBe(goCountBefore + 1); // exactly one new go line, never split
+
+    const servingWorker = createdWorkers.find((w) => w.messages.includes(`position fen ${TEST_FEN}`));
+    expect(servingWorker).toBeDefined();
+    const goLine = servingWorker!.messages.filter((m) => m.startsWith('go '))[0]!;
+    expect(goLine).toBe(buildGradeGoCommand(GRADING_ROOT_DEPTH, TWO));
+  });
+
+  it('k <= 1 (a single candidate) takes the unchanged grade() path even with every slot idle', async () => {
+    const pool = createWorkerPool();
+    warmAllSlots(pool);
+    const ONE = [ROOT_CANDIDATES[0]!];
+    void pool.gradeRoot(TEST_FEN, ONE);
+
+    const goLines = createdWorkers.flatMap((w) => w.messages.filter((m) => m.startsWith('go ')));
+    expect(goLines).toHaveLength(1);
+    expect(goLines[0]).toBe(buildGradeGoCommand(GRADING_ROOT_DEPTH, ONE));
+  });
+
+  it('a shard that completes via bestmove with zero info lines counts as completed, not failed — the group still resolves (and caches) the other shards\' grades', async () => {
+    const pool = createWorkerPool();
+    warmAllSlots(pool);
+    const FOUR = ROOT_CANDIDATES.slice(0, 4);
+    const promise = pool.gradeRoot(TEST_FEN, FOUR);
+    const shardUcisPerWorker = createdWorkers.map(shardUcisOf);
+
+    // Slot 0's shard: every one of its moves is illegal — no info line ever
+    // arrives — but it STILL answers bestmove (Stockfish's own
+    // no-legal-move token), which must count as completed.
+    createdWorkers[0]!.simulateMessage('bestmove (none)');
+    createdWorkers.slice(1).forEach((w, i) => {
+      const ucis = shardUcisPerWorker[i + 1]!;
+      ucis.forEach((uci, rank) => w.simulateMessage(`info depth 14 multipv ${rank + 1} score cp 5 nodes 1000 pv ${uci}`));
+      w.simulateMessage(`bestmove ${ucis[0]}`);
+    });
+
+    const result = await promise;
+    const zeroInfoShardUcis = shardUcisPerWorker[0]!;
+    for (const uci of zeroInfoShardUcis) expect(result.has(uci)).toBe(false);
+    const othersUcis = shardUcisPerWorker.slice(1).flat();
+    for (const uci of othersUcis) expect(result.has(uci)).toBe(true);
+    expect(result.size).toBe(othersUcis.length);
+
+    // Success path (not the L-2 failure path): a following grade() for the
+    // OTHER shards' candidates is a cache hit.
+    const before = pool.cacheStats();
+    await pool.grade(TEST_FEN, othersUcis, undefined, GRADING_ROOT_DEPTH);
+    expect(pool.cacheStats().hits).toBe(before.hits + 1);
+  });
+
+  it('the group adds at most one listener to the outer signal and detaches it once every shard settles', async () => {
+    const pool = createWorkerPool();
+    warmAllSlots(pool);
+    const controller = new AbortController();
+
+    // Count listeners by instrumenting the real signal (WR-02 pattern).
+    let live = 0;
+    let addCount = 0;
+    const realAdd = controller.signal.addEventListener.bind(controller.signal);
+    const realRemove = controller.signal.removeEventListener.bind(controller.signal);
+    controller.signal.addEventListener = ((...args: Parameters<typeof realAdd>) => {
+      live++;
+      addCount++;
+      return realAdd(...args);
+    }) as typeof realAdd;
+    controller.signal.removeEventListener = ((...args: Parameters<typeof realRemove>) => {
+      live--;
+      return realRemove(...args);
+    }) as typeof realRemove;
+
+    const promise = pool.gradeRoot(TEST_FEN, ROOT_CANDIDATES, controller.signal);
+    expect(addCount).toBe(1); // exactly one listener on the OUTER signal, never per-shard
+
+    createdWorkers.forEach((w) => {
+      const ucis = shardUcisOf(w);
+      ucis.forEach((uci, rank) => w.simulateMessage(`info depth 14 multipv ${rank + 1} score cp 5 nodes 1000 pv ${uci}`));
+      w.simulateMessage(`bestmove ${ucis[0]}`);
+    });
+    await promise;
+
+    expect(live).toBe(0); // detached once every shard settled
   });
 });
 

@@ -1,0 +1,285 @@
+{
+  "nodes": 50,
+  "conc": 4,
+  "maiaThreads": 4,
+  "stop": true,
+  "positions": [
+    {
+      "label": "italian",
+      "nodes": 27,
+      "wallMs": 3271.5261790000004,
+      "maiaCalls": 27,
+      "maiaMs": 987.872139000001,
+      "gradeCalls": 27,
+      "gradeMs": 4928.131869999997,
+      "histogram": [
+        {
+          "is_root": true,
+          "grading_depth": 14,
+          "cand_bucket": "5-8",
+          "calls": 1,
+          "ms": 944.2098199999998
+        },
+        {
+          "is_root": false,
+          "grading_depth": 14,
+          "cand_bucket": "<=4",
+          "calls": 1,
+          "ms": 273.6993159999997
+        },
+        {
+          "is_root": false,
+          "grading_depth": 14,
+          "cand_bucket": "5-8",
+          "calls": 4,
+          "ms": 2018.6498619999998
+        },
+        {
+          "is_root": false,
+          "grading_depth": 10,
+          "cand_bucket": "<=4",
+          "calls": 12,
+          "ms": 752.7586499999984
+        },
+        {
+          "is_root": false,
+          "grading_depth": 10,
+          "cand_bucket": "5-8",
+          "calls": 9,
+          "ms": 938.814222
+        }
+      ]
+    },
+    {
+      "label": "middlegame",
+      "nodes": 50,
+      "wallMs": 6587.942718,
+      "maiaCalls": 50,
+      "maiaMs": 1751.306857999999,
+      "gradeCalls": 50,
+      "gradeMs": 13700.855409000005,
+      "histogram": [
+        {
+          "is_root": true,
+          "grading_depth": 14,
+          "cand_bucket": "9-12",
+          "calls": 1,
+          "ms": 830.3643849999999
+        },
+        {
+          "is_root": false,
+          "grading_depth": 14,
+          "cand_bucket": "9-12",
+          "calls": 9,
+          "ms": 7773.874799000001
+        },
+        {
+          "is_root": false,
+          "grading_depth": 10,
+          "cand_bucket": "9-12",
+          "calls": 18,
+          "ms": 2442.677804000001
+        },
+        {
+          "is_root": false,
+          "grading_depth": 14,
+          "cand_bucket": "5-8",
+          "calls": 2,
+          "ms": 743.1113480000013
+        },
+        {
+          "is_root": false,
+          "grading_depth": 10,
+          "cand_bucket": "<=4",
+          "calls": 5,
+          "ms": 302.65560600000026
+        },
+        {
+          "is_root": false,
+          "grading_depth": 10,
+          "cand_bucket": "5-8",
+          "calls": 11,
+          "ms": 1004.5529620000016
+        },
+        {
+          "is_root": false,
+          "grading_depth": 10,
+          "cand_bucket": "13+",
+          "calls": 4,
+          "ms": 603.6185050000004
+        }
+      ]
+    },
+    {
+      "label": "sharp",
+      "nodes": 15,
+      "wallMs": 2735.4904689999985,
+      "maiaCalls": 17,
+      "maiaMs": 592.4198639999977,
+      "gradeCalls": 17,
+      "gradeMs": 5906.643184000002,
+      "histogram": [
+        {
+          "is_root": true,
+          "grading_depth": 14,
+          "cand_bucket": "5-8",
+          "calls": 1,
+          "ms": 541.2043259999991
+        },
+        {
+          "is_root": false,
+          "grading_depth": 14,
+          "cand_bucket": "5-8",
+          "calls": 4,
+          "ms": 3068.973879000001
+        },
+        {
+          "is_root": false,
+          "grading_depth": 14,
+          "cand_bucket": "9-12",
+          "calls": 1,
+          "ms": 1019.4922079999997
+        },
+        {
+          "is_root": false,
+          "grading_depth": 10,
+          "cand_bucket": "<=4",
+          "calls": 3,
+          "ms": 221.4145860000026
+        },
+        {
+          "is_root": false,
+          "grading_depth": 10,
+          "cand_bucket": "5-8",
+          "calls": 7,
+          "ms": 865.5764240000008
+        },
+        {
+          "is_root": false,
+          "grading_depth": 10,
+          "cand_bucket": "9-12",
+          "calls": 1,
+          "ms": 189.9817609999991
+        }
+      ]
+    },
+    {
+      "label": "endgame",
+      "nodes": 8,
+      "wallMs": 1221.4023809999999,
+      "maiaCalls": 11,
+      "maiaMs": 375.20952200000465,
+      "gradeCalls": 11,
+      "gradeMs": 1281.9759990000039,
+      "histogram": [
+        {
+          "is_root": true,
+          "grading_depth": 14,
+          "cand_bucket": "<=4",
+          "calls": 1,
+          "ms": 461.22913399999925
+        },
+        {
+          "is_root": false,
+          "grading_depth": 14,
+          "cand_bucket": "<=4",
+          "calls": 2,
+          "ms": 345.154872000001
+        },
+        {
+          "is_root": false,
+          "grading_depth": 10,
+          "cand_bucket": "<=4",
+          "calls": 7,
+          "ms": 404.2305570000044
+        },
+        {
+          "is_root": false,
+          "grading_depth": 10,
+          "cand_bucket": "5-8",
+          "calls": 1,
+          "ms": 71.36143599999923
+        }
+      ]
+    }
+  ],
+  "histogram": [
+    {
+      "is_root": true,
+      "grading_depth": 14,
+      "cand_bucket": "<=4",
+      "calls": 1,
+      "ms": 461.22913399999925
+    },
+    {
+      "is_root": true,
+      "grading_depth": 14,
+      "cand_bucket": "5-8",
+      "calls": 2,
+      "ms": 1485.414145999999
+    },
+    {
+      "is_root": true,
+      "grading_depth": 14,
+      "cand_bucket": "9-12",
+      "calls": 1,
+      "ms": 830.3643849999999
+    },
+    {
+      "is_root": false,
+      "grading_depth": 10,
+      "cand_bucket": "<=4",
+      "calls": 27,
+      "ms": 1681.0593990000057
+    },
+    {
+      "is_root": false,
+      "grading_depth": 10,
+      "cand_bucket": "5-8",
+      "calls": 28,
+      "ms": 2880.3050440000015
+    },
+    {
+      "is_root": false,
+      "grading_depth": 10,
+      "cand_bucket": "9-12",
+      "calls": 19,
+      "ms": 2632.659565
+    },
+    {
+      "is_root": false,
+      "grading_depth": 10,
+      "cand_bucket": "13+",
+      "calls": 4,
+      "ms": 603.6185050000004
+    },
+    {
+      "is_root": false,
+      "grading_depth": 14,
+      "cand_bucket": "<=4",
+      "calls": 3,
+      "ms": 618.8541880000007
+    },
+    {
+      "is_root": false,
+      "grading_depth": 14,
+      "cand_bucket": "5-8",
+      "calls": 10,
+      "ms": 5830.735089000002
+    },
+    {
+      "is_root": false,
+      "grading_depth": 14,
+      "cand_bucket": "9-12",
+      "calls": 10,
+      "ms": 8793.367007
+    }
+  ],
+  "totals": {
+    "wallMs": 13816.361746999999,
+    "maiaMs": 3706.8083830000023,
+    "gradeMs": 25817.606462000003,
+    "nonRootGt8Ms": 12029.645077000001,
+    "nonRootGt8Share": 0.4659473408081419
+  }
+}

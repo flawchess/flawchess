@@ -1,0 +1,17 @@
+position	fen	dispatch_mode	nodes_evaluated_at_stop	stop_reason	wall_ms	maia_cpu_ms	maia_peak_inflight	maia_fifo	concurrency	max_nodes	elo	stop_rule	guard_window	first_expansions	exposure_snapshots	eligible_snapshots	pool_size	root_split_calls
+italian	r1bqkb1r/pppp1ppp/2n2n2/4p3/2B1P3/5N2/PPPP1PPP/RNBQK2R w KQkq - 4 4	round	13	early-stop	2107	1090.2	1	true	4	50	1500	on	0.09	5	4	6	4	1
+middlegame	r2q1rk1/pp1nbppp/2p1bn2/3p4/3P1B2/2N1PN2/PPQ1BPPP/R4RK1 w - - 6 11	round	50	budget	8422	4129.4	1	true	4	50	1500	on	0.09	11	6	43	4	1
+sharp	r1bq1r1k/pp1nbppp/2p1p3/3pP3/3P4/2NB1N2/PPPQ1PPP/R3K2R w KQ - 2 11	round	15	early-stop	2917	1425.7	1	true	4	50	1500	on	0.09	5	0	8	4	1
+endgame	8/2p5/3p4/KP5r/1R3p1k/8/4P1P1/8 w - - 0 1	round	8	early-stop	1367	900.7	1	true	4	50	1500	on	0.09	2	0	1	4	1
+C50	r1bqk1nr/pppp1ppp/2n5/2b1p3/2B1P3/5N2/PPPP1PPP/RNBQK2R w KQkq - 4 4	round	15	early-stop	2390	1401.1	1	true	4	50	1500	on	0.09	5	5	8	4	1
+C60	r1bqkbnr/pppp1ppp/2n5/1B2p3/4P3/5N2/PPPP1PPP/RNBQK2R b KQkq - 3 3	round	28	early-stop	4332	2387.9	1	true	4	50	1500	on	0.09	6	9	21	4	1
+C70	r1bqkbnr/1ppp1ppp/p1n5/4p3/B3P3/5N2/PPPP1PPP/RNBQK2R b KQkq - 1 4	round	10	early-stop	2267	1056.0	1	true	4	50	1500	on	0.09	4	0	3	4	1
+C45	r1bqkbnr/pppp1ppp/2n5/4p3/3PP3/5N2/PPP2PPP/RNBQKB1R b KQkq - 0 3	round	8	early-stop	952	647.0	1	true	4	50	1500	on	0.09	3	0	1	4	1
+C42	rnbqkb1r/pppp1ppp/5n2/4p3/4P3/5N2/PPPP1PPP/RNBQKB1R w KQkq - 2 3	round	8	early-stop	1243	739.7	1	true	4	50	1500	on	0.09	4	0	1	4	1
+C47	r1bqkb1r/pppp1ppp/2n2n2/4p3/4P3/2N2N2/PPPP1PPP/R1BQKB1R w KQkq - 4 4	round	50	budget	5605	4066.2	1	true	4	50	1500	on	0.09	5	9	43	4	1
+C25	rnbqkbnr/pppp1ppp/8/4p3/4P3/2N5/PPPP1PPP/R1BQKBNR b KQkq - 1 2	round	15	early-stop	2472	1384.9	1	true	4	50	1500	on	0.09	6	7	8	4	1
+C30	rnbqkbnr/pppp1ppp/8/4p3/4PP2/8/PPPP2PP/RNBQKBNR b KQkq - 0 2	round	10	early-stop	1839	1054.3	1	true	4	50	1500	on	0.09	4	0	3	4	1
+B50	rnbqkbnr/pp2pppp/3p4/2p5/4P3/5N2/PPPP1PPP/RNBQKB1R w KQkq - 0 3	round	50	budget	5809	3971.3	1	true	4	50	1500	on	0.09	7	6	43	4	1
+B90	rnbqkb1r/1p2pppp/p2p1n2/8/3NP3/2N5/PPP2PPP/R1BQKB1R w KQkq - 0 6	round	8	early-stop	1629	732.7	1	true	4	50	1500	on	0.09	4	1	1	4	1
+B70	rnbqkb1r/pp2pp1p/3p1np1/8/3NP3/2N5/PPP2PPP/R1BQKB1R w KQkq - 0 6	round	50	budget	5440	3723.2	1	true	4	50	1500	on	0.09	8	3	43	4	1
+C00	rnbqkbnr/pppp1ppp/4p3/8/4P3/8/PPPP1PPP/RNBQKBNR w KQkq - 0 2	round	50	budget	6567	4063.3	1	true	4	50	1500	on	0.09	6	7	43	4	1

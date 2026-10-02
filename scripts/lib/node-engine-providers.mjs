@@ -41,6 +41,9 @@ export const FRONTEND_DIR = path.resolve(REPO_ROOT, 'frontend');
 /** Wall-clock timeout (ms) for the Stockfish `uci`/`isready` init handshake. */
 export const STOCKFISH_INIT_TIMEOUT_MS = 30_000;
 
+/** Characters of child stderr kept for the death reason (enough for a wasm stack trace). */
+const STDERR_TAIL_CHARS = 4_000;
+
 // ─── Resolve frontend-vendored runtime deps (onnxruntime-web, chess.js) ────────
 // scripts/*.mjs is NOT under frontend/src, so bare package specifiers don't
 // resolve from the repo root (no root node_modules). Mirror
@@ -155,12 +158,22 @@ export class StockfishUciEngine {
     this.child.on('error', (err) => {
       this.#die(`Stockfish process error: ${err.message}`);
     });
+    // Phase 226-07: stderr was piped but never read, so two fixture-build runs
+    // died with "exited unexpectedly (code=7)" (node's exit code when an
+    // uncaughtException handler itself throws, as Emscripten's does) and no cause
+    // on record; a third identical run passed. Keep a bounded tail and put it in
+    // the death reason so the next such crash names its cause.
+    this.stderrTail = '';
+    this.child.stderr?.on('data', (chunk) => {
+      this.stderrTail = (this.stderrTail + chunk.toString('utf8')).slice(-STDERR_TAIL_CHARS);
+    });
     this.child.on('exit', (code, signal) => {
       if (this.quitting) {
         this.dead = true; // expected shutdown: still unusable, but not a crash to report
         return;
       }
-      this.#die(`Stockfish process exited unexpectedly (code=${code}, signal=${signal})`);
+      const stderr = this.stderrTail.trim();
+      this.#die(`Stockfish process exited unexpectedly (code=${code}, signal=${signal})${stderr ? `; stderr tail: ${stderr}` : ''}`);
     });
     this.child.stdin.on('error', (err) => {
       this.#die(`Stockfish stdin error (process likely exited): ${err.message}`);

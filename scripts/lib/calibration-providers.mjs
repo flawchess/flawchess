@@ -352,14 +352,23 @@ function maiaFifoPolicy(session, ort, fen, elo, side) {
  * `policy` path byte-for-byte, so no existing calibration sweep's output can
  * change (see the module-level FIFO doc comment above). Passing
  * `{ maiaFifo: true }` routes `policy()` through that FIFO instead.
+ *
+ * `options.gradeRootFn` (Phase 226 D-18) is added to the returned object as
+ * `gradeRoot` ONLY when it is a function (a conditional spread, never a
+ * literal `gradeRoot: undefined` key) — every existing caller that omits it
+ * gets a providers object with exactly the same `{ policy, grade }` shape as
+ * before, so nothing downstream can observe the difference until a caller
+ * both passes `gradeRootFn` AND the engine (`mctsSearch.ts`'s
+ * `dispatchExpansion`, landing in a later plan) routes a root grade to it.
  */
 export function makeNodeProviders(session, ort, gradeFn, options = {}) {
-  const { maiaFifo = false } = options;
+  const { maiaFifo = false, gradeRootFn } = options;
   return {
     policy: maiaFifo
       ? (fen, elo, side) => maiaFifoPolicy(session, ort, fen, elo, side)
       : (fen, elo, side) => nodePolicy(session, ort, fen, elo, side),
     grade: gradeFn,
+    ...(typeof gradeRootFn === 'function' ? { gradeRoot: gradeRootFn } : {}),
   };
 }
 
@@ -414,8 +423,16 @@ export async function nodeValueHead(session, ort, fen, eloSelf, eloOppo = eloSel
  * default. The `go` line is composed exclusively through the shared
  * `buildGradeGoCommand` builder — no hand-written grading `go` string exists
  * in this function.
+ *
+ * `{ clearHash = true }` (Phase 226 D-03): the fifth, options-object param
+ * controls whether the `Clear Hash` button option is sent before this call's
+ * `go` (see the inline comment at the send site below). Every existing
+ * three/four-argument caller keeps today's Clear-Hash-every-call behavior
+ * byte-for-byte; only `calibration-determinism.check.mjs`'s `--no-clear-hash`
+ * warm arm and a grading-only `createStockfishPool({ clearHash: false })`
+ * pool ever pass `false`.
  */
-export async function nodeGrade(stockfish, fen, candidateUcis, depth) {
+export async function nodeGrade(stockfish, fen, candidateUcis, depth, { clearHash = true } = {}) {
   if (candidateUcis.length === 0) return new Map(); // mirror workerPool.ts WR-05
 
   const resolvedDepth = depth ?? GRADING_ROOT_DEPTH;
@@ -441,10 +458,20 @@ export async function nodeGrade(stockfish, fen, candidateUcis, depth) {
   // function of (position, depth, clean hash) — load-independent, since a
   // dirty transposition table from a prior call under real wall-clock timing
   // is itself a source of nondeterminism.
+  //
+  // Phase 226 D-03: `clearHash: false` (opt-in via the fifth param above)
+  // SKIPS this send, leaving the engine's transposition table exactly as a
+  // prior grade left it — the false branch reproduces the shipped browser
+  // worker, which sets `Hash` once at `uciok` and NEVER sends `ucinewgame`/
+  // `Clear Hash` again for the lifetime of the pool (F-5:
+  // `WORKER_HASH_MB = 8`, set once, never cleared). This is what the D-03
+  // no-Clear-Hash warm arm measures: the real shipped-configuration noise
+  // floor, not the load-independent Clear-Hash grade this function sends by
+  // default.
   stockfish.send(`setoption name Skill Level value ${FULL_STRENGTH_SKILL_LEVEL}`);
   stockfish.send('setoption name UCI_LimitStrength value false');
   stockfish.send(`setoption name MultiPV value ${candidateUcis.length}`);
-  stockfish.send('setoption name Clear Hash');
+  if (clearHash) stockfish.send('setoption name Clear Hash');
   stockfish.send(`position fen ${fen}`);
   // D-10: depth-only, no movetime — keep searchmoves LAST (trailing tokens
   // after searchmoves are silently swallowed by the UCI parser, 158-01

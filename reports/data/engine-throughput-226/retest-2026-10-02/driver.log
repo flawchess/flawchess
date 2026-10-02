@@ -1,0 +1,24 @@
+2026-10-02T03:46:17Z start
+2026-10-02T03:46:17Z load=0.79 0.97 0.93 stop a0 r1
+2026-10-02T03:47:30Z done stop a0 r1 rc=0
+2026-10-02T03:47:30Z load=1.76 1.25 1.03 stop a21 r1
+2026-10-02T03:48:42Z done stop a21 r1 rc=0
+2026-10-02T03:48:42Z load=1.63 1.30 1.07 stop a21s r1
+2026-10-02T03:49:40Z done stop a21s r1 rc=0
+2026-10-02T03:49:40Z load=1.60 1.35 1.10 stop a21s r2
+2026-10-02T03:50:38Z done stop a21s r2 rc=0
+2026-10-02T03:51:08Z load=1.65 1.57 1.21 stop a0 r2
+2026-10-02T03:52:18Z done stop a0 r2 rc=0
+2026-10-02T03:52:33Z load=1.95 1.73 1.30 stop a21 r2
+2026-10-02T03:53:42Z done stop a21 r2 rc=0
+2026-10-02T03:53:57Z load=1.81 1.80 1.36 stop a21 r3
+2026-10-02T03:55:06Z done stop a21 r3 rc=0
+2026-10-02T03:55:21Z load=1.61 1.79 1.40 stop a21s r3
+2026-10-02T03:56:18Z done stop a21s r3 rc=0
+2026-10-02T03:56:33Z load=1.58 1.77 1.43 stop a0 r3
+2026-10-02T03:57:44Z done stop a0 r3 rc=0
+2026-10-02T03:57:59Z load=1.73 1.83 1.48 t400-p2 a0 r1
+2026-10-02T04:51:07Z done t400-p2 a0 r1 rc=0
+2026-10-02T04:51:52Z load=1.75 2.23 3.85 t400-p2 a2 r1
+2026-10-02T05:38:17Z done t400-p2 a2 r1 rc=0
+2026-10-02T05:38:24Z stopped after first A0/A2 pair (ABBA cut to AB; ship decision already made)

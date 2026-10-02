@@ -16,6 +16,7 @@ in `YYYY-MM-DD` (Europe/Zurich).
 
 ### Changed
 
+- Bot moves are about 18% faster: the engine now splits its first, biggest look at the candidate moves across all idle Stockfish workers in the browser, and keeps those workers busier during the search. The bot also no longer stops thinking early on a move until it has looked at every close alternative at least once.
 - The phone game screen against a bot has been rebuilt around the board: a labelled four-button bar for Resign, Back, Next and Flip now sits at the bottom in place of the main navigation while you are playing, and the board is flanked by the same player rows as the analysis board, on phone and desktop alike. Each row shows the name and rating on the left, and the material lead and the clock on the right; the clock sits in a badge painted in that player's own board colour, so it says whose clock it is at a glance, and turns red when time gets short. The clock icon marks whose move it is, the bot's avatar is bigger during the game, and its speech bubble stays out of the way while it has nothing to say.
 - A bot's offer to draw is now accepted or declined right from its own speech bubble on both phone and desktop, instead of a separate banner.
 - The mute toggle is gone from the bot game screen; board sounds always play for now, and a proper option to turn them off is planned for a later release.

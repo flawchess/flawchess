@@ -66,13 +66,18 @@
  *
  * Usage:
  *   node --import ./scripts/lib/frontend-alias-hook.mjs scripts/engine-grading-depth-ab.mjs \
- *     [--nodes 50] [--depths 14,12,10] [--procs 4] [--plies 8] [--elo 1500] \
+ *     [--nodes 50] [--depths 14,12,10] [--procs 4] [--pool-size 4] [--plies 8] [--elo 1500] \
  *     [--ladder] [--hash-probe 10] [--openings 0] [--fens path/to/fens.txt] \
- *     [--maia-fifo] [--out-dir reports/data]
+ *     [--maia-fifo] [--out-dir reports/data] [--self-test]
  *
  *   --nodes         node-expansion budget (50 = FLAWCHESS_BOT_MAX_NODES, 400 = analysis board)
  *   --depths        comma-separated; the FIRST is the reference every other is compared against
- *   --procs         Stockfish process pool size; also used as SearchBudget.concurrency
+ *   --procs         SearchBudget.concurrency ONLY (mirrors FLAWCHESS_BOT_CONCURRENCY) — the number
+ *                   of concurrent grade() calls mctsSearch may have in flight
+ *   --pool-size     Stockfish PROCESS pool size (Phase 226 D-04; default = --procs). Decoupled from
+ *                   --procs so a mobile-shaped run (e.g. bot concurrency 4 over a 2-worker pool) can
+ *                   be measured: with pool-size < procs, later grade calls queue in the pool's own
+ *                   FIFO instead of spawning more processes.
  *   --ladder        additionally run one ladder-mode pass per position (LADDER-05)
  *   --hash-probe    N > 0: probe every Nth grading call for D-07's warm-vs-cleared-hash question (default 0 = off)
  *   --openings      additionally draw N positions from `calibration-openings.mjs`'s OPENING_BOOK
@@ -81,6 +86,8 @@
  *                   app's `maiaWorkerHost` lease; OFF by default, which preserves the historical
  *                   (non-serialized, concurrent) measurement regime every prior TSV was produced under
  *   --out-dir       emit a TSV here; omit to print only
+ *   --self-test     exercise parseArgs + resolvePositions + makeGradeStats only (no engines
+ *                   spawned); exits non-zero on failure
  *
  * SEED-126 warns that the built-in 4-position set is too thin to justify a
  * calibration re-run. Widen with `--openings 20` and/or `--fens` before
@@ -91,7 +98,7 @@ import path from 'node:path';
 import fs from 'node:fs';
 
 import { createMaiaSession } from './lib/node-engine-providers.mjs';
-import { createStockfishPool } from './lib/stockfish-pool.mjs';
+import { createStockfishPool, splitAcrossFreeEngines } from './lib/stockfish-pool.mjs';
 import {
   makeNodeProviders,
   maiaInferenceStats,
@@ -159,7 +166,7 @@ const LADDER_TABLE_STAMP = `${GRADING_DEPTH_LADDER.join(',')}+floor${GRADING_DEP
  * provides) would bias the decision. These are the exact positions behind
  * SEED-126's recorded numbers, so results stay comparable to that baseline.
  */
-const BUILTIN_POSITIONS = [
+export const BUILTIN_POSITIONS = [
   { label: 'italian', fen: 'r1bqkb1r/pppp1ppp/2n2n2/4p3/2B1P3/5N2/PPPP1PPP/RNBQK2R w KQkq - 4 4' },
   { label: 'middlegame', fen: 'r2q1rk1/pp1nbppp/2p1bn2/3p4/3P1B2/2N1PN2/PPQ1BPPP/R4RK1 w - - 6 11' },
   { label: 'sharp', fen: 'r1bq1r1k/pp1nbppp/2p1p3/3pP3/3P4/2NB1N2/PPPQ1PPP/R3K2R w KQ - 2 11' },
@@ -198,6 +205,7 @@ export function parseArgs(argv) {
     nodes: DEFAULT_NODES,
     depths: [...DEFAULT_DEPTHS],
     procs: DEFAULT_PROCS,
+    poolSize: null,
     plies: DEFAULT_PLIES,
     elo: DEFAULT_ELO,
     ladder: false,
@@ -206,11 +214,16 @@ export function parseArgs(argv) {
     fens: null,
     maiaFifo: false,
     outDir: null,
+    selfTest: false,
   };
   for (let i = 0; i < argv.length; i++) {
     const token = argv[i];
     if (token === '--help' || token === '-h') {
       args.help = true;
+      continue;
+    }
+    if (token === '--self-test') {
+      args.selfTest = true;
       continue;
     }
     if (!token.startsWith('--')) continue;
@@ -219,6 +232,7 @@ export function parseArgs(argv) {
     switch (key) {
       case 'nodes': args.nodes = parsePositiveIntFlag(value, key); i++; break;
       case 'procs': args.procs = parsePositiveIntFlag(value, key); i++; break;
+      case 'pool-size': args.poolSize = parsePositiveIntFlag(value, key); i++; break; // Phase 226 D-04
       case 'plies': args.plies = parsePositiveIntFlag(value, key); i++; break;
       case 'elo': args.elo = parsePositiveIntFlag(value, key); i++; break;
       case 'ladder': args.ladder = true; break; // boolean, consumes no value
@@ -241,11 +255,17 @@ export function parseArgs(argv) {
         throw new Error(`Unknown flag --${key}`);
     }
   }
+  // Phase 226 D-04: --pool-size decouples the Stockfish PROCESS count from
+  // SearchBudget.concurrency (--procs). Defaulting it to --procs here (after
+  // the loop, so an explicit --pool-size always wins regardless of flag
+  // order) preserves every existing caller's behavior — a run with no
+  // --pool-size spawns exactly as many processes as before.
+  if (args.poolSize === null) args.poolSize = args.procs;
   return args;
 }
 
 /** Resolves the position set from the built-in list, `--fens`, and `--openings`. */
-function resolvePositions(args) {
+export function resolvePositions(args) {
   const positions = [];
   if (args.fens !== null) {
     const filePath = path.isAbsolute(args.fens) ? args.fens : path.resolve(REPO_ROOT, args.fens);
@@ -353,7 +373,11 @@ async function probeHashDivergence(engine, depth, fen, candidateUcis, warmGrades
  * Fresh per-pass stats accumulator. The four `hashProbe*` fields are always
  * present (not just when `--hash-probe` is set) so `hashProbeRowFields`
  * below never has to special-case a missing field — only whether to REPORT
- * them as empty for TSV schema stability.
+ * them as empty for TSV schema stability. `rootSplit` (Phase 226 D-08/D-18)
+ * is `splitAcrossFreeEngines`'s own tripwire accumulator, passed by
+ * reference into `gradeRootAtDepth`/`gradeRootAtLadder` below — it stays at
+ * zero on every arm before A21S, since `mctsSearch` never calls
+ * `providers.gradeRoot` until that arm lands.
  */
 function makeGradeStats() {
   return {
@@ -364,6 +388,7 @@ function makeGradeStats() {
     hashProbesDivergent: 0,
     hashProbeMaxAbsCp: 0,
     hashProbeScoreDiffSum: 0,
+    rootSplit: { calls: 0, splits: 0, premiseViolations: 0 },
   };
 }
 
@@ -473,9 +498,45 @@ async function createDepthPool(size, hashProbeEvery = 0) {
   const gradeAtLadder = (stats) => (fen, candidateUcis, signal, depth) =>
     runGradeAtDepth(depth ?? GRADING_ROOT_DEPTH, fen, candidateUcis, stats);
 
+  /**
+   * Root-grade fan-out (Phase 226 D-18/D-08), dormant until arm A21S's
+   * `mctsSearch.ts` actually routes a root's grade call through
+   * `providers.gradeRoot` — no arm before that ever calls this function, so
+   * `stats.rootSplit` (and the TSV's `root_split_*` columns) stay at zero on
+   * every row this plan's own smoke test produces. Declares all four
+   * parameters `(fen, candidateUcis, signal, depth)` per the harness
+   * provider-signature convention (RESEARCH "Harness provider signature") —
+   * an undeclared 4th parameter would silently drop the ladder depth, even
+   * though this fixed-depth variant never reads it itself. `runShard` reuses
+   * `runGradeAtDepth` for the SAME depth this pass already grades at, so a
+   * shard's CPU time lands in `stats.ms`/`stats.calls` (and, for the
+   * hash-probe pass, is eligible for the same probe selection) like any
+   * other grading call — never a separate, invisible cost.
+   */
+  const gradeRootAtDepth = (depth, stats) => (fen, candidateUcis, signal, _depth) =>
+    splitAcrossFreeEngines({
+      freeCount: pool.freeCount,
+      size,
+      stats: stats.rootSplit,
+      candidateUcis,
+      runShard: (shard) => runGradeAtDepth(depth, fen, shard, stats),
+    });
+
+  /** Ladder-mode counterpart of `gradeRootAtDepth` — reads `depth` per call, same fallback as `gradeAtLadder`. */
+  const gradeRootAtLadder = (stats) => (fen, candidateUcis, signal, depth) =>
+    splitAcrossFreeEngines({
+      freeCount: pool.freeCount,
+      size,
+      stats: stats.rootSplit,
+      candidateUcis,
+      runShard: (shard) => runGradeAtDepth(depth ?? GRADING_ROOT_DEPTH, fen, shard, stats),
+    });
+
   return {
     gradeAtDepth,
     gradeAtLadder,
+    gradeRootAtDepth,
+    gradeRootAtLadder,
     /** Clears every engine's transposition table so each (position, depth) run starts clean. */
     resetAll: () => pool.newGameAll(),
     quitAll: () => pool.quitAll(),
@@ -513,24 +574,94 @@ function compareToReference(lines, referenceLines) {
   };
 }
 
+// ─── Self-test (parseArgs + resolvePositions + makeGradeStats only, no engines) ──
+
+/**
+ * `--self-test`: exercises `parseArgs`, `resolvePositions`, and
+ * `makeGradeStats` only, so it costs no engine time. Returns `true` iff
+ * every assertion held.
+ */
+function runSelfTest() {
+  let ok = true;
+  const check = (cond, label) => {
+    if (!cond) {
+      console.error(`SELF-TEST FAILED: ${label}`);
+      ok = false;
+    } else {
+      console.log(`SELF-TEST ok: ${label}`);
+    }
+  };
+
+  // Unknown flag throws.
+  try {
+    parseArgs(['--bogus-flag']);
+    check(false, 'unknown flag should throw');
+  } catch (err) {
+    check(err.message.includes('Unknown flag'), 'unknown flag throws with a named-flag message');
+  }
+
+  // --pool-size defaults to --procs when omitted (Phase 226 D-04).
+  const defaultArgs = parseArgs([]);
+  check(
+    defaultArgs.poolSize === defaultArgs.procs,
+    `--pool-size defaults to --procs (${defaultArgs.procs}), got ${defaultArgs.poolSize}`,
+  );
+
+  // --pool-size and --procs are independent when both are given.
+  const explicitArgs = parseArgs(['--pool-size', '2', '--procs', '4']);
+  check(
+    explicitArgs.poolSize === 2 && explicitArgs.procs === 4,
+    `--pool-size 2 --procs 4 yields poolSize 2 and procs 4, got poolSize=${explicitArgs.poolSize} procs=${explicitArgs.procs}`,
+  );
+
+  // --pool-size 0 throws (Stockfish pool size must be a positive integer).
+  try {
+    parseArgs(['--pool-size', '0']);
+    check(false, '--pool-size 0 should throw');
+  } catch (err) {
+    check(/pool-size/i.test(err.message), '--pool-size 0 throws mentioning pool-size');
+  }
+
+  // --openings 12 with no --fens resolves the 4 built-in positions plus 12 = 16.
+  const openingsPositions = resolvePositions({ fens: null, openings: 12 });
+  check(
+    openingsPositions.length === BUILTIN_POSITIONS.length + 12,
+    `--openings 12 with no --fens resolves ${BUILTIN_POSITIONS.length + 12} positions, got ${openingsPositions.length}`,
+  );
+
+  // makeGradeStats().rootSplit starts at zeros (Phase 226 D-08 tripwire).
+  const stats = makeGradeStats();
+  check(
+    stats.rootSplit.calls === 0 && stats.rootSplit.splits === 0 && stats.rootSplit.premiseViolations === 0,
+    `makeGradeStats().rootSplit starts at zeros, got ${JSON.stringify(stats.rootSplit)}`,
+  );
+
+  return ok;
+}
+
 // ─── Main ────────────────────────────────────────────────────────────────────
 
 async function main() {
   const args = parseArgs(process.argv.slice(2));
   if (args.help) {
     console.log(fs.readFileSync(new URL(import.meta.url), 'utf8').split('*/')[0]);
-    return;
+    return 0;
+  }
+  if (args.selfTest) {
+    const passed = runSelfTest();
+    console.log(passed ? '\nSelf-test: ALL CHECKS PASSED' : '\nSelf-test: FAILURES ABOVE');
+    return passed ? 0 : 1;
   }
 
   const positions = resolvePositions(args);
   const referenceDepth = args.depths[0];
 
   const { session, ort } = await createMaiaSession();
-  const pool = await createDepthPool(args.procs, args.hashProbe);
+  const pool = await createDepthPool(args.poolSize, args.hashProbe);
 
   console.log(
     `\nGrading-depth A/B — nodes=${args.nodes} plies=${args.plies} concurrency=${args.procs} ` +
-      `elo=${args.elo} ladder-table=${LADDER_TABLE_STAMP}\n` +
+      `pool-size=${args.poolSize} elo=${args.elo} ladder-table=${LADDER_TABLE_STAMP}\n` +
       `positions=${positions.length}  depths=${args.depths.join(',')}  reference=d${referenceDepth}` +
       `${args.ladder ? '  +ladder pass' : ''}\n`,
   );
@@ -548,7 +679,10 @@ async function main() {
       resetMaiaInstrumentationStats(); // Phase 198 DISPATCH-02: co-located with resetMaiaRunMemo above, same per-pass isolation reasoning.
       const stats = makeGradeStats();
       const inferencesBefore = maiaInferenceStats.count;
-      const providers = makeNodeProviders(session, ort, pool.gradeAtDepth(depth, stats), { maiaFifo: args.maiaFifo });
+      const providers = makeNodeProviders(session, ort, pool.gradeAtDepth(depth, stats), {
+        maiaFifo: args.maiaFifo,
+        gradeRootFn: pool.gradeRootAtDepth(depth, stats),
+      });
       const budget = {
         maxNodes: args.nodes,
         maxPlies: args.plies,
@@ -593,6 +727,10 @@ async function main() {
         maia_cpu_ms: maiaCpuMs.toFixed(1),
         maia_peak_inflight: maiaPeakInflight,
         maia_fifo: args.maiaFifo,
+        pool_size: args.poolSize,
+        root_split_calls: stats.rootSplit.calls,
+        root_split_splits: stats.rootSplit.splits,
+        root_split_premise_violations: stats.rootSplit.premiseViolations,
       });
     }
 
@@ -606,7 +744,10 @@ async function main() {
       resetMaiaInstrumentationStats(); // Phase 198 DISPATCH-02: co-located with resetMaiaRunMemo above.
       const stats = makeGradeStats();
       const inferencesBefore = maiaInferenceStats.count;
-      const providers = makeNodeProviders(session, ort, pool.gradeAtLadder(stats), { maiaFifo: args.maiaFifo });
+      const providers = makeNodeProviders(session, ort, pool.gradeAtLadder(stats), {
+        maiaFifo: args.maiaFifo,
+        gradeRootFn: pool.gradeRootAtLadder(stats),
+      });
       const budget = {
         maxNodes: args.nodes,
         maxPlies: args.plies,
@@ -641,6 +782,10 @@ async function main() {
         maia_cpu_ms: maiaCpuMs.toFixed(1),
         maia_peak_inflight: maiaPeakInflight,
         maia_fifo: args.maiaFifo,
+        pool_size: args.poolSize,
+        root_split_calls: stats.rootSplit.calls,
+        root_split_splits: stats.rootSplit.splits,
+        root_split_premise_violations: stats.rootSplit.premiseViolations,
       });
     }
 
@@ -703,6 +848,7 @@ async function main() {
       'mean_abs_score_diff', 'reference_top2_gap', 'ladder_table',
       'hash_probes', 'hash_probes_divergent', 'hash_probe_max_abs_cp', 'hash_probe_mean_abs_score_diff',
       'maia_inferences', 'maia_cpu_ms', 'maia_peak_inflight', 'maia_fifo',
+      'pool_size', 'root_split_calls', 'root_split_splits', 'root_split_premise_violations',
     ];
     // Timestamp is read once here, AFTER all measurement, so it never influences a run.
     const stamp = new Date().toISOString().replace(/[:.]/g, '-');
@@ -716,9 +862,10 @@ async function main() {
   }
 
   pool.quitAll();
+  return 0;
 }
 
 if (process.argv[1] !== undefined && import.meta.url === pathToFileURL(process.argv[1]).href) {
-  await main();
-  process.exit(0);
+  const code = await main();
+  process.exit(code);
 }

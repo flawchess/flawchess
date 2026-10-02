@@ -15,7 +15,7 @@ All use `node --import scripts/lib/frontend-alias-hook.mjs <script>`.
 
 | Script | What it measures |
 |---|---|
-| `profile_search.mjs [nodes] [conc] [maiaThreads] [stopRule 0/1]` | real `mctsSearch` with vendored SF wasm pool + ort-web wasm Maia; Maia vs SF vs JS glue split. `50 4 4 1` = bot budget, `400 4 4 0` = analysis budget |
+| `profile_search.mjs [nodes] [conc] [maiaThreads] [stopRule 0/1] [outJson]` | real `mctsSearch` with vendored SF wasm pool + ort-web wasm Maia; Maia vs SF vs JS glue split, plus (Phase 226 D-17) a grade-ms histogram by (root vs non-root, grading depth, candidate-count bucket) and the `D17 non_root_gt8_share=` decision line. `50 4 4 1` = bot budget, `400 4 4 0` = analysis budget; an optional 6th arg writes the full histogram + totals as JSON |
 | `run400.txt` | output of the 400-node run |
 | `bench_maia.mjs [modelPath]` | Maia latency by backend (ort-web wasm / onnxruntime-node), threads, batch size |
 | `bench_sf.mjs` | lite-single wasm NPS, cost vs MultiPV and depth |
