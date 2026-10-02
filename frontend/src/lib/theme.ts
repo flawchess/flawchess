@@ -584,32 +584,18 @@ export const TRAIN_BEST_MOVE_ARROW = BEST_MOVE_ARROW;
 export const TRAIN_BUBBLE_BORDER = 'oklch(0.55 0.02 40)'; // neutral warm grey-brown
 export const TRAIN_BUBBLE_NUDGE_BORDER = 'oklch(0.75 0.15 85)'; // amber, same family as TRAIN_RATING_YELLOW
 
-// Shield flame meter, 7 slots (Phase 193 D-01, 193-UI-SPEC.md `## Color`;
-// amended at 193 UAT — the 3-band pip meter became a per-slot flame ramp).
-// Indexed by SLOT, not by shield_level: slot i always renders the same
-// color whether it is the highest lit flame or one of several. The ramp
-// runs yellow (slot 1) -> orange (slot 4) -> red (slot 7), so the shield's
-// heat reads at a glance without a legend. Empty slots use the neutral
-// text-muted-foreground/50 Tailwind token (a grey outline flame), never an
-// 8th named color.
-// Train session-streak badge (193 UAT round 4). The streak count is the
-// headline number of the Streak card but rendered as plain text it read as
-// just another stat, so it now sits in a filled amber trophy pill. One FLAT
-// amber, deliberately not a value from the flame ramp below: the pill must
-// never read as an 8th flame or as a heat level on the same scale. The
-// foreground is near-black because the amber sits at oklch lightness 0.78,
-// which white text cannot clear for legible contrast (same reasoning as
-// TRAIN_POINTS_FG_ON_LIGHT above, kept as its own constant so a retune of
-// the points badge can't silently retune the streak badge).
-export const TRAIN_STREAK_BADGE_BG = 'oklch(0.78 0.16 85)'; // amber
-export const TRAIN_STREAK_BADGE_FG = 'oklch(0.20 0 0)'; // near-black
-
-export const TRAIN_SHIELD_FLAME_COLORS = [
-  'oklch(0.80 0.15 95)', // 1: yellow
-  'oklch(0.78 0.16 85)', // 2: amber
-  'oklch(0.75 0.17 72)', // 3: deep amber
-  'oklch(0.72 0.18 60)', // 4: orange
-  'oklch(0.69 0.19 50)', // 5: deep orange
-  'oklch(0.66 0.20 40)', // 6: orange-red
-  'oklch(0.62 0.21 29)', // 7: red
-] as const;
+// Train streak flame + freeze meter (SEED-181, sketch 005 A). The streak count
+// sits inside a 3-layer flame (red outer, orange middle, yellow core); the 0-7
+// `shield_level` buffer renders as snowflake "freezes" in an icy blue. Hot vs
+// cold is deliberate: the 193 UAT round 2 failure was the buffer (then drawn
+// as flames) reading as the streak itself, so the two concepts now live in
+// opposite color families instead of sharing the flame ramp.
+export const TRAIN_FLAME_OUTER = 'oklch(0.60 0.21 29)'; // red
+export const TRAIN_FLAME_MIDDLE = 'oklch(0.73 0.18 55)'; // orange
+export const TRAIN_FLAME_CORE = 'oklch(0.90 0.15 95)'; // yellow
+// Near-black: the number spans the yellow core and orange middle, neither of
+// which white text can clear for legible contrast.
+export const TRAIN_FLAME_NUMBER = 'oklch(0.22 0.04 50)';
+// Streak 0: an unlit grey outline flame with a grey number.
+export const TRAIN_FLAME_UNLIT = 'oklch(0.55 0 0)';
+export const TRAIN_FREEZE_COLOR = 'oklch(0.82 0.10 230)'; // icy blue

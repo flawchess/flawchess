@@ -403,6 +403,127 @@
   animation: train-bubble-nudge 0.4s ease-in-out;
 }
 
+/* Train streak flame + freeze meter (SEED-181, sketch 005). One-shot arrival
+   animations; the components omit these classes under prefers-reduced-motion
+   (same gate as train-score-badge-pop above), and the media query below is a
+   second line of defense. Flame layers scale from their own bottom center. */
+.train-flame-layer {
+  transform-box: fill-box;
+  transform-origin: 50% 100%;
+}
+@keyframes train-flame-ignite {
+  0%   { transform: scale(0.15); opacity: 0; }
+  55%  { transform: scale(1.12, 1.18); opacity: 1; }
+  100% { transform: scale(1); opacity: 1; }
+}
+@keyframes train-flame-flicker {
+  0%, 100% { transform: scale(1, 1); }
+  30%      { transform: scale(0.95, 1.07); }
+  65%      { transform: scale(1.04, 0.96); }
+}
+@keyframes train-flame-glow {
+  0%   { filter: drop-shadow(0 0 0 transparent); }
+  45%  { filter: drop-shadow(0 0 12px oklch(0.75 0.19 55 / 0.75)); }
+  100% { filter: drop-shadow(0 0 0 transparent); }
+}
+.train-flame-ignite { animation: train-flame-glow 1.6s ease-out; }
+.train-flame-ignite .train-flame-layer-0 {
+  animation: train-flame-ignite 0.7s cubic-bezier(0.2, 1.5, 0.4, 1) both;
+}
+.train-flame-ignite .train-flame-layer-1 {
+  animation: train-flame-ignite 0.7s 0.11s cubic-bezier(0.2, 1.5, 0.4, 1) both,
+    train-flame-flicker 0.38s 0.82s 3 ease-in-out;
+}
+.train-flame-ignite .train-flame-layer-2 {
+  animation: train-flame-ignite 0.7s 0.22s cubic-bezier(0.2, 1.5, 0.4, 1) both,
+    train-flame-flicker 0.3s 0.92s 4 ease-in-out;
+}
+/* Freeze used: the flame cools for a moment and stays lit (streak held). The
+   frost band starts above the flame and sweeps down through it. */
+@keyframes train-flame-cool {
+  0%, 100% { filter: none; }
+  35%, 65% { filter: saturate(0.25) brightness(1.15); }
+}
+@keyframes train-flame-frost-sweep {
+  0%   { opacity: 1; transform: translateY(0); }
+  100% { opacity: 1; transform: translateY(200px); }
+}
+.train-flame-frosted .train-flame-body {
+  animation: train-flame-cool 1.3s ease-in-out both;
+  animation-delay: var(--train-frost-delay, 0ms);
+}
+.train-flame-frost { opacity: 0; animation: train-flame-frost-sweep 1.1s ease-in-out; }
+/* Streak reset: the old lit flame (with its old number) gutters and shrinks
+   into its base, then the grey unlit outline and the 0 fade in. */
+@keyframes train-flame-gutter {
+  0%   { transform: scale(1); opacity: 1; }
+  25%  { transform: scale(1.05, 0.92); opacity: 1; }
+  100% { transform: scale(0.3, 0.05); opacity: 0; }
+}
+@keyframes train-flame-fade-in {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+.train-flame-dying {
+  transform-box: fill-box;
+  transform-origin: 50% 100%;
+  animation: train-flame-gutter 0.9s ease-in both;
+  animation-delay: var(--train-extinguish-delay, 0ms);
+}
+.train-flame-extinguished .train-flame-unlit {
+  animation: train-flame-fade-in 0.5s ease-out both;
+  animation-delay: calc(var(--train-extinguish-delay, 0ms) + 700ms);
+}
+/* A spent freeze: two halves of the held snowflake shake, split and fall. */
+@keyframes train-freeze-half-left {
+  0%   { transform: rotate(0); opacity: 1; }
+  10%  { transform: rotate(-14deg); }
+  20%  { transform: rotate(12deg); }
+  30%  { transform: rotate(0); opacity: 1; }
+  100% { transform: translate(-7px, 14px) rotate(-35deg); opacity: 0; }
+}
+@keyframes train-freeze-half-right {
+  0%   { transform: rotate(0); opacity: 1; }
+  10%  { transform: rotate(-14deg); }
+  20%  { transform: rotate(12deg); }
+  30%  { transform: rotate(0); opacity: 1; }
+  100% { transform: translate(7px, 14px) rotate(35deg); opacity: 0; }
+}
+.train-freeze-half-left {
+  clip-path: inset(0 50% 0 0);
+  animation: train-freeze-half-left 1s ease-in both;
+}
+.train-freeze-half-right {
+  clip-path: inset(0 0 0 50%);
+  animation: train-freeze-half-right 1s ease-in both;
+}
+/* A freeze earned: the new snowflake spins in with an expanding ring. */
+@keyframes train-freeze-popin {
+  0%   { transform: scale(0) rotate(-120deg); }
+  100% { transform: scale(1) rotate(0); }
+}
+@keyframes train-freeze-ring {
+  0%   { transform: scale(0.4); opacity: 1; }
+  100% { transform: scale(1.8); opacity: 0; }
+}
+.train-freeze-popin { animation: train-freeze-popin 0.52s cubic-bezier(0.2, 1.6, 0.4, 1) both; }
+.train-freeze-popin::after {
+  content: '';
+  position: absolute;
+  inset: -4px;
+  border-radius: 9999px;
+  border: 2px solid oklch(0.82 0.10 230);
+  opacity: 0;
+  animation: train-freeze-ring 0.6s ease-out;
+  animation-delay: inherit;
+}
+@media (prefers-reduced-motion: reduce) {
+  .train-flame-ignite, .train-flame-ignite *, .train-flame-frosted *,
+  .train-flame-extinguished *,
+  .train-freeze-popin, .train-freeze-popin::after { animation: none !important; }
+  .train-freeze-half-left, .train-freeze-half-right { display: none; }
+}
+
 /* Mobile typography bump.
    Below the sm: breakpoint, lift Tailwind's default type scale by one tier so
    labels, filter chips, table captions, and body copy match typical mobile-app

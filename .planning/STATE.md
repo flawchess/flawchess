@@ -5,8 +5,8 @@ current_phase: 227
 current_phase_name: Browser Engine Continuous Dispatch Against a Relaxed Determinism Target (SEED-171)
 status: planning
 stopped_at: Phase 226 complete, ready to plan Phase 227
-last_updated: "2026-10-02T05:51:56.233Z"
-state_head: 31324ca04ea58a03ffc097c143b74a472ff9bad3
+last_updated: "2026-10-02T09:03:03.016Z"
+state_head: 6b2799d7d0d3b65ee3dabfe20bb13b1a94e131b7
 progress:
   total_phases: 5
   completed_phases: 102
@@ -15,7 +15,7 @@ progress:
   percent: 76
 milestone_name: Train Bot-Narrated Onboarding & Verdicts
 last_activity: 2026-10-02
-last_activity_desc: Completed quick task 261002-8xb (Train puzzles-per-session slider, SEED-179)
+last_activity_desc: Completed quick task 261002-ex9 (Train streak flame + freezes, SEED-181)
 ---
 
 # Project State: FlawChess
@@ -934,6 +934,7 @@ None active.
 | 260928-85v | Move Maia score_move off the API event loop (SEED-172 item 1) | 2026-09-28 | 682127561 | [260928-85v-move-maia-score-move-off-the-api-event-l](./quick/260928-85v-move-maia-score-move-off-the-api-event-l/) |
 | 109 | Activity dashboard: default time range 30 days | 2026-09-28 | de7ce598b | — |
 | 261002-8xb | Train puzzles-per-session slider 3-30 step 3 (SEED-179) | 2026-10-02 | e9b466552 | [261002-8xb-train-puzzles-per-session-slider-3-30-st](./quick/261002-8xb-train-puzzles-per-session-slider-3-30-st/) |
+| 261002-ex9 | Train streak flame hero + snowflake freezes + collapsible schedule (SEED-181) | 2026-10-02 | 6b2799d7d | [261002-ex9-implement-seed-181-train-streak-flame-fr](./quick/261002-ex9-implement-seed-181-train-streak-flame-fr/) |
 
 ## Deferred Items
 

@@ -1,0 +1,285 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sketch 006 — Train landing hero</title>
+<link rel="stylesheet" href="../themes/default.css">
+<link rel="stylesheet" href="../005-streak-flame-and-freezes/flame.css">
+<style>
+  * { box-sizing: border-box; }
+  body { margin: 0; background: #0b0b0b; color: var(--color-text); font-family: var(--font-sans); padding-top: 64px; }
+  #variant-nav { position: fixed; top: 0; left: 0; right: 0; z-index: 9998; background: var(--color-surface); border-bottom: 1px solid var(--color-border); padding: 8px 16px; display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+  #variant-nav .lbl { color: var(--color-text-muted); font-size: 13px; margin: 0 4px 0 12px; }
+  .pill { background: transparent; color: var(--color-text-muted); border: 1px solid var(--color-border-strong); border-radius: var(--radius-full); padding: 6px 12px; font: 600 13px var(--font-sans); cursor: pointer; transition: all .15s ease; }
+  .pill:hover { color: var(--color-text); border-color: var(--brand-brown-light); }
+  .pill.active { background: var(--brand-brown); border-color: var(--brand-brown); color: #fff; }
+  .pill.cold { border-color: oklch(0.82 0.10 230 / .6); color: oklch(0.85 0.08 230); }
+  .pill.cold:hover { background: oklch(0.82 0.10 230 / .12); }
+
+  .stage { display: flex; gap: 24px; justify-content: center; align-items: flex-start; padding: 20px 16px 80px; flex-wrap: wrap; }
+  .col { display: flex; flex-direction: column; align-items: center; gap: 10px; }
+  .col h2 { margin: 0; font-size: 15px; font-weight: 700; }
+  .col h2 small { display: block; font-weight: 400; color: var(--color-text-muted); font-size: 13px; text-align: center; margin-top: 2px; }
+  .phone { width: 375px; height: 760px; background: var(--color-bg); border: 10px solid #222; border-radius: 36px; overflow: hidden auto; box-shadow: var(--shadow-lg); position: relative; }
+  .screen { padding: 14px 12px 24px; display: flex; flex-direction: column; gap: 12px; }
+  .fold { position: absolute; left: 0; right: 0; top: 640px; border-top: 1px dashed oklch(0.82 0.10 230 / .35); pointer-events: none; }
+  .fold::after { content: 'typical phone fold'; position: absolute; right: 8px; top: -16px; font-size: 10px; color: oklch(0.82 0.10 230 / .6); }
+
+  .bot { display: flex; gap: 10px; align-items: flex-start; }
+  .bot .av { flex: 0 0 auto; display: flex; flex-direction: column; align-items: center; gap: 2px; font-size: 11px; color: var(--color-text-muted); }
+  .bot img { width: 52px; height: 52px; border-radius: 50%; object-fit: cover; background: #1d2a26; }
+  .bubble { position: relative; border: 1.5px solid oklch(0.55 0.02 40); border-radius: 14px; padding: 9px 12px; font-size: 14px; line-height: 1.4; background: var(--color-bg); }
+  .bubble::before { content: ''; position: absolute; left: -7px; top: 16px; width: 12px; height: 12px; background: var(--color-bg); border-left: 1.5px solid oklch(0.55 0.02 40); border-bottom: 1.5px solid oklch(0.55 0.02 40); transform: rotate(45deg); }
+
+  .card { background: var(--color-surface); border: 1px solid var(--color-border); border-radius: var(--radius-lg); overflow: hidden; }
+  .card-h { padding: 10px 14px; font-weight: 700; font-size: 14px; border-bottom: 1px solid var(--color-border); background: oklch(1 0 0 / 3%); display: flex; align-items: center; gap: 6px; }
+  .q { width: 16px; height: 16px; border-radius: 50%; border: 1.5px solid var(--color-text-muted); color: var(--color-text-muted); font-size: 10px; display: inline-flex; align-items: center; justify-content: center; }
+  .card-b { padding: 12px 14px; display: flex; flex-direction: column; gap: 10px; }
+  .row { display: flex; align-items: center; justify-content: space-between; font-size: 14px; }
+  .row .k { color: var(--color-text-muted); }
+  .row .v { font-weight: 700; }
+  .muted { color: var(--color-text-muted); font-size: 14px; }
+
+  .start { width: 100%; height: 48px; border-radius: var(--radius-md); border: none; background: var(--brand-brown); color: #fff; font: 700 15px var(--font-sans); cursor: pointer; transition: all .15s ease; }
+  .start:hover { background: var(--brand-brown-hover); }
+  .start:active { transform: scale(.98); }
+
+  /* A: flame beside the CTA column */
+  .heroA { display: flex; gap: 14px; align-items: center; padding: 14px; }
+  .heroA .fh { width: 92px; flex: 0 0 auto; }
+  .heroA .side { flex: 1; display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+  .heroA .lab { font-size: 13px; color: var(--color-text-muted); }
+  /* B: centered hero */
+  .heroB { display: flex; flex-direction: column; align-items: center; gap: 10px; padding: 18px 14px 14px; text-align: center; }
+  .heroB .fh { width: 120px; }
+  .heroB .meter .slot { width: 22px; height: 22px; }
+  /* C: today's layout, flame as the streak value */
+  .card .fh-sm { width: 60px; }
+
+  .tiles { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  .tile { background: var(--color-surface); border: 1px solid var(--color-border); border-radius: var(--radius-lg); padding: 10px 12px; }
+  .tile .n { font: 700 20px var(--font-sans); }
+  .tile .t { font-size: 13px; color: var(--color-text-muted); }
+
+  /* Collapsible schedule */
+  .sched-h { width: 100%; display: flex; align-items: center; gap: 8px; padding: 12px 14px; background: transparent; border: none; color: var(--color-text); font: 600 14px var(--font-sans); cursor: pointer; text-align: left; }
+  .sched-h:hover { background: oklch(1 0 0 / 3%); }
+  .sched-h .sum { color: var(--color-text-muted); font-weight: 400; font-size: 13px; flex: 1; text-align: right; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .sched-h .chev { transition: transform .2s ease; color: var(--color-text-muted); }
+  .sched.open .chev { transform: rotate(180deg); }
+  .sched-body { display: grid; grid-template-rows: 0fr; transition: grid-template-rows .25s ease; }
+  .sched.open .sched-body { grid-template-rows: 1fr; }
+  .sched-body > div { overflow: hidden; }
+  .sched-inner { padding: 4px 14px 14px; display: flex; flex-direction: column; gap: 12px; border-top: 1px solid var(--color-border); padding-top: 12px; }
+  .days { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; }
+  .day { height: 34px; border-radius: var(--radius-sm); font: 600 13px var(--font-sans); cursor: pointer; transition: all .15s ease; border: 1px solid var(--color-border-strong); background: transparent; color: var(--color-text-muted); }
+  .day.on { background: var(--brand-brown); border-color: var(--brand-brown); color: #fff; }
+  .day:hover { border-color: var(--brand-brown-light); }
+  input[type=range] { width: 100%; accent-color: var(--brand-brown-light); }
+  .toggle { display: flex; align-items: center; gap: 8px; font-size: 14px; cursor: pointer; }
+  .sw { width: 36px; height: 20px; border-radius: 10px; background: #555; position: relative; transition: background .15s; }
+  .sw::after { content: ''; position: absolute; left: 2px; top: 2px; width: 16px; height: 16px; border-radius: 50%; background: #fff; transition: left .15s; }
+  .toggle.on .sw { background: var(--brand-brown); }
+  .toggle.on .sw::after { left: 18px; }
+  select.time { background: var(--color-bg); color: var(--color-text); border: 1px solid var(--color-border-strong); border-radius: var(--radius-md); padding: 8px; font: 14px var(--font-sans); }
+
+  .toast { position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%) translateY(20px); background: #222; color: #fff; padding: 10px 16px; border-radius: 8px; font-size: 14px; opacity: 0; transition: all .2s ease; pointer-events: none; z-index: 9999; }
+  .toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+  .look { max-width: 900px; margin: -56px auto 80px; padding: 0 16px; font-size: 14px; color: var(--color-text-muted); line-height: 1.5; }
+  .look b { color: var(--color-text); }
+</style>
+</head>
+<body>
+
+<div id="variant-nav">
+  <span class="lbl" style="margin-left:0">Replay</span>
+  <button class="pill" data-s="up">Streak up</button>
+  <button class="pill cold" data-s="used">Freeze used</button>
+  <button class="pill cold" data-s="earned">Freeze earned</button>
+  <button class="pill" data-s="reset">Reset (quiet)</button>
+  <span class="lbl">Flame</span>
+  <button class="pill fv active" data-v="A">Concentric</button>
+  <button class="pill fv" data-v="B">Licks</button>
+  <button class="pill fv" data-v="C">Chunky drop</button>
+</div>
+
+<div class="stage" id="stage"></div>
+
+<div class="look">
+  <b>What to look for:</b> on a phone, does the Start button land above the fold with the flame in the same glance?
+  Does A's side-by-side still breathe at 375px, or does B's centered hero feel more like a "moment"?
+  Is C (minimal change: today's card, flame swapped in) enough on its own?
+  Tap the <b>Train schedule</b> row: the day toggles now differ by fill (brown = training day), not just shade.
+</div>
+<div class="toast" id="toast"></div>
+
+<script src="../005-streak-flame-and-freezes/flame.js"></script>
+<script>
+  const S = window.Streak;
+  let flameV = 'A';
+  let cur = { streak: 52, freezes: 5, notice: false };
+  const BOT_IMG = '../../../frontend/src/assets/personas-source/grinder-1600.webp';
+  const DAYS = ['Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa', 'Su'];
+
+  const bot = () => `
+    <div class="bot">
+      <div class="av"><img src="${BOT_IMG}" alt="">Tank</div>
+      <div class="bubble">Welcome to boot camp, recruit! Your own blunders are today's drill.</div>
+    </div>`;
+
+  const sched = (id) => `
+    <section class="card sched" data-sched="${id}">
+      <button class="sched-h"><span>Train schedule</span><span class="sum"></span>
+        <svg class="chev" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m6 9 6 6 6-6"/></svg></button>
+      <div class="sched-body"><div><div class="sched-inner">
+        <div class="days">${DAYS.map((d, i) => `<button class="day ${i < 5 ? 'on' : ''}">${d}</button>`).join('')}</div>
+        <div class="row"><span class="k">Puzzles per session</span><span class="v pps">6</span></div>
+        <input type="range" min="3" max="30" step="3" value="6">
+        <div class="toggle on"><span class="sw"></span>Remind me to train</div>
+        <select class="time"><option>16:00</option><option>18:00</option><option>20:00</option></select>
+      </div></div></div>
+    </section>`;
+
+  const pool = () => `
+    <div class="tiles">
+      <div class="tile"><div class="n">80</div><div class="t">Mastered</div></div>
+      <div class="tile"><div class="n">2</div><div class="t">Parked</div></div>
+    </div>`;
+
+  const notice = () => `<p class="muted notice-line" style="margin:0;display:${cur.notice ? 'block' : 'none'}">Streak reset. Complete a session to start a new one.</p>`;
+
+  const LAYOUTS = {
+    A: {
+      title: 'A: Flame beside the CTA ★ Selected', sub: 'Compact hero card, Start fills the right column',
+      html: () => `${bot()}
+        <section class="card heroA">
+          <div class="fh" data-flame></div>
+          <div class="side">
+            <div class="lab">Session streak · 3 of 7 this week</div>
+            <div data-meter></div>
+            <button class="start">Start session · 6 puzzles</button>
+          </div>
+        </section>
+        ${notice()}${pool()}${sched('A')}`,
+    },
+    B: {
+      title: 'B: Centered hero', sub: 'Big flame as the page moment, full-width Start',
+      html: () => `${bot()}
+        <section class="card heroB">
+          <div class="fh" data-flame></div>
+          <div data-meter></div>
+          <div class="muted">Session streak · 3 of 7 this week</div>
+          ${notice()}
+          <button class="start">Start session · 6 puzzles</button>
+        </section>
+        ${pool()}${sched('B')}`,
+    },
+    C: {
+      title: 'C: Minimal change', sub: "Today's cards, flame swapped in, Start full-width",
+      html: () => `${bot()}
+        <button class="start">Start session · 6 puzzles</button>
+        <section class="card">
+          <div class="card-h">Streak <span class="q">?</span></div>
+          <div class="card-b">
+            <div class="row"><span class="k">Session streak</span><span class="fh-sm" data-flame></span></div>
+            <div class="row"><span class="k">Freezes</span><span data-meter></span></div>
+            <div class="row"><span class="k">This week</span><span class="v">3 of 7 sessions</span></div>
+            ${notice()}
+          </div>
+        </section>
+        <section class="card">
+          <div class="card-h">Puzzle pool</div>
+          <div class="card-b">
+            <div class="row"><span class="k">Mastered</span><span class="v">80</span></div>
+            <div class="row"><span class="k">Parked</span><span class="v">2</span></div>
+          </div>
+        </section>
+        ${sched('C')}`,
+    },
+  };
+
+  function build() {
+    document.getElementById('stage').innerHTML = Object.entries(LAYOUTS).map(([k, L]) => `
+      <div class="col">
+        <h2>${L.title}<small>${L.sub}</small></h2>
+        <div class="phone"><div class="screen" data-layout="${k}">${L.html()}</div><div class="fold"></div></div>
+      </div>`).join('');
+    wire();
+    paint(cur);
+  }
+
+  function paint(st) {
+    S.cancelAll();
+    cur = st;
+    document.querySelectorAll('[data-flame]').forEach((h) => (h.innerHTML = S.flameSVG(flameV, st.streak)));
+    document.querySelectorAll('[data-meter]').forEach((h) => (h.innerHTML = S.meterHTML('snow', st.freezes)));
+    document.querySelectorAll('.notice-line').forEach((n) => (n.style.display = st.notice ? 'block' : 'none'));
+  }
+
+  function play(prev, next) {
+    paint(prev);
+    S.later(() => {
+      cur = next;
+      const flames = document.querySelectorAll('[data-flame]');
+      const meters = document.querySelectorAll('[data-meter]');
+      flames.forEach((f, i) => {
+        if (next.streak > prev.streak) S.ignite(f, flameV, prev.streak, next.streak);
+        if (next.freezes < prev.freezes) S.freezeUsed(meters[i], f, 'snow', prev.freezes, next.freezes);
+        if (next.freezes > prev.freezes) S.freezeEarned(meters[i], 'snow', next.freezes, next.streak > prev.streak ? 1300 : 0);
+      });
+    }, 400);
+  }
+
+  function summary(card) {
+    const on = [...card.querySelectorAll('.day')].map((d, i) => (d.classList.contains('on') ? i : -1)).filter((i) => i >= 0);
+    let days;
+    if (on.length === 7) days = 'Every day';
+    else if (on.length === 0) days = 'Anytime';
+    else if (on.length === 5 && on[4] === 4 && on[0] === 0) days = 'Mo–Fr';
+    else days = on.map((i) => DAYS[i]).join(' ');
+    const pps = card.querySelector('input[type=range]').value;
+    const rem = card.querySelector('.toggle').classList.contains('on') ? ` · ${card.querySelector('.time').value}` : '';
+    card.querySelector('.sum').textContent = `${days} · ${pps} puzzles${rem}`;
+    card.closest('.screen').querySelectorAll('.start').forEach((b) => (b.textContent = `Start session · ${pps} puzzles`));
+  }
+
+  function toast(msg) {
+    const t = document.getElementById('toast');
+    t.textContent = msg; t.classList.add('show');
+    setTimeout(() => t.classList.remove('show'), 1400);
+  }
+
+  function wire() {
+    document.querySelectorAll('.sched').forEach((card) => {
+      card.querySelector('.sched-h').addEventListener('click', () => card.classList.toggle('open'));
+      card.querySelectorAll('.day').forEach((d) => d.addEventListener('click', () => { d.classList.toggle('on'); summary(card); }));
+      card.querySelector('input[type=range]').addEventListener('input', (e) => { card.querySelector('.pps').textContent = e.target.value; summary(card); });
+      card.querySelector('.toggle').addEventListener('click', (e) => { e.currentTarget.classList.toggle('on'); summary(card); });
+      card.querySelector('.time').addEventListener('change', () => summary(card));
+      summary(card);
+    });
+    document.querySelectorAll('.start').forEach((b) => b.addEventListener('click', () => toast('Starting session…')));
+  }
+
+  const SCEN = {
+    up: [{ streak: 51, freezes: 4 }, { streak: 52, freezes: 5 }],
+    used: [{ streak: 52, freezes: 5 }, { streak: 52, freezes: 4 }],
+    earned: [{ streak: 52, freezes: 4 }, { streak: 52, freezes: 5 }],
+  };
+  document.querySelectorAll('[data-s]').forEach((b) => b.addEventListener('click', () => {
+    if (b.dataset.s === 'reset') return paint({ streak: 0, freezes: 0, notice: true });
+    play(...SCEN[b.dataset.s]);
+  }));
+  document.querySelectorAll('.fv').forEach((b) => b.addEventListener('click', () => {
+    document.querySelectorAll('.fv').forEach((x) => x.classList.remove('active'));
+    b.classList.add('active');
+    flameV = b.dataset.v;
+    play({ streak: Math.max(0, cur.streak - 1), freezes: cur.freezes }, { ...cur, streak: Math.max(1, cur.streak), notice: false });
+  }));
+
+  build();
+  play(...SCEN.up);
+</script>
+</body>
+</html>

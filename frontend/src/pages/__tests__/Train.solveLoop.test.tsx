@@ -534,9 +534,13 @@ describe('Train solve loop (end-to-end tracer)', () => {
     await renderTrainPage();
 
     await waitFor(() => expect(screen.getByTestId('train-stats-today-score')).not.toBeNull());
-    expect(screen.getByTestId('train-stats-today-score').textContent).toBe('Scored today14 of 18 points');
-    // Never touched browser storage — the whole point of this test.
-    expect(localStorage.length).toBe(0);
+    expect(screen.getByTestId('train-stats-today-score').textContent).toBe('14/18Points today');
+    // Never touched browser storage for the score — the whole point of this
+    // test. The streak hero's last-seen snapshot (SEED-181) is unrelated
+    // cosmetic state and is the only key allowed.
+    expect(
+      Object.keys(localStorage).filter((k) => !k.startsWith('flawchess_train_streak_last_seen:')),
+    ).toEqual([]);
     // Same per-test timeout precedent as the other whole-Train-page mounts in
     // this file (project_frontend_heavy_test_timeout_flake) — this test
     // mounts the full page including TrainStreakCard/TrainScheduleSettings,
