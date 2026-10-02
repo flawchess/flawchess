@@ -91,6 +91,10 @@ function buildBotMoveDeps(deadlineMs: number, queue: MaiaQueue, pool: WorkerPool
   return {
     policy: queue.policy,
     grade: pool.grade,
+    // Phase 226 D-18 (arm A21S): the bot splits the root exactly like the
+    // harness and the analysis board — see the paired comment on
+    // useFlawChessEngine.ts's own providers object.
+    gradeRoot: pool.gradeRoot,
     rng: Math.random,
     search: createDeadlineSearch({ deadlineMs, minNodes: BOT_MIN_SEARCH_NODES }),
   };

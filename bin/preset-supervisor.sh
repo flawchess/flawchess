@@ -28,6 +28,15 @@
 #                                PRESET_SUPERVISOR_DIR=reports/data/199-cell-a \
 #                                PRESET_SUPERVISOR_ANCHORS=maia1300,maia1600,sf2 \
 #                                bin/preset-supervisor.sh 199-cell-a 0.5 1700
+#   PRESET_SUPERVISOR_SEED     --seed for the harness (default 1). Phase 226
+#                              D-19: A0b runs on seed 2 (A0a stays on the
+#                              default seed 1) so both the Maia and the SF
+#                              anchor families get a real empirical null —
+#                              same-seed Maia-anchor games are byte-identical
+#                              (F-7), so a same-seed A0a/A0b pair would give a
+#                              degenerate Maia null. Example:
+#                                PRESET_SUPERVISOR_SEED=2 \
+#                                bin/preset-supervisor.sh 226-a0b 0 1500
 set -uo pipefail
 cd "$(dirname "$0")/.."   # bin/ -> repo root
 
@@ -46,6 +55,11 @@ GAMES_PER_CELL="${PRESET_SUPERVISOR_GAMES:-24}"
 # default, so an unset override reproduces today's behavior exactly (the
 # harness's own default 10-anchor pool).
 ANCHORS="${PRESET_SUPERVISOR_ANCHORS:-}"
+# Phase 226 D-19: default 1 reproduces today's hard-coded `--seed 1` exactly;
+# an A0b run overrides this to 2. Threaded through launch() below, the SINGLE
+# code path for both the cold start and every crash-resume relaunch — same
+# rationale as the ANCHORS override's comment.
+SEED="${PRESET_SUPERVISOR_SEED:-1}"
 LOG="${DIR}/run.log"
 HOOK="./scripts/lib/frontend-alias-hook.mjs"
 HARNESS="scripts/calibration-harness.mjs"
@@ -80,7 +94,7 @@ launch() {
   nohup node --import "$HOOK" "$HARNESS" \
     --blends "$BLEND" --elo "$ELO" \
     --games-per-cell "$GAMES_PER_CELL" --stockfish-procs 4 \
-    --seed 1 --out-dir "$DIR" \
+    --seed "$SEED" --out-dir "$DIR" \
     "${resume_args[@]}" "${anchor_args[@]}" >> "$LOG" 2>&1 &
   echo $!
 }

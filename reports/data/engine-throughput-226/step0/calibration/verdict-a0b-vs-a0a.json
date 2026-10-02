@@ -1,0 +1,94 @@
+{
+  "maia": {
+    "exposed_cells": [
+      {
+        "bot_blend": 0.05,
+        "bot_elo": 1300,
+        "outside_ci": false,
+        "se_shift": 43.10278994407346,
+        "shift": -7.642306280756657
+      },
+      {
+        "bot_blend": 0.5,
+        "bot_elo": 1500,
+        "outside_ci": false,
+        "se_shift": 48.76357366994155,
+        "shift": -27.480911792901452
+      },
+      {
+        "bot_blend": 0.05,
+        "bot_elo": 1900,
+        "outside_ci": false,
+        "se_shift": 53.741589656289946,
+        "shift": 54.78535208883318
+      },
+      {
+        "bot_blend": 0.5,
+        "bot_elo": 2300,
+        "outside_ci": false,
+        "se_shift": 79.43422276148215,
+        "shift": -17.581264746462693
+      }
+    ],
+    "null_control": {
+      "se_shift": 60.18979300354357,
+      "shift": 12.294853636072503,
+      "threshold": 165.0,
+      "within_threshold": true
+    },
+    "pooled": {
+      "n_cells": 4,
+      "se": 26.139676057276052,
+      "shift": 0.3499945535400673,
+      "threshold": 85.0,
+      "within_threshold": true
+    }
+  },
+  "sf": {
+    "exposed_cells": [
+      {
+        "bot_blend": 0.05,
+        "bot_elo": 1300,
+        "outside_ci": false,
+        "se_shift": 51.40071797717446,
+        "shift": -50.34639565999555
+      },
+      {
+        "bot_blend": 0.5,
+        "bot_elo": 1500,
+        "outside_ci": false,
+        "se_shift": 55.54584309624526,
+        "shift": 42.02922656127839
+      },
+      {
+        "bot_blend": 0.05,
+        "bot_elo": 1900,
+        "outside_ci": false,
+        "se_shift": 48.236398483650866,
+        "shift": -19.738418452813903
+      },
+      {
+        "bot_blend": 0.5,
+        "bot_elo": 2300,
+        "outside_ci": true,
+        "se_shift": 69.40065573936764,
+        "shift": 141.11761677626646
+      }
+    ],
+    "null_control": {
+      "se_shift": 59.98554931708047,
+      "shift": 86.90668804246047,
+      "threshold": 149.0,
+      "within_threshold": true
+    },
+    "pooled": {
+      "n_cells": 4,
+      "se": 27.31776158595408,
+      "shift": 11.47907595422419,
+      "threshold": 50.0,
+      "within_threshold": true
+    }
+  },
+  "shape_guard_triggered": [],
+  "verdict": "holds"
+}

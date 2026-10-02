@@ -351,9 +351,13 @@ export function TrainScoreScreen({
   );
 }
 
-/** Desktop with reminders already on a phone has nothing left to ask for;
- * any other desktop points at the QR; mobile and standalone name the row
- * button. Mirrors `useTrainReminderSlot`'s desktop branches. */
+/** Reminders already on a phone leave nothing to ask for, on any device;
+ * otherwise desktop points at the QR and mobile/standalone name the row
+ * button. Mirrors `useTrainReminderSlot`'s desktop branches.
+ *
+ * BUG FIX (2026-09-28): mobile used to return `remind_me` unconditionally,
+ * so a user whose phone already had reminders on was still told to "Turn on
+ * Remind me" in the score bubble on that same phone. */
 function resolveReminderAsk({
   isDesktop,
   hasMobileSubscription,
@@ -361,8 +365,8 @@ function resolveReminderAsk({
   isDesktop: boolean;
   hasMobileSubscription: boolean;
 }): ReminderAsk {
-  if (!isDesktop) return 'remind_me';
-  return hasMobileSubscription ? 'none' : 'scan_qr';
+  if (hasMobileSubscription) return 'none';
+  return isDesktop ? 'scan_qr' : 'remind_me';
 }
 
 /**

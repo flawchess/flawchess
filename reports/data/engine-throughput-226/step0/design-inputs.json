@@ -1,0 +1,44 @@
+{
+  "context": {
+    "calibration_null": {
+      "maia": {
+        "base_threshold": 85.0,
+        "escalate": false,
+        "model_check_fired": false,
+        "null_se": 26.139676057276052,
+        "null_shift": 0.3499945535400673,
+        "se_floor": 51.23376507226106,
+        "threshold": 85.0
+      },
+      "sf": {
+        "base_threshold": 50.0,
+        "escalate": false,
+        "model_check_fired": false,
+        "null_se": 27.31776158595408,
+        "null_shift": 11.47907595422419,
+        "se_floor": 53.542812708469995,
+        "threshold": 53.542812708469995
+      }
+    },
+    "d17_shares": {
+      "400": 0.3594664755448684,
+      "50": 0.4626368666390508
+    },
+    "step0_a0_max_stop_wall_ms": 8253.0,
+    "warm_noise_floor": 0.016804127272727273
+  },
+  "escalations": [],
+  "missing": [],
+  "values": {
+    "CALIBRATION_THRESHOLD_MAIA": 85.0,
+    "CALIBRATION_THRESHOLD_SF": 53.542812708469995,
+    "CANDIDATE_CAP_ARM_ACTIVE": false,
+    "CONTENT_MAX_CLEAR_MEAN_ABS_DES": 0.016804127272727273,
+    "CONTENT_MAX_WARM_MEAN_ABS_DES": 0.02520619090909091,
+    "EXPECTED_MQ_POSITIONS": 60,
+    "MQ_ALLOWANCE_OFF": 1,
+    "MQ_ALLOWANCE_ON": 1,
+    "ROOT_SPLIT_MAX_T50_WALL_RATIO": 0.97,
+    "STOP_RULE_MAX_WALL_MS": 12100.0
+  }
+}

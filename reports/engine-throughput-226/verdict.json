@@ -1,0 +1,209 @@
+{
+  "criteria": {
+    "candidate_cap_mq": null,
+    "candidate_cap_throughput": null,
+    "guard_mq": {
+      "allowance": 1,
+      "label": "a21-vs-a2",
+      "mcnemar_p": null,
+      "net": 0,
+      "pass_to_regression": [],
+      "passed": true,
+      "regression_to_pass": [],
+      "reproduced_pass_to_regression": [],
+      "rerun_required_ids": [],
+      "status": "evaluated",
+      "unconfirmed_pass_to_regression": []
+    },
+    "guard_s1": {
+      "arm": "a21",
+      "max_wall_ms": 8321.0,
+      "passed": true
+    },
+    "guard_s2": {
+      "a21_early_stops": 10,
+      "a2_early_stops": 10,
+      "passed": true,
+      "trivial": false
+    },
+    "root_split_content": {
+      "clear": {
+        "bound": 0.016804127272727273,
+        "hash_mode": "clear",
+        "mean_abs_des": 0.02092251818181818,
+        "n_rows": 76,
+        "passed": false,
+        "root_argmax_flip_rate": 0.07894736842105263
+      },
+      "warm": {
+        "bound": 0.02520619090909091,
+        "hash_mode": "warm",
+        "mean_abs_des": 0.015478624242424242,
+        "n_rows": 76,
+        "passed": true,
+        "root_argmax_flip_rate": 0.05263157894736842
+      }
+    },
+    "root_split_determinism": {
+      "passed": true
+    },
+    "root_split_mq": {
+      "off": {
+        "allowance": 1,
+        "label": "a21s-vs-a21",
+        "mcnemar_p": 0.5,
+        "net": -1,
+        "pass_to_regression": [],
+        "passed": true,
+        "regression_to_pass": [
+          "cBFTV"
+        ],
+        "reproduced_pass_to_regression": [],
+        "rerun_required_ids": [],
+        "status": "evaluated",
+        "unconfirmed_pass_to_regression": []
+      },
+      "on": {
+        "allowance": 1,
+        "label": "a21s-vs-a21",
+        "mcnemar_p": 0.5,
+        "net": -1,
+        "pass_to_regression": [],
+        "passed": true,
+        "regression_to_pass": [
+          "Dj8iG"
+        ],
+        "reproduced_pass_to_regression": [],
+        "rerun_required_ids": [],
+        "status": "evaluated",
+        "unconfirmed_pass_to_regression": []
+      }
+    },
+    "root_split_throughput": {
+      "configs": {
+        "t400-p2": {
+          "admissible": true,
+          "arm_wall_ms": 708357.0,
+          "base_wall_ms": 745599.0,
+          "positions": 16,
+          "ratio": 0.9500508986734156
+        },
+        "t400-p4": {
+          "admissible": true,
+          "arm_wall_ms": 629684.0,
+          "base_wall_ms": 992145.0,
+          "positions": 16,
+          "ratio": 0.6346693275680471
+        },
+        "t50-p2": {
+          "admissible": true,
+          "arm_wall_ms": 104979.0,
+          "base_wall_ms": 139608.0,
+          "positions": 16,
+          "ratio": 0.7519554753309265
+        },
+        "t50-p4": {
+          "admissible": true,
+          "arm_wall_ms": 96623.0,
+          "base_wall_ms": 99675.0,
+          "positions": 16,
+          "ratio": 0.9693804865813895
+        }
+      },
+      "others_passed": true,
+      "t50_passed": true
+    },
+    "underfill_mq": {
+      "allowance": 1,
+      "label": "a2-vs-a0a",
+      "mcnemar_p": 0.5,
+      "net": 1,
+      "pass_to_regression": [
+        "cBFTV"
+      ],
+      "passed": true,
+      "regression_to_pass": [],
+      "reproduced_pass_to_regression": [
+        "cBFTV"
+      ],
+      "rerun_required_ids": [],
+      "status": "evaluated",
+      "unconfirmed_pass_to_regression": []
+    },
+    "underfill_throughput": {
+      "configs": {
+        "t400-p2": {
+          "admissible": false,
+          "arm_wall_ms": 783424.0,
+          "base_wall_ms": 696260.0,
+          "positions": 16,
+          "ratio": 1.125188866228133
+        },
+        "t400-p4": {
+          "admissible": true,
+          "arm_wall_ms": 609962.0,
+          "base_wall_ms": 615023.0,
+          "positions": 16,
+          "ratio": 0.9917710394570609
+        },
+        "t50-p2": {
+          "admissible": true,
+          "arm_wall_ms": 104739.0,
+          "base_wall_ms": 106521.0,
+          "positions": 16,
+          "ratio": 0.9832709043287239
+        },
+        "t50-p4": {
+          "admissible": true,
+          "arm_wall_ms": 103346.0,
+          "base_wall_ms": 99597.0,
+          "positions": 16,
+          "ratio": 1.0376416960350212
+        }
+      },
+      "passed": false
+    }
+  },
+  "design_inputs": {
+    "CALIBRATION_THRESHOLD_MAIA": 85.0,
+    "CALIBRATION_THRESHOLD_SF": 53.542812708469995,
+    "CANDIDATE_CAP_ARM_ACTIVE": false,
+    "CONTENT_MAX_CLEAR_MEAN_ABS_DES": 0.016804127272727273,
+    "CONTENT_MAX_WARM_MEAN_ABS_DES": 0.02520619090909091,
+    "EXPECTED_MQ_POSITIONS": 60,
+    "MQ_ALLOWANCE_OFF": 1,
+    "MQ_ALLOWANCE_ON": 1,
+    "ROOT_SPLIT_MAX_T50_WALL_RATIO": 0.97,
+    "STOP_RULE_MAX_WALL_MS": 12100.0
+  },
+  "items": {
+    "candidate_cap": null,
+    "guard": {
+      "outcome": "hold",
+      "reasons": [
+        "guard S1/S2/MQ criterion failed or is missing, or underfill held"
+      ]
+    },
+    "root_split": {
+      "outcome": "hold",
+      "reasons": [
+        "root split criterion failed or is missing, or underfill held"
+      ]
+    },
+    "underfill": {
+      "outcome": "hold",
+      "reasons": [
+        "underfill throughput or MQ criterion failed or is missing"
+      ]
+    }
+  },
+  "missing": [],
+  "refit": {
+    "decision": "no-refit",
+    "reasons": [
+      "no shipped item shows a real (powered) shift"
+    ]
+  },
+  "rerun_required": [],
+  "status": "complete"
+}

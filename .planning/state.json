@@ -667,12 +667,22 @@
       "number": "225",
       "name": "Engine Search Fixes — Root Comparability, Round Underfill & Findability Fallback (SEED-170, standalone)",
       "status": "complete"
+    },
+    {
+      "number": "226",
+      "name": "Browser Engine Throughput — Round Underfill Re-land & Root Grade Split (SEED-171, standalone)",
+      "status": "complete"
+    },
+    {
+      "number": "227",
+      "name": "Browser Engine Continuous Dispatch Against a Relaxed Determinism Target (SEED-171, standalone)",
+      "status": "pending"
     }
   ],
   "next": {
-    "command": "/gsd:progress",
-    "label": "Show progress",
-    "reason": "Unsure of state — showing progress"
+    "command": "/gsd:progress --next",
+    "label": "Advance to the next step (plan phase 227)",
+    "reason": "Phase 227 of 5 — needs a plan"
   },
-  "updated_at": "2026-09-28T02:29:02.375Z"
+  "updated_at": "2026-10-02T05:51:56.269Z"
 }

@@ -36,6 +36,20 @@
  * shrinking these constants. Do not read calibration-harness numbers as
  * whole-game strength for a live, clocked bot game — they describe this
  * budget at FULL completion only.
+ *
+ * Phase 225 (SEED-170 item 1, D-01/D-02): the clear-winner stop compared a
+ * boosted top root child (already visited, its value backed up through at
+ * least one of its own children) against an unboosted, never-visited
+ * runner-up — the runner-up's first expansion can raise its value by the
+ * opponent's expected error, and the OLD unguarded rule could stop before
+ * that boost ever had a chance to land. `rootGuardBoostAllowance` below
+ * sizes a value-gap window around the top child within which an unvisited,
+ * non-closed root child now blocks the clear-winner stop until it settles.
+ * Deliberately left unguarded, per CONTEXT.md: the near-tie-flatness branch
+ * (D-03 — stopping on a near-tie is low-stakes) and the wall-clock deadline
+ * cut in `deadlineSearch.ts` (D-04 — guarding it could overrun the bot's own
+ * clock and make it flag; a deadline-cut bot is already documented above as
+ * intentionally weaker).
  */
 
 import type { BotStopRule } from './types';
@@ -55,4 +69,11 @@ export const FLAWCHESS_BOT_STOP_RULE: BotStopRule = {
   epsilonThreshold: 0.02,
   stabilityWindow: 3,
   minNodes: 8,
+  // Phase 225 D-02: pooled p90 of root-child first-expansion value change
+  // (post minus pre, at the expansion where that child's visits flip 0->1)
+  // across the stop-rule harness's 16-position set at ELO 1300/1500/1900/
+  // 2300, rounded up to 0.01 (METHOD measured, not the 0.10 fallback — see
+  // reports/engine-search-fixes-225/d02-allowance.md for the full method,
+  // per-ELO table, and caveats).
+  rootGuardBoostAllowance: 0.04,
 };

@@ -1,30 +1,31 @@
 ---
 gsd_state_version: "1.0"
 milestone: v2.19
-current_phase: 225
-status: completed
-stopped_at: Phase 225 complete — all phases complete
-last_updated: "2026-09-28T03:54:12.444Z"
-state_head: 68212756162952e29d476e3c5fc8ebda7ca7bd61
+current_phase: 227
+current_phase_name: Browser Engine Continuous Dispatch Against a Relaxed Determinism Target (SEED-171)
+status: planning
+stopped_at: Phase 226 complete, ready to plan Phase 227
+last_updated: "2026-10-02T05:51:56.233Z"
+state_head: 31324ca04ea58a03ffc097c143b74a472ff9bad3
 progress:
-  total_phases: 3
-  completed_phases: 101
-  total_plans: 20
-  completed_plans: 20
+  total_phases: 5
+  completed_phases: 102
+  total_plans: 34
+  completed_plans: 34
   percent: 76
 milestone_name: Train Bot-Narrated Onboarding & Verdicts
-last_activity: 2026-09-27
-last_activity_desc: Completed quick task 260927-ajg (short checkmate oracle fix + prod re-derive)
+last_activity: 2026-10-02
+last_activity_desc: Completed quick task 261002-8xb (Train puzzles-per-session slider, SEED-179)
 ---
 
 # Project State: FlawChess
 
 ## Current Position
 
-Phase: 225
+Phase: 227 — Browser Engine Continuous Dispatch Against a Relaxed Determinism Target (SEED-171)
 Plan: Not started
 
-Status: All phases complete
+Status: Ready to plan
 
 Open threads carried forward (not blockers):
 
@@ -168,6 +169,7 @@ v1.29 Live-Engine Analysis Page shipped 2026-06-29 — 5 phases (136–140), 14 
 
 ### Roadmap Evolution
 
+- Phase 226 added 2026-09-28 (explicit user request via `/gsd-phase @SEED-171`, after the 2026-09-28 browser engine performance review): **Browser Engine Throughput — Round Underfill Re-land, Root Grade Split & Continuous Dispatch**. Re-measure on an idle box, re-land the held Phase 225 round underfill fix (explain the `cBFTV` flip, wider fixture) with the root comparability guard, split the round-1 root grade across idle SF workers, then continuous dispatch against a relaxed determinism target (may split into its own phase in discuss); gated by a pre-committed accept rule against a same-session A0 baseline.
 - Phase 225 added 2026-09-27 (explicit user request via `/gsd-phase @SEED-170`, after the 2026-09-27 engine review whose behavior-neutral findings shipped as quick task 260927-8xn): **Engine Search Fixes — Root Comparability, Round Underfill & Findability Fallback**. Visit guard on the early-stop clear-winner branch (and possibly the deadline cut), `selectPath` block-and-restart instead of giving up mid-round, findability fallback term in `rankScore`, optional non-root candidate cap; gated by a pre-committed accept rule (throughput, maia-blindness, stop-rule, persona calibration spot check).
 - Phase 224 added 2026-09-17 (explicit user request via `/gsd-phase @SEED-169`, after `/gsd-explore` "guest drop-off" on growth report 2026-09-15 finding 2): **Guest Activation — Welcome Removal & Guest Train**. Lever A: drop the forced `/welcome` redirect for 0-game guests (48% vs 85% import-start gap sits entirely at that step). Lever B: open Train to guests as the full daily warm-up loop (reverses Phase 189 D-05), guest sign-up nudges as bot bubbles with "Why?" + "Sign up free" on the score screen (replacing the reminder ask, no push for guests) and the Import page (random friendly bot), `/welcome` rewritten as a four-delta "What changes when you sign up" page. Guest cleanup must be re-reasoned for guest Train rows. Two metrics recorded separately before/after. Written by hand as 224 (known mature-ROADMAP behavior). Next: `/gsd-discuss-phase 224`.
 - Phase 222 added 2026-09-13 (explicit user request via `/gsd-phase add`, after `/gsd-explore` "Train bot introductions" and sketches 003/004): **Train Bot-Narrated Onboarding & Verdicts** (SEED-166, planted 2026-09-12 from the prod Train funnel, amended 2026-09-13). Standalone, appended after Phase 221. The Bots personas become the permanent voice of Train: guess prompt + buttons inside a bot bubble under the board (first-session Tank/Hilda intro stepper, drop-before-guess nudge, no board overlay), outcome-matched bot verdicts with inline point pills and the SR return date (stern bots 0–1 pts, friendly 2–3, always encouraging; herring/filler never promise a return), actions inside the bubble and the reveal's sound toggle retired, a first-session Hilda walkthrough of the solution screen, and a bot-led score screen that explains spaced repetition before the reminder ask. Server-side explanation-seen flag; two funnel metrics (first-session 0-solve 42%, second-session return 49%) recorded before/after. Dropped: "Boot Camp" rename, landing-page bot images. Written by hand as 222 rather than via `phase.add` (known mature-ROADMAP behavior). Next: `/gsd-discuss-phase 222`.
@@ -930,6 +932,8 @@ None active.
 | 260927-b05 | Replace Endgames Insights hero card with Shelly the Turtle bot bubble | 2026-09-27 | ee465dbf9 | [260927-b05-replace-endgames-insights-hero-card-with](./quick/260927-b05-replace-endgames-insights-hero-card-with/) |
 | 260927-ajg | Fix short checkmate oracle bug (mated position excluded from eval coverage) and re-derive 1,016 prod games | 2026-09-27 | 292e77489 | [260927-ajg-fix-short-checkmate-oracle-bug-and-re-de](./quick/260927-ajg-fix-short-checkmate-oracle-bug-and-re-de/) |
 | 260928-85v | Move Maia score_move off the API event loop (SEED-172 item 1) | 2026-09-28 | 682127561 | [260928-85v-move-maia-score-move-off-the-api-event-l](./quick/260928-85v-move-maia-score-move-off-the-api-event-l/) |
+| 109 | Activity dashboard: default time range 30 days | 2026-09-28 | de7ce598b | — |
+| 261002-8xb | Train puzzles-per-session slider 3-30 step 3 (SEED-179) | 2026-10-02 | e9b466552 | [261002-8xb-train-puzzles-per-session-slider-3-30-st](./quick/261002-8xb-train-puzzles-per-session-slider-3-30-st/) |
 
 ## Deferred Items
 
@@ -982,11 +986,11 @@ Items acknowledged and deferred at **v1.29 milestone close on 2026-06-29** (user
 
 ## Session Continuity
 
-**Stopped at:** Phase 225 complete — all phases complete
+**Stopped at:** Phase 226 complete, ready to plan Phase 227
 
-**Last session:** 2026-09-28T02:16:39.651Z
+**Last session:** 2026-09-28T04:18:00.047Z
 
-**Resume file:** None
+**Resume file:** .planning/phases/226-browser-engine-throughput-underfill-root-split-continuous-dispatch/226-CONTEXT.md
 
 ## Performance Metrics
 

@@ -96,6 +96,15 @@ const SIMPLE_WHITE_GRADES: Record<string, MoveGrade> = {
 
 const NEUTRAL_BUDGET_ELO = { w: 1500, b: 1500 };
 
+/**
+ * Test-local stop-rule guard allowance (Phase 225 D-01/D-02) — deliberately
+ * NOT the production `FLAWCHESS_BOT_STOP_RULE.rootGuardBoostAllowance`
+ * (0.04, `reports/engine-search-fixes-225/d02-allowance.md`). A wider
+ * test-local window keeps the guard-window arithmetic in these fixtures
+ * easy to verify by hand (window 0.05 + 0.1 = 0.15).
+ */
+const GUARD_TEST_ALLOWANCE = 0.1;
+
 /** Never-aborted signal for tests that don't exercise cancellation. */
 function freshSignal(): AbortSignal {
   return new AbortController().signal;
@@ -160,6 +169,32 @@ function makeFixedGrade(
     }
     return map;
   };
+}
+
+/**
+ * Phase 225 D-01: builds a `grade()` fixture where every reply at a root
+ * child's OWN position is graded with that SAME child's own `evalCp` — so
+ * `recomputeValue`'s prior-weighted expectation over equal-valued children
+ * leaves the child's own `.value` unchanged after its first expansion.
+ * Isolates the guard's visit-based settlement test from any actual value
+ * drift the boost would otherwise cause. Replies are read from chess.js's
+ * real legal-move list at the child's position — never hand-enumerated.
+ */
+function buildChildOwnGradeFixture(
+  rootFen: string,
+  rootGrades: Record<string, MoveGrade>,
+): Record<string, Record<string, MoveGrade>> {
+  const byFen: Record<string, Record<string, MoveGrade>> = { [rootFen]: rootGrades };
+  for (const [uci, grade] of Object.entries(rootGrades)) {
+    const chess = new Chess(rootFen);
+    chess.move({ from: uci.slice(0, 2), to: uci.slice(2, 4), promotion: uci.length > 4 ? uci[4] : undefined });
+    const childFen = chess.fen();
+    const replyUcis = chess.moves({ verbose: true }).map((m) => `${m.from}${m.to}${m.promotion ?? ''}`);
+    const replyGrades: Record<string, MoveGrade> = {};
+    for (const replyUci of replyUcis) replyGrades[replyUci] = grade;
+    byFen[childFen] = replyGrades;
+  }
+  return byFen;
 }
 
 // ─── ENGINE-01: ranked output ───────────────────────────────────────────────
@@ -976,35 +1011,133 @@ describe('mctsSearch — 8XN-7 empty non-abort grade() closes a dead end', () =>
   });
 });
 
-// ─── Phase 168.5 D-05/D-06: bot-play stop rule ──────────────────────────────
+// ─── Phase 168.5 D-05/D-06 (guarded Phase 225 D-01/D-02): bot-play stop rule ─
 
-describe('mctsSearch — Phase 168.5 D-05/D-06 bot-play stop rule', () => {
-  it('clear-winner: a dominant root move stops the search before maxNodes, with stopReason early-stop', async () => {
-    // Reuses ENGINE-01's fixture: e2e4 (200cp, es~0.676) clears e2e3 (50cp,
-    // es~0.546) by ~0.13 — well above marginThreshold. minNodes/
-    // stabilityWindow both 1 so the very first post-expansion check (right
-    // after the root's OWN single expansion) already qualifies — before any
-    // deeper node is ever touched, so root.children's leaf values can never
-    // drift from a later recompute (see the min-nodes-floor test below for
-    // the multi-expansion case).
+describe('mctsSearch — Phase 168.5 D-05/D-06 (guarded Phase 225 D-01/D-02) bot-play stop rule', () => {
+  it('clear-winner guard: an in-window unvisited runner-up (e2e3) delays the stop until settled, while an out-of-window unvisited child (e1d2) never blocks it', async () => {
+    // Phase 225 D-01 INTENDED BEHAVIOR CHANGE (RESEARCH Pitfall 2 — this is
+    // a rewrite, not a loosened assertion). Before the guard, this exact
+    // fixture stopped at nodesEvaluated 1 (the pre-225 test asserted
+    // `toBe(1)`): e2e4 (200cp, es~0.676) already cleared e2e3 (50cp,
+    // es~0.546) by ~0.13 >= marginThreshold(0.05) right after the root's OWN
+    // expansion — comparing a value NOBODY had visited yet (every root
+    // child, including the top, is unvisited at node 1). With the guard
+    // (window = marginThreshold 0.05 + GUARD_TEST_ALLOWANCE 0.1 = 0.15):
+    // e2e3's gap (~0.13) is IN-window and unvisited, so it blocks the stop;
+    // e1d2's gap (~0.20, -30cp/es~0.472) is OUT-of-window, so it never
+    // blocks regardless of its own visit state (D-01's "amended" window
+    // semantics, CONTEXT.md).
+    //
+    // `buildChildOwnGradeFixture` grades every reply at a root child's OWN
+    // position with that SAME child's own evalCp, so a root child's first
+    // expansion (backupExpectation over equal-valued children) leaves its
+    // OWN `.value` unchanged — isolating the guard's VISIT-based settlement
+    // logic from any actual value drift the real opponent-error boost would
+    // otherwise cause (Task 1's fixture is deliberately boost-free; the
+    // production allowance is measured separately, D-02).
+    const gradesByFen = buildChildOwnGradeFixture(SIMPLE_WHITE_FEN, SIMPLE_WHITE_GRADES);
+    const budget: SearchBudget = {
+      maxNodes: 20,
+      elo: NEUTRAL_BUDGET_ELO,
+      maxPlies: 2, // grandchildren (root children's own children) are depth-capped dead ends
+      concurrency: 1,
+      stopRule: {
+        marginThreshold: 0.05,
+        epsilonThreshold: 0.02,
+        stabilityWindow: 1,
+        minNodes: 1,
+        rootGuardBoostAllowance: GUARD_TEST_ALLOWANCE,
+      },
+    };
+    const snapshots: EngineSnapshot[] = [];
+    const providers: EngineProviders = {
+      policy: makeFixedPolicy({ [SIMPLE_WHITE_FEN]: SIMPLE_WHITE_POLICY }),
+      grade: makeFixedGrade(gradesByFen),
+    };
+
+    const snapshot = await mctsSearch(
+      SIMPLE_WHITE_FEN,
+      budget,
+      providers,
+      (s) => snapshots.push(structuredClone(s)),
+      freshSignal(),
+    );
+
+    // Derivation from select.ts's root PUCT formula (C_PUCT=1.4, floor-
+    // boosted priors ~0.526/0.316/0.158 for e2e4/e2e3/e1d2 — all already
+    // above ROOT_PRIOR_FLOOR so unaffected by flooring): node 1 is the
+    // root's own expansion (every child unvisited, Q gap already >=
+    // marginThreshold but the guard blocks). Node 2 re-selects e2e4 (its
+    // exploration term still edges out e2e3's at N=1) for its OWN first
+    // expansion, settling it — a depth-capped grandchild discovery along the
+    // way bumps visits without consuming a node. Node 3 then selects e2e3
+    // (its Q term now wins over e2e4's shrunk exploration term at N=2),
+    // settling it — at which point e1d2 (out-of-window) is the ONLY
+    // unsettled child, so the clear-winner branch finally fires. Pinned
+    // from an observed run against this exact fixture; re-derive from
+    // select.ts's PUCT formula in this comment if the fixture ever changes.
+    expect(snapshot.stopReason).toBe('early-stop');
+    expect(snapshot.nodesEvaluated).toBe(3);
+
+    const byMove = new Map(snapshot.rankedLines.map((l) => [l.rootMove, l]));
+    expect(byMove.get('e2e4')!.visits).toBeGreaterThanOrEqual(1);
+    expect(byMove.get('e2e3')!.visits).toBeGreaterThanOrEqual(1);
+    expect(byMove.get('e1d2')!.visits).toBe(0);
+
+    // Stream property: the GUARD, not the margin, is what delayed the stop —
+    // every pre-stop snapshot where the top-vs-runner-up margin already met
+    // marginThreshold still has an in-window line sitting at visits 0.
+    const guardWindow = budget.stopRule!.marginThreshold + budget.stopRule!.rootGuardBoostAllowance;
+    expect(snapshots.length).toBeGreaterThan(1);
+    for (const s of snapshots.slice(0, -1)) {
+      const lines = new Map(s.rankedLines.map((l) => [l.rootMove, l]));
+      const top = lines.get('e2e4')!;
+      const runnerUp = Math.max(lines.get('e2e3')!.practicalScore, lines.get('e1d2')!.practicalScore);
+      if (top.practicalScore - runnerUp >= budget.stopRule!.marginThreshold) {
+        const hasUnsettledInWindow = [...lines.values()].some(
+          (l) => l.visits === 0 && top.practicalScore - l.practicalScore <= guardWindow,
+        );
+        expect(hasUnsettledInWindow).toBe(true);
+      }
+    }
+  });
+
+  it('closed-top guard: a terminal (mate-in-1) top root child counts as settled at zero visits, so the search still early-stops at node 1', async () => {
+    // RESEARCH Pitfall 1: a "settled = visits >= 1" test alone (no isClosed
+    // clause) would stall this clear-winner stop forever — a checkmating
+    // root child is never itself visited (createChildNode closes a terminal
+    // child immediately at creation; selectPath's candidate filter excludes
+    // closed children, so it can never be walked into and re-discovered).
+    // e1e8 delivers immediate mate (value ~1, closed at creation, visits 0).
+    // The ordinary move e1e2 (0cp, es 0.5) sits at gap ~0.5 — far outside
+    // the guard window (0.05 + 0.1 = 0.15) — so it never blocks regardless
+    // of its own (unvisited) settlement state.
+    const MATE_TOP_POLICY: Record<string, number> = { [MATE_IN_1_MOVE]: 0.6, e1e2: 0.3, h1g2: 0.1 };
     const budget: SearchBudget = {
       maxNodes: 20,
       elo: NEUTRAL_BUDGET_ELO,
       maxPlies: 4,
       concurrency: 1,
-      stopRule: { marginThreshold: 0.05, epsilonThreshold: 0.02, stabilityWindow: 1, minNodes: 1 },
+      stopRule: {
+        marginThreshold: 0.05,
+        epsilonThreshold: 0.02,
+        stabilityWindow: 1,
+        minNodes: 1,
+        rootGuardBoostAllowance: GUARD_TEST_ALLOWANCE,
+      },
     };
     const providers: EngineProviders = {
-      policy: makeFixedPolicy({ [SIMPLE_WHITE_FEN]: SIMPLE_WHITE_POLICY }),
-      grade: makeFixedGrade({ [SIMPLE_WHITE_FEN]: SIMPLE_WHITE_GRADES }),
+      policy: makeFixedPolicy({ [MATE_IN_1_FEN]: MATE_TOP_POLICY }),
+      grade: makeFixedGrade({ [MATE_IN_1_FEN]: { e1e2: { evalCp: 0, evalMate: null, depth: 10 } } }),
     };
 
-    const snapshot = await mctsSearch(SIMPLE_WHITE_FEN, budget, providers, () => {}, freshSignal());
+    const snapshot = await mctsSearch(MATE_IN_1_FEN, budget, providers, () => {}, freshSignal());
 
-    expect(snapshot.nodesEvaluated).toBeLessThan(budget.maxNodes);
     expect(snapshot.nodesEvaluated).toBe(1);
     expect(snapshot.stopReason).toBe('early-stop');
-    expect(snapshot.rankedLines[0]?.rootMove).toBe('e2e4');
+    expect(snapshot.rankedLines[0]?.rootMove).toBe(MATE_IN_1_MOVE);
+    const topLine = snapshot.rankedLines.find((l) => l.rootMove === MATE_IN_1_MOVE);
+    expect(topLine!.visits).toBe(0); // never visited — settled via isClosed, not a visit bump
   });
 
   it('near-tie-flatness: closely-bunched root moves stop the search even with no clear winner', async () => {
@@ -1012,6 +1145,11 @@ describe('mctsSearch — Phase 168.5 D-05/D-06 bot-play stop rule', () => {
     // but top-runnerup margin ~0.0046 (BELOW marginThreshold 0.02, so the
     // clear-winner side alone would NOT fire) — isolates the flatness branch
     // of the OR.
+    //
+    // D-03 residual (deliberately NOT guarded, CONTEXT.md): the flatness
+    // branch never consults hasUnsettledInWindow, so it stops here with
+    // every root child still at visits 0 — stopping on a near-tie is
+    // low-stakes, and item 1's guard scope is the clear-winner branch only.
     const CLOSE_GRADES: Record<string, MoveGrade> = {
       e2e4: { evalCp: 15, evalMate: null, depth: 10 },
       e2e3: { evalCp: 10, evalMate: null, depth: 10 },
@@ -1022,7 +1160,13 @@ describe('mctsSearch — Phase 168.5 D-05/D-06 bot-play stop rule', () => {
       elo: NEUTRAL_BUDGET_ELO,
       maxPlies: 4,
       concurrency: 1,
-      stopRule: { marginThreshold: 0.02, epsilonThreshold: 0.01, stabilityWindow: 1, minNodes: 1 },
+      stopRule: {
+        marginThreshold: 0.02,
+        epsilonThreshold: 0.01,
+        stabilityWindow: 1,
+        minNodes: 1,
+        rootGuardBoostAllowance: GUARD_TEST_ALLOWANCE,
+      },
     };
     const providers: EngineProviders = {
       policy: makeFixedPolicy({ [SIMPLE_WHITE_FEN]: SIMPLE_WHITE_POLICY }),
@@ -1034,6 +1178,11 @@ describe('mctsSearch — Phase 168.5 D-05/D-06 bot-play stop rule', () => {
     expect(snapshot.nodesEvaluated).toBeLessThan(budget.maxNodes);
     expect(snapshot.nodesEvaluated).toBe(1);
     expect(snapshot.stopReason).toBe('early-stop');
+    // D-03 residual, explicit: every root child is STILL unvisited at the
+    // stop — the guard never delayed this branch.
+    for (const line of snapshot.rankedLines) {
+      expect(line.visits).toBe(0);
+    }
   });
 
   it('min-nodes floor: neither side of the rule fires before minNodes expansions have run', async () => {
@@ -1048,7 +1197,13 @@ describe('mctsSearch — Phase 168.5 D-05/D-06 bot-play stop rule', () => {
       elo: NEUTRAL_BUDGET_ELO,
       maxPlies: 10,
       concurrency: 1,
-      stopRule: { marginThreshold: 0, epsilonThreshold: 0, stabilityWindow: 1, minNodes: MIN_NODES_FLOOR },
+      stopRule: {
+        marginThreshold: 0,
+        epsilonThreshold: 0,
+        stabilityWindow: 1,
+        minNodes: MIN_NODES_FLOOR,
+        rootGuardBoostAllowance: GUARD_TEST_ALLOWANCE,
+      },
     };
     const providers: EngineProviders = { policy: makeFixedPolicy({}), grade: makeFixedGrade({}) };
 
@@ -1208,6 +1363,82 @@ describe('mctsSearch — ENGINE-07 determinism', () => {
     expect(resultB).toEqual(resultA);
     expect(snapshotsB).toEqual(snapshotsA);
     expect(snapshotsA.length).toBeGreaterThan(0);
+  });
+});
+
+// ─── Phase 226 D-18: gradeRoot routing ──────────────────────────────────────
+
+describe('mctsSearch — gradeRoot routing (Phase 226 D-18)', () => {
+  it('calls gradeRoot exactly once, for the root fen with its full candidate set (including an injected extraRootMoves candidate), and never calls grade for the root', async () => {
+    const budget: SearchBudget = {
+      maxNodes: 2, // root expansion + exactly one non-root expansion
+      elo: NEUTRAL_BUDGET_ELO,
+      maxPlies: 3,
+      concurrency: 1,
+      extraRootMoves: ['e1f1'], // dropped-tail move (D-04) — only the root union revives it
+    };
+    const gradeCalls: GradeCall[] = [];
+    const gradeRootCalls: GradeCall[] = [];
+    const gradesByFen: Record<string, Record<string, MoveGrade>> = {
+      [SIMPLE_WHITE_FEN]: { ...SIMPLE_WHITE_GRADES, e1f1: { evalCp: 120, evalMate: null, depth: 10 } },
+    };
+    const providers: EngineProviders = {
+      policy: makeFixedPolicy({ [SIMPLE_WHITE_FEN]: SIMPLE_WHITE_POLICY }),
+      grade: makeFixedGrade(gradesByFen, gradeCalls),
+      gradeRoot: makeFixedGrade(gradesByFen, gradeRootCalls),
+    };
+
+    const snapshot = await mctsSearch(SIMPLE_WHITE_FEN, budget, providers, () => {}, freshSignal());
+
+    expect(gradeRootCalls.length).toBe(1);
+    expect(gradeRootCalls[0]!.fen).toBe(SIMPLE_WHITE_FEN);
+    // Full root candidate set: the ~90%-mass-kept organic candidates
+    // (e2e4, e2e3, e1d2) unioned with the injected e1f1 (D-04) — the exact
+    // set that would have gone to `grade` had `gradeRoot` been absent.
+    expect(new Set(gradeRootCalls[0]!.candidateUcis)).toEqual(new Set(['e2e4', 'e2e3', 'e1d2', 'e1f1']));
+    // grade() is never called for the root fen — only for the one
+    // non-root leaf this budget's second node dispatches to.
+    expect(gradeCalls.every((c) => c.fen !== SIMPLE_WHITE_FEN)).toBe(true);
+    expect(gradeCalls.length).toBeGreaterThan(0); // the non-root expansion did happen and used grade()
+    expect(snapshot.rankedLines.some((l) => l.rootMove === 'e1f1')).toBe(true);
+  });
+
+  it('routing is transparent: a provider without gradeRoot produces the identical final snapshot as one whose gradeRoot delegates straight to grade', async () => {
+    const determinismBudget: SearchBudget = { maxNodes: 5, elo: NEUTRAL_BUDGET_ELO, maxPlies: 3, concurrency: 1 };
+    const providersWithout: EngineProviders = {
+      policy: makeFixedPolicy({ [SIMPLE_WHITE_FEN]: SIMPLE_WHITE_POLICY }),
+      grade: makeVariedGrade(),
+    };
+    const resultWithout = await mctsSearch(SIMPLE_WHITE_FEN, determinismBudget, providersWithout, () => {}, freshSignal());
+
+    const delegatingGrade = makeVariedGrade();
+    const providersWith: EngineProviders = {
+      policy: makeFixedPolicy({ [SIMPLE_WHITE_FEN]: SIMPLE_WHITE_POLICY }),
+      grade: delegatingGrade,
+      gradeRoot: (fen, candidateUcis, signal) => delegatingGrade(fen, candidateUcis, signal),
+    };
+    const resultWith = await mctsSearch(SIMPLE_WHITE_FEN, determinismBudget, providersWith, () => {}, freshSignal());
+
+    expect(resultWithout.rankedLines.some((l) => l.practicalScore !== 0.5)).toBe(true);
+    expect(resultWith).toEqual(resultWithout);
+  });
+
+  it('an empty (non-aborted) gradeRoot Map degrades exactly like an empty root grade() Map today — root children surface at NEUTRAL_EXPECTED_SCORE', async () => {
+    const budget: SearchBudget = { maxNodes: 1, elo: NEUTRAL_BUDGET_ELO, maxPlies: 4, concurrency: 1 };
+    const gradeCalls: GradeCall[] = [];
+    const providers: EngineProviders = {
+      policy: makeFixedPolicy({ [SIMPLE_WHITE_FEN]: SIMPLE_WHITE_POLICY }),
+      grade: makeFixedGrade({}, gradeCalls), // must never be reached: maxNodes=1 stops after the root
+      gradeRoot: async () => new Map<string, MoveGrade>(), // always empty, even for the root
+    };
+
+    const snapshot = await mctsSearch(SIMPLE_WHITE_FEN, budget, providers, () => {}, freshSignal());
+
+    expect(gradeCalls).toEqual([]); // grade() never called — gradeRoot handled the (only) root expansion
+    expect(snapshot.rankedLines.length).toBeGreaterThan(0);
+    for (const line of snapshot.rankedLines) {
+      expect(line.practicalScore).toBe(0.5);
+    }
   });
 });
 

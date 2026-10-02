@@ -378,7 +378,16 @@ export function useFlawChessEngine({
       // orchestrator layer (Pitfall 1/T-159-08).
       policyTemperature: policyTemperature ?? DEFAULT_POLICY_TEMPERATURE,
     };
-    const providers: EngineProviders = { policy: queue.policy, grade: pool.grade };
+    // Phase 226 D-18 (arm A21S): the analysis board splits the root exactly
+    // like the harness — gradeRoot fans the root's one grade call across
+    // whatever slots are idle at call time; every other leaf, and every
+    // provider that lacked gradeRoot before this plan, keeps the unchanged
+    // grade() path (mctsSearch.ts's dispatchExpansion routing line, 226-10).
+    const providers: EngineProviders = {
+      policy: queue.policy,
+      grade: pool.grade,
+      gradeRoot: pool.gradeRoot,
+    };
 
     setIsSearching(true);
     void mctsSearch(debouncedFen, budget, providers, handleSnapshot, controller.signal)

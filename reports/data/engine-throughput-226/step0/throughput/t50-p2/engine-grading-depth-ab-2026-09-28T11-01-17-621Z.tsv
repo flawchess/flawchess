@@ -1,0 +1,33 @@
+position	fen	depth	wall_ms	grade_cpu_ms	grade_calls	nodes_evaluated	top_move	top_score	same_top_move	same_full_order	mean_abs_score_diff	reference_top2_gap	ladder_table	hash_probes	hash_probes_divergent	hash_probe_max_abs_cp	hash_probe_mean_abs_score_diff	maia_inferences	maia_cpu_ms	maia_peak_inflight	maia_fifo	pool_size	root_split_calls	root_split_splits	root_split_premise_violations
+italian	r1bqkb1r/pppp1ppp/2n2n2/4p3/2B1P3/5N2/PPPP1PPP/RNBQK2R w KQkq - 4 4	14	12198	16719	50	50	f3g5	0.528587					14,14+floor10					50	4191.8	1	true	2	0	0	0
+italian	r1bqkb1r/pppp1ppp/2n2n2/4p3/2B1P3/5N2/PPPP1PPP/RNBQK2R w KQkq - 4 4	ladder	6501	7886	50	50	f3g5	0.535603	true	false	0.002876	0.007746	14,14+floor10					50	4050.4	1	true	2	0	0	0
+middlegame	r2q1rk1/pp1nbppp/2p1bn2/3p4/3P1B2/2N1PN2/PPQ1BPPP/R4RK1 w - - 6 11	14	21817	33392	50	50	f3g5	0.589047					14,14+floor10					50	4108.8	1	true	2	0	0	0
+middlegame	r2q1rk1/pp1nbppp/2p1bn2/3p4/3P1B2/2N1PN2/PPQ1BPPP/R4RK1 w - - 6 11	ladder	9475	13680	50	50	f3g5	0.588303	true	false	0.001723	0.032840	14,14+floor10					50	4037.4	1	true	2	0	0	0
+sharp	r1bq1r1k/pp1nbppp/2p1p3/3pP3/3P4/2NB1N2/PPPQ1PPP/R3K2R w KQ - 2 11	14	16803	25200	50	50	h2h4	0.521656					14,14+floor10					49	3971.1	1	true	2	0	0	0
+sharp	r1bq1r1k/pp1nbppp/2p1p3/3pP3/3P4/2NB1N2/PPPQ1PPP/R3K2R w KQ - 2 11	ladder	7150	9697	50	50	h2h4	0.529962	true	false	0.011765	0.005915	14,14+floor10					49	3967.4	1	true	2	0	0	0
+endgame	8/2p5/3p4/KP5r/1R3p1k/8/4P1P1/8 w - - 0 1	14	7302	7978	50	50	b4f4	0.645868					14,14+floor10					49	3950.9	1	true	2	0	0	0
+endgame	8/2p5/3p4/KP5r/1R3p1k/8/4P1P1/8 w - - 0 1	ladder	4980	4950	50	50	b4f4	0.621797	true	true	0.024519	0.130291	14,14+floor10					49	3921.1	1	true	2	0	0	0
+C50	r1bqk1nr/pppp1ppp/2n5/2b1p3/2B1P3/5N2/PPPP1PPP/RNBQK2R w KQkq - 4 4	14	12786	18360	50	50	c2c3	0.536797					14,14+floor10					48	3898.0	1	true	2	0	0	0
+C50	r1bqk1nr/pppp1ppp/2n5/2b1p3/2B1P3/5N2/PPPP1PPP/RNBQK2R w KQkq - 4 4	ladder	5607	6625	50	50	c2c3	0.537690	true	true	0.002803	0.010068	14,14+floor10					48	3872.1	1	true	2	0	0	0
+C60	r1bqkbnr/pppp1ppp/2n5/1B2p3/4P3/5N2/PPPP1PPP/RNBQK2R b KQkq - 3 3	14	12360	16880	50	50	a7a6	0.490225					14,14+floor10					49	3942.4	1	true	2	0	0	0
+C60	r1bqkbnr/pppp1ppp/2n5/1B2p3/4P3/5N2/PPPP1PPP/RNBQK2R b KQkq - 3 3	ladder	6482	7319	50	50	a7a6	0.488063	true	false	0.002694	0.012841	14,14+floor10					49	3955.1	1	true	2	0	0	0
+C70	r1bqkbnr/1ppp1ppp/p1n5/4p3/B3P3/5N2/PPPP1PPP/RNBQK2R b KQkq - 1 4	14	15416	23021	50	50	g8f6	0.471580					14,14+floor10					50	4047.5	1	true	2	0	0	0
+C70	r1bqkbnr/1ppp1ppp/p1n5/4p3/B3P3/5N2/PPPP1PPP/RNBQK2R b KQkq - 1 4	ladder	6803	8464	50	50	g8f6	0.472848	true	true	0.003106	0.005226	14,14+floor10					50	4020.9	1	true	2	0	0	0
+C45	r1bqkbnr/pppp1ppp/2n5/4p3/3PP3/5N2/PPP2PPP/RNBQKB1R b KQkq - 0 3	14	13343	17702	50	50	e5d4	0.445384					14,14+floor10					50	4017.6	1	true	2	0	0	0
+C45	r1bqkbnr/pppp1ppp/2n5/4p3/3PP3/5N2/PPP2PPP/RNBQKB1R b KQkq - 0 3	ladder	5632	6299	50	50	c6d4	0.444913	false	false	0.002762	0.005452	14,14+floor10					50	4026.4	1	true	2	0	0	0
+C42	rnbqkb1r/pppp1ppp/5n2/4p3/4P3/5N2/PPPP1PPP/RNBQKB1R w KQkq - 2 3	14	10934	15590	50	50	f3e5	0.587890					14,14+floor10					50	4130.6	1	true	2	0	0	0
+C42	rnbqkb1r/pppp1ppp/5n2/4p3/4P3/5N2/PPPP1PPP/RNBQKB1R w KQkq - 2 3	ladder	5829	6961	50	50	f3e5	0.589268	true	true	0.001886	0.064762	14,14+floor10					50	4201.7	1	true	2	0	0	0
+C47	r1bqkb1r/pppp1ppp/2n2n2/4p3/4P3/2N2N2/PPPP1PPP/R1BQKB1R w KQkq - 4 4	14	10895	14625	50	50	d2d4	0.545789					14,14+floor10					50	4211.2	1	true	2	0	0	0
+C47	r1bqkb1r/pppp1ppp/2n2n2/4p3/4P3/2N2N2/PPPP1PPP/R1BQKB1R w KQkq - 4 4	ladder	5874	7013	50	50	d2d4	0.550205	true	false	0.004802	0.011022	14,14+floor10					50	4191.2	1	true	2	0	0	0
+C25	rnbqkbnr/pppp1ppp/8/4p3/4P3/2N5/PPPP1PPP/R1BQKBNR b KQkq - 1 2	14	13630	20543	50	50	b8c6	0.489294					14,14+floor10					47	3850.9	1	true	2	0	0	0
+C25	rnbqkbnr/pppp1ppp/8/4p3/4P3/2N5/PPPP1PPP/R1BQKBNR b KQkq - 1 2	ladder	6354	8430	50	50	b8c6	0.487946	true	true	0.002564	0.004800	14,14+floor10					47	3806.4	1	true	2	0	0	0
+C30	rnbqkbnr/pppp1ppp/8/4p3/4PP2/8/PPPP2PP/RNBQKBNR b KQkq - 0 2	14	14789	20487	50	50	d7d5	0.550739					14,14+floor10					49	3956.7	1	true	2	0	0	0
+C30	rnbqkbnr/pppp1ppp/8/4p3/4PP2/8/PPPP2PP/RNBQKBNR b KQkq - 0 2	ladder	6269	6961	50	50	d7d5	0.553873	true	false	0.003541	0.040707	14,14+floor10					49	3946.2	1	true	2	0	0	0
+B50	rnbqkbnr/pp2pppp/3p4/2p5/4P3/5N2/PPPP1PPP/RNBQKB1R w KQkq - 0 3	14	12770	18327	50	50	b1c3	0.536580					14,14+floor10					49	3955.7	1	true	2	0	0	0
+B50	rnbqkbnr/pp2pppp/3p4/2p5/4P3/5N2/PPPP1PPP/RNBQKB1R w KQkq - 0 3	ladder	6292	7501	50	50	d2d4	0.536928	false	false	0.002384	0.000961	14,14+floor10					49	4043.9	1	true	2	0	0	0
+B90	rnbqkb1r/1p2pppp/p2p1n2/8/3NP3/2N5/PPP2PPP/R1BQKB1R w KQkq - 0 6	14	15926	23565	50	50	c1e3	0.544158					14,14+floor10					49	4087.6	1	true	2	0	0	0
+B90	rnbqkb1r/1p2pppp/p2p1n2/8/3NP3/2N5/PPP2PPP/R1BQKB1R w KQkq - 0 6	ladder	7460	9682	50	50	c1e3	0.543737	true	false	0.002462	0.008264	14,14+floor10					49	4059.4	1	true	2	0	0	0
+B70	rnbqkb1r/pp2pp1p/3p1np1/8/3NP3/2N5/PPP2PPP/R1BQKB1R w KQkq - 0 6	14	17740	23355	50	50	f2f3	0.560443					14,14+floor10					46	3842.7	1	true	2	0	0	0
+B70	rnbqkb1r/pp2pp1p/3p1np1/8/3NP3/2N5/PPP2PPP/R1BQKB1R w KQkq - 0 6	ladder	7071	7591	50	50	f2f3	0.555193	true	false	0.006473	0.024657	14,14+floor10					46	3843.2	1	true	2	0	0	0
+C00	rnbqkbnr/pppp1ppp/4p3/8/4P3/8/PPPP1PPP/RNBQKBNR w KQkq - 0 2	14	15813	24561	50	50	d2d4	0.548026					14,14+floor10					50	4422.5	1	true	2	0	0	0
+C00	rnbqkbnr/pppp1ppp/4p3/8/4P3/8/PPPP1PPP/RNBQKBNR w KQkq - 0 2	ladder	8742	12340	50	50	d2d4	0.547286	true	true	0.001851	0.005909	14,14+floor10					50	4511.8	1	true	2	0	0	0

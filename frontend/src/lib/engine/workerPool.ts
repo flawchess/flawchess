@@ -78,6 +78,7 @@ import {
   dispatchNext as dispatchDispatchNext,
   handleLine as dispatchHandleLine,
   grade as dispatchGrade,
+  gradeRoot as dispatchGradeRoot,
 } from './workerPoolDispatch';
 import {
   replaceDeadSlot as lcReplaceDeadSlot,
@@ -135,6 +136,38 @@ export interface WorkerPool {
    * host-side watchdog (D-06) instead of a wall-clock movetime bound.
    */
   grade(
+    fen: string,
+    candidateUcis: string[],
+    signal?: AbortSignal,
+    gradingDepth?: number,
+  ): Promise<Map<string, MoveGrade>>;
+  /**
+   * Phase 226 D-18/L-2/L-3/L-4 (arm A21S): splits ONE root grade call across
+   * every currently idle, ready, unassigned, alive slot instead of
+   * serializing it through a single worker while the rest of the pool sits
+   * idle for all of round 1 (SEED-171 item 1). Structurally assignable to
+   * `EngineProviders.gradeRoot?` (3-param) — `gradingDepth` is an ADDITIONAL
+   * optional param, matching `grade`'s own `signal`/`gradingDepth`
+   * precedent above.
+   *
+   * Fan-out size `k` is `min(idle-ready-slot count, candidateUcis.length,
+   * ROOT_SPLIT_MAX_SHARDS)`, computed fresh at call time (D-08) — the
+   * "whole pool is idle" premise this relies on holds only USUALLY, not
+   * always (a stopping slot mid-abort, the bot's post-commit one-off
+   * `grade()` call, a not-yet-`isReady` slot on a freshly spawned pool), and
+   * a non-empty pending queue forces `k` to 0. `k <= 1` takes the unchanged
+   * `grade()` path — no other request is ever reordered.
+   *
+   * Each shard is dispatched as its own request with neither read nor write
+   * access to the shared `GradeCache` — the group performs exactly ONE
+   * merged write, at the same `(fen, gradingDepth)` key `grade()` would have
+   * used, only once every shard has settled successfully. If ANY shard does
+   * not complete via `bestmove` (abort, watchdog fire, slot death, `stopAll`)
+   * — or the caller's own `signal` aborts the whole group — every sibling
+   * shard is stopped and the WHOLE call resolves an empty Map: never a
+   * partial merge (L-2).
+   */
+  gradeRoot(
     fen: string,
     candidateUcis: string[],
     signal?: AbortSignal,
@@ -526,6 +559,18 @@ export function createWorkerPool(): WorkerPool {
     return dispatchGrade(state, ops, fen, candidateUcis, signal, gradingDepth);
   }
 
+  // See `WorkerPool.gradeRoot()` above. A local wrapper (matching `grade`'s
+  // own pattern) so the returned object's `gradeRoot,` shorthand below stays
+  // consistent with every other facade method here.
+  function gradeRoot(
+    fen: string,
+    candidateUcis: string[],
+    signal?: AbortSignal,
+    gradingDepth?: number,
+  ): Promise<Map<string, MoveGrade>> {
+    return dispatchGradeRoot(state, ops, fen, candidateUcis, signal, gradingDepth);
+  }
+
   function stopAll(): void {
     lcStopAll(state, ops);
   }
@@ -590,6 +635,7 @@ export function createWorkerPool(): WorkerPool {
 
   return {
     grade,
+    gradeRoot,
     stopAll,
     terminate,
     warm,

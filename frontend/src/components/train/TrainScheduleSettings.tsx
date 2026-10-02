@@ -17,12 +17,12 @@
  * exactly, not just approximate them: "Train on" reuses `ToggleChipButton`
  * (FilterPanel's own multi-select "Time control"/"Platform" pattern,
  * extracted to `@/components/ui/toggle-chip-button` so both call sites share
- * one source of truth instead of two copies of the same class strings), and
- * "Puzzles per session" reuses the Radix `ToggleGroup` at FilterPanel's
- * "Played as" single-select width/sizing (`w-full`, `min-h-11 sm:min-h-0
- * flex-1`). Both labels use FilterPanel's own `text-sm text-muted-foreground`
- * treatment (not `font-semibold`) so this block reads as part of the same
- * design language, not a bespoke one.
+ * one source of truth instead of two copies of the same class strings).
+ * "Puzzles per session" is a single-thumb `Slider` (SEED-179, quick
+ * 261002-8xb) with its live value at the right of the label row. Both labels
+ * use FilterPanel's own `text-sm text-muted-foreground` treatment (not
+ * `font-semibold`) so this block reads as part of the same design language,
+ * not a bespoke one.
  *
  * Phase 202 Plan 02 (PERM-03/PERM-04, D-06..D-13): a third sibling block adds
  * a master "Remind me to train" `Switch` and a 24-hour `Select`. Toggle-OFF
@@ -76,7 +76,7 @@ import { format, parseISO } from 'date-fns';
 import { Check, Smartphone } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardBody, CardHeader } from '@/components/ui/card';
-import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
+import { Slider } from '@/components/ui/slider';
 import { ToggleChipButton } from '@/components/ui/toggle-chip-button';
 import { Switch } from '@/components/ui/switch';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -92,12 +92,14 @@ import type { DeviceSubscribeResult } from '@/lib/push';
 export const TRAIN_SETTINGS_SAVE_DEBOUNCE_MS = 600;
 export const TRAIN_SETTINGS_SAVED_INDICATOR_MS = 2000;
 
-/** D-12: the backend's `puzzles_per_session` CHECK bound is 1-50, but the UI
- * deliberately narrows the choice to five presets. 191-06 UAT: widened from
- * 6/12/18/24 to 3/6/9/12/15 (gentler low end, 6 in the middle — see
- * `app.services.train_scheduler.DEFAULT_PUZZLES_PER_SESSION`). */
-// eslint-disable-next-line react-refresh/only-export-components -- named constants shared with tests, not components
-export const PUZZLES_PER_SESSION_PRESETS = [3, 6, 9, 12, 15] as const;
+/** SEED-179: the 3/6/9/12/15 presets became a 3-30 slider in steps of 3, for
+ * users who want to train longer without a second daily session. Every old
+ * preset (and the default 6, `DEFAULT_PUZZLES_PER_SESSION`) sits on this grid,
+ * so no stored value needs remapping. The backend's `puzzles_per_session`
+ * CHECK stays at 1-50 on purpose: raising the max later is this constant only. */
+export const PUZZLES_PER_SESSION_MIN = 3;
+export const PUZZLES_PER_SESSION_MAX = 30;
+export const PUZZLES_PER_SESSION_STEP = 3;
 
 interface WeekdayChip {
   /** Matches `date.weekday()` (Monday=0..Sunday=6) — the IDENTICAL bit
@@ -296,6 +298,59 @@ function ReminderControls({
   );
 }
 
+interface PuzzlesPerSessionControlProps {
+  /** The draft's value, or null while settings are still loading. */
+  value: number | null;
+  disabled: boolean;
+  onChange: (puzzlesPerSession: number) => void;
+}
+
+/**
+ * SEED-179: the puzzles-per-session slider with its live value in the label
+ * row. Extracted like `ReminderControls` to keep `TrainScheduleSettings`
+ * inside the complexity cap. Every drag step calls `onChange` (so the label
+ * tracks the thumb); the parent's debounced save collapses a drag into one
+ * `PUT`. Always controlled: while loading, the disabled thumb parks at the
+ * minimum rather than switching Radix from uncontrolled to controlled.
+ */
+function PuzzlesPerSessionControl({
+  value,
+  disabled,
+  onChange,
+}: PuzzlesPerSessionControlProps): ReactElement {
+  const handleValueChange = (values: number[]): void => {
+    const next = values[0];
+    if (next === undefined) return;
+    onChange(next);
+  };
+
+  return (
+    <div className="w-full">
+      <div className="flex items-center justify-between text-sm text-muted-foreground">
+        <p>Puzzles per session</p>
+        {value !== null && (
+          <span
+            className="font-medium tabular-nums text-foreground"
+            data-testid="train-puzzles-per-session-value"
+          >
+            {value}
+          </span>
+        )}
+      </div>
+      <Slider
+        min={PUZZLES_PER_SESSION_MIN}
+        max={PUZZLES_PER_SESSION_MAX}
+        step={PUZZLES_PER_SESSION_STEP}
+        value={[value ?? PUZZLES_PER_SESSION_MIN]}
+        onValueChange={handleValueChange}
+        disabled={disabled}
+        thumbLabels={['Puzzles per session']}
+        data-testid="filter-puzzles-per-session"
+      />
+    </div>
+  );
+}
+
 /** D-13 (Phase 224) resolver inputs — the same signals the component already
  * reads (`usePushCapability`'s resolved/available flags, `useInstallPrompt`'s
  * mobile/standalone/canInstall) plus `isGuest`. */
@@ -474,6 +529,11 @@ export function TrainScheduleSettings({
     setDraft((prev) => (prev ? { ...prev, reminderHour: hour } : prev));
   };
 
+  const handlePuzzlesPerSessionChange = (puzzlesPerSession: number): void => {
+    hasEditedRef.current = true;
+    setDraft((prev) => (prev ? { ...prev, puzzlesPerSession } : prev));
+  };
+
   if (isError) {
     return (
       <ScheduleCardShell indicator="idle">
@@ -483,7 +543,6 @@ export function TrainScheduleSettings({
   }
 
   const disabled = isPending || draft === null;
-  const puzzlesSelected = draft !== null ? String(draft.puzzlesPerSession) : '';
 
   const { showReminderBlock, showQr, showMobileInstallButton, showPhoneSection } =
     resolveScheduleCardVisibility({
@@ -507,8 +566,7 @@ export function TrainScheduleSettings({
           Restyled (191-06 UAT) to match the game filter panel exactly:
           - "Train on" mirrors FilterPanel's multi-select "Time control" —
             the hand-rolled ToggleChipButton grid, not the Radix ToggleGroup.
-          - "Puzzles per session" mirrors FilterPanel's single-select
-            "Played as" — the Radix ToggleGroup, full-width flex-1 items.
+          - "Puzzles per session" is a full-width Slider (SEED-179).
           Both labels use FilterPanel's own `text-sm text-muted-foreground`
           (not font-semibold) and sit at the top-left of a full-width block.
         */}
@@ -534,37 +592,11 @@ export function TrainScheduleSettings({
             ))}
           </div>
         </div>
-        <div className="w-full">
-          <p className="mb-1 text-sm text-muted-foreground">Puzzles per session</p>
-          <ToggleGroup
-            type="single"
-            value={puzzlesSelected}
-            onValueChange={(v: string) => {
-              // Radix emits '' when the user taps the already-active item in a
-              // single group — ignore it, keep the current selection (exactly
-              // one preset must always be active, D-12).
-              if (!v) return;
-              hasEditedRef.current = true;
-              const puzzlesPerSession = Number(v);
-              setDraft((prev) => (prev ? { ...prev, puzzlesPerSession } : prev));
-            }}
-            variant="outline"
-            size="sm"
-            className="w-full"
-          >
-            {PUZZLES_PER_SESSION_PRESETS.map((n) => (
-              <ToggleGroupItem
-                key={n}
-                value={String(n)}
-                data-testid={`filter-puzzles-${n}`}
-                disabled={disabled}
-                className="min-h-11 sm:min-h-0 flex-1 text-sm"
-              >
-                {n}
-              </ToggleGroupItem>
-            ))}
-          </ToggleGroup>
-        </div>
+        <PuzzlesPerSessionControl
+          value={draft?.puzzlesPerSession ?? null}
+          disabled={disabled}
+          onChange={handlePuzzlesPerSessionChange}
+        />
         {showReminderBlock && (
           <ReminderControls
             draft={draft}

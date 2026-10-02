@@ -113,7 +113,7 @@ export default function ActivityPage() {
 
   // D6: range is React state and the second element of the query key (not a
   // constant single-element array), so each range gets its own cache entry.
-  const [range, setRange] = useState<ActivityRangeKey>('all');
+  const [range, setRange] = useState<ActivityRangeKey>('d30');
 
   // Quick 260920-frk: the two date inputs are uncommitted, edited freely; the
   // fetch only reacts to `applied`, set by the Apply button. Starting both on

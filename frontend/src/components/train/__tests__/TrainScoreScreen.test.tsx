@@ -487,6 +487,26 @@ describe('TrainScoreScreen', () => {
       expect(stampMock).not.toHaveBeenCalled();
     });
 
+    it('on a phone with reminders already on, a perfect session closes with the understanding tip, never "Turn on Remind me"', () => {
+      // Regression (2026-09-28): mobile used to resolve the ask to
+      // `remind_me` regardless of `has_mobile_subscription`.
+      const uaSpy = vi
+        .spyOn(navigator, 'userAgent', 'get')
+        .mockReturnValue('Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X)');
+      getSettingsMock.mockReturnValue({
+        data: { ...SETTINGS_FIXTURE, reminder_enabled: true, has_mobile_subscription: true },
+      });
+      renderScoreScreen(
+        { total: 20, max: 20 },
+        { solvedOutcomes: [makeSolvedResult({ due_date: '2026-07-26' })] },
+      );
+      const text = screen.getByTestId('train-score-bubble-returns').textContent ?? '';
+      uaSpy.mockRestore();
+      expect(text).toContain('Nothing got away today.');
+      expect(text).toContain('analyze why the moves work or fail');
+      expect(text).not.toContain('Remind me');
+    });
+
     it('a mastered outcome is excluded from the "comes back" counts', () => {
       renderScoreScreen(
         { total: 12, max: 20 },

@@ -809,7 +809,7 @@ describe('scoreBubbleCopy', () => {
     expect(copy.lines[1]).not.toContain('Reminders build the habit');
   });
 
-  it('UAT round 6: a perfect later session with nothing left to ask for (none) stays a one-liner', () => {
+  it('a perfect later session with nothing left to ask for (none) closes with the understanding tip, not a reminder ask', () => {
     const copy = scoreBubbleCopy({
       ...BASE,
       outcomes: [activeOutcome('2026-09-14')],
@@ -817,7 +817,9 @@ describe('scoreBubbleCopy', () => {
       isFirstCompletedSession: false,
       reminderAsk: 'none',
     });
-    expect(copy.lines).toHaveLength(1);
+    expect(copy.lines).toHaveLength(2);
+    expect(copy.lines[1]).toContain('analyze why the moves work or fail');
+    expect(copy.lines[1]).not.toContain('Remind me');
   });
 
   it('return counts are grouped by WHEN, never by position identifier — two items due the same day collapse into one count', () => {

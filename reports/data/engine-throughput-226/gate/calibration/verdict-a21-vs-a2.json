@@ -1,0 +1,94 @@
+{
+  "maia": {
+    "exposed_cells": [
+      {
+        "bot_blend": 0.05,
+        "bot_elo": 1300,
+        "outside_ci": false,
+        "se_shift": 47.36216038011658,
+        "shift": 0.0
+      },
+      {
+        "bot_blend": 0.5,
+        "bot_elo": 1500,
+        "outside_ci": false,
+        "se_shift": 49.670360303176366,
+        "shift": -69.3655440509026
+      },
+      {
+        "bot_blend": 0.05,
+        "bot_elo": 1900,
+        "outside_ci": false,
+        "se_shift": 51.598960045394826,
+        "shift": -6.06086518955135
+      },
+      {
+        "bot_blend": 0.5,
+        "bot_elo": 2300,
+        "outside_ci": false,
+        "se_shift": 84.14240302988587,
+        "shift": 0.0
+      }
+    ],
+    "null_control": {
+      "se_shift": 59.631149872429845,
+      "shift": 0.0,
+      "threshold": 165.0,
+      "within_threshold": true
+    },
+    "pooled": {
+      "n_cells": 4,
+      "se": 27.03728608789124,
+      "shift": -22.21710503130924,
+      "threshold": 85.0,
+      "within_threshold": true
+    }
+  },
+  "sf": {
+    "exposed_cells": [
+      {
+        "bot_blend": 0.05,
+        "bot_elo": 1300,
+        "outside_ci": true,
+        "se_shift": 49.94239036818965,
+        "shift": -111.83673723315337
+      },
+      {
+        "bot_blend": 0.5,
+        "bot_elo": 1500,
+        "outside_ci": false,
+        "se_shift": 49.91429644384953,
+        "shift": -15.375125024164618
+      },
+      {
+        "bot_blend": 0.05,
+        "bot_elo": 1900,
+        "outside_ci": false,
+        "se_shift": 48.347942863644434,
+        "shift": -58.40892002944497
+      },
+      {
+        "bot_blend": 0.5,
+        "bot_elo": 2300,
+        "outside_ci": false,
+        "se_shift": 88.31409109432896,
+        "shift": 97.65514797554215
+      }
+    ],
+    "null_control": {
+      "se_shift": 65.02101110415528,
+      "shift": 5.500786577188023,
+      "threshold": 149.0,
+      "within_threshold": true
+    },
+    "pooled": {
+      "n_cells": 4,
+      "se": 27.13310449895113,
+      "shift": -46.73120943601777,
+      "threshold": 50.0,
+      "within_threshold": true
+    }
+  },
+  "shape_guard_triggered": [],
+  "verdict": "holds"
+}

@@ -193,10 +193,12 @@
 | 223. Bot Voice & Immersive Bot Game Layout (SEED-168 + SEED-167, standalone) | 6/6 | Complete    | 2026-09-16 |
 | 224. Guest Activation — Welcome Removal & Guest Train (SEED-169, standalone) | 6/6 | Complete | 2026-09-18 |
 | 225. Engine Search Fixes — Root Comparability, Round Underfill & Findability Fallback (SEED-170, standalone) | 8/8 | Complete    | 2026-09-28 |
+| 226. Browser Engine Throughput — Round Underfill Re-land & Root Grade Split (SEED-171, standalone) | 14/14 | Complete    | 2026-10-02 |
+| 227. Browser Engine Continuous Dispatch Against a Relaxed Determinism Target (SEED-171, standalone) | 0/0 | Not started | - |
 
 ## Active Phases
 
-No open milestone. Standalone phases continue absolute numbering from v2.19's Phase 222 (223 and 224 complete, 225 not planned).
+No open milestone. Standalone phases continue absolute numbering from v2.19's Phase 222 (223-225 complete, 226-227 not planned).
 
 ### Phase 223: Bot Voice & Immersive Bot Game Layout (SEED-168 + SEED-167)
 
@@ -469,6 +471,127 @@ Plans:
 - [x] 225-08-PLAN.md — Verdict and report, D-14 ship/hold, engine doc + changelog, SEED-173 (item 4), pre-merge gate
 
 **Seed:** `.planning/seeds/SEED-170-engine-root-comparability-and-round-underfill.md`
+
+### Phase 226: Browser Engine Throughput — Round Underfill Re-land & Root Grade Split (SEED-171)
+
+**Goal**: Cut bot-move latency (1.7-14 s at 50 nodes) and analysis wall time (43-98 s per
+position at 400 nodes) by fixing Stockfish *scheduling*, not by porting code: TS search + chess.js
+glue is 0.5-1.1% of wall, the rest is ORT-wasm Maia and Stockfish-wasm, which idle a lot (SF pool
+utilisation 37-48%). SEED-171 steps 0-2; continuous dispatch (step 3) is Phase 227
+(split decided in discuss-phase 2026-09-28, `226-CONTEXT.md` D-01).
+
+0. **Re-measure first** on an idle box (`.planning/research/perf-profiling-2026-09-28/`:
+   `profile_search.mjs` at `50 4 4 1` and `400 4 4 0`, `split_root.mjs` in both Clear-Hash and
+   a shipped-like warm-hash configuration), and run the calibration baseline A0 twice in-session
+   (A0a/A0b) as the empirical null (D-09).
+1. **Re-land the round underfill fix (seed item 6, Phase 225 item 2, arm A2 `a9d5113ef`)**
+   with the root comparability guard (arm A21 `27beff12f`) riding along. First explain the
+   `cBFTV` move-quality flip (tree-shape side effect vs. real bug), judged on a widened (>= 50
+   position) move-quality fixture with a paired regression-count criterion. Non-root candidate cap
+   only if profiling shows grade CPU dominated by high-candidate non-root nodes (own arm).
+2. **Split the round-1 root grade across idle SF workers (seed item 1).** Round 1 only, fan-out
+   and merge below the `providers.grade` boundary; round barrier, apply order and
+   `mctsSearch.ts` untouched; harness bit-identity per concurrency level preserved (D-08).
+   Measured 2.8x on that grade, expected ~10-25% of bot-move wall. Must meet L-2 (any missing
+   sub-grade = whole grade aborted, never a partial merge; unit test), L-3 (merge before the
+   single grade-cache write, idle slots only), L-4 (size from live idle slots, pool can be 2 on
+   mobile).
+3. **No-Clear-Hash arm** in `calibration-determinism.check.mjs` (SEED-130 Q2), so the root split
+   is gated against the shipped warm-hash configuration; Phase 227 reuses it.
+
+**Measurement gate** (accept rule committed under `reports/<dir>/accept-rule.md` before any
+data, never edited after, overrides only; Phase 195/197/198/225 pattern; "measured, not worth
+shipping" is a first-class outcome):
+
+- Stacked arms A0 -> A2 (underfill) -> A21 (+ guard) -> A21S (+ root split), all compared
+  against the **same-session A0**, never the July-21 curves (unchanged `main` already fails SF
+  parity there, pooled shift -81.4 vs ±50).
+- Throughput at bot 50/c4 and analysis 400/c4 (wall clock, SF utilisation), desktop and a Node
+  2-worker pool (gating); real phone report-only.
+- Move quality on the widened fixture (blocking); stop-rule nodes-at-stop inside the bot think
+  deadline.
+- **Powered** persona calibration per item (games per cell sized from the A0a/A0b null for
+  <= ~5% false-fail on a no-effect change). A real shift ships the item plus one strength-curve
+  refit in this phase (reverses Phase 225 D-14 here).
+
+**Out of scope:** continuous dispatch (Phase 227); Rust/WASM or chessops port (glue < 1%);
+multithreaded SF build (iOS wasm reservation budget); fp32/int8 Maia (no gain, breaks MAIA-01);
+Maia WDL leaf values (rejected 2026-09-28); depth ladder / MultiPV width tuning (grading-ladder
+study); cross-FEN Maia batching; guarding the near-tie stop or the deadline cut (Phase 225
+D-03/D-04); server-side Maia (SEED-172).
+
+**Depends on:** Phase 225 (complete).
+
+**Plans:** 14/14 plans complete
+
+Plans:
+**Wave 1**
+- [x] 226-01-PLAN.md — Harness root-split plumbing (dormant gradeRoot, D-08 tripwire), D-03 no-Clear-Hash warm arm, PRESET_SUPERVISOR_SEED (tracer: warm arm end to end)
+- [x] 226-02-PLAN.md — Step-0 instruments: cBFTV search trace (D-13), widened MQ fixture builder (D-14), D-17 grade-CPU histogram
+- [x] 226-03-PLAN.md — Step-0 protocol pre-registration + powered calibration statistics module (D-09/D-10/D-11)
+
+**Wave 2** *(blocked on Wave 1 completion)*
+- [x] 226-04-PLAN.md — Gate CLIs: --pool-size (D-04), dormant gradeRoot wiring, root-split TSV columns, depth-ab self-test
+- [x] 226-05-PLAN.md — Verdict twin: frozen constants, design-inputs formulas, gates, paired MQ rule, refit decision
+
+**Wave 3** *(blocked on Wave 2 completion)*
+- [x] 226-06-PLAN.md — Root-split content instrument (D-16: Clear-Hash and warm, prototype and pool sources)
+
+**Wave 4** *(blocked on Wave 3 completion)*
+- [x] 226-07-PLAN.md — Step 0 (orchestrator): fixture build, idle-box profiling/content/baselines, D-03 warm arm, cBFTV trace, MQ and calibration nulls A0a/A0b
+
+**Wave 5** *(blocked on Wave 4 completion)*
+- [x] 226-08-PLAN.md — Design inputs + D-13 explanation, frozen constants, pre-registered accept rule (arm A0)
+
+**Wave 6** *(blocked on Wave 5 completion)*
+- [x] 226-09-PLAN.md — Re-land arms A2 (round underfill fix, + D-13 fix if named) and A21 (root comparability guard)
+
+**Wave 7** *(blocked on Wave 6 completion)*
+- [x] 226-10-PLAN.md — Arm A21S part 1: optional gradeRoot provider, one routing line (D-18), split helpers, harness end to end
+
+**Wave 8** *(blocked on Wave 7 completion)*
+- [x] 226-11-PLAN.md — Arm A21S part 2: WorkerPool.gradeRoot (L-2/L-3/L-4), hook wiring; conditional arm A21SC (D-17)
+
+**Wave 9** *(blocked on Wave 8 completion)*
+- [x] 226-12-PLAN.md — Gate runs (orchestrator): lock, wall-clock arms incl. Node pool-2, MQ, powered calibration sweeps
+
+**Wave 10** *(blocked on Wave 9 completion)*
+- [x] 226-13-PLAN.md — Verdict, report, ship/hold reverts, engine doc, changelog, SEED-171 outcome
+
+**Wave 11** *(blocked on Wave 10 completion)*
+- [x] 226-14-PLAN.md — Conditional refit (D-11/D-20), dev-build smoke, owner-deferred phone run, pre-merge gate
+
+**Seed:** `.planning/seeds/SEED-171-browser-engine-throughput.md`
+
+### Phase 227: Browser Engine Continuous Dispatch Against a Relaxed Determinism Target (SEED-171)
+
+**Goal**: Overlap Maia and Stockfish by removing the round `Promise.all` barrier in
+`mctsSearch` (asynchronous tree search with virtual loss / pending marks, SEED-171 item 5),
+against a relaxed determinism target decided in Phase 226's discuss-phase (`226-CONTEXT.md`
+D-05..D-07). Size it on the idle profile Phase 226 leaves behind.
+
+- **Prerequisite:** measure WebGPU Maia on desktop (seed item 3, L-6) in a real browser on a
+  machine with a WebGPU adapter before sizing the desktop win; iOS stays on wasm Maia.
+- **Contract (locked):** at c = 4, the picked move's d20 expected score stays within a tolerance
+  of the round-mode baseline, checked statistically over a fixture, with no increase in
+  move-quality regressions. Tolerance = k x the measured round-mode-vs-round-mode warm-hash noise
+  floor (Phase 226's no-Clear-Hash arm), k fixed in the accept rule before data.
+- **Round mode retained behind a budget flag** as the bit-identical path for tests, fixture gates,
+  the A0 arm and rollback (narrows Phase 198 D-11).
+- The calibration harness runs the same dispatch as the app (algorithm parity, not bit-identity);
+  persona calibration uses Phase 226's powered check.
+- Still binding from Phase 198: abort applies zero results (L-2), mobile pool of 2 vs c = 4 (L-4).
+  Read `reports/continuous-dispatch/apply-order-design.md` §9b/§9d first; design reviewed by
+  independent-context reviewers told to attack named claims with file:line evidence (L-7).
+
+**Depends on:** Phase 226.
+
+**Plans:** 0 plans
+
+Plans:
+- [ ] TBD (run /gsd-discuss-phase 227 once Phase 226 ships)
+
+**Seed:** `.planning/seeds/SEED-171-browser-engine-throughput.md`
 
 ## Backlog
 

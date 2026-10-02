@@ -188,6 +188,11 @@ Sentry.init({
     // matched it and all 6 events were Mobile Safari.
     /Script \S+\/sw\.js load failed/,
   ],
-  // These frames are entirely inside Cloudflare Web Analytics, not our code.
-  denyUrls: [/beacon\.min\.js/],
+  denyUrls: [
+    // These frames are entirely inside Cloudflare Web Analytics, not our code.
+    /beacon\.min\.js/,
+    // FLAWCHESS-CF: errors thrown by a browser extension's own content
+    // scripts (e.g. "Window message ... timed out") are not ours to fix.
+    /^(chrome|moz|safari-web)-extension:\/\//,
+  ],
 });

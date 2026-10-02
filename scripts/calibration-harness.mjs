@@ -370,6 +370,13 @@ export function parseAnchorSpec(token) {
  * `stockfishProcs` sizes the pool (Plan 03 Task 1); `providers.grade` is
  * `pool.grade`, so `mctsSearch`'s concurrent `grade()` dispatch fans out
  * across the pool's independent processes instead of serializing on one.
+ *
+ * Phase 226 D-18: also passes `{ gradeRootFn: pool.gradeRoot }` into
+ * `makeNodeProviders`, so `providers.gradeRoot` is always present (dormant
+ * until an A21S engine actually calls it — see `selectBotMoveOnce`'s deps
+ * forwarding below). Every arm before A21S never reaches the fan-out branch
+ * (`splitAcrossFreeEngines`'s `k <= 1` guard), so this alone changes no
+ * measured behavior.
  */
 export async function setupHarnessEngines({ stockfishProcs = STOCKFISH_POOL_DEFAULT_SIZE } = {}) {
   const maiaCtx = await createMaiaSession();
@@ -380,7 +387,7 @@ export async function setupHarnessEngines({ stockfishProcs = STOCKFISH_POOL_DEFA
   // children — their stdio handles keep the event loop alive (hang + leak).
   try {
     const { Chess } = await resolveFrontendModule('chess.js');
-    const providers = makeNodeProviders(maiaCtx.session, maiaCtx.ort, pool.grade);
+    const providers = makeNodeProviders(maiaCtx.session, maiaCtx.ort, pool.grade, { gradeRootFn: pool.gradeRoot });
     return { providers, pool, Chess, maiaCtx };
   } catch (err) {
     pool.quitAll();
@@ -603,7 +610,19 @@ export async function playGame({
         // invariant, asserted in calibration-determinism.check.mjs).
         ...(style !== undefined ? { style } : {}),
       },
-      { policy: providers.policy, grade: providers.grade, rng },
+      {
+        policy: providers.policy,
+        grade: providers.grade,
+        // Phase 226 D-18/T-168.5-04-01 failure shape: `providers.gradeRoot`
+        // must be forwarded here, conditionally (never a literal
+        // `gradeRoot: undefined` key — same discipline as `style` above).
+        // Without it, the moment an A21S engine starts routing root grades
+        // to `gradeRoot`, this harness would silently measure an UNSPLIT
+        // bot while the shipped app splits — a calibration sweep that
+        // reports numbers for a bot nobody plays against.
+        ...(providers.gradeRoot ? { gradeRoot: providers.gradeRoot } : {}),
+        rng,
+      },
       // deps.search intentionally omitted (CAL-02) — defaults to the real mctsSearch.
     );
     // Near-free (SEED-102): Maia-agreement = one cheap policy argmax at the
@@ -1714,6 +1733,15 @@ async function main() {
         totalGames += played.games;
       }
     }
+    // Phase 226 D-18/D-08: dormant until arm A21S's engine actually routes a
+    // root grade to `providers.gradeRoot` (see setupHarnessEngines below) —
+    // every arm before that reports calls=0 splits=0 premise_violations=0.
+    // stdout/run.log only, deliberately NOT a ledger TSV column (T-226-01).
+    const rootSplitStats = pool.rootSplitStats();
+    console.log(
+      `[calibration-harness] root-split: calls=${rootSplitStats.calls} splits=${rootSplitStats.splits} ` +
+        `premise_violations=${rootSplitStats.premiseViolations}`,
+    );
   } finally {
     pool.quitAll();
     await ledgerWriter.close();

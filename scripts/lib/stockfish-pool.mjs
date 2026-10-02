@@ -82,6 +82,16 @@ function acquireEngine(pool) {
 }
 
 /**
+ * Counts engines that are neither dead nor currently busy (Phase 226 D-08).
+ * This is the pool's own definition of "free" for both the public
+ * `freeCount()` surface and `splitAcrossFreeEngines`'s internal premise check
+ * — a single definition so the two can never silently disagree.
+ */
+function countFreeEngines(pool) {
+  return pool.engines.filter((engine) => !engine.dead && !pool.busy.get(engine)).length;
+}
+
+/**
  * Releases an engine back to the pool — hands it directly to the next FIFO
  * waiter if one is queued. A DEAD engine is never handed on: it is evicted and
  * asynchronously replaced (see the bug-fix note in this file's header).
@@ -110,9 +120,24 @@ function releaseEngine(pool, engine) {
  * configured identically — a pool that heals into a differently-configured
  * engine mid-run is worse than one that never heals, because the divergence is
  * invisible in the output.
+ *
+ * `sendObserver` (Phase 226 D-03/D-08, optional), when provided, is wrapped
+ * around the engine's `send` HERE — at spawn AND at every respawn inside
+ * `replaceDeadEngine` — for the same "configured identically after a respawn"
+ * reason `hashMb` is. Every line this engine ever sends (including the
+ * `Hash`/`isready` bring-up lines below) passes through the observer BEFORE
+ * `child.stdin.write` actually fires, so a caller building a Clear-Hash send
+ * spy (`stockfish-pool.check.mjs`) sees the true wire order.
  */
-async function spawnConfigured(hashMb) {
+async function spawnConfigured(hashMb, sendObserver = null) {
   const engine = await spawnStockfish();
+  if (sendObserver) {
+    const rawSend = engine.send.bind(engine);
+    engine.send = (command) => {
+      sendObserver(command);
+      rawSend(command);
+    };
+  }
   if (hashMb === null) return engine;
   try {
     engine.send(`setoption name Hash value ${hashMb}`);
@@ -160,7 +185,7 @@ async function replaceDeadEngine(pool, dead) {
 
   for (let attempt = 1; attempt <= ENGINE_RESPAWN_ATTEMPTS; attempt++) {
     try {
-      const fresh = await spawnConfigured(pool.hashMb);
+      const fresh = await spawnConfigured(pool.hashMb, pool.sendObserver);
       if (pool.shuttingDown) {
         // quitAll() ran while this spawn was in flight. Pushing now would leak a
         // live child (spawn is not detached, but the parent exits right after
@@ -241,24 +266,109 @@ async function withEngine(pool, fn) {
 }
 
 /**
+ * Module specifier for the (currently unbuilt, Plan 226-10) pure root-split
+ * helpers — `partitionCandidates`, `mergeShardGrades`, `ROOT_SPLIT_MAX_SHARDS`.
+ * Named as a constant so `splitAcrossFreeEngines` below and
+ * `stockfish-pool.check.mjs`'s `--root-split` section reference the exact
+ * same string, never two hand-typed copies that could drift.
+ */
+export const ROOT_SPLIT_MODULE_SPECIFIER = '@/lib/engine/rootSplit';
+
+/**
+ * Thrown by `splitAcrossFreeEngines` when `ROOT_SPLIT_MODULE_SPECIFIER`
+ * cannot be resolved — the expected outcome at every arm before A21S
+ * (Plan 226-10 has not landed `frontend/src/lib/engine/rootSplit.ts` yet).
+ * `stockfish-pool.check.mjs --root-split` matches this string verbatim and
+ * exits 3, rather than treating it as a genuine check failure.
+ */
+export const ROOT_SPLIT_ABSENT_MESSAGE = 'rootSplit module absent (pre-A21S arm)';
+
+/**
+ * Fans a root grade request out across the free engines a caller can see
+ * RIGHT NOW (Phase 226 D-18 harness side; D-08 tripwire). Dormant until
+ * A21S's engine actually calls `mctsSearch`'s `gradeRoot` provider — every
+ * arm before that never reaches the `k > 1` branch below, so the (currently
+ * absent) `rootSplit.ts` module is never imported by any arm A0..A21.
+ *
+ * `freeCount`/`size` are passed in (not read off a closed-over `pool`) so
+ * this function stays usable by every harness pool shape RESEARCH Pattern 1
+ * lists (`stockfish-pool.mjs`, `createGradePool`, the depth-ab closures),
+ * not just this file's own pool.
+ *
+ * D-08 tripwire: in the harness, round 1 of every search sees the WHOLE pool
+ * idle (every caller awaits `Promise.all` before its next round — F-4). A
+ * `freeCount() !== size` at a `gradeRoot` call therefore means some OTHER
+ * consumer holds a slot — the premise this file's harness bit-identity
+ * argument depends on — so it is counted, never silently ignored.
+ *
+ * `k <= 1` (only one or zero free engines) or a single candidate takes the
+ * plain, undivided `runShard(candidateUcis)` path WITHOUT importing
+ * `rootSplit.ts` at all — this is what keeps every arm before A21S from ever
+ * touching the absent module. A shard that fails propagates as a throw
+ * (never a partial merged Map — `mctsSearch.ts`'s harness-mirrored L-2
+ * semantics: an incomplete root grade must resolve empty or throw, never
+ * silently drop candidates).
+ */
+export async function splitAcrossFreeEngines({ freeCount, size, stats, candidateUcis, runShard }) {
+  stats.calls++;
+  const k = freeCount();
+  if (k !== size) stats.premiseViolations++;
+  if (k <= 1 || candidateUcis.length <= 1) {
+    return runShard(candidateUcis);
+  }
+
+  let rootSplitModule;
+  try {
+    rootSplitModule = await import(ROOT_SPLIT_MODULE_SPECIFIER);
+  } catch (err) {
+    // `frontend-alias-hook.mjs`'s `@/` resolve branch always returns a URL
+    // regardless of whether the target file exists (it has no `fs.existsSync`
+    // guard, unlike its extensionless-relative branch), so an absent
+    // `rootSplit.ts` fails at the LOAD stage as a raw `ENOENT`, never at
+    // resolve as `ERR_MODULE_NOT_FOUND`/`MODULE_NOT_FOUND` — those two codes
+    // are kept for portability (a caller running this without the alias hook,
+    // or a future hook fix, would surface the standard Node code instead).
+    if (err instanceof Error && (err.code === 'ERR_MODULE_NOT_FOUND' || err.code === 'MODULE_NOT_FOUND' || err.code === 'ENOENT')) {
+      throw new Error(ROOT_SPLIT_ABSENT_MESSAGE);
+    }
+    throw err; // an unrelated import-time failure (e.g. a syntax error in a landed module) must not be masked as "absent"
+  }
+  const { partitionCandidates, mergeShardGrades, ROOT_SPLIT_MAX_SHARDS } = rootSplitModule;
+  const shards = partitionCandidates(candidateUcis, Math.min(k, ROOT_SPLIT_MAX_SHARDS));
+  const parts = await Promise.all(shards.map((shard) => runShard(shard)));
+  stats.splits++;
+  return mergeShardGrades(candidateUcis, parts);
+}
+
+/**
  * Spawns `size` independent Stockfish processes and returns the pool's public
  * surface: `grade`/`evalPosition`/`skillMove` (each acquire-run-release over
  * a free engine), `newGameAll` (D-09 determinism: clears every engine's
  * transposition table at a game boundary), and `quitAll`.
  */
-export async function createStockfishPool({ size = STOCKFISH_POOL_DEFAULT_SIZE, hashMb = null } = {}) {
+export async function createStockfishPool({
+  size = STOCKFISH_POOL_DEFAULT_SIZE,
+  hashMb = null,
+  clearHash = true,
+  sendObserver = null,
+} = {}) {
   if (!Number.isInteger(size) || size < 1) {
     throw new Error(`createStockfishPool: size must be a positive integer, got ${JSON.stringify(size)}`);
   }
   if (hashMb !== null && (!Number.isInteger(hashMb) || hashMb < 1)) {
     throw new Error(`createStockfishPool: hashMb must be a positive integer or null, got ${JSON.stringify(hashMb)}`);
   }
+  if (sendObserver !== null && typeof sendObserver !== 'function') {
+    throw new Error(`createStockfishPool: sendObserver must be a function or null, got ${JSON.stringify(sendObserver)}`);
+  }
   // CR-02: Promise.all rejects on the FIRST failing spawnStockfish(), which
   // would silently discard every OTHER already-spawned sibling engine (live
   // child process, UCI handshake done) with no reference left to terminate
   // it. Promise.allSettled lets us inspect every outcome and terminate every
   // fulfilled engine before rethrowing the first rejection.
-  const results = await Promise.allSettled(Array.from({ length: size }, () => spawnConfigured(hashMb)));
+  const results = await Promise.allSettled(
+    Array.from({ length: size }, () => spawnConfigured(hashMb, sendObserver)),
+  );
   const failed = results.find((r) => r.status === 'rejected');
   if (failed) {
     for (const r of results) {
@@ -269,6 +379,11 @@ export async function createStockfishPool({ size = STOCKFISH_POOL_DEFAULT_SIZE, 
   const engines = results.map((r) => r.value);
   // `fatal` latches once the pool can no longer be rebuilt (see `replaceDeadEngine`);
   // `shuttingDown` stops an in-flight respawn from leaking a child past quitAll().
+  // `clearHash`/`sendObserver` are pinned here next to `hashMb` for the exact
+  // same reason: a respawned replacement engine (`replaceDeadEngine`) must be
+  // configured identically, never silently drop the pool's Clear-Hash policy
+  // or its send observer mid-run. `splitStats` is this pool's D-08 tripwire
+  // accumulator for `gradeRoot`/`rootSplitStats()` below.
   const pool = {
     engines,
     busy: new Map(engines.map((engine) => [engine, false])),
@@ -276,6 +391,9 @@ export async function createStockfishPool({ size = STOCKFISH_POOL_DEFAULT_SIZE, 
     fatal: null,
     shuttingDown: false,
     hashMb,
+    clearHash,
+    sendObserver,
+    splitStats: { calls: 0, splits: 0, premiseViolations: 0 },
   };
   for (const engine of engines) watchForDeath(pool, engine);
 
@@ -302,9 +420,50 @@ export async function createStockfishPool({ size = STOCKFISH_POOL_DEFAULT_SIZE, 
      * abort path today, and inventing one is out of scope for this fix. The
      * parameter exists purely so a future 4th-argument caller can never be
      * silently truncated by parameter position again.
+     *
+     * Phase 226 D-03: forwards `{ clearHash: pool.clearHash }` into `nodeGrade`
+     * so a grading-only pool built with `createStockfishPool({ clearHash: false })`
+     * (the D-03 warm arm) actually skips the per-grade `Clear Hash` send — the
+     * pool's configured policy, not a per-call override.
      */
     grade: (fen, candidateUcis, signal, gradingDepth) =>
-      withEngine(pool, (engine) => nodeGrade(engine, fen, candidateUcis, gradingDepth)),
+      withEngine(pool, (engine) => nodeGrade(engine, fen, candidateUcis, gradingDepth, { clearHash: pool.clearHash })),
+
+    /**
+     * `clearHash` (Phase 226 D-03): exposes this pool's configured Clear-Hash
+     * policy so a caller building a grading-only pool can confirm which mode
+     * it got, without reaching into internal pool state.
+     */
+    clearHash: pool.clearHash,
+
+    /**
+     * Count of engines that are neither dead nor currently busy (Phase 226
+     * D-08 premise instrument) — `splitAcrossFreeEngines`'s own tripwire uses
+     * this same definition internally (`countFreeEngines`); exposed here so a
+     * caller (a check script, or a future harness tool) can read it directly.
+     */
+    freeCount: () => countFreeEngines(pool),
+
+    /**
+     * Root grade fan-out (Phase 226 D-18/D-08), dormant until arm A21S's
+     * `mctsSearch.ts` actually routes a root's grade call here — see
+     * `splitAcrossFreeEngines`'s own doc comment above for the full contract.
+     * `runShard` reuses this pool's own `clearHash` policy per shard, exactly
+     * like `grade` above, so a warm-hash gradeRoot never silently reverts to
+     * Clear-Hash grading.
+     */
+    gradeRoot: (fen, candidateUcis, signal, gradingDepth) =>
+      splitAcrossFreeEngines({
+        freeCount: () => countFreeEngines(pool),
+        size,
+        stats: pool.splitStats,
+        candidateUcis,
+        runShard: (shard) =>
+          withEngine(pool, (engine) => nodeGrade(engine, fen, shard, gradingDepth, { clearHash: pool.clearHash })),
+      }),
+
+    /** Copy of this pool's `gradeRoot` tripwire accumulator — never the live mutable object. */
+    rootSplitStats: () => ({ ...pool.splitStats }),
 
     /** Single-line white-POV cp eval for D-10 cutoff 2 (adjudication). */
     evalPosition: (fen) => withEngine(pool, (engine) => evalPositionCp(engine, fen)),

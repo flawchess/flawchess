@@ -250,6 +250,37 @@ export interface QueuedGradeRequest {
   /** The resolved Stockfish SEARCH depth for this request (LADDER-02/D-01), distinct from the `depth` tie-break field above. Composed into the `go` line via `buildGradeGoCommand`. */
   gradingDepth: number;
   resolve: (grades: Map<string, MoveGrade>) => void;
+  /**
+   * Root-split shard flag (Phase 226 D-18/L-3). Absent or `true` (grade()'s
+   * default) reads the shared `GradeCache` before this request is even
+   * enqueued, exactly as before this plan. `gradeRoot()`'s per-shard
+   * requests set this `false`: a shard's cache-read gate must never fire
+   * mid-split, since a subset of the root's candidates is not the same
+   * request the cache was ever asked about — the group's own success-only
+   * merged write (`workerPoolDispatch.ts`'s `gradeRoot`) is the ONE place a
+   * split root touches the cache.
+   */
+  readCache?: boolean;
+  /**
+   * Root-split shard flag (Phase 226 D-18/L-3). Absent or `true` (grade()'s
+   * default) preserves the single-write-site rule: the `bestmove` branch in
+   * `handleLine` writes this request's accumulator straight into the shared
+   * `GradeCache`. `gradeRoot()`'s per-shard requests set this `false` — a
+   * shard's own accumulator is a PARTIAL grade of the root position, and
+   * writing it would let a later `grade()` read hit an incomplete entry
+   * before the group's all-shards-complete merge ever runs.
+   */
+  writeCache?: boolean;
+  /**
+   * Root-split completion flag (Phase 226 L-2). Set `true` ONLY by
+   * `handleLine`'s `bestmove` branch, the instant a request settles via a
+   * real terminal `bestmove` — every other settle path (abort, `stopAll`,
+   * `terminate`, watchdog fire) resolves the promise without ever touching
+   * this field, so it stays falsy. `gradeRoot()`'s shard group reads this
+   * per shard to tell "this shard finished normally" from "this shard died"
+   * without adding a second resolve path or duplicating settle logic.
+   */
+  completed?: boolean;
 }
 
 /** Internal per-worker UCI state machine states — mirrors useStockfishGradingEngine's EngineState. */
