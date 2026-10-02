@@ -1,0 +1,405 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>007 — Dark surface elevation</title>
+<link rel="stylesheet" href="../themes/default.css">
+<style>
+  /* Sketch 007: card vs page separation in the dark theme. Each .frame carries its
+     own surface tokens so Current / A / B render side by side at phone width. */
+  * { box-sizing: border-box; }
+  html, body { margin: 0; }
+  body {
+    background: #2a2a2a;
+    color: oklch(0.985 0 0);
+    font-family: 'Nunito Sans', sans-serif;
+    padding: 56px 16px 80px;
+  }
+  #variant-nav {
+    position: fixed; top: 0; left: 0; right: 0; z-index: 9998;
+    background: #1b1b1b; border-bottom: 1px solid #333;
+    padding: 8px 16px; display: flex; gap: 8px; align-items: center; flex-wrap: wrap;
+    font-family: system-ui; font-size: 13px;
+  }
+  #variant-nav .title { font-weight: 700; margin-right: 12px; color: #ddd; }
+  .nav-btn {
+    background: #2c2c2c; color: #ddd; border: 1px solid #444; border-radius: 6px;
+    padding: 5px 10px; cursor: pointer; transition: all .15s ease; font: inherit;
+  }
+  .nav-btn:hover { background: #3a3a3a; }
+  .nav-btn.active { background: #8B5E3C; border-color: #A07850; color: #fff; }
+  #variant-nav label { color: #bbb; display: flex; gap: 6px; align-items: center; }
+  #variant-nav .sep { width: 1px; height: 20px; background: #444; margin: 0 4px; }
+
+  .row { display: flex; gap: 20px; justify-content: center; flex-wrap: wrap; }
+  .col { display: flex; flex-direction: column; gap: 8px; align-items: center; }
+  .col-label { font-family: system-ui; font-size: 13px; color: #ccc; text-align: center; max-width: 390px; }
+  .col-label b { color: #fff; font-size: 14px; }
+  .col-label code { font-size: 11px; color: #9a9a9a; }
+  .contrast { font-family: system-ui; font-size: 12px; color: #9a9a9a; }
+  .contrast b { color: #F0DBB9; }
+  .col.hidden { display: none; }
+
+  /* ---------- the phone frame ---------- */
+  .frame {
+    position: relative;
+    width: 390px; height: 1180px; overflow: hidden;
+    background: var(--page);
+    border-radius: 18px;
+    outline: 1px solid #3a3a3a;
+  }
+  /* veiling-glare overlay: additive white veil = ambient sunlight reflecting off the glass */
+  .frame::after {
+    content: ""; position: absolute; inset: 0; pointer-events: none; z-index: 50;
+    background: rgb(255 255 255 / var(--glare, 0));
+  }
+  .frame.glare-filter { filter: contrast(0.45) brightness(1.1); }
+
+  /* Variant tokens */
+  .v-current {
+    --page: #0a0a0a; --card: #161412; --header-bg: rgb(0 0 0 / 0.20);
+    --outline: transparent; --shadow: none; --raised: rgb(255 255 255 / 0.05);
+    --raised-border: rgb(255 255 255 / 0.10); --hairline: rgb(255 255 255 / 0.04);
+    --topbar: #0a0a0a;
+  }
+  .v-a {
+    --page: #0a0a0a; --card: #26221f; --header-bg: rgb(255 255 255 / 0.035);
+    --outline: rgb(255 255 255 / 0.09); --shadow: none; --raised: #332e2a;
+    --raised-border: rgb(255 255 255 / 0.10); --hairline: rgb(255 255 255 / 0.06);
+    --topbar: #0a0a0a;
+  }
+  .v-b {
+    --page: #161412; --card: #2b2724; --header-bg: rgb(255 255 255 / 0.035);
+    --outline: rgb(255 255 255 / 0.07);
+    --shadow: 0 1px 2px rgb(0 0 0 / 0.45), 0 4px 12px rgb(0 0 0 / 0.35);
+    --raised: #38332f; --raised-border: rgb(255 255 255 / 0.10); --hairline: rgb(255 255 255 / 0.06);
+    --topbar: #12100f;
+  }
+  /* Synthesis (round 2): Current surfaces + B's lighter header band + a fine card
+     border in the SAME color as the in-card separator (real app: border-border/40
+     = white 4%). S2 strengthens border + separator together to white 8%. */
+  .v-s1 {
+    --page: #0a0a0a; --card: #161412; --header-bg: rgb(255 255 255 / 0.035);
+    --outline: rgb(255 255 255 / 0.04); --shadow: none; --raised: rgb(255 255 255 / 0.05);
+    --raised-border: rgb(255 255 255 / 0.10); --hairline: rgb(255 255 255 / 0.04);
+    --topbar: #0a0a0a;
+  }
+  .v-s2 {
+    --page: #0a0a0a; --card: #161412; --header-bg: rgb(255 255 255 / 0.035);
+    --outline: rgb(255 255 255 / 0.08); --shadow: none; --raised: rgb(255 255 255 / 0.05);
+    --raised-border: rgb(255 255 255 / 0.10); --hairline: rgb(255 255 255 / 0.08);
+    --topbar: #0a0a0a;
+  }
+  .v-custom {
+    --page: #121110; --card: #2a2623; --header-bg: rgb(255 255 255 / 0.035);
+    --outline: rgb(255 255 255 / 0.08); --shadow: 0 1px 2px rgb(0 0 0 / 0.45), 0 4px 12px rgb(0 0 0 / 0.35);
+    --raised: #37322e; --raised-border: rgb(255 255 255 / 0.10); --hairline: rgb(255 255 255 / 0.06);
+    --topbar: #121110;
+  }
+
+  /* textured surface = .charcoal-texture with variant tokens */
+  .tex {
+    position: relative; background-color: var(--card);
+    /* real border, not an inset box-shadow: children with a background (the header
+       band) paint over an inset shadow and hide the top/side edges */
+    border: 1px solid var(--outline);
+    box-shadow: var(--shadow);
+  }
+  .tex::before {
+    content: ""; position: absolute; inset: 0; border-radius: inherit; pointer-events: none; z-index: 0;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 600 600'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.65' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+    background-size: 200px; opacity: 0.06;
+  }
+  .tex > * { position: relative; z-index: 1; }
+
+  .topbar {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 10px 16px; background: var(--topbar); border-bottom: 1px solid rgb(255 255 255 / 0.08);
+  }
+  .logo { display: flex; align-items: center; gap: 8px; font-family: 'Fredoka', sans-serif; font-weight: 600; font-size: 21px; }
+  .logo .horse { width: 30px; height: 30px; border-radius: 50%; background: radial-gradient(circle at 40% 35%, #c08a5a, #6B4226); }
+  .topbar .page-name { color: oklch(0.85 0 0); font-size: 15px; }
+
+  .content { padding: 12px 16px; display: flex; flex-direction: column; gap: 14px; }
+
+  .tabs { display: flex; padding: 3px; border-radius: 10px; }
+  .tab {
+    flex: 1; display: flex; align-items: center; justify-content: center; gap: 6px;
+    padding: 8px 0; border-radius: 8px; font-size: 15px; color: oklch(0.80 0 0); cursor: pointer;
+    transition: all .15s ease; border: 0; background: transparent; font-family: inherit;
+  }
+  .tab:hover { color: #fff; }
+  .tab.on { background: linear-gradient(#9a6a46, #7a5232); color: #fff; box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.15); }
+
+  .toolbar-row { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+  .btn-outline {
+    display: inline-flex; align-items: center; gap: 6px; padding: 6px 12px; border-radius: 8px;
+    border: 1px solid rgb(139 94 60 / 0.75); color: #e8d2b5; background: rgb(139 94 60 / 0.10);
+    font-size: 14px; cursor: pointer; transition: all .15s ease; font-family: inherit;
+  }
+  .btn-outline:hover { background: rgb(139 94 60 / 0.25); }
+  .chip {
+    display: inline-flex; align-items: center; gap: 6px; padding: 5px 12px; border-radius: 999px;
+    background: var(--raised); border: 1px solid var(--raised-border); font-size: 13px; color: oklch(0.85 0 0);
+  }
+  .chip b { color: #fff; }
+
+  .section-title { font-size: 17px; font-weight: 700; margin: 6px 0 -4px; }
+  .section-sub { font-size: 13px; color: oklch(0.708 0 0); margin: 0; }
+
+  .card { border-radius: 8px; overflow: hidden; }
+  .card-h {
+    display: flex; align-items: center; gap: 8px; padding: 11px 16px;
+    background: var(--header-bg); border-bottom: 1px solid var(--hairline);
+    font-weight: 700; font-size: 16px; margin: 0;
+  }
+  .card-h.compact { font-size: 14px; padding: 8px 14px; flex-direction: column; align-items: flex-start; gap: 2px; }
+  .card-b { padding: 14px 16px; display: flex; flex-direction: column; gap: 10px; }
+  .spine-win { border-left: 4px solid #036C22 !important; }
+
+  .kv { display: flex; justify-content: space-between; font-size: 14px; color: oklch(0.75 0 0); }
+  .kv b { color: #fff; }
+  .wdl { display: flex; height: 20px; border-radius: 4px; overflow: hidden; font-size: 12px; font-weight: 700; }
+  .wdl > div { display: flex; align-items: center; justify-content: center; }
+  .w { background: linear-gradient(#2fa84f, #1f7f3a); }
+  .d { background: #9aa0aa; }
+  .l { background: linear-gradient(#c84747, #a13434); }
+  .zone { position: relative; display: flex; height: 18px; border-radius: 4px; overflow: hidden; }
+  .zone .z1 { flex: 33; background: #4a2424; } .zone .z2 { flex: 25; background: #22304f; } .zone .z3 { flex: 42; background: #133d20; }
+  .zone .box { position: absolute; top: 4px; height: 10px; background: #e6e6e6; border: 1px solid #fff; }
+  .zone .whisk { position: absolute; top: 8px; height: 1px; background: #ddd; }
+  .zone .mid { position: absolute; top: 0; bottom: 0; width: 1px; background: #cfd3da; }
+  .metric { font-size: 14px; color: oklch(0.75 0 0); }
+  .metric b { color: #fff; }
+  .metric .pos { color: #3fbf62; font-weight: 700; }
+  .metric .neg { color: #e05555; font-weight: 700; }
+  .div-row { border-top: 1px solid var(--hairline); margin: 4px -16px 0; }
+
+  .gbody { display: flex; gap: 12px; padding: 12px 14px; }
+  .board { width: 210px; height: 210px; display: grid; grid-template-columns: repeat(8, 1fr); border-radius: 2px; overflow: hidden; flex-shrink: 0; }
+  .board div { display: flex; align-items: center; justify-content: center; font-size: 21px; line-height: 1; }
+  .sq-l { background: #F0DAB7; } .sq-d { background: #B68965; }
+  .pw { color: #fff; text-shadow: 0 0 1px #000, 0 0 1px #000; } .pb { color: #111; }
+  .meta { display: flex; flex-direction: column; gap: 8px; font-size: 14px; color: oklch(0.82 0 0); }
+  .eval { margin: 0 14px; height: 110px; border-radius: 6px; overflow: hidden; background: var(--raised); border: 1px solid var(--raised-border); }
+  .acc { display: flex; gap: 8px; align-items: center; padding: 12px 14px 14px; font-size: 14px; color: oklch(0.82 0 0); }
+  .acc .pill { padding: 4px 10px; border-radius: 8px; background: var(--raised); border: 1px solid var(--raised-border); font-weight: 700; color: #fff; }
+  .acc .pill.light { background: #d8d8d8; color: #111; border-color: #eee; }
+
+  /* custom tuner */
+  #tuner { display: none; font-family: system-ui; font-size: 12px; color: #ccc; background: #1b1b1b; border: 1px solid #3a3a3a; border-radius: 8px; padding: 10px 12px; width: 390px; }
+  #tuner.show { display: block; }
+  #tuner .t { display: grid; grid-template-columns: 110px 1fr 54px; gap: 6px; align-items: center; margin: 4px 0; }
+  #tuner input[type=range] { width: 100%; }
+
+  #sketch-tools { position: fixed; bottom: 12px; right: 12px; z-index: 9999; font-family: system-ui; font-size: 12px; background: rgba(0,0,0,0.7); color: #fff; padding: 8px 12px; border-radius: 8px; opacity: 0.4; transition: opacity .2s; }
+  #sketch-tools:hover { opacity: 1; }
+</style>
+</head>
+<body>
+
+<div id="variant-nav">
+  <span class="title">007 · Dark surface elevation</span>
+  <button class="nav-btn active" data-show="all">Synthesis (★ S2)</button>
+  <button class="nav-btn" data-show="ab">Round 1: A vs B</button>
+  <button class="nav-btn" data-show="current">Current</button>
+  <button class="nav-btn" data-show="a">A: Black page</button>
+  <button class="nav-btn" data-show="b">B: Charcoal page</button>
+  <button class="nav-btn" data-show="custom">Tune</button>
+  <span class="sep"></span>
+  <label>Sun glare veil <input id="glare" type="range" min="0" max="45" value="0"> <span id="glare-v">0%</span></label>
+  <button class="nav-btn" id="glare-filter">Glare filter (contrast .45)</button>
+</div>
+
+<div class="row" id="row"></div>
+
+<div id="sketch-tools">Sketch 007 · glare veil = additive white overlay (sunlight on glass)</div>
+
+<template id="phone">
+  <div class="frame">
+    <div class="topbar">
+      <div class="logo"><div class="horse"></div>FlawChess</div>
+      <div class="page-name">Endgame</div>
+    </div>
+    <div class="content">
+      <div class="tabs tex">
+        <button class="tab on">▮▮ Stats</button>
+        <button class="tab">⚔ Games</button>
+      </div>
+      <div class="toolbar-row">
+        <span class="chip">⚙ <b>2862</b> of <b>2909</b> analyzed</span>
+        <button class="btn-outline">☰ Filters</button>
+      </div>
+
+      <div>
+        <p class="section-title">Endgame Overall Performance</p>
+      </div>
+      <p class="section-sub">Do you perform better or worse when games reach an endgame?</p>
+
+      <section class="card tex">
+        <h3 class="card-h">Games with Endgame</h3>
+        <div class="card-b">
+          <div class="kv"><span>Win/Draw/Loss</span><span>Games: 62% (1,737)</span></div>
+          <div class="wdl"><div class="w" style="flex:43">43%</div><div class="d" style="flex:9"></div><div class="l" style="flex:48">48%</div></div>
+          <div class="metric">Endgame Score: <b>47%</b> <span style="color:#A07850">⌕</span></div>
+          <div class="zone"><div class="z1"></div><div class="z2"></div><div class="z3"></div>
+            <div class="whisk" style="left:34%;width:22%"></div><div class="box" style="left:40%;width:12%"></div><div class="mid" style="left:50%"></div></div>
+          <div class="div-row"></div>
+          <div class="kv"><span>Win/Draw/Loss (no endgame)</span><span>Games: 38% (1,065)</span></div>
+          <div class="wdl"><div class="w" style="flex:60">60%</div><div class="d" style="flex:1"></div><div class="l" style="flex:39">39%</div></div>
+        </div>
+      </section>
+
+      <section class="card tex">
+        <h3 class="card-h">Eval at Endgame Entry</h3>
+        <div class="card-b">
+          <div class="metric">⚙ Entry Eval: <b>+0.4</b></div>
+          <div class="zone"><div class="z1"></div><div class="z2"></div><div class="z3"></div>
+            <div class="whisk" style="left:48%;width:14%"></div><div class="box" style="left:50%;width:7%"></div><div class="mid" style="left:50%"></div></div>
+          <div class="metric">⚙ Entry Eval Score: <b>53%</b></div>
+          <div class="zone"><div class="z1"></div><div class="z2"></div><div class="z3"></div>
+            <div class="whisk" style="left:46%;width:18%"></div><div class="box" style="left:50%;width:9%"></div><div class="mid" style="left:50%"></div></div>
+          <div class="metric">Endgame Score Gap: <span class="neg">−13%</span></div>
+        </div>
+      </section>
+
+      <article class="card tex spine-win">
+        <h3 class="card-h compact"><span>□ aimfeld (1788)</span><span>■ Sheldon the Snail (850)</span></h3>
+        <div class="gbody">
+          <div class="board" data-board></div>
+          <div class="meta">
+            <span>📖 Scandina…</span><span>◷ Rapid 10</span><span># 26 Moves</span><span>▦ Sep 5, 2026</span><span style="color:#3fbf62">✚ Resignation</span>
+          </div>
+        </div>
+        <div class="eval">
+          <svg viewBox="0 0 340 110" width="100%" height="100%" preserveAspectRatio="none">
+            <path d="M0,62 L30,60 60,64 90,55 120,58 150,50 180,46 210,40 240,44 270,36 300,38 340,10 L340,0 L0,0 Z" fill="#c8c8c8"/>
+            <line x1="100" y1="0" x2="100" y2="110" stroke="#888" stroke-dasharray="3 3"/>
+            <line x1="260" y1="0" x2="260" y2="110" stroke="#888" stroke-dasharray="3 3"/>
+          </svg>
+        </div>
+        <div class="acc">🎯 Accuracy <span class="pill">■ 89%</span><span class="pill light">□ 82%</span></div>
+      </article>
+    </div>
+  </div>
+</template>
+
+<script>
+  const VARIANTS = [
+    { id: 'current', cls: 'v-current', name: 'Current', desc: 'page #0a0a0a · card #161412 · header black/20 (darker) · no outline' },
+    { id: 'a', cls: 'v-a', name: 'A: Black page, glowing cards', desc: 'page #0a0a0a · card #26221f · outline white/9% · header white/3.5% (lighter) · no shadow' },
+    { id: 'b', cls: 'v-b', name: 'B: Charcoal page, raised cards', desc: 'page #161412 · card #2b2724 · outline white/7% · header white/3.5% · drop shadow' },
+    { id: 's1', cls: 'v-s1', name: 'S1: Current + B header + hairline border', desc: 'page #0a0a0a · card #161412 · header white/3.5% · border = separator = white/4%' },
+    { id: 's2', cls: 'v-s2', name: 'S2: same, border + separator white/8% ★ Selected', desc: 'page #0a0a0a · card #161412 · header white/3.5% · border = separator = white/8%' },
+    { id: 'custom', cls: 'v-custom', name: 'Tune', desc: 'drag the sliders, copy the values' },
+  ];
+
+  // Endgame position from the real Library screenshot (rank 8 → 1)
+  const POS = [
+    '♜.......', '..♙♔.♕..', '.♙......', '♙...♙..♛', '....♟...', '...♟....', '♟♟♟...♟♟', '.♚......',
+  ];
+  const WHITE = '♔♕♖♗♘♙';
+
+  const row = document.getElementById('row');
+  const tpl = document.getElementById('phone');
+  VARIANTS.forEach(v => {
+    const col = document.createElement('div');
+    col.className = 'col' + (['current', 's1', 's2'].includes(v.id) ? '' : ' hidden');
+    col.dataset.id = v.id;
+    col.innerHTML = `<div class="col-label"><b>${v.name}</b><br><code>${v.desc}</code></div><div class="contrast"></div>`;
+    if (v.id === 'custom') col.appendChild(buildTuner());
+    const frame = tpl.content.firstElementChild.cloneNode(true);
+    frame.classList.add(v.cls);
+    const board = frame.querySelector('[data-board]');
+    POS.forEach((r, ri) => [...r].forEach((p, fi) => {
+      const sq = document.createElement('div');
+      sq.className = (ri + fi) % 2 === 0 ? 'sq-l' : 'sq-d';
+      if (p !== '.') { sq.textContent = p; sq.classList.add(WHITE.includes(p) ? 'pw' : 'pb'); }
+      board.appendChild(sq);
+    }));
+    col.appendChild(frame);
+    row.appendChild(col);
+  });
+
+  // WCAG contrast of card fill vs page fill
+  function lum(hex) {
+    const n = parseInt(hex.slice(1), 16);
+    return [n >> 16, (n >> 8) & 255, n & 255].map(c => {
+      c /= 255; return c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
+    }).reduce((a, c, i) => a + c * [0.2126, 0.7152, 0.0722][i], 0);
+  }
+  function updateContrast() {
+    document.querySelectorAll('.col').forEach(col => {
+      const f = col.querySelector('.frame'); const cs = getComputedStyle(f);
+      const page = cs.getPropertyValue('--page').trim(), card = cs.getPropertyValue('--card').trim();
+      const [a, b] = [lum(page), lum(card)].sort((x, y) => y - x);
+      col.querySelector('.contrast').innerHTML = `card / page fill contrast <b>${((a + 0.05) / (b + 0.05)).toFixed(2)}:1</b>`;
+    });
+  }
+  updateContrast();
+
+  // Tab interactions inside frames
+  document.addEventListener('click', e => {
+    const t = e.target.closest('.tab');
+    if (t) { t.parentElement.querySelectorAll('.tab').forEach(x => x.classList.remove('on')); t.classList.add('on'); }
+  });
+
+  // Variant nav
+  document.querySelectorAll('[data-show]').forEach(btn => btn.addEventListener('click', () => {
+    document.querySelectorAll('[data-show]').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    const s = btn.dataset.show;
+    document.querySelectorAll('.col').forEach(c => {
+      const GROUPS = { all: ['current', 's1', 's2'], ab: ['current', 'a', 'b'], custom: ['current', 'custom'] };
+      const show = (GROUPS[s] || [s]).includes(c.dataset.id);
+      c.classList.toggle('hidden', !show);
+    });
+  }));
+
+  // Glare
+  const glare = document.getElementById('glare');
+  glare.addEventListener('input', () => {
+    document.getElementById('glare-v').textContent = glare.value + '%';
+    document.querySelectorAll('.frame').forEach(f => f.style.setProperty('--glare', glare.value / 100));
+  });
+  // ?glare=25 presets the veil (for headless screenshots / sharing a setting)
+  const g0 = new URLSearchParams(location.search).get('glare');
+  if (g0) { glare.value = g0; glare.dispatchEvent(new Event('input')); }
+  const gf = document.getElementById('glare-filter');
+  gf.addEventListener('click', () => {
+    gf.classList.toggle('active');
+    document.querySelectorAll('.frame').forEach(f => f.classList.toggle('glare-filter', gf.classList.contains('active')));
+  });
+
+  // Tuner: page/card/raised grey levels (warm-tinted), outline alpha, shadow strength
+  function buildTuner() {
+    const el = document.createElement('div');
+    el.id = 'tuner'; el.className = 'show';
+    const ctl = [
+      ['page', 'Page level', 0, 40, 18], ['card', 'Card level', 10, 60, 42], ['raised', 'Raised level', 20, 75, 55],
+      ['outline', 'Outline α %', 0, 20, 8], ['shadow', 'Shadow α %', 0, 80, 40], ['header', 'Header band α %', -30, 10, 4],
+    ];
+    el.innerHTML = ctl.map(([k, l, mn, mx, v]) =>
+      `<div class="t"><span>${l}</span><input type="range" data-k="${k}" min="${mn}" max="${mx}" value="${v}"><span data-o="${k}"></span></div>`).join('')
+      + '<div style="margin-top:6px;color:#999">Levels are warm-tinted greys (R=n+4, G=n+1, B=n−2 on a 0–255 scale)</div>';
+    setTimeout(() => { el.querySelectorAll('input').forEach(i => i.addEventListener('input', applyTune)); applyTune(); });
+    return el;
+  }
+  const warm = n => '#' + [n + 4, n + 1, Math.max(0, n - 2)].map(c => Math.min(255, c).toString(16).padStart(2, '0')).join('');
+  function applyTune() {
+    const f = document.querySelector('.v-custom'); const val = k => +document.querySelector(`#tuner [data-k=${k}]`).value;
+    const page = warm(val('page')), card = warm(val('card')), raised = warm(val('raised'));
+    const h = val('header'), sh = val('shadow') / 100;
+    f.style.setProperty('--page', page); f.style.setProperty('--topbar', page);
+    f.style.setProperty('--card', card); f.style.setProperty('--raised', raised);
+    f.style.setProperty('--outline', `rgb(255 255 255 / ${val('outline') / 100})`);
+    f.style.setProperty('--header-bg', h >= 0 ? `rgb(255 255 255 / ${h / 100})` : `rgb(0 0 0 / ${-h / 100})`);
+    f.style.setProperty('--shadow', sh ? `0 1px 2px rgb(0 0 0 / ${sh * 1.1}), 0 4px 12px rgb(0 0 0 / ${sh * 0.9})` : 'none');
+    const out = { page, card, raised, outline: val('outline') + '%', shadow: val('shadow') + '%', header: (h >= 0 ? 'white ' : 'black ') + Math.abs(h) + '%' };
+    Object.entries(out).forEach(([k, v]) => document.querySelector(`#tuner [data-o=${k}]`).textContent = v);
+    updateContrast();
+  }
+</script>
+</body>
+</html>
