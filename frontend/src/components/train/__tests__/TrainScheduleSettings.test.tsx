@@ -75,7 +75,7 @@ import { trainApi, pushApi } from '@/api/client';
 import { useInstallPrompt } from '@/hooks/useInstallPrompt';
 import {
   TrainScheduleSettings,
-  PUZZLES_PER_SESSION_PRESETS,
+  PUZZLES_PER_SESSION_MAX,
   TRAIN_SETTINGS_SAVE_DEBOUNCE_MS,
 } from '@/components/train/TrainScheduleSettings';
 import type { TrainSettingsResponse, TrainSettingsUpdate } from '@/types/train';
@@ -201,15 +201,14 @@ afterEach(() => {
 });
 
 describe('TrainScheduleSettings', () => {
-  it('loading: every weekday chip and puzzles preset renders disabled', () => {
+  it('loading: every weekday chip and the puzzles slider render disabled', () => {
     vi.mocked(trainApi.getSettings).mockReturnValue(new Promise(() => undefined));
     renderWithClient();
 
     expect(screen.getByTestId('filter-weekday-mo').hasAttribute('disabled')).toBe(true);
     expect(screen.getByTestId('filter-weekday-su').hasAttribute('disabled')).toBe(true);
-    for (const n of PUZZLES_PER_SESSION_PRESETS) {
-      expect(screen.getByTestId(`filter-puzzles-${n}`).hasAttribute('disabled')).toBe(true);
-    }
+    expect(screen.getByTestId('filter-puzzles-per-session').hasAttribute('data-disabled')).toBe(true);
+    expect(screen.queryByTestId('train-puzzles-per-session-value')).toBeNull();
   });
 
   it('populated: Mo and We chips are pressed, the other five are not (weekday_mask = 5)', async () => {
@@ -285,21 +284,55 @@ describe('TrainScheduleSettings', () => {
     expect(screen.queryByText(/required|invalid|must select/i)).toBeNull();
   });
 
-  it('selecting the 15 preset issues one updateSettings call with puzzles_per_session: 15', async () => {
+  it('populated: the slider shows the saved value (12) and is enabled', async () => {
     vi.mocked(trainApi.getSettings).mockResolvedValue(BASE_SETTINGS);
-    vi.mocked(trainApi.updateSettings).mockResolvedValue({ ...BASE_SETTINGS, puzzles_per_session: 15 });
     renderWithClient();
 
     await waitFor(() => {
-      expect(screen.getByTestId('filter-puzzles-15').hasAttribute('disabled')).toBe(false);
+      expect(screen.getByTestId('train-puzzles-per-session-value').textContent).toBe('12');
     });
-    fireEvent.click(screen.getByTestId('filter-puzzles-15'));
+    const thumb = screen.getByRole('slider', { name: 'Puzzles per session' });
+    expect(thumb.getAttribute('aria-valuenow')).toBe('12');
+    expect(screen.getByTestId('filter-puzzles-per-session').hasAttribute('data-disabled')).toBe(false);
+  });
+
+  it('two ArrowRight steps on the slider issue ONE updateSettings call with puzzles_per_session: 18 (step 3)', async () => {
+    vi.mocked(trainApi.getSettings).mockResolvedValue(BASE_SETTINGS);
+    vi.mocked(trainApi.updateSettings).mockResolvedValue({ ...BASE_SETTINGS, puzzles_per_session: 18 });
+    renderWithClient();
+
+    await waitFor(() => {
+      expect(screen.getByTestId('train-puzzles-per-session-value').textContent).toBe('12');
+    });
+    const thumb = screen.getByRole('slider', { name: 'Puzzles per session' });
+    fireEvent.keyDown(thumb, { key: 'ArrowRight' });
+    fireEvent.keyDown(thumb, { key: 'ArrowRight' });
+    expect(screen.getByTestId('train-puzzles-per-session-value').textContent).toBe('18');
     await advanceDebounce();
 
     expect(trainApi.updateSettings).toHaveBeenCalledTimes(1);
     const call = vi.mocked(trainApi.updateSettings).mock.calls[0];
     const body = call?.[0] as TrainSettingsUpdate;
-    expect(body.puzzles_per_session).toBe(15);
+    expect(body.puzzles_per_session).toBe(18);
+  });
+
+  it('End on the slider saves the maximum (PUZZLES_PER_SESSION_MAX)', async () => {
+    vi.mocked(trainApi.getSettings).mockResolvedValue(BASE_SETTINGS);
+    vi.mocked(trainApi.updateSettings).mockResolvedValue({
+      ...BASE_SETTINGS,
+      puzzles_per_session: PUZZLES_PER_SESSION_MAX,
+    });
+    renderWithClient();
+
+    await waitFor(() => {
+      expect(screen.getByTestId('train-puzzles-per-session-value').textContent).toBe('12');
+    });
+    fireEvent.keyDown(screen.getByRole('slider', { name: 'Puzzles per session' }), { key: 'End' });
+    await advanceDebounce();
+
+    expect(trainApi.updateSettings).toHaveBeenCalledTimes(1);
+    const body = vi.mocked(trainApi.updateSettings).mock.calls[0]?.[0] as TrainSettingsUpdate;
+    expect(body.puzzles_per_session).toBe(PUZZLES_PER_SESSION_MAX);
   });
 
   it('every captured updateSettings body carries a non-empty timezone, never rendered in the output', async () => {
@@ -848,7 +881,7 @@ describe('TrainScheduleSettings — D-13 guest visibility (Phase 224)', () => {
     // D-13 removes only the reminder block and phone/QR section — the
     // weekday cadence and puzzles-per-session controls stay for a guest.
     expect(screen.getByTestId('filter-weekday-mo')).not.toBeNull();
-    expect(screen.getByTestId('filter-puzzles-12')).not.toBeNull();
+    expect(screen.getByTestId('filter-puzzles-per-session')).not.toBeNull();
   });
 
   it('isGuest=true on a mobile install-eligible device: the Install FlawChess button is also absent (showPhoneSection gates both branches)', async () => {

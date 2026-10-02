@@ -14,8 +14,8 @@ progress:
   completed_plans: 34
   percent: 76
 milestone_name: Train Bot-Narrated Onboarding & Verdicts
-last_activity: 2026-09-27
-last_activity_desc: Completed quick task 260927-ajg (short checkmate oracle fix + prod re-derive)
+last_activity: 2026-10-02
+last_activity_desc: Completed quick task 261002-8xb (Train puzzles-per-session slider, SEED-179)
 ---
 
 # Project State: FlawChess
@@ -933,6 +933,7 @@ None active.
 | 260927-ajg | Fix short checkmate oracle bug (mated position excluded from eval coverage) and re-derive 1,016 prod games | 2026-09-27 | 292e77489 | [260927-ajg-fix-short-checkmate-oracle-bug-and-re-de](./quick/260927-ajg-fix-short-checkmate-oracle-bug-and-re-de/) |
 | 260928-85v | Move Maia score_move off the API event loop (SEED-172 item 1) | 2026-09-28 | 682127561 | [260928-85v-move-maia-score-move-off-the-api-event-l](./quick/260928-85v-move-maia-score-move-off-the-api-event-l/) |
 | 109 | Activity dashboard: default time range 30 days | 2026-09-28 | de7ce598b | — |
+| 261002-8xb | Train puzzles-per-session slider 3-30 step 3 (SEED-179) | 2026-10-02 | e9b466552 | [261002-8xb-train-puzzles-per-session-slider-3-30-st](./quick/261002-8xb-train-puzzles-per-session-slider-3-30-st/) |
 
 ## Deferred Items
 
