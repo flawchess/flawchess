@@ -162,6 +162,44 @@ Plans:
 **Wave 3** *(blocked on Wave 2 completion)*
 - [x] 228-03-PLAN.md — Live restart-free Stockfish MultiPV option; /analysis arrows 1..N from the reconciled ranking; Train free-play MultiPV and arrows; CHANGELOG and UAT
 
+### Phase 229: Umami User Identification & Feature Events (SEED-183)
+
+**Goal**: Make UI behavior joinable to accounts so we can see which features go unused and whether
+touching a feature predicts retention. Every authenticated session (guests included) calls
+`umami.identify(String(users.id))`, so guest → registered → retention stitches into one `distinct_id`
+(guest promotion keeps the same `users` row); a per-page inventory of UI-only interactions ships as a
+small set of prop-carrying events; the Privacy page stops claiming no personal data is collected.
+Frontend-only (self-hosted Umami at analytics.flawchess.com).
+
+- **Identity (locked):** raw `users.id` as `distinct_id` (no opaque `analytics_id`/HMAC); pre-guest
+  landing pageviews stay anonymous; keep the `account: guest|registered` session tag
+  (`identifyAccountType`, `frontend/src/lib/analytics.ts`, call site `App.tsx`) and retype
+  `window.umami.identify` to the `(distinctId, data)` signature.
+- **Feature events (locked):** inventory per page (~30-50 UI-only interactions: tabs, toggles,
+  filters, board tools, popovers, settings), few event names with props (e.g. `tab-switch` +
+  `page`/`tab`), not auto-capture. DB-known actions (signups, imports, analysis runs) stay un-evented,
+  now joinable via identify. Internal links use `trackEvent()` in `onClick`, never `data-umami-event`
+  on a `<Link>`.
+- **Docs/copy (locked):** replace `Privacy.tsx` "No personal data is collected or shared" with one
+  sentence: usage analytics are linked to your account ID (logged-in and guest), stay on our servers,
+  never shared. Add a `frontend/CLAUDE.md` rule that new features ship with their event and touch up
+  the existing "don't duplicate DB-known actions" wording (it frames Umami as anonymous). Add a
+  "superseded for usage analytics by SEED-183" pointer in
+  `.planning/notes/active-engagement-time-tracking.md`.
+- **Research before planning (unverified):** (a) does `umami.identify()` persist `distinct_id`
+  (localStorage?) or must it be re-called per page load, and does that raise an ePrivacy storage
+  question; (b) logout / account switch on a shared browser needs a reset path so the next user isn't
+  attributed to the previous id.
+- **Verify after ship:** `session.distinct_id` populated in the `flawchess-umami-db` MCP (0 of 1,941
+  app sessions used it in the 30 days to 2026-10-03).
+
+**Depends on**: Phase 228 (merged; settings overlay is one of the inventoried surfaces)
+**Requirements**: TBD
+**Plans:** 0 plans
+
+Plans:
+- [ ] TBD (run /gsd-discuss-phase 229)
+
 Phase detail for every shipped milestone lives in `milestones/vX.Y-ROADMAP.md`, its phase directories in `milestones/vX.Y-phases/`, and the per-milestone summaries in [MILESTONES.md](MILESTONES.md).
 
 ## Backlog
