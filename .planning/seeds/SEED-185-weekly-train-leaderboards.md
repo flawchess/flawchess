@@ -1,6 +1,8 @@
 ---
 id: SEED-185
-status: dormant
+status: promoted
+promoted_to: Phase 230
+promoted: 2026-10-03
 planted: 2026-10-03
 planted_during: no open milestone (after v2.21), Phase 228 (settings page) ready to execute; /gsd-explore training features
 trigger_when: after Phase 228 (settings page) ships, or when planning the next Train / retention work

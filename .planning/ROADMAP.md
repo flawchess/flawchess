@@ -214,6 +214,43 @@ Plans:
 **Wave 4** *(blocked on Wave 3 completion)*
 - [x] 229-08-PLAN.md — Bot in-game actions, frontend/CLAUDE.md rule, CHANGELOG, supersession note, full pre-merge gate, browser UAT
 
+### Phase 230: Weekly Train Leaderboards (SEED-185)
+
+**Goal**: Two weekly leaderboards on Train, visible from the user's first session, to use competition
+as a return motivator: a **points board** (effort, sum of Train points this week) and an **average
+session score board** (accuracy/consistency, labelled as such, not skill). Each shows the top 5 plus
+the user's own row with neighbours.
+
+- **Scoring (settled):** server-side from `drill_solves`: puzzle points = `correct_guess::int +
+  move_quality` (max 3), plus a parity test pinning `GUESS_POINTS` / `MOVE_TIER_POINTS` from
+  `frontend/src/lib/trainScore.ts`. Score = pooled sum(points) / (3 x puzzles). Count solves
+  (`solved_at IS NOT NULL`), not completed sessions. Points board counts every solve; score board and
+  its qualifier exclude `source = SHARP_FILLER` solves.
+- **Window (locked):** one ISO week in UTC for both boards, keyed on `drill_solves.solved_at` (NOT
+  `drill_sessions.session_date`); deadline Sunday 24:00 UTC, reset Monday 00:00 UTC, countdown shown.
+  No rolling window.
+- **Qualifier (locked):** score-board position is tentative until 20 non-filler puzzles this week;
+  tentative users are ranked and marked ("N more puzzles to qualify"). Points board has no qualifier.
+- **Ranking (locked):** ties share a rank (1, 1, 1, 4), more puzzles solved listed first within a tie.
+  Top 5, then the user's row with 2 above and 2 below, and an "N points to pass <name>" target.
+- **Identity (locked):** display lichess username, else chess.com, else "Anonymous". Impersonation is
+  an accepted risk (no username verification); do not fix unprompted.
+- **Visibility (locked):** registered users with a username appear by default; "Hide me from
+  leaderboards" toggle in the Phase 228 settings overlay (server-persisted, unlike the localStorage
+  settings) plus one line on the Privacy page. Guests never appear but see the board with "you'd be
+  #N, sign up to claim your spot".
+- **Placement (default, confirm in discuss):** Train start screen next to the streak, and the session
+  score screen ("you moved up 3 places", rank before vs after this session's solves).
+- **Out of scope:** medals and their weekly snapshot table (follow-up; the UTC deadline is its
+  prerequisite), past-week history, notifications, league tiers.
+
+**Depends on**: Phase 228 (merged; settings overlay hosts the opt-out toggle)
+**Requirements**: TBD
+**Plans:** 0 plans
+
+Plans:
+- [ ] TBD (run /gsd-discuss-phase 230)
+
 Phase detail for every shipped milestone lives in `milestones/vX.Y-ROADMAP.md`, its phase directories in `milestones/vX.Y-phases/`, and the per-milestone summaries in [MILESTONES.md](MILESTONES.md).
 
 ## Backlog
