@@ -3,28 +3,29 @@ gsd_state_version: "1.0"
 milestone: v2.21
 current_phase: 229
 current_phase_name: Umami User Identification & Feature Events (SEED-183)
-status: executing
-stopped_at: Phase 229 context gathered
-last_updated: "2026-10-03T18:11:16.994Z"
-state_head: 8c6555593ae365d5ef203ae2b8a654ba583f10c7
+status: completed
+stopped_at: Phase 229 complete (UAT 8/8, released #383)
+last_updated: "2026-10-03T19:59:55.359Z"
+state_head: 549cab8b6a7b896fa2d02a36c87709fe2cc89bc2
 progress:
   total_phases: 2
   completed_phases: 103
   total_plans: 11
   completed_plans: 47
+  percent: 75
 milestone_name: Browser Engine Throughput
 last_activity: 2026-10-03
-last_activity_desc: Closed milestones v2.20 (phases 223–224) and v2.21 (phases 225–227) with tags and GitHub releases; roadmap cleanup
+last_activity_desc: Phase 229 verified (UAT 8/8 incl. post-deploy Umami checks, security 24/24 closed) and released (#383)
 ---
 
 # Project State: FlawChess
 
 ## Current Position
 
-Phase: 229 (Umami User Identification & Feature Events (SEED-183)) — EXECUTING
-Plan: 1 of 8
+Phase: 229 (Umami User Identification & Feature Events (SEED-183)) — COMPLETE
+Plan: 8 of 8
 
-Status: Executing Phase 229
+Status: Phase 229 complete and deployed 2026-10-03 (release #383). Standalone phases 228–229 sit outside any milestone; no open milestone.
 
 Open threads carried forward (not blockers):
 
@@ -43,7 +44,11 @@ Open threads carried forward (not blockers):
 
 See: .planning/PROJECT.md (updated 2026-09-13 after Phase 221)
 Core value: Position-precise WDL across openings + endgames + time pressure on top of users' actual chess.com / lichess games, with personalized LLM commentary and an auto-generated opening-strengths/weaknesses report.
-Current focus: **v2.20 and v2.21 closed 2026-10-03**; phases 223–227 regrouped into v2.20 Bot Voice & Guest Activation (223–224, releases #360–#373) and v2.21 Browser Engine Throughput (225–227, releases #376/#379/#381), each tagged with a GitHub release. ROADMAP.md slimmed to milestones + per-milestone progress rows + backlog (phase detail lives in `milestones/`). No open milestone: next is `/gsd-new-milestone` or standalone Phase 228. `main` carries one unreleased fast task (move stats accuracy header band, 0e0723eb8).
+Current focus: **Phase 229 (Umami identify + feature events) complete and deployed 2026-10-03** (release #383): every authenticated session now carries `users.id` as Umami `distinct_id` (3 of 3 post-ship sessions identified), 9-verb typed `trackFeature` registry live in prod, Umami pinned to 3.4.0. Standalone phases 228–229 are released but not grouped into a milestone; next is `/gsd-new-milestone`. Watch item: re-read the 229-RESEARCH.md post-ship queries after a few days of volume.
+
+### Superseded: focus after the v2.20/v2.21 close
+
+**v2.20 and v2.21 closed 2026-10-03**; phases 223–227 regrouped into v2.20 Bot Voice & Guest Activation (223–224, releases #360–#373) and v2.21 Browser Engine Throughput (225–227, releases #376/#379/#381), each tagged with a GitHub release. ROADMAP.md slimmed to milestones + per-milestone progress rows + backlog (phase detail lives in `milestones/`). No open milestone: next is `/gsd-new-milestone` or standalone Phase 228. `main` carries one unreleased fast task (move stats accuracy header band, 0e0723eb8).
 
 ### Superseded: focus after Phase 219
 
@@ -997,7 +1002,7 @@ Items acknowledged and deferred at **v1.29 milestone close on 2026-06-29** (user
 
 ## Session Continuity
 
-**Stopped at:** Phase 229 context gathered
+**Stopped at:** Phase 229 complete (UAT 8/8, security verified, released #383)
 
 Previous session note (Phase 227):
 refit (calibration parity holds). Verification passed 17/17; code review 0 blockers (WR-01 + 3 info fixed). Next:

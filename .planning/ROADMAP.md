@@ -195,7 +195,7 @@ Frontend-only (self-hosted Umami at analytics.flawchess.com).
 
 **Depends on**: Phase 228 (merged; settings overlay is one of the inventoried surfaces)
 **Requirements**: TBD (covered by CONTEXT decisions D-01..D-18)
-**Plans:** 8/8 plans executed
+**Plans:** 8/8 plans complete
 
 Plans:
 **Wave 1**
