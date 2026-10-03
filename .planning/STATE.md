@@ -14,8 +14,8 @@ progress:
   completed_plans: 47
   percent: 76
 milestone_name: Train Bot-Narrated Onboarding & Verdicts
-last_activity: 2026-10-02
-last_activity_desc: Completed quick task 261002-ex9 (Train streak flame + freezes, SEED-181)
+last_activity: 2026-10-03
+last_activity_desc: Phase 227 squash-merged to main (a9dc32530)
 ---
 
 # Project State: FlawChess
