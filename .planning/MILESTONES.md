@@ -38,7 +38,7 @@
 
 **Known gaps, recorded rather than smoothed over:**
 
-- **Lever A's `/welcome` landing baseline is still unread**: `reports/growth/guest-activation-baseline-2026-09-17.md` carries a `PENDING OPERATOR READING` placeholder for the Umami numbers (the agent could not read Umami at the time; the `flawchess-umami-db` MCP has existed since 2026-09-25).
+- **Lever A's `/welcome` landing baseline was read late** (2026-10-03, via the `flawchess-umami-db` MCP): 459 of 858 engaged home sessions (53.5%) reached `/welcome` over 2026-06-19..2026-09-17, on a session basis that does not reproduce the growth report's 390 of 1,051.
 - **The post-change readings of both guest levers have not been taken**: guest import-start rate and guest promotion rate have baselines and repeatable queries.
 - **The registered Train score screen's pixel identity** with its pre-phase layout rests on DOM tests, not a visual side-by-side.
 - **No sound toggle exists anywhere** until the settings page (SEED-175) lands.

@@ -10,9 +10,10 @@ drifted forward with the calendar).
 - Prod PostgreSQL, via the read-only `flawchess-prod-db` MCP role over `bin/prod_db_tunnel.sh`
   (`docs/dev-tooling.md` — dedicated read-only role, separate from the app's read-write
   connection).
-- Umami (a separate database on the same prod host; credentials live in `.env`, which the
-  secret-read guard denies — read by a human operator, never automated. See `224-RESEARCH.md`
-  Open Question 3.)
+- Umami (a separate database on the same prod host). At phase time its credentials lived only
+  in `.env`, which the secret-read guard denies, so this was planned as a human operator
+  reading (`224-RESEARCH.md` Open Question 3). Since 2026-09-25 the query-only
+  `flawchess-umami-db` MCP reads it, and the Lever A metric 2 baseline was taken that way.
 
 **S-7 (locked, not re-opened):** Lever A and Lever B are reported as **four separate
 numbers below — no combined "guest conversion" number is computed or reported anywhere in
@@ -91,7 +92,43 @@ WHERE url_path = '/welcome'
   the Umami UI's funnel/behaviour view rather than a single-table query, since it requires
   session-level grouping Umami's UI already computes.
 
-**Result:** `PENDING OPERATOR READING` (Task 4 of this plan — deferred by the user to the end-of-phase test; paste `landings=<N> denominator=<M> basis=<pageviews|sessions>` and this line gets the two numbers, the percentage, the basis and the reading date)
+**Result (read 2026-10-03, Umami DB via the query-only `flawchess-umami-db` MCP; window
+`2026-06-19` <= `created_at` < `2026-09-18`, app site only):** `landings=459 denominator=858
+basis=sessions` → **53.5%** of engaged home sessions reached `/welcome`. Raw context from the
+same window: 639 `/welcome` pageviews across 473 sessions (the committed pageview query
+above returns 639); 1,176 sessions viewed `/`, of which 858 produced at least one later event.
+
+The denominator is read from the database rather than the Umami UI, so the after-reading
+must reuse this exact query (session basis; "engaged" = any event in the same session after
+its first `/` pageview other than another `/` pageview; numerator = engaged sessions with a
+`/welcome` pageview):
+
+```sql
+-- Lever A, metric 2: /welcome landings among engaged home sessions (session basis)
+WITH ev AS (
+  SELECT session_id, url_path, event_type, created_at
+  FROM website_event
+  WHERE website_id = '0ca19960-2398-4caf-b321-8039708fa7ef'
+    AND created_at >= :first AND created_at < :end
+), home AS (
+  SELECT session_id, min(created_at) AS first_home
+  FROM ev WHERE url_path = '/' AND event_type = 1 GROUP BY 1
+), engaged AS (
+  SELECT h.session_id FROM home h
+  WHERE EXISTS (SELECT 1 FROM ev e WHERE e.session_id = h.session_id
+                AND e.created_at > h.first_home
+                AND NOT (e.url_path = '/' AND e.event_type = 1))
+)
+SELECT
+  (SELECT count(*) FROM engaged) AS denominator,
+  (SELECT count(DISTINCT e.session_id) FROM ev e JOIN engaged g USING (session_id)
+   WHERE e.url_path = '/welcome' AND e.event_type = 1) AS landings;
+-- baseline: :first = '2026-06-19', :end = '2026-09-18'
+```
+
+This basis does not reproduce the growth report's 390 of 1,051 below (that report's window
+and its definition of "clicked anything" were not recorded), so compare the after-reading
+against 459/858, not against 390/1,051.
 
 **Comparison (prior published reading, for context only):** 390 of 1,051 home visitors who
 clicked anything landed on `/welcome`, per `growth-recommendations-2026-09-15.md` §2 finding

@@ -29,7 +29,7 @@ Status: No open milestone; v2.21 closed 2026-10-03
 
 Open threads carried forward (not blockers):
 
-- Phase 224 Lever A baseline: `reports/growth/guest-activation-baseline-2026-09-17.md` still carries a `PENDING OPERATOR READING` for the Umami `/welcome` landings (readable now via the `flawchess-umami-db` MCP); post-change readings of both guest levers not yet taken.
+- Phase 224 guest levers: all four baselines are now in `reports/growth/guest-activation-baseline-2026-09-17.md` (Lever A metric 2 read 2026-10-03: 459/858 engaged home sessions, 53.5%); post-change readings not yet written up.
 - Engine follow-ups: SEED-171 closed with its leftovers listed in `seeds/closed/SEED-171-...md` (cross-FEN Maia batching, non-root candidate cap); SEED-180 (Stockfish watchdog hidden-tab gate); real-phone throughput for Phases 226/227 never measured.
 - Phase 221: a forced only-move that sheds a piece can read as a sacrifice (game 1459049 ply 21); captured in `.planning/notes/2026-09-13-forced-only-move-tagged-sacrifice.md`, no action requested. Lever if sacrifice noise ever matters: lower `SACRIFICE_CLEARANCE_MAX_DEPTH` (4) and retag.
 
