@@ -20,7 +20,7 @@ streak symbol there is.
 Moving the buffer to a cold visual family (freezes) separates the two
 concepts by temperature, not only by layout, and frees the flame for the
 streak. The mechanic is literally a freeze: in
-`app/services/train_scheduler.py` `_judge_one_day`, a missed scheduled day
+`../../../app/services/train_scheduler.py` `_judge_one_day`, a missed scheduled day
 costs one unit and the streak is held (neither grows nor resets) until the
 units run out. "Streak freeze" is also a convention users already know.
 
@@ -86,14 +86,14 @@ label assertions change). Run `/gsd-ui-phase` before planning.
 
 ## Breadcrumbs
 
-- `frontend/src/components/train/TrainStreakCard.tsx` (StreakBadge, ShieldMeter, SHIELD_EXPLAINER, 193 UAT history in the header comment)
-- `frontend/src/components/train/__tests__/TrainStreakCard.test.tsx`
-- `frontend/src/components/train/TrainStartScreen.tsx` (LANDING_CARD_GRID_CLASS, Start CTA)
-- `frontend/src/components/train/TrainScheduleSettings.tsx`
-- `frontend/src/lib/theme.ts` (`TRAIN_SHIELD_FLAME_COLORS`, `TRAIN_STREAK_BADGE_BG/FG`)
-- `frontend/src/types/train.ts` (`TrainProgressResponse`)
-- `app/services/train_scheduler.py` (`_judge_one_day`, `tick_days`)
-- Mockups: `.planning/sketches/005-streak-flame-and-freezes/` (winner: A Concentric + Snowflake) and `.planning/sketches/006-train-landing-hero/` (winner: A Flame beside the CTA); `flame.js` there holds the SVG paths and keyframes
+- `../../../frontend/src/components/train/TrainStreakCard.tsx` (StreakBadge, ShieldMeter, SHIELD_EXPLAINER, 193 UAT history in the header comment)
+- `../../../frontend/src/components/train/__tests__/TrainStreakCard.test.tsx`
+- `../../../frontend/src/components/train/TrainStartScreen.tsx` (LANDING_CARD_GRID_CLASS, Start CTA)
+- `../../../frontend/src/components/train/TrainScheduleSettings.tsx`
+- `../../../frontend/src/lib/theme.ts` (`TRAIN_SHIELD_FLAME_COLORS`, `TRAIN_STREAK_BADGE_BG/FG`)
+- `../../../frontend/src/types/train.ts` (`TrainProgressResponse`)
+- `../../../app/services/train_scheduler.py` (`_judge_one_day`, `tick_days`)
+- Mockups: `../../sketches/005-streak-flame-and-freezes` (winner: A Concentric + Snowflake) and `.planning/sketches/006-train-landing-hero/` (winner: A Flame beside the CTA); `flame.js` there holds the SVG paths and keyframes
 
 ## Notes
 
