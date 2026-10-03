@@ -4,15 +4,14 @@ milestone: v2.21
 current_phase: 228
 current_phase_name: Settings Page — Sound Toggle & Per-Engine Lines/Arrows (SEED-175)
 status: completed
-stopped_at: Phase 228 complete — all phases complete
-last_updated: "2026-10-03T15:26:52.720Z"
-state_head: ad78dc00dfe98c641803cc70f48a329218c118d8
+stopped_at: Phase 229 context gathered
+last_updated: "2026-10-03T16:47:11.216Z"
+state_head: 6333bde40548e52d3a7099aa8357a5daa30c829f
 progress:
-  total_phases: 1
+  total_phases: 2
   completed_phases: 103
   total_plans: 3
   completed_plans: 47
-  percent: 100
 milestone_name: Browser Engine Throughput
 last_activity: 2026-10-03
 last_activity_desc: Closed milestones v2.20 (phases 223–224) and v2.21 (phases 225–227) with tags and GitHub releases; roadmap cleanup
@@ -998,7 +997,7 @@ Items acknowledged and deferred at **v1.29 milestone close on 2026-06-29** (user
 
 ## Session Continuity
 
-**Stopped at:** Phase 228 complete (3/3 plans, verification passed 16/16 decisions, browser UAT 5/5 legs passed, code review WR-01/WR-02 fixed). Next: pre-merge gate, then squash-merge `gsd/phase-228-settings-page` to `main` (CHANGELOG entry already in `[Unreleased]`).
+**Stopped at:** Phase 229 context gathered
 
 Previous session note (Phase 227):
 refit (calibration parity holds). Verification passed 17/17; code review 0 blockers (WR-01 + 3 info fixed). Next:
@@ -1006,9 +1005,9 @@ squash-merge `gsd/phase-227-...` to `main` with a CHANGELOG entry already in `[U
 Owner-deferred: real-phone bot game check (227-UAT.md, report-only). Follow-up: stale "Phase 198 will populate"
 priority comment in `workerPoolState.ts:434-437` (verifier info item).
 
-**Last session:** 2026-10-03T15:02:44.838Z
+**Last session:** 2026-10-03T16:47:11.134Z
 
-**Resume file:** None
+**Resume file:** .planning/phases/229-umami-identify-feature-events/229-CONTEXT.md
 
 ## Performance Metrics
 
