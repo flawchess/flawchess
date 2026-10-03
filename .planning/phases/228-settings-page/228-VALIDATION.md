@@ -56,6 +56,20 @@ Filled by the planner per task. Decision-level map (from 228-RESEARCH.md § Vali
 
 *Status: ⬜ pending · ✅ green · ❌ red · ⚠️ flaky*
 
+### Per-task map (planner, 2026-10-03)
+
+| Task | Decisions | Automated command (run from repo root) | Status |
+|------|-----------|----------------------------------------|--------|
+| 228-01 T1 (tracer) | D-01, D-07..D-10 | `cd frontend && npx vitest run src/App.test.tsx` | ⬜ pending |
+| 228-01 T2 | D-07..D-10, store | `cd frontend && npx vitest run src/lib/__tests__/engineSettings.test.ts src/components/settings/__tests__/SettingsPanel.test.tsx` | ⬜ pending |
+| 228-01 T3 | D-02, D-03, D-04, D-06 | `cd frontend && npx vitest run src/components/settings/__tests__/SettingsSheetButton.test.tsx src/App.test.tsx src/pages/__tests__/Bots.test.tsx` + `npm run lint && npm run build && npm run knip` | ⬜ pending |
+| 228-02 T1 | D-16 (rank depth, FC union slice) | `cd frontend && npx vitest run src/hooks/analysis/__tests__/useAnalysisEngineLines.test.ts src/pages/__tests__/Analysis.test.tsx` | ⬜ pending |
+| 228-02 T2 | D-16, D-13 rows | `cd frontend && npx vitest run src/components/analysis/__tests__/ src/components/train/__tests__/TrainReveal.test.tsx src/pages/__tests__/Analysis.test.tsx` + `npm run build` | ⬜ pending |
+| 228-02 T3 | styling lock, retire 2nd-best | `cd frontend && npx vitest run src/components/analysis/__tests__/ src/hooks/__tests__/useGameOverlay.test.ts src/pages/__tests__/Analysis.test.tsx` + `npm run lint && npm run build && npm run knip` | ⬜ pending |
+| 228-03 T1 | D-11, D-12, D-06 live | `cd frontend && npx vitest run src/hooks/__tests__/useStockfishEngine.test.ts src/hooks/__tests__/useTrainFreePlay.test.ts src/components/train/__tests__/TrainSolveScreen.test.tsx src/pages/__tests__/Train.solveLoop.test.tsx src/pages/__tests__/Analysis.test.tsx` + `npm run build` | ⬜ pending |
+| 228-03 T2 | D-14, D-15, union | `cd frontend && npx vitest run src/hooks/analysis/__tests__/useAnalysisBoardArrows.test.ts src/hooks/analysis/__tests__/useAnalysisEngineLines.test.ts src/pages/__tests__/Analysis.test.tsx` + `npm run lint && npm run build`; mutation proof recorded | ⬜ pending |
+| 228-03 T3 | D-13, D-15 | `cd frontend && npx vitest run src/lib/__tests__/trainArrows.test.ts src/hooks/__tests__/useTrainFreePlay.test.ts src/components/train/__tests__/` + full gate `npm run lint && npm run build && npm test -- --run && npm run knip`; UAT legs as human-check | ⬜ pending |
+
 ---
 
 ## Wave 0 Requirements
