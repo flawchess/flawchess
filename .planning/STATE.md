@@ -22,7 +22,7 @@ last_activity_desc: Closed milestones v2.20 (phases 223–224) and v2.21 (phases
 
 ## Current Position
 
-Phase: none (next standalone phase is 228)
+Phase: 228 (Settings Page — Sound Toggle & Per-Engine Lines/Arrows), not planned yet
 Plan: Not started
 
 Status: No open milestone; v2.21 closed 2026-10-03
@@ -168,6 +168,7 @@ v1.29 Live-Engine Analysis Page shipped 2026-06-29 — 5 phases (136–140), 14 
 
 ### Roadmap Evolution
 
+- Phase 228 added 2026-10-03 (explicit user request via `/gsd-phase @SEED-175`, trigger met: Phase 226 merged and v2.21 closed): **Settings Page — Sound Toggle & Per-Engine Lines/Arrows** (SEED-175, planted 2026-09-29 from `/gsd-explore`). Frontend-only cogwheel `/settings` page with localStorage-backed sound on/off and per-engine line (1-5) and arrow (0-3) counts, plus the single-translucent-color non-primary line restyle.
 - Phase 226 added 2026-09-28 (explicit user request via `/gsd-phase @SEED-171`, after the 2026-09-28 browser engine performance review): **Browser Engine Throughput — Round Underfill Re-land, Root Grade Split & Continuous Dispatch**. Re-measure on an idle box, re-land the held Phase 225 round underfill fix (explain the `cBFTV` flip, wider fixture) with the root comparability guard, split the round-1 root grade across idle SF workers, then continuous dispatch against a relaxed determinism target (may split into its own phase in discuss); gated by a pre-committed accept rule against a same-session A0 baseline.
 - Phase 225 added 2026-09-27 (explicit user request via `/gsd-phase @SEED-170`, after the 2026-09-27 engine review whose behavior-neutral findings shipped as quick task 260927-8xn): **Engine Search Fixes — Root Comparability, Round Underfill & Findability Fallback**. Visit guard on the early-stop clear-winner branch (and possibly the deadline cut), `selectPath` block-and-restart instead of giving up mid-round, findability fallback term in `rankScore`, optional non-root candidate cap; gated by a pre-committed accept rule (throughput, maia-blindness, stop-rule, persona calibration spot check).
 - Phase 224 added 2026-09-17 (explicit user request via `/gsd-phase @SEED-169`, after `/gsd-explore` "guest drop-off" on growth report 2026-09-15 finding 2): **Guest Activation — Welcome Removal & Guest Train**. Lever A: drop the forced `/welcome` redirect for 0-game guests (48% vs 85% import-start gap sits entirely at that step). Lever B: open Train to guests as the full daily warm-up loop (reverses Phase 189 D-05), guest sign-up nudges as bot bubbles with "Why?" + "Sign up free" on the score screen (replacing the reminder ask, no push for guests) and the Import page (random friendly bot), `/welcome` rewritten as a four-delta "What changes when you sign up" page. Guest cleanup must be re-reasoned for guest Train rows. Two metrics recorded separately before/after. Written by hand as 224 (known mature-ROADMAP behavior). Next: `/gsd-discuss-phase 224`.

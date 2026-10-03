@@ -120,7 +120,39 @@
 
 ## Active Phases
 
-No open milestone. Standalone phases continue absolute numbering from v2.21's Phase 227; the next phase is 228. Phase detail for every shipped milestone lives in `milestones/vX.Y-ROADMAP.md`, its phase directories in `milestones/vX.Y-phases/`, and the per-milestone summaries in [MILESTONES.md](MILESTONES.md).
+No open milestone. Standalone phases continue absolute numbering from v2.21's Phase 227.
+
+### Phase 228: Settings Page — Sound Toggle & Per-Engine Lines/Arrows (SEED-175)
+
+**Goal**: A cogwheel settings page (`/settings`, entry from the header and mobile nav) that gives sound
+its missing off switch and lets users pick how many card lines and board arrows each engine shows.
+Frontend-only; localStorage persistence (per device, works for guests) behind a small typed settings
+module shaped like `useMuted` in `lib/sounds.ts`, so a later account-sync swap touches only that module.
+
+- **Settings (locked):** Sound on/off (default on, reuses `useMuted`/`setMuted`, key
+  `flawchess_bot_sound_muted`); FlawChess engine lines 1-5 (default 2) and arrows 0-3 (default 1);
+  Stockfish lines 1-5 (default 2) and arrows 0-3 (default 1). Lines and arrows are separate per engine;
+  0 arrows hides that engine's arrows but keeps its card.
+- **Surfaces:** `/analysis` uses both engines; Train puzzle reveal and free-play use the Stockfish
+  settings only.
+- **Styling (locked):** primary line solid; every non-primary line uses one translucent color per engine
+  (blue for Stockfish, gold for FlawChess) on both arrows and card badges. Replaces
+  `FLAWCHESS_ENGINE_BADGE_SHADES` and Stockfish's light-blue second-best badge/arrow. No
+  eval-proportional transparency.
+- **Out of scope:** search time and thread settings, board colors, piece sets, sound sets.
+- **Verify in planning:** Train free-play MultiPV cost (MultiPV = max(SF lines, SF arrows) splits the
+  fixed movetime); whether the free-search MultiPV still matters for `/analysis` arrows now that the SF
+  card reads the grading run; that `flawChessEngine.rankedLines` reliably yields up to 5 lines; tests
+  pinning `MAX_LINES = 2` read the setting's default instead. Header entry placement (desktop and mobile)
+  is still open.
+
+**Depends on**: Phase 226 (merged; v2.21 closed 2026-10-03)
+**Requirements**: TBD
+**Plans:** 0 plans
+
+Plans:
+
+- [ ] TBD (run /gsd-plan-phase 228) Phase detail for every shipped milestone lives in `milestones/vX.Y-ROADMAP.md`, its phase directories in `milestones/vX.Y-phases/`, and the per-milestone summaries in [MILESTONES.md](MILESTONES.md).
 
 ## Backlog
 

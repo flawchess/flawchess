@@ -1,6 +1,8 @@
 ---
 id: SEED-175
-status: dormant
+status: promoted
+promoted_to: Phase 228
+promoted: 2026-10-03
 planted: 2026-09-29
 planted_during: Phase 226 executing (SEED-171); /gsd-explore session
 trigger_when: after Phase 226 (browser engine throughput) merges to main, since both touch the engine-lines/arrow wiring
