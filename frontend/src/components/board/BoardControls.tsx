@@ -3,6 +3,7 @@ import { SkipBack, ChevronLeft, ChevronRight, Repeat2, FastForward } from 'lucid
 import { Button } from '@/components/ui/button';
 import { Tooltip } from '@/components/ui/tooltip';
 import { cn } from '@/lib/utils';
+import { trackFeature } from '@/lib/analytics';
 
 interface BoardControlsProps {
   onBack: () => void;
@@ -212,7 +213,10 @@ export function BoardControls({
         tooltip="Flip board"
         testId="board-btn-flip"
         icon={<Repeat2 className={layout.iconSize} />}
-        onClick={onFlip}
+        onClick={() => {
+          onFlip();
+          trackFeature('board-tool', { target: 'flip' });
+        }}
       />
       {infoSlot}
     </div>

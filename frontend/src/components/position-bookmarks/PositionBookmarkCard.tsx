@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button';
 import { Tooltip } from '@/components/ui/tooltip';
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
 import { useUpdatePositionBookmarkLabel, useDeletePositionBookmark, useUpdateMatchSide } from '@/hooks/usePositionBookmarks';
+import { onOff, trackFeature } from '@/lib/analytics';
 import type { PositionBookmarkResponse } from '@/types/position_bookmarks';
 import type { MatchSide } from '@/types/api';
 import { MiniBoard } from './MiniBoard';
@@ -73,6 +74,13 @@ export function PositionBookmarkCard({ bookmark, onLoad, chartEnabled, onChartEn
   const handleLoad = () => {
     isDirtyRef.current = true;
     onLoad(bookmark);
+    // Never the bookmark id (D-04): the target is a fixed literal.
+    trackFeature('action', { target: 'bookmark-load' });
+  };
+
+  const handleChartToggle = () => {
+    onChartEnabledChange(bookmark.id, !chartEnabled);
+    trackFeature('toggle', { target: 'bookmark-chart', value: onOff(!chartEnabled) });
   };
 
   const handleDelete = () => {
@@ -183,7 +191,7 @@ export function PositionBookmarkCard({ bookmark, onLoad, chartEnabled, onChartEn
           role="switch"
           aria-checked={chartEnabled}
           aria-label={chartEnabled ? 'Exclude from opening results' : 'Include in opening results'}
-          onClick={() => onChartEnabledChange(bookmark.id, !chartEnabled)}
+          onClick={handleChartToggle}
           className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${chartEnabled ? 'bg-toggle-active' : 'bg-muted'}`}
           data-testid={`bookmark-chart-toggle-${bookmark.id}`}
         >

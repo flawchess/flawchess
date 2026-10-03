@@ -33,6 +33,7 @@ import {
 } from '@/lib/theme';
 import { MiniBoard } from '@/components/board/MiniBoard';
 import { Tooltip } from '@/components/ui/tooltip';
+import { trackFeature } from '@/lib/analytics';
 
 /** Maximum number of plies shown per PV line. */
 const MAX_PLIES = 5;
@@ -366,7 +367,11 @@ function PvLineRow({
           data-testid={`engine-line-${lineIndex}-expand`}
           aria-label={expanded ? 'Collapse line' : 'Expand line'}
           aria-expanded={expanded}
-          onClick={() => setExpanded((v) => !v)}
+          onClick={() => {
+            setExpanded(!expanded);
+            // Expand only: collapsing is not a feature use.
+            if (!expanded) trackFeature('board-tool', { target: 'line-expand' });
+          }}
         >
           <ChevronDown
             className={cn('h-4 w-4 transition-transform', expanded && 'rotate-180')}

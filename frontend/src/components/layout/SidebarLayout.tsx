@@ -1,6 +1,7 @@
 import { useEffect, useRef, type ReactNode } from 'react';
 import { Button } from '@/components/ui/button';
 import { Tooltip } from '@/components/ui/tooltip';
+import { trackFeature, type SidebarPanelId } from '@/lib/analytics';
 
 /** Collapsed sidebar strip width in pixels */
 const STRIP_WIDTH = 48;
@@ -8,7 +9,8 @@ const STRIP_WIDTH = 48;
 const PANEL_WIDTH = 380;
 
 export interface SidebarPanelConfig {
-  id: string;
+  /** Panel id; doubles as the analytics panel-open target (Phase 229 D-13). */
+  id: SidebarPanelId;
   label: string;
   icon: ReactNode;
   content: ReactNode;
@@ -88,8 +90,11 @@ export function SidebarLayout({ panels, activePanel, onActivePanelChange, sideCo
     return () => document.removeEventListener('mousedown', handleMouseDown);
   }, [activePanel, onActivePanelChange]);
 
-  const handleStripClick = (panelId: string) => {
+  const handleStripClick = (panelId: SidebarPanelId) => {
     onActivePanelChange(activePanel === panelId ? null : panelId);
+    // Discovery signal (D-13): only the opening click fires. Closing via the strip
+    // and the outside-click close above send nothing.
+    if (activePanel !== panelId) trackFeature('panel-open', { target: panelId });
   };
 
   const stripIcons = panels.map(panel => (

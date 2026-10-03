@@ -26,6 +26,7 @@ import { User, Cpu } from 'lucide-react';
 import { Slider } from '@/components/ui/slider';
 import { DEFAULT_POLICY_TEMPERATURE } from '@/lib/engine/policyTemperature';
 import { MAIA_ACCENT, STOCKFISH_ACCENT } from '@/lib/theme';
+import { trackFeature, type TemperatureBucket } from '@/lib/analytics';
 
 export interface TemperatureSelectorProps {
   /** Current policy temperature (TEMPERATURE_MIN-TEMPERATURE_MAX). */
@@ -71,6 +72,12 @@ export function temperatureToSliderPosition(temperature: number): number {
   return Math.log2(temperature);
 }
 
+/** Analytics bucket relative to the default; the raw float is never sent. */
+function temperatureBucket(temperature: number): TemperatureBucket {
+  if (temperature === TEMPERATURE_DEFAULT) return 'default';
+  return temperature < TEMPERATURE_DEFAULT ? 'lower' : 'higher';
+}
+
 export function TemperatureSelector({
   value,
   onChange,
@@ -79,6 +86,16 @@ export function TemperatureSelector({
     const next = values[0];
     if (next === undefined) return;
     onChange(sliderPositionToTemperature(next));
+  };
+
+  // Once per drag (commit), not per tick.
+  const handleValueCommit = (values: number[]): void => {
+    const committed = values[0];
+    if (committed === undefined) return;
+    trackFeature('option-change', {
+      target: 'temperature',
+      value: temperatureBucket(sliderPositionToTemperature(committed)),
+    });
   };
 
   return (
@@ -101,6 +118,7 @@ export function TemperatureSelector({
         step={SLIDER_STEP}
         value={[temperatureToSliderPosition(value)]}
         onValueChange={handleValueChange}
+        onValueCommit={handleValueCommit}
         thumbLabels={['Play style']}
         className="min-w-16 flex-1"
       />

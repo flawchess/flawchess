@@ -1,9 +1,10 @@
-import type { ReactNode } from 'react';
+import { useEffect, useRef, type ReactNode } from 'react';
 import { X } from 'lucide-react';
 import { Drawer, DrawerContent, DrawerHeader, DrawerTitle, DrawerClose } from '@/components/ui/drawer';
 import { Button } from '@/components/ui/button';
 import { Tooltip } from '@/components/ui/tooltip';
 import { cn } from '@/lib/utils';
+import { trackFeature, type SidebarPanelId } from '@/lib/analytics';
 
 // ─── Constants ──────────────────────────────────────────────────────────────
 
@@ -16,6 +17,8 @@ const DRAWER_CONTENT_CLASS = '!w-full sm:!w-3/4 !bottom-auto !rounded-bl-xl max-
 interface MobileFilterDrawerProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  /** Analytics panel id reported as the panel-open target when the drawer opens. */
+  panel: SidebarPanelId;
   /** Drawer heading, e.g. "Filters" or "Tags". */
   title: string;
   /** Optional element rendered next to the title (e.g. an info popover). */
@@ -53,6 +56,7 @@ interface MobileFilterDrawerProps {
 export function MobileFilterDrawer({
   open,
   onOpenChange,
+  panel,
   title,
   titleAccessory,
   contentTestId,
@@ -63,6 +67,16 @@ export function MobileFilterDrawer({
   footer,
 }: MobileFilterDrawerProps) {
   const label = closeLabel ?? `Close ${title.toLowerCase()}`;
+
+  // The one allowed effect-style tracking site (Phase 229 D-13): parents open this
+  // drawer by setting state from their own trigger buttons, so the false-to-true
+  // transition of `open` is the user's tap. The ref starts at the mount-time value
+  // so a drawer mounted already open fires nothing (D-03).
+  const wasOpenRef = useRef(open);
+  useEffect(() => {
+    if (open && !wasOpenRef.current) trackFeature('panel-open', { target: panel });
+    wasOpenRef.current = open;
+  }, [open, panel]);
 
   return (
     <Drawer open={open} onOpenChange={onOpenChange} direction="right">

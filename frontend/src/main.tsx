@@ -8,7 +8,7 @@ import { createSwUpdateChecker, SW_UPDATE_INTERVAL_MS } from "@/lib/swUpdate";
 import { reportMaiaPageKillFromPreviousSession } from "@/lib/engine/maiaPageKillSentinel";
 import { installStalePreloadReload } from "@/lib/stalePreloadReload";
 import { captureFirstTouch } from "@/lib/firstTouch";
-import { installUmamiBeforeSend } from "@/lib/analytics";
+import { identifyFromStoredToken, installUmamiBeforeSend } from "@/lib/analytics";
 
 // SEED-158: a page killed while Maia was running (iOS Safari's silent
 // per-page memory-limit termination) leaves a record in localStorage — report
@@ -26,6 +26,11 @@ captureFirstTouch();
 // The deferred tracker sends its first pageview only once the document is
 // complete, so registering the hook here always precedes it.
 installUmamiBeforeSend();
+// Identify before the deferred tracker's first pageview (it waits for
+// readyState complete) so the landing pageview carries the id on Umami 3.4+,
+// where the distinct id is part of the session hash. Memory-only: a reload or
+// logout wipes it (Phase 229 D-16/D-09).
+identifyFromStoredToken();
 
 // ── Service Worker update handling ────────────────────────────────────────
 // When a new service worker activates (after deploy), reload the page so the

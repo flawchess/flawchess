@@ -5,6 +5,7 @@ import { InfoPopover } from '@/components/ui/info-popover';
 import { LoadError } from '@/components/ui/load-error';
 import { OpeningFindingCard } from './OpeningFindingCard';
 import { useOpeningInsights } from '@/hooks/useOpeningInsights';
+import { trackFeature } from '@/lib/analytics';
 import type { OpeningInsightFinding, OpeningInsightsResponse } from '@/types/insights';
 import type { FilterState } from '@/components/filters/FilterPanel';
 
@@ -265,7 +266,11 @@ function FindingsSection({
           {hasMore && (
             <button
               className="flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground transition-colors mt-2 px-2"
-              onClick={() => setExpanded((prev) => !prev)}
+              onClick={() => {
+                // Discovery only: track the expand, never the collapse (D-13).
+                if (!expanded) trackFeature('panel-open', { target: 'opening-insights-more' });
+                setExpanded((prev) => !prev);
+              }}
               data-testid={`opening-insights-section-${section.key}-btn-more`}
               aria-label={
                 expanded

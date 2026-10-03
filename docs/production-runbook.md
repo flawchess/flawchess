@@ -38,6 +38,99 @@ Source of truth, not historical. The repeated 2026 OOM-kills traced to import me
 - **SQLAlchemy pool** `10 + 10` overflow; backend/db containers have `mem_limit`/`memswap_limit` set (no swap → contained OOM-restart).
 - **`STOCKFISH_POOL_SIZE=6`** in prod (stable; ~368 MB/worker → fits the 4g backend container). Raising to 8 is gated on a 24h soak of API latency + container RSS.
 
+## Umami analytics
+
+Self-hosted Umami (`analytics.flawchess.com`) lives in the `umami` compose service and its own `umami` database on the shared Postgres. Since Phase 229 every identified session carries the account's `users.id` (as text) in `distinct_id`.
+
+### Version pin (D-17)
+
+The image is pinned in `docker-compose.yml` (`ghcr.io/umami-software/umami:3.4.0`, `pull_policy: missing`). The CI deploy runs a plain `docker compose up -d` without a pull, so the pin is the upgrade mechanism: bump the tag and release through `bin/deploy.sh`; `up -d` pulls the tag the server does not have yet and recreates the container. Umami applies its own migrations on start (3.4.0 adds `25_add_annotation` and `26_add_api_key`, both additive). Read-only post-deploy checks:
+
+```bash
+# Expect tag 3.4.0
+ssh flawchess "cd /opt/flawchess && docker compose images umami"
+
+# Migrations applied, no crash loop
+ssh flawchess "cd /opt/flawchess && docker compose logs --tail=50 umami"
+```
+
+Cloudflare caches `analytics.flawchess.com/script.js` for up to a day (`cache-control: max-age=86400`), so the tracker a browser runs can lag the server version.
+
+### Deleting an account's analytics (D-18)
+
+When a user requests deletion, delete the app account first, then remove their Umami rows by `distinct_id` (= `users.id` as text) in the app website `0ca19960-2398-4caf-b321-8039708fa7ef`. Table and column names below were checked against the Umami v3.4.0 `prisma/schema.prisma`.
+
+- The read-only `flawchess-umami-db` MCP can run the preview count first.
+- Anonymous pre-login sessions carry no `distinct_id` and cannot be matched (they hold no account identifier).
+- A session is shared when it links more than one `distinct_id`; this is only possible for sessions recorded before the 3.4.0 upgrade (3.4.0 puts the distinct id into the session hash). For a shared session only this user's `session_link` and `session_data` rows are removed and the session's events stay.
+
+Open an interactive psql (`UMAMI_DB_USER` from `.env`, default `umami`):
+
+```bash
+ssh -t flawchess "cd /opt/flawchess && docker compose exec db psql -U umami -d umami"
+```
+
+Run the preview block first, replacing the placeholder with the account's `users.id`. Check both counts before running the delete block, which ends in `ROLLBACK` as a dry run: change it to `COMMIT` only after the dry run reports the expected row counts.
+
+```sql
+\set did 'REPLACE_WITH_USERS_ID'
+\set site '0ca19960-2398-4caf-b321-8039708fa7ef'
+
+-- 1. Preview: how many sessions are linked to this distinct_id
+SELECT count(*) FROM (
+  SELECT session_id FROM session_link WHERE website_id = :'site' AND distinct_id = :'did'
+  UNION
+  SELECT session_id FROM session WHERE website_id = :'site' AND distinct_id = :'did'
+) s;
+
+-- 2. Shared-session pre-check: sessions in that set that also link another distinct_id
+SELECT l.session_id, count(DISTINCT l.distinct_id) AS distinct_ids
+FROM session_link l
+WHERE l.website_id = :'site'
+  AND l.session_id IN (SELECT session_id FROM session_link WHERE website_id = :'site' AND distinct_id = :'did')
+GROUP BY l.session_id
+HAVING count(DISTINCT l.distinct_id) > 1;
+```
+
+Delete block (paste separately, after reviewing the preview):
+
+```sql
+-- 3. Delete (one transaction)
+BEGIN;
+
+CREATE TEMP TABLE target_sessions ON COMMIT DROP AS
+  SELECT session_id FROM session_link WHERE website_id = :'site' AND distinct_id = :'did'
+  UNION
+  SELECT session_id FROM session WHERE website_id = :'site' AND distinct_id = :'did';
+
+CREATE TEMP TABLE shared_sessions ON COMMIT DROP AS
+  SELECT session_id FROM session_link
+  WHERE website_id = :'site' AND session_id IN (SELECT session_id FROM target_sessions)
+  GROUP BY session_id HAVING count(DISTINCT distinct_id) > 1;
+
+-- Sessions that belong to this user alone get a full delete
+CREATE TEMP TABLE exclusive_sessions ON COMMIT DROP AS
+  SELECT session_id FROM target_sessions WHERE session_id NOT IN (SELECT session_id FROM shared_sessions);
+
+DELETE FROM event_data WHERE website_id = :'site' AND website_event_id IN (
+  SELECT event_id FROM website_event WHERE website_id = :'site' AND session_id IN (SELECT session_id FROM exclusive_sessions));
+DELETE FROM revenue        WHERE website_id = :'site' AND session_id IN (SELECT session_id FROM exclusive_sessions);
+DELETE FROM session_replay WHERE website_id = :'site' AND session_id IN (SELECT session_id FROM exclusive_sessions);
+DELETE FROM heatmap_event  WHERE website_id = :'site' AND session_id IN (SELECT session_id FROM exclusive_sessions);
+DELETE FROM website_event  WHERE website_id = :'site' AND session_id IN (SELECT session_id FROM exclusive_sessions);
+DELETE FROM session_data   WHERE website_id = :'site' AND session_id IN (SELECT session_id FROM exclusive_sessions);
+DELETE FROM session_link   WHERE website_id = :'site' AND session_id IN (SELECT session_id FROM exclusive_sessions);
+DELETE FROM session        WHERE website_id = :'site' AND session_id IN (SELECT session_id FROM exclusive_sessions);
+
+-- Shared sessions: only this distinct_id's own rows go, the other user's data stays
+DELETE FROM session_data WHERE website_id = :'site' AND distinct_id = :'did';
+DELETE FROM session_link WHERE website_id = :'site' AND distinct_id = :'did';
+UPDATE session SET distinct_id = NULL WHERE website_id = :'site' AND distinct_id = :'did';
+
+-- Dry run by default: replace ROLLBACK with COMMIT once the counts above look right
+ROLLBACK;
+```
+
 ## Infrastructure notes
 
 - Hetzner Cloud Firewall: inbound TCP 22/80/443 + ICMP from any.

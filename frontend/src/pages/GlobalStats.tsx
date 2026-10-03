@@ -317,6 +317,7 @@ export function GlobalStatsPage() {
           <MobileFilterDrawer
             open={mobileFiltersOpen}
             onOpenChange={handleMobileFiltersOpenChange}
+            panel="filters"
             title="Filters"
             contentTestId="drawer-filter-sidebar"
             closeTestId="btn-close-filter-drawer"

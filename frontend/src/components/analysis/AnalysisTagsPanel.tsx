@@ -8,6 +8,7 @@ import { TagChip, TagLegend } from '@/components/library/TagChip';
 import { tacticMotifLabel, TACTIC_FAMILY_FOR_MOTIF } from '@/lib/tacticComparisonMeta';
 import { moverColorAtPly } from '@/lib/plyOwnership';
 import type { GameFlawCard, FlawTag } from '@/types/library';
+import { trackFeature } from '@/lib/analytics';
 
 /**
  * Flaw-tags panel for the /analysis page (game mode) — mirrors the Library game
@@ -219,6 +220,8 @@ export function AnalysisTagsPanel({
     // matching sideline; context tags and Move Stats cells navigate only (single-arg).
     if (ref.kind === 'motif') onCyclePly(ply, ref.orientation);
     else onCyclePly(ply);
+    // Target only: no tag, ply or game id leaves the browser.
+    trackFeature('action', { target: 'chip-cycle' });
     // A click also emphasizes this ref's markers, matching LibraryGameCard.
     setHighlight(ref);
   };

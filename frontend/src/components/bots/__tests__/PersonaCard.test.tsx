@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 
 import { PersonaCard } from '../PersonaCard';
@@ -178,5 +178,31 @@ describe('PersonaCard win-stars row (Phase 185)', () => {
     stars.forEach((star) => {
       expect(star.getAttribute('fill')).not.toBe('none');
     });
+  });
+});
+
+// Phase 229 (D-04, T-229-19): opening a persona reports the open without any persona identity.
+describe('PersonaCard feature events (Phase 229)', () => {
+  const track = vi.fn();
+
+  beforeEach(() => {
+    track.mockClear();
+    window.umami = { track, identify: vi.fn() };
+    window.history.pushState({}, '', '/bots');
+  });
+
+  afterEach(() => {
+    delete window.umami;
+    window.history.pushState({}, '', '/');
+  });
+
+  it('sends one persona-open action carrying no persona id or name', () => {
+    render(<PersonaCard persona={PERSONA} onSelect={vi.fn()} />);
+    expect(track).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByTestId(`bots-persona-card-${PERSONA.id}`));
+    expect(track).toHaveBeenCalledTimes(1);
+    expect(track).toHaveBeenCalledWith('action', { page: 'bots', target: 'persona-open' });
+    expect(JSON.stringify(track.mock.calls)).not.toContain(PERSONA.id);
+    expect(JSON.stringify(track.mock.calls)).not.toContain(PERSONA.name);
   });
 });

@@ -1,4 +1,5 @@
 import { Button } from '@/components/ui/button';
+import { trackFeature } from '@/lib/analytics';
 
 // ─── Props ────────────────────────────────────────────────────────────────────
 
@@ -30,6 +31,15 @@ export function FilterActions({
   applyTestId = 'btn-filter-apply',
   resetLabel = 'Reset',
 }: FilterActionsProps) {
+  // One shared footer for every filter panel, so reset/apply are tracked here once.
+  const handleReset = (): void => {
+    onReset();
+    trackFeature('filter-change', { target: 'reset' });
+  };
+  const handleApply = (): void => {
+    onApply();
+    trackFeature('filter-change', { target: 'apply' });
+  };
   return (
     <div className="pt-2 border-t border-border/40">
       <div className="flex gap-2">
@@ -40,7 +50,7 @@ export function FilterActions({
           className="flex-1 min-h-11 sm:min-h-0"
           data-testid={resetTestId}
           aria-label={resetLabel}
-          onClick={onReset}
+          onClick={handleReset}
         >
           {resetLabel}
         </Button>
@@ -50,7 +60,7 @@ export function FilterActions({
           className="flex-1 min-h-11 sm:min-h-0"
           data-testid={applyTestId}
           aria-label="Apply"
-          onClick={onApply}
+          onClick={handleApply}
         >
           Apply
         </Button>

@@ -9,6 +9,7 @@ function setChartEnabledStorage(bookmarkId: number, enabled: boolean): void {
 }
 import { useNavigate, useLocation, Navigate } from 'react-router';
 import { useUserProfile } from '@/hooks/useUserProfile';
+import { trackFeature } from '@/lib/analytics';
 import { ArrowRightLeft, Swords, BarChart2, Lightbulb, SlidersHorizontal } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -438,8 +439,17 @@ export function OpeningsPage() {
   // board as a `?line=` main line — so the user can step all the way back to move
   // 1 there — rather than a bare snapshot FEN (which lost the move history).
   const handleAnalyzePosition = useCallback(() => {
+    // Tracked before navigate so the derived page is still 'openings' (Phase 229).
+    trackFeature('action', { target: 'analyze' });
     navigate(buildAnalysisLineUrl(chess.moveHistory.slice(0, chess.currentPly)));
   }, [navigate, chess.moveHistory, chess.currentPly]);
+
+  // One opener for the three bookmark-suggestions entry points (sidebar, desktop
+  // sidebar, mobile drawer): D-13 reports the panel being opened, from the click only.
+  const openSuggestions = useCallback(() => {
+    setSuggestionsOpen(true);
+    trackFeature('panel-open', { target: 'bookmark-suggestions' });
+  }, []);
 
   // Analyze-position button shows on the board-bearing subtabs (Moves + Games),
   // where the chessboard position is the thing worth sending to the analysis page.
@@ -517,7 +527,7 @@ export function OpeningsPage() {
       onOpenMoves={handleOpenMoves}
       onOpenChartBookmarkGames={handleOpenChartBookmarkGames}
       onOpenGames={handleOpenGames}
-      onOpenSuggestions={() => setSuggestionsOpen(true)}
+      onOpenSuggestions={openSuggestions}
     />
   );
 
@@ -634,7 +644,7 @@ export function OpeningsPage() {
           onLoadBookmark={handleLoadBookmarkFromDesktopSidebar}
           chartEnabledMap={chartEnabledMap}
           onChartEnabledChange={handleChartEnabledChange}
-          onOpenSuggestions={() => setSuggestionsOpen(true)}
+          onOpenSuggestions={openSuggestions}
           onOpenBookmarkDialog={openBookmarkDialog}
           showBookmarksHint={showBookmarksHint}
           activePanel={sidebar.sidebarOpen}
@@ -643,10 +653,12 @@ export function OpeningsPage() {
           onAnalyzePosition={handleAnalyzePosition}
           filterColor={filters.color}
           onToggleColor={() => {
-            const next = filters.color === 'white' ? 'black' : 'white';
-            setFilters(prev => ({ ...prev, color: next as Color }));
+            const next: Color = filters.color === 'white' ? 'black' : 'white';
+            setFilters(prev => ({ ...prev, color: next }));
             setBoardFlipped(next === 'black');
             sidebar.dismissPlayedAsHint();
+            // Same concept as Library/Endgames played-as, so one Umami row (D-01).
+            trackFeature('filter-change', { target: 'played-as', value: next });
           }}
           showPlayedAsHint={showPlayedAsHint}
         >
@@ -802,6 +814,7 @@ export function OpeningsPage() {
               setGamesOffset(0);
               setBoardFlipped(newColor === 'black');
               sidebar.dismissPlayedAsHint();
+              trackFeature('filter-change', { target: 'played-as', value: newColor });
               if (activeTab !== 'explorer' && activeTab !== 'games') navigate('/openings/explorer');
             }}
             showPlayedAsHint={showPlayedAsHint}
@@ -829,7 +842,7 @@ export function OpeningsPage() {
             localChartEnabled={localChartEnabled}
             onLocalChartEnabledChange={handleLocalChartEnabledChange}
             onLocalMatchSideChange={handleLocalMatchSideChange}
-            onOpenSuggestions={() => setSuggestionsOpen(true)}
+            onOpenSuggestions={openSuggestions}
             onOpenBookmarkDialog={openBookmarkDialog}
           />
 

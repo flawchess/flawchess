@@ -225,3 +225,50 @@ describe('mobile density (171 UAT gap 3, Task 2)', () => {
     expect(screen.getByTestId('setup-tc-classical-30-0')).toBeTruthy();
   });
 });
+
+// Phase 229 (D-12): TC and color choices reach window.umami.track; re-picking the active one does not.
+describe('SetupScreen feature events (Phase 229)', () => {
+  const track = vi.fn();
+
+  beforeEach(() => {
+    track.mockClear();
+    window.umami = { track, identify: vi.fn() };
+    window.history.pushState({}, '', '/bots');
+  });
+
+  afterEach(() => {
+    delete window.umami;
+    window.history.pushState({}, '', '/');
+  });
+
+  it('picking a different TC preset sends one bot-tc option-change with the preset label', () => {
+    render(<SetupScreen ownerKey={null} normalizedRating={1500} onStart={vi.fn()} />);
+    expect(track).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByTestId('setup-tc-rapid-15-10'));
+    expect(track).toHaveBeenCalledTimes(1);
+    expect(track).toHaveBeenCalledWith('option-change', {
+      page: 'bots',
+      target: 'bot-tc',
+      value: '15+10',
+    });
+  });
+
+  it('re-picking the active TC preset sends nothing', () => {
+    render(<SetupScreen ownerKey={null} normalizedRating={1500} onStart={vi.fn()} />);
+    fireEvent.click(screen.getByTestId('setup-tc-rapid-10-0'));
+    expect(track).not.toHaveBeenCalled();
+  });
+
+  it('picking a color sends one bot-color option-change; re-picking it sends nothing', () => {
+    render(<SetupScreen ownerKey={null} normalizedRating={1500} onStart={vi.fn()} />);
+    fireEvent.click(screen.getByTestId('setup-color-white'));
+    expect(track).toHaveBeenCalledTimes(1);
+    expect(track).toHaveBeenCalledWith('option-change', {
+      page: 'bots',
+      target: 'bot-color',
+      value: 'white',
+    });
+    fireEvent.click(screen.getByTestId('setup-color-white'));
+    expect(track).toHaveBeenCalledTimes(1);
+  });
+});

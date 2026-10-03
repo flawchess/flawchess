@@ -49,6 +49,7 @@ import {
   AccordionContent,
 } from '@/components/ui/accordion';
 import { cn } from '@/lib/utils';
+import { trackFeature } from '@/lib/analytics';
 import {
   TACTIC_COMPARISON_FAMILIES,
   TACTIC_FAMILY_COLORS,
@@ -390,7 +391,15 @@ function GridBody({ data }: GridBodyProps) {
       {/* More Tactics accordion — only rendered when there are overflow families (D-14).
           Cloned verbatim from Endgames.tsx:390-397 (Endgame Statistics Concepts pattern). */}
       {overflowFamilies.length > 0 && (
-        <Accordion type="single" collapsible className="mt-4">
+        <Accordion
+          type="single"
+          collapsible
+          className="mt-4"
+          // Expand only: Radix reports '' on collapse (D-13 discovery, not use).
+          onValueChange={(value) => {
+            if (value) trackFeature('panel-open', { target: 'tactic-grid-more' });
+          }}
+        >
           <AccordionItem
             value="more-tactics"
             className="charcoal-texture rounded-md overflow-hidden"

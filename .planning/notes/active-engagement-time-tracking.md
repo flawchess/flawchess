@@ -60,7 +60,11 @@ position without navigating. Two consequences:
 
 ## Rejected alternatives
 
-- **Umami `umami.identify()`** (per-feature attribution for logged-in users): rejected.
+- **Umami `umami.identify()`** (per-feature attribution for logged-in users): rejected for
+  engagement minutes. **Superseded for usage analytics by SEED-183 / Phase 229 (2026-10-03):**
+  identify now ships for feature-usage analytics. Correction: the v3 tracker keeps the
+  identify id in memory only (no localStorage), so the persistence claim below is wrong; the
+  engagement-minutes reasoning still stands.
   Research findings:
   - Stable cross-session Distinct ID exists (Umami v2.18.0+), but persistence is
     **localStorage-based** → stitches per-browser only, must re-call on each login.

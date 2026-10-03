@@ -2,6 +2,7 @@ import type { Dispatch, SetStateAction } from 'react';
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
 import { InfoPopover } from '@/components/ui/info-popover';
 import { FilterPanel, type FilterState } from '@/components/filters/FilterPanel';
+import { trackFeature } from '@/lib/analytics';
 import type { MatchSide } from '@/types/api';
 
 export type OpeningsFilterFieldsProps = {
@@ -66,7 +67,9 @@ export function OpeningsFilterFields({
           value={localFilters.matchSide}
           onValueChange={(v) => {
             if (!v) return;
-            setLocalFilters((prev) => ({ ...prev, matchSide: v as MatchSide }));
+            const matchSide = v as MatchSide;
+            setLocalFilters((prev) => ({ ...prev, matchSide }));
+            trackFeature('filter-change', { target: 'piece-filter', value: matchSide });
           }}
           variant="outline"
           size="sm"

@@ -119,7 +119,14 @@ services:
     restart: unless-stopped
 
   umami:
-    image: ghcr.io/umami-software/umami:postgresql-latest
+    # Pinned deliberately (Phase 229 D-17): the floating postgresql-latest tag
+    # moved to 3.4.0, which adds the distinct id to the session hash (identified
+    # users get their own sessions). The CI deploy runs a plain `docker compose
+    # up -d` without a pull; with pull_policy missing, compose pulls a pinned tag
+    # the server does not have yet, so bumping this tag is the upgrade mechanism.
+    # Umami applies its own migrations on start.
+    image: ghcr.io/umami-software/umami:3.4.0
+    pull_policy: missing
     environment:
       DATABASE_URL: postgresql://${UMAMI_DB_USER}:${UMAMI_DB_PASSWORD}@db:5432/umami
       APP_SECRET: ${UMAMI_APP_SECRET}

@@ -47,6 +47,7 @@ import {
 import { signedBandGradient } from '@/lib/signedBandGradient';
 import type { GradientStop } from '@/lib/signedBandGradient';
 import { computePrimaryTc } from '@/lib/primaryTc';
+import { onOff, trackFeature } from '@/lib/analytics';
 import { MIN_GAMES_PER_TC_CARD } from '@/generated/endgameZones';
 import { inactivityGapReferenceLines } from './InactivityGapReferenceLines';
 import type { EndgameEloTimelineResponse, EloComboKey } from '@/types/endgames';
@@ -422,7 +423,11 @@ export function EndgameEloTimelineSection({
           <button
             key={combo.combo_key}
             type="button"
-            onClick={() => handleLegendClick(combo.combo_key)}
+            onClick={() => {
+              handleLegendClick(combo.combo_key);
+              // A hidden series becomes shown (on), a shown one hidden (off). No combo key (D-04).
+              trackFeature('toggle', { target: 'elo-timeline-legend', value: onOff(isHidden) });
+            }}
             className={`inline-flex min-w-0 items-center gap-1.5 cursor-pointer ${isHidden ? 'opacity-50 line-through' : ''}`}
             data-testid={`endgame-elo-legend-${combo.combo_key}`}
             aria-pressed={!isHidden}

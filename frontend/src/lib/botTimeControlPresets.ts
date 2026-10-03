@@ -27,7 +27,7 @@ export interface TimeControlPreset {
   bucket: 'blitz' | 'rapid' | 'classical';
 }
 
-export const TIME_CONTROL_PRESETS: readonly TimeControlPreset[] = [
+export const TIME_CONTROL_PRESETS = [
   { label: '3+0', baseSeconds: 180, incrementSeconds: 0, bucket: 'blitz' },
   { label: '3+2', baseSeconds: 180, incrementSeconds: 2, bucket: 'blitz' },
   { label: '5+0', baseSeconds: 300, incrementSeconds: 0, bucket: 'blitz' },
@@ -45,7 +45,10 @@ export const TIME_CONTROL_PRESETS: readonly TimeControlPreset[] = [
   // field below is a UI display-grouping label ONLY.
   { label: '30+0', baseSeconds: 1800, incrementSeconds: 0, bucket: 'classical' },
   { label: '30+20', baseSeconds: 1800, incrementSeconds: 20, bucket: 'classical' },
-] as const;
+] as const satisfies readonly TimeControlPreset[];
+
+/** Union of the nine preset labels, derived from the tuple so a new preset flows through (Phase 229 analytics registry). */
+export type TimeControlPresetLabel = (typeof TIME_CONTROL_PRESETS)[number]['label'];
 
 export const DEFAULT_TC_PRESET_LABEL = '10+0';
 

@@ -21,6 +21,7 @@ import { AnalysisTagsPanel } from '@/components/analysis/AnalysisTagsPanel';
 import { EvalChart } from '@/components/library/EvalChart';
 import { AnalysisPendingPill } from '@/components/library/AnalysisPendingPill';
 import { STOCKFISH_ACCENT, MAIA_ACCENT, FLAWCHESS_ENGINE_ACCENT } from '@/lib/theme';
+import { isAnalysisTabId, trackFeature } from '@/lib/analytics';
 import { sideToMoveFromFen, type MoverColor } from '@/lib/liveFlaw';
 import { forkPlyForOrientation, flawKey } from '@/lib/analysisTactics';
 import type { RankedLine } from '@/lib/engine/types';
@@ -517,7 +518,10 @@ export function MoveListHeaderContent({ onOpenPasteModal }: MoveListHeaderConten
         size="default"
         className="ml-auto gap-1"
         data-testid="analysis-btn-paste"
-        onClick={onOpenPasteModal}
+        onClick={() => {
+          onOpenPasteModal();
+          trackFeature('board-tool', { target: 'paste-open' });
+        }}
       >
         <ClipboardPaste className="h-4 w-4" aria-hidden="true" />
         PGN/FEN
@@ -794,7 +798,14 @@ export function AnalysisTabs({
   statsTab,
 }: AnalysisTabsProps): ReactElement {
   return (
-    <Tabs defaultValue="moves" className="flex min-h-0 flex-1 flex-col gap-2 px-2 pt-2">
+    // D-02: Radix fires onValueChange on user selection only, never on mount.
+    <Tabs
+      defaultValue="moves"
+      onValueChange={(tab) => {
+        if (isAnalysisTabId(tab)) trackFeature('tab-switch', { target: tab });
+      }}
+      className="flex min-h-0 flex-1 flex-col gap-2 px-2 pt-2"
+    >
       <TabsList variant="underline" className="w-full shrink-0">
         <TabsTrigger value="moves" data-testid="analysis-tab-moves" className="gap-1 px-1">
           <ArrowLeftRight aria-hidden="true" />

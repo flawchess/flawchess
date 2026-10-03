@@ -11,6 +11,7 @@ import {
   SEV_MISTAKE,
 } from '@/lib/theme';
 import { createDateTickFormatter, formatDateWithYear } from '@/lib/utils';
+import { onOff, trackFeature } from '@/lib/analytics';
 import type { FlawTrendPoint } from '@/types/library';
 
 // ─── Series definitions ────────────────────────────────────────────────────────
@@ -174,7 +175,11 @@ export function FlawTrendChart({ trend, windowSize }: FlawTrendChartProps) {
                   <button
                     key={s.key}
                     type="button"
-                    onClick={() => handleLegendClick(s.key)}
+                    onClick={() => {
+                      handleLegendClick(s.key);
+                      // A hidden series becomes shown (on), a shown one hidden (off). No series key (D-04).
+                      trackFeature('toggle', { target: 'flaw-trend-legend', value: onOff(isHidden) });
+                    }}
                     className={`inline-flex min-w-0 items-center gap-1.5 cursor-pointer ${isHidden ? 'opacity-50 line-through' : ''}`}
                     data-testid={`flaw-trend-legend-${s.key}`}
                     aria-pressed={!isHidden}

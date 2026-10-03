@@ -3,6 +3,7 @@ import type { ReactElement } from 'react';
 import { ChevronLeft, ChevronRight, Flag, Repeat2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { BOT_ACTION_BUTTON_CLASS } from '@/components/bots/chipStyles';
+import { trackFeature } from '@/lib/analytics';
 import {
   Dialog,
   DialogContent,
@@ -127,7 +128,10 @@ export function BotGameMobileBar({
       <Button
         variant="ghost"
         className={BOT_BAR_BUTTON_CLASS}
-        onClick={onFlip}
+        onClick={() => {
+          onFlip();
+          trackFeature('board-tool', { target: 'flip' });
+        }}
         data-testid="board-btn-flip"
       >
         <Repeat2 className="size-5" aria-hidden="true" />

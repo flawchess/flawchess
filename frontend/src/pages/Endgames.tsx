@@ -39,6 +39,7 @@ import { PositionResultsPanel } from '@/components/charts/PositionResultsPanel';
 import { useEndgameOverview, useEndgameGames } from '@/hooks/useEndgames';
 import { EndgameInsightsBlock } from '@/components/insights/EndgameInsightsBlock';
 import { toInsightsFilters } from '@/lib/insightsFilters';
+import { trackFeature } from '@/lib/analytics';
 import { EvalCoverageHeader } from '@/components/EvalCoverageHeader';
 import { useCachedEndgameInsights, useEndgameInsights } from '@/hooks/useEndgameInsights';
 import { useActiveJobs } from '@/hooks/useImport';
@@ -796,8 +797,10 @@ export function EndgamesPage() {
       <Select
         value={selectedCategory}
         onValueChange={(v) => {
-          setSelectedCategory(v as EndgameClass);
+          const category = v as EndgameClass;
+          setSelectedCategory(category);
           setGamesOffset(0);
+          trackFeature('filter-change', { target: 'endgame-type', value: category });
         }}
       >
         <SelectTrigger size="sm" data-testid="filter-endgame-type" className="min-h-11 sm:min-h-0 w-full sm:w-[160px]">
@@ -1010,6 +1013,7 @@ export function EndgamesPage() {
             <MobileFilterDrawer
               open={mobileFiltersOpen}
               onOpenChange={handleMobileFiltersOpenChange}
+              panel="filters"
               title="Filters"
               contentTestId="drawer-filter-sidebar"
               closeTestId="btn-close-filter-drawer"

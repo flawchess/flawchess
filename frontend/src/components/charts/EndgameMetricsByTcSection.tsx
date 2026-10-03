@@ -21,6 +21,7 @@
 import { useState, useEffect } from 'react';
 
 import { Accordion } from '@/components/ui/accordion';
+import { trackFeature } from '@/lib/analytics';
 import { MIN_GAMES_PER_TC_CARD } from '@/generated/endgameZones';
 import { computePrimaryTc } from '@/lib/primaryTc';
 import { EndgameMetricsByTcCard } from '@/components/charts/EndgameMetricsByTcCard';
@@ -78,6 +79,14 @@ export function EndgameMetricsByTcSection({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [filterKey]);
 
+  // Track only an expand (an item was added), never a collapse; no TC in the payload (D-04).
+  const handleExpandedChange = (next: string[]) => {
+    if (next.some((tc) => !expandedTcs.includes(tc))) {
+      trackFeature('panel-open', { target: 'endgame-metrics-tc' });
+    }
+    setExpandedTcs(next);
+  };
+
   return (
     <section
       data-testid="endgame-metrics-tc-section"
@@ -97,7 +106,7 @@ export function EndgameMetricsByTcSection({
         <Accordion
           type="multiple"
           value={expandedTcs}
-          onValueChange={setExpandedTcs}
+          onValueChange={handleExpandedChange}
           className="flex flex-col gap-4 mt-2"
         >
           {data.cards.map((card) => (

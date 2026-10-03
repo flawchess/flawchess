@@ -3,6 +3,7 @@ import type { ReactNode } from 'react';
 import { ChevronDown, ChevronUp } from 'lucide-react';
 import type { OpeningWDL } from '@/types/stats';
 import { OpeningStatsCard } from './OpeningStatsCard';
+import { trackFeature } from '@/lib/analytics';
 
 const MPO_DEFAULT_VISIBLE_COUNT = 4;
 
@@ -60,7 +61,11 @@ export function OpeningStatsSection({ section }: OpeningStatsSectionProps) {
       {hasMore && (
         <button
           className="flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground transition-colors"
-          onClick={() => setExpanded((prev) => !prev)}
+          onClick={() => {
+            // Discovery only: track the expand, never the collapse (D-13).
+            if (!expanded) trackFeature('panel-open', { target: 'opening-stats-more' });
+            setExpanded((prev) => !prev);
+          }}
           data-testid={`${section.testId}-btn-more`}
           aria-label={
             expanded ? 'Show fewer openings' : `Show ${hiddenCount} more openings`

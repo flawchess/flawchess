@@ -4,6 +4,7 @@ import { HorizontalMoveList } from '@/components/board/HorizontalMoveList';
 import type { HorizontalMoveItem } from '@/components/board/HorizontalMoveList';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
+import { trackFeature } from '@/lib/analytics';
 
 interface MoveListPanelProps {
   moveHistory: string[];
@@ -93,7 +94,10 @@ export function MoveListPanel({
           variant="link"
           size="sm"
           className="self-start text-sm"
-          onClick={onReturnToLive}
+          onClick={() => {
+            onReturnToLive();
+            trackFeature('action', { target: 'bot-return-live' });
+          }}
           data-testid="btn-return-live"
         >
           Return to live position

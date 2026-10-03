@@ -1948,3 +1948,46 @@ describe('TrainReveal', () => {
     expect(screen.getByTestId('engine-line-1-move-0').textContent).toBe('c5');
   });
 });
+
+// Phase 229 (D-12): feature events reach window.umami.track through the real
+// analytics module. Only the exploration exit is a client-only affordance here;
+// the post-miss Retry re-submits the solve to the backend (useTrainSession
+// retrySolve), so it is DB-known and stays un-evented.
+describe('TrainReveal feature events (Phase 229)', () => {
+  const track = vi.fn();
+
+  beforeEach(() => {
+    matchMediaMatches = true;
+    revealPuzzle.mockReset();
+    getGame.mockReset();
+    revealPuzzle.mockResolvedValue(makeReveal());
+    getGame.mockResolvedValue(makeGame());
+    track.mockClear();
+    window.umami = { track, identify: vi.fn() };
+    window.history.pushState({}, '', '/train');
+  });
+
+  afterEach(() => {
+    cleanup();
+    delete window.umami;
+    window.history.pushState({}, '', '/');
+  });
+
+  it('closing exploration sends one train-explore-exit action and nothing on render', () => {
+    const onExitExploration = vi.fn();
+    renderReveal({ isExploring: true, freePlay: makeFreePlayState(), onExitExploration });
+    expect(track).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByTestId('btn-train-exploration-close'));
+    expect(onExitExploration).toHaveBeenCalledTimes(1);
+    expect(track).toHaveBeenCalledTimes(1);
+    expect(track).toHaveBeenCalledWith('action', { page: 'train', target: 'train-explore-exit' });
+  });
+
+  it('the post-miss Retry calls onRetrySolve and sends nothing (it writes to the backend)', () => {
+    const onRetrySolve = vi.fn();
+    renderReveal({ verdict: null, isSolveError: true, onRetrySolve });
+    fireEvent.click(screen.getByTestId('btn-train-solve-retry'));
+    expect(onRetrySolve).toHaveBeenCalledTimes(1);
+    expect(track).not.toHaveBeenCalled();
+  });
+});

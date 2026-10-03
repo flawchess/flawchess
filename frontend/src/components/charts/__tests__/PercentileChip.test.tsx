@@ -23,7 +23,7 @@
  * pass tests.
  */
 
-import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 
 beforeAll(() => {
@@ -55,6 +55,7 @@ afterEach(() => {
 });
 
 import { PercentileChip, type PercentileChipFlavor } from '../PercentileChip';
+import { popoverTargetFromTestId } from '@/lib/analytics';
 import { GAUGE_NEUTRAL, ZONE_DANGER, ZONE_SUCCESS } from '@/lib/theme';
 import type { PerTcBreakdownOut } from '@/types/endgames';
 
@@ -565,5 +566,39 @@ describe('PercentileChip — contract', () => {
     const aria = screen.getByTestId(TID).getAttribute('aria-label') ?? '';
     expect(aria).toContain('Endgame Score Gap');
     expect(aria).toContain('p73');
+  });
+});
+
+// ── Phase 229 D-13: popover-open analytics ──────────────────────────────────
+
+describe('PercentileChip — popover-open tracking', () => {
+  let track: ReturnType<typeof vi.fn>;
+
+  beforeEach(() => {
+    track = vi.fn();
+    window.umami = { track, identify: vi.fn() };
+    window.history.pushState({}, '', '/endgames');
+  });
+
+  afterEach(() => {
+    delete window.umami;
+    window.history.pushState({}, '', '/');
+  });
+
+  it('sends one popover-open on first open and nothing more in the same mount', () => {
+    renderChip(85);
+    expect(track).not.toHaveBeenCalled();
+
+    const trigger = screen.getByTestId(TID);
+    fireEvent.click(trigger);
+    expect(track).toHaveBeenCalledTimes(1);
+    expect(track).toHaveBeenCalledWith('popover-open', {
+      page: 'endgames',
+      target: popoverTargetFromTestId(TID),
+    });
+
+    fireEvent.click(trigger);
+    fireEvent.click(trigger);
+    expect(track).toHaveBeenCalledTimes(1);
   });
 });

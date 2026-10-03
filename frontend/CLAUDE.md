@@ -27,7 +27,9 @@ Sentry is initialized in `frontend/src/instrument.ts`. Dashboard: https://flawch
 - **Skip expected failures** — e.g. checking if Google OAuth is available (`.catch(() => setGoogleAvailable(false))`) is expected to fail in dev.
 - **Always handle `isError` in data-loading ternary chains** — every `useQuery` result rendered with a loading/data/empty chain must include an `isError` branch showing "Failed to load [X]. Something went wrong. Please try again in a moment." Never let errors fall through to empty-state messages like "No games imported yet" — this misleads users into thinking they have no data when the API simply failed.
 
-## Outbound link tracking (Umami)
+## Umami analytics (outbound links, feature events, identity)
+
+### Outbound links
 
 Umami does **not** track outbound clicks automatically. Every `<a>` leaving flawchess.com (including `mailto:`) needs an explicit `data-umami-event` attribute, otherwise the click is invisible:
 
@@ -40,7 +42,24 @@ Umami does **not** track outbound clicks automatically. Every `<a>` leaving flaw
 - Events land in the **app** Umami site (`0ca19960-…`, tag in `frontend/index.html`), separate from the stories site. Only fires on `flawchess.com` because of `data-domains`, so localhost clicks are never recorded.
 - Dynamically rendered links (game cards) need no extra wiring: the tracker observes DOM mutations and binds new elements.
 - **Never put `data-umami-event` on an internal react-router `<Link>`.** On an `<a href>` without `target="_blank"` the tracker calls `preventDefault()` then assigns `location.href` itself, downgrading a client-side navigation into a full page reload. For internal links call `trackEvent()` from `frontend/src/lib/analytics.ts` in `onClick` instead; the attribute is only for `<button>` elements and outbound `target="_blank"` links.
-- Track only what the browser knows and the database cannot: signup-CTA attribution (`signup-cta` + `source`), guest starts, and the PWA install funnel. Signups, imports, and analysis runs already live in `users` / `import_jobs` and must not be duplicated as events.
+- Track only what the browser knows and the database cannot. Signups, imports, analysis runs, train guesses and bookmark saves already live in the database and must not be duplicated as events. Since Phase 229 every authenticated session (guests included) is identified with `users.id` as the Umami `distinct_id`, so Umami behavior joins to those rows instead of duplicating them.
+
+### Feature events
+
+Every new user-facing feature ships with its event in the same change, through the typed `trackFeature` registry in `frontend/src/lib/analytics.ts`. Free-form events are a build error by design.
+
+- **Register first.** Add the target (and its value union) to `FeatureEventMap` and its const arrays in `analytics.ts`, then call `trackFeature(name, props)` from the user-initiated handler. Never from a `useEffect` on a value, and never on mount or state restore (D-03): that fires without a user action. The one exception is `MobileFilterDrawer`, whose open-transition effect is safe only because every parent opens it from a tap; never open a drawer programmatically without moving its tracking into the trigger handler.
+- **Enumerated literals only (D-04).** Values are literal unions. Never a FEN, username, opening name, game or bookmark id, or free text.
+- **Reuse the 9 verbs** (`tab-switch`, `toggle`, `filter-change`, `option-change`, `board-tool`, `popover-open`, `panel-open`, `action`, `nav-click`) instead of adding a new event name. Never rename an existing event name or target: a rename splits the Umami history (D-01).
+- **Popovers and panels.** Explanation popovers use `useTrackedPopoverOpen`, open-state panels use `useTrackedOpen`. An `InfoPopover` `testId` becomes the `popover-open` target via `popoverTargetFromTestId`, which only strips numeric segments, per-TC segments after `tc`/`card` (one row per explanation, not per time control) and view suffixes, so never interpolate a non-numeric free value (SAN, FEN, name, opening) into an `InfoPopover` `testId`.
+- **Sliders** track in `onValueCommit`, not on every change.
+- **Skip what the URL or database already says.** URL-routed tabs need no event (their pageview covers it, D-02). Skip high-frequency interactions such as move stepping, piece drag and chart scrubbing (D-06). A handler whose whole effect is a backend write that lands in a table (train retry, bookmark save) stays un-evented because the row is DB-known.
+- **Excluded routes.** `/admin`, `/activity` and auth flows send nothing; `trackFeature` enforces it (D-14).
+- Legacy events (`signup-cta`, `import-cta`, `guest-start`, `pwa-*`, `settings-*`, `engine-gate-*`, `outbound-*`) keep `trackEvent` and their names (D-05).
+
+### Identity
+
+`main.tsx` identifies at boot from the `auth_token` JWT `sub` (`identifyFromStoredToken`), and `ProtectedLayout` re-identifies with the account tag (guest or registered). Impersonation tokens never identify. Logout's full-page navigation is the identity reset (Umami v3 has no reset API), so keep it a hard navigation, not a client-side route change.
 
 ## Browser Automation Rules
 

@@ -17,7 +17,7 @@
  */
 
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, render, screen } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 
 // The grid self-fetches via useTacticComparison — mock the hook module.
 vi.mock('@/hooks/useLibrary', () => ({
@@ -318,6 +318,29 @@ describe('TacticComparisonGrid — More Tactics accordion (D-14 / TACUI-08)', ()
     );
     expect(cards[0]?.getAttribute('data-testid')).toBe('tactic-family-card-fork');
     expect(cards[1]?.getAttribute('data-testid')).toBe('tactic-family-card-skewer');
+  });
+
+  it('expanding More Tactics fires one panel-open; collapsing sends nothing (Phase 229)', () => {
+    const track = vi.fn();
+    window.umami = { track, identify: vi.fn() };
+    window.history.pushState({}, '', '/library/stats');
+    vi.mocked(useTacticComparison).mockReturnValue({
+      isLoading: false,
+      isError: false,
+      data: makeResponse({ bullets: make10Bullets() }),
+    } as ReturnType<typeof useTacticComparison>);
+
+    renderGrid();
+    expect(track).not.toHaveBeenCalled();
+    const trigger = screen.getByTestId('tactic-grid-more-tactics').querySelector('button')!;
+    fireEvent.click(trigger);
+    expect(track).toHaveBeenCalledTimes(1);
+    expect(track).toHaveBeenCalledWith('panel-open', { page: 'library', target: 'tactic-grid-more' });
+    fireEvent.click(trigger);
+    expect(track).toHaveBeenCalledTimes(1);
+
+    delete window.umami;
+    window.history.pushState({}, '', '/');
   });
 
   it('≤6 families → no More Tactics accordion renders', () => {

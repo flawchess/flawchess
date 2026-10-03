@@ -15,6 +15,7 @@ import { PersonaCard } from '@/components/bots/PersonaCard';
 import { TrainBotBubble } from '@/components/train/TrainBotBubble';
 import { Button } from '@/components/ui/button';
 import { InfoPopover } from '@/components/ui/info-popover';
+import { trackFeature } from '@/lib/analytics';
 import { rosterHost, ROSTER_HUMAN_LIKE_LINE } from '@/lib/botGameCopy';
 import { devClockNow, readDevClockOffsetMinutes } from '@/lib/devClock';
 import {
@@ -165,7 +166,10 @@ export function PersonaGrid({
       <Button
         variant="brand-outline"
         data-testid="bots-persona-custom"
-        onClick={onSelectCustom}
+        onClick={() => {
+          onSelectCustom();
+          trackFeature('action', { target: 'custom-setup-open' });
+        }}
         className="h-12 w-full"
       >
         Custom

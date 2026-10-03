@@ -3,7 +3,7 @@
  * BoardControls unit tests — the opt-in fast-forward render guard
  * (Quick 260831-s4y, D-07).
  */
-import { describe, it, expect, vi, afterEach } from 'vitest';
+import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest';
 import { render, screen, cleanup, fireEvent } from '@testing-library/react';
 import { BoardControls } from '../BoardControls';
 import { TooltipProvider } from '@/components/ui/tooltip';
@@ -93,5 +93,39 @@ describe('BoardControls labels mode', () => {
   it('never uses a sub-text-sm font-size utility on a label', () => {
     const { container } = renderControls({ flat: true, labels: true });
     expect(container.innerHTML).not.toContain('text-xs');
+  });
+});
+
+// Phase 229 D-06/D-12: only the discrete flip tool is tracked, never move stepping.
+describe('BoardControls tracking', () => {
+  let track: ReturnType<typeof vi.fn>;
+
+  beforeEach(() => {
+    track = vi.fn();
+    window.umami = { track, identify: vi.fn() };
+    window.history.pushState({}, '', '/analysis');
+  });
+
+  afterEach(() => {
+    cleanup();
+    delete window.umami;
+    window.history.pushState({}, '', '/');
+  });
+
+  it('flip calls onFlip and sends one board-tool flip', () => {
+    const handlers = requiredHandlers();
+    renderControls(handlers);
+    fireEvent.click(screen.getByTestId('board-btn-flip'));
+    expect(handlers.onFlip).toHaveBeenCalledTimes(1);
+    expect(track).toHaveBeenCalledTimes(1);
+    expect(track).toHaveBeenCalledWith('board-tool', { page: 'analysis', target: 'flip' });
+  });
+
+  it('back, forward, reset and fast-forward send nothing (D-06)', () => {
+    renderControls({ onFastForward: vi.fn(), canFastForward: true });
+    for (const id of ['board-btn-back', 'board-btn-forward', 'board-btn-reset', 'board-btn-fast-forward']) {
+      fireEvent.click(screen.getByTestId(id));
+    }
+    expect(track).not.toHaveBeenCalled();
   });
 });

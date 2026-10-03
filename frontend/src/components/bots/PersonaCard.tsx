@@ -16,6 +16,7 @@
 
 import type { CSSProperties, ReactElement } from 'react';
 import { Star } from 'lucide-react';
+import { trackFeature } from '@/lib/analytics';
 import type { Persona } from '@/lib/personas/personaRegistry';
 import {
   PERSONA_STYLE_ACCENT,
@@ -113,7 +114,11 @@ export function PersonaCard({ persona, onSelect, winsForPersona }: PersonaCardPr
       type="button"
       data-testid={`bots-persona-card-${persona.id}`}
       aria-label={`${persona.name}, ${persona.calibratedLabel} ELO`}
-      onClick={() => onSelect(persona)}
+      onClick={() => {
+        onSelect(persona);
+        // Phase 229 D-04: no persona id or name in the payload, only that a persona was opened.
+        trackFeature('action', { target: 'persona-open' });
+      }}
       /* Mobile keeps only a hairline horizontal gutter: in the 4-column grid at
          a 360-390px viewport, the previous px-2 forced 2-9 of the persona names
          onto a third line ("Rocco the / Armadillo" became "Rocco / the /

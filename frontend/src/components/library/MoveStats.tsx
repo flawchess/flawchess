@@ -14,6 +14,7 @@ import {
   type MoveStatSide,
 } from '@/lib/moveStatsCounts';
 import { cn } from '@/lib/utils';
+import { trackFeature } from '@/lib/analytics';
 import type { GameFlawCard, FlawSeverity } from '@/types/library';
 
 /**
@@ -337,7 +338,11 @@ export function MoveStats({
             data-testid="move-stats-expand-toggle"
             aria-label={collapsed ? 'Expand move stats' : 'Collapse move stats'}
             className="flex items-center justify-center text-muted-foreground hover:text-foreground"
-            onClick={() => onToggleCollapse?.()}
+            onClick={() => {
+              // Discovery only: track the expand, never the collapse (D-13).
+              if (collapsed) trackFeature('panel-open', { target: 'move-stats-expand' });
+              onToggleCollapse?.();
+            }}
           >
             <ChevronDown className={cn('h-5 w-5 transition-transform', !collapsed && 'rotate-180')} />
           </button>

@@ -38,6 +38,7 @@ import { Chess } from 'chess.js';
 import { Loader2, Search, X } from 'lucide-react';
 import { Link } from 'react-router';
 import { trainApi } from '@/api/client';
+import { trackFeature } from '@/lib/analytics';
 import { useLibraryGame } from '@/hooks/useLibrary';
 import { useIsDesktop } from '@/hooks/useIsDesktop';
 import { Button } from '@/components/ui/button';
@@ -454,7 +455,10 @@ function TrainExplorationPanel({
             className="ml-auto shrink-0 text-muted-foreground hover:text-foreground"
             data-testid="btn-train-exploration-close"
             aria-label="Back to the solution"
-            onClick={onExit}
+            onClick={() => {
+              onExit?.();
+              trackFeature('action', { target: 'train-explore-exit' });
+            }}
           >
             <X className="h-4 w-4" aria-hidden="true" />
           </button>

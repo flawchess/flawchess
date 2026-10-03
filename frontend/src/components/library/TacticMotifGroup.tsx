@@ -1,6 +1,7 @@
 import * as React from 'react';
 import { TacticMotifChip } from './TacticMotifChip';
 import { ChipColumn } from './ChipColumn';
+import { trackFeature } from '@/lib/analytics';
 
 // Quick 260620-sep: how many tactic chips a single orientation group shows before
 // collapsing the rest behind a "+N more" toggle. Beginner games can span many distinct
@@ -90,7 +91,11 @@ export function TacticMotifGroup({
         <button
           type="button"
           className="text-sm font-medium text-muted-foreground underline-offset-2 hover:text-foreground hover:underline"
-          onClick={() => setExpanded((v) => !v)}
+          onClick={() => {
+            // Discovery only: track the expand, never the collapse (D-13). No game id (D-04).
+            if (!expanded) trackFeature('panel-open', { target: 'tactic-motifs-more' });
+            setExpanded((v) => !v);
+          }}
           data-testid={`btn-tactic-more-${orientation}-${gameId}`}
         >
           {expanded ? 'Show less' : `+${hiddenCount} more`}

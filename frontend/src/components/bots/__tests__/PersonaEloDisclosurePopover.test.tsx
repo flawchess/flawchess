@@ -9,7 +9,7 @@
  * measured copy and the D-06 ~900 floor line are proven to appear the moment
  * a real sweep is fitted — rather than being discovered broken at that point.
  */
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 
 import { PersonaEloDisclosurePopover } from '../PersonaEloDisclosurePopover';
@@ -63,6 +63,30 @@ describe('PersonaEloDisclosurePopover — provisional calibration', () => {
 
     const content = await openDisclosure();
     expect(content.textContent).not.toContain('900');
+  });
+});
+
+describe('PersonaEloDisclosurePopover — popover-open tracking (Phase 229 D-13)', () => {
+  let track: ReturnType<typeof vi.fn>;
+
+  beforeEach(() => {
+    track = vi.fn();
+    window.umami = { track, identify: vi.fn() };
+    window.history.pushState({}, '', '/bots');
+  });
+
+  afterEach(() => {
+    delete window.umami;
+    window.history.pushState({}, '', '/');
+  });
+
+  it('sends nothing on render and one popover-open on first open', async () => {
+    renderPopover(false);
+    expect(track).not.toHaveBeenCalled();
+
+    await openDisclosure();
+    expect(track).toHaveBeenCalledTimes(1);
+    expect(track).toHaveBeenCalledWith('popover-open', { page: 'bots', target: 'persona-elo-disclosure' });
   });
 });
 

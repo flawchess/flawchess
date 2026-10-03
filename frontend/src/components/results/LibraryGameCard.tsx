@@ -50,6 +50,7 @@ import { DEFAULT_TACTIC_DEPTH_VALUE } from '@/lib/tacticDepth';
 import { useMiniBoardSize } from '@/hooks/useMiniBoardSize';
 import { formatTimeControl } from '@/lib/formatTimeControl';
 import { Button } from '@/components/ui/button';
+import { trackFeature } from '@/lib/analytics';
 import type { GameFlawCard, FlawSeverity, FlawTag } from '@/types/library';
 import type { UserResult } from '@/types/api';
 
@@ -599,6 +600,8 @@ export function LibraryGameCard({
   const handleActivate = (ref: FlawRef) => {
     const plies = pliesForRef(ref);
     if (plies.length === 0) return;
+    // No ref, tag or game id in the payload (D-04).
+    trackFeature('action', { target: 'chip-cycle' });
     const pos = cycle && sameFlawRef(cycle.ref, ref) ? (cycle.pos + 1) % plies.length : 0;
     setCycle({ ref, pos });
     setCommandSeq((s) => s + 1);
@@ -1099,6 +1102,8 @@ export function LibraryGameCard({
           to={analyzeTo}
           data-testid="btn-library-game-analyze"
           aria-label="Analyze game"
+          // Internal Link: track in onClick, never data-umami-event (frontend/CLAUDE.md).
+          onClick={() => trackFeature('action', { target: 'analyze' })}
         >
           <Search className="h-4 w-4 mr-1" />
           Analyze
@@ -1177,6 +1182,8 @@ export function LibraryGameCard({
                 to={analyzeTo}
                 data-testid="btn-library-game-analyze"
                 aria-label="Analyze game"
+                // Internal Link: track in onClick, never data-umami-event (frontend/CLAUDE.md).
+                onClick={() => trackFeature('action', { target: 'analyze' })}
               >
                 <Search className="h-4 w-4 mr-1" />
                 Analyze

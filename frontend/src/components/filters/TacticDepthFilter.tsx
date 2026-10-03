@@ -10,6 +10,7 @@
 import { useCallback } from 'react';
 import { PresetRangeFilter } from './PresetRangeFilter';
 import type { PresetOption } from './PresetRangeFilter';
+import { trackFeature } from '@/lib/analytics';
 import {
   DEPTH_MIN,
   DEPTH_MAX,
@@ -45,11 +46,28 @@ export function TacticDepthFilter({ value, onChange }: TacticDepthFilterProps) {
     [onChange],
   );
 
+  // Tracked on drag END only (Radix onValueCommit), never per drag step (Phase 229
+  // Pitfall 2). Only the matching preset or 'custom' is sent, never the bounds.
+  const handleSliderCommit = useCallback((values: number[]) => {
+    const lo = values[0] ?? DEPTH_MIN;
+    const hi = values[1] ?? DEPTH_MAX;
+    const range = sliderToRange(lo, hi);
+    trackFeature('filter-change', {
+      target: 'tactic-depth',
+      value: derivePreset(range.min, range.max) ?? 'custom',
+    });
+  }, []);
+
   const handlePreset = useCallback(
     (preset: string) => {
-      onChange(presetToRange(preset as TacticDepthPreset));
+      const next = preset as TacticDepthPreset;
+      onChange(presetToRange(next));
+      // Re-clicking the active preset changes nothing, so it is not a filter change.
+      if (next !== activePreset) {
+        trackFeature('filter-change', { target: 'tactic-depth', value: next });
+      }
     },
-    [onChange],
+    [onChange, activePreset],
   );
 
   // The summary goes text-toggle-active when the active range is not the
@@ -81,6 +99,7 @@ export function TacticDepthFilter({ value, onChange }: TacticDepthFilterProps) {
         minStepsBetweenThumbs: 0,
         value: [value.min, value.max],
         onValueChange: handleSliderChange,
+        onValueCommit: handleSliderCommit,
         thumbLabels: ['Minimum tactic depth', 'Maximum tactic depth'],
       }}
     />
