@@ -31,6 +31,7 @@ import { formatFlawEvalParts } from '@/lib/formatFlawEval';
 import { useMiniBoardSize } from '@/hooks/useMiniBoardSize';
 import { TacticMotifChip } from '@/components/library/TacticMotifChip';
 import { buildGameAnalysisUrl } from '@/lib/analysisUrl';
+import { trackFeature } from '@/lib/analytics';
 import type { FlawListItem, FlawSeverity, TacticOrientation } from '@/types/library';
 
 // Standalone component per D-05 (sibling to LibraryGameCard — do NOT import from it).
@@ -208,6 +209,8 @@ export function FlawCard({ flaw, tacticOrientation = 'either' }: FlawCardProps) 
           to={buildGameAnalysisUrl(flaw.game_id, flaw.ply)}
           data-testid="btn-flaw-analyze"
           aria-label="Analyze game"
+          // Internal Link: track in onClick, never data-umami-event (frontend/CLAUDE.md).
+          onClick={() => trackFeature('action', { target: 'analyze' })}
         >
           <Search className="h-4 w-4 mr-1" />
           Analyze

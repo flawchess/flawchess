@@ -28,7 +28,12 @@ interface AuthState {
    */
   impersonate: (userId: number) => Promise<void>;
   logout: () => void;
-  /** Clear auth state without redirect — used when a guest navigates to the register page. */
+  /**
+   * Clear auth state without redirect — used when a guest navigates to the register page.
+   * Callers MUST hard-navigate immediately afterwards (all three current callers assign
+   * window.location.href to the register URL), because that reload also wipes the Umami
+   * in-memory identity (Phase 229 D-07).
+   */
   logoutForPromotion: () => void;
 }
 
@@ -164,6 +169,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     sessionStorage.removeItem('promote_intent');
     setToken(null);
     setUser(null);
+    // Load-bearing for analytics identity: this hard navigation is also the
+    // Umami identity reset. Umami v3 keeps the identify() id in tracker memory
+    // with no reset API, so this reload is what stops post-logout traffic from
+    // carrying this user's id. Keep it (Phase 229 D-07).
     window.location.href = '/';
   };
 

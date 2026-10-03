@@ -15,6 +15,7 @@ import {
   CHIP_ACTIVE_CLASS,
   CHIP_INACTIVE_CLASS,
 } from '@/components/bots/chipStyles';
+import { trackFeature } from '@/lib/analytics';
 import { cn } from '@/lib/utils';
 import {
   HUMAN_BLEND,
@@ -83,7 +84,14 @@ export function PlayStyleControl({ blend, onChange }: PlayStyleControlProps) {
           <button
             key={preset.key}
             type="button"
-            onClick={() => onChange(preset.blend)}
+            onClick={() => {
+              // Phase 229 D-12: one component serves both setup surfaces; re-picking the
+              // active preset is not a change.
+              if (activePreset !== preset.key) {
+                trackFeature('option-change', { target: 'play-style', value: preset.key });
+              }
+              onChange(preset.blend);
+            }}
             data-testid={preset.testId}
             aria-pressed={activePreset === preset.key}
             className={cn(

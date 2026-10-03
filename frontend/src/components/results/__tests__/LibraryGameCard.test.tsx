@@ -14,7 +14,7 @@
  * use getAllByTestId / queryAllByTestId rather than the single-element getByTestId.
  */
 
-import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { render, screen, cleanup, fireEvent } from '@testing-library/react';
 import { MemoryRouter } from 'react-router';
 import type { ReactNode } from 'react';
@@ -584,5 +584,66 @@ describe('LibraryGameCard miniboard corner tier badge (both players)', () => {
     renderCard(<LibraryGameCard game={bothPlayersTierGame()} />);
     scrubTo(2);
     expect(screen.getAllByTestId('mini-board-marker-best').length).toBeGreaterThan(0);
+  });
+});
+
+describe('LibraryGameCard feature-event tracking (Phase 229 D-12)', () => {
+  const track = vi.fn();
+
+  beforeEach(() => {
+    track.mockClear();
+    window.umami = { track, identify: vi.fn() };
+    window.history.pushState({}, '', '/library/games');
+  });
+
+  afterEach(() => {
+    delete window.umami;
+    window.history.pushState({}, '', '/');
+  });
+
+  /** The game id must never leave the browser (D-04, T-229-18). */
+  function expectNoGameId() {
+    expect(JSON.stringify(track.mock.calls)).not.toContain(String(GAME_ID));
+  }
+
+  it('sends nothing on render', () => {
+    renderCard(<LibraryGameCard game={makeGame([])} />);
+    expect(track).not.toHaveBeenCalled();
+  });
+
+  it('clicking Analyze sends one id-free action analyze', () => {
+    renderCard(<LibraryGameCard game={makeGame([])} />);
+    fireEvent.click(screen.getAllByTestId('btn-library-game-analyze')[0]!);
+    expect(track).toHaveBeenCalledTimes(1);
+    expect(track).toHaveBeenCalledWith('action', { page: 'library', target: 'analyze' });
+    expectNoGameId();
+  });
+
+  it('activating a tag chip sends one id-free action chip-cycle', () => {
+    renderCard(
+      <LibraryGameCard
+        game={makeGame([marker({ ply: 2, allowed_tactic_motif: 'fork', allowed_tactic_confidence: 90 })])}
+      />,
+    );
+    fireEvent.click(screen.getAllByTestId(`chip-tactic-allowed-fork-${GAME_ID}`)[0]!);
+    expect(track).toHaveBeenCalledTimes(1);
+    expect(track).toHaveBeenCalledWith('action', { page: 'library', target: 'chip-cycle' });
+    expectNoGameId();
+    expect(JSON.stringify(track.mock.calls)).not.toContain('fork');
+  });
+
+  it('expanding the mobile move stats sends panel-open move-stats-expand once, collapsing sends nothing', () => {
+    const game: GameFlawCard = {
+      ...makeGame([marker({ ply: 2, severity: 'blunder', is_user: true })]),
+      white_accuracy: 88,
+    };
+    renderCard(<LibraryGameCard game={game} />);
+    const toggle = screen.getAllByTestId('move-stats-expand-toggle')[0]!;
+    fireEvent.click(toggle);
+    expect(track).toHaveBeenCalledTimes(1);
+    expect(track).toHaveBeenCalledWith('panel-open', { page: 'library', target: 'move-stats-expand' });
+    fireEvent.click(toggle);
+    expect(track).toHaveBeenCalledTimes(1);
+    expectNoGameId();
   });
 });

@@ -2,7 +2,7 @@ import { useState, useCallback, useMemo, useRef, useEffect } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { Link, useSearchParams } from 'react-router';
 import { SlidersHorizontal, Tags } from 'lucide-react';
-import { SidebarLayout } from '@/components/layout/SidebarLayout';
+import { SidebarLayout, type SidebarPanelConfig } from '@/components/layout/SidebarLayout';
 import { Button } from '@/components/ui/button';
 import { LoadError } from '@/components/ui/load-error';
 import { EmptyState } from '@/components/ui/empty-state';
@@ -354,7 +354,7 @@ export function FlawsTab() {
     </div>
   );
 
-  const sidebarPanels = [
+  const sidebarPanels: SidebarPanelConfig[] = [
     {
       id: 'filters',
       label: 'Filters',
@@ -500,6 +500,7 @@ export function FlawsTab() {
         <MobileFilterDrawer
           open={mobileFiltersOpen}
           onOpenChange={handleMobileFiltersOpenChange}
+          panel="filters"
           title="Filters"
           closeLabel="Close game filters"
           contentTestId="drawer-game-filter-sidebar"
@@ -524,6 +525,7 @@ export function FlawsTab() {
         <MobileFilterDrawer
           open={mobileFlawFiltersOpen}
           onOpenChange={handleMobileFlawFiltersOpenChange}
+          panel="tags"
           title="Tags"
           titleAccessory={<TagFilterLogicInfo />}
           contentTestId="drawer-flaw-filter-sidebar"

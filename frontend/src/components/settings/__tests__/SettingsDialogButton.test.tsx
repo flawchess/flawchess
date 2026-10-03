@@ -5,7 +5,7 @@
  * WR-01, second pass: a plain onClick button left focus on <body>).
  */
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { SettingsDialogButton } from '@/components/settings/SettingsDialogButton';
 
@@ -34,5 +34,38 @@ describe('SettingsDialogButton', () => {
     fireEvent.keyDown(dialog, { key: 'Escape' });
     await waitFor(() => expect(screen.queryByTestId('settings-dialog')).toBeNull());
     expect(document.activeElement).toBe(trigger);
+  });
+
+  describe('panel-open tracking', () => {
+    const track = vi.fn();
+
+    beforeEach(() => {
+      track.mockClear();
+      window.umami = { track, identify: vi.fn() };
+      window.history.pushState({}, '', '/openings');
+    });
+
+    afterEach(() => {
+      delete window.umami;
+      window.history.pushState({}, '', '/');
+    });
+
+    it('sends one panel-open settings per open, none on mount', async () => {
+      render(<SettingsDialogButton testId="btn-test-settings" />);
+      expect(track).not.toHaveBeenCalled();
+
+      fireEvent.click(screen.getByTestId('btn-test-settings'));
+      const dialog = await screen.findByTestId('settings-dialog');
+      expect(track).toHaveBeenCalledTimes(1);
+      expect(track).toHaveBeenCalledWith('panel-open', { page: 'openings', target: 'settings' });
+
+      fireEvent.keyDown(dialog, { key: 'Escape' });
+      await waitFor(() => expect(screen.queryByTestId('settings-dialog')).toBeNull());
+      expect(track).toHaveBeenCalledTimes(1);
+
+      fireEvent.click(screen.getByTestId('btn-test-settings'));
+      await screen.findByTestId('settings-dialog');
+      expect(track).toHaveBeenCalledTimes(2);
+    });
   });
 });

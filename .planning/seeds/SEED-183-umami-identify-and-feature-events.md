@@ -1,6 +1,8 @@
 ---
 id: SEED-183
-status: dormant
+status: promoted
+promoted_to: Phase 229
+promoted: 2026-10-03
 planted: 2026-10-03
 planted_during: no open milestone (after v2.21), Phase 228 (SEED-175 settings page) in discuss; /gsd-explore
 trigger_when: after Phase 228 (settings page), or the next growth/analytics work

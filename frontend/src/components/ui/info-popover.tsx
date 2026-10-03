@@ -3,6 +3,7 @@ import { Popover as PopoverPrimitive } from "radix-ui"
 import { HelpCircle } from "lucide-react"
 import type { LucideIcon } from "lucide-react"
 import { cn } from "@/lib/utils"
+import { useTrackedPopoverOpen } from "@/hooks/useTrackedOpen"
 
 interface InfoPopoverProps {
   children: React.ReactNode
@@ -20,7 +21,7 @@ interface InfoPopoverProps {
 }
 
 function InfoPopover({ children, ariaLabel, testId, side = "top", icon: Icon = HelpCircle, triggerContent }: InfoPopoverProps) {
-  const [open, setOpen] = React.useState(false)
+  const [open, setOpen] = useTrackedPopoverOpen(testId)
   const hoverTimeout = React.useRef<ReturnType<typeof setTimeout> | null>(null)
 
   const handleMouseEnter = () => {

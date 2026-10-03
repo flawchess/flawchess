@@ -47,6 +47,7 @@ import { useStockfishEngine } from '@/hooks/useStockfishEngine';
 import { useStockfishGradingEngine } from '@/hooks/useStockfishGradingEngine';
 import { useMaiaEngine } from '@/hooks/useMaiaEngine';
 import { nextLineFen } from '@/lib/nextLineFen';
+import { onOff, trackFeature } from '@/lib/analytics';
 import {
   useMaiaEloDefault,
   deriveRawDefault,
@@ -423,6 +424,20 @@ export default function Analysis() {
   // real-device mobile-memory UAT per 155-RESEARCH.md D-02).
   const [maiaEnabled, setMaiaEnabled] = useState(true);
   const [flawChessEnabled, setFlawChessEnabled] = useState(true);
+  // D-12 group 1: every engine on/off switch (desktop cards and mobile tabs) reports
+  // through these; the raw setters stay private to this component.
+  const handleStockfishToggle = useCallback((on: boolean): void => {
+    setEngineEnabled(on);
+    trackFeature('toggle', { target: 'engine-stockfish', value: onOff(on) });
+  }, []);
+  const handleMaiaToggle = useCallback((on: boolean): void => {
+    setMaiaEnabled(on);
+    trackFeature('toggle', { target: 'engine-maia', value: onOff(on) });
+  }, []);
+  const handleFlawChessToggle = useCallback((on: boolean): void => {
+    setFlawChessEnabled(on);
+    trackFeature('toggle', { target: 'engine-flawchess', value: onOff(on) });
+  }, []);
   // Phase 228 (SEED-175): per-engine line counts from the settings store, read
   // ONCE here and threaded to the cards / reconciliation hook as props and
   // options (the presentational components never read the store themselves).
@@ -2221,7 +2236,7 @@ export default function Analysis() {
   // src/components/analysis/AnalysisTabs.tsx (215-06).
   const flawChessCardProps = {
     flawChessEnabled,
-    setFlawChessEnabled,
+    setFlawChessEnabled: handleFlawChessToggle,
     fcLines,
     selectedElo,
     flawChessLoading,
@@ -2367,7 +2382,7 @@ export default function Analysis() {
           isOpponentToMove={isOpponentToMove}
           onPlayMove={playProseMove}
           maiaEnabled={maiaEnabled}
-          setMaiaEnabled={setMaiaEnabled}
+          setMaiaEnabled={handleMaiaToggle}
           eloSelector={eloSelector}
         />
       }
@@ -2409,7 +2424,7 @@ export default function Analysis() {
   const stockfishCardProps = {
     sfLines,
     engineEnabled,
-    setEngineEnabled,
+    setEngineEnabled: handleStockfishToggle,
     reconciledBestEval,
     engineLoading,
     reconciledPvLines,
@@ -2454,7 +2469,7 @@ export default function Analysis() {
     isOpponentToMove,
     onPlayMove: playProseMove,
     enabled: maiaEnabled,
-    onToggleEnabled: setMaiaEnabled,
+    onToggleEnabled: handleMaiaToggle,
   };
 
   const pasteModalNodeProps = {

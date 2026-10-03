@@ -18,8 +18,8 @@
  * - Returns null when categoriesByTc is undefined.
  */
 
-import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
-import { cleanup, render, screen, act } from '@testing-library/react';
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import { cleanup, render, screen, act, fireEvent } from '@testing-library/react';
 import { MemoryRouter } from 'react-router';
 
 // useEvalCoverage calls useQuery which requires a QueryClientProvider.
@@ -296,5 +296,37 @@ describe('EndgameTypeBreakdownSection — Filter-change reset (D-12)', () => {
     // Now bullet should be expanded, rapid closed.
     expect(screen.getByTestId('endgame-type-tc-card-bullet').getAttribute('data-state')).toBe('open');
     expect(screen.getByTestId('endgame-type-tc-card-rapid').getAttribute('data-state')).toBe('closed');
+  });
+});
+
+describe('EndgameTypeBreakdownSection — panel-open tracking (Phase 229 D-12)', () => {
+  const track = vi.fn();
+
+  beforeEach(() => {
+    track.mockClear();
+    window.umami = { track, identify: vi.fn() };
+    window.history.pushState({}, '', '/endgames');
+  });
+
+  afterEach(() => {
+    delete window.umami;
+    window.history.pushState({}, '', '/');
+  });
+
+  it('sends nothing on render, one id-free panel-open on expand, nothing on collapse', () => {
+    // rapid is the primary TC and starts expanded; bullet starts collapsed.
+    renderSection(buildCategoriesByTc({ bullet: 2000, rapid: 500 }));
+    expect(track).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByTestId('type-breakdown-tc-bullet-trigger'));
+    expect(screen.getByTestId('endgame-type-tc-card-bullet').getAttribute('data-state')).toBe('open');
+    expect(track).toHaveBeenCalledTimes(1);
+    expect(track).toHaveBeenCalledWith('panel-open', { page: 'endgames', target: 'endgame-type-tc' });
+    expect(JSON.stringify(track.mock.calls)).not.toContain('bullet');
+
+    // Collapse the item we just opened: no event.
+    fireEvent.click(screen.getByTestId('type-breakdown-tc-bullet-trigger'));
+    expect(screen.getByTestId('endgame-type-tc-card-bullet').getAttribute('data-state')).toBe('closed');
+    expect(track).toHaveBeenCalledTimes(1);
   });
 });

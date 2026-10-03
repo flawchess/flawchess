@@ -39,6 +39,7 @@ import { Chess, type Move } from 'chess.js';
 import { Loader2, Search } from 'lucide-react';
 import { Link } from 'react-router';
 import { buildGameAnalysisUrl } from '@/lib/analysisUrl';
+import { trackFeature } from '@/lib/analytics';
 import { ChessBoard } from '@/components/board/ChessBoard';
 import { Button } from '@/components/ui/button';
 import { LoadError } from '@/components/ui/load-error';
@@ -520,7 +521,11 @@ function VerdictActions({
           variant="brand-outline"
           className={TRAIN_BUTTON_CLASS}
           data-testid="btn-train-solution"
-          onClick={onShowSolution}
+          onClick={() => {
+            onShowSolution();
+            // Phase 229 D-12: drill outcomes are DB-known, but revealing the solution is not.
+            trackFeature('action', { target: 'train-solution' });
+          }}
         >
           Solution
         </Button>
@@ -1499,6 +1504,9 @@ export function TrainSolveScreen({
   // instead of the start screen (a resumed session no longer contains the
   // solved puzzle, and the grade result lives only in this page's memory).
   function handleAnalyzeClick(): void {
+    // Phase 229 D-12: both Analyze buttons land here (handleAnalyzeFromReveal calls through),
+    // so tracking here, before the cache-state early return, counts each click exactly once.
+    trackFeature('action', { target: 'analyze' });
     const sessionId = trainSession.session?.session_id;
     if (
       sessionId == null ||

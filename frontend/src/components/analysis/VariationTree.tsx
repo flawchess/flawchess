@@ -44,6 +44,7 @@ import {
   ACTIVE_FILTER_RING_CLASS,
 } from '@/lib/theme';
 import type { FlawSeverity } from '@/types/library';
+import { trackFeature } from '@/lib/analytics';
 
 // Subtle zebra stripe for the desktop move list (Quick 260627-r9g item 2). A faint
 // light wash on odd rows; not a semantic color, so a Tailwind opacity utility is fine.
@@ -687,6 +688,7 @@ function siblingBlockToChips(
             onClick={(e) => {
               e.stopPropagation();
               onDeleteLine?.(block.rootId);
+              trackFeature('board-tool', { target: 'line-delete' });
             }}
           >
             <X className="h-3.5 w-3.5" aria-hidden />
@@ -1028,6 +1030,7 @@ function DesktopTree({
                 onClick={(e) => {
                   e.stopPropagation();
                   onDeleteLine?.(block.rootId);
+                  trackFeature('board-tool', { target: 'line-delete' });
                 }}
               >
                 <X className="h-4 w-4" aria-hidden />

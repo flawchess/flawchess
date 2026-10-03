@@ -39,6 +39,7 @@ import {
 } from '@/lib/botTimeControlPresets';
 import type { BotGameSettings } from '@/hooks/useBotGame';
 import type { MoverColor } from '@/lib/liveFlaw';
+import { trackFeature } from '@/lib/analytics';
 import { cn } from '@/lib/utils';
 
 export interface SetupScreenProps {
@@ -192,7 +193,11 @@ function TcBucketGroup({ bucket, activeLabel, onSelect }: TcBucketGroupProps): R
               type="button"
               data-testid={tcPresetTestId(bucket, preset.label)}
               aria-pressed={isActive}
-              onClick={() => onSelect(preset.label)}
+              onClick={() => {
+                // Phase 229 D-12: re-picking the active preset is not a change.
+                if (!isActive) trackFeature('option-change', { target: 'bot-tc', value: preset.label });
+                onSelect(preset.label);
+              }}
               className={cn(CHIP_BASE_CLASS, isActive ? CHIP_ACTIVE_CLASS : CHIP_INACTIVE_CLASS)}
             >
               {preset.label}
@@ -266,7 +271,10 @@ export function SetupScreen({ ownerKey, normalizedRating, onStart }: SetupScreen
                 type="button"
                 data-testid={`setup-color-${option.key}`}
                 aria-pressed={isActive}
-                onClick={() => state.setColorPreference(option.key)}
+                onClick={() => {
+                  if (!isActive) trackFeature('option-change', { target: 'bot-color', value: option.key });
+                  state.setColorPreference(option.key);
+                }}
                 className={cn(CHIP_BASE_CLASS, isActive ? CHIP_ACTIVE_CLASS : CHIP_INACTIVE_CLASS)}
               >
                 {option.label}

@@ -1,4 +1,5 @@
 import * as React from 'react';
+import { useTrackedPopoverOpen } from '@/hooks/useTrackedOpen';
 import { Popover as PopoverPrimitive } from 'radix-ui';
 import { Search } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -69,7 +70,7 @@ export function AchievableScorePopover({
   ariaLabel = 'What is Achievable Score?',
   triggerClassName,
 }: AchievableScorePopoverProps) {
-  const [open, setOpen] = React.useState(false);
+  const [open, setOpen] = useTrackedPopoverOpen(testId);
   const hoverTimeout = React.useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const handleMouseEnter = () => {

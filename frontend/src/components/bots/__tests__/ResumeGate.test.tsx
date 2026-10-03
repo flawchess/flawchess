@@ -6,7 +6,7 @@
  * the load-bearing one: an accidental discard destroys an in-progress game
  * with no server-side trace (SC2).
  */
-import { describe, it, expect, vi, afterEach } from 'vitest';
+import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest';
 import { render, screen, fireEvent, cleanup } from '@testing-library/react';
 import { ResumeGate } from '../ResumeGate';
 import type { BotGameSnapshot } from '@/lib/botGameSnapshot';
@@ -225,5 +225,52 @@ describe('ResumeGate', () => {
       );
       expect(screen.getByTestId('resume-gate').textContent).toContain('Classical 30+20');
     });
+  });
+});
+
+// Phase 229 (D-12 group 3): Resume and the CONFIRMED discard are tracked; the
+// first Discard click only opens the confirm dialog and sends nothing.
+describe('ResumeGate feature events (Phase 229)', () => {
+  const track = vi.fn();
+
+  beforeEach(() => {
+    track.mockClear();
+    window.umami = { track, identify: vi.fn() };
+    window.history.pushState({}, '', '/bots');
+  });
+
+  afterEach(() => {
+    delete window.umami;
+    window.history.pushState({}, '', '/');
+  });
+
+  function renderGate(): { onResume: () => void; onDiscard: () => void } {
+    const onResume = vi.fn();
+    const onDiscard = vi.fn();
+    render(
+      <ResumeGate snapshot={buildSnapshot()} plyCount={14} onResume={onResume} onDiscard={onDiscard} />,
+    );
+    return { onResume, onDiscard };
+  }
+
+  it('Resume fires one bot-resume action', () => {
+    const { onResume } = renderGate();
+    expect(track).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByTestId('btn-resume'));
+    expect(onResume).toHaveBeenCalledTimes(1);
+    expect(track).toHaveBeenCalledTimes(1);
+    expect(track).toHaveBeenCalledWith('action', { page: 'bots', target: 'bot-resume' });
+  });
+
+  it('the first Discard click and Cancel send nothing; the confirmed discard fires bot-discard once', () => {
+    renderGate();
+    fireEvent.click(screen.getByTestId('btn-discard'));
+    expect(track).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByTestId('btn-discard-cancel'));
+    expect(track).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByTestId('btn-discard'));
+    fireEvent.click(screen.getByTestId('btn-discard-confirm'));
+    expect(track).toHaveBeenCalledTimes(1);
+    expect(track).toHaveBeenCalledWith('action', { page: 'bots', target: 'bot-discard' });
   });
 });

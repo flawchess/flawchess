@@ -1,9 +1,10 @@
-import { useState } from 'react';
 import { Settings } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { SettingsPanel } from '@/components/settings/SettingsPanel';
 import { cn } from '@/lib/utils';
+import { trackFeature } from '@/lib/analytics';
+import { useTrackedOpen } from '@/hooks/useTrackedOpen';
 
 interface SettingsDialogButtonProps {
   testId: string;
@@ -17,7 +18,8 @@ interface SettingsDialogButtonProps {
  * navigates and changes apply live underneath.
  */
 export function SettingsDialogButton({ testId, className }: SettingsDialogButtonProps) {
-  const [open, setOpen] = useState(false);
+  // Every open of settings is a deliberate click, so no once option (Phase 229 D-13).
+  const [open, setOpen] = useTrackedOpen(() => trackFeature('panel-open', { target: 'settings' }));
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>

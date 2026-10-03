@@ -11,6 +11,7 @@ import {
 } from '@/components/ui/dialog';
 import type { BotGameSnapshot } from '@/lib/botGameSnapshot';
 import { BOT_ACTION_BUTTON_CLASS } from '@/components/bots/chipStyles';
+import { trackFeature } from '@/lib/analytics';
 
 // ─── Named constants (CLAUDE.md no-magic-numbers) ──────────────────────────
 
@@ -111,6 +112,15 @@ export function ResumeGate({
   const handleConfirmDiscard = (): void => {
     setDiscardConfirmOpen(false);
     onDiscard();
+    // Phase 229: only the confirmed discard is tracked (the first Discard click
+    // just opens the confirm). Discard clears a localStorage snapshot, no backend write.
+    trackFeature('action', { target: 'bot-discard' });
+  };
+
+  const handleResume = (): void => {
+    onResume();
+    // Phase 229: resume only flips local state (useBotGame.confirmLive), no backend write.
+    trackFeature('action', { target: 'bot-resume' });
   };
 
   return (
@@ -133,7 +143,7 @@ export function ResumeGate({
             <Button
               variant="default"
               className={BOT_ACTION_BUTTON_CLASS}
-              onClick={onResume}
+              onClick={handleResume}
               data-testid="btn-resume"
             >
               Resume

@@ -16,6 +16,7 @@ import { BOT_ACTION_BUTTON_CLASS } from '@/components/bots/chipStyles';
 import { BotGameBubble } from '@/components/bots/BotGameBubble';
 import type { Persona } from '@/lib/personas/personaRegistry';
 import type { BotLineKey } from '@/lib/botGameCopy';
+import { trackFeature } from '@/lib/analytics';
 
 /** D-20/D-21 copy, exported so `GameResultStrip` renders the EXACT same
  * strings rather than re-typing them — a divergence risk on the "apply
@@ -166,7 +167,12 @@ export function GameResultDialog({
           <Button
             variant="brand-outline"
             className={BOT_ACTION_BUTTON_CLASS}
-            onClick={onAnalyze}
+            onClick={() => {
+              // Track BEFORE onAnalyze: its store-failure fallback navigates
+              // synchronously, which would attribute the event to /analysis.
+              trackFeature('action', { target: 'analyze' });
+              onAnalyze();
+            }}
             disabled={analyzeBusy}
             data-testid="btn-analyze-game"
           >
@@ -182,7 +188,11 @@ export function GameResultDialog({
           <Button
             variant={personaName ? 'brand-outline' : 'default'}
             className={BOT_ACTION_BUTTON_CLASS}
-            onClick={onNewGame}
+            onClick={() => {
+              onNewGame();
+              // Phase 229: local state reset only (Bots.tsx handleNewGame), no backend write.
+              trackFeature('action', { target: 'bot-new-game' });
+            }}
             data-testid="btn-new-game"
           >
             New opponent
@@ -191,7 +201,12 @@ export function GameResultDialog({
             <Button
               variant="default"
               className={BOT_ACTION_BUTTON_CLASS}
-              onClick={onRematch}
+              onClick={() => {
+                onRematch();
+                // Phase 229: starts a local game (Bots.tsx handleStart); the game row is
+                // only stored at finish, so the click itself is not DB-known.
+                trackFeature('action', { target: 'bot-rematch' });
+              }}
               data-testid="btn-rematch"
             >
               {`Rematch ${personaName}`}

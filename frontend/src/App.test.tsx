@@ -21,7 +21,7 @@
  * wrapped in its own MemoryRouter + TooltipProvider.
  */
 
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import { MemoryRouter, Route, Routes } from 'react-router';
 import { TooltipProvider } from '@/components/ui/tooltip';
@@ -1287,5 +1287,102 @@ describe('228 settings overlay entry (D-01..D-03)', () => {
     expect(await screen.findByTestId('settings-sheet')).toBeTruthy();
     expect(screen.queryByTestId('settings-route-sentinel')).toBeNull();
     expect(screen.getByTestId('analysis-mobile-header')).toBeTruthy();
+  });
+});
+
+// ── Phase 229 (D-12 group 4, D-14): nav and drawer tracking ────────────────────
+// trackFeature derives `page` from window.location (not the MemoryRouter), so the
+// path is set with history.pushState. Events reach window.umami.track via the real
+// analytics module.
+describe('229 nav and drawer tracking', () => {
+  const track = vi.fn();
+  const fullProfile = (isSuperuser: boolean): Partial<UserProfile> => ({
+    email: 'tracked@example.com',
+    is_superuser: isSuperuser,
+    is_guest: false,
+    chess_com_game_count: 50,
+    lichess_game_count: 0,
+    impersonation: null,
+  });
+
+  beforeEach(() => {
+    track.mockClear();
+    window.umami = { track, identify: vi.fn() };
+    window.history.pushState({}, '', '/library');
+  });
+
+  afterEach(() => {
+    delete window.umami;
+    window.history.pushState({}, '', '/');
+  });
+
+  it('MobileBottomBar: tapping More calls onMoreClick and sends one panel-open more-drawer', () => {
+    profileState = fullProfile(false);
+    tier1State = true;
+    const onMoreClick = vi.fn();
+    render(
+      <MemoryRouter initialEntries={['/library']}>
+        <TooltipProvider>
+          <MobileBottomBar onMoreClick={onMoreClick} />
+        </TooltipProvider>
+      </MemoryRouter>,
+    );
+    expect(track).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByTestId('mobile-nav-more'));
+    expect(onMoreClick).toHaveBeenCalledTimes(1);
+    expect(track).toHaveBeenCalledTimes(1);
+    expect(track).toHaveBeenCalledWith('panel-open', { page: 'library', target: 'more-drawer' });
+  });
+
+  it('MobileMoreDrawer: a nav item sends one nav-click with value more-drawer', () => {
+    profileState = fullProfile(false);
+    tier1State = true;
+    renderMobileMoreDrawer();
+    expect(track).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByTestId('drawer-nav-library'));
+    expect(track).toHaveBeenCalledTimes(1);
+    expect(track).toHaveBeenCalledWith('nav-click', {
+      page: 'library',
+      target: 'library',
+      value: 'more-drawer',
+    });
+  });
+
+  it('MobileMoreDrawer: a locked item sends nothing', () => {
+    profileState = {
+      ...fullProfile(false),
+      chess_com_game_count: 0,
+      lichess_game_count: 0,
+    };
+    tier1State = false;
+    renderMobileMoreDrawer();
+
+    const locked = screen.getByTestId('drawer-nav-openings');
+    expect(locked.getAttribute('aria-disabled')).toBe('true');
+    fireEvent.click(locked);
+    expect(track).not.toHaveBeenCalled();
+  });
+
+  it('MobileMoreDrawer: superuser Admin and Activity items never send nav-click (D-14)', () => {
+    profileState = fullProfile(true);
+    tier1State = true;
+    renderMobileMoreDrawer();
+
+    fireEvent.click(screen.getByTestId('drawer-nav-admin'));
+    fireEvent.click(screen.getByTestId('drawer-nav-activity'));
+    expect(track).not.toHaveBeenCalled();
+  });
+
+  it('MobileMoreDrawer: the Settings row sends one panel-open settings', () => {
+    profileState = fullProfile(false);
+    tier1State = true;
+    renderMobileMoreDrawer();
+    expect(track).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByTestId('drawer-settings'));
+    expect(track).toHaveBeenCalledTimes(1);
+    expect(track).toHaveBeenCalledWith('panel-open', { page: 'library', target: 'settings' });
   });
 });

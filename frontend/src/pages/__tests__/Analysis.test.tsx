@@ -532,6 +532,44 @@ describe('Analysis page shell', () => {
   });
 });
 
+// Phase 229 D-12 group 1: engine on/off switches report through trackFeature.
+describe('Analysis page: engine toggle tracking', () => {
+  let track: ReturnType<typeof vi.fn>;
+
+  beforeEach(() => {
+    track = vi.fn();
+    window.umami = { track, identify: vi.fn() };
+    window.history.pushState({}, '', '/analysis');
+  });
+
+  afterEach(() => {
+    delete window.umami;
+    window.history.pushState({}, '', '/');
+  });
+
+  it('sends nothing on render and one toggle event per FlawChess switch click', () => {
+    renderAnalysis();
+    expect(track).not.toHaveBeenCalled();
+
+    // Engines start enabled, so the first click turns the engine off.
+    fireEvent.click(screen.getByTestId('btn-analysis-flawchess-toggle'));
+    expect(track).toHaveBeenCalledTimes(1);
+    expect(track).toHaveBeenCalledWith('toggle', {
+      page: 'analysis',
+      target: 'engine-flawchess',
+      value: 'off',
+    });
+
+    fireEvent.click(screen.getByTestId('btn-analysis-flawchess-toggle'));
+    expect(track).toHaveBeenCalledTimes(2);
+    expect(track).toHaveBeenLastCalledWith('toggle', {
+      page: 'analysis',
+      target: 'engine-flawchess',
+      value: 'on',
+    });
+  });
+});
+
 // ─── Mobile-layout test helper ────────────────────────────────────────────
 //
 // useAnalysisLayoutMode renders EXACTLY ONE of the three layouts per mount

@@ -29,6 +29,7 @@ import { Card } from '@/components/ui/card';
 import { ERROR_COPY } from '@/components/train/TrainReminderButton';
 import { usePushCapability } from '@/hooks/usePushCapability';
 import { useReminderResurface } from '@/hooks/useReminderResurface';
+import { trackFeature } from '@/lib/analytics';
 import { ensureDeviceSubscribed } from '@/lib/push';
 import type { DeviceSubscribeResult } from '@/lib/push';
 
@@ -48,6 +49,13 @@ export function TrainReminderResurfaceBanner(): ReactElement | null {
   // to be usable, which is also what this module's own fail-safe contract
   // (docstring above) already claimed to do.
   if (!shouldResurface || !capability.isResolved || !capability.available) return null;
+
+  // Phase 229 D-12: the dismiss flag is a per-device localStorage key
+  // (useReminderResurface), never a backend write, so the click is not DB-known.
+  const handleDismiss = (): void => {
+    dismiss();
+    trackFeature('action', { target: 'reminder-banner-dismiss' });
+  };
 
   const handleTurnOn = async (): Promise<void> => {
     const { vapidPublicKey } = capability;
@@ -105,7 +113,7 @@ export function TrainReminderResurfaceBanner(): ReactElement | null {
         >
           {status === 'error' ? ERROR_COPY : 'Turn on reminders'}
         </Button>
-        <Button variant="ghost" size="sm" data-testid="btn-resurface-dismiss" onClick={dismiss}>
+        <Button variant="ghost" size="sm" data-testid="btn-resurface-dismiss" onClick={handleDismiss}>
           Not now
         </Button>
       </div>

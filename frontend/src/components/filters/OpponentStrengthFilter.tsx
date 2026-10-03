@@ -1,6 +1,7 @@
 import { useCallback } from 'react';
 import { PresetRangeFilter } from './PresetRangeFilter';
 import type { PresetOption } from './PresetRangeFilter';
+import { trackFeature } from '@/lib/analytics';
 import type { OpponentStrengthPreset, OpponentStrengthRange } from '@/types/api';
 import {
   PRESET_LABELS,
@@ -40,11 +41,27 @@ export function OpponentStrengthFilter({ value, onChange }: OpponentStrengthFilt
     [onChange],
   );
 
+  // Tracked on drag END only (Radix onValueCommit), never per drag step (Phase 229
+  // Pitfall 2). The raw Elo gap is never sent: only the matching preset or 'custom'.
+  const handleSliderCommit = useCallback((values: number[]) => {
+    const lo = values[0] ?? SLIDER_MIN;
+    const hi = values[1] ?? SLIDER_MAX;
+    trackFeature('filter-change', {
+      target: 'opponent-strength',
+      value: derivePreset(sliderToRange(lo, hi)) ?? 'custom',
+    });
+  }, []);
+
   const handlePreset = useCallback(
     (preset: string) => {
-      onChange(presetToRange(preset as OpponentStrengthPreset));
+      const next = preset as OpponentStrengthPreset;
+      onChange(presetToRange(next));
+      // Re-clicking the active preset changes nothing, so it is not a filter change.
+      if (next !== activePreset) {
+        trackFeature('filter-change', { target: 'opponent-strength', value: next });
+      }
     },
-    [onChange],
+    [onChange, activePreset],
   );
 
   return (
@@ -88,6 +105,7 @@ export function OpponentStrengthFilter({ value, onChange }: OpponentStrengthFilt
         minStepsBetweenThumbs: 1,
         value: [sliderLo, sliderHi],
         onValueChange: handleSliderChange,
+        onValueCommit: handleSliderCommit,
         thumbLabels: ['Minimum opponent Elo gap', 'Maximum opponent Elo gap'],
       }}
     />

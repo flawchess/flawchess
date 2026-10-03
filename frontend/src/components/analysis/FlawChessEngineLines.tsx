@@ -41,6 +41,7 @@ import {
 } from '@/lib/theme';
 import { MiniBoard } from '@/components/board/MiniBoard';
 import { Popover, PopoverAnchor, PopoverContent } from '@/components/ui/popover';
+import { trackFeature } from '@/lib/analytics';
 import {
   replayPvLine,
   formatScore,
@@ -417,7 +418,11 @@ function RankedLineRow({
           data-testid={`flawchess-line-${lineIndex}-expand`}
           aria-label={expanded ? 'Collapse line' : 'Expand line'}
           aria-expanded={expanded}
-          onClick={() => setExpanded((v) => !v)}
+          onClick={() => {
+            setExpanded(!expanded);
+            // Expand only: collapsing is not a feature use.
+            if (!expanded) trackFeature('board-tool', { target: 'line-expand' });
+          }}
         >
           <ChevronDown className={cn('h-4 w-4 transition-transform', expanded && 'rotate-180')} />
         </button>

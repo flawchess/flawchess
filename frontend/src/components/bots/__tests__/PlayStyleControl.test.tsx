@@ -4,10 +4,11 @@
  * reworked to preset-only, quick 260717-lr9).
  */
 
-import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 
 import { PlayStyleControl } from '../PlayStyleControl';
+import { DEEP_BLEND, LIGHT_BLEND } from '@/lib/playStyle';
 
 beforeAll(() => {
   Object.defineProperty(window, 'matchMedia', {
@@ -122,5 +123,41 @@ describe('PlayStyleControl', () => {
       render(<PlayStyleControl blend={blend} onChange={vi.fn()} />);
       expect(screen.getByTestId('setup-play-style-summary').textContent).not.toMatch(/\d/);
     }
+  });
+});
+
+// Phase 229 (D-12): option-change reaches window.umami.track through the real analytics module.
+describe('PlayStyleControl feature events (Phase 229)', () => {
+  const track = vi.fn();
+
+  beforeEach(() => {
+    track.mockClear();
+    window.umami = { track, identify: vi.fn() };
+    window.history.pushState({}, '', '/bots');
+  });
+
+  afterEach(() => {
+    delete window.umami;
+    window.history.pushState({}, '', '/');
+  });
+
+  it('picking a different preset sends one play-style option-change and calls onChange', () => {
+    const onChange = vi.fn();
+    render(<PlayStyleControl blend={LIGHT_BLEND} onChange={onChange} />);
+    expect(track).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByTestId('setup-play-style-preset-deep'));
+    expect(onChange).toHaveBeenCalledWith(DEEP_BLEND);
+    expect(track).toHaveBeenCalledTimes(1);
+    expect(track).toHaveBeenCalledWith('option-change', {
+      page: 'bots',
+      target: 'play-style',
+      value: 'deep',
+    });
+  });
+
+  it('re-picking the already-active preset sends nothing', () => {
+    render(<PlayStyleControl blend={LIGHT_BLEND} onChange={vi.fn()} />);
+    fireEvent.click(screen.getByTestId('setup-play-style-preset-light'));
+    expect(track).not.toHaveBeenCalled();
   });
 });

@@ -19,6 +19,7 @@ import { OpponentStrengthFilter } from './OpponentStrengthFilter';
 import { CustomRangePopover, formatCustomRangeLabel } from './CustomRangePopover';
 import { CustomRangeDrawer } from './CustomRangeDrawer';
 import { FilterActions } from './FilterActions';
+import { trackFeature, type RatedFilterValue } from '@/lib/analytics';
 
 // ─── Mobile breakpoint detection ──────────────────────────────────────────────
 // Same threshold as ScoreChart.tsx (768px = Tailwind `md`).
@@ -269,6 +270,13 @@ function NativeGamesHint({ show }: { show: boolean }) {
   );
 }
 
+type CustomRange = FilterState['customRange'];
+
+/** Compare committed custom ranges by timestamp, not Date reference. */
+function isSameRange(a: CustomRange, b: CustomRange): boolean {
+  return a?.from?.getTime() === b?.from?.getTime() && a?.to?.getTime() === b?.to?.getTime();
+}
+
 export function FilterPanel({
   filters,
   onChange,
@@ -311,6 +319,10 @@ export function FilterPanel({
       // Closing — commit pendingCustomRange. Empty edit reverts recency.
       if (pendingCustomRange?.from || pendingCustomRange?.to) {
         update({ recency: 'custom', customRange: pendingCustomRange });
+        // Report only a real change; the range itself is never sent (D-04).
+        if (filters.recency !== 'custom' || !isSameRange(filters.customRange, pendingCustomRange)) {
+          trackFeature('filter-change', { target: 'recency', value: 'custom' });
+        }
       } else {
         update({ recency: null, customRange: null });
       }
@@ -323,11 +335,14 @@ export function FilterPanel({
     const current = filters.timeControls ?? TIME_CONTROLS;
     if (current.includes(tc)) {
       const next = current.filter((t) => t !== tc);
-      update({ timeControls: next.length === TIME_CONTROLS.length ? null : next.length === 0 ? [tc] : next });
+      // Deselecting the last active time control clamps back to [tc], a no-op: no event.
+      if (next.length === 0) return;
+      update({ timeControls: next.length === TIME_CONTROLS.length ? null : next });
     } else {
       const next = [...current, tc];
       update({ timeControls: next.length === TIME_CONTROLS.length ? null : next });
     }
+    trackFeature('filter-change', { target: 'time-control', value: tc });
   };
 
   const isTimeControlActive = (tc: TimeControl) => {
@@ -335,7 +350,7 @@ export function FilterPanel({
     return filters.timeControls.includes(tc);
   };
 
-  const togglePlatform = (p: Platform) => {
+  const applyPlatformToggle = (p: Platform) => {
     // In 'only' mode no platform chip is active, so a click can only mean
     // "bring this platform back" — which drops out of only-mode.
     if (filters.pasted === 'only') {
@@ -365,6 +380,11 @@ export function FilterPanel({
     update({ platforms: [p] });
   };
 
+  const togglePlatform = (p: Platform) => {
+    applyPlatformToggle(p);
+    trackFeature('filter-change', { target: 'platform', value: p });
+  };
+
   const isPlatformActive = (p: Platform) => {
     if (filters.pasted === 'only') return false;
     if (filters.platforms === null) return true;
@@ -375,6 +395,7 @@ export function FilterPanel({
   // chip off from only-mode restores the platform population it hid.
   const togglePasted = () => {
     update({ pasted: filters.pasted === 'off' ? 'with' : 'off' });
+    trackFeature('filter-change', { target: 'platform', value: 'pasted' });
   };
 
   const show = (field: FilterField) => visibleFilters.includes(field);
@@ -389,8 +410,10 @@ export function FilterPanel({
             type="single"
             value={filters.playedAs}
             onValueChange={(v) => {
-              if (!v) return;
-              update({ playedAs: v as FilterState['playedAs'] });
+              if (!v || v === filters.playedAs) return;
+              const playedAs = v as FilterState['playedAs'];
+              update({ playedAs });
+              trackFeature('filter-change', { target: 'played-as', value: playedAs });
             }}
             variant="outline"
             size="sm"
@@ -428,6 +451,7 @@ export function FilterPanel({
                 if (v !== 'custom') {
                   // Any preset clears the custom range (D-08).
                   update({ recency: v === 'all' ? null : (v as RecencyPreset), customRange: null });
+                  trackFeature('filter-change', { target: 'recency', value: v as RecencyPreset });
                 }
               }}
             >
@@ -507,7 +531,9 @@ export function FilterPanel({
           <CustomRangeDrawer
             value={filters.customRange}
             onChange={(range) => {
-              if (range) update({ recency: 'custom', customRange: range });
+              if (!range) return;
+              update({ recency: 'custom', customRange: range });
+              trackFeature('filter-change', { target: 'recency', value: 'custom' });
             }}
             open={customOpen && isMobile}
             onOpenChange={setCustomOpen}
@@ -589,7 +615,9 @@ export function FilterPanel({
             value={filters.opponentType}
             onValueChange={(v) => {
               if (!v) return;
-              update({ opponentType: v as OpponentType });
+              const opponentType = v as OpponentType;
+              update({ opponentType });
+              trackFeature('filter-change', { target: 'opponent-type', value: opponentType });
             }}
             variant="outline"
             size="sm"
@@ -613,6 +641,7 @@ export function FilterPanel({
             onValueChange={(v) => {
               if (!v) return;
               update({ rated: v === 'all' ? null : v === 'rated' });
+              trackFeature('filter-change', { target: 'rated', value: v as RatedFilterValue });
             }}
             variant="outline"
             size="sm"
@@ -652,6 +681,7 @@ export function FilterPanel({
               data-testid="btn-reset-filters"
               onClick={() => {
                 onChange(resetFilterState(filters));
+                trackFeature('filter-change', { target: 'reset' });
               }}
             >
               Reset Filters

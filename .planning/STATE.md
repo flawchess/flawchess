@@ -1,18 +1,17 @@
 ---
 gsd_state_version: "1.0"
 milestone: v2.21
-current_phase: 228
-current_phase_name: Settings Page — Sound Toggle & Per-Engine Lines/Arrows (SEED-175)
-status: completed
-stopped_at: Phase 228 complete — all phases complete
-last_updated: "2026-10-03T15:26:52.720Z"
-state_head: ad78dc00dfe98c641803cc70f48a329218c118d8
+current_phase: 229
+current_phase_name: Umami User Identification & Feature Events (SEED-183)
+status: executing
+stopped_at: Phase 229 context gathered
+last_updated: "2026-10-03T18:11:16.994Z"
+state_head: 8c6555593ae365d5ef203ae2b8a654ba583f10c7
 progress:
-  total_phases: 1
+  total_phases: 2
   completed_phases: 103
-  total_plans: 3
+  total_plans: 11
   completed_plans: 47
-  percent: 100
 milestone_name: Browser Engine Throughput
 last_activity: 2026-10-03
 last_activity_desc: Closed milestones v2.20 (phases 223–224) and v2.21 (phases 225–227) with tags and GitHub releases; roadmap cleanup
@@ -22,10 +21,10 @@ last_activity_desc: Closed milestones v2.20 (phases 223–224) and v2.21 (phases
 
 ## Current Position
 
-Phase: 228 (Settings Page — Sound Toggle & Per-Engine Lines/Arrows (SEED-175)) — COMPLETE
-Plan: 3 of 3
+Phase: 229 (Umami User Identification & Feature Events (SEED-183)) — EXECUTING
+Plan: 1 of 8
 
-Status: All phases complete
+Status: Executing Phase 229
 
 Open threads carried forward (not blockers):
 
@@ -168,6 +167,7 @@ v1.29 Live-Engine Analysis Page shipped 2026-06-29 — 5 phases (136–140), 14 
 
 ### Roadmap Evolution
 
+- Phase 229 added 2026-10-03 (explicit user request via `/gsd-phase @SEED-183`, trigger met: Phase 228 merged): **Umami User Identification & Feature Events** (SEED-183, planted 2026-10-03 from `/gsd-explore` after the growth report). Frontend-only: `umami.identify(String(users.id))` for every authenticated session incl. guests, logout/account-switch reset, per-page inventory of UI-only interactions as few prop-carrying events, Privacy sentence fix, `frontend/CLAUDE.md` event rule. Open research: identify persistence (localStorage/ePrivacy) and logout reset. Written by hand as 229 (known mature-ROADMAP behavior). Next: `/gsd-discuss-phase 229`.
 - Phase 228 added 2026-10-03 (explicit user request via `/gsd-phase @SEED-175`, trigger met: Phase 226 merged and v2.21 closed): **Settings Page — Sound Toggle & Per-Engine Lines/Arrows** (SEED-175, planted 2026-09-29 from `/gsd-explore`). Frontend-only cogwheel `/settings` page with localStorage-backed sound on/off and per-engine line (1-5) and arrow (0-3) counts, plus the single-translucent-color non-primary line restyle.
 - Phase 226 added 2026-09-28 (explicit user request via `/gsd-phase @SEED-171`, after the 2026-09-28 browser engine performance review): **Browser Engine Throughput — Round Underfill Re-land, Root Grade Split & Continuous Dispatch**. Re-measure on an idle box, re-land the held Phase 225 round underfill fix (explain the `cBFTV` flip, wider fixture) with the root comparability guard, split the round-1 root grade across idle SF workers, then continuous dispatch against a relaxed determinism target (may split into its own phase in discuss); gated by a pre-committed accept rule against a same-session A0 baseline.
 - Phase 225 added 2026-09-27 (explicit user request via `/gsd-phase @SEED-170`, after the 2026-09-27 engine review whose behavior-neutral findings shipped as quick task 260927-8xn): **Engine Search Fixes — Root Comparability, Round Underfill & Findability Fallback**. Visit guard on the early-stop clear-winner branch (and possibly the deadline cut), `selectPath` block-and-restart instead of giving up mid-round, findability fallback term in `rankScore`, optional non-root candidate cap; gated by a pre-committed accept rule (throughput, maia-blindness, stop-rule, persona calibration spot check).
@@ -997,7 +997,7 @@ Items acknowledged and deferred at **v1.29 milestone close on 2026-06-29** (user
 
 ## Session Continuity
 
-**Stopped at:** Phase 228 complete (3/3 plans, verification passed 16/16 decisions, browser UAT 5/5 legs passed, code review WR-01/WR-02 fixed). Next: pre-merge gate, then squash-merge `gsd/phase-228-settings-page` to `main` (CHANGELOG entry already in `[Unreleased]`).
+**Stopped at:** Phase 229 context gathered
 
 Previous session note (Phase 227):
 refit (calibration parity holds). Verification passed 17/17; code review 0 blockers (WR-01 + 3 info fixed). Next:
@@ -1005,9 +1005,9 @@ squash-merge `gsd/phase-227-...` to `main` with a CHANGELOG entry already in `[U
 Owner-deferred: real-phone bot game check (227-UAT.md, report-only). Follow-up: stale "Phase 198 will populate"
 priority comment in `workerPoolState.ts:434-437` (verifier info item).
 
-**Last session:** 2026-10-03T15:02:44.838Z
+**Last session:** 2026-10-03T16:47:11.134Z
 
-**Resume file:** None
+**Resume file:** .planning/phases/229-umami-identify-feature-events/229-CONTEXT.md
 
 ## Performance Metrics
 

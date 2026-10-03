@@ -1,6 +1,7 @@
 import type { ReactElement } from 'react';
 import { Button } from '@/components/ui/button';
 import { BOT_ACTION_BUTTON_CLASS } from '@/components/bots/chipStyles';
+import { trackFeature } from '@/lib/analytics';
 
 export interface BotDrawOfferActionsProps {
   /** True while the bot has a live outgoing draw offer (Phase 183, D-07 —
@@ -39,7 +40,11 @@ export function BotDrawOfferActions({
       <Button
         variant="brand-outline"
         className={BOT_ACTION_BUTTON_CLASS}
-        onClick={onDecline}
+        onClick={() => {
+          onDecline();
+          // Phase 229: Accept stays untracked (a drawn result is DB-known); Decline is not.
+          trackFeature('action', { target: 'bot-draw-decline' });
+        }}
         data-testid="btn-decline-bot-draw"
       >
         Decline

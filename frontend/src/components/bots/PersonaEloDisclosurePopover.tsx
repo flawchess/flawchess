@@ -29,9 +29,13 @@ import { Popover as PopoverPrimitive } from 'radix-ui';
 import { HelpCircle } from 'lucide-react';
 
 import { PERSONA_CALIBRATION_MEASURED } from '@/generated/personaCalibration';
+import { useTrackedPopoverOpen } from '@/hooks/useTrackedOpen';
 import { cn } from '@/lib/utils';
 
 const HOVER_OPEN_DELAY_MS = 100;
+
+/** Shared by the trigger's data-testid and the popover-open analytics target so they cannot drift. */
+const PERSONA_ELO_DISCLOSURE_TESTID = 'persona-elo-disclosure';
 
 export interface PersonaEloDisclosurePopoverProps {
   /** True for the bottom-rung (800) persona — appends the D-06 ~900
@@ -44,7 +48,7 @@ export function PersonaEloDisclosurePopover({
   isFloorRung,
   ariaLabel,
 }: PersonaEloDisclosurePopoverProps): ReactElement {
-  const [open, setOpen] = React.useState(false);
+  const [open, setOpen] = useTrackedPopoverOpen(PERSONA_ELO_DISCLOSURE_TESTID);
   const hoverTimeout = React.useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const handleMouseEnter = (): void => {
@@ -64,7 +68,7 @@ export function PersonaEloDisclosurePopover({
           tabIndex={0}
           className="inline-flex items-center text-brand-brown-light/70 hover:text-brand-brown focus:outline-none cursor-pointer"
           aria-label={ariaLabel}
-          data-testid="persona-elo-disclosure"
+          data-testid={PERSONA_ELO_DISCLOSURE_TESTID}
           onMouseEnter={handleMouseEnter}
           onMouseLeave={handleMouseLeave}
         >

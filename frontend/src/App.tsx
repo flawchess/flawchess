@@ -45,7 +45,7 @@ import { useTrainProgress } from '@/hooks/useTrainProgress';
 import { useReminderResurfaceRedirect } from '@/hooks/useReminderResurface';
 import { useDevicePushResync } from '@/hooks/useDevicePushResync';
 import { useFirstTouchSync } from '@/hooks/useFirstTouchSync';
-import { identifyAccountType, type UmamiAccountType } from '@/lib/analytics';
+import { distinctIdFromToken, identifyUser, navDestinationOf, trackFeature, type UmamiAccountType } from '@/lib/analytics';
 import type { UserProfile } from '@/types/users';
 import { captureHandoffMarker } from '@/lib/handoffMarker';
 import { useReturnToTracking } from '@/hooks/useReturnToTracking';
@@ -549,7 +549,10 @@ export function MobileBottomBar({ onMoreClick }: { onMoreClick: () => void }) {
         );
       })}
       <button
-        onClick={onMoreClick}
+        onClick={() => {
+          onMoreClick();
+          trackFeature('panel-open', { target: 'more-drawer' });
+        }}
         data-testid="mobile-nav-more"
         aria-label="More navigation options"
         className="flex flex-1 flex-col items-center gap-1 py-2 text-muted-foreground"
@@ -562,6 +565,16 @@ export function MobileBottomBar({ onMoreClick }: { onMoreClick: () => void }) {
 }
 
 // ─── Mobile more drawer ───────────────────────────────────────────────────────
+
+/**
+ * Report a More-drawer nav tap. navDestinationOf returns null for the
+ * superuser-only /admin and /activity items, so they are never named in
+ * analytics (D-14). Called from onClick, never via data-umami-event on a Link.
+ */
+function trackMoreDrawerNav(to: string): void {
+  const target = navDestinationOf(to);
+  if (target !== null) trackFeature('nav-click', { target, value: 'more-drawer' });
+}
 
 export function MobileMoreDrawer({ open, onOpenChange }: { open: boolean; onOpenChange: (open: boolean) => void }) {
   const location = useLocation();
@@ -578,6 +591,8 @@ export function MobileMoreDrawer({ open, onOpenChange }: { open: boolean; onOpen
   const openSettings = (): void => {
     onOpenChange(false);
     setSettingsOpen(true);
+    // The drawer opens SettingsSheet directly, not through SettingsSheetButton.
+    trackFeature('panel-open', { target: 'settings' });
   };
 
   return (
@@ -600,7 +615,7 @@ export function MobileMoreDrawer({ open, onOpenChange }: { open: boolean; onOpen
                     data-testid={`drawer-nav-${to.slice(1)}`}
                     aria-disabled={locked || undefined}
                     title={locked ? IMPORT_REQUIRED_MESSAGE : undefined}
-                    onClick={locked ? (e) => e.preventDefault() : undefined}
+                    onClick={locked ? (e) => e.preventDefault() : () => trackMoreDrawerNav(to)}
                     className={cn(
                       'relative flex items-center gap-2 rounded-md px-3 py-2 text-base',
                       locked && 'opacity-40 cursor-not-allowed',
@@ -701,12 +716,19 @@ function ProtectedLayout() {
   // re-registers itself on the next app load, with no user gesture.
   useDevicePushResync({ enabled: profile != null && !profile.is_guest });
 
-  // Split Umami reports by guest vs registered. Skipped while impersonating so
-  // the admin's browser session is not relabelled with the target's type.
+  // Identify the Umami session with users.id (JWT sub) plus the guest/registered
+  // tag. Skipped while impersonating, via two guards: the JWT is_impersonation
+  // claim (distinctIdFromToken returns null) and profile.impersonation
+  // (umamiAccountTypeOf returns null), so the admin's browser is never
+  // attributed to the target. Admins identify normally and are excluded at
+  // analysis time (Phase 229 D-10).
   const umamiAccountType = umamiAccountTypeOf(profile);
+  const umamiDistinctId = distinctIdFromToken(token);
   useEffect(() => {
-    if (umamiAccountType !== null) identifyAccountType(umamiAccountType);
-  }, [umamiAccountType]);
+    if (umamiDistinctId !== null && umamiAccountType !== null) {
+      identifyUser(umamiDistinctId, umamiAccountType);
+    }
+  }, [umamiDistinctId, umamiAccountType]);
 
   useEffect(() => {
     if (isOpeningsRoute && profile?.email) {

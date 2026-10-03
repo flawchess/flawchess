@@ -46,6 +46,7 @@ import {
   TACTIC_GROUPS,
 } from '@/lib/tacticComparisonMeta';
 import { TacticDepthFilter } from '@/components/filters/TacticDepthFilter';
+import { onOff, trackFeature } from '@/lib/analytics';
 import { DEFAULT_TACTIC_DEPTH_VALUE } from '@/lib/tacticDepth';
 import type { TacticDepthValue } from '@/lib/tacticDepth';
 
@@ -501,11 +502,13 @@ export function FlawFilterControl({
       ? severity.filter((s) => s !== sev)
       : [...severity, sev];
     onSeverityChange(next);
+    trackFeature('filter-change', { target: 'severity', value: sev });
   };
 
   const handleTagToggle = (tag: FlawTag): void => {
     const next = tags.includes(tag) ? tags.filter((t) => t !== tag) : [...tags, tag];
     onTagChange(next);
+    trackFeature('filter-change', { target: 'flaw-tag', value: tag });
   };
 
   // Tactic-motif families behave exactly like the tag families: off by default,
@@ -515,6 +518,20 @@ export function FlawFilterControl({
       ? tacticFamilies.filter((f) => f !== fam)
       : [...tacticFamilies, fam];
     onTacticFamiliesChange?.(next);
+    trackFeature('filter-change', { target: 'tactic-family', value: fam });
+  };
+
+  // Gem/Great are independent booleans: report the NEW state (current prop flipped).
+  const handleHasGemToggle = (): void => {
+    if (!onHasGemToggle) return;
+    onHasGemToggle();
+    trackFeature('filter-change', { target: 'has-gem', value: onOff(!hasGem) });
+  };
+
+  const handleHasGreatToggle = (): void => {
+    if (!onHasGreatToggle) return;
+    onHasGreatToggle();
+    trackFeature('filter-change', { target: 'has-great', value: onOff(!hasGreat) });
   };
 
   return (
@@ -560,7 +577,7 @@ export function FlawFilterControl({
               color={MAIA_ACCENT}
               bg={MAIA_ACCENT_BG}
               selected={hasGem}
-              onToggle={() => onHasGemToggle?.()}
+              onToggle={handleHasGemToggle}
             />
             <BestMoveFilterButton
               testId="filter-has-great"
@@ -570,7 +587,7 @@ export function FlawFilterControl({
               color={GREAT_ACCENT}
               bg={GREAT_ACCENT_BG}
               selected={hasGreat}
-              onToggle={() => onHasGreatToggle?.()}
+              onToggle={handleHasGreatToggle}
             />
           </div>
         </div>
@@ -597,7 +614,9 @@ export function FlawFilterControl({
               // D-06: deselect guard — empty string means user tapped the active item;
               // preserve current value (same guard as "Played as").
               if (!v) return;
-              onOrientationChange?.(v as TacticOrientation);
+              const next = v as TacticOrientation;
+              onOrientationChange?.(next);
+              trackFeature('filter-change', { target: 'tactic-orientation', value: next });
             }}
             variant="outline"
             size="sm"

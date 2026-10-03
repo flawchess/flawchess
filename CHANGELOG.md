@@ -15,6 +15,8 @@ in `YYYY-MM-DD` (Europe/Zurich).
 ### Changed
 
 - Every engine line after the top one now uses a lighter, see-through version of that engine's color on its badge and arrow.
+- Usage analytics (which pages you visit and which features you use) are now linked to your account ID, for logged-in and guest accounts alike. They stay on our own servers, are never shared with anyone, and the Privacy page now says so.
+- Operators: self-hosted analytics is pinned to Umami 3.4.0 (it ran 3.3.1 behind a floating tag). The next deploy pulls the image automatically and Umami applies two additive database migrations on start; see the runbook section "Umami analytics" for the post-deploy check.
 
 ## [v2.21] Browser Engine Throughput — 2026-10-03
 

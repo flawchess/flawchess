@@ -14,7 +14,7 @@
  * Mirrors `GameResultStrip.test.tsx` case-for-case — the strip is the
  * mobile/dismissed surface (CLAUDE.md: apply every change to both).
  */
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { MemoryRouter } from 'react-router';
 import {
@@ -192,5 +192,61 @@ describe('GameResultDialog — the bot\'s parting line lives in here (Phase 223 
   it('renders no bubble when no terminal line resolved', () => {
     renderDialog({ persona: PERSONA_FIXTURE, botLine: null });
     expect(screen.queryByTestId('result-dialog-bubble')).toBeNull();
+  });
+});
+
+// Phase 229 (D-12 group 3): result-dialog actions reach window.umami.track
+// through the real analytics module. Targets are fixed literals; no persona
+// name, game id or result string ever enters the payload.
+describe('GameResultDialog feature events (Phase 229)', () => {
+  const track = vi.fn();
+
+  beforeEach(() => {
+    track.mockClear();
+    window.umami = { track, identify: vi.fn() };
+    window.history.pushState({}, '', '/bots');
+  });
+
+  afterEach(() => {
+    delete window.umami;
+    window.history.pushState({}, '', '/');
+  });
+
+  it('renders silently, then Rematch fires one bot-rematch action after onRematch', () => {
+    const { onRematch } = renderDialog({ personaName: PERSONA_FIXTURE.name });
+    expect(track).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByTestId('btn-rematch'));
+    expect(onRematch).toHaveBeenCalledTimes(1);
+    expect(track).toHaveBeenCalledTimes(1);
+    expect(track).toHaveBeenCalledWith('action', { page: 'bots', target: 'bot-rematch' });
+  });
+
+  it('New opponent fires one bot-new-game action', () => {
+    const { onNewGame } = renderDialog();
+    fireEvent.click(screen.getByTestId('btn-new-game'));
+    expect(onNewGame).toHaveBeenCalledTimes(1);
+    expect(track).toHaveBeenCalledTimes(1);
+    expect(track).toHaveBeenCalledWith('action', { page: 'bots', target: 'bot-new-game' });
+  });
+
+  it('Analyze is attributed to the bots page even when onAnalyze navigates synchronously', () => {
+    renderDialog({
+      onAnalyze: () => window.history.pushState({}, '', '/analysis'),
+    });
+    fireEvent.click(screen.getByTestId('btn-analyze-game'));
+    expect(track).toHaveBeenCalledWith('action', { page: 'bots', target: 'analyze' });
+  });
+
+  it('Analyze fires one analyze action, and nothing while the button is busy', () => {
+    const { onAnalyze } = renderDialog({ analyzeBusy: false });
+    fireEvent.click(screen.getByTestId('btn-analyze-game'));
+    expect(onAnalyze).toHaveBeenCalledTimes(1);
+    expect(track).toHaveBeenCalledTimes(1);
+    expect(track).toHaveBeenCalledWith('action', { page: 'bots', target: 'analyze' });
+    cleanup();
+    track.mockClear();
+    renderDialog({ analyzeBusy: true });
+    fireEvent.click(screen.getByTestId('btn-analyze-game'));
+    expect(track).not.toHaveBeenCalled();
   });
 });

@@ -13,6 +13,7 @@ import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
 import { sniffPastedInput, MAX_PASTED_INPUT_LENGTH } from '@/lib/pastedGame';
 import type { PasteParseResult } from '@/lib/pastedGame';
 import { useSavePastedGame } from '@/hooks/usePasteGame';
+import { trackFeature } from '@/lib/analytics';
 
 type UserColor = 'white' | 'black';
 
@@ -97,6 +98,8 @@ export function PasteModal({ open, onOpenChange, onLoad, onSaved }: PasteModalPr
     e.preventDefault();
     if (!isLoadEnabled) return;
     onLoad(result, userColor);
+    // Fixed target only: the pasted PGN/FEN text never enters the payload.
+    trackFeature('board-tool', { target: 'paste-load' });
     handleOpenChange(false);
   };
 

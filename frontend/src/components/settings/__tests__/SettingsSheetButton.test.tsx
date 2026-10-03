@@ -5,7 +5,7 @@
  * nothing navigates.
  */
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { SettingsSheetButton } from '@/components/settings/SettingsSheetButton';
 import { SETTINGS_STORAGE_KEYS } from '@/lib/engineSettings';
@@ -106,5 +106,30 @@ describe('SettingsSheetButton', () => {
     fireEvent.click(close);
     await waitFor(() => expect(screen.queryByTestId('settings-sheet')).toBeNull());
     await waitFor(() => expect(document.activeElement).toBe(trigger));
+  });
+
+  describe('panel-open tracking', () => {
+    const track = vi.fn();
+
+    beforeEach(() => {
+      track.mockClear();
+      window.umami = { track, identify: vi.fn() };
+      window.history.pushState({}, '', '/analysis');
+    });
+
+    afterEach(() => {
+      delete window.umami;
+      window.history.pushState({}, '', '/');
+    });
+
+    it('sends one panel-open settings when the trigger opens the sheet, none on mount', async () => {
+      render(<SettingsSheetButton testId="btn-test-settings" />);
+      expect(track).not.toHaveBeenCalled();
+
+      fireEvent.click(screen.getByTestId('btn-test-settings'));
+      await screen.findByTestId('settings-sheet');
+      expect(track).toHaveBeenCalledTimes(1);
+      expect(track).toHaveBeenCalledWith('panel-open', { page: 'analysis', target: 'settings' });
+    });
   });
 });

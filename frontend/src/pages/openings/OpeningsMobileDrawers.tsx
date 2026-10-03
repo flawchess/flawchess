@@ -60,6 +60,7 @@ export function OpeningsMobileDrawers({
       <MobileFilterDrawer
         open={filterSidebarOpen}
         onOpenChange={onFilterSidebarOpenChange}
+        panel="filters"
         title="Filters"
         contentTestId="drawer-filter-sidebar"
         closeTestId="btn-close-filter-sidebar"
@@ -85,6 +86,7 @@ export function OpeningsMobileDrawers({
       <MobileFilterDrawer
         open={bookmarkSidebarOpen}
         onOpenChange={onBookmarkSidebarOpenChange}
+        panel="bookmarks"
         title="Opening Bookmarks"
         titleAccessory={
           <InfoPopover ariaLabel="Opening bookmarks info" testId="position-bookmarks-info-sidebar" side="top">

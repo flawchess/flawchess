@@ -22,6 +22,7 @@
 import { useState, useEffect } from 'react';
 
 import { Accordion } from '@/components/ui/accordion';
+import { trackFeature } from '@/lib/analytics';
 import { MIN_GAMES_PER_TC_CARD } from '@/generated/endgameZones';
 import { computePrimaryTc } from '@/lib/primaryTc';
 import type { EndgameCategoryStats, EndgameClass } from '@/types/endgames';
@@ -93,6 +94,14 @@ function EndgameTypeBreakdownSectionInner({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [filterKey]);
 
+  // Track only an expand (an item was added), never a collapse; no TC in the payload (D-04).
+  const handleExpandedChange = (next: string[]) => {
+    if (next.some((tc) => !expandedTcs.includes(tc))) {
+      trackFeature('panel-open', { target: 'endgame-type-tc' });
+    }
+    setExpandedTcs(next);
+  };
+
   return (
     <section
       data-testid="endgame-type-breakdown-section"
@@ -113,7 +122,7 @@ function EndgameTypeBreakdownSectionInner({
         <Accordion
           type="multiple"
           value={expandedTcs}
-          onValueChange={setExpandedTcs}
+          onValueChange={handleExpandedChange}
           className="flex flex-col gap-2 mt-2"
         >
           {eligibleTcs.map((tc) => (

@@ -48,6 +48,8 @@ interface PresetRangeFilterProps {
     minStepsBetweenThumbs: number;
     value: [number, number];
     onValueChange: (values: number[]) => void;
+    /** Fires once when a drag ends (Radix onValueCommit); callers track here, not per drag step. */
+    onValueCommit?: (values: number[]) => void;
     thumbLabels: [string, string];
   };
 }
@@ -120,6 +122,7 @@ export function PresetRangeFilter({
           minStepsBetweenThumbs={slider.minStepsBetweenThumbs}
           value={slider.value}
           onValueChange={slider.onValueChange}
+          onValueCommit={slider.onValueCommit}
           thumbLabels={slider.thumbLabels}
           data-testid={`${testIdPrefix}-slider`}
         />

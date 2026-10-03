@@ -95,6 +95,7 @@ import { useTrainSettings } from '@/hooks/useTrainSettings';
 import { usePushCapability } from '@/hooks/usePushCapability';
 import { ensureDeviceSubscribed, formatReminderHour, REMINDER_HOUR_OPTIONS } from '@/lib/push';
 import type { DeviceSubscribeResult } from '@/lib/push';
+import { trackFeature } from '@/lib/analytics';
 import { cn } from '@/lib/utils';
 
 export const TRAIN_SETTINGS_SAVE_DEBOUNCE_MS = 600;
@@ -655,7 +656,11 @@ export function TrainScheduleSettings({
     <ScheduleCardShell
       indicator={indicator}
       open={open}
-      onToggle={() => setOpen((prev) => !prev)}
+      onToggle={() => {
+        // Phase 229 D-12: only the opening transition counts as a panel open.
+        if (!open) trackFeature('panel-open', { target: 'train-schedule' });
+        setOpen((prev) => !prev);
+      }}
       summary={draft === null ? null : scheduleSummary(draft, showReminderBlock && !blocked)}
       persistent={nextSessionLine}
     >

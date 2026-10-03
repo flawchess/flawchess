@@ -11,6 +11,7 @@ import { RotateCcw } from 'lucide-react';
 import { Slider } from '@/components/ui/slider';
 import { InfoPopover } from '@/components/ui/info-popover';
 import { MAIA_ELO_LADDER } from '@/lib/maiaEncoding';
+import { trackFeature } from '@/lib/analytics';
 
 /** ChessGoals rating-comparison study backing the Lichess-Blitz normalization (Phase 164). */
 const CHESSGOALS_RATING_URL = 'https://chessgoals.com/rating-comparison/';
@@ -33,6 +34,24 @@ export interface EloSelectorProps {
 
 /** Fallback step (ELO) used only if `ladder` somehow has a single rung. */
 const SINGLE_RUNG_STEP_FALLBACK = 100;
+
+/**
+ * Nearest ladder rung to a raw slider value. The Radix step already lands on a
+ * rung; snapping here keeps the value handed to onChange and to analytics on the
+ * ladder even if min/step ever disagree with it.
+ */
+function snapToLadder(raw: number, ladder: readonly number[]): number {
+  let nearest = raw;
+  let nearestDistance = Infinity;
+  for (const rung of ladder) {
+    const distance = Math.abs(rung - raw);
+    if (distance < nearestDistance) {
+      nearest = rung;
+      nearestDistance = distance;
+    }
+  }
+  return nearest;
+}
 
 /** Explains what the ELO drives and why it's shown on a Lichess-Blitz-normalized scale. */
 function EloInfoTooltip(): React.ReactElement {
@@ -79,7 +98,20 @@ export function EloSelector({
   const handleValueChange = (values: number[]): void => {
     const next = values[0];
     if (next === undefined) return;
-    onChange(next);
+    onChange(snapToLadder(next, ladder));
+  };
+
+  // Pitfall 2: track once per drag (commit), never per slider tick. The value is
+  // always a ladder rung, so the event carries a bounded set of strings.
+  const handleValueCommit = (values: number[]): void => {
+    const committed = values[0];
+    if (committed === undefined) return;
+    trackFeature('option-change', { target: 'elo', value: `${snapToLadder(committed, ladder)}` });
+  };
+
+  const handleReset = (): void => {
+    onReset?.();
+    trackFeature('board-tool', { target: 'elo-reset' });
   };
 
   // Reset control shows only once the user has moved off the players' default (164
@@ -103,6 +135,7 @@ export function EloSelector({
         step={step}
         value={[value]}
         onValueChange={handleValueChange}
+        onValueCommit={handleValueCommit}
         thumbLabels={['Engine strength (ELO)']}
         className="min-w-24"
       />
@@ -115,7 +148,7 @@ export function EloSelector({
       {canReset && (
         <button
           type="button"
-          onClick={onReset}
+          onClick={handleReset}
           aria-label={`Reset ELO to ${defaultElo}`}
           title={`Reset to ${defaultElo}`}
           data-testid="analysis-elo-selector-reset"

@@ -48,6 +48,7 @@
  */
 
 import * as React from 'react';
+import { useTrackedPopoverOpen } from '@/hooks/useTrackedOpen';
 import { Popover as PopoverPrimitive } from 'radix-ui';
 import { BadgePercent } from 'lucide-react';
 
@@ -335,7 +336,7 @@ export function PercentileChip({
   nGames,
   value,
 }: PercentileChipProps): React.ReactElement {
-  const [open, setOpen] = React.useState(false);
+  const [open, setOpen] = useTrackedPopoverOpen(testId);
   const hoverTimeout = React.useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Clear any pending hover-open timer on unmount so it can't fire setOpen

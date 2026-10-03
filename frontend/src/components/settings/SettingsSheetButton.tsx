@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from 'react';
+import type { ReactNode } from 'react';
 import { Settings, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
@@ -10,6 +10,8 @@ import {
   DrawerTrigger,
 } from '@/components/ui/drawer';
 import { SettingsPanel } from '@/components/settings/SettingsPanel';
+import { trackFeature } from '@/lib/analytics';
+import { useTrackedOpen } from '@/hooks/useTrackedOpen';
 
 interface SettingsSheetButtonProps {
   testId: string;
@@ -67,7 +69,8 @@ export function SettingsSheet({ open, onOpenChange, trigger }: SettingsSheetProp
  * changes apply live underneath because the store notifies subscribers.
  */
 export function SettingsSheetButton({ testId, className }: SettingsSheetButtonProps) {
-  const [open, setOpen] = useState(false);
+  // Every open of settings is a deliberate click, so no once option (Phase 229 D-13).
+  const [open, setOpen] = useTrackedOpen(() => trackFeature('panel-open', { target: 'settings' }));
 
   // DrawerTrigger, not a plain onClick button: vaul/Radix return focus on close only
   // to the trigger they registered, so a bare button left focus on <body> after the

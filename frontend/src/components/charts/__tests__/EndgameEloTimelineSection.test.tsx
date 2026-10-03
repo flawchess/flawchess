@@ -10,7 +10,7 @@
  * not the old active-weeks / top-1-by-games heuristic.
  */
 
-import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, render, screen, fireEvent, act } from '@testing-library/react';
 import { cloneElement, isValidElement } from 'react';
 import type { ReactElement } from 'react';
@@ -522,5 +522,45 @@ describe('EndgameEloTimelineSection — info popover content', () => {
     expect(
       await screen.findByText(/lift \(green\) or drag \(red\)/i),
     ).not.toBeNull();
+  });
+});
+
+describe('EndgameEloTimelineSection — legend toggle tracking (Phase 229 D-12)', () => {
+  const track = vi.fn();
+
+  beforeEach(() => {
+    track.mockClear();
+    window.umami = { track, identify: vi.fn() };
+    window.history.pushState({}, '', '/endgames');
+  });
+
+  afterEach(() => {
+    delete window.umami;
+    window.history.pushState({}, '', '/');
+  });
+
+  it('sends one toggle per legend click: off when hiding, on when showing, never the combo key', () => {
+    render(<EndgameEloTimelineSection data={buildResponse()} isLoading={false} isError={false} />);
+    expect(track).not.toHaveBeenCalled();
+
+    // lichess_rapid is the primary combo and starts visible.
+    fireEvent.click(screen.getByTestId('endgame-elo-legend-lichess_rapid'));
+    expect(track).toHaveBeenCalledTimes(1);
+    expect(track).toHaveBeenLastCalledWith('toggle', {
+      page: 'endgames',
+      target: 'elo-timeline-legend',
+      value: 'off',
+    });
+
+    fireEvent.click(screen.getByTestId('endgame-elo-legend-lichess_rapid'));
+    expect(track).toHaveBeenCalledTimes(2);
+    expect(track).toHaveBeenLastCalledWith('toggle', {
+      page: 'endgames',
+      target: 'elo-timeline-legend',
+      value: 'on',
+    });
+
+    expect(JSON.stringify(track.mock.calls)).not.toContain('lichess');
+    expect(JSON.stringify(track.mock.calls)).not.toContain('rapid');
   });
 });
