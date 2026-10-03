@@ -4,8 +4,8 @@ milestone: v2.19
 current_phase: 227
 status: completed
 stopped_at: Phase 227 complete — all phases complete
-last_updated: "2026-10-03T11:45:30.327Z"
-state_head: 305a60a8820ef2c3aa9244d607f2d93a194c12c3
+last_updated: "2026-10-03T12:20:55.948Z"
+state_head: 0e0723eb8129eeede9980a24193d0ffe5d3d778c
 progress:
   total_phases: 5
   completed_phases: 103
@@ -936,6 +936,7 @@ None active.
 | 261002-8xb | Train puzzles-per-session slider 3-30 step 3 (SEED-179) | 2026-10-02 | e9b466552 | [261002-8xb-train-puzzles-per-session-slider-3-30-st](./quick/261002-8xb-train-puzzles-per-session-slider-3-30-st/) |
 | 261002-ex9 | Train streak flame hero + snowflake freezes + collapsible schedule (SEED-181) | 2026-10-02 | 6b2799d7d | [261002-ex9-implement-seed-181-train-streak-flame-fr](./quick/261002-ex9-implement-seed-181-train-streak-flame-fr/) |
 | 261003-ixu | SEED-182 card border and lighter header band on charcoal-texture surfaces | 2026-10-03 | 75d660f46 | [261003-ixu-seed-182-card-border-and-lighter-header-](./quick/261003-ixu-seed-182-card-border-and-lighter-header-/) |
+| 113 | Analysis page: move stats accuracy shown as card header band | 2026-10-03 | 0e0723eb8 | — |
 
 ## Deferred Items
 
