@@ -10,18 +10,35 @@ in `YYYY-MM-DD` (Europe/Zurich).
 
 ### Added
 
+- Settings: open them from the cogwheel in the header (or Settings in the mobile More menu) to switch sounds off and to choose how many lines (1 to 5) and board arrows (0 to 3) the FlawChess engine and Stockfish show. Settings open in a window over the current page (a sheet on mobile, also from the cogwheel on the mobile analysis board and during a mobile bot game), so you never lose the puzzle, game or analysis you were on.
+
+### Changed
+
+- Every engine line after the top one now uses a lighter, see-through version of that engine's color on its badge and arrow.
+
+## [v2.21] Browser Engine Throughput — 2026-10-03
+
+### Changed
+
+- Bot moves are about 18% faster: the engine now splits its first, biggest look at the candidate moves across all idle Stockfish workers in the browser, and keeps those workers busier during the search. The bot also no longer stops thinking early on a move until it has looked at every close alternative at least once.
+- Bot moves are about 19% faster again, and analysis search about 14% faster on the analysis board: the engine now keeps Maia and Stockfish busy at the same time, starting the next position as soon as one finishes instead of waiting for each batch to complete. Move quality is unchanged; a bot can now play a different move in an identical position from one game to the next.
+- Analysis suggestions in a winning position no longer bury a hard-to-find move that is far better than the obvious one under the rest of the list; a hard-to-find move that is genuinely worse still sorts by its own value, unchanged.
+- The Train landing page leads with your session streak inside a flame, right next to the Start button. Streak protection is now shown as snowflake "freezes" instead of a second row of flames, so the two no longer look like the same thing. The flame lights up when your streak grows, a spent freeze cracks when a missed day used one, and the flame goes out when the streak resets. The training schedule folds into a one-line summary you can tap to change. (quick 261002-ex9)
+- Puzzles per session on the Train schedule card is now a slider from 3 to 30 in steps of 3, replacing the five fixed choices that stopped at 15, so you can train longer in one daily session. (quick 261002-8xb)
+- New board and result sounds: softer wooden clicks for captures and checks, and a marimba set for game start, low time, wins, losses, draws and Train scores. The everyday move sound is unchanged.
+
+## [v2.20] Bot Voice & Guest Activation — 2026-09-27
+
+### Added
+
 - The bot opponents now talk during a game and greet you on the roster page, each in its own voice and personality, reacting to captures, big swings and draw offers as the game unfolds.
 - Train is now open to everyone, including guests and accounts that have not imported a game yet: a daily warm-up session of sharp practice puzzles, with the same streak and weekday schedule as a full account, and the streak and solve history carry over when you sign up.
 - The Activity Pulse dashboard now has a start/end date selector alongside the four range presets, so an operator can read a specific historical window instead of only "the last N days ending now". Setting both dates the same analyses just that one day, and today is selectable. (quick 260920-frk)
 
 ### Changed
 
-- The Train landing page leads with your session streak inside a flame, right next to the Start button. Streak protection is now shown as snowflake "freezes" instead of a second row of flames, so the two no longer look like the same thing. The flame lights up when your streak grows, a spent freeze cracks when a missed day used one, and the flame goes out when the streak resets. The training schedule folds into a one-line summary you can tap to change. (quick 261002-ex9)
-- Bot moves are about 18% faster: the engine now splits its first, biggest look at the candidate moves across all idle Stockfish workers in the browser, and keeps those workers busier during the search. The bot also no longer stops thinking early on a move until it has looked at every close alternative at least once.
-- Bot moves are about 19% faster again, and analysis search about 14% faster on the analysis board: the engine now keeps Maia and Stockfish busy at the same time, starting the next position as soon as one finishes instead of waiting for each batch to complete. Move quality is unchanged; a bot can now play a different move in an identical position from one game to the next.
 - The phone game screen against a bot has been rebuilt around the board: a labelled four-button bar for Resign, Back, Next and Flip now sits at the bottom in place of the main navigation while you are playing, and the board is flanked by the same player rows as the analysis board, on phone and desktop alike. Each row shows the name and rating on the left, and the material lead and the clock on the right; the clock sits in a badge painted in that player's own board colour, so it says whose clock it is at a glance, and turns red when time gets short. The clock icon marks whose move it is, the bot's avatar is bigger during the game, and its speech bubble stays out of the way while it has nothing to say.
 - A bot's offer to draw is now accepted or declined right from its own speech bubble on both phone and desktop, instead of a separate banner.
-- New board and result sounds: softer wooden clicks for captures and checks, and a marimba set for game start, low time, wins, losses, draws and Train scores. The everyday move sound is unchanged.
 - The mute toggle is gone from the bot game screen; board sounds always play for now, and a proper option to turn them off is planned for a later release.
 - The board buttons under the analysis board on phones now carry a label under each icon (Start, Back, Next, Jump, Flip), matching the bot game's bar.
 - The Train landing page is now hosted by a different practice bot each day, each greeting you in its own voice. Tank the Ox keeps hosting until you have finished the first-puzzle walkthrough, so the page introduces the same bot who opens it.
@@ -39,9 +56,6 @@ in `YYYY-MM-DD` (Europe/Zurich).
 - A signed-up account with no imported games now gets an "Import games" button from the bot on the Train landing page and on the warm-up score screen, in place of the reminder nudge, so the step that turns warm-ups into your own puzzles is one tap away. (quick 260926-8p5)
 - Opening a link to a FlawChess page while signed out (for example a shared link to Train or Bots) now shows the home page, where you can try it as a guest or sign up, instead of a bare login form. After you start as a guest, sign in or sign up, you land on the page the link pointed to rather than the import screen, and an expired session returns you to the page you were on after you log back in. (quick 260926-9bg)
 - The Insights card at the top of the Endgames page is now hosted by Shelly the Turtle: she explains what Insights does, tells you how long it takes while the report is written, and says why the button is disabled (a running import, non-default filters, or a custom opponent-strength range) instead of hiding the reason in a hover tooltip. Once a report is ready it shows on its own, without the bubble. (quick 260927-b05)
-- Analysis suggestions in a winning position no longer bury a hard-to-find move that is far better than the obvious one under the rest of the list; a hard-to-find move that is genuinely worse still sorts by its own value, unchanged.
-- Puzzles per session on the Train schedule card is now a slider from 3 to 30 in steps of 3, replacing the five fixed choices that stopped at 15, so you can train longer in one daily session. (quick 261002-8xb)
-
 - New accounts now record how they first found FlawChess (the referring site's domain, campaign tags in the link, and the first page opened), so we can tell which channels bring people in; the privacy page lists this. Launches from the installed home-screen app are now tagged as such in page analytics instead of counting as direct visits.
 - Page analytics now note whether a visit comes from a guest or a signed-up account (no other account detail), and the privacy page says so. Clicks on a training reminder notification are now tagged, so reminder effectiveness is measurable.
 
@@ -53,7 +67,6 @@ in `YYYY-MM-DD` (Europe/Zurich).
 - Bot games: the bot now actually comments on the swings it was meant to. It was judging a swing by win probability, which stops moving once a game is decided, so in the games with the biggest blunders it said nothing at all; it now judges by the evaluation itself. A long test game went from one comment to five. A minor line about the first capture can also no longer silence a real blunder moments later.
 - Bot games: the bot reacts when you take the piece, not when it hangs it. It used to comment the instant its own position dropped, which both gave the mistake away and landed a move early. Now it stays quiet and owns up when you actually punish it, says so if it wriggles out of it, and never claims to have escaped while the piece is still hanging.
 - Bot games: the result dialog now waits for the winning confetti to finish before it opens, and carries the bot's face and its parting line, so the line is read instead of flashing past behind the dialog.
-
 - The material lead beside a player's name now carries a pawn icon on phones, where the individual piece icons do not fit, so the number is no longer a bare "+3". Affects both the analysis board and bot games.
 - Chess.com custom-position games that start from an impossible setup (for example two full ranks of pawns) no longer crash the analysis engine or receive nonsense evaluations. They are imported and viewable as before, but skipped by the engine analysis.
 - Activity dashboard: the Train sessions chart no longer goes blank when a session was composed for a calendar day that the site-wide activity range has not reached yet (users ahead of UTC composing just after local midnight).
@@ -1537,7 +1550,9 @@ bookmarks, game cards, and rating / stats pages.
 - Rating history, global stats, openings W/D/L charts.
 - Multi-user auth with data isolation.
 
-[Unreleased]: https://github.com/flawchess/flawchess/compare/v2.19...HEAD
+[Unreleased]: https://github.com/flawchess/flawchess/compare/v2.21...HEAD
+[v2.21]: https://github.com/flawchess/flawchess/compare/v2.20...v2.21
+[v2.20]: https://github.com/flawchess/flawchess/compare/v2.19...v2.20
 [v2.19]: https://github.com/flawchess/flawchess/compare/v2.18...v2.19
 [v2.18]: https://github.com/flawchess/flawchess/compare/v2.17...v2.18
 [v2.17]: https://github.com/flawchess/flawchess/compare/v2.16...v2.17

@@ -11,10 +11,11 @@
  *   - a severity-colored flaw arrow on the played move with the allowed-tactic depth
  *     label — the "tactic overlay" that shows even before any PV sideline is loaded;
  *   - the eval bar from the precomputed eval (synthetic depth so mate displays).
- * The live engine then only contributes the GREY second-best arrow (pvLines[1]).
+ * No second-best arrow is drawn here (Phase 228 retired the light-blue one; non-primary
+ * engine arrows now come from useAnalysisBoardArrows, one translucent color per engine).
  *
  * Off the main line (sideline exploration / fork) there is no precomputed data, so the
- * live engine drives: blue = pvLines[0], grey = pvLines[1], eval = live engine.
+ * live engine drives: blue = pvLines[0], eval = live engine.
  *
  * Ply key contract: mainLine[k] is the position after move k+1, which equals the
  * miniboard's perPly[k] and the eval_series / flaw_markers `ply == k`. So we look up
@@ -31,7 +32,6 @@ import { uciToSquares } from '@/lib/sanToSquares';
 import { tacticDepthBadge } from '@/lib/tacticComparisonMeta';
 import {
   BEST_MOVE_ARROW,
-  SECOND_BEST_ARROW,
   TAC_ALLOWED,
   TAC_ALLOWED_LABEL,
   TAC_MISSED,
@@ -82,8 +82,8 @@ export interface UseGameOverlayParams {
   /** Active only in game mode; otherwise the hook passes the live engine through. */
   enabled: boolean;
   /**
-   * Whether the Stockfish engine is toggled on. When false, the blue best-move /
-   * light-blue second-best arrows are suppressed (155 UAT) — even the precomputed
+   * Whether the Stockfish engine is toggled on. When false, the blue best-move
+   * arrow is suppressed (155 UAT) — even the precomputed
    * best-move arrow, which otherwise shows independently of the live search. The
    * crimson allowed-tactic and teal missed-tactic arrows are part of the tactic
    * overlay, not live engine suggestions, so they stay regardless.
@@ -193,7 +193,7 @@ export function useGameOverlay(params: UseGameOverlayParams): GameOverlay {
     const arrows: BoardArrow[] = [];
 
     // Blue best-move arrow: the engine's best move FROM the *displayed* position, so it
-    // matches the live grey 2nd-best arrow (also from the current position). The board
+    // is anchored to the current position. The board
     // shows mainLine[k] = the position after move k, whose stored best_move lives on the
     // NEXT eval-series row (best_move[k+1] = best move from position k+1); best_move[k] is
     // the move that *led into* the shown position, which pointed the arrow one ply behind
@@ -286,28 +286,6 @@ export function useGameOverlay(params: UseGameOverlayParams): GameOverlay {
         // A clean played move on the main line reads green (item 5).
         lastMoveHighlightColor = MOVE_HIGHLIGHT_GOOD;
       }
-    }
-
-    // Light-blue second-best arrow from the live engine (pvLines[1]). When precomputed
-    // best is shown, the engine's own top line is suppressed — only the 2nd best is added.
-    // Suppressed entirely when Stockfish is toggled off (155 UAT).
-    const secondBestSquares = engineEnabled
-      ? uciToSquares(enginePvLines[1]?.moves[0] ?? null)
-      : null;
-    if (
-      secondBestSquares &&
-      !(
-        blueSquares &&
-        secondBestSquares.from === blueSquares.from &&
-        secondBestSquares.to === blueSquares.to
-      )
-    ) {
-      arrows.push({
-        startSquare: secondBestSquares.from,
-        endSquare: secondBestSquares.to,
-        color: SECOND_BEST_ARROW,
-        width: ARROW_WIDTH,
-      });
     }
 
     // Eval bar: precomputed eval on the main line, else the live engine.

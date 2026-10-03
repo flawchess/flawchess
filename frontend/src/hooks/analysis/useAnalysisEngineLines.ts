@@ -62,8 +62,6 @@ import type { RankedLine } from '@/lib/engine/types';
 import { cloneRankedLineWith } from '@/lib/engine/treeCommon';
 import type { PvLine } from '@/hooks/uciParser';
 import { classifyGem, summarizeForGem } from '@/lib/gemMove';
-import { MAX_LINES as SF_MAX_LINES } from '@/components/analysis/EngineLines';
-import { MAX_LINES as FC_MAX_LINES } from '@/components/analysis/FlawChessEngineLines';
 import type { NodeId, MoveNode } from '@/hooks/useAnalysisBoard';
 import type { StockfishEngineState } from '@/hooks/useStockfishEngine';
 import type { FlawChessEngineState } from '@/hooks/useFlawChessEngine';
@@ -145,6 +143,15 @@ export interface UseAnalysisEngineLinesOptions {
   // 215-05's scope) ──────────────────────────────────────────────────────
   storedTierByPly: Map<number, { tier: 'gem' | 'great'; maiaProb: number }>;
   gameHasStoredBestMoveData: boolean;
+
+  // ── Display counts (settings store, read by Analysis.tsx — this hook stays a
+  // pure transform and never reads the store itself) ───────────────────────
+  /** How many FlawChess ranked lines the card shows (FlawChess lines setting). */
+  fcLineCount: number;
+  /** How deep the reconciled Stockfish ranking runs (Analysis.tsx passes
+   *  max(sf lines, sf arrows) so arrows can exceed card lines; EngineLines
+   *  slices for display). */
+  sfRankCount: number;
 }
 
 export interface UseAnalysisEngineLinesResult {
@@ -186,6 +193,8 @@ export function useAnalysisEngineLines(
     pinnedEloForMover,
     storedTierByPly,
     gameHasStoredBestMoveData,
+    fcLineCount,
+    sfRankCount,
   } = options;
 
   // Phase 158 (SEED-087 SC1) / Phase 162 (SEED-090 D-01): the single
@@ -303,37 +312,37 @@ export function useAnalysisEngineLines(
   // `RankedLine` spread site that the phase's own `{\s*\.\.\.line` grep
   // missed because the `{` and `...line` fall on separate source lines.
   // Spreading forces `modalPath`/`modalStats`' lazy accessors to evaluate
-  // immediately for every one of `FC_MAX_LINES` lines on every render this
+  // immediately for every one of the `fcLineCount` lines on every render this
   // memo recomputes. `Object.getOwnPropertyDescriptors` copies the getter
   // descriptor (laziness preserved), never the current value.
   const reconciledRankedLines = useMemo<RankedLine[]>(
     () =>
-      flawChessEngine.rankedLines.slice(0, FC_MAX_LINES).map((line) => {
+      flawChessEngine.rankedLines.slice(0, fcLineCount).map((line) => {
         const resolved = getByUci(evalLookup, line.rootMove);
         return cloneRankedLineWith(line, {
           objectiveEvalCp: resolved?.evalCp ?? null,
           objectiveEvalMate: resolved?.evalMate ?? null,
         });
       }),
-    [flawChessEngine.rankedLines, evalLookup],
+    [flawChessEngine.rankedLines, evalLookup, fcLineCount],
   );
 
   // Phase 196 (INJECT-06, RESEARCH.md "CORRECTED" / Pitfall 2): a second,
   // UNSLICED view of the same rankedLines, for the verdict row's lookup
   // ONLY. Eval reconciliation is deliberately NOT applied here — the
   // verdict's lookup reads only `.rootMove`/`.practicalScore`.
-  // FlawChessEngineLines' visible list stays capped at FC_MAX_LINES
-  // (reconciledRankedLines, unchanged above); INJECT-06 needs the lookup to
+  // FlawChessEngineLines' visible list stays capped at fcLineCount
+  // (reconciledRankedLines, above); INJECT-06 needs the lookup to
   // see every root candidate the search tracked, because per D-01 a
   // genuinely strong-but-unfindable injected move is legitimately outranked
-  // out of the top 2 and must still surface its practical score.
+  // out of the visible lines and must still surface its practical score.
   const flawChessRankedLinesForVerdict = useMemo<RankedLine[]>(
     () => flawChessEngine.rankedLines,
     [flawChessEngine.rankedLines],
   );
 
   // Phase 162 UAT (supersedes D-04/D-12's card scope): the Stockfish card's
-  // lines are the top-2 of the reconciled ranking over the FULL grading union
+  // lines are the top-`sfRankCount` of the reconciled ranking over the FULL grading union
   // — not the free run's own 2 PVs with swapped evals. This closes the D-12
   // residual edge case UAT flagged: the arrow/verdict/FC card named a
   // reconciled best (a Maia/FC-sourced candidate) that the Stockfish card
@@ -347,7 +356,7 @@ export function useAnalysisEngineLines(
     const mover = sideToMoveFromFen(position);
     if (reconciledBestUci !== null) {
       const ranked = rankReconciledCandidates(evalLookup, gradedCandidateUcis, mover, reconciledTieBreakUci);
-      return ranked.slice(0, SF_MAX_LINES).map(({ uci, grade }, index) => ({
+      return ranked.slice(0, sfRankCount).map(({ uci, grade }, index) => ({
         multipv: index + 1,
         depth: grade.depth,
         moves: grade.pv ?? [uci],
@@ -364,7 +373,7 @@ export function useAnalysisEngineLines(
       (a, b) =>
         evalToExpectedScore(b.evalCp, b.evalMate, mover) - evalToExpectedScore(a.evalCp, a.evalMate, mover),
     );
-  }, [engine.pvLines, evalLookup, position, reconciledBestUci, gradedCandidateUcis, reconciledTieBreakUci]);
+  }, [engine.pvLines, evalLookup, position, reconciledBestUci, gradedCandidateUcis, reconciledTieBreakUci, sfRankCount]);
 
   // Phase 151.1 D-08 / Phase 158 (SEED-087 SC3): 5-bucket quality
   // classification of the RECONCILED grades (not the raw grading pass's

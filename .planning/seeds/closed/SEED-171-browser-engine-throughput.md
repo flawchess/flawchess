@@ -1,6 +1,6 @@
 ---
 id: SEED-171
-status: active
+status: closed. Resolved by Phase 226 (round underfill fix, root comparability guard and round-1 root grade split, shipped by owner override 2026-10-02, release #379) and Phase 227 (continuous dispatch shipped as FLAWCHESS_DISPATCH_MODE = 'continuous', no refit, release #381). Closed at the v2.21 milestone close 2026-10-03
 promoted_to: Phase 226 (steps 0-2), Phase 227 (continuous dispatch)
 planted: 2026-09-28
 planted_during: v2.19, Phase 225 planned (SEED-170); standalone performance review session
@@ -262,3 +262,18 @@ fine for a substantial gain.
 - Underfill, guard and root split are all on the branch now (`frontend/src` equals A21S).
 - SEED-176/177/178 are closed.
 - **Phase 227's baseline is therefore A21S, not `main`.**
+
+### Phase 227 outcome (2026-10-03): continuous dispatch ships
+
+The pre-registered gate came out mechanically `ship-eligible` with `no-refit` and the virtual-loss
+trigger false; the owner chose ship (`reports/continuous-dispatch-227/owner-decision.md`).
+`FLAWCHESS_DISPATCH_MODE` is now `'continuous'`; round mode stays behind the flag as the
+bit-identical path for tests and fixture gates. Bot moves about 19% faster again, analysis about
+14% faster (t400-p4 ratio 0.858); the WebGPU desktop leg median ratio was 0.676. Released as #381
+and closed with milestone v2.21.
+
+**Left open at close (not scheduled):** item 2 cross-FEN Maia batching (revisit only together
+with WebGPU Maia); item 4 depth ladder / MultiPV width (owned by the grading-ladder study); the
+non-root candidate cap (not run, D-17 non-root >8-candidate grade share below 0.5); the near-tie
+and deadline-cut stop guards (left unguarded on purpose, Phase 225 D-03/D-04). Plant a fresh seed
+if any of these becomes worth measuring.

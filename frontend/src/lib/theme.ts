@@ -139,16 +139,11 @@ export const GREAT_ACCENT_BG = 'oklch(0.58 0.18 220 / 0.14)';
 // from Stockfish's cold blue and doesn't collide with the brand-brown primary UI.
 // Rendered as colored text/elements on the dark card, so a bright gold is legible.
 export const FLAWCHESS_ENGINE_ACCENT = 'oklch(0.78 0.14 80)'; // gold/amber
-// FlawChess Engine practical-score badge shades (155 UAT; 156 UAT: brown → gold).
-// Three gold shades keyed by practical rank (best / 2nd / 3rd), the gold analog of the
-// blue Stockfish best/2nd badges — all filled with WHITE text, so they stay dark enough
-// (matching the prior brown shades' white-text contrast ~6.9/5.4/4.2) to carry it. Rank 1
-// is darkest and most saturated so the top line reads strongest.
-export const FLAWCHESS_ENGINE_BADGE_SHADES = [
-  'oklch(0.47 0.13 80)', // best
-  'oklch(0.53 0.12 80)', // second
-  'oklch(0.59 0.10 80)', // third
-] as const;
+// Solid FlawChess primary badge (155 UAT; 156 UAT: brown → gold; Phase 228): the fill of
+// the first (best) line's practical-score badge and the terminal-position badge, with
+// WHITE text (contrast ~6.9). Every later line uses FLAWCHESS_ENGINE_BADGE_SECONDARY instead —
+// the old rank-based shade array is gone (SEED-175 styling lock).
+export const FLAWCHESS_ENGINE_BADGE_PRIMARY = 'oklch(0.47 0.13 80)';
 // Book/opening-theory corner-marker identity color (Phase 172, SEED-106 D-08).
 // Chroma 0.04 is deliberately the LOWEST of any corner-marker hue (gem 0.20,
 // Stockfish 0.16, FlawChess 0.14, severities 0.13-0.19), so the book badge
@@ -425,12 +420,22 @@ export const BEST_MOVE_ARROW = 'rgba(37, 99, 235, 0.8)';  // Tailwind blue-600 @
 // presentation attribute, which left the arrow invisible. sRGB of oklch(0.80 0.15 80).
 export const FLAWCHESS_ENGINE_ARROW = 'rgb(213, 152, 0)';  // deep gold/amber (156 UAT: darker + fully opaque)
 
-// Second-best engine move: arrow + eval badge (151.1 UAT). A light blue so 1st vs 2nd
-// read as a blue hierarchy (best = solid blue, second = light blue) rather than the
-// old blue-vs-grey. SECOND_BEST_BADGE_TEXT is a dark ink for the eval number, since
-// near-white text is unreadable on the light-blue badge fill.
-export const SECOND_BEST_ARROW = 'rgba(147, 197, 253, 0.85)';  // Tailwind blue-300 @ 85%
-export const SECOND_BEST_BADGE_TEXT = 'oklch(0.25 0.03 255)';  // dark blue ink
+// Non-primary engine lines (SEED-175 styling lock, Phase 228): ONE translucent color per
+// engine for every board arrow after the first (primary stays solid: BEST_MOVE_ARROW
+// blue / FLAWCHESS_ENGINE_ARROW gold). Card badges use the *_BADGE_SECONDARY tokens
+// below instead. No eval-proportional transparency (the lichess convention). Same RGB
+// as the engine's primary arrow at lower alpha; rgba (not oklch) because oklch() does
+// not reliably paint in an SVG `fill`. Starting alpha 0.45 is UAT-tuned (Plan 03 Task 3),
+// and ChessBoard additionally multiplies engine arrows by ARROW_OPACITY 0.75.
+export const STOCKFISH_SECONDARY_LINE = 'rgba(37, 99, 235, 0.45)';  // BEST_MOVE_ARROW blue @ 45%
+export const FLAWCHESS_SECONDARY_LINE = 'rgba(213, 152, 0, 0.45)';  // FLAWCHESS_ENGINE_ARROW gold @ 45%
+
+// Non-primary engine-card BADGES (Phase 228 UAT): a faded copy of the engine's primary
+// badge (same color, half its opacity), not the arrow color. The FC primary badge is a
+// darker gold than the board arrow (white text needs contrast), so reusing
+// FLAWCHESS_SECONDARY_LINE gave a different-looking gold nearly as strong as the primary.
+export const STOCKFISH_BADGE_SECONDARY = 'rgba(37, 99, 235, 0.4)';  // BEST_MOVE_ARROW blue @ half its 0.8
+export const FLAWCHESS_ENGINE_BADGE_SECONDARY = 'oklch(0.47 0.13 80 / 0.5)';  // FLAWCHESS_ENGINE_BADGE_PRIMARY @ 50%
 
 // Tactic Line Explorer payoff-ply arrows (Phase 135). Lighter alpha than BEST_MOVE_ARROW
 // so payoff arrows visually recede behind the punchline arrow (same blue, less prominent).
@@ -593,9 +598,10 @@ export const TRAIN_BUBBLE_NUDGE_BORDER = 'oklch(0.75 0.15 85)'; // amber, same f
 export const TRAIN_FLAME_OUTER = 'oklch(0.60 0.21 29)'; // red
 export const TRAIN_FLAME_MIDDLE = 'oklch(0.73 0.18 55)'; // orange
 export const TRAIN_FLAME_CORE = 'oklch(0.90 0.15 95)'; // yellow
-// Near-black: the number spans the yellow core and orange middle, neither of
-// which white text can clear for legible contrast.
-export const TRAIN_FLAME_NUMBER = 'oklch(0.22 0.04 50)';
+// White with a black outline: the outline carries the contrast against the
+// yellow core and orange middle the number spans.
+export const TRAIN_FLAME_NUMBER = 'white';
+export const TRAIN_FLAME_NUMBER_OUTLINE = 'black';
 // Streak 0: an unlit grey outline flame with a grey number.
 export const TRAIN_FLAME_UNLIT = 'oklch(0.55 0 0)';
 export const TRAIN_FREEZE_COLOR = 'oklch(0.82 0.10 230)'; // icy blue

@@ -128,12 +128,12 @@ export interface MoveStatsProps {
   /** Chevron handler for the compact row (mobile expand/collapse). */
   onToggleCollapse?: () => void;
   /**
-   * Render the accuracy strip as the first row INSIDE the charcoal table card
-   * instead of above it on the page background. Used on /analysis, where the
-   * stats column reads as one card; the Library game card keeps the strip
-   * outside (default).
+   * Render the accuracy strip as the charcoal table card's banded header (same
+   * band treatment as `CardHeader`) instead of above the card on the page
+   * background. Used on /analysis, where the stats column reads as one card;
+   * the Library game card keeps the strip outside (default).
    */
-  accuracyInsideCard?: boolean;
+  accuracyAsCardHeader?: boolean;
   className?: string;
 }
 
@@ -152,7 +152,7 @@ export function MoveStats({
   collapsed = false,
   showCompactRow = false,
   onToggleCollapse,
-  accuracyInsideCard = false,
+  accuracyAsCardHeader = false,
   className,
 }: MoveStatsProps) {
   const severityCounts = severityCountsBySide(game.flaw_markers ?? []);
@@ -245,15 +245,24 @@ export function MoveStats({
 
   // Accuracy strip: single row — bullseye + "Accuracy" label on the left, then
   // player accuracy, opponent accuracy. By default it sits above the table card
-  // on the page background (px-2 matches the card's p-2 so the pill columns
-  // line up with the count columns); with `accuracyInsideCard` it becomes the
-  // first row inside the charcoal card instead.
+  // on the page background; with `accuracyAsCardHeader` it becomes the charcoal
+  // card's header band (CardHeader's bg-card-band + border-b). Either way px-2
+  // matches the table's p-2 so the pill columns line up with the count columns.
   const accuracyStrip = (
     <div
-      className={cn(SIDE_ALIGNED_GRID_CLASS, !accuracyInsideCard && 'px-2')}
+      className={cn(
+        SIDE_ALIGNED_GRID_CLASS,
+        'px-2',
+        accuracyAsCardHeader && 'bg-card-band border-b border-card-edge py-1',
+      )}
       data-testid={tid('move-stats-accuracy-strip', gameId)}
     >
-      <h4 className="flex items-center gap-2 py-1.5 text-sm font-semibold text-muted-foreground">
+      <h4
+        className={cn(
+          'flex items-center gap-2 py-1.5 text-sm font-semibold',
+          !accuracyAsCardHeader && 'text-muted-foreground',
+        )}
+      >
         {/* Sized like the MoveQualityIcon (h-5 w-5) in the table rows below,
             so the label column reads as one aligned icon+text list. */}
         <span
@@ -271,7 +280,7 @@ export function MoveStats({
 
   return (
     <div data-testid={tid('move-stats', gameId)} className={cn('flex flex-col gap-2', className)}>
-      {!accuracyInsideCard && accuracyStrip}
+      {!accuracyAsCardHeader && accuracyStrip}
 
       {/* Mobile compact summary row (UAT 179): 8 columns spanning the card width
           — one `count + icon` cell per category (user-side counts) plus a
@@ -341,12 +350,12 @@ export function MoveStats({
           count column sits centered under its accuracy pill. Rows use
           `contents` so all rows participate in the one shared grid. */}
       <div
-        className="charcoal-texture flex flex-col gap-2 rounded-md p-2"
+        className="charcoal-texture flex flex-col overflow-hidden rounded-md"
         hidden={collapsed}
         data-testid={tid('move-stats-table-card', gameId)}
       >
-        {accuracyInsideCard && accuracyStrip}
-        <div className={SIDE_ALIGNED_GRID_CLASS} data-testid={tid('move-stats-table', gameId)}>
+        {accuracyAsCardHeader && accuracyStrip}
+        <div className={cn(SIDE_ALIGNED_GRID_CLASS, 'p-2')} data-testid={tid('move-stats-table', gameId)}>
           {CATEGORY_ORDER.map((category) => {
             // Rows where neither side has a count are kept (D-03) but dimmed,
             // so the table reads as only the rows that actually occurred.

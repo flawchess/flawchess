@@ -65,7 +65,7 @@ import { buildGameAnalysisUrl } from '@/lib/analysisUrl';
 import type { PasteParseResult, PastedGameHeaders } from '@/lib/pastedGame';
 import { takePastedGameHandoff } from '@/lib/pastedGameHandoff';
 import { EvalBar } from '@/components/analysis/EvalBar';
-import { MAX_LINES as FC_MAX_LINES } from '@/components/analysis/FlawChessEngineLines';
+import { useEngineDisplaySettings } from '@/lib/engineSettings';
 import type { FlawSeverity } from '@/types/library';
 import { isRareMoveTier } from '@/types/library';
 import { useFastForward, FAST_FORWARD_ANIMATION_MS } from '@/hooks/useFastForward';
@@ -221,10 +221,22 @@ const DESKTOP_GRID_MAX_WIDTH_PX =
   BOARD_EVAL_BARS_ALLOWANCE_PX +
   EVAL_SLIDER_SLACK_PX * 2;
 
-// QUALITY_HOVER_ARROW_WIDTH, NEXT_MOVE_ARROW_WIDTH, ARROW_COUNT,
-// FLAWCHESS_ENGINE_ARROW_WIDTH and STOCKFISH_ENGINE_ARROW_WIDTH moved to
-// useAnalysisBoardArrows.ts (Phase 215 Plan 05) — that hook is their sole
-// reader now.
+// The board-arrow width constants (quality hover, next move, FlawChess and
+// Stockfish engine arrows) live in useAnalysisBoardArrows.ts (Phase 215
+// Plan 05) — that hook is their sole reader; the per-engine arrow COUNTS come
+// from the settings store (Phase 228).
+
+/**
+ * Phase 228 (D-14): floor for the free-run Stockfish MultiPV. The free run's
+ * `pvLines[0]` and `pvLines[1]` feed the INJECT-03 second-move injection into
+ * the FlawChess search (`extraRootMoves`), so the floor of 2 keeps
+ * `engine.pvLines[1]` present at every display setting. The free run also
+ * feeds the grading union and is the only Stockfish source when Maia and
+ * FlawChess are both off (grading disabled), so its width must additionally
+ * cover max(Stockfish lines, Stockfish arrows) for the card and arrows to
+ * reach N (RESEARCH Pitfall 1).
+ */
+const ANALYSIS_FREE_RUN_MIN_MULTIPV = 2;
 
 /**
  * Phase 196 (INJECT-04, RESEARCH.md Pitfall 1): the single shared empty-array
@@ -411,6 +423,10 @@ export default function Analysis() {
   // real-device mobile-memory UAT per 155-RESEARCH.md D-02).
   const [maiaEnabled, setMaiaEnabled] = useState(true);
   const [flawChessEnabled, setFlawChessEnabled] = useState(true);
+  // Phase 228 (SEED-175): per-engine line counts from the settings store, read
+  // ONCE here and threaded to the cards / reconciliation hook as props and
+  // options (the presentational components never read the store themselves).
+  const { fcLines, fcArrows, sfLines, sfArrows } = useEngineDisplaySettings();
   // Quick 260901-oxh: the fast-forward run state, LIFTED up here rather than read
   // off `fastForward.isRunning`. The useFastForward call sits ~1,000 lines below
   // (it needs `evalChartPly`), but the consumers that must react to a run are the
@@ -531,6 +547,7 @@ export default function Analysis() {
   const engine = useStockfishEngine({
     fen: engineEnabled && !fastForwardRunning ? position : null,
     enabled: engineEnabled,
+    multiPv: Math.max(ANALYSIS_FREE_RUN_MIN_MULTIPV, sfLines, sfArrows),
   });
 
   // focusedFlaw: the open (or pending) line the board is currently "in" — its subtree
@@ -921,19 +938,19 @@ export default function Analysis() {
     [maia.perElo, selectedElo],
   );
 
-  // Phase 158 (SEED-087 SC2): the FC card's own top-MAX_LINES displayed SANs,
+  // Phase 158 (SEED-087 SC2): the FC card's own top-`fcLines` displayed SANs,
   // converted from their root UCI moves — the FlawChess Engine's contribution
   // to the shared grading union below. Empty (a no-op contributor) whenever
   // the FC card is off, so the union reflects only active consumers.
   const flawChessDisplayedSans = useMemo(() => {
     if (!flawChessEnabled) return [];
     const sans: string[] = [];
-    for (const line of flawChessEngine.rankedLines.slice(0, FC_MAX_LINES)) {
+    for (const line of flawChessEngine.rankedLines.slice(0, fcLines)) {
       const san = bestSanFromPv(position, line.rootMove);
       if (san !== null) sans.push(san);
     }
     return sans;
-  }, [flawChessEnabled, flawChessEngine.rankedLines, position]);
+  }, [flawChessEnabled, flawChessEngine.rankedLines, position, fcLines]);
 
   // Phase 162 (SEED-090 D-02/D-09): the free run has "committed" a bestmove for
   // the current position once it has at least one PV line and is no longer
@@ -945,10 +962,11 @@ export default function Analysis() {
   // Phase 158 (SEED-087 SC2, RESEARCH Pitfall 4) / Phase 162 (SEED-090 D-02/D-09):
   // the deduplicated, sorted union of the Maia chart's shownSans, the FC card's
   // displayed SANs, and — once the free run has committed a bestmove for this
-  // position — the free run's own top-2 root SANs. This closes the "no
-  // uncovered displayed move" gap: the grading union now contains everything
-  // the Stockfish card shows, not just what Maia/FlawChess independently
-  // surface. Sorted + deduped via the SAME single `Array.from(new
+  // position — EVERY root SAN of the free run (Phase 228 D-14: its width is
+  // max(2, SF lines, SF arrows), so with a wide setting the card and arrows
+  // rank over all of them). This closes the "no uncovered displayed move"
+  // gap: the grading union now contains everything the Stockfish card shows,
+  // not just what Maia/FlawChess independently surface. Sorted + deduped via the SAME single `Array.from(new
   // Set(...)).sort()` (mirroring the grading hook's own candidatesKey pattern)
   // so a re-throttle of the SAME top moves produces the same array and does
   // not re-trigger the search.
@@ -957,10 +975,10 @@ export default function Analysis() {
     const fcSans = flawChessEnabled ? flawChessDisplayedSans : [];
     const freeRunSans: string[] = [];
     if (freeRunCommitted) {
-      const san0 = bestSanFromPv(position, engine.pvLines[0]?.moves[0] ?? null);
-      const san1 = bestSanFromPv(position, engine.pvLines[1]?.moves[0] ?? null);
-      if (san0 !== null) freeRunSans.push(san0);
-      if (san1 !== null) freeRunSans.push(san1);
+      for (const line of engine.pvLines) {
+        const san = bestSanFromPv(position, line.moves[0] ?? null);
+        if (san !== null) freeRunSans.push(san);
+      }
     }
     return Array.from(new Set([...maiaSans, ...fcSans, ...freeRunSans])).sort();
   }, [maiaEnabled, shownSans, flawChessEnabled, flawChessDisplayedSans, freeRunCommitted, engine.pvLines, position]);
@@ -1096,7 +1114,6 @@ export default function Analysis() {
   // single reconciled argmax + move-quality map every display consumer on
   // the page reads instead of re-deriving its own.
   const {
-    reconciledBestUci,
     reconciledBestSan,
     reconciledStockfishLine,
     reconciledBestEval,
@@ -1121,6 +1138,10 @@ export default function Analysis() {
     pinnedEloForMover,
     storedTierByPly,
     gameHasStoredBestMoveData,
+    fcLineCount: fcLines,
+    // D-14: arrows beyond the card's line count still read the same ranking
+    // (EngineLines slices to sfLines for display).
+    sfRankCount: Math.max(sfLines, sfArrows),
   });
 
   // ── Derived values (game mode — new) ─────────────────────────────────────────
@@ -1680,8 +1701,9 @@ export default function Analysis() {
       flawChessEnabled,
       flawChessRankedLines: flawChessEngine.rankedLines,
       engineEnabled,
-      enginePvLines: engine.pvLines,
-      reconciledBestUci,
+      stockfishArrowLines: reconciledPvLines,
+      fcArrowCount: fcArrows,
+      sfArrowCount: sfArrows,
       gameOverlaySquareMarkers: gameOverlay.squareMarkers,
       liveFlawSquareMarkers: liveFlaw.squareMarkers,
       resolveMarkerFor,
@@ -2200,6 +2222,7 @@ export default function Analysis() {
   const flawChessCardProps = {
     flawChessEnabled,
     setFlawChessEnabled,
+    fcLines,
     selectedElo,
     flawChessLoading,
     reconciledRankedLines,
@@ -2277,6 +2300,7 @@ export default function Analysis() {
         <EvalTab
           mobileEngineLines={
             <MobileEngineLines
+              sfLines={sfLines}
               engineLoading={engineLoading}
               engineEnabled={engineEnabled}
               reconciledPvLines={reconciledPvLines}
@@ -2348,7 +2372,7 @@ export default function Analysis() {
         />
       }
       flawChessTab={
-        <FlawChessTab flawChessCard={<FlawChessCard {...flawChessCardProps} footer={eloSelector} />} />
+        <FlawChessTab flawChessCard={<FlawChessCard {...flawChessCardProps} footer={eloSelector} compact />} />
       }
       statsTab={
         <StatsTab
@@ -2383,6 +2407,7 @@ export default function Analysis() {
   // reader — the mid-range two-column layout and the desktop 3-column layout (single
   // mount — only one return branch renders).
   const stockfishCardProps = {
+    sfLines,
     engineEnabled,
     setEngineEnabled,
     reconciledBestEval,

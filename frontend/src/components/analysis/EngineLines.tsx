@@ -1,10 +1,11 @@
 /**
- * EngineLines — renders up to 2 top PV lines from the Stockfish engine.
+ * EngineLines — renders up to `maxLines` top PV lines from the Stockfish engine
+ * (the count comes from the Stockfish lines setting, 1-5, Phase 228).
  *
  * Each line is a single row:
  *  - a colored eval badge (read from pvLines[i].evalCp / pvLines[i].evalMate, D-03):
- *    solid blue (BEST_MOVE_ARROW) on the best line, light blue (SECOND_BEST_ARROW) on
- *    the second — matching the board's best-move / second-best arrow colors (151.1 UAT).
+ *    solid blue (BEST_MOVE_ARROW) on the best line, one translucent blue
+ *    (STOCKFISH_BADGE_SECONDARY) on every later line, white text throughout (SEED-175).
  *  - up to 5 clickable PV move chips that call onMoveClick(from, to)
  *
  * The search depth is shown by the engine info line above this component, not here.
@@ -26,16 +27,13 @@ import type { PvLine } from '@/hooks/uciParser';
 import { moveLabel } from '@/lib/moveNumberLabel';
 import { cn } from '@/lib/utils';
 import {
-  SECOND_BEST_ARROW,
-  SECOND_BEST_BADGE_TEXT,
   BEST_MOVE_ARROW,
+  STOCKFISH_BADGE_SECONDARY,
   MOVE_HIGHLIGHT_GOOD,
 } from '@/lib/theme';
 import { MiniBoard } from '@/components/board/MiniBoard';
 import { Tooltip } from '@/components/ui/tooltip';
 
-/** Maximum number of PV lines displayed. Exported (162 UAT) so Analysis.tsx slices the reconciled ranking to the same width. */
-export const MAX_LINES = 2;
 /** Maximum number of plies shown per PV line. */
 const MAX_PLIES = 5;
 /** Miniboard size (px) inside the engine-move hover tooltip. */
@@ -92,7 +90,7 @@ export function replayPvLine(baseFen: string | undefined, uciMoves: string[]): P
 const CHIP_CLASS =
   'inline-flex items-center gap-0.5 rounded px-1 py-0.5 font-mono text-xs transition-colors hover:bg-accent';
 
-// Eval badge — filled pill in the line's arrow color (blue best / grey second).
+// Eval badge — filled pill in the line's arrow color (solid blue best / translucent blue rest).
 const BADGE_CLASS = 'shrink-0 rounded px-1.5 py-0.5 text-xs font-semibold text-white';
 
 // Compact variants (Quick 260628-dgv — mobile /analysis takeover): same text-xs font as the
@@ -104,22 +102,25 @@ const CHIP_CLASS_COMPACT =
 const BADGE_CLASS_COMPACT = 'shrink-0 rounded px-1 text-xs font-semibold leading-4 text-white';
 
 // Fixed-height container for the engine-lines region — keeps the panel from
-// jumping as the engine transitions analyzing → 2 lines (Quick 260627-mt8 item 5).
-export const LINES_MIN_HEIGHT = 'min-h-[60px]';
-// Compact min-height — sized to two single-row text-xs PV lines so the loading
-// skeleton, the analyzing skeleton, and the rendered rows are all the same height
-// (no vertical jump on the mobile takeover — Quick 260628-dgv).
+// jumping as the engine transitions analyzing → N lines (Quick 260627-mt8 item 5).
+// Height is rows × a per-row pixel budget, applied as an inline style (Tailwind only
+// ships literal class strings, so an interpolated `min-h-[${n}px]` would never be
+// generated — Phase 228 RESEARCH Pitfall 4).
 //
-// Quick 260628-cjp: bumped 44→50px. Below 640px the unlayered `.text-xs` override in
-// index.css forces line-height 1.25rem (20px), beating the chips' `leading-4` (16px),
-// so two real PV rows measure 49px — but the skeleton's fixed h-4/h-3 bars stay at
-// 40px. min-h-[44px] let the loaded lines outgrow the box by ~5px (the residual jump).
-// 50px clears the measured 49px with a 1px margin so every state is the same height.
-const LINES_MIN_HEIGHT_COMPACT = 'min-h-[50px]';
-// 3-row variant (Phase 155 Plan 03, D-08/D-09) — FlawChessEngineLines shows the top
-// 3 ranked lines (not 2), so its skeleton + rendered rows both need a taller fixed
-// height. Same ~30px-per-row math as LINES_MIN_HEIGHT (2 rows = 60px).
-export const LINES_MIN_HEIGHT_3 = 'min-h-[90px]';
+// Desktop: ~30px per row (2 rows = 60px, the pre-Phase-228 `min-h-[60px]`).
+export const ENGINE_LINE_ROW_PX = 30;
+// Compact (mobile takeover) rows: 25px each, so 2 rows = 50px. Quick 260628-cjp: bumped
+// 44→50px. Below 640px the unlayered `.text-xs` override in index.css forces line-height
+// 1.25rem (20px), beating the chips' `leading-4` (16px), so two real PV rows measure 49px —
+// but the skeleton's fixed h-4/h-3 bars stay at 40px. 50px clears the measured 49px with a
+// 1px margin so every state (loading skeleton, analyzing skeleton, rendered rows) is the
+// same height (no vertical jump on the mobile takeover — Quick 260628-dgv).
+const ENGINE_LINE_ROW_PX_COMPACT = 25;
+
+/** Fixed min-height (px) of an engine-lines region holding `rows` PV rows. */
+export function engineLinesMinHeightPx(rows: number, compact = false): number {
+  return rows * (compact ? ENGINE_LINE_ROW_PX_COMPACT : ENGINE_LINE_ROW_PX);
+}
 
 /**
  * Pulsing placeholder rows shaped like PV lines (eval badge + move chips) — the
@@ -134,25 +135,22 @@ export const LINES_MIN_HEIGHT_3 = 'min-h-[90px]';
 export function EngineLinesSkeleton({
   testId,
   compact = false,
-  rows = 2,
+  rows,
 }: {
   testId?: string;
   /** Mobile takeover: shorter rows matching the compact text-xs PV lines. */
   compact?: boolean;
   /**
-   * Number of placeholder rows (Phase 155 Plan 03, D-09) — 2 for EngineLines'
-   * default, 3 for FlawChessEngineLines' top-3-lines card. `rows=3` implies the
-   * non-compact `LINES_MIN_HEIGHT_3` sizing regardless of `compact`.
+   * Number of placeholder rows — the engine's lines setting (1-5, Phase 228 D-16).
+   * Also sets the container's fixed min-height via `engineLinesMinHeightPx`.
    */
-  rows?: 2 | 3;
+  rows: number;
 }) {
   return (
     <div
       data-testid={testId}
-      className={cn(
-        'flex flex-col justify-center gap-2 px-2',
-        rows === 3 ? LINES_MIN_HEIGHT_3 : compact ? LINES_MIN_HEIGHT_COMPACT : LINES_MIN_HEIGHT,
-      )}
+      className="flex flex-col justify-center gap-2 px-2"
+      style={{ minHeight: engineLinesMinHeightPx(rows, compact) }}
       aria-busy="true"
       aria-label="Loading engine lines"
     >
@@ -200,6 +198,11 @@ export function formatScore(
 export interface EngineLinesProps {
   /** PV lines from useStockfishEngine. */
   pvLines: PvLine[];
+  /**
+   * How many PV rows to render (and how many skeleton rows to show). Comes from the
+   * Stockfish lines setting via the parent; this component never reads the store.
+   */
+  maxLines: number;
   /** True while the engine is running (used only for the analyzing-gate). */
   isAnalyzing: boolean;
   /** Game ply at engine invocation — used for move-number labels. Default 0. */
@@ -260,11 +263,9 @@ function PvLineRow({
   // SAN labels + per-step FENs (replayed from baseFen). Null SAN falls back to raw
   // UCI; null FEN skips the hover preview for that (and every later) chip.
   const steps = replayPvLine(baseFen, moves);
-  // Badge matches the board arrow: solid blue best move, light-blue second-best.
-  // The light-blue badge needs dark ink for the eval number to stay readable.
-  const isBest = lineIndex === 0;
-  const badgeColor = isBest ? BEST_MOVE_ARROW : SECOND_BEST_ARROW;
-  const badgeTextColor = isBest ? undefined : SECOND_BEST_BADGE_TEXT;
+  // Badge matches the board arrow: solid blue best move, one translucent blue for
+  // every later line. White text (BADGE_CLASS) stays legible on both fills.
+  const badgeColor = lineIndex === 0 ? BEST_MOVE_ARROW : STOCKFISH_BADGE_SECONDARY;
 
   return (
     <div
@@ -276,10 +277,10 @@ function PvLineRow({
         addSeparator && 'border-t border-border',
       )}
     >
-      {/* Eval badge — solid blue (best) / light blue (second), matching the arrows. */}
+      {/* Eval badge — solid blue (best) / translucent blue (later lines), matching the arrows. */}
       <span
         className={compact ? BADGE_CLASS_COMPACT : BADGE_CLASS}
-        style={{ backgroundColor: badgeColor, color: badgeTextColor }}
+        style={{ backgroundColor: badgeColor }}
         aria-label={`Line ${lineIndex + 1}: ${scoreText}`}
       >
         {scoreText}
@@ -377,13 +378,14 @@ function PvLineRow({
 }
 
 /**
- * Renders up to 2 top engine PV lines as single rows (eval badge + clickable move
+ * Renders up to `maxLines` top engine PV lines as single rows (eval badge + clickable move
  * chips) inside a fixed-height container, with a non-jumping "Analyzing…"
  * placeholder before any lines arrive. The search depth lives in the engine info
  * line above this component.
  */
 export function EngineLines({
   pvLines,
+  maxLines,
   isAnalyzing,
   startPly = 0,
   baseFen,
@@ -391,18 +393,18 @@ export function EngineLines({
   onMoveClick,
   compact = false,
 }: EngineLinesProps) {
-  const visibleLines = pvLines.slice(0, MAX_LINES);
+  const visibleLines = pvLines.slice(0, maxLines);
 
   return (
     <div
       data-testid="analysis-engine-lines"
       aria-label="Engine lines"
       aria-live="polite"
-      className={compact ? LINES_MIN_HEIGHT_COMPACT : LINES_MIN_HEIGHT}
+      style={{ minHeight: engineLinesMinHeightPx(maxLines, compact) }}
     >
       {/* Analyzing placeholder — fixed-height skeleton (avoids layout jump). */}
       {isAnalyzing && pvLines.length === 0 && (
-        <EngineLinesSkeleton testId="engine-lines-analyzing" compact={compact} />
+        <EngineLinesSkeleton testId="engine-lines-analyzing" rows={maxLines} compact={compact} />
       )}
 
       {/* PV lines — rendered when lines are available */}

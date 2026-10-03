@@ -20,6 +20,8 @@ import type { StockfishGradingEngineState } from '@/hooks/useStockfishGradingEng
 import type { UseMaiaEngineState } from '@/hooks/useMaiaEngine';
 import type { MoveGrade } from '@/lib/moveQuality';
 import type { NodeId, MoveNode } from '@/hooks/useAnalysisBoard';
+import type { RankedLine } from '@/lib/engine/types';
+import { DEFAULT_LINES } from '@/lib/engineSettings';
 
 const START_FEN = 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1';
 
@@ -88,6 +90,8 @@ function baseOptions(isLadderComplete: boolean): UseAnalysisEngineLinesOptions {
     pinnedEloForMover: () => 1500,
     storedTierByPly: new Map(),
     gameHasStoredBestMoveData: false,
+    fcLineCount: DEFAULT_LINES,
+    sfRankCount: DEFAULT_LINES,
   };
 }
 
@@ -142,5 +146,72 @@ describe('useAnalysisEngineLines — qualityBySanWithGem (Phase 219-03, D-12)', 
     // stored-tier check, so an incomplete ladder returned the base map
     // (quality !== 'gem') even though a DB-authoritative stored tier existed.
     expect(result.current.qualityBySanWithGem.get('Nf3')?.quality).toBe('gem');
+  });
+});
+
+/** Minimal RankedLine fixture: plain data properties (no lazy accessors needed here). */
+function rankedLine(rootMove: string, practicalScore: number): RankedLine {
+  return {
+    rootMove,
+    practicalScore,
+    objectiveEvalCp: 0,
+    objectiveEvalMate: null,
+    modalPath: [rootMove],
+    modalStats: [],
+    visits: 10,
+    childScoreSpread: null,
+  };
+}
+
+const FOUR_RANKED_LINES: RankedLine[] = [
+  rankedLine('e2e4', 0.6),
+  rankedLine('d2d4', 0.55),
+  rankedLine('g1f3', 0.5),
+  rankedLine('c2c4', 0.45),
+];
+
+/** baseGrading plus two more candidates so the reconciled ranking has 4 entries. */
+function fourCandidateGrading(): StockfishGradingEngineState {
+  const grading = baseGrading();
+  grading.gradeMap.set('e4', { evalCp: 100, evalMate: null, depth: 10 });
+  grading.gradeMap.set('c4', { evalCp: -100, evalMate: null, depth: 10 });
+  return grading;
+}
+
+describe('useAnalysisEngineLines — display counts follow the settings (Phase 228, D-16)', () => {
+  it('reconciledRankedLines is sliced to fcLineCount, in rankedLines order', () => {
+    const flawChessEngine = { ...baseFlawChessEngine(), rankedLines: FOUR_RANKED_LINES };
+    const three = renderHook(() =>
+      useAnalysisEngineLines({ ...baseOptions(false), flawChessEngine, fcLineCount: 3 }),
+    );
+    expect(three.result.current.reconciledRankedLines.map((l) => l.rootMove)).toEqual([
+      'e2e4',
+      'd2d4',
+      'g1f3',
+    ]);
+    const one = renderHook(() =>
+      useAnalysisEngineLines({ ...baseOptions(false), flawChessEngine, fcLineCount: 1 }),
+    );
+    expect(one.result.current.reconciledRankedLines).toHaveLength(1);
+  });
+
+  it('flawChessRankedLinesForVerdict stays unsliced regardless of fcLineCount', () => {
+    const flawChessEngine = { ...baseFlawChessEngine(), rankedLines: FOUR_RANKED_LINES };
+    const { result } = renderHook(() =>
+      useAnalysisEngineLines({ ...baseOptions(false), flawChessEngine, fcLineCount: 1 }),
+    );
+    expect(result.current.flawChessRankedLinesForVerdict).toHaveLength(4);
+  });
+
+  it('reconciledPvLines ranking depth follows sfRankCount once a reconciled best exists', () => {
+    const three = renderHook(() =>
+      useAnalysisEngineLines({ ...baseOptions(false), grading: fourCandidateGrading(), sfRankCount: 3 }),
+    );
+    expect(three.result.current.reconciledBestUci).not.toBeNull();
+    expect(three.result.current.reconciledPvLines).toHaveLength(3);
+    const one = renderHook(() =>
+      useAnalysisEngineLines({ ...baseOptions(false), grading: fourCandidateGrading(), sfRankCount: 1 }),
+    );
+    expect(one.result.current.reconciledPvLines).toHaveLength(1);
   });
 });

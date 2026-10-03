@@ -1,37 +1,36 @@
 ---
 gsd_state_version: "1.0"
-milestone: v2.19
-current_phase: 227
+milestone: v2.21
+current_phase: 228
+current_phase_name: Settings Page — Sound Toggle & Per-Engine Lines/Arrows (SEED-175)
 status: completed
-stopped_at: Phase 227 complete — all phases complete
-last_updated: "2026-10-03T11:45:30.327Z"
-state_head: 305a60a8820ef2c3aa9244d607f2d93a194c12c3
+stopped_at: Phase 228 complete — all phases complete
+last_updated: "2026-10-03T15:26:52.720Z"
+state_head: ad78dc00dfe98c641803cc70f48a329218c118d8
 progress:
-  total_phases: 5
+  total_phases: 1
   completed_phases: 103
-  total_plans: 47
+  total_plans: 3
   completed_plans: 47
-  percent: 76
-milestone_name: Train Bot-Narrated Onboarding & Verdicts
+  percent: 100
+milestone_name: Browser Engine Throughput
 last_activity: 2026-10-03
-current_phase_name: Browser Engine Continuous Dispatch Against a Relaxed Determinism Target (SEED-171)
-last_activity_desc: "Completed quick task 261003-ixu: SEED-182 card border and lighter header band (75d660f46)"
+last_activity_desc: Closed milestones v2.20 (phases 223–224) and v2.21 (phases 225–227) with tags and GitHub releases; roadmap cleanup
 ---
 
 # Project State: FlawChess
 
 ## Current Position
 
-Phase: 227
-Plan: Not started
+Phase: 228 (Settings Page — Sound Toggle & Per-Engine Lines/Arrows (SEED-175)) — COMPLETE
+Plan: 3 of 3
 
 Status: All phases complete
 
 Open threads carried forward (not blockers):
 
-- Phase 224 added 2026-09-17 (explicit user request via `/gsd-phase @SEED-169`, after `/gsd-explore` "guest drop-off" on growth report 2026-09-15 finding 2): **Guest Activation — Welcome Removal & Guest Train**. Lever A: drop the forced `/welcome` redirect for 0-game guests (48% vs 85% import-start gap sits entirely at that step). Lever B: open Train to guests as the full daily warm-up loop (reverses Phase 189 D-05), guest sign-up nudges as bot bubbles with "Why?" + "Sign up free" on the score screen (replacing the reminder ask, no push for guests) and the Import page (random friendly bot), `/welcome` rewritten as a four-delta "What changes when you sign up" page. Guest cleanup must be re-reasoned for guest Train rows. Two metrics recorded separately before/after. Written by hand as 224 (known mature-ROADMAP behavior). Next: `/gsd-discuss-phase 224`.
-- Phase 223 added 2026-09-15 (explicit user request, `/gsd-explore` "bots page welcome avatars + in-game trash-talk" → SEED-168 → promote): **Bot Voice & Immersive Bot Game Layout**. Per-persona in-game lines in a persistent two-line bubble under the board-truth rule (speak only after the bot's own move, only about cashed-in swings, WDL-based detection), mobile game screen rebuilt in the chess.com shape with a fixed Resign/Back/Forward/Flip bar replacing the nav, desktop `PlayerBar` rows + side-column bubble, roster intro card replaced by a welcome bubble, and SEED-167's settings-page sound switch folded in (no in-game mute remains). Written by hand as 223 rather than via `phase.add` (known mature-ROADMAP behavior). Next: `/gsd-discuss-phase 223`.
-
+- Phase 224 guest levers: all four baselines are now in `reports/growth/guest-activation-baseline-2026-09-17.md` (Lever A metric 2 read 2026-10-03: 459/858 engaged home sessions, 53.5%); post-change readings not yet written up.
+- Engine follow-ups: SEED-171 closed with its leftovers listed in `seeds/closed/SEED-171-...md` (cross-FEN Maia batching, non-root candidate cap); SEED-180 (Stockfish watchdog hidden-tab gate); real-phone throughput for Phases 226/227 never measured.
 - Phase 221: a forced only-move that sheds a piece can read as a sacrifice (game 1459049 ply 21); captured in `.planning/notes/2026-09-13-forced-only-move-tagged-sacrifice.md`, no action requested. Lever if sacrifice noise ever matters: lower `SACRIFICE_CLEARANCE_MAX_DEPTH` (4) and retag.
 
 - SEED-162 cluster 3 (TypeScript 7) blocked upstream until a `typescript-eslint` release accepts it.
@@ -45,7 +44,7 @@ Open threads carried forward (not blockers):
 
 See: .planning/PROJECT.md (updated 2026-09-13 after Phase 221)
 Core value: Position-precise WDL across openings + endgames + time pressure on top of users' actual chess.com / lichess games, with personalized LLM commentary and an auto-generated opening-strengths/weaknesses report.
-Current focus: **v2.19 closed 2026-09-14 and deployed (release #359)**; phases 219–222 regrouped into milestones v2.17–v2.19, each with a GitHub release. No open milestone: next is `/gsd-new-milestone` or another standalone phase. Read the Train funnel (first-session 0-solve, baseline 42%; second-session return, baseline 49%) after a couple of weeks of bot-narrated sessions.
+Current focus: **v2.20 and v2.21 closed 2026-10-03**; phases 223–227 regrouped into v2.20 Bot Voice & Guest Activation (223–224, releases #360–#373) and v2.21 Browser Engine Throughput (225–227, releases #376/#379/#381), each tagged with a GitHub release. ROADMAP.md slimmed to milestones + per-milestone progress rows + backlog (phase detail lives in `milestones/`). No open milestone: next is `/gsd-new-milestone` or standalone Phase 228. `main` carries one unreleased fast task (move stats accuracy header band, 0e0723eb8).
 
 ### Superseded: focus after Phase 219
 
@@ -169,6 +168,7 @@ v1.29 Live-Engine Analysis Page shipped 2026-06-29 — 5 phases (136–140), 14 
 
 ### Roadmap Evolution
 
+- Phase 228 added 2026-10-03 (explicit user request via `/gsd-phase @SEED-175`, trigger met: Phase 226 merged and v2.21 closed): **Settings Page — Sound Toggle & Per-Engine Lines/Arrows** (SEED-175, planted 2026-09-29 from `/gsd-explore`). Frontend-only cogwheel `/settings` page with localStorage-backed sound on/off and per-engine line (1-5) and arrow (0-3) counts, plus the single-translucent-color non-primary line restyle.
 - Phase 226 added 2026-09-28 (explicit user request via `/gsd-phase @SEED-171`, after the 2026-09-28 browser engine performance review): **Browser Engine Throughput — Round Underfill Re-land, Root Grade Split & Continuous Dispatch**. Re-measure on an idle box, re-land the held Phase 225 round underfill fix (explain the `cBFTV` flip, wider fixture) with the root comparability guard, split the round-1 root grade across idle SF workers, then continuous dispatch against a relaxed determinism target (may split into its own phase in discuss); gated by a pre-committed accept rule against a same-session A0 baseline.
 - Phase 225 added 2026-09-27 (explicit user request via `/gsd-phase @SEED-170`, after the 2026-09-27 engine review whose behavior-neutral findings shipped as quick task 260927-8xn): **Engine Search Fixes — Root Comparability, Round Underfill & Findability Fallback**. Visit guard on the early-stop clear-winner branch (and possibly the deadline cut), `selectPath` block-and-restart instead of giving up mid-round, findability fallback term in `rankScore`, optional non-root candidate cap; gated by a pre-committed accept rule (throughput, maia-blindness, stop-rule, persona calibration spot check).
 - Phase 224 added 2026-09-17 (explicit user request via `/gsd-phase @SEED-169`, after `/gsd-explore` "guest drop-off" on growth report 2026-09-15 finding 2): **Guest Activation — Welcome Removal & Guest Train**. Lever A: drop the forced `/welcome` redirect for 0-game guests (48% vs 85% import-start gap sits entirely at that step). Lever B: open Train to guests as the full daily warm-up loop (reverses Phase 189 D-05), guest sign-up nudges as bot bubbles with "Why?" + "Sign up free" on the score screen (replacing the reminder ask, no push for guests) and the Import page (random friendly bot), `/welcome` rewritten as a four-delta "What changes when you sign up" page. Guest cleanup must be re-reasoned for guest Train rows. Two metrics recorded separately before/after. Written by hand as 224 (known mature-ROADMAP behavior). Next: `/gsd-discuss-phase 224`.
@@ -802,6 +802,12 @@ flagged as an open decision for plan 06 / a human, not auto-fixed.
 - [Phase 225]: rankScore blends toward V_fallback (prior-weighted mean of root children) instead of toward 0 (D-10a/D-10b amended), fixing SEED-170 item 3
 - [Phase 225]: Phase 159 showcase reversal accepted (D-10e): a hard-to-find move far better than the findable alternative now ranks first in analysis suggestions
 - [Phase 225]: D-14 applied: item 1 and item 2 held and reverted (five (225-04)/(225-05) commits), item 3 ships; both revert boundaries auto-merged cleanly against Plan 225-06's edits with no manual conflict resolution
+- [Phase 228]: Plan 01: four flawchess_settings_* localStorage keys, tamper-safe reads (default not clamp); sound key flawchess_bot_sound_muted unchanged; Reset fires one settings-reset event
+- [Phase 228]: Engine-line card heights are rows x 30px (25px compact) as inline styles; Stockfish card body adds an 18px chrome constant so defaults stay 60/50/78px
+- [Phase 228]: Non-primary engine line styling: one translucent rgba token per engine (alpha 0.45, UAT-tuned in Plan 03), white badge text; rank shades and second-best tokens retired
+- [Phase 228]: Free-run MultiPV floor of 2 (ANALYSIS_FREE_RUN_MIN_MULTIPV) keeps engine.pvLines[1] for the FlawChess injection; free run width is max(2, SF lines, SF arrows)
+- [Phase 228]: Train eval-bar engine pinned to TRAIN_EVAL_BAR_MULTIPV = 1, independent of settings; Train free play searches at max(SF lines, SF arrows) with no movetime scaling
+- [Phase 228]: Arrows 1..N read the same reconciled ranking as the card (rank k = line k), non-primary ranks use one translucent per-engine color at the engine's own width, primary pushed last
 
 ### Pending Todos
 
@@ -936,6 +942,9 @@ None active.
 | 261002-8xb | Train puzzles-per-session slider 3-30 step 3 (SEED-179) | 2026-10-02 | e9b466552 | [261002-8xb-train-puzzles-per-session-slider-3-30-st](./quick/261002-8xb-train-puzzles-per-session-slider-3-30-st/) |
 | 261002-ex9 | Train streak flame hero + snowflake freezes + collapsible schedule (SEED-181) | 2026-10-02 | 6b2799d7d | [261002-ex9-implement-seed-181-train-streak-flame-fr](./quick/261002-ex9-implement-seed-181-train-streak-flame-fr/) |
 | 261003-ixu | SEED-182 card border and lighter header band on charcoal-texture surfaces | 2026-10-03 | 75d660f46 | [261003-ixu-seed-182-card-border-and-lighter-header-](./quick/261003-ixu-seed-182-card-border-and-lighter-header-/) |
+| 113 | Analysis page: move stats accuracy shown as card header band | 2026-10-03 | 0e0723eb8 | — |
+| 114 | Mobile analysis: hide human/knight icons in card headers; Maia header -> 'Maia, Human Move Probability' | 2026-10-03 | 7ed295414 | — |
+| 115 | streak flame number: white font with black outline | 2026-10-03 | 6099bfdfc | — |
 
 ## Deferred Items
 
@@ -988,13 +997,15 @@ Items acknowledged and deferred at **v1.29 milestone close on 2026-06-29** (user
 
 ## Session Continuity
 
-**Stopped at:** Phase 227 complete (2026-10-03). Owner decided SHIP: `FLAWCHESS_DISPATCH_MODE = 'continuous'`, no
+**Stopped at:** Phase 228 complete (3/3 plans, verification passed 16/16 decisions, browser UAT 5/5 legs passed, code review WR-01/WR-02 fixed). Next: pre-merge gate, then squash-merge `gsd/phase-228-settings-page` to `main` (CHANGELOG entry already in `[Unreleased]`).
+
+Previous session note (Phase 227):
 refit (calibration parity holds). Verification passed 17/17; code review 0 blockers (WR-01 + 3 info fixed). Next:
 squash-merge `gsd/phase-227-...` to `main` with a CHANGELOG entry already in `[Unreleased]`, then deploy when ready.
 Owner-deferred: real-phone bot game check (227-UAT.md, report-only). Follow-up: stale "Phase 198 will populate"
 priority comment in `workerPoolState.ts:434-437` (verifier info item).
 
-**Last session:** 2026-10-03T11:05:00Z
+**Last session:** 2026-10-03T15:02:44.838Z
 
 **Resume file:** None
 
@@ -1197,6 +1208,9 @@ priority comment in `workerPoolState.ts:434-437` (verifier info item).
 | Phase 225 P05 | 20min | 2 tasks | 5 files |
 | Phase 225 P06 | 20min | 2 tasks | 6 files |
 | Phase 225 P08 | 65min | 3 tasks | 13 files |
+| Phase 228 P01 | 12min | 3 tasks | 11 files |
+| Phase 228 P02 | 15min | 3 tasks | 18 files |
+| Phase 228 P03 | 13 min | 3 tasks | 13 files |
 
 ## Performance Metrics
 

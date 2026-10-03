@@ -1,6 +1,7 @@
 import type { ReactElement } from 'react';
 import { ArrowLeft } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { SettingsSheetButton } from '@/components/settings/SettingsSheetButton';
 import { PlayerBar } from '@/components/board/PlayerBar';
 import { resolvePlayerRow, type BotPlayerRowInputs } from '@/components/bots/botPlayerRow';
 import { usePublishMobileBoardControls } from '@/lib/mobileBoardControls';
@@ -31,9 +32,11 @@ export interface BotGameMobileLayoutProps extends BotPlayerRowInputs {
 
 /**
  * BotGameMobileLayout — Phase 223 (BOTVOICE-05, D-10/D-11): replaces the
- * page's old mobile render helper. Top to bottom: a top bar holding only a
- * back arrow (the gear is dropped per CONTEXT's discretion note — an icon
- * with no sheet behind it is worse than no icon), the avatar-and-bubble row,
+ * page's old mobile render helper. Top to bottom: a top bar holding a back
+ * arrow and, at the far end, a settings cogwheel that opens the settings sheet
+ * in place (Phase 228 D-04: sound can be switched off mid-game without
+ * navigating away, which would trigger the ResumeGate overlay on return),
+ * the avatar-and-bubble row,
  * then the board flanked by the same two `PlayerBar` rows the desktop layout
  * and the analysis board use (name + rating label left, clock right).
  *
@@ -106,6 +109,7 @@ export function BotGameMobileLayout({
         >
           <ArrowLeft className="size-5" aria-hidden="true" />
         </Button>
+        <SettingsSheetButton testId="btn-bots-settings" className="ml-auto" />
       </div>
       {bubble}
       <div className="flex flex-col gap-1">

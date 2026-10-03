@@ -68,6 +68,7 @@ import {
   CURRENT_SNAPSHOT_VERSION,
   type BotGameSnapshot,
 } from '@/lib/botGameSnapshot';
+import { MUTE_KEY } from '@/lib/sounds';
 import { BOT_PENDING_STORE_KEY_PREFIX, enqueuePendingStore } from '@/lib/botPendingStore';
 import { MAX_STORE_RETRIES } from '@/hooks/useStoreBotGame';
 
@@ -763,6 +764,23 @@ describe('Bots — mobile chrome removed, back arrow wired (Phase 223, BOTVOICE-
   });
 });
 
+describe('Bots — mobile settings sheet (Phase 228 D-04)', () => {
+  it('opens the settings sheet in place mid-game and the sound switch writes the locked mute key', async () => {
+    renderBots();
+    await startFromSetup();
+
+    fireEvent.click(screen.getByTestId('btn-bots-settings'));
+
+    expect(await screen.findByTestId('settings-sheet')).toBeTruthy();
+    // No navigation: the game page stays mounted underneath the sheet.
+    expect(screen.getByTestId('bots-page')).toBeTruthy();
+
+    fireEvent.click(screen.getByTestId('settings-sound-switch'));
+    expect(localStorage.getItem(MUTE_KEY)).toBe('1');
+    expect(screen.getByTestId('bots-page')).toBeTruthy();
+  });
+});
+
 describe('Bots — desktop layout (Phase 223, BOTVOICE-05, D-11/D-12)', () => {
   beforeEach(() => {
     installMatchMediaStub(true);
@@ -771,6 +789,13 @@ describe('Bots — desktop layout (Phase 223, BOTVOICE-05, D-11/D-12)', () => {
   afterEach(() => {
     // Restore this file's mobile-reporting default for every other suite.
     installMatchMediaStub(false);
+  });
+
+  it('renders no settings cogwheel in the desktop layout (D-04: desktop uses the header cogwheel)', async () => {
+    renderBots();
+    await startFromSetup();
+
+    expect(screen.queryByTestId('btn-bots-settings')).toBeNull();
   });
 
   it('renders two player rows: the bot with its name and calibrated label, the player with its name and rounded estimate', async () => {

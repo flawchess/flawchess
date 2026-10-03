@@ -24,6 +24,7 @@ import { TrainSolveScreen } from '@/components/train/TrainSolveScreen';
 import { useMobileBoardControls } from '@/lib/mobileBoardControls';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import { TRAIN_STEP_HIGHLIGHT } from '@/lib/trainArrows';
+import { SETTINGS_STORAGE_KEYS } from '@/lib/engineSettings';
 import { MOVE_QUALITY_BLUNDER, MOVE_QUALITY_GOOD, TRAIN_BEST_MOVE_ARROW } from '@/lib/theme';
 import { buildGameAnalysisUrl } from '@/lib/analysisUrl';
 import { animateScrollTop } from '@/lib/animatedScroll';
@@ -548,6 +549,7 @@ describe('TrainSolveScreen — progress, last move, grading state, engine failur
     cleanup();
     vi.unstubAllGlobals();
     vi.useRealTimers();
+    localStorage.removeItem(SETTINGS_STORAGE_KEYS.sfArrows);
   });
 
   it('progress: shows "i of N" using the FROZEN session puzzle_count, not puzzles.length', async () => {
@@ -1795,6 +1797,36 @@ describe('TrainSolveScreen — progress, last move, grading state, engine failur
     );
     expect(Number(screen.getByTestId('chessboard').getAttribute('data-markers-count'))).toBe(
       revealMarkerCount,
+    );
+  });
+
+  it('Stockfish arrows 0 (Phase 228 D-13): free play draws no live arrow, yet the reveal legend arrows still draw and return after Solution', async () => {
+    localStorage.setItem(SETTINGS_STORAGE_KEYS.sfArrows, '0');
+    let workerCallCount = 0;
+    stubWorker(() => {
+      workerCallCount += 1;
+      return workerCallCount === 1 ? new FakeWorker() : new FakeWorker('e7e5', 'e7e5');
+    });
+    await renderScreen(makePuzzle());
+    fireEvent.click(screen.getByTestId('btn-train-guess-critical'));
+    await act(async () => {
+      fireEvent.click(screen.getByTestId('drop-e2e4'));
+    });
+    // The setting must NOT touch the reveal legend arrows (blue best, green
+    // also-fine, game-move): the pristine reveal still draws them.
+    await waitFor(() =>
+      expect(Number(screen.getByTestId('chessboard').getAttribute('data-arrows-count'))).toBeGreaterThan(0),
+    );
+    const revealArrowCount = Number(screen.getByTestId('chessboard').getAttribute('data-arrows-count'));
+
+    fireEvent.click(screen.getByTestId('drop-e2e4')); // starts exploration
+    const board = () => screen.getByTestId('chessboard');
+    await waitFor(() => expect(board().getAttribute('data-markers-count')).toBe('1'));
+    expect(board().getAttribute('data-arrows-count')).toBe('0');
+
+    fireEvent.click(screen.getByTestId('btn-train-solution'));
+    await waitFor(() =>
+      expect(Number(board().getAttribute('data-arrows-count'))).toBe(revealArrowCount),
     );
   });
 

@@ -10,7 +10,7 @@ import { TooltipProvider } from '@/components/ui/tooltip';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
-import { ArrowLeft, BookOpenIcon, MenuIcon, LogOutIcon, TrophyIcon, DoorOpen, Shield, FolderOpen, Bot, Dumbbell, Search, Activity } from 'lucide-react';
+import { ArrowLeft, BookOpenIcon, MenuIcon, LogOutIcon, TrophyIcon, DoorOpen, Shield, FolderOpen, Bot, Dumbbell, Search, Activity, Settings as SettingsIcon } from 'lucide-react';
 import {
   Drawer, DrawerContent, DrawerHeader, DrawerTitle, DrawerClose,
 } from '@/components/ui/drawer';
@@ -35,6 +35,8 @@ import { OpeningsPage } from '@/pages/Openings';
 import { EndgamesPage } from '@/pages/Endgames';
 import { AdminPage } from '@/pages/Admin';
 import { PrivacyPage } from '@/pages/Privacy';
+import { SettingsSheet, SettingsSheetButton } from '@/components/settings/SettingsSheetButton';
+import { SettingsDialogButton } from '@/components/settings/SettingsDialogButton';
 import { WelcomePage } from '@/pages/Welcome';
 import { useImportPolling, useActiveJobs } from '@/hooks/useImport';
 import { useUserFlag, setUserFlag } from '@/hooks/useUserFlag';
@@ -369,6 +371,9 @@ export function NavHeader() {
           {profile?.impersonation && (
             <ImpersonationPill impersonation={profile.impersonation} />
           )}
+          {/* D-01: icon-only cogwheel, deliberately NOT in NAV_ITEMS (it is a utility,
+              not main navigation). Opens a modal, never navigates (228 UAT). */}
+          <SettingsDialogButton testId="nav-settings" />
           <Button variant="ghost" size="sm" onClick={logout} data-testid="nav-logout">
             Logout
           </Button>
@@ -422,7 +427,7 @@ export function MobileHeader() {
 
 // The analysis page takes over the mobile shell: a back button (browser back) replaces
 // the logo, and the board controls replace the bottom nav bar (rendered by the page).
-function AnalysisMobileHeader() {
+export function AnalysisMobileHeader() {
   const navigate = useNavigate();
   return (
     <header
@@ -442,6 +447,9 @@ function AnalysisMobileHeader() {
         <ArrowLeft className="h-6 w-6" />
       </Button>
       <span className="text-sm font-medium text-foreground">Analysis</span>
+      {/* D-03: opens the settings sheet in place (no navigation, so the board and any
+          unsaved free-play tree stay put). ml-auto pins it top right, like the bot game. */}
+      <SettingsSheetButton testId="btn-analysis-settings" className="ml-auto h-12 w-12" />
     </header>
   );
 }
@@ -566,63 +574,85 @@ export function MobileMoreDrawer({ open, onOpenChange }: { open: boolean; onOpen
   const navUnlocked = totalGames > 0 && tier1;
   // D-17: Admin entry surfaced in the More drawer (not the bottom bar) for superusers.
   const navItems = profile?.is_superuser ? [...NAV_ITEMS, ADMIN_NAV_ITEM, ACTIVITY_NAV_ITEM] : NAV_ITEMS;
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const openSettings = (): void => {
+    onOpenChange(false);
+    setSettingsOpen(true);
+  };
 
   return (
-    <Drawer open={open} onOpenChange={onOpenChange} direction="bottom">
-      <DrawerContent data-testid="mobile-more-drawer">
-        <DrawerHeader>
-          <DrawerTitle className="text-sm font-medium text-foreground">
-            {profile?.is_guest ? 'Guest session' : (profile?.email ?? 'Account')}
-          </DrawerTitle>
-        </DrawerHeader>
-        <div className="px-4 pb-4">
-          <nav className="flex flex-col gap-1">
-            {navItems.map(({ to, label }) => {
-              const locked = isNavLocked(to, navUnlocked);
-              return (
-              <DrawerClose key={to} asChild>
-                <Link
-                  to={to}
-                  data-testid={`drawer-nav-${to.slice(1)}`}
-                  aria-disabled={locked || undefined}
-                  title={locked ? IMPORT_REQUIRED_MESSAGE : undefined}
-                  onClick={locked ? (e) => e.preventDefault() : undefined}
-                  className={cn(
-                    'relative rounded-md px-3 py-2 text-base',
-                    locked && 'opacity-40 cursor-not-allowed',
-                    isActive(to, location.pathname) ? 'text-primary font-medium' : 'text-foreground',
-                  )}
-                >
-                  {label}
-                  {to === '/library' && noGames && (
-                    <span
-                      className="absolute top-0.5 right-0.5 flex h-2.5 w-2.5"
-                      data-testid="library-notification-dot-drawer"
-                      aria-hidden="true"
-                    >
-                      <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-red-500 opacity-75" />
-                      <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-red-500" />
-                    </span>
-                  )}
-                </Link>
-              </DrawerClose>
-              );
-            })}
-          </nav>
-          <div className="my-2 border-t border-border" />
-          <DrawerClose asChild>
+    <>
+      <Drawer open={open} onOpenChange={onOpenChange} direction="bottom">
+        <DrawerContent data-testid="mobile-more-drawer">
+          <DrawerHeader>
+            <DrawerTitle className="text-sm font-medium text-foreground">
+              {profile?.is_guest ? 'Guest session' : (profile?.email ?? 'Account')}
+            </DrawerTitle>
+          </DrawerHeader>
+          <div className="px-4 pb-4">
+            <nav className="flex flex-col gap-1">
+              {navItems.map(({ to, label, Icon }) => {
+                const locked = isNavLocked(to, navUnlocked);
+                return (
+                <DrawerClose key={to} asChild>
+                  <Link
+                    to={to}
+                    data-testid={`drawer-nav-${to.slice(1)}`}
+                    aria-disabled={locked || undefined}
+                    title={locked ? IMPORT_REQUIRED_MESSAGE : undefined}
+                    onClick={locked ? (e) => e.preventDefault() : undefined}
+                    className={cn(
+                      'relative flex items-center gap-2 rounded-md px-3 py-2 text-base',
+                      locked && 'opacity-40 cursor-not-allowed',
+                      isActive(to, location.pathname) ? 'text-primary font-medium' : 'text-foreground',
+                    )}
+                  >
+                    <Icon className="h-4 w-4" aria-hidden="true" />
+                    {label}
+                    {to === '/library' && noGames && (
+                      <span
+                        className="absolute top-0.5 right-0.5 flex h-2.5 w-2.5"
+                        data-testid="library-notification-dot-drawer"
+                        aria-hidden="true"
+                      >
+                        <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-red-500 opacity-75" />
+                        <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-red-500" />
+                      </span>
+                    )}
+                  </Link>
+                </DrawerClose>
+                );
+              })}
+            </nav>
+            {/* D-02: testid deliberately NOT drawer-nav-* (that prefix is collected by
+                the exact-order nav tests and Settings is not in NAV_ITEMS). */}
+            {/* Opens the settings sheet in place of this drawer, never navigates (228 UAT:
+                a /settings page lost the puzzle or game the user came from). */}
             <button
-              onClick={logout}
-              data-testid="drawer-logout"
-              className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-base text-destructive"
+              type="button"
+              onClick={openSettings}
+              data-testid="drawer-settings"
+              className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-base text-foreground"
             >
-              <LogOutIcon className="h-4 w-4" />
-              Logout
+              <SettingsIcon className="h-4 w-4" aria-hidden="true" />
+              Settings
             </button>
-          </DrawerClose>
-        </div>
-      </DrawerContent>
-    </Drawer>
+            <div className="my-2 border-t border-border" />
+            <DrawerClose asChild>
+              <button
+                onClick={logout}
+                data-testid="drawer-logout"
+                className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-base text-destructive"
+              >
+                <LogOutIcon className="h-4 w-4" aria-hidden="true" />
+                Logout
+              </button>
+            </DrawerClose>
+          </div>
+        </DrawerContent>
+      </Drawer>
+      <SettingsSheet open={settingsOpen} onOpenChange={setSettingsOpen} />
+    </>
   );
 }
 

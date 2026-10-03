@@ -1,7 +1,7 @@
 {
   "contract": "1.0.0",
   "flavor": "core",
-  "milestone": "v2.19",
+  "milestone": "v2.21",
   "phases": [
     {
       "number": "1",
@@ -100,12 +100,7 @@
     },
     {
       "number": "93",
-      "name": "Global Percentile Benchmark Artifact",
-      "status": "complete"
-    },
-    {
-      "number": "94",
-      "name": "Backend & Frontend Percentile Annotations",
+      "name": "94.4. v1.19 phases",
       "status": "complete"
     },
     {
@@ -135,138 +130,23 @@
     },
     {
       "number": "113",
-      "name": "Opponent-Flaw Materialization",
-      "status": "complete"
-    },
-    {
-      "number": "114",
-      "name": "Benchmark Flaw-Delta Zone Computation",
-      "status": "complete"
-    },
-    {
-      "number": "114.1",
-      "name": "Replace move_count with exact ply_count (INSERTED)",
-      "status": "complete"
-    },
-    {
-      "number": "115",
-      "name": "You-vs-Opponent Comparison API + Bullet-Grid UI",
+      "name": "115. v1.25 phases",
       "status": "complete"
     },
     {
       "number": "116",
-      "name": "All-Ply Engine Core",
-      "status": "pending"
-    },
-    {
-      "number": "117",
-      "name": "Priority Queue + Flaw Integration",
-      "status": "pending"
-    },
-    {
-      "number": "117.1",
-      "name": "Flaw-Eval Convention Fix (INSERTED, SEED-044)",
-      "status": "pending"
-    },
-    {
-      "number": "117.2",
-      "name": "Wipe Eval-Only Engine Residue (INSERTED, SEED-044)",
-      "status": "pending"
-    },
-    {
-      "number": "118",
-      "name": "Demand UX + Auto-Enqueue",
-      "status": "pending"
-    },
-    {
-      "number": "119",
-      "name": "Eval-drain coverage (SEED-045, SEED-046)",
-      "status": "complete"
-    },
-    {
-      "number": "120",
-      "name": "Headless remote trusted-operator eval worker",
+      "name": "120. v1.26 phases",
       "status": "complete"
     },
     {
       "number": "121",
-      "name": "Remote-worker tier-1 claiming (SEED-048)",
-      "status": "pending"
-    },
-    {
-      "number": "122",
-      "name": "In-app feedback button (SEED-049)",
-      "status": "pending"
-    },
-    {
-      "number": "123",
-      "name": "Remote-worker entry-ply fresh-import drain (SEED-051)",
-      "status": "pending"
+      "name": "123. v1.27 phases",
+      "status": "complete"
     },
     {
       "number": "123.1",
-      "name": "Opening-eval dedup cache table (SEED-053) (INSERTED)",
-      "status": "complete"
-    },
-    {
-      "number": "124",
-      "name": "Schema + Tactic Detector",
-      "status": "complete"
-    },
-    {
-      "number": "125",
-      "name": "Backfill Tactic Motifs",
-      "status": "complete"
-    },
-    {
-      "number": "126",
-      "name": "Comparison Stats + Frontend",
-      "status": "complete"
-    },
-    {
-      "number": "127",
-      "name": "Detector Hardening & Validation",
-      "status": "complete"
-    },
-    {
-      "number": "128",
-      "name": "Missed-Opportunity Tagging",
-      "status": "complete"
-    },
-    {
-      "number": "129",
-      "name": "Tactic Filter UI",
-      "status": "complete"
-    },
-    {
-      "number": "130",
-      "name": "Tactic tag improvements and fixes",
+      "name": "135. v1.28 phases",
       "status": "pending"
-    },
-    {
-      "number": "131",
-      "name": "Tactic precision hardening (cook.py, SEED-064)",
-      "status": "complete"
-    },
-    {
-      "number": "132",
-      "name": "Tier-3 tactic precision hardening (cook.py)",
-      "status": "complete"
-    },
-    {
-      "number": "133",
-      "name": "Close suppressed-tactic gaps",
-      "status": "complete"
-    },
-    {
-      "number": "134",
-      "name": "trapped-piece fixture expansion + cook reimpl",
-      "status": "complete"
-    },
-    {
-      "number": "135",
-      "name": "Tactic Line Explorer (SEED-065)",
-      "status": "complete"
     },
     {
       "number": "136",
@@ -275,62 +155,17 @@
     },
     {
       "number": "141",
-      "name": "JSONB Schema + Gate Logic",
+      "name": "147. v1.30 phases",
       "status": "complete"
-    },
-    {
-      "number": "142",
-      "name": "MultiPV=2 Engine Pass + Eval Drain + Remote Worker",
-      "status": "complete"
-    },
-    {
-      "number": "143",
-      "name": "Offline Re-tagger",
-      "status": "complete"
-    },
-    {
-      "number": "144",
-      "name": "User-28 A/B Validation",
-      "status": "pending"
-    },
-    {
-      "number": "145",
-      "name": "Corpus Backfill + Rollout",
-      "status": "pending"
-    },
-    {
-      "number": "146",
-      "name": "Offload live-submit continuation eval to remote worker (SEED-071)",
-      "status": "pending"
-    },
-    {
-      "number": "147",
-      "name": "Persist only forcing-line-gated tactic tags (SEED-074, A+B)",
-      "status": "pending"
     },
     {
       "number": "148",
-      "name": "Pipeline & tactic correctness fixes (code-review 2026-07-02)",
-      "status": "complete"
-    },
-    {
-      "number": "149",
-      "name": "Retire & Prune",
-      "status": "complete"
-    },
-    {
-      "number": "150",
-      "name": "Consolidate Write Path",
+      "name": "150. v1.31 phases",
       "status": "complete"
     },
     {
       "number": "151",
-      "name": "Maia in the Browser + All-Position Surfaces",
-      "status": "complete"
-    },
-    {
-      "number": "151.1",
-      "name": "Stockfish-graded Maia moves (INSERTED, SEED-083)",
+      "name": "151.1. v1.32 phases",
       "status": "complete"
     },
     {
@@ -340,342 +175,107 @@
     },
     {
       "number": "162",
-      "name": "Grading-run-authoritative eval reconciliation (SEED-090)",
-      "status": "pending"
-    },
-    {
-      "number": "163",
-      "name": "Gem moves — Maia-findability badges (SEED-092)",
-      "status": "pending"
+      "name": "163. v2.1 phases",
+      "status": "complete"
     },
     {
       "number": "164",
-      "name": "Maia ELO Lichess-blitz normalization (SEED-093)",
-      "status": "pending"
-    },
-    {
-      "number": "165",
-      "name": "Gem-ELO calibration harness + ?fen= deep-link (SEED-094)",
-      "status": "pending"
+      "name": "165. v2.2 phases",
+      "status": "complete"
     },
     {
       "number": "166",
-      "name": "Bot Move Selection Core (`selectBotMove`)",
-      "status": "complete"
-    },
-    {
-      "number": "167",
-      "name": "Backend Store-on-Finish",
-      "status": "complete"
-    },
-    {
-      "number": "168",
-      "name": "Headless Calibration Harness (spike-gated)",
-      "status": "complete"
-    },
-    {
-      "number": "169",
-      "name": "Clocked Board + Game Loop (`useBotGame`)",
-      "status": "complete"
-    },
-    {
-      "number": "169.5",
-      "name": "Bot Opening Book",
-      "status": "complete"
-    },
-    {
-      "number": "170",
-      "name": "localStorage Resume",
-      "status": "complete"
-    },
-    {
-      "number": "171",
-      "name": "Bots Page + Setup Screen + Nav",
-      "status": "complete"
-    },
-    {
-      "number": "172",
-      "name": "Background Gem Sweep on Analysis (SEED-106)",
-      "status": "complete"
-    },
-    {
-      "number": "173",
-      "name": "Anchor ladder self-calibration (SEED-101, v2.6)",
+      "name": "172. v2.3 phases",
       "status": "complete"
     },
     {
       "number": "174",
-      "name": "Backend Maia Inference + Best-Move Storage (spike-gated)",
-      "status": "complete"
-    },
-    {
-      "number": "175",
-      "name": "Board & Filter — Gem/Great Consumption",
-      "status": "complete"
-    },
-    {
-      "number": "176",
-      "name": "Backfill",
-      "status": "complete"
-    },
-    {
-      "number": "177",
-      "name": "Worker-side MultiPV-2 gem-candidate searches (SEED-111, v2.4 addendum)",
+      "name": "177. v2.4 phases",
       "status": "complete"
     },
     {
       "number": "178",
-      "name": "Lichess-compatible accuracy & ACPL (computed columns) (v2.5)",
+      "name": "179. v2.5 phases",
       "status": "complete"
     },
     {
-      "number": "179",
-      "name": "Two-sided Move Stats component (SEED-112, v2.5)",
-      "status": "complete"
-    },
-    {
-      "number": "180",
-      "name": "Three-preset bot strength curves (SEED-102, v2.6)",
+      "number": "173",
+      "name": ", 180-181. v2.6 phases",
       "status": "pending"
     },
     {
-      "number": "181",
-      "name": "Per-preset strength lookup curves (SEED-104, v2.6)",
-      "status": "complete"
-    },
-    {
       "number": "182",
-      "name": "Style Levers (SEED-098, v2.7)",
-      "status": "complete"
-    },
-    {
-      "number": "183",
-      "name": "Persona Registry & Bots Page (SEED-098, v2.7)",
-      "status": "complete"
-    },
-    {
-      "number": "184",
-      "name": "Persona Calibration & Strength Honesty (SEED-098, v2.7)",
-      "status": "complete"
-    },
-    {
-      "number": "185",
-      "name": "Bots Roster Transpose + Win Stars (SEED-098, v2.7)",
+      "name": "185. v2.7 phases",
       "status": "complete"
     },
     {
       "number": "186",
-      "name": "Import Filters — Time Controls + Game Cap (SEED-117, v2.8)",
-      "status": "complete"
-    },
-    {
-      "number": "187",
-      "name": "Guest Game Cleanup — 30-Day Inactivity Pruning (SEED-116, v2.8)",
-      "status": "complete"
-    },
-    {
-      "number": "188",
-      "name": "Import/Eval Pipeline Cleanup — Retire Completed Backfill Machinery (SEED-115, v2.8)",
+      "name": "188. v2.8 phases",
       "status": "complete"
     },
     {
       "number": "189",
-      "name": "Pool + Scheduler Backend (SEED-037, v2.9)",
-      "status": "complete"
-    },
-    {
-      "number": "190",
-      "name": "Train Page + Solve Loop (SEED-037, v2.9)",
-      "status": "complete"
-    },
-    {
-      "number": "190.1",
-      "name": "Train Reveal Redesign (INSERTED, 190 UAT feedback)",
-      "status": "complete"
-    },
-    {
-      "number": "191",
-      "name": "Schedule + Progress Surface (SEED-037, v2.9)",
-      "status": "complete"
-    },
-    {
-      "number": "192",
-      "name": "Precomputed Red-Herring Position Pool (SEED-120, v2.9)",
-      "status": "complete"
-    },
-    {
-      "number": "193",
-      "name": "Session-Tick Streaks with a Depletable Shield (SEED-121, v2.9)",
+      "name": "193. v2.9 phases",
       "status": "complete"
     },
     {
       "number": "194",
-      "name": "Engine main-thread + cache hygiene (SEED-126 Phases 2–5, v2.10)",
-      "status": "complete"
-    },
-    {
-      "number": "195",
-      "name": "Depth-scaled grading ladder (SEED-126 Phase 1, v2.10)",
-      "status": "complete"
-    },
-    {
-      "number": "196",
-      "name": "Analysis-board Stockfish root injection (SEED-118, v2.10)",
-      "status": "complete"
-    },
-    {
-      "number": "197",
-      "name": "Maia WDL leaf values (SEED-126 Phase 6, v2.10)",
-      "status": "pending"
-    },
-    {
-      "number": "198",
-      "name": "mctsSearch continuous dispatch (SEED-127, v2.10)",
-      "status": "pending"
-    },
-    {
-      "number": "199",
-      "name": "Bot re-calibration sweep + strength curve refit (v2.10)",
+      "name": "199. v2.10 phases",
       "status": "pending"
     },
     {
       "number": "200",
-      "name": "Train Solve Screen — Board Legend & Inline Sideline Exploration (SEED-131, v2.11)",
-      "status": "complete"
-    },
-    {
-      "number": "201",
-      "name": "Push Infrastructure & Train Reminders (SEED-132 Phase A, v2.11)",
-      "status": "complete"
-    },
-    {
-      "number": "202",
-      "name": "Reminder Permission UX (SEED-132 Phase A, v2.11)",
-      "status": "complete"
-    },
-    {
-      "number": "203",
-      "name": "PWA Install Re-prompting & Train-Anchored Install Offer (SEED-134, v2.11)",
+      "name": "203. v2.11 phases",
       "status": "complete"
     },
     {
       "number": "204",
-      "name": "Push Reminder Delivery Reliability (SEED-135, v2.12)",
-      "status": "complete"
-    },
-    {
-      "number": "205",
-      "name": "Train Grading Oracle Agreement (SEED-137, v2.12)",
+      "name": "205. v2.12 phases",
       "status": "complete"
     },
     {
       "number": "206",
-      "name": "Train Warm-Up Sessions & Sharp Filler Pool (SEED-140, v2.13)",
-      "status": "complete"
-    },
-    {
-      "number": "207",
-      "name": "Self-Serve Password Reset (SEED-143, v2.13)",
-      "status": "complete"
-    },
-    {
-      "number": "208",
-      "name": "Paste a FEN or PGN on /analysis (SEED-144, v2.13)",
-      "status": "complete"
-    },
-    {
-      "number": "209",
-      "name": "Traffic-Surge Quick Wins (SEED-146, v2.13)",
-      "status": "complete"
-    },
-    {
-      "number": "210",
-      "name": "Custom-Start Games — Crash Containment & Insight Eviction (SEED-042, v2.13)",
-      "status": "complete"
-    },
-    {
-      "number": "211",
-      "name": "Vetted \"Also Fine\" Moves & Server-Key Grading (SEED-150, v2.13)",
+      "name": "211. v2.13 phases",
       "status": "complete"
     },
     {
       "number": "212",
-      "name": "Benchmark Full-Game Analysis Lane (SEED-152, v2.14)",
-      "status": "complete"
-    },
-    {
-      "number": "213",
-      "name": "First-Run Engine Cold Start — Asset-Check Gate & Download Progress UI (SEED-155, v2.14)",
+      "name": "213. v2.14 phases",
       "status": "complete"
     },
     {
       "number": "214",
-      "name": "Backend God-File Decomposition (CONCERNS.md, v2.15)",
-      "status": "complete"
-    },
-    {
-      "number": "215",
-      "name": "Frontend God-File Decomposition (CONCERNS.md, v2.15)",
+      "name": "215. v2.15 phases",
       "status": "complete"
     },
     {
       "number": "216",
-      "name": "Audit Bugs and Quick Wins (SEED-161, v2.16)",
-      "status": "complete"
-    },
-    {
-      "number": "217",
-      "name": "Frontend Major Bumps — Vitest 5 / jsdom 30 + onnxruntime-web 1.29 (SEED-162, v2.16)",
-      "status": "complete"
-    },
-    {
-      "number": "218",
-      "name": "Backend onnxruntime Parity Spike → Python 3.14 Chain (SEED-162, v2.16)",
+      "name": "218. v2.16 phases",
       "status": "complete"
     },
     {
       "number": "219",
-      "name": "Maia Chart Latency — ORT 1.27 Re-pin, Cross-Origin Isolation & Progressive Ladder Paint (v2.17)",
+      "name": "v2.17 phase",
       "status": "complete"
     },
     {
       "number": "220",
-      "name": "Opening Eval Cache Repair & Two-Source Confirmation (SEED-164, v2.18)",
-      "status": "complete"
-    },
-    {
-      "number": "221",
-      "name": "Tactic-Tagger Real-Game Precision — Winning Floor, Predicate Tightening & Port Fixes (SEED-165, v2.18)",
+      "name": "221. v2.18 phases",
       "status": "complete"
     },
     {
       "number": "222",
-      "name": "Train Bot-Narrated Onboarding & Verdicts (SEED-166, v2.19)",
+      "name": "v2.19 phase",
       "status": "complete"
     },
     {
       "number": "223",
-      "name": "Bot Voice & Immersive Bot Game Layout (SEED-168 + SEED-167, standalone)",
-      "status": "complete"
-    },
-    {
-      "number": "224",
-      "name": "Guest Activation — Welcome Removal & Guest Train (SEED-169, standalone)",
+      "name": "224. v2.20 phases",
       "status": "complete"
     },
     {
       "number": "225",
-      "name": "Engine Search Fixes — Root Comparability, Round Underfill & Findability Fallback (SEED-170, standalone)",
-      "status": "complete"
-    },
-    {
-      "number": "226",
-      "name": "Browser Engine Throughput — Round Underfill Re-land & Root Grade Split (SEED-171, standalone)",
-      "status": "complete"
-    },
-    {
-      "number": "227",
-      "name": "Browser Engine Continuous Dispatch Against a Relaxed Determinism Target (SEED-171, standalone)",
+      "name": "227. v2.21 phases",
       "status": "complete"
     }
   ],
@@ -684,5 +284,5 @@
     "label": "Show progress",
     "reason": "Unsure of state — showing progress"
   },
-  "updated_at": "2026-10-03T11:02:46.956Z"
+  "updated_at": "2026-10-03T15:26:52.783Z"
 }

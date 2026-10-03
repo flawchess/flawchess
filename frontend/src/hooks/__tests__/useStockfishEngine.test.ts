@@ -4,7 +4,7 @@
  *
  * Behaviors verified:
  * 1. Classic Worker instantiation (no { type: 'module' }).
- * 2. UCI init: uci → setoption MultiPV value 2 → isready → isReady false→true.
+ * 2. UCI init: uci → setoption MultiPV value <multiPv option> → isready → isReady false→true.
  * 3. Adaptive debounce: settled move fires immediately; rapid steps coalesce.
  * 4. Search command contains movetime 1500 and nodes 2000000.
  * 5. Stop-pending discard: stale bestmove is discarded; only final FEN result committed.
@@ -168,6 +168,9 @@ async function flushWorkerSpawn(): Promise<void> {
   });
 }
 
+/** Candidate-line count the generic tests run at (the caller owns the policy, D-12). */
+const TEST_MULTIPV = 2;
+
 const TEST_FEN = 'rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq e3 0 1';
 const TEST_FEN_2 = 'rnbqkbnr/pppppppp/8/8/3P4/8/PPP1PPPP/RNBQKBNR b KQkq d3 0 1';
 const TEST_FEN_3 = 'rnbqkbnr/pppppppp/8/8/2P5/8/PP1PPPPP/RNBQKBNR b KQkq c3 0 1';
@@ -208,7 +211,7 @@ describe('useStockfishEngine', () => {
   });
 
   it('creates a classic Worker — no module option', async () => {
-    renderHook(() => useStockfishEngine({ fen: null, enabled: true }));
+    renderHook(() => useStockfishEngine({ fen: null, enabled: true, multiPv: TEST_MULTIPV }));
     await flushWorkerSpawn();
     // The Worker constructor must be called with only the engine path.
     // A second argument ({ type: 'module' }) would break the Emscripten glue.
@@ -218,23 +221,26 @@ describe('useStockfishEngine', () => {
   });
 
   it('sends uci as the first command on mount', async () => {
-    renderHook(() => useStockfishEngine({ fen: null, enabled: true }));
+    renderHook(() => useStockfishEngine({ fen: null, enabled: true, multiPv: TEST_MULTIPV }));
     await flushWorkerSpawn();
     expect(mockWorker.messages[0]).toBe('uci');
   });
 
-  it('setoption MultiPV uses value 2', async () => {
-    renderHook(() => useStockfishEngine({ fen: null, enabled: true }));
+  it('setoption MultiPV uses the multiPv option and precedes isready', async () => {
+    renderHook(() => useStockfishEngine({ fen: null, enabled: true, multiPv: 3 }));
     await flushWorkerSpawn();
     act(() => {
       mockWorker.simulateMessage('uciok');
     });
-    expect(mockWorker.messages).toContain('setoption name MultiPV value 2');
+    expect(mockWorker.messages).toContain('setoption name MultiPV value 3');
+    expect(mockWorker.messages.indexOf('setoption name MultiPV value 3')).toBeLessThan(
+      mockWorker.messages.indexOf('isready'),
+    );
   });
 
   it('sends isready after setoption and transitions isReady false→true on readyok', async () => {
     const { result } = renderHook(() =>
-      useStockfishEngine({ fen: null, enabled: true }),
+      useStockfishEngine({ fen: null, enabled: true, multiPv: TEST_MULTIPV }),
     );
     expect(result.current.isReady).toBe(false);
     await flushWorkerSpawn();
@@ -256,7 +262,7 @@ describe('useStockfishEngine', () => {
     // which triggers the immediate (non-debounced) path.
     vi.advanceTimersByTime(200);
 
-    renderHook(() => useStockfishEngine({ fen: TEST_FEN, enabled: true }));
+    renderHook(() => useStockfishEngine({ fen: TEST_FEN, enabled: true, multiPv: TEST_MULTIPV }));
     await flushWorkerSpawn();
     driveInit(mockWorker);
 
@@ -268,7 +274,7 @@ describe('useStockfishEngine', () => {
   it('rapid successive FEN changes coalesce — only the final FEN is searched', async () => {
     // Start at fake time 0: first FEN change gives sinceLast = 0 < 150 → debounce path.
     const { rerender } = renderHook(
-      ({ fen }: { fen: string }) => useStockfishEngine({ fen, enabled: true }),
+      ({ fen }: { fen: string }) => useStockfishEngine({ fen, enabled: true, multiPv: TEST_MULTIPV }),
       { initialProps: { fen: TEST_FEN } },
     );
     await flushWorkerSpawn();
@@ -299,7 +305,7 @@ describe('useStockfishEngine', () => {
 
   it('sends position + go after the debounce delay (rapid-succession path)', async () => {
     const { result } = renderHook(() =>
-      useStockfishEngine({ fen: TEST_FEN, enabled: true }),
+      useStockfishEngine({ fen: TEST_FEN, enabled: true, multiPv: TEST_MULTIPV }),
     );
     await flushWorkerSpawn();
     driveInit(mockWorker);
@@ -314,7 +320,7 @@ describe('useStockfishEngine', () => {
   });
 
   it('search command contains movetime 1500 and nodes 2000000', async () => {
-    renderHook(() => useStockfishEngine({ fen: TEST_FEN, enabled: true }));
+    renderHook(() => useStockfishEngine({ fen: TEST_FEN, enabled: true, multiPv: TEST_MULTIPV }));
     await flushWorkerSpawn();
     driveInit(mockWorker);
 
@@ -330,7 +336,7 @@ describe('useStockfishEngine', () => {
 
   it('lowerbound info line paints evalCp live (relaxed bound, lichess-style)', async () => {
     const { result } = renderHook(() =>
-      useStockfishEngine({ fen: TEST_FEN, enabled: true }),
+      useStockfishEngine({ fen: TEST_FEN, enabled: true, multiPv: TEST_MULTIPV }),
     );
     await flushWorkerSpawn();
     driveInit(mockWorker);
@@ -351,7 +357,7 @@ describe('useStockfishEngine', () => {
 
   it('upperbound info line paints evalCp live (relaxed bound, lichess-style)', async () => {
     const { result } = renderHook(() =>
-      useStockfishEngine({ fen: TEST_FEN, enabled: true }),
+      useStockfishEngine({ fen: TEST_FEN, enabled: true, multiPv: TEST_MULTIPV }),
     );
     await flushWorkerSpawn();
     driveInit(mockWorker);
@@ -372,7 +378,7 @@ describe('useStockfishEngine', () => {
 
   it('exact info line already paints evalCp; bestmove confirms and stops analysis', async () => {
     const { result } = renderHook(() =>
-      useStockfishEngine({ fen: TEST_FEN, enabled: true }),
+      useStockfishEngine({ fen: TEST_FEN, enabled: true, multiPv: TEST_MULTIPV }),
     );
     await flushWorkerSpawn();
     driveInit(mockWorker);
@@ -404,7 +410,7 @@ describe('useStockfishEngine', () => {
   it('stop-pending bestmove is discarded — rapid FEN changes show only final result', async () => {
     const { rerender, result } = renderHook(
       ({ fen }: { fen: string }) =>
-        useStockfishEngine({ fen, enabled: true }),
+        useStockfishEngine({ fen, enabled: true, multiPv: TEST_MULTIPV }),
       { initialProps: { fen: TEST_FEN } },
     );
 
@@ -454,7 +460,7 @@ describe('useStockfishEngine', () => {
     // so races the in-flight stop and traps the Stockfish WASM engine ("unreachable").
     // The pending bestmove handler re-analyzes the LATEST FEN once it arrives.
     const { rerender } = renderHook(
-      ({ fen }: { fen: string }) => useStockfishEngine({ fen, enabled: true }),
+      ({ fen }: { fen: string }) => useStockfishEngine({ fen, enabled: true, multiPv: TEST_MULTIPV }),
       { initialProps: { fen: TEST_FEN } },
     );
 
@@ -494,7 +500,7 @@ describe('useStockfishEngine', () => {
   });
 
   it('visibility hidden sends stop without terminating the Worker', async () => {
-    renderHook(() => useStockfishEngine({ fen: TEST_FEN, enabled: true }));
+    renderHook(() => useStockfishEngine({ fen: TEST_FEN, enabled: true, multiPv: TEST_MULTIPV }));
     await flushWorkerSpawn();
     driveInit(mockWorker);
     await act(async () => {
@@ -520,7 +526,7 @@ describe('useStockfishEngine', () => {
 
   it('unmount sends stop and terminates the Worker (no leak)', async () => {
     const { unmount } = renderHook(() =>
-      useStockfishEngine({ fen: null, enabled: true }),
+      useStockfishEngine({ fen: null, enabled: true, multiPv: TEST_MULTIPV }),
     );
     await flushWorkerSpawn();
 
@@ -534,7 +540,7 @@ describe('useStockfishEngine', () => {
 
   it('Phase 213-08: unmounting before the shared fetch resolves constructs no worker and leaves nothing behind', async () => {
     const { unmount } = renderHook(() =>
-      useStockfishEngine({ fen: null, enabled: true }),
+      useStockfishEngine({ fen: null, enabled: true, multiPv: TEST_MULTIPV }),
     );
 
     // Unmount SYNCHRONOUSLY, before the deferred `ensureStockfishWorkerUrl()
@@ -557,7 +563,7 @@ describe('useStockfishEngine', () => {
   it('FIX-5: stops the superseded search immediately on a RAPID FEN change, discarding its info lines and bestmove', async () => {
     vi.advanceTimersByTime(200); // settled path: first FEN fires the search immediately
     const { rerender, result } = renderHook(
-      ({ fen }: { fen: string }) => useStockfishEngine({ fen, enabled: true }),
+      ({ fen }: { fen: string }) => useStockfishEngine({ fen, enabled: true, multiPv: TEST_MULTIPV }),
       { initialProps: { fen: TEST_FEN } },
     );
     await flushWorkerSpawn();
@@ -606,7 +612,7 @@ describe('useStockfishEngine', () => {
 
   it('FIX-6: commits at most one pvLines snapshot per throttle window, first paint immediate, final bestmove unconditional', async () => {
     const { result } = renderHook(() =>
-      useStockfishEngine({ fen: TEST_FEN, enabled: true }),
+      useStockfishEngine({ fen: TEST_FEN, enabled: true, multiPv: TEST_MULTIPV }),
     );
     await flushWorkerSpawn();
     driveInit(mockWorker);
@@ -660,7 +666,7 @@ describe('useStockfishEngine', () => {
 
   describe('D-01: reports download progress and marks stockfish-wasm ready', () => {
     it('wires a progressPort before the uci handshake, and reporting progress through it updates the shared asset store', async () => {
-      renderHook(() => useStockfishEngine({ fen: null, enabled: true }));
+      renderHook(() => useStockfishEngine({ fen: null, enabled: true, multiPv: TEST_MULTIPV }));
       await flushWorkerSpawn();
 
       // Handshake ordering: progressPort wiring happens before 'uci' is sent.
@@ -678,7 +684,7 @@ describe('useStockfishEngine', () => {
     });
 
     it('marks stockfish-wasm ready on the readyok line', async () => {
-      renderHook(() => useStockfishEngine({ fen: null, enabled: true }));
+      renderHook(() => useStockfishEngine({ fen: null, enabled: true, multiPv: TEST_MULTIPV }));
       await flushWorkerSpawn();
       driveInit(mockWorker);
 
@@ -689,13 +695,117 @@ describe('useStockfishEngine', () => {
     it('a MessageChannel-less environment skips the wiring without breaking engine spawn', async () => {
       vi.stubGlobal('MessageChannel', undefined);
 
-      const { result } = renderHook(() => useStockfishEngine({ fen: null, enabled: true }));
+      const { result } = renderHook(() => useStockfishEngine({ fen: null, enabled: true, multiPv: TEST_MULTIPV }));
       await flushWorkerSpawn();
       // No progressPort message was sent — 'uci' is the only message.
       expect(mockWorker.allMessages).toEqual(['uci']);
 
       driveInit(mockWorker);
       expect(result.current.isReady).toBe(true);
+    });
+  });
+
+  // ─── Phase 228 D-06/D-12: live, restart-free MultiPV changes ──────────────
+  describe('multiPv option changes (D-06, D-12)', () => {
+    function renderAt(multiPv: number) {
+      return renderHook(
+        ({ mpv }: { mpv: number }) =>
+          useStockfishEngine({ fen: TEST_FEN, enabled: true, multiPv: mpv }),
+        { initialProps: { mpv: multiPv } },
+      );
+    }
+
+    it('idle engine: a multiPv change sends setoption, then position, then go (in that order)', async () => {
+      const { rerender } = renderAt(3);
+      await flushWorkerSpawn();
+      driveInit(mockWorker);
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(200);
+      });
+      // First search finishes, engine goes idle.
+      act(() => {
+        mockWorker.simulateMessage('bestmove e2e4 ponder e7e5');
+      });
+      const before = mockWorker.messages.length;
+
+      rerender({ mpv: 4 });
+
+      const tail = mockWorker.messages.slice(before);
+      expect(tail[0]).toBe('setoption name MultiPV value 4');
+      expect(tail[1]).toBe(`position fen ${TEST_FEN}`);
+      expect(tail[2]?.startsWith('go movetime')).toBe(true);
+    });
+
+    it('thinking engine: a multiPv change sends stop and no setoption; setoption follows the stale bestmove (FLAWCHESS-7V)', async () => {
+      const { rerender } = renderAt(3);
+      await flushWorkerSpawn();
+      driveInit(mockWorker);
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(200);
+      });
+      const before = mockWorker.messages.length;
+
+      rerender({ mpv: 4 });
+
+      let tail = mockWorker.messages.slice(before);
+      expect(tail).toEqual(['stop']);
+
+      // Stale bestmove arrives: the idle branch resends setoption before position/go.
+      act(() => {
+        mockWorker.simulateMessage('bestmove e2e4 ponder e7e5');
+      });
+      tail = mockWorker.messages.slice(before);
+      expect(tail[1]).toBe('setoption name MultiPV value 4');
+      expect(tail[2]).toBe(`position fen ${TEST_FEN}`);
+      expect(tail[3]?.startsWith('go movetime')).toBe(true);
+    });
+
+    it('the same multiPv on rerender sends no additional setoption', async () => {
+      const { rerender } = renderAt(3);
+      await flushWorkerSpawn();
+      driveInit(mockWorker);
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(200);
+      });
+      act(() => {
+        mockWorker.simulateMessage('bestmove e2e4 ponder e7e5');
+      });
+
+      rerender({ mpv: 3 });
+
+      const setoptions = mockWorker.messages.filter((m) => m.startsWith('setoption'));
+      expect(setoptions).toEqual(['setoption name MultiPV value 3']);
+    });
+
+    it('never restarts the Worker when multiPv changes', async () => {
+      const { rerender } = renderAt(2);
+      await flushWorkerSpawn();
+      driveInit(mockWorker);
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(200);
+      });
+      act(() => {
+        mockWorker.simulateMessage('bestmove e2e4 ponder e7e5');
+      });
+
+      rerender({ mpv: 5 });
+      rerender({ mpv: 1 });
+
+      const WorkerCtor = vi.mocked(globalThis.Worker as new (url: string) => Worker);
+      expect(WorkerCtor).toHaveBeenCalledTimes(1);
+      expect(mockWorker.terminated).toBe(false);
+    });
+
+    it('a multiPv change before the engine is ready does not send setoption early; uciok sends the latest value', async () => {
+      const { rerender } = renderAt(2);
+      await flushWorkerSpawn();
+      rerender({ mpv: 4 });
+      expect(mockWorker.messages.some((m) => m.startsWith('setoption'))).toBe(false);
+
+      act(() => {
+        mockWorker.simulateMessage('uciok');
+      });
+      expect(mockWorker.messages).toContain('setoption name MultiPV value 4');
     });
   });
 
@@ -708,7 +818,7 @@ describe('useStockfishEngine', () => {
   // never learned about the failure either.
   describe('CR-01: worker.onerror is Sentry-captured and marks stockfish-wasm failed', () => {
     it('captures to Sentry with the stockfish-engine source tag on an async script-load failure', async () => {
-      renderHook(() => useStockfishEngine({ fen: null, enabled: true }));
+      renderHook(() => useStockfishEngine({ fen: null, enabled: true, multiPv: TEST_MULTIPV }));
       await flushWorkerSpawn();
 
       mockWorker.simulateError();
@@ -720,7 +830,7 @@ describe('useStockfishEngine', () => {
     });
 
     it('marks the shared stockfish-wasm asset store failed', async () => {
-      renderHook(() => useStockfishEngine({ fen: null, enabled: true }));
+      renderHook(() => useStockfishEngine({ fen: null, enabled: true, multiPv: TEST_MULTIPV }));
       await flushWorkerSpawn();
 
       mockWorker.simulateError();
@@ -729,7 +839,7 @@ describe('useStockfishEngine', () => {
     });
 
     it('never fires for a clean uciok/readyok init sequence', async () => {
-      renderHook(() => useStockfishEngine({ fen: null, enabled: true }));
+      renderHook(() => useStockfishEngine({ fen: null, enabled: true, multiPv: TEST_MULTIPV }));
       await flushWorkerSpawn();
       driveInit(mockWorker);
 

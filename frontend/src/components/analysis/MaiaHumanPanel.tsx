@@ -1,6 +1,6 @@
 /**
  * MaiaHumanPanel — the "human" surface bundle for the analysis page (Phase 151 Plan 06,
- * D-01/D-03): a charcoal Card whose header reads "<User> Maia - Human Move Probability <info>"
+ * D-01/D-03): a charcoal Card whose header reads "<User> Maia, Human Move Probability <info>"
  * and whose body holds the Moves-by-Rating chart (the ELO slider was moved out
  * below the card in 155 UAT — it drives both engines, not just Maia).
  *
@@ -177,8 +177,8 @@ export function MaiaHumanPanel({
       {(!compact || showToggle) && (
         <CardHeader size="compact" data-testid="maia-human-header" style={{ color: MAIA_ACCENT }}>
           {toggleSwitch}
-          <User aria-hidden="true" className="h-4 w-4" />
-          <span>Maia - Human Move Probability</span>
+          {!compact && <User aria-hidden="true" className="h-4 w-4" />}
+          <span>Maia, Human Move Probability</span>
           <MaiaInfoTooltip />
         </CardHeader>
       )}

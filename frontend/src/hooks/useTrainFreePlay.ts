@@ -38,6 +38,7 @@ import type { FlawMarkerEntry } from '@/components/analysis/VariationTree';
 import { useAnalysisBoard } from '@/hooks/useAnalysisBoard';
 import type { MoveNode, NodeId } from '@/hooks/useAnalysisBoard';
 import { useStockfishEngine } from '@/hooks/useStockfishEngine';
+import { useEngineDisplaySettings } from '@/lib/engineSettings';
 import type { PvLine } from '@/hooks/uciParser';
 import { evalToExpectedScore, sideToMoveFromFen, terminalPositionEval } from '@/lib/liveFlaw';
 import {
@@ -55,6 +56,15 @@ import type { TrainFineMove, TrainMoveQuality } from '@/lib/trainArrows';
  * bound. Well above any realistic sideline depth.
  */
 const FREE_PLAY_EVAL_CACHE_MAX = 200;
+
+/**
+ * Shared empty line list for the "engine has not reached the shown position
+ * yet" branch. A fresh `[]` per render would change `pvLines`' identity every
+ * render and re-run TrainSolveScreen's free-play arrows memo (keyed on it);
+ * the previous memo keyed on the best-move string for the same reason. Never
+ * mutated.
+ */
+const NO_PV_LINES: PvLine[] = Object.freeze([] as PvLine[]) as PvLine[];
 
 /** One position's completed engine verdict, cached while the board sits on it
  * so the move OUT of it can be graded once the board has moved on. */
@@ -224,12 +234,20 @@ export function useTrainFreePlay({
   const { goBack, goForward, goToRoot } = board;
 
   const fen = isExploring ? position : null;
-  const engine = useStockfishEngine({ fen, enabled: isExploring });
+  // D-11: search breadth is max(SF lines, SF arrows) at the fixed 1500 ms
+  // movetime — no movetime scaling; the user trades depth for breadth by
+  // choice, as on lichess.
+  const { sfLines, sfArrows } = useEngineDisplaySettings();
+  const engine = useStockfishEngine({
+    fen,
+    enabled: isExploring,
+    multiPv: Math.max(sfLines, sfArrows),
+  });
   // The hook's `currentFen` lags `fen` by exactly one render (its own
   // documented contract), so an unguarded read would paint the PREVIOUS
   // position's lines — and, worse here, grade a move against them.
   const engineIsCurrent = fen !== null && engine.currentFen === fen;
-  const pvLines = engineIsCurrent ? engine.pvLines : [];
+  const pvLines = engineIsCurrent ? engine.pvLines : NO_PV_LINES;
 
   // ── Per-FEN eval cache ────────────────────────────────────────────────────
   // Every position's completed eval, captured while the board sits on it, so

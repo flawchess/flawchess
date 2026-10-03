@@ -23,7 +23,7 @@
 
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen, within } from '@testing-library/react';
-import { MemoryRouter } from 'react-router';
+import { MemoryRouter, Route, Routes } from 'react-router';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import type { UserProfile } from '@/types/users';
 
@@ -106,8 +106,10 @@ afterEach(() => {
   useTrainProgressSpy.mockClear();
 });
 
-import { NavHeader, MobileBottomBar, MobileMoreDrawer, MobileHeader } from './App';
+import { NavHeader, MobileBottomBar, MobileMoreDrawer, MobileHeader, AnalysisMobileHeader } from './App';
 import { usePublishMobileBoardControls } from '@/lib/mobileBoardControls';
+import { MUTE_KEY } from '@/lib/sounds';
+import { SETTINGS_STORAGE_KEYS } from '@/lib/engineSettings';
 
 // ── Render helpers ──────────────────────────────────────────────────────────────
 
@@ -1204,5 +1206,86 @@ describe('Quick 260824-qaz: /activity nav entry (superuser-only)', () => {
     renderMobileMoreDrawer();
 
     expect(screen.queryByTestId('drawer-nav-activity')).toBeNull();
+  });
+});
+
+// ── Phase 228: settings overlay entry (D-01..D-03; 228 UAT: no /settings page) ────
+
+describe('228 settings overlay entry (D-01..D-03)', () => {
+  afterEach(() => {
+    localStorage.removeItem(MUTE_KEY);
+    Object.values(SETTINGS_STORAGE_KEYS).forEach((key) => localStorage.removeItem(key));
+  });
+
+  it('tracer: header cogwheel opens the settings modal in place and the panel writes the store', async () => {
+    render(
+      <MemoryRouter initialEntries={['/library']}>
+        <TooltipProvider>
+          <NavHeader />
+          <Routes>
+            <Route path="/library" element={<div data-testid="library-sentinel" />} />
+          </Routes>
+        </TooltipProvider>
+      </MemoryRouter>,
+    );
+
+    const cogwheel = screen.getByTestId('nav-settings');
+    expect(cogwheel.getAttribute('aria-label')).toBe('Settings');
+    expect(cogwheel.getAttribute('title')).toBe('Settings');
+    expect(cogwheel.getAttribute('href')).toBeNull();
+
+    fireEvent.click(cogwheel);
+    const dialog = await screen.findByTestId('settings-dialog');
+    // aria-modal gates useBoardNavigationInput's arrow-key suppression (WR-02).
+    expect(dialog.getAttribute('aria-modal')).toBe('true');
+    expect(screen.getByTestId('library-sentinel')).toBeTruthy();
+
+    fireEvent.click(screen.getByTestId('settings-sound-switch'));
+    expect(localStorage.getItem(MUTE_KEY)).toBe('1');
+
+    fireEvent.click(screen.getByTestId('settings-sf-lines-3'));
+    expect(localStorage.getItem(SETTINGS_STORAGE_KEYS.sfLines)).toBe('3');
+    expect(screen.getByTestId('settings-sf-lines-3').getAttribute('data-state')).toBe('on');
+  });
+
+  it('nav-settings is not part of the main navigation (NAV_ITEMS untouched)', () => {
+    renderNavHeader();
+    const nav = screen.getByRole('navigation', { name: 'Main navigation' });
+    expect(screen.getByTestId('nav-settings')).toBeTruthy();
+    expect(within(nav).queryByTestId('nav-settings')).toBeNull();
+  });
+
+  it('more drawer: drawer-settings opens the settings sheet, precedes drawer-logout, and is not a drawer-nav entry (D-02)', async () => {
+    renderMobileMoreDrawer();
+    const row = screen.getByTestId('drawer-settings');
+    expect(row.getAttribute('href')).toBeNull();
+    const logout = screen.getByTestId('drawer-logout');
+    expect(row.compareDocumentPosition(logout) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    const navTestIds = Array.from(document.querySelectorAll('[data-testid^="drawer-nav-"]')).map((el) =>
+      el.getAttribute('data-testid'),
+    );
+    expect(navTestIds.some((id) => id?.includes('settings'))).toBe(false);
+
+    fireEvent.click(row);
+    expect(await screen.findByTestId('settings-sheet')).toBeTruthy();
+  });
+
+  it('mobile /analysis header: cogwheel opens the sheet in place without navigating (D-03)', async () => {
+    render(
+      <MemoryRouter initialEntries={['/analysis']}>
+        <TooltipProvider>
+          <Routes>
+            <Route path="/analysis" element={<AnalysisMobileHeader />} />
+            <Route path="/settings" element={<div data-testid="settings-route-sentinel" />} />
+          </Routes>
+        </TooltipProvider>
+      </MemoryRouter>,
+    );
+
+    fireEvent.click(screen.getByTestId('btn-analysis-settings'));
+
+    expect(await screen.findByTestId('settings-sheet')).toBeTruthy();
+    expect(screen.queryByTestId('settings-route-sentinel')).toBeNull();
+    expect(screen.getByTestId('analysis-mobile-header')).toBeTruthy();
   });
 });
