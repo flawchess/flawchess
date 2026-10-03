@@ -18,6 +18,7 @@ import { TooltipProvider } from '@/components/ui/tooltip';
 import { formatScore } from '@/components/analysis/EngineLines';
 import { formatDateWithYear } from '@/lib/utils';
 import { buildGameAnalysisUrl } from '@/lib/analysisUrl';
+import { SETTINGS_STORAGE_KEYS } from '@/lib/engineSettings';
 import { guessFeedbackProse } from '@/lib/trainGuessLabels';
 import type { GradeResult, TrainEngineLine, TrainGradingEngine } from '@/hooks/useTrainGradingEngine';
 import type { TrainFreePlayState } from '@/hooks/useTrainFreePlay';
@@ -261,6 +262,7 @@ describe('TrainReveal', () => {
 
   afterEach(() => {
     cleanup();
+    localStorage.removeItem(SETTINGS_STORAGE_KEYS.sfLines);
   });
 
   // ─── Verdict rows (190.1-03 D-03) ─────────────────────────────────────────
@@ -1904,6 +1906,28 @@ describe('TrainReveal', () => {
     );
     expect(screen.getByTestId('analysis-engine-lines')).not.toBeNull();
     expect(screen.queryByLabelText('Loading engine lines')).toBeNull();
+  });
+
+  it('the Stockfish lines setting sets the free-play skeleton rows and the rendered rows (D-13)', () => {
+    localStorage.setItem(SETTINGS_STORAGE_KEYS.sfLines, '4');
+    const { rerender, client, props } = renderReveal({
+      isExploring: true,
+      freePlay: makeFreePlayState({ pvLines: [] }),
+    });
+    expect(screen.getByLabelText('Loading engine lines').children).toHaveLength(4);
+
+    const fiveLines = [1, 2, 3, 4, 5].map((n) => makePvLine({ multipv: n }));
+    rerender(
+      <MemoryRouter>
+        <QueryClientProvider client={client}>
+          <TooltipProvider>
+            <TrainReveal {...props} freePlay={makeFreePlayState({ pvLines: fiveLines })} />
+          </TooltipProvider>
+        </QueryClientProvider>
+      </MemoryRouter>,
+    );
+    const engineLines = screen.getByTestId('analysis-engine-lines');
+    expect(within(engineLines).getAllByLabelText(/^Line \d+:/)).toHaveLength(4);
   });
 
   it('PV lines render in the supplied multipv order (best line first)', async () => {

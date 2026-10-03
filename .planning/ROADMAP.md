@@ -128,6 +128,8 @@ No open milestone. Standalone phases continue absolute numbering from v2.21's Ph
 its missing off switch and lets users pick how many card lines and board arrows each engine shows.
 Frontend-only; localStorage persistence (per device, works for guests) behind a small typed settings
 module shaped like `useMuted` in `lib/sounds.ts`, so a later account-sync swap touches only that module.
+*(Amended in UAT, 2026-10-03: settings open as an overlay (desktop modal, mobile sheet) instead of a
+`/settings` page, so opening them never unmounts the current page. See 228-CONTEXT D-17.)*
 
 - **Settings (locked):** Sound on/off (default on, reuses `useMuted`/`setMuted`, key
   `flawchess_bot_sound_muted`); FlawChess engine lines 1-5 (default 2) and arrows 0-3 (default 1);
@@ -148,17 +150,17 @@ module shaped like `useMuted` in `lib/sounds.ts`, so a later account-sync swap t
 
 **Depends on**: Phase 226 (merged; v2.21 closed 2026-10-03)
 **Requirements**: TBD (covered by CONTEXT decisions D-01..D-16)
-**Plans:** 3 plans
+**Plans:** 3/3 plans complete
 
 Plans:
 **Wave 1**
-- [ ] 228-01-PLAN.md — Settings store, /settings page and all entry points (header cogwheel, More drawer, mobile /analysis and bot-game sheets); sound off switch end to end
+- [x] 228-01-PLAN.md — Settings store, /settings page and all entry points (header cogwheel, More drawer, mobile /analysis and bot-game sheets); sound off switch end to end
 
 **Wave 2** *(blocked on Wave 1 completion)*
-- [ ] 228-02-PLAN.md — Engine cards render N lines with N-row skeletons on /analysis and Train; solid primary plus translucent per-engine badges; retire rank shades and second-best
+- [x] 228-02-PLAN.md — Engine cards render N lines with N-row skeletons on /analysis and Train; solid primary plus translucent per-engine badges; retire rank shades and second-best
 
 **Wave 3** *(blocked on Wave 2 completion)*
-- [ ] 228-03-PLAN.md — Live restart-free Stockfish MultiPV option; /analysis arrows 1..N from the reconciled ranking; Train free-play MultiPV and arrows; CHANGELOG and UAT
+- [x] 228-03-PLAN.md — Live restart-free Stockfish MultiPV option; /analysis arrows 1..N from the reconciled ranking; Train free-play MultiPV and arrows; CHANGELOG and UAT
 
 Phase detail for every shipped milestone lives in `milestones/vX.Y-ROADMAP.md`, its phase directories in `milestones/vX.Y-phases/`, and the per-milestone summaries in [MILESTONES.md](MILESTONES.md).
 

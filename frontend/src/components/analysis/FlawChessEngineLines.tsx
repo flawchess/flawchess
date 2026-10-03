@@ -1,14 +1,15 @@
 /**
- * FlawChessEngineLines — renders the top 2 ranked practical lines from the
+ * FlawChessEngineLines — renders the top `maxLines` ranked practical lines from the
  * FlawChess Engine (the Phase 153-155 client-side MCTS search core).
  *
  * Structurally a sibling of `EngineLines.tsx`: same row skeleton, same
  * chip/badge/hover-preview pattern, same expand chevron — with three deltas
  * (D-08/D-06/D-07):
- *  - top 2 lines (`MAX_LINES = 2`, D-08).
- *  - a filled gold practical-score badge (white font, one of three
- *    `FLAWCHESS_ENGINE_BADGE_SHADES` by rank — the gold analog of the blue
- *    Stockfish best/2nd badges), followed by the objective Stockfish eval of the
+ *  - up to `maxLines` lines (the FlawChess lines setting, 1-5, Phase 228; was a fixed 2, D-08).
+ *  - a filled gold practical-score badge (white font: solid
+ *    `FLAWCHESS_ENGINE_BADGE_PRIMARY` on the first line, one translucent
+ *    `FLAWCHESS_ENGINE_BADGE_SECONDARY` on every later line — the gold analog of the
+ *    Stockfish primary/secondary badges, SEED-175), followed by the objective Stockfish eval of the
  *    same move in Stockfish blue (155 UAT). Both numbers are white-POV
  *    pawn-scale (D-06, DISPLAY-03). The badge NEVER renders the bare phrase "best
  *    move" unqualified (ARROW-04 principle) — the aria-label frames it as
@@ -32,20 +33,21 @@ import { expectedScoreToWhitePovCp, sideToMoveFromFen, type MoverColor } from '@
 import { moveLabel } from '@/lib/moveNumberLabel';
 import { cn } from '@/lib/utils';
 import {
-  FLAWCHESS_ENGINE_BADGE_SHADES,
+  FLAWCHESS_ENGINE_BADGE_PRIMARY,
+  FLAWCHESS_ENGINE_BADGE_SECONDARY,
   STOCKFISH_ACCENT,
   MAIA_ACCENT,
   MOVE_HIGHLIGHT_GOOD,
 } from '@/lib/theme';
 import { MiniBoard } from '@/components/board/MiniBoard';
 import { Popover, PopoverAnchor, PopoverContent } from '@/components/ui/popover';
-import { replayPvLine, formatScore, EngineLinesSkeleton, LINES_MIN_HEIGHT } from './EngineLines';
+import {
+  replayPvLine,
+  formatScore,
+  EngineLinesSkeleton,
+  engineLinesMinHeightPx,
+} from './EngineLines';
 
-/** Maximum number of ranked lines displayed (D-08) — a LOCAL constant, distinct
- * from EngineLines.tsx's own MAX_LINES; do not mutate the shared one. Exported
- * (Phase 158, RESEARCH Open Question 3) so Analysis.tsx sizes the FC-displayed
- * SAN slice from this single source of truth instead of a duplicated literal. */
-export const MAX_LINES = 2;
 /** Maximum number of plies shown per collapsed modal path. One fewer than
  * EngineLines.tsx's 5: the FlawChess row carries an extra objective-eval aside
  * next to the badge, so it's wider — 5 plies overflow the card and would either
@@ -90,6 +92,13 @@ const BADGE_CLASS = 'rounded px-1.5 py-0.5 text-xs font-semibold text-white';
 export interface FlawChessEngineLinesProps {
   /** Ranked practical lines from useFlawChessEngine's latest EngineSnapshot. */
   rankedLines: RankedLine[];
+  /**
+   * How many ranked rows to render (and how many skeleton rows to show). Comes from
+   * the FlawChess lines setting via the parent; this component never reads the store.
+   * Fewer rows than this is expected when the search finds fewer root candidates
+   * (Maia candidates stop at the policy-mass threshold, plus injected Stockfish moves).
+   */
+  maxLines: number;
   /** True while the search is running — gates the pre-first-snapshot skeleton. */
   isSearching: boolean;
   /** Game ply at search invocation — used for move-number labels. Default 0. */
@@ -310,11 +319,9 @@ function RankedLineRow({
     line.objectiveEvalMate != null
       ? formatScore(null, line.objectiveEvalMate)
       : formatScore(expectedScoreToWhitePovCp(line.practicalScore, rootMover), null);
-  // Gold badge shade by practical rank (best/2nd/3rd). noUncheckedIndexedAccess:
-  // lineIndex is 0..MAX_LINES-1 and SHADES has MAX_LINES entries, but narrow anyway.
-  const badgeShade =
-    FLAWCHESS_ENGINE_BADGE_SHADES[lineIndex] ??
-    FLAWCHESS_ENGINE_BADGE_SHADES[FLAWCHESS_ENGINE_BADGE_SHADES.length - 1];
+  // Solid gold for the first line, one translucent gold for every later line (no
+  // per-rank shades; SEED-175 styling lock).
+  const badgeColor = lineIndex === 0 ? FLAWCHESS_ENGINE_BADGE_PRIMARY : FLAWCHESS_ENGINE_BADGE_SECONDARY;
 
   const hasMore = line.modalPath.length > MAX_PLIES;
   const moves = expanded ? line.modalPath : line.modalPath.slice(0, MAX_PLIES);
@@ -333,14 +340,14 @@ function RankedLineRow({
         addSeparator && 'border-t border-border',
       )}
     >
-      {/* Gold practical-score badge (white font, shade by rank) + the objective
+      {/* Gold practical-score badge (white font, solid primary / translucent rest) + the objective
           Stockfish eval of this same move in Stockfish blue. Never the bare phrase
           "best move" (D-06). */}
       <span
         className="flex shrink-0 items-center gap-1"
         aria-label={`Line ${lineIndex + 1}: practically ${practicalText} for you, objectively ${objectiveText}`}
       >
-        <span className={BADGE_CLASS} style={{ backgroundColor: badgeShade }}>
+        <span className={BADGE_CLASS} style={{ backgroundColor: badgeColor }}>
           {practicalText}
         </span>
         <span className="font-mono text-xs" style={{ color: STOCKFISH_ACCENT }}>
@@ -420,7 +427,7 @@ function RankedLineRow({
 }
 
 /**
- * Renders up to 2 top FlawChess Engine ranked lines as single rows (score-pair
+ * Renders up to `maxLines` top FlawChess Engine ranked lines as single rows (score-pair
  * badge + clickable modal-path chips) inside a fixed-height container, with a
  * non-jumping skeleton before the first snapshot arrives (D-09). Card
  * chrome/placement inside `/analysis` is Plan 04's job — this component is
@@ -428,6 +435,7 @@ function RankedLineRow({
  */
 export function FlawChessEngineLines({
   rankedLines,
+  maxLines,
   isSearching,
   startPly = 0,
   baseFen,
@@ -438,26 +446,23 @@ export function FlawChessEngineLines({
 }: FlawChessEngineLinesProps) {
   const resolvedRootMover: MoverColor =
     rootMover ?? (baseFen ? sideToMoveFromFen(baseFen) : 'white');
-  const visibleLines = rankedLines.slice(0, MAX_LINES);
+  const visibleLines = rankedLines.slice(0, maxLines);
   // A terminal root has no legal moves → no ranked lines. Show a single badge row
   // (once the search has settled to empty) instead of a blank card (quick 260709).
   const showTerminalRow = terminalOutcome !== null && rankedLines.length === 0 && !isSearching;
-  // Best/#1 gold shade for the terminal badge — narrowed for noUncheckedIndexedAccess.
-  const terminalBadgeShade =
-    FLAWCHESS_ENGINE_BADGE_SHADES[0] ??
-    FLAWCHESS_ENGINE_BADGE_SHADES[FLAWCHESS_ENGINE_BADGE_SHADES.length - 1];
-
   return (
     <div
       data-testid="analysis-flawchess-card"
       aria-label="FlawChess Engine lines"
       aria-live="polite"
-      className={LINES_MIN_HEIGHT}
+      // Sized to maxLines even when fewer root candidates exist, so the panels below
+      // do not jump between positions.
+      style={{ minHeight: engineLinesMinHeightPx(maxLines) }}
     >
-      {/* Pre-first-snapshot placeholder — fixed-height skeleton sized for 2 rows
-          (D-09), avoids layout jump as lines arrive. */}
+      {/* Pre-first-snapshot placeholder — fixed-height skeleton sized for maxLines
+          rows (D-09), avoids layout jump as lines arrive. */}
       {isSearching && rankedLines.length === 0 && (
-        <EngineLinesSkeleton testId="analysis-flawchess-loading" rows={MAX_LINES} />
+        <EngineLinesSkeleton testId="analysis-flawchess-loading" rows={maxLines} />
       )}
 
       {/* Terminal position — checkmate (`#0`) or draw (`½–½`); the game is over so
@@ -468,7 +473,7 @@ export function FlawChessEngineLines({
           data-testid="flawchess-terminal-row"
           aria-label={terminalOutcome === 'checkmate' ? 'Checkmate' : 'Draw'}
         >
-          <span className={BADGE_CLASS} style={{ backgroundColor: terminalBadgeShade }}>
+          <span className={BADGE_CLASS} style={{ backgroundColor: FLAWCHESS_ENGINE_BADGE_PRIMARY }}>
             {terminalOutcome === 'checkmate' ? '#0' : '½–½'}
           </span>
           <span className="text-sm text-muted-foreground">

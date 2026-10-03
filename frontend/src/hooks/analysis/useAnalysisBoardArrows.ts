@@ -6,17 +6,19 @@
  *
  * Owns every `BoardArrow[]`/`SquareMarker[]` value the `<ChessBoard>` render
  * consumes: the PV-sideline tactic overlay, the move-quality hover preview,
- * the translucent next-move arrow, the two live-engine arrow layers, and the
+ * the translucent next-move arrow, the two live-engine arrow layers (each drawing
+ * its own settings-driven count of arrows, Phase 228), and the
  * square-marker/last-move-tint derivation (severity > gem/great > best/good >
  * book precedence). WHY a separate hook: this is a pure transform of
  * already-computed board/engine/gem state (no state/effects of its own beyond
  * `useMemo`), matching the `useLiveMoveFlaw.ts` shape cited in
  * 215-PATTERNS.md ("Extracted transform hooks (gem-sweep / board-arrows)").
  *
- * Ownership boundary: this hook calls no engine hook of its own — `engine`,
- * `flawChessEngine` and `reconciledBestUci` are already-resolved results
- * threaded in as options, exactly like `useAnalysisEngineLines.ts`'s
- * `engine`/`flawChessEngine`/`grading` fields. `resolveMarkerFor` and
+ * Ownership boundary: this hook calls no engine hook of its own — the
+ * FlawChess ranked lines and the reconciled Stockfish ranking
+ * (`stockfishArrowLines`, the same list that feeds the Stockfish card) are
+ * already-resolved results threaded in as options, exactly like
+ * `useAnalysisEngineLines.ts`'s `engine`/`flawChessEngine`/`grading` fields. `resolveMarkerFor` and
  * `storedBestGoodByPly` are still LOCAL to `Analysis.tsx` at this point in the
  * phase (215-06's `useAnalysisGemMarkers` extraction owns them next) — this
  * hook consumes them as options regardless of which file defines them.
@@ -44,7 +46,9 @@ import {
   TAC_MISSED,
   TAC_ALLOWED,
   FLAWCHESS_ENGINE_ARROW,
+  FLAWCHESS_SECONDARY_LINE,
   BEST_MOVE_ARROW,
+  STOCKFISH_SECONDARY_LINE,
   NEXT_MOVE_ARROW,
   MOVE_HIGHLIGHT_GEM,
   MOVE_HIGHLIGHT_GREAT,
@@ -55,11 +59,62 @@ import {
 // cluster rather than staying behind as an orphaned import.
 const QUALITY_HOVER_ARROW_WIDTH = 0.6;
 const NEXT_MOVE_ARROW_WIDTH = 0.18;
-// Both live-engine overlays show only the top-1 line per engine (156 UAT
-// parity — no second-best arrow anywhere on the board).
-const ARROW_COUNT = 1;
+// Each live-engine overlay keeps its engine's width for EVERY rank (D-15): rank 2..N
+// differ from rank 1 only by the engine's translucent color. How many arrows an
+// engine draws is the settings-driven `fcArrowCount` / `sfArrowCount` option.
 const FLAWCHESS_ENGINE_ARROW_WIDTH = 1.0;
 const STOCKFISH_ENGINE_ARROW_WIDTH = 0.5;
+
+interface EngineArrowStyle {
+  /** Solid color of the rank-1 (primary) arrow. */
+  primaryColor: string;
+  /** Translucent per-engine color shared by every rank 2..N arrow. */
+  secondaryColor: string;
+  width: number;
+  /** layerKey prefix: `${prefix}-${rank index}`. */
+  prefix: 'fc' | 'sf';
+}
+
+const FLAWCHESS_ARROW_STYLE: EngineArrowStyle = {
+  primaryColor: FLAWCHESS_ENGINE_ARROW,
+  secondaryColor: FLAWCHESS_SECONDARY_LINE,
+  width: FLAWCHESS_ENGINE_ARROW_WIDTH,
+  prefix: 'fc',
+};
+
+const STOCKFISH_ARROW_STYLE: EngineArrowStyle = {
+  primaryColor: BEST_MOVE_ARROW,
+  secondaryColor: STOCKFISH_SECONDARY_LINE,
+  width: STOCKFISH_ENGINE_ARROW_WIDTH,
+  prefix: 'sf',
+};
+
+/**
+ * Pushes up to `count` arrows for one engine into `out`, rank k reading
+ * `rootMoves[k]` (D-14: each rank names its own move, so ranks 2..N are distinct
+ * and match the card order). Iterates from the lowest rank down to 0 so the
+ * primary is pushed LAST and paints on top within its width tier (D-15;
+ * ChessBoard's width sort keeps input order for equal keys, RESEARCH Pitfall 7).
+ * A count of 0 draws nothing for the engine (its card is unaffected).
+ */
+function pushEngineArrows(
+  out: BoardArrow[],
+  rootMoves: ReadonlyArray<string | null>,
+  count: number,
+  style: EngineArrowStyle,
+): void {
+  for (let i = Math.min(count, rootMoves.length) - 1; i >= 0; i--) {
+    const squares = uciToSquares(rootMoves[i] ?? null);
+    if (!squares) continue;
+    out.push({
+      startSquare: squares.from,
+      endSquare: squares.to,
+      color: i === 0 ? style.primaryColor : style.secondaryColor,
+      width: style.width,
+      layerKey: `${style.prefix}-${i}`,
+    });
+  }
+}
 
 /**
  * Named seam (CLAUDE.md: extract one named predicate/helper, not five
@@ -162,8 +217,17 @@ export interface UseAnalysisBoardArrowsOptions {
   flawChessEnabled: boolean;
   flawChessRankedLines: RankedLine[];
   engineEnabled: boolean;
-  enginePvLines: PvLine[];
-  reconciledBestUci: string | null;
+  /**
+   * The reconciled Stockfish ranking that feeds the Stockfish card (Phase 228
+   * D-14): arrow k reads line k's first move, so arrows and card rows always
+   * name the same moves. Before grading lands it is the free run's own lines
+   * (the fallback inside the ranking, not a separate source here).
+   */
+  stockfishArrowLines: PvLine[];
+  /** FlawChess arrows to draw, 0-3 (settings). 0 hides the arrows, not the card. */
+  fcArrowCount: number;
+  /** Stockfish arrows to draw, 0-3 (settings). 0 hides the arrows, not the card. */
+  sfArrowCount: number;
 
   // ── Precomputed/live overlay markers (useGameOverlay / useLiveMoveFlaw
   // results, unrelated hooks that stay in Analysis.tsx) ──────────────────
@@ -216,8 +280,9 @@ export function useAnalysisBoardArrows(
     flawChessEnabled,
     flawChessRankedLines,
     engineEnabled,
-    enginePvLines,
-    reconciledBestUci,
+    stockfishArrowLines,
+    fcArrowCount,
+    sfArrowCount,
     gameOverlaySquareMarkers,
     liveFlawSquareMarkers,
     resolveMarkerFor,
@@ -277,9 +342,9 @@ export function useAnalysisBoardArrows(
     // number and drops the orientation color — the tactic is over by then (Quick 260628-pu2
     // UAT). The countdown therefore runs ...2, 1 (punchline), then payoff.
     const isPayoff = stepIntoPv >= rootDisplayDepth;
-    // 156 UAT (top-1 per engine): only the single PV-continuation arrow — the
-    // light-blue 2nd-best Stockfish arrow was dropped here for parity with the
-    // free-analysis board (one FC arrow + one SF arrow, no second-best anywhere).
+    // 156 UAT: only the single PV-continuation arrow here — no engine rank
+    // arrows join the tactic overlay (the per-engine count settings, Phase 228,
+    // apply to the free-analysis engine layer below).
     const arrows = buildPvArrow(nextMove, displayDepth, isPayoff, orientation);
     return arrows.length > 0 ? arrows : null;
   }, [
@@ -339,53 +404,47 @@ export function useAnalysisBoardArrows(
     };
   }, [currentNodeId, isOnMainLine, mainLine, nodes]);
 
-  // Phase 156 (ARROW-01/02/03): the board's two live engine arrows — amber
-  // FlawChess Engine (practical move) and blue Stockfish (objective move).
+  // Phase 156 (ARROW-01/02/03) + Phase 228 (D-14/D-15): the board's live engine
+  // arrows — amber FlawChess Engine (practical moves) and blue Stockfish
+  // (objective moves), each drawing its own settings-driven count (0-3).
   // Independently toggled via the existing Phase 155 card switches; each simply
   // doesn't render until its engine's first snapshot yields a root move (no
   // placeholder arrow, mirrors the card skeleton timing). 156 UAT: this layer is
   // the default board overlay in BOTH game mode and free analysis — the engine
   // arrows must be identical regardless of whether a game is loaded.
+  //
+  // Stockfish rank k reads `stockfishArrowLines[k]`: the reconciled ranking that
+  // feeds the Stockfish card (Phase 162 SEED-090 D-07/D-12). sf-0 is still the
+  // reconciled argmax because that ranking's head IS the argmax; the free run's
+  // own lines only appear as the pre-grading fallback inside that ranking. Ranks
+  // 2..N are distinct moves in card order (the old shape repeated the argmax).
   const engineArrows = useMemo<BoardArrow[]>(() => {
     const arrows: BoardArrow[] = [];
     if (flawChessEnabled) {
-      for (let i = 0; i < ARROW_COUNT; i++) {
-        const fcSquares = uciToSquares(flawChessRankedLines[i]?.rootMove ?? null);
-        if (fcSquares) {
-          arrows.push({
-            startSquare: fcSquares.from,
-            endSquare: fcSquares.to,
-            color: FLAWCHESS_ENGINE_ARROW,
-            width: FLAWCHESS_ENGINE_ARROW_WIDTH,
-            layerKey: `fc-${i}`,
-          });
-        }
-      }
+      pushEngineArrows(
+        arrows,
+        flawChessRankedLines.map((line) => line.rootMove),
+        fcArrowCount,
+        FLAWCHESS_ARROW_STYLE,
+      );
     }
     if (engineEnabled) {
-      for (let i = 0; i < ARROW_COUNT; i++) {
-        // Phase 162 (SEED-090 D-07/D-12): the green SF arrow follows the TRUE
-        // global reconciled argmax, not the free run's own pvLines[i] — this
-        // may point at a move outside the Stockfish card's 2 displayed lines
-        // (accepted edge case, D-12). Falls back to the free run's own top
-        // line until grading has produced a reconciled best (first paint, no
-        // regression) — reuses the single reconciledBestUci memo, never a
-        // fresh argmax loop (RESEARCH Anti-Pattern).
-        const sfUci = reconciledBestUci ?? enginePvLines[i]?.moves[0] ?? null;
-        const sfSquares = uciToSquares(sfUci);
-        if (sfSquares) {
-          arrows.push({
-            startSquare: sfSquares.from,
-            endSquare: sfSquares.to,
-            color: BEST_MOVE_ARROW,
-            width: STOCKFISH_ENGINE_ARROW_WIDTH,
-            layerKey: `sf-${i}`,
-          });
-        }
-      }
+      pushEngineArrows(
+        arrows,
+        stockfishArrowLines.map((line) => line.moves[0] ?? null),
+        sfArrowCount,
+        STOCKFISH_ARROW_STYLE,
+      );
     }
     return arrows;
-  }, [flawChessEnabled, flawChessRankedLines, engineEnabled, enginePvLines, reconciledBestUci]);
+  }, [
+    flawChessEnabled,
+    flawChessRankedLines,
+    fcArrowCount,
+    engineEnabled,
+    stockfishArrowLines,
+    sfArrowCount,
+  ]);
 
   // Board arrows (156 UAT — game/free parity): the FC + SF engine-arrow layer is
   // the default overlay in BOTH modes, so the board looks identical whether or not
@@ -394,8 +453,10 @@ export function useAnalysisBoardArrows(
   // (pvSidelineArrows, self-gated to null outside game mode) still takes precedence
   // when you navigate into a specific flaw's PV. The old game-review default overlay
   // (gameOverlay.boardArrows: Stockfish best + light-blue 2nd-best) is no longer
-  // drawn — top-1 per engine everywhere. Draw order is ChessBoard's width sort
-  // (D-05), not array order; the white next-move arrow layers on top (onTop).
+  // drawn — the per-engine count settings (Phase 228) decide how many arrows each
+  // engine draws. Draw order is ChessBoard's width sort (D-05) with input order
+  // as the tie-break (primary pushed last, D-15); the white next-move arrow
+  // layers on top (onTop).
   const baseArrows: BoardArrow[] | undefined =
     qualityHoverArrows ??
     pvSidelineArrows ??

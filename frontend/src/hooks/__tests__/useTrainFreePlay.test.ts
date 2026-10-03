@@ -18,12 +18,13 @@
  * engine path without throwing.
  */
 import { renderHook, act } from '@testing-library/react';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { Chess } from 'chess.js';
 
 import { useTrainFreePlay } from '@/hooks/useTrainFreePlay';
 import type { FreePlaySeedEval } from '@/hooks/useTrainFreePlay';
 import type { TrainFineMove } from '@/lib/trainArrows';
+import { SETTINGS_STORAGE_KEYS } from '@/lib/engineSettings';
 
 // ── Mock useStockfishEngine (Analysis.test.tsx state-object pattern) ────────
 // jsdom has no real Worker; drive the free-play engine deterministically via
@@ -46,6 +47,8 @@ const engineState: {
   isAnalyzing: boolean;
   isReady: boolean;
   currentFen: string | null;
+  /** The `multiPv` option the hook last passed to the (mocked) engine (D-11). */
+  lastMultiPv: number | null;
 } = {
   scoresByFen: {},
   defaultScoreCp: 20,
@@ -53,10 +56,12 @@ const engineState: {
   isAnalyzing: false,
   isReady: true,
   currentFen: null,
+  lastMultiPv: null,
 };
 
 vi.mock('@/hooks/useStockfishEngine', () => ({
-  useStockfishEngine: (options: { fen: string | null; enabled: boolean }) => {
+  useStockfishEngine: (options: { fen: string | null; enabled: boolean; multiPv: number }) => {
+    engineState.lastMultiPv = options.multiPv;
     const scripted = options.fen !== null ? engineState.scoresByFen[options.fen] : undefined;
     const evalCp = options.fen === null ? null : (scripted ?? engineState.defaultScoreCp);
     return {
@@ -113,6 +118,12 @@ beforeEach(() => {
   engineState.isAnalyzing = false;
   engineState.isReady = true;
   engineState.currentFen = null;
+  engineState.lastMultiPv = null;
+});
+
+afterEach(() => {
+  localStorage.removeItem(SETTINGS_STORAGE_KEYS.sfLines);
+  localStorage.removeItem(SETTINGS_STORAGE_KEYS.sfArrows);
 });
 
 describe('useTrainFreePlay — root-ply grading reads the served vetted key (D-06)', () => {
@@ -257,5 +268,30 @@ describe('useTrainFreePlay — root-ply grading reads the served vetted key (D-0
     expect(result.current.isExploring).toBe(false);
     expect(result.current.moveListMarkers.size).toBe(0);
     expect(result.current.boardMarkers).toEqual([]);
+  });
+});
+
+describe('useTrainFreePlay — engine MultiPV follows the Stockfish settings (D-11)', () => {
+  function multiPvFor(sfLines?: number, sfArrows?: number): number | null {
+    if (sfLines !== undefined) localStorage.setItem(SETTINGS_STORAGE_KEYS.sfLines, String(sfLines));
+    if (sfArrows !== undefined) localStorage.setItem(SETTINGS_STORAGE_KEYS.sfArrows, String(sfArrows));
+    renderFreePlay(START_FEN, null);
+    return engineState.lastMultiPv;
+  }
+
+  it('defaults (2 lines, 1 arrow) search at MultiPV 2', () => {
+    expect(multiPvFor()).toBe(2);
+  });
+
+  it('SF lines 4 search at MultiPV 4', () => {
+    expect(multiPvFor(4)).toBe(4);
+  });
+
+  it('SF lines 1 with SF arrows 3 search at MultiPV 3 (arrows widen the search)', () => {
+    expect(multiPvFor(1, 3)).toBe(3);
+  });
+
+  it('SF lines 1 with SF arrows 0 search at MultiPV 1', () => {
+    expect(multiPvFor(1, 0)).toBe(1);
   });
 });

@@ -8,6 +8,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, cleanup, render, screen } from '@testing-library/react';
 import { MaiaHumanPanel } from '../MaiaHumanPanel';
 import { FlawChessCard } from '../AnalysisTabs';
+import { DEFAULT_LINES } from '@/lib/engineSettings';
 import {
   markEngineAssetsUnsupported,
   resetEngineAssetsForTests,
@@ -38,6 +39,7 @@ function renderFlawChessCard(): void {
     <FlawChessCard
       flawChessEnabled
       setFlawChessEnabled={vi.fn()}
+      fcLines={DEFAULT_LINES}
       selectedElo={1500}
       flawChessLoading
       reconciledRankedLines={[]}

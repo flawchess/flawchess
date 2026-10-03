@@ -8,7 +8,7 @@ import { VariationTree } from '@/components/analysis/VariationTree';
 import type { VariationTreeProps } from '@/components/analysis/VariationTree';
 import { BoardControls as BoardControlsBase } from '@/components/board/BoardControls';
 import { EngineToggleHeader } from '@/components/analysis/EngineToggleHeader';
-import { EngineLines, EngineLinesSkeleton, LINES_MIN_HEIGHT } from '@/components/analysis/EngineLines';
+import { EngineLines, EngineLinesSkeleton, engineLinesMinHeightPx } from '@/components/analysis/EngineLines';
 import { FlawChessEngineLines } from '@/components/analysis/FlawChessEngineLines';
 import { FlawChessAgreementVerdict } from '@/components/analysis/FlawChessAgreementVerdict';
 import { useEngineUnsupportedNotice } from '@/components/analysis/EngineUnsupportedNotice';
@@ -359,6 +359,8 @@ export type FlawChessCardProps = {
   compact?: boolean;
   flawChessEnabled: boolean;
   setFlawChessEnabled: (enabled: boolean) => void;
+  /** FlawChess lines setting (1-5): card rows and skeleton rows (Phase 228 D-16). */
+  fcLines: number;
   selectedElo: number;
   flawChessLoading: boolean;
   reconciledRankedLines: RankedLine[];
@@ -393,6 +395,7 @@ export function FlawChessCard({
   compact = false,
   flawChessEnabled,
   setFlawChessEnabled,
+  fcLines,
   selectedElo,
   flawChessLoading,
   reconciledRankedLines,
@@ -438,11 +441,11 @@ export function FlawChessCard({
         </EngineToggleHeader>
         <FlawChessInfoTooltip />
       </CardHeader>
-      <CardBody className={`${LINES_MIN_HEIGHT} p-2`}>
+      <CardBody className="p-2" style={{ minHeight: engineLinesMinHeightPx(fcLines) }}>
         {unsupportedNotice ? (
           unsupportedNotice
         ) : flawChessLoading ? (
-          <EngineLinesSkeleton testId="analysis-flawchess-loading" rows={2} />
+          <EngineLinesSkeleton testId="analysis-flawchess-loading" rows={fcLines} />
         ) : !flawChessEnabled ? (
           <div className="flex h-full items-center px-2 text-sm text-muted-foreground">
             FlawChess Engine off
@@ -451,6 +454,7 @@ export function FlawChessCard({
           <>
             <FlawChessEngineLines
               rankedLines={reconciledRankedLines}
+              maxLines={fcLines}
               isSearching={flawChessIsSearching}
               baseFen={position}
               startPly={currentPly}
@@ -617,6 +621,8 @@ export function FlawChessTab({ flawChessCard }: FlawChessTabProps): ReactElement
 // ─── MobileEngineLines ──────────────────────────────────────────────────────────
 
 export type MobileEngineLinesProps = {
+  /** Stockfish lines setting (1-5): rows and skeleton rows, no mobile cap (Phase 228 D-16). */
+  sfLines: number;
   engineLoading: boolean;
   engineEnabled: boolean;
   reconciledPvLines: PvLine[];
@@ -631,6 +637,7 @@ export type MobileEngineLinesProps = {
 // `analysis-engine-card` body's loading -> off -> lines branches. Shown at the top
 // of the Eval tab in every mobile layout.
 export function MobileEngineLines({
+  sfLines,
   engineLoading,
   engineEnabled,
   reconciledPvLines,
@@ -643,14 +650,15 @@ export function MobileEngineLines({
   return (
     <div className="shrink-0 px-2" data-testid="analysis-engine-lines-mobile">
       {engineLoading ? (
-        <EngineLinesSkeleton testId="analysis-engine-loading" compact />
+        <EngineLinesSkeleton testId="analysis-engine-loading" rows={sfLines} compact />
       ) : !engineEnabled ? (
         <div className="flex h-full items-center px-2 text-sm text-muted-foreground">Engine off</div>
       ) : (
-        // 162 UAT: reconciled top-2 over the full grading union, mobile parity
+        // 162 UAT: reconciled top-N over the full grading union, mobile parity
         // with the desktop card (CLAUDE.md mobile-parity rule).
         <EngineLines
           pvLines={reconciledPvLines}
+          maxLines={sfLines}
           isAnalyzing={isAnalyzing}
           startPly={currentPly}
           baseFen={position}

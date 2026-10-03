@@ -9,11 +9,13 @@ import {
   toDisplayQuality,
   trainGlyphColor,
   vettedMoveForSquares,
+  TRAIN_BEST_MOVE_ARROW_WIDTH,
   TRAIN_GOOD_MOVE_ARROW_WIDTH,
   TRAIN_GAME_MOVE_ARROW_WIDTH,
   TRAIN_STEP_HIGHLIGHT,
 } from '@/lib/trainArrows';
 import type { TrainFineMove } from '@/lib/trainArrows';
+import type { PvLine } from '@/hooks/uciParser';
 import { DARK_GREEN } from '@/lib/arrowColor';
 import {
   MOVE_HIGHLIGHT_BEST,
@@ -22,6 +24,7 @@ import {
   MOVE_QUALITY_GOOD,
   MOVE_QUALITY_MISTAKE,
   NEXT_MOVE_ARROW,
+  STOCKFISH_SECONDARY_LINE,
   TRAIN_BEST_MOVE_ARROW,
 } from '@/lib/theme';
 
@@ -471,9 +474,17 @@ describe('buildTrainStepArrows (190.1 UAT stepping)', () => {
   });
 });
 
-describe('buildTrainFreePlayArrows (Phase 200 UAT round 5)', () => {
-  it("returns a single blue engine-hue arrow for the free-play engine's top move", () => {
-    const arrows = buildTrainFreePlayArrows('e7e5');
+describe('buildTrainFreePlayArrows (Phase 200 UAT round 5, Phase 228 D-13/D-15)', () => {
+  const pv = (multipv: number, firstMove: string): PvLine => ({
+    multipv,
+    depth: 12,
+    moves: [firstMove, 'a7a6'],
+    evalCp: 10,
+    evalMate: null,
+  });
+
+  it("count 1 returns a single blue engine-hue arrow for the free-play engine's top move (the default)", () => {
+    const arrows = buildTrainFreePlayArrows([pv(1, 'e7e5'), pv(2, 'c7c5')], 1);
     expect(arrows).toHaveLength(1);
     expect(arrows[0]).toMatchObject({
       startSquare: 'e7',
@@ -482,13 +493,36 @@ describe('buildTrainFreePlayArrows (Phase 200 UAT round 5)', () => {
     });
   });
 
-  it('returns no arrow while the engine has no line for the shown position (null), or for a malformed UCI', () => {
-    expect(buildTrainFreePlayArrows(null)).toEqual([]);
-    expect(buildTrainFreePlayArrows('e7')).toEqual([]);
+  it('count 3 returns three distinct arrows: rank 0 solid blue, ranks 1-2 translucent, one shared width, rank 0 last', () => {
+    const arrows = buildTrainFreePlayArrows([pv(1, 'e7e5'), pv(2, 'c7c5'), pv(3, 'g8f6')], 3);
+    expect(arrows).toHaveLength(3);
+    const byKey = (key: string) => arrows.find((a) => a.layerKey === key);
+    expect(byKey('free-0')?.color).toBe(TRAIN_BEST_MOVE_ARROW);
+    expect(byKey('free-1')?.color).toBe(STOCKFISH_SECONDARY_LINE);
+    expect(byKey('free-2')?.color).toBe(STOCKFISH_SECONDARY_LINE);
+    expect(new Set(arrows.map((a) => a.width))).toEqual(new Set([TRAIN_BEST_MOVE_ARROW_WIDTH]));
+    expect(new Set(arrows.map((a) => `${a.startSquare}${a.endSquare}`)).size).toBe(3);
+    // Primary pushed last so it paints on top within its width tier.
+    expect(arrows[arrows.length - 1]?.layerKey).toBe('free-0');
+  });
+
+  it('count 0 returns no arrows (the Stockfish arrows setting 0 hides the live arrows)', () => {
+    expect(buildTrainFreePlayArrows([pv(1, 'e7e5')], 0)).toEqual([]);
+  });
+
+  it('returns no arrow while the engine has no lines for the shown position, and skips a malformed UCI', () => {
+    expect(buildTrainFreePlayArrows([], 3)).toEqual([]);
+    expect(buildTrainFreePlayArrows([pv(1, 'e7')], 1)).toEqual([]);
+    const arrows = buildTrainFreePlayArrows([pv(1, 'e7e5'), pv(2, 'zz'), pv(3, 'g8f6')], 3);
+    expect(arrows.map((a) => a.layerKey).sort()).toEqual(['free-0', 'free-2']);
+  });
+
+  it('a count above the available lines yields only the available arrows', () => {
+    expect(buildTrainFreePlayArrows([pv(1, 'e7e5')], 3)).toHaveLength(1);
   });
 
   it("uses its own layerKey, so a free-play arrow never collides with the stepper's", () => {
-    const free = buildTrainFreePlayArrows('e7e5')[0];
+    const free = buildTrainFreePlayArrows([pv(1, 'e7e5')], 1)[0];
     const step = buildTrainStepArrows('e7e5')[0];
     expect(free?.layerKey).not.toBe(step?.layerKey);
   });

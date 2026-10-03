@@ -54,10 +54,10 @@ import { Card, CardHeader, CardBody } from '@/components/ui/card';
 import {
   EngineLines,
   EngineLinesSkeleton,
-  MAX_LINES,
   replayPvLine,
   formatScore,
 } from '@/components/analysis/EngineLines';
+import { useEngineDisplaySettings } from '@/lib/engineSettings';
 import { DARK_GREEN } from '@/lib/arrowColor';
 import { buildGameAnalysisUrl } from '@/lib/analysisUrl';
 import { BEST_MOVE_ARROW, TRAIN_VERDICT_CORRECT, TRAIN_VERDICT_INCORRECT } from '@/lib/theme';
@@ -441,6 +441,9 @@ function TrainExplorationPanel({
   flipped: boolean;
   onFlipBoard?: () => void;
 }): ReactElement {
+  // D-13: the Stockfish lines setting sets the exploration card's rows and the
+  // skeleton's row count (read here, handed to the presentational EngineLines).
+  const { sfLines } = useEngineDisplaySettings();
   return (
     <div className="flex flex-col gap-4" data-testid="train-reveal-exploration">
       <Card data-testid="train-exploration-engine-card">
@@ -458,10 +461,11 @@ function TrainExplorationPanel({
         </CardHeader>
         <CardBody className="p-2">
           {freePlay.pvLines.length === 0 ? (
-            <EngineLinesSkeleton rows={MAX_LINES} />
+            <EngineLinesSkeleton rows={sfLines} />
           ) : (
             <EngineLines
               pvLines={freePlay.pvLines}
+              maxLines={sfLines}
               isAnalyzing={freePlay.isAnalyzing}
               baseFen={freePlay.fen ?? undefined}
               flipped={flipped}

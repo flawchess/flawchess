@@ -40,8 +40,10 @@ import {
   MOVE_QUALITY_MISTAKE,
   MOVE_QUALITY_BLUNDER,
   NEXT_MOVE_ARROW,
+  STOCKFISH_SECONDARY_LINE,
   TRAIN_BEST_MOVE_ARROW,
 } from '@/lib/theme';
+import type { PvLine } from '@/hooks/uciParser';
 import type { FlawSeverity } from '@/types/library';
 
 export type TrainPuzzleType = 'sharp' | 'soft' | 'herring';
@@ -215,19 +217,38 @@ export function buildTrainStepArrows(nextMoveUci: string | null): BoardArrow[] {
 }
 
 /**
- * Phase 200 UAT round 5: while exploring, the board carries the free-play
- * engine's own top move as a blue arrow — exactly what the analysis board
- * shows for its Stockfish engine (same hue, same width). This replaces the
- * original EXPLORE-03 rule of "no arrows at all while exploring": a sideline
- * you cannot see the best answer to is a worse teacher than one you can.
+ * Phase 200 UAT round 5 / Phase 228 (D-13, D-15): while exploring, the board
+ * carries the free-play engine's own top moves as blue arrows — exactly what
+ * the analysis board shows for its Stockfish engine (same hue, same width).
+ * This replaces the original EXPLORE-03 rule of "no arrows at all while
+ * exploring": a sideline you cannot see the best answer to is a worse teacher
+ * than one you can.
  *
- * The caller passes the STALENESS-GUARDED best move (`TrainFreePlayState.
- * bestMoveUci`), so a position the engine hasn't reached yet simply draws
- * nothing rather than pointing at the previous position's answer. A terminal
- * position (mate/stalemate) yields no PV and therefore no arrow.
+ * The Stockfish arrows setting sets how many live engine arrows draw (`count`,
+ * 0-3; 0 draws none). Rank 0 is the solid engine blue, ranks 1..N-1 share the
+ * Stockfish translucent color at the SAME width (D-15), pushed in reverse rank
+ * order so the primary paints on top. The reveal LEGEND arrows (blue best,
+ * green also-fine, game-move) are built elsewhere and always draw (D-13).
+ *
+ * The caller passes the STALENESS-GUARDED free-play `pvLines`
+ * (`TrainFreePlayState.pvLines`), so a position the engine hasn't reached yet
+ * simply draws nothing rather than pointing at the previous position's
+ * answer. A terminal position (mate/stalemate) yields no PV and therefore no
+ * arrow; a line with a malformed first move is skipped.
  */
-export function buildTrainFreePlayArrows(bestMoveUci: string | null): BoardArrow[] {
-  return enginePointerArrows(bestMoveUci, 'free-best');
+export function buildTrainFreePlayArrows(pvLines: readonly PvLine[], count: number): BoardArrow[] {
+  const arrows: BoardArrow[] = [];
+  for (let i = Math.min(count, pvLines.length) - 1; i >= 0; i--) {
+    const squares = squaresFromUci(pvLines[i]?.moves[0] ?? null);
+    if (squares === null) continue;
+    arrows.push({
+      ...squares,
+      color: i === 0 ? TRAIN_BEST_MOVE_ARROW : STOCKFISH_SECONDARY_LINE,
+      width: TRAIN_BEST_MOVE_ARROW_WIDTH,
+      layerKey: `free-${i}`,
+    });
+  }
+  return arrows;
 }
 
 /**

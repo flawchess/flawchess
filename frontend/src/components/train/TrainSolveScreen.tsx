@@ -55,6 +55,7 @@ import { useStockfishEngine, type StockfishEngineState } from '@/hooks/useStockf
 import type { PvLine } from '@/hooks/uciParser';
 import { useWakeLock } from '@/hooks/useWakeLock';
 import type { GradeResult, TrainEngineLine, TrainGradingEngine } from '@/hooks/useTrainGradingEngine';
+import { useEngineDisplaySettings } from '@/lib/engineSettings';
 import { evalToExpectedScore, sideToMoveFromFen, terminalPositionEval } from '@/lib/liveFlaw';
 import { useMarkPlayActive } from '@/lib/playActive';
 import { usePublishMobileBoardControls } from '@/lib/mobileBoardControls';
@@ -221,6 +222,14 @@ const TRAIN_EVAL_BAR_CHROME_PX = 28;
  * Same device Analysis.tsx uses for its own terminal eval.
  */
 const TRAIN_TERMINAL_EVAL_DEPTH = 99;
+
+/**
+ * Phase 228 (D-12): MultiPV of the Train eval-bar engine. That engine only
+ * feeds `resolveTrainEvalBarReading`, which reads evalCp / evalMate / depth, so
+ * one line gives the deepest eval for the same movetime. Deliberately
+ * independent of the Stockfish line / arrow settings.
+ */
+const TRAIN_EVAL_BAR_MULTIPV = 1;
 
 /**
  * Quick 260803-iv6: resolves the Train eval bar's reading from whichever
@@ -835,6 +844,9 @@ export function TrainSolveScreen({
     [gradeResult, vettedMoves],
   );
   const freePlay = useTrainFreePlay({ startFen: puzzle.fen, seedEval: freePlaySeedEval });
+  // Phase 228 (D-13): the Stockfish arrows setting sets how many live free-play
+  // engine arrows draw.
+  const { sfArrows } = useEngineDisplaySettings();
   // Phase 200 (LEGEND-02/D-09): the single active legend spotlight entry —
   // exactly one line box's move is spotlit at a time, or none. Set by
   // TrainReveal's hover/focus/tap handlers via onSpotlightChange, filtered
@@ -1217,7 +1229,11 @@ export function TrainSolveScreen({
   // docstring), so this gate keeps exactly one such worker alive at a time
   // for the shown position (the session-scoped grading worker is a third,
   // but is idle once the verdict has landed).
-  const evalBarEngine = useStockfishEngine({ fen: evalBarFen, enabled: evalBarFen !== null });
+  const evalBarEngine = useStockfishEngine({
+    fen: evalBarFen,
+    enabled: evalBarFen !== null,
+    multiPv: TRAIN_EVAL_BAR_MULTIPV,
+  });
   const freePlayTopLine = freePlay.pvLines[0] ?? null;
   const evalBarReading = resolveTrainEvalBarReading(
     displayFen,
@@ -1323,14 +1339,16 @@ export function TrainSolveScreen({
   // (spotlight-filtered, Pitfall 1: a stray hover while stepping must never
   // touch the step overlay's own blue next-move arrow) and the puzzle's own
   // arrival-move highlight return.
-  // Phase 200 UAT round 5: while exploring, the single arrow is the free-play
-  // engine's own top move for the shown position — the analysis board's blue
-  // Stockfish pointer, in free play too. Memoized so a re-render that doesn't
-  // change the best move hands `ChessBoard` the same array identity (the old
-  // "no arrows while exploring" rule used a module constant for exactly that).
+  // Phase 200 UAT round 5 / Phase 228 D-13: while exploring, the arrows are the
+  // free-play engine's own top moves for the shown position — the analysis
+  // board's blue Stockfish pointers, in free play too — as many as the
+  // Stockfish arrows setting asks for (0 draws none). The reveal legend arrows
+  // are separate and unaffected. Memoized on the staleness-guarded `pvLines`
+  // (a stable identity until the engine commits) and the count, so a re-render
+  // that changes neither hands `ChessBoard` the same array.
   const freePlayArrows = useMemo(
-    () => buildTrainFreePlayArrows(freePlay.bestMoveUci),
-    [freePlay.bestMoveUci],
+    () => buildTrainFreePlayArrows(freePlay.pvLines, sfArrows),
+    [freePlay.pvLines, sfArrows],
   );
   const boardArrows = freePlay.isExploring
     ? freePlayArrows

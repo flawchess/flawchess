@@ -1,7 +1,7 @@
 import type { ReactElement } from 'react';
 import { Cpu } from 'lucide-react';
 import { Card, CardHeader, CardBody } from '@/components/ui/card';
-import { EngineLines, EngineLinesSkeleton } from '@/components/analysis/EngineLines';
+import { EngineLines, EngineLinesSkeleton, engineLinesMinHeightPx } from '@/components/analysis/EngineLines';
 import { MaiaHumanPanel } from '@/components/analysis/MaiaHumanPanel';
 import type { MaiaHumanPanelProps } from '@/components/analysis/MaiaHumanPanel';
 import { PasteModal } from '@/components/analysis/PasteModal';
@@ -22,10 +22,15 @@ import type { PvLine } from '@/hooks/uciParser';
  */
 
 const ENGINE_NAME = 'Stockfish 18';
+/** Card-body chrome (px) on top of the engine-lines region: 78 - 60, so the default
+ *  2-line card keeps its pre-Phase-228 78px body height exactly. */
+const STOCKFISH_CARD_BODY_CHROME_PX = 18;
 
 // ─── StockfishCard ──────────────────────────────────────────────────────────────
 
 export type StockfishCardProps = {
+  /** Stockfish lines setting (1-5): rows and skeleton rows (Phase 228 D-16). */
+  sfLines: number;
   engineEnabled: boolean;
   setEngineEnabled: (enabled: boolean) => void;
   reconciledBestEval: MoveGrade;
@@ -38,9 +43,10 @@ export type StockfishCardProps = {
   onMoveClick: (uciMoves: string[]) => void;
 };
 
-// Stockfish engine info + lines card (155/162 UAT: reconciled top-2 over the
+// Stockfish engine info + lines card (155/162 UAT: reconciled top-N over the
 // grading union).
 export function StockfishCard({
+  sfLines,
   engineEnabled,
   setEngineEnabled,
   reconciledBestEval,
@@ -67,14 +73,18 @@ export function StockfishCard({
           {engineEnabled && reconciledBestEval.depth > 0 ? `, Depth ${reconciledBestEval.depth}` : ''}
         </EngineToggleHeader>
       </CardHeader>
-      <CardBody className="min-h-[78px] p-2">
+      <CardBody
+        className="p-2"
+        style={{ minHeight: engineLinesMinHeightPx(sfLines) + STOCKFISH_CARD_BODY_CHROME_PX }}
+      >
         {engineLoading ? (
-          <EngineLinesSkeleton testId="analysis-engine-loading" />
+          <EngineLinesSkeleton testId="analysis-engine-loading" rows={sfLines} />
         ) : !engineEnabled ? (
           <div className="flex h-full items-center px-2 text-sm text-muted-foreground">Engine off</div>
         ) : (
           <EngineLines
             pvLines={reconciledPvLines}
+            maxLines={sfLines}
             isAnalyzing={isAnalyzing}
             startPly={currentPly}
             baseFen={position}

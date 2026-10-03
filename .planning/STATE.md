@@ -1,17 +1,18 @@
 ---
 gsd_state_version: "1.0"
 milestone: v2.21
-current_phase: 227
-current_phase_name: settings-page
+current_phase: 228
+current_phase_name: Settings Page — Sound Toggle & Per-Engine Lines/Arrows (SEED-175)
 status: completed
-stopped_at: Phase 228 context gathered
-last_updated: "2026-10-03T14:07:36.443Z"
-state_head: bdd13c8d52493f36f2e16aed0dff53f44ec9f5c4
+stopped_at: Phase 228 complete — all phases complete
+last_updated: "2026-10-03T15:26:52.720Z"
+state_head: ad78dc00dfe98c641803cc70f48a329218c118d8
 progress:
   total_phases: 1
   completed_phases: 103
   total_plans: 3
   completed_plans: 47
+  percent: 100
 milestone_name: Browser Engine Throughput
 last_activity: 2026-10-03
 last_activity_desc: Closed milestones v2.20 (phases 223–224) and v2.21 (phases 225–227) with tags and GitHub releases; roadmap cleanup
@@ -21,10 +22,10 @@ last_activity_desc: Closed milestones v2.20 (phases 223–224) and v2.21 (phases
 
 ## Current Position
 
-Phase: 228 (settings-page) — READY TO EXECUTE
-Plan: Not started
+Phase: 228 (Settings Page — Sound Toggle & Per-Engine Lines/Arrows (SEED-175)) — COMPLETE
+Plan: 3 of 3
 
-Status: No open milestone; v2.21 closed 2026-10-03
+Status: All phases complete
 
 Open threads carried forward (not blockers):
 
@@ -801,6 +802,12 @@ flagged as an open decision for plan 06 / a human, not auto-fixed.
 - [Phase 225]: rankScore blends toward V_fallback (prior-weighted mean of root children) instead of toward 0 (D-10a/D-10b amended), fixing SEED-170 item 3
 - [Phase 225]: Phase 159 showcase reversal accepted (D-10e): a hard-to-find move far better than the findable alternative now ranks first in analysis suggestions
 - [Phase 225]: D-14 applied: item 1 and item 2 held and reverted (five (225-04)/(225-05) commits), item 3 ships; both revert boundaries auto-merged cleanly against Plan 225-06's edits with no manual conflict resolution
+- [Phase 228]: Plan 01: four flawchess_settings_* localStorage keys, tamper-safe reads (default not clamp); sound key flawchess_bot_sound_muted unchanged; Reset fires one settings-reset event
+- [Phase 228]: Engine-line card heights are rows x 30px (25px compact) as inline styles; Stockfish card body adds an 18px chrome constant so defaults stay 60/50/78px
+- [Phase 228]: Non-primary engine line styling: one translucent rgba token per engine (alpha 0.45, UAT-tuned in Plan 03), white badge text; rank shades and second-best tokens retired
+- [Phase 228]: Free-run MultiPV floor of 2 (ANALYSIS_FREE_RUN_MIN_MULTIPV) keeps engine.pvLines[1] for the FlawChess injection; free run width is max(2, SF lines, SF arrows)
+- [Phase 228]: Train eval-bar engine pinned to TRAIN_EVAL_BAR_MULTIPV = 1, independent of settings; Train free play searches at max(SF lines, SF arrows) with no movetime scaling
+- [Phase 228]: Arrows 1..N read the same reconciled ranking as the card (rank k = line k), non-primary ranks use one translucent per-engine color at the engine's own width, primary pushed last
 
 ### Pending Todos
 
@@ -990,15 +997,17 @@ Items acknowledged and deferred at **v1.29 milestone close on 2026-06-29** (user
 
 ## Session Continuity
 
-**Stopped at:** Phase 228 context gathered
+**Stopped at:** Phase 228 complete (3/3 plans, verification passed 16/16 decisions, browser UAT 5/5 legs passed, code review WR-01/WR-02 fixed). Next: pre-merge gate, then squash-merge `gsd/phase-228-settings-page` to `main` (CHANGELOG entry already in `[Unreleased]`).
+
+Previous session note (Phase 227):
 refit (calibration parity holds). Verification passed 17/17; code review 0 blockers (WR-01 + 3 info fixed). Next:
 squash-merge `gsd/phase-227-...` to `main` with a CHANGELOG entry already in `[Unreleased]`, then deploy when ready.
 Owner-deferred: real-phone bot game check (227-UAT.md, report-only). Follow-up: stale "Phase 198 will populate"
 priority comment in `workerPoolState.ts:434-437` (verifier info item).
 
-**Last session:** 2026-10-03T13:23:30.983Z
+**Last session:** 2026-10-03T15:02:44.838Z
 
-**Resume file:** .planning/phases/228-settings-page/228-CONTEXT.md
+**Resume file:** None
 
 ## Performance Metrics
 
@@ -1199,6 +1208,9 @@ priority comment in `workerPoolState.ts:434-437` (verifier info item).
 | Phase 225 P05 | 20min | 2 tasks | 5 files |
 | Phase 225 P06 | 20min | 2 tasks | 6 files |
 | Phase 225 P08 | 65min | 3 tasks | 13 files |
+| Phase 228 P01 | 12min | 3 tasks | 11 files |
+| Phase 228 P02 | 15min | 3 tasks | 18 files |
+| Phase 228 P03 | 13 min | 3 tasks | 13 files |
 
 ## Performance Metrics
 

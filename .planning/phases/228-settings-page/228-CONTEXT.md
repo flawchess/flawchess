@@ -56,7 +56,18 @@ Locked upstream in SEED-175 / ROADMAP and not re-decided here:
   (Drawer on mobile, matching the existing `components/ui/drawer` usage). There is one panel
   component and no per-surface section variants. Changes apply live underneath the sheet.
 
-### Page layout & controls
+### UAT amendment (2026-10-03, owner decision): overlay instead of page
+- **D-17:** Supersedes the `/settings` route in D-01, D-02 and D-06. Settings never navigate:
+  navigating to `/settings` unmounted the current page (the Train solution screen started the next
+  puzzle on return). The desktop header cogwheel (D-01 placement unchanged) opens a modal
+  (`SettingsDialogButton`, Radix Dialog) holding the full `SettingsPanel`; the mobile More drawer's
+  Settings row (D-02 placement unchanged) closes the drawer and opens the same settings sheet as
+  D-03/D-04. The `/settings` route, `pages/Settings.tsx` and its `ROUTE_TITLES` entry are removed
+  (587493af7). Both overlays set `aria-modal` and return focus to their cogwheel on close
+  (5b3fe98e4). Settings sections render as Cards (104aa7275).
+  On mobile `/analysis` the cogwheel sits at the header's top right (`ml-auto`), not next to the
+  "Analysis" title as D-03 first said, matching the bot game header (debfd269c).
+
 - **D-07:** Count inputs are segmented toggle groups (`components/ui/toggle-group`): buttons
   `1 2 3 4 5` for lines and `0 1 2 3` for arrows. The sound on/off is a `Switch`.
 - **D-08:** Changes apply instantly, with no Save button. Each control writes localStorage on

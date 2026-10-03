@@ -4,7 +4,7 @@
  *
  * Rendering is deferred to Phases 137/138; this hook is data-only.
  * ENGINE-01: evalCp / evalMate
- * ENGINE-02: pvLines (MultiPV=2)
+ * ENGINE-02: pvLines (MultiPV = the caller's `multiPv` option)
  * ENGINE-03: pvLines[0].moves[0] (best move UCI string)
  * ENGINE-04: isReady / isAnalyzing + enabled control input
  * ENGINE-05: adaptive debounce + go movetime 1500 nodes 2000000 + stopPendingRef
@@ -41,9 +41,6 @@ const MAX_NODES = 2000000;
 /** Rapid-step debounce window (ms): coalesces held arrow-key auto-repeat to one search. */
 const RAPID_STEP_DEBOUNCE_MS = 150;
 
-/** Number of candidate lines requested from the engine. */
-const MULTIPV = 2;
-
 /**
  * Bug fix (quick 260731-s0z, FIX-6): trailing-throttle window for
  * `pvLines`/`evalCp` commits during a search. Numerically equal to
@@ -65,6 +62,13 @@ export interface UseStockfishEngineOptions {
   fen: string | null;
   /** When false the Worker is not created and analysis does not run. */
   enabled: boolean;
+  /**
+   * Number of candidate lines per search (UCI MultiPV). The caller owns the
+   * policy (D-12): Analysis and Train free play derive it from the line/arrow
+   * settings, the Train eval bar pins it to 1. A change re-searches the
+   * current position at the new width WITHOUT restarting the worker (D-06).
+   */
+  multiPv: number;
 }
 
 export interface StockfishEngineState {
@@ -72,7 +76,7 @@ export interface StockfishEngineState {
   evalCp: number | null;
   /** Mate in N; positive=winning, negative=losing; null if centipawn score. */
   evalMate: number | null;
-  /** Up to MULTIPV candidate lines sorted by multipv index. */
+  /** Up to `multiPv` candidate lines sorted by multipv index. */
   pvLines: PvLine[];
   /** Search depth of the last completed (non-discarded) analysis. */
   depth: number;
@@ -98,6 +102,7 @@ export interface StockfishEngineState {
 export function useStockfishEngine({
   fen,
   enabled,
+  multiPv,
 }: UseStockfishEngineOptions): StockfishEngineState {
   // ─── Refs ──────────────────────────────────────────────────────────────────
 
@@ -121,6 +126,16 @@ export function useStockfishEngine({
 
   /** Ref-for-latest-value: isReady visible inside event callbacks. */
   const isReadyRef = useRef(false);
+
+  /** Ref-for-latest-value: the MultiPV the caller currently wants (synced each render). */
+  const multiPvRef = useRef(multiPv);
+
+  /**
+   * The MultiPV last sent to THIS worker (null until uciok, reset on teardown).
+   * Compared against `multiPvRef` so setoption is only ever (re)sent when the
+   * value actually changed, and only while the engine is idle (analyze()).
+   */
+  const appliedMultiPvRef = useRef<number | null>(null);
 
   /** In-flight MultiPV map: keyed by multipv index, updated on exact info lines. */
   const pvMapRef = useRef<Map<number, PvLine>>(new Map());
@@ -170,6 +185,7 @@ export function useStockfishEngine({
   useEffect(() => {
     currentFenRef.current = fen;
     isReadyRef.current = isReady;
+    multiPvRef.current = multiPv;
   });
 
   /**
@@ -328,6 +344,16 @@ export function useStockfishEngine({
       // reachable when the adaptive debounce started firing settled moves immediately
       // instead of serializing every change behind a 150ms timer (quick-260629-n8e).
       return;
+    }
+
+    // Idle-only UCI option change (same rule as useStockfishGradingEngine): a
+    // MultiPV change reaches the worker here, never from the 'thinking' or
+    // 'stopping' branches above (FLAWCHESS-7V: UCI traffic racing an in-flight
+    // stop traps the WASM engine). A change while thinking stops first; the
+    // stale-bestmove handler then re-enters analyze() in the idle state.
+    if (appliedMultiPvRef.current !== multiPvRef.current) {
+      worker.postMessage(`setoption name MultiPV value ${multiPvRef.current}`);
+      appliedMultiPvRef.current = multiPvRef.current;
     }
 
     // Clear pvMap so stale lines from the previous position do not bleed into
@@ -498,7 +524,8 @@ export function useStockfishEngine({
       /** Handle a single UCI line emitted by the engine Worker. */
       function handleLine(line: string): void {
         if (line === 'uciok') {
-          worker.postMessage(`setoption name MultiPV value ${MULTIPV}`);
+          worker.postMessage(`setoption name MultiPV value ${multiPvRef.current}`);
+          appliedMultiPvRef.current = multiPvRef.current;
           worker.postMessage('isready');
           return;
         }
@@ -590,11 +617,13 @@ export function useStockfishEngine({
       // Reset readiness + state machine so a re-enable waits for the NEW worker's
       // readyok (which follows the `setoption MultiPV` sent on uciok). Bug (155 UAT):
       // isReady survived the toggle, so on re-enable analyze() fired a `go` on the
-      // fresh worker BEFORE it had received `setoption MultiPV value 2` — the
-      // re-search ran at MultiPV=1, painting only the best-move arrow (no 2nd-best)
-      // until the next position change re-triggered a search post-init.
+      // fresh worker BEFORE it had received `setoption MultiPV` — the re-search
+      // ran at MultiPV=1, painting only the best-move arrow (no 2nd-best) until
+      // the next position change re-triggered a search post-init. The applied
+      // MultiPV is reset with it: the next worker has had no setoption yet.
       setIsReady(false);
       isReadyRef.current = false;
+      appliedMultiPvRef.current = null;
       stateRef.current = 'idle';
       stopPendingRef.current = false;
       // FIX-6 (quick 260731-s0z): cancel any pending trailing pv commit — a
@@ -618,6 +647,23 @@ export function useStockfishEngine({
     if (!debouncedFen || !isReady) return;
     analyze(debouncedFen);
   }, [debouncedTarget, debouncedFen, isReady, analyze]);
+
+  // ─── MultiPV change → live re-search (D-06) ────────────────────────────────
+
+  // A line/arrow setting changed under a running engine: re-search the current
+  // position at the new width without restarting the worker (multiPv is NOT in
+  // the worker-lifecycle deps — that would re-instantiate the WASM and flash
+  // the asset gate). From idle, analyze() resends setoption and searches at
+  // once; from thinking it stops, and the stale-bestmove handler re-analyzes
+  // (resending setoption from the idle branch, RESEARCH Pitfall 2). Before the
+  // first uciok `appliedMultiPvRef` is null, so the init handshake owns the
+  // first setoption and nothing is sent early.
+  useEffect(() => {
+    if (appliedMultiPvRef.current === null || appliedMultiPvRef.current === multiPv) return;
+    const current = currentFenRef.current;
+    if (current === null || !isReadyRef.current) return;
+    analyze(current);
+  }, [multiPv, analyze]);
 
   // ─── Tab-hide pause (D-04) ─────────────────────────────────────────────────
 

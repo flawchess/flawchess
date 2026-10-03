@@ -11,7 +11,7 @@
 import { renderHook } from '@testing-library/react';
 import { describe, it, expect } from 'vitest';
 import { useGameOverlay } from '@/hooks/useGameOverlay';
-import { BEST_MOVE_ARROW, SECOND_BEST_ARROW, TAC_ALLOWED, TAC_MISSED } from '@/lib/theme';
+import { BEST_MOVE_ARROW, TAC_ALLOWED, TAC_MISSED } from '@/lib/theme';
 import type { EvalPoint, FlawMarker } from '@/types/library';
 import type { PvLine } from '@/hooks/uciParser';
 
@@ -86,9 +86,31 @@ describe('useGameOverlay blue-arrow source', () => {
       }),
     );
     const arrows = result.current.boardArrows ?? [];
-    // Neither the precomputed blue best nor the live second-best show while off.
+    // Neither the precomputed blue best nor an arrow for the live second line show while off.
     expect(arrows.find((a) => a.color === BEST_MOVE_ARROW)).toBeUndefined();
-    expect(arrows.find((a) => a.color === SECOND_BEST_ARROW)).toBeUndefined();
+    expect(arrows.find((a) => a.startSquare === 'd2' && a.endSquare === 'd4')).toBeUndefined();
+  });
+
+  it('never draws a second-best arrow for enginePvLines[1], engine on (Phase 228 retired it)', () => {
+    const { result } = renderHook(() =>
+      useGameOverlay({
+        ...base,
+        engineEnabled: true,
+        evalSeries: [pt(0, 'e2e4'), pt(1, 'e7e5'), pt(2, 'g1f3')],
+        currentNodeId: 11,
+        enginePvLines: [
+          { moves: ['c2c4'], multipv: 1, depth: 12, evalCp: 20, evalMate: null },
+          { moves: ['d2d4'], multipv: 2, depth: 12, evalCp: 10, evalMate: null },
+        ],
+      }),
+    );
+    const arrows = result.current.boardArrows ?? [];
+    // The precomputed blue best (g1f3) still draws; the live second line (d2d4) does not.
+    expect(arrows.find((a) => a.color === BEST_MOVE_ARROW)).toMatchObject({
+      startSquare: 'g1',
+      endSquare: 'f3',
+    });
+    expect(arrows.find((a) => a.startSquare === 'd2' && a.endSquare === 'd4')).toBeUndefined();
   });
 
   it('keeps the crimson allowed-tactic arrow even when Stockfish is toggled off (155 UAT)', () => {

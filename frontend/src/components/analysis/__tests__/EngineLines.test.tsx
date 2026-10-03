@@ -17,6 +17,8 @@ import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { EngineLines, EngineLinesSkeleton } from '../EngineLines';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import type { PvLine } from '@/hooks/uciParser';
+import { DEFAULT_LINES } from '@/lib/engineSettings';
+import { BEST_MOVE_ARROW, STOCKFISH_BADGE_SECONDARY } from '@/lib/theme';
 
 const START_FEN = 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1';
 
@@ -74,6 +76,7 @@ describe('EngineLines', () => {
   it('(a) renders two PV lines with correct score format', () => {
     render(
       <EngineLines
+        maxLines={DEFAULT_LINES}
         pvLines={TWO_LINES}
         isAnalyzing={false}
         onMoveClick={vi.fn()}
@@ -90,6 +93,7 @@ describe('EngineLines', () => {
     const onMoveClick = vi.fn();
     render(
       <EngineLines
+        maxLines={DEFAULT_LINES}
         pvLines={TWO_LINES}
         isAnalyzing={false}
         onMoveClick={onMoveClick}
@@ -108,6 +112,7 @@ describe('EngineLines', () => {
     const onMoveClick = vi.fn();
     render(
       <EngineLines
+        maxLines={DEFAULT_LINES}
         pvLines={[LINE_CP]}
         isAnalyzing={false}
         onMoveClick={onMoveClick}
@@ -121,6 +126,7 @@ describe('EngineLines', () => {
   it('(d) isAnalyzing && empty pvLines → shows analyzing indicator', () => {
     render(
       <EngineLines
+        maxLines={DEFAULT_LINES}
         pvLines={[]}
         isAnalyzing={true}
         onMoveClick={vi.fn()}
@@ -134,6 +140,7 @@ describe('EngineLines', () => {
   it('(d) isAnalyzing && non-empty pvLines → does NOT show analyzing indicator', () => {
     render(
       <EngineLines
+        maxLines={DEFAULT_LINES}
         pvLines={TWO_LINES}
         isAnalyzing={true}
         onMoveClick={vi.fn()}
@@ -145,6 +152,7 @@ describe('EngineLines', () => {
   it('move chips are <button> elements (semantic HTML)', () => {
     render(
       <EngineLines
+        maxLines={DEFAULT_LINES}
         pvLines={[LINE_CP]}
         isAnalyzing={false}
         onMoveClick={vi.fn()}
@@ -164,6 +172,7 @@ describe('EngineLines', () => {
     };
     render(
       <EngineLines
+        maxLines={DEFAULT_LINES}
         pvLines={[negativeLine]}
         isAnalyzing={false}
         onMoveClick={vi.fn()}
@@ -182,6 +191,7 @@ describe('EngineLines', () => {
     };
     render(
       <EngineLines
+        maxLines={DEFAULT_LINES}
         pvLines={[losingMate]}
         isAnalyzing={false}
         onMoveClick={vi.fn()}
@@ -193,6 +203,7 @@ describe('EngineLines', () => {
   it('!isAnalyzing && empty pvLines → renders empty (no spinner, no error)', () => {
     render(
       <EngineLines
+        maxLines={DEFAULT_LINES}
         pvLines={[]}
         isAnalyzing={false}
         onMoveClick={vi.fn()}
@@ -207,6 +218,7 @@ describe('EngineLines', () => {
     render(
       <TooltipProvider>
         <EngineLines
+          maxLines={DEFAULT_LINES}
           pvLines={[LINE_CP]}
           isAnalyzing={false}
           baseFen={START_FEN}
@@ -233,6 +245,7 @@ describe('EngineLines', () => {
     };
     render(
       <EngineLines
+        maxLines={DEFAULT_LINES}
         pvLines={[lineWithOnlyCp]}
         isAnalyzing={false}
         onMoveClick={vi.fn()}
@@ -252,6 +265,7 @@ describe('EngineLines', () => {
     };
     render(
       <EngineLines
+        maxLines={DEFAULT_LINES}
         pvLines={[longLine]}
         isAnalyzing={false}
         onMoveClick={vi.fn()}
@@ -269,9 +283,49 @@ describe('EngineLines', () => {
     expect(screen.getByTestId('engine-line-0-move-6')).toBeTruthy();
   });
 
+  it('renders at most maxLines rows (Phase 228, D-16)', () => {
+    const five: PvLine[] = [1, 2, 3, 4, 5].map((n) => ({ ...LINE_CP, multipv: n }));
+    const three = render(
+      <EngineLines pvLines={five} isAnalyzing={false} maxLines={3} onMoveClick={vi.fn()} />,
+    );
+    expect(screen.getAllByLabelText(/^Line \d+:/)).toHaveLength(3);
+    three.unmount();
+    render(
+      <EngineLines
+        pvLines={five}
+        isAnalyzing={false}
+        maxLines={DEFAULT_LINES}
+        onMoveClick={vi.fn()}
+      />,
+    );
+    expect(screen.getAllByLabelText(/^Line \d+:/)).toHaveLength(2);
+  });
+
+  it('badge styling lock: line 1 solid BEST_MOVE_ARROW, every later line STOCKFISH_BADGE_SECONDARY, no dark-ink text override', () => {
+    const four: PvLine[] = [1, 2, 3, 4].map((n) => ({ ...LINE_CP, multipv: n }));
+    render(<EngineLines pvLines={four} isAnalyzing={false} maxLines={4} onMoveClick={vi.fn()} />);
+    const badges = screen.getAllByLabelText(/^Line \d+:/);
+    expect(badges).toHaveLength(4);
+    expect(badges[0]!.style.backgroundColor).toBe(BEST_MOVE_ARROW);
+    for (const badge of badges.slice(1)) {
+      expect(badge.style.backgroundColor).toBe(STOCKFISH_BADGE_SECONDARY);
+    }
+    for (const badge of badges) {
+      // White text comes from BADGE_CLASS; no inline color override on any row.
+      expect(badge.style.color).toBe('');
+      expect(badge.className).toContain('text-white');
+    }
+  });
+
+  it('the analyzing skeleton shows maxLines placeholder rows', () => {
+    render(<EngineLines pvLines={[]} isAnalyzing={true} maxLines={4} onMoveClick={vi.fn()} />);
+    expect(screen.getByTestId('engine-lines-analyzing').children).toHaveLength(4);
+  });
+
   it('no chevron when the line is <= 5 plies', () => {
     render(
       <EngineLines
+        maxLines={DEFAULT_LINES}
         pvLines={[LINE_CP]} // 3 plies
         isAnalyzing={false}
         onMoveClick={vi.fn()}
@@ -285,7 +339,7 @@ describe('EngineLines', () => {
 
 describe('EngineLinesSkeleton', () => {
   it('renders the pulsing placeholder rows (the ONLY thing this skeleton ever renders now)', () => {
-    render(<EngineLinesSkeleton testId="skel" />);
+    render(<EngineLinesSkeleton testId="skel" rows={DEFAULT_LINES} />);
     const el = screen.getByTestId('skel');
     expect(el).toBeTruthy();
     expect(el.getAttribute('aria-busy')).toBe('true');
@@ -293,18 +347,25 @@ describe('EngineLinesSkeleton', () => {
     expect(screen.queryByTestId('skel-progress')).toBeNull();
   });
 
-  it('the outer container className expression is stable for the default, compact, and three-row variants', () => {
-    render(<EngineLinesSkeleton testId="default-variant" />);
-    render(<EngineLinesSkeleton testId="compact-variant" compact />);
-    render(<EngineLinesSkeleton testId="three-row-variant" rows={3} />);
+  it('container min-height follows the row count; defaults keep today\'s heights (60px / 50px)', () => {
+    render(<EngineLinesSkeleton testId="default-variant" rows={2} />);
+    render(<EngineLinesSkeleton testId="compact-variant" rows={2} compact />);
+    render(<EngineLinesSkeleton testId="five-variant" rows={5} />);
+    render(<EngineLinesSkeleton testId="five-compact-variant" rows={5} compact />);
 
-    expect(screen.getByTestId('default-variant').className).toContain('min-h-[60px]');
-    expect(screen.getByTestId('compact-variant').className).toContain('min-h-[50px]');
-    expect(screen.getByTestId('three-row-variant').className).toContain('min-h-[90px]');
+    expect(screen.getByTestId('default-variant').style.minHeight).toBe('60px');
+    expect(screen.getByTestId('compact-variant').style.minHeight).toBe('50px');
+    expect(screen.getByTestId('five-variant').style.minHeight).toBe('150px');
+    expect(screen.getByTestId('five-compact-variant').style.minHeight).toBe('125px');
+  });
+
+  it('renders exactly `rows` placeholder rows', () => {
+    render(<EngineLinesSkeleton testId="skel-rows" rows={5} />);
+    expect(screen.getByTestId('skel-rows').children).toHaveLength(5);
   });
 
   it('aria-busy and aria-label are always set', () => {
-    render(<EngineLinesSkeleton testId="skel-aria" />);
+    render(<EngineLinesSkeleton testId="skel-aria" rows={DEFAULT_LINES} />);
     const el = screen.getByTestId('skel-aria');
     expect(el.getAttribute('aria-busy')).toBe('true');
     expect(el.getAttribute('aria-label')).toBe('Loading engine lines');

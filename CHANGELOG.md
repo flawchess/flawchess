@@ -8,6 +8,14 @@ in `YYYY-MM-DD` (Europe/Zurich).
 
 ## [Unreleased]
 
+### Added
+
+- Settings: open them from the cogwheel in the header (or Settings in the mobile More menu) to switch sounds off and to choose how many lines (1 to 5) and board arrows (0 to 3) the FlawChess engine and Stockfish show. Settings open in a window over the current page (a sheet on mobile, also from the cogwheel on the mobile analysis board and during a mobile bot game), so you never lose the puzzle, game or analysis you were on.
+
+### Changed
+
+- Every engine line after the top one now uses a lighter, see-through version of that engine's color on its badge and arrow.
+
 ## [v2.21] Browser Engine Throughput — 2026-10-03
 
 ### Changed

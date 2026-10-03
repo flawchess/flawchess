@@ -6,7 +6,8 @@
  * style against a `RankedLine[]` fixture instead of `PvLine[]`.
  *
  * Verifies:
- *  - MAX_LINES=2 row cap from a 4-line fixture (D-08)
+ *  - the maxLines prop caps rows (default 2 from a 4-line fixture; 4 and 5 per the
+ *    FlawChess lines setting, Phase 228 D-16)
  *  - modalPath renders SAN chips, first 5 visible + expand for a >5-ply path
  *    (DISPLAY-02)
  *  - the brown practical badge shows the practical (expected-score-derived,
@@ -23,6 +24,8 @@ import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { FlawChessEngineLines } from '../FlawChessEngineLines';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import type { RankedLine } from '@/lib/engine/types';
+import { DEFAULT_LINES } from '@/lib/engineSettings';
+import { FLAWCHESS_ENGINE_BADGE_SECONDARY } from '@/lib/theme';
 
 const START_FEN = 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1';
 
@@ -116,7 +119,7 @@ const FOUR_LINES: RankedLine[] = [LINE_1, LINE_2, LINE_3, LINE_4];
 // ─── Tests ────────────────────────────────────────────────────────────────────
 
 describe('FlawChessEngineLines', () => {
-  it('renders exactly 2 rows from a 4-line fixture (MAX_LINES=2, D-08)', () => {
+  function renderWithMaxLines(maxLines: number) {
     render(
       <TooltipProvider>
         <FlawChessEngineLines
@@ -124,10 +127,15 @@ describe('FlawChessEngineLines', () => {
           isSearching={false}
           baseFen={START_FEN}
           rootMover="white"
+          maxLines={maxLines}
           onMoveClick={vi.fn()}
         />
       </TooltipProvider>,
     );
+  }
+
+  it('renders the default 2 rows from a 4-line fixture (DEFAULT_LINES, D-08)', () => {
+    renderWithMaxLines(DEFAULT_LINES);
 
     // Lines 0-1 render (their first move chip is present)...
     expect(screen.getByTestId('flawchess-line-0-move-0')).toBeTruthy();
@@ -137,10 +145,53 @@ describe('FlawChessEngineLines', () => {
     expect(screen.queryByTestId('flawchess-line-3-move-0')).toBeNull();
   });
 
+  it('maxLines 4 renders lines 0..3 (Phase 228 D-16)', () => {
+    renderWithMaxLines(4);
+    for (const i of [0, 1, 2, 3]) {
+      expect(screen.getByTestId(`flawchess-line-${i}-move-0`)).toBeTruthy();
+    }
+  });
+
+  it('maxLines 5 with only 4 candidates still renders 4 rows (fewer candidates than the setting is expected)', () => {
+    renderWithMaxLines(5);
+    expect(screen.getByTestId('flawchess-line-3-move-0')).toBeTruthy();
+    expect(screen.queryByTestId('flawchess-line-4-move-0')).toBeNull();
+  });
+
+  it('badge styling lock: lines 2..N use FLAWCHESS_ENGINE_BADGE_SECONDARY, line 1 is a different (solid) fill', () => {
+    renderWithMaxLines(4);
+    // The aria-labelled wrapper's first child is the gold practical-score badge.
+    const badgeOf = (n: number): HTMLElement =>
+      screen.getByLabelText(new RegExp(`^Line ${n}:`)).firstElementChild as HTMLElement;
+    for (const n of [2, 3, 4]) {
+      expect(badgeOf(n).style.backgroundColor).toBe(FLAWCHESS_ENGINE_BADGE_SECONDARY);
+    }
+    // jsdom drops oklch() inline values, so assert inequality rather than the solid token.
+    expect(badgeOf(1).style.backgroundColor).not.toBe(FLAWCHESS_ENGINE_BADGE_SECONDARY);
+    expect(badgeOf(1).className).toContain('text-white');
+  });
+
+  it('the loading skeleton shows maxLines placeholder rows', () => {
+    render(
+      <TooltipProvider>
+        <FlawChessEngineLines
+          rankedLines={[]}
+          isSearching={true}
+          baseFen={START_FEN}
+          rootMover="white"
+          maxLines={5}
+          onMoveClick={vi.fn()}
+        />
+      </TooltipProvider>,
+    );
+    expect(screen.getByTestId('analysis-flawchess-loading').children).toHaveLength(5);
+  });
+
   it('renders modalPath as SAN chips, first MAX_PLIES=4 plies + expand chevron (DISPLAY-02)', () => {
     render(
       <TooltipProvider>
         <FlawChessEngineLines
+          maxLines={DEFAULT_LINES}
           rankedLines={[LINE_1]}
           isSearching={false}
           baseFen={START_FEN}
@@ -168,6 +219,7 @@ describe('FlawChessEngineLines', () => {
     render(
       <TooltipProvider>
         <FlawChessEngineLines
+          maxLines={DEFAULT_LINES}
           rankedLines={[LINE_2]} // 2 plies
           isSearching={false}
           baseFen={START_FEN}
@@ -183,6 +235,7 @@ describe('FlawChessEngineLines', () => {
     render(
       <TooltipProvider>
         <FlawChessEngineLines
+          maxLines={DEFAULT_LINES}
           rankedLines={[LINE_1]}
           isSearching={false}
           baseFen={START_FEN}
@@ -208,6 +261,7 @@ describe('FlawChessEngineLines', () => {
     render(
       <TooltipProvider>
         <FlawChessEngineLines
+          maxLines={DEFAULT_LINES}
           rankedLines={[LINE_3]}
           isSearching={false}
           baseFen={START_FEN}
@@ -236,6 +290,7 @@ describe('FlawChessEngineLines', () => {
     render(
       <TooltipProvider>
         <FlawChessEngineLines
+          maxLines={DEFAULT_LINES}
           rankedLines={[mateLine]}
           isSearching={false}
           baseFen={START_FEN}
@@ -258,6 +313,7 @@ describe('FlawChessEngineLines', () => {
     render(
       <TooltipProvider>
         <FlawChessEngineLines
+          maxLines={DEFAULT_LINES}
           rankedLines={[LINE_1]}
           isSearching={false}
           baseFen={START_FEN}
@@ -279,6 +335,7 @@ describe('FlawChessEngineLines', () => {
     render(
       <TooltipProvider>
         <FlawChessEngineLines
+          maxLines={DEFAULT_LINES}
           rankedLines={[LINE_3]}
           isSearching={false}
           baseFen={START_FEN}
@@ -298,6 +355,7 @@ describe('FlawChessEngineLines', () => {
     render(
       <TooltipProvider>
         <FlawChessEngineLines
+          maxLines={DEFAULT_LINES}
           rankedLines={[LINE_1]}
           isSearching={false}
           baseFen={START_FEN}
@@ -319,6 +377,7 @@ describe('FlawChessEngineLines', () => {
     render(
       <TooltipProvider>
         <FlawChessEngineLines
+          maxLines={DEFAULT_LINES}
           rankedLines={[LINE_1]}
           isSearching={false}
           baseFen={START_FEN}
@@ -348,6 +407,7 @@ describe('FlawChessEngineLines', () => {
     render(
       <TooltipProvider>
         <FlawChessEngineLines
+          maxLines={DEFAULT_LINES}
           rankedLines={[LINE_1]}
           isSearching={false}
           baseFen={START_FEN}
@@ -363,6 +423,7 @@ describe('FlawChessEngineLines', () => {
   it('isSearching && empty rankedLines → shows the 2-row skeleton', () => {
     render(
       <FlawChessEngineLines
+        maxLines={DEFAULT_LINES}
         rankedLines={[]}
         isSearching={true}
         baseFen={START_FEN}
@@ -376,6 +437,7 @@ describe('FlawChessEngineLines', () => {
   it('!isSearching && empty rankedLines → renders no rows and no skeleton', () => {
     render(
       <FlawChessEngineLines
+        maxLines={DEFAULT_LINES}
         rankedLines={[]}
         isSearching={false}
         baseFen={START_FEN}
@@ -390,6 +452,7 @@ describe('FlawChessEngineLines', () => {
   it('checkmate terminalOutcome + empty rankedLines → renders a gold "#0" Checkmate badge (quick 260709)', () => {
     render(
       <FlawChessEngineLines
+        maxLines={DEFAULT_LINES}
         rankedLines={[]}
         isSearching={false}
         baseFen={START_FEN}
@@ -407,6 +470,7 @@ describe('FlawChessEngineLines', () => {
   it('draw terminalOutcome + empty rankedLines → renders a "½–½" Draw badge', () => {
     render(
       <FlawChessEngineLines
+        maxLines={DEFAULT_LINES}
         rankedLines={[]}
         isSearching={false}
         baseFen={START_FEN}
@@ -422,6 +486,7 @@ describe('FlawChessEngineLines', () => {
   it('terminalOutcome is ignored while still searching, and when ranked lines exist', () => {
     const { rerender } = render(
       <FlawChessEngineLines
+        maxLines={DEFAULT_LINES}
         rankedLines={[]}
         isSearching={true}
         baseFen={START_FEN}
@@ -438,6 +503,7 @@ describe('FlawChessEngineLines', () => {
     rerender(
       <TooltipProvider>
         <FlawChessEngineLines
+          maxLines={DEFAULT_LINES}
           rankedLines={[LINE_1]}
           isSearching={false}
           baseFen={START_FEN}
@@ -454,6 +520,7 @@ describe('FlawChessEngineLines', () => {
     render(
       <TooltipProvider>
         <FlawChessEngineLines
+          maxLines={DEFAULT_LINES}
           rankedLines={FOUR_LINES}
           isSearching={false}
           baseFen={START_FEN}

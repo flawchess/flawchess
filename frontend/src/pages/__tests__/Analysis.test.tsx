@@ -19,7 +19,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { Profiler } from 'react';
 import { MemoryRouter, useNavigate } from 'react-router';
-import { BEST_MOVE_ARROW, MAIA_ACCENT, GREAT_ACCENT } from '@/lib/theme';
+import { BEST_MOVE_ARROW, MAIA_ACCENT, GREAT_ACCENT, STOCKFISH_SECONDARY_LINE } from '@/lib/theme';
+import { SETTINGS_STORAGE_KEYS } from '@/lib/engineSettings';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import type { GameFlawCard, EvalPoint } from '@/types/library';
@@ -60,6 +61,10 @@ const engineState: {
   currentFen: null,
 };
 
+// Phase 228 (D-12/D-14): every `multiPv` the page passed to the free-run engine,
+// in call order — the page-level proof that the settings drive search breadth.
+const stockfishMultiPvCalls: number[] = [];
+
 vi.mock('@/hooks/useStockfishEngine', () => ({
   // WR-01 (196-REVIEW.md): `currentFen` defaults to `null` in engineState so
   // it must normally mirror whichever `fen` the hook was called with
@@ -69,10 +74,13 @@ vi.mock('@/hooks/useStockfishEngine', () => ({
   // below is the one place that overrides `engineState.currentFen` to an
   // EXPLICIT (non-null) FEN string to simulate the hook's own reset not
   // having landed yet for the new `fen` argument.
-  useStockfishEngine: (options: { fen: string | null }) => ({
-    ...engineState,
-    currentFen: engineState.currentFen ?? options.fen,
-  }),
+  useStockfishEngine: (options: { fen: string | null; multiPv: number }) => {
+    stockfishMultiPvCalls.push(options.multiPv);
+    return {
+      ...engineState,
+      currentFen: engineState.currentFen ?? options.fen,
+    };
+  },
 }));
 
 // Mock isLowPowerDevice (Phase 172, SEED-106 D-05): useGemSweep.ts's device
@@ -404,6 +412,8 @@ afterEach(() => {
   gradingCalls.length = 0;
   maiaCalls.length = 0;
   flawChessCalls.length = 0;
+  stockfishMultiPvCalls.length = 0;
+  for (const key of Object.values(SETTINGS_STORAGE_KEYS)) localStorage.removeItem(key);
   libraryGameState.data = undefined;
   libraryGameById.clear();
   resetEngineAssetsForTests();
@@ -1159,6 +1169,133 @@ function buildGame(overrides: Partial<GameFlawCard> = {}): GameFlawCard {
     ...overrides,
   };
 }
+
+describe('Settings drive search breadth, grading union and arrows (Phase 228, D-12/D-14/D-15)', () => {
+  const FIVE_FREE_RUN_LINES = [
+    { multipv: 1, moves: ['e2e4'], evalCp: 40, evalMate: null, depth: 18 },
+    { multipv: 2, moves: ['d2d4'], evalCp: 30, evalMate: null, depth: 18 },
+    { multipv: 3, moves: ['g1f3'], evalCp: 20, evalMate: null, depth: 18 },
+    { multipv: 4, moves: ['c2c4'], evalCp: 10, evalMate: null, depth: 18 },
+    { multipv: 5, moves: ['b1c3'], evalCp: 0, evalMate: null, depth: 18 },
+  ];
+
+  function lastFreeRunMultiPv(): number | undefined {
+    return stockfishMultiPvCalls[stockfishMultiPvCalls.length - 1];
+  }
+
+  it('free-run MultiPV is 2 at the defaults (the floor that keeps pvLines[1] for the injection)', () => {
+    renderAnalysis();
+    expect(lastFreeRunMultiPv()).toBe(2);
+  });
+
+  it('free-run MultiPV stays 2 with SF lines 1 and SF arrows 0 (floor, never 1)', () => {
+    localStorage.setItem(SETTINGS_STORAGE_KEYS.sfLines, '1');
+    localStorage.setItem(SETTINGS_STORAGE_KEYS.sfArrows, '0');
+    renderAnalysis();
+    expect(lastFreeRunMultiPv()).toBe(2);
+  });
+
+  it('free-run MultiPV follows SF lines 4', () => {
+    localStorage.setItem(SETTINGS_STORAGE_KEYS.sfLines, '4');
+    renderAnalysis();
+    expect(lastFreeRunMultiPv()).toBe(4);
+  });
+
+  it('free-run MultiPV follows SF arrows 3 when SF lines is 1', () => {
+    localStorage.setItem(SETTINGS_STORAGE_KEYS.sfLines, '1');
+    localStorage.setItem(SETTINGS_STORAGE_KEYS.sfArrows, '3');
+    renderAnalysis();
+    expect(lastFreeRunMultiPv()).toBe(3);
+  });
+
+  it('a committed four-line free run joins the grading union in full at SF lines 4 (not just its top 2)', () => {
+    localStorage.setItem(SETTINGS_STORAGE_KEYS.sfLines, '4');
+    engineState.isReady = true;
+    engineState.isAnalyzing = false;
+    engineState.pvLines = FIVE_FREE_RUN_LINES.slice(0, 4);
+
+    renderAnalysis();
+
+    const sans = lastPrimaryGradingCall()?.candidateSans ?? [];
+    expect(sans).toEqual(expect.arrayContaining(['e4', 'd4', 'Nf3', 'c4']));
+  });
+
+  it('with Maia and FlawChess off, the Stockfish card still reaches 5 rows from the free run at SF lines 5', () => {
+    localStorage.setItem(SETTINGS_STORAGE_KEYS.sfLines, '5');
+    engineState.isReady = true;
+    engineState.isAnalyzing = false;
+    engineState.pvLines = FIVE_FREE_RUN_LINES;
+
+    renderAnalysis();
+    fireEvent.click(screen.getByTestId('btn-analysis-maia-toggle'));
+    fireEvent.click(screen.getByTestId('btn-analysis-flawchess-toggle'));
+
+    for (let line = 0; line < 5; line++) {
+      expect(screen.getByTestId(`engine-line-${line}-move-0`)).toBeTruthy();
+    }
+    expect(screen.queryByTestId('engine-line-5-move-0')).toBeNull();
+  });
+
+  it('SF arrows 2 with two graded candidates draw one solid and one translucent Stockfish arrow, distinct squares', () => {
+    localStorage.setItem(SETTINGS_STORAGE_KEYS.sfArrows, '2');
+    const clientWidthSpy = vi.spyOn(Element.prototype, 'clientWidth', 'get').mockReturnValue(400);
+    try {
+      engineState.isReady = true;
+      engineState.pvLines = [{ moves: ['e2e4'], evalCp: 20, evalMate: null, depth: 18 }];
+      gradingState.gradeMap = new Map([
+        ['e4', { evalCp: 20, evalMate: null, depth: 10 }],
+        ['Nf3', { evalCp: 300, evalMate: null, depth: 10 }],
+      ]);
+
+      renderAnalysis();
+
+      const overlay = document.querySelector('[data-testid="arrow-overlay"]');
+      const solid = overlay?.querySelectorAll(`path[fill="${BEST_MOVE_ARROW}"]`) ?? [];
+      const translucent = overlay?.querySelectorAll(`path[fill="${STOCKFISH_SECONDARY_LINE}"]`) ?? [];
+      expect(solid).toHaveLength(1);
+      expect(translucent).toHaveLength(1);
+      expect(solid[0]?.getAttribute('d')).not.toBe(translucent[0]?.getAttribute('d'));
+    } finally {
+      clientWidthSpy.mockRestore();
+    }
+  });
+
+  it('at the defaults (1 arrow) exactly one solid Stockfish arrow and no translucent one draws', () => {
+    const clientWidthSpy = vi.spyOn(Element.prototype, 'clientWidth', 'get').mockReturnValue(400);
+    try {
+      engineState.isReady = true;
+      engineState.pvLines = [
+        { multipv: 1, moves: ['e2e4'], evalCp: 20, evalMate: null, depth: 18 },
+        { multipv: 2, moves: ['d2d4'], evalCp: 10, evalMate: null, depth: 18 },
+      ];
+
+      renderAnalysis();
+
+      const overlay = document.querySelector('[data-testid="arrow-overlay"]');
+      expect(overlay?.querySelectorAll(`path[fill="${BEST_MOVE_ARROW}"]`)).toHaveLength(1);
+      expect(overlay?.querySelectorAll(`path[fill="${STOCKFISH_SECONDARY_LINE}"]`)).toHaveLength(0);
+    } finally {
+      clientWidthSpy.mockRestore();
+    }
+  });
+
+  it('SF arrows 0 hides the Stockfish board arrows while the Stockfish card keeps rendering', () => {
+    localStorage.setItem(SETTINGS_STORAGE_KEYS.sfArrows, '0');
+    const clientWidthSpy = vi.spyOn(Element.prototype, 'clientWidth', 'get').mockReturnValue(400);
+    try {
+      engineState.isReady = true;
+      engineState.pvLines = [{ multipv: 1, moves: ['e2e4'], evalCp: 20, evalMate: null, depth: 18 }];
+
+      renderAnalysis();
+
+      const overlay = document.querySelector('[data-testid="arrow-overlay"]');
+      expect(overlay?.querySelectorAll(`path[fill="${BEST_MOVE_ARROW}"]`) ?? []).toHaveLength(0);
+      expect(screen.getByTestId('engine-line-0-move-0')).toBeTruthy();
+    } finally {
+      clientWidthSpy.mockRestore();
+    }
+  });
+});
 
 describe('Analysis desktop layout (Phase 161, SEED-088)', () => {
   it('renders the MoveStats section in the right column (after the engine card) and the tags below the eval chart (UAT 179)', () => {
@@ -2676,7 +2813,7 @@ describe('Analysis-board Stockfish root injection (Phase 196, INJECT-03/04/06)',
     // the verdict classifier doesn't bail on a null eval (D-06).
     gradingState.gradeMap = new Map([['e4', { evalCp: 40, evalMate: null, depth: 10 }]]);
     // 5 organic rankedLines with the Stockfish pick (g1f3 / Nf3) at index 3 —
-    // below FC_MAX_LINES (2), so `reconciledRankedLines` (the visible top-2)
+    // below the default FlawChess line count (2), so `reconciledRankedLines` (the visible top-2)
     // would NOT contain it, proving the verdict's own prop must be unsliced.
     flawChessState.rankedLines = [
       fcLine('e2e4'),
