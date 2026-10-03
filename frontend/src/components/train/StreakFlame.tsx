@@ -22,6 +22,7 @@ import {
   TRAIN_FLAME_CORE,
   TRAIN_FLAME_MIDDLE,
   TRAIN_FLAME_NUMBER,
+  TRAIN_FLAME_NUMBER_OUTLINE,
   TRAIN_FLAME_OUTER,
   TRAIN_FLAME_UNLIT,
 } from '@/lib/theme';
@@ -40,6 +41,16 @@ const LAYERS = [
 const NUMBER_Y = 95;
 /** Font size (viewBox units) by digit count; 3+ digits shrink to fit the bowl. */
 const NUMBER_FONT_SIZE_BY_DIGITS = [36, 34, 26] as const;
+/** Outline stroke (viewBox units), painted under the fill so half of it shows. */
+const NUMBER_OUTLINE_WIDTH = 5;
+/** Props for the lit number: white fill with a black outline behind it. */
+const LIT_NUMBER_PAINT = {
+  fill: TRAIN_FLAME_NUMBER,
+  stroke: TRAIN_FLAME_NUMBER_OUTLINE,
+  strokeWidth: NUMBER_OUTLINE_WIDTH,
+  strokeLinejoin: 'round',
+  paintOrder: 'stroke',
+} as const;
 
 /** The count-up starts once the layers have mostly grown in. */
 const COUNT_UP_DELAY_MS = 450;
@@ -180,7 +191,7 @@ export function StreakFlame({
             className="font-brand"
             fontWeight={700}
             fontSize={numberFontSize(extinguishFrom)}
-            fill={TRAIN_FLAME_NUMBER}
+            {...LIT_NUMBER_PAINT}
           >
             {extinguishFrom}
           </text>
@@ -207,7 +218,7 @@ export function StreakFlame({
         className={cn('font-brand', extinguish && 'train-flame-unlit')}
         fontWeight={700}
         fontSize={numberFontSize(shown)}
-        fill={lit ? TRAIN_FLAME_NUMBER : TRAIN_FLAME_UNLIT}
+        {...(lit ? LIT_NUMBER_PAINT : { fill: TRAIN_FLAME_UNLIT })}
         data-testid="train-streak-count"
       >
         {shown}

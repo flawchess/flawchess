@@ -593,9 +593,10 @@ export const TRAIN_BUBBLE_NUDGE_BORDER = 'oklch(0.75 0.15 85)'; // amber, same f
 export const TRAIN_FLAME_OUTER = 'oklch(0.60 0.21 29)'; // red
 export const TRAIN_FLAME_MIDDLE = 'oklch(0.73 0.18 55)'; // orange
 export const TRAIN_FLAME_CORE = 'oklch(0.90 0.15 95)'; // yellow
-// Near-black: the number spans the yellow core and orange middle, neither of
-// which white text can clear for legible contrast.
-export const TRAIN_FLAME_NUMBER = 'oklch(0.22 0.04 50)';
+// White with a black outline: the outline carries the contrast against the
+// yellow core and orange middle the number spans.
+export const TRAIN_FLAME_NUMBER = 'white';
+export const TRAIN_FLAME_NUMBER_OUTLINE = 'black';
 // Streak 0: an unlit grey outline flame with a grey number.
 export const TRAIN_FLAME_UNLIT = 'oklch(0.55 0 0)';
 export const TRAIN_FREEZE_COLOR = 'oklch(0.82 0.10 230)'; // icy blue
