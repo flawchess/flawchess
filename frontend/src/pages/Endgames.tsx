@@ -464,7 +464,7 @@ export function EndgamesPage() {
           {showPerfSection && (
             <>
               <Accordion type="single" collapsible>
-                <AccordionItem value="concepts" className="charcoal-texture rounded-md overflow-hidden border-none" data-testid="endgame-concepts-trigger">
+                <AccordionItem value="concepts" className="charcoal-texture rounded-md overflow-hidden" data-testid="endgame-concepts-trigger">
                   <AccordionTrigger band>
                     <span className="flex items-center gap-2 flex-1">
                       <h3 className="text-base font-semibold text-foreground">Endgame Statistics Concepts</h3>
@@ -1078,9 +1078,9 @@ function SectionInsightSlot({
     return (
       <div
         data-testid={`insights-section-${sectionId}`}
-        className="charcoal-texture rounded-md overflow-hidden border-none"
+        className="charcoal-texture rounded-md overflow-hidden"
       >
-        <div className="w-full flex items-center gap-2 px-4 py-3 bg-black/20">
+        <div className="w-full flex items-center gap-2 px-4 py-3 bg-card-band">
           {headline}
         </div>
       </div>
@@ -1092,7 +1092,7 @@ function SectionInsightSlot({
       <AccordionItem
         value="insight"
         data-testid={`insights-section-${sectionId}`}
-        className="charcoal-texture rounded-md overflow-hidden border-none"
+        className="charcoal-texture rounded-md overflow-hidden"
       >
         <AccordionTrigger
           data-testid={`insights-section-${sectionId}-trigger`}

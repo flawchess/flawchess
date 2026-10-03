@@ -286,7 +286,7 @@ export function OpeningFindingCard({
     <Card
       data-testid={cardTestId}
       accentColor={borderLeftColor}
-      className="relative border border-border/20"
+      className="relative"
     >
       <CardHeader as="h4" size="compact" data-testid={`${cardTestId}-header`}>
         <span className="truncate text-foreground min-w-0">

@@ -35,7 +35,7 @@ function AccordionItem({
 // soup at every call site. Intentionally keeps the trigger's base text-sm/
 // font-medium (accordion headers read lighter than the static CardHeader bands).
 const ACCORDION_TRIGGER_BAND =
-  "w-full flex items-center gap-2 px-4 py-3 bg-black/20 border-0 rounded-none data-[state=open]:border-b data-[state=open]:border-b-border/40 text-left hover:no-underline hover:bg-black/30 cursor-pointer [&>svg:last-child]:ml-0"
+  "w-full flex items-center gap-2 px-4 py-3 bg-card-band border-0 rounded-none data-[state=open]:border-b data-[state=open]:border-b-card-edge text-left hover:no-underline hover:bg-card-band-hover cursor-pointer [&>svg:last-child]:ml-0"
 
 function AccordionTrigger({
   className,

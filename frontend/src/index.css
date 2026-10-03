@@ -70,6 +70,13 @@
     --inactive-bg: #171717;
     --inactive-bg-hover: #262626;
     --sidebar-bg: #171513;
+    /* SEED-182 (sketch 007 S2): sunlight legibility for .charcoal-texture
+       surfaces. A hairline edge plus a header band LIGHTER than the body make
+       cards read as raised rather than cut into the near-black page. The edge
+       is also the in-card separator color so borders and dividers match. */
+    --card-edge: oklch(1 0 0 / 8%);
+    --card-band: oklch(1 0 0 / 3.5%);
+    --card-band-hover: oklch(1 0 0 / 6%);
     --toggle-active: oklch(0.55 0 0);
     --toggle-active-hover: oklch(0.45 0 0);
     --toggle-active-foreground: oklch(0.98 0 0);
@@ -163,6 +170,9 @@
     --color-inactive-bg: var(--inactive-bg);
     --color-inactive-bg-hover: var(--inactive-bg-hover);
     --color-sidebar-bg: var(--sidebar-bg);
+    --color-card-edge: var(--card-edge);
+    --color-card-band: var(--card-band);
+    --color-card-band-hover: var(--card-band-hover);
     --color-toggle-active: var(--toggle-active);
     --color-toggle-active-hover: var(--toggle-active-hover);
     --color-toggle-active-foreground: var(--toggle-active-foreground);
@@ -199,6 +209,11 @@
     position: relative;
     overflow: hidden;
     background-color: var(--charcoal);
+    /* SEED-182: a real border, not an inset box-shadow (children with a
+       background, e.g. the header band, paint over an inset shadow and hide
+       the edge). Lives in the components layer so utilities still win:
+       Card's border-l-4 accent spine and .persona-accent-frame keep theirs. */
+    border: 1px solid var(--card-edge);
   }
   .charcoal-texture::before {
     content: "";

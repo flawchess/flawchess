@@ -392,18 +392,18 @@ export function EndgameMetricsByTcCard({
   // breakpoint (was xl) keeps the three metrics on one row down to tablet width.
   const divider = (
     <>
-      <div className="hidden lg:block w-px bg-border/40 mx-6" aria-hidden="true" />
-      <div className="block lg:hidden border-t border-border/40 my-4" aria-hidden="true" />
+      <div className="hidden lg:block w-px bg-card-edge mx-6" aria-hidden="true" />
+      <div className="block lg:hidden border-t border-card-edge my-4" aria-hidden="true" />
     </>
   );
 
   return (
     // 260530-pll: AccordionItem replaces the plain <div>. The charcoal-texture,
-    // rounded-md, overflow-hidden, and border-none classes mirror EndgameTypeTcCard.
+    // rounded-md, and overflow-hidden classes mirror EndgameTypeTcCard.
     <AccordionItem
       value={card.tc}
       data-testid={`metrics-tc-card-${card.tc}`}
-      className="charcoal-texture rounded-md overflow-hidden border-none"
+      className="charcoal-texture rounded-md overflow-hidden"
     >
       {/* Card header: the AccordionTrigger IS the header band — full-bleed,
           charcoal background, bottom separator only when expanded.

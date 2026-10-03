@@ -393,7 +393,7 @@ function GridBody({ data }: GridBodyProps) {
         <Accordion type="single" collapsible className="mt-4">
           <AccordionItem
             value="more-tactics"
-            className="charcoal-texture rounded-md overflow-hidden border-none"
+            className="charcoal-texture rounded-md overflow-hidden"
             data-testid="tactic-grid-more-tactics"
           >
             <AccordionTrigger band>
