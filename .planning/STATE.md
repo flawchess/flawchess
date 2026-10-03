@@ -1,9 +1,9 @@
 ---
 gsd_state_version: "1.0"
-milestone: v2.19
+milestone: v2.21
 current_phase: 227
 status: completed
-stopped_at: Phase 227 complete — all phases complete
+stopped_at: v2.20 and v2.21 closed (phases 223–227 regrouped), no open milestone
 last_updated: "2026-10-03T12:20:55.948Z"
 state_head: 0e0723eb8129eeede9980a24193d0ffe5d3d778c
 progress:
@@ -12,26 +12,25 @@ progress:
   total_plans: 47
   completed_plans: 47
   percent: 76
-milestone_name: Train Bot-Narrated Onboarding & Verdicts
+milestone_name: Browser Engine Throughput
 last_activity: 2026-10-03
 current_phase_name: Browser Engine Continuous Dispatch Against a Relaxed Determinism Target (SEED-171)
-last_activity_desc: "Completed quick task 261003-ixu: SEED-182 card border and lighter header band (75d660f46)"
+last_activity_desc: "Closed milestones v2.20 (phases 223–224) and v2.21 (phases 225–227) with tags and GitHub releases; roadmap cleanup"
 ---
 
 # Project State: FlawChess
 
 ## Current Position
 
-Phase: 227
+Phase: none (next standalone phase is 228)
 Plan: Not started
 
-Status: All phases complete
+Status: No open milestone; v2.21 closed 2026-10-03
 
 Open threads carried forward (not blockers):
 
-- Phase 224 added 2026-09-17 (explicit user request via `/gsd-phase @SEED-169`, after `/gsd-explore` "guest drop-off" on growth report 2026-09-15 finding 2): **Guest Activation — Welcome Removal & Guest Train**. Lever A: drop the forced `/welcome` redirect for 0-game guests (48% vs 85% import-start gap sits entirely at that step). Lever B: open Train to guests as the full daily warm-up loop (reverses Phase 189 D-05), guest sign-up nudges as bot bubbles with "Why?" + "Sign up free" on the score screen (replacing the reminder ask, no push for guests) and the Import page (random friendly bot), `/welcome` rewritten as a four-delta "What changes when you sign up" page. Guest cleanup must be re-reasoned for guest Train rows. Two metrics recorded separately before/after. Written by hand as 224 (known mature-ROADMAP behavior). Next: `/gsd-discuss-phase 224`.
-- Phase 223 added 2026-09-15 (explicit user request, `/gsd-explore` "bots page welcome avatars + in-game trash-talk" → SEED-168 → promote): **Bot Voice & Immersive Bot Game Layout**. Per-persona in-game lines in a persistent two-line bubble under the board-truth rule (speak only after the bot's own move, only about cashed-in swings, WDL-based detection), mobile game screen rebuilt in the chess.com shape with a fixed Resign/Back/Forward/Flip bar replacing the nav, desktop `PlayerBar` rows + side-column bubble, roster intro card replaced by a welcome bubble, and SEED-167's settings-page sound switch folded in (no in-game mute remains). Written by hand as 223 rather than via `phase.add` (known mature-ROADMAP behavior). Next: `/gsd-discuss-phase 223`.
-
+- Phase 224 Lever A baseline: `reports/growth/guest-activation-baseline-2026-09-17.md` still carries a `PENDING OPERATOR READING` for the Umami `/welcome` landings (readable now via the `flawchess-umami-db` MCP); post-change readings of both guest levers not yet taken.
+- Engine follow-ups: SEED-171 closed with its leftovers listed in `seeds/closed/SEED-171-...md` (cross-FEN Maia batching, non-root candidate cap); SEED-180 (Stockfish watchdog hidden-tab gate); real-phone throughput for Phases 226/227 never measured.
 - Phase 221: a forced only-move that sheds a piece can read as a sacrifice (game 1459049 ply 21); captured in `.planning/notes/2026-09-13-forced-only-move-tagged-sacrifice.md`, no action requested. Lever if sacrifice noise ever matters: lower `SACRIFICE_CLEARANCE_MAX_DEPTH` (4) and retag.
 
 - SEED-162 cluster 3 (TypeScript 7) blocked upstream until a `typescript-eslint` release accepts it.
@@ -45,7 +44,7 @@ Open threads carried forward (not blockers):
 
 See: .planning/PROJECT.md (updated 2026-09-13 after Phase 221)
 Core value: Position-precise WDL across openings + endgames + time pressure on top of users' actual chess.com / lichess games, with personalized LLM commentary and an auto-generated opening-strengths/weaknesses report.
-Current focus: **v2.19 closed 2026-09-14 and deployed (release #359)**; phases 219–222 regrouped into milestones v2.17–v2.19, each with a GitHub release. No open milestone: next is `/gsd-new-milestone` or another standalone phase. Read the Train funnel (first-session 0-solve, baseline 42%; second-session return, baseline 49%) after a couple of weeks of bot-narrated sessions.
+Current focus: **v2.20 and v2.21 closed 2026-10-03**; phases 223–227 regrouped into v2.20 Bot Voice & Guest Activation (223–224, releases #360–#373) and v2.21 Browser Engine Throughput (225–227, releases #376/#379/#381), each tagged with a GitHub release. ROADMAP.md slimmed to milestones + per-milestone progress rows + backlog (phase detail lives in `milestones/`). No open milestone: next is `/gsd-new-milestone` or standalone Phase 228. `main` carries one unreleased fast task (move stats accuracy header band, 0e0723eb8).
 
 ### Superseded: focus after Phase 219
 

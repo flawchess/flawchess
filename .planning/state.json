@@ -1,7 +1,7 @@
 {
   "contract": "1.0.0",
   "flavor": "core",
-  "milestone": "v2.19",
+  "milestone": "v2.21",
   "phases": [
     {
       "number": "1",
@@ -684,5 +684,5 @@
     "label": "Show progress",
     "reason": "Unsure of state — showing progress"
   },
-  "updated_at": "2026-10-03T11:02:46.956Z"
+  "updated_at": "2026-10-03T16:00:00.000Z"
 }
