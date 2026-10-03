@@ -75,6 +75,17 @@ Out of scope: medals and their weekly snapshot table, past-week history, notific
 - **D-17:** A guest's score-screen line reads **"You'd be #7"** (hypothetical, no delta). No second
   CTA button: the score bubble's existing guest sign-up ask carries it.
 
+### Post-research owner calls (2026-10-03, plan-phase)
+- **D-18 Accuracy rank direction:** D-12's "can only go up" holds for the Points board only; on the
+  Accuracy board a weak session can leave the rank worse than without it. The score-screen
+  Accuracy line shows "(up N)" only when the rank improved; when it is unchanged OR worse, show the
+  plain rank with no delta (never "(down N)").
+- **D-19 Qualifier stays non-filler:** keep D-01/D-03 as locked: the 20-puzzle qualifier counts
+  non-filler solves only, even though warm-up users (guests, zero-game users) earn only ~2
+  qualifying puzzles per 8-puzzle session. Copy must never imply all solves count ("N more puzzles
+  to qualify" only), and a viewer with zero non-filler solves this week gets a specific
+  not-on-this-board line rather than a misleading count.
+
 ### Claude's Discretion
 - **Row content:** what each row shows (rank, name, points or %, puzzles count), how the viewer's
   row is highlighted, and the tentative marker styling. Keep rows narrow enough for mobile at
