@@ -113,7 +113,7 @@ New test files are created inside the task that first needs them (each task writ
 - [x] Feedback latency < 120s (full frontend suite ~30s locally)
 - [x] `nyquist_compliant: true` set in frontmatter
 
-**Approval:** automated gate green 2026-10-03 (plan 229-08). The Manual-Only rows above are still pending: the browser UAT (orchestrator, claude-in-chrome, before the squash-merge) and the post-deploy checks (after the owner's release).
+**Approval:** automated gate green 2026-10-03 (plan 229-08). Manual-Only rows resolved 2026-10-03: browser UAT legs 1-4 passed before the squash-merge, post-deploy checks passed after the release (229-UAT.md tests 6-8; Umami migrations 25/26 applied, 3 of 3 post-ship sessions identified, first-pageview gap 0).
 
 ---
 
@@ -134,3 +134,12 @@ Log any mismatch per inventory row with the observed payload (dev ids only, T-22
 - (b) On https://flawchess.com logged in, with claude-in-chrome reading network requests, the first `/api/send` pageview payload of a fresh load carries `id` (RESEARCH A1, boot identify before the first pageview).
 - (c) The orchestrator runs the five queries in `229-RESEARCH.md` "Post-ship verification SQL" through the `flawchess-umami-db` MCP with `ship_ts` = release time (website `0ca19960-2398-4caf-b321-8039708fa7ef`), pulls admin `users.id`s from `flawchess-prod-db` to exclude them (D-10), and joins in Python (separate databases).
 - Expected: identified sessions above 0 (baseline 0 of 1,941), first-pageview-gap count near 0, feature events present with page/target/value props.
+
+## Validation Audit 2026-10-03
+| Metric | Count |
+|--------|-------|
+| Gaps found | 0 |
+| Resolved | 0 |
+| Escalated | 0 |
+
+All 19 task rows already green with automated commands; the four Manual-Only rows are closed by 229-UAT.md (8/8 pass).
