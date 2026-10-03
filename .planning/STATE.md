@@ -1,11 +1,11 @@
 ---
 gsd_state_version: "1.0"
 milestone: v2.21
-current_phase: 227
+current_phase_name: Browser Engine Continuous Dispatch Against a Relaxed Determinism Target (SEED-171)
 status: completed
 stopped_at: v2.20 and v2.21 closed (phases 223–227 regrouped), no open milestone
-last_updated: "2026-10-03T12:20:55.948Z"
-state_head: 0e0723eb8129eeede9980a24193d0ffe5d3d778c
+last_updated: "2026-10-03T12:40:15.388Z"
+state_head: 7ed295414da49b7dc6423bf8a5e606a1e21187e4
 progress:
   total_phases: 5
   completed_phases: 103
@@ -14,8 +14,8 @@ progress:
   percent: 76
 milestone_name: Browser Engine Throughput
 last_activity: 2026-10-03
-current_phase_name: Browser Engine Continuous Dispatch Against a Relaxed Determinism Target (SEED-171)
-last_activity_desc: "Closed milestones v2.20 (phases 223–224) and v2.21 (phases 225–227) with tags and GitHub releases; roadmap cleanup"
+current_phase: 227
+last_activity_desc: Closed milestones v2.20 (phases 223–224) and v2.21 (phases 225–227) with tags and GitHub releases; roadmap cleanup
 ---
 
 # Project State: FlawChess
@@ -936,6 +936,7 @@ None active.
 | 261002-ex9 | Train streak flame hero + snowflake freezes + collapsible schedule (SEED-181) | 2026-10-02 | 6b2799d7d | [261002-ex9-implement-seed-181-train-streak-flame-fr](./quick/261002-ex9-implement-seed-181-train-streak-flame-fr/) |
 | 261003-ixu | SEED-182 card border and lighter header band on charcoal-texture surfaces | 2026-10-03 | 75d660f46 | [261003-ixu-seed-182-card-border-and-lighter-header-](./quick/261003-ixu-seed-182-card-border-and-lighter-header-/) |
 | 113 | Analysis page: move stats accuracy shown as card header band | 2026-10-03 | 0e0723eb8 | — |
+| 114 | Mobile analysis: hide human/knight icons in card headers; Maia header -> 'Maia, Human Move Probability' | 2026-10-03 | 7ed295414 | — |
 
 ## Deferred Items
 
