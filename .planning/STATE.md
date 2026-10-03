@@ -4,18 +4,17 @@ milestone: v2.21
 current_phase: 229
 current_phase_name: Umami User Identification & Feature Events (SEED-183)
 status: completed
-stopped_at: Phase 229 complete (UAT 8/8, released #383)
-last_updated: "2026-10-03T19:59:55.359Z"
-state_head: 549cab8b6a7b896fa2d02a36c87709fe2cc89bc2
+stopped_at: Phase 230 context gathered
+last_updated: "2026-10-03T20:22:08.079Z"
+state_head: 2c510e066bb262a85bbd291e97a86b93cea3007b
 progress:
-  total_phases: 2
+  total_phases: 3
   completed_phases: 103
   total_plans: 11
   completed_plans: 47
-  percent: 75
 milestone_name: Browser Engine Throughput
 last_activity: 2026-10-03
-last_activity_desc: Phase 229 verified (UAT 8/8 incl. post-deploy Umami checks, security 24/24 closed) and released (#383)
+last_activity_desc: "Phase 229 verified (UAT 8/8 incl. post-deploy Umami checks, security 24/24 closed) and released (#383)"
 ---
 
 # Project State: FlawChess
@@ -1003,7 +1002,7 @@ Items acknowledged and deferred at **v1.29 milestone close on 2026-06-29** (user
 
 ## Session Continuity
 
-**Stopped at:** Phase 229 complete (UAT 8/8, security verified, released #383)
+**Stopped at:** Phase 230 context gathered
 
 Previous session note (Phase 227):
 refit (calibration parity holds). Verification passed 17/17; code review 0 blockers (WR-01 + 3 info fixed). Next:
@@ -1011,9 +1010,9 @@ squash-merge `gsd/phase-227-...` to `main` with a CHANGELOG entry already in `[U
 Owner-deferred: real-phone bot game check (227-UAT.md, report-only). Follow-up: stale "Phase 198 will populate"
 priority comment in `workerPoolState.ts:434-437` (verifier info item).
 
-**Last session:** 2026-10-03T16:47:11.134Z
+**Last session:** 2026-10-03T20:22:08.001Z
 
-**Resume file:** .planning/phases/229-umami-identify-feature-events/229-CONTEXT.md
+**Resume file:** .planning/phases/230-weekly-train-leaderboards/230-CONTEXT.md
 
 ## Performance Metrics
 
