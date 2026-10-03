@@ -1,16 +1,16 @@
 ---
 gsd_state_version: "1.0"
 milestone: v2.21
-current_phase: 229
-current_phase_name: Umami User Identification & Feature Events (SEED-183)
-status: completed
+current_phase: 230
+current_phase_name: Weekly Train Leaderboards (SEED-185)
+status: executing
 stopped_at: Phase 230 context gathered
-last_updated: "2026-10-03T20:22:08.079Z"
-state_head: 2c510e066bb262a85bbd291e97a86b93cea3007b
+last_updated: "2026-10-03T22:02:25.898Z"
+state_head: 34629e60e559aaff5414e530bdc54ec4143fb72f
 progress:
   total_phases: 3
   completed_phases: 103
-  total_plans: 11
+  total_plans: 16
   completed_plans: 47
 milestone_name: Browser Engine Throughput
 last_activity: 2026-10-03
@@ -21,10 +21,10 @@ last_activity_desc: "Phase 229 verified (UAT 8/8 incl. post-deploy Umami checks,
 
 ## Current Position
 
-Phase: 229 (Umami User Identification & Feature Events (SEED-183)) — COMPLETE
-Plan: 8 of 8
+Phase: 230 (Weekly Train Leaderboards (SEED-185)) — READY TO EXECUTE
+Plan: 0 of 5
 
-Status: Phase 229 complete and deployed 2026-10-03 (release #383). Standalone phases 228–229 sit outside any milestone; no open milestone.
+Status: Phase 230 planned (5 plans, 4 waves), ready to execute. Standalone phases 228–230 sit outside any milestone; no open milestone.
 
 Open threads carried forward (not blockers):
 
