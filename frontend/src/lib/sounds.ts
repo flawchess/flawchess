@@ -1,9 +1,9 @@
 /**
  * Client-side sound-effect module for bot play (Phase 169, PLAY-08).
  *
- * Plays the vendored, license-correct AGPLv3+ lila `sfx` clips (see README.md
- * "## Sound Assets" and RESEARCH.md Pitfall 1 — NOT the non-free "standard"
- * set D-08 originally named). No new npm dependency.
+ * Plays the clips under `public/sound/`: the self-authored CC0 "Walnut" set
+ * plus a sounddino `Move` cut (provenance and licenses in README.md
+ * "## Sound Assets"). No new npm dependency.
  *
  * Playback goes through the Web Audio API wherever it exists: each clip is
  * decoded ONCE into an `AudioBuffer` (eagerly, at module load) and every play
@@ -87,14 +87,10 @@ const MUTED_VALUE = '1';
 
 /** Maps each SoundEvent to its clip filename (without extension) under
  * `frontend/public/sound/`. `game-end` still uses `Checkmate` (kept for any
- * remaining undiscriminated caller); `game-loss` uses a ~1.5s sad cello phrase
- * (sounddino, not lila — see README "## Sound Assets"). `game-win` uses
- * `WinChime` — a
- * gentle, self-authored (CC0, no attribution) chime chosen over lila's
- * `Victory` fanfare, which read as too aggressive for bot games (and, per
- * 190.1 UAT round 7, for the Train reveal's perfect-score moment too — the
- * short-lived `victory` event was removed again, and `Victory.mp3` has since
- * been deleted from `public/sound/`). Quick 260814-b narrowed `game-win` to
+ * remaining undiscriminated caller). `game-win` uses `WinChime`, a gentle
+ * chime chosen over a fanfare, which read as too aggressive for bot games (and,
+ * per 190.1 UAT round 7, for the Train reveal's perfect-score moment too — the
+ * short-lived `victory` event was removed again). Quick 260814-b narrowed `game-win` to
  * the two end-of-everything wins (a bot-game win, and a green Train SESSION);
  * the per-puzzle full score moved to `score-full`. */
 const SOUND_FILES: Record<SoundEvent, string> = {
@@ -104,11 +100,8 @@ const SOUND_FILES: Record<SoundEvent, string> = {
   'game-end': 'Checkmate',
   'low-time': 'LowTime',
   // Quick 260814-b: `draw-declined` and `game-draw` share one clip. Both are
-  // "the game did not resolve" moments, and the two lila clips they used to
-  // play (GenericNotify, Draw) were deleted — Draw peaked above full scale and
-  // was the loudest asset in the set. The replacement is a two-note sounddino
-  // chime, level-matched to the outgoing GenericNotify. Keep the two events
-  // separate (not one merged event) so either can be re-pointed on its own.
+  // "the game did not resolve" moments. Keep the two events separate (not one
+  // merged event) so either can be re-pointed on its own.
   'draw-declined': 'Notify',
   'game-win': 'WinChime',
   'game-loss': 'Defeat',
@@ -118,10 +111,9 @@ const SOUND_FILES: Record<SoundEvent, string> = {
   // sub-100ms one-shots above — it marks a one-time event, not a per-move tick.
   'game-start': 'GameStart',
   // Quick 260814: the "mixed result" sound — a partial per-puzzle Train score
-  // and the yellow session-verdict band. This is the lila clip that used to be
-  // `LowTime.mp3` (renamed, byte-identical); `low-time` now plays an actual
-  // ticking clock, which reads as a clock warning and made no sense on a Train
-  // score. Keep them separate if either is re-cut.
+  // and the yellow session-verdict band. It used to share a clip with
+  // `low-time`, but a clock warning made no sense on a Train score. Keep them
+  // separate if either is re-cut.
   'score-partial': 'PartialScore',
   // Quick 260814-b: the per-puzzle FULL score. This used to play `game-win`
   // (WinChime), which made the reward for solving one puzzle sound identical

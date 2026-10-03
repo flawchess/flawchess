@@ -110,14 +110,15 @@ export function SidebarLayout({ panels, activePanel, onActivePanelChange, sideCo
 
   // Split the strip into two layers so sticky behaves exactly like the panel:
   //   1. stripBar — a self-stretched flex child that paints the full-height
-  //      vertical bar (bg, border, rounded corner). No positioning — just layout.
+  //      vertical bar (bg, rounded corner; the edge comes from charcoal-texture).
+  //      No positioning — just layout.
   //   2. stripButtons — an absolutely positioned layer (top:0, bottom:0) over
   //      the bar, containing a sticky top-0 inner wrapper with the buttons.
   //      This mirrors the panel's absolute-outer + sticky-inner structure that
   //      reliably pins to the viewport top on scroll.
   const stripBar = (
     <div
-      className="bg-sidebar-bg charcoal-texture border-r border-border rounded-l-md self-stretch"
+      className="bg-sidebar-bg charcoal-texture rounded-l-md self-stretch"
       style={{ width: STRIP_WIDTH, flexShrink: 0 }}
     />
   );

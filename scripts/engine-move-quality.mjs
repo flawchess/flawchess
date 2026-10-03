@@ -11,6 +11,14 @@
  * each arm's own detached worktree (D-12): `--arm LABEL` is a row label, not
  * a code-path switch.
  *
+ * Phase 227 (D-13/D-14) replaces that arm model: BOTH arms run from ONE checkout.
+ * `--dispatch-mode round|continuous` is a real code-path switch (it goes into
+ * `SearchBudget.dispatchMode`), verified by `assertDispatchModeLive` before any
+ * engine starts and stamped into every row as `dispatch_mode`. A requested
+ * mode the engine did not actually run exits 3 (as `continuous` did before
+ * Plan 227-10), so a continuous-labelled run can never silently execute the
+ * round loop.
+ *
  * The judged selector is `argmaxLine(snapshot.rankedLines)` — the bot's
  * `blend=1` pick (`botSampling.ts`), reused directly rather than
  * re-implemented, since that is the ONLY selector the shipped bot ever
@@ -35,6 +43,7 @@
  *   node --import ./scripts/lib/frontend-alias-hook.mjs scripts/engine-move-quality.mjs \
  *     --arm LABEL --stop-rule on|off \
  *     [--fixture fixtures/engine/maia-blindness.tsv] \
+ *     [--dispatch-mode round|continuous] [--repeats 1] [--maia-fifo] [--hash warm|clear] \
  *     [--nodes 50] [--plies 8] [--elo 1500] [--procs 4] [--pool-size 4] [--grade-depth 18] \
  *     [--out-dir reports/data] [--self-test] [--help]
  *
@@ -57,8 +66,30 @@
  *   --pool-size    Stockfish PROCESS pool size (Phase 226 D-04; default = --procs).
  *                  Decoupled from --procs so a mobile-shaped run (concurrency 4 over a
  *                  2-worker pool) can be measured.
- *   --grade-depth  independent Stockfish MultiPV grading depth (default 18)
+ *   --grade-depth  independent Stockfish MultiPV grading depth (default 18; the Phase 227
+ *                  gate passes 20, the d20 ground truth of D-01)
+ *   --dispatch-mode  "round" or "continuous" (default = the app's FLAWCHESS_DISPATCH_MODE).
+ *                  A real code-path switch, probed live before any engine starts (exit 3 =
+ *                  continuous requested but the round loop ran). Stamped as `dispatch_mode`.
+ *   --repeats      N full passes over the fixture (default 1; the Phase 227 gate uses 5, D-02).
+ *                  Every (row, repeat) starts from a quiesced, reset pool and an empty Maia
+ *                  memo; the independent judge grades are memoized per (fen, pick, correct,
+ *                  depth), so repeats cost search time only. Stamped as `repeat` (1-based).
+ *   --maia-fifo    app-faithful Maia: one inference in flight, mirroring the app's
+ *                  `maiaWorkerHost` lease (RESEARCH Pitfall 4). OFF by default. Stamped
+ *                  as `maia_fifo`.
+ *   --maia-main-thread  run Maia on the harness main thread (`createMaiaSession({ offThread: false })`)
+ *                  instead of the default worker thread. Parity reference ONLY (the 227-08 tripwire):
+ *                  the main-thread session blocks the event loop and is not app-faithful. Stamped
+ *                  as `maia_thread` (worker|main).
+ *   --hash         "warm" (default) = no Clear Hash between grades, the shipped-like
+ *                  configuration (the browser worker never clears Hash); "clear" = send
+ *                  `Clear Hash` before every search grade (report-only variant, D-02).
+ *                  Stamped as `hash_mode`.
  *   --out-dir      emit a TSV here; omit to print only
+ *
+ * `--nodes 400 --stop-rule off` is the report-only analysis cell (D-20): the same
+ * flags, a bigger budget and no stop rule, measuring the analysis-board regime.
  *   --self-test    exercise parseArgs + fixture integrity only (no engines
  *                  spawned); exits non-zero on failure
  *   --help         print this header and exit
@@ -69,8 +100,9 @@ import fs from 'node:fs';
 import os from 'node:os';
 
 import { spawnStockfish, createMaiaSession, resolveFrontendModule } from './lib/node-engine-providers.mjs';
-import { makeNodeProviders, nodeGrade, resetMaiaRunMemo } from './lib/calibration-providers.mjs';
+import { makeNodeProviders, nodeGrade, resetMaiaRunMemo, whenMaiaIdle } from './lib/calibration-providers.mjs';
 import { createGradePool } from './engine-dispatch-stop-rule.mjs';
+import { assertDispatchModeLive, defaultDispatchMode, parseDispatchModeFlag } from './lib/dispatch-mode.mjs';
 
 import { mctsSearch } from '@/lib/engine/mctsSearch';
 import { argmaxLine } from '@/lib/engine/botSampling';
@@ -90,6 +122,9 @@ const REPO_ROOT = path.resolve(__dirname, '..');
 const DEFAULT_FIXTURE = 'fixtures/engine/maia-blindness.tsv';
 const DEFAULT_ELO = 1500;
 const DEFAULT_GRADE_DEPTH = 18;
+
+/** Valid `--hash` values: warm (shipped-like, no Clear Hash) or clear (report-only variant). */
+const HASH_MODES = Object.freeze(['warm', 'clear']);
 
 /** Accept-rule §4b margin, expected-score units — same value as the deleted 2026-07-31 runner. */
 const REGRESSION_MARGIN = 0.05;
@@ -125,6 +160,11 @@ export function parseArgs(argv) {
     procs: FLAWCHESS_BOT_CONCURRENCY,
     poolSize: null,
     gradeDepth: DEFAULT_GRADE_DEPTH,
+    dispatchMode: defaultDispatchMode(),
+    repeats: 1,
+    maiaFifo: false,
+    maiaMainThread: false,
+    hash: 'warm',
     outDir: null,
     help: false,
     selfTest: false,
@@ -137,6 +177,14 @@ export function parseArgs(argv) {
     }
     if (token === '--self-test') {
       args.selfTest = true;
+      continue;
+    }
+    if (token === '--maia-fifo') {
+      args.maiaFifo = true; // boolean, consumes no value
+      continue;
+    }
+    if (token === '--maia-main-thread') {
+      args.maiaMainThread = true; // boolean, consumes no value
       continue;
     }
     if (!token.startsWith('--')) continue;
@@ -160,6 +208,17 @@ export function parseArgs(argv) {
       case 'procs': args.procs = parsePositiveIntFlag(value, key); i++; break;
       case 'pool-size': args.poolSize = parsePositiveIntFlag(value, key); i++; break; // Phase 226 D-04
       case 'grade-depth': args.gradeDepth = parsePositiveIntFlag(value, key); i++; break;
+      case 'dispatch-mode': args.dispatchMode = parseDispatchModeFlag(requireFlagValue(value, key)); i++; break; // Phase 227 D-14
+      case 'repeats': args.repeats = parsePositiveIntFlag(value, key); i++; break; // Phase 227 D-02
+      case 'hash': {
+        const raw = requireFlagValue(value, key);
+        if (!HASH_MODES.includes(raw)) {
+          throw new Error(`Invalid --hash ${JSON.stringify(raw)}: expected "warm" or "clear"`);
+        }
+        args.hash = raw;
+        i++;
+        break;
+      }
       case 'out-dir': args.outDir = requireFlagValue(value, key); i++; break;
       default:
         throw new Error(`Unknown flag --${key}`);
@@ -277,6 +336,32 @@ async function gradePair(engine, fen, move, correctMove, gradeDepth) {
   return { esPick, esCorrect };
 }
 
+/**
+ * In-process memo of the independent judge grades (Phase 227 D-02). Keyed on the FULL content of
+ * the `nodeGrade` call (fen, pick, correct move, depth), because `nodeGrade` clears Hash per call
+ * and so makes the grade a pure function of exactly those inputs: a hit is content-identical to
+ * re-grading. This is what lets `--repeats N` cost search time only. Failures are never stored.
+ */
+export function createJudgeMemo() {
+  const cache = new Map();
+  const stats = { hits: 0, misses: 0 };
+  return {
+    stats,
+    async grade(engine, fen, move, correctMove, gradeDepth) {
+      const key = `${fen}|${move}|${correctMove}|${gradeDepth}`;
+      const cached = cache.get(key);
+      if (cached !== undefined) {
+        stats.hits++;
+        return cached;
+      }
+      const graded = await gradePair(engine, fen, move, correctMove, gradeDepth);
+      cache.set(key, graded);
+      stats.misses++;
+      return graded;
+    },
+  };
+}
+
 // ─── Self-test (parseArgs + fixture integrity only, no engines) ────────────
 
 async function runSelfTest(fixturePath = DEFAULT_FIXTURE) {
@@ -378,6 +463,83 @@ async function runSelfTest(fixturePath = DEFAULT_FIXTURE) {
     check(/pool-size/i.test(err.message), '--pool-size 0 throws mentioning pool-size');
   }
 
+  // Phase 227 flags: defaults, explicit values, and rejections.
+  const phase227Defaults = parseArgs(['--arm', 'a0', '--stop-rule', 'on']);
+  check(
+    phase227Defaults.dispatchMode === defaultDispatchMode() &&
+      phase227Defaults.repeats === 1 &&
+      phase227Defaults.maiaFifo === false &&
+      phase227Defaults.maiaMainThread === false &&
+      phase227Defaults.hash === 'warm',
+    `defaults: dispatch-mode=${defaultDispatchMode()} repeats=1 maia-fifo=false hash=warm, got ${JSON.stringify(phase227Defaults)}`,
+  );
+  const phase227Explicit = parseArgs([
+    '--arm', 'a0', '--stop-rule', 'off', '--dispatch-mode', 'continuous', '--repeats', '5',
+    '--maia-fifo', '--hash', 'clear', '--nodes', '400',
+  ]);
+  check(
+    phase227Explicit.dispatchMode === 'continuous' &&
+      phase227Explicit.repeats === 5 &&
+      phase227Explicit.maiaFifo === true &&
+      phase227Explicit.hash === 'clear' &&
+      phase227Explicit.nodes === 400,
+    '--dispatch-mode continuous --repeats 5 --maia-fifo --hash clear parse (and --maia-fifo still lets --nodes parse)',
+  );
+  check(
+    parseArgs(['--arm', 'a0', '--stop-rule', 'on', '--maia-main-thread', '--nodes', '8']).maiaMainThread === true,
+    '--maia-main-thread parses (and still lets --nodes parse)',
+  );
+  const phase227Round = parseArgs(['--arm', 'a0', '--stop-rule', 'on', '--dispatch-mode', 'round']);
+  check(phase227Round.dispatchMode === 'round', '--dispatch-mode round parses');
+  for (const [flagArgs, pattern, label] of [
+    [['--repeats', '0'], /repeats/i, '--repeats 0'],
+    [['--repeats', 'abc'], /repeats/i, '--repeats abc'],
+    [['--hash', 'cold'], /hash/i, '--hash cold'],
+    [['--dispatch-mode', 'sideways'], /dispatch mode/i, '--dispatch-mode sideways'],
+  ]) {
+    try {
+      parseArgs(['--arm', 'a0', '--stop-rule', 'on', ...flagArgs]);
+      check(false, `${label} should throw`);
+    } catch (err) {
+      check(pattern.test(err.message), `${label} throws a message matching ${pattern}`);
+    }
+  }
+
+  // The judge memo returns a stored result without re-grading, and never stores a failure.
+  {
+    const memo = createJudgeMemo();
+    check(memo.stats.hits === 0 && memo.stats.misses === 0, 'judge memo starts empty');
+    try {
+      await memo.grade({}, 'fen w - - 0 1', null, 'e2e4', 20);
+      check(false, 'judge memo must propagate a null-pick failure');
+    } catch (err) {
+      check(/pick is null/.test(err.message) && memo.stats.misses === 0, 'a failed judge grade is not memoized');
+    }
+    // A scripted engine: counts `go` commands and reports one exact line per searchmoves candidate.
+    let goCount = 0;
+    const fakeEngine = {
+      callback: null,
+      lines: [],
+      onLine(cb) { this.callback = cb; return () => { this.callback = null; }; },
+      send(cmd) {
+        if (cmd.startsWith('go ')) {
+          goCount++;
+          const moves = cmd.split(' searchmoves ')[1].split(' ');
+          this.lines = moves.map((m, i) => `info depth 20 multipv ${i + 1} score cp ${30 - i * 10} nodes 1 pv ${m}`);
+        }
+      },
+      async waitFor() { for (const line of this.lines) this.callback?.(line); },
+    };
+    const startFen = 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1';
+    const first = await memo.grade(fakeEngine, startFen, 'e2e4', 'd2d4', 20);
+    const second = await memo.grade(fakeEngine, startFen, 'e2e4', 'd2d4', 20);
+    check(goCount === 1 && memo.stats.hits === 1 && memo.stats.misses === 1, `an identical judge grade is served from the memo (go=${goCount}, hits=${memo.stats.hits})`);
+    check(first.esPick === second.esPick, 'a memo hit returns the stored grade');
+    await memo.grade(fakeEngine, startFen, 'e2e4', 'd2d4', 18);
+    await memo.grade(fakeEngine, startFen, 'g1f3', 'd2d4', 20);
+    check(goCount === 3, `a different depth or pick is a miss (go=${goCount})`);
+  }
+
   // A corrupted temp copy (one row's correct_move replaced by an illegal
   // move) makes validateFixtureIntegrity throw a message containing that
   // row's id (T-225-01).
@@ -428,8 +590,23 @@ async function main() {
   }
   console.log(`Fixture integrity: ${fixtureRows.length}/${fixtureRows.length} rows legal (FEN + recorded move).`);
 
-  const { session, ort } = await createMaiaSession();
-  const pool = await createGradePool(args.poolSize);
+  // Phase 227 T-227-07: prove the requested dispatch mode is the one mctsSearch actually executes,
+  // BEFORE any engine is brought up. Exit 3 = continuous requested but the round loop ran.
+  try {
+    const observed = await assertDispatchModeLive(mctsSearch, args.dispatchMode);
+    console.log(`Dispatch mode probe: requested=${args.dispatchMode} observed=${observed}`);
+  } catch (err) {
+    console.error(`\n${err.message}\n`);
+    return typeof err.exitCode === 'number' ? err.exitCode : 1;
+  }
+
+  // 227-08 tripwire: the worker-thread session (the default, D-18) lets Stockfish grades complete while
+  // Maia infers, so which pool engine runs which grade, and therefore each engine's warm-hash history,
+  // depends on timing. Round-mode results then differ slightly from the main-thread session's (226 a21s)
+  // under `--hash warm`, and are identical under `--hash clear`. `--maia-main-thread` keeps the old
+  // session as the parity reference for that check.
+  const { session, ort } = await createMaiaSession({ offThread: !args.maiaMainThread });
+  const pool = await createGradePool(args.poolSize, { clearHash: args.hash === 'clear' });
   const gradeEngine = await spawnStockfish();
 
   // Review fix (WR-02): a per-row grading error used to escape main() before
@@ -447,6 +624,8 @@ async function measureRows(args, fixtureRows, session, ort, pool, gradeEngine) {
   console.log(
     `\nengine-move-quality — arm=${args.arm} stop-rule=${args.stopRule} nodes=${args.nodes} plies=${args.plies} ` +
       `elo=${args.elo} procs=${args.procs} pool-size=${args.poolSize} grade-depth=${args.gradeDepth} ` +
+      `dispatch-mode=${args.dispatchMode} repeats=${args.repeats} hash=${args.hash} maia-fifo=${args.maiaFifo} ` +
+      `maia-thread=${args.maiaMainThread ? 'main' : 'worker'} ` +
       `margin=${REGRESSION_MARGIN}\n` +
       `fixture=${args.fixture} rows=${fixtureRows.length}\n`,
   );
@@ -456,88 +635,110 @@ async function measureRows(args, fixtureRows, session, ort, pool, gradeEngine) {
   let analysisRegressions = 0;
   let exactMatches = 0;
 
-  for (const row of fixtureRows) {
-    await pool.resetAll();
-    resetMaiaRunMemo();
-    const providers = makeNodeProviders(session, ort, pool.grade, { gradeRootFn: pool.gradeRoot });
-    const budget = {
-      maxNodes: args.nodes,
-      maxPlies: args.plies,
-      concurrency: args.procs,
-      elo: { w: args.elo, b: args.elo },
-      ...(args.stopRule === 'on' ? { stopRule: FLAWCHESS_BOT_STOP_RULE } : {}),
-    };
+  const judgeMemo = createJudgeMemo();
+  for (let repeat = 1; repeat <= args.repeats; repeat++) {
+    const memoBefore = { ...judgeMemo.stats };
+    const repeatStartedAt = performance.now();
+    for (const row of fixtureRows) {
+      // Phase 227 D-02/D-09: every (row, repeat) starts from the SAME state: the previous search's
+      // stopped grades have quiesced, the transposition tables are cleared, the Maia memo is empty.
+      await whenMaiaIdle(); // 227-09 review: the previous search's stale Maia work must also have settled
+      await pool.whenIdle();
+      await pool.resetAll();
+      resetMaiaRunMemo();
+      const providers = makeNodeProviders(session, ort, pool.grade, {
+        maiaFifo: args.maiaFifo,
+        gradeRootFn: pool.gradeRoot,
+      });
+      const budget = {
+        maxNodes: args.nodes,
+        maxPlies: args.plies,
+        concurrency: args.procs,
+        elo: { w: args.elo, b: args.elo },
+        dispatchMode: args.dispatchMode,
+        ...(args.stopRule === 'on' ? { stopRule: FLAWCHESS_BOT_STOP_RULE } : {}),
+      };
 
-    // Phase 226 D-08: per-row delta of the pool's own rootSplit tripwire —
-    // the TSV's `root_split_calls` column.
-    const rootSplitCallsBefore = pool.rootSplitStats().calls;
-    const startedAt = performance.now();
-    const snapshot = await mctsSearch(row.fen, budget, providers, () => {}, new AbortController().signal);
-    const wallMs = performance.now() - startedAt;
-    const rootSplitCallsDelta = pool.rootSplitStats().calls - rootSplitCallsBefore;
+      // Phase 226 D-08: per-row delta of the pool's own rootSplit tripwire —
+      // the TSV's `root_split_calls` column.
+      const rootSplitCallsBefore = pool.rootSplitStats().calls;
+      const startedAt = performance.now();
+      const snapshot = await mctsSearch(row.fen, budget, providers, () => {}, new AbortController().signal);
+      const wallMs = performance.now() - startedAt;
+      const rootSplitCallsDelta = pool.rootSplitStats().calls - rootSplitCallsBefore;
 
-    const botMove = argmaxLine(snapshot.rankedLines);
-    const analysisMove = snapshot.rankedLines[0]?.rootMove ?? null;
+      const botMove = argmaxLine(snapshot.rankedLines);
+      const analysisMove = snapshot.rankedLines[0]?.rootMove ?? null;
 
-    let botGraded;
-    let analysisGraded;
-    try {
-      botGraded = await gradePair(gradeEngine, row.fen, botMove, row.correctMove, args.gradeDepth);
-    } catch (err) {
-      throw new Error(`row ${row.id} (bot pick): ${err.message}`);
+      let botGraded;
+      let analysisGraded;
+      try {
+        botGraded = await judgeMemo.grade(gradeEngine, row.fen, botMove, row.correctMove, args.gradeDepth);
+      } catch (err) {
+        throw new Error(`row ${row.id} repeat ${repeat} (bot pick): ${err.message}`);
+      }
+      try {
+        analysisGraded = await judgeMemo.grade(gradeEngine, row.fen, analysisMove, row.correctMove, args.gradeDepth);
+      } catch (err) {
+        throw new Error(`row ${row.id} repeat ${repeat} (analysis pick): ${err.message}`);
+      }
+
+      // es_correct comes from the BOT pair (spec) — the analysis pair's own
+      // es_correct is redundant (same fen/correctMove/depth) and discarded, so
+      // the two per-selector grades never disagree on what "correct" scores.
+      const esCorrect = botGraded.esCorrect;
+      const esBot = botGraded.esPick;
+      const deltaBot = esBot - esCorrect;
+      const verdictBot = deltaBot <= -REGRESSION_MARGIN ? 'regression' : 'pass';
+
+      const esAnalysis = analysisGraded.esPick;
+      const deltaAnalysis = esAnalysis - esCorrect;
+      const verdictAnalysis = deltaAnalysis <= -REGRESSION_MARGIN ? 'regression' : 'pass';
+
+      if (verdictBot === 'regression') botRegressions++;
+      if (verdictAnalysis === 'regression') analysisRegressions++;
+      if (botMove === row.correctMove) exactMatches++;
+
+      console.log(
+        `  r${repeat} ${row.id.padEnd(14)} bot=${(botMove ?? '').padEnd(6)} analysis=${(analysisMove ?? '').padEnd(6)} ` +
+          `es_bot=${esBot.toFixed(3)} es_correct=${esCorrect.toFixed(3)} delta_bot=${deltaBot.toFixed(3)} ${verdictBot}  ` +
+          `es_analysis=${esAnalysis.toFixed(3)} delta_analysis=${deltaAnalysis.toFixed(3)} ${verdictAnalysis}`,
+      );
+
+      rows.push({
+        arm: args.arm,
+        stop_rule: args.stopRule,
+        id: row.id,
+        fen: row.fen,
+        correct_move: row.correctMove,
+        bot_move: botMove ?? '',
+        es_bot: esBot.toFixed(6),
+        es_correct: esCorrect.toFixed(6),
+        delta_bot: deltaBot.toFixed(6),
+        verdict_bot: verdictBot,
+        analysis_move: analysisMove ?? '',
+        es_analysis: esAnalysis.toFixed(6),
+        delta_analysis: deltaAnalysis.toFixed(6),
+        verdict_analysis: verdictAnalysis,
+        nodes_evaluated: snapshot.nodesEvaluated,
+        stop_reason: snapshot.stopReason ?? '',
+        wall_ms: wallMs.toFixed(0),
+        grade_depth: args.gradeDepth,
+        elo: args.elo,
+        max_nodes: args.nodes,
+        pool_size: args.poolSize,
+        root_split_calls: rootSplitCallsDelta,
+        dispatch_mode: args.dispatchMode,
+        repeat,
+        hash_mode: args.hash,
+        maia_fifo: args.maiaFifo,
+        maia_thread: args.maiaMainThread ? 'main' : 'worker',
+      });
     }
-    try {
-      analysisGraded = await gradePair(gradeEngine, row.fen, analysisMove, row.correctMove, args.gradeDepth);
-    } catch (err) {
-      throw new Error(`row ${row.id} (analysis pick): ${err.message}`);
-    }
-
-    // es_correct comes from the BOT pair (spec) — the analysis pair's own
-    // es_correct is redundant (same fen/correctMove/depth) and discarded, so
-    // the two per-selector grades never disagree on what "correct" scores.
-    const esCorrect = botGraded.esCorrect;
-    const esBot = botGraded.esPick;
-    const deltaBot = esBot - esCorrect;
-    const verdictBot = deltaBot <= -REGRESSION_MARGIN ? 'regression' : 'pass';
-
-    const esAnalysis = analysisGraded.esPick;
-    const deltaAnalysis = esAnalysis - esCorrect;
-    const verdictAnalysis = deltaAnalysis <= -REGRESSION_MARGIN ? 'regression' : 'pass';
-
-    if (verdictBot === 'regression') botRegressions++;
-    if (verdictAnalysis === 'regression') analysisRegressions++;
-    if (botMove === row.correctMove) exactMatches++;
-
     console.log(
-      `  ${row.id.padEnd(14)} bot=${(botMove ?? '').padEnd(6)} analysis=${(analysisMove ?? '').padEnd(6)} ` +
-        `es_bot=${esBot.toFixed(3)} es_correct=${esCorrect.toFixed(3)} delta_bot=${deltaBot.toFixed(3)} ${verdictBot}  ` +
-        `es_analysis=${esAnalysis.toFixed(3)} delta_analysis=${deltaAnalysis.toFixed(3)} ${verdictAnalysis}`,
+      `  repeat ${repeat}/${args.repeats}: ${((performance.now() - repeatStartedAt) / 1000).toFixed(1)}s, ` +
+        `judge memo hits +${judgeMemo.stats.hits - memoBefore.hits} misses +${judgeMemo.stats.misses - memoBefore.misses}`,
     );
-
-    rows.push({
-      arm: args.arm,
-      stop_rule: args.stopRule,
-      id: row.id,
-      fen: row.fen,
-      correct_move: row.correctMove,
-      bot_move: botMove ?? '',
-      es_bot: esBot.toFixed(6),
-      es_correct: esCorrect.toFixed(6),
-      delta_bot: deltaBot.toFixed(6),
-      verdict_bot: verdictBot,
-      analysis_move: analysisMove ?? '',
-      es_analysis: esAnalysis.toFixed(6),
-      delta_analysis: deltaAnalysis.toFixed(6),
-      verdict_analysis: verdictAnalysis,
-      nodes_evaluated: snapshot.nodesEvaluated,
-      stop_reason: snapshot.stopReason ?? '',
-      wall_ms: wallMs.toFixed(0),
-      grade_depth: args.gradeDepth,
-      elo: args.elo,
-      max_nodes: args.nodes,
-      pool_size: args.poolSize,
-      root_split_calls: rootSplitCallsDelta,
-    });
   }
 
   console.log(
@@ -553,6 +754,9 @@ async function measureRows(args, fixtureRows, session, ort, pool, gradeEngine) {
       'delta_bot', 'verdict_bot', 'analysis_move', 'es_analysis', 'delta_analysis', 'verdict_analysis',
       'nodes_evaluated', 'stop_reason', 'wall_ms', 'grade_depth', 'elo', 'max_nodes',
       'pool_size', 'root_split_calls',
+      // Phase 227: appended at the END so 226 readers (and the tripwire) still parse old and new files.
+      'dispatch_mode', 'repeat', 'hash_mode', 'maia_fifo',
+      'maia_thread', // 227-08: appended last, so earlier 227 readers still parse
     ];
     const stamp = new Date().toISOString().replace(/[:.]/g, '-');
     const outPath = path.join(outDir, `engine-move-quality-${args.arm}-stop${args.stopRule}-${stamp}.tsv`);

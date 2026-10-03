@@ -24,6 +24,7 @@
 import { createRequire } from 'node:module';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { spawn } from 'node:child_process';
+import { Worker } from 'node:worker_threads';
 import path from 'node:path';
 import fs from 'node:fs';
 import os from 'node:os';
@@ -40,6 +41,22 @@ export const FRONTEND_DIR = path.resolve(REPO_ROOT, 'frontend');
 
 /** Wall-clock timeout (ms) for the Stockfish `uci`/`isready` init handshake. */
 export const STOCKFISH_INIT_TIMEOUT_MS = 30_000;
+
+/** Wall-clock ceiling (ms) for the Maia worker thread to load the model and report `ready`. */
+export const MAIA_WORKER_READY_TIMEOUT_MS = 60_000;
+
+/**
+ * Process exit code used when the Maia worker thread dies unexpectedly (Phase 227 D-18). Distinct
+ * from 0 (success), 1 (generic failure), 3 (stockfish-pool.check --root-split "module absent") and
+ * 42 (worktree base mismatch), so a supervisor log line can tell a worker death from a script bug.
+ */
+export const MAIA_WORKER_DIED_EXIT_CODE = 70;
+
+/**
+ * Fixed message for every request rejected by a dead Maia worker. No interpolated variables (CLAUDE.md
+ * error-message rule): the underlying cause rides on the Error's `cause` property.
+ */
+export const MAIA_WORKER_FAILED_MESSAGE = 'Maia worker thread failed';
 
 /** Characters of child stderr kept for the death reason (enough for a wasm stack trace). */
 const STDERR_TAIL_CHARS = 4_000;
@@ -63,6 +80,12 @@ export async function resolveFrontendModule(packageName) {
  * ort-web internal, SEED-113 already disposes everything we own; both the
  * frontend maiaWorkerHost and the sweep supervisor mitigate by respawn).
  *
+ * `offThread` (default true, wasm backend only; Phase 227 D-18) runs the wasm
+ * session inside a `worker_threads` worker (`maia-worker-thread.mjs`) behind a
+ * proxy with the same `run(feeds)` contract, so one inference no longer blocks
+ * the harness event loop. `offThread: false` returns the original main-thread
+ * session unchanged: the parity reference and the escape hatch.
+ *
  * `backend: 'native'` is onnxruntime-node from scripts/package.json: no wasm
  * heap (the OOB crash class disappears) and ~2x faster single-threaded.
  * PINNED 1.21.1 — ort >= 1.22 SEGFAULTS loading this model (same pin as
@@ -71,10 +94,12 @@ export async function resolveFrontendModule(packageName) {
  * threads would only oversubscribe the box; measured backend parity is
  * |d expectedScore| <= ~1e-3 (same order as native's own thread-count
  * nondeterminism, an order below E-08's accepted @100-vs-@400 budget error).
+ * It also blocks the event loop (about 179 ms max lag measured) and is not
+ * app-faithful.
  * NEVER mix backends within one study dataset without recording which rows
  * used which (the Stage B ledger stores `ort_backend` per row).
  */
-export async function createMaiaSession({ backend = 'wasm' } = {}) {
+export async function createMaiaSession({ backend = 'wasm', offThread = true } = {}) {
   const modelPath = path.resolve(FRONTEND_DIR, 'public/maia/maia3_simplified.onnx');
   if (backend === 'native') {
     const requireFromScripts = createRequire(path.join(__dirname, '..', 'package.json'));
@@ -92,9 +117,133 @@ export async function createMaiaSession({ backend = 'wasm' } = {}) {
     return { ort, session };
   }
   const ort = (await resolveFrontendModule('onnxruntime-web')).default;
+  // One wasm thread. The trailing comment on the next line ("the browser worker's no-COOP/COEP
+  // posture") is stale: the cross-origin-isolated browser worker runs wasm Maia at 4 threads
+  // (Plan 227-08 legs), so harness Maia is about 2 times slower per inference than the browser's
+  // and sees almost no Maia-versus-Stockfish CPU contention (design.md section 3.6). Kept at 1 so
+  // gate P stays comparable to the 226 a21s data.
   ort.env.wasm.numThreads = 1; // matches the browser worker's no-COOP/COEP posture
+  // Phase 227 D-18 fix site: the main-thread wasm session blocked the event loop for its whole
+  // inference (about 94 ms) and FIFO-chained inferences let no macrotask run (0 timer ticks over a
+  // 373 ms 4-request burst), so Stockfish stdout went unprocessed while Maia worked. The browser
+  // runs Maia in a worker, so the harness now does too.
+  if (offThread) return createWorkerMaiaSession(ort, modelPath);
   const modelBytes = fs.readFileSync(modelPath);
   const session = await ort.InferenceSession.create(modelBytes, { executionProviders: ['wasm'] });
+  return { ort, session };
+}
+
+/**
+ * Spawns the Maia worker thread, awaits its `ready`, and returns `{ ort, session }` where `session`
+ * is a proxy exposing `inputNames`, `outputNames`, `run(feeds)` and `close()` (plus a non-enumerable,
+ * check-only `_worker`). `ort` stays the main-thread onnxruntime-web module: callers build their
+ * `ort.Tensor` feeds with it and the proxy serializes them across the thread boundary.
+ */
+async function createWorkerMaiaSession(ort, modelPath) {
+  // `execArgv: []`: a worker inherits the parent's execArgv by default, which re-registers the `@/`
+  // alias hook (not needed: the worker imports no frontend TS) and breaks outright under
+  // `--input-type=module -e` ("--input-type can only be used with string input"), the form the
+  // worker-death check uses.
+  const worker = new Worker(new URL('./maia-worker-thread.mjs', import.meta.url), {
+    workerData: { modelPath },
+    execArgv: [],
+  });
+  /** In-flight requests by id: `{ resolve, reject }`. */
+  const pending = new Map();
+  let nextId = 0;
+  let closing = false;
+  let ready = false;
+
+  // Node's process 'exit' fires BEFORE it tears workers down, so a script ending by itself (or via
+  // process.exit) must not see the worker's teardown 'exit' as a death and rewrite its exit code.
+  process.once('exit', () => {
+    closing = true;
+  });
+
+  const { inputNames, outputNames } = await new Promise((resolve, reject) => {
+    const timer = setTimeout(() => {
+      void worker.terminate();
+      reject(new Error(MAIA_WORKER_FAILED_MESSAGE, { cause: new Error('timed out waiting for ready') }));
+    }, MAIA_WORKER_READY_TIMEOUT_MS);
+    const fail = (cause) => {
+      clearTimeout(timer);
+      reject(new Error(MAIA_WORKER_FAILED_MESSAGE, { cause }));
+    };
+    worker.once('error', fail);
+    worker.once('exit', (code) => fail(new Error(`worker exited with code ${code} before ready`)));
+    worker.on('message', function onReady(msg) {
+      if (msg?.type !== 'ready') return;
+      clearTimeout(timer);
+      worker.off('message', onReady);
+      worker.off('error', fail);
+      resolve(msg);
+    });
+  });
+  ready = true;
+  worker.unref(); // an idle worker must not keep a script alive; re-ref'd while a request is in flight
+
+  /** Keeps the process alive exactly while at least one request is in flight. */
+  const syncRef = () => {
+    if (pending.size > 0) worker.ref();
+    else worker.unref();
+  };
+
+  // D-15: an unexpected worker death must END THE PROCESS, not degrade. The app-faithful Maia FIFO
+  // (calibration-providers.mjs maiaFifoProcess) resolves `{}` on a rejected inference, so a dead worker
+  // would otherwise turn every later policy call into an empty policy and silently corrupt hours of
+  // sweep games. Today the same wasm out-of-bounds failure crashes the main-thread process and
+  // `bin/preset-supervisor.sh` resumes the sweep; exiting here keeps exactly that behavior.
+  const die = (cause) => {
+    if (closing || !ready) return;
+    ready = false;
+    const failure = new Error(MAIA_WORKER_FAILED_MESSAGE, { cause });
+    for (const { reject } of pending.values()) reject(failure);
+    pending.clear();
+    console.error(`[maia-worker] ${MAIA_WORKER_FAILED_MESSAGE}; exiting with code ${MAIA_WORKER_DIED_EXIT_CODE}`);
+    process.exit(MAIA_WORKER_DIED_EXIT_CODE);
+  };
+  worker.on('error', (err) => die(err));
+  worker.on('exit', (code) => die(new Error(`worker exited with code ${code}`)));
+  worker.on('message', (msg) => {
+    const request = pending.get(msg?.id);
+    if (request === undefined) return;
+    pending.delete(msg.id);
+    syncRef();
+    if (msg.type === 'result') {
+      const outputs = {};
+      for (const [name, out] of Object.entries(msg.outputs)) {
+        outputs[name] = { type: out.type, data: out.data, dims: out.dims, dispose() {} };
+      }
+      request.resolve(outputs);
+    } else {
+      request.reject(new Error(MAIA_WORKER_FAILED_MESSAGE, { cause: new Error(msg.message) }));
+    }
+  });
+
+  const session = {
+    inputNames,
+    outputNames,
+    run(feeds) {
+      return new Promise((resolve, reject) => {
+        const id = nextId++;
+        const serialized = {};
+        const transfer = [];
+        for (const [name, tensor] of Object.entries(feeds)) {
+          const data = tensor.data.slice(); // copy: the caller disposes its tensor right after run()
+          serialized[name] = { type: tensor.type, data, dims: [...tensor.dims] };
+          transfer.push(data.buffer);
+        }
+        pending.set(id, { resolve, reject });
+        syncRef();
+        worker.postMessage({ type: 'run', id, feeds: serialized }, transfer);
+      });
+    },
+    async close() {
+      closing = true;
+      await worker.terminate();
+    },
+  };
+  Object.defineProperty(session, '_worker', { value: worker, enumerable: false });
   return { ort, session };
 }
 

@@ -43,6 +43,11 @@ vi.mock('@/hooks/useTrainProgress', () => ({
   useTrainProgress: () => trainProgressMock,
 }));
 
+// SEED-181: the streak hero keys its last-seen snapshot on the profile email.
+vi.mock('@/hooks/useUserProfile', () => ({
+  useUserProfile: () => ({ data: { email: 'user@example.com' }, isPending: false, isError: false }),
+}));
+
 // 224 UAT round 2: the guest landing bubble renders <SignupAskActions />,
 // which calls useAuth (mocked mirroring SignupAskActions.test.tsx's shape).
 vi.mock('@/hooks/useAuth', () => ({
@@ -230,6 +235,44 @@ function renderScreen(props: Partial<Parameters<typeof TrainStartScreen>[0]> = {
   return { onEnterLoop, onSettingsSaved };
 }
 
+describe('TrainStartScreen — refetch after a schedule save (SEED-181 review)', () => {
+  it('keeps the landing (and the open schedule card) mounted, with Start disabled until the fresh session lands', () => {
+    const props = {
+      session: BASE_SESSION,
+      isError: false,
+      sessionScore: 0,
+      onEnterLoop: vi.fn(),
+      onSettingsSaved: vi.fn(),
+      isGuest: false,
+      hasGames: true,
+    };
+    const { rerender } = render(
+      <MemoryRouter>
+        <TrainStartScreen {...props} isLoading={false} />
+      </MemoryRouter>,
+    );
+    fireEvent.click(screen.getByTestId('btn-train-schedule-toggle'));
+    expect(screen.getByTestId('filter-weekday-mo')).not.toBeNull();
+
+    rerender(
+      <MemoryRouter>
+        <TrainStartScreen {...props} isLoading={true} />
+      </MemoryRouter>,
+    );
+    expect(screen.queryByTestId('train-session-loading')).toBeNull();
+    expect(screen.getByTestId('filter-weekday-mo')).not.toBeNull();
+    expect(screen.getByTestId('btn-train-start').hasAttribute('disabled')).toBe(true);
+
+    rerender(
+      <MemoryRouter>
+        <TrainStartScreen {...props} isLoading={false} />
+      </MemoryRouter>,
+    );
+    expect(screen.getByTestId('filter-weekday-mo')).not.toBeNull();
+    expect(screen.getByTestId('btn-train-start').hasAttribute('disabled')).toBe(false);
+  });
+});
+
 describe('TrainStartScreen — six landing states', () => {
   it('loading: renders the muted text-only loading node, nothing else', () => {
     renderScreen({ isLoading: true, session: null });
@@ -296,7 +339,7 @@ describe('TrainStartScreen — six landing states', () => {
     });
     // 193 UAT round 2: the max is puzzle_count * TRAIN_POINTS_PER_PUZZLE (3),
     // not the stale hardcoded * 2 this assertion used to bake in.
-    expect(screen.getByTestId('train-stats-today-score').textContent).toBe('Scored today9 of 18 points');
+    expect(screen.getByTestId('train-stats-today-score').textContent).toBe('9/18Points today');
     expect(screen.getByText('Next session: Aug 1, 2026')).not.toBeNull();
     expect(screen.queryByTestId('btn-train-start')).toBeNull();
     expect(screen.queryByTestId('btn-train-resume')).toBeNull();
@@ -310,7 +353,7 @@ describe('TrainStartScreen — six landing states', () => {
       session: { ...BASE_SESSION, puzzle_count: 6, solved_count: 5, expires_on: '2026-08-01' },
       sessionScore: 7,
     });
-    expect(screen.getByTestId('train-stats-today-score').textContent).toBe('Scored today7 of 18 points');
+    expect(screen.getByTestId('train-stats-today-score').textContent).toBe('7/18Points today');
     expect(screen.getByText('Next session: Aug 1, 2026')).not.toBeNull();
     expect(screen.queryByTestId('btn-train-start')).toBeNull();
     expect(screen.queryByTestId('btn-train-resume')).toBeNull();
@@ -360,6 +403,8 @@ describe('TrainStartScreen — six landing states', () => {
     const { onSettingsSaved } = renderScreen();
     expect(onSettingsSaved).not.toHaveBeenCalled();
 
+    // SEED-181: the schedule card starts collapsed.
+    fireEvent.click(screen.getByTestId('btn-train-schedule-toggle'));
     fireEvent.click(screen.getByTestId('filter-weekday-fr'));
     await act(async () => {
       await new Promise((resolve) => setTimeout(resolve, TRAIN_SETTINGS_SAVE_DEBOUNCE_MS + 100));

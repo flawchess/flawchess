@@ -76,6 +76,7 @@ import { useInstallPrompt } from '@/hooks/useInstallPrompt';
 import {
   TrainScheduleSettings,
   PUZZLES_PER_SESSION_MAX,
+  weekdaySummary,
   TRAIN_SETTINGS_SAVE_DEBOUNCE_MS,
 } from '@/components/train/TrainScheduleSettings';
 import type { TrainSettingsResponse, TrainSettingsUpdate } from '@/types/train';
@@ -168,7 +169,14 @@ function renderWithClient(onSaved?: () => void, isGuest = false): QueryClient {
     return <QueryClientProvider client={client}>{children}</QueryClientProvider>;
   }
   render(<TrainScheduleSettings onSaved={onSaved} isGuest={isGuest} />, { wrapper: Wrapper });
+  // SEED-181: the card starts collapsed; these tests exercise the controls.
+  expandSchedule();
   return client;
+}
+
+function expandSchedule(): void {
+  const toggle = screen.queryByTestId('btn-train-schedule-toggle');
+  if (toggle !== null) fireEvent.click(toggle);
 }
 
 /** Real-time wait past the debounce window, wrapped in `act` so the
@@ -899,5 +907,57 @@ describe('TrainScheduleSettings — D-13 guest visibility (Phase 224)', () => {
     });
     expect(screen.queryByTestId('btn-install-mobile-settings')).toBeNull();
     expect(screen.queryByText('Reminders work better with FlawChess on your phone')).toBeNull();
+  });
+});
+
+describe('collapsed schedule card (SEED-181)', () => {
+  function renderCollapsed(nextSessionDate?: string): void {
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(
+      <QueryClientProvider client={client}>
+        <TrainScheduleSettings isGuest={false} nextSessionDate={nextSessionDate} />
+      </QueryClientProvider>,
+    );
+  }
+
+  it('starts collapsed to a header summary of the saved schedule', async () => {
+    vi.mocked(trainApi.getSettings).mockResolvedValue(BASE_SETTINGS);
+    renderCollapsed();
+
+    await waitFor(() => {
+      expect(screen.getByTestId('train-schedule-summary').textContent).toBe('Mo We · 12 puzzles');
+    });
+    expect(screen.queryByTestId('filter-weekday-mo')).toBeNull();
+    expect(screen.getByTestId('btn-train-schedule-toggle').getAttribute('aria-expanded')).toBe('false');
+  });
+
+  it('expands to the controls on tap and collapses again', async () => {
+    vi.mocked(trainApi.getSettings).mockResolvedValue(BASE_SETTINGS);
+    renderCollapsed();
+    await waitFor(() => expect(screen.getByTestId('train-schedule-summary')).not.toBeNull());
+
+    fireEvent.click(screen.getByTestId('btn-train-schedule-toggle'));
+    expect(screen.getByTestId('filter-weekday-mo')).not.toBeNull();
+    expect(screen.queryByTestId('train-schedule-summary')).toBeNull();
+
+    fireEvent.click(screen.getByTestId('btn-train-schedule-toggle'));
+    expect(screen.queryByTestId('filter-weekday-mo')).toBeNull();
+  });
+
+  it('keeps the next-session line visible while collapsed', async () => {
+    vi.mocked(trainApi.getSettings).mockResolvedValue(BASE_SETTINGS);
+    renderCollapsed('2026-10-05');
+    await waitFor(() => expect(screen.getByTestId('train-schedule-summary')).not.toBeNull());
+    expect(screen.getByTestId('train-next-session').textContent).toBe('Next session: Oct 5, 2026');
+  });
+
+  it.each([
+    [0b1111111, 'Every day'],
+    [0, 'Any day'],
+    [0b0011111, 'Mo–Fr'],
+    [0b1100000, 'Sa Su'],
+    [0b0010101, 'Mo We Fr'],
+  ])('weekdaySummary(%i) is "%s"', (mask, expected) => {
+    expect(weekdaySummary(mask)).toBe(expected);
   });
 });

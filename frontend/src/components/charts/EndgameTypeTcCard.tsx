@@ -48,22 +48,22 @@ const TILE_ORDER: EndgameClass[] = ['rook', 'minor_piece', 'pawn', 'queen'];
 //   Desktop 4×1 (xl:): non-last columns get border-r; reset bottom-row top rule.
 //     Reset the tablet top rule on all cells via xl:border-t-0.
 //
-// Divider color matches EndgameMetricsByTcCard: border-border/40 (D-06).
+// Divider color matches EndgameMetricsByTcCard: border-card-edge (D-06).
 function tileDividerClasses(i: number): string {
   return cn(
     // Mobile: horizontal rule above every tile except the first.
-    i > 0 && 'border-t border-border/40',
+    i > 0 && 'border-t border-card-edge',
 
     // Tablet 2×2: reset mobile top rule, then add sm: rules.
     'sm:border-t-0',
     // Left column (i%2===0): right border between columns.
-    i % 2 === 0 && 'sm:border-r sm:border-border/40',
+    i % 2 === 0 && 'sm:border-r sm:border-card-edge',
     // Bottom row (i>=2): top border between rows.
-    i >= 2 && 'sm:border-t sm:border-border/40',
+    i >= 2 && 'sm:border-t sm:border-card-edge',
 
     // Desktop 4×1: reset tablet top/right rules, add xl: right rule on non-last.
     'xl:border-t-0',
-    i < 3 ? 'xl:border-r xl:border-border/40' : 'xl:border-r-0',
+    i < 3 ? 'xl:border-r xl:border-card-edge' : 'xl:border-r-0',
   );
 }
 
@@ -99,7 +99,7 @@ export function EndgameTypeTcCard({
     <AccordionItem
       value={tc}
       data-testid={`endgame-type-tc-card-${tc}`}
-      className="charcoal-texture rounded-md overflow-hidden border-none"
+      className="charcoal-texture rounded-md overflow-hidden"
     >
       {/* Full-bleed charcoal header: TC icon + label + Games count (D-05).
           The AccordionTrigger IS the header — no extra px-4 on AccordionItem.

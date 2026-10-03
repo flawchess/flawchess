@@ -1,0 +1,219 @@
+{
+  "schema": "engine-bench-227/v1",
+  "leg": "round",
+  "env": {
+    "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/154.0.0.0 Safari/537.36 Edg/154.0.0.0",
+    "hardwareConcurrency": 32,
+    "poolSize": 4,
+    "isSecureContext": true,
+    "crossOriginIsolated": true,
+    "hasNavigatorGpu": true,
+    "webgpuShaderF16": true
+  },
+  "maiaLatency": [
+    {
+      "backend": "wasm",
+      "condition": "idle",
+      "available": true,
+      "n": 30,
+      "medianMs": 46.230000019073486,
+      "p90Ms": 46.605000019073486,
+      "numThreads": 4,
+      "reason": null
+    },
+    {
+      "backend": "wasm",
+      "condition": "sf-busy",
+      "available": true,
+      "n": 30,
+      "medianMs": 31.99500000476837,
+      "p90Ms": 40.610000014305115,
+      "numThreads": 4,
+      "reason": null
+    },
+    {
+      "backend": "webgpu",
+      "condition": "idle",
+      "available": true,
+      "n": 30,
+      "medianMs": 17.814999997615814,
+      "p90Ms": 28.19000005722046,
+      "numThreads": 4,
+      "reason": null
+    },
+    {
+      "backend": "webgpu",
+      "condition": "sf-busy",
+      "available": true,
+      "n": 30,
+      "medianMs": 23.217500030994415,
+      "p90Ms": 25.87000000476837,
+      "numThreads": 4,
+      "reason": null
+    }
+  ],
+  "botMove": [
+    {
+      "round": 1,
+      "mode": "round",
+      "modeObserved": "round",
+      "positionId": "italian",
+      "wallMs": 1360.9550000429153,
+      "nodes": 14,
+      "backend": "webgpu"
+    },
+    {
+      "round": 1,
+      "mode": "round",
+      "modeObserved": "round",
+      "positionId": "middlegame",
+      "wallMs": 4881.660000085831,
+      "nodes": 50,
+      "backend": "webgpu"
+    },
+    {
+      "round": 1,
+      "mode": "round",
+      "modeObserved": "round",
+      "positionId": "sharp",
+      "wallMs": 1888.4650000333786,
+      "nodes": 15,
+      "backend": "webgpu"
+    },
+    {
+      "round": 1,
+      "mode": "round",
+      "modeObserved": "round",
+      "positionId": "endgame",
+      "wallMs": 826.9850000143051,
+      "nodes": 8,
+      "backend": "webgpu"
+    },
+    {
+      "round": 1,
+      "mode": "round",
+      "modeObserved": "round",
+      "positionId": "C50",
+      "wallMs": 2113.5,
+      "nodes": 50,
+      "backend": "webgpu"
+    },
+    {
+      "round": 1,
+      "mode": "round",
+      "modeObserved": "round",
+      "positionId": "C60",
+      "wallMs": 2471.2099999189377,
+      "nodes": 50,
+      "backend": "webgpu"
+    },
+    {
+      "round": 2,
+      "mode": "round",
+      "modeObserved": "round",
+      "positionId": "italian",
+      "wallMs": 1887.9349999427795,
+      "nodes": 14,
+      "backend": "webgpu"
+    },
+    {
+      "round": 2,
+      "mode": "round",
+      "modeObserved": "round",
+      "positionId": "middlegame",
+      "wallMs": 5649.449999928474,
+      "nodes": 50,
+      "backend": "webgpu"
+    },
+    {
+      "round": 2,
+      "mode": "round",
+      "modeObserved": "round",
+      "positionId": "sharp",
+      "wallMs": 2568.4400000572205,
+      "nodes": 15,
+      "backend": "webgpu"
+    },
+    {
+      "round": 2,
+      "mode": "round",
+      "modeObserved": "round",
+      "positionId": "endgame",
+      "wallMs": 715.545000076294,
+      "nodes": 8,
+      "backend": "webgpu"
+    },
+    {
+      "round": 2,
+      "mode": "round",
+      "modeObserved": "round",
+      "positionId": "C50",
+      "wallMs": 1852.2350000143051,
+      "nodes": 50,
+      "backend": "webgpu"
+    },
+    {
+      "round": 2,
+      "mode": "round",
+      "modeObserved": "round",
+      "positionId": "C60",
+      "wallMs": 2113.5049999952316,
+      "nodes": 22,
+      "backend": "webgpu"
+    },
+    {
+      "round": 3,
+      "mode": "round",
+      "modeObserved": "round",
+      "positionId": "italian",
+      "wallMs": 1331.905000090599,
+      "nodes": 14,
+      "backend": "webgpu"
+    },
+    {
+      "round": 3,
+      "mode": "round",
+      "modeObserved": "round",
+      "positionId": "middlegame",
+      "wallMs": 4857.425000071526,
+      "nodes": 50,
+      "backend": "webgpu"
+    },
+    {
+      "round": 3,
+      "mode": "round",
+      "modeObserved": "round",
+      "positionId": "sharp",
+      "wallMs": 1957.5349999666214,
+      "nodes": 16,
+      "backend": "webgpu"
+    },
+    {
+      "round": 3,
+      "mode": "round",
+      "modeObserved": "round",
+      "positionId": "endgame",
+      "wallMs": 715.5899999141693,
+      "nodes": 8,
+      "backend": "webgpu"
+    },
+    {
+      "round": 3,
+      "mode": "round",
+      "modeObserved": "round",
+      "positionId": "C50",
+      "wallMs": 2236.4500000476837,
+      "nodes": 50,
+      "backend": "webgpu"
+    },
+    {
+      "round": 3,
+      "mode": "round",
+      "modeObserved": "round",
+      "positionId": "C60",
+      "wallMs": 1950.1900000572205,
+      "nodes": 28,
+      "backend": "webgpu"
+    }
+  ]
+}

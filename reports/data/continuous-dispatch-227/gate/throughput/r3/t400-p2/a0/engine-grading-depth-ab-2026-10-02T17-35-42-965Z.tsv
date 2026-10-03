@@ -1,0 +1,17 @@
+position	fen	depth	wall_ms	grade_cpu_ms	grade_calls	nodes_evaluated	top_move	top_score	same_top_move	same_full_order	mean_abs_score_diff	reference_top2_gap	ladder_table	hash_probes	hash_probes_divergent	hash_probe_max_abs_cp	hash_probe_mean_abs_score_diff	maia_inferences	maia_cpu_ms	maia_peak_inflight	maia_fifo	pool_size	root_split_calls	root_split_splits	root_split_premise_violations	dispatch_mode	loop_lag_max_ms
+italian	r1bqkb1r/pppp1ppp/2n2n2/4p3/2B1P3/5N2/PPPP1PPP/RNBQK2R w KQkq - 4 4	ladder	43558	20365	401	400	f3g5	0.540990					14,14+floor10					372	30724.3	1	true	2	1	1	0	round	10.4
+middlegame	r2q1rk1/pp1nbppp/2p1bn2/3p4/3P1B2/2N1PN2/PPQ1BPPP/R4RK1 w - - 6 11	ladder	56553	40025	401	400	f3g5	0.605387					14,14+floor10					395	33465.4	1	true	2	1	1	0	round	9.5
+sharp	r1bq1r1k/pp1nbppp/2p1p3/3pP3/3P4/2NB1N2/PPPQ1PPP/R3K2R w KQ - 2 11	ladder	47111	29721	401	400	h2h4	0.530885					14,14+floor10					345	28212.2	1	true	2	1	1	0	round	6.3
+endgame	8/2p5/3p4/KP5r/1R3p1k/8/4P1P1/8 w - - 0 1	ladder	34278	7765	401	400	b4f4	0.648154					14,14+floor10					365	29695.5	1	true	2	1	1	0	round	3.1
+C50	r1bqk1nr/pppp1ppp/2n5/2b1p3/2B1P3/5N2/PPPP1PPP/RNBQK2R w KQkq - 4 4	ladder	41677	22189	401	400	c2c3	0.554185					14,14+floor10					337	27481.2	1	true	2	1	1	0	round	15.2
+C60	r1bqkbnr/pppp1ppp/2n5/1B2p3/4P3/5N2/PPPP1PPP/RNBQK2R b KQkq - 3 3	ladder	43487	19855	401	400	a7a6	0.495137					14,14+floor10					385	31305.8	1	true	2	1	1	0	round	12.5
+C70	r1bqkbnr/1ppp1ppp/p1n5/4p3/B3P3/5N2/PPPP1PPP/RNBQK2R b KQkq - 1 4	ladder	42232	23745	401	400	g8f6	0.462617					14,14+floor10					336	27454.8	1	true	2	1	1	0	round	11.3
+C45	r1bqkbnr/pppp1ppp/2n5/4p3/3PP3/5N2/PPP2PPP/RNBQKB1R b KQkq - 0 3	ladder	43491	20770	401	400	e5d4	0.447908					14,14+floor10					366	29865.5	1	true	2	1	1	0	round	17.5
+C42	rnbqkb1r/pppp1ppp/5n2/4p3/4P3/5N2/PPPP1PPP/RNBQKB1R w KQkq - 2 3	ladder	43111	19017	401	400	f3e5	0.563970					14,14+floor10					386	31584.7	1	true	2	1	1	0	round	14.3
+C47	r1bqkb1r/pppp1ppp/2n2n2/4p3/4P3/2N2N2/PPPP1PPP/R1BQKB1R w KQkq - 4 4	ladder	44390	18780	401	400	d2d4	0.565445					14,14+floor10					398	32366.0	1	true	2	1	1	0	round	6.8
+C25	rnbqkbnr/pppp1ppp/8/4p3/4P3/2N5/PPPP1PPP/R1BQKBNR b KQkq - 1 2	ladder	37177	21521	401	400	g8f6	0.486919					14,14+floor10					288	23472.8	1	true	2	1	1	0	round	10.9
+C30	rnbqkbnr/pppp1ppp/8/4p3/4PP2/8/PPPP2PP/RNBQKBNR b KQkq - 0 2	ladder	41952	23511	401	400	d7d5	0.549291					14,14+floor10					341	27790.5	1	true	2	1	1	0	round	19.4
+B50	rnbqkbnr/pp2pppp/3p4/2p5/4P3/5N2/PPPP1PPP/RNBQKB1R w KQkq - 0 3	ladder	42504	19876	401	400	c2c3	0.539713					14,14+floor10					370	30077.9	1	true	2	1	1	0	round	10.6
+B90	rnbqkb1r/1p2pppp/p2p1n2/8/3NP3/2N5/PPP2PPP/R1BQKB1R w KQkq - 0 6	ladder	47253	29023	401	400	c1e3	0.539685					14,14+floor10					368	29950.1	1	true	2	1	1	0	round	19.1
+B70	rnbqkb1r/pp2pp1p/3p1np1/8/3NP3/2N5/PPP2PPP/R1BQKB1R w KQkq - 0 6	ladder	44472	31203	401	400	f2f3	0.567763					14,14+floor10					309	25207.3	1	true	2	1	1	0	round	16.6
+C00	rnbqkbnr/pppp1ppp/4p3/8/4P3/8/PPPP1PPP/RNBQKBNR w KQkq - 0 2	ladder	45063	24882	401	400	d2d4	0.543847					14,14+floor10					372	30297.4	1	true	2	1	1	0	round	12.1

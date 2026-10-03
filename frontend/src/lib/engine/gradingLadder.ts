@@ -82,7 +82,8 @@
  * 800 calls — so ~1.4x is the honest centre of the derivation.
  *
  * Cache side effect, and it is favourable. `workerPool.ts`'s grade cache keys on
- * `(fen, candidateUcis, gradingDepth)`, and a FEN carries side-to-move, so from
+ * `${fen}|${gradingDepth}` (candidate UCIs are merged into the entry, not part
+ * of the key; Phase 227 Y-14 corrected this comment), and a FEN carries side-to-move, so from
  * a fixed root a position can only recur at plies of the SAME PARITY. Merging
  * ply 2 into the floor group turns the hittable same-parity pairs from
  * {(0,2)} ∪ {(3,5),(3,7),(5,7),(4,6)} = 5 into {(2,4),(2,6),(4,6),(3,5),(3,7),

@@ -44,6 +44,7 @@ import {
   maiaInflightStats,
   resetMaiaInstrumentationStats,
   resetMaiaRunMemo,
+  whenMaiaIdle,
 } from './calibration-providers.mjs';
 import { POLICY_VOCAB_SIZE } from '@/lib/maiaEncoding';
 
@@ -91,7 +92,9 @@ function makeStubSession() {
       void feeds;
       await new Promise((resolve) => setTimeout(resolve, STUB_DELAY_MS));
       const data = new Float32Array(POLICY_VOCAB_SIZE);
-      return { logits_move: { data, dispose() {} } };
+      // `runMaia` reads BOTH heads since SEED-145 (value head); a policy-only stub made this check
+      // throw "Cannot read properties of undefined (reading 'data')" before any assertion ran.
+      return { logits_move: { data, dispose() {} }, logits_value: { data: new Float32Array(3), dispose() {} } };
     },
   };
 }
@@ -195,7 +198,7 @@ async function checkFifoTrueSerializes(session, ort, label) {
   return { peak: maiaInflightStats.peak, callOrder, resolveOrder };
 }
 
-// ─── (d) resetMaiaInstrumentationStats zeroes all three fields ───────────────
+// ─── (d) resetMaiaInstrumentationStats zeroes CPU time, restarts peak from the live gauge ─
 
 function checkResetZeroesAllFields() {
   maiaCpuStats.totalMs = 999;
@@ -203,9 +206,14 @@ function checkResetZeroesAllFields() {
   maiaInflightStats.peak = 7;
   resetMaiaInstrumentationStats();
   assert.equal(maiaCpuStats.totalMs, 0, 'resetMaiaInstrumentationStats must zero maiaCpuStats.totalMs');
-  assert.equal(maiaInflightStats.current, 0, 'resetMaiaInstrumentationStats must zero maiaInflightStats.current');
-  assert.equal(maiaInflightStats.peak, 0, 'resetMaiaInstrumentationStats must zero maiaInflightStats.peak');
-  console.log('PASS: resetMaiaInstrumentationStats() zeroes maiaCpuStats.totalMs + maiaInflightStats.{current,peak}');
+  // Phase 227: `current` is a live gauge of real in-flight inferences; a reset must never zero it
+  // (a stale inference's finally would then drive it to -1).
+  assert.equal(maiaInflightStats.current, 5, 'resetMaiaInstrumentationStats must leave the live current gauge alone');
+  assert.equal(maiaInflightStats.peak, 5, 'resetMaiaInstrumentationStats must restart peak from current');
+  maiaInflightStats.current = 0; // restore the real (idle) gauge for the checks below
+  resetMaiaInstrumentationStats();
+  assert.equal(maiaInflightStats.peak, 0, 'an idle reset leaves peak at 0');
+  console.log('PASS: resetMaiaInstrumentationStats() zeroes maiaCpuStats.totalMs, keeps current, restarts peak from current');
 }
 
 // ─── (e) the FIFO rejection handler settles ({}), never rejects ─────────────
@@ -223,6 +231,56 @@ async function checkFifoRejectionSettles() {
   console.log('PASS: maiaFifo:true rejection handler settles with {} rather than rejecting');
 }
 
+// ─── (f) the FIFO honors abort and whenMaiaIdle waits for the in-flight call (Phase 227) ─
+
+async function checkFifoAbortAndIdle(session, ort) {
+  resetMaiaInstrumentationStats();
+  resetMaiaRunMemo();
+  let runCalls = 0;
+  const countingSession = {
+    run(feeds) {
+      runCalls++;
+      return session.run(feeds);
+    },
+  };
+  const providers = makeNodeProviders(countingSession, ort, stubGradeMustNotBeCalled, { maiaFifo: true });
+  const controller = new AbortController();
+  // Request 1 dispatches at once; requests 2 and 3 wait in the FIFO behind it.
+  const calls = BURST_FENS.slice(0, 3).map((fen) => providers.policy(fen, TEST_ELO, TEST_SIDE, controller.signal));
+  controller.abort();
+  // The two queued requests settle {} at once, without waiting for the in-flight inference.
+  const queued = await Promise.race([
+    Promise.all(calls.slice(1)),
+    new Promise((resolve) => setTimeout(() => resolve('timeout'), STUB_DELAY_MS / 2)),
+  ]);
+  assert.notEqual(queued, 'timeout', 'an abort must settle still-queued FIFO requests immediately');
+  assert.deepEqual(queued, [{}, {}], 'aborted queued FIFO requests resolve {}');
+  // The dispatched request runs to completion (like the app's in-flight worker inference).
+  const first = await calls[0];
+  assert.ok(Object.keys(first).length > 0, 'the already-dispatched request still returns its policy');
+  await whenMaiaIdle();
+  assert.equal(runCalls, 1, 'aborted queued requests must never reach session.run');
+  assert.equal(maiaInflightStats.current, 0, 'idle means no inference in flight');
+  // A pre-aborted signal never enqueues.
+  const pre = await providers.policy(BURST_FENS[3], TEST_ELO, TEST_SIDE, controller.signal);
+  assert.deepEqual(pre, {}, 'a pre-aborted signal resolves {} without enqueueing');
+  assert.equal(runCalls, 1, 'a pre-aborted request must never reach session.run');
+
+  // whenMaiaIdle really waits: it must not resolve while an inference is in flight.
+  resetMaiaRunMemo();
+  const pending = providers.policy(FEN_START, TEST_ELO, TEST_SIDE);
+  let idleResolved = false;
+  const idle = whenMaiaIdle().then(() => {
+    idleResolved = true;
+  });
+  await new Promise((resolve) => setTimeout(resolve, STUB_DELAY_MS / 3));
+  assert.equal(idleResolved, false, 'whenMaiaIdle must not resolve while an inference is in flight');
+  await pending;
+  await idle;
+  assert.equal(idleResolved, true, 'whenMaiaIdle resolves once the inference settles');
+  console.log('PASS: maiaFifo:true drops queued requests on abort ({}), never runs them, and whenMaiaIdle waits for the in-flight call');
+}
+
 // ─── Main ─────────────────────────────────────────────────────────────────────
 
 async function main() {
@@ -234,6 +292,7 @@ async function main() {
   await checkFifoTrueSerializes(stubSession, stubOrtInstance, 'stub');
   checkResetZeroesAllFields();
   await checkFifoRejectionSettles();
+  await checkFifoAbortAndIdle(stubSession, stubOrtInstance);
 
   if (REAL_SESSION_FLAG) {
     console.log('\n--real-session: opening the real ONNX Maia session (A1 / Open Question 1)...');

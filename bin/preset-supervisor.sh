@@ -37,6 +37,18 @@
 #                              degenerate Maia null. Example:
 #                                PRESET_SUPERVISOR_SEED=2 \
 #                                bin/preset-supervisor.sh 226-a0b 0 1500
+#   PRESET_SUPERVISOR_DISPATCH_MODE  --dispatch-mode for the harness: round or
+#                              continuous (default: unset, the harness uses the
+#                              app's shipped FLAWCHESS_DISPATCH_MODE). Phase 227
+#                              D-15: the A0 (round) and A1 (continuous) arms run
+#                              under this supervisor; the mode is re-passed on
+#                              EVERY crash-resume relaunch, and the harness
+#                              refuses to resume a ledger whose rows used a
+#                              different mode, so a resume can never mix arms.
+#                              Example (A1 arm):
+#                                PRESET_SUPERVISOR_DISPATCH_MODE=continuous \
+#                                PRESET_SUPERVISOR_DIR=reports/data/227-a1 \
+#                                bin/preset-supervisor.sh 227-a1 0.5 1500
 set -uo pipefail
 cd "$(dirname "$0")/.."   # bin/ -> repo root
 
@@ -60,6 +72,10 @@ ANCHORS="${PRESET_SUPERVISOR_ANCHORS:-}"
 # code path for both the cold start and every crash-resume relaunch — same
 # rationale as the ANCHORS override's comment.
 SEED="${PRESET_SUPERVISOR_SEED:-1}"
+# Phase 227 D-15: empty = harness default (the app's shipped mode). Threaded
+# through launch() below (cold start AND every crash-resume relaunch) so an arm
+# keeps its mode across wasm-heap crashes.
+DISPATCH_MODE="${PRESET_SUPERVISOR_DISPATCH_MODE:-}"
 LOG="${DIR}/run.log"
 HOOK="./scripts/lib/frontend-alias-hook.mjs"
 HARNESS="scripts/calibration-harness.mjs"
@@ -91,11 +107,14 @@ launch() {
   # today's command line exactly (no --anchors flag, default 10-anchor pool).
   local anchor_args=()
   [ -n "$ANCHORS" ] && anchor_args=(--anchors "$ANCHORS")
+  # Phase 227 D-15: same SINGLE-code-path rationale as ANCHORS/SEED above.
+  local dispatch_args=()
+  [ -n "$DISPATCH_MODE" ] && dispatch_args=(--dispatch-mode "$DISPATCH_MODE")
   nohup node --import "$HOOK" "$HARNESS" \
     --blends "$BLEND" --elo "$ELO" \
     --games-per-cell "$GAMES_PER_CELL" --stockfish-procs 4 \
     --seed "$SEED" --out-dir "$DIR" \
-    "${resume_args[@]}" "${anchor_args[@]}" >> "$LOG" 2>&1 &
+    "${resume_args[@]}" "${anchor_args[@]}" "${dispatch_args[@]}" >> "$LOG" 2>&1 &
   echo $!
 }
 

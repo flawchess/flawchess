@@ -1113,7 +1113,6 @@ export function LibraryGameCard({
       as="article"
       data-testid={`library-game-card-${game.game_id}`}
       accentColor={BORDER_COLORS[game.user_result]}
-      className="border border-border/20"
     >
       {/* Banded header (desktop single-line, mobile two-line) */}
       {header}

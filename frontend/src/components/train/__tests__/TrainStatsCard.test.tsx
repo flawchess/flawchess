@@ -75,18 +75,17 @@ describe('TrainStatsCard', () => {
     expect(screen.queryByTestId('train-stats-mastered')).toBeNull();
   });
 
-  it('populated: renders mastered/parked as label-value rows under a "Puzzle pool" header', async () => {
+  it('populated: renders mastered/parked as value-over-label tiles in a "Puzzle pool" region', async () => {
     vi.mocked(trainApi.getProgress).mockResolvedValue(BASE);
     renderWithClient();
 
     await waitFor(() => {
       expect(screen.getByTestId('train-stats-mastered')).not.toBeNull();
     });
-    // 193 UAT round 3: "Statistics" said nothing about what the numbers are.
-    expect(screen.getByText('Puzzle pool')).not.toBeNull();
-    expect(screen.queryByText('Statistics')).toBeNull();
-    expect(screen.getByTestId('train-stats-mastered').textContent).toBe('Mastered5');
-    expect(screen.getByTestId('train-stats-parked').textContent).toBe('Parked2');
+    // SEED-181: tiles instead of a headed card; the region keeps the name.
+    expect(screen.getByRole('region', { name: 'Puzzle pool' })).not.toBeNull();
+    expect(screen.getByTestId('train-stats-mastered').textContent).toBe('5Mastered');
+    expect(screen.getByTestId('train-stats-parked').textContent).toBe('2Parked');
   });
 
   describe('jargon popovers (193 UAT round 3)', () => {
@@ -131,14 +130,14 @@ describe('TrainStatsCard', () => {
     expect(screen.queryByTestId('train-stats-today-score')).toBeNull();
   });
 
-  it('spells out "points" in the score row — a bare N/M reads as a puzzle count', async () => {
+  it('labels the score tile as points — a bare N/M reads as a puzzle count', async () => {
     vi.mocked(trainApi.getProgress).mockResolvedValue(BASE);
     renderWithClient({ total: 4, max: 9 });
 
     await waitFor(() => {
       expect(screen.getByTestId('train-stats-today-score')).not.toBeNull();
     });
-    expect(screen.getByTestId('train-stats-today-score').textContent).toBe('Scored today4 of 9 points');
+    expect(screen.getByTestId('train-stats-today-score').textContent).toBe('4/9Points today');
   });
 
   it('renders a zero score rather than hiding it (0 of 9 is a real result)', async () => {
@@ -148,6 +147,6 @@ describe('TrainStatsCard', () => {
     await waitFor(() => {
       expect(screen.getByTestId('train-stats-today-score')).not.toBeNull();
     });
-    expect(screen.getByText('0 of 9 points')).not.toBeNull();
+    expect(screen.getByText('0/9')).not.toBeNull();
   });
 });

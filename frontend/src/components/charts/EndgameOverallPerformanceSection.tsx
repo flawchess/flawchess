@@ -117,12 +117,12 @@ export function EndgameOverallPerformanceSection({
 
       {/* Two separate charcoal cards, equal height on desktop (grid stretch),
           stacked on mobile. Each stacked sub-section carries a full-bleed card
-          header bar (bg-black/20 border-b, matching the Time Pressure cards);
+          header bar (bg-card-band border-b, matching the Time Pressure cards);
           `divide-y` draws the rule between the two stacked sub-sections. */}
       <div className="grid grid-cols-1 md:grid-cols-2 items-stretch gap-4 mt-2">
 
         {/* Card 1: Games without Endgame + Games with Endgame */}
-        <div className="charcoal-texture rounded-md overflow-hidden h-full flex flex-col divide-y divide-border/40">
+        <div className="charcoal-texture rounded-md overflow-hidden h-full flex flex-col divide-y divide-card-edge">
           <EndgameCard
             title="Games without Endgame"
             scoreLabel="Non-Endgame Score:"
@@ -154,7 +154,7 @@ export function EndgameOverallPerformanceSection({
         </div>
 
         {/* Card 2: Eval at Endgame Entry + Endgame Score Differences */}
-        <div className="charcoal-texture rounded-md overflow-hidden h-full flex flex-col divide-y divide-border/40">
+        <div className="charcoal-texture rounded-md overflow-hidden h-full flex flex-col divide-y divide-card-edge">
           <EntryCard data={data} />
           <div data-testid="endgame-score-differences">
             {/* Full-bleed card header bar (matches the Time Pressure cards). */}

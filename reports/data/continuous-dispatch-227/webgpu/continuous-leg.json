@@ -1,0 +1,93 @@
+{
+  "schema": "engine-bench-227/v1",
+  "leg": "interleaved",
+  "env": {
+    "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/154.0.0.0 Safari/537.36 Edg/154.0.0.0",
+    "hardwareConcurrency": 32,
+    "poolSize": 4,
+    "isSecureContext": true,
+    "crossOriginIsolated": true,
+    "hasNavigatorGpu": true,
+    "webgpuShaderF16": true
+  },
+  "maiaLatency": [
+    {
+      "backend": "wasm",
+      "condition": "idle",
+      "available": true,
+      "n": 30,
+      "medianMs": 24.997500002384186,
+      "p90Ms": 26.669999957084656,
+      "numThreads": 4,
+      "reason": null
+    },
+    {
+      "backend": "wasm",
+      "condition": "sf-busy",
+      "available": true,
+      "n": 30,
+      "medianMs": 27.894999980926514,
+      "p90Ms": 30.365000009536743,
+      "numThreads": 4,
+      "reason": null
+    },
+    {
+      "backend": "webgpu",
+      "condition": "idle",
+      "available": true,
+      "n": 30,
+      "medianMs": 17.069999992847443,
+      "p90Ms": 19.5,
+      "numThreads": 4,
+      "reason": null
+    },
+    {
+      "backend": "webgpu",
+      "condition": "sf-busy",
+      "available": true,
+      "n": 30,
+      "medianMs": 23.40750002861023,
+      "p90Ms": 26.5349999666214,
+      "numThreads": 4,
+      "reason": null
+    }
+  ],
+  "botMove": [
+    { "round": 1, "mode": "round", "modeObserved": "round", "positionId": "italian", "wallMs": 1900.6899999380112, "nodes": 35, "backend": "webgpu" },
+    { "round": 1, "mode": "round", "modeObserved": "round", "positionId": "middlegame", "wallMs": 4900.814999938011, "nodes": 50, "backend": "webgpu" },
+    { "round": 1, "mode": "round", "modeObserved": "round", "positionId": "sharp", "wallMs": 2286.514999985695, "nodes": 15, "backend": "webgpu" },
+    { "round": 1, "mode": "round", "modeObserved": "round", "positionId": "endgame", "wallMs": 813.0149999856949, "nodes": 8, "backend": "webgpu" },
+    { "round": 1, "mode": "round", "modeObserved": "round", "positionId": "C50", "wallMs": 2110.335000038147, "nodes": 50, "backend": "webgpu" },
+    { "round": 1, "mode": "round", "modeObserved": "round", "positionId": "C60", "wallMs": 2736.844999909401, "nodes": 50, "backend": "webgpu" },
+    { "round": 1, "mode": "continuous", "modeObserved": "continuous", "positionId": "italian", "wallMs": 855.045000076294, "nodes": 11, "backend": "webgpu" },
+    { "round": 1, "mode": "continuous", "modeObserved": "continuous", "positionId": "middlegame", "wallMs": 3782.235000014305, "nodes": 50, "backend": "webgpu" },
+    { "round": 1, "mode": "continuous", "modeObserved": "continuous", "positionId": "sharp", "wallMs": 2342.179999947548, "nodes": 50, "backend": "webgpu" },
+    { "round": 1, "mode": "continuous", "modeObserved": "continuous", "positionId": "endgame", "wallMs": 516.0899999141693, "nodes": 8, "backend": "webgpu" },
+    { "round": 1, "mode": "continuous", "modeObserved": "continuous", "positionId": "C50", "wallMs": 737.7749999761581, "nodes": 9, "backend": "webgpu" },
+    { "round": 1, "mode": "continuous", "modeObserved": "continuous", "positionId": "C60", "wallMs": 780.170000076294, "nodes": 8, "backend": "webgpu" },
+    { "round": 2, "mode": "continuous", "modeObserved": "continuous", "positionId": "italian", "wallMs": 1160.6849999427795, "nodes": 13, "backend": "webgpu" },
+    { "round": 2, "mode": "continuous", "modeObserved": "continuous", "positionId": "middlegame", "wallMs": 4185.074999928474, "nodes": 50, "backend": "webgpu" },
+    { "round": 2, "mode": "continuous", "modeObserved": "continuous", "positionId": "sharp", "wallMs": 2428.164999961853, "nodes": 50, "backend": "webgpu" },
+    { "round": 2, "mode": "continuous", "modeObserved": "continuous", "positionId": "endgame", "wallMs": 799.8349999189377, "nodes": 10, "backend": "webgpu" },
+    { "round": 2, "mode": "continuous", "modeObserved": "continuous", "positionId": "C50", "wallMs": 1867.2249999046326, "nodes": 50, "backend": "webgpu" },
+    { "round": 2, "mode": "continuous", "modeObserved": "continuous", "positionId": "C60", "wallMs": 1754.3949999809265, "nodes": 50, "backend": "webgpu" },
+    { "round": 2, "mode": "round", "modeObserved": "round", "positionId": "italian", "wallMs": 1897.5849999189377, "nodes": 36, "backend": "webgpu" },
+    { "round": 2, "mode": "round", "modeObserved": "round", "positionId": "middlegame", "wallMs": 3917.9499999284744, "nodes": 26, "backend": "webgpu" },
+    { "round": 2, "mode": "round", "modeObserved": "round", "positionId": "sharp", "wallMs": 3069.9900000095367, "nodes": 50, "backend": "webgpu" },
+    { "round": 2, "mode": "round", "modeObserved": "round", "positionId": "endgame", "wallMs": 853.3600000143051, "nodes": 8, "backend": "webgpu" },
+    { "round": 2, "mode": "round", "modeObserved": "round", "positionId": "C50", "wallMs": 2262.2200000286102, "nodes": 50, "backend": "webgpu" },
+    { "round": 2, "mode": "round", "modeObserved": "round", "positionId": "C60", "wallMs": 2489.8849999904633, "nodes": 40, "backend": "webgpu" },
+    { "round": 3, "mode": "round", "modeObserved": "round", "positionId": "italian", "wallMs": 1917.0750000476837, "nodes": 35, "backend": "webgpu" },
+    { "round": 3, "mode": "round", "modeObserved": "round", "positionId": "middlegame", "wallMs": 4933.325000047684, "nodes": 50, "backend": "webgpu" },
+    { "round": 3, "mode": "round", "modeObserved": "round", "positionId": "sharp", "wallMs": 3123.5900000333786, "nodes": 50, "backend": "webgpu" },
+    { "round": 3, "mode": "round", "modeObserved": "round", "positionId": "endgame", "wallMs": 813.1850000619888, "nodes": 8, "backend": "webgpu" },
+    { "round": 3, "mode": "round", "modeObserved": "round", "positionId": "C50", "wallMs": 1899.9150000810623, "nodes": 50, "backend": "webgpu" },
+    { "round": 3, "mode": "round", "modeObserved": "round", "positionId": "C60", "wallMs": 1967.2000000476837, "nodes": 22, "backend": "webgpu" },
+    { "round": 3, "mode": "continuous", "modeObserved": "continuous", "positionId": "italian", "wallMs": 902.4049999713898, "nodes": 11, "backend": "webgpu" },
+    { "round": 3, "mode": "continuous", "modeObserved": "continuous", "positionId": "middlegame", "wallMs": 3404.4249999523163, "nodes": 50, "backend": "webgpu" },
+    { "round": 3, "mode": "continuous", "modeObserved": "continuous", "positionId": "sharp", "wallMs": 1843.469999909401, "nodes": 35, "backend": "webgpu" },
+    { "round": 3, "mode": "continuous", "modeObserved": "continuous", "positionId": "endgame", "wallMs": 423.43999993801117, "nodes": 8, "backend": "webgpu" },
+    { "round": 3, "mode": "continuous", "modeObserved": "continuous", "positionId": "C50", "wallMs": 1574.9049999713898, "nodes": 50, "backend": "webgpu" },
+    { "round": 3, "mode": "continuous", "modeObserved": "continuous", "positionId": "C60", "wallMs": 1759.2749999761581, "nodes": 50, "backend": "webgpu" }
+  ]
+}

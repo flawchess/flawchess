@@ -265,26 +265,67 @@ describe('enqueue / dequeueHighestPriority', () => {
     expect(next?.fen).toBe('FEN_SHALLOW');
   });
 
-  it('breaks a priority+depth tie by ascending candidateUcis[0] string', () => {
+  // Phase 227 D-19 / N-3: this test used to pin the UCI-string tie-break
+  // (ascending candidateUcis[0]). The tie-break is now arrival order (FIFO),
+  // matching the Node harness pool's acquireEngine/releaseEngine.
+  it('serves equal-priority, equal-depth requests FIFO (arrival order), regardless of candidateUcis[0]', () => {
+    const pending: QueuedGradeRequest[] = [];
+    // Enqueue order h2h3, a2a3, e2e4: neither ascending nor descending by UCI,
+    // so only arrival order yields this exact dequeue sequence.
+    for (const [fen, uci] of [
+      ['FEN_FIRST', 'h2h3'],
+      ['FEN_SECOND', 'a2a3'],
+      ['FEN_THIRD', 'e2e4'],
+    ] as const) {
+      enqueue(pending, {
+        fen,
+        candidateUcis: [uci],
+        priority: 0.5,
+        depth: 3,
+        gradingDepth: GRADING_ROOT_DEPTH,
+        resolve: vi.fn(),
+      });
+    }
+    const order = [
+      dequeueHighestPriority(pending)?.fen,
+      dequeueHighestPriority(pending)?.fen,
+      dequeueHighestPriority(pending)?.fen,
+    ];
+    expect(order).toEqual(['FEN_FIRST', 'FEN_SECOND', 'FEN_THIRD']);
+  });
+
+  // The starvation shape D-19 closes: a queued grade that keeps losing to
+  // newer equal requests whose first UCI sorts lower waits unboundedly once
+  // dispatch is continuous (pool of 2, concurrency 4).
+  it('FIFO: an earlier request is never overtaken by later equal requests', () => {
     const pending: QueuedGradeRequest[] = [];
     enqueue(pending, {
-      fen: 'FEN_LATER',
-      candidateUcis: ['e2e4'],
-      priority: 0.5,
-      depth: 3,
+      fen: 'FEN_WAITING',
+      candidateUcis: ['h2h3'],
+      priority: 0,
+      depth: 0,
       gradingDepth: GRADING_ROOT_DEPTH,
       resolve: vi.fn(),
     });
-    enqueue(pending, {
-      fen: 'FEN_EARLIER',
-      candidateUcis: ['a2a4'],
-      priority: 0.5,
-      depth: 3,
-      gradingDepth: GRADING_ROOT_DEPTH,
-      resolve: vi.fn(),
-    });
-    const next = dequeueHighestPriority(pending);
-    expect(next?.fen).toBe('FEN_EARLIER'); // 'a2a4' < 'e2e4'
+    const STARVATION_ROUNDS = 10;
+    for (let round = 0; round < STARVATION_ROUNDS; round += 1) {
+      // A newer equal request whose first UCI sorts LOWER than the waiting one.
+      enqueue(pending, {
+        fen: `FEN_NEWER_${round}`,
+        candidateUcis: ['a2a3'],
+        priority: 0,
+        depth: 0,
+        gradingDepth: GRADING_ROOT_DEPTH,
+        resolve: vi.fn(),
+      });
+      if (round === 0) {
+        // The waiting request is served first, ahead of every newer one.
+        expect(dequeueHighestPriority(pending)?.fen).toBe('FEN_WAITING');
+      } else {
+        // Remaining newer requests then drain in their own arrival order.
+        expect(dequeueHighestPriority(pending)?.fen).toBe(`FEN_NEWER_${round - 1}`);
+      }
+    }
   });
 
   it('returns undefined on an empty pending array', () => {
@@ -881,7 +922,7 @@ describe('createWorkerPool: gradeRoot() root split — failure paths and edge ca
     const SIX = ROOT_CANDIDATES.slice(0, 6);
     const rootPromise = pool.gradeRoot(TEST_FEN, SIX);
     // No new go line yet — every slot is still busy; the root request queued
-    // behind (or, per the tie-break below, ahead of) the stranded one.
+    // behind the stranded one (FIFO among equals, Phase 227 D-19).
     expect(
       createdWorkers.reduce((sum, w) => sum + w.messages.filter((m) => m.startsWith('go ')).length, 0),
     ).toBe(4);
@@ -893,10 +934,9 @@ describe('createWorkerPool: gradeRoot() root split — failure paths and edge ca
     });
     await Promise.all(busy);
 
-    // dequeueHighestPriority's ascending-candidateUcis[0] tie-break: the
-    // root's 'b8c6' sorts before the stranded request's 'g1f3', so the root
-    // wins the first freed slot — proving it queued as ONE plain request,
-    // never split into shards.
+    // All four slots free at once, so the stranded request takes the first
+    // freed slot and the root request (FIFO, queued behind it) the next —
+    // proving the root queued as ONE plain request, never split into shards.
     const rootWorker = createdWorkers.find((w) => w.messages.includes(`position fen ${TEST_FEN}`));
     expect(rootWorker).toBeDefined();
     // Filter for the EXACT expected root go line, not just any 'go ' —
@@ -2432,8 +2472,11 @@ describe('createWorkerPool: lifecycle', () => {
 
   it('stopAll() sends stop to every thinking slot and clears the pending queue', async () => {
     const pool = createWorkerPool();
+    // Phase 227 D-19: FIFO among equals, so the request enqueued first (`second`)
+    // is the one dispatched; the old UCI-string tie-break ('d7d5' < 'e7e5') no
+    // longer decides it.
+    const second = pool.grade(TEST_FEN_2, ['d7d5']); // dequeues first (arrival order)
     const first = pool.grade(TEST_FEN, ['e7e5']);
-    const second = pool.grade(TEST_FEN_2, ['d7d5']); // dequeues before `first` (tie-break: 'd7d5' < 'e7e5')
 
     driveInit(createdWorkers[0]!); // the only ready slot dispatches `second` (the DISPATCHED/in-flight request)
 
@@ -2482,8 +2525,12 @@ describe('createWorkerPool: lifecycle', () => {
   it('an AbortSignal aborting an unstarted (still-pending) request removes it from the pending queue', async () => {
     const pool = createWorkerPool();
     const controller = new AbortController();
+    // Phase 227 D-19: the queue is FIFO among equals, so `second` (enqueued
+    // first) dispatches first. This test used to enqueue the abortable request
+    // first and rely on the old UCI-string tie-break ('d7d5' < 'e7e5') to put
+    // the other request ahead of it; the order of the two calls is swapped.
+    const second = pool.grade(TEST_FEN_2, ['d7d5']); // dequeues first (arrival order)
     const first = pool.grade(TEST_FEN, ['e7e5'], controller.signal);
-    const second = pool.grade(TEST_FEN_2, ['d7d5']); // dequeues before `first` (tie-break: 'd7d5' < 'e7e5')
 
     driveInit(createdWorkers[0]!); // the only ready slot dispatches `second`, leaving `first` pending
 

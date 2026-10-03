@@ -1,0 +1,57 @@
+/* Shared flame + freeze styles and keyframes for sketches 005 and 006. */
+
+.flame { display: block; overflow: visible; }
+.flame .layer { transform-box: fill-box; transform-origin: 50% 100%; }
+.flame .num { transform-box: fill-box; transform-origin: 50% 50%; }
+.flame .frost { opacity: 0; }
+
+/* Ignite: ember -> overshoot -> settle, inner layers lag and flicker. */
+.flame.ignite .l0 { animation: ign 700ms cubic-bezier(.2, 1.5, .4, 1) both; }
+.flame.ignite .l1 { animation: ign 700ms 110ms cubic-bezier(.2, 1.5, .4, 1) both, flick 380ms 820ms 3 ease-in-out; }
+.flame.ignite .l2 { animation: ign 700ms 220ms cubic-bezier(.2, 1.5, .4, 1) both, flick 300ms 920ms 4 ease-in-out; }
+.flame.ignite { animation: glow 1600ms ease-out; }
+@keyframes ign { 0% { transform: scale(.15); opacity: 0; } 55% { transform: scale(1.12, 1.18); opacity: 1; } 100% { transform: scale(1); } }
+@keyframes flick { 0%, 100% { transform: scale(1, 1); } 30% { transform: scale(.95, 1.07); } 65% { transform: scale(1.04, .96); } }
+@keyframes glow {
+  0% { filter: drop-shadow(0 0 0 transparent); }
+  45% { filter: drop-shadow(0 0 16px oklch(0.75 0.19 55 / .75)); }
+  100% { filter: drop-shadow(0 0 0 transparent); }
+}
+.flame .num.bump { animation: bump 380ms cubic-bezier(.2, 1.6, .4, 1); }
+@keyframes bump { 0% { transform: scale(1); } 40% { transform: scale(1.3); } 100% { transform: scale(1); } }
+
+/* Frost: the flame cools for a moment (streak held, not lost) and stays lit. */
+.flame.frosted .body { animation: cool 1300ms ease-in-out; }
+.flame.frosted .frost { animation: sweep 1100ms ease-in-out; }
+@keyframes cool {
+  0%, 100% { filter: none; }
+  35%, 65% { filter: saturate(.25) brightness(1.15); }
+}
+@keyframes sweep { 0% { opacity: 1; transform: translateY(0); } 100% { opacity: 1; transform: translateY(200px); } }
+
+/* Freeze meter */
+.meter { display: flex; align-items: center; gap: 3px; }
+.slot { position: relative; display: inline-flex; width: 18px; height: 18px; }
+.slot svg { width: 100%; height: 100%; }
+.fz.on { color: oklch(0.82 0.10 230); }
+.fz.off { color: oklch(0.55 0 0 / .55); }
+.slot.shake { animation: shake 320ms ease-in-out; }
+@keyframes shake { 0%, 100% { transform: rotate(0); } 20% { transform: rotate(-14deg); } 45% { transform: rotate(12deg); } 70% { transform: rotate(-8deg); } }
+.slot .half { position: absolute; inset: 0; }
+.slot .half svg { width: 100%; height: 100%; }
+.slot .half.left { clip-path: inset(0 50% 0 0); animation: fall-l 700ms ease-in forwards; }
+.slot .half.right { clip-path: inset(0 0 0 50%); animation: fall-r 700ms ease-in forwards; }
+@keyframes fall-l { to { transform: translate(-7px, 14px) rotate(-35deg); opacity: 0; } }
+@keyframes fall-r { to { transform: translate(7px, 14px) rotate(35deg); opacity: 0; } }
+.slot.popin { animation: popin 520ms cubic-bezier(.2, 1.6, .4, 1); }
+.slot.popin::after { content: ''; position: absolute; inset: -4px; border-radius: 50%; border: 2px solid oklch(0.82 0.10 230); animation: ring 600ms ease-out forwards; }
+@keyframes popin { 0% { transform: scale(0) rotate(-120deg); } 100% { transform: scale(1) rotate(0); } }
+@keyframes ring { 0% { transform: scale(.4); opacity: 1; } 100% { transform: scale(1.8); opacity: 0; } }
+
+/* Reduced motion: final state only. */
+.reduced-motion .flame, .reduced-motion .flame *, .reduced-motion .slot, .reduced-motion .slot * { animation: none !important; }
+.reduced-motion .slot .half { display: none; }
+@media (prefers-reduced-motion: reduce) {
+  .flame, .flame *, .slot, .slot * { animation: none !important; }
+  .slot .half { display: none; }
+}

@@ -192,7 +192,6 @@ export function GameCard({ game, analyzePly }: GameCardProps) {
       as="article"
       data-testid={`game-card-${game.game_id}`}
       accentColor={BORDER_COLORS[game.user_result]}
-      className="border border-border/20"
     >
       {/* Banded header: player info + platform link (desktop single-line, mobile two-line) */}
       {header}

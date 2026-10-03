@@ -241,7 +241,7 @@ describe('EndgameTimePressureCard — 2-column body layout', () => {
 
   it('vertical separator (w-px) is present in the body for desktop layout', () => {
     const { container } = renderCard(makeCard());
-    const verticalSep = container.querySelector('.w-px.bg-border\\/40');
+    const verticalSep = container.querySelector('.w-px.bg-card-edge');
     expect(verticalSep).not.toBeNull();
   });
 

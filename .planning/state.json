@@ -676,13 +676,13 @@
     {
       "number": "227",
       "name": "Browser Engine Continuous Dispatch Against a Relaxed Determinism Target (SEED-171, standalone)",
-      "status": "pending"
+      "status": "complete"
     }
   ],
   "next": {
-    "command": "/gsd:progress --next",
-    "label": "Advance to the next step (plan phase 227)",
-    "reason": "Phase 227 of 5 — needs a plan"
+    "command": "/gsd:progress",
+    "label": "Show progress",
+    "reason": "Unsure of state — showing progress"
   },
-  "updated_at": "2026-10-02T05:51:56.269Z"
+  "updated_at": "2026-10-03T11:02:46.956Z"
 }

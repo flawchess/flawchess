@@ -23,6 +23,9 @@ impact) — chips are display-only in 107 (the Flaws deep-link target ships late
 | 002 | flaw-stats-panel | How to arrange severity rates + tag distribution + trend + the analyzed denominator? | **A — Band → trend → tags** | panel, stats, library, charts, mobile |
 | 003 | train-bot-guess-bubble | Where does the bot avatar + speech bubble carrying the guess prompt sit on a phone? | **A — Chat row under board, buttons inside the bubble** | train, bots, onboarding, mobile, SEED-166 |
 | 004 | train-bot-verdict-and-score | How does a bot deliver the per-puzzle verdict with its return date, and sum up the session ahead of the reminder ask? | **Synthesis — bot row under the board, pills + action buttons inside the bubble; score bubble above the badge** | train, bots, reveal, score-screen, SEED-166 |
+| 005 | streak-flame-and-freezes | Flame silhouette + freeze icon + arrival animations (SEED-181) | **A — Concentric flame + plain Snowflake freezes** | train, streak, flame, freezes, animation |
+| 006 | train-landing-hero | Where the flame lives on the phone landing next to a full-width Start; collapsed schedule (SEED-181) | **A — Flame beside the CTA** | train, landing, hero, mobile |
+| 007 | dark-surface-elevation | How do cards separate from the page in the dark theme (sunlight legibility), keeping all containers? | **S2 — current fills + lighter header band + white/8% border = separator** | theme, dark-mode, surfaces, elevation, mobile |
 
 ## Decisions (winners)
 
@@ -72,3 +75,18 @@ stepper shape as the 003 intro; "Got it" dismisses it. Score screen: the bot bub
 heading, lists what returns and when, explains spaced repetition and the reminder's purpose;
 badge, points, next-session line and Remind me / Done follow. Later sessions get a one-line
 bubble. Prose is placeholder, to be settled in discuss-phase.
+
+**005 → Variant A (Concentric) + Snowflake.** One flame silhouette repeated at 100/76/56% (red
+outer, orange middle, yellow core), streak number in the bowl (dark text, Fredoka 700, shrinks for
+3 digits), grey outline at 0. Freezes = plain stroke snowflakes, icy blue `oklch(0.82 0.10 230)`
+filled vs grey outline. Animations as SEED-181 (ignite, crack + frost sweep, pop-in, quiet reset).
+
+**006 → Variant A (Flame beside the CTA).** Hero card with the flame left and a right column of
+streak caption, freeze meter and full-width Start. Puzzle pool becomes two stat tiles; the Train
+schedule collapses to a one-line summary that expands on tap, day toggles filled when selected.
+
+**007 → S2 (Current fills + lighter header band + matching hairline border).**
+- Page `#0a0a0a` and card `#161412` + noise stay. Lifted-surface variants A/B were rejected; the owner keeps today's darkness.
+- CardHeader band goes from darker (`bg-black/20`) to lighter (`white/3.5%`).
+- 1px card border white/8% (`border-border/80`) and in-card separators raised to the same color. The border carries sunlight legibility.
+- Build note: a real `border`, not an inset box-shadow (children paint over it). Decide Card-only vs all `.charcoal-texture` surfaces.

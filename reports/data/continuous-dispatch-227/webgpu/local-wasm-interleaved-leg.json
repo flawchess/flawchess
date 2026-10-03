@@ -1,0 +1,340 @@
+{
+  "schema": "engine-bench-227/v1",
+  "leg": "interleaved",
+  "env": {
+    "userAgent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/154.0.0.0 Safari/537.36",
+    "hardwareConcurrency": 16,
+    "poolSize": 4,
+    "isSecureContext": true,
+    "crossOriginIsolated": true,
+    "hasNavigatorGpu": true,
+    "webgpuShaderF16": false
+  },
+  "maiaLatency": [],
+  "botMove": [
+    {
+      "round": 1,
+      "mode": "round",
+      "modeObserved": "round",
+      "positionId": "italian",
+      "wallMs": 1676.5649999976158,
+      "nodes": 12,
+      "backend": "wasm"
+    },
+    {
+      "round": 1,
+      "mode": "round",
+      "modeObserved": "round",
+      "positionId": "middlegame",
+      "wallMs": 6029.020000010729,
+      "nodes": 50,
+      "backend": "wasm"
+    },
+    {
+      "round": 1,
+      "mode": "round",
+      "modeObserved": "round",
+      "positionId": "sharp",
+      "wallMs": 2476.3500000089407,
+      "nodes": 15,
+      "backend": "wasm"
+    },
+    {
+      "round": 1,
+      "mode": "round",
+      "modeObserved": "round",
+      "positionId": "endgame",
+      "wallMs": 996.1500000059605,
+      "nodes": 8,
+      "backend": "wasm"
+    },
+    {
+      "round": 1,
+      "mode": "round",
+      "modeObserved": "round",
+      "positionId": "C50",
+      "wallMs": 1438.0249999910593,
+      "nodes": 15,
+      "backend": "wasm"
+    },
+    {
+      "round": 1,
+      "mode": "round",
+      "modeObserved": "round",
+      "positionId": "C60",
+      "wallMs": 2530.4500000029802,
+      "nodes": 24,
+      "backend": "wasm"
+    },
+    {
+      "round": 1,
+      "mode": "continuous",
+      "modeObserved": "continuous",
+      "positionId": "italian",
+      "wallMs": 1069.3250000029802,
+      "nodes": 10,
+      "backend": "wasm"
+    },
+    {
+      "round": 1,
+      "mode": "continuous",
+      "modeObserved": "continuous",
+      "positionId": "middlegame",
+      "wallMs": 4277.969999998808,
+      "nodes": 50,
+      "backend": "wasm"
+    },
+    {
+      "round": 1,
+      "mode": "continuous",
+      "modeObserved": "continuous",
+      "positionId": "sharp",
+      "wallMs": 2041.279999986291,
+      "nodes": 28,
+      "backend": "wasm"
+    },
+    {
+      "round": 1,
+      "mode": "continuous",
+      "modeObserved": "continuous",
+      "positionId": "endgame",
+      "wallMs": 490.1899999976158,
+      "nodes": 8,
+      "backend": "wasm"
+    },
+    {
+      "round": 1,
+      "mode": "continuous",
+      "modeObserved": "continuous",
+      "positionId": "C50",
+      "wallMs": 2049.3400000035763,
+      "nodes": 50,
+      "backend": "wasm"
+    },
+    {
+      "round": 1,
+      "mode": "continuous",
+      "modeObserved": "continuous",
+      "positionId": "C60",
+      "wallMs": 1039.1949999928474,
+      "nodes": 8,
+      "backend": "wasm"
+    },
+    {
+      "round": 2,
+      "mode": "continuous",
+      "modeObserved": "continuous",
+      "positionId": "italian",
+      "wallMs": 1110.8649999946356,
+      "nodes": 10,
+      "backend": "wasm"
+    },
+    {
+      "round": 2,
+      "mode": "continuous",
+      "modeObserved": "continuous",
+      "positionId": "middlegame",
+      "wallMs": 4054.0550000071526,
+      "nodes": 50,
+      "backend": "wasm"
+    },
+    {
+      "round": 2,
+      "mode": "continuous",
+      "modeObserved": "continuous",
+      "positionId": "sharp",
+      "wallMs": 1576.2849999964237,
+      "nodes": 13,
+      "backend": "wasm"
+    },
+    {
+      "round": 2,
+      "mode": "continuous",
+      "modeObserved": "continuous",
+      "positionId": "endgame",
+      "wallMs": 831.0049999952316,
+      "nodes": 11,
+      "backend": "wasm"
+    },
+    {
+      "round": 2,
+      "mode": "continuous",
+      "modeObserved": "continuous",
+      "positionId": "C50",
+      "wallMs": 698.859999999404,
+      "nodes": 9,
+      "backend": "wasm"
+    },
+    {
+      "round": 2,
+      "mode": "continuous",
+      "modeObserved": "continuous",
+      "positionId": "C60",
+      "wallMs": 932.2000000029802,
+      "nodes": 12,
+      "backend": "wasm"
+    },
+    {
+      "round": 2,
+      "mode": "round",
+      "modeObserved": "round",
+      "positionId": "italian",
+      "wallMs": 1909.35,
+      "nodes": 14,
+      "backend": "wasm"
+    },
+    {
+      "round": 2,
+      "mode": "round",
+      "modeObserved": "round",
+      "positionId": "middlegame",
+      "wallMs": 5842.65,
+      "nodes": 50,
+      "backend": "wasm"
+    },
+    {
+      "round": 2,
+      "mode": "round",
+      "modeObserved": "round",
+      "positionId": "sharp",
+      "wallMs": 2548.08,
+      "nodes": 16,
+      "backend": "wasm"
+    },
+    {
+      "round": 2,
+      "mode": "round",
+      "modeObserved": "round",
+      "positionId": "endgame",
+      "wallMs": 1192.61,
+      "nodes": 8,
+      "backend": "wasm"
+    },
+    {
+      "round": 2,
+      "mode": "round",
+      "modeObserved": "round",
+      "positionId": "C50",
+      "wallMs": 1403.745,
+      "nodes": 16,
+      "backend": "wasm"
+    },
+    {
+      "round": 2,
+      "mode": "round",
+      "modeObserved": "round",
+      "positionId": "C60",
+      "wallMs": 2448.525,
+      "nodes": 20,
+      "backend": "wasm"
+    },
+    {
+      "round": 3,
+      "mode": "round",
+      "modeObserved": "round",
+      "positionId": "italian",
+      "wallMs": 1622.82,
+      "nodes": 12,
+      "backend": "wasm"
+    },
+    {
+      "round": 3,
+      "mode": "round",
+      "modeObserved": "round",
+      "positionId": "middlegame",
+      "wallMs": 6112.925,
+      "nodes": 50,
+      "backend": "wasm"
+    },
+    {
+      "round": 3,
+      "mode": "round",
+      "modeObserved": "round",
+      "positionId": "sharp",
+      "wallMs": 2287.06,
+      "nodes": 15,
+      "backend": "wasm"
+    },
+    {
+      "round": 3,
+      "mode": "round",
+      "modeObserved": "round",
+      "positionId": "endgame",
+      "wallMs": 1027.18,
+      "nodes": 8,
+      "backend": "wasm"
+    },
+    {
+      "round": 3,
+      "mode": "round",
+      "modeObserved": "round",
+      "positionId": "C50",
+      "wallMs": 2869.065,
+      "nodes": 50,
+      "backend": "wasm"
+    },
+    {
+      "round": 3,
+      "mode": "round",
+      "modeObserved": "round",
+      "positionId": "C60",
+      "wallMs": 2328.1,
+      "nodes": 22,
+      "backend": "wasm"
+    },
+    {
+      "round": 3,
+      "mode": "continuous",
+      "modeObserved": "continuous",
+      "positionId": "italian",
+      "wallMs": 1076.82,
+      "nodes": 10,
+      "backend": "wasm"
+    },
+    {
+      "round": 3,
+      "mode": "continuous",
+      "modeObserved": "continuous",
+      "positionId": "middlegame",
+      "wallMs": 4084.715,
+      "nodes": 50,
+      "backend": "wasm"
+    },
+    {
+      "round": 3,
+      "mode": "continuous",
+      "modeObserved": "continuous",
+      "positionId": "sharp",
+      "wallMs": 2916.605,
+      "nodes": 50,
+      "backend": "wasm"
+    },
+    {
+      "round": 3,
+      "mode": "continuous",
+      "modeObserved": "continuous",
+      "positionId": "endgame",
+      "wallMs": 676.73,
+      "nodes": 8,
+      "backend": "wasm"
+    },
+    {
+      "round": 3,
+      "mode": "continuous",
+      "modeObserved": "continuous",
+      "positionId": "C50",
+      "wallMs": 614.8,
+      "nodes": 10,
+      "backend": "wasm"
+    },
+    {
+      "round": 3,
+      "mode": "continuous",
+      "modeObserved": "continuous",
+      "positionId": "C60",
+      "wallMs": 975.055,
+      "nodes": 10,
+      "backend": "wasm"
+    }
+  ]
+}

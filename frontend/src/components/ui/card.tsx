@@ -71,7 +71,7 @@ function CardHeader({
   return (
     <Tag
       className={cn(
-        'flex items-center gap-2 px-4 bg-black/20 border-b border-border/40 font-semibold',
+        'flex items-center gap-2 px-4 bg-card-band border-b border-card-edge font-semibold',
         size === 'compact' ? 'py-2 text-sm' : 'py-3 text-base',
         className,
       )}

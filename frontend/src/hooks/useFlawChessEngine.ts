@@ -63,6 +63,7 @@ export {
   FLAWCHESS_BOT_CONCURRENCY,
   FLAWCHESS_BOT_STOP_RULE,
 } from '@/lib/engine/botBudget';
+import { FLAWCHESS_DISPATCH_MODE } from '@/lib/engine/botBudget';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -377,6 +378,9 @@ export function useFlawChessEngine({
       // inside mctsSearch) so the no-op short-circuit stays visible at the
       // orchestrator layer (Pitfall 1/T-159-08).
       policyTemperature: policyTemperature ?? DEFAULT_POLICY_TEMPERATURE,
+      // Phase 227 D-13: the shared dispatch-mode constant, same one the bot
+      // budget carries ('continuous' since the owner's ship decision).
+      dispatchMode: FLAWCHESS_DISPATCH_MODE,
     };
     // Phase 226 D-18 (arm A21S): the analysis board splits the root exactly
     // like the harness — gradeRoot fans the root's one grade call across

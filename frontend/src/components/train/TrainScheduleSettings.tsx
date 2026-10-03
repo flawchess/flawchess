@@ -69,11 +69,18 @@
  * to this landing card, not only the score screen.
  * `resolveScheduleCardVisibility` is the single place both `isGuest` terms
  * live.
+ *
+ * SEED-181 (sketch 006 A): the card is set-once configuration that dominated
+ * a phone's height, so it now starts COLLAPSED to its header, which doubles as
+ * a disclosure button carrying a one-line summary of the draft ("Mo–Fr · 6
+ * puzzles · 16:00"). The save indicator and the completed state's "Next
+ * session" line stay visible while collapsed; the controls unmount (all draft
+ * state lives in this component, so nothing is lost).
  */
 import { useEffect, useRef, useState } from 'react';
-import type { ReactElement } from 'react';
+import type { ReactElement, ReactNode } from 'react';
 import { format, parseISO } from 'date-fns';
-import { Check, Smartphone } from 'lucide-react';
+import { Check, ChevronDown, Smartphone } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardBody, CardHeader } from '@/components/ui/card';
 import { Slider } from '@/components/ui/slider';
@@ -88,6 +95,7 @@ import { useTrainSettings } from '@/hooks/useTrainSettings';
 import { usePushCapability } from '@/hooks/usePushCapability';
 import { ensureDeviceSubscribed, formatReminderHour, REMINDER_HOUR_OPTIONS } from '@/lib/push';
 import type { DeviceSubscribeResult } from '@/lib/push';
+import { cn } from '@/lib/utils';
 
 export const TRAIN_SETTINGS_SAVE_DEBOUNCE_MS = 600;
 export const TRAIN_SETTINGS_SAVED_INDICATOR_MS = 2000;
@@ -170,6 +178,30 @@ export interface TrainScheduleSettingsProps {
   isGuest: boolean;
 }
 
+/** A contiguous run of at least this many days reads as a range ("Mo–Fr"). */
+const MIN_WEEKDAY_RANGE = 3;
+const ALL_WEEKDAYS_MASK = (1 << WEEKDAY_CHIPS.length) - 1;
+
+/** "Every day", "Any day" (train anytime, mask 0), "Mo–Fr", or "Mo We Fr". */
+// eslint-disable-next-line react-refresh/only-export-components -- pure helper shared with tests, not a component
+export function weekdaySummary(mask: number): string {
+  if (mask === ALL_WEEKDAYS_MASK) return 'Every day';
+  const on = WEEKDAY_CHIPS.filter((chip) => isWeekdayBitSet(mask, chip.bit));
+  const first = on[0];
+  const last = on[on.length - 1];
+  if (first === undefined || last === undefined) return 'Any day';
+  const contiguous = last.bit - first.bit === on.length - 1;
+  if (contiguous && on.length >= MIN_WEEKDAY_RANGE) return `${first.label}–${last.label}`;
+  return on.map((chip) => chip.label).join(' ');
+}
+
+/** The collapsed header's one-line summary of the current draft. */
+function scheduleSummary(draft: Draft, showReminder: boolean): string {
+  const parts = [weekdaySummary(draft.weekdayMask), `${draft.puzzlesPerSession} puzzles`];
+  if (showReminder && draft.reminderEnabled) parts.push(formatReminderHour(draft.reminderHour));
+  return parts.join(' · ');
+}
+
 /**
  * The card shell, shared by the error and populated bodies so a failed
  * settings fetch still reads as the same "Train schedule" box.
@@ -182,44 +214,101 @@ export interface TrainScheduleSettingsProps {
  * costs no vertical space at all and still can't shift the layout when it
  * appears.
  */
+interface ScheduleCardShellProps {
+  indicator: IndicatorState;
+  /** Disclosure state; omit both for a non-collapsible shell (error state). */
+  open?: boolean;
+  onToggle?: () => void;
+  /** Shown in the header while collapsed and the indicator is idle. */
+  summary?: string | null;
+  /** Body content that stays visible while collapsed ("Next session"). */
+  persistent?: ReactNode;
+  children: ReactElement;
+}
+
+function SaveIndicator({ indicator }: { indicator: IndicatorState }): ReactElement | null {
+  if (indicator === 'saved') {
+    return (
+      <span
+        data-testid="train-settings-saved"
+        className="ml-auto flex items-center gap-1 text-sm font-normal text-muted-foreground"
+      >
+        <Check className="size-4" aria-hidden="true" />
+        Saved
+      </span>
+    );
+  }
+  if (indicator === 'error') {
+    return (
+      <span data-testid="train-settings-save-error" className="ml-auto text-sm font-normal text-muted-foreground">
+        Couldn&apos;t save. Try again.
+      </span>
+    );
+  }
+  if (indicator === 'reminder-error') {
+    return (
+      <span data-testid="train-reminder-error" className="ml-auto text-sm font-normal text-muted-foreground">
+        Couldn&apos;t turn on reminders. Try again.
+      </span>
+    );
+  }
+  return null;
+}
+
 function ScheduleCardShell({
   indicator,
+  open,
+  onToggle,
+  summary,
+  persistent,
   children,
-}: {
-  indicator: IndicatorState;
-  children: ReactElement;
-}): ReactElement {
+}: ScheduleCardShellProps): ReactElement {
+  const collapsible = onToggle !== undefined;
+  const expanded = !collapsible || open === true;
+  const showSummary = collapsible && !expanded && indicator === 'idle' && summary;
   return (
     <Card as="section" className="w-full" data-testid="train-schedule-settings">
-      <CardHeader size="compact">
-        Train schedule
-        {indicator === 'saved' && (
-          <span
-            data-testid="train-settings-saved"
-            className="ml-auto flex items-center gap-1 text-sm font-normal text-muted-foreground"
+      <CardHeader size="compact" className={cn(collapsible && 'p-0')}>
+        {collapsible ? (
+          <button
+            type="button"
+            onClick={onToggle}
+            aria-expanded={expanded}
+            data-testid="btn-train-schedule-toggle"
+            className="flex w-full min-w-0 items-center gap-2 px-4 py-2 text-left pointer-fine:hover:bg-white/5"
           >
-            <Check className="size-4" aria-hidden="true" />
-            Saved
-          </span>
-        )}
-        {indicator === 'error' && (
-          <span
-            data-testid="train-settings-save-error"
-            className="ml-auto text-sm font-normal text-muted-foreground"
-          >
-            Couldn&apos;t save. Try again.
-          </span>
-        )}
-        {indicator === 'reminder-error' && (
-          <span
-            data-testid="train-reminder-error"
-            className="ml-auto text-sm font-normal text-muted-foreground"
-          >
-            Couldn&apos;t turn on reminders. Try again.
-          </span>
+            <span className="shrink-0">Train schedule</span>
+            {showSummary && (
+              <span
+                data-testid="train-schedule-summary"
+                className="ml-auto truncate text-sm font-normal text-muted-foreground"
+              >
+                {summary}
+              </span>
+            )}
+            <SaveIndicator indicator={indicator} />
+            <ChevronDown
+              aria-hidden="true"
+              className={cn(
+                'size-4 shrink-0 text-muted-foreground transition-transform',
+                !showSummary && indicator === 'idle' && 'ml-auto',
+                expanded && 'rotate-180',
+              )}
+            />
+          </button>
+        ) : (
+          <>
+            Train schedule
+            <SaveIndicator indicator={indicator} />
+          </>
         )}
       </CardHeader>
-      <CardBody>{children}</CardBody>
+      {(expanded || persistent) && (
+        <CardBody className="flex w-full flex-col gap-4">
+          {persistent}
+          {expanded && children}
+        </CardBody>
+      )}
     </Card>
   );
 }
@@ -420,6 +509,7 @@ export function TrainScheduleSettings({
   const [draft, setDraft] = useState<Draft | null>(null);
   const hasEditedRef = useRef(false);
   const [indicator, setIndicator] = useState<IndicatorState>('idle');
+  const [open, setOpen] = useState(false);
   const savedTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   // True while ensureDeviceSubscribed() is in flight for the master toggle.
   const [subscribing, setSubscribing] = useState(false);
@@ -554,14 +644,22 @@ export function TrainScheduleSettings({
       canInstall,
     });
 
+  const nextSessionLine =
+    nextSessionDate !== undefined ? (
+      <p className="text-sm" data-testid="train-next-session">
+        Next session: {format(parseISO(nextSessionDate), 'MMM d, yyyy')}
+      </p>
+    ) : undefined;
+
   return (
-    <ScheduleCardShell indicator={indicator}>
+    <ScheduleCardShell
+      indicator={indicator}
+      open={open}
+      onToggle={() => setOpen((prev) => !prev)}
+      summary={draft === null ? null : scheduleSummary(draft, showReminderBlock && !blocked)}
+      persistent={nextSessionLine}
+    >
       <div className="flex w-full flex-col gap-4">
-        {nextSessionDate !== undefined && (
-          <p className="text-sm" data-testid="train-next-session">
-            Next session: {format(parseISO(nextSessionDate), 'MMM d, yyyy')}
-          </p>
-        )}
         {/*
           Restyled (191-06 UAT) to match the game filter panel exactly:
           - "Train on" mirrors FilterPanel's multi-select "Time control" —

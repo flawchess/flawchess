@@ -68,7 +68,7 @@ const ENGINE_RESPAWN_BACKOFF_MS = 2_000;
  * generalized to one FIFO waiter list since every request here is a single
  * atomic `go` round-trip, not a priority-ordered MCTS grade queue).
  */
-function acquireEngine(pool) {
+function acquireEngine(pool, onQueued) {
   if (pool.fatal) return Promise.reject(pool.fatal);
   const free = pool.engines.find((engine) => !engine.dead && !pool.busy.get(engine));
   if (free !== undefined) {
@@ -78,7 +78,11 @@ function acquireEngine(pool) {
   // No free engine right now. This also covers the transient window where every
   // engine died and its replacement is still spawning — the waiter is served by
   // `replaceDeadEngine`'s release, or rejected if the pool can't be rebuilt.
-  return new Promise((resolve, reject) => pool.waiters.push({ resolve, reject }));
+  return new Promise((resolve, reject) => {
+    const waiter = { resolve, reject };
+    pool.waiters.push(waiter);
+    onQueued?.(waiter); // lets `withEngine` pull this entry back out if its caller aborts while queued
+  });
 }
 
 /**
@@ -89,6 +93,21 @@ function acquireEngine(pool) {
  */
 function countFreeEngines(pool) {
   return pool.engines.filter((engine) => !engine.dead && !pool.busy.get(engine)).length;
+}
+
+/**
+ * True when no request can still be running or waiting: every live engine is free, nobody is
+ * queued, and no dead-engine replacement is mid-respawn (Phase 227 D-09 `whenIdle`).
+ */
+function isPoolIdle(pool) {
+  const live = pool.engines.filter((engine) => !engine.dead).length;
+  return countFreeEngines(pool) === live && pool.waiters.length === 0 && pool.respawning === 0;
+}
+
+/** Resolves every `whenIdle()` caller once the pool is idle. Called wherever an engine frees up or a respawn settles. */
+function notifyIdle(pool) {
+  if (pool.idleResolvers.length === 0 || !isPoolIdle(pool)) return;
+  for (const resolve of pool.idleResolvers.splice(0)) resolve();
 }
 
 /**
@@ -107,6 +126,7 @@ function releaseEngine(pool, engine) {
     return;
   }
   pool.busy.set(engine, false);
+  notifyIdle(pool);
 }
 
 /**
@@ -183,6 +203,18 @@ async function replaceDeadEngine(pool, dead) {
   pool.busy.delete(dead);
   dead.terminate(); // idempotent: reaps the child (if any) and unlinks its temp .cjs/.wasm
 
+  // `whenIdle` must not report idle while a replacement is still being spawned.
+  pool.respawning++;
+  try {
+    await respawnInto(pool, dead);
+  } finally {
+    pool.respawning--;
+    notifyIdle(pool);
+  }
+}
+
+/** The respawn-with-backoff loop of `replaceDeadEngine` (kept separate so its `respawning` accounting has one exit). */
+async function respawnInto(pool, dead) {
   for (let attempt = 1; attempt <= ENGINE_RESPAWN_ATTEMPTS; attempt++) {
     try {
       const fresh = await spawnConfigured(pool.hashMb, pool.sendObserver);
@@ -245,8 +277,75 @@ async function runWithRetry(engine, fn) {
   throw lastErr; // unreachable — the loop above always returns or throws
 }
 
-/** Runs `fn` against a free engine, always releasing it back to the pool afterward (success or throw). */
-async function withEngine(pool, fn) {
+/**
+ * Runs `fn` against a free engine, always releasing it back to the pool afterward (success or throw).
+ *
+ * Phase 227 D-09 / N-2: with a `signal`, mirrors `workerPoolDispatch.ts`'s `submitGradeRequest`
+ * abort handling. A request aborted before it starts never reaches an engine; one aborted while
+ * queued leaves `pool.waiters`; one aborted in flight sends `stop` to its engine. In every case the
+ * caller settles with `abortValue` at once, and an in-flight engine is released only after `fn`
+ * settles on the engine's own `bestmove`, so a still-searching engine is never handed on. The abort
+ * listener is `{ once: true }` AND removed on every settle path (the browser pool's 400-listener
+ * accumulation lesson: mctsSearch threads ONE signal through every grade of a search).
+ */
+function withEngine(pool, fn, signal, abortValue) {
+  if (signal === undefined || signal === null) return runOnEngine(pool, fn); // no signal: exactly the pre-227 path
+  if (signal.aborted) return Promise.resolve(abortValue);
+
+  return new Promise((resolve, reject) => {
+    let settled = false;
+    let queuedWaiter = null;
+    let runningEngine = null;
+    const settle = (finish, value) => {
+      if (settled) return;
+      settled = true;
+      signal.removeEventListener('abort', onAbort);
+      finish(value);
+    };
+    const onAbort = () => {
+      if (queuedWaiter !== null) {
+        const idx = pool.waiters.indexOf(queuedWaiter);
+        if (idx >= 0) pool.waiters.splice(idx, 1);
+      }
+      if (runningEngine !== null && !runningEngine.dead) {
+        try {
+          runningEngine.send('stop'); // `fn` finishes on the resulting bestmove; its result is discarded
+        } catch {
+          // the engine died between the check and the write: its own death path replaces it
+        }
+      }
+      settle(resolve, abortValue);
+    };
+    signal.addEventListener('abort', onAbort, { once: true });
+
+    acquireEngine(pool, (waiter) => {
+      queuedWaiter = waiter;
+    }).then(
+      async (engine) => {
+        queuedWaiter = null;
+        if (settled) {
+          // Aborted in the gap between the engine being handed over and this continuation running.
+          releaseEngine(pool, engine);
+          return;
+        }
+        runningEngine = engine;
+        try {
+          settle(resolve, await runWithRetry(engine, fn));
+        } catch (err) {
+          // WR-01: see `runOnEngine`: resync the engine quiescent before releasing it.
+          if (!engine.dead) await engine.stopAndSync().catch(() => {});
+          settle(reject, err); // a no-op when the caller already settled via abort
+        } finally {
+          releaseEngine(pool, engine);
+        }
+      },
+      (err) => settle(reject, err),
+    );
+  });
+}
+
+/** Signal-free `withEngine` body: acquire, run with retry, release. */
+async function runOnEngine(pool, fn) {
   const engine = await acquireEngine(pool);
   try {
     return await runWithRetry(engine, fn);
@@ -343,7 +442,8 @@ export async function splitAcrossFreeEngines({ freeCount, size, stats, candidate
 /**
  * Spawns `size` independent Stockfish processes and returns the pool's public
  * surface: `grade`/`evalPosition`/`skillMove` (each acquire-run-release over
- * a free engine), `newGameAll` (D-09 determinism: clears every engine's
+ * a free engine; `grade`/`gradeRoot`/`run` honor an AbortSignal, Phase 227 D-09),
+ * `whenIdle`, `newGameAll` (D-09 determinism: clears every engine's
  * transposition table at a game boundary), and `quitAll`.
  */
 export async function createStockfishPool({
@@ -388,6 +488,8 @@ export async function createStockfishPool({
     engines,
     busy: new Map(engines.map((engine) => [engine, false])),
     waiters: [],
+    idleResolvers: [],
+    respawning: 0,
     fatal: null,
     shuttingDown: false,
     hashMb,
@@ -416,10 +518,12 @@ export async function createStockfishPool({
      * output showing it. Widening the closure and forwarding the depth closes
      * that gap.
      *
-     * `signal` is accepted but deliberately NOT acted on: the Node pool has no
-     * abort path today, and inventing one is out of scope for this fix. The
-     * parameter exists purely so a future 4th-argument caller can never be
-     * silently truncated by parameter position again.
+     * Phase 227 N-2 (fix site): the Node pools used to IGNORE `signal`, so continuous
+     * dispatch's D-09 cancellation never happened in Node: stale grades kept engines busy into
+     * the next position's timing window, and the root-split premise counter fired. `signal` is
+     * now honored exactly like the browser WorkerPool: an unstarted request is dropped, an
+     * in-flight one gets `stop` and settles an empty Map at once, and its engine is freed only
+     * after `bestmove` (see `withEngine`).
      *
      * Phase 226 D-03: forwards `{ clearHash: pool.clearHash }` into `nodeGrade`
      * so a grading-only pool built with `createStockfishPool({ clearHash: false })`
@@ -427,7 +531,12 @@ export async function createStockfishPool({
      * pool's configured policy, not a per-call override.
      */
     grade: (fen, candidateUcis, signal, gradingDepth) =>
-      withEngine(pool, (engine) => nodeGrade(engine, fen, candidateUcis, gradingDepth, { clearHash: pool.clearHash })),
+      withEngine(
+        pool,
+        (engine) => nodeGrade(engine, fen, candidateUcis, gradingDepth, { clearHash: pool.clearHash }),
+        signal,
+        new Map(),
+      ),
 
     /**
      * `clearHash` (Phase 226 D-03): exposes this pool's configured Clear-Hash
@@ -452,15 +561,49 @@ export async function createStockfishPool({
      * like `grade` above, so a warm-hash gradeRoot never silently reverts to
      * Clear-Hash grading.
      */
-    gradeRoot: (fen, candidateUcis, signal, gradingDepth) =>
-      splitAcrossFreeEngines({
-        freeCount: () => countFreeEngines(pool),
-        size,
-        stats: pool.splitStats,
-        candidateUcis,
-        runShard: (shard) =>
-          withEngine(pool, (engine) => nodeGrade(engine, fen, shard, gradingDepth, { clearHash: pool.clearHash })),
-      }),
+    gradeRoot: async (fen, candidateUcis, signal, gradingDepth) => {
+      if (signal?.aborted) return new Map();
+      let merged;
+      try {
+        merged = await splitAcrossFreeEngines({
+          freeCount: () => countFreeEngines(pool),
+          size,
+          stats: pool.splitStats,
+          candidateUcis,
+          runShard: (shard) =>
+            withEngine(
+              pool,
+              (engine) => nodeGrade(engine, fen, shard, gradingDepth, { clearHash: pool.clearHash }),
+              signal,
+              new Map(),
+            ),
+        });
+      } catch (err) {
+        // L-2: a root grade aborted mid-fan-out leaves some shards empty, which the shard merge may
+        // reject as incomplete. An abort is not a failure: resolve empty, never throw or merge partially.
+        if (signal?.aborted) return new Map();
+        throw err;
+      }
+      // L-2: shards that settled empty because of the abort must never be merged into a partial result.
+      return signal?.aborted ? new Map() : merged;
+    },
+
+    /**
+     * Resolves once every live engine is free, no request is queued, and no dead-engine
+     * replacement is mid-respawn (Phase 227 D-09). Gate scripts await it after cancelling grades so
+     * the previous position's stopped searches have quiesced before the next position's timer starts.
+     * Stockfish only: it says nothing about Maia, so gate scripts also await `whenMaiaIdle()`
+     * (`scripts/lib/calibration-providers.mjs`) before it.
+     */
+    whenIdle: () =>
+      isPoolIdle(pool)
+        ? Promise.resolve()
+        : new Promise((resolve) => {
+            pool.idleResolvers.push(resolve);
+          }),
+
+    /** Requests currently waiting for an engine (read-only instrument, like `freeCount`; used by the abort check). */
+    queuedCount: () => pool.waiters.length,
 
     /** Copy of this pool's `gradeRoot` tripwire accumulator — never the live mutable object. */
     rootSplitStats: () => ({ ...pool.splitStats }),
@@ -491,8 +634,13 @@ export async function createStockfishPool({
      * a resolved `fn` that left a search running would corrupt the next caller.
      * `fn` may be re-invoked from the start on a `waitFor` timeout (D-11), so
      * keep any accumulator it owns inside the function body.
+     *
+     * Phase 227 D-09: optional `signal` + `abortValue` give `run` the same abort semantics as
+     * `grade` (see `withEngine`); on abort the caller settles with `abortValue` while `fn` is left
+     * to finish on its engine's own `bestmove`, so `fn` must not start a further search by itself
+     * after its first one returns early.
      */
-    run: (fn) => withEngine(pool, fn),
+    run: (fn, signal, abortValue) => withEngine(pool, fn, signal, abortValue),
 
     /** Stockfish-skill anchor move at `skillLevel` (D-07 anchor). */
     skillMove: (fen, skillLevel) => withEngine(pool, (engine) => stockfishSkillMove(engine, fen, skillLevel)),

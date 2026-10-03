@@ -15,7 +15,7 @@ import { Link } from 'react-router';
 import { Button } from '@/components/ui/button';
 import { EmptyState } from '@/components/ui/empty-state';
 import { LoadError } from '@/components/ui/load-error';
-import { TRAIN_CTA_BUTTON_CLASS } from '@/components/train/buttonStyles';
+import { TRAIN_BUTTON_CLASS, TRAIN_CTA_BUTTON_CLASS } from '@/components/train/buttonStyles';
 import { ImportAskActions } from '@/components/train/ImportAskActions';
 import { SignupAskActions } from '@/components/train/SignupAskActions';
 import { TrainBotBubble } from '@/components/train/TrainBotBubble';
@@ -83,14 +83,6 @@ export interface TrainStartScreenProps {
 const LANDING_CONTAINER_CLASS =
   'mx-auto flex w-full max-w-2xl flex-col items-start gap-4 py-6 text-left md:py-8';
 
-/**
- * 193 UAT round 3: Streak and Puzzle pool sit side by side from `sm:` up and
- * stack on mobile. Each held two or three short lines inside full-width card
- * chrome, which pushed `TrainScheduleSettings` — the only interactive block
- * besides the CTA — below the fold on a laptop. Grid items stretch, so the
- * two cards stay equal height.
- */
-const LANDING_CARD_GRID_CLASS = 'grid w-full grid-cols-1 gap-4 sm:grid-cols-2';
 
 type LandingState =
   | { kind: 'loading' }
@@ -130,7 +122,12 @@ function resolveLandingState(
   isError: boolean,
   sessionScore: number,
 ): LandingState {
-  if (isLoading) return { kind: 'loading' };
+  // Only the FIRST load blanks the landing. A schedule save re-fetches the
+  // session (191-06) while the old one is still in hand; showing "Loading…"
+  // then unmounted the whole landing and snapped the schedule card shut
+  // mid-edit (SEED-181 review). The old session keeps rendering instead, with
+  // Start disabled until the fresh one lands.
+  if (isLoading && session === null) return { kind: 'loading' };
   if (isError) return { kind: 'error' };
   // Per TrainSessionResponse's own contract, session_id is null exactly when
   // no eligible puzzle was found (puzzle_count is then always 0 too) — D-04.
@@ -353,10 +350,8 @@ export function TrainStartScreen({
       <div className={LANDING_CONTAINER_CLASS} data-testid="train-start-screen">
         <TrainReminderResurfaceBanner />
         <TrainHeader session={session} isGuest={isGuest} hasGames={hasGames} />
-        <div className={LANDING_CARD_GRID_CLASS}>
-          <TrainStreakCard />
-          <TrainStatsCard todayScore={{ total: state.score, max: state.totalPoints }} />
-        </div>
+        <TrainStreakCard />
+        <TrainStatsCard todayScore={{ total: state.score, max: state.totalPoints }} />
         <TrainScheduleSettings
           onSaved={onSettingsSaved}
           nextSessionDate={state.nextSessionDate}
@@ -375,25 +370,29 @@ export function TrainStartScreen({
       ? `Resume session — ${state.solved} of ${state.total} done`
       : `Start session — ${state.puzzleCount} ${state.puzzleCount === 1 ? 'puzzle' : 'puzzles'}`;
 
-  // 193 UAT round 2: the CTA moved ABOVE the cards. With the stats boxed into
-  // card chrome, leaving Start/Resume underneath them pushed the one action on
-  // the page below a screenful of read-only numbers.
+  // SEED-181 (sketch 006 A): the CTA lives INSIDE the streak hero, beside the
+  // flame, so the one action on the page and the number it feeds share a
+  // glance above the fold on a phone. (193 UAT round 2 had already moved it
+  // above the cards; this folds it into the first one.)
   return (
     <div className={LANDING_CONTAINER_CLASS} data-testid="train-start-screen">
       <TrainReminderResurfaceBanner />
       <TrainHeader session={session} isGuest={isGuest} hasGames={hasGames} />
-      <Button
-        variant="default"
-        className={TRAIN_CTA_BUTTON_CLASS}
-        data-testid={state.kind === 'resume' ? 'btn-train-resume' : 'btn-train-start'}
-        onClick={onEnterLoop}
-      >
-        {buttonLabel}
-      </Button>
-      <div className={LANDING_CARD_GRID_CLASS}>
-        <TrainStreakCard />
-        <TrainStatsCard />
-      </div>
+      <TrainStreakCard
+        action={
+          <Button
+            variant="default"
+            className={`${TRAIN_BUTTON_CLASS} w-full`}
+            data-testid={state.kind === 'resume' ? 'btn-train-resume' : 'btn-train-start'}
+            // A re-fetch after a schedule save may replace this session.
+            disabled={isLoading}
+            onClick={onEnterLoop}
+          >
+            {buttonLabel}
+          </Button>
+        }
+      />
+      <TrainStatsCard />
       <TrainScheduleSettings onSaved={onSettingsSaved} isGuest={isGuest} />
     </div>
   );

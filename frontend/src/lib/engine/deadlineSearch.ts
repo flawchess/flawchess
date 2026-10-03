@@ -35,11 +35,21 @@
  * deadline expiring before `BOT_MIN_SEARCH_NODES` nodes have been evaluated
  * does NOT abort immediately: it arms the cut to fire from the next
  * `onSnapshot` that crosses the floor instead, accepting a small overrun
- * rather than a degenerate result. The overrun is bounded by one dispatch
- * batch — mctsSearch checks its signal per applied expansion inside a
- * `budget.concurrency`-sized round (mctsSearch.ts's canonical apply-order
- * loop), so the worst case is "one round's worth of expansions past the
- * floor", never unbounded. If the bot is so low on time that even the floor
+ * rather than a degenerate result. The overrun is bounded in BOTH dispatch
+ * modes (`SearchBudget.dispatchMode`, Phase 227), never unbounded:
+ *   - ROUND mode: mctsSearch checks its signal per applied expansion inside
+ *     a `budget.concurrency`-sized round (mctsSearch.ts's canonical
+ *     apply-order loop), so the worst case is one round's worth of
+ *     expansions past the floor.
+ *   - CONTINUOUS mode: the armed cut fires synchronously inside `onSnapshot`,
+ *     i.e. inside the apply that crossed the floor; the drain's next check
+ *     sees the aborted inner signal and discards every result still queued,
+ *     and the loop returns with in-flight work cancelled. The overrun is at
+ *     most the time to apply that one expansion. When the floor was already
+ *     met as the deadline fires (the common case) the timer macrotask aborts
+ *     directly, the abort wakes a loop that is awaiting a settlement, and the
+ *     overrun is zero.
+ * If the bot is so low on time that even the floor
  * cannot be reached before its clock empties, it flags — that is D-15/D-18's
  * intended behavior now, not a bug to clamp away.
  */

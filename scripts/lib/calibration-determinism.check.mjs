@@ -111,6 +111,8 @@ import { OPENING_BOOK } from './calibration-openings.mjs';
 import { createStockfishPool } from './stockfish-pool.mjs';
 import { makeNodeProviders } from './calibration-providers.mjs';
 import { applyUciMove } from './calibration-game-loop.mjs';
+import { defaultDispatchMode } from './dispatch-mode.mjs';
+import { FLAWCHESS_DISPATCH_MODE } from '@/lib/engine/botBudget';
 import { mulberry32 } from '@/lib/engine/botSampling';
 import { selectBotMove } from '@/lib/engine/selectBotMove';
 import { ATTACKER_STYLE } from '@/lib/engine/botStyleBundles';
@@ -194,6 +196,22 @@ export function parseArgs(argv) {
  * absent.
  */
 async function runDefaultArm() {
+  // ─── Phase 227 D-14: app/harness dispatch parity ───────────────────────────
+  // The harness's default dispatch mode must be the app's shipped constant, so a
+  // plain calibration sweep measures the loop the app actually runs.
+  assert.equal(
+    defaultDispatchMode(),
+    FLAWCHESS_DISPATCH_MODE,
+    'the harness default dispatch mode must equal FLAWCHESS_DISPATCH_MODE (app == harness, D-14)',
+  );
+  console.log('PASS: dispatch parity — harness default mode equals FLAWCHESS_DISPATCH_MODE');
+
+  // ROUND-MODE PIN (D-11): every bot budget in this check passes dispatchMode:
+  // 'round' explicitly. Round mode is the bit-identical path; continuous mode is
+  // timing-dependent by design (relaxed statistical contract, 226 D-05/D-07), so
+  // it is never asserted bit-identical here. Pinning also keeps this check
+  // meaningful after FLAWCHESS_DISPATCH_MODE is flipped to 'continuous'.
+
   // ─── Phase 184: defined style bundle reaches selectBotMove (deterministic stub) ─
 
   // A position where the SAME pawn has both a capture and a quiet-advance
@@ -221,7 +239,7 @@ async function runDefaultArm() {
 
   const unstyledPick = await selectBotMove(
     STYLE_CHECK_FEN,
-    { elo: 1500, blend: 0, budget: { maxNodes: 1, maxPlies: 1, concurrency: 1 } },
+    { elo: 1500, blend: 0, budget: { maxNodes: 1, maxPlies: 1, concurrency: 1, dispatchMode: 'round' } },
     { policy: stubPolicyStyleCheck, grade: stubGradeMustNotBeCalledStyle, rng: FIXED_DRAW },
   );
   assert.equal(
@@ -232,7 +250,7 @@ async function runDefaultArm() {
 
   const styledPick = await selectBotMove(
     STYLE_CHECK_FEN,
-    { elo: 1500, blend: 0, budget: { maxNodes: 1, maxPlies: 1, concurrency: 1 }, style: ATTACKER_STYLE },
+    { elo: 1500, blend: 0, budget: { maxNodes: 1, maxPlies: 1, concurrency: 1, dispatchMode: 'round' }, style: ATTACKER_STYLE },
     { policy: stubPolicyStyleCheck, grade: stubGradeMustNotBeCalledStyle, rng: FIXED_DRAW },
   );
   assert.equal(
@@ -259,6 +277,7 @@ async function runDefaultArm() {
       startFen: opening.fen,
       botIsWhite: DETERMINISM_BOT_IS_WHITE,
       gameRng: gameRng1,
+      dispatchMode: 'round', // D-11: round mode is the bit-identical path (see ROUND-MODE PIN below)
       // No maxNodes/maxPlies override (Phase 168.5-05 SC5 re-budget, see module
       // doc comment) — defaults to FLAWCHESS_BOT_MAX_NODES/_MAX_PLIES, the
       // ACTUAL shipped bot budget; stopRule/concurrency are already always
@@ -276,6 +295,7 @@ async function runDefaultArm() {
       startFen: opening.fen,
       botIsWhite: DETERMINISM_BOT_IS_WHITE,
       gameRng: gameRng2,
+      dispatchMode: 'round',
       // Same rationale as gameRng1's call above.
     });
 
@@ -302,6 +322,7 @@ async function runDefaultArm() {
       startFen: opening.fen,
       botIsWhite: DETERMINISM_BOT_IS_WHITE,
       gameRng: gameRng3,
+      dispatchMode: 'round',
       style: undefined,
     });
 
@@ -387,6 +408,7 @@ async function playWarmArmGamePair({ index, adjudicationPool, Chess, maiaCtx }) 
       startFen: opening.fen,
       botIsWhite: DETERMINISM_BOT_IS_WHITE,
       gameRng: mulberry32(seed),
+      dispatchMode: 'round',
     });
   } finally {
     gradingPool1?.quitAll();
@@ -437,6 +459,7 @@ async function playWarmArmGamePair({ index, adjudicationPool, Chess, maiaCtx }) 
               maxPlies: FLAWCHESS_BOT_MAX_PLIES,
               concurrency: FLAWCHESS_BOT_CONCURRENCY,
               stopRule: FLAWCHESS_BOT_STOP_RULE,
+              dispatchMode: 'round',
             },
           },
           { policy: providers2.policy, grade: providers2.grade, rng: gameRng2 },

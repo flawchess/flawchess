@@ -93,7 +93,7 @@ export function EndgameInsightsBlock({
       <AccordionItem
         value="insights"
         data-testid="insights-block"
-        className="charcoal-texture rounded-md overflow-hidden border-none"
+        className="charcoal-texture rounded-md overflow-hidden"
       >
         <AccordionTrigger
           data-testid="insights-block-trigger"

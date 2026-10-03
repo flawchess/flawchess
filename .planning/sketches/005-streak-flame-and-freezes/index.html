@@ -1,0 +1,212 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sketch 005 — Streak flame + freezes</title>
+<link rel="stylesheet" href="../themes/default.css">
+<link rel="stylesheet" href="flame.css">
+<style>
+  * { box-sizing: border-box; }
+  body { margin: 0; background: #0b0b0b; color: var(--color-text); font-family: var(--font-sans); padding-top: 64px; }
+  #variant-nav { position: fixed; top: 0; left: 0; right: 0; z-index: 9998; background: var(--color-surface); border-bottom: 1px solid var(--color-border); padding: 8px 16px; display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+  #variant-nav .lbl { color: var(--color-text-muted); font-size: 13px; margin: 0 4px 0 12px; }
+  .variant-tab, .seg { background: transparent; color: var(--color-text-muted); border: 1px solid var(--color-border-strong); border-radius: var(--radius-full); padding: 6px 12px; font: 600 13px var(--font-sans); cursor: pointer; transition: all .15s ease; }
+  .variant-tab:hover, .seg:hover { color: var(--color-text); border-color: var(--brand-brown-light); }
+  .variant-tab.active { background: var(--brand-brown); border-color: var(--brand-brown); color: #fff; }
+  .seg.active { background: oklch(0.82 0.10 230 / .18); border-color: oklch(0.82 0.10 230); color: oklch(0.90 0.06 230); }
+
+  .stage { display: flex; gap: 28px; justify-content: center; align-items: flex-start; padding: 24px 16px 40px; flex-wrap: wrap; }
+  .panel { background: var(--color-surface); border: 1px solid var(--color-border); border-radius: var(--radius-lg); padding: 20px; }
+  .preview { width: 340px; display: flex; flex-direction: column; align-items: center; gap: 18px; }
+  .preview .big { width: 170px; }
+  .preview .meter .slot { width: 26px; height: 26px; }
+  .preview .cap { font-size: 13px; color: var(--color-text-muted); text-align: center; }
+
+  .phone { width: 375px; background: var(--color-bg); border: 10px solid #222; border-radius: 36px; overflow: hidden; box-shadow: var(--shadow-lg); }
+  .phone .screen { padding: 16px 12px 24px; display: flex; flex-direction: column; gap: 12px; }
+  .card { background: var(--color-surface); border: 1px solid var(--color-border); border-radius: var(--radius-lg); overflow: hidden; }
+  .card-h { padding: 10px 14px; font-weight: 700; font-size: 14px; border-bottom: 1px solid var(--color-border); background: oklch(1 0 0 / 3%); display: flex; align-items: center; gap: 6px; }
+  .card-h .q { width: 16px; height: 16px; border-radius: 50%; border: 1.5px solid var(--color-text-muted); color: var(--color-text-muted); font-size: 10px; display: inline-flex; align-items: center; justify-content: center; cursor: help; }
+  .card-b { padding: 12px 14px; display: flex; flex-direction: column; gap: 10px; }
+  .row { display: flex; align-items: center; justify-content: space-between; font-size: 14px; }
+  .row .k { color: var(--color-text-muted); }
+  .row .v { font-weight: 700; }
+  .card .flame-host { width: 64px; }
+  .notice { font-size: 14px; color: var(--color-text-muted); display: none; }
+  .notice.show { display: block; }
+  .tip { display: none; font-size: 13px; color: var(--color-text-muted); padding: 0 14px 12px; line-height: 1.45; }
+  .tip.show { display: block; }
+
+  .controls { max-width: 760px; margin: 0 auto; padding: 0 16px 24px; }
+  .controls h3 { font-size: 14px; color: var(--color-text-muted); margin: 0 0 8px; font-weight: 600; }
+  .btns { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 14px; }
+  .btn { height: 36px; padding: 0 14px; border-radius: var(--radius-md); border: 1px solid rgba(160,120,80,.6); background: rgba(255,255,255,.03); color: var(--brand-brown-light); font: 700 13px var(--font-sans); cursor: pointer; transition: all .15s ease; }
+  .btn:hover { background: rgba(139,94,60,.15); color: var(--brand-brown-highlight); border-color: var(--brand-brown-highlight); }
+  .btn.cold { border-color: oklch(0.82 0.10 230 / .6); color: oklch(0.85 0.08 230); }
+  .btn.cold:hover { background: oklch(0.82 0.10 230 / .12); }
+  .btn.mute { border-color: var(--color-border-strong); color: var(--color-text-muted); }
+  .state { font-size: 13px; color: var(--color-text-muted); margin-bottom: 10px; }
+  .state b { color: var(--color-text); }
+  label.rm { font-size: 13px; color: var(--color-text-muted); display: inline-flex; gap: 6px; align-items: center; cursor: pointer; }
+  .look { max-width: 760px; margin: 0 auto 80px; padding: 0 16px; font-size: 14px; color: var(--color-text-muted); line-height: 1.5; }
+  .look b { color: var(--color-text); }
+
+  #sketch-tools { position: fixed; bottom: 12px; right: 12px; z-index: 9999; font: 12px system-ui; background: rgba(0,0,0,.7); color: #fff; padding: 8px 12px; border-radius: 8px; opacity: .4; transition: opacity .2s; display: flex; gap: 6px; align-items: center; }
+  #sketch-tools:hover { opacity: 1; }
+  #sketch-tools button, #sketch-tools select { font: 12px system-ui; background: #333; color: #fff; border: 1px solid #555; border-radius: 4px; padding: 2px 6px; cursor: pointer; }
+</style>
+</head>
+<body>
+
+<div id="variant-nav">
+  <button class="variant-tab active" data-v="A">A: Concentric ★ Selected</button>
+  <button class="variant-tab" data-v="B">B: Licks</button>
+  <button class="variant-tab" data-v="C">C: Chunky drop</button>
+  <span class="lbl">Freeze icon</span>
+  <button class="seg active" data-fz="snow">Snowflake ★</button>
+  <button class="seg" data-fz="disc">Snowflake disc</button>
+  <button class="seg" data-fz="cube">Ice cube</button>
+</div>
+
+<div class="stage">
+  <div class="panel preview">
+    <div class="flame-host big" id="big-flame"></div>
+    <div id="big-meter"></div>
+    <div class="cap" id="big-cap"></div>
+  </div>
+
+  <div class="phone">
+    <div class="screen">
+      <section class="card">
+        <div class="card-h">Streak <span class="q" id="q">?</span></div>
+        <div class="tip" id="tip">Complete a session on a scheduled training day and your streak goes up by 1. Every completed session earns a freeze (7 max). Each missed scheduled day uses one; when you have none left, your streak resets to 0.</div>
+        <div class="card-b">
+          <div class="row"><span class="k">Session streak</span><span class="flame-host" id="card-flame"></span></div>
+          <div class="row"><span class="k">Freezes</span><span id="card-meter"></span></div>
+          <div class="row"><span class="k">This week</span><span class="v">3 of 7 sessions</span></div>
+          <p class="notice" id="notice">Streak reset. Complete a session to start a new one.</p>
+        </div>
+      </section>
+      <section class="card">
+        <div class="card-h">Puzzle pool</div>
+        <div class="card-b">
+          <div class="row"><span class="k">Mastered</span><span class="v">80</span></div>
+          <div class="row"><span class="k">Parked</span><span class="v">2</span></div>
+        </div>
+      </section>
+    </div>
+  </div>
+</div>
+
+<div class="controls">
+  <div class="state" id="state"></div>
+  <h3>Replay a landing-page arrival (last-seen → now)</h3>
+  <div class="btns">
+    <button class="btn" data-s="up">Streak up · 51→52, freeze 4→5</button>
+    <button class="btn" data-s="up-cap">Streak up at cap · 52→53, freezes stay 7</button>
+    <button class="btn" data-s="up3">Streak up · 99→100</button>
+    <button class="btn" data-s="first">Streak up · 0→1</button>
+  </div>
+  <div class="btns">
+    <button class="btn cold" data-s="used1">Freeze used · 5→4</button>
+    <button class="btn cold" data-s="used2">2 days missed · 5→3</button>
+    <button class="btn cold" data-s="earned">Freeze earned (off-day) · 4→5</button>
+  </div>
+  <div class="btns">
+    <button class="btn mute" data-s="reset">Streak reset (quiet) · 52→0</button>
+    <button class="btn mute" data-s="static">No change / first visit</button>
+    <button class="btn mute" data-s="d1">Static 7</button>
+    <button class="btn mute" data-s="d3">Static 365</button>
+  </div>
+  <label class="rm"><input type="checkbox" id="rm"> Simulate prefers-reduced-motion (final state only)</label>
+</div>
+
+<div class="look">
+  <b>What to look for:</b> does the number stay legible inside the flame at card size (64px) for 1, 2 and 3 digits?
+  Does the freeze row read as clearly <i>different</i> from the flame (cold vs hot), so "5 freezes next to 52" never reads as "the freezes are the streak"?
+  Is the freeze-used beat sad but not punishing (flame stays lit)? Is the ignite short enough to not get in the way (about 1.5s)?
+  Tap the <b>?</b> in the card header for the rewritten explainer.
+</div>
+
+<div id="sketch-tools">
+  <select onchange="document.querySelector('link[href*=themes]').href='../themes/'+this.value+'.css'"><option value="default">Default</option></select>
+</div>
+
+<script src="flame.js"></script>
+<script>
+  const S = window.Streak;
+  let variant = 'A', fz = 'snow';
+  let cur = { streak: 52, freezes: 5, notice: false };
+
+  const hosts = () => ([
+    { flame: document.getElementById('big-flame'), meter: document.getElementById('big-meter') },
+    { flame: document.getElementById('card-flame'), meter: document.getElementById('card-meter') },
+  ]);
+
+  function render(st) {
+    S.cancelAll();
+    cur = st;
+    for (const h of hosts()) {
+      h.flame.innerHTML = S.flameSVG(variant, st.streak);
+      h.meter.innerHTML = S.meterHTML(fz, st.freezes);
+    }
+    document.getElementById('notice').classList.toggle('show', !!st.notice);
+    document.getElementById('big-cap').textContent = st.streak === 0 ? 'Unlit: no streak yet' : `Streak ${st.streak} · ${st.freezes} of 7 freezes`;
+    document.getElementById('state').innerHTML = `Now showing: streak <b>${st.streak}</b>, freezes <b>${st.freezes}</b>. Variant <b>${S.VARIANTS[variant].label}</b>.`;
+  }
+
+  function play(prev, next) {
+    render(prev);
+    const reduced = document.getElementById('rm').checked;
+    if (reduced) { S.later(() => render(next), 150); return; }
+    S.later(() => {
+      cur = next;
+      document.getElementById('state').innerHTML = `Now showing: streak <b>${next.streak}</b>, freezes <b>${next.freezes}</b>. Variant <b>${S.VARIANTS[variant].label}</b>.`;
+      document.getElementById('big-cap').textContent = `Streak ${next.streak} · ${next.freezes} of 7 freezes`;
+      for (const h of hosts()) {
+        if (next.streak > prev.streak) S.ignite(h.flame, variant, prev.streak, next.streak);
+        if (next.freezes < prev.freezes) S.freezeUsed(h.meter, h.flame, fz, prev.freezes, next.freezes);
+        if (next.freezes > prev.freezes) S.freezeEarned(h.meter, fz, next.freezes, next.streak > prev.streak ? 1300 : 0);
+      }
+    }, 450);
+  }
+
+  const SCEN = {
+    up: [{ streak: 51, freezes: 4 }, { streak: 52, freezes: 5 }],
+    'up-cap': [{ streak: 52, freezes: 7 }, { streak: 53, freezes: 7 }],
+    up3: [{ streak: 99, freezes: 6 }, { streak: 100, freezes: 7 }],
+    first: [{ streak: 0, freezes: 0 }, { streak: 1, freezes: 1 }],
+    used1: [{ streak: 52, freezes: 5 }, { streak: 52, freezes: 4 }],
+    used2: [{ streak: 52, freezes: 5 }, { streak: 52, freezes: 3 }],
+    earned: [{ streak: 52, freezes: 4 }, { streak: 52, freezes: 5 }],
+  };
+
+  document.querySelectorAll('[data-s]').forEach((b) => b.addEventListener('click', () => {
+    const s = b.dataset.s;
+    if (s === 'reset') return render({ streak: 0, freezes: 0, notice: true });
+    if (s === 'static') return render({ streak: 52, freezes: 5 });
+    if (s === 'd1') return render({ streak: 7, freezes: 3 });
+    if (s === 'd3') return render({ streak: 365, freezes: 7 });
+    play(...SCEN[s]);
+  }));
+
+  document.querySelectorAll('.variant-tab').forEach((t) => t.addEventListener('click', () => {
+    document.querySelectorAll('.variant-tab').forEach((x) => x.classList.remove('active'));
+    t.classList.add('active');
+    variant = t.dataset.v;
+    play({ streak: cur.streak > 0 ? cur.streak - 1 : 0, freezes: cur.freezes }, { ...cur, streak: Math.max(1, cur.streak) });
+  }));
+  document.querySelectorAll('.seg').forEach((t) => t.addEventListener('click', () => {
+    document.querySelectorAll('.seg').forEach((x) => x.classList.remove('active'));
+    t.classList.add('active');
+    fz = t.dataset.fz;
+    render(cur);
+  }));
+  document.getElementById('q').addEventListener('click', () => document.getElementById('tip').classList.toggle('show'));
+  document.getElementById('rm').addEventListener('change', (e) => document.body.classList.toggle('reduced-motion', e.target.checked));
+
+  play(...SCEN.up);
+</script>
+</body>
+</html>

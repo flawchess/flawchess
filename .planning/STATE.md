@@ -2,30 +2,30 @@
 gsd_state_version: "1.0"
 milestone: v2.19
 current_phase: 227
-current_phase_name: Browser Engine Continuous Dispatch Against a Relaxed Determinism Target (SEED-171)
-status: planning
-stopped_at: Phase 226 complete, ready to plan Phase 227
-last_updated: "2026-10-02T05:51:56.233Z"
-state_head: 31324ca04ea58a03ffc097c143b74a472ff9bad3
+status: completed
+stopped_at: Phase 227 complete — all phases complete
+last_updated: "2026-10-03T11:45:30.327Z"
+state_head: 305a60a8820ef2c3aa9244d607f2d93a194c12c3
 progress:
   total_phases: 5
-  completed_phases: 102
-  total_plans: 34
-  completed_plans: 34
+  completed_phases: 103
+  total_plans: 47
+  completed_plans: 47
   percent: 76
 milestone_name: Train Bot-Narrated Onboarding & Verdicts
-last_activity: 2026-10-02
-last_activity_desc: Completed quick task 261002-8xb (Train puzzles-per-session slider, SEED-179)
+last_activity: 2026-10-03
+current_phase_name: Browser Engine Continuous Dispatch Against a Relaxed Determinism Target (SEED-171)
+last_activity_desc: "Completed quick task 261003-ixu: SEED-182 card border and lighter header band (75d660f46)"
 ---
 
 # Project State: FlawChess
 
 ## Current Position
 
-Phase: 227 — Browser Engine Continuous Dispatch Against a Relaxed Determinism Target (SEED-171)
+Phase: 227
 Plan: Not started
 
-Status: Ready to plan
+Status: All phases complete
 
 Open threads carried forward (not blockers):
 
@@ -934,6 +934,8 @@ None active.
 | 260928-85v | Move Maia score_move off the API event loop (SEED-172 item 1) | 2026-09-28 | 682127561 | [260928-85v-move-maia-score-move-off-the-api-event-l](./quick/260928-85v-move-maia-score-move-off-the-api-event-l/) |
 | 109 | Activity dashboard: default time range 30 days | 2026-09-28 | de7ce598b | — |
 | 261002-8xb | Train puzzles-per-session slider 3-30 step 3 (SEED-179) | 2026-10-02 | e9b466552 | [261002-8xb-train-puzzles-per-session-slider-3-30-st](./quick/261002-8xb-train-puzzles-per-session-slider-3-30-st/) |
+| 261002-ex9 | Train streak flame hero + snowflake freezes + collapsible schedule (SEED-181) | 2026-10-02 | 6b2799d7d | [261002-ex9-implement-seed-181-train-streak-flame-fr](./quick/261002-ex9-implement-seed-181-train-streak-flame-fr/) |
+| 261003-ixu | SEED-182 card border and lighter header band on charcoal-texture surfaces | 2026-10-03 | 75d660f46 | [261003-ixu-seed-182-card-border-and-lighter-header-](./quick/261003-ixu-seed-182-card-border-and-lighter-header-/) |
 
 ## Deferred Items
 
@@ -986,11 +988,15 @@ Items acknowledged and deferred at **v1.29 milestone close on 2026-06-29** (user
 
 ## Session Continuity
 
-**Stopped at:** Phase 226 complete, ready to plan Phase 227
+**Stopped at:** Phase 227 complete (2026-10-03). Owner decided SHIP: `FLAWCHESS_DISPATCH_MODE = 'continuous'`, no
+refit (calibration parity holds). Verification passed 17/17; code review 0 blockers (WR-01 + 3 info fixed). Next:
+squash-merge `gsd/phase-227-...` to `main` with a CHANGELOG entry already in `[Unreleased]`, then deploy when ready.
+Owner-deferred: real-phone bot game check (227-UAT.md, report-only). Follow-up: stale "Phase 198 will populate"
+priority comment in `workerPoolState.ts:434-437` (verifier info item).
 
-**Last session:** 2026-09-28T04:18:00.047Z
+**Last session:** 2026-10-03T11:05:00Z
 
-**Resume file:** .planning/phases/226-browser-engine-throughput-underfill-root-split-continuous-dispatch/226-CONTEXT.md
+**Resume file:** None
 
 ## Performance Metrics
 

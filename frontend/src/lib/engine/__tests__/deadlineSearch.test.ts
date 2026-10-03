@@ -27,8 +27,16 @@
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { createDeadlineSearch } from '../deadlineSearch';
+import {
+  FLAWCHESS_BOT_CONCURRENCY,
+  FLAWCHESS_BOT_MAX_NODES,
+  FLAWCHESS_BOT_MAX_PLIES,
+  FLAWCHESS_BOT_STOP_RULE,
+} from '../botBudget';
 import type { SearchRunner } from '../guardrail';
+import { mctsSearch } from '../mctsSearch';
 import type { EngineProviders, EngineSnapshot, SearchBudget } from '../types';
+import { makeFixedPolicy, makeVariedGrade } from './searchTestProviders';
 
 // ─── Fixtures ────────────────────────────────────────────────────────────────
 
@@ -270,6 +278,63 @@ describe('createDeadlineSearch', () => {
       makeSnapshot(2, false),
       makeSnapshot(3, false),
     ]);
+  });
+
+  it('continuous mode (Phase 227 D-09/D-13): a deadline that cuts mid-search returns the last snapshot before the cut and applies nothing after it', async () => {
+    // The REAL mctsSearch under the bot budget with dispatchMode 'continuous'. Grades take GRADE_DELAY_MS of fake
+    // time, so at the deadline several expansions are in flight; the floor is already met, so the timer macrotask
+    // aborts the inner signal directly and the continuous loop must wake, return and cancel the in-flight work.
+    const GRADE_DELAY_MS = 70; // settlements land at 70, 140, 210: none inside [200, 201]
+    const DEADLINE_MS = 200;
+    const FLOOR = 3;
+    const gradeSignals: (AbortSignal | undefined)[] = [];
+    const providers: EngineProviders = {
+      policy: makeFixedPolicy({}),
+      grade: (fen, candidateUcis, signal) => {
+        gradeSignals.push(signal);
+        return new Promise((resolve) => {
+          setTimeout(() => void makeVariedGrade()(fen, candidateUcis, signal).then(resolve), GRADE_DELAY_MS);
+        });
+      },
+    };
+    const budget: SearchBudget = {
+      maxNodes: FLAWCHESS_BOT_MAX_NODES,
+      elo: { w: 1500, b: 1500 },
+      maxPlies: FLAWCHESS_BOT_MAX_PLIES,
+      concurrency: FLAWCHESS_BOT_CONCURRENCY,
+      stopRule: FLAWCHESS_BOT_STOP_RULE,
+      dispatchMode: 'continuous',
+    };
+    const outerController = new AbortController();
+    const received: EngineSnapshot[] = [];
+    const wrapped = createDeadlineSearch({ deadlineMs: DEADLINE_MS, minNodes: FLOOR, baseSearch: mctsSearch });
+
+    let settled = false;
+    const resultPromise = wrapped(
+      STUB_FEN,
+      budget,
+      providers,
+      (s) => received.push(structuredClone(s)),
+      outerController.signal,
+    ).then((snapshot) => {
+      settled = true;
+      return snapshot;
+    });
+    await vi.advanceTimersByTimeAsync(DEADLINE_MS + 1);
+    // The timer abort alone must free the loop: a drained grade at t=240 has not happened yet.
+    expect(settled).toBe(true);
+    const result = await resultPromise;
+    const snapshotCountAtCut = received.length;
+    await vi.advanceTimersByTimeAsync(GRADE_DELAY_MS * 10); // every stale grade settles now
+
+    expect(result.nodesEvaluated).toBeGreaterThanOrEqual(FLOOR);
+    expect(result.nodesEvaluated).toBeLessThan(FLAWCHESS_BOT_MAX_NODES);
+    expect(result.stopReason).toBeNull(); // a deadline cut is neither budget nor early stop
+    expect(received[received.length - 1]?.nodesEvaluated).toBe(result.nodesEvaluated); // the last snapshot before the cut
+    expect(received).toHaveLength(snapshotCountAtCut); // nothing applied after the cut
+    expect(outerController.signal.aborted).toBe(false); // the caller's signal stays a cancel-only signal
+    expect(gradeSignals.length).toBeGreaterThan(0);
+    for (const signal of gradeSignals) expect(signal?.aborted).toBe(true); // in-flight grades were cancelled
   });
 
   it('handles an outer signal that is already aborted before the call starts', async () => {
