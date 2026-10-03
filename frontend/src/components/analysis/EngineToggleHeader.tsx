@@ -39,9 +39,11 @@ export function EngineToggleHeader({
         data-testid={testId}
         style={checked ? { backgroundColor: accent } : undefined}
       />
-      <span className="flex items-center gap-1.5 text-sm font-medium" style={{ color: accent }}>
+      {/* min-w-0 + truncate: on narrow phones (iPhone SE) the FlawChess label
+          ("FlawChess, 1591 ELO, 400 Nodes") wrapped to two lines; ellipsize instead. */}
+      <span className="flex min-w-0 items-center gap-1.5 text-sm font-medium" style={{ color: accent }}>
         {Icon && <Icon className="size-4 shrink-0" aria-hidden="true" />}
-        {children}
+        <span className="truncate">{children}</span>
       </span>
     </>
   );
