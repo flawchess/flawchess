@@ -4,7 +4,7 @@ status: dormant
 planted: 2026-10-03
 planted_during: no open milestone (after v2.21), Phase 228 (settings page) ready to execute; /gsd-explore training features
 trigger_when: after Phase 228 (settings page) ships, or when planning the next Train / retention work
-scope: medium (one phase: weekly aggregation query + leaderboard card on Train start/score screens + opt-out setting + Privacy copy)
+scope: medium (one phase: weekly aggregation query + leaderboard card on Train start/score screens + guest nudge + opt-out setting + Privacy copy)
 ---
 
 # SEED-185: Weekly Train leaderboards (points + average session score)
@@ -32,7 +32,8 @@ Each board shows the **top 5** plus the **user's own position**.
   supports it: the boards measure different things (see Evidence).
 - **Visible right after the first session.** The score-board position is shown as
   **tentative until 20 puzzles solved in the current week** ("#4 (tentative), 14 more
-  puzzles to qualify"). The points board needs no qualifier.
+  puzzles to qualify"). The points board needs no qualifier. (Round 2: tentative users
+  are ranked in the list too, see below.)
 - **Display the user's chess.com or lichess username.** These are public.
 - **Impersonation is an ACCEPTED RISK, deliberately ignored for now.** FlawChess never
   verifies username ownership (`users.chess_com_username` / `lichess_username` are
@@ -59,31 +60,63 @@ The real formula is client-side in `frontend/src/lib/trainScore.ts`.
 - Caveat: every user's puzzles come from their own games, so difficulty is not
   comparable across users. Label the score board as accuracy/consistency, not skill.
 
-## Suggested (not yet decided)
+## Locked decisions (owner, 2026-10-03, /gsd-explore refinement)
 
-- **Show neighbours** (2 above, 2 below the user) in addition to the top 5. A new user
-  lands around #50 of ~77 on points; "12 points to pass <name>" is a reachable target,
-  a bare "#50" is not.
+- **Opt-out visibility.** Every registered user with a username appears by default.
+  "Hide me from leaderboards" toggle on the Phase 228 settings page, plus one line on the
+  Privacy page (showing usernames next to training results is a new use of listed data).
+- **Guests see the board plus a sign-up nudge.** Guests never appear on the board, but
+  they see it with "you'd be #N, sign up to claim your spot". 18 of 98 trainers in week
+  2026-09-28 were guests, so this doubles as a conversion lever.
+- **Display name: lichess username first**, else chess.com, else "Anonymous" (Google
+  signup with nothing imported; 6 of 80 registered trainers that week). 37 of 80 had both.
+- **Show neighbours.** Top 5, then the user's own row with 2 above and 2 below, and a
+  "N points to pass <name>" target.
 
-## Open questions with proposed defaults
+## Settled by code/data check (2026-10-03)
 
-- **Week boundary:** ISO week (Monday) keyed on `drill_sessions.session_date`, which is
-  already the user's local day. Resets are then not globally simultaneous; acceptable.
-- **Score scope:** do warm-up sessions count toward the score board? Default: points
-  yes, score average no (warm-ups are sharp filler, not the user's own pool).
-- **Score definition:** mean of per-session percentages vs pooled points/max over all
-  puzzles. Default: pooled, so a 30-puzzle session weighs more than a 3-puzzle one.
-- **Guests:** excluded (no persistent identity, purged after 30 days inactivity).
-- **Users with both usernames:** show lichess first? Or the platform with more games?
-  Users with no username (Google signup, nothing imported) appear as "Anonymous".
-- **Opt-out:** "Hide me from leaderboards" toggle (fits the Phase 228 settings page) and
-  one line on the Privacy page, since showing usernames next to training results is a
-  new use of data the Privacy page already lists.
-- **Server-side scoring:** the score formula lives only in `trainScore.ts` today.
-  The leaderboard needs it server-side: persist the session score on completion, or
-  port the formula, with a parity test.
+- **Server-side scoring needs no new column or formula port.** `drill_solves` persists
+  `correct_guess` (bool) and `move_quality` (0/1/2), which equal `GUESS_POINTS` and
+  `MOVE_TIER_POINTS` from `trainScore.ts`. Puzzle points = `correct_guess::int +
+  move_quality`, max 3. Only a parity test pinning the constants is needed. Zero solved
+  rows had NULL in either field that week.
+- **Score = pooled:** sum(points) / (3 × puzzles solved) over the week, so a long session
+  weighs more than a short one.
+- **Count solves, not completed sessions.** 87 of 1474 solves that week were in sessions
+  never completed (open/expired). Aggregate over `drill_solves.solved_at IS NOT NULL`.
+- **Warm-up exclusion goes by puzzle source, not session flag.** Warm-up sessions held
+  32 own-pool puzzles and normal sessions held 22 `SHARP_FILLER` puzzles. Rule: points
+  board counts every solve; score board excludes `source = SHARP_FILLER` solves, and
+  the 20-puzzle qualifier counts only non-filler solves.
+
+## Locked decisions (owner, 2026-10-03, round 2: populated Monday + medals)
+
+- **One weekly window for both boards; no rolling window.** Owner rejected a rolling
+  7-day accuracy board.
+- **Global deadline: Sunday 24:00 UTC.** Both boards reset Monday 00:00 UTC. Key solves
+  on `drill_solves.solved_at` in UTC (ISO week), NOT `drill_sessions.session_date`
+  (that is the user's local day and would make the deadline differ per user). A session
+  spanning the deadline splits by each solve's timestamp. Show a countdown ("ends in
+  1d 4h").
+- **Tentative users are ranked on the score board** so it is populated from Monday
+  (replay of week 2026-09-28: 43 registered users trained on Monday, 0 qualified; 7
+  qualified by Wednesday). Their row is marked tentative with "N more puzzles to
+  qualify". Expect Monday's top to be short 100% sessions; accepted.
+- **Ties share a rank** (1, 1, 1, 4); within a tie, the user with more puzzles solved is
+  listed first.
+- **Medals (follow-up, not this phase):** top 3 of each board at the deadline get a
+  medal. Score-board medals go to qualified users only (20+ non-filler puzzles), so
+  final standings skip tentative users. This phase must not block it: the UTC deadline
+  above is the prerequisite. Medals will need a persisted weekly result snapshot
+  (opt-outs and account deletions must not rewrite past winners); design that in the
+  medals phase.
+
+## Proposed defaults (confirm in discuss-phase)
+
 - **Placement:** Train start screen (next to the streak) and the session score screen
-  ("you moved up 3 places").
+  ("you moved up 3 places", computed as rank before vs after this session's solves).
+- **Out of scope:** medals and their snapshot table, past-week history, notifications,
+  league tiers.
 
 ## Breadcrumbs
 
