@@ -26,7 +26,8 @@ export function EngineToggleHeader({
   accent: string;
   testId: string;
   ariaLabel: string;
-  icon: LucideIcon;
+  /** Omitted on mobile, where the header row is too tight for an icon. */
+  icon?: LucideIcon;
   children: ReactNode;
 }): ReactElement {
   return (
@@ -39,7 +40,7 @@ export function EngineToggleHeader({
         style={checked ? { backgroundColor: accent } : undefined}
       />
       <span className="flex items-center gap-1.5 text-sm font-medium" style={{ color: accent }}>
-        <Icon className="size-4 shrink-0" aria-hidden="true" />
+        {Icon && <Icon className="size-4 shrink-0" aria-hidden="true" />}
         {children}
       </span>
     </>

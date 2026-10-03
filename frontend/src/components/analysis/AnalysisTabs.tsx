@@ -355,6 +355,8 @@ export function EloSelectorPanel({ value, onChange, defaultElo, onReset }: EloSe
 
 export type FlawChessCardProps = {
   footer?: ReactNode;
+  /** Mobile tab: drop the header icon to save horizontal space. */
+  compact?: boolean;
   flawChessEnabled: boolean;
   setFlawChessEnabled: (enabled: boolean) => void;
   selectedElo: number;
@@ -388,6 +390,7 @@ export type FlawChessCardProps = {
 // standalone row between the two cards there).
 export function FlawChessCard({
   footer,
+  compact = false,
   flawChessEnabled,
   setFlawChessEnabled,
   selectedElo,
@@ -423,7 +426,7 @@ export function FlawChessCard({
           accent={FLAWCHESS_ENGINE_ACCENT}
           testId="btn-analysis-flawchess-toggle"
           ariaLabel="Toggle FlawChess Engine"
-          icon={ChessKnight}
+          icon={compact ? undefined : ChessKnight}
         >
           {/* ELO = the mover's rating (or the slider override), the strength the
               engine is playing at (155 UAT). Nodes = the running MCTS expansion

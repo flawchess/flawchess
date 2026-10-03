@@ -2348,7 +2348,7 @@ export default function Analysis() {
         />
       }
       flawChessTab={
-        <FlawChessTab flawChessCard={<FlawChessCard {...flawChessCardProps} footer={eloSelector} />} />
+        <FlawChessTab flawChessCard={<FlawChessCard {...flawChessCardProps} footer={eloSelector} compact />} />
       }
       statsTab={
         <StatsTab
