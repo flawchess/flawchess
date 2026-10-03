@@ -4,15 +4,14 @@ milestone: v2.21
 current_phase: 227
 current_phase_name: Browser Engine Continuous Dispatch Against a Relaxed Determinism Target (SEED-171)
 status: completed
-stopped_at: v2.20 and v2.21 closed (phases 223–227 regrouped), no open milestone
-last_updated: "2026-10-03T12:56:45.093Z"
-state_head: 6099bfdfc54398aa19876e5c1b26b6e2a2fc1bee
+stopped_at: Phase 228 context gathered
+last_updated: "2026-10-03T13:23:31.046Z"
+state_head: 5f46cf08b940339d9149b2c25d166dbaff011a28
 progress:
-  total_phases: 5
+  total_phases: 1
   completed_phases: 103
-  total_plans: 47
+  total_plans: 0
   completed_plans: 47
-  percent: 76
 milestone_name: Browser Engine Throughput
 last_activity: 2026-10-03
 last_activity_desc: Closed milestones v2.20 (phases 223–224) and v2.21 (phases 225–227) with tags and GitHub releases; roadmap cleanup
@@ -991,15 +990,15 @@ Items acknowledged and deferred at **v1.29 milestone close on 2026-06-29** (user
 
 ## Session Continuity
 
-**Stopped at:** Phase 227 complete (2026-10-03). Owner decided SHIP: `FLAWCHESS_DISPATCH_MODE = 'continuous'`, no
+**Stopped at:** Phase 228 context gathered
 refit (calibration parity holds). Verification passed 17/17; code review 0 blockers (WR-01 + 3 info fixed). Next:
 squash-merge `gsd/phase-227-...` to `main` with a CHANGELOG entry already in `[Unreleased]`, then deploy when ready.
 Owner-deferred: real-phone bot game check (227-UAT.md, report-only). Follow-up: stale "Phase 198 will populate"
 priority comment in `workerPoolState.ts:434-437` (verifier info item).
 
-**Last session:** 2026-10-03T11:05:00Z
+**Last session:** 2026-10-03T13:23:30.983Z
 
-**Resume file:** None
+**Resume file:** .planning/phases/228-settings-page/228-CONTEXT.md
 
 ## Performance Metrics
 
