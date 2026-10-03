@@ -100,6 +100,21 @@ Locked upstream in SEED-183 / ROADMAP and not re-decided here:
   owner reviews in the diff / UAT. The inventory should still be written down (a table in the plan
   or the typed registry from D-04) so the CLAUDE.md rule has a reference.
 
+### Post-research decisions (2026-10-03, plan-phase)
+- **D-16:** Identity source is the JWT `sub` claim of the stored `auth_token` (FastAPI-Users sets
+  it to `str(user.id)`; guest tokens too), not a new profile field. Identify once at boot in
+  `main.tsx` (before the tracker's first pageview, closes the D-09 gap on Umami 3.4+) and again in
+  the `ProtectedLayout` effect on token/account-type change. Impersonation tokens
+  (`is_impersonation: true`) never identify (D-11). The phase stays frontend-only for identity; no
+  `id` added to `UserProfileResponse`.
+- **D-17:** Pin the Umami image in `docker-compose.yml` to `ghcr.io/umami-software/umami:3.4.0`
+  (deliberate upgrade from the running 3.3.1 at the next deploy; migrations 25/26 are additive).
+  3.4.0 puts `distinct_id` in the session hash, so shared-device users get separate sessions and
+  D-07 holds at the data level. Deploy note: the release must actually pull the new image.
+- **D-18:** Account deletion: add a `docs/production-runbook.md` step with the SQL to delete
+  Umami `session` / `website_event` (and related) rows by `distinct_id` on a deletion request.
+  Manual, no code automation.
+
 ### Claude's Discretion
 - Exact event-name list and prop keys within D-01/D-04.
 - How `page` is derived (explicit literal at call site vs from the route).
