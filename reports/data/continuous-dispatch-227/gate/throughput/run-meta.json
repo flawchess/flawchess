@@ -1,0 +1,162 @@
+{
+  "tooling_sha": "7090c3ce892554960be915fa44a8f43b29a2a926",
+  "started_at": "2026-10-02T15:43:03Z",
+  "rounds": 3,
+  "configs": [
+    "stop-p4",
+    "t400-p4",
+    "t50-p2",
+    "t400-p2"
+  ],
+  "arms": [
+    "a0",
+    "a1"
+  ],
+  "load_wait_max_s": 600,
+  "schedule": [
+    {
+      "round": 1,
+      "step": 1,
+      "config": "stop-p4",
+      "arm": "a0"
+    },
+    {
+      "round": 1,
+      "step": 2,
+      "config": "stop-p4",
+      "arm": "a1"
+    },
+    {
+      "round": 1,
+      "step": 3,
+      "config": "t400-p4",
+      "arm": "a0"
+    },
+    {
+      "round": 1,
+      "step": 4,
+      "config": "t400-p4",
+      "arm": "a1"
+    },
+    {
+      "round": 1,
+      "step": 5,
+      "config": "t50-p2",
+      "arm": "a0"
+    },
+    {
+      "round": 1,
+      "step": 6,
+      "config": "t50-p2",
+      "arm": "a1"
+    },
+    {
+      "round": 1,
+      "step": 7,
+      "config": "t400-p2",
+      "arm": "a0"
+    },
+    {
+      "round": 1,
+      "step": 8,
+      "config": "t400-p2",
+      "arm": "a1"
+    },
+    {
+      "round": 2,
+      "step": 9,
+      "config": "t400-p4",
+      "arm": "a1"
+    },
+    {
+      "round": 2,
+      "step": 10,
+      "config": "t400-p4",
+      "arm": "a0"
+    },
+    {
+      "round": 2,
+      "step": 11,
+      "config": "t50-p2",
+      "arm": "a1"
+    },
+    {
+      "round": 2,
+      "step": 12,
+      "config": "t50-p2",
+      "arm": "a0"
+    },
+    {
+      "round": 2,
+      "step": 13,
+      "config": "t400-p2",
+      "arm": "a1"
+    },
+    {
+      "round": 2,
+      "step": 14,
+      "config": "t400-p2",
+      "arm": "a0"
+    },
+    {
+      "round": 2,
+      "step": 15,
+      "config": "stop-p4",
+      "arm": "a1"
+    },
+    {
+      "round": 2,
+      "step": 16,
+      "config": "stop-p4",
+      "arm": "a0"
+    },
+    {
+      "round": 3,
+      "step": 17,
+      "config": "t50-p2",
+      "arm": "a0"
+    },
+    {
+      "round": 3,
+      "step": 18,
+      "config": "t50-p2",
+      "arm": "a1"
+    },
+    {
+      "round": 3,
+      "step": 19,
+      "config": "t400-p2",
+      "arm": "a0"
+    },
+    {
+      "round": 3,
+      "step": 20,
+      "config": "t400-p2",
+      "arm": "a1"
+    },
+    {
+      "round": 3,
+      "step": 21,
+      "config": "stop-p4",
+      "arm": "a0"
+    },
+    {
+      "round": 3,
+      "step": 22,
+      "config": "stop-p4",
+      "arm": "a1"
+    },
+    {
+      "round": 3,
+      "step": 23,
+      "config": "t400-p4",
+      "arm": "a0"
+    },
+    {
+      "round": 3,
+      "step": 24,
+      "config": "t400-p4",
+      "arm": "a1"
+    }
+  ]
+}

@@ -67,8 +67,8 @@
  * Usage:
  *   node --import ./scripts/lib/frontend-alias-hook.mjs scripts/engine-grading-depth-ab.mjs \
  *     [--nodes 50] [--depths 14,12,10] [--procs 4] [--pool-size 4] [--plies 8] [--elo 1500] \
- *     [--ladder] [--hash-probe 10] [--openings 0] [--fens path/to/fens.txt] \
- *     [--maia-fifo] [--out-dir reports/data] [--self-test]
+ *     [--ladder | --ladder-only] [--hash-probe 10] [--openings 0] [--fens path/to/fens.txt] \
+ *     [--dispatch-mode round|continuous] [--maia-fifo] [--out-dir reports/data] [--self-test]
  *
  *   --nodes         node-expansion budget (50 = FLAWCHESS_BOT_MAX_NODES, 400 = analysis board)
  *   --depths        comma-separated; the FIRST is the reference every other is compared against
@@ -79,6 +79,13 @@
  *                   be measured: with pool-size < procs, later grade calls queue in the pool's own
  *                   FIFO instead of spawning more processes.
  *   --ladder        additionally run one ladder-mode pass per position (LADDER-05)
+ *   --ladder-only   (Phase 227 D-17) implies --ladder and SKIPS every flat-depth pass and the
+ *                   reference-agreement columns that need one. The throughput gate only needs the
+ *                   ladder pass; the flat passes made 226's t400-p2 run take about 50 minutes.
+ *   --dispatch-mode (Phase 227 D-14) "round" or "continuous" (default = the app's
+ *                   FLAWCHESS_DISPATCH_MODE). A real code-path switch put into the search budget of
+ *                   EVERY pass, probed live before any engine starts (exit 3 = continuous requested
+ *                   but the round loop ran), stamped as `dispatch_mode` on every row.
  *   --hash-probe    N > 0: probe every Nth grading call for D-07's warm-vs-cleared-hash question (default 0 = off)
  *   --openings      additionally draw N positions from `calibration-openings.mjs`'s OPENING_BOOK
  *   --fens          newline-delimited FEN file (`#` comments allowed) REPLACING the built-in set
@@ -105,9 +112,12 @@ import {
   maiaCpuStats,
   maiaInflightStats,
   resetMaiaRunMemo,
+  whenMaiaIdle,
   resetMaiaInstrumentationStats,
 } from './lib/calibration-providers.mjs';
 import { OPENING_BOOK } from './lib/calibration-openings.mjs';
+import { assertDispatchModeLive, defaultDispatchMode, parseDispatchModeFlag } from './lib/dispatch-mode.mjs';
+import { startLoopLagProbe } from './engine-dispatch-stop-rule.mjs';
 
 import { mctsSearch } from '@/lib/engine/mctsSearch';
 import { parseInfoLine } from '@/hooks/uciParser';
@@ -209,6 +219,8 @@ export function parseArgs(argv) {
     plies: DEFAULT_PLIES,
     elo: DEFAULT_ELO,
     ladder: false,
+    ladderOnly: false,
+    dispatchMode: defaultDispatchMode(),
     hashProbe: 0,
     openings: 0,
     fens: null,
@@ -236,6 +248,8 @@ export function parseArgs(argv) {
       case 'plies': args.plies = parsePositiveIntFlag(value, key); i++; break;
       case 'elo': args.elo = parsePositiveIntFlag(value, key); i++; break;
       case 'ladder': args.ladder = true; break; // boolean, consumes no value
+      case 'ladder-only': args.ladder = true; args.ladderOnly = true; break; // Phase 227 D-17: boolean, implies --ladder
+      case 'dispatch-mode': args.dispatchMode = parseDispatchModeFlag(requireFlagValue(value, key)); i++; break; // Phase 227 D-14
       case 'maia-fifo': args.maiaFifo = true; break; // boolean, consumes no value
       case 'hash-probe': args.hashProbe = parsePositiveIntFlag(value, key, 0); i++; break;
       case 'openings': args.openings = parsePositiveIntFlag(value, key, 0); i++; break;
@@ -440,7 +454,7 @@ async function createDepthPool(size, hashProbeEvery = 0) {
    * why `runOneGo` doesn't touch `stats` itself) — so a re-run at the same
    * concurrency probes the same calls.
    */
-  const runGradeAtDepth = async (depth, fen, candidateUcis, stats) => {
+  const runGradeAtDepth = async (depth, fen, candidateUcis, stats, signal) => {
     if (candidateUcis.length === 0) return new Map(); // workerPool.ts WR-05
 
     // The ordinal is claimed at ENTRY, not after the `go` resolves, so every
@@ -459,15 +473,25 @@ async function createDepthPool(size, hashProbeEvery = 0) {
     // probe must stay INSIDE the callback: it compares a warm-hash result
     // against a Clear-Hash one on the SAME engine, so re-acquiring for it could
     // land on a different engine and measure nothing.
-    const { grades, scratch } = await pool.run(async (engine) => {
-      const attempt = makeGradeStats();
-      const { grades: attemptGrades, elapsedMs } = await runOneGo(engine, depth, fen, candidateUcis);
-      attempt.ms += elapsedMs;
-      if (willProbe) {
-        await probeHashDivergence(engine, depth, fen, candidateUcis, attemptGrades, attempt);
-      }
-      return { grades: attemptGrades, scratch: attempt };
-    });
+    //
+    // Phase 227 D-09 / N-2: the search `signal` is forwarded into `pool.run`, so a cancelled grade stops
+    // its engine instead of running on into the next pass's timing window. An aborted grade settles
+    // `aborted: true` with an empty Map and adds nothing to `stats`; the hash probe is skipped once the
+    // signal has fired (the pool contract: `fn` must not start a further search after an early return).
+    const { grades, scratch, aborted } = await pool.run(
+      async (engine) => {
+        const attempt = makeGradeStats();
+        const { grades: attemptGrades, elapsedMs } = await runOneGo(engine, depth, fen, candidateUcis);
+        attempt.ms += elapsedMs;
+        if (willProbe && signal?.aborted !== true) {
+          await probeHashDivergence(engine, depth, fen, candidateUcis, attemptGrades, attempt);
+        }
+        return { grades: attemptGrades, scratch: attempt, aborted: false };
+      },
+      signal,
+      { grades: new Map(), scratch: makeGradeStats(), aborted: true },
+    );
+    if (aborted) return grades;
 
     stats.ms += scratch.ms;
     stats.candidates += candidateUcis.length;
@@ -483,8 +507,8 @@ async function createDepthPool(size, hashProbeEvery = 0) {
    * `workerPool.ts`'s `sendGo`/`handleLine` — see the module header's
    * LOAD-BEARING note.
    */
-  const gradeAtDepth = (depth, stats) => (fen, candidateUcis) =>
-    runGradeAtDepth(depth, fen, candidateUcis, stats);
+  const gradeAtDepth = (depth, stats) => (fen, candidateUcis, signal) =>
+    runGradeAtDepth(depth, fen, candidateUcis, stats, signal);
 
   /**
    * `EngineProviders.grade` reading the incoming per-call depth (Task 2,
@@ -496,7 +520,7 @@ async function createDepthPool(size, hashProbeEvery = 0) {
    * two flat passes instead would be a false-positive validation.
    */
   const gradeAtLadder = (stats) => (fen, candidateUcis, signal, depth) =>
-    runGradeAtDepth(depth ?? GRADING_ROOT_DEPTH, fen, candidateUcis, stats);
+    runGradeAtDepth(depth ?? GRADING_ROOT_DEPTH, fen, candidateUcis, stats, signal);
 
   /**
    * Root-grade fan-out (Phase 226 D-18/D-08), dormant until arm A21S's
@@ -513,24 +537,29 @@ async function createDepthPool(size, hashProbeEvery = 0) {
    * hash-probe pass, is eligible for the same probe selection) like any
    * other grading call — never a separate, invisible cost.
    */
-  const gradeRootAtDepth = (depth, stats) => (fen, candidateUcis, signal, _depth) =>
-    splitAcrossFreeEngines({
-      freeCount: pool.freeCount,
-      size,
-      stats: stats.rootSplit,
-      candidateUcis,
-      runShard: (shard) => runGradeAtDepth(depth, fen, shard, stats),
-    });
+  const gradeRootWith = (stats, depthFor) => async (fen, candidateUcis, signal, depth) => {
+    if (signal?.aborted) return new Map();
+    let merged;
+    try {
+      merged = await splitAcrossFreeEngines({
+        freeCount: pool.freeCount,
+        size,
+        stats: stats.rootSplit,
+        candidateUcis,
+        runShard: (shard) => runGradeAtDepth(depthFor(depth), fen, shard, stats, signal),
+      });
+    } catch (err) {
+      // Phase 227 L-2: a root grade aborted mid-fan-out leaves empty shards the merge may reject as
+      // incomplete. An abort is not a failure: resolve empty, never throw or merge partially.
+      if (signal?.aborted) return new Map();
+      throw err;
+    }
+    return signal?.aborted ? new Map() : merged;
+  };
+  const gradeRootAtDepth = (depth, stats) => gradeRootWith(stats, () => depth);
 
   /** Ladder-mode counterpart of `gradeRootAtDepth` — reads `depth` per call, same fallback as `gradeAtLadder`. */
-  const gradeRootAtLadder = (stats) => (fen, candidateUcis, signal, depth) =>
-    splitAcrossFreeEngines({
-      freeCount: pool.freeCount,
-      size,
-      stats: stats.rootSplit,
-      candidateUcis,
-      runShard: (shard) => runGradeAtDepth(depth ?? GRADING_ROOT_DEPTH, fen, shard, stats),
-    });
+  const gradeRootAtLadder = (stats) => gradeRootWith(stats, (depth) => depth ?? GRADING_ROOT_DEPTH);
 
   return {
     gradeAtDepth,
@@ -539,6 +568,8 @@ async function createDepthPool(size, hashProbeEvery = 0) {
     gradeRootAtLadder,
     /** Clears every engine's transposition table so each (position, depth) run starts clean. */
     resetAll: () => pool.newGameAll(),
+    /** Resolves once every engine is free and nothing is queued (Phase 227 D-09 quiescence before a timer). */
+    whenIdle: () => pool.whenIdle(),
     quitAll: () => pool.quitAll(),
   };
 }
@@ -622,6 +653,27 @@ function runSelfTest() {
     check(/pool-size/i.test(err.message), '--pool-size 0 throws mentioning pool-size');
   }
 
+  // Phase 227: --dispatch-mode (default = the app constant) and --ladder-only (implies --ladder).
+  check(
+    defaultArgs.dispatchMode === defaultDispatchMode() && defaultArgs.ladderOnly === false,
+    `defaults: dispatch-mode=${defaultDispatchMode()} ladder-only=false, got ${defaultArgs.dispatchMode}/${defaultArgs.ladderOnly}`,
+  );
+  const phase227Args = parseArgs(['--dispatch-mode', 'continuous', '--ladder-only', '--nodes', '20']);
+  check(
+    phase227Args.dispatchMode === 'continuous' &&
+      phase227Args.ladderOnly === true &&
+      phase227Args.ladder === true &&
+      phase227Args.nodes === 20,
+    '--dispatch-mode continuous --ladder-only parse (ladder-only implies --ladder and still lets --nodes parse)',
+  );
+  check(parseArgs(['--ladder']).ladderOnly === false, '--ladder alone does not imply --ladder-only');
+  try {
+    parseArgs(['--dispatch-mode', 'sideways']);
+    check(false, 'an invalid --dispatch-mode value should throw');
+  } catch (err) {
+    check(/dispatch mode/i.test(err.message), 'invalid --dispatch-mode value throws mentioning the dispatch mode');
+  }
+
   // --openings 12 with no --fens resolves the 4 built-in positions plus 12 = 16.
   const openingsPositions = resolvePositions({ fens: null, openings: 12 });
   check(
@@ -655,25 +707,43 @@ async function main() {
 
   const positions = resolvePositions(args);
   const referenceDepth = args.depths[0];
+  // Phase 227 D-17: --ladder-only runs no flat-depth pass at all (and so has no reference pass).
+  const flatDepths = args.ladderOnly ? [] : args.depths;
+
+  // Phase 227 T-227-07: prove the requested dispatch mode is the one mctsSearch actually executes,
+  // BEFORE any engine is brought up. Exit 3 = continuous requested but the round loop ran.
+  try {
+    const observed = await assertDispatchModeLive(mctsSearch, args.dispatchMode);
+    console.log(`Dispatch mode probe: requested=${args.dispatchMode} observed=${observed}`);
+  } catch (err) {
+    console.error(`\n${err.message}\n`);
+    return typeof err.exitCode === 'number' ? err.exitCode : 1;
+  }
 
   const { session, ort } = await createMaiaSession();
   const pool = await createDepthPool(args.poolSize, args.hashProbe);
 
   console.log(
     `\nGrading-depth A/B — nodes=${args.nodes} plies=${args.plies} concurrency=${args.procs} ` +
-      `pool-size=${args.poolSize} elo=${args.elo} ladder-table=${LADDER_TABLE_STAMP}\n` +
-      `positions=${positions.length}  depths=${args.depths.join(',')}  reference=d${referenceDepth}` +
-      `${args.ladder ? '  +ladder pass' : ''}\n`,
+      `pool-size=${args.poolSize} elo=${args.elo} ladder-table=${LADDER_TABLE_STAMP} ` +
+      `dispatch-mode=${args.dispatchMode} maia-fifo=${args.maiaFifo}\n` +
+      (args.ladderOnly
+        ? `positions=${positions.length}  ladder-only (no flat-depth passes)\n`
+        : `positions=${positions.length}  depths=${args.depths.join(',')}  reference=d${referenceDepth}` +
+          `${args.ladder ? '  +ladder pass' : ''}\n`),
   );
 
   const rows = [];
-  const wallByDepth = new Map(args.depths.map((depth) => [depth, 0]));
+  const wallByDepth = new Map(flatDepths.map((depth) => [depth, 0]));
+  let ladderWallMs = 0;
 
   for (const { label, fen } of positions) {
     console.log(`── ${label}`);
     const snapshotByDepth = new Map();
 
-    for (const depth of args.depths) {
+    for (const depth of flatDepths) {
+      await whenMaiaIdle(); // 227-09 review: the previous search's stale Maia work must also have settled
+      await pool.whenIdle(); // Phase 227 D-09: the previous pass's cancelled grades must have quiesced
       await pool.resetAll();
       resetMaiaRunMemo(); // Phase 197 LEAF-02: isolate this pass's own inference cost, see doc comment.
       resetMaiaInstrumentationStats(); // Phase 198 DISPATCH-02: co-located with resetMaiaRunMemo above, same per-pass isolation reasoning.
@@ -688,10 +758,13 @@ async function main() {
         maxPlies: args.plies,
         concurrency: args.procs,
         elo: { w: args.elo, b: args.elo },
+        dispatchMode: args.dispatchMode,
       };
+      const loopLag = startLoopLagProbe();
       const startedAt = performance.now();
       const snapshot = await mctsSearch(fen, budget, providers, () => {}, new AbortController().signal);
       const wallMs = performance.now() - startedAt;
+      const loopLagMaxMs = await loopLag.stop(); // after the wall reading: its settle wait is not timed
       const inferences = maiaInferenceStats.count - inferencesBefore;
       const maiaCpuMs = maiaCpuStats.totalMs;
       const maiaPeakInflight = maiaInflightStats.peak;
@@ -731,6 +804,8 @@ async function main() {
         root_split_calls: stats.rootSplit.calls,
         root_split_splits: stats.rootSplit.splits,
         root_split_premise_violations: stats.rootSplit.premiseViolations,
+        dispatch_mode: args.dispatchMode,
+        loop_lag_max_ms: loopLagMaxMs.toFixed(1),
       });
     }
 
@@ -739,6 +814,8 @@ async function main() {
     // depth varies WITHIN a single search (module header LOAD-BEARING note).
     let ladderSnapshot = null;
     if (args.ladder) {
+      await whenMaiaIdle(); // 227-09 review: the previous search's stale Maia work must also have settled
+      await pool.whenIdle(); // Phase 227 D-09
       await pool.resetAll();
       resetMaiaRunMemo();
       resetMaiaInstrumentationStats(); // Phase 198 DISPATCH-02: co-located with resetMaiaRunMemo above.
@@ -753,10 +830,14 @@ async function main() {
         maxPlies: args.plies,
         concurrency: args.procs,
         elo: { w: args.elo, b: args.elo },
+        dispatchMode: args.dispatchMode,
       };
+      const loopLag = startLoopLagProbe();
       const startedAt = performance.now();
       ladderSnapshot = await mctsSearch(fen, budget, providers, () => {}, new AbortController().signal);
       const wallMs = performance.now() - startedAt;
+      const loopLagMaxMs = await loopLag.stop(); // after the wall reading: its settle wait is not timed
+      ladderWallMs += wallMs;
       const inferences = maiaInferenceStats.count - inferencesBefore;
       const maiaCpuMs = maiaCpuStats.totalMs;
       const maiaPeakInflight = maiaInflightStats.peak;
@@ -786,11 +867,13 @@ async function main() {
         root_split_calls: stats.rootSplit.calls,
         root_split_splits: stats.rootSplit.splits,
         root_split_premise_violations: stats.rootSplit.premiseViolations,
+        dispatch_mode: args.dispatchMode,
+        loop_lag_max_ms: loopLagMaxMs.toFixed(1),
       });
     }
 
-    const reference = snapshotByDepth.get(referenceDepth);
-    for (const depth of args.depths.filter((d) => d !== referenceDepth)) {
+    const reference = snapshotByDepth.get(referenceDepth); // undefined under --ladder-only (no flat pass)
+    for (const depth of flatDepths.filter((d) => d !== referenceDepth)) {
       const cmp = compareToReference(snapshotByDepth.get(depth).rankedLines, reference.rankedLines);
       console.log(
         `     d${depth} vs d${referenceDepth}: same top ${cmp.sameTopMove ? 'YES' : 'NO '}  ` +
@@ -809,7 +892,7 @@ async function main() {
       row.reference_top2_gap = cmp.referenceTopGap?.toFixed(6) ?? '';
     }
 
-    if (ladderSnapshot !== null) {
+    if (ladderSnapshot !== null && reference !== undefined) {
       const cmp = compareToReference(ladderSnapshot.rankedLines, reference.rankedLines);
       console.log(
         `     ladder vs d${referenceDepth}: same top ${cmp.sameTopMove ? 'YES' : 'NO '}  ` +
@@ -832,12 +915,13 @@ async function main() {
 
   const referenceWall = wallByDepth.get(referenceDepth);
   console.log(`Total wall across ${positions.length} positions:`);
-  for (const depth of args.depths) {
+  for (const depth of flatDepths) {
     const wall = wallByDepth.get(depth);
     console.log(
       `  d${String(depth).padStart(2)}  ${(wall / 1000).toFixed(1)}s   ${(referenceWall / wall).toFixed(2)}x vs d${referenceDepth}`,
     );
   }
+  if (args.ladderOnly) console.log(`  ladder  ${(ladderWallMs / 1000).toFixed(1)}s`);
 
   if (args.outDir !== null) {
     const outDir = path.isAbsolute(args.outDir) ? args.outDir : path.resolve(REPO_ROOT, args.outDir);
@@ -849,6 +933,8 @@ async function main() {
       'hash_probes', 'hash_probes_divergent', 'hash_probe_max_abs_cp', 'hash_probe_mean_abs_score_diff',
       'maia_inferences', 'maia_cpu_ms', 'maia_peak_inflight', 'maia_fifo',
       'pool_size', 'root_split_calls', 'root_split_splits', 'root_split_premise_violations',
+      // Phase 227: appended at the END so 226 readers and the tripwire still parse old and new files.
+      'dispatch_mode', 'loop_lag_max_ms',
     ];
     // Timestamp is read once here, AFTER all measurement, so it never influences a run.
     const stamp = new Date().toISOString().replace(/[:.]/g, '-');

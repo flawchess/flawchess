@@ -52,7 +52,7 @@
  * intentionally weaker).
  */
 
-import type { BotStopRule } from './types';
+import type { BotStopRule, DispatchMode } from './types';
 
 /** Node-expansion budget for bot play (D-07: ~15s worst-case move target). Locked 168.5-04 from measurement. */
 export const FLAWCHESS_BOT_MAX_NODES = 50;
@@ -60,8 +60,21 @@ export const FLAWCHESS_BOT_MAX_NODES = 50;
 /** Search-tree ply depth cap for bot play — unchanged from the analysis default (D-07, Claude's-discretion "keep"). Locked 168.5-04 from measurement. */
 export const FLAWCHESS_BOT_MAX_PLIES = 8;
 
-/** Pinned bot-play search concurrency (D-09) — the analysis board keeps device-adaptive `computePoolSize()`; bot play uses one fixed constant so app == harness determinism holds exactly. Locked 168.5-04 from measurement. */
+/** Pinned bot-play search concurrency (D-09) — the analysis board keeps device-adaptive `computePoolSize()`; bot play uses one fixed constant so app and harness run the same search shape (exactly reproducible in round mode; continuous dispatch, shipped in Phase 227, varies with timing). Locked 168.5-04 from measurement. */
 export const FLAWCHESS_BOT_CONCURRENCY = 4;
+
+/**
+ * Phase 227 D-13: the dispatch loop `mctsSearch` runs for BOTH app callers
+ * (`useBotGame`'s bot budget and `useFlawChessEngine`'s analysis budget) and
+ * for every harness script (`scripts/lib/dispatch-mode.mjs`'s
+ * `defaultDispatchMode()`). The single definition, same app == harness
+ * pattern as the constants above (T-168.5-04-01): a one-sided flip is
+ * structurally impossible. Flipped to `'continuous'` on the owner's ship
+ * decision from the Phase 227 verdict
+ * (`reports/continuous-dispatch-227/owner-decision.md`); rollback is
+ * flipping it back to `'round'` (L-5).
+ */
+export const FLAWCHESS_DISPATCH_MODE: DispatchMode = 'continuous';
 
 /** Two-sided early-stop rule for bot play (D-05/D-06): clear-winner OR near-tie-flatness, gated by a shared min-nodes floor. Locked 168.5-04 from measurement. */
 export const FLAWCHESS_BOT_STOP_RULE: BotStopRule = {

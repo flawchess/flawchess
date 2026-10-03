@@ -1,0 +1,17 @@
+position	fen	dispatch_mode	nodes_evaluated_at_stop	stop_reason	wall_ms	maia_cpu_ms	maia_peak_inflight	maia_fifo	concurrency	max_nodes	elo	stop_rule	guard_window	first_expansions	exposure_snapshots	eligible_snapshots	pool_size	root_split_calls	grade_cpu_ms	loop_lag_max_ms	root_split_premise_violations
+italian	r1bqkb1r/pppp1ppp/2n2n2/4p3/2B1P3/5N2/PPPP1PPP/RNBQK2R w KQkq - 4 4	continuous	17	early-stop	2095	1457.5	1	true	4	50	1500	on					4	1	3382	5.2	0
+middlegame	r2q1rk1/pp1nbppp/2p1bn2/3p4/3P1B2/2N1PN2/PPQ1BPPP/R4RK1 w - - 6 11	continuous	50	budget	6117	4288.4	1	true	4	50	1500	on					4	1	12197	6.1	0
+sharp	r1bq1r1k/pp1nbppp/2p1p3/3pP3/3P4/2NB1N2/PPPQ1PPP/R3K2R w KQ - 2 11	continuous	15	early-stop	2218	1464.1	1	true	4	50	1500	on					4	1	4653	5.8	0
+endgame	8/2p5/3p4/KP5r/1R3p1k/8/4P1P1/8 w - - 0 1	continuous	11	early-stop	1263	910.9	1	true	4	50	1500	on					4	1	968	1.9	0
+C50	r1bqk1nr/pppp1ppp/2n5/2b1p3/2B1P3/5N2/PPPP1PPP/RNBQK2R w KQkq - 4 4	continuous	50	budget	4517	3976.5	1	true	4	50	1500	on					4	1	4427	5.6	0
+C60	r1bqkbnr/pppp1ppp/2n5/1B2p3/4P3/5N2/PPPP1PPP/RNBQK2R b KQkq - 3 3	continuous	33	early-stop	3121	2737.0	1	true	4	50	1500	on					4	1	4499	5.4	0
+C70	r1bqkbnr/1ppp1ppp/p1n5/4p3/B3P3/5N2/PPPP1PPP/RNBQK2R b KQkq - 1 4	continuous	10	early-stop	1251	916.3	1	true	4	50	1500	on					4	1	1848	2.8	0
+C45	r1bqkbnr/pppp1ppp/2n5/4p3/3PP3/5N2/PPP2PPP/RNBQKB1R b KQkq - 0 3	continuous	9	early-stop	970	824.8	1	true	4	50	1500	on					4	1	1136	3.9	0
+C42	rnbqkb1r/pppp1ppp/5n2/4p3/4P3/5N2/PPPP1PPP/RNBQKB1R w KQkq - 2 3	continuous	8	early-stop	872	749.5	1	true	4	50	1500	on					4	1	1312	1.7	0
+C47	r1bqkb1r/pppp1ppp/2n2n2/4p3/4P3/2N2N2/PPPP1PPP/R1BQKB1R w KQkq - 4 4	continuous	50	budget	4585	4124.9	1	true	4	50	1500	on					4	1	3730	6.8	0
+C25	rnbqkbnr/pppp1ppp/8/4p3/4P3/2N5/PPPP1PPP/R1BQKBNR b KQkq - 1 2	continuous	50	budget	4296	3823.7	1	true	4	50	1500	on					4	1	5401	7.3	0
+C30	rnbqkbnr/pppp1ppp/8/4p3/4PP2/8/PPPP2PP/RNBQKBNR b KQkq - 0 2	continuous	19	early-stop	1923	1649.4	1	true	4	50	1500	on					4	1	1936	4.0	0
+B50	rnbqkbnr/pp2pppp/3p4/2p5/4P3/5N2/PPPP1PPP/RNBQKB1R w KQkq - 0 3	continuous	50	budget	4406	4057.6	1	true	4	50	1500	on					4	1	4626	2.9	0
+B90	rnbqkb1r/1p2pppp/p2p1n2/8/3NP3/2N5/PPP2PPP/R1BQKB1R w KQkq - 0 6	continuous	11	early-stop	1747	1170.7	1	true	4	50	1500	on					4	1	3423	3.1	0
+B70	rnbqkb1r/pp2pp1p/3p1np1/8/3NP3/2N5/PPP2PPP/R1BQKB1R w KQkq - 0 6	continuous	50	budget	4641	3953.9	1	true	4	50	1500	on					4	1	5375	4.9	0
+C00	rnbqkbnr/pppp1ppp/4p3/8/4P3/8/PPPP1PPP/RNBQKBNR w KQkq - 0 2	continuous	50	budget	5020	4290.2	1	true	4	50	1500	on					4	1	7565	5.2	0

@@ -198,8 +198,11 @@ export function resetMaiaRunMemo() {
  */
 export function resetMaiaInstrumentationStats() {
   maiaCpuStats.totalMs = 0;
-  maiaInflightStats.current = 0;
-  maiaInflightStats.peak = 0;
+  // Phase 227 (227-09 review R1A-1/R1B-1): `current` is a live gauge of real `session.run` calls and is
+  // never zeroed here. Zeroing it while a stale inference was still running let that call's `finally`
+  // decrement drive it to -1, so every later peak read one low (a real 2-way overlap read 1). The peak
+  // restarts from whatever is genuinely in flight; callers await `whenMaiaIdle()` first, so that is 0.
+  maiaInflightStats.peak = maiaInflightStats.current;
 }
 
 /**
@@ -267,6 +270,7 @@ async function runMaia(session, ort, fen, elo, eloOppo = elo) {
       for (const t of Object.values(feeds)) t.dispose?.();
       if (result) for (const t of Object.values(result)) t.dispose?.();
       maiaInflightStats.current--;
+      notifyMaiaIdle();
     }
   })();
 
@@ -302,6 +306,33 @@ async function runMaia(session, ort, fen, elo, eloOppo = elo) {
 const maiaFifoPending = [];
 /** True while ONE `nodePolicy(...)` call is in flight from this queue — the local mirror of `maiaQueue.ts`'s own `dispatching` gate. */
 let maiaFifoDispatching = false;
+/** Callers of `whenMaiaIdle()` waiting for the Maia side to go quiet. */
+const maiaIdleResolvers = [];
+
+/** True when no real inference is in flight and the FIFO holds nothing (dispatched or queued). */
+function isMaiaIdle() {
+  return maiaInflightStats.current === 0 && !maiaFifoDispatching && maiaFifoPending.length === 0;
+}
+
+/** Resolves every `whenMaiaIdle()` caller once the Maia side is idle. Called wherever Maia work settles. */
+function notifyMaiaIdle() {
+  if (maiaIdleResolvers.length === 0 || !isMaiaIdle()) return;
+  for (const resolve of maiaIdleResolvers.splice(0)) resolve();
+}
+
+/**
+ * Resolves once no Maia inference is in flight and the FIFO is empty: the Maia counterpart of the
+ * Stockfish pool's `whenIdle()` (Phase 227, 227-09 review R1A-1/R1B-1). A continuous search that stops
+ * early leaves its in-flight inference (which cannot be interrupted, like the app's) running; without
+ * this wait the gate scripts started the next row's timer and memo/stat resets while it was still
+ * running, charging stale work to the next row in continuous mode only.
+ */
+export function whenMaiaIdle() {
+  if (isMaiaIdle()) return Promise.resolve();
+  return new Promise((resolve) => {
+    maiaIdleResolvers.push(resolve);
+  });
+}
 
 /**
  * Dispatches the next queued request if none is currently in flight.
@@ -320,6 +351,7 @@ function maiaFifoProcess() {
       maiaFifoDispatching = false;
       next.resolve(result);
       maiaFifoProcess();
+      notifyMaiaIdle();
     },
     () => {
       // Providers degrade by resolving, never hanging (`maiaQueue.ts` Pitfall
@@ -328,14 +360,42 @@ function maiaFifoProcess() {
       maiaFifoDispatching = false;
       next.resolve({});
       maiaFifoProcess();
+      notifyMaiaIdle();
     },
   );
 }
 
-/** FIFO-gated `policy()` — never more than one `nodePolicy` call in flight from this queue at a time. */
-function maiaFifoPolicy(session, ort, fen, elo, side) {
+/**
+ * FIFO-gated `policy()` — never more than one `nodePolicy` call in flight from this queue at a time.
+ *
+ * Phase 227 fix site (227-09 review R1A-1/R1B-1): the FIFO used to ignore the search signal, so after a
+ * continuous early stop its queued stale requests kept running into the next row's timed window. It now
+ * mirrors `maiaQueue.ts`'s `requestPolicy`: an already-aborted signal never enqueues, and an abort drops
+ * a still-queued request and resolves it `{}`. A request already dispatched runs to completion, exactly
+ * like the app's in-flight worker inference. The listener is removed on every settlement path.
+ */
+function maiaFifoPolicy(session, ort, fen, elo, side, signal) {
+  if (signal?.aborted) return Promise.resolve({});
   return new Promise((resolve) => {
-    maiaFifoPending.push({ session, ort, fen, elo, side, resolve });
+    let removeAbortListener;
+    const settle = (result) => {
+      removeAbortListener?.();
+      resolve(result);
+    };
+    const req = { session, ort, fen, elo, side, resolve: settle };
+    if (signal) {
+      const onAbort = () => {
+        const idx = maiaFifoPending.indexOf(req);
+        if (idx >= 0) {
+          maiaFifoPending.splice(idx, 1);
+          settle({});
+          notifyMaiaIdle();
+        }
+      };
+      signal.addEventListener('abort', onAbort, { once: true });
+      removeAbortListener = () => signal.removeEventListener('abort', onAbort);
+    }
+    maiaFifoPending.push(req);
     maiaFifoProcess();
   });
 }
@@ -365,7 +425,7 @@ export function makeNodeProviders(session, ort, gradeFn, options = {}) {
   const { maiaFifo = false, gradeRootFn } = options;
   return {
     policy: maiaFifo
-      ? (fen, elo, side) => maiaFifoPolicy(session, ort, fen, elo, side)
+      ? (fen, elo, side, signal) => maiaFifoPolicy(session, ort, fen, elo, side, signal)
       : (fen, elo, side) => nodePolicy(session, ort, fen, elo, side),
     grade: gradeFn,
     ...(typeof gradeRootFn === 'function' ? { gradeRoot: gradeRootFn } : {}),

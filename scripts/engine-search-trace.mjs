@@ -26,6 +26,14 @@
  * produce: a round dispatching more expansions than the concurrency, or the
  * same leaf (by its root-to-leaf UCI path) graded twice.
  *
+ * `--dispatch-mode round|continuous` (Phase 227 D-08/D-14) selects the dispatch loop for the
+ * trace: it goes into the search budget, is verified by `assertDispatchModeLive` before any
+ * engine starts (exit 3 = continuous requested but the round loop ran), and is stamped as the
+ * LAST column of both TSVs. CAVEAT for continuous mode: the "round" id above is then just a
+ * batch of `policy()` calls delimited by snapshots (there is no barrier), so per-round sizes
+ * and the over-concurrency anomaly are not barrier statistics there; the duplicate-leaf check
+ * and the expansion/grade rows remain exact.
+ *
  * MUST run from a detached worktree when comparing A0 vs A2 (RESEARCH Pattern
  * 3/9): `@/` resolves relative to the alias hook's own location, so this
  * script always measures whatever `mctsSearch.ts` is checked out in the
@@ -36,7 +44,8 @@
  *     --ids cBFTV --label a0 \
  *     [--fixture fixtures/engine/maia-blindness.tsv] \
  *     [--elo 1500] [--nodes 50] [--concurrency 4] [--procs 4] [--plies 8] \
- *     [--stop-rule on|off] [--out-dir reports/data] [--self-test] [--help]
+ *     [--stop-rule on|off] [--dispatch-mode round|continuous] \
+ *     [--out-dir reports/data] [--self-test] [--help]
  *
  * Worked cBFTV command (the D-13 measurement):
  *   node --import ./scripts/lib/frontend-alias-hook.mjs scripts/engine-search-trace.mjs \
@@ -57,6 +66,8 @@
  *   --plies        search-tree ply cap (default 8)
  *   --stop-rule    "on" or "off" (default off — the D-13 measurement wants
  *                  the full 50-node tree, not an early-stopped one)
+ *   --dispatch-mode  "round" or "continuous" (default = the app's FLAWCHESS_DISPATCH_MODE).
+ *                  A real code-path switch, probed live before any engine starts.
  *   --out-dir      emit the two TSVs here (default reports/data)
  *   --self-test    exercise parseArgs + a stubbed real mctsSearch run (fake
  *                  policy/grade, no engines spawned); exits non-zero on failure
@@ -67,8 +78,9 @@ import path from 'node:path';
 import fs from 'node:fs';
 
 import { createMaiaSession, resolveFrontendModule } from './lib/node-engine-providers.mjs';
-import { makeNodeProviders, resetMaiaRunMemo } from './lib/calibration-providers.mjs';
+import { makeNodeProviders, resetMaiaRunMemo, whenMaiaIdle } from './lib/calibration-providers.mjs';
 import { createGradePool } from './engine-dispatch-stop-rule.mjs';
+import { assertDispatchModeLive, defaultDispatchMode, parseDispatchModeFlag } from './lib/dispatch-mode.mjs';
 import { loadFixtureRows } from './engine-move-quality.mjs';
 
 import { mctsSearch } from '@/lib/engine/mctsSearch';
@@ -117,6 +129,7 @@ export function parseArgs(argv) {
     procs: null,
     plies: FLAWCHESS_BOT_MAX_PLIES,
     stopRule: 'off',
+    dispatchMode: defaultDispatchMode(),
     outDir: DEFAULT_OUT_DIR,
     help: false,
     selfTest: false,
@@ -157,6 +170,7 @@ export function parseArgs(argv) {
         i++;
         break;
       }
+      case 'dispatch-mode': args.dispatchMode = parseDispatchModeFlag(requireFlagValue(value, key)); i++; break; // Phase 227 D-14
       case 'out-dir': args.outDir = requireFlagValue(value, key); i++; break;
       default:
         throw new Error(`Unknown flag --${key}`);
@@ -398,6 +412,23 @@ async function runSelfTest() {
     check(false, '--help alone should not throw');
   }
 
+  // Phase 227: --dispatch-mode defaults to the app constant, parses both modes, rejects anything else.
+  check(
+    parseArgs(['--label', 'a0']).dispatchMode === defaultDispatchMode(),
+    `--dispatch-mode defaults to the app constant (${defaultDispatchMode()})`,
+  );
+  check(
+    parseArgs(['--label', 'a0', '--dispatch-mode', 'continuous']).dispatchMode === 'continuous' &&
+      parseArgs(['--label', 'a0', '--dispatch-mode', 'round']).dispatchMode === 'round',
+    '--dispatch-mode round|continuous parse',
+  );
+  try {
+    parseArgs(['--label', 'a0', '--dispatch-mode', 'sideways']);
+    check(false, 'an invalid --dispatch-mode value should throw');
+  } catch (err) {
+    check(/dispatch mode/i.test(err.message), 'invalid --dispatch-mode value throws mentioning the dispatch mode');
+  }
+
   // --procs defaults to --concurrency when omitted.
   const procsArgs = parseArgs(['--label', 'a0', '--concurrency', '3']);
   check(procsArgs.procs === 3, `--procs defaults to --concurrency (3), got ${procsArgs.procs}`);
@@ -517,6 +548,16 @@ async function main() {
     throw new Error(`No fixture rows matched --ids ${args.ids ? args.ids.join(',') : '(none)'}`);
   }
 
+  // Phase 227 T-227-07: prove the requested dispatch mode is the one mctsSearch actually executes,
+  // BEFORE any engine is brought up. Exit 3 = continuous requested but the round loop ran.
+  try {
+    const observed = await assertDispatchModeLive(mctsSearch, args.dispatchMode);
+    console.log(`Dispatch mode probe: requested=${args.dispatchMode} observed=${observed}`);
+  } catch (err) {
+    console.error(`\n${err.message}\n`);
+    return typeof err.exitCode === 'number' ? err.exitCode : 1;
+  }
+
   const { session, ort } = await createMaiaSession();
   const { Chess } = await resolveFrontendModule('chess.js');
   const pool = await createGradePool(args.procs);
@@ -531,6 +572,8 @@ async function main() {
 
   try {
     for (const row of rows) {
+      await whenMaiaIdle(); // 227-09 review: the previous search's stale Maia work must also have settled
+      await pool.whenIdle(); // Phase 227 D-09: the previous position's cancelled grades must have quiesced
       await pool.resetAll();
       resetMaiaRunMemo();
 
@@ -543,6 +586,7 @@ async function main() {
         maxPlies: args.plies,
         concurrency: args.concurrency,
         elo: { w: args.elo, b: args.elo },
+        dispatchMode: args.dispatchMode,
         ...(args.stopRule === 'on' ? { stopRule: FLAWCHESS_BOT_STOP_RULE } : {}),
       };
 
@@ -554,6 +598,7 @@ async function main() {
           round: sink.round,
           nodes_evaluated: snapshot.nodesEvaluated,
           root_lines: snapshot.rankedLines.map((l) => `${l.rootMove}:${l.visits}:${l.practicalScore}`).join(';'),
+          dispatch_mode: args.dispatchMode,
         });
         sink.sinceSnapshot = true;
       };
@@ -579,6 +624,7 @@ async function main() {
           grade_depth: exp.gradeDepth,
           n_candidates: exp.nCandidates,
           grades: exp.gradesStr,
+          dispatch_mode: args.dispatchMode,
         });
       }
     }
@@ -586,8 +632,9 @@ async function main() {
     pool.quitAll();
   }
 
-  const expColumns = ['id', 'label', 'concurrency', 'round', 'expansion_index', 'leaf_fen', 'grade_depth', 'n_candidates', 'grades'];
-  const snapColumns = ['id', 'label', 'concurrency', 'round', 'nodes_evaluated', 'root_lines'];
+  // Phase 227: `dispatch_mode` appended at the END so older readers still parse both TSVs.
+  const expColumns = ['id', 'label', 'concurrency', 'round', 'expansion_index', 'leaf_fen', 'grade_depth', 'n_candidates', 'grades', 'dispatch_mode'];
+  const snapColumns = ['id', 'label', 'concurrency', 'round', 'nodes_evaluated', 'root_lines', 'dispatch_mode'];
   writeTsv(path.join(outDir, `engine-search-trace-expansions-${args.label}-c${args.concurrency}-${stamp}.tsv`), expColumns, expansionRows);
   writeTsv(path.join(outDir, `engine-search-trace-snapshots-${args.label}-c${args.concurrency}-${stamp}.tsv`), snapColumns, snapshotRows);
 

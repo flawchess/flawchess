@@ -79,6 +79,7 @@ import { maiaArgmaxMove, SF_SKILL_ELO, anchorRatingFor } from './lib/calibration
 import { OPENING_BOOK, assertOpeningBookUciPrefixes } from './lib/calibration-openings.mjs';
 import { combineAnchorEstimates, wasScoreClamped } from './lib/calibration-elo.mjs';
 import { playTwoMoverGame } from './lib/calibration-game-loop.mjs';
+import { parseDispatchModeFlag, defaultDispatchMode, assertDispatchModeLive } from './lib/dispatch-mode.mjs';
 import {
   internalRatingFor,
   pickLocateAnchors,
@@ -88,6 +89,7 @@ import {
   LOCATE_PASS_GAMES,
 } from './lib/calibration-bot-cell-schedule.mjs';
 
+import { mctsSearch } from '@/lib/engine/mctsSearch';
 import { selectBotMove } from '@/lib/engine/selectBotMove';
 import { BOT_STYLE_BUNDLES } from '@/lib/engine/botStyleBundles';
 import { mulberry32 } from '@/lib/engine/botSampling';
@@ -262,6 +264,11 @@ function parseArgs(argv) {
     stockfishProcs: STOCKFISH_POOL_DEFAULT_SIZE,
     outDir: DEFAULT_OUT_DIR,
     resume: null,
+    // Phase 227 D-14/D-15: the bot search's dispatch loop. Default = the app's
+    // shipped constant (FLAWCHESS_DISPATCH_MODE via defaultDispatchMode), so a
+    // plain sweep measures what the app runs; an A0/A1 powered comparison
+    // overrides it per arm.
+    dispatchMode: defaultDispatchMode(),
   };
   for (let i = 0; i < argv.length; i++) {
     const token = argv[i];
@@ -310,6 +317,10 @@ function parseArgs(argv) {
         i++;
         break;
       }
+      case 'dispatch-mode':
+        args.dispatchMode = parseDispatchModeFlag(requireFlagValue(value, key));
+        i++;
+        break;
       case 'seed': {
         const raw = requireFlagValue(value, key);
         const parsed = Number.parseInt(raw, 10);
@@ -387,7 +398,19 @@ export async function setupHarnessEngines({ stockfishProcs = STOCKFISH_POOL_DEFA
   // children — their stdio handles keep the event loop alive (hang + leak).
   try {
     const { Chess } = await resolveFrontendModule('chess.js');
-    const providers = makeNodeProviders(maiaCtx.session, maiaCtx.ort, pool.grade, { gradeRootFn: pool.gradeRoot });
+    // Phase 227 D-14 (RESEARCH Pitfall 4): maiaFifo routes Maia policy calls
+    // through the single-in-flight FIFO, which is what the app does (one Maia
+    // inference at a time in the worker). Without it the harness would
+    // overlap Maia inferences under continuous dispatch and measure a
+    // different arrival order than the shipped bot. Content-neutral for round
+    // mode only at --hash clear, which this harness uses (the pool clears the hash
+    // on every grade, so a grade's content cannot depend on which engine served it
+    // or when). Under a warm hash, timing-dependent engine assignment makes round
+    // mode's content timing-dependent too (Plan 227-08, design.md section 1.4).
+    const providers = makeNodeProviders(maiaCtx.session, maiaCtx.ort, pool.grade, {
+      gradeRootFn: pool.gradeRoot,
+      maiaFifo: true,
+    });
     return { providers, pool, Chess, maiaCtx };
   } catch (err) {
     pool.quitAll();
@@ -572,6 +595,10 @@ export async function playGame({
   maxNodes = FLAWCHESS_BOT_MAX_NODES,
   maxPlies = FLAWCHESS_BOT_MAX_PLIES,
   style,
+  // Phase 227 D-14: forwarded into the bot's SearchBudget. Defaults to the
+  // app's shipped mode so every pre-227 caller measures what the app runs;
+  // the determinism check pins 'round' explicitly (D-11).
+  dispatchMode = defaultDispatchMode(),
 }) {
   const notifyPly = onPly ?? (() => {});
 
@@ -603,6 +630,9 @@ export async function playGame({
           // Phase 168.5 D-05/D-06 (Task 2): without this the sweep would
           // measure a bot without the early-stop rule (T-168.5-04-02).
           stopRule: FLAWCHESS_BOT_STOP_RULE,
+          // Phase 227 D-14: same dispatch loop as the app (verified live by
+          // assertDispatchModeLive in main() before any engine bring-up).
+          dispatchMode,
         },
         // Phase 184 CAL-04: `style` is conditionally spread, NEVER a literal
         // `style: undefined` key — an undefined style must leave this object
@@ -1225,6 +1255,10 @@ export const RAW_LEDGER_COLUMNS = [
   'maia_agree',
   'elapsed_ms', // NEW (D-08): total wall-clock ms for the WHOLE game, all plies/both movers
   'mean_move_ms', // NEW (D-08): mean wall-clock ms per BOT-ONLY move (search cost)
+  // NEW (Phase 227 D-15): the dispatch loop the bot search ran ('round' |
+  // 'continuous'). Appended LAST (same discipline as D-08). --resume refuses a
+  // ledger whose rows used a different mode, so one ledger never mixes A0 and A1.
+  'dispatch_mode',
 ];
 
 const LEDGER_COL_INDEX = new Map(RAW_LEDGER_COLUMNS.map((name, i) => [name, i]));
@@ -1254,6 +1288,9 @@ export function ledgerRowLine(row) {
     nf.maiaAgree,
     row.elapsedMs,
     row.meanMoveMs === null || row.meanMoveMs === undefined ? '' : row.meanMoveMs,
+    // D-15: a row without a valid mode is a harness bug (the column is what keeps
+    // A0/A1 apart) — fail loud rather than write `undefined` into the ledger.
+    parseDispatchModeFlag(row.dispatchMode),
   ].join('\t');
 }
 
@@ -1339,6 +1376,7 @@ async function playCellAnchorGames({ Chess, providers, pool, botElo, botBlend, a
       // paths below — a future persona-cell sweep script passes a real
       // BotStyleParams bundle here).
       style,
+      dispatchMode: args.dispatchMode,
     });
     console.log(`[calibration-harness] result=${result.result} reason=${result.reason} plies=${result.plies}`);
     console.log(`[calibration-harness] analyze: ${analysisLineUrl(opening, result.moveUcis)}`);
@@ -1359,6 +1397,7 @@ async function playCellAnchorGames({ Chess, providers, pool, botElo, botBlend, a
       nearFree: result.nearFree,
       elapsedMs: Math.round(elapsedMs),
       meanMoveMs: botMoveCount > 0 ? botMoveMsSum / botMoveCount : null,
+      dispatchMode: args.dispatchMode,
     });
     foldGameIntoCellAnchor(stat, { result: result.result, botIsWhite, plies: result.plies, nearFree: result.nearFree });
     moves += result.plies;
@@ -1479,6 +1518,7 @@ export function parsePriorLedgerRow(line, filePath) {
     // D-08: an empty/absent mean_move_ms cell (e.g. a zero-bot-move game) must
     // reconstruct as null, not NaN — Number.parseFloat('') is NaN.
     meanMoveMs: get('mean_move_ms') === '' ? null : Number.parseFloat(get('mean_move_ms')),
+    dispatchMode: get('dispatch_mode'),
   };
 }
 
@@ -1497,7 +1537,13 @@ export function readPriorLedgerRows(filePath) {
   if (lines.length === 0) throw new Error(`--resume: prior ledger ${filePath} is empty`);
   const header = lines[0].split('\t');
   if (header.length !== RAW_LEDGER_COLUMNS.length || RAW_LEDGER_COLUMNS.some((col, i) => header[i] !== col)) {
-    throw new Error(`--resume: prior ledger ${filePath} header does not match the current schema`);
+    // Loud on purpose (T-227-09): a ledger written before Phase 227 has no
+    // dispatch_mode column, so its rows cannot be attributed to an arm and must
+    // never be continued under either mode.
+    throw new Error(
+      `--resume: prior ledger ${filePath} header does not match the current schema ` +
+        '(a ledger without the trailing dispatch_mode column predates Phase 227 and cannot be resumed)',
+    );
   }
   return lines.slice(1).map((line) => parsePriorLedgerRow(line, filePath));
 }
@@ -1515,6 +1561,15 @@ function applyPriorLedgerRows(rows, { store, state, anchorByLabel, gridCells, ar
   for (const row of rows) {
     if (row.seed !== args.seed) {
       throw new Error(`--resume: prior seed=${row.seed} differs from current --seed=${args.seed} — refusing to resume a different experiment`);
+    }
+    // Phase 227 D-15 / T-227-09: a resumed A1 sweep must never contain A0 games
+    // (or vice versa). Every prior row must have been played under the active
+    // mode; the supervisor re-passes --dispatch-mode on every relaunch.
+    if (row.dispatchMode !== args.dispatchMode) {
+      throw new Error(
+        `--resume: dispatch_mode mismatch: prior ledger row used dispatch_mode=${row.dispatchMode} but the current ` +
+          `--dispatch-mode is ${args.dispatchMode} — refusing to mix dispatch arms in one sweep`,
+      );
     }
     const anchorSpec = anchorByLabel.get(row.anchor);
     if (!anchorSpec) {
@@ -1675,6 +1730,18 @@ async function main() {
       `[calibration-harness] --resume ${args.resume}: replayed ${priorRows.length} logged games, continuing at game index ${state.gameIndex}`,
     );
   }
+
+  // Phase 227 D-14: prove the requested dispatch mode is what mctsSearch really
+  // executes (a label-only flag would let a sweep report one mode and measure
+  // another). Runs AFTER the --resume refusals above and BEFORE any engine
+  // bring-up; a requested mode the engine did not run exits with its exitCode.
+  try {
+    await assertDispatchModeLive(mctsSearch, args.dispatchMode);
+  } catch (err) {
+    console.error(`[calibration-harness] FAILED: ${err.message}`);
+    process.exit(err.exitCode ?? 1);
+  }
+  console.log(`[calibration-harness] dispatch mode: ${args.dispatchMode} (verified live)`);
 
   console.log(`[calibration-harness] loading Maia session + spawning a ${args.stockfishProcs}-process Stockfish pool...`);
 

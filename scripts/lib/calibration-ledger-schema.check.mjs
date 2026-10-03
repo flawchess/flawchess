@@ -9,6 +9,10 @@
  * (`applyPriorLedgerRows`, exercised end-to-end via the real CLI) survives
  * the D-08 append unweakened (Phase 199, Plan 01, Task 2).
  *
+ * Phase 227 (D-15, T-227-09) extends the contract to 22 columns: `dispatch_mode`
+ * is appended LAST, round-trips, and `--resume` under a different
+ * `--dispatch-mode` is refused (scenario e) before any engine bring-up.
+ *
  * No real Maia/Stockfish session anywhere in this file — scenarios (a)-(c)
  * are pure in-process function calls against small synthetic fixtures;
  * scenario (d) spawns the harness CLI itself with `--resume`, which throws
@@ -32,7 +36,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const HARNESS_PATH = path.join(__dirname, '..', 'calibration-harness.mjs');
 const ALIAS_HOOK_PATH = path.join(__dirname, 'frontend-alias-hook.mjs');
 
-// ─── (a) Column contract: exactly 21 columns, the two new ones at the END ──────
+// ─── (a) Column contract: exactly 22 columns, D-08's two + D-15's one at the END ─
 
 // The pre-D-08 19-column list, asserted in full (not just spot-checked) so a
 // future mid-list insertion of `elapsed_ms`/`mean_move_ms` fails HERE rather
@@ -59,7 +63,7 @@ const PRE_D08_COLUMNS = [
   'maia_agree',
 ];
 
-assert.equal(RAW_LEDGER_COLUMNS.length, 21, `RAW_LEDGER_COLUMNS must have exactly 21 columns, got ${RAW_LEDGER_COLUMNS.length}`);
+assert.equal(RAW_LEDGER_COLUMNS.length, 22, `RAW_LEDGER_COLUMNS must have exactly 22 columns, got ${RAW_LEDGER_COLUMNS.length}`);
 assert.deepEqual(
   RAW_LEDGER_COLUMNS.slice(0, 19),
   PRE_D08_COLUMNS,
@@ -67,7 +71,8 @@ assert.deepEqual(
 );
 assert.equal(RAW_LEDGER_COLUMNS[19], 'elapsed_ms', `index 19 must be elapsed_ms, got ${RAW_LEDGER_COLUMNS[19]}`);
 assert.equal(RAW_LEDGER_COLUMNS[20], 'mean_move_ms', `index 20 must be mean_move_ms, got ${RAW_LEDGER_COLUMNS[20]}`);
-console.log('PASS: column contract — RAW_LEDGER_COLUMNS is 21 columns, elapsed_ms/mean_move_ms appended at the end');
+assert.equal(RAW_LEDGER_COLUMNS[21], 'dispatch_mode', `index 21 (the LAST column) must be dispatch_mode, got ${RAW_LEDGER_COLUMNS[21]}`);
+console.log('PASS: column contract — RAW_LEDGER_COLUMNS is 22 columns, elapsed_ms/mean_move_ms/dispatch_mode appended at the end');
 
 // ─── (b) Round trip: ledgerRowLine -> parsePriorLedgerRow preserves timing ─────
 
@@ -97,6 +102,7 @@ function fixtureRow(overrides = {}) {
     },
     elapsedMs: 12345,
     meanMoveMs: 678.9,
+    dispatchMode: 'round',
     ...overrides,
   };
 }
@@ -107,7 +113,16 @@ function fixtureRow(overrides = {}) {
   const parsed = parsePriorLedgerRow(line, 'fixture.tsv');
   assert.equal(parsed.elapsedMs, row.elapsedMs, `round-tripped elapsedMs mismatch: expected ${row.elapsedMs}, got ${parsed.elapsedMs}`);
   assert.equal(parsed.meanMoveMs, row.meanMoveMs, `round-tripped meanMoveMs mismatch: expected ${row.meanMoveMs}, got ${parsed.meanMoveMs}`);
-  console.log('PASS: round trip — a populated elapsedMs/meanMoveMs row round-trips through ledgerRowLine -> parsePriorLedgerRow');
+  assert.equal(parsed.dispatchMode, 'round', `round-tripped dispatchMode mismatch: expected round, got ${parsed.dispatchMode}`);
+  const continuousRow = fixtureRow({ dispatchMode: 'continuous' });
+  const continuousParsed = parsePriorLedgerRow(ledgerRowLine(continuousRow), 'fixture.tsv');
+  assert.equal(continuousParsed.dispatchMode, 'continuous', `round-tripped dispatchMode mismatch: expected continuous, got ${continuousParsed.dispatchMode}`);
+  assert.throws(
+    () => ledgerRowLine(fixtureRow({ dispatchMode: undefined })),
+    /Invalid dispatch mode/,
+    'a row without a valid dispatchMode must never be written to the ledger (D-15)',
+  );
+  console.log('PASS: round trip — a populated elapsedMs/meanMoveMs/dispatchMode row round-trips through ledgerRowLine -> parsePriorLedgerRow');
 }
 
 {
@@ -116,7 +131,9 @@ function fixtureRow(overrides = {}) {
   // special-case the empty cell).
   const row = fixtureRow({ meanMoveMs: null });
   const line = ledgerRowLine(row);
-  assert.ok(line.endsWith('\t'), `a null meanMoveMs must render as an EMPTY trailing TSV cell, got line ending ${JSON.stringify(line.slice(-10))}`);
+  // mean_move_ms is no longer the last column (dispatch_mode is), so the empty
+  // cell sits between two tabs directly before the mode.
+  assert.ok(line.endsWith('\t\tround'), `a null meanMoveMs must render as an EMPTY TSV cell before dispatch_mode, got line ending ${JSON.stringify(line.slice(-12))}`);
   const parsed = parsePriorLedgerRow(line, 'fixture.tsv');
   assert.equal(parsed.meanMoveMs, null, `a null meanMoveMs must reconstruct as null, got ${parsed.meanMoveMs} (NaN would be the un-special-cased bug)`);
   console.log('PASS: round trip — a null meanMoveMs renders as an empty cell and reconstructs as null (never NaN)');
@@ -144,6 +161,24 @@ function fixtureRow(overrides = {}) {
       'readPriorLedgerRows must THROW (not silently mis-parse) a pre-D-08 19-column ledger header',
     );
     console.log('PASS: schema-drift refusal — a pre-D-08 19-column header throws rather than silently mis-parsing (T-199-01)');
+  } finally {
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  }
+}
+
+{
+  // Phase 227 D-15 (Pitfall 10): a 21-column (pre-227) ledger lacks dispatch_mode,
+  // so its games cannot be attributed to an arm. Refused loudly, naming the column.
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'calibration-ledger-schema-check-'));
+  const pre227Path = path.join(tmpDir, 'pre-227.tsv');
+  try {
+    fs.writeFileSync(pre227Path, `${RAW_LEDGER_COLUMNS.slice(0, 21).join('\t')}\n`, 'utf8');
+    assert.throws(
+      () => readPriorLedgerRows(pre227Path),
+      /dispatch_mode column/,
+      'a pre-227 21-column ledger must be refused with a message naming the dispatch_mode column',
+    );
+    console.log('PASS: pre-227 refusal — a 21-column ledger without dispatch_mode is refused loudly (D-15)');
   } finally {
     fs.rmSync(tmpDir, { recursive: true, force: true });
   }
@@ -179,6 +214,7 @@ function fixtureRow(overrides = {}) {
       nearFree: { botEvalCount: 5, cpLossSum: 10, blunderCount: 0, sfComparable: 5, sfAgree: 3, maiaComparable: 5, maiaAgree: 4 },
       elapsedMs: 1000,
       meanMoveMs: 100,
+      dispatchMode: 'round',
     });
     fs.writeFileSync(anchorMismatchPath, `${RAW_LEDGER_COLUMNS.join('\t')}\n${rowLine}\n`, 'utf8');
 
@@ -206,6 +242,67 @@ function fixtureRow(overrides = {}) {
   }
 }
 
+// ─── (e) Dispatch-mode guard: --resume under a different mode is REFUSED ───────
+// Phase 227 D-15 / T-227-09. The ledger's only row used dispatch_mode=round; the
+// CLI is run with `--dispatch-mode continuous --resume <ledger>`. ORDER (chosen
+// so the check does not depend on Plan 227-10): main() runs the --resume
+// refusals (readPriorLedgerRows/applyPriorLedgerRows) BEFORE
+// assertDispatchModeLive and before setupHarnessEngines, so the mode-mismatch
+// refusal fires first, and today's probe (exit 3 for continuous until 227-10
+// lands the loop) is never reached. The assertion is on the message naming the
+// mode mismatch, so a different pre-engine refusal cannot satisfy it.
+{
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'calibration-ledger-schema-check-'));
+  const modeMismatchPath = path.join(tmpDir, 'mode-mismatch.tsv');
+  try {
+    const gameIndex = 0;
+    const rowLine = ledgerRowLine(
+      fixtureRow({
+        anchor: 'maia1500',
+        gameIndex,
+        botIsWhite: gameIndex % 2 === 0,
+        opening: OPENING_BOOK[gameIndex % OPENING_BOOK.length].name,
+        dispatchMode: 'round',
+      }),
+    );
+    fs.writeFileSync(modeMismatchPath, `${RAW_LEDGER_COLUMNS.join('\t')}\n${rowLine}\n`, 'utf8');
+
+    let threw = false;
+    let stderr = '';
+    try {
+      execFileSync(
+        process.execPath,
+        [
+          '--import', ALIAS_HOOK_PATH, HARNESS_PATH,
+          '--elo', '1500', '--blends', '0.5', '--anchors', 'maia1500', '--seed', '1',
+          '--dispatch-mode', 'continuous', '--resume', modeMismatchPath,
+        ],
+        { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], timeout: 5000 },
+      );
+    } catch (err) {
+      threw = true;
+      stderr = `${err.stderr ?? ''}${err.message ?? ''}`;
+    }
+    assert.ok(threw, '--resume --dispatch-mode continuous against a round ledger must make the CLI exit non-zero');
+    assert.match(
+      stderr,
+      /dispatch_mode mismatch/,
+      `--resume must refuse with the dispatch-mode mismatch message, got stderr: ${stderr}`,
+    );
+    console.log('PASS: dispatch-mode guard — --resume refuses a ledger whose rows used a different dispatch_mode before engine bring-up (T-227-09)');
+
+    // Control: the fixture row reads back as round, so the requested continuous
+    // mode above is the only difference between the ledger and the CLI call.
+    assert.equal(
+      parsePriorLedgerRow(rowLine, modeMismatchPath).dispatchMode,
+      'round',
+      'the fixture ledger row must read back as round so the mismatch above is the only difference',
+    );
+  } finally {
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  }
+}
+
 // Sanity: openLedgerWriter is importable (per this phase's five newly-exported names) —
 // a minimal smoke exercise, not a full round trip (covered by scenario (b) above).
 {
@@ -217,7 +314,7 @@ function fixtureRow(overrides = {}) {
     await writer.close();
     const content = fs.readFileSync(writerPath, 'utf8');
     assert.equal(content.split('\n')[0], RAW_LEDGER_COLUMNS.join('\t'), 'openLedgerWriter must write the current RAW_LEDGER_COLUMNS header');
-    console.log('PASS: openLedgerWriter smoke — writes the current 21-column header + a row');
+    console.log('PASS: openLedgerWriter smoke — writes the current 22-column header + a row');
   } finally {
     fs.rmSync(tmpDir, { recursive: true, force: true });
   }

@@ -29,40 +29,67 @@
  * with prior 0, sorted dead last by the cap's own comparator, and was the
  * cap's first casualty whenever the root exceeded it — the union survived
  * the mass cut but silently lost to the hard cap. And, at `concurrency > 1`,
- * multiple expansions are selected synchronously within one round (marking
- * each as `isPending` — the gate that keeps a later same-round selection
- * from re-picking it directly; visit counts increment only at APPLY time,
- * so intermediate `onSnapshot` counts never depend on how many expansions
- * were dispatched together). SEED-170 item 2 (D-06/D-07): an INTERIOR node
- * whose only children are pending (or closed) is not simply skipped in
- * place — it is marked `isBlocked` for the rest of the round and the walk
- * restarts from the root, so a peaked non-root policy that collapses one
- * subtree to a single live child no longer starves every OTHER subtree's
- * dispatch slot. Once selected (pending or freshly discovered), expansions
- * are dispatched together and applied to the tree strictly in their
- * canonical dispatch order via `Promise.all`'s order-preserving resolution —
- * never raw promise-arrival order (Pattern 5).
+ * multiple expansions are in flight at once. Each selected leaf is marked
+ * `isPending` — the gate that keeps a later selection from re-picking it
+ * while it is in flight (the infinite-penalty limit of virtual loss); visit
+ * counts increment only at APPLY time, so intermediate `onSnapshot` counts
+ * never depend on how many expansions were dispatched together. SEED-170
+ * item 2 (D-06/D-07): an INTERIOR node whose only children are pending (or
+ * closed) is not simply skipped in place — it is marked `isBlocked` for the
+ * rest of the current FILL PASS (one round's fill in round mode, one
+ * synchronous top-up in continuous mode) and the walk restarts from the
+ * root, so a peaked non-root policy that collapses one subtree to a single
+ * live child no longer starves every OTHER subtree's dispatch slot.
  *
- * Determinism scope (ENGINE-07/D-03): output is deterministic PER
- * concurrency level — repeated runs at the same `budget.concurrency` are
- * bit-identical regardless of provider resolution jitter. Different
- * concurrency levels may legitimately build DIFFERENT trees: at c=1 the
- * second selection of a round happens AFTER the first expansion is applied
- * (it sees the backed-up value and may re-descend the same subtree), while
- * at c>1 pending-exclusion forces same-round selections onto different
- * nodes. A c=1 vs c=2 output difference is therefore NOT a bug — do not
- * attempt to equalize the two levels.
+ * Two dispatch loops share `selectPath`, `dispatchExpansion`,
+ * `applyAndReport` (the one apply call site) and `stopRuleSatisfied`;
+ * `SearchBudget.dispatchMode` picks between them (Phase 227 D-13):
+ *
+ *   - ROUND (`'round'` or omitted): fill up to `concurrency` expansions,
+ *     `Promise.all`, then apply them strictly in their canonical dispatch
+ *     order — Promise.all's order-preserving resolution, never raw
+ *     promise-arrival order (Pattern 5).
+ *   - CONTINUOUS (`'continuous'`, `runContinuousLoop`): keep up to
+ *     `concurrency` expansions in flight and refill as each settles — fill
+ *     (synchronous top-up), await exactly one wake, drain every settled
+ *     result in ARRIVAL order. No round barrier, so Maia and Stockfish
+ *     overlap (SEED-171 item 5). Its invariants are argued and reviewed in
+ *     `reports/continuous-dispatch-227/design.md` and guarded by
+ *     `mctsSearch.continuous.test.ts`: (a) block flags are scoped to one
+ *     fill pass and cleared in a `finally`; (b) `nodesEvaluated + inFlight
+ *     <= maxNodes` at all times (D-10); (c) at `concurrency = 1` the output
+ *     is byte-identical to round mode; (d) no result is ever applied after
+ *     abort or early stop, and an inner AbortController cancels in-flight
+ *     grades and queued Maia requests when the loop exits (D-09); (e) no
+ *     missing wakeup (a settled queue plus a single-shot wake, the check and
+ *     the wake assignment in one synchronous run); a rejected provider call
+ *     propagates after its siblings are cancelled (Y-8).
+ *
+ * Determinism scope (ENGINE-07/D-03, Phase 227 D-11): ROUND mode with
+ * deterministic providers is bit-identical across repeated runs at the same
+ * `budget.concurrency`, regardless of provider resolution jitter. CONTINUOUS
+ * mode is NOT: it applies results in arrival order, so under the relaxed,
+ * statistical contract (Phase 226 D-05 read through D-01) the tree depends on
+ * provider timing whenever `concurrency > 1`; it is judged against d20 truth,
+ * not by identity. Different concurrency levels may legitimately build
+ * DIFFERENT trees in either mode: at c=1 the second selection happens AFTER
+ * the first expansion is applied (it sees the backed-up value and may
+ * re-descend the same subtree), while at c>1 pending-exclusion forces
+ * concurrent selections onto different nodes. A c=1 vs c=2 output difference
+ * is therefore NOT a bug — do not attempt to equalize the two levels.
  *
  * Phase 226 D-18/D-08: when a provider supplies `gradeRoot`, the root's one
  * grade call is routed to it instead of `grade` (see `dispatchExpansion`'s
  * provider-selection line) so a caller can fan that single call out across
  * multiple idle workers/engines below the `EngineProviders` boundary — this
  * file never sees the fan-out itself. Because the fan-out's shard count is
- * bounded by how many workers/engines are free/exist, a harness's
- * bit-identity claim for a `gradeRoot`-splitting run is now scoped per
- * (concurrency, pool size) pair, not concurrency alone — the same
- * `budget.concurrency` against two different pool sizes may legitimately
- * split the root grade into a different number of shards.
+ * bounded by how many workers/engines are free/exist, any reproducibility
+ * claim for a `gradeRoot`-splitting run (round mode over deterministic
+ * providers; continuous mode at c>1 makes no identity claim at all, see
+ * "Determinism scope") is scoped per (concurrency, pool size) pair, not
+ * concurrency alone — the same `budget.concurrency` against two different
+ * pool sizes may legitimately split the root grade into a different number
+ * of shards.
  */
 
 import { sideToMoveFromFen, type MoverColor } from '@/lib/liveFlaw';
@@ -110,7 +137,7 @@ import {
  * floor-boosted exploration prior.
  */
 interface EngineNode extends SearchTreeNode<EngineNode> {
-  /** True while this node is selected-but-not-yet-applied within a dispatch round (virtual visit). */
+  /** True while this node is selected-but-not-yet-applied, i.e. its expansion is in flight (virtual visit). */
   isPending: boolean;
   /**
    * True once this node can never yield another expansion: terminal,
@@ -124,15 +151,18 @@ interface EngineNode extends SearchTreeNode<EngineNode> {
   isClosed: boolean;
   /**
    * True while this non-root node is blocked for the REST OF THE CURRENT
-   * dispatch round only (SEED-170 item 2, D-06/D-07): set when a walk
-   * reaches it and finds zero selectable children (every child pending or
-   * closed), so a later same-round walk restarts from the root instead of
-   * giving up on the whole round. Deliberately a SEPARATE flag from
-   * `isPending` — that one means "dispatched this round" and is read and
-   * reset at apply time (`applyExpansion`), while `isBlocked` is read only
-   * by `selectPath` and cleared in bulk right after the fill loop, before
-   * `Promise.all` (see the round loop below). Always false outside an
-   * active fill loop.
+   * FILL PASS only (SEED-170 item 2, D-06/D-07): set when a walk reaches it
+   * and finds zero selectable children (every child pending or closed), so
+   * a later walk in the same pass restarts from the root instead of giving
+   * up on the whole pass. A pass is one round's fill in round mode and one
+   * synchronous top-up (`fillContinuous`) in continuous mode. Deliberately
+   * a SEPARATE flag from `isPending` — that one means "dispatched, in
+   * flight" and is read and reset at apply time (`applyExpansion`), which
+   * runs BETWEEN passes, so a block can be stale by the next pass and must
+   * be cleared at the end of every pass (design 2.2, Lemma 2). `isBlocked`
+   * is read only by `selectPath` and cleared in bulk right after the fill
+   * loop (round: before `Promise.all`; continuous: in a `finally`). Always
+   * false outside an active fill loop.
    */
   isBlocked: boolean;
   /** Root-only floor-boosted exploration prior (D-05) — meaningful only when this node is a direct child of root. */
@@ -296,8 +326,9 @@ interface StopRuleState {
 
 /**
  * Two-sided stop-rule check (Phase 168.5 D-05/D-06, guarded Phase 225
- * D-01/D-02), evaluated once per applied expansion in the canonical
- * apply-order loop: updates `state`'s rolling stability counter
+ * D-01/D-02), evaluated once per applied expansion by `applyAndReport`
+ * (in canonical dispatch order in round mode, in arrival order in
+ * continuous mode): updates `state`'s rolling stability counter
  * UNCONDITIONALLY (the stability semantics themselves are unchanged), then —
  * gated by BOTH the shared min-nodes floor and the stability window — fires
  * on EITHER a clear winner (top-vs-runner-up `.value` margin, AND no
@@ -344,27 +375,28 @@ function propagateClosure(path: readonly EngineNode[]): void {
 
 /**
  * Walks root -> leaf via deterministic PUCT (`select.ts`), skipping pending
- * (in-flight, same-round), closed (fully searched, WR-01), and blocked
- * (dead-end-this-round, D-06/D-07) children. Returns the full path
+ * (in flight), closed (fully searched, WR-01), and blocked
+ * (dead-end-this-pass, D-06/D-07) children. Returns the full path
  * (root-inclusive), ending either at a genuine leaf-to-expand
  * (`isExpanded === false`) or a freshly discovered dead end
  * (terminal/depth-capped — marked closed here, so it is returned at most
  * ONCE). A non-root node reached with zero selectable children is marked
  * `isBlocked` and the walk RESTARTS from the root instead of giving up,
- * because sibling subtrees may still have selectable work this round
- * (SEED-170 item 2 — see `blockedThisRound` below). Returns null only when
- * the ROOT itself has nothing selectable: it is closed (tree fully
- * searched) or every root child is pending, closed, or blocked this round —
- * mirroring the pre-fix behavior for the one node this restart can never
- * route around.
+ * because sibling subtrees may still have selectable work in this fill pass
+ * (SEED-170 item 2 — see `blockedThisPass` below; the caller clears the
+ * marks when its pass ends). Returns null only when the ROOT itself has
+ * nothing selectable: it is closed (tree fully searched), pending (the
+ * first expansion is in flight), or every root child is pending, closed, or
+ * blocked this pass — mirroring the pre-fix behavior for the one node this
+ * restart can never route around.
  */
-function selectPath(root: EngineNode, maxPlies: number, blockedThisRound: EngineNode[]): EngineNode[] | null {
+function selectPath(root: EngineNode, maxPlies: number, blockedThisPass: EngineNode[]): EngineNode[] | null {
   // Root is the one node the child-pending/closed/blocked filter below can
   // never protect (it's the walk's starting point, not reached via a
   // filtered `chosen` pick) — without this guard, two concurrent dispatch
-  // slots in the very first round would both select the pending root
-  // itself, and a terminal/fully-searched root would keep producing
-  // dead-end walks.
+  // slots before the root's expansion is applied would both select the
+  // pending root itself, and a terminal/fully-searched root would keep
+  // producing dead-end walks.
   if (root.isPending || root.isClosed) return null;
   let path: EngineNode[] = [root];
   let node = root;
@@ -385,23 +417,23 @@ function selectPath(root: EngineNode, maxPlies: number, blockedThisRound: Engine
       if (!child.isPending && !child.isClosed && !child.isBlocked) candidates.push(child);
     }
     if (candidates.length === 0) {
-      // Nothing selectable below `node` this round. At the root, that means
-      // the round is genuinely out of work — return null exactly as before
+      // Nothing selectable below `node` this pass. At the root, that means
+      // the pass is genuinely out of work — return null exactly as before
       // the fix (the fill loop's "nothing selectable" break).
       if (node.isRoot) return null;
       // D-06/D-07 fix (SEED-170 item 2): pre-fix, this branch was an
-      // unconditional `return null`, collapsing the WHOLE round to whatever
-      // had already been dispatched — even when other root subtrees still
-      // had selectable children. `apply-order-design.md` section 5 misread
-      // that null return as the saturated-tree case; it actually fired
-      // whenever ONE favored subtree's only children were pending, starving
-      // every OTHER subtree's dispatch slot for the round (do not edit that
-      // report — D-09). The fix: block this node for the rest of the round
+      // unconditional `return null`, collapsing the WHOLE fill pass to
+      // whatever had already been dispatched — even when other root subtrees
+      // still had selectable children. `apply-order-design.md` section 5
+      // misread that null return as the saturated-tree case; it actually
+      // fired whenever ONE favored subtree's only children were pending,
+      // starving every OTHER subtree's dispatch slot (do not edit that
+      // report — D-09). The fix: block this node for the rest of the pass
       // (its parent's filter above then excludes it) and restart the walk
       // from the root, so a peaked non-root policy no longer throttles
       // concurrency down to 1-2 of `budget.concurrency`.
       node.isBlocked = true;
-      blockedThisRound.push(node);
+      blockedThisPass.push(node);
       path = [root];
       node = root;
       continue;
@@ -489,14 +521,15 @@ function applyExpansion(result: DispatchedExpansion, rootMover: MoverColor): voi
     if (ancestor) recomputeValue(ancestor);
   }
   // Visits increment at APPLY time (not at dispatch/selection time): the
-  // `isPending` flag alone already prevents a same-round re-pick of this
-  // node (see selectPath), so deferring the visit bump to here keeps
+  // `isPending` flag alone already prevents a re-pick of this node while it
+  // is in flight (see selectPath), so deferring the visit bump to here keeps
   // intermediate onSnapshot visit counts a pure function of the applied
   // expansions, independent of how many were dispatched together. Note this
   // does NOT make output concurrency-level-independent (see the module
   // header's "Determinism scope"): WHICH nodes get selected still differs
-  // between c=1 and c>1, because pending-exclusion forces same-round
-  // breadth. The invariant delivered is determinism per concurrency level.
+  // between c=1 and c>1, because pending-exclusion forces concurrent
+  // selections onto different nodes. Round mode delivers determinism per
+  // concurrency level; continuous mode is timing-dependent at c>1.
   for (const node of path) node.visits += 1;
 }
 
@@ -513,7 +546,8 @@ function applyExpansion(result: DispatchedExpansion, rootMover: MoverColor): voi
  * exemption and an injected candidate's prior was seeded at 0, so a wide
  * root silently discarded it here despite surviving the union above. Pure
  * with respect to the tree — does not mutate anything; `applyExpansion`
- * performs all mutation once every concurrent dispatch has resolved.
+ * performs all mutation, when the dispatch loop applies the resolved result
+ * (after `Promise.all` in round mode, in arrival order in continuous mode).
  */
 async function dispatchExpansion(
   leaf: EngineNode,
@@ -572,15 +606,15 @@ async function dispatchExpansion(
   // known inside the search orchestrator.
   // Phase 226 D-18: route the ROOT's one grade call to `providers.gradeRoot`
   // when the provider offers one, else fall back to `grade` — the sole
-  // routing change this plan makes. Round 1 of a search is exactly the root
-  // expansion (`selectPath`'s root-pending guard), so this selects
-  // `gradeRoot` at most ONCE per search, and only for the root; every other
-  // leaf (and every provider that lacks `gradeRoot`) takes the unchanged
-  // `grade` path. The round barrier, selection (`selectPath`), apply order
-  // (`applyExpansion`'s canonical loop) and the stop rule
-  // (`stopRuleSatisfied`) are all untouched by this selection — the fan-out
-  // and merge live entirely below this call, inside whichever provider
-  // implements `gradeRoot`.
+  // routing change this plan makes. The first expansion of a search is
+  // exactly the root (`selectPath`'s root-pending guard allows only one
+  // dispatch until the root is applied), so this selects `gradeRoot` at most
+  // ONCE per search, and only for the root; every other leaf (and every
+  // provider that lacks `gradeRoot`) takes the unchanged `grade` path.
+  // Selection (`selectPath`), the apply order of whichever dispatch loop is
+  // running, and the stop rule (`stopRuleSatisfied`) are all untouched by
+  // this selection — the fan-out and merge live entirely below this call,
+  // inside whichever provider implements `gradeRoot`.
   const gradeFn = (leaf.isRoot ? providers.gradeRoot : undefined) ?? providers.grade;
   const gradeWithDepth = gradeFn as GradeWithLadderDepth;
   const grades = await gradeWithDepth(
@@ -599,9 +633,11 @@ async function dispatchExpansion(
   // node budget. The fix: close this leaf as a dead end (the WR-04 shape
   // below) so it keeps the value its OWN parent's grade already gave it,
   // instead of fabricating a value for its children. Excluded on abort: the
-  // apply loop discards an aborted result entirely (`if (signal.aborted)
-  // break`), and the pool also resolves empty on abort, so this branch would
-  // be redundant there. A PARTIAL map (some candidates ungraded) is left
+  // dispatch loop discards an aborted result entirely (round mode: `if
+  // (signal.aborted) break` before each apply; continuous mode: the drain's
+  // `signal.aborted || earlyStop` check before `applyAndReport`), and the
+  // pool also resolves empty on abort, so this branch would be redundant
+  // there. A PARTIAL map (some candidates ungraded) is left
   // alone — those candidates keep the pre-existing NEUTRAL_EXPECTED_SCORE
   // fallback in `applyExpansion`, unchanged.
   //
@@ -625,29 +661,87 @@ async function dispatchExpansion(
   return { leaf, path, candidateMap, grades, rawPolicy, rootExploration };
 }
 
-/**
- * The MCTS orchestrator (`SearchRunner` impl #1). See the module header for
- * the correctness invariants this loop is structurally responsible for.
- */
-export const mctsSearch: SearchRunner = async (rootFen, budget, providers, onSnapshot, signal) => {
-  const rootMover = sideToMoveFromFen(rootFen);
-  const root = createRoot(rootFen, rootMover);
+/** Read-only inputs one `mctsSearch` invocation shares between its dispatch loop and the helpers they both call. */
+interface SearchContext {
+  root: EngineNode;
+  budget: SearchBudget;
+  providers: EngineProviders;
+  rootMover: MoverColor;
+  onSnapshot: (snapshot: EngineSnapshot) => void;
+}
 
-  let nodesEvaluated = 0;
-  let budgetExhausted = false;
+/** The mutable counters of one `mctsSearch` invocation (formerly four loop locals). */
+interface SearchCounters {
+  nodesEvaluated: number;
+  budgetExhausted: boolean;
   // Phase 168.5 D-05/D-06: `earlyStop` is a third stop cause, distinct from
   // both budget exhaustion and abort (see EngineSnapshot.stopReason). Stays
   // false forever when `budget.stopRule` is undefined (Pattern 2 backward-
   // compat guard — no wall-clock signal anywhere in this check).
-  let earlyStop = false;
+  earlyStop: boolean;
   // Rolling "has the argmax UCI held stable for stopRule.stabilityWindow
   // consecutive post-expansion checks" state, shared by BOTH sides of the
   // two-sided rule (D-05/D-06) — mutated only inside `stopRuleSatisfied`.
-  const stopState: StopRuleState = { stableArgmaxUci: null, stableCheckCount: 0 };
-  const stopReason = (): EngineSnapshot['stopReason'] =>
-    earlyStop ? 'early-stop' : budgetExhausted ? 'budget' : null;
+  stopState: StopRuleState;
+}
 
-  while (nodesEvaluated < budget.maxNodes && !signal.aborted && !earlyStop) {
+function stopReasonOf(st: SearchCounters): EngineSnapshot['stopReason'] {
+  return st.earlyStop ? 'early-stop' : st.budgetExhausted ? 'budget' : null;
+}
+
+function snapshotOf(ctx: SearchContext, st: SearchCounters): EngineSnapshot {
+  return buildSnapshot(ctx.root, st.nodesEvaluated, st.budgetExhausted, ctx.budget.elo[ctx.root.side], stopReasonOf(st));
+}
+
+/**
+ * Freshly discovered dead end (terminal or depth-capped) returned by
+ * `selectPath`: a single visit-bump, no provider calls (D-09/Pitfall 6).
+ * `selectPath` marked it closed, so this discovery — and its visit bump —
+ * happens at most ONCE per node (WR-01: the old retry probe re-walked closed
+ * dead ends up to 1000 times, inflating RankedLine.visits). Shared by both
+ * dispatch loops' fills.
+ */
+function discoverDeadEnd(ctx: SearchContext, st: SearchCounters, leaf: EngineNode, path: EngineNode[]): void {
+  if (!leaf.isTerminal && leaf.depth >= ctx.budget.maxPlies) {
+    // WR-05: a NON-terminal node cut by the depth ceiling means
+    // maxPlies stopped part of the search — the types.ts contract
+    // ("maxNodes/maxPlies stopped the search") requires reporting it.
+    st.budgetExhausted = true;
+  }
+  for (const node of path) node.visits += 1;
+  propagateClosure(path);
+}
+
+/**
+ * Applies one resolved expansion to the tree, then reports it: counts the node
+ * (a degenerate empty-candidate close is NOT an expansion event, D-09, and
+ * emits no snapshot), evaluates the two-sided stop rule, and fires
+ * `onSnapshot`. The ONE apply call site both dispatch loops share.
+ */
+function applyAndReport(ctx: SearchContext, st: SearchCounters, result: DispatchedExpansion): void {
+  applyExpansion(result, ctx.rootMover);
+  if (result.candidateMap.size === 0) return; // degenerate close (WR-04): not an expansion event (D-09), no snapshot
+  st.nodesEvaluated += 1;
+  if (st.nodesEvaluated >= ctx.budget.maxNodes) st.budgetExhausted = true;
+
+  // Phase 168.5 D-05/D-06: two-sided stop-rule check, evaluated once per
+  // applied expansion (Pattern 2) — see `stopRuleSatisfied`. Skipped entirely
+  // when budget.stopRule is undefined (byte-identical to today, Pitfall 1).
+  if (ctx.budget.stopRule && stopRuleSatisfied(ctx.root, ctx.budget.stopRule, st.nodesEvaluated, st.stopState)) {
+    st.earlyStop = true;
+  }
+
+  ctx.onSnapshot(snapshotOf(ctx, st));
+}
+
+/**
+ * The round dispatch loop (the A21S barrier loop, `dispatchMode` omitted or
+ * `'round'`): fill up to `budget.concurrency` expansions, `Promise.all`, apply
+ * in canonical dispatch order, repeat.
+ */
+async function runRoundLoop(ctx: SearchContext, st: SearchCounters, signal: AbortSignal): Promise<void> {
+  const { root, budget, providers, rootMover } = ctx;
+  while (st.nodesEvaluated < budget.maxNodes && !signal.aborted && !st.earlyStop) {
     const toExpand: { leaf: EngineNode; path: EngineNode[] }[] = [];
     // D-06/D-07: nodes `selectPath` blocked-for-this-round only, owned by
     // this round's fill loop — cleared right below, before `Promise.all`,
@@ -661,29 +755,14 @@ export const mctsSearch: SearchRunner = async (rootFen, budget, providers, onSna
     // at most once per round — its parent's filter then excludes it,
     // mirroring `propagateClosure`'s closes-at-most-once argument), or fills
     // a dispatch slot (bounded by concurrency).
-    while (
-      toExpand.length < budget.concurrency &&
-      nodesEvaluated + toExpand.length < budget.maxNodes
-    ) {
+    while (toExpand.length < budget.concurrency && st.nodesEvaluated + toExpand.length < budget.maxNodes) {
       const path = selectPath(root, budget.maxPlies, blockedThisRound);
       if (path === null) break; // nothing selectable this round (root closed, or every root child pending/closed/blocked)
       const leaf = path[path.length - 1];
       if (leaf === undefined) break; // defensive; selectPath always returns a non-empty path
 
       if (leaf.isExpanded) {
-        // Freshly discovered dead end (terminal or depth-capped): a single
-        // visit-bump, no provider calls (D-09/Pitfall 6). selectPath marked
-        // it closed, so this discovery — and its visit bump — happens at
-        // most ONCE per node (WR-01: the old retry probe re-walked closed
-        // dead ends up to 1000 times, inflating RankedLine.visits).
-        if (!leaf.isTerminal && leaf.depth >= budget.maxPlies) {
-          // WR-05: a NON-terminal node cut by the depth ceiling means
-          // maxPlies stopped part of the search — the types.ts contract
-          // ("maxNodes/maxPlies stopped the search") requires reporting it.
-          budgetExhausted = true;
-        }
-        for (const node of path) node.visits += 1;
-        propagateClosure(path);
+        discoverDeadEnd(ctx, st, leaf, path);
         continue;
       }
 
@@ -717,32 +796,209 @@ export const mctsSearch: SearchRunner = async (rootFen, budget, providers, onSna
       break;
     }
 
-    // Buffer-then-apply-in-canonical-order (Pattern 5): Promise.all resolves
-    // to an array in INPUT order regardless of which promise settles first,
-    // so applying `results` in order is never raw arrival order.
+    // ROUND MODE ONLY — buffer-then-apply-in-canonical-order (Pattern 5):
+    // Promise.all resolves to an array in INPUT order regardless of which
+    // promise settles first, so applying `results` in order is never raw
+    // arrival order. (Continuous mode deliberately applies in arrival order;
+    // see `runContinuousLoop`.)
     const results = await Promise.all(
       toExpand.map(({ leaf, path }) => dispatchExpansion(leaf, path, budget, providers, rootMover, signal)),
     );
 
     for (const result of results) {
       if (signal.aborted) break;
-      applyExpansion(result, rootMover);
-      if (result.candidateMap.size === 0) continue; // degenerate close (WR-04): not an expansion event (D-09), no snapshot
-      nodesEvaluated += 1;
-      if (nodesEvaluated >= budget.maxNodes) budgetExhausted = true;
-
-      // Phase 168.5 D-05/D-06: two-sided stop-rule check, evaluated in this
-      // SAME canonical apply-order loop `onSnapshot` already fires from
-      // (Pattern 2) — see `stopRuleSatisfied`. Skipped entirely when
-      // budget.stopRule is undefined (byte-identical to today, Pitfall 1).
-      if (budget.stopRule && stopRuleSatisfied(root, budget.stopRule, nodesEvaluated, stopState)) {
-        earlyStop = true;
-      }
-
-      onSnapshot(buildSnapshot(root, nodesEvaluated, budgetExhausted, budget.elo[root.side], stopReason()));
-      if (earlyStop) break; // stop applying further dispatched results this round (mirrors the signal.aborted break above)
+      applyAndReport(ctx, st, result);
+      if (st.earlyStop) break; // stop applying further dispatched results this round (mirrors the signal.aborted break above)
     }
   }
+}
 
-  return buildSnapshot(root, nodesEvaluated, budgetExhausted, budget.elo[root.side], stopReason());
+/** A settled expansion captured as a value, so a rejection can never surface as an unhandled rejection. */
+type Settled = { kind: 'ok'; result: DispatchedExpansion } | { kind: 'rejected'; error: unknown };
+
+/**
+ * One continuous-mode FILL PASS (design 2.1/2.2): synchronously top up to
+ * `budget.concurrency` expansions in flight, subject to the D-10 budget guard
+ * (`nodesEvaluated + inFlight + dispatched < maxNodes`, so a node is never
+ * dispatched that could push `nodesEvaluated` past `maxNodes`; `maxNodes` is
+ * assumed to be a positive integer, a budget precondition this guard relies
+ * on and does not validate). Returns how many it dispatched. Every dispatch
+ * receives `dispatchSignal` (the inner controller), never the caller's outer
+ * signal, and its settlement is handed to `onSettle` as a value.
+ *
+ * Round-3 review repair: the loop also stops once `dispatchSignal` is aborted
+ * (the outer abort listener aborts the inner controller synchronously). A
+ * provider's synchronous prefix (`dispatchExpansion` calls `providers.policy`
+ * synchronously) can abort the search in the MIDDLE of a pass; without this
+ * term the rest of the pass would keep dispatching leaves onto an aborted
+ * signal and keep bumping visits / setting `budgetExhausted` after the abort.
+ * It cannot change c = 1 behavior: the one dispatch is the pass's last action.
+ *
+ * Block flags (`selectPath`) are scoped to this one pass and cleared in the
+ * `finally`, so a throw cannot leak marks into the next pass (design 2.2: a
+ * block can be stale by the next pass, because `isPending` clears at apply
+ * time, which runs between passes). Termination is structural, by the round
+ * loop's argument: each iteration breaks, closes a dead end once, blocks a
+ * node once per pass, or dispatches (bounded by concurrency).
+ */
+function fillContinuous(
+  ctx: SearchContext,
+  st: SearchCounters,
+  inFlight: number,
+  dispatchSignal: AbortSignal,
+  onSettle: (settled: Settled) => void,
+): number {
+  const { root, budget, providers, rootMover } = ctx;
+  const blockedThisPass: EngineNode[] = [];
+  let dispatched = 0;
+  try {
+    while (
+      !dispatchSignal.aborted &&
+      inFlight + dispatched < budget.concurrency &&
+      st.nodesEvaluated + inFlight + dispatched < budget.maxNodes
+    ) {
+      const path = selectPath(root, budget.maxPlies, blockedThisPass);
+      if (path === null) break; // nothing selectable (root pending/closed, or every root child pending/closed/blocked)
+      const leaf = path[path.length - 1];
+      if (leaf === undefined) break; // defensive; selectPath always returns a non-empty path
+      if (leaf.isExpanded) {
+        discoverDeadEnd(ctx, st, leaf, path);
+        continue;
+      }
+      leaf.isPending = true;
+      dispatched += 1;
+      // dispatchExpansion is async, so a provider that throws synchronously becomes a rejection here, never a throw
+      // out of the fill. The rejection handler makes every outcome a value: no unhandled rejection can exist.
+      dispatchExpansion(leaf, path, budget, providers, rootMover, dispatchSignal).then(
+        (result) => onSettle({ kind: 'ok', result }),
+        (error: unknown) => onSettle({ kind: 'rejected', error }),
+      );
+    }
+  } finally {
+    for (const node of blockedThisPass) node.isBlocked = false;
+  }
+  return dispatched;
+}
+
+/**
+ * Drains EVERY settled expansion in arrival order and returns how many it
+ * removed from `settled`. The one place continuous mode applies a result.
+ *
+ * L-2/D-09 (claim (d)): a result is applied only if neither `signal.aborted`
+ * nor `st.earlyStop` holds at the moment of the apply; the check and the
+ * `applyAndReport` call are consecutive statements with no `await` between
+ * them, so nothing can flip either flag in between. This also covers an abort
+ * fired from inside `onSnapshot` (the deadline cut) while more results are
+ * queued: each is discarded. A discarded item is never applied, because an
+ * aborted grade settles an EMPTY Map, which `applyExpansion` would turn into
+ * fabricated 0.5-valued children.
+ *
+ * R2A-6: the abort/early-stop test comes BEFORE the rejection test, so every
+ * rejection drained after a stop or abort is dropped, whether it was queued
+ * behind the stopping apply or arrived later. A rejection drained while the
+ * search is live is rethrown (Y-8): the caller sees what `Promise.all` would
+ * have produced, and `runContinuousLoop`'s `finally` cancels the siblings.
+ */
+function drainSettled(ctx: SearchContext, st: SearchCounters, settled: Settled[], signal: AbortSignal): number {
+  let drained = 0;
+  while (settled.length > 0) {
+    const item = settled.shift();
+    if (item === undefined) break;
+    drained += 1;
+    if (signal.aborted || st.earlyStop) continue;
+    if (item.kind === 'rejected') throw item.error;
+    applyAndReport(ctx, st, item.result);
+  }
+  return drained;
+}
+
+/**
+ * The continuous dispatch loop (`dispatchMode: 'continuous'`, design 2.1):
+ * fill (synchronous top-up), await exactly one wake, drain everything that has
+ * settled, repeat. There is no round barrier, so a slot freed by one settled
+ * expansion is refilled at once and Maia and Stockfish overlap.
+ *
+ * - Pending exclusion: in-flight leaves keep `isPending` and `selectPath`
+ *   skips them (hard exclusion, the infinite-penalty limit of virtual loss).
+ *   No commit-ordered apply, ring buffer or slot-release machinery exists (D-08).
+ * - One inner `dispatchController` is handed to every `dispatchExpansion`; the
+ *   `finally` aborts it, which cancels in-flight grades (the pool stops them)
+ *   and drops queued Maia requests, on early stop, abort, rejection and
+ *   normal exit alike (D-09). The loop returns without draining (Y-3).
+ * - The outer signal gets exactly ONE listener, `{ once: true }`, removed in
+ *   the `finally` (Pitfall 7); it aborts the inner controller and wakes the
+ *   loop, so an abort frees a loop waiting on slow work.
+ * - Wakeup (claim (e), X-8): a settlement pushes to `settled` and THEN calls
+ *   `notify`, which clears `wake` before invoking it. The loop awaits in one
+ *   place only, and the `settled.length` check immediately before it and the
+ *   assignment of `wake` in the Promise executor run in one synchronous
+ *   stretch, so no settlement can land between them (settlements are
+ *   microtasks). R2B-2: an abort raised SYNCHRONOUSLY during a fill (a
+ *   provider's synchronous prefix) lands while `wake` is null and would be
+ *   lost, so the wait is also guarded by `!signal.aborted && !st.earlyStop`;
+ *   the loop-top test then returns.
+ * - Budget (claim (b), D-10): `fillContinuous` dispatches only while
+ *   `nodesEvaluated + inFlight < maxNodes`, and `inFlight` counts every
+ *   dispatched expansion until it is drained, so `nodesEvaluated` never
+ *   exceeds `maxNodes` and `inFlight` is 0 when `nodesEvaluated === maxNodes`.
+ */
+async function runContinuousLoop(ctx: SearchContext, st: SearchCounters, signal: AbortSignal): Promise<void> {
+  const dispatchController = new AbortController();
+  const settled: Settled[] = []; // arrival order
+  let wake: (() => void) | null = null;
+  const notify = (): void => {
+    const waiter = wake;
+    wake = null;
+    waiter?.();
+  };
+  const onOuterAbort = (): void => {
+    dispatchController.abort();
+    notify();
+  };
+  if (signal.aborted) onOuterAbort();
+  else signal.addEventListener('abort', onOuterAbort, { once: true });
+  const onSettle = (item: Settled): void => {
+    settled.push(item);
+    notify();
+  };
+  let inFlight = 0; // dispatched and not yet drained (includes settled-but-undrained)
+  try {
+    for (;;) {
+      if (signal.aborted || st.earlyStop) return;
+      inFlight += fillContinuous(ctx, st, inFlight, dispatchController.signal, onSettle);
+      if (inFlight === 0 && settled.length === 0) return; // nothing running and nothing selectable
+      if (settled.length === 0 && !signal.aborted && !st.earlyStop) {
+        await new Promise<void>((resolve) => {
+          wake = resolve;
+        });
+      }
+      inFlight -= drainSettled(ctx, st, settled, signal);
+    }
+  } finally {
+    signal.removeEventListener('abort', onOuterAbort);
+    dispatchController.abort();
+  }
+}
+
+/**
+ * The MCTS orchestrator (`SearchRunner` impl #1). See the module header for
+ * the correctness invariants this loop is structurally responsible for.
+ * `budget.dispatchMode === 'continuous'` runs `runContinuousLoop`; anything
+ * else (including omitted) runs the round loop.
+ */
+export const mctsSearch: SearchRunner = async (rootFen, budget, providers, onSnapshot, signal) => {
+  const rootMover = sideToMoveFromFen(rootFen);
+  const ctx: SearchContext = { root: createRoot(rootFen, rootMover), budget, providers, rootMover, onSnapshot };
+  const st: SearchCounters = {
+    nodesEvaluated: 0,
+    budgetExhausted: false,
+    earlyStop: false,
+    stopState: { stableArgmaxUci: null, stableCheckCount: 0 },
+  };
+  if (budget.dispatchMode === 'continuous') {
+    await runContinuousLoop(ctx, st, signal);
+  } else {
+    await runRoundLoop(ctx, st, signal);
+  }
+  return snapshotOf(ctx, st);
 };

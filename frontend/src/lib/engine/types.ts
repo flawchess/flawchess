@@ -90,6 +90,15 @@ export interface BotStopRule {
   rootGuardBoostAllowance: number;
 }
 
+/**
+ * Phase 227 D-13: which dispatch loop `mctsSearch` runs. `'round'` is the
+ * existing barrier loop (fill up to `concurrency` expansions, `Promise.all`,
+ * apply in canonical order). `'continuous'` is asynchronous dispatch with
+ * pending exclusion and arrival-order apply under the relaxed, statistical
+ * determinism contract (Phase 226 D-05 read through D-01).
+ */
+export type DispatchMode = 'round' | 'continuous';
+
 /** Bounds one `SearchRunner` invocation (ENGINE-06). */
 export interface SearchBudget {
   /** D-09: one node = one expansion event; the unit this budget counts. */
@@ -106,6 +115,14 @@ export interface SearchBudget {
   policyTemperature?: number;
   /** Phase 168.5 D-05/D-06: optional bot-play early-stop rule; omitted/undefined = today's unchanged full-budget behavior. */
   stopRule?: BotStopRule;
+  /**
+   * Phase 227 D-13/D-11: dispatch loop selector. Omitted/undefined = `'round'`,
+   * the byte-identical A21S barrier loop, so every existing caller, test and
+   * fixture gate is unchanged with zero edits. `'continuous'` = asynchronous
+   * dispatch with pending exclusion and arrival-order apply under the relaxed,
+   * statistical contract (226 D-05 read through D-01).
+   */
+  dispatchMode?: DispatchMode;
 }
 
 /**

@@ -98,6 +98,7 @@ import {
   FLAWCHESS_BOT_MAX_PLIES,
   FLAWCHESS_BOT_CONCURRENCY,
   FLAWCHESS_BOT_STOP_RULE,
+  FLAWCHESS_DISPATCH_MODE,
 } from '@/lib/engine/botBudget';
 import type { SearchBudget } from '@/lib/engine/types';
 import { restoreChess, writeSnapshot, clearSnapshot, type BotGameSnapshot } from '@/lib/botGameSnapshot';
@@ -125,6 +126,9 @@ const BOT_SEARCH_BUDGET: Omit<SearchBudget, 'elo' | 'policyTemperature'> = {
   maxPlies: FLAWCHESS_BOT_MAX_PLIES,
   concurrency: FLAWCHESS_BOT_CONCURRENCY,
   stopRule: FLAWCHESS_BOT_STOP_RULE,
+  // Phase 227 D-13: the shared dispatch-mode constant ('continuous' since the
+  // owner's ship decision; the same constant feeds the analysis budget).
+  dispatchMode: FLAWCHESS_DISPATCH_MODE,
 };
 
 // ─── Types ───────────────────────────────────────────────────────────────────

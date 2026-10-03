@@ -421,8 +421,9 @@ export interface PoolOps {
 //
 // No maintained priority-queue library fits this workload's scale (hundreds
 // of pending grades per search, not millions) — a hand-rolled O(n) linear
-// scan is both correct and fast enough. Tie-break order matches every other
-// canonical tie-break in the Phase 153 core: NEVER insertion/arrival order.
+// scan is both correct and fast enough. Phase 227 D-19: among equal
+// `priority` and `depth`, requests are served in ARRIVAL order (FIFO), matching
+// the Node harness pool (`scripts/lib/stockfish-pool.mjs`).
 //
 // WR-02: `priority`/`depth` are populated by a caller that computes
 // per-root-line practical scores. Every request built by `grade()` today
@@ -442,8 +443,16 @@ export function enqueue(pending: QueuedGradeRequest[], req: QueuedGradeRequest):
 
 /**
  * Remove and return the highest-priority pending request. Ties broken by
- * smaller `depth`, then by ascending `candidateUcis[0]` UCI string —
- * NEVER by insertion/arrival order. Returns undefined on an empty array.
+ * smaller `depth`, then by arrival order: among equal `priority` and `depth`
+ * the earliest-enqueued request (lowest `pending` index) wins. Returns
+ * undefined on an empty array.
+ *
+ * Phase 227 D-19 / N-3 fix: ties used to break by the first candidate UCI
+ * string, so on a pool of 2 with concurrency 4 a queued grade could keep
+ * losing to newer requests whose first move sorts lower (an unbounded wait
+ * once dispatch is continuous; round mode bounded it to one round). The Node
+ * harness pool was already FIFO, so the pool-2 gate could not see it. Every
+ * request is still priority 0 / depth 0 (Phase 227 activates no priorities).
  */
 export function dequeueHighestPriority(
   pending: QueuedGradeRequest[],
@@ -451,13 +460,11 @@ export function dequeueHighestPriority(
   let best: QueuedGradeRequest | undefined;
   let bestIdx = -1;
   pending.forEach((req, i) => {
+    // Strict comparisons: an equal later request never replaces the earlier one.
     const better =
       best === undefined ||
       req.priority > best.priority ||
-      (req.priority === best.priority && req.depth < best.depth) ||
-      (req.priority === best.priority &&
-        req.depth === best.depth &&
-        (req.candidateUcis[0] ?? '') < (best.candidateUcis[0] ?? ''));
+      (req.priority === best.priority && req.depth < best.depth);
     if (better) {
       best = req;
       bestIdx = i;

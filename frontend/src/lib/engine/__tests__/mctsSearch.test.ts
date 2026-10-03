@@ -54,7 +54,14 @@ import { mctsSearch } from '../mctsSearch';
 import { ROOT_CANDIDATE_HARD_CAP, applyPolicyTemperature } from '../policyTemperature';
 import { truncateAndRenormalize } from '../select';
 import { gradingDepthForTreeDepth, GRADING_ROOT_DEPTH } from '../gradingLadder';
-import type { EngineProviders, EngineSnapshot, SearchBudget, Side, MoveGrade } from '../types';
+import type { EngineProviders, EngineSnapshot, SearchBudget, MoveGrade } from '../types';
+import {
+  makeFixedPolicy,
+  makeVariedGrade,
+  uniformPolicyFromLegalMoves,
+  withJitter,
+  type PolicyCall,
+} from './searchTestProviders';
 
 // ─── Fixtures ────────────────────────────────────────────────────────────────
 
@@ -112,43 +119,9 @@ function freshSignal(): AbortSignal {
 
 // ─── Fabricated-provider helpers ────────────────────────────────────────────
 
-interface PolicyCall {
-  fen: string;
-  elo: number;
-  side: Side;
-}
-
 interface GradeCall {
   fen: string;
   candidateUcis: string[];
-}
-
-/** Uniform distribution over chess.js's OWN legal-move list at `fen` — never hand-enumerated. */
-function uniformPolicyFromLegalMoves(fen: string): Record<string, number> {
-  const chess = new Chess(fen);
-  const moves = chess.moves({ verbose: true });
-  const ucis = moves.map((m) => `${m.from}${m.to}${m.promotion ?? ''}`);
-  const weight = ucis.length > 0 ? 1 / ucis.length : 0;
-  const dist: Record<string, number> = {};
-  for (const uci of ucis) dist[uci] = weight;
-  return dist;
-}
-
-/**
- * A fabricated `policy()`: returns `byFen[fen]` when explicitly configured,
- * else falls back to a uniform distribution over chess.js's real legal moves
- * (so deeper/unconfigured tree nodes always receive a legal distribution).
- * Records every call when `calls` is provided (ENGINE-04 oracle / ENGINE-02
- * dropped-tail assertions).
- */
-function makeFixedPolicy(
-  byFen: Record<string, Record<string, number>>,
-  calls?: PolicyCall[],
-): EngineProviders['policy'] {
-  return async (fen, elo, side) => {
-    calls?.push({ fen, elo, side });
-    return byFen[fen] ?? uniformPolicyFromLegalMoves(fen);
-  };
 }
 
 /**
@@ -1239,49 +1212,6 @@ describe('mctsSearch — Phase 168.5 D-05/D-06 (guarded Phase 225 D-01/D-02) bot
 });
 
 // ─── ENGINE-07: determinism, concurrency 1 and 2 ────────────────────────────
-
-/** Wraps an async fabricated provider fn with an artificial, deliberately jittered resolution delay. */
-function withJitter<Args extends unknown[], Result>(
-  fn: (...args: Args) => Promise<Result>,
-  jitterMsSequence: number[],
-): (...args: Args) => Promise<Result> {
-  let callIndex = 0;
-  return async (...args: Args) => {
-    const idx = callIndex;
-    callIndex += 1;
-    const delay = jitterMsSequence[idx % jitterMsSequence.length] ?? 0;
-    await new Promise((resolve) => setTimeout(resolve, delay));
-    return fn(...args);
-  };
-}
-
-// CR-01 fixture hardening: the original determinism fixtures used uniform
-// policies and all-zero grades, pinning every node value at exactly 0.5 —
-// structurally unable to detect a selection-order regression (any two search
-// trees look identical when every value is 0.5). These constants derive a
-// deterministic NON-neutral grade from (fen, uci) so different trees produce
-// different outputs.
-const GRADE_HASH_MULTIPLIER = 31;
-const GRADE_EVAL_CP_SPAN = 300;
-
-/** Deterministic non-neutral cp eval in (-GRADE_EVAL_CP_SPAN, GRADE_EVAL_CP_SPAN) derived from (fen, uci). */
-function hashedEvalCp(fen: string, uci: string): number {
-  const s = `${fen}|${uci}`;
-  let h = 0;
-  for (let i = 0; i < s.length; i += 1) h = (Math.imul(h, GRADE_HASH_MULTIPLIER) + s.charCodeAt(i)) | 0;
-  return (Math.abs(h) % (2 * GRADE_EVAL_CP_SPAN)) - GRADE_EVAL_CP_SPAN;
-}
-
-/** A fabricated `grade()` returning deterministic, varied (non-0.5-collapsing) grades at every node. */
-function makeVariedGrade(): EngineProviders['grade'] {
-  return async (fen, candidateUcis) => {
-    const map = new Map<string, MoveGrade>();
-    for (const uci of candidateUcis) {
-      map.set(uci, { evalCp: hashedEvalCp(fen, uci), evalMate: null, depth: 10 });
-    }
-    return map;
-  };
-}
 
 describe('mctsSearch — ENGINE-07 determinism', () => {
   const determinismBudget: SearchBudget = { maxNodes: 5, elo: NEUTRAL_BUDGET_ELO, maxPlies: 3, concurrency: 1 };

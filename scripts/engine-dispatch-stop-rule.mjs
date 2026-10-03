@@ -33,28 +33,37 @@
  * because there would then be two different stop rules in the codebase and
  * this script would no longer be describing the one that ships.
  *
- * `--dispatch-mode round|continuous` is a LABEL for the emitted row, NOT a
- * switch this script can flip: it measures whatever `mctsSearch` currently
- * is at the moment it runs. D-11 forbids retaining the old round-barrier
- * loop alongside the continuous-dispatch rewrite (no `mctsSearchContinuous`
- * behind a flag), so the round-vs-continuous comparison this flag labels is
- * taken across TWO COMMITS — a `round`-mode TSV captured before the
- * rewrite, and a `continuous`-mode TSV captured after — never from one
- * script running two code paths in the same process. The operator states
- * which side of that rewrite a given run is on; this script does not know
- * or guess.
+ * `--dispatch-mode round|continuous` is a REAL code-path switch (Phase 227 D-13/D-14),
+ * no longer a label: 226 D-07 retains the round-barrier loop behind
+ * `SearchBudget.dispatchMode` (narrowing Phase 198 D-11, which had forbidden keeping the
+ * old loop alongside a rewrite), so BOTH arms run from ONE checkout. The flag goes into the
+ * search budget, is verified by `assertDispatchModeLive` (a probe that observes which loop
+ * `mctsSearch` really executed) BEFORE any engine starts, and is stamped on every row. The
+ * default is the app's `FLAWCHESS_DISPATCH_MODE`. A requested mode the engine did not run
+ * exits 3 (as `continuous` did before Plan 227-10), so a continuous-labelled row can never
+ * come from the round loop.
  *
+ * Every position starts from a quiesced harness: `await whenMaiaIdle()` (the Maia FIFO in
+ * `scripts/lib/calibration-providers.mjs`) and then `await pool.whenIdle()` (Stockfish only)
+ * before the timer (Phase 227 D-09, and the design review's round-1 fix), so neither a
+ * previous position's cancelled grades nor its still-running Maia inference leaks into this
+ * timing window. `pool.whenIdle()` alone covers Stockfish only. Two report-only columns are appended: `grade_cpu_ms` (sum of per-grade engine
+ * elapsed, the SAME definition as engine-grading-depth-ab.mjs's `makeGradeStats`; D-17
+ * normalizes machine speed with a separate probe, and per-grade elapsed rises under
+ * contention, Pitfall 5) and `loop_lag_max_ms` (largest event-loop stall during the search,
+ * D-18 evidence that Maia no longer blocks the loop).
+
  * Usage:
  *   node --import ./scripts/lib/frontend-alias-hook.mjs scripts/engine-dispatch-stop-rule.mjs \
- *     --dispatch-mode round|continuous \
+ *     [--dispatch-mode round|continuous] \
  *     [--nodes 50] [--procs 4] [--pool-size 4] [--plies 8] [--elo 1500] \
  *     [--openings 12] [--fens path/to/fens.txt] [--maia-fifo] \
  *     [--no-stop-rule] [--root-trace] [--guard-window 0.15] \
  *     [--out-dir reports/data] [--self-test] [--help]
  *
- *   --dispatch-mode  REQUIRED, no default. "round" or "continuous" — which
- *                    side of the D-11 rewrite this run measures. A label
- *                    stamped onto every row, never a code-path switch.
+ *   --dispatch-mode  "round" or "continuous" (default = the app's FLAWCHESS_DISPATCH_MODE).
+ *                    A real code-path switch, probed live before any engine starts (exit 3 =
+ *                    continuous requested but the round loop ran). Stamped onto every row.
  *   --nodes          node-expansion budget (default FLAWCHESS_BOT_MAX_NODES = 50)
  *   --procs          SearchBudget.concurrency ONLY (default FLAWCHESS_BOT_CONCURRENCY = 4)
  *   --pool-size      Stockfish PROCESS pool size (Phase 226 D-04; default = --procs). Decoupled
@@ -97,14 +106,17 @@ import { pathToFileURL } from 'node:url';
 import path from 'node:path';
 import fs from 'node:fs';
 import os from 'node:os';
+import { monitorEventLoopDelay } from 'node:perf_hooks';
 
 import { createMaiaSession } from './lib/node-engine-providers.mjs';
 import { createStockfishPool, splitAcrossFreeEngines } from './lib/stockfish-pool.mjs';
+import { assertDispatchModeLive, defaultDispatchMode, parseDispatchModeFlag } from './lib/dispatch-mode.mjs';
 import {
   makeNodeProviders,
   maiaCpuStats,
   maiaInflightStats,
   resetMaiaRunMemo,
+  whenMaiaIdle,
   resetMaiaInstrumentationStats,
 } from './lib/calibration-providers.mjs';
 import { OPENING_BOOK } from './lib/calibration-openings.mjs';
@@ -129,6 +141,39 @@ const DEFAULT_ELO = 1500;
 
 /** Mirrors `workerPool.ts`'s `WORKER_HASH_MB`. */
 const WORKER_HASH_MB = 8;
+
+/**
+ * Event-loop-delay histogram resolution (Phase 227 D-18). 10 ms: fine enough that a Maia inference
+ * blocking the loop for tens of ms is clearly visible, coarse enough to add no load of its own.
+ */
+export const LOOP_LAG_RESOLUTION_MS = 10;
+
+/** Settle time before the histogram is read: its last sample lands only after a final stall ends. */
+const LOOP_LAG_SETTLE_MS = 2 * LOOP_LAG_RESOLUTION_MS;
+
+/** What an aborted grade settles with (the empty-Map contract, in `runOneGo`'s result shape); fresh per call. */
+const abortedGo = () => ({ grades: new Map(), elapsedMs: 0 });
+
+/**
+ * Starts an event-loop-delay probe (Phase 227 D-18). `stop()` resolves the largest stall in ms.
+ *
+ * Two details that bit when this was first used naively: (1) the histogram records a sample only
+ * AFTER a stall ends and its timer finally fires, so reading `max` the instant the search resolves
+ * misses the last stall (measured: 10 ms read vs a real 300 ms block), hence the settle wait before
+ * the read; (2) each sample includes the sampling period itself, so the period is subtracted to
+ * report the stall beyond the expected tick (an idle loop reads about 0).
+ */
+export function startLoopLagProbe() {
+  const histogram = monitorEventLoopDelay({ resolution: LOOP_LAG_RESOLUTION_MS });
+  histogram.enable();
+  return {
+    async stop() {
+      await new Promise((resolve) => setTimeout(resolve, LOOP_LAG_SETTLE_MS));
+      histogram.disable();
+      return Math.max(0, histogram.max / 1e6 - LOOP_LAG_RESOLUTION_MS);
+    },
+  };
+}
 
 /**
  * Watchdog for one grading `go` — mirrors `engine-grading-depth-ab.mjs`'s
@@ -196,7 +241,7 @@ export function parseArgs(argv) {
     noStopRule: false,
     rootTrace: false,
     guardWindow: null,
-    dispatchMode: null,
+    dispatchMode: defaultDispatchMode(),
     outDir: null,
     help: false,
     selfTest: false,
@@ -227,28 +272,13 @@ export function parseArgs(argv) {
       case 'root-trace': args.rootTrace = true; break; // boolean, consumes no value (D-02)
       case 'guard-window': args.guardWindow = parsePositiveFloatFlag(value, key); i++; break; // D-04
       case 'out-dir': args.outDir = requireFlagValue(value, key); i++; break;
-      case 'dispatch-mode': {
-        const raw = requireFlagValue(value, key);
-        if (raw !== 'round' && raw !== 'continuous') {
-          throw new Error(`Invalid --dispatch-mode ${JSON.stringify(raw)}: expected "round" or "continuous"`);
-        }
-        args.dispatchMode = raw;
-        i++;
-        break;
-      }
+      case 'dispatch-mode': args.dispatchMode = parseDispatchModeFlag(requireFlagValue(value, key)); i++; break; // Phase 227 D-14
       default:
         throw new Error(`Unknown flag --${key}`);
     }
   }
-  // --dispatch-mode is REQUIRED (no default) for a real run: the operator
-  // states which side of the D-11 rewrite this run measures. --help and
-  // --self-test both bypass this — neither runs a real measurement.
-  if (!args.help && !args.selfTest && args.dispatchMode === null) {
-    throw new Error(
-      'Missing required --dispatch-mode round|continuous — the operator must state which ' +
-        'side of the round/continuous rewrite this run measures (D-11: this cannot be inferred)',
-    );
-  }
+  // Phase 227: --dispatch-mode is optional (default = the app's FLAWCHESS_DISPATCH_MODE); a real run
+  // still proves the requested mode with `assertDispatchModeLive` in main() before any engine starts.
   // Phase 226 D-04: --pool-size decouples the Stockfish PROCESS count from
   // SearchBudget.concurrency (--procs); defaulting it here (after the loop)
   // preserves every existing caller's behavior when --pool-size is omitted.
@@ -286,9 +316,9 @@ function resolvePositions(args) {
  * (same `MultiPV`/`position`/`go` sequence via the shared `buildGradeGoCommand`
  * builder, keyed by `parsed.pv[0]` — never the `multipv` rank field, SC5 —
  * `bound === 'exact'` only), the same convention `engine-grading-depth-ab.mjs`
- * follows.
+ * follows. Resolves `{ grades, elapsedMs }`.
  */
-async function runOneGo(engine, depth, fen, candidateUcis) {
+async function runOneGo(engine, depth, fen, candidateUcis, { clearHash = false } = {}) {
   const whitePovSign = fen.split(' ')[1] === 'b' ? -1 : 1;
   const grades = new Map();
   const off = engine.onLine((line) => {
@@ -304,14 +334,21 @@ async function runOneGo(engine, depth, fen, candidateUcis) {
     });
   });
   engine.send(`setoption name MultiPV value ${candidateUcis.length}`);
+  // Phase 227 D-02: the report-only Clear-Hash variant. The shipped browser worker never clears
+  // Hash between grades (WORKER_HASH_MB is set once), so the default stays warm.
+  if (clearHash) engine.send('setoption name Clear Hash');
   engine.send(`position fen ${fen}`);
+  const startedAt = performance.now();
   engine.send(buildGradeGoCommand(depth, candidateUcis));
   try {
     await engine.waitFor((line) => line.startsWith('bestmove'), GRADE_WATCHDOG_MS);
   } finally {
     off();
   }
-  return grades;
+  // Elapsed of the engine's own `go` (never queue wait): the `grade_cpu_ms` definition shared with
+  // engine-grading-depth-ab.mjs's makeGradeStats. Returned, not accumulated here, because `pool.run`
+  // may re-invoke this body after a watchdog timeout and a retried attempt must not double-count.
+  return { grades, elapsedMs: performance.now() - startedAt };
 }
 
 /**
@@ -324,7 +361,7 @@ async function runOneGo(engine, depth, fen, candidateUcis) {
  * than a fixed comparison depth (unlike `engine-grading-depth-ab.mjs`, this
  * script never sweeps depths — it has exactly one grading path).
  */
-export async function createGradePool(size) {
+export async function createGradePool(size, { clearHash = false } = {}) {
   // The SHARED pool (`lib/stockfish-pool.mjs`) rather than a private
   // acquire/release copy: it evicts and respawns an engine whose child process
   // dies, which a hand-rolled pool did not — one lost child used to poison the
@@ -337,9 +374,27 @@ export async function createGradePool(size) {
   // Skill Level / UCI_LimitStrength / Clear Hash preamble, whereas this script
   // must mirror `workerPool.ts`'s `sendGo` EXACTLY (module header's
   // LOAD-BEARING note) — `runOneGo` is that mirror and stays the grading path.
+  //
+  // Phase 227 D-09 / N-2: the search `signal` is forwarded into `pool.run`, so a
+  // cancelled grade stops its engine instead of running on into the next
+  // position's timing window (before this, the signal was silently ignored here).
+  // The abort value is an empty grade Map, the same contract as the browser pool.
+  //
+  // `gradeMs` accumulates the engine-go elapsed of every grade that actually settled (an aborted
+  // grade resolves `abortedGo()` and adds nothing); callers read per-position deltas via `gradeCpuMs()`.
+  let gradeMs = 0;
+  const runGo = async (fen, candidateUcis, signal, depth) => {
+    const { grades, elapsedMs } = await pool.run(
+      (engine) => runOneGo(engine, depth ?? GRADING_ROOT_DEPTH, fen, candidateUcis, { clearHash }),
+      signal,
+      abortedGo(),
+    );
+    gradeMs += elapsedMs;
+    return grades;
+  };
   const grade = async (fen, candidateUcis, signal, depth) => {
     if (candidateUcis.length === 0) return new Map(); // mirror workerPool.ts WR-05
-    return pool.run((engine) => runOneGo(engine, depth ?? GRADING_ROOT_DEPTH, fen, candidateUcis));
+    return runGo(fen, candidateUcis, signal, depth);
   };
 
   /**
@@ -351,17 +406,28 @@ export async function createGradePool(size) {
    * empty candidate set never reaches `splitAcrossFreeEngines`. `runShard`
    * reuses `runOneGo` — the same mirror of `workerPool.ts`'s `sendGo` that
    * `grade` uses — so a shard's `go` shape is identical to a full grade's.
+   *
+   * Phase 227 L-2: same abort contract as `stockfish-pool.mjs`'s `gradeRoot`: an aborted root
+   * grade resolves an empty Map and never a partial shard merge.
    */
   const splitStats = { calls: 0, splits: 0, premiseViolations: 0 };
   const gradeRoot = async (fen, candidateUcis, signal, depth) => {
     if (candidateUcis.length === 0) return new Map(); // WR-05 guard stays first
-    return splitAcrossFreeEngines({
-      freeCount: pool.freeCount,
-      size,
-      stats: splitStats,
-      candidateUcis,
-      runShard: (shard) => pool.run((engine) => runOneGo(engine, depth ?? GRADING_ROOT_DEPTH, fen, shard)),
-    });
+    if (signal?.aborted) return new Map();
+    let merged;
+    try {
+      merged = await splitAcrossFreeEngines({
+        freeCount: pool.freeCount,
+        size,
+        stats: splitStats,
+        candidateUcis,
+        runShard: (shard) => runGo(fen, shard, signal, depth),
+      });
+    } catch (err) {
+      if (signal?.aborted) return new Map(); // an abort is not a failure (a partial merge may be rejected)
+      throw err;
+    }
+    return signal?.aborted ? new Map() : merged;
   };
 
   return {
@@ -369,7 +435,14 @@ export async function createGradePool(size) {
     gradeRoot,
     /** Copy of this pool's `gradeRoot` tripwire accumulator — never the live mutable object. */
     rootSplitStats: () => ({ ...splitStats }),
+    /** Cumulative engine-go elapsed (ms) of every settled grade so far; diff it around a search. */
+    gradeCpuMs: () => gradeMs,
     resetAll: () => pool.newGameAll(),
+    /**
+     * Resolves once every engine is free and nothing is queued (Phase 227 D-09 quiescence before a timer).
+     * Stockfish only: callers also await `whenMaiaIdle()` (`scripts/lib/calibration-providers.mjs`) first.
+     */
+    whenIdle: () => pool.whenIdle(),
     quitAll: () => pool.quitAll(),
   };
 }
@@ -447,7 +520,7 @@ function makeRootTracer({ position, elo, stopRuleLabel, guardWindow, minNodes })
  * `--self-test`: exercises `parseArgs` only, so it costs no engine time.
  * Returns `true` iff every assertion held.
  */
-function runSelfTest() {
+async function runSelfTest() {
   let ok = true;
   const check = (cond, label) => {
     if (!cond) {
@@ -466,26 +539,27 @@ function runSelfTest() {
     check(err.message.includes('Unknown flag'), 'unknown flag throws with a named-flag message');
   }
 
-  // --dispatch-mode is required for a real run.
-  try {
-    parseArgs(['--nodes', '4']);
-    check(false, 'omitting --dispatch-mode should throw');
-  } catch (err) {
-    check(/dispatch-mode/i.test(err.message), 'missing --dispatch-mode throws mentioning dispatch-mode');
-  }
+  // Phase 227: --dispatch-mode is optional and defaults to the app's shipped mode.
+  const defaultModeArgs = parseArgs(['--nodes', '4']);
+  check(
+    defaultModeArgs.dispatchMode === defaultDispatchMode(),
+    `omitting --dispatch-mode defaults to the app constant (${defaultDispatchMode()}), got ${defaultModeArgs.dispatchMode}`,
+  );
+  check(parseArgs(['--dispatch-mode', 'continuous']).dispatchMode === 'continuous', '--dispatch-mode continuous parses');
+  check(parseArgs(['--dispatch-mode', 'round']).dispatchMode === 'round', '--dispatch-mode round parses');
 
   // --dispatch-mode rejects an unrecognized value.
   try {
     parseArgs(['--dispatch-mode', 'sideways']);
     check(false, 'an invalid --dispatch-mode value should throw');
   } catch (err) {
-    check(/dispatch-mode/i.test(err.message), 'invalid --dispatch-mode value throws mentioning dispatch-mode');
+    check(/dispatch mode/i.test(err.message), 'invalid --dispatch-mode value throws mentioning the dispatch mode');
   }
 
-  // --help and --self-test both bypass the --dispatch-mode requirement.
+  // --help parses on its own.
   try {
     const helpArgs = parseArgs(['--help']);
-    check(helpArgs.help === true, '--help bypasses the --dispatch-mode requirement');
+    check(helpArgs.help === true, '--help parses without any other flag');
   } catch {
     check(false, '--help alone should not throw');
   }
@@ -596,6 +670,22 @@ function runSelfTest() {
     );
   }
 
+  // Loop-lag probe: an idle loop reads about 0, a 150 ms synchronous stall reads at least 100 ms.
+  {
+    const idle = startLoopLagProbe();
+    await new Promise((resolve) => setTimeout(resolve, 60));
+    const idleLag = await idle.stop();
+    check(idleLag < 50, `loop-lag probe reads small on an idle loop, got ${idleLag.toFixed(1)} ms`);
+    const stalled = startLoopLagProbe();
+    await new Promise((resolve) => setTimeout(resolve, 30));
+    const stallStart = performance.now();
+    while (performance.now() - stallStart < 150) {
+      // busy-wait: a deliberate synchronous stall for the probe to catch
+    }
+    const stallLag = await stalled.stop(); // read right after the stall: must still catch it
+    check(stallLag >= 100, `loop-lag probe catches a 150 ms synchronous stall read immediately after it, got ${stallLag.toFixed(1)} ms`);
+  }
+
   return ok;
 }
 
@@ -608,12 +698,23 @@ async function main() {
     return 0;
   }
   if (args.selfTest) {
-    const passed = runSelfTest();
+    const passed = await runSelfTest();
     console.log(passed ? '\nSelf-test: ALL CHECKS PASSED' : '\nSelf-test: FAILURES ABOVE');
     return passed ? 0 : 1;
   }
 
   const positions = resolvePositions(args);
+
+  // Phase 227 T-227-07: prove the requested dispatch mode is the one mctsSearch actually executes,
+  // BEFORE any engine is brought up. Exit 3 = continuous requested but the round loop ran.
+  try {
+    const observed = await assertDispatchModeLive(mctsSearch, args.dispatchMode);
+    console.log(`Dispatch mode probe: requested=${args.dispatchMode} observed=${observed}`);
+  } catch (err) {
+    console.error(`\n${err.message}\n`);
+    return typeof err.exitCode === 'number' ? err.exitCode : 1;
+  }
+
   const { session, ort } = await createMaiaSession();
   const pool = await createGradePool(args.poolSize);
 
@@ -636,6 +737,8 @@ async function main() {
   const rows = [];
   const rootTraceRows = [];
   for (const { label, fen } of positions) {
+    await whenMaiaIdle(); // 227-09 review: the previous search's stale Maia work must also have settled
+    await pool.whenIdle(); // Phase 227 D-09: the previous position's cancelled grades must have quiesced
     await pool.resetAll();
     resetMaiaRunMemo(); // isolates this position's own inference cost (198-01 convention).
     resetMaiaInstrumentationStats(); // co-located with resetMaiaRunMemo, same per-pass isolation reasoning.
@@ -649,6 +752,7 @@ async function main() {
       maxPlies: args.plies,
       concurrency: args.procs,
       elo: { w: args.elo, b: args.elo },
+      dispatchMode: args.dispatchMode,
       ...(args.noStopRule ? {} : { stopRule: FLAWCHESS_BOT_STOP_RULE }),
     };
     // Phase 226 D-08: per-position delta of the pool's own rootSplit tripwire
@@ -666,6 +770,9 @@ async function main() {
         })
       : null;
 
+    const gradeCpuBefore = pool.gradeCpuMs();
+    const premiseViolationsBefore = pool.rootSplitStats().premiseViolations;
+    const loopLag = startLoopLagProbe();
     const startedAt = performance.now();
     const snapshot = await mctsSearch(
       fen,
@@ -675,7 +782,10 @@ async function main() {
       new AbortController().signal,
     );
     const wallMs = performance.now() - startedAt;
+    const loopLagMaxMs = await loopLag.stop(); // after the wall reading: its settle wait is not timed
     const rootSplitCallsDelta = pool.rootSplitStats().calls - rootSplitCallsBefore;
+    const gradeCpuMs = pool.gradeCpuMs() - gradeCpuBefore;
+    const premiseViolations = pool.rootSplitStats().premiseViolations - premiseViolationsBefore;
 
     const firstExpansions = tracer !== null ? tracer.getRows().length : null;
     const exposure = tracer !== null && args.guardWindow !== null ? tracer.getExposure() : null;
@@ -684,7 +794,8 @@ async function main() {
     console.log(
       `── ${label}  wall ${(wallMs / 1000).toFixed(1)}s  nodes=${snapshot.nodesEvaluated}  ` +
         `stop=${snapshot.stopReason ?? 'none'}  maia_cpu=${(maiaCpuStats.totalMs / 1000).toFixed(1)}s  ` +
-        `peak_inflight=${maiaInflightStats.peak}` +
+        `peak_inflight=${maiaInflightStats.peak}  grade_cpu=${(gradeCpuMs / 1000).toFixed(1)}s  ` +
+        `loop_lag_max=${loopLagMaxMs.toFixed(0)}ms` +
         (firstExpansions !== null ? `  first_expansions=${firstExpansions}` : '') +
         (exposure !== null ? `  exposure ${exposure.exposed}/${exposure.eligible}` : ''),
     );
@@ -709,6 +820,11 @@ async function main() {
       eligible_snapshots: exposure !== null ? exposure.eligible : '',
       pool_size: args.poolSize,
       root_split_calls: rootSplitCallsDelta,
+      // Phase 227: appended at the END so 226 readers and the tripwire still parse old and new files.
+      // Both timing columns are REPORT-ONLY (Pitfall 5: per-grade elapsed rises under contention).
+      grade_cpu_ms: gradeCpuMs.toFixed(0),
+      loop_lag_max_ms: loopLagMaxMs.toFixed(1),
+      root_split_premise_violations: premiseViolations,
     });
   }
 
@@ -720,6 +836,7 @@ async function main() {
       'maia_cpu_ms', 'maia_peak_inflight', 'maia_fifo', 'concurrency', 'max_nodes',
       'elo', 'stop_rule', 'guard_window', 'first_expansions', 'exposure_snapshots', 'eligible_snapshots',
       'pool_size', 'root_split_calls',
+      'grade_cpu_ms', 'loop_lag_max_ms', 'root_split_premise_violations',
     ];
     // Timestamp is read once here, AFTER all measurement, so it never influences a run.
     const stamp = new Date().toISOString().replace(/[:.]/g, '-');

@@ -194,7 +194,7 @@
 | 224. Guest Activation — Welcome Removal & Guest Train (SEED-169, standalone) | 6/6 | Complete | 2026-09-18 |
 | 225. Engine Search Fixes — Root Comparability, Round Underfill & Findability Fallback (SEED-170, standalone) | 8/8 | Complete    | 2026-09-28 |
 | 226. Browser Engine Throughput — Round Underfill Re-land & Root Grade Split (SEED-171, standalone) | 14/14 | Complete    | 2026-10-02 |
-| 227. Browser Engine Continuous Dispatch Against a Relaxed Determinism Target (SEED-171, standalone) | 0/0 | Not started | - |
+| 227. Browser Engine Continuous Dispatch Against a Relaxed Determinism Target (SEED-171, standalone) | 13/13 | Complete    | 2026-10-03 |
 
 ## Active Phases
 
@@ -586,10 +586,37 @@ D-05..D-07). Size it on the idle profile Phase 226 leaves behind.
 
 **Depends on:** Phase 226.
 
-**Plans:** 0 plans
+**Plans:** 13/13 plans complete
 
 Plans:
-- [ ] TBD (run /gsd-discuss-phase 227 once Phase 226 ships)
+**Wave 1**
+- [x] 227-01-PLAN.md — Harness fidelity: Maia in worker_threads (D-18) and Node Stockfish pool abort + whenIdle (N-2) (tracer: Maia off the event loop)
+- [x] 227-02-PLAN.md — dispatchMode flag (D-13) with a live harness probe, app call sites, app SF queue FIFO (D-19), Y-14 comment (tracer: flag end to end)
+- [x] 227-03-PLAN.md — Verdict twin: D-01/D-03 MQ math, round tripwire vs 226 a21s, D-17 throughput, D-07 WebGPU, D-15 calibration, gates
+
+**Wave 2** *(blocked on Wave 1 completion)*
+- [x] 227-04-PLAN.md — Gate scripts: real --dispatch-mode, MQ --repeats/--maia-fifo/--hash, depth-ab --ladder-only, report-only CPU and loop-lag columns
+- [x] 227-05-PLAN.md — Calibration harness parity (D-14): --dispatch-mode, FIFO Maia, dispatch_mode ledger column + resume refusal, supervisor env, determinism pin
+- [x] 227-06-PLAN.md — Dev-only WebGPU bench page (D-06): Maia latency per backend, round/continuous bot-move legs, prod-bundle absence check
+- [x] 227-07-PLAN.md — Interleave driver + machine-speed probe (D-17), manifest contract, dry-run and resume
+
+**Wave 3** *(blocked on Wave 2 completion)*
+- [x] 227-08-PLAN.md — Orchestrator: round-mode tooling tripwire vs 226 a21s, local wasm bench leg, owner WebGPU round leg (D-07 early)
+
+**Wave 4** *(blocked on Wave 3 completion)*
+- [x] 227-09-PLAN.md — Design doc with X/Y/N dispositions, two independent reviews to SOUND (D-12), accept rule committed before any continuous data
+
+**Wave 5** *(blocked on Wave 4 completion)*
+- [x] 227-10-PLAN.md — Continuous dispatch in mctsSearch behind the flag: c=1 identity, mutation-checked guards, deadline path (flag stays 'round')
+
+**Wave 6** *(blocked on Wave 5 completion)*
+- [x] 227-11-PLAN.md — Gate runs (orchestrator): MQ R=5, interleaved throughput, A0/A1 powered calibration
+
+**Wave 7** *(blocked on Wave 6 completion)*
+- [x] 227-12-PLAN.md — Owner WebGPU interleaved leg, verdict + report, owner ship/hold decision (VL trigger handled)
+
+**Wave 8** *(blocked on Wave 7 completion)*
+- [x] 227-13-PLAN.md — Execute decision (flip/hold/revert), conditional refit, smoke, dev tool removal, CHANGELOG + engine doc (D-16), pre-merge gate
 
 **Seed:** `.planning/seeds/SEED-171-browser-engine-throughput.md`
 
