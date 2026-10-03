@@ -194,11 +194,25 @@ Frontend-only (self-hosted Umami at analytics.flawchess.com).
   app sessions used it in the 30 days to 2026-10-03).
 
 **Depends on**: Phase 228 (merged; settings overlay is one of the inventoried surfaces)
-**Requirements**: TBD
-**Plans:** 0 plans
+**Requirements**: TBD (covered by CONTEXT decisions D-01..D-18)
+**Plans:** 8 plans
 
 Plans:
-- [ ] TBD (run /gsd-discuss-phase 229)
+**Wave 1**
+- [ ] 229-01-PLAN.md — Identity spine: JWT-sub boot identify + ProtectedLayout identify (impersonation never), logout reset pinned, Privacy sentence, Umami 3.4.0 pin, runbook upgrade + deletion SQL
+
+**Wave 2** *(blocked on Wave 1 completion)*
+- [ ] 229-02-PLAN.md — Typed feature-event registry (9 events, trackFeature, route-derived page, excluded routes) proven through InfoPopover + 7 popover shells
+
+**Wave 3** *(blocked on Wave 2 completion; plans touch disjoint files)*
+- [ ] 229-03-PLAN.md — Panel opens (sidebar panels, 8 mobile drawers), More drawer + nav items, settings entry points, Endgames type select
+- [ ] 229-04-PLAN.md — Filter changes (FilterPanel, footers, flaw/tactic and slider filters) plus Openings color, suggestions, analyze and bookmark card
+- [ ] 229-05-PLAN.md — Analysis board: non-URL tabs, engine toggles, ELO/temperature commits, flip, paste, line expand/delete, chip cycle
+- [ ] 229-06-PLAN.md — Endgame accordions, chart legends, show-more expanders, library game card and flaw card actions
+- [ ] 229-07-PLAN.md — Train reveal/retry/exit/analyze, schedule and banner; Bots setup choices, persona and custom-setup opens
+
+**Wave 4** *(blocked on Wave 3 completion)*
+- [ ] 229-08-PLAN.md — Bot in-game actions, frontend/CLAUDE.md rule, CHANGELOG, supersession note, full pre-merge gate, browser UAT
 
 Phase detail for every shipped milestone lives in `milestones/vX.Y-ROADMAP.md`, its phase directories in `milestones/vX.Y-phases/`, and the per-milestone summaries in [MILESTONES.md](MILESTONES.md).
 
