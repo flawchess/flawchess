@@ -4,8 +4,8 @@ milestone: v2.21
 current_phase: 231
 status: completed
 stopped_at: Phase 231 complete — all phases complete
-last_updated: "2026-10-04T07:49:48.107Z"
-state_head: 5fd1667b20fc4c0eca013501d0967b7240dbf023
+last_updated: "2026-10-04T08:00:20.189Z"
+state_head: 13d2bc96ed7fe5dd18b405eab5fbf1f092557ad5
 progress:
   total_phases: 4
   completed_phases: 103
@@ -14,7 +14,7 @@ progress:
   percent: 75
 milestone_name: Browser Engine Throughput
 last_activity: 2026-10-04
-last_activity_desc: "Completed quick task 261004-8rt: Accuracy leaderboard qualified-first tiering"
+last_activity_desc: "Completed quick task 261004-dta: Train page mobile: hide coach avatar (except Tank intro), schedule above leaderboard"
 ---
 
 # Project State: FlawChess
@@ -963,6 +963,7 @@ None active.
 | 114 | Mobile analysis: hide human/knight icons in card headers; Maia header -> 'Maia, Human Move Probability' | 2026-10-03 | 7ed295414 | — |
 | 115 | streak flame number: white font with black outline | 2026-10-03 | 6099bfdfc | — |
 | 261004-8rt | Accuracy leaderboard: qualified users ranked first, tentative unranked below a divider (supersedes D-03) | 2026-10-04 | eb3c0f530 | [261004-8rt-accuracy-leaderboard-qualified-first-tie](./quick/261004-8rt-accuracy-leaderboard-qualified-first-tie/) |
+| 261004-dta | Train page mobile: hide coach avatar (except Tank intro), schedule above leaderboard | 2026-10-04 | 13d2bc96e | [261004-dta-train-page-mobile-hide-coach-avatar-exce](./quick/261004-dta-train-page-mobile-hide-coach-avatar-exce/) |
 
 ## Deferred Items
 
