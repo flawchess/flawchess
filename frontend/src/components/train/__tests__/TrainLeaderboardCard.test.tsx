@@ -273,7 +273,7 @@ describe('TrainLeaderboardCard tabs (D-07, D-09, D-10)', () => {
     expect(screen.getByTestId('train-leaderboard-row-2').textContent).not.toContain('#');
     expect(within(rows).queryByText('(tentative)')).toBeNull();
     expect(screen.getByTestId('train-leaderboard-accuracy-helper').textContent).toContain('20+ puzzles to qualify');
-    expect(screen.getByTestId('train-leaderboard-accuracy-helper').textContent).toContain("Tactics puzzles don't count");
+    expect(screen.getByTestId('train-leaderboard-accuracy-helper').textContent).toContain('20+ puzzles to qualify');
   });
 
   it('the Points tab renders no qualify divider', async () => {

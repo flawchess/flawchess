@@ -12,12 +12,13 @@
 
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { useState } from 'react';
-import { cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
 
 import { AnalysisTabs, MoveListHeaderContent } from '../AnalysisTabs';
 import { EloSelector } from '../EloSelector';
 import { TemperatureSelector, TEMPERATURE_DEFAULT, sliderPositionToTemperature } from '../TemperatureSelector';
 import { MAIA_ELO_LADDER } from '@/lib/maiaEncoding';
+import { SLIDER_TRACK_DEBOUNCE_MS } from '@/hooks/useDebouncedTrackFeature';
 
 const SLIDER_WIDTH_PX = 1000;
 
@@ -139,6 +140,13 @@ describe('MoveListHeaderContent paste-open tracking', () => {
 });
 
 describe('EloSelector tracking (Pitfall 2)', () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
   it('fires option-change elo once per drag, on commit, with the snapped ladder rung', () => {
     const onChange = vi.fn();
     render(<StatefulElo onChange={onChange} />);
@@ -150,6 +158,8 @@ describe('EloSelector tracking (Pitfall 2)', () => {
     expect(track).not.toHaveBeenCalled();
 
     drag.commit();
+    expect(track).not.toHaveBeenCalled();
+    act(() => vi.advanceTimersByTime(SLIDER_TRACK_DEBOUNCE_MS));
     expect(track).toHaveBeenCalledTimes(1);
     const [name, props] = track.mock.calls[0] as [string, { page: string; target: string; value: string }];
     expect(name).toBe('option-change');
@@ -164,8 +174,51 @@ describe('EloSelector tracking (Pitfall 2)', () => {
     const thumb = screen.getByRole('slider');
     thumb.focus();
     fireEvent.keyDown(thumb, { key: 'ArrowRight' });
+    expect(track).not.toHaveBeenCalled();
+    act(() => vi.advanceTimersByTime(SLIDER_TRACK_DEBOUNCE_MS));
     expect(track).toHaveBeenCalledTimes(1);
     expect(track).toHaveBeenCalledWith('option-change', { page: 'analysis', target: 'elo', value: '1600' });
+  });
+
+  it('collapses a burst of keyboard steps into one event, with onChange still synchronous', () => {
+    const onChange = vi.fn();
+    render(<StatefulElo onChange={onChange} />);
+    const thumb = screen.getByRole('slider');
+    thumb.focus();
+    fireEvent.keyDown(thumb, { key: 'ArrowRight' });
+    fireEvent.keyDown(thumb, { key: 'ArrowRight' });
+    fireEvent.keyDown(thumb, { key: 'ArrowRight' });
+    // The engine path is never delayed: onChange fired for every step before any timer ran.
+    expect(onChange).toHaveBeenCalledTimes(3);
+    expect(track).not.toHaveBeenCalled();
+    act(() => vi.advanceTimersByTime(SLIDER_TRACK_DEBOUNCE_MS));
+    expect(track).toHaveBeenCalledTimes(1);
+    expect(track).toHaveBeenCalledWith('option-change', { page: 'analysis', target: 'elo', value: '1800' });
+  });
+
+  it('sends one event per step when steps are separated by more than the window', () => {
+    render(<StatefulElo onChange={vi.fn()} />);
+    const thumb = screen.getByRole('slider');
+    thumb.focus();
+    fireEvent.keyDown(thumb, { key: 'ArrowRight' });
+    act(() => vi.advanceTimersByTime(SLIDER_TRACK_DEBOUNCE_MS));
+    fireEvent.keyDown(thumb, { key: 'ArrowRight' });
+    act(() => vi.advanceTimersByTime(SLIDER_TRACK_DEBOUNCE_MS));
+    expect(track).toHaveBeenCalledTimes(2);
+    expect(track).toHaveBeenNthCalledWith(1, 'option-change', { page: 'analysis', target: 'elo', value: '1600' });
+    expect(track).toHaveBeenNthCalledWith(2, 'option-change', { page: 'analysis', target: 'elo', value: '1700' });
+  });
+
+  it('flushes a pending event on unmount', () => {
+    const { unmount } = render(<StatefulElo onChange={vi.fn()} />);
+    const thumb = screen.getByRole('slider');
+    thumb.focus();
+    fireEvent.keyDown(thumb, { key: 'ArrowRight' });
+    expect(track).not.toHaveBeenCalled();
+    unmount();
+    expect(track).toHaveBeenCalledTimes(1);
+    act(() => vi.advanceTimersByTime(SLIDER_TRACK_DEBOUNCE_MS));
+    expect(track).toHaveBeenCalledTimes(1);
   });
 
   it('reset button fires board-tool elo-reset and calls onReset', () => {
@@ -183,11 +236,19 @@ describe('EloSelector tracking (Pitfall 2)', () => {
     const thumb = screen.getByRole('slider');
     thumb.focus();
     fireEvent.keyDown(thumb, { key: 'ArrowLeft' });
+    act(() => vi.advanceTimersByTime(SLIDER_TRACK_DEBOUNCE_MS));
     expect(track).toHaveBeenCalledWith('option-change', { page: 'bots', target: 'elo', value: '1400' });
   });
 });
 
 describe('TemperatureSelector tracking', () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
   it('fires once per drag on commit, never on change alone, with a bucket not a float', () => {
     render(<StatefulTemperature />);
     const drag = dragSliderTo(screen.getByRole('slider').closest('[data-slot="slider"]') as HTMLElement, 0.9);
@@ -196,6 +257,8 @@ describe('TemperatureSelector tracking', () => {
     expect(track).not.toHaveBeenCalled();
 
     drag.commit();
+    expect(track).not.toHaveBeenCalled();
+    act(() => vi.advanceTimersByTime(SLIDER_TRACK_DEBOUNCE_MS));
     expect(track).toHaveBeenCalledTimes(1);
     expect(track).toHaveBeenCalledWith('option-change', { page: 'analysis', target: 'temperature', value: 'higher' });
   });
@@ -205,6 +268,19 @@ describe('TemperatureSelector tracking', () => {
     const thumb = screen.getByRole('slider');
     thumb.focus();
     fireEvent.keyDown(thumb, { key: 'ArrowLeft' });
+    expect(track).not.toHaveBeenCalled();
+    act(() => vi.advanceTimersByTime(SLIDER_TRACK_DEBOUNCE_MS));
+    expect(track).toHaveBeenCalledTimes(1);
+    expect(track).toHaveBeenCalledWith('option-change', { page: 'analysis', target: 'temperature', value: 'lower' });
+  });
+
+  it('collapses a held arrow key (five steps) into one lower event', () => {
+    render(<StatefulTemperature />);
+    const thumb = screen.getByRole('slider');
+    thumb.focus();
+    for (let i = 0; i < 5; i += 1) fireEvent.keyDown(thumb, { key: 'ArrowLeft' });
+    expect(track).not.toHaveBeenCalled();
+    act(() => vi.advanceTimersByTime(SLIDER_TRACK_DEBOUNCE_MS));
     expect(track).toHaveBeenCalledTimes(1);
     expect(track).toHaveBeenCalledWith('option-change', { page: 'analysis', target: 'temperature', value: 'lower' });
   });
@@ -215,6 +291,7 @@ describe('TemperatureSelector tracking', () => {
     const thumb = screen.getByRole('slider');
     thumb.focus();
     fireEvent.keyDown(thumb, { key: 'ArrowLeft' });
+    act(() => vi.advanceTimersByTime(SLIDER_TRACK_DEBOUNCE_MS));
     expect(track).toHaveBeenCalledTimes(1);
     expect(track).toHaveBeenCalledWith('option-change', { page: 'analysis', target: 'temperature', value: 'default' });
   });
@@ -224,6 +301,7 @@ describe('TemperatureSelector tracking', () => {
     const thumb = screen.getByRole('slider');
     thumb.focus();
     fireEvent.keyDown(thumb, { key: 'ArrowRight' });
+    act(() => vi.advanceTimersByTime(SLIDER_TRACK_DEBOUNCE_MS));
     const [, props] = track.mock.calls[0] as [string, { value: string }];
     expect(['lower', 'default', 'higher']).toContain(props.value);
   });

@@ -66,7 +66,7 @@ import { buildGameAnalysisUrl } from '@/lib/analysisUrl';
 import type { PasteParseResult, PastedGameHeaders } from '@/lib/pastedGame';
 import { takePastedGameHandoff } from '@/lib/pastedGameHandoff';
 import { EvalBar } from '@/components/analysis/EvalBar';
-import { useEngineDisplaySettings } from '@/lib/engineSettings';
+import { setEngineToggle, useEngineDisplaySettings, useEngineToggles } from '@/lib/engineSettings';
 import type { FlawSeverity } from '@/types/library';
 import { isRareMoveTier } from '@/types/library';
 import { useFastForward, FAST_FORWARD_ANIMATION_MS } from '@/hooks/useFastForward';
@@ -415,27 +415,38 @@ export default function Analysis() {
   // the store's asset entries change (a mid-session WebGPU-to-wasm refetch
   // resets an asset's progress and would otherwise re-open a gate the user
   // has already passed).
-  const [engineGateOpen, setEngineGateOpen] = useState(() => engineGateRequired());
+  //
+  // Quick 261004-nxn: the three engine switches persist in the engineSettings
+  // store (all three default ON), so they are read above the gate initializer.
+  // Bug-fix note: the gate is non-dismissible and only closes once every required
+  // asset is done, but an asset only downloads while an engine that uses it is on.
+  // With a persisted-off engine and missing seen flags (an unsupported device
+  // whose probe never runs, or a newly added asset id) the gate would never
+  // close, so it opens at mount only when all three engines are on. The all-on
+  // default keeps the original cold-start behavior.
+  const {
+    stockfish: engineEnabled,
+    maia: maiaEnabled,
+    flawChess: flawChessEnabled,
+  } = useEngineToggles();
+  const [engineGateOpen, setEngineGateOpen] = useState(
+    () => engineGateRequired() && engineEnabled && maiaEnabled && flawChessEnabled,
+  );
 
-  // D-06: engine on by default; toggle available via infoSlot button.
-  const [engineEnabled, setEngineEnabled] = useState(true);
-  // Phase 155 D-02/D-03: the Maia and FlawChess Engine header switches — all
-  // three engine cards default ON (all-by-default UI, gated on the SC4
-  // real-device mobile-memory UAT per 155-RESEARCH.md D-02).
-  const [maiaEnabled, setMaiaEnabled] = useState(true);
-  const [flawChessEnabled, setFlawChessEnabled] = useState(true);
-  // D-12 group 1: every engine on/off switch (desktop cards and mobile tabs) reports
-  // through these; the raw setters stay private to this component.
+  // D-12 group 1: every engine on/off switch (desktop cards and mobile tabs) persists
+  // through the store and reports through these handlers. Tracking lives ONLY here,
+  // so hydrating a stored value from storage sends no event (D-03). All three
+  // engines default ON and persist across visits (quick 261004-nxn).
   const handleStockfishToggle = useCallback((on: boolean): void => {
-    setEngineEnabled(on);
+    setEngineToggle('stockfish', on);
     trackFeature('toggle', { target: 'engine-stockfish', value: onOff(on) });
   }, []);
   const handleMaiaToggle = useCallback((on: boolean): void => {
-    setMaiaEnabled(on);
+    setEngineToggle('maia', on);
     trackFeature('toggle', { target: 'engine-maia', value: onOff(on) });
   }, []);
   const handleFlawChessToggle = useCallback((on: boolean): void => {
-    setFlawChessEnabled(on);
+    setEngineToggle('flawChess', on);
     trackFeature('toggle', { target: 'engine-flawchess', value: onOff(on) });
   }, []);
   // Phase 228 (SEED-175): per-engine line counts from the settings store, read

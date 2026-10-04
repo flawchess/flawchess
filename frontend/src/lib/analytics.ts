@@ -409,12 +409,20 @@ export const FEATURE_EVENT_NAMES = Object.keys(FEATURE_EVENT_NAME_SET) as Featur
  * Send one typed feature event. `page` is derived from the route so shared
  * components (InfoPopover, FilterPanel, BoardControls) need not thread it.
  * Goes through `trackEvent` so existing trackEvent spies see feature events.
+ *
+ * Deferred senders (see `useDebouncedTrackFeature`) pass the pathname captured
+ * when the user acted, so a send that happens after navigation is attributed to
+ * the right page and still honors the D-14 exclusion for that page.
  */
-export function trackFeature<E extends FeatureEventName>(name: E, props: FeatureEventMap[E]): void {
+export function trackFeature<E extends FeatureEventName>(
+  name: E,
+  props: FeatureEventMap[E],
+  pathname: string = window.location.pathname,
+): void {
   // D-14: shared components also render on /admin and /auth/*; send nothing there.
-  if (isTrackingExcludedPath(window.location.pathname)) return;
+  if (isTrackingExcludedPath(pathname)) return;
   // Every registry value is a string literal, which is what Umami event data takes.
-  trackEvent(name, { page: currentPage(), ...props } as Record<string, string>);
+  trackEvent(name, { page: currentPage(pathname), ...props } as Record<string, string>);
 }
 
 const NUMERIC_SEGMENT = /^\d+$/;

@@ -16,11 +16,16 @@ in `YYYY-MM-DD` (Europe/Zurich).
 
 ### Changed
 
+- Analysis board: the Stockfish, Maia and FlawChess engine switches now remember your choice, so an engine you switch off stays off on your next visit.
 - Train weekly leaderboards: on the Accuracy board, players with 20+ puzzles this week are now always ranked above players who have not qualified yet. Players still under 20 puzzles are listed below a "Not yet qualified" line without a rank number, most active first, and the session score screen tells you how many more puzzles you need instead of showing a tentative rank.
 - Every engine line after the top one now uses a lighter, see-through version of that engine's color on its badge and arrow.
 - Usage analytics (which pages you visit and which features you use) are now linked to your account ID, for logged-in and guest accounts alike. They stay on our own servers, are never shared with anyone, and the Privacy page now says so.
 - Maintenance: the frontend now type-checks with TypeScript 7 (through Microsoft's side-by-side install, so linting keeps working) and runs on Sentry 11 and vite-plugin-pwa 2, with a patched fast-uri. Error reports still collect only what the Privacy page lists, and the installed app and its offline support are unchanged.
 - Operators: self-hosted analytics is pinned to Umami 3.4.0 (it ran 3.3.1 behind a floating tag). The next deploy pulls the image automatically and Umami applies two additive database migrations on start; see the runbook section "Umami analytics" for the post-deploy check.
+
+### Fixed
+
+- Mobile layout polish: the Library move stats show accuracy in a header card on phones, game-card tags and move-stats cards stretch to the miniboard's height, and the Train page has a tighter gap between the header and the streak card.
 
 ## [v2.21] Browser Engine Throughput — 2026-10-03
 

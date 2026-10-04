@@ -26,7 +26,8 @@ import { User, Cpu } from 'lucide-react';
 import { Slider } from '@/components/ui/slider';
 import { DEFAULT_POLICY_TEMPERATURE } from '@/lib/engine/policyTemperature';
 import { MAIA_ACCENT, STOCKFISH_ACCENT } from '@/lib/theme';
-import { trackFeature, type TemperatureBucket } from '@/lib/analytics';
+import type { TemperatureBucket } from '@/lib/analytics';
+import { useDebouncedTrackFeature } from '@/hooks/useDebouncedTrackFeature';
 
 export interface TemperatureSelectorProps {
   /** Current policy temperature (TEMPERATURE_MIN-TEMPERATURE_MAX). */
@@ -82,17 +83,20 @@ export function TemperatureSelector({
   value,
   onChange,
 }: TemperatureSelectorProps): React.ReactElement {
+  const trackCommit = useDebouncedTrackFeature('option-change');
+
   const handleValueChange = (values: number[]): void => {
     const next = values[0];
     if (next === undefined) return;
     onChange(sliderPositionToTemperature(next));
   };
 
-  // Once per drag (commit), not per tick.
+  // One event per adjustment burst, not per tick: Radix commits on every keyboard
+  // step (step 0.01 here), so the debounce collapses a held key into one event.
   const handleValueCommit = (values: number[]): void => {
     const committed = values[0];
     if (committed === undefined) return;
-    trackFeature('option-change', {
+    trackCommit({
       target: 'temperature',
       value: temperatureBucket(sliderPositionToTemperature(committed)),
     });

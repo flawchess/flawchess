@@ -5,8 +5,8 @@ current_phase: 232
 current_phase_name: Frontend Major Dependency Upgrades (SEED-187
 status: completed
 stopped_at: Phase 232 complete — all phases complete
-last_updated: "2026-10-04T14:51:20.701Z"
-state_head: cb06fc84c65e259232186df546fdb0db6c030675
+last_updated: "2026-10-04T15:30:31.781Z"
+state_head: 8230265ef0d6a5b319569e94fbdf16a50cb0a8a4
 progress:
   total_phases: 5
   completed_phases: 103
@@ -15,7 +15,7 @@ progress:
   percent: 75
 milestone_name: Browser Engine Throughput
 last_activity: 2026-10-04
-last_activity_desc: "Completed quick task 261004-dta: Train page mobile: hide coach avatar (except Tank intro), schedule above leaderboard"
+last_activity_desc: "Completed quick task 261004-nxn: Debounce slider analytics and persist analysis engine toggles"
 ---
 
 # Project State: FlawChess
@@ -974,6 +974,7 @@ None active.
 | fast | Train page mobile: drop landing container top padding (streak card 48px→24px below header) | 2026-10-04 | fd550d7d0 | — |
 | 119 | Library game card: accuracy merged into move-stats card, tags + stats cards stretch to miniboard height | 2026-10-04 | 4212c55d2 | — |
 | 120 | Library mobile game card: move stats in one card with accuracy header | 2026-10-04 | cb06fc84c | — |
+| 261004-nxn | Debounce slider analytics and persist analysis engine toggles | 2026-10-04 | 8230265ef | [261004-nxn-debounce-slider-analytics-and-persist-an](./quick/261004-nxn-debounce-slider-analytics-and-persist-an/) |
 
 ## Deferred Items
 

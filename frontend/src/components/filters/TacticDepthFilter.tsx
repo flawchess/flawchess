@@ -11,6 +11,7 @@ import { useCallback } from 'react';
 import { PresetRangeFilter } from './PresetRangeFilter';
 import type { PresetOption } from './PresetRangeFilter';
 import { trackFeature } from '@/lib/analytics';
+import { useDebouncedTrackFeature } from '@/hooks/useDebouncedTrackFeature';
 import {
   DEPTH_MIN,
   DEPTH_MAX,
@@ -36,6 +37,7 @@ const PRESETS: PresetOption[] = PRESET_ORDER.map((preset) => ({
 
 export function TacticDepthFilter({ value, onChange }: TacticDepthFilterProps) {
   const activePreset = derivePreset(value.min, value.max);
+  const trackCommit = useDebouncedTrackFeature('filter-change');
 
   const handleSliderChange = useCallback(
     (values: number[]) => {
@@ -46,17 +48,22 @@ export function TacticDepthFilter({ value, onChange }: TacticDepthFilterProps) {
     [onChange],
   );
 
-  // Tracked on drag END only (Radix onValueCommit), never per drag step (Phase 229
-  // Pitfall 2). Only the matching preset or 'custom' is sent, never the bounds.
-  const handleSliderCommit = useCallback((values: number[]) => {
-    const lo = values[0] ?? DEPTH_MIN;
-    const hi = values[1] ?? DEPTH_MAX;
-    const range = sliderToRange(lo, hi);
-    trackFeature('filter-change', {
-      target: 'tactic-depth',
-      value: derivePreset(range.min, range.max) ?? 'custom',
-    });
-  }, []);
+  // Tracked on commit (Radix onValueCommit), never per drag step (Phase 229
+  // Pitfall 2), and debounced to one event per adjustment burst because Radix also
+  // commits on every keyboard step. Only the matching preset or 'custom' is sent,
+  // never the bounds.
+  const handleSliderCommit = useCallback(
+    (values: number[]) => {
+      const lo = values[0] ?? DEPTH_MIN;
+      const hi = values[1] ?? DEPTH_MAX;
+      const range = sliderToRange(lo, hi);
+      trackCommit({
+        target: 'tactic-depth',
+        value: derivePreset(range.min, range.max) ?? 'custom',
+      });
+    },
+    [trackCommit],
+  );
 
   const handlePreset = useCallback(
     (preset: string) => {
