@@ -5,6 +5,7 @@ import {
   LEADERBOARD_TAB_STORAGE_KEY,
   ACCURACY_NOT_ENTERED_LINE,
   boardValueLabel,
+  firstUnrankedRowIndex,
   parseLeaderboardTab,
   passTargetCopy,
   formatCountdown,
@@ -18,7 +19,39 @@ import {
   writeLeaderboardTab,
 } from '@/lib/trainLeaderboard';
 import * as leaderboardLib from '@/lib/trainLeaderboard';
-import type { LeaderboardBoard, LeaderboardViewer, TrainLeaderboardResponse } from '@/types/train';
+import type {
+  LeaderboardBoard,
+  LeaderboardRow,
+  LeaderboardViewer,
+  TrainLeaderboardResponse,
+} from '@/types/train';
+
+function rowWithRank(rank: number | null): LeaderboardRow {
+  return {
+    rank,
+    name: 'someone',
+    value: 50,
+    puzzles: 5,
+    tentative: rank === null,
+    is_viewer: false,
+    visibility: 'public',
+    gap_before: false,
+  };
+}
+
+describe('firstUnrankedRowIndex (quick 261004-8rt)', () => {
+  it('returns the index of the first row with a null rank', () => {
+    expect(firstUnrankedRowIndex([rowWithRank(1), rowWithRank(2), rowWithRank(null), rowWithRank(null)])).toBe(2);
+  });
+
+  it('returns -1 when every row is ranked', () => {
+    expect(firstUnrankedRowIndex([rowWithRank(1), rowWithRank(2)])).toBe(-1);
+  });
+
+  it('returns 0 when every row is unranked', () => {
+    expect(firstUnrankedRowIndex([rowWithRank(null), rowWithRank(null)])).toBe(0);
+  });
+});
 
 describe('boardValueLabel', () => {
   it('suffixes points with pts', () => {
@@ -248,19 +281,27 @@ describe('rankLineCopy, guest, tentative and worse-rank variants (D-11, D-17, D-
     expect(rankLineCopy('points', guest)).toBe("Points board: You'd be #7");
   });
 
-  it('a tentative Accuracy viewer with an unchanged rank gets the suffix', () => {
-    const viewer = { ...VIEWER, rank: 4, rank_without_session: 4, tentative: true };
-    expect(rankLineCopy('accuracy', viewer)).toBe('Accuracy: #4 (tentative)');
-  });
+  it.each(['public', 'hidden', 'guest'] as const)(
+    'an unranked tentative Accuracy viewer (%s) reads "N more to qualify"',
+    (visibility) => {
+      const viewer = {
+        ...VIEWER,
+        rank: null,
+        rank_without_session: 3,
+        tentative: true,
+        puzzles_to_qualify: 8,
+        visibility,
+      };
+      expect(rankLineCopy('accuracy', viewer)).toBe('Accuracy: 8 more to qualify');
+    },
+  );
 
-  it('a tentative Accuracy improvement carries both the delta and the suffix', () => {
-    const viewer = { ...VIEWER, rank: 4, rank_without_session: 6, tentative: true };
-    expect(rankLineCopy('accuracy', viewer)).toBe('Accuracy: #4 (up 2) (tentative)');
-  });
-
-  it('a guest on the tentative Accuracy board keeps the suffix', () => {
-    const viewer = { ...VIEWER, rank: 4, rank_without_session: null, tentative: true, visibility: 'guest' as const };
-    expect(rankLineCopy('accuracy', viewer)).toBe("Accuracy: You'd be #4 (tentative)");
+  it('a qualified Accuracy improvement reads "(up N)" and a first entry reads "this week"', () => {
+    expect(rankLineCopy('accuracy', { ...VIEWER, rank: 4, rank_without_session: 6 })).toBe('Accuracy: #4 (up 2)');
+    // Also what a session that just crossed the 20-puzzle cutoff reads.
+    expect(rankLineCopy('accuracy', { ...VIEWER, rank: 3, rank_without_session: null })).toBe(
+      'Accuracy: #3 this week',
+    );
   });
 
   it('a worse Accuracy rank after the session shows the plain rank and never "down" (D-18)', () => {
@@ -270,8 +311,11 @@ describe('rankLineCopy, guest, tentative and worse-rank variants (D-11, D-17, D-
     expect(text.toLowerCase()).not.toContain('down');
   });
 
-  it('a qualified Accuracy viewer has no tentative suffix and Points never does', () => {
+  it('no rank line ever contains the word tentative', () => {
     expect(rankLineCopy('accuracy', { ...VIEWER, rank: 4, rank_without_session: 4 })).not.toContain('tentative');
+    expect(
+      rankLineCopy('accuracy', { ...VIEWER, rank: null, tentative: true, puzzles_to_qualify: 8 }),
+    ).not.toContain('tentative');
     // Points rows are never tentative on the wire, but even a stray flag must not leak.
     expect(rankLineCopy('points', { ...VIEWER, rank: 4, rank_without_session: 4, tentative: true })).not.toContain(
       'tentative',

@@ -306,7 +306,11 @@ export type LeaderboardVisibility = 'public' | 'hidden' | 'guest';
 
 /** One ranked row of a weekly board. Mirrors app/schemas/train.py. */
 export interface LeaderboardRow {
-  rank: number;
+  /**
+   * Null marks a tentative Accuracy entry: listed below every qualified row,
+   * without a rank (quick 261004-8rt).
+   */
+  rank: number | null;
   name: string;
   /** Points, or the floored accuracy percent. */
   value: number;
@@ -322,8 +326,12 @@ export interface LeaderboardRow {
 
 /** The viewer's own standing on one board. Mirrors app/schemas/train.py. */
 export interface LeaderboardViewer {
-  rank: number;
-  /** Rank without the given session's solves (score screen only), else null. */
+  /** Null while the viewer is a tentative Accuracy entry (quick 261004-8rt). */
+  rank: number | null;
+  /**
+   * Rank without the given session's solves (score screen only), else null.
+   * Also null when the viewer is tentative with or without the session.
+   */
   rank_without_session: number | null;
   tentative: boolean;
   puzzles_to_qualify: number;

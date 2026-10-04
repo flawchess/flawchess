@@ -222,9 +222,10 @@ const TABBED_RESPONSE = makeResponse({
   accuracy: {
     rows: [
       makeRow({ rank: 1, name: 'zed', value: 95, puzzles: 30 }),
-      makeRow({ rank: 2, name: 'yan', value: 80, puzzles: 5, tentative: true }),
+      makeRow({ rank: null, name: 'yan', value: 80, puzzles: 5, tentative: true }),
+      makeRow({ rank: null, name: 'xia', value: 100, puzzles: 2, tentative: true }),
     ],
-    viewer: { ...VIEWER, tentative: true, puzzles_to_qualify: 18 },
+    viewer: { ...VIEWER, rank: null, tentative: true, puzzles_to_qualify: 18 },
     pass_target: null,
   },
 });
@@ -248,17 +249,55 @@ describe('TrainLeaderboardCard tabs (D-07, D-09, D-10)', () => {
     expect(screen.getByTestId('train-leaderboard-tab-points').textContent).toBe('Points');
   });
 
-  it('clicking Accuracy shows % rows, the tentative marker and the helper line', async () => {
+  it('clicking Accuracy shows % rows, one qualify divider, rank-less tentative rows and the helper line', async () => {
     respondWith(TABBED_RESPONSE);
     renderCard();
     await screen.findByTestId('train-leaderboard-rows');
     fireEvent.click(screen.getByTestId('train-leaderboard-tab-accuracy'));
     const rows = screen.getByTestId('train-leaderboard-rows');
     expect(within(rows).getByText('95%')).not.toBeNull();
-    expect(within(rows).getByText('(tentative)')).not.toBeNull();
-    expect(within(rows).getAllByText('(tentative)')).toHaveLength(1);
+    const dividers = screen.getAllByTestId('train-leaderboard-qualify-divider');
+    expect(dividers).toHaveLength(1);
+    const divider = dividers[0];
+    expect(divider?.textContent).toBe('Not yet qualified');
+    expect(divider?.nextElementSibling).toBe(screen.getByTestId('train-leaderboard-row-1'));
+    expect(screen.getByTestId('train-leaderboard-row-0').textContent).toContain('#1');
+    expect(screen.getByTestId('train-leaderboard-row-1').textContent).not.toContain('#');
+    expect(screen.getByTestId('train-leaderboard-row-2').textContent).not.toContain('#');
+    expect(within(rows).queryByText('(tentative)')).toBeNull();
     expect(screen.getByTestId('train-leaderboard-accuracy-helper').textContent).toContain('20+ puzzles to qualify');
     expect(screen.getByTestId('train-leaderboard-accuracy-helper').textContent).toContain("Tactics puzzles don't count");
+  });
+
+  it('the Points tab renders no qualify divider', async () => {
+    respondWith(TABBED_RESPONSE);
+    renderCard();
+    await screen.findByTestId('train-leaderboard-rows');
+    expect(screen.queryByTestId('train-leaderboard-qualify-divider')).toBeNull();
+  });
+
+  it('renders the gap marker, then the divider, then the row when one row is both', async () => {
+    respondWith(
+      makeResponse({
+        points: { rows: [makeRow()], viewer: null, pass_target: null },
+        accuracy: {
+          rows: [
+            makeRow({ rank: 1, name: 'zed', value: 95, puzzles: 30 }),
+            makeRow({ rank: null, name: 'yan', value: 80, puzzles: 5, tentative: true, gap_before: true }),
+          ],
+          viewer: null,
+          pass_target: null,
+        },
+      }),
+    );
+    renderCard();
+    await screen.findByTestId('train-leaderboard-rows');
+    fireEvent.click(screen.getByTestId('train-leaderboard-tab-accuracy'));
+    const gap = screen.getByTestId('train-leaderboard-gap');
+    const divider = screen.getByTestId('train-leaderboard-qualify-divider');
+    const row = screen.getByTestId('train-leaderboard-row-1');
+    expect(gap.nextElementSibling).toBe(divider);
+    expect(divider.nextElementSibling).toBe(row);
   });
 
   it('remembers the tab across a remount via localStorage', async () => {
