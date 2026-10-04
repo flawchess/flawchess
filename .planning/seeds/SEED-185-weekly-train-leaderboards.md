@@ -118,6 +118,8 @@ The real formula is client-side in `frontend/src/lib/trainScore.ts`.
   API caller can bank up to 2 of 3 points per puzzle on both public boards. Owner accepted
   this on 2026-10-04 for the leaderboards alone (no prizes, small user base). The medals
   phase must verify or clamp off-key tiers server-side before awarding anything.
+  **Superseded 2026-10-04:** owner also accepts WR-01 for medals; see SEED-186.
+- **Medals design moved to SEED-186** (`SEED-186-weekly-leaderboard-medals.md`).
 
 ## Proposed defaults (confirm in discuss-phase)
 
