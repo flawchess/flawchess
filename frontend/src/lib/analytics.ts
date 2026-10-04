@@ -13,6 +13,7 @@
  * No-ops when the tracker is absent (local dev, ad blockers, the
  * `data-domains` gate), so callers never need to guard.
  */
+import { consumeAutoReloadMarker } from '@/lib/autoReload';
 import type { FilterState } from '@/components/filters/FilterPanel';
 import type { BotSetupSettings } from '@/lib/botSetupSettings';
 import type { TimeControlPresetLabel } from '@/lib/botTimeControlPresets';
@@ -43,8 +44,8 @@ declare global {
       track: (eventName: string, eventData?: Record<string, string>) => void;
       identify: (distinctId: string, data?: Record<string, string>) => void;
     };
-    /** Named by `data-before-send` on the tracker tag in index.html. */
-    umamiBeforeSend?: (type: string, payload: UmamiPayload) => UmamiPayload;
+    /** Named by `data-before-send` on the tracker tag in index.html. Null cancels the send. */
+    umamiBeforeSend?: (type: string, payload: UmamiPayload) => UmamiPayload | null;
   }
 }
 
@@ -102,13 +103,36 @@ export function scrubUmamiPayload(_type: string, payload: UmamiPayload): UmamiPa
   return scrubbed;
 }
 
+/** The tracker sends pageviews as type 'event' without a name; custom events carry one. */
+function isPageview(type: string, payload: UmamiPayload): boolean {
+  return type === 'event' && payload.name === undefined;
+}
+
+/**
+ * Quick 261004-rmc: set at boot when this page load came from an automatic
+ * reload (see autoReload.ts); its landing pageview is a duplicate. Consumed at
+ * boot rather than at send time so a marker left behind by a blocked tracker
+ * can never swallow a later, real pageview.
+ */
+let dropLandingPageview = false;
+
+/** The installed hook: drop an automatic reload's landing pageview, scrub everything else. */
+export function umamiBeforeSend(type: string, payload: UmamiPayload): UmamiPayload | null {
+  if (dropLandingPageview && isPageview(type, payload)) {
+    dropLandingPageview = false;
+    return null; // a falsy return cancels the send
+  }
+  return scrubUmamiPayload(type, payload);
+}
+
 /**
  * Register the hook the tracker looks up by name at send time. Must run before
  * the first pageview: the deferred tracker only sends once the document is
  * complete, after main.tsx has executed.
  */
 export function installUmamiBeforeSend(): void {
-  window.umamiBeforeSend = scrubUmamiPayload;
+  dropLandingPageview = consumeAutoReloadMarker();
+  window.umamiBeforeSend = umamiBeforeSend;
 }
 
 export type UmamiAccountType = 'guest' | 'registered';

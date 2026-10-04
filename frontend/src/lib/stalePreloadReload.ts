@@ -7,6 +7,8 @@
 // this case; reloading picks up the new index.html and its current chunks.
 // Extracted from main.tsx so it is unit-testable (see swUpdate.ts).
 
+import { reloadAutomatically } from '@/lib/autoReload';
+
 /** sessionStorage key holding the epoch-ms of the last recovery reload. */
 export const PRELOAD_RELOAD_STORAGE_KEY = 'flawchess:preload-reload-at';
 
@@ -55,7 +57,7 @@ export function handleVitePreloadError(event: Event, nowMs: number = Date.now())
   }
   event.preventDefault();
   reloadPending = true;
-  window.location.reload();
+  reloadAutomatically();
 }
 
 /** Registers the stale-chunk recovery listener. Call once at startup. */

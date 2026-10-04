@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { installUmamiBeforeSend, scrubUmamiPayload } from '@/lib/analytics';
+import { installUmamiBeforeSend, scrubUmamiPayload, umamiBeforeSend } from '@/lib/analytics';
+import { reloadAutomatically } from '@/lib/autoReload';
 
 const ORIGIN = window.location.origin;
 
@@ -45,9 +46,49 @@ describe('Umami globals', () => {
     delete window.umamiBeforeSend;
   });
 
-  it('installs the scrubber under the name index.html references', () => {
+  it('installs the hook under the name index.html references', () => {
     installUmamiBeforeSend();
-    expect(window.umamiBeforeSend).toBe(scrubUmamiPayload);
+    expect(window.umamiBeforeSend).toBe(umamiBeforeSend);
+  });
+});
+
+describe('umamiBeforeSend after an automatic reload (Quick 261004-rmc)', () => {
+  const PAGEVIEW = { website: 'w', url: '/train' };
+  const originalLocation = window.location;
+
+  beforeEach(() => {
+    window.sessionStorage.clear();
+    Object.defineProperty(window, 'location', {
+      configurable: true,
+      value: { reload: vi.fn(), origin: originalLocation.origin },
+    });
+  });
+
+  afterEach(() => {
+    Object.defineProperty(window, 'location', { configurable: true, value: originalLocation });
+    delete window.umamiBeforeSend;
+  });
+
+  it('drops exactly one landing pageview after an automatic reload', () => {
+    reloadAutomatically();
+    installUmamiBeforeSend();
+    expect(umamiBeforeSend('event', PAGEVIEW)).toBeNull();
+    expect(umamiBeforeSend('event', PAGEVIEW)).toEqual(PAGEVIEW);
+  });
+
+  it('passes identify calls and custom events while a pageview is pending drop', () => {
+    reloadAutomatically();
+    installUmamiBeforeSend();
+    expect(umamiBeforeSend('identify', { website: 'w', id: '42' })).toEqual({ website: 'w', id: '42' });
+    expect(umamiBeforeSend('event', { ...PAGEVIEW, name: 'toggle' })).toEqual({ ...PAGEVIEW, name: 'toggle' });
+    expect(umamiBeforeSend('event', PAGEVIEW)).toBeNull();
+  });
+
+  it('keeps every pageview on a normal page load, scrubbed', () => {
+    installUmamiBeforeSend();
+    expect(umamiBeforeSend('event', { url: '/auth/reset-password?token=abc' })).toEqual({
+      url: '/auth/reset-password',
+    });
   });
 });
 

@@ -36,8 +36,9 @@
          access token in website_event.url_path. It also strips the hash from
          the referrer, so the next pageview is clean too.
          data-before-send: window.umamiBeforeSend (lib/analytics.ts, installed
-         in main.tsx) strips ?token= (password reset) and blanks the
-         accounts.google.* OAuth referrer. -->
+         in main.tsx) strips ?token= (password reset), blanks the
+         accounts.google.* OAuth referrer, and drops the landing pageview of
+         an automatic post-deploy reload (lib/autoReload.ts). -->
     <script
       defer
       src="https://analytics.flawchess.com/script.js"
