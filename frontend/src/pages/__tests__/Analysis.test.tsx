@@ -20,7 +20,7 @@ import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testi
 import { Profiler } from 'react';
 import { MemoryRouter, useNavigate } from 'react-router';
 import { BEST_MOVE_ARROW, MAIA_ACCENT, GREAT_ACCENT, STOCKFISH_SECONDARY_LINE } from '@/lib/theme';
-import { SETTINGS_STORAGE_KEYS } from '@/lib/engineSettings';
+import { ENGINE_TOGGLE_STORAGE_KEYS, SETTINGS_STORAGE_KEYS } from '@/lib/engineSettings';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import type { GameFlawCard, EvalPoint } from '@/types/library';
@@ -250,14 +250,14 @@ const flawChessState: {
 // captured into flawChessCalls so tests can assert the derived
 // extraRootMoves value/identity across re-renders — mirrors the
 // gradingCalls/lastPrimaryGradingCall idiom above.
-const flawChessCalls: { extraRootMoves: string[] | undefined }[] = [];
-function lastFlawChessCall(): { extraRootMoves: string[] | undefined } | undefined {
+const flawChessCalls: { extraRootMoves: string[] | undefined; enabled: boolean }[] = [];
+function lastFlawChessCall(): { extraRootMoves: string[] | undefined; enabled: boolean } | undefined {
   return flawChessCalls[flawChessCalls.length - 1];
 }
 
 vi.mock('@/hooks/useFlawChessEngine', () => ({
-  useFlawChessEngine: (options: { fen: string | null; extraRootMoves?: string[] }) => {
-    flawChessCalls.push({ extraRootMoves: options.extraRootMoves });
+  useFlawChessEngine: (options: { fen: string | null; enabled: boolean; extraRootMoves?: string[] }) => {
+    flawChessCalls.push({ extraRootMoves: options.extraRootMoves, enabled: options.enabled });
     return {
       rankedLines: flawChessState.rankedLines,
       nodesEvaluated: flawChessState.nodesEvaluated,
@@ -414,6 +414,9 @@ afterEach(() => {
   flawChessCalls.length = 0;
   stockfishMultiPvCalls.length = 0;
   for (const key of Object.values(SETTINGS_STORAGE_KEYS)) localStorage.removeItem(key);
+  // Engine switches persist (quick 261004-nxn): many tests click one off and the
+  // next test must start with all engines on.
+  for (const key of Object.values(ENGINE_TOGGLE_STORAGE_KEYS)) localStorage.removeItem(key);
   libraryGameState.data = undefined;
   libraryGameById.clear();
   resetEngineAssetsForTests();
@@ -567,6 +570,49 @@ describe('Analysis page: engine toggle tracking', () => {
       target: 'engine-flawchess',
       value: 'on',
     });
+  });
+});
+
+describe('Analysis page: persisted engine switches (quick 261004-nxn)', () => {
+  let track: ReturnType<typeof vi.fn>;
+
+  beforeEach(() => {
+    track = vi.fn();
+    window.umami = { track, identify: vi.fn() };
+    window.history.pushState({}, '', '/analysis');
+  });
+
+  afterEach(() => {
+    delete window.umami;
+    window.history.pushState({}, '', '/');
+  });
+
+  it('restores a persisted-off FlawChess switch silently', () => {
+    localStorage.setItem(ENGINE_TOGGLE_STORAGE_KEYS.flawChess, '0');
+    renderAnalysis();
+    expect(screen.getByTestId('btn-analysis-flawchess-toggle').getAttribute('aria-checked')).toBe('false');
+    expect(lastFlawChessCall()?.enabled).toBe(false);
+    // Hydration from storage is not a user action (D-03): no toggle event.
+    expect(track).not.toHaveBeenCalled();
+  });
+
+  it('keeps a switched-off Maia engine off after a remount', () => {
+    const first = renderAnalysis();
+    fireEvent.click(screen.getByTestId('btn-analysis-maia-toggle'));
+    expect(localStorage.getItem(ENGINE_TOGGLE_STORAGE_KEYS.maia)).toBe('0');
+    first.unmount();
+    maiaCalls.length = 0;
+
+    renderAnalysis();
+    expect(lastLiveMaiaCall()?.enabled).toBe(false);
+  });
+
+  it('never mounts the non-dismissible engine-ready gate behind a persisted-off engine', () => {
+    localStorage.clear();
+    resetEngineAssetsForTests();
+    localStorage.setItem(ENGINE_TOGGLE_STORAGE_KEYS.stockfish, '0');
+    renderAnalysis();
+    expect(screen.queryByTestId('engine-ready-gate')).toBeNull();
   });
 });
 

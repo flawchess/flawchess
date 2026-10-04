@@ -8,10 +8,13 @@ import { act, renderHook } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import {
+  ENGINE_TOGGLE_STORAGE_KEYS,
   resetAllSettings,
   setCountSetting,
+  setEngineToggle,
   SETTINGS_STORAGE_KEYS,
   useEngineDisplaySettings,
+  useEngineToggles,
 } from '@/lib/engineSettings';
 import { MUTE_KEY, setMuted, useMuted } from '@/lib/sounds';
 
@@ -99,5 +102,56 @@ describe('resetAllSettings', () => {
     });
     expect(settings.result.current).toEqual({ fcLines: 2, fcArrows: 1, sfLines: 2, sfArrows: 1 });
     expect(muted.result.current).toBe(false);
+  });
+});
+
+describe('useEngineToggles / setEngineToggle (quick 261004-nxn)', () => {
+  it('defaults all three engines ON with empty storage', () => {
+    const { result } = renderHook(() => useEngineToggles());
+    expect(result.current).toEqual({ stockfish: true, maia: true, flawChess: true });
+  });
+
+  it('persists off as 0 and on as 1 and re-renders a mounted subscriber', () => {
+    const { result } = renderHook(() => useEngineToggles());
+    act(() => setEngineToggle('maia', false));
+    expect(localStorage.getItem(ENGINE_TOGGLE_STORAGE_KEYS.maia)).toBe('0');
+    expect(result.current.maia).toBe(false);
+    expect(result.current.stockfish).toBe(true);
+    act(() => setEngineToggle('maia', true));
+    expect(localStorage.getItem(ENGINE_TOGGLE_STORAGE_KEYS.maia)).toBe('1');
+    expect(result.current.maia).toBe(true);
+  });
+
+  it.each(['false', '', 'off', '2', '1'])('reads tampered or on value %j as ON', (raw) => {
+    localStorage.setItem(ENGINE_TOGGLE_STORAGE_KEYS.stockfish, raw);
+    const { result } = renderHook(() => useEngineToggles());
+    expect(result.current.stockfish).toBe(true);
+  });
+
+  it('reads exactly 0 as OFF', () => {
+    localStorage.setItem(ENGINE_TOGGLE_STORAGE_KEYS.flawChess, '0');
+    const { result } = renderHook(() => useEngineToggles());
+    expect(result.current.flawChess).toBe(false);
+  });
+
+  it('keeps the switch working for the session when storage writes throw', () => {
+    const { result } = renderHook(() => useEngineToggles());
+    const spy = vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
+      throw new Error('QuotaExceededError');
+    });
+    act(() => setEngineToggle('flawChess', false));
+    expect(result.current.flawChess).toBe(false);
+    spy.mockRestore();
+    act(() => setEngineToggle('flawChess', true));
+    expect(localStorage.getItem(ENGINE_TOGGLE_STORAGE_KEYS.flawChess)).toBe('1');
+    expect(result.current.flawChess).toBe(true);
+  });
+
+  it('is not touched by resetAllSettings', () => {
+    localStorage.setItem(ENGINE_TOGGLE_STORAGE_KEYS.maia, '0');
+    act(() => resetAllSettings());
+    expect(localStorage.getItem(ENGINE_TOGGLE_STORAGE_KEYS.maia)).toBe('0');
+    const { result } = renderHook(() => useEngineToggles());
+    expect(result.current.maia).toBe(false);
   });
 });

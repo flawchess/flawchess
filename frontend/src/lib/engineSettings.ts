@@ -15,6 +15,11 @@
  * localStorage is user- and extension-writable and these values reach Stockfish
  * MultiPV, so every read accepts only an integer inside the setting's range and
  * falls back to the default otherwise (never a clamp).
+ *
+ * Quick 261004-nxn: the store also persists the three analysis-board engine
+ * on/off switches (Stockfish, Maia, FlawChess), same flat-key pattern, default
+ * ON. They are not panel settings, so `resetAllSettings` deliberately leaves
+ * them alone: a reset that silently re-enabled heavy engines would surprise users.
  */
 
 import { useSyncExternalStore } from 'react';
@@ -48,6 +53,25 @@ export interface EngineDisplaySettings {
 }
 
 const COUNT_SETTING_IDS: readonly CountSettingId[] = ['fcLines', 'fcArrows', 'sfLines', 'sfArrows'];
+
+export type EngineToggleId = 'stockfish' | 'maia' | 'flawChess';
+
+export interface EngineToggles {
+  stockfish: boolean;
+  maia: boolean;
+  flawChess: boolean;
+}
+
+export const ENGINE_TOGGLE_STORAGE_KEYS: Readonly<Record<EngineToggleId, string>> = {
+  stockfish: 'flawchess_settings_engine_stockfish',
+  maia: 'flawchess_settings_engine_maia',
+  flawChess: 'flawchess_settings_engine_flawchess',
+};
+
+/** Same '1'/'0' format as the sound mute key in `lib/sounds.ts`. */
+const TOGGLE_ON = '1';
+const TOGGLE_OFF = '0';
+const DEFAULT_ENGINE_TOGGLE = true;
 
 // ─── Validation (type guards, no casts) ─────────────────────────────────────
 
@@ -143,5 +167,51 @@ export function resetAllSettings(): void {
     // Nothing to remove if storage is unavailable; reads already yield defaults.
   }
   setMuted(false);
+  notify();
+}
+
+// ─── Engine on/off switches ─────────────────────────────────────────────────
+
+/**
+ * In-session values for switches whose storage write failed (private mode,
+ * quota). Unlike a count setting, which may simply not apply, an engine switch
+ * that ignored the click would be inert, so the failed value is kept in memory
+ * for the rest of the session. A successful write clears the override, so
+ * storage stays the source of truth whenever it works.
+ */
+const sessionToggleOverrides: Partial<Record<EngineToggleId, boolean>> = {};
+
+/** Only the exact off value disables an engine; absent or tampered reads as ON. */
+function readEngineToggle(id: EngineToggleId): boolean {
+  const override = sessionToggleOverrides[id];
+  if (override !== undefined) return override;
+  try {
+    return localStorage.getItem(ENGINE_TOGGLE_STORAGE_KEYS[id]) !== TOGGLE_OFF;
+  } catch {
+    return DEFAULT_ENGINE_TOGGLE;
+  }
+}
+
+const getStockfishToggle = (): boolean => readEngineToggle('stockfish');
+const getMaiaToggle = (): boolean => readEngineToggle('maia');
+const getFlawChessToggle = (): boolean => readEngineToggle('flawChess');
+const getEngineToggleServerSnapshot = (): boolean => DEFAULT_ENGINE_TOGGLE;
+
+/** Subscription to the three engine switches. Defaults ON with no stored value. */
+export function useEngineToggles(): EngineToggles {
+  const stockfish = useSyncExternalStore(subscribe, getStockfishToggle, getEngineToggleServerSnapshot);
+  const maia = useSyncExternalStore(subscribe, getMaiaToggle, getEngineToggleServerSnapshot);
+  const flawChess = useSyncExternalStore(subscribe, getFlawChessToggle, getEngineToggleServerSnapshot);
+  return { stockfish, maia, flawChess };
+}
+
+/** Persists one engine switch and notifies subscribers. */
+export function setEngineToggle(id: EngineToggleId, on: boolean): void {
+  try {
+    localStorage.setItem(ENGINE_TOGGLE_STORAGE_KEYS[id], on ? TOGGLE_ON : TOGGLE_OFF);
+    delete sessionToggleOverrides[id];
+  } catch {
+    sessionToggleOverrides[id] = on;
+  }
   notify();
 }
