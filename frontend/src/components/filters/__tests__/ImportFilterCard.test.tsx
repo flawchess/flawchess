@@ -15,7 +15,7 @@
  * - PATCH failure: inline text-destructive save-error line appears (verification-gap fix),
  *   and clears once a subsequent mutation attempt starts.
  */
-import { describe, it, expect, vi, afterEach } from 'vitest';
+import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest';
 import { render, screen, fireEvent, cleanup } from '@testing-library/react';
 import type { Mock } from 'vitest';
 
@@ -219,5 +219,86 @@ describe('ImportFilterCard', () => {
     rerender(<ImportFilterCard />);
 
     expect(screen.queryByTestId('import-filter-save-error')).toBeNull();
+  });
+});
+
+describe('ImportFilterCard Umami tracking', () => {
+  let track: ReturnType<typeof vi.fn>;
+
+  beforeEach(() => {
+    track = vi.fn();
+    window.umami = { track, identify: vi.fn() };
+    window.history.pushState({}, '', '/library/import');
+  });
+
+  afterEach(() => {
+    cleanup();
+    vi.resetAllMocks();
+    delete window.umami;
+    window.history.pushState({}, '', '/');
+  });
+
+  it('sends nothing on render', () => {
+    mockSettings();
+    mockUpdateMutation();
+
+    render(<ImportFilterCard />);
+
+    expect(track).not.toHaveBeenCalled();
+  });
+
+  it('turning on an inactive time control sends toggle import-tc-bullet on', () => {
+    mockSettings();
+    mockUpdateMutation();
+
+    render(<ImportFilterCard />);
+    fireEvent.click(screen.getByTestId('import-filter-time-control-bullet'));
+
+    expect(track).toHaveBeenCalledTimes(1);
+    expect(track).toHaveBeenCalledWith('toggle', { page: 'library', target: 'import-tc-bullet', value: 'on' });
+  });
+
+  it('turning off an active time control (another still active) sends value off', () => {
+    mockSettings();
+    mockUpdateMutation();
+
+    render(<ImportFilterCard />);
+    fireEvent.click(screen.getByTestId('import-filter-time-control-blitz'));
+
+    expect(track).toHaveBeenCalledTimes(1);
+    expect(track).toHaveBeenCalledWith('toggle', { page: 'library', target: 'import-tc-blitz', value: 'off' });
+  });
+
+  it('the last-active time control no-op click sends nothing and does not mutate', () => {
+    mockSettings({ tc_bullet: false, tc_blitz: false, tc_rapid: false, tc_classical: true });
+    const mutate = mockUpdateMutation();
+
+    render(<ImportFilterCard />);
+    fireEvent.click(screen.getByTestId('import-filter-time-control-classical'));
+
+    expect(mutate).not.toHaveBeenCalled();
+    expect(track).not.toHaveBeenCalled();
+  });
+
+  it('picking cap 3000 sends option-change import-cap 3000', () => {
+    mockSettings();
+    mockUpdateMutation();
+
+    render(<ImportFilterCard />);
+    fireEvent.click(screen.getByTestId('import-filter-cap-3000'));
+
+    expect(track).toHaveBeenCalledTimes(1);
+    expect(track).toHaveBeenCalledWith('option-change', { page: 'library', target: 'import-cap', value: '3000' });
+  });
+
+  it('re-tapping the active cap (Radix emits an empty value) sends nothing', () => {
+    mockSettings();
+    const mutate = mockUpdateMutation();
+
+    render(<ImportFilterCard />);
+    fireEvent.click(screen.getByTestId('import-filter-cap-1000'));
+
+    expect(mutate).not.toHaveBeenCalled();
+    expect(track).not.toHaveBeenCalled();
   });
 });

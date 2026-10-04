@@ -160,7 +160,7 @@ describe('LeaderboardPrivacyCard', () => {
     expect(put).not.toHaveBeenCalled();
   });
 
-  it('sends no analytics event when the switch is flipped (database-landing write)', async () => {
+  it('flipping the switch on sends one legacy settings-change event for leaderboard-hidden', async () => {
     vi.spyOn(apiClient, 'get').mockResolvedValue({ data: PROFILE });
     vi.spyOn(apiClient, 'put').mockResolvedValue({ data: { ...PROFILE, leaderboard_hidden: true } });
     const track = vi.fn();
@@ -170,7 +170,23 @@ describe('LeaderboardPrivacyCard', () => {
     fireEvent.click(await screen.findByTestId(SWITCH_ID));
     await waitFor(() => expect(screen.getByTestId(SWITCH_ID).getAttribute('aria-checked')).toBe('true'));
 
-    expect(track).not.toHaveBeenCalled();
+    expect(track).toHaveBeenCalledTimes(1);
+    expect(track).toHaveBeenCalledWith('settings-change', { setting: 'leaderboard-hidden', value: 'on' });
+    window.umami = undefined;
+  });
+
+  it('flipping the switch off from a hidden profile sends value off', async () => {
+    vi.spyOn(apiClient, 'get').mockResolvedValue({ data: { ...PROFILE, leaderboard_hidden: true } });
+    vi.spyOn(apiClient, 'put').mockResolvedValue({ data: PROFILE });
+    const track = vi.fn();
+    window.umami = { track, identify: vi.fn() };
+    renderCard();
+
+    fireEvent.click(await screen.findByTestId(SWITCH_ID));
+    await waitFor(() => expect(screen.getByTestId(SWITCH_ID).getAttribute('aria-checked')).toBe('false'));
+
+    expect(track).toHaveBeenCalledTimes(1);
+    expect(track).toHaveBeenCalledWith('settings-change', { setting: 'leaderboard-hidden', value: 'off' });
     window.umami = undefined;
   });
 });
