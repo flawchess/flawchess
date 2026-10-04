@@ -789,11 +789,16 @@ Note: STATE.md still says Phase 230 is "not yet squash-merged". That is stale: `
 | A6 | Showing the podium to guests is fine (public data) | Pattern 6 | Product preference only |
 | A7 | Table names `train_weekly_standings` / `train_weekly_finalizations` | Pattern 3 | Naming only |
 
-## Open Questions
+## Open Questions (RESOLVED)
+
+All three fall under CONTEXT.md "Claude's Discretion" (finalization trigger and concurrency) or are product preferences with a cheap reversal; the planner adopted each recommendation (recorded in 231-01-PLAN.md "Decision coverage", row "Discretion").
 
 1. **Grace length (A3).** Recommendation: 5 minutes, as a named constant. The owner may prefer 1 minute for a snappier Monday podium.
+   **RESOLVED:** 5 minutes. `MEDALS_FINALIZE_GRACE = timedelta(minutes=5)` in `app/services/train_medals.py` (231-01 Task 1), grace-boundary tests at 00:04:59 / 00:05:00 UTC (231-01 Task 2). Changing it later is a one-constant edit.
 2. **Marker table vs. recompute.** Recommended: the marker table (lock + memory + test isolation). If the owner wants a single table, the fallback is recomputing weeks with no standings rows on every request, plus an advisory lock for concurrency.
+   **RESOLVED:** marker table `train_weekly_finalizations`, no advisory lock. Its primary-key insert (`ON CONFLICT DO NOTHING RETURNING`) serializes concurrent finalizers and remembers empty weeks (231-01 Task 1); the concurrency and empty-week guarantees are proven in 231-06.
 3. **Podium for guests.** Recommended: show it. Trivial to hide if the owner disagrees.
+   **RESOLVED:** shown to guests (public data). The 231-01 tracer test asserts a guest GET returns the same Points podium with `viewer_final_rank` null.
 
 ## Environment Availability
 

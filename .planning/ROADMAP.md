@@ -301,10 +301,22 @@ after the week closes. Non-medallists get "You finished #N last week".
 
 **Depends on**: Phase 230 (weekly leaderboards; aggregation, ranking, opt-out, `LeaderboardRow`)
 **Requirements**: TBD
-**Plans:** 0 plans
+**Plans:** 6 plans
 
 Plans:
-- [ ] TBD (run /gsd-plan-phase 231 to break down)
+**Wave 1**
+- [ ] 231-01-PLAN.md — Backend snapshot: standings + marker tables, erasure trigger, lazy finalization, last-week podium and finish rank on GET /train/leaderboard
+
+**Wave 2** *(blocked on Wave 1 completion)*
+- [ ] 231-02-PLAN.md — Backend claim API (GET /train/medals/unclaimed, POST /train/medals/claim) and the lifetime medal tally on board rows
+- [ ] 231-03-PLAN.md — Frontend board: "Last week" podium, row tally, "You finished #N last week", prop-driven TrainLeaderboardCardView
+- [ ] 231-06-PLAN.md — Finalization guarantees (wave 2): concurrent finalizers, idempotency, empty weeks, erasure trigger tests, runbook line
+
+**Wave 3** *(blocked on Wave 2 completion)*
+- [ ] 231-04-PLAN.md — Frontend claim-and-celebrate dialog on the Train landing (audio unlock, win chime, confetti, mute and reduced motion)
+
+**Wave 4** *(blocked on Wave 3 completion)*
+- [ ] 231-05-PLAN.md — Admin "Leaderboard medals demo", privacy copy, Privacy page sentence, CHANGELOG
 
 Phase detail for every shipped milestone lives in `milestones/vX.Y-ROADMAP.md`, its phase directories in `milestones/vX.Y-phases/`, and the per-milestone summaries in [MILESTONES.md](MILESTONES.md).
 
