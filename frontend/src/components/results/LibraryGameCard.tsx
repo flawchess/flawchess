@@ -1279,7 +1279,6 @@ export function LibraryGameCard({
                 <MoveStats
                   game={game}
                   gameId={game.game_id}
-                  accuracyAsCardHeader
                   className="flex-1"
                   activeRef={activeCellRef}
                   outlinedRef={outlinedCellRef}

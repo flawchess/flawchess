@@ -128,14 +128,6 @@ export interface MoveStatsProps {
   showCompactRow?: boolean;
   /** Chevron handler for the compact row (mobile expand/collapse). */
   onToggleCollapse?: () => void;
-  /**
-   * Render the accuracy strip as the charcoal table card's banded header (same
-   * band treatment as `CardHeader`) instead of above the card on the page
-   * background. Used on /analysis and the Library desktop card, where the stats
-   * column reads as one card; the Library mobile card keeps the strip outside
-   * (default).
-   */
-  accuracyAsCardHeader?: boolean;
   className?: string;
 }
 
@@ -154,7 +146,6 @@ export function MoveStats({
   collapsed = false,
   showCompactRow = false,
   onToggleCollapse,
-  accuracyAsCardHeader = false,
   className,
 }: MoveStatsProps) {
   const severityCounts = severityCountsBySide(game.flaw_markers ?? []);
@@ -246,25 +237,17 @@ export function MoveStats({
   }
 
   // Accuracy strip: single row — bullseye + "Accuracy" label on the left, then
-  // player accuracy, opponent accuracy. By default it sits above the table card
-  // on the page background; with `accuracyAsCardHeader` it becomes the charcoal
-  // card's header band (CardHeader's bg-card-band + border-b). Either way px-2
-  // matches the table's p-2 so the pill columns line up with the count columns.
+  // player accuracy, opponent accuracy. Rendered as the charcoal card's header
+  // band (CardHeader's bg-card-band + border-b); px-2 matches the table's p-2 so
+  // the pill columns line up with the count columns. py-0.5 (not py-1) keeps the
+  // card's natural height under the Library desktop miniboard (225px), so the
+  // card stretches to the board instead of pushing the row 1-2px taller.
   const accuracyStrip = (
     <div
-      className={cn(
-        SIDE_ALIGNED_GRID_CLASS,
-        'px-2',
-        accuracyAsCardHeader && 'bg-card-band border-b border-card-edge py-1',
-      )}
+      className={cn(SIDE_ALIGNED_GRID_CLASS, 'bg-card-band border-b border-card-edge px-2 py-0.5')}
       data-testid={tid('move-stats-accuracy-strip', gameId)}
     >
-      <h4
-        className={cn(
-          'flex items-center gap-2 py-1.5 text-sm font-semibold',
-          !accuracyAsCardHeader && 'text-muted-foreground',
-        )}
-      >
+      <h4 className="flex items-center gap-2 py-1.5 text-sm font-semibold">
         {/* Sized like the MoveQualityIcon (h-5 w-5) in the table rows below,
             so the label column reads as one aligned icon+text list. */}
         <span
@@ -280,90 +263,96 @@ export function MoveStats({
     </div>
   );
 
+  // One charcoal card: accuracy strip as the header band, then the body — the
+  // mobile compact row (when requested) and the full two-sided category table.
+  // flex-1 lets the card fill a height-constrained caller (the Library desktop
+  // card stretches it to the miniboard height); a no-op in auto-height parents.
   return (
-    <div data-testid={tid('move-stats', gameId)} className={cn('flex flex-col gap-2', className)}>
-      {!accuracyAsCardHeader && accuracyStrip}
-
-      {/* Mobile compact summary row (UAT 179): 8 columns spanning the card width
-          — one `count + icon` cell per category (user-side counts) plus a
-          trailing chevron toggle. Replaces the old severity-badge row + "Show
-          more" button. */}
-      {showCompactRow && (
-        <div
-          className="grid grid-cols-8 items-center gap-1"
-          data-testid={tid('move-stats-compact', gameId)}
-        >
-          {CATEGORY_ORDER.map((category) => {
-            const count = countFor(category, userSide);
-            const ref: MoveStatsCellRef = { kind: 'category', category, side: userSide };
-            const testId = tid(`move-stats-compact-cell-${category}`, gameId);
-            const inner = (
-              <>
-                <span className="text-sm font-bold tabular-nums">{count}</span>
-                <MoveQualityIcon quality={category} className="h-4 w-4" />
-              </>
-            );
-            if (count === 0) {
-              return (
-                <span
-                  key={category}
-                  data-testid={testId}
-                  className="flex items-center justify-center gap-0.5 text-muted-foreground"
-                >
-                  {inner}
-                </span>
-              );
-            }
-            return (
-              <button
-                key={category}
-                type="button"
-                data-testid={testId}
-                aria-label={`${count} ${CATEGORY_LABELS[category]} for ${userSide}`}
-                className={cn(
-                  'flex cursor-pointer items-center justify-center gap-0.5 rounded',
-                  sameCellRef(activeRef, ref) && 'underline',
-                )}
-                onClick={() => onCellActivate?.(ref)}
-                onMouseEnter={() => onCellHover?.(ref)}
-                onMouseLeave={() => onCellHover?.(null)}
-                onFocus={() => onCellHover?.(ref)}
-                onBlur={() => onCellHover?.(null)}
-              >
-                {inner}
-              </button>
-            );
-          })}
-          <button
-            type="button"
-            data-testid="move-stats-expand-toggle"
-            aria-label={collapsed ? 'Expand move stats' : 'Collapse move stats'}
-            className="flex items-center justify-center text-muted-foreground hover:text-foreground"
-            onClick={() => {
-              // Discovery only: track the expand, never the collapse (D-13).
-              if (collapsed) trackFeature('panel-open', { target: 'move-stats-expand' });
-              onToggleCollapse?.();
-            }}
-          >
-            <ChevronDown className={cn('h-5 w-5 transition-transform', !collapsed && 'rotate-180')} />
-          </button>
-        </div>
-      )}
-
-      {/* Full two-sided category table, in a charcoal card (UAT 179). Hidden via
-          the native attribute (not unmounted) so the mobile toggle preserves
-          hover/active state. Shares the strip's grid template so each side's
-          count column sits centered under its accuracy pill. Rows use
-          `contents` so all rows participate in the one shared grid. flex-1 lets
-          the card fill a height-constrained caller (the Library desktop card
-          stretches it to the miniboard height); a no-op in auto-height parents. */}
+    <div data-testid={tid('move-stats', gameId)} className={cn('flex flex-col', className)}>
       <div
         className="charcoal-texture flex flex-1 flex-col overflow-hidden rounded-md"
-        hidden={collapsed}
         data-testid={tid('move-stats-table-card', gameId)}
       >
-        {accuracyAsCardHeader && accuracyStrip}
-        <div className={cn(SIDE_ALIGNED_GRID_CLASS, 'p-2')} data-testid={tid('move-stats-table', gameId)}>
+        {accuracyStrip}
+
+        {/* Mobile compact summary row (UAT 179): 8 columns spanning the card width
+            — one `count + icon` cell per category (user-side counts) plus a
+            trailing chevron toggle. Replaces the old severity-badge row + "Show
+            more" button. */}
+        {showCompactRow && (
+          <div
+            className="grid grid-cols-8 items-center gap-1 p-2"
+            data-testid={tid('move-stats-compact', gameId)}
+          >
+            {CATEGORY_ORDER.map((category) => {
+              const count = countFor(category, userSide);
+              const ref: MoveStatsCellRef = { kind: 'category', category, side: userSide };
+              const testId = tid(`move-stats-compact-cell-${category}`, gameId);
+              const inner = (
+                <>
+                  <span className="text-sm font-bold tabular-nums">{count}</span>
+                  <MoveQualityIcon quality={category} className="h-4 w-4" />
+                </>
+              );
+              if (count === 0) {
+                return (
+                  <span
+                    key={category}
+                    data-testid={testId}
+                    className="flex items-center justify-center gap-0.5 text-muted-foreground"
+                  >
+                    {inner}
+                  </span>
+                );
+              }
+              return (
+                <button
+                  key={category}
+                  type="button"
+                  data-testid={testId}
+                  aria-label={`${count} ${CATEGORY_LABELS[category]} for ${userSide}`}
+                  className={cn(
+                    'flex cursor-pointer items-center justify-center gap-0.5 rounded',
+                    sameCellRef(activeRef, ref) && 'underline',
+                  )}
+                  onClick={() => onCellActivate?.(ref)}
+                  onMouseEnter={() => onCellHover?.(ref)}
+                  onMouseLeave={() => onCellHover?.(null)}
+                  onFocus={() => onCellHover?.(ref)}
+                  onBlur={() => onCellHover?.(null)}
+                >
+                  {inner}
+                </button>
+              );
+            })}
+            <button
+              type="button"
+              data-testid="move-stats-expand-toggle"
+              aria-label={collapsed ? 'Expand move stats' : 'Collapse move stats'}
+              className="flex items-center justify-center text-muted-foreground hover:text-foreground"
+              onClick={() => {
+                // Discovery only: track the expand, never the collapse (D-13).
+                if (collapsed) trackFeature('panel-open', { target: 'move-stats-expand' });
+                onToggleCollapse?.();
+              }}
+            >
+              <ChevronDown className={cn('h-5 w-5 transition-transform', !collapsed && 'rotate-180')} />
+            </button>
+          </div>
+        )}
+
+      {/* Full two-sided category table (UAT 179). Hidden via the native
+          attribute (not unmounted) so the mobile toggle preserves hover/active
+          state; the card and its accuracy header stay visible. Shares the strip's
+          grid template so each side's count column sits centered under its
+          accuracy pill. Rows use `contents` so all rows participate in the one
+          shared grid. */}
+        <div
+          // pt-0 under the compact row, whose own p-2 already spaces the two.
+          className={cn(SIDE_ALIGNED_GRID_CLASS, 'p-2', showCompactRow && 'pt-0')}
+          hidden={collapsed}
+          data-testid={tid('move-stats-table', gameId)}
+        >
           {CATEGORY_ORDER.map((category) => {
             // Rows where neither side has a count are kept (D-03) but dimmed,
             // so the table reads as only the rows that actually occurred.
