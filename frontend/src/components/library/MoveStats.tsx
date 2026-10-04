@@ -131,8 +131,9 @@ export interface MoveStatsProps {
   /**
    * Render the accuracy strip as the charcoal table card's banded header (same
    * band treatment as `CardHeader`) instead of above the card on the page
-   * background. Used on /analysis, where the stats column reads as one card;
-   * the Library game card keeps the strip outside (default).
+   * background. Used on /analysis and the Library desktop card, where the stats
+   * column reads as one card; the Library mobile card keeps the strip outside
+   * (default).
    */
   accuracyAsCardHeader?: boolean;
   className?: string;
@@ -353,9 +354,11 @@ export function MoveStats({
           the native attribute (not unmounted) so the mobile toggle preserves
           hover/active state. Shares the strip's grid template so each side's
           count column sits centered under its accuracy pill. Rows use
-          `contents` so all rows participate in the one shared grid. */}
+          `contents` so all rows participate in the one shared grid. flex-1 lets
+          the card fill a height-constrained caller (the Library desktop card
+          stretches it to the miniboard height); a no-op in auto-height parents. */}
       <div
-        className="charcoal-texture flex flex-col overflow-hidden rounded-md"
+        className="charcoal-texture flex flex-1 flex-col overflow-hidden rounded-md"
         hidden={collapsed}
         data-testid={tid('move-stats-table-card', gameId)}
       >
