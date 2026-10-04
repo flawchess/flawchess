@@ -92,9 +92,11 @@ export interface TrainStartScreenProps {
  *
  * 193 UAT round 3: `py-12` dropped to `py-6 md:py-8` — stacked on the page's
  * own `py-6` it put 72px of dead space above the title on a phone.
+ * Later: the phone title is hidden for returning users, so the streak card
+ * sat 48px below the app header; `max-sm:pt-0` leaves just the page's 24px.
  */
 const LANDING_CONTAINER_CLASS =
-  'mx-auto flex w-full max-w-2xl flex-col items-start gap-4 py-6 text-left md:py-8';
+  'mx-auto flex w-full max-w-2xl flex-col items-start gap-4 py-6 text-left max-sm:pt-0 md:py-8';
 
 
 type LandingState =
