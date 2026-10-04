@@ -127,7 +127,7 @@ server-side claim via `celebrated_at` on Claim or dismiss, no Umami event, admin
 ### Phase 230 foundation
 - `.planning/phases/230-weekly-train-leaderboards/230-CONTEXT.md` — D-01..D-19 (scoring, window, ranking, visibility)
 - `.planning/phases/230-weekly-train-leaderboards/230-REVIEW-DISPOSITION.md` — WR-01 (accepted, do not fix)
-- `.planning/quick/261004-8rt-accuracy-leaderboard-qualified-first-tie/261004-8rt-PLAN.md` — qualified-first Accuracy ordering, `rank: int | None` for tentative rows; **uncommitted in the main checkout at discuss time, must land on `main` before this phase starts**
+- `.planning/quick/261004-8rt-accuracy-leaderboard-qualified-first-tie/261004-8rt-PLAN.md` — qualified-first Accuracy ordering, `rank: int | None` for tentative rows; code landed on `main` in c0499df76 / 173435102 (2026-10-04); the snapshot builds on that ordering
 
 ### Backend
 - `app/services/train_leaderboard.py` — `week_window`, `display_name`, `_tiered_order`, `_competition_ranks`, `build_board`, `get_weekly_leaderboard`

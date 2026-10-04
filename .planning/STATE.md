@@ -2,19 +2,19 @@
 gsd_state_version: "1.0"
 milestone: v2.21
 current_phase: 230
+current_phase_name: COMPLETE, on branch gsd/phase-230-weekly-train-leaderboards
 status: completed
-stopped_at: Phase 230 complete — all phases complete
-last_updated: "2026-10-04T03:23:40.372Z"
-state_head: 83c85171fd169bdde5b81fca88ff219ec37a75fb
+stopped_at: Phase 231 context gathered
+last_updated: "2026-10-04T04:31:19.972Z"
+state_head: 1b72679a4a77c82a94c37b94a2d4bfeff16cbcaa
 progress:
-  total_phases: 3
+  total_phases: 4
   completed_phases: 103
   total_plans: 16
   completed_plans: 47
-  percent: 75
 milestone_name: Browser Engine Throughput
 last_activity: 2026-10-04
-last_activity_desc: "Phase 230 executed and verified (5/5 plans, browser UAT 7/7, review WR-03/IN-01/IN-02 fixed, WR-01 accepted risk carried to SEED-185 medals); awaiting squash-merge to main"
+last_activity_desc: Phase 230 executed and verified (5/5 plans, browser UAT 7/7, review WR-03/IN-01/IN-02 fixed, WR-01 accepted risk carried to SEED-185 medals); awaiting squash-merge to main
 ---
 
 # Project State: FlawChess
@@ -1010,7 +1010,7 @@ Items acknowledged and deferred at **v1.29 milestone close on 2026-06-29** (user
 
 ## Session Continuity
 
-**Stopped at:** Phase 230 complete — all phases complete
+**Stopped at:** Phase 231 context gathered
 
 Previous session note (Phase 227):
 refit (calibration parity holds). Verification passed 17/17; code review 0 blockers (WR-01 + 3 info fixed). Next:
@@ -1018,9 +1018,9 @@ squash-merge `gsd/phase-227-...` to `main` with a CHANGELOG entry already in `[U
 Owner-deferred: real-phone bot game check (227-UAT.md, report-only). Follow-up: stale "Phase 198 will populate"
 priority comment in `workerPoolState.ts:434-437` (verifier info item).
 
-**Last session:** 2026-10-04T02:59:45.036Z
+**Last session:** 2026-10-04T04:31:19.538Z
 
-**Resume file:** None
+**Resume file:** .planning/phases/231-weekly-leaderboard-medals/231-CONTEXT.md
 
 ## Performance Metrics
 
