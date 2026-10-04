@@ -117,6 +117,16 @@ function isDroppableAxiosError(error: AxiosLikeError): boolean {
   );
 }
 
+const FILTERED_QUERY_PLACEHOLDER = "[Filtered]";
+
+/** Replaces everything after the first "?"; applied to the page URL and navigation breadcrumbs so query-string tokens never leave the browser. */
+function scrubUrlQuery(url: string): string {
+  const queryStart = url.indexOf("?");
+  return queryStart === -1
+    ? url
+    : `${url.slice(0, queryStart)}?${FILTERED_QUERY_PLACEHOLDER}`;
+}
+
 function sentryBeforeSend(
   event: Sentry.ErrorEvent,
   hint: Sentry.EventHint,
@@ -162,8 +172,41 @@ function sentryBeforeSend(
       event.fingerprint = ["api-network-error"];
     }
   }
+  // Scrub the query string from the event URL for EVERY event, not just axios
+  // ones. Sentry's HttpContext integration copies location.href (full query
+  // string) into event.request.url, and that URL is NOT gated by
+  // dataCollection.urlQueryParams (the SDK source says so). /reset-password
+  // ?token=<JWT> is a real route, so any error captured there shipped the live
+  // password-reset credential to Sentry. Placed after the axios block so it also
+  // covers the url that block attaches (an API path, normally query-free).
+  if (event.request?.url) {
+    event.request.url = scrubUrlQuery(event.request.url);
+  }
+  scrubNavigationBreadcrumbs(event.breadcrumbs);
   return event;
 }
+
+// The History integration records every client-side route change as a
+// "navigation" breadcrumb whose data.from / data.to keep the full query string,
+// and dataCollection.urlQueryParams does not gate them (it covers fetch/xhr
+// breadcrumbs and spans only). After a reset, ResetPasswordForm navigates away
+// from /reset-password?token=<JWT>, so any later error in that page session
+// shipped the token in event.breadcrumbs (found in Phase 232 UAT, gap G-232-3).
+function scrubNavigationBreadcrumbs(breadcrumbs: Sentry.Breadcrumb[] | undefined): void {
+  for (const breadcrumb of breadcrumbs ?? []) {
+    if (breadcrumb.category !== "navigation" || !breadcrumb.data) continue;
+    for (const key of ["from", "to"] as const) {
+      const url: unknown = breadcrumb.data[key];
+      if (typeof url === "string") breadcrumb.data[key] = scrubUrlQuery(url);
+    }
+  }
+}
+
+// Key fragments (matched case-insensitively as substrings) that identify an IP
+// or user-identifying header / query parameter. Verbatim from the Sentry JS
+// v10 -> v11 migration guide ("restore previous behavior" dataCollection
+// snippet), so header and query-param filtering matches what v10 did.
+const SENTRY_PII_KEY_DENYLIST: string[] = ["forwarded", "-ip", "remote-", "via", "-user"];
 
 export { sentryBeforeSend };
 
@@ -173,6 +216,32 @@ Sentry.init({
   integrations: [Sentry.browserTracingIntegration()],
   tracesSampleRate: Number(import.meta.env.VITE_SENTRY_TRACES_SAMPLE_RATE) || 0,
   beforeSend: sentryBeforeSend,
+  // Phase 232 / D-02: Sentry v11 reversed the dataCollection defaults to
+  // "collect everything" (user IP, cookies, request/response bodies, headers,
+  // query params). Left unset, login POST bodies (passwords) and session
+  // cookies would start leaving the browser. This block keeps exactly what v10
+  // sent, which is what the Privacy page discloses.
+  // NOTE: urlQueryParams below only gates query strings in fetch breadcrumbs and
+  // spans. It does NOT cover event.request.url (the page URL) or navigation
+  // breadcrumbs; sentryBeforeSend() scrubs both via scrubUrlQuery().
+  dataCollection: {
+    // userInfo false also keeps Relay IP inference off (infer_ip "never").
+    userInfo: false,
+    cookies: false,
+    // Deny list rather than `false`: the browser HttpContext integration only
+    // ever reads User-Agent and Referer, and dropping User-Agent would lose
+    // the browser/OS context Sentry derives from it.
+    httpHeaders: {
+      request: { deny: SENTRY_PII_KEY_DENYLIST },
+      response: { deny: SENTRY_PII_KEY_DENYLIST },
+    },
+    httpBodies: [],
+    urlQueryParams: { deny: SENTRY_PII_KEY_DENYLIST },
+  },
+  // v11 defaults this to true, attaching synthetic stack traces to non-Error
+  // captures. With no source maps shipped (SEED-189) those frames are minified
+  // and change on every deploy, which would split issues per release.
+  attachStacktrace: false,
   // Suppress DOM errors caused by browser extensions (e.g. Google Translate)
   // mutating nodes that React expects to control.
   ignoreErrors: [

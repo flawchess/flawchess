@@ -26,6 +26,14 @@
     {
       "matchPackageNames": ["onnxruntime-web"],
       "groupName": "onnxruntime-web (run scripts/bench_maia_ort_wasm.mjs before merging — Phase 219)"
+    },
+    {
+      "description": "js-yaml and fast-uri exist only as npm overrides pinning patched transitive versions. A major would force the next major onto consumers that declare ^4 / ^3 (cosmiconfig, ajv@8), so disable majors; minor and patch floors still flow through the grouped branch.",
+      "matchManagers": ["npm"],
+      "matchDepTypes": ["overrides"],
+      "matchPackageNames": ["js-yaml", "fast-uri"],
+      "matchUpdateTypes": ["major"],
+      "enabled": false
     }
   ],
   "vulnerabilityAlerts": {

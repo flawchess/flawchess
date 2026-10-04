@@ -1,6 +1,6 @@
 # SEED-162: Major-version dependency backlog (clustered, one blocked upstream)
 
-**Status:** Scheduled 2026-09-04 as Phase 217 (clusters 1–2) and Phase 218 (cluster 4); cluster 3 stays blocked upstream. Cluster 4 step 1 spike passed 2026-09-05 (evidence at `.planning/milestones/v2.16-phases/218-backend-onnxruntime-parity-spike-python-3-14-chain/218-evidence-onnxruntime-1.29.0-python.txt`); steps 1 and 2 merged to `main` 2026-09-05 as `55e1c0151` (onnxruntime 1.29.0, Python 3.14, both images digest-pinned). Release held on `main` at the 218-03 checkpoint, then deployed 2026-09-05 as release #341 (`463b93de7`); **clusters 1, 2 and 4 closed** with milestone v2.16. Only cluster 3 (TypeScript 7) remains, blocked upstream.
+**Status:** Scheduled 2026-09-04 as Phase 217 (clusters 1–2) and Phase 218 (cluster 4); cluster 3 stays blocked upstream. Cluster 4 step 1 spike passed 2026-09-05 (evidence at `.planning/milestones/v2.16-phases/218-backend-onnxruntime-parity-spike-python-3-14-chain/218-evidence-onnxruntime-1.29.0-python.txt`); steps 1 and 2 merged to `main` 2026-09-05 as `55e1c0151` (onnxruntime 1.29.0, Python 3.14, both images digest-pinned). Release held on `main` at the 218-03 checkpoint, then deployed 2026-09-05 as release #341 (`463b93de7`); **clusters 1, 2 and 4 closed** with milestone v2.16. Cluster 3 (TypeScript 7) resolved 2026-10-04 by Phase 232 (D-01) through the side-by-side alias, so all four clusters are closed.
 **Created:** 2026-09-04
 **Source:** Renovate Dependency Dashboard (#338) after Phase 216 installed the app. Phase 216 explicitly scoped out "major-version dependency bumps"; Tier A (Action majors + in-range lockfile refresh) landed on `main` 2026-09-04 as `0c4d0a1bb..d1693e05f` (PR #340). What remains is the majors that need real migration work.
 **Related:** SEED-032 / Phase 101 (the v1.22 precedent — same clustered, sequential, bisectable shape); `.planning/notes/2026-07-10-flawchess-engine-self-execution-analysis.md` (Pitfall 2, the onnxruntime pin); `pyproject.toml` `[dependency-groups] maia-inference`; `frontend/package.json`; `Dockerfile`, `Dockerfile.worker`, `.python-version`, `.github/workflows/ci.yml`.
@@ -45,7 +45,7 @@ Frontend Maia inference path. Technically a minor, deliberately **not** taken in
 
 Definition of done includes a real-device pass, not just `npm test`. Also bump `scripts/package.json`'s `onnxruntime-node` 1.21.1 → matching version in the same cluster so the headless harnesses and the browser agree.
 
-## Cluster 3 — TypeScript 7: **BLOCKED UPSTREAM, do not plan yet**
+## Cluster 3 — TypeScript 7: **RESOLVED by Phase 232 (side-by-side alias)**
 
 `typescript` ~6.0.3 → 7.0.2 (the native-port compiler).
 

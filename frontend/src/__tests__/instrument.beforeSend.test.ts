@@ -352,6 +352,74 @@ describe('sentryBeforeSend request attachment (FLAWCHESS-64)', () => {
   });
 });
 
+describe('sentryBeforeSend page-URL query scrub (Phase 232 review WR-01)', () => {
+  // Sentry's HttpContext copies location.href into event.request.url and that
+  // URL is not gated by dataCollection, so /reset-password?token=<JWT> would
+  // leak the live reset token. sentryBeforeSend must scrub the query string.
+  const RESET_URL = 'https://flawchess.com/reset-password?token=eyJhbGciOi.secret.jwt';
+
+  it('scrubs the query string from event.request.url on a non-axios event', async () => {
+    const { sentryBeforeSend } = await import('@/instrument');
+
+    const event = sentryBeforeSend(
+      { request: { url: RESET_URL } } as never,
+      { originalException: new Error('boom') } as never,
+    );
+    expect((event as unknown as { request: { url: string } }).request.url).toBe(
+      'https://flawchess.com/reset-password?[Filtered]',
+    );
+  });
+
+  it('scrubs the query string on an axios event that is kept', async () => {
+    const { sentryBeforeSend } = await import('@/instrument');
+
+    const event = sentryBeforeSend(
+      { request: { url: RESET_URL } } as never,
+      makeHint({ isAxiosError: true, response: { status: 500 } }) as never,
+    );
+    expect((event as unknown as { request: { url: string } }).request.url).toBe(
+      'https://flawchess.com/reset-password?[Filtered]',
+    );
+  });
+
+  it('leaves a URL without a query string untouched', async () => {
+    const { sentryBeforeSend } = await import('@/instrument');
+
+    const event = sentryBeforeSend(
+      { request: { url: 'https://flawchess.com/openings' } } as never,
+      { originalException: new Error('boom') } as never,
+    );
+    expect((event as unknown as { request: { url: string } }).request.url).toBe(
+      'https://flawchess.com/openings',
+    );
+  });
+
+  it('scrubs the query string from navigation breadcrumb from/to (gap G-232-3)', async () => {
+    const { sentryBeforeSend } = await import('@/instrument');
+
+    const event = sentryBeforeSend(
+      {
+        breadcrumbs: [
+          {
+            category: 'navigation',
+            data: { from: '/reset-password?token=eyJhbGciOi.secret.jwt', to: '/login?next=/train' },
+          },
+          { category: 'fetch', data: { url: '/api/openings/positions?color=white' } },
+        ],
+      } as never,
+      { originalException: new Error('boom') } as never,
+    );
+    const breadcrumbs = (event as unknown as { breadcrumbs: { data: Record<string, string> }[] })
+      .breadcrumbs;
+    expect(breadcrumbs[0]?.data).toEqual({
+      from: '/reset-password?[Filtered]',
+      to: '/login?[Filtered]',
+    });
+    // fetch breadcrumbs stay as-is: dataCollection.urlQueryParams already gates them.
+    expect(breadcrumbs[1]?.data.url).toBe('/api/openings/positions?color=white');
+  });
+});
+
 describe('Sentry.init config (FLAWCHESS-24 / SEED-148 items 3)', () => {
   it('ignoreErrors matches the real prod ServiceWorker-update-failure string', async () => {
     const Sentry = await import('@sentry/react');
@@ -392,6 +460,39 @@ describe('Sentry.init config (FLAWCHESS-24 / SEED-148 items 3)', () => {
     const denyUrls = (initCall?.denyUrls ?? []) as RegExp[];
     const beaconUrl = 'https://static.cloudflareinsights.com/beacon.min.js/xyz';
     expect(denyUrls.some((p) => p.test(beaconUrl))).toBe(true);
+  });
+
+  // Phase 232 / D-02: Sentry v11 flipped the dataCollection defaults to collect
+  // everything (IP, cookies, bodies, headers) and attachStacktrace to true. This
+  // pins the v10 behavior so an accidental removal fails here, not silently in prod.
+  it('keeps the v10 privacy baseline under Sentry v11 (dataCollection + attachStacktrace, D-02)', async () => {
+    const Sentry = await import('@sentry/react');
+    await import('@/instrument');
+
+    const initCall = vi.mocked(Sentry.init).mock.calls[0]?.[0] as Record<string, unknown> | undefined;
+    const dataCollection = initCall?.dataCollection as
+      | {
+          userInfo?: unknown;
+          cookies?: unknown;
+          httpBodies?: unknown;
+          httpHeaders?: { request?: unknown; response?: unknown };
+          urlQueryParams?: unknown;
+        }
+      | undefined;
+
+    expect(dataCollection?.userInfo).toBe(false);
+    expect(dataCollection?.cookies).toBe(false);
+    expect(dataCollection?.httpBodies).toEqual([]);
+
+    // Header and query-param collection stays deny-listed (never the boolean true).
+    const denyShape = { deny: expect.arrayContaining(['-ip', '-user']) };
+    expect(dataCollection?.httpHeaders?.request).toEqual(expect.objectContaining(denyShape));
+    expect(dataCollection?.httpHeaders?.response).toEqual(expect.objectContaining(denyShape));
+    expect(dataCollection?.urlQueryParams).toEqual(
+      expect.objectContaining({ deny: expect.arrayContaining(['-ip']) }),
+    );
+
+    expect(initCall?.attachStacktrace).toBe(false);
   });
 });
 
