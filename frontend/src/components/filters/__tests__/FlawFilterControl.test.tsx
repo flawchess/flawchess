@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { useState } from 'react';
 import { describe, it, expect, vi, afterEach, beforeAll, beforeEach } from 'vitest';
-import { render, screen, cleanup, fireEvent } from '@testing-library/react';
+import { render, screen, cleanup, fireEvent, act } from '@testing-library/react';
 import { FlawFilterControl } from '../FlawFilterControl';
 import { OpponentStrengthFilter } from '../OpponentStrengthFilter';
 import { TacticDepthFilter } from '../TacticDepthFilter';
@@ -9,6 +9,7 @@ import { ANY_RANGE } from '@/lib/opponentStrength';
 import type { OpponentStrengthRange } from '@/types/api';
 import { DEFAULT_TACTIC_DEPTH_VALUE, type TacticDepthValue } from '@/lib/tacticDepth';
 import type { FlawTag } from '@/types/library';
+import { SLIDER_TRACK_DEBOUNCE_MS } from '@/hooks/useDebouncedTrackFeature';
 
 // Stub ResizeObserver — required by Radix UI ToggleGroup (added Phase 129 TACUI-06).
 // [Rule 1 - Bug] The ToggleGroup uses @radix-ui/react-use-size which calls ResizeObserver;
@@ -536,6 +537,15 @@ describe('filter-change tracking (Phase 229)', () => {
       Element.prototype.hasPointerCapture = vi.fn(() => true);
     });
 
+    // Slider commit tracking is debounced, so these tests advance fake timers.
+    beforeEach(() => {
+      vi.useFakeTimers();
+    });
+
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
     function stubSliderRect(slider: HTMLElement): void {
       slider.getBoundingClientRect = () =>
         ({ left: 0, right: SLIDER_WIDTH_PX, width: SLIDER_WIDTH_PX, top: 0, bottom: 20, height: 20, x: 0, y: 0, toJSON: () => ({}) }) as DOMRect;
@@ -575,6 +585,8 @@ describe('filter-change tracking (Phase 229)', () => {
       expect(track).not.toHaveBeenCalled();
 
       fireEvent.pointerUp(slider, { clientX: 340, pointerId: 1 });
+      expect(track).not.toHaveBeenCalled();
+      act(() => vi.advanceTimersByTime(SLIDER_TRACK_DEBOUNCE_MS));
       expect(track).toHaveBeenCalledTimes(1);
       const [name, props] = track.mock.calls[0] as [string, Record<string, string>];
       expect(name).toBe('filter-change');
@@ -590,6 +602,8 @@ describe('filter-change tracking (Phase 229)', () => {
       fireEvent.pointerDown(slider, { clientX: 100, pointerId: 1, button: 0, buttons: 1 });
       expect(track).not.toHaveBeenCalled();
       fireEvent.pointerUp(slider, { clientX: 100, pointerId: 1 });
+      expect(track).not.toHaveBeenCalled();
+      act(() => vi.advanceTimersByTime(SLIDER_TRACK_DEBOUNCE_MS));
       expect(track).toHaveBeenCalledTimes(1);
       // Default is the full range (high); dragging the low thumb to ~3 matches no preset.
       expect(track.mock.calls[0]?.[1]).toMatchObject({ target: 'tactic-depth', value: 'custom' });

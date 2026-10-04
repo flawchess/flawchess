@@ -2,6 +2,7 @@ import { useCallback } from 'react';
 import { PresetRangeFilter } from './PresetRangeFilter';
 import type { PresetOption } from './PresetRangeFilter';
 import { trackFeature } from '@/lib/analytics';
+import { useDebouncedTrackFeature } from '@/hooks/useDebouncedTrackFeature';
 import type { OpponentStrengthPreset, OpponentStrengthRange } from '@/types/api';
 import {
   PRESET_LABELS,
@@ -31,6 +32,7 @@ const PRESETS: PresetOption[] = PRESET_ORDER.map((preset) => ({
 export function OpponentStrengthFilter({ value, onChange }: OpponentStrengthFilterProps) {
   const activePreset = derivePreset(value);
   const [sliderLo, sliderHi] = rangeToSlider(value);
+  const trackCommit = useDebouncedTrackFeature('filter-change');
 
   const handleSliderChange = useCallback(
     (values: number[]) => {
@@ -41,16 +43,21 @@ export function OpponentStrengthFilter({ value, onChange }: OpponentStrengthFilt
     [onChange],
   );
 
-  // Tracked on drag END only (Radix onValueCommit), never per drag step (Phase 229
-  // Pitfall 2). The raw Elo gap is never sent: only the matching preset or 'custom'.
-  const handleSliderCommit = useCallback((values: number[]) => {
-    const lo = values[0] ?? SLIDER_MIN;
-    const hi = values[1] ?? SLIDER_MAX;
-    trackFeature('filter-change', {
-      target: 'opponent-strength',
-      value: derivePreset(sliderToRange(lo, hi)) ?? 'custom',
-    });
-  }, []);
+  // Tracked on commit (Radix onValueCommit), never per drag step (Phase 229
+  // Pitfall 2), and debounced to one event per adjustment burst because Radix also
+  // commits on every keyboard step. The raw Elo gap is never sent: only the
+  // matching preset or 'custom'.
+  const handleSliderCommit = useCallback(
+    (values: number[]) => {
+      const lo = values[0] ?? SLIDER_MIN;
+      const hi = values[1] ?? SLIDER_MAX;
+      trackCommit({
+        target: 'opponent-strength',
+        value: derivePreset(sliderToRange(lo, hi)) ?? 'custom',
+      });
+    },
+    [trackCommit],
+  );
 
   const handlePreset = useCallback(
     (preset: string) => {

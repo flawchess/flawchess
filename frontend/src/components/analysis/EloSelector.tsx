@@ -12,6 +12,7 @@ import { Slider } from '@/components/ui/slider';
 import { InfoPopover } from '@/components/ui/info-popover';
 import { MAIA_ELO_LADDER } from '@/lib/maiaEncoding';
 import { trackFeature } from '@/lib/analytics';
+import { useDebouncedTrackFeature } from '@/hooks/useDebouncedTrackFeature';
 
 /** ChessGoals rating-comparison study backing the Lichess-Blitz normalization (Phase 164). */
 const CHESSGOALS_RATING_URL = 'https://chessgoals.com/rating-comparison/';
@@ -95,18 +96,21 @@ export function EloSelector({
   const second = ladder[1];
   const step = first !== undefined && second !== undefined ? second - first : SINGLE_RUNG_STEP_FALLBACK;
 
+  const trackCommit = useDebouncedTrackFeature('option-change');
+
   const handleValueChange = (values: number[]): void => {
     const next = values[0];
     if (next === undefined) return;
     onChange(snapToLadder(next, ladder));
   };
 
-  // Pitfall 2: track once per drag (commit), never per slider tick. The value is
+  // Pitfall 2: track on commit, never per slider tick, and debounced to one event
+  // per adjustment burst (Radix commits on every keyboard step). The value is
   // always a ladder rung, so the event carries a bounded set of strings.
   const handleValueCommit = (values: number[]): void => {
     const committed = values[0];
     if (committed === undefined) return;
-    trackFeature('option-change', { target: 'elo', value: `${snapToLadder(committed, ladder)}` });
+    trackCommit({ target: 'elo', value: `${snapToLadder(committed, ladder)}` });
   };
 
   const handleReset = (): void => {
