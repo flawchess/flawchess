@@ -347,11 +347,21 @@ from offering the two security-override majors.
   Renovate minor/patch branch (it also carries onnxruntime / onnxruntime-node 1.29 → 1.30).
 
 **Depends on**: Nothing (standalone maintenance)
-**Requirements**: TBD
-**Plans:** 0 plans
+**Requirements**: TBD (plans use descriptive IDs DEP-PWA2, DEP-OVR, DEP-SENTRY11, DEP-TS7 from 232-RESEARCH.md)
+**Plans:** 4 plans
 
 Plans:
-- [ ] TBD (run /gsd-plan-phase 232 to break down)
+**Wave 1**
+- [ ] 232-01-PLAN.md — vite-plugin-pwa 1 -> 2: byte-identical sw.js/manifest/registerSW.js and precache list, full gate, browser SW smoke (checkpoint)
+
+**Wave 2** *(blocked on Wave 1 completion)*
+- [ ] 232-02-PLAN.md — fast-uri override floor ^3.1.8 (js-yaml stays 4.x), Renovate rule disabling override majors, shadcn dev-advisory seed
+
+**Wave 3** *(blocked on Wave 2 completion)*
+- [ ] 232-03-PLAN.md — @sentry/react 10 -> 11 with an explicit v10-equivalent dataCollection and attachStacktrace false (mutation-proven test), live Sentry smoke (checkpoint), source-map seed
+
+**Wave 4** *(blocked on Wave 3 completion)*
+- [ ] 232-04-PLAN.md — TypeScript 7 via the official side-by-side alias, tsconfig cleanup, negative control and Alpine Docker build, CHANGELOG/STATE/SEED-162/D-11 docs
 
 Phase detail for every shipped milestone lives in `milestones/vX.Y-ROADMAP.md`, its phase directories in `milestones/vX.Y-phases/`, and the per-milestone summaries in [MILESTONES.md](MILESTONES.md).
 
