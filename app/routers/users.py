@@ -109,6 +109,7 @@ async def get_profile(
         lichess_last_sync_at=last_syncs.get("lichess"),
         impersonation=impersonation,
         beta_enabled=user.beta_enabled,
+        leaderboard_hidden=user.leaderboard_hidden,
         current_strength=current_strength,
     )
 
@@ -120,7 +121,11 @@ async def update_profile(
     user: Annotated[User, Depends(current_active_user)],
     now_utc: Annotated[datetime.datetime, Depends(dev_now_utc)],
 ) -> UserProfileResponse:
-    """Update the authenticated user's platform usernames."""
+    """Update the authenticated user's platform usernames and leaderboard_hidden flag.
+
+    Omitted (None) fields are left unchanged; `leaderboard_hidden` false un-hides
+    the user from the weekly Train leaderboards (Phase 230 D-16).
+    """
     updated = await user_repository.update_profile(session, user.id, body.model_dump())
     counts = await game_repository.count_games_by_platform(session, user.id)
     last_syncs = await import_job_repository.get_last_completed_at_by_platform(session, user.id)
@@ -142,6 +147,7 @@ async def update_profile(
         lichess_last_sync_at=last_syncs.get("lichess"),
         impersonation=None,
         beta_enabled=updated.beta_enabled,
+        leaderboard_hidden=updated.leaderboard_hidden,
         current_strength=current_strength,
     )
 

@@ -239,6 +239,13 @@ vi.mock('@/hooks/useUserProfile', () => ({
   }),
 }));
 
+// Phase 230 D-16: the real Privacy card needs a QueryClientProvider and the
+// useSetLeaderboardHidden export (absent from the factory above); the settings
+// sheet test here only exercises the sound switch.
+vi.mock('@/components/settings/LeaderboardPrivacyCard', () => ({
+  LeaderboardPrivacyCard: () => null,
+}));
+
 // Quick 260723-tqn: the celebration-hold delay is covered by its own
 // dedicated unit test (useWinCelebrationHold.test.ts, fake timers). Mocked
 // here to `false` (no hold) so this file's existing result-dialog assertions

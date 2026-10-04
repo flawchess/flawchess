@@ -10,6 +10,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { SettingsSheetButton } from '@/components/settings/SettingsSheetButton';
 import { SETTINGS_STORAGE_KEYS } from '@/lib/engineSettings';
 
+// Phase 230 D-16: the real card needs a QueryClientProvider; this suite renders the panel bare.
+vi.mock('@/components/settings/LeaderboardPrivacyCard', () => ({
+  LeaderboardPrivacyCard: () => null,
+}));
+
 // jsdom shims required by vaul's Drawer (copied from App.test.tsx).
 Object.defineProperty(window, 'matchMedia', {
   writable: true,

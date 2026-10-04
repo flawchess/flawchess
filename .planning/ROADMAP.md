@@ -246,21 +246,21 @@ the user's own row with neighbours.
 
 **Depends on**: Phase 228 (merged; settings overlay hosts the opt-out toggle)
 **Requirements**: TBD
-**Plans:** 5 plans
+**Plans:** 5/5 plans complete
 
 Plans:
 **Wave 1**
-- [ ] 230-01-PLAN.md — Backend foundation: users.leaderboard_hidden migration, parity-pinned scoring, weekly aggregate, ranking service, GET /train/leaderboard (both boards, hidden/guest rows, pass target)
+- [x] 230-01-PLAN.md — Backend foundation: users.leaderboard_hidden migration, parity-pinned scoring, weekly aggregate, ranking service, GET /train/leaderboard (both boards, hidden/guest rows, pass target)
 
 **Wave 2** *(blocked on Wave 1 completion)*
-- [ ] 230-02-PLAN.md — Backend session delta: ?session_id= and rank without this session (IDOR-safe), real-row scoring/window proofs, hidden/guest viewers over HTTP
-- [ ] 230-03-PLAN.md — Train landing "This week" card: Points/Accuracy tabs, remembered tab, countdown, hints, hidden/guest rows, guest nudge, Umami tab-switch
+- [x] 230-02-PLAN.md — Backend session delta: ?session_id= and rank without this session (IDOR-safe), real-row scoring/window proofs, hidden/guest viewers over HTTP
+- [x] 230-03-PLAN.md — Train landing "This week" card: Points/Accuracy tabs, remembered tab, countdown, hints, hidden/guest rows, guest nudge, Umami tab-switch
 
 **Wave 3** *(blocked on Wave 2 completion)*
-- [ ] 230-04-PLAN.md — Opt-out: leaderboard_hidden on the profile API, Privacy card in the settings overlay, Privacy page line
+- [x] 230-04-PLAN.md — Opt-out: leaderboard_hidden on the profile API, Privacy card in the settings overlay, Privacy page line
 
 **Wave 4** *(blocked on Wave 3 completion)*
-- [ ] 230-05-PLAN.md — Score-screen rank lines (rank with vs without the session), CHANGELOG, full pre-merge gate and browser UAT
+- [x] 230-05-PLAN.md — Score-screen rank lines (rank with vs without the session), CHANGELOG, full pre-merge gate and browser UAT
 
 Phase detail for every shipped milestone lives in `milestones/vX.Y-ROADMAP.md`, its phase directories in `milestones/vX.Y-phases/`, and the per-milestone summaries in [MILESTONES.md](MILESTONES.md).
 

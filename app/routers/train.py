@@ -22,10 +22,10 @@ ladder, streak weeks) without waiting real days. Outside
 from __future__ import annotations
 
 import datetime
-from typing import Annotated
+from typing import Annotated, Final
 
 import sentry_sdk
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_async_session
@@ -39,6 +39,7 @@ from app.schemas.train import (
     SolveRequest,
     SolveResponse,
     SolvedResult,
+    TrainLeaderboardResponse,
     TrainProgressResponse,
     TrainPuzzle,
     TrainSessionResponse,
@@ -46,12 +47,17 @@ from app.schemas.train import (
     TrainSettingsUpdate,
     VettedMove,
 )
+from app.services.train_leaderboard import get_weekly_leaderboard
 from app.users import current_active_user
 
 router = APIRouter(prefix="/train", tags=["train"])
 
 #: The current UTC instant, dev-clock-shiftable. Real clock outside development.
 NowUtc = Annotated[datetime.datetime, Depends(dev_now_utc)]
+
+# drill_sessions.id is int4; a larger session_id would raise in asyncpg and reach
+# Sentry as a 500, so the Query bound turns it into a 422 before any SQL runs.
+_SESSION_ID_MAX: Final = 2**31 - 1
 
 
 @router.post("/sessions", response_model=TrainSessionResponse)
@@ -270,6 +276,40 @@ async def get_train_progress(
         next_due_date=progress.next_due_date,
         badge_visible=progress.badge_visible,
     )
+
+
+@router.get("/leaderboard", response_model=TrainLeaderboardResponse)
+async def get_train_leaderboard(
+    session: Annotated[AsyncSession, Depends(get_async_session)],
+    user: Annotated[User, Depends(current_active_user)],
+    now_utc: NowUtc,
+    session_id: Annotated[int | None, Query(ge=1, le=_SESSION_ID_MAX)] = None,
+) -> TrainLeaderboardResponse:
+    """Return this week's Points and Accuracy leaderboards for the viewer (Phase 230).
+
+    `session_id` is optional: when given, each board's viewer standing also carries
+    `rank_without_session` (D-12). Only the caller's own session is ever subtracted,
+    so another user's session id changes nothing.
+
+    The viewer id comes only from `current_active_user`. Guests are allowed
+    (Phase 224); visibility is enforced server-side so a hidden user or guest never
+    appears in, or moves a rank on, anyone else's board (D-06/D-13/D-14). Read-only:
+    no commit.
+    """
+    try:
+        result = await get_weekly_leaderboard(
+            session,
+            viewer_id=user.id,
+            viewer_is_guest=user.is_guest,
+            viewer_hidden=user.leaderboard_hidden,
+            now_utc=now_utc,
+            session_id=session_id,
+        )
+    except Exception:
+        sentry_sdk.set_context("train", {"user_id": str(user.id), "session_id": str(session_id)})
+        sentry_sdk.capture_exception()
+        raise
+    return TrainLeaderboardResponse.model_validate(result)
 
 
 async def _settings_response(

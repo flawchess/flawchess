@@ -32,6 +32,7 @@ import type {
   TrainSettingsResponse,
   TrainSettingsUpdate,
   TrainProgressResponse,
+  TrainLeaderboardResponse,
 } from '@/types/train';
 import type { OnboardingStep } from '@/hooks/useTrainOnboarding';
 import type {
@@ -299,6 +300,14 @@ export const trainApi = {
     apiClient.put<TrainSettingsResponse>('/train/settings', data).then(r => r.data),
   getProgress: () =>
     apiClient.get<TrainProgressResponse>('/train/progress').then(r => r.data),
+  /** Phase 230: weekly Points + Accuracy boards. `sessionId` (score screen only)
+   * asks the server to fill `rank_without_session`; omitted for the landing card. */
+  getLeaderboard: (sessionId?: number) =>
+    apiClient
+      .get<TrainLeaderboardResponse>('/train/leaderboard', {
+        params: sessionId !== undefined ? { session_id: sessionId } : undefined,
+      })
+      .then(r => r.data),
   /** Phase 222 (D-11/D-12): stamps one of the three onboarding "seen"
    * watermarks on stepper completion. Returns the full settings response so
    * `useTrainOnboarding`'s `onSuccess` can refresh the shared cache with no

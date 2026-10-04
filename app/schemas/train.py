@@ -14,7 +14,7 @@ from datetime import date, datetime
 from typing import Literal
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from app.services.train_scheduler import REMINDER_HOUR_MAX, REMINDER_HOUR_MIN
 
@@ -56,11 +56,12 @@ class SolvedResult(BaseModel):
     `drill_solves` row with `solved_at IS NOT NULL`, in `position` order. The
     client aggregates these with its own points formula
     (`frontend/src/lib/trainScore.ts`, `scorePuzzle` + `aggregateSessionScore`)
-    — that file stays the single source of truth for scoring (LOCKED, Option
-    B). This response deliberately carries NO precomputed score integer;
-    porting the formula server-side was considered and rejected (see
-    `app.models.drill_solve.DrillMoveQuality`'s docstring, which explicitly
-    forbids using its enum values to compute a score directly).
+    — that file stays the single source of truth for per-session display
+    (LOCKED, Option B). This response deliberately carries NO precomputed
+    score integer. Phase 230 D-01 later added a deliberate server port of the
+    three scoring constants for the weekly leaderboard aggregate only
+    (`app.services.train_score`), pinned to trainScore.ts by
+    `tests/services/test_train_score_parity.py`.
 
     Not an answer-key leak: `correct_guess`, `move_quality`, and (Phase 222,
     TRAINBOT-04/D-17) `source`/`item_status`/`due_date` were ALL already
@@ -436,11 +437,90 @@ class TrainProgressResponse(BaseModel):
     badge_visible: bool
 
 
+LeaderboardBoardKind = Literal["points", "accuracy"]
+LeaderboardVisibility = Literal["public", "hidden", "guest"]
+
+
+class LeaderboardRow(BaseModel):
+    """One displayed row of a weekly leaderboard (Phase 230).
+
+    Deliberately carries no user id or email: rows are keyed by position only,
+    and the viewer's own row is marked `is_viewer`.
+    """
+
+    model_config = ConfigDict(from_attributes=True)
+
+    rank: int
+    name: str
+    value: int  # points (Points board) or floored accuracy percent (Accuracy board)
+    puzzles: int  # all solves (Points) or non-filler solves (Accuracy)
+    tentative: bool  # Accuracy only: puzzles < 20; always False on Points
+    is_viewer: bool
+    # "public" on every row except the viewer's own hidden/guest row.
+    visibility: LeaderboardVisibility
+    gap_before: bool  # True on the first row after skipped ranks
+
+
+class LeaderboardViewer(BaseModel):
+    """The viewer's standing on one board."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    rank: int
+    # Rank without the current session's solves (D-12). Null when no session_id
+    # was supplied or the viewer had no entry before the session.
+    rank_without_session: int | None
+    tentative: bool
+    puzzles_to_qualify: int  # 0 on Points and once qualified
+    visibility: LeaderboardVisibility
+
+
+class LeaderboardPassTarget(BaseModel):
+    """The nearest strictly-better row and the points needed to pass it."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    name: str
+    points_needed: int
+
+
+class LeaderboardBoard(BaseModel):
+    """One board: sliced rows, the viewer's standing, and the Points pass target."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    rows: list[LeaderboardRow]
+    viewer: LeaderboardViewer | None
+    pass_target: LeaderboardPassTarget | None  # Points board only
+
+
+class TrainLeaderboardResponse(BaseModel):
+    """Response for GET /train/leaderboard: both weekly boards for the viewer.
+
+    No user ids or emails, by design; rows key only by position.
+    """
+
+    model_config = ConfigDict(from_attributes=True)
+
+    week_start: datetime
+    week_end: datetime
+    seconds_remaining: int
+    points: LeaderboardBoard
+    accuracy: LeaderboardBoard
+
+
 __all__ = [
+    "LeaderboardBoard",
+    "LeaderboardBoardKind",
+    "LeaderboardPassTarget",
+    "LeaderboardRow",
+    "LeaderboardViewer",
+    "LeaderboardVisibility",
     "PuzzleRevealResponse",
     "SolveRequest",
     "SolveResponse",
     "SolvedResult",
+    "TrainLeaderboardResponse",
     "TrainProgressResponse",
     "TrainPuzzle",
     "TrainSessionResponse",

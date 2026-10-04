@@ -1,15 +1,41 @@
-import { useQuery } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { apiClient } from '@/api/client';
+import { TRAIN_LEADERBOARD_QUERY_KEY } from '@/hooks/useTrainLeaderboard';
 import type { UserProfile } from '@/types/users';
+
+export const USER_PROFILE_QUERY_KEY = ['userProfile'] as const;
 
 export function useUserProfile() {
   return useQuery<UserProfile>({
-    queryKey: ['userProfile'],
+    queryKey: USER_PROFILE_QUERY_KEY,
     queryFn: async () => {
       const res = await apiClient.get<UserProfile>('/users/me/profile');
       return res.data;
     },
     staleTime: 300_000, // 5 minutes
+  });
+}
+
+/**
+ * Phase 230 D-16: persist the weekly-leaderboard opt-out through the profile
+ * PUT. The response is the full profile, so it replaces the cached profile
+ * directly (the switch reads the server's answer), and the cached boards are
+ * invalidated so the landing re-ranks without a reload. No Sentry call: the
+ * global MutationCache.onError already reports failed mutations.
+ */
+export function useSetLeaderboardHidden() {
+  const queryClient = useQueryClient();
+  return useMutation<UserProfile, Error, boolean>({
+    mutationFn: async (hidden) => {
+      const res = await apiClient.put<UserProfile>('/users/me/profile', {
+        leaderboard_hidden: hidden,
+      });
+      return res.data;
+    },
+    onSuccess: (profile) => {
+      queryClient.setQueryData(USER_PROFILE_QUERY_KEY, profile);
+      void queryClient.invalidateQueries({ queryKey: TRAIN_LEADERBOARD_QUERY_KEY });
+    },
   });
 }
 

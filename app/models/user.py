@@ -39,6 +39,16 @@ class User(SQLAlchemyBaseUserTable[int], Base):
         default=False,
     )
 
+    # Phase 230 D-16: opt-out from the weekly Train leaderboards. Server-persisted,
+    # written only through PUT /users/me/profile. Default false: every registered
+    # user appears on the boards until they opt out.
+    leaderboard_hidden: Mapped[bool] = mapped_column(
+        Boolean,
+        nullable=False,
+        server_default=text("false"),
+        default=False,
+    )
+
     # Records WHEN a row that began life as a guest session was promoted in place
     # to a full account. NULL means never promoted. Set by
     # app/services/guest_service.py on both promotion paths (Google and

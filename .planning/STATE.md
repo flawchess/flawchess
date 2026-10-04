@@ -2,29 +2,29 @@
 gsd_state_version: "1.0"
 milestone: v2.21
 current_phase: 230
-current_phase_name: Weekly Train Leaderboards (SEED-185)
-status: executing
-stopped_at: Phase 230 context gathered
-last_updated: "2026-10-03T22:02:25.898Z"
-state_head: 34629e60e559aaff5414e530bdc54ec4143fb72f
+status: completed
+stopped_at: Phase 230 complete — all phases complete
+last_updated: "2026-10-04T03:23:40.372Z"
+state_head: 83c85171fd169bdde5b81fca88ff219ec37a75fb
 progress:
   total_phases: 3
   completed_phases: 103
   total_plans: 16
   completed_plans: 47
+  percent: 75
 milestone_name: Browser Engine Throughput
-last_activity: 2026-10-03
-last_activity_desc: "Phase 229 verified (UAT 8/8 incl. post-deploy Umami checks, security 24/24 closed) and released (#383)"
+last_activity: 2026-10-04
+last_activity_desc: "Phase 230 executed and verified (5/5 plans, browser UAT 7/7, review WR-03/IN-01/IN-02 fixed, WR-01 accepted risk carried to SEED-185 medals); awaiting squash-merge to main"
 ---
 
 # Project State: FlawChess
 
 ## Current Position
 
-Phase: 230 (Weekly Train Leaderboards (SEED-185)) — READY TO EXECUTE
-Plan: 0 of 5
+Phase: 230 (Weekly Train Leaderboards (SEED-185)) — COMPLETE, on branch gsd/phase-230-weekly-train-leaderboards (not yet squash-merged)
+Plan: 5 of 5
 
-Status: Phase 230 planned (5 plans, 4 waves), ready to execute. Standalone phases 228–230 sit outside any milestone; no open milestone.
+Status: All phases complete
 
 Open threads carried forward (not blockers):
 
@@ -813,6 +813,13 @@ flagged as an open decision for plan 06 / a human, not auto-fixed.
 - [Phase 228]: Free-run MultiPV floor of 2 (ANALYSIS_FREE_RUN_MIN_MULTIPV) keeps engine.pvLines[1] for the FlawChess injection; free run width is max(2, SF lines, SF arrows)
 - [Phase 228]: Train eval-bar engine pinned to TRAIN_EVAL_BAR_MULTIPV = 1, independent of settings; Train free play searches at max(SF lines, SF arrows) with no movetime scaling
 - [Phase 228]: Arrows 1..N read the same reconciled ranking as the card (rank k = line k), non-primary ranks use one translucent per-engine color at the engine's own width, primary pushed last
+- [Phase 230]: 230-01: Accuracy ranks on the floored integer percent so equal displayed percents are visible ties; Points pass target only (Accuracy shows the qualifier line)
+- [Phase 230]: 230-01: viewer own entry is re-inserted regardless of visibility while every other row requires registered and not hidden, filtered before ranking; rank_without_session key is final on the wire but null until Plan 02
+- [Phase 230]: 230-02: rank_without_session returned as computed (Accuracy can improve, never clamped to rank); null when nothing remains without the session
+- [Phase 230]: useTrainLeaderboard is one useQuery with options derived from sessionId (undefined = landing), not two conditional hooks
+- [Phase 230]: Leaderboard countdown sets no state on mount: fetch time stands in for now until the first 60 s tick (react-hooks purity)
+- [Phase 230]: 230-04: leaderboard_hidden rides the existing profile PUT; user_repository.update_profile None-filtering gives omit-unchanged and explicit-false-unhides, no repository change; the toggle sends no Umami event (DB-known write)
+- [Phase 230]: 230-05: rankLineCopy has a single plain-rank path for unchanged and worse ranks, so a downward delta cannot be produced (D-18); guest rule is checked first so guests never see a delta
 
 ### Pending Todos
 
@@ -1002,7 +1009,7 @@ Items acknowledged and deferred at **v1.29 milestone close on 2026-06-29** (user
 
 ## Session Continuity
 
-**Stopped at:** Phase 230 context gathered
+**Stopped at:** Phase 230 complete — all phases complete
 
 Previous session note (Phase 227):
 refit (calibration parity holds). Verification passed 17/17; code review 0 blockers (WR-01 + 3 info fixed). Next:
@@ -1010,9 +1017,9 @@ squash-merge `gsd/phase-227-...` to `main` with a CHANGELOG entry already in `[U
 Owner-deferred: real-phone bot game check (227-UAT.md, report-only). Follow-up: stale "Phase 198 will populate"
 priority comment in `workerPoolState.ts:434-437` (verifier info item).
 
-**Last session:** 2026-10-03T20:22:08.001Z
+**Last session:** 2026-10-04T02:59:45.036Z
 
-**Resume file:** .planning/phases/230-weekly-train-leaderboards/230-CONTEXT.md
+**Resume file:** None
 
 ## Performance Metrics
 
@@ -1216,6 +1223,11 @@ priority comment in `workerPoolState.ts:434-437` (verifier info item).
 | Phase 228 P01 | 12min | 3 tasks | 11 files |
 | Phase 228 P02 | 15min | 3 tasks | 18 files |
 | Phase 228 P03 | 13 min | 3 tasks | 13 files |
+| Phase 230 P01 | 6 min | 2 tasks | 12 files |
+| Phase 230 P02 | 14 min | 3 tasks | 6 files |
+| Phase 230 P03 | 7 min | 3 tasks | 14 files |
+| Phase 230 P04 | 7 min | 2 tasks | 15 files |
+| Phase 230 P05 | 6 min | 3 tasks | 11 files |
 
 ## Performance Metrics
 

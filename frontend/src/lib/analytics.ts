@@ -251,6 +251,10 @@ export function isTrackingExcludedPath(pathname: string): boolean {
 export const ANALYSIS_TAB_IDS = ['moves', 'eval', 'human', 'flawchess', 'stats'] as const;
 export type AnalysisTabId = (typeof ANALYSIS_TAB_IDS)[number];
 
+/** Train weekly leaderboard tabs (Phase 230), sent as `tab-switch` targets. */
+export const LEADERBOARD_TAB_IDS = ['leaderboard-points', 'leaderboard-accuracy'] as const;
+export type LeaderboardTabId = (typeof LEADERBOARD_TAB_IDS)[number];
+
 export function isAnalysisTabId(value: string): value is AnalysisTabId {
   return (ANALYSIS_TAB_IDS as readonly string[]).includes(value);
 }
@@ -374,7 +378,7 @@ export type OptionChangeProps =
   | { target: 'bot-color'; value: BotSetupSettings['colorPreference'] };
 
 export interface FeatureEventMap {
-  'tab-switch': { target: AnalysisTabId };
+  'tab-switch': { target: AnalysisTabId | LeaderboardTabId };
   toggle: { target: ToggleTarget; value: OnOff };
   'filter-change': FilterChangeProps;
   'option-change': OptionChangeProps;
