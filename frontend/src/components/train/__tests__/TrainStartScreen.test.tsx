@@ -165,6 +165,15 @@ vi.mock('@/components/train/TrainLeaderboardCard', () => ({
   ),
 }));
 
+// Phase 231: the real host fetches (QueryClientProvider, useUserProfile with an
+// impersonation field), which this suite lacks. A stub carrying isGuest proves
+// where it mounts; TrainMedalDialogHost.test.tsx covers the host itself.
+vi.mock('@/components/train/medals/TrainMedalDialogHost', () => ({
+  TrainMedalDialogHost: ({ isGuest }: { isGuest: boolean }) => (
+    <div data-testid="train-medal-dialog-host" data-guest={String(isGuest)} />
+  ),
+}));
+
 import { TrainStartScreen } from '@/components/train/TrainStartScreen';
 import { TANK_ID, landingHost } from '@/lib/trainBotCopy';
 import { TRAIN_SETTINGS_SAVE_DEBOUNCE_MS } from '@/components/train/TrainScheduleSettings';
@@ -407,6 +416,29 @@ describe('TrainStartScreen — six landing states', () => {
     const btn = screen.getByTestId('btn-train-start');
     const settings = screen.getByTestId('train-schedule-settings');
     expect(btn.compareDocumentPosition(settings) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
+  it('quick 261004-dta: the schedule card sits above the leaderboard (fresh and completed)', () => {
+    renderScreen();
+    const isBefore = (a: HTMLElement, b: HTMLElement): boolean =>
+      Boolean(a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING);
+    expect(
+      isBefore(screen.getByTestId('train-schedule-settings'), screen.getByTestId('train-leaderboard-card')),
+    ).toBe(true);
+    cleanup();
+    renderScreen({ session: { ...BASE_SESSION, solved_count: BASE_SESSION.puzzle_count } });
+    expect(
+      isBefore(screen.getByTestId('train-schedule-settings'), screen.getByTestId('train-leaderboard-card')),
+    ).toBe(true);
+  });
+
+  it('quick 261004-dta: the host bubble is phone-hidden once the intro is seen, but Tank\'s intro stays', () => {
+    renderScreen();
+    expect(screen.getByTestId('train-landing-host').className).not.toContain('max-sm:hidden');
+    cleanup();
+    mockTrainSettingsData = { ...mockTrainSettingsData, intro_seen_at: '2026-07-01T10:00:00Z' };
+    renderScreen();
+    expect(screen.getByTestId('train-landing-host').className).toContain('max-sm:hidden');
   });
 
   it('191-06 UAT bug fix: a persisted schedule-settings edit calls onSettingsSaved, so the stale mount-time session gets re-fetched', async () => {
@@ -706,5 +738,42 @@ describe('TrainStartScreen — Phase 230 D-08: weekly leaderboard card position'
     cleanup();
     renderScreen({ isGuest: false });
     expect(screen.getByTestId('train-leaderboard-card').getAttribute('data-guest')).toBe('false');
+  });
+});
+
+describe('TrainStartScreen — Phase 231 D-10: medal dialog host mount', () => {
+  it('mounts in the empty branch', () => {
+    renderScreen({ session: EMPTY_SESSION });
+    expect(screen.getByTestId('train-medal-dialog-host')).not.toBeNull();
+  });
+
+  it('mounts in the completed branch', () => {
+    renderScreen({ session: { ...BASE_SESSION, puzzle_count: 6, solved_count: 6 }, sessionScore: 6 });
+    expect(screen.getByTestId('train-medal-dialog-host')).not.toBeNull();
+  });
+
+  it('mounts in the fresh and resume branches', () => {
+    renderScreen();
+    expect(screen.getByTestId('train-medal-dialog-host')).not.toBeNull();
+    cleanup();
+    renderScreen({ session: { ...BASE_SESSION, puzzle_count: 12, solved_count: 4, puzzles: [STUB_PUZZLE] } });
+    expect(screen.getByTestId('btn-train-resume')).not.toBeNull();
+    expect(screen.getByTestId('train-medal-dialog-host')).not.toBeNull();
+  });
+
+  it('does not mount while loading or on error', () => {
+    renderScreen({ isLoading: true, session: null });
+    expect(screen.queryByTestId('train-medal-dialog-host')).toBeNull();
+    cleanup();
+    renderScreen({ isError: true, session: null });
+    expect(screen.queryByTestId('train-medal-dialog-host')).toBeNull();
+  });
+
+  it('threads isGuest into the host', () => {
+    renderScreen({ isGuest: true });
+    expect(screen.getByTestId('train-medal-dialog-host').getAttribute('data-guest')).toBe('true');
+    cleanup();
+    renderScreen({ isGuest: false });
+    expect(screen.getByTestId('train-medal-dialog-host').getAttribute('data-guest')).toBe('false');
   });
 });

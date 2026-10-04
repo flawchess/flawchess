@@ -26,7 +26,7 @@ export function PrivacyPage() {
           <ul className="list-disc list-inside space-y-2 text-muted-foreground">
             <li>Chess.com and lichess usernames you enter (publicly available information)</li>
             <li>
-              If you use Train, your lichess username (or your chess.com username if you have no lichess one) is shown next to your weekly Train points and accuracy on leaderboards that other FlawChess users can see. Guest accounts never appear, accounts without a username show as &quot;Anonymous&quot;, and you can hide yourself in Settings under Privacy.
+              If you use Train, your lichess username (or your chess.com username if you have no lichess one) is shown next to your weekly Train points and accuracy on leaderboards that other FlawChess users can see. Guest accounts never appear, accounts without a username show as &quot;Anonymous&quot;, and you can hide yourself in Settings under Privacy. We store each week&apos;s final standings so past medals and podiums stay as they were; if your account is deleted, your name there is replaced with &quot;Deleted user&quot;.
             </li>
             <li>Game data imported from those platforms (publicly accessible via their APIs)</li>
             <li>

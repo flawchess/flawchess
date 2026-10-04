@@ -187,7 +187,7 @@ const getProgress = vi.fn(async () => DEFAULT_TRAIN_PROGRESS);
 
 // Phase 230: the landing's TrainLeaderboardCard calls trainApi.getLeaderboard.
 // Empty boards, null viewers and null pass targets keep it inert here.
-const EMPTY_LEADERBOARD_BOARD = { rows: [], viewer: null, pass_target: null };
+const EMPTY_LEADERBOARD_BOARD = { rows: [], viewer: null, pass_target: null, last_week: null };
 const getLeaderboard = vi.fn(async () => ({
   week_start: '2032-01-05',
   week_end: '2032-01-12',
@@ -195,6 +195,11 @@ const getLeaderboard = vi.fn(async () => ({
   points: EMPTY_LEADERBOARD_BOARD,
   accuracy: EMPTY_LEADERBOARD_BOARD,
 }));
+
+// Phase 231: the landing's TrainMedalDialogHost calls trainApi.getUnclaimedMedals.
+// An empty list keeps the dialog closed; claimMedals is never reached.
+const getUnclaimedMedals = vi.fn(async () => ({ medals: [] }));
+const claimMedals = vi.fn(async () => undefined);
 
 // 190-05: TrainReveal (mounted once the verdict lands) also fetches the
 // game card via libraryApi.getGame — mocked to reject deterministically
@@ -213,6 +218,8 @@ vi.mock('@/api/client', async () => {
       updateSettings: vi.fn(),
       getProgress: () => getProgress(),
       getLeaderboard: () => getLeaderboard(),
+      getUnclaimedMedals: () => getUnclaimedMedals(),
+      claimMedals: () => claimMedals(),
     },
     libraryApi: {
       ...actual.libraryApi,
@@ -326,9 +333,14 @@ describe('Train solve loop (end-to-end tracer)', () => {
     await waitFor(() => expect(screen.getByTestId('btn-train-start')).not.toBeNull());
     // The mount-time status read must not count as entering the session.
     expect(markSessionEntered).not.toHaveBeenCalled();
+    // Phase 231 (D-10): the landing asked for unclaimed medals (empty here), so
+    // no medal dialog shows on the landing or once the loop is entered.
+    await waitFor(() => expect(getUnclaimedMedals).toHaveBeenCalled());
+    expect(screen.queryByTestId('train-medal-dialog')).toBeNull();
     fireEvent.click(screen.getByTestId('btn-train-start'));
 
     await waitFor(() => expect(screen.getByTestId('chessboard')).not.toBeNull());
+    expect(screen.queryByTestId('train-medal-dialog')).toBeNull();
     // Exactly one call total: the automatic mount-time status fetch IS the
     // one call — pressing Start only reveals the already-loaded loop.
     expect(composeOrResumeSession).toHaveBeenCalledTimes(1);

@@ -34,6 +34,7 @@ from app.models.user import User
 from app.repositories import push_repository, train_repository
 from app.repositories.train_repository import TrainSettingsRow
 from app.schemas.train import (
+    ClaimMedalsRequest,
     OnboardingStep,
     PuzzleRevealResponse,
     SolveRequest,
@@ -45,9 +46,16 @@ from app.schemas.train import (
     TrainSessionResponse,
     TrainSettingsResponse,
     TrainSettingsUpdate,
+    UnclaimedMedal,
+    UnclaimedMedalsResponse,
     VettedMove,
 )
 from app.services.train_leaderboard import get_weekly_leaderboard
+from app.services.train_medals import (
+    claim_medals,
+    finalize_due_weeks,
+    get_unclaimed_medals,
+)
 from app.users import current_active_user
 
 router = APIRouter(prefix="/train", tags=["train"])
@@ -278,6 +286,23 @@ async def get_train_progress(
     )
 
 
+async def _finalize_medal_weeks(
+    session: AsyncSession, *, user_id: int, now_utc: datetime.datetime
+) -> None:
+    """Lazily finalize closed weeks, then commit (Phase 231).
+
+    A finalization failure must never fail the board: roll back, report to Sentry and
+    let the caller serve this week's board as before.
+    """
+    try:
+        await finalize_due_weeks(session, now_utc=now_utc)
+        await session.commit()
+    except Exception:
+        await session.rollback()
+        sentry_sdk.set_context("train", {"user_id": str(user_id)})
+        sentry_sdk.capture_exception()
+
+
 @router.get("/leaderboard", response_model=TrainLeaderboardResponse)
 async def get_train_leaderboard(
     session: Annotated[AsyncSession, Depends(get_async_session)],
@@ -293,23 +318,90 @@ async def get_train_leaderboard(
 
     The viewer id comes only from `current_active_user`. Guests are allowed
     (Phase 224); visibility is enforced server-side so a hidden user or guest never
-    appears in, or moves a rank on, anyone else's board (D-06/D-13/D-14). Read-only:
-    no commit.
+    appears in, or moves a rank on, anyone else's board (D-06/D-13/D-14). The handler
+    commits the lazy medal finalization first (an idempotent, guarded write, like
+    GET /progress), then reads.
     """
+    # Copy what the handler needs out of the User now: FastAPI caches
+    # get_async_session per request, so current_active_user loaded this User into the
+    # same session, and a rollback in the finalizer expires every instance in it. A
+    # later attribute read would then lazy-load (MissingGreenlet under asyncio).
+    user_id = user.id
+    is_guest = user.is_guest
+    hidden = user.leaderboard_hidden
+    await _finalize_medal_weeks(session, user_id=user_id, now_utc=now_utc)
     try:
         result = await get_weekly_leaderboard(
             session,
-            viewer_id=user.id,
-            viewer_is_guest=user.is_guest,
-            viewer_hidden=user.leaderboard_hidden,
+            viewer_id=user_id,
+            viewer_is_guest=is_guest,
+            viewer_hidden=hidden,
             now_utc=now_utc,
             session_id=session_id,
         )
     except Exception:
-        sentry_sdk.set_context("train", {"user_id": str(user.id), "session_id": str(session_id)})
+        sentry_sdk.set_context("train", {"user_id": str(user_id), "session_id": str(session_id)})
         sentry_sdk.capture_exception()
         raise
     return TrainLeaderboardResponse.model_validate(result)
+
+
+@router.get("/medals/unclaimed", response_model=UnclaimedMedalsResponse)
+async def get_unclaimed_train_medals(
+    session: Annotated[AsyncSession, Depends(get_async_session)],
+    user: Annotated[User, Depends(current_active_user)],
+    now_utc: NowUtc,
+) -> UnclaimedMedalsResponse:
+    """The caller's medals not yet celebrated, newest week first (Phase 231, D-11).
+
+    The caller id comes only from `current_active_user`; there is no user parameter and
+    the response carries no ids (T-231-10). The lazy finalizer runs first so a week that
+    just closed already has its medals here, even if this is the first request of the
+    week. Guests never have snapshot rows (D-01), so their list is empty.
+    """
+    # Copy the id out before the finalizer: a rollback there expires the request-cached
+    # session's User instance, and a later attribute read would lazy-load.
+    user_id = user.id
+    await _finalize_medal_weeks(session, user_id=user_id, now_utc=now_utc)
+    try:
+        items = await get_unclaimed_medals(session, user_id=user_id)
+    except Exception:
+        sentry_sdk.set_context("train", {"user_id": str(user_id)})
+        sentry_sdk.capture_exception()
+        raise
+    return UnclaimedMedalsResponse(medals=[UnclaimedMedal.model_validate(item) for item in items])
+
+
+@router.post("/medals/claim", status_code=204)
+async def claim_train_medals(
+    body: ClaimMedalsRequest,
+    session: Annotated[AsyncSession, Depends(get_async_session)],
+    user: Annotated[User, Depends(current_active_user)],
+    now_utc: NowUtc,
+) -> None:
+    """Mark the shown medals as celebrated (Phase 231, D-13).
+
+    The caller id comes only from `current_active_user`; the body carries only
+    (week_start, board) keys, so a foreign or unknown key matches nothing (T-231-09).
+    Only the posted keys are claimed, never "all unclaimed": a medal finalized between
+    the read and the tap stays unclaimed for the next visit. A repeat is a no-op and a
+    guest has nothing to claim, both 204. No analytics event: the `celebrated_at` row is
+    the record.
+    """
+    user_id = user.id
+    try:
+        await claim_medals(
+            session,
+            user_id=user_id,
+            keys=[(key.week_start, key.board) for key in body.medals],
+            now_utc=now_utc,
+        )
+        await session.commit()
+    except Exception:
+        await session.rollback()
+        sentry_sdk.set_context("train", {"user_id": str(user_id)})
+        sentry_sdk.capture_exception()
+        raise
 
 
 async def _settings_response(

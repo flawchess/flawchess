@@ -60,6 +60,8 @@ Cloudflare caches `analytics.flawchess.com/script.js` for up to a day (`cache-co
 
 When a user requests deletion, delete the app account first, then remove their Umami rows by `distinct_id` (= `users.id` as text) in the app website `0ca19960-2398-4caf-b321-8039708fa7ef`. Table and column names below were checked against the Umami v3.4.0 `prisma/schema.prisma`.
 
+Weekly Train standings (`train_weekly_standings`) need no manual step: deleting the `users` row sets `user_id` to NULL and the `trg_train_weekly_standings_erase_name` trigger replaces the stored name with "Deleted user"; the medal slot stays.
+
 - The read-only `flawchess-umami-db` MCP can run the preview count first.
 - Anonymous pre-login sessions carry no `distinct_id` and cannot be matched (they hold no account identifier).
 - A session is shared when it links more than one `distinct_id`; this is only possible for sessions recorded before the 3.4.0 upgrade (3.4.0 puts the distinct id into the session hash). For a shared session only this user's `session_link` and `session_data` rows are removed and the session's events stay.
@@ -130,6 +132,14 @@ UPDATE session SET distinct_id = NULL WHERE website_id = :'site' AND distinct_id
 -- Dry run by default: replace ROLLBACK with COMMIT once the counts above look right
 ROLLBACK;
 ```
+
+## Weekly leaderboard medals
+
+Weeks are finalized lazily: the first `GET /train/leaderboard` or `GET /train/medals/unclaimed` after a week's Sunday 24:00 UTC deadline plus 5 minutes of grace freezes that week into `train_weekly_standings` (see `app/services/train_medals.py`). There is no cron or scheduler.
+
+- **Eligibility is read at finalization time, not at the deadline.** `users.leaderboard_hidden` is evaluated live when the week is finalized, so with low traffic (for example the first Monday-morning visit) a user who toggles "Hide me from leaderboards" between the deadline and that first request is excluded, and users below them move up a rank. The reverse also holds. This is a known, accepted behavior; medals are permanent once written.
+- **Manual trigger.** `finalize_due_weeks` is idempotent and global: the `train_weekly_finalizations` marker row is the lock, so re-running it never double-awards a week. To finalize without waiting for a visit, load either endpoint once as any registered user.
+- **Dev cleanup only.** Deleting a week from `train_weekly_finalizations` (the FK cascades its standings rows) lets the next request finalize it again. Never do this in prod: it discards already-awarded medals.
 
 ## Infrastructure notes
 

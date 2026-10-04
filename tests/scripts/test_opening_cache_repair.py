@@ -3230,6 +3230,10 @@ class TestLegacySample:
         """Fewer eligible legacy games than requested (30 < 200) uses all 30
         and reports the real n in the decision line."""
         session_maker = _session_maker(test_engine)
+        # Create the carrier-game owner here: these tests used to rely on an earlier
+        # test on the same xdist worker having created it, so they failed with an FK
+        # violation whenever they ran first (alone, or after a schedule shift).
+        await _ensure_user(session_maker, _TEST_USER_ID)
         await _seed_calibrate_finished(session_maker, screen_floor=1.0)
         legacy_dt = datetime.datetime(2026, 6, 1, tzinfo=datetime.timezone.utc)
         control_dt = datetime.datetime(2026, 8, 21, tzinfo=datetime.timezone.utc)
@@ -3278,6 +3282,10 @@ class TestLegacySample:
         """No row is written to `game_positions`, `game_flaws` or
         `opening_position_eval`."""
         session_maker = _session_maker(test_engine)
+        # Create the carrier-game owner here: these tests used to rely on an earlier
+        # test on the same xdist worker having created it, so they failed with an FK
+        # violation whenever they ran first (alone, or after a schedule shift).
+        await _ensure_user(session_maker, _TEST_USER_ID)
         await _seed_calibrate_finished(session_maker, screen_floor=1.0)
         legacy_dt = datetime.datetime(2026, 5, 1, tzinfo=datetime.timezone.utc)
         control_dt = datetime.datetime(2026, 8, 25, tzinfo=datetime.timezone.utc)

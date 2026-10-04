@@ -375,6 +375,7 @@ export const IMPERSONATION_PILL_BORDER = 'oklch(0.60 0.18 40)';
 // Values locked in 57-UI-SPEC.md §ELO_COMBO_COLORS.
 
 import type { EloComboKey } from '@/types/endgames';
+import type { MedalKind } from '@/types/train';
 
 export const ELO_COMBO_COLORS: Record<EloComboKey, { bright: string; dark: string }> = {
   chess_com_bullet:    { bright: 'oklch(0.62 0.22 30)',  dark: 'oklch(0.42 0.18 30)'  },
@@ -605,3 +606,20 @@ export const TRAIN_FLAME_NUMBER_OUTLINE = 'black';
 // Streak 0: an unlit grey outline flame with a grey number.
 export const TRAIN_FLAME_UNLIT = 'oklch(0.55 0 0)';
 export const TRAIN_FREEZE_COLOR = 'oklch(0.82 0.10 230)'; // icy blue
+
+// Weekly leaderboard medals (Phase 231), drawn after the 🥇 emoji: a two-strap
+// ribbon V above a filled disc with a darker rim and the place number in the
+// rim colour. Used on the dark card (tally, "Last week:" podium, dialog); not
+// confetti colours. Tuned in UAT through the admin "Leaderboard medals demo".
+export interface MedalPalette {
+  face: string;
+  rim: string;
+  number: string;
+}
+export const MEDAL_PALETTES: Record<MedalKind, MedalPalette> = {
+  gold: { face: 'oklch(0.86 0.16 90)', rim: 'oklch(0.72 0.15 72)', number: 'oklch(0.52 0.12 62)' },
+  silver: { face: 'oklch(0.90 0.005 260)', rim: 'oklch(0.72 0.01 260)', number: 'oklch(0.50 0.015 260)' },
+  bronze: { face: 'oklch(0.74 0.12 58)', rim: 'oklch(0.60 0.12 46)', number: 'oklch(0.44 0.09 40)' },
+};
+export const MEDAL_RIBBON_LEFT = 'oklch(0.55 0.16 255)'; // blue strap
+export const MEDAL_RIBBON_RIGHT = 'oklch(0.58 0.20 25)'; // red strap

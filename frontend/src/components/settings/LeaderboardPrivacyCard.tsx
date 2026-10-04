@@ -5,7 +5,7 @@ import { useSetLeaderboardHidden, useUserProfile } from '@/hooks/useUserProfile'
 
 const HIDE_LABEL = 'Hide me from leaderboards';
 const HIDE_HELPER =
-  'Your username and weekly Train results stay off the leaderboards other people see. You still see your own position.';
+  "Your username and weekly Train results stay off the leaderboards other people see. You still see your own position. Hidden users don't earn medals; medals you already won are kept.";
 const SAVE_ERROR = "Couldn't save this setting. Please try again.";
 
 /** The Privacy card shell around the profile-load error line. */

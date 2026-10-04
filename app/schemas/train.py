@@ -11,7 +11,7 @@ schema exists to enforce. Phase 211: vetted-move material (`VettedMove`,
 from __future__ import annotations
 
 from datetime import date, datetime
-from typing import Literal
+from typing import Final, Literal
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
@@ -439,6 +439,36 @@ class TrainProgressResponse(BaseModel):
 
 LeaderboardBoardKind = Literal["points", "accuracy"]
 LeaderboardVisibility = Literal["public", "hidden", "guest"]
+MedalKind = Literal["gold", "silver", "bronze"]
+
+
+class LeaderboardMedals(BaseModel):
+    """Lifetime medal counts of one row's user (Phase 231). Counts only, no user id."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    gold: int
+    silver: int
+    bronze: int
+
+
+class LeaderboardPodiumEntry(BaseModel):
+    """One medal on last week's podium: the medal and a read-time masked name."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    medal: MedalKind
+    name: str
+
+
+class LeaderboardLastWeek(BaseModel):
+    """Last week's podium and the viewer's own non-medal rank on one board (Phase 231)."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    week_start: date  # the previous ISO Monday (UTC)
+    podium: list[LeaderboardPodiumEntry]  # gold, silver, bronze; every tied name listed
+    viewer_final_rank: int | None  # only when the viewer has a row with no medal (D-03)
 
 
 class LeaderboardRow(BaseModel):
@@ -459,6 +489,7 @@ class LeaderboardRow(BaseModel):
     # "public" on every row except the viewer's own hidden/guest row.
     visibility: LeaderboardVisibility
     gap_before: bool  # True on the first row after skipped ranks
+    medals: LeaderboardMedals  # lifetime tally, zero counts when the user has no medals
 
 
 class LeaderboardViewer(BaseModel):
@@ -493,6 +524,9 @@ class LeaderboardBoard(BaseModel):
     rows: list[LeaderboardRow]
     viewer: LeaderboardViewer | None
     pass_target: LeaderboardPassTarget | None  # Points board only
+    # The immediately previous ISO week only (D-07); null when that board awarded no
+    # medal and the viewer has no non-medal row there (D-08).
+    last_week: LeaderboardLastWeek | None
 
 
 class TrainLeaderboardResponse(BaseModel):
@@ -510,13 +544,62 @@ class TrainLeaderboardResponse(BaseModel):
     accuracy: LeaderboardBoard
 
 
+# About a year of both boards. Caps the unclaimed read and the claim body, so a dialog's
+# POST built from a GET is always valid.
+MEDAL_CLAIM_MAX_ITEMS: Final = 100
+
+
+class UnclaimedMedal(BaseModel):
+    """One medal the caller has not yet seen celebrated (Phase 231, D-11).
+
+    Carries no row id or user id: a medal is identified by its (week_start, board) pair,
+    the per-user natural key the claim POST echoes back.
+    """
+
+    model_config = ConfigDict(from_attributes=True)
+
+    week_start: date  # the Monday (UTC)
+    board: LeaderboardBoardKind
+    medal: MedalKind
+    value: int  # final points, or floored accuracy percent
+    shared: bool  # another row of the same week, board and medal exists (a tie)
+
+
+class UnclaimedMedalsResponse(BaseModel):
+    """Response for GET /train/medals/unclaimed: newest week first, Points before Accuracy."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    medals: list[UnclaimedMedal]
+
+
+class MedalKey(BaseModel):
+    """The natural key of one medal in a claim request: no row id, no user id."""
+
+    week_start: date
+    board: LeaderboardBoardKind
+
+
+class ClaimMedalsRequest(BaseModel):
+    """Body of POST /train/medals/claim: the shown medals' keys, never "all unclaimed"."""
+
+    medals: list[MedalKey] = Field(min_length=1, max_length=MEDAL_CLAIM_MAX_ITEMS)
+
+
 __all__ = [
+    "MEDAL_CLAIM_MAX_ITEMS",
+    "ClaimMedalsRequest",
     "LeaderboardBoard",
     "LeaderboardBoardKind",
+    "LeaderboardLastWeek",
+    "LeaderboardMedals",
     "LeaderboardPassTarget",
+    "LeaderboardPodiumEntry",
     "LeaderboardRow",
     "LeaderboardViewer",
     "LeaderboardVisibility",
+    "MedalKey",
+    "MedalKind",
     "PuzzleRevealResponse",
     "SolveRequest",
     "SolveResponse",
@@ -527,5 +610,7 @@ __all__ = [
     "TrainSessionResponse",
     "TrainSettingsResponse",
     "TrainSettingsUpdate",
+    "UnclaimedMedal",
+    "UnclaimedMedalsResponse",
     "VettedMove",
 ]

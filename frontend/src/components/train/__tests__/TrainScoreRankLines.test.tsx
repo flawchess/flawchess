@@ -17,7 +17,7 @@ import type {
   TrainLeaderboardResponse,
 } from '@/types/train';
 
-const EMPTY_BOARD: LeaderboardBoard = { rows: [], viewer: null, pass_target: null };
+const EMPTY_BOARD: LeaderboardBoard = { rows: [], viewer: null, pass_target: null, last_week: null };
 
 function makeViewer(overrides: Partial<LeaderboardViewer> = {}): LeaderboardViewer {
   return {

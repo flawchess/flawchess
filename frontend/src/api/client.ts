@@ -33,6 +33,8 @@ import type {
   TrainSettingsUpdate,
   TrainProgressResponse,
   TrainLeaderboardResponse,
+  UnclaimedMedalsResponse,
+  MedalKey,
 } from '@/types/train';
 import type { OnboardingStep } from '@/hooks/useTrainOnboarding';
 import type {
@@ -308,6 +310,13 @@ export const trainApi = {
         params: sessionId !== undefined ? { session_id: sessionId } : undefined,
       })
       .then(r => r.data),
+  /** Phase 231: medals won in closed weeks that the user has not celebrated yet. */
+  getUnclaimedMedals: () =>
+    apiClient.get<UnclaimedMedalsResponse>('/train/medals/unclaimed').then(r => r.data),
+  /** Phase 231 (D-13): records the shown medals as celebrated (Claim or dismiss).
+   * Idempotent server-side; resolves to undefined (204). */
+  claimMedals: (medals: MedalKey[]) =>
+    apiClient.post<void>('/train/medals/claim', { medals }).then(() => undefined),
   /** Phase 222 (D-11/D-12): stamps one of the three onboarding "seen"
    * watermarks on stepper completion. Returns the full settings response so
    * `useTrainOnboarding`'s `onSuccess` can refresh the shared cache with no
