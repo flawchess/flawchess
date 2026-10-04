@@ -255,6 +255,7 @@ describe('feature-event registry', () => {
     const lists: readonly (readonly string[])[] = [
       analytics.PAGE_IDS,
       analytics.ANALYSIS_TAB_IDS,
+      analytics.LEADERBOARD_TAB_IDS,
       analytics.TOGGLE_TARGETS,
       analytics.BOARD_TOOL_TARGETS,
       analytics.PANEL_TARGETS,
@@ -303,6 +304,16 @@ describe('feature-event registry', () => {
     analytics.trackFeature('filter-change', { target: 'time-control', value: 'blitz' });
     expect(track).toHaveBeenCalledWith('filter-change', { page: 'openings', target: 'time-control', value: 'blitz' });
   });
+
+  it.each(['leaderboard-points', 'leaderboard-accuracy'] as const)(
+    'trackFeature sends the %s tab-switch target with page train (Phase 230)',
+    (target) => {
+      window.history.pushState({}, '', '/train');
+      analytics.trackFeature('tab-switch', { target });
+      expect(track).toHaveBeenCalledTimes(1);
+      expect(track).toHaveBeenCalledWith('tab-switch', { page: 'train', target });
+    },
+  );
 
   it.each(['/admin', '/activity', '/login', '/auth/callback'])('trackFeature sends nothing on %s', (path) => {
     window.history.pushState({}, '', path);

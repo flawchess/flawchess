@@ -155,6 +155,16 @@ vi.mock('@/hooks/useReminderResurface', () => ({
   TRAIN_RESURFACE_DISMISSED_KEY: 'train-resurface-dismissed',
 }));
 
+// Phase 230: the real card needs a QueryClientProvider (and, for guests, the
+// sign-up action pair), which this suite deliberately lacks and whose
+// registered-account tests assert no btn-signup- element. A stub carrying the
+// isGuest prop is enough here; TrainLeaderboardCard.test.tsx covers the card.
+vi.mock('@/components/train/TrainLeaderboardCard', () => ({
+  TrainLeaderboardCard: ({ isGuest }: { isGuest: boolean }) => (
+    <div data-testid="train-leaderboard-card" data-guest={String(isGuest)} />
+  ),
+}));
+
 import { TrainStartScreen } from '@/components/train/TrainStartScreen';
 import { TANK_ID, landingHost } from '@/lib/trainBotCopy';
 import { TRAIN_SETTINGS_SAVE_DEBOUNCE_MS } from '@/components/train/TrainScheduleSettings';
@@ -655,5 +665,46 @@ describe('TrainStartScreen — OFFER-05/D-16 re-surface banner (additive, not a 
     const banner = screen.getByTestId('resurface-banner');
     const streakCard = screen.getByTestId('train-streak-card');
     expect(banner.compareDocumentPosition(streakCard) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+});
+
+describe('TrainStartScreen — Phase 230 D-08: weekly leaderboard card position', () => {
+  function expectOrder(...testIds: string[]): void {
+    for (let i = 0; i < testIds.length - 1; i += 1) {
+      const a = screen.getByTestId(testIds[i]!);
+      const b = screen.getByTestId(testIds[i + 1]!);
+      expect(a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    }
+  }
+
+  it('fresh: streak card, then leaderboard card, then stats card', () => {
+    renderScreen();
+    expectOrder('train-streak-card', 'train-leaderboard-card', 'train-stats-card');
+  });
+
+  it('completed: streak card, then leaderboard card, then stats card', () => {
+    renderScreen({
+      session: { ...BASE_SESSION, puzzle_count: 6, solved_count: 6 },
+      sessionScore: 6,
+    });
+    expectOrder('train-streak-card', 'train-leaderboard-card', 'train-stats-card');
+  });
+
+  it('exhausted empty state: the card follows the streak card, before the caught-up body', () => {
+    trainProgressMock = {
+      data: { ...DEFAULT_TRAIN_PROGRESS, pool_state: 'exhausted', mastered_count: 4 },
+      isPending: false,
+      isError: false,
+    };
+    renderScreen({ session: EMPTY_SESSION });
+    expectOrder('train-streak-card', 'train-leaderboard-card', 'train-empty-exhausted');
+  });
+
+  it('threads isGuest into the card', () => {
+    renderScreen({ isGuest: true });
+    expect(screen.getByTestId('train-leaderboard-card').getAttribute('data-guest')).toBe('true');
+    cleanup();
+    renderScreen({ isGuest: false });
+    expect(screen.getByTestId('train-leaderboard-card').getAttribute('data-guest')).toBe('false');
   });
 });

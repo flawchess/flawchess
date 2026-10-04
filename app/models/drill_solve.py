@@ -73,10 +73,12 @@ from sqlalchemy import (
     CheckConstraint,
     DateTime,
     ForeignKey,
+    Index,
     SmallInteger,
     String,
     Text,
     UniqueConstraint,
+    text,
 )
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -104,10 +106,13 @@ class DrillMoveQuality(IntEnum):
 
     Members are ordered so the member value equals the move points awarded
     (0/1/2 of the 2 move points in the 1-guess + 2-move = 3 total scoring
-    scheme). This is a readability convenience only — the actual scoring
-    formula lives client-side in `frontend/src/lib/trainScore.ts`, which is
-    the single source of truth; nothing here should be used to compute a
-    score directly.
+    scheme). This is a readability convenience only — the per-session
+    scoring formula lives client-side in `frontend/src/lib/trainScore.ts`,
+    which stays the single source of truth for display; nothing here should
+    be used to compute a score directly. The weekly leaderboard (Phase 230
+    D-01) is a deliberate server port of the scoring constants in
+    `app.services.train_score`, pinned to trainScore.ts by
+    `tests/services/test_train_score_parity.py`.
     """
 
     WRONG = 0
@@ -127,6 +132,11 @@ class DrillSolve(Base):
             name="ck_drill_solves_move_quality",
         ),
         UniqueConstraint("session_id", "game_id", "ply", name="uq_drill_solves_session_puzzle"),
+        # Phase 230: read by the weekly Train leaderboard window scan
+        # (app.repositories.train_leaderboard_repository.fetch_week_aggregates).
+        Index(
+            "ix_drill_solves_solved_at", "solved_at", postgresql_where=text("solved_at IS NOT NULL")
+        ),
     )
 
     session_id: Mapped[int] = mapped_column(

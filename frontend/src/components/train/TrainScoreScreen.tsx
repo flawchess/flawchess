@@ -58,6 +58,7 @@ import { playSound, type SoundEvent } from '@/lib/sounds';
 import { TrainBotBubble } from '@/components/train/TrainBotBubble';
 import { ImportAskActions } from '@/components/train/ImportAskActions';
 import { SignupAskActions } from '@/components/train/SignupAskActions';
+import { TrainScoreRankLines } from '@/components/train/TrainScoreRankLines';
 import { pickBot, scoreBubbleCopy, type ReminderAsk, type TrainCopyAudience } from '@/lib/trainBotCopy';
 import { useTrainSettings } from '@/hooks/useTrainSettings';
 import { useTrainOnboarding } from '@/hooks/useTrainOnboarding';
@@ -150,6 +151,10 @@ export interface TrainScoreScreenProps {
    * reminder ask with the sign-up ask (`GUEST_SIGNUP_ASK_SCORE`, D-13: a
    * guest gets no reminder slot). */
   isGuest: boolean;
+  /** `TrainSessionResponse.session_id`: the rank lines ask the server for this
+   * session's rank change (Phase 230 D-11/D-12). Null while unknown; the
+   * lines then render nothing. */
+  sessionId: number | null;
 }
 
 /** The score bubble's action row: guests get the sign-up ask (Phase 224
@@ -171,6 +176,7 @@ export function TrainScoreScreen({
   isWarmup,
   hasGames,
   isGuest,
+  sessionId,
 }: TrainScoreScreenProps): ReactElement {
   const percentage = displaySessionPercentage(score);
   const band = score.max > 0 ? resolveRatingBand(score.total / score.max) : null;
@@ -319,6 +325,7 @@ export function TrainScoreScreen({
       <p className="text-lg font-semibold text-muted-foreground" data-testid="train-score-total">
         Points: {score.total}/{score.max}
       </p>
+      <TrainScoreRankLines sessionId={sessionId} />
       <p className="text-sm font-semibold text-muted-foreground">
         Next session: {format(parseISO(nextSessionDate), 'MMM d, yyyy')}
       </p>

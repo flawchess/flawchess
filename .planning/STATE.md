@@ -1,30 +1,30 @@
 ---
 gsd_state_version: "1.0"
 milestone: v2.21
-current_phase: 229
-current_phase_name: Umami User Identification & Feature Events (SEED-183)
-status: executing
-stopped_at: Phase 229 context gathered
-last_updated: "2026-10-03T18:11:16.994Z"
-state_head: 8c6555593ae365d5ef203ae2b8a654ba583f10c7
+current_phase: 230
+status: completed
+stopped_at: Phase 230 complete — all phases complete
+last_updated: "2026-10-04T03:23:40.372Z"
+state_head: 83c85171fd169bdde5b81fca88ff219ec37a75fb
 progress:
-  total_phases: 2
+  total_phases: 3
   completed_phases: 103
-  total_plans: 11
+  total_plans: 16
   completed_plans: 47
+  percent: 75
 milestone_name: Browser Engine Throughput
-last_activity: 2026-10-03
-last_activity_desc: Closed milestones v2.20 (phases 223–224) and v2.21 (phases 225–227) with tags and GitHub releases; roadmap cleanup
+last_activity: 2026-10-04
+last_activity_desc: "Phase 230 executed and verified (5/5 plans, browser UAT 7/7, review WR-03/IN-01/IN-02 fixed, WR-01 accepted risk carried to SEED-185 medals); awaiting squash-merge to main"
 ---
 
 # Project State: FlawChess
 
 ## Current Position
 
-Phase: 229 (Umami User Identification & Feature Events (SEED-183)) — EXECUTING
-Plan: 1 of 8
+Phase: 230 (Weekly Train Leaderboards (SEED-185)) — COMPLETE, on branch gsd/phase-230-weekly-train-leaderboards (not yet squash-merged)
+Plan: 5 of 5
 
-Status: Executing Phase 229
+Status: All phases complete
 
 Open threads carried forward (not blockers):
 
@@ -43,7 +43,11 @@ Open threads carried forward (not blockers):
 
 See: .planning/PROJECT.md (updated 2026-09-13 after Phase 221)
 Core value: Position-precise WDL across openings + endgames + time pressure on top of users' actual chess.com / lichess games, with personalized LLM commentary and an auto-generated opening-strengths/weaknesses report.
-Current focus: **v2.20 and v2.21 closed 2026-10-03**; phases 223–227 regrouped into v2.20 Bot Voice & Guest Activation (223–224, releases #360–#373) and v2.21 Browser Engine Throughput (225–227, releases #376/#379/#381), each tagged with a GitHub release. ROADMAP.md slimmed to milestones + per-milestone progress rows + backlog (phase detail lives in `milestones/`). No open milestone: next is `/gsd-new-milestone` or standalone Phase 228. `main` carries one unreleased fast task (move stats accuracy header band, 0e0723eb8).
+Current focus: **Phase 229 (Umami identify + feature events) complete and deployed 2026-10-03** (release #383): every authenticated session now carries `users.id` as Umami `distinct_id` (3 of 3 post-ship sessions identified), 9-verb typed `trackFeature` registry live in prod, Umami pinned to 3.4.0. Standalone phases 228–229 are released but not grouped into a milestone; next is `/gsd-new-milestone`. Watch item: re-read the 229-RESEARCH.md post-ship queries after a few days of volume.
+
+### Superseded: focus after the v2.20/v2.21 close
+
+**v2.20 and v2.21 closed 2026-10-03**; phases 223–227 regrouped into v2.20 Bot Voice & Guest Activation (223–224, releases #360–#373) and v2.21 Browser Engine Throughput (225–227, releases #376/#379/#381), each tagged with a GitHub release. ROADMAP.md slimmed to milestones + per-milestone progress rows + backlog (phase detail lives in `milestones/`). No open milestone: next is `/gsd-new-milestone` or standalone Phase 228. `main` carries one unreleased fast task (move stats accuracy header band, 0e0723eb8).
 
 ### Superseded: focus after Phase 219
 
@@ -167,6 +171,7 @@ v1.29 Live-Engine Analysis Page shipped 2026-06-29 — 5 phases (136–140), 14 
 
 ### Roadmap Evolution
 
+- Phase 230 added 2026-10-03 (explicit user request via `/gsd-phase`, trigger met: Phase 228 shipped): **Weekly Train Leaderboards** (SEED-185, planted 2026-10-03 from `/gsd-explore` training features). Points board + pooled average-score board over a UTC ISO week keyed on `drill_solves.solved_at`, top 5 plus own row with neighbours, 20 non-filler puzzle qualifier (tentative users ranked), lichess-first display names, opt-out toggle in the settings overlay + Privacy line, guest board with sign-up nudge. Medals out of scope. Written by hand as 230 (known mature-ROADMAP behavior). Next: `/gsd-discuss-phase 230`.
 - Phase 229 added 2026-10-03 (explicit user request via `/gsd-phase @SEED-183`, trigger met: Phase 228 merged): **Umami User Identification & Feature Events** (SEED-183, planted 2026-10-03 from `/gsd-explore` after the growth report). Frontend-only: `umami.identify(String(users.id))` for every authenticated session incl. guests, logout/account-switch reset, per-page inventory of UI-only interactions as few prop-carrying events, Privacy sentence fix, `frontend/CLAUDE.md` event rule. Open research: identify persistence (localStorage/ePrivacy) and logout reset. Written by hand as 229 (known mature-ROADMAP behavior). Next: `/gsd-discuss-phase 229`.
 - Phase 228 added 2026-10-03 (explicit user request via `/gsd-phase @SEED-175`, trigger met: Phase 226 merged and v2.21 closed): **Settings Page — Sound Toggle & Per-Engine Lines/Arrows** (SEED-175, planted 2026-09-29 from `/gsd-explore`). Frontend-only cogwheel `/settings` page with localStorage-backed sound on/off and per-engine line (1-5) and arrow (0-3) counts, plus the single-translucent-color non-primary line restyle.
 - Phase 226 added 2026-09-28 (explicit user request via `/gsd-phase @SEED-171`, after the 2026-09-28 browser engine performance review): **Browser Engine Throughput — Round Underfill Re-land, Root Grade Split & Continuous Dispatch**. Re-measure on an idle box, re-land the held Phase 225 round underfill fix (explain the `cBFTV` flip, wider fixture) with the root comparability guard, split the round-1 root grade across idle SF workers, then continuous dispatch against a relaxed determinism target (may split into its own phase in discuss); gated by a pre-committed accept rule against a same-session A0 baseline.
@@ -808,6 +813,13 @@ flagged as an open decision for plan 06 / a human, not auto-fixed.
 - [Phase 228]: Free-run MultiPV floor of 2 (ANALYSIS_FREE_RUN_MIN_MULTIPV) keeps engine.pvLines[1] for the FlawChess injection; free run width is max(2, SF lines, SF arrows)
 - [Phase 228]: Train eval-bar engine pinned to TRAIN_EVAL_BAR_MULTIPV = 1, independent of settings; Train free play searches at max(SF lines, SF arrows) with no movetime scaling
 - [Phase 228]: Arrows 1..N read the same reconciled ranking as the card (rank k = line k), non-primary ranks use one translucent per-engine color at the engine's own width, primary pushed last
+- [Phase 230]: 230-01: Accuracy ranks on the floored integer percent so equal displayed percents are visible ties; Points pass target only (Accuracy shows the qualifier line)
+- [Phase 230]: 230-01: viewer own entry is re-inserted regardless of visibility while every other row requires registered and not hidden, filtered before ranking; rank_without_session key is final on the wire but null until Plan 02
+- [Phase 230]: 230-02: rank_without_session returned as computed (Accuracy can improve, never clamped to rank); null when nothing remains without the session
+- [Phase 230]: useTrainLeaderboard is one useQuery with options derived from sessionId (undefined = landing), not two conditional hooks
+- [Phase 230]: Leaderboard countdown sets no state on mount: fetch time stands in for now until the first 60 s tick (react-hooks purity)
+- [Phase 230]: 230-04: leaderboard_hidden rides the existing profile PUT; user_repository.update_profile None-filtering gives omit-unchanged and explicit-false-unhides, no repository change; the toggle sends no Umami event (DB-known write)
+- [Phase 230]: 230-05: rankLineCopy has a single plain-rank path for unchanged and worse ranks, so a downward delta cannot be produced (D-18); guest rule is checked first so guests never see a delta
 
 ### Pending Todos
 
@@ -997,7 +1009,7 @@ Items acknowledged and deferred at **v1.29 milestone close on 2026-06-29** (user
 
 ## Session Continuity
 
-**Stopped at:** Phase 229 context gathered
+**Stopped at:** Phase 230 complete — all phases complete
 
 Previous session note (Phase 227):
 refit (calibration parity holds). Verification passed 17/17; code review 0 blockers (WR-01 + 3 info fixed). Next:
@@ -1005,9 +1017,9 @@ squash-merge `gsd/phase-227-...` to `main` with a CHANGELOG entry already in `[U
 Owner-deferred: real-phone bot game check (227-UAT.md, report-only). Follow-up: stale "Phase 198 will populate"
 priority comment in `workerPoolState.ts:434-437` (verifier info item).
 
-**Last session:** 2026-10-03T16:47:11.134Z
+**Last session:** 2026-10-04T02:59:45.036Z
 
-**Resume file:** .planning/phases/229-umami-identify-feature-events/229-CONTEXT.md
+**Resume file:** None
 
 ## Performance Metrics
 
@@ -1211,6 +1223,11 @@ priority comment in `workerPoolState.ts:434-437` (verifier info item).
 | Phase 228 P01 | 12min | 3 tasks | 11 files |
 | Phase 228 P02 | 15min | 3 tasks | 18 files |
 | Phase 228 P03 | 13 min | 3 tasks | 13 files |
+| Phase 230 P01 | 6 min | 2 tasks | 12 files |
+| Phase 230 P02 | 14 min | 3 tasks | 6 files |
+| Phase 230 P03 | 7 min | 3 tasks | 14 files |
+| Phase 230 P04 | 7 min | 2 tasks | 15 files |
+| Phase 230 P05 | 6 min | 3 tasks | 11 files |
 
 ## Performance Metrics
 

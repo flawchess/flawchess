@@ -260,6 +260,7 @@ export default function TrainPage(): ReactElement {
           isWarmup={trainSession.session.is_warmup}
           hasGames={hasGames}
           isGuest={isGuest}
+          sessionId={trainSession.session.session_id}
         />
       )}
     </div>

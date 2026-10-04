@@ -7,6 +7,9 @@
  * State selection is a single ordered branch chain (`resolveLandingState`),
  * not scattered inline ternaries — the six states are mutually exclusive and
  * exactly one always matches.
+ *
+ * Phase 230 (D-08): wherever a `TrainStreakCard` renders, the weekly
+ * `TrainLeaderboardCard` follows it directly (before `TrainStatsCard`).
  */
 
 import type { ReactElement } from 'react';
@@ -18,6 +21,7 @@ import { LoadError } from '@/components/ui/load-error';
 import { TRAIN_BUTTON_CLASS, TRAIN_CTA_BUTTON_CLASS } from '@/components/train/buttonStyles';
 import { ImportAskActions } from '@/components/train/ImportAskActions';
 import { SignupAskActions } from '@/components/train/SignupAskActions';
+import { TrainLeaderboardCard } from '@/components/train/TrainLeaderboardCard';
 import { TrainBotBubble } from '@/components/train/TrainBotBubble';
 import { TrainReminderResurfaceBanner } from '@/components/train/TrainReminderResurfaceBanner';
 import { TrainScheduleSettings } from '@/components/train/TrainScheduleSettings';
@@ -253,8 +257,10 @@ function landingActions(isGuest: boolean, showImportAsk: boolean): ReactElement 
  */
 function TrainEmptyBody({
   progress,
+  isGuest,
 }: {
   progress: ReturnType<typeof useTrainProgress>;
+  isGuest: boolean;
 }): ReactElement {
   const poolState = progress.isPending || progress.isError ? undefined : progress.data?.pool_state;
 
@@ -286,6 +292,7 @@ function TrainEmptyBody({
     return (
       <>
         <TrainStreakCard />
+        <TrainLeaderboardCard isGuest={isGuest} />
         <div data-testid="train-empty-exhausted">
           <EmptyState layout="page" title="All caught up!" subtitle={`${mastered_count} mastered. ${nextDueCopy}`} />
         </div>
@@ -340,7 +347,7 @@ export function TrainStartScreen({
     return (
       <div className={LANDING_CONTAINER_CLASS} data-testid="train-start-screen">
         <TrainReminderResurfaceBanner />
-        <TrainEmptyBody progress={progress} />
+        <TrainEmptyBody progress={progress} isGuest={isGuest} />
       </div>
     );
   }
@@ -351,6 +358,7 @@ export function TrainStartScreen({
         <TrainReminderResurfaceBanner />
         <TrainHeader session={session} isGuest={isGuest} hasGames={hasGames} />
         <TrainStreakCard />
+        <TrainLeaderboardCard isGuest={isGuest} />
         <TrainStatsCard todayScore={{ total: state.score, max: state.totalPoints }} />
         <TrainScheduleSettings
           onSaved={onSettingsSaved}
@@ -392,6 +400,7 @@ export function TrainStartScreen({
           </Button>
         }
       />
+      <TrainLeaderboardCard isGuest={isGuest} />
       <TrainStatsCard />
       <TrainScheduleSettings onSaved={onSettingsSaved} isGuest={isGuest} />
     </div>

@@ -67,6 +67,9 @@ class UserProfileResponse(BaseModel):
     impersonation: ImpersonationContext | None = None
     # BETA-01: beta_enabled flag (e.g. Endgame Insights). Default false; flipped via direct DB op.
     beta_enabled: bool
+    # Phase 230 D-16: weekly Train leaderboard opt-out. Written only via the
+    # profile PUT (UserProfileUpdate.leaderboard_hidden).
+    leaderboard_hidden: bool
     # Quick 260811-u11 (SEED-147): the opponent-matching current-strength
     # estimate, replacing `lichess_blitz_equivalent_rating` (P-01) -- that
     # field had zero readers left once all three opponent-matching surfaces
@@ -84,6 +87,9 @@ class UserProfileUpdate(BaseModel):
 
     chess_com_username: str | None = None
     lichess_username: str | None = None
+    # Phase 230 D-16: None means unchanged (the repository drops None values),
+    # an explicit False un-hides. beta_enabled stays absent from this schema.
+    leaderboard_hidden: bool | None = None
 
     # D-03: per-field validators pinned to that field's own platform, so a
     # chess.com URL pasted into lichess_username (or vice versa) is not

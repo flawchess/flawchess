@@ -11,6 +11,7 @@ in `YYYY-MM-DD` (Europe/Zurich).
 ### Added
 
 - Settings: open them from the cogwheel in the header (or Settings in the mobile More menu) to switch sounds off and to choose how many lines (1 to 5) and board arrows (0 to 3) the FlawChess engine and Stockfish show. Settings open in a window over the current page (a sheet on mobile, also from the cogwheel on the mobile analysis board and during a mobile bot game), so you never lose the puzzle, game or analysis you were on.
+- Train weekly leaderboards. A "This week" card on the Train page ranks everyone's Train points (Points) and average session score (Accuracy: 20+ puzzles to qualify, tactics puzzles don't count) for the current week, which ends Sunday at midnight UTC. It shows the top 5 plus your own position with your neighbours, and the score screen tells you how your session moved you. Your lichess or chess.com username is shown; hide yourself any time in Settings under Privacy (the Privacy page now says so). Guests see where they would rank.
 
 ### Changed
 

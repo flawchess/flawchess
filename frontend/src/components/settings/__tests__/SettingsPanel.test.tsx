@@ -13,6 +13,11 @@ import { MUTE_KEY } from '@/lib/sounds';
 const { trackEventMock } = vi.hoisted(() => ({ trackEventMock: vi.fn() }));
 vi.mock('@/lib/analytics', () => ({ trackEvent: trackEventMock }));
 
+// Phase 230 D-16: the real card needs a QueryClientProvider; this suite renders the panel bare.
+vi.mock('@/components/settings/LeaderboardPrivacyCard', () => ({
+  LeaderboardPrivacyCard: () => <section data-testid="settings-section-privacy" />,
+}));
+
 beforeEach(() => {
   trackEventMock.mockClear();
 });
@@ -33,6 +38,21 @@ describe('SettingsPanel layout (D-07, D-09)', () => {
     expect(follows(sound, fc)).toBe(true);
     expect(follows(fc, sf)).toBe(true);
     expect(screen.queryByRole('button', { name: /save/i })).toBeNull();
+  });
+
+  it('places the Privacy section after the Reset button (server state, outside Reset)', () => {
+    render(<SettingsPanel />);
+    const reset = screen.getByTestId('btn-settings-reset');
+    const privacy = screen.getByTestId('settings-section-privacy');
+    expect(Boolean(reset.compareDocumentPosition(privacy) & Node.DOCUMENT_POSITION_FOLLOWING)).toBe(
+      true,
+    );
+  });
+
+  it('keeps Reset disabled at default display settings while the Privacy section is present', () => {
+    render(<SettingsPanel />);
+    expect(screen.getByTestId('settings-section-privacy')).not.toBeNull();
+    expect((screen.getByTestId('btn-settings-reset') as HTMLButtonElement).disabled).toBe(true);
   });
 
   it('offers line buttons 1..5 and arrow buttons 0..3 for both engines', () => {

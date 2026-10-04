@@ -19,7 +19,9 @@ export type TrainRatingBand = 'green' | 'yellow' | 'red';
  */
 export type TrainMoveTier = 'good' | 'inaccuracy' | 'wrong';
 
-/** Move points awarded per tier (SEED-119: good=2, inaccuracy=1, wrong=0). */
+/** Move points awarded per tier (SEED-119: good=2, inaccuracy=1, wrong=0).
+ * The backend parity test (tests/services/test_train_score_parity.py) pins this
+ * value, so change both sides together. */
 export const MOVE_TIER_POINTS: Record<TrainMoveTier, number> = {
   good: 2,
   inaccuracy: 1,
@@ -42,7 +44,8 @@ export function moveTierFromSeverity(severity: FlawSeverity | null): TrainMoveTi
 
 /** Points awarded for a correct guess (SEED-119: the guess is worth exactly 1,
  * independently of the move). Named so the reveal's guess chip and
- * `scorePuzzle` can never disagree on it. */
+ * `scorePuzzle` can never disagree on it. The backend parity test
+ * (tests/services/test_train_score_parity.py) pins this value. */
 export const GUESS_POINTS = 1;
 
 /** Ratio (score/max) at or above which a session rates green (UI-SPEC). */
@@ -53,7 +56,8 @@ export const TRAIN_RATING_YELLOW_MIN = 0.5;
 /**
  * Max points a single puzzle can award (SEED-119): 1 for the guess plus 0-2
  * for the tiered move (good=2 / inaccuracy=1 / wrong=0) — guess and move
- * points are independent.
+ * points are independent. The backend parity test
+ * (tests/services/test_train_score_parity.py) pins this value.
  */
 export const TRAIN_POINTS_PER_PUZZLE = 3;
 

@@ -19,12 +19,15 @@ export function PrivacyPage() {
 
       <main className="max-w-2xl mx-auto px-4 py-12" data-testid="privacy-page">
         <h1 className="text-4xl font-bold">Privacy Policy</h1>
-        <p className="mt-2 text-sm text-muted-foreground">Last updated: March 2026</p>
+        <p className="mt-2 text-sm text-muted-foreground">Last updated: October 2026</p>
 
         <section className="mt-8">
           <h2 className="text-xl font-bold mb-3">What we collect</h2>
           <ul className="list-disc list-inside space-y-2 text-muted-foreground">
             <li>Chess.com and lichess usernames you enter (publicly available information)</li>
+            <li>
+              If you use Train, your lichess username (or your chess.com username if you have no lichess one) is shown next to your weekly Train points and accuracy on leaderboards that other FlawChess users can see. Guest accounts never appear, accounts without a username show as &quot;Anonymous&quot;, and you can hide yourself in Settings under Privacy.
+            </li>
             <li>Game data imported from those platforms (publicly accessible via their APIs)</li>
             <li>
               Email address and password if you register with email (password is hashed using

@@ -9,6 +9,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { SettingsDialogButton } from '@/components/settings/SettingsDialogButton';
 
+// Phase 230 D-16: the real card needs a QueryClientProvider; this suite renders the panel bare.
+vi.mock('@/components/settings/LeaderboardPrivacyCard', () => ({
+  LeaderboardPrivacyCard: () => null,
+}));
+
 afterEach(() => {
   cleanup();
   localStorage.clear();

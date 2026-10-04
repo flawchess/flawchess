@@ -185,6 +185,17 @@ const DEFAULT_TRAIN_PROGRESS: TrainProgressResponse = {
 };
 const getProgress = vi.fn(async () => DEFAULT_TRAIN_PROGRESS);
 
+// Phase 230: the landing's TrainLeaderboardCard calls trainApi.getLeaderboard.
+// Empty boards, null viewers and null pass targets keep it inert here.
+const EMPTY_LEADERBOARD_BOARD = { rows: [], viewer: null, pass_target: null };
+const getLeaderboard = vi.fn(async () => ({
+  week_start: '2032-01-05',
+  week_end: '2032-01-12',
+  seconds_remaining: 388800,
+  points: EMPTY_LEADERBOARD_BOARD,
+  accuracy: EMPTY_LEADERBOARD_BOARD,
+}));
+
 // 190-05: TrainReveal (mounted once the verdict lands) also fetches the
 // game card via libraryApi.getGame — mocked to reject deterministically
 // (fast, no real network call) since this tracer doesn't exercise the game
@@ -201,6 +212,7 @@ vi.mock('@/api/client', async () => {
       getSettings: () => getSettings(),
       updateSettings: vi.fn(),
       getProgress: () => getProgress(),
+      getLeaderboard: () => getLeaderboard(),
     },
     libraryApi: {
       ...actual.libraryApi,

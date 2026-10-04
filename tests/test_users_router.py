@@ -290,6 +290,96 @@ class TestProfileBetaEnabled:
 
 
 # ---------------------------------------------------------------------------
+# Phase 230 D-16: leaderboard_hidden round-trip through /users/me/profile
+# ---------------------------------------------------------------------------
+
+
+class TestProfileLeaderboardHidden:
+    @pytest.mark.asyncio
+    async def test_profile_leaderboard_hidden_defaults_false(self):
+        email = unique_email("lb_default")
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=app), base_url="http://test"
+        ) as client:
+            token = await _register_and_login(client, email, "testpassword123")
+            resp = await client.get(
+                "/api/users/me/profile", headers={"Authorization": f"Bearer {token}"}
+            )
+        assert resp.status_code == 200
+        assert resp.json()["leaderboard_hidden"] is False
+
+    @pytest.mark.asyncio
+    async def test_put_leaderboard_hidden_true_persists(self):
+        email = unique_email("lb_put_true")
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=app), base_url="http://test"
+        ) as client:
+            token = await _register_and_login(client, email, "testpassword123")
+            headers = {"Authorization": f"Bearer {token}"}
+            put_resp = await client.put(
+                "/api/users/me/profile", json={"leaderboard_hidden": True}, headers=headers
+            )
+            get_resp = await client.get("/api/users/me/profile", headers=headers)
+        assert put_resp.status_code == 200
+        assert put_resp.json()["leaderboard_hidden"] is True
+        assert get_resp.json()["leaderboard_hidden"] is True
+
+    @pytest.mark.asyncio
+    async def test_put_without_leaderboard_field_leaves_it_unchanged(self):
+        email = unique_email("lb_unchanged")
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=app), base_url="http://test"
+        ) as client:
+            token = await _register_and_login(client, email, "testpassword123")
+            headers = {"Authorization": f"Bearer {token}"}
+            await client.put(
+                "/api/users/me/profile", json={"leaderboard_hidden": True}, headers=headers
+            )
+            omitted = await client.put(
+                "/api/users/me/profile", json={"chess_com_username": "x"}, headers=headers
+            )
+            explicit_null = await client.put(
+                "/api/users/me/profile", json={"leaderboard_hidden": None}, headers=headers
+            )
+        assert omitted.status_code == 200
+        assert omitted.json()["leaderboard_hidden"] is True
+        assert explicit_null.json()["leaderboard_hidden"] is True
+
+    @pytest.mark.asyncio
+    async def test_put_leaderboard_hidden_false_unhides(self):
+        email = unique_email("lb_put_false")
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=app), base_url="http://test"
+        ) as client:
+            token = await _register_and_login(client, email, "testpassword123")
+            headers = {"Authorization": f"Bearer {token}"}
+            await client.put(
+                "/api/users/me/profile", json={"leaderboard_hidden": True}, headers=headers
+            )
+            resp = await client.put(
+                "/api/users/me/profile", json={"leaderboard_hidden": False}, headers=headers
+            )
+            get_resp = await client.get("/api/users/me/profile", headers=headers)
+        assert resp.status_code == 200
+        assert resp.json()["leaderboard_hidden"] is False
+        assert get_resp.json()["leaderboard_hidden"] is False
+
+    @pytest.mark.asyncio
+    async def test_put_leaderboard_hidden_non_boolean_is_422(self):
+        email = unique_email("lb_bad_value")
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=app), base_url="http://test"
+        ) as client:
+            token = await _register_and_login(client, email, "testpassword123")
+            resp = await client.put(
+                "/api/users/me/profile",
+                json={"leaderboard_hidden": "maybe"},
+                headers={"Authorization": f"Bearer {token}"},
+            )
+        assert resp.status_code == 422
+
+
+# ---------------------------------------------------------------------------
 # Quick 260811-u11 (SEED-147): current_strength, replacing
 # lichess_blitz_equivalent_rating (P-01)
 # ---------------------------------------------------------------------------

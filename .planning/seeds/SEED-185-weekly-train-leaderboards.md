@@ -1,6 +1,8 @@
 ---
 id: SEED-185
-status: dormant
+status: promoted
+promoted_to: Phase 230
+promoted: 2026-10-03
 planted: 2026-10-03
 planted_during: no open milestone (after v2.21), Phase 228 (settings page) ready to execute; /gsd-explore training features
 trigger_when: after Phase 228 (settings page) ships, or when planning the next Train / retention work
@@ -110,6 +112,12 @@ The real formula is client-side in `frontend/src/lib/trainScore.ts`.
   above is the prerequisite. Medals will need a persisted weekly result snapshot
   (opt-outs and account deletions must not rewrite past winners); design that in the
   medals phase.
+- **Score integrity (accepted risk in Phase 230, MUST close before medals ship):** Phase
+  230 code review WR-01. `record_solve` keeps the client-asserted `move_quality` for any
+  off-key move (only vetted key moves get the server tier, Phase 211 D-04), so a direct
+  API caller can bank up to 2 of 3 points per puzzle on both public boards. Owner accepted
+  this on 2026-10-04 for the leaderboards alone (no prizes, small user base). The medals
+  phase must verify or clamp off-key tiers server-side before awarding anything.
 
 ## Proposed defaults (confirm in discuss-phase)
 

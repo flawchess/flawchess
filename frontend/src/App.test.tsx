@@ -36,6 +36,12 @@ vi.mock('@/hooks/useUserProfile', () => ({
   useUserProfile: () => ({ data: profileState }),
 }));
 
+// Phase 230 D-16: the real Privacy card uses useSetLeaderboardHidden (absent from the
+// factory above) and a QueryClient; the settings overlay tests do not exercise it.
+vi.mock('@/components/settings/LeaderboardPrivacyCard', () => ({
+  LeaderboardPrivacyCard: () => null,
+}));
+
 vi.mock('@/hooks/useReadiness', () => ({
   useReadiness: () => ({
     tier1: tier1State,

@@ -11,7 +11,8 @@ import { useAuth } from '@/hooks/useAuth';
  * branch of the Train score screen (`source="train-score"`), the Import
  * page's guest promo bubble (`source="import-promo"`) and, since the 224 UAT
  * (round 2), the guest Train landing bubble (`source="train-landing"`, which
- * replaced the "Warm-up session" info card). Each surface carries
+ * replaced the "Warm-up session" info card). Phase 230 (D-14) adds a fourth,
+ * the guest weekly-leaderboard card (`source="train-leaderboard"`). Each surface carries
  * its own `data-umami-event-source` so lever B is attributable per surface
  * (S-7, ROADMAP SC 9).
  *
@@ -25,7 +26,11 @@ import { useAuth } from '@/hooks/useAuth';
  * heading it opens; the `btn-signup-why-*` testids are kept as-is.
  */
 
-export type SignupAskSource = 'train-score' | 'import-promo' | 'train-landing';
+export type SignupAskSource =
+  | 'train-score'
+  | 'import-promo'
+  | 'train-landing'
+  | 'train-leaderboard';
 
 export interface SignupAskActionsProps {
   source: SignupAskSource;

@@ -38,6 +38,8 @@ export interface UserProfile {
   impersonation: ImpersonationContext | null;
   // BETA-01: beta feature flag (e.g. Endgame Insights in v1.11). Default false; flipped via direct DB op.
   beta_enabled: boolean;
+  // Phase 230 D-16: opt-out from the weekly Train leaderboards, written via PUT /users/me/profile.
+  leaderboard_hidden: boolean;
   // Quick 260811-u11 (SEED-147): the opponent-matching current-strength
   // estimate, replacing `lichess_blitz_equivalent_rating`. Null for guests,
   // for users with no anchor at all, and for users with anchors only in

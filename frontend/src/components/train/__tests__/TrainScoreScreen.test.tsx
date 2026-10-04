@@ -79,6 +79,15 @@ vi.mock('@/lib/sounds', () => ({
   playSound: (...args: unknown[]) => playSound(...args),
 }));
 
+// Phase 230 (D-11): the rank lines issue their own query, and this suite has no
+// QueryClientProvider, so the component is stubbed; it only needs to prove the
+// session id is passed and the element sits right under the Points line.
+vi.mock('@/components/train/TrainScoreRankLines', () => ({
+  TrainScoreRankLines: ({ sessionId }: { sessionId: number | null }) => (
+    <div data-testid="train-score-rank-lines" data-session-id={String(sessionId)} />
+  ),
+}));
+
 // Phase 222: "already seen" by default (a past timestamp on all three
 // onboarding columns) so every PRE-EXISTING test in this file keeps seeing
 // the one-liner variant, exactly as it did before the bubble landed — mirrors
@@ -141,11 +150,26 @@ function renderScoreScreen(
       isWarmup={false}
       hasGames={true}
       isGuest={false}
+      sessionId={42}
       {...overrides}
     />,
     { wrapper: MemoryRouter },
   );
 }
+
+describe('TrainScoreScreen rank lines (Phase 230 D-11)', () => {
+  afterEach(() => {
+    cleanup();
+  });
+
+  it('renders the rank lines right under the Points line, carrying the session id', () => {
+    renderScoreScreen({ total: 12, max: 20 });
+    const total = screen.getByTestId('train-score-total');
+    const lines = screen.getByTestId('train-score-rank-lines');
+    expect(total.nextElementSibling).toBe(lines);
+    expect(lines.getAttribute('data-session-id')).toBe('42');
+  });
+});
 
 describe('TrainScoreScreen', () => {
   beforeEach(() => {

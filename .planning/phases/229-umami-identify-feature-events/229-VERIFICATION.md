@@ -1,7 +1,7 @@
 ---
 phase: 229-umami-identify-feature-events
 verified: 2026-10-03T21:40:00Z
-status: human_needed
+status: passed
 score: 5/5 roadmap truths and 18/18 CONTEXT decisions verified
 covered_files:
   - .planning/phases/229-umami-identify-feature-events/229-01-PLAN.md
@@ -93,6 +93,7 @@ covered_files:
   - frontend/src/pages/library/GamesTab.tsx
   - frontend/src/pages/openings/OpeningsFilterFields.tsx
   - frontend/src/pages/openings/OpeningsMobileDrawers.tsx
+
 covered_digest: "v2:sha256:e0f85e3aa4b442977368eb2885b0a268fce0d53e0c7293f9143985a68bc02d53"
 behavior_unverified: 0
 overrides_applied: 0
@@ -223,7 +224,6 @@ None blocking. Notes:
 1. **First pageview carries id on deployed tracker.** Test: after release, logged in on flawchess.com, reload a protected route and inspect the first `/api/send` payload. Expected: `id` present. Why human: needs the real tracker (D-09/D-16, RESEARCH A1).
 2. **Umami 3.4.0 running.** Test: `docker compose images umami` on the server and check the logs for migrations 25/26. Expected: tag 3.4.0, no crash loop. Why human: prod infra after release (D-17).
 3. **`session.distinct_id` populated.** Test: run the five post-ship SQL queries in `229-RESEARCH.md` via `flawchess-umami-db`, exclude admin ids from `flawchess-prod-db`. Expected: identified sessions > 0 (baseline 0 of 1,941), first-pageview gap near 0, feature events with props. Why human: prod data after release.
-
 
 Also not walkable in the browser (covered by unit tests, noted in 229-UAT.md): mobile More drawer and `nav-click` (< 736 px viewport), Stockfish engine toggle, Train solve loop events, bot result dialog actions and confirmed discard, `line-delete` and analysis tags-panel chip-cycle (acceptance grep only). I confirmed call sites for these by grep (`App.tsx:554,576,595`, `Analysis.tsx:431`, `TrainSolveScreen.tsx:527,1509`, `GameResultDialog.tsx:173-208`, `ResumeGate.tsx:117,123`, `VariationTree.tsx:691,1033`, `AnalysisTagsPanel.tsx:224`).
 

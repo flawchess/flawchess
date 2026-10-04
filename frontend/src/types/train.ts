@@ -291,3 +291,64 @@ export interface TrainProgressResponse {
   next_due_date: string | null;
   badge_visible: boolean;
 }
+
+// ─── Weekly leaderboards (Phase 230) ─────────────────────────────────────────
+
+/** Which weekly board a payload or tab refers to. Mirrors app/schemas/train.py. */
+export type LeaderboardBoardKind = 'points' | 'accuracy';
+
+/**
+ * Row visibility. `'public'` for every row except the viewer's own private
+ * would-be row: `'hidden'` (opted out, D-13) or `'guest'` (ghost row, D-14).
+ * Mirrors app/schemas/train.py.
+ */
+export type LeaderboardVisibility = 'public' | 'hidden' | 'guest';
+
+/** One ranked row of a weekly board. Mirrors app/schemas/train.py. */
+export interface LeaderboardRow {
+  rank: number;
+  name: string;
+  /** Points, or the floored accuracy percent. */
+  value: number;
+  /** All solves (points board) or non-filler solves (accuracy board). */
+  puzzles: number;
+  /** Accuracy board only: fewer than 20 qualifying puzzles this week. */
+  tentative: boolean;
+  is_viewer: boolean;
+  visibility: LeaderboardVisibility;
+  /** True when a gap marker belongs before this row. */
+  gap_before: boolean;
+}
+
+/** The viewer's own standing on one board. Mirrors app/schemas/train.py. */
+export interface LeaderboardViewer {
+  rank: number;
+  /** Rank without the given session's solves (score screen only), else null. */
+  rank_without_session: number | null;
+  tentative: boolean;
+  puzzles_to_qualify: number;
+  visibility: LeaderboardVisibility;
+}
+
+/** The nearest strictly better Points row. Mirrors app/schemas/train.py. */
+export interface LeaderboardPassTarget {
+  name: string;
+  points_needed: number;
+}
+
+/** One board: rows, the viewer's standing and (points board only) a pass target. */
+export interface LeaderboardBoard {
+  rows: LeaderboardRow[];
+  viewer: LeaderboardViewer | null;
+  pass_target: LeaderboardPassTarget | null;
+}
+
+/** Response for GET /train/leaderboard. Mirrors app/schemas/train.py. */
+export interface TrainLeaderboardResponse {
+  week_start: string;
+  week_end: string;
+  /** Server-computed remainder to week_end; the client never does its own week math (D-02). */
+  seconds_remaining: number;
+  points: LeaderboardBoard;
+  accuracy: LeaderboardBoard;
+}
