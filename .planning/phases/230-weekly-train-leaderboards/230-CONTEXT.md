@@ -113,7 +113,7 @@ Out of scope: medals and their weekly snapshot table, past-week history, notific
 **Downstream agents MUST read these before planning or implementing.**
 
 ### Phase source
-- `.planning/seeds/SEED-185-weekly-train-leaderboards.md` — full locked decisions, prod evidence
+- `../../seeds/closed/SEED-185-weekly-train-leaderboards.md` — full locked decisions, prod evidence
   (points ≈ volume, qualifier rationale, warm-up/filler exclusion), and the medals follow-up constraint
 - `.planning/ROADMAP.md` § "Phase 230: Weekly Train Leaderboards (SEED-185)" — phase goal and locked list
 

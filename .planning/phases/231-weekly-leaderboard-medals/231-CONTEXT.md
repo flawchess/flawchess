@@ -22,7 +22,7 @@ seasons/leagues/prizes, WR-01 hardening.
 ## Implementation Decisions
 
 ### Locked upstream (SEED-186 + ROADMAP Phase 231, owner 2026-10-04; do not re-open)
-Everything in `.planning/seeds/SEED-186-weekly-leaderboard-medals.md` § "Locked decisions" is binding:
+Everything in `../../seeds/closed/SEED-186-weekly-leaderboard-medals.md` § "Locked decisions" is binding:
 per-board medals, Accuracy medals for qualified users only, medals follow the public board (opted-out
 at finalization time and guests are ineligible), Olympic ties, no Points participation floor,
 `MEDALS_START_WEEK = 2026-10-05`, WR-01 accepted (do not fix), snapshot shape (`final_rank`, `value`,
@@ -120,9 +120,9 @@ server-side claim via `celebrated_at` on Claim or dismiss, no Umami event, admin
 **Downstream agents MUST read these before planning or implementing.**
 
 ### Phase source
-- `.planning/seeds/SEED-186-weekly-leaderboard-medals.md` — full locked decisions, demo scenarios, breadcrumbs
+- `../../seeds/closed/SEED-186-weekly-leaderboard-medals.md` — full locked decisions, demo scenarios, breadcrumbs
 - `.planning/ROADMAP.md` § "Phase 231: Weekly Leaderboard Medals (SEED-186)" — phase goal and locked list
-- `.planning/seeds/SEED-185-weekly-train-leaderboards.md` — board rules, UTC deadline, qualifier, tie display, accepted risks
+- `../../seeds/closed/SEED-185-weekly-train-leaderboards.md` — board rules, UTC deadline, qualifier, tie display, accepted risks
 
 ### Phase 230 foundation
 - `.planning/phases/230-weekly-train-leaderboards/230-CONTEXT.md` — D-01..D-19 (scoring, window, ranking, visibility)

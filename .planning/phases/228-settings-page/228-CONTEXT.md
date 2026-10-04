@@ -130,7 +130,7 @@ Locked upstream in SEED-175 / ROADMAP and not re-decided here:
 **Downstream agents MUST read these before planning or implementing.**
 
 ### Phase scope and locked decisions
-- `.planning/seeds/SEED-175-settings-page.md`: locked decisions, breadcrumbs, and the
+- `../../seeds/closed/SEED-175-settings-page.md`: locked decisions, breadcrumbs, and the
   "Verify in planning" list (FC `rankedLines` reliably yielding up to 5 lines; tests pinning
   `MAX_LINES = 2`, e.g. `FlawChessEngineLines.test.tsx`, should read the setting default).
 - `.planning/ROADMAP.md`, Phase 228 entry.

@@ -164,7 +164,7 @@ None. T-228-06/07/08 mitigated: `multiPv` is derived only from validated `LineCo
 ## Notes
 
 - The Analysis free run at high settings widens the grading union to a handful of extra moves at the fixed grading time cap (RESEARCH Open Question 2): accepted breadth/depth trade, no mitigation planned.
-- A foreign unstaged change (`.planning/seeds/SEED-185-weekly-train-leaderboards.md`) from another session was present throughout and was never staged.
+- A foreign unstaged change (`../../seeds/closed/SEED-185-weekly-train-leaderboards.md`) from another session was present throughout and was never staged.
 
 ## Self-Check: PASSED
 

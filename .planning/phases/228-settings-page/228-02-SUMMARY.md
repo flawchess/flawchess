@@ -134,7 +134,7 @@ None. T-228-04 holds: counts reach the cards only as validated `LineCount` value
 ## Follow-ups (not done, out of scope)
 
 - `useGameOverlay`'s whole `boardArrows` field is unused by its only caller (Analysis.tsx never reads it); retiring the field is a separate cleanup.
-- A shared checkout hazard surfaced: a foreign `chore(reports)` commit and an unrelated modified `.planning/seeds/SEED-185-weekly-train-leaderboards.md` appeared during the run; neither was touched or staged.
+- A shared checkout hazard surfaced: a foreign `chore(reports)` commit and an unrelated modified `../../seeds/closed/SEED-185-weekly-train-leaderboards.md` appeared during the run; neither was touched or staged.
 
 ## Self-Check: PASSED
 
