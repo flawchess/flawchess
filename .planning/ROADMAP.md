@@ -262,6 +262,50 @@ Plans:
 **Wave 4** *(blocked on Wave 3 completion)*
 - [x] 230-05-PLAN.md — Score-screen rank lines (rank with vs without the session), CHANGELOG, full pre-merge gate and browser UAT
 
+### Phase 231: Weekly Leaderboard Medals (SEED-186)
+
+**Goal**: At each Sunday 24:00 UTC deadline the top 3 of each weekly Train board (Points, Accuracy)
+earn gold, silver and bronze medals, shown as a lifetime tally next to names on the live board, as a
+last-week podium in each tab, and celebrated with a claim dialog the first time a winner opens Train
+after the week closes. Non-medallists get "You finished #N last week".
+
+- **Eligibility (locked):** medals separate per board. Accuracy medals for qualified users only (20+
+  non-filler puzzles; tentative users skipped in final standings). Medals follow the public board:
+  opted-out (at finalization time) and guests are not eligible; the privacy toggle copy gets one line
+  saying so. Olympic ties (two golds, then bronze). No Points participation floor. First medal week
+  2026-10-05 (`MEDALS_START_WEEK`).
+- **Score integrity (locked):** WR-01 (client-asserted `move_quality` on off-key moves) accepted for
+  medals too, reversing SEED-185's "must close before medals". Do not fix unprompted.
+- **Snapshot (locked):** full final standings, one row per (week, board, user): `final_rank`, `value`,
+  `puzzles`, `display_name` as of finalization, explicit `medal` column (SMALLINT IntEnum + CHECK,
+  NULL for non-medallists; never derived from `final_rank <= 3`), `celebrated_at`. Unique on
+  week + board + user. Lazy idempotent finalization (no cron): the first request after a deadline
+  finalizes every unfinalized week from `MEDALS_START_WEEK` with `ON CONFLICT DO NOTHING`. Account
+  deletion sets `user_id` NULL and `display_name` "Deleted user". Opt-out after winning keeps the medal
+  but masks past podium names as "Anonymous"; tally keyed on user id survives an opt-out round trip.
+- **Live-board tally (locked):** lifetime medals for that tab's board only, non-zero types only,
+  lucide `Medal` icon tinted via gold/silver/bronze `theme.ts` constants plus a `text-sm` count, no
+  emoji; lives in the wrapping name block (drops below the name at 375 px), `aria-label`, never affects
+  rank. Wire format `medals: {gold, silver, bronze}` per row from one grouped `COUNT`, still no user id.
+- **Podium (locked):** "Last week: [gold] alice [silver] bob [bronze] carol" at the top of each tab,
+  names only, every tied name listed; viewer's own non-medal final rank in the hint area.
+- **Celebration (locked):** medal dialog on Train open when unclaimed medals exist (all boards, all
+  weeks, newest first); medals animate in, a "Claim" button fires `fireWinConfetti` and the win sound
+  (the tap is the audio-unlock gesture, iOS included); respects `useMuted` and `prefersReducedMotion()`.
+  Claim state server-side via `celebrated_at` set by POST on Claim or dismiss. No Umami event needed.
+- **Demo page (locked):** admin-only "Leaderboard medals demo" next to `TrainReminderTestCard`, driven
+  by client-side dummy data, rendering the real production components via props (thin fetching hook),
+  with celebrate scenarios, board-state scenarios and simulated muted / reduced-motion toggles.
+- **Out of scope:** per-medal popovers with dates, medal history or profile medal case, notifications,
+  seasons/leagues/prizes, WR-01 hardening.
+
+**Depends on**: Phase 230 (weekly leaderboards; aggregation, ranking, opt-out, `LeaderboardRow`)
+**Requirements**: TBD
+**Plans:** 0 plans
+
+Plans:
+- [ ] TBD (run /gsd-plan-phase 231 to break down)
+
 Phase detail for every shipped milestone lives in `milestones/vX.Y-ROADMAP.md`, its phase directories in `milestones/vX.Y-phases/`, and the per-milestone summaries in [MILESTONES.md](MILESTONES.md).
 
 ## Backlog

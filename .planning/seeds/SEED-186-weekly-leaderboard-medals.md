@@ -1,6 +1,8 @@
 ---
 id: SEED-186
-status: dormant
+status: promoted
+promoted_to: Phase 231
+promoted: 2026-10-04
 planted: 2026-10-04
 planted_during: no open milestone; right after Phase 230 (SEED-185 weekly Train leaderboards) merged to main
 trigger_when: next Train / retention phase, once the weekly leaderboards have run a few weeks in prod
