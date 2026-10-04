@@ -5,8 +5,8 @@ current_phase: 230
 current_phase_name: COMPLETE, on branch gsd/phase-230-weekly-train-leaderboards
 status: completed
 stopped_at: Phase 231 context gathered
-last_updated: "2026-10-04T04:31:19.972Z"
-state_head: 1b72679a4a77c82a94c37b94a2d4bfeff16cbcaa
+last_updated: "2026-10-04T04:32:50.901Z"
+state_head: eb3c0f530ba8b52aa086add11a2681f8e998be3b
 progress:
   total_phases: 4
   completed_phases: 103
@@ -14,7 +14,7 @@ progress:
   completed_plans: 47
 milestone_name: Browser Engine Throughput
 last_activity: 2026-10-04
-last_activity_desc: Phase 230 executed and verified (5/5 plans, browser UAT 7/7, review WR-03/IN-01/IN-02 fixed, WR-01 accepted risk carried to SEED-185 medals); awaiting squash-merge to main
+last_activity_desc: Completed quick task 261004-8rt: Accuracy leaderboard qualified-first tiering
 ---
 
 # Project State: FlawChess
@@ -958,6 +958,7 @@ None active.
 | 113 | Analysis page: move stats accuracy shown as card header band | 2026-10-03 | 0e0723eb8 | — |
 | 114 | Mobile analysis: hide human/knight icons in card headers; Maia header -> 'Maia, Human Move Probability' | 2026-10-03 | 7ed295414 | — |
 | 115 | streak flame number: white font with black outline | 2026-10-03 | 6099bfdfc | — |
+| 261004-8rt | Accuracy leaderboard: qualified users ranked first, tentative unranked below a divider (supersedes D-03) | 2026-10-04 | eb3c0f530 | [261004-8rt-accuracy-leaderboard-qualified-first-tie](./quick/261004-8rt-accuracy-leaderboard-qualified-first-tie/) |
 
 ## Deferred Items
 
