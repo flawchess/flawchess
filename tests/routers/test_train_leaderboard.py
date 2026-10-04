@@ -166,7 +166,7 @@ async def _get_leaderboard(token: str, session_id: int | str | None = None) -> h
         )
 
 
-def _rows(board: dict[str, Any]) -> list[tuple[int, str, int, int, bool]]:
+def _rows(board: dict[str, Any]) -> list[tuple[int | None, str, int, int, bool]]:
     return [(r["rank"], r["name"], r["value"], r["puzzles"], r["is_viewer"]) for r in board["rows"]]
 
 
@@ -222,10 +222,11 @@ async def test_points_and_accuracy_boards_rank_this_week(
             (3, "Anonymous", 6, 2, True),
         ]
         assert _rows(body["accuracy"]) == [
-            (1, a_name, 100, 4, False),
-            (1, "Anonymous", 100, 2, True),
-            (3, b_name, 55, 3, False),
+            (None, a_name, 100, 4, False),
+            (None, b_name, 55, 3, False),
+            (None, "Anonymous", 100, 2, True),
         ]
+        assert body["accuracy"]["viewer"]["rank"] is None
         assert all(r["tentative"] for r in body["accuracy"]["rows"])
         assert body["accuracy"]["viewer"]["puzzles_to_qualify"] == 18
         assert body["points"]["viewer"]["rank"] == 3
@@ -361,7 +362,7 @@ async def test_solves_outside_the_pinned_week_are_ignored(
         body = resp.json()
         # Only the Monday 00:00:00 solve that starts the week counts: 3 points, 1 puzzle.
         assert _rows(body["points"]) == [(1, "Anonymous", 3, 1, True)]
-        assert _rows(body["accuracy"]) == [(1, "Anonymous", 100, 1, True)]
+        assert _rows(body["accuracy"]) == [(None, "Anonymous", 100, 1, True)]
     finally:
         await _delete_users(test_engine, user_ids)
 
@@ -401,9 +402,10 @@ async def test_rank_without_session_follows_the_viewer_across_two_sessions(
         # V now has 9 points to A's 6; without S2 V is back to 3 and behind A.
         assert second["points"]["viewer"]["rank"] == 1
         assert second["points"]["viewer"]["rank_without_session"] == 2
-        # 100 percent accuracy with or without S2, tied with A at rank 1.
-        assert second["accuracy"]["viewer"]["rank"] == 1
-        assert second["accuracy"]["viewer"]["rank_without_session"] == 1
+        # Both users are under 20 puzzles, so the viewer is unranked on Accuracy and
+        # gets no delta (no comparison across the qualification cutoff).
+        assert second["accuracy"]["viewer"]["rank"] is None
+        assert second["accuracy"]["viewer"]["rank_without_session"] is None
 
         plain = (await _get_leaderboard(v_token)).json()
 
