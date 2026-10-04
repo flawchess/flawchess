@@ -2,7 +2,7 @@
 
 Every test builds WeeklyAggregate / SolveTotals values directly. Test names carry a
 rule token (window, display_name, accuracy_percent, qualify, rank, slice,
-pass_target, hidden, guest, without_session, totals_without) so the VALIDATION map can select them with pytest -k.
+pass_target, hidden, guest, without_session, totals_without, tier) so the VALIDATION map can select them with pytest -k.
 """
 
 from __future__ import annotations
@@ -17,6 +17,7 @@ from app.services.train_leaderboard import (
     ANONYMOUS_DISPLAY_NAME,
     LEADERBOARD_TOP_N,
     Board,
+    BoardRow,
     accuracy_percent,
     build_board,
     build_leaderboard,
@@ -56,6 +57,12 @@ def _agg(
         is_guest=is_guest,
         leaderboard_hidden=hidden,
     )
+
+
+def _rk(row: BoardRow) -> int:
+    """A row's rank, asserted numeric (Points rows are always ranked)."""
+    assert row.rank is not None
+    return row.rank
 
 
 def _points(aggs: list[WeeklyAggregate], viewer_id: int) -> Board:
@@ -173,6 +180,8 @@ def test_qualify_below_the_minimum_is_tentative_with_puzzles_to_go() -> None:
     assert board.viewer.tentative is True
     assert board.viewer.puzzles_to_qualify == 1
     assert board.rows[0].tentative is True
+    assert board.viewer.rank is None
+    assert board.rows[0].rank is None
 
 
 def test_qualify_at_the_minimum_is_no_longer_tentative() -> None:
@@ -241,14 +250,19 @@ def test_rank_equal_value_and_puzzles_fall_back_to_casefolded_name() -> None:
 
 
 def test_rank_accuracy_ties_are_visible_ties_on_the_floored_percent() -> None:
-    # 8/9 = 88.9% and 24/27 = 88.9% both floor to 88, so they tie; puzzles breaks the order.
+    # 56/63 = 88.9% and 64/72 = 88.9% both floor to 88, so they tie; puzzles breaks the order.
+    # All three are qualified (20+ puzzles), so all are ranked.
     aggs = [
-        _agg(1, points=8, puzzles=3),  # 8/9 -> 88
-        _agg(2, points=24, puzzles=9),  # 24/27 -> 88
-        _agg(3, points=9, puzzles=3),  # 100
+        _agg(1, points=56, puzzles=21),  # 56/63 -> 88
+        _agg(2, points=64, puzzles=24),  # 64/72 -> 88
+        _agg(3, points=60, puzzles=20),  # 100
     ]
     board = _accuracy(aggs, viewer_id=1)
-    assert [(r.rank, r.value) for r in board.rows] == [(1, 100), (2, 88), (2, 88)]
+    assert [(r.rank, r.value, r.puzzles) for r in board.rows] == [
+        (1, 100, 20),
+        (2, 88, 24),
+        (2, 88, 21),
+    ]
 
 
 # --- slice ------------------------------------------------------------------
@@ -277,11 +291,11 @@ def test_slice_top_n_plus_viewer_neighbours_with_single_gap(
     viewer_index: int, shown: list[int], gap_position: int | None
 ) -> None:
     board = _points(_ladder(_SLICE_SIZE), viewer_id=viewer_index + 1)
-    assert [r.rank - 1 for r in board.rows] == shown
-    gap_positions = [r.rank - 1 for r in board.rows if r.gap_before]
+    assert [_rk(r) - 1 for r in board.rows] == shown
+    gap_positions = [_rk(r) - 1 for r in board.rows if r.gap_before]
     assert gap_positions == ([] if gap_position is None else [gap_position])
     viewer_rows = [r for r in board.rows if r.is_viewer]
-    assert [r.rank - 1 for r in viewer_rows] == [viewer_index]
+    assert [_rk(r) - 1 for r in viewer_rows] == [viewer_index]
 
 
 def test_slice_short_board_returns_every_row() -> None:
@@ -379,9 +393,9 @@ def test_hidden_viewer_gets_a_private_would_be_row_among_visible_users() -> None
 
 def test_guest_never_appears_on_or_shifts_a_registered_viewers_board() -> None:
     aggs = [
-        _agg(1, points=50, name="ghost", is_guest=True),
-        _agg(2, points=20, name="registered"),
-        _agg(3, points=10, name="viewer"),
+        _agg(1, points=50, puzzles=20, name="ghost", is_guest=True),
+        _agg(2, points=20, puzzles=20, name="registered"),
+        _agg(3, points=10, puzzles=20, name="viewer"),
     ]
     for kind in ("points", "accuracy"):
         board = build_board(kind, aggs, viewer_id=3, viewer_visibility="public")
@@ -489,12 +503,13 @@ def test_without_session_viewer_without_an_entry_has_no_standing() -> None:
 
 
 def test_without_session_accuracy_can_improve_and_is_returned_unclamped() -> None:
-    # Strong earlier solves (10 puzzles at 100 percent) plus a weak session (10 puzzles
-    # at 0 percent): 50 percent with the session, 100 percent without it.
+    # Strong earlier solves (20 puzzles at 100 percent) plus a weak session (10 puzzles
+    # at 0 percent): 66 percent with the session, 100 percent without it. The 20 remaining
+    # puzzles keep the viewer qualified, so the delta is still computed.
     aggs = [
         _agg(1, points=60, puzzles=20, name="rival"),  # 100 percent
-        _agg(2, points=30, puzzles=10, name="mid"),  # 100 percent
-        _agg(9, points=30, puzzles=20, name="viewer"),  # 50 percent
+        _agg(2, points=45, puzzles=20, name="mid"),  # 75 percent
+        _agg(9, points=60, puzzles=30, name="viewer"),  # 66 percent
     ]
     board = build_board(
         "accuracy",
@@ -534,3 +549,159 @@ def test_totals_without_subtracts_each_field_and_clamps_at_zero() -> None:
     total = SolveTotals(points=10, puzzles=4, nf_points=8, nf_puzzles=3)
     assert totals_without(total, SolveTotals(3, 1, 2, 1)) == SolveTotals(7, 3, 6, 2)
     assert totals_without(total, SolveTotals(99, 99, 99, 99)) == SolveTotals(0, 0, 0, 0)
+
+
+# --- tier (quick 261004-8rt: qualified first, tentative unranked below) -------
+
+
+def test_tier_qualified_user_outranks_tentative_users_at_a_higher_percent() -> None:
+    aggs = [
+        _agg(1, points=30, puzzles=20, name="steady"),  # 50 percent, qualified
+        _agg(2, points=3, puzzles=1, name="lucky"),  # 100 percent, 1 puzzle
+        _agg(3, points=57, puzzles=19, name="almost"),  # 100 percent, 19 puzzles
+    ]
+    board = _accuracy(aggs, viewer_id=1)
+    assert [(r.name, r.rank, r.tentative) for r in board.rows] == [
+        ("steady", 1, False),
+        ("almost", None, True),
+        ("lucky", None, True),
+    ]
+
+
+def test_tier_tentative_rows_order_by_puzzles_then_value_then_name() -> None:
+    aggs = [
+        _agg(1, points=3 * 2, puzzles=2, name="bravo"),  # 2 puzzles, 100
+        _agg(2, points=3 * 2, puzzles=2, name="Alpha"),  # 2 puzzles, 100
+        _agg(3, points=15, puzzles=10, name="fifty"),  # 10 puzzles, 50
+        _agg(4, points=27, puzzles=10, name="ninety"),  # 10 puzzles, 90
+    ]
+    board = _accuracy(aggs, viewer_id=1)
+    assert [r.name for r in board.rows] == ["ninety", "fifty", "Alpha", "bravo"]
+    assert all(r.rank is None and r.tentative for r in board.rows)
+
+
+def test_tier_competition_ranks_among_qualified_ignore_tentative_rows() -> None:
+    aggs = [
+        _agg(1, points=60, puzzles=20, name="top"),  # 100
+        _agg(2, points=56, puzzles=21, name="tie_a"),  # 88
+        _agg(3, points=64, puzzles=24, name="tie_b"),  # 88
+        _agg(4, points=3, puzzles=1, name="tentative"),
+    ]
+    board = _accuracy(aggs, viewer_id=1)
+    assert [r.rank for r in board.rows] == [1, 2, 2, None]
+
+
+def test_tier_all_tentative_week_shows_the_five_most_active() -> None:
+    aggs = [_agg(i, points=3 * (i + 1), puzzles=i + 1) for i in range(1, 9)]
+    board = _accuracy(aggs, viewer_id=999)
+    assert [r.puzzles for r in board.rows] == [9, 8, 7, 6, 5]
+    assert all(r.rank is None for r in board.rows)
+
+
+def test_tier_slice_windows_over_the_combined_qualified_then_tentative_list() -> None:
+    qualified = [_agg(i, points=60 - i, puzzles=20, name=f"q{i}") for i in (1, 2, 3)]
+    tentative = [_agg(i, points=3 * (23 - i), puzzles=23 - i, name=f"t{i}") for i in range(4, 14)]
+    # Tentative puzzles are 19..10 in id order; id 12 (11 puzzles) is the 9th tentative.
+    board = _accuracy([*qualified, *tentative], viewer_id=12)
+    assert [r.name for r in board.rows] == [
+        "q1",
+        "q2",
+        "q3",
+        "t4",
+        "t5",
+        "t10",
+        "t11",
+        "t12",
+        "t13",
+    ]
+    assert [r.rank for r in board.rows] == [1, 2, 3, None, None, None, None, None, None]
+    assert [r.gap_before for r in board.rows].count(True) == 1
+    assert board.rows[5].gap_before is True
+    assert board.rows[7].is_viewer is True
+    assert board.viewer is not None
+    assert board.viewer.rank is None
+
+
+def test_tier_tentative_viewer_is_unranked_and_gets_no_rank_without_delta() -> None:
+    aggs = [
+        _agg(1, points=60, puzzles=20, name="qualified"),
+        _agg(9, points=15, puzzles=5, name="viewer"),
+    ]
+    board = build_board(
+        "accuracy",
+        aggs,
+        viewer_id=9,
+        viewer_visibility="public",
+        session_contribution=_contribution(points=6, puzzles=2),
+    )
+    assert board.viewer is not None
+    assert board.viewer.rank is None
+    assert board.viewer.tentative is True
+    assert board.viewer.puzzles_to_qualify == 15
+    assert board.viewer.rank_without_session is None
+
+
+def test_tier_session_that_crossed_the_cutoff_has_no_rank_without_delta() -> None:
+    # 22 puzzles with the session, 17 without: ranked now, tentative without the session.
+    aggs = [
+        _agg(1, points=60, puzzles=20, name="qualified"),
+        _agg(9, points=66, puzzles=22, name="viewer"),
+    ]
+    board = build_board(
+        "accuracy",
+        aggs,
+        viewer_id=9,
+        viewer_visibility="public",
+        session_contribution=_contribution(points=15, puzzles=5),
+    )
+    assert board.viewer is not None
+    assert board.viewer.rank is not None
+    assert board.viewer.rank_without_session is None
+
+
+def test_tier_rank_without_compares_against_qualified_visible_others_only() -> None:
+    aggs = [
+        _agg(1, points=54, puzzles=20, name="rival"),  # 90
+        _agg(2, points=36, puzzles=20, name="low"),  # 60
+        _agg(3, points=3, puzzles=1, name="flash"),  # 100, tentative
+        _agg(9, points=48, puzzles=30, name="viewer"),  # 53 with, 80 without
+    ]
+    board = build_board(
+        "accuracy",
+        aggs,
+        viewer_id=9,
+        viewer_visibility="public",
+        session_contribution=_contribution(points=0, puzzles=10),
+    )
+    assert board.viewer is not None
+    assert board.viewer.rank == 3
+    # The tentative 100 percent "flash" does not count ahead of the viewer.
+    assert board.viewer.rank_without_session == 2
+
+
+@pytest.mark.parametrize("visibility", ["guest", "hidden"])
+def test_tier_guest_and_hidden_viewers_sit_in_the_tentative_section(visibility: str) -> None:
+    aggs = [
+        _agg(1, points=30, puzzles=20, name="qualified"),
+        _agg(2, points=15, puzzles=5, name="public_tentative"),
+        _agg(
+            9,
+            points=9,
+            puzzles=3,
+            name="me",
+            is_guest=visibility == "guest",
+            hidden=visibility == "hidden",
+        ),
+    ]
+    viewer_visibility = resolve_viewer_visibility(
+        is_guest=visibility == "guest", leaderboard_hidden=visibility == "hidden"
+    )
+    board = build_board("accuracy", aggs, viewer_id=9, viewer_visibility=viewer_visibility)
+    assert [(r.name, r.rank, r.visibility) for r in board.rows] == [
+        ("qualified", 1, "public"),
+        ("public_tentative", None, "public"),
+        ("me", None, visibility),
+    ]
+    # A different public viewer sees neither the guest nor the hidden user in any tier.
+    other = _accuracy(aggs, viewer_id=2)
+    assert [r.name for r in other.rows] == ["qualified", "public_tentative"]

@@ -8,6 +8,7 @@
 import type {
   LeaderboardBoardKind,
   LeaderboardPassTarget,
+  LeaderboardRow,
   LeaderboardViewer,
   TrainLeaderboardResponse,
 } from '@/types/train';
@@ -27,6 +28,9 @@ export const ACCURACY_NOT_ENTERED_COPY =
 export const ACCURACY_EMPTY_COPY = 'No accuracy entries yet this week.';
 export const EMPTY_WEEK_COPY = 'No one has trained yet this week. Be the first.';
 export const ENTER_BOARD_HINT_COPY = "Solve a puzzle to enter this week's board.";
+
+/** Divider label before the first unranked (tentative) Accuracy row (quick 261004-8rt). */
+export const NOT_YET_QUALIFIED_DIVIDER_COPY = 'Not yet qualified';
 
 /** Shown under the board for guests, above the shared sign-up action pair (D-14). */
 export const GUEST_CLAIM_SPOT_COPY = 'Sign up to claim your spot';
@@ -67,6 +71,14 @@ export function writeLeaderboardTab(tab: LeaderboardBoardKind): void {
   } catch {
     // Degrade to "not remembered"; never crash the card.
   }
+}
+
+/**
+ * Index of the first unranked row (rank null), where the "Not yet qualified"
+ * divider goes; -1 when every row is ranked.
+ */
+export function firstUnrankedRowIndex(rows: readonly LeaderboardRow[]): number {
+  return rows.findIndex((row) => row.rank === null);
 }
 
 /** '1 more puzzle to qualify' / 'N more puzzles to qualify'. Never implies all solves count (D-19). */
@@ -178,29 +190,32 @@ const RANK_LINE_LABEL: Record<LeaderboardBoardKind, string> = {
 export const ACCURACY_NOT_ENTERED_LINE =
   "Accuracy: not on this board yet (tactics puzzles don't count)";
 
-/** Only a tentative Accuracy ranking carries the suffix (D-11). */
-function rankLineSuffix(kind: LeaderboardBoardKind, viewer: LeaderboardViewer): string {
-  return kind === 'accuracy' && viewer.tentative ? ' (tentative)' : '';
-}
-
 /**
  * One score-screen rank line for a board (D-11, D-12, D-17, D-18).
  *
+ * - unranked (rank null, a tentative Accuracy viewer): "Accuracy: N more to
+ *   qualify" from the server's puzzles_to_qualify. Supersedes D-11's
+ *   "(tentative)" suffix: a tentative viewer never gets a numbered rank line
+ *   (quick 261004-8rt). The wording names no solve type, so D-19 holds.
  * - guest: the hypothetical rank wording, no delta (D-17).
  * - first entry of the week: "#N this week".
  * - improvement: "#N (up M)".
  * - everything else, unchanged or worse: the plain "#N". D-18 (owner call):
  *   Accuracy can get worse after a session because the average moved, and the
  *   screen never shows a downward delta; there is deliberately no "down" path.
+ *
+ * "(up N)" is only computed when both ranks are numbers: the server nulls
+ * rank_without_session whenever the viewer is tentative without the session,
+ * so a delta never spans the qualification cutoff.
  */
 export function rankLineCopy(kind: LeaderboardBoardKind, viewer: LeaderboardViewer): string {
   const label = RANK_LINE_LABEL[kind];
-  const suffix = rankLineSuffix(kind, viewer);
+  if (viewer.rank === null) return `${label}: ${viewer.puzzles_to_qualify} more to qualify`;
   const before = viewer.rank_without_session;
-  if (viewer.visibility === 'guest') return `${label}: You'd be #${viewer.rank}${suffix}`;
-  if (before === null) return `${label}: #${viewer.rank} this week${suffix}`;
-  if (before > viewer.rank) return `${label}: #${viewer.rank} (up ${before - viewer.rank})${suffix}`;
-  return `${label}: #${viewer.rank}${suffix}`;
+  if (viewer.visibility === 'guest') return `${label}: You'd be #${viewer.rank}`;
+  if (before === null) return `${label}: #${viewer.rank} this week`;
+  if (before > viewer.rank) return `${label}: #${viewer.rank} (up ${before - viewer.rank})`;
+  return `${label}: #${viewer.rank}`;
 }
 
 export interface ScoreRankLine {

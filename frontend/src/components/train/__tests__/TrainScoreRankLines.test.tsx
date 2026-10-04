@@ -112,16 +112,23 @@ describe('TrainScoreRankLines variants (D-17, D-18, D-19)', () => {
     expect(screen.getByTestId('train-score-rank-lines').querySelector('button')).toBeNull();
   });
 
-  it('a tentative Accuracy viewer reads "(tentative)"', async () => {
+  it('a tentative (unranked) Accuracy viewer reads "Accuracy: N more to qualify"', async () => {
     respondWith(
       makeResponse(
         { viewer: makeViewer({ rank: 2, rank_without_session: 2 }) },
-        { viewer: makeViewer({ rank: 4, rank_without_session: 4, tentative: true, puzzles_to_qualify: 8 }) },
+        {
+          viewer: makeViewer({
+            rank: null,
+            rank_without_session: null,
+            tentative: true,
+            puzzles_to_qualify: 8,
+          }),
+        },
       ),
     );
     renderLines(42);
     await waitFor(() => {
-      expect(screen.getByTestId('train-score-rank-accuracy').textContent).toBe('Accuracy: #4 (tentative)');
+      expect(screen.getByTestId('train-score-rank-accuracy').textContent).toBe('Accuracy: 8 more to qualify');
     });
   });
 

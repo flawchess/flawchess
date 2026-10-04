@@ -8,10 +8,14 @@ without a database:
   keyed on `drill_solves.solved_at`. `week_window` is standalone so a later medals
   snapshot can reuse it. Time only ever arrives as the `now_utc` argument (the
   router injects it from the `dev_now_utc` dependency), never the wall clock.
-- D-03 / D-19: the Accuracy board lists everyone with at least one non-filler solve,
-  marking users under 20 non-filler solves as tentative.
-- D-04: competition ranks (1, 1, 1, 4); display order within equal value is puzzles
-  desc, then name, then an internal key. Top 5 plus the viewer with 2 neighbours.
+- D-03 / D-19 (amended by quick 261004-8rt, which superseded D-03's interleaved
+  ranking): the Accuracy board lists everyone with at least one non-filler solve.
+  Users with 20+ non-filler solves are qualified and ranked first by accuracy; users
+  under 20 are tentative, listed below every qualified user with no rank, ordered by
+  puzzles desc, then accuracy desc, then name.
+- D-04: competition ranks (1, 1, 1, 4) among qualified entries; display order within
+  equal value is puzzles desc, then name, then an internal key. Top 5 plus the viewer
+  with 2 neighbours.
 - D-05 / D-15: display name is the lichess username, else chess.com, else
   "Anonymous". No verification (impersonation is an accepted risk).
 - D-06 / D-13 / D-14: other users' rows and ranks are computed only from registered,
@@ -49,7 +53,7 @@ ANONYMOUS_DISPLAY_NAME: Final = "Anonymous"
 
 @dataclass(frozen=True)
 class BoardRow:
-    rank: int
+    rank: int | None  # None marks a tentative Accuracy entry (unranked)
     name: str
     value: int
     puzzles: int
@@ -61,7 +65,7 @@ class BoardRow:
 
 @dataclass(frozen=True)
 class ViewerStanding:
-    rank: int
+    rank: int | None  # None while the viewer is a tentative Accuracy entry
     rank_without_session: int | None
     tentative: bool
     puzzles_to_qualify: int
@@ -166,6 +170,11 @@ def _order_key(entry: _Entry) -> tuple[int, int, str, int]:
     return (-entry.value, -entry.puzzles, entry.name.casefold(), entry.key)
 
 
+def _tentative_order_key(entry: _Entry) -> tuple[int, int, str, int]:
+    """Tentative entries are ordered by activity first: puzzles desc, then value desc."""
+    return (-entry.puzzles, -entry.value, entry.name.casefold(), entry.key)
+
+
 def _competition_ranks(ordered: Sequence[_Entry]) -> list[int]:
     """Competition ranks over an already ordered list: equal values share a rank."""
     ranks: list[int] = []
@@ -175,6 +184,20 @@ def _competition_ranks(ordered: Sequence[_Entry]) -> list[int]:
         else:
             ranks.append(index + 1)
     return ranks
+
+
+def _tiered_order(combined: Sequence[_Entry]) -> tuple[list[_Entry], list[int | None]]:
+    """Qualified entries first (ranked), then tentative entries (rank None).
+
+    Fix (quick 261004-8rt): tentative entries used to be ranked and interleaved with
+    qualified ones by raw percentage, so a single 1/1 solve at 100% sat at #1 above every
+    qualified player (prod 2026-10-04, top 5 rows all 100% on 1 puzzle). Qualified
+    entries now rank first; tentative ones follow unranked.
+    """
+    qualified = sorted((e for e in combined if not e.tentative), key=_order_key)
+    tentative = sorted((e for e in combined if e.tentative), key=_tentative_order_key)
+    ranks: list[int | None] = [*_competition_ranks(qualified), *([None] * len(tentative))]
+    return [*qualified, *tentative], ranks
 
 
 def _slice_indices(size: int, viewer_index: int | None) -> tuple[list[int], int | None]:
@@ -225,18 +248,22 @@ def _rank_without(
     """The viewer's rank with one session's solves removed (D-12), None if nothing remains.
 
     Counted against `entries` filtered to the same visible others `rank` is computed
-    against (public and not the viewer), never the combined list, which holds the
-    viewer's full entry. Points can only worsen without a session; Accuracy can
-    improve, and the value is returned as computed, never clamped to the real rank
-    (D-18: the "(up N)" copy rule is the client's).
+    against (public, qualified and not the viewer), never the combined list, which
+    holds the viewer's full entry. None when the viewer is tentative without the
+    session, so the client never computes a delta across the qualification cutoff.
+    Points can only worsen without a session; Accuracy can improve, and the value is
+    returned as computed, never clamped to the real rank (D-18: the "(up N)" copy rule
+    is the client's).
     """
     remaining = totals_without(viewer_aggregate.totals, contribution)
     if kind == "points" and remaining.puzzles == 0:
         return None
     viewer_entry = _entry_for(kind, replace(viewer_aggregate, totals=remaining))
-    if viewer_entry is None:
+    if viewer_entry is None or viewer_entry.tentative:
         return None
-    others = (e for e in entries if e.is_public and e.key != viewer_aggregate.user_id)
+    others = (
+        e for e in entries if e.is_public and not e.tentative and e.key != viewer_aggregate.user_id
+    )
     return 1 + sum(1 for other in others if other.value > viewer_entry.value)
 
 
@@ -256,8 +283,7 @@ def build_board(
     """
     entries = [e for e in (_entry_for(kind, a) for a in aggregates) if e is not None]
     combined = [e for e in entries if e.is_public or e.key == viewer_id]
-    ordered = sorted(combined, key=_order_key)
-    ranks = _competition_ranks(ordered)
+    ordered, ranks = _tiered_order(combined)
     viewer_index = next((i for i, e in enumerate(ordered) if e.key == viewer_id), None)
     indices, gap_index = _slice_indices(len(ordered), viewer_index)
     rows = tuple(
@@ -279,7 +305,9 @@ def build_board(
         viewer_aggregate = next((a for a in aggregates if a.user_id == viewer_id), None)
         without = (
             _rank_without(kind, entries, viewer_aggregate, session_contribution)
-            if session_contribution is not None and viewer_aggregate is not None
+            if session_contribution is not None
+            and viewer_aggregate is not None
+            and ranks[viewer_index] is not None
             else None
         )
         viewer = ViewerStanding(

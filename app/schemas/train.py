@@ -450,7 +450,7 @@ class LeaderboardRow(BaseModel):
 
     model_config = ConfigDict(from_attributes=True)
 
-    rank: int
+    rank: int | None  # None marks a tentative Accuracy entry (listed below every qualified row)
     name: str
     value: int  # points (Points board) or floored accuracy percent (Accuracy board)
     puzzles: int  # all solves (Points) or non-filler solves (Accuracy)
@@ -466,9 +466,10 @@ class LeaderboardViewer(BaseModel):
 
     model_config = ConfigDict(from_attributes=True)
 
-    rank: int
+    rank: int | None  # None while the viewer is a tentative Accuracy entry (unranked)
     # Rank without the current session's solves (D-12). Null when no session_id
-    # was supplied or the viewer had no entry before the session.
+    # was supplied, the viewer had no entry before the session, or the viewer is
+    # tentative with or without the session (no delta across the cutoff).
     rank_without_session: int | None
     tentative: bool
     puzzles_to_qualify: int  # 0 on Points and once qualified

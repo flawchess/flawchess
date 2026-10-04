@@ -3,7 +3,8 @@
  * (Phase 230, D-07, D-08): a Points | Accuracy tab toggle (the choice is
  * remembered in localStorage, D-09), the top 5 plus the viewer's own row
  * (highlighted) and its neighbours with a gap marker between the two, one
- * viewer hint line under the board, and for guests a "Sign up to claim your
+ * viewer hint line under the board, a "Not yet qualified" divider before the
+ * first unranked (tentative) Accuracy row, and for guests a "Sign up to claim your
  * spot" nudge (D-14).
  *
  * Self-contained apart from `isGuest`: it calls `useTrainLeaderboard()`
@@ -29,9 +30,11 @@ import {
   GUEST_CLAIM_SPOT_COPY,
   GUEST_ROW_LABEL,
   HIDDEN_FROM_OTHERS_LABEL,
+  NOT_YET_QUALIFIED_DIVIDER_COPY,
   ROLLOVER_MAX_RETRIES,
   ROLLOVER_RETRY_MS,
   boardValueLabel,
+  firstUnrankedRowIndex,
   formatCountdown,
   parseLeaderboardTab,
   puzzleCountLabel,
@@ -63,9 +66,16 @@ interface LeaderboardRowItemProps {
   row: LeaderboardRow;
   kind: LeaderboardBoardKind;
   index: number;
+  /** True on the first unranked row: the "Not yet qualified" divider renders before it. */
+  qualifyDividerBefore: boolean;
 }
 
-function LeaderboardRowItem({ row, kind, index }: LeaderboardRowItemProps): ReactElement {
+function LeaderboardRowItem({
+  row,
+  kind,
+  index,
+  qualifyDividerBefore,
+}: LeaderboardRowItemProps): ReactElement {
   return (
     <>
       {row.gap_before && (
@@ -77,6 +87,16 @@ function LeaderboardRowItem({ row, kind, index }: LeaderboardRowItemProps): Reac
           …
         </li>
       )}
+      {/* Order: the gap says rows were skipped; the divider labels the section the
+          next row opens. Not aria-hidden: unlike the gap marker it carries meaning. */}
+      {qualifyDividerBefore && (
+        <li
+          data-testid="train-leaderboard-qualify-divider"
+          className="mt-1 border-t border-border px-2 pt-1.5 text-sm text-muted-foreground"
+        >
+          {NOT_YET_QUALIFIED_DIVIDER_COPY}
+        </li>
+      )}
       <li
         data-testid={`train-leaderboard-row-${index}`}
         data-viewer={row.is_viewer ? 'true' : undefined}
@@ -86,10 +106,12 @@ function LeaderboardRowItem({ row, kind, index }: LeaderboardRowItemProps): Reac
           row.is_viewer && 'rounded-md bg-muted font-semibold',
         )}
       >
-        <span className="w-9 shrink-0 tabular-nums">#{row.rank}</span>
-        {/* IN-02 (phase 230 review): only the name truncates. The privacy and
-            tentative cues are their own nowrap items and wrap below the name when
-            the row is too narrow, instead of being the first text cut off. */}
+        <span className="w-9 shrink-0 tabular-nums">
+          {row.rank === null ? '' : `#${row.rank}`}
+        </span>
+        {/* IN-02 (phase 230 review): only the name truncates. The privacy cue is
+            its own nowrap item and wraps below the name when the row is too
+            narrow, instead of being the first text cut off. */}
         <span className="flex min-w-0 flex-1 flex-wrap items-baseline gap-x-1">
           <span className="min-w-0 max-w-full truncate">
             {row.visibility === 'guest' ? GUEST_ROW_LABEL : row.name}
@@ -98,9 +120,6 @@ function LeaderboardRowItem({ row, kind, index }: LeaderboardRowItemProps): Reac
             <span className="whitespace-nowrap font-normal text-muted-foreground">
               {HIDDEN_FROM_OTHERS_LABEL}
             </span>
-          )}
-          {row.tentative && (
-            <span className="whitespace-nowrap font-normal text-muted-foreground">(tentative)</span>
           )}
         </span>
         <span className="shrink-0 font-semibold tabular-nums">{boardValueLabel(kind, row.value)}</span>
@@ -117,11 +136,18 @@ function LeaderboardRows({
   rows: LeaderboardRow[];
   kind: LeaderboardBoardKind;
 }): ReactElement {
+  const firstUnranked = firstUnrankedRowIndex(rows);
   return (
     <ol data-testid="train-leaderboard-rows" className="flex flex-col">
       {rows.map((row, index) => (
         // Rows carry no id (the wire format exposes no user id), so index is the key.
-        <LeaderboardRowItem key={index} row={row} kind={kind} index={index} />
+        <LeaderboardRowItem
+          key={index}
+          row={row}
+          kind={kind}
+          index={index}
+          qualifyDividerBefore={index === firstUnranked}
+        />
       ))}
     </ol>
   );

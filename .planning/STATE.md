@@ -2,19 +2,19 @@
 gsd_state_version: "1.0"
 milestone: v2.21
 current_phase: 230
+current_phase_name: COMPLETE, on branch gsd/phase-230-weekly-train-leaderboards
 status: completed
-stopped_at: Phase 230 complete — all phases complete
-last_updated: "2026-10-04T03:23:40.372Z"
-state_head: 83c85171fd169bdde5b81fca88ff219ec37a75fb
+stopped_at: Phase 231 context gathered
+last_updated: "2026-10-04T04:32:50.901Z"
+state_head: eb3c0f530ba8b52aa086add11a2681f8e998be3b
 progress:
-  total_phases: 3
+  total_phases: 4
   completed_phases: 103
   total_plans: 16
   completed_plans: 47
-  percent: 75
 milestone_name: Browser Engine Throughput
 last_activity: 2026-10-04
-last_activity_desc: "Phase 230 executed and verified (5/5 plans, browser UAT 7/7, review WR-03/IN-01/IN-02 fixed, WR-01 accepted risk carried to SEED-185 medals); awaiting squash-merge to main"
+last_activity_desc: Completed quick task 261004-8rt: Accuracy leaderboard qualified-first tiering
 ---
 
 # Project State: FlawChess
@@ -171,6 +171,7 @@ v1.29 Live-Engine Analysis Page shipped 2026-06-29 — 5 phases (136–140), 14 
 
 ### Roadmap Evolution
 
+- Phase 231 added 2026-10-04 (explicit user request via `/gsd-phase @SEED-186`, planted the same day right after Phase 230 merged): **Weekly Leaderboard Medals** (SEED-186). Gold/silver/bronze for the top 3 of each weekly Train board (Olympic ties, Accuracy qualified-only, opted-out and guests ineligible), full final-standings snapshot table with explicit `medal` column and `celebrated_at`, lazy idempotent finalization from `MEDALS_START_WEEK` 2026-10-05, lifetime per-board tally on live rows, last-week podium, "finished #N" hint, server-side claim dialog with confetti and win sound, admin demo page on dummy data rendering the real components. WR-01 accepted. Written by hand as 231 (known mature-ROADMAP behavior). Next: `/gsd-discuss-phase 231` or `/gsd-plan-phase 231` (seed already locks most decisions).
 - Phase 230 added 2026-10-03 (explicit user request via `/gsd-phase`, trigger met: Phase 228 shipped): **Weekly Train Leaderboards** (SEED-185, planted 2026-10-03 from `/gsd-explore` training features). Points board + pooled average-score board over a UTC ISO week keyed on `drill_solves.solved_at`, top 5 plus own row with neighbours, 20 non-filler puzzle qualifier (tentative users ranked), lichess-first display names, opt-out toggle in the settings overlay + Privacy line, guest board with sign-up nudge. Medals out of scope. Written by hand as 230 (known mature-ROADMAP behavior). Next: `/gsd-discuss-phase 230`.
 - Phase 229 added 2026-10-03 (explicit user request via `/gsd-phase @SEED-183`, trigger met: Phase 228 merged): **Umami User Identification & Feature Events** (SEED-183, planted 2026-10-03 from `/gsd-explore` after the growth report). Frontend-only: `umami.identify(String(users.id))` for every authenticated session incl. guests, logout/account-switch reset, per-page inventory of UI-only interactions as few prop-carrying events, Privacy sentence fix, `frontend/CLAUDE.md` event rule. Open research: identify persistence (localStorage/ePrivacy) and logout reset. Written by hand as 229 (known mature-ROADMAP behavior). Next: `/gsd-discuss-phase 229`.
 - Phase 228 added 2026-10-03 (explicit user request via `/gsd-phase @SEED-175`, trigger met: Phase 226 merged and v2.21 closed): **Settings Page — Sound Toggle & Per-Engine Lines/Arrows** (SEED-175, planted 2026-09-29 from `/gsd-explore`). Frontend-only cogwheel `/settings` page with localStorage-backed sound on/off and per-engine line (1-5) and arrow (0-3) counts, plus the single-translucent-color non-primary line restyle.
@@ -957,6 +958,7 @@ None active.
 | 113 | Analysis page: move stats accuracy shown as card header band | 2026-10-03 | 0e0723eb8 | — |
 | 114 | Mobile analysis: hide human/knight icons in card headers; Maia header -> 'Maia, Human Move Probability' | 2026-10-03 | 7ed295414 | — |
 | 115 | streak flame number: white font with black outline | 2026-10-03 | 6099bfdfc | — |
+| 261004-8rt | Accuracy leaderboard: qualified users ranked first, tentative unranked below a divider (supersedes D-03) | 2026-10-04 | eb3c0f530 | [261004-8rt-accuracy-leaderboard-qualified-first-tie](./quick/261004-8rt-accuracy-leaderboard-qualified-first-tie/) |
 
 ## Deferred Items
 
@@ -1009,7 +1011,7 @@ Items acknowledged and deferred at **v1.29 milestone close on 2026-06-29** (user
 
 ## Session Continuity
 
-**Stopped at:** Phase 230 complete — all phases complete
+**Stopped at:** Phase 231 context gathered
 
 Previous session note (Phase 227):
 refit (calibration parity holds). Verification passed 17/17; code review 0 blockers (WR-01 + 3 info fixed). Next:
@@ -1017,9 +1019,9 @@ squash-merge `gsd/phase-227-...` to `main` with a CHANGELOG entry already in `[U
 Owner-deferred: real-phone bot game check (227-UAT.md, report-only). Follow-up: stale "Phase 198 will populate"
 priority comment in `workerPoolState.ts:434-437` (verifier info item).
 
-**Last session:** 2026-10-04T02:59:45.036Z
+**Last session:** 2026-10-04T04:31:19.538Z
 
-**Resume file:** None
+**Resume file:** .planning/phases/231-weekly-leaderboard-medals/231-CONTEXT.md
 
 ## Performance Metrics
 
