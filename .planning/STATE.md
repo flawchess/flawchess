@@ -970,6 +970,7 @@ None active.
 | 115 | streak flame number: white font with black outline | 2026-10-03 | 6099bfdfc | — |
 | 261004-8rt | Accuracy leaderboard: qualified users ranked first, tentative unranked below a divider (supersedes D-03) | 2026-10-04 | eb3c0f530 | [261004-8rt-accuracy-leaderboard-qualified-first-tie](./quick/261004-8rt-accuracy-leaderboard-qualified-first-tie/) |
 | 261004-dta | Train page mobile: hide coach avatar (except Tank intro), schedule above leaderboard | 2026-10-04 | 13d2bc96e | [261004-dta-train-page-mobile-hide-coach-avatar-exce](./quick/261004-dta-train-page-mobile-hide-coach-avatar-exce/) |
+| fast | Train page mobile: drop landing container top padding (streak card 48px→24px below header) | 2026-10-04 | fd550d7d0 | — |
 
 ## Deferred Items
 
