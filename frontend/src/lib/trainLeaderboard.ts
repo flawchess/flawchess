@@ -21,7 +21,7 @@ export const DEFAULT_LEADERBOARD_TAB: LeaderboardBoardKind = 'points';
 
 /** Accuracy tab helper under the toggle (D-10 wording plus the D-19 caveat). */
 export const ACCURACY_HELPER_COPY =
-  "Average session score. Tactics puzzles don't count; 20+ puzzles to qualify.";
+  "Average session score. 20+ puzzles to qualify.";
 /** Viewer has Points entries but no Accuracy entry (D-19): never a misleading count. */
 export const ACCURACY_NOT_ENTERED_COPY =
   "You're not on this board yet: tactics puzzles don't count here.";
