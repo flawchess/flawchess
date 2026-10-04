@@ -7,6 +7,7 @@ import App from "./App.tsx";
 import { createSwUpdateChecker, SW_UPDATE_INTERVAL_MS } from "@/lib/swUpdate";
 import { reportMaiaPageKillFromPreviousSession } from "@/lib/engine/maiaPageKillSentinel";
 import { installStalePreloadReload } from "@/lib/stalePreloadReload";
+import { reloadAutomatically } from "@/lib/autoReload";
 import { captureFirstTouch } from "@/lib/firstTouch";
 import { identifyFromStoredToken, installUmamiBeforeSend } from "@/lib/analytics";
 
@@ -22,7 +23,8 @@ installStalePreloadReload();
 // utm tags, landing path) before the router rewrites the URL.
 captureFirstTouch();
 
-// Scrub credentials and the Google OAuth referrer from every Umami payload.
+// Scrub credentials and the Google OAuth referrer from every Umami payload,
+// and drop the duplicate pageview of an automatic post-deploy reload.
 // The deferred tracker sends its first pageview only once the document is
 // complete, so registering the hook here always precedes it.
 installUmamiBeforeSend();
@@ -45,7 +47,8 @@ if ("serviceWorker" in navigator) {
     navigator.serviceWorker.addEventListener("controllerchange", () => {
       if (refreshing) return;
       refreshing = true;
-      window.location.reload();
+      // Quick 261004-rmc: marked as automatic so Umami drops the reload's pageview.
+      reloadAutomatically();
     });
   }
 

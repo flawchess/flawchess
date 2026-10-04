@@ -95,7 +95,15 @@ import { useTrainSettings } from '@/hooks/useTrainSettings';
 import { usePushCapability } from '@/hooks/usePushCapability';
 import { ensureDeviceSubscribed, formatReminderHour, REMINDER_HOUR_OPTIONS } from '@/lib/push';
 import type { DeviceSubscribeResult } from '@/lib/push';
-import { trackFeature } from '@/lib/analytics';
+import {
+  enumeratedValue,
+  onOff,
+  REMINDER_HOUR_VALUES,
+  TRAIN_PUZZLES_PER_SESSION_VALUES,
+  trackFeature,
+  type TrainDayToggleTarget,
+} from '@/lib/analytics';
+import { useDebouncedTrackFeature } from '@/hooks/useDebouncedTrackFeature';
 import { cn } from '@/lib/utils';
 
 export const TRAIN_SETTINGS_SAVE_DEBOUNCE_MS = 600;
@@ -117,17 +125,19 @@ interface WeekdayChip {
   bit: number;
   label: string;
   testId: string;
+  /** Umami toggle target; set explicitly per chip so a reorder cannot mislabel one. */
+  toggleTarget: TrainDayToggleTarget;
 }
 
 // eslint-disable-next-line react-refresh/only-export-components -- named constant shared with tests, not a component
 export const WEEKDAY_CHIPS: readonly WeekdayChip[] = [
-  { bit: 0, label: 'Mo', testId: 'filter-weekday-mo' },
-  { bit: 1, label: 'Tu', testId: 'filter-weekday-tu' },
-  { bit: 2, label: 'We', testId: 'filter-weekday-we' },
-  { bit: 3, label: 'Th', testId: 'filter-weekday-th' },
-  { bit: 4, label: 'Fr', testId: 'filter-weekday-fr' },
-  { bit: 5, label: 'Sa', testId: 'filter-weekday-sa' },
-  { bit: 6, label: 'Su', testId: 'filter-weekday-su' },
+  { bit: 0, label: 'Mo', testId: 'filter-weekday-mo', toggleTarget: 'train-day-mon' },
+  { bit: 1, label: 'Tu', testId: 'filter-weekday-tu', toggleTarget: 'train-day-tue' },
+  { bit: 2, label: 'We', testId: 'filter-weekday-we', toggleTarget: 'train-day-wed' },
+  { bit: 3, label: 'Th', testId: 'filter-weekday-th', toggleTarget: 'train-day-thu' },
+  { bit: 4, label: 'Fr', testId: 'filter-weekday-fr', toggleTarget: 'train-day-fri' },
+  { bit: 5, label: 'Sa', testId: 'filter-weekday-sa', toggleTarget: 'train-day-sat' },
+  { bit: 6, label: 'Su', testId: 'filter-weekday-su', toggleTarget: 'train-day-sun' },
 ];
 
 interface Draft {
@@ -402,16 +412,28 @@ interface PuzzlesPerSessionControlProps {
  * tracks the thumb); the parent's debounced save collapses a drag into one
  * `PUT`. Always controlled: while loading, the disabled thumb parks at the
  * minimum rather than switching Radix from uncontrolled to controlled.
+ * Tracking happens on commit, debounced to one `option-change` per adjustment
+ * burst (the committed value is always on the 3-30 step-3 grid).
  */
 function PuzzlesPerSessionControl({
   value,
   disabled,
   onChange,
 }: PuzzlesPerSessionControlProps): ReactElement {
+  const trackCommit = useDebouncedTrackFeature('option-change');
+
   const handleValueChange = (values: number[]): void => {
     const next = values[0];
     if (next === undefined) return;
     onChange(next);
+  };
+
+  const handleValueCommit = (values: number[]): void => {
+    const committed = values[0];
+    if (committed === undefined) return;
+    const trackedValue = enumeratedValue(TRAIN_PUZZLES_PER_SESSION_VALUES, committed);
+    if (trackedValue === null) return;
+    trackCommit({ target: 'train-puzzles-per-session', value: trackedValue });
   };
 
   return (
@@ -433,6 +455,7 @@ function PuzzlesPerSessionControl({
         step={PUZZLES_PER_SESSION_STEP}
         value={[value ?? PUZZLES_PER_SESSION_MIN]}
         onValueChange={handleValueChange}
+        onValueCommit={handleValueCommit}
         disabled={disabled}
         thumbLabels={['Puzzles per session']}
         data-testid="filter-puzzles-per-session"
@@ -585,6 +608,8 @@ export function TrainScheduleSettings({
   // pattern; see the module docstring for why. Toggle-OFF and hour changes
   // ride the debounce unmodified via the two handlers that follow.
   const handleReminderToggle = (checked: boolean): void => {
+    // The user's requested state, sent before any gating so switch-offs are kept.
+    trackFeature('toggle', { target: 'train-reminder', value: onOff(checked) });
     setIndicator((prev) => (prev === 'reminder-error' ? 'idle' : prev));
     if (!checked) {
       hasEditedRef.current = true;
@@ -601,6 +626,13 @@ export function TrainScheduleSettings({
       .catch((error: unknown): DeviceSubscribeResult => ({ status: 'error', error }))
       .then((result) => {
         setSubscribing(false);
+        // Desktop has no score-screen "Remind me" button, so this switch is its only
+        // opt-in path; without this event the reminder funnel would be blind to desktop.
+        trackFeature('action', {
+          target: 'reminder-enable',
+          source: 'train-settings',
+          outcome: result.status,
+        });
         if (result.status === 'subscribed') {
           hasEditedRef.current = true;
           setDraft((prev) => (prev ? { ...prev, reminderEnabled: true } : prev));
@@ -618,6 +650,15 @@ export function TrainScheduleSettings({
   const handleReminderHourChange = (hour: number): void => {
     hasEditedRef.current = true;
     setDraft((prev) => (prev ? { ...prev, reminderHour: hour } : prev));
+    const trackedHour = enumeratedValue(REMINDER_HOUR_VALUES, hour);
+    if (trackedHour !== null) trackFeature('option-change', { target: 'train-reminder-hour', value: trackedHour });
+  };
+
+  const handleWeekdayToggle = (chip: WeekdayChip): void => {
+    const currentlyOn = draft !== null && isWeekdayBitSet(draft.weekdayMask, chip.bit);
+    hasEditedRef.current = true;
+    setDraft((prev) => (prev ? { ...prev, weekdayMask: prev.weekdayMask ^ (1 << chip.bit) } : prev));
+    trackFeature('toggle', { target: chip.toggleTarget, value: onOff(!currentlyOn) });
   };
 
   const handlePuzzlesPerSessionChange = (puzzlesPerSession: number): void => {
@@ -679,12 +720,7 @@ export function TrainScheduleSettings({
             {WEEKDAY_CHIPS.map((chip) => (
               <ToggleChipButton
                 key={chip.bit}
-                onClick={() => {
-                  hasEditedRef.current = true;
-                  setDraft((prev) =>
-                    prev ? { ...prev, weekdayMask: prev.weekdayMask ^ (1 << chip.bit) } : prev,
-                  );
-                }}
+                onClick={() => handleWeekdayToggle(chip)}
                 testId={chip.testId}
                 ariaLabel={`Train on ${chip.label}`}
                 active={draft !== null && isWeekdayBitSet(draft.weekdayMask, chip.bit)}

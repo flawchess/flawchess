@@ -73,6 +73,11 @@ export function TrainReminderResurfaceBanner(): ReactElement | null {
     const result = await ensureDeviceSubscribed(vapidPublicKey).catch(
       (error: unknown): DeviceSubscribeResult => ({ status: 'error', error }),
     );
+    trackFeature('action', {
+      target: 'reminder-enable',
+      source: 'resurface-banner',
+      outcome: result.status,
+    });
     if (result.status === 'subscribed') {
       markSubscribed();
       return;

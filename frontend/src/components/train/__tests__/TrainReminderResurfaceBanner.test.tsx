@@ -206,6 +206,70 @@ describe('TrainReminderResurfaceBanner', () => {
   });
 });
 
+describe('reminder-enable tracking', () => {
+  let track: ReturnType<typeof vi.fn>;
+
+  beforeEach(() => {
+    track = vi.fn();
+    window.umami = { track, identify: vi.fn() };
+    window.history.pushState({}, '', '/train');
+    mockResurface();
+    mockPushCapability();
+  });
+
+  afterEach(() => {
+    delete window.umami;
+    window.history.pushState({}, '', '/');
+  });
+
+  async function pressTurnOn(): Promise<void> {
+    await act(async () => {
+      fireEvent.click(screen.getByTestId('btn-resurface-turn-on'));
+    });
+  }
+
+  it('sends nothing on render', () => {
+    render(<TrainReminderResurfaceBanner />);
+    expect(track).not.toHaveBeenCalled();
+  });
+
+  it.each(['subscribed', 'denied', 'dismissed', 'unsupported'] as const)(
+    'sends one reminder-enable action with outcome %s',
+    async (status) => {
+      vi.mocked(ensureDeviceSubscribed).mockResolvedValue({ status });
+      render(<TrainReminderResurfaceBanner />);
+      await pressTurnOn();
+      expect(track).toHaveBeenCalledTimes(1);
+      expect(track).toHaveBeenCalledWith('action', {
+        page: 'train',
+        target: 'reminder-enable',
+        source: 'resurface-banner',
+        outcome: status,
+      });
+    },
+  );
+
+  it('sends outcome error when the subscribe call rejects', async () => {
+    vi.mocked(ensureDeviceSubscribed).mockRejectedValue(new Error('network down'));
+    render(<TrainReminderResurfaceBanner />);
+    await pressTurnOn();
+    expect(track).toHaveBeenCalledTimes(1);
+    expect(track).toHaveBeenCalledWith('action', {
+      page: 'train',
+      target: 'reminder-enable',
+      source: 'resurface-banner',
+      outcome: 'error',
+    });
+  });
+
+  it('Not now still sends only the reminder-banner-dismiss action', () => {
+    render(<TrainReminderResurfaceBanner />);
+    fireEvent.click(screen.getByTestId('btn-resurface-dismiss'));
+    expect(track).toHaveBeenCalledTimes(1);
+    expect(track).toHaveBeenCalledWith('action', { page: 'train', target: 'reminder-banner-dismiss' });
+  });
+});
+
 describe('static file checks (module scope, no render needed)', () => {
   beforeEach(() => {
     mockResurface();

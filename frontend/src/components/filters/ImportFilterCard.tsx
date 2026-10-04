@@ -3,6 +3,7 @@ import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
 import { InfoPopover } from '@/components/ui/info-popover';
 import { TimeControlIcon } from '@/components/icons/TimeControlIcon';
 import { cn } from '@/lib/utils';
+import { onOff, trackFeature } from '@/lib/analytics';
 import type { TimeControl } from '@/types/api';
 import {
   useImportSettings,
@@ -84,6 +85,7 @@ export function ImportFilterCard() {
     // active TC is a no-op — at least one TC must always stay enabled.
     if (currentlyActive && activeCount === 1) return;
     updateSettings.mutate(withTcToggle(settings, tc, !currentlyActive));
+    trackFeature('toggle', { target: `import-tc-${tc}`, value: onOff(!currentlyActive) });
   };
 
   const handleCapChange = (value: string) => {
@@ -96,6 +98,7 @@ export function ImportFilterCard() {
       tc_classical: settings.tc_classical,
       game_cap: cap,
     });
+    trackFeature('option-change', { target: 'import-cap', value: `${cap}` });
   };
 
   return (

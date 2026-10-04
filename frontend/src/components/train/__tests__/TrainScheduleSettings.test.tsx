@@ -77,8 +77,12 @@ import {
   TrainScheduleSettings,
   PUZZLES_PER_SESSION_MAX,
   weekdaySummary,
+  PUZZLES_PER_SESSION_MIN,
+  PUZZLES_PER_SESSION_STEP,
   TRAIN_SETTINGS_SAVE_DEBOUNCE_MS,
 } from '@/components/train/TrainScheduleSettings';
+import { REMINDER_HOUR_VALUES, TRAIN_PUZZLES_PER_SESSION_VALUES } from '@/lib/analytics';
+import { REMINDER_HOUR_OPTIONS } from '@/lib/push';
 import type { TrainSettingsResponse, TrainSettingsUpdate } from '@/types/train';
 
 /** Desktop-shaped default: not mobile, not standalone, no live captured
@@ -959,5 +963,184 @@ describe('collapsed schedule card (SEED-181)', () => {
     [0b0010101, 'Mo We Fr'],
   ])('weekdaySummary(%i) is "%s"', (mask, expected) => {
     expect(weekdaySummary(mask)).toBe(expected);
+  });
+});
+
+describe('Umami tracking (settings rows overwritten in place)', () => {
+  let track: ReturnType<typeof vi.fn>;
+
+  beforeEach(() => {
+    track = vi.fn();
+    window.umami = { track, identify: vi.fn() };
+    window.history.pushState({}, '', '/train');
+  });
+
+  afterEach(() => {
+    delete window.umami;
+    window.history.pushState({}, '', '/');
+  });
+
+  /** Calls other than the card's own panel-open (sent by renderWithClient's expand). */
+  function trackedExceptPanelOpen(): unknown[][] {
+    return track.mock.calls.filter((call) => call[0] !== 'panel-open');
+  }
+
+  async function waitForControls(): Promise<void> {
+    await waitFor(() => {
+      expect(screen.getByTestId('filter-weekday-mo').hasAttribute('disabled')).toBe(false);
+    });
+  }
+
+  it('drift guard: the tracked value lists match the slider grid and the hour options', () => {
+    const grid: string[] = [];
+    for (let n = PUZZLES_PER_SESSION_MIN; n <= PUZZLES_PER_SESSION_MAX; n += PUZZLES_PER_SESSION_STEP) {
+      grid.push(String(n));
+    }
+    expect([...TRAIN_PUZZLES_PER_SESSION_VALUES]).toEqual(grid);
+    expect([...REMINDER_HOUR_VALUES]).toEqual(REMINDER_HOUR_OPTIONS.map(String));
+  });
+
+  it('mount, settings load and draft seeding send nothing but the expand panel-open', async () => {
+    vi.mocked(trainApi.getSettings).mockResolvedValue(BASE_SETTINGS);
+    renderWithClient();
+    await waitForControls();
+    await advanceDebounce();
+
+    expect(trackedExceptPanelOpen()).toEqual([]);
+  });
+
+  it('clicking Fr while Friday is off sends train-day-fri on', async () => {
+    vi.mocked(trainApi.getSettings).mockResolvedValue(BASE_SETTINGS);
+    vi.mocked(trainApi.updateSettings).mockResolvedValue({ ...BASE_SETTINGS, weekday_mask: 21 });
+    renderWithClient();
+    await waitForControls();
+
+    fireEvent.click(screen.getByTestId('filter-weekday-fr'));
+
+    expect(trackedExceptPanelOpen()).toEqual([['toggle', { page: 'train', target: 'train-day-fri', value: 'on' }]]);
+    await advanceDebounce();
+  });
+
+  it('clicking Mo while Monday is on sends train-day-mon off', async () => {
+    vi.mocked(trainApi.getSettings).mockResolvedValue(BASE_SETTINGS);
+    vi.mocked(trainApi.updateSettings).mockResolvedValue({ ...BASE_SETTINGS, weekday_mask: 4 });
+    renderWithClient();
+    await waitForControls();
+
+    fireEvent.click(screen.getByTestId('filter-weekday-mo'));
+
+    expect(trackedExceptPanelOpen()).toEqual([['toggle', { page: 'train', target: 'train-day-mon', value: 'off' }]]);
+    await advanceDebounce();
+  });
+
+  it('a slider burst sends exactly one debounced option-change with the final grid value', async () => {
+    vi.mocked(trainApi.getSettings).mockResolvedValue(BASE_SETTINGS);
+    vi.mocked(trainApi.updateSettings).mockResolvedValue({ ...BASE_SETTINGS, puzzles_per_session: 18 });
+    renderWithClient();
+    await waitFor(() => {
+      expect(screen.getByTestId('train-puzzles-per-session-value').textContent).toBe('12');
+    });
+
+    const thumb = screen.getByRole('slider', { name: 'Puzzles per session' });
+    fireEvent.keyDown(thumb, { key: 'ArrowRight' });
+    fireEvent.keyDown(thumb, { key: 'ArrowRight' });
+    // Pending, not sent yet.
+    expect(trackedExceptPanelOpen()).toEqual([]);
+
+    // Collapsing the card unmounts the slider, which flushes the pending event.
+    fireEvent.click(screen.getByTestId('btn-train-schedule-toggle'));
+
+    expect(trackedExceptPanelOpen()).toEqual([
+      ['option-change', { page: 'train', target: 'train-puzzles-per-session', value: '18' }],
+    ]);
+  });
+
+  describe('reminder switch and hour', () => {
+    it('switch ON with a granted prompt sends the train-reminder toggle and a subscribed reminder-enable action', async () => {
+      vi.mocked(trainApi.getSettings).mockResolvedValue(BASE_SETTINGS);
+      vi.mocked(trainApi.updateSettings).mockResolvedValue({ ...BASE_SETTINGS, reminder_enabled: true });
+      mockVapidConfigured();
+      vi.mocked(pushApi.subscribe).mockResolvedValue({ subscription_id: 1 });
+      stubBrowserGlobals();
+      renderWithClient();
+      await waitFor(() => {
+        expect(screen.getByTestId('filter-reminder-enabled')).not.toBeNull();
+      });
+
+      await act(async () => {
+        fireEvent.click(screen.getByTestId('filter-reminder-enabled'));
+      });
+
+      expect(trackedExceptPanelOpen()).toEqual([
+        ['toggle', { page: 'train', target: 'train-reminder', value: 'on' }],
+        [
+          'action',
+          { page: 'train', target: 'reminder-enable', source: 'train-settings', outcome: 'subscribed' },
+        ],
+      ]);
+      await advanceDebounce();
+    });
+
+    it('switch ON with a denied prompt reports outcome denied', async () => {
+      vi.mocked(trainApi.getSettings).mockResolvedValue(BASE_SETTINGS);
+      mockVapidConfigured();
+      stubBrowserGlobals({ requestPermission: vi.fn().mockResolvedValue('denied') });
+      renderWithClient();
+      await waitFor(() => {
+        expect(screen.getByTestId('filter-reminder-enabled')).not.toBeNull();
+      });
+
+      await act(async () => {
+        fireEvent.click(screen.getByTestId('filter-reminder-enabled'));
+      });
+
+      expect(trackedExceptPanelOpen()).toEqual([
+        ['toggle', { page: 'train', target: 'train-reminder', value: 'on' }],
+        [
+          'action',
+          { page: 'train', target: 'reminder-enable', source: 'train-settings', outcome: 'denied' },
+        ],
+      ]);
+    });
+
+    it('switch OFF sends the toggle off and no reminder-enable action', async () => {
+      vi.mocked(trainApi.getSettings).mockResolvedValue({ ...BASE_SETTINGS, reminder_enabled: true });
+      vi.mocked(trainApi.updateSettings).mockResolvedValue({ ...BASE_SETTINGS, reminder_enabled: false });
+      mockVapidConfigured();
+      stubBrowserGlobals();
+      renderWithClient();
+      await waitFor(() => {
+        expect(screen.getByTestId('filter-reminder-enabled').getAttribute('aria-checked')).toBe('true');
+      });
+
+      await act(async () => {
+        fireEvent.click(screen.getByTestId('filter-reminder-enabled'));
+      });
+
+      expect(trackedExceptPanelOpen()).toEqual([['toggle', { page: 'train', target: 'train-reminder', value: 'off' }]]);
+      await advanceDebounce();
+    });
+
+    it('picking hour 9 sends train-reminder-hour 9', async () => {
+      vi.mocked(trainApi.getSettings).mockResolvedValue({ ...BASE_SETTINGS, reminder_enabled: true });
+      vi.mocked(trainApi.updateSettings).mockResolvedValue({ ...BASE_SETTINGS, reminder_enabled: true, reminder_hour: 9 });
+      mockVapidConfigured();
+      stubBrowserGlobals();
+      renderWithClient();
+      await waitFor(() => {
+        expect(screen.getByTestId('filter-reminder-hour')).not.toBeNull();
+      });
+
+      fireEvent.click(screen.getByTestId('filter-reminder-hour'));
+      await waitFor(() => {
+        expect(screen.getByTestId('filter-reminder-hour-9')).not.toBeNull();
+      });
+      fireEvent.click(screen.getByTestId('filter-reminder-hour-9'));
+
+      expect(trackedExceptPanelOpen()).toEqual([
+        ['option-change', { page: 'train', target: 'train-reminder-hour', value: '9' }],
+      ]);
+      await advanceDebounce();
+    });
   });
 });

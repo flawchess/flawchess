@@ -78,6 +78,7 @@ import { TrainInstallQr } from '@/components/train/TrainInstallQr';
 import { usePushCapability } from '@/hooks/usePushCapability';
 import { useTrainSettings } from '@/hooks/useTrainSettings';
 import { useInstallPrompt } from '@/hooks/useInstallPrompt';
+import { trackFeature } from '@/lib/analytics';
 import { resolveReminderSlotState } from '@/lib/reminderSlotState';
 import { ensureDeviceSubscribed, formatReminderHour, getDeviceSubscription } from '@/lib/push';
 import type { DeviceSubscribeResult } from '@/lib/push';
@@ -183,6 +184,13 @@ export function useTrainReminderSlot(): TrainReminderSlotResult {
 
   if (slotState === 'ios-tabbed') {
     const handleIosTap = (): void => {
+      // The iOS tap never prompts: the install instructions reveal either way,
+      // so that is the outcome. Counted before the early return so both paths do.
+      trackFeature('action', {
+        target: 'reminder-enable',
+        source: 'score-screen',
+        outcome: 'install-instructions',
+      });
       if (data === undefined) {
         // OFFER-03 empty edge: the settings GET hasn't resolved, so there is
         // nothing to echo and nothing to write. Reveal immediately rather
@@ -277,6 +285,13 @@ export function useTrainReminderSlot(): TrainReminderSlotResult {
     const result = await ensureDeviceSubscribed(vapidPublicKey).catch(
       (error: unknown): DeviceSubscribeResult => ({ status: 'error', error }),
     );
+    // The later save() success or failure is not part of the outcome (save errors
+    // already reach Sentry through the global MutationCache handler).
+    trackFeature('action', {
+      target: 'reminder-enable',
+      source: 'score-screen',
+      outcome: result.status,
+    });
     if (result.status === 'subscribed') {
       // The 201 scheduler gates fan-out on reminder_enabled and the account
       // default is false — without this write the D-03 confirmation would

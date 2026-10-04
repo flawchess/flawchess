@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { installUmamiBeforeSend, scrubUmamiPayload } from '@/lib/analytics';
+import { installUmamiBeforeSend, scrubUmamiPayload, umamiBeforeSend } from '@/lib/analytics';
+import { reloadAutomatically } from '@/lib/autoReload';
 
 const ORIGIN = window.location.origin;
 
@@ -45,9 +46,49 @@ describe('Umami globals', () => {
     delete window.umamiBeforeSend;
   });
 
-  it('installs the scrubber under the name index.html references', () => {
+  it('installs the hook under the name index.html references', () => {
     installUmamiBeforeSend();
-    expect(window.umamiBeforeSend).toBe(scrubUmamiPayload);
+    expect(window.umamiBeforeSend).toBe(umamiBeforeSend);
+  });
+});
+
+describe('umamiBeforeSend after an automatic reload (Quick 261004-rmc)', () => {
+  const PAGEVIEW = { website: 'w', url: '/train' };
+  const originalLocation = window.location;
+
+  beforeEach(() => {
+    window.sessionStorage.clear();
+    Object.defineProperty(window, 'location', {
+      configurable: true,
+      value: { reload: vi.fn(), origin: originalLocation.origin },
+    });
+  });
+
+  afterEach(() => {
+    Object.defineProperty(window, 'location', { configurable: true, value: originalLocation });
+    delete window.umamiBeforeSend;
+  });
+
+  it('drops exactly one landing pageview after an automatic reload', () => {
+    reloadAutomatically();
+    installUmamiBeforeSend();
+    expect(umamiBeforeSend('event', PAGEVIEW)).toBeNull();
+    expect(umamiBeforeSend('event', PAGEVIEW)).toEqual(PAGEVIEW);
+  });
+
+  it('passes identify calls and custom events while a pageview is pending drop', () => {
+    reloadAutomatically();
+    installUmamiBeforeSend();
+    expect(umamiBeforeSend('identify', { website: 'w', id: '42' })).toEqual({ website: 'w', id: '42' });
+    expect(umamiBeforeSend('event', { ...PAGEVIEW, name: 'toggle' })).toEqual({ ...PAGEVIEW, name: 'toggle' });
+    expect(umamiBeforeSend('event', PAGEVIEW)).toBeNull();
+  });
+
+  it('keeps every pageview on a normal page load, scrubbed', () => {
+    installUmamiBeforeSend();
+    expect(umamiBeforeSend('event', { url: '/auth/reset-password?token=abc' })).toEqual({
+      url: '/auth/reset-password',
+    });
   });
 });
 
@@ -264,6 +305,11 @@ describe('feature-event registry', () => {
       analytics.NAV_SOURCES,
       analytics.FILTER_TARGETS,
       analytics.OPTION_TARGETS,
+      analytics.TRAIN_DAY_TOGGLE_TARGETS,
+      analytics.REMINDER_ENABLE_SOURCES,
+      analytics.REMINDER_ENABLE_OUTCOMES,
+      analytics.TRAIN_PUZZLES_PER_SESSION_VALUES,
+      analytics.REMINDER_HOUR_VALUES,
     ];
     for (const list of lists) {
       for (const entry of list) expect(entry).toMatch(/^[a-z0-9]+(-[a-z0-9]+)*$/);
@@ -303,6 +349,26 @@ describe('feature-event registry', () => {
     window.history.pushState({}, '', '/openings');
     analytics.trackFeature('filter-change', { target: 'time-control', value: 'blitz' });
     expect(track).toHaveBeenCalledWith('filter-change', { page: 'openings', target: 'time-control', value: 'blitz' });
+  });
+
+  it('trackFeature sends source and outcome on the reminder-enable action', () => {
+    window.history.pushState({}, '', '/train');
+    analytics.trackFeature('action', { target: 'reminder-enable', source: 'resurface-banner', outcome: 'denied' });
+    expect(track).toHaveBeenCalledTimes(1);
+    expect(track).toHaveBeenCalledWith('action', {
+      page: 'train',
+      target: 'reminder-enable',
+      source: 'resurface-banner',
+      outcome: 'denied',
+    });
+  });
+
+  it('enumeratedValue returns the matching literal and null for off-list numbers', () => {
+    expect(analytics.enumeratedValue(analytics.TRAIN_PUZZLES_PER_SESSION_VALUES, 18)).toBe('18');
+    expect(analytics.enumeratedValue(analytics.TRAIN_PUZZLES_PER_SESSION_VALUES, 4)).toBeNull();
+    expect(analytics.enumeratedValue(analytics.REMINDER_HOUR_VALUES, 0)).toBe('0');
+    expect(analytics.enumeratedValue(analytics.REMINDER_HOUR_VALUES, 23)).toBe('23');
+    expect(analytics.enumeratedValue(analytics.REMINDER_HOUR_VALUES, 24)).toBeNull();
   });
 
   it.each(['leaderboard-points', 'leaderboard-accuracy'] as const)(

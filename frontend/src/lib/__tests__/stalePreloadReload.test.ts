@@ -10,6 +10,7 @@ import {
   PRELOAD_RELOAD_COOLDOWN_MS,
   PRELOAD_RELOAD_STORAGE_KEY,
 } from '../stalePreloadReload';
+import { consumeAutoReloadMarker } from '../autoReload';
 
 const NOW_MS = 1_800_000_000_000;
 const originalLocation = window.location;
@@ -39,6 +40,12 @@ describe('handleVitePreloadError', () => {
     expect(reload).toHaveBeenCalledOnce();
     expect(event.defaultPrevented).toBe(true);
     expect(window.sessionStorage.getItem(PRELOAD_RELOAD_STORAGE_KEY)).toBe(String(NOW_MS));
+  });
+
+  it('marks the recovery reload as automatic so Umami drops its pageview', () => {
+    handleVitePreloadError(preloadErrorEvent(), NOW_MS);
+
+    expect(consumeAutoReloadMarker()).toBe(true);
   });
 
   it('lets the error through instead of reload-looping within the cooldown', () => {

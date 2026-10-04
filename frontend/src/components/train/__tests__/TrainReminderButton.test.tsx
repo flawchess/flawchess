@@ -912,3 +912,131 @@ describe('TrainReminderButton', () => {
     });
   });
 });
+
+describe('reminder-enable tracking (score screen)', () => {
+  let track: ReturnType<typeof vi.fn>;
+
+  beforeEach(() => {
+    track = vi.fn();
+    window.umami = { track, identify: vi.fn() };
+    window.history.pushState({}, '', '/train');
+  });
+
+  afterEach(() => {
+    delete window.umami;
+    window.history.pushState({}, '', '/');
+  });
+
+  async function pressRemindMe(): Promise<void> {
+    await waitFor(() => {
+      expect(screen.getByTestId('btn-train-remind-me')).not.toBeNull();
+    });
+    await act(async () => {
+      fireEvent.click(screen.getByTestId('btn-train-remind-me'));
+    });
+  }
+
+  it('sends nothing on mount', async () => {
+    vi.mocked(trainApi.getSettings).mockResolvedValue(BASE_SETTINGS);
+    vi.mocked(pushApi.getVapidPublicKey).mockResolvedValue({ application_server_key: VAPID_KEY });
+    stubBrowserGlobals();
+
+    renderWithClient();
+
+    await waitFor(() => {
+      expect(screen.getByTestId('btn-train-remind-me')).not.toBeNull();
+    });
+    expect(track).not.toHaveBeenCalled();
+  });
+
+  it('Remind me with a granted prompt sends one reminder-enable action with outcome subscribed', async () => {
+    vi.mocked(trainApi.getSettings).mockResolvedValue(BASE_SETTINGS);
+    vi.mocked(trainApi.updateSettings).mockResolvedValue({ ...BASE_SETTINGS, reminder_enabled: true });
+    vi.mocked(pushApi.getVapidPublicKey).mockResolvedValue({ application_server_key: VAPID_KEY });
+    vi.mocked(pushApi.subscribe).mockResolvedValue({ subscription_id: 1 });
+    stubBrowserGlobals();
+
+    renderWithClient();
+    await pressRemindMe();
+
+    await waitFor(() => {
+      expect(screen.getByTestId('train-reminder-confirmed')).not.toBeNull();
+    });
+    expect(track).toHaveBeenCalledTimes(1);
+    expect(track).toHaveBeenCalledWith('action', {
+      page: 'train',
+      target: 'reminder-enable',
+      source: 'score-screen',
+      outcome: 'subscribed',
+    });
+  });
+
+  it('Remind me with a denied prompt sends outcome denied', async () => {
+    vi.mocked(trainApi.getSettings).mockResolvedValue(BASE_SETTINGS);
+    vi.mocked(pushApi.getVapidPublicKey).mockResolvedValue({ application_server_key: VAPID_KEY });
+    stubBrowserGlobals({ requestPermission: vi.fn().mockResolvedValue('denied') });
+
+    renderWithClient();
+    await pressRemindMe();
+
+    expect(track).toHaveBeenCalledTimes(1);
+    expect(track).toHaveBeenCalledWith('action', {
+      page: 'train',
+      target: 'reminder-enable',
+      source: 'score-screen',
+      outcome: 'denied',
+    });
+  });
+
+  describe('iOS-tabbed tap', () => {
+    beforeEach(() => {
+      vi.mocked(useInstallPrompt).mockReturnValue({ ...defaultInstallPrompt(), isIOS: true, isMobile: true });
+    });
+
+    it('Get reminders sends outcome install-instructions', async () => {
+      vi.mocked(trainApi.getSettings).mockResolvedValue(BASE_SETTINGS);
+      vi.mocked(trainApi.updateSettings).mockResolvedValue(BASE_SETTINGS);
+      vi.mocked(pushApi.getVapidPublicKey).mockResolvedValue({ application_server_key: VAPID_KEY });
+
+      renderWithClient();
+      await waitFor(() => {
+        expect(screen.getByTestId('btn-train-ios-reminders')).not.toBeNull();
+      });
+      expect(track).not.toHaveBeenCalled();
+
+      await act(async () => {
+        fireEvent.click(screen.getByTestId('btn-train-ios-reminders'));
+      });
+
+      expect(track).toHaveBeenCalledTimes(1);
+      expect(track).toHaveBeenCalledWith('action', {
+        page: 'train',
+        target: 'reminder-enable',
+        source: 'score-screen',
+        outcome: 'install-instructions',
+      });
+    });
+
+    it('Get reminders counts the tap even when settings have not loaded yet', async () => {
+      vi.mocked(trainApi.getSettings).mockReturnValue(new Promise(() => {}));
+      vi.mocked(pushApi.getVapidPublicKey).mockResolvedValue({ application_server_key: VAPID_KEY });
+
+      renderWithClient();
+      await waitFor(() => {
+        expect(screen.getByTestId('btn-train-ios-reminders')).not.toBeNull();
+      });
+
+      await act(async () => {
+        fireEvent.click(screen.getByTestId('btn-train-ios-reminders'));
+      });
+
+      expect(track).toHaveBeenCalledTimes(1);
+      expect(track).toHaveBeenCalledWith('action', {
+        page: 'train',
+        target: 'reminder-enable',
+        source: 'score-screen',
+        outcome: 'install-instructions',
+      });
+    });
+  });
+});
