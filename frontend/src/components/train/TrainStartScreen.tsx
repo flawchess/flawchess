@@ -9,7 +9,9 @@
  * exactly one always matches.
  *
  * Phase 230 (D-08): wherever a `TrainStreakCard` renders, the weekly
- * `TrainLeaderboardCard` follows it directly (before `TrainStatsCard`).
+ * `TrainLeaderboardCard` follows it (before `TrainStatsCard`). Quick
+ * 261004-dta: the schedule card now sits between the streak card and the
+ * leaderboard on the completed and start/resume landings.
  *
  * Phase 231 (D-10): `TrainMedalDialogHost` is the first child of the empty,
  * completed and fresh/resume/warmup landings (not loading or error). Train.tsx
@@ -42,6 +44,7 @@ import {
   landingHost,
 } from '@/lib/trainBotCopy';
 import { TRAIN_POINTS_PER_PUZZLE } from '@/lib/trainScore';
+import { cn } from '@/lib/utils';
 import type { TrainSessionResponse } from '@/types/train';
 
 export interface TrainStartScreenProps {
@@ -230,20 +233,28 @@ function TrainHeader({
   const showImportAsk = !isGuest && !hasGames;
   const showReminderAsk =
     !isGuest && !showImportAsk && settings?.has_mobile_subscription === false;
+  // Quick 261004-dta: on a phone the avatar + bubble pushed the streak card and
+  // its Start button below the fold. Only Tank's intro (intro stepper not yet
+  // completed) keeps it there; the sign-up/import/install asks it would carry
+  // are repeated on the session score screen. Gated on loaded settings so a
+  // returning user's bubble never flashes in before hiding.
+  const isIntroHost = settings != null && settings.intro_seen_at == null;
   return (
-    <TrainBotBubble
-      persona={host.persona}
-      state="prompt"
-      avatarSize="large"
-      actions={landingActions(isGuest, showImportAsk)}
-    >
-      <p data-testid="train-tagline">{host.copy}</p>
-      {isGuest && <p data-testid="train-landing-signup-ask">{GUEST_SIGNUP_ASK_SCORE}</p>}
-      {showImportAsk && <p data-testid="train-landing-import-ask">{IMPORT_ASK_LANDING}</p>}
-      {showReminderAsk && (
-        <p data-testid="train-landing-reminder-ask">{REMINDER_INSTALL_ASK}</p>
-      )}
-    </TrainBotBubble>
+    <div className={cn('w-full', !isIntroHost && 'max-sm:hidden')} data-testid="train-landing-host">
+      <TrainBotBubble
+        persona={host.persona}
+        state="prompt"
+        avatarSize="large"
+        actions={landingActions(isGuest, showImportAsk)}
+      >
+        <p data-testid="train-tagline">{host.copy}</p>
+        {isGuest && <p data-testid="train-landing-signup-ask">{GUEST_SIGNUP_ASK_SCORE}</p>}
+        {showImportAsk && <p data-testid="train-landing-import-ask">{IMPORT_ASK_LANDING}</p>}
+        {showReminderAsk && (
+          <p data-testid="train-landing-reminder-ask">{REMINDER_INSTALL_ASK}</p>
+        )}
+      </TrainBotBubble>
+    </div>
   );
 }
 
@@ -366,13 +377,13 @@ export function TrainStartScreen({
         <TrainReminderResurfaceBanner />
         <TrainHeader session={session} isGuest={isGuest} hasGames={hasGames} />
         <TrainStreakCard />
-        <TrainLeaderboardCard isGuest={isGuest} />
-        <TrainStatsCard todayScore={{ total: state.score, max: state.totalPoints }} />
         <TrainScheduleSettings
           onSaved={onSettingsSaved}
           nextSessionDate={state.nextSessionDate}
           isGuest={isGuest}
         />
+        <TrainLeaderboardCard isGuest={isGuest} />
+        <TrainStatsCard todayScore={{ total: state.score, max: state.totalPoints }} />
       </div>
     );
   }
@@ -409,9 +420,9 @@ export function TrainStartScreen({
           </Button>
         }
       />
+      <TrainScheduleSettings onSaved={onSettingsSaved} isGuest={isGuest} />
       <TrainLeaderboardCard isGuest={isGuest} />
       <TrainStatsCard />
-      <TrainScheduleSettings onSaved={onSettingsSaved} isGuest={isGuest} />
     </div>
   );
 }

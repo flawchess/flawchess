@@ -418,6 +418,29 @@ describe('TrainStartScreen — six landing states', () => {
     expect(btn.compareDocumentPosition(settings) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 
+  it('quick 261004-dta: the schedule card sits above the leaderboard (fresh and completed)', () => {
+    renderScreen();
+    const isBefore = (a: HTMLElement, b: HTMLElement): boolean =>
+      Boolean(a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING);
+    expect(
+      isBefore(screen.getByTestId('train-schedule-settings'), screen.getByTestId('train-leaderboard-card')),
+    ).toBe(true);
+    cleanup();
+    renderScreen({ session: { ...BASE_SESSION, solved_count: BASE_SESSION.puzzle_count } });
+    expect(
+      isBefore(screen.getByTestId('train-schedule-settings'), screen.getByTestId('train-leaderboard-card')),
+    ).toBe(true);
+  });
+
+  it('quick 261004-dta: the host bubble is phone-hidden once the intro is seen, but Tank\'s intro stays', () => {
+    renderScreen();
+    expect(screen.getByTestId('train-landing-host').className).not.toContain('max-sm:hidden');
+    cleanup();
+    mockTrainSettingsData = { ...mockTrainSettingsData, intro_seen_at: '2026-07-01T10:00:00Z' };
+    renderScreen();
+    expect(screen.getByTestId('train-landing-host').className).toContain('max-sm:hidden');
+  });
+
   it('191-06 UAT bug fix: a persisted schedule-settings edit calls onSettingsSaved, so the stale mount-time session gets re-fetched', async () => {
     const { onSettingsSaved } = renderScreen();
     expect(onSettingsSaved).not.toHaveBeenCalled();
