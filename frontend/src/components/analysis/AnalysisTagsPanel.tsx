@@ -308,7 +308,6 @@ export function AnalysisTagsPanel({
       activeRef={activeCellRef}
       onCellActivate={handleMoveStatsCellActivate}
       onCellHover={handleMoveStatsCellHover}
-      accuracyAsCardHeader
     />
   );
 

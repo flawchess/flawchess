@@ -1004,9 +1004,9 @@ export function LibraryGameCard({
   // rows (ChipColumn `inline` — the label sits left of its chips, matching the mobile
   // layout), wrapped in a charcoal card. Shared by mobile (below the eval chart) and
   // desktop (filling the gap under the eval chart). Only rendered when `hasTags`.
-  const renderTagsBlock = () => (
+  const renderTagsBlock = (className?: string) => (
     <div
-      className="charcoal-texture rounded-md p-2 flex flex-col gap-y-2"
+      className={cn('charcoal-texture rounded-md p-2 flex flex-col gap-y-2', className)}
       data-testid={`flaw-chip-columns-${game.game_id}`}
     >
       {TACTIC_ORIENTATIONS.map((orientation) => {
@@ -1218,13 +1218,14 @@ export function LibraryGameCard({
             )}
           </div>
           {/* RIGHT column: a two-lane row — the eval chart + tags card stacked on the
-              left, the MoveStats column (accuracies card + charcoal table) on the right.
-              items-stretch so the tags card fills the gap under the (short) eval chart,
-              matching the taller MoveStats column height (UAT 179). flex-1 fills the
-              remaining card width. */}
+              left, the MoveStats card (accuracy header band + category table) on the
+              right. The outer row is items-stretch, so this column takes the
+              miniboard's height; the lane row is flex-1 so both lanes fill it — the
+              tags card and the MoveStats card align with the board's top and bottom.
+              flex-1 fills the remaining card width. */}
           <div className="flex-1 min-w-0 flex flex-col gap-1">
             {game.analysis_state === 'analyzed' ? (
-            <div className="flex gap-3 items-stretch">
+            <div className="flex-1 flex gap-3 items-stretch">
               {/* Left lane: eval chart on top, tags card filling the gap below it. */}
               <div className="flex-1 min-w-0 flex flex-col gap-2">
                 <div
@@ -1259,23 +1260,26 @@ export function LibraryGameCard({
                     />
                   )}
                 </div>
-                {/* Tags card fills the gap under the eval chart (flex-1). Marked as
-                    flaw-controls for the outside-pointer highlight guard. */}
+                {/* Tags card fills the gap under the eval chart down to the board's
+                    bottom edge (flex-1 wrapper + flex-1 card). Marked as flaw-controls
+                    for the outside-pointer highlight guard. */}
                 {hasTags && (
-                  <div className="flex-1" data-testid={`flaw-controls-${game.game_id}`}>
-                    {renderTagsBlock()}
+                  <div className="flex-1 flex flex-col" data-testid={`flaw-controls-${game.game_id}`}>
+                    {renderTagsBlock('flex-1')}
                   </div>
                 )}
               </div>
-              {/* MoveStats column: accuracies card + charcoal category table, ~256px
+              {/* MoveStats column: one charcoal card (accuracy header band + category
+                  table) stretched to the miniboard height, ~256px
                   fixed width beside the miniboard — wide enough that the strip's
                   "Accuracies" label + two pills never squeeze the shared grid, so the
                   table's count columns stay aligned under the pills. Marked as
                   flaw-controls for the outside-pointer highlight guard. */}
-              <div className="shrink-0 w-64" data-testid={`flaw-controls-${game.game_id}`}>
+              <div className="shrink-0 w-64 flex flex-col" data-testid={`flaw-controls-${game.game_id}`}>
                 <MoveStats
                   game={game}
                   gameId={game.game_id}
+                  className="flex-1"
                   activeRef={activeCellRef}
                   outlinedRef={outlinedCellRef}
                   onCellActivate={handleMoveStatsCellActivate}

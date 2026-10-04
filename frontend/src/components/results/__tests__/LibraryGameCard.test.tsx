@@ -516,13 +516,15 @@ describe('LibraryGameCard mobile MoveStats collapse (D-06) and unanalyzed pill (
     // per-category cell (UAT 179 — replaces the old severity-badge row).
     expect(screen.getAllByTestId(`move-stats-compact-${GAME_ID}`).length).toBeGreaterThan(0);
     expect(screen.getAllByTestId(`move-stats-compact-cell-blunder-${GAME_ID}`).length).toBeGreaterThan(0);
-    // The 7-row table's charcoal card is present but hidden (native `hidden`) while collapsed.
-    const tableCard = screen.getAllByTestId(`move-stats-table-card-${GAME_ID}`)[0]!;
+    // The card (with its accuracy header) stays visible; only the 7-row table is
+    // hidden (native `hidden`) while collapsed.
+    expect((screen.getAllByTestId(`move-stats-table-card-${GAME_ID}`)[0] as HTMLElement).hidden).toBe(false);
+    const tableCard = screen.getAllByTestId(`move-stats-table-${GAME_ID}`)[0]!;
     expect((tableCard as HTMLElement).hidden).toBe(true);
 
     const toggle = screen.getAllByTestId('move-stats-expand-toggle')[0]!;
     fireEvent.click(toggle);
-    const tableCardAfter = screen.getAllByTestId(`move-stats-table-card-${GAME_ID}`)[0]!;
+    const tableCardAfter = screen.getAllByTestId(`move-stats-table-${GAME_ID}`)[0]!;
     expect((tableCardAfter as HTMLElement).hidden).toBe(false);
   });
 

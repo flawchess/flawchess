@@ -2,10 +2,11 @@
 gsd_state_version: "1.0"
 milestone: v2.21
 current_phase: 232
+current_phase_name: Frontend Major Dependency Upgrades (SEED-187
 status: completed
 stopped_at: Phase 232 complete — all phases complete
-last_updated: "2026-10-04T12:56:32.798Z"
-state_head: 5ee87ec1f61dc0948ec5c4d7e3061fb480c1c11c
+last_updated: "2026-10-04T14:51:20.701Z"
+state_head: cb06fc84c65e259232186df546fdb0db6c030675
 progress:
   total_phases: 5
   completed_phases: 103
@@ -970,6 +971,9 @@ None active.
 | 115 | streak flame number: white font with black outline | 2026-10-03 | 6099bfdfc | — |
 | 261004-8rt | Accuracy leaderboard: qualified users ranked first, tentative unranked below a divider (supersedes D-03) | 2026-10-04 | eb3c0f530 | [261004-8rt-accuracy-leaderboard-qualified-first-tie](./quick/261004-8rt-accuracy-leaderboard-qualified-first-tie/) |
 | 261004-dta | Train page mobile: hide coach avatar (except Tank intro), schedule above leaderboard | 2026-10-04 | 13d2bc96e | [261004-dta-train-page-mobile-hide-coach-avatar-exce](./quick/261004-dta-train-page-mobile-hide-coach-avatar-exce/) |
+| fast | Train page mobile: drop landing container top padding (streak card 48px→24px below header) | 2026-10-04 | fd550d7d0 | — |
+| 119 | Library game card: accuracy merged into move-stats card, tags + stats cards stretch to miniboard height | 2026-10-04 | 4212c55d2 | — |
+| 120 | Library mobile game card: move stats in one card with accuracy header | 2026-10-04 | cb06fc84c | — |
 
 ## Deferred Items
 
