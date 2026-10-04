@@ -15,9 +15,11 @@
  */
 import { consumeAutoReloadMarker } from '@/lib/autoReload';
 import type { FilterState } from '@/components/filters/FilterPanel';
+import type { GameCap } from '@/hooks/useImportSettings';
 import type { BotSetupSettings } from '@/lib/botSetupSettings';
 import type { TimeControlPresetLabel } from '@/lib/botTimeControlPresets';
 import type { PlayStylePreset } from '@/lib/playStyle';
+import type { DeviceSubscribeResult } from '@/lib/push';
 import type { TacticFamily } from '@/lib/tacticComparisonMeta';
 import type { TacticDepthPreset } from '@/lib/tacticDepth';
 import type {
@@ -283,6 +285,66 @@ export function isAnalysisTabId(value: string): value is AnalysisTabId {
   return (ANALYSIS_TAB_IDS as readonly string[]).includes(value);
 }
 
+/** Import time-control buttons (ImportFilterCard), one toggle target per TimeControl. */
+const IMPORT_TC_TOGGLE_TARGETS = [
+  'import-tc-bullet',
+  'import-tc-blitz',
+  'import-tc-rapid',
+  'import-tc-classical',
+] as const satisfies readonly `import-tc-${TimeControl}`[];
+
+/** Train schedule weekday chips, Monday-first (bit 0 = Monday). */
+export const TRAIN_DAY_TOGGLE_TARGETS = [
+  'train-day-mon',
+  'train-day-tue',
+  'train-day-wed',
+  'train-day-thu',
+  'train-day-fri',
+  'train-day-sat',
+  'train-day-sun',
+] as const;
+export type TrainDayToggleTarget = (typeof TRAIN_DAY_TOGGLE_TARGETS)[number];
+
+/** Where the user pressed the reminder opt-in (the `reminder-enable` funnel). */
+export const REMINDER_ENABLE_SOURCES = ['score-screen', 'resurface-banner', 'train-settings'] as const;
+type ReminderEnableSource = (typeof REMINDER_ENABLE_SOURCES)[number];
+
+/** Push subscribe result, plus the iOS tap which only reveals install instructions and never prompts. */
+type ReminderEnableOutcome = DeviceSubscribeResult['status'] | 'install-instructions';
+export const REMINDER_ENABLE_OUTCOMES = [
+  'subscribed',
+  'dismissed',
+  'denied',
+  'unsupported',
+  'error',
+  'install-instructions',
+] as const satisfies readonly ReminderEnableOutcome[];
+
+/**
+ * The puzzles-per-session slider grid as strings. A test in
+ * TrainScheduleSettings.test.tsx pins it to PUZZLES_PER_SESSION_MIN/MAX/STEP.
+ */
+export const TRAIN_PUZZLES_PER_SESSION_VALUES = ['3', '6', '9', '12', '15', '18', '21', '24', '27', '30'] as const;
+
+/**
+ * Exact reminder hour, kept rather than coarse buckets: 24 bounded literals carry
+ * no PII and the exact hour is the useful scheduling signal. A test in
+ * TrainScheduleSettings.test.tsx pins it to REMINDER_HOUR_OPTIONS.
+ */
+export const REMINDER_HOUR_VALUES = [
+  '0', '1', '2', '3', '4', '5', '6', '7', '8', '9', '10', '11',
+  '12', '13', '14', '15', '16', '17', '18', '19', '20', '21', '22', '23',
+] as const;
+
+/**
+ * Narrow a number to the matching literal of an enumerated string list, or null
+ * when it is off the list (callers then send nothing, D-04).
+ */
+export function enumeratedValue<T extends string>(values: readonly T[], n: number): T | null {
+  const text = String(n);
+  return values.find((value) => value === text) ?? null;
+}
+
 export const TOGGLE_TARGETS = [
   'engine-stockfish',
   'engine-maia',
@@ -290,6 +352,9 @@ export const TOGGLE_TARGETS = [
   'bookmark-chart',
   'elo-timeline-legend',
   'flaw-trend-legend',
+  ...IMPORT_TC_TOGGLE_TARGETS,
+  ...TRAIN_DAY_TOGGLE_TARGETS,
+  'train-reminder',
 ] as const;
 type ToggleTarget = (typeof TOGGLE_TARGETS)[number];
 
@@ -332,6 +397,7 @@ export const ACTION_TARGETS = [
   'bot-new-game',
   'bot-draw-decline',
   'bot-return-live',
+  'reminder-enable',
 ] as const;
 type ActionTarget = (typeof ACTION_TARGETS)[number];
 
@@ -368,7 +434,16 @@ export const FILTER_TARGETS = [
   'apply',
 ] as const;
 
-export const OPTION_TARGETS = ['elo', 'temperature', 'play-style', 'bot-tc', 'bot-color'] as const;
+export const OPTION_TARGETS = [
+  'elo',
+  'temperature',
+  'play-style',
+  'bot-tc',
+  'bot-color',
+  'import-cap',
+  'train-puzzles-per-session',
+  'train-reminder-hour',
+] as const;
 
 /** FilterPanel's Rated ToggleGroup item values. */
 export type RatedFilterValue = 'all' | 'rated' | 'casual';
@@ -399,7 +474,15 @@ export type OptionChangeProps =
   | { target: 'temperature'; value: TemperatureBucket }
   | { target: 'play-style'; value: PlayStylePreset }
   | { target: 'bot-tc'; value: TimeControlPresetLabel }
-  | { target: 'bot-color'; value: BotSetupSettings['colorPreference'] };
+  | { target: 'bot-color'; value: BotSetupSettings['colorPreference'] }
+  | { target: 'import-cap'; value: `${GameCap}` }
+  | { target: 'train-puzzles-per-session'; value: (typeof TRAIN_PUZZLES_PER_SESSION_VALUES)[number] }
+  | { target: 'train-reminder-hour'; value: (typeof REMINDER_HOUR_VALUES)[number] };
+
+/** Every action target keeps the bare shape except the reminder opt-in funnel, which carries source and outcome. */
+export type ActionProps =
+  | { target: Exclude<ActionTarget, 'reminder-enable'> }
+  | { target: 'reminder-enable'; source: ReminderEnableSource; outcome: ReminderEnableOutcome };
 
 export interface FeatureEventMap {
   'tab-switch': { target: AnalysisTabId | LeaderboardTabId };
@@ -410,7 +493,7 @@ export interface FeatureEventMap {
   /** Only ever built from `popoverTargetFromTestId`. */
   'popover-open': { target: string };
   'panel-open': { target: PanelTarget };
-  action: { target: ActionTarget };
+  action: ActionProps;
   'nav-click': { target: NavDestination; value: NavSource };
 }
 export type FeatureEventName = keyof FeatureEventMap;

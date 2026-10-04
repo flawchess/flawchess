@@ -305,6 +305,11 @@ describe('feature-event registry', () => {
       analytics.NAV_SOURCES,
       analytics.FILTER_TARGETS,
       analytics.OPTION_TARGETS,
+      analytics.TRAIN_DAY_TOGGLE_TARGETS,
+      analytics.REMINDER_ENABLE_SOURCES,
+      analytics.REMINDER_ENABLE_OUTCOMES,
+      analytics.TRAIN_PUZZLES_PER_SESSION_VALUES,
+      analytics.REMINDER_HOUR_VALUES,
     ];
     for (const list of lists) {
       for (const entry of list) expect(entry).toMatch(/^[a-z0-9]+(-[a-z0-9]+)*$/);
@@ -344,6 +349,26 @@ describe('feature-event registry', () => {
     window.history.pushState({}, '', '/openings');
     analytics.trackFeature('filter-change', { target: 'time-control', value: 'blitz' });
     expect(track).toHaveBeenCalledWith('filter-change', { page: 'openings', target: 'time-control', value: 'blitz' });
+  });
+
+  it('trackFeature sends source and outcome on the reminder-enable action', () => {
+    window.history.pushState({}, '', '/train');
+    analytics.trackFeature('action', { target: 'reminder-enable', source: 'resurface-banner', outcome: 'denied' });
+    expect(track).toHaveBeenCalledTimes(1);
+    expect(track).toHaveBeenCalledWith('action', {
+      page: 'train',
+      target: 'reminder-enable',
+      source: 'resurface-banner',
+      outcome: 'denied',
+    });
+  });
+
+  it('enumeratedValue returns the matching literal and null for off-list numbers', () => {
+    expect(analytics.enumeratedValue(analytics.TRAIN_PUZZLES_PER_SESSION_VALUES, 18)).toBe('18');
+    expect(analytics.enumeratedValue(analytics.TRAIN_PUZZLES_PER_SESSION_VALUES, 4)).toBeNull();
+    expect(analytics.enumeratedValue(analytics.REMINDER_HOUR_VALUES, 0)).toBe('0');
+    expect(analytics.enumeratedValue(analytics.REMINDER_HOUR_VALUES, 23)).toBe('23');
+    expect(analytics.enumeratedValue(analytics.REMINDER_HOUR_VALUES, 24)).toBeNull();
   });
 
   it.each(['leaderboard-points', 'leaderboard-accuracy'] as const)(
