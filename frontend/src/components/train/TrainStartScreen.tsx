@@ -10,6 +10,11 @@
  *
  * Phase 230 (D-08): wherever a `TrainStreakCard` renders, the weekly
  * `TrainLeaderboardCard` follows it directly (before `TrainStatsCard`).
+ *
+ * Phase 231 (D-10): `TrainMedalDialogHost` is the first child of the empty,
+ * completed and fresh/resume/warmup landings (not loading or error). Train.tsx
+ * renders this component only outside the solve loop and the score screen is
+ * separate, so the medal dialog never appears mid-session.
  */
 
 import type { ReactElement } from 'react';
@@ -22,6 +27,7 @@ import { TRAIN_BUTTON_CLASS, TRAIN_CTA_BUTTON_CLASS } from '@/components/train/b
 import { ImportAskActions } from '@/components/train/ImportAskActions';
 import { SignupAskActions } from '@/components/train/SignupAskActions';
 import { TrainLeaderboardCard } from '@/components/train/TrainLeaderboardCard';
+import { TrainMedalDialogHost } from '@/components/train/medals/TrainMedalDialogHost';
 import { TrainBotBubble } from '@/components/train/TrainBotBubble';
 import { TrainReminderResurfaceBanner } from '@/components/train/TrainReminderResurfaceBanner';
 import { TrainScheduleSettings } from '@/components/train/TrainScheduleSettings';
@@ -346,6 +352,7 @@ export function TrainStartScreen({
   if (state.kind === 'empty') {
     return (
       <div className={LANDING_CONTAINER_CLASS} data-testid="train-start-screen">
+        <TrainMedalDialogHost isGuest={isGuest} />
         <TrainReminderResurfaceBanner />
         <TrainEmptyBody progress={progress} isGuest={isGuest} />
       </div>
@@ -355,6 +362,7 @@ export function TrainStartScreen({
   if (state.kind === 'completed') {
     return (
       <div className={LANDING_CONTAINER_CLASS} data-testid="train-start-screen">
+        <TrainMedalDialogHost isGuest={isGuest} />
         <TrainReminderResurfaceBanner />
         <TrainHeader session={session} isGuest={isGuest} hasGames={hasGames} />
         <TrainStreakCard />
@@ -384,6 +392,7 @@ export function TrainStartScreen({
   // above the cards; this folds it into the first one.)
   return (
     <div className={LANDING_CONTAINER_CLASS} data-testid="train-start-screen">
+      <TrainMedalDialogHost isGuest={isGuest} />
       <TrainReminderResurfaceBanner />
       <TrainHeader session={session} isGuest={isGuest} hasGames={hasGames} />
       <TrainStreakCard

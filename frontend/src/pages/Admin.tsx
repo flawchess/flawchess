@@ -2,6 +2,7 @@ import { Navigate } from 'react-router';
 
 import { useUserProfile } from '@/hooks/useUserProfile';
 import { ImpersonationSelector } from '@/components/admin/ImpersonationSelector';
+import { LeaderboardMedalsDemo } from '@/components/admin/LeaderboardMedalsDemo';
 import { SentryTestButtons } from '@/components/admin/SentryTestButtons';
 import { TrainReminderTestCard } from '@/components/admin/TrainReminderTestCard';
 
@@ -54,6 +55,16 @@ export function AdminPage() {
           <TrainReminderTestCard />
         </section>
       )}
+
+      {/* Client-only fixtures (no endpoint), so unlike the reminder card above
+          this works in prod too. Still superuser-only via the route guard. */}
+      <section
+        className="space-y-3"
+        data-testid="admin-section-leaderboard-medals-demo"
+      >
+        <h2 className="text-lg font-medium">Leaderboard medals demo</h2>
+        <LeaderboardMedalsDemo />
+      </section>
 
       <section
         className="space-y-3"

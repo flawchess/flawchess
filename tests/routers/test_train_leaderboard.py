@@ -269,7 +269,7 @@ async def test_response_key_set_has_no_user_ids(
         assert set(body) == {"week_start", "week_end", "seconds_remaining", "points", "accuracy"}
         for board_name in ("points", "accuracy"):
             board = body[board_name]
-            assert set(board) == {"rows", "viewer", "pass_target"}
+            assert set(board) == {"rows", "viewer", "pass_target", "last_week"}
             assert len(board["rows"]) == 2
             for row in board["rows"]:
                 assert set(row) == {
@@ -281,7 +281,9 @@ async def test_response_key_set_has_no_user_ids(
                     "is_viewer",
                     "visibility",
                     "gap_before",
+                    "medals",
                 }
+                assert set(row["medals"]) == {"gold", "silver", "bronze"}
             assert set(board["viewer"]) == {
                 "rank",
                 "rank_without_session",

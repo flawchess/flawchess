@@ -92,6 +92,15 @@ describe('LeaderboardPrivacyCard', () => {
     expect(invalidate).toHaveBeenCalledWith({ queryKey: ['train', 'leaderboard'] });
   });
 
+  it("tells hidden users they don't earn medals (Phase 231)", async () => {
+    vi.spyOn(apiClient, 'get').mockResolvedValue({ data: PROFILE });
+    renderCard();
+    await screen.findByTestId(SWITCH_ID);
+    const card = screen.getByTestId('settings-section-privacy');
+    expect(card.textContent).toContain("don't earn medals");
+    expect(card.textContent).toContain('medals you already won are kept');
+  });
+
   it('renders nothing for a guest profile', async () => {
     const get = vi.spyOn(apiClient, 'get').mockResolvedValue({ data: { ...PROFILE, is_guest: true } });
     renderCard();

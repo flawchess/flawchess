@@ -36,6 +36,7 @@ function rowWithRank(rank: number | null): LeaderboardRow {
     is_viewer: false,
     visibility: 'public',
     gap_before: false,
+    medals: { gold: 0, silver: 0, bronze: 0 },
   };
 }
 
@@ -143,7 +144,7 @@ const VIEWER: LeaderboardViewer = {
   puzzles_to_qualify: 0,
   visibility: 'public',
 };
-const EMPTY_BOARD: LeaderboardBoard = { rows: [], viewer: null, pass_target: null };
+const EMPTY_BOARD: LeaderboardBoard = { rows: [], viewer: null, pass_target: null, last_week: null };
 
 function response(points: Partial<LeaderboardBoard>, accuracy: Partial<LeaderboardBoard>): TrainLeaderboardResponse {
   return {

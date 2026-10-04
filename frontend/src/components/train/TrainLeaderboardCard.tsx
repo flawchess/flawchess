@@ -7,8 +7,15 @@
  * first unranked (tentative) Accuracy row, and for guests a "Sign up to claim your
  * spot" nudge (D-14).
  *
- * Self-contained apart from `isGuest`: it calls `useTrainLeaderboard()`
- * itself, exactly like `TrainStatsCard` calls `useTrainProgress()`. Names are
+ * Phase 231 adds the "Last week:" podium above each board and a lifetime medal
+ * tally in every row's name block.
+ *
+ * `TrainLeaderboardCard` is the thin container, self-contained apart from
+ * `isGuest`: it calls `useTrainLeaderboard()` itself, exactly like
+ * `TrainStatsCard` calls `useTrainProgress()`, and owns the countdown, tab
+ * state and the Umami tab-switch. `TrainLeaderboardCardView` renders the whole
+ * card from props, so the admin "Leaderboard medals demo" shows production
+ * markup from fixtures. Names are
  * other users' self-typed platform usernames, so they only ever render as
  * React text children (never HTML, never an href/src; T-230-08).
  */
@@ -18,6 +25,9 @@ import { Card } from '@/components/ui/card';
 import { LoadError } from '@/components/ui/load-error';
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
 import { SignupAskActions } from '@/components/train/SignupAskActions';
+import { LastWeekPodium } from '@/components/train/medals/LastWeekPodium';
+import { MedalTally } from '@/components/train/medals/MedalTally';
+import { lastWeekFinishCopy } from '@/lib/trainMedals';
 import { useQueryClient } from '@tanstack/react-query';
 import { TRAIN_LEADERBOARD_QUERY_KEY, useTrainLeaderboard } from '@/hooks/useTrainLeaderboard';
 import { trackFeature } from '@/lib/analytics';
@@ -116,6 +126,7 @@ function LeaderboardRowItem({
           <span className="min-w-0 max-w-full truncate">
             {row.visibility === 'guest' ? GUEST_ROW_LABEL : row.name}
           </span>
+          <MedalTally medals={row.medals} board={kind} testId={`train-leaderboard-row-${index}-medals`} />
           {row.visibility === 'hidden' && (
             <span className="whitespace-nowrap font-normal text-muted-foreground">
               {HIDDEN_FROM_OTHERS_LABEL}
@@ -196,11 +207,25 @@ function LeaderboardHint({
   data: TrainLeaderboardResponse;
 }): ReactElement | null {
   const hint = viewerHint(tab, data);
-  if (hint === null) return null;
+  const finalRank = data[tab].last_week?.viewer_final_rank ?? null;
+  if (hint === null && finalRank === null) return null;
   return (
-    <p data-testid={`train-leaderboard-${hint.id}`} className="mt-2 text-sm text-muted-foreground">
-      {hint.text}
-    </p>
+    <>
+      {hint !== null && (
+        <p data-testid={`train-leaderboard-${hint.id}`} className="mt-2 text-sm text-muted-foreground">
+          {hint.text}
+        </p>
+      )}
+      {/* D-03: a separate line below this week's hint, never replacing it. */}
+      {finalRank !== null && (
+        <p
+          data-testid="train-leaderboard-last-week-finish"
+          className={cn('text-sm text-muted-foreground', hint === null ? 'mt-2' : 'mt-1')}
+        >
+          {lastWeekFinishCopy(finalRank)}
+        </p>
+      )}
+    </>
   );
 }
 
@@ -214,6 +239,7 @@ function LeaderboardBoardView({
   const rows = data[tab].rows;
   return (
     <>
+      <LastWeekPodium lastWeek={data[tab].last_week} />
       {tab === 'accuracy' && (
         <p data-testid="train-leaderboard-accuracy-helper" className="mb-2 text-sm text-muted-foreground">
           {ACCURACY_HELPER_COPY}
@@ -294,22 +320,31 @@ function useLeaderboardCountdown(
   return remaining;
 }
 
-export function TrainLeaderboardCard({ isGuest }: TrainLeaderboardCardProps): ReactElement {
-  const { data, isPending, isError, dataUpdatedAt } = useTrainLeaderboard();
-  const remaining = useLeaderboardCountdown(data, dataUpdatedAt);
-  const [tab, setTab] = useState<LeaderboardBoardKind>(readLeaderboardTab);
+export interface TrainLeaderboardCardViewProps {
+  data: TrainLeaderboardResponse | undefined;
+  isPending: boolean;
+  isError: boolean;
+  /** Seconds to the deadline, or null before data arrives (header countdown). */
+  remaining: number | null;
+  tab: LeaderboardBoardKind;
+  onTabChange: (value: string) => void;
+  isGuest: boolean;
+}
 
-  const handleTabChange = (value: string): void => {
-    // Radix single-select emits '' when the active item is re-tapped: keep the
-    // current tab and fire nothing (no write, no Umami event).
-    if (value === '') return;
-    const next = parseLeaderboardTab(value);
-    if (next === tab) return;
-    setTab(next);
-    writeLeaderboardTab(next);
-    trackFeature('tab-switch', { target: LEADERBOARD_TAB_TARGET[next] });
-  };
-
+/**
+ * The whole card rendered from props: no fetching, no query client, no
+ * analytics (Phase 231). The admin "Leaderboard medals demo" renders this with
+ * fixture data so it shows production markup.
+ */
+export function TrainLeaderboardCardView({
+  data,
+  isPending,
+  isError,
+  remaining,
+  tab,
+  onTabChange,
+  isGuest,
+}: TrainLeaderboardCardViewProps): ReactElement {
   return (
     <Card as="section" className="w-full p-4" data-testid="train-leaderboard-card">
       <div className="mb-2 flex items-baseline justify-between gap-2">
@@ -332,11 +367,40 @@ export function TrainLeaderboardCard({ isGuest }: TrainLeaderboardCardProps): Re
       )}
       {data !== undefined && (
         <>
-          <LeaderboardTabs tab={tab} onChange={handleTabChange} />
+          <LeaderboardTabs tab={tab} onChange={onTabChange} />
           <LeaderboardBoardView tab={tab} data={data} />
           {isGuest && <LeaderboardGuestCta />}
         </>
       )}
     </Card>
+  );
+}
+
+export function TrainLeaderboardCard({ isGuest }: TrainLeaderboardCardProps): ReactElement {
+  const { data, isPending, isError, dataUpdatedAt } = useTrainLeaderboard();
+  const remaining = useLeaderboardCountdown(data, dataUpdatedAt);
+  const [tab, setTab] = useState<LeaderboardBoardKind>(readLeaderboardTab);
+
+  const handleTabChange = (value: string): void => {
+    // Radix single-select emits '' when the active item is re-tapped: keep the
+    // current tab and fire nothing (no write, no Umami event).
+    if (value === '') return;
+    const next = parseLeaderboardTab(value);
+    if (next === tab) return;
+    setTab(next);
+    writeLeaderboardTab(next);
+    trackFeature('tab-switch', { target: LEADERBOARD_TAB_TARGET[next] });
+  };
+
+  return (
+    <TrainLeaderboardCardView
+      data={data}
+      isPending={isPending}
+      isError={isError}
+      remaining={remaining}
+      tab={tab}
+      onTabChange={handleTabChange}
+      isGuest={isGuest}
+    />
   );
 }

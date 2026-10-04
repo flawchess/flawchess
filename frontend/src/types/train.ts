@@ -304,6 +304,33 @@ export type LeaderboardBoardKind = 'points' | 'accuracy';
  */
 export type LeaderboardVisibility = 'public' | 'hidden' | 'guest';
 
+/** Medal types, best first. Mirrors app/schemas/train.py (Phase 231). */
+export type MedalKind = 'gold' | 'silver' | 'bronze';
+
+/** Lifetime medal counts of one row's user. Mirrors app/schemas/train.py (Phase 231). */
+export interface LeaderboardMedals {
+  gold: number;
+  silver: number;
+  bronze: number;
+}
+
+/** One medal on last week's podium. Mirrors app/schemas/train.py (Phase 231). */
+export interface LeaderboardPodiumEntry {
+  medal: MedalKind;
+  /** Read-time masked by the server ("Anonymous" / "Deleted user"); render as text only. */
+  name: string;
+}
+
+/** Last week's podium plus the viewer's own non-medal rank. Mirrors app/schemas/train.py (Phase 231). */
+export interface LeaderboardLastWeek {
+  /** ISO date of the previous Monday (UTC). */
+  week_start: string;
+  /** Server-ordered gold to bronze, every tied name listed; empty means no podium line. */
+  podium: LeaderboardPodiumEntry[];
+  /** Set only for the viewer's own row that earned no medal (D-03). */
+  viewer_final_rank: number | null;
+}
+
 /** One ranked row of a weekly board. Mirrors app/schemas/train.py. */
 export interface LeaderboardRow {
   /**
@@ -322,6 +349,8 @@ export interface LeaderboardRow {
   visibility: LeaderboardVisibility;
   /** True when a gap marker belongs before this row. */
   gap_before: boolean;
+  /** Lifetime medals of this row's owner on this board; all zero when none (Phase 231). */
+  medals: LeaderboardMedals;
 }
 
 /** The viewer's own standing on one board. Mirrors app/schemas/train.py. */
@@ -349,6 +378,8 @@ export interface LeaderboardBoard {
   rows: LeaderboardRow[];
   viewer: LeaderboardViewer | null;
   pass_target: LeaderboardPassTarget | null;
+  /** Previous ISO week only (D-07); null means there is nothing to show (D-08). */
+  last_week: LeaderboardLastWeek | null;
 }
 
 /** Response for GET /train/leaderboard. Mirrors app/schemas/train.py. */
@@ -359,4 +390,29 @@ export interface TrainLeaderboardResponse {
   seconds_remaining: number;
   points: LeaderboardBoard;
   accuracy: LeaderboardBoard;
+}
+
+// ─── Medal claim (Phase 231) ─────────────────────────────────────────────────
+
+/** One unclaimed medal awaiting the claim dialog. Mirrors app/schemas/train.py (Phase 231). */
+export interface UnclaimedMedal {
+  /** ISO date of the week's Monday (UTC); render with parseISO, never `new Date`. */
+  week_start: string;
+  board: LeaderboardBoardKind;
+  medal: MedalKind;
+  /** Final points, or the floored accuracy percent. */
+  value: number;
+  /** Another user holds the same medal on the same week and board. */
+  shared: boolean;
+}
+
+/** Response for GET /train/medals/unclaimed: newest week first, Points before Accuracy. */
+export interface UnclaimedMedalsResponse {
+  medals: UnclaimedMedal[];
+}
+
+/** Natural per-user key of a medal, the body item of POST /train/medals/claim. Mirrors app/schemas/train.py. */
+export interface MedalKey {
+  week_start: string;
+  board: LeaderboardBoardKind;
 }

@@ -2,16 +2,16 @@
 gsd_state_version: "1.0"
 milestone: v2.21
 current_phase: 231
-current_phase_name: weekly-leaderboard-medals
 status: completed
-stopped_at: Phase 231 context gathered
-last_updated: "2026-10-04T05:48:59.499Z"
-state_head: e07f06acae913be3a5a74ae18aee0e3eadfe6b20
+stopped_at: Phase 231 complete — all phases complete
+last_updated: "2026-10-04T07:49:48.107Z"
+state_head: 5fd1667b20fc4c0eca013501d0967b7240dbf023
 progress:
   total_phases: 4
   completed_phases: 103
   total_plans: 22
   completed_plans: 47
+  percent: 75
 milestone_name: Browser Engine Throughput
 last_activity: 2026-10-04
 last_activity_desc: "Completed quick task 261004-8rt: Accuracy leaderboard qualified-first tiering"
@@ -21,8 +21,8 @@ last_activity_desc: "Completed quick task 261004-8rt: Accuracy leaderboard quali
 
 ## Current Position
 
-Phase: 231 (weekly-leaderboard-medals) — READY TO EXECUTE
-Plan: 5 of 5
+Phase: 231
+Plan: Not started
 
 Status: All phases complete
 
@@ -43,7 +43,7 @@ Open threads carried forward (not blockers):
 
 See: .planning/PROJECT.md (updated 2026-09-13 after Phase 221)
 Core value: Position-precise WDL across openings + endgames + time pressure on top of users' actual chess.com / lichess games, with personalized LLM commentary and an auto-generated opening-strengths/weaknesses report.
-Current focus: **Phase 229 (Umami identify + feature events) complete and deployed 2026-10-03** (release #383): every authenticated session now carries `users.id` as Umami `distinct_id` (3 of 3 post-ship sessions identified), 9-verb typed `trackFeature` registry live in prod, Umami pinned to 3.4.0. Standalone phases 228–229 are released but not grouped into a milestone; next is `/gsd-new-milestone`. Watch item: re-read the 229-RESEARCH.md post-ship queries after a few days of volume.
+Current focus: **Phase 231 (Weekly Leaderboard Medals, SEED-186) complete and verified 2026-10-04** on branch `gsd/phase-231-weekly-leaderboard-medals`: UAT 5/5 (medal icon redrawn after the 🥇 emoji in UAT, 4246a3d43), verification passed, Nyquist-compliant, SECURITY threats_open 0. Not yet squash-merged to `main` (full pre-merge gate + CHANGELOG check first) and not deployed. Standalone phases 228-231 are not grouped into a milestone; next is `/gsd-new-milestone`.
 
 ### Superseded: focus after the v2.20/v2.21 close
 
@@ -821,6 +821,10 @@ flagged as an open decision for plan 06 / a human, not auto-fixed.
 - [Phase 230]: Leaderboard countdown sets no state on mount: fetch time stands in for now until the first 60 s tick (react-hooks purity)
 - [Phase 230]: 230-04: leaderboard_hidden rides the existing profile PUT; user_repository.update_profile None-filtering gives omit-unchanged and explicit-false-unhides, no repository change; the toggle sends no Umami event (DB-known write)
 - [Phase 230]: 230-05: rankLineCopy has a single plain-rank path for unchanged and worse ranks, so a downward delta cannot be produced (D-18); guest rule is checked first so guests never see a delta
+- [Phase 231]: Finalization uses a marker table (PK insert ON CONFLICT DO NOTHING RETURNING) as lock and memory, no advisory lock; 5 minute MEDALS_FINALIZE_GRACE after the Sunday deadline
+- [Phase 231]: Router copies user id/guest/hidden into locals before the lazy finalizer, since a rollback expires the request-cached session's User; finalization errors go to Sentry and never fail the board
+- [Phase 231]: 231-04: medal dialog host skips guests, impersonation and unresolved profile; opens only on isFetchedAfterMount non-empty list; settled ref guards double Claim tap
+- [Phase 231]: 231-05: medals demo toggles are simulated via props; real persisted mute and CSS reduced-motion media query still apply (stated in demo helper text)
 
 ### Pending Todos
 
@@ -1011,7 +1015,8 @@ Items acknowledged and deferred at **v1.29 milestone close on 2026-06-29** (user
 
 ## Session Continuity
 
-**Stopped at:** Phase 231 context gathered
+**Stopped at:** Phase 231 complete (UAT, verification, validation, security all passed 2026-10-04); next: pre-merge gate and squash-merge `gsd/phase-231-weekly-leaderboard-medals` into `main`
+**Resume file:** None
 
 Previous session note (Phase 227):
 refit (calibration parity holds). Verification passed 17/17; code review 0 blockers (WR-01 + 3 info fixed). Next:
@@ -1019,9 +1024,9 @@ squash-merge `gsd/phase-227-...` to `main` with a CHANGELOG entry already in `[U
 Owner-deferred: real-phone bot game check (227-UAT.md, report-only). Follow-up: stale "Phase 198 will populate"
 priority comment in `workerPoolState.ts:434-437` (verifier info item).
 
-**Last session:** 2026-10-04T04:31:19.538Z
+**Last session:** 2026-10-04T06:47:17.953Z
 
-**Resume file:** .planning/phases/231-weekly-leaderboard-medals/231-CONTEXT.md
+**Resume file:** None
 
 ## Performance Metrics
 
@@ -1230,6 +1235,9 @@ priority comment in `workerPoolState.ts:434-437` (verifier info item).
 | Phase 230 P03 | 7 min | 3 tasks | 14 files |
 | Phase 230 P04 | 7 min | 2 tasks | 15 files |
 | Phase 230 P05 | 6 min | 3 tasks | 11 files |
+| Phase 231 P01 | 14 min | 2 tasks | 12 files |
+| Phase 231 P04 | 35 min | 2 tasks | 13 files |
+| Phase 231 P05 | 6 min | 3 tasks | 8 files |
 
 ## Performance Metrics
 

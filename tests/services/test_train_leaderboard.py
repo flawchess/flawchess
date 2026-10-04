@@ -2,29 +2,43 @@
 
 Every test builds WeeklyAggregate / SolveTotals values directly. Test names carry a
 rule token (window, display_name, accuracy_percent, qualify, rank, slice,
-pass_target, hidden, guest, without_session, totals_without, tier) so the VALIDATION map can select them with pytest -k.
+pass_target, hidden, guest, without_session, totals_without, tier, final_standings, medal_for,
+last_week, podium, viewer_final_rank, tally, visible_keys) so the VALIDATION map can select them with pytest -k.
 """
 
 from __future__ import annotations
 
+import dataclasses
 import datetime
 
 import pytest
 
+from app.models.train_weekly_standing import Medal
 from app.repositories.train_leaderboard_repository import SolveTotals, WeeklyAggregate
+from app.repositories.train_medals_repository import StandingRow, TallyCount
 from app.services.train_leaderboard import (
     ACCURACY_QUALIFY_MIN_PUZZLES,
     ANONYMOUS_DISPLAY_NAME,
+    DELETED_USER_DISPLAY_NAME,
     LEADERBOARD_TOP_N,
+    ZERO_TALLY,
     Board,
     BoardRow,
+    LastWeek,
+    MedalTally,
+    PodiumEntry,
     accuracy_percent,
     build_board,
+    build_last_week,
     build_leaderboard,
     display_name,
+    final_standings,
+    fold_medal_tallies,
+    medal_for,
     puzzles_to_qualify,
     totals_without,
     resolve_viewer_visibility,
+    visible_keys,
     week_window,
 )
 
@@ -705,3 +719,334 @@ def test_tier_guest_and_hidden_viewers_sit_in_the_tentative_section(visibility: 
     # A different public viewer sees neither the guest nor the hidden user in any tier.
     other = _accuracy(aggs, viewer_id=2)
     assert [r.name for r in other.rows] == ["qualified", "public_tentative"]
+
+
+# --- final_standings and medal_for (Phase 231) ----------------------------------
+
+
+def _points_aggs(values: list[int]) -> list[WeeklyAggregate]:
+    """One 1-puzzle Points aggregate per value; names user01, user02, ... order ties."""
+    return [_agg(i + 1, points=v) for i, v in enumerate(values)]
+
+
+def _ranks_and_medals(values: list[int]) -> list[tuple[int, Medal | None]]:
+    standings = final_standings("points", _points_aggs(values))
+    return [(s.final_rank, s.medal) for s in standings]
+
+
+def test_final_standings_excludes_hidden_users_and_guests() -> None:
+    aggs = [
+        _agg(1, points=9),
+        _agg(2, points=30, hidden=True),
+        _agg(3, points=30, is_guest=True),
+        _agg(4, points=3),
+    ]
+
+    standings = final_standings("points", aggs)
+
+    assert [s.user_id for s in standings] == [1, 4]
+    assert [s.final_rank for s in standings] == [1, 2]
+
+
+def test_final_standings_accuracy_keeps_only_qualified_users() -> None:
+    qualified = _agg(1, points=60, puzzles=ACCURACY_QUALIFY_MIN_PUZZLES)
+    tentative = _agg(2, points=57, puzzles=ACCURACY_QUALIFY_MIN_PUZZLES - 1)
+
+    standings = final_standings("accuracy", [qualified, tentative])
+
+    assert [(s.user_id, s.final_rank, s.value, s.medal) for s in standings] == [
+        (1, 1, 100, Medal.GOLD)
+    ]
+
+
+def test_final_standings_zero_point_user_gets_a_row_and_rank_but_no_medal() -> None:
+    standings = final_standings("points", [_agg(1, points=0, puzzles=1)])
+
+    assert [(s.final_rank, s.value, s.puzzles, s.medal) for s in standings] == [(1, 0, 1, None)]
+
+
+def test_final_standings_zero_percent_qualified_accuracy_entry_has_no_medal() -> None:
+    standings = final_standings(
+        "accuracy", [_agg(1, points=0, puzzles=ACCURACY_QUALIFY_MIN_PUZZLES)]
+    )
+
+    assert [(s.final_rank, s.value, s.medal) for s in standings] == [(1, 0, None)]
+
+
+def test_final_standings_ranks_and_names_equal_the_live_public_board() -> None:
+    aggs = [
+        _agg(1, points=9),
+        _agg(2, points=9),
+        _agg(3, points=6),
+        _agg(4, points=30, hidden=True),
+        _agg(5, points=1),
+    ]
+
+    live = _points(aggs, viewer_id=5)
+    standings = final_standings("points", aggs)
+
+    assert [(r.rank, r.name) for r in live.rows] == [
+        (s.final_rank, s.display_name) for s in standings
+    ]
+
+
+def test_medal_for_olympic_tie_for_first_gives_gold_gold_bronze() -> None:
+    assert _ranks_and_medals([9, 9, 5]) == [
+        (1, Medal.GOLD),
+        (1, Medal.GOLD),
+        (3, Medal.BRONZE),
+    ]
+
+
+def test_medal_for_tie_for_second_gives_gold_silver_silver_and_no_bronze() -> None:
+    assert _ranks_and_medals([9, 5, 5]) == [
+        (1, Medal.GOLD),
+        (2, Medal.SILVER),
+        (2, Medal.SILVER),
+    ]
+
+
+def test_medal_for_three_way_tie_for_first_gives_three_golds_and_none_for_fourth() -> None:
+    assert _ranks_and_medals([9, 9, 9, 5]) == [
+        (1, Medal.GOLD),
+        (1, Medal.GOLD),
+        (1, Medal.GOLD),
+        (4, None),
+    ]
+
+
+def test_medal_for_fewer_than_three_entrants_awards_fewer_medals() -> None:
+    assert _ranks_and_medals([9, 5]) == [(1, Medal.GOLD), (2, Medal.SILVER)]
+    assert _ranks_and_medals([9]) == [(1, Medal.GOLD)]
+
+
+@pytest.mark.parametrize("rank", [1, 2, 3, 4])
+def test_medal_for_a_zero_value_never_earns_a_medal(rank: int) -> None:
+    assert medal_for(rank, 0) is None
+
+
+# --- last_week, podium, viewer_final_rank (Phase 231) ----------------------------
+
+_PREV_WEEK = datetime.date(2033, 1, 3)
+
+
+def _standing(
+    name: str,
+    *,
+    rank: int,
+    medal: Medal | None,
+    user_id: int | None,
+    puzzles: int = 5,
+    board: str = "points",
+    hidden: bool = False,
+) -> StandingRow:
+    assert board in ("points", "accuracy")
+    return StandingRow(
+        board="points" if board == "points" else "accuracy",
+        user_id=user_id,
+        display_name=name,
+        final_rank=rank,
+        puzzles=puzzles,
+        medal=medal,
+        leaderboard_hidden=hidden,
+    )
+
+
+def test_last_week_podium_lists_gold_silver_bronze_then_puzzles_then_name() -> None:
+    rows = [
+        _standing("zed", rank=2, medal=Medal.SILVER, user_id=3, puzzles=4),
+        _standing("amy", rank=2, medal=Medal.SILVER, user_id=4, puzzles=9),
+        _standing("bob", rank=2, medal=Medal.SILVER, user_id=5, puzzles=4),
+        _standing("cat", rank=1, medal=Medal.GOLD, user_id=6, puzzles=1),
+        _standing("dan", rank=4, medal=Medal.BRONZE, user_id=7, puzzles=2),
+    ]
+
+    last = build_last_week("points", rows, viewer_id=99, week_start=_PREV_WEEK)
+
+    assert last is not None
+    assert [(e.medal, e.name) for e in last.podium] == [
+        ("gold", "cat"),
+        ("silver", "amy"),
+        ("silver", "bob"),
+        ("silver", "zed"),
+        ("bronze", "dan"),
+    ]
+    assert last.week_start == _PREV_WEEK
+
+
+def test_last_week_podium_renders_a_deleted_user_row_as_deleted_user() -> None:
+    rows = [_standing("stale name", rank=1, medal=Medal.GOLD, user_id=None)]
+
+    last = build_last_week("points", rows, viewer_id=99, week_start=_PREV_WEEK)
+
+    assert last is not None
+    assert [e.name for e in last.podium] == [DELETED_USER_DISPLAY_NAME]
+
+
+def test_last_week_podium_masks_a_user_hidden_now_for_other_viewers() -> None:
+    rows = [_standing("secret", rank=1, medal=Medal.GOLD, user_id=3, hidden=True)]
+
+    last = build_last_week("points", rows, viewer_id=99, week_start=_PREV_WEEK)
+
+    assert last is not None
+    assert [e.name for e in last.podium] == [ANONYMOUS_DISPLAY_NAME]
+
+
+def test_last_week_podium_shows_a_hidden_viewer_their_own_stored_name() -> None:
+    rows = [_standing("secret", rank=1, medal=Medal.GOLD, user_id=3, hidden=True)]
+
+    last = build_last_week("points", rows, viewer_id=3, week_start=_PREV_WEEK)
+
+    assert last is not None
+    assert [e.name for e in last.podium] == ["secret"]
+
+
+def test_last_week_viewer_final_rank_is_set_only_for_a_non_medal_viewer_row() -> None:
+    rows = [
+        _standing("gold", rank=1, medal=Medal.GOLD, user_id=3),
+        _standing("me", rank=12, medal=None, user_id=7),
+    ]
+
+    non_medallist = build_last_week("points", rows, viewer_id=7, week_start=_PREV_WEEK)
+    medallist = build_last_week("points", rows, viewer_id=3, week_start=_PREV_WEEK)
+
+    assert non_medallist is not None and non_medallist.viewer_final_rank == 12
+    assert medallist is not None and medallist.viewer_final_rank is None
+
+
+def test_last_week_viewer_final_rank_survives_the_viewer_opting_out_since() -> None:
+    rows = [_standing("me", rank=12, medal=None, user_id=7, hidden=True)]
+
+    last = build_last_week("points", rows, viewer_id=7, week_start=_PREV_WEEK)
+
+    assert last is not None
+    assert last.viewer_final_rank == 12
+    assert last.podium == ()
+
+
+def test_last_week_is_none_without_a_medal_or_a_viewer_row() -> None:
+    other_board = [_standing("gold", rank=1, medal=Medal.GOLD, user_id=3, board="accuracy")]
+    someone_else_unmedalled = [_standing("x", rank=9, medal=None, user_id=5)]
+
+    assert build_last_week("points", [], viewer_id=7, week_start=_PREV_WEEK) is None
+    assert build_last_week("points", other_board, viewer_id=7, week_start=_PREV_WEEK) is None
+    assert (
+        build_last_week("points", someone_else_unmedalled, viewer_id=7, week_start=_PREV_WEEK)
+        is None
+    )
+
+
+def test_last_week_only_reads_rows_of_its_own_board() -> None:
+    rows = [
+        _standing("p", rank=1, medal=Medal.GOLD, user_id=3, board="points"),
+        _standing("a", rank=1, medal=Medal.GOLD, user_id=4, board="accuracy"),
+    ]
+
+    accuracy = build_last_week("accuracy", rows, viewer_id=99, week_start=_PREV_WEEK)
+
+    assert accuracy is not None
+    assert [e.name for e in accuracy.podium] == ["a"]
+
+
+# --- tally -------------------------------------------------------------------
+
+
+def test_tally_is_copied_onto_matching_rows_without_exposing_a_key() -> None:
+    aggs = [_agg(1, points=9), _agg(2, points=6)]
+    tally = MedalTally(gold=2, silver=1, bronze=0)
+
+    board = build_board(
+        "points",
+        aggs,
+        viewer_id=2,
+        viewer_visibility="public",
+        medal_tallies={1: tally},
+    )
+
+    assert [r.medals for r in board.rows] == [tally, ZERO_TALLY]
+
+
+def test_tally_response_dataclasses_expose_no_key_or_user_id() -> None:
+    for cls in (BoardRow, PodiumEntry, LastWeek, MedalTally):
+        field_names = {f.name for f in dataclasses.fields(cls)}
+        assert not field_names & {"key", "user_id"}, cls.__name__
+
+
+def test_tally_fills_tentative_rows_and_never_changes_rank_or_order() -> None:
+    aggs = [
+        _agg(1, points=100, puzzles=25, name="qualified"),
+        _agg(2, points=30, puzzles=3, name="tentative"),
+        _agg(3, points=60, puzzles=22, name="other"),
+    ]
+    tallies = {2: MedalTally(gold=1, silver=0, bronze=4), 3: MedalTally(gold=9, silver=9, bronze=9)}
+
+    plain = _accuracy(aggs, viewer_id=1)
+    tallied = build_board(
+        "accuracy", aggs, viewer_id=1, viewer_visibility="public", medal_tallies=tallies
+    )
+
+    assert [(r.rank, r.name) for r in tallied.rows] == [(r.rank, r.name) for r in plain.rows]
+    by_name = {r.name: r.medals for r in tallied.rows}
+    assert by_name["tentative"] == MedalTally(gold=1, silver=0, bronze=4)  # tentative rows too
+    assert by_name["qualified"] == ZERO_TALLY  # no entry for user 1: zero, not an error
+
+
+def test_tally_fold_builds_per_board_maps_with_zero_filled_missing_types() -> None:
+    rows = [
+        TallyCount("points", 1, Medal.GOLD, 2),
+        TallyCount("points", 1, Medal.SILVER, 1),
+        TallyCount("points", 2, Medal.BRONZE, 5),
+        TallyCount("accuracy", 2, Medal.GOLD, 3),
+    ]
+
+    folded = fold_medal_tallies(rows)
+
+    assert folded["points"] == {
+        1: MedalTally(gold=2, silver=1, bronze=0),
+        2: MedalTally(gold=0, silver=0, bronze=5),
+    }
+    # User 1 holds Points medals only, so it has no Accuracy entry at all.
+    assert folded["accuracy"] == {2: MedalTally(gold=3, silver=0, bronze=0)}
+    assert fold_medal_tallies([]) == {"points": {}, "accuracy": {}}
+
+
+def _ids_by_name(aggs: list[WeeklyAggregate]) -> dict[str, int]:
+    return {a.lichess_username or "": a.user_id for a in aggs}
+
+
+def _shown_ids(board: Board, aggs: list[WeeklyAggregate]) -> list[int]:
+    ids = _ids_by_name(aggs)
+    return [ids[r.name] for r in board.rows]
+
+
+@pytest.mark.parametrize("viewer_id", [1, 6, 9, 12, 999])
+def test_visible_keys_equals_the_users_behind_the_rows_build_board_shows(viewer_id: int) -> None:
+    """Top 5, the viewer's window and the gap slice, plus a viewer with no entry at all."""
+    aggs = _ladder(_SLICE_SIZE)
+    for kind in ("points", "accuracy"):
+        # Every ladder user has 1 puzzle, so Accuracy rows are all tentative: still shown.
+        board = build_board(kind, aggs, viewer_id=viewer_id, viewer_visibility="public")
+        assert visible_keys(kind, aggs, viewer_id=viewer_id) == _shown_ids(board, aggs)
+
+
+def test_visible_keys_includes_the_hidden_viewer_but_never_another_hidden_or_guest_user() -> None:
+    aggs = [
+        _agg(1, points=50),
+        _agg(2, points=40, hidden=True),
+        _agg(3, points=30, is_guest=True),
+        _agg(4, points=20),
+        _agg(5, points=10, hidden=True),  # the viewer
+    ]
+
+    keys = visible_keys("points", aggs, viewer_id=5)
+
+    assert sorted(keys) == [1, 4, 5]
+    board = build_board("points", aggs, viewer_id=5, viewer_visibility="hidden")
+    assert keys == _shown_ids(board, aggs)
+
+
+def test_visible_keys_is_empty_when_nobody_is_on_the_board() -> None:
+    assert visible_keys("points", [], viewer_id=1) == []
+    # Filler-only users have no Accuracy entry.
+    filler_only = [_agg(1, points=10, puzzles=3, nf_points=0, nf_puzzles=0)]
+    assert visible_keys("accuracy", filler_only, viewer_id=1) == []
