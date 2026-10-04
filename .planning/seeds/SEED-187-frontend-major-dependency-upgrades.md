@@ -1,6 +1,8 @@
 ---
 id: SEED-187
-status: dormant
+status: promoted
+promoted_to: Phase 232
+promoted: 2026-10-04
 planted: 2026-10-04
 planted_during: no open milestone; Renovate PR triage after Phase 231 (weekly leaderboard medals) released
 trigger_when: next maintenance / chore phase, or before the Renovate majors pile up further
