@@ -107,7 +107,7 @@ jobs:
       - name: Caddyfile validate
         run: |
           docker run --rm -v "$PWD/deploy/Caddyfile:/etc/caddy/Caddyfile:ro" \
-            caddy:2.11.4 caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile
+            caddy:2.11.6 caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile
 
       - name: Install Stockfish (for engine wrapper tests)
         # Mirrors Dockerfile: download pinned sf_18 binary from GitHub releases instead of
