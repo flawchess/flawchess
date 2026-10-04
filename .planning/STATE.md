@@ -1,15 +1,15 @@
 ---
 gsd_state_version: "1.0"
 milestone: v2.21
-current_phase: 231
+current_phase: 232
 status: completed
-stopped_at: Phase 231 complete — all phases complete
-last_updated: "2026-10-04T08:00:20.189Z"
-state_head: 13d2bc96ed7fe5dd18b405eab5fbf1f092557ad5
+stopped_at: Phase 232 complete — all phases complete
+last_updated: "2026-10-04T12:56:32.798Z"
+state_head: 5ee87ec1f61dc0948ec5c4d7e3061fb480c1c11c
 progress:
-  total_phases: 4
+  total_phases: 5
   completed_phases: 103
-  total_plans: 22
+  total_plans: 26
   completed_plans: 47
   percent: 75
 milestone_name: Browser Engine Throughput
@@ -21,10 +21,10 @@ last_activity_desc: "Completed quick task 261004-dta: Train page mobile: hide co
 
 ## Current Position
 
-Phase: 231
-Plan: Not started
+Phase: 232 (Frontend Major Dependency Upgrades (SEED-187)) — COMPLETE (UAT 3/3, verification passed, threats_open 0, Nyquist-compliant)
+Plan: 4 of 4
 
-Status: All phases complete
+Status: Verified on branch `gsd/phase-232-frontend-major-dependency-upgrades`; not yet squash-merged to `main` and not deployed. UAT found and fixed a Sentry navigation-breadcrumb query-string leak (G-232-3, 814a3c44c); first prod release carrying 232 keeps the Sentry 11 deploy watch.
 
 Open threads carried forward (not blockers):
 
@@ -32,12 +32,13 @@ Open threads carried forward (not blockers):
 - Engine follow-ups: SEED-171 closed with its leftovers listed in `seeds/closed/SEED-171-...md` (cross-FEN Maia batching, non-root candidate cap); SEED-180 (Stockfish watchdog hidden-tab gate); real-phone throughput for Phases 226/227 never measured.
 - Phase 221: a forced only-move that sheds a piece can read as a sacrifice (game 1459049 ply 21); captured in `.planning/notes/2026-09-13-forced-only-move-tagged-sacrifice.md`, no action requested. Lever if sacrifice noise ever matters: lower `SACRIFICE_CLEARANCE_MAX_DEPTH` (4) and retag.
 
-- SEED-162 cluster 3 (TypeScript 7) blocked upstream until a `typescript-eslint` release accepts it.
+- TypeScript 7 adopted in Phase 232 (D-01, supersedes Phase 217 D-11) via Microsoft's side-by-side alias: `typescript` is `@typescript/typescript6` (TS6 JS API for typescript-eslint and eslint-plugin-sonarjs) and `@typescript/native` is `typescript@7` (the `tsc` in `npm run build`). Unwind once TS 7.1 ships its API and a typescript-eslint release accepts it (typescript-eslint#10940); never merge Renovate's `typescript-7.x` branch as-is (it installs 7 under the `typescript` name and breaks lint).
 - Phase 217 device legs (iOS <16.4 no-SIMD, low-memory OOM, WebGPU adapter) deferred for lack of hardware (`v2.16-phases/217-.../217-UAT.md`).
 - Phase 215's `Train.guestGate.test.tsx` full-run flake still deferred (`v2.15-phases/215-.../deferred-items.md`).
 - SEED-163 (analytics population excludes bot games) captured 2026-09-04, unscheduled.
 - SEED-164 resolved by Phase 220 (deployed 2026-09-11); the `disagreements >= 2` few-days watch on `opening_position_eval` is still open.
 - SEED-158 re-scoped 2026-09-06: the iOS OOM half is closed (quick task 260906-p54); what remains is WebGPU failing on capable devices (iPhone 14 Pro iOS 26, Linux Brave/Chrome, a Windows 11 notebook), everyone silently on the wasm fallback. Collect the `[maia-worker]` console fallback lines first.
+- Sentry 11 deploy watch (Phase 232): prod bundles `tracesSampleRate` 0.1 (read from the live bundle 2026-10-04), so v11 span streaming and the Web Vitals now built into `browserTracingIntegration` change span volume. After the release that ships Phase 232, check span usage in Sentry Stats and lower `VITE_SENTRY_TRACES_SAMPLE_RATE` in `.prod.env` if quota climbs. Source-map gap captured as SEED-189.
 
 ## Project Reference
 
@@ -171,6 +172,7 @@ v1.29 Live-Engine Analysis Page shipped 2026-06-29 — 5 phases (136–140), 14 
 
 ### Roadmap Evolution
 
+- Phase 232 added 2026-10-04 (explicit user request via `/gsd-phase @SEED-187`, planted the same day during Renovate PR triage after Phase 231 shipped): **Frontend Major Dependency Upgrades** (SEED-187). One plan per dependency: TypeScript 7 (research first, "blocked, stay on 6.x" acceptable), @sentry/react 11 (verify events still arrive with tags and source maps), vite-plugin-pwa 2 (diff SW and precache, check update flow and `/maia/*` `/engine/*` handling); js-yaml 5 and fast-uri 4 stay within their current override majors with a Renovate rule disabling those majors. Stockfish 19 / onnxruntime-web 1.30 out of scope. Written by hand as 232 (known mature-ROADMAP behavior). Next: `/gsd-plan-phase 232` (or `/gsd-discuss-phase 232` first).
 - Phase 231 added 2026-10-04 (explicit user request via `/gsd-phase @SEED-186`, planted the same day right after Phase 230 merged): **Weekly Leaderboard Medals** (SEED-186). Gold/silver/bronze for the top 3 of each weekly Train board (Olympic ties, Accuracy qualified-only, opted-out and guests ineligible), full final-standings snapshot table with explicit `medal` column and `celebrated_at`, lazy idempotent finalization from `MEDALS_START_WEEK` 2026-10-05, lifetime per-board tally on live rows, last-week podium, "finished #N" hint, server-side claim dialog with confetti and win sound, admin demo page on dummy data rendering the real components. WR-01 accepted. Written by hand as 231 (known mature-ROADMAP behavior). Next: `/gsd-discuss-phase 231` or `/gsd-plan-phase 231` (seed already locks most decisions).
 - Phase 230 added 2026-10-03 (explicit user request via `/gsd-phase`, trigger met: Phase 228 shipped): **Weekly Train Leaderboards** (SEED-185, planted 2026-10-03 from `/gsd-explore` training features). Points board + pooled average-score board over a UTC ISO week keyed on `drill_solves.solved_at`, top 5 plus own row with neighbours, 20 non-filler puzzle qualifier (tentative users ranked), lichess-first display names, opt-out toggle in the settings overlay + Privacy line, guest board with sign-up nudge. Medals out of scope. Written by hand as 230 (known mature-ROADMAP behavior). Next: `/gsd-discuss-phase 230`.
 - Phase 229 added 2026-10-03 (explicit user request via `/gsd-phase @SEED-183`, trigger met: Phase 228 merged): **Umami User Identification & Feature Events** (SEED-183, planted 2026-10-03 from `/gsd-explore` after the growth report). Frontend-only: `umami.identify(String(users.id))` for every authenticated session incl. guests, logout/account-switch reset, per-page inventory of UI-only interactions as few prop-carrying events, Privacy sentence fix, `frontend/CLAUDE.md` event rule. Open research: identify persistence (localStorage/ePrivacy) and logout reset. Written by hand as 229 (known mature-ROADMAP behavior). Next: `/gsd-discuss-phase 229`.
@@ -825,6 +827,10 @@ flagged as an open decision for plan 06 / a human, not auto-fixed.
 - [Phase 231]: Router copies user id/guest/hidden into locals before the lazy finalizer, since a rollback expires the request-cached session's User; finalization errors go to Sentry and never fail the board
 - [Phase 231]: 231-04: medal dialog host skips guests, impersonation and unresolved profile; opens only on isFetchedAfterMount non-empty list; settled ref guards double Claim tap
 - [Phase 231]: 231-05: medals demo toggles are simulated via props; real persisted mute and CSS reduced-motion media query still apply (stated in demo helper text)
+- [Phase 232]: vite-plugin-pwa 2.0.0 adopted without a blocking legitimacy checkpoint (pre-existing dep; automated identity gate + npm audit signatures passed); generated sw.js/manifest/registerSW.js byte-identical to 1.3.0
+- [Phase 232]: D-04: fast-uri override floor raised to ^3.1.8 within major; js-yaml stays 4.x; Renovate rule disables majors for override-only js-yaml and fast-uri
+- [Phase 232]: Sentry 11 (232-03): pin a v10-equivalent dataCollection (userInfo false, cookies false, httpBodies [], header/query deny lists) and attachStacktrace false in Sentry.init, mutation-proven by test, so v11 default flips do not widen collection
+- [Phase 232]: Phase 232 D-01: TypeScript 7 adopted via the side-by-side alias (typescript = @typescript/typescript6, @typescript/native = typescript@7), supersedes Phase 217 D-11 — typescript-eslint and eslint-plugin-sonarjs peers cap below TS 6.1 and TS 7.0 has no JS API; unwind when TS 7.1 ships its API and typescript-eslint supports it (typescript-eslint#10940)
 
 ### Pending Todos
 
@@ -1016,7 +1022,7 @@ Items acknowledged and deferred at **v1.29 milestone close on 2026-06-29** (user
 
 ## Session Continuity
 
-**Stopped at:** Phase 231 complete (UAT, verification, validation, security all passed 2026-10-04); next: pre-merge gate and squash-merge `gsd/phase-231-weekly-leaderboard-medals` into `main`
+**Stopped at:** Phase 232 complete — all phases complete
 **Resume file:** None
 
 Previous session note (Phase 227):
@@ -1025,7 +1031,7 @@ squash-merge `gsd/phase-227-...` to `main` with a CHANGELOG entry already in `[U
 Owner-deferred: real-phone bot game check (227-UAT.md, report-only). Follow-up: stale "Phase 198 will populate"
 priority comment in `workerPoolState.ts:434-437` (verifier info item).
 
-**Last session:** 2026-10-04T06:47:17.953Z
+**Last session:** 2026-10-04T11:58:57.504Z
 
 **Resume file:** None
 
@@ -1239,6 +1245,10 @@ priority comment in `workerPoolState.ts:434-437` (verifier info item).
 | Phase 231 P01 | 14 min | 2 tasks | 12 files |
 | Phase 231 P04 | 35 min | 2 tasks | 13 files |
 | Phase 231 P05 | 6 min | 3 tasks | 8 files |
+| Phase 232 P01 | 8min | 2 tasks | 2 files |
+| Phase 232 P02 | 9 min | 2 tasks | 4 files |
+| Phase 232 P03 | n/a | 3 tasks | 6 files |
+| Phase 232 P04 | 8 min | 3 tasks | 8 files |
 
 ## Performance Metrics
 

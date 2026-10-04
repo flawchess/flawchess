@@ -604,7 +604,7 @@ export function useTrainLeaderboard(options?: { sessionId?: number }) {
 - SQLAlchemy compile of the proposed statement (PostgreSQL dialect)
 
 ### Secondary (MEDIUM confidence)
-- `.planning/seeds/SEED-185-weekly-train-leaderboards.md` prod evidence (population sizes, filler counts): owner-reported, not re-queried (no prod access from this agent)
+- `../../seeds/closed/SEED-185-weekly-train-leaderboards.md` prod evidence (population sizes, filler counts): owner-reported, not re-queried (no prod access from this agent)
 
 ### Tertiary (LOW confidence)
 - Prod `drill_solves` total row count: not observed; inferred from SEED-185 weekly numbers

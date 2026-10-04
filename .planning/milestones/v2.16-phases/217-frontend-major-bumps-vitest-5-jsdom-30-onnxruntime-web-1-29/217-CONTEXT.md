@@ -79,6 +79,7 @@ the `fast-uri` / `js-yaml` / `@babel/plugin-transform-modules-systemjs` override
 - **D-11:** TypeScript 7 stays out. No published `typescript-eslint` (8.69.0 stable,
   8.69.1-alpha.0 canary) accepts `typescript` >= 6.1. Renovate's `typescript-7.x` branch
   stays unmerged until a typescript-eslint release admits 7.x.
+  Superseded 2026-10-04 by Phase 232 D-01: TypeScript 7 adopted through Microsoft's side-by-side alias, so typescript-eslint's TS6 peer cap no longer blocks it.
 
 ### Claude's Discretion
 - Whether to add a small script or documented command that re-vendors the six runtime

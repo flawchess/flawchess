@@ -99,9 +99,9 @@ a persisted weekly snapshot so that opt-outs and deletions never change past win
   board's hint area when they took part but didn't medal.
 
 ### Celebration (first Train visit after the week closes)
-- When a user has unclaimed medals, opening Train shows a **medal dialog**: the medal(s)
+- When a user has unclaimed medals, opening Train shows a **medal dialog**: the medal (s)
   animate in (scale/bounce), a **"Claim" button** fires confetti (`fireWinConfetti`, from
-  `frontend/src/lib/confetti.ts`) and the win sound (`playSound`, either the existing
+  `../../../frontend/src/lib/confetti.ts`) and the win sound (`playSound`, either the existing
   `game-win` event or a new `medal` event in `frontend/src/lib/sounds.ts`).
 - **Why a Claim button:** browsers block audio before a user gesture on page load, and on
   iOS audio also depends on `unlockAudio()`/`initWebAudio()` running inside a gesture (see
@@ -142,17 +142,17 @@ a persisted weekly snapshot so that opt-outs and deletions never change past win
 - Score-integrity hardening (WR-01, accepted above).
 
 ## Breadcrumbs
-- `.planning/seeds/SEED-185-weekly-train-leaderboards.md`: board rules, UTC deadline,
+- `SEED-185-weekly-train-leaderboards.md`: board rules, UTC deadline,
   qualifier, tie display, accepted risks
-- `app/services/train_leaderboard.py`, `app/repositories/train_leaderboard_repository.py`:
+- `../../../app/services/train_leaderboard.py`, `app/repositories/train_leaderboard_repository.py`:
   weekly aggregation to reuse for finalization
-- `app/schemas/train.py`: `LeaderboardRow` wire format (add `medals`)
-- `frontend/src/components/train/TrainLeaderboardCard.tsx`: row layout (`LeaderboardRowItem`,
+- `../../../app/schemas/train.py`: `LeaderboardRow` wire format (add `medals`)
+- `../../../frontend/src/components/train/TrainLeaderboardCard.tsx`: row layout (`LeaderboardRowItem`,
   name block wrap from IN-02), tab toggle
-- `frontend/src/lib/confetti.ts`: `fireWinConfetti`, `CONFETTI_DURATION_MS`,
+- `../../../frontend/src/lib/confetti.ts`: `fireWinConfetti`, `CONFETTI_DURATION_MS`,
   `prefersReducedMotion`
-- `frontend/src/lib/sounds.ts`: `SoundEvent`, `playSound`, `unlockAudio`, `useMuted`
-- `frontend/src/components/admin/TrainReminderTestCard.tsx`, `frontend/src/pages/Admin.tsx`:
+- `../../../frontend/src/lib/sounds.ts`: `SoundEvent`, `playSound`, `unlockAudio`, `useMuted`
+- `../../../frontend/src/components/admin/TrainReminderTestCard.tsx`, `frontend/src/pages/Admin.tsx`:
   admin dev-tool card pattern
-- `frontend/src/components/settings/LeaderboardPrivacyCard.tsx`: opt-out copy to extend
-- `.planning/phases/230-weekly-train-leaderboards/230-REVIEW-DISPOSITION.md`: WR-01
+- `../../../frontend/src/components/settings/LeaderboardPrivacyCard.tsx`: opt-out copy to extend
+- `../../phases/230-weekly-train-leaderboards/230-REVIEW-DISPOSITION.md`: WR-01

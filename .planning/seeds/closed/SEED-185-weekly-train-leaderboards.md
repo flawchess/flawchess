@@ -48,7 +48,7 @@ Each board shows the **top 5** plus the **user's own position**.
 ## Evidence (prod, week 2026-09-28..10-04, partial)
 
 Points approximated as correct guess (1) + move quality capped at 2, max 3 per puzzle.
-The real formula is client-side in `frontend/src/lib/trainScore.ts`.
+The real formula is client-side in `../../../frontend/src/lib/trainScore.ts`.
 
 - 77 users completed a session that week (76-100 per week since the 2026-09-25
   newsletter, 7-15 per week before it). 14 trained on 5+ days.
@@ -130,14 +130,14 @@ The real formula is client-side in `frontend/src/lib/trainScore.ts`.
 
 ## Breadcrumbs
 
-- `frontend/src/lib/trainScore.ts` — scoring constants (GUESS_POINTS, MOVE_TIER_POINTS,
+- `../../../frontend/src/lib/trainScore.ts` — scoring constants (GUESS_POINTS, MOVE_TIER_POINTS,
   TRAIN_POINTS_PER_PUZZLE)
-- `app/models/drill_session.py`, `app/models/drill_solve.py` — session/solve rows
+- `../../../app/models/drill_session.py`, `app/models/drill_solve.py` — session/solve rows
   (`correct_guess`, `move_quality`, `is_warmup`, `entered_at`)
 - `app/models/user.py:20-21` — platform usernames
-- `frontend/src/components/train/TrainStartScreen.tsx`, `TrainScoreScreen.tsx`
+- `../../../frontend/src/components/train/TrainStartScreen.tsx`, `TrainScoreScreen.tsx`
 - `frontend/src/pages/Privacy.tsx:27` — usernames listed as collected data
-- `.planning/seeds/SEED-175-settings-page.md` — Phase 228, home for the opt-out toggle
+- `SEED-175-settings-page.md` — Phase 228, home for the opt-out toggle
 - `reports/growth/growth-recommendations-2026-10-03.md` — Train retention context
 - Related: SEED-184 (conversion/defender trainer), whose results could later feed the
   boards

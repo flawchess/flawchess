@@ -318,6 +318,51 @@ Plans:
 **Wave 4** *(blocked on Wave 3 completion)*
 - [x] 231-05-PLAN.md — Admin "Leaderboard medals demo", privacy copy, Privacy page sentence, CHANGELOG
 
+### Phase 232: Frontend Major Dependency Upgrades (SEED-187)
+
+**Goal**: Take the major frontend upgrades the Renovate dashboard (#338) lists under "Awaiting
+Schedule", one plan per dependency so a blocked upgrade doesn't hold up the others, and stop Renovate
+from offering the two security-override majors.
+
+- **TypeScript 6 → 7 (highest risk, research first):** expected to be the native (Go) compiler port.
+  Verify `typescript-eslint` (`^8.60.0`), knip, `tsc -b` in `npm run build`, and any Vite/TS plugins
+  that use the JS compiler API. "Blocked on X, stay on 6.x" with the blocker recorded is an acceptable
+  outcome; don't force it through. `npm run build` is the real type gate (lint and test don't type-check).
+- **@sentry/react 10 → 11:** follow the v10 → v11 migration guide for `Sentry.init` options,
+  integrations and the helpers the `frontend/CLAUDE.md` Sentry rules use. Failure is silent, so verify a
+  deliberate dev test error arrives in the `flawchess` project with tags/context intact and source maps
+  resolving.
+- **vite-plugin-pwa 1 → 2:** diff the generated SW and precache list before/after; check the update
+  prompt / auto-update flow, offline load, and that `/maia/*` and `/engine/*` runtime assets stay
+  excluded or cached as before (stale SWs on installed clients are hard to recover).
+- **js-yaml 5 / fast-uri 4 (overrides only, likely no bump):** both exist only in `"overrides"` to force
+  patched transitive versions (`js-yaml` via `cosmiconfig` ← `shadcn`; `fast-uri` via `ajv@8` ← `shadcn`
+  and `workbox-build`). Keep each override within its current major (or drop it once consumers ship
+  patched versions) and add a `renovate.json` `packageRules` entry disabling majors for these two.
+  Re-check after the vite-plugin-pwa upgrade, since workbox may move to a newer `ajv`.
+- **Every plan:** `npm run lint && npm run build && npm test -- --run && npm run knip`, plus
+  `npx audit-ci --config frontend/audit-ci.jsonc` (drop allowlist entries the upgrade fixes); browser
+  smoke on the dev build for Sentry and the PWA.
+- **Out of scope:** Stockfish 19 and onnxruntime-web 1.30 (owner decisions, closed PR #351); the grouped
+  Renovate minor/patch branch (it also carries onnxruntime / onnxruntime-node 1.29 → 1.30).
+
+**Depends on**: Nothing (standalone maintenance)
+**Requirements**: TBD (plans use descriptive IDs DEP-PWA2, DEP-OVR, DEP-SENTRY11, DEP-TS7 from 232-RESEARCH.md)
+**Plans:** 4/4 plans complete
+
+Plans:
+**Wave 1**
+- [x] 232-01-PLAN.md — vite-plugin-pwa 1 -> 2: byte-identical sw.js/manifest/registerSW.js and precache list, full gate, browser SW smoke (checkpoint)
+
+**Wave 2** *(blocked on Wave 1 completion)*
+- [x] 232-02-PLAN.md — fast-uri override floor ^3.1.8 (js-yaml stays 4.x), Renovate rule disabling override majors, shadcn dev-advisory seed
+
+**Wave 3** *(blocked on Wave 2 completion)*
+- [x] 232-03-PLAN.md — @sentry/react 10 -> 11 with an explicit v10-equivalent dataCollection and attachStacktrace false (mutation-proven test), live Sentry smoke (checkpoint), source-map seed
+
+**Wave 4** *(blocked on Wave 3 completion)*
+- [x] 232-04-PLAN.md — TypeScript 7 via the official side-by-side alias, tsconfig cleanup, negative control and Alpine Docker build, CHANGELOG/STATE/SEED-162/D-11 docs
+
 Phase detail for every shipped milestone lives in `milestones/vX.Y-ROADMAP.md`, its phase directories in `milestones/vX.Y-phases/`, and the per-milestone summaries in [MILESTONES.md](MILESTONES.md).
 
 ## Backlog

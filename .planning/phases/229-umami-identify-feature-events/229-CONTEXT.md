@@ -130,7 +130,7 @@ Locked upstream in SEED-183 / ROADMAP and not re-decided here:
 **Downstream agents MUST read these before planning or implementing.**
 
 ### Phase source
-- `.planning/seeds/SEED-183-umami-identify-and-feature-events.md` — full rationale, locked
+- `../../seeds/closed/SEED-183-umami-identify-and-feature-events.md` — full rationale, locked
   decisions, open research questions (a) persistence and (b) logout reset, breadcrumbs.
 - `.planning/ROADMAP.md` § Phase 229 — goal and locked items.
 

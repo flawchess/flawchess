@@ -36,7 +36,7 @@ already ships `Medal`, and `canvas-confetti`, `radix-ui` Dialog and `tw-animate-
 ### Locked Decisions
 
 #### Locked upstream (SEED-186 + ROADMAP Phase 231, owner 2026-10-04; do not re-open)
-Everything in `.planning/seeds/SEED-186-weekly-leaderboard-medals.md` § "Locked decisions" is binding:
+Everything in `../../seeds/closed/SEED-186-weekly-leaderboard-medals.md` § "Locked decisions" is binding:
 per-board medals, Accuracy medals for qualified users only, medals follow the public board (opted-out
 at finalization time and guests are ineligible), Olympic ties, no Points participation floor,
 `MEDALS_START_WEEK = 2026-10-05`, WR-01 accepted (do not fix), snapshot shape (`final_rank`, `value`,
