@@ -5,8 +5,8 @@ current_phase: 232
 current_phase_name: Frontend Major Dependency Upgrades (SEED-187
 status: completed
 stopped_at: Phase 232 complete — all phases complete
-last_updated: "2026-10-04T15:30:31.781Z"
-state_head: 8230265ef0d6a5b319569e94fbdf16a50cb0a8a4
+last_updated: "2026-10-04T17:56:51.504Z"
+state_head: d0a515bbf7cf9cc786e896e3b360de55072b60f6
 progress:
   total_phases: 5
   completed_phases: 103
@@ -15,7 +15,7 @@ progress:
   percent: 75
 milestone_name: Browser Engine Throughput
 last_activity: 2026-10-04
-last_activity_desc: "Completed quick task 261004-nxn: Debounce slider analytics and persist analysis engine toggles"
+last_activity_desc: "Completed quick task 261004-rmc: Suppress Umami pageview after automatic SW/preload reloads"
 ---
 
 # Project State: FlawChess
@@ -975,6 +975,7 @@ None active.
 | 119 | Library game card: accuracy merged into move-stats card, tags + stats cards stretch to miniboard height | 2026-10-04 | 4212c55d2 | — |
 | 120 | Library mobile game card: move stats in one card with accuracy header | 2026-10-04 | cb06fc84c | — |
 | 261004-nxn | Debounce slider analytics and persist analysis engine toggles | 2026-10-04 | 8230265ef | [261004-nxn-debounce-slider-analytics-and-persist-an](./quick/261004-nxn-debounce-slider-analytics-and-persist-an/) |
+| 261004-rmc | Suppress Umami pageview after automatic SW/preload reloads | 2026-10-04 | d0a515bbf | [261004-rmc-suppress-umami-pageview-after-automatic-](./quick/261004-rmc-suppress-umami-pageview-after-automatic-/) |
 
 ## Deferred Items
 
