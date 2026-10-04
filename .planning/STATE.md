@@ -1,17 +1,17 @@
 ---
 gsd_state_version: "1.0"
 milestone: v2.21
-current_phase: 231
+current_phase: 232
+current_phase_name: Frontend Major Dependency Upgrades (SEED-187)
 status: completed
 stopped_at: Phase 231 complete — all phases complete
-last_updated: "2026-10-04T08:00:20.189Z"
-state_head: 13d2bc96ed7fe5dd18b405eab5fbf1f092557ad5
+last_updated: "2026-10-04T10:22:53.140Z"
+state_head: b0f840bff3ce2916d4e633151a8c295bd909a3b3
 progress:
-  total_phases: 4
+  total_phases: 5
   completed_phases: 103
-  total_plans: 22
+  total_plans: 26
   completed_plans: 47
-  percent: 75
 milestone_name: Browser Engine Throughput
 last_activity: 2026-10-04
 last_activity_desc: "Completed quick task 261004-dta: Train page mobile: hide coach avatar (except Tank intro), schedule above leaderboard"
@@ -21,7 +21,7 @@ last_activity_desc: "Completed quick task 261004-dta: Train page mobile: hide co
 
 ## Current Position
 
-Phase: 231
+Phase: 232 (Frontend Major Dependency Upgrades (SEED-187)) — READY TO EXECUTE
 Plan: Not started
 
 Status: All phases complete
