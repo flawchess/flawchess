@@ -39,7 +39,7 @@ would let us see which features that cohort actually used before retaining or ch
   self-hosted (analytics.flawchess.com), so data stays on our infra, and raw id gives the
   simplest join to the prod DB.
 - Keep the existing `account: guest|registered` session tag (`identifyAccountType` in
-  `frontend/src/lib/analytics.ts`, call site `frontend/src/App.tsx:678`). Update the
+  `../../../frontend/src/lib/analytics.ts`, call site `frontend/src/App.tsx:678`). Update the
   `window.umami.identify` typing to the `(distinctId, data)` signature.
 - Verified 2026-10-03: the self-hosted Umami schema has `session.distinct_id` (v2.18+);
   0 of 1,941 app sessions in the last 30 days use it.
@@ -49,7 +49,7 @@ would let us see which features that cohort actually used before retaining or ch
 - One pass per page builds an inventory of UI-only interactions (~30-50).
 - **Few event names with props** (e.g. `tab-switch` + `page`/`tab`) so the flat Umami
   events list doesn't sprawl into hundreds of near-zero rows.
-- Add a `frontend/CLAUDE.md` rule so new features ship with their event.
+- Add a `../../../frontend/CLAUDE.md` rule so new features ship with their event.
 - **Keep** the existing rule (`frontend/CLAUDE.md:43`): DB-known actions (signups,
   imports, analysis runs) are not duplicated as events. With identify they become
   joinable instead. Its wording needs a touch-up since it frames Umami as anonymous.
@@ -69,7 +69,7 @@ first-party analytics; the point is not publishing a false statement.
 ### 4. Supersedes the June identify rejection
 
 The 2026-06-27 rejection of Umami identify in
-`.planning/notes/active-engagement-time-tracking.md` (SEED-069) was about measuring
+`../../notes/active-engagement-time-tracking.md` (SEED-069) was about measuring
 engagement minutes, which Umami can't do. That reasoning doesn't apply to feature usage.
 Add a "superseded for usage analytics by SEED-183" pointer there when implementing.
 
@@ -93,12 +93,12 @@ and wiring (bulk of the work), Privacy sentence, CLAUDE.md rule update.
 
 ## Breadcrumbs
 
-- `frontend/src/lib/analytics.ts`: `trackEvent`, `identifyAccountType`, `umamiBeforeSend` scrub
+- `../../../frontend/src/lib/analytics.ts`: `trackEvent`, `identifyAccountType`, `umamiBeforeSend` scrub
 - `frontend/src/App.tsx:678`: current identify call site
-- `frontend/index.html`: tracker tag (`data-domains`, `data-exclude-hash`, `data-before-send`)
+- `../../../frontend/index.html`: tracker tag (`data-domains`, `data-exclude-hash`, `data-before-send`)
 - `frontend/CLAUDE.md:30-43`: Umami event conventions
 - `frontend/src/pages/Privacy.tsx:58`: analytics disclosure
 - `app/services/guest_service.py:69,136`: guest promotion keeps the user row
-- `.planning/notes/active-engagement-time-tracking.md`, SEED-069 (closed): prior rejection
+- `../../notes/active-engagement-time-tracking.md`, SEED-069 (closed): prior rejection
 - `reports/growth/growth-recommendations-2026-10-03.md`: attribution/retention context
 - MCP `flawchess-umami-db`: read-only Umami DB for verifying `distinct_id` after ship

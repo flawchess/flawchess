@@ -58,7 +58,7 @@ that module.
   the same time, so a user may want e.g. more Stockfish card lines without more
   arrows.
 - 0 arrows hides that engine's arrows while keeping its card.
-- Sound reuses the existing `useMuted`/`setMuted` in `frontend/src/lib/sounds.ts`
+- Sound reuses the existing `useMuted`/`setMuted` in `../../../frontend/src/lib/sounds.ts`
   (key `flawchess_bot_sound_muted`). They have had no production caller since
   Phase 223.
 
@@ -84,22 +84,22 @@ second-best badge/arrow.
 
 ## Breadcrumbs
 
-- `frontend/src/lib/sounds.ts`: `MUTE_KEY`, `useMuted`, `setMuted`,
+- `../../../frontend/src/lib/sounds.ts`: `MUTE_KEY`, `useMuted`, `setMuted`,
   `playSound` (honours a persisted `'1'`).
 - `frontend/src/components/analysis/EngineLines.tsx:38`: `MAX_LINES = 2`;
   badge color by rank at ~266 (`BEST_MOVE_ARROW` / `SECOND_BEST_ARROW`).
 - `frontend/src/components/analysis/FlawChessEngineLines.tsx:48`:
   `MAX_LINES = 2`; `FLAWCHESS_ENGINE_BADGE_SHADES` from `lib/theme`.
 - `frontend/src/hooks/analysis/useAnalysisBoardArrows.ts:60`: `ARROW_COUNT = 1`.
-- `frontend/src/hooks/analysis/useAnalysisEngineLines.ts`: imports both
+- `../../../frontend/src/hooks/analysis/useAnalysisEngineLines.ts`: imports both
   `MAX_LINES`; SF card sourced from the grading run via
   `ranked.slice(0, SF_MAX_LINES)`.
-- `frontend/src/pages/Analysis.tsx`: `FC_MAX_LINES` slice at ~931.
-- `frontend/src/hooks/useStockfishEngine.ts`: `MULTIPV = 2`,
+- `../../../frontend/src/pages/Analysis.tsx`: `FC_MAX_LINES` slice at ~931.
+- `../../../frontend/src/hooks/useStockfishEngine.ts`: `MULTIPV = 2`,
   `MOVETIME_MS = 1500`, `MAX_NODES`.
-- `frontend/src/hooks/useTrainFreePlay.ts` + `components/train/TrainReveal.tsx`:
+- `../../../frontend/src/hooks/useTrainFreePlay.ts` + `components/train/TrainReveal.tsx`:
   Train free-play Stockfish search and card.
-- `frontend/src/App.tsx`: header/nav (lucide icons imported at line 13).
+- `../../../frontend/src/App.tsx`: header/nav (lucide icons imported at line 13).
 
 ## Verify in planning
 
