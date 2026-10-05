@@ -1,6 +1,6 @@
 ---
 name: deploy
-description: Deploy FlawChess to production end-to-end without interruption — open a PR from main to production, fix anything CI complains about (Dependabot CVEs, ruff/ty drift, merge conflicts, branch divergence, frontend lint), squash-merge once green, run bin/deploy.sh, monitor it through to a verified server SHA on flawchess.com. Use this skill whenever the user asks to deploy, ship, release, push to prod, promote main to production, cut a release, or run bin/deploy.sh. Trigger on phrases like "deploy", "deploy to prod", "ship it", "release", "promote main", "push to production", "cut a release", "go live", or any request to get current main running on flawchess.com. This is a SET-AND-FORGET flow: stream status as milestones complete, but do not pause for user approval at any stage — only halt when a situation is genuinely ambiguous (dirty working tree that might be in-progress work, repeated unrecoverable CI failure after multiple fix attempts, server SHA mismatch after deploy) or destructive (force-push, branch deletion, manual SSH deploy).
+description: Deploy FlawChess to production end-to-end (open the main → production release PR, fix whatever CI flags, squash-merge, run bin/deploy.sh, and verify the server SHA on flawchess.com). Use when the user asks to deploy, ship, release, go live, promote main to production, or run bin/deploy.sh; not for questions about how deploying works.
 ---
 
 # Deploy to Production
@@ -38,7 +38,7 @@ git rev-list --left-right --count main...origin/main  # local-ahead<TAB>origin-a
 git log --oneline origin/production..origin/main  # what's about to ship
 ```
 
-**Do NOT try to check `.prod.env` from Bash.** The old preflight ran `ls -la .prod.env`; that silently killed the deploy on 2026-09-01 and 2026-09-02. The file is covered by `permissions.deny` rules in `.claude/settings.json` and `~/.claude/settings.json`, and the block is path-based rather than limited to the listed `cat`/`head`/`grep` forms — `ls -la .prod.env` is refused outright, and indirect probes (`ls -1a | grep '\.prod\.env'`) are refused by the auto-mode classifier as well. That is the protection working as intended; do not route around it.
+**Don't check `.prod.env` from Bash.** Any Bash command naming the file (`ls`, `cat`, indirect `grep` probes) is refused by the secret-file protection. That is the protection working as intended; do not route around it.
 
 Two consequences for this step:
 
@@ -100,6 +100,8 @@ Capture the PR number — you'll need it for the merge step.
 gh pr checks <PR#> --watch
 ```
 
+`--watch` exits 0 even when a check fails, so judge the result from the per-check states it prints (re-run `gh pr checks <PR#>` for a final table), never from the exit code.
+
 **Gotcha (cost a hung deploy on 2026-06-11): if this reports "no checks reported", the PR is almost certainly unmergeable.** CI triggers on `pull_request`, and GitHub cannot build the `refs/pull/N/merge` ref for a conflicted PR — so the workflow never starts and there is nothing to wait for. Check `gh pr view <PR#> --json mergeable`. The usual cause is a missing forward-port of the previous release (production's last squash commit not reachable from main). Fix:
 
 ```bash
@@ -117,7 +119,7 @@ For every fix:
 3. `git push origin main` — this updates the open PR automatically.
 4. `gh pr checks <PR#> --watch` again.
 
-If you've tried 2-3 distinct fixes for the same failure and it's still red, stop and report what you've tried. Don't churn indefinitely.
+If you've tried 3 distinct fixes for the same failure and it's still red, stop and report what you've tried. Don't churn indefinitely.
 
 ## Step 4: Squash-merge
 
@@ -167,9 +169,9 @@ If `bin/deploy.sh` exits non-zero:
 - **Dispatched run is on wrong branch / SHA** — abort and investigate. Do NOT bypass the assertion.
 - **CI failure during deploy** — check `gh run view <run-id> --log-failed`. If it's a transient flake, `gh run rerun <run-id> --failed` then re-run `bin/deploy.sh`. If it's a real failure, halt and report — fixing this is one of the few situations that needs the user to decide between forward-fix-via-main and hotfix-to-production.
 - **Server SHA mismatch at the end** — server didn't converge. Check `ssh flawchess "cd /opt/flawchess && docker compose ps"` and the deploy logs. Don't claim success.
-- **`Deploy via SSH` fails with `could not read Username for 'https://github.com'`** — the server's `git fetch` cannot authenticate. Fixed durably on 2026-09-02 by giving the box a read-only deploy key (`~/.ssh/id_ed25519_github`, `~/.ssh/config` entry for github.com, remote switched to `git@github.com:flawchess/flawchess.git`), so this should not recur. If it does, verify the key is still on the repo (`gh repo deploy-key list`) rather than re-diagnosing from scratch.
+- **`Deploy via SSH` fails with `could not read Username for 'https://github.com'`** — the server's `git fetch` cannot authenticate. The server pulls over SSH with a read-only deploy key (`~/.ssh/id_ed25519_github`, `~/.ssh/config` entry for github.com, remote `git@github.com:flawchess/flawchess.git`); first verify the key is still on the repo (`gh repo deploy-key list`).
 
-  **Diagnose by reading the 401's body first** (`GIT_TRACE_CURL=1 git ls-remote origin <branch>` on the server, then look at the `Recv data:` line). On 2026-09-02 two plausible-sounding theories — GitHub IP throttling, then a git protocol-v2 POST bug — both survived several probes and were both wrong, costing ~15 minutes. The decisive test is one command: run an anonymous `git ls-remote` against an unrelated public repo (`https://github.com/git/git.git`) from BOTH the server and the local machine. If both fail while an authenticated fetch succeeds, the cause is GitHub refusing anonymous fetches, not anything about this server. Also beware that `git ls-remote` under `protocol.version=0` succeeds where a real `fetch` still fails: ls-remote v0 only issues the `GET /info/refs` that GitHub still serves, while a fetch needs the `POST /git-upload-pack` that it refuses — so a green ls-remote is NOT evidence that the deploy will work.
+  **Diagnose by reading the 401's body first** (`GIT_TRACE_CURL=1 git ls-remote origin <branch>` on the server, then the `Recv data:` line). GitHub refuses anonymous fetches: if an anonymous `git ls-remote https://github.com/git/git.git` fails from BOTH the server and the local machine while an authenticated fetch succeeds, that is the cause, not this server. A green `git ls-remote` under `protocol.version=0` is NOT evidence the deploy will work: it only issues `GET /info/refs`, while a fetch needs the `POST /git-upload-pack` GitHub refuses.
 
 - **Forward-port step reports `SKIPPED: need a clean working tree on main`** — `bin/deploy.sh` treats **untracked** files as dirty, not just modified ones, so stray reports or another session's new planning docs are enough to skip it. Don't leave it skipped: per `docs/git-workflow.md` the next release then conflicts on PR #2. Run the merge manually (`git merge -s ours origin/production && git push origin main`). If `main` carries commits from a concurrently running session, that push publishes them too — surface this and let the user decide before pushing, and never `git reset` main to tidy it, which would destroy the other session's work in progress.
 
@@ -213,7 +215,7 @@ When in doubt: prefer continuing with a noted caveat over halting. Halting waste
 ## Hard rules (never break, even in auto-mode)
 
 - **Never bypass `bin/deploy.sh`'s safety assertions** (branch check, SHA check, server SHA verify). They exist because of a 2026-05-16 incident where a deploy silently shipped unreleased `main` to prod.
-- **Never deploy via direct SSH.** Saved in user memory as a hard rule. `bin/deploy.sh` is the only sanctioned path — it runs CI tests first.
+- **Never deploy via direct SSH** (also a root `CLAUDE.md` rule). `bin/deploy.sh` is the only sanctioned path — it runs CI tests first.
 - **Never force-push `main` or `production`.** Forward-fix instead. If a rebase would require force-push, halt and ask.
 - **Never `git push --no-verify`** unless the pre-push hook itself is broken (then fix the hook, don't skip it). The hook catches the most common preventable CI failure on this project.
 - **Never delete the `main` or `production` branch.** `gh pr merge` defaults to deleting the head branch — always pass `--delete-branch=false`.

@@ -1,13 +1,13 @@
 ---
 name: tactic-tagger-report
-description: Generate a FlawChess tactic-tagger precision/recall + difficulty report. Scores the tactic-motif detector (app/services/tactic_detector.py) against the committed CC0 lichess puzzle fixture and writes a timestamped markdown report with a per-tactic table (precision, recall, TP/FP/FN, ground-truth difficulty distribution, mean depth), column explanations, and a summary/interpretation section. Use this skill whenever the user asks about tactic-tag accuracy, tactic detector precision or recall, per-motif precision/recall, how good the tactic tagging is, tactic false-positive rates, motif difficulty distribution, or wants a tactic-tagger health/validation report. Trigger on phrases like "tactic tagger report", "tactic-tagger-report", "tactic precision report", "detector precision/recall", "how accurate are the tactic tags", "per-motif precision", "tactic difficulty distribution", or any request to evaluate the tactic-motif detector against the puzzle fixture. Also covers goal-seeking self-improvement: the same script exposes a `--check-goals` mode (editable per-motif precision/recall GOALS, exits non-zero until met) for driving a `/loop` that automatically improves the detector until targets are reached — trigger on "improve the tagger until", "tactic precision/recall goals", "loop to improve the detector". Writes to reports/tactic-tagger/tactic-tagger-YYYY-MM-DD.md.
+description: Generate a FlawChess tactic-tagger precision/recall + difficulty report. Scores the tactic-motif detector (app/services/tactic_detector.py) against the committed CC0 lichess puzzle fixture and writes a timestamped markdown report with a per-tactic table (precision, recall, TP/FP/FN, ground-truth difficulty distribution, mean depth), column explanations, and a summary/interpretation section. Use when the user asks how accurate the tactic tagging is (per-motif precision or recall, false-positive rates, motif difficulty distribution) or wants a tactic-tagger health/validation report. Also covers goal-seeking improvement, where the script's `--check-goals` mode (editable per-motif precision/recall GOALS, exits non-zero until met) drives a `/loop` that improves the detector until targets are reached. Writes to reports/tactic-tagger/tactic-tagger-YYYY-MM-DD.md.
 ---
 
 # Tactic-Tagger Report
 
 Generate a precision/recall + difficulty report for the FlawChess tactic-motif detector
 (`app/services/tactic_detector.py::detect_tactic_motif`) scored against the committed CC0
-lichess puzzle fixture (`fixtures/tagger/detector_fixture.csv`).
+lichess puzzle fixture (`fixtures/tagger/detector_fixture_{train,test}.csv`).
 
 This is **read-only and offline**: no database, no network, no DB tunnel. It reuses the
 Phase 127 validation-harness modules (`tests/scripts/tagger/`) as the single source of truth

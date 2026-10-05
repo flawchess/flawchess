@@ -1,11 +1,11 @@
 ---
 name: benchmarks
-description: Generate FlawChess endgame population benchmarks from the benchmark DB. Computes per-user distributions for score-gap (endgame vs non-endgame), Conversion/Parity/Recovery rates, composite Endgame Skill, time-pressure stats at endgame entry, time-pressure-vs-performance curves, per-endgame-class (rook/minor_piece/pawn/queen/mixed/pawnless) score and conv/recov rates, and (Phase 114, §5) flaw-delta zones: 15-metric you−opponent paired-delta per-(ELO×TC) Q1/Q3 zones (flaw rate, tempo, phase, opportunity, impact, combos) with Cohen's-d collapse verdicts and viability diagnostics. All metrics are bucketed via 400-wide ELO buckets (anchored at 800/1200/1600/2000/2400) computed from the cohort user's **rating at game time** (`games.white_rating`/`games.black_rating`, never the frozen selection-snapshot rating — see "Rating-lag selection bias" in chapter 1) and the 4 TC buckets (anchored from `benchmark_selected_users.tc_bucket`). For every metric, the skill produces a Cohen's-d-based collapse verdict per axis ({TC, ELO}) that determines whether the metric needs cell-specific zones or collapses to a single global zone. Use this skill whenever the user asks about endgame benchmarks, neutral zones, gauge ranges, "what's typical", baseline distributions, calibrating thresholds, comparing time controls, deciding whether to collapse zones across TC or ELO, breaking down stats by endgame class, flaw-delta zones / you-vs-opponent flaw comparisons / flaw-delta typical range / flaw zone calibration, or (§1) how many benchmark games carry whole-game Lichess analysis per (ELO x TC) cell. Trigger on phrases like "benchmark", "benchmarks", "baseline", "neutral zone", "gauge range", "collapse verdict", "Cohen's d", "calibrate thresholds", "endgame type breakdown", "by endgame class", "rook vs minor piece", "flaw delta", "flaw zone", "you vs opponent", "analysis share", "analysis coverage", "analyzed game share", "how many games are analyzed", "lichess analysis coverage". Writes the latest markdown report to reports/benchmark/benchmarks-latest.md, rotating any prior latest file to reports/benchmark/benchmarks-YYYY-MM-DD.md based on its first-line date.
+description: Generate FlawChess population benchmarks from the benchmark DB. Computes per-user distributions for endgame metrics (score gap endgame vs non-endgame, Conversion/Parity/Recovery rates, the informational Endgame Skill composite, time pressure at endgame entry, time-pressure-vs-performance curves, per-endgame-class score and conv/recov rates), flaw-delta zones (15 you−opponent paired-delta metrics per ELO×TC cell), and whole-game Lichess analysis coverage per cell. Cells are 400-wide ELO buckets (800/1200/1600/2000/2400) from the cohort user's **rating at game time** (`games.white_rating`/`games.black_rating`, never the frozen selection-snapshot rating — see "Rating-lag selection bias" in chapter 1) × the 4 TC buckets (`benchmark_selected_users.tc_bucket`). Zone-calibrated metrics get a Cohen's-d collapse verdict per axis ({TC, ELO}) deciding between cell-specific zones and one global zone. Use when the user asks what's typical or baseline for a metric, about neutral zones / gauge ranges / threshold calibration, comparing time controls or rating bands, collapsing zones across TC or ELO, endgame-class breakdowns, you-vs-opponent flaw comparisons, or how many benchmark games carry Lichess analysis. Writes the latest markdown report to reports/benchmark/benchmarks-latest.md, rotating any prior latest file to reports/benchmark/benchmarks-YYYY-MM-DD.md based on its first-line date.
 ---
 
 # Benchmarks
 
-> **Phase 94.2 callout:** This SKILL describes the per-cohort analytical methodology used for `/benchmarks` reports — distribution exploration, neutral-zone calibration, "what's typical" breakdowns by (TC × ELO) bucket. The **production percentile chip uses a different methodology** since Phase 94.2: a pooled-per-user model (recent 1000/TC across all played TCs, 36-month window, single ≥30 floor on the pooled set, single globally pooled CDF). See `app/services/canonical_slice_sql.py` for the chip's SQL builders, `app/services/global_percentile_cdf.py` for the committed CDF literal, and `.planning/phases/94.2-pooled-per-user-percentile-redesign/94.2-CONTEXT.md` for the design rationale. The per-cohort stratification described below remains correct for analytical purposes — it just no longer mirrors what the production chip computes.
+> **The production percentile chip uses a different methodology.** This skill describes the per-cohort analytical methodology used for `/benchmarks` reports — distribution exploration, neutral-zone calibration, "what's typical" breakdowns by (TC × ELO) bucket. The chip reads the cohort sliding-window registry `COHORT_PERCENTILE_CDF` in `app/services/global_percentile_cdf.py` (see §4 and the `scripts/gen_global_percentile_cdf.py` module docstring). The per-cohort stratification described below remains correct for analysis; it just does not mirror what the chip computes.
 
 Generate population-level benchmarks for FlawChess from the benchmark DB. The headline deliverable is a **per-metric collapse verdict** answering: does this metric need cell-specific zones across (TC × ELO), or can it use a single global zone?
 
@@ -15,7 +15,7 @@ The skill is organized into three chapters that mirror the FlawChess UI: **Chapt
 
 ## Workflow (generator-driven — read this first)
 
-> **The numbers come from a deterministic generator, not from running SQL by hand.** As of SEED-029 Phase A, `scripts/gen_benchmarks.py` computes every distribution, marginal, IQR, Cohen's d, and correlation in §§1–4 directly against the benchmark DB and writes a structured artifact. Your job is to **narrate that artifact into the report**, not to re-run ~36 inline SQL blocks and hand-compute statistics (the old flow, which was a transcription/arithmetic fragility — that's exactly what the generator removes). The per-subchapter SQL, building blocks, and methodology in §§1–4 below are now **reference** for *what the generator computes* (and for QA / narration) — you do not execute them by hand.
+> **The numbers come from a deterministic generator, not from running SQL by hand.** `scripts/gen_benchmarks.py` computes every distribution, marginal, IQR, Cohen's d, and correlation in §§1–4 directly against the benchmark DB and writes a structured artifact. Your job is to **narrate that artifact into the report**, not to re-run ~36 inline SQL blocks and hand-compute statistics. The per-subchapter SQL, building blocks, and methodology in §§1–4 below are **reference** for *what the generator computes* (and for QA / narration) — you do not execute them by hand.
 
 **The code/LLM seam.** Code emits numbers; you apply the fixed collapse-verdict thresholds and write the prose. The generator's output is validated against this report by `tests/scripts/benchmarks/test_chapter*_diff.py` (a numeric diff, within rounding). It does **not** apply verdict *words*, author recommendations, or assemble the final report — those are yours.
 
@@ -114,7 +114,7 @@ The 36-month history stays fully intact — only the bucket *label* changes from
 
 **Behavior change to flag:** any single whole-career per-user scalar (e.g. composite Endgame Skill per user) is no longer one number under game-time bucketing — it becomes per-bucket or a trajectory. The live-UI comparator must absorb this; report it in the regenerated report header.
 
-**Acceptance test (must pass post-fix).** Both run against the benchmark DB, cohort = `benchmark_selected_users ⋈ users` on `lower(lichess_username)` (the current DB has games for all 5 ELO buckets but `benchmark_ingest_checkpoints` rows only for 800/1200, so the canonical checkpoint join is omitted *for the current partial-ingest DB state only* — see "Standard CTE" note):
+**Acceptance test (must pass post-fix).** Both run against the benchmark DB using the canonical checkpoint-joined `selected_users` CTE (see "Standard CTE"):
 1. **Score flat ≈0.500, no monotone ramp.** Cohort score vs equal-rated opponents (`abs(opp−user)≤100`, both NOT NULL, sparse `(2400,classical)` excluded), bucketed by game-time rating: every bucket within `0.50 ± 0.015` with no monotone rise. Contrast: the old snapshot bucketing produced the smooth ramp `800→0.496, 1200→0.505, 1600→0.506, 2000→0.523, 2400→0.538`.
 2. **Per-color middlegame-entry eval mirror-symmetric.** Reproduce the 2.1 methodology (MIN(ply) where `phase=1`, drop `eval_mate` / `abs(eval_cp)≥2000`, user-POV signed) but bucket by game-time rating: the rating-lag-attributable component of the per-color asymmetry collapses (contrast: old snapshot bucketing gave the asymmetric 1200 White ≈ +33 / Black ≈ −16).
 
@@ -177,8 +177,6 @@ WITH selected_users AS (
 
 Then JOIN `selected_users su` on `g.user_id = su.user_id` and filter `g.time_control_bucket::text = su.tc_bucket`. **The ELO axis is NOT `su.selection_rating_bucket`** — every per-metric query derives `elo_bucket` per-game from the cohort user's rating at game time via the canonical `user_elo_at_game` / `elo_bucket` building block (see "Shared SQL building blocks"), and drops sub-800 rows. Cells are `(game-time elo_bucket, su.tc_bucket)`. **Cast note**: `games.time_control_bucket` is a custom enum (`timecontrolbucket`) and `benchmark_selected_users.tc_bucket` is `varchar` — without the `::text` cast Postgres errors with `operator does not exist: timecontrolbucket = character varying`.
 
-**Current-DB-state checkpoint exception — OBSOLETE (SEED-029).** This exception described an earlier partial-ingest state (games for all 5 ELO buckets but `benchmark_ingest_checkpoints` rows only for 800/1200), under which the canonical checkpoint join was temporarily dropped in favor of a bare `benchmark_selected_users ⋈ users ON lower(lichess_username)` join. **That state no longer exists** — the benchmark DB now has `status='completed'` checkpoints for all five ELO buckets, so the canonical checkpoint-joined CTE (next subsection) is the **only** correct path and the generator uses it unconditionally (`sql.SELECTED_USERS_CTE`). Do not omit the checkpoint join. The acceptance-test note above and the `current-DB-state: lower() join, no checkpoint` SQL comment are kept only as historical audit trail.
-
 **Why the checkpoint join is non-optional**: `benchmark_selected_users` is the candidate *pool*. The ingest orchestrator (`scripts/import_benchmark_users.py`) walks the pool, marking each `(lichess_username, tc_bucket)` row as `completed`, `skipped` (low yield, games purged), `failed` (404/error), or leaving it `null` (never attempted because earlier candidates filled the slot). Only `completed` rows have games in this TC. Skipping the filter pulls in 'skipped' multi-TC qualifiers (whose games for this TC were deleted) and never-attempted pool members, both of which appear as 0-game users in cell aggregates.
 
 #### Sample size check
@@ -216,7 +214,7 @@ A cell is **pool-exhausted** when `unattempted = 0` and `completed < target`. To
 The two queries above use `bsu.rating_bucket` deliberately: they measure **selection-pool coverage** (a selection-time property), not analysis-cell membership. Analysis cells are now game-time-bucketed, so before a report also verify the **game-time cell sizes** actually clearing the per-user floors:
 
 ```sql
-WITH selected_users AS ( /* Standard CTE (current-DB-state: lower() join, no checkpoint) */ ),
+WITH selected_users AS ( /* Standard CTE */ ),
 gt AS (
   SELECT g.user_id,
          (CASE WHEN g.user_color::text='white' THEN g.white_rating ELSE g.black_rating END) AS ueag,
@@ -580,18 +578,18 @@ Before running each subchapter, grep the code for the constants the subchapter's
 | Subchapter | Metric | File | Constants |
 |---|---|---|---|
 | 2.1 | Middlegame-entry eval | `frontend/src/lib/openingStatsZones.ts` (MG-entry bullet). For the **symmetric engine-asymmetry baseline** (live z-test, MG only), `app/services/opening_insights_constants.py`. `EVAL_BASELINE_PAWNS_BLACK` must equal `-EVAL_BASELINE_PAWNS_WHITE` (symmetric by construction — flag if violated). | `EVAL_NEUTRAL_MIN_PAWNS = -0.30`, `EVAL_NEUTRAL_MAX_PAWNS = +0.30`, `EVAL_BULLET_DOMAIN_PAWNS = 1.5`. Baseline: `EVAL_BASELINE_PAWNS_WHITE = 0.25`, `EVAL_BASELINE_PAWNS_BLACK = -0.25`, `EVAL_CONFIDENCE_MIN_N = 20` (re-grep at run time). |
-| 3.1.2 | Endgame-entry eval (pawns, EG-entry "Where you start" tile) | `frontend/src/lib/endgameEntryEvalZones.ts` | `ENDGAME_ENTRY_EVAL_NEUTRAL_MIN_PAWNS = -0.75`, `ENDGAME_ENTRY_EVAL_NEUTRAL_MAX_PAWNS = +0.75`, `ENDGAME_ENTRY_EVAL_DOMAIN_PAWNS = 2.0`, `ENDGAME_ENTRY_EVAL_CENTER = 0`. **EG-entry tile is 0-centered** (null = 0, no baseline subtraction) — unlike the MG-entry tile which centers on the symmetric ±baseline. Calibration recommendations feed `endgameEntryEvalZones.ts` directly from the **uncentered** distribution; do not center against the EG pass-1 baseline when calibrating the EG bullet. |
+| 3.1.2 | Endgame-entry eval (pawns, EG-entry "Where you start" tile) | `frontend/src/lib/endgameEntryEvalZones.ts` | `ENDGAME_ENTRY_EVAL_NEUTRAL_MIN_PAWNS = -0.60`, `ENDGAME_ENTRY_EVAL_NEUTRAL_MAX_PAWNS = +0.60`, `ENDGAME_ENTRY_EVAL_DOMAIN_PAWNS = 2.25`, `ENDGAME_ENTRY_EVAL_CENTER = 0`. **EG-entry tile is 0-centered** (null = 0, no baseline subtraction) — unlike the MG-entry tile which centers on the symmetric ±baseline. Calibration recommendations feed `endgameEntryEvalZones.ts` directly from the **uncentered** distribution; do not center against the EG pass-1 baseline when calibrating the EG bullet. |
 | 3.1.3 | Achievable Score (Stockfish-predicted expected score at EG entry) | `app/services/endgame_zones.py` → generated `frontend/src/generated/endgameZones.ts` | `entry_expected_score` ZoneSpec; `ENTRY_EXPECTED_SCORE_NEUTRAL_MIN/MAX`, `entryExpectedScoreZoneColor()` (generated). |
 | 3.1.4 | Endgame score (per-user, EG-only) | `frontend/src/lib/scoreBulletConfig.ts` (shared with Openings score bullet) | `SCORE_BULLET_CENTER = 0.5`, `SCORE_BULLET_NEUTRAL_MIN = -0.05`, `SCORE_BULLET_NEUTRAL_MAX = +0.05`, `SCORE_BULLET_DOMAIN = 0.25`. The score bullet config is shared across surfaces; 3.1.4 calibrates the **endgame-only** subset of users that the "What you do with it" tile reads. |
-| 3.1.5 | Achievable Score Gap (per-user `actual − expected`) | `frontend/src/components/charts/EndgamePerformanceSection.tsx` (Endgame Score Differences row) | `ACHIEVABLE_SCORE_GAP_NEUTRAL_MIN/MAX`, `ACHIEVABLE_SCORE_GAP_DOMAIN` (re-grep — names may have evolved with Phase 85.1) |
-| 3.1.6 | Endgame Score Gap and Timeline (per-user `eg − non_eg`) | `frontend/src/components/charts/EndgamePerformanceSection.tsx` | `SCORE_GAP_NEUTRAL_MIN/MAX`, `SCORE_GAP_DOMAIN`, `SCORE_TIMELINE_Y_DOMAIN`, any `SCORE_TIMELINE_NEUTRAL_*` constants |
-| 3.2.1 | Conv / Par / Recov + Endgame Skill | `frontend/src/components/charts/EndgameScoreGapSection.tsx`, `frontend/src/generated/endgameZones.ts` | `FIXED_GAUGE_ZONES`, `NEUTRAL_ZONE_MIN/MAX`, `BULLET_DOMAIN`, `ENDGAME_SKILL_ZONES` |
-| 3.3.1 | Clock-diff + net timeout | `frontend/src/components/charts/EndgameClockPressureSection.tsx` | `NEUTRAL_PCT_THRESHOLD`, `NEUTRAL_TIMEOUT_THRESHOLD` |
-| 3.3.2 | Time-pressure chart | `app/services/endgame_service.py::_compute_time_pressure_chart`, `EndgameTimePressureSection.tsx` | `Y_AXIS_DOMAIN`, `X_AXIS_DOMAIN`, `MIN_GAMES_FOR_CLOCK_STATS` |
-| 3.3.1 clock-gap-% | Clock gap fraction at endgame entry | `app/services/endgame_zones.py` → generated `frontend/src/generated/endgameZones.ts` | `CLOCK_GAP_NEUTRAL_MIN`, `CLOCK_GAP_NEUTRAL_MAX`; `ZONE_REGISTRY["clock_gap_pct"]` ZoneSpec. Placeholder: `(-0.05, 0.05)`. |
-| §3.3.3 | Chess score per pressure bin | `app/services/endgame_zones.py` → generated `frontend/src/generated/endgameZones.ts` | `PRESSURE_BIN_SCORE_NEUTRAL_ZONES` (nested dict by tc/quintile); `PRESSURE_BIN_NEUTRAL_CAP = 0.06`. Placeholder: all bands `(-0.06, 0.06)`. |
+| 3.1.5 | Achievable Score Gap (per-user `actual − expected`) | `app/services/endgame_zones.py` (`achievable_score_gap` ZoneSpec) → generated `frontend/src/generated/endgameZones.ts`; rendered in `frontend/src/components/charts/EndgameOverallPerformanceSection.tsx` | `ACHIEVABLE_SCORE_GAP_NEUTRAL_MIN/MAX` |
+| 3.1.6 | Endgame Score Gap and Timeline (per-user `eg − non_eg`) | `app/services/endgame_zones.py` → generated `endgameZones.ts` (`SCORE_GAP_NEUTRAL_MIN/MAX`); `frontend/src/components/charts/EndgameOverallShared.ts`, `EndgameScoreOverTimeChart.tsx` | `SCORE_GAP_NEUTRAL_MIN/MAX`, `SCORE_GAP_DOMAIN`, `SCORE_TIMELINE_Y_DOMAIN` |
+| 3.2.1 | Conv / Par / Recov | `app/services/endgame_zones.py` → generated `endgameZones.ts`; rendered per TC by `frontend/src/components/charts/EndgameMetricsByTcCard.tsx` | `TC_METRIC_BANDS` (per-TC gauge bands), `FIXED_GAUGE_ZONES`. Endgame Skill is retracted: no zone. |
+| 3.3.1 | Clock-diff + net timeout | `app/services/endgame_zones.py` → generated `endgameZones.ts` | `NEUTRAL_PCT_THRESHOLD`, `NEUTRAL_TIMEOUT_THRESHOLD` |
+| 3.3.2 | Time-pressure chart | `frontend/src/components/charts/ScoreGapByTimePressureChart.tsx`, `EndgameTimePressureCard.tsx`; `app/schemas/endgames.py` | `PRESSURE_SCORE_GAP_NEUTRAL_MIN/MAX`, `CLOCK_GAP_DOMAIN` (`frontend/src/lib/pressureBulletConfig.ts`), `MIN_GAMES_FOR_CLOCK_STATS` |
+| 3.3.1 clock-gap-% | Clock gap fraction at endgame entry | `app/services/endgame_zones.py` → generated `frontend/src/generated/endgameZones.ts` | `CLOCK_GAP_NEUTRAL_MIN`, `CLOCK_GAP_NEUTRAL_MAX`; `ZONE_REGISTRY["clock_gap_pct"]` ZoneSpec (calibrated). |
+| §3.3.3 | Chess score per pressure bin | `app/services/endgame_zones.py` → generated `frontend/src/generated/endgameZones.ts` | `PRESSURE_BIN_SCORE_NEUTRAL_ZONES` (nested dict by tc/quintile); `PRESSURE_BIN_NEUTRAL_CAP = 0.06` (bands calibrated per tc/quintile). |
 | 3.4.1 | Per-class chess-score bullet + conv/recov gauges | `frontend/src/components/charts/EndgameTypeCard.tsx`, `EndgameTypeBreakdownSection.tsx`, `frontend/src/generated/endgameZones.ts`, `frontend/src/lib/scoreBulletConfig.ts` | Score bullet uses GLOBAL `SCORE_BULLET_NEUTRAL_MIN/MAX` (0.45/0.55) + `SCORE_BULLET_CENTER` (no per-class zones yet — see 3.4.1 recommendations); gauges use per-class IQR-derived `PER_CLASS_GAUGE_ZONES.{class}.{conversion,recovery}` |
-| 3.4.2 | Per-span Score Gap by endgame type (per-type card "Score Gap" bullet — Phase 87.1) | `app/services/endgame_zones.py` → generated `frontend/src/generated/endgameZones.ts`; consumed by `frontend/src/components/charts/EndgameTypeCard.tsx` (Plan 03) | `endgame_type_achievable_score_gap` ZoneSpec; `ENDGAME_TYPE_SCORE_GAP_NEUTRAL_MIN/MAX`; `PER_CLASS_GAUGE_ZONES.{class}.achievable_score_gap`. Placeholder bands `(-0.05, 0.05)` shipped in Phase 87.1 Plan 01; calibrate per this subchapter then update both registry entries and regenerate. |
+| 3.4.2 | Per-span Score Gap by endgame type (per-type card "Score Gap" bullet) | `app/services/endgame_zones.py` → generated `frontend/src/generated/endgameZones.ts`; consumed by `frontend/src/components/charts/EndgameTypeCard.tsx` | `endgame_type_achievable_score_gap` ZoneSpec; `ENDGAME_TYPE_SCORE_GAP_NEUTRAL_MIN/MAX`; `PER_CLASS_GAUGE_ZONES.{class}.achievable_score_gap` (calibrated). |
 
 Use the Grep tool, not bash. Record literal values.
 
@@ -1054,105 +1052,15 @@ FROM eg_centered;
 
 | Constant | Live value | File |
 |---|---:|---|
-| `entry_expected_score` ZoneSpec | TBD by Plan 83-04 Task 3 | `app/services/endgame_zones.py` |
-| `ENTRY_EXPECTED_SCORE_NEUTRAL_MIN/MAX` | TBD (generated) | `frontend/src/generated/endgameZones.ts` |
+| `entry_expected_score` ZoneSpec | `[0.45, 0.55]` (re-grep at run time) | `app/services/endgame_zones.py` |
+| `ENTRY_EXPECTED_SCORE_NEUTRAL_MIN/MAX` | generated from the ZoneSpec | `frontend/src/generated/endgameZones.ts` |
 | `entryExpectedScoreZoneColor()` | TBD (generated) | `frontend/src/generated/endgameZones.ts` |
 
 The cohort band is a **dedicated EG-entry score band** — not shared with `SCORE_BULLET_NEUTRAL_*` (which drives the Openings per-position score bullet on a different population) or with `endgame_score` (which drives the 3.1.4 final-score zone). All three populations differ; do not retune one band based on another's data.
 
 ##### Query
 
-```sql
-WITH selected_users AS (
-  SELECT u.id AS user_id, bsu.tc_bucket,
-         bsu.rating_bucket AS selection_rating_bucket,  -- LONGITUDINAL ONLY (ELO axis is game-time, per building block)
-         bsu.median_elo
-  FROM benchmark_selected_users bsu
-  JOIN benchmark_ingest_checkpoints bic
-    ON bic.lichess_username = bsu.lichess_username
-   AND bic.tc_bucket = bsu.tc_bucket
-   AND bic.status = 'completed'
-  JOIN users u ON u.lichess_username = bsu.lichess_username
-),
-endgame_game_ids AS (
-  SELECT game_id FROM game_positions
-  WHERE endgame_class IS NOT NULL
-  GROUP BY game_id HAVING count(*) >= 6
-),
-entry_rows AS (
-  -- One row per game: the first endgame-class ply (lowest ply where endgame_class IS NOT NULL).
-  SELECT
-    gp.game_id, gp.eval_cp, gp.eval_mate,
-    ROW_NUMBER() OVER (PARTITION BY gp.game_id ORDER BY gp.ply ASC) AS rn
-  FROM game_positions gp
-  JOIN endgame_game_ids eg ON eg.game_id = gp.game_id
-  WHERE gp.endgame_class IS NOT NULL
-),
-rows AS (
-  SELECT
-    g.user_id,
-    -- game-time ELO (canonical "user_elo_at_game / elo_bucket" building block; drop sub-800 via WHERE user_elo_at_game >= 800)
-    (CASE WHEN g.user_color::text='white' THEN g.white_rating ELSE g.black_rating END) AS user_elo_at_game,
-    (CASE WHEN (CASE WHEN g.user_color::text='white' THEN g.white_rating ELSE g.black_rating END) < 800 THEN NULL
-          WHEN (CASE WHEN g.user_color::text='white' THEN g.white_rating ELSE g.black_rating END) < 1200 THEN 800
-          WHEN (CASE WHEN g.user_color::text='white' THEN g.white_rating ELSE g.black_rating END) < 1600 THEN 1200
-          WHEN (CASE WHEN g.user_color::text='white' THEN g.white_rating ELSE g.black_rating END) < 2000 THEN 1600
-          WHEN (CASE WHEN g.user_color::text='white' THEN g.white_rating ELSE g.black_rating END) < 2400 THEN 2000
-          ELSE 2400 END) AS elo_bucket,
-    su.tc_bucket AS tc,
-    -- Per-game expected_score from the user's perspective:
-    --   mate forces 0 or 1 (sign-flipped for black),
-    --   |cp| < 2000 uses the Lichess winning-chances sigmoid (k=0.00368208),
-    --   |cp| >= 2000 is clamped to NULL (treated as decisive but mate-undeclared — caller can decide).
-    CASE
-      WHEN er.eval_mate IS NOT NULL AND (er.eval_mate * (CASE WHEN g.user_color='white' THEN 1 ELSE -1 END)) > 0 THEN 1.0
-      WHEN er.eval_mate IS NOT NULL AND (er.eval_mate * (CASE WHEN g.user_color='white' THEN 1 ELSE -1 END)) < 0 THEN 0.0
-      WHEN er.eval_cp IS NOT NULL AND abs(er.eval_cp) < 2000
-           THEN 1.0 / (1.0 + exp(-0.00368208 * (er.eval_cp * (CASE WHEN g.user_color='white' THEN 1 ELSE -1 END))))
-      ELSE NULL
-    END AS expected_score
-  FROM games g
-  JOIN selected_users su ON su.user_id = g.user_id
-  JOIN entry_rows er ON er.game_id = g.id AND er.rn = 1
-  WHERE g.rated AND NOT g.is_computer_game
-    AND g.time_control_bucket::text = su.tc_bucket
-    -- Equal-footing filter (universal — see "Equal-footing opponent filter (all subchapters)")
-    AND g.white_rating IS NOT NULL AND g.black_rating IS NOT NULL
-    AND abs(
-          (CASE WHEN g.user_color='white' THEN g.white_rating ELSE g.black_rating END)
-        - (CASE WHEN g.user_color='white' THEN g.black_rating ELSE g.white_rating END)
-        ) <= 100
-),
-per_user AS (
-  SELECT user_id, elo_bucket, tc,
-    avg(expected_score) AS entry_xs
-  FROM rows
-  GROUP BY user_id, elo_bucket, tc
-  HAVING count(*) FILTER (WHERE expected_score IS NOT NULL) >= 20
-),
-per_user_excl_sparse AS (
-  -- Sparse-cell exclusion mirrors universal handling.
-  SELECT * FROM per_user
-  WHERE NOT (elo_bucket = 2400 AND tc = 'classical')
-)
-SELECT
-  elo_bucket, tc,
-  count(*) AS n_users,
-  round(avg(entry_xs)::numeric, 4) AS xs_mean,
-  round(stddev_samp(entry_xs)::numeric, 4) AS xs_sd,
-  round(var_samp(entry_xs)::numeric, 6) AS xs_var,
-  round(percentile_cont(0.05) WITHIN GROUP (ORDER BY entry_xs)::numeric, 4) AS xs_p05,
-  round(percentile_cont(0.25) WITHIN GROUP (ORDER BY entry_xs)::numeric, 4) AS xs_p25,
-  round(percentile_cont(0.50) WITHIN GROUP (ORDER BY entry_xs)::numeric, 4) AS xs_p50,
-  round(percentile_cont(0.75) WITHIN GROUP (ORDER BY entry_xs)::numeric, 4) AS xs_p75,
-  round(percentile_cont(0.95) WITHIN GROUP (ORDER BY entry_xs)::numeric, 4) AS xs_p95
-FROM per_user_excl_sparse
-GROUP BY elo_bucket, tc
-HAVING count(*) >= 10
-ORDER BY elo_bucket, CASE tc WHEN 'bullet' THEN 1 WHEN 'blitz' THEN 2 WHEN 'rapid' THEN 3 WHEN 'classical' THEN 4 END;
-```
-
-The full 5×4 cell table re-runs the same shape for the sparse `(2400, classical)` cell with an `n=2*` footnote (12 completed users overall, most below the 20-game floor). TC marginal, ELO marginal, and pooled overall come from re-aggregating `per_user_excl_sparse` over `tc` only / `elo_bucket` only / no group. `xs_mean` / `xs_var` columns feed Cohen's d per the canonical "Computing Cohen's d in SQL" recipe.
+Reference SQL (QA only): `references/queries.md` → "3.1.3 Achievable Score (Stockfish-predicted expected score at EG entry)".
 
 ##### Output
 
@@ -1192,85 +1100,7 @@ The score-bullet config is **shared** with the Openings score bullet (per-positi
 
 ##### Query
 
-```sql
-WITH selected_users AS (
-  SELECT u.id AS user_id, bsu.tc_bucket,
-         bsu.rating_bucket AS selection_rating_bucket,  -- LONGITUDINAL ONLY (ELO axis is game-time, per building block)
-         bsu.median_elo
-  FROM benchmark_selected_users bsu
-  JOIN benchmark_ingest_checkpoints bic
-    ON bic.lichess_username = bsu.lichess_username
-   AND bic.tc_bucket = bsu.tc_bucket
-   AND bic.status = 'completed'
-  JOIN users u ON u.lichess_username = bsu.lichess_username
-),
-endgame_game_ids AS (
-  SELECT game_id FROM game_positions
-  WHERE endgame_class IS NOT NULL
-  GROUP BY game_id HAVING count(*) >= 6
-),
-rows AS (
-  SELECT
-    g.user_id,
-    -- game-time ELO (canonical "user_elo_at_game / elo_bucket" building block; drop sub-800 via WHERE user_elo_at_game >= 800)
-    (CASE WHEN g.user_color::text='white' THEN g.white_rating ELSE g.black_rating END) AS user_elo_at_game,
-    (CASE WHEN (CASE WHEN g.user_color::text='white' THEN g.white_rating ELSE g.black_rating END) < 800 THEN NULL
-          WHEN (CASE WHEN g.user_color::text='white' THEN g.white_rating ELSE g.black_rating END) < 1200 THEN 800
-          WHEN (CASE WHEN g.user_color::text='white' THEN g.white_rating ELSE g.black_rating END) < 1600 THEN 1200
-          WHEN (CASE WHEN g.user_color::text='white' THEN g.white_rating ELSE g.black_rating END) < 2000 THEN 1600
-          WHEN (CASE WHEN g.user_color::text='white' THEN g.white_rating ELSE g.black_rating END) < 2400 THEN 2000
-          ELSE 2400 END) AS elo_bucket,
-    su.tc_bucket AS tc,
-    CASE
-      WHEN (g.result = '1-0' AND g.user_color = 'white')
-        OR (g.result = '0-1' AND g.user_color = 'black') THEN 1.0
-      WHEN g.result = '1/2-1/2' THEN 0.5
-      ELSE 0.0
-    END AS score
-  FROM games g
-  JOIN selected_users su ON su.user_id = g.user_id
-  JOIN endgame_game_ids eg ON eg.game_id = g.id
-  WHERE g.rated AND NOT g.is_computer_game
-    AND g.time_control_bucket::text = su.tc_bucket
-    -- Equal-footing filter (universal — see "Equal-footing opponent filter (all subchapters)")
-    AND g.white_rating IS NOT NULL AND g.black_rating IS NOT NULL
-    AND abs(
-          (CASE WHEN g.user_color='white' THEN g.white_rating ELSE g.black_rating END)
-        - (CASE WHEN g.user_color='white' THEN g.black_rating ELSE g.white_rating END)
-        ) <= 100
-),
-per_user AS (
-  SELECT
-    user_id, elo_bucket, tc,
-    count(*) AS eg_games,
-    avg(score) AS eg_score
-  FROM rows
-  GROUP BY user_id, elo_bucket, tc
-  HAVING count(*) >= 20
-),
-per_user_excl_sparse AS (
-  -- Sparse-cell exclusion mirrors universal handling.
-  SELECT * FROM per_user
-  WHERE NOT (elo_bucket = 2400 AND tc = 'classical')
-)
-SELECT
-  elo_bucket, tc,
-  count(*) AS n_users,
-  round(avg(eg_score)::numeric, 4) AS eg_mean,
-  round(stddev_samp(eg_score)::numeric, 4) AS eg_sd,
-  round(var_samp(eg_score)::numeric, 6) AS eg_var,
-  round(percentile_cont(0.05) WITHIN GROUP (ORDER BY eg_score)::numeric, 4) AS eg_p05,
-  round(percentile_cont(0.25) WITHIN GROUP (ORDER BY eg_score)::numeric, 4) AS eg_p25,
-  round(percentile_cont(0.50) WITHIN GROUP (ORDER BY eg_score)::numeric, 4) AS eg_p50,
-  round(percentile_cont(0.75) WITHIN GROUP (ORDER BY eg_score)::numeric, 4) AS eg_p75,
-  round(percentile_cont(0.95) WITHIN GROUP (ORDER BY eg_score)::numeric, 4) AS eg_p95
-FROM per_user_excl_sparse
-GROUP BY elo_bucket, tc
-HAVING count(*) >= 10
-ORDER BY elo_bucket, CASE tc WHEN 'bullet' THEN 1 WHEN 'blitz' THEN 2 WHEN 'rapid' THEN 3 WHEN 'classical' THEN 4 END;
-```
-
-The full 5×4 cell table also re-runs the same shape for the sparse `(2400, classical)` cell with an `n=12*` footnote. TC marginal, ELO marginal, and pooled overall come from re-aggregating `per_user_excl_sparse` over `tc` only / `elo_bucket` only / no group. The `eg_mean` / `eg_var` columns feed Cohen's d per the canonical "Computing Cohen's d in SQL" recipe.
+Reference SQL (QA only): `references/queries.md` → "3.1.4 Endgame Score (per-user, EG-only)".
 
 ##### Output
 
@@ -1291,7 +1121,7 @@ The full 5×4 cell table also re-runs the same shape for the sparse `(2400, clas
 
 **Why a separate subchapter from 3.1.3 and 3.1.6:** 3.1.3 measures the **predicted** score at entry (`entry_xs = avg(expected_score)`). 3.1.4 measures the **achieved** score in endgames (`eg_score`). 3.1.5 (this subchapter) measures their **paired per-game difference** — the gauge in the UI reports a single per-user number, not a difference of two pooled means, so the per-game variance matters for the CI computation. (Mathematically `mean(actual − expected) ≡ mean(actual) − mean(expected)` over the same game set, but the live `compute_paired_difference_test` consumes the per-game `d_i` array directly for its SE; calibrating from `d_i` keeps the benchmark variance comparable to the live CI.) 3.1.6 measures a different population-level gap: `eg_score − non_eg_score` (endgame vs non-endgame games), which has nothing to do with the engine prediction.
 
-**Live-UI provenance:** mirrors `compute_endgame_performance` in `app/services/endgame_service.py:1820–1880` (Phase 85.1 paired-diff accumulator, SEC1-10). The filter for the per-game pair is: `eval_mate IS NOT NULL` (mate INCLUDED, mapped to 0/1 via `eval_mate_to_expected_score`) OR (`eval_cp IS NOT NULL` AND `|eval_cp| < EVAL_CLIP_MAX_CP = 2000`). Both-NULL games are dropped. `actual_score_i ∈ {0.0, 0.5, 1.0}` via `derive_user_result`.
+**Live-UI provenance:** mirrors `_get_endgame_performance_from_rows` in `app/services/endgame_service.py` (paired-diff accumulator). The filter for the per-game pair is: `eval_mate IS NOT NULL` (mate INCLUDED, mapped to 0/1 via `eval_mate_to_expected_score`) OR (`eval_cp IS NOT NULL` AND `|eval_cp| < EVAL_CLIP_MAX_CP = 2000`). Both-NULL games are dropped. `actual_score_i ∈ {0.0, 0.5, 1.0}` via `derive_user_result`.
 
 **Per-user metric:**
 - `expected_score_i` per game = Lichess winning-chances sigmoid on user-POV `eval_cp` (mate forces 0/1 in user-POV), at the first endgame-class ply. Same definition as 3.1.3, but with **mate INCLUDED** and `|eval_cp| >= 2000` *clipped* (i.e. those games are excluded from both accumulators identically — see live code).
@@ -1305,7 +1135,7 @@ The full 5×4 cell table also re-runs the same shape for the sparse `(2400, clas
 
 | Constant | Live value | File |
 |---|---:|---|
-| `ACHIEVABLE_SCORE_GAP_*` (gauge zones) | re-grep at run time | `frontend/src/components/charts/EndgamePerformanceSection.tsx` (or a generated module if Phase 85.1 moved it to `endgameZones.ts`) |
+| `ACHIEVABLE_SCORE_GAP_*` (gauge zones) | re-grep at run time | `app/services/endgame_zones.py` (`achievable_score_gap` ZoneSpec) → generated `frontend/src/generated/endgameZones.ts` |
 | `PVALUE_RELIABILITY_MIN_N` | 10 | `app/services/endgame_service.py` |
 | `EVAL_CLIP_MAX_CP` | 2000 | `app/services/endgame_service.py` (D-07 clip — same as `EVAL_OUTLIER_TRIM_CP` in MG-entry) |
 
@@ -1313,106 +1143,7 @@ The Achievable Score Gap gauge is centered at 0 (the "you scored exactly what St
 
 ##### Query
 
-```sql
-WITH selected_users AS (
-  SELECT u.id AS user_id, bsu.tc_bucket,
-         bsu.rating_bucket AS selection_rating_bucket,  -- LONGITUDINAL ONLY (ELO axis is game-time, per building block)
-         bsu.median_elo
-  FROM benchmark_selected_users bsu
-  JOIN benchmark_ingest_checkpoints bic
-    ON bic.lichess_username = bsu.lichess_username
-   AND bic.tc_bucket = bsu.tc_bucket
-   AND bic.status = 'completed'
-  JOIN users u ON u.lichess_username = bsu.lichess_username
-),
-endgame_game_ids AS (
-  SELECT game_id FROM game_positions
-  WHERE endgame_class IS NOT NULL
-  GROUP BY game_id HAVING count(*) >= 6
-),
-entry_rows AS (
-  -- One row per game: the first endgame-class ply.
-  SELECT
-    gp.game_id, gp.eval_cp, gp.eval_mate,
-    ROW_NUMBER() OVER (PARTITION BY gp.game_id ORDER BY gp.ply ASC) AS rn
-  FROM game_positions gp
-  JOIN endgame_game_ids eg ON eg.game_id = gp.game_id
-  WHERE gp.endgame_class IS NOT NULL
-),
-rows AS (
-  -- Mirror live filter: mate INCLUDED, |eval_cp| < 2000 only, both-NULL skipped.
-  -- d_i = actual_score_i - expected_score_i (paired per-game diff).
-  SELECT
-    g.user_id,
-    -- game-time ELO (canonical "user_elo_at_game / elo_bucket" building block; drop sub-800 via WHERE user_elo_at_game >= 800)
-    (CASE WHEN g.user_color::text='white' THEN g.white_rating ELSE g.black_rating END) AS user_elo_at_game,
-    (CASE WHEN (CASE WHEN g.user_color::text='white' THEN g.white_rating ELSE g.black_rating END) < 800 THEN NULL
-          WHEN (CASE WHEN g.user_color::text='white' THEN g.white_rating ELSE g.black_rating END) < 1200 THEN 800
-          WHEN (CASE WHEN g.user_color::text='white' THEN g.white_rating ELSE g.black_rating END) < 1600 THEN 1200
-          WHEN (CASE WHEN g.user_color::text='white' THEN g.white_rating ELSE g.black_rating END) < 2000 THEN 1600
-          WHEN (CASE WHEN g.user_color::text='white' THEN g.white_rating ELSE g.black_rating END) < 2400 THEN 2000
-          ELSE 2400 END) AS elo_bucket,
-    su.tc_bucket AS tc,
-    -- actual_score_i (user POV)
-    CASE
-      WHEN (g.result = '1-0' AND g.user_color = 'white')
-        OR (g.result = '0-1' AND g.user_color = 'black') THEN 1.0
-      WHEN g.result = '1/2-1/2' THEN 0.5
-      ELSE 0.0
-    END
-    -
-    -- expected_score_i (user POV; mate -> 0/1, cp -> Lichess sigmoid)
-    CASE
-      WHEN er.eval_mate IS NOT NULL AND (er.eval_mate * (CASE WHEN g.user_color='white' THEN 1 ELSE -1 END)) > 0 THEN 1.0
-      WHEN er.eval_mate IS NOT NULL AND (er.eval_mate * (CASE WHEN g.user_color='white' THEN 1 ELSE -1 END)) < 0 THEN 0.0
-      WHEN er.eval_cp IS NOT NULL AND abs(er.eval_cp) < 2000
-           THEN 1.0 / (1.0 + exp(-0.00368208 * (er.eval_cp * (CASE WHEN g.user_color='white' THEN 1 ELSE -1 END))))
-      ELSE NULL  -- both-NULL or cp clip — dropped at the HAVING below
-    END AS d_i
-  FROM games g
-  JOIN selected_users su ON su.user_id = g.user_id
-  JOIN entry_rows er ON er.game_id = g.id AND er.rn = 1
-  WHERE g.rated AND NOT g.is_computer_game
-    AND g.time_control_bucket::text = su.tc_bucket
-    -- Equal-footing filter (universal — see "Equal-footing opponent filter (all subchapters)")
-    AND g.white_rating IS NOT NULL AND g.black_rating IS NOT NULL
-    AND abs(
-          (CASE WHEN g.user_color='white' THEN g.white_rating ELSE g.black_rating END)
-        - (CASE WHEN g.user_color='white' THEN g.black_rating ELSE g.white_rating END)
-        ) <= 100
-),
-per_user AS (
-  SELECT user_id, elo_bucket, tc,
-    count(*) FILTER (WHERE d_i IS NOT NULL) AS n_pairs,
-    avg(d_i) AS achievable_gap,
-    var_samp(d_i) AS d_var_within  -- per-user within-game variance (informational; not used for between-user Cohen's d)
-  FROM rows
-  GROUP BY user_id, elo_bucket, tc
-  HAVING count(*) FILTER (WHERE d_i IS NOT NULL) >= 20
-),
-per_user_excl_sparse AS (
-  -- Sparse-cell exclusion mirrors universal handling.
-  SELECT * FROM per_user
-  WHERE NOT (elo_bucket = 2400 AND tc = 'classical')
-)
-SELECT
-  elo_bucket, tc,
-  count(*) AS n_users,
-  round(avg(achievable_gap)::numeric, 4) AS gap_mean,         -- proportion units (rendered as pp)
-  round(stddev_samp(achievable_gap)::numeric, 4) AS gap_sd,
-  round(var_samp(achievable_gap)::numeric, 6) AS gap_var,     -- between-user variance, feeds Cohen's d
-  round(percentile_cont(0.05) WITHIN GROUP (ORDER BY achievable_gap)::numeric, 4) AS gap_p05,
-  round(percentile_cont(0.25) WITHIN GROUP (ORDER BY achievable_gap)::numeric, 4) AS gap_p25,
-  round(percentile_cont(0.50) WITHIN GROUP (ORDER BY achievable_gap)::numeric, 4) AS gap_p50,
-  round(percentile_cont(0.75) WITHIN GROUP (ORDER BY achievable_gap)::numeric, 4) AS gap_p75,
-  round(percentile_cont(0.95) WITHIN GROUP (ORDER BY achievable_gap)::numeric, 4) AS gap_p95
-FROM per_user_excl_sparse
-GROUP BY elo_bucket, tc
-HAVING count(*) >= 10
-ORDER BY elo_bucket, CASE tc WHEN 'bullet' THEN 1 WHEN 'blitz' THEN 2 WHEN 'rapid' THEN 3 WHEN 'classical' THEN 4 END;
-```
-
-The full 5×4 cell table re-runs the same shape for the sparse `(2400, classical)` cell with an `n=N*` footnote. TC marginal, ELO marginal, and pooled overall come from re-aggregating `per_user_excl_sparse` over `tc` only / `elo_bucket` only / no group. `gap_mean` / `gap_var` columns feed Cohen's d per the canonical "Computing Cohen's d in SQL" recipe.
+Reference SQL (QA only): `references/queries.md` → "3.1.5 Achievable Score Gap".
 
 ##### Output
 
@@ -1425,7 +1156,7 @@ The full 5×4 cell table re-runs the same shape for the sparse `(2400, classical
    - **Cohort neutral band** = pooled `[gap_p25, gap_p75]` rendered in pp, rounded to whole pp. Symmetric `±Npp` only if `|pooled mean| < 1pp`; otherwise asymmetric (the engine-alignment null is at 0, not at the population median).
    - **Cohort domain bounds** = pooled `[gap_p05, gap_p95]` in pp, rounded to whole pp.
    - **Editorial tightening (memory `feedback_zone_band_judgement.md`)**: if pooled IQR is wide enough that meaningful effects would land in `typical`, tighten inside IQR so the tile actually paints red/green.
-   - **Recommendation routing**: live constants for this gauge are in `EndgamePerformanceSection.tsx` (or a generated module if Phase 85.1 moved them). Do **not** retune the 3.1.6 `SCORE_GAP_*` constants — that gauge measures a different gap.
+   - **Recommendation routing**: live constants for this gauge are the `achievable_score_gap` ZoneSpec in `app/services/endgame_zones.py` (generated as `ACHIEVABLE_SCORE_GAP_NEUTRAL_MIN/MAX`). Do **not** retune the 3.1.6 `SCORE_GAP_*` constants — that gauge measures a different gap.
 6. **Collapse verdict block**: TC d_max + ELO d_max from per-user `achievable_gap` distribution, plus a 5×4 heatmap of `gap_p50` (rendered as pp). Per the canonical thresholds (< 0.2 collapse / 0.2–0.5 review / ≥ 0.5 keep separate).
 
 #### 3.1.6 Endgame Score Gap and Timeline
@@ -1438,82 +1169,8 @@ The full 5×4 cell table re-runs the same shape for the sparse `(2400, classical
 - `diff` = eg_score − non_eg_score
 
 ##### Query
-```sql
-WITH selected_users AS (
-  SELECT u.id AS user_id, bsu.tc_bucket,
-         bsu.rating_bucket AS selection_rating_bucket,  -- LONGITUDINAL ONLY (ELO axis is game-time, per building block)
-         bsu.median_elo
-  FROM benchmark_selected_users bsu
-  JOIN benchmark_ingest_checkpoints bic
-    ON bic.lichess_username = bsu.lichess_username
-   AND bic.tc_bucket = bsu.tc_bucket
-   AND bic.status = 'completed'
-  JOIN users u ON u.lichess_username = bsu.lichess_username
-),
-endgame_game_ids AS (
-  SELECT game_id FROM game_positions
-  WHERE endgame_class IS NOT NULL
-  GROUP BY game_id HAVING count(*) >= 6
-),
-rows AS (
-  SELECT
-    g.user_id,
-    -- game-time ELO (canonical "user_elo_at_game / elo_bucket" building block; drop sub-800 via WHERE user_elo_at_game >= 800)
-    (CASE WHEN g.user_color::text='white' THEN g.white_rating ELSE g.black_rating END) AS user_elo_at_game,
-    (CASE WHEN (CASE WHEN g.user_color::text='white' THEN g.white_rating ELSE g.black_rating END) < 800 THEN NULL
-          WHEN (CASE WHEN g.user_color::text='white' THEN g.white_rating ELSE g.black_rating END) < 1200 THEN 800
-          WHEN (CASE WHEN g.user_color::text='white' THEN g.white_rating ELSE g.black_rating END) < 1600 THEN 1200
-          WHEN (CASE WHEN g.user_color::text='white' THEN g.white_rating ELSE g.black_rating END) < 2000 THEN 1600
-          WHEN (CASE WHEN g.user_color::text='white' THEN g.white_rating ELSE g.black_rating END) < 2400 THEN 2000
-          ELSE 2400 END) AS elo_bucket,
-    su.tc_bucket AS tc,
-    CASE
-      WHEN (g.result = '1-0' AND g.user_color = 'white')
-        OR (g.result = '0-1' AND g.user_color = 'black') THEN 1.0
-      WHEN g.result = '1/2-1/2' THEN 0.5
-      ELSE 0.0
-    END AS score,
-    (eg.game_id IS NOT NULL) AS has_endgame
-  FROM games g
-  JOIN selected_users su ON su.user_id = g.user_id
-  LEFT JOIN endgame_game_ids eg ON eg.game_id = g.id
-  WHERE g.rated AND NOT g.is_computer_game
-    AND g.time_control_bucket::text = su.tc_bucket
-    -- Equal-footing filter (universal — see "Equal-footing opponent filter (all subchapters)")
-    AND g.white_rating IS NOT NULL AND g.black_rating IS NOT NULL
-    AND abs(
-          (CASE WHEN g.user_color='white' THEN g.white_rating ELSE g.black_rating END)
-        - (CASE WHEN g.user_color='white' THEN g.black_rating ELSE g.white_rating END)
-        ) <= 100
-),
-per_user AS (
-  SELECT
-    user_id, elo_bucket, tc,
-    count(*) FILTER (WHERE has_endgame) AS eg_games,
-    count(*) FILTER (WHERE NOT has_endgame) AS non_eg_games,
-    avg(score) FILTER (WHERE has_endgame) AS eg_score,
-    avg(score) FILTER (WHERE NOT has_endgame) AS non_eg_score
-  FROM rows
-  GROUP BY user_id, elo_bucket, tc
-  HAVING count(*) FILTER (WHERE has_endgame) >= 30
-     AND count(*) FILTER (WHERE NOT has_endgame) >= 30
-)
-SELECT
-  elo_bucket, tc,
-  count(*) AS n_users,
-  round(avg(eg_score - non_eg_score)::numeric, 4) AS diff_mean,
-  round(stddev_samp(eg_score - non_eg_score)::numeric, 4) AS diff_std,
-  round(percentile_cont(0.05) WITHIN GROUP (ORDER BY eg_score - non_eg_score)::numeric, 4) AS diff_p05,
-  round(percentile_cont(0.25) WITHIN GROUP (ORDER BY eg_score - non_eg_score)::numeric, 4) AS diff_p25,
-  round(percentile_cont(0.50) WITHIN GROUP (ORDER BY eg_score - non_eg_score)::numeric, 4) AS diff_p50,
-  round(percentile_cont(0.75) WITHIN GROUP (ORDER BY eg_score - non_eg_score)::numeric, 4) AS diff_p75,
-  round(percentile_cont(0.95) WITHIN GROUP (ORDER BY eg_score - non_eg_score)::numeric, 4) AS diff_p95,
-  round(avg(eg_score)::numeric, 4) AS eg_mean,
-  round(avg(non_eg_score)::numeric, 4) AS non_eg_mean
-FROM per_user
-GROUP BY elo_bucket, tc
-ORDER BY elo_bucket, CASE tc WHEN 'bullet' THEN 1 WHEN 'blitz' THEN 2 WHEN 'rapid' THEN 3 WHEN 'classical' THEN 4 END;
-```
+
+Reference SQL (QA only): `references/queries.md` → "3.1.6 Endgame Score Gap and Timeline".
 
 ##### Output
 
@@ -1532,7 +1189,7 @@ ORDER BY elo_bucket, CASE tc WHEN 'bullet' THEN 1 WHEN 'blitz' THEN 2 WHEN 'rapi
 
 ### 3.2 Endgame Metrics and ELO
 
-Maps to the page H2 of the same name. Hosts the `EndgameScoreGapSection` (Conv/Par/Recov gauges + Endgame Skill) and `EndgameEloTimelineSection`.
+Maps to the page H2 of the same name. Hosts `EndgameMetricsByTcSection` (per-TC Conv/Par/Recov gauges in `EndgameMetricsByTcCard`) and `EndgameEloTimelineSection`.
 
 **ELO timeline note**: no current SKILL calibration. The ELO timeline visualizes per-user rating progression in endgame games — out of scope until a UI argument warrants a population-level overlay.
 
@@ -1628,136 +1285,8 @@ Cross-user Pearson correlation between **per-user mean eval at endgame entry** (
 Unweighted mean of the non-empty per-bucket rates. A user with all three buckets has `skill = (conv + par + recov) / 3`; one with only parity has `skill = parity_rate`. Sample floor: ≥20 endgame games per user per cell + ≥2 of 3 buckets non-empty (defensive — with eval coverage near 100% essentially every user has all three).
 
 ##### Query
-```sql
-WITH selected_users AS (
-  SELECT u.id AS user_id, bsu.tc_bucket,
-         bsu.rating_bucket AS selection_rating_bucket,  -- LONGITUDINAL ONLY (ELO axis is game-time, per building block)
-         bsu.median_elo
-  FROM benchmark_selected_users bsu
-  JOIN benchmark_ingest_checkpoints bic
-    ON bic.lichess_username = bsu.lichess_username
-   AND bic.tc_bucket = bsu.tc_bucket
-   AND bic.status = 'completed'
-  JOIN users u ON u.lichess_username = bsu.lichess_username
-),
-first_endgame AS (
-  SELECT game_id, min(ply) AS entry_ply
-  FROM game_positions
-  WHERE endgame_class IS NOT NULL
-  GROUP BY game_id HAVING count(*) >= 6
-),
-bucketed AS (
-  SELECT
-    g.user_id,
-    -- game-time ELO (canonical "user_elo_at_game / elo_bucket" building block; drop sub-800 via WHERE user_elo_at_game >= 800)
-    (CASE WHEN g.user_color::text='white' THEN g.white_rating ELSE g.black_rating END) AS user_elo_at_game,
-    (CASE WHEN (CASE WHEN g.user_color::text='white' THEN g.white_rating ELSE g.black_rating END) < 800 THEN NULL
-          WHEN (CASE WHEN g.user_color::text='white' THEN g.white_rating ELSE g.black_rating END) < 1200 THEN 800
-          WHEN (CASE WHEN g.user_color::text='white' THEN g.white_rating ELSE g.black_rating END) < 1600 THEN 1200
-          WHEN (CASE WHEN g.user_color::text='white' THEN g.white_rating ELSE g.black_rating END) < 2000 THEN 1600
-          WHEN (CASE WHEN g.user_color::text='white' THEN g.white_rating ELSE g.black_rating END) < 2400 THEN 2000
-          ELSE 2400 END) AS elo_bucket,
-    su.tc_bucket AS tc,
-    CASE
-      WHEN (g.result='1-0' AND g.user_color='white')
-        OR (g.result='0-1' AND g.user_color='black') THEN 1.0
-      WHEN g.result='1/2-1/2' THEN 0.5
-      ELSE 0.0
-    END AS score,
-    CASE WHEN g.user_color='white' THEN 1 ELSE -1 END AS color_sign,
-    ep.eval_cp   AS entry_eval_cp,    -- white-perspective Stockfish eval at endgame entry
-    ep.eval_mate AS entry_eval_mate   -- white-perspective mate-in-N at endgame entry
-  FROM games g
-  JOIN selected_users su ON su.user_id = g.user_id
-  JOIN first_endgame fe ON fe.game_id = g.id
-  JOIN game_positions ep
-    ON ep.game_id = g.id AND ep.ply = fe.entry_ply
-  WHERE g.rated AND NOT g.is_computer_game
-    AND g.time_control_bucket::text = su.tc_bucket
-    -- Equal-footing filter (universal — see "Equal-footing opponent filter (all subchapters)")
-    AND g.white_rating IS NOT NULL AND g.black_rating IS NOT NULL
-    AND abs(
-          (CASE WHEN g.user_color='white' THEN g.white_rating ELSE g.black_rating END)
-        - (CASE WHEN g.user_color='white' THEN g.black_rating ELSE g.white_rating END)
-        ) <= 100
-),
-classified AS (
-  -- Mirrors _classify_endgame_bucket: mate first (forces conv/recov), then cp vs ±100, NULL = parity.
-  SELECT
-    user_id, elo_bucket, tc, score,
-    CASE
-      WHEN entry_eval_mate IS NOT NULL AND (entry_eval_mate * color_sign) > 0 THEN 'conversion'
-      WHEN entry_eval_mate IS NOT NULL AND (entry_eval_mate * color_sign) < 0 THEN 'recovery'
-      WHEN entry_eval_cp   IS NOT NULL AND (entry_eval_cp   * color_sign) >=  100 THEN 'conversion'
-      WHEN entry_eval_cp   IS NOT NULL AND (entry_eval_cp   * color_sign) <= -100 THEN 'recovery'
-      ELSE 'parity'
-    END AS bucket,
-    CASE
-      WHEN entry_eval_mate IS NOT NULL AND (entry_eval_mate * color_sign) > 0
-        THEN CASE WHEN score = 1.0 THEN 1.0 ELSE 0.0 END
-      WHEN entry_eval_mate IS NOT NULL AND (entry_eval_mate * color_sign) < 0
-        THEN CASE WHEN score >= 0.5 THEN 1.0 ELSE 0.0 END
-      WHEN entry_eval_cp   IS NOT NULL AND (entry_eval_cp   * color_sign) >=  100
-        THEN CASE WHEN score = 1.0 THEN 1.0 ELSE 0.0 END
-      WHEN entry_eval_cp   IS NOT NULL AND (entry_eval_cp   * color_sign) <= -100
-        THEN CASE WHEN score >= 0.5 THEN 1.0 ELSE 0.0 END
-      ELSE score
-    END AS bucket_contribution
-  FROM bucketed
-),
-per_user_bucket AS (
-  SELECT user_id, elo_bucket, tc, bucket,
-         count(*) AS games,
-         avg(bucket_contribution) AS bucket_rate
-  FROM classified
-  GROUP BY user_id, elo_bucket, tc, bucket
-),
-per_user_cell AS (
-  -- pivot per-user buckets to wide form, plus skill
-  SELECT
-    user_id, elo_bucket, tc,
-    sum(games) AS total_games,
-    count(*) AS buckets_used,
-    max(bucket_rate) FILTER (WHERE bucket = 'conversion') AS conv_rate,
-    max(bucket_rate) FILTER (WHERE bucket = 'parity')     AS par_rate,
-    max(bucket_rate) FILTER (WHERE bucket = 'recovery')   AS recov_rate,
-    avg(bucket_rate) AS skill
-  FROM per_user_bucket
-  GROUP BY user_id, elo_bucket, tc
-  HAVING sum(games) >= 20 AND count(*) >= 2
-)
-SELECT
-  elo_bucket, tc,
-  count(*) AS n_users,
-  -- Endgame Skill
-  round(percentile_cont(0.25) WITHIN GROUP (ORDER BY skill)::numeric, 4) AS skill_p25,
-  round(percentile_cont(0.50) WITHIN GROUP (ORDER BY skill)::numeric, 4) AS skill_p50,
-  round(percentile_cont(0.75) WITHIN GROUP (ORDER BY skill)::numeric, 4) AS skill_p75,
-  -- Conversion (per-user, only users with conversion games)
-  count(*) FILTER (WHERE conv_rate IS NOT NULL) AS n_conv,
-  round(percentile_cont(0.50) WITHIN GROUP (ORDER BY conv_rate)::numeric, 4) AS conv_p50,
-  round(avg(conv_rate)::numeric, 4) AS conv_mean,
-  round(var_samp(conv_rate)::numeric, 6) AS conv_var,
-  -- Parity
-  count(*) FILTER (WHERE par_rate IS NOT NULL) AS n_par,
-  round(percentile_cont(0.50) WITHIN GROUP (ORDER BY par_rate)::numeric, 4) AS par_p50,
-  round(avg(par_rate)::numeric, 4) AS par_mean,
-  round(var_samp(par_rate)::numeric, 6) AS par_var,
-  -- Recovery
-  count(*) FILTER (WHERE recov_rate IS NOT NULL) AS n_recov,
-  round(percentile_cont(0.50) WITHIN GROUP (ORDER BY recov_rate)::numeric, 4) AS recov_p50,
-  round(avg(recov_rate)::numeric, 4) AS recov_mean,
-  round(var_samp(recov_rate)::numeric, 6) AS recov_var,
-  -- Skill mean/var for Cohen's d
-  round(avg(skill)::numeric, 4) AS skill_mean,
-  round(var_samp(skill)::numeric, 6) AS skill_var
-FROM per_user_cell
-GROUP BY elo_bucket, tc
-HAVING count(*) >= 10
-ORDER BY elo_bucket, CASE tc WHEN 'bullet' THEN 1 WHEN 'blitz' THEN 2 WHEN 'rapid' THEN 3 WHEN 'classical' THEN 4 END;
-```
 
-The `mean` / `var_samp` columns feed Cohen's d. Pooled rates come from re-aggregating the same `per_user_cell` CTE without the `elo_bucket, tc` GROUP BY.
+Reference SQL (QA only): `references/queries.md` → "3.2.1 Conversion / Parity / Recovery + Endgame Skill".
 
 ##### Output (one block per metric: Conversion, Parity, Recovery, Endgame Skill)
 
@@ -1765,10 +1294,10 @@ The `mean` / `var_samp` columns feed Cohen's d. Pooled rates come from re-aggreg
 2. **TC marginal** + **ELO marginal** percentile tables.
 3. **Pooled overall** — feeds the gauge neutral-zone recommendation.
 4. **Recommendations** per metric:
-   - `Conversion` neutral band = pooled `[conv_p25, conv_p75]` rounded. Compare to `FIXED_GAUGE_ZONES.conversion` (`[0.65, 0.75]`).
-   - `Parity` neutral band = same. Compare to `[0.45, 0.55]`.
-   - `Recovery` neutral band = same. Compare to `[0.25, 0.35]`.
-   - `Endgame Skill` neutral band = pooled `[skill_p25, skill_p75]`. Compare to `ENDGAME_SKILL_ZONES`.
+   - `Conversion` neutral band = pooled `[conv_p25, conv_p75]` rounded, plus the per-TC IQR. Compare to the live per-TC `TC_METRIC_BANDS` in `app/services/endgame_zones.py` (re-grep at run time).
+   - `Parity` neutral band = same.
+   - `Recovery` neutral band = same.
+   - `Endgame Skill` is informational only (composite retracted; the generator emits no verdict). Report its distribution and recommend no zone.
    - For each, if the cell-level p50 spread across cells exceeds `2 × (band width)`, the pooled band cannot center every cell — flag in the verdict.
 5. **Collapse verdict block** per metric.
 
@@ -1776,12 +1305,12 @@ The `mean` / `var_samp` columns feed Cohen's d. Pooled rates come from re-aggreg
 
 #### 3.2.2 Per-bucket ΔES Score Gap (Section 2 — Phase 87.2)
 
-**Question:** How does the per-span ΔES Score Gap, partitioned by the **eval-entry bucket** `_classify_endgame_bucket(eval_cp, eval_mate, user_color)` (conversion / parity / recovery), distribute per user per bucket? What is the per-axis (TC × ELO) Cohen's-d collapse verdict per bucket? What bands should land in `ZONE_REGISTRY["section2_score_gap_{conv,parity,recov,skill}"]`?
+**Question:** How does the per-span ΔES Score Gap, partitioned by the **eval-entry bucket** `_classify_endgame_bucket(eval_cp, eval_mate, user_color)` (conversion / parity / recovery), distribute per user per bucket? What is the per-axis (TC × ELO) Cohen's-d collapse verdict per bucket? How do the live bands in `ZONE_REGISTRY["score_gap_{conv,parity,recov}"]` compare?
 
 **User-facing terminology** (per CONTEXT.md D-07):
 - Card row labels: **"Conversion Score Gap"** / **"Parity Score Gap"** / **"Recovery Score Gap"** / **"Skill Score Gap"**.
 - Glossary umbrella: **"Section 2 Score Gap"** (disambiguates from "Endgame Score Gap", "Achievable Score Gap", and "Endgame Type Score Gap").
-- Internal identifiers: `section2_score_gap_{conv,parity,recov,skill}` (snake_case, preserves grep-ability).
+- Internal identifiers: `score_gap_{conv,parity,recov}` (`ZONE_REGISTRY` keys; per-TC overrides in `TC_METRIC_BANDS`). There is no skill key.
 
 **Per-user metric definition (per bucket):**
 - One row per qualifying span: `(game_id, endgame_class, span_min_ply)` with ≥ `ENDGAME_PLY_THRESHOLD` (= 6) plies.
@@ -1803,165 +1332,18 @@ Apply the same 3-level pattern as §3.4.2: `d < 0.2` collapse, `0.2 ≤ d < 0.5`
 - If observed verdicts match this prediction, divergent per-bucket bands are the right output — do not force a single global band.
 
 **Decision rule for updating zone bands:**
-- If both axes collapse for a bucket: set `ZONE_REGISTRY["section2_score_gap_<bucket>"]` to a single pooled [p25, p75] band.
+- If both axes collapse for a bucket: recommend a single pooled [p25, p75] band for `ZONE_REGISTRY["score_gap_<bucket>"]`.
 - If the ELO axis "keeps separate" for a bucket: decide whether to stratify (this phase keeps the scalar MetricId — per-ELO stratification deferred to a follow-on phase).
 - Per memory `feedback_zone_band_judgement.md`: tighten the band when small effects are meaningful, even if Cohen's d straddles the collapse threshold.
 - Per memory `feedback_llm_significance_signal.md`: do not add a separate sig-test signal to the LLM payload. Tighten the cohort band instead.
 
 **Output instructions:**
-1. Update the 4 placeholder ZoneSpec entries in `app/services/endgame_zones.py` with calibrated `(typical_lower, typical_upper)` tuples for each bucket: `ZONE_REGISTRY["section2_score_gap_conv"]`, `ZONE_REGISTRY["section2_score_gap_parity"]`, `ZONE_REGISTRY["section2_score_gap_recov"]`, `ZONE_REGISTRY["section2_score_gap_skill"]`.
-2. Run `uv run python scripts/gen_endgame_zones_ts.py` and commit the regenerated `frontend/src/generated/endgameZones.ts` (drift gate enforces parity).
-3. Add the per-bucket IQR table and collapse verdict to `reports/benchmark/benchmarks-latest.md` under a new §3.2.2 block; archive the previous report per the "Report file layout" rotation rule.
-
-**Note:** Actually running the benchmark query is OUT OF SCOPE for the Phase 87.2 Plan 01 ROADMAP gate — this subchapter documents the method so a future calibration session can produce real bands. Placeholder ±5pp bands from Plan 01 Task 1 remain in effect until then; the codegen drift gate from Plan 01 Task 2 ensures any band update flows through to `endgameZones.ts` automatically.
+1. Report the per-bucket IQR table and collapse verdict under §3.2.2.
+2. Recommend `(typical_lower, typical_upper)` per bucket against the live `ZONE_REGISTRY["score_gap_{conv,parity,recov}"]` bands and the per-TC `TC_METRIC_BANDS` in `app/services/endgame_zones.py`.
 
 ##### Query
 
-Equal-footing opponent filter (`abs(opp_rating - user_rating) <= 100`) preserved per memory `feedback_260503-fef` (universal as of 2026-05-03).
-
-```sql
-WITH selected_users AS (
-  SELECT u.id AS user_id, bsu.tc_bucket,
-         bsu.rating_bucket AS selection_rating_bucket,  -- LONGITUDINAL ONLY (ELO axis is game-time, per building block)
-         bsu.median_elo
-  FROM benchmark_selected_users bsu
-  JOIN benchmark_ingest_checkpoints bic
-    ON bic.lichess_username = bsu.lichess_username
-   AND bic.tc_bucket = bsu.tc_bucket
-   AND bic.status = 'completed'
-  JOIN users u ON u.lichess_username = bsu.lichess_username
-),
-spans AS (
-  -- One row per (game_id, endgame_class) span >= 6 plies, with entry eval at first ply.
-  SELECT
-    gp.game_id,
-    gp.endgame_class,
-    (array_agg(gp.eval_cp   ORDER BY gp.ply ASC))[1] AS entry_eval_cp,
-    (array_agg(gp.eval_mate ORDER BY gp.ply ASC))[1] AS entry_eval_mate,
-    min(gp.ply) AS span_min_ply
-  FROM game_positions gp
-  JOIN games g           ON g.id = gp.game_id
-  JOIN selected_users su ON su.user_id = g.user_id
-  WHERE gp.endgame_class IS NOT NULL
-    AND g.rated AND NOT g.is_computer_game
-    AND g.time_control_bucket::text = su.tc_bucket
-    AND g.white_rating IS NOT NULL AND g.black_rating IS NOT NULL
-    AND abs(
-          (CASE WHEN g.user_color='white' THEN g.white_rating ELSE g.black_rating END)
-        - (CASE WHEN g.user_color='white' THEN g.black_rating ELSE g.white_rating END)
-        ) <= 100
-  GROUP BY gp.game_id, gp.endgame_class
-  HAVING count(gp.ply) >= 6
-),
-spans_with_next AS (
-  SELECT
-    s.*,
-    lead(s.entry_eval_cp)   OVER (PARTITION BY s.game_id ORDER BY s.span_min_ply) AS next_eval_cp,
-    lead(s.entry_eval_mate) OVER (PARTITION BY s.game_id ORDER BY s.span_min_ply) AS next_eval_mate
-  FROM spans s
-),
-gap_rows AS (
-  -- gap_span = exit_score - ES_entry. Bucket derived from entry eval per _classify_endgame_bucket.
-  SELECT
-    g.user_id,
-    -- game-time ELO (canonical "user_elo_at_game / elo_bucket" building block)
-    (CASE WHEN g.user_color::text='white' THEN g.white_rating ELSE g.black_rating END) AS user_elo_at_game,
-    (CASE WHEN (CASE WHEN g.user_color::text='white' THEN g.white_rating ELSE g.black_rating END) < 800 THEN NULL
-          WHEN (CASE WHEN g.user_color::text='white' THEN g.white_rating ELSE g.black_rating END) < 1200 THEN 800
-          WHEN (CASE WHEN g.user_color::text='white' THEN g.white_rating ELSE g.black_rating END) < 1600 THEN 1200
-          WHEN (CASE WHEN g.user_color::text='white' THEN g.white_rating ELSE g.black_rating END) < 2000 THEN 1600
-          WHEN (CASE WHEN g.user_color::text='white' THEN g.white_rating ELSE g.black_rating END) < 2400 THEN 2000
-          ELSE 2400 END) AS elo_bucket,
-    su.tc_bucket,
-    -- Bucket assignment: mirrors _classify_endgame_bucket(eval_cp, eval_mate, user_color)
-    CASE
-      WHEN swn.entry_eval_mate IS NOT NULL THEN
-        CASE WHEN (swn.entry_eval_mate * (CASE WHEN g.user_color='white' THEN 1 ELSE -1 END)) > 0
-          THEN 'conversion' ELSE 'recovery' END
-      WHEN swn.entry_eval_cp IS NOT NULL THEN
-        CASE
-          WHEN (swn.entry_eval_cp * (CASE WHEN g.user_color='white' THEN 1 ELSE -1 END)) >= 100 THEN 'conversion'
-          WHEN (swn.entry_eval_cp * (CASE WHEN g.user_color='white' THEN 1 ELSE -1 END)) <= -100 THEN 'recovery'
-          ELSE 'parity'
-        END
-      ELSE 'parity'  -- NULL eval -> parity
-    END AS bucket,
-    (
-      CASE
-        WHEN next_eval_mate IS NOT NULL
-          THEN CASE WHEN (next_eval_mate * (CASE WHEN g.user_color='white' THEN 1 ELSE -1 END)) > 0 THEN 1.0 ELSE 0.0 END
-        WHEN next_eval_cp IS NOT NULL
-          THEN 1.0 / (1.0 + exp(-0.00368208 * (next_eval_cp * (CASE WHEN g.user_color='white' THEN 1 ELSE -1 END))))
-        ELSE
-          CASE
-            WHEN (g.result='1-0' AND g.user_color='white')
-              OR (g.result='0-1' AND g.user_color='black') THEN 1.0
-            WHEN g.result='1/2-1/2' THEN 0.5
-            ELSE 0.0
-          END
-      END
-    )
-    -
-    (
-      CASE
-        WHEN swn.entry_eval_mate IS NOT NULL
-          THEN CASE WHEN (swn.entry_eval_mate * (CASE WHEN g.user_color='white' THEN 1 ELSE -1 END)) > 0 THEN 1.0 ELSE 0.0 END
-        WHEN swn.entry_eval_cp IS NOT NULL
-          THEN 1.0 / (1.0 + exp(-0.00368208 * (swn.entry_eval_cp * (CASE WHEN g.user_color='white' THEN 1 ELSE -1 END))))
-        ELSE NULL
-      END
-    ) AS gap_span
-  FROM spans_with_next swn
-  JOIN games g           ON g.id = swn.game_id
-  JOIN selected_users su ON su.user_id = g.user_id
-  WHERE (swn.entry_eval_cp IS NOT NULL OR swn.entry_eval_mate IS NOT NULL)
-    AND (CASE WHEN g.user_color::text='white' THEN g.white_rating ELSE g.black_rating END) >= 800  -- drop sub-800
-),
-per_user_bucket AS (
-  SELECT
-    user_id, elo_bucket, tc_bucket, bucket,
-    avg(gap_span)  AS mean_gap,
-    count(*)       AS n_spans
-  FROM gap_rows
-  WHERE gap_span IS NOT NULL
-    AND elo_bucket IS NOT NULL
-    AND NOT (elo_bucket = 2400 AND tc_bucket = 'classical')  -- sparse-cell exclusion (game-time bucket)
-  GROUP BY user_id, elo_bucket, tc_bucket, bucket
-  HAVING count(*) >= 20         -- sample floor: >= 20 qualifying spans per user per bucket
-)
-SELECT
-  bucket,
-  elo_bucket,
-  tc_bucket,
-  count(*)                                                          AS n_users,
-  round(avg(mean_gap)::numeric,              4)                    AS mean,
-  round(stddev_samp(mean_gap)::numeric,      4)                    AS sd,
-  round(percentile_cont(0.05) WITHIN GROUP (ORDER BY mean_gap)::numeric, 4) AS p05,
-  round(percentile_cont(0.25) WITHIN GROUP (ORDER BY mean_gap)::numeric, 4) AS p25,
-  round(percentile_cont(0.50) WITHIN GROUP (ORDER BY mean_gap)::numeric, 4) AS p50,
-  round(percentile_cont(0.75) WITHIN GROUP (ORDER BY mean_gap)::numeric, 4) AS p75,
-  round(percentile_cont(0.95) WITHIN GROUP (ORDER BY mean_gap)::numeric, 4) AS p95
-FROM per_user_bucket
-GROUP BY bucket, elo_bucket, tc_bucket
-ORDER BY bucket, elo_bucket, tc_bucket;
-```
-
-Run a second pass for the pooled-across-cells distribution (sparse-cell exclusion already in CTE):
-
-```sql
--- Pooled per-bucket (all cells combined, sparse-cell exclusion applied in CTE above).
-SELECT
-  bucket,
-  count(*)                                                          AS n_users,
-  round(avg(mean_gap)::numeric,              4)                    AS pooled_mean,
-  round(stddev_samp(mean_gap)::numeric,      4)                    AS pooled_sd,
-  round(percentile_cont(0.25) WITHIN GROUP (ORDER BY mean_gap)::numeric, 4) AS p25,
-  round(percentile_cont(0.50) WITHIN GROUP (ORDER BY mean_gap)::numeric, 4) AS p50,
-  round(percentile_cont(0.75) WITHIN GROUP (ORDER BY mean_gap)::numeric, 4) AS p75
-FROM per_user_bucket
-GROUP BY bucket
-ORDER BY bucket;
-```
+Reference SQL (QA only): `references/queries.md` → "3.2.2 Per-bucket ΔES Score Gap (Section 2 — Phase 87.2)".
 
 ##### Output
 
@@ -2011,7 +1393,7 @@ Reuse the §3.2.1 per-user `conv_p50` / `recov_p50` cell tables and marginals, a
 
 ### 3.3 Time Pressure
 
-Maps to the page H2 of the same name. Hosts `EndgameClockPressureSection` + `ClockDiffTimelineChart` + `EndgameTimePressureSection`.
+Maps to the page H2 of the same name. Hosts `EndgameTimePressureSection` (per-TC `EndgameTimePressureCard` with `ScoreGapByTimePressureChart`) and `EndgameClockDiffOverTimeChart`.
 
 #### 3.3.1 Clock pressure at endgame entry
 
@@ -2024,118 +1406,8 @@ Maps to the page H2 of the same name. Hosts `EndgameClockPressureSection` + `Clo
 The backend scans ply arrays for the first non-NULL clock per parity. SQL approximates by taking clocks at `entry_ply` and `entry_ply + 1` and routing by parity + user_color. This misses NULL-clock plies; small systematic bias vs backend logic.
 
 ##### Query
-```sql
-WITH selected_users AS (
-  SELECT u.id AS user_id, bsu.tc_bucket,
-         bsu.rating_bucket AS selection_rating_bucket,  -- LONGITUDINAL ONLY (ELO axis is game-time, per building block)
-         bsu.median_elo
-  FROM benchmark_selected_users bsu
-  JOIN benchmark_ingest_checkpoints bic
-    ON bic.lichess_username = bsu.lichess_username
-   AND bic.tc_bucket = bsu.tc_bucket
-   AND bic.status = 'completed'
-  JOIN users u ON u.lichess_username = bsu.lichess_username
-),
-first_endgame AS (
-  SELECT game_id, min(ply) AS entry_ply
-  FROM game_positions
-  WHERE endgame_class IS NOT NULL
-  GROUP BY game_id HAVING count(*) >= 6
-),
-clock_raw AS (
-  SELECT
-    g.id AS game_id, g.user_id, g.user_color,
-    -- game-time ELO (canonical "user_elo_at_game / elo_bucket" building block; drop sub-800 via WHERE user_elo_at_game >= 800)
-    (CASE WHEN g.user_color::text='white' THEN g.white_rating ELSE g.black_rating END) AS user_elo_at_game,
-    (CASE WHEN (CASE WHEN g.user_color::text='white' THEN g.white_rating ELSE g.black_rating END) < 800 THEN NULL
-          WHEN (CASE WHEN g.user_color::text='white' THEN g.white_rating ELSE g.black_rating END) < 1200 THEN 800
-          WHEN (CASE WHEN g.user_color::text='white' THEN g.white_rating ELSE g.black_rating END) < 1600 THEN 1200
-          WHEN (CASE WHEN g.user_color::text='white' THEN g.white_rating ELSE g.black_rating END) < 2000 THEN 1600
-          WHEN (CASE WHEN g.user_color::text='white' THEN g.white_rating ELSE g.black_rating END) < 2400 THEN 2000
-          ELSE 2400 END) AS elo_bucket,
-    su.tc_bucket AS tc,
-    g.base_time_seconds, g.termination, g.result,
-    fe.entry_ply,
-    p1.clock_seconds AS clk_at_entry,
-    p2.clock_seconds AS clk_at_entry_plus_1
-  FROM games g
-  JOIN selected_users su ON su.user_id = g.user_id
-  JOIN first_endgame fe ON fe.game_id = g.id
-  LEFT JOIN game_positions p1 ON p1.game_id = g.id AND p1.ply = fe.entry_ply
-  LEFT JOIN game_positions p2 ON p2.game_id = g.id AND p2.ply = fe.entry_ply + 1
-  WHERE g.rated AND NOT g.is_computer_game
-    AND g.time_control_bucket::text = su.tc_bucket
-    -- Equal-footing filter (universal — see "Equal-footing opponent filter (all subchapters)")
-    AND g.white_rating IS NOT NULL AND g.black_rating IS NOT NULL
-    AND abs(
-          (CASE WHEN g.user_color='white' THEN g.white_rating ELSE g.black_rating END)
-        - (CASE WHEN g.user_color='white' THEN g.black_rating ELSE g.white_rating END)
-        ) <= 100
-),
-routed AS (
-  SELECT
-    user_id, elo_bucket, tc, base_time_seconds, termination, result, user_color,
-    CASE
-      WHEN user_color='white' AND entry_ply % 2 = 0 THEN clk_at_entry
-      WHEN user_color='white' AND entry_ply % 2 = 1 THEN clk_at_entry_plus_1
-      WHEN user_color='black' AND entry_ply % 2 = 1 THEN clk_at_entry
-      ELSE clk_at_entry_plus_1
-    END AS user_clk,
-    CASE
-      WHEN user_color='white' AND entry_ply % 2 = 0 THEN clk_at_entry_plus_1
-      WHEN user_color='white' AND entry_ply % 2 = 1 THEN clk_at_entry
-      WHEN user_color='black' AND entry_ply % 2 = 1 THEN clk_at_entry_plus_1
-      ELSE clk_at_entry
-    END AS opp_clk
-  FROM clock_raw
-),
-clean AS (
-  SELECT user_id, elo_bucket, tc, termination, result, user_color,
-         user_clk, opp_clk, base_time_seconds,
-         (user_clk - opp_clk) / NULLIF(base_time_seconds, 0) * 100 AS diff_pct
-  FROM routed
-  WHERE user_clk IS NOT NULL AND opp_clk IS NOT NULL
-    AND base_time_seconds > 0
-    AND user_clk <= 2.0 * base_time_seconds
-    AND opp_clk <= 2.0 * base_time_seconds
-),
-per_user_cell AS (
-  SELECT
-    user_id, elo_bucket, tc,
-    count(*) AS games,
-    avg(diff_pct) AS avg_diff_pct,
-    sum(CASE WHEN termination='timeout' AND (
-              (result='1-0' AND user_color='white') OR
-              (result='0-1' AND user_color='black')) THEN 1 ELSE 0 END) AS timeout_wins,
-    sum(CASE WHEN termination='timeout' AND (
-              (result='1-0' AND user_color='black') OR
-              (result='0-1' AND user_color='white')) THEN 1 ELSE 0 END) AS timeout_losses
-  FROM clean
-  GROUP BY user_id, elo_bucket, tc
-  HAVING count(*) >= 20
-)
-SELECT
-  elo_bucket, tc,
-  count(*) AS n_users,
-  -- Clock diff %
-  round(avg(avg_diff_pct)::numeric, 2) AS pct_mean,
-  round(var_samp(avg_diff_pct)::numeric, 2) AS pct_var,
-  round(percentile_cont(0.05) WITHIN GROUP (ORDER BY avg_diff_pct)::numeric, 2) AS pct_p05,
-  round(percentile_cont(0.25) WITHIN GROUP (ORDER BY avg_diff_pct)::numeric, 2) AS pct_p25,
-  round(percentile_cont(0.50) WITHIN GROUP (ORDER BY avg_diff_pct)::numeric, 2) AS pct_p50,
-  round(percentile_cont(0.75) WITHIN GROUP (ORDER BY avg_diff_pct)::numeric, 2) AS pct_p75,
-  round(percentile_cont(0.95) WITHIN GROUP (ORDER BY avg_diff_pct)::numeric, 2) AS pct_p95,
-  -- Net timeout
-  round(avg((timeout_wins - timeout_losses)::numeric / games * 100), 2) AS net_mean,
-  round(var_samp((timeout_wins - timeout_losses)::numeric / games * 100), 2) AS net_var,
-  round(percentile_cont(0.25) WITHIN GROUP (ORDER BY (timeout_wins - timeout_losses)::numeric / games * 100)::numeric, 2) AS net_p25,
-  round(percentile_cont(0.50) WITHIN GROUP (ORDER BY (timeout_wins - timeout_losses)::numeric / games * 100)::numeric, 2) AS net_p50,
-  round(percentile_cont(0.75) WITHIN GROUP (ORDER BY (timeout_wins - timeout_losses)::numeric / games * 100)::numeric, 2) AS net_p75
-FROM per_user_cell
-GROUP BY elo_bucket, tc
-HAVING count(*) >= 10
-ORDER BY elo_bucket, CASE tc WHEN 'bullet' THEN 1 WHEN 'blitz' THEN 2 WHEN 'rapid' THEN 3 WHEN 'classical' THEN 4 END;
-```
+
+Reference SQL (QA only): `references/queries.md` → "3.3.1 Clock pressure at endgame entry".
 
 ##### Output
 
@@ -2193,8 +1465,6 @@ Note: the gap fraction here is `(user_clk - opp_clk) / base_clock` (dimensionles
 
 **Output destination:** `app/services/endgame_zones.py` `ZONE_REGISTRY["clock_gap_pct"]` as a single ZoneSpec with `direction="higher_is_better"`. The zone constants are emitted as flat constants `CLOCK_GAP_NEUTRAL_MIN` / `CLOCK_GAP_NEUTRAL_MAX` in `frontend/src/generated/endgameZones.ts`, following the same pattern as `NEUTRAL_PCT_THRESHOLD`.
 
-**Placeholder note:** the initial scaffolded values are `(-0.05, 0.05)` (matching `NEUTRAL_PCT_THRESHOLD`) and will be replaced with the benchmark-derived IQR band (pooled `[gap_p25, gap_p75]` across all cells) after running this metric on the benchmark DB.
-
 #### 3.3.2 Time pressure vs performance
 
 **Question:** Does the time-pressure-vs-performance curve collapse across (TC × ELO), or does it need stratified display?
@@ -2202,82 +1472,8 @@ Note: the gap fraction here is `(user_clk - opp_clk) / base_clock` (dimensionles
 The metric is per-time-bucket (10 buckets, 0–100% time-remaining), not a single per-user value, so the verdict is computed slightly differently.
 
 ##### Query
-```sql
-WITH selected_users AS (
-  SELECT u.id AS user_id, bsu.tc_bucket,
-         bsu.rating_bucket AS selection_rating_bucket,  -- LONGITUDINAL ONLY (ELO axis is game-time, per building block)
-         bsu.median_elo
-  FROM benchmark_selected_users bsu
-  JOIN benchmark_ingest_checkpoints bic
-    ON bic.lichess_username = bsu.lichess_username
-   AND bic.tc_bucket = bsu.tc_bucket
-   AND bic.status = 'completed'
-  JOIN users u ON u.lichess_username = bsu.lichess_username
-),
-first_endgame AS (
-  SELECT game_id, min(ply) AS entry_ply
-  FROM game_positions
-  WHERE endgame_class IS NOT NULL
-  GROUP BY game_id HAVING count(*) >= 6
-),
-clock_raw AS (
-  SELECT
-    g.id AS game_id, g.user_color,
-    -- game-time ELO (canonical "user_elo_at_game / elo_bucket" building block; drop sub-800 via WHERE user_elo_at_game >= 800)
-    (CASE WHEN g.user_color::text='white' THEN g.white_rating ELSE g.black_rating END) AS user_elo_at_game,
-    (CASE WHEN (CASE WHEN g.user_color::text='white' THEN g.white_rating ELSE g.black_rating END) < 800 THEN NULL
-          WHEN (CASE WHEN g.user_color::text='white' THEN g.white_rating ELSE g.black_rating END) < 1200 THEN 800
-          WHEN (CASE WHEN g.user_color::text='white' THEN g.white_rating ELSE g.black_rating END) < 1600 THEN 1200
-          WHEN (CASE WHEN g.user_color::text='white' THEN g.white_rating ELSE g.black_rating END) < 2000 THEN 1600
-          WHEN (CASE WHEN g.user_color::text='white' THEN g.white_rating ELSE g.black_rating END) < 2400 THEN 2000
-          ELSE 2400 END) AS elo_bucket,
-    su.tc_bucket AS tc,
-    g.base_time_seconds, g.result,
-    fe.entry_ply,
-    p1.clock_seconds AS clk_at_entry,
-    p2.clock_seconds AS clk_at_entry_plus_1
-  FROM games g
-  JOIN selected_users su ON su.user_id = g.user_id
-  JOIN first_endgame fe ON fe.game_id = g.id
-  LEFT JOIN game_positions p1 ON p1.game_id = g.id AND p1.ply = fe.entry_ply
-  LEFT JOIN game_positions p2 ON p2.game_id = g.id AND p2.ply = fe.entry_ply + 1
-  WHERE g.rated AND NOT g.is_computer_game
-    AND g.time_control_bucket::text = su.tc_bucket
-    AND g.base_time_seconds > 0
-    -- Equal-footing filter (universal — see "Equal-footing opponent filter (all subchapters)")
-    AND g.white_rating IS NOT NULL AND g.black_rating IS NOT NULL
-    AND abs(
-          (CASE WHEN g.user_color='white' THEN g.white_rating ELSE g.black_rating END)
-        - (CASE WHEN g.user_color='white' THEN g.black_rating ELSE g.white_rating END)
-        ) <= 100
-),
-game_pct AS (
-  SELECT
-    elo_bucket, tc,
-    CASE
-      WHEN (result='1-0' AND user_color='white')
-        OR (result='0-1' AND user_color='black') THEN 1.0
-      WHEN result='1/2-1/2' THEN 0.5
-      ELSE 0.0
-    END AS user_score,
-    (CASE
-       WHEN user_color='white' AND entry_ply % 2 = 0 THEN clk_at_entry
-       WHEN user_color='white' AND entry_ply % 2 = 1 THEN clk_at_entry_plus_1
-       WHEN user_color='black' AND entry_ply % 2 = 1 THEN clk_at_entry
-       ELSE clk_at_entry_plus_1
-     END) / NULLIF(base_time_seconds, 0) * 100 AS user_pct
-  FROM clock_raw
-)
-SELECT
-  elo_bucket, tc,
-  least(floor(user_pct / 10)::int, 9) AS time_bucket,
-  count(*) AS games,
-  round(avg(user_score)::numeric, 4) AS score
-FROM game_pct
-WHERE user_pct IS NOT NULL AND user_pct <= 200
-GROUP BY elo_bucket, tc, time_bucket
-ORDER BY elo_bucket, tc, time_bucket;
-```
+
+Reference SQL (QA only): `references/queries.md` → "3.3.2 Time pressure vs performance".
 
 ##### Output
 
@@ -2304,114 +1500,7 @@ ORDER BY elo_bucket, tc, time_bucket;
 
 ##### Query
 
-```sql
-WITH selected_users AS (
-  SELECT u.id AS user_id, bsu.tc_bucket,
-         bsu.rating_bucket AS selection_rating_bucket,  -- LONGITUDINAL ONLY (ELO axis is game-time, per building block)
-         bsu.median_elo
-  FROM benchmark_selected_users bsu
-  JOIN benchmark_ingest_checkpoints bic
-    ON bic.lichess_username = bsu.lichess_username
-   AND bic.tc_bucket = bsu.tc_bucket
-   AND bic.status = 'completed'
-  JOIN users u ON u.lichess_username = bsu.lichess_username
-),
-first_endgame AS (
-  SELECT game_id, min(ply) AS entry_ply
-  FROM game_positions
-  WHERE endgame_class IS NOT NULL
-  GROUP BY game_id HAVING count(*) >= 6
-),
-endgame_games_with_clock AS (
-  -- One row per game with endgame entry and clock data
-  SELECT
-    g.id AS game_id, g.user_id, g.user_color,
-    -- game-time ELO (canonical "user_elo_at_game / elo_bucket" building block; drop sub-800 via WHERE user_elo_at_game >= 800)
-    (CASE WHEN g.user_color::text='white' THEN g.white_rating ELSE g.black_rating END) AS user_elo_at_game,
-    (CASE WHEN (CASE WHEN g.user_color::text='white' THEN g.white_rating ELSE g.black_rating END) < 800 THEN NULL
-          WHEN (CASE WHEN g.user_color::text='white' THEN g.white_rating ELSE g.black_rating END) < 1200 THEN 800
-          WHEN (CASE WHEN g.user_color::text='white' THEN g.white_rating ELSE g.black_rating END) < 1600 THEN 1200
-          WHEN (CASE WHEN g.user_color::text='white' THEN g.white_rating ELSE g.black_rating END) < 2000 THEN 1600
-          WHEN (CASE WHEN g.user_color::text='white' THEN g.white_rating ELSE g.black_rating END) < 2400 THEN 2000
-          ELSE 2400 END) AS elo_bucket,
-    su.tc_bucket AS tc,
-    g.base_time_seconds, g.result,
-    fe.entry_ply,
-    -- user clock at endgame entry (same routing logic as _compute_clock_pressure)
-    CASE
-      WHEN g.user_color='white' AND fe.entry_ply % 2 = 0 THEN p1.clock_seconds
-      WHEN g.user_color='white' AND fe.entry_ply % 2 = 1 THEN p2.clock_seconds
-      WHEN g.user_color='black' AND fe.entry_ply % 2 = 1 THEN p1.clock_seconds
-      ELSE p2.clock_seconds
-    END AS user_clk,
-    -- derived fields
-    CASE
-      WHEN g.user_color='white' AND fe.entry_ply % 2 = 0 THEN p1.clock_seconds
-      WHEN g.user_color='white' AND fe.entry_ply % 2 = 1 THEN p2.clock_seconds
-      WHEN g.user_color='black' AND fe.entry_ply % 2 = 1 THEN p1.clock_seconds
-      ELSE p2.clock_seconds
-    END / NULLIF(g.base_time_seconds, 0) * 100 AS user_clk_pct,
-    -- game score from user perspective
-    CASE
-      WHEN (g.result='1-0' AND g.user_color='white')
-        OR (g.result='0-1' AND g.user_color='black') THEN 1.0
-      WHEN g.result='1/2-1/2' THEN 0.5
-      ELSE 0.0
-    END AS score
-  FROM games g
-  JOIN selected_users su ON su.user_id = g.user_id
-  JOIN first_endgame fe ON fe.game_id = g.id
-  LEFT JOIN game_positions p1 ON p1.game_id = g.id AND p1.ply = fe.entry_ply
-  LEFT JOIN game_positions p2 ON p2.game_id = g.id AND p2.ply = fe.entry_ply + 1
-  WHERE g.rated AND NOT g.is_computer_game
-    AND g.time_control_bucket::text = su.tc_bucket
-    AND g.base_time_seconds > 0
-    -- Equal-footing filter (universal — see "Equal-footing opponent filter (all subchapters)")
-    AND g.white_rating IS NOT NULL AND g.black_rating IS NOT NULL
-    AND abs(
-          (CASE WHEN g.user_color='white' THEN g.white_rating ELSE g.black_rating END)
-        - (CASE WHEN g.user_color='white' THEN g.black_rating ELSE g.white_rating END)
-        ) <= 100
-    -- Drop sub-800 + sparse-cell exclusion (game-time ELO bucket — see "user_elo_at_game / elo_bucket" building block)
-    AND (CASE WHEN g.user_color='white' THEN g.white_rating ELSE g.black_rating END) >= 800
-    AND NOT ((CASE WHEN g.user_color='white' THEN g.white_rating ELSE g.black_rating END) >= 2400
-             AND su.tc_bucket = 'classical')
-    -- Outlier guard on clock percentage
-    AND (
-      CASE
-        WHEN g.user_color='white' AND fe.entry_ply % 2 = 0 THEN p1.clock_seconds
-        WHEN g.user_color='white' AND fe.entry_ply % 2 = 1 THEN p2.clock_seconds
-        WHEN g.user_color='black' AND fe.entry_ply % 2 = 1 THEN p1.clock_seconds
-        ELSE p2.clock_seconds
-      END / NULLIF(g.base_time_seconds, 0) * 100
-    ) BETWEEN 0 AND 200
-),
-per_user_quintile AS (
-  SELECT
-    user_id, elo_bucket, tc,
-    LEAST(4, FLOOR(user_clk_pct / 20.0)::int) AS quintile,
-    count(*) AS n_games,
-    avg(score) AS user_score
-  FROM endgame_games_with_clock
-  WHERE user_clk IS NOT NULL
-  GROUP BY user_id, elo_bucket, tc, LEAST(4, FLOOR(user_clk_pct / 20.0)::int)
-  HAVING count(*) >= 5  -- sample floor per bin
-)
--- Per-(quintile, ELO, TC) distribution: use for Cohen's d + IQR band
-SELECT
-  quintile, elo_bucket, tc,
-  count(*) AS n_users,
-  round(avg(user_score)::numeric, 4) AS mean_score,
-  round(var_samp(user_score)::numeric, 6) AS var_score,
-  round(percentile_cont(0.25) WITHIN GROUP (ORDER BY user_score)::numeric, 4) AS p25,
-  round(percentile_cont(0.50) WITHIN GROUP (ORDER BY user_score)::numeric, 4) AS p50,
-  round(percentile_cont(0.75) WITHIN GROUP (ORDER BY user_score)::numeric, 4) AS p75
-FROM per_user_quintile
-GROUP BY quintile, elo_bucket, tc
-HAVING count(*) >= 10  -- Cohen's d floor
-ORDER BY quintile, elo_bucket,
-  CASE tc WHEN 'bullet' THEN 1 WHEN 'blitz' THEN 2 WHEN 'rapid' THEN 3 WHEN 'classical' THEN 4 END;
-```
+Reference SQL (QA only): `references/queries.md` → "§3.3.3 chess-score-per-pressure-bin".
 
 ##### Collapse verdict per quintile
 
@@ -2464,7 +1553,7 @@ For each quintile where ELO verdict = "collapse" (expected default): report `(tc
 
 ### 3.4 Endgame Type Breakdown
 
-Maps to the page H2 of the same name. Hosts `EndgameWDLChart` + `EndgameConvRecovChart`.
+Maps to the page H2 of the same name. Hosts `EndgameTypeBreakdownSection` (per-TC `EndgameTypeTcCard` → per-class `EndgameTypeCard`).
 
 #### 3.4.1 Per-class score / conversion / recovery
 
@@ -2475,103 +1564,8 @@ Maps to the page H2 of the same name. Hosts `EndgameWDLChart` + `EndgameConvReco
 **Bucketing**: per REFAC-02, conv/recov is determined by the Stockfish eval at the **first ply of each class span** (not at the game's first endgame ply). This matches `query_endgame_entry_rows`, which projects `eval_cp` / `eval_mate` per (game, endgame_class) span via `array_agg(... ORDER BY ply)[1]`. The classification rule is identical to 3.2.1: mate scores force conv/recov; otherwise cp vs ±`EVAL_ADVANTAGE_THRESHOLD = 100`; NULL routes to parity. There is no longer a 4-ply persistence join — the old material-imbalance proxy is gone.
 
 ##### Query
-```sql
-WITH selected_users AS (
-  SELECT u.id AS user_id, bsu.tc_bucket,
-         bsu.rating_bucket AS selection_rating_bucket,  -- LONGITUDINAL ONLY (ELO axis is game-time, per building block)
-         bsu.median_elo
-  FROM benchmark_selected_users bsu
-  JOIN benchmark_ingest_checkpoints bic
-    ON bic.lichess_username = bsu.lichess_username
-   AND bic.tc_bucket = bsu.tc_bucket
-   AND bic.status = 'completed'
-  JOIN users u ON u.lichess_username = bsu.lichess_username
-),
-class_span AS (
-  SELECT game_id, endgame_class, min(ply) AS entry_ply
-  FROM game_positions
-  WHERE endgame_class IS NOT NULL
-  GROUP BY game_id, endgame_class
-  HAVING count(*) >= 6
-),
-bucketed AS (
-  -- Pull the Stockfish eval at the FIRST ply of each (game, class) span (REFAC-02).
-  -- White-perspective raw; sign flip happens below via color_sign.
-  SELECT
-    g.id AS game_id,
-    g.user_id,
-    -- game-time ELO (canonical "user_elo_at_game / elo_bucket" building block; drop sub-800 via WHERE user_elo_at_game >= 800)
-    (CASE WHEN g.user_color::text='white' THEN g.white_rating ELSE g.black_rating END) AS user_elo_at_game,
-    (CASE WHEN (CASE WHEN g.user_color::text='white' THEN g.white_rating ELSE g.black_rating END) < 800 THEN NULL
-          WHEN (CASE WHEN g.user_color::text='white' THEN g.white_rating ELSE g.black_rating END) < 1200 THEN 800
-          WHEN (CASE WHEN g.user_color::text='white' THEN g.white_rating ELSE g.black_rating END) < 1600 THEN 1200
-          WHEN (CASE WHEN g.user_color::text='white' THEN g.white_rating ELSE g.black_rating END) < 2000 THEN 1600
-          WHEN (CASE WHEN g.user_color::text='white' THEN g.white_rating ELSE g.black_rating END) < 2400 THEN 2000
-          ELSE 2400 END) AS elo_bucket,
-    su.tc_bucket AS tc,
-    cs.endgame_class AS endgame_class_int,
-    CASE
-      WHEN (g.result='1-0' AND g.user_color='white')
-        OR (g.result='0-1' AND g.user_color='black') THEN 1.0
-      WHEN g.result='1/2-1/2' THEN 0.5
-      ELSE 0.0
-    END AS score,
-    CASE WHEN g.user_color='white' THEN 1 ELSE -1 END AS color_sign,
-    ep.eval_cp   AS entry_eval_cp,
-    ep.eval_mate AS entry_eval_mate
-  FROM games g
-  JOIN selected_users su ON su.user_id = g.user_id
-  JOIN class_span cs ON cs.game_id = g.id
-  JOIN game_positions ep
-    ON ep.game_id = g.id AND ep.ply = cs.entry_ply
-  WHERE g.rated AND NOT g.is_computer_game
-    AND g.time_control_bucket::text = su.tc_bucket
-    -- Equal-footing filter (universal — see "Equal-footing opponent filter (all subchapters)")
-    AND g.white_rating IS NOT NULL AND g.black_rating IS NOT NULL
-    AND abs(
-          (CASE WHEN g.user_color='white' THEN g.white_rating ELSE g.black_rating END)
-        - (CASE WHEN g.user_color='white' THEN g.black_rating ELSE g.white_rating END)
-        ) <= 100
-),
-classified AS (
-  -- Apply _classify_endgame_bucket: mate first, else cp vs ±100, else parity (NULL or in-band).
-  SELECT
-    *,
-    CASE
-      WHEN entry_eval_mate IS NOT NULL AND (entry_eval_mate * color_sign) > 0 THEN 'conversion'
-      WHEN entry_eval_mate IS NOT NULL AND (entry_eval_mate * color_sign) < 0 THEN 'recovery'
-      WHEN entry_eval_cp   IS NOT NULL AND (entry_eval_cp   * color_sign) >=  100 THEN 'conversion'
-      WHEN entry_eval_cp   IS NOT NULL AND (entry_eval_cp   * color_sign) <= -100 THEN 'recovery'
-      ELSE 'parity'
-    END AS bucket
-  FROM bucketed
-)
-SELECT
-  elo_bucket, tc,
-  CASE endgame_class_int
-    WHEN 1 THEN 'rook'
-    WHEN 2 THEN 'minor_piece'
-    WHEN 3 THEN 'pawn'
-    WHEN 4 THEN 'queen'
-    WHEN 5 THEN 'mixed'
-    WHEN 6 THEN 'pawnless'
-  END AS endgame_class,
-  count(*) AS games,
-  count(DISTINCT user_id) AS users,
-  round(avg(score)::numeric, 4) AS score,
-  round((avg(score) * 2 - 1)::numeric, 4) AS score_diff,
-  count(*) FILTER (WHERE bucket = 'conversion') AS conv_games,
-  round((avg(CASE WHEN score = 1.0 THEN 1.0 ELSE 0.0 END)
-         FILTER (WHERE bucket = 'conversion'))::numeric, 4) AS conversion,
-  count(*) FILTER (WHERE bucket = 'recovery') AS recov_games,
-  round((avg(CASE WHEN score >= 0.5 THEN 1.0 ELSE 0.0 END)
-         FILTER (WHERE bucket = 'recovery'))::numeric, 4) AS recovery
-FROM classified
-GROUP BY elo_bucket, tc, endgame_class_int
-ORDER BY elo_bucket,
-         CASE tc WHEN 'bullet' THEN 1 WHEN 'blitz' THEN 2 WHEN 'rapid' THEN 3 WHEN 'classical' THEN 4 END,
-         endgame_class_int;
-```
+
+Reference SQL (QA only): `references/queries.md` → "3.4.1 Per-class score / conversion / recovery".
 
 ##### Per-user per-class score distribution (for Score bullet neutral-zone calibration)
 
@@ -2750,132 +1744,7 @@ For each of the three metrics (score / conversion / recovery):
 
 ##### Query
 
-Equal-footing opponent filter (`abs(opp_rating - user_rating) <= 100`) preserved per memory `feedback_260503-fef` (universal as of 2026-05-03).
-
-```sql
-WITH selected_users AS (
-  SELECT u.id AS user_id, bsu.tc_bucket,
-         bsu.rating_bucket AS selection_rating_bucket,  -- LONGITUDINAL ONLY (ELO axis is game-time, per building block)
-         bsu.median_elo
-  FROM benchmark_selected_users bsu
-  JOIN benchmark_ingest_checkpoints bic
-    ON bic.lichess_username = bsu.lichess_username
-   AND bic.tc_bucket = bsu.tc_bucket
-   AND bic.status = 'completed'
-  JOIN users u ON u.lichess_username = bsu.lichess_username
-),
-spans AS (
-  -- One row per (game_id, endgame_class) span ≥6 plies, with entry eval at first ply.
-  -- Matches the ≥6-ply gate from 3.4.1 / `query_endgame_entry_rows`.
-  SELECT
-    gp.game_id,
-    gp.endgame_class,
-    (array_agg(gp.eval_cp   ORDER BY gp.ply ASC))[1] AS entry_eval_cp,
-    (array_agg(gp.eval_mate ORDER BY gp.ply ASC))[1] AS entry_eval_mate,
-    min(gp.ply) AS span_min_ply
-  FROM game_positions gp
-  JOIN games g          ON g.id = gp.game_id
-  JOIN selected_users su ON su.user_id = g.user_id
-  WHERE gp.endgame_class IS NOT NULL
-    AND g.rated AND NOT g.is_computer_game
-    AND g.time_control_bucket::text = su.tc_bucket
-    AND g.white_rating IS NOT NULL AND g.black_rating IS NOT NULL
-    -- Equal-footing filter (universal — see "Equal-footing opponent filter (all subchapters)")
-    AND abs(
-          (CASE WHEN g.user_color='white' THEN g.white_rating ELSE g.black_rating END)
-        - (CASE WHEN g.user_color='white' THEN g.black_rating ELSE g.white_rating END)
-        ) <= 100
-  GROUP BY gp.game_id, gp.endgame_class
-  HAVING count(gp.ply) >= 6
-),
-spans_with_next AS (
-  -- LEAD() over (game_id ORDER BY span_min_ply) gives the next span's entry eval.
-  -- NULL on the terminal span of each game; the gap_rows CTE falls back to game result.
-  SELECT
-    s.*,
-    lead(s.entry_eval_cp)   OVER (PARTITION BY s.game_id ORDER BY s.span_min_ply) AS next_eval_cp,
-    lead(s.entry_eval_mate) OVER (PARTITION BY s.game_id ORDER BY s.span_min_ply) AS next_eval_mate
-  FROM spans s
-),
-gap_rows AS (
-  -- Compute gap_span = exit_score - ES_entry per CONTEXT D-07.
-  -- Uses the Lichess winning-chances sigmoid: 1 / (1 + exp(-0.00368208 * cp_signed)).
-  SELECT
-    g.user_id,
-    -- game-time ELO (canonical "user_elo_at_game / elo_bucket" building block)
-    (CASE WHEN g.user_color::text='white' THEN g.white_rating ELSE g.black_rating END) AS user_elo_at_game,
-    (CASE WHEN (CASE WHEN g.user_color::text='white' THEN g.white_rating ELSE g.black_rating END) < 800 THEN NULL
-          WHEN (CASE WHEN g.user_color::text='white' THEN g.white_rating ELSE g.black_rating END) < 1200 THEN 800
-          WHEN (CASE WHEN g.user_color::text='white' THEN g.white_rating ELSE g.black_rating END) < 1600 THEN 1200
-          WHEN (CASE WHEN g.user_color::text='white' THEN g.white_rating ELSE g.black_rating END) < 2000 THEN 1600
-          WHEN (CASE WHEN g.user_color::text='white' THEN g.white_rating ELSE g.black_rating END) < 2400 THEN 2000
-          ELSE 2400 END) AS elo_bucket,
-    su.tc_bucket,
-    swn.endgame_class,
-    (
-      -- exit_score: transitory uses sigmoid on next-span entry eval; terminal uses game result.
-      CASE
-        WHEN next_eval_mate IS NOT NULL
-          THEN CASE WHEN (next_eval_mate * (CASE WHEN g.user_color='white' THEN 1 ELSE -1 END)) > 0 THEN 1.0 ELSE 0.0 END
-        WHEN next_eval_cp IS NOT NULL
-          THEN 1.0 / (1.0 + exp(-0.00368208 * (next_eval_cp * (CASE WHEN g.user_color='white' THEN 1 ELSE -1 END))))
-        ELSE
-          CASE
-            WHEN (g.result='1-0' AND g.user_color='white')
-              OR (g.result='0-1' AND g.user_color='black') THEN 1.0
-            WHEN g.result='1/2-1/2' THEN 0.5
-            ELSE 0.0
-          END
-      END
-    )
-    -
-    (
-      -- ES_entry: sigmoid on the span's entry eval (mate scores saturate to 0/1).
-      CASE
-        WHEN swn.entry_eval_mate IS NOT NULL
-          THEN CASE WHEN (swn.entry_eval_mate * (CASE WHEN g.user_color='white' THEN 1 ELSE -1 END)) > 0 THEN 1.0 ELSE 0.0 END
-        WHEN swn.entry_eval_cp IS NOT NULL
-          THEN 1.0 / (1.0 + exp(-0.00368208 * (swn.entry_eval_cp * (CASE WHEN g.user_color='white' THEN 1 ELSE -1 END))))
-        ELSE NULL
-      END
-    ) AS gap_span
-  FROM spans_with_next swn
-  JOIN games g          ON g.id = swn.game_id
-  JOIN selected_users su ON su.user_id = g.user_id
-  WHERE (swn.entry_eval_cp IS NOT NULL OR swn.entry_eval_mate IS NOT NULL)
-    AND (CASE WHEN g.user_color::text='white' THEN g.white_rating ELSE g.black_rating END) >= 800  -- drop sub-800
-),
-per_user_class AS (
-  SELECT
-    user_id, elo_bucket, tc_bucket, endgame_class,
-    avg(gap_span)   AS mean_gap,
-    count(*)        AS n_spans
-  FROM gap_rows
-  WHERE gap_span IS NOT NULL
-    AND elo_bucket IS NOT NULL
-  GROUP BY user_id, elo_bucket, tc_bucket, endgame_class
-  HAVING count(*) >= 20         -- §3.4.2 sample floor: ≥20 qualifying spans per user per class per cell
-)
-SELECT
-  elo_bucket, tc_bucket,
-  CASE endgame_class
-    WHEN 1 THEN 'rook'
-    WHEN 2 THEN 'minor_piece'
-    WHEN 3 THEN 'pawn'
-    WHEN 4 THEN 'queen'
-    WHEN 5 THEN 'mixed'
-    WHEN 6 THEN 'pawnless'
-  END AS endgame_class,
-  count(*) AS users,
-  round(percentile_cont(0.25) WITHIN GROUP (ORDER BY mean_gap)::numeric, 4) AS p25,
-  round(percentile_cont(0.50) WITHIN GROUP (ORDER BY mean_gap)::numeric, 4) AS p50,
-  round(percentile_cont(0.75) WITHIN GROUP (ORDER BY mean_gap)::numeric, 4) AS p75,
-  round(avg(mean_gap)::numeric, 4)     AS mean_x,
-  round(var_samp(mean_gap)::numeric, 6) AS var_x
-FROM per_user_class
-GROUP BY elo_bucket, tc_bucket, endgame_class
-ORDER BY endgame_class, elo_bucket, tc_bucket;
-```
+Reference SQL (QA only): `references/queries.md` → "3.4.2 Per-span Score Gap by Endgame Type (Phase 87.1 SEED-016)".
 
 ##### Output
 
@@ -2884,12 +1753,10 @@ For each class (6 sub-tables; `pawnless` is hidden in the UI per `HIDDEN_ENDGAME
 1. **5×4 cell table** (rows = ELO bucket, columns = TC). Cell = `p50 (n_users)`. Suppress where `n_users < 20`. Sparse-cell exclusion `(2400, classical)` applies per the universal report-header rule.
 2. **Pooled-by-class IQR row**: `endgame_class | n_users | mean | p25 | p50 | p75`. Drives the per-class band proposal.
 3. **Cohen's-d collapse verdicts**: per class × {TC, ELO}, computed against the per-cell pooled `mean_gap`. 6 × 2 = 12 verdicts; aggregate to one verdict per axis (across-class max d) when reporting.
-4. **Per-class band proposal**: `PER_CLASS_GAUGE_ZONES[cls].achievable_score_gap = (p25, p75)`. Compare against the placeholder `(-0.05, 0.05)` shipped in this plan (Phase 87.1 Plan 01) — recommend a delta only when |p25 - placeholder_lower| > 0.5pp or |p75 - placeholder_upper| > 0.5pp.
+4. **Per-class band proposal**: `PER_CLASS_GAUGE_ZONES[cls].achievable_score_gap = (p25, p75)`. Compare against the live band in `app/services/endgame_zones.py` — recommend a delta only when |p25 - live_lower| > 0.5pp or |p75 - live_upper| > 0.5pp.
 5. **Global band proposal**: pooled-across-classes [p25, p75] for `ZONE_REGISTRY["endgame_type_achievable_score_gap"]`. If all 6 classes collapse together, recommend setting this band and identical per-class entries.
 
 **Calibration caveat (mandatory in popover copy and prompt-version bump, but recorded here for the methodology audit):** The Lichess winning-chances sigmoid under-weights endgame eval advantages (~`feedback`: `lichess-sigmoid-endgame-calibration.md`). Per-class IQR-derived zones absorb the bias so zone placement is calibrated even though absolute gap magnitudes are scale-compressed.
-
-**Scope note:** Running the benchmark query is OUT OF SCOPE for the Phase 87.1 Plan 01 ROADMAP gate — this subchapter documents the method so a future calibration run can produce real per-class bands. The placeholder bands from `endgame_zones.py` remain in effect until then.
 
 #### 3.4.3 Endgame Type Score vs Score Gap — agreement / redundancy analysis
 
@@ -2935,235 +1802,7 @@ If classes disagree on the rubric verdict (e.g. rook says "drop Score" but minor
 
 ##### Query
 
-```sql
-WITH selected_users AS (
-  SELECT u.id AS user_id, bsu.tc_bucket,
-         bsu.rating_bucket AS selection_rating_bucket,  -- LONGITUDINAL ONLY (ELO axis is game-time, per building block)
-         bsu.median_elo
-  FROM benchmark_selected_users bsu
-  JOIN benchmark_ingest_checkpoints bic
-    ON bic.lichess_username = bsu.lichess_username
-   AND bic.tc_bucket = bsu.tc_bucket
-   AND bic.status = 'completed'
-  JOIN users u ON u.lichess_username = bsu.lichess_username
-),
-class_span AS (
-  -- 3.4.1 / 3.4.2 shared gate: ≥6-ply per (game, class) span.
-  SELECT game_id, endgame_class, min(ply) AS entry_ply
-  FROM game_positions
-  WHERE endgame_class IS NOT NULL
-  GROUP BY game_id, endgame_class
-  HAVING count(*) >= 6
-),
-per_user_class_score AS (
-  -- Mirrors §3.4.1 per-user-per-class score CTE.
-  SELECT
-    g.user_id,
-    -- game-time ELO (canonical "user_elo_at_game / elo_bucket" building block)
-    (CASE WHEN g.user_color::text='white' THEN g.white_rating ELSE g.black_rating END) AS user_elo_at_game,
-    (CASE WHEN (CASE WHEN g.user_color::text='white' THEN g.white_rating ELSE g.black_rating END) < 800 THEN NULL
-          WHEN (CASE WHEN g.user_color::text='white' THEN g.white_rating ELSE g.black_rating END) < 1200 THEN 800
-          WHEN (CASE WHEN g.user_color::text='white' THEN g.white_rating ELSE g.black_rating END) < 1600 THEN 1200
-          WHEN (CASE WHEN g.user_color::text='white' THEN g.white_rating ELSE g.black_rating END) < 2000 THEN 1600
-          WHEN (CASE WHEN g.user_color::text='white' THEN g.white_rating ELSE g.black_rating END) < 2400 THEN 2000
-          ELSE 2400 END) AS elo_bucket,
-    su.tc_bucket,
-    cs.endgame_class,
-    count(*) AS n_games,
-    avg(
-      CASE
-        WHEN (g.result='1-0' AND g.user_color='white')
-          OR (g.result='0-1' AND g.user_color='black') THEN 1.0
-        WHEN g.result='1/2-1/2' THEN 0.5
-        ELSE 0.0
-      END
-    ) AS user_class_score
-  FROM games g
-  JOIN selected_users su ON su.user_id = g.user_id
-  JOIN class_span cs     ON cs.game_id = g.id
-  WHERE g.rated AND NOT g.is_computer_game
-    AND g.time_control_bucket::text = su.tc_bucket
-    AND g.white_rating IS NOT NULL AND g.black_rating IS NOT NULL
-    AND abs(
-          (CASE WHEN g.user_color='white' THEN g.white_rating ELSE g.black_rating END)
-        - (CASE WHEN g.user_color='white' THEN g.black_rating ELSE g.white_rating END)
-        ) <= 100
-    AND (CASE WHEN g.user_color='white' THEN g.white_rating ELSE g.black_rating END) >= 800  -- drop sub-800 (game-time ELO)
-  GROUP BY g.user_id, user_elo_at_game, elo_bucket, su.tc_bucket, cs.endgame_class
-  HAVING count(*) >= 10
-),
-spans AS (
-  -- Mirrors §3.4.2: one row per (game_id, endgame_class), ≥6 plies.
-  SELECT
-    gp.game_id,
-    gp.endgame_class,
-    (array_agg(gp.eval_cp   ORDER BY gp.ply ASC))[1] AS entry_eval_cp,
-    (array_agg(gp.eval_mate ORDER BY gp.ply ASC))[1] AS entry_eval_mate,
-    min(gp.ply) AS span_min_ply
-  FROM game_positions gp
-  JOIN games g           ON g.id = gp.game_id
-  JOIN selected_users su ON su.user_id = g.user_id
-  WHERE gp.endgame_class IS NOT NULL
-    AND g.rated AND NOT g.is_computer_game
-    AND g.time_control_bucket::text = su.tc_bucket
-    AND g.white_rating IS NOT NULL AND g.black_rating IS NOT NULL
-    AND abs(
-          (CASE WHEN g.user_color='white' THEN g.white_rating ELSE g.black_rating END)
-        - (CASE WHEN g.user_color='white' THEN g.black_rating ELSE g.white_rating END)
-        ) <= 100
-  GROUP BY gp.game_id, gp.endgame_class
-  HAVING count(gp.ply) >= 6
-),
-spans_with_next AS (
-  SELECT
-    s.*,
-    lead(s.entry_eval_cp)   OVER (PARTITION BY s.game_id ORDER BY s.span_min_ply) AS next_eval_cp,
-    lead(s.entry_eval_mate) OVER (PARTITION BY s.game_id ORDER BY s.span_min_ply) AS next_eval_mate
-  FROM spans s
-),
-gap_rows AS (
-  SELECT
-    g.user_id,
-    -- game-time ELO (canonical "user_elo_at_game / elo_bucket" building block)
-    (CASE WHEN g.user_color::text='white' THEN g.white_rating ELSE g.black_rating END) AS user_elo_at_game,
-    (CASE WHEN (CASE WHEN g.user_color::text='white' THEN g.white_rating ELSE g.black_rating END) < 800 THEN NULL
-          WHEN (CASE WHEN g.user_color::text='white' THEN g.white_rating ELSE g.black_rating END) < 1200 THEN 800
-          WHEN (CASE WHEN g.user_color::text='white' THEN g.white_rating ELSE g.black_rating END) < 1600 THEN 1200
-          WHEN (CASE WHEN g.user_color::text='white' THEN g.white_rating ELSE g.black_rating END) < 2000 THEN 1600
-          WHEN (CASE WHEN g.user_color::text='white' THEN g.white_rating ELSE g.black_rating END) < 2400 THEN 2000
-          ELSE 2400 END) AS elo_bucket,
-    su.tc_bucket,
-    swn.endgame_class,
-    (
-      CASE
-        WHEN next_eval_mate IS NOT NULL
-          THEN CASE WHEN (next_eval_mate * (CASE WHEN g.user_color='white' THEN 1 ELSE -1 END)) > 0 THEN 1.0 ELSE 0.0 END
-        WHEN next_eval_cp IS NOT NULL
-          THEN 1.0 / (1.0 + exp(-0.00368208 * (next_eval_cp * (CASE WHEN g.user_color='white' THEN 1 ELSE -1 END))))
-        ELSE
-          CASE
-            WHEN (g.result='1-0' AND g.user_color='white')
-              OR (g.result='0-1' AND g.user_color='black') THEN 1.0
-            WHEN g.result='1/2-1/2' THEN 0.5
-            ELSE 0.0
-          END
-      END
-    )
-    -
-    (
-      CASE
-        WHEN swn.entry_eval_mate IS NOT NULL
-          THEN CASE WHEN (swn.entry_eval_mate * (CASE WHEN g.user_color='white' THEN 1 ELSE -1 END)) > 0 THEN 1.0 ELSE 0.0 END
-        WHEN swn.entry_eval_cp IS NOT NULL
-          THEN 1.0 / (1.0 + exp(-0.00368208 * (swn.entry_eval_cp * (CASE WHEN g.user_color='white' THEN 1 ELSE -1 END))))
-        ELSE NULL
-      END
-    ) AS gap_span
-  FROM spans_with_next swn
-  JOIN games g           ON g.id = swn.game_id
-  JOIN selected_users su ON su.user_id = g.user_id
-  WHERE (swn.entry_eval_cp IS NOT NULL OR swn.entry_eval_mate IS NOT NULL)
-    AND (CASE WHEN g.user_color::text='white' THEN g.white_rating ELSE g.black_rating END) >= 800  -- drop sub-800
-),
-per_user_class_gap AS (
-  SELECT
-    user_id, elo_bucket, tc_bucket, endgame_class,
-    avg(gap_span) AS user_class_mean_gap,
-    count(*)      AS n_spans
-  FROM gap_rows
-  WHERE gap_span IS NOT NULL
-    AND elo_bucket IS NOT NULL
-  GROUP BY user_id, elo_bucket, tc_bucket, endgame_class
-  HAVING count(*) >= 20
-),
-joined AS (
-  -- Inner join: user contributes only when both metrics clear their floors,
-  -- paired within the same game-time ELO bucket. Sparse cell (2400, classical) excluded.
-  SELECT
-    s.user_id, s.elo_bucket, s.tc_bucket, s.endgame_class,
-    s.user_class_score AS score,
-    g.user_class_mean_gap AS gap
-  FROM per_user_class_score s
-  JOIN per_user_class_gap g
-    ON g.user_id = s.user_id
-   AND g.elo_bucket = s.elo_bucket
-   AND g.tc_bucket = s.tc_bucket
-   AND g.endgame_class = s.endgame_class
-  WHERE NOT (s.elo_bucket = 2400 AND s.tc_bucket = 'classical')
-),
-class_iqr AS (
-  -- Per-class IQR-derived band edges. Drives zone classification below.
-  SELECT
-    endgame_class,
-    percentile_cont(0.25) WITHIN GROUP (ORDER BY score) AS score_p25,
-    percentile_cont(0.75) WITHIN GROUP (ORDER BY score) AS score_p75,
-    percentile_cont(0.25) WITHIN GROUP (ORDER BY gap)   AS gap_p25,
-    percentile_cont(0.75) WITHIN GROUP (ORDER BY gap)   AS gap_p75
-  FROM joined
-  GROUP BY endgame_class
-),
-classified AS (
-  -- Per-class IQR zones: red = below p25, green = above p75, neutral otherwise.
-  -- Lights-up rate is 50% per class per metric by construction (uninformative).
-  SELECT
-    j.user_id, j.elo_bucket, j.tc_bucket, j.endgame_class,
-    j.score, j.gap,
-    CASE
-      WHEN j.score < ci.score_p25 THEN 'red'
-      WHEN j.score > ci.score_p75 THEN 'green'
-      ELSE 'neutral'
-    END AS score_zone,
-    CASE
-      WHEN j.gap < ci.gap_p25 THEN 'red'
-      WHEN j.gap > ci.gap_p75 THEN 'green'
-      ELSE 'neutral'
-    END AS gap_zone
-  FROM joined j
-  JOIN class_iqr ci ON ci.endgame_class = j.endgame_class
-),
-per_class_stats AS (
-  SELECT
-    CASE endgame_class
-      WHEN 1 THEN 'rook'
-      WHEN 2 THEN 'minor_piece'
-      WHEN 3 THEN 'pawn'
-      WHEN 4 THEN 'queen'
-      WHEN 5 THEN 'mixed'
-      WHEN 6 THEN 'pawnless'
-    END AS endgame_class,
-    count(*) AS n_users,
-    round(corr(score, gap)::numeric, 3) AS pearson_r,
-    round(avg(CASE WHEN sign(score - 0.5) = sign(gap) THEN 1.0 ELSE 0.0 END)::numeric, 3) AS sign_agreement,
-    round(avg(CASE WHEN score_zone = gap_zone THEN 1.0 ELSE 0.0 END)::numeric, 3) AS zone_strict_agreement,
-    round(avg(CASE WHEN (score_zone='red' AND gap_zone='green')
-                     OR (score_zone='green' AND gap_zone='red')
-                   THEN 1.0 ELSE 0.0 END)::numeric, 3) AS strong_disagreement,
-    round(stddev_samp(score)::numeric, 4) AS score_stdev,
-    round(stddev_samp(gap)::numeric,   4) AS gap_stdev
-  FROM classified
-  GROUP BY endgame_class
-  HAVING count(*) >= 30
-)
-SELECT * FROM per_class_stats
-ORDER BY endgame_class;
-```
-
-Also run the 3×3 zone-agreement matrix as a second query (one matrix per class):
-
-```sql
--- Replace <CLASS_INT> with 1..6 and re-run; or wrap in a per-class loop.
-WITH /* (paste CTEs above through `classified`) */
-matrix AS (
-  SELECT score_zone, gap_zone, count(*) AS users
-  FROM classified
-  WHERE endgame_class = <CLASS_INT>
-  GROUP BY score_zone, gap_zone
-)
-SELECT score_zone, gap_zone, users,
-       round(users::numeric / sum(users) OVER (), 3) AS frac
-FROM matrix
-ORDER BY score_zone, gap_zone;
-```
+Reference SQL (QA only): `references/queries.md` → "3.4.3 Endgame Type Score vs Score Gap — agreement / redundancy analysis".
 
 ##### Output
 
@@ -3196,143 +1835,13 @@ For the §3.4.3 block in `reports/benchmark/benchmarks-latest.md`:
 
 ## 4. Global Percentile CDF
 
-> **CURRENT REALITY (SEED-029) — read this before the historical prose below.** §4 is a **separate deliverable**: it is NOT part of `benchmarks-latest.md` and `scripts/gen_benchmarks.py` does **not** compute it (its §4 chapter is reference-only, `status: "REFERENCE"`, emitting no report body — see `scripts/benchmarks/chapter4.py`). The live percentile artifact is the **Phase 94.4 cohort sliding-window** registry `COHORT_PERCENTILE_CDF` (8 metrics × ~37 Elo anchors × 4 TC, K-nearest-anchor cohorts) in `app/services/global_percentile_cdf.py`, generated by `scripts/gen_global_percentile_cdf.py --target benchmark`, reported at `reports/percentile/cohort-percentile-cdf-latest.md`, and gated by `tests/scripts/test_gen_global_percentile_cdf_{pooled,unchanged}.py`. **Everything below this callout — including the Phase 94.2 note, the flat `GLOBAL_PERCENTILE_CDF`, the 99-breakpoint pooled methodology, and `global-percentile-cdf-latest.md` — is HISTORICAL** (Phase 93 v1 → 94.2 → 94.3, all retired). Consult it for design lineage only; for current behaviour read `scripts/gen_global_percentile_cdf.py` and its module docstring.
-
-> **Correspondence with the production CDF changed in Phase 94.2 (see top-of-file callout).** This chapter describes the **per-cohort empirical CDF methodology** that produced the Phase 93 v1 `GLOBAL_PERCENTILE_CDF` artifact: one per-(user, game-time elo_bucket, tc) value pooled across the sparse-excluded (TC × ELO) grid. **As of Phase 94.2, the production CDF in `app/services/global_percentile_cdf.py` is no longer this distribution** — Plan 02 of 94.2 regenerated it under pooled-per-user methodology (recent 1000/TC across all played TCs, 36-month window, single ≥30 floor on the pooled set, one row per user; see `app/services/canonical_slice_sql.py` for the authoritative builders and `.planning/phases/94.2-pooled-per-user-percentile-redesign/` for the rationale). The numbers in `scripts/gen_global_percentile_cdf.py` were regenerated then too, so the breakpoint array on this chapter's SQL no longer matches the committed `GLOBAL_PERCENTILE_CDF` array. The per-cohort, per-rating-bucket sanity-check methodology below remains a **valid analytical breakdown** (same role as `_build_per_bucket_sanity_query` after 94.2 Plan 02) — it is just no longer the production-chip distribution. When this chapter mentions "the chip" / "Phase 94 backend interpolation" / "the committed artifact" / "GLOBAL_PERCENTILE_CDF", treat those references as **historical** to Phase 93 v1 and consult `app/services/canonical_slice_sql.py` for current production behaviour.
-
-This chapter produces per-metric empirical CDFs (cumulative distribution functions) over the four chipped ΔES metrics, **globally pooled** across the (TC × ELO) grid. The committed artifact lives at `app/services/global_percentile_cdf.py` (a sibling of `app/services/endgame_zones.py`, NOT a graft into it — the CDF tables have a different artifact shape than ZoneSpec). Mechanization is `scripts/gen_global_percentile_cdf.py` (Plan 02 — DB → Python regen is a manual recalibration step, mirroring `scripts/backfill_eval.py --db benchmark`; no CI gate, no auto-regen). The report deliverable is `reports/percentile/global-percentile-cdf-latest.md`, with the same rotation rule as `reports/benchmark/benchmarks-latest.md` (see §"Report file layout").
-
-The downstream consumer is **Phase 94 backend only**: it interpolates the user's per-metric value against `GLOBAL_PERCENTILE_CDF` at request time and emits a scalar `{metric}_percentile` field on the endgame response schemas, which the chip + popover render from. Phase 93 ships **no client-side code, no TS mirror, no Python→TS codegen, no CI drift-guard** (D-01) — unlike `endgame_zones.py` whose IQR bands are painted client-side, the CDF output is a single scalar computed server-side. A future client-side viz (sparkline of the user's position on the global distribution, "what value puts me in the top X%" widget, offline what-if calculator) is the trigger to add a TS mirror; it is not pre-built here.
-
-**Out of scope (explicit — D-02 rationale):**
-- **Recovery Score Gap percentiles** (`section2_score_gap_recov`) — opponent-confounded with Cohen's d ≈ 0.95 inverted rating coupling per `reports/benchmark/benchmarks-gap-metrics-percentile-candidacy.md` (2026-05-22). Defer until Recovery is repaired or re-framed.
-- **Raw % gauge percentiles** (Conversion / Parity / Recovery rate gauges — `conversion_win_pct`, `parity_score_pct`, `recovery_save_pct`) — redundant chips on cards whose ΔES row is already chipped.
-- **Per-(TC, ELO)-cell CDFs** — SEED-019 deliberately ships global-only comparison. The bragging-rights "top X% of all players" framing is the explicit product call; per-cell CDFs are not in v1.19 scope.
-- **Tier-4 per-endgame-class CDFs** — per-class samples too thin (~8 rook conversion spans per user is noise); deferred per `REQUIREMENTS.md` §Future Requirements.
-- **Opening insights percentile annotations** — candidate for a future Opening Insights v2 milestone.
-- **TS mirror / client-side codegen / Python→TS drift-guard** — D-01; add when a client-side CDF consumer ships.
-
-### In-scope metrics
-
-The artifact ships exactly **4** `MetricId` literals from `app/schemas/endgames.py` (no new IDs introduced — D-03):
-
-- **`score_gap`** — page-level Endgame Score Gap (`eg_score − non_eg_score`); see §3.1.6. Per-user inclusion floor: **≥30 endgame AND ≥30 non-endgame games** per user in their selected TC (matches the §3.1.6 cohort-band floor).
-- **`achievable_score_gap`** — page-level Achievable Score Gap (paired per-game `actual − expected` against the Stockfish-baseline expected score); see §3.1.5. Per-user inclusion floor: **≥20 endgame-entry games** per user with a paired (actual, expected) score (matches the §3.1.5 floor).
-- **`section2_score_gap_parity`** — Section 2 Parity ΔES Score Gap (per-span `exit_score − ES_entry`, partitioned to spans whose entry-eval bucket is `parity`); see §3.2.2. Per-user inclusion floor: **≥20 qualifying spans per user in the parity bucket** (matches the §3.2.2 span floor).
-- **`section2_score_gap_conv`** — Section 2 Conversion ΔES Score Gap (per-span `exit_score − ES_entry`, partitioned to spans whose entry-eval bucket is `conversion`); see §3.2.2. Per-user inclusion floor: **≥20 qualifying spans per user in the conversion bucket** (matches the §3.2.2 span floor).
-
-Per-metric floors are kept from the pre-flight (rather than unified) to preserve continuity with `reports/benchmark/benchmarks-gap-metrics-percentile-candidacy.md` (Claude's Discretion item #2 from CONTEXT.md).
-
-### Canonical CTE — inherited verbatim from §1
-
-The CDF query uses the Chapter 1 building blocks unchanged — **do not duplicate the SQL here** (the authoritative SQL lives in `scripts/gen_global_percentile_cdf.py`; the illustrative snippet at the end of this chapter is a composition example, not a substitute):
-
-- **Standard CTE — `selected_users`** (§1) — `benchmark_selected_users ⋈ benchmark_ingest_checkpoints` on `lichess_username + tc_bucket` with `bic.status = 'completed'`, joined to `users` on `lower(lichess_username)`. Bypassing the canonical CTE produces a wrong global distribution and therefore wrong percentiles for every user; the CDF tails are more sensitive to CTE drift than the IQR zone bands are (D-05).
-- **Sparse-cell exclusion** (§1) — `(elo_bucket = 2400 AND tc_bucket = 'classical')` is dropped from the pooled distribution (n=12 completed users, ~55 games/user, pool exhausted). Same rule applied to TC marginals, ELO marginals, and Cohen's d throughout Chapters 2–3.
-- **Equal-footing opponent filter** (§1) — `abs(opp_rating − user_rating) ≤ 100` (both ratings `NOT NULL`). Universal across every per-metric subchapter as of 2026-05-03; the CDF inherits it so the global distribution represents skill at equal footing, not skill at typical Lichess matchmaking.
-- **Rating-lag selection bias — game-time ELO bucketing** (§1, "Rating-lag selection bias (game-time bucketing)" and "user_elo_at_game / elo_bucket" in Shared SQL building blocks) — every per-user row is bucketed by the cohort user's **rating at game time** (`games.white_rating` / `games.black_rating`), NOT by `benchmark_selected_users.rating_bucket`. Sub-800 rows are dropped (`elo_bucket IS NULL`). A single user spans 2–3 game-time ELO buckets across their career; per-user metric values are computed per `(user_id, elo_bucket, tc)`.
-
-The pooled distribution is **global** (pooled across all `(elo_bucket, tc_bucket)` cells except the sparse `(2400, classical)` cell) — not per-cell. The chip phrasing "top X% of all players" requires a single global CDF, not per-(TC, ELO) CDFs. The per-rating-bucket tables in the next subsection are sanity checks on the pooled distribution, not separate CDFs.
-
-### Breakpoint set
-
-The locked breakpoint set is **every integer percentile from p1 through p99** — 99 breakpoints total (`p1, p2, p3, ..., p97, p98, p99`), no sub-percent steps. Per `ROADMAP.md` Phase 93 success criterion #5.
-
-**Rationale for the bounded tails (p1/p99, NOT extreme-tail extensions):** at the current pooled cohort size (n ≈ 2000 across the 4 metrics) the deep-tail breakpoints have approximately ±5pp sampling SE and would swing on single outliers — the bounded p1..p99 range deliberately keeps such extreme-tail breakpoints **out of scope**. Tighter tails are a future ops task — cohort re-selection at a higher `--per-cell` from `scripts/select_benchmark_users.py` — deferred until that cohort exists.
-
-**Rationale for integer-only steps (no sub-percent intermediates):** chip-rendered phrasing operates on whole-percent precision ("top 3%", not "top 2.5%"). Half-percent shoulders are **out of scope** because they would be stored but never rendered.
-
-**Chip phrasing convention:** all chip copy uses the **"top X%"** form (NEVER "bottom X%"). A user at p3 renders as "top 97%"; a user at p97 renders as "top 3%". The CDF table stores the empirical percentile; the renderer (Phase 94) converts to the top-X% framing.
-
-> **Superseded breakpoint sets** (earlier drafts, kept here for audit trail only — do not implement): an earlier 19-breakpoint *tail-densified* set (including p0.1, p0.5, p99.5, p99.9 and the `p2.5 / p97.5` half-percent shoulders) was proposed in `SEED-019` and an intermediate 15-breakpoint p1..p99-with-half-steps draft followed in CONTEXT.md D-06. Both are out of scope as of 2026-05-22 (CONTEXT.md D-06 revised to match ROADMAP success criterion #5); any incidental mention of `p0.1` / `p99.9` / `p2.5` / `p97.5` / `p0.5` / `p99.5` should appear only inside this superseded / out-of-scope footnote or an earlier-draft callout.
-
-### Per-rating-bucket sanity-check methodology
-
-For each of the 4 metrics, the report includes a per-rating-bucket table showing:
-
-| rating bucket | n_users | median | skew | kurtosis |
-|---|---:|---:|---:|---:|
-| 800 (game-time) | ... | ... | ... | ... |
-| 1200 (game-time) | ... | ... | ... | ... |
-| 1600 (game-time) | ... | ... | ... | ... |
-| 2000 (game-time) | ... | ... | ... | ... |
-| 2400 (game-time) | ... | ... | ... | ... |
-
-This mirrors `reports/benchmark/benchmarks-gap-metrics-percentile-candidacy.md` (2026-05-22). Purpose: verify that the pooled distribution behaves reasonably across rating strata. Conversion ΔES is known to have skew ≈ −0.95 and excess kurtosis ≈ +1.42 per the pre-flight (sigmoid-asymmetry artifact, ceiling at 1.0); sanity-check tables document this is expected, not a data bug. The sparse `(2400, classical)` cell is excluded from these marginals per §1 rules.
-
-Rating buckets follow the §1 canonical anchors `800 / 1200 / 1600 / 2000 / 2400` (game-time, 400-wide, sub-800 dropped).
-
-### Expected report shape
-
-`reports/percentile/global-percentile-cdf-latest.md` MUST contain, at minimum (slim format — Claude's Discretion item #3):
-
-1. **Header block** — DB provenance (benchmark, localhost:5433, flawchess_benchmark), snapshot ISO timestamp, `BENCHMARK_DB_SNAPSHOT_MONTH` (currently `"2026-03"`), per-metric n_users, the canonical-CTE inheritance note, and the same sparse-cell + equal-footing + game-time-bucketing methodology notes as `reports/benchmark/benchmarks-latest.md`.
-2. **Per-metric breakpoint table** — 99 rows × value columns: percentile label (`p1, p2, ..., p99`) and value at that percentile. Values rendered in pp with one decimal (`−2.3pp`) per the §1 Display formatting rule (`max(|p25|, |p75|)` family). The CDF stores raw 0–1 score-difference values internally; the report renders them in pp.
-3. **Per-metric per-rating-bucket sanity-check table** — 5 rows × 4 columns (`n_users / median / skew / kurtosis`) as shown above. One table per metric. Sparse `(2400, classical)` excluded.
-4. **Per-metric n_users header line** — explicit cohort size after the per-user inclusion floor is applied, so the reader can verify the cohort matches the pre-flight expectations (~2000 users per metric ±200 depending on per-metric floors).
-
-The slim format is sufficient for `ROADMAP.md` Phase 93 success criterion #3. The richer pre-flight-style layout (full per-bucket distribution percentiles + per-axis ELO collapse verdicts) is not required — those live in `reports/benchmark/benchmarks-latest.md` already and are not re-derived here.
-
-### Mechanization & rotation rule
-
-Methodology is mechanized by `scripts/gen_global_percentile_cdf.py` (Plan 02). The script:
-
-- Reuses the `--db benchmark` safety guard pattern from `scripts/backfill_eval.py`: refuses to run unless `DATABASE_URL` contains both `flawchess_benchmark` AND `:5433`, preventing accidental writes against dev/prod.
-- Runs the canonical CTE (§1) per metric, projects the 99 integer percentiles via `percentile_cont(ARRAY[0.01, 0.02, ..., 0.99]) WITHIN GROUP (ORDER BY <metric>)`, and emits the result as committed Python source at `app/services/global_percentile_cdf.py` (typed `Mapping[MetricId, CdfTable]` registry, dataclass shape mirroring `endgame_zones.ZONE_REGISTRY` — Claude's Discretion item #4).
-- Embeds two audit-trail constants in the committed Python source (Claude's Discretion item #4): `BENCHMARK_DB_SNAPSHOT_MONTH = "2026-03"` (str) and a per-metric `n_users: int` field on each `CdfTable`. Both also appear in the report header so a future recalibration session can verify what cohort the live chips were trained against.
-- DB → Python regen is a **manual recalibration step**. Re-run on demand (new benchmark snapshot month, metric floor change, methodology fix). No CI gate, no auto-regen, no scheduled job.
-
-**Report rotation rule (D-07).** On each run:
-1. If `reports/percentile/global-percentile-cdf-latest.md` exists, read the date from its first-line header (`# FlawChess Global Percentile CDF — YYYY-MM-DD`).
-2. Rename it to `reports/percentile/global-percentile-cdf-YYYY-MM-DD.md`. If that dated archive already exists, leave the archive alone and overwrite `reports/percentile/global-percentile-cdf-latest.md` in place (same convention as `reports/benchmark/benchmarks-latest.md`).
-3. Write the new snapshot to `reports/percentile/global-percentile-cdf-latest.md`.
-
-Never mutate an existing dated archive.
-
-### Illustrative SQL snippet (composition example — not authoritative)
-
-The authoritative SQL is in `scripts/gen_global_percentile_cdf.py`. The snippet below illustrates how the 99-breakpoint `percentile_cont` composes onto the canonical CTE for a single metric (`achievable_score_gap`); the script generalizes this across all 4 in-scope metrics with their per-metric floors:
-
-```sql
-WITH selected_users AS (
-  -- §1 Standard CTE — selected_users (status='completed', sub-800 dropped via game-time bucketing below)
-  -- ... see §1 "Standard CTE — selected_users" for the verbatim block ...
-),
-per_user AS (
-  -- §3.1.5 Achievable Score Gap per-user (paired d_i = actual − expected; mate included, |eval_cp| < 2000)
-  -- with §1 "user_elo_at_game / elo_bucket" + universal equal-footing filter abs(opp - user) <= 100
-  -- HAVING count(d_i) >= 20  (per-metric inclusion floor)
-  -- ... see §3.1.5 query for the verbatim block ...
-),
-per_user_excl_sparse AS (
-  SELECT * FROM per_user WHERE NOT (elo_bucket = 2400 AND tc = 'classical')
-)
-SELECT
-  percentile_cont(
-    ARRAY[
-      0.01, 0.02, 0.03, 0.04, 0.05, 0.06, 0.07, 0.08, 0.09, 0.10,
-      0.11, 0.12, 0.13, 0.14, 0.15, 0.16, 0.17, 0.18, 0.19, 0.20,
-      0.21, 0.22, 0.23, 0.24, 0.25, 0.26, 0.27, 0.28, 0.29, 0.30,
-      0.31, 0.32, 0.33, 0.34, 0.35, 0.36, 0.37, 0.38, 0.39, 0.40,
-      0.41, 0.42, 0.43, 0.44, 0.45, 0.46, 0.47, 0.48, 0.49, 0.50,
-      0.51, 0.52, 0.53, 0.54, 0.55, 0.56, 0.57, 0.58, 0.59, 0.60,
-      0.61, 0.62, 0.63, 0.64, 0.65, 0.66, 0.67, 0.68, 0.69, 0.70,
-      0.71, 0.72, 0.73, 0.74, 0.75, 0.76, 0.77, 0.78, 0.79, 0.80,
-      0.81, 0.82, 0.83, 0.84, 0.85, 0.86, 0.87, 0.88, 0.89, 0.90,
-      0.91, 0.92, 0.93, 0.94, 0.95, 0.96, 0.97, 0.98, 0.99
-    ]::double precision[]
-  ) WITHIN GROUP (ORDER BY achievable_gap) AS breakpoints,
-  count(*) AS n_users
-FROM per_user_excl_sparse;
-```
-
-The 99-element `breakpoints` array is the row that lands in `GLOBAL_PERCENTILE_CDF["achievable_score_gap"].values` (with index `i ∈ {0..98}` mapping to percentile `i + 1`). Phase 94's interpolation helper consumes this array plus `n_users`.
+> §4 is a **separate deliverable**: it is NOT part of `benchmarks-latest.md` and `scripts/gen_benchmarks.py` does **not** compute it (its §4 chapter is reference-only, `status: "REFERENCE"`, emitting no report body — see `scripts/benchmarks/chapter4.py`). The live percentile artifact is the **Phase 94.4 cohort sliding-window** registry `COHORT_PERCENTILE_CDF` (8 metrics × ~37 Elo anchors × 4 TC, K-nearest-anchor cohorts) in `app/services/global_percentile_cdf.py`, generated by `scripts/gen_global_percentile_cdf.py --target benchmark`, reported at `reports/percentile/cohort-percentile-cdf-latest.md`, and gated by `tests/scripts/test_gen_global_percentile_cdf_{pooled,unchanged}.py`. Earlier designs (Phase 93 v1 → 94.2 → 94.3, flat `GLOBAL_PERCENTILE_CDF`) are retired; for current behaviour read `scripts/gen_global_percentile_cdf.py` and its module docstring.
 
 ---
 
 ## 5. Flaw-Delta Zones
 
-> **Added Phase 114 (D-01 unified estimator, D-04 amendment).** This chapter computes the population-level "typical zone" for all 15 flaw-delta metrics using the single **per-100-moves paired-delta estimator** — no count-rate/proportion family split. The code/LLM seam is identical to §§2–3: `scripts/benchmarks/chapter5.py` computes the numbers; you apply the verdict *words* and write recommendations.
+> This chapter computes the population-level "typical zone" for all 15 flaw-delta metrics using the single **per-100-moves paired-delta estimator** — no count-rate/proportion family split. The code/LLM seam is identical to §§2–3: `scripts/benchmarks/chapter5.py` computes the numbers; you apply the verdict *words* and write recommendations.
 
 This chapter is **read from the generator artifact** (`chapters["5-flaw-delta-zones"]` in `reports/benchmark/benchmarks-generated.json`). Do NOT re-run any SQL by hand. The per-metric markdown tables are already rendered in `reports/benchmark/benchmarks-generated.md` — splice them and write the verdict words + recommendations.
 
@@ -3494,7 +2003,7 @@ Write to `reports/benchmark/benchmarks-latest.md`. Before writing, if that file 
 - **Snapshot taken**: <ISO timestamp>
 - **Population**: <N_users> users / <N_games> games / <N_positions> positions
 - **Cell anchoring**: 400-wide ELO buckets via the cohort user's **rating at game time** (`games.white_rating`/`games.black_rating`, sub-800 dropped) — NOT `benchmark_selected_users.rating_bucket`; tc_bucket from `benchmark_selected_users`; per-user TC restricted to selected tc_bucket. State the **"Methodology change (2026-05-19): rating-at-game-time bucketing"** note in the report header.
-- **Selection provenance**: 2026-03 Lichess monthly dump, 9133 selected users, <N_ingested> ingested at ~50/cell
+- **Selection provenance**: <dump_month> Lichess monthly dump, <N_selected> selected-user rows, <N_ingested> ingested users
 - **Per-user history caveat**: each user contributes up to 1000 games per TC over a 36-month window at varying ratings, so a user spans 2–3 game-time ELO buckets; "ELO bucket effect" is now a genuine rating-at-game-time effect. `benchmark_selected_users.rating_bucket` / `median_elo` are retained as longitudinal/trajectory columns only. Any whole-career per-user scalar (e.g. composite Endgame Skill) is now per-bucket/trajectory, not one number — flag for the live-UI comparator.
 - **Base filters**: g.rated AND NOT g.is_computer_game; per-user filter g.time_control_bucket = bsu.tc_bucket; benchmark_ingest_checkpoints.status = 'completed' (mandatory canonical-CTE filter)
 - **Equal-footing filter (universal — all subchapters)**: `abs(opp_rating - user_rating) <= 100`. Applied to every per-game CTE in Chapters 2 and 3 to remove the matchmaking confound. Live UI uses unfiltered games — the gap above the equal-footing baseline is the intended skill signal. Scope changed to universal on 2026-05-03; pre-2026-05-03 score-gap / clock / time-pressure numbers are not directly comparable. If a non-sparse cell drops below sample floor after filtering, escalate by re-selecting/re-ingesting more users/games rather than relaxing the filter. See `.planning/notes/benchmark-equal-footing-framing.md` for rationale.
@@ -3610,7 +2119,7 @@ Write to `reports/benchmark/benchmarks-latest.md`. Before writing, if that file 
 | Mistake delta (severity=1) | 5.14 | ... | ... | ... |
 | Blunder delta (severity=2) | 5.15 | ... | ... | ... |
 
-Every cell states `max |d|` and a verdict. Drives Phase 73 zone calibration in SEED-006.
+Every cell states `max |d|` and a verdict.
 
 ## Recommended thresholds summary
 
