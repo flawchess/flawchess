@@ -2,7 +2,7 @@
 
 Every test name carries the due_weeks rule token so the VALIDATION map can select them
 with pytest -k due_weeks. Each passes `start` explicitly (the production value is
-MEDALS_START_WEEK = 2026-10-05, a Monday).
+MEDALS_START_WEEK = 2026-09-28, a Monday).
 """
 
 from __future__ import annotations
@@ -18,8 +18,8 @@ THIRD = datetime.date(2026, 10, 19)
 
 
 def test_due_weeks_the_production_start_week_is_the_locked_monday() -> None:
-    assert MEDALS_START_WEEK == START
-    assert START.weekday() == 0
+    assert MEDALS_START_WEEK == datetime.date(2026, 9, 28)
+    assert MEDALS_START_WEEK.weekday() == 0
 
 
 def test_due_weeks_nothing_is_due_before_the_start_week_ends() -> None:
