@@ -53,8 +53,10 @@ from app.services.train_leaderboard import (
 )
 
 # Locked: the first week that earns medals. Read at call time (a module global, never a
-# default argument) so tests can monkeypatch it.
-MEDALS_START_WEEK: Final = datetime.date(2026, 10, 5)
+# default argument) so tests can monkeypatch it. Moved back from 2026-10-05 to 2026-09-28
+# after launch so the launch week (the board went live Sunday 2026-10-04) awards medals
+# too; finalization recomputes from drill_solves, so a past week finalizes exactly.
+MEDALS_START_WEEK: Final = datetime.date(2026, 9, 28)
 # Pitfall 1: `solved_at` is the request's start time but visibility is commit time, so a
 # solve that started before the deadline can commit a moment after it. The grace keeps a
 # permanent snapshot from missing it, at the cost of the podium appearing at 00:05 UTC.
