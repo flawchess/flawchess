@@ -24,9 +24,10 @@ Rejected alternative: emailing active users directly. Users never gave explicit 
 ## Locked Decisions (from /gsd-explore 2026-10-05)
 
 1. **Eligibility:** non-guest users with >= 5 distinct `activity_date` rows in `user_activity`. On 2026-10-05: 98 users eligible, 73 of them active in the last 14 days. Feature-agnostic on purpose, so regulars who never train are covered; no separate Train-session condition needed (training counts as activity).
-2. **Surfaces (both, one shared state; whichever the user hits first):**
+2. **Surfaces (all three, one shared state; whichever the user hits first):**
    - Import page bot bubble: replaces the usual explore copy ("Analyze your games, try a training session, challenge me to a game, or explore your openings and endgames.", `components/import/importBotBubbleCopy.ts` `EXPLORE_PARTS`).
    - Train landing page host bubble (`TrainStartScreen.tsx` `TrainHeader`): Hilda replaces the daily rotating host while the ask is active.
+   - Bots roster page welcome bubble (`components/bots/PersonaGrid.tsx` `BotWelcomeCard`, the `rosterHost` daily rotation): Hilda replaces the standard host greeting while the ask is active. The greeting's inline info popover (how the bots work) is hidden for that stretch, which is acceptable since eligible users have 5+ active days. The welcome bubble renders for guests too, but guests are never eligible.
    - NOT the session score screen.
 3. **Mobile exception:** on phones the Train landing bubble is normally hidden for returning users (quick 261004-dta, `max-sm:hidden` in `TrainHeader`). Show it anyway while the ask is active, accepting that it pushes the streak card / Start button down.
 4. **Persona + copy:** Hilda the Hippo (`personaRegistry.ts`). "You've been with FlawChess for 5 days now, thanks! Got an idea that would make it better for you?" CTAs: **Maybe later** | **Sure!**
@@ -44,7 +45,7 @@ Rejected alternative: emailing active users directly. Users never gave explicit 
 
 ## Scope Estimate
 
-**Small-medium:** one Alembic migration (user-level ask state + feedback source column), an eligibility/state endpoint (or a field on the user profile), two bubble integrations, view/dismiss/snooze mutations, FeedbackModal placeholder + source prop. Likely a single phase or a larger quick task.
+**Small-medium:** one Alembic migration (user-level ask state + feedback source column), an eligibility/state endpoint (or a field on the user profile), three bubble integrations, view/dismiss/snooze mutations, FeedbackModal placeholder + source prop. Likely a single phase or a larger quick task.
 
 ## Breadcrumbs
 
@@ -52,5 +53,6 @@ Rejected alternative: emailing active users directly. Users never gave explicit 
 - `app/models/feedback.py`, `app/schemas/feedback.py`, `app/services/feedback_service.py`
 - `frontend/src/components/import/ImportBotBubble.tsx`, `importBotBubbleCopy.ts`
 - `frontend/src/components/train/TrainStartScreen.tsx` (`TrainHeader`, `landingHost`, ask chain), `TrainBotBubble.tsx`
+- `frontend/src/components/bots/PersonaGrid.tsx` (`BotWelcomeCard`), `botGameCopy.ts` (`rosterHost`)
 - `frontend/src/lib/personas/personaRegistry.ts` (Hilda the Hippo)
 - `user_activity` table (`user_id`, `activity_date`, `activity_count`)
