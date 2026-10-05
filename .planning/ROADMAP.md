@@ -424,8 +424,8 @@ Hippo asks once a user reaches 5 active days, on whichever surface they hit firs
   landing host bubble (`TrainHeader`, shown on phones too while active, above the reminder-install
   ask), Bots roster welcome bubble (`BotWelcomeCard`, info popover hidden while active). Not the
   session score screen.
-- **Copy:** "You've been with FlawChess for 5 days now, thanks! Got an idea that would make it
-  better for you?" CTAs **Maybe later** | **Sure!**
+- **Copy:** "You've been with FlawChess for {active_days} days now, thanks! Got an idea that would make
+  it better for you?" (actual count, same copy in both rounds; CONTEXT D-01/D-02) CTAs **Maybe later** | **Sure!**
 - **Lifecycle:** "Sure!" opens `FeedbackModal` with a concrete placeholder and marks the ask done
   forever (even if closed unsent). "Maybe later" dismisses immediately and snoozes; re-ask once after
   +10 more active days, then never. 3 views without a click count as "Maybe later". A view is at
@@ -442,11 +442,19 @@ Hippo asks once a user reaches 5 active days, on whichever surface they hit firs
 - **Out of scope:** NPS / recommend-a-friend split, mobile floating feedback button.
 
 **Depends on**: Nothing (standalone)
-**Requirements**: TBD
-**Plans:** 0 plans
+**Requirements**: FBASK-01..FBASK-10 (defined in 234-RESEARCH.md "Phase Requirements"; coverage contract also CONTEXT.md D-01..D-05)
+**Plans:** 4 plans
 
 Plans:
-- [ ] TBD (run /gsd-discuss-phase 234 or /gsd-plan-phase 234)
+**Wave 1**
+- [ ] 234-01-PLAN.md — Backend: users.prompt_state + feedback.source migration, server-decided eligibility on GET/PUT profile, atomic view/snooze/done via POST /users/me/feedback-ask (tracer)
+- [ ] 234-02-PLAN.md — Frontend: shared Hilda FeedbackAskBubble on the Import page (tracer), FeedbackModal source/placeholder props, profile refresh after any feedback
+
+**Wave 2** *(blocked on Wave 1 completion)*
+- [ ] 234-03-PLAN.md — "Sure!" end to end: feedback.source attribution on POST /api/feedback (tracer), app-level feedback modal host that survives the bubble unmounting
+
+**Wave 3** *(blocked on Wave 2 completion)*
+- [ ] 234-04-PLAN.md — Train landing (after the intro, phones included) and Bots roster surfaces, CHANGELOG, phase pre-merge gate
 
 Phase detail for every shipped milestone lives in `milestones/vX.Y-ROADMAP.md`, its phase directories in `milestones/vX.Y-phases/`, and the per-milestone summaries in [MILESTONES.md](MILESTONES.md).
 
