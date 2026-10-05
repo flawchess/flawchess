@@ -63,7 +63,7 @@ Not in scope: any UI that shows timing, any per-click event stream, any new Umam
 - **D-09 Device class: telemetry key per solve.** `client: "mobile" | "desktop"` inside
   `telemetry`, a Pydantic `Literal`. No migration, no `drill_sessions` column, correct when a session
   is resumed on another device. Add one line to `frontend/src/pages/Privacy.tsx`.
-- **D-10 No `train-review` Umami mirror.** The DB row is the single source; Umami stays funnels-only.
+- **D-10 No `train-review` Umami mirror:** The DB row is the single source; Umami stays funnels-only.
 
 ### Engagement counter rules
 - **D-11 Card "opened":** mobile = a tap that spotlights a card. Desktop = a hover held for at least

@@ -1,16 +1,16 @@
 ---
 gsd_state_version: "1.0"
 milestone: v2.21
-current_phase: 232
-current_phase_name: Frontend Major Dependency Upgrades (SEED-187
+current_phase: 233
+current_phase_name: Train Per-Puzzle Timing & Engagement Telemetry (SEED-190)
 status: completed
 stopped_at: Phase 233 context gathered
-last_updated: "2026-10-05T16:17:00.921Z"
-state_head: 258bc7e55793b1cb321f74e81f4f94cca06e0b20
+last_updated: "2026-10-05T17:18:08.006Z"
+state_head: f899a6c0eb091f0b7c2f9427c3c6d65b6a5aa9fd
 progress:
   total_phases: 6
   completed_phases: 103
-  total_plans: 26
+  total_plans: 31
   completed_plans: 47
 milestone_name: Browser Engine Throughput
 last_activity: 2026-10-04
@@ -21,7 +21,7 @@ last_activity_desc: "Completed quick task 261004-rre: Track Umami events for ser
 
 ## Current Position
 
-Phase: 232 (Frontend Major Dependency Upgrades (SEED-187)) — COMPLETE (UAT 3/3, verification passed, threats_open 0, Nyquist-compliant)
+Phase: 233 (Train Per-Puzzle Timing & Engagement Telemetry (SEED-190)) — READY TO EXECUTE
 Plan: 4 of 4
 
 Status: Verified on branch `gsd/phase-232-frontend-major-dependency-upgrades`; not yet squash-merged to `main` and not deployed. UAT found and fixed a Sentry navigation-breadcrumb query-string leak (G-232-3, 814a3c44c); first prod release carrying 232 keeps the Sentry 11 deploy watch.
