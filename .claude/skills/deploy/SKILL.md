@@ -160,14 +160,15 @@ Then immediately run `bin/deploy.sh`. No question, no pause.
 bin/deploy.sh
 ```
 
-This script already does the right things: it dispatches the CI workflow on `production`, asserts the dispatched run is on `production@TARGET_SHA`, watches the run via `gh run watch --exit-status`, then SSHes to the server to verify `HEAD` matches. It self-monitors. **Don't background it** — let its output stream so the user can see progress.
+This script already does the right things: it checks for a green CI run on the identical tree (normally the release PR's run from Step 3, so no second test run), runs `ci.yml` on `production` first if there is none, then dispatches `deploy.yml`, asserts each dispatched run is on `production@TARGET_SHA`, watches it via `gh run watch --exit-status`, and SSHes to the server to verify `HEAD` matches. It self-monitors. **Don't background it** — let its output stream so the user can see progress.
 
 If `bin/deploy.sh` exits non-zero:
 
 - **`scp .prod.env` failed** — usually network or SSH. Retry once. If it fails again, stop and report.
-- **`no workflow_dispatch run found`** — race condition (rare). Re-run `bin/deploy.sh`.
+- **`no ci.yml/deploy.yml workflow_dispatch run found`** — race condition (rare). Re-run `bin/deploy.sh`.
+- **`Require green CI for this tree` fails in `deploy.yml`** — the tree has no successful `ci.yml` run. `bin/deploy.sh` normally prevents this; re-run it and it will run CI first.
 - **Dispatched run is on wrong branch / SHA** — abort and investigate. Do NOT bypass the assertion.
-- **CI failure during deploy** — check `gh run view <run-id> --log-failed`. If it's a transient flake, `gh run rerun <run-id> --failed` then re-run `bin/deploy.sh`. If it's a real failure, halt and report — fixing this is one of the few situations that needs the user to decide between forward-fix-via-main and hotfix-to-production.
+- **CI failure in the fallback `ci.yml` run on `production`** — check `gh run view <run-id> --log-failed`. If it's a transient flake, `gh run rerun <run-id> --failed` then re-run `bin/deploy.sh`. If it's a real failure, halt and report — fixing this is one of the few situations that needs the user to decide between forward-fix-via-main and hotfix-to-production.
 - **Server SHA mismatch at the end** — server didn't converge. Check `ssh flawchess "cd /opt/flawchess && docker compose ps"` and the deploy logs. Don't claim success.
 - **`Deploy via SSH` fails with `could not read Username for 'https://github.com'`** — the server's `git fetch` cannot authenticate. The server pulls over SSH with a read-only deploy key (`~/.ssh/id_ed25519_github`, `~/.ssh/config` entry for github.com, remote `git@github.com:flawchess/flawchess.git`); first verify the key is still on the repo (`gh repo deploy-key list`).
 
@@ -215,7 +216,7 @@ When in doubt: prefer continuing with a noted caveat over halting. Halting waste
 ## Hard rules (never break, even in auto-mode)
 
 - **Never bypass `bin/deploy.sh`'s safety assertions** (branch check, SHA check, server SHA verify). They exist because of a 2026-05-16 incident where a deploy silently shipped unreleased `main` to prod.
-- **Never deploy via direct SSH** (also a root `CLAUDE.md` rule). `bin/deploy.sh` is the only sanctioned path — it runs CI tests first.
+- **Never deploy via direct SSH** (also a root `CLAUDE.md` rule). `bin/deploy.sh` is the only sanctioned path — it never deploys a tree without a green CI run.
 - **Never force-push `main` or `production`.** Forward-fix instead. If a rebase would require force-push, halt and ask.
 - **Never `git push --no-verify`** unless the pre-push hook itself is broken (then fix the hook, don't skip it). The hook catches the most common preventable CI failure on this project.
 - **Never delete the `main` or `production` branch.** `gh pr merge` defaults to deleting the head branch — always pass `--delete-branch=false`.

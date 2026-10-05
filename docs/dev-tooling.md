@@ -6,7 +6,8 @@ Scripts, database access, and the dev clock. The root `CLAUDE.md` keeps only the
 
 `bin/` holds shell helpers, `scripts/` holds Python maintenance/backfill/benchmark tools. Most are self-describing — read the docstring or run with `--help`. The ones with non-obvious behavior:
 
-- **`bin/deploy.sh`** — the only sanctioned deploy path (CI → `production`). Never deploy by direct SSH.
+- **`bin/deploy.sh`** — the only sanctioned deploy path (green CI → `deploy.yml` → `production`). Never deploy by direct SSH.
+- **`bin/ci_green_for_tree.sh <sha>`** — exits 0 and prints the run's SHA when a successful `ci.yml` run exists for a commit with the same tree as `<sha>`; the deploy gate (used by `bin/deploy.sh` and `deploy.yml`).
 - **`bin/reset_db.sh`** — destroys and recreates the dev DB. **DO NOT RUN WITHOUT EXPLICIT PERMISSION FROM THE USER.**
 - **`bin/prod_db_tunnel.sh`** — SSH tunnel forwarding prod PostgreSQL to `localhost:15432` (needed for the prod-db MCP and `--db prod` scripts). Stop with `bin/prod_db_tunnel.sh stop`.
 - **`bin/benchmark_db.sh`** — lifecycle (`start`/`stop`/`reset`) for the benchmark Postgres on port 5433.
