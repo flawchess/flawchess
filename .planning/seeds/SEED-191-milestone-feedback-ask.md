@@ -1,6 +1,8 @@
 ---
 id: SEED-191
-status: dormant
+status: promoted
+promoted_to: Phase 234
+promoted: 2026-10-05
 planted: 2026-10-05
 planted_during: /gsd-explore on getting feedback from invested users (milestone v2.21, phase 233 in flight)
 trigger_when: next milestone planning, or a free quick-task slot; ship early, since every week without it is a week of near-zero feedback

@@ -412,6 +412,39 @@ Plans:
 **Wave 5** *(blocked on Wave 4 completion)*
 - [x] 233-05-PLAN.md — Privacy line (D-09), D-08/D-10 confirmation, CHANGELOG, phase pre-merge gate
 
+### Phase 234: Milestone Feedback Ask (SEED-191)
+
+**Goal**: Turn invested users into feedback senders with a timed, character-voiced ask instead of the
+generic desktop-only floating button (11 real submissions since June, 7 from one user). Hilda the
+Hippo asks once a user reaches 5 active days, on whichever surface they hit first.
+
+- **Eligibility (server-decided):** non-guest users with >= 5 distinct `user_activity.activity_date`
+  rows who have never submitted feedback from any source.
+- **Surfaces (one shared state):** Import page bot bubble (replaces `EXPLORE_PARTS` copy), Train
+  landing host bubble (`TrainHeader`, shown on phones too while active, above the reminder-install
+  ask), Bots roster welcome bubble (`BotWelcomeCard`, info popover hidden while active). Not the
+  session score screen.
+- **Copy:** "You've been with FlawChess for 5 days now, thanks! Got an idea that would make it
+  better for you?" CTAs **Maybe later** | **Sure!**
+- **Lifecycle:** "Sure!" opens `FeedbackModal` with a concrete placeholder and marks the ask done
+  forever (even if closed unsent). "Maybe later" dismisses immediately and snoozes; re-ask once after
+  +10 more active days, then never. 3 views without a click count as "Maybe later".
+- **State:** `users.prompt_state JSONB NOT NULL DEFAULT '{}'`, keyed by ask id (`feedback_v1`),
+  validated by a per-ask Pydantic model (`status: Literal["snoozed", "done"]`) instead of a DB CHECK
+  (deliberate exception). Every update (view, snooze, done) is one atomic `jsonb_set`/`||` UPDATE,
+  never read-modify-write. Profile exposes `active_days` and the ask state; one small POST endpoint
+  for view/snooze/done.
+- **Yield:** `feedback.source` column (`milestone_ask` vs `floating_button`) so the effect is
+  queryable.
+- **Out of scope:** NPS / recommend-a-friend split, mobile floating feedback button.
+
+**Depends on**: Nothing (standalone)
+**Requirements**: TBD
+**Plans:** 0 plans
+
+Plans:
+- [ ] TBD (run /gsd-discuss-phase 234 or /gsd-plan-phase 234)
+
 Phase detail for every shipped milestone lives in `milestones/vX.Y-ROADMAP.md`, its phase directories in `milestones/vX.Y-phases/`, and the per-milestone summaries in [MILESTONES.md](MILESTONES.md).
 
 ## Backlog
