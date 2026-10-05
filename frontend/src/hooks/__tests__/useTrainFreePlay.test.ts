@@ -295,3 +295,60 @@ describe('useTrainFreePlay — engine MultiPV follows the Stockfish settings (D-
     expect(multiPvFor(1, 0)).toBe(1);
   });
 });
+
+describe('useTrainFreePlay — onUserMove counts only user-played moves (Phase 233 D-14)', () => {
+  function renderCounting() {
+    const onUserMove = vi.fn();
+    const hook = renderHook(() => useTrainFreePlay({ startFen: START_FEN, seedEval: null, onUserMove }));
+    return { onUserMove, ...hook };
+  }
+
+  it('fires once on start', () => {
+    const { onUserMove, result } = renderCounting();
+    act(() => result.current.start([], 'e2e4'));
+    expect(onUserMove).toHaveBeenCalledTimes(1);
+  });
+
+  it('fires once per legal playMove and never for a rejected one', () => {
+    const { onUserMove, result } = renderCounting();
+    act(() => result.current.start([], 'e2e4'));
+    onUserMove.mockClear();
+
+    let played = false;
+    act(() => {
+      played = result.current.playMove('e7', 'e5');
+    });
+    expect(played).toBe(true);
+    expect(onUserMove).toHaveBeenCalledTimes(1);
+
+    act(() => {
+      played = result.current.playMove('a1', 'a8');
+    });
+    expect(played).toBe(false);
+    expect(onUserMove).toHaveBeenCalledTimes(1);
+  });
+
+  it('fires once per playLine', () => {
+    const { onUserMove, result } = renderCounting();
+    act(() => result.current.start([], 'e2e4'));
+    onUserMove.mockClear();
+    act(() => result.current.playLine(['e7e5', 'g1f3']));
+    expect(onUserMove).toHaveBeenCalledTimes(1);
+  });
+
+  it('never fires for reset, goBack, goForward, goToRoot or goToNode', () => {
+    const { onUserMove, result } = renderCounting();
+    act(() => result.current.start([], 'e2e4'));
+    act(() => {
+      result.current.playMove('e7', 'e5');
+    });
+    onUserMove.mockClear();
+
+    act(() => result.current.goBack());
+    act(() => result.current.goForward());
+    act(() => result.current.goToRoot());
+    act(() => result.current.goToNode(0));
+    act(() => result.current.reset());
+    expect(onUserMove).not.toHaveBeenCalled();
+  });
+});

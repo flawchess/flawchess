@@ -31,7 +31,7 @@
     {
       "number": "26",
       "name": "33. v1.5 phases",
-      "status": "pending"
+      "status": "complete"
     },
     {
       "number": "34",
@@ -61,27 +61,27 @@
     {
       "number": "63",
       "name": "68. v1.11 phases",
-      "status": "pending"
+      "status": "complete"
     },
     {
       "number": "69",
       "name": "Benchmark DB Infra & Ingestion",
-      "status": "pending"
+      "status": "complete"
     },
     {
       "number": "70",
       "name": "71.1. v1.13 phases",
-      "status": "pending"
+      "status": "complete"
     },
     {
       "number": "75",
       "name": "77. v1.14 phases",
-      "status": "pending"
+      "status": "complete"
     },
     {
       "number": "78",
       "name": "79. v1.15 phases",
-      "status": "pending"
+      "status": "complete"
     },
     {
       "number": "80",
@@ -91,7 +91,7 @@
     {
       "number": "84",
       "name": "88.4. v1.17 phases",
-      "status": "pending"
+      "status": "complete"
     },
     {
       "number": "90",
@@ -111,7 +111,7 @@
     {
       "number": "97",
       "name": "99.1. v1.21 phases",
-      "status": "pending"
+      "status": "complete"
     },
     {
       "number": "100",
@@ -121,12 +121,12 @@
     {
       "number": "102",
       "name": "103. v1.23 phases",
-      "status": "pending"
+      "status": "complete"
     },
     {
       "number": "104",
       "name": "112. v1.24 phases",
-      "status": "pending"
+      "status": "complete"
     },
     {
       "number": "113",
@@ -146,7 +146,7 @@
     {
       "number": "123.1",
       "name": "135. v1.28 phases",
-      "status": "pending"
+      "status": "complete"
     },
     {
       "number": "136",
@@ -171,7 +171,7 @@
     {
       "number": "153",
       "name": "161. v2.0 FlawChess Engine phases",
-      "status": "pending"
+      "status": "complete"
     },
     {
       "number": "162",
@@ -201,7 +201,7 @@
     {
       "number": "173",
       "name": ", 180-181. v2.6 phases",
-      "status": "pending"
+      "status": "complete"
     },
     {
       "number": "182",
@@ -221,7 +221,7 @@
     {
       "number": "194",
       "name": "199. v2.10 phases",
-      "status": "pending"
+      "status": "complete"
     },
     {
       "number": "200",
@@ -280,9 +280,9 @@
     }
   ],
   "next": {
-    "command": "/gsd:progress",
-    "label": "Show progress",
-    "reason": "Unsure of state — showing progress"
+    "command": "/gsd:new-milestone",
+    "label": "Start a new milestone",
+    "reason": "All phases complete — start a new milestone"
   },
-  "updated_at": "2026-10-04T12:56:32.850Z"
+  "updated_at": "2026-10-05T19:21:17.365Z"
 }

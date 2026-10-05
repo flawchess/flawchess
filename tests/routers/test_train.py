@@ -675,19 +675,23 @@ async def _solve(
     guess: str = "several",
     played_move: str = "e2e4",
     move_quality: str = "good",
+    telemetry: dict[str, object] | None = None,
 ) -> httpx.Response:
+    body: dict[str, object] = {
+        "position": position,
+        "guess": guess,
+        "played_move": played_move,
+        "move_quality": move_quality,
+    }
+    if telemetry is not None:
+        body["telemetry"] = telemetry
     async with httpx.AsyncClient(
         transport=httpx.ASGITransport(app=app), base_url="http://test"
     ) as client:
         return await client.post(
             f"/api/train/sessions/{session_id}/solve",
             headers={"Authorization": f"Bearer {token}"},
-            json={
-                "position": position,
-                "guess": guess,
-                "played_move": played_move,
-                "move_quality": move_quality,
-            },
+            json=body,
         )
 
 
@@ -3172,3 +3176,362 @@ async def test_enter_session_rejects_other_users_session(test_engine) -> None:
         )
     assert resp.status_code == 404
     assert await _entered_at(test_engine, session_id) is None
+
+
+# ---------------------------------------------------------------------------
+# Phase 233: per-puzzle telemetry (SEED-190)
+# ---------------------------------------------------------------------------
+
+
+async def _telemetry_row(
+    test_engine, session_id: int, position: int
+) -> tuple[object, bool, str | None]:
+    """Return (telemetry, telemetry IS NULL, jsonb_typeof(telemetry)) for one row."""
+    session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
+    async with session_maker() as session:
+        row = (
+            await session.execute(
+                text(
+                    "SELECT telemetry, telemetry IS NULL, jsonb_typeof(telemetry) "
+                    "FROM drill_solves WHERE session_id = :sid AND position = :pos"
+                ),
+                {"sid": session_id, "pos": position},
+            )
+        ).one()
+    return row[0], bool(row[1]), row[2]
+
+
+async def _seed_herring_session(test_engine, label: str) -> tuple[int, str, int, int]:
+    """Register a user and seed a one-puzzle herring session. Returns (user_id, token, game_id, session_id)."""
+    user_id, token = await _register_and_login(
+        f"train-tel-{label}-{uuid.uuid4().hex[:8]}@example.com"
+    )
+    game_id = await _seed_bare_game(test_engine, user_id, f"tel-{label}")
+    session_id = await _seed_session(
+        test_engine, user_id, [(game_id, 8, int(DrillSource.RED_HERRING))]
+    )
+    return user_id, token, game_id, session_id
+
+
+@pytest.mark.asyncio
+async def test_telemetry_solve_without_telemetry_stays_sql_null(test_engine) -> None:
+    """D-01: a solve that carries no telemetry leaves the column SQL NULL, not JSON null."""
+    _, token, game_id, session_id = await _seed_herring_session(test_engine, "none")
+    try:
+        resp = await _solve(token, session_id, 0)
+        assert resp.status_code == 200, resp.text
+        _, is_null, _ = await _telemetry_row(test_engine, session_id, 0)
+        assert is_null is True
+    finally:
+        await _delete_games(test_engine, [game_id])
+
+
+@pytest.mark.asyncio
+async def test_telemetry_solve_with_telemetry_stores_object(test_engine) -> None:
+    """D-01: valid telemetry is stored as exactly the sent keys, a JSON object."""
+    _, token, game_id, session_id = await _seed_herring_session(test_engine, "store")
+    payload: dict[str, object] = {
+        "v": 1,
+        "client": "mobile",
+        "guess_ms": 1200,
+        "move_ms": 3400,
+        "think_hidden_ms": 0,
+        "resumed": False,
+    }
+    try:
+        resp = await _solve(token, session_id, 0, telemetry=payload)
+        assert resp.status_code == 200, resp.text
+        stored, is_null, kind = await _telemetry_row(test_engine, session_id, 0)
+        assert is_null is False
+        assert kind == "object"
+        assert stored == payload
+    finally:
+        await _delete_games(test_engine, [game_id])
+
+
+@pytest.mark.asyncio
+async def test_telemetry_solve_clamps_and_rounds(test_engine) -> None:
+    """D-04: durations are rounded and clamped into [0, cap] server-side."""
+    _, token, game_id, session_id = await _seed_herring_session(test_engine, "clamp")
+    try:
+        resp = await _solve(
+            token,
+            session_id,
+            0,
+            telemetry={"v": 1, "guess_ms": 1234.6, "move_ms": 99_999_999, "think_hidden_ms": -5},
+        )
+        assert resp.status_code == 200, resp.text
+        stored, _, _ = await _telemetry_row(test_engine, session_id, 0)
+        assert stored == {"v": 1, "guess_ms": 1235, "move_ms": 1_800_000, "think_hidden_ms": 0}
+    finally:
+        await _delete_games(test_engine, [game_id])
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "bad_telemetry",
+    [
+        {"v": 1, "bogus": 1},
+        {"v": 1, "guess_ms": True},
+        {"v": 1, "guess_ms": "12"},
+        {"v": 1, "resumed": 1},
+        {"v": 2},
+        {"v": 1, "client": "tablet"},
+    ],
+)
+async def test_telemetry_invalid_telemetry_still_solves(
+    test_engine, bad_telemetry: dict[str, object]
+) -> None:
+    """D-02: malformed telemetry never costs the solve; only the telemetry is dropped."""
+    _, token, game_id, session_id = await _seed_herring_session(test_engine, "bad")
+    try:
+        resp = await _solve(token, session_id, 0, telemetry=bad_telemetry)
+        assert resp.status_code == 200, resp.text
+        session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
+        async with session_maker() as session:
+            solved_at = (
+                await session.execute(
+                    select(DrillSolve.solved_at).where(DrillSolve.session_id == session_id)
+                )
+            ).scalar_one()
+        assert solved_at is not None
+        _, is_null, _ = await _telemetry_row(test_engine, session_id, 0)
+        assert is_null is True
+    finally:
+        await _delete_games(test_engine, [game_id])
+
+
+@pytest.mark.asyncio
+async def test_telemetry_does_not_change_grading(test_engine) -> None:
+    """D-05: the response and the SR ladder are identical with and without telemetry."""
+    game_ids: list[int] = []
+    responses: list[dict[str, object]] = []
+    cases: list[tuple[str, dict[str, object] | None]] = [
+        ("with", {"v": 1, "client": "desktop", "guess_ms": 900, "move_ms": 2100}),
+        ("without", None),
+    ]
+    try:
+        for label, telemetry in cases:
+            user_id, token = await _register_and_login(
+                f"train-tel-grade-{label}-{uuid.uuid4().hex[:8]}@example.com"
+            )
+            game_id = await _seed_game_with_blunder(
+                test_engine, user_id, missed_pv_lines=_SHARP_PV_LINES
+            )
+            game_ids.append(game_id)
+            await _seed_drill_item(test_engine, user_id, game_id, _FLAW_PLY_WHITE, streak=0)
+            session_id = await _seed_session(
+                test_engine, user_id, [(game_id, _FLAW_PLY_WHITE, int(DrillSource.SR_ITEM))]
+            )
+            resp = await _solve(
+                token, session_id, 0, guess="critical", move_quality="good", telemetry=telemetry
+            )
+            assert resp.status_code == 200, resp.text
+            responses.append(resp.json())
+            item = await _get_drill_item(test_engine, user_id, game_id, _FLAW_PLY_WHITE)
+            assert item is not None
+            assert item.streak == 1
+            assert item.status == DrillStatus.ACTIVE
+        assert responses[0] == responses[1]
+    finally:
+        await _delete_games(test_engine, game_ids)
+
+
+@pytest.mark.asyncio
+async def test_telemetry_resubmit_keeps_first_payload(test_engine) -> None:
+    """A re-submitted solve is a lost claim: the first recorded telemetry wins."""
+    _, token, game_id, session_id = await _seed_herring_session(test_engine, "resubmit")
+    first: dict[str, object] = {"v": 1, "guess_ms": 1000}
+    second: dict[str, object] = {"v": 1, "guess_ms": 7777}
+    try:
+        assert (await _solve(token, session_id, 0, telemetry=first)).status_code == 200
+        assert (await _solve(token, session_id, 0, telemetry=second)).status_code == 200
+        stored, _, _ = await _telemetry_row(test_engine, session_id, 0)
+        assert stored == first
+    finally:
+        await _delete_games(test_engine, [game_id])
+
+
+async def _review(
+    token: str, session_id: int, position: int, body: dict[str, object]
+) -> httpx.Response:
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app), base_url="http://test"
+    ) as client:
+        return await client.post(
+            f"{ENDPOINT}/{session_id}/solves/{position}/review",
+            headers={"Authorization": f"Bearer {token}"},
+            json=body,
+        )
+
+
+@pytest.mark.asyncio
+async def test_review_flush_merges_into_solved_row(test_engine) -> None:
+    """D-01/D-03: the flush adds the review keys and leaves the solve keys intact."""
+    _, token, game_id, session_id = await _seed_herring_session(test_engine, "rmerge")
+    try:
+        solve_patch: dict[str, object] = {"v": 1, "guess_ms": 1200, "client": "mobile"}
+        assert (await _solve(token, session_id, 0, telemetry=solve_patch)).status_code == 200
+        resp = await _review(token, session_id, 0, {"v": 1, "exit": "next", "review_ms": 5000})
+        assert resp.status_code == 204, resp.text
+        stored, _, kind = await _telemetry_row(test_engine, session_id, 0)
+        assert kind == "object"
+        assert stored == {
+            "v": 1,
+            "guess_ms": 1200,
+            "client": "mobile",
+            "exit": "next",
+            "review_ms": 5000,
+        }
+    finally:
+        await _delete_games(test_engine, [game_id])
+
+
+@pytest.mark.asyncio
+async def test_review_flush_last_write_wins_per_key(test_engine) -> None:
+    """A later flush overwrites per key; the solve keys are untouched."""
+    _, token, game_id, session_id = await _seed_herring_session(test_engine, "rlww")
+    try:
+        assert (
+            await _solve(token, session_id, 0, telemetry={"v": 1, "guess_ms": 1200})
+        ).status_code == 200
+        first = await _review(token, session_id, 0, {"v": 1, "exit": "pagehide", "review_ms": 3000})
+        assert first.status_code == 204
+        second = await _review(
+            token,
+            session_id,
+            0,
+            {"v": 1, "exit": "next", "review_ms": 5000, "review_line_steps": 2},
+        )
+        assert second.status_code == 204
+        stored, _, _ = await _telemetry_row(test_engine, session_id, 0)
+        assert stored == {
+            "v": 1,
+            "guess_ms": 1200,
+            "exit": "next",
+            "review_ms": 5000,
+            "review_line_steps": 2,
+        }
+    finally:
+        await _delete_games(test_engine, [game_id])
+
+
+@pytest.mark.asyncio
+async def test_review_flush_on_row_solved_without_telemetry_creates_object(test_engine) -> None:
+    """coalesce on SQL NULL yields a JSON object holding only the review keys, never an array."""
+    _, token, game_id, session_id = await _seed_herring_session(test_engine, "rnull")
+    try:
+        assert (await _solve(token, session_id, 0)).status_code == 200
+        resp = await _review(token, session_id, 0, {"v": 1, "exit": "next", "review_ms": 800})
+        assert resp.status_code == 204, resp.text
+        stored, is_null, kind = await _telemetry_row(test_engine, session_id, 0)
+        assert is_null is False
+        assert kind == "object"
+        assert stored == {"v": 1, "exit": "next", "review_ms": 800}
+    finally:
+        await _delete_games(test_engine, [game_id])
+
+
+@pytest.mark.asyncio
+async def test_review_flush_rejects_unsolved_row(test_engine) -> None:
+    """An unsolved row is a 404 and stays SQL NULL."""
+    _, token, game_id, session_id = await _seed_herring_session(test_engine, "runsolved")
+    try:
+        resp = await _review(token, session_id, 0, {"v": 1, "exit": "next"})
+        assert resp.status_code == 404
+        _, is_null, _ = await _telemetry_row(test_engine, session_id, 0)
+        assert is_null is True
+    finally:
+        await _delete_games(test_engine, [game_id])
+
+
+@pytest.mark.asyncio
+async def test_review_flush_rejects_other_users_row(test_engine) -> None:
+    """T-233-01: another user's solved row is a 404 and the owner's telemetry is unchanged."""
+    _, owner_token, game_id, session_id = await _seed_herring_session(test_engine, "rowner")
+    _, intruder_token = await _register_and_login(
+        f"train-tel-intruder-{uuid.uuid4().hex[:8]}@example.com"
+    )
+    try:
+        owner_patch: dict[str, object] = {"v": 1, "guess_ms": 1500}
+        assert (await _solve(owner_token, session_id, 0, telemetry=owner_patch)).status_code == 200
+        resp = await _review(
+            intruder_token, session_id, 0, {"v": 1, "exit": "next", "review_ms": 9}
+        )
+        assert resp.status_code == 404
+        stored, _, _ = await _telemetry_row(test_engine, session_id, 0)
+        assert stored == owner_patch
+    finally:
+        await _delete_games(test_engine, [game_id])
+
+
+@pytest.mark.asyncio
+async def test_review_flush_unknown_position(test_engine) -> None:
+    _, token, game_id, session_id = await _seed_herring_session(test_engine, "rpos")
+    try:
+        assert (await _solve(token, session_id, 0)).status_code == 200
+        resp = await _review(token, session_id, 7, {"v": 1, "exit": "next"})
+        assert resp.status_code == 404
+    finally:
+        await _delete_games(test_engine, [game_id])
+
+
+@pytest.mark.asyncio
+async def test_review_flush_accepts_completed_and_expired_session(test_engine) -> None:
+    """The last puzzle's flush lands after the session completed (and after it expired)."""
+    _, token, game_id, session_id = await _seed_herring_session(test_engine, "rdone")
+    try:
+        resp = await _solve(token, session_id, 0)
+        assert resp.status_code == 200
+        assert resp.json()["session_complete"] is True
+        first = await _review(token, session_id, 0, {"v": 1, "exit": "next", "review_ms": 100})
+        assert first.status_code == 204, first.text
+
+        session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
+        async with session_maker() as session:
+            async with session.begin():
+                await session.execute(
+                    update(DrillSession)
+                    .where(DrillSession.id == session_id)
+                    .values(status="expired")
+                )
+        second = await _review(token, session_id, 0, {"v": 1, "exit": "pagehide", "review_ms": 200})
+        assert second.status_code == 204, second.text
+        stored, _, _ = await _telemetry_row(test_engine, session_id, 0)
+        assert isinstance(stored, dict)
+        assert stored["review_ms"] == 200
+    finally:
+        await _delete_games(test_engine, [game_id])
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "bad_body",
+    [
+        {"v": 1},
+        {"v": 1, "exit": "next", "bogus": 1},
+        {"v": 1, "exit": "close"},
+        {"v": 2, "exit": "next"},
+        {"v": 1, "exit": "next", "review_explored": 1},
+    ],
+)
+async def test_review_flush_rejects_bad_body(test_engine, bad_body: dict[str, object]) -> None:
+    _, token, game_id, session_id = await _seed_herring_session(test_engine, "rbad")
+    try:
+        assert (await _solve(token, session_id, 0)).status_code == 200
+        resp = await _review(token, session_id, 0, bad_body)
+        assert resp.status_code == 422
+    finally:
+        await _delete_games(test_engine, [game_id])
+
+
+@pytest.mark.asyncio
+async def test_review_flush_path_bounds(test_engine) -> None:
+    """T-233-03: int2/int4 overflow in the path is a 422 before any SQL runs."""
+    _, token, game_id, session_id = await _seed_herring_session(test_engine, "rpath")
+    try:
+        body: dict[str, object] = {"v": 1, "exit": "next"}
+        assert (await _review(token, session_id, 32768, body)).status_code == 422
+        assert (await _review(token, 2147483648, 0, body)).status_code == 422
+    finally:
+        await _delete_games(test_engine, [game_id])

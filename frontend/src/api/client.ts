@@ -1,4 +1,5 @@
 import axios from 'axios';
+import * as Sentry from '@sentry/react';
 import { queryClient } from '@/lib/queryClient';
 import {
   DEV_CLOCK_ENABLED,
@@ -35,6 +36,7 @@ import type {
   TrainLeaderboardResponse,
   UnclaimedMedalsResponse,
   MedalKey,
+  ReviewTelemetry,
 } from '@/types/train';
 import type { OnboardingStep } from '@/hooks/useTrainOnboarding';
 import type {
@@ -44,6 +46,11 @@ import type {
   VapidPublicKeyResponse,
 } from '@/types/push';
 
+const API_BASE_URL = '/api';
+const AUTH_TOKEN_STORAGE_KEY = 'auth_token';
+/** First HTTP status that is a server bug (reported to Sentry by the keepalive flush). */
+const SERVER_ERROR_MIN_STATUS = 500;
+
 /**
  * Central Axios instance.
  *
@@ -52,7 +59,7 @@ import type {
  * paths work because the frontend is served from the same origin as the API.
  */
 export const apiClient = axios.create({
-  baseURL: '/api',
+  baseURL: API_BASE_URL,
   headers: {
     'Content-Type': 'application/json',
   },
@@ -68,7 +75,7 @@ export const apiClient = axios.create({
 // ─── Request interceptor: attach Bearer token (+ dev clock offset) ────────
 
 apiClient.interceptors.request.use((config) => {
-  const token = localStorage.getItem('auth_token');
+  const token = localStorage.getItem(AUTH_TOKEN_STORAGE_KEY);
   if (token) {
     config.headers.Authorization = `Bearer ${token}`;
   }
@@ -325,6 +332,41 @@ export const trainApi = {
   stampOnboarding: (step: OnboardingStep) =>
     apiClient.post<TrainSettingsResponse>(`/train/onboarding/${step}`).then(r => r.data),
 };
+
+/**
+ * Phase 233 (D-06): the transport for EVERY review flush: Next, page hidden,
+ * unload and screen unmount (Next moved here in the 233 review fix WR-02, so a
+ * Next flush survives the page navigating away right after it). Fire-and-forget: a keepalive request outlives the
+ * page. Not the navigator beacon API: it cannot set an Authorization header,
+ * so with Bearer auth it would 401. Not `apiClient`: its 401 interceptor
+ * redirects to /login and clears the query cache, wrong during an unload or in
+ * a background tab. The URL is relative, so the token only ever goes same-origin.
+ */
+export function postReviewKeepalive(sessionId: number, position: number, body: ReviewTelemetry): void {
+  const token = localStorage.getItem(AUTH_TOKEN_STORAGE_KEY);
+  if (token === null) return;
+  fetch(`${API_BASE_URL}/train/sessions/${sessionId}/solves/${position}/review`, {
+    method: 'POST',
+    keepalive: true,
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+    body: JSON.stringify(body),
+  })
+    .then((response) => {
+      // A 5xx is a server bug whatever triggered the flush; a 4xx (expired token
+      // after logout, row gone) is expected and not captured. Constant message,
+      // variable data in context (frontend/CLAUDE.md grouping rule).
+      if (response.status >= SERVER_ERROR_MIN_STATUS) {
+        Sentry.captureException(new Error('Train review keepalive flush failed'), {
+          tags: { source: 'train-review-keepalive' },
+          contexts: { train_review: { status: response.status } },
+        });
+      }
+    })
+    .catch(() => {
+      // A network rejection (unload abort, offline) is expected, never captured
+      // (frontend/CLAUDE.md "skip expected failures").
+    });
+}
 
 // ─── Push API ─────────────────────────────────────────────────────────────────
 

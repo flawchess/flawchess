@@ -32,8 +32,9 @@ import { BY_TEMPERAMENT, introStepCount, WALKTHROUGH_STEP_COUNT } from '@/lib/tr
 import { PERSONA_REGISTRY } from '@/lib/personas/personaRegistry';
 import { useTrainSession } from '@/hooks/useTrainSession';
 import { useTrainGradingEngine } from '@/hooks/useTrainGradingEngine';
-import type { CachedTrainReveal } from '@/lib/trainRevealCache';
+import { readTrainRevealCache, type CachedTrainReveal } from '@/lib/trainRevealCache';
 import type {
+  ReviewTelemetry,
   SolveRequest,
   SolveResponse,
   SolvedResult,
@@ -168,6 +169,13 @@ function makeSettings(overrides: Partial<TrainSettingsResponse> = {}): TrainSett
 // intro-stepper tests below.
 const stampOnboarding = vi.fn(async () => makeSettings({ intro_seen_at: '2026-06-01T00:00:00Z' }));
 
+// Phase 233 (D-06): every review flush goes through the keepalive transport
+// (Next too, since the 233 review fix WR-02). The mock below splits it by the
+// body's `exit`: nextFlush is the Next path, exitFlush every non-Next exit. A
+// factory without the transport would throw inside the deferred unmount flush.
+const exitFlush = vi.fn<(sessionId: number, position: number, body: ReviewTelemetry) => void>();
+const nextFlush = vi.fn<(sessionId: number, position: number, body: ReviewTelemetry) => void>();
+
 // 190-05/190.1-01: TrainReveal (mounted here once a verdict lands) fires its
 // own reveal/game-card/tactic-lines queries. Exposed at module scope (rather
 // than inlined in the mock factory) so individual tests can override the
@@ -199,6 +207,8 @@ vi.mock('@/api/client', async () => {
       updateSettings: vi.fn(),
       stampOnboarding: (step: string) => stampOnboarding(step),
     },
+    postReviewKeepalive: (sessionId: number, position: number, body: ReviewTelemetry) =>
+      (body.exit === 'next' ? nextFlush : exitFlush)(sessionId, position, body),
     libraryApi: {
       ...actual.libraryApi,
       getGame: vi.fn().mockRejectedValue(new Error('not needed for this test file')),
@@ -2920,5 +2930,150 @@ describe('TrainSolveScreen — progress, last move, grading state, engine failur
       await waitFor(() => expect(screen.getByTestId('btn-train-next')).not.toBeNull());
       expect(board.getAttribute('data-arrow-ucis')).toBe(step0Arrows);
     });
+  });
+});
+
+describe('TrainSolveScreen — per-puzzle telemetry (Phase 233)', () => {
+  beforeEach(() => {
+    matchMediaMatches = true;
+    stubbedWorkerInstances = [];
+    stubWorker(() => new FakeWorker());
+    composeOrResumeSession.mockReset();
+    solvePuzzle.mockReset();
+    solvePuzzle.mockResolvedValue(SOLVE_RESPONSE);
+    revealPuzzle.mockClear();
+    getSettings.mockReset();
+    getSettings.mockResolvedValue(makeSettings());
+    stampOnboarding.mockClear();
+    nextFlush.mockClear();
+    exitFlush.mockClear();
+    // The think-timer resume marker lives in sessionStorage; start every test fresh.
+    sessionStorage.clear();
+  });
+
+  afterEach(() => {
+    cleanup();
+    vi.unstubAllGlobals();
+    vi.useRealTimers();
+    sessionStorage.clear();
+  });
+
+  async function guessAndDrop(): Promise<void> {
+    fireEvent.click(screen.getByTestId('btn-train-guess-critical'));
+    await act(async () => {
+      fireEvent.click(screen.getByTestId('drop-e2e4'));
+    });
+    await waitFor(() => expect(screen.getByTestId('train-verdict-guess')).not.toBeNull());
+  }
+
+  it('telemetry: the solve POST carries v, client, guess_ms, move_ms, think_hidden_ms and resumed', async () => {
+    await renderScreen(makePuzzle());
+    await guessAndDrop();
+
+    expect(solvePuzzle).toHaveBeenCalledTimes(1);
+    const telemetry = solvePuzzle.mock.calls[0]?.[1].telemetry;
+    expect(telemetry).toMatchObject({ v: 1, client: 'desktop', think_hidden_ms: 0, resumed: false });
+    expect(Number.isInteger(telemetry.guess_ms)).toBe(true);
+    expect(telemetry.guess_ms).toBeGreaterThanOrEqual(0);
+    expect(Number.isInteger(telemetry.move_ms)).toBe(true);
+    expect(telemetry.move_ms).toBeGreaterThanOrEqual(0);
+  });
+
+  it('telemetry: Next flushes the review once with exit next for this position', async () => {
+    const puzzle = makePuzzle();
+    await renderScreen(puzzle);
+    await guessAndDrop();
+    expect(nextFlush).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByTestId('btn-train-next'));
+
+    await waitFor(() => expect(nextFlush).toHaveBeenCalledTimes(1));
+    const [sessionId, position, body] = nextFlush.mock.calls[0]!;
+    expect(sessionId).toBe(makeSession().session_id);
+    expect(position).toBe(puzzle.position);
+    expect(body).toMatchObject({ v: 1, exit: 'next' });
+    expect(Number.isInteger(body.review_ms)).toBe(true);
+    expect(body.review_ms).toBeGreaterThanOrEqual(0);
+  });
+
+  it('telemetry: leaving an open reveal (unmount) sends one keepalive flush with exit pagehide for this position', async () => {
+    const puzzle = makePuzzle();
+    const { unmount } = await renderScreen(puzzle);
+    await guessAndDrop();
+    expect(exitFlush).not.toHaveBeenCalled();
+
+    unmount();
+    await act(async () => {});
+
+    expect(exitFlush).toHaveBeenCalledTimes(1);
+    expect(exitFlush).toHaveBeenCalledWith(
+      makeSession().session_id,
+      puzzle.position,
+      expect.objectContaining({ exit: 'pagehide' }),
+    );
+    expect(nextFlush).not.toHaveBeenCalled();
+  });
+
+  it('telemetry: Next then unmount sends no keepalive flush', async () => {
+    const { unmount } = await renderScreen(makePuzzle());
+    await guessAndDrop();
+    fireEvent.click(screen.getByTestId('btn-train-next'));
+    await waitFor(() => expect(nextFlush).toHaveBeenCalledTimes(1));
+
+    unmount();
+    await act(async () => {});
+
+    expect(exitFlush).not.toHaveBeenCalled();
+  });
+
+  it('telemetry: Analyze saves the review snapshot into the reveal cache', async () => {
+    await renderScreen(makePuzzle());
+    await guessAndDrop();
+    await waitFor(() => expect(screen.getByTestId('btn-train-analyze')).not.toBeNull());
+
+    fireEvent.click(screen.getByTestId('btn-train-analyze'));
+
+    const visibleMs = readTrainRevealCache()?.reviewTelemetry?.visibleMs;
+    expect(typeof visibleMs).toBe('number');
+    expect(visibleMs).toBeGreaterThanOrEqual(0);
+  });
+
+  it('telemetry: a stepper click and an active walkthrough reach the Next flush', async () => {
+    getSettings.mockResolvedValue(makeSettings({ reveal_walkthrough_seen_at: null }));
+    await renderScreen(makePuzzle());
+    fireEvent.click(screen.getByTestId('btn-train-guess-critical'));
+    await act(async () => {
+      fireEvent.click(screen.getByTestId('drop-e2e4'));
+    });
+    await waitFor(() => expect(screen.getByTestId('train-bot-walkthrough')).not.toBeNull());
+    await waitFor(() => expect(screen.getAllByTestId('btn-train-step-next').length).toBeGreaterThan(0));
+    fireEvent.click(screen.getAllByTestId('btn-train-step-next')[0]!);
+    // Walk to the walkthrough's last step, whose control is the real Next button.
+    for (let click = 0; click < WALKTHROUGH_STEP_COUNT; click += 1) {
+      const walkthroughNext = screen.queryByTestId('btn-train-bot-walkthrough-next');
+      if (walkthroughNext === null) break;
+      fireEvent.click(walkthroughNext);
+    }
+
+    fireEvent.click(await waitFor(() => screen.getByTestId('btn-train-next')));
+
+    await waitFor(() => expect(nextFlush).toHaveBeenCalledTimes(1));
+    expect(nextFlush.mock.calls[0]![2]).toMatchObject({
+      exit: 'next',
+      review_line_steps: 1,
+      review_walkthrough: true,
+      review_explored: false,
+      review_analyze_opened: false,
+    });
+  });
+
+  it('telemetry: a remount of the same unsolved puzzle sends resumed: true', async () => {
+    const first = await renderScreen(makePuzzle());
+    first.unmount();
+    await renderScreen(makePuzzle());
+    await guessAndDrop();
+
+    expect(solvePuzzle).toHaveBeenCalledTimes(1);
+    expect(solvePuzzle.mock.calls[0]?.[1].telemetry.resumed).toBe(true);
   });
 });

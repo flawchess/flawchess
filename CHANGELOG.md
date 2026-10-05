@@ -23,6 +23,7 @@ in `YYYY-MM-DD` (Europe/Zurich).
 - Usage analytics now also cover changes to your import filters, Train schedule, Train reminders and leaderboard visibility (only which option you picked, never anything you type).
 - Maintenance: the frontend now type-checks with TypeScript 7 (through Microsoft's side-by-side install, so linting keeps working) and runs on Sentry 11 and vite-plugin-pwa 2, with a patched fast-uri. Error reports still collect only what the Privacy page lists, and the installed app and its offline support are unchanged.
 - Operators: self-hosted analytics is pinned to Umami 3.4.0 (it ran 3.3.1 behind a floating tag). The next deploy pulls the image automatically and Umami applies two additive database migrations on start; see the runbook section "Umami analytics" for the post-deploy check.
+- Train now records how you work through each puzzle (thinking time, time spent on the solution while the page is visible, which parts of the solution you open, and whether you used a phone or a computer) so we can see how Train is used and improve it. It never affects your score or the leaderboards, and the Privacy page lists it.
 
 ### Fixed
 

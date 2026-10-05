@@ -15,11 +15,9 @@ and its own acceptance tests:
   - Gates     : `tests/scripts/test_gen_global_percentile_cdf_pooled.py`,
                 `tests/scripts/test_gen_global_percentile_cdf_unchanged.py`
 
-NB: the SKILL.md §4 prose still describes the retired Phase 93/94.2 *flat*
-`GLOBAL_PERCENTILE_CDF` (99 breakpoints pooled across the TC×ELO grid). The live artifact
-is the Phase 94.4 *cohort sliding-window* `COHORT_PERCENTILE_CDF` (8 metrics × ~37 anchors
-× 4 TC, K-nearest-anchor cohorts). The SKILL rewrite (final Phase-A step) reconciles that;
-this chapter points at the current reality, not the stale prose.
+The live artifact is the Phase 94.4 *cohort sliding-window* `COHORT_PERCENTILE_CDF`
+(8 metrics × ~37 anchors × 4 TC, K-nearest-anchor cohorts); the retired Phase 93/94.2 *flat*
+`GLOBAL_PERCENTILE_CDF` prose was removed from SKILL.md §4.
 """
 
 from __future__ import annotations

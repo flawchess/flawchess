@@ -152,6 +152,12 @@ const SETTINGS_RESPONSE: TrainSettingsResponse = {
 const composeOrResumeSession = vi.fn(async () => SESSION_RESPONSE);
 const solvePuzzle = vi.fn(async () => SOLVE_RESPONSE);
 const markSessionEntered = vi.fn<(sessionId: number) => Promise<void>>(async () => undefined);
+// Phase 233 (D-06): the keepalive transport of every non-Next review flush
+// (fires from the deferred unmount flush at RTL cleanup, so it must exist).
+// Phase 233: every review flush uses the keepalive transport (Next too, since
+// the 233 review fix WR-02); the mock splits it by `exit` into these two spies.
+const exitFlush = vi.fn<(sessionId: number, position: number, body: unknown) => void>();
+const nextFlush = vi.fn<(sessionId: number, position: number, body: unknown) => void>();
 const getSettings = vi.fn(async () => SETTINGS_RESPONSE);
 const revealPuzzle = vi.fn(async () => ({
   game_id: 100,
@@ -221,6 +227,8 @@ vi.mock('@/api/client', async () => {
       getUnclaimedMedals: () => getUnclaimedMedals(),
       claimMedals: () => claimMedals(),
     },
+    postReviewKeepalive: (sessionId: number, position: number, body: unknown) =>
+      ((body as { exit?: string }).exit === 'next' ? nextFlush : exitFlush)(sessionId, position, body),
     libraryApi: {
       ...actual.libraryApi,
       getGame: vi.fn().mockRejectedValue(new Error('not exercised by this tracer')),
@@ -304,6 +312,8 @@ describe('Train solve loop (end-to-end tracer)', () => {
     markSessionEntered.mockClear();
     solvePuzzle.mockClear();
     revealPuzzle.mockClear();
+    nextFlush.mockClear();
+    exitFlush.mockClear();
   });
 
   afterEach(() => {
@@ -472,6 +482,11 @@ describe('Train solve loop (end-to-end tracer)', () => {
     await waitFor(() => expect(screen.getByTestId('train-guess-prompt')).not.toBeNull());
     // The next puzzle has not been attempted — a reveal GET for it 409s.
     expect(revealPuzzle.mock.calls).toEqual([]);
+    // Phase 233 (D-03): the review flush for puzzle 0 went out before the loop advanced.
+    expect(nextFlush).toHaveBeenCalledTimes(1);
+    expect(nextFlush).toHaveBeenCalledWith(69, 0, expect.objectContaining({ exit: 'next' }));
+    // Next set the Next-flushed guard, so the advance never also sends a keepalive flush.
+    expect(exitFlush).not.toHaveBeenCalled();
   }, 15000);
 
   it('a resumed session with server-recorded solved_results shows the resumed score and max, not a restart from zero (190.1-04 D-04)', async () => {

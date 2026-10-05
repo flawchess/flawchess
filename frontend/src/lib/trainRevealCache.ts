@@ -20,6 +20,7 @@
 import type { GradeResult } from '@/hooks/useTrainGradingEngine';
 import type { PersonaId } from '@/lib/personas/personaRegistry';
 import type { Guess } from '@/lib/trainGuessLabels';
+import type { ReviewTelemetrySnapshot } from '@/lib/trainTelemetry';
 import type { SolveResponse, TrainPuzzle } from '@/types/train';
 
 const STORAGE_KEY = 'train_reveal_cache';
@@ -35,6 +36,11 @@ export interface CachedTrainReveal {
   guess: Guess;
   playedMoveUci: string;
   gradeResult: GradeResult;
+  /** Phase 233: the review totals already flushed for this reveal, so the
+   * restored reveal continues ONE review timer from exactly what the row
+   * holds. Optional: an entry written before this field existed starts a
+   * fresh timer. */
+  reviewTelemetry?: ReviewTelemetrySnapshot;
 }
 
 export function saveTrainRevealCache(cached: CachedTrainReveal): void {
@@ -44,6 +50,21 @@ export function saveTrainRevealCache(cached: CachedTrainReveal): void {
     // Best-effort only — a storage failure just means back lands on the
     // start screen (the pre-cache behavior), never a crash.
   }
+}
+
+/**
+ * Phase 233: rewrite `reviewTelemetry` of the cached reveal, only when it
+ * belongs to this (session, position). Update-only, never creates an entry, so
+ * a late write can never resurrect a reveal the loop already cleared.
+ */
+export function updateTrainRevealCacheReview(
+  sessionId: number,
+  position: number,
+  snapshot: ReviewTelemetrySnapshot,
+): void {
+  const cached = readTrainRevealCache();
+  if (cached === null || cached.sessionId !== sessionId || cached.puzzle.position !== position) return;
+  saveTrainRevealCache({ ...cached, reviewTelemetry: snapshot });
 }
 
 export function readTrainRevealCache(): CachedTrainReveal | null {

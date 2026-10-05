@@ -10,11 +10,22 @@ schema exists to enforce. Phase 211: vetted-move material (`VettedMove`,
 
 from __future__ import annotations
 
+import math
+from collections.abc import Callable
 from datetime import date, datetime
-from typing import Final, Literal
+from typing import Annotated, Final, Literal
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import (
+    BaseModel,
+    BeforeValidator,
+    ConfigDict,
+    Field,
+    StrictBool,
+    ValidationError,
+    ValidatorFunctionWrapHandler,
+    field_validator,
+)
 
 from app.services.train_scheduler import REMINDER_HOUR_MAX, REMINDER_HOUR_MIN
 
@@ -133,6 +144,130 @@ class TrainSessionResponse(BaseModel):
     is_warmup: bool
 
 
+# Phase 233 (SEED-190): per-puzzle telemetry boundary. Mirrored by the frontend in
+# frontend/src/lib/trainTelemetry.ts (plain integer literals, regex-parity-tested).
+# Schema version stamped as `v` on both patches (a `Literal[1]` cannot reference it).
+TELEMETRY_SCHEMA_VERSION: Final = 1
+# D-04: a forgotten tab must not record a 9-hour think; a data-quality cap, not a security bound.
+TELEMETRY_DURATION_CAP_MS: Final = 30 * 60 * 1000
+# Cap on prev/next/token steps through a reveal line (D-14).
+TELEMETRY_LINE_STEPS_CAP: Final = 50
+# Cap on free-play moves played on the reveal board (D-14).
+TELEMETRY_EXPLORE_MOVES_CAP: Final = 50
+# Cap on card counts (the reveal shows at most 4 cards today).
+TELEMETRY_CARDS_CAP: Final = 10
+
+
+def _clamp_to(cap: int) -> Callable[[object], object]:
+    """Build a BeforeValidator that rounds and clamps a number into [0, cap].
+
+    Clamps instead of rejecting (precedent `_clip` in app/schemas/users.py): a
+    client clock delta can be fractional or marginally out of range, and a 422
+    would throw away the whole record. A bool is returned unchanged (bool is an
+    int subclass, strict int must still reject it), as is anything non-numeric
+    (or a non-finite float) so strict validation rejects it.
+    """
+
+    def _clamp(value: object) -> object:
+        if isinstance(value, bool) or not isinstance(value, (int, float)):
+            return value
+        if isinstance(value, float) and not math.isfinite(value):
+            return value
+        return max(0, min(cap, round(value)))
+
+    return _clamp
+
+
+TelemetryDurationMs = Annotated[
+    int,
+    BeforeValidator(_clamp_to(TELEMETRY_DURATION_CAP_MS)),
+    Field(ge=0, le=TELEMETRY_DURATION_CAP_MS, strict=True),
+]
+TelemetryCardCount = Annotated[
+    int,
+    BeforeValidator(_clamp_to(TELEMETRY_CARDS_CAP)),
+    Field(ge=0, le=TELEMETRY_CARDS_CAP, strict=True),
+]
+TelemetryLineSteps = Annotated[
+    int,
+    BeforeValidator(_clamp_to(TELEMETRY_LINE_STEPS_CAP)),
+    Field(ge=0, le=TELEMETRY_LINE_STEPS_CAP, strict=True),
+]
+TelemetryExploreMoves = Annotated[
+    int,
+    BeforeValidator(_clamp_to(TELEMETRY_EXPLORE_MOVES_CAP)),
+    Field(ge=0, le=TELEMETRY_EXPLORE_MOVES_CAP, strict=True),
+]
+
+
+class SolveTelemetry(BaseModel):
+    """Client-measured think-time telemetry riding on the solve POST (Phase 233).
+
+    D-01: validated at the boundary (`extra="forbid"`, typed and capped fields,
+    a `v` schema-version key), so nothing unvalidated reaches the JSONB column.
+    D-02: `guess_ms` is board shown -> guess pressed, `move_ms` is guess pressed
+    -> move played, both measured client-side (the server cannot measure this,
+    puzzles are pre-materialized at composition). D-04: only visible time is
+    counted; the hidden span is stored as `think_hidden_ms` here and as
+    `review_hidden_ms` on the review patch. The two are distinct keys on purpose
+    (refinement of D-04's single `hidden_ms`): the per-key last-write-wins merge
+    would otherwise let the review flush overwrite the think value. D-09:
+    `client` is a closed Literal. `resumed` marks a timer that restarted after a
+    reload or remount. D-05: never an input to grading, scoring, the SR ladder or
+    the leaderboard.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    # Must equal TELEMETRY_SCHEMA_VERSION (a Literal cannot reference the constant).
+    v: Literal[1]
+    client: Literal["mobile", "desktop"] | None = None
+    guess_ms: TelemetryDurationMs | None = None
+    move_ms: TelemetryDurationMs | None = None
+    think_hidden_ms: TelemetryDurationMs | None = None
+    resumed: StrictBool | None = None
+
+
+class ReviewTelemetry(BaseModel):
+    """Client-measured reveal telemetry flushed once per puzzle (Phase 233).
+
+    D-03: accumulated in the reveal and flushed via the review route on Next and
+    on page unload; no per-click events. D-07: `exit` is required, the abandon
+    analysis derives "puzzle N was shown" from puzzle N-1's `exit == "next"`.
+    `exit` is a closed enum with no third value: "next" means the user pressed
+    Next on the reveal, "pagehide" means the user left the reveal WITHOUT pressing
+    Next (page hidden or unloaded, in-app route change or screen unmount, leaving
+    via Analyze). A reveal can be flushed with "pagehide" several times and then
+    with "next" (the user came back), so every counter is a cumulative TOTAL,
+    never a delta: each later flush overwrites per key via the jsonb merge.
+    D-14: the closed counter set (no flip counter, no Solution-return counter).
+    D-04: `review_hidden_ms` is the hidden-tab span of the review (the solve
+    patch carries `think_hidden_ms`, distinct keys so the merge cannot collide).
+
+    No wrap validator here (unlike `SolveRequest.telemetry`): the body IS the
+    telemetry, so a bad body is a normal 422.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    # Must equal TELEMETRY_SCHEMA_VERSION (a Literal cannot reference the constant).
+    v: Literal[1]
+    # "next" = pressed Next on the reveal; "pagehide" = left the reveal WITHOUT
+    # pressing Next (page hidden/unloaded, route change or unmount, Analyze).
+    exit: Literal["next", "pagehide"]
+    review_ms: TelemetryDurationMs | None = None
+    review_hidden_ms: TelemetryDurationMs | None = None
+    # D-12: distinct cards inspected at least once, and the number shown.
+    review_cards_opened: TelemetryCardCount | None = None
+    review_cards_total: TelemetryCardCount | None = None
+    review_line_steps: TelemetryLineSteps | None = None
+    review_explored: StrictBool | None = None
+    review_explore_moves: TelemetryExploreMoves | None = None
+    review_analyze_opened: StrictBool | None = None
+    # D-13: the Phase 222 first-reveal walkthrough was active on this reveal.
+    review_walkthrough: StrictBool | None = None
+
+
 class SolveRequest(BaseModel):
     """Body for POST /train/sessions/{session_id}/solve.
 
@@ -156,6 +291,11 @@ class SolveRequest(BaseModel):
     the client can never assert a verdict it does not own. The request
     schema itself is unchanged (P-01 intact: the client cannot know the key
     before attempting).
+
+    Phase 233 (SEED-190): `telemetry` is optional so a stale frontend bundle
+    still solves. Invalid telemetry never costs the solve (D-02): a malformed
+    object is dropped to None and only the telemetry is lost. It is never an
+    input to grading (D-05).
     """
 
     position: int
@@ -163,6 +303,22 @@ class SolveRequest(BaseModel):
     # UCI move string: 4 chars normal (e.g. "e2e4"), 5 chars promotion (e.g. "e7e8q").
     played_move: str = Field(min_length=4, max_length=5)
     move_quality: Literal["good", "inaccuracy", "wrong"]
+    telemetry: SolveTelemetry | None = None
+
+    @field_validator("telemetry", mode="wrap")
+    @classmethod
+    def _drop_invalid_telemetry(
+        cls, value: object, handler: ValidatorFunctionWrapHandler
+    ) -> SolveTelemetry | None:
+        """Drop malformed telemetry to None instead of 422-ing the solve (D-02).
+
+        No logging and no Sentry capture: a malformed object comes from a stale
+        or tampered client and is an expected condition, not a bug.
+        """
+        try:
+            return handler(value)
+        except ValidationError:
+            return None
 
 
 class VettedMove(BaseModel):

@@ -99,6 +99,13 @@ export interface TrainLineStepperProps {
    */
   onStepChange?: (step: TrainLineStep) => void;
   /**
+   * Phase 233 (D-14): fired once per USER prev/next/token click that changes the
+   * index. Never from the mount/reset effects (the index reset and the
+   * `onStepChange` effect run on mount and on every Solution reset), which is
+   * why `onStepChange` cannot be counted (RESEARCH Pitfall 3).
+   */
+  onUserStep?: () => void;
+  /**
    * Phase 200 UAT: false suppresses the active-token (brown) highlight in this
    * stepper. Exactly one line box owns the board position at a time, so only
    * that box may show a move cursor — a box stepped earlier keeps its index
@@ -155,6 +162,7 @@ export function TrainLineStepper({
   showCursor = true,
   onFenChange,
   onStepChange,
+  onUserStep,
 }: TrainLineStepperProps): ReactElement {
   // Bug fix (190.1 UAT): callers build `moves` inline per render (e.g.
   // TrainReveal's `replayPvLine(...).map(...)`), so the array's IDENTITY
@@ -236,6 +244,7 @@ export function TrainLineStepper({
    */
   function goTo(nextIndex: number): void {
     if (nextIndex === index) return;
+    onUserStep?.();
     const soundEvent = nextIndex > index ? sounds[nextIndex - 1] : 'move';
     if (soundEvent !== undefined) playSound(soundEvent);
     setIndex(nextIndex);

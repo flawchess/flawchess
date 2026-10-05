@@ -67,6 +67,7 @@ import type { TrainFineMove, TrainMoveQuality } from '@/lib/trainArrows';
 import { GUESS_POINTS, MOVE_TIER_POINTS } from '@/lib/trainScore';
 import { GUESS_CALL_LABELS, guessFeedbackProse } from '@/lib/trainGuessLabels';
 import type { Guess } from '@/lib/trainGuessLabels';
+import type { CardEngageKind } from '@/lib/trainTelemetry';
 import { cn, formatDateWithYear } from '@/lib/utils';
 import { formatTimeControl } from '@/lib/formatTimeControl';
 import type { GradeResult, TrainEngineLine, TrainGradingEngine } from '@/hooks/useTrainGradingEngine';
@@ -146,6 +147,7 @@ function makeCardClickHandler({
   entry,
   onSpotlightChange,
   onReturnToSolution,
+  onCardEngage,
 }: {
   isDesktop: boolean;
   isSpotlit: boolean;
@@ -153,10 +155,14 @@ function makeCardClickHandler({
   entry: SpotlightEntry;
   onSpotlightChange?: (entry: SpotlightEntry | null) => void;
   onReturnToSolution?: () => void;
+  onCardEngage?: (key: string, kind: CardEngageKind) => void;
 }): (event: MouseEvent<HTMLElement>) => void {
   return (event) => {
     if (event.target instanceof Element && event.target.closest('button') !== null) {
-      if (!isDesktop && !isSpotlit) onSpotlightChange?.(entry);
+      if (!isDesktop && !isSpotlit) {
+        onSpotlightChange?.(entry);
+        onCardEngage?.(entry.key, 'open');
+      }
       return;
     }
     if (isBoardDeparted) {
@@ -165,6 +171,7 @@ function makeCardClickHandler({
       // they batch and the entry wins.
       onReturnToSolution?.();
       onSpotlightChange?.(entry);
+      onCardEngage?.(entry.key, 'open');
       return;
     }
     // Desktop, board already pristine: inert. Hover is the only spotlight
@@ -172,6 +179,8 @@ function makeCardClickHandler({
     // fired, leaving the card un-spotlit while the pointer still sits on it.
     if (isDesktop) return;
     onSpotlightChange?.(isSpotlit ? null : entry);
+    // Phase 233 (D-11): only the tap that turns the spotlight ON opens the card.
+    if (!isSpotlit) onCardEngage?.(entry.key, 'open');
   };
 }
 
@@ -614,6 +623,12 @@ export interface TrainRevealProps {
    */
   onLineStep?: (step: TrainRevealStep | null) => void;
   /**
+   * Phase 233 (D-14): a USER prev/next/token click on either line stepper.
+   * Distinct from `onLineStep`, which also fires on mount and on every Solution
+   * reset and so cannot be counted.
+   */
+  onLineUserStep?: () => void;
+  /**
    * 190.1 UAT round 3: the Solution/Analyze/Next row moved out of this
    * component to below the board (TrainSolveScreen). The board owner bumps
    * this nonce when its Solution button is pressed; every stepper here keys
@@ -651,6 +666,21 @@ export interface TrainRevealProps {
    * the spotlight so the FULL solution overlay returns.
    */
   onReturnToSolution?: () => void;
+  /**
+   * Phase 233 (D-11): a card was engaged. 'open' is a mobile tap that
+   * spotlights it or a click while the board has departed the solution;
+   * 'hover-start'/'hover-end' bracket a desktop pointer/focus span (the
+   * telemetry hook counts it only once held for REVIEW_CARD_HOVER_MIN_MS).
+   * `onSpotlightChange` cannot be counted instead: desktop hover and desktop
+   * click arrive through the same call, and the mobile tap-away clear fires it
+   * too.
+   */
+  onCardEngage?: (key: string, kind: CardEngageKind) => void;
+  /**
+   * Phase 233 (D-12): the number of cards (line boxes plus the Also-fine card)
+   * shown on this reveal; reported whenever it is above zero and changes.
+   */
+  onCardsTotalChange?: (total: number) => void;
   /**
    * Phase 200 (LEGEND-04/D-02/D-03): exactly the alternative fine moves
    * actually drawn as green arrows on the board (`revealOverlay.alsoFineMoves`
@@ -736,11 +766,14 @@ export function TrainReveal({
   onAnalyzeClick,
   onGameMoveLineChange,
   onLineStep,
+  onLineUserStep,
   solutionNonce = 0,
   spotlightKey = null,
   onSpotlightChange,
   isBoardDeparted = false,
   onReturnToSolution,
+  onCardEngage,
+  onCardsTotalChange,
   alsoFineMoves = [],
   isExploring = false,
   freePlay,
@@ -893,6 +926,33 @@ export function TrainReveal({
     return () => document.removeEventListener('pointerdown', handlePointerDown);
   }, [isDesktop, spotlightKey, onSpotlightChange]);
 
+  // Phase 233 (D-12): the line boxes and Also-fine flag are derived HERE, above
+  // the `verdict === null` early return, because the cards-total effect below is
+  // a hook and may not follow it. `lineBoxes` is rebuilt every render, so the
+  // effect depends on the COUNT, never the array.
+  const lineBoxes =
+    verdict === null
+      ? []
+      : buildLineBoxes(
+          puzzle.fen,
+          playedMoveUci,
+          gradeResult,
+          gameMoveUci,
+          playedMoveQuality,
+          gameMoveQuality,
+          // Phase 200 UAT round 3: the chip states the earned MOVE points, so it
+          // reads from the three-way scoring tier (good 2 / inaccuracy 1 / wrong 0),
+          // not the coarser boolean `correct_move` the SR bookkeeping uses.
+          MOVE_TIER_POINTS[verdict.move_quality],
+        );
+  // Phase 200 UAT round 6: the Also fine legend lives in the guess card's body,
+  // so it needs no free-play gate of its own — the card it sits in is gone.
+  const showAlsoFine = alsoFineMoves.length > 0;
+  const cardsTotal = lineBoxes.length + (showAlsoFine ? 1 : 0);
+  useEffect(() => {
+    if (cardsTotal > 0) onCardsTotalChange?.(cardsTotal);
+  }, [cardsTotal, onCardsTotalChange]);
+
   if (verdict === null) {
     // Grading/solve has not landed successfully yet. Only the pre-existing
     // block-and-retry row applies (190-04) — same shape, same test ids.
@@ -946,19 +1006,6 @@ export function TrainReveal({
     </p>
   );
 
-  const lineBoxes = buildLineBoxes(
-    puzzle.fen,
-    playedMoveUci,
-    gradeResult,
-    gameMoveUci,
-    playedMoveQuality,
-    gameMoveQuality,
-    // Phase 200 UAT round 3: the chip states the earned MOVE points, so it
-    // reads from the three-way scoring tier (good 2 / inaccuracy 1 / wrong 0),
-    // not the coarser boolean `correct_move` the SR bookkeeping uses.
-    MOVE_TIER_POINTS[verdict.move_quality],
-  );
-
   // Free play joins the line boxes in being swapped out (see the render): the
   // guess card goes with them. Exploration replaces the board's reveal arrows
   // with its own, so the card's Also fine legend would describe arrows that are
@@ -966,9 +1013,6 @@ export function TrainReveal({
   // has already left behind. (Same narrowing as the render's own `isExploring
   // && freePlay` ternary, so the two can never disagree.)
   const isFreePlayActive = isExploring && freePlay !== undefined;
-  // Phase 200 UAT round 6: the Also fine legend lives in the guess card's body,
-  // so it needs no free-play gate of its own — the card it sits in is gone.
-  const showAlsoFine = alsoFineMoves.length > 0;
   // Quick 260803-iv6 (Task 3): the guess card states the verdict but never
   // says WHY it landed where it did — one locked prose sentence, derived
   // next to `showAlsoFine` since both render inside the same card body.
@@ -989,6 +1033,16 @@ export function TrainReveal({
           verdict.move_quality,
         )
       : null;
+  // Desktop hover/focus spotlights the card AND opens a telemetry hover span
+  // (Phase 233 D-11); leave/blur clears the spotlight and closes the span.
+  function startHover(entry: SpotlightEntry): void {
+    onSpotlightChange?.(entry);
+    onCardEngage?.(entry.key, 'hover-start');
+  }
+  function endHover(key: string): void {
+    onSpotlightChange?.(null);
+    onCardEngage?.(key, 'hover-end');
+  }
   const alsoFineEntry = { key: ALSO_FINE_KEY, ucis: alsoFineMoves.map((f) => f.uci) };
   const isAlsoFineSpotlit = spotlightKey === ALSO_FINE_KEY;
   const alsoFineSanList = alsoFineMoves
@@ -999,10 +1053,10 @@ export function TrainReveal({
   // split (and the same WR-01 focus/blur reasoning) as the line boxes.
   const alsoFineSpotlightHandlers = showAlsoFine
     ? {
-        onPointerEnter: isDesktop ? () => onSpotlightChange?.(alsoFineEntry) : undefined,
-        onPointerLeave: isDesktop ? () => onSpotlightChange?.(null) : undefined,
-        onFocus: isDesktop ? () => onSpotlightChange?.(alsoFineEntry) : undefined,
-        onBlur: isDesktop ? () => onSpotlightChange?.(null) : undefined,
+        onPointerEnter: isDesktop ? () => startHover(alsoFineEntry) : undefined,
+        onPointerLeave: isDesktop ? () => endHover(ALSO_FINE_KEY) : undefined,
+        onFocus: isDesktop ? () => startHover(alsoFineEntry) : undefined,
+        onBlur: isDesktop ? () => endHover(ALSO_FINE_KEY) : undefined,
         // UAT round 9: attached on BOTH viewports — on desktop it does nothing
         // unless the board has departed the solution (see the handler).
         onClick: makeCardClickHandler({
@@ -1012,6 +1066,7 @@ export function TrainReveal({
           entry: alsoFineEntry,
           onSpotlightChange,
           onReturnToSolution,
+          onCardEngage,
         }),
         tabIndex: 0,
       }
@@ -1037,18 +1092,19 @@ export function TrainReveal({
       entry: spotlightEntry,
       onSpotlightChange,
       onReturnToSolution,
+      onCardEngage,
     });
     const spotlightHandlers = {
-      onPointerEnter: isDesktop ? () => onSpotlightChange?.(spotlightEntry) : undefined,
-      onPointerLeave: isDesktop ? () => onSpotlightChange?.(null) : undefined,
+      onPointerEnter: isDesktop ? () => startHover(spotlightEntry) : undefined,
+      onPointerLeave: isDesktop ? () => endHover(box.testid) : undefined,
       // WR-01 fix: focus/blur are desktop-gated for the SAME reason
       // pointer-enter/leave are. React's onFocus is focusin underneath, so
       // it BUBBLES up to this Card from anything focusable inside it. On a
       // touch device a real tap fires focus (spotlight ON) before click,
       // and the card's own toggle then reads that fresh state and turns it
       // back OFF — swallowing the first tap.
-      onFocus: isDesktop ? () => onSpotlightChange?.(spotlightEntry) : undefined,
-      onBlur: isDesktop ? () => onSpotlightChange?.(null) : undefined,
+      onFocus: isDesktop ? () => startHover(spotlightEntry) : undefined,
+      onBlur: isDesktop ? () => endHover(box.testid) : undefined,
       // Phase 200 UAT: on mobile the WHOLE card is the tap target — the
       // glyph included, since it carries no handler of its own any more.
       // Round 9 attached it on desktop too, purely for the departed-board
@@ -1101,6 +1157,7 @@ export function TrainReveal({
             resetNonce={solutionNonce}
             showCursor={activeStepperKey === box.testid}
             onStepChange={handleLineStep(box.testid, box.quality)}
+            onUserStep={onLineUserStep}
           />
         </CardBody>
       </Card>
@@ -1138,6 +1195,7 @@ export function TrainReveal({
               resetNonce={solutionNonce}
               showCursor={activeStepperKey === box.testid}
               onStepChange={handleLineStep(box.testid, gameMoveQuality)}
+              onUserStep={onLineUserStep}
             />
           )}
           {gameMoveLine.status === 'loading' && (

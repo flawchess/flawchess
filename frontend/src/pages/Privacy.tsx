@@ -28,6 +28,9 @@ export function PrivacyPage() {
             <li>
               If you use Train, your lichess username (or your chess.com username if you have no lichess one) is shown next to your weekly Train points and accuracy on leaderboards that other FlawChess users can see. Guest accounts never appear, accounts without a username show as &quot;Anonymous&quot;, and you can hide yourself in Settings under Privacy. We store each week&apos;s final standings so past medals and podiums stay as they were; if your account is deleted, your name there is replaced with &quot;Deleted user&quot;.
             </li>
+            <li>
+              If you use Train, how you work through each puzzle: how long you think before you guess and move, how long you study the solution (only while the page is visible), which parts of the solution you open, and whether you trained on a phone or a computer. We use this only to understand and improve Train, and it never changes your score or your place on the leaderboards.
+            </li>
             <li>Game data imported from those platforms (publicly accessible via their APIs)</li>
             <li>
               Email address and password if you register with email (password is hashed using

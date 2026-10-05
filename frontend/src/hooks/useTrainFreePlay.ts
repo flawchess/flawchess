@@ -30,7 +30,7 @@
  * `useStockfishEngine`'s own lifecycle the moment that flips false.
  */
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Chess } from 'chess.js';
 
 import type { SquareMarker } from '@/components/board/ChessBoard';
@@ -114,6 +114,14 @@ export interface UseTrainFreePlayOptions {
    * every other eval in the Train stack. Null before a verdict has landed.
    */
   seedEval: FreePlaySeedEval | null;
+  /**
+   * Phase 233 (D-14): called once per user-played exploration move: the first
+   * drop (`start`), each successful `playMove`, and an engine-line click
+   * (`playLine`, counted as ONE move, RESEARCH A4). Never for reset, goBack,
+   * goForward, goToRoot or goToNode. Held in a ref so the command identities
+   * do not change with the caller's callback.
+   */
+  onUserMove?: () => void;
 }
 
 export interface TrainFreePlayState {
@@ -226,8 +234,13 @@ function withCapped<V>(prev: Map<string, V>, key: string, value: V): Map<string,
 export function useTrainFreePlay({
   startFen,
   seedEval,
+  onUserMove,
 }: UseTrainFreePlayOptions): TrainFreePlayState {
   const [isExploring, setIsExploring] = useState(false);
+  const onUserMoveRef = useRef(onUserMove);
+  useEffect(() => {
+    onUserMoveRef.current = onUserMove;
+  });
   const board = useAnalysisBoard(startFen);
   const { position, nodes, mainLine, currentNodeId, rootFen, lastMove } = board;
   const { makeMove, playUciLine, goToNode, deleteSubtree, loadMainLine } = board;
@@ -405,8 +418,26 @@ export function useTrainFreePlay({
       // earlier session would attach itself to an unrelated new node.
       setQualityByNode((prev) => (prev.size === 0 ? prev : new Map()));
       setIsExploring(true);
+      onUserMoveRef.current?.();
     },
     [loadMainLine, playUciLine, startFen],
+  );
+
+  const playMove = useCallback(
+    (from: string, to: string): boolean => {
+      const played = makeMove(from, to);
+      if (played) onUserMoveRef.current?.();
+      return played;
+    },
+    [makeMove],
+  );
+
+  const playLine = useCallback(
+    (uciMoves: string[]): void => {
+      playUciLine(uciMoves);
+      onUserMoveRef.current?.();
+    },
+    [playUciLine],
   );
 
   const reset = useCallback(() => {
@@ -434,8 +465,8 @@ export function useTrainFreePlay({
     isAnalyzing: engine.isAnalyzing,
     bestMoveUci: liveBestUci,
     start,
-    playMove: makeMove,
-    playLine: playUciLine,
+    playMove,
+    playLine,
     goToNode,
     goBack,
     goForward,

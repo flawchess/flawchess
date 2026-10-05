@@ -89,6 +89,60 @@ export interface SolveRequest {
   /** UCI move string: 4 chars normal ("e2e4"), 5 chars promotion ("e7e8q"). */
   played_move: string;
   move_quality: TrainMoveTier;
+  /**
+   * Phase 233 think-time telemetry. Optional so a stale client bundle still
+   * solves; never an input to grading or scoring (D-05).
+   */
+  telemetry?: SolveTelemetry;
+}
+
+/** Device class sent with telemetry (D-09): a two-value class, never the raw UA string. */
+export type TelemetryClient = 'mobile' | 'desktop';
+
+/**
+ * Mirrors app/schemas/train.py SolveTelemetry (Phase 233). Durations are
+ * integer milliseconds of VISIBLE time (D-04); `v` is TELEMETRY_SCHEMA_VERSION.
+ * `think_hidden_ms` is the think phase's hidden-tab time, kept distinct from
+ * the review flush's `review_hidden_ms` because the server merges per key.
+ */
+export interface SolveTelemetry {
+  v: 1;
+  client?: TelemetryClient;
+  guess_ms?: number;
+  move_ms?: number;
+  think_hidden_ms?: number;
+  resumed?: boolean;
+}
+
+/**
+ * Why a review flush was sent (D-07), closed set mirrored from
+ * app/schemas/train.py with no third value. 'next' = the user pressed Next on
+ * the reveal; 'pagehide' = the user left the reveal without pressing Next
+ * (page hidden or unloaded, in-app route change or screen unmount, leaving
+ * via Analyze). "Puzzle N was shown" is derived server-side from the previous
+ * puzzle's `exit = 'next'`.
+ */
+export type ReviewExit = 'next' | 'pagehide';
+
+/**
+ * Mirrors app/schemas/train.py ReviewTelemetry (Phase 233 D-03). Every value
+ * is a CUMULATIVE total for the reveal, because one reveal can be flushed
+ * several times (non-Next exits, then Next) and the server merges per key,
+ * last write wins. Durations are integer ms of VISIBLE time (D-04); hidden-tab
+ * time is `review_hidden_ms`, distinct from the solve patch's `think_hidden_ms`.
+ */
+export interface ReviewTelemetry {
+  v: 1;
+  exit: ReviewExit;
+  review_ms?: number;
+  review_hidden_ms?: number;
+  review_cards_opened?: number;
+  review_cards_total?: number;
+  review_line_steps?: number;
+  review_explore_moves?: number;
+  review_explored?: boolean;
+  review_analyze_opened?: boolean;
+  review_walkthrough?: boolean;
 }
 
 /**

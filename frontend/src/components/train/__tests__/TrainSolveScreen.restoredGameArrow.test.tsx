@@ -84,6 +84,8 @@ vi.mock('@/api/client', async () => {
   const actual = await vi.importActual<typeof import('@/api/client')>('@/api/client');
   return {
     ...actual,
+    // Phase 233 (D-06): every restored reveal flushes on unmount at RTL cleanup.
+    postReviewKeepalive: vi.fn(),
     trainApi: {
       ...actual.trainApi,
       composeOrResumeSession: vi.fn(async () => ({

@@ -1,6 +1,6 @@
 ---
 name: db-report
-description: Generate a database storage and performance report for FlawChess. Use this skill when the user asks about database size, storage usage, table sizes, index sizes, game counts, position counts, slow queries, query performance, cache hit ratio, sequential scans, index usage, dead tuples, data integrity / sanity checks (e.g. do the games blunder/mistake count columns match game_flaws), or wants a DB health/status overview. Trigger on phrases like "db report", "database report", "how big is the database", "storage usage", "index sizes", "table sizes", "slow queries", "query performance", "db performance", "db health", "data integrity", "sanity check", or any question about DB metrics. Supports both production and local dev databases. Writes a timestamped markdown report to reports/db-stats/db-report-{env}-YYYY-MM-DD.md.
+description: Generate a database storage and performance report for FlawChess (production or local dev). Use when the user asks about database size or storage (tables, indexes, game/position counts), query performance (slow queries, cache hit ratio, sequential scans, index usage, dead tuples), data integrity / sanity checks (e.g. do the games blunder/mistake count columns match game_flaws), or wants a DB health/status overview. Writes a timestamped markdown report to reports/db-stats/db-report-{env}-YYYY-MM-DD.md.
 ---
 
 # DB Report
@@ -214,7 +214,7 @@ Data-integrity checks. Run all four unless the user asks for a specific one.
   - **our-pipeline games (chess.com etc.)**: both sides derive from *our own* evals, so agreement should be **tighter**. A chess.com match rate materially below the lichess rate is suspicious rather than reassuring, because there is no independent-classifier excuse for it.
 - Aggregate totals should agree within ~1% on every platform.
 
-> **History note (do not re-derive this the hard way):** this section previously asserted that oracle columns were "NULL for chess.com" and that chess.com had "zero `game_flaws` rows". Both were true once and are **false as of 2026-07-31** (chess.com: 345,949 games with oracle columns, 339,508 with flaw rows). Because Check A used to be hard-scoped to lichess, it silently skipped the largest population. If you find the scoping narrowed again, widen it rather than trusting the prose.
+> **Scope:** Check A covers every platform. chess.com games carry oracle columns and `game_flaws` rows like lichess games do, and are the largest population; if you find the check scoped to one platform, widen it rather than trusting the prose.
 
 Two things we want to know:
 1. **Do the counts match?** For games with counts present, does `white_mistakes + black_mistakes` equal the `game_flaws` mistake count (severity 1), and likewise for blunders (severity 2)?
@@ -302,8 +302,6 @@ Verdict line (Check A): **PASS** if `flaws_but_all_counts_null = 0` on every pla
 > Verdict: PASS. Note chess.com agrees *better* than lichess, as the source model predicts.
 >
 > The absolute counts drift upward between runs (the eval pipeline analyzes games continuously — chess.com moved 345,953 → 346,108 within one session). Compare **match rates**, not raw counts; a higher count is normal progress, not a regression.
->
-> Older reference (prod 2026-06-12, lichess-only scoping): match rate 98.4% (38,355 / 38,964). Kept only to show the trend; that scoping is obsolete.
 
 ---
 
