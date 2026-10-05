@@ -25,7 +25,7 @@ import datetime
 from typing import Annotated, Final
 
 import sentry_sdk
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Path, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_async_session
@@ -37,6 +37,7 @@ from app.schemas.train import (
     ClaimMedalsRequest,
     OnboardingStep,
     PuzzleRevealResponse,
+    ReviewTelemetry,
     SolveRequest,
     SolveResponse,
     SolvedResult,
@@ -66,6 +67,9 @@ NowUtc = Annotated[datetime.datetime, Depends(dev_now_utc)]
 # drill_sessions.id is int4; a larger session_id would raise in asyncpg and reach
 # Sentry as a 500, so the Query bound turns it into a 422 before any SQL runs.
 _SESSION_ID_MAX: Final = 2**31 - 1
+# drill_solves.position is SmallInteger; a larger value would overflow in asyncpg and
+# reach Sentry as a 500, so the Path bound turns it into a 422 before any SQL runs.
+_DRILL_POSITION_MAX: Final = 2**15 - 1
 
 
 @router.post("/sessions", response_model=TrainSessionResponse)
@@ -155,6 +159,11 @@ async def solve_puzzle(
             played_move=body.played_move,
             move_quality=body.move_quality,
             now_utc=now_utc,
+            # exclude_none keeps unmeasured keys out of the patch so the merge
+            # never writes a JSON null value (D-01).
+            telemetry=(
+                body.telemetry.model_dump(exclude_none=True) if body.telemetry is not None else None
+            ),
         )
     except Exception:
         await session.rollback()
@@ -181,6 +190,42 @@ async def solve_puzzle(
         graded_es_before=recorded.graded_es_before,
         graded_es_after=recorded.graded_es_after,
     )
+
+
+@router.post("/sessions/{session_id}/solves/{position}/review", status_code=204)
+async def record_puzzle_review(
+    session_id: Annotated[int, Path(ge=1, le=_SESSION_ID_MAX)],
+    position: Annotated[int, Path(ge=0, le=_DRILL_POSITION_MAX)],
+    body: ReviewTelemetry,
+    session: Annotated[AsyncSession, Depends(get_async_session)],
+    user: Annotated[User, Depends(current_active_user)],
+) -> None:
+    """Merge one puzzle's review telemetry into the caller's solved row (D-03).
+
+    The client flushes once per puzzle on Next and on page unload (D-03). Bearer
+    auth through `current_active_user` works from a keepalive fetch (D-06). The
+    user id only ever comes from `current_active_user`. A row that is missing,
+    unsolved or owned by someone else is a 404 (not 403) so a foreign id is
+    indistinguishable from a missing one. No `now_utc` dependency: the durations
+    are client-measured, so the unload fetch needs no dev-clock header.
+    """
+    try:
+        found = await train_repository.merge_solve_telemetry(
+            session,
+            user_id=user.id,
+            session_id=session_id,
+            position=position,
+            patch=body.model_dump(exclude_none=True),
+        )
+    except Exception:
+        await session.rollback()
+        sentry_sdk.set_context("train", {"user_id": str(user.id), "session_id": session_id})
+        sentry_sdk.capture_exception()
+        raise
+    if not found:
+        await session.rollback()
+        raise HTTPException(status_code=404, detail="Puzzle not found")
+    await session.commit()
 
 
 @router.post("/sessions/{session_id}/enter", status_code=204)

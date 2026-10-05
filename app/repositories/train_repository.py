@@ -22,7 +22,8 @@ from dataclasses import dataclass
 from typing import Any, Literal, cast
 
 import chess
-from sqlalchemy import and_, delete, exists, func, or_, select, update
+from sqlalchemy import ColumnElement, and_, delete, exists, func, literal, or_, select, update
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -2867,6 +2868,59 @@ async def _apply_completion_tick(
         )
 
 
+def _merged_telemetry(patch: dict[str, object]) -> ColumnElement[Any]:
+    """SQL expression merging `patch` into `drill_solves.telemetry` (D-01).
+
+    `coalesce(telemetry, '{}'::jsonb) || patch`: the existing keys survive, the
+    patch keys are added or overwritten (last write wins per key), and a SQL NULL
+    column becomes a JSON object holding only the patch. Atomic in the single
+    UPDATE it is embedded in, so there is no read-modify-write race. Never pass a
+    patch containing JSON null values (callers use `model_dump(exclude_none=True)`).
+    """
+    return func.coalesce(DrillSolve.telemetry, literal({}, JSONB)).op("||", return_type=JSONB)(
+        literal(patch, JSONB)
+    )
+
+
+async def merge_solve_telemetry(
+    session: AsyncSession,
+    *,
+    user_id: int,
+    session_id: int,
+    position: int,
+    patch: dict[str, object],
+) -> bool:
+    """Merge a review-flush telemetry patch into the caller's solved row (D-03).
+
+    One UPDATE, no SELECT first, no join to `drill_sessions` and no session-status
+    check: a flush for the last puzzle always lands after the session completed,
+    and it is the user's own row, so completed and expired sessions are accepted.
+
+    Args:
+        session: AsyncSession. Caller commits.
+        user_id: Authenticated user's internal PK (V4: never client-supplied).
+        session_id: The `drill_sessions.id` (untrusted client input, resolved
+            only in combination with `user_id`).
+        position: The puzzle's frozen 0-based order within the session.
+        patch: Validated review telemetry keys, no None values.
+
+    Returns:
+        False when the row does not exist, belongs to another user, or is not
+        solved yet (the router maps this to 404, no existence oracle).
+    """
+    result = await session.execute(
+        update(DrillSolve)
+        .where(
+            DrillSolve.session_id == session_id,
+            DrillSolve.position == position,
+            DrillSolve.user_id == user_id,
+            DrillSolve.solved_at.is_not(None),
+        )
+        .values(telemetry=_merged_telemetry(patch))
+    )
+    return result.rowcount == 1  # ty: ignore[unresolved-attribute]  # SQLAlchemy DML result carries rowcount
+
+
 async def record_solve(
     session: AsyncSession,
     *,
@@ -2877,6 +2931,7 @@ async def record_solve(
     played_move: str,
     move_quality: Literal["good", "inaccuracy", "wrong"],
     now_utc: datetime.datetime,
+    telemetry: dict[str, object] | None = None,
 ) -> RecordedSolve | None:
     """Record one puzzle's outcome and advance the interval ladder (POOL-08).
 
@@ -2936,6 +2991,9 @@ async def record_solve(
             byte-identical to pre-SEED-119 for off-key moves (an inaccuracy
             passed then and passes now).
         now_utc: The current UTC instant.
+        telemetry: Phase 233 (D-01/D-02) validated solve-telemetry keys (no None
+            values), merged into `drill_solves.telemetry` inside the claim UPDATE.
+            None leaves the column untouched (SQL NULL). Never read by grading.
 
     Returns:
         `RecordedSolve`, or None when no `(session_id, position)` row exists
@@ -2984,6 +3042,19 @@ async def record_solve(
     correct_move = effective_quality != "wrong"
     move_quality_int = int(_MOVE_QUALITY_ENUM[effective_quality])
 
+    claim_values: dict[str, Any] = {
+        "guess": guess_int,
+        "played_move": played_move,
+        "correct_move": correct_move,
+        "move_quality": move_quality_int,
+        "correct_guess": correct_guess,
+        "solved_at": now_utc,
+    }
+    # D-01: add the column ONLY when there is a patch. Omitting it keeps "no
+    # telemetry" a true SQL NULL (asyncpg would write Python None as a JSON null
+    # VALUE, which `IS NULL` skips and which would break the later `||` merge).
+    if telemetry is not None:
+        claim_values["telemetry"] = _merged_telemetry(telemetry)
     claim_result = await session.execute(
         update(DrillSolve)
         .where(
@@ -2992,14 +3063,7 @@ async def record_solve(
             DrillSolve.user_id == user_id,
             DrillSolve.solved_at.is_(None),
         )
-        .values(
-            guess=guess_int,
-            played_move=played_move,
-            correct_move=correct_move,
-            move_quality=move_quality_int,
-            correct_guess=correct_guess,
-            solved_at=now_utc,
-        )
+        .values(**claim_values)
     )
     claimed = claim_result.rowcount == 1  # ty: ignore[unresolved-attribute]  # SQLAlchemy DML result carries rowcount
 

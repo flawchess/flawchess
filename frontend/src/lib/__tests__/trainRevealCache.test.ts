@@ -8,6 +8,7 @@ import {
   clearTrainRevealCache,
   readTrainRevealCache,
   saveTrainRevealCache,
+  updateTrainRevealCacheReview,
 } from '@/lib/trainRevealCache';
 import type { CachedTrainReveal } from '@/lib/trainRevealCache';
 
@@ -51,6 +52,40 @@ describe('trainRevealCache', () => {
   it('round-trips a saved reveal', () => {
     saveTrainRevealCache(CACHED);
     expect(readTrainRevealCache()).toEqual(CACHED);
+  });
+
+  it('Phase 233: round-trips reviewTelemetry, and an entry without it still restores', () => {
+    const withReview = { ...CACHED, reviewTelemetry: { visibleMs: 4300, hiddenMs: 200 } };
+    saveTrainRevealCache(withReview);
+    expect(readTrainRevealCache()).toEqual(withReview);
+
+    saveTrainRevealCache(CACHED);
+    const restored = readTrainRevealCache();
+    expect(restored).toEqual(CACHED);
+    expect(restored?.reviewTelemetry).toBeUndefined();
+  });
+
+  describe('updateTrainRevealCacheReview', () => {
+    const SNAPSHOT = { visibleMs: 9000, hiddenMs: 100 };
+
+    it('rewrites reviewTelemetry of the matching entry', () => {
+      saveTrainRevealCache({ ...CACHED, reviewTelemetry: { visibleMs: 1, hiddenMs: 0 } });
+      updateTrainRevealCacheReview(CACHED.sessionId, CACHED.puzzle.position, SNAPSHOT);
+      expect(readTrainRevealCache()).toEqual({ ...CACHED, reviewTelemetry: SNAPSHOT });
+    });
+
+    it('leaves an entry for another session or another position unchanged', () => {
+      saveTrainRevealCache(CACHED);
+      updateTrainRevealCacheReview(CACHED.sessionId + 1, CACHED.puzzle.position, SNAPSHOT);
+      updateTrainRevealCacheReview(CACHED.sessionId, CACHED.puzzle.position + 1, SNAPSHOT);
+      expect(readTrainRevealCache()).toEqual(CACHED);
+    });
+
+    it('never creates an entry when none exists', () => {
+      updateTrainRevealCacheReview(CACHED.sessionId, CACHED.puzzle.position, SNAPSHOT);
+      expect(readTrainRevealCache()).toBeNull();
+      expect(sessionStorage.getItem('train_reveal_cache')).toBeNull();
+    });
   });
 
   it('returns null when nothing was saved', () => {

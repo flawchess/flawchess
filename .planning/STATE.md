@@ -2,16 +2,16 @@
 gsd_state_version: "1.0"
 milestone: v2.21
 current_phase: 233
-current_phase_name: Train Per-Puzzle Timing & Engagement Telemetry (SEED-190)
 status: completed
-stopped_at: Phase 233 context gathered
-last_updated: "2026-10-05T17:18:08.006Z"
-state_head: f899a6c0eb091f0b7c2f9427c3c6d65b6a5aa9fd
+stopped_at: Phase 233 complete — all phases complete
+last_updated: "2026-10-05T19:21:17.315Z"
+state_head: cb775805db0b8217aeedd9a1eba0cea8629e0fce
 progress:
   total_phases: 6
   completed_phases: 103
   total_plans: 31
   completed_plans: 47
+  percent: 100
 milestone_name: Browser Engine Throughput
 last_activity: 2026-10-04
 last_activity_desc: "Completed quick task 261004-rre: Track Umami events for server-persisted settings controls"
@@ -21,10 +21,10 @@ last_activity_desc: "Completed quick task 261004-rre: Track Umami events for ser
 
 ## Current Position
 
-Phase: 233 (Train Per-Puzzle Timing & Engagement Telemetry (SEED-190)) — READY TO EXECUTE
-Plan: 4 of 4
+Phase: 233
+Plan: Not started
 
-Status: Verified on branch `gsd/phase-232-frontend-major-dependency-upgrades`; not yet squash-merged to `main` and not deployed. UAT found and fixed a Sentry navigation-breadcrumb query-string leak (G-232-3, 814a3c44c); first prod release carrying 232 keeps the Sentry 11 deploy watch.
+Status: All phases complete
 
 Open threads carried forward (not blockers):
 
@@ -42,9 +42,9 @@ Open threads carried forward (not blockers):
 
 ## Project Reference
 
-See: .planning/PROJECT.md (updated 2026-09-13 after Phase 221)
+See: .planning/PROJECT.md (updated 2026-10-05 after Phase 233)
 Core value: Position-precise WDL across openings + endgames + time pressure on top of users' actual chess.com / lichess games, with personalized LLM commentary and an auto-generated opening-strengths/weaknesses report.
-Current focus: **Phase 231 (Weekly Leaderboard Medals, SEED-186) complete and verified 2026-10-04** on branch `gsd/phase-231-weekly-leaderboard-medals`: UAT 5/5 (medal icon redrawn after the 🥇 emoji in UAT, 4246a3d43), verification passed, Nyquist-compliant, SECURITY threats_open 0. Not yet squash-merged to `main` (full pre-merge gate + CHANGELOG check first) and not deployed. Standalone phases 228-231 are not grouped into a milestone; next is `/gsd-new-milestone`.
+Current focus: **Phase 233 (Train Per-Puzzle Timing & Engagement Telemetry, SEED-190) complete 2026-10-05** on branch `gsd/phase-233-train-puzzle-timing-telemetry`: 5/5 plans, review WR-01/WR-02 fixed, browser UAT passed (phone-tap leg owner-deferred), verification passed by owner override. Next: pre-merge gate + squash-merge to `main` (CHANGELOG bullet already under [Unreleased]). (Prior focus: Phase 231.)
 
 ### Superseded: focus after the v2.20/v2.21 close
 
@@ -832,6 +832,13 @@ flagged as an open decision for plan 06 / a human, not auto-fixed.
 - [Phase 232]: D-04: fast-uri override floor raised to ^3.1.8 within major; js-yaml stays 4.x; Renovate rule disables majors for override-only js-yaml and fast-uri
 - [Phase 232]: Sentry 11 (232-03): pin a v10-equivalent dataCollection (userInfo false, cookies false, httpBodies [], header/query deny lists) and attachStacktrace false in Sentry.init, mutation-proven by test, so v11 default flips do not widen collection
 - [Phase 232]: Phase 232 D-01: TypeScript 7 adopted via the side-by-side alias (typescript = @typescript/typescript6, @typescript/native = typescript@7), supersedes Phase 217 D-11 — typescript-eslint and eslint-plugin-sonarjs peers cap below TS 6.1 and TS 7.0 has no JS API; unwind when TS 7.1 ships its API and typescript-eslint supports it (typescript-eslint#10940)
+- [Phase 233]: D-04 refinement: hidden time stored as think_hidden_ms (solve patch) and review_hidden_ms (review patch) to avoid per-key merge collision
+- [Phase 233]: Invalid solve telemetry is dropped silently (solve still records); review route returns 422 on bad body
+- [Phase 233]: 233-02: think timer starts at engine isReady (not mount); restored reveals start no timer and write no resume marker; counter caps deferred to plan 04
+- [Phase 233]: 233-03: ReviewExit stays closed 'next'|'pagehide'; only the Next flush sets the Next-flushed guard; one non-Next flush per hidden span; postReviewKeepalive (fetch keepalive + Bearer) is the single transport for every non-Next exit
+- [Phase 233]: 233-04: counters reset skips the first key because TrainReveal's mount effect reports the cards total before the hook's own mount effect; seed merge unions cardKeys and takes the max total
+- [Phase 233]: 233-04: snapshotReviewForAnalyze sets analyzeOpened before the snapshot so the unmount keepalive flush after a plain Analyze click carries review_analyze_opened
+- [Phase 233]: D-08/D-10 confirmed by absence: no leaderboard impression event, no Umami review event; Privacy page discloses Train telemetry (D-09)
 
 ### Pending Todos
 
@@ -1029,8 +1036,8 @@ Items acknowledged and deferred at **v1.29 milestone close on 2026-06-29** (user
 
 ## Session Continuity
 
-**Stopped at:** Phase 233 context gathered
-**Resume file:** .planning/phases/233-train-puzzle-timing-telemetry/233-CONTEXT.md
+**Stopped at:** Phase 233 complete, verified (owner override). Branch not yet squash-merged to `main`.
+**Resume file:** None
 
 Previous session note (Phase 227):
 refit (calibration parity holds). Verification passed 17/17; code review 0 blockers (WR-01 + 3 info fixed). Next:
@@ -1038,7 +1045,7 @@ squash-merge `gsd/phase-227-...` to `main` with a CHANGELOG entry already in `[U
 Owner-deferred: real-phone bot game check (227-UAT.md, report-only). Follow-up: stale "Phase 198 will populate"
 priority comment in `workerPoolState.ts:434-437` (verifier info item).
 
-**Last session:** 2026-10-05T16:17:00.762Z
+**Last session:** 2026-10-05T19:30:00Z
 
 **Resume file:** None
 
@@ -1256,6 +1263,11 @@ priority comment in `workerPoolState.ts:434-437` (verifier info item).
 | Phase 232 P02 | 9 min | 2 tasks | 4 files |
 | Phase 232 P03 | n/a | 3 tasks | 6 files |
 | Phase 232 P04 | 8 min | 3 tasks | 8 files |
+| Phase 233 P01 | 14 min | 2 tasks | 7 files |
+| Phase 233 P02 | 8 min | 2 tasks | 12 files |
+| Phase 233 P03 | 25 min | 3 tasks | 12 files |
+| Phase 233 P04 | 13 min | 2 tasks | 12 files |
+| Phase 233 P05 | 7 min | 2 tasks | 3 files |
 
 ## Performance Metrics
 

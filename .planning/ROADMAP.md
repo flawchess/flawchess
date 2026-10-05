@@ -394,23 +394,23 @@ to the next attempt at the same SR item. Ship early: the data only exists from t
 
 **Depends on**: Nothing (standalone; builds on Phase 229 Umami events and Phase 230 leaderboard)
 **Requirements**: TBD (coverage contract: CONTEXT.md decisions D-01..D-14)
-**Plans:** 5 plans
+**Plans:** 5/5 plans complete
 
 Plans:
 **Wave 1**
-- [ ] 233-01-PLAN.md — Backend: drill_solves.telemetry JSONB, SolveTelemetry on the solve POST (tracer), review-flush route
+- [x] 233-01-PLAN.md — Backend: drill_solves.telemetry JSONB, SolveTelemetry on the solve POST (tracer), review-flush route
 
 **Wave 2** *(blocked on Wave 1 completion)*
-- [ ] 233-02-PLAN.md — Frontend think time (guess_ms, move_ms, think_hidden_ms, client, resumed) on the solve POST
+- [x] 233-02-PLAN.md — Frontend think time (guess_ms, move_ms, think_hidden_ms, client, resumed) on the solve POST
 
 **Wave 3** *(blocked on Wave 2 completion)*
-- [ ] 233-03-PLAN.md — Frontend review time: Next flush, keepalive flush on every non-Next exit (unmount, hidden, pagehide), Analyze round trip
+- [x] 233-03-PLAN.md — Frontend review time: Next flush, keepalive flush on every non-Next exit (unmount, hidden, pagehide), Analyze round trip
 
 **Wave 4** *(blocked on Wave 3 completion)*
-- [ ] 233-04-PLAN.md — Engagement counters (D-11..D-14) with the TrainReveal refactor render test
+- [x] 233-04-PLAN.md — Engagement counters (D-11..D-14) with the TrainReveal refactor render test
 
 **Wave 5** *(blocked on Wave 4 completion)*
-- [ ] 233-05-PLAN.md — Privacy line (D-09), D-08/D-10 confirmation, CHANGELOG, phase pre-merge gate
+- [x] 233-05-PLAN.md — Privacy line (D-09), D-08/D-10 confirmation, CHANGELOG, phase pre-merge gate
 
 Phase detail for every shipped milestone lives in `milestones/vX.Y-ROADMAP.md`, its phase directories in `milestones/vX.Y-phases/`, and the per-milestone summaries in [MILESTONES.md](MILESTONES.md).
 

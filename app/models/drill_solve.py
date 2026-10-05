@@ -67,6 +67,7 @@ from __future__ import annotations
 
 import datetime
 from enum import IntEnum
+from typing import Any
 
 from sqlalchemy import (
     Boolean,
@@ -80,6 +81,7 @@ from sqlalchemy import (
     UniqueConstraint,
     text,
 )
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.models.base import Base
@@ -182,6 +184,17 @@ class DrillSolve(Base):
     # NULL = not yet attempted (P-07). Non-NULL = this puzzle's recorded outcome.
     solved_at: Mapped[datetime.datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
+    )
+    # Client-measured think/review telemetry (SEED-190, Phase 233). Keys are
+    # documented by `SolveTelemetry` / `ReviewTelemetry` in app/schemas/train.py.
+    # Written only by merging (`coalesce(telemetry, '{}') || patch`), never
+    # overwritten. none_as_null: a Python None would be written as a JSON null
+    # VALUE, which turns that merge into an array and is skipped by `IS NULL`
+    # predicates. A recorded outcome only: never read by grading, scoring, the SR
+    # ladder or the leaderboard (D-05). Composition inserts never set it, so it
+    # stays SQL NULL until a write.
+    telemetry: Mapped[dict[str, Any] | None] = mapped_column(
+        JSONB(none_as_null=True), nullable=True, default=None
     )
 
 

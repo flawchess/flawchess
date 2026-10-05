@@ -10,7 +10,13 @@
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { apiClient, libraryApi } from '../client';
+import * as Sentry from '@sentry/react';
+import { apiClient, libraryApi, postReviewKeepalive } from '../client';
+
+vi.mock('@sentry/react', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@sentry/react')>();
+  return { ...actual, captureException: vi.fn() };
+});
 
 const EMPTY_GAMES_RESPONSE = {
   data: { games: [], matched_count: 0, offset: 0, limit: 20 },
@@ -98,6 +104,69 @@ describe('libraryApi.getGames', () => {
 
       expect(lastGetParams(getSpy)).not.toHaveProperty('has_gem');
       expect(lastGetParams(getSpy)).not.toHaveProperty('has_great');
+    });
+  });
+});
+
+describe('postReviewKeepalive', () => {
+  const BODY = { v: 1, exit: 'pagehide', review_ms: 3000, review_hidden_ms: 0 } as const;
+  let fetchMock: ReturnType<typeof vi.fn>;
+
+  beforeEach(() => {
+    fetchMock = vi.fn(async () => ({ status: 204 }));
+    vi.stubGlobal('fetch', fetchMock);
+    localStorage.setItem('auth_token', 'tok');
+    vi.mocked(Sentry.captureException).mockClear();
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    localStorage.clear();
+  });
+
+  it('posts a keepalive request with the Bearer token to the same-origin review route', () => {
+    postReviewKeepalive(7, 2, BODY);
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(fetchMock).toHaveBeenCalledWith('/api/train/sessions/7/solves/2/review', {
+      method: 'POST',
+      keepalive: true,
+      headers: { 'Content-Type': 'application/json', Authorization: 'Bearer tok' },
+      body: JSON.stringify(BODY),
+    });
+  });
+
+  it('does not call fetch without a stored token', () => {
+    localStorage.clear();
+    postReviewKeepalive(7, 2, BODY);
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it('swallows a rejected fetch without throwing or reporting', async () => {
+    fetchMock.mockRejectedValueOnce(new TypeError('network'));
+    expect(() => postReviewKeepalive(7, 2, BODY)).not.toThrow();
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(Sentry.captureException).not.toHaveBeenCalled();
+  });
+
+  it.each([401, 404])('does not report an expected %s response', async (status) => {
+    fetchMock.mockResolvedValueOnce({ status });
+    postReviewKeepalive(7, 2, BODY);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(Sentry.captureException).not.toHaveBeenCalled();
+  });
+
+  it('reports a 500 once with a constant message and the status in context', async () => {
+    fetchMock.mockResolvedValueOnce({ status: 500 });
+    postReviewKeepalive(7, 2, BODY);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(Sentry.captureException).toHaveBeenCalledTimes(1);
+    const [error, hint] = vi.mocked(Sentry.captureException).mock.calls[0]!;
+    expect((error as Error).message).toBe('Train review keepalive flush failed');
+    expect(hint).toMatchObject({
+      tags: { source: 'train-review-keepalive' },
+      contexts: { train_review: { status: 500 } },
     });
   });
 });

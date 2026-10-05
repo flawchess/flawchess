@@ -90,6 +90,7 @@ import { placeholderAvatarFor, resolveAvatarSrc } from '@/lib/personas/personaAv
 import { useTrainSettings } from '@/hooks/useTrainSettings';
 import { useTrainOnboarding } from '@/hooks/useTrainOnboarding';
 import { useTrainWalkthrough } from '@/hooks/useTrainWalkthrough';
+import { useTrainPuzzleTelemetry } from '@/hooks/useTrainPuzzleTelemetry';
 import { TrainBotStepper } from '@/components/train/TrainBotStepper';
 import {
   applyTrainSpotlight,
@@ -819,6 +820,19 @@ export function TrainSolveScreen({
     trainSession.lastSolvedPosition === puzzle.position ? trainSession.lastSolveResponse : null;
   const verdict = liveVerdict ?? restoredSolve?.verdict ?? null;
 
+  // Phase 233 (D-02): think-time telemetry for this puzzle. Prefer the restored
+  // reveal's session id (Pitfall 6: `trainSession.session` is null briefly on a
+  // restored mount). `isReady` gates the timer start: the guess UI does not
+  // exist while "Loading engine…" shows (Pitfall 8). Never read by scoring (D-05).
+  const puzzleTelemetry = useTrainPuzzleTelemetry({
+    sessionId: restoredSolve?.sessionId ?? trainSession.session?.session_id ?? null,
+    position: puzzle.position,
+    isReady: gradingEngine.isReady,
+    isRestored: restoredSolve !== null,
+    hasVerdict: verdict !== null,
+    restoredReview: restoredSolve?.reviewTelemetry,
+  });
+
   // Phase 211 (D-01/D-06): the server's certified "also fine" set — the
   // single source BOTH consumers read: the reveal overlay's green alternative
   // arrows AND the free-play seed's root-ply key (do not inline the default
@@ -848,7 +862,11 @@ export function TrainSolveScreen({
           },
     [gradeResult, vettedMoves],
   );
-  const freePlay = useTrainFreePlay({ startFen: puzzle.fen, seedEval: freePlaySeedEval });
+  const freePlay = useTrainFreePlay({
+    startFen: puzzle.fen,
+    seedEval: freePlaySeedEval,
+    onUserMove: puzzleTelemetry.onExploreMove,
+  });
   // Phase 228 (D-13): the Stockfish arrows setting sets how many live free-play
   // engine arrows draw.
   const { sfArrows } = useEngineDisplaySettings();
@@ -941,6 +959,12 @@ export function TrainSolveScreen({
     stamp,
   });
   const walkthroughTarget = walkthrough.target;
+  // Phase 233 (D-13): sticky flag, so the walkthrough being active at ANY point
+  // on this reveal counts (not read at flush time, after the leave-stamp).
+  const walkthroughActive = walkthrough.activeStep !== null;
+  useEffect(() => {
+    if (walkthroughActive) puzzleTelemetry.markWalkthroughActive();
+  }, [walkthroughActive, puzzleTelemetry]);
   const boardMaxWidthPx = useFitBoardToViewport({
     columnRef,
     boardRef,
@@ -1062,6 +1086,8 @@ export function TrainSolveScreen({
         guess: playedGuess,
         played_move: playedUci,
         move_quality: grade.moveTier,
+        // Frozen at move time, so a retry resends the identical object.
+        telemetry: puzzleTelemetry.solveTelemetry(),
       });
       // correct_guess is read ONLY from the server response (POOL-10) — never
       // recomputed client-side. The verdict itself renders from
@@ -1166,6 +1192,7 @@ export function TrainSolveScreen({
     setBoardFen(chess.fen());
     const playedUci = `${move.from}${move.to}${move.promotion ?? ''}`;
     setLastPlayedUci(playedUci);
+    puzzleTelemetry.markMove();
     void gradeAndSolve(guess, playedUci);
     return true;
   }
@@ -1525,6 +1552,8 @@ export function TrainSolveScreen({
       guess,
       playedMoveUci: lastPlayedUci,
       gradeResult,
+      // Phase 233: the review totals so far, so the restored reveal continues one timer.
+      reviewTelemetry: puzzleTelemetry.snapshotReviewForAnalyze(),
     });
   }
 
@@ -1566,6 +1595,13 @@ export function TrainSolveScreen({
     if (settings?.intro_seen_at == null) {
       stamp('intro');
     }
+    puzzleTelemetry.markGuess();
+    setGuess(guessValue);
+  }
+
+  // Phase 233 (D-02): the prompt and drop-nudge guess buttons both land here.
+  function handleGuess(guessValue: Guess): void {
+    puzzleTelemetry.markGuess();
     setGuess(guessValue);
   }
 
@@ -1594,6 +1630,9 @@ export function TrainSolveScreen({
   }, [verdict, verdictPoints]);
 
   function handleNextFromReveal(): void {
+    // Phase 233 (D-03): flush BEFORE anything that advances the puzzle or unmounts
+    // the screen (the next puzzle's key reset must not run first, Pitfall 5).
+    puzzleTelemetry.flushReviewOnNext();
     walkthrough.leave();
     handleNext();
   }
@@ -1625,7 +1664,7 @@ export function TrainSolveScreen({
   const bubbleBody = renderTrainBotBubbleBody(bubbleState, {
     sideToMove: puzzle.side_to_move,
     guess,
-    onGuess: setGuess,
+    onGuess: handleGuess,
     suppressPrompt,
     onIntroNext: handleIntroNext,
     onIntroGuess: handleIntroGuess,
@@ -1863,6 +1902,9 @@ export function TrainSolveScreen({
           onAnalyzeClick={handleAnalyzeClick}
           onGameMoveLineChange={setGameMoveLine}
           onLineStep={walkthrough.handleLineStep}
+          onLineUserStep={puzzleTelemetry.onLineUserStep}
+          onCardEngage={puzzleTelemetry.onCardEngage}
+          onCardsTotalChange={puzzleTelemetry.onCardsTotalChange}
           solutionNonce={solutionNonce}
           spotlightKey={spotlight?.key ?? null}
           onSpotlightChange={walkthrough.handleSpotlightChange}

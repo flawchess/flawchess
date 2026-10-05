@@ -1596,6 +1596,147 @@ describe('TrainReveal', () => {
     expect(onSpotlightChange).toHaveBeenLastCalledWith(null);
   });
 
+  // ─── Phase 233 (D-11/D-12): card engagement reaches the telemetry callbacks ──
+
+  describe('TrainReveal card engagement (Phase 233)', () => {
+    afterEach(() => {
+      matchMediaMatches = true;
+      vi.restoreAllMocks();
+    });
+
+    it('desktop: pointer enter/leave and focus/blur report hover-start/hover-end for the card key', async () => {
+      matchMediaMatches = true;
+      const onCardEngage = vi.fn();
+      await renderThreeBoxReveal(vi.fn(), null, { onCardEngage });
+      const bestBox = screen.getByTestId('train-line-box-best-move');
+
+      fireEvent.pointerEnter(bestBox);
+      expect(onCardEngage).toHaveBeenLastCalledWith('train-line-box-best-move', 'hover-start');
+      fireEvent.pointerLeave(bestBox);
+      expect(onCardEngage).toHaveBeenLastCalledWith('train-line-box-best-move', 'hover-end');
+      fireEvent.focus(bestBox);
+      expect(onCardEngage).toHaveBeenLastCalledWith('train-line-box-best-move', 'hover-start');
+      fireEvent.blur(bestBox);
+      expect(onCardEngage).toHaveBeenLastCalledWith('train-line-box-best-move', 'hover-end');
+    });
+
+    it('desktop: a click on a pristine board is not an open, a click on a departed board is, immediately', async () => {
+      matchMediaMatches = true;
+      const onCardEngage = vi.fn();
+      await renderThreeBoxReveal(vi.fn(), null, { onCardEngage });
+      fireEvent.click(within(screen.getByTestId('train-line-box-best-move')).getByTestId('train-line-stepper-title'));
+      expect(onCardEngage).not.toHaveBeenCalled();
+      cleanup();
+
+      await renderThreeBoxReveal(vi.fn(), null, { onCardEngage, isBoardDeparted: true, onReturnToSolution: vi.fn() });
+      fireEvent.click(within(screen.getByTestId('train-line-box-best-move')).getByTestId('train-line-stepper-title'));
+      expect(onCardEngage).toHaveBeenCalledTimes(1);
+      expect(onCardEngage).toHaveBeenCalledWith('train-line-box-best-move', 'open');
+    });
+
+    it('desktop: the Also-fine card uses its own key for hover', () => {
+      matchMediaMatches = true;
+      const onCardEngage = vi.fn();
+      renderReveal({ alsoFineMoves: [{ uci: 'd2d4', quality: 'good' }], onCardEngage });
+      const card = screen.getByTestId('train-verdict-guess');
+      fireEvent.pointerEnter(card);
+      expect(onCardEngage).toHaveBeenLastCalledWith('train-reveal-also-fine', 'hover-start');
+      fireEvent.pointerLeave(card);
+      expect(onCardEngage).toHaveBeenLastCalledWith('train-reveal-also-fine', 'hover-end');
+    });
+
+    it('mobile: a tap on an un-spotlit card opens it, a tap on the spotlit card (toggle off) does not', async () => {
+      matchMediaMatches = false;
+      const onCardEngage = vi.fn();
+      await renderThreeBoxReveal(vi.fn(), null, { onCardEngage });
+      fireEvent.click(within(screen.getByTestId('train-line-box-best-move')).getByTestId('train-line-stepper-title'));
+      expect(onCardEngage).toHaveBeenCalledTimes(1);
+      expect(onCardEngage).toHaveBeenCalledWith('train-line-box-best-move', 'open');
+      cleanup();
+
+      onCardEngage.mockClear();
+      await renderThreeBoxReveal(vi.fn(), 'train-line-box-best-move', { onCardEngage });
+      fireEvent.click(within(screen.getByTestId('train-line-box-best-move')).getByTestId('train-line-stepper-title'));
+      expect(onCardEngage).not.toHaveBeenCalled();
+    });
+
+    it('mobile: a tap on a stepper button inside an un-spotlit card opens it, inside a spotlit card does not', async () => {
+      matchMediaMatches = false;
+      const onCardEngage = vi.fn();
+      await renderThreeBoxReveal(vi.fn(), null, { onCardEngage });
+      fireEvent.click(within(screen.getByTestId('train-line-box-best-move')).getByTestId('btn-train-step-next'));
+      expect(onCardEngage).toHaveBeenCalledWith('train-line-box-best-move', 'open');
+      cleanup();
+
+      onCardEngage.mockClear();
+      await renderThreeBoxReveal(vi.fn(), 'train-line-box-best-move', { onCardEngage });
+      fireEvent.click(within(screen.getByTestId('train-line-box-best-move')).getByTestId('btn-train-step-next'));
+      expect(onCardEngage).not.toHaveBeenCalled();
+    });
+
+    it('reports the cards shown: 3 for the three-box reveal once the game box resolves, 4 with Also-fine', async () => {
+      const onCardsTotalChange = vi.fn();
+      await renderThreeBoxReveal(vi.fn(), null, { onCardsTotalChange });
+      await waitFor(() => expect(onCardsTotalChange).toHaveBeenLastCalledWith(3));
+      cleanup();
+
+      onCardsTotalChange.mockClear();
+      await renderThreeBoxReveal(vi.fn(), null, {
+        onCardsTotalChange,
+        alsoFineMoves: [{ uci: 'd2d4', quality: 'good' }],
+      });
+      await waitFor(() => expect(onCardsTotalChange).toHaveBeenLastCalledWith(4));
+    });
+
+    it('TrainReveal refactor: one instance renders verdict null, then a verdict, then null with no hook-order error', async () => {
+      const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+      const onCardsTotalChange = vi.fn();
+      const { rerender, client, props } = renderReveal({ verdict: null, isSolveError: true, onCardsTotalChange });
+      expect(screen.getByTestId('train-solve-error')).not.toBeNull();
+      expect(onCardsTotalChange).not.toHaveBeenCalled();
+
+      revealPuzzle.mockResolvedValue(makeReveal({ played_in_game_san: 'Nf3', played_in_game_move_uci: 'g1f3' }));
+      const verdictProps: ComponentProps<typeof TrainReveal> = {
+        ...props,
+        verdict: makeVerdict(),
+        isSolveError: false,
+        guess: 'critical',
+        playedMoveUci: 'd2d4',
+        gradeResult: makeGradeResult({
+          bestLine: makeEngineLine({ moves: ['e2e4'], evalCp: 50, evalMate: null }),
+          playedLine: makeEngineLine({ moves: ['d2d4'], evalCp: 10, evalMate: null }),
+        }),
+        gradingEngine: makeGradingEngine({
+          startGameMoveSearch: vi
+            .fn()
+            .mockResolvedValue(makeEngineLine({ moves: ['g1f3'], evalCp: -20, evalMate: null })),
+        }),
+      };
+      const renderTree = (treeProps: ComponentProps<typeof TrainReveal>) => (
+        <MemoryRouter>
+          <QueryClientProvider client={client}>
+            <TooltipProvider>
+              <TrainReveal {...treeProps} />
+            </TooltipProvider>
+          </QueryClientProvider>
+        </MemoryRouter>
+      );
+      rerender(renderTree(verdictProps));
+      await waitFor(() => expect(screen.getByTestId('train-line-box-game-move')).not.toBeNull());
+      expect(screen.getByTestId('train-line-box-your-move')).not.toBeNull();
+      expect(screen.getByTestId('train-line-box-best-move')).not.toBeNull();
+      await waitFor(() => expect(onCardsTotalChange).toHaveBeenLastCalledWith(3));
+
+      rerender(renderTree({ ...props, verdict: null, isSolveError: true }));
+      expect(screen.getByTestId('train-solve-error')).not.toBeNull();
+
+      const hookOrderErrors = consoleError.mock.calls.filter(
+        (call) => typeof call[0] === 'string' && /order of Hooks|Rendered (more|fewer) hooks/.test(call[0]),
+      );
+      expect(hookOrderErrors).toEqual([]);
+    });
+  });
+
   // ─── Guess-feedback prose (Quick 260803-iv6, Task 3) ──────────────────────
   // One prose sentence stating what the guess verdict MEANS, in the guess
   // card body above the Also fine line. The six combinations are LOCKED

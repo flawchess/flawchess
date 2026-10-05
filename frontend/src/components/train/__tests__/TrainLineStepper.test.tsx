@@ -308,4 +308,44 @@ describe('TrainLineStepper', () => {
     expect(block.style.maxHeight).toBe(`${TRAIN_LINE_STEPPER_MAX_HEIGHT_PX}px`);
     expect(block.querySelectorAll('button').length).toBe(deepLine.length);
   });
+
+  describe('onUserStep (Phase 233 D-14)', () => {
+    it('is not called on mount, on a resetNonce bump, or when a new-but-equal moves array arrives', () => {
+      const onUserStep = vi.fn();
+      const { rerender } = render(
+        <TrainLineStepper moves={OPENING_MOVES} startFen={START_FEN} onUserStep={onUserStep} />,
+      );
+      expect(onUserStep).not.toHaveBeenCalled();
+
+      rerender(
+        <TrainLineStepper moves={[...OPENING_MOVES]} startFen={START_FEN} onUserStep={onUserStep} />,
+      );
+      rerender(
+        <TrainLineStepper moves={OPENING_MOVES} startFen={START_FEN} resetNonce={1} onUserStep={onUserStep} />,
+      );
+      expect(onUserStep).not.toHaveBeenCalled();
+    });
+
+    it('is called once per prev, next and token click that changes the index', () => {
+      const onUserStep = vi.fn();
+      render(<TrainLineStepper moves={OPENING_MOVES} startFen={START_FEN} onUserStep={onUserStep} />);
+
+      fireEvent.click(screen.getByTestId('btn-train-step-next'));
+      expect(onUserStep).toHaveBeenCalledTimes(1);
+      fireEvent.click(screen.getByTestId('train-line-stepper-token-3'));
+      expect(onUserStep).toHaveBeenCalledTimes(2);
+      fireEvent.click(screen.getByTestId('btn-train-step-prev'));
+      expect(onUserStep).toHaveBeenCalledTimes(3);
+    });
+
+    it('does not count a click on the token of the current index', () => {
+      const onUserStep = vi.fn();
+      render(<TrainLineStepper moves={OPENING_MOVES} startFen={START_FEN} onUserStep={onUserStep} />);
+
+      fireEvent.click(screen.getByTestId('train-line-stepper-token-1'));
+      expect(onUserStep).toHaveBeenCalledTimes(1);
+      fireEvent.click(screen.getByTestId('train-line-stepper-token-1'));
+      expect(onUserStep).toHaveBeenCalledTimes(1);
+    });
+  });
 });

@@ -10,6 +10,7 @@ import {
 } from '@/lib/installCooldown';
 import { clearHandoffMarker, isHandoffActive } from '@/lib/handoffMarker';
 import { trackEvent } from '@/lib/analytics';
+import { isMobileUserAgent } from '@/lib/deviceClass';
 
 // navigator.standalone is Apple-only (iOS Safari's home-screen-launch flag)
 // and is absent from lib.dom.d.ts — without this augmentation the hook
@@ -183,11 +184,10 @@ export function useInstallPrompt() {
   };
   const isStandalone =
     (typeof navigator !== 'undefined' && navigator.standalone === true) || matchesStandaloneMediaQuery();
-  // D-06: this UA device-class gate is kept verbatim, and is deliberately NOT
-  // the project's viewport-based desktop-detection hook (a matchMedia width
-  // check answering a different question) — a desktop browser resized narrow
-  // must never show the install drawer.
-  const isMobile = typeof navigator !== 'undefined' && /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
+  // D-06: the UA device-class gate (now `isMobileUserAgent`, shared with the
+  // Phase 233 telemetry) is deliberately NOT the project's viewport-based
+  // desktop-detection hook.
+  const isMobile = isMobileUserAgent();
 
   // D-11: a scanned handoff QR bypasses the cooldown/attempt state entirely
   // for this load — the marker is an explicit "I came here to install"
