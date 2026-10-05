@@ -1,6 +1,8 @@
 ---
 id: SEED-190
-status: dormant
+status: promoted
+promoted_to: Phase 233
+promoted: 2026-10-05
 planted: 2026-10-05
 planted_during: ad-hoc prod analysis of Train puzzle difficulty and the weekly leaderboard (no phase)
 trigger_when: before the leaderboard-effect revisit (~2026-10-25), or the next Train phase; ship early, the data only exists from the day it ships

@@ -363,6 +363,42 @@ Plans:
 **Wave 4** *(blocked on Wave 3 completion)*
 - [x] 232-04-PLAN.md — TypeScript 7 via the official side-by-side alias, tsconfig cleanup, negative control and Alpine Docker build, CHANGELOG/STATE/SEED-162/D-11 docs
 
+### Phase 233: Train Per-Puzzle Timing & Engagement Telemetry (SEED-190)
+
+**Goal**: Record HOW each Train puzzle was solved, not just whether: client-measured think time,
+review time and a reveal-engagement summary, stored on the solve row so they join to the outcome and
+to the next attempt at the same SR item. Ship early: the data only exists from the day it ships
+(leaderboard-effect revisit ~2026-10-25).
+
+- **Storage:** one nullable `drill_solves.telemetry` JSONB (owner decision 2026-10-05), not individual
+  columns. Validated at the API boundary by a Pydantic model (`extra="forbid"`, typed and capped
+  int/bool fields, a `v` schema-version key). The two writes per puzzle MERGE
+  (`coalesce(telemetry, '{}'::jsonb) || :patch`), never overwrite. Omit the column when there is
+  nothing to store so "no telemetry" stays SQL `IS NULL` (asyncpg writes Python `None` as JSON null).
+- **Think time (solve phase):** `guess_ms` (board shown -> guess pressed) and `move_ms` (guess ->
+  move played), measured client-side and sent with `POST /train/sessions/{id}/solve` (`SolveRequest`).
+  The server can't measure this: puzzles are pre-materialized at composition (P-07).
+- **Review time + engagement (reveal phase):** `review_ms` plus counters accumulated in the reveal
+  component (`review_cards_opened` with a named hover-hold threshold on desktop, `review_line_steps`,
+  `review_explored`, `review_explore_moves`, `review_analyze_opened`), flushed ONCE per puzzle on Next
+  via a small `POST /train/sessions/{id}/solves/{position}/review`, with `navigator.sendBeacon` on
+  `pagehide` so the last puzzle and abandons aren't lost (seed option a). No per-click events.
+- **Data quality:** count visible time only (pause while `document.visibilityState` is hidden),
+  optionally store `hidden_ms`, cap stored durations with a named constant (~30 min).
+- **Grading untouched:** telemetry is a recorded outcome, never an input to `move_quality`,
+  `correct_guess`, scoring or the leaderboard. Go-forward only, no backfill.
+- **Owner to pick in discuss (seed §4):** `shown_at` stamp for "puzzle shown, never solved";
+  leaderboard-card exposure impression (IntersectionObserver, one per visit); `client_kind`
+  (`mobile`/`desktop`, TEXT + CHECK) on the solve or session row (Privacy line if stored); optional
+  single bucketed `train-review` Umami event.
+
+**Depends on**: Nothing (standalone; builds on Phase 229 Umami events and Phase 230 leaderboard)
+**Requirements**: TBD
+**Plans:** 0 plans
+
+Plans:
+- [ ] TBD (run `/gsd-discuss-phase 233` or `/gsd-plan-phase 233`)
+
 Phase detail for every shipped milestone lives in `milestones/vX.Y-ROADMAP.md`, its phase directories in `milestones/vX.Y-phases/`, and the per-milestone summaries in [MILESTONES.md](MILESTONES.md).
 
 ## Backlog
