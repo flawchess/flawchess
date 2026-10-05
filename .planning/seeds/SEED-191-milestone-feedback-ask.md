@@ -34,7 +34,11 @@ Rejected alternative: emailing active users directly. Users never gave explicit 
 5. **"Sure!"** opens `FeedbackModal` with a concrete placeholder (e.g. "What's one thing you'd change or add?") and marks the ask done forever, even if the modal is closed without submitting.
 6. **"Maybe later"** immediately dismisses avatar + bubble and snoozes. Re-ask once after +10 more active days, then never again.
 7. **Ignored:** a bubble isn't a modal, so ignoring is normal. After 3 views without a click it counts as "Maybe later".
-8. **State:** user-level (view counter + status `snoozed`/`done` + the active-day count at snooze), NOT `train_settings`, since non-trainers must be covered. Per CLAUDE.md DB rules: TEXT + CHECK for the status column.
+8. **State: server-side, one generic JSONB column** (decided over localStorage: no cross-device double-ask, and the funnel is queryable in Postgres). `users.prompt_state JSONB NOT NULL DEFAULT '{}'`, keyed by ask id so future asks (e.g. the deferred NPS ask) add a key, not a migration: `{"feedback_v1": {"status": "snoozed", "views": 2, "snoozed_at_days": 6}}`. Lives on `users`, NOT `train_settings`, since non-trainers must be covered.
+   - NOT NULL + default avoids the asyncpg trap where Python `None` writes JSON `null` instead of SQL NULL.
+   - Deliberate exception to the CLAUDE.md TEXT + CHECK rule: shape is validated by a Pydantic model per ask (`status: Literal["snoozed", "done"]`) on every read/write instead of a DB CHECK.
+   - Updates (view increment, snooze, done) are a single atomic SQL `jsonb_set` / `||` UPDATE, never read-modify-write in Python (two open tabs would lose updates).
+   - Profile exposes `active_days` (count from `user_activity`) and the ask state; the server decides eligibility. Also never ask a user who has already submitted feedback from any source.
 9. **Measure yield:** tag feedback submissions with a source (e.g. `milestone_ask` vs `floating_button`) so the effect is visible in the `feedback` table.
 10. **Priority on Train landing:** above the reminder-install ask (that ask shows indefinitely to anyone without a phone push subscription and would otherwise block this one forever). Guest sign-up and zero-game import asks don't conflict (guests and zero-game users aren't eligible anyway).
 
@@ -45,7 +49,7 @@ Rejected alternative: emailing active users directly. Users never gave explicit 
 
 ## Scope Estimate
 
-**Small-medium:** one Alembic migration (user-level ask state + feedback source column), an eligibility/state endpoint (or a field on the user profile), three bubble integrations, view/dismiss/snooze mutations, FeedbackModal placeholder + source prop. Likely a single phase or a larger quick task.
+**Small-medium:** one Alembic migration (`users.prompt_state` JSONB + `feedback.source` column), profile fields (`active_days`, ask state, has-submitted-feedback), one small POST endpoint for view/snooze/done, three bubble integrations, view/dismiss/snooze mutations, FeedbackModal placeholder + source prop. Likely a single phase or a larger quick task.
 
 ## Breadcrumbs
 
