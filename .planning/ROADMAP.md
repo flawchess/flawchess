@@ -428,7 +428,10 @@ Hippo asks once a user reaches 5 active days, on whichever surface they hit firs
   better for you?" CTAs **Maybe later** | **Sure!**
 - **Lifecycle:** "Sure!" opens `FeedbackModal` with a concrete placeholder and marks the ask done
   forever (even if closed unsent). "Maybe later" dismisses immediately and snoozes; re-ask once after
-  +10 more active days, then never. 3 views without a click count as "Maybe later".
+  +10 more active days, then never. 3 views without a click count as "Maybe later". A view is at
+  most one per active day (UTC) across all three surfaces (`last_view_date` checked in the atomic
+  UPDATE), reported only when the bubble renders: Hilda shows on every surface visit that day, so a
+  fully ignored ask shows on 3 active days per round, max 6 active days in total.
 - **State:** `users.prompt_state JSONB NOT NULL DEFAULT '{}'`, keyed by ask id (`feedback_v1`),
   validated by a per-ask Pydantic model (`status: Literal["snoozed", "done"]`) instead of a DB CHECK
   (deliberate exception). Every update (view, snooze, done) is one atomic `jsonb_set`/`||` UPDATE,
