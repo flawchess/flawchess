@@ -8,7 +8,8 @@ Lookup detail for GitLab Flow in this repo. The branch model, squash-merge rule,
 
 - The `main` squash-merge route relies on branch protection with `enforce_admins: false`. If that flips to `true`, revert to the PR route.
 - CodeQL runs post-merge on `main`.
-- `bin/deploy.sh` re-runs full CI before shipping `production`, which is the real gate.
+- CI (`ci.yml`) runs on PRs into `main` and `production` as three parallel jobs (backend, frontend, docker) plus a `test` aggregator, which is the required status check. Deploying is a separate workflow (`deploy.yml`).
+- `bin/deploy.sh` only deploys a `production` tree that already has a green CI run (`bin/ci_green_for_tree.sh`, matched by tree, so the release PR's run counts for the squash commit). If none exists (hotfix, diverged branches) it runs `ci.yml` on `production` first. `deploy.yml` re-checks the same gate before touching the server.
 
 ## Release promotion
 

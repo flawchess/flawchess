@@ -3,15 +3,16 @@ name: CI
 "on":
   pull_request:
     branches: [main, production]
+  # Manual runs: bin/deploy.sh dispatches this on `production` when no green
+  # run exists for the tree being deployed (see bin/ci_green_for_tree.sh).
+  # Deploying itself lives in deploy.yml.
   workflow_dispatch:
-    inputs:
-      deploy:
-        description: "Deploy to production after tests pass"
-        type: boolean
-        default: true
 
+# Three independent jobs run in parallel; the run is green only when all pass.
+# Wall clock is bounded by the slowest job (backend pytest or frontend vitest)
+# instead of the sum of all steps.
 jobs:
-  test:
+  backend:
     runs-on: ubuntu-latest
     services:
       postgres:
@@ -102,13 +103,6 @@ jobs:
       - name: Function-size gate
         run: uv run python scripts/check_function_size.py app/ --fail-over-depth 4
 
-      # Fails the build on a Caddyfile syntax error before merge (SEED-161
-      # group 2 / D-09a) instead of discovering it during a live deploy.
-      - name: Caddyfile validate
-        run: |
-          docker run --rm -v "$PWD/deploy/Caddyfile:/etc/caddy/Caddyfile:ro" \
-            caddy:2.11.6 caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile
-
       - name: Install Stockfish (for engine wrapper tests)
         # Mirrors Dockerfile: download pinned sf_18 binary from GitHub releases instead of
         # apt-get (which is ~24s slower and pulls Stockfish 16, drifting from prod's sf_18).
@@ -134,6 +128,11 @@ jobs:
 
       - name: Tagger precision gate
         run: uv run pytest tests/scripts/tagger -v
+
+  frontend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
 
       # Node version comes from .nvmrc so CI and developer machines cannot
       # drift apart. The floor that actually matters (>=24.15.0, set by
@@ -216,6 +215,18 @@ jobs:
         run: npm run knip
         working-directory: frontend
 
+  docker:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      # Fails the build on a Caddyfile syntax error before merge (SEED-161
+      # group 2 / D-09a) instead of discovering it during a live deploy.
+      - name: Caddyfile validate
+        run: |
+          docker run --rm -v "$PWD/deploy/Caddyfile:/etc/caddy/Caddyfile:ro" \
+            caddy:2.11.6 caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile
+
       - name: Build image for vulnerability scan
         run: docker build -t flawchess:ci .
 
@@ -227,81 +238,21 @@ jobs:
           exit-code: 1
           ignore-unfixed: true
 
-  deploy:
-    needs: test
-    if: >-
-      github.ref == 'refs/heads/production' &&
-      github.event_name == 'workflow_dispatch' &&
-      inputs.deploy == true
+  # Branch protection on main and production requires a status check named
+  # `test` (the single job's name before the split), so this job keeps that
+  # contract. `if: always()` is load-bearing: without it a failed dependency
+  # makes this job SKIPPED, and GitHub treats a skipped required check as
+  # passing.
+  test:
+    needs: [backend, frontend, docker]
+    if: always()
     runs-on: ubuntu-latest
     steps:
-      - name: Deploy via SSH
-        uses: appleboy/ssh-action@v1
-        with:
-          host: ${{ secrets.SSH_HOST }}
-          username: ${{ secrets.SSH_USER }}
-          key: ${{ secrets.SSH_PRIVATE_KEY }}
-          command_timeout: 10m
-          script: |
-            set -e
-            cd /opt/flawchess
-
-            # Fail fast if working tree is dirty — never auto-resolve
-            if ! git diff --quiet || ! git diff --cached --quiet; then
-              echo "ERROR: Working tree has uncommitted changes — aborting deploy"
-              git status --short
-              exit 1
-            fi
-
-            # GitLab Flow: prod tracks the `production` branch, never `main`.
-            # checkout handles the one-time switch from the old `main` checkout;
-            # reset --hard guarantees the working tree matches origin/production
-            # exactly (the dirty-tree guard above already aborted on local edits).
-            git fetch origin --prune
-            git checkout production 2>/dev/null || git checkout -b production origin/production
-            git reset --hard origin/production
-
-            # Verify the expected commit arrived
-            echo "Deployed commit: $(git log --oneline -1)"
-
-            docker compose build --no-cache backend caddy
-            docker compose up -d
-
-      - name: Health check
+      - name: Require all CI jobs to pass
+        env:
+          RESULTS: ${{ join(needs.*.result, ' ') }}
         run: |
-          SUCCESS=0
-          for i in $(seq 1 36); do
-            if curl -sf https://flawchess.com/api/health; then
-              echo "Health check passed"
-              SUCCESS=1
-              break
-            fi
-            echo "Attempt $i/36 failed, waiting 5s..."
-            sleep 5
+          echo "Job results: $RESULTS"
+          for r in $RESULTS; do
+            [ "$r" = "success" ] || exit 1
           done
-
-          if [ "$SUCCESS" -ne 1 ]; then
-            echo "Health check failed after 180s"
-            exit 1
-          fi
-
-          # SEED-161 group 2 / D-09b: the health loop above only proves the
-          # backend is reachable through Caddy — it says nothing about the
-          # security headers Caddy is supposed to add on every response
-          # (216-02). Assert all five here so a deploy that silently drops
-          # one fails the release instead of going unnoticed.
-          RESPONSE_HEADERS=$(curl -sf -I https://flawchess.com/)
-          echo "Response headers:"
-          echo "$RESPONSE_HEADERS"
-
-          FAIL=0
-          for h in strict-transport-security x-content-type-options referrer-policy \
-                   permissions-policy content-security-policy-report-only; do
-            if echo "$RESPONSE_HEADERS" | grep -qi "$h"; then
-              echo "PASS: $h present"
-            else
-              echo "FAIL: $h missing"
-              FAIL=1
-            fi
-          done
-          exit $FAIL

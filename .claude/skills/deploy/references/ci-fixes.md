@@ -290,7 +290,7 @@ If SSH itself fails twice in a row, halt — could be the server or could be the
 Race condition between `gh workflow run` dispatching and the run appearing. The script retries 15 times at 2s intervals; if it still fails:
 
 ```bash
-gh run list --workflow=ci.yml --branch=production --limit=5
+gh run list --workflow=deploy.yml --branch=production --limit=5   # or --workflow=ci.yml for the fallback CI run
 ```
 
 If a run is there but the script missed it, just re-run `bin/deploy.sh`. If no run appears, the dispatch silently failed — check `gh auth status` and re-run.
@@ -302,19 +302,19 @@ This is the 2026-05-16 safety assertion firing. **Do not bypass.** It means the 
 ```bash
 git fetch origin production
 git rev-parse origin/production
-gh run list --workflow=ci.yml --event=workflow_dispatch --limit=3 \
+gh run list --workflow=deploy.yml --event=workflow_dispatch --limit=3 \
   --json databaseId,headBranch,headSha,createdAt
 ```
 
 Likely cause: someone (or another deploy) pushed to `production` between the script computing `TARGET_SHA` and dispatch landing. Re-run `bin/deploy.sh` — it'll pick up the new SHA.
 
-### CI failure during deploy run
+### CI failure in the fallback CI run on production
 
 ```bash
 gh run view <run-id> --log-failed
 ```
 
-The deploy CI runs the same checks as PR CI. If something failed here that didn't fail on the PR, it's almost always:
+`bin/deploy.sh` only runs `ci.yml` on `production` when no green run exists for the tree (hotfix, or production diverged from main). It runs the same checks as PR CI. If something failed here that didn't fail on the PR, it's almost always:
 - A test that depends on production env vars not present in PR CI.
 - A timing-sensitive test that flaked.
 

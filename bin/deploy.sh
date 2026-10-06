@@ -1,7 +1,13 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Deploy to production via GitHub Actions (runs CI tests first, then deploys).
+# Deploy to production via GitHub Actions.
+#
+# Tests are not re-run when a successful CI run already exists for the exact
+# tree being deployed (normally the main → production release PR's run, see
+# bin/ci_green_for_tree.sh). Otherwise this runs CI (ci.yml) on production
+# first and only deploys if it passes. The deploy itself is deploy.yml, which
+# re-checks the same green-tree gate server-side before touching the server.
 #
 # GitLab Flow: this ALWAYS deploys the `production` branch, regardless of which
 # branch your working tree is currently on. `main` is the integration trunk and
@@ -25,46 +31,63 @@ git fetch origin --quiet "$DEPLOY_BRANCH"
 TARGET_SHA=$(git rev-parse "origin/${DEPLOY_BRANCH}")
 echo "  target commit: $(git log -1 --format='%h %s' "origin/${DEPLOY_BRANCH}")"
 
+# Dispatch a workflow on production@TARGET_SHA and watch it to completion.
+# Waits for a run NEWER than any existing one: matching on SHA alone would pick
+# up an earlier run at the same commit (e.g. a retry) before the new one registers.
+dispatch_and_watch() {
+  local workflow="$1"
+  local prev_id run_id="" run_branch run_sha
+  prev_id=$(gh run list --workflow="$workflow" --limit=1 --json databaseId --jq '.[0].databaseId // 0')
+
+  echo "Triggering ${workflow} on ${DEPLOY_BRANCH}..."
+  # Reference the workflow by filename (not display name) and pass an explicit
+  # --ref so dispatch targets the production branch deterministically.
+  gh workflow run "$workflow" --ref "$DEPLOY_BRANCH"
+
+  echo "Waiting for the run to register..."
+  for _ in $(seq 1 15); do
+    sleep 2
+    run_id=$(gh run list --workflow="$workflow" --branch="$DEPLOY_BRANCH" \
+      --event=workflow_dispatch --limit=5 \
+      --json databaseId,headSha --jq \
+      "[.[] | select(.headSha == \"${TARGET_SHA}\" and .databaseId > ${prev_id})][0].databaseId // empty")
+    [ -n "$run_id" ] && break
+  done
+
+  if [ -z "$run_id" ]; then
+    echo "ERROR: no ${workflow} workflow_dispatch run found on '${DEPLOY_BRANCH}' at ${TARGET_SHA:0:7}." >&2
+    echo "       Aborting rather than risk deploying the wrong branch." >&2
+    echo "       Check manually: gh run list --workflow=${workflow}" >&2
+    exit 1
+  fi
+
+  # Hard guard: never watch/trust a run that isn't production@TARGET_SHA.
+  run_branch=$(gh run view "$run_id" --json headBranch --jq '.headBranch')
+  run_sha=$(gh run view "$run_id" --json headSha --jq '.headSha')
+  if [ "$run_branch" != "$DEPLOY_BRANCH" ] || [ "$run_sha" != "$TARGET_SHA" ]; then
+    echo "ERROR: dispatched run is ${run_branch}@${run_sha:0:7}, expected" >&2
+    echo "       ${DEPLOY_BRANCH}@${TARGET_SHA:0:7}. Aborting deploy." >&2
+    exit 1
+  fi
+
+  echo "Watching ${workflow} run $run_id (${DEPLOY_BRANCH}@${TARGET_SHA:0:7})..."
+  echo "  https://github.com/$(gh repo view --json nameWithOwner --jq '.nameWithOwner')/actions/runs/$run_id"
+  echo ""
+  gh run watch "$run_id" --exit-status
+}
+
+echo "Looking for a green CI run on the same tree..."
+if GREEN_SHA=$(bin/ci_green_for_tree.sh "$TARGET_SHA"); then
+  echo "  CI already passed on ${GREEN_SHA:0:7} (identical tree). Skipping the test run."
+else
+  echo "  none found (e.g. a hotfix, or production diverged from main). Running CI first."
+  dispatch_and_watch ci.yml
+fi
+
 echo "Uploading .prod.env to server..."
 scp .prod.env flawchess:/opt/flawchess/.env
 
-echo "Triggering deploy workflow on ${DEPLOY_BRANCH}..."
-# Reference the workflow by filename (not display name) and pass an explicit
-# --ref so dispatch targets the production branch deterministically.
-gh workflow run ci.yml --ref "$DEPLOY_BRANCH" --field deploy=true
-
-echo "Waiting for the run to register..."
-RUN_ID=""
-for _ in $(seq 1 15); do
-  sleep 2
-  RUN_ID=$(gh run list --workflow=ci.yml --branch="$DEPLOY_BRANCH" \
-    --event=workflow_dispatch --limit=1 \
-    --json databaseId,headSha --jq \
-    "[.[] | select(.headSha == \"${TARGET_SHA}\")][0].databaseId")
-  [ -n "$RUN_ID" ] && break
-done
-
-if [ -z "$RUN_ID" ]; then
-  echo "ERROR: no workflow_dispatch run found on '${DEPLOY_BRANCH}' at ${TARGET_SHA:0:7}." >&2
-  echo "       Aborting rather than risk deploying the wrong branch." >&2
-  echo "       Check manually: gh run list --workflow=ci.yml" >&2
-  exit 1
-fi
-
-# Hard guard: never watch/trust a run that isn't production@TARGET_SHA.
-RUN_BRANCH=$(gh run view "$RUN_ID" --json headBranch --jq '.headBranch')
-RUN_SHA=$(gh run view "$RUN_ID" --json headSha --jq '.headSha')
-if [ "$RUN_BRANCH" != "$DEPLOY_BRANCH" ] || [ "$RUN_SHA" != "$TARGET_SHA" ]; then
-  echo "ERROR: dispatched run is ${RUN_BRANCH}@${RUN_SHA:0:7}, expected" >&2
-  echo "       ${DEPLOY_BRANCH}@${TARGET_SHA:0:7}. Aborting deploy." >&2
-  exit 1
-fi
-
-echo "Watching run $RUN_ID (${DEPLOY_BRANCH}@${TARGET_SHA:0:7})..."
-echo "  https://github.com/$(gh repo view --json nameWithOwner --jq '.nameWithOwner')/actions/runs/$RUN_ID"
-echo ""
-
-gh run watch "$RUN_ID" --exit-status
+dispatch_and_watch deploy.yml
 
 # Final safety net: confirm the server actually landed on the expected commit.
 echo ""

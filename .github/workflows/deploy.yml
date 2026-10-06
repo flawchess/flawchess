@@ -1,0 +1,111 @@
+name: Deploy
+
+# Deploys the `production` branch. Dispatched by bin/deploy.sh only.
+#
+# Tests are NOT re-run here: the gate below requires a successful CI run
+# (ci.yml) on a commit whose tree is byte-identical to the commit being
+# deployed. For a normal release that is the main → production PR's CI run;
+# otherwise bin/deploy.sh dispatches ci.yml on production first. Before this
+# split, every deploy re-ran the full suite on the exact tree the release PR
+# had just tested (~10 min of duplicate work).
+
+"on":
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: deploy
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    if: github.ref == 'refs/heads/production'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Require green CI for this tree
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if GREEN_SHA=$(bin/ci_green_for_tree.sh "$GITHUB_SHA"); then
+            echo "CI passed on ${GREEN_SHA} with the identical tree. Proceeding."
+          else
+            echo "ERROR: no successful ci.yml run for this tree. Run bin/deploy.sh,"
+            echo "       which runs CI on production first when needed."
+            exit 1
+          fi
+
+      - name: Deploy via SSH
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.SSH_HOST }}
+          username: ${{ secrets.SSH_USER }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          command_timeout: 10m
+          script: |
+            set -e
+            cd /opt/flawchess
+
+            # Fail fast if working tree is dirty — never auto-resolve
+            if ! git diff --quiet || ! git diff --cached --quiet; then
+              echo "ERROR: Working tree has uncommitted changes — aborting deploy"
+              git status --short
+              exit 1
+            fi
+
+            # GitLab Flow: prod tracks the `production` branch, never `main`.
+            # checkout handles the one-time switch from the old `main` checkout;
+            # reset --hard guarantees the working tree matches origin/production
+            # exactly (the dirty-tree guard above already aborted on local edits).
+            git fetch origin --prune
+            git checkout production 2>/dev/null || git checkout -b production origin/production
+            git reset --hard origin/production
+
+            # Verify the expected commit arrived
+            echo "Deployed commit: $(git log --oneline -1)"
+
+            docker compose build --no-cache backend caddy
+            docker compose up -d
+
+      - name: Health check
+        run: |
+          SUCCESS=0
+          for i in $(seq 1 36); do
+            if curl -sf https://flawchess.com/api/health; then
+              echo "Health check passed"
+              SUCCESS=1
+              break
+            fi
+            echo "Attempt $i/36 failed, waiting 5s..."
+            sleep 5
+          done
+
+          if [ "$SUCCESS" -ne 1 ]; then
+            echo "Health check failed after 180s"
+            exit 1
+          fi
+
+          # SEED-161 group 2 / D-09b: the health loop above only proves the
+          # backend is reachable through Caddy — it says nothing about the
+          # security headers Caddy is supposed to add on every response
+          # (216-02). Assert all five here so a deploy that silently drops
+          # one fails the release instead of going unnoticed.
+          RESPONSE_HEADERS=$(curl -sf -I https://flawchess.com/)
+          echo "Response headers:"
+          echo "$RESPONSE_HEADERS"
+
+          FAIL=0
+          for h in strict-transport-security x-content-type-options referrer-policy \
+                   permissions-policy content-security-policy-report-only; do
+            if echo "$RESPONSE_HEADERS" | grep -qi "$h"; then
+              echo "PASS: $h present"
+            else
+              echo "FAIL: $h missing"
+              FAIL=1
+            fi
+          done
+          exit $FAIL

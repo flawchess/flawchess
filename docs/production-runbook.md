@@ -44,7 +44,7 @@ Self-hosted Umami (`analytics.flawchess.com`) lives in the `umami` compose servi
 
 ### Version pin (D-17)
 
-The image is pinned in `docker-compose.yml` (`ghcr.io/umami-software/umami:3.4.0`, `pull_policy: missing`). The CI deploy runs a plain `docker compose up -d` without a pull, so the pin is the upgrade mechanism: bump the tag and release through `bin/deploy.sh`; `up -d` pulls the tag the server does not have yet and recreates the container. Umami applies its own migrations on start (3.4.0 adds `25_add_annotation` and `26_add_api_key`, both additive). Read-only post-deploy checks:
+The image is pinned in `docker-compose.yml` (`ghcr.io/umami-software/umami:3.4.0`, `pull_policy: missing`). The deploy workflow (`deploy.yml`) runs a plain `docker compose up -d` without a pull, so the pin is the upgrade mechanism: bump the tag and release through `bin/deploy.sh`; `up -d` pulls the tag the server does not have yet and recreates the container. Umami applies its own migrations on start (3.4.0 adds `25_add_annotation` and `26_add_api_key`, both additive). Read-only post-deploy checks:
 
 ```bash
 # Expect tag 3.4.0

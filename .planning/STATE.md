@@ -1,17 +1,17 @@
 ---
 gsd_state_version: "1.0"
 milestone: v2.21
-current_phase: 233
+current_phase: 234
+current_phase_name: Milestone Feedback Ask (SEED-191)
 status: completed
 stopped_at: Phase 233 complete — all phases complete
-last_updated: "2026-10-05T19:21:17.315Z"
-state_head: cb775805db0b8217aeedd9a1eba0cea8629e0fce
+last_updated: "2026-10-05T21:35:25.494Z"
+state_head: 231f30eae64d85d22b0dd6c19aec6374c4f1e426
 progress:
-  total_phases: 6
+  total_phases: 7
   completed_phases: 103
-  total_plans: 31
+  total_plans: 35
   completed_plans: 47
-  percent: 100
 milestone_name: Browser Engine Throughput
 last_activity: 2026-10-04
 last_activity_desc: "Completed quick task 261004-rre: Track Umami events for server-persisted settings controls"
@@ -21,7 +21,7 @@ last_activity_desc: "Completed quick task 261004-rre: Track Umami events for ser
 
 ## Current Position
 
-Phase: 233
+Phase: 234 (Milestone Feedback Ask (SEED-191)) — READY TO EXECUTE
 Plan: Not started
 
 Status: All phases complete
@@ -172,6 +172,7 @@ v1.29 Live-Engine Analysis Page shipped 2026-06-29 — 5 phases (136–140), 14 
 
 ### Roadmap Evolution
 
+- Phase 234 added 2026-10-05 (explicit user request via `/gsd-phase SEED-191`, planted the same day from `/gsd-explore` on getting feedback from invested users): **Milestone Feedback Ask** (SEED-191). Hilda the Hippo asks non-guest users with >= 5 active days (and no prior feedback) for an idea, on the Import bubble, Train landing host bubble (phones too, above the reminder ask) or Bots roster welcome bubble, whichever comes first. "Sure!" opens `FeedbackModal` and marks done; "Maybe later" (or 3 ignored views) snoozes, one re-ask after +10 active days. State in `users.prompt_state` JSONB keyed by ask id with atomic UPDATEs; `feedback.source` column measures yield. Written by hand as 234 (known mature-ROADMAP behavior). Next: `/gsd-discuss-phase 234` or `/gsd-plan-phase 234` (seed locks most decisions).
 - Phase 233 added 2026-10-05 (explicit user request via `/gsd-phase SEED-190`, planted the same day from the ad-hoc prod analysis of Train difficulty and the weekly leaderboard): **Train Per-Puzzle Timing & Engagement Telemetry** (SEED-190). One `drill_solves.telemetry` JSONB validated by a Pydantic model and merged across two writes: `guess_ms`/`move_ms` on the solve POST, `review_ms` plus reveal-engagement counters via a review POST on Next with a `pagehide` sendBeacon; visible time only, capped; grading untouched, go-forward only. Owner picks in discuss: `shown_at`, leaderboard exposure impression, `client_kind`, bucketed Umami event. Written by hand as 233 (known mature-ROADMAP behavior). Next: `/gsd-discuss-phase 233`.
 - Phase 232 added 2026-10-04 (explicit user request via `/gsd-phase @SEED-187`, planted the same day during Renovate PR triage after Phase 231 shipped): **Frontend Major Dependency Upgrades** (SEED-187). One plan per dependency: TypeScript 7 (research first, "blocked, stay on 6.x" acceptable), @sentry/react 11 (verify events still arrive with tags and source maps), vite-plugin-pwa 2 (diff SW and precache, check update flow and `/maia/*` `/engine/*` handling); js-yaml 5 and fast-uri 4 stay within their current override majors with a Renovate rule disabling those majors. Stockfish 19 / onnxruntime-web 1.30 out of scope. Written by hand as 232 (known mature-ROADMAP behavior). Next: `/gsd-plan-phase 232` (or `/gsd-discuss-phase 232` first).
 - Phase 231 added 2026-10-04 (explicit user request via `/gsd-phase @SEED-186`, planted the same day right after Phase 230 merged): **Weekly Leaderboard Medals** (SEED-186). Gold/silver/bronze for the top 3 of each weekly Train board (Olympic ties, Accuracy qualified-only, opted-out and guests ineligible), full final-standings snapshot table with explicit `medal` column and `celebrated_at`, lazy idempotent finalization from `MEDALS_START_WEEK` 2026-10-05, lifetime per-board tally on live rows, last-week podium, "finished #N" hint, server-side claim dialog with confetti and win sound, admin demo page on dummy data rendering the real components. WR-01 accepted. Written by hand as 231 (known mature-ROADMAP behavior). Next: `/gsd-discuss-phase 231` or `/gsd-plan-phase 231` (seed already locks most decisions).

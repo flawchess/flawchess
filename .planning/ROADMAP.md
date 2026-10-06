@@ -412,6 +412,50 @@ Plans:
 **Wave 5** *(blocked on Wave 4 completion)*
 - [x] 233-05-PLAN.md — Privacy line (D-09), D-08/D-10 confirmation, CHANGELOG, phase pre-merge gate
 
+### Phase 234: Milestone Feedback Ask (SEED-191)
+
+**Goal**: Turn invested users into feedback senders with a timed, character-voiced ask instead of the
+generic desktop-only floating button (11 real submissions since June, 7 from one user). Hilda the
+Hippo asks once a user reaches 5 active days, on whichever surface they hit first.
+
+- **Eligibility (server-decided):** non-guest users with >= 5 distinct `user_activity.activity_date`
+  rows who have never submitted feedback from any source.
+- **Surfaces (one shared state):** Import page bot bubble (replaces `EXPLORE_PARTS` copy), Train
+  landing host bubble (`TrainHeader`, shown on phones too while active, above the reminder-install
+  ask), Bots roster welcome bubble (`BotWelcomeCard`, info popover hidden while active). Not the
+  session score screen.
+- **Copy:** "You've been with FlawChess for {active_days} days now, thanks! Got an idea that would make
+  it better for you?" (actual count, same copy in both rounds; CONTEXT D-01/D-02) CTAs **Maybe later** | **Sure!**
+- **Lifecycle:** "Sure!" opens `FeedbackModal` with a concrete placeholder and marks the ask done
+  forever (even if closed unsent). "Maybe later" dismisses immediately and snoozes; re-ask once after
+  +10 more active days, then never. 3 views without a click count as "Maybe later". A view is at
+  most one per active day (UTC) across all three surfaces (`last_view_date` checked in the atomic
+  UPDATE), reported only when the bubble renders: Hilda shows on every surface visit that day, so a
+  fully ignored ask shows on 3 active days per round, max 6 active days in total.
+- **State:** `users.prompt_state JSONB NOT NULL DEFAULT '{}'`, keyed by ask id (`feedback_v1`),
+  validated by a per-ask Pydantic model (`status: Literal["snoozed", "done"]`) instead of a DB CHECK
+  (deliberate exception). Every update (view, snooze, done) is one atomic `jsonb_set`/`||` UPDATE,
+  never read-modify-write. Profile exposes `active_days` and the ask state; one small POST endpoint
+  for view/snooze/done.
+- **Yield:** `feedback.source` column (`milestone_ask` vs `floating_button`) so the effect is
+  queryable.
+- **Out of scope:** NPS / recommend-a-friend split, mobile floating feedback button.
+
+**Depends on**: Nothing (standalone)
+**Requirements**: FBASK-01..FBASK-10 (defined in 234-RESEARCH.md "Phase Requirements"; coverage contract also CONTEXT.md D-01..D-05)
+**Plans:** 4 plans
+
+Plans:
+**Wave 1**
+- [ ] 234-01-PLAN.md — Backend: users.prompt_state + feedback.source migration, server-decided eligibility on GET/PUT profile, atomic view/snooze/done via POST /users/me/feedback-ask (tracer)
+- [ ] 234-02-PLAN.md — Frontend: shared Hilda FeedbackAskBubble on the Import page (tracer), FeedbackModal source/placeholder props, profile refresh after any feedback
+
+**Wave 2** *(blocked on Wave 1 completion)*
+- [ ] 234-03-PLAN.md — "Sure!" end to end: feedback.source attribution on POST /api/feedback (tracer), app-level feedback modal host that survives the bubble unmounting
+
+**Wave 3** *(blocked on Wave 2 completion)*
+- [ ] 234-04-PLAN.md — Train landing (after the intro, phones included) and Bots roster surfaces, CHANGELOG, phase pre-merge gate
+
 Phase detail for every shipped milestone lives in `milestones/vX.Y-ROADMAP.md`, its phase directories in `milestones/vX.Y-phases/`, and the per-milestone summaries in [MILESTONES.md](MILESTONES.md).
 
 ## Backlog
