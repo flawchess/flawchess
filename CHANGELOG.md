@@ -27,6 +27,8 @@ in `YYYY-MM-DD` (Europe/Zurich).
 - Operators: self-hosted analytics is pinned to Umami 3.4.0 (it ran 3.3.1 behind a floating tag). The next deploy pulls the image automatically and Umami applies two additive database migrations on start; see the runbook section "Umami analytics" for the post-deploy check.
 - Train now records how you work through each puzzle (thinking time, time spent on the solution while the page is visible, which parts of the solution you open, and whether you used a phone or a computer) so we can see how Train is used and improve it. It never affects your score or the leaderboards, and the Privacy page lists it.
 
+- Settings: on phones, a cogwheel next to the page title opens them, and "Reset to defaults" now sits at the bottom, below Privacy. The weekly leaderboard's info button also tells you that you can hide yourself from the leaderboards in Settings.
+
 ### Fixed
 
 - Mobile layout polish: the Library move stats show accuracy in a header card on phones, game-card tags and move-stats cards stretch to the miniboard's height, and the Train page has a tighter gap between the header and the streak card.
