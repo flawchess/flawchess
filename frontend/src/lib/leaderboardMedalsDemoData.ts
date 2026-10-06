@@ -62,6 +62,7 @@ function row(rank: number | null, name: string, value: number, puzzles: number, 
     is_viewer: false,
     visibility: 'public',
     gap_before: false,
+    gap_after: false,
     medals: { ...NO_MEDALS, ...medals },
   };
 }

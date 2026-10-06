@@ -95,6 +95,7 @@ class BoardRow:
     is_viewer: bool
     visibility: LeaderboardVisibility
     gap_before: bool
+    gap_after: bool
     medals: MedalTally
 
 
@@ -501,6 +502,9 @@ def build_board(
     ranked = _rank_board(kind, aggregates, viewer_id=viewer_id)
     entries, ordered, ranks = ranked.entries, ranked.ordered, ranked.ranks
     viewer_index, indices, gap_index = ranked.viewer_index, ranked.indices, ranked.gap_index
+    # Ranks below the last shown row are cut: without a trailing marker a top-ranked
+    # viewer saw only top N plus neighbours and read it as the whole field.
+    trailing_gap_index = indices[-1] if indices and indices[-1] < len(ordered) - 1 else None
     rows = tuple(
         BoardRow(
             rank=ranks[i],
@@ -511,6 +515,7 @@ def build_board(
             is_viewer=i == viewer_index,
             visibility=viewer_visibility if i == viewer_index else "public",
             gap_before=i == gap_index,
+            gap_after=i == trailing_gap_index,
             medals=tallies.get(ordered[i].key, ZERO_TALLY),
         )
         for i in indices
