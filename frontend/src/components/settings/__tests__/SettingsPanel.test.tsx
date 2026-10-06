@@ -40,11 +40,11 @@ describe('SettingsPanel layout (D-07, D-09)', () => {
     expect(screen.queryByRole('button', { name: /save/i })).toBeNull();
   });
 
-  it('places the Privacy section after the Reset button (server state, outside Reset)', () => {
+  it('places the Reset button last, after the Privacy section', () => {
     render(<SettingsPanel />);
     const reset = screen.getByTestId('btn-settings-reset');
     const privacy = screen.getByTestId('settings-section-privacy');
-    expect(Boolean(reset.compareDocumentPosition(privacy) & Node.DOCUMENT_POSITION_FOLLOWING)).toBe(
+    expect(Boolean(privacy.compareDocumentPosition(reset) & Node.DOCUMENT_POSITION_FOLLOWING)).toBe(
       true,
     );
   });
