@@ -20,9 +20,18 @@ describe('MedalTally', () => {
     expect(tally.getAttribute('aria-label')).toBe('3 gold, 1 silver Points medals');
     // The count is the span after the icon (the SVG's own <text> is the place number).
     expect(screen.getByTestId('tally-gold').querySelector('span')?.textContent).toBe('3');
-    expect(screen.getByTestId('tally-silver').querySelector('span')?.textContent).toBe('1');
+    // A single medal hides its count; only a zero-width baseline anchor remains.
+    const silverCount = screen.getByTestId('tally-silver').querySelector('span');
+    expect(silverCount?.textContent).not.toMatch(/\d/);
+    expect(silverCount?.getAttribute('aria-hidden')).toBe('true');
     expect(screen.queryByTestId('tally-bronze')).toBeNull();
     expect(tally.querySelectorAll('svg')).toHaveLength(2);
+  });
+
+  it('shows the count from 2 up', () => {
+    render(<MedalTally medals={{ gold: 2, silver: 0, bronze: 0 }} board="points" testId="tally" />);
+    expect(screen.getByTestId('tally-gold').querySelector('span')?.textContent).toBe('2');
+    expect(screen.getByTestId('tally').getAttribute('aria-label')).toBe('2 gold Points medals');
   });
 
   it('orders the items gold, silver, bronze', () => {

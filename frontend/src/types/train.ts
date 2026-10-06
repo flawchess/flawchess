@@ -373,6 +373,8 @@ export interface LeaderboardPodiumEntry {
   medal: MedalKind;
   /** Read-time masked by the server ("Anonymous" / "Deleted user"); render as text only. */
   name: string;
+  /** True only on the viewer's own entry; carries no user id. */
+  is_viewer: boolean;
 }
 
 /** Last week's podium plus the viewer's own non-medal rank. Mirrors app/schemas/train.py (Phase 231). */

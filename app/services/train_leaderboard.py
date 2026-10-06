@@ -117,6 +117,7 @@ class PassTarget:
 class PodiumEntry:
     medal: MedalKind
     name: str  # read-time masked, see _podium_name
+    is_viewer: bool  # True only on the viewer's own entry
 
 
 @dataclass(frozen=True)
@@ -402,7 +403,12 @@ def build_last_week(
     board_rows = [r for r in rows if r.board == kind]
     medal_rows = sorted((r for r in board_rows if r.medal is not None), key=_podium_order_key)
     podium = tuple(
-        PodiumEntry(medal=MEDAL_KIND[r.medal], name=_podium_name(r, viewer_id))
+        PodiumEntry(
+            medal=MEDAL_KIND[r.medal],
+            name=_podium_name(r, viewer_id),
+            # A deleted user's row has user_id None, which never equals an int viewer_id.
+            is_viewer=r.user_id == viewer_id,
+        )
         for r in medal_rows
         if r.medal is not None  # narrowing for the type checker; medal_rows are medal rows
     )

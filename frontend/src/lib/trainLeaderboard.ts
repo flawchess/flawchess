@@ -19,9 +19,17 @@ export const LEADERBOARD_TAB_STORAGE_KEY = 'flawchess_train_leaderboard_tab';
 /** The tab shown on a first visit, and the fallback for any storage trouble. */
 export const DEFAULT_LEADERBOARD_TAB: LeaderboardBoardKind = 'points';
 
-/** Accuracy tab helper under the toggle (D-10 wording plus the D-19 caveat). */
-export const ACCURACY_HELPER_COPY =
-  "Average session score. 20+ puzzles to qualify.";
+/**
+ * Accuracy board entry threshold. Mirrors ACCURACY_QUALIFY_MIN_PUZZLES in
+ * app/services/train_leaderboard.py, pinned by a parity test in
+ * tests/services/test_train_leaderboard.py.
+ */
+export const ACCURACY_QUALIFY_MIN_PUZZLES = 20;
+
+/** Header info popover: what each board rewards (D-10 wording: effort and care, never ability). */
+export const LEADERBOARD_INFO_POINTS_COPY = 'Points mainly rewards how many puzzles you solve.';
+export const LEADERBOARD_INFO_ACCURACY_COPY =
+  'Accuracy is your average session score: it rewards how carefully you solve, not how many.';
 /** Viewer has Points entries but no Accuracy entry (D-19): never a misleading count. */
 export const ACCURACY_NOT_ENTERED_COPY =
   "You're not on this board yet: tactics puzzles don't count here.";
@@ -30,7 +38,7 @@ export const EMPTY_WEEK_COPY = 'No one has trained yet this week. Be the first.'
 export const ENTER_BOARD_HINT_COPY = "Solve a puzzle to enter this week's board.";
 
 /** Divider label before the first unranked (tentative) Accuracy row (quick 261004-8rt). */
-export const NOT_YET_QUALIFIED_DIVIDER_COPY = 'Not yet qualified';
+export const NOT_YET_QUALIFIED_DIVIDER_COPY = `Not yet qualified (${ACCURACY_QUALIFY_MIN_PUZZLES}+ puzzles)`;
 
 /** Shown under the board for guests, above the shared sign-up action pair (D-14). */
 export const GUEST_CLAIM_SPOT_COPY = 'Sign up to claim your spot';
@@ -81,23 +89,19 @@ export function firstUnrankedRowIndex(rows: readonly LeaderboardRow[]): number {
   return rows.findIndex((row) => row.rank === null);
 }
 
-/** '1 more puzzle to qualify' / 'N more puzzles to qualify'. Never implies all solves count (D-19). */
-export function puzzlesToQualifyCopy(n: number): string {
-  return `${n} more ${n === 1 ? 'puzzle' : 'puzzles'} to qualify`;
-}
-
 /** '1 point to pass X' / 'N points to pass X'. */
 export function passTargetCopy(target: LeaderboardPassTarget): string {
   const unit = target.points_needed === 1 ? 'point' : 'points';
   return `${target.points_needed} ${unit} to pass ${target.name}`;
 }
 
-export type ViewerHintId = 'pass-target' | 'qualify' | 'accuracy-not-entered' | 'enter-hint';
+export type ViewerHintId = 'pass-target' | 'accuracy-not-entered' | 'enter-hint';
 
 /**
- * The one hint line under the active board, or null. Every number comes from
- * the server (`puzzles_to_qualify`, `points_needed`); the client never counts
- * the viewer's solves itself (D-19).
+ * The one hint line under the active board, or null. The pass-target number
+ * comes from the server (`points_needed`); the client never counts the
+ * viewer's solves itself (D-19). A tentative Accuracy viewer gets no hint: the
+ * "Not yet qualified" divider already states the threshold.
  */
 export function viewerHint(
   kind: LeaderboardBoardKind,
@@ -116,17 +120,11 @@ function pointsHint(data: TrainLeaderboardResponse): { id: ViewerHintId; text: s
 }
 
 function accuracyHint(data: TrainLeaderboardResponse): { id: ViewerHintId; text: string } | null {
-  const viewer = data.accuracy.viewer;
-  if (viewer === null) {
-    // On the Points board but not here: only tactics puzzles so far (D-19).
-    return data.points.viewer !== null
-      ? { id: 'accuracy-not-entered', text: ACCURACY_NOT_ENTERED_COPY }
-      : { id: 'enter-hint', text: ENTER_BOARD_HINT_COPY };
-  }
-  if (viewer.tentative) {
-    return { id: 'qualify', text: puzzlesToQualifyCopy(viewer.puzzles_to_qualify) };
-  }
-  return null;
+  if (data.accuracy.viewer !== null) return null;
+  // On the Points board but not here: only tactics puzzles so far (D-19).
+  return data.points.viewer !== null
+    ? { id: 'accuracy-not-entered', text: ACCURACY_NOT_ENTERED_COPY }
+    : { id: 'enter-hint', text: ENTER_BOARD_HINT_COPY };
 }
 
 /** Label on the viewer's own private row when they opted out (D-13). */

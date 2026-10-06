@@ -985,6 +985,7 @@ None active.
 | 261004-nxn | Debounce slider analytics and persist analysis engine toggles | 2026-10-04 | 8230265ef | [261004-nxn-debounce-slider-analytics-and-persist-an](./quick/261004-nxn-debounce-slider-analytics-and-persist-an/) |
 | 261004-rmc | Suppress Umami pageview after automatic SW/preload reloads | 2026-10-04 | d0a515bbf | [261004-rmc-suppress-umami-pageview-after-automatic-](./quick/261004-rmc-suppress-umami-pageview-after-automatic-/) |
 | 261004-rre | Track Umami events for server-persisted settings controls | 2026-10-04 | 738cee6b1 | [261004-rre-track-umami-events-for-server-persisted-](./quick/261004-rre-track-umami-events-for-server-persisted-/) |
+| 261006-75v | Leaderboard card declutter: puzzle icon, qualify divider, info popover, podium viewer highlight, medal count | 2026-10-06 | 6cd678dc2 | [261006-75v-leaderboard-card-declutter-puzzle-icon-q](./quick/261006-75v-leaderboard-card-declutter-puzzle-icon-q/) |
 
 ## Deferred Items
 

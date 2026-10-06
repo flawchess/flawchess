@@ -3,7 +3,9 @@
  * (Phase 231, D-07, D-08, D-09). Lists every server-sent podium entry (ties
  * included, server order gold to bronze) as a medal icon plus the name, and
  * wraps on narrow screens. Renders nothing when there is no podium: no empty
- * state and no older-week fallback.
+ * state and no older-week fallback. The viewer's own entry (server-set
+ * `is_viewer`) is semibold so a medal finisher spots themselves, since the
+ * "You finished #N" line is suppressed for medals (D-03; quick 261006-75v).
  *
  * Presentational only. Names are other users' self-typed platform usernames,
  * so they only ever render as React text children (T-230-08, T-231-14).
@@ -11,6 +13,7 @@
 import type { ReactElement } from 'react';
 import { MedalIcon } from '@/components/train/medals/MedalIcon';
 import { LAST_WEEK_PODIUM_LABEL, MEDAL_LABEL } from '@/lib/trainMedals';
+import { cn } from '@/lib/utils';
 import type { LeaderboardLastWeek } from '@/types/train';
 
 export function LastWeekPodium({ lastWeek }: { lastWeek: LeaderboardLastWeek | null }): ReactElement | null {
@@ -23,11 +26,15 @@ export function LastWeekPodium({ lastWeek }: { lastWeek: LeaderboardLastWeek | n
         <span
           key={index}
           data-testid={`train-leaderboard-podium-entry-${index}`}
+          data-viewer={entry.is_viewer ? 'true' : undefined}
+          aria-current={entry.is_viewer ? 'true' : undefined}
           className="inline-flex min-w-0 max-w-full items-center gap-1"
         >
           <MedalIcon kind={entry.medal} className="shrink-0" />
           <span className="sr-only">{MEDAL_LABEL[entry.medal]}</span>
-          <span className="min-w-0 truncate">{entry.name}</span>
+          <span className={cn('min-w-0 truncate', entry.is_viewer && 'font-semibold text-foreground')}>
+            {entry.name}
+          </span>
         </span>
       ))}
     </p>
