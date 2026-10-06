@@ -430,6 +430,17 @@ describe('TrainLeaderboardCard countdown and private rows (D-02, D-13, D-14)', (
       screen.getByText('Accuracy is your average session score: it rewards how carefully you solve, not how many.'),
     ).not.toBeNull();
     expect(trackFeature).toHaveBeenCalledWith('popover-open', { target: 'train-leaderboard-info' });
+    expect(screen.getByTestId('train-leaderboard-info-opt-out').textContent).toContain(
+      'hide yourself from the leaderboards',
+    );
+  });
+
+  it('omits the settings opt-out hint for guests, who never appear on the boards', async () => {
+    respondWith(makeResponse({ seconds_remaining: 388800 }));
+    renderCard(true);
+    fireEvent.click(await screen.findByTestId('train-leaderboard-info'));
+    expect(await screen.findByText('Points mainly rewards how many puzzles you solve.')).not.toBeNull();
+    expect(screen.queryByTestId('train-leaderboard-info-opt-out')).toBeNull();
   });
 
   it('invalidates the leaderboard query exactly once at the deadline, without looping', async () => {
