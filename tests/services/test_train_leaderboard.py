@@ -10,6 +10,8 @@ from __future__ import annotations
 
 import dataclasses
 import datetime
+import re
+from pathlib import Path
 
 import pytest
 
@@ -899,6 +901,22 @@ def test_last_week_podium_shows_a_hidden_viewer_their_own_stored_name() -> None:
 
     assert last is not None
     assert [e.name for e in last.podium] == ["secret"]
+    assert [e.is_viewer for e in last.podium] == [True]
+
+
+def test_last_week_podium_marks_only_the_viewers_own_entry() -> None:
+    rows = [
+        _standing("gold", rank=1, medal=Medal.GOLD, user_id=3),
+        _standing("silver", rank=2, medal=Medal.SILVER, user_id=4),
+        _standing("gone", rank=3, medal=Medal.BRONZE, user_id=None),
+    ]
+
+    on_podium = build_last_week("points", rows, viewer_id=4, week_start=_PREV_WEEK)
+    off_podium = build_last_week("points", rows, viewer_id=99, week_start=_PREV_WEEK)
+
+    assert on_podium is not None and off_podium is not None
+    assert [e.is_viewer for e in on_podium.podium] == [False, True, False]
+    assert [e.is_viewer for e in off_podium.podium] == [False, False, False]
 
 
 def test_last_week_viewer_final_rank_is_set_only_for_a_non_medal_viewer_row() -> None:
@@ -912,6 +930,15 @@ def test_last_week_viewer_final_rank_is_set_only_for_a_non_medal_viewer_row() ->
 
     assert non_medallist is not None and non_medallist.viewer_final_rank == 12
     assert medallist is not None and medallist.viewer_final_rank is None
+    assert [e.is_viewer for e in medallist.podium] == [True]
+
+
+def test_accuracy_qualify_min_puzzles_matches_frontend() -> None:
+    """The frontend divider copy mirrors the backend threshold; change both together."""
+    ts = Path(__file__).resolve().parents[2] / "frontend/src/lib/trainLeaderboard.ts"
+    m = re.search(r"export\s+const\s+ACCURACY_QUALIFY_MIN_PUZZLES\s*=\s*(\d+)\s*;", ts.read_text())
+    assert m, "could not find export const ACCURACY_QUALIFY_MIN_PUZZLES in trainLeaderboard.ts"
+    assert int(m.group(1)) == ACCURACY_QUALIFY_MIN_PUZZLES
 
 
 def test_last_week_viewer_final_rank_survives_the_viewer_opting_out_since() -> None:

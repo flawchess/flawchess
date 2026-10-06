@@ -296,16 +296,16 @@ async def test_deadline_finalizes_last_week_and_shows_the_podium(
         assert body["points"]["last_week"] == {
             "week_start": week0.isoformat(),
             "podium": [
-                {"medal": "gold", "name": a_name},
-                {"medal": "silver", "name": b_name},
-                {"medal": "silver", "name": c_name},
+                {"medal": "gold", "name": a_name, "is_viewer": False},
+                {"medal": "silver", "name": b_name, "is_viewer": False},
+                {"medal": "silver", "name": c_name, "is_viewer": False},
             ],
             "viewer_final_rank": 4,
         }
         # B, C and V are tentative on Accuracy (under 20 puzzles): no row, so no line.
         assert body["accuracy"]["last_week"] == {
             "week_start": week0.isoformat(),
-            "podium": [{"medal": "gold", "name": a_name}],
+            "podium": [{"medal": "gold", "name": a_name, "is_viewer": False}],
             "viewer_final_rank": None,
         }
         podium_names = {
@@ -384,7 +384,12 @@ async def test_podium_masks_hidden_now_and_deleted_users(
             "Deleted user",
         ]
         # D-04: masking only applies to what others see; A still sees their own name.
-        assert as_a["points"]["last_week"]["podium"][0] == {"medal": "gold", "name": a_name}
+        assert as_a["points"]["last_week"]["podium"][0] == {
+            "medal": "gold",
+            "name": a_name,
+            "is_viewer": True,
+        }
+        assert not any(e["is_viewer"] for e in as_viewer["points"]["last_week"]["podium"])
         # The trigger, not only read-time masking, erased the stored name.
         bronze = [row for row in await _standings(test_engine, week2, "points") if row[2] == 3]
         assert bronze == [(None, "Deleted user", 3, 3)]
@@ -423,7 +428,11 @@ async def test_finalization_waits_for_the_grace_window(
         pin_now(_week_monday(5) + datetime.timedelta(minutes=5))
         later = (await _get_leaderboard(a_token)).json()
 
-        assert later["points"]["last_week"]["podium"] == [{"medal": "gold", "name": a_name}]
+        assert later["points"]["last_week"]["podium"] == [
+            {"medal": "gold", "name": a_name, "is_viewer": True}
+        ]
+        # The viewer medalled, so the "You finished #N" line stays off (D-03).
+        assert later["points"]["last_week"]["viewer_final_rank"] is None
         assert await _marker_count(test_engine, week4) == 1
     finally:
         await _clear_weeks(test_engine, [week4])

@@ -3,9 +3,11 @@
  * (Phase 230, D-07, D-08): a Points | Accuracy tab toggle (the choice is
  * remembered in localStorage, D-09), the top 5 plus the viewer's own row
  * (highlighted) and its neighbours with a gap marker between the two, one
- * viewer hint line under the board, a "Not yet qualified" divider before the
- * first unranked (tentative) Accuracy row, and for guests a "Sign up to claim your
- * spot" nudge (D-14).
+ * viewer hint line under the board, a "Not yet qualified (20+ puzzles)" divider
+ * before the first unranked (tentative) Accuracy row, and for guests a "Sign up
+ * to claim your spot" nudge (D-14). Each row's puzzle count is a Puzzle icon
+ * plus the number, and an info popover next to the title explains what each
+ * board rewards (quick 261006-75v).
  *
  * Phase 231 adds the "Last week:" podium above each board and a lifetime medal
  * tally in every row's name block.
@@ -21,7 +23,9 @@
  */
 import { useEffect, useRef, useState } from 'react';
 import type { ReactElement } from 'react';
+import { Puzzle } from 'lucide-react';
 import { Card } from '@/components/ui/card';
+import { InfoPopover } from '@/components/ui/info-popover';
 import { LoadError } from '@/components/ui/load-error';
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
 import { SignupAskActions } from '@/components/train/SignupAskActions';
@@ -34,12 +38,13 @@ import { trackFeature } from '@/lib/analytics';
 import type { LeaderboardTabId } from '@/lib/analytics';
 import {
   ACCURACY_EMPTY_COPY,
-  ACCURACY_HELPER_COPY,
   COUNTDOWN_TICK_MS,
   EMPTY_WEEK_COPY,
   GUEST_CLAIM_SPOT_COPY,
   GUEST_ROW_LABEL,
   HIDDEN_FROM_OTHERS_LABEL,
+  LEADERBOARD_INFO_ACCURACY_COPY,
+  LEADERBOARD_INFO_POINTS_COPY,
   NOT_YET_QUALIFIED_DIVIDER_COPY,
   ROLLOVER_MAX_RETRIES,
   ROLLOVER_RETRY_MS,
@@ -134,7 +139,17 @@ function LeaderboardRowItem({
           )}
         </span>
         <span className="shrink-0 font-semibold tabular-nums">{boardValueLabel(kind, row.value)}</span>
-        <span className="shrink-0 text-muted-foreground">{puzzleCountLabel(row.puzzles)}</span>
+        {/* The count text carries the row baseline; only the icon is centred (a lone
+            SVG in an items-baseline row has no text baseline and gets lifted). */}
+        <span
+          role="img"
+          aria-label={puzzleCountLabel(row.puzzles)}
+          data-testid={`train-leaderboard-row-${index}-puzzles`}
+          className="inline-flex shrink-0 items-baseline gap-1 text-muted-foreground"
+        >
+          <Puzzle aria-hidden="true" className="size-3.5 self-center" />
+          <span className="tabular-nums">{row.puzzles}</span>
+        </span>
       </li>
     </>
   );
@@ -240,11 +255,6 @@ function LeaderboardBoardView({
   return (
     <>
       <LastWeekPodium lastWeek={data[tab].last_week} />
-      {tab === 'accuracy' && (
-        <p data-testid="train-leaderboard-accuracy-helper" className="mb-2 text-sm text-muted-foreground">
-          {ACCURACY_HELPER_COPY}
-        </p>
-      )}
       {rows.length === 0 ? (
         <p data-testid="train-leaderboard-empty" className="text-sm text-muted-foreground">
           {EMPTY_BOARD_COPY[tab]}
@@ -333,7 +343,8 @@ export interface TrainLeaderboardCardViewProps {
 
 /**
  * The whole card rendered from props: no fetching, no query client, no
- * analytics (Phase 231). The admin "Leaderboard medals demo" renders this with
+ * analytics beyond the header InfoPopover's own popover-open (Phase 231;
+ * trackFeature drops events on /admin). The admin "Leaderboard medals demo" renders this with
  * fixture data so it shows production markup.
  */
 export function TrainLeaderboardCardView({
@@ -347,8 +358,16 @@ export function TrainLeaderboardCardView({
 }: TrainLeaderboardCardViewProps): ReactElement {
   return (
     <Card as="section" className="w-full p-4" data-testid="train-leaderboard-card">
-      <div className="mb-2 flex items-baseline justify-between gap-2">
-        <h2 className="text-base font-semibold">This week</h2>
+      <div className="mb-2 flex items-center justify-between gap-2">
+        <div className="flex items-center gap-1.5">
+          <h2 className="text-base font-semibold">This week</h2>
+          <InfoPopover ariaLabel="About the weekly leaderboards" testId="train-leaderboard-info" side="bottom">
+            <div className="space-y-1">
+              <p>{LEADERBOARD_INFO_POINTS_COPY}</p>
+              <p>{LEADERBOARD_INFO_ACCURACY_COPY}</p>
+            </div>
+          </InfoPopover>
+        </div>
         {remaining !== null && (
           <span data-testid="train-leaderboard-countdown" className="text-sm text-muted-foreground">
             {formatCountdown(remaining)}

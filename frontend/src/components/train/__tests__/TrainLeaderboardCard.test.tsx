@@ -98,7 +98,7 @@ describe('TrainLeaderboardCard (Points board)', () => {
     renderCard();
     expect(screen.getByTestId('train-leaderboard-card')).not.toBeNull();
     expect(screen.getByTestId('train-leaderboard-loading')).not.toBeNull();
-    expect(screen.queryByTestId('train-leaderboard-rows')).toBeNull();
+    expect(screen.queryByTestId('train-leaderboard-rows')).toBeNull();    expect(screen.getByTestId('train-leaderboard-info')).not.toBeNull();
   });
 
   it('error: renders the exact LoadError sentence and no rows', async () => {
@@ -145,11 +145,16 @@ describe('TrainLeaderboardCard (Points board)', () => {
     const list = await screen.findByTestId('train-leaderboard-rows');
     const rows = within(list).getAllByRole('listitem');
     expect(rows.map((r) => r.textContent)).toEqual([
-      '#1alice20 pts8 puzzles',
-      '#2bob15 pts7 puzzles',
-      '#2carol15 pts5 puzzles',
-      '#4dave9 pts1 puzzle',
+      '#1alice20 pts8',
+      '#2bob15 pts7',
+      '#2carol15 pts5',
+      '#4dave9 pts1',
     ]);
+    // The puzzle count is an icon plus the number; the accessible name keeps the word.
+    expect(screen.getByTestId('train-leaderboard-row-0-puzzles').getAttribute('aria-label')).toBe('8 puzzles');
+    expect(screen.getByTestId('train-leaderboard-row-3-puzzles').getAttribute('aria-label')).toBe('1 puzzle');
+    expect(screen.getByTestId('train-leaderboard-row-0-puzzles').getAttribute('role')).toBe('img');
+    expect(screen.getByTestId('train-leaderboard-row-0-puzzles').querySelector('svg')).not.toBeNull();
   });
 
   it('marks only the viewer row with data-viewer and aria-current', async () => {
@@ -256,7 +261,7 @@ describe('TrainLeaderboardCard tabs (D-07, D-09, D-10)', () => {
     expect(screen.getByTestId('train-leaderboard-tab-points').textContent).toBe('Points');
   });
 
-  it('clicking Accuracy shows % rows, one qualify divider, rank-less tentative rows and the helper line', async () => {
+  it('clicking Accuracy shows % rows, one qualify divider with the threshold and rank-less tentative rows', async () => {
     respondWith(TABBED_RESPONSE);
     renderCard();
     await screen.findByTestId('train-leaderboard-rows');
@@ -266,14 +271,14 @@ describe('TrainLeaderboardCard tabs (D-07, D-09, D-10)', () => {
     const dividers = screen.getAllByTestId('train-leaderboard-qualify-divider');
     expect(dividers).toHaveLength(1);
     const divider = dividers[0];
-    expect(divider?.textContent).toBe('Not yet qualified');
+    expect(divider?.textContent).toBe('Not yet qualified (20+ puzzles)');
     expect(divider?.nextElementSibling).toBe(screen.getByTestId('train-leaderboard-row-1'));
     expect(screen.getByTestId('train-leaderboard-row-0').textContent).toContain('#1');
     expect(screen.getByTestId('train-leaderboard-row-1').textContent).not.toContain('#');
     expect(screen.getByTestId('train-leaderboard-row-2').textContent).not.toContain('#');
     expect(within(rows).queryByText('(tentative)')).toBeNull();
-    expect(screen.getByTestId('train-leaderboard-accuracy-helper').textContent).toContain('20+ puzzles to qualify');
-    expect(screen.getByTestId('train-leaderboard-accuracy-helper').textContent).toContain('20+ puzzles to qualify');
+    expect(screen.getByTestId('train-leaderboard-row-1-puzzles').getAttribute('aria-label')).toBe('5 puzzles');
+    expect(screen.queryByTestId('train-leaderboard-accuracy-helper')).toBeNull();
   });
 
   it('the Points tab renders no qualify divider', async () => {
@@ -348,13 +353,13 @@ describe('TrainLeaderboardCard tabs (D-07, D-09, D-10)', () => {
     expect(screen.getByTestId('train-leaderboard-empty').textContent).toBe('No accuracy entries yet this week.');
   });
 
-  it('viewer hints: pass target on Points, qualifier count on Accuracy', async () => {
+  it('viewer hints: pass target on Points, none for a tentative viewer on Accuracy', async () => {
     respondWith(TABBED_RESPONSE);
     renderCard();
     await screen.findByTestId('train-leaderboard-rows');
     expect(screen.getByTestId('train-leaderboard-pass-target').textContent).toBe('4 points to pass alice');
     fireEvent.click(screen.getByTestId('train-leaderboard-tab-accuracy'));
-    expect(screen.getByTestId('train-leaderboard-qualify').textContent).toBe('18 more puzzles to qualify');
+    expect(screen.queryByTestId('train-leaderboard-qualify')).toBeNull();
     expect(screen.queryByTestId('train-leaderboard-pass-target')).toBeNull();
   });
 
@@ -409,6 +414,22 @@ describe('TrainLeaderboardCard countdown and private rows (D-02, D-13, D-14)', (
     renderCard();
     const countdown = await screen.findByTestId('train-leaderboard-countdown');
     expect(countdown.textContent).toBe('ends in 4d 12h');
+  });
+
+  it('puts the info popover next to the title, before the countdown, and explains both boards', async () => {
+    respondWith(makeResponse({ seconds_remaining: 388800 }));
+    renderCard();
+    const countdown = await screen.findByTestId('train-leaderboard-countdown');
+    const info = screen.getByTestId('train-leaderboard-info');
+    expect(info.getAttribute('aria-label')).toBe('About the weekly leaderboards');
+    expect(info.compareDocumentPosition(countdown) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(info.parentElement?.querySelector('h2')?.textContent).toBe('This week');
+    fireEvent.click(info);
+    expect(await screen.findByText('Points mainly rewards how many puzzles you solve.')).not.toBeNull();
+    expect(
+      screen.getByText('Accuracy is your average session score: it rewards how carefully you solve, not how many.'),
+    ).not.toBeNull();
+    expect(trackFeature).toHaveBeenCalledWith('popover-open', { target: 'train-leaderboard-info' });
   });
 
   it('invalidates the leaderboard query exactly once at the deadline, without looping', async () => {
@@ -535,9 +556,9 @@ describe('TrainLeaderboardCard last-week podium (Phase 231, D-07..D-09)', () => 
           ...EMPTY_BOARD,
           rows: [makeRow()],
           last_week: lastWeekOf([
-            { medal: 'gold', name: 'alice' },
-            { medal: 'silver', name: 'bob' },
-            { medal: 'silver', name: 'dave' },
+            { medal: 'gold', name: 'alice', is_viewer: false },
+            { medal: 'silver', name: 'bob', is_viewer: false },
+            { medal: 'silver', name: 'dave', is_viewer: false },
           ]),
         },
       }),
@@ -557,7 +578,7 @@ describe('TrainLeaderboardCard last-week podium (Phase 231, D-07..D-09)', () => 
         accuracy: {
           ...EMPTY_BOARD,
           rows: [makeRow({ value: 90, puzzles: 30 })],
-          last_week: lastWeekOf([{ medal: 'gold', name: 'zed' }]),
+          last_week: lastWeekOf([{ medal: 'gold', name: 'zed', is_viewer: false }]),
         },
       }),
     );
@@ -565,15 +586,15 @@ describe('TrainLeaderboardCard last-week podium (Phase 231, D-07..D-09)', () => 
     await screen.findByTestId('train-leaderboard-rows');
     fireEvent.click(screen.getByTestId('train-leaderboard-tab-accuracy'));
     const podium = screen.getByTestId('train-leaderboard-podium');
-    const helper = screen.getByTestId('train-leaderboard-accuracy-helper');
-    expect(podium.compareDocumentPosition(helper) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    const rows = screen.getByTestId('train-leaderboard-rows');
+    expect(podium.compareDocumentPosition(rows) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 
   it('shows the podium of the active tab only', async () => {
     respondWith(
       makeResponse({
-        points: { ...EMPTY_BOARD, rows: [makeRow()], last_week: lastWeekOf([{ medal: 'gold', name: 'pointsy' }]) },
-        accuracy: { ...EMPTY_BOARD, rows: [makeRow()], last_week: lastWeekOf([{ medal: 'gold', name: 'accy' }]) },
+        points: { ...EMPTY_BOARD, rows: [makeRow()], last_week: lastWeekOf([{ medal: 'gold', name: 'pointsy', is_viewer: false }]) },
+        accuracy: { ...EMPTY_BOARD, rows: [makeRow()], last_week: lastWeekOf([{ medal: 'gold', name: 'accy', is_viewer: false }]) },
       }),
     );
     renderCard();
@@ -605,7 +626,7 @@ describe('TrainLeaderboardCard last-week podium (Phase 231, D-07..D-09)', () => 
         points: {
           ...EMPTY_BOARD,
           rows: [makeRow()],
-          last_week: lastWeekOf([{ medal: 'gold', name: '<b>x</b>' }]),
+          last_week: lastWeekOf([{ medal: 'gold', name: '<b>x</b>', is_viewer: false }]),
         },
       }),
     );
@@ -622,7 +643,7 @@ describe('TrainLeaderboardCardView (Phase 231 seam)', () => {
       points: {
         ...EMPTY_BOARD,
         rows: [makeRow({ name: 'alice' })],
-        last_week: lastWeekOf([{ medal: 'gold', name: 'carol' }]),
+        last_week: lastWeekOf([{ medal: 'gold', name: 'carol', is_viewer: false }]),
       },
     });
     render(
@@ -744,7 +765,7 @@ describe('TrainLeaderboardCard last-week finish line (Phase 231, D-03)', () => {
           rows: [makeRow()],
           viewer: VIEWER,
           pass_target: { name: 'alice', points_needed: 4 },
-          last_week: lastWeekOf([{ medal: 'gold', name: 'alice' }], 12),
+          last_week: lastWeekOf([{ medal: 'gold', name: 'alice', is_viewer: false }], 12),
         },
       }),
     );
@@ -762,20 +783,20 @@ describe('TrainLeaderboardCard last-week finish line (Phase 231, D-03)', () => {
         points: {
           ...EMPTY_BOARD,
           rows: [makeRow()],
-          last_week: lastWeekOf([{ medal: 'gold', name: 'alice' }], 12),
+          viewer: VIEWER,
+          last_week: lastWeekOf([{ medal: 'gold', name: 'alice', is_viewer: false }], 12),
         },
         accuracy: {
           ...EMPTY_BOARD,
           rows: [makeRow({ value: 90, puzzles: 30 })],
-          viewer: { ...VIEWER, rank: null, tentative: true, puzzles_to_qualify: 18 },
-          last_week: lastWeekOf([{ medal: 'gold', name: 'zed' }], 5),
+          last_week: lastWeekOf([{ medal: 'gold', name: 'zed', is_viewer: false }], 5),
         },
       }),
     );
     renderCard();
     await screen.findByTestId('train-leaderboard-rows');
     fireEvent.click(screen.getByTestId('train-leaderboard-tab-accuracy'));
-    const hint = screen.getByTestId('train-leaderboard-qualify');
+    const hint = screen.getByTestId('train-leaderboard-accuracy-not-entered');
     const finish = screen.getByTestId('train-leaderboard-last-week-finish');
     expect(finish.textContent).toBe('You finished #5 last week');
     expect(hint.compareDocumentPosition(finish) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
@@ -807,7 +828,7 @@ describe('TrainLeaderboardCard last-week finish line (Phase 231, D-03)', () => {
           rows: [makeRow()],
           viewer: VIEWER,
           pass_target: { name: 'alice', points_needed: 4 },
-          last_week: lastWeekOf([{ medal: 'gold', name: 'alice' }], null),
+          last_week: lastWeekOf([{ medal: 'gold', name: 'alice', is_viewer: false }], null),
         },
       }),
     );

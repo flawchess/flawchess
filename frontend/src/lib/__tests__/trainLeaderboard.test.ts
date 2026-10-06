@@ -9,8 +9,8 @@ import {
   parseLeaderboardTab,
   passTargetCopy,
   formatCountdown,
+  NOT_YET_QUALIFIED_DIVIDER_COPY,
   puzzleCountLabel,
-  puzzlesToQualifyCopy,
   rankLineCopy,
   remainingSeconds,
   readLeaderboardTab,
@@ -126,9 +126,8 @@ describe('readLeaderboardTab / writeLeaderboardTab', () => {
 });
 
 describe('qualifier and pass-target copy', () => {
-  it('puzzlesToQualifyCopy is singular for 1', () => {
-    expect(puzzlesToQualifyCopy(1)).toBe('1 more puzzle to qualify');
-    expect(puzzlesToQualifyCopy(18)).toBe('18 more puzzles to qualify');
+  it('the divider states the Accuracy threshold', () => {
+    expect(NOT_YET_QUALIFIED_DIVIDER_COPY).toBe('Not yet qualified (20+ puzzles)');
   });
 
   it('passTargetCopy is singular for 1 point', () => {
@@ -171,10 +170,10 @@ describe('viewerHint', () => {
     expect(viewerHint('points', response({ viewer: VIEWER }, {}))).toBeNull();
   });
 
-  it('accuracy: qualify with the server count for a tentative viewer (D-03)', () => {
+  it('accuracy: no hint for a tentative viewer (the divider states the threshold)', () => {
     const tentative = { ...VIEWER, tentative: true, puzzles_to_qualify: 18 };
     const data = response({ viewer: VIEWER }, { viewer: tentative });
-    expect(viewerHint('accuracy', data)).toEqual({ id: 'qualify', text: '18 more puzzles to qualify' });
+    expect(viewerHint('accuracy', data)).toBeNull();
   });
 
   it('accuracy: a specific not-on-this-board line when only the points viewer exists (D-19)', () => {

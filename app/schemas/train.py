@@ -609,12 +609,13 @@ class LeaderboardMedals(BaseModel):
 
 
 class LeaderboardPodiumEntry(BaseModel):
-    """One medal on last week's podium: the medal and a read-time masked name."""
+    """One medal on last week's podium: the medal, a read-time masked name and a viewer flag."""
 
     model_config = ConfigDict(from_attributes=True)
 
     medal: MedalKind
     name: str
+    is_viewer: bool  # True only on the viewer's own entry; carries no user id
 
 
 class LeaderboardLastWeek(BaseModel):

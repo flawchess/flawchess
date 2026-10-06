@@ -53,6 +53,13 @@ describe('LeaderboardMedalsDemo tracer', () => {
     expect(within(podium).getAllByTestId(/^train-leaderboard-podium-entry-/)).toHaveLength(3);
   });
 
+  it("highlights the viewer on last week's podium without a finish line", () => {
+    render(<LeaderboardMedalsDemo />);
+    clickBoard('podium-viewer');
+    expect(screen.getByTestId('train-leaderboard-podium-entry-1').getAttribute('data-viewer')).toBe('true');
+    expect(screen.queryByTestId('train-leaderboard-last-week-finish')).toBeNull();
+  });
+
   it('opens the production claim dialog from a celebrate button and Claim closes it', () => {
     render(<LeaderboardMedalsDemo />);
     expect(screen.queryByTestId('train-medal-dialog')).toBeNull();

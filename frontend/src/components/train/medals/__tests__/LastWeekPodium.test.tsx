@@ -25,10 +25,10 @@ describe('LastWeekPodium', () => {
     render(
       <LastWeekPodium
         lastWeek={lastWeek([
-          { medal: 'gold', name: 'alice' },
-          { medal: 'silver', name: 'bob' },
-          { medal: 'silver', name: 'carol' },
-          { medal: 'bronze', name: 'dave' },
+          { medal: 'gold', name: 'alice', is_viewer: false },
+          { medal: 'silver', name: 'bob', is_viewer: false },
+          { medal: 'silver', name: 'carol', is_viewer: false },
+          { medal: 'bronze', name: 'dave', is_viewer: false },
         ])}
       />,
     );
@@ -42,13 +42,32 @@ describe('LastWeekPodium', () => {
   });
 
   it('gives screen readers the medal label through sr-only text', () => {
-    render(<LastWeekPodium lastWeek={lastWeek([{ medal: 'bronze', name: 'dave' }])} />);
+    render(<LastWeekPodium lastWeek={lastWeek([{ medal: 'bronze', name: 'dave', is_viewer: false }])} />);
     const label = screen.getByText('Bronze');
     expect(label.className).toContain('sr-only');
   });
 
+  it("highlights only the viewer's own entry", () => {
+    render(
+      <LastWeekPodium
+        lastWeek={lastWeek([
+          { medal: 'gold', name: 'alice', is_viewer: false },
+          { medal: 'silver', name: 'me', is_viewer: true },
+        ])}
+      />,
+    );
+    const mine = screen.getByTestId('train-leaderboard-podium-entry-1');
+    expect(mine.getAttribute('data-viewer')).toBe('true');
+    expect(mine.getAttribute('aria-current')).toBe('true');
+    expect(screen.getByText('me').className).toContain('font-semibold');
+    const other = screen.getByTestId('train-leaderboard-podium-entry-0');
+    expect(other.getAttribute('data-viewer')).toBeNull();
+    expect(other.getAttribute('aria-current')).toBeNull();
+    expect(screen.getByText('alice').className).not.toContain('font-semibold');
+  });
+
   it('shows the "Last week:" lead-in', () => {
-    render(<LastWeekPodium lastWeek={lastWeek([{ medal: 'gold', name: 'alice' }])} />);
+    render(<LastWeekPodium lastWeek={lastWeek([{ medal: 'gold', name: 'alice', is_viewer: false }])} />);
     expect(screen.getByTestId('train-leaderboard-podium').textContent).toContain('Last week:');
   });
 });

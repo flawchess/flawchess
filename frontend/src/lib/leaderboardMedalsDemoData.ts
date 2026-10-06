@@ -23,6 +23,7 @@ export type BoardScenarioId =
   | 'anonymous-tally'
   | 'podium-tie'
   | 'podium-deleted-user'
+  | 'podium-viewer'
   | 'finished-12';
 export type CelebrateScenarioId =
   | 'gold-points'
@@ -137,9 +138,9 @@ export const DEMO_BOARD_SCENARIOS: Record<
       viewer: null,
       pass_target: null,
       last_week: lastWeek([
-        { medal: 'gold', name: LONG_NAME_A },
-        { medal: 'silver', name: LONG_NAME_B },
-        { medal: 'bronze', name: LONG_NAME_C },
+        { medal: 'gold', name: LONG_NAME_A, is_viewer: false },
+        { medal: 'silver', name: LONG_NAME_B, is_viewer: false },
+        { medal: 'bronze', name: LONG_NAME_C, is_viewer: false },
       ]),
     }),
   },
@@ -178,9 +179,9 @@ export const DEMO_BOARD_SCENARIOS: Record<
       viewer: null,
       pass_target: null,
       last_week: lastWeek([
-        { medal: 'gold', name: 'alice' },
-        { medal: 'gold', name: 'bob' },
-        { medal: 'bronze', name: 'carol' },
+        { medal: 'gold', name: 'alice', is_viewer: false },
+        { medal: 'gold', name: 'bob', is_viewer: false },
+        { medal: 'bronze', name: 'carol', is_viewer: false },
       ]),
     }),
   },
@@ -192,9 +193,27 @@ export const DEMO_BOARD_SCENARIOS: Record<
       viewer: null,
       pass_target: null,
       last_week: lastWeek([
-        { medal: 'gold', name: 'Deleted user' },
-        { medal: 'silver', name: 'bob' },
-        { medal: 'bronze', name: 'carol' },
+        { medal: 'gold', name: 'Deleted user', is_viewer: false },
+        { medal: 'silver', name: 'bob', is_viewer: false },
+        { medal: 'bronze', name: 'carol', is_viewer: false },
+      ]),
+    }),
+  },
+  'podium-viewer': {
+    label: "Viewer on last week's podium",
+    tab: 'points',
+    data: response({
+      rows: [
+        viewerRow(1, 'You', 540, 38, { silver: 1 }),
+        row(2, 'alice', 498, 31, { gold: 2 }),
+        row(3, 'carol', 455, 29),
+      ],
+      viewer: { rank: 1, rank_without_session: null, tentative: false, puzzles_to_qualify: 0, visibility: 'public' },
+      pass_target: null,
+      last_week: lastWeek([
+        { medal: 'gold', name: 'alice', is_viewer: false },
+        { medal: 'silver', name: 'You', is_viewer: true },
+        { medal: 'bronze', name: 'carol', is_viewer: false },
       ]),
     }),
   },
@@ -211,9 +230,9 @@ export const DEMO_BOARD_SCENARIOS: Record<
       pass_target: { name: 'bob', points_needed: 43 },
       last_week: lastWeek(
         [
-          { medal: 'gold', name: 'alice' },
-          { medal: 'silver', name: 'bob' },
-          { medal: 'bronze', name: 'carol' },
+          { medal: 'gold', name: 'alice', is_viewer: false },
+          { medal: 'silver', name: 'bob', is_viewer: false },
+          { medal: 'bronze', name: 'carol', is_viewer: false },
         ],
         DEMO_FINISHED_RANK,
       ),
