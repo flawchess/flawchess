@@ -281,6 +281,7 @@ async def test_response_key_set_has_no_user_ids(
                     "is_viewer",
                     "visibility",
                     "gap_before",
+                    "gap_after",
                     "medals",
                 }
                 assert set(row["medals"]) == {"gold", "silver", "bronze"}

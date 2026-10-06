@@ -2,7 +2,8 @@
  * TrainLeaderboardCard — the one "This week" card on the Train landing
  * (Phase 230, D-07, D-08): a Points | Accuracy tab toggle (the choice is
  * remembered in localStorage, D-09), the top 5 plus the viewer's own row
- * (highlighted) and its neighbours with a gap marker between the two, one
+ * (highlighted) and its neighbours with a gap marker between the two (and a
+ * trailing one when lower ranks are cut), one
  * viewer hint line under the board, a "Not yet qualified (20+ puzzles)" divider
  * before the first unranked (tentative) Accuracy row, and for guests a "Sign up
  * to claim your spot" nudge (D-14). Each row's puzzle count is a Puzzle icon
@@ -85,6 +86,19 @@ interface LeaderboardRowItemProps {
   qualifyDividerBefore: boolean;
 }
 
+/** The '…' between non-adjacent ranks, and after the last row when ranks below it are cut. */
+function LeaderboardGap({ testId }: { testId: string }): ReactElement {
+  return (
+    <li
+      aria-hidden="true"
+      data-testid={testId}
+      className="py-0.5 text-center text-sm leading-none text-muted-foreground"
+    >
+      …
+    </li>
+  );
+}
+
 function LeaderboardRowItem({
   row,
   kind,
@@ -93,15 +107,7 @@ function LeaderboardRowItem({
 }: LeaderboardRowItemProps): ReactElement {
   return (
     <>
-      {row.gap_before && (
-        <li
-          aria-hidden="true"
-          data-testid="train-leaderboard-gap"
-          className="py-0.5 text-center text-sm leading-none text-muted-foreground"
-        >
-          …
-        </li>
-      )}
+      {row.gap_before && <LeaderboardGap testId="train-leaderboard-gap" />}
       {/* Order: the gap says rows were skipped; the divider labels the section the
           next row opens. Not aria-hidden: unlike the gap marker it carries meaning. */}
       {qualifyDividerBefore && (
@@ -151,6 +157,8 @@ function LeaderboardRowItem({
           <span className="tabular-nums">{row.puzzles}</span>
         </span>
       </li>
+      {/* Without it a top-ranked viewer sees only top 5 plus neighbours and reads that as everyone. */}
+      {row.gap_after && <LeaderboardGap testId="train-leaderboard-gap-after" />}
     </>
   );
 }

@@ -646,6 +646,7 @@ class LeaderboardRow(BaseModel):
     # "public" on every row except the viewer's own hidden/guest row.
     visibility: LeaderboardVisibility
     gap_before: bool  # True on the first row after skipped ranks
+    gap_after: bool  # True on the last shown row when ranks below it are cut
     medals: LeaderboardMedals  # lifetime tally, zero counts when the user has no medals
 
 

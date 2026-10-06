@@ -405,6 +405,8 @@ export interface LeaderboardRow {
   visibility: LeaderboardVisibility;
   /** True when a gap marker belongs before this row. */
   gap_before: boolean;
+  /** True on the last shown row when ranks below it are cut: a gap marker follows it. */
+  gap_after: boolean;
   /** Lifetime medals of this row's owner on this board; all zero when none (Phase 231). */
   medals: LeaderboardMedals;
 }

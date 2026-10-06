@@ -45,6 +45,7 @@ function makeRow(overrides: Partial<LeaderboardRow> = {}): LeaderboardRow {
     is_viewer: false,
     visibility: 'public',
     gap_before: false,
+    gap_after: false,
     medals: { gold: 0, silver: 0, bronze: 0 },
     ...overrides,
   };
@@ -194,6 +195,29 @@ describe('TrainLeaderboardCard (Points board)', () => {
     expect(gap.getAttribute('aria-hidden')).toBe('true');
     const items = within(screen.getByTestId('train-leaderboard-rows')).getAllByRole('listitem', { hidden: true });
     expect(items.indexOf(gap)).toBe(1);
+  });
+
+  it('renders a hidden trailing gap marker after a gap_after row', async () => {
+    respondWith(
+      makeResponse({
+        points: {
+          rows: [
+            makeRow({ rank: 1, name: 'me', is_viewer: true }),
+            makeRow({ rank: 2 }),
+            makeRow({ rank: 3, gap_after: true }),
+          ],
+          viewer: null,
+          pass_target: null,
+          last_week: null,
+        },
+      }),
+    );
+    renderCard();
+    const gap = await screen.findByTestId('train-leaderboard-gap-after');
+    expect(gap.getAttribute('aria-hidden')).toBe('true');
+    const items = within(screen.getByTestId('train-leaderboard-rows')).getAllByRole('listitem', { hidden: true });
+    expect(items.indexOf(gap)).toBe(items.length - 1);
+    expect(screen.queryByTestId('train-leaderboard-gap')).toBeNull();
   });
 
   it('guest: shows the claim-your-spot nudge with the shared sign-up pair (train-leaderboard source)', async () => {

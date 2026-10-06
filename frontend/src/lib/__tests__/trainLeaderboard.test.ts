@@ -36,6 +36,7 @@ function rowWithRank(rank: number | null): LeaderboardRow {
     is_viewer: false,
     visibility: 'public',
     gap_before: false,
+    gap_after: false,
     medals: { gold: 0, silver: 0, bronze: 0 },
   };
 }

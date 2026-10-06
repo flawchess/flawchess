@@ -310,6 +310,9 @@ def test_slice_top_n_plus_viewer_neighbours_with_single_gap(
     assert [_rk(r) - 1 for r in board.rows] == shown
     gap_positions = [_rk(r) - 1 for r in board.rows if r.gap_before]
     assert gap_positions == ([] if gap_position is None else [gap_position])
+    # Every slice of the 12-row ladder cuts ranks below it except the viewer at the bottom.
+    trailing = [_rk(r) - 1 for r in board.rows if r.gap_after]
+    assert trailing == ([] if shown[-1] == _SLICE_SIZE - 1 else [shown[-1]])
     viewer_rows = [r for r in board.rows if r.is_viewer]
     assert [_rk(r) - 1 for r in viewer_rows] == [viewer_index]
 
@@ -319,6 +322,14 @@ def test_slice_short_board_returns_every_row() -> None:
         board = _points(_ladder(3), viewer_id=viewer_id)
         assert len(board.rows) == 3
         assert not any(r.gap_before for r in board.rows)
+        assert not any(r.gap_after for r in board.rows)
+
+
+def test_slice_window_reaching_the_last_row_has_no_trailing_gap() -> None:
+    # Viewer at index 5 of 8: neighbours reach index 7, the bottom of the board.
+    board = _points(_ladder(8), viewer_id=6)
+    assert len(board.rows) == 8
+    assert not any(r.gap_after for r in board.rows)
 
 
 def test_slice_without_a_viewer_entry_returns_only_the_top_n() -> None:
@@ -327,6 +338,7 @@ def test_slice_without_a_viewer_entry_returns_only_the_top_n() -> None:
     assert len(board.rows) == LEADERBOARD_TOP_N
     assert board.viewer is None
     assert not any(r.is_viewer for r in board.rows)
+    assert [r.gap_after for r in board.rows] == [False] * (LEADERBOARD_TOP_N - 1) + [True]
 
 
 # --- pass_target ------------------------------------------------------------
