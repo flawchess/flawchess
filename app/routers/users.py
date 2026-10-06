@@ -23,6 +23,7 @@ from app.repositories import (
 )
 from app.repositories.user_import_settings_repository import _import_scope_expanded
 from app.schemas.admin import ImpersonationContext
+from app.schemas.feedback_ask import FeedbackAskActionRequest, FeedbackAskView
 from app.schemas.users import (
     FirstTouchRequest,
     GameCountResponse,
@@ -31,6 +32,7 @@ from app.schemas.users import (
     UserProfileResponse,
     UserProfileUpdate,
 )
+from app.services import feedback_ask_service
 from app.services.current_strength_service import resolve_current_strength_for_user
 from app.users import current_active_user
 
@@ -75,6 +77,50 @@ async def _get_impersonation_context(
     return ImpersonationContext(admin_id=int(admin_id), target_email=target.email)
 
 
+async def _build_profile_response(
+    session: AsyncSession,
+    *,
+    user: User,
+    profile_row: User,
+    now_utc: datetime.datetime,
+    impersonation: ImpersonationContext | None,
+) -> UserProfileResponse:
+    """Build the profile response shared by GET and PUT /me/profile.
+
+    One builder so the two routes can never drift (234-RESEARCH Pitfall 2: the
+    leaderboard toggle writes the PUT response straight into the frontend profile
+    cache, so a PUT missing a field would drop it there).
+    """
+    counts = await game_repository.count_games_by_platform(session, user.id)
+    last_syncs = await import_job_repository.get_last_completed_at_by_platform(session, user.id)
+    anchors = await user_rating_anchors_repository.fetch_anchors_for_user(session, user_id=user.id)
+    current_strength = await resolve_current_strength_for_user(
+        session, user_id=user.id, now_utc=now_utc, anchors=anchors
+    )
+    ask = await feedback_ask_service.build_feedback_ask_snapshot(
+        session, user, now_utc=now_utc, impersonated=impersonation is not None
+    )
+    return UserProfileResponse(
+        email=user.email,
+        is_superuser=user.is_superuser,
+        is_guest=user.is_guest,
+        chess_com_username=profile_row.chess_com_username,
+        lichess_username=profile_row.lichess_username,
+        created_at=profile_row.created_at,
+        last_login=profile_row.last_login,
+        chess_com_game_count=counts.get("chess.com", 0),
+        lichess_game_count=counts.get("lichess", 0),
+        chess_com_last_sync_at=last_syncs.get("chess.com"),
+        lichess_last_sync_at=last_syncs.get("lichess"),
+        impersonation=impersonation,
+        beta_enabled=profile_row.beta_enabled,
+        leaderboard_hidden=profile_row.leaderboard_hidden,
+        current_strength=current_strength,
+        active_days=ask.active_days,
+        feedback_ask=ask.view,
+    )
+
+
 @router.get("/me/profile", response_model=UserProfileResponse)
 async def get_profile(
     session: Annotated[AsyncSession, Depends(get_async_session)],
@@ -89,28 +135,8 @@ async def get_profile(
     For regular + guest tokens, `impersonation` is null.
     """
     profile = await user_repository.get_profile(session, user.id)
-    counts = await game_repository.count_games_by_platform(session, user.id)
-    last_syncs = await import_job_repository.get_last_completed_at_by_platform(session, user.id)
-    anchors = await user_rating_anchors_repository.fetch_anchors_for_user(session, user_id=user.id)
-    current_strength = await resolve_current_strength_for_user(
-        session, user_id=user.id, now_utc=now_utc, anchors=anchors
-    )
-    return UserProfileResponse(
-        email=user.email,
-        is_superuser=user.is_superuser,
-        is_guest=user.is_guest,
-        chess_com_username=profile.chess_com_username,
-        lichess_username=profile.lichess_username,
-        created_at=profile.created_at,
-        last_login=profile.last_login,
-        chess_com_game_count=counts.get("chess.com", 0),
-        lichess_game_count=counts.get("lichess", 0),
-        chess_com_last_sync_at=last_syncs.get("chess.com"),
-        lichess_last_sync_at=last_syncs.get("lichess"),
-        impersonation=impersonation,
-        beta_enabled=user.beta_enabled,
-        leaderboard_hidden=user.leaderboard_hidden,
-        current_strength=current_strength,
+    return await _build_profile_response(
+        session, user=user, profile_row=profile, now_utc=now_utc, impersonation=impersonation
     )
 
 
@@ -119,6 +145,9 @@ async def update_profile(
     body: UserProfileUpdate,
     session: Annotated[AsyncSession, Depends(get_async_session)],
     user: Annotated[User, Depends(current_active_user)],
+    # Phase 234: PUT now carries the impersonation context like GET (it used to be
+    # null, which also dropped the impersonation pill from the cached profile).
+    impersonation: Annotated[ImpersonationContext | None, Depends(_get_impersonation_context)],
     now_utc: Annotated[datetime.datetime, Depends(dev_now_utc)],
 ) -> UserProfileResponse:
     """Update the authenticated user's platform usernames and leaderboard_hidden flag.
@@ -127,28 +156,8 @@ async def update_profile(
     the user from the weekly Train leaderboards (Phase 230 D-16).
     """
     updated = await user_repository.update_profile(session, user.id, body.model_dump())
-    counts = await game_repository.count_games_by_platform(session, user.id)
-    last_syncs = await import_job_repository.get_last_completed_at_by_platform(session, user.id)
-    anchors = await user_rating_anchors_repository.fetch_anchors_for_user(session, user_id=user.id)
-    current_strength = await resolve_current_strength_for_user(
-        session, user_id=user.id, now_utc=now_utc, anchors=anchors
-    )
-    return UserProfileResponse(
-        email=user.email,
-        is_superuser=user.is_superuser,
-        is_guest=user.is_guest,
-        chess_com_username=updated.chess_com_username,
-        lichess_username=updated.lichess_username,
-        created_at=updated.created_at,
-        last_login=updated.last_login,
-        chess_com_game_count=counts.get("chess.com", 0),
-        lichess_game_count=counts.get("lichess", 0),
-        chess_com_last_sync_at=last_syncs.get("chess.com"),
-        lichess_last_sync_at=last_syncs.get("lichess"),
-        impersonation=None,
-        beta_enabled=updated.beta_enabled,
-        leaderboard_hidden=updated.leaderboard_hidden,
-        current_strength=current_strength,
+    return await _build_profile_response(
+        session, user=user, profile_row=updated, now_utc=now_utc, impersonation=impersonation
     )
 
 
@@ -233,6 +242,25 @@ async def record_first_touch(
         # exclude_none keeps the stored object to the keys that carry a value.
         first_touch=body.model_dump(exclude_none=True),
         created_after=now_utc - FIRST_TOUCH_MAX_ACCOUNT_AGE,
+    )
+
+
+@router.post("/me/feedback-ask", response_model=FeedbackAskView)
+async def feedback_ask_action(
+    body: FeedbackAskActionRequest,
+    session: Annotated[AsyncSession, Depends(get_async_session)],
+    user: Annotated[User, Depends(current_active_user)],
+    impersonation: Annotated[ImpersonationContext | None, Depends(_get_impersonation_context)],
+    now_utc: Annotated[datetime.datetime, Depends(dev_now_utc)],
+) -> FeedbackAskView:
+    """Report a view, snooze or done for the milestone feedback ask (SEED-191).
+
+    The user id comes only from current_active_user (V4). Always 200 and idempotent:
+    an ineligible, guest, impersonated or stale-tab call is a no-op that returns the
+    current view, so no 4xx reaches Sentry from a stale tab.
+    """
+    return await feedback_ask_service.apply_feedback_ask_action(
+        session, user, body.action, now_utc=now_utc, impersonated=impersonation is not None
     )
 
 

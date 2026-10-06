@@ -49,6 +49,7 @@ import { TrainDevClock } from '@/components/train/TrainDevClock';
 import { clearTrainRevealCache, readTrainRevealCache } from '@/lib/trainRevealCache';
 import type { CachedTrainReveal } from '@/lib/trainRevealCache';
 import { DEV_CLOCK_ENABLED } from '@/lib/devClock';
+import { feedbackAskDays } from '@/lib/feedbackAsk';
 import { TRAIN_POINTS_PER_PUZZLE } from '@/lib/trainScore';
 import { cn } from '@/lib/utils';
 
@@ -223,6 +224,7 @@ export default function TrainPage(): ReactElement {
           onSettingsSaved={startSession}
           isGuest={isGuest}
           hasGames={hasGames}
+          feedbackAskDays={feedbackAskDays(profile)}
         />
       )}
       {restoredActive && restoredReveal && (

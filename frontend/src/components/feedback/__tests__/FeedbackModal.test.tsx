@@ -155,6 +155,49 @@ describe('FeedbackModal', () => {
     );
   });
 
+  it('keeps the default placeholder and sends source floating_button without props', () => {
+    const mutateFn = vi.fn();
+    (useFeedback as Mock).mockReturnValue(makeMockMutation({ mutate: mutateFn }));
+
+    render(<FeedbackModal open={true} onOpenChange={vi.fn()} />);
+
+    const textarea = screen.getByTestId('feedback-text') as HTMLTextAreaElement;
+    expect(textarea.placeholder).toBe(
+      'Tell us what you think about FlawChess or this page in particular',
+    );
+    fireEvent.change(textarea, { target: { value: 'Default source' } });
+    fireEvent.click(screen.getByTestId('btn-feedback-submit'));
+
+    expect(mutateFn).toHaveBeenCalledWith(
+      expect.objectContaining({ text: 'Default source', source: 'floating_button' }),
+      expect.anything(),
+    );
+  });
+
+  it('shows the given placeholder and sends the given source', () => {
+    const mutateFn = vi.fn();
+    (useFeedback as Mock).mockReturnValue(makeMockMutation({ mutate: mutateFn }));
+
+    render(
+      <FeedbackModal
+        open={true}
+        onOpenChange={vi.fn()}
+        placeholder="What's one thing you'd change or add?"
+        source="milestone_ask"
+      />,
+    );
+
+    const textarea = screen.getByTestId('feedback-text') as HTMLTextAreaElement;
+    expect(textarea.placeholder).toBe("What's one thing you'd change or add?");
+    fireEvent.change(textarea, { target: { value: 'An idea' } });
+    fireEvent.click(screen.getByTestId('btn-feedback-submit'));
+
+    expect(mutateFn).toHaveBeenCalledWith(
+      expect.objectContaining({ text: 'An idea', source: 'milestone_ask' }),
+      expect.anything(),
+    );
+  });
+
   it('has cancel button with correct data-testid', () => {
     (useFeedback as Mock).mockReturnValue(makeMockMutation());
 

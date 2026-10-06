@@ -24,6 +24,8 @@ import { TimeControlIcon } from '@/components/icons/TimeControlIcon';
 import { EvalCoverageHeader } from '@/components/EvalCoverageHeader';
 import { useUserProfile } from '@/hooks/useUserProfile';
 import { ImportBotBubble } from '@/components/import/ImportBotBubble';
+import { FeedbackAskBubble } from '@/components/feedback/FeedbackAskBubble';
+import { feedbackAskDays } from '@/lib/feedbackAsk';
 import type { ImportBotBubbleVariant } from '@/components/import/importBotBubbleCopy';
 import { TRAIN_BUTTON_CLASS } from '@/components/train/buttonStyles';
 import { cn } from '@/lib/utils';
@@ -283,6 +285,8 @@ function ImportProgressBar({ jobId, onDismiss, platformFilter, onProgress }: { j
 
 export function ImportPage({ onImportStarted, activeJobIds, onJobDismissed }: ImportPageProps) {
   const { data: profile, isLoading: profileLoading } = useUserProfile();
+  // Phase 234 (SEED-191): non-null while Hilda's milestone feedback ask is active.
+  const feedbackAskDaysValue = feedbackAskDays(profile);
   // ImportFilterCard (mounted below) surfaces the CLAUDE.md-mandated isError copy
   // for this same query — only need the data here, for the per-platform budget chips.
   const { data: importSettings } = useImportSettings();
@@ -446,7 +450,15 @@ export function ImportPage({ onImportStarted, activeJobIds, onJobDismissed }: Im
     // The bottom keeps the page's original 24px.
     <main data-testid="import-page" className="mx-auto w-full max-w-2xl px-4 pt-1 pb-6 md:pt-0 md:px-6 space-y-8">
       <EvalCoverageHeader />
-      {profile && <ImportBotBubble variant={importBubbleVariant(profile)} />}
+      {/* D-03: the ask wins on Import whenever it is active and replaces both the
+          welcome and the explore variant (guests are never eligible, so the
+          signup-ask variant is unaffected). */}
+      {profile &&
+        (feedbackAskDaysValue !== null ? (
+          <FeedbackAskBubble surface="import" activeDays={feedbackAskDaysValue} />
+        ) : (
+          <ImportBotBubble variant={importBubbleVariant(profile)} />
+        ))}
 
       {profileLoading ? (
         <p className="text-sm text-muted-foreground">Loading profile...</p>

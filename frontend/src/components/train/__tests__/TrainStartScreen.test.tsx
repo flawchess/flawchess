@@ -174,6 +174,28 @@ vi.mock('@/components/train/medals/TrainMedalDialogHost', () => ({
   ),
 }));
 
+// Phase 234: the real bubble needs a QueryClientProvider (it owns a TanStack
+// mutation), which this suite deliberately lacks. A stub exposing the props
+// proves what the Train landing hands it; FeedbackAskBubble.test.tsx covers
+// the bubble itself.
+vi.mock('@/components/feedback/FeedbackAskBubble', () => ({
+  FeedbackAskBubble: ({
+    surface,
+    activeDays,
+    avatarSize,
+  }: {
+    surface: string;
+    activeDays: number;
+    avatarSize?: string;
+  }) => (
+    <div
+      data-testid={`feedback-ask-${surface}`}
+      data-active-days={String(activeDays)}
+      data-avatar-size={avatarSize}
+    />
+  ),
+}));
+
 import { TrainStartScreen } from '@/components/train/TrainStartScreen';
 import { TANK_ID, landingHost } from '@/lib/trainBotCopy';
 import { TRAIN_SETTINGS_SAVE_DEBOUNCE_MS } from '@/components/train/TrainScheduleSettings';
@@ -247,6 +269,7 @@ function renderScreen(props: Partial<Parameters<typeof TrainStartScreen>[0]> = {
         onSettingsSaved={onSettingsSaved}
         isGuest={false}
         hasGames={true}
+        feedbackAskDays={null}
         {...props}
       />
     </MemoryRouter>,
@@ -264,6 +287,7 @@ describe('TrainStartScreen — refetch after a schedule save (SEED-181 review)',
       onSettingsSaved: vi.fn(),
       isGuest: false,
       hasGames: true,
+      feedbackAskDays: null,
     };
     const { rerender } = render(
       <MemoryRouter>
@@ -775,5 +799,53 @@ describe('TrainStartScreen — Phase 231 D-10: medal dialog host mount', () => {
     cleanup();
     renderScreen({ isGuest: false });
     expect(screen.getByTestId('train-medal-dialog-host').getAttribute('data-guest')).toBe('false');
+  });
+});
+
+describe('TrainStartScreen: Phase 234 milestone feedback ask', () => {
+  const INTRO_DONE = '2026-07-01T10:00:00Z';
+  const ASK_DAYS = 7;
+
+  beforeEach(() => {
+    mockTrainSettingsData = { ...mockTrainSettingsData, intro_seen_at: INTRO_DONE };
+  });
+
+  it('D-04: intro done + active ask renders Hilda (large) instead of the host, visible on phones', () => {
+    renderScreen({ feedbackAskDays: ASK_DAYS });
+    const stub = screen.getByTestId('feedback-ask-train-landing');
+    expect(stub.getAttribute('data-active-days')).toBe(String(ASK_DAYS));
+    expect(stub.getAttribute('data-avatar-size')).toBe('large');
+    expect(screen.queryByTestId('train-tagline')).toBeNull();
+    expect(screen.getByTestId('train-landing-host').className).not.toContain('max-sm:hidden');
+  });
+
+  it('SEED-191 #10: the ask outranks the reminder-install ask', () => {
+    mockTrainSettingsData = { ...mockTrainSettingsData, has_mobile_subscription: false };
+    renderScreen({ feedbackAskDays: ASK_DAYS });
+    expect(screen.getByTestId('feedback-ask-train-landing')).not.toBeNull();
+    expect(screen.queryByTestId('train-landing-reminder-ask')).toBeNull();
+  });
+
+  it('D-04: while the intro is not completed Tank still hosts and no ask renders', () => {
+    mockTrainSettingsData = { ...mockTrainSettingsData, intro_seen_at: null };
+    renderScreen({ feedbackAskDays: ASK_DAYS });
+    expect(screen.queryByTestId('feedback-ask-train-landing')).toBeNull();
+    expect(screen.getByTestId('train-tagline')).not.toBeNull();
+    expect(screen.getByTestId('train-landing-host').className).not.toContain('max-sm:hidden');
+  });
+
+  it('inactive ask (null) keeps the daily host and the phone-hiding rule', () => {
+    renderScreen({ feedbackAskDays: null });
+    expect(screen.queryByTestId('feedback-ask-train-landing')).toBeNull();
+    expect(screen.getByTestId('train-tagline')).not.toBeNull();
+    expect(screen.getByTestId('train-landing-host').className).toContain('max-sm:hidden');
+  });
+
+  it('the completed landing also renders the ask', () => {
+    renderScreen({
+      session: { ...BASE_SESSION, solved_count: BASE_SESSION.puzzle_count },
+      feedbackAskDays: ASK_DAYS,
+    });
+    expect(screen.getByTestId('feedback-ask-train-landing')).not.toBeNull();
   });
 });

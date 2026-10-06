@@ -398,6 +398,8 @@ export const ACTION_TARGETS = [
   'bot-draw-decline',
   'bot-return-live',
   'reminder-enable',
+  'feedback-ask-sure',
+  'feedback-ask-later',
 ] as const;
 type ActionTarget = (typeof ACTION_TARGETS)[number];
 

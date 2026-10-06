@@ -12,6 +12,7 @@
 import type { ReactElement } from 'react';
 import { format } from 'date-fns';
 import { PersonaCard } from '@/components/bots/PersonaCard';
+import { FeedbackAskBubble } from '@/components/feedback/FeedbackAskBubble';
 import { TrainBotBubble } from '@/components/train/TrainBotBubble';
 import { Button } from '@/components/ui/button';
 import { InfoPopover } from '@/components/ui/info-popover';
@@ -47,6 +48,12 @@ export interface PersonaGridProps {
    * while loading/erroring; each card degrades to its own all-outline
    * zero-state rather than blocking this whole grid. */
   winsByPersona?: Record<string, number>;
+  /** Phase 234 (SEED-191): non-null while the milestone feedback ask is active,
+   * the user's active days for Hilda's copy. Computed by `Bots.tsx` from its
+   * single `useUserProfile()` read and prop-drilled like `winsByPersona`, so
+   * this component still calls no query hook; the ask's only hook-bearing child
+   * mounts only while active. Omitted/null renders the greeting as before. */
+  feedbackAskDays?: number | null;
 }
 
 /**
@@ -73,8 +80,22 @@ export interface PersonaGridProps {
  * style sentence in the popover body stays directional for the same reason:
  * `varianceBonus` and `contempt` only bite on the Light/Deep rungs, while the
  * prior reweighting and opening books tilt every rung.
+ *
+ * Phase 234: while the milestone feedback ask is active (`feedbackAskDays`
+ * non-null) Hilda's `FeedbackAskBubble` takes this slot instead of the host
+ * greeting.
  */
-function BotWelcomeCard(): ReactElement {
+function BotWelcomeCard({ feedbackAskDays }: { feedbackAskDays: number | null }): ReactElement {
+  if (feedbackAskDays != null) {
+    // SEED-191 #2: Hilda replaces the rotating host, and the inline bot-engine
+    // explainer popover is hidden for that stretch (acceptable: eligible users
+    // have 5+ active days). Guests are never eligible.
+    return (
+      <section data-testid="bots-intro" className="space-y-3 text-sm text-muted-foreground">
+        <FeedbackAskBubble surface="bots" activeDays={feedbackAskDays} avatarSize="large" />
+      </section>
+    );
+  }
   // Rotation day is computed HERE, in the component, from the dev clock —
   // `rosterHost` is a pure module and never reads a clock itself.
   const today = format(devClockNow(readDevClockOffsetMinutes()), 'yyyy-MM-dd');
@@ -126,6 +147,7 @@ export function PersonaGrid({
   onSelectPersona,
   onSelectCustom,
   winsByPersona,
+  feedbackAskDays,
 }: PersonaGridProps): ReactElement {
   return (
     // Bottom-nav clearance (mirrors SetupScreen.tsx's root pb-20 sm:pb-4
@@ -134,7 +156,7 @@ export function PersonaGrid({
       data-testid="bots-persona-grid"
       className="mx-auto flex max-w-2xl flex-col gap-6 p-4 pb-20 sm:pb-4"
     >
-      <BotWelcomeCard />
+      <BotWelcomeCard feedbackAskDays={feedbackAskDays ?? null} />
 
       {/* Single grid-cols-4 container for the header row + all 6 rung body
           rows, so columns align exactly and row/column gaps stay uniform

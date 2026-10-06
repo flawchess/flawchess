@@ -8,6 +8,7 @@ from pydantic import BaseModel, field_validator
 from app.core.platform_usernames import extract_platform_username
 from app.repositories.query_utils import AnalyticsPlatform
 from app.schemas.admin import ImpersonationContext
+from app.schemas.feedback_ask import FeedbackAskView
 from app.schemas.normalization import TimeControlBucket
 
 
@@ -80,6 +81,11 @@ class UserProfileResponse(BaseModel):
     # not a bug); the frontend falls back to 1500. UI DEFAULT ONLY -- never
     # fed into bot move selection (BOT-03).
     current_strength: CurrentStrengthResponse | None = None
+    # Phase 234 (SEED-191, D-01): distinct UTC activity days up to and including
+    # today; the milestone-ask copy interpolates it.
+    active_days: int
+    # Phase 234 (SEED-191 #8): server-decided milestone feedback ask state.
+    feedback_ask: FeedbackAskView
 
 
 class UserProfileUpdate(BaseModel):

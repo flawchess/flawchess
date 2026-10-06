@@ -13,7 +13,10 @@
     "verifier": true,
     "nyquist_validation": true,
     "_auto_chain_active": false,
-    "ai_integration_phase": true
+    "ai_integration_phase": true,
+    "ui_phase": false,
+    "ui_safety_gate": false,
+    "ui_review": false
   },
   "git": {
     "branching_strategy": "phase"

@@ -12,6 +12,28 @@ import {
 } from '@/lib/personas/personaRegistry';
 import { ATTACKER_ACCENT, TRICKSTER_ACCENT, GRINDER_ACCENT, WALL_ACCENT } from '@/lib/theme';
 
+// Phase 234: the real bubble needs a QueryClientProvider (it owns a TanStack
+// mutation), which these provider-less grid renders deliberately lack. A stub
+// exposing the props proves what the roster hands it; FeedbackAskBubble.test.tsx
+// covers the bubble itself.
+vi.mock('@/components/feedback/FeedbackAskBubble', () => ({
+  FeedbackAskBubble: ({
+    surface,
+    activeDays,
+    avatarSize,
+  }: {
+    surface: string;
+    activeDays: number;
+    avatarSize?: string;
+  }) => (
+    <div
+      data-testid={`feedback-ask-${surface}`}
+      data-active-days={String(activeDays)}
+      data-avatar-size={avatarSize}
+    />
+  ),
+}));
+
 // The welcome bubble's copy is `rosterHost({ today }).copy` for the
 // component's own day computation (`devClockNow(readDevClockOffsetMinutes())`
 // formatted 'yyyy-MM-dd'). Pinning the system clock makes `today` — and so
@@ -144,5 +166,45 @@ describe('PersonaGrid', () => {
 
     const container = screen.getByTestId('bots-persona-grid');
     expect(container.innerHTML).not.toContain('text-xs');
+  });
+});
+
+describe('PersonaGrid: Phase 234 milestone feedback ask (FBASK-09)', () => {
+  const ASK_DAYS = 9;
+
+  it("an active ask hands the welcome bubble to Hilda (large) and hides the greeting and engine popover", () => {
+    render(
+      <PersonaGrid onSelectPersona={vi.fn()} onSelectCustom={vi.fn()} feedbackAskDays={ASK_DAYS} />,
+    );
+
+    const intro = screen.getByTestId('bots-intro');
+    const stub = screen.getByTestId('feedback-ask-bots');
+    expect(intro.contains(stub)).toBe(true);
+    expect(stub.getAttribute('data-active-days')).toBe(String(ASK_DAYS));
+    expect(stub.getAttribute('data-avatar-size')).toBe('large');
+    expect(screen.queryByTestId('bots-welcome-bubble')).toBeNull();
+    expect(screen.queryByTestId('bots-intro-info')).toBeNull();
+    // The roster itself is untouched.
+    expect(
+      screen.getByTestId('bots-persona-grid').querySelectorAll('[data-testid^="bots-persona-card-"]')
+        .length,
+    ).toBe(24);
+  });
+
+  it.each([
+    ['null', { feedbackAskDays: null }],
+    ['omitted', {}],
+  ])('an inactive ask (%s) keeps the rosterHost greeting and popover', (_label, extra) => {
+    render(<PersonaGrid onSelectPersona={vi.fn()} onSelectCustom={vi.fn()} {...extra} />);
+
+    expect(screen.queryByTestId('feedback-ask-bots')).toBeNull();
+    expect(screen.getByTestId('bots-welcome-bubble').textContent).toContain(
+      rosterHost({ today: MOCKED_TODAY }).copy,
+    );
+    expect(screen.getByTestId('bots-intro-info')).toBeTruthy();
+    expect(
+      screen.getByTestId('bots-persona-grid').querySelectorAll('[data-testid^="bots-persona-card-"]')
+        .length,
+    ).toBe(24);
   });
 });
