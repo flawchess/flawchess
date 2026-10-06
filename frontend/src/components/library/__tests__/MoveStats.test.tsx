@@ -183,3 +183,22 @@ describe('MoveStats — Best/Good rows render the new circular icons', () => {
     expect(goodRow.querySelector('title')?.textContent).toBe('Good move');
   });
 });
+
+describe('MoveStats — accuracy info popover', () => {
+  it('replaces the bullseye with an info trigger that explains accuracy and every move quality', () => {
+    render(<MoveStats game={makeGame()} />);
+    const strip = screen.getByTestId('move-stats-accuracy-strip');
+    expect(strip.textContent).not.toContain('🎯');
+
+    fireEvent.click(screen.getByTestId('move-stats-info'));
+    const body = document.body.textContent ?? '';
+    for (const label of ['Accuracy', 'Gem', 'Great', 'Best', 'Good', 'Inaccuracy', 'Mistake', 'Blunder', 'Lichess']) {
+      expect(body).toContain(label);
+    }
+  });
+
+  it('suffixes the info trigger testid with the game id', () => {
+    render(<MoveStats game={makeGame()} gameId={GAME_ID} />);
+    expect(screen.getByTestId(`move-stats-info-${GAME_ID}`)).toBeTruthy();
+  });
+});
