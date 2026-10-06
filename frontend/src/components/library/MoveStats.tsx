@@ -1,5 +1,6 @@
 import { ChevronDown } from 'lucide-react';
 import { MoveQualityIcon } from '@/components/icons/MoveQualityIcon';
+import { InfoPopover } from '@/components/ui/info-popover';
 import {
   EVAL_BAR_BLACK,
   EVAL_BAR_WHITE,
@@ -87,6 +88,56 @@ function sameCellRef(a: MoveStatsCellRef | null | undefined, b: MoveStatsCellRef
 
 function formatAccuracy(value: number | null): string {
   return value === null ? '—' : `${Math.round(value)}%`;
+}
+
+/**
+ * One-line definition per category for the accuracy-strip info popover. Gem/Great
+ * wording mirrors `BestMovesInfo` (FlawFilterControl.tsx); severity cutoffs are the
+ * Lichess-aligned win-chance drops in `app/services/flaws_service.py`.
+ */
+const CATEGORY_DEFINITIONS: Record<MoveStatCategory, string> = {
+  gem: "The engine's clear best move, which fewer than ~1 in 5 rating peers would find.",
+  great: "The engine's clear best move, found by roughly 1 in 5 to 1 in 2 rating peers.",
+  best: "The engine's top move.",
+  good: 'Not the top move, but costs less than 5% winning chances.',
+  inaccuracy: 'Costs 5–10% winning chances.',
+  mistake: 'Costs 10–15% winning chances.',
+  blunder: 'Costs 15% winning chances or more.',
+};
+
+/** Accuracy-strip help popover: explains Accuracy and all seven move qualities. */
+function MoveStatsInfo({ gameId }: { gameId?: number }) {
+  return (
+    <InfoPopover
+      ariaLabel="About accuracy and move qualities"
+      testId={tid('move-stats-info', gameId)}
+      side="bottom"
+    >
+      <p>
+        <strong>Accuracy</strong>: how well each side kept its winning chances, move by
+        move. 100% means no move gave anything away.
+      </p>
+      <ul className="mt-1.5 space-y-1">
+        {CATEGORY_ORDER.map((category) => (
+          <li key={category} className="flex items-start gap-1.5">
+            <MoveQualityIcon quality={category} className="mt-px h-3.5 w-3.5 shrink-0" />
+            <span>
+              <strong>{CATEGORY_LABELS[category]}</strong>: {CATEGORY_DEFINITIONS[category]}
+            </span>
+          </li>
+        ))}
+      </ul>
+      <p className="mt-1.5">
+        Gems and Greats combine <strong>Stockfish</strong> (the move is clearly best) with{' '}
+        <strong>Maia</strong>, which estimates how many players at the mover&apos;s level
+        would find it.
+      </p>
+      <p className="mt-1.5">
+        Accuracy, inaccuracies, mistakes and blunders use the same formulas as{' '}
+        <strong>Lichess</strong>, so they match Lichess&apos;s game analysis.
+      </p>
+    </InfoPopover>
+  );
 }
 
 export interface MoveStatsProps {
@@ -236,7 +287,7 @@ export function MoveStats({
     );
   }
 
-  // Accuracy strip: single row — bullseye + "Accuracy" label on the left, then
+  // Accuracy strip: single row — info popover + "Accuracy" label on the left, then
   // player accuracy, opponent accuracy. Rendered as the charcoal card's header
   // band (CardHeader's bg-card-band + border-b); px-2 matches the table's p-2 so
   // the pill columns line up with the count columns. py-0.5 (not py-1) keeps the
@@ -250,11 +301,8 @@ export function MoveStats({
       <h4 className="flex items-center gap-2 py-1.5 text-sm font-semibold">
         {/* Sized like the MoveQualityIcon (h-5 w-5) in the table rows below,
             so the label column reads as one aligned icon+text list. */}
-        <span
-          aria-hidden="true"
-          className="flex h-5 w-5 items-center justify-center text-base leading-none"
-        >
-          🎯
+        <span className="flex h-5 w-5 items-center justify-center">
+          <MoveStatsInfo gameId={gameId} />
         </span>
         Accuracy
       </h4>
