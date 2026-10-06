@@ -413,6 +413,8 @@ export function MobileHeader() {
             emailMaxWidthClass="max-w-[8rem]"
           />
         )}
+        {/* Settings shortcut next to the page title (the More drawer row stays too). */}
+        <SettingsSheetButton testId="btn-mobile-header-settings" className="h-8 w-8 text-muted-foreground" />
         <span
           data-testid="mobile-header-page-title"
           className="text-sm text-muted-foreground"
