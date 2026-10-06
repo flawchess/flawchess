@@ -6,8 +6,8 @@
  * viewer hint line under the board, a "Not yet qualified (20+ puzzles)" divider
  * before the first unranked (tentative) Accuracy row, and for guests a "Sign up
  * to claim your spot" nudge (D-14). Each row's puzzle count is a Puzzle icon
- * plus the number, and an info popover in the header explains what each board
- * rewards (quick 261006-75v).
+ * plus the number, and an info popover next to the title explains what each
+ * board rewards (quick 261006-75v).
  *
  * Phase 231 adds the "Last week:" podium above each board and a lifetime medal
  * tally in every row's name block.
@@ -359,13 +359,8 @@ export function TrainLeaderboardCardView({
   return (
     <Card as="section" className="w-full p-4" data-testid="train-leaderboard-card">
       <div className="mb-2 flex items-center justify-between gap-2">
-        <h2 className="text-base font-semibold">This week</h2>
         <div className="flex items-center gap-1.5">
-          {remaining !== null && (
-            <span data-testid="train-leaderboard-countdown" className="text-sm text-muted-foreground">
-              {formatCountdown(remaining)}
-            </span>
-          )}
+          <h2 className="text-base font-semibold">This week</h2>
           <InfoPopover ariaLabel="About the weekly leaderboards" testId="train-leaderboard-info" side="bottom">
             <div className="space-y-1">
               <p>{LEADERBOARD_INFO_POINTS_COPY}</p>
@@ -373,6 +368,11 @@ export function TrainLeaderboardCardView({
             </div>
           </InfoPopover>
         </div>
+        {remaining !== null && (
+          <span data-testid="train-leaderboard-countdown" className="text-sm text-muted-foreground">
+            {formatCountdown(remaining)}
+          </span>
+        )}
       </div>
       {isPending && (
         <div

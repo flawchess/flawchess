@@ -416,13 +416,14 @@ describe('TrainLeaderboardCard countdown and private rows (D-02, D-13, D-14)', (
     expect(countdown.textContent).toBe('ends in 4d 12h');
   });
 
-  it('puts the info popover right of the countdown and explains both boards', async () => {
+  it('puts the info popover next to the title, before the countdown, and explains both boards', async () => {
     respondWith(makeResponse({ seconds_remaining: 388800 }));
     renderCard();
     const countdown = await screen.findByTestId('train-leaderboard-countdown');
     const info = screen.getByTestId('train-leaderboard-info');
     expect(info.getAttribute('aria-label')).toBe('About the weekly leaderboards');
-    expect(countdown.compareDocumentPosition(info) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(info.compareDocumentPosition(countdown) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(info.parentElement?.querySelector('h2')?.textContent).toBe('This week');
     fireEvent.click(info);
     expect(await screen.findByText('Points mainly rewards how many puzzles you solve.')).not.toBeNull();
     expect(
