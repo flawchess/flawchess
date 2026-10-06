@@ -23,7 +23,7 @@
  */
 import { useEffect, useRef, useState } from 'react';
 import type { ReactElement } from 'react';
-import { Puzzle } from 'lucide-react';
+import { Puzzle, Settings as SettingsIcon } from 'lucide-react';
 import { Card } from '@/components/ui/card';
 import { InfoPopover } from '@/components/ui/info-popover';
 import { LoadError } from '@/components/ui/load-error';
@@ -365,6 +365,14 @@ export function TrainLeaderboardCardView({
             <div className="space-y-1">
               <p>{LEADERBOARD_INFO_POINTS_COPY}</p>
               <p>{LEADERBOARD_INFO_ACCURACY_COPY}</p>
+              {/* Guests never appear on the boards, so the opt-out hint is for signed-in users only. */}
+              {!isGuest && (
+                <p data-testid="train-leaderboard-info-opt-out">
+                  You can hide yourself from the leaderboards in the{' '}
+                  <SettingsIcon className="inline h-3.5 w-3.5 align-text-bottom" aria-label="Settings" />{' '}
+                  settings.
+                </p>
+              )}
             </div>
           </InfoPopover>
         </div>

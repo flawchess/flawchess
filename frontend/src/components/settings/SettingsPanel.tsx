@@ -174,6 +174,11 @@ export function SettingsPanel() {
         groupPrefix="settings-sf"
       />
 
+      {/* Server-persisted privacy choice (Phase 230 D-16), deliberately outside
+          isAtDefaults and Reset, which only cover localStorage display
+          preferences. The card hides itself for guests. */}
+      <LeaderboardPrivacyCard />
+
       <Button
         type="button"
         variant="brand-outline"
@@ -183,11 +188,6 @@ export function SettingsPanel() {
       >
         Reset to defaults
       </Button>
-
-      {/* Server-persisted privacy choice (Phase 230 D-16), deliberately outside
-          isAtDefaults and Reset, which only cover localStorage display
-          preferences. The card hides itself for guests. */}
-      <LeaderboardPrivacyCard />
     </div>
   );
 }

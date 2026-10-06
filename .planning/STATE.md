@@ -5,8 +5,8 @@ current_phase: 234
 current_phase_name: Milestone Feedback Ask (SEED-191)
 status: completed
 stopped_at: Phase 234 complete — all phases complete
-last_updated: "2026-10-06T04:40:04.971Z"
-state_head: bf89f68a17f997627910d9e4463d1e8215276647
+last_updated: "2026-10-06T14:04:54.603Z"
+state_head: 21fdebd2dc37235c5e093b82b9b9b407d7678b93
 progress:
   total_phases: 7
   completed_phases: 103
@@ -988,6 +988,7 @@ None active.
 | 261004-rre | Track Umami events for server-persisted settings controls | 2026-10-04 | 738cee6b1 | [261004-rre-track-umami-events-for-server-persisted-](./quick/261004-rre-track-umami-events-for-server-persisted-/) |
 | 261006-75v | Leaderboard card declutter: puzzle icon, qualify divider, info popover, podium viewer highlight, medal count | 2026-10-06 | 6cd678dc2 | [261006-75v-leaderboard-card-declutter-puzzle-icon-q](./quick/261006-75v-leaderboard-card-declutter-puzzle-icon-q/) |
 | 261006-95o | Replace accuracy bullseye icon with info popover explaining Accuracy and move qualities | 2026-10-06 | bf89f68a1 | [261006-95o-replace-accuracy-bullseye-icon-with-info](./quick/261006-95o-replace-accuracy-bullseye-icon-with-info/) |
+| 126 | Mobile header: settings cogwheel left of the page title | 2026-10-06 | 21fdebd2d | — |
 
 ## Deferred Items
 
