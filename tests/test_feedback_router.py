@@ -2,6 +2,7 @@
 
 Coverage:
 - TestFeedbackPersist: 201 response + row written (D-04)
+- TestFeedbackSource: source persisted ('floating_button' default, 'milestone_ask'), unknown -> 422
 - TestFeedbackValidation: empty text → 422; over-max text → 422 (D-03/D-07)
 - TestFeedbackRateLimit: 6th submission within window → 429 (D-07)
 - TestFeedbackGuest: guest user can submit feedback → 201 (D-08)
@@ -14,8 +15,13 @@ import uuid
 import httpx
 import pytest
 import pytest_asyncio
+from sqlalchemy import func, select
 
+# Resolve the session maker at call time via the module: conftest swaps
+# db_module.async_session_maker for the per-run test DB.
+from app.core import database as db_module
 from app.main import app
+from app.models.feedback import Feedback
 from app.schemas.feedback import _MAX_FEEDBACK_LEN
 
 
@@ -91,6 +97,82 @@ class TestFeedbackPersist:
             resp = await client.post("/api/feedback", json=body, headers=auth_headers)
 
         assert resp.status_code == 201
+
+
+# ---------------------------------------------------------------------------
+# TestFeedbackSource — SEED-191 #9 (source written end to end)
+# ---------------------------------------------------------------------------
+
+
+async def _register_fresh_user(client: httpx.AsyncClient) -> tuple[int, dict[str, str]]:
+    """Register a dedicated user (own rate-limit bucket); return (user_id, auth headers)."""
+    email = f"feedback_source_{uuid.uuid4().hex[:8]}@example.com"
+    password = "testpassword123"
+    reg = await client.post("/api/auth/register", json={"email": email, "password": password})
+    login = await client.post("/api/auth/jwt/login", data={"username": email, "password": password})
+    return int(reg.json()["id"]), {"Authorization": f"Bearer {login.json()['access_token']}"}
+
+
+async def _stored_source(feedback_id: int) -> str:
+    async with db_module.async_session_maker() as session:
+        result = await session.execute(select(Feedback.source).where(Feedback.id == feedback_id))
+        return result.scalar_one()
+
+
+async def _feedback_count(user_id: int) -> int:
+    async with db_module.async_session_maker() as session:
+        result = await session.execute(
+            select(func.count()).select_from(Feedback).where(Feedback.user_id == user_id)
+        )
+        return int(result.scalar_one())
+
+
+class TestFeedbackSource:
+    """POST /api/feedback persists where the submission came from."""
+
+    @pytest.mark.asyncio
+    async def test_body_without_source_stores_floating_button(self) -> None:
+        """A stale SPA bundle never sends source; the row records 'floating_button'."""
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=app), base_url="http://test"
+        ) as client:
+            _, headers = await _register_fresh_user(client)
+            resp = await client.post("/api/feedback", json=_STANDARD_FEEDBACK_BODY, headers=headers)
+
+        assert resp.status_code == 201
+        assert await _stored_source(resp.json()["id"]) == "floating_button"
+
+    @pytest.mark.asyncio
+    async def test_milestone_ask_source_is_stored(self) -> None:
+        """source 'milestone_ask' from the ask's modal lands in feedback.source."""
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=app), base_url="http://test"
+        ) as client:
+            _, headers = await _register_fresh_user(client)
+            resp = await client.post(
+                "/api/feedback",
+                json={**_STANDARD_FEEDBACK_BODY, "source": "milestone_ask"},
+                headers=headers,
+            )
+
+        assert resp.status_code == 201
+        assert await _stored_source(resp.json()["id"]) == "milestone_ask"
+
+    @pytest.mark.asyncio
+    async def test_unknown_source_returns_422_and_writes_no_row(self) -> None:
+        """A source outside the Literal is rejected before any SQL runs."""
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=app), base_url="http://test"
+        ) as client:
+            user_id, headers = await _register_fresh_user(client)
+            resp = await client.post(
+                "/api/feedback",
+                json={**_STANDARD_FEEDBACK_BODY, "source": "bogus"},
+                headers=headers,
+            )
+
+        assert resp.status_code == 422
+        assert await _feedback_count(user_id) == 0
 
 
 # ---------------------------------------------------------------------------

@@ -14,11 +14,19 @@ import {
 import { Button } from '@/components/ui/button';
 import { useFeedback } from '@/hooks/useFeedback';
 import { MAX_RATING } from '@/types/feedback';
+import type { FeedbackSource } from '@/types/feedback';
 
 interface FeedbackModalProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  /** Textarea placeholder; defaults to DEFAULT_FEEDBACK_PLACEHOLDER (the floating button's). */
+  placeholder?: string;
+  /** Submission origin sent to the server; defaults to the floating button. */
+  source?: FeedbackSource;
 }
+
+const DEFAULT_FEEDBACK_PLACEHOLDER =
+  'Tell us what you think about FlawChess or this page in particular';
 
 const STAR_VALUES = Array.from({ length: MAX_RATING }, (_, i) => i + 1);
 
@@ -35,7 +43,12 @@ function getErrorMessage(error: Error): string {
   return "Couldn't send your feedback. Something went wrong. Please try again in a moment.";
 }
 
-export function FeedbackModal({ open, onOpenChange }: FeedbackModalProps) {
+export function FeedbackModal({
+  open,
+  onOpenChange,
+  placeholder,
+  source = 'floating_button',
+}: FeedbackModalProps) {
   const loc = useLocation();
   const [text, setText] = useState('');
   const [rating, setRating] = useState<number | undefined>(undefined);
@@ -56,7 +69,7 @@ export function FeedbackModal({ open, onOpenChange }: FeedbackModalProps) {
 
     setSubmitError(null);
     mutate(
-      { text: text.trim(), rating, page_url },
+      { text: text.trim(), rating, page_url, source },
       {
         onSuccess: () => {
           toast('Thanks for the feedback!');
@@ -113,7 +126,7 @@ export function FeedbackModal({ open, onOpenChange }: FeedbackModalProps) {
               data-testid="feedback-text"
               aria-required="true"
               aria-label="Your feedback"
-              placeholder="Tell us what you think about FlawChess or this page in particular"
+              placeholder={placeholder ?? DEFAULT_FEEDBACK_PLACEHOLDER}
               rows={4}
               value={text}
               onChange={(e) => setText(e.target.value)}

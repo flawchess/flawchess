@@ -443,18 +443,18 @@ Hippo asks once a user reaches 5 active days, on whichever surface they hit firs
 
 **Depends on**: Nothing (standalone)
 **Requirements**: FBASK-01..FBASK-10 (defined in 234-RESEARCH.md "Phase Requirements"; coverage contract also CONTEXT.md D-01..D-05)
-**Plans:** 4 plans
+**Plans:** 4/4 plans complete
 
 Plans:
 **Wave 1**
-- [ ] 234-01-PLAN.md — Backend: users.prompt_state + feedback.source migration, server-decided eligibility on GET/PUT profile, atomic view/snooze/done via POST /users/me/feedback-ask (tracer)
-- [ ] 234-02-PLAN.md — Frontend: shared Hilda FeedbackAskBubble on the Import page (tracer), FeedbackModal source/placeholder props, profile refresh after any feedback
+- [x] 234-01-PLAN.md — Backend: users.prompt_state + feedback.source migration, server-decided eligibility on GET/PUT profile, atomic view/snooze/done via POST /users/me/feedback-ask (tracer)
+- [x] 234-02-PLAN.md — Frontend: shared Hilda FeedbackAskBubble on the Import page (tracer), FeedbackModal source/placeholder props, profile refresh after any feedback
 
 **Wave 2** *(blocked on Wave 1 completion)*
-- [ ] 234-03-PLAN.md — "Sure!" end to end: feedback.source attribution on POST /api/feedback (tracer), app-level feedback modal host that survives the bubble unmounting
+- [x] 234-03-PLAN.md — "Sure!" end to end: feedback.source attribution on POST /api/feedback (tracer), app-level feedback modal host that survives the bubble unmounting
 
 **Wave 3** *(blocked on Wave 2 completion)*
-- [ ] 234-04-PLAN.md — Train landing (after the intro, phones included) and Bots roster surfaces, CHANGELOG, phase pre-merge gate
+- [x] 234-04-PLAN.md — Train landing (after the intro, phones included) and Bots roster surfaces, CHANGELOG, phase pre-merge gate
 
 Phase detail for every shipped milestone lives in `milestones/vX.Y-ROADMAP.md`, its phase directories in `milestones/vX.Y-phases/`, and the per-milestone summaries in [MILESTONES.md](MILESTONES.md).
 

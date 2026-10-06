@@ -2,8 +2,10 @@
 
 One row per (user_id, UTC activity_date). The middleware writer is hour-throttled,
 so `activity_count` counts distinct active hours that day (1-24 range). Read by
-`app/services/activity_queries.py` for the superuser-only /activity dashboard;
-the model itself stays write-only (the middleware is its sole writer).
+`app/services/activity_queries.py` for the superuser-only /activity dashboard and
+by `app/repositories/feedback_ask_repository.py` (per-user active-day count for the
+milestone feedback ask); the model itself stays write-only (the middleware is its
+sole writer).
 """
 
 import datetime

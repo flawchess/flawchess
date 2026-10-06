@@ -23,6 +23,7 @@ import type { ReactElement } from 'react';
 import { format, parseISO } from 'date-fns';
 import { Link } from 'react-router';
 import { Button } from '@/components/ui/button';
+import { FeedbackAskBubble } from '@/components/feedback/FeedbackAskBubble';
 import { EmptyState } from '@/components/ui/empty-state';
 import { LoadError } from '@/components/ui/load-error';
 import { TRAIN_BUTTON_CLASS, TRAIN_CTA_BUTTON_CLASS } from '@/components/train/buttonStyles';
@@ -77,6 +78,10 @@ export interface TrainStartScreenProps {
    * registered account without games gets the import ask + "Import games"
    * button in the host bubble instead of the reminder ask. */
   hasGames: boolean;
+  /** Phase 234 (SEED-191): non-null while the server says the milestone feedback
+   * ask is active, the user's active days for Hilda's copy. From
+   * `feedbackAskDays(useUserProfile().data)`. */
+  feedbackAskDays: number | null;
 }
 
 /**
@@ -214,15 +219,22 @@ function resolveLandingState(
  * the phone app. Strict `=== false`: while settings are still loading the
  * sentence stays hidden rather than flashing in and out. Guests never see it
  * (they get the sign-up ask, and D-13 gives a guest no reminder slot).
+ *
+ * Phase 234 (D-04, SEED-191): once the intro stepper is completed and the
+ * milestone feedback ask is active, Hilda's `FeedbackAskBubble` replaces the
+ * whole host bubble (daily rotating host plus the sign-up/import/reminder
+ * asks), on phones too. Tank's intro is never displaced.
  */
 function TrainHeader({
   session,
   isGuest,
   hasGames,
+  feedbackAskDays,
 }: {
   session: TrainSessionResponse | null;
   isGuest: boolean;
   hasGames: boolean;
+  feedbackAskDays: number | null;
 }): ReactElement {
   const { data: settings } = useTrainSettings();
   const host = landingHost({
@@ -241,21 +253,38 @@ function TrainHeader({
   // are repeated on the session score screen. Gated on loaded settings so a
   // returning user's bubble never flashes in before hiding.
   const isIntroHost = settings != null && settings.intro_seen_at == null;
+  // D-04: Tank's intro wins; Hilda takes the host only once the intro stepper is
+  // completed. Requiring LOADED settings also means no view is counted on a
+  // render that would flip to Tank a moment later.
+  const introDone = settings?.intro_seen_at != null;
+  const askDays = introDone ? feedbackAskDays : null;
   return (
-    <div className={cn('w-full', !isIntroHost && 'max-sm:hidden')} data-testid="train-landing-host">
-      <TrainBotBubble
-        persona={host.persona}
-        state="prompt"
-        avatarSize="large"
-        actions={landingActions(isGuest, showImportAsk)}
-      >
-        <p data-testid="train-tagline">{host.copy}</p>
-        {isGuest && <p data-testid="train-landing-signup-ask">{GUEST_SIGNUP_ASK_SCORE}</p>}
-        {showImportAsk && <p data-testid="train-landing-import-ask">{IMPORT_ASK_LANDING}</p>}
-        {showReminderAsk && (
-          <p data-testid="train-landing-reminder-ask">{REMINDER_INSTALL_ASK}</p>
-        )}
-      </TrainBotBubble>
+    <div
+      // SEED-191 #3: the ask shows on phones while active, accepting that it
+      // pushes the streak card down; otherwise the phone-hiding rule is unchanged.
+      className={cn('w-full', !isIntroHost && askDays == null && 'max-sm:hidden')}
+      data-testid="train-landing-host"
+    >
+      {askDays != null ? (
+        // SEED-191 #10: the ask takes the whole bubble, so it outranks the
+        // reminder-install ask (shown indefinitely to anyone without a phone
+        // push subscription) and the import ask.
+        <FeedbackAskBubble surface="train-landing" activeDays={askDays} avatarSize="large" />
+      ) : (
+        <TrainBotBubble
+          persona={host.persona}
+          state="prompt"
+          avatarSize="large"
+          actions={landingActions(isGuest, showImportAsk)}
+        >
+          <p data-testid="train-tagline">{host.copy}</p>
+          {isGuest && <p data-testid="train-landing-signup-ask">{GUEST_SIGNUP_ASK_SCORE}</p>}
+          {showImportAsk && <p data-testid="train-landing-import-ask">{IMPORT_ASK_LANDING}</p>}
+          {showReminderAsk && (
+            <p data-testid="train-landing-reminder-ask">{REMINDER_INSTALL_ASK}</p>
+          )}
+        </TrainBotBubble>
+      )}
     </div>
   );
 }
@@ -340,6 +369,7 @@ export function TrainStartScreen({
   onSettingsSaved,
   isGuest,
   hasGames,
+  feedbackAskDays,
 }: TrainStartScreenProps): ReactElement {
   const state = resolveLandingState(session, isLoading, isError, sessionScore);
   const progress = useTrainProgress();
@@ -377,7 +407,12 @@ export function TrainStartScreen({
       <div className={LANDING_CONTAINER_CLASS} data-testid="train-start-screen">
         <TrainMedalDialogHost isGuest={isGuest} />
         <TrainReminderResurfaceBanner />
-        <TrainHeader session={session} isGuest={isGuest} hasGames={hasGames} />
+        <TrainHeader
+          session={session}
+          isGuest={isGuest}
+          hasGames={hasGames}
+          feedbackAskDays={feedbackAskDays}
+        />
         <TrainStreakCard />
         <TrainScheduleSettings
           onSaved={onSettingsSaved}
@@ -407,7 +442,12 @@ export function TrainStartScreen({
     <div className={LANDING_CONTAINER_CLASS} data-testid="train-start-screen">
       <TrainMedalDialogHost isGuest={isGuest} />
       <TrainReminderResurfaceBanner />
-      <TrainHeader session={session} isGuest={isGuest} hasGames={hasGames} />
+      <TrainHeader
+          session={session}
+          isGuest={isGuest}
+          hasGames={hasGames}
+          feedbackAskDays={feedbackAskDays}
+        />
       <TrainStreakCard
         action={
           <Button

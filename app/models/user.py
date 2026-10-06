@@ -1,7 +1,7 @@
 """User model for FastAPI-Users with integer primary key and OAuth accounts."""
 
 from datetime import datetime
-from typing import List
+from typing import Any, List
 
 from fastapi_users.db import SQLAlchemyBaseUserTable
 from sqlalchemy import Boolean, DateTime, Integer, String, func, text
@@ -109,6 +109,18 @@ class User(SQLAlchemyBaseUserTable[int], Base):
     # `IS NULL` predicate does not match (the first-write-wins guard would break).
     first_touch: Mapped[dict[str, str] | None] = mapped_column(
         JSONB(none_as_null=True), nullable=True, default=None
+    )
+
+    # --- Per-ask prompt state (Phase 234, SEED-191) ---
+    # One JSON object keyed by ask id (feedback ask = "feedback_v1"). The shape of
+    # each entry is validated by FeedbackAskState in app/schemas/feedback_ask.py
+    # instead of a DB CHECK. Written ONLY by the atomic guarded UPDATEs in
+    # app/repositories/feedback_ask_repository.py (never read-modify-write in
+    # Python). NOT NULL with a '{}' default, deliberately without none_as_null: a
+    # None must fail loudly instead of becoming a JSON null. `default=dict` covers
+    # ORM inserts (registration, guest creation, test fixtures).
+    prompt_state: Mapped[dict[str, Any]] = mapped_column(
+        JSONB, nullable=False, server_default=text("'{}'::jsonb"), default=dict
     )
 
     oauth_accounts: Mapped[List["OAuthAccount"]] = relationship(  # ty: ignore[unresolved-reference]

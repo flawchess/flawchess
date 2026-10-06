@@ -57,6 +57,7 @@ import { useBotGame, type BotGameSettings } from '@/hooks/useBotGame';
 import { useFitBoardToViewport } from '@/hooks/useFitBoardToViewport';
 import { useWinCelebrationHold } from '@/hooks/useWinCelebrationHold';
 import { useUserProfile } from '@/hooks/useUserProfile';
+import { feedbackAskDays } from '@/lib/feedbackAsk';
 import { useBotPersonaWins, BOT_PERSONA_WINS_QUERY_KEY } from '@/hooks/useBotPersonaWins';
 import { useDrainPendingStore, useStoreBotGame, toStoreRequest } from '@/hooks/useStoreBotGame';
 import { useTier1EnqueueForGame } from '@/hooks/useEnqueueGame';
@@ -790,6 +791,7 @@ export default function BotsPage(): ReactElement {
           onSelectPersona={setDetailPersona}
           onSelectCustom={() => setShowCustomSetup(true)}
           winsByPersona={winsByPersona}
+          feedbackAskDays={feedbackAskDays(profile)}
         />
         <PersonaDetailSurface
           persona={detailPersona}

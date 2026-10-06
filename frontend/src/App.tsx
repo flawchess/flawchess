@@ -23,6 +23,7 @@ import { BotGameMobileBar } from '@/components/bots/BotGameMobileBar';
 import { AuthProvider, useAuth } from '@/hooks/useAuth';
 import { InstallPromptBanner } from '@/components/install/InstallPromptBanner';
 import { FeedbackButton } from '@/components/feedback/FeedbackButton';
+import { FeedbackAskModalHost } from '@/components/feedback/FeedbackAskModalHost';
 import { ImpersonationPill } from '@/components/admin/ImpersonationPill';
 import { useUserProfile } from '@/hooks/useUserProfile';
 import { AuthPage } from '@/pages/Auth';
@@ -830,6 +831,10 @@ function ProtectedLayout() {
         <div className="hidden md:block">
           <FeedbackButton />
         </div>
+        {/* Phase 234: the milestone ask's modal opens on every viewport (phones
+            included, where the button above is hidden), so it sits outside the
+            wrapper. Renders nothing while closed. */}
+        <FeedbackAskModalHost />
       </>
     );
   }
@@ -852,6 +857,10 @@ function ProtectedLayout() {
           and the result dialog's actions, so it's hidden on both immersive
           board screens (`playActive`: a live bot game, the Train solve loop). */}
       {!playActive && <FeedbackButton />}
+      {/* Phase 234: the milestone ask's modal must not be gated on `playActive`
+          (it opens from a bubble, never during play) and renders nothing while
+          closed. */}
+      <FeedbackAskModalHost />
     </>
   );
 }

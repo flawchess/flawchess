@@ -42,7 +42,7 @@ async def push_sentry_signal(session: AsyncSession, user: User, data: FeedbackCr
     """Derive cohort context from the authenticated user and emit a Sentry push signal.
 
     Uses capture_message (non-exception, D-05) with a static message string.
-    Variable data goes in tags (filterable: source/platform/elo_bucket) and
+    Variable data goes in tags (filterable: source/feedback_source/platform/elo_bucket) and
     set_context (structured: user_id/page_url/rating). Never embed variables
     in the message string — that would fragment Sentry grouping (CLAUDE.md rule,
     Pitfall 2 from RESEARCH.md).
@@ -65,6 +65,9 @@ async def push_sentry_signal(session: AsyncSession, user: User, data: FeedbackCr
 
     # Set tags (filterable dimensions for Sentry cohort filtering per D-05)
     sentry_sdk.set_tag("source", "feedback")
+    # Distinct tag (not an overload of "source"): one of two enumerated literals, so it
+    # cannot fragment grouping.
+    sentry_sdk.set_tag("feedback_source", data.source)
     sentry_sdk.set_tag("platform", platform)
     sentry_sdk.set_tag("elo_bucket", str(bucket) if bucket is not None else "unknown")
 

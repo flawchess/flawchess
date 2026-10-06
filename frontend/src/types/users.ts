@@ -21,6 +21,16 @@ export interface CurrentStrength {
   rung: CurrentStrengthRung | null;
 }
 
+/** Phase 234 (SEED-191): the server-decided milestone feedback ask. There is no
+ * round field because D-02 keeps one copy for both rounds; the client only
+ * renders when `active` is true (false for guests and impersonation). */
+export interface FeedbackAskView {
+  active: boolean;
+}
+
+/** Body of POST /users/me/feedback-ask (Phase 234). */
+export type FeedbackAskAction = 'view' | 'snooze' | 'done';
+
 export interface UserProfile {
   email: string;
   is_superuser: boolean;
@@ -47,4 +57,9 @@ export interface UserProfile {
   // back to 1500. UI DEFAULT ONLY — never fed into bot move selection
   // (BOT-03).
   current_strength: CurrentStrength | null;
+  // Phase 234 (SEED-191): distinct UTC activity days up to and including today,
+  // the number quoted in the ask copy.
+  active_days: number;
+  // Phase 234 (SEED-191): whether Hilda's feedback ask should show right now.
+  feedback_ask: FeedbackAskView;
 }
