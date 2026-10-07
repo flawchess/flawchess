@@ -4,7 +4,7 @@ status: dormant
 planted: 2026-10-07
 planted_during: ad-hoc prod analysis of a contradictory Train reveal (user 28, no phase; current phase 234)
 trigger_when: next Train phase, or any change to Train grading / puzzle classification; plan as its own GSD phase
-scope: medium (one phase for the client/server grading fix; the classification measurement may spawn a follow-up)
+scope: medium (one phase: steps 1-3; step 4 is monitoring via the step-3 disagreement flag, hardening only as a follow-up)
 ---
 
 # SEED-192: Train grading anchored to the server answer key (sharp-puzzle server/client mismatch)
@@ -103,6 +103,22 @@ and hash-dependent (SEED-130: the browser never clears its TT).
   `esAfter` mixes horizons (`gradeMoveInner`).
 - Never mix server and client evals in one drop (server +401 vs phone +190 for
   the same Qh4 would manufacture fake mistakes).
+- **Server-graded runner-up (refinement, 2026-10-07):** for SR items the blob
+  also stores the second-best move (`su`, with eval `s`). On a sharp puzzle
+  `su` is a mistake by construction, so a played move == `su` can be graded
+  server-side from the server's own `b`/`s` evals with no client search,
+  keeping verdict and grade consistent. This is a small extension of the
+  existing key-move override (`_override_for_key_move`), which today is empty
+  on sharp puzzles. It does NOT cover moves the server never evaluated (b3
+  here), so 2-3 are still needed for every other move.
+- **Runner-up as a contradiction signal:** a sharp verdict claims no non-key
+  move beats `su`. If the client rates the played move clearly above `su`
+  (client engine on both sides, after-move searches), the server's ranking is
+  demonstrably wrong (here b3 beats d1d5 at every depth >= 18). Candidate
+  extra trigger for step 3.
+- Herring puzzles already have a server-certified ladder; sharp-filler puzzles
+  (lichess CC0) have only the solution move, but lichess verifies uniqueness
+  deeply, so they are low risk.
 - Under option 1(a) the after-key search can only start once the key is known;
   under 1(b) it can run during the think phase like today's mount search.
 
@@ -122,17 +138,23 @@ move is within the good band of the key.
   a confirmed disagreement retroactively flip the guess verdict or the puzzle's
   type after the re-check?
 
-### 4. Measure, then harden the sharp classification (root cause)
+### 4. Watch the step-3 disagreement rate; harden only if it is high
 
-- Measurement first (cheap, decides the scope): sample N sharp puzzles from
-  the live pool (all three sources), re-search node 0 at a deep fixed depth
-  (~28, MultiPV 2-3, clean hash) and count how many flip to soft (runner-up
-  gap < `SHARP_GAP_ES`) or drop into the dead band.
-- Small flip rate -> the disagreement flags from 3 plus a worker-fleet deep
-  re-check are enough.
-- Large flip rate -> sharp puzzles need a deeper verification search before
-  pool entry (worker fleet has headroom, see
-  project_remote_workers_cover_pool), or the runner-up search budget must rise.
+Owner decision 2026-10-07: no separate measurement or classification
+hardening in this phase. The server's BEST move is strong (depth 30 agrees on
+Qh4); the weak point is only the runner-up eval behind the sharp verdict, and
+one case does not establish a rate.
+
+- The step-3 disagreement flag is the measurement, for free, from real prod
+  solves. Make sure it is queryable (which puzzle, played move, both client
+  evals) so a later review can count it per source.
+- Low rate -> server classification stays as is.
+- High rate -> a follow-up seed/phase for deeper verification of sharp
+  puzzles before pool entry (worker fleet has headroom, see
+  project_remote_workers_cover_pool) or a larger runner-up search budget.
+- The offline deep-search sample (re-search node 0 of N sharp puzzles at
+  depth ~28 and count flips) stays available as a fallback if the prod signal
+  is ambiguous.
 
 ## Breadcrumbs
 
