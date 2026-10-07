@@ -109,6 +109,9 @@ async def compose_or_resume_session(
                 fen=p.fen,
                 side_to_move=p.side_to_move,
                 last_move_uci=p.last_move_uci,
+                key_move_uci=p.key_move_uci,
+                puzzle_type=p.puzzle_type,
+                runner_up_uci=p.runner_up_uci,
             )
         )
     solved_results = [
@@ -164,6 +167,8 @@ async def solve_puzzle(
             telemetry=(
                 body.telemetry.model_dump(exclude_none=True) if body.telemetry is not None else None
             ),
+            # Phase 235 (D-14/D-17): the already-validated re-check record, or None.
+            recheck=body.recheck,
         )
     except Exception:
         await session.rollback()
@@ -189,6 +194,7 @@ async def solve_puzzle(
         vetted_moves=[VettedMove(uci=v.uci, quality=v.quality) for v in recorded.vetted_moves],
         graded_es_before=recorded.graded_es_before,
         graded_es_after=recorded.graded_es_after,
+        disagreement=recorded.disagreement,
     )
 
 

@@ -28,9 +28,10 @@ import io
 import math
 import random
 from collections.abc import Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Any, Literal, TypeVar
 
+import chess
 import chess.pgn
 from sqlalchemy import (
     Float,
@@ -58,6 +59,7 @@ from app.models.game_flaw import GameFlaw
 from app.models.game_position import GamePosition
 from app.models.herring_pool import HerringPool
 from app.repositories.query_utils import mover_color_expr, player_only_gate
+from app.services.best_move_candidates import mover_color_for_ply
 from app.services.eval_utils import LICHESS_K, eval_cp_to_expected_score
 from app.services.flaws_service import (
     BLUNDER_DROP,
@@ -187,6 +189,10 @@ HERRING_DEGENERATE_MIN_GAP_ES: float = 0.02
 # (avoid-the-blunder). Never an entry gate — see classify_puzzle_type.
 PuzzleType = Literal["sharp", "soft"]
 
+# Phase 235 (SEED-192, D-05): the WIRE puzzle type on the pre-attempt payload —
+# PuzzleType plus the red-herring source. A sharp filler reads "sharp".
+TrainPuzzleType = Literal["sharp", "soft", "herring"]
+
 
 def expected_score_sql(cp_col: Any, mate_col: Any, user_color_col: Any) -> ColumnElement[float]:
     """SQL twin of `eval_cp_to_expected_score` / `eval_mate_to_expected_score`.
@@ -306,6 +312,113 @@ def classify_puzzle_type(
     if best_es is None or second_es is None:
         return "soft"
     return "sharp" if best_es - second_es >= SHARP_GAP_ES else "soft"
+
+
+@dataclass(frozen=True)
+class PuzzleAnswerKey:
+    """The server's answer key for one puzzle (Phase 235, SEED-192, D-05/D-06/D-19).
+
+    The single derivation shared by session composition (plan 01) and the solve
+    path (plan 03), so the two can never derive the key two different ways.
+
+    `key_uci` is the move the puzzle is graded against (None = no usable key,
+    D-07); `puzzle_type` is the wire type; `runner_up_uci` is the blob's
+    second-best move for a SHARP SR item only (D-19), else None.
+    """
+
+    key_uci: str | None
+    puzzle_type: TrainPuzzleType
+    runner_up_uci: str | None
+
+
+def _non_empty_str(value: object) -> str | None:
+    """Return `value` when it is a non-empty str, else None."""
+    return value if isinstance(value, str) and value else None
+
+
+def _herring_key(ladder: list[Any] | None) -> str | None:
+    """The red herring's key: `ladder[0].move_uci` (a deep-best-first ladder)."""
+    if not ladder:
+        return None
+    top = ladder[0]
+    if not isinstance(top, dict):
+        return None
+    return _non_empty_str(top.get("move_uci"))
+
+
+def _sharp_runner_up(missed_pv_lines: list[Any] | None) -> str | None:
+    """Node 0's `su` (white-POV second-best UCI), or None.
+
+    D-19: the empty-string `su` is the "no legal second move" sentinel, so it
+    reads as no runner-up.
+    """
+    if not missed_pv_lines:
+        return None
+    node = missed_pv_lines[0]
+    if not isinstance(node, dict):
+        return None
+    return _non_empty_str(node.get("su"))
+
+
+def answer_key_for(
+    *,
+    source: int,
+    ply: int,
+    missed_pv_lines: list[Any] | None,
+    best_move: str | None,
+    ladder: list[Any] | None,
+    filler_solution_uci: str | None,
+) -> PuzzleAnswerKey:
+    """Derive `(key, puzzle_type, runner_up)` for one puzzle from the data the server owns.
+
+    Pure, never raises. Per source: a red herring's key is the top of its
+    stored ladder (type "herring"); a sharp filler's key is its CSV
+    `solution_uci` (type "sharp"); an SR item's key is
+    `game_positions.best_move` at the flaw ply, its type is
+    `classify_puzzle_type(live blob, ply-parity mover)` (never a stored color,
+    matching `_classify_and_certify_solve`), and its runner-up is the blob's
+    `su` only when the type is "sharp" (D-19).
+
+    Callers pass `missed_pv_lines`/`best_move` only for an SR item and
+    `ladder` only for a herring — a herring row can share (user, game, ply)
+    with the user's own `game_flaws` row and must not be read as an SR blob.
+    """
+    if source == DrillSource.RED_HERRING:
+        return PuzzleAnswerKey(_herring_key(ladder), "herring", None)
+    if source == DrillSource.SHARP_FILLER:
+        return PuzzleAnswerKey(_non_empty_str(filler_solution_uci), "sharp", None)
+    puzzle_type = classify_puzzle_type(missed_pv_lines, mover_color_for_ply(ply))
+    runner_up = _sharp_runner_up(missed_pv_lines) if puzzle_type == "sharp" else None
+    return PuzzleAnswerKey(_non_empty_str(best_move), puzzle_type, runner_up)
+
+
+def _legal_in(board: chess.Board, uci: str | None) -> str | None:
+    """`uci` when it parses and is legal on `board`, else None."""
+    if uci is None:
+        return None
+    try:
+        move = chess.Move.from_uci(uci)
+    except ValueError:
+        return None
+    return uci if move in board.legal_moves else None
+
+
+def legal_answer_key(key: PuzzleAnswerKey, fen: str) -> PuzzleAnswerKey:
+    """Null any key / runner-up that is not a legal move in the served `fen` (D-07).
+
+    A key the client cannot play is sent as null and the client falls back to
+    today's root-search grading. An unparseable FEN nulls both. `puzzle_type`
+    is never changed.
+    """
+    try:
+        board = chess.Board(fen)
+    except ValueError:
+        return replace(key, key_uci=None, runner_up_uci=None)
+    return replace(
+        key,
+        key_uci=_legal_in(board, key.key_uci),
+        runner_up_uci=_legal_in(board, key.runner_up_uci),
+    )
 
 
 @dataclass(frozen=True)
@@ -457,6 +570,72 @@ def vetted_moves_from_pv_node(
         best_entry = VettedMove(uci=best_uci, quality="best", es_before=best_es, es_after=best_es)
         return [best_entry, vetted]
     return [vetted]
+
+
+@dataclass(frozen=True)
+class ServerGradedMove:
+    """A move whose grade the SERVER owns (Phase 235, SEED-192, D-02).
+
+    Every Phase 211 vetted entry plus the sharp runner-up. Never displayed: the
+    display list stays `SolveResponse.vetted_moves`, because a sharp runner-up
+    is a mistake by construction and must not render as "Also fine".
+
+    `es_before` is the best move's mover-POV expected score, `es_after` this
+    move's own; `tier` is the recorded move quality.
+    """
+
+    uci: str
+    tier: Literal["good", "inaccuracy", "wrong"]
+    es_before: float
+    es_after: float
+
+
+def graded_moves_from_vetted(vetted: list[VettedMove]) -> list[ServerGradedMove]:
+    """Map vetted entries to graded moves, order kept; "best" collapses to "good".
+
+    The collapse used to live inline in `record_solve`: "best" is the deep best
+    move and is recorded as a plain "good" tier.
+    """
+    return [
+        ServerGradedMove(
+            uci=entry.uci,
+            tier="inaccuracy" if entry.quality == "inaccuracy" else "good",
+            es_before=entry.es_before,
+            es_after=entry.es_after,
+        )
+        for entry in vetted
+    ]
+
+
+def sharp_runner_up_graded_move(
+    node: Any, mover_color: Literal["white", "black"], *, key_uci: str | None
+) -> ServerGradedMove | None:
+    """Grade a sharp node's runner-up `su` from the blob's own b/s evals (D-02).
+
+    The runner-up is graded the way a Phase 211 key move is: `classify_severity`
+    of the best-vs-second gap (in practice "wrong", a sharp gap is
+    `>= SHARP_GAP_ES` = MISTAKE_DROP). None for a non-dict node, an absent,
+    empty or non-str `su`, a `su` equal to the key (the key is never graded as
+    a mistake), or evals that do not resolve.
+    """
+    if not isinstance(node, dict):
+        return None
+    su = node.get("su")
+    if not isinstance(su, str) or su == "" or su == key_uci:
+        return None
+    best_es = expected_score_for(node.get("b"), node.get("bm"), mover_color)
+    second_es = expected_score_for(node.get("s"), node.get("sm"), mover_color)
+    if best_es is None or second_es is None:
+        return None
+    severity = classify_severity(best_es - second_es)
+    tier: Literal["good", "inaccuracy", "wrong"]
+    if severity is None:
+        tier = "good"
+    elif severity == "inaccuracy":
+        tier = "inaccuracy"
+    else:
+        tier = "wrong"
+    return ServerGradedMove(uci=su, tier=tier, es_before=best_es, es_after=second_es)
 
 
 def answer_key_present(col: Any) -> ColumnElement[bool]:
@@ -1291,8 +1470,12 @@ __all__ = [
     "SECOND_BEST_WINNING_FLOOR_CP",
     "SHARP_GAP_ES",
     "WINNABILITY_FLOOR_ES",
+    "PuzzleAnswerKey",
     "PuzzleType",
+    "ServerGradedMove",
+    "TrainPuzzleType",
     "VettedMove",
+    "answer_key_for",
     "answer_key_pending",
     "answer_key_present",
     "blob_pending_stmt",
@@ -1303,10 +1486,13 @@ __all__ = [
     "expected_score_sql",
     "fen_and_last_move_at_ply",
     "full_fen_at_ply",
+    "graded_moves_from_vetted",
     "herring_stmt",
+    "legal_answer_key",
     "pick_one_per_game",
     "pool_entry_stmt",
     "second_best_not_winning_admissible",
+    "sharp_runner_up_graded_move",
     "vetted_moves_from_ladder",
     "vetted_moves_from_pv_node",
 ]

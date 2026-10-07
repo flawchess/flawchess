@@ -31,7 +31,12 @@ import { animateScrollTop } from '@/lib/animatedScroll';
 import { BY_TEMPERAMENT, introStepCount, WALKTHROUGH_STEP_COUNT } from '@/lib/trainBotCopy';
 import { PERSONA_REGISTRY } from '@/lib/personas/personaRegistry';
 import { useTrainSession } from '@/hooks/useTrainSession';
-import { useTrainGradingEngine } from '@/hooks/useTrainGradingEngine';
+import {
+  TRAIN_RECHECK_MAX_NODES,
+  TRAIN_RECHECK_MOVETIME_MS,
+  TRAIN_RECHECK_TIMEOUT_MS,
+  useTrainGradingEngine,
+} from '@/hooks/useTrainGradingEngine';
 import { readTrainRevealCache, type CachedTrainReveal } from '@/lib/trainRevealCache';
 import type {
   ReviewTelemetry,
@@ -133,6 +138,10 @@ vi.mock('@/components/board/ChessBoard', () => ({
           stays on today's cross-oracle path). */}
       <button data-testid="drop-b1c3" onClick={() => onPieceDrop('b1', 'c3')}>
         b1c3
+      </button>
+      {/* Phase 235 (D-19): the sharp runner-up c2c4 of the re-check tests. */}
+      <button data-testid="drop-c2c4" onClick={() => onPieceDrop('c2', 'c4')}>
+        c2c4
       </button>
     </div>
   ),
@@ -286,6 +295,39 @@ class FakeWorker {
 
   private emit(data: string): void {
     this.onmessage?.(new MessageEvent('message', { data }));
+  }
+}
+
+/**
+ * Phase 235 (D-20): a FakeWorker that HOLDS the reply to any disagreement
+ * re-check search (`go movetime ${TRAIN_RECHECK_MOVETIME_MS} `) until
+ * `release()` is called, so a test can observe the wait or let it time out.
+ * Real Stockfish answers a `stop` with a bestmove, so held replies are also
+ * released on `stop` (that is how the dispatch queue drains after a timeout).
+ */
+class GatedRecheckWorker extends FakeWorker {
+  private heldGo: string[] = [];
+
+  postMessage(msg: string | { progressPort: unknown }): void {
+    if (typeof msg === 'string') {
+      if (msg.startsWith(`go movetime ${TRAIN_RECHECK_MOVETIME_MS} `)) {
+        this.heldGo.push(msg);
+        return;
+      }
+      if (msg === 'stop') this.release();
+    }
+    super.postMessage(msg);
+  }
+
+  /** Number of re-check searches currently held. */
+  get heldCount(): number {
+    return this.heldGo.length;
+  }
+
+  release(): void {
+    const held = this.heldGo;
+    this.heldGo = [];
+    for (const go of held) super.postMessage(go);
   }
 }
 
@@ -613,6 +655,204 @@ describe('TrainSolveScreen — progress, last move, grading state, engine failur
     fireEvent.click(screen.getByTestId('drop-d2d4')); // does not match bestmove e2e4 -> second search
     await waitFor(() => expect(screen.getByTestId('train-grading-indicator')).not.toBeNull());
     await waitFor(() => expect(screen.getByTestId('train-verdict-guess')).not.toBeNull());
+  });
+
+  it('keyed puzzle: grades against the server key and the best arrow names it (Phase 235)', async () => {
+    // The phone's own search would answer d7d5 for every position, and every
+    // search reads cp 19 (black POV) after a white move, so the after-key and
+    // after-e2e4 readings are identical: drop 0, GOOD. The key d2d4 is NOT any
+    // move the FakeWorker ever names as bestmove for the root position.
+    stubWorker(() => new FakeWorker('d7d5', 'd7d5'));
+    await renderScreen(
+      makePuzzle({ key_move_uci: 'd2d4', puzzle_type: 'soft', runner_up_uci: null }),
+    );
+    fireEvent.click(screen.getByTestId('btn-train-guess-critical'));
+    await act(async () => {
+      fireEvent.click(screen.getByTestId('drop-e2e4'));
+    });
+    await waitFor(() => expect(screen.getByTestId('train-verdict-guess')).not.toBeNull());
+
+    expect(solvePuzzle).toHaveBeenCalledTimes(1);
+    expect(solvePuzzle.mock.calls[0]?.[1].move_quality).toBe('good');
+
+    // The reveal's best arrow names the server key, in the best-move color.
+    const board = () => screen.getByTestId('chessboard');
+    await waitFor(() => {
+      const ucis = (board().getAttribute('data-arrow-ucis') ?? '').split(',');
+      // Colors are rgba(...) strings that contain commas, so split only on commas outside parentheses.
+      const colors = (board().getAttribute('data-arrow-colors') ?? '').split(/,(?![^()]*\))/);
+      const keyIndex = ucis.indexOf('d2d4');
+      expect(keyIndex).toBeGreaterThanOrEqual(0);
+      expect(colors[keyIndex]).toBe(TRAIN_BEST_MOVE_ARROW);
+    });
+  });
+
+  it('sharp keyed puzzle: an off-key good move is re-checked and the POST carries the record (Phase 235 D-10/D-11/D-17)', async () => {
+    // FakeWorker answers every search with the same depth-10 reading, so the
+    // 1.5 s pair grades GOOD, the sharp trigger fires, and both 3 s re-check
+    // searches answer at depth 10 too (proving they really ran).
+    const postSpy = vi.spyOn(FakeWorker.prototype, 'postMessage');
+    try {
+      stubWorker(() => new FakeWorker('d7d5', 'd7d5'));
+      await renderScreen(
+        makePuzzle({ key_move_uci: 'd2d4', puzzle_type: 'sharp', runner_up_uci: 'c2c4' }),
+      );
+      fireEvent.click(screen.getByTestId('btn-train-guess-critical'));
+      await act(async () => {
+        fireEvent.click(screen.getByTestId('drop-e2e4'));
+      });
+      await waitFor(() => expect(screen.getByTestId('train-verdict-guess')).not.toBeNull());
+
+      expect(solvePuzzle).toHaveBeenCalledTimes(1);
+      const body = solvePuzzle.mock.calls[0]?.[1];
+      expect(body?.move_quality).toBe('good');
+      expect(body?.recheck).toMatchObject({
+        v: 1,
+        outcome: 'confirmed',
+        key_depth_recheck: 10,
+        played_depth_recheck: 10,
+      });
+
+      const recheckGo = `go movetime ${TRAIN_RECHECK_MOVETIME_MS} nodes ${TRAIN_RECHECK_MAX_NODES}`;
+      const recheckPosts = postSpy.mock.calls.filter(([msg]) => msg === recheckGo);
+      expect(recheckPosts).toHaveLength(2);
+    } finally {
+      postSpy.mockRestore();
+    }
+  });
+
+  it('playing the sharp runner-up posts no recheck (D-19)', async () => {
+    const postSpy = vi.spyOn(FakeWorker.prototype, 'postMessage');
+    try {
+      stubWorker(() => new FakeWorker('d7d5', 'd7d5'));
+      await renderScreen(
+        makePuzzle({ key_move_uci: 'd2d4', puzzle_type: 'sharp', runner_up_uci: 'c2c4' }),
+      );
+      fireEvent.click(screen.getByTestId('btn-train-guess-critical'));
+      await act(async () => {
+        fireEvent.click(screen.getByTestId('drop-c2c4'));
+      });
+      await waitFor(() => expect(screen.getByTestId('train-verdict-guess')).not.toBeNull());
+
+      expect(solvePuzzle).toHaveBeenCalledTimes(1);
+      expect(solvePuzzle.mock.calls[0]?.[1]).not.toHaveProperty('recheck');
+      expect(
+        postSpy.mock.calls.filter(([msg]) => typeof msg === 'string' && msg.includes('movetime 3000')),
+      ).toHaveLength(0);
+    } finally {
+      postSpy.mockRestore();
+    }
+  });
+
+  it('a soft keyed puzzle posts no recheck (D-10)', async () => {
+    stubWorker(() => new FakeWorker('d7d5', 'd7d5'));
+    await renderScreen(
+      makePuzzle({ key_move_uci: 'd2d4', puzzle_type: 'soft', runner_up_uci: 'c2c4' }),
+    );
+    fireEvent.click(screen.getByTestId('btn-train-guess-critical'));
+    await act(async () => {
+      fireEvent.click(screen.getByTestId('drop-e2e4'));
+    });
+    await waitFor(() => expect(screen.getByTestId('train-verdict-guess')).not.toBeNull());
+
+    expect(solvePuzzle).toHaveBeenCalledTimes(1);
+    expect(solvePuzzle.mock.calls[0]?.[1]).not.toHaveProperty('recheck');
+  });
+
+  it('a stalled re-check falls back to the 1.5 s grade and posts no recheck (D-20)', async () => {
+    let gated: GatedRecheckWorker | null = null;
+    stubWorker(() => {
+      gated = new GatedRecheckWorker('d7d5', 'd7d5');
+      return gated;
+    });
+    await renderScreen(
+      makePuzzle({ key_move_uci: 'd2d4', puzzle_type: 'sharp', runner_up_uci: 'c2c4' }),
+    );
+    // Only timeouts are faked, and only once the screen is up. RTL's waitFor
+    // must not be used while they are (its drain step waits on a faked
+    // setTimeout); the FakeWorker answers in microtasks, so flushing them is enough.
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    fireEvent.click(screen.getByTestId('btn-train-guess-critical'));
+    await act(async () => {
+      fireEvent.click(screen.getByTestId('drop-e2e4'));
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    // The first re-check search is held: the POST has not happened yet, and the
+    // bubble explains the wait (D-12) instead of "Checking your move…".
+    expect((gated as GatedRecheckWorker | null)?.heldCount).toBe(1);
+    expect(solvePuzzle).not.toHaveBeenCalled();
+    expect(screen.getByTestId('train-recheck-indicator').textContent).toBe('Taking a closer look…');
+    expect(screen.queryByTestId('train-grading-indicator')).toBeNull();
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(TRAIN_RECHECK_TIMEOUT_MS);
+    });
+    // D-20 on screen: the wait copy is gone once the stalled re-check times out
+    // and the verdict renders from the 1.5 s grade.
+    expect(screen.queryByTestId('train-recheck-indicator')).toBeNull();
+    expect(screen.queryByTestId('train-grading-indicator')).toBeNull();
+    expect(screen.getByTestId('train-verdict-guess')).not.toBeNull();
+    expect(solvePuzzle).toHaveBeenCalledTimes(1);
+    const body = solvePuzzle.mock.calls[0]?.[1];
+    expect(body?.move_quality).toBe('good');
+    expect(body).not.toHaveProperty('recheck');
+  });
+
+  it('the bubble reads "Taking a closer look…" while the re-check runs, then the verdict replaces it (D-12)', async () => {
+    let gated: GatedRecheckWorker | null = null;
+    stubWorker(() => {
+      gated = new GatedRecheckWorker('d7d5', 'd7d5');
+      return gated;
+    });
+    await renderScreen(
+      makePuzzle({ key_move_uci: 'd2d4', puzzle_type: 'sharp', runner_up_uci: 'c2c4' }),
+    );
+    fireEvent.click(screen.getByTestId('btn-train-guess-critical'));
+    await act(async () => {
+      fireEvent.click(screen.getByTestId('drop-e2e4'));
+    });
+    await waitFor(() => expect(screen.getByTestId('train-recheck-indicator')).not.toBeNull());
+    expect(screen.getByTestId('train-recheck-indicator').textContent).toBe('Taking a closer look…');
+    expect(screen.queryByTestId('train-grading-indicator')).toBeNull();
+    expect(solvePuzzle).not.toHaveBeenCalled();
+
+    // Each re-check search is held in turn (key, then played); keep releasing
+    // until the whole re-check has answered and the verdict is on screen.
+    await waitFor(() => {
+      (gated as GatedRecheckWorker | null)?.release();
+      expect(screen.getByTestId('train-verdict-guess')).not.toBeNull();
+    });
+    expect(screen.queryByTestId('train-recheck-indicator')).toBeNull();
+    expect(solvePuzzle.mock.calls[0]?.[1].recheck).toBeDefined();
+  });
+
+  it('a retried solve re-sends the identical payload, recheck included, and never re-runs the re-check (D-17)', async () => {
+    const postSpy = vi.spyOn(FakeWorker.prototype, 'postMessage');
+    try {
+      solvePuzzle.mockRejectedValueOnce(new Error('network down'));
+      stubWorker(() => new FakeWorker('d7d5', 'd7d5'));
+      await renderScreen(
+        makePuzzle({ key_move_uci: 'd2d4', puzzle_type: 'sharp', runner_up_uci: 'c2c4' }),
+      );
+      fireEvent.click(screen.getByTestId('btn-train-guess-critical'));
+      await act(async () => {
+        fireEvent.click(screen.getByTestId('drop-e2e4'));
+      });
+      await waitFor(() => expect(screen.getByTestId('train-solve-error')).not.toBeNull());
+      const recheckGo = `go movetime ${TRAIN_RECHECK_MOVETIME_MS} nodes ${TRAIN_RECHECK_MAX_NODES}`;
+      const recheckPostsBefore = postSpy.mock.calls.filter(([msg]) => msg === recheckGo).length;
+      expect(recheckPostsBefore).toBe(2);
+
+      fireEvent.click(screen.getByTestId('btn-train-solve-retry'));
+      await waitFor(() => expect(screen.getByTestId('train-verdict-guess')).not.toBeNull());
+
+      expect(solvePuzzle).toHaveBeenCalledTimes(2);
+      expect(solvePuzzle.mock.calls[1]?.[1]).toEqual(solvePuzzle.mock.calls[0]?.[1]);
+      expect(solvePuzzle.mock.calls[1]?.[1].recheck).toBeDefined();
+      expect(postSpy.mock.calls.filter(([msg]) => msg === recheckGo)).toHaveLength(2);
+    } finally {
+      postSpy.mockRestore();
+    }
   });
 
   it('board holds the played-move position through grading (no flicker/remount), then snaps back to the puzzle position once the reveal opens (190-05 D-08)', async () => {

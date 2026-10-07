@@ -44,6 +44,7 @@ import dataclasses
 import datetime
 import uuid
 from collections.abc import Sequence
+from typing import Literal
 
 import pytest
 from sqlalchemy import delete, func, select, update
@@ -60,11 +61,13 @@ from app.models.game_position import GamePosition
 from app.models.herring_pool import HerringPool
 from app.models.train_settings import TrainSettings
 from app.repositories import train_repository
+from app.schemas.train import SolveRecheck
 from app.services import sharp_filler
 from app.services.sharp_filler import SharpPuzzle
 from app.services.flaws_service import classify_severity
 from app.services.train_pool import (
     MAX_ITEMS_PER_GAME_PER_SESSION,
+    ServerGradedMove,
     VettedMove,
     compose_slots,
     expected_score_for,
@@ -4035,11 +4038,23 @@ async def test_reminder_hour_check_constraint_rejects_out_of_range(
 
 
 async def _seed_open_session_with_sr_item(
-    db_session: AsyncSession, user_id: int, label: str, *, streak: int = 0
+    db_session: AsyncSession,
+    user_id: int,
+    label: str,
+    *,
+    streak: int = 0,
+    missed_pv_lines: list | None = _MISSED_PV_LINES,
+    best_move: str | None = None,
 ) -> DrillSession:
     """Seed one ACTIVE drill_items row + one open session with a single
-    unsolved SR-source drill_solves row at position 0, ready for record_solve."""
-    game_id = await _seed_flaw_game(db_session, user_id, label)
+    unsolved SR-source drill_solves row at position 0, ready for record_solve.
+
+    Phase 235: `missed_pv_lines` overrides the default soft blob and `best_move`
+    (when given) seeds the `game_positions.best_move` row at the flaw ply (the
+    SR answer key)."""
+    game_id = await _seed_flaw_game(db_session, user_id, label, missed_pv_lines=missed_pv_lines)
+    if best_move is not None:
+        await _seed_best_move_position(db_session, user_id, game_id, 2, best_move)
     db_session.add(
         DrillItem(
             user_id=user_id,
@@ -5313,3 +5328,440 @@ async def test_compose_stamps_pool_eligible_since_once(db_session: AsyncSession)
 
     row_after = await _read_tick_row(db_session, _USER_ID)
     assert row_after.pool_eligible_since == _TODAY
+
+
+# ---------------------------------------------------------------------------
+# Phase 235 (SEED-192, D-05/D-06/D-07/D-19) — the server answer key attached
+# to every composed/resumed puzzle by `_attach_answer_keys`.
+# ---------------------------------------------------------------------------
+
+# Sharp for the white mover at ply 2 (best +200, second -200); `su` b1c3 is
+# legal in the position after 1.e4 e5 (white to move), so the legality check
+# keeps it on the key.
+_SHARP_KEYED_PV_LINES = [{"b": 200, "bm": None, "s": -200, "sm": None, "su": "b1c3"}]
+
+
+async def _seed_best_move_position(
+    db_session: AsyncSession, user_id: int, game_id: int, ply: int, best_move: str
+) -> None:
+    """Seed the `game_positions` row AT the flaw ply carrying `best_move`.
+
+    Hashes are distinct from `_seed_flaw_game`'s prior (ply-1) row
+    (1_000_000 / 2_000_000 / 3_000_000 + game_id * 100 + ply).
+    """
+    db_session.add(
+        GamePosition(
+            user_id=user_id,
+            game_id=game_id,
+            ply=ply,
+            full_hash=4_000_000 + game_id * 100 + ply,
+            white_hash=5_000_000 + game_id * 100 + ply,
+            black_hash=6_000_000 + game_id * 100 + ply,
+            best_move=best_move,
+        )
+    )
+    await db_session.flush()
+
+
+async def _answer_key_by_source(
+    db_session: AsyncSession, composed: train_repository.ComposedSession
+) -> dict[int, list[tuple[str | None, str | None, str | None]]]:
+    """Group each puzzle's (key, type, runner-up) by its drill_solves source."""
+    source_by_position = dict(
+        (
+            await db_session.execute(
+                select(DrillSolve.position, DrillSolve.source).where(
+                    DrillSolve.session_id == composed.session_id
+                )
+            )
+        )
+        .tuples()
+        .all()
+    )
+    grouped: dict[int, list[tuple[str | None, str | None, str | None]]] = {}
+    for puzzle in composed.puzzles:
+        grouped.setdefault(source_by_position[puzzle.position], []).append(
+            (puzzle.key_move_uci, puzzle.puzzle_type, puzzle.runner_up_uci)
+        )
+    return grouped
+
+
+@pytest.mark.asyncio
+async def test_compose_attaches_answer_keys_for_every_source(
+    db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Fresh composition AND the resumed session carry the same answer keys:
+    SR item = stored best_move + live-blob type + sharp `su`; herring = top of
+    its ladder; sharp filler = its CSV solution (D-05/D-06/D-19)."""
+    _install_sharp_fixture(monkeypatch)
+    await ensure_test_user(db_session, _USER_ID)
+    await train_repository.upsert_settings(
+        db_session,
+        user_id=_USER_ID,
+        timezone="UTC",
+        weekday_mask=0,
+        puzzles_per_session=4,
+        reminder_enabled=False,
+        reminder_hour=18,
+        reminder_intent_at=None,
+        now_utc=_NOW,
+    )
+    sr_game_id = await _seed_flaw_game(
+        db_session, _USER_ID, "key-sr", missed_pv_lines=_SHARP_KEYED_PV_LINES
+    )
+    await _seed_best_move_position(db_session, _USER_ID, sr_game_id, 2, "g1f3")
+    await _seed_herring_pool_row(db_session, _USER_ID, "key-herring")
+
+    fresh = await train_repository.compose_and_materialize_session(
+        db_session, user_id=_USER_ID, now_utc=_NOW
+    )
+    assert fresh.session_id is not None
+    by_source = await _answer_key_by_source(db_session, fresh)
+
+    assert by_source[DrillSource.SR_ITEM] == [("g1f3", "sharp", "b1c3")]
+    assert by_source[DrillSource.RED_HERRING] == [("e2e4", "herring", None)]
+    fillers = by_source[DrillSource.SHARP_FILLER]
+    assert len(fillers) == 2
+    assert all(entry == ("d2d4", "sharp", None) for entry in fillers)
+
+    # Second call, same instant: resumes the open session (deferred ladder
+    # column must not raise MissingGreenlet) and returns the identical keys.
+    resumed = await train_repository.compose_and_materialize_session(
+        db_session, user_id=_USER_ID, now_utc=_NOW
+    )
+    assert resumed.session_id == fresh.session_id
+
+    def key_map(c: train_repository.ComposedSession) -> dict[int, tuple[str | None, ...]]:
+        return {p.position: (p.key_move_uci, p.puzzle_type, p.runner_up_uci) for p in c.puzzles}
+
+    assert key_map(resumed) == key_map(fresh)
+
+
+@pytest.mark.asyncio
+async def test_answer_keys_ignore_own_game_flaw_for_herring(db_session: AsyncSession) -> None:
+    """RESEARCH Pitfall 5: a RED_HERRING drill_solves row that shares
+    (user, game, ply) with the user's OWN sharp game_flaws row must still read
+    puzzle_type "herring" with no runner-up — the SR joins are source-gated."""
+    await ensure_test_user(db_session, _USER_ID)
+    game_id = await _seed_flaw_game(
+        db_session, _USER_ID, "own-game-herring", ply=8, missed_pv_lines=_SHARP_KEYED_PV_LINES
+    )
+    await _seed_best_move_position(db_session, _USER_ID, game_id, 8, "g1f3")
+    _, pool_id = await _seed_herring_pool_row(
+        db_session, _USER_ID, "own-game-herring", existing_game_id=game_id, ply=8
+    )
+    drill_session = DrillSession(
+        user_id=_USER_ID,
+        session_date=_TODAY,
+        status="open",
+        puzzle_count=1,
+        expires_on=_TODAY + datetime.timedelta(days=7),
+    )
+    db_session.add(drill_session)
+    await db_session.flush()
+    db_session.add(
+        DrillSolve(
+            session_id=drill_session.id,
+            position=0,
+            user_id=_USER_ID,
+            game_id=game_id,
+            ply=8,
+            source=DrillSource.RED_HERRING,
+            herring_pool_id=pool_id,
+            solved_at=None,
+        )
+    )
+    await db_session.flush()
+
+    keys = await train_repository._answer_keys_by_position(
+        db_session, user_id=_USER_ID, session_id=drill_session.id
+    )
+
+    assert keys[0].puzzle_type == "herring"
+    assert keys[0].runner_up_uci is None
+    assert keys[0].key_uci == "e2e4"
+
+
+# ---------------------------------------------------------------------------
+# Phase 235 (SEED-192, D-02/D-14) — server-graded sharp runner-up and the pure
+# `_resolve_grade` decision.
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_record_solve_grades_sharp_runner_up_server_side(db_session: AsyncSession) -> None:
+    """D-02: on a sharp SR item the played runner-up `su` is graded by the server
+    from the blob's b/s evals, whatever tier the client asserted; the runner-up is
+    never shown as also fine (vetted_moves stays empty)."""
+    await ensure_test_user(db_session, _USER_ID)
+    drill_session = await _seed_open_session_with_sr_item(
+        db_session,
+        _USER_ID,
+        "sharp-su",
+        missed_pv_lines=_SHARP_KEYED_PV_LINES,
+        best_move="g1f3",
+    )
+
+    recorded = await train_repository.record_solve(
+        db_session,
+        user_id=_USER_ID,
+        session_id=drill_session.id,
+        position=0,
+        guess="critical",
+        played_move="b1c3",  # the sharp blob's `su`
+        move_quality="good",  # a wrong client assertion
+        now_utc=_NOW,
+    )
+
+    assert recorded is not None
+    assert recorded.puzzle_type == "sharp"
+    assert recorded.move_quality == "wrong"
+    assert recorded.correct_move is False
+    assert recorded.correct_guess is True
+    assert recorded.vetted_moves == []
+    assert recorded.graded_es_before == expected_score_for(200, None, "white")
+    assert recorded.graded_es_after == expected_score_for(-200, None, "white")
+    assert recorded.disagreement is False
+
+
+@pytest.mark.asyncio
+async def test_record_solve_sharp_key_keeps_client_tier(db_session: AsyncSession) -> None:
+    """D-02: playing the sharp KEY is not graded by the server (the key is never
+    a mistake): the client's tier stands and no graded-ES pair is returned."""
+    await ensure_test_user(db_session, _USER_ID)
+    drill_session = await _seed_open_session_with_sr_item(
+        db_session,
+        _USER_ID,
+        "sharp-key",
+        missed_pv_lines=_SHARP_KEYED_PV_LINES,
+        best_move="g1f3",
+    )
+
+    recorded = await train_repository.record_solve(
+        db_session,
+        user_id=_USER_ID,
+        session_id=drill_session.id,
+        position=0,
+        guess="critical",
+        played_move="g1f3",  # the key
+        move_quality="good",
+        now_utc=_NOW,
+    )
+
+    assert recorded is not None
+    assert recorded.move_quality == "good"
+    assert recorded.graded_es_before is None
+    assert recorded.graded_es_after is None
+    assert recorded.vetted_moves == []
+
+
+_RECHECK_OK: dict[str, object] = {
+    "v": 1,
+    "outcome": "confirmed",
+    "key_es": 0.6,
+    "played_es": 0.62,
+    "key_es_recheck": 0.7,
+    "played_es_recheck": 0.69,
+    "key_depth": 15,
+    "played_depth": 16,
+    "key_depth_recheck": 18,
+    "played_depth_recheck": 20,
+}
+
+
+def _recheck(**overrides: object) -> SolveRecheck:
+    return SolveRecheck.model_validate({**_RECHECK_OK, **overrides})
+
+
+_SU_GRADED = ServerGradedMove(uci="b5c6", tier="wrong", es_before=0.7, es_after=0.3)
+
+
+def _classification(
+    puzzle_type: Literal["sharp", "soft", "herring"] = "sharp",
+    *,
+    key_uci: str | None = "b5a4",
+    runner_up_uci: str | None = "b5c6",
+    graded_moves: list[ServerGradedMove] | None = None,
+) -> train_repository.SolveClassification:
+    return train_repository.SolveClassification(
+        puzzle_type=puzzle_type,
+        vetted_moves=[],
+        key_uci=key_uci,
+        runner_up_uci=runner_up_uci,
+        graded_moves=graded_moves if graded_moves is not None else [],
+    )
+
+
+@pytest.mark.parametrize(
+    "guess,played,tier,classification,recheck",
+    [
+        pytest.param(
+            "critical", "b1c3", "good", _classification(), _recheck(), id="accepted-critical"
+        ),
+        pytest.param(
+            "several", "b1c3", "good", _classification(), _recheck(), id="accepted-several"
+        ),
+    ],
+)
+def test_resolve_grade_accepts_a_confirmed_sharp_disagreement(
+    guess: Literal["critical", "several"],
+    played: str,
+    tier: Literal["good", "inaccuracy", "wrong"],
+    classification: train_repository.SolveClassification,
+    recheck: SolveRecheck,
+) -> None:
+    """D-14: either guess earns the point, tier good, no graded ES pair."""
+    resolved = train_repository._resolve_grade(
+        guess=guess,
+        played_move=played,
+        client_tier=tier,
+        classification=classification,
+        recheck=recheck,
+    )
+    assert resolved == train_repository.ResolvedGrade("good", True, True, None, None)
+
+
+@pytest.mark.parametrize(
+    "guess,played,tier,classification,recheck,expected_quality,expected_correct_guess",
+    [
+        pytest.param(
+            "critical",
+            "b1c3",
+            "good",
+            _classification("soft"),
+            _recheck(),
+            "good",
+            False,
+            id="live-type-soft",
+        ),
+        pytest.param(
+            "critical",
+            "b1c3",
+            "good",
+            _classification("herring"),
+            _recheck(),
+            "good",
+            False,
+            id="live-type-herring",
+        ),
+        pytest.param(
+            "several",
+            "b5a4",
+            "good",
+            _classification(),
+            _recheck(),
+            "good",
+            False,
+            id="played-equals-key",
+        ),
+        pytest.param(
+            "several",
+            "b5c6",
+            "good",
+            _classification(graded_moves=[]),
+            _recheck(),
+            "good",
+            False,
+            id="played-equals-runner-up-without-graded-entry",
+        ),
+        pytest.param(
+            "several",
+            "b1c3",
+            "inaccuracy",
+            _classification(),
+            _recheck(),
+            "inaccuracy",
+            False,
+            id="client-tier-inaccuracy",
+        ),
+        pytest.param(
+            "several",
+            "b1c3",
+            "wrong",
+            _classification(),
+            _recheck(),
+            "wrong",
+            False,
+            id="client-tier-wrong",
+        ),
+        pytest.param(
+            "several",
+            "b1c3",
+            "good",
+            _classification(),
+            _recheck(outcome="resolved"),
+            "good",
+            False,
+            id="outcome-resolved",
+        ),
+        pytest.param(
+            "several", "b1c3", "good", _classification(), None, "good", False, id="no-recheck"
+        ),
+        pytest.param(
+            "several",
+            "b1c3",
+            "good",
+            _classification(key_uci=None),
+            _recheck(),
+            "good",
+            False,
+            id="no-server-key",
+        ),
+        pytest.param(
+            "several",
+            "b1c3",
+            "good",
+            _classification(),
+            _recheck(played_es=0.3),
+            "good",
+            False,
+            id="fast-pair-not-good",
+        ),
+        pytest.param(
+            "several",
+            "b1c3",
+            "good",
+            _classification(),
+            _recheck(played_es_recheck=0.3),
+            "good",
+            False,
+            id="slow-pair-not-good",
+        ),
+    ],
+)
+def test_resolve_grade_rejects_every_failed_sanity_check(
+    guess: Literal["critical", "several"],
+    played: str,
+    tier: Literal["good", "inaccuracy", "wrong"],
+    classification: train_repository.SolveClassification,
+    recheck: SolveRecheck | None,
+    expected_quality: str,
+    expected_correct_guess: bool,
+) -> None:
+    """D-14 sanity rejects grade exactly as without the claim: the client tier and
+    the normal server-computed guess verdict, disagreement False."""
+    resolved = train_repository._resolve_grade(
+        guess=guess,
+        played_move=played,
+        client_tier=tier,
+        classification=classification,
+        recheck=recheck,
+    )
+    assert resolved.disagreement is False
+    assert resolved.effective_quality == expected_quality
+    assert resolved.correct_guess is expected_correct_guess
+    assert resolved.graded_es_before is None
+    assert resolved.graded_es_after is None
+
+
+def test_resolve_grade_server_graded_move_wins_over_a_confirmed_claim() -> None:
+    """D-02 beats D-14: a played sharp runner-up is graded by the server even when
+    the phone claims a confirmed disagreement."""
+    resolved = train_repository._resolve_grade(
+        guess="critical",
+        played_move="b5c6",
+        client_tier="good",
+        classification=_classification(graded_moves=[_SU_GRADED]),
+        recheck=_recheck(),
+    )
+    assert resolved == train_repository.ResolvedGrade("wrong", True, False, 0.7, 0.3)

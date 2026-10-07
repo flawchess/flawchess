@@ -13,42 +13,71 @@
  * solve loop mounts (`enabled` toggled at the SESSION boundary, never per
  * puzzle — 190-RESEARCH.md Pattern 4 / Pitfall 2).
  *
- * Grading rule (190-RESEARCH.md Pattern 2 — TrainPuzzle carries no answer key,
- * P-01, so the client's own search grades the attempt; two regimes as of
- * Phase 211):
+ * Grading rule (Phase 235, SEED-192: the phone grades against the SERVER KEY;
+ * the server picks the solution MOVE, the phone supplies every NUMBER):
  *   mover = sideToMoveFromFen(fen)
- *   esBefore = evalToExpectedScore(bestSearch.evalCp, bestSearch.evalMate, mover)
- *   playedMoveUci === bestSearch.bestMoveUci -> esAfter = esBefore, no 2nd search
- *     (the exact-match fast path, unchanged)
- *   else -> run ONE full-budget width-1 search on the post-move FEN, esAfter
- *     with the SAME mover
- *   severity = classifyLiveSeverity(esBefore, esAfter)
- *   moveTier = moveTierFromSeverity(severity)  (SEED-119: good/inaccuracy/wrong)
- * The mount search itself is width 1 (Phase 211 D-05): this hook proposes NO
- * alternative moves — the "Also fine" set is certified SERVER-side from the
- * stored deep answer key, and when the played move is one of the server's
- * certified key moves, record_solve OVERRIDES the tier this hook computed
- * (Phase 211 D-07).
+ *   anchor (think time, `startGrading(fen, keyUci)`):
+ *     keyed (D-08)  -> ONE width-1 search of the position AFTER the key move;
+ *                      anchor.es = evalToExpectedScore(afterKey eval, mover)
+ *     no usable key (null, missing from a stale server, or illegal; D-07) ->
+ *                      today's root search; anchor.keyUci is its bestmove and
+ *                      anchor.es its root ES (legacy anchor)
+ *   gradeMove(fen, playedMoveUci):
+ *     playedMoveUci === anchor.keyUci -> GOOD, no second search (D-01)
+ *     else -> ONE width-1 search of the position after the played move at the
+ *             same budget, esAfter with the SAME mover;
+ *             severity = classifyLiveSeverity(anchor.es, esAfter)
+ *             moveTier = moveTierFromSeverity(severity)  (SEED-119: good/inaccuracy/wrong)
+ * Both numbers of the drop are the phone's own searches at the same horizon
+ * (after one move), so no server number ever enters the drop and no mixed
+ * root-vs-after-move horizon remains (D-01). `GradeResult.bestMoveUci` /
+ * `bestLine` / `esBefore` keep their names but now mean the KEY, its after-key
+ * line and the after-key ES (D-09), so every downstream consumer (reveal
+ * arrow, line boxes, board badge, free-play seed) names the key unchanged.
+ * The mount search is width 1 (Phase 211 D-05): this hook proposes NO
+ * alternative moves; the "Also fine" set is certified SERVER-side, and when the
+ * played move is one of the server's certified key moves, record_solve
+ * OVERRIDES the tier this hook computed (Phase 211 D-07).
  * Accepted residual (Phase 211 D-04): an OFF-KEY played move is graded
  * best-effort by this live engine and can still disagree with the analysis
- * board's deeper verdict; the top-K deep-eval blob extension that would close
- * that gap is explicitly out of scope.
+ * board's deeper verdict.
  * Never re-derive the sigmoid/threshold locally — both come from
  * `@/lib/liveFlaw` (CI-drift-checked against app/services/flaws_service.py).
  */
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Chess } from 'chess.js';
-import { parseInfoLine, parseBestmove, dedupePvLinesByFirstMove, rankLineForMove } from './uciParser';
+import { parseInfoLine, parseBestmove } from './uciParser';
 import type { PvLine } from './uciParser';
 import { classifyLiveSeverity, evalToExpectedScore, sideToMoveFromFen } from '@/lib/liveFlaw';
-import type { MoverColor } from '@/lib/liveFlaw';
 import { moveTierFromSeverity } from '@/lib/trainScore';
-import type { TrainMoveTier } from '@/lib/trainScore';
 import {
   createStockfishWorker,
   ensureStockfishWorkerUrl,
 } from '@/lib/engine/stockfishWorkerSource';
+import {
+  buildSearchResult,
+  clampLineEvalToBest,
+  fenAfterUciMove,
+  finishRecheck,
+  keyedAnchorFrom,
+  legacyAnchorFrom,
+  planRecheck,
+  raceWithTimeout,
+  terminalSearchResult,
+} from './trainGradingSupport';
+import type {
+  GradeResult,
+  GradingAnchor,
+  LastPlayedSearch,
+  RawSearchResult,
+  RecheckInnerResult,
+  RecheckResult,
+  TrainEngineLine,
+} from './trainGradingSupport';
+
+// The public result types live in trainGradingSupport (pure, React-free) and
+// are re-exported here so every existing importer keeps its import path.
+export type { GradeResult, RecheckResult, TrainEngineLine } from './trainGradingSupport';
 
 // ─── Constants ──────────────────────────────────────────────────────────────
 
@@ -108,43 +137,36 @@ export const TRAIN_GRADING_MOUNT_MOVETIME_MS = TRAIN_GRADING_MOVETIME_MS;
  */
 export const TRAIN_GRADING_TIMEOUT_MS = 8000;
 
+/**
+ * Phase 235 (D-11): search budget of EACH of the two disagreement re-check
+ * searches (key, then played), twice the 1.5 s grading search.
+ */
+export const TRAIN_RECHECK_MOVETIME_MS = 3000;
+
+/** Headroom factor on the scaled re-check node cap, so the cap never binds before the movetime does. */
+const TRAIN_RECHECK_NODE_HEADROOM = 2;
+
+/**
+ * Node cap of each re-check search (8,000,000). Scales the grading cap with the
+ * movetime and doubles it: measured in Node 24 on the user-28 FEN, the 2M
+ * grading cap bound at 2,699 ms (2,000,425 nodes), so a "3 s" re-check under
+ * that cap would not search any deeper than the 1.5 s one (RESEARCH Pitfall 1).
+ */
+export const TRAIN_RECHECK_MAX_NODES =
+  TRAIN_GRADING_MAX_NODES *
+  (TRAIN_RECHECK_MOVETIME_MS / TRAIN_GRADING_MOVETIME_MS) *
+  TRAIN_RECHECK_NODE_HEADROOM;
+
+/**
+ * Hard ceiling on `recheckMove` (D-11, D-20): two sequential re-check searches
+ * plus stop/queue and WASM overhead. Separate from TRAIN_GRADING_TIMEOUT_MS,
+ * which stays 8000 for the normal path. On expiry the 1.5 s grade stands.
+ */
+export const TRAIN_RECHECK_TIMEOUT_MS = 12000;
+
 // ─── Types ──────────────────────────────────────────────────────────────────
 
 type EngineState = 'idle' | 'thinking' | 'stopping';
-
-interface RawSearchResult {
-  /** White-POV centipawns (already sign-normalized for the searched FEN). */
-  evalCp: number | null;
-  evalMate: number | null;
-  bestMoveUci: string | null;
-  /** UCI moves following the top (multipv 1) line's `pv` keyword — mover-POV
-   * move list, not sign-dependent (190.1-01: captured for the reveal-time
-   * lines, previously parsed but discarded). */
-  pv: string[];
-  /**
-   * Every rank the engine returned for this search, sorted by `multipv`
-   * ascending and white-POV sign-normalized (190.1-02 D-01 point 1). As of
-   * Phase 211 (D-05) EVERY search this hook dispatches — mount, after-move,
-   * reveal-time — is width 1, so this normally holds exactly one entry
-   * (rank 1, whose convenience values are `evalCp`/`evalMate`/`pv` above).
-   * The array shape is kept because the commit path is width-agnostic and
-   * `startGameMoveSearch`'s reveal-time exact-UCI lookup (211-02 consumer
-   * ledger row 4) still reads it; it no longer leaves this hook — Plan
-   * 211-03 deleted `GradeResult`'s rank-lines field once the free-play seed
-   * seam switched to the served vetted list (D-06). Never assume
-   * `lines.length` equals the requested width: the engine returns only as
-   * many ranks as there are legal moves and never pads — nor that every
-   * rank holds a DISTINCT move before `dedupePvLinesByFirstMove` runs at
-   * commit time (see that helper for the cross-iteration staleness this
-   * drops); after it, every entry's first move is unique.
-   */
-  lines: PvLine[];
-}
-
-interface BestSearchResult extends RawSearchResult {
-  fen: string;
-  generation: number;
-}
 
 interface QueuedDispatch {
   fen: string;
@@ -155,42 +177,11 @@ interface QueuedDispatch {
    * (width 1) share the same stop/queue serialization. */
   width: number;
   movetimeMs: number;
+  /** Node cap travels WITH the dispatch (Phase 235 D-11) so a re-check search
+   * keeps its raised cap through the stop-queue and readyok drains. */
+  maxNodes: number;
   resolve: (result: RawSearchResult) => void;
   reject: (error: Error) => void;
-}
-
-export interface GradeResult {
-  /** SEED-119: the three-way move-quality tier, derived from
-   * `classifyLiveSeverity` via `moveTierFromSeverity` — never a re-derived
-   * boolean. `moveTier !== 'wrong'` is what feeds the SR ladder verdict. */
-  moveTier: TrainMoveTier;
-  bestMoveUci: string | null;
-  esBefore: number;
-  esAfter: number;
-  /** The MultiPV mount search's rank-1 line (190.1-02 D-01 point 1), derived
-   * without any additional search. */
-  bestLine: TrainEngineLine;
-  /**
-   * The played move's own line. On the exact-match fast path this is exactly
-   * `bestLine` — rank 1 IS the played move's line. Otherwise it comes from
-   * the after-move grading search (`[playedMoveUci, ...afterSearch.pv]`,
-   * 190.1-02 D-01 point 2), with the displayed eval clamped to never read
-   * better than `bestLine`'s.
-   */
-  playedLine: TrainEngineLine;
-}
-
-/**
- * One reveal-time engine line (190.1-01, D-01/D-03). `moves` are UCI strings
- * rooted at the PUZZLE's fen — not the position after any move — the
- * invariant shared by all three reveal lines (YOUR MOVE / BEST MOVE /
- * PLAYED IN GAME) so a single replay-from-puzzle-fen call always applies.
- * `evalCp`/`evalMate` are white-POV, matching every other eval in this file.
- */
-export interface TrainEngineLine {
-  moves: string[];
-  evalCp: number | null;
-  evalMate: number | null;
 }
 
 export interface UseTrainGradingEngineOptions {
@@ -204,8 +195,12 @@ export interface TrainGradingEngine {
    * crashed) — surfaced so callers can show an error state rather than
    * silently retry against a dead engine. */
   hasError: boolean;
-  /** Start the "find the best move" search for a puzzle's FEN. */
-  startGrading: (fen: string) => void;
+  /**
+   * Start the think-time anchor search for a puzzle's FEN. With a usable
+   * `keyUci` (the server key) it evaluates the position AFTER the key (D-08);
+   * with null/undefined/illegal it is today's root search (D-07).
+   */
+  startGrading: (fen: string, keyUci?: string | null) => void;
   /** Cancel any in-flight/pending search for the current puzzle (Pitfall 3). */
   abortGrading: () => void;
   /**
@@ -217,7 +212,7 @@ export interface TrainGradingEngine {
   restartEngine: () => void;
   /**
    * Resolve the grading verdict for a played move against the fen most
-   * recently passed to `startGrading`. Awaits the best-move search if it
+   * recently passed to `startGrading`. Awaits the anchor search if it
    * has not yet settled. Rejects if grading does not complete within
    * `TRAIN_GRADING_TIMEOUT_MS` or the engine reports an error — callers
    * MUST catch this (never treated as "still loading" indefinitely).
@@ -232,56 +227,14 @@ export interface TrainGradingEngine {
    * `startGrading`/`gradeMove` (no second cancellation authority).
    */
   startGameMoveSearch: (puzzleFen: string, gameMoveUci: string) => Promise<TrainEngineLine>;
-}
-
-/** Build the `bestLine` field from a settled mount search: rank 1's PV,
- * falling back to a single-element array containing the bestmove token when
- * the PV is empty (190.1-02 D-01 point 1). */
-function bestLineFrom(best: BestSearchResult): TrainEngineLine {
-  const moves = best.pv.length > 0 ? best.pv : best.bestMoveUci !== null ? [best.bestMoveUci] : [];
-  return { moves, evalCp: best.evalCp, evalMate: best.evalMate };
-}
-
-/**
- * Bug fix (190.1 UAT round 9; rationale narrowed by Phase 211): a played/game
- * move evaluated by its own after-move search occasionally READS better than
- * the best move (e.g. your Ke4 −4.5 vs best Ke5 −4.0). With the mount search
- * at width 1 (Phase 211 D-05) the node budget is no longer split across
- * ranks, so the surviving causes are the after-move search spending its
- * budget one ply DEEPER than the mount search, and ordinary cross-search cp
- * variance in decided positions (project_eval_nondeterminism). The verdict
- * already treats "better than best" as correct; this clamp only stops the
- * DISPLAYED eval from contradicting the "best move" label. From the mover's
- * POV the shown eval is capped at the best line's eval; the line's moves are
- * untouched.
- */
-function clampLineEvalToBest(
-  line: TrainEngineLine,
-  best: TrainEngineLine,
-  mover: MoverColor,
-): TrainEngineLine {
-  const esLine = evalToExpectedScore(line.evalCp, line.evalMate, mover);
-  const esBest = evalToExpectedScore(best.evalCp, best.evalMate, mover);
-  if (esLine <= esBest) return line;
-  return { ...line, evalCp: best.evalCp, evalMate: best.evalMate };
-}
-
-/** Convert a UCI move string ("e2e4", "e7e8q") applied to `fen` into the
- * resulting FEN, or null on illegal/malformed input. */
-function fenAfterUciMove(fen: string, uci: string): string | null {
-  if (uci.length < 4) return null;
-  try {
-    const chess = new Chess(fen);
-    const move = chess.move({
-      from: uci.slice(0, 2),
-      to: uci.slice(2, 4),
-      promotion: uci.length > 4 ? uci.slice(4, 5) : undefined,
-    });
-    if (!move) return null;
-    return chess.fen();
-  } catch {
-    return null;
-  }
+  /**
+   * Phase 235 (D-10/D-11): re-run BOTH after-move searches (key, then played)
+   * at TRAIN_RECHECK_MOVETIME_MS with the raised node cap, after `gradeMove`
+   * rated an off-key move good. NEVER rejects: a missing anchor, a legacy
+   * anchor, a superseded puzzle, an engine error or a timeout all resolve
+   * null, and the caller keeps the 1.5 s grade and posts no record (D-20).
+   */
+  recheckMove: (fen: string, playedMoveUci: string) => Promise<RecheckResult | null>;
 }
 
 // ─── Hook ───────────────────────────────────────────────────────────────────
@@ -335,12 +288,15 @@ export function useTrainGradingEngine({
    * array. A width-1 search still populates exactly one entry (rank 1). */
   const pvMapRef = useRef<Map<number, PvLine>>(new Map());
 
-  /** The settled "find best move" search for the puzzle most recently passed
-   * to startGrading. */
-  const bestSearchRef = useRef<BestSearchResult | null>(null);
-  /** Resolves once the CURRENT generation's best-search settles; gradeMove
+  /** The settled think-time anchor for the puzzle most recently passed to
+   * startGrading (Phase 235). */
+  const anchorRef = useRef<GradingAnchor | null>(null);
+  /** Resolves once the CURRENT generation's anchor search settles; gradeMove
    * awaits this so it works even if called before the search finishes. */
-  const bestSearchReadyRef = useRef<Promise<void>>(Promise.resolve());
+  const anchorReadyRef = useRef<Promise<void>>(Promise.resolve());
+  /** The 1.5 s after-played search of the move `gradeMoveInner` most recently
+   * graded (Phase 235 D-17); see `LastPlayedSearch`. */
+  const lastPlayedSearchRef = useRef<LastPlayedSearch | null>(null);
 
   // ─── Low-level dispatch (refs only — stable across renders) ───────────────
 
@@ -352,6 +308,7 @@ export function useTrainGradingEngine({
       reject: (error: Error) => void,
       width: number,
       movetimeMs: number,
+      maxNodes: number,
     ) => {
       const worker = workerRef.current;
       if (!worker) {
@@ -368,7 +325,7 @@ export function useTrainGradingEngine({
       // the dispatch rather than assuming a prior value survived.
       worker.postMessage(`setoption name MultiPV value ${width}`);
       worker.postMessage(`position fen ${fen}`);
-      worker.postMessage(`go movetime ${movetimeMs} nodes ${TRAIN_GRADING_MAX_NODES}`);
+      worker.postMessage(`go movetime ${movetimeMs} nodes ${maxNodes}`);
       stateRef.current = 'thinking';
     },
     [],
@@ -382,7 +339,13 @@ export function useTrainGradingEngine({
    * dispatch (queued behind a stop or the initial readyok handshake) still
    * requests the width/budget its caller asked for. */
   const search = useCallback(
-    (fen: string, generation: number, width: number, movetimeMs: number): Promise<RawSearchResult> =>
+    (
+      fen: string,
+      generation: number,
+      width: number,
+      movetimeMs: number,
+      maxNodes: number = TRAIN_GRADING_MAX_NODES,
+    ): Promise<RawSearchResult> =>
       new Promise((resolve, reject) => {
         const worker = workerRef.current;
         if (hasErrorRef.current) {
@@ -407,24 +370,43 @@ export function useTrainGradingEngine({
           // own Worker-construction effect lives in Train.tsx, the parent).
           // Rejecting outright on `!worker` (as an earlier version of this
           // fix did) broke every very first puzzle of every session.
-          pendingReadyDispatchRef.current = { fen, generation, width, movetimeMs, resolve, reject };
+          pendingReadyDispatchRef.current = { fen, generation, width, movetimeMs, maxNodes, resolve, reject };
           return;
         }
         if (stateRef.current === 'thinking') {
           worker.postMessage('stop');
           stopPendingRef.current = true;
           stateRef.current = 'stopping';
-          queuedDispatchRef.current = { fen, generation, width, movetimeMs, resolve, reject };
+          queuedDispatchRef.current = { fen, generation, width, movetimeMs, maxNodes, resolve, reject };
           return;
         }
         if (stateRef.current === 'stopping') {
           // Only the latest request matters once the stale bestmove settles.
-          queuedDispatchRef.current = { fen, generation, width, movetimeMs, resolve, reject };
+          queuedDispatchRef.current = { fen, generation, width, movetimeMs, maxNodes, resolve, reject };
           return;
         }
-        dispatchNow(fen, generation, resolve, reject, width, movetimeMs);
+        dispatchNow(fen, generation, resolve, reject, width, movetimeMs, maxNodes);
       }),
     [dispatchNow],
+  );
+
+  /** Every after-move search (anchor after the key, graded after the played
+   * move, reveal after the game move) is a width-1 search of the position
+   * AFTER one move, serialized through `search`. A checkmated or stalemated
+   * after-move position is scored directly with no dispatch (see
+   * `terminalSearchResult`). */
+  const searchAfterMove = useCallback(
+    (
+      afterFen: string,
+      generation: number,
+      movetimeMs: number,
+      maxNodes: number = TRAIN_GRADING_MAX_NODES,
+    ): Promise<RawSearchResult> => {
+      const terminal = terminalSearchResult(afterFen);
+      if (terminal !== null) return Promise.resolve(terminal);
+      return search(afterFen, generation, 1, movetimeMs, maxNodes);
+    },
+    [search],
   );
 
   // ─── Worker lifecycle ───────────────────────────────────────────────────
@@ -481,6 +463,7 @@ export function useTrainGradingEngine({
               pendingReady.reject,
               pendingReady.width,
               pendingReady.movetimeMs,
+              pendingReady.maxNodes,
             );
           }
           return;
@@ -521,7 +504,15 @@ export function useTrainGradingEngine({
             const queued = queuedDispatchRef.current;
             queuedDispatchRef.current = null;
             if (queued) {
-              dispatchNow(queued.fen, queued.generation, queued.resolve, queued.reject, queued.width, queued.movetimeMs);
+              dispatchNow(
+                queued.fen,
+                queued.generation,
+                queued.resolve,
+                queued.reject,
+                queued.width,
+                queued.movetimeMs,
+                queued.maxNodes,
+              );
             }
             return;
           }
@@ -530,25 +521,7 @@ export function useTrainGradingEngine({
           const pending = pendingRef.current;
           pendingRef.current = null;
           if (!pending) return;
-          // 190.1-02: commit the accumulated MultiPV map — sorted by rank,
-          // sign-normalized to white POV — exactly once, at bestmove. Never
-          // assume the requested width was returned (Map may have fewer
-          // entries than requested); a width-1 search still yields one entry.
-          const lines: PvLine[] = dedupePvLinesByFirstMove(
-            [...pvMapRef.current.values()].sort((a, b) => a.multipv - b.multipv),
-          ).map((l) => ({
-            ...l,
-            evalCp: l.evalCp === null ? null : l.evalCp * pending.whitePovSign,
-            evalMate: l.evalMate === null ? null : l.evalMate * pending.whitePovSign,
-          }));
-          const rank1 = lines[0];
-          pending.resolve({
-            evalCp: rank1 !== undefined ? rank1.evalCp : null,
-            evalMate: rank1 !== undefined ? rank1.evalMate : null,
-            bestMoveUci,
-            pv: rank1 !== undefined ? rank1.moves : [],
-            lines,
-          });
+          pending.resolve(buildSearchResult(pvMapRef.current, pending.whitePovSign, bestMoveUci));
         }
       }
 
@@ -559,7 +532,7 @@ export function useTrainGradingEngine({
       // Bug fix (Phase 190-01 checkpoint): a Worker construction/load failure
       // (e.g. the vendored WASM asset 404s or the browser can't instantiate
       // it) previously left every pending/queued search unresolved forever —
-      // gradeMove would hang on `await bestSearchReadyRef.current` with no
+      // gradeMove would hang on `await anchorReadyRef.current` with no
       // visible error. Surface it via `hasError` and reject anything waiting
       // immediately rather than making callers wait out the full
       // TRAIN_GRADING_TIMEOUT_MS on a definitively-dead engine.
@@ -611,10 +584,11 @@ export function useTrainGradingEngine({
   }, []);
 
   const startGrading = useCallback(
-    (fen: string) => {
+    (fen: string, keyUci: string | null = null) => {
       generationRef.current += 1;
       const generation = generationRef.current;
-      bestSearchRef.current = null;
+      anchorRef.current = null;
+      lastPlayedSearchRef.current = null;
       let resolveReady: () => void = () => {};
       let rejectReady: (error: Error) => void = () => {};
       const readyPromise = new Promise<void>((resolve, reject) => {
@@ -626,17 +600,26 @@ export function useTrainGradingEngine({
       // promise rejection — gradeMove is the one real consumer and it awaits
       // this exact promise, propagating the failure through its own reject path.
       readyPromise.catch(() => {});
-      bestSearchReadyRef.current = readyPromise;
-      // Phase 211 (D-05): the mount search is width 1 — the whole
-      // TRAIN_GRADING_MOUNT_MOVETIME_MS budget goes to the single best line
-      // (best move, esBefore, and the displayed solution PV). Alternatives
-      // are server-certified; this search proposes none.
-      search(fen, generation, TRAIN_GRADING_MULTIPV_WIDTH, TRAIN_GRADING_MOUNT_MOVETIME_MS)
-        .then((raw) => {
+      anchorReadyRef.current = readyPromise;
+      // Phase 235 (D-08): with a usable key the think-time budget goes to the
+      // position AFTER the key (width 1), so gradeMove compares two after-move
+      // searches at the same horizon. A null, missing or illegal key (D-07)
+      // keeps today's root search; the key line is then the root bestmove's.
+      const afterKeyFen = keyUci !== null ? fenAfterUciMove(fen, keyUci) : null;
+      const anchorSearch: Promise<GradingAnchor> =
+        keyUci !== null && afterKeyFen !== null
+          ? searchAfterMove(afterKeyFen, generation, TRAIN_GRADING_MOUNT_MOVETIME_MS).then((raw) =>
+              keyedAnchorFrom(fen, generation, keyUci, raw),
+            )
+          : search(fen, generation, TRAIN_GRADING_MULTIPV_WIDTH, TRAIN_GRADING_MOUNT_MOVETIME_MS).then(
+              (raw) => legacyAnchorFrom(fen, generation, raw),
+            );
+      anchorSearch
+        .then((anchor) => {
           // Superseded by a later startGrading/abortGrading — discard silently
           // (Pitfall 3: never leak a stale verdict into the next puzzle).
           if (generation !== generationRef.current) return;
-          bestSearchRef.current = { fen, generation, ...raw };
+          anchorRef.current = anchor;
           resolveReady();
         })
         .catch((error: unknown) => {
@@ -644,12 +627,12 @@ export function useTrainGradingEngine({
           rejectReady(error instanceof Error ? error : new Error('Grading search failed'));
         });
     },
-    [search],
+    [search, searchAfterMove],
   );
 
   const abortGrading = useCallback(() => {
     generationRef.current += 1;
-    bestSearchRef.current = null;
+    anchorRef.current = null;
     queuedDispatchRef.current = null;
     pendingReadyDispatchRef.current = null;
     if (stateRef.current === 'thinking') {
@@ -662,13 +645,13 @@ export function useTrainGradingEngine({
   const gradeMoveInner = useCallback(
     async (fen: string, playedMoveUci: string): Promise<GradeResult> => {
       const generation = generationRef.current;
-      await bestSearchReadyRef.current;
-      const best = bestSearchRef.current;
+      await anchorReadyRef.current;
+      const anchor = anchorRef.current;
       const mover = sideToMoveFromFen(fen);
 
       const emptyLine: TrainEngineLine = { moves: [], evalCp: null, evalMate: null };
 
-      if (!best || best.generation !== generation || best.fen !== fen) {
+      if (!anchor || anchor.generation !== generation || anchor.fen !== fen) {
         // Defensive fallback (should not happen when startGrading was called
         // for this exact fen) — never crash the solve loop. Resolves the GOOD
         // tier (SEED-119): a defensive path must never silently cost the
@@ -683,32 +666,20 @@ export function useTrainGradingEngine({
         };
       }
 
-      const esBefore = evalToExpectedScore(best.evalCp, best.evalMate, mover);
-      const bestLine = bestLineFrom(best);
-
-      if (playedMoveUci === best.bestMoveUci) {
-        // D-06 fast path: exact match to the engine's own top move — no
-        // second search. playedLine IS bestLine here — rank 1 is the played
-        // move's own line (190.1-02 D-01 point 2). An exact match to the
-        // engine's own best move is unambiguously the GOOD tier.
+      if (playedMoveUci === anchor.keyUci) {
+        // D-01: playing the key (the engine's own top move on the legacy
+        // path) is the GOOD tier with no second search. playedLine IS the key
+        // line.
         return {
           moveTier: 'good',
-          bestMoveUci: best.bestMoveUci,
-          esBefore,
-          esAfter: esBefore,
-          bestLine,
-          playedLine: bestLine,
+          bestMoveUci: anchor.keyUci,
+          esBefore: anchor.es,
+          esAfter: anchor.es,
+          bestLine: anchor.keyLine,
+          playedLine: anchor.keyLine,
         };
       }
 
-      // Phase 211 (D-05): the 190.1-round-9 mount-rank shortcut is GONE — a
-      // played move that is neither the engine's own top move (exact-match
-      // fast path above) nor a server-certified key is graded by the ONE
-      // full-budget width-1 after-move search below. Its replacement is not a
-      // client branch at all: a key move's tier is overridden by the SERVER
-      // in record_solve (Plan 211-01, D-07). Accepted cost (SEED-150): a
-      // non-best played move now ALWAYS incurs the second "Checking your
-      // move…" search, where a mount-rank hit used to skip it.
       const afterFen = fenAfterUciMove(fen, playedMoveUci);
       if (afterFen === null) {
         // Defensive fallback (illegal/unparseable played move — should not
@@ -716,42 +687,47 @@ export function useTrainGradingEngine({
         // (SEED-119), never silently costing the user move points.
         return {
           moveTier: 'good',
-          bestMoveUci: best.bestMoveUci,
-          esBefore,
-          esAfter: esBefore,
-          bestLine,
-          playedLine: bestLine,
+          bestMoveUci: anchor.keyUci,
+          esBefore: anchor.es,
+          esAfter: anchor.es,
+          bestLine: anchor.keyLine,
+          playedLine: anchor.keyLine,
         };
       }
 
-      // 190.1-02 D-01 point 2: the after-move search's PV is captured into
-      // playedLine instead of being discarded. Reached for EVERY played move
-      // that is not the engine's own top move (Phase 211 D-05 — the
-      // mount-rank shortcut that used to skip this is gone); the display
-      // clamp below is a backstop for the occasional deeper-search inversion.
-      const afterRaw = await search(afterFen, generation, 1, TRAIN_GRADING_MOVETIME_MS);
+      // D-01: ONE after-move search of the played move at the same budget as
+      // the anchor, so the drop compares two same-horizon phone searches. The
+      // PV is captured into playedLine; the clamp below (D-09) keeps the
+      // displayed eval from reading better than the key line's.
+      const afterRaw = await searchAfterMove(afterFen, generation, TRAIN_GRADING_MOVETIME_MS);
       const esAfter = evalToExpectedScore(afterRaw.evalCp, afterRaw.evalMate, mover);
-      const severity = classifyLiveSeverity(esBefore, esAfter);
+      const severity = classifyLiveSeverity(anchor.es, esAfter);
       const moveTier = moveTierFromSeverity(severity);
+      lastPlayedSearchRef.current = {
+        generation,
+        playedUci: playedMoveUci,
+        es: esAfter,
+        depth: afterRaw.depth,
+      };
       const playedLine = clampLineEvalToBest(
         {
           moves: [playedMoveUci, ...afterRaw.pv],
           evalCp: afterRaw.evalCp,
           evalMate: afterRaw.evalMate,
         },
-        bestLine,
+        anchor.keyLine,
         mover,
       );
       return {
         moveTier,
-        bestMoveUci: best.bestMoveUci,
-        esBefore,
+        bestMoveUci: anchor.keyUci,
+        esBefore: anchor.es,
         esAfter,
-        bestLine,
+        bestLine: anchor.keyLine,
         playedLine,
       };
     },
-    [search],
+    [searchAfterMove],
   );
 
   // Bug fix (Phase 190-01 checkpoint): manual browser UAT hit an indefinite
@@ -763,29 +739,89 @@ export function useTrainGradingEngine({
   // settles, surfacing a catchable error instead of hanging forever.
   const gradeMove = useCallback(
     (fen: string, playedMoveUci: string): Promise<GradeResult> =>
-      new Promise<GradeResult>((resolve, reject) => {
-        let settled = false;
-        const timer = setTimeout(() => {
-          if (settled) return;
-          settled = true;
-          reject(new Error('Grading timed out'));
-        }, TRAIN_GRADING_TIMEOUT_MS);
-        gradeMoveInner(fen, playedMoveUci).then(
-          (result) => {
-            if (settled) return;
-            settled = true;
-            clearTimeout(timer);
-            resolve(result);
-          },
-          (error: unknown) => {
-            if (settled) return;
-            settled = true;
-            clearTimeout(timer);
-            reject(error instanceof Error ? error : new Error('Grading failed'));
-          },
-        );
-      }),
+      raceWithTimeout(
+        () => gradeMoveInner(fen, playedMoveUci),
+        TRAIN_GRADING_TIMEOUT_MS,
+        'Grading timed out',
+        'Grading failed',
+      ),
     [gradeMoveInner],
+  );
+
+  // Phase 235 (D-10/D-11/D-13/D-16/D-17): the disagreement re-check. Re-runs
+  // BOTH after-move searches (key, then played) at TRAIN_RECHECK_MOVETIME_MS
+  // with the raised node cap, SEQUENTIALLY (single-threaded WASM), and grades
+  // them with the same classifyLiveSeverity as the 1.5 s pair. The result
+  // replaces the 1.5 s grade whatever it says (D-11). Resolves null when there
+  // is nothing coherent to re-check (anchor mismatch, legacy anchor, played ==
+  // key, no recorded 1.5 s played search, illegal after-move FEN).
+  const recheckMoveInner = useCallback(
+    async (
+      fen: string,
+      playedMoveUci: string,
+      generation: number,
+      signal: AbortSignal,
+    ): Promise<RecheckInnerResult | null> => {
+      const plan = planRecheck(
+        fen,
+        playedMoveUci,
+        generation,
+        anchorRef.current,
+        lastPlayedSearchRef.current,
+      );
+      if (plan === null) return null;
+
+      const keyRaw = await searchAfterMove(
+        plan.afterKeyFen,
+        generation,
+        TRAIN_RECHECK_MOVETIME_MS,
+        TRAIN_RECHECK_MAX_NODES,
+      );
+      // Bug fix (review WR-01): recheckMove's timeout only rejects the race, it
+      // does not stop this async function. A key search landing just AFTER the
+      // timeout used to fall through to the played search, which kept the engine
+      // busy for up to 3 s and could collide with the reveal's own search. The
+      // timeout aborts `signal`, so a timed-out re-check never dispatches its
+      // second search. (The generation check below cannot catch it: a timeout
+      // does not bump the generation, because the anchor must stay valid for the
+      // reveal.)
+      if (signal.aborted) return null;
+      const playedRaw = await searchAfterMove(
+        plan.afterPlayedFen,
+        generation,
+        TRAIN_RECHECK_MOVETIME_MS,
+        TRAIN_RECHECK_MAX_NODES,
+      );
+      // A puzzle change (or abort) while the searches ran: nothing to report.
+      if (generation !== generationRef.current) return null;
+      return finishRecheck(plan, keyRaw, playedRaw);
+    },
+    [searchAfterMove],
+  );
+
+  // D-20: races recheckMoveInner against TRAIN_RECHECK_TIMEOUT_MS with the same
+  // settle-once race as gradeMove, but NEVER rejects: a timeout, an engine
+  // error or an unusable state all resolve null and the caller keeps the 1.5 s
+  // grade with no record. The anchor is swapped only in the success branch, so
+  // a re-check that lost the race (or errored) never changes what the reveal shows.
+  const recheckMove = useCallback(
+    (fen: string, playedMoveUci: string): Promise<RecheckResult | null> => {
+      const generation = generationRef.current;
+      return raceWithTimeout(
+        (signal) => recheckMoveInner(fen, playedMoveUci, generation, signal),
+        TRAIN_RECHECK_TIMEOUT_MS,
+        'Re-check timed out',
+        'Re-check failed',
+      ).then(
+        (inner) => {
+          if (inner === null) return null;
+          if (generation === generationRef.current) anchorRef.current = inner.anchor;
+          return inner.result;
+        },
+        () => null,
+      );
+    },
+    [recheckMoveInner],
   );
 
   // 190.1-01, D-01 point 3 / Task 2 (honest states + cancellation safety):
@@ -795,9 +831,8 @@ export function useTrainGradingEngine({
   // (captured at call time) as the SAME cancellation authority as
   // startGrading/gradeMove — no second counter (190.1-RESEARCH Pitfall 2).
   //
-  // Races the underlying search against TRAIN_GRADING_TIMEOUT_MS using the
-  // exact settle-once wrapper shape gradeMove uses above (a `settled`
-  // boolean, a timer rejecting, clearTimeout on the inner settle) so the
+  // Races the underlying search against TRAIN_GRADING_TIMEOUT_MS through the
+  // same settle-once `raceWithTimeout` gradeMove uses, so the
   // promise ALWAYS settles — a wedged Worker yields a stated failure, never
   // an unbounded spinner. Before resolving, the captured generation is
   // compared against generationRef.current: a result computed for a
@@ -814,71 +849,44 @@ export function useTrainGradingEngine({
       if (afterFen === null) {
         return Promise.reject(new Error('Illegal or malformed game move'));
       }
-      // 190.1 UAT round 9, narrowed by Phase 211 (D-05): at width 1 the
-      // settled mount search holds only rank 1, so the ONLY move this
-      // exact-UCI lookup can match is the engine's own top move — the branch
-      // now means "the move played in the game IS the engine's best move",
-      // which still legitimately skips a redundant search (rank 1's line IS
-      // that move's line, and its eval cannot invert against the best
-      // move's). This is a deliberately RETAINED consumer of the rank lookup
-      // (211-02 consumer ledger row 4), not an overlooked one. The mount
-      // search is guaranteed settled here in practice (the reveal only opens
-      // after gradeMove resolved, which awaited it); the fen/generation
-      // guard is purely defensive.
-      const best = bestSearchRef.current;
-      const bestMatches =
-        best !== null && best.generation === generation && best.fen === puzzleFen;
-      if (bestMatches) {
-        const rankLine = rankLineForMove(best.lines, gameMoveUci);
-        if (rankLine !== null) {
-          return Promise.resolve({
-            moves: rankLine.moves,
-            evalCp: rankLine.evalCp,
-            evalMate: rankLine.evalMate,
-          });
-        }
+      // Phase 235 (D-09): a game move equal to the key reuses the key line with
+      // no search. (The anchor's own search is rooted at the AFTER-KEY fen, so
+      // an exact-UCI rank lookup there could match the opponent's reply.) The
+      // anchor is guaranteed settled here in practice (the reveal only opens
+      // after gradeMove resolved, which awaited it); the fen/generation guard
+      // is purely defensive.
+      const anchor = anchorRef.current;
+      const anchorMatches =
+        anchor !== null && anchor.generation === generation && anchor.fen === puzzleFen;
+      if (anchorMatches && gameMoveUci === anchor.keyUci) {
+        return Promise.resolve(anchor.keyLine);
       }
-      return new Promise<TrainEngineLine>((resolve, reject) => {
-        let settled = false;
-        const timer = setTimeout(() => {
-          if (settled) return;
-          settled = true;
-          reject(new Error('Reveal search timed out'));
-        }, TRAIN_GRADING_TIMEOUT_MS);
-        search(afterFen, generation, 1, TRAIN_GRADING_MOVETIME_MS).then(
-          (raw) => {
-            if (settled) return;
-            settled = true;
-            clearTimeout(timer);
-            if (generation !== generationRef.current) {
-              reject(new Error('Reveal search superseded by a newer puzzle'));
-              return;
-            }
-            const line: TrainEngineLine = {
-              moves: [gameMoveUci, ...raw.pv],
-              evalCp: raw.evalCp,
-              evalMate: raw.evalMate,
-            };
-            // Rare-case backstop, same rationale as gradeMove's clamp (190.1
-            // UAT round 9) — a game move outside the mount ranks whose
-            // after-move search reads better than the best move must not be
-            // DISPLAYED contradicting the "best move" label.
-            resolve(
-              bestMatches
-                ? clampLineEvalToBest(line, bestLineFrom(best), sideToMoveFromFen(puzzleFen))
-                : line,
-            );
-          },
-          (error: unknown) => {
-            if (settled) return;
-            settled = true;
-            clearTimeout(timer);
-            reject(error instanceof Error ? error : new Error('Reveal search failed'));
-          },
-        );
-      });
+      return raceWithTimeout(
+        async () => {
+          const raw = await searchAfterMove(afterFen, generation, TRAIN_GRADING_MOVETIME_MS);
+          if (generation !== generationRef.current) {
+            throw new Error('Reveal search superseded by a newer puzzle');
+          }
+          const line: TrainEngineLine = {
+            moves: [gameMoveUci, ...raw.pv],
+            evalCp: raw.evalCp,
+            evalMate: raw.evalMate,
+          };
+          // Display backstop, same rationale as gradeMove's clamp (D-09) — a
+          // game move whose after-move search reads better than the key line
+          // must not be DISPLAYED contradicting the "best move" label.
+          // D-16: after a CONFIRMED re-check the anchor is unclamped, so the
+          // game line shows the phone's honest eval.
+          return anchorMatches && !anchor.unclamped
+            ? clampLineEvalToBest(line, anchor.keyLine, sideToMoveFromFen(puzzleFen))
+            : line;
+        },
+        TRAIN_GRADING_TIMEOUT_MS,
+        'Reveal search timed out',
+        'Reveal search failed',
+      );
     },
-    [search],
+    [searchAfterMove],
   );
 
   return {
@@ -889,5 +897,6 @@ export function useTrainGradingEngine({
     restartEngine,
     gradeMove,
     startGameMoveSearch,
+    recheckMove,
   };
 }

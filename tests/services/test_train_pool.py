@@ -46,7 +46,7 @@ from app.models.game_flaw import GameFlaw
 from app.models.game_position import GamePosition
 from app.models.herring_pool import HerringPool
 from app.services.eval_utils import LICHESS_K
-from app.services.flaws_service import BLUNDER_DROP, INACCURACY_DROP
+from app.services.flaws_service import BLUNDER_DROP, INACCURACY_DROP, MISTAKE_DROP
 from app.services.train_pool import (
     HERRING_DEGENERATE_MIN_GAP_ES,
     HERRING_LADDER_SIZE,
@@ -55,16 +55,23 @@ from app.services.train_pool import (
     HERRING_PREFERRED_QUALIFYING_MOVES,
     MAX_ITEMS_PER_GAME_PER_SESSION,
     SHARP_GAP_ES,
+    PuzzleAnswerKey,
+    ServerGradedMove,
+    VettedMove,
+    answer_key_for,
     answer_key_present,
     blob_pending_stmt,
     classify_puzzle_type,
     expected_score_for,
     fen_and_last_move_at_ply,
     full_fen_at_ply,
+    graded_moves_from_vetted,
     herring_stmt,
+    legal_answer_key,
     pick_one_per_game,
     pool_entry_stmt,
     second_best_not_winning_admissible,
+    sharp_runner_up_graded_move,
     vetted_moves_from_ladder,
     vetted_moves_from_pv_node,
 )
@@ -203,6 +210,202 @@ class TestClassifyPuzzleType:
         soft_node = {"b": 50, "bm": None, "s": 50, "sm": None, "su": "e2e4"}
         assert classify_puzzle_type([sharp_node, soft_node], "white") == "sharp"
         assert classify_puzzle_type([soft_node, sharp_node], "white") == "soft"
+
+
+# ---------------------------------------------------------------------------
+# TestAnswerKeyFor / TestLegalAnswerKey (Phase 235, SEED-192, D-05/D-06/D-07/D-19)
+# — the single pure derivation of the server's answer key, plus the python-chess
+# legality check that degrades an unplayable key to null.
+# ---------------------------------------------------------------------------
+
+# White to move after 1.e4 e5 (g1f3 / b1c3 legal; the black reply e7e5 is not).
+_WHITE_TO_MOVE_FEN = "rnbqkbnr/pppp1ppp/8/4p3/4P3/8/PPPP1PPP/RNBQKBNR w KQkq - 0 2"
+
+# Sharp for a WHITE mover (best +200, second -200); the same blob read from a
+# BLACK mover's POV is inverted (best_es < second_es), i.e. "soft".
+_SHARP_NODE = {"b": 200, "bm": None, "s": -200, "sm": None, "su": "b1c3"}
+_SOFT_NODE = {"b": 40, "bm": None, "s": 30, "sm": None, "su": "b1c3"}
+_SHARP_NO_SECOND_NODE = {"b": 200, "bm": None, "s": None, "sm": None, "su": ""}
+_EVEN_PLY = 2  # white mover
+_ODD_PLY = 3  # black mover
+_LADDER = [{"move_uci": "e2e4", "cp": 30, "mate": None}, {"move_uci": "d2d4", "cp": 10}]
+
+
+def _sr_key(
+    *, ply: int = _EVEN_PLY, blob: list[Any] | None, best_move: str | None
+) -> PuzzleAnswerKey:
+    return answer_key_for(
+        source=DrillSource.SR_ITEM,
+        ply=ply,
+        missed_pv_lines=blob,
+        best_move=best_move,
+        ladder=None,
+        filler_solution_uci=None,
+    )
+
+
+class TestAnswerKeyFor:
+    """answer_key_for — (key, puzzle_type, runner_up) per source."""
+
+    @pytest.mark.parametrize(
+        ("ply", "blob", "best_move", "expected"),
+        [
+            pytest.param(
+                _EVEN_PLY,
+                [_SHARP_NODE],
+                "g1f3",
+                PuzzleAnswerKey("g1f3", "sharp", "b1c3"),
+                id="sharp-keeps-runner-up",
+            ),
+            pytest.param(
+                _EVEN_PLY,
+                [_SOFT_NODE],
+                "g1f3",
+                PuzzleAnswerKey("g1f3", "soft", None),
+                id="soft-has-no-runner-up",
+            ),
+            pytest.param(
+                _EVEN_PLY,
+                [_SHARP_NO_SECOND_NODE],
+                "g1f3",
+                PuzzleAnswerKey("g1f3", "sharp", None),
+                id="empty-su-sentinel-is-no-runner-up",
+            ),
+            pytest.param(
+                _EVEN_PLY,
+                [_SHARP_NODE],
+                None,
+                PuzzleAnswerKey(None, "sharp", "b1c3"),
+                id="best-move-none-gives-null-key",
+            ),
+            pytest.param(
+                _EVEN_PLY,
+                [_SHARP_NODE],
+                "",
+                PuzzleAnswerKey(None, "sharp", "b1c3"),
+                id="best-move-empty-string-gives-null-key",
+            ),
+            pytest.param(
+                _EVEN_PLY,
+                None,
+                "g1f3",
+                PuzzleAnswerKey("g1f3", "soft", None),
+                id="blob-none-is-soft",
+            ),
+            pytest.param(
+                _ODD_PLY,
+                [_SHARP_NODE],
+                "g8f6",
+                PuzzleAnswerKey("g8f6", "soft", None),
+                id="ply-parity-picks-mover-pov",
+            ),
+        ],
+    )
+    def test_sr_item(
+        self,
+        ply: int,
+        blob: list[Any] | None,
+        best_move: str | None,
+        expected: PuzzleAnswerKey,
+    ) -> None:
+        assert _sr_key(ply=ply, blob=blob, best_move=best_move) == expected
+
+    @pytest.mark.parametrize(
+        ("ladder", "expected_key"),
+        [
+            pytest.param(_LADDER, "e2e4", id="valid-ladder"),
+            pytest.param(None, None, id="ladder-none"),
+            pytest.param([], None, id="ladder-empty"),
+            pytest.param(["e2e4"], None, id="element-zero-not-a-dict"),
+            pytest.param([{"move_uci": ""}], None, id="empty-move-uci"),
+        ],
+    )
+    def test_herring(self, ladder: list[Any] | None, expected_key: str | None) -> None:
+        got = answer_key_for(
+            source=DrillSource.RED_HERRING,
+            ply=_EVEN_PLY,
+            missed_pv_lines=None,
+            best_move=None,
+            ladder=ladder,
+            filler_solution_uci=None,
+        )
+        assert got == PuzzleAnswerKey(expected_key, "herring", None)
+
+    def test_herring_ignores_a_sharp_sr_blob(self) -> None:
+        """A herring row that shares (user, game, ply) with the user's own flaw
+        must stay "herring" even when an SR blob is (wrongly) passed alongside."""
+        got = answer_key_for(
+            source=DrillSource.RED_HERRING,
+            ply=_EVEN_PLY,
+            missed_pv_lines=[_SHARP_NODE],
+            best_move="g1f3",
+            ladder=_LADDER,
+            filler_solution_uci=None,
+        )
+        assert got == PuzzleAnswerKey("e2e4", "herring", None)
+
+    @pytest.mark.parametrize(
+        ("solution", "expected_key"),
+        [pytest.param("d2d4", "d2d4", id="solution"), pytest.param(None, None, id="no-solution")],
+    )
+    def test_sharp_filler(self, solution: str | None, expected_key: str | None) -> None:
+        got = answer_key_for(
+            source=DrillSource.SHARP_FILLER,
+            ply=_EVEN_PLY,
+            missed_pv_lines=None,
+            best_move=None,
+            ladder=None,
+            filler_solution_uci=solution,
+        )
+        assert got == PuzzleAnswerKey(expected_key, "sharp", None)
+
+
+class TestLegalAnswerKey:
+    """legal_answer_key — D-07: an unplayable key or runner-up degrades to None."""
+
+    @pytest.mark.parametrize(
+        ("key", "fen", "expected"),
+        [
+            pytest.param(
+                PuzzleAnswerKey("g1f3", "sharp", "b1c3"),
+                _WHITE_TO_MOVE_FEN,
+                PuzzleAnswerKey("g1f3", "sharp", "b1c3"),
+                id="legal-key-and-runner-up-kept",
+            ),
+            pytest.param(
+                PuzzleAnswerKey("e7e5", "soft", None),
+                _WHITE_TO_MOVE_FEN,
+                PuzzleAnswerKey(None, "soft", None),
+                id="illegal-key-black-move-in-white-fen",
+            ),
+            pytest.param(
+                PuzzleAnswerKey("zz", "soft", None),
+                _WHITE_TO_MOVE_FEN,
+                PuzzleAnswerKey(None, "soft", None),
+                id="malformed-uci",
+            ),
+            pytest.param(
+                PuzzleAnswerKey("g1f3", "sharp", "e7e5"),
+                _WHITE_TO_MOVE_FEN,
+                PuzzleAnswerKey("g1f3", "sharp", None),
+                id="illegal-runner-up-dropped-key-survives",
+            ),
+            pytest.param(
+                PuzzleAnswerKey("g1f3", "sharp", "b1c3"),
+                "not a fen",
+                PuzzleAnswerKey(None, "sharp", None),
+                id="unparseable-fen-nulls-both",
+            ),
+            pytest.param(
+                PuzzleAnswerKey(None, "herring", None),
+                _WHITE_TO_MOVE_FEN,
+                PuzzleAnswerKey(None, "herring", None),
+                id="null-key-stays-null",
+            ),
+        ],
+    )
+    def test_legality(self, key: PuzzleAnswerKey, fen: str, expected: PuzzleAnswerKey) -> None:
+        assert legal_answer_key(key, fen) == expected
 
 
 # ---------------------------------------------------------------------------
@@ -447,6 +650,83 @@ class TestFenAndLastMoveAtPly:
             assert result is not None
             fen, _last_move_uci = result
             assert fen == full_fen_at_ply(_PGN, ply)
+
+
+# ---------------------------------------------------------------------------
+# Phase 235 (D-02): server-graded moves — graded_moves_from_vetted and
+# sharp_runner_up_graded_move.
+# ---------------------------------------------------------------------------
+
+
+class TestGradedMovesFromVetted:
+    def test_maps_quality_to_tier_and_keeps_order_and_es(self) -> None:
+        vetted = [
+            VettedMove(uci="d1e2", quality="best", es_before=0.6, es_after=0.6),
+            VettedMove(uci="d1a4", quality="good", es_before=0.6, es_after=0.58),
+            VettedMove(uci="d1a5", quality="inaccuracy", es_before=0.6, es_after=0.53),
+        ]
+        graded = graded_moves_from_vetted(vetted)
+        assert [(g.uci, g.tier, g.es_before, g.es_after) for g in graded] == [
+            ("d1e2", "good", 0.6, 0.6),
+            ("d1a4", "good", 0.6, 0.58),
+            ("d1a5", "inaccuracy", 0.6, 0.53),
+        ]
+
+    def test_empty_in_empty_out(self) -> None:
+        assert graded_moves_from_vetted([]) == []
+
+
+class TestSharpRunnerUpGradedMove:
+    def test_sharp_runner_up_is_graded_wrong_from_the_blob_evals(self) -> None:
+        node: dict[str, Any] = {"b": 200, "bm": None, "s": -200, "sm": None, "su": "b5c6"}
+        graded = sharp_runner_up_graded_move(node, "white", key_uci="b5a4")
+        assert graded == ServerGradedMove(
+            uci="b5c6",
+            tier="wrong",
+            es_before=expected_score_for(200, None, "white"),  # ty: ignore[invalid-argument-type]
+            es_after=expected_score_for(-200, None, "white"),  # ty: ignore[invalid-argument-type]
+        )
+
+    def test_black_mover_uses_black_pov_scores(self) -> None:
+        node: dict[str, Any] = {"b": -200, "bm": None, "s": 200, "sm": None, "su": "b8c6"}
+        graded = sharp_runner_up_graded_move(node, "black", key_uci=None)
+        assert graded is not None
+        assert graded.tier == "wrong"
+        assert graded.es_before == expected_score_for(-200, None, "black")
+        assert graded.es_after == expected_score_for(200, None, "black")
+
+    def test_runner_up_equal_to_key_is_not_graded(self) -> None:
+        node: dict[str, Any] = {"b": 200, "bm": None, "s": -200, "sm": None, "su": "b5a4"}
+        assert sharp_runner_up_graded_move(node, "white", key_uci="b5a4") is None
+
+    @pytest.mark.parametrize(
+        "node",
+        [
+            {"b": 200, "bm": None, "s": -200, "sm": None, "su": ""},
+            {"b": 200, "bm": None, "s": -200, "sm": None},
+            {"b": 200, "bm": None, "s": -200, "sm": None, "su": None},
+            {"b": 200, "bm": None, "s": None, "sm": None, "su": "b5c6"},
+            {"b": None, "bm": None, "s": -200, "sm": None, "su": "b5c6"},
+            "not-a-dict",
+            None,
+        ],
+    )
+    def test_degenerate_nodes_yield_none(self, node: Any) -> None:
+        assert sharp_runner_up_graded_move(node, "white", key_uci="b5a4") is None
+
+    @pytest.mark.parametrize(
+        "best_cp,expected_tier",
+        [
+            (_boundary_best_cp(INACCURACY_DROP) - 1.0, "good"),
+            (_boundary_best_cp(INACCURACY_DROP), "inaccuracy"),
+            (_boundary_best_cp(MISTAKE_DROP), "wrong"),
+        ],
+    )
+    def test_tier_follows_the_severity_ladder(self, best_cp: float, expected_tier: str) -> None:
+        node: dict[str, Any] = {"b": best_cp, "bm": None, "s": 0, "sm": None, "su": "b5c6"}
+        graded = sharp_runner_up_graded_move(node, "white", key_uci="b5a4")
+        assert graded is not None
+        assert graded.tier == expected_tier
 
 
 # ---------------------------------------------------------------------------

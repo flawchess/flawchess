@@ -34,6 +34,7 @@ in `YYYY-MM-DD` (Europe/Zurich).
 ### Fixed
 
 - Mobile layout polish: the Library move stats show accuracy in a header card on phones, game-card tags and move-stats cards stretch to the miniboard's height, and the Train page has a tighter gap between the header and the streak card.
+- Train: the solution arrow now always shows the move the "only one move works" verdict is about, and your move is graded against that move with the same engine search on both sides. When a different move of yours still looks just as good on a one-good-move puzzle, Train takes a few seconds for a closer look, and if your move holds up it counts, whichever way you guessed.
 
 ## [v2.21] Browser Engine Throughput — 2026-10-03
 

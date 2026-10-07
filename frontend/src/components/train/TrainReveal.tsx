@@ -1024,6 +1024,12 @@ export function TrainReveal({
   // `move_quality` joins it (2026-08-03 bug fix) so the sentence can never
   // claim the user PLAYED the critical move on the strength of the guess
   // alone; see `guessFeedbackProse`.
+  // Phase 235 (D-15): the D-15 line reads the SERVER's `disagreement` flag only
+  // (never the phone's own outcome, T-235-07). The key SAN comes from
+  // `gradeResult.bestMoveUci` because on the keyed path that IS the server key
+  // (plan 02, D-09).
+  const disagreement = verdict.disagreement ?? false;
+  const keySan = disagreement ? sanFromPlayedUci(puzzle.fen, gradeResult?.bestMoveUci ?? null) : null;
   const guessProse =
     guess !== null
       ? guessFeedbackProse(
@@ -1031,6 +1037,8 @@ export function TrainReveal({
           verdict.correct_guess,
           verdict.source === 'sr_item',
           verdict.move_quality,
+          disagreement,
+          keySan,
         )
       : null;
   // Desktop hover/focus spotlights the card AND opens a telemetry hover span

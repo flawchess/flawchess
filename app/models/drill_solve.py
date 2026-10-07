@@ -196,6 +196,15 @@ class DrillSolve(Base):
     telemetry: Mapped[dict[str, Any] | None] = mapped_column(
         JSONB(none_as_null=True), nullable=True, default=None
     )
+    # Phase 235 (D-17/D-18): the phone's disagreement re-check for this solve.
+    # Keys are documented by `SolveRecheck` in app/schemas/train.py plus the
+    # server-added `accepted` flag (did the server credit the disagreement).
+    # Written once by the claim UPDATE (never merged). Unlike telemetry this IS a
+    # grading input (D-14). none_as_null: SQL NULL when no re-check ran, never a
+    # JSON null value.
+    recheck: Mapped[dict[str, Any] | None] = mapped_column(
+        JSONB(none_as_null=True), nullable=True, default=None
+    )
 
 
 __all__ = ["DrillGuess", "DrillMoveQuality", "DrillSolve", "DrillSource"]

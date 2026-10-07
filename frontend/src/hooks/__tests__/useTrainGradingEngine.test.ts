@@ -22,10 +22,17 @@
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { renderHook, act } from '@testing-library/react';
+import { Chess } from 'chess.js';
 import {
   useTrainGradingEngine,
   TRAIN_GRADING_TIMEOUT_MS,
   TRAIN_GRADING_MULTIPV_WIDTH,
+  TRAIN_GRADING_MOVETIME_MS,
+  TRAIN_GRADING_MOUNT_MOVETIME_MS,
+  TRAIN_GRADING_MAX_NODES,
+  TRAIN_RECHECK_MOVETIME_MS,
+  TRAIN_RECHECK_MAX_NODES,
+  TRAIN_RECHECK_TIMEOUT_MS,
 } from '../useTrainGradingEngine';
 import { MISTAKE_DROP, BLUNDER_DROP, INACCURACY_DROP } from '@/generated/flawThresholds';
 import { evalToExpectedScore } from '@/lib/liveFlaw';
@@ -989,5 +996,635 @@ describe('useTrainGradingEngine — consistent evals & display clamp (190.1 UAT 
     const line = await linePromise;
     expect(line.moves).toEqual(['d2d4', 'd7d5']);
     expect(line.evalCp).toBe(230);
+  });
+});
+
+// ─── Phase 235 (D-01/D-08): key-anchored grading ───────────────────────────
+
+/** The FEN after a legal UCI move from `fen`, computed independently with chess.js. */
+function fenAfter(fen: string, uci: string): string {
+  const chess = new Chess(fen);
+  chess.move({ from: uci.slice(0, 2), to: uci.slice(2, 4), promotion: uci.slice(4, 5) || undefined });
+  return chess.fen();
+}
+
+function goCount(): number {
+  return mockWorker.messages.filter((m) => m.startsWith('go ')).length;
+}
+
+describe('useTrainGradingEngine — key-anchored grading (Phase 235 D-01/D-08)', () => {
+  beforeEach(() => {
+    vi.useFakeTimers({ now: 0 });
+    mockWorker = new MockWorker();
+    vi.stubGlobal(
+      'Worker',
+      vi.fn(function (this: unknown) {
+        return mockWorker;
+      }),
+    );
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.unstubAllGlobals();
+  });
+
+  it('a keyed startGrading searches the position AFTER the key at the mount budget, never the root (D-08)', () => {
+    const { result } = renderHook(() => useTrainGradingEngine({ enabled: true }));
+    driveInit(mockWorker);
+
+    act(() => {
+      result.current.startGrading(FEN, 'd2d4');
+    });
+
+    const afterKey = fenAfter(FEN, 'd2d4');
+    expect(mockWorker.messages).toContain(`position fen ${afterKey}`);
+    expect(mockWorker.messages).not.toContain(`position fen ${FEN}`);
+    expect(mockWorker.messages).toContain(
+      `go movetime ${TRAIN_GRADING_MOUNT_MOVETIME_MS} nodes ${TRAIN_GRADING_MAX_NODES}`,
+    );
+    expect(goCount()).toBe(1);
+  });
+
+  it('playing the key grades GOOD with no further search, and the key line is rooted at the puzzle fen (D-01)', async () => {
+    const { result } = renderHook(() => useTrainGradingEngine({ enabled: true }));
+    driveInit(mockWorker);
+
+    act(() => {
+      result.current.startGrading(FEN, 'd2d4');
+    });
+    act(() => {
+      mockWorker.simulateMessage('info depth 12 multipv 1 score cp -40 nodes 1000 pv d7d5');
+    });
+    act(() => {
+      mockWorker.simulateMessage('bestmove d7d5');
+    });
+
+    const grade = await result.current.gradeMove(FEN, 'd2d4');
+    expect(grade.moveTier).toBe('good');
+    expect(grade.bestMoveUci).toBe('d2d4');
+    expect(grade.bestLine.moves).toEqual(['d2d4', 'd7d5']);
+    expect(grade.playedLine).toEqual(grade.bestLine);
+    expect(grade.esAfter).toBe(grade.esBefore);
+    // Only the anchor's own search ever ran: playing the key posts no further `go`.
+    expect(goCount()).toBe(1);
+  });
+
+  it('an off-key move runs ONE after-move search and is graded against the after-key ES, naming the key as best (D-01/D-09)', async () => {
+    const { result } = renderHook(() => useTrainGradingEngine({ enabled: true }));
+    driveInit(mockWorker);
+
+    act(() => {
+      result.current.startGrading(FEN, 'd2d4');
+    });
+    // Black to move after d2d4: raw cp -40 (black POV) -> white-POV +40.
+    act(() => {
+      mockWorker.simulateMessage('info depth 12 multipv 1 score cp -40 nodes 1000 pv d7d5');
+    });
+    act(() => {
+      mockWorker.simulateMessage('bestmove d7d5');
+    });
+
+    const gradePromise = result.current.gradeMove(FEN, 'e2e4');
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    expect(mockWorker.messages).toContain(`position fen ${fenAfter(FEN, 'e2e4')}`);
+    expect(goCount()).toBe(2);
+    // Black to move after e2e4: raw cp 300 (black POV) -> white-POV -300. The
+    // anchor read +40 for white, so this is a large white drop.
+    act(() => {
+      mockWorker.simulateMessage('info depth 12 multipv 1 score cp 300 nodes 1000 pv d7d5');
+    });
+    act(() => {
+      mockWorker.simulateMessage('bestmove d7d5');
+    });
+
+    const grade = await gradePromise;
+    expect(grade.moveTier).toBe('wrong');
+    // D-09: the key, not the phone's own pick, is named best.
+    expect(grade.bestMoveUci).toBe('d2d4');
+    expect(grade.bestLine.moves.slice(0, 2)).toEqual(['d2d4', 'd7d5']);
+    expect(grade.playedLine.moves[0]).toBe('e2e4');
+    // esBefore is the after-key ES (white +40), not a root reading.
+    expect(grade.esBefore).toBe(evalToExpectedScore(40, null, 'white'));
+    expect(grade.esAfter).toBe(evalToExpectedScore(-300, null, 'white'));
+  });
+
+  it('keeps the grading budget unchanged: no global movetime raise (D-03)', () => {
+    expect(TRAIN_GRADING_MOVETIME_MS).toBe(1500);
+    expect(TRAIN_GRADING_MAX_NODES).toBe(2000000);
+  });
+});
+
+// ─── Phase 235 (D-07/D-09): legacy fallback, terminal positions, clamp ─────
+
+// White to move, Ra8# is mate in one (back-rank).
+const MATE_IN_ONE_FEN = '6k1/5ppp/8/8/8/8/5PPP/R5K1 w - - 0 1';
+// Two mating moves (Ra8# and Rb8#) plus a quiet king move (Kh1).
+const TWO_MATES_FEN = '6k1/5ppp/8/8/8/8/5PPP/RR4K1 w - - 0 1';
+// White to move; Qg6 is stalemate (black Kh8 has no move and is not in check).
+const STALEMATE_FEN = '7k/5K2/8/6Q1/8/8/8/8 w - - 0 1';
+
+describe('useTrainGradingEngine — anchor fallbacks, terminal positions, clamp (Phase 235 D-07/D-09)', () => {
+  beforeEach(() => {
+    vi.useFakeTimers({ now: 0 });
+    mockWorker = new MockWorker();
+    vi.stubGlobal(
+      'Worker',
+      vi.fn(function (this: unknown) {
+        return mockWorker;
+      }),
+    );
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.unstubAllGlobals();
+  });
+
+  type StartArgs = [] | [null] | [string];
+  it.each<[string, StartArgs]>([
+    ['no key argument', []],
+    ['a null key', [null]],
+    ['an illegal key', ['e2e5']],
+  ])('D-07: %s keeps the legacy root search and the exact-match fast path', async (_label, args) => {
+    const { result } = renderHook(() => useTrainGradingEngine({ enabled: true }));
+    driveInit(mockWorker);
+
+    act(() => {
+      result.current.startGrading(FEN, ...args);
+    });
+    expect(mockWorker.messages).toContain(`position fen ${FEN}`);
+    expect(mockWorker.messages).toContain(`setoption name MultiPV value ${TRAIN_GRADING_MULTIPV_WIDTH}`);
+    act(() => {
+      mockWorker.simulateMessage('info depth 12 multipv 1 score cp 40 nodes 1000 pv e2e4 e7e5');
+    });
+    act(() => {
+      mockWorker.simulateMessage('bestmove e2e4');
+    });
+
+    const grade = await result.current.gradeMove(FEN, 'e2e4');
+    expect(grade.moveTier).toBe('good');
+    expect(grade.bestMoveUci).toBe('e2e4');
+    expect(grade.bestLine.moves).toEqual(['e2e4', 'e7e5']);
+    expect(goCount()).toBe(1);
+  });
+
+  it('a mating key is scored without a search, and a weaker move is graded against the mate, not a neutral 0.5 (T-235-05)', async () => {
+    const { result } = renderHook(() => useTrainGradingEngine({ enabled: true }));
+    driveInit(mockWorker);
+
+    act(() => {
+      result.current.startGrading(MATE_IN_ONE_FEN, 'a1a8');
+    });
+    // The after-key position is checkmate: no `go` is dispatched for the anchor.
+    expect(goCount()).toBe(0);
+
+    const keyGrade = await result.current.gradeMove(MATE_IN_ONE_FEN, 'a1a8');
+    expect(keyGrade.moveTier).toBe('good');
+    expect(keyGrade.bestMoveUci).toBe('a1a8');
+    expect(keyGrade.esBefore).toBeGreaterThan(0.9);
+    expect(goCount()).toBe(0);
+
+    // A quiet rook move: only the after-PLAYED position is searched.
+    const gradePromise = result.current.gradeMove(MATE_IN_ONE_FEN, 'a1a2');
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    expect(goCount()).toBe(1);
+    expect(mockWorker.messages).toContain(`position fen ${fenAfter(MATE_IN_ONE_FEN, 'a1a2')}`);
+    // Black to move: raw cp -300 (black POV) -> white +300, still far below the mate.
+    act(() => {
+      mockWorker.simulateMessage('info depth 12 multipv 1 score cp -300 nodes 1000 pv g8f8');
+    });
+    act(() => {
+      mockWorker.simulateMessage('bestmove g8f8');
+    });
+
+    const grade = await gradePromise;
+    expect(grade.moveTier).toBe('wrong');
+    expect(grade.bestMoveUci).toBe('a1a8');
+  });
+
+  it('a played move that itself mates is scored without a search and grades good against a non-mating key', async () => {
+    const { result } = renderHook(() => useTrainGradingEngine({ enabled: true }));
+    driveInit(mockWorker);
+
+    // Key = the quiet Kh1; the anchor search reads raw cp -100 (black POV) -> white +100.
+    act(() => {
+      result.current.startGrading(TWO_MATES_FEN, 'g1h1');
+    });
+    act(() => {
+      mockWorker.simulateMessage('info depth 12 multipv 1 score cp -100 nodes 1000 pv g8f8');
+    });
+    act(() => {
+      mockWorker.simulateMessage('bestmove g8f8');
+    });
+    expect(goCount()).toBe(1);
+
+    const grade = await result.current.gradeMove(TWO_MATES_FEN, 'b1b8');
+    expect(grade.moveTier).toBe('good');
+    expect(grade.esAfter).toBeGreaterThan(grade.esBefore);
+    // The mating move needed no search at all.
+    expect(goCount()).toBe(1);
+  });
+
+  it('a played move that stalemates is scored as a draw (evalCp 0) without a search', async () => {
+    const { result } = renderHook(() => useTrainGradingEngine({ enabled: true }));
+    driveInit(mockWorker);
+
+    // Key = a queen move that keeps a big edge: raw cp -500 (black POV) -> white +500.
+    act(() => {
+      result.current.startGrading(STALEMATE_FEN, 'g5d5');
+    });
+    act(() => {
+      mockWorker.simulateMessage('info depth 12 multipv 1 score cp -500 nodes 1000 pv h8g8');
+    });
+    act(() => {
+      mockWorker.simulateMessage('bestmove h8g8');
+    });
+    expect(goCount()).toBe(1);
+
+    const grade = await result.current.gradeMove(STALEMATE_FEN, 'g5g6');
+    expect(goCount()).toBe(1);
+    expect(grade.playedLine.evalCp).toBe(0);
+    expect(grade.esAfter).toBe(0.5);
+    // Throwing away a won position into a draw is a blunder-sized drop.
+    expect(grade.moveTier).toBe('wrong');
+  });
+
+  it('D-09 clamp: an off-key move whose after-search reads better than the key line grades good and its line is capped at the key line eval', async () => {
+    const { result } = renderHook(() => useTrainGradingEngine({ enabled: true }));
+    driveInit(mockWorker);
+
+    act(() => {
+      result.current.startGrading(FEN, 'd2d4');
+    });
+    // Key line: raw cp -40 (black POV) -> white +40.
+    act(() => {
+      mockWorker.simulateMessage('info depth 12 multipv 1 score cp -40 nodes 1000 pv d7d5');
+    });
+    act(() => {
+      mockWorker.simulateMessage('bestmove d7d5');
+    });
+
+    const gradePromise = result.current.gradeMove(FEN, 'e2e4');
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    // Played line reads raw cp -260 (black POV) -> white +260: better than the key.
+    act(() => {
+      mockWorker.simulateMessage('info depth 12 multipv 1 score cp -260 nodes 1000 pv e7e5');
+    });
+    act(() => {
+      mockWorker.simulateMessage('bestmove e7e5');
+    });
+
+    const grade = await gradePromise;
+    expect(grade.moveTier).toBe('good');
+    expect(grade.esAfter).toBeGreaterThan(grade.esBefore);
+    expect(grade.playedLine.evalCp).toBe(grade.bestLine.evalCp);
+    expect(grade.playedLine.evalCp).toBe(40);
+    expect(grade.playedLine.moves).toEqual(['e2e4', 'e7e5']);
+  });
+
+  it('D-09 game move: a game move equal to the key resolves the key line with no search', async () => {
+    const { result } = renderHook(() => useTrainGradingEngine({ enabled: true }));
+    driveInit(mockWorker);
+
+    act(() => {
+      result.current.startGrading(FEN, 'd2d4');
+    });
+    act(() => {
+      mockWorker.simulateMessage('info depth 12 multipv 1 score cp -40 nodes 1000 pv d7d5 g1f3');
+    });
+    act(() => {
+      mockWorker.simulateMessage('bestmove d7d5');
+    });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0);
+    });
+
+    const goCountBefore = goCount();
+    const line = await result.current.startGameMoveSearch(FEN, 'd2d4');
+    expect(goCount()).toBe(goCountBefore);
+    expect(line.moves).toEqual(['d2d4', 'd7d5', 'g1f3']);
+    expect(line.evalCp).toBe(40);
+  });
+
+  it('D-09 game move: a different game move posts ONE after-move search and its eval is clamped to the key line', async () => {
+    const { result } = renderHook(() => useTrainGradingEngine({ enabled: true }));
+    driveInit(mockWorker);
+
+    act(() => {
+      result.current.startGrading(FEN, 'd2d4');
+    });
+    act(() => {
+      mockWorker.simulateMessage('info depth 12 multipv 1 score cp -40 nodes 1000 pv d7d5');
+    });
+    act(() => {
+      mockWorker.simulateMessage('bestmove d7d5');
+    });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0);
+    });
+
+    const goCountBefore = goCount();
+    const linePromise = result.current.startGameMoveSearch(FEN, 'e2e4');
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    expect(goCount()).toBe(goCountBefore + 1);
+    expect(mockWorker.messages).toContain(`position fen ${fenAfter(FEN, 'e2e4')}`);
+    // Raw cp -260 (black POV) -> white +260: better than the key line's +40.
+    act(() => {
+      mockWorker.simulateMessage('info depth 12 multipv 1 score cp -260 nodes 1000 pv e7e5');
+    });
+    act(() => {
+      mockWorker.simulateMessage('bestmove e7e5');
+    });
+
+    const line = await linePromise;
+    expect(line.moves).toEqual(['e2e4', 'e7e5']);
+    expect(line.evalCp).toBe(40);
+  });
+});
+
+// ─── Phase 235 (D-11/D-13/D-16/D-20): disagreement re-check ────────────────
+
+const RECHECK_GO = `go movetime ${TRAIN_RECHECK_MOVETIME_MS} nodes ${TRAIN_RECHECK_MAX_NODES}`;
+
+/**
+ * Answer the in-flight search of a position where BLACK is to move (every
+ * after-move position in these tests): the raw UCI score is black-POV, so the
+ * white-POV reading `whiteCp` is sent negated. `pv` is the engine line.
+ */
+function answerSearch(whiteCp: number, depth: number, pv: string): void {
+  act(() => {
+    mockWorker.simulateMessage(`info depth ${depth} multipv 1 score cp ${-whiteCp} nodes 1000 pv ${pv}`);
+  });
+  act(() => {
+    mockWorker.simulateMessage(`bestmove ${pv.split(' ')[0]}`);
+  });
+}
+
+async function flush(): Promise<void> {
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(0);
+  });
+}
+
+interface FastReadings {
+  keyWhiteCp: number;
+  keyDepth: number;
+  playedWhiteCp: number;
+  playedDepth: number;
+}
+
+type GradingHook = { current: ReturnType<typeof useTrainGradingEngine> };
+
+/** Run the keyed anchor search (key d2d4) and grade the off-key e2e4 from the 1.5 s readings. */
+async function gradeOffKey(result: GradingHook, fast: FastReadings) {
+  act(() => {
+    result.current.startGrading(FEN, 'd2d4');
+  });
+  answerSearch(fast.keyWhiteCp, fast.keyDepth, 'd7d5 g1f3');
+  const gradePromise = result.current.gradeMove(FEN, 'e2e4');
+  await flush();
+  answerSearch(fast.playedWhiteCp, fast.playedDepth, 'e7e5 g1f3');
+  return gradePromise;
+}
+
+/** Answer both re-check searches (key, then played) with the given 3 s white-POV readings. */
+async function answerRecheck(keyWhiteCp: number, keyDepth: number, playedWhiteCp: number, playedDepth: number) {
+  answerSearch(keyWhiteCp, keyDepth, 'd7d5 b1c3');
+  await flush();
+  answerSearch(playedWhiteCp, playedDepth, 'e7e5 b1c3');
+}
+
+const GOOD_FAST: FastReadings = { keyWhiteCp: 40, keyDepth: 12, playedWhiteCp: 30, playedDepth: 11 };
+
+describe('useTrainGradingEngine — disagreement re-check (Phase 235 D-11/D-13/D-16/D-20)', () => {
+  beforeEach(() => {
+    vi.useFakeTimers({ now: 0 });
+    mockWorker = new MockWorker();
+    vi.stubGlobal(
+      'Worker',
+      vi.fn(function (this: unknown) {
+        return mockWorker;
+      }),
+    );
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.unstubAllGlobals();
+  });
+
+  it('(a) posts exactly two re-check dispatches, the after-key position first and the after-played one only after the first bestmove', async () => {
+    const { result } = renderHook(() => useTrainGradingEngine({ enabled: true }));
+    driveInit(mockWorker);
+    await gradeOffKey(result, GOOD_FAST);
+
+    const goBefore = goCount();
+    const recheckPromise = result.current.recheckMove(FEN, 'e2e4');
+    expect(goCount()).toBe(goBefore + 1);
+    expect(mockWorker.messages.at(-1)).toBe(RECHECK_GO);
+    expect(mockWorker.messages.at(-2)).toBe(`position fen ${fenAfter(FEN, 'd2d4')}`);
+
+    answerSearch(40, 18, 'd7d5 b1c3');
+    await flush();
+    expect(goCount()).toBe(goBefore + 2);
+    expect(mockWorker.messages.at(-1)).toBe(RECHECK_GO);
+    expect(mockWorker.messages.at(-2)).toBe(`position fen ${fenAfter(FEN, 'e2e4')}`);
+
+    answerSearch(30, 17, 'e7e5 b1c3');
+    const outcome = await recheckPromise;
+    expect(outcome).not.toBeNull();
+    expect(mockWorker.messages.filter((m) => m === RECHECK_GO)).toHaveLength(2);
+  });
+
+  it('(b) confirmed: a played move still good at 3 s keeps its honest eval, and the payload carries the 1.5 s values and the matching depths', async () => {
+    const { result } = renderHook(() => useTrainGradingEngine({ enabled: true }));
+    driveInit(mockWorker);
+    await gradeOffKey(result, GOOD_FAST);
+
+    const recheckPromise = result.current.recheckMove(FEN, 'e2e4');
+    // The played move now reads BETTER than the key (white +260 vs +40).
+    await answerRecheck(40, 18, 260, 17);
+    const outcome = await recheckPromise;
+
+    expect(outcome?.recheck.outcome).toBe('confirmed');
+    expect(outcome?.grade.moveTier).toBe('good');
+    expect(outcome?.grade.bestMoveUci).toBe('d2d4');
+    expect(outcome?.grade.bestLine.moves).toEqual(['d2d4', 'd7d5', 'b1c3']);
+    expect(outcome?.grade.playedLine.moves).toEqual(['e2e4', 'e7e5', 'b1c3']);
+    // D-16: NOT capped at the key line's +40.
+    expect(outcome?.grade.playedLine.evalCp).toBe(260);
+    expect(outcome?.recheck).toEqual({
+      v: 1,
+      outcome: 'confirmed',
+      key_es: evalToExpectedScore(40, null, 'white'),
+      played_es: evalToExpectedScore(30, null, 'white'),
+      key_es_recheck: evalToExpectedScore(40, null, 'white'),
+      played_es_recheck: evalToExpectedScore(260, null, 'white'),
+      key_depth: 12,
+      played_depth: 11,
+      key_depth_recheck: 18,
+      played_depth_recheck: 17,
+    });
+  });
+
+  it('(c) resolved: a 3 s pair in the mistake band is graded wrong with the outcome resolved and the played line not above the key line', async () => {
+    const { result } = renderHook(() => useTrainGradingEngine({ enabled: true }));
+    driveInit(mockWorker);
+    await gradeOffKey(result, GOOD_FAST);
+
+    const recheckPromise = result.current.recheckMove(FEN, 'e2e4');
+    await answerRecheck(40, 18, -300, 17);
+    const outcome = await recheckPromise;
+
+    expect(outcome?.recheck.outcome).toBe('resolved');
+    expect(outcome?.grade.moveTier).toBe('wrong');
+    expect(outcome?.grade.esBefore).toBe(evalToExpectedScore(40, null, 'white'));
+    expect(outcome?.grade.esAfter).toBe(evalToExpectedScore(-300, null, 'white'));
+    expect(outcome?.grade.playedLine.evalCp).toBeLessThanOrEqual(outcome?.grade.bestLine.evalCp ?? 0);
+    expect(outcome?.recheck.played_es_recheck).toBe(evalToExpectedScore(-300, null, 'white'));
+  });
+
+  it('(d) a stalled re-check resolves null after TRAIN_RECHECK_TIMEOUT_MS and a late answer never changes the anchor (D-20)', async () => {
+    expect(TRAIN_RECHECK_TIMEOUT_MS).toBeGreaterThan(2 * TRAIN_RECHECK_MOVETIME_MS);
+    const { result } = renderHook(() => useTrainGradingEngine({ enabled: true }));
+    driveInit(mockWorker);
+    await gradeOffKey(result, GOOD_FAST);
+
+    const recheckPromise = result.current.recheckMove(FEN, 'e2e4');
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(TRAIN_RECHECK_TIMEOUT_MS);
+    });
+    expect(await recheckPromise).toBeNull();
+
+    // The stalled searches are answered afterwards (a deep 3 s reading that
+    // would have confirmed): the timed-out re-check must not swap the anchor.
+    await answerRecheck(500, 30, 900, 29);
+    await flush();
+
+    const line = await result.current.startGameMoveSearch(FEN, 'd2d4');
+    expect(line.moves).toEqual(['d2d4', 'd7d5', 'g1f3']);
+    expect(line.evalCp).toBe(40);
+  });
+
+  it('(d2) a key search that lands AFTER the timeout never dispatches the played re-check search (WR-01)', async () => {
+    const { result } = renderHook(() => useTrainGradingEngine({ enabled: true }));
+    driveInit(mockWorker);
+    await gradeOffKey(result, GOOD_FAST);
+
+    const goBefore = goCount();
+    const recheckPromise = result.current.recheckMove(FEN, 'e2e4');
+    expect(goCount()).toBe(goBefore + 1);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(TRAIN_RECHECK_TIMEOUT_MS);
+    });
+    expect(await recheckPromise).toBeNull();
+
+    // The stalled key search finally answers. The timed-out re-check must not
+    // go on to occupy the engine with its second (played) 3 s search.
+    answerSearch(40, 18, 'd7d5 b1c3');
+    await flush();
+    expect(goCount()).toBe(goBefore + 1);
+  });
+
+  it('(e) a legacy (null-key) anchor resolves null without posting a search', async () => {
+    const { result } = renderHook(() => useTrainGradingEngine({ enabled: true }));
+    driveInit(mockWorker);
+    act(() => {
+      result.current.startGrading(FEN);
+    });
+    // Root search (white to move): raw cp is white-POV; best move d2d4.
+    act(() => {
+      mockWorker.simulateMessage('info depth 12 multipv 1 score cp 40 nodes 1000 pv d2d4 d7d5');
+    });
+    act(() => {
+      mockWorker.simulateMessage('bestmove d2d4');
+    });
+    const gradePromise = result.current.gradeMove(FEN, 'e2e4');
+    await flush();
+    answerSearch(30, 11, 'e7e5');
+    await gradePromise;
+
+    const goBefore = goCount();
+    expect(await result.current.recheckMove(FEN, 'e2e4')).toBeNull();
+    expect(goCount()).toBe(goBefore);
+  });
+
+  it('(f) after a confirmed re-check, startGameMoveSearch for a non-key game move resolves an unclamped eval', async () => {
+    const { result } = renderHook(() => useTrainGradingEngine({ enabled: true }));
+    driveInit(mockWorker);
+    await gradeOffKey(result, GOOD_FAST);
+    const recheckPromise = result.current.recheckMove(FEN, 'e2e4');
+    await answerRecheck(40, 18, 260, 17);
+    expect((await recheckPromise)?.recheck.outcome).toBe('confirmed');
+
+    const linePromise = result.current.startGameMoveSearch(FEN, 'g1f3');
+    await flush();
+    answerSearch(300, 16, 'd7d5');
+    const line = await linePromise;
+    expect(line.evalCp).toBe(300);
+  });
+
+  it('(f) after a resolved re-check, a game move reading better than the key stays clamped to the 3 s key line', async () => {
+    const { result } = renderHook(() => useTrainGradingEngine({ enabled: true }));
+    driveInit(mockWorker);
+    await gradeOffKey(result, GOOD_FAST);
+    const recheckPromise = result.current.recheckMove(FEN, 'e2e4');
+    await answerRecheck(55, 18, -300, 17);
+    expect((await recheckPromise)?.recheck.outcome).toBe('resolved');
+
+    const linePromise = result.current.startGameMoveSearch(FEN, 'g1f3');
+    await flush();
+    answerSearch(300, 16, 'd7d5');
+    const line = await linePromise;
+    // Capped at the 3 s key reading (white +55), not the 1.5 s one (+40).
+    expect(line.evalCp).toBe(55);
+  });
+
+  it('(g) ordinary anchor, grade and game-move searches still post the 2M grading cap', async () => {
+    const { result } = renderHook(() => useTrainGradingEngine({ enabled: true }));
+    driveInit(mockWorker);
+    await gradeOffKey(result, GOOD_FAST);
+    const linePromise = result.current.startGameMoveSearch(FEN, 'g1f3');
+    await flush();
+    answerSearch(30, 16, 'd7d5');
+    await linePromise;
+
+    const goMessages = mockWorker.messages.filter((m) => m.startsWith('go '));
+    expect(goMessages).toHaveLength(3);
+    for (const message of goMessages) {
+      expect(message).toBe(`go movetime ${TRAIN_GRADING_MOVETIME_MS} nodes ${TRAIN_GRADING_MAX_NODES}`);
+    }
+    expect(TRAIN_RECHECK_MAX_NODES).toBeGreaterThan(TRAIN_GRADING_MAX_NODES);
+  });
+
+  it('(h) the raised node cap survives the stop-queue drain when a re-check search is deferred behind a running search', async () => {
+    const { result } = renderHook(() => useTrainGradingEngine({ enabled: true }));
+    driveInit(mockWorker);
+    await gradeOffKey(result, GOOD_FAST);
+
+    // A reveal game-move search is still thinking when the re-check dispatches.
+    void result.current.startGameMoveSearch(FEN, 'g1f3').catch(() => {});
+    await flush();
+    const recheckPromise = result.current.recheckMove(FEN, 'e2e4');
+    expect(mockWorker.messages.at(-1)).toBe('stop');
+
+    // The engine answers the stop; the queued re-check search then dispatches.
+    act(() => {
+      mockWorker.simulateMessage('bestmove d7d5');
+    });
+    expect(mockWorker.messages.at(-1)).toBe(RECHECK_GO);
+    answerSearch(40, 18, 'd7d5');
+    await flush();
+    answerSearch(30, 17, 'e7e5');
+    expect(await recheckPromise).not.toBeNull();
   });
 });
