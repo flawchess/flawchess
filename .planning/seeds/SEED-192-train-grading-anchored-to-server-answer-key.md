@@ -1,6 +1,8 @@
 ---
 id: SEED-192
-status: dormant
+status: promoted
+promoted_to: Phase 235
+promoted: 2026-10-07
 planted: 2026-10-07
 planted_during: ad-hoc prod analysis of a contradictory Train reveal (user 28, no phase; current phase 234)
 trigger_when: next Train phase, or any change to Train grading / puzzle classification; plan as its own GSD phase
