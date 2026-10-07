@@ -116,6 +116,16 @@ solves; a type-blind pre-POST trigger would fire on ~29% of soft solves.
   — **Reversibility:** costly — Alembic migration adding a column; dropping it later loses the
   collected re-check data.
 
+### Added at plan time (owner 2026-10-07, from research open questions)
+- **D-19:** `TrainPuzzle` also carries the sharp runner-up UCI (`su`), filled only for sharp SR
+  items (null otherwise). Reason: at 1.5s the phone can rate `su` above the key (user-28: d1d5 vs
+  Qh4), so without it playing `su` would trigger a needless ~6s re-check that D-02 then overrides.
+  The D-10 trigger excludes `su` client-side. Same no-display rule as D-05.
+- **D-20:** Re-check timeout or engine error: keep the 1.5s grade, send no re-check record, no
+  disagreement credit.
+- Research recommendations adopted: no server override for `played == key` on sharp/filler (out of
+  scope); the D-15 line lives in `guessFeedbackProse` (reveal guess card), as D-15 says.
+
 ### Claude's Discretion
 - Exact field names (`TrainPuzzle` key/type fields, the re-check column and its keys). Suggested
   payload: outcome, key and played ES at 1.5s and at 3s, depth reached per search, `v: 1`.
