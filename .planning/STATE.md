@@ -5,8 +5,8 @@ current_phase: 234
 current_phase_name: Milestone Feedback Ask (SEED-191)
 status: completed
 stopped_at: Phase 234 complete — all phases complete
-last_updated: "2026-10-06T14:04:54.603Z"
-state_head: 21fdebd2dc37235c5e093b82b9b9b407d7678b93
+last_updated: "2026-10-07T05:55:42.054Z"
+state_head: 27ce3d361d06bc7c9b24032924946945a30f3773
 progress:
   total_phases: 7
   completed_phases: 103
@@ -14,8 +14,8 @@ progress:
   completed_plans: 47
   percent: 100
 milestone_name: Browser Engine Throughput
-last_activity: 2026-10-04
-last_activity_desc: "Completed quick task 261004-rre: Track Umami events for server-persisted settings controls"
+last_activity: 2026-10-07
+last_activity_desc: "Completed quick task 261007-axc: Separate Train reveal telemetry counter for hand-played free moves (review_board_moves)"
 ---
 
 # Project State: FlawChess
@@ -989,6 +989,7 @@ None active.
 | 261006-75v | Leaderboard card declutter: puzzle icon, qualify divider, info popover, podium viewer highlight, medal count | 2026-10-06 | 6cd678dc2 | [261006-75v-leaderboard-card-declutter-puzzle-icon-q](./quick/261006-75v-leaderboard-card-declutter-puzzle-icon-q/) |
 | 261006-95o | Replace accuracy bullseye icon with info popover explaining Accuracy and move qualities | 2026-10-06 | bf89f68a1 | [261006-95o-replace-accuracy-bullseye-icon-with-info](./quick/261006-95o-replace-accuracy-bullseye-icon-with-info/) |
 | 126 | Mobile header: settings cogwheel left of the page title | 2026-10-06 | 21fdebd2d | — |
+| 261007-axc | Separate Train reveal telemetry counter for hand-played free moves (review_board_moves) | 2026-10-07 | 27ce3d361 | [261007-axc-separate-train-reveal-telemetry-counter-](./quick/261007-axc-separate-train-reveal-telemetry-counter-/) |
 
 ## Deferred Items
 
