@@ -49,6 +49,7 @@ import {
   TRAIN_STEP_HIGHLIGHT,
 } from '@/lib/trainArrows';
 import type { TrainFineMove, TrainMoveQuality } from '@/lib/trainArrows';
+import type { ExploreMoveSource } from '@/lib/trainTelemetry';
 
 /**
  * FIFO bound on the per-FEN eval cache — mirrors the Analysis page's own
@@ -119,9 +120,10 @@ export interface UseTrainFreePlayOptions {
    * drop (`start`), each successful `playMove`, and an engine-line click
    * (`playLine`, counted as ONE move, RESEARCH A4). Never for reset, goBack,
    * goForward, goToRoot or goToNode. Held in a ref so the command identities
-   * do not change with the caller's callback.
+   * do not change with the caller's callback. Quick 261007-axc: `source` tells
+   * board moves ('board': start, playMove) from engine-line clicks.
    */
-  onUserMove?: () => void;
+  onUserMove?: (source: ExploreMoveSource) => void;
 }
 
 export interface TrainFreePlayState {
@@ -418,7 +420,7 @@ export function useTrainFreePlay({
       // earlier session would attach itself to an unrelated new node.
       setQualityByNode((prev) => (prev.size === 0 ? prev : new Map()));
       setIsExploring(true);
-      onUserMoveRef.current?.();
+      onUserMoveRef.current?.('board');
     },
     [loadMainLine, playUciLine, startFen],
   );
@@ -426,7 +428,7 @@ export function useTrainFreePlay({
   const playMove = useCallback(
     (from: string, to: string): boolean => {
       const played = makeMove(from, to);
-      if (played) onUserMoveRef.current?.();
+      if (played) onUserMoveRef.current?.('board');
       return played;
     },
     [makeMove],
@@ -435,7 +437,7 @@ export function useTrainFreePlay({
   const playLine = useCallback(
     (uciMoves: string[]): void => {
       playUciLine(uciMoves);
-      onUserMoveRef.current?.();
+      onUserMoveRef.current?.('engine-line');
     },
     [playUciLine],
   );

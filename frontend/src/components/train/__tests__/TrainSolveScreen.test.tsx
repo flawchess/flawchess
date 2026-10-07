@@ -3067,6 +3067,33 @@ describe('TrainSolveScreen — per-puzzle telemetry (Phase 233)', () => {
     });
   });
 
+  it('telemetry: board moves and engine-line clicks split into review_board_moves and review_explore_moves', async () => {
+    let workerCallCount = 0;
+    stubWorker(() => {
+      workerCallCount += 1;
+      // Grading engine first, then the free-play engine whose PV (e7e5) is legal after 1.e4.
+      return workerCallCount === 1 ? new FakeWorker() : new FakeWorker('e7e5', 'e7e5');
+    });
+    await renderScreen(makePuzzle());
+    await guessAndDrop();
+
+    // The mocked board's drop buttons call onPieceDrop, the one entry point for
+    // desktop drag AND mobile tap-to-move in the real ChessBoard.
+    fireEvent.click(screen.getByTestId('drop-e2e4')); // board move 1, starts free play
+    await waitFor(() => expect(screen.getByTestId('engine-line-0-move-0')).not.toBeNull());
+    fireEvent.click(screen.getByTestId('engine-line-0-move-0')); // engine-line click (1...e5)
+    await waitFor(() => expect(screen.getByTestId('chessboard').getAttribute('data-position')).toContain('4p3'));
+    fireEvent.click(screen.getByTestId('drop-d2d4')); // board move 2
+
+    fireEvent.click(screen.getByTestId('btn-train-next'));
+    await waitFor(() => expect(nextFlush).toHaveBeenCalledTimes(1));
+    expect(nextFlush.mock.calls[0]![2]).toMatchObject({
+      review_explored: true,
+      review_explore_moves: 3,
+      review_board_moves: 2,
+    });
+  });
+
   it('telemetry: a remount of the same unsolved puzzle sends resumed: true', async () => {
     const first = await renderScreen(makePuzzle());
     first.unmount();

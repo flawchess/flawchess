@@ -21,6 +21,7 @@ import {
   noteThinkStarted,
   REVIEW_CARD_HOVER_MIN_MS,
   type CardEngageKind,
+  type ExploreMoveSource,
   type ReviewCounters,
   type ReviewTelemetrySnapshot,
 } from '@/lib/trainTelemetry';
@@ -50,8 +51,8 @@ interface TrainPuzzleTelemetry {
   snapshotReviewForAnalyze: () => ReviewTelemetrySnapshot | undefined;
   /** A user prev/next/token click on a reveal line stepper (D-14). */
   onLineUserStep: () => void;
-  /** A user-played free-play move: a drop or an engine-line click (D-14). */
-  onExploreMove: () => void;
+  /** A user-played free-play move: a board move or an engine-line click (D-14, quick 261007-axc). */
+  onExploreMove: (source: ExploreMoveSource) => void;
   /** The first-reveal walkthrough is active: sticky for this puzzle (D-13). */
   markWalkthroughActive: () => void;
   /** A reveal card was engaged (D-11): a tap/click opens it at once, a desktop hover counts after the hold time. */
@@ -71,6 +72,7 @@ function emptyCounters(): ReviewCounters {
   return {
     lineSteps: 0,
     exploreMoves: 0,
+    boardMoves: 0,
     analyzeOpened: false,
     walkthrough: false,
     cardKeys: new Set<string>(),
@@ -152,6 +154,7 @@ export function useTrainPuzzleTelemetry(options: UseTrainPuzzleTelemetryOptions)
       countersRef.current = {
         lineSteps: seed.lineSteps ?? 0,
         exploreMoves: seed.exploreMoves ?? 0,
+        boardMoves: seed.boardMoves ?? 0,
         analyzeOpened: seed.analyzeOpened ?? false,
         walkthrough: seed.walkthrough ?? false,
         cardKeys: new Set([...(seed.cardKeys ?? []), ...current.cardKeys]),
@@ -170,6 +173,7 @@ export function useTrainPuzzleTelemetry(options: UseTrainPuzzleTelemetryOptions)
       ...readStopwatch(review.stopwatch, Date.now()),
       lineSteps: counters.lineSteps,
       exploreMoves: counters.exploreMoves,
+      boardMoves: counters.boardMoves,
       analyzeOpened: counters.analyzeOpened,
       walkthrough: counters.walkthrough,
       cardKeys: [...counters.cardKeys],
@@ -299,8 +303,13 @@ export function useTrainPuzzleTelemetry(options: UseTrainPuzzleTelemetryOptions)
     countersRef.current = { ...countersRef.current, lineSteps: countersRef.current.lineSteps + 1 };
   }, []);
 
-  const onExploreMove = useCallback((): void => {
-    countersRef.current = { ...countersRef.current, exploreMoves: countersRef.current.exploreMoves + 1 };
+  const onExploreMove = useCallback((source: ExploreMoveSource): void => {
+    const counters = countersRef.current;
+    countersRef.current = {
+      ...counters,
+      exploreMoves: counters.exploreMoves + 1,
+      boardMoves: source === 'board' ? counters.boardMoves + 1 : counters.boardMoves,
+    };
   }, []);
 
   const addCard = useCallback((key: string): void => {

@@ -10,6 +10,7 @@ import pytest
 from app.schemas.train import (
     TELEMETRY_CARDS_CAP,
     TELEMETRY_DURATION_CAP_MS,
+    TELEMETRY_EXPLORE_MOVES_CAP,
     TELEMETRY_LINE_STEPS_CAP,
     ReviewTelemetry,
     SolveRequest,
@@ -38,10 +39,17 @@ def test_duration_is_rounded_and_clamped(raw: float, expected: int) -> None:
 
 def test_counters_clamp_to_their_caps() -> None:
     model = ReviewTelemetry.model_validate(
-        {"v": 1, "exit": "next", "review_line_steps": 500, "review_cards_opened": 99}
+        {
+            "v": 1,
+            "exit": "next",
+            "review_line_steps": 500,
+            "review_cards_opened": 99,
+            "review_board_moves": 999,
+        }
     )
     assert model.review_line_steps == TELEMETRY_LINE_STEPS_CAP
     assert model.review_cards_opened == TELEMETRY_CARDS_CAP
+    assert model.review_board_moves == TELEMETRY_EXPLORE_MOVES_CAP
 
 
 @pytest.mark.parametrize(
@@ -50,6 +58,7 @@ def test_counters_clamp_to_their_caps() -> None:
         {"v": 1, "exit": "next", "review_ms": True},
         {"v": 1, "exit": "next", "review_ms": "12"},
         {"v": 1, "exit": "next", "review_explored": 1},
+        {"v": 1, "exit": "next", "review_board_moves": True},
         {"v": 1, "exit": "next", "bogus": 1},
         {"v": 1},
         {"v": 2, "exit": "next"},

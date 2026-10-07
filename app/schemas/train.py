@@ -240,7 +240,8 @@ class ReviewTelemetry(BaseModel):
     via Analyze). A reveal can be flushed with "pagehide" several times and then
     with "next" (the user came back), so every counter is a cumulative TOTAL,
     never a delta: each later flush overwrites per key via the jsonb merge.
-    D-14: the closed counter set (no flip counter, no Solution-return counter).
+    D-14: the closed counter set (no flip counter, no Solution-return counter),
+    plus `review_board_moves` (quick 261007-axc).
     D-04: `review_hidden_ms` is the hidden-tab span of the review (the solve
     patch carries `think_hidden_ms`, distinct keys so the merge cannot collide).
 
@@ -262,7 +263,11 @@ class ReviewTelemetry(BaseModel):
     review_cards_total: TelemetryCardCount | None = None
     review_line_steps: TelemetryLineSteps | None = None
     review_explored: StrictBool | None = None
+    # Every user-played free-play move: board moves plus Stockfish engine-line clicks.
     review_explore_moves: TelemetryExploreMoves | None = None
+    # Quick 261007-axc: only the moves played on the board by hand (drag or tap),
+    # a subset of review_explore_moves. Absent on rows from older clients.
+    review_board_moves: TelemetryExploreMoves | None = None
     review_analyze_opened: StrictBool | None = None
     # D-13: the Phase 222 first-reveal walkthrough was active on this reveal.
     review_walkthrough: StrictBool | None = None

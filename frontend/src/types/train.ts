@@ -140,6 +140,7 @@ export interface ReviewTelemetry {
   review_cards_total?: number;
   review_line_steps?: number;
   review_explore_moves?: number;
+  review_board_moves?: number;
   review_explored?: boolean;
   review_analyze_opened?: boolean;
   review_walkthrough?: boolean;
