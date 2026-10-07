@@ -493,10 +493,13 @@ record disagreements so the answer-key quality can be judged from real prod solv
 
 **Depends on**: Nothing (standalone; touches Phase 233 telemetry and Phase 230 leaderboard scoring)
 **Requirements**: TBD
-**Plans:** 0 plans
+**Plans:** 4 plans
 
 Plans:
-- [ ] TBD (run /gsd-discuss-phase 235)
+- [ ] 235-01-PLAN.md — Server answer key on every pre-attempt puzzle (key, puzzle type, sharp runner-up) for SR, herring and sharp filler, fresh and resumed sessions (D-05/D-06/D-07/D-19)
+- [ ] 235-02-PLAN.md — Client grading anchored on the key: after-key mount search, played == key is good with no search, key arrow and clamp, terminal positions (D-01/D-03/D-07/D-08/D-09)
+- [ ] 235-03-PLAN.md — Solve path: server-graded sharp runner-up, drill_solves.recheck JSONB, confirmed disagreement credits either guess (D-02/D-04/D-14/D-17/D-18/D-20)
+- [ ] 235-04-PLAN.md — Phone re-check at 3 s + 3 s, "Taking a closer look…", D-15 guess copy, unclamped evals, CHANGELOG and full pre-merge gate (D-10..D-13/D-15/D-16/D-19/D-20)
 
 Phase detail for every shipped milestone lives in `milestones/vX.Y-ROADMAP.md`, its phase directories in `milestones/vX.Y-phases/`, and the per-milestone summaries in [MILESTONES.md](MILESTONES.md).
 
