@@ -4,15 +4,14 @@ milestone: v2.21
 current_phase: 234
 current_phase_name: Milestone Feedback Ask (SEED-191)
 status: completed
-stopped_at: Phase 234 complete — all phases complete
-last_updated: "2026-10-07T05:55:42.054Z"
-state_head: 27ce3d361d06bc7c9b24032924946945a30f3773
+stopped_at: Phase 235 context gathered
+last_updated: "2026-10-07T17:04:34.052Z"
+state_head: 1d57ddf72ae873d983b07284e515ef7b0b68693d
 progress:
-  total_phases: 7
+  total_phases: 8
   completed_phases: 103
   total_plans: 35
   completed_plans: 47
-  percent: 100
 milestone_name: Browser Engine Throughput
 last_activity: 2026-10-07
 last_activity_desc: "Completed quick task 261007-axc: Separate Train reveal telemetry counter for hand-played free moves (review_board_moves)"
@@ -1043,8 +1042,8 @@ Items acknowledged and deferred at **v1.29 milestone close on 2026-06-29** (user
 
 ## Session Continuity
 
-**Stopped at:** Phase 234 complete, verified (UAT 4/4 browser, digest refreshed after the WR-01/WR-02 fixes). Branch `gsd/phase-234-milestone-feedback-ask` not yet squash-merged to `main`.
-**Resume file:** None
+**Stopped at:** Phase 235 context gathered
+**Resume file:** .planning/phases/235-train-grading-server-answer-key/235-CONTEXT.md
 
 Previous session note (Phase 227):
 refit (calibration parity holds). Verification passed 17/17; code review 0 blockers (WR-01 + 3 info fixed). Next:
@@ -1052,7 +1051,7 @@ squash-merge `gsd/phase-227-...` to `main` with a CHANGELOG entry already in `[U
 Owner-deferred: real-phone bot game check (227-UAT.md, report-only). Follow-up: stale "Phase 198 will populate"
 priority comment in `workerPoolState.ts:434-437` (verifier info item).
 
-**Last session:** 2026-10-05T19:30:00Z
+**Last session:** 2026-10-07T17:04:33.808Z
 
 **Resume file:** None
 
