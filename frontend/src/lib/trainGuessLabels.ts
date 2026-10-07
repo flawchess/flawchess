@@ -69,13 +69,23 @@ export const GUESS_CALL_LABELS: Record<Guess, string> = {
  *    across both guesses — the position fact does not depend on what the user
  *    guessed about it. Only the herring case still splits on `correctGuess`,
  *    for the affirming "Indeed".
+ * 4. Phase 235 (D-15, owner sign-off on a new branch of LOCKED copy): when the
+ *    SERVER reports a confirmed disagreement (the user's off-key move held up on
+ *    the deeper re-check), the sentence names the key move and says the user's
+ *    move holds up too. It outranks every "only one move works" branch above
+ *    for BOTH guesses, because the position turned out to have two good moves.
+ *    It needs the key SAN; without one the chain below applies unchanged.
  */
 export function guessFeedbackProse(
   guess: Guess,
   correctGuess: boolean,
   fromOwnBlunder: boolean,
   moveTier: TrainMoveTier,
+  disagreement: boolean,
+  keySan: string | null,
 ): string {
+  if (disagreement && keySan !== null)
+    return `${keySan} is the engine's first choice, but your move holds up too.`;
   if (guess === 'critical' && correctGuess && moveTier === 'good')
     return 'Right, and you found it: only one move works here.';
   if (guess === 'critical' && correctGuess)

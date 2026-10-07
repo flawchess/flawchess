@@ -9,9 +9,11 @@
  * After the guess, exactly one move is accepted (SOLV-02) — every subsequent
  * drop is rejected.
  *
- * Grading (SOLV-03): `startGrading(puzzle.fen)` fires once per puzzle at
- * MOUNT (190-RESEARCH.md Open Question 1 — resolved at mount to maximise the
- * D-06 fast-path hit rate), not gated on the guess. `correct_guess` is read
+ * Grading (SOLV-03): `startGrading` fires once per puzzle at MOUNT (190-RESEARCH.md
+ * Open Question 1 — resolved at mount so the think time is spent searching),
+ * not gated on the guess. Phase 235: it passes the server key so the think-time
+ * search evaluates the position after the key (D-08); the key is read only
+ * there and never rendered before the attempt (D-05). `correct_guess` is read
  * ONLY from the server's `SolveResponse` — never recomputed client-side
  * (POOL-10).
  *
@@ -47,7 +49,13 @@ import { TRAIN_BUTTON_CLASS } from '@/components/train/buttonStyles';
 import { TrainReveal, TrainScoreChip } from '@/components/train/TrainReveal';
 import type { TrainRevealStep } from '@/components/train/TrainReveal';
 import { EvalBar } from '@/components/analysis/EvalBar';
-import type { SolveResponse, TrainPuzzle, TrainSettingsResponse, VettedMove } from '@/types/train';
+import type {
+  SolveRecheck,
+  SolveResponse,
+  TrainPuzzle,
+  TrainSettingsResponse,
+  VettedMove,
+} from '@/types/train';
 import type { UseTrainSessionResult } from '@/hooks/useTrainSession';
 import { useFitBoardToViewport } from '@/hooks/useFitBoardToViewport';
 import { useIsDesktop } from '@/hooks/useIsDesktop';
@@ -55,7 +63,12 @@ import { useTrainFreePlay, uciFromDrop } from '@/hooks/useTrainFreePlay';
 import { useStockfishEngine, type StockfishEngineState } from '@/hooks/useStockfishEngine';
 import type { PvLine } from '@/hooks/uciParser';
 import { useWakeLock } from '@/hooks/useWakeLock';
-import type { GradeResult, TrainEngineLine, TrainGradingEngine } from '@/hooks/useTrainGradingEngine';
+import type {
+  GradeResult,
+  RecheckResult,
+  TrainEngineLine,
+  TrainGradingEngine,
+} from '@/hooks/useTrainGradingEngine';
 import { useEngineDisplaySettings } from '@/lib/engineSettings';
 import { evalToExpectedScore, sideToMoveFromFen, terminalPositionEval } from '@/lib/liveFlaw';
 import { useMarkPlayActive } from '@/lib/playActive';
@@ -70,6 +83,7 @@ import { resolveBubbleState } from '@/components/train/trainBubbleState';
 import type { TrainBubbleState } from '@/components/train/trainBubbleState';
 import {
   GRADING_COPY,
+  RECHECK_COPY,
   HILDA_ID,
   introStepCount,
   WALKTHROUGH_STEP_COUNT,
@@ -104,6 +118,7 @@ import {
 import type { TrainMoveQuality, TrainOverlayMove } from '@/lib/trainArrows';
 import { scorePuzzle, MOVE_TIER_POINTS, GUESS_POINTS, TRAIN_POINTS_PER_PUZZLE } from '@/lib/trainScore';
 import type { TrainMoveTier } from '@/lib/trainScore';
+import { shouldRecheck } from '@/lib/trainRecheck';
 import {
   SEV_INACCURACY,
   SEV_MISTAKE,
@@ -625,6 +640,17 @@ function renderTrainBotBubbleBody(
       copy: <p data-testid="train-move-prompt">{movePromptCopy(deps.sideToMove, deps.guess)}</p>,
     };
   }
+  if (bubbleState.kind === 'grading' && bubbleState.recheck) {
+    // Phase 235 (D-12): the disagreement re-check is running (a few extra seconds).
+    return {
+      copy: (
+        <span className="flex items-center gap-2" data-testid="train-recheck-indicator">
+          <Loader2 className="size-4 animate-spin text-muted-foreground" aria-hidden="true" />
+          {RECHECK_COPY}
+        </span>
+      ),
+    };
+  }
   if (bubbleState.kind === 'grading') {
     return {
       copy: (
@@ -761,6 +787,8 @@ export function TrainSolveScreen({
   const [boardFen, setBoardFen] = useState(puzzle.fen);
   const [moveApplied, setMoveApplied] = useState(restoredSolve !== null);
   const [isGrading, setIsGrading] = useState(false);
+  // Phase 235 (D-12): true only around the single `recheckMove` await.
+  const [isRechecking, setIsRechecking] = useState(false);
   const [gradingError, setGradingError] = useState(false);
   const [lastPlayedUci, setLastPlayedUci] = useState<string | null>(
     restoredSolve?.playedMoveUci ?? null,
@@ -981,7 +1009,8 @@ export function TrainSolveScreen({
   // Destructured so their (stable, useCallback([])) identities can be listed
   // in the effect's deps array without the effect re-firing on gradingEngine's
   // own per-render object identity.
-  const { startGrading, abortGrading, gradeMove, restartEngine, isReady, hasError } = gradingEngine;
+  const { startGrading, abortGrading, gradeMove, recheckMove, restartEngine, isReady, hasError } =
+    gradingEngine;
 
   const engineFailed = hasError || engineTimedOut;
 
@@ -1026,6 +1055,7 @@ export function TrainSolveScreen({
     setBoardFen(puzzle.fen);
     setMoveApplied(restoredSolve !== null);
     setIsGrading(false);
+    setIsRechecking(false);
     setGradingError(false);
     setLastPlayedUci(restoredSolve?.playedMoveUci ?? null);
     setGradeResult(restoredSolve?.gradeResult ?? null);
@@ -1056,17 +1086,44 @@ export function TrainSolveScreen({
     // reveal state, never mid-sideline.
     freePlay.reset();
     trainSession.resetSolve();
-    if (restoredSolve === null) startGrading(puzzle.fen);
+    if (restoredSolve === null) startGrading(puzzle.fen, puzzle.key_move_uci ?? null);
     return () => {
       abortGrading();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps -- trainSession.resetSolve is a stable useCallback from the hook (it closes over the mutation's own `.reset`, bound once per observer — see useTrainSession's stability comment; it was NOT stable before that fix, so this line's original claim was aspirational). Including the whole trainSession object would re-fire this effect every render. restoredSolve only ever changes together with puzzle.fen (Train.tsx pairs them), so puzzle.fen already covers it — as does puzzle.side_to_move, which is a function of the FEN. freePlay.reset's identity is keyed on puzzle.fen alone, so it changes with (and only with) that dep.
-  }, [puzzle.fen, startGrading, abortGrading, freePlay.reset, walkthrough.reset]);
+  }, [puzzle.fen, puzzle.key_move_uci, startGrading, abortGrading, freePlay.reset, walkthrough.reset]);
+
+  /**
+   * Phase 235 (D-10/D-19): the disagreement re-check. Runs only for a sharp
+   * keyed puzzle whose off-key, off-runner-up move the 1.5 s grade rated good.
+   * The key, type and runner-up are read here, after the move and before the
+   * POST, and never rendered (D-05). Resolves null when no re-check applies or
+   * it failed (recheckMove never rejects, D-20).
+   */
+  async function runRecheck(grade: GradeResult, playedUci: string): Promise<RecheckResult | null> {
+    const eligible = shouldRecheck({
+      puzzleType: puzzle.puzzle_type ?? null,
+      keyUci: puzzle.key_move_uci ?? null,
+      runnerUpUci: puzzle.runner_up_uci ?? null,
+      playedUci,
+      tier: grade.moveTier,
+    });
+    if (!eligible) return null;
+    // D-12: the wait copy lives exactly as long as the single re-check await;
+    // the finally clears it for a null (timeout/failure) or a throw alike.
+    setIsRechecking(true);
+    try {
+      return await recheckMove(puzzle.fen, playedUci);
+    } finally {
+      setIsRechecking(false);
+    }
+  }
 
   async function gradeAndSolve(playedGuess: Guess, playedUci: string): Promise<void> {
     setIsGrading(true);
     setGradingError(false);
     let grade: GradeResult;
+    let recheck: SolveRecheck | null = null;
     try {
       grade = await gradeMove(puzzle.fen, playedUci);
     } catch {
@@ -1079,6 +1136,12 @@ export function TrainSolveScreen({
       setIsGrading(false);
       return;
     }
+    // D-11: a completed re-check replaces the 1.5 s grade whatever it says.
+    const rechecked = await runRecheck(grade, playedUci);
+    if (rechecked !== null) {
+      grade = rechecked.grade;
+      recheck = rechecked.recheck;
+    }
     setGradeResult(grade);
     try {
       await trainSession.solvePuzzle({
@@ -1088,6 +1151,9 @@ export function TrainSolveScreen({
         move_quality: grade.moveTier,
         // Frozen at move time, so a retry resends the identical object.
         telemetry: puzzleTelemetry.solveTelemetry(),
+        // D-17: every completed re-check rides the POST; none on a stall (D-20).
+        // Frozen with the rest of the payload, so retrySolve never re-runs it.
+        ...(recheck !== null ? { recheck } : {}),
       });
       // correct_guess is read ONLY from the server response (POOL-10) — never
       // recomputed client-side. The verdict itself renders from
@@ -1133,8 +1199,8 @@ export function TrainSolveScreen({
     if (engineRetryNonce === 0) return; // no manual retry has happened yet
     if (lastStartedRetryNonceRef.current === engineRetryNonce) return;
     lastStartedRetryNonceRef.current = engineRetryNonce;
-    startGrading(puzzle.fen);
-  }, [isReady, engineRetryNonce, startGrading, puzzle.fen]);
+    startGrading(puzzle.fen, puzzle.key_move_uci ?? null);
+  }, [isReady, engineRetryNonce, startGrading, puzzle.fen, puzzle.key_move_uci]);
 
   function handlePieceDrop(source: string, target: string): boolean {
     // D-05: board locked until the binary guess is committed.
@@ -1657,6 +1723,7 @@ export function TrainSolveScreen({
   const bubbleState = resolveBubbleState({
     hasVerdict: verdict !== null,
     isGrading,
+    isRechecking,
     guessMade: guess !== null,
     introStep: activeIntroStep,
     nudgeActive: nudgeNonce > 0,

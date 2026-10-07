@@ -10,7 +10,7 @@ import { TooltipProvider } from '@/components/ui/tooltip';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
-import { ArrowLeft, BookOpenIcon, MenuIcon, LogOutIcon, TrophyIcon, DoorOpen, Shield, FolderOpen, Bot, Dumbbell, Search, Activity, Settings as SettingsIcon } from 'lucide-react';
+import { ArrowLeft, BookOpenIcon, MenuIcon, LogOutIcon, TrophyIcon, DoorOpen, Shield, FolderOpen, Bot, Puzzle, Search, Activity, Settings as SettingsIcon } from 'lucide-react';
 import {
   Drawer, DrawerContent, DrawerHeader, DrawerTitle, DrawerClose,
 } from '@/components/ui/drawer';
@@ -105,7 +105,7 @@ function ImportJobWatcher({ jobId, onDone }: { jobId: string; onDone: (jobId: st
 // reintroduce.
 const NAV_ITEMS = [
   { to: '/library', label: 'Library', Icon: FolderOpen },
-  { to: '/train', label: 'Train', Icon: Dumbbell },
+  { to: '/train', label: 'Train', Icon: Puzzle },
   { to: '/bots', label: 'Bots', Icon: Bot },
   { to: '/openings', label: 'Opening', Icon: BookOpenIcon },
   { to: '/endgames', label: 'Endgame', Icon: TrophyIcon },
@@ -116,7 +116,7 @@ const NAV_ITEMS = [
 // at its original 5 entries by design; /analysis is NOT added here.
 const BOTTOM_NAV_ITEMS = [
   { to: '/library', label: 'Library', Icon: FolderOpen },
-  { to: '/train', label: 'Train', Icon: Dumbbell },
+  { to: '/train', label: 'Train', Icon: Puzzle },
   { to: '/bots', label: 'Bots', Icon: Bot },
   { to: '/openings', label: 'Opening', Icon: BookOpenIcon },
   { to: '/endgames', label: 'Endgame', Icon: TrophyIcon },

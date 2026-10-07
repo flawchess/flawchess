@@ -28,7 +28,7 @@ Preconditions per target:
 from __future__ import annotations
 
 import socket
-from collections.abc import Iterator
+from collections.abc import Generator
 from contextlib import contextmanager
 from pathlib import Path
 from typing import Final, Literal
@@ -90,7 +90,7 @@ def _assert_reachable(target: DbTarget) -> None:
 
 
 @contextmanager
-def connect(target: DbTarget) -> Iterator[psycopg.Connection]:
+def connect(target: DbTarget) -> Generator[psycopg.Connection]:
     """Open a read-oriented connection to ``target``, closing it on exit."""
     _assert_reachable(target)
     with psycopg.connect(conn_str(target)) as conn:

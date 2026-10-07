@@ -303,10 +303,11 @@ describe('useTrainFreePlay — onUserMove counts only user-played moves (Phase 2
     return { onUserMove, ...hook };
   }
 
-  it('fires once on start', () => {
+  it('fires once on start, as a board move', () => {
     const { onUserMove, result } = renderCounting();
     act(() => result.current.start([], 'e2e4'));
     expect(onUserMove).toHaveBeenCalledTimes(1);
+    expect(onUserMove).toHaveBeenCalledWith('board');
   });
 
   it('fires once per legal playMove and never for a rejected one', () => {
@@ -320,6 +321,7 @@ describe('useTrainFreePlay — onUserMove counts only user-played moves (Phase 2
     });
     expect(played).toBe(true);
     expect(onUserMove).toHaveBeenCalledTimes(1);
+    expect(onUserMove).toHaveBeenCalledWith('board');
 
     act(() => {
       played = result.current.playMove('a1', 'a8');
@@ -328,12 +330,13 @@ describe('useTrainFreePlay — onUserMove counts only user-played moves (Phase 2
     expect(onUserMove).toHaveBeenCalledTimes(1);
   });
 
-  it('fires once per playLine', () => {
+  it('fires once per playLine, as an engine-line move', () => {
     const { onUserMove, result } = renderCounting();
     act(() => result.current.start([], 'e2e4'));
     onUserMove.mockClear();
     act(() => result.current.playLine(['e7e5', 'g1f3']));
     expect(onUserMove).toHaveBeenCalledTimes(1);
+    expect(onUserMove).toHaveBeenCalledWith('engine-line');
   });
 
   it('never fires for reset, goBack, goForward, goToRoot or goToNode', () => {

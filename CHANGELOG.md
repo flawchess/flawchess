@@ -23,6 +23,7 @@ in `YYYY-MM-DD` (Europe/Zurich).
 - Every engine line after the top one now uses a lighter, see-through version of that engine's color on its badge and arrow.
 - Usage analytics (which pages you visit and which features you use) are now linked to your account ID, for logged-in and guest accounts alike. They stay on our own servers, are never shared with anyone, and the Privacy page now says so.
 - Usage analytics now also cover changes to your import filters, Train schedule, Train reminders and leaderboard visibility (only which option you picked, never anything you type).
+- Train now uses a puzzle icon in the menu and on the home page (it was a dumbbell), matching the puzzle icon on the weekly leaderboards.
 - Train weekly leaderboards: a "…" now closes the board when more players rank below the last row shown, so a top-ranked player no longer sees what looks like a five-player board.
 - Maintenance: the frontend now type-checks with TypeScript 7 (through Microsoft's side-by-side install, so linting keeps working) and runs on Sentry 11 and vite-plugin-pwa 2, with a patched fast-uri. Error reports still collect only what the Privacy page lists, and the installed app and its offline support are unchanged.
 - Operators: self-hosted analytics is pinned to Umami 3.4.0 (it ran 3.3.1 behind a floating tag). The next deploy pulls the image automatically and Umami applies two additive database migrations on start; see the runbook section "Umami analytics" for the post-deploy check.
@@ -33,6 +34,7 @@ in `YYYY-MM-DD` (Europe/Zurich).
 ### Fixed
 
 - Mobile layout polish: the Library move stats show accuracy in a header card on phones, game-card tags and move-stats cards stretch to the miniboard's height, and the Train page has a tighter gap between the header and the streak card.
+- Train: the solution arrow now always shows the move the "only one move works" verdict is about, and your move is graded against that move with the same engine search on both sides. When a different move of yours still looks just as good on a one-good-move puzzle, Train takes a few seconds for a closer look, and if your move holds up it counts, whichever way you guessed.
 
 ## [v2.21] Browser Engine Throughput — 2026-10-03
 

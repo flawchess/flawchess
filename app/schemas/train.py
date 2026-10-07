@@ -1,11 +1,12 @@
 """Pydantic v2 schemas for the Train API (Phase 189).
 
-POOL-10 / P-01: `TrainPuzzle` is the pre-attempt payload and carries no
-answer key — see its class docstring for the exact-equality contract this
-schema exists to enforce. Phase 211: vetted-move material (`VettedMove`,
-`SolveResponse.vetted_moves`, the graded-ES pair) lives on `SolveResponse`
-— produced only once the attempt is already recorded — and never on
-`TrainPuzzle`.
+Phase 235 (SEED-192, D-05, supersedes POOL-10 / P-01): `TrainPuzzle` is the
+pre-attempt payload and carries the server's answer key (`key_move_uci`), the
+puzzle type and, for a sharp SR item only, the runner-up — see its class
+docstring for the exact-equality contract and the display rule. Phase 211:
+the vetted-move material ("also fine" moves, the graded-ES pair) lives on
+`SolveResponse` — produced only once the attempt is already recorded — and
+never on `TrainPuzzle`.
 """
 
 from __future__ import annotations
@@ -33,16 +34,22 @@ from app.services.train_scheduler import REMINDER_HOUR_MAX, REMINDER_HOUR_MIN
 class TrainPuzzle(BaseModel):
     """One pre-attempt puzzle.
 
-    POOL-10 / P-01 (LOCKED): the pre-attempt payload carries no answer key.
+    Phase 235 (SEED-192, D-05, supersedes POOL-10 / P-01): the pre-attempt
+    payload carries the server's answer key (`key_move_uci`), the puzzle type
+    and, for a sharp SR item only, the runner-up (`runner_up_uci`, D-19). Why:
+    the phone grades the played move against the key with its own engine on
+    both sides (D-01), and the puzzle type lets the sharp disagreement
+    re-check run before the POST (D-10). The owner ruled cheating out as a
+    concern on 2026-10-07 (anyone can run Stockfish in another tab, and
+    off-key `move_quality` was already client-asserted). The guess UI must
+    still never DISPLAY the type or the key before the attempt. A null key
+    means no usable key (D-07): the client keeps today's root-search grading.
+    `best_move`, `pv` and `source` remain forbidden here.
+
     `last_move_uci` (190-02, SOLV-02) describes the position's ARRIVAL — the
     half-move immediately before `ply`, i.e. the opponent's (or the user's
     own) prior move — so the solve screen can animate/highlight it. It does
-    not reveal what to play next, so it does not reopen POOL-10. `best_move`,
-    `pv`, `puzzle_type`, and `source` remain forbidden: adding any of them
-    here re-opens the POOL-10 leak this schema exists to close — the
-    client's exact-match/grading path runs entirely client-side against its
-    own vendored Stockfish WASM output (see 189-01-PLAN.md P-01). Do not add
-    fields here without re-reading that decision.
+    not reveal what to play next.
 
     `game_id` is `int | None` (Phase 192 Plan 02, D-01/D-05): a red herring's
     source-game link is nullable provenance — `None` here means either the
@@ -58,6 +65,12 @@ class TrainPuzzle(BaseModel):
     fen: str
     side_to_move: Literal["white", "black"]
     last_move_uci: str | None
+    # Phase 235 (D-05/D-06): the server's key move; None = no usable key (D-07).
+    key_move_uci: str | None = None
+    # Phase 235 (D-05): wire puzzle type; a sharp filler reads "sharp".
+    puzzle_type: Literal["sharp", "soft", "herring"] | None = None
+    # Phase 235 (D-19): the blob's second-best move, sharp SR items only.
+    runner_up_uci: str | None = None
 
 
 class SolvedResult(BaseModel):
@@ -157,6 +170,13 @@ TELEMETRY_EXPLORE_MOVES_CAP: Final = 50
 # Cap on card counts (the reveal shows at most 4 cards today).
 TELEMETRY_CARDS_CAP: Final = 10
 
+# Phase 235 (SEED-192, D-17/D-18): disagreement re-check boundary. Schema version
+# stamped on the stored record (a `Literal[1]` cannot reference it).
+RECHECK_SCHEMA_VERSION: Final = 1
+# A data-quality bound on Stockfish's reported depth, which can run into the
+# hundreds once a mate is found; clamped, not rejected.
+RECHECK_DEPTH_CAP: Final = 255
+
 
 def _clamp_to(cap: int) -> Callable[[object], object]:
     """Build a BeforeValidator that rounds and clamps a number into [0, cap].
@@ -228,6 +248,45 @@ class SolveTelemetry(BaseModel):
     resumed: StrictBool | None = None
 
 
+RecheckExpectedScore = Annotated[float, Field(ge=0.0, le=1.0, allow_inf_nan=False, strict=True)]
+RecheckDepth = Annotated[
+    int,
+    BeforeValidator(_clamp_to(RECHECK_DEPTH_CAP)),
+    Field(ge=0, le=RECHECK_DEPTH_CAP, strict=True),
+]
+
+
+class SolveRecheck(BaseModel):
+    """The phone's disagreement re-check record riding on the solve POST (Phase 235).
+
+    D-11/D-13/D-17/D-18: when the phone's own search disagrees with the server key
+    it re-searches at a longer budget. `key_es` / `played_es` are the mover-POV
+    expected scores of the key and the played move from the phone's first
+    after-move searches (the 1.5 s pair); `key_es_recheck` / `played_es_recheck`
+    are the same two from the longer (3 s) searches. Depths are the Stockfish
+    depths those searches reached. `outcome` is "confirmed" when the longer
+    search still disagreed with the key and "resolved" when it agreed after all.
+
+    Validated at the boundary and stored as the `drill_solves.recheck` record.
+    Whether the disagreement earns credit (D-14) is decided server-side in
+    `train_repository._resolve_grade`, never by this model.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    # Must equal RECHECK_SCHEMA_VERSION (a Literal cannot reference the constant).
+    v: Literal[1]
+    outcome: Literal["confirmed", "resolved"]
+    key_es: RecheckExpectedScore
+    played_es: RecheckExpectedScore
+    key_es_recheck: RecheckExpectedScore
+    played_es_recheck: RecheckExpectedScore
+    key_depth: RecheckDepth
+    played_depth: RecheckDepth
+    key_depth_recheck: RecheckDepth
+    played_depth_recheck: RecheckDepth
+
+
 class ReviewTelemetry(BaseModel):
     """Client-measured reveal telemetry flushed once per puzzle (Phase 233).
 
@@ -240,7 +299,8 @@ class ReviewTelemetry(BaseModel):
     via Analyze). A reveal can be flushed with "pagehide" several times and then
     with "next" (the user came back), so every counter is a cumulative TOTAL,
     never a delta: each later flush overwrites per key via the jsonb merge.
-    D-14: the closed counter set (no flip counter, no Solution-return counter).
+    D-14: the closed counter set (no flip counter, no Solution-return counter),
+    plus `review_board_moves` (quick 261007-axc).
     D-04: `review_hidden_ms` is the hidden-tab span of the review (the solve
     patch carries `think_hidden_ms`, distinct keys so the merge cannot collide).
 
@@ -262,7 +322,11 @@ class ReviewTelemetry(BaseModel):
     review_cards_total: TelemetryCardCount | None = None
     review_line_steps: TelemetryLineSteps | None = None
     review_explored: StrictBool | None = None
+    # Every user-played free-play move: board moves plus Stockfish engine-line clicks.
     review_explore_moves: TelemetryExploreMoves | None = None
+    # Quick 261007-axc: only the moves played on the board by hand (drag or tap),
+    # a subset of review_explore_moves. Absent on rows from older clients.
+    review_board_moves: TelemetryExploreMoves | None = None
     review_analyze_opened: StrictBool | None = None
     # D-13: the Phase 222 first-reveal walkthrough was active on this reveal.
     review_walkthrough: StrictBool | None = None
@@ -288,14 +352,23 @@ class SolveRequest(BaseModel):
     (D-04's accepted residual); for a key move the server recomputes the
     tier from its own stored evals and discards the client's value. This is
     the same shape as the pre-existing `_compute_correct_guess` override —
-    the client can never assert a verdict it does not own. The request
-    schema itself is unchanged (P-01 intact: the client cannot know the key
-    before attempting).
+    the client can never assert a verdict it does not own.
 
     Phase 233 (SEED-190): `telemetry` is optional so a stale frontend bundle
     still solves. Invalid telemetry never costs the solve (D-02): a malformed
     object is dropped to None and only the telemetry is lost. It is never an
     input to grading (D-05).
+
+    Phase 235 (SEED-192): the client knows the key before attempting since D-05
+    (the pre-attempt payload carries it), so the old "the client cannot know the
+    key" argument no longer applies. `recheck` is the optional D-17/D-18
+    disagreement re-check record, separate from telemetry because it feeds
+    grading. The server grades a played sharp runner-up itself from its own blob
+    (D-02) and accepts a confirmed disagreement only after its own sanity checks
+    (D-14), which amends P-02: `correct_guess` is still computed server-side, but
+    a confirmed, sanity-checked phone disagreement can now earn the guess point.
+    A malformed `recheck` is dropped to None and never costs the solve; unknown
+    top-level keys are ignored so a stale bundle still solves.
     """
 
     position: int
@@ -304,6 +377,7 @@ class SolveRequest(BaseModel):
     played_move: str = Field(min_length=4, max_length=5)
     move_quality: Literal["good", "inaccuracy", "wrong"]
     telemetry: SolveTelemetry | None = None
+    recheck: SolveRecheck | None = None
 
     @field_validator("telemetry", mode="wrap")
     @classmethod
@@ -314,6 +388,21 @@ class SolveRequest(BaseModel):
 
         No logging and no Sentry capture: a malformed object comes from a stale
         or tampered client and is an expected condition, not a bug.
+        """
+        try:
+            return handler(value)
+        except ValidationError:
+            return None
+
+    @field_validator("recheck", mode="wrap")
+    @classmethod
+    def _drop_invalid_recheck(
+        cls, value: object, handler: ValidatorFunctionWrapHandler
+    ) -> SolveRecheck | None:
+        """Drop a malformed re-check to None instead of 422-ing the solve (D-18).
+
+        Same contract as `_drop_invalid_telemetry`: no logging, no Sentry, a
+        malformed object comes from a stale or tampered client.
         """
         try:
             return handler(value)
@@ -379,6 +468,13 @@ class SolveResponse(BaseModel):
     was computed from, so the client can re-classify the board badge from
     the SAME numbers the score came from — display and recorded verdict can
     never diverge for a key move.
+
+    Phase 235 (SEED-192): `graded_es_*` also cover the D-02 case: a played sharp
+    runner-up is graded by the server from its own blob, and the two ES values
+    are that move's before/after pair (`vetted_moves` stays empty, the runner-up
+    is never shown as also fine). `disagreement` (D-14/D-15) is true when the
+    server accepted a confirmed phone disagreement for this solve, i.e. the
+    played move was credited as good and either guess earns the point.
     """
 
     correct_guess: bool
@@ -393,6 +489,8 @@ class SolveResponse(BaseModel):
     vetted_moves: list[VettedMove]
     graded_es_before: float | None
     graded_es_after: float | None
+    # D-14/D-15: the server accepted a confirmed phone disagreement for this solve.
+    disagreement: bool
 
 
 class PuzzleRevealResponse(BaseModel):
@@ -411,6 +509,13 @@ class PuzzleRevealResponse(BaseModel):
     client's own WASM search are not guaranteed to agree bit-for-bit
     (project_eval_nondeterminism), so this endpoint must never be a second,
     contradicting source of truth for a number the reveal panel displays.
+
+    Phase 235 (SEED-192, D-09) amends the above: the SERVER now picks every
+    move the reveal shows (the pre-attempt key names the solution arrow and
+    card; the soft `su` and herring ladder moves stay on
+    `SolveResponse.vetted_moves`), while the phone still supplies every
+    NUMBER (every eval shown is computed client-side), so this response still
+    carries no best move, PV or eval.
 
     `played_in_game_move_uci` (190.1-01, D-05) is the UCI counterpart of
     `played_in_game_san`, behind the identical 409 gate — the client uses it

@@ -19,7 +19,7 @@ import { FLAWCHESS_ENGINE_ACCENT } from '@/lib/theme';
 import { trackEvent } from '@/lib/analytics';
 import { hasImportedGames } from '@/hooks/useUserProfile';
 import { peekReturnTo } from '@/lib/returnTo';
-import { Search, Bot, Dumbbell, TrophyIcon, Timer, Compass, Loader2, UserPlus, DoorOpen, ChessKnight } from 'lucide-react';
+import { Search, Bot, Puzzle, TrophyIcon, Timer, Compass, Loader2, UserPlus, DoorOpen, ChessKnight } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 
 // Feature sections — the first entry is rendered in the hero (desktop right column +
@@ -61,7 +61,7 @@ const FEATURES: {
   },
   {
     slug: 'train',
-    icon: Dumbbell,
+    icon: Puzzle,
     heading: 'Personalized Puzzle Training',
     desc: [
         'Every puzzle is built from your own blunders, not a generic puzzle set.',

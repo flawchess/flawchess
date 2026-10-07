@@ -146,6 +146,7 @@ function makeGradingEngine(overrides: Partial<TrainGradingEngine> = {}): TrainGr
     abortGrading: vi.fn(),
     restartEngine: vi.fn(),
     gradeMove: vi.fn(),
+    recheckMove: vi.fn(),
     startGameMoveSearch: vi.fn<(puzzleFen: string, gameMoveUci: string) => Promise<TrainEngineLine>>()
       .mockResolvedValue({ moves: [], evalCp: null, evalMate: null }),
     ...overrides,
@@ -1744,10 +1745,10 @@ describe('TrainReveal', () => {
 
   describe('guessFeedbackProse', () => {
     it('critical + wrong guess + herring, regardless of the move played', () => {
-      expect(guessFeedbackProse('critical', false, false, 'wrong')).toBe(
+      expect(guessFeedbackProse('critical', false, false, 'wrong', false, null)).toBe(
         'Several moves are fine here.',
       );
-      expect(guessFeedbackProse('critical', false, false, 'good')).toBe(
+      expect(guessFeedbackProse('critical', false, false, 'good', false, null)).toBe(
         'Several moves are fine here.',
       );
     });
@@ -1757,10 +1758,10 @@ describe('TrainReveal', () => {
     // one of the user's own blunders. Both guesses share the sentence — the
     // position fact is independent of what the user guessed about it.
     it('critical + wrong guess + one of the user own blunders (soft)', () => {
-      expect(guessFeedbackProse('critical', false, true, 'wrong')).toBe(
+      expect(guessFeedbackProse('critical', false, true, 'wrong', false, null)).toBe(
         'Several moves are fine here, but not the one you played in the game.',
       );
-      expect(guessFeedbackProse('critical', false, true, 'good')).toBe(
+      expect(guessFeedbackProse('critical', false, true, 'good', false, null)).toBe(
         'Several moves are fine here, but not the one you played in the game.',
       );
     });
@@ -1768,28 +1769,28 @@ describe('TrainReveal', () => {
     // The 2026-08-03 fix: a correct `critical` guess no longer claims the user
     // PLAYED the critical move — only a `good` move earns the praise clause.
     it('critical + correct + a good move', () => {
-      expect(guessFeedbackProse('critical', true, true, 'good')).toBe(
+      expect(guessFeedbackProse('critical', true, true, 'good', false, null)).toBe(
         'Right, and you found it: only one move works here.',
       );
     });
 
     it('critical + correct + a non-good move never claims the move was found', () => {
-      expect(guessFeedbackProse('critical', true, true, 'inaccuracy')).toBe(
+      expect(guessFeedbackProse('critical', true, true, 'inaccuracy', false, null)).toBe(
         "Right, only one move works here, but that wasn't it.",
       );
-      expect(guessFeedbackProse('critical', true, true, 'wrong')).toBe(
+      expect(guessFeedbackProse('critical', true, true, 'wrong', false, null)).toBe(
         "Right, only one move works here, but that wasn't it.",
       );
     });
 
     it('several + wrong', () => {
-      expect(guessFeedbackProse('several', false, true, 'wrong')).toBe(
+      expect(guessFeedbackProse('several', false, true, 'wrong', false, null)).toBe(
         'One move is clearly better than the alternatives.',
       );
     });
 
     it('several + correct + NOT one of the user own blunders (herring)', () => {
-      expect(guessFeedbackProse('several', true, false, 'good')).toBe(
+      expect(guessFeedbackProse('several', true, false, 'good', false, null)).toBe(
         'Indeed, several moves are fine here.',
       );
     });
@@ -1799,10 +1800,49 @@ describe('TrainReveal', () => {
     // them ("You handled this fine in your game.") at the exact position where
     // they blundered.
     it('several + correct + one of the user own blunders (soft)', () => {
-      expect(guessFeedbackProse('several', true, true, 'good')).toBe(
+      expect(guessFeedbackProse('several', true, true, 'good', false, null)).toBe(
         'Several moves are fine here, but not the one you played in the game.',
       );
     });
+
+    // Phase 235 (D-15): a server-confirmed disagreement outranks every "only
+    // one move works" branch, for BOTH guesses and whatever else is true.
+    it('a confirmed disagreement names the key for both guesses, whatever the other inputs (D-15)', () => {
+      const line = "Qh4 is the engine's first choice, but your move holds up too.";
+      expect(guessFeedbackProse('critical', false, true, 'good', true, 'Qh4')).toBe(line);
+      expect(guessFeedbackProse('critical', true, true, 'good', true, 'Qh4')).toBe(line);
+      expect(guessFeedbackProse('several', true, false, 'good', true, 'Qh4')).toBe(line);
+      expect(guessFeedbackProse('several', false, false, 'wrong', true, 'Qh4')).toBe(line);
+    });
+
+    it('a disagreement without a key SAN falls through to the existing chain (D-15)', () => {
+      expect(guessFeedbackProse('critical', true, true, 'good', true, null)).toBe(
+        'Right, and you found it: only one move works here.',
+      );
+      expect(guessFeedbackProse('several', false, true, 'wrong', true, null)).toBe(
+        'One move is clearly better than the alternatives.',
+      );
+    });
+  });
+
+  it('a server-confirmed disagreement renders the D-15 line naming the key SAN on the guess card (D-15)', () => {
+    renderReveal({
+      guess: 'several',
+      verdict: makeVerdict({ correct_guess: true, move_quality: 'good', disagreement: true }),
+      gradeResult: makeGradeResult({ bestMoveUci: 'd2d4' }),
+    });
+    const prose = within(screen.getByTestId('train-verdict-guess')).getByTestId('train-verdict-guess-prose');
+    expect(prose.textContent).toBe("d4 is the engine's first choice, but your move holds up too.");
+  });
+
+  it('a verdict without the disagreement field keeps the old copy even when a key is known (D-15)', () => {
+    renderReveal({
+      guess: 'critical',
+      verdict: makeVerdict({ correct_guess: true, move_quality: 'good' }),
+      gradeResult: makeGradeResult({ bestMoveUci: 'd2d4' }),
+    });
+    const prose = within(screen.getByTestId('train-verdict-guess')).getByTestId('train-verdict-guess-prose');
+    expect(prose.textContent).toBe('Right, and you found it: only one move works here.');
   });
 
   it('renders the exact locked prose sentence in the guess card body, above the Also fine line', () => {

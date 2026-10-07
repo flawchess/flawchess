@@ -456,6 +456,59 @@ Plans:
 **Wave 3** *(blocked on Wave 2 completion)*
 - [x] 234-04-PLAN.md — Train landing (after the intro, phones included) and Bots roster surfaces, CHANGELOG, phase pre-merge gate
 
+### Phase 235: Train Grading Anchored to the Server Answer Key (SEED-192)
+
+**Goal**: A Train reveal never contradicts itself. Today three engine readings feed one screen
+(prod user 28, game 1715828 ply 52): the "only one good move" verdict comes from the server's
+1M-node MultiPV-2 answer key (key Qh4), the solution arrow names the phone's 1.5s mount-search pick
+(b3), and the played-move grade compares a root search against an after-move search. Make the
+server's key the single source of truth for the solution, grade against it apples to apples, and
+record disagreements so the answer-key quality can be judged from real prod solves.
+
+- **1. The server's move is the solution:** the reveal's best/solution arrow and "only one move works"
+  copy name the server key (`game_positions.best_move` at the flaw ply for SR items, the stored best
+  for herring and sharp-filler sources), never the client's mount-search pick. LOCKED P-01 / POOL-10
+  forbids an answer key in the pre-attempt `TrainPuzzle`; discuss picks (a) key in `SolveResponse`
+  only (recommended going in) or (b) relax P-01 for the best UCI only, weighing the Phase 230 weekly
+  leaderboard.
+- **2. Grade against the server key, client engine on both sides:** played == key -> GOOD, no search.
+  Otherwise compare the client's after-move search of the played move with its after-move search of
+  the server key at the same budget (replaces the mixed-horizon root vs after-move drop in
+  `gradeMoveInner`). Never mix server and client evals in one drop. Server-graded runner-up: on a
+  sharp SR item, played == `su` is graded server-side from the blob's `b`/`s` (extends
+  `_override_for_key_move`, empty on sharp puzzles today).
+- **3. Adaptive extension only on disagreement:** sharp puzzle, played != key, and the client rates
+  the played move within the good band of the key (or clearly above `su`) -> re-run both after-move
+  searches with a longer budget (~3-4s each). Still disagreeing -> benefit of the doubt (grade good)
+  with new non-"only one" copy (owner sign-off: `guessFeedbackProse` is LOCKED wording). Record the
+  disagreement queryably (puzzle, played move, both client evals) on `drill_solves` or its telemetry.
+  `correct_guess` stays server-owned (P-02); discuss decides whether a confirmed disagreement ever
+  flips the guess verdict or the puzzle type.
+- **4. Monitoring, not hardening:** the step-3 flag is the measurement. No sharp-classification
+  hardening or extra server search budget in this phase (owner decision 2026-10-07); a high rate
+  becomes a follow-up seed.
+- **Coverage:** all three sources (SR flaw items, herring, sharp filler).
+- **Rejected:** raising the client movetime globally (Qh4/b3 swap between depth 19 and 22, device-
+  and hash-dependent per SEED-130).
+
+**Depends on**: Nothing (standalone; touches Phase 233 telemetry and Phase 230 leaderboard scoring)
+**Requirements**: TBD
+**Plans:** 5/5 plans complete
+
+Plans:
+**Wave 1**
+- [x] 235-01-PLAN.md — Server answer key on every pre-attempt puzzle (key, puzzle type, sharp runner-up) for SR, herring and sharp filler, fresh and resumed sessions (D-05/D-06/D-07/D-19)
+- [x] 235-02-PLAN.md — Client grading anchored on the key: after-key mount search, played == key is good with no search, key arrow and clamp, terminal positions (D-01/D-03/D-07/D-08/D-09)
+
+**Wave 2** *(blocked on Wave 1 completion)*
+- [x] 235-03-PLAN.md — Solve path: server-graded sharp runner-up, drill_solves.recheck JSONB, confirmed disagreement credits either guess (D-02/D-04/D-14/D-17/D-18/D-20)
+
+**Wave 3** *(blocked on Wave 2 completion)*
+- [x] 235-04-PLAN.md — Phone re-check engine: trigger, 3 s + 3 s searches with a raised node cap, re-check record on the solve POST, unclamped evals, timeout fallback (D-10/D-11/D-13/D-16/D-17/D-19/D-20)
+
+**Wave 4** *(blocked on Wave 3 completion)*
+- [x] 235-05-PLAN.md — "Taking a closer look…" wait copy, D-15 guess copy, CHANGELOG and full pre-merge gate (D-12/D-15/D-20)
+
 Phase detail for every shipped milestone lives in `milestones/vX.Y-ROADMAP.md`, its phase directories in `milestones/vX.Y-phases/`, and the per-milestone summaries in [MILESTONES.md](MILESTONES.md).
 
 ## Backlog

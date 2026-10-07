@@ -12,6 +12,7 @@ import type { ResolveBubbleStateInput } from '@/components/train/trainBubbleStat
 const BASE: ResolveBubbleStateInput = {
   hasVerdict: false,
   isGrading: false,
+  isRechecking: false,
   guessMade: false,
   introStep: null,
   nudgeActive: false,
@@ -35,7 +36,21 @@ describe('resolveBubbleState', () => {
   });
 
   it('grading state when isGrading is true', () => {
-    expect(resolveBubbleState({ ...BASE, isGrading: true })).toEqual({ kind: 'grading' });
+    expect(resolveBubbleState({ ...BASE, isGrading: true })).toEqual({ kind: 'grading', recheck: false });
+  });
+
+  // Phase 235 (D-12): the same grading state carries the re-check flag.
+  it('grading state carries recheck: true while the disagreement re-check runs (D-12)', () => {
+    expect(resolveBubbleState({ ...BASE, isGrading: true, isRechecking: true })).toEqual({
+      kind: 'grading',
+      recheck: true,
+    });
+  });
+
+  it('a verdict still wins over a re-check in flight', () => {
+    expect(
+      resolveBubbleState({ ...BASE, hasVerdict: true, isGrading: true, isRechecking: true }),
+    ).toEqual({ kind: 'verdict' });
   });
 
   it('verdict state when hasVerdict is true', () => {
@@ -48,6 +63,7 @@ describe('resolveBubbleState', () => {
         resolveBubbleState({
           hasVerdict: true,
           isGrading: true,
+          isRechecking: false,
           guessMade: true,
           introStep: 2,
           nudgeActive: true,
@@ -60,11 +76,12 @@ describe('resolveBubbleState', () => {
         resolveBubbleState({
           hasVerdict: false,
           isGrading: true,
+          isRechecking: false,
           guessMade: true,
           introStep: 2,
           nudgeActive: true,
         }),
-      ).toEqual({ kind: 'grading' });
+      ).toEqual({ kind: 'grading', recheck: false });
     });
 
     it('move beats intro, drop-nudge', () => {
@@ -72,6 +89,7 @@ describe('resolveBubbleState', () => {
         resolveBubbleState({
           hasVerdict: false,
           isGrading: false,
+          isRechecking: false,
           guessMade: true,
           introStep: 2,
           nudgeActive: true,
@@ -84,6 +102,7 @@ describe('resolveBubbleState', () => {
         resolveBubbleState({
           hasVerdict: false,
           isGrading: false,
+          isRechecking: false,
           guessMade: false,
           introStep: 0,
           nudgeActive: true,
@@ -96,6 +115,7 @@ describe('resolveBubbleState', () => {
         resolveBubbleState({
           hasVerdict: false,
           isGrading: false,
+          isRechecking: false,
           guessMade: false,
           introStep: null,
           nudgeActive: true,

@@ -30,6 +30,13 @@ export const TELEMETRY_CARDS_CAP = 10;
 // is not mirrored.
 export const REVIEW_CARD_HOVER_MIN_MS = 800;
 
+/**
+ * Where a user-played free-play move came from (quick 261007-axc): a move played
+ * on the board by hand (desktop drag or mobile tap-to-move, both reach the
+ * board's onPieceDrop) or a click on a Stockfish engine-line move.
+ */
+export type ExploreMoveSource = 'board' | 'engine-line';
+
 /** How a reveal card was engaged: a tap/click that opens it, or a desktop hover span. */
 export type CardEngageKind = 'open' | 'hover-start' | 'hover-end';
 
@@ -92,7 +99,10 @@ export function noteThinkStarted(sessionId: number, position: number): boolean {
 /** The engagement counters of one reveal (D-14): cumulative totals, never deltas. */
 export interface ReviewCounters {
   lineSteps: number;
+  /** Every user-played free-play move, board and engine-line alike. */
   exploreMoves: number;
+  /** Board moves only (quick 261007-axc), a subset of exploreMoves. */
+  boardMoves: number;
   analyzeOpened: boolean;
   walkthrough: boolean;
   /** Distinct cards opened (D-11/D-12); identity stays client-side, only the count is sent. */
@@ -119,6 +129,7 @@ export function buildReviewTelemetry(
     review_line_steps: clampTelemetryCount(counters.lineSteps, TELEMETRY_LINE_STEPS_CAP),
     review_explored: counters.exploreMoves > 0,
     review_explore_moves: clampTelemetryCount(counters.exploreMoves, TELEMETRY_EXPLORE_MOVES_CAP),
+    review_board_moves: clampTelemetryCount(counters.boardMoves, TELEMETRY_EXPLORE_MOVES_CAP),
     review_analyze_opened: counters.analyzeOpened,
     review_walkthrough: counters.walkthrough,
     review_cards_opened: clampTelemetryCount(counters.cardKeys.size, TELEMETRY_CARDS_CAP),
@@ -137,6 +148,7 @@ export interface ReviewTelemetrySnapshot {
   hiddenMs: number;
   lineSteps?: number;
   exploreMoves?: number;
+  boardMoves?: number;
   analyzeOpened?: boolean;
   walkthrough?: boolean;
   cardKeys?: string[];
@@ -169,6 +181,7 @@ export function isUsableReviewSnapshot(value: unknown): value is ReviewTelemetry
     hiddenMs >= 0 &&
     isAbsentOrCount(v.lineSteps) &&
     isAbsentOrCount(v.exploreMoves) &&
+    isAbsentOrCount(v.boardMoves) &&
     isAbsentOrBoolean(v.analyzeOpened) &&
     isAbsentOrBoolean(v.walkthrough) &&
     isAbsentOrStringArray(v.cardKeys) &&

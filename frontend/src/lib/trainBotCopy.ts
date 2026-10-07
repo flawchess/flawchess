@@ -199,6 +199,10 @@ export function movePromptCopy(sideToMove: 'white' | 'black', guess: Guess | nul
 /** D-22 grading copy — shown while the move is being checked. */
 export const GRADING_COPY = 'Checking your move…';
 
+/** Phase 235 (D-12): shown instead of GRADING_COPY while the disagreement
+ * re-check runs (a few extra seconds on the rare sharp off-key good move). */
+export const RECHECK_COPY = 'Taking a closer look…';
+
 /**
  * Phone copy budget for every stepper bubble (intro + first-reveal
  * walkthrough), in characters. Calibrated in the browser at 375x667 (plan 06

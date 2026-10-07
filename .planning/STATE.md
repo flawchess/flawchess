@@ -1,29 +1,28 @@
 ---
 gsd_state_version: "1.0"
 milestone: v2.21
-current_phase: 234
-current_phase_name: Milestone Feedback Ask (SEED-191)
+current_phase: 235
 status: completed
-stopped_at: Phase 234 complete — all phases complete
-last_updated: "2026-10-06T14:04:54.603Z"
-state_head: 21fdebd2dc37235c5e093b82b9b9b407d7678b93
+stopped_at: Phase 235 complete — all phases complete
+last_updated: "2026-10-07T20:54:01.961Z"
+state_head: 2c3d44b799f3da87abe43bdc0bf18d364d83cdfb
 progress:
-  total_phases: 7
+  total_phases: 8
   completed_phases: 103
-  total_plans: 35
+  total_plans: 40
   completed_plans: 47
   percent: 100
 milestone_name: Browser Engine Throughput
-last_activity: 2026-10-04
-last_activity_desc: "Completed quick task 261004-rre: Track Umami events for server-persisted settings controls"
+last_activity: 2026-10-07
+last_activity_desc: "Completed quick task 261007-axc: Separate Train reveal telemetry counter for hand-played free moves (review_board_moves)"
 ---
 
 # Project State: FlawChess
 
 ## Current Position
 
-Phase: 234 (Milestone Feedback Ask (SEED-191)) — COMPLETE
-Plan: 4 of 4
+Phase: 235 (Train Grading Anchored to the Server Answer Key (SEED-192)) — COMPLETE
+Plan: 5 of 5
 
 Status: All phases complete
 
@@ -173,6 +172,7 @@ v1.29 Live-Engine Analysis Page shipped 2026-06-29 — 5 phases (136–140), 14 
 
 ### Roadmap Evolution
 
+- Phase 235 added 2026-10-07 (explicit user request via `/gsd-phase SEED-192`, planted the same day from the ad-hoc prod analysis of a contradictory Train reveal, user 28): **Train Grading Anchored to the Server Answer Key** (SEED-192). The server key is the reveal's solution (P-01: key in `SolveResponse` only vs relaxing for the best UCI, decided in discuss); grade the played move by client after-move searches of played vs server key; sharp runner-up `su` graded server-side; longer re-search only on disagreement, benefit of the doubt with new copy, disagreement flag recorded queryably; no classification hardening (step 4 = monitoring). Written by hand as 235 (known mature-ROADMAP behavior). Next: `/gsd-discuss-phase 235`.
 - Phase 234 added 2026-10-05 (explicit user request via `/gsd-phase SEED-191`, planted the same day from `/gsd-explore` on getting feedback from invested users): **Milestone Feedback Ask** (SEED-191). Hilda the Hippo asks non-guest users with >= 5 active days (and no prior feedback) for an idea, on the Import bubble, Train landing host bubble (phones too, above the reminder ask) or Bots roster welcome bubble, whichever comes first. "Sure!" opens `FeedbackModal` and marks done; "Maybe later" (or 3 ignored views) snoozes, one re-ask after +10 active days. State in `users.prompt_state` JSONB keyed by ask id with atomic UPDATEs; `feedback.source` column measures yield. Written by hand as 234 (known mature-ROADMAP behavior). Next: `/gsd-discuss-phase 234` or `/gsd-plan-phase 234` (seed locks most decisions).
 - Phase 233 added 2026-10-05 (explicit user request via `/gsd-phase SEED-190`, planted the same day from the ad-hoc prod analysis of Train difficulty and the weekly leaderboard): **Train Per-Puzzle Timing & Engagement Telemetry** (SEED-190). One `drill_solves.telemetry` JSONB validated by a Pydantic model and merged across two writes: `guess_ms`/`move_ms` on the solve POST, `review_ms` plus reveal-engagement counters via a review POST on Next with a `pagehide` sendBeacon; visible time only, capped; grading untouched, go-forward only. Owner picks in discuss: `shown_at`, leaderboard exposure impression, `client_kind`, bucketed Umami event. Written by hand as 233 (known mature-ROADMAP behavior). Next: `/gsd-discuss-phase 233`.
 - Phase 232 added 2026-10-04 (explicit user request via `/gsd-phase @SEED-187`, planted the same day during Renovate PR triage after Phase 231 shipped): **Frontend Major Dependency Upgrades** (SEED-187). One plan per dependency: TypeScript 7 (research first, "blocked, stay on 6.x" acceptable), @sentry/react 11 (verify events still arrive with tags and source maps), vite-plugin-pwa 2 (diff SW and precache, check update flow and `/maia/*` `/engine/*` handling); js-yaml 5 and fast-uri 4 stay within their current override majors with a Renovate rule disabling those majors. Stockfish 19 / onnxruntime-web 1.30 out of scope. Written by hand as 232 (known mature-ROADMAP behavior). Next: `/gsd-plan-phase 232` (or `/gsd-discuss-phase 232` first).
@@ -989,6 +989,7 @@ None active.
 | 261006-75v | Leaderboard card declutter: puzzle icon, qualify divider, info popover, podium viewer highlight, medal count | 2026-10-06 | 6cd678dc2 | [261006-75v-leaderboard-card-declutter-puzzle-icon-q](./quick/261006-75v-leaderboard-card-declutter-puzzle-icon-q/) |
 | 261006-95o | Replace accuracy bullseye icon with info popover explaining Accuracy and move qualities | 2026-10-06 | bf89f68a1 | [261006-95o-replace-accuracy-bullseye-icon-with-info](./quick/261006-95o-replace-accuracy-bullseye-icon-with-info/) |
 | 126 | Mobile header: settings cogwheel left of the page title | 2026-10-06 | 21fdebd2d | — |
+| 261007-axc | Separate Train reveal telemetry counter for hand-played free moves (review_board_moves) | 2026-10-07 | 27ce3d361 | [261007-axc-separate-train-reveal-telemetry-counter-](./quick/261007-axc-separate-train-reveal-telemetry-counter-/) |
 
 ## Deferred Items
 
@@ -1041,7 +1042,8 @@ Items acknowledged and deferred at **v1.29 milestone close on 2026-06-29** (user
 
 ## Session Continuity
 
-**Stopped at:** Phase 234 complete, verified (UAT 4/4 browser, digest refreshed after the WR-01/WR-02 fixes). Branch `gsd/phase-234-milestone-feedback-ask` not yet squash-merged to `main`.
+**Last session:** 2026-10-07
+**Stopped at:** Phase 235 complete. UAT 4/4 passed (browser, dev build), re-verification passed 10/10, SECURITY 17/17 closed. Next: squash-merge `gsd/phase-235-train-grading-server-answer-key` to `main` after the pre-merge gate (CHANGELOG entry already in `[Unreleased]` from plan 05).
 **Resume file:** None
 
 Previous session note (Phase 227):
@@ -1050,7 +1052,7 @@ squash-merge `gsd/phase-227-...` to `main` with a CHANGELOG entry already in `[U
 Owner-deferred: real-phone bot game check (227-UAT.md, report-only). Follow-up: stale "Phase 198 will populate"
 priority comment in `workerPoolState.ts:434-437` (verifier info item).
 
-**Last session:** 2026-10-05T19:30:00Z
+**Last session:** 2026-10-07T17:04:33.808Z
 
 **Resume file:** None
 

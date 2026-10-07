@@ -157,6 +157,11 @@ ENDPOINT = "/api/train/sessions"
 # _MISSED_PV_LINES blob is deliberately "soft".
 _SHARP_PV_LINES = [{"b": 200, "bm": None, "s": -200, "sm": None, "su": "g8f6"}]
 
+# Phase 235 (D-19): a sharp blob whose runner-up `su` is LEGAL at _FLAW_PLY_WHITE
+# (white to move after 1.e4 e5 2.Nf3 Nc6 3.Bb5 a6: b5a4 and b5c6 are both legal),
+# so the answer key's legality check keeps it on the wire.
+_SHARP_KEYED_PV_LINES = [{"b": 200, "bm": None, "s": -200, "sm": None, "su": "b5c6"}]
+
 # A real, legal Ruy Lopez opening PGN — long enough (10 half-moves) to replay
 # any flaw ply this file exercises via chess.pgn.
 _PGN = "1. e4 e5 2. Nf3 Nc6 3. Bb5 a6 4. Ba4 Nf6 5. O-O Be7 *"
@@ -337,6 +342,31 @@ async def _seed_game_with_blunder(
                 session.add(prior)
 
     return game_id
+
+
+async def _seed_flaw_best_move(
+    test_engine, user_id: int, game_id: int, ply: int, best_move: str
+) -> None:
+    """Seed the `game_positions` row AT the flaw ply carrying `best_move`.
+
+    Phase 235 (D-05/D-06): the SR answer key is `game_positions.best_move` at
+    the flaw ply. Hashes are distinct from `_seed_game_with_blunder`'s prior
+    (ply-1) row (1000/2000/3000 + game_id).
+    """
+    session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
+    async with session_maker() as session:
+        async with session.begin():
+            session.add(
+                GamePosition(
+                    user_id=user_id,
+                    game_id=game_id,
+                    ply=ply,
+                    full_hash=4000 + game_id,
+                    white_hash=5000 + game_id,
+                    black_hash=6000 + game_id,
+                    best_move=best_move,
+                )
+            )
 
 
 async def _seed_game_with_pgn(test_engine, user_id: int, pgn: str, label: str) -> int:
@@ -676,6 +706,7 @@ async def _solve(
     played_move: str = "e2e4",
     move_quality: str = "good",
     telemetry: dict[str, object] | None = None,
+    recheck: dict[str, object] | None = None,
 ) -> httpx.Response:
     body: dict[str, object] = {
         "position": position,
@@ -685,6 +716,8 @@ async def _solve(
     }
     if telemetry is not None:
         body["telemetry"] = telemetry
+    if recheck is not None:
+        body["recheck"] = recheck
     async with httpx.AsyncClient(
         transport=httpx.ASGITransport(app=app), base_url="http://test"
     ) as client:
@@ -1088,11 +1121,12 @@ async def test_401_unauthenticated() -> None:
 
 @pytest.mark.asyncio
 async def test_pre_attempt_payload_shape(test_engine) -> None:
-    """The puzzle dict's key set is EXACTLY the POOL-10 six fields (P-01, 190-02).
+    """The puzzle dict's key set is EXACTLY the six POOL-10 fields plus the
+    three Phase 235 answer-key fields (D-05).
 
-    Equality, not membership (`set(...) == {...}`, never `in`/`assertIn`): a
-    future answer-key field addition (best_move, pv, puzzle_type, source)
-    must fail this test, not silently pass it.
+    Equality, not membership (`set(...) == {...}`, never `in`/`assertIn`): the
+    key/type/runner-up widening is deliberate (SEED-192, D-05), and any
+    FURTHER addition (best_move, pv, source) must still fail this test.
     """
     email = f"train-shape-{uuid.uuid4().hex[:8]}@example.com"
     user_id, token = await _register_and_login(email)
@@ -1115,7 +1149,86 @@ async def test_pre_attempt_payload_shape(test_engine) -> None:
             "fen",
             "side_to_move",
             "last_move_uci",
+            "key_move_uci",
+            "puzzle_type",
+            "runner_up_uci",
         }
+    finally:
+        await _delete_games(test_engine, [game_id])
+
+
+@pytest.mark.asyncio
+async def test_pre_attempt_payload_carries_sr_answer_key(test_engine) -> None:
+    """Phase 235 (D-05/D-06/D-19): a sharp SR puzzle arrives with the stored
+    best move as its key, puzzle_type "sharp" and the blob's `su` as runner-up."""
+    email = f"train-key-{uuid.uuid4().hex[:8]}@example.com"
+    user_id, token = await _register_and_login(email)
+    game_id = await _seed_game_with_blunder(
+        test_engine, user_id, missed_pv_lines=_SHARP_KEYED_PV_LINES
+    )
+    await _seed_flaw_best_move(test_engine, user_id, game_id, _FLAW_PLY_WHITE, "b5a4")
+
+    try:
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=app), base_url="http://test"
+        ) as client:
+            resp = await client.post(ENDPOINT, headers={"Authorization": f"Bearer {token}"})
+
+        assert resp.status_code == 200
+        puzzle = resp.json()["puzzles"][0]
+        assert puzzle["key_move_uci"] == "b5a4"
+        assert puzzle["puzzle_type"] == "sharp"
+        assert puzzle["runner_up_uci"] == "b5c6"
+    finally:
+        await _delete_games(test_engine, [game_id])
+
+
+@pytest.mark.asyncio
+async def test_pre_attempt_payload_key_is_null_without_best_move(test_engine) -> None:
+    """Phase 235 (D-07): an SR item with no stored best move is still served,
+    with a null key (the client keeps today's root-search grading)."""
+    email = f"train-nokey-{uuid.uuid4().hex[:8]}@example.com"
+    user_id, token = await _register_and_login(email)
+    game_id = await _seed_game_with_blunder(test_engine, user_id)
+
+    try:
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=app), base_url="http://test"
+        ) as client:
+            resp = await client.post(ENDPOINT, headers={"Authorization": f"Bearer {token}"})
+
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["puzzle_count"] == 1
+        puzzle = body["puzzles"][0]
+        assert puzzle["key_move_uci"] is None
+        assert puzzle["puzzle_type"] == "soft"
+        assert puzzle["runner_up_uci"] is None
+    finally:
+        await _delete_games(test_engine, [game_id])
+
+
+@pytest.mark.asyncio
+async def test_pre_attempt_payload_illegal_key_and_runner_up_are_null(test_engine) -> None:
+    """Phase 235 (D-07): a stored best move / runner-up that is not legal in the
+    served FEN is sent as null (the puzzle is still served, type unchanged)."""
+    email = f"train-illegalkey-{uuid.uuid4().hex[:8]}@example.com"
+    user_id, token = await _register_and_login(email)
+    # g8f6 is a black move: illegal with white to move at _FLAW_PLY_WHITE.
+    game_id = await _seed_game_with_blunder(test_engine, user_id, missed_pv_lines=_SHARP_PV_LINES)
+    await _seed_flaw_best_move(test_engine, user_id, game_id, _FLAW_PLY_WHITE, "e7e5")
+
+    try:
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=app), base_url="http://test"
+        ) as client:
+            resp = await client.post(ENDPOINT, headers={"Authorization": f"Bearer {token}"})
+
+        assert resp.status_code == 200
+        puzzle = resp.json()["puzzles"][0]
+        assert puzzle["key_move_uci"] is None
+        assert puzzle["puzzle_type"] == "sharp"
+        assert puzzle["runner_up_uci"] is None
     finally:
         await _delete_games(test_engine, [game_id])
 
@@ -1664,7 +1777,8 @@ async def test_correct_guess_computed_server_side(
 @pytest.mark.asyncio
 async def test_solve_response_key_set_is_exactly_the_wire_contract(test_engine) -> None:
     """Phase 211: the solve body's key set is EXACTLY the pre-211 nine fields
-    plus vetted_moves/graded_es_before/graded_es_after.
+    plus vetted_moves/graded_es_before/graded_es_after. Phase 235 (D-14/D-15)
+    adds `disagreement`.
 
     Equality, not membership (`set(...) == {...}`, never `in`) — mirroring
     test_pre_attempt_payload_shape's rationale: a future answer-key widening
@@ -1694,6 +1808,7 @@ async def test_solve_response_key_set_is_exactly_the_wire_contract(test_engine) 
             "vetted_moves",
             "graded_es_before",
             "graded_es_after",
+            "disagreement",
         }
     finally:
         await _delete_games(test_engine, [game_id])
@@ -3533,5 +3648,219 @@ async def test_review_flush_path_bounds(test_engine) -> None:
         body: dict[str, object] = {"v": 1, "exit": "next"}
         assert (await _review(token, session_id, 32768, body)).status_code == 422
         assert (await _review(token, 2147483648, 0, body)).status_code == 422
+    finally:
+        await _delete_games(test_engine, [game_id])
+
+
+# ---------------------------------------------------------------------------
+# Phase 235: server-graded sharp runner-up and phone disagreement re-check
+# ---------------------------------------------------------------------------
+
+# D-11/D-13: a confirmed re-check where the phone's own numbers rate the played
+# move as good as the key at both budgets (key - played = -0.02 and 0.01, both
+# below INACCURACY_DROP).
+_CONFIRMED_RECHECK: dict[str, object] = {
+    "v": 1,
+    "outcome": "confirmed",
+    "key_es": 0.6,
+    "played_es": 0.62,
+    "key_es_recheck": 0.7,
+    "played_es_recheck": 0.69,
+    "key_depth": 15,
+    "played_depth": 16,
+    "key_depth_recheck": 18,
+    "played_depth_recheck": 20,
+}
+
+
+async def _recheck_row(
+    test_engine, session_id: int, position: int
+) -> tuple[object, bool, str | None]:
+    """Return (recheck, recheck IS NULL, jsonb_typeof(recheck)) for one row."""
+    session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
+    async with session_maker() as session:
+        row = (
+            await session.execute(
+                text(
+                    "SELECT recheck, recheck IS NULL, jsonb_typeof(recheck) "
+                    "FROM drill_solves WHERE session_id = :sid AND position = :pos"
+                ),
+                {"sid": session_id, "pos": position},
+            )
+        ).one()
+    return row[0], bool(row[1]), row[2]
+
+
+async def _seed_sharp_keyed_session(test_engine, label: str) -> tuple[int, str, int, int]:
+    """Seed a one-puzzle session on the sharp keyed SR puzzle (key "b5a4", su "b5c6").
+
+    Returns (user_id, token, game_id, session_id).
+    """
+    user_id, token = await _register_and_login(
+        f"train-rck-{label}-{uuid.uuid4().hex[:8]}@example.com"
+    )
+    game_id = await _seed_game_with_blunder(
+        test_engine, user_id, missed_pv_lines=_SHARP_KEYED_PV_LINES
+    )
+    await _seed_flaw_best_move(test_engine, user_id, game_id, _FLAW_PLY_WHITE, "b5a4")
+    await _seed_drill_item(test_engine, user_id, game_id, _FLAW_PLY_WHITE)
+    session_id = await _seed_session(
+        test_engine, user_id, [(game_id, _FLAW_PLY_WHITE, int(DrillSource.SR_ITEM))]
+    )
+    return user_id, token, game_id, session_id
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("guess", ["critical", "several"])
+async def test_recheck_confirmed_on_sharp_credits_either_guess(test_engine, guess: str) -> None:
+    """D-14: a confirmed re-check on a live sharp puzzle earns the guess point for
+    BOTH guesses, records tier good, flags disagreement, and stores the record
+    with accepted true."""
+    _, token, game_id, session_id = await _seed_sharp_keyed_session(test_engine, f"ok-{guess}")
+    try:
+        resp = await _solve(
+            token,
+            session_id,
+            0,
+            guess=guess,
+            played_move="b1c3",
+            move_quality="good",
+            recheck=_CONFIRMED_RECHECK,
+        )
+        assert resp.status_code == 200, resp.text
+        body = resp.json()
+        assert body["correct_guess"] is True
+        assert body["move_quality"] == "good"
+        assert body["disagreement"] is True
+        stored, is_null, kind = await _recheck_row(test_engine, session_id, 0)
+        assert is_null is False
+        assert kind == "object"
+        assert stored == {**_CONFIRMED_RECHECK, "accepted": True}
+    finally:
+        await _delete_games(test_engine, [game_id])
+
+
+@pytest.mark.asyncio
+async def test_solve_without_recheck_stays_sql_null_and_grades_as_before(test_engine) -> None:
+    """D-20 / stale bundle: no recheck -> graded as before (several is wrong on a
+    sharp puzzle), no disagreement credit, and the column is SQL NULL (not a JSON
+    null value)."""
+    _, token, game_id, session_id = await _seed_sharp_keyed_session(test_engine, "none")
+    try:
+        resp = await _solve(
+            token, session_id, 0, guess="several", played_move="b1c3", move_quality="good"
+        )
+        assert resp.status_code == 200, resp.text
+        body = resp.json()
+        assert body["correct_guess"] is False
+        assert body["disagreement"] is False
+        _, is_null, _ = await _recheck_row(test_engine, session_id, 0)
+        assert is_null is True
+    finally:
+        await _delete_games(test_engine, [game_id])
+
+
+@pytest.mark.asyncio
+async def test_recheck_resolved_is_stored_unaccepted(test_engine) -> None:
+    """D-17: a "resolved" re-check (the phone agreed with the key after all) is
+    stored with accepted false, grants nothing, and the client tier is recorded."""
+    _, token, game_id, session_id = await _seed_sharp_keyed_session(test_engine, "resolved")
+    recheck = {**_CONFIRMED_RECHECK, "outcome": "resolved"}
+    try:
+        resp = await _solve(
+            token,
+            session_id,
+            0,
+            guess="several",
+            played_move="b1c3",
+            move_quality="good",
+            recheck=recheck,
+        )
+        assert resp.status_code == 200, resp.text
+        body = resp.json()
+        assert body["correct_guess"] is False  # sharp + "several": graded as without it
+        assert body["move_quality"] == "good"
+        assert body["disagreement"] is False
+        stored, _, kind = await _recheck_row(test_engine, session_id, 0)
+        assert kind == "object"
+        assert stored == {**recheck, "accepted": False}
+    finally:
+        await _delete_games(test_engine, [game_id])
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("guess,expected_correct", [("several", True), ("critical", False)])
+async def test_recheck_confirmed_on_soft_puzzle_grants_nothing(
+    test_engine, guess: str, expected_correct: bool
+) -> None:
+    """D-14 / Pitfall 4: the LIVE puzzle type decides. A confirmed claim on a soft
+    puzzle is stored with accepted false and grades as normal (P-02: several is
+    right, critical is wrong); it is never a 422."""
+    user_id, token = await _register_and_login(
+        f"train-rck-soft-{guess}-{uuid.uuid4().hex[:8]}@example.com"
+    )
+    game_id = await _seed_game_with_blunder(test_engine, user_id)
+    # A stored best move gives the soft puzzle a server key, so the ONLY thing
+    # keeping this claim from being accepted is the live "soft" type.
+    await _seed_flaw_best_move(test_engine, user_id, game_id, _FLAW_PLY_WHITE, "d2d4")
+    await _seed_drill_item(test_engine, user_id, game_id, _FLAW_PLY_WHITE)
+    session_id = await _seed_session(
+        test_engine, user_id, [(game_id, _FLAW_PLY_WHITE, int(DrillSource.SR_ITEM))]
+    )
+    try:
+        resp = await _solve(
+            token,
+            session_id,
+            0,
+            guess=guess,
+            played_move="e2e4",
+            move_quality="good",
+            recheck=_CONFIRMED_RECHECK,
+        )
+        assert resp.status_code == 200, resp.text
+        body = resp.json()
+        assert body["puzzle_type"] == "soft"
+        assert body["correct_guess"] is expected_correct
+        assert body["disagreement"] is False
+        stored, _, _ = await _recheck_row(test_engine, session_id, 0)
+        assert stored == {**_CONFIRMED_RECHECK, "accepted": False}
+    finally:
+        await _delete_games(test_engine, [game_id])
+
+
+@pytest.mark.asyncio
+async def test_recheck_resubmit_keeps_first_record(test_engine) -> None:
+    """The first recorded outcome wins: a re-submit of an already-solved position
+    with a different re-check keeps the first stored record and returns the stored
+    disagreement flag."""
+    _, token, game_id, session_id = await _seed_sharp_keyed_session(test_engine, "resubmit")
+    try:
+        first = await _solve(
+            token,
+            session_id,
+            0,
+            guess="several",
+            played_move="b1c3",
+            move_quality="good",
+            recheck=_CONFIRMED_RECHECK,
+        )
+        assert first.status_code == 200, first.text
+        assert first.json()["disagreement"] is True
+
+        second = await _solve(
+            token,
+            session_id,
+            0,
+            guess="several",
+            played_move="b1c3",
+            move_quality="good",
+            recheck={**_CONFIRMED_RECHECK, "outcome": "resolved", "key_depth": 99},
+        )
+        assert second.status_code == 200, second.text
+        second_body = second.json()
+        assert second_body["disagreement"] is True
+        assert second_body["correct_guess"] is True
+        stored, _, _ = await _recheck_row(test_engine, session_id, 0)
+        assert stored == {**_CONFIRMED_RECHECK, "accepted": True}
     finally:
         await _delete_games(test_engine, [game_id])

@@ -55,6 +55,7 @@ const ZERO_ENGAGEMENT = {
   review_line_steps: 0,
   review_explored: false,
   review_explore_moves: 0,
+  review_board_moves: 0,
   review_analyze_opened: false,
   review_walkthrough: false,
   review_cards_opened: 0,
@@ -464,6 +465,7 @@ describe('useTrainPuzzleTelemetry', () => {
       hiddenMs: 0,
       lineSteps: 0,
       exploreMoves: 0,
+      boardMoves: 0,
       analyzeOpened: true,
       walkthrough: false,
       cardKeys: [],
@@ -543,7 +545,7 @@ describe('useTrainPuzzleTelemetry', () => {
 
   it('counters: 3 explore moves flush review_explored true and review_explore_moves 3', async () => {
     const { result } = mountHook(REVIEW_PROPS);
-    for (let i = 0; i < 3; i++) act(() => result.current.onExploreMove());
+    for (let i = 0; i < 3; i++) act(() => result.current.onExploreMove('board'));
     act(() => result.current.flushReviewOnNext());
     await flushMicrotasks();
     expect(nextFlush).toHaveBeenCalledWith(
@@ -553,27 +555,54 @@ describe('useTrainPuzzleTelemetry', () => {
     );
   });
 
-  it('counters: explore moves cap at 50', async () => {
+  it('counters: review_board_moves counts board moves only, review_explore_moves counts both sources', async () => {
     const { result } = mountHook(REVIEW_PROPS);
-    for (let i = 0; i < 55; i++) act(() => result.current.onExploreMove());
+    act(() => result.current.onExploreMove('board'));
+    act(() => result.current.onExploreMove('engine-line'));
+    act(() => result.current.onExploreMove('engine-line'));
+    act(() => result.current.onExploreMove('board'));
     act(() => result.current.flushReviewOnNext());
     await flushMicrotasks();
-    expect(nextFlush).toHaveBeenCalledWith(7, 0, expect.objectContaining({ review_explore_moves: 50 }));
+    expect(nextFlush).toHaveBeenCalledWith(
+      7,
+      0,
+      expect.objectContaining({ review_explored: true, review_explore_moves: 4, review_board_moves: 2 }),
+    );
+  });
+
+  it('counters: explore and board moves cap at 50', async () => {
+    const { result } = mountHook(REVIEW_PROPS);
+    for (let i = 0; i < 55; i++) act(() => result.current.onExploreMove('board'));
+    act(() => result.current.flushReviewOnNext());
+    await flushMicrotasks();
+    expect(nextFlush).toHaveBeenCalledWith(
+      7,
+      0,
+      expect.objectContaining({ review_explore_moves: 50, review_board_moves: 50 }),
+    );
   });
 
   it('counters: the Analyze snapshot carries the counters and a restored hook continues them cumulatively', async () => {
     const first = mountHook(REVIEW_PROPS);
     advance(1000);
     act(() => first.result.current.onLineUserStep());
-    act(() => first.result.current.onExploreMove());
+    act(() => first.result.current.onExploreMove('board'));
+    act(() => first.result.current.onExploreMove('engine-line'));
     act(() => first.result.current.markWalkthroughActive());
     const snapshot = first.result.current.snapshotReviewForAnalyze();
-    expect(snapshot).toMatchObject({ lineSteps: 1, exploreMoves: 1, analyzeOpened: true, walkthrough: true });
+    expect(snapshot).toMatchObject({
+      lineSteps: 1,
+      exploreMoves: 2,
+      boardMoves: 1,
+      analyzeOpened: true,
+      walkthrough: true,
+    });
     first.unmount();
     await flushMicrotasks();
 
     const restored = mountHook({ ...REVIEW_PROPS, isRestored: true, restoredReview: snapshot });
     act(() => restored.result.current.onLineUserStep());
+    act(() => restored.result.current.onExploreMove('board'));
     act(() => restored.result.current.flushReviewOnNext());
     await flushMicrotasks();
     expect(nextFlush).toHaveBeenCalledWith(
@@ -582,7 +611,8 @@ describe('useTrainPuzzleTelemetry', () => {
       expect.objectContaining({
         review_line_steps: 2,
         review_explored: true,
-        review_explore_moves: 1,
+        review_explore_moves: 3,
+        review_board_moves: 2,
         review_analyze_opened: true,
         review_walkthrough: true,
       }),
@@ -774,7 +804,7 @@ describe('useTrainPuzzleTelemetry', () => {
     expect((nextFlush.mock.calls.at(-1)?.[2] as Record<string, unknown>).review_cards_total).toBe(3);
   });
 
-  it('closed set: a flush body has exactly the 11 D-14 keys', async () => {
+  it('closed set: a flush body has exactly the 11 D-14 keys plus review_board_moves', async () => {
     const { result } = mountHook(REVIEW_PROPS);
     advance(1000);
     const body = await nextBody(result);
@@ -789,6 +819,7 @@ describe('useTrainPuzzleTelemetry', () => {
         'review_line_steps',
         'review_explored',
         'review_explore_moves',
+        'review_board_moves',
         'review_analyze_opened',
         'review_walkthrough',
       ].sort(),

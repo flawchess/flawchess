@@ -3,13 +3,15 @@
  * (app/schemas/train.py). Field-for-field, literal unions instead of bare
  * `string` per CLAUDE.md's type-safety rule.
  *
- * `TrainPuzzle` carries no answer key (POOL-10 / P-01, LOCKED).
- * `last_move_uci` (190-02, SOLV-02) is the position's arrival — the prior
- * half-move — never what to play next, so it does not reopen POOL-10. Do
- * not add fields here without re-reading that decision.
+ * Since Phase 235 (SEED-192, D-05) `TrainPuzzle` carries the server answer key
+ * (`key_move_uci`), the puzzle type and the sharp runner-up so the phone grades
+ * against the key. They are read only to start grading and are never displayed
+ * before the attempt. `last_move_uci` (190-02, SOLV-02) is the position's
+ * arrival, the prior half-move, never what to play next.
  */
 
 import type { TrainMoveTier } from '@/lib/trainScore';
+import type { TrainPuzzleType } from '@/lib/trainArrows';
 
 export interface TrainPuzzle {
   position: number;
@@ -18,6 +20,19 @@ export interface TrainPuzzle {
   fen: string;
   side_to_move: 'white' | 'black';
   last_move_uci: string | null;
+  /**
+   * Phase 235 (D-05/D-08): the server-picked solution move. The think-time
+   * search evaluates the position AFTER it, and the reveal names it. All three
+   * fields are OPTIONAL on purpose: a stale server (or an old trainRevealCache
+   * entry) omits them, and every consumer defaults with a single `?? null`
+   * (the `SolveResponse.vetted_moves?` precedent). null means no usable key,
+   * which keeps the legacy root-search grading (D-07).
+   */
+  key_move_uci?: string | null;
+  /** Phase 235 (D-05): the puzzle type, known before the attempt but never displayed until the reveal. */
+  puzzle_type?: TrainPuzzleType | null;
+  /** Phase 235 (D-19): the sharp runner-up move, null for non-sharp puzzles; never displayed pre-attempt. */
+  runner_up_uci?: string | null;
 }
 
 /**
@@ -94,6 +109,36 @@ export interface SolveRequest {
    * solves; never an input to grading or scoring (D-05).
    */
   telemetry?: SolveTelemetry;
+  /**
+   * Phase 235 (D-17/D-20): the disagreement re-check record. Present exactly
+   * when a re-check COMPLETED (confirmed or resolved); absent when none ran or
+   * it timed out or errored, in which case the 1.5 s grade stands and the
+   * server credits nothing. A client claim only: the server re-validates it.
+   */
+  recheck?: SolveRecheck;
+}
+
+/** How a completed re-check ended (D-13): the 3 s reading still rates the played move good, or not. */
+export type RecheckOutcome = 'confirmed' | 'resolved';
+
+/**
+ * Mirrors app/schemas/train.py SolveRecheck (Phase 235 D-17/D-18). ES values
+ * are mover-POV expected scores in [0, 1]: `key_es`/`played_es` are the 1.5 s
+ * after-move searches, `*_recheck` the 3 s ones. Depths are the engine depth
+ * reported with each reading (0 when no exact line arrived). `v` is
+ * RECHECK_SCHEMA_VERSION in lib/trainRecheck.ts.
+ */
+export interface SolveRecheck {
+  v: 1;
+  outcome: RecheckOutcome;
+  key_es: number;
+  played_es: number;
+  key_es_recheck: number;
+  played_es_recheck: number;
+  key_depth: number;
+  played_depth: number;
+  key_depth_recheck: number;
+  played_depth_recheck: number;
 }
 
 /** Device class sent with telemetry (D-09): a two-value class, never the raw UA string. */
@@ -140,6 +185,7 @@ export interface ReviewTelemetry {
   review_cards_total?: number;
   review_line_steps?: number;
   review_explore_moves?: number;
+  review_board_moves?: number;
   review_explored?: boolean;
   review_analyze_opened?: boolean;
   review_walkthrough?: boolean;
@@ -196,6 +242,12 @@ export interface SolveResponse {
   vetted_moves?: VettedMove[];
   graded_es_before?: number | null;
   graded_es_after?: number | null;
+  /**
+   * Phase 235 (D-14): true only when the server accepted a confirmed phone
+   * re-check, crediting either guess. Optional for pre-235 trainRevealCache
+   * entries and a not-yet-deployed server; read with a single `?? false`.
+   */
+  disagreement?: boolean;
 }
 
 /**
@@ -210,6 +262,8 @@ export interface SolveResponse {
  * guaranteed to agree bit-for-bit — project_eval_nondeterminism). Do not
  * re-add these fields as a "fallback" — see 190.1-03-PLAN.md's
  * assumption-delta decision.
+ * Phase 235 (D-09): the server now picks the solution MOVE
+ * (`TrainPuzzle.key_move_uci`); the phone still supplies every number.
  *
  * `played_in_game_move_uci` (190.1-01, D-05) is the UCI counterpart of
  * `played_in_game_san`, behind the identical gate — used to dispatch the
