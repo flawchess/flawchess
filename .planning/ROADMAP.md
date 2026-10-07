@@ -496,10 +496,17 @@ record disagreements so the answer-key quality can be judged from real prod solv
 **Plans:** 5 plans
 
 Plans:
+**Wave 1**
 - [ ] 235-01-PLAN.md — Server answer key on every pre-attempt puzzle (key, puzzle type, sharp runner-up) for SR, herring and sharp filler, fresh and resumed sessions (D-05/D-06/D-07/D-19)
 - [ ] 235-02-PLAN.md — Client grading anchored on the key: after-key mount search, played == key is good with no search, key arrow and clamp, terminal positions (D-01/D-03/D-07/D-08/D-09)
+
+**Wave 2** *(blocked on Wave 1 completion)*
 - [ ] 235-03-PLAN.md — Solve path: server-graded sharp runner-up, drill_solves.recheck JSONB, confirmed disagreement credits either guess (D-02/D-04/D-14/D-17/D-18/D-20)
+
+**Wave 3** *(blocked on Wave 2 completion)*
 - [ ] 235-04-PLAN.md — Phone re-check engine: trigger, 3 s + 3 s searches with a raised node cap, re-check record on the solve POST, unclamped evals, timeout fallback (D-10/D-11/D-13/D-16/D-17/D-19/D-20)
+
+**Wave 4** *(blocked on Wave 3 completion)*
 - [ ] 235-05-PLAN.md — "Taking a closer look…" wait copy, D-15 guess copy, CHANGELOG and full pre-merge gate (D-12/D-15/D-20)
 
 Phase detail for every shipped milestone lives in `milestones/vX.Y-ROADMAP.md`, its phase directories in `milestones/vX.Y-phases/`, and the per-milestone summaries in [MILESTONES.md](MILESTONES.md).
