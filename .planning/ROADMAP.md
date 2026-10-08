@@ -557,6 +557,51 @@ Plans:
 **Wave 4** *(blocked on Wave 3 completion)*
 - [x] 236-06-PLAN.md — reveal loading/failed line cards, badge/arrow/eval-bar/bubble fallbacks, CHANGELOG and phase gate (wave 4)
 
+### Phase 237: Train Reveal Verdict Strip, Line Chips & One Move Tree (SEED-194)
+
+**Goal**: Make the post-solve reveal fit a phone and teach through one model instead of two. Today at
+390x844 the board gets 38% of the screen, the bot bubble 23% and the line cards 24%, so only ~1.5 of
+the four cards are visible, the bubble repeats the Your-call/Your-move cards, all three arrows compete
+on the board, and free play is a second mode (cards swap to Stockfish + Moves, bottom nav turns into
+board controls, a Solution button undoes it). Direction is the owner-approved sketch 008 winner
+(`.planning/sketches/008-train-reveal-mobile-layout/`, tab "Combined"; decisions under **008** in
+`.planning/sketches/MANIFEST.md`). Frontend only, no backend change expected.
+
+- **1. Verdict strip** replaces the bot bubble after the reveal: avatar + total-points pill + one line
+  ("Right call, right move" / "Right call, best move" / "Right call, wrong move"). Tap expands the full
+  bot verdict, the Your-call feedback and the also-fine moves. The Your-call card goes.
+- **2. Line chips** (You / Best / Game, each with mark, SAN, eval) replace the three line cards. You
+  merges with Best or Game ("You = Best", "You = Game", one arrow) when the moves coincide.
+- **3. Chip-driven board:** reveal opens with **You** active; only the active chip's arrow and mark are
+  opaque, all others (also-fine included) fade to ~20-30%, never hidden. Playing a line's move from the
+  puzzle position activates that chip.
+- **4. One move tree:** the three lines are pre-loaded branches of the `useAnalysisBoard` tree free play
+  already uses; the list shows the active line (numbered, wrapping); moving a piece forks a sideline in
+  place with × to close. No separate free-play mode, no card swap. A one-line Stockfish row (expandable
+  to PV 2) shows only off the known lines. Keep `useTrainFreePlay`'s per-move grading markers on
+  sideline moves.
+- **5. Phone action bar** replaces the bottom nav for the whole reveal: ⏮ ‹ › ⇅ + Analyze + Next
+  (⏮ = old Solution, keeps sidelines). Acceptance: first view fits 390x844 with no scroll.
+- **6. Desktop:** board left with the same controls and Analyze/Next under it; right column = full
+  verdict bubble (no strip) + chips + move tree + game line. ← → step, Home = puzzle position.
+- **7. Onboarding tour rewritten for the new screen** (in scope): new `walkthroughCopy` steps and
+  spotlight targets for the strip, chips (focus, faded arrows, merge), stepping, sideline fork + ⏮, and
+  the action bar (spotlight must reach the bottom bar). Keep D-21's "understand, don't memorize" step,
+  `STEPPER_COPY_MAX_CHARS` = 145, and "only describe what is on screen" (`hasAnalyze`; `hasSolution`
+  goes away). Re-run the phone UAT of the tour.
+- **Guardrails:** SOLV-02 (forking a sideline never reaches grading); herring / server-graded verdicts
+  and Phase 211 D-06 "Also fine" moves keep their marks; the restored-reveal path (`CachedTrainReveal`,
+  Analyze → Back) restores the active chip and tree; new telemetry equivalents for `CardEngageKind` and
+  `train-explore-*` Umami events (chip select, tree jump, sideline fork, strip expand); test ids and
+  reveal tests move off the card structure. `TrainReveal.tsx` (1469 lines) is the seam to split.
+
+**Depends on**: Phase 236 (current reveal loading/failed line cards, server-graded verdict fallbacks)
+**Requirements**: TBD
+**Plans:** 0 plans
+
+Plans:
+- [ ] TBD (run /gsd-discuss-phase 237)
+
 Phase detail for every shipped milestone lives in `milestones/vX.Y-ROADMAP.md`, its phase directories in `milestones/vX.Y-phases/`, and the per-milestone summaries in [MILESTONES.md](MILESTONES.md).
 
 ## Backlog

@@ -1,6 +1,8 @@
 ---
 id: SEED-194
-status: planted
+status: promoted
+promoted_to: Phase 237
+promoted: 2026-10-08
 planted: 2026-10-08
 planted_during: ad-hoc reveal UX review + sketch 008 (Phase 236 in flight in another session; milestone v2.21)
 trigger_when: next Train UI phase, any further change to TrainReveal / free play, or before more reveal copy work
