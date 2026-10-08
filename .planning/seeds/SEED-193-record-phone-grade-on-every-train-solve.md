@@ -52,6 +52,16 @@ improved accuracy is unmeasurable without this seed.
   see the asyncpg JSONB-null gotcha), validated with `extra="forbid"`.
 - Keep `move_quality` as the effective tier; the new record is the phone's
   pre-override reading, so the override rate falls out of a column compare.
+- What the phone actually grades: when the played move IS the key, the phone
+  runs no after-move search (`useTrainGradingEngine.ts` ~669, GOOD by
+  definition), so there is no played reading to record (send the tier only,
+  or omit the record). Every other move, including server-graded ones (sharp
+  runner-up, soft vetted moves, herring good band), IS graded by the phone's
+  1.5 s search: the phone knows only `key_move_uci` / `runner_up_uci` before
+  the solve (vetted moves arrive in `SolveResponse`), and the runner-up only
+  skips the re-check, not the grading. Those discarded phone grades on
+  server-graded moves are the best accuracy signal available, since the
+  server's deep tier for the same move is the ground truth, free of charge.
 - Optional: an engine/device hint (wasm build, threads, nodes reached) only
   if cheap; `telemetry.client` already gives mobile vs desktop.
 - Afterwards, rewrite `temp/grade-audit/` as a query + depth-18 spot check
