@@ -4,10 +4,10 @@ status: planted
 planted: 2026-10-08
 planted_during: ad-hoc Train grading investigation (prod user 28, quick tasks 261008-ob1 / 261008-opg; no phase in flight, milestone v2.21 after Phase 235)
 trigger_when: next Train phase, any further change to Train grading, or before re-running the grade audit in temp/grade-audit/
-scope: small (one migration + payload field + server write; no new engine work)
+scope: small-medium (Part 1: migration + payload field + server write; Part 2: puzzle payload + client fast path, gated on a prod frequency check)
 ---
 
-# SEED-193: Record the phone's grade and its readings on every Train solve
+# SEED-193: Record the phone's grade on every Train solve, and skip the wait on server-graded moves
 
 ## Why This Matters
 
@@ -66,6 +66,32 @@ improved accuracy is unmeasurable without this seed.
   if cheap; `telemetry.client` already gives mobile vs desktop.
 - Afterwards, rewrite `temp/grade-audit/` as a query + depth-18 spot check
   instead of the current reconstruct-and-exclude workflow.
+
+## Part 2: instant verdict for server-graded moves
+
+Today the phone runs its 1.5 s after-move search on every non-key move,
+including moves the server grades itself and whose phone tier `_resolve_grade`
+then discards. The user waits ~1.5 s ("Checking your move…") for a grade that
+is thrown away. The search is NOT pure waste: it supplies the "Your move"
+reveal card's line and eval (`GradeResult.playedLine`), and the server's
+`VettedMove` wire shape carries only UCI + tier, no PV or eval
+(`app/schemas/train.py` ~423).
+
+Direction:
+
+- Send the server-graded moves (soft vetted, herring good band, sharp
+  runner-up) with their tiers in the puzzle payload, read only after the move
+  like `key_move_uci` / `runner_up_uci` today (Phase 235 D-05). The key is
+  already on the wire, so this exposes nothing new.
+- When the played move is in that set, show the verdict immediately from the
+  server tier and POST without waiting.
+- Keep the after-move search running in the background to fill the "Your
+  move" card, and record its tier/ES/depth per Part 1: on exactly these moves
+  the server's deep tier is the ground truth, so Part 1 gets its best accuracy
+  signal without any extra wait.
+- Before planning, measure how often a played move is a non-key server-graded
+  move in prod (my stratified audit sample had ~23% such rows, which is NOT a
+  population rate). If it is rare, Part 2 may not be worth its complexity.
 
 ## Breadcrumbs
 
