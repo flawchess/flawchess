@@ -2,16 +2,16 @@
 gsd_state_version: "1.0"
 milestone: v2.21
 current_phase: 235
+current_phase_name: Train Grading Anchored to the Server Answer Key (SEED-192
 status: completed
-stopped_at: Phase 235 complete — all phases complete
-last_updated: "2026-10-08T15:51:07.909Z"
-state_head: 44e037dd3bdbd1c3039ac4058627625c0799190f
+stopped_at: Phase 236 context gathered
+last_updated: "2026-10-08T17:19:47.790Z"
+state_head: 7a4c71917fcf717671fc2aac4c5ac5c0af3c1591
 progress:
-  total_phases: 8
+  total_phases: 9
   completed_phases: 103
   total_plans: 40
   completed_plans: 47
-  percent: 100
 milestone_name: Browser Engine Throughput
 last_activity: 2026-10-07
 last_activity_desc: "Completed quick task 261007-axc: Separate Train reveal telemetry counter for hand-played free moves (review_board_moves)"
@@ -1045,9 +1045,9 @@ Items acknowledged and deferred at **v1.29 milestone close on 2026-06-29** (user
 
 ## Session Continuity
 
-**Last session:** 2026-10-07
-**Stopped at:** Phase 235 complete. UAT 4/4 passed (browser, dev build), re-verification passed 10/10, SECURITY 17/17 closed. Next: squash-merge `gsd/phase-235-train-grading-server-answer-key` to `main` after the pre-merge gate (CHANGELOG entry already in `[Unreleased]` from plan 05).
-**Resume file:** None
+**Last session:** 2026-10-08T17:19:47.567Z
+**Stopped at:** Phase 236 context gathered
+**Resume file:** .planning/phases/236-train-phone-grade-instant-verdict/236-CONTEXT.md
 
 Previous session note (Phase 227):
 refit (calibration parity holds). Verification passed 17/17; code review 0 blockers (WR-01 + 3 info fixed). Next:
