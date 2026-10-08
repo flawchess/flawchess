@@ -13,8 +13,9 @@ import { classifyLiveSeverity, evalToExpectedScore, sideToMoveFromFen } from '@/
 import type { MoverColor } from '@/lib/liveFlaw';
 import { moveTierFromSeverity } from '@/lib/trainScore';
 import type { TrainMoveTier } from '@/lib/trainScore';
+import type { PhoneReading } from '@/lib/trainPhoneGrade';
 import { buildRecheckPayload, recheckOutcome } from '@/lib/trainRecheck';
-import type { SolveRecheck } from '@/types/train';
+import type { SolveRecheck, SolveResponse } from '@/types/train';
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
@@ -104,6 +105,13 @@ export interface GradeResult {
    * never read better than the key line's (D-09).
    */
   playedLine: TrainEngineLine;
+  /**
+   * Phase 236 (D-01/D-04): the 1.5 s reading for the phone_grade record. Null
+   * or absent on the legacy root anchor (D-06), on the defensive fallbacks and
+   * on a re-check's replacement grade. Optional because restored reveal-cache
+   * entries predate it.
+   */
+  phoneReading?: PhoneReading | null;
 }
 
 /**
@@ -117,6 +125,59 @@ export interface TrainEngineLine {
   moves: string[];
   evalCp: number | null;
   evalMate: number | null;
+}
+
+/**
+ * Optional hooks into a `gradeMove` call. Phase 236 D-14: the instant path
+ * renders the solution card from the think-time after-key line as soon as the
+ * anchor has settled, before the played move's search finishes.
+ */
+export interface GradeMoveOptions {
+  /** Called at most once per `gradeMove`, with the think-time after-key line.
+   * Never called for a legacy (null key) root anchor. */
+  onKeyLine?: (keyLine: TrainEngineLine) => void;
+}
+
+/** Phase 236 D-14/D-15: where a server-graded move's background phone grade is. */
+export type InstantGradeStatus = 'pending' | 'failed';
+
+/**
+ * Phase 236 D-14/D-15: the reveal's view of a server-graded move whose phone
+ * grade has not landed. `keyLine` is the think-time after-key line, set once
+ * the anchor has settled (null before that). The solve screen holds `null`
+ * when no instant grade is outstanding (the normal path, or the grade landed).
+ */
+export interface InstantGradeState {
+  status: InstantGradeStatus;
+  keyUci: string;
+  keyLine: TrainEngineLine | null;
+}
+
+/**
+ * Phase 236 review WR-02: a stand-in GradeResult for the reveal cache, used when
+ * Analyze is pressed before the instant path's background grade landed. Without
+ * it the click cached nothing, so browser Back lost the solved reveal (a resumed
+ * session no longer contains the solved puzzle). Every number is the SERVER's
+ * graded pair from the verdict (never a fabricated 0.5), the key line is the
+ * think-time one when the anchor had settled, and the played-move line is empty,
+ * so the restored Your-move card is the header-only card of the D-15 failed
+ * state. `phoneReading` is null: the search ends with the unmount, so this solve
+ * records no phone_grade (accepted gap). Returns null when the verdict carries no
+ * server pair, where the caller keeps the old no-cache behaviour.
+ */
+export function gradeFromServerPair(verdict: SolveResponse, instant: InstantGradeState): GradeResult | null {
+  const esBefore = verdict.graded_es_before;
+  const esAfter = verdict.graded_es_after;
+  if (esBefore == null || esAfter == null) return null;
+  return {
+    moveTier: verdict.move_quality,
+    bestMoveUci: instant.keyUci,
+    esBefore,
+    esAfter,
+    bestLine: instant.keyLine ?? { moves: [], evalCp: null, evalMate: null },
+    playedLine: { moves: [], evalCp: null, evalMate: null },
+    phoneReading: null,
+  };
 }
 
 /**

@@ -205,6 +205,18 @@ class DrillSolve(Base):
     recheck: Mapped[dict[str, Any] | None] = mapped_column(
         JSONB(none_as_null=True), nullable=True, default=None
     )
+    # Phase 236 (SEED-193, D-01..D-06): the phone's own grading reading for this
+    # keyed solve. Keys are documented by `PhoneGrade` in app/schemas/train.py.
+    # Always the phone's 1.5 s reading (D-04), never the 3 s re-check reading
+    # (that stays in `recheck`). Audit data only: never read by grading, scoring,
+    # the SR ladder or the leaderboard (D-02). A played == key solve stores equal
+    # key/played pairs with tier good (D-05), so accuracy queries must filter
+    # `played_move != key`. The legacy no-key path stores none (D-06). Written
+    # once, by the solve claim UPDATE or by the review route via coalesce
+    # (D-12/D-13). none_as_null: "no record" is a true SQL NULL, never a JSON null.
+    phone_grade: Mapped[dict[str, Any] | None] = mapped_column(
+        JSONB(none_as_null=True), nullable=True, default=None
+    )
 
 
 __all__ = ["DrillGuess", "DrillMoveQuality", "DrillSolve", "DrillSource"]

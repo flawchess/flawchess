@@ -7,6 +7,14 @@ docstring for the exact-equality contract and the display rule. Phase 211:
 the vetted-move material ("also fine" moves, the graded-ES pair) lives on
 `SolveResponse` — produced only once the attempt is already recorded — and
 never on `TrainPuzzle`.
+
+Phase 236 (SEED-193, D-03/D-08): `TrainPuzzle` also carries
+`server_graded_moves`, the tier-only set of moves whose grade the server owns,
+so a played move the server grades itself is POSTed without the phone's engine
+wait. It is read only after the move and never displayed before the attempt;
+it exposes nothing beyond the key already sent, whose server-certified good
+band the owner accepted in Phase 235 D-05. This is a different, tier-only wire
+type from `VettedMove`, which still never goes on `TrainPuzzle`.
 """
 
 from __future__ import annotations
@@ -31,6 +39,20 @@ from pydantic import (
 from app.services.train_scheduler import REMINDER_HOUR_MAX, REMINDER_HOUR_MIN
 
 
+class ServerGradedMove(BaseModel):
+    """One move whose grade the server owns (Phase 236, SEED-193, D-03/D-08).
+
+    The wire twin of `app.services.train_pool.ServerGradedMove` (same name,
+    different module, the Phase 211 `VettedMove` precedent; mapped field-by-field
+    at the router). Only the UCI and its tier cross the wire: the expected
+    scores stay server-side. The tier is what the client asserts on the instant
+    POST (D-10) when the move has left the live set by solve time.
+    """
+
+    uci: str
+    tier: Literal["good", "inaccuracy", "wrong"]
+
+
 class TrainPuzzle(BaseModel):
     """One pre-attempt puzzle.
 
@@ -45,6 +67,14 @@ class TrainPuzzle(BaseModel):
     still never DISPLAY the type or the key before the attempt. A null key
     means no usable key (D-07): the client keeps today's root-search grading.
     `best_move`, `pv` and `source` remain forbidden here.
+
+    Phase 236 (SEED-193, D-03/D-08): `server_graded_moves` is the set of
+    (uci, tier) the server grades itself (soft best + second-best, a sharp
+    runner-up, a herring's good-band ladder), legal in `fen` and empty for a
+    puzzle with no usable key. The client reads it only after the move, to POST
+    without the ~1.5 s phone wait; it is never displayed before the attempt and
+    exposes nothing beyond the key already sent (Phase 235 D-05). Only uci and
+    tier are sent; the expected scores stay server-side.
 
     `last_move_uci` (190-02, SOLV-02) describes the position's ARRIVAL — the
     half-move immediately before `ply`, i.e. the opponent's (or the user's
@@ -71,6 +101,8 @@ class TrainPuzzle(BaseModel):
     puzzle_type: Literal["sharp", "soft", "herring"] | None = None
     # Phase 235 (D-19): the blob's second-best move, sharp SR items only.
     runner_up_uci: str | None = None
+    # Phase 236 (D-08): read only after the move, never displayed pre-attempt.
+    server_graded_moves: list[ServerGradedMove] = Field(default_factory=list)
 
 
 class SolvedResult(BaseModel):
@@ -176,6 +208,10 @@ RECHECK_SCHEMA_VERSION: Final = 1
 # A data-quality bound on Stockfish's reported depth, which can run into the
 # hundreds once a mate is found; clamped, not rejected.
 RECHECK_DEPTH_CAP: Final = 255
+# Phase 236 (SEED-193, D-01): schema version stamped as `v` on the stored phone
+# grade record (a `Literal[1]` cannot reference it); mirrored in
+# frontend/src/lib/trainPhoneGrade.ts.
+PHONE_GRADE_SCHEMA_VERSION: Final = 1
 
 
 def _clamp_to(cap: int) -> Callable[[object], object]:
@@ -292,6 +328,36 @@ class SolveRecheck(BaseModel):
     played_depth_recheck: RecheckDepth
 
 
+class PhoneGrade(BaseModel):
+    """The phone's own grading reading for one keyed solve (Phase 236, SEED-193).
+
+    D-04: the phone's grading reading at the standard 1.5 s budget, never the 3 s
+    re-check reading (that stays in `SolveRecheck`). `key_es` / `played_es` are the
+    mover-POV expected scores of the phone's after-key and after-played searches and
+    `key_depth` / `played_depth` the Stockfish depths they reached. `tier` is the
+    phone's own grade of the played move.
+
+    D-05: a played == key solve carries equal pairs and tier good, so accuracy
+    queries filter `played_move != key`. D-06: the legacy no-key path sends no
+    record. D-07: no device or engine hint (depth already measures a slow device),
+    so `extra="forbid"` rejects any extra field and drops the whole record.
+
+    Validated at the boundary and stored as the `drill_solves.phone_grade` record.
+    D-02: audit data only, never an input to `_resolve_grade`; `move_quality` stays
+    the effective tier.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    # Must equal PHONE_GRADE_SCHEMA_VERSION (a Literal cannot reference the constant).
+    v: Literal[1]
+    tier: Literal["good", "inaccuracy", "wrong"]
+    key_es: RecheckExpectedScore
+    played_es: RecheckExpectedScore
+    key_depth: RecheckDepth
+    played_depth: RecheckDepth
+
+
 class ReviewTelemetry(BaseModel):
     """Client-measured reveal telemetry flushed once per puzzle (Phase 233).
 
@@ -337,6 +403,35 @@ class ReviewTelemetry(BaseModel):
     review_walkthrough: StrictBool | None = None
 
 
+class ReviewRequest(ReviewTelemetry):
+    """Body for the review route (Phase 236 D-12).
+
+    The Phase 233 telemetry plus, for a server-graded move, the phone's late 1.5 s
+    reading that finished after the instant solve POST. `phone_grade` is written to
+    its own `drill_solves.phone_grade` column, never merged into telemetry and never
+    a grading input (Phase 233 D-05, Phase 236 D-02). A malformed record is dropped
+    to None so it never costs the flush its telemetry (mirrors D-01).
+    `extra="forbid"` is inherited, so unknown top-level keys still 422.
+    """
+
+    phone_grade: PhoneGrade | None = None
+
+    @field_validator("phone_grade", mode="wrap")
+    @classmethod
+    def _drop_invalid_phone_grade(
+        cls, value: object, handler: ValidatorFunctionWrapHandler
+    ) -> PhoneGrade | None:
+        """Drop a malformed phone grade to None instead of 422-ing the flush (D-01).
+
+        No logging and no Sentry capture: a malformed object comes from a stale or
+        tampered client and is an expected condition, not a bug.
+        """
+        try:
+            return handler(value)
+        except ValidationError:
+            return None
+
+
 class SolveRequest(BaseModel):
     """Body for POST /train/sessions/{session_id}/solve.
 
@@ -374,6 +469,11 @@ class SolveRequest(BaseModel):
     a confirmed, sanity-checked phone disagreement can now earn the guess point.
     A malformed `recheck` is dropped to None and never costs the solve; unknown
     top-level keys are ignored so a stale bundle still solves.
+
+    Phase 236 (SEED-193): `phone_grade` is the optional D-01 audit record of the
+    phone's own 1.5 s grading reading (D-13: sent on the POST for phone-graded
+    moves and for played == key). A malformed record is dropped to None and never
+    costs the solve. It is never a grading input (D-02).
     """
 
     position: int
@@ -383,6 +483,7 @@ class SolveRequest(BaseModel):
     move_quality: Literal["good", "inaccuracy", "wrong"]
     telemetry: SolveTelemetry | None = None
     recheck: SolveRecheck | None = None
+    phone_grade: PhoneGrade | None = None
 
     @field_validator("telemetry", mode="wrap")
     @classmethod
@@ -414,6 +515,21 @@ class SolveRequest(BaseModel):
         except ValidationError:
             return None
 
+    @field_validator("phone_grade", mode="wrap")
+    @classmethod
+    def _drop_invalid_phone_grade(
+        cls, value: object, handler: ValidatorFunctionWrapHandler
+    ) -> PhoneGrade | None:
+        """Drop a malformed phone grade to None instead of 422-ing the solve (D-01).
+
+        Same contract as `_drop_invalid_recheck`: no logging, no Sentry, a
+        malformed object comes from a stale or tampered client.
+        """
+        try:
+            return handler(value)
+        except ValidationError:
+            return None
+
 
 class VettedMove(BaseModel):
     """One server-certified "also fine" alternative move (Phase 211, D-01).
@@ -427,7 +543,9 @@ class VettedMove(BaseModel):
     POST-ATTEMPT-ONLY material: this model appears exclusively on
     `SolveResponse`, which is produced solely by `record_solve` after the
     attempt row is resolved. Never add it to `TrainPuzzle` (P-01) or
-    `SolveRequest`.
+    `SolveRequest`. (`TrainPuzzle.server_graded_moves`, Phase 236 D-03, is a
+    different, tier-only wire type, `ServerGradedMove`; this `VettedMove` itself
+    still never goes on `TrainPuzzle`.)
 
     D-01 amendment (2026-08-16): quality "best" marks the deep best move
     itself, served first on a soft puzzle alongside the certified

@@ -638,6 +638,69 @@ def sharp_runner_up_graded_move(
     return ServerGradedMove(uci=su, tier=tier, es_before=best_es, es_after=second_es)
 
 
+def server_graded_moves_for(
+    *,
+    source: int,
+    ply: int,
+    missed_pv_lines: list[Any] | None,
+    best_move: str | None,
+    ladder: list[Any] | None,
+    herring_mover_color: Literal["white", "black"] | None,
+    key: PuzzleAnswerKey,
+) -> list[ServerGradedMove]:
+    """Every move whose grade the server owns, in first-match order (Phase 236 D-08).
+
+    THE single derivation shared by session composition (the pre-attempt
+    `TrainPuzzle.server_graded_moves`) and the solve path (`_resolve_grade`
+    path 1), so the two lists are identical for the same blob/ladder read and
+    cannot drift. Pure, never raises.
+
+    Per source: a herring grades its stored ladder's good band (needs the
+    STORED `herring_mover_color`, never ply parity; None gives `[]`); a sharp
+    filler has no graded set; an SR item grades its blob's vetted entries
+    (ply-parity mover) plus, for a sharp key, the runner-up appended AFTER them
+    so the key wins a UCI tie. A None/empty blob gives `[]`.
+
+    Takes the RAW (pre-legality) key from `answer_key_for` at both call sites,
+    exactly as the solve path always has: it does NOT return `[]` for a null
+    key (the solve path still grades a played `su` on a no-key soft puzzle).
+    Legality and the no-key rule are the composition-only
+    `legal_server_graded_moves`.
+    """
+    if source == DrillSource.RED_HERRING:
+        if herring_mover_color is None:
+            return []
+        return graded_moves_from_vetted(vetted_moves_from_ladder(ladder, herring_mover_color))
+    if source == DrillSource.SHARP_FILLER or not missed_pv_lines:
+        return []
+    mover = mover_color_for_ply(ply)
+    node = missed_pv_lines[0]
+    graded = graded_moves_from_vetted(vetted_moves_from_pv_node(node, mover, best_uci=best_move))
+    if key.puzzle_type == "sharp":
+        runner_up = sharp_runner_up_graded_move(node, mover, key_uci=key.key_uci)
+        if runner_up is not None:
+            graded.append(runner_up)
+    return graded
+
+
+def legal_server_graded_moves(
+    moves: Sequence[ServerGradedMove], fen: str, *, legal_key_uci: str | None
+) -> tuple[ServerGradedMove, ...]:
+    """The composed set as served: legal in `fen`, empty without a legal key (D-08).
+
+    A puzzle with no usable key sends no set (the client falls back to today's
+    root-search grading), so `legal_key_uci is None` gives `()`; so does an
+    unparseable FEN. Otherwise the entries playable in `fen`, order kept.
+    """
+    if legal_key_uci is None:
+        return ()
+    try:
+        board = chess.Board(fen)
+    except ValueError:
+        return ()
+    return tuple(move for move in moves if _legal_in(board, move.uci) is not None)
+
+
 def answer_key_present(col: Any) -> ColumnElement[bool]:
     """True when `col` (a `missed_pv_lines`-shaped JSONB column) holds a
     genuinely usable answer key (189-06 gap closure).
@@ -1489,9 +1552,11 @@ __all__ = [
     "graded_moves_from_vetted",
     "herring_stmt",
     "legal_answer_key",
+    "legal_server_graded_moves",
     "pick_one_per_game",
     "pool_entry_stmt",
     "second_best_not_winning_admissible",
+    "server_graded_moves_for",
     "sharp_runner_up_graded_move",
     "vetted_moves_from_ladder",
     "vetted_moves_from_pv_node",

@@ -540,22 +540,22 @@ grades itself.
 
 **Depends on**: Phase 235 (server answer key on the wire, `drill_solves.recheck`, `_resolve_grade` path 1)
 **Requirements**: TBD
-**Plans:** 6 plans
+**Plans:** 6/6 plans executed
 
 Plans:
 **Wave 1**
-- [ ] 236-01-PLAN.md — drill_solves.phone_grade column, PhoneGrade schema, solve-POST claim write and review-route coalesce write-once (wave 1)
-- [ ] 236-02-PLAN.md — client phone reading on GradeResult, phone_grade on the solve POST, D-11 never re-check server-graded moves (wave 1)
+- [x] 236-01-PLAN.md — drill_solves.phone_grade column, PhoneGrade schema, solve-POST claim write and review-route coalesce write-once (wave 1)
+- [x] 236-02-PLAN.md — client phone reading on GradeResult, phone_grade on the solve POST, D-11 never re-check server-graded moves (wave 1)
 
 **Wave 2** *(blocked on Wave 1 completion)*
-- [ ] 236-03-PLAN.md — server_graded_moves on TrainPuzzle via one shared function with the solve path, parity test (wave 2)
-- [ ] 236-04-PLAN.md — grading-Worker serialization (reveal search queues behind in-flight grading) and the onKeyLine hook API (wave 2)
+- [x] 236-03-PLAN.md — server_graded_moves on TrainPuzzle via one shared function with the solve path, parity test (wave 2)
+- [x] 236-04-PLAN.md — grading-Worker serialization (reveal search queues behind in-flight grading) and the onKeyLine hook API (wave 2)
 
 **Wave 3** *(blocked on Wave 2 completion)*
-- [ ] 236-05-PLAN.md — instant POST for server-graded moves, late phone_grade on the review flush, stale-puzzle guard (wave 3)
+- [x] 236-05-PLAN.md — instant POST for server-graded moves, late phone_grade on the review flush, stale-puzzle guard (wave 3)
 
 **Wave 4** *(blocked on Wave 3 completion)*
-- [ ] 236-06-PLAN.md — reveal loading/failed line cards, badge/arrow/eval-bar/bubble fallbacks, CHANGELOG and phase gate (wave 4)
+- [x] 236-06-PLAN.md — reveal loading/failed line cards, badge/arrow/eval-bar/bubble fallbacks, CHANGELOG and phase gate (wave 4)
 
 Phase detail for every shipped milestone lives in `milestones/vX.Y-ROADMAP.md`, its phase directories in `milestones/vX.Y-phases/`, and the per-milestone summaries in [MILESTONES.md](MILESTONES.md).
 

@@ -24,6 +24,7 @@ import { TrainSolveScreen } from '@/components/train/TrainSolveScreen';
 import { useMobileBoardControls } from '@/lib/mobileBoardControls';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import { TRAIN_STEP_HIGHLIGHT } from '@/lib/trainArrows';
+import { MOVE_TIER_POINTS, scorePuzzle } from '@/lib/trainScore';
 import { SETTINGS_STORAGE_KEYS } from '@/lib/engineSettings';
 import { MOVE_QUALITY_BLUNDER, MOVE_QUALITY_GOOD, TRAIN_BEST_MOVE_ARROW } from '@/lib/theme';
 import { buildGameAnalysisUrl } from '@/lib/analysisUrl';
@@ -37,9 +38,11 @@ import {
   TRAIN_RECHECK_TIMEOUT_MS,
   useTrainGradingEngine,
 } from '@/hooks/useTrainGradingEngine';
+import type { GradeResult, TrainGradingEngine } from '@/hooks/useTrainGradingEngine';
+import { fenAfterUciMove } from '@/hooks/trainGradingSupport';
 import { readTrainRevealCache, type CachedTrainReveal } from '@/lib/trainRevealCache';
 import type {
-  ReviewTelemetry,
+  ReviewRequest,
   SolveRequest,
   SolveResponse,
   SolvedResult,
@@ -182,8 +185,8 @@ const stampOnboarding = vi.fn(async () => makeSettings({ intro_seen_at: '2026-06
 // (Next too, since the 233 review fix WR-02). The mock below splits it by the
 // body's `exit`: nextFlush is the Next path, exitFlush every non-Next exit. A
 // factory without the transport would throw inside the deferred unmount flush.
-const exitFlush = vi.fn<(sessionId: number, position: number, body: ReviewTelemetry) => void>();
-const nextFlush = vi.fn<(sessionId: number, position: number, body: ReviewTelemetry) => void>();
+const exitFlush = vi.fn<(sessionId: number, position: number, body: ReviewRequest) => void>();
+const nextFlush = vi.fn<(sessionId: number, position: number, body: ReviewRequest) => void>();
 
 // 190-05/190.1-01: TrainReveal (mounted here once a verdict lands) fires its
 // own reveal/game-card/tactic-lines queries. Exposed at module scope (rather
@@ -216,7 +219,7 @@ vi.mock('@/api/client', async () => {
       updateSettings: vi.fn(),
       stampOnboarding: (step: string) => stampOnboarding(step),
     },
-    postReviewKeepalive: (sessionId: number, position: number, body: ReviewTelemetry) =>
+    postReviewKeepalive: (sessionId: number, position: number, body: ReviewRequest) =>
       (body.exit === 'next' ? nextFlush : exitFlush)(sessionId, position, body),
     libraryApi: {
       ...actual.libraryApi,
@@ -333,6 +336,58 @@ class GatedRecheckWorker extends FakeWorker {
     const held = this.heldGo;
     this.heldGo = [];
     for (const go of held) super.postMessage(go);
+  }
+}
+
+/**
+ * Phase 236 (D-12, Pitfall 1): a FakeWorker that HOLDS the reply to any search
+ * started on `heldFen` until `release()` is called, so a test can observe the
+ * instant path while its after-played background search is still running.
+ * Matches on the searched FEN, not the movetime (the mount budget equals the
+ * grading budget). A `stop` releases held replies first (real Stockfish answers
+ * a stop with a bestmove); `stopsWhileHeld` counts the stops that arrived while
+ * a search was held, which is exactly what plan 04's serialization must keep at 0.
+ */
+class HeldPositionWorker extends FakeWorker {
+  private lastPosition = '';
+  private heldGo: string[] = [];
+  stopsWhileHeld = 0;
+
+  constructor(private heldFen: string) {
+    super('d7d5', 'd7d5');
+  }
+
+  postMessage(msg: string | { progressPort: unknown }): void {
+    if (typeof msg === 'string') {
+      if (msg.startsWith('position ')) this.lastPosition = msg;
+      if (msg.startsWith('go ') && this.lastPosition.includes(this.heldFen)) {
+        this.heldGo.push(msg);
+        return;
+      }
+      if (msg === 'stop') {
+        if (this.heldGo.length > 0) this.stopsWhileHeld += 1;
+        this.release();
+      }
+    }
+    super.postMessage(msg);
+  }
+
+  /** Number of searches currently held. */
+  get heldCount(): number {
+    return this.heldGo.length;
+  }
+
+  release(): void {
+    const held = this.heldGo;
+    this.heldGo = [];
+    for (const go of held) super.postMessage(go);
+  }
+}
+
+/** Release every HeldPositionWorker `stubWorker` handed out. */
+function releaseHeldWorkers(): void {
+  for (const instance of stubbedWorkerInstances) {
+    if (instance instanceof HeldPositionWorker) instance.release();
   }
 }
 
@@ -470,15 +525,21 @@ function makeSession(overrides: Partial<TrainSessionResponse> = {}): TrainSessio
 function Harness({
   puzzle,
   restoredSolve = null,
+  gradeMoveOverride,
 }: {
   puzzle: TrainPuzzle;
+  /** Phase 236: replaces the real engine's `gradeMove` (the real engine still
+   * drives startGrading and the reveal search), to script background-grade outcomes. */
+  gradeMoveOverride?: TrainGradingEngine['gradeMove'];
   /** Phase 205 Task 2 (D-10): pass-through to TrainSolveScreen's own prop,
    * defaulting to today's behavior so every pre-existing test (none of which
    * passes this) is unaffected. */
   restoredSolve?: CachedTrainReveal | null;
 }): ReactElement {
   const trainSession = useTrainSession();
-  const gradingEngine = useTrainGradingEngine({ enabled: true });
+  const realEngine = useTrainGradingEngine({ enabled: true });
+  const gradingEngine: TrainGradingEngine =
+    gradeMoveOverride === undefined ? realEngine : { ...realEngine, gradeMove: gradeMoveOverride };
   const { startSession } = trainSession;
   useEffect(() => {
     startSession();
@@ -548,6 +609,7 @@ async function renderScreen(
   puzzle: TrainPuzzle,
   session: TrainSessionResponse = makeSession(),
   restoredSolve: CachedTrainReveal | null = null,
+  gradeMoveOverride?: TrainGradingEngine['gradeMove'],
 ) {
   composeOrResumeSession.mockResolvedValue(session);
   const queryClient = new QueryClient({
@@ -557,7 +619,7 @@ async function renderScreen(
     <MemoryRouter>
       <QueryClientProvider client={queryClient}>
         <TooltipProvider>
-          <Harness puzzle={puzzle} restoredSolve={restoredSolve} />
+          <Harness puzzle={puzzle} restoredSolve={restoredSolve} gradeMoveOverride={gradeMoveOverride} />
         </TooltipProvider>
       </QueryClientProvider>
     </MemoryRouter>,
@@ -718,6 +780,32 @@ describe('TrainSolveScreen — progress, last move, grading state, engine failur
     });
   });
 
+  it('keyed puzzle: an off-key move POSTs the 1.5 s phone_grade record (Phase 236 D-01/D-13)', async () => {
+    stubWorker(() => new FakeWorker('d7d5', 'd7d5'));
+    await renderScreen(
+      makePuzzle({ key_move_uci: 'd2d4', puzzle_type: 'soft', runner_up_uci: null }),
+    );
+    fireEvent.click(screen.getByTestId('btn-train-guess-critical'));
+    await act(async () => {
+      fireEvent.click(screen.getByTestId('drop-e2e4'));
+    });
+    await waitFor(() => expect(screen.getByTestId('train-verdict-guess')).not.toBeNull());
+
+    expect(solvePuzzle).toHaveBeenCalledTimes(1);
+    const body = solvePuzzle.mock.calls[0]?.[1];
+    expect(body?.phone_grade).toMatchObject({
+      v: 1,
+      tier: body?.move_quality,
+      key_depth: 10,
+      played_depth: 10,
+    });
+    for (const es of [body?.phone_grade?.key_es, body?.phone_grade?.played_es]) {
+      expect(typeof es).toBe('number');
+      expect(es).toBeGreaterThanOrEqual(0);
+      expect(es).toBeLessThanOrEqual(1);
+    }
+  });
+
   it('sharp keyed puzzle: an off-key good move is re-checked and the POST carries the record (Phase 235 D-10/D-11/D-17)', async () => {
     // FakeWorker answers every search with the same depth-10 reading, so the
     // 1.5 s pair grades GOOD, the sharp trigger fires, and both 3 s re-check
@@ -839,6 +927,115 @@ describe('TrainSolveScreen — progress, last move, grading state, engine failur
     const body = solvePuzzle.mock.calls[0]?.[1];
     expect(body?.move_quality).toBe('inaccuracy');
     expect(body?.recheck).toMatchObject({ v: 1, outcome: 'resolved' });
+  });
+
+  it('keyed puzzle: playing the key POSTs phone_grade good with played == key (Phase 236 D-05)', async () => {
+    stubWorker(() => new FakeWorker('d7d5', 'd7d5'));
+    await renderScreen(
+      makePuzzle({ key_move_uci: 'd2d4', puzzle_type: 'soft', runner_up_uci: null }),
+    );
+    fireEvent.click(screen.getByTestId('btn-train-guess-critical'));
+    await act(async () => {
+      fireEvent.click(screen.getByTestId('drop-d2d4'));
+    });
+    await waitFor(() => expect(screen.getByTestId('train-verdict-guess')).not.toBeNull());
+
+    expect(solvePuzzle).toHaveBeenCalledTimes(1);
+    const phoneGrade = solvePuzzle.mock.calls[0]?.[1].phone_grade;
+    expect(phoneGrade?.tier).toBe('good');
+    expect(phoneGrade?.played_es).toBe(phoneGrade?.key_es);
+    expect(phoneGrade?.key_depth).toBe(10);
+    expect(phoneGrade?.played_depth).toBe(phoneGrade?.key_depth);
+  });
+
+  it('legacy no-key puzzle: the POST carries no phone_grade (Phase 236 D-06)', async () => {
+    stubWorker(() => new FakeWorker('d7d5', 'd7d5'));
+    await renderScreen(makePuzzle());
+    fireEvent.click(screen.getByTestId('btn-train-guess-critical'));
+    await act(async () => {
+      fireEvent.click(screen.getByTestId('drop-e2e4'));
+    });
+    await waitFor(() => expect(screen.getByTestId('train-verdict-guess')).not.toBeNull());
+
+    expect(solvePuzzle).toHaveBeenCalledTimes(1);
+    expect(solvePuzzle.mock.calls[0]?.[1]).not.toHaveProperty('phone_grade');
+  });
+
+  it('a re-check replaces the grade but phone_grade keeps the 1.5 s reading (Phase 236 D-04)', async () => {
+    stubWorker(() => underReadPlayedWorker(null));
+    await renderScreen(
+      makePuzzle({ key_move_uci: 'd2d4', puzzle_type: 'soft', runner_up_uci: null }),
+    );
+    fireEvent.click(screen.getByTestId('btn-train-guess-critical'));
+    await act(async () => {
+      fireEvent.click(screen.getByTestId('drop-e2e4'));
+    });
+    await waitFor(() => expect(screen.getByTestId('train-verdict-guess')).not.toBeNull());
+
+    expect(solvePuzzle).toHaveBeenCalledTimes(1);
+    const body = solvePuzzle.mock.calls[0]?.[1];
+    expect(body?.move_quality).toBe('good');
+    expect(body?.recheck?.outcome).toBe('confirmed');
+    // The record is the 1.5 s reading, whose tier differs from the final grade.
+    expect(body?.phone_grade?.tier).toBe('inaccuracy');
+    expect(body?.phone_grade?.key_es).toBe(body?.recheck?.key_es);
+    expect(body?.phone_grade?.played_es).toBe(body?.recheck?.played_es);
+  });
+
+  it('a retried keyed solve re-sends the identical payload, phone_grade included (Phase 236 D-13)', async () => {
+    solvePuzzle.mockRejectedValueOnce(new Error('network down'));
+    stubWorker(() => new FakeWorker('d7d5', 'd7d5'));
+    await renderScreen(
+      makePuzzle({ key_move_uci: 'd2d4', puzzle_type: 'soft', runner_up_uci: null }),
+    );
+    fireEvent.click(screen.getByTestId('btn-train-guess-critical'));
+    await act(async () => {
+      fireEvent.click(screen.getByTestId('drop-e2e4'));
+    });
+    await waitFor(() => expect(screen.getByTestId('train-solve-error')).not.toBeNull());
+
+    fireEvent.click(screen.getByTestId('btn-train-solve-retry'));
+    await waitFor(() => expect(screen.getByTestId('train-verdict-guess')).not.toBeNull());
+
+    expect(solvePuzzle).toHaveBeenCalledTimes(2);
+    const first = solvePuzzle.mock.calls[0]?.[1];
+    expect(first?.phone_grade).toBeDefined();
+    expect(solvePuzzle.mock.calls[1]?.[1]).toEqual(first);
+  });
+
+  it('a server-graded move is never re-checked: no 3 s search, no recheck in the body (Phase 236 D-11)', async () => {
+    // The 1.5 s pair reads the played move as an inaccuracy, which would
+    // trigger a re-check were e2e4 not in the puzzle's server-graded set.
+    const postSpy = vi.spyOn(FakeWorker.prototype, 'postMessage');
+    try {
+      stubWorker(() => underReadPlayedWorker(null));
+      await renderScreen(
+        makePuzzle({
+          key_move_uci: 'd2d4',
+          puzzle_type: 'soft',
+          runner_up_uci: null,
+          server_graded_moves: [
+            { uci: 'd2d4', tier: 'good' },
+            { uci: 'e2e4', tier: 'inaccuracy' },
+          ],
+        }),
+      );
+      fireEvent.click(screen.getByTestId('btn-train-guess-critical'));
+      await act(async () => {
+        fireEvent.click(screen.getByTestId('drop-e2e4'));
+      });
+      await waitFor(() => expect(screen.getByTestId('train-verdict-guess')).not.toBeNull());
+
+      expect(solvePuzzle).toHaveBeenCalledTimes(1);
+      const body = solvePuzzle.mock.calls[0]?.[1];
+      expect(body?.move_quality).toBe('inaccuracy');
+      expect(body).not.toHaveProperty('recheck');
+      expect(
+        postSpy.mock.calls.filter(([msg]) => typeof msg === 'string' && msg.includes('movetime 3000')),
+      ).toHaveLength(0);
+    } finally {
+      postSpy.mockRestore();
+    }
   });
 
   it('a stalled re-check falls back to the 1.5 s grade and posts no recheck (D-20)', async () => {
@@ -3424,5 +3621,405 @@ describe('TrainSolveScreen — per-puzzle telemetry (Phase 233)', () => {
 
     expect(solvePuzzle).toHaveBeenCalledTimes(1);
     expect(solvePuzzle.mock.calls[0]?.[1].telemetry.resumed).toBe(true);
+  });
+});
+
+// ─── Phase 236: the instant server-graded path (D-09 .. D-16) ───────────────
+
+describe('TrainSolveScreen — instant server-graded path (Phase 236)', () => {
+  const AFTER_E2E4_FEN = fenAfterUciMove(START_FEN, 'e2e4') ?? '';
+  const INSTANT_PUZZLE = {
+    key_move_uci: 'd2d4',
+    puzzle_type: 'soft' as const,
+    server_graded_moves: [
+      { uci: 'd2d4', tier: 'good' as const },
+      { uci: 'e2e4', tier: 'good' as const },
+    ],
+  };
+
+  beforeEach(() => {
+    matchMediaMatches = true;
+    stubbedWorkerInstances = [];
+    stubWorker(() => new FakeWorker());
+    composeOrResumeSession.mockReset();
+    solvePuzzle.mockReset();
+    solvePuzzle.mockResolvedValue(SOLVE_RESPONSE);
+    revealPuzzle.mockClear();
+    getSettings.mockReset();
+    getSettings.mockResolvedValue(makeSettings());
+    stampOnboarding.mockClear();
+    nextFlush.mockClear();
+    exitFlush.mockClear();
+    sessionStorage.clear();
+  });
+
+  afterEach(() => {
+    cleanup();
+    vi.unstubAllGlobals();
+    vi.useRealTimers();
+    sessionStorage.clear();
+  });
+
+  function heldWorker(): HeldPositionWorker {
+    const held = stubbedWorkerInstances.find((i) => i instanceof HeldPositionWorker);
+    expect(held).toBeDefined();
+    return held as HeldPositionWorker;
+  }
+
+  /** The "grade landed" signal: the Your-move box is present and not in a loading state. */
+  async function waitForYourMoveLine(): Promise<void> {
+    await waitFor(() => {
+      const box = screen.queryByTestId('train-line-box-your-move');
+      expect(box).not.toBeNull();
+      expect(screen.queryByTestId('train-line-box-your-move-loading')).toBeNull();
+    });
+  }
+
+  async function guessAndDrop(dropTestId: string): Promise<void> {
+    fireEvent.click(screen.getByTestId('btn-train-guess-critical'));
+    await act(async () => {
+      fireEvent.click(screen.getByTestId(dropTestId));
+    });
+  }
+
+  it('instant path: a played server-graded move POSTs at once with the payload tier, and its late reading rides the Next flush (Phase 236 D-09/D-10/D-12/D-16)', async () => {
+    stubWorker(() => new HeldPositionWorker(AFTER_E2E4_FEN));
+    await renderScreen(makePuzzle(INSTANT_PUZZLE));
+    await guessAndDrop('drop-e2e4');
+    // D-16: no grading copy right after the drop either.
+    expect(screen.queryByTestId('train-grading-indicator')).toBeNull();
+    await waitFor(() => expect(screen.getByTestId('train-verdict-guess')).not.toBeNull());
+
+    // The after-played search is STILL held: the verdict did not wait for it.
+    expect(heldWorker().heldCount).toBe(1);
+    expect(solvePuzzle).toHaveBeenCalledTimes(1);
+    const body = solvePuzzle.mock.calls[0]?.[1];
+    expect(body?.move_quality).toBe('good');
+    expect(body).not.toHaveProperty('phone_grade');
+    expect(body).not.toHaveProperty('recheck');
+    expect(screen.queryByTestId('train-grading-indicator')).toBeNull();
+
+    act(() => releaseHeldWorkers());
+    await waitForYourMoveLine();
+
+    fireEvent.click(screen.getByTestId('btn-train-next'));
+    await waitFor(() => expect(nextFlush).toHaveBeenCalledTimes(1));
+    expect(nextFlush.mock.calls[0]?.[2].phone_grade).toEqual({
+      v: 1,
+      tier: 'good',
+      key_depth: 10,
+      played_depth: 10,
+      key_es: expect.any(Number),
+      played_es: expect.any(Number),
+    });
+  });
+
+  it('instant path: playing the key keeps the graded path and its POST record (D-05/D-13)', async () => {
+    stubWorker(() => new FakeWorker('d7d5', 'd7d5'));
+    await renderScreen(makePuzzle(INSTANT_PUZZLE));
+    await guessAndDrop('drop-d2d4');
+    await waitFor(() => expect(screen.getByTestId('train-verdict-guess')).not.toBeNull());
+
+    expect(solvePuzzle).toHaveBeenCalledTimes(1);
+    const phoneGrade = solvePuzzle.mock.calls[0]?.[1].phone_grade;
+    expect(phoneGrade).toBeDefined();
+    expect(phoneGrade?.played_depth).toBe(phoneGrade?.key_depth);
+  });
+
+  it('instant path: the solution card shows the key line at once and the Your-move card loads, then fills (Phase 236 D-14)', async () => {
+    stubWorker(() => new HeldPositionWorker(AFTER_E2E4_FEN));
+    await renderScreen(makePuzzle(INSTANT_PUZZLE));
+    await guessAndDrop('drop-e2e4');
+    await waitFor(() => expect(screen.getByTestId('train-verdict-guess')).not.toBeNull());
+
+    // The played-move search is held: the Your-move card is loading, while the
+    // anchor (key line) settled, so the solution card is already filled.
+    expect(heldWorker().heldCount).toBe(1);
+    await waitFor(() => expect(screen.getByTestId('train-line-box-best-move')).not.toBeNull());
+    expect(screen.queryByTestId('train-line-box-best-move-loading')).toBeNull();
+    expect(screen.getByTestId('train-line-box-your-move-loading')).not.toBeNull();
+
+    act(() => releaseHeldWorkers());
+    await waitForYourMoveLine();
+    expect(screen.queryByTestId('train-line-box-your-move-loading')).toBeNull();
+    expect(within(screen.getByTestId('train-line-box-your-move')).getAllByRole('button').length).toBeGreaterThan(0);
+  });
+
+  it('D-16: the instant POST round trip shows a copy-less spinner, never "Checking your move…"', async () => {
+    let resolveSolve: (value: SolveResponse) => void = () => {};
+    solvePuzzle.mockImplementationOnce(
+      () => new Promise<SolveResponse>((resolve) => (resolveSolve = resolve)),
+    );
+    await renderScreen(makePuzzle(INSTANT_PUZZLE));
+    await guessAndDrop('drop-e2e4');
+
+    expect(screen.getByTestId('train-submitting-indicator')).not.toBeNull();
+    expect(screen.queryByTestId('train-grading-indicator')).toBeNull();
+    expect(screen.queryByTestId('train-recheck-indicator')).toBeNull();
+    expect(screen.getByTestId('train-submitting-indicator').textContent).toBe('');
+
+    await act(async () => {
+      resolveSolve(SOLVE_RESPONSE);
+    });
+    await waitFor(() => expect(screen.getByTestId('train-verdict-guess')).not.toBeNull());
+    expect(screen.queryByTestId('train-submitting-indicator')).toBeNull();
+  });
+
+  it('D-16: before the phone grade lands the board follows the server pair and the key (never an Also fine arrow); the eval bar waits for the grade', async () => {
+    stubWorker(() => new HeldPositionWorker(AFTER_E2E4_FEN));
+    solvePuzzle.mockResolvedValueOnce({
+      ...SOLVE_RESPONSE,
+      puzzle_type: 'soft',
+      vetted_moves: [
+        { uci: 'd2d4', quality: 'good' },
+        { uci: 'e2e4', quality: 'good' },
+      ],
+      graded_es_before: 0.6,
+      graded_es_after: 0.59,
+    });
+    await renderScreen(makePuzzle(INSTANT_PUZZLE));
+    await guessAndDrop('drop-e2e4');
+    await waitFor(() => expect(screen.getByTestId('train-verdict-guess')).not.toBeNull());
+    expect(heldWorker().heldCount).toBe(1);
+
+    const board = () => screen.getByTestId('chessboard');
+    // The played badge (server pair) and the best arrow (the key) are both drawn.
+    await waitFor(() => {
+      const ucis = (board().getAttribute('data-arrow-ucis') ?? '').split(',');
+      expect(ucis).toContain('e2e4');
+      expect(ucis).toContain('d2d4');
+    });
+    expect(board().getAttribute('data-arrow-colors') ?? '').toContain(MOVE_QUALITY_GOOD);
+
+    // The eval bar's own Worker would compete with the held background search.
+    expect(screen.getByTestId('train-eval-bar-placeholder')).not.toBeNull();
+    expect(screen.queryByTestId('train-eval-bar')).toBeNull();
+
+    act(() => releaseHeldWorkers());
+    await waitForYourMoveLine();
+    await waitFor(() => expect(screen.getByTestId('train-eval-bar')).not.toBeNull());
+    expect(screen.queryByTestId('train-eval-bar-placeholder')).toBeNull();
+    // The key is still the best arrow, not an Also fine one, once the grade landed.
+    expect((board().getAttribute('data-arrow-ucis') ?? '').split(',')).toContain('d2d4');
+  });
+
+  it('D-09: every verdict surface renders the SolveResponse, never the payload tier', async () => {
+    stubWorker(() => new HeldPositionWorker(AFTER_E2E4_FEN));
+    // The payload says inaccuracy for the played move; the server answers good.
+    await renderScreen(
+      makePuzzle({
+        ...INSTANT_PUZZLE,
+        server_graded_moves: [
+          { uci: 'd2d4', tier: 'good' },
+          { uci: 'e2e4', tier: 'inaccuracy' },
+        ],
+      }),
+    );
+    await guessAndDrop('drop-e2e4');
+    await waitFor(() => expect(screen.getByTestId('train-verdict-guess')).not.toBeNull());
+
+    expect(solvePuzzle.mock.calls[0]?.[1].move_quality).toBe('inaccuracy');
+    const expectedPoints = scorePuzzle(SOLVE_RESPONSE.correct_guess, SOLVE_RESPONSE.move_quality);
+    await waitFor(() => expect(screen.getByTestId('train-points-flash')).not.toBeNull());
+    expect(screen.getByTestId('train-points-flash').textContent).toBe(`+${expectedPoints}`);
+    // The Your-move chip states the SERVER's move points, not the payload tier's.
+    act(() => releaseHeldWorkers());
+    await waitForYourMoveLine();
+    expect(
+      within(screen.getByTestId('train-line-box-your-move')).getByTestId('train-line-stepper-points')
+        .textContent,
+    ).toContain(String(MOVE_TIER_POINTS[SOLVE_RESPONSE.move_quality]));
+  });
+
+  it('Pitfall 1: the reveal game-move search queues behind the background grade, never stopping it', async () => {
+    revealPuzzle.mockResolvedValueOnce({
+      game_id: 100,
+      ply: 20,
+      fen: START_FEN,
+      played_in_game_san: 'Nf3',
+      played_in_game_move_uci: 'g1f3',
+      puzzle_type: 'sharp' as const,
+      source: 'sr_item' as const,
+      has_tactic_lines: false,
+    });
+    stubWorker(() => new HeldPositionWorker(AFTER_E2E4_FEN));
+    await renderScreen(makePuzzle(INSTANT_PUZZLE));
+    await guessAndDrop('drop-e2e4');
+    await waitFor(() => expect(screen.getByTestId('train-verdict-guess')).not.toBeNull());
+    // The reveal query resolved and the game-move search was requested.
+    await waitFor(() => expect(revealPuzzle).toHaveBeenCalled());
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    });
+
+    // The played search is still held and nothing stopped it.
+    expect(heldWorker().heldCount).toBe(1);
+    expect(heldWorker().stopsWhileHeld).toBe(0);
+
+    act(() => releaseHeldWorkers());
+    await waitForYourMoveLine();
+    await waitFor(() => expect(screen.getByTestId('train-line-box-game-move')).not.toBeNull());
+    await waitFor(() => expect(screen.queryByTestId('train-game-line-loading')).toBeNull());
+    expect(screen.queryByTestId('train-game-line-error')).toBeNull();
+
+    fireEvent.click(screen.getByTestId('btn-train-next'));
+    await waitFor(() => expect(nextFlush).toHaveBeenCalledTimes(1));
+    expect(nextFlush.mock.calls[0]?.[2].phone_grade).toBeDefined();
+  });
+
+  it('D-15: a rejecting background grade leaves the verdict open, no grading error and no phone_grade', async () => {
+    const gradeMove = vi.fn<TrainGradingEngine['gradeMove']>().mockRejectedValue(new Error('grading timed out'));
+    await renderScreen(makePuzzle(INSTANT_PUZZLE), makeSession(), null, gradeMove);
+    await guessAndDrop('drop-e2e4');
+    await waitFor(() => expect(screen.getByTestId('train-verdict-guess')).not.toBeNull());
+    await waitFor(() => expect(gradeMove).toHaveBeenCalledTimes(1));
+    await act(async () => {});
+
+    expect(screen.queryByTestId('train-grading-error')).toBeNull();
+    expect(screen.queryByTestId('train-grading-indicator')).toBeNull();
+    expect(screen.getByTestId('train-verdict-guess')).not.toBeNull();
+    // Phase 236 D-15: the Your-move card is the header alone, no loading, no error copy.
+    const yourBox = screen.getByTestId('train-line-box-your-move');
+    expect(yourBox.getAttribute('data-line-status')).toBe('failed');
+    expect(screen.queryByTestId('train-line-box-your-move-loading')).toBeNull();
+    expect(screen.queryByTestId('train-game-line-error')).toBeNull();
+
+    fireEvent.click(screen.getByTestId('btn-train-next'));
+    await waitFor(() => expect(nextFlush).toHaveBeenCalledTimes(1));
+    expect(nextFlush.mock.calls[0]?.[2]).not.toHaveProperty('phone_grade');
+  });
+
+  it('WR-01/D-15: a grading Worker error after the instant verdict keeps the verdict bubble and its Next button', async () => {
+    stubWorker(() => new HeldPositionWorker(AFTER_E2E4_FEN));
+    await renderScreen(makePuzzle(INSTANT_PUZZLE));
+    await guessAndDrop('drop-e2e4');
+    await waitFor(() => expect(screen.getByTestId('train-verdict-guess')).not.toBeNull());
+    // The background search is held: the verdict is on screen while the Worker still works.
+    expect(heldWorker().heldCount).toBe(1);
+
+    // The Worker dies mid-search (e.g. a wasm out-of-memory crash on a phone):
+    // the hook's own worker.onerror flips hasError and rejects the pending grade.
+    await act(async () => {
+      (heldWorker().onerror as (e: unknown) => void)(new Event('error'));
+    });
+
+    // The engine-error branch must not displace the landed verdict (D-15).
+    expect(screen.queryByTestId('train-engine-error')).toBeNull();
+    expect(screen.queryByTestId('btn-train-engine-retry')).toBeNull();
+    expect(screen.getByTestId('train-verdict-guess')).not.toBeNull();
+    expect(screen.getByTestId('btn-train-next')).not.toBeNull();
+  });
+
+  it('WR-02: Analyze pressed before the background grade lands still caches the solved reveal from the server pair', async () => {
+    stubWorker(() => new HeldPositionWorker(AFTER_E2E4_FEN));
+    solvePuzzle.mockResolvedValueOnce({
+      ...SOLVE_RESPONSE,
+      puzzle_type: 'soft',
+      graded_es_before: 0.6,
+      graded_es_after: 0.59,
+    });
+    await renderScreen(makePuzzle(INSTANT_PUZZLE));
+    await guessAndDrop('drop-e2e4');
+    await waitFor(() => expect(screen.getByTestId('train-verdict-guess')).not.toBeNull());
+    // The played-move search is still held: gradeResult is null when Analyze is pressed.
+    expect(heldWorker().heldCount).toBe(1);
+
+    fireEvent.click(screen.getByTestId('btn-train-analyze'));
+
+    const cached = readTrainRevealCache();
+    expect(cached).not.toBeNull();
+    expect(cached?.playedMoveUci).toBe('e2e4');
+    // Real server numbers, the key as the best move, and no played-move line to restore.
+    expect(cached?.gradeResult.bestMoveUci).toBe('d2d4');
+    expect(cached?.gradeResult.esBefore).toBe(0.6);
+    expect(cached?.gradeResult.esAfter).toBe(0.59);
+    expect(cached?.gradeResult.playedLine.moves).toEqual([]);
+    expect(cached?.gradeResult.phoneReading).toBeNull();
+
+    // Browser Back: the stand-in restores a solved reveal (verdict plus key card), no crash.
+    cleanup();
+    stubbedWorkerInstances = [];
+    stubWorker(() => new FakeWorker());
+    await renderScreen(makePuzzle(INSTANT_PUZZLE), makeSession(), readTrainRevealCache());
+    await waitFor(() => expect(screen.getByTestId('train-verdict-guess')).not.toBeNull());
+    await waitFor(() => expect(screen.getByTestId('train-line-box-best-move')).not.toBeNull());
+    expect(screen.queryByTestId('train-grading-error')).toBeNull();
+  });
+
+  it('WR-02: without a server pair on the verdict there is nothing real to cache, so Analyze caches no reveal', async () => {
+    stubWorker(() => new HeldPositionWorker(AFTER_E2E4_FEN));
+    await renderScreen(makePuzzle(INSTANT_PUZZLE));
+    await guessAndDrop('drop-e2e4');
+    await waitFor(() => expect(screen.getByTestId('train-verdict-guess')).not.toBeNull());
+    expect(heldWorker().heldCount).toBe(1);
+
+    fireEvent.click(screen.getByTestId('btn-train-analyze'));
+
+    expect(readTrainRevealCache()).toBeNull();
+  });
+
+  it('Pitfall 4: a background grade settling after the user moved on never lands on the next puzzle', async () => {
+    const lateGrade: GradeResult = {
+      moveTier: 'good',
+      bestMoveUci: 'd2d4',
+      esBefore: 0.5,
+      esAfter: 0.5,
+      bestLine: { moves: ['d2d4'], evalCp: 20, evalMate: null },
+      playedLine: { moves: ['e2e4'], evalCp: 20, evalMate: null },
+      phoneReading: { tier: 'good', keyEs: 0.5, playedEs: 0.5, keyDepth: 10, playedDepth: 10 },
+    };
+    const resolvers: Array<(grade: GradeResult) => void> = [];
+    const gradeMove = vi.fn<TrainGradingEngine['gradeMove']>(
+      () => new Promise<GradeResult>((resolve) => resolvers.push(resolve)),
+    );
+    const puzzleA = makePuzzle(INSTANT_PUZZLE);
+    const { rerender } = await renderScreen(puzzleA, makeSession(), null, gradeMove);
+    await guessAndDrop('drop-e2e4');
+    await waitFor(() => expect(screen.getByTestId('train-verdict-guess')).not.toBeNull());
+    expect(resolvers).toHaveLength(1);
+
+    // Puzzle B (a different fen and position) on the SAME component instance, also instant.
+    const puzzleB = makePuzzle({
+      position: 2,
+      ply: 30,
+      fen: 'rnbqkbnr/pppp1ppp/8/4p3/4P3/8/PPPP1PPP/RNBQKBNR w KQkq e6 0 2',
+      key_move_uci: 'g1f3',
+      puzzle_type: 'soft',
+      server_graded_moves: [
+        { uci: 'g1f3', tier: 'good' },
+        { uci: 'd2d4', tier: 'good' },
+      ],
+    });
+    const queryClient = new QueryClient({
+      defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+    });
+    rerender(
+      <MemoryRouter>
+        <QueryClientProvider client={queryClient}>
+          <TooltipProvider>
+            <Harness puzzle={puzzleB} gradeMoveOverride={gradeMove} />
+          </TooltipProvider>
+        </QueryClientProvider>
+      </MemoryRouter>,
+    );
+    await waitFor(() => expect(screen.queryByTestId('train-verdict-guess')).toBeNull());
+    await guessAndDrop('drop-d2d4');
+    await waitFor(() => expect(screen.getByTestId('train-verdict-guess')).not.toBeNull());
+    expect(solvePuzzle).toHaveBeenCalledTimes(2);
+    expect(resolvers).toHaveLength(2);
+    // Phase 236 D-14: B's Your-move card is in its loading state, B's own grade has not landed.
+    expect(screen.queryByTestId('train-line-box-your-move-loading')).not.toBeNull();
+
+    // A's grade settles now, while B is on screen: it must not fill B's card.
+    await act(async () => {
+      resolvers[0]?.(lateGrade);
+    });
+    await act(async () => {});
+    expect(screen.queryByTestId('train-line-box-your-move-loading')).not.toBeNull();
+
+    fireEvent.click(screen.getByTestId('btn-train-next'));
+    await waitFor(() => expect(nextFlush).toHaveBeenCalledTimes(1));
+    expect(nextFlush.mock.calls[0]?.[1]).toBe(puzzleB.position);
+    expect(nextFlush.mock.calls[0]?.[2]).not.toHaveProperty('phone_grade');
   });
 });

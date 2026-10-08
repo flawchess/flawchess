@@ -5340,6 +5340,11 @@ async def test_compose_stamps_pool_eligible_since_once(db_session: AsyncSession)
 # keeps it on the key.
 _SHARP_KEYED_PV_LINES = [{"b": 200, "bm": None, "s": -200, "sm": None, "su": "b1c3"}]
 
+# Phase 236 (D-08): a soft blob (gap ~0.009, inside the good band) whose `su`
+# b1c3 is legal at ply 2, so with best g1f3 the server-graded set is
+# [g1f3 good, b1c3 good].
+_SOFT_KEYED_PV_LINES = [{"b": 40, "bm": None, "s": 30, "sm": None, "su": "b1c3"}]
+
 
 async def _seed_best_move_position(
     db_session: AsyncSession, user_id: int, game_id: int, ply: int, best_move: str
@@ -5477,9 +5482,87 @@ async def test_answer_keys_ignore_own_game_flaw_for_herring(db_session: AsyncSes
         db_session, user_id=_USER_ID, session_id=drill_session.id
     )
 
-    assert keys[0].puzzle_type == "herring"
-    assert keys[0].runner_up_uci is None
-    assert keys[0].key_uci == "e2e4"
+    assert keys[0].key.puzzle_type == "herring"
+    assert keys[0].key.runner_up_uci is None
+    assert keys[0].key.key_uci == "e2e4"
+    # Phase 236 (D-08): the herring grades its LADDER band, not the user's own
+    # sharp game_flaws blob (which would give a runner-up "wrong" entry instead).
+    assert [m.uci for m in keys[0].server_graded_moves] == ["e2e4", "d2d4", "g1f3"]
+
+
+@pytest.mark.asyncio
+async def test_server_graded_moves_graded_parity_fresh_and_resumed(
+    db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Phase 236 D-08: for EVERY composed puzzle (soft SR, sharp SR, herring, sharp
+    filler), fresh and resumed, the pre-attempt `server_graded_moves` equals
+    `SolveClassification.graded_moves` from `_classify_and_certify_solve` on the
+    same drill_solves row (uci, tier, order): composition and the solve path call
+    the one shared function, so a drift would be a real divergence."""
+    _install_sharp_fixture(monkeypatch)
+    await ensure_test_user(db_session, _USER_ID)
+    await train_repository.upsert_settings(
+        db_session,
+        user_id=_USER_ID,
+        timezone="UTC",
+        weekday_mask=0,
+        puzzles_per_session=4,
+        reminder_enabled=False,
+        reminder_hour=18,
+        reminder_intent_at=None,
+        now_utc=_NOW,
+    )
+    soft_game = await _seed_flaw_game(
+        db_session, _USER_ID, "parity-soft", missed_pv_lines=_SOFT_KEYED_PV_LINES
+    )
+    await _seed_best_move_position(db_session, _USER_ID, soft_game, 2, "g1f3")
+    sharp_game = await _seed_flaw_game(
+        db_session, _USER_ID, "parity-sharp", missed_pv_lines=_SHARP_KEYED_PV_LINES
+    )
+    await _seed_best_move_position(db_session, _USER_ID, sharp_game, 2, "g1f3")
+    await _seed_herring_pool_row(db_session, _USER_ID, "parity-herring")
+
+    fresh = await train_repository.compose_and_materialize_session(
+        db_session, user_id=_USER_ID, now_utc=_NOW
+    )
+    resumed = await train_repository.compose_and_materialize_session(
+        db_session, user_id=_USER_ID, now_utc=_NOW
+    )
+    assert fresh.session_id is not None
+    assert resumed.session_id == fresh.session_id
+
+    # (source, wire puzzle_type) -> the exact non-vacuous expected set.
+    expected: dict[tuple[int, str | None], list[tuple[str, str]]] = {
+        (DrillSource.SR_ITEM, "soft"): [("g1f3", "good"), ("b1c3", "good")],
+        (DrillSource.SR_ITEM, "sharp"): [("b1c3", "wrong")],
+        (DrillSource.RED_HERRING, "herring"): [
+            ("e2e4", "good"),
+            ("d2d4", "good"),
+            ("g1f3", "good"),
+        ],
+        (DrillSource.SHARP_FILLER, "sharp"): [],
+    }
+    for composed in (fresh, resumed):
+        seen: set[tuple[int, str | None]] = set()
+        for puzzle in composed.puzzles:
+            row = (
+                await db_session.execute(
+                    select(DrillSolve).where(
+                        DrillSolve.session_id == composed.session_id,
+                        DrillSolve.position == puzzle.position,
+                    )
+                )
+            ).scalar_one()
+            classification = await train_repository._classify_and_certify_solve(
+                db_session, solve=row
+            )
+            wire = [(m.uci, m.tier) for m in puzzle.server_graded_moves]
+            assert wire == [(m.uci, m.tier) for m in classification.graded_moves]
+            variant = (row.source, puzzle.puzzle_type)
+            assert wire == expected[variant]
+            seen.add(variant)
+        # Non-vacuous: every source and both SR shapes were composed.
+        assert seen == set(expected)
 
 
 # ---------------------------------------------------------------------------
@@ -5765,3 +5848,35 @@ def test_resolve_grade_server_graded_move_wins_over_a_confirmed_claim() -> None:
         recheck=_recheck(),
     )
     assert resolved == train_repository.ResolvedGrade("wrong", True, False, 0.7, 0.3)
+
+
+def test_resolve_grade_instant_payload_tier_d10() -> None:
+    """Phase 236 D-10: the instant path POSTs the payload tier. A set member that
+    left the live classification (blob changed between composition and solve)
+    records the client-asserted tier via path 3 with no graded ES pair; a member
+    still in the live set records the live server tier via path 1."""
+    dropped = train_repository._resolve_grade(
+        guess="several",
+        played_move="b1c3",
+        client_tier="inaccuracy",
+        classification=_classification("soft", key_uci="g1f3", runner_up_uci=None),
+        recheck=None,
+    )
+    assert dropped.effective_quality == "inaccuracy"
+    assert dropped.graded_es_before is None
+    assert dropped.graded_es_after is None
+
+    live = train_repository._resolve_grade(
+        guess="several",
+        played_move="b1c3",
+        client_tier="inaccuracy",
+        classification=_classification(
+            "soft",
+            key_uci="g1f3",
+            runner_up_uci=None,
+            graded_moves=[ServerGradedMove(uci="b1c3", tier="good", es_before=0.6, es_after=0.58)],
+        ),
+        recheck=None,
+    )
+    assert live.effective_quality == "good"
+    assert (live.graded_es_before, live.graded_es_after) == (0.6, 0.58)

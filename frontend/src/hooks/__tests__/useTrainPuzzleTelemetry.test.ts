@@ -4,6 +4,7 @@ import { act, cleanup, configure, render, renderHook } from '@testing-library/re
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { useTrainPuzzleTelemetry } from '@/hooks/useTrainPuzzleTelemetry';
+import type { PhoneGrade } from '@/types/train';
 import {
   THINK_MARKER_STORAGE_KEY,
   TELEMETRY_DURATION_CAP_MS,
@@ -824,5 +825,67 @@ describe('useTrainPuzzleTelemetry', () => {
         'review_walkthrough',
       ].sort(),
     );
+  });
+
+  describe('late phone_grade record (Phase 236 D-12)', () => {
+    const RECORD: PhoneGrade = { v: 1, tier: 'good', key_es: 0.6, played_es: 0.58, key_depth: 10, played_depth: 10 };
+
+    it('a record set for the current puzzle rides the Next flush', async () => {
+      const { result } = mountHook(REVIEW_PROPS);
+      advance(1000);
+      act(() => result.current.setLatePhoneGrade(7, 0, RECORD));
+      const body = await nextBody(result);
+      expect(body.phone_grade).toEqual(RECORD);
+      expect(body).toMatchObject({ v: 1, exit: 'next' });
+    });
+
+    it('a record set before a hidden tab rides the pagehide-style flush', () => {
+      const { result } = mountHook(REVIEW_PROPS);
+      advance(1000);
+      act(() => result.current.setLatePhoneGrade(7, 0, RECORD));
+      fireVisibility('hidden');
+      expect(exitFlush).toHaveBeenCalledTimes(1);
+      expect((exitFlush.mock.calls[0]?.[2] as Record<string, unknown>).phone_grade).toEqual(RECORD);
+    });
+
+    it('without a record the flush body has no phone_grade key', async () => {
+      const { result } = mountHook(REVIEW_PROPS);
+      advance(1000);
+      const body = await nextBody(result);
+      expect(body).not.toHaveProperty('phone_grade');
+    });
+
+    it('a flush sent before the record arrived carries none, the later Next flush carries it', async () => {
+      const { result } = mountHook(REVIEW_PROPS);
+      advance(1000);
+      fireVisibility('hidden');
+      expect(exitFlush).toHaveBeenCalledTimes(1);
+      expect(exitFlush.mock.calls[0]?.[2]).not.toHaveProperty('phone_grade');
+      fireVisibility('visible');
+      act(() => result.current.setLatePhoneGrade(7, 0, RECORD));
+      const body = await nextBody(result);
+      expect(body.phone_grade).toEqual(RECORD);
+    });
+
+    it('a record for a puzzle the user already left is ignored (Pitfall 4)', async () => {
+      const { result, rerender } = mountHook(REVIEW_PROPS);
+      rerender({ ...REVIEW_PROPS, position: 1 });
+      advance(1000);
+      // The background grade of position 0 settles after the key moved to position 1.
+      act(() => result.current.setLatePhoneGrade(7, 0, RECORD));
+      const body = await nextBody(result);
+      expect(nextFlush).toHaveBeenLastCalledWith(7, 1, expect.anything());
+      expect(body).not.toHaveProperty('phone_grade');
+    });
+
+    it('a position change clears a stored record', async () => {
+      const { result, rerender } = mountHook(REVIEW_PROPS);
+      act(() => result.current.setLatePhoneGrade(7, 0, RECORD));
+      rerender({ ...BASE_PROPS, position: 1 });
+      rerender({ ...REVIEW_PROPS, position: 1 });
+      advance(1000);
+      const body = await nextBody(result);
+      expect(body).not.toHaveProperty('phone_grade');
+    });
   });
 });

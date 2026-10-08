@@ -37,7 +37,7 @@ from app.models.game_flaw import GameFlaw
 from app.models.game_position import GamePosition
 from app.models.herring_pool import HerringPool
 from app.models.train_settings import TrainSettings
-from app.schemas.train import OnboardingStep, SolveRecheck
+from app.schemas.train import OnboardingStep, PhoneGrade, SolveRecheck
 from app.services.best_move_candidates import mover_color_for_ply
 from app.services.flaws_service import classify_severity
 from app.services.sharp_filler import (
@@ -60,13 +60,13 @@ from app.services.train_pool import (
     dead_band_admissible,
     fen_and_last_move_at_ply,
     full_fen_at_ply,
-    graded_moves_from_vetted,
     herring_stmt,
     legal_answer_key,
+    legal_server_graded_moves,
     pick_one_per_game,
     pool_entry_stmt,
     second_best_not_winning_admissible,
-    sharp_runner_up_graded_move,
+    server_graded_moves_for,
     vetted_moves_from_ladder,
     vetted_moves_from_pv_node,
 )
@@ -195,6 +195,10 @@ class ComposedPuzzle:
     are the server's answer key, attached to every puzzle by
     `_attach_answer_keys` after composition/resume; `None` means no usable key
     (D-07) or, for `puzzle_type`, a puzzle the funnel did not see.
+
+    Phase 236 (SEED-193, D-08): `server_graded_moves` is the legal-filtered set
+    of moves whose grade the server owns (empty without a legal key), attached
+    by `_attach_answer_keys` from the same function the solve path uses.
     """
 
     position: int
@@ -207,6 +211,16 @@ class ComposedPuzzle:
     key_move_uci: str | None = None
     puzzle_type: TrainPuzzleType | None = None
     runner_up_uci: str | None = None
+    server_graded_moves: tuple[ServerGradedMove, ...] = ()
+
+
+@dataclass(frozen=True)
+class PositionAnswerKey:
+    """One unsolved position's pre-legality answer key plus its composed
+    server-graded set (Phase 236 D-08), as `_answer_keys_by_position` returns it."""
+
+    key: PuzzleAnswerKey
+    server_graded_moves: tuple[ServerGradedMove, ...]
 
 
 @dataclass(frozen=True)
@@ -2241,23 +2255,79 @@ async def _materialize_session_rows(
     )
 
 
+def _position_answer_key(
+    *,
+    source: int,
+    ply: int,
+    sharp_puzzle_id: str | None,
+    blob: list[Any] | None,
+    best_move: str | None,
+    ladder: list[Any] | None,
+    mover_color: str | None,
+) -> PositionAnswerKey:
+    """Derive one position's key and server-graded set from its composition row.
+
+    Phase 235 key plus Phase 236 D-08 set, with the SAME source gating for both:
+    the SR columns (blob, best move) only for an SR item and the ladder only for
+    a herring. A herring row can share (user, game, ply) with one of the user's
+    own `game_flaws` rows, which must not be read as an SR blob. The herring's
+    color is the STORED `HerringPool.mover_color`, never ply parity (SEED-120
+    Pitfall 1); a herring row with no pool row yields a null color and no set.
+    """
+    filler_row = SHARP_SET_BY_ID.get(sharp_puzzle_id) if sharp_puzzle_id is not None else None
+    is_sr = source == DrillSource.SR_ITEM
+    is_herring = source == DrillSource.RED_HERRING
+    sr_blob = blob if is_sr else None
+    sr_best = best_move if is_sr else None
+    herring_ladder = ladder if is_herring else None
+    key = answer_key_for(
+        source=source,
+        ply=ply,
+        missed_pv_lines=sr_blob,
+        best_move=sr_best,
+        ladder=herring_ladder,
+        filler_solution_uci=(
+            filler_row.solution_uci
+            if filler_row is not None and source == DrillSource.SHARP_FILLER
+            else None
+        ),
+    )
+    graded = server_graded_moves_for(
+        source=source,
+        ply=ply,
+        missed_pv_lines=sr_blob,
+        best_move=sr_best,
+        ladder=herring_ladder,
+        herring_mover_color=(
+            cast(Literal["white", "black"], mover_color)
+            if is_herring and mover_color is not None
+            else None
+        ),
+        key=key,
+    )
+    return PositionAnswerKey(key=key, server_graded_moves=tuple(graded))
+
+
 async def _answer_keys_by_position(
     session: AsyncSession, *, user_id: int, session_id: int
-) -> dict[int, PuzzleAnswerKey]:
-    """One query: the unsolved puzzles' answer keys, keyed by `drill_solves.position`.
+) -> dict[int, PositionAnswerKey]:
+    """One query: the unsolved puzzles' answer keys and server-graded sets, keyed
+    by `drill_solves.position`.
 
     Phase 235 (SEED-192, D-05/D-06/D-19). Outer-joins the three key sources
     (`game_flaws` live blob + `game_positions.best_move` for an SR item,
-    `herring_pool.ladder` for a herring); a sharp filler's key comes from the
-    in-memory `SHARP_SET_BY_ID` (module global, so tests can monkeypatch it).
-    The deferred `GameFlaw.missed_pv_lines` / `HerringPool.ladder` columns are
-    loaded because they are named in the select (the resume path would
-    otherwise raise MissingGreenlet on the ladder).
+    `herring_pool.ladder` + `herring_pool.mover_color` for a herring); a sharp
+    filler's key comes from the in-memory `SHARP_SET_BY_ID` (module global, so
+    tests can monkeypatch it). The deferred `GameFlaw.missed_pv_lines` /
+    `HerringPool.ladder` columns are loaded because they are named in the select
+    (the resume path would otherwise raise MissingGreenlet on the ladder).
 
-    `user_id` is in the WHERE (V4/IDOR) and in every SR join. The SR columns
-    are passed to `answer_key_for` ONLY for an SR item and the ladder ONLY for
-    a herring: a herring row can share (user, game, ply) with one of the
-    user's own `game_flaws` rows, which must not be read as an SR blob.
+    Phase 236 (D-08): each value also carries the (pre-legality) server-graded
+    set from `server_graded_moves_for`; `mover_color` is selected so a herring's
+    ladder band is graded with its stored color.
+
+    `user_id` is in the WHERE (V4/IDOR) and in every SR join. Source gating of
+    the SR and ladder columns lives in `_position_answer_key`.
     """
     stmt = (
         select(
@@ -2268,6 +2338,7 @@ async def _answer_keys_by_position(
             GameFlaw.missed_pv_lines,
             GamePosition.best_move,
             HerringPool.ladder,
+            HerringPool.mover_color,
         )
         .select_from(DrillSolve)
         .outerjoin(
@@ -2293,25 +2364,20 @@ async def _answer_keys_by_position(
             DrillSolve.solved_at.is_(None),
         )
     )
-    keys: dict[int, PuzzleAnswerKey] = {}
-    for position, source, ply, sharp_puzzle_id, blob, best_move, ladder in (
-        await session.execute(stmt)
-    ).all():
-        filler_row = SHARP_SET_BY_ID.get(sharp_puzzle_id) if sharp_puzzle_id is not None else None
-        is_sr = source == DrillSource.SR_ITEM
-        keys[position] = answer_key_for(
+    return {
+        position: _position_answer_key(
             source=source,
             ply=ply,
-            missed_pv_lines=blob if is_sr else None,
-            best_move=best_move if is_sr else None,
-            ladder=ladder if source == DrillSource.RED_HERRING else None,
-            filler_solution_uci=(
-                filler_row.solution_uci
-                if filler_row is not None and source == DrillSource.SHARP_FILLER
-                else None
-            ),
+            sharp_puzzle_id=sharp_puzzle_id,
+            blob=blob,
+            best_move=best_move,
+            ladder=ladder,
+            mover_color=mover_color,
         )
-    return keys
+        for position, source, ply, sharp_puzzle_id, blob, best_move, ladder, mover_color in (
+            await session.execute(stmt)
+        ).all()
+    }
 
 
 async def _attach_answer_keys(
@@ -2323,6 +2389,8 @@ async def _attach_answer_keys(
     paths of `compose_and_materialize_session` (one query, not one per path).
     Each key is checked for legality against the served FEN (D-07): an
     illegal key or runner-up degrades to None and the puzzle is still served.
+    Phase 236 (D-08): the server-graded set is filtered to legal moves and is
+    empty whenever the legal key is null.
     """
     if composed.session_id is None or not composed.puzzles:
         return composed
@@ -2333,13 +2401,16 @@ async def _attach_answer_keys(
         if entry is None:
             puzzles.append(puzzle)
             continue
-        legal = legal_answer_key(entry, puzzle.fen)
+        legal = legal_answer_key(entry.key, puzzle.fen)
         puzzles.append(
             replace(
                 puzzle,
                 key_move_uci=legal.key_uci,
                 puzzle_type=legal.puzzle_type,
                 runner_up_uci=legal.runner_up_uci,
+                server_graded_moves=legal_server_graded_moves(
+                    entry.server_graded_moves, puzzle.fen, legal_key_uci=legal.key_uci
+                ),
             )
         )
     return replace(composed, puzzles=puzzles)
@@ -2629,11 +2700,21 @@ async def _classify_herring_solve(
         ladder=pool_row.ladder,
         filler_solution_uci=None,
     )
+    # Phase 236 D-08: the graded set comes from the SAME function composition
+    # uses for the pre-attempt payload, so the two lists cannot drift.
     return SolveClassification(
         puzzle_type="herring",
         vetted_moves=vetted,
         key_uci=key.key_uci,
-        graded_moves=graded_moves_from_vetted(vetted),
+        graded_moves=server_graded_moves_for(
+            source=solve.source,
+            ply=solve.ply,
+            missed_pv_lines=None,
+            best_move=None,
+            ladder=pool_row.ladder,
+            herring_mover_color=mover,
+            key=key,
+        ),
     )
 
 
@@ -2709,15 +2790,18 @@ async def _classify_sr_solve(session: AsyncSession, *, solve: DrillSolve) -> Sol
         if missed_pv_lines
         else []
     )
-    graded_moves = graded_moves_from_vetted(vetted_moves)
-    if key.puzzle_type == "sharp" and missed_pv_lines:
-        # D-02: the sharp runner-up is graded by the server from its own blob
-        # evals, appended AFTER the vetted entries so a key always wins a UCI tie.
-        runner_up = sharp_runner_up_graded_move(
-            missed_pv_lines[0], mover_color, key_uci=key.key_uci
-        )
-        if runner_up is not None:
-            graded_moves.append(runner_up)
+    # Phase 236 D-08: the same function composition uses, so the pre-attempt
+    # list and the path-1 list cannot drift. It appends the sharp runner-up
+    # (D-02) AFTER the vetted entries so a key always wins a UCI tie.
+    graded_moves = server_graded_moves_for(
+        source=solve.source,
+        ply=solve.ply,
+        missed_pv_lines=missed_pv_lines,
+        best_move=best_uci,
+        ladder=None,
+        herring_mover_color=None,
+        key=key,
+    )
     return SolveClassification(
         puzzle_type=key.puzzle_type,
         vetted_moves=vetted_moves,
@@ -3191,6 +3275,7 @@ async def merge_solve_telemetry(
     session_id: int,
     position: int,
     patch: dict[str, object],
+    phone_grade: PhoneGrade | None = None,
 ) -> bool:
     """Merge a review-flush telemetry patch into the caller's solved row (D-03).
 
@@ -3205,11 +3290,23 @@ async def merge_solve_telemetry(
             only in combination with `user_id`).
         position: The puzzle's frozen 0-based order within the session.
         patch: Validated review telemetry keys, no None values.
+        phone_grade: Phase 236 (D-12) the validated late phone grading reading,
+            or None. Written write-once to `drill_solves.phone_grade` in the same
+            UPDATE (an existing record always wins); never merged into telemetry.
 
     Returns:
         False when the row does not exist, belongs to another user, or is not
         solved yet (the router maps this to 404, no existence oracle).
     """
+    values: dict[str, Any] = {"telemetry": _merged_telemetry(patch)}
+    if phone_grade is not None:
+        # D-12 write-once: an existing record (from the solve POST or an earlier
+        # flush) wins, atomically inside this one UPDATE. Deliberately NOT a WHERE
+        # guard: that would make a second flush affect 0 rows, which the route
+        # reports as 404, and would drop that flush's telemetry.
+        values["phone_grade"] = func.coalesce(
+            DrillSolve.phone_grade, literal(phone_grade.model_dump(), JSONB)
+        )
     result = await session.execute(
         update(DrillSolve)
         .where(
@@ -3218,7 +3315,7 @@ async def merge_solve_telemetry(
             DrillSolve.user_id == user_id,
             DrillSolve.solved_at.is_not(None),
         )
-        .values(telemetry=_merged_telemetry(patch))
+        .values(**values)
     )
     return result.rowcount == 1  # ty: ignore[unresolved-attribute]  # SQLAlchemy DML result carries rowcount
 
@@ -3235,6 +3332,7 @@ async def record_solve(
     now_utc: datetime.datetime,
     telemetry: dict[str, object] | None = None,
     recheck: SolveRecheck | None = None,
+    phone_grade: PhoneGrade | None = None,
 ) -> RecordedSolve | None:
     """Record one puzzle's outcome and advance the interval ladder (POOL-08).
 
@@ -3301,6 +3399,10 @@ async def record_solve(
             None. Every re-check is stored in `drill_solves.recheck` with the
             server-added `accepted` flag; only an accepted one changes grading
             (see `_disagreement_accepted`). None leaves the column SQL NULL.
+        phone_grade: Phase 236 (D-01/D-02/D-13) the validated phone grading
+            reading, or None. Audit-only: stored in `drill_solves.phone_grade`
+            by the claim UPDATE and NEVER passed to `_resolve_grade`. None
+            leaves the column SQL NULL.
 
     Returns:
         `RecordedSolve`, or None when no `(session_id, position)` row exists
@@ -3363,6 +3465,12 @@ async def record_solve(
     # solve (the claim UPDATE is guarded by solved_at IS NULL).
     if recheck is not None:
         claim_values["recheck"] = {**recheck.model_dump(), "accepted": resolved.disagreement}
+    # Phase 236 D-13: the phone's grading reading is written once by this claim
+    # UPDATE (the solved_at IS NULL guard makes the first write win). Omitted when
+    # absent so the column stays SQL NULL (memory project_asyncpg_jsonb_null_vs_sql_null).
+    # D-02: deliberately not an input to _resolve_grade above.
+    if phone_grade is not None:
+        claim_values["phone_grade"] = phone_grade.model_dump()
     claim_result = await session.execute(
         update(DrillSolve)
         .where(

@@ -37,7 +37,8 @@ from app.schemas.train import (
     ClaimMedalsRequest,
     OnboardingStep,
     PuzzleRevealResponse,
-    ReviewTelemetry,
+    ReviewRequest,
+    ServerGradedMove,
     SolveRequest,
     SolveResponse,
     SolvedResult,
@@ -112,6 +113,9 @@ async def compose_or_resume_session(
                 key_move_uci=p.key_move_uci,
                 puzzle_type=p.puzzle_type,
                 runner_up_uci=p.runner_up_uci,
+                server_graded_moves=[
+                    ServerGradedMove(uci=m.uci, tier=m.tier) for m in p.server_graded_moves
+                ],
             )
         )
     solved_results = [
@@ -169,6 +173,8 @@ async def solve_puzzle(
             ),
             # Phase 235 (D-14/D-17): the already-validated re-check record, or None.
             recheck=body.recheck,
+            # Phase 236 (D-01/D-13): the already-validated phone grade record, or None.
+            phone_grade=body.phone_grade,
         )
     except Exception:
         await session.rollback()
@@ -202,7 +208,7 @@ async def solve_puzzle(
 async def record_puzzle_review(
     session_id: Annotated[int, Path(ge=1, le=_SESSION_ID_MAX)],
     position: Annotated[int, Path(ge=0, le=_DRILL_POSITION_MAX)],
-    body: ReviewTelemetry,
+    body: ReviewRequest,
     session: Annotated[AsyncSession, Depends(get_async_session)],
     user: Annotated[User, Depends(current_active_user)],
 ) -> None:
@@ -214,6 +220,9 @@ async def record_puzzle_review(
     unsolved or owned by someone else is a 404 (not 403) so a foreign id is
     indistinguishable from a missing one. No `now_utc` dependency: the durations
     are client-measured, so the unload fetch needs no dev-clock header.
+
+    Phase 236 (D-12): the body may also carry the phone's late grading reading,
+    which is written write-once to its own column and never into telemetry.
     """
     try:
         found = await train_repository.merge_solve_telemetry(
@@ -221,7 +230,10 @@ async def record_puzzle_review(
             user_id=user.id,
             session_id=session_id,
             position=position,
-            patch=body.model_dump(exclude_none=True),
+            # D-12: the phone grade record never enters telemetry; it goes to its
+            # own column via the separate argument below.
+            patch=body.model_dump(exclude_none=True, exclude={"phone_grade"}),
+            phone_grade=body.phone_grade,
         )
     except Exception:
         await session.rollback()

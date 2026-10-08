@@ -68,9 +68,11 @@ from app.services.train_pool import (
     graded_moves_from_vetted,
     herring_stmt,
     legal_answer_key,
+    legal_server_graded_moves,
     pick_one_per_game,
     pool_entry_stmt,
     second_best_not_winning_admissible,
+    server_graded_moves_for,
     sharp_runner_up_graded_move,
     vetted_moves_from_ladder,
     vetted_moves_from_pv_node,
@@ -727,6 +729,170 @@ class TestSharpRunnerUpGradedMove:
         graded = sharp_runner_up_graded_move(node, "white", key_uci="b5a4")
         assert graded is not None
         assert graded.tier == expected_tier
+
+
+# ---------------------------------------------------------------------------
+# TestServerGradedMovesFor / TestLegalServerGradedMoves (Phase 236, SEED-193, D-08)
+# — the single derivation shared by composition and the solve path, plus the
+# composition-only legality / no-key filter.
+# ---------------------------------------------------------------------------
+
+# Soft-shaped (gap ~0.091 < SHARP_GAP_ES) but outside the good band (>= INACCURACY_DROP):
+# the su fails certification, so only the best move is served.
+_SOFT_SU_FAILS_BAND_NODE = {"b": 100, "bm": None, "s": 0, "sm": None, "su": "b1c3"}
+_GRADE_LADDER = [
+    {"move_uci": "e2e4", "cp": 60, "mate": None},
+    {"move_uci": "d2d4", "cp": 45, "mate": None},
+    {"move_uci": "g1f3", "cp": 20, "mate": None},
+    {"move_uci": "c2c4", "cp": -10, "mate": None},
+    {"move_uci": "b1c3", "cp": -40, "mate": None},
+]
+
+
+def _graded_for(
+    *,
+    source: int = DrillSource.SR_ITEM,
+    blob: list[Any] | None = None,
+    best_move: str | None = None,
+    ladder: list[Any] | None = None,
+    herring_mover_color: Literal["white", "black"] | None = None,
+    solution: str | None = None,
+) -> list[tuple[str, str]]:
+    """(uci, tier) of `server_graded_moves_for`, with the RAW key from `answer_key_for`."""
+    key = answer_key_for(
+        source=source,
+        ply=_EVEN_PLY,
+        missed_pv_lines=blob,
+        best_move=best_move,
+        ladder=ladder,
+        filler_solution_uci=solution,
+    )
+    graded = server_graded_moves_for(
+        source=source,
+        ply=_EVEN_PLY,
+        missed_pv_lines=blob,
+        best_move=best_move,
+        ladder=ladder,
+        herring_mover_color=herring_mover_color,
+        key=key,
+    )
+    return [(g.uci, g.tier) for g in graded]
+
+
+class TestServerGradedMovesFor:
+    """server_graded_moves_for — every source, first-match order."""
+
+    @pytest.mark.parametrize(
+        ("blob", "best_move", "expected"),
+        [
+            pytest.param(
+                [_SOFT_NODE], "g1f3", [("g1f3", "good"), ("b1c3", "good")], id="soft-best-and-su"
+            ),
+            pytest.param([_SOFT_NODE], None, [("b1c3", "good")], id="soft-without-best-is-su-only"),
+            pytest.param(
+                [_SOFT_SU_FAILS_BAND_NODE],
+                "g1f3",
+                [("g1f3", "good")],
+                id="soft-su-fails-band-is-best-alone",
+            ),
+            pytest.param([_SHARP_NODE], "g1f3", [("b1c3", "wrong")], id="sharp-runner-up-wrong"),
+            pytest.param(
+                [_SHARP_NODE], "b1c3", [], id="sharp-runner-up-equal-to-key-is-not-graded"
+            ),
+            pytest.param([_SHARP_NO_SECOND_NODE], "g1f3", [], id="sharp-empty-su-sentinel"),
+            pytest.param(None, "g1f3", [], id="blob-none"),
+            pytest.param([], "g1f3", [], id="blob-empty"),
+            pytest.param(
+                [_SOFT_NODE],
+                None,
+                [("b1c3", "good")],
+                id="no-key-still-grades-the-su-like-the-solve-path",
+            ),
+        ],
+    )
+    def test_sr_item(
+        self, blob: list[Any] | None, best_move: str | None, expected: list[tuple[str, str]]
+    ) -> None:
+        assert _graded_for(blob=blob, best_move=best_move) == expected
+
+    def test_herring_grades_the_good_band_ladder_first(self) -> None:
+        got = _graded_for(
+            source=DrillSource.RED_HERRING,
+            ladder=_GRADE_LADDER,
+            herring_mover_color="white",
+        )
+        assert got == [("e2e4", "good"), ("d2d4", "good"), ("g1f3", "good")]
+
+    def test_herring_without_stored_mover_color_is_empty(self) -> None:
+        assert (
+            _graded_for(
+                source=DrillSource.RED_HERRING, ladder=_GRADE_LADDER, herring_mover_color=None
+            )
+            == []
+        )
+
+    def test_herring_ignores_a_sharp_sr_blob(self) -> None:
+        """A herring sharing (user, game, ply) with the user's own sharp flaw still gets the ladder band."""
+        got = _graded_for(
+            source=DrillSource.RED_HERRING,
+            blob=[_SHARP_NODE],
+            best_move="g1f3",
+            ladder=_GRADE_LADDER,
+            herring_mover_color="white",
+        )
+        assert got == [("e2e4", "good"), ("d2d4", "good"), ("g1f3", "good")]
+
+    def test_sharp_filler_is_empty(self) -> None:
+        assert _graded_for(source=DrillSource.SHARP_FILLER, solution="d2d4") == []
+
+    def test_matches_the_building_blocks_for_a_soft_node(self) -> None:
+        """Parity with the pieces the solve path used before Phase 236 (no grading change)."""
+        expected = graded_moves_from_vetted(
+            vetted_moves_from_pv_node(_SOFT_NODE, "white", best_uci="g1f3")
+        )
+        key = _sr_key(blob=[_SOFT_NODE], best_move="g1f3")
+        assert (
+            server_graded_moves_for(
+                source=DrillSource.SR_ITEM,
+                ply=_EVEN_PLY,
+                missed_pv_lines=[_SOFT_NODE],
+                best_move="g1f3",
+                ladder=None,
+                herring_mover_color=None,
+                key=key,
+            )
+            == expected
+        )
+
+
+class TestLegalServerGradedMoves:
+    """legal_server_graded_moves — legal in the FEN, empty without a legal key."""
+
+    _MOVES = (
+        ServerGradedMove(uci="g1f3", tier="good", es_before=0.5, es_after=0.5),
+        ServerGradedMove(uci="e7e5", tier="good", es_before=0.5, es_after=0.5),
+        ServerGradedMove(uci="b1c3", tier="wrong", es_before=0.6, es_after=0.4),
+    )
+
+    @pytest.mark.parametrize(
+        ("fen", "legal_key_uci", "expected"),
+        [
+            pytest.param(
+                _WHITE_TO_MOVE_FEN,
+                "g1f3",
+                ("g1f3", "b1c3"),
+                id="illegal-uci-dropped-order-kept",
+            ),
+            pytest.param(_WHITE_TO_MOVE_FEN, None, (), id="null-key-gives-empty"),
+            pytest.param("not a fen", "g1f3", (), id="unparseable-fen-gives-empty"),
+        ],
+    )
+    def test_filter(self, fen: str, legal_key_uci: str | None, expected: tuple[str, ...]) -> None:
+        got = legal_server_graded_moves(self._MOVES, fen, legal_key_uci=legal_key_uci)
+        assert tuple(m.uci for m in got) == expected
+
+    def test_empty_input_stays_empty(self) -> None:
+        assert legal_server_graded_moves((), _WHITE_TO_MOVE_FEN, legal_key_uci="g1f3") == ()
 
 
 # ---------------------------------------------------------------------------

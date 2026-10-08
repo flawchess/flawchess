@@ -24,6 +24,8 @@ export interface ShouldRecheckInput {
   runnerUpUci: string | null;
   playedUci: string;
   tier: TrainMoveTier;
+  /** D-11 (Phase 236): the UCIs of `TrainPuzzle.server_graded_moves`. */
+  serverGradedUcis: readonly string[];
 }
 
 /**
@@ -43,7 +45,9 @@ export interface ShouldRecheckInput {
  * overstates a drop of 0.10 or more enough to flip the verdict, and it would
  * add the ~6 s wait to a large share of solves. The sharp runner-up is
  * excluded because the server grades it from its own blob (D-02), so a
- * re-check would burn 6 s on a result the server overrides.
+ * re-check would burn 6 s on a result the server overrides. The same holds for
+ * every move in the puzzle's server-graded set (Phase 236 D-11): the server
+ * discards the phone tier for it, so the ~6 s re-check would buy nothing.
  */
 export function shouldRecheck(input: ShouldRecheckInput): boolean {
   const offKey =
@@ -51,6 +55,7 @@ export function shouldRecheck(input: ShouldRecheckInput): boolean {
     input.playedUci !== input.keyUci &&
     input.playedUci !== input.runnerUpUci;
   if (!offKey) return false;
+  if (input.serverGradedUcis.includes(input.playedUci)) return false;
   if (input.tier === 'inaccuracy') return true;
   return input.puzzleType === 'sharp' && input.tier === 'good';
 }

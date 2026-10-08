@@ -50,6 +50,7 @@ import { TrainReveal, TrainScoreChip } from '@/components/train/TrainReveal';
 import type { TrainRevealStep } from '@/components/train/TrainReveal';
 import { EvalBar } from '@/components/analysis/EvalBar';
 import type {
+  ServerGradedMove,
   SolveRecheck,
   SolveResponse,
   TrainPuzzle,
@@ -63,6 +64,7 @@ import { useTrainFreePlay, uciFromDrop } from '@/hooks/useTrainFreePlay';
 import { useStockfishEngine, type StockfishEngineState } from '@/hooks/useStockfishEngine';
 import type { PvLine } from '@/hooks/uciParser';
 import { useWakeLock } from '@/hooks/useWakeLock';
+import { gradeFromServerPair, type InstantGradeState } from '@/hooks/trainGradingSupport';
 import type {
   GradeResult,
   RecheckResult,
@@ -118,6 +120,7 @@ import {
 import type { TrainMoveQuality, TrainOverlayMove } from '@/lib/trainArrows';
 import { scorePuzzle, MOVE_TIER_POINTS, GUESS_POINTS, TRAIN_POINTS_PER_PUZZLE } from '@/lib/trainScore';
 import type { TrainMoveTier } from '@/lib/trainScore';
+import { buildPhoneGradePayload, instantServerTier } from '@/lib/trainPhoneGrade';
 import { shouldRecheck } from '@/lib/trainRecheck';
 import {
   SEV_INACCURACY,
@@ -661,6 +664,22 @@ function renderTrainBotBubbleBody(
       ),
     };
   }
+  if (bubbleState.kind === 'submitting') {
+    // Phase 236 (D-16): the instant solve POST round trip. A bare spinner, no
+    // copy: the move was taken, and nothing says it is being "checked".
+    return {
+      copy: (
+        <span
+          className="flex items-center"
+          role="status"
+          aria-label="Saving your move"
+          data-testid="train-submitting-indicator"
+        >
+          <Loader2 className="size-4 animate-spin text-muted-foreground" aria-hidden="true" />
+        </span>
+      ),
+    };
+  }
   if (bubbleState.kind === 'intro') {
     return {
       copy: <p>{introCopy(bubbleState.step, deps.sideToMove, deps.isWarmup, deps.audience).copy}</p>,
@@ -786,6 +805,15 @@ export function TrainSolveScreen({
   const [nudgeNonce, setNudgeNonce] = useState(0);
   const [boardFen, setBoardFen] = useState(puzzle.fen);
   const [moveApplied, setMoveApplied] = useState(restoredSolve !== null);
+  // Phase 236 Pitfall 4: bumped on every puzzle change; a background grade only
+  // writes state or a late phone_grade record while its captured value still matches.
+  const instantAttemptRef = useRef(0);
+  // Phase 236 (D-14/D-15): the reveal's view of a server-graded move whose phone
+  // grade has not landed (null on the normal path and once it landed).
+  const [instantGrade, setInstantGrade] = useState<InstantGradeState | null>(null);
+  // Phase 236 (D-16): the instant solve POST is in flight. Distinct from
+  // `isGrading`, which would show the "Checking your move…" copy.
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const [isGrading, setIsGrading] = useState(false);
   // Phase 235 (D-12): true only around the single `recheckMove` await.
   const [isRechecking, setIsRechecking] = useState(false);
@@ -871,6 +899,14 @@ export function TrainSolveScreen({
   // exactly one default is what makes the D-10 mutation test meaningful.
   const vettedMoves = useMemo<VettedMove[]>(() => verdict?.vetted_moves ?? [], [verdict]);
 
+  // D-03: the single read site and the single default for the server-graded
+  // set. Read only after the move (the re-check gate), never rendered
+  // pre-attempt.
+  const serverGradedMoves = useMemo<ServerGradedMove[]>(
+    () => puzzle.server_graded_moves ?? [],
+    [puzzle.server_graded_moves],
+  );
+
   // `seedEval` hands it the grading engine's verdict for the puzzle position,
   // so the FIRST free move is graded without waiting for the free-play engine
   // to re-search a position the solve loop already searched. Phase 211
@@ -878,6 +914,8 @@ export function TrainSolveScreen({
   // overlay draws (the hoisted `vettedMoves` memo above — the single
   // stale-cache default site), so the free-play ROOT ply and the "Also fine"
   // row can never read different keys.
+  // Phase 236: null while an instant grade is pending is fine, free play then
+  // searches the first position itself.
   const freePlaySeedEval = useMemo(
     () =>
       gradeResult === null
@@ -1046,6 +1084,10 @@ export function TrainSolveScreen({
   // StrictMode dev (harmless extra stop+go pair) and production (fires
   // exactly once per real puzzle.fen change).
   useEffect(() => {
+    // Pitfall 4: TrainSolveScreen is one instance across puzzles, so a background
+    // grade started on the previous puzzle must prove it still belongs to the
+    // puzzle on screen (gradeInBackground compares against this counter).
+    instantAttemptRef.current += 1;
     // 190.1 UAT round 5: a restored puzzle (Analyze -> back) seeds its cached
     // solved state instead of the fresh-puzzle reset, and skips the mount
     // grading search entirely — no move will ever be graded for it. The
@@ -1056,6 +1098,8 @@ export function TrainSolveScreen({
     setMoveApplied(restoredSolve !== null);
     setIsGrading(false);
     setIsRechecking(false);
+    setInstantGrade(null);
+    setIsSubmitting(false);
     setGradingError(false);
     setLastPlayedUci(restoredSolve?.playedMoveUci ?? null);
     setGradeResult(restoredSolve?.gradeResult ?? null);
@@ -1109,6 +1153,7 @@ export function TrainSolveScreen({
       runnerUpUci: puzzle.runner_up_uci ?? null,
       playedUci,
       tier: grade.moveTier,
+      serverGradedUcis: serverGradedMoves.map((m) => m.uci),
     });
     if (!eligible) return null;
     // D-12: the wait copy lives exactly as long as the single re-check await;
@@ -1121,7 +1166,98 @@ export function TrainSolveScreen({
     }
   }
 
+  /**
+   * Phase 236 (D-09/D-10): the played move is one the server grades itself, so
+   * POST at once instead of waiting for the phone's 1.5 s grade.
+   *
+   * D-09: the verdict renders from the SolveResponse; the asserted tier is never
+   * rendered. D-10: the tier is the composition-time server tier, which
+   * `_resolve_grade` path 1 normally replaces with the live one. D-11: never
+   * re-checked. D-12/D-13: no phone_grade on this POST (frozen that way for
+   * retrySolve); the late 1.5 s reading rides the review flush instead. D-16:
+   * `isGrading` stays false so "Checking your move…" never shows; the bubble
+   * shows a copy-less spinner (`isSubmitting`) for the round trip instead.
+   */
+  async function solveInstantly(
+    playedGuess: Guess,
+    playedUci: string,
+    tier: TrainMoveTier,
+    keyUci: string,
+  ): Promise<void> {
+    setGradingError(false);
+    // D-14: the reveal opens on the verdict with the Your-move card loading.
+    setInstantGrade({ status: 'pending', keyUci, keyLine: null });
+    // Started BEFORE the POST so the engine works during the round trip.
+    gradeInBackground(playedUci);
+    setIsSubmitting(true);
+    try {
+      await trainSession.solvePuzzle({
+        position: puzzle.position,
+        guess: playedGuess,
+        played_move: playedUci,
+        move_quality: tier,
+        // Frozen at move time, so a retry resends the identical object.
+        telemetry: puzzleTelemetry.solveTelemetry(),
+      });
+    } catch {
+      // The solve-POST failure surfaces via trainSession.isSolveError (locked
+      // copy + Retry, which calls trainSession.retrySolve() and resends this
+      // SAME frozen body). The global mutation-cache handler in queryClient.ts
+      // already reports it.
+    } finally {
+      setIsSubmitting(false);
+    }
+  }
+
+  /**
+   * Phase 236 D-12: grade the played move in the background so the 1.5 s reading
+   * can ride the review flush. A rejection (timeout, engine error) is silent:
+   * the verdict is already server-final, so no gradingError and no record
+   * (D-15, Pitfall 8). A grade that settles after the user moved on is dropped
+   * (Pitfall 4).
+   * Known gap (review WR-02, deliberately not fixed): a Next pressed before this
+   * grade lands records no phone_grade. A trailing review flush cannot recover it,
+   * because the next puzzle's startGrading reuses the single grading Worker and
+   * supersedes this in-flight search, so it never produces a reading. Recovering it
+   * would mean delaying Next until the grade settles (or a second Worker), which
+   * trades against the instant-verdict goal and is an owner decision. The audit
+   * therefore under-samples fast Next presses; read it with that bias in mind.
+   */
+  function gradeInBackground(playedUci: string): void {
+    const attempt = instantAttemptRef.current;
+    const sessionId = trainSession.session?.session_id ?? null;
+    const position = puzzle.position;
+    gradeMove(puzzle.fen, playedUci, {
+      // D-14: the solution card shows the think-time after-key line as soon as
+      // the anchor has settled, before the played move's search finishes.
+      onKeyLine: (keyLine) => {
+        if (attempt !== instantAttemptRef.current) return;
+        setInstantGrade((state) => (state === null ? state : { ...state, keyLine }));
+      },
+    }).then(
+      (grade) => {
+        if (attempt !== instantAttemptRef.current) return;
+        setGradeResult(grade);
+        setInstantGrade(null);
+        if (grade.phoneReading == null) return;
+        puzzleTelemetry.setLatePhoneGrade(sessionId, position, buildPhoneGradePayload(grade.phoneReading));
+      },
+      () => {
+        // D-15: no gradingError and no record; the Your-move card falls back to a
+        // header-only card and the verdict stays server-final.
+        if (attempt !== instantAttemptRef.current) return;
+        setInstantGrade((state) => (state === null ? state : { ...state, status: 'failed' }));
+      },
+    );
+  }
+
   async function gradeAndSolve(playedGuess: Guess, playedUci: string): Promise<void> {
+    const keyUci = puzzle.key_move_uci ?? null;
+    const instantTier = instantServerTier(serverGradedMoves, playedUci, keyUci);
+    if (instantTier !== null && keyUci !== null) {
+      await solveInstantly(playedGuess, playedUci, instantTier, keyUci);
+      return;
+    }
     setIsGrading(true);
     setGradingError(false);
     let grade: GradeResult;
@@ -1138,6 +1274,9 @@ export function TrainSolveScreen({
       setIsGrading(false);
       return;
     }
+    // D-04: the phone_grade record is always the 1.5 s reading, captured before
+    // a re-check can replace `grade`.
+    const phoneReading = grade.phoneReading ?? null;
     // D-11: a completed re-check replaces the 1.5 s grade whatever it says.
     const rechecked = await runRecheck(grade, playedUci);
     if (rechecked !== null) {
@@ -1156,6 +1295,9 @@ export function TrainSolveScreen({
         // D-17: every completed re-check rides the POST; none on a stall (D-20).
         // Frozen with the rest of the payload, so retrySolve never re-runs it.
         ...(recheck !== null ? { recheck } : {}),
+        // D-13: the 1.5 s phone reading rides every keyed solve; frozen with the
+        // payload, so retrySolve resends it unchanged.
+        ...(phoneReading !== null ? { phone_grade: buildPhoneGradePayload(phoneReading) } : {}),
       });
       // correct_guess is read ONLY from the server response (POOL-10) — never
       // recomputed client-side. The verdict itself renders from
@@ -1322,7 +1464,12 @@ export function TrainSolveScreen({
   // would hand the user the answer to the "one critical move vs several fine
   // moves" question the puzzle is asking, so the bar cannot appear any
   // earlier than `showResultRow` does.
-  const showEvalBar = showResultRow;
+  // Phase 236 (RESEARCH Pitfall 2 / A1): not while the instant path's background
+  // search is pending. The bar's own Worker would compete with that search
+  // exactly on the population whose server tier is the phone-accuracy ground
+  // truth. The bar appears up to ~1.5 s later on instant-path solves; the verdict
+  // is not delayed.
+  const showEvalBar = showResultRow && instantGrade?.status !== 'pending';
   const evalBarFen = showEvalBar && !freePlay.isExploring ? displayFen : null;
   // Deliberately disabled while exploring: `useTrainFreePlay` already owns a
   // FEN-driven Stockfish worker for the explored position (see its own
@@ -1353,27 +1500,34 @@ export function TrainSolveScreen({
   // assertion; now the server can legitimately disagree with the client
   // engine's search, and the display must follow the server. Off-key moves
   // (graded_es_* null/absent) keep the client-engine derivation.
+  //
+  // Phase 236 (D-16): on the instant path the verdict lands before the phone
+  // grade, so the badge follows the server's pair while `gradeResult` is null.
+  // `revealBestUci` is the key until the grade replaces it (same UCI after).
+  const revealBestUci = gradeResult?.bestMoveUci ?? instantGrade?.keyUci ?? null;
   const playedMoveQuality = useMemo<TrainMoveQuality | null>(() => {
-    if (gradeResult === null || lastPlayedUci === null) return null;
-    const isBest = lastPlayedUci === gradeResult.bestMoveUci;
+    if (lastPlayedUci === null) return null;
+    const isBest = lastPlayedUci === revealBestUci;
     if (verdict?.graded_es_before != null && verdict?.graded_es_after != null) {
       return classifyTrainMoveQuality(verdict.graded_es_before, verdict.graded_es_after, isBest);
     }
+    if (gradeResult === null) return null;
     return classifyTrainMoveQuality(gradeResult.esBefore, gradeResult.esAfter, isBest);
-  }, [gradeResult, lastPlayedUci, verdict]);
+  }, [gradeResult, lastPlayedUci, verdict, revealBestUci]);
 
   // The game move's quality: derived from the coinciding best/played move
   // when no reveal-time search ran, else from the searched line's eval via
   // the SAME expected-score pipeline the verdict uses.
   const gameMoveQuality = useMemo<TrainMoveQuality | null>(() => {
-    if (gameMoveUci === null || gradeResult === null) return null;
-    if (gameMoveUci === gradeResult.bestMoveUci) return 'best';
+    if (gameMoveUci === null) return null;
+    if (gameMoveUci === revealBestUci) return 'best';
     if (gameMoveUci === lastPlayedUci) return playedMoveQuality;
-    if (gameMoveLine === null) return null;
+    // The eval-derived branch needs the phone's root reading (esBefore).
+    if (gradeResult === null || gameMoveLine === null) return null;
     const mover = sideToMoveFromFen(puzzle.fen);
     const esGame = evalToExpectedScore(gameMoveLine.evalCp, gameMoveLine.evalMate, mover);
     return classifyTrainMoveQuality(gradeResult.esBefore, esGame, false);
-  }, [gameMoveUci, gradeResult, lastPlayedUci, playedMoveQuality, gameMoveLine, puzzle.fen]);
+  }, [gameMoveUci, gradeResult, revealBestUci, lastPlayedUci, playedMoveQuality, gameMoveLine, puzzle.fen]);
 
   // 190.1-04 (D-02, reworked per 190.1 UAT): reveal-board overlay — the blue
   // best-move arrow, green alternative-good-move arrows capped by puzzle
@@ -1382,7 +1536,7 @@ export function TrainSolveScreen({
   // target square. Empty until the verdict has actually landed.
   const revealOverlay = useMemo(() => {
     const playedMove: TrainOverlayMove | null =
-      gradeResult !== null && lastPlayedUci !== null && playedMoveQuality !== null
+      lastPlayedUci !== null && playedMoveQuality !== null
         ? { uci: lastPlayedUci, quality: playedMoveQuality }
         : null;
     return buildTrainRevealOverlay(
@@ -1391,12 +1545,15 @@ export function TrainSolveScreen({
       // engine no longer contributes alternatives to this overlay. The
       // hoisted `vettedMoves` memo above owns the stale-cache default.
       vettedMoves,
-      gradeResult?.bestMoveUci ?? null,
+      // Phase 236: the key while the phone grade is pending, so the best arrow
+      // points at it and the key is never drawn as an "Also fine" arrow
+      // (trainArrows.ts filters the alternatives against this UCI).
+      revealBestUci,
       playedMove,
       gameMoveUci !== null ? { uci: gameMoveUci, quality: gameMoveQuality } : null,
       verdict !== null,
     );
-  }, [verdict, vettedMoves, gradeResult, lastPlayedUci, playedMoveQuality, gameMoveUci, gameMoveQuality]);
+  }, [verdict, vettedMoves, revealBestUci, lastPlayedUci, playedMoveQuality, gameMoveUci, gameMoveQuality]);
 
   /**
    * 260902-qf7 (reverses Phase 200 UAT): the moves the PRISTINE (un-spotlit)
@@ -1409,8 +1566,9 @@ export function TrainSolveScreen({
    *
    * Expressed as a DEFAULT active set for `applyTrainSpotlight` rather than a
    * second drawing rule, so the un-spotlit board and a spotlit one go through
-   * exactly the same filter. A verdict cannot land without a `gradeResult` and
-   * a played move (both live and restored paths set them together), so this is
+   * exactly the same filter. On the Phase 236 instant path a verdict lands BEFORE
+   * the `gradeResult`, so the best UCI comes from `revealBestUci` (the key while
+   * the phone grade is pending); a verdict always has a played move, so this is
    * non-empty whenever the overlay itself is non-empty — the empty case would
    * hit `applyTrainSpotlight`'s no-op and simply show everything. `gameMoveUci`
    * is `null` for filler puzzles (and any puzzle not mined from a user's own
@@ -1418,10 +1576,8 @@ export function TrainSolveScreen({
    */
   const pristineOverlayUcis = useMemo(
     () =>
-      [lastPlayedUci, gradeResult?.bestMoveUci ?? null, gameMoveUci].filter(
-        (uci): uci is string => uci !== null,
-      ),
-    [lastPlayedUci, gradeResult, gameMoveUci],
+      [lastPlayedUci, revealBestUci, gameMoveUci].filter((uci): uci is string => uci !== null),
+    [lastPlayedUci, revealBestUci, gameMoveUci],
   );
 
   // Phase 200 (LEGEND-02): the reveal overlay filtered down to the spotlit
@@ -1603,15 +1759,15 @@ export function TrainSolveScreen({
     // so tracking here, before the cache-state early return, counts each click exactly once.
     trackFeature('action', { target: 'analyze' });
     const sessionId = trainSession.session?.session_id;
-    if (
-      sessionId == null ||
-      verdict === null ||
-      guess === null ||
-      lastPlayedUci === null ||
-      gradeResult === null
-    ) {
-      return;
-    }
+    if (sessionId == null || verdict === null || guess === null || lastPlayedUci === null) return;
+    // Phase 236 review WR-02: an Analyze click before the instant path's background
+    // grade landed (gradeResult still null) used to cache nothing, so browser Back
+    // lost the solved reveal. Cache a stand-in built from the server's graded pair
+    // instead. The unmount's abortGrading still ends the search, so that solve
+    // sends no phone_grade (accepted gap, see the Next path in gradeInBackground).
+    const cachedGrade =
+      gradeResult ?? (instantGrade !== null ? gradeFromServerPair(verdict, instantGrade) : null);
+    if (cachedGrade === null) return;
     saveTrainRevealCache({
       sessionId,
       puzzle,
@@ -1619,7 +1775,7 @@ export function TrainSolveScreen({
       verdictBotId: verdictBot?.id,
       guess,
       playedMoveUci: lastPlayedUci,
-      gradeResult,
+      gradeResult: cachedGrade,
       // Phase 233: the review totals so far, so the restored reveal continues one timer.
       reviewTelemetry: puzzleTelemetry.snapshotReviewForAnalyze(),
     });
@@ -1726,6 +1882,7 @@ export function TrainSolveScreen({
     hasVerdict: verdict !== null,
     isGrading,
     isRechecking,
+    isSubmitting,
     guessMade: guess !== null,
     introStep: activeIntroStep,
     nudgeActive: nudgeNonce > 0,
@@ -1887,7 +2044,14 @@ export function TrainSolveScreen({
         </div>
       </div>
       </div>
-      {engineFailed ? (
+      {/* Phase 236 review WR-01 (D-15): a landed verdict is never displaced by the
+          engine-error or engine-loading branches. On the instant path the verdict is
+          server-final while the background grade still runs, so a Worker error (e.g. a
+          wasm OOM) after the verdict used to swap the bubble, and with it the
+          Solution/Analyze/Next row, for "Failed to load the grading engine" + Retry
+          (whose restartEngine would re-grade an already-solved puzzle). Both branches
+          now apply only while there is no verdict. */}
+      {engineFailed && verdict === null ? (
         <div className="flex flex-col items-center gap-2" data-testid="train-engine-error">
           <LoadError resource="the grading engine" />
           <Button
@@ -1899,7 +2063,7 @@ export function TrainSolveScreen({
             Retry
           </Button>
         </div>
-      ) : !isReady ? (
+      ) : !isReady && verdict === null ? (
         // CR-01 defense in depth: never offer the guess/move UI before the
         // grading engine's Worker has actually completed its UCI handshake —
         // without this, a fast user (or one on a slow connection where the
@@ -1965,6 +2129,7 @@ export function TrainSolveScreen({
           guess={guess}
           playedMoveUci={lastPlayedUci}
           gradeResult={gradeResult}
+          instantGrade={instantGrade}
           playedMoveQuality={playedMoveQuality}
           gameMoveQuality={gameMoveQuality}
           onGameMoveUciChange={setGameMoveUci}
