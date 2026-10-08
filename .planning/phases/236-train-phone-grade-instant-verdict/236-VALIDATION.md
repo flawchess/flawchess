@@ -38,7 +38,27 @@ created: "2026-10-08"
 
 ## Per-Task Verification Map
 
-Filled by the planner per task. Decision-to-test map from RESEARCH.md:
+Filled by the planner per task (2026-10-08):
+
+| Task | Plan | Wave | Decisions | Test Type | Automated Command | File Exists | Status |
+|------|------|------|-----------|-----------|-------------------|-------------|--------|
+| 236-01-T1 | 01 | 1 | D-01, D-02, D-07, D-13 | integration + migration | `uv run pytest tests/routers/test_train.py -x -k "phone_grade"` (+ alembic at-head / round-trip on d3a7f1c9e246) | ✅ file / ❌ tests | ⬜ pending |
+| 236-01-T2 | 01 | 1 | D-01, D-12, D-13 | unit + integration | `uv run pytest tests/schemas/test_train_phone_grade_schema.py -x` ; `uv run pytest tests/routers/test_train.py -x -k "phone_grade or review"` | ❌ W0 (schema file) | ⬜ pending |
+| 236-02-T1 | 02 | 1 | D-01, D-13 | unit + component | `cd frontend && npx vitest run src/lib/__tests__/trainPhoneGrade.test.ts src/components/train/__tests__/TrainSolveScreen.test.tsx` | ❌ W0 (lib test) | ⬜ pending |
+| 236-02-T2 | 02 | 1 | D-04, D-05, D-06, D-11, D-13 | unit + component | `cd frontend && npx vitest run src/hooks/__tests__/useTrainGradingEngine.test.ts src/lib/__tests__/trainRecheck.test.ts src/lib/__tests__/trainPhoneGrade.test.ts src/components/train/__tests__/TrainSolveScreen.test.tsx` | ✅ extend | ⬜ pending |
+| 236-03-T1 | 03 | 2 | D-03, D-08 | integration | `uv run pytest tests/routers/test_train.py -x -k "pre_attempt or vetted_move_material"` ; `uv run pytest tests/repositories/test_train_repository.py -x -k "answer_key"` | ✅ extend | ⬜ pending |
+| 236-03-T2 | 03 | 2 | D-08 parity, D-10 | unit + integration | `uv run pytest tests/repositories/test_train_repository.py -x -k "graded_parity or resolve_grade"` ; three-file `-n auto` suite | ❌ W0 (parity test) | ⬜ pending |
+| 236-04-T1 | 04 | 2 | D-12, D-14 (Pitfall 1 serialization) | unit | `cd frontend && npx vitest run src/hooks/__tests__/useTrainGradingEngine.test.ts` | ✅ extend | ⬜ pending |
+| 236-04-T2 | 04 | 2 | D-14 hook API (onKeyLine) | unit | `cd frontend && npx vitest run src/hooks/__tests__/useTrainGradingEngine.test.ts` | ✅ extend | ⬜ pending |
+| 236-05-T1 | 05 | 3 | D-09, D-10, D-11, D-12, D-16 | unit + component | `cd frontend && npx vitest run src/lib/__tests__/trainPhoneGrade.test.ts src/components/train/__tests__/TrainSolveScreen.test.tsx` | ✅ extend (HeldPositionWorker W0 fixture) | ⬜ pending |
+| 236-05-T2 | 05 | 3 | D-12, D-15, Pitfall 1 (end to end), Pitfall 4 | unit + component | `cd frontend && npx vitest run src/hooks/__tests__/useTrainPuzzleTelemetry.test.ts src/components/train/__tests__/TrainSolveScreen.test.tsx` | ✅ extend | ⬜ pending |
+| 236-06-T1 | 06 | 4 | D-14, D-15 | component | `cd frontend && npx vitest run src/components/train/__tests__/TrainReveal.test.tsx src/components/train/__tests__/TrainSolveScreen.test.tsx` | ✅ extend | ⬜ pending |
+| 236-06-T2 | 06 | 4 | D-09, D-16, Pitfall 2 | unit + component | `cd frontend && npx vitest run src/components/train/__tests__/trainBubbleState.test.ts src/components/train/__tests__/TrainSolveScreen.test.tsx src/components/train/__tests__/TrainReveal.test.tsx` | ✅ extend | ⬜ pending |
+| 236-06-T3 | 06 | 4 | phase gate | full suite | CLAUDE.md pre-merge gate + serial train backend run | ✅ | ⬜ pending |
+
+Mutation proofs are named per task in the plans (D-08 parity: 236-03-T2 a/b; Pitfall 1 serialization: 236-04-T1 (hook level) and 236-05-T2 a (component level); stale-puzzle guard: 236-05-T2 b/c; reveal fallbacks: 236-06-T2 a-c).
+
+Decision-to-test map from RESEARCH.md:
 
 | Decision | Behavior | Test Type | Automated Command | File Exists | Status |
 |----------|----------|-----------|-------------------|-------------|--------|
