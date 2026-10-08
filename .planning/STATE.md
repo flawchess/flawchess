@@ -4,8 +4,8 @@ milestone: v2.21
 current_phase: 235
 status: completed
 stopped_at: Phase 235 complete — all phases complete
-last_updated: "2026-10-07T20:54:01.961Z"
-state_head: 2c3d44b799f3da87abe43bdc0bf18d364d83cdfb
+last_updated: "2026-10-08T15:34:42.913Z"
+state_head: b53a2203b47c1114da0a34fbd815ca81c8d134ae
 progress:
   total_phases: 8
   completed_phases: 103
@@ -990,6 +990,7 @@ None active.
 | 261006-95o | Replace accuracy bullseye icon with info popover explaining Accuracy and move qualities | 2026-10-06 | bf89f68a1 | [261006-95o-replace-accuracy-bullseye-icon-with-info](./quick/261006-95o-replace-accuracy-bullseye-icon-with-info/) |
 | 126 | Mobile header: settings cogwheel left of the page title | 2026-10-06 | 21fdebd2d | — |
 | 261007-axc | Separate Train reveal telemetry counter for hand-played free moves (review_board_moves) | 2026-10-07 | 27ce3d361 | [261007-axc-separate-train-reveal-telemetry-counter-](./quick/261007-axc-separate-train-reveal-telemetry-counter-/) |
+| 261008-ob1 | Train re-check also rescues off-key inaccuracy grades | 2026-10-08 | b53a2203b | [261008-ob1-train-re-check-also-rescues-off-key-inac](./quick/261008-ob1-train-re-check-also-rescues-off-key-inac/) |
 
 ## Deferred Items
 
