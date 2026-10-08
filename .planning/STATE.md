@@ -4,8 +4,8 @@ milestone: v2.21
 current_phase: 235
 status: completed
 stopped_at: Phase 235 complete — all phases complete
-last_updated: "2026-10-08T15:34:42.913Z"
-state_head: b53a2203b47c1114da0a34fbd815ca81c8d134ae
+last_updated: "2026-10-08T15:51:07.909Z"
+state_head: 44e037dd3bdbd1c3039ac4058627625c0799190f
 progress:
   total_phases: 8
   completed_phases: 103
@@ -991,6 +991,7 @@ None active.
 | 126 | Mobile header: settings cogwheel left of the page title | 2026-10-06 | 21fdebd2d | — |
 | 261007-axc | Separate Train reveal telemetry counter for hand-played free moves (review_board_moves) | 2026-10-07 | 27ce3d361 | [261007-axc-separate-train-reveal-telemetry-counter-](./quick/261007-axc-separate-train-reveal-telemetry-counter-/) |
 | 261008-ob1 | Train re-check also rescues off-key inaccuracy grades | 2026-10-08 | b53a2203b | [261008-ob1-train-re-check-also-rescues-off-key-inac](./quick/261008-ob1-train-re-check-also-rescues-off-key-inac/) |
+| 261008-opg | Train reveal shows a played inaccuracy as inaccuracy | 2026-10-08 | 44e037dd3 | [261008-opg-train-reveal-shows-a-played-inaccuracy-a](./quick/261008-opg-train-reveal-shows-a-played-inaccuracy-a/) |
 
 ## Deferred Items
 
