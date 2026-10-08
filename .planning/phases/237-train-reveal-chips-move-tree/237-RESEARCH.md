@@ -578,7 +578,9 @@ class ReviewTelemetry(BaseModel):
 | A7 | The claude-in-chrome tools are available to the UAT agent (per memory notes; not probed this session) | Environment | UAT falls back to owner |
 | A8 | Desktop tour bubble stacks above the verdict bubble in the right column (D-10 only specifies the phone) | Pattern 9 | Layout tweak |
 
-## Open Questions
+## Open Questions (RESOLVED)
+
+> Resolved at planning (2026-10-09): Q1 = option (a), no migration, recorded in plan 10 (owner may override); Q2 = sideline off a chip's own line counts as on the line, no root jump (plan 02); Q3 = `review_strip_expanded` documented phone-only (plan 01).
 
 1. **Should returning users see the new tour?** (affects plan scope; needs an owner decision)
    - What we know: the gate is `reveal_walkthrough_seen_at IS NULL`; `OnboardingStep = Literal["intro", "reveal_walkthrough", "sr_explained"]` [VERIFIED: app/schemas/train.py:676] and `export type OnboardingStep = 'intro' | 'reveal_walkthrough' | 'sr_explained';` [VERIFIED: hooks/useTrainOnboarding.ts]. The column was added by alembic `7d6bb75aae54`.
