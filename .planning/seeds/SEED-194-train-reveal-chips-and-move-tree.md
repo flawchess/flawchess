@@ -56,6 +56,20 @@ https://claude.ai/artifact/Kgry1SU4SQuMkky78y8jvv
    Solution button and keeps the sidelines. Acceptance: the first view fits 390x844 with no scroll.
 6. **Desktop:** board left with the same controls and Analyze/Next under it; right column = full
    verdict bubble (no strip) + chips + move tree + game line. ← → step, Home = puzzle position.
+7. **Onboarding tour rewritten for the new screen** (in scope, not a follow-up). Hilda's
+   first-reveal walkthrough (`walkthroughCopy` in `lib/trainBotCopy.ts`, D-24, six steps,
+   `WalkthroughStepCopy.spotlightTarget` = `verdict | lines | board | actions`) explains the
+   current screen: "the cards below or on the right", "tap a card to highlight its move", "the
+   arrows inside a card play its line", and a Solution button. All of that disappears. New steps
+   need new targets and copy for: the verdict strip (and that tapping it opens the full feedback),
+   the chips (tap to focus a line, the faded arrows, the "You = Best" merge), stepping with the
+   bottom bar or tapping moves in the list, moving pieces to fork a sideline (and ⏮ to return),
+   and the action bar. Keep D-21's "understand, don't memorize" step, the phone copy budget
+   (`STEPPER_COPY_MAX_CHARS` = 145, calibrated at 375x667), and the "only describe what is on
+   screen" rules (`hasAnalyze`: Analyze shows only for puzzles from the user's own games, which a
+   first reveal often is not; `hasSolution` goes away with ⏮). The spotlight must reach the
+   bottom action bar, which today is outside the reveal component. Re-run the phone UAT of the
+   tour, as Phase 222 did.
 
 ## Where It Lands
 
@@ -70,8 +84,9 @@ https://claude.ai/artifact/Kgry1SU4SQuMkky78y8jvv
 
 ## Watch Out For
 
-- **Onboarding walkthrough** (`useTrainOnboarding`, `TrainBotStepper`, Phase 233 D-13) spotlights
-  reveal elements by step; its targets and copy change with the layout.
+- **Onboarding plumbing** beyond the copy (item 7): `useTrainOnboarding` (`reveal_walkthrough`
+  step), `TrainBotStepper`, the walkthrough-active state in `TrainReveal` / `TrainSolveScreen`
+  (Phase 222 D-24, Phase 233 D-13 sticky flag) and the think-time telemetry that keys off it.
 - **Telemetry:** card engagement (`CardEngageKind` open / hover) and `train-explore-*` Umami events
   need new equivalents (chip select, tree jump, sideline fork, strip expand) or the funnels break.
 - **Test ids** (`train-line-box-your-move` etc.) and the reveal tests depend on the card structure.
