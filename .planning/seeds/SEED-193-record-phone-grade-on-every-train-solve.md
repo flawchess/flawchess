@@ -89,9 +89,15 @@ Direction:
   move" card, and record its tier/ES/depth per Part 1: on exactly these moves
   the server's deep tier is the ground truth, so Part 1 gets its best accuracy
   signal without any extra wait.
-- Before planning, measure how often a played move is a non-key server-graded
-  move in prod (my stratified audit sample had ~23% such rows, which is NOT a
-  population rate). If it is rare, Part 2 may not be worth its complexity.
+- Measured in prod 2026-10-08 (last 30 days, played moves only): SR items
+  3,113 solves = 45.0% key, 11.7% non-key server-graded, 42.9% phone-only;
+  herrings 903 solves = 28.3% key, 37.2% non-key server-graded, 34.4%
+  phone-only. Overall ~17% of SR + herring solves (701 / 4,016) wait ~1.5 s
+  for a grade the server then replaces. Classification mirrors
+  `_resolve_grade` path 1: SR `su` when the node is sharp (gap >= 0.10) or
+  `su` is in the good band (gap < 0.05); herring ladder entries within 0.05 ES
+  of the top. Mates approximated as +/-10000 cp. Sharp fillers have no
+  server-graded moves besides the key.
 
 ## Breadcrumbs
 
