@@ -4,11 +4,11 @@ milestone: v2.21
 current_phase: 236
 current_phase_name: Train Phone Grade Record & Instant Server Verdict (SEED-193)
 status: executing
-stopped_at: Phase 236 planned (6 plans, 4 waves)
-last_updated: "2026-10-08T18:53:56.827Z"
-state_head: 4c0c4997abf2917d1efca21500f8ad23fc9c354a
+stopped_at: Phase 237 context gathered
+last_updated: "2026-10-08T21:57:54.796Z"
+state_head: a7a236ee3f3521666bbbfecd0c5864d1f8c98ccb
 progress:
-  total_phases: 9
+  total_phases: 10
   completed_phases: 103
   total_plans: 46
   completed_plans: 47
@@ -1046,9 +1046,9 @@ Items acknowledged and deferred at **v1.29 milestone close on 2026-06-29** (user
 
 ## Session Continuity
 
-**Last session:** 2026-10-08T17:19:47.567Z
-**Stopped at:** Phase 236 context gathered
-**Resume file:** .planning/phases/236-train-phone-grade-instant-verdict/236-CONTEXT.md
+**Last session:** 2026-10-08T21:57:54.516Z
+**Stopped at:** Phase 237 context gathered
+**Resume file:** .planning/phases/237-train-reveal-chips-move-tree/237-CONTEXT.md
 
 Previous session note (Phase 227):
 refit (calibration parity holds). Verification passed 17/17; code review 0 blockers (WR-01 + 3 info fixed). Next:
