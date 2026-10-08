@@ -509,6 +509,42 @@ Plans:
 **Wave 4** *(blocked on Wave 3 completion)*
 - [x] 235-05-PLAN.md — "Taking a closer look…" wait copy, D-15 guess copy, CHANGELOG and full pre-merge gate (D-12/D-15/D-20)
 
+### Phase 236: Train Phone Grade Record & Instant Server Verdict (SEED-193)
+
+**Goal**: Make Train grading accuracy measurable from stored data, and stop making users wait for a
+grade the server throws away. Today `drill_solves.move_quality` is the effective tier after the
+`_resolve_grade` override and the phone's own tier, expected scores and depths are discarded unless a
+disagreement re-check ran (zero `recheck` rows in prod as of 2026-10-08), so the 2026-10-08 audit had
+to re-run Stockfish at depth 18 and could not tell a misread key from a shallow device. And ~17% of
+SR + herring solves (701 / 4,016, last 30 days) wait ~1.5 s for a phone grade on a move the server
+grades itself.
+
+- **1. Record the phone's grade on every keyed solve:** the client already holds its tier and the
+  1.5 s pair (key ES, played ES, both depths) before the POST. Send it as a `phone_grade` record
+  mirroring `SolveRecheck` (`v`, `tier`, `key_es`, `played_es`, `key_depth`, `played_depth`,
+  `extra="forbid"`), stored in a new nullable JSONB column on `drill_solves` (omit the column, never
+  write JSON `null`). `move_quality` stays the effective tier, so the override rate is a column
+  compare. Played == key runs no after-move search: tier only, or no record (discuss).
+- **2. Instant verdict for server-graded moves:** send the server-graded moves (soft vetted, herring
+  good band, sharp runner-up) with their tiers in the puzzle payload, read only after the move like
+  `key_move_uci` / `runner_up_uci` (Phase 235 D-05). When the played move is in that set, show the
+  verdict immediately from the server tier and POST without waiting. Keep the after-move search
+  running in the background to fill the "Your move" card (`GradeResult.playedLine`; `VettedMove`
+  carries no PV or eval) and record its reading per step 1, where the server's deep tier is free
+  ground truth for phone accuracy.
+- **Optional:** a cheap engine/device hint (wasm build, threads, nodes); `telemetry.client` already
+  gives mobile vs desktop.
+- **Not a grading change:** no new engine search, no scoring effect, go-forward only.
+- **Afterwards (outside the phase):** rewrite the gitignored `temp/grade-audit/` as a query plus a
+  depth-18 spot check; re-run the audit on post-Phase-235 solves around 2026-10-22.
+
+**Depends on**: Phase 235 (server answer key on the wire, `drill_solves.recheck`, `_resolve_grade` path 1)
+**Requirements**: TBD
+**Plans:** 0 plans
+
+Plans:
+- [ ] TBD (run /gsd-discuss-phase 236)
+
 Phase detail for every shipped milestone lives in `milestones/vX.Y-ROADMAP.md`, its phase directories in `milestones/vX.Y-phases/`, and the per-milestone summaries in [MILESTONES.md](MILESTONES.md).
 
 ## Backlog

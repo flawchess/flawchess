@@ -1,6 +1,8 @@
 ---
 id: SEED-193
-status: planted
+status: promoted
+promoted_to: Phase 236
+promoted: 2026-10-08
 planted: 2026-10-08
 planted_during: ad-hoc Train grading investigation (prod user 28, quick tasks 261008-ob1 / 261008-opg; no phase in flight, milestone v2.21 after Phase 235)
 trigger_when: next Train phase, any further change to Train grading, or before re-running the grade audit in temp/grade-audit/
