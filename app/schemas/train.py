@@ -265,7 +265,12 @@ class SolveRecheck(BaseModel):
     after-move searches (the 1.5 s pair); `key_es_recheck` / `played_es_recheck`
     are the same two from the longer (3 s) searches. Depths are the Stockfish
     depths those searches reached. `outcome` is "confirmed" when the longer
-    search still disagreed with the key and "resolved" when it agreed after all.
+    search rates the played move good and "resolved" otherwise.
+
+    Two triggers produce this record: a sharp puzzle's off-key move the 1.5 s
+    pair rated good (Phase 235), and any keyed puzzle's off-key move the 1.5 s
+    pair rated inaccuracy (quick 261008-ob1, rescuing short-search under-reads).
+    The 1.5 s pair (`key_es - played_es`) tells the two apart.
 
     Validated at the boundary and stored as the `drill_solves.recheck` record.
     Whether the disagreement earns credit (D-14) is decided server-side in

@@ -1094,8 +1094,10 @@ export function TrainSolveScreen({
   }, [puzzle.fen, puzzle.key_move_uci, startGrading, abortGrading, freePlay.reset, walkthrough.reset]);
 
   /**
-   * Phase 235 (D-10/D-19): the disagreement re-check. Runs only for a sharp
-   * keyed puzzle whose off-key, off-runner-up move the 1.5 s grade rated good.
+   * Phase 235 (D-10/D-19): the disagreement re-check. Runs for a sharp keyed
+   * puzzle whose off-key, off-runner-up move the 1.5 s grade rated good, and
+   * (quick 261008-ob1) for any keyed puzzle whose off-key move it rated
+   * inaccuracy, so short-search noise cannot cost a move point.
    * The key, type and runner-up are read here, after the move and before the
    * POST, and never rendered (D-05). Resolves null when no re-check applies or
    * it failed (recheckMove never rejects, D-20).

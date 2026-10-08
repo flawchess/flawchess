@@ -2815,6 +2815,10 @@ def _disagreement_accepted(
       disagreement) nor the sharp runner-up (the server grades that itself,
       D-02);
     - the client's asserted tier is "good".
+
+    An inaccuracy-triggered re-check (quick 261008-ob1) always fails the 1.5 s
+    check, so it never earns the guess point here; its upgraded tier reaches the
+    record through the client tier (path 3 of `_resolve_grade`).
     """
     if recheck is None or recheck.outcome != "confirmed":
         return False

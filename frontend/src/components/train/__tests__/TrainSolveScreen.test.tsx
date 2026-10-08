@@ -282,7 +282,7 @@ class FakeWorker {
     } else if (msg.startsWith('go ')) {
       queueMicrotask(() => {
         for (let rank = 1; rank <= this.width; rank++) {
-          this.emit(`info depth 10 multipv ${rank} score cp ${20 - rank} nodes 1000 pv ${this.pv}`);
+          this.emit(`info depth 10 multipv ${rank} score cp ${this.cpFor(rank)} nodes 1000 pv ${this.pv}`);
         }
         this.emit(`bestmove ${this.bestMove}`);
       });
@@ -291,6 +291,11 @@ class FakeWorker {
 
   terminate(): void {
     this.terminated = true;
+  }
+
+  /** Side-to-move centipawns reported for `rank`; subclasses script other readings. */
+  protected cpFor(rank: number): number {
+    return 20 - rank;
   }
 
   private emit(data: string): void {
@@ -328,6 +333,32 @@ class GatedRecheckWorker extends FakeWorker {
     const held = this.heldGo;
     this.heldGo = [];
     for (const go of held) super.postMessage(go);
+  }
+}
+
+/**
+ * Quick 261008-ob1: a FakeWorker whose reading depends on the searched position
+ * and the search budget. `cpAt` receives the last `position fen ...` and the
+ * `go ...` message and returns the side-to-move cp, or null for the default.
+ */
+class ScriptedCpWorker extends FakeWorker {
+  private lastPosition = '';
+  private lastGo = '';
+
+  constructor(private cpAt: (position: string, go: string) => number | null) {
+    super('d7d5', 'd7d5');
+  }
+
+  postMessage(msg: string | { progressPort: unknown }): void {
+    if (typeof msg === 'string') {
+      if (msg.startsWith('position ')) this.lastPosition = msg;
+      if (msg.startsWith('go ')) this.lastGo = msg;
+    }
+    super.postMessage(msg);
+  }
+
+  protected cpFor(rank: number): number {
+    return this.cpAt(this.lastPosition, this.lastGo) ?? super.cpFor(rank);
   }
 }
 
@@ -757,6 +788,57 @@ describe('TrainSolveScreen — progress, last move, grading state, engine failur
 
     expect(solvePuzzle).toHaveBeenCalledTimes(1);
     expect(solvePuzzle.mock.calls[0]?.[1]).not.toHaveProperty('recheck');
+  });
+
+  // Quick 261008-ob1: the 1.5 s search under-reads the played move (black to
+  // move after 1.e4 reads +90 for black: a ~0.06 ES drop against the key's +19,
+  // an inaccuracy). Every other search, the key and the 3 s searches, reads the
+  // default +19 unless `slowPlayedCp` overrides the 3 s played reading.
+  const AFTER_E2E4_BOARD = '/4P3/';
+  const FAST_PLAYED_CP = 90;
+  function underReadPlayedWorker(slowPlayedCp: number | null): ScriptedCpWorker {
+    return new ScriptedCpWorker((position, go) => {
+      if (!position.includes(AFTER_E2E4_BOARD)) return null;
+      return go.startsWith(`go movetime ${TRAIN_RECHECK_MOVETIME_MS} `)
+        ? slowPlayedCp
+        : FAST_PLAYED_CP;
+    });
+  }
+
+  it('an off-key inaccuracy on a soft puzzle is re-checked and upgraded to good (quick 261008-ob1)', async () => {
+    stubWorker(() => underReadPlayedWorker(null));
+    await renderScreen(
+      makePuzzle({ key_move_uci: 'd2d4', puzzle_type: 'soft', runner_up_uci: null }),
+    );
+    fireEvent.click(screen.getByTestId('btn-train-guess-critical'));
+    await act(async () => {
+      fireEvent.click(screen.getByTestId('drop-e2e4'));
+    });
+    await waitFor(() => expect(screen.getByTestId('train-verdict-guess')).not.toBeNull());
+
+    expect(solvePuzzle).toHaveBeenCalledTimes(1);
+    const body = solvePuzzle.mock.calls[0]?.[1];
+    expect(body?.move_quality).toBe('good');
+    expect(body?.recheck).toMatchObject({ v: 1, outcome: 'confirmed' });
+    // The 1.5 s pair in the record still reads the inaccuracy that triggered it.
+    expect((body?.recheck?.key_es ?? 0) - (body?.recheck?.played_es ?? 0)).toBeGreaterThan(0.05);
+  });
+
+  it('an off-key inaccuracy the 3 s pair still reads as inaccuracy stays inaccuracy (quick 261008-ob1)', async () => {
+    stubWorker(() => underReadPlayedWorker(FAST_PLAYED_CP));
+    await renderScreen(
+      makePuzzle({ key_move_uci: 'd2d4', puzzle_type: 'soft', runner_up_uci: null }),
+    );
+    fireEvent.click(screen.getByTestId('btn-train-guess-critical'));
+    await act(async () => {
+      fireEvent.click(screen.getByTestId('drop-e2e4'));
+    });
+    await waitFor(() => expect(screen.getByTestId('train-verdict-guess')).not.toBeNull());
+
+    expect(solvePuzzle).toHaveBeenCalledTimes(1);
+    const body = solvePuzzle.mock.calls[0]?.[1];
+    expect(body?.move_quality).toBe('inaccuracy');
+    expect(body?.recheck).toMatchObject({ v: 1, outcome: 'resolved' });
   });
 
   it('a stalled re-check falls back to the 1.5 s grade and posts no recheck (D-20)', async () => {

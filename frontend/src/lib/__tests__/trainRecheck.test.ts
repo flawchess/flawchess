@@ -27,10 +27,30 @@ describe('shouldRecheck (D-10, D-19)', () => {
     ['null key', { keyUci: null }],
     ['played == key', { playedUci: 'd2d4' }],
     ['played == runner-up', { playedUci: 'c2c4' }],
-    ['inaccuracy', { tier: 'inaccuracy' as const }],
     ['wrong', { tier: 'wrong' as const }],
   ])('never fires for %s', (_label, override) => {
     expect(shouldRecheck({ ...BASE, ...override })).toBe(false);
+  });
+});
+
+describe('shouldRecheck: inaccuracy rescue (quick 261008-ob1)', () => {
+  const INACCURACY: ShouldRecheckInput = { ...BASE, tier: 'inaccuracy' };
+
+  it.each([
+    ['sharp', { puzzleType: 'sharp' as const }],
+    ['soft', { puzzleType: 'soft' as const, runnerUpUci: null }],
+    ['herring', { puzzleType: 'herring' as const, runnerUpUci: null }],
+  ])('fires for an off-key inaccuracy on a %s puzzle', (_label, override) => {
+    expect(shouldRecheck({ ...INACCURACY, ...override })).toBe(true);
+  });
+
+  it.each([
+    ['null key', { keyUci: null }],
+    ['played == key', { playedUci: 'd2d4' }],
+    ['played == runner-up', { playedUci: 'c2c4' }],
+    ['wrong on a soft puzzle', { puzzleType: 'soft' as const, tier: 'wrong' as const }],
+  ])('never fires for %s', (_label, override) => {
+    expect(shouldRecheck({ ...INACCURACY, ...override })).toBe(false);
   });
 });
 
