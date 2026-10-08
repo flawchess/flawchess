@@ -36,7 +36,7 @@ import type {
   TrainLeaderboardResponse,
   UnclaimedMedalsResponse,
   MedalKey,
-  ReviewTelemetry,
+  ReviewRequest,
 } from '@/types/train';
 import type { OnboardingStep } from '@/hooks/useTrainOnboarding';
 import type {
@@ -341,8 +341,9 @@ export const trainApi = {
  * so with Bearer auth it would 401. Not `apiClient`: its 401 interceptor
  * redirects to /login and clears the query cache, wrong during an unload or in
  * a background tab. The URL is relative, so the token only ever goes same-origin.
+ * The body may carry the Phase 236 D-12 late `phone_grade` record.
  */
-export function postReviewKeepalive(sessionId: number, position: number, body: ReviewTelemetry): void {
+export function postReviewKeepalive(sessionId: number, position: number, body: ReviewRequest): void {
   const token = localStorage.getItem(AUTH_TOKEN_STORAGE_KEY);
   if (token === null) return;
   fetch(`${API_BASE_URL}/train/sessions/${sessionId}/solves/${position}/review`, {

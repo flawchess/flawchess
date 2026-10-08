@@ -6,7 +6,9 @@
  * Since Phase 235 (SEED-192, D-05) `TrainPuzzle` carries the server answer key
  * (`key_move_uci`), the puzzle type and the sharp runner-up so the phone grades
  * against the key. They are read only to start grading and are never displayed
- * before the attempt. `last_move_uci` (190-02, SOLV-02) is the position's
+ * before the attempt. Since Phase 236 the pre-attempt payload also carries the
+ * server-graded set (`server_graded_moves`), read only after the move.
+ * `last_move_uci` (190-02, SOLV-02) is the position's
  * arrival, the prior half-move, never what to play next.
  */
 
@@ -33,6 +35,20 @@ export interface TrainPuzzle {
   puzzle_type?: TrainPuzzleType | null;
   /** Phase 235 (D-19): the sharp runner-up move, null for non-sharp puzzles; never displayed pre-attempt. */
   runner_up_uci?: string | null;
+  /**
+   * Phase 236 (D-03/D-08): the moves whose grade the server owns, read only
+   * AFTER the move (never displayed before the attempt). OPTIONAL because a
+   * stale server or an old reveal-cache entry omits it; the one consumer
+   * defaults with a single `?? []`. Empty for sharp fillers and the no-key
+   * path; includes the key for soft and herring puzzles.
+   */
+  server_graded_moves?: ServerGradedMove[];
+}
+
+/** Phase 236 (D-08): a move whose grade the server owns; read only after the move, never displayed pre-attempt (D-03 / Phase 235 D-05). */
+export interface ServerGradedMove {
+  uci: string;
+  tier: TrainMoveTier;
 }
 
 /**
@@ -116,6 +132,30 @@ export interface SolveRequest {
    * server credits nothing. A client claim only: the server re-validates it.
    */
   recheck?: SolveRecheck;
+  /**
+   * Phase 236 (D-01/D-13): the phone's 1.5 s grading reading, audit data only.
+   * Present for a keyed solve graded on the phone, including played == key;
+   * absent on the legacy no-key path, on a server-graded move's instant POST
+   * and when the after-key search never completed. Frozen with the payload so a
+   * retry resends it unchanged.
+   */
+  phone_grade?: PhoneGrade;
+}
+
+/**
+ * Mirrors app/schemas/train.py PhoneGrade (Phase 236 D-01). ES values are
+ * mover-POV expected scores in [0, 1] of the 1.5 s after-key and after-played
+ * searches; depths are the engine depths reported with them (0 when no exact
+ * line arrived). Audit data only, never a grading input (D-02). `v` is
+ * PHONE_GRADE_SCHEMA_VERSION in lib/trainPhoneGrade.ts.
+ */
+export interface PhoneGrade {
+  v: 1;
+  tier: TrainMoveTier;
+  key_es: number;
+  played_es: number;
+  key_depth: number;
+  played_depth: number;
 }
 
 /** How a completed re-check ended (D-13): the 3 s reading still rates the played move good, or not. */
@@ -189,6 +229,17 @@ export interface ReviewTelemetry {
   review_explored?: boolean;
   review_analyze_opened?: boolean;
   review_walkthrough?: boolean;
+}
+
+/**
+ * Body of POST /train/sessions/{session_id}/solves/{position}/review. Mirrors
+ * app/schemas/train.py ReviewRequest (Phase 236 D-12): the Phase 233 telemetry
+ * keys plus the optional late 1.5 s phone reading of a server-graded move,
+ * present only once the background search settled. The server writes it once
+ * and never merges it into telemetry.
+ */
+export interface ReviewRequest extends ReviewTelemetry {
+  phone_grade?: PhoneGrade;
 }
 
 /**

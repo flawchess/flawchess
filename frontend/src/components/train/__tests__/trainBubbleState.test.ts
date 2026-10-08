@@ -1,8 +1,8 @@
 /**
  * trainBubbleState.test.ts — Phase 222 Plan 01 Task 2 (D-07).
  *
- * Asserts the six-way precedence chain resolveBubbleState implements:
- * verdict > grading > move > intro > drop-nudge > prompt. Pure-module test
+ * Asserts the seven-way precedence chain resolveBubbleState implements:
+ * verdict > grading > submitting > move > intro > drop-nudge > prompt. Pure-module test
  * template (mirrors trainScore.test.ts).
  */
 import { describe, expect, it } from 'vitest';
@@ -13,6 +13,7 @@ const BASE: ResolveBubbleStateInput = {
   hasVerdict: false,
   isGrading: false,
   isRechecking: false,
+  isSubmitting: false,
   guessMade: false,
   introStep: null,
   nudgeActive: false,
@@ -53,6 +54,29 @@ describe('resolveBubbleState', () => {
     ).toEqual({ kind: 'verdict' });
   });
 
+  // Phase 236 (D-16): the instant solve POST round trip.
+  it('submitting state while the instant solve POST is in flight (D-16)', () => {
+    expect(resolveBubbleState({ ...BASE, guessMade: true, isSubmitting: true })).toEqual({
+      kind: 'submitting',
+    });
+  });
+
+  it('a verdict beats submitting, and grading beats submitting', () => {
+    expect(resolveBubbleState({ ...BASE, hasVerdict: true, isSubmitting: true })).toEqual({
+      kind: 'verdict',
+    });
+    expect(resolveBubbleState({ ...BASE, isGrading: true, isSubmitting: true })).toEqual({
+      kind: 'grading',
+      recheck: false,
+    });
+  });
+
+  it('submitting beats move, intro, drop-nudge', () => {
+    expect(
+      resolveBubbleState({ ...BASE, isSubmitting: true, guessMade: true, introStep: 2, nudgeActive: true }),
+    ).toEqual({ kind: 'submitting' });
+  });
+
   it('verdict state when hasVerdict is true', () => {
     expect(resolveBubbleState({ ...BASE, hasVerdict: true })).toEqual({ kind: 'verdict' });
   });
@@ -64,6 +88,7 @@ describe('resolveBubbleState', () => {
           hasVerdict: true,
           isGrading: true,
           isRechecking: false,
+          isSubmitting: false,
           guessMade: true,
           introStep: 2,
           nudgeActive: true,
@@ -77,6 +102,7 @@ describe('resolveBubbleState', () => {
           hasVerdict: false,
           isGrading: true,
           isRechecking: false,
+          isSubmitting: false,
           guessMade: true,
           introStep: 2,
           nudgeActive: true,
@@ -90,6 +116,7 @@ describe('resolveBubbleState', () => {
           hasVerdict: false,
           isGrading: false,
           isRechecking: false,
+          isSubmitting: false,
           guessMade: true,
           introStep: 2,
           nudgeActive: true,
@@ -103,6 +130,7 @@ describe('resolveBubbleState', () => {
           hasVerdict: false,
           isGrading: false,
           isRechecking: false,
+          isSubmitting: false,
           guessMade: false,
           introStep: 0,
           nudgeActive: true,
@@ -116,6 +144,7 @@ describe('resolveBubbleState', () => {
           hasVerdict: false,
           isGrading: false,
           isRechecking: false,
+          isSubmitting: false,
           guessMade: false,
           introStep: null,
           nudgeActive: true,

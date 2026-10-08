@@ -9,6 +9,7 @@ const BASE: ShouldRecheckInput = {
   runnerUpUci: 'c2c4',
   playedUci: 'e2e4',
   tier: 'good',
+  serverGradedUcis: [],
 };
 
 describe('shouldRecheck (D-10, D-19)', () => {
@@ -27,10 +28,46 @@ describe('shouldRecheck (D-10, D-19)', () => {
     ['null key', { keyUci: null }],
     ['played == key', { playedUci: 'd2d4' }],
     ['played == runner-up', { playedUci: 'c2c4' }],
-    ['inaccuracy', { tier: 'inaccuracy' as const }],
     ['wrong', { tier: 'wrong' as const }],
   ])('never fires for %s', (_label, override) => {
     expect(shouldRecheck({ ...BASE, ...override })).toBe(false);
+  });
+});
+
+describe('shouldRecheck: inaccuracy rescue (quick 261008-ob1)', () => {
+  const INACCURACY: ShouldRecheckInput = { ...BASE, tier: 'inaccuracy' };
+
+  it.each([
+    ['sharp', { puzzleType: 'sharp' as const }],
+    ['soft', { puzzleType: 'soft' as const, runnerUpUci: null }],
+    ['herring', { puzzleType: 'herring' as const, runnerUpUci: null }],
+  ])('fires for an off-key inaccuracy on a %s puzzle', (_label, override) => {
+    expect(shouldRecheck({ ...INACCURACY, ...override })).toBe(true);
+  });
+
+  it.each([
+    ['null key', { keyUci: null }],
+    ['played == key', { playedUci: 'd2d4' }],
+    ['played == runner-up', { playedUci: 'c2c4' }],
+    ['wrong on a soft puzzle', { puzzleType: 'soft' as const, tier: 'wrong' as const }],
+  ])('never fires for %s', (_label, override) => {
+    expect(shouldRecheck({ ...INACCURACY, ...override })).toBe(false);
+  });
+});
+
+describe('shouldRecheck: server-graded moves are never re-checked (Phase 236 D-11)', () => {
+  it.each([
+    ['inaccuracy on a soft puzzle', { puzzleType: 'soft' as const, tier: 'inaccuracy' as const }],
+    ['sharp + good', { puzzleType: 'sharp' as const, tier: 'good' as const }],
+    ['sharp + inaccuracy', { puzzleType: 'sharp' as const, tier: 'inaccuracy' as const }],
+  ])('returns false for a played move in the server-graded set: %s', (_label, override) => {
+    expect(
+      shouldRecheck({ ...BASE, ...override, serverGradedUcis: ['d2d4', 'e2e4'] }),
+    ).toBe(false);
+  });
+
+  it('still fires when the played move is not in the server-graded set', () => {
+    expect(shouldRecheck({ ...BASE, serverGradedUcis: ['d2d4', 'g1f3'] })).toBe(true);
   });
 });
 

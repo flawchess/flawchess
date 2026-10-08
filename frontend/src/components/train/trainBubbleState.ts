@@ -8,14 +8,16 @@
  * bubble swaps copy to the move prompt -> while grading "Checking your
  * move…" (or, while the Phase 235 disagreement re-check runs, "Taking a
  * closer look…": the same `grading` state with `recheck: true`) -> the
- * outcome bot's verdict row replaces it when the reveal opens. No layout jump, no vanishing bot. Extracting this resolution OUT of
+ * outcome bot's verdict row replaces it when the reveal opens. Phase 236: on the
+ * instant (server-graded) path the solve POST round trip shows `submitting`, a
+ * copy-less spinner, instead of any grading copy (D-16). No layout jump, no vanishing bot. Extracting this resolution OUT of
  * `TrainSolveScreen` (rather than inlining five sibling JSX guard blocks) is
  * the mechanism that LOWERS the component's own cyclomatic complexity while
  * adding the intro/nudge states — see 222-01-PLAN.md task 1, RESEARCH
  * Finding B / Pattern 2.
  *
- * Precedence (highest first): verdict > grading > move > intro > drop-nudge
- * > prompt. Only `prompt`, `move` and `grading` are reachable from
+ * Precedence (highest first): verdict > grading > submitting > move > intro
+ * > drop-nudge > prompt. Only `prompt`, `move` and `grading` are reachable from
  * `TrainSolveScreen` after plan 01 — `intro` and `drop-nudge` are wired in
  * plan 04 (their inputs default to `introStep: null` / `nudgeActive: false`
  * until then, which structurally can never win the precedence chain).
@@ -27,6 +29,7 @@ import type { IntroStep } from '@/lib/trainBotCopy';
 export type TrainBubbleState =
   | { kind: 'verdict' }
   | { kind: 'grading'; recheck: boolean }
+  | { kind: 'submitting' }
   | { kind: 'move' }
   | { kind: 'intro'; step: IntroStep }
   | { kind: 'drop-nudge' }
@@ -42,6 +45,10 @@ export interface ResolveBubbleStateInput {
   /** True while the Phase 235 (D-10) disagreement re-check runs; only ever true
    * while `isGrading`. Selects the "Taking a closer look…" copy (D-12). */
   isRechecking: boolean;
+  /** Phase 236 (D-16): true while the instant solve POST is in flight. No grading
+   * copy; the bubble shows a copy-less spinner. Never set together with
+   * `isGrading` (the instant path does not grade before the POST). */
+  isSubmitting: boolean;
   /** True once the guess has been committed (`guess !== null`). */
   guessMade: boolean;
   /** The active first-session intro-stepper step, or `null` when the intro
@@ -60,6 +67,7 @@ export interface ResolveBubbleStateInput {
 export function resolveBubbleState(input: ResolveBubbleStateInput): TrainBubbleState {
   if (input.hasVerdict) return { kind: 'verdict' };
   if (input.isGrading) return { kind: 'grading', recheck: input.isRechecking };
+  if (input.isSubmitting) return { kind: 'submitting' };
   if (input.guessMade) return { kind: 'move' };
   if (input.introStep !== null) return { kind: 'intro', step: input.introStep };
   if (input.nudgeActive) return { kind: 'drop-nudge' };

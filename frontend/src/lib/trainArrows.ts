@@ -5,9 +5,8 @@
  *
  * Color language (190.1 UAT, recolored per Phase 200 D-04/D-05): BLUE always
  * marks the engine's best move (the app-wide "engine pointer" hue), the
- * user's PLAYED move is colored by its own move quality (good/mistake/
- * blunder — inaccuracy is PRESENTATION-collapsed into good, see
- * `toDisplayQuality`), alternative fine moves — the SERVER's vetted "Also
+ * user's PLAYED move is colored by its own move quality (good/inaccuracy/
+ * mistake/blunder), alternative fine moves — the SERVER's vetted "Also
  * fine" list as of Phase 211 (D-01), no longer the client engine's MultiPV
  * ranks — are dark green regardless of whether the server classified them
  * best, good or inaccuracy (a 'best'-quality alternative keeps its blue
@@ -15,13 +14,14 @@
  * information), and the thin white on-top arrow still marks the move
  * played in the original game.
  * Every arrow additionally gets the matching move-quality badge (the shared
- * SquareMarker corner glyphs) on its target square. Accepted cost: the
- * reveal board can no longer visually distinguish good from inaccuracy — by
- * design (D-04: a played inaccuracy must not contradict SOLV-03's verdict
- * that it was a correct answer). The line eval badge is still the
- * disclosure channel for the small drop; `classifyTrainMoveQuality`/
- * `classifyLiveSeverity` are untouched, so the underlying classification and
- * the verdict/eval numbers still know the difference.
+ * SquareMarker corner glyphs) on its target square.
+ *
+ * Quick 261008-opg reverses Phase 200 D-04/D-05, which drew a played
+ * inaccuracy as good so the board would not contradict a verdict that called
+ * it correct. Since tiered scoring (SEED-119) an inaccuracy earns 1 move point,
+ * not 2, and the verdict says "decent move [+1]", so the green collapse itself
+ * became the contradiction. Only the server-vetted "Also fine" alternatives
+ * still render inaccuracy as good: they are listed as acceptable moves.
  *
  * Extracted into its own module (rather than inlined in TrainSolveScreen) so
  * the puzzle-type-aware arrow selection is unit-testable without rendering a
@@ -36,7 +36,9 @@ import {
   MOVE_HIGHLIGHT_BLUNDER,
   MOVE_HIGHLIGHT_GOOD,
   MOVE_HIGHLIGHT_MISTAKE,
+  MOVE_HIGHLIGHT_SQUARE,
   MOVE_QUALITY_GOOD,
+  MOVE_QUALITY_INACCURACY,
   MOVE_QUALITY_MISTAKE,
   MOVE_QUALITY_BLUNDER,
   NEXT_MOVE_ARROW,
@@ -62,8 +64,8 @@ export type TrainMoveQuality = 'best' | 'good' | FlawSeverity;
  * good-band ladder — no longer derived from the client engine's MultiPV mount
  * search. 'good' (drop not even an inaccuracy) and 'inaccuracy' (drop within
  * [INACCURACY_DROP, MISTAKE_DROP), still a correct move by SOLV-03's rule)
- * are retained because the wire shape mirrors them and Phase 200 D-05 already
- * renders them identically. D-01 amendment (2026-08-16): 'best' marks the
+ * are retained because the wire shape mirrors them; the reveal renders both
+ * as good (see `buildTrainRevealOverlay`). D-01 amendment (2026-08-16): 'best' marks the
  * deep best move itself, served FIRST on a soft puzzle — usually filtered out
  * below (it coincides with the client's best arrow), but displayable when the
  * two engines disagree, which is exactly the case that used to strand the
@@ -165,9 +167,7 @@ export const TRAIN_GAME_MOVE_ARROW_WIDTH = 0.18;
 const QUALITY_ARROW_COLOR: Record<TrainMoveQuality, string> = {
   best: TRAIN_BEST_MOVE_ARROW,
   good: MOVE_QUALITY_GOOD,
-  // Phase 200 D-05: inaccuracy is presentation-collapsed into good — same
-  // fill as the 'good' entry, never its own yellow.
-  inaccuracy: MOVE_QUALITY_GOOD,
+  inaccuracy: MOVE_QUALITY_INACCURACY,
   mistake: MOVE_QUALITY_MISTAKE,
   blunder: MOVE_QUALITY_BLUNDER,
 };
@@ -180,9 +180,7 @@ const QUALITY_ARROW_COLOR: Record<TrainMoveQuality, string> = {
 export const TRAIN_STEP_HIGHLIGHT: Record<TrainMoveQuality, string> = {
   best: MOVE_HIGHLIGHT_BEST,
   good: MOVE_HIGHLIGHT_GOOD,
-  // Phase 200 D-05: inaccuracy is presentation-collapsed into good — same
-  // highlight as the 'good' entry, never the shared yellow.
-  inaccuracy: MOVE_HIGHLIGHT_GOOD,
+  inaccuracy: MOVE_HIGHLIGHT_SQUARE,
   mistake: MOVE_HIGHLIGHT_MISTAKE,
   blunder: MOVE_HIGHLIGHT_BLUNDER,
 };
@@ -312,22 +310,6 @@ export function classifyTrainMoveQuality(
   return classifyLiveSeverity(esBefore, esMove) ?? 'good';
 }
 
-/**
- * Phase 200 (LEGEND-03/D-04/D-05) — PRESENTATION-ONLY collapse of the
- * inaccuracy tier into good, for every drawing decision on the Train reveal
- * surface (arrow fill, badge glyph, step highlight, and the CardHeader
- * quality icon in `TrainReveal.tsx`). `classifyTrainMoveQuality` above and
- * `classifyLiveSeverity` it delegates to are UNTOUCHED by this function — the
- * verdict, the `move_quality` POSTed to `solvePuzzle`, and the line eval all
- * still know an inaccuracy from a clean good move. This is the single rule
- * every recolor site in this module (and TrainReveal's header) reads through,
- * so the collapse can never drift out of sync between the board and the
- * glyph next to it.
- */
-export function toDisplayQuality(quality: TrainMoveQuality): TrainMoveQuality {
-  return quality === 'inaccuracy' ? 'good' : quality;
-}
-
 /** Phase 211 (D-01): branches on ALL THREE puzzle types explicitly — the old
  * two-way sharp/non-sharp shape is exactly what would silently cap a herring
  * at the soft budget now that the two budgets differ (RESEARCH Pitfall 6). */
@@ -352,8 +334,7 @@ function squaresFromUci(uci: string | null): { startSquare: string; endSquare: s
 /**
  * Phase 200 UAT: the SquareMarker corner badge for one move quality, exported
  * so the free-play board (`useTrainFreePlay`) badges a freely played move with
- * exactly the glyph the reveal board would use for the same quality — the
- * inaccuracy-collapse rule included.
+ * exactly the glyph the reveal board would use for the same quality.
  */
 export function trainQualityMarker(square: string, quality: TrainMoveQuality): SquareMarker {
   return markerForQuality(square, quality);
@@ -362,10 +343,9 @@ export function trainQualityMarker(square: string, quality: TrainMoveQuality): S
 /** The SquareMarker corner badge for a quality — the same glyph set the
  * analysis board uses (green star / thumbs-up / severity NAG glyphs). */
 function markerForQuality(square: string, quality: TrainMoveQuality): SquareMarker {
-  const displayQuality = toDisplayQuality(quality);
-  if (displayQuality === 'best') return { square, best: true };
-  if (displayQuality === 'good') return { square, good: true };
-  return { square, severity: displayQuality };
+  if (quality === 'best') return { square, best: true };
+  if (quality === 'good') return { square, good: true };
+  return { square, severity: quality };
 }
 
 /**
@@ -373,11 +353,10 @@ function markerForQuality(square: string, quality: TrainMoveQuality): SquareMark
  * Phase 200 D-04/D-05):
  * - a BLUE best-move arrow (the engine's top move) with a 'best' badge
  * - up to `alternativeArrowCap` additional fine-move arrows (soft/herring
- *   only — sharp draws none), always dark green with the 'good' badge — good
- *   and inaccuracy are indistinguishable here by design (D-05)
- * - the user's played-move arrow colored by its own quality (inaccuracy
- *   collapsed to the good color/badge, per D-04), with the matching quality
- *   badge — merged into the blue arrow when the played move IS the best move
+ *   only — sharp draws none), always dark green with the 'good' badge, an
+ *   inaccuracy-quality alternative included (it is listed as acceptable)
+ * - the user's played-move arrow colored by its own quality (inaccuracy is
+ *   yellow since quick 261008-opg), with the matching quality badge — merged into the blue arrow when the played move IS the best move
  * - a thin white game-move arrow (drawn on top) for the move played in the
  *   game, with its quality badge once known (`quality: null` = no badge yet)
  *
@@ -427,7 +406,11 @@ export function buildTrainRevealOverlay(
   // arrow draw order.
   if (playedMove !== null) pushMarker(playedMove.uci, playedMove.quality);
   if (bestMoveUci !== null) pushMarker(bestMoveUci, 'best');
-  for (const fine of alternatives) pushMarker(fine.uci, fine.quality);
+  // "Also fine" alternatives keep the good badge even at inaccuracy quality,
+  // matching their always-green arrow below.
+  for (const fine of alternatives) {
+    pushMarker(fine.uci, fine.quality === 'inaccuracy' ? 'good' : fine.quality);
+  }
   if (gameMove !== null) pushMarker(gameMove.uci, gameMove.quality);
 
   // Played-move arrow, colored by its quality — unless it IS the best move,
@@ -455,8 +438,8 @@ export function buildTrainRevealOverlay(
     });
   }
 
-  // Alternative fine moves (soft/herring rank 2+): always dark green (Phase
-  // 200 D-05 — good and inaccuracy render identically now). Moves already
+  // Alternative fine moves (soft/herring rank 2+): always dark green, an
+  // inaccuracy-quality alternative included. Moves already
   // drawn as the best or played arrow were filtered out when `alternatives`
   // was built. Every pushed arrow gets a matching `alsoFineMoves` entry in
   // the SAME iteration (Phase 200 LEGEND-04/D-03), so the sidebar row and the

@@ -6,7 +6,6 @@ import {
   buildTrainStepArrows,
   buildTrainStepMarkers,
   classifyTrainMoveQuality,
-  toDisplayQuality,
   trainGlyphColor,
   vettedMoveForSquares,
   TRAIN_BEST_MOVE_ARROW_WIDTH,
@@ -20,8 +19,10 @@ import { DARK_GREEN } from '@/lib/arrowColor';
 import {
   MOVE_HIGHLIGHT_BEST,
   MOVE_HIGHLIGHT_GOOD,
+  MOVE_HIGHLIGHT_SQUARE,
   MOVE_QUALITY_BLUNDER,
   MOVE_QUALITY_GOOD,
+  MOVE_QUALITY_INACCURACY,
   MOVE_QUALITY_MISTAKE,
   NEXT_MOVE_ARROW,
   STOCKFISH_SECONDARY_LINE,
@@ -342,7 +343,7 @@ describe('buildTrainRevealOverlay', () => {
     expect(overlay.markers).toEqual([]);
   });
 
-  it('badges dedupe by target square with the played move winning (played and best land on the same square from different origins); the played inaccuracy renders as good (D-04/D-05)', () => {
+  it('badges dedupe by target square with the played move winning (played and best land on the same square from different origins); the played inaccuracy keeps its own severity badge (quick 261008-opg)', () => {
     const overlay = buildTrainRevealOverlay(
       'sharp',
       good('e2e4'),
@@ -352,7 +353,23 @@ describe('buildTrainRevealOverlay', () => {
       true,
     );
     const e4Markers = overlay.markers.filter((m) => m.square === 'e4');
-    expect(e4Markers).toEqual([{ square: 'e4', good: true }]);
+    expect(e4Markers).toEqual([{ square: 'e4', severity: 'inaccuracy' }]);
+  });
+
+  it('a played inaccuracy draws the inaccuracy-yellow arrow, not the good green (quick 261008-opg)', () => {
+    const overlay = buildTrainRevealOverlay(
+      'sharp',
+      good('e2e4'),
+      'e2e4',
+      { uci: 'd2d4', quality: 'inaccuracy' },
+      null,
+      true,
+    );
+    const played = overlay.arrows.find((a) => a.layerKey === 'played');
+    expect(played?.color).toBe(MOVE_QUALITY_INACCURACY);
+    expect(trainGlyphColor({ includesBest: false, includesYour: true, quality: 'inaccuracy' })).toBe(
+      MOVE_QUALITY_INACCURACY,
+    );
   });
 
   it('a coincident from-to pair across played, best and game moves keeps distinct layerKeys so concentric arrows survive dedupe', () => {
@@ -432,28 +449,6 @@ describe('classifyTrainMoveQuality', () => {
 
   it('a large drop classifies as blunder', () => {
     expect(classifyTrainMoveQuality(0.9, 0.1, false)).toBe('blunder');
-  });
-});
-
-describe('toDisplayQuality (Phase 200 LEGEND-03/D-05)', () => {
-  it('collapses inaccuracy into good', () => {
-    expect(toDisplayQuality('inaccuracy')).toBe('good');
-  });
-
-  it('is the identity for best', () => {
-    expect(toDisplayQuality('best')).toBe('best');
-  });
-
-  it('is the identity for good', () => {
-    expect(toDisplayQuality('good')).toBe('good');
-  });
-
-  it('is the identity for mistake', () => {
-    expect(toDisplayQuality('mistake')).toBe('mistake');
-  });
-
-  it('is the identity for blunder', () => {
-    expect(toDisplayQuality('blunder')).toBe('blunder');
   });
 });
 
@@ -543,10 +538,11 @@ describe('buildTrainStepMarkers (190.1 UAT round 4)', () => {
   });
 });
 
-describe('TRAIN_STEP_HIGHLIGHT (190.1 UAT stepping / Phase 200 D-05)', () => {
-  it('maps best to the engine-blue highlight and inaccuracy to the SAME highlight as good (collapse)', () => {
+describe('TRAIN_STEP_HIGHLIGHT (190.1 UAT stepping)', () => {
+  it('maps best to the engine-blue highlight and inaccuracy to the shared yellow, not good (quick 261008-opg)', () => {
     expect(TRAIN_STEP_HIGHLIGHT.best).toBe(MOVE_HIGHLIGHT_BEST);
-    expect(TRAIN_STEP_HIGHLIGHT.inaccuracy).toBe(MOVE_HIGHLIGHT_GOOD);
+    expect(TRAIN_STEP_HIGHLIGHT.inaccuracy).toBe(MOVE_HIGHLIGHT_SQUARE);
+    expect(TRAIN_STEP_HIGHLIGHT.inaccuracy).not.toBe(MOVE_HIGHLIGHT_GOOD);
   });
 
   it('mistake and blunder keep their own distinct highlight values — never collapsed', () => {

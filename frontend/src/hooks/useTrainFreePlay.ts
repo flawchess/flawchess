@@ -43,7 +43,6 @@ import type { PvLine } from '@/hooks/uciParser';
 import { evalToExpectedScore, sideToMoveFromFen, terminalPositionEval } from '@/lib/liveFlaw';
 import {
   classifyTrainMoveQuality,
-  toDisplayQuality,
   trainQualityMarker,
   vettedMoveForSquares,
   TRAIN_STEP_HIGHLIGHT,
@@ -202,13 +201,12 @@ function fenToPly(fen: string): number {
 
 /**
  * The `VariationTree` marker entry for one graded move. Maps the Train quality
- * taxonomy onto the move list's icon slots through `toDisplayQuality`, so an
- * inaccuracy reads exactly as it does on the reveal board (collapsed into
- * good) rather than contradicting it. Never sets `gem`/`great` — no Maia runs
- * in the Train loop (Phase 200 UAT).
+ * taxonomy onto the move list's icon slots, so a move reads exactly as it does
+ * on the reveal board (an inaccuracy shows its own glyph since quick
+ * 261008-opg). Never sets `gem`/`great` — no Maia runs in the Train loop
+ * (Phase 200 UAT).
  */
 function markerEntryForQuality(quality: TrainMoveQuality): FlawMarkerEntry {
-  const display = toDisplayQuality(quality);
   const base: FlawMarkerEntry = {
     missedMotif: null,
     allowedMotif: null,
@@ -216,9 +214,9 @@ function markerEntryForQuality(quality: TrainMoveQuality): FlawMarkerEntry {
     allowedDepth: null,
     ply: 0,
   };
-  if (display === 'best') return { ...base, best: true };
-  if (display === 'good') return { ...base, good: true };
-  return { ...base, severity: display };
+  if (quality === 'best') return { ...base, best: true };
+  if (quality === 'good') return { ...base, good: true };
+  return { ...base, severity: quality };
 }
 
 /** Insert into a FEN-keyed cache under the shared FIFO bound (Map preserves
@@ -406,7 +404,7 @@ export function useTrainFreePlay({
     [currentNode, shownQuality],
   );
   const lastMoveColor =
-    shownQuality !== null ? TRAIN_STEP_HIGHLIGHT[toDisplayQuality(shownQuality)] : undefined;
+    shownQuality !== null ? TRAIN_STEP_HIGHLIGHT[shownQuality] : undefined;
 
   // ── Commands ──────────────────────────────────────────────────────────────
   const start = useCallback(

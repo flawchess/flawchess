@@ -32,7 +32,7 @@
  */
 
 import { useEffect, useRef, useState } from 'react';
-import type { MouseEvent, ReactElement } from 'react';
+import type { HTMLAttributes, MouseEvent, ReactElement } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Chess } from 'chess.js';
 import { Loader2, Search, X } from 'lucide-react';
@@ -62,7 +62,7 @@ import { useEngineDisplaySettings } from '@/lib/engineSettings';
 import { DARK_GREEN } from '@/lib/arrowColor';
 import { buildGameAnalysisUrl } from '@/lib/analysisUrl';
 import { BEST_MOVE_ARROW, TRAIN_VERDICT_CORRECT, TRAIN_VERDICT_INCORRECT } from '@/lib/theme';
-import { toDisplayQuality, trainGlyphColor } from '@/lib/trainArrows';
+import { trainGlyphColor } from '@/lib/trainArrows';
 import type { TrainFineMove, TrainMoveQuality } from '@/lib/trainArrows';
 import { GUESS_POINTS, MOVE_TIER_POINTS } from '@/lib/trainScore';
 import { GUESS_CALL_LABELS, guessFeedbackProse } from '@/lib/trainGuessLabels';
@@ -71,6 +71,7 @@ import type { CardEngageKind } from '@/lib/trainTelemetry';
 import { cn, formatDateWithYear } from '@/lib/utils';
 import { formatTimeControl } from '@/lib/formatTimeControl';
 import type { GradeResult, TrainEngineLine, TrainGradingEngine } from '@/hooks/useTrainGradingEngine';
+import type { InstantGradeState } from '@/hooks/trainGradingSupport';
 import type { TrainFreePlayState } from '@/hooks/useTrainFreePlay';
 import type { PuzzleRevealResponse, SolveResponse, TrainPuzzle } from '@/types/train';
 
@@ -203,10 +204,10 @@ function lineSanTokens(startFen: string, moves: string[]): string[] {
  * both role labels, never two boxes repeating the same move).
  *
  * `line === null` means "defer to the game-move search's own idle/loading/
- * ready/error state machine" — the only role that can ever be in that state
- * is a STANDALONE 'game' box (`roles` is exactly `['game']`), since 'your'/
- * 'best' are only ever added to `roles` when `gradeResult` already supplies
- * their line synchronously.
+ * ready/error state machine" (a STANDALONE 'game' box, `roles` exactly
+ * `['game']`) or, when `pending` is set, "the Phase 236 instant path has not
+ * produced this line yet". Outside the instant path 'your'/'best' are only
+ * added to `roles` when `gradeResult` already supplies their line.
  */
 interface LineBox {
   roles: RoleKey[];
@@ -218,6 +219,11 @@ interface LineBox {
   uci: string;
   title: string;
   line: TrainEngineLine | null;
+  /** Phase 236 D-14/D-15: set only for a your/best box whose line is not known
+   * yet on the instant path ('loading' while the background search runs,
+   * 'failed' once it gave up). Null for a ready box and for the standalone
+   * game box. */
+  pending: 'loading' | 'failed' | null;
   /** Quality of the box's (shared) first move, for the header icon and the
    * step highlight (190.1 UAT): 'best' whenever the best move is in the box,
    * else the played move's own quality, else the game move's searched
@@ -257,6 +263,19 @@ export interface TrainRevealStep {
 }
 
 /**
+ * Phase 236: the best-move UCI the reveal shows. The graded result's key line
+ * once the phone grade has landed, else the key the instant path carries while
+ * it is pending; null when neither exists. Primitive, so effect deps built on
+ * it do not re-fire when the grade object replaces the pending state.
+ */
+function revealBestUciOf(
+  gradeResult: GradeResult | null,
+  instantGrade: InstantGradeState | null,
+): string | null {
+  return gradeResult?.bestLine.moves[0] ?? instantGrade?.keyUci ?? null;
+}
+
+/**
  * Groups the up-to-three role lines by coincident first-move UCI (190.1-03
  * D-03). Merge-precedence rule for which line's data is DISPLAYED (distinct
  * from testid precedence, which is always your > best > game): 'best'
@@ -269,15 +288,20 @@ function buildLineBoxes(
   puzzleFen: string,
   playedMoveUci: string | null,
   gradeResult: GradeResult | null,
+  instantGrade: InstantGradeState | null,
   gameMoveUci: string | null,
   playedMoveQuality: TrainMoveQuality | null,
   gameMoveQuality: TrainMoveQuality | null,
   movePoints: number,
 ): LineBox[] {
   const uciByRole: Partial<Record<RoleKey, string>> = {};
-  if (gradeResult !== null && playedMoveUci !== null) uciByRole.your = playedMoveUci;
-  const bestUci = gradeResult?.bestLine.moves[0];
-  if (bestUci !== undefined) uciByRole.best = bestUci;
+  // Phase 236: on the instant path the verdict lands before the phone grade, so
+  // the your/best roles exist from the server verdict and the key alone.
+  if ((gradeResult !== null || instantGrade !== null) && playedMoveUci !== null) {
+    uciByRole.your = playedMoveUci;
+  }
+  const bestUci = revealBestUciOf(gradeResult, instantGrade);
+  if (bestUci !== null) uciByRole.best = bestUci;
   if (gameMoveUci !== null) uciByRole.game = gameMoveUci;
 
   // 190.1 UAT round 5 (reverses round 3's best-leads-on-a-miss order): the
@@ -293,10 +317,18 @@ function buildLineBoxes(
     const roles = CANONICAL_ROLE_ORDER.filter((r) => uciByRole[r] === uci);
     roles.forEach((r) => consumed.add(r));
     const line = roles.includes('best')
-      ? (gradeResult?.bestLine ?? null)
+      ? (gradeResult?.bestLine ?? instantGrade?.keyLine ?? null)
       : roles.includes('your')
         ? (gradeResult?.playedLine ?? null)
         : null; // standalone 'game' box — caller supplies the search-derived line
+    // Phase 236: a your/best box with no line yet is waiting on the background
+    // search (or gave up), never the game-move search.
+    const pending: LineBox['pending'] =
+      line === null && instantGrade !== null && (roles.includes('your') || roles.includes('best'))
+        ? instantGrade.status === 'failed'
+          ? 'failed'
+          : 'loading'
+        : null;
     // testid precedence your > best > game — roles is already filtered from
     // CANONICAL_ROLE_ORDER, so roles[0] is the highest-precedence role here.
     const primaryRole = roles[0] ?? role;
@@ -312,11 +344,62 @@ function buildLineBoxes(
       uci,
       title: roles.map((r) => ROLE_LABELS[r]).join(' / ') + (san !== null ? `: ${san}` : ''),
       line,
+      pending,
       quality,
       movePoints: roles.includes('your') ? movePoints : null,
     });
   }
   return boxes;
+}
+
+/**
+ * Phase 236 (D-14/D-15): a your/best line card whose engine line is not known
+ * yet on the instant path. Same shell, header and spotlight handlers as a ready
+ * card. 'loading' shows the compact Loader2 + "Loading…" body; 'failed' is the
+ * header alone (the played move's SAN, no line, no eval, no error copy) and
+ * carries `data-line-status="failed"`.
+ */
+function PendingLineCard({
+  box,
+  glyphRole,
+  glyphColor,
+  isSpotlit,
+  className,
+  handlers,
+}: {
+  box: LineBox;
+  glyphRole: RoleKey;
+  glyphColor: string;
+  isSpotlit: boolean;
+  className: string;
+  handlers: HTMLAttributes<HTMLElement>;
+}): ReactElement {
+  const failed = box.pending === 'failed';
+  return (
+    <Card
+      data-testid={box.testid}
+      data-spotlight={isSpotlit ? 'true' : undefined}
+      data-line-status={failed ? 'failed' : undefined}
+      className={className}
+      {...handlers}
+    >
+      <LineBoxHeader
+        box={box}
+        glyphRole={glyphRole}
+        glyphColor={glyphColor}
+        quality={box.quality}
+        evalLabel={null}
+      />
+      {!failed && (
+        <CardBody className="p-3">
+          <div className="flex items-center gap-2" data-testid={`${box.testid}-loading`}>
+            <Loader2 className="size-4 animate-spin text-muted-foreground" aria-hidden="true" />
+            <p className="text-sm text-muted-foreground">Loading…</p>
+          </div>
+        </CardBody>
+      )}
+    </Card>
+  );
 }
 
 /**
@@ -368,11 +451,6 @@ function LineBoxHeader({
   quality: TrainMoveQuality | null;
   evalLabel: string | null;
 }): ReactElement {
-  // Phase 200 (LEGEND-03/D-04/D-05, the fifth recolor site): the CardHeader's
-  // quality icon must never show the inaccuracy severity glyph next to a
-  // green arrow — feed it the collapsed display quality, same rule the pure
-  // builder itself uses for the board.
-  const displayQuality = quality !== null ? toDisplayQuality(quality) : null;
   return (
     <CardHeader size="compact">
       {/* Phase 200 UAT: a plain, non-interactive glyph. It used to be a button
@@ -393,9 +471,9 @@ function LineBoxHeader({
         <TrainScoreChip points={box.movePoints} testid="train-line-stepper-points" />
       )}
       <span className="ml-auto flex shrink-0 items-center gap-1.5">
-        {displayQuality != null && (
-          <span data-testid="train-line-stepper-quality" data-quality={displayQuality}>
-            <MoveQualityIcon quality={displayQuality} className="h-4 w-4" />
+        {quality != null && (
+          <span data-testid="train-line-stepper-quality" data-quality={quality}>
+            <MoveQualityIcon quality={quality} className="h-4 w-4" />
           </span>
         )}
         {evalLabel != null && (
@@ -579,6 +657,13 @@ export interface TrainRevealProps {
   /** The `gradeMove` result for `playedMoveUci` — supplies the 'your' and
    * 'best' role lines/evals with no further engine search (190.1-03 D-01). */
   gradeResult: GradeResult | null;
+  /**
+   * Phase 236 (D-14/D-15): non-null while a server-graded move's background
+   * phone grade is outstanding. The Your-move card (and the Best-move card until
+   * the key line is known) renders a loading state, or a header-only card when
+   * the search failed. Null on the normal path and once the grade has landed.
+   */
+  instantGrade?: InstantGradeState | null;
   /** The played move's classified quality (190.1 UAT) — derived once by the
    * board owner (TrainSolveScreen) from `gradeResult`, threaded here for the
    * line-box header icons so the icon and the board badge can never drift. */
@@ -760,6 +845,7 @@ export function TrainReveal({
   guess,
   playedMoveUci,
   gradeResult,
+  instantGrade = null,
   playedMoveQuality = null,
   gameMoveQuality = null,
   onGameMoveUciChange,
@@ -873,6 +959,10 @@ export function TrainReveal({
   }, [gameMoveUci, onGameMoveUciChange]);
 
   const [gameMoveLine, setGameMoveLine] = useState<GameMoveLineState>({ status: 'idle' });
+  // RESEARCH Pitfall 5: a primitive dep, so the grade landing (the pending state
+  // replaced by a gradeResult with the same best UCI) does not re-dispatch the
+  // game search; plan 04 serializes it behind the background search.
+  const revealBestUci = revealBestUciOf(gradeResult, instantGrade);
   useEffect(() => {
     if (gameMoveUci === null) {
       setGameMoveLine({ status: 'idle' });
@@ -881,9 +971,7 @@ export function TrainReveal({
     // 190.1-03 D-03: when the game move coincides with the played move or the
     // engine's best move, the merged box uses that SURVIVING entry's line —
     // no reveal-time search is dispatched at all.
-    const coincidesWithYourOrBest =
-      gameMoveUci === playedMoveUci ||
-      (gradeResult !== null && gameMoveUci === gradeResult.bestLine.moves[0]);
+    const coincidesWithYourOrBest = gameMoveUci === playedMoveUci || gameMoveUci === revealBestUci;
     if (coincidesWithYourOrBest) {
       setGameMoveLine({ status: 'idle' });
       return;
@@ -906,7 +994,7 @@ export function TrainReveal({
       cancelled = true;
       onGameMoveLineChange?.(null);
     };
-  }, [gameMoveUci, puzzle.fen, startGameMoveSearch, playedMoveUci, gradeResult, onGameMoveLineChange]);
+  }, [gameMoveUci, puzzle.fen, startGameMoveSearch, playedMoveUci, revealBestUci, onGameMoveLineChange]);
 
   // D-08 tap-away-to-clear: a small listener scoped to the panel's own
   // lifetime — registered only while mobile AND something is spotlit,
@@ -937,6 +1025,7 @@ export function TrainReveal({
           puzzle.fen,
           playedMoveUci,
           gradeResult,
+          instantGrade,
           gameMoveUci,
           playedMoveQuality,
           gameMoveQuality,
@@ -1138,6 +1227,24 @@ export function TrainReveal({
     // Testid precedence mirrors ROLE_TESTIDS: roles[0] is always the
     // highest-precedence role present (your > best > game).
     const glyphRole = box.roles[0] ?? 'game';
+
+    if (box.pending !== null) {
+      return (
+        <PendingLineCard
+          key={box.testid}
+          box={box}
+          glyphRole={glyphRole}
+          glyphColor={trainGlyphColor({
+            includesBest: box.roles.includes('best'),
+            includesYour: box.roles.includes('your'),
+            quality: box.quality,
+          })}
+          isSpotlit={isSpotlit}
+          className={cardClass}
+          handlers={spotlightHandlers}
+        />
+      );
+    }
 
     return box.line !== null ? (
       <Card

@@ -26,7 +26,7 @@ import {
   type ReviewTelemetrySnapshot,
 } from '@/lib/trainTelemetry';
 import { applyVisibility, readStopwatch, startStopwatch, type VisibleStopwatch } from '@/lib/visibleStopwatch';
-import type { SolveTelemetry } from '@/types/train';
+import type { PhoneGrade, ReviewRequest, ReviewExit, SolveTelemetry } from '@/types/train';
 
 interface UseTrainPuzzleTelemetryOptions {
   sessionId: number | null;
@@ -59,6 +59,13 @@ interface TrainPuzzleTelemetry {
   onCardEngage: (key: string, kind: CardEngageKind) => void;
   /** The number of cards currently shown on the reveal (D-12); the hook keeps the maximum. */
   onCardsTotalChange: (total: number) => void;
+  /**
+   * Phase 236 D-12: the late 1.5 s phone reading of a server-graded move, once
+   * the background search settled. Stored only while `(sessionId, position)` is
+   * still the puzzle on screen; sent on the next Next or pagehide flush.
+   * Nothing is sent while the search is still running.
+   */
+  setLatePhoneGrade: (sessionId: number | null, position: number, record: PhoneGrade) => void;
 }
 
 /** The review stopwatch plus the row it belongs to (never read from later props). */
@@ -96,6 +103,8 @@ export function useTrainPuzzleTelemetry(options: UseTrainPuzzleTelemetryOptions)
   const guessMarkRef = useRef<number | null>(null);
   const frozenRef = useRef<SolveTelemetry | null>(null);
   const reviewRef = useRef<ReviewState | null>(null);
+  // Phase 236 D-12: the late phone_grade record for this puzzle, cleared with the other per-puzzle refs.
+  const latePhoneGradeRef = useRef<PhoneGrade | null>(null);
   // Engagement counters (D-14): cumulative totals for this puzzle's reveal.
   const countersRef = useRef<ReviewCounters>(emptyCounters());
   // The one pending desktop hover (D-11) and the card it is armed for.
@@ -129,6 +138,7 @@ export function useTrainPuzzleTelemetry(options: UseTrainPuzzleTelemetryOptions)
       guessMarkRef.current = null;
       frozenRef.current = null;
       reviewRef.current = null;
+      latePhoneGradeRef.current = null;
       nextFlushedRef.current = false;
       // The reset itself does not flush: per Train.tsx the key changes without an
       // unmount only through handleNext, which flushes Next first.
@@ -181,6 +191,16 @@ export function useTrainPuzzleTelemetry(options: UseTrainPuzzleTelemetryOptions)
     };
   }, []);
 
+  // The flush body for both review flushes: the cumulative telemetry plus the
+  // D-12 late phone_grade record when the background search has settled.
+  const buildReviewBody = useCallback(
+    (snapshot: ReviewTelemetrySnapshot, exit: ReviewExit): ReviewRequest => ({
+      ...buildReviewTelemetry(snapshot, countersRef.current, exit),
+      ...(latePhoneGradeRef.current !== null ? { phone_grade: latePhoneGradeRef.current } : {}),
+    }),
+    [],
+  );
+
   // The ONE funnel for every non-Next exit (page hidden, pagehide, unmount).
   // It NEVER sets the Next-flushed guard: the user can come back (tab visible
   // again, the Analyze return) and press Next, whose cumulative values must
@@ -197,14 +217,14 @@ export function useTrainPuzzleTelemetry(options: UseTrainPuzzleTelemetryOptions)
     // literally the pagehide event.
     const snapshot = takeReviewSnapshot();
     if (snapshot === undefined) return;
-    postReviewKeepalive(review.sessionId, review.position, buildReviewTelemetry(snapshot, countersRef.current, 'pagehide'));
+    postReviewKeepalive(review.sessionId, review.position, buildReviewBody(snapshot, 'pagehide'));
     // Mirror the SAME snapshot into a matching reveal-cache entry (update-only):
     // on a plain Analyze click this runs from the unmount microtask right after
     // handleAnalyzeClick saved the entry, so the entry ends up holding exactly
     // what the row received and the restored reveal's later flushes are never smaller.
     updateTrainRevealCacheReview(review.sessionId, review.position, snapshot);
     if (hidden) hiddenFlushedRef.current = true;
-  }, [takeReviewSnapshot]);
+  }, [takeReviewSnapshot, buildReviewBody]);
 
   useEffect(() => {
     aliveRef.current = true;
@@ -288,9 +308,9 @@ export function useTrainPuzzleTelemetry(options: UseTrainPuzzleTelemetryOptions)
     // after Next (e.g. the last puzzle navigating away) or a failed one was lost
     // for good, and the row kept exit='pagehide' (breaking the D-07 "next puzzle
     // shown" derivation). The keepalive transport outlives the page.
-    postReviewKeepalive(review.sessionId, review.position, buildReviewTelemetry(snapshot, countersRef.current, 'next'));
+    postReviewKeepalive(review.sessionId, review.position, buildReviewBody(snapshot, 'next'));
     nextFlushedRef.current = true;
-  }, [takeReviewSnapshot]);
+  }, [takeReviewSnapshot, buildReviewBody]);
 
   // D-14: the flag is set BEFORE the snapshot so the Analyze snapshot, and the
   // unmount flush that follows a plain Analyze click, both carry it.
@@ -348,6 +368,14 @@ export function useTrainPuzzleTelemetry(options: UseTrainPuzzleTelemetryOptions)
     countersRef.current = { ...countersRef.current, walkthrough: true };
   }, []);
 
+  // Pitfall 4: TrainSolveScreen is one instance across puzzles, so a reading
+  // that settles after the user moved on must not be attributed to the next
+  // puzzle: it is stored only when its (session, position) is the current key.
+  const setLatePhoneGrade = useCallback((recordSessionId: number | null, recordPosition: number, record: PhoneGrade): void => {
+    if (`${recordSessionId ?? 'none'}:${recordPosition}` !== keyRef.current) return;
+    latePhoneGradeRef.current = record;
+  }, []);
+
   return useMemo(
     () => ({
       markGuess,
@@ -360,6 +388,7 @@ export function useTrainPuzzleTelemetry(options: UseTrainPuzzleTelemetryOptions)
       markWalkthroughActive,
       onCardEngage,
       onCardsTotalChange,
+      setLatePhoneGrade,
     }),
     [
       markGuess,
@@ -372,6 +401,7 @@ export function useTrainPuzzleTelemetry(options: UseTrainPuzzleTelemetryOptions)
       markWalkthroughActive,
       onCardEngage,
       onCardsTotalChange,
+      setLatePhoneGrade,
     ],
   );
 }

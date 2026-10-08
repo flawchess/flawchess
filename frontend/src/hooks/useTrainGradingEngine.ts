@@ -66,6 +66,7 @@ import {
   terminalSearchResult,
 } from './trainGradingSupport';
 import type {
+  GradeMoveOptions,
   GradeResult,
   GradingAnchor,
   LastPlayedSearch,
@@ -216,8 +217,17 @@ export interface TrainGradingEngine {
    * has not yet settled. Rejects if grading does not complete within
    * `TRAIN_GRADING_TIMEOUT_MS` or the engine reports an error — callers
    * MUST catch this (never treated as "still loading" indefinitely).
+   * The result carries `phoneReading` (Phase 236): the 1.5 s key/played pair
+   * for the phone_grade record, null on the legacy anchor and the fallbacks.
+   * `options.onKeyLine` (Phase 236 D-14) fires once with the think-time
+   * after-key line as soon as the anchor has settled, before the played
+   * move's search result; keyed anchors only, never for the legacy root anchor.
    */
-  gradeMove: (fen: string, playedMoveUci: string) => Promise<GradeResult>;
+  gradeMove: (
+    fen: string,
+    playedMoveUci: string,
+    options?: GradeMoveOptions,
+  ) => Promise<GradeResult>;
   /**
    * Reveal-time search for the PLAYED IN GAME box (190.1-01, D-01 point 3):
    * derives the position after `gameMoveUci` (rejecting on an illegal/
@@ -225,6 +235,9 @@ export interface TrainGradingEngine {
    * `TrainEngineLine` rooted at `puzzleFen` — see that interface's doc
    * comment for the shared invariant. Reuses the SAME `generationRef` as
    * `startGrading`/`gradeMove` (no second cancellation authority).
+   * Phase 236: waits for an in-flight `gradeMove` (anchor wait plus the
+   * after-played search) to settle before dispatching, so the instant path's
+   * early reveal never stops the grading search; a superseded wait rejects.
    */
   startGameMoveSearch: (puzzleFen: string, gameMoveUci: string) => Promise<TrainEngineLine>;
   /**
@@ -294,6 +307,12 @@ export function useTrainGradingEngine({
   /** Resolves once the CURRENT generation's anchor search settles; gradeMove
    * awaits this so it works even if called before the search finishes. */
   const anchorReadyRef = useRef<Promise<void>>(Promise.resolve());
+  /** Phase 236 (Pitfall 1): settles (never rejects) when the most recent
+   * `gradeMove` has finished, anchor wait plus after-played search included.
+   * `startGameMoveSearch` waits on it so the reveal's search never `stop`s an
+   * in-flight grading search. Reset to a settled promise on a new/aborted
+   * puzzle, because a superseded search never settles. */
+  const gradingSettledRef = useRef<Promise<void>>(Promise.resolve());
   /** The 1.5 s after-played search of the move `gradeMoveInner` most recently
    * graded (Phase 235 D-17); see `LastPlayedSearch`. */
   const lastPlayedSearchRef = useRef<LastPlayedSearch | null>(null);
@@ -589,6 +608,8 @@ export function useTrainGradingEngine({
       const generation = generationRef.current;
       anchorRef.current = null;
       lastPlayedSearchRef.current = null;
+      // A superseded search never settles, so the next puzzle must not wait on it.
+      gradingSettledRef.current = Promise.resolve();
       let resolveReady: () => void = () => {};
       let rejectReady: (error: Error) => void = () => {};
       const readyPromise = new Promise<void>((resolve, reject) => {
@@ -633,6 +654,8 @@ export function useTrainGradingEngine({
   const abortGrading = useCallback(() => {
     generationRef.current += 1;
     anchorRef.current = null;
+    // A superseded search never settles, so a later search must not wait on it.
+    gradingSettledRef.current = Promise.resolve();
     queuedDispatchRef.current = null;
     pendingReadyDispatchRef.current = null;
     if (stateRef.current === 'thinking') {
@@ -643,7 +666,11 @@ export function useTrainGradingEngine({
   }, []);
 
   const gradeMoveInner = useCallback(
-    async (fen: string, playedMoveUci: string): Promise<GradeResult> => {
+    async (
+      fen: string,
+      playedMoveUci: string,
+      options?: GradeMoveOptions,
+    ): Promise<GradeResult> => {
       const generation = generationRef.current;
       await anchorReadyRef.current;
       const anchor = anchorRef.current;
@@ -663,8 +690,15 @@ export function useTrainGradingEngine({
           esAfter: 0.5,
           bestLine: emptyLine,
           playedLine: emptyLine,
+          // Fabricated numbers must never become an audit record.
+          phoneReading: null,
         };
       }
+
+      // Phase 236 D-14: hand the think-time key line over now, before the played
+      // move's search. A legacy root anchor's line is the root bestmove's, not an
+      // after-key line, so it is never offered.
+      if (!anchor.legacy) options?.onKeyLine?.(anchor.keyLine);
 
       if (playedMoveUci === anchor.keyUci) {
         // D-01: playing the key (the engine's own top move on the legacy
@@ -677,6 +711,18 @@ export function useTrainGradingEngine({
           esAfter: anchor.es,
           bestLine: anchor.keyLine,
           playedLine: anchor.keyLine,
+          // D-05: the played move's after-move search IS the think-time
+          // after-key search, so the pair is equal and the tier good. D-06: a
+          // legacy root anchor is a different quantity, no record.
+          phoneReading: anchor.legacy
+            ? null
+            : {
+                tier: 'good',
+                keyEs: anchor.es,
+                playedEs: anchor.es,
+                keyDepth: anchor.depth,
+                playedDepth: anchor.depth,
+              },
         };
       }
 
@@ -692,6 +738,8 @@ export function useTrainGradingEngine({
           esAfter: anchor.es,
           bestLine: anchor.keyLine,
           playedLine: anchor.keyLine,
+          // Fabricated numbers must never become an audit record.
+          phoneReading: null,
         };
       }
 
@@ -725,6 +773,17 @@ export function useTrainGradingEngine({
         esAfter,
         bestLine: anchor.keyLine,
         playedLine,
+        // D-01/D-06: the 1.5 s pair as the phone_grade record. A legacy root
+        // anchor is a different quantity (root ES, not after-key), so no record.
+        phoneReading: anchor.legacy
+          ? null
+          : {
+              tier: moveTier,
+              keyEs: anchor.es,
+              playedEs: esAfter,
+              keyDepth: anchor.depth,
+              playedDepth: afterRaw.depth,
+            },
       };
     },
     [searchAfterMove],
@@ -738,13 +797,21 @@ export function useTrainGradingEngine({
   // wrapper races it against TRAIN_GRADING_TIMEOUT_MS so the promise ALWAYS
   // settles, surfacing a catchable error instead of hanging forever.
   const gradeMove = useCallback(
-    (fen: string, playedMoveUci: string): Promise<GradeResult> =>
-      raceWithTimeout(
-        () => gradeMoveInner(fen, playedMoveUci),
+    (fen: string, playedMoveUci: string, options?: GradeMoveOptions): Promise<GradeResult> => {
+      const inner = gradeMoveInner(fen, playedMoveUci, options);
+      // Phase 236 (Pitfall 1): the reveal's game-move search queues behind this
+      // whole grading (anchor wait plus after-played search), settled either way.
+      gradingSettledRef.current = inner.then(
+        () => undefined,
+        () => undefined,
+      );
+      return raceWithTimeout(
+        () => inner,
         TRAIN_GRADING_TIMEOUT_MS,
         'Grading timed out',
         'Grading failed',
-      ),
+      );
+    },
     [gradeMoveInner],
   );
 
@@ -849,20 +916,30 @@ export function useTrainGradingEngine({
       if (afterFen === null) {
         return Promise.reject(new Error('Illegal or malformed game move'));
       }
-      // Phase 235 (D-09): a game move equal to the key reuses the key line with
-      // no search. (The anchor's own search is rooted at the AFTER-KEY fen, so
-      // an exact-UCI rank lookup there could match the opponent's reply.) The
-      // anchor is guaranteed settled here in practice (the reveal only opens
-      // after gradeMove resolved, which awaited it); the fen/generation guard
-      // is purely defensive.
-      const anchor = anchorRef.current;
-      const anchorMatches =
-        anchor !== null && anchor.generation === generation && anchor.fen === puzzleFen;
-      if (anchorMatches && gameMoveUci === anchor.keyUci) {
-        return Promise.resolve(anchor.keyLine);
-      }
       return raceWithTimeout(
         async () => {
+          // Phase 236 RESEARCH Pitfall 1: on the instant path the reveal opens
+          // before grading finishes. Dispatching now would `stop` the in-flight
+          // anchor or after-played search, whose promise the bestmove handler
+          // then drops unsettled, losing the phone_grade record and the
+          // Your-move line. A single queue slot is enough because no other
+          // caller shares this Worker; this search's own
+          // TRAIN_GRADING_TIMEOUT_MS race still bounds the total wait.
+          await gradingSettledRef.current;
+          if (generation !== generationRef.current) {
+            throw new Error('Reveal search superseded by a newer puzzle');
+          }
+          // Phase 235 (D-09): a game move equal to the key reuses the key line
+          // with no search. (The anchor's own search is rooted at the AFTER-KEY
+          // fen, so an exact-UCI rank lookup there could match the opponent's
+          // reply.) Read after the await above: the anchor has settled by now;
+          // the fen/generation guard is purely defensive.
+          const anchor = anchorRef.current;
+          const anchorMatches =
+            anchor !== null && anchor.generation === generation && anchor.fen === puzzleFen;
+          if (anchorMatches && gameMoveUci === anchor.keyUci) {
+            return anchor.keyLine;
+          }
           const raw = await searchAfterMove(afterFen, generation, TRAIN_GRADING_MOVETIME_MS);
           if (generation !== generationRef.current) {
             throw new Error('Reveal search superseded by a newer puzzle');

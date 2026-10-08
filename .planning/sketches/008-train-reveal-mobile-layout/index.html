@@ -1,0 +1,669 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Train Reveal Layouts</title>
+<link rel="stylesheet" href="../themes/default.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/chess.js/0.10.3/chess.min.js"></script>
+<style>
+/* Layout: one phone frame (390x844 on desktop, the whole viewport on a phone) under a slim
+   sketch bar. Inside the frame: sticky progress+board, scrolling reveal content, and a bottom bar. */
+:root {
+  color-scheme: dark;
+  --sq-light: #F0D9B5; --sq-dark: #B58863;
+  --hl-move: rgba(255, 236, 90, 0.55);
+  --c-your: #6DB463; --c-best: #4C6FD6; --c-best-badge: #1F7A2E; --c-game: #ECECEC; --c-game-badge: #D93A3A;
+  --c-also: #2F8F46;
+  --pill-ok: #1E7B30; --eval-chip: #2D5BD0;
+  --card: #161412; --card-head: rgba(255,255,255,0.035); --card-border: rgba(255,255,255,0.08);
+  --page: #0a0a0a;
+}
+html, body { height: 100%; }
+body { margin: 0; background: #050505; color: var(--color-text); font-family: var(--font-sans); font-size: 15px; -webkit-tap-highlight-color: transparent; }
+* { box-sizing: border-box; }
+button { font: inherit; color: inherit; background: none; border: 0; cursor: pointer; }
+button:focus-visible, [data-act]:focus-visible { outline: 2px solid var(--brand-brown-highlight); outline-offset: 2px; }
+
+.app { height: 100%; display: flex; flex-direction: column; }
+.sketchbar { flex: none; height: 40px; display: flex; align-items: center; gap: 8px; padding: 0 10px; background: #1b1b1f; border-bottom: 1px solid #2a2a30; font-family: system-ui, sans-serif; font-size: 13px; }
+.sketchbar select { flex: 1; min-width: 0; height: 30px; background: #26262c; color: #fff; border: 1px solid #3a3a42; border-radius: 6px; padding: 0 6px; font-size: 14px; }
+.sketchbar select.scen { flex: 0 1 112px; }
+.sketchbar .sbtn { height: 30px; padding: 0 10px; border-radius: 6px; background: #26262c; border: 1px solid #3a3a42; color: #ddd; font-size: 13px; white-space: nowrap; }
+.stage { flex: 1; min-height: 0; display: flex; justify-content: center; align-items: flex-start; gap: 28px; padding: 20px; overflow: auto; }
+.phone { width: 390px; height: 844px; flex: none; border: 1px solid #2c2c2c; border-radius: 30px; overflow: hidden; position: relative; display: flex; flex-direction: column; background: var(--page); box-shadow: 0 20px 60px rgba(0,0,0,.6); }
+.notes { width: 340px; flex: none; font-family: system-ui, sans-serif; font-size: 14px; line-height: 1.5; color: #cfcfcf; }
+.notes h2 { font-family: var(--font-brand); font-weight: 600; font-size: 20px; margin: 0 0 8px; color: #fff; }
+.notes p { margin: 0 0 10px; } .notes ul { margin: 0 0 10px; padding-left: 18px; } .notes li { margin-bottom: 4px; }
+.notes .try { background: #17171b; border: 1px solid #2a2a30; border-radius: 8px; padding: 10px 12px; }
+.sheet { display: none; }
+@media (max-width: 760px) {
+  .stage { padding: 0; }
+  .notes { display: none; }
+  .phone { width: 100%; height: 100%; border: 0; border-radius: 0; box-shadow: none; }
+  .sheet.open { display: block; position: fixed; inset: 40px 0 0 0; z-index: 50; background: rgba(0,0,0,.55); }
+  .sheet .inner { position: absolute; left: 0; right: 0; bottom: 0; max-height: 75%; overflow: auto; background: #17171b; border-top: 1px solid #333; border-radius: 16px 16px 0 0; padding: 16px 16px calc(16px + env(safe-area-inset-bottom, 0px)); }
+  .sheet .notes { display: block; width: auto; }
+}
+
+/* ---------- inside the phone ---------- */
+.scroll { flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; }
+.sticky { position: sticky; top: 0; z-index: 5; background: var(--page); padding: 8px 16px 8px; }
+.progress { display: flex; align-items: center; gap: 10px; height: 24px; font-size: 14px; color: #d8d8d8; font-variant-numeric: tabular-nums; margin-bottom: 6px; }
+.progress .bar { flex: 1; height: 6px; border-radius: 3px; background: #2a2a2a; overflow: hidden; }
+.progress .bar i { display: block; height: 100%; width: 78%; background: var(--brand-brown-light); border-radius: 3px; }
+.boardrow { display: flex; gap: 8px; }
+.boardwrap { position: relative; flex: 1; min-width: 0; container-type: inline-size; }
+.board { width: 100%; aspect-ratio: 1; display: grid; grid-template-columns: repeat(8, 1fr); grid-template-rows: repeat(8, 1fr); border-radius: 6px; overflow: hidden; user-select: none; -webkit-user-select: none; }
+.sq { position: relative; display: flex; align-items: center; justify-content: center; }
+.sq.l { background: var(--sq-light); } .sq.d { background: var(--sq-dark); }
+.sq.hl::before { content: ''; position: absolute; inset: 0; background: var(--hl-move); }
+.sq.sel::before { content: ''; position: absolute; inset: 0; background: rgba(90, 160, 255, .45); }
+.sq.tgt::after { content: ''; position: absolute; width: 28%; height: 28%; border-radius: 50%; background: rgba(0,0,0,.22); }
+.sq .pc { position: relative; font-size: 10.6cqw; line-height: 1; font-family: 'DejaVu Sans', 'Segoe UI Symbol', 'Apple Symbols', 'Noto Sans Symbols 2', serif; pointer-events: none; }
+.sq .pc.w { color: #fff; -webkit-text-stroke: 1.2px #222; text-shadow: 0 1px 1px rgba(0,0,0,.35); }
+.sq .pc.b { color: #111; text-shadow: 0 1px 0 rgba(255,255,255,.15); }
+.sq .rk, .sq .fl { position: absolute; font-size: 2.2cqw; font-weight: 700; opacity: .75; pointer-events: none; }
+.sq .rk { top: 2px; left: 3px; } .sq .fl { bottom: 1px; right: 3px; }
+.sq.l .rk, .sq.l .fl { color: var(--sq-dark); } .sq.d .rk, .sq.d .fl { color: var(--sq-light); }
+.arrows { position: absolute; inset: 0; pointer-events: none; }
+.evalbar { width: 14px; flex: none; border-radius: 4px; overflow: hidden; background: #2b2b2b; border: 1px solid #3b5bdb55; display: flex; flex-direction: column; }
+.evalbar .w { background: #d8d8d8; transition: height .3s ease; }
+
+.content { padding: 4px 16px 24px; display: flex; flex-direction: column; gap: 12px; }
+
+/* bot bubble (current) */
+.chatrow { display: flex; gap: 10px; align-items: flex-start; }
+.who { display: flex; flex-direction: column; align-items: center; gap: 4px; width: 64px; flex: none; }
+.avatar { border-radius: 50%; flex: none; display: block; }
+.botname { font-size: 13px; color: #ddd; text-align: center; line-height: 1.2; }
+.chatrow.inline { flex-direction: column; gap: 6px; }
+.chatrow.inline .who { flex-direction: row; width: auto; gap: 10px; }
+.chatrow.inline .botname { font-size: 15px; }
+.bubble { flex: 1; min-width: 0; border: 1.5px solid #6b6155; border-radius: 16px; padding: 12px 14px; background: #121110; }
+.bubble p { margin: 0 0 10px; line-height: 1.45; }
+.pill { display: inline-flex; align-items: center; justify-content: center; min-width: 30px; height: 22px; padding: 0 7px; border-radius: 11px; background: var(--pill-ok); color: #fff; font-size: 13px; font-weight: 700; vertical-align: 1px; }
+.pill.bad { background: #8a2a2a; }
+.btnrow { display: flex; justify-content: flex-end; gap: 8px; flex-wrap: wrap; }
+.btn { height: 40px; padding: 0 14px; border-radius: 8px; border: 1px solid #5b4632; color: #c8a27c; background: #1a1612; display: inline-flex; align-items: center; gap: 6px; transition: all .15s ease; }
+.btn:hover { background: #241d17; }
+.btn.primary { background: var(--brand-brown); border-color: var(--brand-brown); color: #fff; }
+.btn.primary:hover { background: var(--brand-brown-light); }
+.btn svg { width: 16px; height: 16px; }
+
+/* cards */
+.card { background: var(--card); border: 1px solid var(--card-border); border-radius: 10px; overflow: hidden; }
+.card .hd { display: flex; align-items: center; gap: 8px; padding: 10px 12px; background: var(--card-head); border-bottom: 1px solid var(--card-border); font-weight: 700; }
+.card .hd .t { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.card .bd { padding: 10px 12px; line-height: 1.45; }
+.card.spot { border-color: #8a7a62; box-shadow: 0 0 0 1px #8a7a62 inset; }
+.card.click .hd { cursor: pointer; }
+.arrowico { font-weight: 800; }
+.evalchip { display: inline-flex; align-items: center; height: 24px; padding: 0 7px; border-radius: 5px; background: var(--eval-chip); color: #fff; font-size: 14px; font-weight: 700; font-variant-numeric: tabular-nums; }
+.badge { display: inline-flex; align-items: center; justify-content: center; width: 18px; height: 18px; border-radius: 50%; font-size: 10px; font-weight: 800; color: #fff; flex: none; }
+.badge.your { background: var(--c-your); } .badge.best { background: var(--c-best-badge); } .badge.game { background: var(--c-game-badge); } .badge.free { background: #666; }
+.stepper { display: flex; align-items: center; gap: 8px; }
+.stepbtn { width: 44px; height: 44px; flex: none; border-radius: 10px; background: #1f1c19; border: 1px solid #2f2a25; display: inline-flex; align-items: center; justify-content: center; color: #ccc; }
+.stepbtn:disabled { opacity: .35; }
+.stepbtn svg { width: 18px; height: 18px; }
+.tokens { flex: 1; min-width: 0; display: flex; gap: 4px; overflow-x: auto; scrollbar-width: thin; padding: 4px 0 6px; }
+.tok { flex: none; padding: 4px 6px; border-radius: 6px; color: #bdbdbd; font-weight: 600; white-space: nowrap; }
+.tok.on { background: #3a3128; color: #fff; outline: 1px solid #8a7a62; }
+.tok .n { color: #777; font-weight: 600; margin-right: 2px; }
+.muted { color: #9a9a9a; }
+.footer { color: #a9a9a9; font-size: 14px; line-height: 1.5; }
+.footer svg { width: 14px; height: 14px; vertical-align: -2px; color: #c8a27c; }
+
+/* lines panel (A / combo) */
+.chips { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; padding: 10px 10px 0; }
+.chip { min-width: 0; border-radius: 10px; padding: 6px 6px 7px; border: 1.5px solid #2f2a25; background: #1b1815; display: flex; flex-direction: column; align-items: flex-start; gap: 3px; text-align: left; transition: all .15s ease; }
+.chip .k { font-size: 12px; color: #a5a5a5; display: flex; align-items: center; gap: 5px; font-weight: 700; letter-spacing: .02em; }
+.chip .v { display: flex; align-items: baseline; justify-content: space-between; width: 100%; gap: 4px; }
+.chip .san { font-weight: 800; font-size: 16px; white-space: nowrap; }
+.chip .ev { font-size: 13px; font-weight: 700; color: #cfd9ff; font-variant-numeric: tabular-nums; }
+.chip.on.your { border-color: var(--c-your); background: #17241a; }
+.chip.on.best { border-color: var(--c-best); background: #161c2c; }
+.chip.on.game { border-color: var(--c-game-badge); background: #2a1616; }
+.movelist { padding: 8px 12px 4px; line-height: 2; }
+.movelist .tok { display: inline-block; padding: 1px 5px; margin-right: 1px; }
+.subline { display: flex; align-items: flex-start; gap: 6px; padding: 2px 0 2px 12px; border-left: 2px solid #3a332b; margin: 2px 0 4px 6px; }
+.subline .body { flex: 1; min-width: 0; line-height: 2; }
+.subline .x { width: 28px; height: 28px; flex: none; border-radius: 6px; color: #999; display: inline-flex; align-items: center; justify-content: center; }
+.subline .x svg { width: 14px; height: 14px; }
+.panelfoot { display: flex; justify-content: flex-end; gap: 6px; padding: 4px 10px 10px; }
+.panelfoot .stepbtn { width: 40px; height: 36px; }
+.sfrow { display: flex; align-items: center; gap: 8px; padding: 8px 12px; border-bottom: 1px solid var(--card-border); font-family: ui-monospace, 'DejaVu Sans Mono', monospace; font-size: 13px; color: #ccc; }
+.sfrow .lbl { font-family: var(--font-sans); font-weight: 700; font-size: 12px; color: #999; }
+.sfrow .pv { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.treerow { display: flex; gap: 8px; align-items: flex-start; padding: 6px 12px; }
+.treerow + .treerow { border-top: 1px dashed #2a2622; }
+.treerow .lab { flex: none; width: 46px; padding-top: 6px; font-size: 12px; font-weight: 700; color: #a5a5a5; display: flex; flex-direction: column; gap: 3px; }
+.treerow .body { flex: 1; min-width: 0; line-height: 2; }
+
+/* verdict strip (C / combo) */
+.strip { border: 1.5px solid #6b6155; border-radius: 14px; background: #121110; overflow: hidden; }
+.strip .row { display: flex; align-items: center; gap: 10px; padding: 8px 8px 8px 10px; min-height: 52px; }
+.strip .txt { flex: 1; min-width: 0; display: flex; align-items: center; gap: 8px; text-align: left; }
+.strip .txt span.s { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.strip .chev { width: 16px; height: 16px; flex: none; color: #999; transition: transform .2s ease; }
+.strip.open .chev { transform: rotate(180deg); }
+.strip .more { padding: 0 14px 12px; line-height: 1.45; }
+.strip .more p { margin: 0 0 8px; }
+.strip .row .btn { height: 36px; }
+
+/* bottom bars */
+.bottombar { flex: none; border-top: 1px solid #222; background: #0d0d0d; padding-bottom: env(safe-area-inset-bottom, 0px); }
+.nav { display: grid; grid-template-columns: repeat(6, 1fr); height: 60px; }
+.nav .it { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; font-size: 12px; color: #aaa; }
+.nav .it.on { color: #fff; font-weight: 700; }
+.nav .ic { width: 20px; height: 20px; border: 1.6px solid currentColor; border-radius: 5px; opacity: .8; }
+.ctrl { display: flex; align-items: center; height: 60px; padding: 0 8px; gap: 2px; }
+.ctrl .cb { flex: 1; height: 48px; display: inline-flex; align-items: center; justify-content: center; color: #ddd; border-radius: 10px; }
+.ctrl .cb:hover { background: #1a1a1a; }
+.ctrl .cb:disabled { opacity: .3; }
+.ctrl .cb svg { width: 22px; height: 22px; }
+.ctrl .btn.primary { height: 44px; padding: 0 20px; margin-left: 6px; font-weight: 700; }
+
+/* desktop frame (combined) */
+.stage.deskmode { flex-direction: column; align-items: center; }
+.stage.deskmode .notes { width: min(1280px, 100%); }
+.phone.desk { width: 1280px; height: 800px; border-radius: 12px; }
+@media (max-width: 760px) { .phone.desk { width: 1280px; height: 800px; } .stage.deskmode { align-items: flex-start; } }
+.dhead { flex: none; height: 52px; display: flex; align-items: center; gap: 22px; padding: 0 24px; border-bottom: 1px solid #1d1d1d; background: #0d0d0d; }
+.dhead .logo { font-family: var(--font-brand); font-weight: 600; font-size: 20px; display: flex; align-items: center; gap: 8px; margin-right: 8px; }
+.dhead .logo i { width: 26px; height: 26px; border-radius: 7px; background: var(--brand-brown); display: inline-block; }
+.dhead .ni { color: #aaa; font-size: 15px; padding: 6px 4px; }
+.dhead .ni.on { color: #fff; font-weight: 700; border-bottom: 2px solid var(--brand-brown-light); }
+.dmain { flex: 1; min-height: 0; display: grid; grid-template-columns: 600px 420px; gap: 36px; justify-content: center; padding: 20px 24px; overflow: auto; }
+.dleft { display: flex; flex-direction: column; gap: 10px; }
+.dctrl { display: flex; align-items: center; gap: 6px; }
+.dctrl .cb { width: 52px; height: 44px; border-radius: 10px; background: #161412; border: 1px solid var(--card-border); display: inline-flex; align-items: center; justify-content: center; color: #ddd; }
+.dctrl .cb:hover { background: #221e1a; } .dctrl .cb:disabled { opacity: .35; }
+.dctrl .cb svg { width: 20px; height: 20px; }
+.dctrl .sp { flex: 1; }
+.dctrl .kbd { color: #777; font-size: 12px; margin-left: 6px; }
+.dright { display: flex; flex-direction: column; gap: 14px; min-width: 0; }
+.dright .chip .san { font-size: 17px; }
+.toast { position: absolute; left: 50%; bottom: 76px; transform: translateX(-50%); background: #2b2622; border: 1px solid #5b4632; color: #f0dbb9; padding: 8px 14px; border-radius: 10px; font-size: 14px; white-space: nowrap; z-index: 20; opacity: 0; transition: opacity .2s ease; pointer-events: none; }
+.toast.show { opacity: 1; }
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style>
+</head>
+<body>
+<div class="app">
+  <div class="sketchbar">
+    <select id="variant" aria-label="Variant">
+      <option value="current">0 · Current (today)</option>
+      <option value="a">A · Lines panel (chips)</option>
+      <option value="b">B · One move tree</option>
+      <option value="c">C · Verdict strip</option>
+      <option value="d">D · Bottom action bar</option>
+      <option value="combo" selected>★ Combined · phone (winner)</option>
+      <option value="desktop">★ Combined · desktop (winner)</option>
+    </select>
+    <select id="scenario" aria-label="Your move" class="scen">
+      <option value="nf6">You: Nf6</option>
+      <option value="best">You: Bg7 = Best</option>
+      <option value="game">You: f5 = Game</option>
+    </select>
+    <button class="sbtn" id="notesbtn" type="button">Notes</button>
+    <button class="sbtn" id="resetbtn" type="button">Reset</button>
+  </div>
+  <div class="stage">
+    <div class="phone" id="phone"></div>
+    <aside class="notes" id="notes"></aside>
+  </div>
+  <div class="sheet" id="sheet"><div class="inner"><aside class="notes" id="notes2"></aside></div></div>
+</div>
+
+<script>
+// ---------- data: the real puzzle from the 2026-10-08 screenshots ----------
+const START_FEN = 'rn1qkbnr/pp3p1p/2p1b1p1/8/8/8/PPPPQPPP/RNB1KBNR b KQkq - 0 6';
+const ARRIVAL = { from: 'b5', to: 'e2' };
+const ROLES = ['your', 'best', 'game'];
+const BEST_SANS = 'Bg7 Nf3 Ne7 g3 c5 Bg2 Nbc6 d3 O-O O-O Qd7 Nbd2';
+const GAME_SANS = 'f5 Qxe6+ Be7 Bc4 Nf6 Nf3 Qd7 Qxd7+ Nbxd7 d4 c5 O-O';
+// kind = the quality mark on the board and chip: good ✓, best ★, blunder ??
+const LINE = {
+  your: null, // set by the scenario
+  best: { label: 'Best move', short: 'Best', kind: 'best', ev: 0.1, sans: BEST_SANS },
+  game: { label: 'Played in game', short: 'Game', kind: 'blunder', ev: 5.1, sans: GAME_SANS },
+};
+// "Your move" scenarios: the solver's move can differ from both, or coincide with Best or Game.
+const SCENARIOS = {
+  nf6: { your: { kind: 'good', ev: 0.3, pts: 2, sans: 'Nf6 Nf3 Bh6 Qd1 O-O Be2 c5 d3 Bg7 O-O Nc6 c3' },
+    total: 3, short: 'Right call, right move',
+    verdict: 'Clean. Right call <span class="pill">+1</span>, right move <span class="pill">+2</span>. We’ll try this one again in the next session.' },
+  best: { your: { kind: 'best', ev: 0.1, pts: 2, sans: BEST_SANS },
+    total: 3, short: 'Right call, best move',
+    verdict: 'Spot on. Right call <span class="pill">+1</span>, best move <span class="pill">+2</span>. We’ll check you still see it in a few days.' },
+  game: { your: { kind: 'blunder', ev: 5.1, pts: 0, sans: GAME_SANS },
+    total: 1, short: 'Right call, wrong move',
+    verdict: 'Right call <span class="pill">+1</span>, but you played the game move again <span class="pill bad">+0</span>. This one comes back next session.' },
+};
+let SCEN = SCENARIOS.nf6;
+function applyScenario(key) {
+  SCEN = SCENARIOS[key];
+  LINE.your = { label: 'Your move', short: 'You', ...SCEN.your };
+}
+const KIND = { good: { cls: 'your', glyph: '✓', fill: '#6DB463', arrow: '#6DB463' },
+  best: { cls: 'best', glyph: '★', fill: '#1F7A2E', arrow: '#4C6FD6' },
+  blunder: { cls: 'game', glyph: '??', fill: '#D93A3A', arrow: '#ECECEC' } };
+const badge = (role) => `<span class="badge ${KIND[LINE[role].kind].cls}">${KIND[LINE[role].kind].glyph}</span>`;
+const ALSO_FINE = { from: 'g8', to: 'e7', san: 'Ne7' };
+const verdictHtml = () => SCEN.verdict;
+const CALL_TEXT = 'Several moves are fine here, but not the one you played in the game.';
+
+const NOTES = {
+  current: { h: 'Current (today)', p: 'Baseline, rebuilt from the screenshots so you can feel the problem in the same frame.',
+    li: ['First view: board, then the bot bubble, then about one and a half cards.', 'Tap a card header to spotlight its arrow. Tap a move or the chevrons to step the line.', 'Move a piece (tap it, then tap a target) to enter free-move mode: the cards swap to Stockfish + Moves, the bottom nav turns into board controls, and Solution appears.'] },
+  a: { h: 'A · Lines panel', p: 'The three line cards collapse into one panel: three chips for the comparison, one wrapping move list for the selected line.',
+    li: ['Chips select the line and spotlight its arrow.', 'Tap any move in the list to jump there. The small buttons step it.', 'Bubble and free-move mode are unchanged, to isolate the panel.'] },
+  b: { h: 'B · One move tree', p: 'Line stepping and free play become one model: the three lines are pre-loaded branches of the same tree the Analysis page uses.',
+    li: ['Move a piece anywhere, at the start or in the middle of a line: it forks a sideline under that line, with × to close it.', 'No Solution button: ⏮ returns to the puzzle position and its arrows. Sidelines stay.', 'Board controls are always in the bottom bar.'] },
+  c: { h: 'C · Verdict strip', p: 'After the reveal the bot bubble shrinks to one line with the points and Next. Tap the line to read the full verdict and the Your-call feedback.',
+    li: ['The Your-call card is folded into the strip (the bubble already said it).', 'Cards and free-move mode as today.'] },
+  d: { h: 'D · Bottom action bar', p: 'The bottom bar carries ⏮ ‹ › ⇅, Analyze and Next for the whole reveal, so Next never scrolls away.',
+    li: ['‹ › step the line of the last card you tapped (starts on Your move).', 'The bubble keeps its prose but loses its buttons.'] },
+  combo: { h: '★ Combined · phone', p: 'Verdict strip, chips, one move tree, fixed action bar. Everything fits in the first view, no scrolling.',
+    li: ['The reveal opens with You selected: only your arrow and mark are opaque, the others fade.', 'Use the second picker to make your move equal Best or Game: the two chips merge into one.', 'Move a piece anywhere to fork a sideline; the Stockfish row appears while you are off the known lines.', '⏮ is the old Solution button. Next and Analyze live in the bar. Tap the strip for the full verdict.'] },
+  desktop: { h: '★ Combined · desktop', p: 'The same model on a 1280×800 screen: board left with the controls and actions under it, verdict, chips and move tree on the right. The verdict is shown in full because there is room.',
+    li: ['Keyboard: ← → step, Home returns to the puzzle position.', 'Same chip dimming and chip merging as the phone.', 'On a phone this tab is scaled down; look at it on a computer.'] },
+};
+
+// ---------- tiny utils ----------
+const $ = (s, r = document) => r.querySelector(s);
+const hash = (s) => { let h = 5381; for (let i = 0; i < s.length; i++) h = ((h << 5) + h + s.charCodeAt(i)) | 0; return Math.abs(h); };
+const fmtEv = (v) => (v >= 0 ? '+' : '−') + Math.abs(v).toFixed(1);
+const ICON = {
+  left: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m15 18-6-6 6-6"/></svg>',
+  right: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"/></svg>',
+  first: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 5v14"/><path d="m18 18-7-6 7-6"/></svg>',
+  flip: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 4v16"/><path d="m3 8 4-4 4 4"/><path d="M17 20V4"/><path d="m21 16-4 4-4-4"/></svg>',
+  search: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>',
+  x: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M6 6l12 12M18 6 6 18"/></svg>',
+  down: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>',
+};
+const WASP = (size) => `<svg class="avatar" width="${size}" height="${size}" viewBox="0 0 40 40" aria-hidden="true"><circle cx="20" cy="20" r="20" fill="#3a1f24"/><ellipse cx="20" cy="24" rx="10" ry="11" fill="#f2c230"/><path d="M11 22h18M10.5 27h19" stroke="#2a1a10" stroke-width="3"/><circle cx="20" cy="14" r="7" fill="#f2c230"/><circle cx="17" cy="13" r="1.6" fill="#222"/><circle cx="23" cy="13" r="1.6" fill="#222"/><path d="M15 8l-3-4M25 8l3-4" stroke="#2a1a10" stroke-width="1.5"/></svg>`;
+
+// ---------- move tree ----------
+let nodes, lineIds;
+function newNode(parent, fen, mv, role) {
+  const n = { id: nodes.length, parent, fen, san: mv ? mv.san : null, from: mv ? mv.from : null, to: mv ? mv.to : null, role, children: [], lastChild: null, ply: parent === null ? 0 : nodes[parent].ply + 1 };
+  nodes.push(n); if (parent !== null) nodes[parent].children.push(n.id); return n.id;
+}
+function addChild(parentId, mv, role, fen) {
+  const p = nodes[parentId];
+  const hit = p.children.find((c) => nodes[c].from === mv.from && nodes[c].to === mv.to && !nodes[c].dead);
+  return hit !== undefined ? hit : newNode(parentId, fen, mv, role);
+}
+function buildTree() {
+  nodes = []; lineIds = {};
+  newNode(null, START_FEN, null, null);
+  for (const r of ROLES) {
+    let cur = 0; lineIds[r] = [];
+    for (const san of LINE[r].sans.split(' ')) {
+      const c = new Chess(nodes[cur].fen); const m = c.move(san);
+      if (!m) { console.warn('illegal', r, san); break; }
+      cur = addChild(cur, m, r, c.fen()); lineIds[r].push(cur);
+    }
+  }
+}
+const isFree = (id) => nodes[id].role === 'free';
+function rootRole(id) { let n = nodes[id]; while (n.parent !== null && n.role === 'free') n = nodes[n.parent]; return n.role; }
+function evalOf(id) {
+  const n = nodes[id];
+  if (id === 0) return LINE.best.ev;
+  if (n.role !== 'free') return n.ply === 1 ? LINE[n.role].ev : LINE[n.role].ev + ((hash(n.fen) % 50) - 25) / 100;
+  return evalOf(n.parent) + ((hash(n.fen) % 90) - 45) / 100;
+}
+function sfLines(fen) {
+  const out = [];
+  for (let k = 0; k < 2; k++) {
+    const c = new Chess(fen); const toks = [];
+    for (let i = 0; i < 6; i++) {
+      const ms = c.moves(); if (!ms.length) break;
+      const ranked = ms.slice().sort((a, b) => hash(fen + a) - hash(fen + b));
+      const m = ranked[i === 0 ? k : 0]; const pre = c.fen().split(' ');
+      toks.push((pre[1] === 'w' ? pre[5] + '. ' : (i === 0 ? pre[5] + '… ' : '')) + m); c.move(m);
+    }
+    out.push({ ev: ((hash(fen) % 120) - 30) / 100 - k * 0.35, pv: toks.join(' ') });
+  }
+  return out;
+}
+
+// ---------- state ----------
+const S = { variant: 'combo', cur: 0, exploring: false, spot: null, sel: 'your', stripOpen: false, flipped: true, selSq: null, sfOpen: false, active: 'your' };
+function resetPuzzle() { buildTree(); Object.assign(S, { cur: 0, exploring: false, spot: null, sel: 'your', stripOpen: false, flipped: true, selSq: null, sfOpen: false, active: 'your' }); }
+const LEGACY = () => ['current', 'a', 'c', 'd'].includes(S.variant);
+const COMBO = () => ['combo', 'desktop'].includes(S.variant);
+
+function goto(id) {
+  if (id === null || id === undefined) return;
+  const n = nodes[id]; if (n.parent !== null) nodes[n.parent].lastChild = id;
+  S.cur = id; S.selSq = null;
+}
+function back() { if (nodes[S.cur].parent !== null) goto(nodes[S.cur].parent); }
+function fwd() { const n = nodes[S.cur]; const live = n.children.filter((c) => !nodes[c].dead); if (!live.length) return; goto(live.includes(n.lastChild) ? n.lastChild : preferredChild(n, live)); }
+function preferredChild(n, live) { const r = S.variant === 'd' ? S.active : S.sel; return live.find((c) => nodes[c].role === r) ?? live[0]; }
+function stepLine(role, dir) {
+  const L = lineIds[role]; const i = L.indexOf(S.cur);
+  if (S.cur !== 0 && i === -1) { dir < 0 ? back() : fwd(); return; }
+  if (dir > 0) goto(L[Math.min(L.length - 1, i + 1)]); else goto(i <= 0 ? 0 : L[i - 1]);
+}
+function toRoot() {
+  goto(0);
+  if (LEGACY()) pruneFree(); // the legacy Solution button throws the free-play tree away
+  S.exploring = false;
+}
+function pruneFree() { for (const n of nodes) if (n.role === 'free') n.dead = true; for (const n of nodes) { n.children = n.children.filter((c) => !nodes[c].dead); if (n.lastChild !== null && nodes[n.lastChild].dead) n.lastChild = null; } }
+function closeBranch(id) {
+  const kill = (x) => { nodes[x].dead = true; nodes[x].children.forEach(kill); };
+  kill(id); const p = nodes[nodes[id].parent]; p.children = p.children.filter((c) => c !== id); if (p.lastChild === id) p.lastChild = null;
+  let walk = S.cur; while (walk !== null) { if (walk === id) { S.cur = p.id; break; } walk = nodes[walk].parent; }
+}
+
+// ---------- board ----------
+function sqName(r, c) { return S.flipped ? 'hgfedcba'[c] + (r + 1) : 'abcdefgh'[c] + (8 - r); }
+function sqRC(sq) { const f = sq.charCodeAt(0) - 97, rk = +sq[1]; return S.flipped ? [rk - 1, 7 - f] : [8 - rk, f]; }
+const GLYPH = { k: '♚', q: '♛', r: '♜', b: '♝', n: '♞', p: '♟' };
+function boardHtml() {
+  const n = nodes[S.cur]; const c = new Chess(n.fen);
+  const hl = S.cur === 0 ? ARRIVAL : { from: n.from, to: n.to };
+  let tg = [];
+  if (S.selSq) tg = c.moves({ square: S.selSq, verbose: true }).map((m) => m.to);
+  let html = '';
+  for (let r = 0; r < 8; r++) for (let col = 0; col < 8; col++) {
+    const sq = sqName(r, col); const p = c.get(sq);
+    const cls = ['sq', (r + col) % 2 ? 'd' : 'l'];
+    if (sq === hl.from || sq === hl.to) cls.push('hl');
+    if (sq === S.selSq) cls.push('sel'); if (tg.includes(sq)) cls.push('tgt');
+    html += `<div class="${cls.join(' ')}" data-act="sq" data-sq="${sq}">${col === 0 ? `<span class="rk">${sq[1]}</span>` : ''}${r === 7 ? `<span class="fl">${sq[0]}</span>` : ''}${p ? `<span class="pc ${p.color}">${GLYPH[p.type]}︎</span>` : ''}</div>`;
+  }
+  return `<div class="board">${html}</div>${arrowsSvg()}`;
+}
+function arrow(from, to, color, width, op) {
+  const [r1, c1] = sqRC(from), [r2, c2] = sqRC(to);
+  const x1 = (c1 + .5) * 100, y1 = (r1 + .5) * 100, x2 = (c2 + .5) * 100, y2 = (r2 + .5) * 100;
+  const dx = x2 - x1, dy = y2 - y1, L = Math.hypot(dx, dy), ux = dx / L, uy = dy / L;
+  const hx = x2 - ux * 18, hy = y2 - uy * 18, bx = hx - ux * 34, by = hy - uy * 34, px = -uy, py = ux, hw = width * 1.9;
+  return `<g opacity="${op}"><line x1="${x1}" y1="${y1}" x2="${bx}" y2="${by}" stroke="${color}" stroke-width="${width}" stroke-linecap="round"/><polygon points="${hx},${hy} ${bx + px * hw},${by + py * hw} ${bx - px * hw},${by - py * hw}" fill="${color}"/></g>`;
+}
+function badgeSvg(sq, role, op) {
+  const [r, c] = sqRC(sq); const x = (c + .78) * 100, y = (r + .22) * 100; const k = KIND[LINE[role].kind];
+  return `<g opacity="${op}"><circle cx="${x}" cy="${y}" r="19" fill="${k.fill}" stroke="#fff" stroke-width="3"/><text x="${x}" y="${y + 7}" text-anchor="middle" font-size="${k.glyph === '??' ? 17 : 22}" font-weight="800" fill="#fff" font-family="system-ui,sans-serif">${k.glyph}</text></g>`;
+}
+// One group per distinct first move: "You" merges with "Best" or "Game" when the moves coincide.
+function chipGroups() {
+  const g = [];
+  for (const r of ROLES) { const first = lineIds[r][0]; const hit = g.find((x) => x.first === first); if (hit) hit.roles.push(r); else g.push({ first, roles: [r] }); }
+  return g;
+}
+function arrowsSvg() {
+  let g = '';
+  if (S.cur === 0 && !S.selSq) {
+    const spot = COMBO() ? S.sel : S.spot;
+    const groups = chipGroups();
+    const lit = spot ? groups.find((x) => x.roles.includes(spot)) : null;
+    const dimArrow = COMBO() ? 0.22 : 0.18, dimBadge = 0.32;
+    g += arrow(ALSO_FINE.from, ALSO_FINE.to, '#2F8F46', 11, spot ? (COMBO() ? 0.2 : 0.12) : 0.55);
+    const ordered = groups.filter((x) => x !== lit).concat(lit ? [lit] : []); // the lit one paints on top
+    for (const grp of ordered) { const n = nodes[grp.first]; g += arrow(n.from, n.to, KIND[LINE[grp.roles[0]].kind].arrow, 15, lit && grp !== lit ? dimArrow : 0.92); }
+    for (const grp of ordered) { g += badgeSvg(nodes[grp.first].to, grp.roles[0], lit && grp !== lit ? dimBadge : 1); }
+  } else if (S.cur !== 0 && nodes[S.cur].ply === 1 && nodes[S.cur].role !== 'free') {
+    g += badgeSvg(nodes[S.cur].to, nodes[S.cur].role, 1);
+  }
+  return `<svg class="arrows" viewBox="0 0 800 800">${g}</svg>`;
+}
+function evalBarHtml() {
+  const ev = evalOf(S.cur); const w = 1 / (1 + Math.exp(-ev * 0.55));
+  return S.flipped ? `<div class="evalbar"><div class="w" style="height:${(w * 100).toFixed(1)}%"></div></div>`
+    : `<div class="evalbar" style="flex-direction:column-reverse"><div class="w" style="height:${(w * 100).toFixed(1)}%"></div></div>`;
+}
+function topHtml() {
+  return `<div class="sticky"><div class="progress"><span>8 of 9</span><div class="bar"><i></i></div><span>20 / 24 pts</span></div>
+    <div class="boardrow"><div class="boardwrap">${boardHtml()}</div>${evalBarHtml()}</div></div>`;
+}
+
+// ---------- shared pieces ----------
+function tokenHtml(id, opts = {}) {
+  const n = nodes[id]; const p = nodes[n.parent].fen.split(' ');
+  let num = '';
+  if (opts.numbered) { if (p[1] === 'w') num = p[5] + '.'; else if (opts.first) num = p[5] + '…'; }
+  return `<button class="tok${id === S.cur ? ' on' : ''}" data-act="goto" data-id="${id}">${num ? `<span class="n">${num}</span>` : ''}${n.san}</button>`;
+}
+const pathTokens = (ids, numbered) => ids.map((id, i) => tokenHtml(id, { numbered, first: i === 0 })).join('');
+function botBubble(buttons) {
+  return `<div class="chatrow">${'<div class="who">' + WASP(56) + '<span class="botname">Ziggy the Wasp</span></div>'}<div class="bubble"><p>${verdictHtml()}</p>${buttons ? `<div class="btnrow">${buttons}</div>` : ''}</div></div>`;
+}
+const BTN_SOLUTION = '<button class="btn" data-act="solution">Solution</button>';
+const BTN_ANALYZE = `<button class="btn" data-act="analyze">${ICON.search}Analyze</button>`;
+const BTN_NEXT = '<button class="btn primary" data-act="next">Next</button>';
+function footerHtml() { return `<div class="footer">Game: Rapid 10 · vs Miko the Magpie (750) · Aug 14, 2026 <button data-act="analyze" aria-label="Open game">${ICON.search}</button></div>`; }
+function lineCard(role) {
+  const L = LINE[role]; const ids = lineIds[role]; const i = ids.indexOf(S.cur);
+  const color = { your: 'var(--c-your)', best: 'var(--c-best)', game: 'var(--c-game)' }[role];
+  const pts = role === 'your' ? ` <span class="pill${L.pts ? '' : ' bad'}">+${L.pts}</span>` : '';
+  return `<div class="card click${S.spot === role ? ' spot' : ''}"><div class="hd" data-act="spot" data-role="${role}"><span class="arrowico" style="color:${color}">➜</span><span class="t">${L.label}: ${nodes[ids[0]].san}${pts}</span>${badge(role)}<span class="evalchip">${fmtEv(L.ev)}</span></div>
+    <div class="bd"><div class="stepper"><button class="stepbtn" data-act="linestep" data-role="${role}" data-dir="-1" ${S.cur !== 0 && i === -1 ? '' : (i === -1 ? 'disabled' : '')}>${ICON.left}</button><div class="tokens">${pathTokens(ids, false)}</div><button class="stepbtn" data-act="linestep" data-role="${role}" data-dir="1" ${i === ids.length - 1 ? 'disabled' : ''}>${ICON.right}</button></div></div></div>`;
+}
+function callCard() {
+  return `<div class="card"><div class="hd"><span class="arrowico" style="color:var(--c-your)">➜</span><span class="t">Your call: several good moves <span class="pill">+1</span></span></div><div class="bd"><div>${CALL_TEXT}</div><div style="margin-top:6px">Also fine, e.g. ${ALSO_FINE.san}</div></div></div>`;
+}
+function freePath() { // root-to-leaf path through the current node, for the legacy Moves card
+  const up = []; let n = nodes[S.cur]; while (n.parent !== null) { up.unshift(n.id); n = nodes[n.parent]; }
+  let x = nodes[S.cur]; while (x.children.length) { const nx = x.children.includes(x.lastChild) ? x.lastChild : x.children[0]; up.push(nx); x = nodes[nx]; }
+  return up;
+}
+function sfCardHtml() {
+  const lines = sfLines(nodes[S.cur].fen);
+  return `<div class="card"><div class="hd"><span class="t">Stockfish</span><button data-act="solution" aria-label="Close">${ICON.x}</button></div><div>${lines.map((l) => `<div class="sfrow"><span class="evalchip" style="height:22px;font-size:13px">${fmtEv(l.ev)}</span><span class="pv">${l.pv}</span>${ICON.down.replace('<svg', '<svg width="16" height="16"')}</div>`).join('')}</div></div>`;
+}
+function legacyFreeCards() {
+  return sfCardHtml() + `<div class="card"><div class="hd"><span class="t">Moves</span><button data-act="solution" aria-label="Close">${ICON.x}</button></div><div class="movelist">${pathTokens(freePath(), true)}</div></div>`;
+}
+function navBar() {
+  const items = ['Library', 'Train', 'Bots', 'Opening', 'Endgame', 'More'];
+  return `<div class="bottombar"><div class="nav">${items.map((t) => `<button class="it${t === 'Train' ? ' on' : ''}" data-act="nav"><span class="ic"></span>${t}</button>`).join('')}</div></div>`;
+}
+function ctrlBar(extra) {
+  const n = nodes[S.cur];
+  return `<div class="bottombar"><div class="ctrl"><button class="cb" data-act="root" aria-label="Back to the puzzle position" ${S.cur === 0 ? 'disabled' : ''}>${ICON.first}</button><button class="cb" data-act="back" aria-label="Back" ${n.parent === null ? 'disabled' : ''}>${ICON.left}</button><button class="cb" data-act="fwd" aria-label="Forward" ${n.children.length ? '' : 'disabled'}>${ICON.right}</button><button class="cb" data-act="flip" aria-label="Flip board">${ICON.flip}</button>${extra || ''}</div></div>`;
+}
+const BAR_EXTRA = `<button class="cb" data-act="analyze" aria-label="Analyze">${ICON.search}</button><button class="btn primary" data-act="next">Next</button>`;
+
+// sidelines: free branches hanging off a set of nodes
+function branchStarts(fromIds) {
+  const starts = [];
+  for (const id of fromIds) for (const c of nodes[id].children) if (isFree(c) && !nodes[c].dead) starts.push(c);
+  return starts;
+}
+function sublineHtml(start) {
+  const path = [start]; let x = nodes[start];
+  while (x.children.length) { const nx = x.children.includes(x.lastChild) ? x.lastChild : x.children[0]; path.push(nx); x = nodes[nx]; }
+  const nested = branchStarts(path).filter((s) => !path.includes(s));
+  return `<div class="subline"><div class="body">${pathTokens(path, true)}${nested.map(sublineHtml).join('')}</div><button class="x" data-act="close" data-id="${start}" aria-label="Close sideline">${ICON.x}</button></div>`;
+}
+function sfRowHtml() {
+  if (!isFree(S.cur)) return '';
+  const lines = sfLines(nodes[S.cur].fen); const shown = S.sfOpen ? lines : lines.slice(0, 1);
+  return shown.map((l, i) => `<div class="sfrow">${i === 0 ? '<span class="lbl">SF</span>' : '<span class="lbl" style="visibility:hidden">SF</span>'}<span class="evalchip" style="height:22px;font-size:13px">${fmtEv(l.ev)}</span><span class="pv">${l.pv}</span>${i === 0 ? `<button data-act="sftoggle" aria-label="More engine lines" style="display:inline-flex;color:#999;${S.sfOpen ? 'transform:rotate(180deg)' : ''}">${ICON.down.replace('<svg', '<svg width="16" height="16"')}</button>` : ''}</div>`).join('');
+}
+function chipsHtml() {
+  const groups = COMBO() ? chipGroups() : ROLES.map((r) => ({ first: lineIds[r][0], roles: [r] }));
+  return `<div class="chips" style="grid-template-columns:repeat(${groups.length},1fr)">${groups.map((grp) => {
+    const r = grp.roles[0]; const on = grp.roles.includes(S.sel);
+    return `<button class="chip ${KIND[LINE[r].kind].cls}${on ? ' on' : ''}" data-act="chip" data-role="${r}"><span class="k">${badge(r)}${grp.roles.map((x) => LINE[x].short).join(' = ')}</span><span class="v"><span class="san">${nodes[grp.first].san}</span><span class="ev">${fmtEv(LINE[r].ev)}</span></span></button>`;
+  }).join('')}</div>`;
+}
+function selectedListHtml(withSidelines) {
+  const ids = lineIds[S.sel];
+  let body = '';
+  if (!withSidelines) body = pathTokens(ids, true);
+  else {
+    // main line tokens, with each sideline inserted right after the move it branches from
+    ids.forEach((id, i) => {
+      body += tokenHtml(id, { numbered: true, first: i === 0 || branchStarts([ids[i - 1]]).length > 0 });
+      branchStarts([id]).forEach((s) => { body += sublineHtml(s); });
+    });
+    const fromRoot = branchStarts([0]);
+    if (fromRoot.length) body = fromRoot.map(sublineHtml).join('') + body;
+  }
+  return `<div class="movelist">${body}</div>`;
+}
+function linesPanel({ tree, steps }) {
+  const foot = steps ? `<div class="panelfoot"><button class="stepbtn" data-act="root" ${S.cur === 0 ? 'disabled' : ''}>${ICON.first}</button><button class="stepbtn" data-act="linestep" data-role="${S.sel}" data-dir="-1" ${S.cur === 0 ? 'disabled' : ''}>${ICON.left}</button><button class="stepbtn" data-act="linestep" data-role="${S.sel}" data-dir="1">${ICON.right}</button></div>` : '';
+  return `<div class="card">${chipsHtml()}${tree ? sfRowHtml() : ''}${selectedListHtml(tree)}${foot}</div>`;
+}
+function stripHtml({ next }) {
+  const right = next ? BTN_NEXT : '';
+  const sol = (LEGACY() && S.exploring) ? BTN_SOLUTION : '';
+  return `<div class="strip${S.stripOpen ? ' open' : ''}"><div class="row"><button class="txt" data-act="strip" aria-expanded="${S.stripOpen}">${WASP(32)}<span class="pill${SCEN.total ? '' : ' bad'}">+${SCEN.total}</span><span class="s">${SCEN.short}</span>${ICON.down.replace('<svg', '<svg class="chev"')}</button>${sol}${right}</div>
+    ${S.stripOpen ? `<div class="more"><p>${verdictHtml()}</p><p class="muted">${CALL_TEXT} Also fine, e.g. ${ALSO_FINE.san}.</p>${next ? `<div class="btnrow">${BTN_ANALYZE}</div>` : ''}</div>` : ''}</div>`;
+}
+function treeCardHtml() {
+  const head = S.cur === 0 ? '<span class="muted" style="font-weight:600">Puzzle position</span>' : `<span class="evalchip">${fmtEv(evalOf(S.cur))}</span>`;
+  const rows = ROLES.map((r) => {
+    const ids = lineIds[r]; let body = '';
+    ids.forEach((id, i) => { body += tokenHtml(id, { numbered: true, first: i === 0 || branchStarts([ids[i - 1]]).length > 0 }); branchStarts([id]).forEach((s) => { body += sublineHtml(s); }); });
+    return `<div class="treerow"><div class="lab">${badge(r)}${LINE[r].short}</div><div class="body">${body}</div></div>`;
+  }).join('');
+  const own = branchStarts([0]);
+  const ownRow = own.length ? `<div class="treerow"><div class="lab"><span class="badge free">+</span>Yours</div><div class="body">${own.map(sublineHtml).join('')}</div></div>` : '';
+  return `<div class="card"><div class="hd"><span class="t">Moves</span>${head}</div>${sfRowHtml()}${rows}${ownRow}</div>`;
+}
+
+// ---------- variants ----------
+const V = {
+  current() {
+    const content = S.exploring ? legacyFreeCards() : lineCard('your') + callCard() + lineCard('best') + lineCard('game') + footerHtml();
+    return { body: botBubble((S.exploring ? BTN_SOLUTION : '') + BTN_ANALYZE + BTN_NEXT) + content, bar: S.exploring ? ctrlBar() : navBar() };
+  },
+  a() {
+    const content = S.exploring ? legacyFreeCards() : linesPanel({ tree: false, steps: true }) + callCard() + footerHtml();
+    return { body: botBubble((S.exploring ? BTN_SOLUTION : '') + BTN_ANALYZE + BTN_NEXT) + content, bar: S.exploring ? ctrlBar() : navBar() };
+  },
+  b() {
+    return { body: botBubble(BTN_ANALYZE + BTN_NEXT) + treeCardHtml() + callCard() + footerHtml(), bar: ctrlBar() };
+  },
+  c() {
+    const content = S.exploring ? legacyFreeCards() : lineCard('your') + lineCard('best') + lineCard('game') + footerHtml();
+    return { body: stripHtml({ next: true }) + content, bar: S.exploring ? ctrlBar() : navBar() };
+  },
+  d() {
+    const content = S.exploring ? legacyFreeCards() : lineCard('your') + callCard() + lineCard('best') + lineCard('game') + footerHtml();
+    return { body: botBubble('') + content, bar: ctrlBar(BAR_EXTRA) };
+  },
+  combo() {
+    return { body: stripHtml({ next: false }) + linesPanel({ tree: true, steps: false }) + footerHtml(), bar: ctrlBar(BAR_EXTRA) };
+  },
+  desktop() { return { desk: true }; },
+};
+
+// Desktop combined: board + controls/actions on the left, verdict + chips + tree on the right.
+function deskHtml() {
+  const n = nodes[S.cur];
+  const navs = ['Library', 'Train', 'Bots', 'Opening', 'Endgame', 'Analysis'];
+  const ctrl = `<div class="dctrl"><button class="cb" data-act="root" aria-label="Back to the puzzle position" ${S.cur === 0 ? 'disabled' : ''}>${ICON.first}</button><button class="cb" data-act="back" aria-label="Back" ${n.parent === null ? 'disabled' : ''}>${ICON.left}</button><button class="cb" data-act="fwd" aria-label="Forward" ${n.children.length ? '' : 'disabled'}>${ICON.right}</button><button class="cb" data-act="flip" aria-label="Flip board">${ICON.flip}</button><span class="kbd">\u2190 \u2192 Home</span><span class="sp"></span>${BTN_ANALYZE}${BTN_NEXT}</div>`;
+  const bubble = `<div class="chatrow">${'<div class="who">' + WASP(56) + '<span class="botname">Ziggy the Wasp</span></div>'}<div class="bubble"><p>${verdictHtml()}</p><p class="muted" style="margin:0">${CALL_TEXT} Also fine, e.g. ${ALSO_FINE.san}.</p></div></div>`;
+  return `<div class="dhead"><span class="logo"><i></i>FlawChess</span>${navs.map((t) => `<button class="ni${t === 'Train' ? ' on' : ''}" data-act="nav">${t}</button>`).join('')}</div>
+    <div class="dmain"><div class="dleft"><div class="progress"><span>8 of 9</span><div class="bar"><i></i></div><span>20 / 24 pts</span></div><div class="boardrow"><div class="boardwrap">${boardHtml()}</div>${evalBarHtml()}</div>${ctrl}</div>
+    <div class="dright">${bubble}${linesPanel({ tree: true, steps: false })}${footerHtml()}</div></div><div class="toast" id="toast"></div>`;
+}
+function fitDesk() {
+  const stage = $('.stage'); const avail = stage.clientWidth - (window.matchMedia('(max-width: 760px)').matches ? 0 : 40);
+  phone.style.zoom = S.variant === 'desktop' ? String(Math.min(1, avail / 1280)) : '';
+}
+
+// ---------- render ----------
+const phone = $('#phone');
+let toastTimer;
+function render() {
+  const desk = S.variant === 'desktop';
+  phone.classList.toggle('desk', desk); $('.stage').classList.toggle('deskmode', desk);
+  $('#scenario').hidden = !COMBO();
+  if (desk) { phone.innerHTML = deskHtml(); fitDesk(); return; }
+  phone.style.zoom = '';
+  const prev = $('.scroll', phone); const st = prev ? prev.scrollTop : 0;
+  const { body, bar } = V[S.variant]();
+  phone.innerHTML = `<div class="scroll">${topHtml()}<div class="content">${body}</div></div>${bar}<div class="toast" id="toast"></div>`;
+  $('.scroll', phone).scrollTop = st;
+  const on = $('.tok.on', phone); if (on && on.parentElement.classList.contains('tokens')) on.scrollIntoView({ block: 'nearest', inline: 'center' });
+}
+function renderNotes() {
+  const n = NOTES[S.variant];
+  const html = `<h2>${n.h}</h2><p>${n.p}</p><div class="try"><ul>${n.li.map((x) => `<li>${x}</li>`).join('')}</ul></div><p class="muted" style="margin-top:10px">Sketch only: moves are tapped (tap a piece, then a square). Stockfish numbers in free play are fake. The 40px bar at the top is the sketch's own switcher, not part of the design.</p>`;
+  $('#notes').innerHTML = html; $('#notes2').innerHTML = html;
+}
+function toast(msg) { const t = $('#toast'); t.textContent = msg; t.classList.add('show'); clearTimeout(toastTimer); toastTimer = setTimeout(() => t.classList.remove('show'), 1600); }
+
+function onSquare(sq) {
+  const c = new Chess(nodes[S.cur].fen);
+  if (S.selSq) {
+    const m = c.moves({ square: S.selSq, verbose: true }).find((x) => x.to === sq);
+    if (m) {
+      const mv = c.move({ from: m.from, to: m.to, promotion: 'q' });
+      const id = addChild(S.cur, mv, 'free', c.fen());
+      goto(id); S.spot = null;
+      if (isFree(id)) S.exploring = true;
+      else {
+        // a played move that lands on a known line (e.g. Bg7 from the puzzle position) activates that line's chip
+        const grp = chipGroups().find((g) => g.roles.includes(nodes[id].role));
+        if (grp) S.sel = grp.roles[0];
+      }
+      return;
+    }
+  }
+  const p = c.get(sq);
+  S.selSq = p && p.color === c.turn() && S.selSq !== sq ? sq : null;
+}
+
+phone.addEventListener('click', (e) => {
+  const t = e.target.closest('[data-act]'); if (!t) return;
+  const a = t.dataset.act; const role = t.dataset.role;
+  switch (a) {
+    case 'sq': onSquare(t.dataset.sq); break;
+    case 'goto': if (LEGACY() && S.exploring && !isFree(+t.dataset.id)) { pruneFree(); S.exploring = false; } goto(+t.dataset.id); break;
+    case 'linestep': S.active = role; stepLine(role, +t.dataset.dir); break;
+    case 'spot': S.active = role; if (S.cur !== 0) goto(0); S.spot = S.spot === role ? null : role; break;
+    case 'chip': S.sel = role; S.spot = role; if (S.cur !== 0 && !isFree(S.cur) && rootRole(S.cur) !== role) goto(0); break;
+    case 'root': case 'solution': toRoot(); break;
+    case 'back': back(); break;
+    case 'fwd': fwd(); break;
+    case 'flip': S.flipped = !S.flipped; break;
+    case 'close': closeBranch(+t.dataset.id); break;
+    case 'sftoggle': S.sfOpen = !S.sfOpen; break;
+    case 'strip': S.stripOpen = !S.stripOpen; break;
+    case 'analyze': render(); toast('Opens this position on the Analysis page'); return;
+    case 'next': resetPuzzle(); render(); toast('Next puzzle (the sketch resets)'); return;
+    case 'nav': render(); toast('App navigation'); return;
+  }
+  render();
+});
+
+$('#variant').addEventListener('change', (e) => {
+  S.variant = e.target.value; resetPuzzle(); S.variant = e.target.value; render(); renderNotes();
+  try { localStorage.setItem('sketch008-variant', S.variant); } catch (err) { /* storage blocked: fine */ }
+});
+$('#resetbtn').addEventListener('click', () => { const v = S.variant; resetPuzzle(); S.variant = v; render(); });
+$('#scenario').addEventListener('change', (e) => { applyScenario(e.target.value); resetPuzzle(); render(); });
+window.addEventListener('resize', () => { if (S.variant === 'desktop') fitDesk(); });
+document.addEventListener('keydown', (e) => {
+  if (e.target.closest && e.target.closest('select')) return;
+  const k = { ArrowLeft: back, ArrowRight: fwd, Home: toRoot }[e.key];
+  if (k) { e.preventDefault(); k(); render(); }
+});
+$('#notesbtn').addEventListener('click', () => {
+  if (window.matchMedia('(max-width: 760px)').matches) $('#sheet').classList.toggle('open');
+  else $('#notes').scrollIntoView({ behavior: 'smooth' });
+});
+$('#sheet').addEventListener('click', (e) => { if (e.target.id === 'sheet') $('#sheet').classList.remove('open'); });
+
+applyScenario('nf6');
+resetPuzzle();
+try { const v = localStorage.getItem('sketch008-variant'); if (v && V[v]) S.variant = v; } catch (err) { /* ignore */ }
+$('#variant').value = S.variant;
+render(); renderNotes();
+</script>
+</body>
+</html>

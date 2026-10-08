@@ -26,6 +26,7 @@ impact) — chips are display-only in 107 (the Flaws deep-link target ships late
 | 005 | streak-flame-and-freezes | Flame silhouette + freeze icon + arrival animations (SEED-181) | **A — Concentric flame + plain Snowflake freezes** | train, streak, flame, freezes, animation |
 | 006 | train-landing-hero | Where the flame lives on the phone landing next to a full-width Start; collapsed schedule (SEED-181) | **A — Flame beside the CTA** | train, landing, hero, mobile |
 | 007 | dark-surface-elevation | How do cards separate from the page in the dark theme (sunlight legibility), keeping all containers? | **S2 — current fills + lighter header band + white/8% border = separator** | theme, dark-mode, surfaces, elevation, mobile |
+| 008 | train-reveal-mobile-layout | How should the post-solve reveal (lines, verdict, free play, Solution/Analyze/Next) use a phone screen? | **Combined — strip + chips + one move tree + action bar (phone + desktop)** | train, reveal, mobile, lines, free-play |
 
 ## Decisions (winners)
 
@@ -90,3 +91,23 @@ schedule collapses to a one-line summary that expands on tap, day toggles filled
 - CardHeader band goes from darker (`bg-black/20`) to lighter (`white/3.5%`).
 - 1px card border white/8% (`border-border/80`) and in-card separators raised to the same color. The border carries sunlight legibility.
 - Build note: a real `border`, not an inset box-shadow (children paint over it). Decide Card-only vs all `.charcoal-texture` surfaces.
+
+**008 → Combined (A+B+C+D), phone + desktop.** Sketched 2026-10-08 from the reveal screenshots in
+`temp/puzzle-reveal-ux/` (on 390x844 the line cards got ~24% of the first view). Seed: SEED-194.
+- **Verdict strip** replaces the bot bubble after the reveal: avatar + total points pill + one line
+  ("Right call, right move" / "Right call, best move" / "Right call, wrong move"); tap expands the
+  full verdict, the Your-call feedback and the also-fine moves. The Your-call card is gone.
+- **Chips** replace the three line cards: You / Best / Game, each with mark (✓ ★ ??), SAN, eval.
+  **You merges with Best or Game** ("You = Best", "You = Game", one chip, one arrow) when the moves coincide.
+- **Chip-driven board:** the reveal opens with **You** active; only the active chip's arrow + mark are
+  opaque, all other arrows/marks (also-fine included) fade to ~20-30% instead of hiding. Tapping a
+  chip moves the focus. A move played from the puzzle position that matches a line activates that chip.
+- **One move tree** (the Analysis-page model): the three lines are pre-loaded branches; the list shows
+  the active chip's line, numbered and wrapping. Moving a piece anywhere forks a sideline in place (× to
+  close); no separate free-play mode, no card swap. A one-line Stockfish row (expandable) appears only
+  while off the known lines.
+- **Phone action bar** replaces the bottom nav for the whole reveal: ⏮ ‹ › ⇅ + Analyze + Next.
+  ⏮ = the old Solution button (sidelines are kept). First view fits 390x844 without scrolling.
+- **Desktop:** board left with the same controls + Analyze/Next under it; right column = full verdict
+  bubble (no strip, there is room) + chips + move tree + game line. ← → step, Home = puzzle position.
+

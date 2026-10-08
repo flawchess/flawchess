@@ -1,17 +1,17 @@
 ---
 gsd_state_version: "1.0"
 milestone: v2.21
-current_phase: 235
-status: completed
-stopped_at: Phase 235 complete — all phases complete
-last_updated: "2026-10-07T20:54:01.961Z"
-state_head: 2c3d44b799f3da87abe43bdc0bf18d364d83cdfb
+current_phase: 236
+current_phase_name: Train Phone Grade Record & Instant Server Verdict (SEED-193)
+status: executing
+stopped_at: Phase 236 planned (6 plans, 4 waves)
+last_updated: "2026-10-08T18:53:56.827Z"
+state_head: 4c0c4997abf2917d1efca21500f8ad23fc9c354a
 progress:
-  total_phases: 8
+  total_phases: 9
   completed_phases: 103
-  total_plans: 40
+  total_plans: 46
   completed_plans: 47
-  percent: 100
 milestone_name: Browser Engine Throughput
 last_activity: 2026-10-07
 last_activity_desc: "Completed quick task 261007-axc: Separate Train reveal telemetry counter for hand-played free moves (review_board_moves)"
@@ -21,10 +21,10 @@ last_activity_desc: "Completed quick task 261007-axc: Separate Train reveal tele
 
 ## Current Position
 
-Phase: 235 (Train Grading Anchored to the Server Answer Key (SEED-192)) — COMPLETE
-Plan: 5 of 5
+Phase: 236 (Train Phone Grade Record & Instant Server Verdict (SEED-193)) — EXECUTING
+Plan: 1 of 6
 
-Status: All phases complete
+Status: Executing Phase 236
 
 Open threads carried forward (not blockers):
 
@@ -172,6 +172,7 @@ v1.29 Live-Engine Analysis Page shipped 2026-06-29 — 5 phases (136–140), 14 
 
 ### Roadmap Evolution
 
+- Phase 236 added 2026-10-08 (explicit user request via `/gsd-phase @SEED-193`, planted the same day from the ad-hoc Train grading audit, user 28, quick tasks 261008-ob1 / 261008-opg): **Train Phone Grade Record & Instant Server Verdict** (SEED-193). Part 1: a `phone_grade` JSONB record on every keyed `drill_solves` row (tier, key/played ES, depths; `SolveRecheck` shape), `move_quality` stays effective so the override rate is a column compare. Part 2: server-graded moves (soft vetted, herring good band, sharp runner-up) with tiers in the puzzle payload so those ~17% of solves get an instant verdict, after-move search continues in the background for the "Your move" card and the Part 1 record. Written by hand as 236 (known mature-ROADMAP behavior). Next: `/gsd-discuss-phase 236`.
 - Phase 235 added 2026-10-07 (explicit user request via `/gsd-phase SEED-192`, planted the same day from the ad-hoc prod analysis of a contradictory Train reveal, user 28): **Train Grading Anchored to the Server Answer Key** (SEED-192). The server key is the reveal's solution (P-01: key in `SolveResponse` only vs relaxing for the best UCI, decided in discuss); grade the played move by client after-move searches of played vs server key; sharp runner-up `su` graded server-side; longer re-search only on disagreement, benefit of the doubt with new copy, disagreement flag recorded queryably; no classification hardening (step 4 = monitoring). Written by hand as 235 (known mature-ROADMAP behavior). Next: `/gsd-discuss-phase 235`.
 - Phase 234 added 2026-10-05 (explicit user request via `/gsd-phase SEED-191`, planted the same day from `/gsd-explore` on getting feedback from invested users): **Milestone Feedback Ask** (SEED-191). Hilda the Hippo asks non-guest users with >= 5 active days (and no prior feedback) for an idea, on the Import bubble, Train landing host bubble (phones too, above the reminder ask) or Bots roster welcome bubble, whichever comes first. "Sure!" opens `FeedbackModal` and marks done; "Maybe later" (or 3 ignored views) snoozes, one re-ask after +10 active days. State in `users.prompt_state` JSONB keyed by ask id with atomic UPDATEs; `feedback.source` column measures yield. Written by hand as 234 (known mature-ROADMAP behavior). Next: `/gsd-discuss-phase 234` or `/gsd-plan-phase 234` (seed locks most decisions).
 - Phase 233 added 2026-10-05 (explicit user request via `/gsd-phase SEED-190`, planted the same day from the ad-hoc prod analysis of Train difficulty and the weekly leaderboard): **Train Per-Puzzle Timing & Engagement Telemetry** (SEED-190). One `drill_solves.telemetry` JSONB validated by a Pydantic model and merged across two writes: `guess_ms`/`move_ms` on the solve POST, `review_ms` plus reveal-engagement counters via a review POST on Next with a `pagehide` sendBeacon; visible time only, capped; grading untouched, go-forward only. Owner picks in discuss: `shown_at`, leaderboard exposure impression, `client_kind`, bucketed Umami event. Written by hand as 233 (known mature-ROADMAP behavior). Next: `/gsd-discuss-phase 233`.
@@ -990,6 +991,8 @@ None active.
 | 261006-95o | Replace accuracy bullseye icon with info popover explaining Accuracy and move qualities | 2026-10-06 | bf89f68a1 | [261006-95o-replace-accuracy-bullseye-icon-with-info](./quick/261006-95o-replace-accuracy-bullseye-icon-with-info/) |
 | 126 | Mobile header: settings cogwheel left of the page title | 2026-10-06 | 21fdebd2d | — |
 | 261007-axc | Separate Train reveal telemetry counter for hand-played free moves (review_board_moves) | 2026-10-07 | 27ce3d361 | [261007-axc-separate-train-reveal-telemetry-counter-](./quick/261007-axc-separate-train-reveal-telemetry-counter-/) |
+| 261008-ob1 | Train re-check also rescues off-key inaccuracy grades | 2026-10-08 | b53a2203b | [261008-ob1-train-re-check-also-rescues-off-key-inac](./quick/261008-ob1-train-re-check-also-rescues-off-key-inac/) |
+| 261008-opg | Train reveal shows a played inaccuracy as inaccuracy | 2026-10-08 | 44e037dd3 | [261008-opg-train-reveal-shows-a-played-inaccuracy-a](./quick/261008-opg-train-reveal-shows-a-played-inaccuracy-a/) |
 
 ## Deferred Items
 
@@ -1042,9 +1045,9 @@ Items acknowledged and deferred at **v1.29 milestone close on 2026-06-29** (user
 
 ## Session Continuity
 
-**Last session:** 2026-10-07
-**Stopped at:** Phase 235 complete. UAT 4/4 passed (browser, dev build), re-verification passed 10/10, SECURITY 17/17 closed. Next: squash-merge `gsd/phase-235-train-grading-server-answer-key` to `main` after the pre-merge gate (CHANGELOG entry already in `[Unreleased]` from plan 05).
-**Resume file:** None
+**Last session:** 2026-10-08T17:19:47.567Z
+**Stopped at:** Phase 236 context gathered
+**Resume file:** .planning/phases/236-train-phone-grade-instant-verdict/236-CONTEXT.md
 
 Previous session note (Phase 227):
 refit (calibration parity holds). Verification passed 17/17; code review 0 blockers (WR-01 + 3 info fixed). Next:

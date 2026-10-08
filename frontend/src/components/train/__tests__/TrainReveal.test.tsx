@@ -1076,7 +1076,7 @@ describe('TrainReveal', () => {
     expect(bestIcon?.getAttribute('data-quality')).toBe('best');
   });
 
-  it('a played inaccuracy renders the GOOD quality icon in the CardHeader, never the severity glyph — the fifth D-05 recolor site (LEGEND-03)', async () => {
+  it('a played inaccuracy renders the inaccuracy quality icon in the CardHeader, matching its +1 chip (quick 261008-opg)', async () => {
     const gradeResult = makeGradeResult({
       bestLine: makeEngineLine({ moves: ['e2e4'] }),
       playedLine: makeEngineLine({ moves: ['d2d4'] }),
@@ -1091,7 +1091,7 @@ describe('TrainReveal', () => {
     const yourIcon = screen
       .getByTestId('train-line-box-your-move')
       .querySelector('[data-testid="train-line-stepper-quality"]');
-    expect(yourIcon?.getAttribute('data-quality')).toBe('good');
+    expect(yourIcon?.getAttribute('data-quality')).toBe('inaccuracy');
   });
 
   it('stepping a line reports the stepped move with its quality (first move = box quality, deeper = good/green), and back-to-start reports null', async () => {
@@ -2127,6 +2127,140 @@ describe('TrainReveal', () => {
     });
     expect(screen.getByTestId('engine-line-0-move-0').textContent).toBe('e5');
     expect(screen.getByTestId('engine-line-1-move-0').textContent).toBe('c5');
+  });
+});
+
+// Phase 236 (D-14/D-15): the instant path opens the reveal on the server verdict
+// before the phone grade exists. `gradeResult` is null and `instantGrade`
+// carries the key (and, once the anchor settled, the key line).
+describe('instant-path line cards (Phase 236 D-14/D-15)', () => {
+  beforeEach(() => {
+    matchMediaMatches = true;
+    revealPuzzle.mockReset();
+    getGame.mockReset();
+    revealPuzzle.mockResolvedValue(makeReveal());
+    getGame.mockResolvedValue(makeGame());
+  });
+
+  afterEach(() => {
+    cleanup();
+  });
+
+  const KEY_LINE: TrainEngineLine = { moves: ['d2d4', 'd7d5'], evalCp: 30, evalMate: null };
+  const soft = { puzzle_type: 'soft' as const, move_quality: 'good' as const };
+
+  it('pending without a key line: both the Your-move and the Best-move card load', () => {
+    renderReveal({
+      guess: 'critical',
+      playedMoveUci: 'e2e4',
+      verdict: makeVerdict(soft),
+      instantGrade: { status: 'pending', keyUci: 'd2d4', keyLine: null },
+    });
+    expect(screen.getByTestId('train-line-box-your-move-loading')).not.toBeNull();
+    expect(screen.getByTestId('train-line-box-best-move-loading')).not.toBeNull();
+    // The header names the move even while loading.
+    expect(screen.getByTestId('train-line-box-your-move').textContent).toContain('Your move: e4');
+    expect(screen.getByTestId('train-line-box-best-move').textContent).toContain('Best move: d4');
+  });
+
+  it('pending WITH the key line: the Best-move card renders its stepper, the Your-move card still loads', () => {
+    renderReveal({
+      guess: 'critical',
+      playedMoveUci: 'e2e4',
+      verdict: makeVerdict(soft),
+      instantGrade: { status: 'pending', keyUci: 'd2d4', keyLine: KEY_LINE },
+    });
+    expect(screen.queryByTestId('train-line-box-best-move-loading')).toBeNull();
+    expect(screen.getByTestId('train-line-box-best-move')).not.toBeNull();
+    expect(
+      within(screen.getByTestId('train-line-box-best-move')).getByTestId('train-line-stepper-eval'),
+    ).not.toBeNull();
+    expect(screen.getByTestId('train-line-box-your-move-loading')).not.toBeNull();
+  });
+
+  it('failed: the Your-move card is the header alone, with no loading child and no error copy', () => {
+    renderReveal({
+      guess: 'critical',
+      playedMoveUci: 'e2e4',
+      verdict: makeVerdict(soft),
+      instantGrade: { status: 'failed', keyUci: 'd2d4', keyLine: null },
+    });
+    const yourBox = screen.getByTestId('train-line-box-your-move');
+    expect(yourBox.getAttribute('data-line-status')).toBe('failed');
+    expect(screen.queryByTestId('train-line-box-your-move-loading')).toBeNull();
+    expect(within(yourBox).queryByTestId('train-line-stepper-eval')).toBeNull();
+    expect(screen.queryByTestId('train-game-line-error')).toBeNull();
+    expect(yourBox.textContent).toContain('Your move: e4');
+  });
+
+  it('a landed grade (instantGrade null) renders both cards ready', () => {
+    renderReveal({
+      guess: 'critical',
+      playedMoveUci: 'e2e4',
+      verdict: makeVerdict(soft),
+      gradeResult: makeGradeResult({
+        bestMoveUci: 'd2d4',
+        bestLine: KEY_LINE,
+        playedLine: makeEngineLine({ moves: ['e2e4', 'e7e5'] }),
+      }),
+      instantGrade: null,
+    });
+    expect(screen.queryByTestId('train-line-box-your-move-loading')).toBeNull();
+    expect(screen.queryByTestId('train-line-box-best-move-loading')).toBeNull();
+    expect(screen.getByTestId('train-line-box-your-move').getAttribute('data-line-status')).toBeNull();
+    expect(screen.getAllByTestId('train-line-stepper-eval')).toHaveLength(2);
+  });
+
+  it('the grade landing with the same best UCI does not re-dispatch the game-move search (RESEARCH Pitfall 5)', async () => {
+    revealPuzzle.mockResolvedValue(
+      makeReveal({ played_in_game_move_uci: 'g1f3', played_in_game_san: 'Nf3' }),
+    );
+    const startGameMoveSearch = vi
+      .fn<(puzzleFen: string, gameMoveUci: string) => Promise<TrainEngineLine>>()
+      .mockResolvedValue({ moves: ['g1f3'], evalCp: 10, evalMate: null });
+    const gradingEngine = makeGradingEngine({ startGameMoveSearch });
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const base: ComponentProps<typeof TrainReveal> = {
+      puzzle: makePuzzle(),
+      sessionId: 1,
+      verdict: makeVerdict(soft),
+      isSolveError: false,
+      onRetrySolve: vi.fn(),
+      onNext: vi.fn(),
+      onFenChange: vi.fn(),
+      gradingEngine,
+      guess: 'critical',
+      playedMoveUci: 'e2e4',
+      gradeResult: null,
+      instantGrade: { status: 'pending', keyUci: 'd2d4', keyLine: KEY_LINE },
+    };
+    const tree = (props: ComponentProps<typeof TrainReveal>) => (
+      <MemoryRouter>
+        <QueryClientProvider client={client}>
+          <TooltipProvider>
+            <TrainReveal {...props} />
+          </TooltipProvider>
+        </QueryClientProvider>
+      </MemoryRouter>
+    );
+    const { rerender } = render(tree(base));
+    await waitFor(() => expect(startGameMoveSearch).toHaveBeenCalledTimes(1));
+    expect(startGameMoveSearch).toHaveBeenCalledWith(START_FEN, 'g1f3');
+
+    rerender(
+      tree({
+        ...base,
+        instantGrade: null,
+        gradeResult: makeGradeResult({
+          bestMoveUci: 'd2d4',
+          bestLine: KEY_LINE,
+          playedLine: makeEngineLine({ moves: ['e2e4', 'e7e5'] }),
+        }),
+      }),
+    );
+    await waitFor(() => expect(screen.getByTestId('train-line-box-game-move')).not.toBeNull());
+    expect(screen.queryByTestId('train-line-box-your-move-loading')).toBeNull();
+    expect(startGameMoveSearch).toHaveBeenCalledTimes(1);
   });
 });
 

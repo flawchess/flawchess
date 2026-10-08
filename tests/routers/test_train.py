@@ -146,7 +146,7 @@ from app.models.game_flaw import GameFlaw
 from app.models.game_position import GamePosition
 from app.models.herring_pool import HerringPool
 from app.repositories import train_repository
-from app.schemas.train import SolveRequest, TrainPuzzle
+from app.schemas.train import ServerGradedMove, SolveRequest, TrainPuzzle
 from app.services import sharp_filler
 from app.services.sharp_filler import SharpPuzzle
 
@@ -161,6 +161,11 @@ _SHARP_PV_LINES = [{"b": 200, "bm": None, "s": -200, "sm": None, "su": "g8f6"}]
 # (white to move after 1.e4 e5 2.Nf3 Nc6 3.Bb5 a6: b5a4 and b5c6 are both legal),
 # so the answer key's legality check keeps it on the wire.
 _SHARP_KEYED_PV_LINES = [{"b": 200, "bm": None, "s": -200, "sm": None, "su": "b5c6"}]
+
+# Phase 236 (D-08): a soft blob whose `su` is legal at _FLAW_PLY_WHITE and inside
+# the good band (gap ~0.009 < INACCURACY_DROP), so a stored best move b5a4 gives
+# the server-graded set [b5a4 good, b5c6 good].
+_SOFT_KEYED_PV_LINES = [{"b": 40, "bm": None, "s": 30, "sm": None, "su": "b5c6"}]
 
 # A real, legal Ruy Lopez opening PGN — long enough (10 half-moves) to replay
 # any flaw ply this file exercises via chess.pgn.
@@ -707,6 +712,7 @@ async def _solve(
     move_quality: str = "good",
     telemetry: dict[str, object] | None = None,
     recheck: dict[str, object] | None = None,
+    phone_grade: dict[str, object] | None = None,
 ) -> httpx.Response:
     body: dict[str, object] = {
         "position": position,
@@ -718,6 +724,8 @@ async def _solve(
         body["telemetry"] = telemetry
     if recheck is not None:
         body["recheck"] = recheck
+    if phone_grade is not None:
+        body["phone_grade"] = phone_grade
     async with httpx.AsyncClient(
         transport=httpx.ASGITransport(app=app), base_url="http://test"
     ) as client:
@@ -1122,11 +1130,13 @@ async def test_401_unauthenticated() -> None:
 @pytest.mark.asyncio
 async def test_pre_attempt_payload_shape(test_engine) -> None:
     """The puzzle dict's key set is EXACTLY the six POOL-10 fields plus the
-    three Phase 235 answer-key fields (D-05).
+    three Phase 235 answer-key fields (D-05) plus the Phase 236 server-graded
+    set (D-03/D-08).
 
     Equality, not membership (`set(...) == {...}`, never `in`/`assertIn`): the
-    key/type/runner-up widening is deliberate (SEED-192, D-05), and any
-    FURTHER addition (best_move, pv, source) must still fail this test.
+    key/type/runner-up and server_graded_moves widenings are deliberate
+    (SEED-192 D-05, SEED-193 D-03/D-08), and any FURTHER addition (best_move,
+    pv, source) must still fail this test.
     """
     email = f"train-shape-{uuid.uuid4().hex[:8]}@example.com"
     user_id, token = await _register_and_login(email)
@@ -1152,7 +1162,60 @@ async def test_pre_attempt_payload_shape(test_engine) -> None:
             "key_move_uci",
             "puzzle_type",
             "runner_up_uci",
+            "server_graded_moves",
         }
+    finally:
+        await _delete_games(test_engine, [game_id])
+
+
+@pytest.mark.asyncio
+async def test_pre_attempt_payload_carries_server_graded_moves(test_engine) -> None:
+    """Phase 236 (D-03/D-08): a soft keyed SR puzzle arrives with its server-graded
+    set [best (the key) good, su good], tier only (no ES values)."""
+    email = f"train-sgm-{uuid.uuid4().hex[:8]}@example.com"
+    user_id, token = await _register_and_login(email)
+    game_id = await _seed_game_with_blunder(
+        test_engine, user_id, missed_pv_lines=_SOFT_KEYED_PV_LINES
+    )
+    await _seed_flaw_best_move(test_engine, user_id, game_id, _FLAW_PLY_WHITE, "b5a4")
+
+    try:
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=app), base_url="http://test"
+        ) as client:
+            resp = await client.post(ENDPOINT, headers={"Authorization": f"Bearer {token}"})
+
+        assert resp.status_code == 200
+        puzzle = resp.json()["puzzles"][0]
+        assert puzzle["key_move_uci"] == "b5a4"
+        assert puzzle["server_graded_moves"] == [
+            {"uci": "b5a4", "tier": "good"},
+            {"uci": "b5c6", "tier": "good"},
+        ]
+    finally:
+        await _delete_games(test_engine, [game_id])
+
+
+@pytest.mark.asyncio
+async def test_pre_attempt_payload_no_key_sends_no_server_graded_moves(test_engine) -> None:
+    """Phase 236 (D-08): with NO stored best move the key is null while the blob's
+    `su` b5c6 is legal and good, so ONLY the no-key rule empties the set."""
+    email = f"train-sgm-nokey-{uuid.uuid4().hex[:8]}@example.com"
+    user_id, token = await _register_and_login(email)
+    game_id = await _seed_game_with_blunder(
+        test_engine, user_id, missed_pv_lines=_SOFT_KEYED_PV_LINES
+    )
+
+    try:
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=app), base_url="http://test"
+        ) as client:
+            resp = await client.post(ENDPOINT, headers={"Authorization": f"Bearer {token}"})
+
+        assert resp.status_code == 200
+        puzzle = resp.json()["puzzles"][0]
+        assert puzzle["key_move_uci"] is None
+        assert puzzle["server_graded_moves"] == []
     finally:
         await _delete_games(test_engine, [game_id])
 
@@ -1179,6 +1242,8 @@ async def test_pre_attempt_payload_carries_sr_answer_key(test_engine) -> None:
         assert puzzle["key_move_uci"] == "b5a4"
         assert puzzle["puzzle_type"] == "sharp"
         assert puzzle["runner_up_uci"] == "b5c6"
+        # Phase 236 (D-08): a sharp node grades only its runner-up, as a mistake.
+        assert puzzle["server_graded_moves"] == [{"uci": "b5c6", "tier": "wrong"}]
     finally:
         await _delete_games(test_engine, [game_id])
 
@@ -1204,6 +1269,7 @@ async def test_pre_attempt_payload_key_is_null_without_best_move(test_engine) ->
         assert puzzle["key_move_uci"] is None
         assert puzzle["puzzle_type"] == "soft"
         assert puzzle["runner_up_uci"] is None
+        assert puzzle["server_graded_moves"] == []
     finally:
         await _delete_games(test_engine, [game_id])
 
@@ -1229,6 +1295,7 @@ async def test_pre_attempt_payload_illegal_key_and_runner_up_are_null(test_engin
         assert puzzle["key_move_uci"] is None
         assert puzzle["puzzle_type"] == "sharp"
         assert puzzle["runner_up_uci"] is None
+        assert puzzle["server_graded_moves"] == []
     finally:
         await _delete_games(test_engine, [game_id])
 
@@ -1852,6 +1919,9 @@ def test_vetted_move_material_absent_from_request_and_pre_attempt_schemas() -> N
     for field in ("vetted_moves", "graded_es_before", "graded_es_after"):
         assert field not in SolveRequest.model_fields
         assert field not in TrainPuzzle.model_fields
+    # Phase 236 (D-03): the one new pre-attempt wire type is tier-only, the
+    # expected scores never cross the wire.
+    assert set(ServerGradedMove.model_fields) == {"uci", "tier"}
 
 
 @pytest.mark.asyncio
@@ -3862,5 +3932,275 @@ async def test_recheck_resubmit_keeps_first_record(test_engine) -> None:
         assert second_body["correct_guess"] is True
         stored, _, _ = await _recheck_row(test_engine, session_id, 0)
         assert stored == {**_CONFIRMED_RECHECK, "accepted": True}
+    finally:
+        await _delete_games(test_engine, [game_id])
+
+
+# ---------------------------------------------------------------------------
+# Phase 236: phone grade audit record (SEED-193)
+# ---------------------------------------------------------------------------
+
+_PHONE_GRADE: dict[str, object] = {
+    "v": 1,
+    "tier": "inaccuracy",
+    "key_es": 0.62,
+    "played_es": 0.55,
+    "key_depth": 14,
+    "played_depth": 13,
+}
+
+
+async def _phone_grade_row(
+    test_engine, session_id: int, position: int
+) -> tuple[object, bool, str | None]:
+    """Return (phone_grade, phone_grade IS NULL, jsonb_typeof(phone_grade)) for one row."""
+    session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
+    async with session_maker() as session:
+        row = (
+            await session.execute(
+                text(
+                    "SELECT phone_grade, phone_grade IS NULL, jsonb_typeof(phone_grade) "
+                    "FROM drill_solves WHERE session_id = :sid AND position = :pos"
+                ),
+                {"sid": session_id, "pos": position},
+            )
+        ).one()
+    return row[0], bool(row[1]), row[2]
+
+
+@pytest.mark.asyncio
+async def test_phone_grade_on_solve_is_stored_verbatim(test_engine) -> None:
+    """D-01/D-13: a solve POST carrying phone_grade stores the record as a JSON object."""
+    _, token, game_id, session_id = await _seed_herring_session(test_engine, "pg-store")
+    try:
+        resp = await _solve(token, session_id, 0, phone_grade=_PHONE_GRADE)
+        assert resp.status_code == 200, resp.text
+        stored, is_null, json_type = await _phone_grade_row(test_engine, session_id, 0)
+        assert is_null is False
+        assert json_type == "object"
+        assert stored == _PHONE_GRADE
+    finally:
+        await _delete_games(test_engine, [game_id])
+
+
+@pytest.mark.asyncio
+async def test_solve_without_phone_grade_stays_sql_null(test_engine) -> None:
+    """D-01: a solve with no record leaves the column SQL NULL, never a JSON null."""
+    _, token, game_id, session_id = await _seed_herring_session(test_engine, "pg-none")
+    try:
+        resp = await _solve(token, session_id, 0)
+        assert resp.status_code == 200, resp.text
+        stored, is_null, json_type = await _phone_grade_row(test_engine, session_id, 0)
+        assert stored is None
+        assert is_null is True
+        assert json_type is None
+    finally:
+        await _delete_games(test_engine, [game_id])
+
+
+@pytest.mark.asyncio
+async def test_phone_grade_is_never_a_grading_input(test_engine) -> None:
+    """D-02: a fabricated phone_grade changes nothing about how the solve is graded;
+    the stored record keeps the client's tier verbatim while move_quality stays the
+    server's effective tier."""
+    _, token_a, game_a, session_a = await _seed_sharp_keyed_session(test_engine, "pg-gradeA")
+    _, token_b, game_b, session_b = await _seed_sharp_keyed_session(test_engine, "pg-gradeB")
+    fabricated = {**_PHONE_GRADE, "tier": "good", "key_es": 0.6, "played_es": 0.6}
+    try:
+        with_record = await _solve(
+            token_a,
+            session_a,
+            0,
+            guess="critical",
+            played_move="b5c6",
+            move_quality="good",
+            phone_grade=fabricated,
+        )
+        without_record = await _solve(
+            token_b,
+            session_b,
+            0,
+            guess="critical",
+            played_move="b5c6",
+            move_quality="good",
+        )
+        assert with_record.status_code == 200, with_record.text
+        assert without_record.status_code == 200, without_record.text
+        a, b = with_record.json(), without_record.json()
+        for key in (
+            "move_quality",
+            "correct_guess",
+            "disagreement",
+            "graded_es_before",
+            "graded_es_after",
+        ):
+            assert a[key] == b[key], key
+        # The server tier for the graded runner-up, not the record's "good".
+        assert a["move_quality"] != "good"
+        stored, _, _ = await _phone_grade_row(test_engine, session_a, 0)
+        assert isinstance(stored, dict)
+        assert stored["tier"] == "good"
+    finally:
+        await _delete_games(test_engine, [game_a, game_b])
+
+
+@pytest.mark.asyncio
+async def test_review_flush_writes_phone_grade_column_not_telemetry(test_engine) -> None:
+    """D-12: the flush's record lands in its own column and never in telemetry."""
+    _, token, game_id, session_id = await _seed_herring_session(test_engine, "pg-rev")
+    try:
+        assert (await _solve(token, session_id, 0)).status_code == 200
+        resp = await _review(
+            token,
+            session_id,
+            0,
+            {"v": 1, "exit": "next", "review_ms": 5000, "phone_grade": _PHONE_GRADE},
+        )
+        assert resp.status_code == 204, resp.text
+        stored, is_null, json_type = await _phone_grade_row(test_engine, session_id, 0)
+        assert is_null is False
+        assert json_type == "object"
+        assert stored == _PHONE_GRADE
+        telemetry, _, _ = await _telemetry_row(test_engine, session_id, 0)
+        assert telemetry == {"v": 1, "exit": "next", "review_ms": 5000}
+        assert isinstance(telemetry, dict)
+        assert "phone_grade" not in telemetry
+    finally:
+        await _delete_games(test_engine, [game_id])
+
+
+@pytest.mark.asyncio
+async def test_review_flush_phone_grade_is_write_once(test_engine) -> None:
+    """D-12: a second flush with a different record keeps the first record, still
+    returns 204 and still merges its own telemetry keys."""
+    _, token, game_id, session_id = await _seed_herring_session(test_engine, "pg-once")
+    try:
+        assert (await _solve(token, session_id, 0)).status_code == 200
+        first = await _review(
+            token, session_id, 0, {"v": 1, "exit": "pagehide", "phone_grade": _PHONE_GRADE}
+        )
+        assert first.status_code == 204, first.text
+        second = await _review(
+            token,
+            session_id,
+            0,
+            {
+                "v": 1,
+                "exit": "next",
+                "review_ms": 7000,
+                "phone_grade": {**_PHONE_GRADE, "tier": "wrong", "key_depth": 40},
+            },
+        )
+        assert second.status_code == 204, second.text
+        stored, _, _ = await _phone_grade_row(test_engine, session_id, 0)
+        assert stored == _PHONE_GRADE
+        telemetry, _, _ = await _telemetry_row(test_engine, session_id, 0)
+        assert telemetry == {"v": 1, "exit": "next", "review_ms": 7000}
+    finally:
+        await _delete_games(test_engine, [game_id])
+
+
+@pytest.mark.asyncio
+async def test_review_flush_never_overwrites_solve_time_phone_grade(test_engine) -> None:
+    """D-12/D-13: a record stored by the solve POST survives a later flush's record."""
+    _, token, game_id, session_id = await _seed_herring_session(test_engine, "pg-keep")
+    try:
+        assert (await _solve(token, session_id, 0, phone_grade=_PHONE_GRADE)).status_code == 200
+        resp = await _review(
+            token,
+            session_id,
+            0,
+            {
+                "v": 1,
+                "exit": "next",
+                "phone_grade": {**_PHONE_GRADE, "tier": "good", "key_es": 0.9},
+            },
+        )
+        assert resp.status_code == 204, resp.text
+        stored, _, _ = await _phone_grade_row(test_engine, session_id, 0)
+        assert stored == _PHONE_GRADE
+    finally:
+        await _delete_games(test_engine, [game_id])
+
+
+@pytest.mark.asyncio
+async def test_review_flush_malformed_phone_grade_keeps_telemetry(test_engine) -> None:
+    """D-01: a malformed record is dropped; the flush still 204s and merges telemetry."""
+    _, token, game_id, session_id = await _seed_herring_session(test_engine, "pg-bad")
+    try:
+        assert (await _solve(token, session_id, 0)).status_code == 200
+        resp = await _review(
+            token,
+            session_id,
+            0,
+            {
+                "v": 1,
+                "exit": "next",
+                "review_ms": 4000,
+                "phone_grade": {**_PHONE_GRADE, "threads": 4},
+            },
+        )
+        assert resp.status_code == 204, resp.text
+        stored, is_null, _ = await _phone_grade_row(test_engine, session_id, 0)
+        assert stored is None
+        assert is_null is True
+        telemetry, _, _ = await _telemetry_row(test_engine, session_id, 0)
+        assert telemetry == {"v": 1, "exit": "next", "review_ms": 4000}
+    finally:
+        await _delete_games(test_engine, [game_id])
+
+
+@pytest.mark.asyncio
+async def test_review_flush_without_phone_grade_leaves_column_null(test_engine) -> None:
+    """D-12: a stale-bundle flush (no field) behaves as in Phase 233, column stays NULL."""
+    _, token, game_id, session_id = await _seed_herring_session(test_engine, "pg-stale")
+    try:
+        assert (await _solve(token, session_id, 0)).status_code == 200
+        resp = await _review(token, session_id, 0, {"v": 1, "exit": "next"})
+        assert resp.status_code == 204, resp.text
+        _, is_null, json_type = await _phone_grade_row(test_engine, session_id, 0)
+        assert is_null is True
+        assert json_type is None
+    finally:
+        await _delete_games(test_engine, [game_id])
+
+
+@pytest.mark.asyncio
+async def test_phone_grade_resubmit_keeps_first_record(test_engine) -> None:
+    """D-13: a re-submit of an already-solved position with a different record keeps
+    the first stored record."""
+    _, token, game_id, session_id = await _seed_herring_session(test_engine, "pg-resub")
+    try:
+        first = await _solve(token, session_id, 0, phone_grade=_PHONE_GRADE)
+        assert first.status_code == 200, first.text
+        second = await _solve(
+            token, session_id, 0, phone_grade={**_PHONE_GRADE, "tier": "wrong", "key_depth": 99}
+        )
+        assert second.status_code == 200, second.text
+        stored, _, _ = await _phone_grade_row(test_engine, session_id, 0)
+        assert stored == _PHONE_GRADE
+    finally:
+        await _delete_games(test_engine, [game_id])
+
+
+@pytest.mark.asyncio
+async def test_phone_grade_never_earns_disagreement_credit(test_engine) -> None:
+    """T-236-01: a record claiming a good pair earns no disagreement credit; only a
+    sanity-checked recheck can (P-02: several on a sharp puzzle is not correct)."""
+    _, token, game_id, session_id = await _seed_sharp_keyed_session(test_engine, "pg-nocredit")
+    try:
+        resp = await _solve(
+            token,
+            session_id,
+            0,
+            guess="several",
+            played_move="b1c3",
+            move_quality="good",
+            phone_grade={**_PHONE_GRADE, "tier": "good", "key_es": 0.6, "played_es": 0.62},
+        )
+        assert resp.status_code == 200, resp.text
+        body = resp.json()
+        assert body["disagreement"] is False
+        assert body["correct_guess"] is False
     finally:
         await _delete_games(test_engine, [game_id])

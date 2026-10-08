@@ -1628,3 +1628,371 @@ describe('useTrainGradingEngine — disagreement re-check (Phase 235 D-11/D-13/D
     expect(await recheckPromise).not.toBeNull();
   });
 });
+
+// ─── Phase 236 (D-04/D-05/D-06): the phone_grade reading ───────────────────
+
+describe('useTrainGradingEngine — phone reading (Phase 236 D-04/D-05/D-06)', () => {
+  beforeEach(() => {
+    vi.useFakeTimers({ now: 0 });
+    mockWorker = new MockWorker();
+    vi.stubGlobal(
+      'Worker',
+      vi.fn(function (this: unknown) {
+        return mockWorker;
+      }),
+    );
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.unstubAllGlobals();
+  });
+
+  /** Settle a keyed anchor search at depth 12 reading raw cp -40 (black POV) after d2d4. */
+  function settleKeyedAnchor(startGrading: (fen: string, key: string) => void): void {
+    act(() => {
+      startGrading(FEN, 'd2d4');
+    });
+    act(() => {
+      mockWorker.simulateMessage('info depth 12 multipv 1 score cp -40 nodes 1000 pv d7d5');
+    });
+    act(() => {
+      mockWorker.simulateMessage('bestmove d7d5');
+    });
+  }
+
+  it('playing the key records a good tier with the played pair equal to the key pair (D-05)', async () => {
+    const { result } = renderHook(() => useTrainGradingEngine({ enabled: true }));
+    driveInit(mockWorker);
+    settleKeyedAnchor(result.current.startGrading);
+
+    const grade = await result.current.gradeMove(FEN, 'd2d4');
+    expect(grade.phoneReading).toEqual({
+      tier: 'good',
+      keyEs: grade.esBefore,
+      playedEs: grade.esBefore,
+      keyDepth: 12,
+      playedDepth: 12,
+    });
+  });
+
+  it('an off-key move takes the key pair from the anchor and the played pair from the after-played search (D-04)', async () => {
+    const { result } = renderHook(() => useTrainGradingEngine({ enabled: true }));
+    driveInit(mockWorker);
+    settleKeyedAnchor(result.current.startGrading);
+
+    const gradePromise = result.current.gradeMove(FEN, 'e2e4');
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    act(() => {
+      mockWorker.simulateMessage('info depth 9 multipv 1 score cp 300 nodes 1000 pv d7d5');
+    });
+    act(() => {
+      mockWorker.simulateMessage('bestmove d7d5');
+    });
+
+    const grade = await gradePromise;
+    expect(grade.phoneReading).toEqual({
+      tier: grade.moveTier,
+      keyEs: grade.esBefore,
+      playedEs: grade.esAfter,
+      keyDepth: 12,
+      playedDepth: 9,
+    });
+    expect(grade.moveTier).toBe('wrong');
+  });
+
+  it('the legacy root anchor records nothing, for the root bestmove and for an off-key move (D-06)', async () => {
+    const { result } = renderHook(() => useTrainGradingEngine({ enabled: true }));
+    driveInit(mockWorker);
+
+    act(() => {
+      result.current.startGrading(FEN);
+    });
+    act(() => {
+      mockWorker.simulateMessage('info depth 12 multipv 1 score cp 40 nodes 1000 pv e2e4 e7e5');
+    });
+    act(() => {
+      mockWorker.simulateMessage('bestmove e2e4');
+    });
+
+    const keyGrade = await result.current.gradeMove(FEN, 'e2e4');
+    expect(keyGrade.phoneReading ?? null).toBeNull();
+
+    const gradePromise = result.current.gradeMove(FEN, 'd2d4');
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    act(() => {
+      mockWorker.simulateMessage('info depth 10 multipv 1 score cp 20 nodes 1000 pv d7d5');
+    });
+    act(() => {
+      mockWorker.simulateMessage('bestmove d7d5');
+    });
+    const offKeyGrade = await gradePromise;
+    expect(offKeyGrade.phoneReading ?? null).toBeNull();
+  });
+
+  it('the defensive fallbacks (anchor mismatch, illegal played move) record nothing', async () => {
+    const { result } = renderHook(() => useTrainGradingEngine({ enabled: true }));
+    driveInit(mockWorker);
+    settleKeyedAnchor(result.current.startGrading);
+
+    const illegal = await result.current.gradeMove(FEN, 'e2e5');
+    expect(illegal.moveTier).toBe('good');
+    expect(illegal.phoneReading ?? null).toBeNull();
+
+    const mismatch = await result.current.gradeMove(fenAfter(FEN, 'e2e4'), 'e7e5');
+    expect(mismatch.moveTier).toBe('good');
+    expect(mismatch.phoneReading ?? null).toBeNull();
+  });
+});
+
+// ─── Phase 236 (RESEARCH Pitfall 1): instant-path serialization ────────────
+
+describe('useTrainGradingEngine: instant-path serialization (Phase 236 Pitfall 1)', () => {
+  beforeEach(() => {
+    vi.useFakeTimers({ now: 0 });
+    mockWorker = new MockWorker();
+    vi.stubGlobal(
+      'Worker',
+      vi.fn(function (this: unknown) {
+        return mockWorker;
+      }),
+    );
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.unstubAllGlobals();
+  });
+
+  async function flush(): Promise<void> {
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0);
+    });
+  }
+
+  /** Answer the search the Worker is currently running (raw cp is from the side to move). */
+  function answerCurrentSearch(rawCp: number, depth: number, pv: string): void {
+    act(() => {
+      mockWorker.simulateMessage(
+        `info depth ${depth} multipv 1 score cp ${rawCp} nodes 1000 pv ${pv}`,
+      );
+    });
+    act(() => {
+      mockWorker.simulateMessage(`bestmove ${pv.split(' ')[0]}`);
+    });
+  }
+
+  function stopCount(): number {
+    return mockWorker.messages.filter((m) => m === 'stop').length;
+  }
+
+  function positions(): string[] {
+    return mockWorker.messages.filter((m) => m.startsWith('position fen '));
+  }
+
+  it('a game search started while the played search runs queues behind it, then runs after grading resolves', async () => {
+    const { result } = renderHook(() => useTrainGradingEngine({ enabled: true }));
+    driveInit(mockWorker);
+    act(() => {
+      result.current.startGrading(FEN, 'd2d4');
+    });
+    answerCurrentSearch(-40, 12, 'd7d5');
+
+    const gradePromise = result.current.gradeMove(FEN, 'e2e4');
+    await flush();
+    expect(goCount()).toBe(2);
+
+    const gamePromise = result.current.startGameMoveSearch(FEN, 'g1f3');
+    await flush();
+    // Pitfall 1: the reveal's search must neither stop the played search nor dispatch yet.
+    expect(stopCount()).toBe(0);
+    expect(goCount()).toBe(2);
+
+    answerCurrentSearch(300, 9, 'd7d5');
+    const grade = await gradePromise;
+    expect(grade.phoneReading).not.toBeNull();
+    expect(grade.phoneReading?.playedDepth).toBe(9);
+
+    // Only now does the game search dispatch.
+    await flush();
+    expect(goCount()).toBe(3);
+    expect(positions().at(-1)).toBe(`position fen ${fenAfter(FEN, 'g1f3')}`);
+    expect(stopCount()).toBe(0);
+    answerCurrentSearch(20, 10, 'd7d5');
+    const line = await gamePromise;
+    expect(line.moves[0]).toBe('g1f3');
+  });
+
+  it('a fast mover (gradeMove during the anchor search, then the game search) runs anchor -> played -> game with no stop', async () => {
+    const { result } = renderHook(() => useTrainGradingEngine({ enabled: true }));
+    driveInit(mockWorker);
+    act(() => {
+      result.current.startGrading(FEN, 'd2d4');
+    });
+
+    const gradePromise = result.current.gradeMove(FEN, 'e2e4');
+    const gamePromise = result.current.startGameMoveSearch(FEN, 'g1f3');
+    await flush();
+    expect(stopCount()).toBe(0);
+    expect(goCount()).toBe(1);
+
+    answerCurrentSearch(-40, 12, 'd7d5'); // anchor settles
+    await flush();
+    expect(goCount()).toBe(2);
+    expect(stopCount()).toBe(0);
+
+    answerCurrentSearch(300, 9, 'd7d5'); // played settles
+    const grade = await gradePromise;
+    expect(grade.phoneReading).not.toBeNull();
+    await flush();
+    expect(goCount()).toBe(3);
+    answerCurrentSearch(20, 10, 'd7d5'); // game
+    const line = await gamePromise;
+    expect(line.moves[0]).toBe('g1f3');
+
+    expect(stopCount()).toBe(0);
+    expect(positions()).toEqual([
+      `position fen ${fenAfter(FEN, 'd2d4')}`,
+      `position fen ${fenAfter(FEN, 'e2e4')}`,
+      `position fen ${fenAfter(FEN, 'g1f3')}`,
+    ]);
+  });
+
+  it('a game search queued behind grading never dispatches for the old puzzle once a new one starts, and rejects', async () => {
+    const { result } = renderHook(() => useTrainGradingEngine({ enabled: true }));
+    driveInit(mockWorker);
+    act(() => {
+      result.current.startGrading(FEN, 'd2d4');
+    });
+    answerCurrentSearch(-40, 12, 'd7d5');
+
+    const gradePromise = result.current.gradeMove(FEN, 'e2e4');
+    const gradeAssertion = expect(gradePromise).rejects.toThrow();
+    await flush();
+    const gamePromise = result.current.startGameMoveSearch(FEN, 'g1f3');
+    const gameAssertion = expect(gamePromise).rejects.toThrow();
+    await flush();
+
+    // New puzzle: supersedes the stuck played search (the Worker is stopped).
+    act(() => {
+      result.current.startGrading(BLACK_TO_MOVE_FEN);
+    });
+    act(() => {
+      mockWorker.simulateMessage('bestmove d7d5'); // stop echo, discarded
+    });
+    answerCurrentSearch(10, 12, 'g8f6'); // settles the NEW puzzle's anchor
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(TRAIN_GRADING_TIMEOUT_MS + 100);
+    });
+    await gameAssertion;
+    await gradeAssertion;
+    expect(positions()).not.toContain(`position fen ${fenAfter(FEN, 'g1f3')}`);
+  });
+});
+
+// ─── Phase 236 (D-14): the early key-line callback ─────────────────────────
+
+describe('useTrainGradingEngine: onKeyLine (Phase 236 D-14)', () => {
+  beforeEach(() => {
+    vi.useFakeTimers({ now: 0 });
+    mockWorker = new MockWorker();
+    vi.stubGlobal(
+      'Worker',
+      vi.fn(function (this: unknown) {
+        return mockWorker;
+      }),
+    );
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.unstubAllGlobals();
+  });
+
+  function answerCurrentSearch(rawCp: number, depth: number, pv: string): void {
+    act(() => {
+      mockWorker.simulateMessage(
+        `info depth ${depth} multipv 1 score cp ${rawCp} nodes 1000 pv ${pv}`,
+      );
+    });
+    act(() => {
+      mockWorker.simulateMessage(`bestmove ${pv.split(' ')[0]}`);
+    });
+  }
+
+  it('a keyed anchor hands the key line over once, before the played search result', async () => {
+    const { result } = renderHook(() => useTrainGradingEngine({ enabled: true }));
+    driveInit(mockWorker);
+    act(() => {
+      result.current.startGrading(FEN, 'd2d4');
+    });
+    answerCurrentSearch(-40, 12, 'd7d5');
+
+    const onKeyLine = vi.fn();
+    const gradePromise = result.current.gradeMove(FEN, 'e2e4', { onKeyLine });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    // The played search is still running: the key line is already out.
+    expect(goCount()).toBe(2);
+    expect(onKeyLine).toHaveBeenCalledTimes(1);
+    expect(onKeyLine.mock.calls[0]?.[0]).toMatchObject({ moves: ['d2d4', 'd7d5'] });
+
+    answerCurrentSearch(300, 9, 'd7d5');
+    await gradePromise;
+    expect(onKeyLine).toHaveBeenCalledTimes(1);
+  });
+
+  it('playing the key still calls onKeyLine once, then resolves as before', async () => {
+    const { result } = renderHook(() => useTrainGradingEngine({ enabled: true }));
+    driveInit(mockWorker);
+    act(() => {
+      result.current.startGrading(FEN, 'd2d4');
+    });
+    answerCurrentSearch(-40, 12, 'd7d5');
+
+    const onKeyLine = vi.fn();
+    const grade = await result.current.gradeMove(FEN, 'd2d4', { onKeyLine });
+    expect(onKeyLine).toHaveBeenCalledTimes(1);
+    expect(onKeyLine.mock.calls[0]?.[0]).toEqual(grade.bestLine);
+    expect(grade.moveTier).toBe('good');
+  });
+
+  it('a legacy (null key) root anchor never calls onKeyLine', async () => {
+    const { result } = renderHook(() => useTrainGradingEngine({ enabled: true }));
+    driveInit(mockWorker);
+    act(() => {
+      result.current.startGrading(FEN);
+    });
+    answerCurrentSearch(40, 12, 'e2e4 e7e5');
+
+    const onKeyLine = vi.fn();
+    const keyGrade = await result.current.gradeMove(FEN, 'e2e4', { onKeyLine });
+    expect(keyGrade.moveTier).toBe('good');
+    expect(onKeyLine).not.toHaveBeenCalled();
+
+    const offKey = result.current.gradeMove(FEN, 'd2d4', { onKeyLine });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    answerCurrentSearch(20, 10, 'd7d5');
+    await offKey;
+    expect(onKeyLine).not.toHaveBeenCalled();
+  });
+
+  it('works unchanged without options', async () => {
+    const { result } = renderHook(() => useTrainGradingEngine({ enabled: true }));
+    driveInit(mockWorker);
+    act(() => {
+      result.current.startGrading(FEN, 'd2d4');
+    });
+    answerCurrentSearch(-40, 12, 'd7d5');
+    const grade = await result.current.gradeMove(FEN, 'd2d4');
+    expect(grade.moveTier).toBe('good');
+  });
+});
