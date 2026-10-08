@@ -1076,7 +1076,7 @@ describe('TrainReveal', () => {
     expect(bestIcon?.getAttribute('data-quality')).toBe('best');
   });
 
-  it('a played inaccuracy renders the GOOD quality icon in the CardHeader, never the severity glyph — the fifth D-05 recolor site (LEGEND-03)', async () => {
+  it('a played inaccuracy renders the inaccuracy quality icon in the CardHeader, matching its +1 chip (quick 261008-opg)', async () => {
     const gradeResult = makeGradeResult({
       bestLine: makeEngineLine({ moves: ['e2e4'] }),
       playedLine: makeEngineLine({ moves: ['d2d4'] }),
@@ -1091,7 +1091,7 @@ describe('TrainReveal', () => {
     const yourIcon = screen
       .getByTestId('train-line-box-your-move')
       .querySelector('[data-testid="train-line-stepper-quality"]');
-    expect(yourIcon?.getAttribute('data-quality')).toBe('good');
+    expect(yourIcon?.getAttribute('data-quality')).toBe('inaccuracy');
   });
 
   it('stepping a line reports the stepped move with its quality (first move = box quality, deeper = good/green), and back-to-start reports null', async () => {

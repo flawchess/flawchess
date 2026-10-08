@@ -259,9 +259,7 @@ export interface FlawMarkerEntry {
   best?: boolean;
   /**
    * Phase 200 UAT: this node's arrival move is clean but not the best move —
-   * renders `GoodMoveIcon`. Same Train-only provenance as `best`; an
-   * inaccuracy is presentation-collapsed into this tier by the caller
-   * (`toDisplayQuality`), matching the Train reveal board.
+   * renders `GoodMoveIcon`. Same Train-only provenance as `best`.
    */
   good?: boolean;
   /** FlawMarker.ply — passed to onPvChipClick for the useTacticLines fetch key

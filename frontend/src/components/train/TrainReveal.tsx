@@ -62,7 +62,7 @@ import { useEngineDisplaySettings } from '@/lib/engineSettings';
 import { DARK_GREEN } from '@/lib/arrowColor';
 import { buildGameAnalysisUrl } from '@/lib/analysisUrl';
 import { BEST_MOVE_ARROW, TRAIN_VERDICT_CORRECT, TRAIN_VERDICT_INCORRECT } from '@/lib/theme';
-import { toDisplayQuality, trainGlyphColor } from '@/lib/trainArrows';
+import { trainGlyphColor } from '@/lib/trainArrows';
 import type { TrainFineMove, TrainMoveQuality } from '@/lib/trainArrows';
 import { GUESS_POINTS, MOVE_TIER_POINTS } from '@/lib/trainScore';
 import { GUESS_CALL_LABELS, guessFeedbackProse } from '@/lib/trainGuessLabels';
@@ -368,11 +368,6 @@ function LineBoxHeader({
   quality: TrainMoveQuality | null;
   evalLabel: string | null;
 }): ReactElement {
-  // Phase 200 (LEGEND-03/D-04/D-05, the fifth recolor site): the CardHeader's
-  // quality icon must never show the inaccuracy severity glyph next to a
-  // green arrow — feed it the collapsed display quality, same rule the pure
-  // builder itself uses for the board.
-  const displayQuality = quality !== null ? toDisplayQuality(quality) : null;
   return (
     <CardHeader size="compact">
       {/* Phase 200 UAT: a plain, non-interactive glyph. It used to be a button
@@ -393,9 +388,9 @@ function LineBoxHeader({
         <TrainScoreChip points={box.movePoints} testid="train-line-stepper-points" />
       )}
       <span className="ml-auto flex shrink-0 items-center gap-1.5">
-        {displayQuality != null && (
-          <span data-testid="train-line-stepper-quality" data-quality={displayQuality}>
-            <MoveQualityIcon quality={displayQuality} className="h-4 w-4" />
+        {quality != null && (
+          <span data-testid="train-line-stepper-quality" data-quality={quality}>
+            <MoveQualityIcon quality={quality} className="h-4 w-4" />
           </span>
         )}
         {evalLabel != null && (
