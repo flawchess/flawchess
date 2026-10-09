@@ -1,6 +1,6 @@
 ---
 id: SEED-172
-status: dormant
+status: closed (2026-10-09, owner decision). Items 1 and 3 shipped (Maia off the event loop, quick-260928-85v / release #376; int.bit_count() popcounts, 2026-10-09). Items 2 and 4-8 (Maia fp32, cheaper second-best search, cheaper blob walks, SMT oversubscription, engine-call instrumentation, import off the event loop) not pursued; replant from this file if throughput becomes the priority.
 planted: 2026-09-28
 planted_during: v2.19, Phase 225 planned (SEED-170); standalone performance review session
 trigger_when: when analysis backlog throughput, worker fleet cost, or API latency during eval submits becomes the priority
