@@ -5,6 +5,8 @@ import {
   buildTrainFreePlayArrows,
   buildTrainStepArrows,
   buildTrainStepMarkers,
+  buildTrainStepOverlayArrows,
+  dropLineMove,
   chipArrowColor,
   classifyTrainMoveQuality,
   vettedMoveForSquares,
@@ -521,6 +523,112 @@ describe('buildTrainFreePlayArrows (Phase 200 UAT round 5, Phase 228 D-13/D-15)'
     const free = buildTrainFreePlayArrows([pv(1, 'e7e5')], 1)[0];
     const step = buildTrainStepArrows('e7e5')[0];
     expect(free?.layerKey).not.toBe(step?.layerKey);
+  });
+});
+
+describe('buildTrainStepOverlayArrows (quick 261009-por)', () => {
+  const pv = (multipv: number, firstMove: string, depth: number = 12): PvLine => ({
+    multipv,
+    depth,
+    moves: [firstMove, 'a7a6'],
+    evalCp: 10,
+    evalMate: null,
+  });
+
+  it('engine agrees with the line: exactly the single blue line arrow', () => {
+    const arrows = buildTrainStepOverlayArrows('g1f3', [pv(1, 'g1f3')], 1);
+    expect(arrows).toHaveLength(1);
+    expect(arrows[0]).toMatchObject({ layerKey: 'step-next', color: TRAIN_BEST_MOVE_ARROW });
+  });
+
+  it('a disagreeing engine move draws a secondary under the line arrow, even at depth 1 (no gate)', () => {
+    const arrows = buildTrainStepOverlayArrows('g1f3', [pv(1, 'b1c3', 1)], 1);
+    expect(arrows).toHaveLength(2);
+    expect(arrows[0]).toMatchObject({
+      startSquare: 'b1',
+      endSquare: 'c3',
+      color: STOCKFISH_SECONDARY_LINE,
+      width: TRAIN_BEST_MOVE_ARROW_WIDTH,
+    });
+    expect(arrows[arrows.length - 1]).toMatchObject({
+      layerKey: 'step-next',
+      color: TRAIN_BEST_MOVE_ARROW,
+    });
+  });
+
+  it('setting 0 draws only the line arrow', () => {
+    const arrows = buildTrainStepOverlayArrows('g1f3', [pv(1, 'b1c3')], 0);
+    expect(arrows.map((a) => a.layerKey)).toEqual(['step-next']);
+  });
+
+  it('empty pvLines (engine not at the shown position yet) draws only the line arrow', () => {
+    const arrows = buildTrainStepOverlayArrows('g1f3', [], 3);
+    expect(arrows.map((a) => a.layerKey)).toEqual(['step-next']);
+  });
+
+  it('count 3: disagreeing ranks all draw as unique secondaries, line arrow last', () => {
+    const arrows = buildTrainStepOverlayArrows(
+      'g1f3',
+      [pv(1, 'g1f3'), pv(2, 'b1c3'), pv(3, 'd2d4')],
+      3,
+    );
+    expect(arrows).toHaveLength(3);
+    expect(arrows[arrows.length - 1]?.layerKey).toBe('step-next');
+    const live = arrows.slice(0, -1);
+    expect(live.map((a) => a.color)).toEqual([STOCKFISH_SECONDARY_LINE, STOCKFISH_SECONDARY_LINE]);
+    const keys = arrows.map((a) => a.layerKey);
+    expect(new Set(keys).size).toBe(keys.length);
+    for (const a of live) {
+      expect(a.layerKey).not.toBe('step-next');
+      expect(a.layerKey?.startsWith('free-')).toBe(false);
+    }
+  });
+
+  it('dedupes by from-to squares only (an under-promotion on the same squares is hidden)', () => {
+    const arrows = buildTrainStepOverlayArrows('e7e8q', [pv(1, 'e7e8n')], 1);
+    expect(arrows.map((a) => a.layerKey)).toEqual(['step-next']);
+  });
+
+  it('skips a malformed live UCI without throwing', () => {
+    const arrows = buildTrainStepOverlayArrows('g1f3', [pv(1, 'zz'), pv(2, 'b1c3')], 2);
+    expect(arrows.map((a) => `${a.startSquare}${a.endSquare}`)).toEqual(['b1c3', 'g1f3']);
+  });
+
+  it('end of the line (null next move): live moves draw as secondaries with no primary', () => {
+    const arrows = buildTrainStepOverlayArrows(null, [pv(1, 'b1c3')], 1);
+    expect(arrows).toHaveLength(1);
+    expect(arrows[0]).toMatchObject({ color: STOCKFISH_SECONDARY_LINE });
+    expect(arrows.some((a) => a.layerKey === 'step-next')).toBe(false);
+  });
+
+  it('a count above the available lines yields only the available arrows', () => {
+    const arrows = buildTrainStepOverlayArrows('g1f3', [pv(1, 'b1c3')], 3);
+    expect(arrows).toHaveLength(2);
+  });
+});
+
+describe('dropLineMove (quick 261009-por)', () => {
+  const pv = (multipv: number, firstMove: string): PvLine => ({
+    multipv,
+    depth: 12,
+    moves: [firstMove],
+    evalCp: 10,
+    evalMate: null,
+  });
+
+  it("drops the live line that repeats the known line's next move, keeping rank order", () => {
+    const lines = [pv(1, 'g1f3'), pv(2, 'b1c3'), pv(3, 'd2d4')];
+    expect(dropLineMove(lines, 'g1f3').map((l) => l.moves[0])).toEqual(['b1c3', 'd2d4']);
+  });
+
+  it('compares from-to squares only (a promotion suffix does not matter)', () => {
+    expect(dropLineMove([pv(1, 'e7e8n')], 'e7e8q')).toEqual([]);
+  });
+
+  it('keeps every line when the engine disagrees or at the end of the line', () => {
+    const lines = [pv(1, 'b1c3'), pv(2, 'd2d4')];
+    expect(dropLineMove(lines, 'g1f3')).toEqual(lines);
+    expect(dropLineMove(lines, null)).toEqual(lines);
   });
 });
 

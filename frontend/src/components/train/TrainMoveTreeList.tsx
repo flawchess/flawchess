@@ -21,14 +21,16 @@ import { VariationTree } from '@/components/analysis/VariationTree';
 import { useIsDesktop } from '@/hooks/useIsDesktop';
 import type { TrainRevealTree } from '@/hooks/useTrainRevealTree';
 import { useEngineDisplaySettings } from '@/lib/engineSettings';
+import { dropLineMove } from '@/lib/trainArrows';
 
 /**
  * Height of the reveal move list: two wrapped token rows on mobile, four on desktop
  * (lg), without scrolling. A row is 24px (text-sm 20px line + py-0.5) with a 2px
  * gap-y; the box adds 16px padding + 2px border (Phase 237 UAT: h-16 scrolled at
- * two rows).
+ * two rows). Mobile bumped h-17 -> h-18 (UAT 2026-10-09: a little more air
+ * under the second row; +4px keeps the 4px grid).
  */
-export const TRAIN_MOVE_TREE_HEIGHT_CLASS = 'h-17 lg:h-30';
+export const TRAIN_MOVE_TREE_HEIGHT_CLASS = 'h-18 lg:h-30';
 
 interface TrainMoveTreeListProps {
   tree: TrainRevealTree;
@@ -38,7 +40,11 @@ interface TrainMoveTreeListProps {
   ring?: boolean;
 }
 
-/** The off-line Stockfish row: the lines setting, compact (sideways scroll) on mobile. */
+/** The Stockfish row: the lines setting, compact (sideways scroll) on mobile.
+ * Quick 261009-por: shown on every node except the puzzle position, i.e. on the
+ * stepped known lines as well as sidelines. At the puzzle position the chips are
+ * the server's graded answer key, and a short live ranking there would read as
+ * contradicting it (Phase 211 dropped client-engine alternatives for that). */
 function TrainStockfishRow({
   tree,
   flipped,
@@ -48,15 +54,27 @@ function TrainStockfishRow({
 }): ReactElement {
   const isDesktop = useIsDesktop();
   const { sfLines } = useEngineDisplaySettings();
+  // Quick 261009-por: on a stepped chip line the line owns the primary move (its
+  // blue pointer and the chip's eval), so the row drops the live line that
+  // repeats it and draws every other badge secondary, like the board arrows.
+  // When the engine agrees with the line the row shows one line fewer than the
+  // setting (its reserved height keeps the layout still).
+  const step = tree.stepInfo;
+  // Slice before filtering, as the arrows do, so rows and arrows cover the same ranks.
+  const rows =
+    step !== null ? dropLineMove(tree.pvLines.slice(0, sfLines), step.nextMoveUci) : tree.pvLines;
   return (
     <div data-testid="train-sf-row">
       {tree.pvLines.length === 0 ? (
         <EngineLinesSkeleton rows={sfLines} compact={!isDesktop} />
       ) : (
         <EngineLines
-          pvLines={tree.pvLines}
+          pvLines={rows}
           maxLines={sfLines}
-          isAnalyzing={tree.isAnalyzing}
+          // The skeleton above covers "no lines yet"; an empty `rows` here means
+          // the engine agrees with the line, which must not pulse as loading.
+          isAnalyzing={false}
+          allSecondary={step !== null}
           baseFen={tree.fen}
           flipped={flipped}
           onMoveClick={tree.playLine}
@@ -73,10 +91,11 @@ export function TrainMoveTreeList({
   ring = false,
 }: TrainMoveTreeListProps): ReactElement {
   // The Stockfish row is a SIBLING of the list's testid wrapper, so queries that
-  // read the list's move tokens never pick up the engine line's moves.
+  // read the list's move tokens never pick up the engine line's moves. It sits
+  // BELOW the list (UAT 2026-10-09), so the list keeps its place when the row
+  // appears or leaves.
   return (
     <div className="flex flex-col gap-1">
-      {tree.isOffLine && <TrainStockfishRow tree={tree} flipped={flipped} />}
       <div
         data-testid="train-move-tree"
         className={ring ? 'rounded-md ring-2 ring-brand-brown' : undefined}
@@ -93,6 +112,7 @@ export function TrainMoveTreeList({
           heightClass={TRAIN_MOVE_TREE_HEIGHT_CLASS}
         />
       </div>
+      {!tree.isAtRoot && <TrainStockfishRow tree={tree} flipped={flipped} />}
     </div>
   );
 }

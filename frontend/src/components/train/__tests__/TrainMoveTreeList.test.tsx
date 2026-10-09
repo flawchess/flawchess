@@ -16,6 +16,7 @@ import { buildChipGroups } from '@/lib/trainRevealLines';
 import { TrainLineChips } from '@/components/train/TrainLineChips';
 import { TrainMoveTreeList } from '@/components/train/TrainMoveTreeList';
 import { TooltipProvider } from '@/components/ui/tooltip';
+import { STOCKFISH_BADGE_SECONDARY } from '@/lib/theme';
 
 vi.mock('@/lib/sounds', () => ({
   playSound: vi.fn(),
@@ -99,6 +100,7 @@ beforeAll(() => {
 
 afterEach(() => {
   cleanup();
+  engineState.pvFirstMove = 'e7e5';
 });
 
 describe('TrainLineChips + TrainMoveTreeList over the real tree hook', () => {
@@ -128,13 +130,49 @@ describe('TrainLineChips + TrainMoveTreeList over the real tree hook', () => {
     expect(screen.getByTestId('harness-fen').textContent).toBe(fenAfter('d4', 'd5'));
   });
 
+  it('quick 261009-por: stepping a known line renders the Stockfish row; the puzzle position does not', () => {
+    render(
+      <TooltipProvider>
+        <Harness />
+      </TooltipProvider>,
+    );
+    expect(screen.queryByTestId('train-sf-row')).toBeNull();
+    fireEvent.click(within(screen.getByTestId('train-move-tree')).getByText('e5'));
+    expect(screen.getByTestId('train-sf-row')).toBeTruthy();
+  });
+
+  it("quick 261009-por: on a stepped chip line the row hides the engine line that repeats the line's next move and draws the rest secondary", () => {
+    const { rerender } = render(
+      <TooltipProvider>
+        <Harness />
+      </TooltipProvider>,
+    );
+    // Step to 1. e4: the Move line continues 1... e5, which the engine also plays.
+    engineState.pvFirstMove = 'e7e5';
+    fireEvent.click(within(screen.getByTestId('train-move-tree')).getByText('e4'));
+    expect(screen.getByTestId('train-sf-row')).toBeTruthy();
+    expect(screen.queryAllByLabelText(/^Line \d+:/)).toHaveLength(0);
+    expect(screen.queryByTestId('engine-lines-analyzing')).toBeNull();
+
+    // The engine disagrees (1... c5): its line shows, with a secondary badge.
+    engineState.pvFirstMove = 'c7c5';
+    rerender(
+      <TooltipProvider>
+        <Harness />
+      </TooltipProvider>,
+    );
+    const badges = screen.getAllByLabelText(/^Line \d+:/);
+    expect(badges).toHaveLength(1);
+    expect(badges[0]!.style.backgroundColor).toBe(STOCKFISH_BADGE_SECONDARY);
+  });
+
   it('a hand-played fork off the known lines renders the Stockfish row', () => {
     render(
       <TooltipProvider>
         <Harness />
       </TooltipProvider>,
     );
-    // On the known lines (the puzzle position) the row is absent.
+    // At the puzzle position the row is absent.
     expect(screen.queryByTestId('train-sf-row')).toBeNull();
 
     // Nc3 matches no chip line (Move = e4, Best = d4), so it forks a sideline.

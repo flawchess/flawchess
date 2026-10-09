@@ -225,13 +225,88 @@ function enginePointerArrows(uci: string | null, layerKey: string): BoardArrow[]
 }
 
 /**
- * While stepping a reveal line (190.1 UAT), the ONLY arrow on the board is a
+ * While stepping a reveal line (190.1 UAT), the PRIMARY arrow on the board is a
  * blue pointer for the line's next move from the shown position (it comes
  * from a Stockfish line, so it reads in the engine hue). Null/absent next
- * move (end of the line) draws nothing.
+ * move (end of the line) draws nothing. `buildTrainStepOverlayArrows` adds the
+ * live engine's secondary arrows underneath it.
  */
 export function buildTrainStepArrows(nextMoveUci: string | null): BoardArrow[] {
   return enginePointerArrows(nextMoveUci, 'step-next');
+}
+
+/** The from-to squares of a UCI move (drops any promotion suffix), the key the
+ * board draws arrows by. */
+function fromToKey(uci: string): string {
+  return uci.slice(0, 4);
+}
+
+/**
+ * Quick 261009-por: the live engine lines minus the one whose first move is the
+ * known line's next move (compared by from-to squares). On a stepped chip line
+ * that move is already the line's own (the solid blue pointer, the chip's eval),
+ * so the Stockfish row and the secondary arrows both leave it out. A null next
+ * move (end of the line) keeps every line.
+ */
+export function dropLineMove(pvLines: readonly PvLine[], nextMoveUci: string | null): PvLine[] {
+  if (nextMoveUci === null) return [...pvLines];
+  const lineKey = fromToKey(nextMoveUci);
+  return pvLines.filter((line) => {
+    const move = line.moves[0];
+    return move === undefined || fromToKey(move) !== lineKey;
+  });
+}
+
+/**
+ * Secondary arrows for the reveal engine's top moves on a stepped position.
+ * Walks ranks in reverse (mirroring `buildTrainFreePlayArrows`) and skips
+ * malformed first moves and moves that share from-to squares with the line's
+ * next move. Every live arrow is
+ * secondary-colored, rank 0 included: the line owns the solid blue.
+ */
+function stepLiveArrows(
+  nextMoveUci: string | null,
+  pvLines: readonly PvLine[],
+  count: number,
+): BoardArrow[] {
+  const arrows: BoardArrow[] = [];
+  const lineKey = nextMoveUci === null ? null : fromToKey(nextMoveUci);
+  for (let rank = Math.min(count, pvLines.length) - 1; rank >= 0; rank--) {
+    const line = pvLines[rank];
+    if (line === undefined) continue;
+    const move = line.moves[0] ?? null;
+    const squares = squaresFromUci(move);
+    if (move === null || squares === null) continue;
+    if (fromToKey(move) === lineKey) continue;
+    arrows.push({
+      ...squares,
+      color: STOCKFISH_SECONDARY_LINE,
+      width: TRAIN_BEST_MOVE_ARROW_WIDTH,
+      layerKey: `step-live-${rank}`,
+    });
+  }
+  return arrows;
+}
+
+/**
+ * Quick 261009-por: a stepped known-line position keeps the line's blue pointer
+ * AND shows the live reveal engine's other top moves (up to `count`, the
+ * Stockfish arrows setting) as translucent secondaries, exactly as many as the
+ * free-play board draws off the known lines. No depth gate (owner call): the
+ * arrows settle as the search deepens, the same as off the known lines, and a
+ * gate would leave slow phones with no live arrows at all. The line pointer is
+ * pushed LAST so
+ * it paints on top (same-tier stable sort in the board's arrow overlay).
+ * `pvLines` is the staleness-guarded list for the shown position (empty until
+ * the engine reaches it). At the end of a line (`nextMoveUci` null) the live
+ * moves draw as secondaries with no primary.
+ */
+export function buildTrainStepOverlayArrows(
+  nextMoveUci: string | null,
+  pvLines: readonly PvLine[],
+  count: number,
+): BoardArrow[] {
+  return [...stepLiveArrows(nextMoveUci, pvLines, count), ...buildTrainStepArrows(nextMoveUci)];
 }
 
 /**

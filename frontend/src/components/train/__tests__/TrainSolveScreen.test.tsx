@@ -29,6 +29,7 @@ import { SETTINGS_STORAGE_KEYS } from '@/lib/engineSettings';
 import {
   MOVE_QUALITY_BLUNDER,
   MOVE_QUALITY_GOOD,
+  STOCKFISH_SECONDARY_LINE,
   TRAIN_BEST_MOVE_ARROW,
   TRAIN_FOCUS_ARROW_DIM_OPACITY,
   TRAIN_FOCUS_ARROW_LIT_OPACITY,
@@ -333,6 +334,9 @@ vi.mock('@/lib/sounds', () => ({
 // message and emits one `info ... multipv K ...` line per requested rank on
 // a mount search, still emitting a single rank for width-1 searches (the
 // after-move/reveal-time searches).
+/** Search depth every FakeWorker reports unless a test overrides it. */
+const FAKE_WORKER_DEFAULT_DEPTH = 10;
+
 class FakeWorker {
   onmessage: ((e: MessageEvent<string>) => void) | null = null;
   onerror: ((e: unknown) => void) | null = null;
@@ -346,6 +350,7 @@ class FakeWorker {
   constructor(
     private bestMove = 'e2e4',
     private pv = bestMove,
+    private depth = FAKE_WORKER_DEFAULT_DEPTH,
   ) {}
 
   postMessage(msg: string | { progressPort: unknown }): void {
@@ -364,7 +369,7 @@ class FakeWorker {
     } else if (msg.startsWith('go ')) {
       queueMicrotask(() => {
         for (let rank = 1; rank <= this.width; rank++) {
-          this.emit(`info depth 10 multipv ${rank} score cp ${this.cpFor(rank)} nodes 1000 pv ${this.pv}`);
+          this.emit(`info depth ${this.depth} multipv ${rank} score cp ${this.cpFor(rank)} nodes 1000 pv ${this.pv}`);
         }
         this.emit(`bestmove ${this.bestMove}`);
       });
@@ -1422,6 +1427,9 @@ describe('TrainSolveScreen — progress, last move, grading state, engine failur
   // ─── Phase 237 tracer: chips + one move tree on the real reveal ─────────
 
   it('tracer: tapping the Best chip lights its arrow at the puzzle position and a list tap steps the line', async () => {
+    // Quick 261009-por: live engine arrows now draw on stepped positions with no
+    // depth gate; this test pins the line pointer alone, so it turns them off.
+    localStorage.setItem(SETTINGS_STORAGE_KEYS.sfArrows, '0');
     // A three-move PV so the second token of the Best line still has a next move.
     stubWorker(() => new FakeWorker('e2e4', 'e2e4 e7e5 g1f3'));
     await renderScreen(makePuzzle());
@@ -1452,9 +1460,42 @@ describe('TrainSolveScreen — progress, last move, grading state, engine failur
     expect(board().getAttribute('data-arrow-ucis')).toBe('g1f3');
   });
 
+  it('quick 261009-por: a stepped known-line position shows a disagreeing reveal-engine move as a secondary arrow under the line pointer', async () => {
+    // First Worker = grading engine (builds the Best line e4 e5 Nf3); later
+    // Workers = the reveal engine, which disagrees with the line ('b1c3' vs the
+    // line's 'g1f3'); no depth gate, so the FakeWorker's shallow depth draws.
+    let workerCallCount = 0;
+    stubWorker(() => {
+      workerCallCount += 1;
+      return workerCallCount === 1
+        ? new FakeWorker('e2e4', 'e2e4 e7e5 g1f3')
+        : new FakeWorker('b1c3', 'b1c3');
+    });
+    await renderScreen(makePuzzle());
+    fireEvent.click(screen.getByTestId('btn-train-guess-critical'));
+    await act(async () => {
+      fireEvent.click(screen.getByTestId('drop-d2d4')); // non-best -> separate You / Best chips
+    });
+    await waitForReveal();
+    const board = () => screen.getByTestId('chessboard');
+    fireEvent.click(screen.getByTestId('train-chip-best'));
+    await waitFor(() => expectLitArrows(board(), ['e2e4']));
+
+    fireEvent.click(within(screen.getByTestId('train-move-tree')).getByText('e5'));
+    await waitFor(() => expect(board().getAttribute('data-position')).not.toBe(START_FEN));
+    await waitFor(() => expect(board().getAttribute('data-arrows-count')).toBe('2'));
+    expect(board().getAttribute('data-arrow-ucis')).toBe('b1c3,g1f3');
+    expect(board().getAttribute('data-arrow-colors')).toBe(
+      `${STOCKFISH_SECONDARY_LINE},${TRAIN_BEST_MOVE_ARROW}`,
+    );
+  });
+
   // ─── 190.1 UAT: reveal-line stepping clears the overlay; Solution restores ─
 
   it('stepping a reveal line clears the overlay, highlights the stepped move in its quality color with a blue next-move arrow, and Solution restores everything', async () => {
+    // Quick 261009-por: live engine arrows now draw on stepped positions with no
+    // depth gate; this test pins the line pointer alone, so it turns them off.
+    localStorage.setItem(SETTINGS_STORAGE_KEYS.sfArrows, '0');
     // A two-move PV so the merged your/best box actually has a next move to
     // point at after the first step.
     stubWorker(() => new FakeWorker('e2e4', 'e2e4 e7e5'));
@@ -2636,19 +2677,21 @@ describe('TrainSolveScreen — progress, last move, grading state, engine failur
     expect(within(moveList()).getByText('e5')).not.toBeNull();
   });
 
-  it('the Stockfish row is absent on the known lines and again after a tap back onto one', async () => {
+  // Quick 261009-por: the row shows on every node but the puzzle position (the
+  // chips there are the server's answer key), stepped known lines included.
+  it('the Stockfish row is absent at the puzzle position and shows again on a stepped known line', async () => {
     const { board } = await startSideline();
     expect(screen.getByTestId('train-sf-row')).not.toBeNull();
 
-    // Solution rewinds to the puzzle position: a known line (and the root).
+    // Solution rewinds to the puzzle position.
     fireEvent.click(screen.getByTestId('board-btn-reset'));
     await waitFor(() => expect(board().getAttribute('data-position')).toBe(START_FEN));
     expect(screen.queryByTestId('train-sf-row')).toBeNull();
 
-    // Stepping into the played/best line (e2e4) keeps the row away.
+    // Stepping into the played/best line (e2e4) brings the row back.
     fireEvent.click(screen.getByTestId('drop-e2e4'));
     await waitFor(() => expect(board().getAttribute('data-position')).not.toBe(START_FEN));
-    expect(screen.queryByTestId('train-sf-row')).toBeNull();
+    expect(screen.getByTestId('train-sf-row')).not.toBeNull();
   });
 
   // Phase 237 UAT: the row follows the analysis board's layout. It was capped at
@@ -2876,7 +2919,6 @@ describe('TrainSolveScreen — progress, last move, grading state, engine failur
     await waitFor(() => expect(pressed('train-chip-best')).toBe('true'));
     expect(pressed('train-chip-your')).toBe('false');
     expect(document.querySelector('[data-testid^="btn-delete-line-"]')).toBeNull();
-    expect(screen.queryByTestId('train-sf-row')).toBeNull();
 
     // Back at the puzzle position, a move that matches no line forks.
     fireEvent.click(screen.getByTestId('board-btn-reset'));
@@ -2884,7 +2926,9 @@ describe('TrainSolveScreen — progress, last move, grading state, engine failur
       expect(screen.getByTestId('chessboard').getAttribute('data-position')).toBe(START_FEN),
     );
     fireEvent.click(screen.getByTestId('drop-b1c3'));
-    await waitFor(() => expect(screen.getByTestId('train-sf-row')).not.toBeNull());
+    await waitFor(() =>
+      expect(within(screen.getByTestId('train-move-tree')).getByText('Nc3')).not.toBeNull(),
+    );
     expect(pressed('train-chip-your')).toBe('false');
     expect(pressed('train-chip-best')).toBe('false');
     const list = screen.getByTestId('train-move-tree');
