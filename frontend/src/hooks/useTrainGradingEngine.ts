@@ -454,7 +454,7 @@ export function useTrainGradingEngine({
       // `sharedUrl` constructs against the served path exactly as before.
       // This hook reports no asset progress today and does not start doing
       // so here — the only change is where the worker's `.wasm` comes from.
-      const worker = createStockfishWorker(sharedUrl);
+      const worker = createStockfishWorker(sharedUrl, 'train-grading');
       workerRef.current = worker;
 
       runWorkerHandshake(worker);

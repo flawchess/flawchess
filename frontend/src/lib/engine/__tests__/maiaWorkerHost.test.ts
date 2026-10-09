@@ -298,6 +298,36 @@ describe('maiaWorkerHost', () => {
     await expect(p1).resolves.toBeDefined();
   });
 
+  it('SEED-195: a pre-ready OOM capture tags the spawn path (auto-wasm vs webgpu-failed-wasm)', async () => {
+    const lease = acquireMaiaWorker({ source: 'maia-worker', priority: true });
+    const p1 = lease.analyze(TEST_FEN, [1500]);
+    const oom = 'no available backend found. ERR: [wasm] RangeError: Out of memory';
+
+    // ensureOrtRuntime resolves 'wasm' in this suite: no WebGPU adapter.
+    createdWorkers[0]!.simulateMessage({ type: 'error', message: oom });
+    await expect(p1).rejects.toThrow();
+    expect(Sentry.captureException).toHaveBeenLastCalledWith(
+      expect.any(Error),
+      expect.objectContaining({
+        tags: expect.objectContaining({ maia_failure: 'oom', maia_spawn_path: 'auto-wasm' }),
+        contexts: expect.objectContaining({ engine_workers: expect.objectContaining({ stockfishTotal: 0 }) }),
+      }),
+    );
+
+    // A WebGPU failure pins the replacement to wasm; its own OOM says so.
+    const p2 = lease.analyze(TEST_FEN, [1500]);
+    const worker2 = createdWorkers[1]!;
+    worker2.simulateMessage({ type: 'webgpu-unavailable', message: 'RangeError: Out of memory' });
+    createdWorkers[2]!.simulateMessage({ type: 'error', message: oom });
+    await expect(p2).rejects.toThrow();
+    expect(Sentry.captureException).toHaveBeenLastCalledWith(
+      expect.any(Error),
+      expect.objectContaining({
+        tags: expect.objectContaining({ maia_failure: 'oom', maia_spawn_path: 'webgpu-failed-wasm' }),
+      }),
+    );
+  });
+
   it('WR-01 (Phase 219 review): a threaded-init timeout retries ONCE pinned to single-thread, preserving the queue', async () => {
     const lease = acquireMaiaWorker({ source: 'maia-worker', priority: true });
     const p1 = lease.analyze(TEST_FEN, [1500]);

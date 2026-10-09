@@ -14,11 +14,13 @@ import {
   MaiaWorkerError,
   isReportedMaiaWorkerError,
 } from './maiaWorkerErrors';
+import { resetLiveEngineWorkersForTests, trackStockfishWorker } from './engine/liveEngineWorkers';
 
 vi.mock('@sentry/react', () => ({ captureException: vi.fn() }));
 
 afterEach(() => {
   vi.clearAllMocks();
+  resetLiveEngineWorkersForTests();
 });
 
 describe('classifyMaiaWorkerError', () => {
@@ -87,6 +89,37 @@ describe('captureMaiaWorkerError', () => {
       expect.objectContaining({
         contexts: expect.objectContaining({ engine_device: expect.any(Object) }),
       }),
+    );
+  });
+
+  it('SEED-195: tags the spawn path and attaches live Stockfish worker counts', () => {
+    const pooled = { terminate: vi.fn() } as unknown as Worker;
+    trackStockfishWorker(pooled, 'pool');
+    trackStockfishWorker({ terminate: vi.fn() } as unknown as Worker, 'grading');
+
+    captureMaiaWorkerError('RangeError: Out of memory', {
+      source: 'maia-worker',
+      backend: null,
+      spawnPath: 'webgpu-failed-wasm',
+    });
+
+    const [, opts] = vi.mocked(Sentry.captureException).mock.calls[0]!;
+    expect(opts).toEqual(
+      expect.objectContaining({
+        tags: expect.objectContaining({ maia_spawn_path: 'webgpu-failed-wasm' }),
+        contexts: expect.objectContaining({
+          engine_workers: expect.objectContaining({ stockfishPool: 1, stockfishGrading: 1, stockfishTotal: 2 }),
+        }),
+      }),
+    );
+  });
+
+  it('SEED-195: tags maia_spawn_path as unknown when the caller has no spawn path', () => {
+    captureMaiaWorkerError('Load failed', { source: 'maia-queue-worker', backend: null });
+
+    const [, opts] = vi.mocked(Sentry.captureException).mock.calls[0]!;
+    expect(opts).toEqual(
+      expect.objectContaining({ tags: expect.objectContaining({ maia_spawn_path: 'unknown' }) }),
     );
   });
 

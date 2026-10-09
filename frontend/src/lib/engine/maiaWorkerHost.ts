@@ -48,6 +48,7 @@ import {
   classifyMaiaWorkerError,
   MaiaWorkerError,
   type MaiaErrorSource,
+  type MaiaSpawnPath,
 } from '@/lib/maiaWorkerErrors';
 import { supportsWasmSimd } from './wasmSimd';
 import { isIosWebKit } from './iosWebKit';
@@ -219,6 +220,8 @@ let isReady = false;
 let backend: 'webgpu' | 'wasm' | null = null;
 /** Phase 219 (D-10, Pitfall 9): the wasm thread count the worker reported on its last `ready` message — attached to failure-path Sentry context in `maiaWorkerErrors.ts` alongside `hardwareConcurrency`, `null` before the first `ready`. */
 let lastReportedNumThreads: number | null = null;
+/** SEED-195: how the current worker was spawned — attached to failure captures, `null` before the first spawn. */
+let spawnPath: MaiaSpawnPath | null = null;
 /** Source of whichever lease most recently triggered a spawn — used to tag Sentry captures that fire before any request is in flight (pre-ready init failures). */
 let spawnSource: MaiaErrorSource | null = null;
 /**
@@ -410,7 +413,7 @@ function spawn(source: MaiaErrorSource, mode: 'auto' | 'wasm', forceSingleThread
       // `myGeneration !== spawnGeneration` guard for `terminate()`.
       if (myGeneration !== spawnGeneration) return;
       spawnInFlight = false;
-      constructWorker(source, 'wasm', runtimeBuffer, forceSingleThread);
+      constructWorker(source, 'wasm', runtimeBuffer, 'webgpu-failed-wasm', forceSingleThread);
     });
     return;
   }
@@ -432,7 +435,13 @@ function spawn(source: MaiaErrorSource, mode: 'auto' | 'wasm', forceSingleThread
   ensureOrtRuntime().then(({ backend: chosenBackend, buffer: runtimeBuffer }) => {
     if (myGeneration !== spawnGeneration) return;
     spawnInFlight = false;
-    constructWorker(source, chosenBackend, runtimeBuffer, forceSingleThread);
+    constructWorker(
+      source,
+      chosenBackend,
+      runtimeBuffer,
+      chosenBackend === 'webgpu' ? 'webgpu' : 'auto-wasm',
+      forceSingleThread,
+    );
   });
 }
 
@@ -445,7 +454,7 @@ function spawnOnIosWebKit(source: MaiaErrorSource, myGeneration: number, forceSi
   fetchWasmOnlyOrtRuntime().then((runtimeBuffer) => {
     if (myGeneration !== spawnGeneration) return;
     spawnInFlight = false;
-    constructWorker(source, 'wasm', runtimeBuffer, forceSingleThread);
+    constructWorker(source, 'wasm', runtimeBuffer, 'ios-wasm', forceSingleThread);
   });
 }
 
@@ -475,6 +484,7 @@ function constructWorker(
   source: MaiaErrorSource,
   chosenBackend: OrtBackend,
   runtimeBuffer: ArrayBuffer | null,
+  path: MaiaSpawnPath,
   forceSingleThread = false,
 ): void {
   let w: Worker;
@@ -501,6 +511,7 @@ function constructWorker(
   // funnel every spawn (auto AND wasm-pinned respawn) goes through, so
   // resetting here covers every respawn path.
   lastReportedNumThreads = null;
+  spawnPath = path;
   // WR-01 (Phase 219 review): tracked per-worker so a THIS worker's own
   // pre-ready timeout can tell "first timeout, eligible for the single-
   // thread retry" apart from "already single-threaded, retrying again is
@@ -747,6 +758,7 @@ function handleErrorMessage(rawMessage: string): void {
     // Phase 219 (D-08): the thread count in effect when this failure fired —
     // null before the first `ready` (pre-ready init failures never had one).
     numThreads: lastReportedNumThreads,
+    spawnPath,
   });
 
   if (!isReady) {
@@ -951,4 +963,5 @@ export function resetMaiaWorkerHostForTests(): void {
   // retry in one case must not leak the pin into the next.
   currentInitForceSingleThread = false;
   lastReportedNumThreads = null;
+  spawnPath = null;
 }
