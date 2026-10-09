@@ -50,7 +50,8 @@ Quick wins (could be `/gsd-quick`):
    re-measurement plan**: Maia runs on the API server, not the workers, and blocks the event loop
    ~150 ms per call (1-2 s per analysed game; at 1k games/h that is 28-55% of loop time). Do it
    first, standalone.
-3. `position_classifier.py:230` `_compute_mixedness`: `bin().count("1")` -> `int.bit_count()`
+3. **DONE 2026-10-09** (all four popcounts in `position_classifier.py`).
+   `position_classifier.py:230` `_compute_mixedness`: `bin().count("1")` -> `int.bit_count()`
    (~5-10% of import CPU). Trivial.
 
 Low priority (after item 1 and item 7):

@@ -154,8 +154,8 @@ def _compute_backrank_sparse(board: chess.Board) -> bool:
     A position is backrank sparse when a side has evacuated most of their back rank —
     one component of the Lichess middlegame phase detection algorithm.
     """
-    white_backrank_count = bin(board.occupied_co[chess.WHITE] & chess.BB_RANK_1).count("1")
-    black_backrank_count = bin(board.occupied_co[chess.BLACK] & chess.BB_RANK_8).count("1")
+    white_backrank_count = (board.occupied_co[chess.WHITE] & chess.BB_RANK_1).bit_count()
+    black_backrank_count = (board.occupied_co[chess.BLACK] & chess.BB_RANK_8).bit_count()
     return (
         white_backrank_count < BACKRANK_SPARSE_THRESHOLD
         or black_backrank_count < BACKRANK_SPARSE_THRESHOLD
@@ -234,14 +234,14 @@ def _compute_mixedness(board: chess.Board) -> int:
     computing white_count and black_count of pieces within each region and
     accumulating the score from _mixedness_score.
 
-    Uses bin(bb).count('1') for popcount — portable across python-chess versions.
+    Uses int.bit_count() for popcount (SEED-172 item 3, ~5-10% of import CPU vs bin().count).
     """
     score = 0
     white_occ = board.occupied_co[chess.WHITE]
     black_occ = board.occupied_co[chess.BLACK]
     for mask, y in _MIXEDNESS_REGIONS:
-        white_count = bin(white_occ & mask).count("1")
-        black_count = bin(black_occ & mask).count("1")
+        white_count = (white_occ & mask).bit_count()
+        black_count = (black_occ & mask).bit_count()
         score += _mixedness_score(y, white_count, black_count)
     return score
 
