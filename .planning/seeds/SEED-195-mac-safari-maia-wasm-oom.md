@@ -3,7 +3,7 @@ id: SEED-195
 status: dormant
 planted: 2026-10-09
 planted_during: ad-hoc Sentry triage of unresolved Maia issues (Phase 237 in flight)
-trigger_when: next engine/Maia phase, any change to the Stockfish worker pool sizing, or another Mac Safari `maia_failure:oom` event
+trigger_when: a few Mac Safari `maia_failure:oom` events carrying the new `engine_workers` context have arrived (step 1 telemetry shipped), or any change to the Stockfish worker pool sizing
 scope: small-medium (frontend only; maiaWorkerHost + workerPoolState + Sentry context)
 ---
 
@@ -45,9 +45,25 @@ memory reservations, not the bytes they hold.
 The events can't confirm it: they don't record how many engine workers were alive, or whether Maia
 went straight to wasm or got there via the `webgpu-unavailable` → `respawnPinnedToWasm` respawn.
 
+## Status (2026-10-09)
+
+- **Step 1 (telemetry) done:** quick task 261009-kb2, commit `72d164b08` on `main`. It is only
+  live after the next deploy. Every Maia failure capture now carries:
+  - tag `maia_spawn_path`: `webgpu` | `auto-wasm` (no adapter) | `webgpu-failed-wasm` (pinned
+    after a WebGPU failure) | `ios-wasm` | `unknown`
+  - context `engine_workers`: `stockfishPool`, `stockfishSingle`, `stockfishGrading`,
+    `stockfishTrainGrading`, `stockfishTotal` (Stockfish workers constructed and not yet
+    terminated, counted in `frontend/src/lib/engine/liveEngineWorkers.ts`)
+- **Step 2 (mitigation) is waiting on that data.** Read the next Mac Safari OOM events with
+  `maia_failure:oom os.name:"Mac OS X"`. A high `stockfishTotal` (4+) on every event supports
+  the budget theory and the pool-shrink retry. Low or varying counts point somewhere else
+  (per-tab memory, other tabs), and the pool shrink would be the wrong fix.
+- The owner can test the normal load path on an office Mac (around 2026-10-12). That checks for
+  regressions only; the OOM is rare enough that it probably won't reproduce there.
+
 ## Proposed Direction
 
-1. **Telemetry first (one release):** on a Maia `oom`, add to the Sentry context the live engine
+1. **Telemetry first (one release, DONE, see Status):** on a Maia `oom`, add to the Sentry context the live engine
    worker count (Stockfish pool slots, grading worker, single engine) and the spawn path
    (`auto-wasm` / `webgpu→wasm respawn` / `ios`). Fold B2 into CP.
 2. **Mitigation:** on a pre-ready wasm OOM, shrink the Stockfish pool to `MOBILE_POOL_SIZE` (2),

@@ -1,12 +1,11 @@
 ---
 gsd_state_version: "1.0"
 milestone: v2.24
-current_phase: 237
 current_phase_name: Train Reveal Verdict Strip, Line Chips & One Move Tree (SEED-194)
 status: completed
 stopped_at: v2.22, v2.23 and v2.24 closed (phases 228–237 regrouped), no open milestone
-last_updated: "2026-10-09T13:00:00.000Z"
-state_head: 1a997e563fd03ac75571f70ef42d2f0e61895497
+last_updated: "2026-10-09T12:42:57.208Z"
+state_head: 72d164b0829b559b7fbf859bfbb55df5e85e19d8
 progress:
   total_phases: 10
   completed_phases: 103
@@ -14,7 +13,8 @@ progress:
   completed_plans: 57
 milestone_name: Train Grading Integrity & One-Screen Reveal
 last_activity: 2026-10-09
-last_activity_desc: "Deployed Phase 237 (release #404); closed milestones v2.22 (228–232), v2.23 (233–234) and v2.24 (235–237) with tags and GitHub releases"
+current_phase: 237
+last_activity_desc: "Completed quick task 261009-kb2: Maia OOM Sentry telemetry (SEED-195 step 1)"
 ---
 
 # Project State: FlawChess
@@ -1016,6 +1016,7 @@ None active.
 | 261007-axc | Separate Train reveal telemetry counter for hand-played free moves (review_board_moves) | 2026-10-07 | 27ce3d361 | [261007-axc-separate-train-reveal-telemetry-counter-](./quick/261007-axc-separate-train-reveal-telemetry-counter-/) |
 | 261008-ob1 | Train re-check also rescues off-key inaccuracy grades | 2026-10-08 | b53a2203b | [261008-ob1-train-re-check-also-rescues-off-key-inac](./quick/261008-ob1-train-re-check-also-rescues-off-key-inac/) |
 | 261008-opg | Train reveal shows a played inaccuracy as inaccuracy | 2026-10-08 | 44e037dd3 | [261008-opg-train-reveal-shows-a-played-inaccuracy-a](./quick/261008-opg-train-reveal-shows-a-played-inaccuracy-a/) |
+| 261009-kb2 | Maia OOM Sentry telemetry: spawn path + live Stockfish worker count (SEED-195 step 1) | 2026-10-09 | 72d164b08 | [261009-kb2-maia-oom-sentry-telemetry-live-engine-wo](./quick/261009-kb2-maia-oom-sentry-telemetry-live-engine-wo/) |
 
 ## Deferred Items
 
