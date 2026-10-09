@@ -28,6 +28,11 @@
       "groupName": "onnxruntime-web (run scripts/bench_maia_ort_wasm.mjs before merging — Phase 219)"
     },
     {
+      "description": "onnxruntime / onnxruntime-node are pinned at 1.29.0: >=1.30 segfaults loading the vendored maia3_simplified.onnx (exit 139, reproduced 2026-10-09 on 1.30.0 and 1.31.0). A bump must pass the Phase 218 parity spike (scripts/maia_parity_spike.py, verify_value_head.mjs) first.",
+      "matchPackageNames": ["onnxruntime", "onnxruntime-node"],
+      "dependencyDashboardApproval": true
+    },
+    {
       "description": "js-yaml and fast-uri exist only as npm overrides pinning patched transitive versions. A major would force the next major onto consumers that declare ^4 / ^3 (cosmiconfig, ajv@8), so disable majors; minor and patch floors still flow through the grouped branch.",
       "matchManagers": ["npm"],
       "matchDepTypes": ["overrides"],
