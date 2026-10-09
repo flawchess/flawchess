@@ -242,6 +242,22 @@ function fromToKey(uci: string): string {
 }
 
 /**
+ * Quick 261009-por: the live engine lines minus the one whose first move is the
+ * known line's next move (compared by from-to squares). On a stepped chip line
+ * that move is already the line's own (the solid blue pointer, the chip's eval),
+ * so the Stockfish row and the secondary arrows both leave it out. A null next
+ * move (end of the line) keeps every line.
+ */
+export function dropLineMove(pvLines: readonly PvLine[], nextMoveUci: string | null): PvLine[] {
+  if (nextMoveUci === null) return [...pvLines];
+  const lineKey = fromToKey(nextMoveUci);
+  return pvLines.filter((line) => {
+    const move = line.moves[0];
+    return move === undefined || fromToKey(move) !== lineKey;
+  });
+}
+
+/**
  * Secondary arrows for the reveal engine's top moves on a stepped position.
  * Walks ranks in reverse (mirroring `buildTrainFreePlayArrows`) and skips
  * malformed first moves and moves that share from-to squares with the line's

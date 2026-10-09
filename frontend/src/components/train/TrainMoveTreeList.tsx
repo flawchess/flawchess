@@ -21,6 +21,7 @@ import { VariationTree } from '@/components/analysis/VariationTree';
 import { useIsDesktop } from '@/hooks/useIsDesktop';
 import type { TrainRevealTree } from '@/hooks/useTrainRevealTree';
 import { useEngineDisplaySettings } from '@/lib/engineSettings';
+import { dropLineMove } from '@/lib/trainArrows';
 
 /**
  * Height of the reveal move list: two wrapped token rows on mobile, four on desktop
@@ -53,15 +54,27 @@ function TrainStockfishRow({
 }): ReactElement {
   const isDesktop = useIsDesktop();
   const { sfLines } = useEngineDisplaySettings();
+  // Quick 261009-por: on a stepped chip line the line owns the primary move (its
+  // blue pointer and the chip's eval), so the row drops the live line that
+  // repeats it and draws every other badge secondary, like the board arrows.
+  // When the engine agrees with the line the row shows one line fewer than the
+  // setting (its reserved height keeps the layout still).
+  const step = tree.stepInfo;
+  // Slice before filtering, as the arrows do, so rows and arrows cover the same ranks.
+  const rows =
+    step !== null ? dropLineMove(tree.pvLines.slice(0, sfLines), step.nextMoveUci) : tree.pvLines;
   return (
     <div data-testid="train-sf-row">
       {tree.pvLines.length === 0 ? (
         <EngineLinesSkeleton rows={sfLines} compact={!isDesktop} />
       ) : (
         <EngineLines
-          pvLines={tree.pvLines}
+          pvLines={rows}
           maxLines={sfLines}
-          isAnalyzing={tree.isAnalyzing}
+          // The skeleton above covers "no lines yet"; an empty `rows` here means
+          // the engine agrees with the line, which must not pulse as loading.
+          isAnalyzing={false}
+          allSecondary={step !== null}
           baseFen={tree.fen}
           flipped={flipped}
           onMoveClick={tree.playLine}

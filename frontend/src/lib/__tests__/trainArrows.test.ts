@@ -6,6 +6,7 @@ import {
   buildTrainStepArrows,
   buildTrainStepMarkers,
   buildTrainStepOverlayArrows,
+  dropLineMove,
   chipArrowColor,
   classifyTrainMoveQuality,
   vettedMoveForSquares,
@@ -603,6 +604,31 @@ describe('buildTrainStepOverlayArrows (quick 261009-por)', () => {
   it('a count above the available lines yields only the available arrows', () => {
     const arrows = buildTrainStepOverlayArrows('g1f3', [pv(1, 'b1c3')], 3);
     expect(arrows).toHaveLength(2);
+  });
+});
+
+describe('dropLineMove (quick 261009-por)', () => {
+  const pv = (multipv: number, firstMove: string): PvLine => ({
+    multipv,
+    depth: 12,
+    moves: [firstMove],
+    evalCp: 10,
+    evalMate: null,
+  });
+
+  it("drops the live line that repeats the known line's next move, keeping rank order", () => {
+    const lines = [pv(1, 'g1f3'), pv(2, 'b1c3'), pv(3, 'd2d4')];
+    expect(dropLineMove(lines, 'g1f3').map((l) => l.moves[0])).toEqual(['b1c3', 'd2d4']);
+  });
+
+  it('compares from-to squares only (a promotion suffix does not matter)', () => {
+    expect(dropLineMove([pv(1, 'e7e8n')], 'e7e8q')).toEqual([]);
+  });
+
+  it('keeps every line when the engine disagrees or at the end of the line', () => {
+    const lines = [pv(1, 'b1c3'), pv(2, 'd2d4')];
+    expect(dropLineMove(lines, 'g1f3')).toEqual(lines);
+    expect(dropLineMove(lines, null)).toEqual(lines);
   });
 });
 

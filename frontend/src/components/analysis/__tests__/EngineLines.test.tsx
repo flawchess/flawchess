@@ -324,6 +324,16 @@ describe('EngineLines', () => {
     }
   });
 
+  it('allSecondary draws line 1 in the secondary color too (quick 261009-por)', () => {
+    const two: PvLine[] = [1, 2].map((n) => ({ ...LINE_CP, multipv: n }));
+    render(
+      <EngineLines pvLines={two} isAnalyzing={false} maxLines={2} onMoveClick={vi.fn()} allSecondary />,
+    );
+    for (const badge of screen.getAllByLabelText(/^Line \d+:/)) {
+      expect(badge.style.backgroundColor).toBe(STOCKFISH_BADGE_SECONDARY);
+    }
+  });
+
   it('the analyzing skeleton shows maxLines placeholder rows', () => {
     render(<EngineLines pvLines={[]} isAnalyzing={true} maxLines={4} onMoveClick={vi.fn()} />);
     expect(screen.getByTestId('engine-lines-analyzing').children).toHaveLength(4);
