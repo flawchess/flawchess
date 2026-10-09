@@ -42,7 +42,9 @@ Share of engine time: full pass ~45%, blob walks ~20-45%, second-best re-search 
 ## Candidate work (decide in discuss-phase)
 
 Quick wins (could be `/gsd-quick`):
-1. **Move Maia off the event loop**: `score_move` runs synchronously inside the async submit
+1. **DONE 2026-09-28** (quick-260928-85v, commit `682127561`, release #376): `asyncio.to_thread`
+   wrapper at `eval_apply.py` ~2284. Original text kept for context.
+   **Move Maia off the event loop**: `score_move` runs synchronously inside the async submit
    handler (`eval_apply.py` ~2443). Wrap in `asyncio.to_thread` (onnxruntime releases the GIL).
    Pure latency fix, no behavior change. **Independent of the Stockfish share and of the
    re-measurement plan**: Maia runs on the API server, not the workers, and blocks the event loop
