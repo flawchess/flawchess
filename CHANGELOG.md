@@ -8,6 +8,10 @@ in `YYYY-MM-DD` (Europe/Zurich).
 
 ## [Unreleased]
 
+### Fixed
+
+- Analysis engine no longer restarts its Stockfish workers when the tab sits in the background, so a search left running in another tab keeps its results instead of losing them.
+
 ## [v2.24] Train Grading Integrity & One-Screen Reveal — 2026-10-09
 
 ### Changed

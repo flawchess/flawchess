@@ -1,6 +1,6 @@
 ---
 id: SEED-180
-status: dormant
+status: closed. Resolved by quick task 261009-kpa (commit 036b01d72, 2026-10-09), after the 2026-10-03 Safari event confirmed the same hidden-tab shape from a second session.
 planted: 2026-10-02
 planted_during: no open milestone (after v2.19), during Phase 226 (SEED-171); Sentry prod triage
 trigger_when: FLAWCHESS-9G escalates in Sentry, or the next engine worker-pool touch
