@@ -3573,6 +3573,33 @@ async def test_review_flush_merges_into_solved_row(test_engine) -> None:
 
 
 @pytest.mark.asyncio
+async def test_review_flush_v2_body_is_stored(test_engine) -> None:
+    """Phase 237 D-12: a v2 chip/strip body is merged next to the v1-shaped solve keys."""
+    _, token, game_id, session_id = await _seed_herring_session(test_engine, "rv2")
+    try:
+        solve_patch: dict[str, object] = {"v": 1, "guess_ms": 1200, "client": "mobile"}
+        assert (await _solve(token, session_id, 0, telemetry=solve_patch)).status_code == 200
+        body: dict[str, object] = {
+            "v": 2,
+            "exit": "next",
+            "review_ms": 4000,
+            "review_chips_selected": 1,
+            "review_chips_total": 3,
+            "review_strip_expanded": True,
+            "review_explored": True,
+            "review_line_steps": 2,
+        }
+        resp = await _review(token, session_id, 0, body)
+        assert resp.status_code == 204, resp.text
+        stored, _, kind = await _telemetry_row(test_engine, session_id, 0)
+        assert kind == "object"
+        # Exactly the review keys plus the solve keys; the top-level v is the LAST patch's.
+        assert stored == {"guess_ms": 1200, "client": "mobile", **body}
+    finally:
+        await _delete_games(test_engine, [game_id])
+
+
+@pytest.mark.asyncio
 async def test_review_flush_last_write_wins_per_key(test_engine) -> None:
     """A later flush overwrites per key; the solve keys are untouched."""
     _, token, game_id, session_id = await _seed_herring_session(test_engine, "rlww")
@@ -3696,8 +3723,11 @@ async def test_review_flush_accepts_completed_and_expired_session(test_engine) -
         {"v": 1},
         {"v": 1, "exit": "next", "bogus": 1},
         {"v": 1, "exit": "close"},
-        {"v": 2, "exit": "next"},
+        {"v": 3, "exit": "next"},
         {"v": 1, "exit": "next", "review_explored": 1},
+        # Phase 237 D-12: a body mixing the v1 card keys and the v2 chip keys is a 422.
+        {"v": 1, "exit": "next", "review_chips_total": 2},
+        {"v": 2, "exit": "next", "review_cards_opened": 1},
     ],
 )
 async def test_review_flush_rejects_bad_body(test_engine, bad_body: dict[str, object]) -> None:

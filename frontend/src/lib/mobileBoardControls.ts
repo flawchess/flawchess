@@ -35,6 +35,17 @@ export interface MobileBoardControls {
    * bar.
    */
   onResign?: () => void;
+  /**
+   * Phase 237 plan 07 (the Train reveal bar): presence of `onNext` selects
+   * `TrainRevealActionBar` in `MobileBottomBar`, ahead of the bot-game branch.
+   * Like `onResign`, deliberately NOT given a NOOP default. `analyzeTo` is the
+   * source game's analysis URL (null: no Analyze button), `onAnalyzeClick` fires
+   * the Analyze analytics + reveal cache. Callbacks must be referentially
+   * stable so the publish effect does not re-run on every render.
+   */
+  onNext?: () => void;
+  analyzeTo?: string | null;
+  onAnalyzeClick?: () => void;
 }
 
 const NOOP_PAYLOAD: MobileBoardControls = Object.freeze({
@@ -85,12 +96,28 @@ export function usePublishMobileBoardControls(controls: MobileBoardControls | nu
     canReset = NOOP_PAYLOAD.canReset,
     // No default — undefined is the meaningful "not the bot bar" value.
     onResign,
+    // Phase 237: same rule for the Train reveal bar's fields.
+    onNext,
+    analyzeTo,
+    onAnalyzeClick,
   } = controls ?? {};
   const hasControls = controls != null;
 
   useEffect(() => {
     if (!hasControls) return;
-    setPayload({ onBack, onForward, onReset, onFlip, canGoBack, canGoForward, canReset, onResign });
+    setPayload({
+      onBack,
+      onForward,
+      onReset,
+      onFlip,
+      canGoBack,
+      canGoForward,
+      canReset,
+      onResign,
+      onNext,
+      analyzeTo,
+      onAnalyzeClick,
+    });
     return () => setPayload(null);
   }, [
     hasControls,
@@ -102,5 +129,8 @@ export function usePublishMobileBoardControls(controls: MobileBoardControls | nu
     canGoForward,
     canReset,
     onResign,
+    onNext,
+    analyzeTo,
+    onAnalyzeClick,
   ]);
 }

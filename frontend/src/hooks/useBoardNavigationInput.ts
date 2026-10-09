@@ -11,14 +11,16 @@
  * Two input surfaces:
  * - Keyboard: window-scoped so ArrowLeft/ArrowRight work without first
  *   clicking the board (lichess parity). Six guards, cheapest first, keep it
- *   from hijacking keys that belong elsewhere — see handleKeyDown.
+ *   from hijacking keys that belong elsewhere — see handleKeyDown. A consumer
+ *   may also pass `goHome` to bind the Home key (the Train reveal's "back to
+ *   the puzzle position", Phase 237); without it Home is left alone.
  * - Wheel: board-scoped. Wheel down goes forward, wheel up goes back, and the
  *   page never scrolls while the pointer is over the board. Rate limited by
  *   an accumulated-delta threshold plus a time throttle so a trackpad flick
  *   advances a handful of moves, not the whole game.
  *
  * Both surfaces are inert while every container ref is null — that is how a
- * consumer opts out entirely (useTrainFreePlay never attaches one) without
+ * consumer opts out entirely (a hook that never attaches one) without
  * needing a separate flag. Consumers pass more than one ref when the page
  * keeps its desktop and mobile boards mounted at the same time and hides one
  * with CSS (Openings): the wheel handler then accepts a pointer over either,
@@ -102,12 +104,17 @@ export interface BoardNavigationInputOptions {
   goBack: () => void;
   /** Step one move forward (ArrowRight / wheel down). */
   goForward: () => void;
+  /** Jump to the start position (Home). Optional: when omitted the Home key is
+   * ignored and NOT default-prevented, so it still scrolls pages that never
+   * pass it (Analysis, Openings). */
+  goHome?: () => void;
 }
 
 export function useBoardNavigationInput({
   containerRefs,
   goBack,
   goForward,
+  goHome,
 }: BoardNavigationInputOptions): void {
   // The listeners are registered once, on mount, and read the newest callbacks
   // and container refs through these two refs. Depending on them directly
@@ -118,10 +125,10 @@ export function useBoardNavigationInput({
   // Synced in an effect rather than assigned inline: writing a ref during
   // render is what react-hooks/refs forbids, and the handlers can only fire
   // after the commit anyway.
-  const navRef = useRef({ goBack, goForward });
+  const navRef = useRef({ goBack, goForward, goHome });
   const containerRefsRef = useRef(containerRefs);
   useEffect(() => {
-    navRef.current = { goBack, goForward };
+    navRef.current = { goBack, goForward, goHome };
     containerRefsRef.current = containerRefs;
   });
 
@@ -131,13 +138,16 @@ export function useBoardNavigationInput({
   const accumulatedWheelPxRef = useRef(0);
 
   // Window-scoped, guarded keydown handler (ArrowLeft = goBack, ArrowRight =
-  // goForward). Window-scoped rather than container-scoped (D-01) so arrows
-  // work without first clicking the board. The container refs are read INSIDE
-  // the handler, not captured at effect-mount time, because pages swap their
-  // mobile and desktop board wrappers without re-running this effect.
+  // goForward, Home = goHome when provided). Window-scoped rather than
+  // container-scoped (D-01) so arrows work without first clicking the board.
+  // The container refs are read INSIDE the handler, not captured at
+  // effect-mount time, because pages swap their mobile and desktop board
+  // wrappers without re-running this effect.
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent): void => {
-      if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
+      if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight' && e.key !== 'Home') return;
+      // Home belongs to the page (scroll to top) unless this consumer opted in.
+      if (e.key === 'Home' && navRef.current.goHome === undefined) return;
       // Already consumed (e.g. a Radix menu whose listener runs earlier in bubble order).
       if (e.defaultPrevented) return;
       // A modifier is held, so browser shortcuts like Cmd+Left still work.
@@ -162,8 +172,10 @@ export function useBoardNavigationInput({
 
       if (e.key === 'ArrowLeft') {
         navRef.current.goBack();
-      } else {
+      } else if (e.key === 'ArrowRight') {
         navRef.current.goForward();
+      } else {
+        navRef.current.goHome?.();
       }
     };
     window.addEventListener('keydown', handleKeyDown);

@@ -1145,6 +1145,87 @@ describe('Phase 223 (BOTVOICE-05): MobileBottomBar swaps to the bot four-action 
   });
 });
 
+describe('Phase 237 plan 07: MobileBottomBar swaps to the Train reveal bar', () => {
+  const FULL_PROFILE = {
+    email: 'full@example.com',
+    is_superuser: false,
+    is_guest: false,
+    chess_com_game_count: 50,
+    lichess_game_count: 0,
+    impersonation: null,
+  } as Partial<UserProfile>;
+
+  function MobileBoardControlsRevealProbe(props: {
+    onNext: () => void;
+    analyzeTo: string | null;
+    onAnalyzeClick: () => void;
+    onReset?: () => void;
+  }) {
+    usePublishMobileBoardControls({
+      onBack: vi.fn(),
+      onForward: vi.fn(),
+      onReset: props.onReset ?? vi.fn(),
+      onFlip: vi.fn(),
+      canGoBack: true,
+      canGoForward: true,
+      canReset: true,
+      onNext: props.onNext,
+      analyzeTo: props.analyzeTo,
+      onAnalyzeClick: props.onAnalyzeClick,
+    });
+    return null;
+  }
+
+  it('a Train reveal payload renders the reveal bar: board buttons, Analyze link with its href, Next; clicking Next / Analyze calls the published callbacks', () => {
+    profileState = FULL_PROFILE;
+    tier1State = true;
+    const onNext = vi.fn();
+    const onAnalyzeClick = vi.fn();
+    const onReset = vi.fn();
+
+    renderMobileBottomBar(
+      '/train',
+      <MobileBoardControlsRevealProbe
+        onNext={onNext}
+        analyzeTo="/analysis/100?ply=19"
+        onAnalyzeClick={onAnalyzeClick}
+        onReset={onReset}
+      />,
+    );
+
+    expect(screen.getByTestId('mobile-board-controls-bar')).toBeTruthy();
+    expect(screen.getByTestId('train-reveal-action-bar')).toBeTruthy();
+    expect(screen.queryByTestId('mobile-bottom-bar')).toBeNull();
+    expect(screen.queryByTestId('bot-game-mobile-bar')).toBeNull();
+    expect(screen.getByTestId('board-btn-reset')).toBeTruthy();
+    expect(screen.getByTestId('board-btn-back')).toBeTruthy();
+    expect(screen.getByTestId('board-btn-forward')).toBeTruthy();
+    expect(screen.getByTestId('board-btn-flip')).toBeTruthy();
+    expect(screen.getByTestId('btn-train-analyze').getAttribute('href')).toBe('/analysis/100?ply=19');
+
+    fireEvent.click(screen.getByTestId('btn-train-next'));
+    fireEvent.click(screen.getByTestId('btn-train-analyze'));
+    fireEvent.click(screen.getByTestId('board-btn-reset'));
+    expect(onNext).toHaveBeenCalledTimes(1);
+    expect(onAnalyzeClick).toHaveBeenCalledTimes(1);
+    expect(onReset).toHaveBeenCalledTimes(1);
+  });
+
+  it('with analyzeTo null no Analyze renders', () => {
+    profileState = FULL_PROFILE;
+    tier1State = true;
+
+    renderMobileBottomBar(
+      '/train',
+      <MobileBoardControlsRevealProbe onNext={vi.fn()} analyzeTo={null} onAnalyzeClick={vi.fn()} />,
+    );
+
+    expect(screen.getByTestId('btn-train-next')).toBeTruthy();
+    expect(screen.queryByTestId('btn-train-analyze')).toBeNull();
+  });
+
+});
+
 // Quick 260824-qaz (D-7/D-8): the hosted Activity Pulse dashboard's nav entry
 // mirrors ADMIN_NAV_ITEM's conditional-append pattern on both nav surfaces —
 // present for superusers on both NavHeader and MobileMoreDrawer, absent on

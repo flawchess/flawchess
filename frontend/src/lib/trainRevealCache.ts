@@ -15,11 +15,21 @@
  * cache was written) — `Train.tsx` validates it against the freshly resumed
  * session and drops mismatches. All fields are plain JSON-serializable data
  * (`GradeResult`/`TrainEngineLine` are UCI strings and numbers).
+ *
+ * Phase 237: the entry also carries the reveal move tree (`revealTree`, UCI
+ * paths) so Back restores the focused chip, the sidelines and the shown node.
+ * That field is validated on its own and dropped when malformed.
  */
 
 import type { GradeResult } from '@/hooks/useTrainGradingEngine';
 import type { PersonaId } from '@/lib/personas/personaRegistry';
 import type { Guess } from '@/lib/trainGuessLabels';
+import {
+  CANONICAL_ROLE_ORDER,
+  REVEAL_TREE_SNAPSHOT_MAX_PATHS,
+  REVEAL_TREE_SNAPSHOT_MAX_PLIES,
+  type RevealTreeSnapshot,
+} from '@/lib/trainRevealLines';
 import type { ReviewTelemetrySnapshot } from '@/lib/trainTelemetry';
 import type { SolveResponse, TrainPuzzle } from '@/types/train';
 
@@ -41,6 +51,11 @@ export interface CachedTrainReveal {
    * holds. Optional: an entry written before this field existed starts a
    * fresh timer. */
   reviewTelemetry?: ReviewTelemetrySnapshot;
+  /** Phase 237: the focused chip, every sideline and the exact node the board was
+   * on, as UCI paths (not node ids, which differ across async rebuilds). Optional:
+   * an entry written by an older bundle restores at the puzzle position with You
+   * focused, and a malformed field is dropped on read (never the whole entry). */
+  revealTree?: RevealTreeSnapshot;
 }
 
 export function saveTrainRevealCache(cached: CachedTrainReveal): void {
@@ -72,7 +87,15 @@ export function readTrainRevealCache(): CachedTrainReveal | null {
     const raw = sessionStorage.getItem(STORAGE_KEY);
     if (raw === null) return null;
     const parsed: unknown = JSON.parse(raw);
-    return isCachedTrainReveal(parsed) ? parsed : null;
+    if (!isCachedTrainReveal(parsed)) return null;
+    // T-237-16: a malformed tree snapshot costs only itself; the rest of the
+    // entry still restores (at the puzzle position with You focused).
+    if (parsed.revealTree !== undefined && !isRevealTreeSnapshot(parsed.revealTree)) {
+      const stripped: CachedTrainReveal = { ...parsed };
+      delete stripped.revealTree;
+      return stripped;
+    }
+    return parsed;
   } catch {
     return null;
   }
@@ -115,5 +138,25 @@ function isCachedTrainReveal(value: unknown): value is CachedTrainReveal {
     typeof gradeResult === 'object' &&
     gradeResult !== null &&
     typeof gradeResult.bestLine === 'object'
+  );
+}
+
+function isUciPath(value: unknown): value is string[] {
+  return Array.isArray(value) && value.length <= REVEAL_TREE_SNAPSHOT_MAX_PLIES && value.every((uci) => typeof uci === 'string');
+}
+
+/** Shape + cap check of a persisted tree snapshot. Paths are replayed through
+ * chess.js by the tree hook (an illegal move stops the graft), and the snapshot
+ * never feeds grading, scoring or the solve POST (T-237-16). */
+function isRevealTreeSnapshot(value: unknown): value is RevealTreeSnapshot {
+  if (typeof value !== 'object' || value === null) return false;
+  const v = value as Record<string, unknown>;
+  const focusOk = v.rootFocus === null || CANONICAL_ROLE_ORDER.some((role) => role === v.rootFocus);
+  return (
+    focusOk &&
+    isUciPath(v.currentPath) &&
+    Array.isArray(v.sidelinePaths) &&
+    v.sidelinePaths.length <= REVEAL_TREE_SNAPSHOT_MAX_PATHS &&
+    v.sidelinePaths.every(isUciPath)
   );
 }

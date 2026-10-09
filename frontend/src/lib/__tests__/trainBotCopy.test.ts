@@ -9,6 +9,8 @@
  * injected-rng casting picker, and the score-bubble variant selection.
  */
 import { describe, expect, it } from 'vitest';
+import { scorePuzzle } from '@/lib/trainScore';
+import type { TrainMoveTier } from '@/lib/trainScore';
 import {
   BY_TEMPERAMENT,
   GRADING_COPY,
@@ -19,6 +21,7 @@ import {
   LANDING_ROTATION_EPOCH,
   STEPPER_COPY_MAX_CHARS,
   TANK_ID,
+  LANDING_HILDA_HANDOFF,
   WALKTHROUGH_STEP_COUNT,
   dropNudgeCopy,
   introCopy,
@@ -28,10 +31,13 @@ import {
   lookCloserCopy,
   movePromptCopy,
   pickBot,
+  pickPuzzleHost,
   promptCopy,
   returnPhrase,
   scoreBubbleCopy,
+  verdictClauseParts,
   verdictCopy,
+  verdictStripLine,
   walkthroughCopy,
 } from '@/lib/trainBotCopy';
 import type {
@@ -39,6 +45,7 @@ import type {
   ScoreBubbleInput,
   ScoreBubbleOutcome,
   TrainCopyAudience,
+  WalkthroughContext,
   WalkthroughStep,
 } from '@/lib/trainBotCopy';
 import { PERSONA_REGISTRY, personaForId } from '@/lib/personas/personaRegistry';
@@ -81,6 +88,22 @@ describe('pickBot', () => {
   });
 });
 
+describe('pickPuzzleHost (Phase 237 UAT)', () => {
+  const draws = Array.from({ length: 48 }, (_, i) => i / 48);
+
+  it('draws from every persona, all three temperaments included', () => {
+    const ids = new Set(draws.map((d) => pickPuzzleHost(false, () => d).id));
+    expect(ids.size).toBe(Object.keys(PERSONA_REGISTRY).length);
+    expect(ids.has(HILDA_ID)).toBe(true);
+  });
+
+  it('never draws Hilda while the first-reveal tour is pending', () => {
+    const ids = new Set(draws.map((d) => pickPuzzleHost(true, () => d).id));
+    expect(ids.has(HILDA_ID)).toBe(false);
+    expect(ids.size).toBe(Object.keys(PERSONA_REGISTRY).length - 1);
+  });
+});
+
 describe('HILDA_ID / TANK_ID', () => {
   it("HILDA_ID resolves to Hilda the Hippo (temperament 'smart')", () => {
     const persona = personaForId(HILDA_ID);
@@ -111,7 +134,7 @@ describe('LANDING_GREETINGS / landingHost', () => {
 
   it("Tank's greeting is the boot-camp line", () => {
     expect(LANDING_GREETINGS[TANK_ID]).toBe(
-      "Welcome to boot camp, recruit! Your own blunders are today's drill.",
+      "Welcome to boot camp, recruit! You'll learn from the mistakes in your own games and train your instinct for when a position hides a tactic.",
     );
   });
 
@@ -120,6 +143,13 @@ describe('LANDING_GREETINGS / landingHost', () => {
       expect(landingHost({ sessionDate: date, introSeenAt: null }).persona.id).toBe(TANK_ID);
       expect(landingHost({ sessionDate: date, introSeenAt: undefined }).persona.id).toBe(TANK_ID);
     }
+  });
+
+  it('hands off to Hilda only before the intro has been seen', () => {
+    expect(landingHost({ sessionDate: '2026-07-25', introSeenAt: null }).copy).toBe(
+      `${LANDING_GREETINGS[TANK_ID]} ${LANDING_HILDA_HANDOFF}`,
+    );
+    expect(landingHost({ sessionDate: null, ...SEEN }).copy).toBe(LANDING_GREETINGS[TANK_ID]);
   });
 
   it('is Tank with no session date (loading/error) or an unparseable one', () => {
@@ -200,9 +230,9 @@ describe('promptCopy / movePromptCopy / GRADING_COPY', () => {
 });
 
 describe('introCopy', () => {
-  it('step 0 is hosted by Tank and welcomes the user to the boot camp', () => {
-    expect(introCopy(0, 'white', false, AUDIENCE_HAS_GAMES).personaId).toBe(TANK_ID);
-    expect(introCopy(0, 'white', false, AUDIENCE_HAS_GAMES).copy).toContain('boot camp');
+  it('step 0 is hosted by Hilda and welcomes the user to FlawChess Train', () => {
+    expect(introCopy(0, 'white', false, AUDIENCE_HAS_GAMES).personaId).toBe(HILDA_ID);
+    expect(introCopy(0, 'white', false, AUDIENCE_HAS_GAMES).copy).toContain('Welcome to FlawChess Train!');
     expect(introCopy(0, 'white', false, AUDIENCE_HAS_GAMES).copy).toContain('your own games');
   });
 
@@ -273,7 +303,7 @@ describe('introCopy / introSteps — D-03 games-less audience branch (Phase 224)
     const guestWithGames: TrainCopyAudience = { hasGames: true, isGuest: true };
     for (const audience of [AUDIENCE_HAS_GAMES, guestWithGames]) {
       expect(introCopy(0, 'white', false, audience).copy).toBe(
-        'Welcome to FlawChess Train, my chess boot camp! You will improve by solving puzzles ' +
+        'Welcome to FlawChess Train! You will improve by solving puzzles ' +
           'created from your own games.',
       );
       expect(introCopy(4, 'white', true, audience).copy).toBe(
@@ -325,51 +355,107 @@ describe('dropNudgeCopy', () => {
   });
 });
 
+describe('verdictClauseParts / verdictCopy clause / verdictStripLine (Phase 237 D-05/D-06)', () => {
+  // The full vocabulary table: [correct call, tier, isBest, guess label, move label,
+  // guess points, move points].
+  const TABLE: ReadonlyArray<readonly [boolean, TrainMoveTier, boolean, string, string, 0 | 1, 0 | 1 | 2]> = [
+    [true, 'good', true, 'Right call', 'best move', 1, 2],
+    [true, 'good', false, 'Right call', 'good move', 1, 2],
+    [true, 'inaccuracy', false, 'Right call', 'decent move', 1, 1],
+    [true, 'wrong', false, 'Right call', 'wrong move', 1, 0],
+    [false, 'good', true, 'Wrong call', 'but the best move', 0, 2],
+    [false, 'good', false, 'Wrong call', 'but a good move', 0, 2],
+    [false, 'inaccuracy', false, 'Wrong call', 'decent move', 0, 1],
+    [false, 'wrong', false, 'Wrong call', 'wrong move', 0, 0],
+  ];
+
+  it.each(TABLE)(
+    'correct=%s tier=%s isBest=%s -> %s, %s',
+    (correct, tier, isBest, guessLabel, moveLabel, guessPoints, movePoints) => {
+      expect(verdictClauseParts(correct, tier, isBest)).toEqual({
+        guessLabel,
+        guessPoints,
+        moveLabel,
+        movePoints,
+      });
+      expect(verdictCopy(0, correct, tier, isBest, () => 0).clause).toBe(
+        `${guessLabel} [+${guessPoints}], ${moveLabel} [+${movePoints}].`,
+      );
+      expect(verdictStripLine(correct, tier, isBest)).toBe(`${guessLabel}, ${moveLabel}`);
+    },
+  );
+
+  it('states the example clauses and strip lines from the plan', () => {
+    expect(verdictCopy(3, true, 'good', true, () => 0).clause).toBe('Right call [+1], best move [+2].');
+    expect(verdictCopy(2, false, 'good', false, () => 0).clause).toBe(
+      'Wrong call [+0], but a good move [+2].',
+    );
+    expect(verdictStripLine(true, 'good', true)).toBe('Right call, best move');
+    expect(verdictStripLine(false, 'good', false)).toBe('Wrong call, but a good move');
+    expect(verdictStripLine(true, 'wrong', false)).toBe('Right call, wrong move');
+  });
+
+  it('isBest is ignored for the inaccuracy and wrong tiers', () => {
+    for (const tier of ['inaccuracy', 'wrong'] as const) {
+      expect(verdictClauseParts(true, tier, true)).toEqual(verdictClauseParts(true, tier, false));
+      expect(verdictClauseParts(false, tier, true)).toEqual(verdictClauseParts(false, tier, false));
+    }
+  });
+
+  it('the points always equal scorePuzzle (isBest only selects wording)', () => {
+    for (const [correct, tier, isBest, , , guessPoints, movePoints] of TABLE) {
+      expect(guessPoints + movePoints).toBe(scorePuzzle(correct, tier));
+      const parts = verdictClauseParts(correct, tier, isBest);
+      expect(parts.guessPoints + parts.movePoints).toBe(scorePuzzle(correct, tier));
+    }
+  });
+});
+
 describe('verdictCopy', () => {
   it('0-point bucket: wrong guess + wrong move, carries the look-closer line', () => {
-    const copy = verdictCopy(0, false, 'wrong', () => 0);
+    const copy = verdictCopy(0, false, 'wrong', false, () => 0);
     expect(['Not this time.', 'Not quite.']).toContain(copy.opener);
     expect(copy.clause).toBe('Wrong call [+0], wrong move [+0].');
     expect(copy.lookCloser).toBe('Step through the best line and your own move to see why.');
   });
 
   it('1-point bucket via correct guess + wrong move, carries the look-closer line', () => {
-    const copy = verdictCopy(1, true, 'wrong', () => 0);
+    const copy = verdictCopy(1, true, 'wrong', false, () => 0);
     expect(['Close.', 'Halfway there.']).toContain(copy.opener);
     expect(copy.clause).toBe('Right call [+1], wrong move [+0].');
     expect(copy.lookCloser).not.toBeNull();
   });
 
   it('1-point bucket via wrong guess + inaccuracy, same opener bucket, different clause', () => {
-    const copy = verdictCopy(1, false, 'inaccuracy', () => 0);
+    const copy = verdictCopy(1, false, 'inaccuracy', false, () => 0);
     expect(['Close.', 'Halfway there.']).toContain(copy.opener);
     expect(copy.clause).toBe('Wrong call [+0], decent move [+1].');
   });
 
   it('2-point bucket via correct guess + inaccuracy, no look-closer line', () => {
-    const copy = verdictCopy(2, true, 'inaccuracy', () => 0);
+    const copy = verdictCopy(2, true, 'inaccuracy', false, () => 0);
     expect(['Nice.', 'Solid.']).toContain(copy.opener);
     expect(copy.clause).toBe('Right call [+1], decent move [+1].');
     expect(copy.lookCloser).toBeNull();
   });
 
   it('2-point bucket via wrong guess + good move, no look-closer line', () => {
-    const copy = verdictCopy(2, false, 'good', () => 0);
+    const copy = verdictCopy(2, false, 'good', false, () => 0);
     expect(['Nice.', 'Solid.']).toContain(copy.opener);
-    expect(copy.clause).toBe('Wrong call [+0], but the right move [+2].');
+    expect(copy.clause).toBe('Wrong call [+0], but a good move [+2].');
     expect(copy.lookCloser).toBeNull();
   });
 
   it('3-point bucket: correct guess + good move, no look-closer line', () => {
-    const copy = verdictCopy(3, true, 'good', () => 0);
+    const copy = verdictCopy(3, true, 'good', true, () => 0);
     expect(['Good job!', 'Clean.']).toContain(copy.opener);
-    expect(copy.clause).toBe('Right call [+1], right move [+2].');
+    expect(copy.clause).toBe('Right call [+1], best move [+2].');
     expect(copy.lookCloser).toBeNull();
   });
 
   it('the injected rng selects between the two opener variants deterministically', () => {
-    expect(verdictCopy(3, true, 'good', () => 0).opener).toBe('Good job!');
-    expect(verdictCopy(3, true, 'good', () => 0.999).opener).toBe('Clean.');
+    expect(verdictCopy(3, true, 'good', true, () => 0).opener).toBe('Good job!');
+    expect(verdictCopy(3, true, 'good', true, () => 0.999).opener).toBe('Clean.');
   });
 
   it('lookCloserCopy mirrors verdictCopy.lookCloser for all four buckets', () => {
@@ -564,65 +650,93 @@ describe('returnPhrase — D-03 games-less warm-up tail audience branch (Phase 2
 });
 
 describe('walkthroughCopy', () => {
-  it('step 0 spotlights the verdict bubble and explains the two point sources', () => {
-    expect(walkthroughCopy(0, true).spotlightTarget).toBe('verdict');
-    expect(walkthroughCopy(0, true).copy).toContain('One point for a correct call');
-    expect(walkthroughCopy(0, true).copy).toContain('up to two for the move');
-  });
+  const BASE_CTX: WalkthroughContext = { hasAnalyze: true, mergedChip: null, isDesktop: false };
+  const STEPS: WalkthroughStep[] = [0, 1, 2, 3, 4, 5];
+  const ALL_CONTEXTS: WalkthroughContext[] = [];
+  for (const hasAnalyze of [true, false]) {
+    for (const mergedChip of [null, 'best', 'game'] as const) {
+      for (const isDesktop of [false, true]) {
+        ALL_CONTEXTS.push({ hasAnalyze, mergedChip, isDesktop });
+      }
+    }
+  }
 
-  it('steps 1 and 2 spotlight the line cards: tap highlights, arrows step (phase 222 UAT split)', () => {
-    expect(walkthroughCopy(1, true).spotlightTarget).toBe('lines');
-    expect(walkthroughCopy(1, true).copy).toContain('Tap a card to highlight');
-    expect(walkthroughCopy(2, true).spotlightTarget).toBe('lines');
-    expect(walkthroughCopy(2, true).copy).toContain('arrows inside a card');
-  });
-
-  it('step 3 spotlights the board for free play with the eval bar', () => {
-    expect(walkthroughCopy(3, true).spotlightTarget).toBe('board');
-    expect(walkthroughCopy(3, true).copy).toContain('eval bar');
-  });
-
-  it('step 4 carries the "understand, don\'t just memorize" line on the line cards', () => {
-    expect(walkthroughCopy(4, true).spotlightTarget).toBe('lines');
-    expect(walkthroughCopy(4, true).copy).toContain("Don't just memorize the answer");
-  });
-
-  // Phase 222 UAT round 4: the cards sit below the board on phones and to
-  // its right on desktop — the tap step names both placements.
-  it('step 1 covers both the phone (below) and desktop (right) card placement', () => {
-    expect(walkthroughCopy(1, true).copy).toContain('The cards below or on the right');
-  });
-
-  it('the last step spotlights the action row', () => {
-    expect(walkthroughCopy(5, true).spotlightTarget).toBe('actions');
+  it('the six steps map to verdict, chips, tree, board, lines, bar', () => {
     expect(WALKTHROUGH_STEP_COUNT).toBe(6);
+    expect(STEPS.map((step) => walkthroughCopy(step, BASE_CTX).spotlightTarget)).toEqual([
+      'verdict',
+      'chips',
+      'tree',
+      'board',
+      'lines',
+      'bar',
+    ]);
+  });
+
+  it('step 0 explains the two point sources; "Tap it" only where a strip exists (phone)', () => {
+    const phone = walkthroughCopy(0, BASE_CTX).copy;
+    expect(phone).toContain('a point for the right call');
+    expect(phone).toContain('up to two for the move');
+    expect(phone).toContain('Tap it');
+    const desktop = walkthroughCopy(0, { ...BASE_CTX, isDesktop: true }).copy;
+    expect(desktop).toContain('up to two for the move');
+    expect(desktop).not.toContain('Tap it');
+    expect(desktop).not.toContain('strip');
+  });
+
+  it('step 1 explains "Move = Best" / "Move = Game" only when that merged chip is on screen', () => {
+    const alone = walkthroughCopy(1, BASE_CTX).copy;
+    expect(alone).toContain('Tap one to focus it');
+    expect(alone).not.toContain('Move =');
+    expect(walkthroughCopy(1, { ...BASE_CTX, mergedChip: 'best' }).copy).toContain('"Move = Best"');
+    expect(walkthroughCopy(1, { ...BASE_CTX, mergedChip: 'best' }).copy).not.toContain('Move = Game');
+    expect(walkthroughCopy(1, { ...BASE_CTX, mergedChip: 'game' }).copy).toContain('"Move = Game"');
+    expect(walkthroughCopy(1, { ...BASE_CTX, mergedChip: 'game' }).copy).not.toContain('Move = Best');
+  });
+
+  it('step 2 names the bar on phones and the arrow keys on desktop', () => {
+    expect(walkthroughCopy(2, BASE_CTX).copy).toContain('in the bar');
+    expect(walkthroughCopy(2, BASE_CTX).copy).not.toContain('arrow keys');
+    expect(walkthroughCopy(2, { ...BASE_CTX, isDesktop: true }).copy).toContain('arrow keys');
+  });
+
+  it('step 3 explains sidelines and the rewind; Home only on desktop', () => {
+    const phone = walkthroughCopy(3, BASE_CTX).copy;
+    expect(phone).toContain('sideline');
+    expect(phone).toContain('puzzle position');
+    expect(phone).not.toContain('Home');
+    expect(walkthroughCopy(3, { ...BASE_CTX, isDesktop: true }).copy).toContain('Home');
+  });
+
+  it('step 4 carries the "understand, don\'t just memorize" line on chips + list', () => {
+    expect(walkthroughCopy(4, BASE_CTX).spotlightTarget).toBe('lines');
+    expect(walkthroughCopy(4, BASE_CTX).copy).toContain("Don't just memorize the answer");
   });
 
   it('the last step describes Analyze only when the puzzle comes from an own game (UAT: warm-up first reveal)', () => {
-    expect(walkthroughCopy(5, true).copy).toMatch(/^Analyze opens the whole game/);
-    const warmup = walkthroughCopy(5, false);
-    expect(warmup.spotlightTarget).toBe('actions');
+    expect(walkthroughCopy(5, BASE_CTX).copy).toMatch(/^The Analyze button opens the whole game/);
+    const warmup = walkthroughCopy(5, { ...BASE_CTX, hasAnalyze: false });
+    expect(warmup.spotlightTarget).toBe('bar');
     expect(warmup.copy).toMatch(/^Next takes you to the next puzzle/);
     expect(warmup.copy).toContain('Analyze appears once puzzles come from your own games');
   });
 
-  // Phase 222 UAT round 3: the free-play step departs the board, so the
-  // action row usually carries Solution by the last step — describe it.
-  it('the last step describes Solution only when the board is departed', () => {
-    expect(walkthroughCopy(5, true, false).copy).not.toContain('Solution');
-    expect(walkthroughCopy(5, true, true).copy).toMatch(/^The Solution button restores the board\. Analyze/);
-    expect(walkthroughCopy(5, false, true).copy).toMatch(/^The Solution button restores the board\. Next/);
+  it('no step mentions a card, a Solution button or the eval bar, and no copy has an em-dash', () => {
+    for (const step of STEPS) {
+      for (const ctx of ALL_CONTEXTS) {
+        const { copy } = walkthroughCopy(step, ctx);
+        expect(copy).not.toMatch(/card/i);
+        expect(copy).not.toContain('Solution');
+        expect(copy).not.toContain('—');
+      }
+    }
   });
 
-  it('every walkthrough step, with and without Analyze/Solution, fits the phone copy budget', () => {
-    const steps: WalkthroughStep[] = [0, 1, 2, 3, 4, 5];
-    for (const step of steps) {
-      for (const hasAnalyze of [true, false]) {
-        for (const hasSolution of [true, false]) {
-          expect(walkthroughCopy(step, hasAnalyze, hasSolution).copy.length).toBeLessThanOrEqual(
-            STEPPER_COPY_MAX_CHARS,
-          );
-        }
+  it('every step fits the phone copy budget in all 12 context combinations', () => {
+    expect(ALL_CONTEXTS).toHaveLength(12);
+    for (const step of STEPS) {
+      for (const ctx of ALL_CONTEXTS) {
+        expect(walkthroughCopy(step, ctx).copy.length).toBeLessThanOrEqual(STEPPER_COPY_MAX_CHARS);
       }
     }
   });

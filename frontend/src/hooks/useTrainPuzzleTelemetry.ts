@@ -14,13 +14,12 @@ import { useCallback, useEffect, useMemo, useRef } from 'react';
 import { postReviewKeepalive } from '@/api/client';
 import { telemetryClient } from '@/lib/deviceClass';
 import { updateTrainRevealCacheReview } from '@/lib/trainRevealCache';
+import { DEFAULT_ROOT_FOCUS, type RoleKey } from '@/lib/trainRevealLines';
 import {
   buildReviewTelemetry,
   buildSolveTelemetry,
   isUsableReviewSnapshot,
   noteThinkStarted,
-  REVIEW_CARD_HOVER_MIN_MS,
-  type CardEngageKind,
   type ExploreMoveSource,
   type ReviewCounters,
   type ReviewTelemetrySnapshot,
@@ -51,14 +50,25 @@ interface TrainPuzzleTelemetry {
   snapshotReviewForAnalyze: () => ReviewTelemetrySnapshot | undefined;
   /** A user prev/next/token click on a reveal line stepper (D-14). */
   onLineUserStep: () => void;
-  /** A user-played free-play move: a board move or an engine-line click (D-14, quick 261007-axc). */
-  onExploreMove: (source: ExploreMoveSource) => void;
+  /**
+   * A user-played move on the reveal tree (D-14, quick 261007-axc): a board move
+   * or an engine-line click. `forked` (D-13) is true only when it created a new
+   * sideline node; a move that matches a known line or an existing sideline is
+   * counted as a move but is not a fork.
+   */
+  onExploreMove: (source: ExploreMoveSource, forked: boolean) => void;
   /** The first-reveal walkthrough is active: sticky for this puzzle (D-13). */
   markWalkthroughActive: () => void;
-  /** A reveal card was engaged (D-11): a tap/click opens it at once, a desktop hover counts after the hold time. */
-  onCardEngage: (key: string, kind: CardEngageKind) => void;
-  /** The number of cards currently shown on the reveal (D-12); the hook keeps the maximum. */
-  onCardsTotalChange: (total: number) => void;
+  /**
+   * A chip was selected (D-12), by tap or by a line-matching move from the puzzle
+   * position. The default You chip is never counted, so opening on it or
+   * re-tapping it adds nothing; each other chip counts once.
+   */
+  onChipSelect: (key: RoleKey) => void;
+  /** The number of chips currently shown on the reveal (D-12); the hook keeps the maximum. */
+  onChipsTotalChange: (total: number) => void;
+  /** The phone verdict strip was expanded (D-12): sticky for this puzzle. */
+  markStripExpanded: () => void;
   /**
    * Phase 236 D-12: the late 1.5 s phone reading of a server-graded move, once
    * the background search settled. Stored only while `(sessionId, position)` is
@@ -82,8 +92,10 @@ function emptyCounters(): ReviewCounters {
     boardMoves: 0,
     analyzeOpened: false,
     walkthrough: false,
-    cardKeys: new Set<string>(),
-    cardsTotal: 0,
+    forked: false,
+    chipKeys: new Set<string>(),
+    chipsTotal: 0,
+    stripExpanded: false,
   };
 }
 
@@ -107,15 +119,6 @@ export function useTrainPuzzleTelemetry(options: UseTrainPuzzleTelemetryOptions)
   const latePhoneGradeRef = useRef<PhoneGrade | null>(null);
   // Engagement counters (D-14): cumulative totals for this puzzle's reveal.
   const countersRef = useRef<ReviewCounters>(emptyCounters());
-  // The one pending desktop hover (D-11) and the card it is armed for.
-  const hoverTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const hoverKeyRef = useRef<string | null>(null);
-
-  const clearHover = useCallback((): void => {
-    if (hoverTimerRef.current !== null) clearTimeout(hoverTimerRef.current);
-    hoverTimerRef.current = null;
-    hoverKeyRef.current = null;
-  }, []);
   // Set ONLY by the Next flush: after it every later trigger for this puzzle is a no-op.
   const nextFlushedRef = useRef(false);
   // A non-Next flush was already sent in the current hidden span (cleared on visible).
@@ -126,12 +129,11 @@ export function useTrainPuzzleTelemetry(options: UseTrainPuzzleTelemetryOptions)
   useEffect(() => {
     const key = `${sessionId ?? 'none'}:${position}`;
     if (keyRef.current !== key) {
-      // The very first key leaves the counters alone: the child TrainReveal's
-      // mount effect (which reports the cards total) runs BEFORE this parent
-      // effect, and the refs are still pristine on a first mount anyway.
+      // The very first key leaves the counters alone: a child's mount effect
+      // that reports a count (the chips total) can run BEFORE this effect, and
+      // the refs are still pristine on a first mount anyway.
       const isFirstKey = keyRef.current === null;
       keyRef.current = key;
-      clearHover();
       if (!isFirstKey) countersRef.current = emptyCounters();
       stopwatchRef.current = null;
       resumedRef.current = false;
@@ -148,7 +150,7 @@ export function useTrainPuzzleTelemetry(options: UseTrainPuzzleTelemetryOptions)
     // A mount into an already-hidden tab starts paused (useBotGameClock CR-01).
     stopwatchRef.current = startStopwatch(Date.now(), isTabHidden());
     resumedRef.current = sessionId === null ? false : noteThinkStarted(sessionId, position);
-  }, [sessionId, position, isReady, isRestored, clearHover]);
+  }, [sessionId, position, isReady, isRestored]);
 
   // Review timer (D-03): starts when the verdict lands. Declared AFTER the
   // reset effect so a key change clears the previous puzzle's state first.
@@ -158,8 +160,8 @@ export function useTrainPuzzleTelemetry(options: UseTrainPuzzleTelemetryOptions)
     const seed = isRestored && isUsableReviewSnapshot(restoredReview) ? restoredReview : undefined;
     reviewRef.current = { stopwatch: startStopwatch(Date.now(), isTabHidden(), seed), sessionId, position };
     if (seed !== undefined) {
-      // Cards are merged, not replaced: the child reveal may already have reported
-      // its total on this very mount (its effect runs before this one).
+      // Chips are merged, not replaced: the screen may already have reported its
+      // chip total on this very mount. Flags OR together, sets union, totals max.
       const current = countersRef.current;
       countersRef.current = {
         lineSteps: seed.lineSteps ?? 0,
@@ -167,8 +169,10 @@ export function useTrainPuzzleTelemetry(options: UseTrainPuzzleTelemetryOptions)
         boardMoves: seed.boardMoves ?? 0,
         analyzeOpened: seed.analyzeOpened ?? false,
         walkthrough: seed.walkthrough ?? false,
-        cardKeys: new Set([...(seed.cardKeys ?? []), ...current.cardKeys]),
-        cardsTotal: Math.max(seed.cardsTotal ?? 0, current.cardsTotal),
+        forked: (seed.forked ?? false) || current.forked,
+        chipKeys: new Set([...(seed.chipKeys ?? []), ...current.chipKeys]),
+        chipsTotal: Math.max(seed.chipsTotal ?? 0, current.chipsTotal),
+        stripExpanded: (seed.stripExpanded ?? false) || current.stripExpanded,
       };
     }
   }, [hasVerdict, sessionId, position, isRestored, restoredReview]);
@@ -186,8 +190,10 @@ export function useTrainPuzzleTelemetry(options: UseTrainPuzzleTelemetryOptions)
       boardMoves: counters.boardMoves,
       analyzeOpened: counters.analyzeOpened,
       walkthrough: counters.walkthrough,
-      cardKeys: [...counters.cardKeys],
-      cardsTotal: counters.cardsTotal,
+      forked: counters.forked,
+      chipKeys: [...counters.chipKeys],
+      chipsTotal: counters.chipsTotal,
+      stripExpanded: counters.stripExpanded,
     };
   }, []);
 
@@ -237,10 +243,6 @@ export function useTrainPuzzleTelemetry(options: UseTrainPuzzleTelemetryOptions)
       if (review !== null) {
         reviewRef.current = { ...review, stopwatch: applyVisibility(review.stopwatch, hidden, now) };
       }
-      // D-11: a hover cannot be held on a hidden page. This also keeps every
-      // counter frozen while hidden, which the one-flush-per-hidden-span
-      // dedupe in flushReviewNonNext relies on.
-      if (hidden) clearHover();
       if (hidden) flushReviewNonNext();
       else hiddenFlushedRef.current = false;
     };
@@ -253,7 +255,6 @@ export function useTrainPuzzleTelemetry(options: UseTrainPuzzleTelemetryOptions)
       document.removeEventListener('visibilitychange', handleVisibility);
       window.removeEventListener('pagehide', handlePageHide);
       aliveRef.current = false;
-      clearHover();
       // React StrictMode (main.tsx) runs a simulated unmount in dev and re-runs
       // the setup synchronously before this microtask, which then sees alive and
       // sends nothing; a real unmount (route change, the Analyze link, a Train.tsx
@@ -263,7 +264,7 @@ export function useTrainPuzzleTelemetry(options: UseTrainPuzzleTelemetryOptions)
         if (!aliveRef.current) flushReviewNonNext();
       });
     };
-  }, [flushReviewNonNext, clearHover]);
+  }, [flushReviewNonNext]);
 
   const markGuess = useCallback((): void => {
     const sw = stopwatchRef.current;
@@ -323,45 +324,31 @@ export function useTrainPuzzleTelemetry(options: UseTrainPuzzleTelemetryOptions)
     countersRef.current = { ...countersRef.current, lineSteps: countersRef.current.lineSteps + 1 };
   }, []);
 
-  const onExploreMove = useCallback((source: ExploreMoveSource): void => {
+  const onExploreMove = useCallback((source: ExploreMoveSource, forked: boolean): void => {
     const counters = countersRef.current;
     countersRef.current = {
       ...counters,
       exploreMoves: counters.exploreMoves + 1,
       boardMoves: source === 'board' ? counters.boardMoves + 1 : counters.boardMoves,
+      // D-13: sticky; a move onto a known line or an existing sideline never sets it.
+      forked: counters.forked || forked,
     };
   }, []);
 
-  const addCard = useCallback((key: string): void => {
+  const onChipSelect = useCallback((key: RoleKey): void => {
     const counters = countersRef.current;
-    if (counters.cardKeys.has(key)) return;
-    countersRef.current = { ...counters, cardKeys: new Set(counters.cardKeys).add(key) };
+    // The default You chip is lit on open, so selecting it is not engagement.
+    if (key === DEFAULT_ROOT_FOCUS || counters.chipKeys.has(key)) return;
+    countersRef.current = { ...counters, chipKeys: new Set(counters.chipKeys).add(key) };
   }, []);
 
-  const onCardEngage = useCallback(
-    (key: string, kind: CardEngageKind): void => {
-      if (kind === 'hover-end') {
-        if (hoverKeyRef.current === key) clearHover();
-        return;
-      }
-      clearHover();
-      if (kind === 'open') {
-        addCard(key);
-        return;
-      }
-      hoverKeyRef.current = key;
-      hoverTimerRef.current = setTimeout(() => {
-        hoverTimerRef.current = null;
-        hoverKeyRef.current = null;
-        addCard(key);
-      }, REVIEW_CARD_HOVER_MIN_MS);
-    },
-    [addCard, clearHover],
-  );
-
-  const onCardsTotalChange = useCallback((total: number): void => {
+  const onChipsTotalChange = useCallback((total: number): void => {
     const counters = countersRef.current;
-    if (total > counters.cardsTotal) countersRef.current = { ...counters, cardsTotal: total };
+    if (total > counters.chipsTotal) countersRef.current = { ...counters, chipsTotal: total };
+  }, []);
+
+  const markStripExpanded = useCallback((): void => {
+    countersRef.current = { ...countersRef.current, stripExpanded: true };
   }, []);
 
   const markWalkthroughActive = useCallback((): void => {
@@ -386,8 +373,9 @@ export function useTrainPuzzleTelemetry(options: UseTrainPuzzleTelemetryOptions)
       onLineUserStep,
       onExploreMove,
       markWalkthroughActive,
-      onCardEngage,
-      onCardsTotalChange,
+      onChipSelect,
+      onChipsTotalChange,
+      markStripExpanded,
       setLatePhoneGrade,
     }),
     [
@@ -399,8 +387,9 @@ export function useTrainPuzzleTelemetry(options: UseTrainPuzzleTelemetryOptions)
       onLineUserStep,
       onExploreMove,
       markWalkthroughActive,
-      onCardEngage,
-      onCardsTotalChange,
+      onChipSelect,
+      onChipsTotalChange,
+      markStripExpanded,
       setLatePhoneGrade,
     ],
   );

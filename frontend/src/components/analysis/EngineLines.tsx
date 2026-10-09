@@ -84,12 +84,14 @@ export function replayPvLine(baseFen: string | undefined, uciMoves: string[]): P
 }
 
 // PV chip class — matches HorizontalMoveList chip exactly (PATTERNS line 176).
+// whitespace-nowrap: a chip is a flex item that may shrink to min-content, which broke
+// "O-O-O+" at its hyphens and stacked the O's vertically (Phase 237 UAT).
 // text-xs is the user-approved exception to the CLAUDE.md text-sm floor, scoped to this
 // dense engine surface (Quick 260628-r5v UAT: shrink the desktop engine lines to match the
 // already-compact mobile lines). The compact variant below keeps the same font, differing
 // only in row layout (no-wrap + zero padding).
 const CHIP_CLASS =
-  'inline-flex items-center gap-0.5 rounded px-1 py-0.5 font-mono text-xs transition-colors hover:bg-accent';
+  'inline-flex items-center gap-0.5 rounded px-1 py-0.5 whitespace-nowrap font-mono text-xs cursor-pointer transition-colors hover:bg-accent';
 
 // Eval badge — filled pill in the line's arrow color (solid blue best / translucent blue rest).
 const BADGE_CLASS = 'shrink-0 rounded px-1.5 py-0.5 text-xs font-semibold text-white';
@@ -99,7 +101,7 @@ const BADGE_CLASS = 'shrink-0 rounded px-1.5 py-0.5 text-xs font-semibold text-w
 // deterministic ~16px row. (Desktop now uses text-xs too — Quick 260628-r5v — so the compact
 // split is purely about row layout, not font size.)
 const CHIP_CLASS_COMPACT =
-  'inline-flex items-center gap-0.5 rounded px-1 font-mono text-xs leading-4 transition-colors hover:bg-accent';
+  'inline-flex items-center gap-0.5 rounded px-1 whitespace-nowrap font-mono text-xs leading-4 cursor-pointer transition-colors hover:bg-accent';
 const BADGE_CLASS_COMPACT = 'shrink-0 rounded px-1 text-xs font-semibold leading-4 text-white';
 
 // Fixed-height container for the engine-lines region — keeps the panel from

@@ -90,7 +90,7 @@ function resolveMarkerIcon(flaw: FlawMarkerEntry | undefined): {
     return { show: true, Icon: GreatMoveIcon, isGem: false, isGreat: true };
   }
   // Phase 200 UAT: the positive non-Maia tiers, set only by Train's free-play
-  // move list (`useTrainFreePlay`). The Analysis page never populates them, so
+  // move list (`useTreeMoveGrading`). The Analysis page never populates them, so
   // its own markers are unchanged. They sit BELOW gem/great deliberately: a
   // surface that has Maia available should still say "gem", and a surface that
   // does not (Train) simply labels the same move `best`.
@@ -333,8 +333,10 @@ export interface VariationTreeProps {
    * strip on mobile, vertical paired list on desktop. `'vertical'` forces the vertical
    * paired list at every width (used in the mobile analysis Moves tab so the move list
    * fills the available vertical space instead of collapsing to a single horizontal row).
+   * `'wrap'` (Phase 237 Train reveal list) forces the wrapping numbered token list with
+   * inline sidelines at every width, so the reveal's compact list looks the same on desktop.
    */
-  variant?: 'responsive' | 'vertical';
+  variant?: 'responsive' | 'vertical' | 'wrap';
   /**
    * Game-mode ply the board first lands on (the URL `ply` param, defaulting to 0 — or the
    * tactic fork ply when the entry ply auto-opens a tactic line: decision board `ply-1` for
@@ -682,7 +684,7 @@ function siblingBlockToChips(
             type="button"
             data-testid={`btn-delete-line-${block.rootId}`}
             aria-label="Delete variation"
-            className="text-muted-foreground hover:text-foreground inline-flex items-center ml-0.5"
+            className="text-muted-foreground hover:text-foreground inline-flex items-center ml-0.5 cursor-pointer"
             onClick={(e) => {
               e.stopPropagation();
               onDeleteLine?.(block.rootId);
@@ -920,7 +922,7 @@ function DesktopTree({
             aria-current={isCurrent ? 'step' : undefined}
             onClick={() => onNodeClick(nodeId)}
             className={cn(
-              'text-sm font-mono px-1 py-0.5 rounded transition-colors hover:bg-accent',
+              'text-sm font-mono px-1 py-0.5 rounded cursor-pointer transition-colors hover:bg-accent',
               isCurrent && 'bg-primary text-primary-foreground hover:bg-primary/90',
               !isCurrent && isVariation && !decoColor && 'text-muted-foreground',
               decoColor && 'font-bold',
@@ -1024,7 +1026,7 @@ function DesktopTree({
                 type="button"
                 data-testid={`btn-delete-line-${block.rootId}`}
                 aria-label="Delete variation"
-                className="text-muted-foreground hover:text-foreground shrink-0 p-0.5"
+                className="text-muted-foreground hover:text-foreground shrink-0 p-0.5 cursor-pointer"
                 onClick={(e) => {
                   e.stopPropagation();
                   onDeleteLine?.(block.rootId);
@@ -1097,6 +1099,20 @@ export function VariationTree(props: VariationTreeProps) {
         className="relative flex min-h-0 flex-1 flex-col"
       >
         <DesktopTree {...props} />
+      </div>
+    );
+  }
+  // `variant='wrap'` (Phase 237 Train reveal list) forces the wrapping mobile renderer
+  // at every width: numbered tokens, inline sidelines, a delete x per free sideline.
+  if (props.variant === 'wrap') {
+    return (
+      <div
+        data-testid="analysis-variation-tree"
+        aria-label="Move list"
+        role="navigation"
+        className="flex min-h-0 flex-1 flex-col"
+      >
+        <MobileTree {...props} />
       </div>
     );
   }

@@ -1,12 +1,12 @@
 import { describe, it, expect } from 'vitest';
 import {
-  applyTrainSpotlight,
+  buildChipFocusOverlay,
   buildTrainRevealOverlay,
   buildTrainFreePlayArrows,
   buildTrainStepArrows,
   buildTrainStepMarkers,
+  chipArrowColor,
   classifyTrainMoveQuality,
-  trainGlyphColor,
   vettedMoveForSquares,
   TRAIN_BEST_MOVE_ARROW_WIDTH,
   TRAIN_GOOD_MOVE_ARROW_WIDTH,
@@ -27,6 +27,10 @@ import {
   NEXT_MOVE_ARROW,
   STOCKFISH_SECONDARY_LINE,
   TRAIN_BEST_MOVE_ARROW,
+  TRAIN_FOCUS_ARROW_DIM_OPACITY,
+  TRAIN_FOCUS_ARROW_LIT_OPACITY,
+  TRAIN_FOCUS_BADGE_DIM_OPACITY,
+  TRAIN_FOCUS_BADGE_LIT_OPACITY,
 } from '@/lib/theme';
 
 /** Shorthand: wrap UCIs as clean ('good') fine moves — the pre-260726-fma
@@ -367,9 +371,6 @@ describe('buildTrainRevealOverlay', () => {
     );
     const played = overlay.arrows.find((a) => a.layerKey === 'played');
     expect(played?.color).toBe(MOVE_QUALITY_INACCURACY);
-    expect(trainGlyphColor({ includesBest: false, includesYour: true, quality: 'inaccuracy' })).toBe(
-      MOVE_QUALITY_INACCURACY,
-    );
   });
 
   it('a coincident from-to pair across played, best and game moves keeps distinct layerKeys so concentric arrows survive dedupe', () => {
@@ -552,33 +553,31 @@ describe('TRAIN_STEP_HIGHLIGHT (190.1 UAT stepping)', () => {
   });
 });
 
-describe('applyTrainSpotlight (Phase 200 LEGEND-02/LEGEND-05)', () => {
-  it('returns the overlay unchanged (same reference) for a null activeUcis', () => {
-    const overlay = buildTrainRevealOverlay('sharp', good('e2e4'), 'e2e4', null, null, true);
-    expect(applyTrainSpotlight(overlay, null)).toBe(overlay);
-  });
+describe('buildChipFocusOverlay (Phase 237)', () => {
+  const squaresOf = (a: { startSquare: string; endSquare: string }): string =>
+    `${a.startSquare}${a.endSquare}`;
 
-  it('returns the overlay unchanged (same reference) for an empty activeUcis array', () => {
-    const overlay = buildTrainRevealOverlay('sharp', good('e2e4'), 'e2e4', null, null, true);
-    expect(applyTrainSpotlight(overlay, [])).toBe(overlay);
-  });
-
-  it('filters arrows/markers to only the squares of the active UCI', () => {
+  it('keeps every arrow (dim, never filter): the count equals the input, the active move is lit and onTop, the rest dimmed and not onTop', () => {
     const overlay = buildTrainRevealOverlay(
-      'soft',
-      good('e2e4', 'd2d4', 'g1f3', 'c2c4', 'b1c3'),
+      'sharp',
+      good('e2e4'),
       'e2e4',
-      null,
-      null,
+      { uci: 'd2d4', quality: 'mistake' },
+      { uci: 'g1f3', quality: 'good' },
       true,
     );
-    const spotlit = applyTrainSpotlight(overlay, ['e2e4']);
-    expect(spotlit.arrows).toHaveLength(1);
-    expect(spotlit.arrows[0]).toMatchObject({ startSquare: 'e2', endSquare: 'e4' });
-    expect(spotlit.markers).toEqual([{ square: 'e4', best: true }]);
+    expect(overlay.arrows).toHaveLength(3); // played + best + game
+    const focused = buildChipFocusOverlay(overlay, ['d2d4']);
+
+    expect(focused.arrows).toHaveLength(overlay.arrows.length);
+    const byMove = Object.fromEntries(focused.arrows.map((a) => [squaresOf(a), a]));
+    expect(byMove['d2d4']).toMatchObject({ opacity: TRAIN_FOCUS_ARROW_LIT_OPACITY, onTop: true });
+    expect(byMove['e2e4']).toMatchObject({ opacity: TRAIN_FOCUS_ARROW_DIM_OPACITY, onTop: false });
+    // The game arrow is built onTop: true; while dimmed it must NOT paint over the lit one.
+    expect(byMove['g1f3']).toMatchObject({ opacity: TRAIN_FOCUS_ARROW_DIM_OPACITY, onTop: false });
   });
 
-  it('keeps BOTH stacked arrows (quality-colored + white on-top game hint) on the same UCI for a merged box, dropping the unrelated best arrow', () => {
+  it('lights BOTH arrows of a merged role (quality-colored + thin white game arrow on the same squares) and dims the unrelated best arrow', () => {
     const overlay = buildTrainRevealOverlay(
       'sharp',
       good('e2e4'),
@@ -588,63 +587,98 @@ describe('applyTrainSpotlight (Phase 200 LEGEND-02/LEGEND-05)', () => {
       true,
     );
     expect(overlay.arrows).toHaveLength(3); // played + best + game, distinct layerKeys
-    const spotlit = applyTrainSpotlight(overlay, ['d2d4']);
-    expect(spotlit.arrows).toHaveLength(2);
-    expect(spotlit.arrows.every((a) => a.startSquare === 'd2' && a.endSquare === 'd4')).toBe(true);
-    expect(new Set(spotlit.arrows.map((a) => a.layerKey))).toEqual(new Set(['played', 'game']));
+    const focused = buildChipFocusOverlay(overlay, ['d2d4']);
+
+    const merged = focused.arrows.filter((a) => squaresOf(a) === 'd2d4');
+    expect(new Set(merged.map((a) => a.layerKey))).toEqual(new Set(['played', 'game']));
+    expect(merged.every((a) => a.opacity === TRAIN_FOCUS_ARROW_LIT_OPACITY && a.onTop === true)).toBe(true);
+    const best = focused.arrows.find((a) => squaresOf(a) === 'e2e4');
+    expect(best).toMatchObject({ opacity: TRAIN_FOCUS_ARROW_DIM_OPACITY, onTop: false });
   });
 
-  it('preserves the source overlay draw order for surviving arrows and markers', () => {
+  it('lights a badge only when its markerOwners entry is active; the other badges dim but stay', () => {
     const overlay = buildTrainRevealOverlay(
-      'herring',
-      good('e2e4', 'd2d4', 'g1f3', 'c2c4', 'b1c3'),
+      'sharp',
+      good('e2e4'),
       'e2e4',
-      null,
-      null,
+      { uci: 'd2d4', quality: 'mistake' },
+      { uci: 'g1f3', quality: 'good' },
       true,
     );
-    const spotlit = applyTrainSpotlight(overlay, ['g1f3', 'e2e4']);
-    // Source order is best(e2e4), good(d2d4), good(g1f3) — e2e4 then g1f3 must
-    // stay in THAT relative order, not the order they appear in activeUcis.
-    expect(spotlit.arrows.map((a) => `${a.startSquare}${a.endSquare}`)).toEqual(['e2e4', 'g1f3']);
-    expect(spotlit.markers.map((m) => m.square)).toEqual(['e4', 'f3']);
-  });
+    expect(overlay.markers.map((m) => m.square).sort()).toEqual(['d4', 'e4', 'f3']);
+    const focused = buildChipFocusOverlay(overlay, ['g1f3']);
 
-  it('a malformed (< 4 char) UCI contributes no match and does not throw', () => {
-    const overlay = buildTrainRevealOverlay('sharp', good('e2e4'), 'e2e4', null, null, true);
-    expect(() => applyTrainSpotlight(overlay, ['e2e'])).not.toThrow();
-    const spotlit = applyTrainSpotlight(overlay, ['e2e']);
-    expect(spotlit.arrows).toEqual([]);
-    expect(spotlit.markers).toEqual([]);
+    expect(focused.markers).toHaveLength(overlay.markers.length);
+    const opacityBySquare = Object.fromEntries(focused.markers.map((m) => [m.square, m.opacity]));
+    expect(opacityBySquare).toEqual({
+      f3: TRAIN_FOCUS_BADGE_LIT_OPACITY,
+      d4: TRAIN_FOCUS_BADGE_DIM_OPACITY,
+      e4: TRAIN_FOCUS_BADGE_DIM_OPACITY,
+    });
   });
 
   // WR-02 regression. Two candidate moves can land on the SAME target square
   // (here c4d5 as the best move and e4d5 as a fine alternative). `pushMarker`
   // dedups badges by end square under precedence played > best > fine > game,
-  // so only the blue best badge on d5 survives the build. Filtering markers by
-  // end-square membership therefore handed that blue badge to whichever move
-  // was spotlit — including the green alternative that owns no badge at all.
-  it('does not leak another move’s badge when two candidate moves share a target square (WR-02)', () => {
+  // so only the blue best badge on d5 survives the build. Lighting markers by
+  // end-square membership would hand that blue badge to the focused move,
+  // including the green alternative that owns no badge at all.
+  it('does not light another move’s badge when two candidate moves share a target square (WR-02)', () => {
     const overlay = buildTrainRevealOverlay('soft', good('e4d5'), 'c4d5', null, null, true);
 
     // One badge total, on the shared square, owned by the BEST move.
     expect(overlay.markers).toEqual([{ square: 'd5', best: true }]);
     expect(overlay.markerOwners['d5']).toBe('c4d5');
 
-    // Spotlighting the alternative keeps its own arrow and NO badge.
-    const alternative = applyTrainSpotlight(overlay, ['e4d5']);
-    expect(alternative.arrows).toHaveLength(1);
-    expect(alternative.arrows[0]).toMatchObject({ startSquare: 'e4', endSquare: 'd5' });
-    expect(alternative.markers).toEqual([]);
+    // Focusing the alternative: its arrow is lit, the best badge it does not own stays dim.
+    const alternative = buildChipFocusOverlay(overlay, ['e4d5']);
+    expect(alternative.arrows.find((a) => squaresOf(a) === 'e4d5')?.opacity).toBe(TRAIN_FOCUS_ARROW_LIT_OPACITY);
+    expect(alternative.markers).toEqual([
+      { square: 'd5', best: true, opacity: TRAIN_FOCUS_BADGE_DIM_OPACITY },
+    ]);
 
-    // Spotlighting the best move keeps the badge it actually owns.
-    const best = applyTrainSpotlight(overlay, ['c4d5']);
-    expect(best.arrows).toHaveLength(1);
-    expect(best.arrows[0]).toMatchObject({ startSquare: 'c4', endSquare: 'd5' });
-    expect(best.markers).toEqual([{ square: 'd5', best: true }]);
+    // Focusing the best move lights the badge it actually owns.
+    const best = buildChipFocusOverlay(overlay, ['c4d5']);
+    expect(best.markers).toEqual([
+      { square: 'd5', best: true, opacity: TRAIN_FOCUS_BADGE_LIT_OPACITY },
+    ]);
   });
 
-  it('preserves alsoFineMoves unchanged through the spotlight filter (Phase 200 LEGEND-04) — the board filter never empties the sidebar row', () => {
+  it.each([
+    ['null', null],
+    ['empty', []],
+  ] as const)('a %s active set dims every arrow and badge (D-04: no active move)', (_label, active) => {
+    const overlay = buildTrainRevealOverlay(
+      'soft',
+      good('e2e4', 'd2d4'),
+      'e2e4',
+      { uci: 'g1f3', quality: 'good' },
+      null,
+      true,
+    );
+    const focused = buildChipFocusOverlay(overlay, active);
+    expect(focused.arrows).toHaveLength(overlay.arrows.length);
+    expect(focused.markers).toHaveLength(overlay.markers.length);
+    expect(focused.arrows.every((a) => a.opacity === TRAIN_FOCUS_ARROW_DIM_OPACITY && a.onTop === false)).toBe(true);
+    expect(focused.markers.every((m) => m.opacity === TRAIN_FOCUS_BADGE_DIM_OPACITY)).toBe(true);
+  });
+
+  it('an empty overlay stays empty', () => {
+    const overlay = buildTrainRevealOverlay('sharp', good('e2e4'), 'e2e4', null, null, false);
+    const focused = buildChipFocusOverlay(overlay, ['e2e4']);
+    expect(focused.arrows).toEqual([]);
+    expect(focused.markers).toEqual([]);
+  });
+
+  it('a malformed (< 4 char) UCI contributes no match and does not throw: everything dims', () => {
+    const overlay = buildTrainRevealOverlay('sharp', good('e2e4'), 'e2e4', null, null, true);
+    expect(() => buildChipFocusOverlay(overlay, ['e2e'])).not.toThrow();
+    const focused = buildChipFocusOverlay(overlay, ['e2e']);
+    expect(focused.arrows.every((a) => a.opacity === TRAIN_FOCUS_ARROW_DIM_OPACITY)).toBe(true);
+    expect(focused.markers.every((m) => m.opacity === TRAIN_FOCUS_BADGE_DIM_OPACITY)).toBe(true);
+  });
+
+  it('passes alsoFineMoves and markerOwners through unchanged (Phase 200 LEGEND-04: the sidebar row is never emptied by the board focus)', () => {
     const overlay = buildTrainRevealOverlay(
       'soft',
       good('e2e4', 'd2d4', 'g1f3'),
@@ -653,33 +687,26 @@ describe('applyTrainSpotlight (Phase 200 LEGEND-02/LEGEND-05)', () => {
       null,
       true,
     );
-    const spotlit = applyTrainSpotlight(overlay, ['e2e4']);
-    expect(spotlit.alsoFineMoves).toBe(overlay.alsoFineMoves);
+    const focused = buildChipFocusOverlay(overlay, ['e2e4']);
+    expect(focused.alsoFineMoves).toBe(overlay.alsoFineMoves);
+    expect(focused.markerOwners).toBe(overlay.markerOwners);
+  });
+
+  it('does not mutate the source overlay', () => {
+    const overlay = buildTrainRevealOverlay('sharp', good('e2e4'), 'e2e4', null, null, true);
+    buildChipFocusOverlay(overlay, ['e2e4']);
+    expect(overlay.arrows.every((a) => a.opacity === undefined)).toBe(true);
+    expect(overlay.markers.every((m) => m.opacity === undefined)).toBe(true);
   });
 });
 
-describe('trainGlyphColor (Phase 200 LEGEND-01)', () => {
-  it('returns TRAIN_BEST_MOVE_ARROW whenever includesBest is true, regardless of quality', () => {
-    expect(
-      trainGlyphColor({ includesBest: true, includesYour: true, quality: 'blunder' }),
-    ).toBe(TRAIN_BEST_MOVE_ARROW);
-  });
-
-  it('returns the quality arrow color when includesYour is true and includesBest is false', () => {
-    expect(
-      trainGlyphColor({ includesBest: false, includesYour: true, quality: 'blunder' }),
-    ).toBe(MOVE_QUALITY_BLUNDER);
-  });
-
-  it('defaults a null quality to good when includesYour is true', () => {
-    expect(trainGlyphColor({ includesBest: false, includesYour: true, quality: null })).toBe(
-      MOVE_QUALITY_GOOD,
-    );
-  });
-
-  it('returns NEXT_MOVE_ARROW for a standalone game-move box (neither best nor your)', () => {
-    expect(
-      trainGlyphColor({ includesBest: false, includesYour: false, quality: null }),
-    ).toBe(NEXT_MOVE_ARROW);
+describe('chipArrowColor (Phase 237 UAT)', () => {
+  it('matches the board arrow each chip focuses', () => {
+    expect(chipArrowColor(['your', 'best'], 'best')).toBe(TRAIN_BEST_MOVE_ARROW);
+    expect(chipArrowColor(['best', 'game'], 'best')).toBe(TRAIN_BEST_MOVE_ARROW);
+    expect(chipArrowColor(['your'], 'blunder')).toBe(MOVE_QUALITY_BLUNDER);
+    expect(chipArrowColor(['your', 'game'], 'mistake')).toBe(MOVE_QUALITY_MISTAKE);
+    expect(chipArrowColor(['your'], null)).toBe(MOVE_QUALITY_GOOD);
+    expect(chipArrowColor(['game'], 'inaccuracy')).toBe(NEXT_MOVE_ARROW);
   });
 });

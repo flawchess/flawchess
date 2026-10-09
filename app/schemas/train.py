@@ -34,6 +34,7 @@ from pydantic import (
     ValidationError,
     ValidatorFunctionWrapHandler,
     field_validator,
+    model_validator,
 )
 
 from app.services.train_scheduler import REMINDER_HOUR_MAX, REMINDER_HOUR_MIN
@@ -191,8 +192,13 @@ class TrainSessionResponse(BaseModel):
 
 # Phase 233 (SEED-190): per-puzzle telemetry boundary. Mirrored by the frontend in
 # frontend/src/lib/trainTelemetry.ts (plain integer literals, regex-parity-tested).
-# Schema version stamped as `v` on both patches (a `Literal[1]` cannot reference it).
+# Schema version stamped as `v` on the SOLVE patch (a `Literal[1]` cannot reference it).
 TELEMETRY_SCHEMA_VERSION: Final = 1
+# Phase 237 D-12: the REVIEW patch's own schema version, mirrored in
+# frontend/src/lib/trainTelemetry.ts by plan 09. Separate from the solve constant on
+# purpose (RESEARCH Pitfall 4): bumping TELEMETRY_SCHEMA_VERSION would make every solve
+# POST send `v: 2`, which SolveTelemetry rejects (and SolveRequest then silently drops).
+REVIEW_TELEMETRY_SCHEMA_VERSION: Final = 2
 # D-04: a forgotten tab must not record a 9-hour think; a data-quality cap, not a security bound.
 TELEMETRY_DURATION_CAP_MS: Final = 30 * 60 * 1000
 # Cap on prev/next/token steps through a reveal line (D-14).
@@ -375,14 +381,34 @@ class ReviewTelemetry(BaseModel):
     D-04: `review_hidden_ms` is the hidden-tab span of the review (the solve
     patch carries `think_hidden_ms`, distinct keys so the merge cannot collide).
 
+    Phase 237 D-12/D-13, schema v2: line chips replace the cards, so v2 carries
+    `review_chips_selected` (distinct line chips selected beyond the default You
+    chip, by tap or by a line-matching move from the puzzle position),
+    `review_chips_total` (chips shown, the largest number seen on this reveal) and
+    `review_strip_expanded` (the phone verdict strip was opened at least once;
+    PHONE ONLY, absent on desktop where no strip exists, so a desktop row must not
+    be read as "ignored"). `review_cards_opened` / `review_cards_total` are v1-only.
+    v1 stays valid forever (old bundles and open tabs keep posting it). A body
+    mixing the two key sets is a plain 422 (see `_keys_match_version`), so the
+    stored JSONB has exactly two shapes. Under v2 `review_explored` means "forked
+    at least one sideline", while `review_explore_moves` stays every user-played
+    move (board moves plus Stockfish-row clicks) and `review_board_moves` its
+    hand-played subset (v1 meaning); a hand-played move that matches a known line
+    counts as a board move, not a fork. `review_line_steps` counts steps through
+    the move tree (prev/next, list taps, arrow keys). The stored row's top-level
+    `v` is written by BOTH patches and the jsonb merge is last write wins, so it
+    reflects the LAST patch merged (a v2 review flush leaves `v: 2` on a row whose
+    solve keys are v1-shaped); analysis branches on `v` for the review keys only.
+
     No wrap validator here (unlike `SolveRequest.telemetry`): the body IS the
     telemetry, so a bad body is a normal 422.
     """
 
     model_config = ConfigDict(extra="forbid")
 
-    # Must equal TELEMETRY_SCHEMA_VERSION (a Literal cannot reference the constant).
-    v: Literal[1]
+    # A member of {TELEMETRY_SCHEMA_VERSION, REVIEW_TELEMETRY_SCHEMA_VERSION} (a
+    # Literal cannot reference the constants). v1 = legacy cards, v2 = chips.
+    v: Literal[1, 2]
     # "next" = pressed Next on the reveal; "pagehide" = left the reveal WITHOUT
     # pressing Next (page hidden/unloaded, route change or unmount, Analyze).
     exit: Literal["next", "pagehide"]
@@ -391,6 +417,11 @@ class ReviewTelemetry(BaseModel):
     # D-12: distinct cards inspected at least once, and the number shown.
     review_cards_opened: TelemetryCardCount | None = None
     review_cards_total: TelemetryCardCount | None = None
+    # Phase 237 D-12 (v2 only): distinct chips selected beyond the default You chip,
+    # chips shown, and whether the phone verdict strip was opened (phone only).
+    review_chips_selected: TelemetryCardCount | None = None
+    review_chips_total: TelemetryCardCount | None = None
+    review_strip_expanded: StrictBool | None = None
     review_line_steps: TelemetryLineSteps | None = None
     review_explored: StrictBool | None = None
     # Every user-played free-play move: board moves plus Stockfish engine-line clicks.
@@ -401,6 +432,22 @@ class ReviewTelemetry(BaseModel):
     review_analyze_opened: StrictBool | None = None
     # D-13: the Phase 222 first-reveal walkthrough was active on this reveal.
     review_walkthrough: StrictBool | None = None
+
+    @model_validator(mode="after")
+    def _keys_match_version(self) -> ReviewTelemetry:
+        """Keep the stored JSONB to two clean shapes (Phase 237 D-12).
+
+        v1 must not carry the v2 chip/strip keys and v2 must not carry the v1 card
+        keys. A plain ValueError (no variables, no Sentry): a mixed body is expected
+        client drift and becomes a normal 422.
+        """
+        v2_keys = (self.review_chips_selected, self.review_chips_total, self.review_strip_expanded)
+        v1_keys = (self.review_cards_opened, self.review_cards_total)
+        if self.v == 1 and any(key is not None for key in v2_keys):
+            raise ValueError("v2 review telemetry keys are not valid on a v1 body")
+        if self.v == 2 and any(key is not None for key in v1_keys):
+            raise ValueError("v1 review telemetry keys are not valid on a v2 body")
+        return self
 
 
 class ReviewRequest(ReviewTelemetry):

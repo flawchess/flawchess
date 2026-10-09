@@ -80,6 +80,12 @@ const REVEAL: PuzzleRevealResponse = {
   has_tactic_lines: false,
 };
 
+// jsdom has no scrollIntoView; the reveal's move list (HorizontalMoveList)
+// scrolls the current token into view.
+if (typeof Element.prototype.scrollIntoView !== 'function') {
+  Element.prototype.scrollIntoView = vi.fn();
+}
+
 vi.mock('@/api/client', async () => {
   const actual = await vi.importActual<typeof import('@/api/client')>('@/api/client');
   return {
@@ -224,7 +230,7 @@ async function renderRestored(opts: { warmCache: boolean }): Promise<() => strin
       </QueryClientProvider>
     </MemoryRouter>,
   );
-  await waitFor(() => expect(screen.getByTestId('train-line-box-game-move')).not.toBeNull());
+  await waitFor(() => expect(screen.getByTestId('train-chip-game')).not.toBeNull());
   return () => screen.getByTestId('chessboard').getAttribute('data-arrow-colors') ?? '';
 }
 

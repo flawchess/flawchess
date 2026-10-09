@@ -210,19 +210,28 @@ export interface SolveTelemetry {
 export type ReviewExit = 'next' | 'pagehide';
 
 /**
- * Mirrors app/schemas/train.py ReviewTelemetry (Phase 233 D-03). Every value
- * is a CUMULATIVE total for the reveal, because one reveal can be flushed
- * several times (non-Next exits, then Next) and the server merges per key,
- * last write wins. Durations are integer ms of VISIBLE time (D-04); hidden-tab
- * time is `review_hidden_ms`, distinct from the solve patch's `think_hidden_ms`.
+ * Mirrors app/schemas/train.py ReviewTelemetry (Phase 233 D-03, v2 in Phase 237
+ * D-12). Every value is a CUMULATIVE total for the reveal, because one reveal can
+ * be flushed several times (non-Next exits, then Next) and the server merges per
+ * key, last write wins. Durations are integer ms of VISIBLE time (D-04);
+ * hidden-tab time is `review_hidden_ms`, distinct from the solve patch's
+ * `think_hidden_ms`.
+ *
+ * This client always sends v 2: chips selected / chips total / strip expanded
+ * replace the v1 card keys, and `review_explored` means "forked at least one
+ * sideline" (D-13). v 1 is what older bundles still send; the server accepts both.
  */
 export interface ReviewTelemetry {
-  v: 1;
+  v: 2;
   exit: ReviewExit;
   review_ms?: number;
   review_hidden_ms?: number;
-  review_cards_opened?: number;
-  review_cards_total?: number;
+  /** Distinct chips selected beyond the default You chip (D-12). */
+  review_chips_selected?: number;
+  /** The most chips shown on this reveal (D-12). */
+  review_chips_total?: number;
+  /** The phone verdict strip was opened at least once (D-12). */
+  review_strip_expanded?: boolean;
   review_line_steps?: number;
   review_explore_moves?: number;
   review_board_moves?: number;

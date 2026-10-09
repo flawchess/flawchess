@@ -28,7 +28,9 @@ import {
   fireEvent,
 } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { waitForReveal } from '@/components/train/__tests__/revealTestUtils';
 import { MemoryRouter } from 'react-router';
+import { TooltipProvider } from '@/components/ui/tooltip';
 import { saveTrainRevealCache } from '@/lib/trainRevealCache';
 import type { CachedTrainReveal } from '@/lib/trainRevealCache';
 import type {
@@ -293,7 +295,10 @@ async function renderTrainPage() {
   return render(
     <MemoryRouter>
       <QueryClientProvider client={queryClient}>
-        <TrainPage />
+        {/* Phase 237 plan 07: the reveal bar's BoardControls use tooltips (the App shell provides this). */}
+        <TooltipProvider>
+          <TrainPage />
+        </TooltipProvider>
       </QueryClientProvider>
     </MemoryRouter>,
   );
@@ -307,6 +312,18 @@ describe('Train solve loop (end-to-end tracer)', () => {
       vi.fn(function (this: unknown) {
         return fakeWorker;
       }),
+    );
+    // WR-02: the reveal action bar mounts once by breakpoint. Model a tablet width:
+    // `sm` up (in-flow bar, btn-train-next in the DOM) but below `lg` (collapsed
+    // verdict strip, as the strip assertions below expect).
+    vi.stubGlobal(
+      'matchMedia',
+      vi.fn().mockImplementation((query: string) => ({
+        matches: query === '(min-width: 640px)',
+        media: query,
+        addEventListener: vi.fn(),
+        removeEventListener: vi.fn(),
+      })),
     );
     composeOrResumeSession.mockClear();
     markSessionEntered.mockClear();
@@ -376,15 +393,15 @@ describe('Train solve loop (end-to-end tracer)', () => {
       fireEvent.click(screen.getByTestId('test-drop-e2e4'));
     });
 
-    await waitFor(() => expect(screen.getByTestId('train-verdict-guess')).not.toBeNull());
-    expect(screen.getByTestId('train-verdict-guess-points').textContent).toBe('+1');
-    // UAT round 3: the move verdict is the Your-move box's own score chip
-    // (a good move scores 2), not a separate row and no longer a check mark.
-    expect(
-      screen
-        .getByTestId('train-line-box-your-move')
-        .querySelector('[data-testid="train-line-stepper-points"]')?.textContent,
-    ).toBe('+2');
+    await waitForReveal();
+    // Below `lg` (the stub above) shows the collapsed verdict strip: its pill
+    // is the puzzle total (guess 1 + good move 2).
+    expect(screen.getByTestId('train-verdict-strip-points').textContent).toBe('+3');
+    fireEvent.click(screen.getByTestId('train-verdict-strip'));
+    expect(screen.getByTestId('train-bot-pill-guess').textContent).toBe('+1');
+    // The move verdict is the expanded verdict's move pill (a good move scores 2),
+    // not a separate row and no longer a check mark.
+    expect(screen.getByTestId('train-bot-pill-move').textContent).toBe('+2');
     expect(screen.getByTestId('btn-train-next')).not.toBeNull();
 
     // 190-05 D-08: once the reveal opens, the board snaps back to the puzzle
@@ -649,18 +666,18 @@ describe('Train solve loop (end-to-end tracer)', () => {
     await renderTrainPage();
 
     // No start/resume press — the reveal restores directly from the cache.
-    await waitFor(() => expect(screen.getByTestId('train-verdict-guess')).not.toBeNull());
+    await waitForReveal();
     expect(screen.getByTestId('chessboard').getAttribute('data-position')).toBe(SOLVED_FEN);
     // The restored puzzle is the most recently SOLVED one (1 of 2), not the
     // next unsolved (which the general formula would report as 2 of 2).
     expect(screen.getByTestId('train-progress').textContent).toBe('1 of 2');
-    // Verdicts render from the cache: guess correct, move incorrect.
-    expect(screen.getByTestId('train-verdict-guess-points').textContent).toBe('+1');
-    expect(
-      screen
-        .getByTestId('train-line-box-your-move')
-        .querySelector('[data-testid="train-line-stepper-points"]')?.textContent,
-    ).toBe('+0');
+    // Verdicts render from the cache: guess correct, move incorrect. The restored
+    // strip is collapsed (D-08), so open it to read the pills.
+    expect(screen.getByTestId('train-verdict-strip').getAttribute('aria-expanded')).toBe('false');
+    expect(screen.getByTestId('train-verdict-strip-points').textContent).toBe('+1');
+    fireEvent.click(screen.getByTestId('train-verdict-strip'));
+    expect(screen.getByTestId('train-bot-pill-guess').textContent).toBe('+1');
+    expect(screen.getByTestId('train-bot-pill-move').textContent).toBe('+0');
     // No mount grading search for an already-solved puzzle — the grading
     // engine handshakes but never receives a `go`. Quick 260803-iv6: the
     // restored reveal's own eval bar DOES analyze the solved position (it
@@ -690,7 +707,7 @@ describe('Train solve loop (end-to-end tracer)', () => {
 
     // SESSION_RESPONSE's session_id is 1 — the 999 cache must be discarded.
     await waitFor(() => expect(screen.getByTestId('btn-train-start')).not.toBeNull());
-    expect(screen.queryByTestId('train-verdict-guess')).toBeNull();
+    expect(screen.queryByTestId('train-reveal')).toBeNull();
     expect(sessionStorage.getItem('train_reveal_cache')).toBeNull();
   });
 });

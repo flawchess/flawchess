@@ -59,8 +59,9 @@ const ZERO_ENGAGEMENT = {
   review_board_moves: 0,
   review_analyze_opened: false,
   review_walkthrough: false,
-  review_cards_opened: 0,
-  review_cards_total: 0,
+  review_chips_selected: 0,
+  review_chips_total: 0,
+  review_strip_expanded: false,
 };
 
 function setVisibility(state: 'visible' | 'hidden'): void {
@@ -299,7 +300,7 @@ describe('useTrainPuzzleTelemetry', () => {
 
     expect(nextFlush).toHaveBeenCalledTimes(1);
     expect(nextFlush).toHaveBeenCalledWith(7, 0, {
-      v: 1,
+      v: 2,
       exit: 'next',
       review_ms: 5000,
       review_hidden_ms: 2000,
@@ -349,7 +350,7 @@ describe('useTrainPuzzleTelemetry', () => {
     await flushMicrotasks();
     expect(exitFlush).toHaveBeenCalledTimes(1);
     expect(exitFlush).toHaveBeenCalledWith(7, 0, {
-      v: 1,
+      v: 2,
       exit: 'pagehide',
       review_ms: 4000,
       review_hidden_ms: 0,
@@ -387,7 +388,7 @@ describe('useTrainPuzzleTelemetry', () => {
     expect(exitFlush).toHaveBeenCalledTimes(1);
     expect(nextFlush).toHaveBeenCalledTimes(1);
     expect(nextFlush).toHaveBeenCalledWith(7, 0, {
-      v: 1,
+      v: 2,
       exit: 'next',
       review_ms: 5000,
       review_hidden_ms: 4000,
@@ -469,8 +470,10 @@ describe('useTrainPuzzleTelemetry', () => {
       boardMoves: 0,
       analyzeOpened: true,
       walkthrough: false,
-      cardKeys: [],
-      cardsTotal: 0,
+      forked: false,
+      chipKeys: [],
+      chipsTotal: 0,
+      stripExpanded: false,
     });
     advance(1000);
     act(() => result.current.flushReviewOnNext());
@@ -508,7 +511,7 @@ describe('useTrainPuzzleTelemetry', () => {
     act(() => result.current.flushReviewOnNext());
     await flushMicrotasks();
     expect(nextFlush).toHaveBeenCalledWith(7, 0, {
-      v: 1,
+      v: 2,
       exit: 'next',
       review_ms: 10000,
       review_hidden_ms: 1000,
@@ -544,9 +547,9 @@ describe('useTrainPuzzleTelemetry', () => {
     expect(nextFlush).toHaveBeenCalledWith(7, 0, expect.objectContaining({ review_line_steps: 50 }));
   });
 
-  it('counters: 3 explore moves flush review_explored true and review_explore_moves 3', async () => {
+  it('counters: 3 forking explore moves flush review_explored true and review_explore_moves 3', async () => {
     const { result } = mountHook(REVIEW_PROPS);
-    for (let i = 0; i < 3; i++) act(() => result.current.onExploreMove('board'));
+    for (let i = 0; i < 3; i++) act(() => result.current.onExploreMove('board', true));
     act(() => result.current.flushReviewOnNext());
     await flushMicrotasks();
     expect(nextFlush).toHaveBeenCalledWith(
@@ -558,10 +561,10 @@ describe('useTrainPuzzleTelemetry', () => {
 
   it('counters: review_board_moves counts board moves only, review_explore_moves counts both sources', async () => {
     const { result } = mountHook(REVIEW_PROPS);
-    act(() => result.current.onExploreMove('board'));
-    act(() => result.current.onExploreMove('engine-line'));
-    act(() => result.current.onExploreMove('engine-line'));
-    act(() => result.current.onExploreMove('board'));
+    act(() => result.current.onExploreMove('board', true));
+    act(() => result.current.onExploreMove('engine-line', true));
+    act(() => result.current.onExploreMove('engine-line', true));
+    act(() => result.current.onExploreMove('board', true));
     act(() => result.current.flushReviewOnNext());
     await flushMicrotasks();
     expect(nextFlush).toHaveBeenCalledWith(
@@ -573,7 +576,7 @@ describe('useTrainPuzzleTelemetry', () => {
 
   it('counters: explore and board moves cap at 50', async () => {
     const { result } = mountHook(REVIEW_PROPS);
-    for (let i = 0; i < 55; i++) act(() => result.current.onExploreMove('board'));
+    for (let i = 0; i < 55; i++) act(() => result.current.onExploreMove('board', true));
     act(() => result.current.flushReviewOnNext());
     await flushMicrotasks();
     expect(nextFlush).toHaveBeenCalledWith(
@@ -587,8 +590,8 @@ describe('useTrainPuzzleTelemetry', () => {
     const first = mountHook(REVIEW_PROPS);
     advance(1000);
     act(() => first.result.current.onLineUserStep());
-    act(() => first.result.current.onExploreMove('board'));
-    act(() => first.result.current.onExploreMove('engine-line'));
+    act(() => first.result.current.onExploreMove('board', true));
+    act(() => first.result.current.onExploreMove('engine-line', true));
     act(() => first.result.current.markWalkthroughActive());
     const snapshot = first.result.current.snapshotReviewForAnalyze();
     expect(snapshot).toMatchObject({
@@ -603,7 +606,7 @@ describe('useTrainPuzzleTelemetry', () => {
 
     const restored = mountHook({ ...REVIEW_PROPS, isRestored: true, restoredReview: snapshot });
     act(() => restored.result.current.onLineUserStep());
-    act(() => restored.result.current.onExploreMove('board'));
+    act(() => restored.result.current.onExploreMove('board', true));
     act(() => restored.result.current.flushReviewOnNext());
     await flushMicrotasks();
     expect(nextFlush).toHaveBeenCalledWith(
@@ -674,117 +677,113 @@ describe('useTrainPuzzleTelemetry', () => {
     return nextFlush.mock.calls.at(-1)?.[2] as Record<string, unknown>;
   }
 
-  it('cards: a hover shorter than 800 ms is not counted, one held 800 ms is', async () => {
+  it('chips: the default You chip is never counted, re-tapping it adds nothing', async () => {
     const { result } = mountHook(REVIEW_PROPS);
-    act(() => result.current.onCardEngage('card-a', 'hover-start'));
-    advance(799);
-    act(() => result.current.onCardEngage('card-a', 'hover-end'));
-    advance(2000);
-    expect((await nextBody(result)).review_cards_opened).toBe(0);
-
-    const second = mountHook({ ...REVIEW_PROPS, position: 1 });
-    act(() => second.result.current.onCardEngage('card-a', 'hover-start'));
-    advance(800);
-    expect((await nextBody(second.result)).review_cards_opened).toBe(1);
+    act(() => result.current.onChipSelect('your'));
+    act(() => result.current.onChipSelect('your'));
+    expect((await nextBody(result)).review_chips_selected).toBe(0);
   });
 
-  it('cards: open counts immediately and cancels a pending hover timer', async () => {
+  it('chips: each distinct non-default chip counts once', async () => {
     const { result } = mountHook(REVIEW_PROPS);
-    act(() => result.current.onCardEngage('card-a', 'hover-start'));
-    act(() => result.current.onCardEngage('card-b', 'open'));
-    advance(2000);
-    // card-a's hover was cancelled by the open, so only card-b counts.
-    expect((await nextBody(result)).review_cards_opened).toBe(1);
+    act(() => result.current.onChipSelect('best'));
+    act(() => result.current.onChipSelect('best'));
+    act(() => result.current.onChipSelect('your'));
+    act(() => result.current.onChipSelect('game'));
+    expect((await nextBody(result)).review_chips_selected).toBe(2);
   });
 
-  it('cards: the same card twice counts once', async () => {
+  it('chips: chips total keeps the maximum reported', async () => {
     const { result } = mountHook(REVIEW_PROPS);
-    act(() => result.current.onCardEngage('card-a', 'open'));
-    act(() => result.current.onCardEngage('card-a', 'open'));
-    act(() => result.current.onCardEngage('card-a', 'hover-start'));
-    advance(1000);
-    expect((await nextBody(result)).review_cards_opened).toBe(1);
+    act(() => result.current.onChipsTotalChange(2));
+    act(() => result.current.onChipsTotalChange(3));
+    act(() => result.current.onChipsTotalChange(1));
+    expect((await nextBody(result)).review_chips_total).toBe(3);
   });
 
-  it('cards: hover-start on A then hover-start on B within 800 ms lets only B count', async () => {
+  it('chips: 12 reported chips flush review_chips_total capped at 10', async () => {
     const { result } = mountHook(REVIEW_PROPS);
-    act(() => result.current.onCardEngage('card-a', 'hover-start'));
-    advance(500);
-    act(() => result.current.onCardEngage('card-b', 'hover-start'));
-    advance(500);
-    // A's timer was replaced at 500 ms; B has only been held 500 ms.
-    act(() => result.current.onCardEngage('card-a', 'hover-end'));
-    advance(400);
-    expect((await nextBody(result)).review_cards_opened).toBe(1);
+    act(() => result.current.onChipsTotalChange(12));
+    expect((await nextBody(result)).review_chips_total).toBe(10);
   });
 
-  it('cards: cards total keeps the maximum reported', async () => {
-    const { result } = mountHook(REVIEW_PROPS);
-    act(() => result.current.onCardsTotalChange(2));
-    act(() => result.current.onCardsTotalChange(4));
-    act(() => result.current.onCardsTotalChange(3));
-    expect((await nextBody(result)).review_cards_total).toBe(4);
-  });
-
-  it('cards: 12 distinct opens flush review_cards_opened capped at 10', async () => {
-    const { result } = mountHook(REVIEW_PROPS);
-    for (let i = 0; i < 12; i++) act(() => result.current.onCardEngage(`card-${i}`, 'open'));
-    act(() => result.current.onCardsTotalChange(12));
-    const body = await nextBody(result);
-    expect(body.review_cards_opened).toBe(10);
-    expect(body.review_cards_total).toBe(10);
-  });
-
-  it('cards: a key change clears the pending hover timer (no late increment)', async () => {
+  it('chips: a key change clears the chip counters for the next puzzle', async () => {
     const { result, rerender } = mountHook(REVIEW_PROPS);
-    act(() => result.current.onCardEngage('card-a', 'hover-start'));
+    act(() => result.current.onChipSelect('best'));
+    act(() => result.current.onChipsTotalChange(3));
+    act(() => result.current.markStripExpanded());
     rerender({ ...REVIEW_PROPS, position: 1 });
-    advance(2000);
-    expect((await nextBody(result)).review_cards_opened).toBe(0);
+    const body = await nextBody(result);
+    expect(body).toMatchObject({ review_chips_selected: 0, review_chips_total: 0, review_strip_expanded: false });
   });
 
-  it('cards: unmount clears the pending hover timer', async () => {
-    const { result, unmount } = mountHook(REVIEW_PROPS);
-    act(() => result.current.onCardEngage('card-a', 'hover-start'));
-    unmount();
-    await flushMicrotasks();
-    exitFlush.mockClear();
-    advance(2000);
-    expect(vi.getTimerCount()).toBe(0);
-    expect(exitFlush).not.toHaveBeenCalled();
-  });
-
-  it('cards: a hover armed, then the page turning hidden, then 800 ms is not counted', async () => {
+  it('strip: markStripExpanded makes review_strip_expanded true, sticky across flushes', async () => {
     const { result } = mountHook(REVIEW_PROPS);
-    act(() => result.current.onCardEngage('card-a', 'hover-start'));
-    advance(300);
     fireVisibility('hidden');
-    advance(800);
+    expect(exitFlush).toHaveBeenLastCalledWith(7, 0, expect.objectContaining({ review_strip_expanded: false }));
     fireVisibility('visible');
-    expect((await nextBody(result)).review_cards_opened).toBe(0);
+    act(() => result.current.markStripExpanded());
+    act(() => result.current.markStripExpanded());
+    fireVisibility('hidden');
+    expect(exitFlush).toHaveBeenLastCalledWith(7, 0, expect.objectContaining({ review_strip_expanded: true }));
+    fireVisibility('visible');
+    expect((await nextBody(result)).review_strip_expanded).toBe(true);
   });
 
-  it('cards: the Analyze snapshot carries distinct card keys and the total, which a restored hook continues', async () => {
+  it('fork (D-13): a board move that does not fork leaves review_explored false but is still counted', async () => {
+    const { result } = mountHook(REVIEW_PROPS);
+    act(() => result.current.onExploreMove('board', false));
+    const body = await nextBody(result);
+    expect(body).toMatchObject({ review_explored: false, review_explore_moves: 1, review_board_moves: 1 });
+  });
+
+  it('fork (D-13): one forking move among non-forking ones sets review_explored, sticky', async () => {
+    const { result } = mountHook(REVIEW_PROPS);
+    act(() => result.current.onExploreMove('board', false));
+    act(() => result.current.onExploreMove('engine-line', true));
+    act(() => result.current.onExploreMove('board', false));
+    expect(await nextBody(result)).toMatchObject({ review_explored: true, review_explore_moves: 3 });
+  });
+
+  it('chips: the Analyze snapshot carries chips, strip and fork, which a restored hook continues', async () => {
     const first = mountHook(REVIEW_PROPS);
-    act(() => first.result.current.onCardsTotalChange(3));
-    act(() => first.result.current.onCardEngage('card-a', 'open'));
+    act(() => first.result.current.onChipsTotalChange(3));
+    act(() => first.result.current.onChipSelect('best'));
+    act(() => first.result.current.markStripExpanded());
+    act(() => first.result.current.onExploreMove('board', true));
     const snapshot = first.result.current.snapshotReviewForAnalyze();
-    expect(snapshot).toMatchObject({ cardKeys: ['card-a'], cardsTotal: 3 });
+    expect(snapshot).toMatchObject({
+      chipKeys: ['best'],
+      chipsTotal: 3,
+      stripExpanded: true,
+      forked: true,
+    });
     first.unmount();
     await flushMicrotasks();
 
     const restored = mountHook({ ...REVIEW_PROPS, isRestored: true, restoredReview: snapshot });
-    act(() => restored.result.current.onCardEngage('card-a', 'open'));
-    act(() => restored.result.current.onCardEngage('card-b', 'open'));
+    act(() => restored.result.current.onChipSelect('best'));
+    act(() => restored.result.current.onChipSelect('game'));
     const body = await nextBody(restored.result);
-    expect(body.review_cards_opened).toBe(2);
-    expect(body.review_cards_total).toBe(3);
+    expect(body).toMatchObject({
+      review_chips_selected: 2,
+      review_chips_total: 3,
+      review_strip_expanded: true,
+      review_explored: true,
+    });
   });
 
-  it('cards: a total reported by a child mount effect (which runs before the hook\'s own) survives', async () => {
-    // TrainReveal (child) reports its total in an effect that runs BEFORE the
-    // hook's mount effect in TrainSolveScreen (parent); a first-mount reset
-    // would wipe it.
+  it('chips: a legacy v1 snapshot (card keys, no chip fields) still seeds the timer and ignores the card keys', async () => {
+    const legacy = { visibleMs: 3000, hiddenMs: 0, cardKeys: ['card-a'], cardsTotal: 4 } as ReviewTelemetrySnapshot;
+    const { result } = mountHook({ ...REVIEW_PROPS, isRestored: true, restoredReview: legacy });
+    const body = await nextBody(result);
+    expect(body).toMatchObject({ review_ms: 3000, review_chips_selected: 0, review_chips_total: 0 });
+    expect(body).not.toHaveProperty('review_cards_opened');
+  });
+
+  it("chips: a total reported by a parent-screen effect on the first mount survives", async () => {
+    // The screen reports its chip total in an effect declared after the hook's own
+    // effects; a first-mount reset would wipe a count reported before them.
     const captured: { current: ReturnType<typeof useTrainPuzzleTelemetry> | null } = { current: null };
     function Child({ report }: { report: (total: number) => void }) {
       useEffect(() => {
@@ -797,15 +796,15 @@ describe('useTrainPuzzleTelemetry', () => {
       useEffect(() => {
         captured.current = telemetry;
       }, [telemetry]);
-      return createElement(Child, { report: telemetry.onCardsTotalChange });
+      return createElement(Child, { report: telemetry.onChipsTotalChange });
     }
     render(createElement(QueryWrapper, null, createElement(Parent)));
     act(() => captured.current!.flushReviewOnNext());
     await flushMicrotasks();
-    expect((nextFlush.mock.calls.at(-1)?.[2] as Record<string, unknown>).review_cards_total).toBe(3);
+    expect((nextFlush.mock.calls.at(-1)?.[2] as Record<string, unknown>).review_chips_total).toBe(3);
   });
 
-  it('closed set: a flush body has exactly the 11 D-14 keys plus review_board_moves', async () => {
+  it('closed set: a flush body has exactly the v2 keys (D-12) and no card keys', async () => {
     const { result } = mountHook(REVIEW_PROPS);
     advance(1000);
     const body = await nextBody(result);
@@ -815,8 +814,9 @@ describe('useTrainPuzzleTelemetry', () => {
         'exit',
         'review_ms',
         'review_hidden_ms',
-        'review_cards_opened',
-        'review_cards_total',
+        'review_chips_selected',
+        'review_chips_total',
+        'review_strip_expanded',
         'review_line_steps',
         'review_explored',
         'review_explore_moves',
@@ -836,7 +836,7 @@ describe('useTrainPuzzleTelemetry', () => {
       act(() => result.current.setLatePhoneGrade(7, 0, RECORD));
       const body = await nextBody(result);
       expect(body.phone_grade).toEqual(RECORD);
-      expect(body).toMatchObject({ v: 1, exit: 'next' });
+      expect(body).toMatchObject({ v: 2, exit: 'next' });
     });
 
     it('a record set before a hidden tab rides the pagehide-style flush', () => {

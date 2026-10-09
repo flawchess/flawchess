@@ -75,6 +75,32 @@ export interface TrainBotBubbleProps {
   avatarSize?: TrainBotAvatarSize;
 }
 
+/** The persona's round avatar (art, or the emoji placeholder on its tint). */
+export function TrainBotAvatar({
+  persona,
+  className,
+}: {
+  persona: Persona;
+  className: string;
+}): ReactElement {
+  const avatar = placeholderAvatarFor(persona);
+  const avatarSrc = resolveAvatarSrc(persona);
+  return (
+    <span
+      aria-hidden="true"
+      className={cn('flex items-center justify-center overflow-hidden rounded-full', className)}
+      style={{ backgroundColor: avatar.tint }}
+      data-testid="train-bot-avatar"
+    >
+      {avatarSrc !== undefined ? (
+        <img src={avatarSrc} alt="" loading="lazy" className="h-full w-full object-cover" />
+      ) : (
+        avatar.emoji
+      )}
+    </span>
+  );
+}
+
 export function TrainBotBubble({
   persona,
   state,
@@ -84,8 +110,6 @@ export function TrainBotBubble({
   ring = false,
   avatarSize = 'default',
 }: TrainBotBubbleProps): ReactElement {
-  const avatar = placeholderAvatarFor(persona);
-  const avatarSrc = resolveAvatarSrc(persona);
   const isNudge = state === 'drop-nudge';
   // Plan 06 UAT (SC1 during the intro): `resolveBubbleState` ranks `intro`
   // above `drop-nudge`, so a piece dropped while Hilda's guess step is up
@@ -104,21 +128,10 @@ export function TrainBotBubble({
       data-nudge={isNudge ? 'true' : undefined}
     >
       <div className="flex shrink-0 flex-row items-center gap-2 sm:flex-col sm:gap-1">
-        <span
-          aria-hidden="true"
-          className={cn(
-            'flex items-center justify-center overflow-hidden rounded-full text-xl sm:text-3xl',
-            AVATAR_SIZE_CLASS[avatarSize],
-          )}
-          style={{ backgroundColor: avatar.tint }}
-          data-testid="train-bot-avatar"
-        >
-          {avatarSrc !== undefined ? (
-            <img src={avatarSrc} alt="" loading="lazy" className="h-full w-full object-cover" />
-          ) : (
-            avatar.emoji
-          )}
-        </span>
+        <TrainBotAvatar
+          persona={persona}
+          className={cn('text-xl sm:text-3xl', AVATAR_SIZE_CLASS[avatarSize])}
+        />
         <span className="text-sm font-medium text-foreground" data-testid="train-bot-name">
           {persona.name}
         </span>

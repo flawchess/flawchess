@@ -597,37 +597,37 @@ board controls, a Solution button undoes it). Direction is the owner-approved sk
 
 **Depends on**: Phase 236 (current reveal loading/failed line cards, server-graded verdict fallbacks)
 **Requirements**: TBD
-**Plans:** 11 plans
+**Plans:** 11/11 plans executed
 
 Plans:
 **Wave 1**
-- [ ] 237-01-PLAN.md — backend ReviewTelemetry v2 boundary: v Literal[1, 2], chips/strip keys, cross-version validator (wave 1)
-- [ ] 237-02-PLAN.md — tree engine: non-navigating graftLine, chip model (buildChipGroups), useTrainRevealTree focus/forks/list view/snapshot, Home key (wave 1)
-- [ ] 237-03-PLAN.md — dim, never hide: arrow/badge opacity, Train focus opacity constants, buildChipFocusOverlay on today's reveal (wave 1)
+- [x] 237-01-PLAN.md — backend ReviewTelemetry v2 boundary: v Literal[1, 2], chips/strip keys, cross-version validator (wave 1)
+- [x] 237-02-PLAN.md — tree engine: non-navigating graftLine, chip model (buildChipGroups), useTrainRevealTree focus/forks/list view/snapshot, Home key (wave 1)
+- [x] 237-03-PLAN.md — dim, never hide: arrow/badge opacity, Train focus opacity constants, buildChipFocusOverlay on today's reveal (wave 1)
 
 **Wave 2** *(blocked on Wave 1 completion)*
-- [ ] 237-04-PLAN.md — chips row + move list components (TrainLineChips, TrainMoveTreeList, VariationTree 'wrap'), proven against the real tree hook (wave 2)
+- [x] 237-04-PLAN.md — chips row + move list components (TrainLineChips, TrainMoveTreeList, VariationTree 'wrap'), proven against the real tree hook (wave 2)
 
 **Wave 3** *(blocked on Wave 2 completion)*
-- [ ] 237-05-PLAN.md — chips + one move tree replace the line cards on the reveal; chip focus D-01/D-02, list stepping, card-era code removed, reveal tests ported (wave 3)
+- [x] 237-05-PLAN.md — chips + one move tree replace the line cards on the reveal; chip focus D-01/D-02, list stepping, card-era code removed, reveal tests ported (wave 3)
 
 **Wave 4** *(blocked on Wave 3 completion)*
-- [ ] 237-06-PLAN.md — forks in place, Stockfish row, one reveal engine, sideline grading, D-04, first-fork event; free-play mode deleted (wave 4)
+- [x] 237-06-PLAN.md — forks in place, Stockfish row, one reveal engine, sideline grading, D-04, first-fork event; free-play mode deleted (wave 4)
 
 **Wave 5** *(blocked on Wave 4 completion)*
-- [ ] 237-07-PLAN.md — action bar ⏮ ‹ › ⇅ + Analyze + Next for the whole reveal (phone bar, in-flow, desktop), ← → Home (wave 5)
+- [x] 237-07-PLAN.md — action bar ⏮ ‹ › ⇅ + Analyze + Next for the whole reveal (phone bar, in-flow, desktop), ← → Home (wave 5)
 
 **Wave 6** *(blocked on Wave 5 completion)*
-- [ ] 237-08-PLAN.md — verdict strip (D-05..D-08), best/good move vocabulary everywhere, desktop bubble in the right column, TrainReveal split (wave 6)
+- [x] 237-08-PLAN.md — verdict strip (D-05..D-08), best/good move vocabulary everywhere, desktop bubble in the right column, TrainReveal split (wave 6)
 
 **Wave 7** *(blocked on Wave 6 completion)*
-- [ ] 237-09-PLAN.md — client review telemetry v2 + parity row, Analyze -> Back restores chip and tree (wave 7)
+- [x] 237-09-PLAN.md — client review telemetry v2 + parity row, Analyze -> Back restores chip and tree (wave 7)
 
 **Wave 8** *(blocked on Wave 7 completion)*
-- [ ] 237-10-PLAN.md — first-reveal tour rewrite (D-09/D-10): six steps, bubble above the strip, rings incl. the bottom bar (wave 8)
+- [x] 237-10-PLAN.md — first-reveal tour rewrite (D-09/D-10): six steps, bubble above the strip, rings incl. the bottom bar (wave 8)
 
 **Wave 9** *(blocked on Wave 8 completion)*
-- [ ] 237-11-PLAN.md — agent browser UAT (390x844 no-scroll, 375x667, 768x1024, 1280x800, tour), CHANGELOG, full pre-merge gate (wave 9)
+- [x] 237-11-PLAN.md — agent browser UAT (390x844 no-scroll, 375x667, 768x1024, 1280x800, tour), CHANGELOG, full pre-merge gate (wave 9)
 
 Phase detail for every shipped milestone lives in `milestones/vX.Y-ROADMAP.md`, its phase directories in `milestones/vX.Y-phases/`, and the per-milestone summaries in [MILESTONES.md](MILESTONES.md).
 

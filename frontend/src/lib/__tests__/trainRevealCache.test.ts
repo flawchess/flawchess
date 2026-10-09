@@ -11,6 +11,7 @@ import {
   updateTrainRevealCacheReview,
 } from '@/lib/trainRevealCache';
 import type { CachedTrainReveal } from '@/lib/trainRevealCache';
+import { REVEAL_TREE_SNAPSHOT_MAX_PATHS, REVEAL_TREE_SNAPSHOT_MAX_PLIES } from '@/lib/trainRevealLines';
 
 const CACHED: CachedTrainReveal = {
   sessionId: 7,
@@ -63,6 +64,70 @@ describe('trainRevealCache', () => {
     const restored = readTrainRevealCache();
     expect(restored).toEqual(CACHED);
     expect(restored?.reviewTelemetry).toBeUndefined();
+  });
+
+  describe('Phase 237: revealTree (T-237-16)', () => {
+    const TREE = {
+      rootFocus: 'best' as const,
+      currentPath: ['e2e4', 'e7e5', 'g1f3'],
+      sidelinePaths: [['e2e4', 'e7e5', 'f1c4']],
+    };
+
+    function writeRaw(revealTree: unknown): void {
+      sessionStorage.setItem('train_reveal_cache', JSON.stringify({ ...CACHED, revealTree }));
+    }
+
+    it('round-trips a saved tree snapshot', () => {
+      saveTrainRevealCache({ ...CACHED, revealTree: TREE });
+      expect(readTrainRevealCache()).toEqual({ ...CACHED, revealTree: TREE });
+    });
+
+    it('accepts a null focus (a free fork deselected every chip)', () => {
+      const tree = { ...TREE, rootFocus: null };
+      saveTrainRevealCache({ ...CACHED, revealTree: tree });
+      expect(readTrainRevealCache()?.revealTree).toEqual(tree);
+    });
+
+    it('an entry from an older bundle without the field still restores', () => {
+      saveTrainRevealCache(CACHED);
+      const restored = readTrainRevealCache();
+      expect(restored).toEqual(CACHED);
+      expect(restored).not.toHaveProperty('revealTree');
+    });
+
+    it.each([
+      ['an unknown focus role', { ...TREE, rootFocus: 'queen' }],
+      ['a non-string path item', { ...TREE, currentPath: ['e2e4', 7] }],
+      ['a non-string sideline item', { ...TREE, sidelinePaths: [['e2e4', null]] }],
+      ['a non-array sidelinePaths', { ...TREE, sidelinePaths: 'e2e4' }],
+      ['a missing currentPath', { rootFocus: 'best', sidelinePaths: [] }],
+      [
+        'more sideline paths than the cap',
+        { ...TREE, sidelinePaths: Array.from({ length: REVEAL_TREE_SNAPSHOT_MAX_PATHS + 1 }, () => ['e2e4']) },
+      ],
+      [
+        'a path longer than the ply cap',
+        { ...TREE, currentPath: Array.from({ length: REVEAL_TREE_SNAPSHOT_MAX_PLIES + 1 }, () => 'e2e4') },
+      ],
+      ['a non-object value', 'e2e4'],
+      ['null', null],
+    ])('drops a malformed field (%s) but still restores the rest of the entry', (_label, revealTree) => {
+      writeRaw(revealTree);
+      const restored = readTrainRevealCache();
+      expect(restored).toEqual(CACHED);
+      expect(restored).not.toHaveProperty('revealTree');
+    });
+
+    it('a review update preserves the stored tree snapshot', () => {
+      saveTrainRevealCache({ ...CACHED, revealTree: TREE });
+      updateTrainRevealCacheReview(CACHED.sessionId, CACHED.puzzle.position, { visibleMs: 5, hiddenMs: 0 });
+      expect(readTrainRevealCache()?.revealTree).toEqual(TREE);
+    });
+
+    it('corrupt JSON still returns null', () => {
+      sessionStorage.setItem('train_reveal_cache', '{"revealTree": ');
+      expect(readTrainRevealCache()).toBeNull();
+    });
   });
 
   describe('updateTrainRevealCacheReview', () => {
