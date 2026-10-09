@@ -31,6 +31,7 @@ import {
   MAX_WATCHDOG_SUSPEND_REARMS,
   GRADING_WATCHDOG_LIVENESS_MS,
   MAX_WATCHDOG_LIVENESS_REARMS,
+  MAX_WATCHDOG_HIDDEN_REARMS,
   STOP_BESTMOVE_WATCHDOG_TIMEOUT_MS,
   INIT_WATCHDOG_TIMEOUT_MS,
 } from './workerPoolState';
@@ -46,7 +47,7 @@ export function clearSlotWatchdog(_state: PoolState, _ops: PoolOps, slot: PoolWo
 /**
  * Re-arm a slot's grading watchdog for another full
  * `GRADING_WATCHDOG_TIMEOUT_MS` window, leaving its request untouched.
- * Extracted for the same reason as `clearSlotWatchdog`: both of
+ * Extracted for the same reason as `clearSlotWatchdog`: every one of
  * `fireWatchdog`'s false-positive branches must re-stamp `armedAtMs` and
  * the timer together, or the next fire mis-measures its own elapsed time.
  */
@@ -66,11 +67,12 @@ export function rearmGradingWatchdog(
 /**
  * D-06: fires when a slot's `sendGo` never produced a `bestmove` within
  * `GRADING_WATCHDOG_TIMEOUT_MS` — a genuinely hung/wedged worker, not a
- * merely slow position. Two false-positive gates run first and re-arm
+ * merely slow position. Three false-positive gates run first and re-arm
  * instead of killing (FLAWCHESS-9G): a fire far past its deadline is page
- * suspension, and a fire from a slot still emitting `info` is a slow or
- * CPU-starved search. Only a slot that is both on-time and silent falls
- * through. Past the gates it is treated as a worker fault, mirroring `onerror`
+ * suspension, a fire from a slot still emitting `info` is a slow or
+ * CPU-starved search, and a fire in a hidden tab is background throttling.
+ * Only a slot that is on-time, silent and visible falls through (or one
+ * that has used up a gate's re-arm budget). Past the gates it is treated as a worker fault, mirroring `onerror`
  * exactly (reusing `dead` rather than inventing a new lifecycle state is
  * deliberate: a 60s grading `go` with no `bestmove` is not recoverable on
  * THAT worker, `dispatchNext` already skips non-`isReady` slots, and
@@ -130,6 +132,24 @@ export function fireWatchdog(state: PoolState, ops: PoolOps, slot: PoolWorkerSlo
     return;
   }
 
+  // Bug fix (FLAWCHESS-9G, third pass, SEED-180): a hidden tab whose workers
+  // are throttled into silence while the host timer still fires on time
+  // slips past both gates above (on time, so not suspension; silent, so not
+  // liveness). The enriched context showed it in two separate sessions:
+  // all candidates graded, no `bestmove`, `visibilityState: "hidden"`, one
+  // session respawning 7 slots in 8 minutes. Re-arm while hidden instead.
+  // Bounded by `MAX_WATCHDOG_HIDDEN_REARMS`; once the tab is visible again
+  // this gate no longer applies, so a genuinely wedged worker is still
+  // killed on the next fire.
+  if (
+    document.visibilityState === 'hidden' &&
+    slot.watchdogHiddenRearms < MAX_WATCHDOG_HIDDEN_REARMS
+  ) {
+    slot.watchdogHiddenRearms++;
+    rearmGradingWatchdog(state, ops, slot, nowMs);
+    return;
+  }
+
   // Best-effort: ask the worker to stop. It may never respond — that's
   // exactly why this fired — so this is not awaited or relied upon.
   slot.worker.postMessage('stop');
@@ -149,6 +169,7 @@ export function fireWatchdog(state: PoolState, ops: PoolOps, slot: PoolWorkerSlo
         sinceLastInfoMs,
         suspendRearms: slot.watchdogSuspendRearms,
         livenessRearms: slot.watchdogLivenessRearms,
+        hiddenRearms: slot.watchdogHiddenRearms,
         gradingDepth: slot.current?.gradingDepth ?? null,
         candidateCount: slot.current?.candidateUcis.length ?? null,
         gradesAccumulated: slot.accumulator.size,

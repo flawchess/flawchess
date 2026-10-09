@@ -54,7 +54,7 @@ export function sendGo(
   slot.state = 'thinking';
   ops.clearSlotWatchdog(slot); // defensive: a stale timer must never coexist with a fresh dispatch
   // FLAWCHESS-9G: a fresh dispatch is the only place the re-arm counters
-  // reset — each grading request gets its own budget for both causes — and
+  // reset — each grading request gets its own budget for every cause — and
   // the only place `lastInfoAtMs` clears, so liveness is always measured
   // against THIS dispatch's output, never the previous request's. That last
   // reset is DEFENSIVE only while `GRADING_WATCHDOG_LIVENESS_MS <
@@ -65,6 +65,7 @@ export function sendGo(
   slot.armedAtMs = Date.now();
   slot.watchdogSuspendRearms = 0;
   slot.watchdogLivenessRearms = 0;
+  slot.watchdogHiddenRearms = 0;
   slot.lastInfoAtMs = 0;
   slot.watchdogTimer = setTimeout(() => fireWatchdog(state, ops, slot), GRADING_WATCHDOG_TIMEOUT_MS);
 }

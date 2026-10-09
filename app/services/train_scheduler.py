@@ -443,7 +443,7 @@ def scheduled_days_per_week(weekday_mask: int) -> int | None:
     """The count of scheduled days per week — a plain popcount, no gating.
 
     Returns `None` at `weekday_mask == 0` ("train anytime" has no
-    denominator to show); otherwise `bin(weekday_mask).count("1")`. Unlike
+    denominator to show); otherwise `weekday_mask.bit_count()`. Unlike
     the deleted `required_sessions_per_week`, there is no special-casing of
     `ALL_WEEKDAYS_MASK` to `1` — nothing gates on this value any more (the
     weekly-fulfillment requirement is deleted this phase), so it is simply
@@ -451,7 +451,7 @@ def scheduled_days_per_week(weekday_mask: int) -> int | None:
     """
     if weekday_mask == 0:
         return None
-    return bin(weekday_mask).count("1")
+    return weekday_mask.bit_count()
 
 
 # ---------------------------------------------------------------------------

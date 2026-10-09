@@ -130,7 +130,7 @@ export function createSlot(
   ops: PoolOps,
   sharedUrl: string | null,
 ): PoolWorkerSlot {
-  const worker = createStockfishWorker(sharedUrl);
+  const worker = createStockfishWorker(sharedUrl, 'pool');
 
   // Phase 213 D-01/T-213-01/T-213-07: wire the vendored glue's own,
   // already-shipped `progressPort` protocol (213-RESEARCH.md Pattern 2) —
@@ -172,6 +172,7 @@ export function createSlot(
     watchdogSuspendRearms: 0,
     lastInfoAtMs: 0,
     watchdogLivenessRearms: 0,
+    watchdogHiddenRearms: 0,
   };
   worker.onmessage = (e: MessageEvent<string>) => ops.handleLine(slot, e.data);
   // WR-03/WR-04: an async script-load failure (404, CSP block, syntax

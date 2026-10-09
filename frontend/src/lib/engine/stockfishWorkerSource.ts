@@ -51,6 +51,7 @@ import {
   STOCKFISH_WASM_BYTES_FALLBACK,
 } from './engineAssetProgress';
 import { getEngineAsset, versionedEngineAssetUrl } from './engineAssetCache';
+import { trackStockfishWorker, type StockfishWorkerRole } from './liveEngineWorkers';
 
 // ─── Named constants (CLAUDE.md no-magic-numbers) ──────────────────────────
 
@@ -151,9 +152,13 @@ export function ensureStockfishWorkerUrl(): Promise<string | null> {
  * Blob object URL published by `ensureStockfishWorkerUrl()`) is passed the
  * same way.
  */
-export function createStockfishWorker(sharedUrl: string | null): Worker {
+export function createStockfishWorker(sharedUrl: string | null, role: StockfishWorkerRole): Worker {
   const wasmHashUrl = sharedUrl ?? STOCKFISH_ENGINE_WASM_PATH;
-  return new Worker(`${STOCKFISH_ENGINE_GLUE_PATH}#${encodeURIComponent(wasmHashUrl)}`);
+  const worker = new Worker(`${STOCKFISH_ENGINE_GLUE_PATH}#${encodeURIComponent(wasmHashUrl)}`);
+  // SEED-195: counted so Maia failure captures can report how many Stockfish
+  // wasm instances were alive (the suspected Mac Safari OOM cause).
+  trackStockfishWorker(worker, role);
+  return worker;
 }
 
 /**

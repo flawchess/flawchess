@@ -1,33 +1,35 @@
 ---
 gsd_state_version: "1.0"
-milestone: v2.21
-current_phase: 237
+milestone: v2.24
 current_phase_name: Train Reveal Verdict Strip, Line Chips & One Move Tree (SEED-194)
-status: verifying
-stopped_at: Completed 237-10-PLAN.md
-last_updated: "2026-10-09T01:42:54.191Z"
-state_head: 1a997e563fd03ac75571f70ef42d2f0e61895497
+status: completed
+stopped_at: v2.22, v2.23 and v2.24 closed (phases 228–237 regrouped), no open milestone
+last_updated: "2026-10-09T12:59:08.274Z"
+state_head: 036b01d72dd462fbb19fce20d7ae09eb70f9e371
 progress:
   total_phases: 10
   completed_phases: 103
   total_plans: 57
   completed_plans: 57
-milestone_name: Browser Engine Throughput
-last_activity: 2026-10-07
-last_activity_desc: "Completed quick task 261007-axc: Separate Train reveal telemetry counter for hand-played free moves (review_board_moves)"
+milestone_name: Train Grading Integrity & One-Screen Reveal
+last_activity: 2026-10-09
+current_phase: 237
+last_activity_desc: "Completed quick task 261009-kpa: Stockfish watchdog hidden-tab re-arm gate (SEED-180, FLAWCHESS-9G)"
 ---
 
 # Project State: FlawChess
 
 ## Current Position
 
-Phase: 237 (Train Reveal Verdict Strip, Line Chips & One Move Tree (SEED-194)) — EXECUTING
-Plan: 11 of 11
+Phase: none (next standalone phase is 238)
+Plan: Not started
 
-Status: Phase complete — ready for verification
+Status: No open milestone; v2.24 closed 2026-10-09
 
 Open threads carried forward (not blockers):
 
+- Train grade audit (SEED-193 follow-up): tooling done 2026-10-09 as `temp/grade-audit/phone_grade_audit.py` (gitignored; reads `drill_solves.phone_grade` over the prod tunnel in a READ ONLY transaction, derives keys with the app's own `answer_key_for`, then a depth-18 spot check with local Stockfish). Run around 2026-10-22: `bin/prod_db_tunnel.sh` then `uv run python temp/grade-audit/phone_grade_audit.py --db prod --sample 300 --workers 8 > temp/grade-audit/report-$(date +%F).txt`. Smoke reading at n=140 records (report-smoke-2026-10-09.txt): server-graded moves 30/30 phone agreement; phone vs d18 31/40, phone `inaccuracy` the weak tier (2/8 confirmed). Too small to act on. Missing records skew toward fast Next presses and slow devices (236 WR-02, deferred).
+- Pending reads: Train telemetry and the weekly-leaderboard effect (~2026-10-25, data from 2026-10-05); feedback-ask yield (`feedback.source = 'milestone_ask'` vs `floating_button`); Umami funnels on `train-explore-exit` go flat from release #404 (`train-sideline-fork` replaces it).
 - Phase 224 guest levers: all four baselines are now in `reports/growth/guest-activation-baseline-2026-09-17.md` (Lever A metric 2 read 2026-10-03: 459/858 engaged home sessions, 53.5%); post-change readings not yet written up.
 - Engine follow-ups: SEED-171 closed with its leftovers listed in `seeds/closed/SEED-171-...md` (cross-FEN Maia batching, non-root candidate cap); SEED-180 (Stockfish watchdog hidden-tab gate); real-phone throughput for Phases 226/227 never measured.
 - Phase 221: a forced only-move that sheds a piece can read as a sacrifice (game 1459049 ply 21); captured in `.planning/notes/2026-09-13-forced-only-move-tagged-sacrifice.md`, no action requested. Lever if sacrifice noise ever matters: lower `SACRIFICE_CLEARANCE_MAX_DEPTH` (4) and retag.
@@ -44,7 +46,11 @@ Open threads carried forward (not blockers):
 
 See: .planning/PROJECT.md (updated 2026-10-05 after Phase 233)
 Core value: Position-precise WDL across openings + endgames + time pressure on top of users' actual chess.com / lichess games, with personalized LLM commentary and an auto-generated opening-strengths/weaknesses report.
-Current focus: **Phase 233 (Train Per-Puzzle Timing & Engagement Telemetry, SEED-190) complete 2026-10-05** on branch `gsd/phase-233-train-puzzle-timing-telemetry`: 5/5 plans, review WR-01/WR-02 fixed, browser UAT passed (phone-tap leg owner-deferred), verification passed by owner override. Next: pre-merge gate + squash-merge to `main` (CHANGELOG bullet already under [Unreleased]). (Prior focus: Phase 231.)
+Current focus: **v2.22, v2.23 and v2.24 closed 2026-10-09**; phases 228–237 regrouped into v2.22 Settings, Feature Analytics & Weekly Leaderboards (228–232, releases #382–#393), v2.23 Train Telemetry & Feedback Ask (233–234, #394–#401) and v2.24 Train Grading Integrity & One-Screen Reveal (235–237, #402–#404), each tagged with a GitHub release. Phase 237 deployed as part of the close (release #404, with the pydantic-ai-slim CVE bump). No open milestone: next is `/gsd-new-milestone` or standalone Phase 238.
+
+### Superseded: focus after Phase 233
+
+**Phase 233 (Train Per-Puzzle Timing & Engagement Telemetry, SEED-190) complete 2026-10-05** on branch `gsd/phase-233-train-puzzle-timing-telemetry`: 5/5 plans, review WR-01/WR-02 fixed, browser UAT passed (phone-tap leg owner-deferred), verification passed by owner override. Next: pre-merge gate + squash-merge to `main` (CHANGELOG bullet already under [Unreleased]). (Prior focus: Phase 231.)
 
 ### Superseded: focus after the v2.20/v2.21 close
 
@@ -1009,6 +1015,8 @@ None active.
 | 261007-axc | Separate Train reveal telemetry counter for hand-played free moves (review_board_moves) | 2026-10-07 | 27ce3d361 | [261007-axc-separate-train-reveal-telemetry-counter-](./quick/261007-axc-separate-train-reveal-telemetry-counter-/) |
 | 261008-ob1 | Train re-check also rescues off-key inaccuracy grades | 2026-10-08 | b53a2203b | [261008-ob1-train-re-check-also-rescues-off-key-inac](./quick/261008-ob1-train-re-check-also-rescues-off-key-inac/) |
 | 261008-opg | Train reveal shows a played inaccuracy as inaccuracy | 2026-10-08 | 44e037dd3 | [261008-opg-train-reveal-shows-a-played-inaccuracy-a](./quick/261008-opg-train-reveal-shows-a-played-inaccuracy-a/) |
+| 261009-kb2 | Maia OOM Sentry telemetry: spawn path + live Stockfish worker count (SEED-195 step 1) | 2026-10-09 | 72d164b08 | [261009-kb2-maia-oom-sentry-telemetry-live-engine-wo](./quick/261009-kb2-maia-oom-sentry-telemetry-live-engine-wo/) |
+| 261009-kpa | Stockfish watchdog hidden-tab re-arm gate (SEED-180, FLAWCHESS-9G) | 2026-10-09 | 036b01d72 | [261009-kpa-stockfish-watchdog-hidden-tab-re-arm-gat](./quick/261009-kpa-stockfish-watchdog-hidden-tab-re-arm-gat/) |
 
 ## Deferred Items
 

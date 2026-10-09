@@ -409,7 +409,7 @@ export function useStockfishEngine({
       // never started or failed) still passes the versioned wasm path
       // through that same override (D-05, quick 260905-rhc) rather than
       // falling back to an unversioned URL (T-213-07).
-      const worker = createStockfishWorker(sharedUrl);
+      const worker = createStockfishWorker(sharedUrl, 'single');
       workerRef.current = worker;
 
       // Bug fix (CR-01, 213-REVIEW.md): an async script-load failure (404, CSP

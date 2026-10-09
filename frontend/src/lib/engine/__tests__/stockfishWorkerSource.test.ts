@@ -476,7 +476,7 @@ describe('createStockfishWorker — construction contract', () => {
   });
 
   it('a null shared URL appends STOCKFISH_ENGINE_WASM_PATH as an encoded location hash (D-05)', () => {
-    const worker = createStockfishWorker(null) as unknown as MockWorker;
+    const worker = createStockfishWorker(null, 'single') as unknown as MockWorker;
 
     expect(worker.url).toBe(
       `${STOCKFISH_ENGINE_GLUE_PATH}#${encodeURIComponent(STOCKFISH_ENGINE_WASM_PATH)}`,
@@ -489,7 +489,7 @@ describe('createStockfishWorker — construction contract', () => {
 
   it('a non-null shared URL appends it as an encoded location hash with no comma', () => {
     const sharedUrl = 'blob:http://localhost/abcd-1234';
-    const worker = createStockfishWorker(sharedUrl) as unknown as MockWorker;
+    const worker = createStockfishWorker(sharedUrl, 'single') as unknown as MockWorker;
 
     expect(worker.url).toBe(`${STOCKFISH_ENGINE_GLUE_PATH}#${encodeURIComponent(sharedUrl)}`);
     const [gluePart, hash] = worker.url.split('#');
@@ -567,9 +567,9 @@ describe('ensureStockfishWorkerUrl — accounting: numerator equals denominator 
     // subtract) any accounting — this module's fetch/stream is the only
     // thing that ever calls `reportEngineAssetProgress`.
     stubWorkerCtor();
-    createStockfishWorker(url);
-    createStockfishWorker(url);
-    createStockfishWorker(url);
+    createStockfishWorker(url, 'pool');
+    createStockfishWorker(url, 'pool');
+    createStockfishWorker(url, 'pool');
 
     const entry = getEngineAssetsSnapshot().assets['stockfish-wasm'];
     expect(entry?.total).toBe(STOCKFISH_WASM_BYTES_FALLBACK);

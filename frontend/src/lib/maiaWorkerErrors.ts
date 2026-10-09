@@ -20,6 +20,8 @@
 
 import * as Sentry from '@sentry/react';
 
+import { readLiveEngineWorkers } from '@/lib/engine/liveEngineWorkers';
+
 // ─── Types ──────────────────────────────────────────────────────────────────
 
 /** The three stable Sentry-groupable Maia worker failure buckets. */
@@ -27,6 +29,14 @@ export type MaiaFailureKind = 'oom' | 'load' | 'inference';
 
 /** Which of the two Maia worker owners is reporting the failure. */
 export type MaiaErrorSource = 'maia-worker' | 'maia-queue-worker';
+
+/**
+ * SEED-195: how the failing Maia worker was spawned. `webgpu` = WebGPU
+ * adapter found; `auto-wasm` = no adapter, straight to wasm;
+ * `webgpu-failed-wasm` = pinned to wasm after a WebGPU session failed in this
+ * page session; `ios-wasm` = the iOS/iPadOS CPU shape (SEED-158).
+ */
+export type MaiaSpawnPath = 'webgpu' | 'auto-wasm' | 'webgpu-failed-wasm' | 'ios-wasm';
 
 // ─── Classification ─────────────────────────────────────────────────────────
 
@@ -150,6 +160,8 @@ export interface CaptureMaiaWorkerErrorOptions {
   backend: 'webgpu' | 'wasm' | null;
   /** Phase 219 (D-08/D-10): the wasm thread count in effect when the failure fired, `null`/absent if the failure fired pre-`ready` (never called for `maia-queue-worker`, which does not report this). */
   numThreads?: number | null;
+  /** SEED-195: how the failing worker was spawned, `null`/absent when unknown. */
+  spawnPath?: MaiaSpawnPath | null;
 }
 
 /**
@@ -166,8 +178,19 @@ export function captureMaiaWorkerError(
 ): MaiaWorkerError {
   const kind = classifyMaiaWorkerError(rawMessage);
   Sentry.captureException(new Error(`Maia worker inference error (${kind})`), {
-    tags: { source: opts.source, backend: opts.backend ?? 'unknown', maia_failure: kind },
-    contexts: { maia: { rawMessage }, engine_device: readDeviceContext(opts.numThreads) },
+    tags: {
+      source: opts.source,
+      backend: opts.backend ?? 'unknown',
+      maia_failure: kind,
+      maia_spawn_path: opts.spawnPath ?? 'unknown',
+    },
+    contexts: {
+      maia: { rawMessage },
+      engine_device: readDeviceContext(opts.numThreads),
+      // SEED-195: live Stockfish wasm instances at failure time, to test the
+      // "per-page wasm budget already spent" theory for the Mac Safari OOM.
+      engine_workers: readLiveEngineWorkers(),
+    },
   });
   return new MaiaWorkerError(rawMessage, kind);
 }

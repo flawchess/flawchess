@@ -1,7 +1,7 @@
 {
   "contract": "1.0.0",
   "flavor": "core",
-  "milestone": "v2.21",
+  "milestone": "v2.24",
   "phases": [
     {
       "number": "1",
@@ -280,9 +280,9 @@
     }
   ],
   "next": {
-    "command": "/gsd:progress --next",
-    "label": "Advance to the next step (verify)",
-    "reason": "Phase 237 of 10 · ready to verify"
+    "command": "/gsd-new-milestone",
+    "label": "Start the next milestone or a standalone phase",
+    "reason": "v2.24 closed 2026-10-09; no open milestone"
   },
-  "updated_at": "2026-10-09T01:42:54.276Z"
+  "updated_at": "2026-10-09T13:00:00.000Z"
 }

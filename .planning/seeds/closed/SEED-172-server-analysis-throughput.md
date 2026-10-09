@@ -1,6 +1,6 @@
 ---
 id: SEED-172
-status: dormant
+status: closed (2026-10-09, owner decision). Items 1 and 3 shipped (Maia off the event loop, quick-260928-85v / release #376; int.bit_count() popcounts, 2026-10-09). Items 2 and 4-8 (Maia fp32, cheaper second-best search, cheaper blob walks, SMT oversubscription, engine-call instrumentation, import off the event loop) not pursued; replant from this file if throughput becomes the priority.
 planted: 2026-09-28
 planted_during: v2.19, Phase 225 planned (SEED-170); standalone performance review session
 trigger_when: when analysis backlog throughput, worker fleet cost, or API latency during eval submits becomes the priority
@@ -42,13 +42,16 @@ Share of engine time: full pass ~45%, blob walks ~20-45%, second-best re-search 
 ## Candidate work (decide in discuss-phase)
 
 Quick wins (could be `/gsd-quick`):
-1. **Move Maia off the event loop**: `score_move` runs synchronously inside the async submit
+1. **DONE 2026-09-28** (quick-260928-85v, commit `682127561`, release #376): `asyncio.to_thread`
+   wrapper at `eval_apply.py` ~2284. Original text kept for context.
+   **Move Maia off the event loop**: `score_move` runs synchronously inside the async submit
    handler (`eval_apply.py` ~2443). Wrap in `asyncio.to_thread` (onnxruntime releases the GIL).
    Pure latency fix, no behavior change. **Independent of the Stockfish share and of the
    re-measurement plan**: Maia runs on the API server, not the workers, and blocks the event loop
    ~150 ms per call (1-2 s per analysed game; at 1k games/h that is 28-55% of loop time). Do it
    first, standalone.
-3. `position_classifier.py:230` `_compute_mixedness`: `bin().count("1")` -> `int.bit_count()`
+3. **DONE 2026-10-09** (all four popcounts in `position_classifier.py`).
+   `position_classifier.py:230` `_compute_mixedness`: `bin().count("1")` -> `int.bit_count()`
    (~5-10% of import CPU). Trivial.
 
 Low priority (after item 1 and item 7):

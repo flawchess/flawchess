@@ -1,6 +1,6 @@
 ---
 id: SEED-193
-status: promoted
+status: closed. Resolved by Phase 236 (release #403). Closed at the v2.24 milestone close 2026-10-09. Follow-up: re-run the grade audit around 2026-10-22 with temp/grade-audit/phone_grade_audit.py (query plus depth-18 spot check, built 2026-10-09; command in STATE.md).
 promoted_to: Phase 236
 promoted: 2026-10-08
 planted: 2026-10-08
