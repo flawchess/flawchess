@@ -128,13 +128,24 @@ describe('TrainLineChips + TrainMoveTreeList over the real tree hook', () => {
     expect(screen.getByTestId('harness-fen').textContent).toBe(fenAfter('d4', 'd5'));
   });
 
+  it('quick 261009-por: stepping a known line renders the Stockfish row; the puzzle position does not', () => {
+    render(
+      <TooltipProvider>
+        <Harness />
+      </TooltipProvider>,
+    );
+    expect(screen.queryByTestId('train-sf-row')).toBeNull();
+    fireEvent.click(within(screen.getByTestId('train-move-tree')).getByText('e5'));
+    expect(screen.getByTestId('train-sf-row')).toBeTruthy();
+  });
+
   it('a hand-played fork off the known lines renders the Stockfish row', () => {
     render(
       <TooltipProvider>
         <Harness />
       </TooltipProvider>,
     );
-    // On the known lines (the puzzle position) the row is absent.
+    // At the puzzle position the row is absent.
     expect(screen.queryByTestId('train-sf-row')).toBeNull();
 
     // Nc3 matches no chip line (Move = e4, Best = d4), so it forks a sideline.

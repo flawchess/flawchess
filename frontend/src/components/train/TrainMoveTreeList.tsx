@@ -38,7 +38,11 @@ interface TrainMoveTreeListProps {
   ring?: boolean;
 }
 
-/** The off-line Stockfish row: the lines setting, compact (sideways scroll) on mobile. */
+/** The Stockfish row: the lines setting, compact (sideways scroll) on mobile.
+ * Quick 261009-por: shown on every node except the puzzle position, i.e. on the
+ * stepped known lines as well as sidelines. At the puzzle position the chips are
+ * the server's graded answer key, and a short live ranking there would read as
+ * contradicting it (Phase 211 dropped client-engine alternatives for that). */
 function TrainStockfishRow({
   tree,
   flipped,
@@ -76,7 +80,7 @@ export function TrainMoveTreeList({
   // read the list's move tokens never pick up the engine line's moves.
   return (
     <div className="flex flex-col gap-1">
-      {tree.isOffLine && <TrainStockfishRow tree={tree} flipped={flipped} />}
+      {!tree.isAtRoot && <TrainStockfishRow tree={tree} flipped={flipped} />}
       <div
         data-testid="train-move-tree"
         className={ring ? 'rounded-md ring-2 ring-brand-brown' : undefined}
