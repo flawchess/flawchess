@@ -22,6 +22,7 @@ import {
   MAX_WATCHDOG_SUSPEND_REARMS,
   GRADING_WATCHDOG_LIVENESS_MS,
   MAX_WATCHDOG_LIVENESS_REARMS,
+  MAX_WATCHDOG_HIDDEN_REARMS,
   STOP_BESTMOVE_WATCHDOG_TIMEOUT_MS,
   MAX_SLOT_RESPAWNS,
   INIT_WATCHDOG_TIMEOUT_MS,
@@ -1163,16 +1164,23 @@ describe('createWorkerPool: watchdog (D-06)', () => {
   /** What `stubDesktopSizing(6)` below resolves to via `computePoolSize()`. */
   const POOL_SIZE = 4;
 
+  /** jsdom reports `visible` by default; the hidden-tab gate reads it at fire time. */
+  function setVisibility(state: DocumentVisibilityState): void {
+    Object.defineProperty(document, 'visibilityState', { value: state, configurable: true });
+  }
+
   beforeEach(() => {
     stubDesktopSizing(6); // computePoolSize() -> POOL_SIZE slots
     stubWorkerCtor();
     vi.useFakeTimers();
     vi.mocked(Sentry.captureException).mockClear();
+    setVisibility('visible');
   });
 
   afterEach(() => {
     vi.useRealTimers();
     vi.unstubAllGlobals();
+    setVisibility('visible');
   });
 
   it('settles empty once GRADING_WATCHDOG_TIMEOUT_MS elapses with no bestmove, discarding accumulated info grades (even several of them)', async () => {
@@ -1664,6 +1672,7 @@ describe('createWorkerPool: watchdog (D-06)', () => {
         sinceLastInfoMs: null, // the worker never emitted a line — a real fault
         suspendRearms: 0,
         livenessRearms: 0,
+        hiddenRearms: 0,
         gradingDepth: 12,
         candidateCount: 2,
         gradesAccumulated: 0,
@@ -1712,6 +1721,89 @@ describe('createWorkerPool: watchdog (D-06)', () => {
     // can never satisfy the liveness gate. Raising LIVENESS past TIMEOUT
     // would make the reset load-bearing and this assertion is the tripwire.
     expect(GRADING_WATCHDOG_LIVENESS_MS).toBeLessThan(GRADING_WATCHDOG_TIMEOUT_MS);
+  });
+
+  // ─── FLAWCHESS-9G third pass: hidden-tab gate (SEED-180) ─────────────────
+
+  it('FLAWCHESS-9G: an on-time fire from a silent slot in a HIDDEN tab is background throttling — re-armed, not killed, and its eventual bestmove delivers the real grade', async () => {
+    const pool = createWorkerPool();
+    const gradePromise = pool.grade(TEST_FEN, ['e7e5']);
+    const worker = createdWorkers[0]!;
+    driveInit(worker);
+
+    let settled = false;
+    void gradePromise.then(() => {
+      settled = true;
+    });
+
+    // The production shape: on time (suspend gate skipped), no output in the
+    // liveness window (liveness gate skipped), tab hidden.
+    setVisibility('hidden');
+    await vi.advanceTimersByTimeAsync(GRADING_WATCHDOG_TIMEOUT_MS);
+
+    expect(Sentry.captureException).not.toHaveBeenCalled();
+    expect(worker.messages).not.toContain('stop');
+    expect(settled).toBe(false);
+
+    worker.simulateMessage('info depth 14 multipv 1 score cp 5 nodes 900000 pv e7e5');
+    worker.simulateMessage('bestmove e7e5');
+    const result = await gradePromise;
+    expect(result.get('e7e5')?.evalCp).toBe(-5); // black to move -> white POV
+  });
+
+  it('FLAWCHESS-9G: hidden-tab re-arms are bounded so a genuinely wedged worker in a long-hidden tab still reaches the kill path', async () => {
+    const pool = createWorkerPool();
+    const gradePromise = pool.grade(TEST_FEN, ['e7e5']);
+    const worker = createdWorkers[0]!;
+    driveInit(worker);
+
+    let settled = false;
+    void gradePromise.then(() => {
+      settled = true;
+    });
+
+    setVisibility('hidden');
+    for (let i = 0; i < MAX_WATCHDOG_HIDDEN_REARMS; i++) {
+      await vi.advanceTimersByTimeAsync(GRADING_WATCHDOG_TIMEOUT_MS);
+      expect(settled).toBe(false);
+      expect(Sentry.captureException).not.toHaveBeenCalled();
+    }
+
+    // One more hidden fire exceeds the budget — kill path.
+    await vi.advanceTimersByTimeAsync(GRADING_WATCHDOG_TIMEOUT_MS);
+
+    const result = await gradePromise;
+    expect(settled).toBe(true);
+    expect(worker.messages).toContain('stop');
+    expect(Sentry.captureException).toHaveBeenCalledTimes(1);
+    expect(result.size).toBe(0);
+    const [, ctx] = vi.mocked(Sentry.captureException).mock.calls[0]!;
+    const ctxObj = ctx as { contexts: { stockfishWatchdog: Record<string, unknown> } };
+    expect(ctxObj.contexts.stockfishWatchdog).toEqual(
+      expect.objectContaining({
+        hiddenRearms: MAX_WATCHDOG_HIDDEN_REARMS,
+        visibilityState: 'hidden',
+      }),
+    );
+  });
+
+  it('FLAWCHESS-9G: the hidden-tab gate stops applying once the tab is visible again — a wedged worker is killed at the first visible fire', async () => {
+    const pool = createWorkerPool();
+    const gradePromise = pool.grade(TEST_FEN, ['e7e5']);
+    const worker = createdWorkers[0]!;
+    driveInit(worker);
+
+    setVisibility('hidden');
+    await vi.advanceTimersByTimeAsync(GRADING_WATCHDOG_TIMEOUT_MS);
+    expect(Sentry.captureException).not.toHaveBeenCalled();
+
+    setVisibility('visible');
+    await vi.advanceTimersByTimeAsync(GRADING_WATCHDOG_TIMEOUT_MS);
+
+    const result = await gradePromise;
+    expect(worker.messages).toContain('stop');
+    expect(Sentry.captureException).toHaveBeenCalledTimes(1);
+    expect(result.size).toBe(0);
   });
 
 });

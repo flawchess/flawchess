@@ -117,9 +117,9 @@ export const MOBILE_CORE_THRESHOLD = 4;
  * — replaces the removed `GRADING_MOVETIME_SAFETY_CAP_MS` wall-clock bound
  * (D-05), which capped EVERY search regardless of whether the worker was
  * healthy. That "fault, not slowness" intent is only actually ENFORCED by the
- * two re-arm gates in `fireWatchdog` (see `GRADING_WATCHDOG_SUSPEND_FACTOR`
- * and `GRADING_WATCHDOG_LIVENESS_MS`); this constant alone cannot tell the
- * two apart, which is what FLAWCHESS-9G was.
+ * three re-arm gates in `fireWatchdog` (see `GRADING_WATCHDOG_SUSPEND_FACTOR`,
+ * `GRADING_WATCHDOG_LIVENESS_MS` and `MAX_WATCHDOG_HIDDEN_REARMS`); this
+ * constant alone cannot tell the two apart, which is what FLAWCHESS-9G was.
  */
 export const GRADING_WATCHDOG_TIMEOUT_MS = 60_000;
 
@@ -175,12 +175,32 @@ export const GRADING_WATCHDOG_LIVENESS_MS = 20_000;
  *
  * Trade-off, stated plainly: worst case a dispatch is now abandoned after
  * `GRADING_WATCHDOG_TIMEOUT_MS * (1 + MAX_WATCHDOG_SUSPEND_REARMS +
- * MAX_WATCHDOG_LIVENESS_REARMS)` rather than 60s. That is only reachable by a
- * slot that is provably alive the whole time; the alternative is what this
+ * MAX_WATCHDOG_LIVENESS_REARMS + MAX_WATCHDOG_HIDDEN_REARMS)` rather than 60s.
+ * The liveness share of that is only reachable by a slot that is provably
+ * alive the whole time (the hidden share only while nobody is looking); the alternative is what this
  * fix exists to stop — killing a healthy worker and settling its node with an
  * empty grade, which dents search quality invisibly instead of visibly.
  */
 export const MAX_WATCHDOG_LIVENESS_REARMS = 3;
+
+/**
+ * Bug fix (FLAWCHESS-9G, third pass, SEED-180): per-dispatch cap on re-arms
+ * granted because the tab is hidden. Chrome and Safari throttle a background
+ * tab's workers hard enough that they go silent while the host `setTimeout`
+ * still fires on time, so neither earlier gate sees it: the fire is not late
+ * (suspend gate) and the worker is quiet (liveness gate). Production events
+ * from two separate sessions (Chrome 153 and Safari 26.4, both Mac) had all
+ * candidates graded, no `bestmove`, and `visibilityState: "hidden"`. One
+ * session falsely killed 7 slots in 8 minutes.
+ *
+ * Sized more generously than the other two caps because re-arming while
+ * hidden is nearly free: nobody is watching the stalled search, and once the
+ * tab is visible again the next fire skips this gate, so a genuinely wedged
+ * worker is still killed within one watchdog window of the user returning.
+ * The cap only matters for a tab left hidden for more than ~10 minutes,
+ * where it keeps a wedged slot from being held forever.
+ */
+export const MAX_WATCHDOG_HIDDEN_REARMS = 10;
 
 /**
  * Bug fix (quick 260731-s0z, FIX-4): host-side "stop-bestmove" watchdog (ms),
@@ -310,6 +330,8 @@ export interface PoolWorkerSlot {
   lastInfoAtMs: number;
   /** FLAWCHESS-9G (second pass): liveness re-arms consumed by the current dispatch (see `MAX_WATCHDOG_LIVENESS_REARMS`). Reset to 0 on every fresh `sendGo` dispatch. */
   watchdogLivenessRearms: number;
+  /** FLAWCHESS-9G (third pass): hidden-tab re-arms consumed by the current dispatch (see `MAX_WATCHDOG_HIDDEN_REARMS`). Reset to 0 on every fresh `sendGo` dispatch. */
+  watchdogHiddenRearms: number;
 }
 
 /**

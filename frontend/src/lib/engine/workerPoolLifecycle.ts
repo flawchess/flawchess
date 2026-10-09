@@ -172,6 +172,7 @@ export function createSlot(
     watchdogSuspendRearms: 0,
     lastInfoAtMs: 0,
     watchdogLivenessRearms: 0,
+    watchdogHiddenRearms: 0,
   };
   worker.onmessage = (e: MessageEvent<string>) => ops.handleLine(slot, e.data);
   // WR-03/WR-04: an async script-load failure (404, CSP block, syntax
