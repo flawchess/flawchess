@@ -113,15 +113,6 @@ export interface TrainRevealProps {
    */
   onGameMoveUciChange?: (uci: string | null) => void;
   /**
-   * Fired by the game footer's open-on-the-analysis-board link, immediately
-   * before it navigates. Wired to the SAME `handleAnalyzeClick` as the
-   * board's Analyze button: that handler writes the reveal cache, which is
-   * what lets a Back from /analysis restore this reveal instead of dropping
-   * the user on a fresh puzzle. A footer link that navigated without it
-   * would look identical and silently lose the reveal on Back.
-   */
-  onAnalyzeClick?: () => void;
-  /**
    * Phase 237: reports every state of the reveal-time "played in game" search
    * (idle / loading / ready with the line / error) to the board owner, which
    * builds the standalone game chip from it (loading spinner, failed state) and
@@ -187,7 +178,6 @@ export function TrainReveal({
   onChipSelect,
   treeList,
   onGameMoveUciChange,
-  onAnalyzeClick,
   onGameMoveLineStateChange,
   alsoFineMoves = [],
   walkthroughTarget = null,
@@ -439,10 +429,10 @@ export function TrainReveal({
       )}
 
       {/* 4. Game footer (190.1-03 D-03): "Game: <TC> · vs <opponent> (<elo>) ·
-          <date>" with the open-on-the-analysis-board link. Phase 237 plan 08
+          <date>". Phase 237 plan 08
           moved it, with its `sr_item` gate and game query, into
           TrainRevealGameFooter. */}
-      <TrainRevealGameFooter puzzle={puzzle} verdict={verdict} onAnalyzeClick={onAnalyzeClick} />
+      <TrainRevealGameFooter puzzle={puzzle} verdict={verdict} />
     </div>
   );
 }

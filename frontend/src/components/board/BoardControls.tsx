@@ -39,6 +39,12 @@ interface BoardControlsProps {
    * every desktop/vertical caller stays icon-only with its tooltip.
    */
   labels?: boolean;
+  /**
+   * Visible label of the forward control in `labels` mode. The Train reveal's
+   * phone bar passes "Fwd" because its own Next (next puzzle) button sits
+   * right beside it, and two "Next" labels read as the same action.
+   */
+  forwardLabel?: string;
   /** Button size. 'sm' = h-8 w-8 (desktop), 'md' = h-9 w-9 (mobile slim row), 'lg' = h-11 w-11 (mobile vertical column), 'xl' = each button fills an equal share of the bar at a 48px tap target (bot play, matching that page's other action buttons). Defaults to 'lg' when vertical, 'sm' otherwise. */
   size?: 'sm' | 'md' | 'lg' | 'xl';
   /** Explicit Tailwind size classes for the buttons. Overrides `size` when provided — use when width and height need to be decoupled (e.g. `h-9 w-11`). */
@@ -57,8 +63,10 @@ const SIZE_CLASSES: Record<'sm' | 'md' | 'lg' | 'xl', string> = {
 /**
  * Icon-over-label column, byte-identical to `BotGameMobileBar`'s own button
  * class so the two mobile bars read as the same furniture (Phase 223 UAT).
+ * Exported for bars that add their own labelled column beside the controls
+ * (the Train reveal's Analyze).
  */
-const LABELLED_BUTTON_CLASS = 'h-auto flex-1 flex-col gap-1 px-1 py-2';
+export const LABELLED_BUTTON_CLASS = 'h-auto flex-1 flex-col gap-1 px-1 py-2';
 
 interface BoardControlsLayout {
   buttonSizeClass: string;
@@ -154,6 +162,7 @@ export function BoardControls({
   className,
   flat = false,
   labels = false,
+  forwardLabel = 'Next',
 }: BoardControlsProps) {
   const layout = resolveLayout({ flat, labels, vertical, size, buttonClassName });
   // Short one-word labels: the mobile footer fits five columns on a 360px phone,
@@ -189,7 +198,7 @@ export function BoardControls({
       />
       <ControlButton
         layout={layout}
-        label={label('Next')}
+        label={label(forwardLabel)}
         tooltip="Next move"
         testId="board-btn-forward"
         icon={<ChevronRight className={layout.iconSize} />}
