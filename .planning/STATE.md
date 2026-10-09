@@ -1,33 +1,36 @@
 ---
 gsd_state_version: "1.0"
-milestone: v2.21
+milestone: v2.24
 current_phase: 237
 current_phase_name: Train Reveal Verdict Strip, Line Chips & One Move Tree (SEED-194)
-status: verifying
-stopped_at: Completed 237-10-PLAN.md
-last_updated: "2026-10-09T01:42:54.191Z"
+status: completed
+stopped_at: v2.22, v2.23 and v2.24 closed (phases 228–237 regrouped), no open milestone
+last_updated: "2026-10-09T13:00:00.000Z"
 state_head: 1a997e563fd03ac75571f70ef42d2f0e61895497
 progress:
   total_phases: 10
   completed_phases: 103
   total_plans: 57
   completed_plans: 57
-milestone_name: Browser Engine Throughput
-last_activity: 2026-10-07
-last_activity_desc: "Completed quick task 261007-axc: Separate Train reveal telemetry counter for hand-played free moves (review_board_moves)"
+milestone_name: Train Grading Integrity & One-Screen Reveal
+last_activity: 2026-10-09
+last_activity_desc: "Deployed Phase 237 (release #404); closed milestones v2.22 (228–232), v2.23 (233–234) and v2.24 (235–237) with tags and GitHub releases"
 ---
 
 # Project State: FlawChess
 
 ## Current Position
 
-Phase: 237 (Train Reveal Verdict Strip, Line Chips & One Move Tree (SEED-194)) — EXECUTING
-Plan: 11 of 11
+Phase: none (next standalone phase is 238)
+Plan: Not started
 
-Status: Phase complete — ready for verification
+Status: No open milestone; v2.24 closed 2026-10-09
 
 Open threads carried forward (not blockers):
 
+- Train grade audit (SEED-193 follow-up): rewrite `temp/grade-audit/` as a query on `drill_solves.phone_grade` / `recheck` plus a depth-18 spot check and read post-Phase-235 solves around 2026-10-22. Missing records skew toward fast Next presses and slow devices (236 WR-02, deferred).
+- Pending reads: Train telemetry and the weekly-leaderboard effect (~2026-10-25, data from 2026-10-05); feedback-ask yield (`feedback.source = 'milestone_ask'` vs `floating_button`); Umami funnels on `train-explore-exit` go flat from release #404 (`train-sideline-fork` replaces it).
+- Dependabot alert #149 (high): `@modelcontextprotocol/sdk` CVE-2026-104850, dev-only transitive in `frontend/package-lock.json`, fixed in 1.31.0; not yet bumped.
 - Phase 224 guest levers: all four baselines are now in `reports/growth/guest-activation-baseline-2026-09-17.md` (Lever A metric 2 read 2026-10-03: 459/858 engaged home sessions, 53.5%); post-change readings not yet written up.
 - Engine follow-ups: SEED-171 closed with its leftovers listed in `seeds/closed/SEED-171-...md` (cross-FEN Maia batching, non-root candidate cap); SEED-180 (Stockfish watchdog hidden-tab gate); real-phone throughput for Phases 226/227 never measured.
 - Phase 221: a forced only-move that sheds a piece can read as a sacrifice (game 1459049 ply 21); captured in `.planning/notes/2026-09-13-forced-only-move-tagged-sacrifice.md`, no action requested. Lever if sacrifice noise ever matters: lower `SACRIFICE_CLEARANCE_MAX_DEPTH` (4) and retag.
@@ -44,7 +47,11 @@ Open threads carried forward (not blockers):
 
 See: .planning/PROJECT.md (updated 2026-10-05 after Phase 233)
 Core value: Position-precise WDL across openings + endgames + time pressure on top of users' actual chess.com / lichess games, with personalized LLM commentary and an auto-generated opening-strengths/weaknesses report.
-Current focus: **Phase 233 (Train Per-Puzzle Timing & Engagement Telemetry, SEED-190) complete 2026-10-05** on branch `gsd/phase-233-train-puzzle-timing-telemetry`: 5/5 plans, review WR-01/WR-02 fixed, browser UAT passed (phone-tap leg owner-deferred), verification passed by owner override. Next: pre-merge gate + squash-merge to `main` (CHANGELOG bullet already under [Unreleased]). (Prior focus: Phase 231.)
+Current focus: **v2.22, v2.23 and v2.24 closed 2026-10-09**; phases 228–237 regrouped into v2.22 Settings, Feature Analytics & Weekly Leaderboards (228–232, releases #382–#393), v2.23 Train Telemetry & Feedback Ask (233–234, #394–#401) and v2.24 Train Grading Integrity & One-Screen Reveal (235–237, #402–#404), each tagged with a GitHub release. Phase 237 deployed as part of the close (release #404, with the pydantic-ai-slim CVE bump). No open milestone: next is `/gsd-new-milestone` or standalone Phase 238.
+
+### Superseded: focus after Phase 233
+
+**Phase 233 (Train Per-Puzzle Timing & Engagement Telemetry, SEED-190) complete 2026-10-05** on branch `gsd/phase-233-train-puzzle-timing-telemetry`: 5/5 plans, review WR-01/WR-02 fixed, browser UAT passed (phone-tap leg owner-deferred), verification passed by owner override. Next: pre-merge gate + squash-merge to `main` (CHANGELOG bullet already under [Unreleased]). (Prior focus: Phase 231.)
 
 ### Superseded: focus after the v2.20/v2.21 close
 

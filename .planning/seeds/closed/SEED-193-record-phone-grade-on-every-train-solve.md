@@ -1,6 +1,6 @@
 ---
 id: SEED-193
-status: promoted
+status: closed. Resolved by Phase 236 (release #403). Closed at the v2.24 milestone close 2026-10-09. Follow-up: re-run the grade audit on post-Phase-235 solves around 2026-10-22 (query plus a depth-18 spot check).
 promoted_to: Phase 236
 promoted: 2026-10-08
 planted: 2026-10-08

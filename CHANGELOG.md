@@ -8,38 +8,56 @@ in `YYYY-MM-DD` (Europe/Zurich).
 
 ## [Unreleased]
 
+## [v2.24] Train Grading Integrity & One-Screen Reveal — 2026-10-09
+
+### Changed
+
+- Train: the solution screen after each puzzle is redesigned to fit a phone without scrolling. A one-line result strip replaces the speech bubble (tap it for the full feedback), the line cards became You / Best / Game chips that focus their move on the board while the other arrows fade, and all lines live in one move list where moving a piece simply branches off a sideline (the Solution button is now the ⏮ button, and your sidelines stay). On phones the bottom bar holds the board controls, Analyze and Next for the whole solution; on desktop the arrow keys and Home step through the lines. The first-time tour explains the new screen.
+- Train: when the move you play is one FlawChess has already graded itself, the verdict now shows right away instead of after a short engine check, and the engine line for your move fills in a moment later.
+- Train now uses a puzzle icon in the menu and on the home page (it was a dumbbell), matching the puzzle icon on the weekly leaderboards.
+- Operators: Train's reveal now reports review telemetry version 2 (chips, result strip, sidelines instead of cards; older open tabs keep sending version 1, both are accepted). The Umami action train-explore-exit is retired (sideline closes keep board-tool line-delete; the first sideline per puzzle is the new action train-sideline-fork), so funnels on it go flat after this release.
+- Maintenance: the backend's LLM client library (pydantic-ai) is updated to a release that fixes a denial-of-service issue in streaming requests (CVE-2026-107286).
+
+### Fixed
+
+- Train: the solution arrow now always shows the move the "only one move works" verdict is about, and your move is graded against that move with the same engine search on both sides. When a different move of yours still looks just as good on a one-good-move puzzle, Train takes a few seconds for a closer look, and if your move holds up it counts, whichever way you guessed.
+- Train: a good move that the quick engine check graded as an inaccuracy now gets a second, longer look before scoring, so a sound move is no longer docked a point because the fast search misjudged it.
+- Train: on the solution screen, a move graded as an inaccuracy now shows as one (yellow arrow and ?! badge) instead of looking like a good move, so the board matches the +1 it scores.
+
+## [v2.23] Train Telemetry & Feedback Ask — 2026-10-06
+
+### Added
+
+- Feedback ask: once you have been active on FlawChess for 5 days, Hilda the Hippo asks on the Import, Train and Bots pages whether you have an idea that would make FlawChess better. Sure! opens the feedback form, Maybe later hides her, and she asks one more time after 10 more active days. This also gives phones a way to send feedback.
+
+### Changed
+
+- Train weekly leaderboards: the "This week" card is tidier. Rows show a puzzle icon with the count, the Accuracy board's "Not yet qualified (20+ puzzles)" line replaces the separate explainer and the "more puzzles to qualify" hint, an info button next to the countdown explains what each board rewards, your own name stands out on last week's podium, and a single medal shows without a "1".
+- Train weekly leaderboards: a "…" now closes the board when more players rank below the last row shown, so a top-ranked player no longer sees what looks like a five-player board.
+- Train now records how you work through each puzzle (thinking time, time spent on the solution while the page is visible, which parts of the solution you open, and whether you used a phone or a computer) so we can see how Train is used and improve it. It never affects your score or the leaderboards, and the Privacy page lists it.
+- Settings: on phones, a cogwheel next to the page title opens them, and "Reset to defaults" now sits at the bottom, below Privacy. The weekly leaderboard's info button also tells you that you can hide yourself from the leaderboards in Settings.
+
+## [v2.22] Settings, Feature Analytics & Weekly Leaderboards — 2026-10-05
+
 ### Added
 
 - Settings: open them from the cogwheel in the header (or Settings in the mobile More menu) to switch sounds off and to choose how many lines (1 to 5) and board arrows (0 to 3) the FlawChess engine and Stockfish show. Settings open in a window over the current page (a sheet on mobile, also from the cogwheel on the mobile analysis board and during a mobile bot game), so you never lose the puzzle, game or analysis you were on.
 - Train weekly leaderboards. A "This week" card on the Train page ranks everyone's Train points (Points) and average session score (Accuracy: 20+ puzzles to qualify, tactics puzzles don't count) for the current week, which ends Sunday at midnight UTC. It shows the top 5 plus your own position with your neighbours, and the score screen tells you how your session moved you. Your lichess or chess.com username is shown; hide yourself any time in Settings under Privacy (the Privacy page now says so). Guests see where they would rank.
 - Train weekly medals. At the Sunday midnight UTC deadline the top 3 of each weekly board (Points and Accuracy) win gold, silver and bronze; ties share the medal, Accuracy medals need 20+ puzzles, and hidden users don't earn medals (medals already won are kept). Your lifetime medals show next to your name on the board, each tab opens with last week's podium, you see where you finished if you didn't medal, and winners get a medal to claim, with confetti and a sound, the next time they open Train. The first medals go to the week of September 28, the week the leaderboards launched.
-- Feedback ask: once you have been active on FlawChess for 5 days, Hilda the Hippo asks on the Import, Train and Bots pages whether you have an idea that would make FlawChess better. Sure! opens the feedback form, Maybe later hides her, and she asks one more time after 10 more active days. This also gives phones a way to send feedback.
 
 ### Changed
 
 - Analysis board: the Stockfish, Maia and FlawChess engine switches now remember your choice, so an engine you switch off stays off on your next visit.
 - Train weekly leaderboards: on the Accuracy board, players with 20+ puzzles this week are now always ranked above players who have not qualified yet. Players still under 20 puzzles are listed below a "Not yet qualified" line without a rank number, most active first, and the session score screen tells you how many more puzzles you need instead of showing a tentative rank.
-- Train weekly leaderboards: the "This week" card is tidier. Rows show a puzzle icon with the count, the Accuracy board's "Not yet qualified (20+ puzzles)" line replaces the separate explainer and the "more puzzles to qualify" hint, an info button next to the countdown explains what each board rewards, your own name stands out on last week's podium, and a single medal shows without a "1".
 - Every engine line after the top one now uses a lighter, see-through version of that engine's color on its badge and arrow.
 - Usage analytics (which pages you visit and which features you use) are now linked to your account ID, for logged-in and guest accounts alike. They stay on our own servers, are never shared with anyone, and the Privacy page now says so.
 - Usage analytics now also cover changes to your import filters, Train schedule, Train reminders and leaderboard visibility (only which option you picked, never anything you type).
-- Train now uses a puzzle icon in the menu and on the home page (it was a dumbbell), matching the puzzle icon on the weekly leaderboards.
-- Train weekly leaderboards: a "…" now closes the board when more players rank below the last row shown, so a top-ranked player no longer sees what looks like a five-player board.
 - Maintenance: the frontend now type-checks with TypeScript 7 (through Microsoft's side-by-side install, so linting keeps working) and runs on Sentry 11 and vite-plugin-pwa 2, with a patched fast-uri. Error reports still collect only what the Privacy page lists, and the installed app and its offline support are unchanged.
 - Operators: self-hosted analytics is pinned to Umami 3.4.0 (it ran 3.3.1 behind a floating tag). The next deploy pulls the image automatically and Umami applies two additive database migrations on start; see the runbook section "Umami analytics" for the post-deploy check.
-- Train now records how you work through each puzzle (thinking time, time spent on the solution while the page is visible, which parts of the solution you open, and whether you used a phone or a computer) so we can see how Train is used and improve it. It never affects your score or the leaderboards, and the Privacy page lists it.
-- Train: when the move you play is one FlawChess has already graded itself, the verdict now shows right away instead of after a short engine check, and the engine line for your move fills in a moment later.
-
-- Settings: on phones, a cogwheel next to the page title opens them, and "Reset to defaults" now sits at the bottom, below Privacy. The weekly leaderboard's info button also tells you that you can hide yourself from the leaderboards in Settings.
-- Train: the solution screen after each puzzle is redesigned to fit a phone without scrolling. A one-line result strip replaces the speech bubble (tap it for the full feedback), the line cards became You / Best / Game chips that focus their move on the board while the other arrows fade, and all lines live in one move list where moving a piece simply branches off a sideline (the Solution button is now the ⏮ button, and your sidelines stay). On phones the bottom bar holds the board controls, Analyze and Next for the whole solution; on desktop the arrow keys and Home step through the lines. The first-time tour explains the new screen.
-- Operators: Train's reveal now reports review telemetry version 2 (chips, result strip, sidelines instead of cards; older open tabs keep sending version 1, both are accepted). The Umami action train-explore-exit is retired (sideline closes keep board-tool line-delete; the first sideline per puzzle is the new action train-sideline-fork), so funnels on it go flat after this release.
 
 ### Fixed
 
-- Train: a good move that the quick engine check graded as an inaccuracy now gets a second, longer look before scoring, so a sound move is no longer docked a point because the fast search misjudged it.
-- Train: on the solution screen, a move graded as an inaccuracy now shows as one (yellow arrow and ?! badge) instead of looking like a good move, so the board matches the +1 it scores.
 - Mobile layout polish: the Library move stats show accuracy in a header card on phones, game-card tags and move-stats cards stretch to the miniboard's height, and the Train page has a tighter gap between the header and the streak card.
-- Train: the solution arrow now always shows the move the "only one move works" verdict is about, and your move is graded against that move with the same engine search on both sides. When a different move of yours still looks just as good on a one-good-move puzzle, Train takes a few seconds for a closer look, and if your move holds up it counts, whichever way you guessed.
 
 ## [v2.21] Browser Engine Throughput — 2026-10-03
 
@@ -1575,7 +1593,10 @@ bookmarks, game cards, and rating / stats pages.
 - Rating history, global stats, openings W/D/L charts.
 - Multi-user auth with data isolation.
 
-[Unreleased]: https://github.com/flawchess/flawchess/compare/v2.21...HEAD
+[Unreleased]: https://github.com/flawchess/flawchess/compare/v2.24...HEAD
+[v2.24]: https://github.com/flawchess/flawchess/compare/v2.23...v2.24
+[v2.23]: https://github.com/flawchess/flawchess/compare/v2.22...v2.23
+[v2.22]: https://github.com/flawchess/flawchess/compare/v2.21...v2.22
 [v2.21]: https://github.com/flawchess/flawchess/compare/v2.20...v2.21
 [v2.20]: https://github.com/flawchess/flawchess/compare/v2.19...v2.20
 [v2.19]: https://github.com/flawchess/flawchess/compare/v2.18...v2.19

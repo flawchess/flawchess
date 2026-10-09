@@ -1,6 +1,6 @@
 ---
 id: SEED-185
-status: promoted
+status: closed. Resolved by Phase 230 (release #384). Closed at the v2.22 milestone close 2026-10-09.
 promoted_to: Phase 230
 promoted: 2026-10-03
 planted: 2026-10-03
