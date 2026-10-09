@@ -161,6 +161,17 @@ export const TRAIN_PLAYED_MOVE_ARROW_WIDTH = 0.5;
 /** Width of the blue best-move arrow — same rationale as the played-move
  * width constant above. */
 export const TRAIN_BEST_MOVE_ARROW_WIDTH = 0.5;
+/** Minimum search depth (per PvLine) before the reveal engine's moves draw as
+ * secondary arrows on a stepped known-line position. The engine's throttled
+ * commits paint every early iteration, and the first iterations of a MultiPV
+ * search still reorder candidates as depth climbs, so a shallow live arrow
+ * that disagrees with the line would flicker in and out against the line's
+ * move. 12 sits above that early churn and should be reached inside the
+ * 1500 ms movetime on most hardware; a device too slow to reach it simply never
+ * shows live arrows on a stepped position, which fails safe toward the
+ * line-only board. Deliberately higher than EvalBar's depth 8 mate-display
+ * floor because a disagreeing arrow is a visible claim against the line. */
+export const TRAIN_STEP_LIVE_ARROW_MIN_DEPTH = 12;
 /** Thinner width for the game-move arrow (matches Analysis.tsx's
  * NEXT_MOVE_ARROW_WIDTH) — reads as a subtle hint layered over the wider
  * quality arrows, same treatment as the analysis board's translucent white
@@ -225,13 +236,71 @@ function enginePointerArrows(uci: string | null, layerKey: string): BoardArrow[]
 }
 
 /**
- * While stepping a reveal line (190.1 UAT), the ONLY arrow on the board is a
+ * While stepping a reveal line (190.1 UAT), the PRIMARY arrow on the board is a
  * blue pointer for the line's next move from the shown position (it comes
  * from a Stockfish line, so it reads in the engine hue). Null/absent next
- * move (end of the line) draws nothing.
+ * move (end of the line) draws nothing. `buildTrainStepOverlayArrows` adds the
+ * live engine's secondary arrows underneath it.
  */
 export function buildTrainStepArrows(nextMoveUci: string | null): BoardArrow[] {
   return enginePointerArrows(nextMoveUci, 'step-next');
+}
+
+/** The from-to squares of a UCI move (drops any promotion suffix), the key the
+ * board draws arrows by. */
+function fromToKey(uci: string): string {
+  return uci.slice(0, 4);
+}
+
+/**
+ * Secondary arrows for the reveal engine's top moves on a stepped position.
+ * Walks ranks in reverse (mirroring `buildTrainFreePlayArrows`) and skips lines
+ * still below the depth gate, malformed first moves, and moves that share
+ * from-to squares with the line's next move. Every live arrow is
+ * secondary-colored, rank 0 included: the line owns the solid blue.
+ */
+function stepLiveArrows(
+  nextMoveUci: string | null,
+  pvLines: readonly PvLine[],
+  count: number,
+): BoardArrow[] {
+  const arrows: BoardArrow[] = [];
+  const lineKey = nextMoveUci === null ? null : fromToKey(nextMoveUci);
+  for (let rank = Math.min(count, pvLines.length) - 1; rank >= 0; rank--) {
+    const line = pvLines[rank];
+    if (line === undefined || line.depth < TRAIN_STEP_LIVE_ARROW_MIN_DEPTH) continue;
+    const move = line.moves[0] ?? null;
+    const squares = squaresFromUci(move);
+    if (move === null || squares === null) continue;
+    if (fromToKey(move) === lineKey) continue;
+    arrows.push({
+      ...squares,
+      color: STOCKFISH_SECONDARY_LINE,
+      width: TRAIN_BEST_MOVE_ARROW_WIDTH,
+      layerKey: `step-live-${rank}`,
+    });
+  }
+  return arrows;
+}
+
+/**
+ * Quick 261009-por: a stepped known-line position keeps the line's blue pointer
+ * AND shows the live reveal engine's other top moves (up to `count`, the
+ * Stockfish arrows setting) as translucent secondaries, but only once each
+ * line's own depth reaches `TRAIN_STEP_LIVE_ARROW_MIN_DEPTH`, so an early,
+ * shallow search never contradicts the line. The line pointer is pushed LAST so
+ * it paints on top (same-tier stable sort in the board's arrow overlay).
+ * `pvLines` is the staleness-guarded list for the shown position (empty until
+ * the engine reaches it). At the end of a line (`nextMoveUci` null) the same
+ * rule applies: deep live moves draw as secondaries with no primary, since
+ * there is no line move to contradict.
+ */
+export function buildTrainStepOverlayArrows(
+  nextMoveUci: string | null,
+  pvLines: readonly PvLine[],
+  count: number,
+): BoardArrow[] {
+  return [...stepLiveArrows(nextMoveUci, pvLines, count), ...buildTrainStepArrows(nextMoveUci)];
 }
 
 /**
