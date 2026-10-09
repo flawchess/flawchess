@@ -1,7 +1,7 @@
 ---
 phase: 237-train-reveal-chips-move-tree
 verified: 2026-10-09T04:00:00Z
-status: human_needed
+status: passed
 score: 9/9 must-haves verified
 covered_files:
   - .planning/phases/237-train-reveal-chips-move-tree/237-01-PLAN.md
@@ -49,6 +49,7 @@ covered_files:
 covered_digest: "v3:sha256:f0d76144e9213f1f38d3641f874da4a99aac452ac1fa8ac4523a4aca48573bbc"
 behavior_unverified: 0
 overrides_applied: 0
+override_note: "Owner completed both human_verification legs (real-phone tap leg, small-phone tour after the G-01 redesign) and marked UAT complete on 2026-10-09T12:14:44Z (via chat 'I did all testing, mark UAT as completed')."
 coincidental_reliance_items: []
 human_verification:
   - test: "Real-phone tap leg on the Train reveal (iOS Safari + Android Chrome)"
@@ -63,7 +64,7 @@ human_verification:
 
 **Phase Goal:** Make the post-solve reveal fit a phone and teach through one model instead of two (verdict strip, You/Best/Game chips, one pre-loaded move tree with in-place forks, phone action bar, desktop layout, rewritten tour). Frontend, plus the small telemetry v2 backend schema change (D-12).
 **Verified:** 2026-10-09
-**Status:** human_needed
+**Status:** passed (owner completed human verification, see frontmatter and 237-UAT.md)
 **Re-verification:** No, initial verification
 
 ## Goal Achievement
