@@ -39,7 +39,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { CSSProperties, ReactElement } from 'react';
 import { Chess, type Move } from 'chess.js';
 import { Loader2 } from 'lucide-react';
-import { buildGameAnalysisUrl } from '@/lib/analysisUrl';
+import { buildAnalysisFenUrl, buildGameAnalysisUrl } from '@/lib/analysisUrl';
 import { trackFeature } from '@/lib/analytics';
 import { ChessBoard } from '@/components/board/ChessBoard';
 import type { BoardArrow, SquareMarker } from '@/components/board/ChessBoard';
@@ -919,14 +919,21 @@ export function TrainSolveScreen({
   const analyzeFromRevealRef = useRef<() => void>(() => undefined);
   const handleBarNext = useCallback(() => nextFromRevealRef.current(), []);
   const handleBarAnalyzeClick = useCallback(() => analyzeFromRevealRef.current(), []);
-  // The source game's analysis URL (one move before the mistake), or null for a
-  // puzzle without an own game: the bar then has no Analyze button.
-  const analyzeTo = useMemo<string | null>(
+  // Analyze opens the user's own source game one move before the mistake. Every
+  // other puzzle opens just its position: a red herring's game_id routinely
+  // points at ANOTHER user's game (the herring pool is shared), which Analyze
+  // used to open in full, and a sharp filler or an orphaned herring has no game
+  // at all, which used to hide Analyze. Reads `verdict.source` like the game
+  // footer (Analyze only renders once the verdict exists); a stale verdict
+  // without `source` keeps the game link whenever there is a game.
+  const analyzeOpens: WalkthroughContext['analyzeOpens'] =
+    puzzle.game_id !== null && verdict?.source !== 'red_herring' ? 'game' : 'position';
+  const analyzeTo = useMemo<string>(
     () =>
-      puzzle.game_id !== null
+      analyzeOpens === 'game' && puzzle.game_id !== null
         ? buildGameAnalysisUrl(puzzle.game_id, puzzle.ply > 0 ? puzzle.ply - 1 : null)
-        : null,
-    [puzzle.game_id, puzzle.ply],
+        : buildAnalysisFenUrl(puzzle.fen, puzzle.side_to_move),
+    [analyzeOpens, puzzle.game_id, puzzle.ply, puzzle.fen, puzzle.side_to_move],
   );
 
   // Phase 222 (D-24): the first-reveal walkthrough — step state, the bar-Next
@@ -943,7 +950,7 @@ export function TrainSolveScreen({
   const walkthrough = useTrainWalkthrough({
     settings,
     hasVerdict: verdict !== null,
-    hasAnalyze: puzzle.game_id !== null,
+    analyzeOpens,
     mergedChip,
     isDesktop,
     screenRef,

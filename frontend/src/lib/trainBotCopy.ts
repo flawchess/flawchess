@@ -611,14 +611,14 @@ export interface WalkthroughStepCopy {
 
 /**
  * Phase 237 plan 10 (D-09/D-11): what is on screen, which the copy may describe
- * and nothing else. `hasAnalyze`: the bar carries Analyze only for a puzzle from
- * one of the user's own games. `mergedChip`: the second role of the merged "Move"
+ * and nothing else. `analyzeOpens`: Analyze opens the whole game for a puzzle from
+ * one of the user's own games, otherwise just the puzzle position. `mergedChip`: the second role of the merged "Move"
  * chip ("Move = Best" / "Move = Game"), null when the Move chip stands alone.
  * `isDesktop`: desktop has no strip (the verdict bubble shows the feedback
  * already), the arrow keys step the tree, and Home rewinds.
  */
 export interface WalkthroughContext {
-  hasAnalyze: boolean;
+  analyzeOpens: 'game' | 'position';
   mergedChip: 'best' | 'game' | null;
   isDesktop: boolean;
 }
@@ -691,7 +691,7 @@ export function walkthroughCopy(
     case 4:
       return { spotlightTarget: 'lines', copy: WALKTHROUGH_UNDERSTAND };
     case 5:
-      return { spotlightTarget: 'bar', copy: walkthroughActionsCopy(ctx.hasAnalyze) };
+      return { spotlightTarget: 'bar', copy: walkthroughActionsCopy(ctx.analyzeOpens) };
   }
 }
 
@@ -703,16 +703,12 @@ function mergedChipSentence(mergedChip: WalkthroughContext['mergedChip']): strin
 }
 
 const WALKTHROUGH_NEXT_PART = 'Next takes you to the next puzzle.';
-// Phase 222 UAT round 4: the warm-up Analyze sentence is the short form so the
-// warm-up variant stays within `STEPPER_COPY_MAX_CHARS`.
-const WALKTHROUGH_ANALYZE_LATER_PART = 'Analyze appears once puzzles come from your own games.';
-
-/** The last walkthrough step, assembled from the buttons actually on screen. */
-function walkthroughActionsCopy(hasAnalyze: boolean): string {
-  if (hasAnalyze) {
+/** The last walkthrough step: what Analyze opens on this puzzle, then Next. */
+function walkthroughActionsCopy(analyzeOpens: WalkthroughContext['analyzeOpens']): string {
+  if (analyzeOpens === 'game') {
     return `The Analyze button opens the whole game one move before the mistake. ${WALKTHROUGH_NEXT_PART}`;
   }
-  return `${WALKTHROUGH_NEXT_PART} ${WALKTHROUGH_ANALYZE_LATER_PART}`;
+  return `The Analyze button opens this position on the analysis board. ${WALKTHROUGH_NEXT_PART}`;
 }
 
 /**

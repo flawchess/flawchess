@@ -36,7 +36,7 @@ import {
   TRAIN_FOCUS_BADGE_DIM_OPACITY,
   TRAIN_FOCUS_BADGE_LIT_OPACITY,
 } from '@/lib/theme';
-import { buildGameAnalysisUrl } from '@/lib/analysisUrl';
+import { buildAnalysisFenUrl, buildGameAnalysisUrl } from '@/lib/analysisUrl';
 import { animateScrollTop } from '@/lib/animatedScroll';
 import { HILDA_ID, introStepCount, WALKTHROUGH_STEP_COUNT } from '@/lib/trainBotCopy';
 import { PERSONA_REGISTRY } from '@/lib/personas/personaRegistry';
@@ -2184,16 +2184,18 @@ describe('TrainSolveScreen — progress, last move, grading state, engine failur
     expect(screen.queryByTestId('train-points-flash')).toBeNull();
   });
 
-  // ─── D-09: Analyze hidden (not disabled) when game_id is null (Phase 192) ──
+  // ─── Analyze opens the puzzle position when there is no own source game ──
 
-  it('hides the Analyze link when the source game link is null, but the bar still has Next and rewind (Phase 237 plan 07)', async () => {
-    await renderScreen(makePuzzle({ game_id: null, ply: 20 }));
+  it('a puzzle without a source game links Analyze to its position; the bar still has Next and rewind (Phase 237 plan 07)', async () => {
+    await renderScreen(makePuzzle({ game_id: null, ply: 20, side_to_move: 'black' }));
     fireEvent.click(screen.getByTestId('btn-train-guess-critical'));
     await act(async () => {
       fireEvent.click(screen.getByTestId('drop-e2e4'));
     });
     await waitFor(() => expect(screen.getByTestId('btn-train-next')).not.toBeNull());
-    expect(screen.queryByTestId('btn-train-analyze')).toBeNull();
+    expect(screen.getByTestId('btn-train-analyze').getAttribute('href')).toBe(
+      buildAnalysisFenUrl(START_FEN, 'black'),
+    );
     expect(screen.getByTestId('train-reveal-action-bar').contains(screen.getByTestId('btn-train-next'))).toBe(true);
     await waitFor(() => expect(screen.getByTestId('train-move-tree')).not.toBeNull());
     tapListMove(0);
@@ -3226,7 +3228,7 @@ describe('TrainSolveScreen — progress, last move, grading state, engine failur
       expect(screen.queryByTestId('btn-train-analyze')).toBeNull();
     });
 
-    it('a puzzle without a source game publishes analyzeTo null', async () => {
+    it('a puzzle without a source game publishes the position as analyzeTo', async () => {
       await renderScreenWithProbe(makePuzzle({ game_id: null }));
       fireEvent.click(screen.getByTestId('btn-train-guess-critical'));
       await act(async () => {
@@ -3235,7 +3237,31 @@ describe('TrainSolveScreen — progress, last move, grading state, engine failur
       await waitFor(() =>
         expect(screen.getByTestId('mbc-probe').getAttribute('data-published')).toBe('true'),
       );
-      expect(screen.getByTestId('mbc-analyze-to').textContent).toBe('null');
+      expect(screen.getByTestId('mbc-analyze-to').textContent).toBe(
+        buildAnalysisFenUrl(START_FEN, 'white'),
+      );
+    });
+
+    it("a red herring publishes its position, never the source game (another user's game)", async () => {
+      solvePuzzle.mockResolvedValue({
+        ...SOLVE_RESPONSE,
+        puzzle_type: 'herring',
+        source: 'red_herring',
+        item_status: null,
+        streak: null,
+        due_date: null,
+      });
+      await renderScreenWithProbe(makePuzzle({ game_id: 100 }));
+      fireEvent.click(screen.getByTestId('btn-train-guess-critical'));
+      await act(async () => {
+        fireEvent.click(screen.getByTestId('drop-e2e4'));
+      });
+      await waitFor(() =>
+        expect(screen.getByTestId('mbc-probe').getAttribute('data-published')).toBe('true'),
+      );
+      expect(screen.getByTestId('mbc-analyze-to').textContent).toBe(
+        buildAnalysisFenUrl(START_FEN, 'white'),
+      );
     });
 
     it('the published onNext leaves the reveal like the in-flow Next (review flushed once with exit next)', async () => {
