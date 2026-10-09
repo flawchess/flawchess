@@ -1044,14 +1044,24 @@ describe('useTrainRevealTree: the one reveal engine', () => {
     return engineState.lastMultiPv;
   }
 
-  it('runs MultiPV 1 at the puzzle position and on the known lines', () => {
+  it('runs the settings width (MultiPV 2 by default) at the puzzle position and on the known lines', () => {
     const { result } = renderTree();
-    expect(engineState.lastMultiPv).toBe(1);
+    expect(engineState.lastMultiPv).toBe(2);
     act(() => {
       result.current.playMove('e2', 'e4');
     });
     expect(result.current.isOffLine).toBe(false);
-    expect(engineState.lastMultiPv).toBe(1);
+    expect(engineState.lastMultiPv).toBe(2);
+  });
+
+  it('Stockfish arrows 3 search at MultiPV 3 on the known lines too', () => {
+    localStorage.setItem(SETTINGS_STORAGE_KEYS.sfArrows, '3');
+    const { result } = renderTree();
+    act(() => {
+      result.current.playMove('e2', 'e4');
+    });
+    expect(result.current.isOffLine).toBe(false);
+    expect(engineState.lastMultiPv).toBe(3);
   });
 
   it('off the known lines the default settings (1 arrow) search at MultiPV 2', () => {

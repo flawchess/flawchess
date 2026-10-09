@@ -11,6 +11,7 @@ in `YYYY-MM-DD` (Europe/Zurich).
 ### Changed
 
 - Train: on phones, the solution screen's bottom bar now matches the analysis page's board controls (icon with a label under it), with Analyze as one more control beside them; the forward button reads "Fwd" so it is not confused with Next. The small analyze icon next to the game line is gone, since the Analyze button does the same.
+- Train: when you step through a solution line, the board now also shows the engine's other top moves as faint arrows (as many as your Stockfish arrows setting), once its search is deep enough. The line's next move keeps the solid blue arrow.
 
 ### Fixed
 

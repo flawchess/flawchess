@@ -23,8 +23,10 @@
  * before the verdict.
  *
  * Plan 06 folds the old free-play mode in: ONE Stockfish engine follows the
- * shown position (it feeds the eval bar on every node, the Stockfish row and the
- * board's engine arrows off the known lines, and the move grader), and a move
+ * shown position at MultiPV max(Stockfish lines, Stockfish arrows) on every node
+ * (it feeds the eval bar, the Stockfish row and the board's engine arrows off the
+ * known lines, the secondary arrows under a stepped known line's pointer, and
+ * the move grader), and a move
  * played after the verdict forks a sideline in place. `useTreeMoveGrading` grades
  * those sideline moves.
  */
@@ -56,10 +58,6 @@ import {
   walkLinePath,
 } from '@/lib/trainRevealLines';
 import type { RevealTreeSnapshot, RoleKey, TreeListView } from '@/lib/trainRevealLines';
-
-/** The eval bar needs only the top line, so the engine runs MultiPV 1 on the
- * known lines (the deepest eval for the same movetime). */
-const TRAIN_REVEAL_ONLINE_MULTIPV = 1;
 
 /**
  * Shared empty line list for the "engine has not reached the shown position yet"
@@ -504,22 +502,26 @@ export function useTrainRevealTree({
   );
 
   // ── The one reveal engine ────────────────────────────────────────────────
-  // It follows the shown position. MultiPV 1 on the known lines (the eval bar
-  // needs one line); off them max(Stockfish lines, Stockfish arrows) so the row
-  // shows as many lines and the board draws as many arrows as the settings ask for. Not
-  // started lazily: the eval bar needs a search on the known lines anyway, and
-  // searching every shown node also fills the eval cache, so a fork from a
-  // stepped line position grades. Off while the Phase 236 background grade is
-  // pending (`engineEnabled`).
+  // It follows the shown position and always runs max(Stockfish lines,
+  // Stockfish arrows): off the known lines the row shows that many lines and the
+  // board draws that many arrows; on a stepped known line its other top moves
+  // draw as secondary arrows under the line's pointer
+  // (`buildTrainStepOverlayArrows`). The puzzle position uses the same width
+  // rather than a third special case: it draws no live arrows, but one width
+  // everywhere means stepping between the root, the known lines and a sideline
+  // never re-issues `setoption name MultiPV` or restarts a search just for a
+  // width change. The accepted cost is a slightly shallower top line (eval bar,
+  // sideline grading seed) within the same movetime. Not started lazily: the
+  // eval bar needs a search on the known lines anyway, and searching every shown
+  // node also fills the eval cache, so a fork from a stepped line position
+  // grades. Off while the Phase 236 background grade is pending (`engineEnabled`).
   const isOffLine = currentNodeId !== null && !knownIds.has(currentNodeId);
   const { sfLines, sfArrows } = useEngineDisplaySettings();
   const shownFen = active ? board.position : null;
   const engine = useStockfishEngine({
     fen: shownFen,
     enabled: active && engineEnabled,
-    multiPv: isOffLine
-      ? Math.max(sfLines, sfArrows)
-      : TRAIN_REVEAL_ONLINE_MULTIPV,
+    multiPv: Math.max(sfLines, sfArrows),
   });
   // The hook's `currentFen` lags `fen` by exactly one render (its own documented
   // contract), so an unguarded read would paint the PREVIOUS position's lines

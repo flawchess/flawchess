@@ -23,12 +23,13 @@ import { Chess } from 'chess.js';
 import { TrainSolveScreen } from '@/components/train/TrainSolveScreen';
 import { useMobileBoardControls } from '@/lib/mobileBoardControls';
 import { TooltipProvider } from '@/components/ui/tooltip';
-import { TRAIN_STEP_HIGHLIGHT } from '@/lib/trainArrows';
+import { TRAIN_STEP_HIGHLIGHT, TRAIN_STEP_LIVE_ARROW_MIN_DEPTH } from '@/lib/trainArrows';
 import { MOVE_TIER_POINTS, scorePuzzle } from '@/lib/trainScore';
 import { SETTINGS_STORAGE_KEYS } from '@/lib/engineSettings';
 import {
   MOVE_QUALITY_BLUNDER,
   MOVE_QUALITY_GOOD,
+  STOCKFISH_SECONDARY_LINE,
   TRAIN_BEST_MOVE_ARROW,
   TRAIN_FOCUS_ARROW_DIM_OPACITY,
   TRAIN_FOCUS_ARROW_LIT_OPACITY,
@@ -333,6 +334,10 @@ vi.mock('@/lib/sounds', () => ({
 // message and emits one `info ... multipv K ...` line per requested rank on
 // a mount search, still emitting a single rank for width-1 searches (the
 // after-move/reveal-time searches).
+/** Search depth every FakeWorker reports unless a test overrides it. Kept BELOW
+ * TRAIN_STEP_LIVE_ARROW_MIN_DEPTH so stepped positions stay line-arrow-only. */
+const FAKE_WORKER_DEFAULT_DEPTH = 10;
+
 class FakeWorker {
   onmessage: ((e: MessageEvent<string>) => void) | null = null;
   onerror: ((e: unknown) => void) | null = null;
@@ -346,6 +351,7 @@ class FakeWorker {
   constructor(
     private bestMove = 'e2e4',
     private pv = bestMove,
+    private depth = FAKE_WORKER_DEFAULT_DEPTH,
   ) {}
 
   postMessage(msg: string | { progressPort: unknown }): void {
@@ -364,7 +370,7 @@ class FakeWorker {
     } else if (msg.startsWith('go ')) {
       queueMicrotask(() => {
         for (let rank = 1; rank <= this.width; rank++) {
-          this.emit(`info depth 10 multipv ${rank} score cp ${this.cpFor(rank)} nodes 1000 pv ${this.pv}`);
+          this.emit(`info depth ${this.depth} multipv ${rank} score cp ${this.cpFor(rank)} nodes 1000 pv ${this.pv}`);
         }
         this.emit(`bestmove ${this.bestMove}`);
       });
@@ -1450,6 +1456,36 @@ describe('TrainSolveScreen — progress, last move, grading state, engine failur
     expect(board().getAttribute('data-position')).toContain('rnbqkbnr/pppp1ppp/8/4p3/4P3');
     expect(board().getAttribute('data-arrows-count')).toBe('1');
     expect(board().getAttribute('data-arrow-ucis')).toBe('g1f3');
+  });
+
+  it('quick 261009-por: a stepped known-line position shows a deep, disagreeing reveal-engine move as a secondary arrow under the line pointer', async () => {
+    // First Worker = grading engine (builds the Best line e4 e5 Nf3); later
+    // Workers = the reveal engine, which disagrees with the line ('b1c3' vs the
+    // line's 'g1f3') at exactly the gate depth.
+    let workerCallCount = 0;
+    stubWorker(() => {
+      workerCallCount += 1;
+      return workerCallCount === 1
+        ? new FakeWorker('e2e4', 'e2e4 e7e5 g1f3')
+        : new FakeWorker('b1c3', 'b1c3', TRAIN_STEP_LIVE_ARROW_MIN_DEPTH);
+    });
+    await renderScreen(makePuzzle());
+    fireEvent.click(screen.getByTestId('btn-train-guess-critical'));
+    await act(async () => {
+      fireEvent.click(screen.getByTestId('drop-d2d4')); // non-best -> separate You / Best chips
+    });
+    await waitForReveal();
+    const board = () => screen.getByTestId('chessboard');
+    fireEvent.click(screen.getByTestId('train-chip-best'));
+    await waitFor(() => expectLitArrows(board(), ['e2e4']));
+
+    fireEvent.click(within(screen.getByTestId('train-move-tree')).getByText('e5'));
+    await waitFor(() => expect(board().getAttribute('data-position')).not.toBe(START_FEN));
+    await waitFor(() => expect(board().getAttribute('data-arrows-count')).toBe('2'));
+    expect(board().getAttribute('data-arrow-ucis')).toBe('b1c3,g1f3');
+    expect(board().getAttribute('data-arrow-colors')).toBe(
+      `${STOCKFISH_SECONDARY_LINE},${TRAIN_BEST_MOVE_ARROW}`,
+    );
   });
 
   // ─── 190.1 UAT: reveal-line stepping clears the overlay; Solution restores ─

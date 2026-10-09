@@ -5,6 +5,7 @@ import {
   buildTrainFreePlayArrows,
   buildTrainStepArrows,
   buildTrainStepMarkers,
+  buildTrainStepOverlayArrows,
   chipArrowColor,
   classifyTrainMoveQuality,
   vettedMoveForSquares,
@@ -12,6 +13,7 @@ import {
   TRAIN_GOOD_MOVE_ARROW_WIDTH,
   TRAIN_GAME_MOVE_ARROW_WIDTH,
   TRAIN_STEP_HIGHLIGHT,
+  TRAIN_STEP_LIVE_ARROW_MIN_DEPTH,
 } from '@/lib/trainArrows';
 import type { TrainFineMove } from '@/lib/trainArrows';
 import type { PvLine } from '@/hooks/uciParser';
@@ -521,6 +523,102 @@ describe('buildTrainFreePlayArrows (Phase 200 UAT round 5, Phase 228 D-13/D-15)'
     const free = buildTrainFreePlayArrows([pv(1, 'e7e5')], 1)[0];
     const step = buildTrainStepArrows('e7e5')[0];
     expect(free?.layerKey).not.toBe(step?.layerKey);
+  });
+});
+
+describe('buildTrainStepOverlayArrows (quick 261009-por)', () => {
+  const DEEP = TRAIN_STEP_LIVE_ARROW_MIN_DEPTH;
+  const pv = (multipv: number, firstMove: string, depth: number = DEEP): PvLine => ({
+    multipv,
+    depth,
+    moves: [firstMove, 'a7a6'],
+    evalCp: 10,
+    evalMate: null,
+  });
+
+  it('engine agrees with the line: exactly the single blue line arrow', () => {
+    const arrows = buildTrainStepOverlayArrows('g1f3', [pv(1, 'g1f3')], 1);
+    expect(arrows).toHaveLength(1);
+    expect(arrows[0]).toMatchObject({ layerKey: 'step-next', color: TRAIN_BEST_MOVE_ARROW });
+  });
+
+  it('a disagreeing engine move at exactly the gate depth draws a secondary under the line arrow', () => {
+    const arrows = buildTrainStepOverlayArrows('g1f3', [pv(1, 'b1c3', DEEP)], 1);
+    expect(arrows).toHaveLength(2);
+    expect(arrows[0]).toMatchObject({
+      startSquare: 'b1',
+      endSquare: 'c3',
+      color: STOCKFISH_SECONDARY_LINE,
+      width: TRAIN_BEST_MOVE_ARROW_WIDTH,
+    });
+    expect(arrows[arrows.length - 1]).toMatchObject({
+      layerKey: 'step-next',
+      color: TRAIN_BEST_MOVE_ARROW,
+    });
+  });
+
+  it('below the gate depth only the line arrow draws', () => {
+    const arrows = buildTrainStepOverlayArrows('g1f3', [pv(1, 'b1c3', DEEP - 1)], 1);
+    expect(arrows.map((a) => a.layerKey)).toEqual(['step-next']);
+  });
+
+  it('setting 0 draws only the line arrow', () => {
+    const arrows = buildTrainStepOverlayArrows('g1f3', [pv(1, 'b1c3')], 0);
+    expect(arrows.map((a) => a.layerKey)).toEqual(['step-next']);
+  });
+
+  it('empty pvLines (engine not at the shown position yet) draws only the line arrow', () => {
+    const arrows = buildTrainStepOverlayArrows('g1f3', [], 3);
+    expect(arrows.map((a) => a.layerKey)).toEqual(['step-next']);
+  });
+
+  it('count 3: deep disagreeing ranks all draw as unique secondaries, line arrow last', () => {
+    const arrows = buildTrainStepOverlayArrows(
+      'g1f3',
+      [pv(1, 'g1f3'), pv(2, 'b1c3'), pv(3, 'd2d4')],
+      3,
+    );
+    expect(arrows).toHaveLength(3);
+    expect(arrows[arrows.length - 1]?.layerKey).toBe('step-next');
+    const live = arrows.slice(0, -1);
+    expect(live.map((a) => a.color)).toEqual([STOCKFISH_SECONDARY_LINE, STOCKFISH_SECONDARY_LINE]);
+    const keys = arrows.map((a) => a.layerKey);
+    expect(new Set(keys).size).toBe(keys.length);
+    for (const a of live) {
+      expect(a.layerKey).not.toBe('step-next');
+      expect(a.layerKey?.startsWith('free-')).toBe(false);
+    }
+  });
+
+  it('applies the depth gate per line (mixed depths)', () => {
+    const arrows = buildTrainStepOverlayArrows(
+      'g1f3',
+      [pv(1, 'b1c3', DEEP), pv(2, 'd2d4', DEEP - 1)],
+      2,
+    );
+    expect(arrows.map((a) => `${a.startSquare}${a.endSquare}`)).toEqual(['b1c3', 'g1f3']);
+  });
+
+  it('dedupes by from-to squares only (an under-promotion on the same squares is hidden)', () => {
+    const arrows = buildTrainStepOverlayArrows('e7e8q', [pv(1, 'e7e8n')], 1);
+    expect(arrows.map((a) => a.layerKey)).toEqual(['step-next']);
+  });
+
+  it('skips a malformed live UCI without throwing', () => {
+    const arrows = buildTrainStepOverlayArrows('g1f3', [pv(1, 'zz'), pv(2, 'b1c3')], 2);
+    expect(arrows.map((a) => `${a.startSquare}${a.endSquare}`)).toEqual(['b1c3', 'g1f3']);
+  });
+
+  it('end of the line (null next move): deep live moves draw as secondaries with no primary', () => {
+    const arrows = buildTrainStepOverlayArrows(null, [pv(1, 'b1c3')], 1);
+    expect(arrows).toHaveLength(1);
+    expect(arrows[0]).toMatchObject({ color: STOCKFISH_SECONDARY_LINE });
+    expect(arrows.some((a) => a.layerKey === 'step-next')).toBe(false);
+  });
+
+  it('a count above the available lines yields only the available arrows', () => {
+    const arrows = buildTrainStepOverlayArrows('g1f3', [pv(1, 'b1c3')], 3);
+    expect(arrows).toHaveLength(2);
   });
 });
 

@@ -120,12 +120,13 @@ import {
   buildChipFocusOverlay,
   buildTrainFreePlayArrows,
   buildTrainRevealOverlay,
-  buildTrainStepArrows,
   buildTrainStepMarkers,
+  buildTrainStepOverlayArrows,
   classifyTrainMoveQuality,
   TRAIN_STEP_HIGHLIGHT,
 } from '@/lib/trainArrows';
 import type { TrainMoveQuality, TrainOverlayMove, TrainRevealOverlay } from '@/lib/trainArrows';
+import type { PvLine } from '@/hooks/uciParser';
 import { scorePuzzle, TRAIN_POINTS_PER_PUZZLE } from '@/lib/trainScore';
 import type { TrainMoveTier } from '@/lib/trainScore';
 import { buildPhoneGradePayload, instantServerTier } from '@/lib/trainPhoneGrade';
@@ -279,6 +280,10 @@ interface RevealBoardOverlay {
 interface RevealBoardOverlayInput {
   /** The engine's arrows for the shown position (drawn only off the known lines). */
   offLineArrows: BoardArrow[];
+  /** The reveal engine's staleness-guarded lines for the shown position. */
+  liveLines: readonly PvLine[];
+  /** The Stockfish arrows setting: how many live moves a stepped position may draw. */
+  liveArrowCount: number;
   tree: Pick<
     TrainRevealTree,
     'isAtRoot' | 'isOffLine' | 'stepInfo' | 'activeChip' | 'lastMove' | 'boardMarkers' | 'lastMoveColor'
@@ -293,14 +298,18 @@ interface RevealBoardOverlayInput {
  * Phase 237: what the reveal board draws. A position off every known line (the
  * user's own sideline) draws the engine's blue arrows and the played move's
  * grade. A list-stepped line position
- * shows only the quality-colored last move, the first move's badge and a blue
- * pointer at the line's next move (the solution overlay is cleared). At the puzzle position the full reveal
+ * shows the quality-colored last move, the first move's badge and a blue
+ * pointer at the line's next move (the solution overlay is cleared), plus the
+ * live engine's other top moves as translucent secondaries once deep enough,
+ * with the line's pointer painted on top. At the puzzle position the full reveal
  * overlay is drawn with ONLY the focused chip's arrow and badge lit and every
  * other one dimmed, never hidden (`buildChipFocusOverlay`); with no chip focused
  * (D-04) everything dims.
  */
 function resolveRevealBoardOverlay({
   offLineArrows,
+  liveLines,
+  liveArrowCount,
   tree,
   chips,
   revealOverlay,
@@ -321,7 +330,7 @@ function resolveRevealBoardOverlay({
     const firstMoveQuality = chips.find((chip) => chip.key === step.line)?.quality ?? null;
     const quality: TrainMoveQuality | null = step.isFirstMove ? firstMoveQuality : 'good';
     return {
-      arrows: buildTrainStepArrows(step.nextMoveUci),
+      arrows: buildTrainStepOverlayArrows(step.nextMoveUci, liveLines, liveArrowCount),
       markers: buildTrainStepMarkers(step.lastMoveUci, quality, step.isFirstMove),
       lastMove: { from: step.lastMoveUci.slice(0, 2), to: step.lastMoveUci.slice(2, 4) },
       lastMoveColor: quality !== null ? TRAIN_STEP_HIGHLIGHT[quality] : undefined,
@@ -718,7 +727,8 @@ export function TrainSolveScreen({
     [gradeResult, vettedMoves],
   );
   // Phase 228 (D-13): the Stockfish arrows setting sets how many live engine
-  // arrows draw off the known lines.
+  // arrows draw off the known lines. Quick 261009-por: it also caps the live
+  // secondary arrows drawn under the line pointer on a stepped known line.
   const { sfArrows } = useEngineDisplaySettings();
   // 190.1 UAT round 7: the points earned by a LIVE solve, shown as a short
   // "Points: +N" pop animation over the board as the reveal opens. Set by the
@@ -1475,6 +1485,8 @@ export function TrainSolveScreen({
   // position, or the puzzle position with the focused chip's arrow lit.
   const boardOverlay = resolveRevealBoardOverlay({
     offLineArrows,
+    liveLines: revealTree.pvLines,
+    liveArrowCount: sfArrows,
     tree: revealTree,
     chips,
     revealOverlay,
