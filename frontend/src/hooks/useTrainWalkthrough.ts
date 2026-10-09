@@ -51,8 +51,8 @@ export interface UseTrainWalkthroughInput {
   settings: TrainSettingsResponse | undefined;
   /** True once a verdict (`SolveResponse`) has landed for the puzzle on screen. */
   hasVerdict: boolean;
-  /** Whether the action bar carries Analyze (own-game puzzle). */
-  hasAnalyze: boolean;
+  /** What the action bar's Analyze opens: the own source game, or just the puzzle position. */
+  analyzeOpens: WalkthroughContext['analyzeOpens'];
   /** The second role of the merged Move chip ("Move = Best" / "Move = Game"), or
    * null when the Move chip stands alone — step 2 explains only what is shown. */
   mergedChip: WalkthroughContext['mergedChip'];
@@ -132,7 +132,7 @@ function visibleBottomEdge(): number {
 }
 
 export function useTrainWalkthrough(input: UseTrainWalkthroughInput): UseTrainWalkthroughResult {
-  const { settings, hasVerdict, hasAnalyze, mergedChip, isDesktop, screenRef, pinnedRef } = input;
+  const { settings, hasVerdict, analyzeOpens, mergedChip, isDesktop, screenRef, pinnedRef } = input;
   const { stamp } = input;
   // Only meaningful while `resolveWalkthroughStep` reports it active;
   // otherwise ignored. The caller resets it per puzzle so an abandoned
@@ -143,7 +143,7 @@ export function useTrainWalkthrough(input: UseTrainWalkthroughInput): UseTrainWa
   // again. Reset per puzzle with the step.
   const [overlayHidden, setOverlayHidden] = useState(false);
   const activeStep = resolveWalkthroughStep(settings, hasVerdict, step);
-  const context: WalkthroughContext = { hasAnalyze, mergedChip, isDesktop };
+  const context: WalkthroughContext = { analyzeOpens, mergedChip, isDesktop };
   const target = activeStep === null ? null : walkthroughCopy(activeStep, context).spotlightTarget;
   const isLastStep = activeStep === WALKTHROUGH_STEP_COUNT - 1;
   const consumesNext = activeStep !== null && !isLastStep;

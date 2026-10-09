@@ -650,13 +650,13 @@ describe('returnPhrase — D-03 games-less warm-up tail audience branch (Phase 2
 });
 
 describe('walkthroughCopy', () => {
-  const BASE_CTX: WalkthroughContext = { hasAnalyze: true, mergedChip: null, isDesktop: false };
+  const BASE_CTX: WalkthroughContext = { analyzeOpens: 'game', mergedChip: null, isDesktop: false };
   const STEPS: WalkthroughStep[] = [0, 1, 2, 3, 4, 5];
   const ALL_CONTEXTS: WalkthroughContext[] = [];
-  for (const hasAnalyze of [true, false]) {
+  for (const analyzeOpens of ['game', 'position'] as const) {
     for (const mergedChip of [null, 'best', 'game'] as const) {
       for (const isDesktop of [false, true]) {
-        ALL_CONTEXTS.push({ hasAnalyze, mergedChip, isDesktop });
+        ALL_CONTEXTS.push({ analyzeOpens, mergedChip, isDesktop });
       }
     }
   }
@@ -713,12 +713,12 @@ describe('walkthroughCopy', () => {
     expect(walkthroughCopy(4, BASE_CTX).copy).toContain("Don't just memorize the answer");
   });
 
-  it('the last step describes Analyze only when the puzzle comes from an own game (UAT: warm-up first reveal)', () => {
+  it('the last step says Analyze opens the game for an own-game puzzle, the position otherwise (warm-up first reveal)', () => {
     expect(walkthroughCopy(5, BASE_CTX).copy).toMatch(/^The Analyze button opens the whole game/);
-    const warmup = walkthroughCopy(5, { ...BASE_CTX, hasAnalyze: false });
+    const warmup = walkthroughCopy(5, { ...BASE_CTX, analyzeOpens: 'position' });
     expect(warmup.spotlightTarget).toBe('bar');
-    expect(warmup.copy).toMatch(/^Next takes you to the next puzzle/);
-    expect(warmup.copy).toContain('Analyze appears once puzzles come from your own games');
+    expect(warmup.copy).toMatch(/^The Analyze button opens this position/);
+    expect(warmup.copy).toContain('Next takes you to the next puzzle');
   });
 
   it('no step mentions a card, a Solution button or the eval bar, and no copy has an em-dash', () => {

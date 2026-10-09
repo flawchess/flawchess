@@ -127,6 +127,13 @@ describe('buildAnalysisFenUrl', () => {
     expect(value).toContain('%20');
     expect(value).toContain('%2F');
   });
+
+  it('appends ?orientation= when given and round-trips the FEN', () => {
+    const fen = '3r2k1/p5pp/1p1Np1q1/2pRP3/5P2/P3n1PP/1PP3Q1/3R3K b - - 1 28';
+    const params = new URLSearchParams(buildAnalysisFenUrl(fen, 'black').split('?')[1]);
+    expect(params.get('orientation')).toBe('black');
+    expect(parseAnalysisFenParam(params.get('fen'))).toBe(fen);
+  });
 });
 
 describe('parseAnalysisFenParam', () => {

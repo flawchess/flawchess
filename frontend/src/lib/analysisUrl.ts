@@ -119,10 +119,12 @@ export function buildGameAnalysisUrl(gameId: number, ply?: number | null): strin
  * Constructs a navigable /analysis URL carrying an arbitrary mid-game FEN as a
  * `?fen=` snapshot param (SEED-094 / D-06 additive restoration — see module
  * doc comment). `encodeURIComponent` handles the FEN's spaces (`%20`) and
- * slash (`%2F`), which are otherwise query-string-unsafe.
+ * slash (`%2F`), which are otherwise query-string-unsafe. `orientation`, when
+ * given, is appended as `?orientation=` (see the module doc comment).
  */
-export function buildAnalysisFenUrl(fen: string): string {
-  return `${ANALYSIS_PATH}?${FEN_PARAM}=${encodeURIComponent(fen)}`;
+export function buildAnalysisFenUrl(fen: string, orientation?: 'white' | 'black'): string {
+  const url = `${ANALYSIS_PATH}?${FEN_PARAM}=${encodeURIComponent(fen)}`;
+  return orientation ? `${url}&${ORIENTATION_PARAM}=${orientation}` : url;
 }
 
 /**

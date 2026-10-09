@@ -29,7 +29,7 @@ export interface TrainRevealActionBarProps {
   canRewind: boolean;
   canGoBack: boolean;
   canGoForward: boolean;
-  /** The source game's analysis URL, or null for a puzzle without an own game (no Analyze). */
+  /** The Analyze target (own source game or the puzzle position); null renders no Analyze. */
   analyzeTo: string | null;
   onAnalyzeClick: () => void;
   onNext: () => void;
