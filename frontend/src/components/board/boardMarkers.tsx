@@ -69,6 +69,12 @@ export interface SquareMarker {
   label?: string;
   /** Fill color for the depth label. Defaults to white. */
   labelColor?: string;
+  /**
+   * Phase 237: an explicit group opacity. The Train reveal dims badges outside
+   * the focused move instead of hiding them. Omitted = fully opaque (no
+   * attribute rendered), so every other caller is unchanged.
+   */
+  opacity?: number;
 }
 
 // Depth-label geometry. Anchored to the square's TOP-LEFT corner, and capped at
@@ -285,7 +291,7 @@ export function SquareMarkerGroup({
   flipped: boolean;
 }) {
   return (
-    <g>
+    <g opacity={marker.opacity}>
       <SquareMarkerBadge marker={marker} sqSize={sqSize} flipped={flipped} />
       {marker.label && (
         <DepthLabel

@@ -38,16 +38,17 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { CSSProperties, ReactElement } from 'react';
 import { Chess, type Move } from 'chess.js';
-import { Loader2, Search } from 'lucide-react';
-import { Link } from 'react-router';
+import { Loader2 } from 'lucide-react';
 import { buildGameAnalysisUrl } from '@/lib/analysisUrl';
 import { trackFeature } from '@/lib/analytics';
 import { ChessBoard } from '@/components/board/ChessBoard';
+import type { BoardArrow, SquareMarker } from '@/components/board/ChessBoard';
 import { Button } from '@/components/ui/button';
 import { LoadError } from '@/components/ui/load-error';
 import { TRAIN_BUTTON_CLASS } from '@/components/train/buttonStyles';
-import { TrainReveal, TrainScoreChip } from '@/components/train/TrainReveal';
-import type { TrainRevealStep } from '@/components/train/TrainReveal';
+import { TrainReveal } from '@/components/train/TrainReveal';
+import { TrainMoveTreeList } from '@/components/train/TrainMoveTreeList';
+import { TrainRevealActionBar } from '@/components/train/TrainRevealActionBar';
 import { EvalBar } from '@/components/analysis/EvalBar';
 import type {
   ServerGradedMove,
@@ -59,24 +60,26 @@ import type {
 } from '@/types/train';
 import type { UseTrainSessionResult } from '@/hooks/useTrainSession';
 import { useFitBoardToViewport } from '@/hooks/useFitBoardToViewport';
-import { useIsDesktop } from '@/hooks/useIsDesktop';
-import { useTrainFreePlay, uciFromDrop } from '@/hooks/useTrainFreePlay';
-import { useStockfishEngine, type StockfishEngineState } from '@/hooks/useStockfishEngine';
-import type { PvLine } from '@/hooks/uciParser';
+import { useIsDesktop, useIsSmUp } from '@/hooks/useIsDesktop';
+import { useTrainRevealTree } from '@/hooks/useTrainRevealTree';
+import type { RevealEvalReading, RevealUserMove, TrainRevealTree } from '@/hooks/useTrainRevealTree';
+import type { TreeSeedEval } from '@/hooks/useTreeMoveGrading';
 import { useWakeLock } from '@/hooks/useWakeLock';
 import { gradeFromServerPair, type InstantGradeState } from '@/hooks/trainGradingSupport';
 import type {
   GradeResult,
   RecheckResult,
-  TrainEngineLine,
   TrainGradingEngine,
 } from '@/hooks/useTrainGradingEngine';
 import { useEngineDisplaySettings } from '@/lib/engineSettings';
 import { evalToExpectedScore, sideToMoveFromFen, terminalPositionEval } from '@/lib/liveFlaw';
 import { useMarkPlayActive } from '@/lib/playActive';
 import { usePublishMobileBoardControls } from '@/lib/mobileBoardControls';
+import type { MobileBoardControls } from '@/lib/mobileBoardControls';
 import { playSound } from '@/lib/sounds';
 import { saveTrainRevealCache } from '@/lib/trainRevealCache';
+import { buildChipGroups, revealBestUciOf } from '@/lib/trainRevealLines';
+import type { ChipGroup, GameMoveLineState, RoleKey } from '@/lib/trainRevealLines';
 import type { CachedTrainReveal } from '@/lib/trainRevealCache';
 import { GUESS_LABELS } from '@/lib/trainGuessLabels';
 import type { Guess } from '@/lib/trainGuessLabels';
@@ -92,13 +95,17 @@ import {
   dropNudgeCopy,
   introCopy,
   movePromptCopy,
-  pickBot,
+  pickPuzzleHost,
   promptCopy,
-  returnPhrase,
   verdictCopy,
   walkthroughCopy,
 } from '@/lib/trainBotCopy';
-import type { IntroStep, TrainCopyAudience, VerdictCopy, WalkthroughStep } from '@/lib/trainBotCopy';
+import type {
+  IntroStep,
+  TrainCopyAudience,
+  VerdictCopy,
+  WalkthroughContext,
+} from '@/lib/trainBotCopy';
 import { cn } from '@/lib/utils';
 import { personaForId } from '@/lib/personas/personaRegistry';
 import type { Persona } from '@/lib/personas/personaRegistry';
@@ -108,8 +115,9 @@ import { useTrainOnboarding } from '@/hooks/useTrainOnboarding';
 import { useTrainWalkthrough } from '@/hooks/useTrainWalkthrough';
 import { useTrainPuzzleTelemetry } from '@/hooks/useTrainPuzzleTelemetry';
 import { TrainBotStepper } from '@/components/train/TrainBotStepper';
+import { TrainTourOverlay } from '@/components/train/TrainTourOverlay';
 import {
-  applyTrainSpotlight,
+  buildChipFocusOverlay,
   buildTrainFreePlayArrows,
   buildTrainRevealOverlay,
   buildTrainStepArrows,
@@ -117,8 +125,8 @@ import {
   classifyTrainMoveQuality,
   TRAIN_STEP_HIGHLIGHT,
 } from '@/lib/trainArrows';
-import type { TrainMoveQuality, TrainOverlayMove } from '@/lib/trainArrows';
-import { scorePuzzle, MOVE_TIER_POINTS, GUESS_POINTS, TRAIN_POINTS_PER_PUZZLE } from '@/lib/trainScore';
+import type { TrainMoveQuality, TrainOverlayMove, TrainRevealOverlay } from '@/lib/trainArrows';
+import { scorePuzzle, TRAIN_POINTS_PER_PUZZLE } from '@/lib/trainScore';
 import type { TrainMoveTier } from '@/lib/trainScore';
 import { buildPhoneGradePayload, instantServerTier } from '@/lib/trainPhoneGrade';
 import { shouldRecheck } from '@/lib/trainRecheck';
@@ -244,39 +252,87 @@ const TRAIN_EVAL_BAR_CHROME_PX = 28;
 const TRAIN_TERMINAL_EVAL_DEPTH = 99;
 
 /**
- * Phase 228 (D-12): MultiPV of the Train eval-bar engine. That engine only
- * feeds `resolveTrainEvalBarReading`, which reads evalCp / evalMate / depth, so
- * one line gives the deepest eval for the same movetime. Deliberately
- * independent of the Stockfish line / arrow settings.
+ * Quick 260803-iv6: resolves the Train eval bar's reading: a terminal
+ * (mate/draw) verdict first (the rules already know the answer), else the
+ * reveal engine's own reading of the shown position (Phase 237 plan 06: one
+ * engine follows every node, on the known lines and off them). Kept as a flat,
+ * non-exported module-level helper so the component body stays shallow per
+ * CLAUDE.md.
  */
-const TRAIN_EVAL_BAR_MULTIPV = 1;
-
-/**
- * Quick 260803-iv6: resolves the Train eval bar's reading from whichever
- * source currently owns the shown position — a terminal (mate/draw) verdict
- * first (the rules already know the answer), then the free-play engine's own
- * top line while exploring, else the standalone eval-bar engine. Kept as a
- * flat, non-exported module-level helper (guard-clause returns, no nesting
- * past depth 2) so the component body stays shallow per CLAUDE.md.
- */
-function resolveTrainEvalBarReading(
-  fen: string,
-  isExploring: boolean,
-  freePlayTop: PvLine | null,
-  engine: StockfishEngineState,
-): { evalCp: number | null; evalMate: number | null; depth: number } {
+function resolveTrainEvalBarReading(fen: string, reading: RevealEvalReading): RevealEvalReading {
   const terminal = terminalPositionEval(fen);
   if (terminal !== null) {
     return { evalCp: terminal.cp, evalMate: terminal.mate, depth: TRAIN_TERMINAL_EVAL_DEPTH };
   }
-  if (isExploring) {
+  return reading;
+}
+
+/** The four board props the reveal overlay decides (arrows, badges, last-move
+ * square and its highlight color). */
+interface RevealBoardOverlay {
+  arrows: BoardArrow[];
+  markers: SquareMarker[];
+  lastMove: { from: string; to: string } | null;
+  lastMoveColor: string | undefined;
+}
+
+interface RevealBoardOverlayInput {
+  /** The engine's arrows for the shown position (drawn only off the known lines). */
+  offLineArrows: BoardArrow[];
+  tree: Pick<
+    TrainRevealTree,
+    'isAtRoot' | 'isOffLine' | 'stepInfo' | 'activeChip' | 'lastMove' | 'boardMarkers' | 'lastMoveColor'
+  >;
+  chips: readonly ChipGroup[];
+  revealOverlay: TrainRevealOverlay;
+  /** The puzzle's arrival move (the highlight at the puzzle position). */
+  puzzleLastMove: { from: string; to: string } | null;
+}
+
+/**
+ * Phase 237: what the reveal board draws. A position off every known line (the
+ * user's own sideline) draws the engine's blue arrows and the played move's
+ * grade. A list-stepped line position
+ * shows only the quality-colored last move, the first move's badge and a blue
+ * pointer at the line's next move (the solution overlay is cleared). At the puzzle position the full reveal
+ * overlay is drawn with ONLY the focused chip's arrow and badge lit and every
+ * other one dimmed, never hidden (`buildChipFocusOverlay`); with no chip focused
+ * (D-04) everything dims.
+ */
+function resolveRevealBoardOverlay({
+  offLineArrows,
+  tree,
+  chips,
+  revealOverlay,
+  puzzleLastMove,
+}: RevealBoardOverlayInput): RevealBoardOverlay {
+  if (tree.isOffLine) {
     return {
-      evalCp: freePlayTop?.evalCp ?? null,
-      evalMate: freePlayTop?.evalMate ?? null,
-      depth: freePlayTop?.depth ?? 0,
+      arrows: offLineArrows,
+      markers: tree.boardMarkers,
+      lastMove: tree.lastMove,
+      lastMoveColor: tree.lastMoveColor,
     };
   }
-  return { evalCp: engine.evalCp, evalMate: engine.evalMate, depth: engine.depth };
+  const step = tree.stepInfo;
+  if (step !== null) {
+    // The first move carries its chip's quality; deeper moves are engine
+    // continuations and read as 'good' (190.1 UAT round 3).
+    const firstMoveQuality = chips.find((chip) => chip.key === step.line)?.quality ?? null;
+    const quality: TrainMoveQuality | null = step.isFirstMove ? firstMoveQuality : 'good';
+    return {
+      arrows: buildTrainStepArrows(step.nextMoveUci),
+      markers: buildTrainStepMarkers(step.lastMoveUci, quality, step.isFirstMove),
+      lastMove: { from: step.lastMoveUci.slice(0, 2), to: step.lastMoveUci.slice(2, 4) },
+      lastMoveColor: quality !== null ? TRAIN_STEP_HIGHLIGHT[quality] : undefined,
+    };
+  }
+  if (!tree.isAtRoot) {
+    return { arrows: [], markers: [], lastMove: tree.lastMove, lastMoveColor: undefined };
+  }
+  const focusedChip = chips.find((chip) => chip.key === tree.activeChip);
+  const lit = buildChipFocusOverlay(revealOverlay, focusedChip !== undefined ? [focusedChip.uci] : null);
+  return { arrows: lit.arrows, markers: lit.markers, lastMove: puzzleLastMove, lastMoveColor: undefined };
 }
 
 /**
@@ -336,148 +392,6 @@ function guessButtons(onGuess: (guess: Guess) => void): ReactElement {
   );
 }
 
-/** D-23: the verdict clause's two labeled phrases (guess/move) with their
- * point values — mirrors `trainBotCopy.ts`'s `verdictClause` wording exactly,
- * but split apart so the caller can render each point value as a real
- * `TrainScoreChip` pill instead of literal "[+N]" bracket text (plan 01 kept
- * the bracket text in the pure copy module; wiring live pills is this plan's
- * job). Lives here (not `trainBotCopy.ts`) because it exists only to feed
- * JSX pills — the pure module stays React-free. */
-function verdictClauseParts(
-  correctGuess: boolean,
-  moveQuality: TrainMoveTier,
-): { guessLabel: string; guessPoints: 0 | 1; moveLabel: string; movePoints: 0 | 1 | 2 } {
-  const guessLabel = correctGuess ? 'Right call' : 'Wrong call';
-  const guessPoints: 0 | 1 = correctGuess ? GUESS_POINTS : 0;
-  const movePoints = MOVE_TIER_POINTS[moveQuality] as 0 | 1 | 2;
-  if (moveQuality === 'good') {
-    const moveLabel = correctGuess ? 'right move' : 'but the right move';
-    return { guessLabel, guessPoints, moveLabel, movePoints };
-  }
-  if (moveQuality === 'inaccuracy') {
-    return { guessLabel, guessPoints, moveLabel: 'decent move', movePoints };
-  }
-  return { guessLabel, guessPoints, moveLabel: 'wrong move', movePoints };
-}
-
-/**
- * Phase 222 (D-23): resolves the verdict bubble's body — opener + clause with
- * inline `TrainScoreChip` pills + optional look-closer line (0-1 pts) + the
- * D-15/D-16 return tail. Module-level (RESEARCH Finding B) so this state's
- * own decision points never raise `TrainSolveScreen`'s pinned complexity.
- *
- * RESEARCH Pitfall 7: a `trainRevealCache` entry written by a pre-206 bundle
- * restores a verdict without `source` at runtime despite the TS type calling
- * it required. Per D-16, a return tail can only be trusted once the item's
- * SOURCE is known (herring/filler never return; sr_item's tail depends on
- * item_status/due_date) — so a missing `source` renders no return tail at
- * all, the one nullish default at this consumption site, rather than
- * guessing from a possibly-unrelated due_date.
- */
-function renderVerdictBubbleBody(
-  verdict: SolveResponse,
-  opening: VerdictCopy,
-  sessionDate: string | undefined,
-  expiresOn: string | undefined,
-  isWarmup: boolean,
-  audience: TrainCopyAudience,
-  actions: ReactElement,
-): { copy: ReactElement; actions: ReactElement } {
-  const clause = verdictClauseParts(verdict.correct_guess, verdict.move_quality);
-  const returnTail =
-    verdict.source === undefined
-      ? ''
-      : returnPhrase({
-          source: verdict.source,
-          item_status: verdict.item_status,
-          due_date: verdict.due_date,
-          is_warmup: isWarmup,
-          session_date: sessionDate,
-          expires_on: expiresOn,
-          audience,
-        });
-  // D-16: a mastered/parked/herring/filler item's tail explains WHY it won't
-  // return — it is not itself a return promise. `train-bot-return-tail`
-  // (the testid a future date-check UI could key off) is reserved for the
-  // two genuine promises (next-session / in-N-days); the terminal variants
-  // still render their explanatory text, just without that testid.
-  const isReturnPromise =
-    verdict.source === 'sr_item' &&
-    verdict.item_status !== 'mastered' &&
-    verdict.item_status !== 'parked' &&
-    returnTail !== '';
-  return {
-    // One flowing paragraph, not one <p> per sentence: the three stacked
-    // lines ate too much vertical space on phones, where the bubble sits
-    // above the board. The testids stay on inline spans.
-    copy: (
-      <p data-testid="train-bot-verdict-line">
-        {opening.opener} {clause.guessLabel}{' '}
-        <TrainScoreChip points={clause.guessPoints} testid="train-bot-pill-guess" />,{' '}
-        {clause.moveLabel}{' '}
-        <TrainScoreChip points={clause.movePoints} testid="train-bot-pill-move" />.
-        {opening.lookCloser !== null && (
-          <>
-            {' '}
-            <span data-testid="train-bot-look-closer">{opening.lookCloser}</span>
-          </>
-        )}
-        {returnTail !== '' && isReturnPromise && (
-          <>
-            {' '}
-            <span data-testid="train-bot-return-tail">{returnTail}</span>
-          </>
-        )}
-        {returnTail !== '' && !isReturnPromise && <> {returnTail}</>}
-      </p>
-    ),
-    actions,
-  };
-}
-
-/**
- * Phase 222 (D-24): resolves the first-reveal walkthrough's bubble body — one
- * of the Hilda steps, each with its own copy and a Next control. The real
- * Solution/Analyze/Next row (`verdictActions`) IS the last step's control —
- * the last step's copy explains those buttons, so they must be visible (and
- * ringed) while Hilda's line about them is on screen. Phase 222 UAT round 3
- * dropped the separate "Got it": leaving the reveal through that row (Next or
- * Analyze) is what completes the walkthrough. Module-level (RESEARCH Finding
- * B) so this state's own branching never raises `TrainSolveScreen`'s own
- * pinned complexity.
- */
-function renderWalkthroughBubbleBody(
-  step: WalkthroughStep,
-  onNext: () => void,
-  verdictActions: ReactElement,
-  hasAnalyze: boolean,
-  hasSolution: boolean,
-): { copy: ReactElement; actions: ReactElement } {
-  const { copy } = walkthroughCopy(step, hasAnalyze, hasSolution);
-  // Phase 222 UAT round 3: the last step's control IS the real action row —
-  // no separate "Got it". Next/Analyze there both end the walkthrough (and
-  // stamp it, see `handleWalkthroughLeave` in TrainSolveScreen).
-  // UAT round 4: no spotlight ring around the action row — the buttons
-  // themselves are the obvious target of the last step's copy.
-  const lastControl = <div className="flex flex-wrap justify-end gap-2">{verdictActions}</div>;
-  return {
-    copy: (
-      <p data-testid="train-bot-walkthrough">{copy}</p>
-    ),
-    actions: (
-      <TrainBotStepper
-        stepCount={WALKTHROUGH_STEP_COUNT}
-        step={step}
-        onNext={onNext}
-        nextTestId="btn-train-bot-walkthrough-next"
-        lastControl={lastControl}
-      >
-        {null}
-      </TrainBotStepper>
-    ),
-  };
-}
-
 /** Sketch 004 (phase 222 UAT): the verdict bot's face inside the points pop
  * over the board. 40px — the sketch's `avatar md`. */
 const POINTS_FLASH_AVATAR_CLASS = 'size-10';
@@ -504,76 +418,6 @@ function PointsFlashAvatar({ persona }: { persona: Persona }): ReactElement {
   );
 }
 
-/**
- * Phase 200 (D-11)-era action row (Solution/Analyze/Next), relocated (D-10)
- * from the below-board sibling into the verdict bubble's own actions slot.
- * A real component (rendered via JSX at the call site below), NOT a plain
- * helper function called directly — `handleShowSolution` reads
- * `keepSpotlightRef.current` transitively (via `returnToSolution`), and
- * `react-hooks/refs` flags a ref-reading closure passed into an ordinary
- * function call during render; passing it as a JSX prop (the same pattern
- * already used for `onReturnToSolution`/`onClick` elsewhere in this file) is
- * the sanctioned shape. Module-level so the `isBoardDeparted`/`gameId`/`ply`
- * branching never raises `TrainSolveScreen`'s own pinned complexity (FINDING
- * B) — this is exactly the branch removal the plan's headroom accounting
- * relies on.
- */
-function VerdictActions({
-  isBoardDeparted,
-  gameId,
-  ply,
-  onShowSolution,
-  onAnalyzeClick,
-  onNext,
-}: {
-  isBoardDeparted: boolean;
-  gameId: number | null;
-  ply: number;
-  onShowSolution: () => void;
-  onAnalyzeClick: () => void;
-  onNext: () => void;
-}): ReactElement {
-  return (
-    <>
-      {isBoardDeparted && (
-        <Button
-          variant="brand-outline"
-          className={TRAIN_BUTTON_CLASS}
-          data-testid="btn-train-solution"
-          onClick={() => {
-            onShowSolution();
-            // Phase 229 D-12: drill outcomes are DB-known, but revealing the solution is not.
-            trackFeature('action', { target: 'train-solution' });
-          }}
-        >
-          Solution
-        </Button>
-      )}
-      {gameId !== null && (
-        <Button asChild variant="brand-outline" className={TRAIN_BUTTON_CLASS}>
-          <Link
-            to={buildGameAnalysisUrl(gameId, ply > 0 ? ply - 1 : null)}
-            data-testid="btn-train-analyze"
-            aria-label="Analyze this position"
-            onClick={onAnalyzeClick}
-          >
-            <Search className="h-4 w-4 mr-1" />
-            Analyze
-          </Link>
-        </Button>
-      )}
-      <Button
-        variant="default"
-        className={TRAIN_BUTTON_CLASS}
-        data-testid="btn-train-next"
-        onClick={onNext}
-      >
-        Next
-      </Button>
-    </>
-  );
-}
-
 /** Inputs `renderTrainBotBubbleBody` needs beyond `bubbleState` itself —
  * bundled so growing the state machine (intro, drop-nudge, verdict) never
  * grows a raw parameter list. */
@@ -588,33 +432,10 @@ interface BubbleBodyDeps {
   suppressPrompt: boolean;
   onIntroNext: () => void;
   onIntroGuess: (guess: Guess) => void;
-  /** Non-null exactly when `bubbleState.kind === 'verdict'` (hasVerdict is
-   * the top precedence rung in `resolveBubbleState`, so the two are always
-   * in lockstep). */
-  verdict: SolveResponse | null;
-  /** UAT round 4: resolved ONCE per verdict by the caller (`useMemo`), never
-   * inside this render helper — `verdictCopy` draws a random opener, and a
-   * per-render draw flipped "Nice."/"Solid." on every board interaction,
-   * re-wrapping the bubble and twitching the layout. */
-  verdictOpening: VerdictCopy | null;
-  sessionDate: string | undefined;
-  expiresOn: string | undefined;
-  verdictActions: ReactElement;
-  /** Phase 222 (D-24): non-null exactly while the first-reveal walkthrough is
-   * active for this verdict — see `resolveWalkthroughStep`. */
-  activeWalkthroughStep: WalkthroughStep | null;
-  onWalkthroughNext: () => void;
-  /** Phase 222 UAT round 3: whether the action row carries Solution (the
-   * board was departed — a free-play move or a stepped line). */
-  hasSolution: boolean;
   /** Phase 222 UAT round 3: a warm-up first session gets one extra intro step. */
   isWarmup: boolean;
-  /** Plan 06 UAT: whether the action row carries Analyze (own-game puzzle,
-   * `game_id` set) — walkthrough step 3 must not describe a missing button. */
-  hasAnalyze: boolean;
   /** D-03 (Phase 224): threaded into `introCopy`/`introStepCount` (the
-   * welcome/warm-up intro copy) and `returnPhrase` (the verdict's warm-up
-   * return tail) via `renderVerdictBubbleBody`. */
+   * welcome/warm-up intro copy). */
   audience: TrainCopyAudience;
 }
 
@@ -701,34 +522,20 @@ function renderTrainBotBubbleBody(
       actions: guessButtons(deps.onGuess),
     };
   }
-  if (bubbleState.kind === 'verdict' && deps.verdict !== null && deps.verdictOpening !== null) {
-    if (deps.activeWalkthroughStep !== null) {
-      return renderWalkthroughBubbleBody(
-        deps.activeWalkthroughStep,
-        deps.onWalkthroughNext,
-        deps.verdictActions,
-        deps.hasAnalyze,
-        deps.hasSolution,
-      );
-    }
-    return renderVerdictBubbleBody(
-      deps.verdict,
-      deps.verdictOpening,
-      deps.sessionDate,
-      deps.expiresOn,
-      deps.isWarmup,
-      deps.audience,
-      deps.verdictActions,
-    );
+  if (bubbleState.kind === 'verdict') {
+    // Phase 237 plans 08/10: the verdict itself (strip on phones, bubble on
+    // desktop) and the first-reveal tour bubble both live in TrainReveal now;
+    // the left slot stays empty from the verdict on.
+    return null;
   }
   return null;
 }
 
 /**
  * Phase 222 (D-02/D-03/D-05): the persona that should speak the current
- * bubble state — Hilda/Tank during the intro stepper (fixed hosts, never
- * randomly cast), the outcome-matched stern/friendly bot during the verdict,
- * else the regular-session random smart host. Module-level so this dispatch
+ * bubble state — Hilda during the intro stepper (fixed host, never
+ * randomly cast), else the puzzle's random host, which also speaks the
+ * verdict (Phase 237 UAT). Module-level so this dispatch
  * never raises `TrainSolveScreen`'s own pinned complexity (FINDING B).
  */
 function resolveBubblePersona(
@@ -736,7 +543,6 @@ function resolveBubblePersona(
   sideToMove: 'white' | 'black',
   regularBot: Persona,
   verdictBot: Persona | null,
-  activeWalkthroughStep: WalkthroughStep | null,
   isWarmup: boolean,
   audience: TrainCopyAudience,
 ): Persona {
@@ -744,11 +550,6 @@ function resolveBubblePersona(
     return (
       personaForId(introCopy(bubbleState.step, sideToMove, isWarmup, audience).personaId) ?? regularBot
     );
-  }
-  // Phase 222 (D-05/D-24): the first-reveal walkthrough is always taught by
-  // Hilda, never the outcome-matched verdict bot.
-  if (bubbleState.kind === 'verdict' && activeWalkthroughStep !== null) {
-    return personaForId(HILDA_ID) ?? regularBot;
   }
   if (bubbleState.kind === 'verdict' && verdictBot !== null) return verdictBot;
   return regularBot;
@@ -833,27 +634,16 @@ export function TrainSolveScreen({
   // TrainReveal itself) so the board's arrows prop can include the thin white
   // game-move arrow alongside the best/played-move arrows.
   const [gameMoveUci, setGameMoveUci] = useState<string | null>(null);
-  // 190.1 UAT: the reveal-time search's resolved game-move line (null while
-  // pending/errored/coincident) — its eval derives the game move's quality
-  // badge on the board overlay.
-  const [gameMoveLine, setGameMoveLine] = useState<TrainEngineLine | null>(null);
-  // 190.1 UAT: the reveal panel's current line-stepping state — non-null while
-  // a line is stepped away from its start. While stepping, the solution
-  // overlay (arrows + quality badges) is cleared, the reported last move gets
-  // a quality-colored square highlight, and the line's next move renders as a
-  // blue engine arrow.
-  const [lineStep, setLineStep] = useState<TrainRevealStep | null>(null);
-  // Phase 200 (EXPLORE-01/02), reworked per Phase 200 UAT: the free-play
-  // branching move tree — reachable only once the verdict has landed
-  // (handlePieceDrop's post-verdict branch below). Seeded from the
-  // stepped-line prefix when there is one (EXPLORE-02), or an empty prefix
-  // from the pristine reveal. Torn down by handleShowSolution (EXPLORE-04) and
-  // the per-puzzle reset effect (EXPLORE-05).
-  //
-  // The hook owns its OWN Stockfish Worker (EXPLORE-05: a second, independent
-  // engine instance — never a repurposed grading engine) and grades every
-  // freely played move from it. See useTrainFreePlay's docstring.
-  //
+  // 190.1 UAT / Phase 237: the reveal-time search's state, reported up from
+  // TrainReveal (idle / loading / ready with the line / error). Its line derives
+  // the game move's quality badge; the whole state builds the standalone game
+  // chip's loading/failed look. Deliberately NOT reset by the per-puzzle effect
+  // below: TrainReveal reports `loading` synchronously from its own effect, which
+  // runs BEFORE this component's on the same commit (a restored reveal mounts
+  // with the reveal query already cached), so a reset here would wipe it and
+  // leave the game chip loading forever. The search's own cleanup reports idle.
+  const [gameMoveLineState, setGameMoveLineState] = useState<GameMoveLineState>({ status: 'idle' });
+  const gameMoveLine = gameMoveLineState.status === 'ready' ? gameMoveLineState.line : null;
   // 190.1 UAT round 5: a restored reveal's verdict comes from the cache (the
   // solve mutation belongs to the unmounted prior page visit) — but a LIVE
   // solve response always wins, and the restored fallback disappears the
@@ -869,9 +659,9 @@ export function TrainSolveScreen({
   // verdict with `lastSolvedPosition` closes that window at the source, and
   // also stops the reveal panel from rendering the old solution for one frame.
   //
-  // Phase 211 (Plan 03): derived HERE, above the free-play seed memo, so the
+  // Phase 211 (Plan 03): derived HERE, above the tree seed memo, so the
   // hoisted `vettedMoves` memo below can feed BOTH the reveal overlay and the
-  // free-play seed from one place.
+  // tree's grading seed from one place.
   const liveVerdict =
     trainSession.lastSolvedPosition === puzzle.position ? trainSession.lastSolveResponse : null;
   const verdict = liveVerdict ?? restoredSolve?.verdict ?? null;
@@ -891,7 +681,7 @@ export function TrainSolveScreen({
 
   // Phase 211 (D-01/D-06): the server's certified "also fine" set — the
   // single source BOTH consumers read: the reveal overlay's green alternative
-  // arrows AND the free-play seed's root-ply key (do not inline the default
+  // arrows AND the tree seed's root-ply key (do not inline the default
   // at either call site). The `?? []` here is the ONE nullish default for
   // the served list on this whole screen: a `trainRevealCache` entry written
   // by a pre-211 bundle restores a verdict with no `vetted_moves` key at
@@ -907,16 +697,15 @@ export function TrainSolveScreen({
     [puzzle.server_graded_moves],
   );
 
-  // `seedEval` hands it the grading engine's verdict for the puzzle position,
-  // so the FIRST free move is graded without waiting for the free-play engine
-  // to re-search a position the solve loop already searched. Phase 211
-  // (D-06): the seed also carries the SAME served vetted list the reveal
-  // overlay draws (the hoisted `vettedMoves` memo above — the single
-  // stale-cache default site), so the free-play ROOT ply and the "Also fine"
-  // row can never read different keys.
-  // Phase 236: null while an instant grade is pending is fine, free play then
-  // searches the first position itself.
-  const freePlaySeedEval = useMemo(
+  // The tree's grading seed: the grading engine's verdict for the puzzle
+  // position, so a move forked from the puzzle position is graded without waiting
+  // for the reveal engine to re-search a position the solve loop already
+  // searched. Phase 211 (D-06): the seed also carries the SAME served vetted list
+  // the reveal overlay draws (the hoisted `vettedMoves` memo above, the single
+  // stale-cache default site), so a root fork's badge and the "Also fine" row can
+  // never read different keys. Phase 236: null while an instant grade is pending
+  // is fine, the reveal engine is off then and grades once it starts.
+  const treeSeedEval = useMemo<TreeSeedEval | null>(
     () =>
       gradeResult === null
         ? null
@@ -928,24 +717,9 @@ export function TrainSolveScreen({
           },
     [gradeResult, vettedMoves],
   );
-  const freePlay = useTrainFreePlay({
-    startFen: puzzle.fen,
-    seedEval: freePlaySeedEval,
-    onUserMove: puzzleTelemetry.onExploreMove,
-  });
-  // Phase 228 (D-13): the Stockfish arrows setting sets how many live free-play
-  // engine arrows draw.
+  // Phase 228 (D-13): the Stockfish arrows setting sets how many live engine
+  // arrows draw off the known lines.
   const { sfArrows } = useEngineDisplaySettings();
-  // Phase 200 (LEGEND-02/D-09): the single active legend spotlight entry —
-  // exactly one line box's move is spotlit at a time, or none. Set by
-  // TrainReveal's hover/focus/tap handlers via onSpotlightChange, filtered
-  // into the board overlay below via applyTrainSpotlight.
-  const [spotlight, setSpotlight] = useState<{ key: string; ucis: string[] } | null>(null);
-  // 190.1 UAT round 3: the Solution/Analyze/Next row lives HERE, below the
-  // board (each button a third of the board's width). Solution bumps this
-  // nonce; the reveal's steppers key their reset on it, snapping the board
-  // back to the puzzle position with the full solution overlay.
-  const [solutionNonce, setSolutionNonce] = useState(0);
   // 190.1 UAT round 7: the points earned by a LIVE solve, shown as a short
   // "Points: +N" pop animation over the board as the reveal opens. Set by the
   // result-sound effect below (so it can never fire for a restored reveal),
@@ -954,41 +728,11 @@ export function TrainSolveScreen({
   const [pointsFlash, setPointsFlash] = useState<number | null>(null);
   // Phase 200 UAT round 5: board orientation. Defaults to the solver's own
   // color (a black-to-move puzzle starts flipped, as it always has) and is
-  // toggled by the free-play board-controls strip. Reset on every puzzle
+  // toggled by the phone bottom bar's flip button. Reset on every puzzle
   // transition by the same effect that resets the rest of the solve state —
   // orientation is a per-position affordance, not a session preference.
   const [flipped, setFlipped] = useState(puzzle.side_to_move === 'black');
   const handleFlipBoard = useCallback(() => setFlipped((prev) => !prev), []);
-  // Quick 260809-g0n: on phones, while free-move mode is active this replaces
-  // the main nav buttons in the fixed bottom bar (the /analysis board's
-  // mobile-footer treatment) — see MobileBottomBar in App.tsx. The wiring
-  // mirrors TrainExplorationPanel's own in-card control strip exactly (same
-  // canReset-mirrors-canGoBack semantic) so the two surfaces can never
-  // disagree; the in-card strip itself covers `sm` and up.
-  const mobileBoardControls = useMemo(
-    () =>
-      freePlay.isExploring
-        ? {
-            onBack: freePlay.goBack,
-            onForward: freePlay.goForward,
-            onReset: freePlay.goToRoot,
-            onFlip: handleFlipBoard,
-            canGoBack: freePlay.canGoBack,
-            canGoForward: freePlay.canGoForward,
-            canReset: freePlay.canGoBack,
-          }
-        : null,
-    [
-      freePlay.isExploring,
-      freePlay.goBack,
-      freePlay.goForward,
-      freePlay.goToRoot,
-      freePlay.canGoBack,
-      freePlay.canGoForward,
-      handleFlipBoard,
-    ],
-  );
-  usePublishMobileBoardControls(mobileBoardControls);
   // 191 UAT: the board column shrinks to whatever vertical room the viewport
   // actually leaves (see useFitBoardToViewport) — measured, not a hard-coded
   // chrome estimate, so the button row below the board always keeps its
@@ -1000,31 +744,228 @@ export function TrainSolveScreen({
   const screenRef = useRef<HTMLDivElement>(null);
   const pinnedRef = useRef<HTMLDivElement>(null);
   const isDesktop = useIsDesktop();
+  // WR-02: exactly one reveal action bar is mounted. From `sm` up it is the in-flow
+  // bar under the board; below `sm` it is the fixed bottom bar fed by the published
+  // payload. Both used to mount (one CSS-hidden), duplicating btn-train-next /
+  // btn-train-analyze / train-reveal-action-bar testids in the DOM.
+  const isSmUp = useIsSmUp();
 
-  // Phase 200 (D-11) + UAT round 9: the board has left the pristine reveal —
-  // a line is stepped, or exploration is running. Gates the Solution button's
-  // visibility, and tells the reveal panel that a card click must first bring
-  // the board back before spotlighting itself.
-  const isBoardDeparted = lineStep !== null || freePlay.isExploring;
+  // 190.1 UAT: the played move's classified quality — derived once here and
+  // shared by the board overlay below AND the reveal's chips (marks), so the two
+  // surfaces can never drift.
+  //
+  // Phase 211 (D-03/D-07): when the verdict carries the server's graded-ES
+  // pair (a key-move override), the badge derives from THOSE numbers through
+  // the same classifier — before this phase the board badge and the score
+  // chip were always equal only because the server echoed the client's own
+  // assertion; now the server can legitimately disagree with the client
+  // engine's search, and the display must follow the server. Off-key moves
+  // (graded_es_* null/absent) keep the client-engine derivation.
+  //
+  // Phase 236 (D-16): on the instant path the verdict lands before the phone
+  // grade, so the badge follows the server's pair while `gradeResult` is null.
+  // `revealBestUci` is the key until the grade replaces it (same UCI after).
+  const revealBestUci = revealBestUciOf(gradeResult, instantGrade);
+  // Phase 237 (D-06): the exact predicate that merges the You and Best chips, so
+  // the verdict clause ("best move" vs "good move") can never disagree with the
+  // chips row. Only wording depends on it, never points.
+  const playedIsBest = lastPlayedUci !== null && lastPlayedUci === revealBestUci;
+  const playedMoveQuality = useMemo<TrainMoveQuality | null>(() => {
+    if (lastPlayedUci === null) return null;
+    const isBest = lastPlayedUci === revealBestUci;
+    if (verdict?.graded_es_before != null && verdict?.graded_es_after != null) {
+      return classifyTrainMoveQuality(verdict.graded_es_before, verdict.graded_es_after, isBest);
+    }
+    if (gradeResult === null) return null;
+    return classifyTrainMoveQuality(gradeResult.esBefore, gradeResult.esAfter, isBest);
+  }, [gradeResult, lastPlayedUci, verdict, revealBestUci]);
 
-  // Phase 222 (D-24): the first-reveal walkthrough — step state, Next, the
-  // interaction auto-advances, the phone scroll-to-cards effect and the
-  // leave-stamp all live in the hook; this component only reads `activeStep`
-  // / `target` (the bubble ring, the board-row ring, the `<TrainReveal>`
-  // lines ring) and threads the handlers through.
+  // The game move's quality: derived from the coinciding best/played move
+  // when no reveal-time search ran, else from the searched line's eval via
+  // the SAME expected-score pipeline the verdict uses.
+  const gameMoveQuality = useMemo<TrainMoveQuality | null>(() => {
+    if (gameMoveUci === null) return null;
+    if (gameMoveUci === revealBestUci) return 'best';
+    if (gameMoveUci === lastPlayedUci) return playedMoveQuality;
+    // The eval-derived branch needs the phone's root reading (esBefore).
+    if (gradeResult === null || gameMoveLine === null) return null;
+    const mover = sideToMoveFromFen(puzzle.fen);
+    const esGame = evalToExpectedScore(gameMoveLine.evalCp, gameMoveLine.evalMate, mover);
+    return classifyTrainMoveQuality(gradeResult.esBefore, esGame, false);
+  }, [gameMoveUci, gradeResult, revealBestUci, lastPlayedUci, playedMoveQuality, gameMoveLine, puzzle.fen]);
+
+  // Phase 237 (D-02): the chips, built ONCE here from everything this screen
+  // owns, so the same groups seed the move tree and render in the chips row.
+  // T-237-07 (T-190-16): empty until the solve verdict has landed, so no answer
+  // line exists on the client before the attempt.
+  const chips = useMemo<ChipGroup[]>(
+    () =>
+      verdict === null
+        ? []
+        : buildChipGroups({
+            puzzleFen: puzzle.fen,
+            playedMoveUci: lastPlayedUci,
+            gradeResult,
+            instantGrade,
+            gameMoveUci,
+            gameMoveLine: gameMoveLineState,
+            playedMoveQuality,
+            gameMoveQuality,
+          }),
+    [
+      verdict,
+      puzzle.fen,
+      lastPlayedUci,
+      gradeResult,
+      instantGrade,
+      gameMoveUci,
+      gameMoveLineState,
+      playedMoveQuality,
+      gameMoveQuality,
+    ],
+  );
+
+  // The walkthrough hook is declared AFTER the tree (it needs the tree's
+  // callbacks), but the tree's step and move callbacks must hide the phone tour
+  // overlay: route them through a ref the walkthrough fills in below.
+  const walkthroughHideRef = useRef<() => void>(() => undefined);
+  const handleTreeUserStep = useCallback(() => {
+    puzzleTelemetry.onLineUserStep();
+    walkthroughHideRef.current();
+  }, [puzzleTelemetry]);
+
+  // Phase 237 plan 06 (D-13/D-14): every user-played move after the verdict is
+  // counted (board drops and Stockfish-row clicks); the FIRST fork per puzzle also
+  // sends one Umami event. Called from the tree's user-move commands (a drop or a
+  // row click), never from an effect, so a mount or a restore sends nothing. The
+  // ref resets with the puzzle in the per-puzzle reset effect below.
+  const sidelineForkTrackedRef = useRef(false);
+  const handleRevealUserMove = useCallback(
+    ({ source, forked }: RevealUserMove) => {
+      // D-13: the telemetry fork flag (review_explored) follows the same `forked`
+      // the Umami event uses; a move onto a known line is a board move, not a fork.
+      puzzleTelemetry.onExploreMove(source, forked);
+      if (forked && !sidelineForkTrackedRef.current) {
+        sidelineForkTrackedRef.current = true;
+        trackFeature('action', { target: 'train-sideline-fork' });
+      }
+      // Phase 237 UAT (G-01): a move on the board hides the tour overlay.
+      walkthroughHideRef.current();
+    },
+    [puzzleTelemetry],
+  );
+
+  // Phase 237: the reveal's single move tree — every chip's pre-loaded line plus
+  // the user's own forks, graded and engine-backed (plan 06: a post-verdict drop
+  // forks in place; there is no separate free-play mode). Inert until the verdict
+  // lands. The reveal engine stays off while the Phase 236 background grade is
+  // pending so nothing competes with the phone-accuracy search.
+  const revealTree = useTrainRevealTree({
+    startFen: puzzle.fen,
+    active: verdict !== null,
+    chips,
+    onUserMove: handleRevealUserMove,
+    onUserStep: handleTreeUserStep,
+    // Phase 237 plan 09 (D-12): a chip tap AND a line-matching root move both report
+    // here (the hook's selectChip and playMove fire it), so the telemetry counts both.
+    onChipSelect: puzzleTelemetry.onChipSelect,
+    // Analyze -> Back: rebuild the focused chip, the sidelines and the shown node.
+    restored: restoredSolve?.revealTree ?? null,
+    seedEval: treeSeedEval,
+    engineEnabled: instantGrade?.status !== 'pending',
+    // Phase 237 plan 07: ArrowLeft / ArrowRight / Home on desktop (inert until the verdict).
+    navContainerRef: boardRef,
+  });
+
+  /**
+   * Phase 200 (EXPLORE-04) / Phase 237 plan 07: rewind (the old Solution button)
+   * brings the board back to the puzzle position in one tap: the tree rewinds to
+   * its root (the default chip is lit again) and its sidelines stay listed. The
+   * board orientation is left alone: flip is a permanent bar control now, and a
+   * puzzle transition still restores the solver-colour default (per-puzzle effect).
+   */
+  const { goToRoot: revealGoToRoot, goBack: revealGoBack, goForward: revealGoForward } = revealTree;
+  const handleRewind = useCallback((): void => {
+    revealGoToRoot();
+    // Phase 229 D-12 / Phase 237 D-14: drill outcomes are DB-known, but rewinding
+    // to the solution is not; the kept 'train-solution' target (never renamed).
+    trackFeature('action', { target: 'train-solution' });
+  }, [revealGoToRoot]);
+
+  // Phase 237 plan 09 (D-12): the most chips shown on this reveal. The hook keeps
+  // the maximum, so a game chip that arrives late raises the total and a reset to
+  // zero chips (the next puzzle, before its verdict) reports nothing.
+  const { onChipsTotalChange } = puzzleTelemetry;
+  const chipCount = chips.length;
+  useEffect(() => {
+    if (chipCount > 0) onChipsTotalChange(chipCount);
+  }, [chipCount, onChipsTotalChange]);
+
+  // Phase 237 plan 07: the bar's Analyze / Next handlers are plain functions
+  // defined further down (they close over a lot of reveal state). The published
+  // payload needs referentially stable callbacks, so it calls through refs that
+  // an effect refreshes every render (same shape as `walkthroughTreeStepRef`).
+  const nextFromRevealRef = useRef<() => void>(() => undefined);
+  const analyzeFromRevealRef = useRef<() => void>(() => undefined);
+  const handleBarNext = useCallback(() => nextFromRevealRef.current(), []);
+  const handleBarAnalyzeClick = useCallback(() => analyzeFromRevealRef.current(), []);
+  // The source game's analysis URL (one move before the mistake), or null for a
+  // puzzle without an own game: the bar then has no Analyze button.
+  const analyzeTo = useMemo<string | null>(
+    () =>
+      puzzle.game_id !== null
+        ? buildGameAnalysisUrl(puzzle.game_id, puzzle.ply > 0 ? puzzle.ply - 1 : null)
+        : null,
+    [puzzle.game_id, puzzle.ply],
+  );
+
+  // Phase 222 (D-24): the first-reveal walkthrough — step state, the bar-Next
+  // routing, the phone overlay's hidden flag, the phone scroll-to-target effect
+  // and the leave-stamp all live in the hook; this component only reads
+  // `activeStep` / `target` (the strip, board-row, list and bar rings) and
+  // threads the handlers through.
+  // Phase 237 plan 10 (D-09): the tour explains "Move = Best" / "Move = Game" only
+  // when that merged chip is actually on screen: the Move chip's second role.
+  const mergedChip = useMemo<WalkthroughContext['mergedChip']>(() => {
+    const secondRole = chips.find((chip) => chip.roles.includes('your'))?.roles.find((role) => role !== 'your');
+    return secondRole === 'best' || secondRole === 'game' ? secondRole : null;
+  }, [chips]);
   const walkthrough = useTrainWalkthrough({
     settings,
     hasVerdict: verdict !== null,
     hasAnalyze: puzzle.game_id !== null,
-    hasSolution: isBoardDeparted,
+    mergedChip,
     isDesktop,
     screenRef,
     pinnedRef,
-    setSpotlight,
-    setLineStep,
     stamp,
   });
+  const hideTourOverlay = walkthrough.hide;
+  useEffect(() => {
+    walkthroughHideRef.current = hideTourOverlay;
+  }, [hideTourOverlay]);
+  // The strip's expand feeds the telemetry flag AND hides the tour overlay.
+  const { markStripExpanded } = puzzleTelemetry;
+  const handleStripExpand = useCallback(() => {
+    markStripExpanded();
+    hideTourOverlay();
+  }, [markStripExpanded, hideTourOverlay]);
   const walkthroughTarget = walkthrough.target;
+  // Phase 237 UAT: Hilda's tour is an overlay on the board at every width
+  // (G-01 for phones; on desktop a tour bubble stacked over the verdict bubble
+  // put two avatars on top of each other).
+  const tourPersona = personaForId(HILDA_ID);
+  const tourOverlay =
+    walkthrough.activeStep === null || tourPersona === undefined ? null : (
+      <TrainTourOverlay
+        persona={tourPersona}
+        copy={walkthroughCopy(walkthrough.activeStep, walkthrough.context).copy}
+        step={walkthrough.activeStep}
+        stepCount={WALKTHROUGH_STEP_COUNT}
+        hidden={walkthrough.overlayHidden}
+        onReopen={walkthrough.reopen}
+      />
+    );
   // Phase 233 (D-13): sticky flag, so the walkthrough being active at ANY point
   // on this reveal counts (not read at flush time, after the leave-stamp).
   const walkthroughActive = walkthrough.activeStep !== null;
@@ -1110,11 +1051,9 @@ export function TrainSolveScreen({
     // back, staleTime Infinity), TrainReveal's child effect fired FIRST with
     // the UCI and this parent effect then overwrote it with null in the same
     // commit, so the white played-in-game arrow was missing while the legend
-    // card still rendered. `gameMoveLine` is safe to reset: it only ever
-    // arrives asynchronously, after this effect has run.
-    setGameMoveLine(null);
-    setLineStep(null);
-    setSpotlight(null);
+    // card still rendered. `gameMoveLineState` is deliberately NOT reset here
+    // either, see its declaration. The move tree resets itself, keyed on
+    // `puzzle.fen` and the verdict.
     setPointsFlash(null);
     setFlipped(puzzle.side_to_move === 'black');
     // Phase 222 (D-12): an abandoned intro stepper replays next time — reset
@@ -1124,18 +1063,18 @@ export function TrainSolveScreen({
     setIntroStep(0);
     walkthrough.reset();
     setNudgeNonce(0);
-    // Phase 200 (EXPLORE-05): a puzzle transition tears down any active
-    // exploration session (and, via the hook's `enabled: isExploring` engine
-    // in task 3, its Worker) — the next puzzle always starts in the pristine
-    // reveal state, never mid-sideline.
-    freePlay.reset();
+    // Phase 200 (EXPLORE-05) / Phase 237: the next puzzle always starts in the
+    // pristine reveal state, never mid-sideline: the move tree re-roots itself on
+    // `puzzle.fen` (and tears down its engine), and the per-puzzle fork-event
+    // ref resets here.
+    sidelineForkTrackedRef.current = false;
     trainSession.resetSolve();
     if (restoredSolve === null) startGrading(puzzle.fen, puzzle.key_move_uci ?? null);
     return () => {
       abortGrading();
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- trainSession.resetSolve is a stable useCallback from the hook (it closes over the mutation's own `.reset`, bound once per observer — see useTrainSession's stability comment; it was NOT stable before that fix, so this line's original claim was aspirational). Including the whole trainSession object would re-fire this effect every render. restoredSolve only ever changes together with puzzle.fen (Train.tsx pairs them), so puzzle.fen already covers it — as does puzzle.side_to_move, which is a function of the FEN. freePlay.reset's identity is keyed on puzzle.fen alone, so it changes with (and only with) that dep.
-  }, [puzzle.fen, puzzle.key_move_uci, startGrading, abortGrading, freePlay.reset, walkthrough.reset]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- trainSession.resetSolve is a stable useCallback from the hook (it closes over the mutation's own `.reset`, bound once per observer — see useTrainSession's stability comment; it was NOT stable before that fix, so this line's original claim was aspirational). Including the whole trainSession object would re-fire this effect every render. restoredSolve only ever changes together with puzzle.fen (Train.tsx pairs them), so puzzle.fen already covers it — as does puzzle.side_to_move, which is a function of the FEN. walkthrough.reset is stable per puzzle.
+  }, [puzzle.fen, puzzle.key_move_uci, startGrading, abortGrading, walkthrough.reset]);
 
   /**
    * Phase 235 (D-10/D-19): the disagreement re-check. Runs for a sharp keyed
@@ -1359,34 +1298,19 @@ export function TrainSolveScreen({
     }
     // SOLV-02: exactly one attempt per puzzle.
     if (moveApplied) {
-      // Phase 200 (EXPLORE-01/02/D-12): once the verdict has landed, a
-      // further drop starts (or extends) a free-play sideline on this SAME
-      // board — no mode toggle, no second board, no second grading attempt.
+      // Phase 200 (EXPLORE-01/02/D-12) / Phase 237: once the verdict has landed,
+      // a further drop forks (or extends) a sideline IN PLACE on the one move
+      // tree: no mode toggle, no second board, no second grading attempt. The
+      // tree validates the drop against the position it shows, exactly as the
+      // analysis board does, and a drop that matches a known line or an existing
+      // sideline just moves along it (a board move, not a fork, D-13).
       // Guardrail (Pitfall 3, extended): this branch sits STRICTLY after the
       // guess and moveApplied guards above, which are what hold SOLV-02 at
-      // exactly one graded attempt — do not reorder them, and do not widen
-      // the graded path (below) to read displayFen.
+      // exactly one graded attempt, and it never reaches `gradeMove` or the
+      // solve POST below. Do not reorder these guards, and do not widen the
+      // graded path (below) to read displayFen.
       if (verdict === null) return false; // solve/grading still pending
-      // Already in free play: the move tree validates (and forks) the drop
-      // itself, exactly as the analysis board does.
-      if (freePlay.isExploring) {
-        const played = freePlay.playMove(source, target);
-        if (played) {
-          setLineStep(null);
-          setSpotlight(null);
-        }
-        return played;
-      }
-      // Opening move of a free-play session: validate against displayFen —
-      // D-12: the LIVE position on the board (a stepped-into line position, or
-      // the puzzle position), never the frozen boardFen — to derive the UCI
-      // the tree is seeded with.
-      const exploreUci = uciFromDrop(displayFen, source, target);
-      if (exploreUci === null) return false;
-      freePlay.start(lineStep?.prefixUci ?? [], exploreUci);
-      setLineStep(null);
-      setSpotlight(null);
-      return true;
+      return revealTree.playMove(source, target);
     }
 
     const chess = new Chess(boardFen);
@@ -1439,16 +1363,9 @@ export function TrainSolveScreen({
     ? { from: puzzle.last_move_uci.slice(0, 2), to: puzzle.last_move_uci.slice(2, 4) }
     : null;
 
-  // Phase 200 (D-12): the live board position — while exploring, the
-  // exploration hook's replayed FEN is the single source of truth for both
-  // the RENDERED board and handlePieceDrop's exploration-branch move
-  // validation above. Deliberately never `boardFen`: every existing
-  // `setBoardFen` call site is untouched by this plan, so `boardFen` stays
-  // frozen at the pristine/stepped position for the whole exploration
-  // session — validating a sideline drop against it would silently re-impose
-  // a one-color restriction the moment the sideline's side to move flips
-  // (see handlePieceDrop's own comment for the full mechanism).
-  const displayFen = freePlay.isExploring ? (freePlay.fen ?? boardFen) : boardFen;
+  // Phase 200 (D-12) / Phase 237: the live board position. Once the verdict has landed the board follows the reveal tree
+  // (the puzzle position at its root); before that it shows the move just played.
+  const displayFen = verdict !== null ? revealTree.fen : boardFen;
 
   // T-190-12: the verdict/Next/solve-error row only appears once the local
   // grade+solve pipeline has settled (moveApplied && !isGrading && no
@@ -1470,64 +1387,52 @@ export function TrainSolveScreen({
   // truth. The bar appears up to ~1.5 s later on instant-path solves; the verdict
   // is not delayed.
   const showEvalBar = showResultRow && instantGrade?.status !== 'pending';
-  const evalBarFen = showEvalBar && !freePlay.isExploring ? displayFen : null;
-  // Deliberately disabled while exploring: `useTrainFreePlay` already owns a
-  // FEN-driven Stockfish worker for the explored position (see its own
-  // docstring), so this gate keeps exactly one such worker alive at a time
-  // for the shown position (the session-scoped grading worker is a third,
-  // but is idle once the verdict has landed).
-  const evalBarEngine = useStockfishEngine({
-    fen: evalBarFen,
-    enabled: evalBarFen !== null,
-    multiPv: TRAIN_EVAL_BAR_MULTIPV,
-  });
-  const freePlayTopLine = freePlay.pvLines[0] ?? null;
-  const evalBarReading = resolveTrainEvalBarReading(
-    displayFen,
-    freePlay.isExploring,
-    freePlayTopLine,
-    evalBarEngine,
+  // Phase 237 plan 07 (T-237-12): on phones the reveal bar replaces the main nav
+  // buttons in the fixed bottom bar for the WHOLE reveal, from the moment the
+  // verdict lands (`showResultRow`); null before it and on unmount, so a stale
+  // payload can never press Next for a puzzle no longer on screen. The sm+ hosts
+  // render the same bar in the page flow below.
+  const revealCanReset = !revealTree.isAtRoot;
+  const revealCanGoBack = revealTree.canGoBack;
+  const revealCanGoForward = revealTree.canGoForward;
+  const mobileBoardControls = useMemo<MobileBoardControls | null>(
+    () =>
+      verdict !== null && showResultRow && !isSmUp
+        ? {
+            onBack: revealGoBack,
+            onForward: revealGoForward,
+            onReset: handleRewind,
+            onFlip: handleFlipBoard,
+            canGoBack: revealCanGoBack,
+            canGoForward: revealCanGoForward,
+            canReset: revealCanReset,
+            onNext: handleBarNext,
+            analyzeTo,
+            onAnalyzeClick: handleBarAnalyzeClick,
+          }
+        : null,
+    [
+      verdict,
+      showResultRow,
+      isSmUp,
+      revealGoBack,
+      revealGoForward,
+      handleRewind,
+      handleFlipBoard,
+      revealCanGoBack,
+      revealCanGoForward,
+      revealCanReset,
+      handleBarNext,
+      analyzeTo,
+      handleBarAnalyzeClick,
+    ],
   );
+  usePublishMobileBoardControls(mobileBoardControls);
 
-  // 190.1 UAT: the played move's classified quality — derived once here and
-  // shared by the board overlay below AND the reveal's line-box header icons
-  // (threaded down as a prop), so the two surfaces can never drift.
-  //
-  // Phase 211 (D-03/D-07): when the verdict carries the server's graded-ES
-  // pair (a key-move override), the badge derives from THOSE numbers through
-  // the same classifier — before this phase the board badge and the score
-  // chip were always equal only because the server echoed the client's own
-  // assertion; now the server can legitimately disagree with the client
-  // engine's search, and the display must follow the server. Off-key moves
-  // (graded_es_* null/absent) keep the client-engine derivation.
-  //
-  // Phase 236 (D-16): on the instant path the verdict lands before the phone
-  // grade, so the badge follows the server's pair while `gradeResult` is null.
-  // `revealBestUci` is the key until the grade replaces it (same UCI after).
-  const revealBestUci = gradeResult?.bestMoveUci ?? instantGrade?.keyUci ?? null;
-  const playedMoveQuality = useMemo<TrainMoveQuality | null>(() => {
-    if (lastPlayedUci === null) return null;
-    const isBest = lastPlayedUci === revealBestUci;
-    if (verdict?.graded_es_before != null && verdict?.graded_es_after != null) {
-      return classifyTrainMoveQuality(verdict.graded_es_before, verdict.graded_es_after, isBest);
-    }
-    if (gradeResult === null) return null;
-    return classifyTrainMoveQuality(gradeResult.esBefore, gradeResult.esAfter, isBest);
-  }, [gradeResult, lastPlayedUci, verdict, revealBestUci]);
-
-  // The game move's quality: derived from the coinciding best/played move
-  // when no reveal-time search ran, else from the searched line's eval via
-  // the SAME expected-score pipeline the verdict uses.
-  const gameMoveQuality = useMemo<TrainMoveQuality | null>(() => {
-    if (gameMoveUci === null) return null;
-    if (gameMoveUci === revealBestUci) return 'best';
-    if (gameMoveUci === lastPlayedUci) return playedMoveQuality;
-    // The eval-derived branch needs the phone's root reading (esBefore).
-    if (gradeResult === null || gameMoveLine === null) return null;
-    const mover = sideToMoveFromFen(puzzle.fen);
-    const esGame = evalToExpectedScore(gameMoveLine.evalCp, gameMoveLine.evalMate, mover);
-    return classifyTrainMoveQuality(gradeResult.esBefore, esGame, false);
-  }, [gameMoveUci, gradeResult, revealBestUci, lastPlayedUci, playedMoveQuality, gameMoveLine, puzzle.fen]);
+  // Phase 237 plan 06: the reveal tree's one engine follows the shown position
+  // and feeds the bar on every node (known lines and sidelines alike), so there is
+  // no second engine and no concurrent search.
+  const evalBarReading = resolveTrainEvalBarReading(displayFen, revealTree.evalReading);
 
   // 190.1-04 (D-02, reworked per 190.1 UAT): reveal-board overlay — the blue
   // best-move arrow, green alternative-good-move arrows capped by puzzle
@@ -1555,85 +1460,30 @@ export function TrainSolveScreen({
     );
   }, [verdict, vettedMoves, revealBestUci, lastPlayedUci, playedMoveQuality, gameMoveUci, gameMoveQuality]);
 
-  /**
-   * 260902-qf7 (reverses Phase 200 UAT): the moves the PRISTINE (un-spotlit)
-   * reveal board draws — "Your move", "Best move", AND the played-in-game
-   * move. A puzzle mined from the user's own game exists to contrast their
-   * guess against what they actually played there, so that contrast must not
-   * be hidden behind a hover/tap; only the server-vetted "Also fine"
-   * alternatives remain hover/tap-only, surfacing (alone) while their own
-   * legend card is spotlit and otherwise staying off the board.
-   *
-   * Expressed as a DEFAULT active set for `applyTrainSpotlight` rather than a
-   * second drawing rule, so the un-spotlit board and a spotlit one go through
-   * exactly the same filter. On the Phase 236 instant path a verdict lands BEFORE
-   * the `gradeResult`, so the best UCI comes from `revealBestUci` (the key while
-   * the phone grade is pending); a verdict always has a played move, so this is
-   * non-empty whenever the overlay itself is non-empty — the empty case would
-   * hit `applyTrainSpotlight`'s no-op and simply show everything. `gameMoveUci`
-   * is `null` for filler puzzles (and any puzzle not mined from a user's own
-   * game), so `.filter` drops it there and the pristine set is unchanged.
-   */
-  const pristineOverlayUcis = useMemo(
-    () =>
-      [lastPlayedUci, revealBestUci, gameMoveUci].filter((uci): uci is string => uci !== null),
-    [lastPlayedUci, revealBestUci, gameMoveUci],
+  // Phase 200 UAT round 5 / Phase 228 D-13: off the known lines the arrows are the
+  // reveal engine's own top moves for the shown position (the analysis board's
+  // blue Stockfish pointers), as many as the Stockfish arrows setting asks for
+  // (0 draws none). The reveal legend arrows are separate and unaffected.
+  // Memoized on the staleness-guarded `pvLines` (a stable identity until the
+  // engine commits) and the count, so a re-render that changes neither hands
+  // `ChessBoard` the same array.
+  const offLineArrows = useMemo(
+    () => buildTrainFreePlayArrows(revealTree.pvLines, sfArrows),
+    [revealTree.pvLines, sfArrows],
   );
-
-  // Phase 200 (LEGEND-02): the reveal overlay filtered down to the spotlit
-  // legend entry's own arrow(s)/badge, or — with nothing spotlit — down to the
-  // pristine your/best pair above.
-  const spotlitOverlay = useMemo(
-    () => applyTrainSpotlight(revealOverlay, spotlight?.ucis ?? pristineOverlayUcis),
-    [revealOverlay, spotlight, pristineOverlayUcis],
-  );
-
-  // 190.1 UAT stepping mode: while a reveal line is stepped away from its
-  // start, the solution overlay is cleared; the only marks are the stepped
-  // move's quality-colored square highlight and a blue arrow for the line's
-  // next move. Back at the start (lineStep === null), the full overlay
-  // (spotlight-filtered, Pitfall 1: a stray hover while stepping must never
-  // touch the step overlay's own blue next-move arrow) and the puzzle's own
-  // arrival-move highlight return.
-  // Phase 200 UAT round 5 / Phase 228 D-13: while exploring, the arrows are the
-  // free-play engine's own top moves for the shown position — the analysis
-  // board's blue Stockfish pointers, in free play too — as many as the
-  // Stockfish arrows setting asks for (0 draws none). The reveal legend arrows
-  // are separate and unaffected. Memoized on the staleness-guarded `pvLines`
-  // (a stable identity until the engine commits) and the count, so a re-render
-  // that changes neither hands `ChessBoard` the same array.
-  const freePlayArrows = useMemo(
-    () => buildTrainFreePlayArrows(freePlay.pvLines, sfArrows),
-    [freePlay.pvLines, sfArrows],
-  );
-  const boardArrows = freePlay.isExploring
-    ? freePlayArrows
-    : lineStep !== null
-      ? buildTrainStepArrows(lineStep.nextMoveUci)
-      : spotlitOverlay.arrows;
-  // 190.1 UAT round 4: while stepping, the line's FIRST move keeps its
-  // quality icon badge on the moved-to square (deeper steps show none).
-  // Phase 200 UAT: while exploring, the badge is the FREELY PLAYED move's own
-  // live grade (useTrainFreePlay) — the original EXPLORE-03 rule of "no badges
-  // at all" was reversed, since grading the sideline is the point.
-  const boardMarkers = freePlay.isExploring
-    ? freePlay.boardMarkers
-    : lineStep !== null
-      ? buildTrainStepMarkers(lineStep.lastMoveUci, lineStep.quality, lineStep.isFirstMove)
-      : spotlitOverlay.markers;
-  const boardLastMove = freePlay.isExploring
-    ? freePlay.lastMove
-    : lineStep !== null
-      ? { from: lineStep.lastMoveUci.slice(0, 2), to: lineStep.lastMoveUci.slice(2, 4) }
-      : lastMove;
-  // Phase 200 UAT: the free-play last-move highlight is quality-colored too
-  // (undefined while the move is still ungraded — the board then falls back to
-  // its ordinary highlight rather than flashing a wrong color).
-  const boardLastMoveColor = freePlay.isExploring
-    ? freePlay.lastMoveColor
-    : lineStep !== null && lineStep.quality !== null
-      ? TRAIN_STEP_HIGHLIGHT[lineStep.quality]
-      : undefined;
+  // Phase 237: ONE resolver picks the board overlay: a sideline, a stepped list
+  // position, or the puzzle position with the focused chip's arrow lit.
+  const boardOverlay = resolveRevealBoardOverlay({
+    offLineArrows,
+    tree: revealTree,
+    chips,
+    revealOverlay,
+    puzzleLastMove: lastMove,
+  });
+  const boardArrows = boardOverlay.arrows;
+  const boardMarkers = boardOverlay.markers;
+  const boardLastMove = boardOverlay.lastMove;
+  const boardLastMoveColor = boardOverlay.lastMoveColor;
 
   // 190.1 UAT rounds 6+7 / SEED-119: the reveal plays a per-score result
   // sound AND pops the "Points: +N" flash over the board the moment a LIVE
@@ -1672,31 +1522,6 @@ export function TrainSolveScreen({
     setPointsFlash(points);
   }, [liveSolveResponse]);
 
-  // Phase 200 UAT round 3: stepping a line back to its START position restores
-  // the pristine solution board, and that board must show the FULL solution —
-  // both the Your-move and the Best-move arrow. Without this, the card the user
-  // stepped inside is still spotlit (desktop: the pointer never left it while
-  // clicking prev; mobile: the tap that opened the line is still active), so
-  // the restored "solution" showed that one card's move alone. Only a real
-  // non-null -> null transition reaches this (React bails out on an unchanged
-  // null), so a stepper's own mount report can never clear a live spotlight.
-  //
-  // UAT round 9 carve-out: a CARD CLICK also ends the stepped line (it snaps
-  // the board back to the solution position), but there the whole point is to
-  // spotlight the clicked card — so `returnToSolution` arms this ref and the
-  // clear is skipped exactly once. A ref rather than extra state: the flag must
-  // be read in the very effect run this transition triggers, and re-rendering
-  // for it would be pointless.
-  const keepSpotlightRef = useRef(false);
-  useEffect(() => {
-    if (lineStep !== null) return;
-    if (keepSpotlightRef.current) {
-      keepSpotlightRef.current = false;
-      return;
-    }
-    setSpotlight(null);
-  }, [lineStep]);
-
   // D-08: as the reveal opens (the solve POST has actually succeeded), the
   // board snaps back to the puzzle position and becomes the stage for
   // stepping the best/tactic line — the played move is reported in the
@@ -1719,35 +1544,12 @@ export function TrainSolveScreen({
       ? (TRAIN_POINTS_FLASH_COLORS[pointsFlash] ?? TRAIN_POINTS_FLASH_COLORS[0]!)
       : undefined;
 
-  /**
-   * Phase 200 UAT round 9: brings the board back to the pristine solution
-   * position — every stepper reset (solutionNonce), the board FEN, no stepped
-   * line, no exploration — WITHOUT touching the spotlight. Wired to a reveal
-   * card click, which re-applies its OWN spotlight right after (and so arms
-   * `keepSpotlightRef` above, since ending the stepped line would otherwise
-   * clear it again on the next commit).
-   */
-  function returnToSolution(): void {
-    if (lineStep !== null) keepSpotlightRef.current = true;
-    setSolutionNonce((n) => n + 1);
-    setBoardFen(puzzle.fen);
-    setLineStep(null);
-    // Phase 200 (EXPLORE-04): one press does both jobs — exit exploration AND
-    // the existing stepper reset, so the board always snaps to the pristine
-    // reveal in a single tap regardless of which departed state it was in.
-    freePlay.reset();
-    // Flipping is only offered while exploring, so leaving exploration also
-    // restores the puzzle's initial orientation — otherwise the pristine
-    // reveal comes back upside down after a flip.
-    setFlipped(puzzle.side_to_move === 'black');
-  }
-
-  function handleShowSolution(): void {
-    returnToSolution();
-    // The Solution button restores the FULL overlay, so it drops the spotlight
-    // too. Safe alongside the ref `returnToSolution` may have just armed: that
-    // ref only suppresses the effect's own clear, never this explicit one.
-    setSpotlight(null);
+  // Phase 237 (D-01): a chip tap. The tree jumps the board to the puzzle position
+  // with that chip's arrow lit (unless the board is already on its line); the
+  // same tap hides the tour overlay so the lit arrow is readable.
+  function handleChipSelect(key: RoleKey): void {
+    revealTree.selectChip(key);
+    hideTourOverlay();
   }
 
   // 190.1 UAT round 5: leaving the reveal via Analyze caches the full
@@ -1778,16 +1580,21 @@ export function TrainSolveScreen({
       gradeResult: cachedGrade,
       // Phase 233: the review totals so far, so the restored reveal continues one timer.
       reviewTelemetry: puzzleTelemetry.snapshotReviewForAnalyze(),
+      // Phase 237 (guardrail): the focused chip, every sideline and the exact node,
+      // so Analyze -> Back lands where the user left (UCI paths, not node ids).
+      revealTree: revealTree.snapshot(),
     });
   }
 
-  // Phase 222 (D-02): a random smart bot hosts the regular-session guess
-  // bubble, memoised per puzzle (`puzzle.position` — Math.random, not seeded,
-  // not persisted; a reload may recast, which D-02 accepts). Hilda/Tank
-  // (the fixed intro-stepper hosts) and the outcome-matched verdict bot are
-  // resolved separately below.
-  // eslint-disable-next-line react-hooks/exhaustive-deps -- `puzzle.position` is intentionally NOT read inside the callback: it exists purely to re-run `pickBot` (a fresh Math.random draw) on every puzzle transition, per D-02.
-  const bot = useMemo(() => pickBot('smart'), [puzzle.position]);
+  // Phase 222 (D-02): a random bot hosts the puzzle, memoised per puzzle
+  // (`puzzle.position` — Math.random, not seeded, not persisted; a reload may
+  // recast, which D-02 accepts). Phase 237 UAT: any persona can host, and the
+  // host also speaks the verdict below. Hilda is excluded unless the settings
+  // confirm the first-reveal tour was already seen (still loading counts as
+  // pending), since she narrates that tour herself.
+  const tourMaybePending = settings?.reveal_walkthrough_seen_at == null;
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- `puzzle.position` is intentionally NOT read inside the callback: it exists purely to re-run the draw (a fresh Math.random) on every puzzle transition, per D-02. `tourMaybePending` is read at that moment only, so a settings load mid-puzzle never recasts the host.
+  const bot = useMemo(() => pickPuzzleHost(tourMaybePending), [puzzle.position]);
 
   // Phase 222 (D-05): the session's FIRST puzzle only — later puzzles always
   // show the regular prompt even if `intro_seen_at` is somehow still null
@@ -1839,21 +1646,25 @@ export function TrainSolveScreen({
   // UAT round 4: a reveal restored after the Analyze round trip keeps the bot
   // that spoke the verdict before leaving (`verdictBotId` rides along in the
   // reveal cache) instead of recasting on remount.
+  // Phase 237 UAT: the bot that narrated the puzzle also gives the feedback
+  // (it used to be a fresh stern/friendly draw, so a different bot answered
+  // the move it had just asked for). The verdict copy is persona-independent.
   const verdictBot = useMemo<Persona | null>(() => {
     if (verdictPoints === null) return null;
-    const restoredBot = personaForId(restoredSolve?.verdictBotId);
-    if (restoredBot !== undefined) return restoredBot;
-    return pickBot(verdictPoints <= 1 ? 'stern' : 'friendly');
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- recast exactly when `verdict` itself changes (D-03), not when `verdictPoints`/`restoredSolve` alone are read; both are fully determined by `verdict` (same memo dep above / nulled on the same puzzle transition), so this can never drift.
+    return personaForId(restoredSolve?.verdictBotId) ?? bot;
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- recast exactly when `verdict` itself changes (D-03), not when `verdictPoints`/`restoredSolve`/`bot` alone are read; all are fixed per puzzle (same memo dep above / nulled or redrawn on the same puzzle transition), so this can never drift.
   }, [verdict]);
   // UAT round 4: the opener is a random draw, so it is resolved once per
   // verdict here rather than on every render inside the bubble body.
   const verdictOpening = useMemo<VerdictCopy | null>(() => {
     if (verdict === null || verdictPoints === null) return null;
-    return verdictCopy(verdictPoints, verdict.correct_guess, verdict.move_quality);
-  }, [verdict, verdictPoints]);
+    return verdictCopy(verdictPoints, verdict.correct_guess, verdict.move_quality, playedIsBest);
+  }, [verdict, verdictPoints, playedIsBest]);
 
   function handleNextFromReveal(): void {
+    // Phase 237 UAT (G-01): the bar's Next is the tour's only Next; on any tour
+    // step but the last it advances the tour and the puzzle stays.
+    if (walkthrough.consumeNext()) return;
     // Phase 233 (D-03): flush BEFORE anything that advances the puzzle or unmounts
     // the screen (the next puzzle's key reset must not run first, Pitfall 5).
     puzzleTelemetry.flushReviewOnNext();
@@ -1864,19 +1675,10 @@ export function TrainSolveScreen({
     walkthrough.leave();
     handleAnalyzeClick();
   }
-
-  // Phase 222 (D-10): the Solution/Analyze/Next row, now rendered INSIDE the
-  // verdict bubble's actions slot rather than the below-board sibling.
-  const verdictActions = (
-    <VerdictActions
-      isBoardDeparted={isBoardDeparted}
-      gameId={puzzle.game_id}
-      ply={puzzle.ply}
-      onShowSolution={handleShowSolution}
-      onAnalyzeClick={handleAnalyzeFromReveal}
-      onNext={handleNextFromReveal}
-    />
-  );
+  useEffect(() => {
+    nextFromRevealRef.current = handleNextFromReveal;
+    analyzeFromRevealRef.current = handleAnalyzeFromReveal;
+  });
 
   const bubbleState = resolveBubbleState({
     hasVerdict: verdict !== null,
@@ -1894,16 +1696,7 @@ export function TrainSolveScreen({
     suppressPrompt,
     onIntroNext: handleIntroNext,
     onIntroGuess: handleIntroGuess,
-    verdict,
-    verdictOpening,
-    sessionDate: trainSession.session?.session_date,
-    expiresOn: trainSession.session?.expires_on,
-    verdictActions,
-    activeWalkthroughStep: walkthrough.activeStep,
-    hasAnalyze: puzzle.game_id !== null,
-    hasSolution: isBoardDeparted,
     isWarmup,
-    onWalkthroughNext: walkthrough.next,
     audience,
   });
   const bubblePersona = resolveBubblePersona(
@@ -1911,7 +1704,6 @@ export function TrainSolveScreen({
     puzzle.side_to_move,
     bot,
     verdictBot,
-    walkthrough.activeStep,
     isWarmup,
     audience,
   );
@@ -1985,7 +1777,14 @@ export function TrainSolveScreen({
           walkthroughTarget === 'board' && 'rounded-md ring-2 ring-brand-brown ring-offset-4 ring-offset-background',
         )}
       >
-        <div className="relative min-w-0 flex-1">
+        <div
+          className="relative min-w-0 flex-1"
+          // Phase 237 UAT (G-01): any touch on the board (the overlay is
+          // pointer-events-none, so a touch on it lands here too) hides the
+          // tour overlay. Capture phase, so the board's own handlers
+          // cannot swallow it.
+          onPointerDownCapture={tourOverlay !== null ? hideTourOverlay : undefined}
+        >
           <ChessBoard
             position={displayFen}
             flipped={flipped}
@@ -1997,6 +1796,7 @@ export function TrainSolveScreen({
             maxWidth={boardMaxWidthPx - TRAIN_EVAL_BAR_CHROME_PX}
             id="chessboard"
           />
+          {tourOverlay}
           {/* 190.1 UAT round 7: short "Points: +N" pop over the board as the
               reveal opens. Centering lives in the keyframes' translate(-50%,-50%)
               (NOT Tailwind translate utilities — the animation would overwrite
@@ -2043,6 +1843,25 @@ export function TrainSolveScreen({
           )}
         </div>
       </div>
+      {/* Phase 237 plan 07: the reveal's action bar in the page flow under the board
+          from `sm` up (tablet and desktop; phones get the same bar in the fixed
+          bottom bar through the published payload). Desktop adds the key hint. */}
+      {verdict !== null && showResultRow && isSmUp && (
+        <TrainRevealActionBar
+          onRewind={handleRewind}
+          onBack={revealGoBack}
+          onForward={revealGoForward}
+          onFlip={handleFlipBoard}
+          canRewind={revealCanReset}
+          canGoBack={revealCanGoBack}
+          canGoForward={revealCanGoForward}
+          analyzeTo={analyzeTo}
+          onAnalyzeClick={handleBarAnalyzeClick}
+          onNext={handleBarNext}
+          framed
+          className="w-full"
+        />
+      )}
       </div>
       {/* Phase 236 review WR-01 (D-15): a landed verdict is never displaced by the
           engine-error or engine-loading branches. On the instant path the verdict is
@@ -2095,7 +1914,6 @@ export function TrainSolveScreen({
               state={bubbleState.kind}
               nudgeNonce={nudgeNonce}
               actions={bubbleBody.actions}
-              ring={walkthroughTarget === 'verdict'}
             >
               {bubbleBody.copy}
             </TrainBotBubble>
@@ -2124,33 +1942,31 @@ export function TrainSolveScreen({
           isSolveError={trainSession.isSolveError}
           onRetrySolve={trainSession.retrySolve}
           onNext={handleNext}
-          onFenChange={setBoardFen}
           gradingEngine={gradingEngine}
           guess={guess}
           playedMoveUci={lastPlayedUci}
           gradeResult={gradeResult}
           instantGrade={instantGrade}
-          playedMoveQuality={playedMoveQuality}
-          gameMoveQuality={gameMoveQuality}
+          chips={chips}
+          activeChip={revealTree.activeChip}
+          onChipSelect={handleChipSelect}
+          treeList={<TrainMoveTreeList tree={revealTree} flipped={flipped} />}
           onGameMoveUciChange={setGameMoveUci}
-          onAnalyzeClick={handleAnalyzeClick}
-          onGameMoveLineChange={setGameMoveLine}
-          onLineStep={walkthrough.handleLineStep}
-          onLineUserStep={puzzleTelemetry.onLineUserStep}
-          onCardEngage={puzzleTelemetry.onCardEngage}
-          onCardsTotalChange={puzzleTelemetry.onCardsTotalChange}
-          solutionNonce={solutionNonce}
-          spotlightKey={spotlight?.key ?? null}
-          onSpotlightChange={walkthrough.handleSpotlightChange}
-          isBoardDeparted={isBoardDeparted}
-          onReturnToSolution={returnToSolution}
+          // WR-03: the game-footer Analyze link must run the same handler as the action
+          // bar's Analyze (it stamps the first-reveal tour via walkthrough.leave());
+          // passing handleAnalyzeClick directly skipped that on this exit.
+          onAnalyzeClick={handleAnalyzeFromReveal}
+          onGameMoveLineStateChange={setGameMoveLineState}
           alsoFineMoves={revealOverlay.alsoFineMoves}
-          isExploring={freePlay.isExploring}
-          freePlay={freePlay}
-          onExitExploration={handleShowSolution}
-          flipped={flipped}
-          onFlipBoard={handleFlipBoard}
-          walkthroughLinesRing={walkthroughTarget === 'lines'}
+          walkthroughTarget={walkthroughTarget}
+          verdictBot={verdictBot}
+          verdictOpening={verdictOpening}
+          isBest={playedIsBest}
+          sessionDate={trainSession.session?.session_date}
+          expiresOn={trainSession.session?.expires_on}
+          isWarmup={isWarmup}
+          audience={audience}
+          onStripExpand={handleStripExpand}
         />
       )}
     </div>

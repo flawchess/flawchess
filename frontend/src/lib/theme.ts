@@ -583,6 +583,15 @@ export const TRAIN_POINTS_FG_ON_LIGHT = 'oklch(0.20 0 0)'; // near-black, for th
 // is only used on Library miniboards).
 export const TRAIN_BEST_MOVE_ARROW = BEST_MOVE_ARROW;
 
+// Train reveal focus dimming (Phase 237, sketch 008, owner-approved). The
+// locked rule is "the other arrows fade to ~20-30%, never hidden": arrows and
+// quality badges outside the focused set stay on the board at a low opacity,
+// the focused set is drawn near-opaque. Tunable in the plan 11 browser UAT.
+export const TRAIN_FOCUS_ARROW_LIT_OPACITY = 0.92;
+export const TRAIN_FOCUS_ARROW_DIM_OPACITY = 0.22;
+export const TRAIN_FOCUS_BADGE_LIT_OPACITY = 1;
+export const TRAIN_FOCUS_BADGE_DIM_OPACITY = 0.32;
+
 // Train bot chat-row bubble (Phase 222, D-07/D-08). Two named borders, not
 // one: the nudge state (a piece dropped before the guess) must read as a
 // visually distinct "pay attention" moment from the bubble's resting state,

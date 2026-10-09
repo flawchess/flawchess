@@ -79,12 +79,14 @@ let mockTrainSettingsData: {
   weekday_mask: number;
   puzzles_per_session: number;
   intro_seen_at: string | null;
+  reveal_walkthrough_seen_at: string | null;
   has_mobile_subscription: boolean;
 } = {
   timezone: 'UTC',
   weekday_mask: 127,
   puzzles_per_session: 6,
   intro_seen_at: null,
+  reveal_walkthrough_seen_at: null,
   has_mobile_subscription: true,
 };
 
@@ -210,6 +212,7 @@ afterEach(() => {
     weekday_mask: 127,
     puzzles_per_session: 6,
     intro_seen_at: null,
+    reveal_walkthrough_seen_at: null,
     has_mobile_subscription: true,
   };
   resurfaceMock = { shouldResurface: false };
@@ -406,7 +409,7 @@ describe('TrainStartScreen — six landing states', () => {
     renderScreen();
     expect(screen.getByTestId('train-bot-name').textContent).toBe('Tank the Ox');
     expect(screen.getByTestId('train-tagline').textContent).toBe(
-      "Welcome to boot camp, recruit! Your own blunders are today's drill.",
+      "Welcome to boot camp, recruit! You'll learn from the mistakes in your own games and train your instinct for when a position hides a tactic. Hilda will show you the ropes.",
     );
     expect(screen.queryByRole('heading', { name: 'Train' })).toBeNull();
   });
@@ -524,11 +527,27 @@ describe('TrainStartScreen — 224 UAT round 2: no warm-up info card, guest sign
 });
 
 describe('TrainStartScreen — landing reminder ask (no push subscription from a phone)', () => {
+  const ONBOARDED = {
+    intro_seen_at: '2026-07-01T10:00:00Z',
+    reveal_walkthrough_seen_at: '2026-07-01T10:05:00Z',
+  };
+
   it('registered account without a phone subscription: the host bubble carries the reminder sentence', () => {
-    mockTrainSettingsData = { ...mockTrainSettingsData, has_mobile_subscription: false };
+    mockTrainSettingsData = { ...mockTrainSettingsData, ...ONBOARDED, has_mobile_subscription: false };
     renderScreen({ isGuest: false, session: { ...BASE_SESSION, is_warmup: false } });
     expect(screen.getByTestId('train-landing-reminder-ask').textContent).toBe(REMINDER_INSTALL_ASK);
     expect(screen.queryByTestId('train-landing-signup-ask')).toBeNull();
+  });
+
+  it('Phase 237 UAT: no reminder sentence until the reveal walkthrough is completed', () => {
+    mockTrainSettingsData = {
+      ...mockTrainSettingsData,
+      intro_seen_at: '2026-07-01T10:00:00Z',
+      reveal_walkthrough_seen_at: null,
+      has_mobile_subscription: false,
+    };
+    renderScreen({ isGuest: false, session: { ...BASE_SESSION, is_warmup: false } });
+    expect(screen.queryByTestId('train-landing-reminder-ask')).toBeNull();
   });
 
   it('registered account with a phone subscription: no reminder sentence', () => {

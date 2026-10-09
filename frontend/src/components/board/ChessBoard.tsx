@@ -54,6 +54,13 @@ export interface BoardArrow {
    * escape (D-06).
    */
   layerKey?: string;
+  /**
+   * Phase 237: an explicit resting opacity. The Train reveal dims arrows
+   * outside the focused move instead of hiding them. Omitted = the color-based
+   * default (blue low-emphasis vs the standard opacity); a hovered arrow
+   * always wins over this.
+   */
+  opacity?: number;
 }
 
 // Re-exported so existing importers (useGameOverlay) keep their ChessBoard path.
@@ -149,9 +156,39 @@ const ARROW_TIP_OVERSHOOT = 0.15;
 // Constants live in lib/highlightPulse.ts so the MoveExplorer row-pulse
 // stays driven by the same timing.
 const ARROW_PULSE_CLASS = 'animate-arrow-pulse';
+// Window in which react-chessboard's own touchend onSquareClick is treated as a
+// repeat of the tap our onPointerUp workaround already handled (see
+// isDuplicateTouchTap). A real second tap on the same square comes much later.
+const TOUCH_TAP_DEDUPE_MS = 500;
 
 // Depth-label and severity corner-marker rendering live in ./boardMarkers, shared
 // with MiniBoard so both boards draw identical marks (Quick 260627-r9g items 4 & 6).
+
+/**
+ * Resting opacity of one arrow: hover wins, then an explicit `arrow.opacity`
+ * (Phase 237 Train focus dimming), then the color-based default (blue arrows
+ * render much fainter at rest so reliable red/green arrows dominate).
+ */
+// eslint-disable-next-line react-refresh/only-export-components -- pure helper shared with tests, not a component
+export function resolveArrowOpacity(arrow: BoardArrow): number {
+  if (arrow.isHovered) return ARROW_HOVER_OPACITY;
+  if (arrow.opacity !== undefined) return arrow.opacity;
+  return arrow.color === DARK_BLUE ? ARROW_LOW_EMPHASIS_OPACITY : ARROW_OPACITY;
+}
+
+interface TouchTap {
+  square: string;
+  at: number;
+}
+
+/**
+ * True when a library onSquareClick is the echo of a touch tap the squareRenderer's
+ * onPointerUp already handled: same square, within TOUCH_TAP_DEDUPE_MS.
+ */
+// eslint-disable-next-line react-refresh/only-export-components -- pure helper shared with tests, not a component
+export function isDuplicateTouchTap(lastTap: TouchTap | null, square: string, now: number): boolean {
+  return lastTap !== null && lastTap.square === square && now - lastTap.at < TOUCH_TAP_DEDUPE_MS;
+}
 
 // Render priority: hovered arrow always on top; otherwise green > red > blue
 // > grey (low-data). Within each tier, thicker arrows are drawn first so thin
@@ -228,10 +265,6 @@ function ArrowOverlay({
             }
           : undefined;
 
-        // Blue arrows render much fainter at rest (low-emphasis); hover bumps
-        // every arrow back to ARROW_HOVER_OPACITY regardless of color.
-        const baseOpacity = arrow.color === DARK_BLUE ? ARROW_LOW_EMPHASIS_OPACITY : ARROW_OPACITY;
-
         // Stable key keyed on the move identity (start→end), NOT the sorted
         // index. Hovering a different move changes another arrow's color and
         // therefore the sort order, so an index-based key would shift the
@@ -243,7 +276,7 @@ function ArrowOverlay({
             key={arrowMoveKey(arrow)}
             d={d}
             fill={arrow.color}
-            opacity={arrow.isHovered ? ARROW_HOVER_OPACITY : baseOpacity}
+            opacity={resolveArrowOpacity(arrow)}
             stroke={ARROW_OUTLINE_COLOR}
             strokeWidth={ARROW_OUTLINE_WIDTH}
             strokeLinejoin="round"
@@ -284,6 +317,7 @@ export function ChessBoard({ position, onPieceDrop, flipped = false, lastMove, l
   const [boardWidth, setBoardWidth] = useState(0);
   const [selectedSquare, setSelectedSquare] = useState<string | null>(null);
   const [prevPosition, setPrevPosition] = useState<string>(position);
+  const lastTouchTapRef = useRef<TouchTap | null>(null);
 
   useEffect(() => {
     const updateWidth = () => {
@@ -345,6 +379,23 @@ export function ChessBoard({ position, onPieceDrop, flipped = false, lastMove, l
     [selectedSquare, onPieceDrop],
   );
 
+  // Phase 237 UAT bug fix: a clean tap (no finger movement) fired onSquareClick
+  // TWICE, once from our onPointerUp workaround below and once from
+  // react-chessboard's own onTouchEnd (its tap flag survives when no drag
+  // started). The second call saw the just-selected square and deselected it,
+  // so a single tap on a piece never stuck; only a drag back onto the source
+  // square (which resets the library flag) selected it. Swallow the echo.
+  const handleLibrarySquareClick = useCallback(
+    (args: SquareHandlerArgs) => {
+      if (isDuplicateTouchTap(lastTouchTapRef.current, args.square, performance.now())) {
+        lastTouchTapRef.current = null;
+        return;
+      }
+      handleSquareClick(args);
+    },
+    [handleSquareClick],
+  );
+
   // Memoize squareStyles so its identity is stable across renders that don't
   // change last-move or selection. Without this, react-chessboard 5.x sees a
   // fresh `options` object every parent tick and re-fires its internal
@@ -401,6 +452,7 @@ export function ChessBoard({ position, onPieceDrop, flipped = false, lastMove, l
           // This onPointerUp bypasses that flow to make tap-to-move work.
           onPointerUp={(e) => {
             if (e.pointerType === 'touch') {
+              lastTouchTapRef.current = { square, at: performance.now() };
               handleSquareClick({ square, piece: piece ?? null });
             }
           }}
@@ -483,10 +535,10 @@ export function ChessBoard({ position, onPieceDrop, flipped = false, lastMove, l
       allowDrawingArrows: false,
       squareStyles,
       squareRenderer,
-      onSquareClick: handleSquareClick,
+      onSquareClick: handleLibrarySquareClick,
       onPieceDrop: handlePieceDrop,
     }),
-    [position, flipped, boardStyle, showAnimations, animationDurationInMs, squareStyles, squareRenderer, handleSquareClick, handlePieceDrop, id],
+    [position, flipped, boardStyle, showAnimations, animationDurationInMs, squareStyles, squareRenderer, handleLibrarySquareClick, handlePieceDrop, id],
   );
 
   return (

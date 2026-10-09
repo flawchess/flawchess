@@ -31,6 +31,8 @@ in `YYYY-MM-DD` (Europe/Zurich).
 - Train: when the move you play is one FlawChess has already graded itself, the verdict now shows right away instead of after a short engine check, and the engine line for your move fills in a moment later.
 
 - Settings: on phones, a cogwheel next to the page title opens them, and "Reset to defaults" now sits at the bottom, below Privacy. The weekly leaderboard's info button also tells you that you can hide yourself from the leaderboards in Settings.
+- Train: the solution screen after each puzzle is redesigned to fit a phone without scrolling. A one-line result strip replaces the speech bubble (tap it for the full feedback), the line cards became You / Best / Game chips that focus their move on the board while the other arrows fade, and all lines live in one move list where moving a piece simply branches off a sideline (the Solution button is now the ⏮ button, and your sidelines stay). On phones the bottom bar holds the board controls, Analyze and Next for the whole solution; on desktop the arrow keys and Home step through the lines. The first-time tour explains the new screen.
+- Operators: Train's reveal now reports review telemetry version 2 (chips, result strip, sidelines instead of cards; older open tabs keep sending version 1, both are accepted). The Umami action train-explore-exit is retired (sideline closes keep board-tool line-delete; the first sideline per puzzle is the new action train-sideline-fork), so funnels on it go flat after this release.
 
 ### Fixed
 

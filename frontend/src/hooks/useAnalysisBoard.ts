@@ -9,8 +9,8 @@
  * - Stores full FEN per node for O(1) goToNode — no root replay (BOARD-02).
  * - Arrow-key and mouse-wheel move browsing (Quick 260821-kyz) live in the
  *   shared useBoardNavigationInput hook, which the Openings board uses too.
- *   containerRef.current === null (useTrainFreePlay never attaches it) is
- *   what excludes Train from both surfaces.
+ *   containerRef.current === null (a consumer that never attaches it) is
+ *   what excludes that consumer from both surfaces.
  */
 
 import { useRef, useState, useCallback, useEffect } from 'react';
@@ -104,6 +104,16 @@ export interface AnalysisBoardReturn {
    * engine-line chips to play the whole line up to the clicked move.
    */
   playUciLine: (uciMoves: string[]) => void;
+  /**
+   * graftLine(uciMoves, parentId) — Phase 237: graft a UCI line under `parentId`
+   * (null = the root position) in ONE functional setState, reusing any existing
+   * child with the same from/to, and NEVER move the board. Mirrors playUciLine's
+   * child reuse but is non-navigating and silent, so a line that arrives late
+   * (a background search, the game-move search, a restored snapshot) cannot yank
+   * the user off the position they are looking at (RESEARCH Pitfall 1). An
+   * unknown `parentId` is a no-op; an illegal UCI stops the graft at that move.
+   */
+  graftLine: (uciMoves: readonly string[], parentId: NodeId | null) => void;
   /**
    * deleteSubtree(rootId) — delete rootId and all its descendants from the
    * node map, drop those ids from pvNodeIds, and recover currentNodeId to
@@ -206,6 +216,24 @@ function findFirstChild(
   return firstChild;
 }
 
+/**
+ * The child of `parentId` reached by from -> to, if any. The single child search
+ * behind makeMove's advance-or-fork, playUciLine's and graftLine's child reuse,
+ * and the Train reveal's line-path walk (Phase 237). Promotion piece is NOT part
+ * of the match: two promotions on the same squares share a node, as before.
+ */
+export function findChildBySquares(
+  nodes: Map<NodeId, MoveNode>,
+  parentId: NodeId | null,
+  from: string,
+  to: string,
+): MoveNode | undefined {
+  for (const node of nodes.values()) {
+    if (node.parentId === parentId && node.from === from && node.to === to) return node;
+  }
+  return undefined;
+}
+
 function makeInitialState(rootFen: string): AnalysisBoardState {
   return {
     nodes: new Map<NodeId, MoveNode>(),
@@ -237,7 +265,7 @@ export function useAnalysisBoard(
   // effect run (mount) only records a baseline and stays silent.
   const prevNavRef = useRef<{ id: NodeId | null; depth: number } | null>(null);
   // silentNavRef: NAMES the single landing node id whose arrival must not
-  // sound. A ref-held id (not a boolean) is load-bearing: useTrainFreePlay.
+  // sound. A ref-held id (not a boolean) is load-bearing: the retired Train free-play hook's
   // start() calls loadMainLine([], startFen) and playUciLine([...prefixUci,
   // moveUci]) in ONE React batch, producing ONE commit. A boolean set by
   // loadMainLine would swallow the grafted move's sound; keying on the id
@@ -302,10 +330,9 @@ export function useAnalysisBoard(
     setState((prev) => {
       // Reuse an existing child with the same from/to (game continuation or open
       // sideline) — advance into it rather than forking a duplicate branch.
-      for (const node of prev.nodes.values()) {
-        if (node.parentId === currentNodeId && node.from === moveFrom && node.to === moveTo) {
-          return prev.currentNodeId === node.id ? prev : { ...prev, currentNodeId: node.id };
-        }
+      const existing = findChildBySquares(prev.nodes, currentNodeId, moveFrom, moveTo);
+      if (existing) {
+        return prev.currentNodeId === existing.id ? prev : { ...prev, currentNodeId: existing.id };
       }
       const newNode = buildNode(prev.nextId, san, childFen, moveFrom, moveTo, currentNodeId);
       const newNodes = new Map(prev.nodes);
@@ -435,7 +462,7 @@ export function useAnalysisBoard(
     // Seeding a tree from the URL or resetting free play is not a user move
     // (Quick 260805-p37) — claim silence on the id this call will land on,
     // BEFORE the setState so the emission effect sees the claim on its next
-    // run. useTrainFreePlay.start() calls this with sans=[] (landingId =
+    // run. the retired Train free-play hook's start() called this with sans=[] (landingId =
     // null) immediately followed by playUciLine in the SAME React batch; the
     // id-keyed claim lets that stale "land on null" claim miss the batch's
     // actual landing node, so the grafted move still sounds.
@@ -658,13 +685,7 @@ export function useAnalysisBoard(
         if (!move) break;
 
         // Reuse an existing child with the same from/to to avoid duplicate branches.
-        let child: MoveNode | undefined;
-        for (const node of newNodes.values()) {
-          if (node.parentId === parentId && node.from === move.from && node.to === move.to) {
-            child = node;
-            break;
-          }
-        }
+        let child = findChildBySquares(newNodes, parentId, move.from, move.to);
         if (!child) {
           child = buildNode(id, move.san, chess.fen(), move.from, move.to, parentId);
           newNodes.set(id, child);
@@ -676,6 +697,52 @@ export function useAnalysisBoard(
 
       if (landingId === prev.currentNodeId) return prev; // nothing grafted — no-op
       return { ...prev, nodes: newNodes, currentNodeId: landingId, nextId: id };
+    });
+  }, []);
+
+  /**
+   * graftLine(uciMoves, parentId) — Phase 237. Mirrors playUciLine's child reuse
+   * but is non-navigating: it never writes currentNodeId, plays no sound and does
+   * not unlock audio (it is programmatic, never a gesture). One functional
+   * setState because stateRef only syncs after render (L-1/L-7): several grafts
+   * in one render chain would otherwise read the same stale node map.
+   *
+   * Returns `prev` untouched when nothing was created (unknown parent, empty or
+   * fully-reused line) so a re-seed with the same lines causes no re-render.
+   */
+  const graftLine = useCallback((uciMoves: readonly string[], parentId: NodeId | null): void => {
+    if (uciMoves.length === 0) return;
+    setState((prev) => {
+      const startFen = parentId === null ? prev.rootFen : prev.nodes.get(parentId)?.fen;
+      if (startFen === undefined) return prev; // unknown parent: no-op
+      const newNodes = new Map(prev.nodes);
+      const chess = new Chess(startFen);
+      let cursor: NodeId | null = parentId;
+      let id = prev.nextId;
+
+      for (const uci of uciMoves) {
+        let move: ReturnType<typeof chess.move>;
+        try {
+          // 'q' is a harmless default for non-promotion moves (chess.js ignores it).
+          move = chess.move({
+            from: uci.slice(0, 2),
+            to: uci.slice(2, 4),
+            promotion: uci.length > 4 ? uci.slice(4, 5) : 'q',
+          });
+        } catch {
+          break; // chess.js 1.4 throws on illegal input (Phase 210): keep the legal prefix
+        }
+        const existing = findChildBySquares(newNodes, cursor, move.from, move.to);
+        if (existing) {
+          cursor = existing.id;
+          continue;
+        }
+        newNodes.set(id, buildNode(id, move.san, chess.fen(), move.from, move.to, cursor));
+        cursor = id;
+        id++;
+      }
+
+      return id === prev.nextId ? prev : { ...prev, nodes: newNodes, nextId: id };
     });
   }, []);
 
@@ -710,7 +777,7 @@ export function useAnalysisBoard(
     // A silent claim (loadMainLine or goToNode({ silent: true })) is
     // consumed here. It only suppresses THIS run when its named id matches
     // the actual landing id — a different node landing means the claim is
-    // stale (the useTrainFreePlay.start() same-batch loadMainLine+
+    // stale (the retired Train free-play start() same-batch loadMainLine+
     // playUciLine shape), so evaluation continues instead of bailing.
     const silent = silentNavRef.current;
     if (silent !== null) {
@@ -752,6 +819,7 @@ export function useAnalysisBoard(
     isOnMainLine,
     insertPvLine,
     playUciLine,
+    graftLine,
     deleteSubtree,
     clearAllSidelines,
     isOnPvLine,

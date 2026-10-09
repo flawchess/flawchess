@@ -1,17 +1,17 @@
 ---
 gsd_state_version: "1.0"
 milestone: v2.21
-current_phase: 236
-current_phase_name: Train Phone Grade Record & Instant Server Verdict (SEED-193)
-status: executing
-stopped_at: Phase 236 planned (6 plans, 4 waves)
-last_updated: "2026-10-08T18:53:56.827Z"
-state_head: 4c0c4997abf2917d1efca21500f8ad23fc9c354a
+current_phase: 237
+current_phase_name: Train Reveal Verdict Strip, Line Chips & One Move Tree (SEED-194)
+status: verifying
+stopped_at: Completed 237-10-PLAN.md
+last_updated: "2026-10-09T01:42:54.191Z"
+state_head: 1a997e563fd03ac75571f70ef42d2f0e61895497
 progress:
-  total_phases: 9
+  total_phases: 10
   completed_phases: 103
-  total_plans: 46
-  completed_plans: 47
+  total_plans: 57
+  completed_plans: 57
 milestone_name: Browser Engine Throughput
 last_activity: 2026-10-07
 last_activity_desc: "Completed quick task 261007-axc: Separate Train reveal telemetry counter for hand-played free moves (review_board_moves)"
@@ -21,10 +21,10 @@ last_activity_desc: "Completed quick task 261007-axc: Separate Train reveal tele
 
 ## Current Position
 
-Phase: 236 (Train Phone Grade Record & Instant Server Verdict (SEED-193)) — EXECUTING
-Plan: 1 of 6
+Phase: 237 (Train Reveal Verdict Strip, Line Chips & One Move Tree (SEED-194)) — EXECUTING
+Plan: 11 of 11
 
-Status: Executing Phase 236
+Status: Phase complete — ready for verification
 
 Open threads carried forward (not blockers):
 
@@ -172,6 +172,7 @@ v1.29 Live-Engine Analysis Page shipped 2026-06-29 — 5 phases (136–140), 14 
 
 ### Roadmap Evolution
 
+- Phase 237 added 2026-10-08 (explicit user request via `/gsd-phase @SEED-194`, planted the same day from the ad-hoc reveal UX review + sketch 008): **Train Reveal Verdict Strip, Line Chips & One Move Tree** (SEED-194). Verdict strip replaces the bot bubble, You/Best/Game chips (with "You = Best/Game" merge) replace the line cards, chip-driven board fades inactive arrows, the three lines become pre-loaded branches of one `useAnalysisBoard` tree (no separate free-play mode), a phone action bar replaces the bottom nav for the whole reveal (first view fits 390x844), desktop right column keeps the full bubble, and the first-reveal onboarding tour is rewritten for the new screen. Frontend only. Written by hand as 237 (known mature-ROADMAP behavior). Next: `/gsd-discuss-phase 237`.
 - Phase 236 added 2026-10-08 (explicit user request via `/gsd-phase @SEED-193`, planted the same day from the ad-hoc Train grading audit, user 28, quick tasks 261008-ob1 / 261008-opg): **Train Phone Grade Record & Instant Server Verdict** (SEED-193). Part 1: a `phone_grade` JSONB record on every keyed `drill_solves` row (tier, key/played ES, depths; `SolveRecheck` shape), `move_quality` stays effective so the override rate is a column compare. Part 2: server-graded moves (soft vetted, herring good band, sharp runner-up) with tiers in the puzzle payload so those ~17% of solves get an instant verdict, after-move search continues in the background for the "Your move" card and the Part 1 record. Written by hand as 236 (known mature-ROADMAP behavior). Next: `/gsd-discuss-phase 236`.
 - Phase 235 added 2026-10-07 (explicit user request via `/gsd-phase SEED-192`, planted the same day from the ad-hoc prod analysis of a contradictory Train reveal, user 28): **Train Grading Anchored to the Server Answer Key** (SEED-192). The server key is the reveal's solution (P-01: key in `SolveResponse` only vs relaxing for the best UCI, decided in discuss); grade the played move by client after-move searches of played vs server key; sharp runner-up `su` graded server-side; longer re-search only on disagreement, benefit of the doubt with new copy, disagreement flag recorded queryably; no classification hardening (step 4 = monitoring). Written by hand as 235 (known mature-ROADMAP behavior). Next: `/gsd-discuss-phase 235`.
 - Phase 234 added 2026-10-05 (explicit user request via `/gsd-phase SEED-191`, planted the same day from `/gsd-explore` on getting feedback from invested users): **Milestone Feedback Ask** (SEED-191). Hilda the Hippo asks non-guest users with >= 5 active days (and no prior feedback) for an idea, on the Import bubble, Train landing host bubble (phones too, above the reminder ask) or Bots roster welcome bubble, whichever comes first. "Sure!" opens `FeedbackModal` and marks done; "Maybe later" (or 3 ignored views) snoozes, one re-ask after +10 active days. State in `users.prompt_state` JSONB keyed by ask id with atomic UPDATEs; `feedback.source` column measures yield. Written by hand as 234 (known mature-ROADMAP behavior). Next: `/gsd-discuss-phase 234` or `/gsd-plan-phase 234` (seed locks most decisions).
@@ -842,6 +843,21 @@ flagged as an open decision for plan 06 / a human, not auto-fixed.
 - [Phase 233]: 233-04: counters reset skips the first key because TrainReveal's mount effect reports the cards total before the hook's own mount effect; seed merge unions cardKeys and takes the max total
 - [Phase 233]: 233-04: snapshotReviewForAnalyze sets analyzeOpened before the snapshot so the unmount keepalive flush after a plain Analyze click carries review_analyze_opened
 - [Phase 233]: D-08/D-10 confirmed by absence: no leaderboard impression event, no Umami review event; Privacy page discloses Train telemetry (D-09)
+- [Phase 237]: Review telemetry v2 uses separate REVIEW_TELEMETRY_SCHEMA_VERSION=2; solve patch stays TELEMETRY_SCHEMA_VERSION=1; mixed v1/v2 key bodies are a plain 422
+- [Phase 237]: 237-02: reveal tree keeps mainLine empty and derives chip membership from UCI paths; graftLine never navigates; rewinding with no chip focus restores You (goBack, goToRoot, Home); selectChip also fires onChipSelect
+- [Phase 237]: Plan 03: focus dimming via buildChipFocusOverlay; lit arrows onTop:true, dimmed onTop:false (overrides game arrow onTop); null/empty active set dims everything
+- [Phase 237]: Plan 04: TrainMoveTreeList uses the hook's exported TrainRevealTree type; SAN-only game chip is a non-interactive div in the chips grid; ChipGroup feeds useTrainRevealTree directly
+- [Phase 237]: 237-05: gameMoveLineState is not reset in the per-puzzle effect; the search's own cleanup reports idle (a parent reset would wipe a restored reveal's synchronous loading report)
+- [Phase 237]: 237-05: the board follows revealTree.fen in the render the verdict lands; keyboard nav (navContainerRef) stays unwired until plan 06
+- [Phase 237]: Plan 06: the grading engine's seed stays the parent eval of a root fork; the reveal engine's live capture skips the start FEN while a seed exists
+- [Phase 237]: Plan 06: per-node quality state is keyed to the tree (resetKey), since the tree restarts node ids on a puzzle change
+- [Phase 237]: Plan 06: first fork per puzzle sends action/train-sideline-fork from the drop handler; train-explore-exit retired; sideline x keeps board-tool/line-delete
+- [Phase 237]: 237-07: rewind no longer resets board orientation; flip is a permanent bar control (per-puzzle effect still restores solver-colour default)
+- [Phase 237]: 237-08: Also fine sits inside the train-verdict-guess block; during the first-reveal walkthrough desktop shows Hilda's bubble plus the verdict bubble until plan 10 moves the tour
+- [Phase 237]: 237-09: tree hook fires onChipSelect for tap and line-matching root move, so TrainSolveScreen passes the telemetry callback once to useTrainRevealTree; default You chip filtered in the telemetry hook
+- [Phase 237]: 237-09: malformed cached revealTree is dropped on read, the rest of the reveal-cache entry still restores (T-237-16)
+- [Phase 237]: 237-10: phone tour scroll aligns Hilda's bubble under the pinned block when the target still fits above the bottom bar, else scrolls the target itself
+- [Phase 237]: 237-10: 'Got it' (btn-train-bot-walkthrough-done) ends the tour in place, stamps once; re-onboarding stays option (a) (no migration)
 
 ### Pending Todos
 
@@ -1045,9 +1061,9 @@ Items acknowledged and deferred at **v1.29 milestone close on 2026-06-29** (user
 
 ## Session Continuity
 
-**Last session:** 2026-10-08T17:19:47.567Z
-**Stopped at:** Phase 236 context gathered
-**Resume file:** .planning/phases/236-train-phone-grade-instant-verdict/236-CONTEXT.md
+**Last session:** 2026-10-09T01:22:08.992Z
+**Stopped at:** Completed 237-10-PLAN.md
+**Resume file:** None
 
 Previous session note (Phase 227):
 refit (calibration parity holds). Verification passed 17/17; code review 0 blockers (WR-01 + 3 info fixed). Next:
@@ -1278,6 +1294,16 @@ priority comment in `workerPoolState.ts:434-437` (verifier info item).
 | Phase 233 P03 | 25 min | 3 tasks | 12 files |
 | Phase 233 P04 | 13 min | 2 tasks | 12 files |
 | Phase 233 P05 | 7 min | 2 tasks | 3 files |
+| Phase 237 P01 | 12 min | 2 tasks | 3 files |
+| Phase 237 P02 | 16 min | 3 tasks | 8 files |
+| Phase 237 P03 | 25 min | 2 tasks | 10 files |
+| Phase 237 P04 | 7 min | 2 tasks | 6 files |
+| Phase 237 P05 | 22 min | 3 tasks | 13 files |
+| Phase 237 P06 | 22 min | 3 tasks | 14 files |
+| Phase 237 P07 | 38 min | 3 tasks | 11 files |
+| Phase 237 P08 | 55 min | 3 tasks | 13 files |
+| Phase 237 P09 | 8 min | 2 tasks | 9 files |
+| Phase 237 P10 | 12 min | 2 tasks | 8 files |
 
 ## Performance Metrics
 

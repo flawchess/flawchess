@@ -109,4 +109,18 @@ describe('SquareMarkerGroup', () => {
     expect(circle?.getAttribute('fill')).toBe(GREAT_ACCENT);
     expect(circle?.getAttribute('fill')).not.toBe(BOOK_MARKER_COLOR);
   });
+
+  // Phase 237: the Train reveal dims badges outside the focused move.
+  it('puts the marker opacity on its root <g> (dim, never hide)', () => {
+    const { container } = renderMarker({ square: 'e4', best: true, opacity: 0.32 });
+    const root = container.querySelector('svg > g');
+    expect(root?.getAttribute('opacity')).toBe('0.32');
+  });
+
+  it('renders no opacity attribute when the marker has none, so every other caller is unchanged', () => {
+    const { container } = renderMarker({ square: 'e4', best: true });
+    const root = container.querySelector('svg > g');
+    expect(root).not.toBeNull();
+    expect(root?.hasAttribute('opacity')).toBe(false);
+  });
 });

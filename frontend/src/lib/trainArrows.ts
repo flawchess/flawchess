@@ -44,8 +44,13 @@ import {
   NEXT_MOVE_ARROW,
   STOCKFISH_SECONDARY_LINE,
   TRAIN_BEST_MOVE_ARROW,
+  TRAIN_FOCUS_ARROW_DIM_OPACITY,
+  TRAIN_FOCUS_ARROW_LIT_OPACITY,
+  TRAIN_FOCUS_BADGE_DIM_OPACITY,
+  TRAIN_FOCUS_BADGE_LIT_OPACITY,
 } from '@/lib/theme';
 import type { PvLine } from '@/hooks/uciParser';
+import type { RoleKey } from '@/lib/trainRevealLines';
 import type { FlawSeverity } from '@/types/library';
 
 export type TrainPuzzleType = 'sharp' | 'soft' | 'herring';
@@ -85,7 +90,7 @@ export interface TrainFineMove {
  * - The four-character slice exists because the move tree (`MoveNode` in
  *   `useAnalysisBoard.ts`) stores only `from`/`to` and no promotion piece —
  *   a full-string compare would miss a promotion (the same reason
- *   `useTrainFreePlay`'s `isBest` check slices its UCI to four characters).
+ *   `useTreeMoveGrading`'s `isBest` check slices its UCI to four characters).
  * - Ties (two entries naming the same squares — a promotion-variant pair)
  *   resolve by ARRAY ORDER, which is the server's own best-first order:
  *   the first match wins. Callers must NOT re-sort `moves` — the ordering
@@ -171,6 +176,21 @@ const QUALITY_ARROW_COLOR: Record<TrainMoveQuality, string> = {
   mistake: MOVE_QUALITY_MISTAKE,
   blunder: MOVE_QUALITY_BLUNDER,
 };
+
+/**
+ * Phase 237 UAT: the color of a reveal chip's board arrow, so the chip can show
+ * which arrow it focuses. Mirrors `buildTrainRevealOverlay`: a chip holding the
+ * played or best move is drawn in its quality color (blue for best, an unrated
+ * played move as good); a game-only chip is the thin white game arrow.
+ */
+export function chipArrowColor(
+  roles: readonly RoleKey[],
+  quality: TrainMoveQuality | null,
+): string {
+  if (roles.includes('best')) return TRAIN_BEST_MOVE_ARROW;
+  if (roles.includes('your')) return QUALITY_ARROW_COLOR[quality ?? 'good'];
+  return NEXT_MOVE_ARROW;
+}
 
 /**
  * Last-move square-highlight color per move quality (190.1 UAT stepping):
@@ -288,8 +308,8 @@ export interface TrainRevealOverlay {
    * `pushMarker` dedups by end square under precedence played > best > fine >
    * game, so when two candidate moves share a target square only ONE badge
    * survives — and it belongs to the higher-precedence move. Without this map
-   * `applyTrainSpotlight` could only match markers by square, which let a
-   * spotlit alternative inherit the best move's blue badge (WR-02). Recorded
+   * `buildChipFocusOverlay` could only match markers by square, which let a
+   * focused alternative inherit the best move's blue badge (WR-02). Recorded
    * in the same `pushMarker` call that creates the badge, so the two can
    * never drift. */
   markerOwners: Record<string, string>;
@@ -333,7 +353,7 @@ function squaresFromUci(uci: string | null): { startSquare: string; endSquare: s
 
 /**
  * Phase 200 UAT: the SquareMarker corner badge for one move quality, exported
- * so the free-play board (`useTrainFreePlay`) badges a freely played move with
+ * so the reveal tree (`useTreeMoveGrading`) badges a freely played move with
  * exactly the glyph the reveal board would use for the same quality.
  */
 export function trainQualityMarker(square: string, quality: TrainMoveQuality): SquareMarker {
@@ -471,90 +491,63 @@ export function buildTrainRevealOverlay(
 }
 
 /**
- * Phase 200 (LEGEND-02/LEGEND-05) — the board-side half of the reveal
- * legend's hover/tap spotlight. Filters a reveal overlay down to only the
- * arrows/markers belonging to `activeUcis`, so hovering (desktop) or tapping
- * (mobile) a legend line box hides every other arrow and quality badge.
+ * Phase 237 (D-04) — the board-side half of the reveal's chip focus. DIMS a
+ * reveal overlay instead of filtering it: every arrow and quality badge stays
+ * on the board, the ones belonging to `activeUcis` are drawn near-opaque, the
+ * rest fade to a low opacity ("the other arrows fade to ~20-30%, never
+ * hidden"). The pristine board and a focused one go through this same
+ * function; only the active set differs.
  *
- * Matches on UCI move identity (`startSquare`+`endSquare`), never on
- * `layerKey` — a coincidence-merged box (e.g. played move == game move)
- * carries a colored arrow and a thin white on-top arrow with DIFFERENT
- * `layerKey`s for the SAME move, and both must survive the same spotlight.
+ * Arrows match on UCI move identity (`startSquare`+`endSquare`), never on
+ * `layerKey`: a coincidence-merged role (e.g. Move = Game) carries a colored
+ * arrow and a thin white on-top arrow with DIFFERENT `layerKey`s for the SAME
+ * move, and both must light together. A lit arrow gets `onTop: true` and a
+ * dimmed one `onTop: false`, so the focused move paints above the faded ones
+ * (this deliberately overrides the game arrow's own `onTop` while dimmed).
+ *
  * Markers match by badge OWNERSHIP (`markerOwners`), not by end-square
- * membership — see the `markerOwners` field docs and WR-02.
+ * membership (WR-02): two candidate moves can share a target square, only the
+ * higher-precedence badge survives `pushMarker`, and a focused alternative
+ * must not light the best move's badge. An unowned square dims.
  *
- * Returns `overlay` itself (no-op, same reference) when `activeUcis` is null
- * or empty. Note (260902-qf7, reversing Phase 200 UAT) that this is NOT how
- * the un-spotlit board is drawn: `TrainSolveScreen` passes a DEFAULT active
- * set (the your-move, best-move, AND played-in-game UCIs) when nothing is
- * spotlit, so only the server-vetted "Also fine" alternatives stay off the
- * board until their own legend card is hovered/tapped. The no-op branch is
- * only the degenerate fallback for an overlay with no such moves at all. A
- * malformed UCI (< 4 chars) contributes no match and never throws (`squaresFromUci`'s existing
- * contract). Uses `Array.prototype.filter` throughout, so the source
- * overlay's draw order is preserved verbatim — a surviving on-top arrow
- * still paints over a surviving colored arrow underneath it.
- *
- * `alsoFineMoves` (Phase 200 LEGEND-04) is spread through UNFILTERED — the
- * "Also fine" sidebar row is the legend and always lists every drawn
- * alternative regardless of which entry is currently spotlit; only the BOARD
- * is filtered down. The board owner passes the unfiltered overlay's
- * `alsoFineMoves` to the row separately (never this function's output) for
- * exactly that reason.
+ * A null or empty `activeUcis` dims every arrow and badge (no active move).
+ * A malformed UCI (< 4 chars) contributes no match and never throws.
+ * `alsoFineMoves` and `markerOwners` pass through unchanged.
  */
-export function applyTrainSpotlight(
+export function buildChipFocusOverlay(
   overlay: TrainRevealOverlay,
   activeUcis: readonly string[] | null,
 ): TrainRevealOverlay {
-  if (activeUcis === null || activeUcis.length === 0) return overlay;
-
-  const activePairs = activeUcis
+  const active = activeUcis ?? [];
+  const activePairs = active
     .map((uci) => squaresFromUci(uci))
     .filter((squares): squares is { startSquare: string; endSquare: string } => squares !== null);
+  const activeUciSet = new Set(active);
 
-  const activeUciSet = new Set(activeUcis);
-
-  function matchesActivePair(arrow: BoardArrow): boolean {
+  function arrowIsLit(arrow: BoardArrow): boolean {
     return activePairs.some(
       (pair) => arrow.startSquare === pair.startSquare && arrow.endSquare === pair.endSquare,
     );
   }
 
-  // WR-02 fix: match markers by the move that actually OWNS the badge, not by
-  // end-square membership. Two candidate moves can share a target square (e.g.
-  // the best move and a fine alternative both landing on d5); `pushMarker`
-  // keeps only the higher-precedence badge, so a square-membership test let a
-  // spotlit alternative display the best move's blue badge on its own green
-  // arrow. An unowned square (marker with no `markerOwners` entry) is dropped
-  // rather than kept — a badge we cannot attribute is exactly the leak.
-  function ownsMarkerSquare(square: string): boolean {
-    const ownerUci = overlay.markerOwners[square];
+  function markerIsLit(marker: SquareMarker): boolean {
+    const ownerUci = overlay.markerOwners[marker.square];
     return ownerUci !== undefined && activeUciSet.has(ownerUci);
   }
 
   return {
     ...overlay,
-    arrows: overlay.arrows.filter(matchesActivePair),
-    markers: overlay.markers.filter((marker) => ownsMarkerSquare(marker.square)),
+    arrows: overlay.arrows.map((arrow) => {
+      const lit = arrowIsLit(arrow);
+      return {
+        ...arrow,
+        opacity: lit ? TRAIN_FOCUS_ARROW_LIT_OPACITY : TRAIN_FOCUS_ARROW_DIM_OPACITY,
+        onTop: lit,
+      };
+    }),
+    markers: overlay.markers.map((marker) => ({
+      ...marker,
+      opacity: markerIsLit(marker) ? TRAIN_FOCUS_BADGE_LIT_OPACITY : TRAIN_FOCUS_BADGE_DIM_OPACITY,
+    })),
   };
-}
-
-/**
- * Phase 200 (LEGEND-01) — the exact fill a legend line box's arrow glyph
- * must use, so the glyph can never drift from the board arrow it explains.
- * These are precisely the three colors `buildTrainRevealOverlay` draws for
- * the three box roles: the best-move box is always blue regardless of the
- * played move's own quality (a coincidence-merged box renders ONE blue
- * glyph, matching the single blue arrow actually drawn); a your-move-only
- * box takes its own quality color; a standalone game-move box is always the
- * thin white game-hint color.
- */
-export function trainGlyphColor(opts: {
-  includesBest: boolean;
-  includesYour: boolean;
-  quality: TrainMoveQuality | null;
-}): string {
-  if (opts.includesBest) return TRAIN_BEST_MOVE_ARROW;
-  if (opts.includesYour) return QUALITY_ARROW_COLOR[opts.quality ?? 'good'];
-  return NEXT_MOVE_ARROW;
 }

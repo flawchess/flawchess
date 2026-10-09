@@ -20,7 +20,7 @@
  * 9. makeMove off a PV node yields a node with isOnPvLine=false (a free-move sub-fork).
  *
  * Quick 260805-p37 — move-sound emission (one seam covering both the Analysis board
- * and the Train solution board's free-play, via useTrainFreePlay's wrap):
+ * and the Train reveal board's sidelines, via useTrainRevealTree's wrap):
  * 10. Landing on a node whose SAN carries a check/mate marker plays 'check'; a capture
  *     marker (no check) plays 'capture'; an ordinary node (including castling) plays 'move'.
  * 11. makeMove — both the fork path and the advance-or-fork reuse path — plays the
@@ -32,7 +32,7 @@
  * 14. goToRoot plays 'move'. playUciLine plays the event of the last grafted move.
  * 15. loadMainLine plays nothing, even though it lands on the line's last move.
  * 16. loadMainLine([], fen) immediately followed by playUciLine([...]) in the SAME
- *     act() (the useTrainFreePlay.start() shape) DOES play the grafted move's event —
+ *     act() (the retired Train free-play hook's start() shape) DOES play the grafted move's event —
  *     the stale silent claim (landing null) misses the batch's actual landing node.
  * 17. goToNode(id, { silent: true }) plays nothing. Hook mount plays nothing. A command
  *     that leaves currentNodeId unchanged (goToNode onto the current node, deleteSubtree
@@ -780,14 +780,14 @@ describe('useAnalysisBoard', () => {
     expect(mockPlaySound).not.toHaveBeenCalled();
   });
 
-  it('loadMainLine([], fen) immediately followed by playUciLine in the SAME batch DOES play the grafted move (useTrainFreePlay.start() shape)', () => {
+  it('loadMainLine([], fen) immediately followed by playUciLine in the SAME batch DOES play the grafted move (the retired free-play start() shape)', () => {
     const { result } = renderHook(() => useAnalysisBoard());
     const startFen = result.current.rootFen;
 
     // No preceding navigation — mount itself already recorded the { id: null,
     // depth: 0 } baseline the emission effect needs (the plain first render,
     // which plays nothing per the mount rule but still seeds prevNavRef).
-    // This mirrors the REAL useTrainFreePlay.start() call: it fires as the
+    // This mirrors the retired Train free-play hook's start() call: it fires as the
     // first free move on a board that was never separately navigated.
     act(() => {
       result.current.loadMainLine([], startFen); // resets the tree, claims silence on null
@@ -946,6 +946,132 @@ describe('useAnalysisBoard', () => {
   });
 });
 
+// ─── Phase 237: graftLine — non-navigating, child-reusing line graft ─────────
+//
+// The Train reveal pre-loads every chip's line as a root branch and receives
+// later lines (background grade, game-move search, restored snapshot) while the
+// user is already looking at the board, so the graft must never move it.
+
+describe('useAnalysisBoard — graftLine (Phase 237)', () => {
+  beforeEach(() => {
+    mockPlaySound.mockClear();
+    mockUnlockAudio.mockClear();
+  });
+
+  it('grafts a line from the root without moving the board and advances nextId', () => {
+    const { result } = renderHook(() => useAnalysisBoard());
+    expect(result.current.nextId).toBe(0);
+
+    act(() => { result.current.graftLine(['e2e4', 'e7e5'], null); });
+
+    expect(result.current.nodes.size).toBe(2);
+    expect(result.current.nextId).toBe(2);
+    expect(result.current.currentNodeId).toBeNull();
+    const first = result.current.nodes.get(0);
+    const second = result.current.nodes.get(1);
+    expect(first?.san).toBe('e4');
+    expect(first?.parentId).toBeNull();
+    expect(second?.san).toBe('e5');
+    expect(second?.parentId).toBe(0);
+  });
+
+  it('reuses existing children and only adds the new tail', () => {
+    const { result } = renderHook(() => useAnalysisBoard());
+    act(() => { result.current.graftLine(['e2e4', 'e7e5'], null); });
+
+    act(() => { result.current.graftLine(['e2e4', 'e7e5', 'g1f3'], null); });
+
+    expect(result.current.nodes.size).toBe(3);
+    expect(result.current.nodes.get(2)?.san).toBe('Nf3');
+    expect(result.current.nodes.get(2)?.parentId).toBe(1);
+  });
+
+  it('keeps the board where the user is when a line is grafted late', () => {
+    const { result } = renderHook(() => useAnalysisBoard());
+    act(() => { result.current.graftLine(['e2e4', 'e7e5'], null); });
+    act(() => { result.current.goToNode(1, { silent: true }); });
+    mockPlaySound.mockClear();
+
+    act(() => { result.current.graftLine(['d2d4', 'd7d5'], null); });
+
+    expect(result.current.currentNodeId).toBe(1);
+    expect(result.current.nodes.size).toBe(4);
+    expect(mockPlaySound).not.toHaveBeenCalled();
+  });
+
+  it('grafts under an existing node when given its id', () => {
+    const { result } = renderHook(() => useAnalysisBoard());
+    act(() => { result.current.graftLine(['e2e4'], null); });
+
+    act(() => { result.current.graftLine(['c7c5'], 0); });
+
+    expect(result.current.nodes.get(1)?.san).toBe('c5');
+    expect(result.current.nodes.get(1)?.parentId).toBe(0);
+  });
+
+  it('is a no-op (same node map) for an unknown parent id', () => {
+    const { result } = renderHook(() => useAnalysisBoard());
+    act(() => { result.current.graftLine(['e2e4'], null); });
+    const nodesBefore = result.current.nodes;
+
+    act(() => { result.current.graftLine(['e7e5'], 999); });
+
+    expect(result.current.nodes).toBe(nodesBefore);
+    expect(result.current.nextId).toBe(1);
+  });
+
+  it('is a no-op for an empty line and for a fully reused line', () => {
+    const { result } = renderHook(() => useAnalysisBoard());
+    act(() => { result.current.graftLine(['e2e4', 'e7e5'], null); });
+    const nodesBefore = result.current.nodes;
+
+    act(() => { result.current.graftLine([], null); });
+    act(() => { result.current.graftLine(['e2e4', 'e7e5'], null); });
+
+    expect(result.current.nodes).toBe(nodesBefore);
+  });
+
+  it('stops at an illegal UCI and keeps the legal prefix without throwing', () => {
+    const { result } = renderHook(() => useAnalysisBoard());
+
+    expect(() => {
+      act(() => { result.current.graftLine(['e2e4', 'e2e4', 'g1f3'], null); });
+    }).not.toThrow();
+
+    expect(result.current.nodes.size).toBe(1);
+    expect(result.current.nodes.get(0)?.san).toBe('e4');
+  });
+
+  it('keeps the promotion piece the UCI names', () => {
+    const { result } = renderHook(() => useAnalysisBoard('7k/4P3/8/8/8/8/8/K7 w - - 0 1'));
+
+    act(() => { result.current.graftLine(['e7e8n'], null); });
+
+    expect(result.current.nodes.get(0)?.san.startsWith('e8=N')).toBe(true);
+  });
+
+  it('plays no sound and never unlocks audio', () => {
+    const { result } = renderHook(() => useAnalysisBoard());
+
+    act(() => { result.current.graftLine(['e2e4', 'e7e5'], null); });
+
+    expect(mockPlaySound).not.toHaveBeenCalled();
+    expect(mockUnlockAudio).not.toHaveBeenCalled();
+  });
+
+  it('several grafts in one batch each see the previous graft (functional updater)', () => {
+    const { result } = renderHook(() => useAnalysisBoard());
+
+    act(() => {
+      result.current.graftLine(['e2e4', 'e7e5'], null);
+      result.current.graftLine(['e2e4', 'c7c5'], null);
+    });
+
+    // e4 shared, e5 and c5 siblings under it: 3 nodes, not 4.
+    expect(result.current.nodes.size).toBe(3);
+  });
+});
+
 // ─── Quick 260821-kyz: window-scoped, guarded arrow-key navigation ──────────
 //
 // D-01: promoted from a container-scoped keydown handler to a window-scoped
@@ -953,8 +1079,8 @@ describe('useAnalysisBoard', () => {
 // D-02: six guards, in order — not an arrow key; already defaultPrevented;
 // a modifier key held; the event target is a typing surface
 // (input/textarea/select/contentEditable); this hook instance has no
-// mounted container (containerRef.current === null — how useTrainFreePlay
-// opts out, D-05); an open modal dialog (PasteModal).
+// mounted container (containerRef.current === null — how the Train free-play hook
+// opted out, D-05); an open modal dialog (PasteModal).
 
 describe('useAnalysisBoard — keyboard navigation', () => {
   let board: HTMLDivElement;
@@ -1019,7 +1145,7 @@ describe('useAnalysisBoard — keyboard navigation', () => {
     expect(prevented2).toBe(true);
   });
 
-  it('with no mounted container (the useTrainFreePlay shape), arrow keys do nothing', () => {
+  it('with no mounted container (the retired Train free-play shape), arrow keys do nothing', () => {
     const { result } = renderBoard();
     act(() => { result.current.loadMainLine(MAIN_LINE_SANS, ROOT_FEN); });
     const startId = result.current.currentNodeId;
@@ -1321,7 +1447,7 @@ describe('useAnalysisBoard — wheel navigation', () => {
     outside.remove();
   });
 
-  it('with no mounted container (the useTrainFreePlay shape), wheel events do nothing', () => {
+  it('with no mounted container (the retired Train free-play shape), wheel events do nothing', () => {
     const { result } = renderBoard();
     act(() => { result.current.loadMainLine(MAIN_LINE_SANS, ROOT_FEN); });
     const startId = result.current.currentNodeId;

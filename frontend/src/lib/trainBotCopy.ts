@@ -30,6 +30,7 @@ import { PERSONA_REGISTRY } from '@/lib/personas/personaRegistry';
 import type { Persona, PersonaId, Temperament } from '@/lib/personas/personaRegistry';
 import { GUESS_CALL_LABELS } from '@/lib/trainGuessLabels';
 import type { Guess } from '@/lib/trainGuessLabels';
+import { GUESS_POINTS, MOVE_TIER_POINTS } from '@/lib/trainScore';
 import type { TrainMoveTier, TrainRatingBand } from '@/lib/trainScore';
 
 /**
@@ -72,7 +73,10 @@ export const LANDING_GREETINGS: Record<PersonaId, string> = {
   'grinder-1000': "I dug up the old positions from your games. The leaky ones are today's puzzles.",
   'grinder-1200': "Nice and calm now. We'll paddle back to the spots where your games went under.",
   'grinder-1400': "Take your time. Your own mistakes are waiting, and they aren't going anywhere.",
-  'grinder-1600': "Welcome to boot camp, recruit! Your own blunders are today's drill.",
+  // Phase 237 UAT: Tank's first-visit greeting, no app name yet (intro step 1 names it).
+  'grinder-1600':
+    "Welcome to boot camp, recruit! You'll learn from the mistakes in your own games and " +
+    'train your instinct for when a position hides a tactic.',
   'grinder-1800': 'A long fight is the good part. Today we fight the positions your games lost.',
   'wall-800': 'No rush. Slow and solid beats fast and sorry, and your games have a few sorry moments to fix.',
   'wall-1000': "Curl up, stay sharp. Today's puzzles are the moments your games weren't.",
@@ -114,10 +118,15 @@ export interface LandingHost {
   copy: string;
 }
 
+/** Phase 237 UAT: appended to Tank's greeting until the intro is completed,
+ * since Hilda hosts every onboarding step. Not on Tank's rotation day: a
+ * returning user has already met her. */
+export const LANDING_HILDA_HANDOFF = 'Hilda will show you the ropes.';
+
 /**
  * Picks the /train landing host + greeting. Tank (D-05) until the intro
- * stepper has been completed, so the landing page introduces the same host
- * who opens intro step 1 ("my chess boot camp") — after that, one persona
+ * stepper has been completed (his boot-camp welcome is the first-visit
+ * greeting) — after that, one persona
  * per calendar day, cycling through all 24 in `LANDING_GREETINGS` order via
  * days-since-epoch modulo the roster size. Every user sees the same host on
  * a given day, which keeps the rotation explainable. Tank also covers the
@@ -128,7 +137,9 @@ export function landingHost(input: LandingHostInput): LandingHost {
     persona: PERSONA_REGISTRY[TANK_ID],
     copy: LANDING_GREETINGS[TANK_ID],
   };
-  if (input.introSeenAt == null) return tank;
+  if (input.introSeenAt == null) {
+    return { ...tank, copy: `${LANDING_GREETINGS[TANK_ID]} ${LANDING_HILDA_HANDOFF}` };
+  }
   if (input.sessionDate === null) return tank;
   const day = differenceInCalendarDays(parseISO(input.sessionDate), LANDING_ROTATION_EPOCH);
   if (Number.isNaN(day)) return tank;
@@ -172,6 +183,19 @@ export function pickBot(temperament: Temperament, rng: () => number = Math.rando
   const fallback = pool[0];
   if (fallback !== undefined) return fallback;
   throw new Error(`pickBot: temperament pool "${temperament}" is unexpectedly empty`);
+}
+
+/**
+ * Phase 237 UAT: the puzzle host is drawn from EVERY persona (not one
+ * temperament pool) and speaks both the prompt and the verdict. Hilda is left
+ * out while the first-reveal tour is pending (`excludeHilda`), because she
+ * narrates that tour from the board overlay and must not also be the host.
+ */
+export function pickPuzzleHost(excludeHilda: boolean, rng: () => number = Math.random): Persona {
+  const pool = Object.values(PERSONA_REGISTRY).filter((p) => !excludeHilda || p.id !== HILDA_ID);
+  const picked = pool[Math.floor(rng() * pool.length)] ?? pool[0];
+  if (picked !== undefined) return picked;
+  throw new Error('pickPuzzleHost: persona registry is unexpectedly empty');
 }
 
 /**
@@ -267,13 +291,13 @@ export interface IntroStepCopy {
  */
 const INTRO_WELCOME_COPY: Record<CopyAudienceKey, string> = {
   has_games:
-    'Welcome to FlawChess Train, my chess boot camp! You will improve by solving puzzles ' +
+    'Welcome to FlawChess Train! You will improve by solving puzzles ' +
     'created from your own games.',
   no_games:
-    'Welcome to FlawChess Train, my chess boot camp! Import your games and you will improve ' +
+    'Welcome to FlawChess Train! Import your games and you will improve ' +
     'by solving puzzles created from your own mistakes.',
   no_games_guest:
-    'Welcome to FlawChess Train, my chess boot camp! Import your games and sign up, and you ' +
+    'Welcome to FlawChess Train! Import your games and sign up, and you ' +
     'will improve by solving puzzles created from your own mistakes.',
 };
 const INTRO_QUESTION: IntroStepCopy = {
@@ -320,7 +344,8 @@ const INTRO_WARMUP_COPY: Record<CopyAudienceKey, string> = {
 };
 
 /**
- * D-22 intro stepper (D-05: Tank hosts the welcome, Hilda teaches). Short
+ * D-22 intro stepper, all Hilda (Phase 237 UAT: Tank only hosts the landing
+ * greeting, Hilda runs every onboarding step). Short
  * steps rather than the CONTEXT's three: the plan 06 phone UAT showed the
  * three-step copy at 8-9 lines each in the 204px phone bubble, and the user
  * chose more Next clicks over internal scrolling (D-21 lets the copy be
@@ -336,7 +361,7 @@ export function introSteps(
 ): IntroStepCopy[] {
   const key = audienceKey(audience);
   const steps: IntroStepCopy[] = [
-    { personaId: TANK_ID, copy: INTRO_WELCOME_COPY[key] },
+    { personaId: HILDA_ID, copy: INTRO_WELCOME_COPY[key] },
     INTRO_QUESTION,
     INTRO_VOCABULARY,
     INTRO_PRACTICE,
@@ -403,19 +428,60 @@ const VERDICT_OPENERS: Record<0 | 1 | 2 | 3, readonly [string, string]> = {
 /** D-23: shown only for the 0 and 1 point buckets. */
 const LOOK_CLOSER_LINE = 'Step through the best line and your own move to see why.';
 
+/** The verdict clause's two labeled phrases with their point values. One table
+ * drives every surface (strip line, expanded verdict, desktop bubble), so the
+ * vocabulary can never drift between them (Phase 237 D-06). */
+export interface VerdictClauseParts {
+  guessLabel: string;
+  guessPoints: 0 | 1;
+  moveLabel: string;
+  movePoints: 0 | 1 | 2;
+}
+
 /**
- * D-23's scoring clause — fully determined by the (correctGuess, moveQuality)
- * pair (which also determines `points`, but `points` is never re-derived
- * here — it is passed in by the caller from `scorePuzzle`). Guard-clause
- * returns, no nesting.
+ * Phase 237 (D-05/D-06): the clause's guess and move halves. The move half is
+ * four words at most: "best move" (the best move, a good-tier move that is the
+ * engine's top choice), "good move" (good tier, not the best), "decent move"
+ * (inaccuracy), "wrong move" (mistake/blunder). `isBest` only selects wording,
+ * never points: those come from `GUESS_POINTS` / `MOVE_TIER_POINTS`, the same
+ * source `scorePuzzle` sums, so the clause can never disagree with the total.
+ * Guard-clause returns, no nesting.
  */
-function verdictClause(correctGuess: boolean, moveQuality: TrainMoveTier): string {
-  if (correctGuess && moveQuality === 'good') return 'Right call [+1], right move [+2].';
-  if (correctGuess && moveQuality === 'inaccuracy') return 'Right call [+1], decent move [+1].';
-  if (correctGuess) return 'Right call [+1], wrong move [+0].';
-  if (moveQuality === 'good') return 'Wrong call [+0], but the right move [+2].';
-  if (moveQuality === 'inaccuracy') return 'Wrong call [+0], decent move [+1].';
-  return 'Wrong call [+0], wrong move [+0].';
+export function verdictClauseParts(
+  correctGuess: boolean,
+  moveQuality: TrainMoveTier,
+  isBest: boolean,
+): VerdictClauseParts {
+  const guessLabel = correctGuess ? 'Right call' : 'Wrong call';
+  const guessPoints: 0 | 1 = correctGuess ? GUESS_POINTS : 0;
+  const movePoints = MOVE_TIER_POINTS[moveQuality] as 0 | 1 | 2;
+  if (moveQuality === 'good') {
+    const base = isBest ? 'best move' : 'good move';
+    const moveLabel = correctGuess ? base : `but ${isBest ? 'the' : 'a'} ${base}`;
+    return { guessLabel, guessPoints, moveLabel, movePoints };
+  }
+  if (moveQuality === 'inaccuracy') {
+    return { guessLabel, guessPoints, moveLabel: 'decent move', movePoints };
+  }
+  return { guessLabel, guessPoints, moveLabel: 'wrong move', movePoints };
+}
+
+/** D-23's scoring clause with bracketed point values ("Right call [+1], best
+ * move [+2]."), built from `verdictClauseParts`. */
+function verdictClause(correctGuess: boolean, moveQuality: TrainMoveTier, isBest: boolean): string {
+  const parts = verdictClauseParts(correctGuess, moveQuality, isBest);
+  return `${parts.guessLabel} [+${parts.guessPoints}], ${parts.moveLabel} [+${parts.movePoints}].`;
+}
+
+/** Phase 237 (D-05): the phone strip's one line, the clause without the
+ * point brackets ("Right call, best move"). */
+export function verdictStripLine(
+  correctGuess: boolean,
+  moveQuality: TrainMoveTier,
+  isBest: boolean,
+): string {
+  const parts = verdictClauseParts(correctGuess, moveQuality, isBest);
+  return `${parts.guessLabel}, ${parts.moveLabel}`;
 }
 
 /**
@@ -428,13 +494,14 @@ export function verdictCopy(
   points: 0 | 1 | 2 | 3,
   correctGuess: boolean,
   moveQuality: TrainMoveTier,
+  isBest: boolean,
   rng: () => number = Math.random,
 ): VerdictCopy {
   const openers = VERDICT_OPENERS[points];
   const opener = rng() < 0.5 ? openers[0] : openers[1];
   return {
     opener,
-    clause: verdictClause(correctGuess, moveQuality),
+    clause: verdictClause(correctGuess, moveQuality, isBest),
     lookCloser: points <= 1 ? LOOK_CLOSER_LINE : null,
   };
 }
@@ -520,101 +587,132 @@ export function returnPhrase(input: ReturnPhraseInput): string {
   return `Let's see if you remember this in ${days} days.`;
 }
 
-/** D-24 first-reveal walkthrough step index (six steps since the phase 222
- * UAT: the line-card explanation is three steps — tap, step, free play —
- * before the "understand, don't just memorize" line). */
+/** D-24 first-reveal walkthrough step index (Phase 237 rewrote the six steps
+ * for the chips + single move tree screen: result, chips, stepping, board,
+ * "understand, don't just memorize", action bar). */
 export type WalkthroughStep = 0 | 1 | 2 | 3 | 4 | 5;
 export const WALKTHROUGH_STEP_COUNT = 6;
 
-/** D-24: one first-reveal walkthrough step's copy + the element it spotlights.
- * `board` (phase 222 UAT) rings the board row itself, for the free-play step. */
+/**
+ * Phase 237 plan 10 (D-10): what a walkthrough step spotlights.
+ *  - `verdict`: the one-line strip on phones, the verdict bubble on desktop.
+ *  - `chips`: the chips row (never ringed as a row: the active chip's own ring
+ *    already marks it, Phase 237 UAT). `tree`: the move list. `lines`: chips + list.
+ *  - `board`: the board row (free play / sidelines).
+ *  - `bar`: the reveal action bar (fixed bottom bar on phones, in-flow on sm+).
+ */
+export type WalkthroughTarget = 'verdict' | 'chips' | 'tree' | 'board' | 'lines' | 'bar';
+
+/** D-24: one first-reveal walkthrough step's copy + the element it spotlights. */
 export interface WalkthroughStepCopy {
   copy: string;
-  spotlightTarget: 'verdict' | 'lines' | 'board' | 'actions';
+  spotlightTarget: WalkthroughTarget;
 }
 
 /**
+ * Phase 237 plan 10 (D-09/D-11): what is on screen, which the copy may describe
+ * and nothing else. `hasAnalyze`: the bar carries Analyze only for a puzzle from
+ * one of the user's own games. `mergedChip`: the second role of the merged "Move"
+ * chip ("Move = Best" / "Move = Game"), null when the Move chip stands alone.
+ * `isDesktop`: desktop has no strip (the verdict bubble shows the feedback
+ * already), the arrow keys step the tree, and Home rewinds.
+ */
+export interface WalkthroughContext {
+  hasAnalyze: boolean;
+  mergedChip: 'best' | 'game' | null;
+  isDesktop: boolean;
+}
+
+/** The reveal action bar's icon-only buttons the tour copy names. */
+export type TourIcon = 'rewind' | 'back' | 'forward';
+
+/** In-copy placeholders for `TourIcon`s; `TourCopy` swaps each for the icon. */
+export const TOUR_ICON_TOKEN: Record<TourIcon, string> = {
+  rewind: '{rewind}',
+  back: '{back}',
+  forward: '{forward}',
+};
+
+const WALKTHROUGH_RESULT_PHONE =
+  'This strip is your result: a point for the right call and up to two for the move. Tap it to read the full feedback.';
+const WALKTHROUGH_RESULT_DESKTOP =
+  'Your result is in the highlighted bubble beside the board: a point for the right call and up to two for the move.';
+const WALKTHROUGH_CHIPS =
+  'The Move, Best, and Game chips are the lines, one per move. Tap one to focus it on the board.';
+const WALKTHROUGH_MERGED_BEST = ' "Move = Best" means you found the best move.';
+const WALKTHROUGH_MERGED_GAME = ' "Move = Game" means you played the game move.';
+// Phase 237 UAT: the bar's buttons are named by icon tokens, which the tour
+// renders as the bar's real lucide icons (`TourCopy`). Glyphs drifted from the
+// bar: ⏮ has two triangles, the bar's rewind (SkipBack) one.
+const WALKTHROUGH_STEP_PHONE =
+  `Step through the focused line with ${TOUR_ICON_TOKEN.back} ${TOUR_ICON_TOKEN.forward} in the bar, or tap a move in the list.`;
+const WALKTHROUGH_STEP_DESKTOP =
+  `Step through the focused line with ${TOUR_ICON_TOKEN.back} ${TOUR_ICON_TOKEN.forward} under the board, the arrow keys, or a tap on a move in the list.`;
+const WALKTHROUGH_BOARD_PHONE =
+  `Move a piece to try your own idea: it branches off as a sideline. ${TOUR_ICON_TOKEN.rewind} in the bar takes you back to the puzzle position.`;
+const WALKTHROUGH_BOARD_DESKTOP =
+  `Move a piece to try your own idea: it branches off as a sideline. ${TOUR_ICON_TOKEN.rewind} or Home takes you back to the puzzle position.`;
+const WALKTHROUGH_UNDERSTAND =
+  'Understanding why a move works or fails by analyzing the lines is what makes ' +
+  "the pattern stick. Don't just memorize the answer.";
+
+/**
  * D-24: the Hilda walkthrough of the reveal, run once on the user's
- * first-ever reveal. Six steps (verdict, lines, lines, board, lines,
- * actions). The phase 222 UAT found the single line-card step unclear: a tap
- * on a card only HIGHLIGHTS its move, the arrows inside the card step
- * through the line, and the board itself accepts free moves with the eval
- * bar as the judge — three distinct interactions, so three short steps,
- * each within the phone copy budget (`STEPPER_COPY_MAX_CHARS`). Step 4
- * carries D-21's "understanding, not memorizing" message.
- *
- * `hasAnalyze` (plan 06 UAT): the action row only renders Analyze for a
- * puzzle that comes from one of the user's OWN games (`game_id` set). A
- * first-timer's first reveal is very often a warm-up puzzle (games still
- * being analyzed, `game_id` null), so the last step must not describe a
- * button that is not on screen — it explains Next and says when Analyze
- * appears instead.
- *
- * `hasSolution` (phase 222 UAT round 3): the free-play step invites the user
- * to move pieces, which departs the board and makes the action row grow a
- * Solution button — so by the time the last step describes that row, the
- * button is usually there. Same rule: only describe what is on screen.
+ * first-ever reveal. Six steps (Phase 237 plan 10, D-09), in target order
+ * verdict, chips, tree, board, lines, bar: the result, the chips, stepping,
+ * sidelines + rewind, D-21's "understanding, not memorizing", and the action
+ * bar. Each step stays within the phone copy budget (`STEPPER_COPY_MAX_CHARS`)
+ * and only describes what is on screen for this context (D-09): no cards, no
+ * Solution button, Analyze only when the puzzle has it, a merged chip only when
+ * it is shown.
  */
 export function walkthroughCopy(
   step: WalkthroughStep,
-  hasAnalyze: boolean,
-  hasSolution: boolean = false,
+  ctx: WalkthroughContext,
 ): WalkthroughStepCopy {
   switch (step) {
     case 0:
       return {
         spotlightTarget: 'verdict',
-        copy: 'This is your feedback. One point for a correct call and up to two for the move.',
+        copy: ctx.isDesktop ? WALKTHROUGH_RESULT_DESKTOP : WALKTHROUGH_RESULT_PHONE,
       };
     case 1:
-      return {
-        spotlightTarget: 'lines',
-        copy:
-          // Phase 222 UAT round 4: the cards sit below the board on phones and
-          // to its right on desktop, so the copy names both placements.
-          "The cards below or on the right are the lines: your move, the best move, and the game's move. " +
-          'Tap a card to highlight its move on the board.',
-      };
+      return { spotlightTarget: 'chips', copy: WALKTHROUGH_CHIPS + mergedChipSentence(ctx.mergedChip) };
     case 2:
       return {
-        spotlightTarget: 'lines',
-        copy:
-          'The arrows inside a card play its line move by move on the board, so you ' +
-          'can see how it continues.',
+        spotlightTarget: 'tree',
+        copy: ctx.isDesktop ? WALKTHROUGH_STEP_DESKTOP : WALKTHROUGH_STEP_PHONE,
       };
     case 3:
       return {
         spotlightTarget: 'board',
-        copy:
-          'You can also move the pieces freely to test your own ideas. The eval bar ' +
-          'next to the board judges every position.',
+        copy: ctx.isDesktop ? WALKTHROUGH_BOARD_DESKTOP : WALKTHROUGH_BOARD_PHONE,
       };
     case 4:
-      return {
-        spotlightTarget: 'lines',
-        copy:
-          'Understanding why a move works or fails by analyzing the lines is what makes ' +
-          "the pattern stick. Don't just memorize the answer.",
-      };
+      return { spotlightTarget: 'lines', copy: WALKTHROUGH_UNDERSTAND };
     case 5:
-      return { spotlightTarget: 'actions', copy: walkthroughActionsCopy(hasAnalyze, hasSolution) };
+      return { spotlightTarget: 'bar', copy: walkthroughActionsCopy(ctx.hasAnalyze) };
   }
 }
 
-const WALKTHROUGH_SOLUTION_PART = 'The Solution button restores the board. ';
+/** The merged-chip explanation, only for the merged chip actually on screen. */
+function mergedChipSentence(mergedChip: WalkthroughContext['mergedChip']): string {
+  if (mergedChip === 'best') return WALKTHROUGH_MERGED_BEST;
+  if (mergedChip === 'game') return WALKTHROUGH_MERGED_GAME;
+  return '';
+}
+
 const WALKTHROUGH_NEXT_PART = 'Next takes you to the next puzzle.';
-// Phase 222 UAT round 4: "The Solution button …" pushed the warm-up variant
-// past `STEPPER_COPY_MAX_CHARS`, so the warm-up Analyze sentence is the short
-// form.
+// Phase 222 UAT round 4: the warm-up Analyze sentence is the short form so the
+// warm-up variant stays within `STEPPER_COPY_MAX_CHARS`.
 const WALKTHROUGH_ANALYZE_LATER_PART = 'Analyze appears once puzzles come from your own games.';
 
 /** The last walkthrough step, assembled from the buttons actually on screen. */
-function walkthroughActionsCopy(hasAnalyze: boolean, hasSolution: boolean): string {
-  const solution = hasSolution ? WALKTHROUGH_SOLUTION_PART : '';
+function walkthroughActionsCopy(hasAnalyze: boolean): string {
   if (hasAnalyze) {
-    return `${solution}Analyze opens the whole game one move before the mistake. ${WALKTHROUGH_NEXT_PART}`;
+    return `The Analyze button opens the whole game one move before the mistake. ${WALKTHROUGH_NEXT_PART}`;
   }
-  return `${solution}${WALKTHROUGH_NEXT_PART} ${WALKTHROUGH_ANALYZE_LATER_PART}`;
+  return `${WALKTHROUGH_NEXT_PART} ${WALKTHROUGH_ANALYZE_LATER_PART}`;
 }
 
 /**

@@ -1,7 +1,7 @@
 /**
  * trainTelemetry.ts — Phase 233 per-puzzle telemetry constants and builders.
  *
- * The two numeric constants mirror app/schemas/train.py and are CI-locked by
+ * The numeric constants mirror app/schemas/train.py and are CI-locked by
  * tests/schemas/test_train_telemetry_parity.py. Keep them plain integer
  * literals (the parity test reads `export const NAME = <digits>;` by regex).
  * Telemetry is a recorded outcome only; it never feeds grading or scoring (D-05).
@@ -13,6 +13,12 @@ import type { StopwatchTotals } from '@/lib/visibleStopwatch';
 // Mirrors app/schemas/train.py TELEMETRY_SCHEMA_VERSION, guarded by tests/schemas/test_train_telemetry_parity.py.
 export const TELEMETRY_SCHEMA_VERSION = 1;
 
+// Phase 237 (D-12): the REVIEW patch is v2 (chips selected / chips total / strip
+// expanded replace the card keys). The solve patch keeps TELEMETRY_SCHEMA_VERSION
+// (1), so the two patches carry separate constants (RESEARCH Pitfall 4). Mirrors
+// app/schemas/train.py REVIEW_TELEMETRY_SCHEMA_VERSION, guarded by tests/schemas/test_train_telemetry_parity.py.
+export const REVIEW_TELEMETRY_SCHEMA_VERSION = 2;
+
 // 30 minutes (D-04). Mirrors app/schemas/train.py TELEMETRY_DURATION_CAP_MS, guarded by tests/schemas/test_train_telemetry_parity.py.
 export const TELEMETRY_DURATION_CAP_MS = 1800000;
 
@@ -22,13 +28,8 @@ export const TELEMETRY_LINE_STEPS_CAP = 50;
 // 50 free-play moves (D-14). Mirrors app/schemas/train.py TELEMETRY_EXPLORE_MOVES_CAP, guarded by tests/schemas/test_train_telemetry_parity.py.
 export const TELEMETRY_EXPLORE_MOVES_CAP = 50;
 
-// 10 cards (D-12): the line boxes plus Also-fine never exceed this. Mirrors app/schemas/train.py TELEMETRY_CARDS_CAP, guarded by tests/schemas/test_train_telemetry_parity.py.
+// 10 chips (D-12): the reveal chips never exceed this (it also clamps the v2 chip counts). Mirrors app/schemas/train.py TELEMETRY_CARDS_CAP, guarded by tests/schemas/test_train_telemetry_parity.py.
 export const TELEMETRY_CARDS_CAP = 10;
-
-// D-11: a desktop hover shorter than this is a pointer fly-over on the way to
-// Next, not engagement. Frontend-only (the server never sees the hover), so it
-// is not mirrored.
-export const REVIEW_CARD_HOVER_MIN_MS = 800;
 
 /**
  * Where a user-played free-play move came from (quick 261007-axc): a move played
@@ -36,9 +37,6 @@ export const REVIEW_CARD_HOVER_MIN_MS = 800;
  * board's onPieceDrop) or a click on a Stockfish engine-line move.
  */
 export type ExploreMoveSource = 'board' | 'engine-line';
-
-/** How a reveal card was engaged: a tap/click that opens it, or a desktop hover span. */
-export type CardEngageKind = 'open' | 'hover-start' | 'hover-end';
 
 /** sessionStorage key marking the (session, puzzle) a think timer already started for. */
 export const THINK_MARKER_STORAGE_KEY = 'train_think_started';
@@ -105,10 +103,18 @@ export interface ReviewCounters {
   boardMoves: number;
   analyzeOpened: boolean;
   walkthrough: boolean;
-  /** Distinct cards opened (D-11/D-12); identity stays client-side, only the count is sent. */
-  cardKeys: ReadonlySet<string>;
-  /** The largest number of cards (line boxes plus Also-fine) shown on this reveal. */
-  cardsTotal: number;
+  /** At least one sideline was forked (D-13): a hand-played move that matches a known line is NOT a fork. */
+  forked: boolean;
+  /**
+   * Distinct chips selected beyond the default You chip (D-12), by tap or by a
+   * line-matching move from the puzzle position. Identity stays client-side,
+   * only the count is sent (T-237-18).
+   */
+  chipKeys: ReadonlySet<string>;
+  /** The largest number of chips shown on this reveal (a late game chip raises it). */
+  chipsTotal: number;
+  /** The phone verdict strip was opened at least once (D-12). */
+  stripExpanded: boolean;
 }
 
 /**
@@ -122,18 +128,20 @@ export function buildReviewTelemetry(
   exit: ReviewExit,
 ): ReviewTelemetry {
   return {
-    v: TELEMETRY_SCHEMA_VERSION,
+    v: REVIEW_TELEMETRY_SCHEMA_VERSION,
     exit,
     review_ms: clampTelemetryCount(totals.visibleMs, TELEMETRY_DURATION_CAP_MS),
     review_hidden_ms: clampTelemetryCount(totals.hiddenMs, TELEMETRY_DURATION_CAP_MS),
     review_line_steps: clampTelemetryCount(counters.lineSteps, TELEMETRY_LINE_STEPS_CAP),
-    review_explored: counters.exploreMoves > 0,
+    // D-13: explored means forked at least one sideline, not "played any move".
+    review_explored: counters.forked,
     review_explore_moves: clampTelemetryCount(counters.exploreMoves, TELEMETRY_EXPLORE_MOVES_CAP),
     review_board_moves: clampTelemetryCount(counters.boardMoves, TELEMETRY_EXPLORE_MOVES_CAP),
     review_analyze_opened: counters.analyzeOpened,
     review_walkthrough: counters.walkthrough,
-    review_cards_opened: clampTelemetryCount(counters.cardKeys.size, TELEMETRY_CARDS_CAP),
-    review_cards_total: clampTelemetryCount(counters.cardsTotal, TELEMETRY_CARDS_CAP),
+    review_chips_selected: clampTelemetryCount(counters.chipKeys.size, TELEMETRY_CARDS_CAP),
+    review_chips_total: clampTelemetryCount(counters.chipsTotal, TELEMETRY_CARDS_CAP),
+    review_strip_expanded: counters.stripExpanded,
   };
 }
 
@@ -141,7 +149,8 @@ export function buildReviewTelemetry(
  * The review totals already flushed for a reveal, as folded numbers only (never
  * a running timestamp), plus the engagement counters. Persisted in the reveal
  * cache so a restored reveal continues ONE review timer and cumulative counters.
- * The counter fields are optional: an entry written before they existed has none.
+ * The counter fields are optional: an entry written before they existed has none,
+ * and legacy v1 fields (card keys) are simply ignored.
  */
 export interface ReviewTelemetrySnapshot {
   visibleMs: number;
@@ -151,8 +160,10 @@ export interface ReviewTelemetrySnapshot {
   boardMoves?: number;
   analyzeOpened?: boolean;
   walkthrough?: boolean;
-  cardKeys?: string[];
-  cardsTotal?: number;
+  forked?: boolean;
+  chipKeys?: string[];
+  chipsTotal?: number;
+  stripExpanded?: boolean;
 }
 
 function isAbsentOrCount(value: unknown): boolean {
@@ -184,7 +195,9 @@ export function isUsableReviewSnapshot(value: unknown): value is ReviewTelemetry
     isAbsentOrCount(v.boardMoves) &&
     isAbsentOrBoolean(v.analyzeOpened) &&
     isAbsentOrBoolean(v.walkthrough) &&
-    isAbsentOrStringArray(v.cardKeys) &&
-    isAbsentOrCount(v.cardsTotal)
+    isAbsentOrBoolean(v.forked) &&
+    isAbsentOrStringArray(v.chipKeys) &&
+    isAbsentOrCount(v.chipsTotal) &&
+    isAbsentOrBoolean(v.stripExpanded)
   );
 }

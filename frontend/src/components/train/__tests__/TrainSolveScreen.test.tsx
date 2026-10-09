@@ -26,10 +26,18 @@ import { TooltipProvider } from '@/components/ui/tooltip';
 import { TRAIN_STEP_HIGHLIGHT } from '@/lib/trainArrows';
 import { MOVE_TIER_POINTS, scorePuzzle } from '@/lib/trainScore';
 import { SETTINGS_STORAGE_KEYS } from '@/lib/engineSettings';
-import { MOVE_QUALITY_BLUNDER, MOVE_QUALITY_GOOD, TRAIN_BEST_MOVE_ARROW } from '@/lib/theme';
+import {
+  MOVE_QUALITY_BLUNDER,
+  MOVE_QUALITY_GOOD,
+  TRAIN_BEST_MOVE_ARROW,
+  TRAIN_FOCUS_ARROW_DIM_OPACITY,
+  TRAIN_FOCUS_ARROW_LIT_OPACITY,
+  TRAIN_FOCUS_BADGE_DIM_OPACITY,
+  TRAIN_FOCUS_BADGE_LIT_OPACITY,
+} from '@/lib/theme';
 import { buildGameAnalysisUrl } from '@/lib/analysisUrl';
 import { animateScrollTop } from '@/lib/animatedScroll';
-import { BY_TEMPERAMENT, introStepCount, WALKTHROUGH_STEP_COUNT } from '@/lib/trainBotCopy';
+import { HILDA_ID, introStepCount, WALKTHROUGH_STEP_COUNT } from '@/lib/trainBotCopy';
 import { PERSONA_REGISTRY } from '@/lib/personas/personaRegistry';
 import { useTrainSession } from '@/hooks/useTrainSession';
 import {
@@ -40,6 +48,7 @@ import {
 } from '@/hooks/useTrainGradingEngine';
 import type { GradeResult, TrainGradingEngine } from '@/hooks/useTrainGradingEngine';
 import { fenAfterUciMove } from '@/hooks/trainGradingSupport';
+import { waitForReveal } from './revealTestUtils';
 import { readTrainRevealCache, type CachedTrainReveal } from '@/lib/trainRevealCache';
 import type {
   ReviewRequest,
@@ -70,10 +79,16 @@ class ResizeObserverStub {
 // the desktop path so the pre-existing hover-spotlight coverage below needs
 // no per-test override.
 let matchMediaMatches = true;
+// WR-02: the reveal action bar is mounted once by breakpoint (`useIsSmUp`, 640px):
+// the in-flow bar from `sm` up, the published phone bottom-bar payload below it.
+// Kept separate from `matchMediaMatches` (the lg desktop gate) so a phone-width
+// bubble/strip test does not also flip the action bar; the probe render sets it false.
+let smUpMatches = true;
+const SM_UP_QUERY = '(min-width: 640px)';
 Object.defineProperty(window, 'matchMedia', {
   writable: true,
   value: vi.fn().mockImplementation((query: string) => ({
-    matches: matchMediaMatches,
+    matches: query === SM_UP_QUERY ? smUpMatches : matchMediaMatches,
     media: query,
     onchange: null,
     addEventListener: vi.fn(),
@@ -83,6 +98,65 @@ Object.defineProperty(window, 'matchMedia', {
     dispatchEvent: vi.fn(),
   })),
 });
+
+// jsdom has no scrollIntoView; the reveal's move list (HorizontalMoveList)
+// scrolls the current token into view.
+if (typeof Element.prototype.scrollIntoView !== 'function') {
+  Element.prototype.scrollIntoView = vi.fn();
+}
+
+// ─── Phase 237 focus-dimming readers (over the ChessBoard mock's attributes) ─
+
+/** Every arrow's explicit opacity, in the order of the mock's data-arrow-ucis
+ * (a merged role draws two arrows with the same UCI, so the values stay a
+ * list per UCI). Dim, never hide: an unfocused move is present with the DIM
+ * opacity, not missing. */
+function arrowOpacitiesByUci(boardEl: HTMLElement): Record<string, number[]> {
+  const ucis = (boardEl.getAttribute('data-arrow-ucis') ?? '').split(',').filter((u) => u !== '');
+  const opacities = (boardEl.getAttribute('data-arrow-opacities') ?? '').split(',');
+  const out: Record<string, number[]> = {};
+  ucis.forEach((uci, i) => {
+    (out[uci] ??= []).push(Number(opacities[i]));
+  });
+  return out;
+}
+
+/** Marker opacities in the order the overlay builder pushed them. */
+function markerOpacities(boardEl: HTMLElement): number[] {
+  return (boardEl.getAttribute('data-marker-opacities') ?? '')
+    .split(',')
+    .filter((o) => o !== '')
+    .map(Number);
+}
+
+/** Phase 237 plan 08: on a phone the verdict is a collapsed strip; open it so the
+ * expanded details (verdict line, pills, Your-call feedback) are readable. */
+async function openVerdictStrip(): Promise<HTMLElement> {
+  await waitForReveal();
+  const strip = await screen.findByTestId('train-verdict-strip');
+  fireEvent.click(strip);
+  return screen.getByTestId('train-verdict-strip-details');
+}
+
+/** Asserts exactly `lit` UCIs are drawn lit and every other drawn arrow is DIM
+ * (all of its arrows, so a merged pair lights together). */
+function expectLitArrows(boardEl: HTMLElement, lit: string[]): void {
+  const byUci = arrowOpacitiesByUci(boardEl);
+  for (const [uci, opacities] of Object.entries(byUci)) {
+    const expected = lit.includes(uci) ? TRAIN_FOCUS_ARROW_LIT_OPACITY : TRAIN_FOCUS_ARROW_DIM_OPACITY;
+    expect(opacities, `arrow ${uci}`).toEqual(opacities.map(() => expected));
+  }
+  for (const uci of lit) expect(Object.keys(byUci), `lit arrow ${uci} is drawn`).toContain(uci);
+}
+
+/** Phase 237: the reveal's move list replaced the per-card steppers. Taps the
+ * move token at `index` (0 = the first move of the focused chip's line). */
+function tapListMove(index = 0): void {
+  const tokens = screen.getByTestId('train-move-tree').querySelectorAll('[data-testid^="variation-node-"]');
+  const token = tokens[index];
+  expect(token, `list move ${index}`).toBeDefined();
+  fireEvent.click(token!);
+}
 
 // ─── ChessBoard mock ────────────────────────────────────────────────────────
 
@@ -101,8 +175,8 @@ vi.mock('@/components/board/ChessBoard', () => ({
     lastMove?: { from: string; to: string } | null;
     lastMoveColor?: string;
     onPieceDrop: (source: string, target: string) => boolean;
-    arrows?: { startSquare: string; endSquare: string; color: string }[];
-    squareMarkers?: unknown[];
+    arrows?: { startSquare: string; endSquare: string; color: string; opacity?: number }[];
+    squareMarkers?: { opacity?: number }[];
   }) => (
     <div
       data-testid="chessboard"
@@ -117,6 +191,11 @@ vi.mock('@/components/board/ChessBoard', () => ({
       data-arrow-ucis={(arrows ?? []).map((a) => `${a.startSquare}${a.endSquare}`).join(',')}
       data-arrow-colors={(arrows ?? []).map((a) => a.color).join(',')}
       data-markers-count={String(squareMarkers?.length ?? 0)}
+      // Phase 237: the focus dimming is an opacity on each arrow/badge, so the
+      // mock exposes them in the same order as data-arrow-ucis (empty string =
+      // no explicit opacity).
+      data-arrow-opacities={(arrows ?? []).map((a) => (a.opacity === undefined ? '' : String(a.opacity))).join(',')}
+      data-marker-opacities={(squareMarkers ?? []).map((m) => (m.opacity === undefined ? '' : String(m.opacity))).join(',')}
     >
       <button data-testid="drop-e2e4" onClick={() => onPieceDrop('e2', 'e4')}>
         e2e4
@@ -234,7 +313,7 @@ vi.mock('@/api/client', async () => {
 // 190.1 UAT round 4: reveal-line stepping plays sounds and the button row
 // carries the shared mute toggle — mocked (same approach as useBotGame.test)
 // so jsdom never touches real Audio machinery. `unlockAudio` (Quick 260805-p37)
-// added once useAnalysisBoard/useTrainFreePlay started calling it on every
+// added once useAnalysisBoard/useTrainRevealTree started calling it on every
 // gesture-driven command — free play on this screen wraps that hook.
 const mockSetMuted = vi.fn();
 vi.mock('@/lib/animatedScroll', () => ({
@@ -381,6 +460,24 @@ class HeldPositionWorker extends FakeWorker {
     const held = this.heldGo;
     this.heldGo = [];
     for (const go of held) super.postMessage(go);
+  }
+}
+
+/**
+ * Phase 237 plan 06 (SOLV-02): a FakeWorker that records every string message it
+ * receives, so a test can prove which Workers were (not) asked to search.
+ */
+class RecordingFakeWorker extends FakeWorker {
+  messages: string[] = [];
+
+  postMessage(msg: string | { progressPort: unknown }): void {
+    if (typeof msg === 'string') this.messages.push(msg);
+    super.postMessage(msg);
+  }
+
+  /** Number of `go ...` searches this Worker has been asked to run. */
+  get goCount(): number {
+    return this.messages.filter((m) => m.startsWith('go ')).length;
   }
 }
 
@@ -640,6 +737,9 @@ function MobileBoardControlsProbe(): ReactElement {
           <span data-testid="mbc-can-go-back">{String(controls.canGoBack)}</span>
           <span data-testid="mbc-can-go-forward">{String(controls.canGoForward)}</span>
           <span data-testid="mbc-can-reset">{String(controls.canReset)}</span>
+          <span data-testid="mbc-has-next">{String(controls.onNext != null)}</span>
+          <span data-testid="mbc-analyze-to">{String(controls.analyzeTo)}</span>
+          <button data-testid="mbc-btn-next" onClick={controls.onNext}>next</button>
           <button data-testid="mbc-btn-back" onClick={controls.onBack}>back</button>
           <button data-testid="mbc-btn-forward" onClick={controls.onForward}>forward</button>
           <button data-testid="mbc-btn-reset" onClick={controls.onReset}>reset</button>
@@ -658,6 +758,8 @@ async function renderScreenWithProbe(
   puzzle: TrainPuzzle,
   session: TrainSessionResponse = makeSession(),
 ) {
+  // Below `sm` the fixed phone bar (fed by the published payload) is the only bar.
+  smUpMatches = false;
   composeOrResumeSession.mockResolvedValue(session);
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
@@ -679,6 +781,7 @@ async function renderScreenWithProbe(
 describe('TrainSolveScreen — progress, last move, grading state, engine failure, solve retry', () => {
   beforeEach(() => {
     matchMediaMatches = true; // desktop by default — see the module-scope stub
+    smUpMatches = true;
     stubbedWorkerInstances = [];
     stubWorker(() => new FakeWorker());
     composeOrResumeSession.mockReset();
@@ -695,6 +798,7 @@ describe('TrainSolveScreen — progress, last move, grading state, engine failur
     vi.unstubAllGlobals();
     vi.useRealTimers();
     localStorage.removeItem(SETTINGS_STORAGE_KEYS.sfArrows);
+    localStorage.removeItem(SETTINGS_STORAGE_KEYS.sfLines);
   });
 
   it('progress: shows "i of N" using the FROZEN session puzzle_count, not puzzles.length', async () => {
@@ -738,7 +842,7 @@ describe('TrainSolveScreen — progress, last move, grading state, engine failur
     await act(async () => {
       fireEvent.click(screen.getByTestId('drop-e2e4')); // matches FakeWorker's default bestmove
     });
-    await waitFor(() => expect(screen.getByTestId('train-verdict-guess')).not.toBeNull());
+    await waitForReveal();
     expect(screen.queryByTestId('train-grading-indicator')).toBeNull();
   });
 
@@ -747,7 +851,7 @@ describe('TrainSolveScreen — progress, last move, grading state, engine failur
     fireEvent.click(screen.getByTestId('btn-train-guess-critical'));
     fireEvent.click(screen.getByTestId('drop-d2d4')); // does not match bestmove e2e4 -> second search
     await waitFor(() => expect(screen.getByTestId('train-grading-indicator')).not.toBeNull());
-    await waitFor(() => expect(screen.getByTestId('train-verdict-guess')).not.toBeNull());
+    await waitForReveal();
   });
 
   it('keyed puzzle: grades against the server key and the best arrow names it (Phase 235)', async () => {
@@ -763,7 +867,7 @@ describe('TrainSolveScreen — progress, last move, grading state, engine failur
     await act(async () => {
       fireEvent.click(screen.getByTestId('drop-e2e4'));
     });
-    await waitFor(() => expect(screen.getByTestId('train-verdict-guess')).not.toBeNull());
+    await waitForReveal();
 
     expect(solvePuzzle).toHaveBeenCalledTimes(1);
     expect(solvePuzzle.mock.calls[0]?.[1].move_quality).toBe('good');
@@ -789,7 +893,7 @@ describe('TrainSolveScreen — progress, last move, grading state, engine failur
     await act(async () => {
       fireEvent.click(screen.getByTestId('drop-e2e4'));
     });
-    await waitFor(() => expect(screen.getByTestId('train-verdict-guess')).not.toBeNull());
+    await waitForReveal();
 
     expect(solvePuzzle).toHaveBeenCalledTimes(1);
     const body = solvePuzzle.mock.calls[0]?.[1];
@@ -820,7 +924,7 @@ describe('TrainSolveScreen — progress, last move, grading state, engine failur
       await act(async () => {
         fireEvent.click(screen.getByTestId('drop-e2e4'));
       });
-      await waitFor(() => expect(screen.getByTestId('train-verdict-guess')).not.toBeNull());
+      await waitForReveal();
 
       expect(solvePuzzle).toHaveBeenCalledTimes(1);
       const body = solvePuzzle.mock.calls[0]?.[1];
@@ -851,7 +955,7 @@ describe('TrainSolveScreen — progress, last move, grading state, engine failur
       await act(async () => {
         fireEvent.click(screen.getByTestId('drop-c2c4'));
       });
-      await waitFor(() => expect(screen.getByTestId('train-verdict-guess')).not.toBeNull());
+      await waitForReveal();
 
       expect(solvePuzzle).toHaveBeenCalledTimes(1);
       expect(solvePuzzle.mock.calls[0]?.[1]).not.toHaveProperty('recheck');
@@ -872,7 +976,7 @@ describe('TrainSolveScreen — progress, last move, grading state, engine failur
     await act(async () => {
       fireEvent.click(screen.getByTestId('drop-e2e4'));
     });
-    await waitFor(() => expect(screen.getByTestId('train-verdict-guess')).not.toBeNull());
+    await waitForReveal();
 
     expect(solvePuzzle).toHaveBeenCalledTimes(1);
     expect(solvePuzzle.mock.calls[0]?.[1]).not.toHaveProperty('recheck');
@@ -902,7 +1006,7 @@ describe('TrainSolveScreen — progress, last move, grading state, engine failur
     await act(async () => {
       fireEvent.click(screen.getByTestId('drop-e2e4'));
     });
-    await waitFor(() => expect(screen.getByTestId('train-verdict-guess')).not.toBeNull());
+    await waitForReveal();
 
     expect(solvePuzzle).toHaveBeenCalledTimes(1);
     const body = solvePuzzle.mock.calls[0]?.[1];
@@ -921,7 +1025,7 @@ describe('TrainSolveScreen — progress, last move, grading state, engine failur
     await act(async () => {
       fireEvent.click(screen.getByTestId('drop-e2e4'));
     });
-    await waitFor(() => expect(screen.getByTestId('train-verdict-guess')).not.toBeNull());
+    await waitForReveal();
 
     expect(solvePuzzle).toHaveBeenCalledTimes(1);
     const body = solvePuzzle.mock.calls[0]?.[1];
@@ -938,7 +1042,7 @@ describe('TrainSolveScreen — progress, last move, grading state, engine failur
     await act(async () => {
       fireEvent.click(screen.getByTestId('drop-d2d4'));
     });
-    await waitFor(() => expect(screen.getByTestId('train-verdict-guess')).not.toBeNull());
+    await waitForReveal();
 
     expect(solvePuzzle).toHaveBeenCalledTimes(1);
     const phoneGrade = solvePuzzle.mock.calls[0]?.[1].phone_grade;
@@ -955,7 +1059,7 @@ describe('TrainSolveScreen — progress, last move, grading state, engine failur
     await act(async () => {
       fireEvent.click(screen.getByTestId('drop-e2e4'));
     });
-    await waitFor(() => expect(screen.getByTestId('train-verdict-guess')).not.toBeNull());
+    await waitForReveal();
 
     expect(solvePuzzle).toHaveBeenCalledTimes(1);
     expect(solvePuzzle.mock.calls[0]?.[1]).not.toHaveProperty('phone_grade');
@@ -970,7 +1074,7 @@ describe('TrainSolveScreen — progress, last move, grading state, engine failur
     await act(async () => {
       fireEvent.click(screen.getByTestId('drop-e2e4'));
     });
-    await waitFor(() => expect(screen.getByTestId('train-verdict-guess')).not.toBeNull());
+    await waitForReveal();
 
     expect(solvePuzzle).toHaveBeenCalledTimes(1);
     const body = solvePuzzle.mock.calls[0]?.[1];
@@ -995,7 +1099,7 @@ describe('TrainSolveScreen — progress, last move, grading state, engine failur
     await waitFor(() => expect(screen.getByTestId('train-solve-error')).not.toBeNull());
 
     fireEvent.click(screen.getByTestId('btn-train-solve-retry'));
-    await waitFor(() => expect(screen.getByTestId('train-verdict-guess')).not.toBeNull());
+    await waitForReveal();
 
     expect(solvePuzzle).toHaveBeenCalledTimes(2);
     const first = solvePuzzle.mock.calls[0]?.[1];
@@ -1024,7 +1128,7 @@ describe('TrainSolveScreen — progress, last move, grading state, engine failur
       await act(async () => {
         fireEvent.click(screen.getByTestId('drop-e2e4'));
       });
-      await waitFor(() => expect(screen.getByTestId('train-verdict-guess')).not.toBeNull());
+      await waitForReveal();
 
       expect(solvePuzzle).toHaveBeenCalledTimes(1);
       const body = solvePuzzle.mock.calls[0]?.[1];
@@ -1070,7 +1174,7 @@ describe('TrainSolveScreen — progress, last move, grading state, engine failur
     // and the verdict renders from the 1.5 s grade.
     expect(screen.queryByTestId('train-recheck-indicator')).toBeNull();
     expect(screen.queryByTestId('train-grading-indicator')).toBeNull();
-    expect(screen.getByTestId('train-verdict-guess')).not.toBeNull();
+    expect(screen.getByTestId('train-reveal')).not.toBeNull();
     expect(solvePuzzle).toHaveBeenCalledTimes(1);
     const body = solvePuzzle.mock.calls[0]?.[1];
     expect(body?.move_quality).toBe('good');
@@ -1099,7 +1203,7 @@ describe('TrainSolveScreen — progress, last move, grading state, engine failur
     // until the whole re-check has answered and the verdict is on screen.
     await waitFor(() => {
       (gated as GatedRecheckWorker | null)?.release();
-      expect(screen.getByTestId('train-verdict-guess')).not.toBeNull();
+      expect(screen.getByTestId('train-reveal')).not.toBeNull();
     });
     expect(screen.queryByTestId('train-recheck-indicator')).toBeNull();
     expect(solvePuzzle.mock.calls[0]?.[1].recheck).toBeDefined();
@@ -1123,7 +1227,7 @@ describe('TrainSolveScreen — progress, last move, grading state, engine failur
       expect(recheckPostsBefore).toBe(2);
 
       fireEvent.click(screen.getByTestId('btn-train-solve-retry'));
-      await waitFor(() => expect(screen.getByTestId('train-verdict-guess')).not.toBeNull());
+      await waitForReveal();
 
       expect(solvePuzzle).toHaveBeenCalledTimes(2);
       expect(solvePuzzle.mock.calls[1]?.[1]).toEqual(solvePuzzle.mock.calls[0]?.[1]);
@@ -1136,6 +1240,10 @@ describe('TrainSolveScreen — progress, last move, grading state, engine failur
 
   it('board holds the played-move position through grading (no flicker/remount), then snaps back to the puzzle position once the reveal opens (190-05 D-08)', async () => {
     const puzzle = makePuzzle();
+    // Phase 237: the board now snaps to the puzzle position in the SAME render the
+    // verdict lands (it follows the reveal tree), so the played-move position has
+    // to be observed while the grading search is held, not in a one-render window.
+    stubWorker(() => new HeldPositionWorker(fenAfterUciMove(START_FEN, 'd2d4') ?? ''));
     await renderScreen(puzzle);
     fireEvent.click(screen.getByTestId('btn-train-guess-critical'));
     fireEvent.click(screen.getByTestId('drop-d2d4'));
@@ -1143,7 +1251,8 @@ describe('TrainSolveScreen — progress, last move, grading state, engine failur
     const positionAtIndicator = screen.getByTestId('chessboard').getAttribute('data-position');
     // No flicker/remount during grading itself: still showing the played move.
     expect(positionAtIndicator).not.toBe(puzzle.fen);
-    await waitFor(() => expect(screen.getByTestId('train-verdict-guess')).not.toBeNull());
+    act(() => releaseHeldWorkers());
+    await waitForReveal();
     const positionAtVerdict = screen.getByTestId('chessboard').getAttribute('data-position');
     // 190-05 D-08: as the reveal opens, the board snaps BACK to the puzzle
     // position — the played move is reported in the verdict text, not left
@@ -1186,7 +1295,7 @@ describe('TrainSolveScreen — progress, last move, grading state, engine failur
     // synchronously against the STALE (still-erroring) refs — permanently
     // rejecting this puzzle's grading, so every subsequent move surfaced
     // `train-grading-error` forever instead of ever reaching a verdict.
-    await waitFor(() => expect(screen.getByTestId('train-verdict-guess')).not.toBeNull());
+    await waitForReveal();
     expect(screen.queryByTestId('train-grading-error')).toBeNull();
   });
 
@@ -1230,7 +1339,7 @@ describe('TrainSolveScreen — progress, last move, grading state, engine failur
     // Pressing Next while disabled must not change the puzzle index — the
     // hook's own gate (not just the disabled attribute) is what's asserted.
     fireEvent.click(nextBtn);
-    expect(screen.queryByTestId('train-verdict-guess')).toBeNull();
+    expect(screen.queryByTestId('train-reveal')).toBeNull();
 
     expect(solvePuzzle).toHaveBeenCalledTimes(1);
     const firstAttemptBody = solvePuzzle.mock.calls[0]?.[1];
@@ -1238,7 +1347,7 @@ describe('TrainSolveScreen — progress, last move, grading state, engine failur
     // Retry re-submits — this time it resolves (mockResolvedValue default).
     fireEvent.click(screen.getByTestId('btn-train-solve-retry'));
 
-    await waitFor(() => expect(screen.getByTestId('train-verdict-guess')).not.toBeNull());
+    await waitForReveal();
     expect(screen.queryByTestId('train-solve-error')).toBeNull();
 
     expect(solvePuzzle).toHaveBeenCalledTimes(2);
@@ -1251,11 +1360,11 @@ describe('TrainSolveScreen — progress, last move, grading state, engine failur
 
   // ─── 190.1-01: end-to-end game-move reveal line, real hook + real Worker ──
 
-  it('the game-move box surfaces a live eval from the REAL grading engine, not a stub, once the reveal lands', async () => {
+  it('the game-move chip surfaces a live eval from the REAL grading engine, not a stub, once the reveal lands', async () => {
     // played_in_game_move_uci ('d2d4') is deliberately DISTINCT from the
     // played/best move ('e2e4', FakeWorker's fixed bestmove) — 190.1-03's
     // coincidence-merge rule only skips the reveal-time search (and folds
-    // the game-move box into the your/best box) when the game move matches
+    // the game move into the You / Best chip) when the game move matches
     // one of the other two; this test exercises the independent search path.
     revealPuzzle.mockResolvedValueOnce({
       game_id: 100,
@@ -1272,15 +1381,11 @@ describe('TrainSolveScreen — progress, last move, grading state, engine failur
     await act(async () => {
       fireEvent.click(screen.getByTestId('drop-e2e4'));
     });
-    await waitFor(() => expect(screen.getByTestId('train-line-box-game-move')).not.toBeNull());
-    // Scoped to the game-move box specifically — the exact-match played move
-    // also renders its own (merged your/best) stepper with the SAME
-    // train-line-stepper-eval testid, so an unscoped query would be ambiguous.
+    await waitFor(() => expect(screen.getByTestId('train-chip-game')).not.toBeNull());
+    // The eval lands once the reveal-time search resolves (the chip shows a
+    // spinner until then).
     await waitFor(() => {
-      const evalEl = screen
-        .getByTestId('train-line-box-game-move')
-        .querySelector('[data-testid="train-line-stepper-eval"]');
-      expect(evalEl?.textContent).not.toBe('');
+      expect(screen.getByTestId('train-chip-game-eval').textContent).not.toBe('');
     });
   });
 
@@ -1296,7 +1401,7 @@ describe('TrainSolveScreen — progress, last move, grading state, engine failur
     await act(async () => {
       fireEvent.click(screen.getByTestId('drop-e2e4'));
     });
-    await waitFor(() => expect(screen.getByTestId('train-verdict-guess')).not.toBeNull());
+    await waitForReveal();
     await waitFor(() =>
       expect(Number(screen.getByTestId('chessboard').getAttribute('data-arrows-count'))).toBeGreaterThan(0),
     );
@@ -1314,6 +1419,39 @@ describe('TrainSolveScreen — progress, last move, grading state, engine failur
     );
   });
 
+  // ─── Phase 237 tracer: chips + one move tree on the real reveal ─────────
+
+  it('tracer: tapping the Best chip lights its arrow at the puzzle position and a list tap steps the line', async () => {
+    // A three-move PV so the second token of the Best line still has a next move.
+    stubWorker(() => new FakeWorker('e2e4', 'e2e4 e7e5 g1f3'));
+    await renderScreen(makePuzzle());
+    fireEvent.click(screen.getByTestId('btn-train-guess-critical'));
+    await act(async () => {
+      fireEvent.click(screen.getByTestId('drop-d2d4')); // non-best -> separate You / Best chips
+    });
+    await waitForReveal();
+    const board = () => screen.getByTestId('chessboard');
+
+    // The reveal opens with the Move chip active: its arrow lit, the best arrow dimmed.
+    await waitFor(() => expect(screen.getByTestId('train-chip-your').getAttribute('data-active')).toBe('true'));
+    await waitFor(() => expectLitArrows(board(), ['d2d4']));
+    expect(Object.keys(arrowOpacitiesByUci(board()))).toContain('e2e4');
+
+    // D-01: a Best chip tap lights the best arrow; the board stays at the puzzle position.
+    fireEvent.click(screen.getByTestId('train-chip-best'));
+    await waitFor(() => expectLitArrows(board(), ['e2e4']));
+    expect(screen.getByTestId('train-chip-best').getAttribute('data-active')).toBe('true');
+    expect(board().getAttribute('data-position')).toBe(START_FEN);
+
+    // D-03: a tap on the SECOND move token of the list steps the board there with
+    // the step overlay (one blue next-move arrow).
+    fireEvent.click(within(screen.getByTestId('train-move-tree')).getByText('e5'));
+    await waitFor(() => expect(board().getAttribute('data-position')).not.toBe(START_FEN));
+    expect(board().getAttribute('data-position')).toContain('rnbqkbnr/pppp1ppp/8/4p3/4P3');
+    expect(board().getAttribute('data-arrows-count')).toBe('1');
+    expect(board().getAttribute('data-arrow-ucis')).toBe('g1f3');
+  });
+
   // ─── 190.1 UAT: reveal-line stepping clears the overlay; Solution restores ─
 
   it('stepping a reveal line clears the overlay, highlights the stepped move in its quality color with a blue next-move arrow, and Solution restores everything', async () => {
@@ -1329,9 +1467,8 @@ describe('TrainSolveScreen — progress, last move, grading state, engine failur
       expect(Number(screen.getByTestId('chessboard').getAttribute('data-markers-count'))).toBeGreaterThan(0),
     );
 
-    // Step to the line's first move (the merged your/best box's first token).
-    const yourBox = screen.getByTestId('train-line-box-your-move');
-    fireEvent.click(within(yourBox).getByTestId('train-line-stepper-token-0'));
+    // Step to the line's first move (the merged Move = Best chip's first list token).
+    tapListMove(0);
 
     const board = () => screen.getByTestId('chessboard');
     // UAT round 4: the FIRST move of a stepped line keeps exactly its own
@@ -1345,12 +1482,12 @@ describe('TrainSolveScreen — progress, last move, grading state, engine failur
     expect(board().getAttribute('data-arrows-count')).toBe('1');
 
     // Deeper into the line (an engine continuation): no quality badge at all.
-    fireEvent.click(within(yourBox).getByTestId('train-line-stepper-token-1'));
+    tapListMove(1);
     await waitFor(() => expect(board().getAttribute('data-markers-count')).toBe('0'));
 
     // Solution: board back at the puzzle position, full overlay + the
     // arrival-move highlight restored.
-    fireEvent.click(screen.getByTestId('btn-train-solution'));
+    fireEvent.click(screen.getByTestId('board-btn-reset'));
     await waitFor(() =>
       expect(Number(board().getAttribute('data-markers-count'))).toBeGreaterThan(0),
     );
@@ -1363,80 +1500,117 @@ describe('TrainSolveScreen — progress, last move, grading state, engine failur
   // FULL solution — both the your-move and best-move arrows. The card being
   // stepped is still spotlit at that moment (the pointer never left it), which
   // used to leave the "restored" board showing that one move alone.
-  it('stepping a spotlit line back to its start drops the spotlight, so the full solution overlay returns', async () => {
-    stubWorker(() => new FakeWorker('e2e4', 'e2e4 e7e5'));
-    await renderScreen(makePuzzle());
-    fireEvent.click(screen.getByTestId('btn-train-guess-critical'));
-    await act(async () => {
-      fireEvent.click(screen.getByTestId('drop-d2d4')); // non-best -> separate your/best boxes
-    });
-    await waitFor(() => expect(screen.getByTestId('train-verdict-guess')).not.toBeNull());
-
-    const board = () => screen.getByTestId('chessboard');
-    await waitFor(() =>
-      expect(Number(board().getAttribute('data-arrows-count'))).toBeGreaterThan(1),
-    );
-    const fullArrowCount = Number(board().getAttribute('data-arrows-count'));
-
-    // Hover the your-move card (what stepping inside it implies) and step in.
-    const yourBox = screen.getByTestId('train-line-box-your-move');
-    fireEvent.pointerEnter(yourBox);
-    await waitFor(() => expect(board().getAttribute('data-arrows-count')).toBe('1'));
-    fireEvent.click(within(yourBox).getByTestId('train-line-stepper-token-0'));
-    await waitFor(() => expect(screen.getByTestId('btn-train-solution')).not.toBeNull());
-
-    // Back to the start ply WITHOUT moving the pointer off the card.
-    fireEvent.click(within(yourBox).getByTestId('btn-train-step-prev'));
-    await waitFor(() => expect(screen.queryByTestId('btn-train-solution')).toBeNull());
-    expect(board().getAttribute('data-position')).toBe(START_FEN);
-    expect(Number(board().getAttribute('data-arrows-count'))).toBe(fullArrowCount);
-  });
-
   // Phase 200 UAT round 9: while a line is stepped, clicking ANOTHER card used
   // to move only the card ring — the board stayed at the stepped position, so
   // the clicked card's own move was nowhere on screen. It must snap back to the
   // solution position and show that card's move.
-  it('clicking a card while a line is stepped returns the board to the solution position and spotlights that card', async () => {
+  it('D-01: tapping a chip while stepped into another line returns the board to the puzzle position with that chip\'s arrow lit', async () => {
     stubWorker(() => new FakeWorker('e2e4', 'e2e4 e7e5'));
     await renderScreen(makePuzzle());
     fireEvent.click(screen.getByTestId('btn-train-guess-critical'));
     await act(async () => {
-      fireEvent.click(screen.getByTestId('drop-d2d4')); // non-best -> separate your/best boxes
+      fireEvent.click(screen.getByTestId('drop-d2d4')); // non-best -> separate You / Best chips
     });
-    await waitFor(() => expect(screen.getByTestId('train-verdict-guess')).not.toBeNull());
+    await waitForReveal();
 
     const board = () => screen.getByTestId('chessboard');
     await waitFor(() =>
       expect(Number(board().getAttribute('data-arrows-count'))).toBeGreaterThan(1),
     );
 
-    // Step two plies into the your-move box's line — the board now shows a
-    // position that no other card describes.
-    const yourBox = screen.getByTestId('train-line-box-your-move');
-    fireEvent.click(within(yourBox).getByTestId('train-line-stepper-token-0'));
+    // Step into the You line — the board now shows a position no other chip describes.
+    tapListMove(0);
     await waitFor(() => expect(board().getAttribute('data-position')).not.toBe(START_FEN));
+    expect((screen.getByTestId('board-btn-reset') as HTMLButtonElement).disabled).toBe(false);
 
-    // Click the best-move card's body (not one of its buttons).
-    fireEvent.click(screen.getByTestId('train-line-box-best-move'));
+    // Tap the Best chip: the board jumps to the puzzle position with its arrow lit.
+    fireEvent.click(screen.getByTestId('train-chip-best'));
 
     await waitFor(() => expect(board().getAttribute('data-position')).toBe(START_FEN));
-    // The stepped line is over (no Solution button) and the board shows the
-    // clicked card's move alone — the spotlight survived the reset.
-    expect(screen.queryByTestId('btn-train-solution')).toBeNull();
-    expect(board().getAttribute('data-arrows-count')).toBe('1');
-    expect(screen.getByTestId('train-line-box-best-move').getAttribute('data-spotlight')).toBe(
-      'true',
-    );
+    // The stepped line is over (rewind is disabled again) and the Best move is LIT
+    // (the other move is dimmed, not removed).
+    expect((screen.getByTestId('board-btn-reset') as HTMLButtonElement).disabled).toBe(true);
+    expect(Number(board().getAttribute('data-arrows-count'))).toBeGreaterThan(1);
+    expectLitArrows(board(), ['e2e4']);
+    expect(screen.getByTestId('train-chip-best').getAttribute('data-active')).toBe('true');
   });
 
-  // ─── Phase 200 (LEGEND-02): reveal legend hover spotlight, end to end ─────
+  it('D-01: tapping the chip whose own line is on the board does not move the board', async () => {
+    stubWorker(() => new FakeWorker('e2e4', 'e2e4 e7e5 g1f3'));
+    await renderScreen(makePuzzle());
+    fireEvent.click(screen.getByTestId('btn-train-guess-critical'));
+    await act(async () => {
+      fireEvent.click(screen.getByTestId('drop-d2d4'));
+    });
+    await waitForReveal();
+    const board = () => screen.getByTestId('chessboard');
 
-  it('hovering the best-move legend box spotlights its own arrow on the shared board; pointer-leave restores the full overlay', async () => {
+    // Walk into the Best line (chip first, so the list shows the Best line), two plies deep.
+    fireEvent.click(screen.getByTestId('train-chip-best'));
+    tapListMove(1);
+    await waitFor(() => expect(board().getAttribute('data-position')).not.toBe(START_FEN));
+    const positionInLine = board().getAttribute('data-position');
+
+    // Tapping Best again while on its own line leaves the board exactly where it is.
+    fireEvent.click(screen.getByTestId('train-chip-best'));
+    expect(board().getAttribute('data-position')).toBe(positionInLine);
+    expect(screen.getByTestId('train-chip-best').getAttribute('data-active')).toBe('true');
+  });
+
+  it('D-02: playing the best move shows ONE chip labelled "Move = Best" and one lit arrow', async () => {
+    await renderScreen(makePuzzle());
+    fireEvent.click(screen.getByTestId('btn-train-guess-critical'));
+    await act(async () => {
+      fireEvent.click(screen.getByTestId('drop-e2e4')); // exact match -> played IS best
+    });
+    await waitForReveal();
+
+    expect(screen.getByTestId('train-chip-your-label').textContent).toBe('Move = Best');
+    expect(screen.queryByTestId('train-chip-best')).toBeNull();
+    const board = () => screen.getByTestId('chessboard');
+    await waitFor(() => expectLitArrows(board(), ['e2e4']));
+    expect(Object.keys(arrowOpacitiesByUci(board()))).toEqual(['e2e4']);
+  });
+
+  it('tracer: a best-move solve shows the collapsed strip with its total and expands to the full feedback', async () => {
+    matchMediaMatches = false; // phone: the verdict is a strip, not a bubble
+    await renderScreen(makePuzzle());
+    fireEvent.click(screen.getByTestId('btn-train-guess-critical'));
+    await act(async () => {
+      fireEvent.click(screen.getByTestId('drop-e2e4')); // exact match -> played IS the engine's best
+    });
+    await waitForReveal();
+
+    const strip = await screen.findByTestId('train-verdict-strip');
+    expect(strip.getAttribute('aria-expanded')).toBe('false');
+    expect(screen.getByTestId('train-verdict-strip-line').textContent).toBe('Right call, best move');
+    expect(screen.getByTestId('train-verdict-strip-points').textContent).toBe(
+      `+${scorePuzzle(SOLVE_RESPONSE.correct_guess, SOLVE_RESPONSE.move_quality)}`,
+    );
+    expect(screen.queryByTestId('train-verdict-strip-details')).toBeNull();
+    // The old surfaces are gone on a phone: no bubble, no Your-call card.
+    expect(screen.queryByTestId('train-bot-bubble')).toBeNull();
+    expect(screen.queryByTestId('train-verdict-guess')).toBeNull();
+
+    fireEvent.click(strip);
+    expect(strip.getAttribute('aria-expanded')).toBe('true');
+    const details = screen.getByTestId('train-verdict-strip-details');
+    const verdictLine = within(details).getByTestId('train-bot-verdict-line');
+    const guessRow = within(details).getByTestId('train-verdict-guess');
+    const guessProse = within(details).getByTestId('train-verdict-guess-prose');
+    expect(verdictLine.compareDocumentPosition(guessRow) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(guessRow.compareDocumentPosition(guessProse) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(within(details).queryByTestId('btn-train-analyze')).toBeNull();
+  });
+
+  // ─── Phase 200 (LEGEND-02) / Phase 237: chip focus on the shared board, end to end ─
+
+  it('tapping the Best chip lights its own arrow on the shared board and dims the merged Move = Game move; tapping You restores it', async () => {
     // played_in_game_move_uci ('d2d4') coincides with the user's own played
     // move (also 'd2d4', a non-exact-match play against FakeWorker's fixed
-    // bestmove 'e2e4') — merges your+game into one box and leaves 'best' as
-    // its own standalone box (train-line-box-best-move), so the spotlight
-    // target and its single arrow are unambiguous.
+    // bestmove 'e2e4') — merges You + Game into one chip and leaves Best as
+    // its own chip (train-chip-best), so the focus target and its single arrow
+    // are unambiguous.
     revealPuzzle.mockResolvedValueOnce({
       game_id: 100,
       ply: 20,
@@ -1450,8 +1624,8 @@ describe('TrainSolveScreen — progress, last move, grading state, engine failur
     stubWorker(() => new FakeWorker('e2e4', 'e2e4 e7e5'));
     await renderScreen(makePuzzle());
     fireEvent.click(screen.getByTestId('btn-train-guess-critical'));
-    fireEvent.click(screen.getByTestId('drop-d2d4')); // non-exact -> separate your/best boxes
-    await waitFor(() => expect(screen.getByTestId('train-verdict-guess')).not.toBeNull());
+    fireEvent.click(screen.getByTestId('drop-d2d4')); // non-exact -> separate You / Best chips
+    await waitForReveal();
 
     const board = () => screen.getByTestId('chessboard');
     await waitFor(() =>
@@ -1459,20 +1633,23 @@ describe('TrainSolveScreen — progress, last move, grading state, engine failur
     );
     const fullArrowCount = Number(board().getAttribute('data-arrows-count'));
     expect(fullArrowCount).toBeGreaterThan(1); // a genuinely multi-arrow reveal
+    // The reveal opens on the You (= Game) chip.
+    await waitFor(() => expectLitArrows(board(), ['d2d4']));
 
-    const bestBox = screen.getByTestId('train-line-box-best-move');
-    fireEvent.pointerEnter(bestBox);
-    await waitFor(() => expect(board().getAttribute('data-arrows-count')).toBe('1'));
+    fireEvent.click(screen.getByTestId('train-chip-best'));
+    // Lighting the best move DIMS the merged Move = Game move (both of its
+    // arrows), never removes anything.
+    await waitFor(() => expectLitArrows(board(), ['e2e4']));
+    expect(Number(board().getAttribute('data-arrows-count'))).toBe(fullArrowCount);
 
-    fireEvent.pointerLeave(bestBox);
-    await waitFor(() =>
-      expect(Number(board().getAttribute('data-arrows-count'))).toBe(fullArrowCount),
-    );
+    fireEvent.click(screen.getByTestId('train-chip-your'));
+    await waitFor(() => expectLitArrows(board(), ['d2d4']));
+    expect(Number(board().getAttribute('data-arrows-count'))).toBe(fullArrowCount);
   });
 
-  it('the pristine board draws three arrows and three badges — your-move, best-move, AND played-in-game — with no hover; hovering the game-move box still narrows to one arrow and leaving restores three (260902-qf7 reverses Phase 200 UAT)', async () => {
+  it('the reveal opens with You lit — three arrows and three badges are drawn, only the You move is lit — and tapping Game then Best moves the light (Phase 237 dim-not-hide)', async () => {
     // A game move distinct from BOTH the user's played move (d2d4) and the
-    // engine's best move (e2e4), so it gets its own standalone box and lands
+    // engine's best move (e2e4), so it gets its own standalone chip and lands
     // on its own square (f3), keeping all three arrows/badges pairwise
     // distinguishable (d4/e4/f3).
     revealPuzzle.mockResolvedValueOnce({
@@ -1490,47 +1667,66 @@ describe('TrainSolveScreen — progress, last move, grading state, engine failur
     await act(async () => {
       fireEvent.click(screen.getByTestId('drop-d2d4')); // non-exact -> your != best
     });
-    await waitFor(() => expect(screen.getByTestId('train-verdict-guess')).not.toBeNull());
-    // The game box exists (so its arrow IS available to spotlight)...
-    const gameBox = await waitFor(() => screen.getByTestId('train-line-box-game-move'));
+    await waitForReveal();
+    // The game chip exists (so its arrow IS available to focus)...
+    await waitFor(() => expect(screen.getByTestId('train-chip-game')).not.toBeNull());
 
-    // 260902-qf7 reverses the Phase 200 UAT call: the pristine board now
-    // carries all THREE arrows with no hover — the played-in-game arrow is
-    // no longer hover/tap-only, only the "Also fine" alternatives are. The
-    // marker count is asserted separately (and inside its own `waitFor`)
-    // because the game move's own quality badge depends on the reveal-time
-    // engine search resolving (`gameMoveLine`), an async gap that lands
-    // strictly after the arrow itself is drawn.
+    // All THREE arrows and badges are drawn with no tap (260902-qf7). The marker
+    // count is asserted inside its own `waitFor` because the game move's own
+    // quality badge depends on the reveal-time engine search resolving
+    // (`gameMoveLine`), an async gap that lands strictly after the arrow itself.
     const board = () => screen.getByTestId('chessboard');
     await waitFor(() => expect(board().getAttribute('data-arrows-count')).toBe('3'));
     await waitFor(() => expect(board().getAttribute('data-markers-count')).toBe('3'));
+    // Phase 237: the Move chip is active, so ONLY its arrow and badge are lit.
+    expectLitArrows(board(), ['d2d4']);
+    // Badges are pushed played > best > game, i.e. d4, e4, f3.
+    expect(markerOpacities(board())).toEqual([
+      TRAIN_FOCUS_BADGE_LIT_OPACITY,
+      TRAIN_FOCUS_BADGE_DIM_OPACITY,
+      TRAIN_FOCUS_BADGE_DIM_OPACITY,
+    ]);
 
-    // The legend card still narrows the board to its own single arrow on
-    // hover/tap, and pointer-leave restores the full three-arrow set.
-    fireEvent.pointerEnter(gameBox);
-    await waitFor(() => expect(board().getAttribute('data-arrows-count')).toBe('1'));
+    fireEvent.click(screen.getByTestId('train-chip-game'));
+    await waitFor(() => expectLitArrows(board(), ['g1f3']));
+    expect(board().getAttribute('data-arrows-count')).toBe('3');
+    expect(board().getAttribute('data-markers-count')).toBe('3');
+    expect(markerOpacities(board())).toEqual([
+      TRAIN_FOCUS_BADGE_DIM_OPACITY,
+      TRAIN_FOCUS_BADGE_DIM_OPACITY,
+      TRAIN_FOCUS_BADGE_LIT_OPACITY,
+    ]);
 
-    fireEvent.pointerLeave(gameBox);
-    await waitFor(() => expect(board().getAttribute('data-arrows-count')).toBe('3'));
+    fireEvent.click(screen.getByTestId('train-chip-best'));
+    await waitFor(() => expectLitArrows(board(), ['e2e4']));
+    expect(markerOpacities(board())).toEqual([
+      TRAIN_FOCUS_BADGE_DIM_OPACITY,
+      TRAIN_FOCUS_BADGE_LIT_OPACITY,
+      TRAIN_FOCUS_BADGE_DIM_OPACITY,
+    ]);
+    expect(board().getAttribute('data-arrows-count')).toBe('3');
   });
 
-  it('a puzzle with no played-in-game move draws only the your-move and best-move arrows on the pristine board (filler puzzles are unaffected by 260902-qf7)', async () => {
+  it('a puzzle with no played-in-game move shows two chips and draws only the your-move and best-move arrows (filler puzzles are unaffected by 260902-qf7)', async () => {
     // Uses the module-level `revealPuzzle` default fixture
-    // (`played_in_game_move_uci: null`) — no game-move legend box is ever
-    // rendered, so the pristine set stays the your/best pair the Phase 200
-    // UAT default already established; this guards that the reversal above
-    // is scoped to puzzles that actually carry a game move.
+    // (`played_in_game_move_uci: null`) — no Game chip is ever rendered, so the
+    // drawn set stays the your/best pair; this guards that the game arrow is
+    // scoped to puzzles that actually carry a game move.
     await renderScreen(makePuzzle());
     fireEvent.click(screen.getByTestId('btn-train-guess-critical'));
     await act(async () => {
       fireEvent.click(screen.getByTestId('drop-d2d4')); // non-exact -> your != best
     });
-    await waitFor(() => expect(screen.getByTestId('train-verdict-guess')).not.toBeNull());
-    expect(screen.queryByTestId('train-line-box-game-move')).toBeNull();
+    await waitForReveal();
+    expect(screen.queryByTestId('train-chip-game')).toBeNull();
+    expect(screen.getByTestId('train-chip-your')).not.toBeNull();
+    expect(screen.getByTestId('train-chip-best')).not.toBeNull();
 
     const board = () => screen.getByTestId('chessboard');
     await waitFor(() => expect(board().getAttribute('data-arrows-count')).toBe('2'));
     expect(board().getAttribute('data-markers-count')).toBe('2');
+    expectLitArrows(board(), ['d2d4']); // You lit, Best present but dimmed
+    expect(Object.keys(arrowOpacitiesByUci(board())).sort()).toEqual(['d2d4', 'e2e4']);
   });
 
   // ─── Phase 200 (LEGEND-04): the "Also fine" row, end to end ───────────────
@@ -1652,7 +1848,7 @@ describe('TrainSolveScreen — progress, last move, grading state, engine failur
     }
   }
 
-  it('a herring puzzle with three drawn alternatives lists all three SANs in the guess card; the alternatives are OFF the pristine board and appear only while that card is hovered (Phase 200 UAT)', async () => {
+  it('a herring puzzle with three drawn alternatives lists all three SANs in the guess card; the alternatives stay DIMMED on the board whichever chip is focused (Phase 237)', async () => {
     stubWorker(() => new MultiRankFakeWorker());
     // Phase 211 (D-01): the alternatives come from the SERVER's vetted_moves
     // on the solve response — the client engine's own ranks no longer feed
@@ -1679,27 +1875,26 @@ describe('TrainSolveScreen — progress, last move, grading state, engine failur
     await act(async () => {
       fireEvent.click(screen.getByTestId('drop-e2e4'));
     });
-    await waitFor(() => expect(screen.getByTestId('train-verdict-guess')).not.toBeNull());
+    await waitForReveal();
 
-    // UAT round 6: the list lives in the guess card's body, and the card (not
-    // the list) is the spotlight target.
+    // UAT round 6: the list lives in the guess card's body.
     const list = await waitFor(() => screen.getByTestId('train-reveal-also-fine'));
     expect(list.textContent).toContain('d4');
     expect(list.textContent).toContain('Nf3');
     expect(list.textContent).toContain('c4');
-    const card = screen.getByTestId('train-verdict-guess');
 
-    // Phase 200 UAT: the pristine board draws ONLY your/best — here they
-    // coincide, so exactly one (blue) arrow. The three alternatives are listed
-    // in the card above but drawn nowhere yet.
+    // Phase 237 (dim, never hide): the board lights the focused chip (your =
+    // best coincide, so one blue arrow) AND draws the three alternatives
+    // DIMMED. No chip owns an alternative, so they stay dimmed whichever chip
+    // is focused.
     const board = () => screen.getByTestId('chessboard');
-    await waitFor(() => expect(board().getAttribute('data-arrows-count')).toBe('1'));
+    await waitFor(() => expect(board().getAttribute('data-arrows-count')).toBe('4'));
+    expectLitArrows(board(), ['e2e4']);
+    expect(Object.keys(arrowOpacitiesByUci(board())).sort()).toEqual(['c2c4', 'd2d4', 'e2e4', 'g1f3']);
 
-    fireEvent.pointerEnter(card);
-    await waitFor(() => expect(board().getAttribute('data-arrows-count')).toBe('3'));
-
-    fireEvent.pointerLeave(card);
-    await waitFor(() => expect(board().getAttribute('data-arrows-count')).toBe('1'));
+    fireEvent.click(screen.getByTestId('train-chip-your'));
+    await waitFor(() => expectLitArrows(board(), ['e2e4']));
+    expect(board().getAttribute('data-arrows-count')).toBe('4');
   });
 
   // ─── Phase 211 (D-03/D-07): the board badge follows the server's graded ES ─
@@ -1733,7 +1928,7 @@ describe('TrainSolveScreen — progress, last move, grading state, engine failur
     await act(async () => {
       fireEvent.click(screen.getByTestId('drop-b1c3')); // off-rank -> real after-move search
     });
-    await waitFor(() => expect(screen.getByTestId('train-verdict-guess')).not.toBeNull());
+    await waitForReveal();
 
     // (a) The board followed the SERVER, not the client engine: the played
     // arrow is good-green, and no blunder-colored arrow exists anywhere.
@@ -1762,7 +1957,7 @@ describe('TrainSolveScreen — progress, last move, grading state, engine failur
     await act(async () => {
       fireEvent.click(screen.getByTestId('drop-e2e4'));
     });
-    await waitFor(() => expect(screen.getByTestId('train-verdict-guess')).not.toBeNull());
+    await waitForReveal();
 
     // No "Also fine" list, and hovering the guess card surfaces no
     // alternative arrows — the pristine single blue best/played arrow stays.
@@ -1802,7 +1997,7 @@ describe('TrainSolveScreen — progress, last move, grading state, engine failur
     await act(async () => {
       fireEvent.click(screen.getByTestId('drop-e2e4')); // rank-1, exact match -> lands the verdict
     });
-    await waitFor(() => expect(screen.getByTestId('train-verdict-guess')).not.toBeNull());
+    await waitForReveal();
 
     // Post-verdict: the FIRST free-play move, from the root, is the served
     // vetted ("Also fine") move.
@@ -1825,7 +2020,7 @@ describe('TrainSolveScreen — progress, last move, grading state, engine failur
     await act(async () => {
       fireEvent.click(screen.getByTestId('drop-e2e4')); // rank-1, exact match -> lands the verdict
     });
-    await waitFor(() => expect(screen.getByTestId('train-verdict-guess')).not.toBeNull());
+    await waitForReveal();
 
     // b1c3 (Nc3) is legal but outside every mount rank (e2e4/d2d4/g1f3/c2c4)
     // — D-04's accepted residual seam: esBefore stays seeded from the mount
@@ -1837,44 +2032,43 @@ describe('TrainSolveScreen — progress, last move, grading state, engine failur
     );
   });
 
-  // ─── 190.1 UAT round 3: Solution/Analyze/Next row below the board ─────────
+  // ─── 190.1 UAT round 3 / Phase 237 plan 07: the action bar under the board ──
 
-  it('the Analyze/Next row appears below the board only once the verdict lands; Solution joins it once the board departs the pristine reveal (Phase 200 D-11)', async () => {
+  it('the action bar appears under the board only once the verdict lands; rewind is disabled at the puzzle position and live after a list step', async () => {
     await renderScreen(makePuzzle({ ply: 20 }));
-    expect(screen.queryByTestId('btn-train-solution')).toBeNull();
+    expect(screen.queryByTestId('train-reveal-action-bar')).toBeNull();
     expect(screen.queryByTestId('btn-train-analyze')).toBeNull();
     fireEvent.click(screen.getByTestId('btn-train-guess-critical'));
     await act(async () => {
       fireEvent.click(screen.getByTestId('drop-e2e4'));
     });
     await waitFor(() => expect(screen.getByTestId('btn-train-analyze')).not.toBeNull());
-    // Phase 200 (D-11): Solution is absent on the pristine reveal — nothing
-    // for it to do yet.
-    expect(screen.queryByTestId('btn-train-solution')).toBeNull();
+    const reset = () => screen.getByTestId('board-btn-reset') as HTMLButtonElement;
+    // The pristine reveal sits at the puzzle position: nothing to rewind.
+    expect(reset().disabled).toBe(true);
 
-    // Step the merged your/best box's first move — the board departs the
-    // pristine reveal, so Solution now has a job and joins the row.
-    const yourBox = screen.getByTestId('train-line-box-your-move');
-    fireEvent.click(within(yourBox).getByTestId('train-line-stepper-token-0'));
-    await waitFor(() => expect(screen.getByTestId('btn-train-solution')).not.toBeNull());
+    // Step the merged Move = Best line's first move: the board departs the puzzle
+    // position, so rewind now has a job.
+    await waitFor(() => expect(screen.getByTestId('train-move-tree')).not.toBeNull());
+    tapListMove(0);
+    await waitFor(() => expect(reset().disabled).toBe(false));
 
-    const solutionBtn = screen.getByTestId('btn-train-solution');
+    const bar = screen.getByTestId('train-reveal-action-bar');
     const analyzeBtn = screen.getByTestId('btn-train-analyze');
     const nextBtn = screen.getByTestId('btn-train-next');
-    expect(solutionBtn.closest('div')).toBe(analyzeBtn.closest('div'));
-    expect(analyzeBtn.closest('div')).toBe(nextBtn.closest('div'));
-    // Phase 222 (D-10): the row now lives INSIDE the verdict bubble's own
-    // actions slot, not the below-board sibling.
-    const bubble = screen.getByTestId('train-bot-bubble');
-    expect(bubble.contains(solutionBtn)).toBe(true);
-    expect(bubble.contains(analyzeBtn)).toBe(true);
-    expect(bubble.contains(nextBtn)).toBe(true);
+    // The bar owns the controls; the verdict bubble carries copy only.
+    expect(bar.contains(analyzeBtn)).toBe(true);
+    expect(bar.contains(nextBtn)).toBe(true);
+    expect(bar.contains(reset())).toBe(true);
+    const bubble = screen.getByTestId('train-verdict-card');
+    expect(bubble.contains(analyzeBtn)).toBe(false);
+    expect(bubble.contains(nextBtn)).toBe(false);
     // Analyze deep-links one ply BEFORE the mistake (ply 20 -> 19).
     expect(analyzeBtn.getAttribute('href')).toBe(buildGameAnalysisUrl(100, 19));
 
-    // Pressing Solution restores the pristine reveal, which hides it again.
-    fireEvent.click(solutionBtn);
-    await waitFor(() => expect(screen.queryByTestId('btn-train-solution')).toBeNull());
+    // Rewind returns to the puzzle position, which disables it again.
+    fireEvent.click(reset());
+    await waitFor(() => expect(reset().disabled).toBe(true));
   });
 
   it('Phase 222 (D-10): the mute toggle is retired — no board-btn-mute renders once the verdict lands', async () => {
@@ -1951,7 +2145,7 @@ describe('TrainSolveScreen — progress, last move, grading state, engine failur
 
   // ─── D-09: Analyze hidden (not disabled) when game_id is null (Phase 192) ──
 
-  it('hides the Analyze link when the source game link is null, but Next still renders (Solution joins once a line is stepped, Phase 200 D-11)', async () => {
+  it('hides the Analyze link when the source game link is null, but the bar still has Next and rewind (Phase 237 plan 07)', async () => {
     await renderScreen(makePuzzle({ game_id: null, ply: 20 }));
     fireEvent.click(screen.getByTestId('btn-train-guess-critical'));
     await act(async () => {
@@ -1959,10 +2153,12 @@ describe('TrainSolveScreen — progress, last move, grading state, engine failur
     });
     await waitFor(() => expect(screen.getByTestId('btn-train-next')).not.toBeNull());
     expect(screen.queryByTestId('btn-train-analyze')).toBeNull();
-    expect(screen.queryByTestId('btn-train-solution')).toBeNull();
-    const yourBox = screen.getByTestId('train-line-box-your-move');
-    fireEvent.click(within(yourBox).getByTestId('train-line-stepper-token-0'));
-    await waitFor(() => expect(screen.getByTestId('btn-train-solution')).not.toBeNull());
+    expect(screen.getByTestId('train-reveal-action-bar').contains(screen.getByTestId('btn-train-next'))).toBe(true);
+    await waitFor(() => expect(screen.getByTestId('train-move-tree')).not.toBeNull());
+    tapListMove(0);
+    await waitFor(() =>
+      expect((screen.getByTestId('board-btn-reset') as HTMLButtonElement).disabled).toBe(false),
+    );
     expect(screen.getByTestId('btn-train-next')).not.toBeNull();
   });
 
@@ -2049,34 +2245,42 @@ describe('TrainSolveScreen — progress, last move, grading state, engine failur
     expect(bar.nextElementSibling).toBe(score);
   });
 
-  // ─── Phase 200 (EXPLORE-01/02/04/05, D-12): inline sideline exploration ──
+  // ─── Phase 200 (EXPLORE-01/02/04/05, D-12) / Phase 237 plan 06: sidelines fork in place ──
 
-  it('a post-verdict drop starts a free-play sideline on the shared board; a further drop extends it; no second grading/solve attempt is ever issued', async () => {
+  it('a post-verdict drop forks a sideline in place on the one tree; a further drop extends it; no second grading/solve attempt is ever issued', async () => {
     await renderScreen(makePuzzle());
     fireEvent.click(screen.getByTestId('btn-train-guess-critical'));
     await act(async () => {
       fireEvent.click(screen.getByTestId('drop-e2e4')); // the single graded attempt
     });
-    await waitFor(() => expect(screen.getByTestId('train-verdict-guess')).not.toBeNull());
+    await waitForReveal();
     expect(solvePuzzle).toHaveBeenCalledTimes(1);
 
     const board = () => screen.getByTestId('chessboard');
-    const afterE4 = new Chess(START_FEN);
-    afterE4.move('e4');
+    // The known lines (played = best = e2e4) carry no Stockfish row.
+    expect(screen.queryByTestId('train-sf-row')).toBeNull();
 
-    // Post-verdict drop 1: starts exploration.
-    fireEvent.click(screen.getByTestId('drop-e2e4'));
-    await waitFor(() => expect(board().getAttribute('data-position')).toBe(afterE4.fen()));
+    // Post-verdict drop 1: d2d4 matches no known line, so it FORKS a sideline.
+    const afterD4 = new Chess(START_FEN);
+    afterD4.move('d4');
+    fireEvent.click(screen.getByTestId('drop-d2d4'));
+    await waitFor(() => expect(board().getAttribute('data-position')).toBe(afterD4.fen()));
+    // Off the known lines: the sideline is listed with its close x, and the
+    // Stockfish row appears (D-03).
+    expect(
+      screen.getByTestId('train-move-tree').querySelector('[data-testid^="btn-delete-line-"]'),
+    ).not.toBeNull();
+    expect(screen.getByTestId('train-sf-row')).not.toBeNull();
 
-    // Post-verdict drop 2: EXTENDS the chain (never restarts/resets it).
-    const afterE4E5 = new Chess(START_FEN);
-    afterE4E5.move('e4');
-    afterE4E5.move('e5');
-    fireEvent.click(screen.getByTestId('drop-e7e5'));
-    await waitFor(() => expect(board().getAttribute('data-position')).toBe(afterE4E5.fen()));
+    // Post-verdict drop 2: EXTENDS the sideline (never restarts/resets it).
+    const afterD4D5 = new Chess(START_FEN);
+    afterD4D5.move('d4');
+    afterD4D5.move('d5');
+    fireEvent.click(screen.getByTestId('drop-d7d5'));
+    await waitFor(() => expect(board().getAttribute('data-position')).toBe(afterD4D5.fen()));
 
-    // Prohibition guard: neither exploration drop touched the graded/solve
-    // path — exactly the ONE solvePuzzle call from the original graded move.
+    // Prohibition guard (SOLV-02): neither drop touched the graded/solve path,
+    // exactly the ONE solvePuzzle call from the original graded move.
     expect(solvePuzzle).toHaveBeenCalledTimes(1);
   });
 
@@ -2084,7 +2288,7 @@ describe('TrainSolveScreen — progress, last move, grading state, engine failur
   // (its gradeResult has no rank-lines key at runtime) must grade its root
   // free-play move exactly like today's pre-Phase-205 path — no throw, no
   // silently invented rank match.
-  it('D-10: a restored pre-Phase-205 reveal (gradeResult carrying no rank lines) grades its root free-play move from today\'s free-play-engine path, never throwing', async () => {
+  it('D-10: a restored pre-Phase-205 reveal (gradeResult carrying no rank lines) grades its root fork from the reveal engine\'s own path, never throwing', async () => {
     const restoredPuzzle = makePuzzle();
     const afterD2D4 = new Chess(START_FEN);
     afterD2D4.move('d4');
@@ -2112,7 +2316,7 @@ describe('TrainSolveScreen — progress, last move, grading state, engine failur
     ) as CachedTrainReveal;
 
     await renderScreen(restoredPuzzle, makeSession(), restoredCached);
-    await waitFor(() => expect(screen.getByTestId('train-verdict-guess')).not.toBeNull());
+    await waitForReveal();
 
     expect(() => fireEvent.click(screen.getByTestId('drop-d2d4'))).not.toThrow();
     const board = () => screen.getByTestId('chessboard');
@@ -2124,7 +2328,7 @@ describe('TrainSolveScreen — progress, last move, grading state, engine failur
     );
   });
 
-  it('a drop while grading is still pending (verdict not yet landed) is rejected and never starts exploration', async () => {
+  it('a drop while grading is still pending (verdict not yet landed) is rejected and never forks a sideline', async () => {
     await renderScreen(makePuzzle());
     fireEvent.click(screen.getByTestId('btn-train-guess-critical'));
     fireEvent.click(screen.getByTestId('drop-d2d4')); // non-exact -> grading in flight, verdict still null
@@ -2132,11 +2336,13 @@ describe('TrainSolveScreen — progress, last move, grading state, engine failur
     // lands, moveApplied is already true but verdict is still null — the
     // exploration branch's own gate must reject this drop.
     fireEvent.click(screen.getByTestId('drop-e2e4'));
-    await waitFor(() => expect(screen.getByTestId('train-verdict-guess')).not.toBeNull());
+    await waitForReveal();
     expect(solvePuzzle).toHaveBeenCalledTimes(1);
-    // No exploration ever started: the pristine reveal shows no Solution
-    // button (D-11) — if the rejected drop had started exploration, it would.
-    expect(screen.queryByTestId('btn-train-solution')).toBeNull();
+    // No sideline was ever forked: rewind stays disabled (the board never left the
+    // puzzle position) and there is no sideline close x. If the rejected drop had
+    // forked, both would show.
+    expect(document.querySelector('[data-testid^="btn-delete-line-"]')).toBeNull();
+    expect((screen.getByTestId('board-btn-reset') as HTMLButtonElement).disabled).toBe(true);
   });
 
   it('Phase 200 (D-12): the side to move follows the sideline, turn order stays fully enforced, and no move is ever auto-played onto the board', async () => {
@@ -2145,31 +2351,31 @@ describe('TrainSolveScreen — progress, last move, grading state, engine failur
     await act(async () => {
       fireEvent.click(screen.getByTestId('drop-e2e4'));
     });
-    await waitFor(() => expect(screen.getByTestId('train-verdict-guess')).not.toBeNull());
+    await waitForReveal();
 
     const board = () => screen.getByTestId('chessboard');
-    const afterE4 = new Chess(START_FEN);
-    afterE4.move('e4');
-    const afterE4E5 = new Chess(START_FEN);
-    afterE4E5.move('e4');
-    afterE4E5.move('e5');
+    const afterD4 = new Chess(START_FEN);
+    afterD4.move('d4');
+    const afterD4D5 = new Chess(START_FEN);
+    afterD4D5.move('d4');
+    afterD4D5.move('d5');
 
-    // Start exploration with a white drop — now black's turn.
-    fireEvent.click(screen.getByTestId('drop-e2e4'));
-    await waitFor(() => expect(board().getAttribute('data-position')).toBe(afterE4.fen()));
+    // Fork a sideline with a white drop: now black's turn.
+    fireEvent.click(screen.getByTestId('drop-d2d4'));
+    await waitFor(() => expect(board().getAttribute('data-position')).toBe(afterD4.fen()));
 
     // Turn order is still ENFORCED, not bypassed (the Analysis-board rule): a
     // WHITE drop while it's black's turn is rejected — a build that widens
     // the branch by skipping chess.js validation (instead of tracking
     // displayFen) would wrongly accept this.
-    fireEvent.click(screen.getByTestId('drop-d2d4'));
-    expect(board().getAttribute('data-position')).toBe(afterE4.fen());
+    fireEvent.click(screen.getByTestId('drop-e2e4'));
+    expect(board().getAttribute('data-position')).toBe(afterD4.fen());
 
     // The side to move FOLLOWS the sideline: a black drop is accepted here.
     // A build that validates against the frozen boardFen instead of
-    // displayFen fails this — data-position would stay stuck after-e2e4.
-    fireEvent.click(screen.getByTestId('drop-e7e5'));
-    await waitFor(() => expect(board().getAttribute('data-position')).toBe(afterE4E5.fen()));
+    // displayFen fails this — data-position would stay stuck after-d2d4.
+    fireEvent.click(screen.getByTestId('drop-d7d5'));
+    await waitFor(() => expect(board().getAttribute('data-position')).toBe(afterD4D5.fen()));
     expect(board().getAttribute('data-position')?.split(' ')[1]).toBe('w');
 
     // No auto-reply: the position stays byte-identical after flushing
@@ -2178,56 +2384,86 @@ describe('TrainSolveScreen — progress, last move, grading state, engine failur
     await act(async () => {
       await Promise.resolve();
     });
-    expect(board().getAttribute('data-position')).toBe(afterE4E5.fen());
+    expect(board().getAttribute('data-position')).toBe(afterD4D5.fen());
   });
 
-  // ─── Phase 200 (EXPLORE-05): second Stockfish instance + teardown ────────
+  // ─── Phase 200 (EXPLORE-05) / Phase 237 plan 06: ONE reveal engine ────────
   //
-  // Quick 260803-iv6 (Task 1) added a THIRD standalone `useStockfishEngine`
-  // instance — the eval bar's own worker, enabled the moment the verdict
-  // lands (`showEvalBar`) and disabled the moment exploration starts (it
-  // defers to the free-play engine's own top line instead). So the ordering
-  // below is: [0] grading (mount) -> [1] eval bar (verdict lands) -> [2]
-  // free play (exploration starts, [1] terminates in the same commit).
+  // After the verdict there are exactly two Workers: [0] the session-scoped
+  // grading engine (idle once the verdict has landed) and [1] the reveal tree's
+  // one engine, which follows the shown position (eval bar, Stockfish row, board
+  // arrows and the sideline grader all read it). A fork never adds a third.
 
-  it('grading + eval-bar Workers exist once the verdict lands; a THIRD, distinct free-play Worker appears after the first post-verdict drop', async () => {
+  /** Verdict landed (played = best = e2e4), then ONE fork from the puzzle
+   * position (d2d4, a move no known line carries) so the board sits on a user
+   * sideline. Returns board accessors. */
+  async function startSideline() {
+    await renderScreen(makePuzzle());
+    return forkFromVerdict();
+  }
+
+  async function forkFromVerdict() {
+    fireEvent.click(screen.getByTestId('btn-train-guess-critical'));
+    await act(async () => {
+      fireEvent.click(screen.getByTestId('drop-e2e4')); // the single graded attempt
+    });
+    await waitForReveal();
+    fireEvent.click(screen.getByTestId('drop-d2d4')); // forks a sideline
+    await waitFor(() => expect(screen.getByTestId('train-sf-row')).not.toBeNull());
+    return {
+      board: () => screen.getByTestId('chessboard'),
+      moveList: () => screen.getByTestId('train-move-tree'),
+    };
+  }
+
+  it('exactly two Workers exist once the verdict lands (grading + the reveal engine), and still exactly two after a fork', async () => {
     await renderScreen(makePuzzle());
     fireEvent.click(screen.getByTestId('btn-train-guess-critical'));
     await act(async () => {
       fireEvent.click(screen.getByTestId('drop-e2e4'));
     });
-    await waitFor(() => expect(screen.getByTestId('train-verdict-guess')).not.toBeNull());
-    await waitFor(() => expect(stubbedWorkerInstances.length).toBe(2)); // grading + eval bar
+    await waitForReveal();
+    await waitFor(() => expect(stubbedWorkerInstances.length).toBe(2)); // grading + reveal engine
 
-    fireEvent.click(screen.getByTestId('drop-e2e4')); // starts exploration
-    await waitFor(() => expect(stubbedWorkerInstances.length).toBe(3));
+    fireEvent.click(screen.getByTestId('drop-d2d4')); // forks a sideline
+    await waitFor(() => expect(screen.getByTestId('train-sf-row')).not.toBeNull());
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(stubbedWorkerInstances.length).toBe(2);
     expect(stubbedWorkerInstances[0]).not.toBe(stubbedWorkerInstances[1]);
-    expect(stubbedWorkerInstances[1]).not.toBe(stubbedWorkerInstances[2]);
-    // The eval-bar Worker ([1]) is disabled the instant exploration starts.
-    await waitFor(() => expect(stubbedWorkerInstances[1]!.terminated).toBe(true));
+    expect(stubbedWorkerInstances[0]!.terminated).not.toBe(true);
+    expect(stubbedWorkerInstances[1]!.terminated).not.toBe(true);
   });
 
-  it('pressing Solution terminates the exploration Worker while the grading Worker stays alive', async () => {
+  it('SOLV-02: two post-verdict forks never reach grading or the solve POST: solvePuzzle runs once and the grading Worker is asked for no further search', async () => {
+    stubWorker(() => new RecordingFakeWorker());
     await renderScreen(makePuzzle());
     fireEvent.click(screen.getByTestId('btn-train-guess-critical'));
     await act(async () => {
       fireEvent.click(screen.getByTestId('drop-e2e4'));
     });
-    await waitFor(() => expect(screen.getByTestId('train-verdict-guess')).not.toBeNull());
-    await waitFor(() => expect(stubbedWorkerInstances.length).toBe(2)); // grading + eval bar
-    fireEvent.click(screen.getByTestId('drop-e2e4')); // starts exploration
-    await waitFor(() => expect(stubbedWorkerInstances.length).toBe(3));
-    const gradingWorker = stubbedWorkerInstances[0]!;
-    const explorationWorker = stubbedWorkerInstances[2]!;
-    expect(explorationWorker.terminated).not.toBe(true);
+    await waitForReveal();
+    await waitFor(() => expect(stubbedWorkerInstances.length).toBe(2));
+    const gradingWorker = stubbedWorkerInstances[0] as RecordingFakeWorker;
+    const gradingSearchesAtVerdict = gradingWorker.goCount;
+    expect(solvePuzzle).toHaveBeenCalledTimes(1);
 
-    await waitFor(() => expect(screen.getByTestId('btn-train-solution')).not.toBeNull());
-    fireEvent.click(screen.getByTestId('btn-train-solution'));
-    await waitFor(() => expect(explorationWorker.terminated).toBe(true));
-    expect(gradingWorker.terminated).not.toBe(true);
+    const board = () => screen.getByTestId('chessboard');
+    fireEvent.click(screen.getByTestId('drop-d2d4')); // fork 1
+    await waitFor(() => expect(board().getAttribute('data-position')).toContain('3P4'));
+    fireEvent.click(screen.getByTestId('drop-d7d5')); // extends the sideline
+    await waitFor(() => expect(board().getAttribute('data-position')).toContain('3p4'));
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 250));
+    });
+
+    expect(solvePuzzle).toHaveBeenCalledTimes(1);
+    expect(gradingWorker.goCount).toBe(gradingSearchesAtVerdict);
+    expect(stubbedWorkerInstances.length).toBe(2);
   });
 
-  it('a puzzle transition while exploring terminates the exploration Worker, clears isExploring, and the next puzzle renders the pristine reveal', async () => {
+  it('a puzzle transition from a sideline tears down the reveal engine Worker, and the next puzzle opens at the root with no sidelines', async () => {
     composeOrResumeSession.mockResolvedValue(makeSession());
     const queryClient = new QueryClient({
       defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
@@ -2248,18 +2484,17 @@ describe('TrainSolveScreen — progress, last move, grading state, engine failur
     await act(async () => {
       fireEvent.click(screen.getByTestId('drop-e2e4'));
     });
-    await waitFor(() => expect(screen.getByTestId('train-verdict-guess')).not.toBeNull());
-    await waitFor(() => expect(stubbedWorkerInstances.length).toBe(2)); // grading + eval bar
-    fireEvent.click(screen.getByTestId('drop-e2e4')); // starts exploration
-    await waitFor(() => expect(stubbedWorkerInstances.length).toBe(3));
-    const explorationWorker = stubbedWorkerInstances[2]!;
-    expect(explorationWorker.terminated).not.toBe(true);
-    await waitFor(() => expect(screen.getByTestId('btn-train-solution')).not.toBeNull());
+    await waitForReveal();
+    await waitFor(() => expect(stubbedWorkerInstances.length).toBe(2)); // grading + reveal engine
+    fireEvent.click(screen.getByTestId('drop-d2d4')); // forks a sideline
+    await waitFor(() => expect(screen.getByTestId('train-sf-row')).not.toBeNull());
+    const revealWorker = stubbedWorkerInstances[1]!;
+    expect(revealWorker.terminated).not.toBe(true);
 
     // Transition to a new puzzle (Train.tsx hands TrainSolveScreen a new
-    // `puzzle` prop on the SAME component instance — never a remount). The
-    // per-puzzle reset effect is keyed on puzzle.fen, so the fixture needs a
-    // genuinely DIFFERENT fen, not just a different position/ply.
+    // `puzzle` prop on the SAME component instance, never a remount). The
+    // per-puzzle reset is keyed on puzzle.fen, so the fixture needs a genuinely
+    // DIFFERENT fen, not just a different position/ply.
     const puzzle2 = makePuzzle({
       position: 2,
       ply: 30,
@@ -2275,15 +2510,18 @@ describe('TrainSolveScreen — progress, last move, grading state, engine failur
       </MemoryRouter>,
     );
 
-    await waitFor(() => expect(explorationWorker.terminated).toBe(true));
-    // The new puzzle renders the pristine reveal — no Solution button, no
-    // sideline carried forward.
-    expect(screen.queryByTestId('btn-train-solution')).toBeNull();
+    await waitFor(() => expect(revealWorker.terminated).toBe(true));
+    // The new puzzle renders the pristine pre-verdict screen: no move list, no
+    // sideline carried forward, no action bar, no Stockfish row.
+    expect(screen.queryByTestId('train-move-tree')).toBeNull();
+    expect(document.querySelector('[data-testid^="btn-delete-line-"]')).toBeNull();
+    expect(screen.queryByTestId('train-sf-row')).toBeNull();
+    expect(screen.queryByTestId('train-reveal-action-bar')).toBeNull();
   });
 
-  it("while exploring the board carries exactly the free-play engine's blue best-move arrow, and the reveal arrows return after Solution", async () => {
-    // Second Worker = the free-play engine; its PV must be a LEGAL move from
-    // the exploration position (after 1.e4, black to move), so 'e7e5'.
+  it("off the known lines the board carries exactly the reveal engine's blue best-move arrow, and the reveal arrows return after Solution", async () => {
+    // Second Worker = the reveal engine; its PV must be a LEGAL move from the
+    // sideline position (after 1.d4, black to move), so 'e7e5'.
     let workerCallCount = 0;
     stubWorker(() => {
       workerCallCount += 1;
@@ -2303,22 +2541,19 @@ describe('TrainSolveScreen — progress, last move, grading state, engine failur
     const revealMarkerCount = Number(screen.getByTestId('chessboard').getAttribute('data-markers-count'));
     expect(revealMarkerCount).toBeGreaterThan(0);
 
-    fireEvent.click(screen.getByTestId('drop-e2e4')); // starts exploration
-    // Phase 200 UAT round 5 reversed the "no arrows while exploring" half of
-    // EXPLORE-03: free play now shows the engine's top move as a blue arrow,
-    // exactly like the analysis board. Exactly ONE arrow — the reveal overlay
-    // (your/best/game/alternatives) stays off.
+    fireEvent.click(screen.getByTestId('drop-d2d4')); // forks a sideline
+    // Phase 200 UAT round 5: off the known lines the engine's top move is a blue
+    // arrow, exactly like the analysis board. Exactly ONE arrow: the reveal
+    // overlay (your/best/game/alternatives) stays off.
     const board = () => screen.getByTestId('chessboard');
     await waitFor(() => expect(board().getAttribute('data-arrows-count')).toBe('1'));
     expect(board().getAttribute('data-arrow-ucis')).toBe('e7e5');
     expect(board().getAttribute('data-arrow-colors')).toBe(TRAIN_BEST_MOVE_ARROW);
-    // The "no markers while exploring" half was reversed in an earlier UAT
-    // round: the freely played move carries its own live quality badge, and
-    // the seeded parent eval makes the FIRST one resolve without waiting for
-    // the free-play engine.
+    // The freely played move carries its own live quality badge, and the seeded
+    // parent eval makes the FIRST one resolve without waiting on the engine.
     await waitFor(() => expect(board().getAttribute('data-markers-count')).toBe('1'));
 
-    fireEvent.click(screen.getByTestId('btn-train-solution'));
+    fireEvent.click(screen.getByTestId('board-btn-reset'));
     await waitFor(() =>
       expect(Number(screen.getByTestId('chessboard').getAttribute('data-arrows-count'))).toBe(
         revealArrowCount,
@@ -2329,7 +2564,7 @@ describe('TrainSolveScreen — progress, last move, grading state, engine failur
     );
   });
 
-  it('Stockfish arrows 0 (Phase 228 D-13): free play draws no live arrow, yet the reveal legend arrows still draw and return after Solution', async () => {
+  it('Stockfish arrows 0 (Phase 228 D-13): a sideline draws no live arrow, yet the reveal legend arrows still draw and return after Solution', async () => {
     localStorage.setItem(SETTINGS_STORAGE_KEYS.sfArrows, '0');
     let workerCallCount = 0;
     stubWorker(() => {
@@ -2348,18 +2583,18 @@ describe('TrainSolveScreen — progress, last move, grading state, engine failur
     );
     const revealArrowCount = Number(screen.getByTestId('chessboard').getAttribute('data-arrows-count'));
 
-    fireEvent.click(screen.getByTestId('drop-e2e4')); // starts exploration
+    fireEvent.click(screen.getByTestId('drop-d2d4')); // forks a sideline
     const board = () => screen.getByTestId('chessboard');
     await waitFor(() => expect(board().getAttribute('data-markers-count')).toBe('1'));
     expect(board().getAttribute('data-arrows-count')).toBe('0');
 
-    fireEvent.click(screen.getByTestId('btn-train-solution'));
+    fireEvent.click(screen.getByTestId('board-btn-reset'));
     await waitFor(() =>
       expect(Number(board().getAttribute('data-arrows-count'))).toBe(revealArrowCount),
     );
   });
 
-  it('the Analyze link href is unchanged while exploring (EXPLORE-06)', async () => {
+  it('the Analyze link href is unchanged on a sideline (EXPLORE-06)', async () => {
     await renderScreen(makePuzzle({ game_id: 100, ply: 20 }));
     fireEvent.click(screen.getByTestId('btn-train-guess-critical'));
     await act(async () => {
@@ -2369,67 +2604,79 @@ describe('TrainSolveScreen — progress, last move, grading state, engine failur
     const hrefBefore = screen.getByTestId('btn-train-analyze').getAttribute('href');
     expect(hrefBefore).toBe(buildGameAnalysisUrl(100, 19));
 
-    fireEvent.click(screen.getByTestId('drop-e2e4')); // starts exploration
-    await waitFor(() => expect(screen.getByTestId('btn-train-solution')).not.toBeNull());
+    fireEvent.click(screen.getByTestId('drop-d2d4')); // forks a sideline
+    await waitFor(() =>
+      expect((screen.getByTestId('board-btn-reset') as HTMLButtonElement).disabled).toBe(false),
+    );
     expect(screen.getByTestId('btn-train-analyze').getAttribute('href')).toBe(hrefBefore);
   });
 
-  // ─── Phase 200 plan 04 (D-10/D-13/D-14): exploration engine card + move
-  // list swap, PV click-to-play ─────────────────────────────────────────────
+  // ─── Phase 237 plan 06 (D-03): the Stockfish row off the known lines ───────
 
-  it('starting exploration swaps in the engine card + move list; clicking a PV move plays it into the exploration line and moves the board', async () => {
+  it('a sideline shows the Stockfish row; clicking a move in it plays it into the sideline as one engine-line move', async () => {
     let workerCallCount = 0;
     stubWorker(() => {
       workerCallCount += 1;
-      // First Worker = the session-scoped grading engine (default FakeWorker,
-      // 'e2e4' exact-match bestmove, matching every other test in this file).
-      // Second Worker = the exploration engine — its PV must be a LEGAL move
-      // from the exploration position (after 1.e4, black to move), so 'e7e5'.
+      // First Worker = the session-scoped grading engine. Second = the reveal
+      // engine, whose PV must be LEGAL from the sideline position (after 1.d4,
+      // black to move), so 'e7e5'.
       return workerCallCount === 1 ? new FakeWorker() : new FakeWorker('e7e5', 'e7e5');
     });
 
-    await renderScreen(makePuzzle());
-    fireEvent.click(screen.getByTestId('btn-train-guess-critical'));
-    await act(async () => {
-      fireEvent.click(screen.getByTestId('drop-e2e4'));
-    });
-    await waitFor(() => expect(screen.getByTestId('train-verdict-guess')).not.toBeNull());
-
-    fireEvent.click(screen.getByTestId('drop-e2e4')); // starts exploration
-    await waitFor(() => expect(screen.getByTestId('train-reveal-exploration')).not.toBeNull());
-    expect(screen.getByTestId('train-exploration-engine-card')).not.toBeNull();
-    // Phase 200 UAT: the move list is the Analysis page's VariationTree, and
-    // the drop that started free play is already in it.
-    const moveList = () => screen.getByTestId('train-exploration-moves-card');
-    expect(within(moveList()).getByText('e4')).not.toBeNull();
+    const { board, moveList } = await startSideline();
+    // The move list is the one tree: the user's fork is already in it.
+    expect(within(moveList()).getByText('d4')).not.toBeNull();
+    // On the known lines the row is absent; here it is present.
+    expect(screen.getByTestId('train-sf-row')).not.toBeNull();
 
     await waitFor(() => expect(screen.getByTestId('engine-line-0-move-0')).not.toBeNull());
-    const board = () => screen.getByTestId('chessboard');
     const positionBeforeClick = board().getAttribute('data-position');
-
     fireEvent.click(screen.getByTestId('engine-line-0-move-0'));
     await waitFor(() => expect(board().getAttribute('data-position')).not.toBe(positionBeforeClick));
     expect(within(moveList()).getByText('e5')).not.toBeNull();
   });
 
-  // ─── Phase 200 UAT: free-play sidelines + move quality ────────────────────
+  it('the Stockfish row is absent on the known lines and again after a tap back onto one', async () => {
+    const { board } = await startSideline();
+    expect(screen.getByTestId('train-sf-row')).not.toBeNull();
 
-  it('a move played from a jumped-back position FORKS a sideline instead of truncating it — both continuations stay in the move list', async () => {
-    await renderScreen(makePuzzle());
-    fireEvent.click(screen.getByTestId('btn-train-guess-critical'));
-    await act(async () => {
-      fireEvent.click(screen.getByTestId('drop-e2e4'));
-    });
-    await waitFor(() => expect(screen.getByTestId('train-verdict-guess')).not.toBeNull());
+    // Solution rewinds to the puzzle position: a known line (and the root).
+    fireEvent.click(screen.getByTestId('board-btn-reset'));
+    await waitFor(() => expect(board().getAttribute('data-position')).toBe(START_FEN));
+    expect(screen.queryByTestId('train-sf-row')).toBeNull();
 
-    fireEvent.click(screen.getByTestId('drop-e2e4')); // 1. e4 — starts free play
-    await waitFor(() => expect(screen.getByTestId('train-reveal-exploration')).not.toBeNull());
+    // Stepping into the played/best line (e2e4) keeps the row away.
+    fireEvent.click(screen.getByTestId('drop-e2e4'));
+    await waitFor(() => expect(board().getAttribute('data-position')).not.toBe(START_FEN));
+    expect(screen.queryByTestId('train-sf-row')).toBeNull();
+  });
+
+  // Phase 237 UAT: the row follows the analysis board's layout. It was capped at
+  // two lines whatever the setting, behind a row toggle beside each line's chevron.
+  it('on desktop the Stockfish row shows every configured line, wrapping (no sideways scroll)', async () => {
+    localStorage.setItem(SETTINGS_STORAGE_KEYS.sfLines, '3');
+    await startSideline();
+    await waitFor(() => expect(screen.getByTestId('engine-line-2-move-0')).not.toBeNull());
+    expect(screen.getByTestId('engine-line-0-move-0').closest('.overflow-x-auto')).toBeNull();
+  });
+
+  it('on mobile the Stockfish row shows every configured line, each scrolling sideways', async () => {
+    localStorage.setItem(SETTINGS_STORAGE_KEYS.sfLines, '3');
+    matchMediaMatches = false;
+    await startSideline();
+    await waitFor(() => expect(screen.getByTestId('engine-line-2-move-0')).not.toBeNull());
+    expect(screen.getByTestId('engine-line-0-move-0').closest('.overflow-x-auto')).not.toBeNull();
+  });
+
+  // ─── Phase 200 UAT: sidelines + move quality ──────────────────────────────
+
+  it('a move played from a jumped-back position FORKS a sideline instead of truncating it: both continuations stay in the move list', async () => {
+    const { moveList } = await startSideline(); // 1. d4 (root fork)
     fireEvent.click(screen.getByTestId('drop-e7e5')); // 1... e5
-    const moveList = () => screen.getByTestId('train-exploration-moves-card');
     await waitFor(() => expect(within(moveList()).getByText('e5')).not.toBeNull());
 
-    // Jump back to the position after 1.e4 and play a DIFFERENT black move.
-    fireEvent.click(within(moveList()).getByText('e4'));
+    // Jump back to the position after 1.d4 and play a DIFFERENT black move.
+    fireEvent.click(within(moveList()).getByText('d4'));
     fireEvent.click(screen.getByTestId('drop-d7d5')); // 1... d5
 
     // The analysis board's fork semantics: e5 survives alongside d5.
@@ -2437,21 +2684,20 @@ describe('TrainSolveScreen — progress, last move, grading state, engine failur
     expect(within(moveList()).getByText('e5')).not.toBeNull();
   });
 
-  it('the free-play move list badges the played move with its quality — never a gem/great glyph, since Train runs no Maia', async () => {
-    await renderScreen(makePuzzle());
-    fireEvent.click(screen.getByTestId('btn-train-guess-critical'));
-    await act(async () => {
-      fireEvent.click(screen.getByTestId('drop-e2e4'));
+  it('the sideline move list badges the played move with its quality: never a gem/great glyph, since Train runs no Maia', async () => {
+    let workerCallCount = 0;
+    stubWorker(() => {
+      workerCallCount += 1;
+      // The reveal engine's top move after 1.d4 is e7e5 (legal for black).
+      return workerCallCount === 1 ? new FakeWorker() : new FakeWorker('e7e5', 'e7e5');
     });
-    await waitFor(() => expect(screen.getByTestId('train-verdict-guess')).not.toBeNull());
+    const { moveList } = await startSideline();
+    // Wait for the reveal engine to have searched the d4 position, so playing
+    // its top move grades 'best' against the cached parent.
+    await waitFor(() => expect(screen.getByTestId('engine-line-0-move-0')).not.toBeNull());
+    fireEvent.click(screen.getByTestId('drop-e7e5'));
+    await waitFor(() => expect(within(moveList()).getByText('e5')).not.toBeNull());
 
-    // e2e4 is the stubbed grading engine's own best move, so the seeded parent
-    // eval grades this free-play repeat of it as 'best' — which the move list
-    // renders as the BEST badge, not the gem/great badge the Analysis page
-    // would reach for with a Maia overlay available.
-    fireEvent.click(screen.getByTestId('drop-e2e4'));
-    const moveList = () => screen.getByTestId('train-exploration-moves-card');
-    await waitFor(() => expect(within(moveList()).getByText('e4')).not.toBeNull());
     // The badge icons carry an SVG <title> as their accessible name.
     const badgeTitles = (): string[] =>
       [...moveList().querySelectorAll('svg > title')].map((t) => t.textContent ?? '');
@@ -2460,108 +2706,111 @@ describe('TrainSolveScreen — progress, last move, grading state, engine failur
     expect(badgeTitles()).not.toContain('Great move');
   });
 
-  // Phase 205 (D-04, ORACLE-02): the root-only boundary. The seeded rank
-  // lines describe the ROOT position only — consulting them at a DEEPER ply
-  // would grade a move against a search of a DIFFERENT position, exactly
-  // the failure mode this test exists to catch (edge probe R2, a boundary
-  // edge per 205-01-PLAN.md).
-  it('ORACLE-02: a mount-rank move replayed at ply 3 (not the root) is graded from the free-play engine\'s own parent/child pair — a scripted bad score still badges it worse', async () => {
+  // Phase 205 (D-04, ORACLE-02): the root-only boundary. The served vetted list
+  // describes the PUZZLE position only: consulting it at a DEEPER ply would grade
+  // a move against a key for a DIFFERENT position, exactly the failure mode this
+  // test exists to catch.
+  it('ORACLE-02: a served vetted move replayed at ply 3 (not the root) is graded from the engine\'s own parent/child pair: a scripted bad score still badges it worse', async () => {
     const afterSequence = new Chess(START_FEN);
-    afterSequence.move('e4');
-    afterSequence.move('e5');
-    afterSequence.move('d4'); // the ROOT search's own rank-2 move, replayed at ply 3
+    afterSequence.move('d4');
+    afterSequence.move('d5');
+    afterSequence.move('c4'); // a SERVED vetted move, replayed at ply 3
     const fenAfterSequence = afterSequence.fen();
     stubWorker(() => new ScriptedFenFakeWorker(START_FEN, { [fenAfterSequence]: -900 }));
+    solvePuzzle.mockResolvedValueOnce({
+      ...SOLVE_RESPONSE,
+      puzzle_type: 'soft',
+      vetted_moves: [{ uci: 'c2c4', quality: 'good' }],
+    });
 
     await renderScreen(makePuzzle());
     fireEvent.click(screen.getByTestId('btn-train-guess-critical'));
     await act(async () => {
       fireEvent.click(screen.getByTestId('drop-e2e4')); // graded move -> lands the verdict
     });
-    await waitFor(() => expect(screen.getByTestId('train-verdict-guess')).not.toBeNull());
+    await waitForReveal();
 
-    fireEvent.click(screen.getByTestId('drop-e2e4')); // ply 1 (root) — starts free play
-    await waitFor(() => expect(screen.getByTestId('train-reveal-exploration')).not.toBeNull());
-
-    const moveList = () => screen.getByTestId('train-exploration-moves-card');
-    fireEvent.click(screen.getByTestId('drop-e7e5')); // ply 2 — a reply
-    await waitFor(() => expect(within(moveList()).getByText('e5')).not.toBeNull());
-    // Let ply 2's own position finish its free-play-engine search (debounce
-    // + microtask-deferred response) BEFORE playing ply 3 — otherwise React's
-    // effect cleanup cancels ply 2's pending debounce outright the instant
-    // ply 3's FEN change fires, and its eval never lands in `evalByFen`
-    // (same RAPID_STEP_DEBOUNCE_MS-driven pattern other suites in this repo
-    // wait out, e.g. TrainStartScreen.test.tsx).
+    const moveList = () => screen.getByTestId('train-move-tree');
+    fireEvent.click(screen.getByTestId('drop-d2d4')); // ply 1 (root fork)
+    await waitFor(() => expect(within(moveList()).getByText('d4')).not.toBeNull());
+    fireEvent.click(screen.getByTestId('drop-d7d5')); // ply 2: a reply
+    await waitFor(() => expect(within(moveList()).getByText('d5')).not.toBeNull());
+    // Let ply 2's own position finish its reveal-engine search (debounce +
+    // microtask-deferred response) BEFORE playing ply 3: otherwise React's effect
+    // cleanup cancels ply 2's pending debounce the instant ply 3's FEN changes,
+    // and its eval never lands in the cache.
     await act(async () => {
       await new Promise((resolve) => setTimeout(resolve, 250));
     });
 
-    // ply 3 — the ROOT search's own rank-2 move (d2d4), replayed at a DEEPER
-    // ply. A build that widened the root-only gate to run at every ply would
-    // wrongly consult the ROOT's seeded lines by squares alone and badge
-    // this 'good'; the correct build grades it from THIS ply's own
-    // parent/child pair (the free-play engine's scripted, catastrophic
-    // score for the position after 1.e4 e5 2.d4).
-    fireEvent.click(screen.getByTestId('drop-d2d4'));
+    // ply 3: the served vetted move (c2c4) at a DEEPER ply. A build that widened
+    // the root-only gate to every ply would wrongly consult the served list by
+    // squares alone and badge this 'good'; the correct build grades it from THIS
+    // ply's own parent/child pair (the engine's scripted, catastrophic score).
+    fireEvent.click(screen.getByTestId('drop-c2c4'));
     const board = () => screen.getByTestId('chessboard');
     await waitFor(() =>
       expect(board().getAttribute('data-last-move-color')).toBe(TRAIN_STEP_HIGHLIGHT.blunder),
     );
   });
 
-  // ─── Phase 200 UAT round 5: free-play board controls ──────────────────────
+  // ─── Sideline stepping through the published phone bottom bar ─────────────
+  //
+  // Back/forward/rewind/flip are published to the phone bottom bar for the whole
+  // reveal (plan 07); these tests drive them off a sideline.
 
-  /** Enters free play with 1.e4 played and returns board/move-list accessors. */
-  async function startFreePlay() {
-    await renderScreen(makePuzzle());
+  async function startSidelineWithProbe() {
+    await renderScreenWithProbe(makePuzzle());
     fireEvent.click(screen.getByTestId('btn-train-guess-critical'));
     await act(async () => {
       fireEvent.click(screen.getByTestId('drop-e2e4'));
     });
-    await waitFor(() => expect(screen.getByTestId('train-verdict-guess')).not.toBeNull());
-    fireEvent.click(screen.getByTestId('drop-e2e4')); // starts free play
-    await waitFor(() => expect(screen.getByTestId('train-reveal-exploration')).not.toBeNull());
+    await waitForReveal();
+    fireEvent.click(screen.getByTestId('drop-d2d4')); // forks a sideline
+    await waitFor(() =>
+      expect(screen.getByTestId('mbc-probe').getAttribute('data-published')).toBe('true'),
+    );
     return {
       board: () => screen.getByTestId('chessboard'),
-      moveList: () => screen.getByTestId('train-exploration-moves-card'),
+      moveList: () => screen.getByTestId('train-move-tree'),
     };
   }
 
-  it('the free-play strip steps back and forward through the line, and Reset returns to the puzzle position without leaving free play', async () => {
-    const { board, moveList } = await startFreePlay();
-    const afterE4 = board().getAttribute('data-position');
+  it('the published controls step back and forward through the sideline, and Reset returns to the puzzle position while the sideline stays listed', async () => {
+    const { board, moveList } = await startSidelineWithProbe();
+    const afterD4 = board().getAttribute('data-position');
     fireEvent.click(screen.getByTestId('drop-e7e5'));
     await waitFor(() => expect(within(moveList()).getByText('e5')).not.toBeNull());
-    const afterE5 = board().getAttribute('data-position');
+    const afterD4E5 = board().getAttribute('data-position');
 
-    fireEvent.click(screen.getByTestId('board-btn-back'));
-    await waitFor(() => expect(board().getAttribute('data-position')).toBe(afterE4));
-    fireEvent.click(screen.getByTestId('board-btn-forward'));
-    await waitFor(() => expect(board().getAttribute('data-position')).toBe(afterE5));
+    fireEvent.click(screen.getByTestId('mbc-btn-back'));
+    await waitFor(() => expect(board().getAttribute('data-position')).toBe(afterD4));
+    fireEvent.click(screen.getByTestId('mbc-btn-forward'));
+    await waitFor(() => expect(board().getAttribute('data-position')).toBe(afterD4E5));
 
-    // Reset lands on the puzzle position but keeps the tree AND free play —
-    // leaving free play is Solution's job, and the move list proves the
-    // difference (the line is still listed, the exploration panel still up).
-    fireEvent.click(screen.getByTestId('board-btn-reset'));
+    // Reset lands on the puzzle position but keeps the tree: the sideline is
+    // still listed.
+    fireEvent.click(screen.getByTestId('mbc-btn-reset'));
     await waitFor(() => expect(board().getAttribute('data-position')).toBe(START_FEN));
-    expect(screen.getByTestId('train-reveal-exploration')).not.toBeNull();
     expect(within(moveList()).getByText('e5')).not.toBeNull();
+    expect(within(moveList()).getByText('d4')).not.toBeNull();
   });
 
-  it('Reset and Back are disabled at the puzzle position, Forward is disabled at the tip', async () => {
-    const { board } = await startFreePlay();
-    // At the tip of the line: nothing to advance into.
-    expect(screen.getByTestId('board-btn-forward')).toHaveProperty('disabled', true);
-    expect(screen.getByTestId('board-btn-back')).toHaveProperty('disabled', false);
+  it('at the tip of the sideline Forward is disabled and Back and Reset are live; at the puzzle position Reset is disabled but the bar stays published', async () => {
+    const { board } = await startSidelineWithProbe();
+    expect(screen.getByTestId('mbc-can-go-forward').textContent).toBe('false');
+    expect(screen.getByTestId('mbc-can-go-back').textContent).toBe('true');
+    expect(screen.getByTestId('mbc-can-reset').textContent).toBe('true');
 
-    fireEvent.click(screen.getByTestId('board-btn-reset'));
+    fireEvent.click(screen.getByTestId('mbc-btn-reset'));
     await waitFor(() => expect(board().getAttribute('data-position')).toBe(START_FEN));
-    expect(screen.getByTestId('board-btn-reset')).toHaveProperty('disabled', true);
-    expect(screen.getByTestId('board-btn-back')).toHaveProperty('disabled', true);
-    expect(screen.getByTestId('board-btn-forward')).toHaveProperty('disabled', false);
+    // Published for the whole reveal: the bar stays, with Reset disabled at the root.
+    expect(screen.getByTestId('mbc-probe').getAttribute('data-published')).toBe('true');
+    expect(screen.getByTestId('mbc-can-reset').textContent).toBe('false');
   });
 
-  it('the flip button toggles board orientation, and a puzzle transition restores the solver-color default', async () => {
+  it('the published flip toggles board orientation, and a puzzle transition restores the solver-color default', async () => {
+    smUpMatches = false; // phone: only the published bottom-bar payload exists
     composeOrResumeSession.mockResolvedValue(makeSession());
     const queryClient = new QueryClient({
       defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
@@ -2570,6 +2819,7 @@ describe('TrainSolveScreen — progress, last move, grading state, engine failur
       <MemoryRouter>
         <QueryClientProvider client={queryClient}>
           <TooltipProvider>
+            <MobileBoardControlsProbe />
             <Harness puzzle={puzzle} />
           </TooltipProvider>
         </QueryClientProvider>
@@ -2584,14 +2834,16 @@ describe('TrainSolveScreen — progress, last move, grading state, engine failur
     await act(async () => {
       fireEvent.click(screen.getByTestId('drop-e2e4'));
     });
-    await waitFor(() => expect(screen.getByTestId('train-verdict-guess')).not.toBeNull());
-    fireEvent.click(screen.getByTestId('drop-e2e4')); // starts free play
-    await waitFor(() => expect(screen.getByTestId('train-reveal-exploration')).not.toBeNull());
+    await waitForReveal();
+    fireEvent.click(screen.getByTestId('drop-d2d4')); // forks a sideline
+    await waitFor(() =>
+      expect(screen.getByTestId('mbc-probe').getAttribute('data-published')).toBe('true'),
+    );
 
-    fireEvent.click(screen.getByTestId('board-btn-flip'));
+    fireEvent.click(screen.getByTestId('mbc-btn-flip'));
     await waitFor(() => expect(board().getAttribute('data-flipped')).toBe('true'));
 
-    // Orientation is a per-position affordance, not a session preference — the
+    // Orientation is a per-position affordance, not a session preference: the
     // next puzzle starts at its own solver-color default again.
     rerender(
       renderTree(
@@ -2603,6 +2855,171 @@ describe('TrainSolveScreen — progress, last move, grading state, engine failur
       ),
     );
     await waitFor(() => expect(board().getAttribute('data-flipped')).toBe('false'));
+  });
+
+  // ─── Phase 237 plan 06 (D-04): a move no chip owns deselects every chip ────
+
+  it('D-04: a hand-played move that matches a line lights that chip without creating a sideline; a move that matches none deselects every chip and lists only the user line', async () => {
+    await renderScreen(makePuzzle());
+    fireEvent.click(screen.getByTestId('btn-train-guess-critical'));
+    await act(async () => {
+      fireEvent.click(screen.getByTestId('drop-d2d4')); // played d4 against the best e4 -> separate chips
+    });
+    await waitForReveal();
+    await waitFor(() => expect(screen.getByTestId('train-chip-best')).not.toBeNull());
+    const pressed = (testId: string) => screen.getByTestId(testId).getAttribute('aria-pressed');
+    expect(pressed('train-chip-your')).toBe('true');
+
+    // Playing the best move by hand from the root lights the Best chip and is a
+    // board move along the known line, not a fork.
+    fireEvent.click(screen.getByTestId('drop-e2e4'));
+    await waitFor(() => expect(pressed('train-chip-best')).toBe('true'));
+    expect(pressed('train-chip-your')).toBe('false');
+    expect(document.querySelector('[data-testid^="btn-delete-line-"]')).toBeNull();
+    expect(screen.queryByTestId('train-sf-row')).toBeNull();
+
+    // Back at the puzzle position, a move that matches no line forks.
+    fireEvent.click(screen.getByTestId('board-btn-reset'));
+    await waitFor(() =>
+      expect(screen.getByTestId('chessboard').getAttribute('data-position')).toBe(START_FEN),
+    );
+    fireEvent.click(screen.getByTestId('drop-b1c3'));
+    await waitFor(() => expect(screen.getByTestId('train-sf-row')).not.toBeNull());
+    expect(pressed('train-chip-your')).toBe('false');
+    expect(pressed('train-chip-best')).toBe('false');
+    const list = screen.getByTestId('train-move-tree');
+    expect(within(list).getByText('Nc3')).not.toBeNull();
+    // Only the user's own line is listed: neither known line shows.
+    expect(within(list).queryByText('d4')).toBeNull();
+    expect(within(list).queryByText('e4')).toBeNull();
+  });
+
+  // ─── Phase 237 plan 06 (D-14): Umami events for sideline forks ────────────
+
+  describe('sideline feature events (D-14)', () => {
+    const track = vi.fn();
+    const trackedTargets = (target: string): unknown[][] =>
+      track.mock.calls.filter((call) => (call[1] as { target?: string } | undefined)?.target === target);
+
+    beforeEach(() => {
+      track.mockClear();
+      window.umami = { track, identify: vi.fn() };
+      window.history.pushState({}, '', '/train');
+    });
+
+    afterEach(() => {
+      delete window.umami;
+      window.history.pushState({}, '', '/');
+    });
+
+    async function landVerdict(): Promise<void> {
+      fireEvent.click(screen.getByTestId('btn-train-guess-critical'));
+      await act(async () => {
+        fireEvent.click(screen.getByTestId('drop-e2e4'));
+      });
+      await waitForReveal();
+    }
+
+    it('the FIRST fork per puzzle sends exactly one train-sideline-fork action; a second fork and a hand-played known-line move send nothing', async () => {
+      await renderScreen(makePuzzle());
+      await landVerdict();
+      expect(trackedTargets('train-sideline-fork')).toHaveLength(0);
+
+      // A hand-played move along the known line (played = best = e2e4) is a
+      // board move, not a fork: no event.
+      fireEvent.click(screen.getByTestId('drop-e2e4'));
+      await waitFor(() =>
+        expect(screen.getByTestId('chessboard').getAttribute('data-position')).not.toBe(START_FEN),
+      );
+      expect(trackedTargets('train-sideline-fork')).toHaveLength(0);
+
+      fireEvent.click(screen.getByTestId('board-btn-reset'));
+      await waitFor(() =>
+        expect(screen.getByTestId('chessboard').getAttribute('data-position')).toBe(START_FEN),
+      );
+      fireEvent.click(screen.getByTestId('drop-d2d4')); // the first fork
+      await waitFor(() => expect(screen.getByTestId('train-sf-row')).not.toBeNull());
+      expect(trackedTargets('train-sideline-fork')).toHaveLength(1);
+      expect(trackedTargets('train-sideline-fork')[0]).toEqual([
+        'action',
+        { page: 'train', target: 'train-sideline-fork' },
+      ]);
+
+      fireEvent.click(screen.getByTestId('drop-d7d5')); // extends it: a second fork
+      await waitFor(() =>
+        expect(screen.getByTestId('chessboard').getAttribute('data-position')).toContain('3p4'),
+      );
+      expect(trackedTargets('train-sideline-fork')).toHaveLength(1);
+    });
+
+    it('rewind sends exactly one train-solution action per press and nothing on render (D-14)', async () => {
+      await renderScreen(makePuzzle());
+      await landVerdict();
+      expect(trackedTargets('train-solution')).toHaveLength(0);
+
+      fireEvent.click(screen.getByTestId('drop-d2d4')); // forks a sideline
+      await waitFor(() =>
+        expect((screen.getByTestId('board-btn-reset') as HTMLButtonElement).disabled).toBe(false),
+      );
+      expect(trackedTargets('train-solution')).toHaveLength(0);
+
+      fireEvent.click(screen.getByTestId('board-btn-reset'));
+      await waitFor(() =>
+        expect(screen.getByTestId('chessboard').getAttribute('data-position')).toBe(START_FEN),
+      );
+      expect(trackedTargets('train-solution')).toHaveLength(1);
+      expect(trackedTargets('train-solution')[0]).toEqual([
+        'action',
+        { page: 'train', target: 'train-solution' },
+      ]);
+    });
+
+    it('closing a sideline with its x sends the existing board-tool line-delete event', async () => {
+      await renderScreen(makePuzzle());
+      await landVerdict();
+      fireEvent.click(screen.getByTestId('drop-d2d4')); // forks a sideline
+      await waitFor(() => expect(screen.getByTestId('train-sf-row')).not.toBeNull());
+      const close = screen
+        .getByTestId('train-move-tree')
+        .querySelector('[data-testid^="btn-delete-line-"]');
+      expect(close).not.toBeNull();
+
+      fireEvent.click(close!);
+
+      expect(trackedTargets('line-delete')).toEqual([
+        ['board-tool', { page: 'train', target: 'line-delete' }],
+      ]);
+      expect(screen.queryByTestId('train-sf-row')).toBeNull();
+    });
+
+    it('mounting a restored reveal sends no sideline event', async () => {
+      const restoredPuzzle = makePuzzle();
+      const restoredCached = JSON.parse(
+        JSON.stringify({
+          sessionId: 1,
+          puzzle: restoredPuzzle,
+          verdict: SOLVE_RESPONSE,
+          guess: 'critical',
+          playedMoveUci: 'e2e4',
+          gradeResult: {
+            moveTier: 'good',
+            bestMoveUci: 'e2e4',
+            esBefore: 0.5,
+            esAfter: 0.5,
+            bestLine: { moves: ['e2e4'], evalCp: 19, evalMate: null },
+            playedLine: { moves: ['e2e4'], evalCp: 19, evalMate: null },
+          },
+        }),
+      ) as CachedTrainReveal;
+
+      await renderScreen(restoredPuzzle, makeSession(), restoredCached);
+      await waitForReveal();
+      await act(async () => {
+        await Promise.resolve();
+      });
+
+      expect(trackedTargets('train-sideline-fork')).toHaveLength(0);
+    });
   });
 
   // ─── Quick 260803-iv6 (Task 1): live Stockfish eval bar beside the board ──
@@ -2625,7 +3042,7 @@ describe('TrainSolveScreen — progress, last move, grading state, engine failur
       expect(screen.getByTestId('train-grading-indicator')).not.toBeNull();
       expect(screen.queryByTestId('train-eval-bar')).toBeNull(); // T-iv6-01: verdict not landed yet
 
-      await waitFor(() => expect(screen.getByTestId('train-verdict-guess')).not.toBeNull());
+      await waitForReveal();
       await waitFor(() => expect(screen.getByTestId('train-eval-bar')).not.toBeNull());
       expect(screen.queryByTestId('train-eval-bar-placeholder')).toBeNull();
       // aria-label reflects a real engine evaluation, not the 0.00 neutral
@@ -2651,8 +3068,7 @@ describe('TrainSolveScreen — progress, last move, grading state, engine failur
       // Step into the merged your/best box's line — the board moves off the
       // puzzle position, and the bar must stay mounted and keep tracking it
       // (never disappear just because the position is no longer the puzzle's).
-      const yourBox = screen.getByTestId('train-line-box-your-move');
-      fireEvent.click(within(yourBox).getByTestId('train-line-stepper-token-0'));
+      tapListMove(0);
       await waitFor(() => expect(board().getAttribute('data-position')).not.toBe(positionAtSolution));
       expect(screen.getByTestId('train-eval-bar')).not.toBeNull();
       await waitFor(() => {
@@ -2661,13 +3077,13 @@ describe('TrainSolveScreen — progress, last move, grading state, engine failur
       });
     });
 
-    it('while exploring, the bar reads the free-play engine\'s own top line instead of running a second concurrent search', async () => {
+    it('on a sideline the bar reads the one reveal engine: no second concurrent search, and the bar keeps a real evaluation', async () => {
       let workerCallCount = 0;
       stubWorker(() => {
         workerCallCount += 1;
-        // [0] grading, [1] eval bar (verdict lands before exploring), [2] free
-        // play — all three legal from their respective positions.
-        return workerCallCount <= 2 ? new FakeWorker() : new FakeWorker('e7e5', 'e7e5');
+        // [0] grading, [1] the reveal engine (it follows the shown position, so
+        // its PV must be legal from the sideline position too: black to move).
+        return workerCallCount <= 1 ? new FakeWorker() : new FakeWorker('e7e5', 'e7e5');
       });
       await renderScreen(makePuzzle());
       fireEvent.click(screen.getByTestId('btn-train-guess-critical'));
@@ -2675,74 +3091,177 @@ describe('TrainSolveScreen — progress, last move, grading state, engine failur
         fireEvent.click(screen.getByTestId('drop-e2e4'));
       });
       await waitFor(() => expect(screen.getByTestId('train-eval-bar')).not.toBeNull());
-      await waitFor(() => expect(stubbedWorkerInstances.length).toBe(2)); // grading + eval bar
+      await waitFor(() => expect(stubbedWorkerInstances.length).toBe(2)); // grading + reveal engine
 
-      fireEvent.click(screen.getByTestId('drop-e2e4')); // starts exploration
-      await waitFor(() => expect(stubbedWorkerInstances.length).toBe(3)); // + free play
-      // The eval bar's OWN worker (index 1) is torn down — exploration never
-      // runs a second concurrent search alongside the free-play engine's.
-      await waitFor(() => expect(stubbedWorkerInstances[1]!.terminated).toBe(true));
-      // The bar keeps rendering, fed by the free-play engine's top line.
+      fireEvent.click(screen.getByTestId('drop-d2d4')); // forks a sideline
+      await waitFor(() => expect(screen.getByTestId('train-sf-row')).not.toBeNull());
+      await act(async () => {
+        await Promise.resolve();
+      });
+      // No second engine: the same two Workers, neither torn down.
+      expect(stubbedWorkerInstances.length).toBe(2);
+      expect(stubbedWorkerInstances[1]!.terminated).not.toBe(true);
+      // The bar keeps rendering, fed by the reveal engine's reading of the sideline.
       expect(screen.getByTestId('train-eval-bar')).not.toBeNull();
+      await waitFor(() => {
+        const label = screen.getByTestId('train-eval-bar').getAttribute('aria-label') ?? '';
+        expect(label).not.toBe('Engine evaluation: 0.00');
+      });
     });
   });
 
-  // ─── Quick 260809-g0n: publishes mobileBoardControls while free-move mode
-  // is active, for MobileBottomBar's mobile-footer swap ─────────────────────
+  // ─── Phase 237 plan 07: desktop keyboard (ArrowLeft / ArrowRight / Home) ──────
+  describe('desktop keyboard navigation', () => {
+    const position = () => screen.getByTestId('chessboard').getAttribute('data-position');
+
+    async function landVerdictOnYourLine(): Promise<void> {
+      fireEvent.click(screen.getByTestId('btn-train-guess-critical'));
+      await act(async () => {
+        fireEvent.click(screen.getByTestId('drop-e2e4'));
+      });
+      await waitForReveal();
+    }
+
+    it('does nothing before the verdict lands', async () => {
+      await renderScreen(makePuzzle());
+      expect(position()).toBe(START_FEN);
+      // Inert: the hook never attaches a container, so the key is not even
+      // default-prevented (fireEvent returns false when it was).
+      expect(fireEvent.keyDown(window, { key: 'ArrowRight' })).toBe(true);
+      expect(fireEvent.keyDown(window, { key: 'Home' })).toBe(true);
+      expect(position()).toBe(START_FEN);
+    });
+
+    it('ArrowRight steps into the focused chip\'s line, ArrowLeft returns, Home returns from deeper in the line', async () => {
+      await renderScreen(makePuzzle());
+      await landVerdictOnYourLine();
+      expect(position()).toBe(START_FEN);
+
+      fireEvent.keyDown(window, { key: 'ArrowRight' });
+      await waitFor(() => expect(position()).not.toBe(START_FEN));
+      const afterFirst = position();
+
+      fireEvent.keyDown(window, { key: 'ArrowLeft' });
+      await waitFor(() => expect(position()).toBe(START_FEN));
+
+      // Go in again, then deeper (a hand-played reply), then Home straight back.
+      fireEvent.keyDown(window, { key: 'ArrowRight' });
+      await waitFor(() => expect(position()).toBe(afterFirst));
+      fireEvent.click(screen.getByTestId('drop-e7e5'));
+      await waitFor(() => expect(position()).not.toBe(afterFirst));
+      fireEvent.keyDown(window, { key: 'Home' });
+      await waitFor(() => expect(position()).toBe(START_FEN));
+    });
+  });
+
+  // ─── Quick 260809-g0n / Phase 237 plan 06: publishes mobileBoardControls while
+  // the board is off the puzzle position, for MobileBottomBar's footer swap ──
   describe('mobileBoardControls publishing', () => {
     it('publishes nothing before a verdict lands', async () => {
       await renderScreenWithProbe(makePuzzle());
       expect(screen.getByTestId('mbc-probe').getAttribute('data-published')).toBe('false');
     });
 
-    it('publishes nothing after a verdict lands while NOT exploring', async () => {
+    it('publishes for the whole reveal once the verdict lands, also at the puzzle position, with Next and the Analyze URL', async () => {
       await renderScreenWithProbe(makePuzzle());
       fireEvent.click(screen.getByTestId('btn-train-guess-critical'));
       await act(async () => {
         fireEvent.click(screen.getByTestId('drop-e2e4'));
       });
-      await waitFor(() => expect(screen.getByTestId('train-verdict-guess')).not.toBeNull());
-      expect(screen.getByTestId('mbc-probe').getAttribute('data-published')).toBe('false');
+      await waitForReveal();
+      await waitFor(() =>
+        expect(screen.getByTestId('mbc-probe').getAttribute('data-published')).toBe('true'),
+      );
+      // At the puzzle position: nothing to rewind or step back into, but the bar is there.
+      expect(screen.getByTestId('mbc-can-reset').textContent).toBe('false');
+      expect(screen.getByTestId('mbc-can-go-back').textContent).toBe('false');
+      expect(screen.getByTestId('mbc-has-next').textContent).toBe('true');
+      // Below `sm` the in-flow Analyze link is not mounted (WR-02), so the payload's
+      // URL is checked against the builder, not a DOM href.
+      expect(screen.getByTestId('mbc-analyze-to').textContent).toBe(buildGameAnalysisUrl(100, 19));
+      expect(screen.queryByTestId('btn-train-analyze')).toBeNull();
     });
 
-    it('starting free-move mode publishes a payload mirroring freePlay.canGoBack/canGoForward, canReset === canGoBack', async () => {
+    it('a puzzle without a source game publishes analyzeTo null', async () => {
+      await renderScreenWithProbe(makePuzzle({ game_id: null }));
+      fireEvent.click(screen.getByTestId('btn-train-guess-critical'));
+      await act(async () => {
+        fireEvent.click(screen.getByTestId('drop-e2e4'));
+      });
+      await waitFor(() =>
+        expect(screen.getByTestId('mbc-probe').getAttribute('data-published')).toBe('true'),
+      );
+      expect(screen.getByTestId('mbc-analyze-to').textContent).toBe('null');
+    });
+
+    it('the published onNext leaves the reveal like the in-flow Next (review flushed once with exit next)', async () => {
+      nextFlush.mockClear();
+      await renderScreenWithProbe(makePuzzle());
+      fireEvent.click(screen.getByTestId('btn-train-guess-critical'));
+      await act(async () => {
+        fireEvent.click(screen.getByTestId('drop-e2e4'));
+      });
+      await waitFor(() =>
+        expect(screen.getByTestId('mbc-probe').getAttribute('data-published')).toBe('true'),
+      );
+      fireEvent.click(screen.getByTestId('mbc-btn-next'));
+      await waitFor(() => expect(nextFlush).toHaveBeenCalledTimes(1));
+    });
+
+    it("the published bar's Next walks the tour to its last step without flushing", async () => {
+      getSettings.mockResolvedValue(makeSettings({ reveal_walkthrough_seen_at: null }));
+      await renderScreenWithProbe(makePuzzle());
+      fireEvent.click(screen.getByTestId('btn-train-guess-critical'));
+      await act(async () => {
+        fireEvent.click(screen.getByTestId('drop-e2e4'));
+      });
+      await waitFor(() => expect(screen.getByTestId('train-bot-walkthrough')).not.toBeNull());
+      // Phase 237 UAT (G-01): the published bar's Next walks the tour.
+      for (let click = 0; click < WALKTHROUGH_STEP_COUNT - 1; click += 1) {
+        fireEvent.click(screen.getByTestId('mbc-btn-next'));
+      }
+      await waitFor(() =>
+        expect(screen.getByTestId('train-tour-step-count').textContent).toBe(
+          `${WALKTHROUGH_STEP_COUNT} / ${WALKTHROUGH_STEP_COUNT}`,
+        ),
+      );
+      expect(nextFlush).not.toHaveBeenCalled();
+    });
+
+    it('forking a sideline publishes a payload mirroring the tree: back and reset live, forward disabled at the tip', async () => {
       await renderScreenWithProbe(makePuzzle());
       fireEvent.click(screen.getByTestId('btn-train-guess-critical'));
       await act(async () => {
         fireEvent.click(screen.getByTestId('drop-e2e4')); // the graded attempt
       });
-      await waitFor(() => expect(screen.getByTestId('train-verdict-guess')).not.toBeNull());
+      await waitForReveal();
 
-      fireEvent.click(screen.getByTestId('drop-e2e4')); // starts free play
-      await waitFor(() => expect(screen.getByTestId('train-reveal-exploration')).not.toBeNull());
+      fireEvent.click(screen.getByTestId('drop-d2d4')); // forks a sideline
 
       await waitFor(() =>
         expect(screen.getByTestId('mbc-probe').getAttribute('data-published')).toBe('true'),
       );
-      // One move in: at the tip (nothing to advance into) but back/reset are
-      // live — same state the in-card strip's own "Reset and Back are
-      // disabled..." test pins for board-btn-forward/back.
+      // One move in: at the tip (nothing to advance into) but back/reset are live.
       expect(screen.getByTestId('mbc-can-go-back').textContent).toBe('true');
       expect(screen.getByTestId('mbc-can-go-forward').textContent).toBe('false');
       expect(screen.getByTestId('mbc-can-reset').textContent).toBe('true');
     });
 
-    it('pressing Solution (exiting free-move mode) clears the published payload', async () => {
+    it('rewinding (back on the puzzle position) keeps the payload published with reset disabled', async () => {
       await renderScreenWithProbe(makePuzzle());
       fireEvent.click(screen.getByTestId('btn-train-guess-critical'));
       await act(async () => {
         fireEvent.click(screen.getByTestId('drop-e2e4'));
       });
-      await waitFor(() => expect(screen.getByTestId('train-verdict-guess')).not.toBeNull());
-      fireEvent.click(screen.getByTestId('drop-e2e4')); // starts free play
+      await waitForReveal();
+      fireEvent.click(screen.getByTestId('drop-d2d4')); // forks a sideline
       await waitFor(() =>
         expect(screen.getByTestId('mbc-probe').getAttribute('data-published')).toBe('true'),
       );
 
-      fireEvent.click(screen.getByTestId('btn-train-solution'));
-      await waitFor(() =>
-        expect(screen.getByTestId('mbc-probe').getAttribute('data-published')).toBe('false'),
-      );
+      fireEvent.click(screen.getByTestId('mbc-btn-reset'));
+      await waitFor(() => expect(screen.getByTestId('mbc-can-reset').textContent).toBe('false'));
+      expect(screen.getByTestId('mbc-probe').getAttribute('data-published')).toBe('true');
     });
 
     it('unmounting the solve screen clears the published payload', async () => {
@@ -2751,8 +3270,8 @@ describe('TrainSolveScreen — progress, last move, grading state, engine failur
       await act(async () => {
         fireEvent.click(screen.getByTestId('drop-e2e4'));
       });
-      await waitFor(() => expect(screen.getByTestId('train-verdict-guess')).not.toBeNull());
-      fireEvent.click(screen.getByTestId('drop-e2e4')); // starts free play
+      await waitForReveal();
+      fireEvent.click(screen.getByTestId('drop-d2d4')); // forks a sideline
       await waitFor(() =>
         expect(screen.getByTestId('mbc-probe').getAttribute('data-published')).toBe('true'),
       );
@@ -2770,14 +3289,14 @@ describe('TrainSolveScreen — progress, last move, grading state, engine failur
       expect(screen.getByTestId('mbc-probe').getAttribute('data-published')).toBe('false');
     });
 
-    it('invoking the published onReset returns the board to the puzzle position while free-move mode stays active', async () => {
+    it('invoking the published onReset returns the board to the puzzle position while the sideline stays listed', async () => {
       await renderScreenWithProbe(makePuzzle());
       fireEvent.click(screen.getByTestId('btn-train-guess-critical'));
       await act(async () => {
         fireEvent.click(screen.getByTestId('drop-e2e4'));
       });
-      await waitFor(() => expect(screen.getByTestId('train-verdict-guess')).not.toBeNull());
-      fireEvent.click(screen.getByTestId('drop-e2e4')); // starts free play
+      await waitForReveal();
+      fireEvent.click(screen.getByTestId('drop-d2d4')); // forks a sideline
       await waitFor(() =>
         expect(screen.getByTestId('mbc-probe').getAttribute('data-published')).toBe('true'),
       );
@@ -2785,7 +3304,7 @@ describe('TrainSolveScreen — progress, last move, grading state, engine failur
       const board = () => screen.getByTestId('chessboard');
       fireEvent.click(screen.getByTestId('mbc-btn-reset'));
       await waitFor(() => expect(board().getAttribute('data-position')).toBe(START_FEN));
-      expect(screen.getByTestId('train-reveal-exploration')).not.toBeNull();
+      expect(within(screen.getByTestId('train-move-tree')).getByText('d4')).not.toBeNull();
     });
 
     it('invoking the published onFlip flips the shared board', async () => {
@@ -2794,8 +3313,8 @@ describe('TrainSolveScreen — progress, last move, grading state, engine failur
       await act(async () => {
         fireEvent.click(screen.getByTestId('drop-e2e4'));
       });
-      await waitFor(() => expect(screen.getByTestId('train-verdict-guess')).not.toBeNull());
-      fireEvent.click(screen.getByTestId('drop-e2e4')); // starts free play
+      await waitForReveal();
+      fireEvent.click(screen.getByTestId('drop-d2d4')); // forks a sideline
       await waitFor(() =>
         expect(screen.getByTestId('mbc-probe').getAttribute('data-published')).toBe('true'),
       );
@@ -2806,14 +3325,14 @@ describe('TrainSolveScreen — progress, last move, grading state, engine failur
       await waitFor(() => expect(board().getAttribute('data-flipped')).toBe('true'));
     });
 
-    it('pressing Solution after a flip restores the puzzle\'s initial orientation', async () => {
+    it('a flip survives a rewind (flip is a permanent bar control now)', async () => {
       await renderScreenWithProbe(makePuzzle());
       fireEvent.click(screen.getByTestId('btn-train-guess-critical'));
       await act(async () => {
         fireEvent.click(screen.getByTestId('drop-e2e4'));
       });
-      await waitFor(() => expect(screen.getByTestId('train-verdict-guess')).not.toBeNull());
-      fireEvent.click(screen.getByTestId('drop-e2e4')); // starts free play
+      await waitForReveal();
+      fireEvent.click(screen.getByTestId('drop-d2d4')); // forks a sideline
       await waitFor(() =>
         expect(screen.getByTestId('mbc-probe').getAttribute('data-published')).toBe('true'),
       );
@@ -2822,34 +3341,39 @@ describe('TrainSolveScreen — progress, last move, grading state, engine failur
       fireEvent.click(screen.getByTestId('mbc-btn-flip'));
       await waitFor(() => expect(board().getAttribute('data-flipped')).toBe('true'));
 
-      // Solution exits free play AND snaps orientation back to the puzzle's
-      // initial state (white to move -> not flipped).
-      fireEvent.click(screen.getByTestId('btn-train-solution'));
-      await waitFor(() => expect(board().getAttribute('data-flipped')).toBe('false'));
+      // Rewind returns to the puzzle position and leaves the orientation alone.
+      fireEvent.click(screen.getByTestId('mbc-btn-reset'));
+      await waitFor(() => expect(screen.getByTestId('mbc-can-reset').textContent).toBe('false'));
+      expect(board().getAttribute('data-flipped')).toBe('true');
     });
   });
 
   describe('Phase 222: first-session intro stepper (D-05/D-12/D-22)', () => {
-    it('renders Tank\'s welcome with a Next control and no guess buttons when intro_seen_at is null', async () => {
+    it('renders Hilda\'s welcome with a Next control and no guess buttons when intro_seen_at is null', async () => {
       getSettings.mockResolvedValue(makeSettings({ intro_seen_at: null }));
       await renderScreen(makePuzzle());
-      expect(screen.getByTestId('train-bot-name').textContent).toBe('Tank the Ox');
+      expect(screen.getByTestId('train-bot-name').textContent).toBe('Hilda the Hippo');
+      expect(screen.getByTestId('train-bot-copy').textContent).toContain('Welcome to FlawChess Train!');
       expect(screen.queryByTestId('btn-train-guess-critical')).toBeNull();
       expect(screen.queryByTestId('btn-train-guess-several')).toBeNull();
       expect(screen.getByTestId('btn-train-bot-step-next')).not.toBeNull();
     });
 
-    // Plan 06 UAT: short steps (Tank, then Hilda) instead of three long ones,
-    // so nothing scrolls inside the phone bubble — four Next clicks reach the
-    // guess buttons on a regular session.
-    it('advances Tank -> Hilda x4, showing the guess buttons only on the closing step', async () => {
+    // Plan 06 UAT: short steps instead of three long ones, so nothing scrolls
+    // inside the phone bubble — four Next clicks reach the guess buttons on a
+    // regular session. Phase 237 UAT: Hilda hosts every step, the welcome too.
+    it('advances through the Hilda steps, showing the guess buttons only on the closing step', async () => {
       getSettings.mockResolvedValue(makeSettings({ intro_seen_at: null }));
       await renderScreen(makePuzzle());
-      await waitFor(() => expect(screen.getByTestId('train-bot-name').textContent).toBe('Tank the Ox'));
+      await waitFor(() =>
+        expect(screen.getByTestId('train-bot-copy').textContent).toContain('Welcome to FlawChess Train!'),
+      );
+      expect(screen.getByTestId('train-bot-name').textContent).toBe('Hilda the Hippo');
       fireEvent.click(screen.getByTestId('btn-train-bot-step-next'));
       await waitFor(() =>
-        expect(screen.getByTestId('train-bot-name').textContent).toBe('Hilda the Hippo'),
+        expect(screen.getByTestId('train-bot-copy').textContent).not.toContain('Welcome'),
       );
+      expect(screen.getByTestId('train-bot-name').textContent).toBe('Hilda the Hippo');
       expect(screen.queryByTestId('btn-train-guess-critical')).toBeNull();
       for (let click = 0; click < introStepCount(false, { hasGames: true, isGuest: false }) - 2; click += 1) {
         expect(screen.queryByTestId('btn-train-guess-critical')).toBeNull();
@@ -2932,7 +3456,9 @@ describe('TrainSolveScreen — progress, last move, grading state, engine failur
       expect(screen.queryByTestId('train-guess-prompt')).toBeNull();
       expect(screen.queryByTestId('btn-train-guess-critical')).toBeNull();
       resolveSettings(makeSettings({ intro_seen_at: null }));
-      await waitFor(() => expect(screen.getByTestId('train-bot-name').textContent).toBe('Tank the Ox'));
+      await waitFor(() =>
+        expect(screen.getByTestId('train-bot-copy').textContent).toContain('Welcome to FlawChess Train!'),
+      );
     });
 
     // Phase 222 code review CR-01: a settings fetch that FAILS (not merely
@@ -3000,7 +3526,8 @@ describe('TrainSolveScreen — progress, last move, grading state, engine failur
   });
 
   describe('Phase 222: verdict bubble (D-03/D-10/D-15/D-16/D-23)', () => {
-    it('a 0-point verdict is spoken by a stern-pool bot and shows the look-closer line + both pills', async () => {
+    it('a 0-point verdict is spoken by the narrating bot and shows the look-closer line + both pills', async () => {
+      matchMediaMatches = false; // phone: the expanded strip
       solvePuzzle.mockResolvedValue({
         correct_guess: false,
         correct_move: false,
@@ -3013,19 +3540,23 @@ describe('TrainSolveScreen — progress, last move, grading state, engine failur
         session_complete: false,
       });
       await renderScreen(makePuzzle());
+      const narrator = screen.getByTestId('train-bot-name').textContent;
       fireEvent.click(screen.getByTestId('btn-train-guess-critical'));
       await act(async () => {
         fireEvent.click(screen.getByTestId('drop-e2e4'));
       });
-      await waitFor(() => expect(screen.getByTestId('train-bot-verdict-line')).not.toBeNull());
-      const botName = screen.getByTestId('train-bot-name').textContent;
-      expect(BY_TEMPERAMENT.stern.some((p) => p.name === botName)).toBe(true);
+      await openVerdictStrip();
+      // Phase 237 UAT: the bot that asked for the move also gives the feedback.
+      expect(screen.getByTestId('train-verdict-strip-avatar').getAttribute('data-persona-name')).toBe(
+        narrator,
+      );
       expect(screen.getByTestId('train-bot-pill-guess').textContent).toBe('+0');
       expect(screen.getByTestId('train-bot-pill-move').textContent).toBe('+0');
       expect(screen.getByTestId('train-bot-look-closer')).not.toBeNull();
     });
 
-    it('a 3-point verdict is spoken by a friendly-pool bot with no look-closer line', async () => {
+    it('a 3-point verdict is spoken by the narrating bot with no look-closer line', async () => {
+      matchMediaMatches = false; // phone: the expanded strip
       solvePuzzle.mockResolvedValue({
         correct_guess: true,
         correct_move: true,
@@ -3038,22 +3569,38 @@ describe('TrainSolveScreen — progress, last move, grading state, engine failur
         session_complete: false,
       });
       await renderScreen(makePuzzle());
+      const narrator = screen.getByTestId('train-bot-name').textContent;
       fireEvent.click(screen.getByTestId('btn-train-guess-critical'));
       await act(async () => {
         fireEvent.click(screen.getByTestId('drop-e2e4'));
       });
-      await waitFor(() => expect(screen.getByTestId('train-bot-verdict-line')).not.toBeNull());
-      const botName = screen.getByTestId('train-bot-name').textContent;
-      expect(BY_TEMPERAMENT.friendly.some((p) => p.name === botName)).toBe(true);
+      await openVerdictStrip();
+      // Phase 237 UAT: the bot that asked for the move also gives the feedback.
+      expect(screen.getByTestId('train-verdict-strip-avatar').getAttribute('data-persona-name')).toBe(
+        narrator,
+      );
       expect(screen.getByTestId('train-bot-pill-guess').textContent).toBe('+1');
       expect(screen.getByTestId('train-bot-pill-move').textContent).toBe('+2');
       expect(screen.queryByTestId('train-bot-look-closer')).toBeNull();
+    });
+
+    // Phase 237 UAT: Hilda narrates the first-reveal tour, so she never hosts a
+    // puzzle while that tour is pending, even on a draw that lands on her slot.
+    it('Hilda never hosts the puzzle while the first-reveal tour is pending', async () => {
+      getSettings.mockResolvedValue(makeSettings({ reveal_walkthrough_seen_at: null }));
+      const all = Object.values(PERSONA_REGISTRY);
+      const hildaSlot = all.findIndex((p) => p.id === HILDA_ID);
+      const random = vi.spyOn(Math, 'random').mockReturnValue((hildaSlot + 0.5) / all.length);
+      await renderScreen(makePuzzle());
+      expect(screen.getByTestId('train-bot-name').textContent).not.toBe('Hilda the Hippo');
+      random.mockRestore();
     });
 
     // Phase 222 UAT round 4: `verdictCopy` draws a random opener; drawing it
     // on every render flipped "Good job!"/"Clean." on each board interaction
     // and twitched the layout. The draw is memoised per verdict.
     it('the verdict opener stays fixed across re-renders (no per-render random draw)', async () => {
+      matchMediaMatches = false; // phone: the expanded strip
       solvePuzzle.mockResolvedValue({
         correct_guess: true,
         correct_move: true,
@@ -3071,12 +3618,12 @@ describe('TrainSolveScreen — progress, last move, grading state, engine failur
       await act(async () => {
         fireEvent.click(screen.getByTestId('drop-e2e4'));
       });
-      const verdictLine = await waitFor(() => screen.getByTestId('train-bot-verdict-line'));
-      expect(verdictLine.textContent).toMatch(/^Good job!/);
+      const details = await openVerdictStrip();
+      expect(within(details).getByTestId('train-bot-verdict-line').textContent).toMatch(/^Good job!/);
       // Every later draw would pick the OTHER opener — a re-render must not draw.
       random.mockReturnValue(0.999);
-      const yourBox = await waitFor(() => screen.getByTestId('train-line-box-your-move'));
-      fireEvent.click(within(yourBox).getByTestId('train-line-stepper-token-0'));
+      await waitFor(() => expect(screen.getByTestId('train-move-tree')).not.toBeNull());
+      tapListMove(0);
       await waitFor(() =>
         expect(screen.getByTestId('chessboard').getAttribute('data-position')).not.toBe(START_FEN),
       );
@@ -3087,6 +3634,7 @@ describe('TrainSolveScreen — progress, last move, grading state, engine failur
     // Phase 222 UAT round 4: the reveal restored after the Analyze round trip
     // shows the SAME bot that spoke the verdict before leaving.
     it('a restored reveal keeps the verdict bot recorded in the reveal cache', async () => {
+      matchMediaMatches = false; // phone: the bot is the strip's avatar
       const restoredPuzzle = makePuzzle();
       const restoredCached: CachedTrainReveal = {
         sessionId: 1,
@@ -3106,10 +3654,72 @@ describe('TrainSolveScreen — progress, last move, grading state, engine failur
         },
       };
       await renderScreen(restoredPuzzle, makeSession(), restoredCached);
-      await waitFor(() => expect(screen.getByTestId('train-bot-verdict-line')).not.toBeNull());
-      expect(screen.getByTestId('train-bot-name').textContent).toBe(
+      await waitForReveal();
+      const strip = await screen.findByTestId('train-verdict-strip');
+      // D-08: a restored reveal starts collapsed too, whatever the score.
+      expect(strip.getAttribute('aria-expanded')).toBe('false');
+      expect(screen.getByTestId('train-verdict-strip-avatar').getAttribute('data-persona-name')).toBe(
         PERSONA_REGISTRY['wall-1800'].name,
       );
+    });
+
+    it('desktop: the verdict is the full bubble at the top of the reveal column, details visible, no strip', async () => {
+      await renderScreen(makePuzzle());
+      fireEvent.click(screen.getByTestId('btn-train-guess-critical'));
+      await act(async () => {
+        fireEvent.click(screen.getByTestId('drop-e2e4'));
+      });
+      const reveal = await waitForReveal();
+      const bubble = within(reveal).getByTestId('train-verdict-card');
+      expect(reveal.firstElementChild).toBe(bubble);
+      // Phase 237 UAT: the avatar sits inside the card, with no name label.
+      expect(within(bubble).getByTestId('train-verdict-card-avatar')).not.toBeNull();
+      expect(within(bubble).queryByTestId('train-bot-name')).toBeNull();
+      expect(within(bubble).getByTestId('train-bot-verdict-line').textContent).toContain('best move');
+      expect(within(bubble).getByTestId('train-verdict-guess-prose')).not.toBeNull();
+      expect(screen.queryByTestId('train-verdict-strip')).toBeNull();
+      // The left slot no longer speaks the verdict.
+      expect(screen.queryByTestId('train-bot-bubble')).toBeNull();
+    });
+
+    it('D-08: the strip is collapsed again on the next puzzle\'s reveal, even after the user opened it', async () => {
+      matchMediaMatches = false;
+      const { rerender } = await renderScreen(makePuzzle());
+      fireEvent.click(screen.getByTestId('btn-train-guess-critical'));
+      await act(async () => {
+        fireEvent.click(screen.getByTestId('drop-e2e4'));
+      });
+      await openVerdictStrip();
+      expect(screen.getByTestId('train-verdict-strip').getAttribute('aria-expanded')).toBe('true');
+
+      // The next puzzle on the SAME screen instance (what Next does in the page).
+      const queryClient = new QueryClient({
+        defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+      });
+      rerender(
+        <MemoryRouter>
+          <QueryClientProvider client={queryClient}>
+            <TooltipProvider>
+              <Harness
+                puzzle={makePuzzle({
+                  position: 2,
+                  ply: 30,
+                  fen: 'rnbqkbnr/pppp1ppp/8/4p3/4P3/8/PPPP1PPP/RNBQKBNR w KQkq e6 0 2',
+                })}
+              />
+            </TooltipProvider>
+          </QueryClientProvider>
+        </MemoryRouter>,
+      );
+      await waitFor(() => expect(screen.queryByTestId('train-reveal')).toBeNull());
+      fireEvent.click(await screen.findByTestId('btn-train-guess-critical'));
+      await act(async () => {
+        fireEvent.click(screen.getByTestId('drop-d2d4'));
+      });
+      await waitForReveal();
+      const strip = await screen.findByTestId('train-verdict-strip');
+      expect(strip.getAttribute('aria-expanded')).toBe('false');
+      expect(screen.queryByTestId('train-verdict-strip-details')).toBeNull();
     });
 
     it('the mastered tail renders even when the stale due_date compares as "next session" (status-before-date)', async () => {
@@ -3209,204 +3819,291 @@ describe('TrainSolveScreen — progress, last move, grading state, engine failur
       expect(screen.queryByTestId('train-bot-return-tail')).toBeNull();
     });
 
-    it('Solution/Analyze/Next live inside the verdict bubble and the mute toggle is gone', async () => {
+    it('the verdict bubble renders no buttons (the actions live in the reveal bar) and the mute toggle is gone', async () => {
       await renderScreen(makePuzzle());
       fireEvent.click(screen.getByTestId('btn-train-guess-critical'));
       await act(async () => {
         fireEvent.click(screen.getByTestId('drop-e2e4'));
       });
       await waitFor(() => expect(screen.getByTestId('btn-train-next')).not.toBeNull());
-      const bubble = screen.getByTestId('train-bot-bubble');
-      expect(bubble.contains(screen.getByTestId('btn-train-next'))).toBe(true);
-      expect(bubble.contains(screen.getByTestId('btn-train-analyze'))).toBe(true);
+      const bubble = screen.getByTestId('train-verdict-card');
+      expect(bubble.querySelector('button')).toBeNull();
+      expect(bubble.contains(screen.getByTestId('btn-train-next'))).toBe(false);
+      const bar = screen.getByTestId('train-reveal-action-bar');
+      expect(bar.contains(screen.getByTestId('btn-train-next'))).toBe(true);
+      expect(bar.contains(screen.getByTestId('btn-train-analyze'))).toBe(true);
       expect(screen.queryByTestId('board-btn-mute')).toBeNull();
     });
   });
 
   describe('Phase 222: first-reveal walkthrough (D-24/D-12/TRAINBOT-10)', () => {
-    it('the first reveal with reveal_walkthrough_seen_at null shows Hilda\'s step-1 copy with a ring on the bubble, and no normal verdict', async () => {
+    /** Opens a first reveal (tour active) on the current viewport. */
+    async function openFirstReveal(): Promise<ReturnType<typeof render>> {
       getSettings.mockResolvedValue(makeSettings({ reveal_walkthrough_seen_at: null }));
-      await renderScreen(makePuzzle());
+      const rendered = await renderScreen(makePuzzle());
       fireEvent.click(screen.getByTestId('btn-train-guess-critical'));
       await act(async () => {
         fireEvent.click(screen.getByTestId('drop-e2e4'));
       });
       await waitFor(() => expect(screen.getByTestId('train-bot-walkthrough')).not.toBeNull());
-      expect(screen.getByTestId('train-bot-name').textContent).toBe('Hilda the Hippo');
-      expect(screen.getByTestId('train-bot-copy').parentElement?.className).toContain('ring-2');
-      expect(screen.getByTestId('btn-train-bot-walkthrough-next')).not.toBeNull();
+      return rendered;
+    }
+    // Phase 237 UAT (G-01): the reveal bar's Next is the tour's only Next.
+    const clickWalkthroughNext = (): void => {
+      fireEvent.click(screen.getByTestId('btn-train-next'));
+    };
+    const walkthroughCopyText = (): string =>
+      screen.getByTestId('train-bot-walkthrough').textContent ?? '';
+    const overlayShown = (): boolean => screen.queryByTestId('train-tour-overlay') !== null;
+    const badgeShown = (): boolean => screen.queryByTestId('btn-train-tour-reopen') !== null;
+
+    it('tracer: on a phone Hilda speaks from an overlay on the board and the strip is ringed', async () => {
+      matchMediaMatches = false; // below lg: the strip is the verdict surface, the tour an overlay
+      await openFirstReveal();
+      const overlay = screen.getByTestId('train-tour-overlay');
+      // G-01: the tour copy sits on the board, not in the reveal column.
+      expect(screen.getByTestId('train-pinned-board').contains(overlay)).toBe(true);
+      expect(within(screen.getByTestId('train-reveal')).queryByTestId('train-bot-walkthrough')).toBeNull();
+      expect(overlay.className).toContain('pointer-events-none');
+      expect(screen.getByTestId('train-verdict-strip').getAttribute('aria-expanded')).toBe('false');
+      expect(screen.getByTestId('train-verdict-strip-root').className).toContain('ring-2');
+      expect(walkthroughCopyText()).toContain('Tap it');
+      expect(within(overlay).getByTestId('train-tour-step-count').textContent).toBe(`1 / ${WALKTHROUGH_STEP_COUNT}`);
+      // One Next on screen: the bar's.
+      expect(screen.queryByTestId('btn-train-bot-walkthrough-next')).toBeNull();
+      expect(screen.getAllByTestId('btn-train-next')).toHaveLength(1);
       expect(screen.queryByTestId('train-bot-verdict-line')).toBeNull();
     });
 
-    it('Next moves the ring to the line-card group (step 2) and off the bubble', async () => {
-      getSettings.mockResolvedValue(makeSettings({ reveal_walkthrough_seen_at: null }));
-      await renderScreen(makePuzzle());
-      fireEvent.click(screen.getByTestId('btn-train-guess-critical'));
-      await act(async () => {
-        fireEvent.click(screen.getByTestId('drop-e2e4'));
-      });
-      await waitFor(() => expect(screen.getByTestId('train-bot-walkthrough')).not.toBeNull());
-      fireEvent.click(screen.getByTestId('btn-train-bot-walkthrough-next'));
-      await waitFor(() =>
-        expect(screen.getByTestId('train-line-box-your-move').className).toContain('ring-2'),
+    it('on desktop Hilda also speaks from the board overlay, and the verdict bubble is ringed', async () => {
+      matchMediaMatches = true;
+      await openFirstReveal();
+      const overlay = screen.getByTestId('train-tour-overlay');
+      // Phase 237 UAT: no second bot bubble stacked over the verdict bubble.
+      expect(screen.getByTestId('train-pinned-board').contains(overlay)).toBe(true);
+      const reveal = screen.getByTestId('train-reveal');
+      expect(within(reveal).queryByTestId('train-bot-walkthrough')).toBeNull();
+      expect(within(reveal).queryByTestId('train-bot-bubble')).toBeNull();
+      expect(within(reveal).getByTestId('train-verdict-card').className).toContain('ring-2');
+      expect(within(overlay).getByTestId('train-tour-step-count').textContent).toBe(
+        `1 / ${WALKTHROUGH_STEP_COUNT}`,
       );
-      expect(screen.getByTestId('train-bot-copy').parentElement?.className).not.toContain('ring-2');
+      expect(walkthroughCopyText()).not.toContain('Tap it');
+      expect(screen.queryByTestId('btn-train-bot-walkthrough-next')).toBeNull();
+      expect(within(reveal).queryByTestId('train-verdict-strip')).toBeNull();
     });
 
-    it('the last step rings the real Solution/Analyze/Next row and leaving through Next stamps reveal_walkthrough exactly once', async () => {
-      getSettings.mockResolvedValue(makeSettings({ reveal_walkthrough_seen_at: null }));
-      await renderScreen(makePuzzle());
-      fireEvent.click(screen.getByTestId('btn-train-guess-critical'));
-      await act(async () => {
-        fireEvent.click(screen.getByTestId('drop-e2e4'));
-      });
-      await waitFor(() => expect(screen.getByTestId('train-bot-walkthrough')).not.toBeNull());
-      fireEvent.click(screen.getByTestId('btn-train-bot-walkthrough-next'));
-      await waitFor(() => expect(screen.getByTestId('train-line-box-your-move')).not.toBeNull());
-      // Phase 222 UAT: tap / arrows / free play / "not memorizing" — the
-      // line cards ring on the tap and arrows steps, the board row on the
-      // free-play step, the cards again on the fourth.
-      fireEvent.click(screen.getByTestId('btn-train-bot-walkthrough-next'));
-      expect(screen.getByTestId('train-line-box-your-move').className).toContain('ring-2');
-      fireEvent.click(screen.getByTestId('btn-train-bot-walkthrough-next'));
-      expect(screen.getByTestId('train-line-box-your-move').className).not.toContain('ring-2');
-      expect(screen.getByTestId('chessboard').closest('[class*="ring-2"]')).not.toBeNull();
-      fireEvent.click(screen.getByTestId('btn-train-bot-walkthrough-next'));
-      expect(screen.getByTestId('train-line-box-your-move').className).toContain('ring-2');
-      fireEvent.click(screen.getByTestId('btn-train-bot-walkthrough-next'));
-      // UAT round 3: the REAL action row IS the last step's control; there
-      // is no separate "Got it". Leaving through Next completes the
-      // walkthrough and advances the loop. UAT round 4: no ring around it.
-      const nextButton = await waitFor(() => screen.getByTestId('btn-train-next'));
-      expect(nextButton.closest('[class*="ring-2"]')).toBeNull();
-      expect(screen.queryByTestId('btn-train-bot-walkthrough-done')).toBeNull();
-      expect(screen.queryByTestId('btn-train-bot-walkthrough-next')).toBeNull();
+    it('the bar Next moves the tour to the chips step and off the strip, and never rings the chips row', async () => {
+      matchMediaMatches = false;
+      await openFirstReveal();
+      clickWalkthroughNext();
+      await waitFor(() => expect(walkthroughCopyText()).toContain('Tap one to focus it'));
+      expect(screen.getByTestId('train-verdict-strip-root').className).not.toContain('ring-2');
+      expect(screen.getByTestId('train-line-chips').className).not.toContain('ring-2');
+      expect(screen.getByTestId('train-tour-step-count').textContent).toBe(`2 / ${WALKTHROUGH_STEP_COUNT}`);
+    });
+
+    it('the ring follows the target: list, board row, list, then nothing on the bar step', async () => {
+      matchMediaMatches = false;
+      await openFirstReveal();
+      const treeRinged = (): boolean =>
+        screen.getByTestId('train-tree-tour-ring').className.includes('ring-2');
+      const boardRinged = (): boolean =>
+        screen.getByTestId('chessboard').closest('[class*="ring-2"]') !== null;
+      // Step 1: the chips (the active chip's own ring only).
+      clickWalkthroughNext();
+      expect([treeRinged(), boardRinged()]).toEqual([false, false]);
+      // Step 2: the move list.
+      clickWalkthroughNext();
+      expect([treeRinged(), boardRinged()]).toEqual([true, false]);
+      // Step 3: the board row.
+      clickWalkthroughNext();
+      expect([treeRinged(), boardRinged()]).toEqual([false, true]);
+      // Step 4: chips and list together (the list carries the ring).
+      clickWalkthroughNext();
+      expect([treeRinged(), boardRinged()]).toEqual([true, false]);
+      // Step 5: the action bar step rings nothing (Phase 237 UAT: the bar ring
+      // was clipped in the fixed mobile bottom bar, so the bubble points alone).
+      clickWalkthroughNext();
+      await waitFor(() =>
+        expect(screen.getByTestId('train-tour-step-count').textContent).toBe(
+          `${WALKTHROUGH_STEP_COUNT} / ${WALKTHROUGH_STEP_COUNT}`,
+        ),
+      );
+      expect(screen.getByTestId('train-reveal-action-bar').className).not.toContain('ring-2');
+      expect([treeRinged(), boardRinged()]).toEqual([false, false]);
+      expect(screen.getByTestId('train-line-chips').className).not.toContain('ring-2');
+    });
+
+    it('the bar Next walks the tour without leaving the puzzle; on the last step it leaves and stamps once', async () => {
+      await openFirstReveal();
+      for (let click = 0; click < WALKTHROUGH_STEP_COUNT - 1; click += 1) {
+        clickWalkthroughNext();
+        // The puzzle stays: the reveal is still on screen and nothing is stamped or flushed.
+        expect(screen.getByTestId('train-reveal')).not.toBeNull();
+      }
+      expect(nextFlush).not.toHaveBeenCalled();
       expect(stampOnboarding).not.toHaveBeenCalled();
-      fireEvent.click(nextButton);
+      clickWalkthroughNext();
       await waitFor(() => expect(stampOnboarding).toHaveBeenCalledTimes(1));
       expect(stampOnboarding).toHaveBeenCalledWith('reveal_walkthrough');
-    });
-
-    it('a free-play move before the last step makes its copy describe the Solution button', async () => {
-      getSettings.mockResolvedValue(makeSettings({ reveal_walkthrough_seen_at: null }));
-      await renderScreen(makePuzzle());
-      fireEvent.click(screen.getByTestId('btn-train-guess-critical'));
-      await act(async () => {
-        fireEvent.click(screen.getByTestId('drop-e2e4'));
-      });
-      await waitFor(() => expect(screen.getByTestId('train-bot-walkthrough')).not.toBeNull());
-      fireEvent.click(screen.getByTestId('btn-train-bot-walkthrough-next'));
-      // Stepping a card's line departs the board exactly like a free-play
-      // move does (`isBoardDeparted`); the action row (with Solution) only
-      // renders on the last step, so advance there and check both.
-      const yourBox = await waitFor(() => screen.getByTestId('train-line-box-your-move'));
-      fireEvent.click(within(yourBox).getByTestId('train-line-stepper-token-0'));
-      await waitFor(() => expect(screen.getByTestId('chessboard').getAttribute('data-position')).not.toBe(START_FEN));
-      for (let click = 1; click < WALKTHROUGH_STEP_COUNT - 1; click += 1) {
-        fireEvent.click(screen.getByTestId('btn-train-bot-walkthrough-next'));
-      }
-      await waitFor(() => expect(screen.getByTestId('btn-train-solution')).not.toBeNull());
-      expect(screen.getByTestId('train-bot-walkthrough').textContent).toMatch(
-        /^The Solution button restores the board/,
-      );
+      await waitFor(() => expect(nextFlush).toHaveBeenCalledTimes(1));
     });
 
     it('unmounting on the last step (before leaving through Next) fires no stamp — an abandoned stepper replays', async () => {
-      getSettings.mockResolvedValue(makeSettings({ reveal_walkthrough_seen_at: null }));
-      const { unmount } = await renderScreen(makePuzzle());
-      fireEvent.click(screen.getByTestId('btn-train-guess-critical'));
-      await act(async () => {
-        fireEvent.click(screen.getByTestId('drop-e2e4'));
-      });
-      await waitFor(() => expect(screen.getByTestId('train-bot-walkthrough')).not.toBeNull());
-      for (let click = 0; click < WALKTHROUGH_STEP_COUNT - 1; click += 1) {
-        fireEvent.click(screen.getByTestId('btn-train-bot-walkthrough-next'));
-      }
-      await waitFor(() => expect(screen.getByTestId('btn-train-next')).not.toBeNull());
+      const { unmount } = await openFirstReveal();
+      for (let click = 0; click < WALKTHROUGH_STEP_COUNT - 1; click += 1) clickWalkthroughNext();
+      await waitFor(() =>
+        expect(screen.getByTestId('train-tour-step-count').textContent).toBe(
+          `${WALKTHROUGH_STEP_COUNT} / ${WALKTHROUGH_STEP_COUNT}`,
+        ),
+      );
       unmount();
       expect(stampOnboarding).not.toHaveBeenCalled();
     });
 
-    // UAT round 3: the two line-card steps auto-advance on the interaction
-    // they describe (Next stays as the fallback).
-    async function openWalkthroughAtTapStep(): Promise<void> {
-      getSettings.mockResolvedValue(makeSettings({ reveal_walkthrough_seen_at: null }));
-      await renderScreen(makePuzzle());
-      fireEvent.click(screen.getByTestId('btn-train-guess-critical'));
+    it('step 2 explains the Move = Best chip only when the played move is the best move', async () => {
+      matchMediaMatches = false;
+      await openFirstReveal();
+      clickWalkthroughNext();
+      const merged = screen.queryByTestId('train-chip-your')?.textContent?.includes('Best') ?? false;
+      expect(walkthroughCopyText().includes('"Move = Best"')).toBe(merged);
+    });
+
+    it('the bar copy shows the bar icons, not glyphs', async () => {
+      matchMediaMatches = false;
+      await openFirstReveal();
+      clickWalkthroughNext();
+      clickWalkthroughNext();
+      expect(screen.getByTestId('train-tour-icon-back')).not.toBeNull();
+      expect(screen.getByTestId('train-tour-icon-forward')).not.toBeNull();
+      clickWalkthroughNext();
+      expect(screen.getByTestId('train-tour-icon-rewind')).not.toBeNull();
+      expect(walkthroughCopyText()).not.toContain('{');
+    });
+
+    // Phase 237 UAT (G-01): an interaction hides the phone overlay but never
+    // moves the tour; the next bar Next shows the overlay with the next step.
+    it('on a phone, a chip tap hides the overlay without advancing; Next shows the next step', async () => {
+      matchMediaMatches = false;
+      await openFirstReveal();
+      clickWalkthroughNext();
+      expect(overlayShown()).toBe(true);
+      fireEvent.click(screen.getByTestId('train-chip-your'));
+      await waitFor(() => expect(overlayShown()).toBe(false));
+      expect(badgeShown()).toBe(true);
+      clickWalkthroughNext();
+      await waitFor(() => expect(overlayShown()).toBe(true));
+      expect(walkthroughCopyText()).toContain('Step through the focused line');
+      expect(badgeShown()).toBe(false);
+    });
+
+    it("on a phone, Hilda's badge brings the current step back", async () => {
+      matchMediaMatches = false;
+      await openFirstReveal();
+      clickWalkthroughNext();
+      clickWalkthroughNext();
+      tapListMove(0);
+      await waitFor(() => expect(badgeShown()).toBe(true));
+      fireEvent.click(screen.getByTestId('btn-train-tour-reopen'));
+      expect(overlayShown()).toBe(true);
+      expect(walkthroughCopyText()).toContain('Step through the focused line');
+    });
+
+    it('on a phone, a touch on the board hides the overlay', async () => {
+      matchMediaMatches = false;
+      await openFirstReveal();
+      fireEvent.pointerDown(screen.getByTestId('chessboard'));
+      await waitFor(() => expect(badgeShown()).toBe(true));
+      expect(overlayShown()).toBe(false);
+    });
+
+    it('on a phone, expanding the strip hides the overlay and leaves the tour on the result step', async () => {
+      matchMediaMatches = false;
+      await openFirstReveal();
+      fireEvent.click(screen.getByTestId('train-verdict-strip'));
+      await waitFor(() => expect(badgeShown()).toBe(true));
+      fireEvent.click(screen.getByTestId('btn-train-tour-reopen'));
+      expect(walkthroughCopyText()).toContain('Tap it');
+    });
+
+    it('a fork hides the overlay and leaves the tour on its step', async () => {
+      matchMediaMatches = false;
+      await openFirstReveal();
+      clickWalkthroughNext();
+      clickWalkthroughNext();
+      clickWalkthroughNext();
+      expect(walkthroughCopyText()).toContain('Move a piece');
       await act(async () => {
-        fireEvent.click(screen.getByTestId('drop-e2e4'));
+        fireEvent.click(screen.getByTestId('drop-d2d4'));
       });
-      await waitFor(() => expect(screen.getByTestId('train-bot-walkthrough')).not.toBeNull());
-      fireEvent.click(screen.getByTestId('btn-train-bot-walkthrough-next'));
-      await waitFor(() =>
-        expect(screen.getByTestId('train-bot-walkthrough').textContent).toContain('Tap a card'),
-      );
-    }
-
-    it('on a phone, tapping a line card advances the tap step, and stepping a line advances the arrows step', async () => {
-      matchMediaMatches = false;
-      await openWalkthroughAtTapStep();
-      const yourBox = screen.getByTestId('train-line-box-your-move');
-      fireEvent.click(yourBox);
-      await waitFor(() =>
-        expect(screen.getByTestId('train-bot-walkthrough').textContent).toContain(
-          'arrows inside a card',
-        ),
-      );
-      fireEvent.click(within(yourBox).getByTestId('train-line-stepper-token-0'));
-      await waitFor(() =>
-        expect(screen.getByTestId('train-bot-walkthrough').textContent).toContain('eval bar'),
-      );
-      expect(screen.getByTestId('chessboard').closest('[class*="ring-2"]')).not.toBeNull();
+      await waitFor(() => expect(badgeShown()).toBe(true));
+      fireEvent.click(screen.getByTestId('btn-train-tour-reopen'));
+      expect(walkthroughCopyText()).toContain('Move a piece');
     });
 
-    it('on desktop, hovering a line card (the spotlight) advances the tap step', async () => {
-      await openWalkthroughAtTapStep();
-      fireEvent.pointerEnter(screen.getByTestId('train-line-box-your-move'));
-      await waitFor(() =>
-        expect(screen.getByTestId('train-bot-walkthrough').textContent).toContain(
-          'arrows inside a card',
-        ),
-      );
+    it('on desktop an interaction hides the tour overlay behind the badge but never moves the tour', async () => {
+      matchMediaMatches = true;
+      await openFirstReveal();
+      clickWalkthroughNext();
+      fireEvent.click(screen.getByTestId('train-chip-your'));
+      // Phase 237 UAT: the overlay covers the board on desktop too, so it hides.
+      expect(overlayShown()).toBe(false);
+      expect(badgeShown()).toBe(true);
+      fireEvent.click(screen.getByTestId('btn-train-tour-reopen'));
+      expect(walkthroughCopyText()).toContain('Tap one to focus it');
     });
 
-    it('a card tap on any other step does not move the walkthrough', async () => {
-      matchMediaMatches = false;
-      await openWalkthroughAtTapStep();
-      fireEvent.click(screen.getByTestId('btn-train-bot-walkthrough-next'));
-      fireEvent.click(screen.getByTestId('btn-train-bot-walkthrough-next'));
-      await waitFor(() =>
-        expect(screen.getByTestId('train-bot-walkthrough').textContent).toContain('eval bar'),
-      );
-      fireEvent.click(screen.getByTestId('train-line-box-your-move'));
-      expect(screen.getByTestId('train-bot-walkthrough').textContent).toContain('eval bar');
-    });
-
-    it('on a phone, entering the tap step scrolls the first line card to just under the pinned board block', async () => {
+    async function openOnPhoneAndMockLayout(rects: {
+      pinned: Partial<DOMRect>;
+      chips: Partial<DOMRect>;
+    }): Promise<void> {
       matchMediaMatches = false;
       const scrollTween = vi.mocked(animateScrollTop);
       scrollTween.mockClear();
-      getSettings.mockResolvedValue(makeSettings({ reveal_walkthrough_seen_at: null }));
-      await renderScreen(makePuzzle());
-      fireEvent.click(screen.getByTestId('btn-train-guess-critical'));
-      await act(async () => {
-        fireEvent.click(screen.getByTestId('drop-e2e4'));
-      });
-      await waitFor(() => expect(screen.getByTestId('train-bot-walkthrough')).not.toBeNull());
-      await waitFor(() => expect(screen.getByTestId('train-line-box-your-move')).not.toBeNull());
-      const pinned = screen.getByTestId('train-pinned-board');
-      const card = screen.getByTestId('train-line-box-your-move');
-      const pinnedRect = { top: 0, bottom: 300, height: 300 } as DOMRect;
-      const cardRect = { top: 700, bottom: 780, height: 80 } as DOMRect;
-      vi.spyOn(pinned, 'getBoundingClientRect').mockReturnValue(pinnedRect);
-      vi.spyOn(card, 'getBoundingClientRect').mockReturnValue(cardRect);
+      await openFirstReveal();
+      await waitFor(() => expect(screen.getByTestId('train-line-chips')).not.toBeNull());
+      vi.spyOn(screen.getByTestId('train-pinned-board'), 'getBoundingClientRect').mockReturnValue(
+        rects.pinned as DOMRect,
+      );
+      // The scroll target is the chips wrapper (`data-tour-target="chips"`).
+      const chipsAnchor = screen.getByTestId('train-reveal').querySelector('[data-tour-target="chips"]');
+      expect(chipsAnchor).not.toBeNull();
+      vi.spyOn(chipsAnchor as Element, 'getBoundingClientRect').mockReturnValue(rects.chips as DOMRect);
       expect(scrollTween).not.toHaveBeenCalled();
-      fireEvent.click(screen.getByTestId('btn-train-bot-walkthrough-next'));
+      clickWalkthroughNext();
+    }
+
+    it('on a phone, chips already on screen need no scroll', async () => {
+      // jsdom's viewport is 768px tall and no fixed bar is mounted from sm up.
+      await openOnPhoneAndMockLayout({
+        pinned: { top: 0, bottom: 300, height: 300 },
+        chips: { top: 400, bottom: 480, height: 80 },
+      });
+      await waitFor(() => expect(walkthroughCopyText()).toContain('Tap one to focus it'));
+      expect(vi.mocked(animateScrollTop)).not.toHaveBeenCalled();
+    });
+
+    it('on a phone, chips below the fold scroll up just enough to clear the bottom edge', async () => {
+      await openOnPhoneAndMockLayout({
+        pinned: { top: 0, bottom: 300, height: 300 },
+        chips: { top: 700, bottom: 780, height: 80 },
+      });
+      const scrollTween = vi.mocked(animateScrollTop);
       await waitFor(() => expect(scrollTween).toHaveBeenCalledTimes(1));
-      // Scrolls the PAGE (document.scrollingElement) by
-      // 700 (card top) - 300 (pinned height) - 12 (gap), over the explicit
-      // 700ms tween (quick task 260914-uer, QUICK-03).
-      expect(scrollTween).toHaveBeenCalledWith(document.documentElement, 388, 700);
+      // 780 (chips bottom) + 12 (gap) - 768 (viewport bottom), over the 700ms tween.
+      expect(scrollTween).toHaveBeenCalledWith(document.documentElement, 24, 700);
+    });
+
+    it('on a phone, a target taller than the gap never scrolls its top behind the pinned block', async () => {
+      await openOnPhoneAndMockLayout({
+        pinned: { top: 0, bottom: 300, height: 300 },
+        chips: { top: 350, bottom: 1200, height: 850 },
+      });
+      const scrollTween = vi.mocked(animateScrollTop);
+      await waitFor(() => expect(scrollTween).toHaveBeenCalledTimes(1));
+      // Capped at 350 (chips top) - 300 (pinned height) - 12 (gap).
+      expect(scrollTween).toHaveBeenCalledWith(document.documentElement, 38, 700);
     });
 
     it('with reveal_walkthrough_seen_at already stamped, no walkthrough renders and the verdict shows immediately', async () => {
@@ -3422,30 +4119,15 @@ describe('TrainSolveScreen — progress, last move, grading state, engine failur
       expect(screen.queryByTestId('train-bot-walkthrough')).toBeNull();
     });
 
-    it('the board arrow set is identical across all walkthrough steps — spotlightKey is never touched', async () => {
-      getSettings.mockResolvedValue(makeSettings({ reveal_walkthrough_seen_at: null }));
-      await renderScreen(makePuzzle());
-      fireEvent.click(screen.getByTestId('btn-train-guess-critical'));
-      await act(async () => {
-        fireEvent.click(screen.getByTestId('drop-e2e4'));
-      });
-      await waitFor(() => expect(screen.getByTestId('train-bot-walkthrough')).not.toBeNull());
+    it('the board arrow set is identical across all walkthrough steps — the chip focus is never touched', async () => {
+      await openFirstReveal();
       const board = screen.getByTestId('chessboard');
       const step0Arrows = board.getAttribute('data-arrow-ucis');
       expect(step0Arrows).not.toBe('');
-
-      fireEvent.click(screen.getByTestId('btn-train-bot-walkthrough-next'));
-      await waitFor(() =>
-        expect(screen.getByTestId('train-line-box-your-move').className).toContain('ring-2'),
-      );
-      expect(board.getAttribute('data-arrow-ucis')).toBe(step0Arrows);
-
-      for (let click = 2; click < WALKTHROUGH_STEP_COUNT - 1; click += 1) {
-        fireEvent.click(screen.getByTestId('btn-train-bot-walkthrough-next'));
+      for (let click = 0; click < WALKTHROUGH_STEP_COUNT - 1; click += 1) {
+        clickWalkthroughNext();
         expect(board.getAttribute('data-arrow-ucis')).toBe(step0Arrows);
       }
-
-      fireEvent.click(screen.getByTestId('btn-train-bot-walkthrough-next'));
       await waitFor(() => expect(screen.getByTestId('btn-train-next')).not.toBeNull());
       expect(board.getAttribute('data-arrow-ucis')).toBe(step0Arrows);
     });
@@ -3482,7 +4164,7 @@ describe('TrainSolveScreen — per-puzzle telemetry (Phase 233)', () => {
     await act(async () => {
       fireEvent.click(screen.getByTestId('drop-e2e4'));
     });
-    await waitFor(() => expect(screen.getByTestId('train-verdict-guess')).not.toBeNull());
+    await waitForReveal();
   }
 
   it('telemetry: the solve POST carries v, client, guess_ms, move_ms, think_hidden_ms and resumed', async () => {
@@ -3510,7 +4192,7 @@ describe('TrainSolveScreen — per-puzzle telemetry (Phase 233)', () => {
     const [sessionId, position, body] = nextFlush.mock.calls[0]!;
     expect(sessionId).toBe(makeSession().session_id);
     expect(position).toBe(puzzle.position);
-    expect(body).toMatchObject({ v: 1, exit: 'next' });
+    expect(body).toMatchObject({ v: 2, exit: 'next' });
     expect(Number.isInteger(body.review_ms)).toBe(true);
     expect(body.review_ms).toBeGreaterThanOrEqual(0);
   });
@@ -3557,7 +4239,7 @@ describe('TrainSolveScreen — per-puzzle telemetry (Phase 233)', () => {
     expect(visibleMs).toBeGreaterThanOrEqual(0);
   });
 
-  it('telemetry: a stepper click and an active walkthrough reach the Next flush', async () => {
+  it('telemetry: a list step and an active walkthrough reach the Next flush', async () => {
     getSettings.mockResolvedValue(makeSettings({ reveal_walkthrough_seen_at: null }));
     await renderScreen(makePuzzle());
     fireEvent.click(screen.getByTestId('btn-train-guess-critical'));
@@ -3565,16 +4247,13 @@ describe('TrainSolveScreen — per-puzzle telemetry (Phase 233)', () => {
       fireEvent.click(screen.getByTestId('drop-e2e4'));
     });
     await waitFor(() => expect(screen.getByTestId('train-bot-walkthrough')).not.toBeNull());
-    await waitFor(() => expect(screen.getAllByTestId('btn-train-step-next').length).toBeGreaterThan(0));
-    fireEvent.click(screen.getAllByTestId('btn-train-step-next')[0]!);
-    // Walk to the walkthrough's last step, whose control is the real Next button.
+    await waitFor(() => expect(screen.getByTestId('train-move-tree')).not.toBeNull());
+    tapListMove(0);
+    // Walk the walkthrough with the bar's Next (Phase 237 UAT G-01); on its last
+    // step the same Next leaves the puzzle.
     for (let click = 0; click < WALKTHROUGH_STEP_COUNT; click += 1) {
-      const walkthroughNext = screen.queryByTestId('btn-train-bot-walkthrough-next');
-      if (walkthroughNext === null) break;
-      fireEvent.click(walkthroughNext);
+      fireEvent.click(screen.getByTestId('btn-train-next'));
     }
-
-    fireEvent.click(await waitFor(() => screen.getByTestId('btn-train-next')));
 
     await waitFor(() => expect(nextFlush).toHaveBeenCalledTimes(1));
     expect(nextFlush.mock.calls[0]![2]).toMatchObject({
@@ -3590,7 +4269,7 @@ describe('TrainSolveScreen — per-puzzle telemetry (Phase 233)', () => {
     let workerCallCount = 0;
     stubWorker(() => {
       workerCallCount += 1;
-      // Grading engine first, then the free-play engine whose PV (e7e5) is legal after 1.e4.
+      // Grading engine first, then the reveal engine whose PV (e7e5) is legal after 1.d4.
       return workerCallCount === 1 ? new FakeWorker() : new FakeWorker('e7e5', 'e7e5');
     });
     await renderScreen(makePuzzle());
@@ -3598,11 +4277,11 @@ describe('TrainSolveScreen — per-puzzle telemetry (Phase 233)', () => {
 
     // The mocked board's drop buttons call onPieceDrop, the one entry point for
     // desktop drag AND mobile tap-to-move in the real ChessBoard.
-    fireEvent.click(screen.getByTestId('drop-e2e4')); // board move 1, starts free play
+    fireEvent.click(screen.getByTestId('drop-d2d4')); // board move 1, forks a sideline
     await waitFor(() => expect(screen.getByTestId('engine-line-0-move-0')).not.toBeNull());
     fireEvent.click(screen.getByTestId('engine-line-0-move-0')); // engine-line click (1...e5)
     await waitFor(() => expect(screen.getByTestId('chessboard').getAttribute('data-position')).toContain('4p3'));
-    fireEvent.click(screen.getByTestId('drop-d2d4')); // board move 2
+    fireEvent.click(screen.getByTestId('drop-e2e4')); // board move 2
 
     fireEvent.click(screen.getByTestId('btn-train-next'));
     await waitFor(() => expect(nextFlush).toHaveBeenCalledTimes(1));
@@ -3610,6 +4289,72 @@ describe('TrainSolveScreen — per-puzzle telemetry (Phase 233)', () => {
       review_explored: true,
       review_explore_moves: 3,
       review_board_moves: 2,
+    });
+  });
+
+  it('telemetry (D-13): a hand-played known-line move counts as a board move, not a fork', async () => {
+    await renderScreen(makePuzzle());
+    await guessAndDrop(); // played = best = e2e4
+
+    fireEvent.click(screen.getByTestId('drop-e2e4')); // along the known line
+    fireEvent.click(screen.getByTestId('btn-train-next'));
+    await waitFor(() => expect(nextFlush).toHaveBeenCalledTimes(1));
+    expect(nextFlush.mock.calls[0]![2]).toMatchObject({
+      review_explore_moves: 1,
+      review_board_moves: 1,
+      // D-13: a move along a known line is not a fork, and the merged Move = Best
+      // chip is the default chip, so nothing counts as selected either.
+      review_explored: false,
+      review_chips_selected: 0,
+    });
+  });
+
+  it('tracer: a chip tap, a strip expand and a fork ride the v2 Next flush', async () => {
+    matchMediaMatches = false; // phone: the strip exists
+    await renderScreen(makePuzzle());
+    fireEvent.click(screen.getByTestId('btn-train-guess-critical'));
+    await act(async () => {
+      fireEvent.click(screen.getByTestId('drop-d2d4')); // non-best -> separate You / Best chips
+    });
+    await waitForReveal();
+    const chipsShown = screen.getAllByTestId(/^train-chip-(your|best|game)$/).length;
+    expect(chipsShown).toBeGreaterThanOrEqual(2);
+
+    fireEvent.click(screen.getByTestId('train-chip-best')); // 1 chip selected beyond You
+    fireEvent.click(await screen.findByTestId('train-verdict-strip')); // strip expanded
+    fireEvent.click(screen.getByTestId('drop-c2c4')); // fork from the root: matches no chip line
+    fireEvent.click(screen.getByTestId('btn-train-next'));
+
+    await waitFor(() => expect(nextFlush).toHaveBeenCalledTimes(1));
+    const body = nextFlush.mock.calls[0]![2];
+    expect(body).toMatchObject({
+      v: 2,
+      exit: 'next',
+      review_chips_selected: 1,
+      review_chips_total: chipsShown,
+      review_strip_expanded: true,
+      review_explored: true,
+    });
+    expect(Object.keys(body).filter((key) => key.startsWith('review_cards_'))).toEqual([]);
+  });
+
+  it('telemetry (D-12): re-tapping the default You chip and never opening the strip sends zero chips and a closed strip', async () => {
+    matchMediaMatches = false;
+    await renderScreen(makePuzzle());
+    fireEvent.click(screen.getByTestId('btn-train-guess-critical'));
+    await act(async () => {
+      fireEvent.click(screen.getByTestId('drop-d2d4'));
+    });
+    await waitForReveal();
+
+    fireEvent.click(screen.getByTestId('train-chip-your'));
+    fireEvent.click(screen.getByTestId('btn-train-next'));
+
+    await waitFor(() => expect(nextFlush).toHaveBeenCalledTimes(1));
+    expect(nextFlush.mock.calls[0]![2]).toMatchObject({
+      review_chips_selected: 0,
+      review_strip_expanded: false,
+      review_explored: false,
     });
   });
 
@@ -3621,6 +4366,135 @@ describe('TrainSolveScreen — per-puzzle telemetry (Phase 233)', () => {
 
     expect(solvePuzzle).toHaveBeenCalledTimes(1);
     expect(solvePuzzle.mock.calls[0]?.[1].telemetry.resumed).toBe(true);
+  });
+});
+
+// ─── Phase 237 plan 09: Analyze -> Back restores the reveal tree ─────────────
+
+describe('TrainSolveScreen — restored reveal tree (Phase 237 plan 09)', () => {
+  const track = vi.fn();
+
+  beforeEach(() => {
+    matchMediaMatches = true;
+    stubbedWorkerInstances = [];
+    // A three-move Best line so the second token still has a next move.
+    stubWorker(() => new FakeWorker('e2e4', 'e2e4 e7e5 g1f3'));
+    composeOrResumeSession.mockReset();
+    solvePuzzle.mockReset();
+    solvePuzzle.mockResolvedValue(SOLVE_RESPONSE);
+    revealPuzzle.mockClear();
+    getSettings.mockReset();
+    getSettings.mockResolvedValue(makeSettings());
+    stampOnboarding.mockClear();
+    nextFlush.mockClear();
+    exitFlush.mockClear();
+    track.mockClear();
+    sessionStorage.clear();
+    window.history.pushState({}, '', '/train');
+  });
+
+  afterEach(() => {
+    cleanup();
+    delete window.umami;
+    vi.unstubAllGlobals();
+    sessionStorage.clear();
+    window.history.pushState({}, '', '/');
+  });
+
+  /** Solve with a non-best move, tap Best, step to its 2nd move, fork Nc3 there, click Analyze. */
+  async function solveForkAndAnalyze(): Promise<{ forkedPosition: string }> {
+    await renderScreen(makePuzzle());
+    fireEvent.click(screen.getByTestId('btn-train-guess-critical'));
+    await act(async () => {
+      fireEvent.click(screen.getByTestId('drop-d2d4')); // non-best -> separate You / Best chips
+    });
+    await waitForReveal();
+    fireEvent.click(screen.getByTestId('train-chip-best'));
+    fireEvent.click(within(screen.getByTestId('train-move-tree')).getByText('e5'));
+    await waitFor(() => expect(screen.getByTestId('chessboard').getAttribute('data-position')).not.toBe(START_FEN));
+    fireEvent.click(screen.getByTestId('drop-b1c3')); // fork off the Best line
+    await waitFor(() => expect(within(screen.getByTestId('train-move-tree')).queryByText('Nc3')).not.toBeNull());
+    const forkedPosition = screen.getByTestId('chessboard').getAttribute('data-position') ?? '';
+    fireEvent.click(screen.getByTestId('btn-train-analyze'));
+    return { forkedPosition };
+  }
+
+  it('Analyze saves the focused chip, the forked node as currentPath and the sideline in the cache entry', async () => {
+    await solveForkAndAnalyze();
+
+    const tree = readTrainRevealCache()?.revealTree;
+    expect(tree?.rootFocus).toBe('best');
+    expect(tree?.currentPath).toEqual(['e2e4', 'e7e5', 'b1c3']);
+    expect(tree?.sidelinePaths).toEqual([['e2e4', 'e7e5', 'b1c3']]);
+  });
+
+  it('remounting with that entry shows the Best chip active, the board on the forked node and the sideline listed, silently', async () => {
+    const { forkedPosition } = await solveForkAndAnalyze();
+    const cached = readTrainRevealCache();
+    expect(cached).not.toBeNull();
+    cleanup();
+    await act(async () => {});
+    // The unmount flush mirrors the review totals into the entry; the tree survives that.
+    expect(readTrainRevealCache()?.revealTree).toEqual(cached?.revealTree);
+
+    const { playSound } = await import('@/lib/sounds');
+    vi.mocked(playSound).mockClear();
+    window.umami = { track, identify: vi.fn() };
+    track.mockClear();
+    await renderScreen(makePuzzle(), makeSession(), readTrainRevealCache());
+    await waitForReveal();
+
+    await waitFor(() => expect(screen.getByTestId('chessboard').getAttribute('data-position')).toBe(forkedPosition));
+    expect(screen.getByTestId('train-chip-best').getAttribute('data-active')).toBe('true');
+    expect(within(screen.getByTestId('train-move-tree')).queryByText('Nc3')).not.toBeNull();
+    expect(playSound).not.toHaveBeenCalled();
+    expect(track).not.toHaveBeenCalled();
+  });
+
+  it('remounting with an entry that has no revealTree opens at the puzzle position with You active', async () => {
+    await solveForkAndAnalyze();
+    const entry = { ...readTrainRevealCache()! };
+    delete entry.revealTree;
+    cleanup();
+    await act(async () => {});
+
+    await renderScreen(makePuzzle(), makeSession(), entry);
+    await waitForReveal();
+
+    expect(screen.getByTestId('chessboard').getAttribute('data-position')).toBe(START_FEN);
+    expect(screen.getByTestId('train-chip-your').getAttribute('data-active')).toBe('true');
+    expect(within(screen.getByTestId('train-move-tree')).queryByText('Nc3')).toBeNull();
+  });
+
+  it('a restored reveal continues the cumulative v2 counters (chips, strip, fork) into the Next flush', async () => {
+    matchMediaMatches = false; // phone: the strip exists
+    await renderScreen(makePuzzle());
+    fireEvent.click(screen.getByTestId('btn-train-guess-critical'));
+    await act(async () => {
+      fireEvent.click(screen.getByTestId('drop-d2d4'));
+    });
+    await waitForReveal();
+    fireEvent.click(screen.getByTestId('train-chip-best'));
+    fireEvent.click(await screen.findByTestId('train-verdict-strip'));
+    fireEvent.click(screen.getByTestId('drop-c2c4')); // fork from the root
+    fireEvent.click(screen.getByTestId('btn-train-analyze'));
+    const entry = readTrainRevealCache();
+    cleanup();
+    await act(async () => {});
+    nextFlush.mockClear();
+
+    await renderScreen(makePuzzle(), makeSession(), entry);
+    await waitForReveal();
+    fireEvent.click(screen.getByTestId('btn-train-next'));
+
+    await waitFor(() => expect(nextFlush).toHaveBeenCalledTimes(1));
+    expect(nextFlush.mock.calls[0]![2]).toMatchObject({
+      v: 2,
+      review_chips_selected: 1,
+      review_strip_expanded: true,
+      review_explored: true,
+      review_analyze_opened: true,
+    });
   });
 });
 
@@ -3666,12 +4540,12 @@ describe('TrainSolveScreen — instant server-graded path (Phase 236)', () => {
     return held as HeldPositionWorker;
   }
 
-  /** The "grade landed" signal: the Your-move box is present and not in a loading state. */
+  /** The "grade landed" signal: the Move chip is present and not in a loading state. */
   async function waitForYourMoveLine(): Promise<void> {
     await waitFor(() => {
-      const box = screen.queryByTestId('train-line-box-your-move');
-      expect(box).not.toBeNull();
-      expect(screen.queryByTestId('train-line-box-your-move-loading')).toBeNull();
+      const chip = screen.queryByTestId('train-chip-your');
+      expect(chip).not.toBeNull();
+      expect(screen.queryByTestId('train-chip-your-loading')).toBeNull();
     });
   }
 
@@ -3688,7 +4562,7 @@ describe('TrainSolveScreen — instant server-graded path (Phase 236)', () => {
     await guessAndDrop('drop-e2e4');
     // D-16: no grading copy right after the drop either.
     expect(screen.queryByTestId('train-grading-indicator')).toBeNull();
-    await waitFor(() => expect(screen.getByTestId('train-verdict-guess')).not.toBeNull());
+    await waitForReveal();
 
     // The after-played search is STILL held: the verdict did not wait for it.
     expect(heldWorker().heldCount).toBe(1);
@@ -3718,7 +4592,7 @@ describe('TrainSolveScreen — instant server-graded path (Phase 236)', () => {
     stubWorker(() => new FakeWorker('d7d5', 'd7d5'));
     await renderScreen(makePuzzle(INSTANT_PUZZLE));
     await guessAndDrop('drop-d2d4');
-    await waitFor(() => expect(screen.getByTestId('train-verdict-guess')).not.toBeNull());
+    await waitForReveal();
 
     expect(solvePuzzle).toHaveBeenCalledTimes(1);
     const phoneGrade = solvePuzzle.mock.calls[0]?.[1].phone_grade;
@@ -3726,23 +4600,24 @@ describe('TrainSolveScreen — instant server-graded path (Phase 236)', () => {
     expect(phoneGrade?.played_depth).toBe(phoneGrade?.key_depth);
   });
 
-  it('instant path: the solution card shows the key line at once and the Your-move card loads, then fills (Phase 236 D-14)', async () => {
+  it('instant path: the Best chip shows the key line at once and the Move chip loads, then fills (Phase 236 D-14)', async () => {
     stubWorker(() => new HeldPositionWorker(AFTER_E2E4_FEN));
     await renderScreen(makePuzzle(INSTANT_PUZZLE));
     await guessAndDrop('drop-e2e4');
-    await waitFor(() => expect(screen.getByTestId('train-verdict-guess')).not.toBeNull());
+    await waitForReveal();
 
-    // The played-move search is held: the Your-move card is loading, while the
-    // anchor (key line) settled, so the solution card is already filled.
+    // The played-move search is held: the Move chip is loading, while the
+    // anchor (key line) settled, so the Best chip is already filled.
     expect(heldWorker().heldCount).toBe(1);
-    await waitFor(() => expect(screen.getByTestId('train-line-box-best-move')).not.toBeNull());
-    expect(screen.queryByTestId('train-line-box-best-move-loading')).toBeNull();
-    expect(screen.getByTestId('train-line-box-your-move-loading')).not.toBeNull();
+    await waitFor(() => expect(screen.getByTestId('train-chip-best-eval')).not.toBeNull());
+    expect(screen.queryByTestId('train-chip-best-loading')).toBeNull();
+    expect(screen.getByTestId('train-chip-your-loading')).not.toBeNull();
+    expect(screen.getByTestId('train-chip-your').getAttribute('data-line-status')).toBe('loading');
 
     act(() => releaseHeldWorkers());
     await waitForYourMoveLine();
-    expect(screen.queryByTestId('train-line-box-your-move-loading')).toBeNull();
-    expect(within(screen.getByTestId('train-line-box-your-move')).getAllByRole('button').length).toBeGreaterThan(0);
+    expect(screen.queryByTestId('train-chip-your-loading')).toBeNull();
+    expect(screen.getByTestId('train-chip-your-eval')).not.toBeNull();
   });
 
   it('D-16: the instant POST round trip shows a copy-less spinner, never "Checking your move…"', async () => {
@@ -3761,7 +4636,7 @@ describe('TrainSolveScreen — instant server-graded path (Phase 236)', () => {
     await act(async () => {
       resolveSolve(SOLVE_RESPONSE);
     });
-    await waitFor(() => expect(screen.getByTestId('train-verdict-guess')).not.toBeNull());
+    await waitForReveal();
     expect(screen.queryByTestId('train-submitting-indicator')).toBeNull();
   });
 
@@ -3779,7 +4654,7 @@ describe('TrainSolveScreen — instant server-graded path (Phase 236)', () => {
     });
     await renderScreen(makePuzzle(INSTANT_PUZZLE));
     await guessAndDrop('drop-e2e4');
-    await waitFor(() => expect(screen.getByTestId('train-verdict-guess')).not.toBeNull());
+    await waitForReveal();
     expect(heldWorker().heldCount).toBe(1);
 
     const board = () => screen.getByTestId('chessboard');
@@ -3804,6 +4679,7 @@ describe('TrainSolveScreen — instant server-graded path (Phase 236)', () => {
   });
 
   it('D-09: every verdict surface renders the SolveResponse, never the payload tier', async () => {
+    matchMediaMatches = false; // phone: the strip total plus its expanded details
     stubWorker(() => new HeldPositionWorker(AFTER_E2E4_FEN));
     // The payload says inaccuracy for the played move; the server answers good.
     await renderScreen(
@@ -3816,19 +4692,20 @@ describe('TrainSolveScreen — instant server-graded path (Phase 236)', () => {
       }),
     );
     await guessAndDrop('drop-e2e4');
-    await waitFor(() => expect(screen.getByTestId('train-verdict-guess')).not.toBeNull());
+    await waitForReveal();
 
     expect(solvePuzzle.mock.calls[0]?.[1].move_quality).toBe('inaccuracy');
     const expectedPoints = scorePuzzle(SOLVE_RESPONSE.correct_guess, SOLVE_RESPONSE.move_quality);
     await waitFor(() => expect(screen.getByTestId('train-points-flash')).not.toBeNull());
     expect(screen.getByTestId('train-points-flash').textContent).toBe(`+${expectedPoints}`);
-    // The Your-move chip states the SERVER's move points, not the payload tier's.
+    // The strip total and the expanded move pill state the SERVER's points, not the payload tier's.
+    expect(screen.getByTestId('train-verdict-strip-points').textContent).toBe(`+${expectedPoints}`);
     act(() => releaseHeldWorkers());
     await waitForYourMoveLine();
-    expect(
-      within(screen.getByTestId('train-line-box-your-move')).getByTestId('train-line-stepper-points')
-        .textContent,
-    ).toContain(String(MOVE_TIER_POINTS[SOLVE_RESPONSE.move_quality]));
+    await openVerdictStrip();
+    expect(screen.getByTestId('train-bot-pill-move').textContent).toContain(
+      String(MOVE_TIER_POINTS[SOLVE_RESPONSE.move_quality]),
+    );
   });
 
   it('Pitfall 1: the reveal game-move search queues behind the background grade, never stopping it', async () => {
@@ -3845,7 +4722,7 @@ describe('TrainSolveScreen — instant server-graded path (Phase 236)', () => {
     stubWorker(() => new HeldPositionWorker(AFTER_E2E4_FEN));
     await renderScreen(makePuzzle(INSTANT_PUZZLE));
     await guessAndDrop('drop-e2e4');
-    await waitFor(() => expect(screen.getByTestId('train-verdict-guess')).not.toBeNull());
+    await waitForReveal();
     // The reveal query resolved and the game-move search was requested.
     await waitFor(() => expect(revealPuzzle).toHaveBeenCalled());
     await act(async () => {
@@ -3858,9 +4735,9 @@ describe('TrainSolveScreen — instant server-graded path (Phase 236)', () => {
 
     act(() => releaseHeldWorkers());
     await waitForYourMoveLine();
-    await waitFor(() => expect(screen.getByTestId('train-line-box-game-move')).not.toBeNull());
-    await waitFor(() => expect(screen.queryByTestId('train-game-line-loading')).toBeNull());
-    expect(screen.queryByTestId('train-game-line-error')).toBeNull();
+    await waitFor(() => expect(screen.getByTestId('train-chip-game')).not.toBeNull());
+    await waitFor(() => expect(screen.queryByTestId('train-chip-game-loading')).toBeNull());
+    expect(screen.getByTestId('train-chip-game').getAttribute('data-line-status')).toBeNull();
 
     fireEvent.click(screen.getByTestId('btn-train-next'));
     await waitFor(() => expect(nextFlush).toHaveBeenCalledTimes(1));
@@ -3871,18 +4748,19 @@ describe('TrainSolveScreen — instant server-graded path (Phase 236)', () => {
     const gradeMove = vi.fn<TrainGradingEngine['gradeMove']>().mockRejectedValue(new Error('grading timed out'));
     await renderScreen(makePuzzle(INSTANT_PUZZLE), makeSession(), null, gradeMove);
     await guessAndDrop('drop-e2e4');
-    await waitFor(() => expect(screen.getByTestId('train-verdict-guess')).not.toBeNull());
+    await waitForReveal();
     await waitFor(() => expect(gradeMove).toHaveBeenCalledTimes(1));
     await act(async () => {});
 
     expect(screen.queryByTestId('train-grading-error')).toBeNull();
     expect(screen.queryByTestId('train-grading-indicator')).toBeNull();
-    expect(screen.getByTestId('train-verdict-guess')).not.toBeNull();
-    // Phase 236 D-15: the Your-move card is the header alone, no loading, no error copy.
-    const yourBox = screen.getByTestId('train-line-box-your-move');
-    expect(yourBox.getAttribute('data-line-status')).toBe('failed');
-    expect(screen.queryByTestId('train-line-box-your-move-loading')).toBeNull();
-    expect(screen.queryByTestId('train-game-line-error')).toBeNull();
+    expect(screen.getByTestId('train-reveal')).not.toBeNull();
+    // Phase 236 D-15: the Move chip shows its SAN and mark only: no loading, no eval, no error copy.
+    const yourChip = screen.getByTestId('train-chip-your');
+    expect(yourChip.getAttribute('data-line-status')).toBe('failed');
+    expect(screen.queryByTestId('train-chip-your-loading')).toBeNull();
+    expect(screen.queryByTestId('train-chip-your-eval')).toBeNull();
+    expect(screen.getByTestId('train-chip-your-san').textContent).toBe('e4');
 
     fireEvent.click(screen.getByTestId('btn-train-next'));
     await waitFor(() => expect(nextFlush).toHaveBeenCalledTimes(1));
@@ -3893,7 +4771,7 @@ describe('TrainSolveScreen — instant server-graded path (Phase 236)', () => {
     stubWorker(() => new HeldPositionWorker(AFTER_E2E4_FEN));
     await renderScreen(makePuzzle(INSTANT_PUZZLE));
     await guessAndDrop('drop-e2e4');
-    await waitFor(() => expect(screen.getByTestId('train-verdict-guess')).not.toBeNull());
+    await waitForReveal();
     // The background search is held: the verdict is on screen while the Worker still works.
     expect(heldWorker().heldCount).toBe(1);
 
@@ -3906,7 +4784,7 @@ describe('TrainSolveScreen — instant server-graded path (Phase 236)', () => {
     // The engine-error branch must not displace the landed verdict (D-15).
     expect(screen.queryByTestId('train-engine-error')).toBeNull();
     expect(screen.queryByTestId('btn-train-engine-retry')).toBeNull();
-    expect(screen.getByTestId('train-verdict-guess')).not.toBeNull();
+    expect(screen.getByTestId('train-reveal')).not.toBeNull();
     expect(screen.getByTestId('btn-train-next')).not.toBeNull();
   });
 
@@ -3920,7 +4798,7 @@ describe('TrainSolveScreen — instant server-graded path (Phase 236)', () => {
     });
     await renderScreen(makePuzzle(INSTANT_PUZZLE));
     await guessAndDrop('drop-e2e4');
-    await waitFor(() => expect(screen.getByTestId('train-verdict-guess')).not.toBeNull());
+    await waitForReveal();
     // The played-move search is still held: gradeResult is null when Analyze is pressed.
     expect(heldWorker().heldCount).toBe(1);
 
@@ -3941,8 +4819,8 @@ describe('TrainSolveScreen — instant server-graded path (Phase 236)', () => {
     stubbedWorkerInstances = [];
     stubWorker(() => new FakeWorker());
     await renderScreen(makePuzzle(INSTANT_PUZZLE), makeSession(), readTrainRevealCache());
-    await waitFor(() => expect(screen.getByTestId('train-verdict-guess')).not.toBeNull());
-    await waitFor(() => expect(screen.getByTestId('train-line-box-best-move')).not.toBeNull());
+    await waitForReveal();
+    await waitFor(() => expect(screen.getByTestId('train-chip-best')).not.toBeNull());
     expect(screen.queryByTestId('train-grading-error')).toBeNull();
   });
 
@@ -3950,7 +4828,7 @@ describe('TrainSolveScreen — instant server-graded path (Phase 236)', () => {
     stubWorker(() => new HeldPositionWorker(AFTER_E2E4_FEN));
     await renderScreen(makePuzzle(INSTANT_PUZZLE));
     await guessAndDrop('drop-e2e4');
-    await waitFor(() => expect(screen.getByTestId('train-verdict-guess')).not.toBeNull());
+    await waitForReveal();
     expect(heldWorker().heldCount).toBe(1);
 
     fireEvent.click(screen.getByTestId('btn-train-analyze'));
@@ -3975,7 +4853,7 @@ describe('TrainSolveScreen — instant server-graded path (Phase 236)', () => {
     const puzzleA = makePuzzle(INSTANT_PUZZLE);
     const { rerender } = await renderScreen(puzzleA, makeSession(), null, gradeMove);
     await guessAndDrop('drop-e2e4');
-    await waitFor(() => expect(screen.getByTestId('train-verdict-guess')).not.toBeNull());
+    await waitForReveal();
     expect(resolvers).toHaveLength(1);
 
     // Puzzle B (a different fen and position) on the SAME component instance, also instant.
@@ -4002,20 +4880,20 @@ describe('TrainSolveScreen — instant server-graded path (Phase 236)', () => {
         </QueryClientProvider>
       </MemoryRouter>,
     );
-    await waitFor(() => expect(screen.queryByTestId('train-verdict-guess')).toBeNull());
+    await waitFor(() => expect(screen.queryByTestId('train-reveal')).toBeNull());
     await guessAndDrop('drop-d2d4');
-    await waitFor(() => expect(screen.getByTestId('train-verdict-guess')).not.toBeNull());
+    await waitForReveal();
     expect(solvePuzzle).toHaveBeenCalledTimes(2);
     expect(resolvers).toHaveLength(2);
-    // Phase 236 D-14: B's Your-move card is in its loading state, B's own grade has not landed.
-    expect(screen.queryByTestId('train-line-box-your-move-loading')).not.toBeNull();
+    // Phase 236 D-14: B's You chip is in its loading state, B's own grade has not landed.
+    expect(screen.queryByTestId('train-chip-your-loading')).not.toBeNull();
 
     // A's grade settles now, while B is on screen: it must not fill B's card.
     await act(async () => {
       resolvers[0]?.(lateGrade);
     });
     await act(async () => {});
-    expect(screen.queryByTestId('train-line-box-your-move-loading')).not.toBeNull();
+    expect(screen.queryByTestId('train-chip-your-loading')).not.toBeNull();
 
     fireEvent.click(screen.getByTestId('btn-train-next'));
     await waitFor(() => expect(nextFlush).toHaveBeenCalledTimes(1));

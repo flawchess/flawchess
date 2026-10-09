@@ -219,6 +219,7 @@ function resolveLandingState(
  * the phone app. Strict `=== false`: while settings are still loading the
  * sentence stays hidden rather than flashing in and out. Guests never see it
  * (they get the sign-up ask, and D-13 gives a guest no reminder slot).
+ * Phase 237 UAT: hidden until the reveal walkthrough is completed.
  *
  * Phase 234 (D-04, SEED-191): once the intro stepper is completed and the
  * milestone feedback ask is active, Hilda's `FeedbackAskBubble` replaces the
@@ -245,8 +246,11 @@ function TrainHeader({
   // in place of the reminder ask, the first step before Train has anything of
   // its own to serve.
   const showImportAsk = !isGuest && !hasGames;
+  // Phase 237 UAT: the install/reminder ask waits until onboarding is over (the
+  // reveal walkthrough completed), so a first visit only reads Tank's welcome.
+  const onboardingDone = settings?.reveal_walkthrough_seen_at != null;
   const showReminderAsk =
-    !isGuest && !showImportAsk && settings?.has_mobile_subscription === false;
+    !isGuest && !showImportAsk && onboardingDone && settings?.has_mobile_subscription === false;
   // Quick 261004-dta: on a phone the avatar + bubble pushed the streak card and
   // its Start button below the fold. Only Tank's intro (intro stepper not yet
   // completed) keeps it there; the sign-up/import/install asks it would carry

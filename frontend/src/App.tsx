@@ -1,4 +1,5 @@
 import { lazy, Suspense, useState, useCallback, useEffect, useRef } from 'react';
+import type { ReactElement } from 'react';
 import { Navigate, Outlet, Route, BrowserRouter as Router, Routes, useLocation, useNavigate, useSearchParams } from 'react-router';
 import * as Sentry from "@sentry/react";
 import { Link } from 'react-router';
@@ -18,8 +19,10 @@ import {
 import { apiClient } from '@/api/client';
 import { usePlayActive } from '@/lib/playActive';
 import { useMobileBoardControls } from '@/lib/mobileBoardControls';
+import type { MobileBoardControls } from '@/lib/mobileBoardControls';
 import { BoardControls } from '@/components/board/BoardControls';
 import { BotGameMobileBar } from '@/components/bots/BotGameMobileBar';
+import { TrainRevealActionBar } from '@/components/train/TrainRevealActionBar';
 import { AuthProvider, useAuth } from '@/hooks/useAuth';
 import { InstallPromptBanner } from '@/components/install/InstallPromptBanner';
 import { FeedbackButton } from '@/components/feedback/FeedbackButton';
@@ -475,6 +478,64 @@ function resolveBoardControlsReset(onReset: (() => void) | undefined): () => voi
   return onReset ?? (() => {});
 }
 
+/**
+ * The three bars a published payload can select, in precedence order: the Train
+ * reveal's (Phase 237, `onNext` present), the bot game's four-action bar
+ * (Phase 223, `onResign` present), else the shared `BoardControls` row.
+ * Extracted from `MobileBottomBar` so the component stays shallow.
+ */
+function renderBoardControlsBar(boardControls: MobileBoardControls): ReactElement {
+  if (boardControls.onNext != null) {
+    return (
+      <TrainRevealActionBar
+        onRewind={resolveBoardControlsReset(boardControls.onReset)}
+        onBack={boardControls.onBack}
+        onForward={boardControls.onForward}
+        onFlip={boardControls.onFlip}
+        canRewind={boardControls.canReset ?? boardControls.canGoBack}
+        canGoBack={boardControls.canGoBack}
+        canGoForward={boardControls.canGoForward}
+        analyzeTo={boardControls.analyzeTo ?? null}
+        onAnalyzeClick={boardControls.onAnalyzeClick ?? (() => {})}
+        onNext={boardControls.onNext}
+        className="flex-1"
+      />
+    );
+  }
+  if (boardControls.onResign != null) {
+    // Phase 223 (BOTVOICE-05, D-10): a payload carrying a resign action
+    // is the bot game's — swap in its four-action bar instead of the
+    // shared BoardControls row (which cannot gain a fifth prop/branch;
+    // see resolveBoardControlsReset's comment above).
+    return (
+      <BotGameMobileBar
+        onResign={boardControls.onResign}
+        onBack={boardControls.onBack}
+        onForward={boardControls.onForward}
+        onFlip={boardControls.onFlip}
+        canGoBack={boardControls.canGoBack}
+        canGoForward={boardControls.canGoForward}
+      />
+    );
+  }
+  return (
+    <BoardControls
+      onBack={boardControls.onBack}
+      onForward={boardControls.onForward}
+      onReset={resolveBoardControlsReset(boardControls.onReset)}
+      onFlip={boardControls.onFlip}
+      canGoBack={boardControls.canGoBack}
+      canGoForward={boardControls.canGoForward}
+      canReset={boardControls.canReset}
+      flat
+      // The bar root is a flex row, so without a width the controls shrink-wrap
+      // and hug the left edge; flex-1 spreads them across the bar like the
+      // analysis footer (whose wrapper is a plain block div).
+      className="flex-1"
+    />
+  );
+}
+
 export function MobileBottomBar({ onMoreClick }: { onMoreClick: () => void }) {
   // Quick 260809-g0n: a Train puzzle in free-move mode takes over the bar the
   // way the /analysis route takes over the whole mobile shell — while a
@@ -490,35 +551,7 @@ export function MobileBottomBar({ onMoreClick }: { onMoreClick: () => void }) {
         data-testid="mobile-board-controls-bar"
         className={cn(MOBILE_BOTTOM_BAR_CLASSES, 'items-center px-2 py-2')}
       >
-        {boardControls.onResign != null ? (
-          // Phase 223 (BOTVOICE-05, D-10): a payload carrying a resign action
-          // is the bot game's — swap in its four-action bar instead of the
-          // shared BoardControls row (which cannot gain a fifth prop/branch;
-          // see resolveBoardControlsReset's comment above).
-          <BotGameMobileBar
-            onResign={boardControls.onResign}
-            onBack={boardControls.onBack}
-            onForward={boardControls.onForward}
-            onFlip={boardControls.onFlip}
-            canGoBack={boardControls.canGoBack}
-            canGoForward={boardControls.canGoForward}
-          />
-        ) : (
-          <BoardControls
-            onBack={boardControls.onBack}
-            onForward={boardControls.onForward}
-            onReset={resolveBoardControlsReset(boardControls.onReset)}
-            onFlip={boardControls.onFlip}
-            canGoBack={boardControls.canGoBack}
-            canGoForward={boardControls.canGoForward}
-            canReset={boardControls.canReset}
-            flat
-            // The bar root is a flex row, so without a width the controls shrink-wrap
-            // and hug the left edge; flex-1 spreads them across the bar like the
-            // analysis footer (whose wrapper is a plain block div).
-            className="flex-1"
-          />
-        )}
+        {renderBoardControlsBar(boardControls)}
       </div>
     );
   }

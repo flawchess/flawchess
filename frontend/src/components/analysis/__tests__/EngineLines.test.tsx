@@ -283,6 +283,13 @@ describe('EngineLines', () => {
     expect(screen.getByTestId('engine-line-0-move-6')).toBeTruthy();
   });
 
+  it('move chips never wrap inside, so O-O-O stays on one row (Phase 237 UAT)', () => {
+    render(
+      <EngineLines maxLines={1} pvLines={[LINE_CP]} isAnalyzing={false} onMoveClick={vi.fn()} compact />,
+    );
+    expect(screen.getByTestId('engine-line-0-move-0').className).toContain('whitespace-nowrap');
+  });
+
   it('renders at most maxLines rows (Phase 228, D-16)', () => {
     const five: PvLine[] = [1, 2, 3, 4, 5].map((n) => ({ ...LINE_CP, multipv: n }));
     const three = render(

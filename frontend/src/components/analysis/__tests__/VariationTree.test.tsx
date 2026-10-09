@@ -236,6 +236,27 @@ describe('VariationTree', () => {
     expect(screen.getByTestId('variation-tree-desktop')).toBeTruthy();
   });
 
+  it("(1b) variant='wrap' renders only the wrapping mobile list at every width (Phase 237)", () => {
+    const { nodes, mainLine } = buildFixture();
+    const onNodeClick = vi.fn();
+    render(
+      <VariationTree
+        variant="wrap"
+        nodes={nodes}
+        mainLine={mainLine}
+        currentNodeId={3}
+        onNodeClick={onNodeClick}
+      />,
+    );
+    expect(screen.getByTestId('variation-tree-mobile')).toBeTruthy();
+    expect(screen.queryByTestId('variation-tree-desktop')).toBeNull();
+    // Each node renders once (no dual DOM) and a tap reports its id.
+    const e5 = screen.getAllByTestId('variation-node-2');
+    expect(e5).toHaveLength(1);
+    fireEvent.click(e5[0]!);
+    expect(onNodeClick).toHaveBeenCalledWith(2);
+  });
+
   it('(2) main-line move buttons render with correct data-testids and SAN text', () => {
     const { nodes, mainLine } = buildFixture();
     render(

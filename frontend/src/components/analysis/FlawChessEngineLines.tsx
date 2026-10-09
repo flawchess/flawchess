@@ -83,7 +83,7 @@ function formatMaiaPct(prob: number | null): string {
 // so the two engine cards read as one visual family. No compact variant here:
 // card placement/mobile-tab wiring is Plan 04's job, not this body component's.
 const CHIP_CLASS =
-  'inline-flex items-center gap-0.5 rounded px-1 py-0.5 font-mono text-xs transition-colors hover:bg-accent';
+  'inline-flex items-center gap-0.5 rounded px-1 py-0.5 whitespace-nowrap font-mono text-xs transition-colors hover:bg-accent';
 // Filled gold practical-score badge — the same pill shell as EngineLines'
 // BADGE_CLASS (white font), so the two engine cards read as one visual family;
 // only the fill color differs (gold-by-rank vs SF blue). shrink-0 lives on the
