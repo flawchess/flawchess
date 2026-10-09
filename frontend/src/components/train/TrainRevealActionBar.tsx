@@ -16,7 +16,7 @@
 import type { ReactElement } from 'react';
 import { Link } from 'react-router';
 import { Search } from 'lucide-react';
-import { BoardControls } from '@/components/board/BoardControls';
+import { BoardControls, LABELLED_BUTTON_CLASS } from '@/components/board/BoardControls';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { cn } from '@/lib/utils';
@@ -36,7 +36,8 @@ export interface TrainRevealActionBarProps {
   /**
    * Phase 237 UAT: wrap the board controls in the analysis board's charcoal
    * container, as tall as Analyze and Next beside it. The in-flow `sm`-up host
-   * sets it; the phone bottom bar keeps the flat controls on its own surface.
+   * sets it; the phone bottom bar instead renders the /analysis mobile footer's
+   * icon-over-label columns, with Analyze as one more column.
    */
   framed?: boolean;
   className?: string;
@@ -63,9 +64,27 @@ export function TrainRevealActionBar({
   framed = false,
   className,
 }: TrainRevealActionBarProps): ReactElement {
+  // Phone bottom bar: Analyze reads as one more board-control column, the same
+  // ghost icon-over-label shape as Start/Back/Next/Flip. It rides in the
+  // controls' own row (infoSlot) so all five columns share the width equally.
+  const labelledAnalyze = !framed && analyzeTo !== null && (
+    <Button asChild variant="ghost" className={cn(LABELLED_BUTTON_CLASS, 'hover:bg-accent')}>
+      <Link
+        to={analyzeTo}
+        data-testid="btn-train-analyze"
+        aria-label="Analyze this position"
+        onClick={onAnalyzeClick}
+      >
+        <Search className="h-5 w-5" />
+        <span className="text-sm">Analyze</span>
+      </Link>
+    </Button>
+  );
   const controls = (
     <BoardControls
       flat
+      labels={!framed}
+      forwardLabel="Fwd"
       onReset={onRewind}
       onBack={onBack}
       onForward={onForward}
@@ -73,6 +92,7 @@ export function TrainRevealActionBar({
       canReset={canRewind}
       canGoBack={canGoBack}
       canGoForward={canGoForward}
+      infoSlot={labelledAnalyze}
       buttonClassName={framed ? FRAMED_CONTROL_BUTTON_CLASS : undefined}
       className={framed ? 'h-full w-full' : 'min-w-0 flex-1'}
     />
@@ -92,7 +112,7 @@ export function TrainRevealActionBar({
       ) : (
         controls
       )}
-      {analyzeTo !== null && (
+      {framed && analyzeTo !== null && (
         <Button asChild variant="brand-outline" className={ACTION_BUTTON_CLASS}>
           <Link
             to={analyzeTo}

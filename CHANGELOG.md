@@ -8,6 +8,10 @@ in `YYYY-MM-DD` (Europe/Zurich).
 
 ## [Unreleased]
 
+### Changed
+
+- Train: on phones, the solution screen's bottom bar now matches the analysis page's board controls (icon with a label under it), with Analyze as one more control beside them; the forward button reads "Fwd" so it is not confused with Next. The small analyze icon next to the game line is gone, since the Analyze button does the same.
+
 ### Fixed
 
 - Analysis engine no longer restarts its Stockfish workers when the tab sits in the background, so a search left running in another tab keeps its results instead of losing them.

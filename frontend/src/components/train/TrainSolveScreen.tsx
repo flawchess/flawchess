@@ -1952,10 +1952,6 @@ export function TrainSolveScreen({
           onChipSelect={handleChipSelect}
           treeList={<TrainMoveTreeList tree={revealTree} flipped={flipped} />}
           onGameMoveUciChange={setGameMoveUci}
-          // WR-03: the game-footer Analyze link must run the same handler as the action
-          // bar's Analyze (it stamps the first-reveal tour via walkthrough.leave());
-          // passing handleAnalyzeClick directly skipped that on this exit.
-          onAnalyzeClick={handleAnalyzeFromReveal}
           onGameMoveLineStateChange={setGameMoveLineState}
           alsoFineMoves={revealOverlay.alsoFineMoves}
           walkthroughTarget={walkthroughTarget}
