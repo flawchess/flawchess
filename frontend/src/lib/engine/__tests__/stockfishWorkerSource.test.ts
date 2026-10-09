@@ -430,6 +430,23 @@ describe('ensureStockfishWorkerUrl — failure degradation (T-213-07)', () => {
     );
   });
 
+  it.each(['Load failed', 'network error', 'Failed to fetch', 'Error in input stream'])(
+    'a transient network TypeError (%s) resolves null WITHOUT reporting to Sentry (FLAWCHESS-CQ)',
+    async (message) => {
+      vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new TypeError(message)));
+
+      await expect(ensureStockfishWorkerUrl()).resolves.toBeNull();
+      expect(Sentry.captureException).not.toHaveBeenCalled();
+    },
+  );
+
+  it('a non-network TypeError is still reported to Sentry', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new TypeError('x is not a function')));
+
+    await expect(ensureStockfishWorkerUrl()).resolves.toBeNull();
+    expect(Sentry.captureException).toHaveBeenCalledTimes(1);
+  });
+
   it('a non-ok response (404) resolves null the same way', async () => {
     const { reader } = createControlledReader([]);
     vi.stubGlobal(

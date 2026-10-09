@@ -106,6 +106,20 @@ async function fetchAndPublishSharedWasm(): Promise<string> {
 }
 
 /**
+ * Browser wordings for a fetch/stream TypeError caused by the network
+ * (WebKit, Chromium, Firefox). Matched by message, not by `TypeError` alone,
+ * so a genuine TypeError bug (e.g. a missing `URL.createObjectURL`) is still
+ * reported. HTTP-status and truncation failures throw a plain `Error` and are
+ * always reported.
+ */
+const TRANSIENT_NETWORK_ERROR_PATTERN =
+  /^(load failed|network error|failed to fetch|networkerror when attempting to fetch resource\.?|error in input stream|the network connection was lost\.?)$/i;
+
+function isTransientNetworkError(err: unknown): boolean {
+  return err instanceof TypeError && TRANSIENT_NETWORK_ERROR_PATTERN.test(err.message);
+}
+
+/**
  * The single owner of the shared Stockfish `.wasm` fetch. Memoised: the
  * first call synchronously registers `'stockfish-wasm'` as pending (CR-02 —
  * this MUST happen before the fetch is even awaited, in the same tick) and
@@ -126,9 +140,15 @@ export function ensureStockfishWorkerUrl(): Promise<string | null> {
   markEngineAssetPending('stockfish-wasm');
 
   sharedUrlPromise = fetchAndPublishSharedWasm().catch((err: unknown) => {
-    Sentry.captureException(err instanceof Error ? err : new Error(String(err)), {
-      tags: { source: 'stockfish-worker-source' },
-    });
+    // FLAWCHESS-CQ: a client connection dropping mid-download of the wasm
+    // ("Load failed" / "network error" / "Error in input stream") is
+    // unactionable and already degrades to the direct path; each browser
+    // wording and each deploy's bundle hash opened a fresh Sentry issue.
+    if (!isTransientNetworkError(err)) {
+      Sentry.captureException(err instanceof Error ? err : new Error(String(err)), {
+        tags: { source: 'stockfish-worker-source' },
+      });
+    }
     return null;
   });
   return sharedUrlPromise;
