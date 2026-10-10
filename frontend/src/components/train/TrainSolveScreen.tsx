@@ -63,6 +63,7 @@ import { useFitBoardToViewport } from '@/hooks/useFitBoardToViewport';
 import { useIsDesktop, useIsSmUp } from '@/hooks/useIsDesktop';
 import { useTrainRevealTree } from '@/hooks/useTrainRevealTree';
 import type { RevealEvalReading, RevealUserMove, TrainRevealTree } from '@/hooks/useTrainRevealTree';
+import { useTrainLiveAlternatives } from '@/hooks/useTrainLiveAlternatives';
 import type { TreeSeedEval } from '@/hooks/useTreeMoveGrading';
 import { useWakeLock } from '@/hooks/useWakeLock';
 import { gradeFromServerPair, type InstantGradeState } from '@/hooks/trainGradingSupport';
@@ -122,14 +123,13 @@ import {
   buildTrainFreePlayArrows,
   buildTrainRevealOverlay,
   buildTrainStepMarkers,
-  buildTrainLiveAlternativeArrows,
   buildTrainStepOverlayArrows,
   classifyTrainMoveQuality,
   trainRootMultiPvFloor,
   TRAIN_STEP_HIGHLIGHT,
 } from '@/lib/trainArrows';
 import type {
-  TrainLiveAlternativeContext,
+  TrainFineMove,
   TrainMoveQuality,
   TrainOverlayMove,
   TrainPuzzleType,
@@ -299,8 +299,8 @@ interface RevealBoardOverlayInput {
   >;
   chips: readonly ChipGroup[];
   revealOverlay: TrainRevealOverlay;
-  /** Quick 261010-e5l: the soft-root live-alternative inputs, used only at the puzzle position. */
-  liveAlternatives: TrainLiveAlternativeContext;
+  /** Quick 261010-e5l: the soft root's latched live alternatives, drawn only at the puzzle position. */
+  liveAlternatives: readonly TrainFineMove[];
   /** The puzzle's arrival move (the highlight at the puzzle position). */
   puzzleLastMove: { from: string; to: string } | null;
 }
@@ -316,7 +316,7 @@ interface RevealBoardOverlayInput {
  * overlay is drawn with ONLY the focused chip's arrow and badge lit and every
  * other one dimmed, never hidden (`buildChipFocusOverlay`); with no chip focused
  * (D-04) everything dims. Quick 261010-e5l: a soft puzzle's live engine
- * alternatives (`liveLines` at the root) join that overlay as translucent arrows.
+ * alternatives join that overlay as green arrows with 'good' badges.
  */
 function resolveRevealBoardOverlay({
   offLineArrows,
@@ -353,12 +353,10 @@ function resolveRevealBoardOverlay({
     return { arrows: [], markers: [], lastMove: tree.lastMove, lastMoveColor: undefined };
   }
   const focusedChip = chips.find((chip) => chip.key === tree.activeChip);
-  // At the root `liveLines` is the staleness-guarded list for the puzzle FEN.
-  const liveArrows = buildTrainLiveAlternativeArrows(liveAlternatives, liveLines);
   const lit = buildChipFocusOverlay(
     revealOverlay,
     focusedChip !== undefined ? [focusedChip.uci] : null,
-    liveArrows,
+    liveAlternatives,
   );
   return { arrows: lit.arrows, markers: lit.markers, lastMove: puzzleLastMove, lastMoveColor: undefined };
 }
@@ -1508,6 +1506,25 @@ export function TrainSolveScreen({
     gameMoveQuality,
   ]);
 
+  // Quick 261010-e5l: a soft puzzle's live engine alternatives, latched from
+  // the root search. Owner UAT 2026-10-10: presented like the certified ones,
+  // so the "Also fine" text lists them after the server alternatives.
+  const liveAlternatives = useTrainLiveAlternatives(
+    {
+      puzzleType: revealPuzzleType,
+      puzzleFen: puzzle.fen,
+      bestMoveUci: revealBestUci,
+      playedMoveUci: lastPlayedUci,
+      drawnAlternatives: revealOverlay.alsoFineMoves,
+    },
+    revealTree.isAtRoot,
+    revealTree.pvLines,
+  );
+  const alsoFineMoves = useMemo(
+    () => [...revealOverlay.alsoFineMoves, ...liveAlternatives],
+    [revealOverlay.alsoFineMoves, liveAlternatives],
+  );
+
   // Phase 200 UAT round 5 / Phase 228 D-13: off the known lines the arrows are the
   // reveal engine's own top moves for the shown position (the analysis board's
   // blue Stockfish pointers), as many as the Stockfish arrows setting asks for
@@ -1528,13 +1545,7 @@ export function TrainSolveScreen({
     tree: revealTree,
     chips,
     revealOverlay,
-    liveAlternatives: {
-      puzzleType: revealPuzzleType,
-      puzzleFen: puzzle.fen,
-      bestMoveUci: revealBestUci,
-      playedMoveUci: lastPlayedUci,
-      drawnAlternatives: revealOverlay.alsoFineMoves,
-    },
+    liveAlternatives,
     puzzleLastMove: lastMove,
   });
   const boardArrows = boardOverlay.arrows;
@@ -2024,7 +2035,7 @@ export function TrainSolveScreen({
           treeList={<TrainMoveTreeList tree={revealTree} flipped={flipped} />}
           onGameMoveUciChange={setGameMoveUci}
           onGameMoveLineStateChange={setGameMoveLineState}
-          alsoFineMoves={revealOverlay.alsoFineMoves}
+          alsoFineMoves={alsoFineMoves}
           walkthroughTarget={walkthroughTarget}
           verdictBot={verdictBot}
           verdictOpening={verdictOpening}

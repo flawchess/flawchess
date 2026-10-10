@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   buildChipFocusOverlay,
-  buildTrainLiveAlternativeArrows,
+  buildTrainLiveAlternatives,
   buildTrainRevealOverlay,
   buildTrainFreePlayArrows,
   buildTrainStepArrows,
@@ -39,7 +39,6 @@ import {
   TRAIN_FOCUS_ARROW_LIT_OPACITY,
   TRAIN_FOCUS_BADGE_DIM_OPACITY,
   TRAIN_FOCUS_BADGE_LIT_OPACITY,
-  TRAIN_FOCUS_LIVE_ALT_DIM_OPACITY,
 } from '@/lib/theme';
 
 /** Shorthand: wrap UCIs as clean ('good') fine moves — the pre-260726-fma
@@ -814,14 +813,8 @@ describe('buildChipFocusOverlay (Phase 237)', () => {
     expect(overlay.markers.every((m) => m.opacity === undefined)).toBe(true);
   });
 
-  describe('liveArrows (quick 261010-e5l)', () => {
-    const liveArrow = (uci: string, index: number) => ({
-      startSquare: uci.slice(0, 2),
-      endSquare: uci.slice(2, 4),
-      color: STOCKFISH_SECONDARY_LINE,
-      width: TRAIN_BEST_MOVE_ARROW_WIDTH,
-      layerKey: `live-alt-${index}`,
-    });
+  describe('liveAlternatives (quick 261010-e5l)', () => {
+    const live = (uci: string): TrainFineMove => ({ uci, quality: 'good' });
     const rootOverlay = () =>
       buildTrainRevealOverlay(
         'soft',
@@ -832,27 +825,40 @@ describe('buildChipFocusOverlay (Phase 237)', () => {
         true,
       );
 
-    it('dims a non-matching live arrow to the live-alt level (not onTop) and lights one that shares the focused squares', () => {
+    it('dims a non-matching live arrow to the shared dim level (not onTop) and lights one that shares the focused squares', () => {
       const focused = buildChipFocusOverlay(
         rootOverlay(),
         ['c2c4'],
-        [liveArrow('d2d4', 1), liveArrow('c2c4', 2)],
+        [live('d2d4'), live('c2c4')],
       );
-      const live = focused.arrows.filter((a) => a.layerKey?.startsWith('live-alt-'));
-      const d2d4 = live.find((a) => squaresOf(a) === 'd2d4');
-      const c2c4 = live.find((a) => squaresOf(a) === 'c2c4');
-      expect(d2d4).toMatchObject({ opacity: TRAIN_FOCUS_LIVE_ALT_DIM_OPACITY, onTop: false });
+      const liveArrows = focused.arrows.filter((a) => a.layerKey?.startsWith('live-alt-'));
+      expect(liveArrows.every((a) => a.color === DARK_GREEN && a.width === TRAIN_GOOD_MOVE_ARROW_WIDTH)).toBe(true);
+      const d2d4 = liveArrows.find((a) => squaresOf(a) === 'd2d4');
+      const c2c4 = liveArrows.find((a) => squaresOf(a) === 'c2c4');
+      expect(d2d4).toMatchObject({ opacity: TRAIN_FOCUS_ARROW_DIM_OPACITY, onTop: false });
       expect(c2c4).toMatchObject({ opacity: TRAIN_FOCUS_ARROW_LIT_OPACITY, onTop: true });
     });
 
-    it('returns the live arrows first, then the overlay arrows, and passes markers, alsoFineMoves and markerOwners through', () => {
+    it('returns the live arrows first, then the overlay arrows, and adds a good badge per live arrow', () => {
       const overlay = rootOverlay();
-      const focused = buildChipFocusOverlay(overlay, ['e2e4'], [liveArrow('d2d4', 1)]);
+      const focused = buildChipFocusOverlay(overlay, ['e2e4'], [live('d2d4')]);
       expect(focused.arrows).toHaveLength(overlay.arrows.length + 1);
-      expect(focused.arrows[0]?.layerKey).toBe('live-alt-1');
+      expect(focused.arrows[0]?.layerKey).toBe('live-alt-0');
       expect(focused.alsoFineMoves).toEqual(overlay.alsoFineMoves);
-      expect(focused.markerOwners).toEqual(overlay.markerOwners);
-      expect(focused.markers.map((m) => m.square)).toEqual(overlay.markers.map((m) => m.square));
+      expect(focused.markerOwners).toEqual({ ...overlay.markerOwners, d4: 'd2d4' });
+      expect(focused.markers.map((m) => m.square)).toEqual([...overlay.markers.map((m) => m.square), 'd4']);
+      expect(focused.markers.find((m) => m.square === 'd4')).toMatchObject({
+        good: true,
+        opacity: TRAIN_FOCUS_BADGE_DIM_OPACITY,
+      });
+    });
+
+    it('never puts a live badge on a square an overlay badge already owns', () => {
+      const overlay = rootOverlay();
+      // b2c4 shares c4 with the game move c2c4, whose badge keeps the square.
+      const focused = buildChipFocusOverlay(overlay, ['e2e4'], [live('b2c4')]);
+      expect(focused.markers).toHaveLength(overlay.markers.length);
+      expect(focused.markerOwners.c4).toBe('c2c4');
     });
 
     it('omitting the parameter is identical to the two-argument call and to an empty list', () => {
@@ -884,7 +890,7 @@ describe('trainRootMultiPvFloor (quick 261010-e5l)', () => {
   });
 });
 
-describe('buildTrainLiveAlternativeArrows (quick 261010-e5l)', () => {
+describe('buildTrainLiveAlternatives (quick 261010-e5l)', () => {
   const START_FEN = 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1';
   const BLACK_TO_MOVE_FEN = 'rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq - 0 1';
   // White-POV cp of the top line; candidates are scored relative to it.
@@ -922,21 +928,11 @@ describe('buildTrainLiveAlternativeArrows (quick 261010-e5l)', () => {
       evalToExpectedScore(candidateCp, null, 'white'),
     );
   }
-  const ucisOf = (arrows: { startSquare: string; endSquare: string }[]) =>
-    arrows.map((a) => `${a.startSquare}${a.endSquare}`);
+  const ucisOf = (moves: TrainFineMove[] | null) => (moves ?? []).map((m) => m.uci);
 
-  it('draws a good rank-1 line as a translucent secondary with the live layerKey', () => {
+  it('lists a good rank-1 line as a good alternative', () => {
     expect(severityOf(GOOD_CP)).toBeNull();
-    const arrows = buildTrainLiveAlternativeArrows(context(), goodLines(2));
-    expect(arrows).toEqual([
-      {
-        startSquare: 'd2',
-        endSquare: 'd4',
-        color: STOCKFISH_SECONDARY_LINE,
-        width: TRAIN_BEST_MOVE_ARROW_WIDTH,
-        layerKey: 'live-alt-1',
-      },
-    ]);
+    expect(buildTrainLiveAlternatives(context(), goodLines(2))).toEqual([{ uci: 'd2d4', quality: 'good' }]);
   });
 
   it('never draws an inaccuracy, mistake or blunder and lets a later good line take the slot', () => {
@@ -949,9 +945,9 @@ describe('buildTrainLiveAlternativeArrows (quick 261010-e5l)', () => {
       line(3, 'g1f3', MISTAKE_CP),
       line(4, 'c2c4', BLUNDER_CP),
     ];
-    expect(buildTrainLiveAlternativeArrows(context(), lines)).toEqual([]);
+    expect(buildTrainLiveAlternatives(context(), lines)).toEqual([]);
     const withGood = [...lines.slice(0, 2), line(3, 'g1f3', GOOD_CP), line(4, 'c2c4', BLUNDER_CP)];
-    expect(ucisOf(buildTrainLiveAlternativeArrows(context(), withGood))).toEqual(['g1f3']);
+    expect(ucisOf(buildTrainLiveAlternatives(context(), withGood))).toEqual(['g1f3']);
   });
 
   it('gates on depth inclusively, for the candidate and for the top line', () => {
@@ -961,18 +957,19 @@ describe('buildTrainLiveAlternativeArrows (quick 261010-e5l)', () => {
       line(2, 'd2d4', GOOD_CP, shallow),
       line(3, 'g1f3', GOOD_CP, TRAIN_LIVE_ALT_MIN_DEPTH),
     ];
-    expect(ucisOf(buildTrainLiveAlternativeArrows(context(), lines))).toEqual(['g1f3']);
+    expect(ucisOf(buildTrainLiveAlternatives(context(), lines))).toEqual(['g1f3']);
     const shallowTop = [line(1, TOP_MOVE, TOP_CP, shallow), ...lines.slice(1)];
-    expect(buildTrainLiveAlternativeArrows(context(), shallowTop)).toEqual([]);
-    expect(buildTrainLiveAlternativeArrows(context(), goodLines(3))).toHaveLength(2);
+    // A shallow top line means the search has not settled yet: null, not [].
+    expect(buildTrainLiveAlternatives(context(), shallowTop)).toBeNull();
+    expect(buildTrainLiveAlternatives(context(), goodLines(3))).toHaveLength(2);
   });
 
   it('caps the total at TRAIN_SOFT_TOTAL_ALT_MOVE_ARROWS including drawn server alternatives', () => {
     const lines = goodLines(GOOD_MOVES.length + 1);
-    const none = buildTrainLiveAlternativeArrows(context(), lines);
+    const none = buildTrainLiveAlternatives(context(), lines);
     expect(none).toHaveLength(TRAIN_SOFT_TOTAL_ALT_MOVE_ARROWS);
     expect(ucisOf(none)).toEqual(GOOD_MOVES.slice(0, TRAIN_SOFT_TOTAL_ALT_MOVE_ARROWS));
-    const withServer = buildTrainLiveAlternativeArrows(
+    const withServer = buildTrainLiveAlternatives(
       context({ drawnAlternatives: [{ uci: 'h2h3', quality: 'good' }] }),
       lines,
     );
@@ -989,7 +986,7 @@ describe('buildTrainLiveAlternativeArrows (quick 261010-e5l)', () => {
       line(6, 'c2c4q', GOOD_CP), // same squares as the earlier live line
       line(7, 'b1c3', GOOD_CP),
     ];
-    const arrows = buildTrainLiveAlternativeArrows(
+    const moves = buildTrainLiveAlternatives(
       context({
         bestMoveUci: 'e2e4',
         playedMoveUci: 'd2d4',
@@ -997,21 +994,21 @@ describe('buildTrainLiveAlternativeArrows (quick 261010-e5l)', () => {
       }),
       lines,
     );
-    expect(ucisOf(arrows)).toEqual(['c2c4', 'b1c3']);
+    expect(ucisOf(moves)).toEqual(['c2c4', 'b1c3']);
   });
 
   it('draws nothing for sharp and herring puzzles', () => {
-    expect(buildTrainLiveAlternativeArrows(context({ puzzleType: 'sharp' }), goodLines(4))).toEqual([]);
-    expect(buildTrainLiveAlternativeArrows(context({ puzzleType: 'herring' }), goodLines(4))).toEqual([]);
+    expect(buildTrainLiveAlternatives(context({ puzzleType: 'sharp' }), goodLines(4))).toEqual([]);
+    expect(buildTrainLiveAlternatives(context({ puzzleType: 'herring' }), goodLines(4))).toEqual([]);
   });
 
-  it('never throws on empty, unscored or malformed input', () => {
-    expect(buildTrainLiveAlternativeArrows(context(), [])).toEqual([]);
-    expect(buildTrainLiveAlternativeArrows(context(), [line(1, TOP_MOVE, null)])).toEqual([]);
+  it('never throws on empty, unscored or malformed input (null until the top line settles)', () => {
+    expect(buildTrainLiveAlternatives(context(), [])).toBeNull();
+    expect(buildTrainLiveAlternatives(context(), [line(1, TOP_MOVE, null)])).toBeNull();
     const unscoredCandidate = [line(1, TOP_MOVE, TOP_CP), line(2, 'd2d4', null)];
-    expect(buildTrainLiveAlternativeArrows(context(), unscoredCandidate)).toEqual([]);
+    expect(buildTrainLiveAlternatives(context(), unscoredCandidate)).toEqual([]);
     const malformed = [line(1, TOP_MOVE, TOP_CP), line(2, 'd2', GOOD_CP), { ...line(3, 'x', GOOD_CP), moves: [] }];
-    expect(buildTrainLiveAlternativeArrows(context(), malformed)).toEqual([]);
+    expect(buildTrainLiveAlternatives(context(), malformed)).toEqual([]);
   });
 
   it('judges candidates from the mover point of view (black to move)', () => {
@@ -1026,10 +1023,10 @@ describe('buildTrainLiveAlternativeArrows (quick 261010-e5l)', () => {
       line(2, 'd7d5', badForBlack),
       line(3, 'c7c5', nearEqual),
     ];
-    const arrows = buildTrainLiveAlternativeArrows(
+    const moves = buildTrainLiveAlternatives(
       context({ puzzleFen: BLACK_TO_MOVE_FEN, bestMoveUci: 'e7e5' }),
       lines,
     );
-    expect(ucisOf(arrows)).toEqual(['c7c5']);
+    expect(ucisOf(moves)).toEqual(['c7c5']);
   });
 });

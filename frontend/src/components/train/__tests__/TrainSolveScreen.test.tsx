@@ -36,7 +36,6 @@ import {
   TRAIN_FOCUS_ARROW_LIT_OPACITY,
   TRAIN_FOCUS_BADGE_DIM_OPACITY,
   TRAIN_FOCUS_BADGE_LIT_OPACITY,
-  TRAIN_FOCUS_LIVE_ALT_DIM_OPACITY,
 } from '@/lib/theme';
 import { buildAnalysisFenUrl, buildGameAnalysisUrl } from '@/lib/analysisUrl';
 import { animateScrollTop } from '@/lib/animatedScroll';
@@ -1987,11 +1986,12 @@ describe('TrainSolveScreen — progress, last move, grading state, engine failur
     expect(list.textContent).toContain('Nf3');
   });
 
-  it('VETFINE-03 (pre-211 cache shape): a verdict with NO vetted_moves key draws zero certified (green) alternatives, only live translucent ones (quick 261010-e5l), and nothing throws', async () => {
+  it('VETFINE-03 (pre-211 cache shape): a verdict with NO vetted_moves key draws and lists only live alternatives, never a certified one (quick 261010-e5l), and nothing throws', async () => {
     // MultiRankFakeWorker still derives client-side ranks 2-4. The overlay must
-    // never turn them into CERTIFIED alternatives (green arrows, "Also fine"
-    // row); quick 261010-e5l deliberately adds a separate, uncertified live
-    // layer at a soft root. SOLVE_RESPONSE carries no vetted_moves key at all
+    // never turn them into CERTIFIED alternatives; quick 261010-e5l
+    // deliberately adds a separate live layer at a soft root, presented like
+    // the certified one (green arrow, good badge, listed in "Also fine"; owner
+    // UAT 2026-10-10). With no vetted list, the live layer is all there is. SOLVE_RESPONSE carries no vetted_moves key at all
     // (the exact shape a trainRevealCache entry written by a pre-211 bundle
     // restores).
     stubWorker(() => new MultiRankFakeWorker());
@@ -2003,31 +2003,25 @@ describe('TrainSolveScreen — progress, last move, grading state, engine failur
     });
     await waitForReveal();
 
-    // No "Also fine" list, no green arrow. Three live alternatives (the soft
-    // root searches width 4 at depth 10) paint beneath the merged blue
+    // Three green live alternatives (the soft root searches width 4 at depth
+    // 10) paint beneath the merged blue
     // Move = Best arrow, dimmed because the default focus lights the Move chip.
-    expect(screen.queryByTestId('train-reveal-also-fine')).toBeNull();
     const board = () => screen.getByTestId('chessboard');
     const expectLiveBoard = async () => {
       await waitFor(() => expect(board().getAttribute('data-arrow-ucis')).toBe('d2d4,g1f3,c2c4,e2e4'));
       // The mock joins colors with commas, and rgba() values contain commas too,
       // so compare the joined string rather than a split list.
       const colors = board().getAttribute('data-arrow-colors') ?? '';
-      expect(colors).not.toContain(DARK_GREEN);
-      expect(colors).toBe(
-        [
-          STOCKFISH_SECONDARY_LINE,
-          STOCKFISH_SECONDARY_LINE,
-          STOCKFISH_SECONDARY_LINE,
-          TRAIN_BEST_MOVE_ARROW,
-        ].join(','),
-      );
+      expect(colors).toBe([DARK_GREEN, DARK_GREEN, DARK_GREEN, TRAIN_BEST_MOVE_ARROW].join(','));
       expect((board().getAttribute('data-arrow-opacities') ?? '').split(',').map(Number)).toEqual([
-        TRAIN_FOCUS_LIVE_ALT_DIM_OPACITY,
-        TRAIN_FOCUS_LIVE_ALT_DIM_OPACITY,
-        TRAIN_FOCUS_LIVE_ALT_DIM_OPACITY,
+        TRAIN_FOCUS_ARROW_DIM_OPACITY,
+        TRAIN_FOCUS_ARROW_DIM_OPACITY,
+        TRAIN_FOCUS_ARROW_DIM_OPACITY,
         TRAIN_FOCUS_ARROW_LIT_OPACITY,
       ]);
+      // One good badge per live alternative, plus the merged Move = Best badge.
+      expect(board().getAttribute('data-markers-count')).toBe('4');
+      expect(screen.getByTestId('train-reveal-also-fine').textContent).toContain('d4, Nf3, c4');
     };
     await expectLiveBoard();
     fireEvent.pointerEnter(screen.getByTestId('train-verdict-guess'));
