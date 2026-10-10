@@ -7,6 +7,8 @@ import { useUserProfile } from '@/hooks/useUserProfile';
 
 // ─── Four-delta copy (Phase 224 S-5) ──────────────────────────────────────────
 
+const INTRO = 'Everything stays completely free.';
+
 const DELTA_1 =
   'Every game you import is analyzed by Stockfish automatically, with no per-game Analyze click.';
 const DELTA_2 = 'Train switches from warm-up puzzles to the mistakes in your own games.';
@@ -47,13 +49,18 @@ export function WelcomePage() {
     >
       <h1 className="text-2xl font-bold">What changes when you sign up</h1>
 
-      <ul data-testid="welcome-delta-list" className="space-y-3">
-        {DELTAS.map((delta, index) => (
-          <li key={delta} data-testid={`welcome-delta-${index + 1}`} className="text-sm">
-            {delta}
-          </li>
-        ))}
-      </ul>
+      <div className="space-y-3">
+        <p data-testid="welcome-intro" className="text-sm">
+          {INTRO}
+        </p>
+        <ul data-testid="welcome-delta-list" className="space-y-3">
+          {DELTAS.map((delta, index) => (
+            <li key={delta} data-testid={`welcome-delta-${index + 1}`} className="text-sm">
+              {delta}
+            </li>
+          ))}
+        </ul>
+      </div>
 
       <div className="flex flex-row gap-3" data-testid="welcome-actions">
         <Button
