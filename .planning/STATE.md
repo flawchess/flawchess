@@ -4,17 +4,17 @@ milestone: v2.24
 current_phase_name: Train Reveal Verdict Strip, Line Chips & One Move Tree (SEED-194)
 status: completed
 stopped_at: v2.22, v2.23 and v2.24 closed (phases 228–237 regrouped), no open milestone
-last_updated: "2026-10-10T02:59:40.777Z"
-state_head: 40bf209599fca196a66e676de13cec5793590867
+last_updated: "2026-10-10T08:32:18.448Z"
+state_head: 0cd92a603ff027b57570a351eb02379d3f698db8
 progress:
   total_phases: 10
   completed_phases: 103
   total_plans: 57
   completed_plans: 57
 milestone_name: Train Grading Integrity & One-Screen Reveal
-last_activity: 2026-10-09
+last_activity: 2026-10-10
 current_phase: 237
-last_activity_desc: "Completed quick task 261009-por: live engine arrows on stepped known-line positions in the Train reveal"
+last_activity_desc: "Completed quick task 261010-e5l: live-engine good-move alternatives at the soft puzzle position in the Train reveal"
 ---
 
 # Project State: FlawChess
@@ -1019,6 +1019,7 @@ None active.
 | 261009-kpa | Stockfish watchdog hidden-tab re-arm gate (SEED-180, FLAWCHESS-9G) | 2026-10-09 | 036b01d72 | [261009-kpa-stockfish-watchdog-hidden-tab-re-arm-gat](./quick/261009-kpa-stockfish-watchdog-hidden-tab-re-arm-gat/) |
 | 261009-por | add live engine arrows on known lines | 2026-10-09 | dcca42380 | [261009-por-add-live-engine-arrows-on-known-lines](./quick/261009-por-add-live-engine-arrows-on-known-lines/) |
 | 133 | Train mobile: progress bar spans board only, settings cog in top-right corner | 2026-10-10 | 40bf20959 | — |
+| 261010-e5l | Train reveal: live-engine good-move alternatives at the soft puzzle position (up to 3 incl. server alt, good only, depth>=10) | 2026-10-10 | 0cd92a603 | [261010-e5l-train-reveal-live-engine-good-move-alter](./quick/261010-e5l-train-reveal-live-engine-good-move-alter/) |
 
 ## Deferred Items
 
