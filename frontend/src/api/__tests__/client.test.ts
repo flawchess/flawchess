@@ -150,7 +150,7 @@ describe('postReviewKeepalive', () => {
     expect(Sentry.captureException).not.toHaveBeenCalled();
   });
 
-  it.each([401, 404])('does not report an expected %s response', async (status) => {
+  it.each([401, 404, 502, 503, 504])('does not report an expected %s response', async (status) => {
     fetchMock.mockResolvedValueOnce({ status });
     postReviewKeepalive(7, 2, BODY);
     await new Promise((resolve) => setTimeout(resolve, 0));

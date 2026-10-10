@@ -94,7 +94,7 @@ flawchess.com {
         # directive evidence is in 216-RESEARCH.md Pattern 3. Flip to an
         # enforcing Content-Security-Policy header only after reviewing a
         # few weeks of Sentry violation reports.
-        Content-Security-Policy-Report-Only "default-src 'self'; script-src 'self' https://analytics.flawchess.com 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: blob:; connect-src 'self' https://*.ingest.de.sentry.io https://analytics.flawchess.com blob:; worker-src 'self' blob:; frame-ancestors 'none'; base-uri 'self'; form-action 'self'; report-uri https://o4511084502450176.ingest.de.sentry.io/api/4511084868272208/security/?sentry_key=5ac850dda8e5ec8b838c6dfbf50fc89d; report-to csp-endpoint"
+        Content-Security-Policy-Report-Only "default-src 'self'; script-src 'self' https://analytics.flawchess.com 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: blob:; connect-src 'self' https://*.ingest.de.sentry.io https://analytics.flawchess.com https://fonts.googleapis.com blob:; worker-src 'self' blob:; frame-ancestors 'none'; base-uri 'self'; form-action 'self'; report-uri https://o4511084502450176.ingest.de.sentry.io/api/4511084868272208/security/?sentry_key=5ac850dda8e5ec8b838c6dfbf50fc89d; report-to csp-endpoint"
         Reporting-Endpoints "csp-endpoint=\"https://o4511084502450176.ingest.de.sentry.io/api/4511084868272208/security/?sentry_key=5ac850dda8e5ec8b838c6dfbf50fc89d\""
     }
 

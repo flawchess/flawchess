@@ -50,6 +50,11 @@ const API_BASE_URL = '/api';
 const AUTH_TOKEN_STORAGE_KEY = 'auth_token';
 /** First HTTP status that is a server bug (reported to Sentry by the keepalive flush). */
 const SERVER_ERROR_MIN_STATUS = 500;
+/**
+ * Gateway statuses Caddy returns while the backend restarts during a deploy
+ * (FLAWCHESS-CK: every 502 landed within 2 min of a release). Expected, not a bug.
+ */
+const GATEWAY_RESTART_STATUSES: ReadonlySet<number> = new Set([502, 503, 504]);
 
 /**
  * Central Axios instance.
@@ -354,9 +359,13 @@ export function postReviewKeepalive(sessionId: number, position: number, body: R
   })
     .then((response) => {
       // A 5xx is a server bug whatever triggered the flush; a 4xx (expired token
-      // after logout, row gone) is expected and not captured. Constant message,
-      // variable data in context (frontend/CLAUDE.md grouping rule).
-      if (response.status >= SERVER_ERROR_MIN_STATUS) {
+      // after logout, row gone) and a 502-504 during a deploy restart are
+      // expected and not captured. Constant message, variable data in context
+      // (frontend/CLAUDE.md grouping rule).
+      if (
+        response.status >= SERVER_ERROR_MIN_STATUS &&
+        !GATEWAY_RESTART_STATUSES.has(response.status)
+      ) {
         Sentry.captureException(new Error('Train review keepalive flush failed'), {
           tags: { source: 'train-review-keepalive' },
           contexts: { train_review: { status: response.status } },
