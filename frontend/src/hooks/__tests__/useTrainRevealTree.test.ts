@@ -12,6 +12,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { useTrainRevealTree } from '@/hooks/useTrainRevealTree';
 import type { RevealChipLine, UseTrainRevealTreeOptions } from '@/hooks/useTrainRevealTree';
 import type { TreeSeedEval } from '@/hooks/useTreeMoveGrading';
+import { TRAIN_LIVE_ALT_ROOT_MULTIPV } from '@/lib/trainArrows';
 import type { TrainFineMove } from '@/lib/trainArrows';
 import { SETTINGS_STORAGE_KEYS } from '@/lib/engineSettings';
 import {
@@ -1052,6 +1053,26 @@ describe('useTrainRevealTree: the one reveal engine', () => {
     });
     expect(result.current.isOffLine).toBe(false);
     expect(engineState.lastMultiPv).toBe(2);
+  });
+
+  it('rootMinMultiPv widens only the puzzle position (quick 261010-e5l): 4 at the root, the settings width on a known line, 4 again after goToRoot', () => {
+    const { result } = renderTree({ rootMinMultiPv: TRAIN_LIVE_ALT_ROOT_MULTIPV });
+    expect(engineState.lastMultiPv).toBe(TRAIN_LIVE_ALT_ROOT_MULTIPV);
+    act(() => {
+      result.current.playMove('e2', 'e4');
+    });
+    expect(result.current.isOffLine).toBe(false);
+    expect(engineState.lastMultiPv).toBe(2);
+    act(() => {
+      result.current.goToRoot();
+    });
+    expect(engineState.lastMultiPv).toBe(TRAIN_LIVE_ALT_ROOT_MULTIPV);
+  });
+
+  it('rootMinMultiPv never narrows a wider settings width (Stockfish lines 5 stay 5 at the root)', () => {
+    localStorage.setItem(SETTINGS_STORAGE_KEYS.sfLines, '5');
+    renderTree({ rootMinMultiPv: TRAIN_LIVE_ALT_ROOT_MULTIPV });
+    expect(engineState.lastMultiPv).toBe(5);
   });
 
   it('Stockfish arrows 3 search at MultiPV 3 on the known lines too', () => {

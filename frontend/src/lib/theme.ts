@@ -589,6 +589,15 @@ export const TRAIN_BEST_MOVE_ARROW = BEST_MOVE_ARROW;
 // the focused set is drawn near-opaque. Tunable in the plan 11 browser UAT.
 export const TRAIN_FOCUS_ARROW_LIT_OPACITY = 0.92;
 export const TRAIN_FOCUS_ARROW_DIM_OPACITY = 0.22;
+// A live engine alternative at a soft puzzle's root is drawn in
+// STOCKFISH_SECONDARY_LINE, whose fill already carries 45% alpha, and ChessBoard
+// multiplies the arrow opacity into it. The shared 0.22 dim would leave it at
+// about 10% (near invisible); 0.4 puts it at about 18%, the same weight as the
+// dimmed best arrow (0.8 alpha x 0.22) and just under a dimmed certified green
+// alternative (opaque x 0.22), so it reads as a translucent alternative like the
+// server ones. Hue and the missing badge keep live and certified apart.
+// Tunable in browser UAT (quick 261010-e5l).
+export const TRAIN_FOCUS_LIVE_ALT_DIM_OPACITY = 0.4;
 export const TRAIN_FOCUS_BADGE_LIT_OPACITY = 1;
 export const TRAIN_FOCUS_BADGE_DIM_OPACITY = 0.32;
 

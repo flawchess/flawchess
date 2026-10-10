@@ -10,6 +10,7 @@ in `YYYY-MM-DD` (Europe/Zurich).
 
 ### Changed
 
+- Train: on puzzles with several good moves, the solution board now shows up to three good alternatives at the puzzle position. The certified alternative stays green, and the engine fills the remaining slots with its own good moves as faint blue arrows once its search is deep enough; moves it rates an inaccuracy or worse are never shown.
 - Train: on phones, the solution screen's bottom bar now matches the analysis page's board controls (icon with a label under it), with Analyze as one more control beside them; the forward button reads "Fwd" so it is not confused with Next. The small analyze icon next to the game line is gone, since the Analyze button does the same.
 - Train: when you step through a solution line, the board now also shows the engine's other top moves as faint arrows (as many as your Stockfish arrows setting) and the Stockfish lines row below the move list. The line's next move keeps the solid blue arrow and the chip's eval, so the row leaves out the engine line that repeats it and shows the rest as secondary lines.
 - Train: every solution screen now has an Analyze button. Puzzles from your own games still open the whole game one move before the mistake; red herrings and warm-up puzzles open the puzzle position on the analysis board instead of linking to the source game.

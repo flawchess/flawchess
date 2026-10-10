@@ -23,6 +23,7 @@ import { Chess } from 'chess.js';
 import { TrainSolveScreen } from '@/components/train/TrainSolveScreen';
 import { useMobileBoardControls } from '@/lib/mobileBoardControls';
 import { TooltipProvider } from '@/components/ui/tooltip';
+import { DARK_GREEN } from '@/lib/arrowColor';
 import { TRAIN_STEP_HIGHLIGHT } from '@/lib/trainArrows';
 import { MOVE_TIER_POINTS, scorePuzzle } from '@/lib/trainScore';
 import { SETTINGS_STORAGE_KEYS } from '@/lib/engineSettings';
@@ -35,6 +36,7 @@ import {
   TRAIN_FOCUS_ARROW_LIT_OPACITY,
   TRAIN_FOCUS_BADGE_DIM_OPACITY,
   TRAIN_FOCUS_BADGE_LIT_OPACITY,
+  TRAIN_FOCUS_LIVE_ALT_DIM_OPACITY,
 } from '@/lib/theme';
 import { buildAnalysisFenUrl, buildGameAnalysisUrl } from '@/lib/analysisUrl';
 import { animateScrollTop } from '@/lib/animatedScroll';
@@ -1985,11 +1987,12 @@ describe('TrainSolveScreen — progress, last move, grading state, engine failur
     expect(list.textContent).toContain('Nf3');
   });
 
-  it('VETFINE-03 (pre-211 cache shape): a verdict with NO vetted_moves key draws zero alternative arrows and nothing throws', async () => {
-    // MultiRankFakeWorker still derives client-side ranks 2-4 — if the
-    // overlay ever fell back to the client engine's alternatives, this test
-    // would see them. SOLVE_RESPONSE carries no vetted_moves key at all (the
-    // exact shape a trainRevealCache entry written by a pre-211 bundle
+  it('VETFINE-03 (pre-211 cache shape): a verdict with NO vetted_moves key draws zero certified (green) alternatives, only live translucent ones (quick 261010-e5l), and nothing throws', async () => {
+    // MultiRankFakeWorker still derives client-side ranks 2-4. The overlay must
+    // never turn them into CERTIFIED alternatives (green arrows, "Also fine"
+    // row); quick 261010-e5l deliberately adds a separate, uncertified live
+    // layer at a soft root. SOLVE_RESPONSE carries no vetted_moves key at all
+    // (the exact shape a trainRevealCache entry written by a pre-211 bundle
     // restores).
     stubWorker(() => new MultiRankFakeWorker());
     solvePuzzle.mockResolvedValueOnce({ ...SOLVE_RESPONSE, puzzle_type: 'soft' });
@@ -2000,14 +2003,36 @@ describe('TrainSolveScreen — progress, last move, grading state, engine failur
     });
     await waitForReveal();
 
-    // No "Also fine" list, and hovering the guess card surfaces no
-    // alternative arrows — the pristine single blue best/played arrow stays.
+    // No "Also fine" list, no green arrow. Three live alternatives (the soft
+    // root searches width 4 at depth 10) paint beneath the merged blue
+    // Move = Best arrow, dimmed because the default focus lights the Move chip.
     expect(screen.queryByTestId('train-reveal-also-fine')).toBeNull();
     const board = () => screen.getByTestId('chessboard');
-    await waitFor(() => expect(board().getAttribute('data-arrows-count')).toBe('1'));
+    const expectLiveBoard = async () => {
+      await waitFor(() => expect(board().getAttribute('data-arrow-ucis')).toBe('d2d4,g1f3,c2c4,e2e4'));
+      // The mock joins colors with commas, and rgba() values contain commas too,
+      // so compare the joined string rather than a split list.
+      const colors = board().getAttribute('data-arrow-colors') ?? '';
+      expect(colors).not.toContain(DARK_GREEN);
+      expect(colors).toBe(
+        [
+          STOCKFISH_SECONDARY_LINE,
+          STOCKFISH_SECONDARY_LINE,
+          STOCKFISH_SECONDARY_LINE,
+          TRAIN_BEST_MOVE_ARROW,
+        ].join(','),
+      );
+      expect((board().getAttribute('data-arrow-opacities') ?? '').split(',').map(Number)).toEqual([
+        TRAIN_FOCUS_LIVE_ALT_DIM_OPACITY,
+        TRAIN_FOCUS_LIVE_ALT_DIM_OPACITY,
+        TRAIN_FOCUS_LIVE_ALT_DIM_OPACITY,
+        TRAIN_FOCUS_ARROW_LIT_OPACITY,
+      ]);
+    };
+    await expectLiveBoard();
     fireEvent.pointerEnter(screen.getByTestId('train-verdict-guess'));
-    // Deliberately re-assert after the hover settles — still exactly one.
-    await waitFor(() => expect(board().getAttribute('data-arrows-count')).toBe('1'));
+    // Deliberately re-assert after the hover settles.
+    await expectLiveBoard();
   });
 
   // ─── Phase 205 (ORACLE-01/ORACLE-02) → Phase 211 (D-06): free-play root ──
