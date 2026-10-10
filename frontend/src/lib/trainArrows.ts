@@ -48,7 +48,6 @@ import {
   TRAIN_FOCUS_ARROW_LIT_OPACITY,
   TRAIN_FOCUS_BADGE_DIM_OPACITY,
   TRAIN_FOCUS_BADGE_LIT_OPACITY,
-  TRAIN_FOCUS_LIVE_ALT_DIM_OPACITY,
 } from '@/lib/theme';
 import type { PvLine } from '@/hooks/uciParser';
 import type { RoleKey } from '@/lib/trainRevealLines';
@@ -637,21 +636,25 @@ function isScoredLiveLine(line: PvLine): boolean {
  * wide translucent arrow under it adds the "also a good move" fact, and under
  * chip focus both arrows match the Game chip by squares and light together.
  *
- * Live arrows are uncertified: STOCKFISH_SECONDARY_LINE hue, no badge (a live
- * badge would need a new tier in pushMarker's precedence and could steal the
- * game move's square) and never in `alsoFineMoves`, so the "Also fine" text
- * stays server-only. Sharp draws none (one right move), herring keeps its own
- * certified ladder.
+ * Owner UAT 2026-10-10: live alternatives are presented exactly like the
+ * certified ones (green arrow, 'good' badge, listed in the "Also fine" text);
+ * the original faint blue, badge-less, unlisted styling made the same "also a
+ * good move" fact read as a different kind of move. Sharp draws none (one
+ * right move), herring keeps its own certified ladder.
+ *
+ * Returns null while the root search is not yet trustworthy (top line
+ * shallow or unscored), so a caller can keep the last settled list instead of
+ * flashing an empty one; [] when it is settled and nothing qualifies.
  */
-export function buildTrainLiveAlternativeArrows(
+export function buildTrainLiveAlternatives(
   context: TrainLiveAlternativeContext,
   rootPvLines: readonly PvLine[],
-): BoardArrow[] {
+): TrainFineMove[] | null {
   if (context.puzzleType !== 'soft') return [];
   const slots = Math.max(0, TRAIN_SOFT_TOTAL_ALT_MOVE_ARROWS - context.drawnAlternatives.length);
   if (slots === 0) return [];
   const top = rootPvLines[0];
-  if (top === undefined || !isScoredLiveLine(top)) return [];
+  if (top === undefined || !isScoredLiveLine(top)) return null;
 
   const mover = sideToMoveFromFen(context.puzzleFen);
   const esTop = evalToExpectedScore(top.evalCp, top.evalMate, mover);
@@ -661,24 +664,50 @@ export function buildTrainLiveAlternativeArrows(
   }
   for (const fine of context.drawnAlternatives) drawn.add(fromToKey(fine.uci));
 
-  const arrows: BoardArrow[] = [];
-  for (let index = 1; index < rootPvLines.length && arrows.length < slots; index++) {
+  const alternatives: TrainFineMove[] = [];
+  for (let index = 1; index < rootPvLines.length && alternatives.length < slots; index++) {
     const line = rootPvLines[index];
     if (line === undefined || !isScoredLiveLine(line)) continue;
     const move = line.moves[0] ?? null;
-    const squares = squaresFromUci(move);
-    if (move === null || squares === null || drawn.has(fromToKey(move))) continue;
+    if (squaresFromUci(move) === null || move === null || drawn.has(fromToKey(move))) continue;
     const esLine = evalToExpectedScore(line.evalCp, line.evalMate, mover);
     if (classifyLiveSeverity(esTop, esLine) !== null) continue;
     drawn.add(fromToKey(move));
-    arrows.push({
-      ...squares,
-      color: STOCKFISH_SECONDARY_LINE,
-      width: TRAIN_BEST_MOVE_ARROW_WIDTH,
-      layerKey: `live-alt-${index}`,
-    });
+    alternatives.push({ uci: move, quality: 'good' });
   }
-  return arrows;
+  return alternatives;
+}
+
+/** A live alternative's board arrow: the certified alternatives' green arrow. */
+function liveAlternativeArrows(liveAlternatives: readonly TrainFineMove[]): BoardArrow[] {
+  return liveAlternatives.flatMap((fine, index) => {
+    const squares = squaresFromUci(fine.uci);
+    if (squares === null) return [];
+    return [{ ...squares, color: DARK_GREEN, width: TRAIN_GOOD_MOVE_ARROW_WIDTH, layerKey: `live-alt-${index}` }];
+  });
+}
+
+/**
+ * The overlay's badges plus a 'good' badge for each live alternative, at the
+ * lowest precedence (after played > best > fine > game): a live badge only
+ * takes a square no overlay badge owns, so it never steals the game move's
+ * square.
+ */
+function withLiveAlternativeBadges(
+  overlay: TrainRevealOverlay,
+  liveAlternatives: readonly TrainFineMove[],
+): Pick<TrainRevealOverlay, 'markers' | 'markerOwners'> {
+  // Keep the overlay's own objects when there is nothing to add (pass-through identity).
+  if (liveAlternatives.length === 0) return overlay;
+  const markers = [...overlay.markers];
+  const markerOwners = { ...overlay.markerOwners };
+  for (const fine of liveAlternatives) {
+    const squares = squaresFromUci(fine.uci);
+    if (squares === null || markerOwners[squares.endSquare] !== undefined) continue;
+    markerOwners[squares.endSquare] = fine.uci;
+    markers.push(markerForQuality(squares.endSquare, 'good'));
+  }
+  return { markers, markerOwners };
 }
 
 /**
@@ -703,18 +732,19 @@ export function buildTrainLiveAlternativeArrows(
  *
  * A null or empty `activeUcis` dims every arrow and badge (no active move).
  * A malformed UCI (< 4 chars) contributes no match and never throws.
- * `alsoFineMoves` and `markerOwners` pass through unchanged.
+ * `alsoFineMoves` passes through unchanged; `markerOwners` gains only the
+ * live alternatives' badges.
  *
- * Quick 261010-e5l: `liveArrows` (the soft root's live engine alternatives) are
+ * Quick 261010-e5l: `liveAlternatives` (the soft root's live engine alternatives) are
  * never chips, same as server alternatives, so like them they dim at the root
- * unless the focused chip's move shares their squares. They dim to
- * TRAIN_FOCUS_LIVE_ALT_DIM_OPACITY rather than the shared level because their
- * fill is already translucent. They are returned before the overlay's arrows.
+ * unless the focused chip's move shares their squares, and each gets the same
+ * 'good' badge (`withLiveAlternativeBadges`). They are returned before the
+ * overlay's arrows.
  */
 export function buildChipFocusOverlay(
   overlay: TrainRevealOverlay,
   activeUcis: readonly string[] | null,
-  liveArrows: readonly BoardArrow[] = [],
+  liveAlternatives: readonly TrainFineMove[] = [],
 ): TrainRevealOverlay {
   const active = activeUcis ?? [];
   const activePairs = active
@@ -728,16 +758,18 @@ export function buildChipFocusOverlay(
     );
   }
 
+  const { markers, markerOwners } = withLiveAlternativeBadges(overlay, liveAlternatives);
+
   function markerIsLit(marker: SquareMarker): boolean {
-    const ownerUci = overlay.markerOwners[marker.square];
+    const ownerUci = markerOwners[marker.square];
     return ownerUci !== undefined && activeUciSet.has(ownerUci);
   }
 
-  function focusArrow(arrow: BoardArrow, dimOpacity: number): BoardArrow {
+  function focusArrow(arrow: BoardArrow): BoardArrow {
     const lit = arrowIsLit(arrow);
     return {
       ...arrow,
-      opacity: lit ? TRAIN_FOCUS_ARROW_LIT_OPACITY : dimOpacity,
+      opacity: lit ? TRAIN_FOCUS_ARROW_LIT_OPACITY : TRAIN_FOCUS_ARROW_DIM_OPACITY,
       onTop: lit,
     };
   }
@@ -745,11 +777,9 @@ export function buildChipFocusOverlay(
   return {
     ...overlay,
     // Live alternatives first: they paint beneath the certified arrows within a tier.
-    arrows: [
-      ...liveArrows.map((arrow) => focusArrow(arrow, TRAIN_FOCUS_LIVE_ALT_DIM_OPACITY)),
-      ...overlay.arrows.map((arrow) => focusArrow(arrow, TRAIN_FOCUS_ARROW_DIM_OPACITY)),
-    ],
-    markers: overlay.markers.map((marker) => ({
+    arrows: [...liveAlternativeArrows(liveAlternatives), ...overlay.arrows].map(focusArrow),
+    markerOwners,
+    markers: markers.map((marker) => ({
       ...marker,
       opacity: markerIsLit(marker) ? TRAIN_FOCUS_BADGE_LIT_OPACITY : TRAIN_FOCUS_BADGE_DIM_OPACITY,
     })),
