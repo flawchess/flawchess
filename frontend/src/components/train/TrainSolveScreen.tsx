@@ -122,11 +122,19 @@ import {
   buildTrainFreePlayArrows,
   buildTrainRevealOverlay,
   buildTrainStepMarkers,
+  buildTrainLiveAlternativeArrows,
   buildTrainStepOverlayArrows,
   classifyTrainMoveQuality,
+  trainRootMultiPvFloor,
   TRAIN_STEP_HIGHLIGHT,
 } from '@/lib/trainArrows';
-import type { TrainMoveQuality, TrainOverlayMove, TrainRevealOverlay } from '@/lib/trainArrows';
+import type {
+  TrainLiveAlternativeContext,
+  TrainMoveQuality,
+  TrainOverlayMove,
+  TrainPuzzleType,
+  TrainRevealOverlay,
+} from '@/lib/trainArrows';
 import type { PvLine } from '@/hooks/uciParser';
 import { scorePuzzle, TRAIN_POINTS_PER_PUZZLE } from '@/lib/trainScore';
 import type { TrainMoveTier } from '@/lib/trainScore';
@@ -291,6 +299,8 @@ interface RevealBoardOverlayInput {
   >;
   chips: readonly ChipGroup[];
   revealOverlay: TrainRevealOverlay;
+  /** Quick 261010-e5l: the soft-root live-alternative inputs, used only at the puzzle position. */
+  liveAlternatives: TrainLiveAlternativeContext;
   /** The puzzle's arrival move (the highlight at the puzzle position). */
   puzzleLastMove: { from: string; to: string } | null;
 }
@@ -305,7 +315,8 @@ interface RevealBoardOverlayInput {
  * with the line's pointer painted on top. At the puzzle position the full reveal
  * overlay is drawn with ONLY the focused chip's arrow and badge lit and every
  * other one dimmed, never hidden (`buildChipFocusOverlay`); with no chip focused
- * (D-04) everything dims.
+ * (D-04) everything dims. Quick 261010-e5l: a soft puzzle's live engine
+ * alternatives (`liveLines` at the root) join that overlay as translucent arrows.
  */
 function resolveRevealBoardOverlay({
   offLineArrows,
@@ -314,6 +325,7 @@ function resolveRevealBoardOverlay({
   tree,
   chips,
   revealOverlay,
+  liveAlternatives,
   puzzleLastMove,
 }: RevealBoardOverlayInput): RevealBoardOverlay {
   if (tree.isOffLine) {
@@ -341,7 +353,13 @@ function resolveRevealBoardOverlay({
     return { arrows: [], markers: [], lastMove: tree.lastMove, lastMoveColor: undefined };
   }
   const focusedChip = chips.find((chip) => chip.key === tree.activeChip);
-  const lit = buildChipFocusOverlay(revealOverlay, focusedChip !== undefined ? [focusedChip.uci] : null);
+  // At the root `liveLines` is the staleness-guarded list for the puzzle FEN.
+  const liveArrows = buildTrainLiveAlternativeArrows(liveAlternatives, liveLines);
+  const lit = buildChipFocusOverlay(
+    revealOverlay,
+    focusedChip !== undefined ? [focusedChip.uci] : null,
+    liveArrows,
+  );
   return { arrows: lit.arrows, markers: lit.markers, lastMove: puzzleLastMove, lastMoveColor: undefined };
 }
 
@@ -675,6 +693,7 @@ export function TrainSolveScreen({
   const liveVerdict =
     trainSession.lastSolvedPosition === puzzle.position ? trainSession.lastSolveResponse : null;
   const verdict = liveVerdict ?? restoredSolve?.verdict ?? null;
+  const revealPuzzleType: TrainPuzzleType = verdict?.puzzle_type ?? 'sharp';
 
   // Phase 233 (D-02): think-time telemetry for this puzzle. Prefer the restored
   // reveal's session id (Pitfall 6: `trainSession.session` is null briefly on a
@@ -884,6 +903,8 @@ export function TrainSolveScreen({
     restored: restoredSolve?.revealTree ?? null,
     seedEval: treeSeedEval,
     engineEnabled: instantGrade?.status !== 'pending',
+    // Quick 261010-e5l: a soft puzzle's root searches best + 3 for live alternatives.
+    rootMinMultiPv: trainRootMultiPvFloor(revealPuzzleType),
     // Phase 237 plan 07: ArrowLeft / ArrowRight / Home on desktop (inert until the verdict).
     navContainerRef: boardRef,
   });
@@ -1463,7 +1484,7 @@ export function TrainSolveScreen({
         ? { uci: lastPlayedUci, quality: playedMoveQuality }
         : null;
     return buildTrainRevealOverlay(
-      verdict?.puzzle_type ?? 'sharp',
+      revealPuzzleType,
       // Phase 211 (D-01): the server's certified vetted list — the client
       // engine no longer contributes alternatives to this overlay. The
       // hoisted `vettedMoves` memo above owns the stale-cache default.
@@ -1476,7 +1497,16 @@ export function TrainSolveScreen({
       gameMoveUci !== null ? { uci: gameMoveUci, quality: gameMoveQuality } : null,
       verdict !== null,
     );
-  }, [verdict, vettedMoves, revealBestUci, lastPlayedUci, playedMoveQuality, gameMoveUci, gameMoveQuality]);
+  }, [
+    verdict,
+    revealPuzzleType,
+    vettedMoves,
+    revealBestUci,
+    lastPlayedUci,
+    playedMoveQuality,
+    gameMoveUci,
+    gameMoveQuality,
+  ]);
 
   // Phase 200 UAT round 5 / Phase 228 D-13: off the known lines the arrows are the
   // reveal engine's own top moves for the shown position (the analysis board's
@@ -1498,6 +1528,13 @@ export function TrainSolveScreen({
     tree: revealTree,
     chips,
     revealOverlay,
+    liveAlternatives: {
+      puzzleType: revealPuzzleType,
+      puzzleFen: puzzle.fen,
+      bestMoveUci: revealBestUci,
+      playedMoveUci: lastPlayedUci,
+      drawnAlternatives: revealOverlay.alsoFineMoves,
+    },
     puzzleLastMove: lastMove,
   });
   const boardArrows = boardOverlay.arrows;

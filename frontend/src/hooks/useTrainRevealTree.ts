@@ -66,6 +66,9 @@ import type { RevealTreeSnapshot, RoleKey, TreeListView } from '@/lib/trainRevea
  */
 const NO_PV_LINES: PvLine[] = Object.freeze([] as PvLine[]) as PvLine[];
 
+/** No MultiPV floor: the reveal engine runs the settings width. */
+const NO_MULTIPV_FLOOR = 0;
+
 /** What the tree needs from a chip: its key and the UCI line to pre-load. A
  * `ChipGroup` satisfies it. */
 export interface RevealChipLine {
@@ -124,6 +127,12 @@ export interface UseTrainRevealTreeOptions {
    * pending, so nothing may compete with the phone-accuracy background search).
    */
   engineEnabled?: boolean;
+  /**
+   * A MultiPV floor applied only while the shown node is the puzzle position
+   * (quick 261010-e5l). The Train screen passes 4 for a soft puzzle so the root
+   * can offer live good-move alternatives; default none.
+   */
+  rootMinMultiPv?: number;
 }
 
 /** The reveal engine's reading of the shown position (the eval bar's input). */
@@ -246,6 +255,7 @@ export function useTrainRevealTree({
   restored = null,
   seedEval = null,
   engineEnabled = true,
+  rootMinMultiPv = NO_MULTIPV_FLOOR,
 }: UseTrainRevealTreeOptions): TrainRevealTree {
   const board = useAnalysisBoard(startFen);
   const {
@@ -502,26 +512,26 @@ export function useTrainRevealTree({
   );
 
   // ── The one reveal engine ────────────────────────────────────────────────
-  // It follows the shown position and always runs max(Stockfish lines,
-  // Stockfish arrows): off the known lines the row shows that many lines and the
-  // board draws that many arrows; on a stepped known line its other top moves
-  // draw as secondary arrows under the line's pointer
-  // (`buildTrainStepOverlayArrows`). The puzzle position uses the same width
-  // rather than a third special case: it draws no live arrows, but one width
-  // everywhere means stepping between the root, the known lines and a sideline
-  // never re-issues `setoption name MultiPV` or restarts a search just for a
-  // width change. The accepted cost is a slightly shallower top line (eval bar,
-  // sideline grading seed) within the same movetime. Not started lazily: the
-  // eval bar needs a search on the known lines anyway, and searching every shown
-  // node also fills the eval cache, so a fork from a stepped line position
-  // grades. Off while the Phase 236 background grade is pending (`engineEnabled`).
+  // It follows the shown position and runs max(Stockfish lines, Stockfish
+  // arrows) everywhere except the puzzle position of a soft puzzle: off the
+  // known lines the row shows that many lines and the board draws that many
+  // arrows; on a stepped known line its other top moves draw as secondary
+  // arrows under the line's pointer (`buildTrainStepOverlayArrows`). At a soft
+  // puzzle's root the caller's `rootMinMultiPv` floor widens the search to best
+  // + 3 so the board can offer live good-move alternatives; the accepted cost
+  // is a slightly shallower root top line within the same movetime. Not started
+  // lazily: the eval bar needs a search on the known lines anyway, and searching
+  // every shown node also fills the eval cache, so a fork from a stepped line
+  // position grades. Off while the Phase 236 background grade is pending
+  // (`engineEnabled`).
   const isOffLine = currentNodeId !== null && !knownIds.has(currentNodeId);
   const { sfLines, sfArrows } = useEngineDisplaySettings();
   const shownFen = active ? board.position : null;
+  const multiPvFloor = currentNodeId === null ? rootMinMultiPv : NO_MULTIPV_FLOOR;
   const engine = useStockfishEngine({
     fen: shownFen,
     enabled: active && engineEnabled,
-    multiPv: Math.max(sfLines, sfArrows),
+    multiPv: Math.max(sfLines, sfArrows, multiPvFloor),
   });
   // The hook's `currentFen` lags `fen` by exactly one render (its own documented
   // contract), so an unguarded read would paint the PREVIOUS position's lines

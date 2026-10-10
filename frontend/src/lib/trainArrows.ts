@@ -30,7 +30,7 @@
 
 import type { BoardArrow, SquareMarker } from '@/components/board/ChessBoard';
 import { DARK_GREEN } from '@/lib/arrowColor';
-import { classifyLiveSeverity } from '@/lib/liveFlaw';
+import { classifyLiveSeverity, evalToExpectedScore, sideToMoveFromFen } from '@/lib/liveFlaw';
 import {
   MOVE_HIGHLIGHT_BEST,
   MOVE_HIGHLIGHT_BLUNDER,
@@ -48,6 +48,7 @@ import {
   TRAIN_FOCUS_ARROW_LIT_OPACITY,
   TRAIN_FOCUS_BADGE_DIM_OPACITY,
   TRAIN_FOCUS_BADGE_LIT_OPACITY,
+  TRAIN_FOCUS_LIVE_ALT_DIM_OPACITY,
 } from '@/lib/theme';
 import type { PvLine } from '@/hooks/uciParser';
 import type { RoleKey } from '@/lib/trainRevealLines';
@@ -150,6 +151,46 @@ export const TRAIN_SOFT_ALT_MOVE_ARROWS = 1;
  * length is the authority — this constant is deliberately NOT imported from
  * the backend. */
 export const TRAIN_HERRING_ALT_MOVE_ARROWS = 4;
+/** The TOTAL alternative arrows at a soft puzzle's root (quick 261010-e5l):
+ * server-certified alternatives first (still capped by
+ * TRAIN_SOFT_ALT_MOVE_ARROWS), live engine lines fill the rest. Deliberately
+ * independent of the Stockfish arrows setting (sfArrows), which governs
+ * stepped and off-line boards only. */
+export const TRAIN_SOFT_TOTAL_ALT_MOVE_ARROWS = 3;
+/** Minimum search depth for a live alternative to draw. A live alternative is a
+ * visible "this is also good" claim, and the first iterations of a MultiPV
+ * search still reorder candidates and swing evals, so a shallow line could
+ * flash a move that turns out to be an inaccuracy. 10 equals
+ * GRADING_DEPTH_FLOOR in lib/engine/gradingLadder.ts, the shallowest depth the
+ * app's own move grading trusts; it sits above EvalBar's depth-8 mate floor and
+ * below the depth-12 step gate that quick 261009-por dropped because slow
+ * phones never reached it inside the 1500 ms movetime. Kept as its own number
+ * (not imported) so retuning the bot grading ladder never moves this display
+ * gate. Checked on BOTH the top line and the candidate (secondary lines of an
+ * iteration can trail the top line by a depth). A device that never reaches it
+ * shows the board without live alternatives (fails safe). */
+export const TRAIN_LIVE_ALT_MIN_DEPTH = 10;
+/** The reveal engine's root width floor for a soft puzzle: the best move plus
+ * every alternative slot. */
+export const TRAIN_LIVE_ALT_ROOT_MULTIPV = TRAIN_SOFT_TOTAL_ALT_MOVE_ARROWS + 1;
+/** No root width floor (sharp and herring draw no live alternatives). */
+const NO_ROOT_MULTIPV_FLOOR = 0;
+
+/**
+ * The reveal engine's MultiPV floor at the puzzle position. Only a soft puzzle
+ * draws live alternatives, so only it pays the shallower root top line of a
+ * wider search; sharp and herring keep the settings width.
+ */
+export function trainRootMultiPvFloor(puzzleType: TrainPuzzleType): number {
+  switch (puzzleType) {
+    case 'sharp':
+      return NO_ROOT_MULTIPV_FLOOR;
+    case 'soft':
+      return TRAIN_LIVE_ALT_ROOT_MULTIPV;
+    case 'herring':
+      return NO_ROOT_MULTIPV_FLOOR;
+  }
+}
 
 /** Normal engine-arrow width (matches Analysis.tsx's
  * STOCKFISH_ENGINE_ARROW_WIDTH) — used for the green good-move arrows. */
@@ -565,6 +606,81 @@ export function buildTrainRevealOverlay(
   return { arrows, markers, alsoFineMoves, markerOwners };
 }
 
+export interface TrainLiveAlternativeContext {
+  puzzleType: TrainPuzzleType;
+  puzzleFen: string;
+  bestMoveUci: string | null;
+  playedMoveUci: string | null;
+  /** The overlay's alsoFineMoves: the server alternatives actually drawn green. */
+  drawnAlternatives: readonly TrainFineMove[];
+}
+
+/** True when the line carries a usable score at a trustworthy depth. */
+function isScoredLiveLine(line: PvLine): boolean {
+  if (line.depth < TRAIN_LIVE_ALT_MIN_DEPTH) return false;
+  return line.evalCp !== null || line.evalMate !== null;
+}
+
+/**
+ * Quick 261010-e5l: the soft puzzle's live-engine alternatives, drawn at the
+ * puzzle position next to the server-certified one. Walks the root search's
+ * lines 1.. in rank order and keeps those that classify as good (no
+ * inaccuracy or worse, mover POV, via the app's own classifyLiveSeverity) once
+ * both the top line and the candidate reach TRAIN_LIVE_ALT_MIN_DEPTH. Fills
+ * the slots the server alternatives left of TRAIN_SOFT_TOTAL_ALT_MOVE_ARROWS.
+ *
+ * Skipped lines (shallow, unscored, malformed, excluded or an inaccuracy) never
+ * consume a slot. Excluded: the best arrow, the played move, every drawn server
+ * alternative and an earlier live line on the same squares. The game move is
+ * deliberately NOT excluded: server alternatives are not filtered against it
+ * either, the game arrow is a thin white hint that can be a bad move while a
+ * wide translucent arrow under it adds the "also a good move" fact, and under
+ * chip focus both arrows match the Game chip by squares and light together.
+ *
+ * Live arrows are uncertified: STOCKFISH_SECONDARY_LINE hue, no badge (a live
+ * badge would need a new tier in pushMarker's precedence and could steal the
+ * game move's square) and never in `alsoFineMoves`, so the "Also fine" text
+ * stays server-only. Sharp draws none (one right move), herring keeps its own
+ * certified ladder.
+ */
+export function buildTrainLiveAlternativeArrows(
+  context: TrainLiveAlternativeContext,
+  rootPvLines: readonly PvLine[],
+): BoardArrow[] {
+  if (context.puzzleType !== 'soft') return [];
+  const slots = Math.max(0, TRAIN_SOFT_TOTAL_ALT_MOVE_ARROWS - context.drawnAlternatives.length);
+  if (slots === 0) return [];
+  const top = rootPvLines[0];
+  if (top === undefined || !isScoredLiveLine(top)) return [];
+
+  const mover = sideToMoveFromFen(context.puzzleFen);
+  const esTop = evalToExpectedScore(top.evalCp, top.evalMate, mover);
+  const drawn = new Set<string>();
+  for (const uci of [context.bestMoveUci, context.playedMoveUci]) {
+    if (uci !== null) drawn.add(fromToKey(uci));
+  }
+  for (const fine of context.drawnAlternatives) drawn.add(fromToKey(fine.uci));
+
+  const arrows: BoardArrow[] = [];
+  for (let index = 1; index < rootPvLines.length && arrows.length < slots; index++) {
+    const line = rootPvLines[index];
+    if (line === undefined || !isScoredLiveLine(line)) continue;
+    const move = line.moves[0] ?? null;
+    const squares = squaresFromUci(move);
+    if (move === null || squares === null || drawn.has(fromToKey(move))) continue;
+    const esLine = evalToExpectedScore(line.evalCp, line.evalMate, mover);
+    if (classifyLiveSeverity(esTop, esLine) !== null) continue;
+    drawn.add(fromToKey(move));
+    arrows.push({
+      ...squares,
+      color: STOCKFISH_SECONDARY_LINE,
+      width: TRAIN_BEST_MOVE_ARROW_WIDTH,
+      layerKey: `live-alt-${index}`,
+    });
+  }
+  return arrows;
+}
+
 /**
  * Phase 237 (D-04) — the board-side half of the reveal's chip focus. DIMS a
  * reveal overlay instead of filtering it: every arrow and quality badge stays
@@ -588,10 +704,17 @@ export function buildTrainRevealOverlay(
  * A null or empty `activeUcis` dims every arrow and badge (no active move).
  * A malformed UCI (< 4 chars) contributes no match and never throws.
  * `alsoFineMoves` and `markerOwners` pass through unchanged.
+ *
+ * Quick 261010-e5l: `liveArrows` (the soft root's live engine alternatives) are
+ * never chips, same as server alternatives, so like them they dim at the root
+ * unless the focused chip's move shares their squares. They dim to
+ * TRAIN_FOCUS_LIVE_ALT_DIM_OPACITY rather than the shared level because their
+ * fill is already translucent. They are returned before the overlay's arrows.
  */
 export function buildChipFocusOverlay(
   overlay: TrainRevealOverlay,
   activeUcis: readonly string[] | null,
+  liveArrows: readonly BoardArrow[] = [],
 ): TrainRevealOverlay {
   const active = activeUcis ?? [];
   const activePairs = active
@@ -610,16 +733,22 @@ export function buildChipFocusOverlay(
     return ownerUci !== undefined && activeUciSet.has(ownerUci);
   }
 
+  function focusArrow(arrow: BoardArrow, dimOpacity: number): BoardArrow {
+    const lit = arrowIsLit(arrow);
+    return {
+      ...arrow,
+      opacity: lit ? TRAIN_FOCUS_ARROW_LIT_OPACITY : dimOpacity,
+      onTop: lit,
+    };
+  }
+
   return {
     ...overlay,
-    arrows: overlay.arrows.map((arrow) => {
-      const lit = arrowIsLit(arrow);
-      return {
-        ...arrow,
-        opacity: lit ? TRAIN_FOCUS_ARROW_LIT_OPACITY : TRAIN_FOCUS_ARROW_DIM_OPACITY,
-        onTop: lit,
-      };
-    }),
+    // Live alternatives first: they paint beneath the certified arrows within a tier.
+    arrows: [
+      ...liveArrows.map((arrow) => focusArrow(arrow, TRAIN_FOCUS_LIVE_ALT_DIM_OPACITY)),
+      ...overlay.arrows.map((arrow) => focusArrow(arrow, TRAIN_FOCUS_ARROW_DIM_OPACITY)),
+    ],
     markers: overlay.markers.map((marker) => ({
       ...marker,
       opacity: markerIsLit(marker) ? TRAIN_FOCUS_BADGE_LIT_OPACITY : TRAIN_FOCUS_BADGE_DIM_OPACITY,
