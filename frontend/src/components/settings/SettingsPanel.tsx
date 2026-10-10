@@ -153,17 +153,6 @@ export function SettingsPanel() {
       </Card>
 
       <EngineSection
-        testId="settings-section-flawchess"
-        title="FlawChess engine"
-        linesHelper="Shows up to this many lines. In forcing positions the engine may find fewer candidate moves."
-        linesId="fcLines"
-        arrowsId="fcArrows"
-        lines={fcLines}
-        arrows={fcArrows}
-        groupPrefix="settings-fc"
-      />
-
-      <EngineSection
         testId="settings-section-stockfish"
         title="Stockfish"
         linesHelper="More lines means a shallower search for each line."
@@ -172,6 +161,17 @@ export function SettingsPanel() {
         lines={sfLines}
         arrows={sfArrows}
         groupPrefix="settings-sf"
+      />
+
+      <EngineSection
+        testId="settings-section-flawchess"
+        title="FlawChess engine"
+        linesHelper="Shows up to this many lines. In forcing positions the engine may find fewer candidate moves."
+        linesId="fcLines"
+        arrowsId="fcArrows"
+        lines={fcLines}
+        arrows={fcArrows}
+        groupPrefix="settings-fc"
       />
 
       {/* Server-persisted privacy choice (Phase 230 D-16), deliberately outside

@@ -118,7 +118,7 @@ BACKEND_PID=$!
 # Start frontend
 echo "Starting frontend..."
 cd frontend
-npm install
+npm install --no-audit --no-fund
 npm run dev:mobile &
 FRONTEND_PID=$!
 cd ..

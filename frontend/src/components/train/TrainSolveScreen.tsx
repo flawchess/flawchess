@@ -111,6 +111,7 @@ import { personaForId } from '@/lib/personas/personaRegistry';
 import type { Persona } from '@/lib/personas/personaRegistry';
 import { placeholderAvatarFor, resolveAvatarSrc } from '@/lib/personas/personaAvatars';
 import { useTrainSettings } from '@/hooks/useTrainSettings';
+import { SettingsSheetButton } from '@/components/settings/SettingsSheetButton';
 import { useTrainOnboarding } from '@/hooks/useTrainOnboarding';
 import { useTrainWalkthrough } from '@/hooks/useTrainWalkthrough';
 import { useTrainPuzzleTelemetry } from '@/hooks/useTrainPuzzleTelemetry';
@@ -1768,8 +1769,13 @@ export function TrainSolveScreen({
         className="flex w-full flex-col items-center gap-3 max-lg:sticky max-lg:top-0 max-lg:z-10 max-lg:bg-background"
         data-testid="train-pinned-board"
       >
-      {/* Phase 222 UAT: one compact row — "n of m", the bar, "x / y pts". */}
-      <div className="flex w-full items-center gap-3">
+      {/* Phase 222 UAT: one compact row — "n of m", the bar, "x / y pts".
+          On phones (below `sm`) the mobile header is suppressed during play,
+          so the row spans only the board and the settings cogwheel takes the
+          corner above the eval-bar slot (same `w-5` + `gap-2` geometry as the
+          board row below). At `sm`+ the desktop nav carries its own cog. */}
+      <div className="flex w-full items-center gap-2">
+      <div className="flex min-w-0 flex-1 items-center gap-3">
         <p className="shrink-0 text-sm font-semibold" data-testid="train-progress">
           {currentPosition1Based} of {totalPuzzles}
         </p>
@@ -1787,6 +1793,15 @@ export function TrainSolveScreen({
             {trainSession.sessionScore} / {trainSession.sessionSolvedCount * TRAIN_POINTS_PER_PUZZLE} pts
           </p>
         )}
+      </div>
+        {/* The h-8 tap target overhangs the 20px slot on all sides (-my-1.5
+            keeps the row at its text height, so the board is not pushed down). */}
+        <div className="flex w-5 shrink-0 justify-center sm:hidden">
+          <SettingsSheetButton
+            testId="btn-train-settings"
+            className="-my-1.5 h-8 w-8 shrink-0 text-muted-foreground"
+          />
+        </div>
       </div>
       <div
         ref={boardRef}

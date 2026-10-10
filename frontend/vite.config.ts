@@ -15,7 +15,7 @@ function ogImageHashPlugin(): Plugin {
     name: 'og-image-hash',
     apply: 'build',
     transformIndexHtml(html) {
-      const content = fs.readFileSync(path.resolve(__dirname, 'public/og-image.jpg'))
+      const content = fs.readFileSync(path.resolve(import.meta.dirname, 'public/og-image.jpg'))
       const hash = createHash('md5').update(content).digest('base64url').slice(0, 8)
       return html.replaceAll('og-image.jpg', `og-image.jpg?v=${hash}`)
     },
@@ -92,7 +92,7 @@ export default defineConfig({
     hookTimeout: HOOK_TIMEOUT_MS,
     setupFiles: ['src/vitest.setup.ts'],
   },
-  envDir: path.resolve(__dirname, '..'), // Load .env from project root
+  envDir: path.resolve(import.meta.dirname, '..'), // Load .env from project root
   optimizeDeps: {
     // Prevent Vite's esbuild optimizer from relocating the stockfish/onnxruntime-web
     // package JS to .vite/deps/, which would break their relative WASM paths.
@@ -106,7 +106,7 @@ export default defineConfig({
     tailwindcss(),
     vitePrerenderPlugin({
       renderTarget: '#root',
-      prerenderScript: path.resolve(__dirname, 'src/prerender.tsx'),
+      prerenderScript: path.resolve(import.meta.dirname, 'src/prerender.tsx'),
       additionalPrerenderRoutes: ['/privacy'],
     }),
     VitePWA({
@@ -202,7 +202,7 @@ export default defineConfig({
   ],
   resolve: {
     alias: {
-      '@': path.resolve(__dirname, './src'),
+      '@': path.resolve(import.meta.dirname, './src'),
     },
   },
   server: {

@@ -28,15 +28,15 @@ afterEach(() => {
 });
 
 describe('SettingsPanel layout (D-07, D-09)', () => {
-  it('renders the three sections in order Sound, FlawChess engine, Stockfish', () => {
+  it('renders the three sections in order Sound, Stockfish, FlawChess engine', () => {
     render(<SettingsPanel />);
     const sound = screen.getByTestId('settings-section-sound');
     const fc = screen.getByTestId('settings-section-flawchess');
     const sf = screen.getByTestId('settings-section-stockfish');
     const follows = (a: HTMLElement, b: HTMLElement): boolean =>
       Boolean(a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING);
-    expect(follows(sound, fc)).toBe(true);
-    expect(follows(fc, sf)).toBe(true);
+    expect(follows(sound, sf)).toBe(true);
+    expect(follows(sf, fc)).toBe(true);
     expect(screen.queryByRole('button', { name: /save/i })).toBeNull();
   });
 
