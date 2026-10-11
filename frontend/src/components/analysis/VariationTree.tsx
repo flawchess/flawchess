@@ -273,6 +273,21 @@ export interface FlawMarkerEntry {
   missedPly?: number;
 }
 
+/**
+ * A dimmed, never-stored continuation rendered at the end of a branch (SEED-197,
+ * Train reveal). The tokens follow the node `anchorId`, which must be a leaf: at
+ * the end of the main line, or inside that sideline's parentheses. A tap on
+ * token `i` calls `onTokenClick(i)`; preview tokens are never the current move.
+ */
+export interface VariationTreePreview {
+  /** The leaf node the preview hangs off (it renders right after that node). */
+  anchorId: NodeId;
+  /** SAN of each preview move, in order (the first is played from the anchor's position). */
+  sans: readonly string[];
+  /** Token `index` was tapped (the caller commits `index + 1` plies). */
+  onTokenClick: (index: number) => void;
+}
+
 export interface VariationTreeProps {
   nodes: Map<NodeId, MoveNode>;
   mainLine: NodeId[];
@@ -355,6 +370,12 @@ export interface VariationTreeProps {
    * keeps the minimal keep-in-view scroll.
    */
   topAlignSeq?: number;
+  /**
+   * Dimmed preview continuation (SEED-197). Honored only by the wrap/MobileTree
+   * renderer; Train is the only caller. DesktopTree ignores it and the Analysis
+   * callers pass nothing, so their output is unchanged.
+   */
+  preview?: VariationTreePreview;
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -648,6 +669,82 @@ function FlawChip({
 // ─── Mobile sub-component ────────────────────────────────────────────────────
 
 /**
+ * The closing ")" of a sideline block plus, for a free-move block only, its x
+ * delete affordance. Shared by the last real chip (no preview) and the last
+ * preview token (preview anchored at the block's tail).
+ */
+function BlockClosing({
+  block,
+  onDeleteLine,
+}: {
+  block: SiblingBlock;
+  onDeleteLine: ((rootId: NodeId) => void) | undefined;
+}): ReactNode {
+  return (
+    <>
+      {')'}
+      {!block.isTactic && (
+        <button
+          type="button"
+          data-testid={`btn-delete-line-${block.rootId}`}
+          aria-label="Delete variation"
+          className="text-muted-foreground hover:text-foreground inline-flex items-center ml-0.5 cursor-pointer"
+          onClick={(e) => {
+            e.stopPropagation();
+            onDeleteLine?.(block.rootId);
+            trackFeature('board-tool', { target: 'line-delete' });
+          }}
+        >
+          <X className="h-3.5 w-3.5" aria-hidden />
+        </button>
+      )}
+    </>
+  );
+}
+
+/**
+ * Move-number label for preview token `index` after an anchor whose position has
+ * `startPly` plies behind it: "N." for a white move, "N..." only on a leading black
+ * move (later black moves follow their white move and carry no label).
+ */
+function previewTokenLabel(startPly: number, index: number): string | null {
+  const isWhite = (startPly + index) % 2 === 0;
+  return isWhite || index === 0 ? moveLabel(startPly, index) : null;
+}
+
+/**
+ * The preview as dimmed move-list items (SEED-197). Token testids are index-based
+ * (never SAN). `closing` (the sideline's ")" and x) rides on the LAST token's
+ * `after` slot, outside the move button.
+ */
+function previewToItems(
+  preview: VariationTreePreview,
+  anchor: MoveNode | undefined,
+  closing: ReactNode | null,
+): HorizontalMoveItem[] {
+  const startPly = plyFromFen(anchor?.fen);
+  const lastIdx = preview.sans.length - 1;
+  return preview.sans.map((san, i) => {
+    const label = previewTokenLabel(startPly, i);
+    return {
+      key: `preview-${i}`,
+      ply: -1 - i, // unused: onSelect owns the click
+      numberLabel: label,
+      san,
+      dimmed: true,
+      onSelect: () => preview.onTokenClick(i),
+      testId: `variation-preview-${i}`,
+      ariaLabel: `Add engine move ${label ?? ''} ${san}`.replace(/\s+/g, ' ').trim(),
+      scrollTail: i === lastIdx,
+      after:
+        i === lastIdx && closing !== null ? (
+          <span className="text-muted-foreground select-none inline-flex items-center">{closing}</span>
+        ) : undefined,
+    };
+  });
+}
+
+/**
  * Convert a single flat sibling block into chip items, wrapped in single
  * parentheses: the FIRST chip's numberLabel gets a leading "(", the LAST chip's
  * trailing gets the severity glyph, a closing ")", and — for a free-move block
@@ -661,9 +758,13 @@ function siblingBlockToChips(
   currentNodeId: NodeId | null,
   flawMarkerByNodeId: Map<NodeId, FlawMarkerEntry> | undefined,
   onDeleteLine: ((rootId: NodeId) => void) | undefined,
+  preview?: VariationTreePreview,
 ): HorizontalMoveItem[] {
   const startPly = blockStartPly(nodes, block.forkParentId, rootPlyVal);
   const items: HorizontalMoveItem[] = [];
+  // A preview anchored at this block's tail renders inside the parentheses, so the
+  // closing ")" and x move from the last real chip onto the last preview token.
+  const hasPreview = preview !== undefined && block.chain.at(-1) === preview.anchorId;
 
   block.chain.forEach((nodeId, i) => {
     const node = nodes.get(nodeId);
@@ -675,25 +776,10 @@ function siblingBlockToChips(
 
     const flaw = flawMarkerByNodeId?.get(nodeId);
 
-    const trailing = isLast ? (
+    const trailing = isLast && !hasPreview ? (
       <span className="text-muted-foreground select-none inline-flex items-center">
         <MoveListMarker flaw={flaw} className="inline h-4 w-4 ml-0.5 align-middle" />
-        {')'}
-        {!block.isTactic && (
-          <button
-            type="button"
-            data-testid={`btn-delete-line-${block.rootId}`}
-            aria-label="Delete variation"
-            className="text-muted-foreground hover:text-foreground inline-flex items-center ml-0.5 cursor-pointer"
-            onClick={(e) => {
-              e.stopPropagation();
-              onDeleteLine?.(block.rootId);
-              trackFeature('board-tool', { target: 'line-delete' });
-            }}
-          >
-            <X className="h-3.5 w-3.5" aria-hidden />
-          </button>
-        )}
+        <BlockClosing block={block} onDeleteLine={onDeleteLine} />
       </span>
     ) : (
       <MoveListMarker flaw={flaw} className="inline h-4 w-4 ml-0.5 align-middle" />
@@ -711,6 +797,11 @@ function siblingBlockToChips(
     });
   });
 
+  if (hasPreview) {
+    const closing = <BlockClosing block={block} onDeleteLine={onDeleteLine} />;
+    items.push(...previewToItems(preview, nodes.get(preview.anchorId), closing));
+  }
+
   return items;
 }
 
@@ -724,6 +815,7 @@ function MobileTree({
   heightClass,
   flawMarkerByNodeId,
   onDeleteLine,
+  preview,
 }: VariationTreeProps) {
   const rootPlyVal = rootPly ?? 0;
   const resolvedPvNodeIds = pvNodeIds ?? new Set<NodeId>();
@@ -739,7 +831,15 @@ function MobileTree({
   }
 
   const chipsFor = (block: SiblingBlock): HorizontalMoveItem[] =>
-    siblingBlockToChips(block, nodes, rootPlyVal, currentNodeId, flawMarkerByNodeId, onDeleteLine);
+    siblingBlockToChips(
+      block,
+      nodes,
+      rootPlyVal,
+      currentNodeId,
+      flawMarkerByNodeId,
+      onDeleteLine,
+      preview,
+    );
 
   const items: HorizontalMoveItem[] = [];
   for (const block of blocksByIdx.get(-1) ?? []) items.push(...chipsFor(block));
@@ -766,6 +866,11 @@ function MobileTree({
       ariaLabel: `Move ${label ?? ''} ${node.san}`.trim(),
       trailing: <MoveListMarker flaw={flaw} className="inline h-4 w-4 ml-0.5 align-middle" />,
     });
+
+    // Main-line leaf preview: the dimmed tokens follow the anchor's own chip.
+    if (preview !== undefined && nodeId === preview.anchorId) {
+      items.push(...previewToItems(preview, node, null));
+    }
 
     for (const block of blocksByIdx.get(idx) ?? []) items.push(...chipsFor(block));
   });

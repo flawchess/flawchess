@@ -287,15 +287,15 @@ interface RevealBoardOverlay {
 }
 
 interface RevealBoardOverlayInput {
-  /** The engine's arrows for the shown position (drawn only off the known lines). */
+  /** The engine's arrows for the shown position (drawn when no preview is anchored there). */
   offLineArrows: BoardArrow[];
   /** The reveal engine's staleness-guarded lines for the shown position. */
   liveLines: readonly PvLine[];
-  /** The Stockfish arrows setting: how many live moves a stepped position may draw. */
+  /** The Stockfish arrows setting: how many live moves a previewed position may draw. */
   liveArrowCount: number;
   tree: Pick<
     TrainRevealTree,
-    'isAtRoot' | 'isOffLine' | 'stepInfo' | 'activeChip' | 'lastMove' | 'boardMarkers' | 'lastMoveColor'
+    'isAtRoot' | 'currentNodeId' | 'chipMove' | 'preview' | 'activeChip' | 'lastMove' | 'boardMarkers' | 'lastMoveColor'
   >;
   chips: readonly ChipGroup[];
   revealOverlay: TrainRevealOverlay;
@@ -306,17 +306,19 @@ interface RevealBoardOverlayInput {
 }
 
 /**
- * Phase 237: what the reveal board draws. A position off every known line (the
- * user's own sideline) draws the engine's blue arrows and the played move's
- * grade. A list-stepped line position
- * shows the quality-colored last move, the first move's badge and a blue
- * pointer at the line's next move (the solution overlay is cleared), plus the
- * live engine's other top moves as translucent secondaries once deep enough,
- * with the line's pointer painted on top. At the puzzle position the full reveal
- * overlay is drawn with ONLY the focused chip's arrow and badge lit and every
- * other one dimmed, never hidden (`buildChipFocusOverlay`); with no chip focused
- * (D-04) everything dims. Quick 261010-e5l: a soft puzzle's live engine
- * alternatives join that overlay as green arrows with 'good' badges.
+ * Phase 237 / SEED-197: what the reveal board draws. Below the puzzle position
+ * the primary blue pointer is the preview's next move, i.e. what the forward
+ * button commits (only when the preview is anchored at the shown node), with the
+ * live engine's other top moves as translucent secondaries; with no preview the
+ * engine's own blue arrows draw (a branch that already has children, a
+ * terminal position). A chip's first-move node keeps its chip's quality badge and
+ * highlight. Every other node shows the grade of a move the user played on the
+ * board; a move committed from the preview is ungraded, so it shows a plain
+ * last-move highlight. At the puzzle position the full reveal overlay is drawn
+ * with ONLY the focused chip's arrow and badge lit and every other one dimmed,
+ * never hidden (`buildChipFocusOverlay`); with no chip focused (D-04) everything
+ * dims. Quick 261010-e5l: a soft puzzle's live engine alternatives join that
+ * overlay as green arrows with 'good' badges.
  */
 function resolveRevealBoardOverlay({
   offLineArrows,
@@ -328,29 +330,33 @@ function resolveRevealBoardOverlay({
   liveAlternatives,
   puzzleLastMove,
 }: RevealBoardOverlayInput): RevealBoardOverlay {
-  if (tree.isOffLine) {
+  if (!tree.isAtRoot) {
+    const preview = tree.preview;
+    const previewNext =
+      preview !== null && preview.anchorId === tree.currentNodeId
+        ? (preview.steps[0]?.uci ?? null)
+        : null;
+    const arrows =
+      previewNext !== null
+        ? buildTrainStepOverlayArrows(previewNext, liveLines, liveArrowCount)
+        : offLineArrows;
+    const chipMove = tree.chipMove;
+    if (chipMove === null) {
+      return {
+        arrows,
+        markers: tree.boardMarkers,
+        lastMove: tree.lastMove,
+        lastMoveColor: tree.lastMoveColor,
+      };
+    }
+    // A chip's first move carries its chip's quality (190.1 UAT round 3).
+    const quality = chips.find((chip) => chip.key === chipMove.line)?.quality ?? null;
     return {
-      arrows: offLineArrows,
-      markers: tree.boardMarkers,
+      arrows,
+      markers: buildTrainStepMarkers(chipMove.uci, quality, true),
       lastMove: tree.lastMove,
-      lastMoveColor: tree.lastMoveColor,
-    };
-  }
-  const step = tree.stepInfo;
-  if (step !== null) {
-    // The first move carries its chip's quality; deeper moves are engine
-    // continuations and read as 'good' (190.1 UAT round 3).
-    const firstMoveQuality = chips.find((chip) => chip.key === step.line)?.quality ?? null;
-    const quality: TrainMoveQuality | null = step.isFirstMove ? firstMoveQuality : 'good';
-    return {
-      arrows: buildTrainStepOverlayArrows(step.nextMoveUci, liveLines, liveArrowCount),
-      markers: buildTrainStepMarkers(step.lastMoveUci, quality, step.isFirstMove),
-      lastMove: { from: step.lastMoveUci.slice(0, 2), to: step.lastMoveUci.slice(2, 4) },
       lastMoveColor: quality !== null ? TRAIN_STEP_HIGHLIGHT[quality] : undefined,
     };
-  }
-  if (!tree.isAtRoot) {
-    return { arrows: [], markers: [], lastMove: tree.lastMove, lastMoveColor: undefined };
   }
   const focusedChip = chips.find((chip) => chip.key === tree.activeChip);
   const lit = buildChipFocusOverlay(

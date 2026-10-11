@@ -1,27 +1,30 @@
 /**
  * TrainMoveTreeList — the reveal's single move list (Phase 237, D-03).
  *
- * Renders the active chip's pre-loaded line (plus the user's own sidelines) from
- * `useTrainRevealTree`'s list view through `VariationTree` in its `'wrap'`
- * variant: numbered tokens that wrap at every width, inline sidelines and a
- * delete x per free sideline. A tap on a token moves the tree to that node.
+ * Renders the active chip's first move, the user's committed continuation and
+ * sidelines from `useTrainRevealTree`'s list view through `VariationTree` in its
+ * `'wrap'` variant: numbered tokens that wrap at every width, inline sidelines and
+ * a delete x per free sideline. A tap on a token moves the tree to that node.
  *
- * Plan 06: off the known lines (on a sideline of the user's own) a one-line
- * Stockfish row sits above the list (D-03) with as many lines as the Stockfish
- * lines setting, laid out like the analysis board's (Phase 237 UAT): each line is
- * collapsed behind its own chevron, expanding by wrapping on desktop and by
- * scrolling sideways on mobile. A click on a move in it plays that engine line
- * into the sideline. On the known lines the row is absent.
+ * SEED-197: at a leaf the list ends in a dimmed engine preview (at most six
+ * plies, no eval). A tap on preview token i commits i + 1 plies as real nodes.
+ * The Stockfish row sits below the list on every node except the puzzle
+ * position, with as many lines as the Stockfish lines setting (each line
+ * collapsed behind its own chevron, Phase 237 UAT). It always shows lines 1..N,
+ * so the top line's live eval reads there, like the analysis board (SEED-197
+ * UAT: a live eval pill inside the move list was confusing). A click on a move
+ * in it plays that engine line into the tree.
  */
 
 import type { ReactElement } from 'react';
 
 import { EngineLines, EngineLinesSkeleton } from '@/components/analysis/EngineLines';
 import { VariationTree } from '@/components/analysis/VariationTree';
+import type { VariationTreePreview } from '@/components/analysis/VariationTree';
 import { useIsDesktop } from '@/hooks/useIsDesktop';
+import { fenToPly } from '@/hooks/useTrainRevealTree';
 import type { TrainRevealTree } from '@/hooks/useTrainRevealTree';
 import { useEngineDisplaySettings } from '@/lib/engineSettings';
-import { dropLineMove } from '@/lib/trainArrows';
 
 /**
  * Height of the reveal move list: two wrapped token rows on mobile, four on desktop
@@ -41,10 +44,10 @@ interface TrainMoveTreeListProps {
 }
 
 /** The Stockfish row: the lines setting, compact (sideways scroll) on mobile.
- * Quick 261009-por: shown on every node except the puzzle position, i.e. on the
- * stepped known lines as well as sidelines. At the puzzle position the chips are
- * the server's graded answer key, and a short live ranking there would read as
- * contradicting it (Phase 211 dropped client-engine alternatives for that). */
+ * Quick 261009-por: shown on every node except the puzzle position. At the puzzle
+ * position the chips are the server's graded answer key, and a short live ranking
+ * there would read as contradicting it (Phase 211 dropped client-engine
+ * alternatives for that). */
 function TrainStockfishRow({
   tree,
   flipped,
@@ -54,27 +57,17 @@ function TrainStockfishRow({
 }): ReactElement {
   const isDesktop = useIsDesktop();
   const { sfLines } = useEngineDisplaySettings();
-  // Quick 261009-por: on a stepped chip line the line owns the primary move (its
-  // blue pointer and the chip's eval), so the row drops the live line that
-  // repeats it and draws every other badge secondary, like the board arrows.
-  // When the engine agrees with the line the row shows one line fewer than the
-  // setting (its reserved height keeps the layout still).
-  const step = tree.stepInfo;
-  // Slice before filtering, as the arrows do, so rows and arrows cover the same ranks.
-  const rows =
-    step !== null ? dropLineMove(tree.pvLines.slice(0, sfLines), step.nextMoveUci) : tree.pvLines;
   return (
     <div data-testid="train-sf-row">
       {tree.pvLines.length === 0 ? (
         <EngineLinesSkeleton rows={sfLines} compact={!isDesktop} />
       ) : (
         <EngineLines
-          pvLines={rows}
+          pvLines={tree.pvLines}
           maxLines={sfLines}
-          // The skeleton above covers "no lines yet"; an empty `rows` here means
-          // the engine agrees with the line, which must not pulse as loading.
           isAnalyzing={false}
-          allSecondary={step !== null}
+          // Without it the row numbered every line from "1." (SEED-197 UAT).
+          startPly={fenToPly(tree.fen)}
           baseFen={tree.fen}
           flipped={flipped}
           onMoveClick={tree.playLine}
@@ -83,6 +76,18 @@ function TrainStockfishRow({
       )}
     </div>
   );
+}
+
+/** The tree's preview as VariationTree's render model, or undefined without one. */
+function toVariationPreview(tree: TrainRevealTree): VariationTreePreview | undefined {
+  const preview = tree.preview;
+  if (preview === null || preview.steps.length === 0) return undefined;
+  return {
+    anchorId: preview.anchorId,
+    sans: preview.steps.map((step) => step.san),
+    // Token i commits i + 1 plies (at the puzzle position the chip move is played first).
+    onTokenClick: (index) => tree.commitPreview(index + 1),
+  };
 }
 
 export function TrainMoveTreeList({
@@ -110,6 +115,7 @@ export function TrainMoveTreeList({
           onDeleteLine={tree.deleteLine}
           flawMarkerByNodeId={tree.moveListMarkers}
           heightClass={TRAIN_MOVE_TREE_HEIGHT_CLASS}
+          preview={toVariationPreview(tree)}
         />
       </div>
       {!tree.isAtRoot && <TrainStockfishRow tree={tree} flipped={flipped} />}

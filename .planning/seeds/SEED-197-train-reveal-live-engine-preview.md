@@ -1,6 +1,6 @@
 ---
 id: SEED-197
-status: dormant
+status: implemented by quick 261011-lwy (branch quick/seed-197-live-engine-preview, 2026-10-11); close at release
 planted: 2026-10-11
 planted_during: Phase 238 (Endgame Stats percentile-first), ad-hoc Train reveal UX discussion
 trigger_when: owner picks a Train reveal / puzzle solution screen UX pass, or any rework of useTrainRevealTree / trainRevealLines
@@ -49,9 +49,15 @@ Facts behind it (verified in code, 2026-10-11):
    step-back). Tapping a preview token commits up to it (like `playLine` from the Stockfish row).
 5. **No preview when stepped back** to a node that already has children. Existing moves show the
    continuation; › follows last-visited child as today.
-6. **Live eval badge leads the preview** (`formatScore` styling, same reading as the eval bar).
-7. **Stockfish row:** at a leaf shows lines 2..N only (line 1 is the preview); elsewhere all N lines.
-   Replaces `dropLineMove` / `allSecondary`.
+6. ~~**Live eval badge leads the preview**~~ Dropped in UAT (2026-10-11): an eval badge inside the move
+   list was confusing. The preview is dimmed tokens only.
+7. **Stockfish row:** always lines 1..N (UAT 2026-10-11; first build showed 2..N at a leaf). Line 1 is
+   the same top line as the preview and carries its live eval. Replaces `dropLineMove` / `allSecondary`.
+   Brief mismatch accepted: until the live search reaches `TRAIN_LIVE_ALT_MIN_DEPTH` the preview shows
+   the inherited/seed line while row 1 shows the shallow live line.
+10. **Minimum preview length (UAT 2026-10-11):** chip move + at least 5 preview plies. A live line
+   shorter than `TRAIN_PREVIEW_MIN_PLIES` (5) yields to a longer stored/seed/inherited line that agrees
+   on its first move; a live line that disagrees on the first move always wins (never padded).
 8. Playing a move that differs from the preview just commits it (new sideline if needed); previews are
    ephemeral and never persisted.
 9. **Edge cases:** no preview at mate/stalemate; `MAX_LINE_PLIES` no longer caps committed nodes, only

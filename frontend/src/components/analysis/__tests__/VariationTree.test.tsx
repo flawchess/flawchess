@@ -761,4 +761,90 @@ describe('VariationTree', () => {
     const desktopTree = screen.getByTestId('variation-tree-desktop');
     expect(desktopTree.querySelectorAll('svg').length).toBe(0);
   });
+
+  // ─── SEED-197: dimmed preview (wrap variant only) ───────────────────────────
+
+  describe('preview (SEED-197)', () => {
+    const SANS = ['Nc6', 'Bb5'];
+
+    function renderWrap(preview?: { anchorId: NodeId }) {
+      const { nodes, mainLine } = buildFixture();
+      const onNodeClick = vi.fn();
+      const onDeleteLine = vi.fn();
+      const onTokenClick = vi.fn();
+      render(
+        <VariationTree
+          variant="wrap"
+          nodes={nodes}
+          mainLine={mainLine}
+          currentNodeId={3}
+          onNodeClick={onNodeClick}
+          onDeleteLine={onDeleteLine}
+          preview={
+            preview
+              ? { anchorId: preview.anchorId, sans: SANS, onTokenClick }
+              : undefined
+          }
+        />,
+      );
+      return { onNodeClick, onDeleteLine, onTokenClick };
+    }
+
+    it('without a preview prop no preview token renders', () => {
+      renderWrap();
+      expect(screen.queryByTestId('variation-preview-0')).toBeNull();
+    });
+
+    it('main-line leaf: dimmed tokens follow the last move, with no eval pill', () => {
+      const { onNodeClick, onTokenClick } = renderWrap({ anchorId: 3 });
+      const tokens = [0, 1].map((i) => screen.getByTestId(`variation-preview-${i}`));
+      expect(tokens.map((t) => t.textContent)).toEqual(['Nc6', 'Bb5']);
+      // Dimmed, never the current step.
+      for (const token of tokens) {
+        expect(token.className).toContain('text-muted-foreground');
+        expect(token.getAttribute('aria-current')).toBeNull();
+      }
+      // SEED-197 UAT: the live eval lives in the Stockfish row, not the move list.
+      expect(screen.queryByTestId('variation-preview-eval')).toBeNull();
+      // Document order: Nf3 chip, then the preview tokens.
+      const nf3 = screen.getByTestId('variation-node-3');
+      expect(nf3.compareDocumentPosition(tokens[0]!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+      // A token tap reports its index and never reaches onNodeClick.
+      fireEvent.click(tokens[1]!);
+      expect(onTokenClick).toHaveBeenCalledWith(1);
+      expect(onNodeClick).not.toHaveBeenCalled();
+      // Black to move at the anchor: the first token carries "2...", the white reply "3.".
+      const mobile = screen.getByTestId('variation-tree-mobile');
+      expect(mobile.textContent).toContain('2...');
+      expect(mobile.textContent).toContain('3.');
+    });
+
+
+    it('sideline leaf: tokens render inside the parentheses, before ")" and the delete x', () => {
+      const { onDeleteLine } = renderWrap({ anchorId: 4 });
+      const sidelineChip = screen.getByTestId('variation-node-4');
+      const lastToken = screen.getByTestId('variation-preview-1');
+      // The closing ")" and x moved off the real chip and onto the last preview token.
+      expect(sidelineChip.textContent).not.toContain(')');
+      const closing = lastToken.parentElement!;
+      expect(closing.textContent).toContain(')');
+      const x = screen.getByTestId('btn-delete-line-4');
+      expect(closing.contains(x)).toBe(true);
+      // The x is a sibling of the token button, never nested inside it.
+      expect(lastToken.contains(x)).toBe(false);
+      fireEvent.click(x);
+      expect(onDeleteLine).toHaveBeenCalledWith(4);
+      expect(
+        sidelineChip.compareDocumentPosition(screen.getByTestId('variation-preview-0')) &
+          Node.DOCUMENT_POSITION_FOLLOWING,
+      ).toBeTruthy();
+    });
+
+    it('a sideline without a preview keeps its ")" and x on its own last chip', () => {
+      renderWrap();
+      const sidelineChip = screen.getByTestId('variation-node-4');
+      expect(sidelineChip.textContent).toContain(')');
+      expect(sidelineChip.contains(screen.getByTestId('btn-delete-line-4'))).toBe(true);
+    });
+  });
 });

@@ -10,9 +10,10 @@ in `YYYY-MM-DD` (Europe/Zurich).
 
 ### Changed
 
+- Train: each solution chip now gives only its first move (its eval is the graded eval), and the rest of the line is a faded live engine line at the end of the move list that improves while the engine searches. The forward button or right arrow adds its next move, tapping a faded move adds the line up to it, and engine moves added this way are not graded.
 - Train: on puzzles with several good moves, the solution board now shows up to three good alternatives at the puzzle position. The certified alternative comes first, and the engine fills the remaining slots with its own good moves once its search is deep enough, shown the same way (green arrow with a checkmark, listed under "Also fine"); moves it rates an inaccuracy or worse are never shown.
 - Train: on phones, the solution screen's bottom bar now matches the analysis page's board controls (icon with a label under it), with Analyze as one more control beside them; the forward button reads "Fwd" so it is not confused with Next. The small analyze icon next to the game line is gone, since the Analyze button does the same.
-- Train: when you step through a solution line, the board now also shows the engine's other top moves as faint arrows (as many as your Stockfish arrows setting) and the Stockfish lines row below the move list. The line's next move keeps the solid blue arrow and the chip's eval, so the row leaves out the engine line that repeats it and shows the rest as secondary lines.
+- Train: when you step through a solution line, the board now also shows the engine's other top moves as faint arrows (as many as your Stockfish arrows setting) and the Stockfish lines row below the move list. Its top line carries the live eval and matches the faded preview, and its moves are numbered from the position on the board.
 - Train: every solution screen now has an Analyze button. Puzzles from your own games still open the whole game one move before the mistake; red herrings and warm-up puzzles open the puzzle position on the analysis board instead of linking to the source game.
 
 ### Fixed

@@ -4,12 +4,14 @@
  *
  * The reveal shows up to three "role" lines: Your move, Best move and the move
  * Played in game. Roles whose first move coincides merge into ONE chip (D-02:
- * "Move = Best"); each chip's line is pre-loaded as a root branch of one
- * `useAnalysisBoard` tree, capped at MAX_LINE_PLIES (D-03). Which tree nodes
- * belong to which chip is never stored on a node: it is derived by walking each
- * chip's UCI list through the tree (`walkLinePath`), so late-arriving lines,
- * child reuse and a hand-played move that happens to match a line all fall out
- * of the same code (RESEARCH Pattern 1).
+ * "Move = Best"); each chip contributes ONLY its first move as a root branch of
+ * one `useAnalysisBoard` tree (SEED-197). Everything after that move is an
+ * ordinary free node, and the engine continuation is a dimmed preview that is
+ * never stored in the tree (`trainRevealPreview.ts`). Which tree nodes belong to
+ * which chip is never stored on a node: it is derived by walking each chip's
+ * first move through the tree (`walkLinePath`) and attributing the subtree under
+ * it to that chip, so child reuse and a hand-played move that happens to match
+ * a chip's move all fall out of the same code (RESEARCH Pattern 1).
  */
 
 import { Chess } from 'chess.js';
@@ -35,14 +37,6 @@ export const ROLE_SHORT_LABELS: Record<RoleKey, string> = {
 /** The chip whose arrow is lit when the reveal opens, and what rewinding to the
  * puzzle position restores when no chip is focused (RESEARCH A1). */
 export const DEFAULT_ROOT_FOCUS: RoleKey = 'your';
-
-/**
- * Phase 200 UAT: a pre-loaded line steps at most this many plies (six full
- * moves — about two wrapped token rows; UAT round 3 raised it from ten). The
- * deep tail of a long PV is noise on the reveal. Moves past the end are
- * ordinary user forks (D-03).
- */
-export const MAX_LINE_PLIES = 12;
 
 /**
  * Local discriminated state for the reveal-time "played in game" search
@@ -72,9 +66,6 @@ export interface ChipGroup {
   label: string;
   /** The line to display, or null while it is not known yet (see `pending`). */
   line: TrainEngineLine | null;
-  /** The UCI moves to pre-load as a root branch: capped at MAX_LINE_PLIES and
-   * always starting with `uci` (just `[uci]` while the line is unknown). */
-  lineUcis: string[];
   /** 'loading' while the line is still being searched, 'failed' once the search
    * gave up. Null for a ready chip (Phase 236 D-14/D-15). */
   pending: 'loading' | 'failed' | null;
@@ -127,13 +118,6 @@ export function revealBestUciOf(
   // settled, so moves[0] was undefined and the Best chip vanished while the board
   // arrow (which already used bestMoveUci) still drew it. One predicate now.
   return gradeResult?.bestMoveUci ?? instantGrade?.keyUci ?? null;
-}
-
-/** The pre-load list for a chip: the line capped at MAX_LINE_PLIES when it
- * starts with the chip's own first move, else just that first move. */
-function capLineUcis(uci: string, line: TrainEngineLine | null): string[] {
-  if (line === null || line.moves[0] !== uci) return [uci];
-  return line.moves.slice(0, MAX_LINE_PLIES);
 }
 
 /**
@@ -222,7 +206,6 @@ export function buildChipGroups(input: BuildChipGroupsInput): ChipGroup[] {
       san: sanFromUci(puzzleFen, uci),
       label: roles.map((r) => ROLE_SHORT_LABELS[r]).join(' = '),
       line,
-      lineUcis: capLineUcis(uci, line),
       pending: resolveChipPending(roles, line, input),
       quality,
     });
@@ -331,12 +314,37 @@ export interface TreeListView {
   mainLine: NodeId[];
 }
 
+/** The lowest-id child of `parentId` (null = the root), i.e. the first-added
+ * continuation, which is the main line (analysis-board semantics). */
+function lowestIdChild(nodes: Map<NodeId, MoveNode>, parentId: NodeId | null): MoveNode | undefined {
+  let lowest: MoveNode | undefined;
+  for (const node of nodes.values()) {
+    if (node.parentId !== parentId) continue;
+    if (lowest === undefined || node.id < lowest.id) lowest = node;
+  }
+  return lowest;
+}
+
+/** `firstId` followed by the lowest-id child chain down to a leaf. Bounded by the
+ * tree size so a malformed parent cycle cannot loop. */
+function mainLineFrom(nodes: Map<NodeId, MoveNode>, firstId: NodeId): NodeId[] {
+  const line: NodeId[] = [firstId];
+  let cursor: NodeId = firstId;
+  while (line.length <= nodes.size) {
+    const next = lowestIdChild(nodes, cursor);
+    if (next === undefined) break;
+    line.push(next.id);
+    cursor = next.id;
+  }
+  return line;
+}
+
 /**
- * The list the user sees for the active chip (sketch `selectedListHtml`): the
- * chip's line as the main line, the free sidelines hanging off it, and the free
- * root forks (rendered before move 1). The other chips' lines, and the free
- * subtrees under them, are excluded. With no active chip (D-04) the list is
- * only the user's own root-fork subtrees.
+ * The list the user sees for the active chip: its first move followed by the
+ * first-added continuation chain as the main line (analysis-board semantics,
+ * SEED-197), the later-added children as ordinary sidelines, and the free root
+ * forks (rendered before move 1). The other chips' subtrees are excluded. With
+ * no active chip (D-04) the list is only the user's own root-fork subtrees.
  */
 export function buildTreeListView(
   nodes: Map<NodeId, MoveNode>,
@@ -349,7 +357,8 @@ export function buildTreeListView(
     const owner = owners.get(node.id) ?? null;
     if (owner === null || owner === activeChip) view.set(node.id, node);
   }
-  const mainLine = activeChip !== null ? [...(linePaths[activeChip] ?? [])] : [];
+  const firstId = activeChip !== null ? linePaths[activeChip]?.[0] : undefined;
+  const mainLine = firstId !== undefined ? mainLineFrom(nodes, firstId) : [];
   return { nodes: view, mainLine };
 }
 
@@ -363,14 +372,14 @@ export interface ForwardTargetInput {
 }
 
 /**
- * Where › (and ArrowRight) goes. NOT useAnalysisBoard.goForward, whose
- * lowest-id / pv-first rule would step into the wrong chip at the root
- * (RESEARCH Pitfall 3):
- * - at the puzzle position: the ACTIVE chip's first move (with no active chip,
- *   D-04: the last-visited root fork, else the first one);
- * - below the root: the last-visited child, then the next node of the known
- *   line the current node is on, then the lowest-id child (a free sideline).
- * Null when the node has no children.
+ * Where › (and ArrowRight) goes through EXISTING nodes. NOT
+ * useAnalysisBoard.goForward, whose lowest-id / pv-first rule would step into the
+ * wrong chip at the root (RESEARCH Pitfall 3):
+ * - at the puzzle position: the ACTIVE chip's first move (`linePaths` is read only
+ *   here; with no active chip, D-04: the last-visited root fork, else the first);
+ * - below the root: the last-visited child, else the lowest-id child (the main
+ *   line continuation).
+ * Null when the node has no children; the caller then commits the preview.
  */
 export function resolveForwardTarget({
   nodes,
@@ -379,21 +388,14 @@ export function resolveForwardTarget({
   linePaths,
   lastChildByParent,
 }: ForwardTargetInput): NodeId | null {
-  const children: MoveNode[] = [];
-  for (const node of nodes.values()) {
-    if (node.parentId === currentNodeId) children.push(node);
-  }
-  const first = children.reduce<MoveNode | undefined>(
-    (lowest, node) => (lowest === undefined || node.id < lowest.id ? node : lowest),
-    undefined,
-  );
+  const first = lowestIdChild(nodes, currentNodeId);
   if (first === undefined) return null;
 
   // A remembered child only counts while it still hangs off the current node
   // (ids are reset with the tree, so a stale entry must not be trusted).
   const remembered = lastChildByParent.get(currentNodeId);
   const lastChild =
-    remembered !== undefined && children.some((child) => child.id === remembered)
+    remembered !== undefined && nodes.get(remembered)?.parentId === currentNodeId
       ? remembered
       : null;
 
@@ -401,14 +403,7 @@ export function resolveForwardTarget({
     if (activeChip !== null) return linePaths[activeChip]?.[0] ?? null;
     return lastChild ?? first.id;
   }
-  if (lastChild !== null) return lastChild;
-  for (const key of CANONICAL_ROLE_ORDER) {
-    const path = linePaths[key] ?? [];
-    const index = path.indexOf(currentNodeId);
-    if (index < 0) continue;
-    return path[index + 1] ?? first.id;
-  }
-  return first.id;
+  return lastChild ?? first.id;
 }
 
 // ─── Snapshot (restored reveal) ──────────────────────────────────────────────
@@ -424,15 +419,26 @@ export const REVEAL_TREE_SNAPSHOT_MAX_PLIES = 64;
 /**
  * The reveal tree as UCI paths, never node ids: ids differ across a rebuild
  * because lines graft asynchronously (the game line arrives after a restore).
- * Known-line nodes are re-seeded from the chips, so only the user's own
- * sidelines and the shown position need persisting.
+ * Chip first moves are re-seeded from the chips, so every COMMITTED continuation
+ * (hand-played or committed from the preview) persists as a path. The dimmed
+ * preview never does: it is never in the tree.
  */
 export interface RevealTreeSnapshot {
   rootFocus: RoleKey | null;
   /** UCIs from the puzzle position to the shown position. */
   currentPath: string[];
-  /** UCIs from the puzzle position to each free leaf (the user's sidelines). */
+  /** UCIs from the puzzle position to each leaf beyond a chip's first move, in
+   * DFS pre-order (children by ascending id) so replaying them in order rebuilds
+   * the same first-added main line. */
   sidelinePaths: string[][];
+  /**
+   * UCIs from the puzzle position to each node COMMITTED from the engine preview
+   * (never graded, SEED-197). The node-id based committed set does not survive a
+   * rebuild (ids differ), so a restore re-resolves these paths to re-mark the
+   * regrafted nodes. Omitted when nothing was committed (and by older bundles),
+   * which restores with nothing marked.
+   */
+  committedPaths?: string[][];
 }
 
 function uciPathTo(nodes: Map<NodeId, MoveNode>, id: NodeId | null): string[] {
@@ -444,24 +450,73 @@ function uciPathTo(nodes: Map<NodeId, MoveNode>, id: NodeId | null): string[] {
     .slice(0, REVEAL_TREE_SNAPSHOT_MAX_PLIES);
 }
 
-/** Serializes the tree: the focus, the shown position and every free leaf. */
+/** Children of each parent (null = the root), each list sorted by ascending id. */
+function childrenByParent(nodes: Map<NodeId, MoveNode>): Map<NodeId | null, NodeId[]> {
+  const children = new Map<NodeId | null, NodeId[]>();
+  for (const node of nodes.values()) {
+    const siblings = children.get(node.parentId);
+    if (siblings === undefined) children.set(node.parentId, [node.id]);
+    else siblings.push(node.id);
+  }
+  for (const siblings of children.values()) siblings.sort((a, b) => a - b);
+  return children;
+}
+
+/** Leaf ids in DFS pre-order, children visited in ascending id. */
+function leavesInDfsOrder(nodes: Map<NodeId, MoveNode>): NodeId[] {
+  const children = childrenByParent(nodes);
+  const leaves: NodeId[] = [];
+  // Explicit stack: push siblings in descending id so the lowest pops first.
+  const stack: NodeId[] = [...(children.get(null) ?? [])].reverse();
+  while (stack.length > 0) {
+    const id = stack.pop();
+    if (id === undefined) break;
+    const kids = children.get(id);
+    if (kids === undefined) leaves.push(id);
+    else stack.push(...[...kids].reverse());
+  }
+  return leaves;
+}
+
+/** UCI path of every preview-committed node still in the tree, capped like the
+ * sideline paths. A node deeper than the ply cap is skipped: its truncated path
+ * would mark a different (shallower) node on restore. */
+function committedUciPaths(
+  nodes: Map<NodeId, MoveNode>,
+  committedIds: ReadonlySet<NodeId>,
+): string[][] {
+  const paths: string[][] = [];
+  for (const id of committedIds) {
+    if (paths.length >= REVEAL_TREE_SNAPSHOT_MAX_PATHS) break;
+    if (!nodes.has(id) || pathToNode(nodes, id).length > REVEAL_TREE_SNAPSHOT_MAX_PLIES) continue;
+    paths.push(uciPathTo(nodes, id));
+  }
+  return paths;
+}
+
+/** Serializes the tree: the focus, the shown position and every leaf beyond a
+ * chip's first move (a chip-only leaf is re-seeded, so it is skipped), plus the
+ * paths of the nodes committed from the engine preview. */
 export function buildRevealTreeSnapshot(
   nodes: Map<NodeId, MoveNode>,
   currentNodeId: NodeId | null,
   linePaths: Partial<Record<RoleKey, NodeId[]>>,
   rootFocus: RoleKey | null,
+  committedIds: ReadonlySet<NodeId> = new Set(),
 ): RevealTreeSnapshot {
   const known = new Set(Object.values(linePaths).flatMap((path) => path ?? []));
-  const parents = new Set<NodeId>();
-  for (const node of nodes.values()) {
-    if (node.parentId !== null) parents.add(node.parentId);
-  }
   const sidelinePaths: string[][] = [];
-  for (const node of nodes.values()) {
+  for (const leafId of leavesInDfsOrder(nodes)) {
     if (sidelinePaths.length >= REVEAL_TREE_SNAPSHOT_MAX_PATHS) break;
-    // A free LEAF: its root->leaf path also covers every free ancestor of it.
-    if (known.has(node.id) || parents.has(node.id)) continue;
-    sidelinePaths.push(uciPathTo(nodes, node.id));
+    if (known.has(leafId)) continue;
+    sidelinePaths.push(uciPathTo(nodes, leafId));
   }
-  return { rootFocus, currentPath: uciPathTo(nodes, currentNodeId), sidelinePaths };
+  const snapshot: RevealTreeSnapshot = {
+    rootFocus,
+    currentPath: uciPathTo(nodes, currentNodeId),
+    sidelinePaths,
+  };
+  const committedPaths = committedUciPaths(nodes, committedIds);
+  if (committedPaths.length > 0) snapshot.committedPaths = committedPaths;
+  return snapshot;
 }

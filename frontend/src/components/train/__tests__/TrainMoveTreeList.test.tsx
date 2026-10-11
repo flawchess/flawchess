@@ -4,6 +4,10 @@
  * useTrainRevealTree, which drives TrainLineChips and TrainMoveTreeList together
  * (no mock of either module), so the chip -> tree -> list path is proven as one
  * slice before the reveal screen mounts it.
+ *
+ * SEED-197: each chip owns only its first move; the rest of its graded line is the
+ * dimmed preview at the end of the list, and the Stockfish row drops the top engine
+ * line at a previewed leaf.
  */
 
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
@@ -16,7 +20,6 @@ import { buildChipGroups } from '@/lib/trainRevealLines';
 import { TrainLineChips } from '@/components/train/TrainLineChips';
 import { TrainMoveTreeList } from '@/components/train/TrainMoveTreeList';
 import { TooltipProvider } from '@/components/ui/tooltip';
-import { STOCKFISH_BADGE_SECONDARY } from '@/lib/theme';
 
 vi.mock('@/lib/sounds', () => ({
   playSound: vi.fn(),
@@ -25,8 +28,9 @@ vi.mock('@/lib/sounds', () => ({
 
 // The tree hook owns the reveal's one Stockfish engine (plan 06). jsdom has no
 // Worker, so drive it with a mutable state object (the useTrainRevealTree test's
-// pattern): one PV line whose first move is `engineState.pvFirstMove`.
-const engineState = { pvFirstMove: 'e7e5' };
+// pattern): `lineCount` PV lines, the first starting with `engineState.pvFirstMove`.
+const SECONDARY_ENGINE_MOVES = ['c7c5', 'e7e6', 'd7d5', 'c7c6'];
+const engineState = { pvFirstMove: 'e7e5', lineCount: 3 };
 vi.mock('@/hooks/useStockfishEngine', () => ({
   useStockfishEngine: (options: { fen: string | null; enabled: boolean; multiPv: number }) => {
     const live = options.fen !== null && options.enabled;
@@ -34,7 +38,13 @@ vi.mock('@/hooks/useStockfishEngine', () => ({
       evalCp: live ? 20 : null,
       evalMate: null,
       pvLines: live
-        ? [{ multipv: 1, depth: 10, moves: [engineState.pvFirstMove], evalCp: 20, evalMate: null }]
+        ? Array.from({ length: engineState.lineCount }, (_, i) => ({
+            multipv: i + 1,
+            depth: 10,
+            moves: [i === 0 ? engineState.pvFirstMove : (SECONDARY_ENGINE_MOVES[i - 1] ?? 'a7a6')],
+            evalCp: 20,
+            evalMate: null,
+          }))
         : [],
       depth: live ? 10 : 0,
       isAnalyzing: false,
@@ -101,20 +111,41 @@ beforeAll(() => {
 afterEach(() => {
   cleanup();
   engineState.pvFirstMove = 'e7e5';
+  engineState.lineCount = 3;
 });
 
+/** The "Line N" prefix of every engine row badge, in render order. */
+function rowRanks(): string[] {
+  return screen.queryAllByLabelText(/^Line \d+:/).map((el) => (el.getAttribute('aria-label') ?? '').split(':')[0]!);
+}
+
+function renderHarness() {
+  return render(
+    <TooltipProvider>
+      <Harness />
+    </TooltipProvider>,
+  );
+}
+
 describe('TrainLineChips + TrainMoveTreeList over the real tree hook', () => {
-  it('tracer: a chip tap switches the list to its line and a list tap moves the tree', () => {
-    render(<Harness />);
+  it('tracer: the list shows the chip move plus a dimmed preview; a preview tap commits it', () => {
+    renderHarness();
     const list = () => screen.getByTestId('train-move-tree');
 
     expect(screen.getByTestId('train-chip-your').getAttribute('aria-pressed')).toBe('true');
-    expect(within(list()).getByText('e4')).toBeTruthy();
-    expect(within(list()).getByText('e5')).toBeTruthy();
-    expect(within(list()).getByText('Nf3')).toBeTruthy();
+    // Seed item 1: e4 is the only real node, e5/Nf3 are the preview of the graded line.
+    expect(within(list()).getByText('e4').closest('[data-testid^="variation-node-"]')).toBeTruthy();
+    expect(screen.getByTestId('variation-preview-0').textContent).toContain('e5');
+    expect(screen.getByTestId('variation-preview-1').textContent).toContain('Nf3');
+    expect(within(list()).queryByTestId('variation-preview-2')).toBeNull();
+    // SEED-197 UAT: no eval pill in the move list; the chip keeps the frozen graded eval.
+    expect(screen.queryByTestId('variation-preview-eval')).toBeNull();
+    expect(screen.getByTestId('train-chip-your-eval').getAttribute('title')).toBe('Graded eval');
 
-    fireEvent.click(within(list()).getByText('e5'));
+    // Tapping the e5 preview token commits it: the board moves and e5 becomes a real node.
+    fireEvent.click(screen.getByTestId('variation-preview-0'));
     expect(screen.getByTestId('harness-fen').textContent).toBe(fenAfter('e4', 'e5'));
+    expect(within(list()).getByText('e5').closest('[data-testid^="variation-node-"]')).toBeTruthy();
 
     // D-01: a chip tap from another chip's line returns to the puzzle position.
     fireEvent.click(screen.getByTestId('train-chip-best'));
@@ -122,60 +153,56 @@ describe('TrainLineChips + TrainMoveTreeList over the real tree hook', () => {
     expect(screen.getByTestId('train-chip-best').getAttribute('aria-pressed')).toBe('true');
     expect(screen.getByTestId('train-chip-your').getAttribute('aria-pressed')).toBe('false');
     expect(within(list()).getByText('d4')).toBeTruthy();
-    expect(within(list()).getByText('d5')).toBeTruthy();
-    expect(within(list()).getByText('c4')).toBeTruthy();
+    expect(screen.getByTestId('variation-preview-0').textContent).toContain('d5');
+    expect(screen.getByTestId('variation-preview-1').textContent).toContain('c4');
     expect(within(list()).queryByText('Nf3')).toBeNull();
 
-    fireEvent.click(within(list()).getByText('d5'));
-    expect(screen.getByTestId('harness-fen').textContent).toBe(fenAfter('d4', 'd5'));
+    fireEvent.click(within(list()).getByText('d4'));
+    expect(screen.getByTestId('harness-fen').textContent).toBe(fenAfter('d4'));
   });
 
-  it('quick 261009-por: stepping a known line renders the Stockfish row; the puzzle position does not', () => {
-    render(
-      <TooltipProvider>
-        <Harness />
-      </TooltipProvider>,
-    );
+  it('a preview token tap at the puzzle position plays the chip move plus the tapped plies', () => {
+    renderHarness();
+    fireEvent.click(screen.getByTestId('variation-preview-1'));
+    expect(screen.getByTestId('harness-fen').textContent).toBe(fenAfter('e4', 'e5', 'Nf3'));
+  });
+
+  it('the Stockfish row is absent at the puzzle position and shown after stepping onto a node', () => {
+    renderHarness();
     expect(screen.queryByTestId('train-sf-row')).toBeNull();
-    fireEvent.click(within(screen.getByTestId('train-move-tree')).getByText('e5'));
-    expect(screen.getByTestId('train-sf-row')).toBeTruthy();
-  });
-
-  it("quick 261009-por: on a stepped chip line the row hides the engine line that repeats the line's next move and draws the rest secondary", () => {
-    const { rerender } = render(
-      <TooltipProvider>
-        <Harness />
-      </TooltipProvider>,
-    );
-    // Step to 1. e4: the Move line continues 1... e5, which the engine also plays.
-    engineState.pvFirstMove = 'e7e5';
     fireEvent.click(within(screen.getByTestId('train-move-tree')).getByText('e4'));
     expect(screen.getByTestId('train-sf-row')).toBeTruthy();
-    expect(screen.queryAllByLabelText(/^Line \d+:/)).toHaveLength(0);
-    expect(screen.queryByTestId('engine-lines-analyzing')).toBeNull();
-
-    // The engine disagrees (1... c5): its line shows, with a secondary badge.
-    engineState.pvFirstMove = 'c7c5';
-    rerender(
-      <TooltipProvider>
-        <Harness />
-      </TooltipProvider>,
-    );
-    const badges = screen.getAllByLabelText(/^Line \d+:/);
-    expect(badges).toHaveLength(1);
-    expect(badges[0]!.style.backgroundColor).toBe(STOCKFISH_BADGE_SECONDARY);
   });
 
-  it('a hand-played fork off the known lines renders the Stockfish row', () => {
-    render(
-      <TooltipProvider>
-        <Harness />
-      </TooltipProvider>,
-    );
+  it('the row shows all lines from Line 1 at a previewed leaf and on a node with children', () => {
+    renderHarness();
+    const list = () => screen.getByTestId('train-move-tree');
+
+    // e4 is a leaf with a preview. SEED-197 UAT: the row still leads with Line 1 (the
+    // solid-blue best line carrying the live eval) next to the dimmed preview.
+    fireEvent.click(within(list()).getByText('e4'));
+    expect(screen.getByTestId('variation-preview-0')).toBeTruthy();
+    expect(rowRanks()).toEqual(['Line 1', 'Line 2']);
+    expect(screen.getByTestId('engine-line-0-move-0')).toBeTruthy();
+
+    // Commit the preview move, then step back: e4 now has a child, so no preview.
+    fireEvent.click(screen.getByTestId('variation-preview-0'));
+    // After 1.e4 e5 the row numbers from the shown position ("2."), not from a fresh
+    // game ("1.", the bug before startPly was passed).
+    const row = screen.getByTestId('train-sf-row');
+    expect(within(row).queryAllByText('2.').length).toBeGreaterThan(0);
+    expect(within(row).queryAllByText('1.')).toHaveLength(0);
+    fireEvent.click(within(list()).getByText('e4'));
+    expect(screen.queryByTestId('variation-preview-0')).toBeNull();
+    expect(rowRanks()).toEqual(['Line 1', 'Line 2']);
+  });
+
+  it('a hand-played fork off the first moves renders the Stockfish row', () => {
+    renderHarness();
     // At the puzzle position the row is absent.
     expect(screen.queryByTestId('train-sf-row')).toBeNull();
 
-    // Nc3 matches no chip line (Move = e4, Best = d4), so it forks a sideline.
+    // Nc3 matches no chip first move (Move = e4, Best = d4), so it forks a sideline.
     fireEvent.click(screen.getByTestId('harness-play-nc3'));
     expect(screen.getByTestId('train-sf-row')).toBeTruthy();
     // The row is a sibling of the list wrapper, so list queries never see its moves.

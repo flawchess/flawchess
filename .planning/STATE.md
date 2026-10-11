@@ -5,8 +5,8 @@ current_phase: 238
 current_phase_name: Endgame Stats Percentile-First Redesign (SEED-196)
 status: completed
 stopped_at: Phase 238 context gathered
-last_updated: "2026-10-11T12:04:44.837Z"
-state_head: 04fb07517d3d7636d7a1d797af06c18ea1b47d75
+last_updated: "2026-10-11T15:13:32.194Z"
+state_head: 6d15ebdc01b6a068c341b687d66ba8f6fae07314
 progress:
   total_phases: 1
   completed_phases: 103
@@ -1021,6 +1021,7 @@ None active.
 | 261009-por | add live engine arrows on known lines | 2026-10-09 | dcca42380 | [261009-por-add-live-engine-arrows-on-known-lines](./quick/261009-por-add-live-engine-arrows-on-known-lines/) |
 | 133 | Train mobile: progress bar spans board only, settings cog in top-right corner | 2026-10-10 | 40bf20959 | — |
 | 261010-e5l | Train reveal: live-engine good-move alternatives at the soft puzzle position (up to 3 incl. server alt, good only, depth>=10) | 2026-10-10 | 0cd92a603 | [261010-e5l-train-reveal-live-engine-good-move-alter](./quick/261010-e5l-train-reveal-live-engine-good-move-alter/) |
+| 261011-lwy | Implement SEED-197: Train reveal live engine preview instead of fixed chip lines | 2026-10-11 | 6d15ebdc0 | [261011-lwy-implement-seed-197-train-reveal-live-eng](./quick/261011-lwy-implement-seed-197-train-reveal-live-eng/) |
 
 ## Deferred Items
 
