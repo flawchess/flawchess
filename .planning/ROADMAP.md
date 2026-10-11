@@ -157,16 +157,18 @@ Gauges duplicate the WDL bar. Direction is the owner-approved sketch 009 round 2
 
 **Depends on**: nothing in flight (builds on Phase 94.4 peer-relative percentiles and Phase 99 rate percentiles)
 **Requirements**: TBD (coverage contract = CONTEXT decisions D-00a..D-00i, D-01..D-14)
-**Plans:** 7 plans
+**Plans:** 9 plans
 
 Plans:
 - [ ] 238-01-PLAN.md — Backend ranked-sample core: GET /endgames/ranked-stats, 11 metrics on read with CTE parity, rank status (wave 1)
 - [ ] 238-02-PLAN.md — Backend per-TC timelines, time-pressure curve, type categories, filtered GET /endgames/stats, latency probe (wave 2)
 - [ ] 238-03-PLAN.md — Frontend foundation: synced TC switch, PercentileBar, merged popover, Overall section, peers card, empty state (wave 2)
 - [ ] 238-04-PLAN.md — Filter-free Shelly insights on the ranked payload, endgame_v48, deliberate golden regen (wave 3)
-- [ ] 238-05-PLAN.md — Frontend Metrics cards, Time Pressure grey bands, Type table, retire gauges/chips/stat popovers (wave 3)
-- [ ] 238-06-PLAN.md — Frontend insights without filters, Games tab on /stats, filters hidden on Stats, retire /overview, CHANGELOG (wave 4)
-- [ ] 238-07-PLAN.md — Pre-merge gate, final latency, Claude-run desktop + mobile UAT and live Shelly smoke (wave 5)
+- [ ] 238-05-PLAN.md — Frontend Metrics cards, Time Pressure grey bands, Type table, filter-free Stats tab, concepts copy (wave 3)
+- [ ] 238-06-PLAN.md — Retirement sweep: delete gauges/chips/stat popovers and old section components, stale-reference grep (wave 4, run inline)
+- [ ] 238-07-PLAN.md — Frontend insights without filters, Games tab on /stats, filters hidden on Stats, overview types retired (wave 5)
+- [ ] 238-08-PLAN.md — Backend /overview and aggregated chips retired, zone codegen pruned, CHANGELOG (wave 5)
+- [ ] 238-09-PLAN.md — Pre-merge gate, final stale-reference grep and latency, Claude-run desktop + mobile UAT and live Shelly smoke (wave 6)
 
 Phase detail for every shipped milestone lives in `milestones/vX.Y-ROADMAP.md`, its phase directories in `milestones/vX.Y-phases/`, and the per-milestone summaries in [MILESTONES.md](MILESTONES.md).
 

@@ -54,8 +54,8 @@ Task IDs are assigned by the planner; each plan task must map to one of these ro
 | D-03 | Per-TC ranked Score Gap over Time + ELO Timeline series; `since` trims output | integration/unit | `uv run pytest tests/services/test_endgame_ranked_parity.py tests/services/test_endgame_ranked_service.py -k "timeline or elo" -x` | 238-02-T1 | ❌ | ⬜ pending |
 | D-05/D-06 | Per-TC quintile curve, Clock Gap timeline, type categories from ranked games | unit | `uv run pytest tests/services/test_endgame_ranked_service.py -k "quintile or clock_diff or type_categories" -x` | 238-02-T2 | ❌ | ⬜ pending |
 | D-01 (Games tab) | Filtered `/endgames/stats` honours filters | router | `uv run pytest tests/test_endgames_router.py -k EndgameStats -x` | 238-02-T3 | ❌ | ⬜ pending |
-| D-00h | Aggregated cross-TC fields absent from schema | schema | `uv run pytest tests/schemas/test_endgames_schema.py -x` | 238-06-T3 | ⚠ rewrite | ⬜ pending |
-| D-00h | `/endgames/overview` retired (404) | router | `uv run pytest tests/test_endgames_router.py -k overview_returns_404 -x` | 238-06-T3 | ❌ | ⬜ pending |
+| D-00h | Aggregated cross-TC fields absent from schema | schema | `uv run pytest tests/schemas/test_endgames_schema.py -x` | 238-08-T1 | ⚠ rewrite | ⬜ pending |
+| D-00h | `/endgames/overview` retired (404) | router | `uv run pytest tests/test_endgames_router.py -k overview_returns_404 -x` | 238-08-T1 | ❌ | ⬜ pending |
 | D-04 | Insights filter-free, constant cache key, `endgame_v48`, findings == ranked values | router/service | `uv run pytest tests/test_insights_router.py tests/services/test_insights_service.py tests/services/test_insights_llm.py -x` | 238-04-T1, T2, T3 | ⚠ rewrite | ⬜ pending |
 | D-04 | Golden user prompt deliberately regenerated; no scoping caveat in system prompt | unit | `uv run pytest tests/services/test_insights_llm.py -k golden -x && uv run pytest tests/prompts -x` | 238-04-T2, T3 | ⚠ regen | ⬜ pending |
 | D-00a | PercentileBar band/tick/dot colors, uncolored value, no icon overlay | component | `cd frontend && npx vitest run src/components/endgames/stats/PercentileBar.test.tsx` | 238-03-T1 | ❌ | ⬜ pending |
@@ -67,9 +67,11 @@ Task IDs are assigned by the planner; each plan task must map to one of these ro
 | D-00d | Metrics card: no gauge, bracket on WDL bar, rate and WDL from same games | component | `cd frontend && npx vitest run src/components/endgames/stats/MetricsCard.test.tsx` | 238-05-T1 | ❌ | ⬜ pending |
 | D-00f/D-06 | Clock timeline + pressure curve: one grey band, neutral marks, no verdict text | component | `cd frontend && npx vitest run src/components/charts/__tests__/EndgameClockDiffOverTimeChart.test.tsx src/components/charts/__tests__/ScoreGapByTimePressureChart.test.tsx` | 238-05-T2 | ⚠ update | ⬜ pending |
 | D-00e/D-05 | Type table: grey range, white tick, amber below typical, faded <100 games, stacked on mobile | component | `cd frontend && npx vitest run src/components/endgames/stats/TypeTable.test.tsx` | 238-05-T3 | ❌ | ⬜ pending |
-| D-04 (FE) | Insights hook sends no filters, single cached report | hook | `cd frontend && npx vitest run src/hooks/__tests__/useEndgameInsights.test.tsx` | 238-06-T1 | ⚠ rewrite | ⬜ pending |
-| D-02 | Filters hidden on Stats, shown on Games, applied state preserved | page | `cd frontend && npx vitest run src/pages/__tests__/Endgames.filterVisibility.test.tsx` | 238-06-T2 | ❌ | ⬜ pending |
-| Gate | Full CLAUDE.md pre-merge gate | all | see CLAUDE.md "Pre-merge gate" | 238-07-T1 | ✅ | ⬜ pending |
+| D-04 (FE) | Insights hook sends no filters, single cached report | hook | `cd frontend && npx vitest run src/hooks/__tests__/useEndgameInsights.test.tsx` | 238-07-T1 | ⚠ rewrite | ⬜ pending |
+| D-02 | Filters hidden on Stats, shown on Games, applied state preserved | page | `cd frontend && npx vitest run src/pages/__tests__/Endgames.filterVisibility.test.tsx` | 238-07-T2 | ❌ | ⬜ pending |
+| D-00c/D-00d/D-00h | Retired gauge / chip / stat-popover generation deleted with its tests; knip green; no retired component name left in frontend/src, app/ or tests/ (comments included) outside the five files 238-07/238-08 rewrite | static | `npm --prefix frontend run knip` plus the stale-reference grep in 238-06-PLAN.md Task 2 verify | 238-06-T1, T2 | ❌ | ⬜ pending |
+| D-00h | Generator and generated zone file name no retired component; zone constants limited to live frontend consumers | static | `uv run python scripts/gen_endgame_zones_ts.py --check` plus the grep in 238-08-PLAN.md Task 2 acceptance | 238-08-T2 | ✅ | ⬜ pending |
+| Gate | Full CLAUDE.md pre-merge gate plus the final no-exclusion stale-reference grep over frontend/src, app/, tests/, scripts/ | all | see CLAUDE.md "Pre-merge gate" and 238-09-PLAN.md Task 1 verify | 238-09-T1 | ✅ | ⬜ pending |
 
 *Status: ⬜ pending · ✅ green · ❌ red · ⚠️ flaky*
 
@@ -89,8 +91,8 @@ Task IDs are assigned by the planner; each plan task must map to one of these ro
 | Behavior | Decision | Why Manual | Test Instructions |
 |----------|----------|------------|-------------------|
 | Desktop + mobile layout, popover on tap, stacked type rows, switch sync | D-00c/D-00e/D-00h | Visual layout across viewports | Run dev build, drive via Chrome extension at desktop and mobile widths (Claude runs it per memory) |
-| Heavy-account latency of `/endgames/ranked-stats` | D-07 | Needs real dev data volume | Probe `get_ranked_stats` for dev users 7 and 14 (238-02-T3, re-measured in 238-07-T1); flag a median above ~2 s |
-| Live Shelly generate on dev with a non-default filter applied | D-04 | Needs the LLM provider and real data | 238-07-T2 step 8: one report, filters untouched, numbers match the page |
+| Heavy-account latency of `/endgames/ranked-stats` | D-07 | Needs real dev data volume | Probe `get_ranked_stats` for dev users 7 and 14 (238-02-T3, re-measured in 238-09-T1); flag a median above ~2 s |
+| Live Shelly generate on dev with a non-default filter applied | D-04 | Needs the LLM provider and real data | 238-09-T2 step 8: one report, filters untouched, numbers match the page |
 
 ---
 
