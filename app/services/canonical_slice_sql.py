@@ -156,6 +156,10 @@ _EQUAL_FOOTING_TOL: int = 100
 _SPARSE_CELL_ELO: int = 2400
 _SPARSE_CELL_TC: str = "classical"
 _SUB_800_FLOOR: int = 800
+# Phase 238: public alias so the on-read ranked service applies the exact same
+# sub-800 exclusion floor as the rate / bucket-gap CTEs below (an added name; it
+# does not change any builder output).
+SUB_800_FLOOR: Final[int] = _SUB_800_FLOOR
 
 
 # ---------------------------------------------------------------------------
@@ -316,10 +320,43 @@ def _recent_capped_per_tc_cte(snapshot_date: date | None, tc: TimeControlBucket)
 )"""
 
 
+def ranked_games_sql(tc: TimeControlBucket) -> str:
+    """Phase 238: the per-TC ranked sample (the games Stage A/B rank) with display columns.
+
+    The ``WITH`` chain is the unchanged ``selected_users_cte("single_user")`` +
+    ``_recent_capped_per_tc_cte(None, tc)`` prelude every ``per_user_cte_*``
+    builder uses, so the on-read ranked games are exactly the games the
+    persisted percentiles were computed from (D-07). Only the outer ``SELECT``
+    is new. No existing builder body is edited.
+
+    Columns: ``game_id``, ``played_at``, ``platform``, ``time_control_str``
+    (the anchor count must exclude chess.com Daily, ``time_control_str LIKE
+    '1/%'``), ``user_elo`` (rating at game time; the rate / bucket-gap
+    metrics drop sub-800 games), ``eval_pending`` (entry evals not yet
+    completed for the game).
+
+    Security (T-238-01): ``tc`` is interpolated by ``_recent_capped_per_tc_cte``
+    and is safe only because it is the 4-value ``TimeControlBucket`` Literal,
+    enforced by ty at every call site. ``user_id`` flows only through the
+    ``CAST(:user_id AS int)`` bindparam inside ``selected_users_cte``; callers
+    bind it with ``text(sql).bindparams(user_id=...)``, never an f-string.
+    """
+    return (
+        f"WITH {selected_users_cte(source='single_user')},\n"
+        f"{_recent_capped_per_tc_cte(None, tc)}\n"
+        "SELECT rc.id AS game_id, rc.played_at, g.platform, g.time_control_str,\n"
+        f"       {_user_elo_at_game_expr()} AS user_elo,\n"
+        "       (g.evals_completed_at IS NULL) AS eval_pending\n"
+        "FROM recent_capped rc\n"
+        "JOIN games g ON g.id = rc.id\n"
+        "ORDER BY rc.played_at ASC, rc.id ASC"
+    )
+
+
 def _endgame_entry_clocks_cte() -> str:
     """Per-game endgame-entry clock derivation for the three Phase 94.3 per-TC builders.
 
-    Mirrors the Python ``_extract_entry_clocks`` logic (``app/services/endgame_service.py``
+    Mirrors the Python ``extract_entry_clocks`` logic (``app/services/endgame_service.py``
     lines 1626-1647): for each game that reached an endgame phase (≥6 endgame
     plies under the whole-game rule, quick-260414-pv4), aggregate the first
     non-null ``clock_seconds`` per ply parity:
@@ -512,8 +549,8 @@ def per_user_cte_net_flag_rate(
     and user is the winner); a user "loses on time" when the user flagged.
 
     ``metric_value`` = ``(timeout_wins - timeout_losses) / total_endgame_games``
-    averaged per user; mirrors the existing ``net_timeout_rate`` field on
-    ``TimePressureTcCard`` (``app/services/endgame_service.py`` lines 1941-1956).
+    averaged per user; mirrors ``_net_flag_metric`` in
+    ``app/services/endgame_ranked_service.py``.
     ``n_games`` = pooled endgame-entry count (the binding floor per
     ``NET_FLAG_RATE_MIN_POOL_N``).
 

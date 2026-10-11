@@ -13,7 +13,6 @@ import type { GradeResult, TrainEngineLine } from '@/hooks/useTrainGradingEngine
 import type { InstantGradeState } from '@/hooks/trainGradingSupport';
 import {
   CANONICAL_ROLE_ORDER,
-  MAX_LINE_PLIES,
   REVEAL_TREE_SNAPSHOT_MAX_PATHS,
   REVEAL_TREE_SNAPSHOT_MAX_PLIES,
   buildChipGroups,
@@ -80,7 +79,7 @@ describe('buildChipGroups', () => {
       quality: 'best',
     });
     expect(chips[0]?.line).toBe(best);
-    expect(chips[0]?.lineUcis).toEqual(['e2e4', 'e7e5', 'g1f3']);
+    expect(chips[0]).not.toHaveProperty('lineUcis');
   });
 
   it('game == played merges into Move = Game and shows the played line', () => {
@@ -95,7 +94,7 @@ describe('buildChipGroups', () => {
     expect(chips.map((c) => c.label)).toEqual(['Move = Game', 'Best']);
     const merged = chips[0];
     expect(merged?.key).toBe('your');
-    expect(merged?.lineUcis).toEqual(['d2d4', 'd7d5']);
+    expect(merged?.line?.moves).toEqual(['d2d4', 'd7d5']);
     expect(merged?.quality).toBe('inaccuracy');
   });
 
@@ -130,34 +129,15 @@ describe('buildChipGroups', () => {
     expect(CANONICAL_ROLE_ORDER).toEqual(['your', 'best', 'game']);
   });
 
-  it('a long engine line is capped at 12 plies and still starts with the chip move', () => {
-    const longLine = [
-      'e2e4', 'e7e5', 'g1f3', 'b8c6', 'f1c4', 'f8c5',
-      'c2c3', 'g8f6', 'd2d3', 'd7d6', 'b1d2', 'c8e6',
-      'c4b3', 'd8d7',
-    ];
+  it('chips carry their line but no pre-load UCI list (a chip owns only its first move)', () => {
     const chips = buildChipGroups(
       input({
-        playedMoveUci: 'e2e4',
-        gradeResult: gradeResult(longLine, longLine),
+        playedMoveUci: 'd2d4',
+        gradeResult: gradeResult(['e2e4', 'e7e5'], ['d2d4', 'd7d5']),
       }),
     );
-    const lineUcis = chips[0]?.lineUcis ?? [];
-    expect(MAX_LINE_PLIES).toBe(12);
-    expect(lineUcis).toHaveLength(12);
-    expect(lineUcis[0]).toBe('e2e4');
-    expect(lineUcis.at(-1)).toBe('c8e6');
-  });
-
-  it('an empty or mismatched line yields just the chip first move', () => {
-    const standIn = gradeResult(['e2e4'], []); // the WR-02 stand-in: empty played line
-    const chips = buildChipGroups(input({ playedMoveUci: 'd2d4', gradeResult: standIn }));
-    expect(chips[0]?.lineUcis).toEqual(['d2d4']);
-
-    const mismatched = buildChipGroups(
-      input({ playedMoveUci: 'd2d4', gradeResult: gradeResult(['e2e4'], ['c2c4', 'c7c5']) }),
-    );
-    expect(mismatched[0]?.lineUcis).toEqual(['d2d4']);
+    for (const chip of chips) expect(chip).not.toHaveProperty('lineUcis');
+    expect(chips.map((c) => c.line?.moves[0])).toEqual(['d2d4', 'e2e4']);
   });
 
   it('produces no chips before any grade or key exists, and no your/best chip without a played move', () => {
@@ -179,9 +159,9 @@ describe('buildChipGroups', () => {
       const chips = buildChipGroups(
         input({ playedMoveUci: 'd2d4', instantGrade: pendingKey(null, 'pending') }),
       );
-      expect(chips.map((c) => [c.key, c.pending, c.lineUcis])).toEqual([
-        ['your', 'loading', ['d2d4']],
-        ['best', 'loading', ['e2e4']],
+      expect(chips.map((c) => [c.key, c.pending, c.uci, c.line])).toEqual([
+        ['your', 'loading', 'd2d4', null],
+        ['best', 'loading', 'e2e4', null],
       ]);
     });
 
@@ -200,7 +180,7 @@ describe('buildChipGroups', () => {
       const best = chips.find((c) => c.key === 'best');
       const your = chips.find((c) => c.key === 'your');
       expect(best?.pending).toBeNull();
-      expect(best?.lineUcis).toEqual(['e2e4', 'e7e5']);
+      expect(best?.line?.moves).toEqual(['e2e4', 'e7e5']);
       expect(your?.pending).toBe('loading');
     });
 
@@ -233,13 +213,13 @@ describe('buildChipGroups', () => {
       const state = { status } as GameMoveLineState;
       expect(gameChip(state)?.pending).toBe(pending);
       expect(gameChip(state)?.line).toBeNull();
-      expect(gameChip(state)?.lineUcis).toEqual(['g1f3']);
+      expect(gameChip(state)?.uci).toBe('g1f3');
     });
 
     it('grows its line once the search is ready', () => {
       const ready = gameChip({ status: 'ready', line: line(['g1f3', 'g8f6', 'b1c3']) });
       expect(ready?.pending).toBeNull();
-      expect(ready?.lineUcis).toEqual(['g1f3', 'g8f6', 'b1c3']);
+      expect(ready?.line?.moves).toEqual(['g1f3', 'g8f6', 'b1c3']);
     });
   });
 });
@@ -358,38 +338,48 @@ describe('classifyTreeNodes', () => {
 });
 
 describe('buildTreeListView', () => {
+  /** Chips own only their first move; everything else is a free node. */
   function fixture() {
     const nodes = new Map<NodeId, MoveNode>();
-    const your = addLine(nodes, null, ['e2e4', 'e7e5']);
-    const best = addLine(nodes, null, ['d2d4', 'd7d5']);
+    const your = addLine(nodes, null, ['e2e4']);
+    const best = addLine(nodes, null, ['d2d4']);
     const game = addLine(nodes, null, ['c2c4']);
-    const freeOffYour = addLine(nodes, your[0]!, ['c7c5']);
-    const freeOffBest = addLine(nodes, best[0]!, ['g8f6']);
+    const yourRest = addLine(nodes, your[0]!, ['e7e5', 'g1f3']); // first-added chain
+    const freeOffYour = addLine(nodes, your[0]!, ['c7c5']); // later child: a sideline
+    const bestRest = addLine(nodes, best[0]!, ['d7d5']);
     const rootFork = addLine(nodes, null, ['g1f3']);
     const rootForkChild = addLine(nodes, rootFork[0]!, ['g8f6']);
     const linePaths: Partial<Record<RoleKey, NodeId[]>> = { your, best, game };
     const owners = classifyTreeNodes(nodes, linePaths);
-    return { nodes, linePaths, owners, your, best, game, freeOffYour, freeOffBest, rootFork, rootForkChild };
+    return { nodes, linePaths, owners, your, best, game, yourRest, freeOffYour, bestRest, rootFork, rootForkChild };
   }
 
-  it('active chip: its line, the free subtrees hanging off it and the free root forks', () => {
-    const f = fixture();
-
-    const view = buildTreeListView(f.nodes, f.linePaths, f.owners, 'best');
-
-    expect(view.mainLine).toEqual(f.best);
-    expect(new Set(view.nodes.keys())).toEqual(
-      new Set([...f.best, ...f.freeOffBest, ...f.rootFork, ...f.rootForkChild]),
-    );
-  });
-
-  it('hands back a main line copy, never the live path array', () => {
+  it('active chip: first move plus the lowest-id child chain is the main line', () => {
     const f = fixture();
 
     const view = buildTreeListView(f.nodes, f.linePaths, f.owners, 'your');
 
-    expect(view.mainLine).not.toBe(f.linePaths.your);
-    expect(view.mainLine).toEqual(f.your);
+    expect(view.mainLine).toEqual([...f.your, ...f.yourRest]);
+    expect(new Set(view.nodes.keys())).toEqual(
+      new Set([...f.your, ...f.yourRest, ...f.freeOffYour, ...f.rootFork, ...f.rootForkChild]),
+    );
+  });
+
+  it('a later-added child renders as a sideline, not as the main line', () => {
+    const f = fixture();
+
+    const view = buildTreeListView(f.nodes, f.linePaths, f.owners, 'your');
+
+    expect(view.mainLine).not.toContain(f.freeOffYour[0]);
+    expect(view.nodes.has(f.freeOffYour[0]!)).toBe(true);
+  });
+
+  it('a chip with no continuation has just its first move as the main line', () => {
+    const f = fixture();
+
+    const view = buildTreeListView(f.nodes, f.linePaths, f.owners, 'game');
+
+    expect(view.mainLine).toEqual(f.game);
   });
 
   it('no active chip (D-04): an empty main line and only the root-fork subtrees', () => {
@@ -405,12 +395,13 @@ describe('buildTreeListView', () => {
 describe('resolveForwardTarget', () => {
   function fixture() {
     const nodes = new Map<NodeId, MoveNode>();
-    // BEST is added first so its nodes carry the lowest ids.
-    const best = addLine(nodes, null, ['d2d4', 'd7d5']);
-    const your = addLine(nodes, null, ['e2e4', 'e7e5', 'g1f3']);
-    const freeOffE4 = addLine(nodes, your[0]!, ['c7c5']); // a free sideline off 1.e4
+    // BEST is added first so its node carries the lowest id.
+    const best = addLine(nodes, null, ['d2d4']);
+    const your = addLine(nodes, null, ['e2e4']);
+    const main = addLine(nodes, your[0]!, ['e7e5', 'g1f3']); // first-added chain
+    const freeOffE4 = addLine(nodes, your[0]!, ['c7c5']); // a later sideline off 1.e4
     const linePaths: Partial<Record<RoleKey, NodeId[]>> = { your, best };
-    return { nodes, linePaths, your, best, freeOffE4 };
+    return { nodes, linePaths, your, best, main, freeOffE4 };
   }
   const NONE: ReadonlyMap<NodeId | null, NodeId> = new Map();
 
@@ -442,7 +433,7 @@ describe('resolveForwardTarget', () => {
     ).toBe(f.your[0]);
   });
 
-  it('below the root it prefers the last-visited child over the known line', () => {
+  it('below the root it prefers the last-visited child', () => {
     const f = fixture();
     const target = resolveForwardTarget({
       nodes: f.nodes, currentNodeId: f.your[0]!, activeChip: 'your', linePaths: f.linePaths,
@@ -451,19 +442,14 @@ describe('resolveForwardTarget', () => {
     expect(target).toBe(f.freeOffE4[0]);
   });
 
-  it('with no last-visited child it follows the known line, not the lowest id', () => {
-    const nodes = new Map<NodeId, MoveNode>();
-    const e4 = addLine(nodes, null, ['e2e4']);
-    const free = addLine(nodes, e4[0]!, ['c7c5']); // created FIRST: lowest-id child of e4
-    const rest = addLine(nodes, e4[0]!, ['e7e5', 'g1f3']);
-    expect(free[0]!).toBeLessThan(rest[0]!);
-
+  it('below the root with no last-visited child it takes the lowest-id child, ignoring chip lines', () => {
+    const f = fixture();
+    // linePaths deliberately names a DIFFERENT node as the chip's next move.
     const target = resolveForwardTarget({
-      nodes, currentNodeId: e4[0]!, activeChip: 'your',
-      linePaths: { your: [e4[0]!, ...rest] }, lastChildByParent: NONE,
+      nodes: f.nodes, currentNodeId: f.your[0]!, activeChip: 'your',
+      linePaths: { your: [f.your[0]!, f.freeOffE4[0]!] }, lastChildByParent: NONE,
     });
-
-    expect(target).toBe(rest[0]);
+    expect(target).toBe(f.main[0]);
   });
 
   it('ignores a remembered child that is no longer a child of the node', () => {
@@ -472,32 +458,21 @@ describe('resolveForwardTarget', () => {
       nodes: f.nodes, currentNodeId: f.your[0]!, activeChip: 'your', linePaths: f.linePaths,
       lastChildByParent: new Map([[f.your[0]!, 9999]]),
     });
-    expect(target).toBe(f.your[1]);
+    expect(target).toBe(f.main[0]);
   });
 
-  it('falls back to the lowest-id child on a free node and returns null on a leaf', () => {
+  it('returns null on a leaf (the caller commits the preview instead)', () => {
     const f = fixture();
-    const sideChildren = addLine(f.nodes, f.freeOffE4[0]!, ['g1f3']);
+    expect(
+      resolveForwardTarget({
+        nodes: f.nodes, currentNodeId: f.main[1]!, activeChip: 'your',
+        linePaths: f.linePaths, lastChildByParent: NONE,
+      }),
+    ).toBeNull();
     expect(
       resolveForwardTarget({
         nodes: f.nodes, currentNodeId: f.freeOffE4[0]!, activeChip: 'your',
         linePaths: f.linePaths, lastChildByParent: NONE,
-      }),
-    ).toBe(sideChildren[0]);
-    expect(
-      resolveForwardTarget({
-        nodes: f.nodes, currentNodeId: sideChildren[0]!, activeChip: 'your',
-        linePaths: f.linePaths, lastChildByParent: NONE,
-      }),
-    ).toBeNull();
-  });
-
-  it('at the end of a known line with no sideline there is nowhere to go', () => {
-    const f = fixture();
-    expect(
-      resolveForwardTarget({
-        nodes: f.nodes, currentNodeId: f.your[2]!, activeChip: 'your', linePaths: f.linePaths,
-        lastChildByParent: NONE,
       }),
     ).toBeNull();
   });
@@ -536,6 +511,19 @@ describe('buildRevealTreeSnapshot', () => {
     ]);
   });
 
+  it('persists the UCI path of each committed node, omitting the field when none (WR-02)', () => {
+    const nodes = new Map<NodeId, MoveNode>();
+    const your = addLine(nodes, null, ['e2e4']);
+    const [e5, nf3] = addLine(nodes, your[0]!, ['e7e5', 'g1f3']);
+
+    const plain = buildRevealTreeSnapshot(nodes, nf3!, { your }, 'your');
+    const marked = buildRevealTreeSnapshot(nodes, nf3!, { your }, 'your', new Set([e5!, nf3!, 999]));
+
+    expect(plain).not.toHaveProperty('committedPaths');
+    // 999 is not in the tree (deleted since) and is skipped.
+    expect(marked.committedPaths).toEqual([['e2e4', 'e7e5'], ['e2e4', 'e7e5', 'g1f3']]);
+  });
+
   it('is empty at the puzzle position', () => {
     const nodes = new Map<NodeId, MoveNode>();
     expect(buildRevealTreeSnapshot(nodes, null, {}, 'best')).toEqual({
@@ -543,6 +531,65 @@ describe('buildRevealTreeSnapshot', () => {
       currentPath: [],
       sidelinePaths: [],
     });
+  });
+
+  it('emits leaves in DFS pre-order, children by ascending id (not by leaf id)', () => {
+    const nodes = new Map<NodeId, MoveNode>();
+    const e4 = addLine(nodes, null, ['e2e4']);
+    const [e5, nf3] = addLine(nodes, e4[0]!, ['e7e5', 'g1f3']);
+    const bc4 = addLine(nodes, e5!, ['f1c4']); // later child of e5
+    const nc6 = addLine(nodes, nf3!, ['b8c6']); // created LAST, but under the first child
+
+    const snapshot = buildRevealTreeSnapshot(nodes, nc6[0]!, { your: e4 }, 'your');
+
+    expect(bc4[0]!).toBeLessThan(nc6[0]!);
+    expect(snapshot.sidelinePaths).toEqual([
+      ['e2e4', 'e7e5', 'g1f3', 'b8c6'],
+      ['e2e4', 'e7e5', 'f1c4'],
+    ]);
+  });
+
+  it('round trip: grafting the paths in order rebuilds the same main line (Pitfall 1)', () => {
+    // e4 chip; e5, Nf3, step back, Bc4, go to Nf3 and play Nc6: the main line is
+    // e4 e5 Nf3 Nc6 (first-added chain). Leaf-id order would graft Bc4 first and
+    // flip the main line to e4 e5 Bc4.
+    const nodes = new Map<NodeId, MoveNode>();
+    const e4 = addLine(nodes, null, ['e2e4']);
+    const [e5, nf3] = addLine(nodes, e4[0]!, ['e7e5', 'g1f3']);
+    addLine(nodes, e5!, ['f1c4']);
+    addLine(nodes, nf3!, ['b8c6']);
+    const linePaths: Partial<Record<RoleKey, NodeId[]>> = { your: e4 };
+    const before = buildTreeListView(nodes, linePaths, classifyTreeNodes(nodes, linePaths), 'your');
+    const beforeUcis = before.mainLine.map((id) => nodeUci(nodes.get(id)!));
+
+    const snapshot = buildRevealTreeSnapshot(nodes, nf3!, linePaths, 'your');
+
+    const fresh = new Map<NodeId, MoveNode>();
+    const freshChip = addLine(fresh, null, ['e2e4']);
+    for (const path of snapshot.sidelinePaths) {
+      const chess = new Chess(START_FEN);
+      let parent: NodeId | null = null;
+      for (const uci of path) {
+        const from = uci.slice(0, 2);
+        const to = uci.slice(2, 4);
+        const existing: MoveNode | undefined = [...fresh.values()].find(
+          (n) => n.parentId === parent && n.from === from && n.to === to,
+        );
+        const move = chess.move({ from, to });
+        if (existing) {
+          parent = existing.id;
+          continue;
+        }
+        const id = fresh.size;
+        fresh.set(id, { id, san: move.san, fen: chess.fen(), from, to, parentId: parent });
+        parent = id;
+      }
+    }
+    const freshPaths: Partial<Record<RoleKey, NodeId[]>> = { your: freshChip };
+    const after = buildTreeListView(fresh, freshPaths, classifyTreeNodes(fresh, freshPaths), 'your');
+
+    expect(after.mainLine.map((id) => nodeUci(fresh.get(id)!))).toEqual(beforeUcis);
+    expect(beforeUcis).toEqual(['e2e4', 'e7e5', 'g1f3', 'b8c6']);
   });
 
   it('carries a promotion letter in the UCI path', () => {

@@ -1,15 +1,18 @@
 /**
  * Phase 88.4 / Plan 88.4-01 (SC-3) — Score Gap by Time Pressure line chart.
  *
- * Replaces the four stacked QuintileRow bullet charts inside EndgameTimePressureCard
- * with a single horizontal ComposedChart over the 4 ordinal pressure-bucket labels
- * (Q0–Q3; Q4 filtered as per Plan 88-13 A-4). Three ReferenceArea zone bands use
- * the TC-collapsed neutral zone [-0.06, +0.06] derived from benchmarks-latest.md
- * §3.3.3.b (opp-quintile rerun, 2026-05-17). CI whiskers render via Recharts ErrorBar.
+ * A single horizontal ComposedChart over the 4 ordinal pressure-bucket labels
+ * (Q0–Q3; Q4 filtered as per Plan 88-13 A-4), mounted by TimePressureSection for the
+ * selected time control. One grey ReferenceArea marks the TC-collapsed typical range
+ * [-0.06, +0.06] derived from benchmarks-latest.md §3.3.3.b (opp-quintile rerun,
+ * 2026-05-17). The line is neutral (Phase 238 D-00f); the dots and tooltip swatch keep
+ * their zone colors relative to that range (238 UAT brought them back). The statistical
+ * detail (p-value, CI) lives in the tooltip, greyed. CI whiskers render via Recharts
+ * ErrorBar.
  *
- * Visual pattern: mirrors EndgameClockDiffOverTimeChart (zone bands, white line,
- * zone-colored dots, 0-line reference). Built as a self-contained component — not
- * a fork — so it can be updated independently.
+ * Visual pattern: mirrors EndgameClockDiffOverTimeChart (grey typical band, neutral
+ * line, zone-colored dots, 0-line reference). Built as a self-contained component — not a
+ * fork — so it can be updated independently.
  */
 
 import { useEffect, useState } from 'react';
@@ -25,18 +28,17 @@ import {
 } from 'recharts';
 import { ChartContainer, ChartTooltip } from '@/components/ui/chart';
 import { ChartTooltipBox } from '@/components/ui/chart-tooltip-box';
-import { ZONE_DANGER, ZONE_NEUTRAL, ZONE_SUCCESS } from '@/lib/theme';
+import { NEUTRAL_SERIES_COLOR, TYPICAL_BAND_FILL } from '@/lib/theme';
 import {
   clampDeltaCi,
   computeScoreGapYAxis,
   pressureDeltaZoneColor,
 } from '@/lib/pressureBulletConfig';
 import type { PressureQuintileBullet } from '@/types/endgames';
-import { deriveLevel } from './EndgameOverallShared';
 
-// Muted opacity for zone-tinted ReferenceArea bands. Matches EndgameClockDiffOverTimeChart.
-// Not exported from theme.ts — local constant per chart.
-const ZONE_OPACITY = 0.15;
+// Label of the grey band, at the text-sm floor (14px) from frontend/CLAUDE.md.
+const TYPICAL_LABEL = 'typical';
+const TYPICAL_LABEL_FONT_SIZE = 14;
 
 // Mobile breakpoint for hiding the vertical Y-axis label (Tailwind `sm:`).
 // Mirrors EndgameClockDiffOverTimeChart's "Clock Gap" axis-label treatment.
@@ -77,8 +79,8 @@ const MAX_VISIBLE_QUINTILE_INDEX = 3;
 // Ordinal x-axis labels for the 4 displayed quintile buckets.
 // Post-UAT (88.4): bucket *center* values (the midpoint of each 20%-wide
 // clock-remaining band), no "Time" suffix — the section/axis already conveys
-// "Remaining Time". Redeclared here (not imported from EndgameTimePressureCard)
-// to keep this chart self-contained per the "build independently" guidance.
+// "Remaining Time". Declared here to keep this chart self-contained per the
+// "build independently" guidance.
 const PRESSURE_LABELS: Record<0 | 1 | 2 | 3, string> = {
   0: '10%',
   1: '30%',
@@ -95,36 +97,6 @@ const PRESSURE_RANGE_LABELS: Record<0 | 1 | 2 | 3, string> = {
   2: '40-60%',
   3: '60-80%',
 };
-
-/**
- * Build the conclusion line, e.g. "Likely a real strength (p < 0.001)".
- * Verdict noun + Likely/Possibly lead mirror MetricStatTooltip (score
- * vocabulary, 0% baseline); the confidence-label clause is intentionally
- * dropped per UAT — the parenthesised p-value already conveys strength of
- * evidence. The neutral band is the chart's TC-collapsed ±0.06 so the verdict
- * matches the colored zone the dot sits in.
- */
-function conclusionText(
-  delta: number,
-  pValue: number | null,
-  n: number,
-): string {
-  const level = deriveLevel(pValue, n);
-  let headline: string;
-  if (level === 'low') {
-    headline = 'Inconclusive';
-  } else {
-    const lead = level === 'high' ? 'Likely' : 'Possibly';
-    if (delta >= PRESSURE_SCORE_GAP_NEUTRAL_MAX) {
-      headline = `${lead} a real strength`;
-    } else if (delta <= PRESSURE_SCORE_GAP_NEUTRAL_MIN) {
-      headline = `${lead} a real weakness`;
-    } else {
-      headline = `${lead} a real difference from the 0% baseline`;
-    }
-  }
-  return pValue !== null ? `${headline} (${formatPValue(pValue)})` : headline;
-}
 
 // Post-UAT (88.4): inset the first/last datapoints from the chart edges so the
 // line doesn't touch the y-axis / right border. Recharts category-axis padding.
@@ -178,12 +150,12 @@ function formatPct(frac: number | null): string {
   return frac != null ? `${(frac * 100).toFixed(1)}%` : 'n/a';
 }
 
-/** p-value display matching MetricStatTooltip: 3 decimals, "< 0.001" floor. */
+/** p-value display used across the Stats tab popovers: 3 decimals, "< 0.001" floor. */
 function formatPValue(p: number): string {
   return p < 0.001 ? 'p < 0.001' : `p = ${p.toFixed(3)}`;
 }
 
-/** Pick zone color for a score-gap dot relative to the TC-collapsed neutral band. */
+/** Zone color for a score-gap dot relative to the TC-collapsed typical band. */
 function zoneDotColor(delta: number): string {
   return pressureDeltaZoneColor(
     delta,
@@ -229,9 +201,9 @@ function toChartData(quintiles: PressureQuintileBullet[]): ChartPoint[] {
  * Tooltip body for a single bucket. Exported so the test renders the REAL
  * production tooltip instead of a reimplementation (REVIEW.md IN-01 tautology
  * fix). Post-UAT 88.4: header is the full bucket range ("Time Bucket: 0-20%");
- * You/Opp/Games collapse to one muted line; the app-standard verdict sentence
- * (conclusionText) plus the statistical test + CI methodology we had behind
- * the old per-bucket info icons render below.
+ * You/Opp/Games collapse to one muted block; the p-value (greyed) and the
+ * statistical test + CI methodology render below. No verdict sentence: the
+ * per-metric z-test verdict left the visible UI in Phase 238 (D-00c).
  *
  * Font-size note: this Recharts hover tooltip deliberately uses `text-xs` to
  * match the sibling "Clock Gap at Endgame Entry"
@@ -242,7 +214,6 @@ function toChartData(quintiles: PressureQuintileBullet[]): ChartPoint[] {
  */
 export function ScoreGapTooltipContent({ point }: { point: ChartPoint }) {
   const userScore = point.opp_score != null ? point.opp_score + point.delta : null;
-  // p-value is already in the conclusion line above — don't repeat it here.
   const testLine = 'Independent two-sample test.';
   const ciLine =
     point.ci_low != null && point.ci_high != null
@@ -255,6 +226,7 @@ export function ScoreGapTooltipContent({ point }: { point: ChartPoint }) {
       <div className="flex items-center gap-1.5">
         <div
           className="h-2 w-2 shrink-0 rounded-[2px]"
+          data-testid="score-gap-tooltip-swatch"
           style={{ backgroundColor: zoneDotColor(point.delta) }}
         />
         <span>Score gap: {formatSignedPct(point.delta)}</span>
@@ -270,7 +242,11 @@ export function ScoreGapTooltipContent({ point }: { point: ChartPoint }) {
           Opp: {formatPct(point.opp_score)} ({point.n_opp} games)
         </div>
       </div>
-      <div>{conclusionText(point.delta, point.p_value, point.n)}</div>
+      {point.p_value !== null && (
+        <div className="text-muted-foreground" data-testid="score-gap-tooltip-p-value">
+          {formatPValue(point.p_value)}
+        </div>
+      )}
       <div className="text-muted-foreground italic">{testLine}</div>
       <div className="text-muted-foreground italic">{ciLine}</div>
     </ChartTooltipBox>
@@ -289,6 +265,19 @@ export function ScoreGapByTimePressureChart({
   const data = toChartData(quintiles);
   const { domain: yDomain, ticks: yTicks } = computeScoreGapYAxis(data);
   const isMobile = useIsMobile();
+
+  // Phase 238 review (FE-IN-04): with no clock data every bin is filtered out and the
+  // chart drew only its axis frame and grey band, with no hint why it was blank.
+  if (data.length === 0) {
+    return (
+      <p
+        className="text-sm text-muted-foreground"
+        data-testid={`score-gap-by-time-pressure-empty-${tc}`}
+      >
+        Not enough games with clock data in this time control yet.
+      </p>
+    );
+  }
 
   return (
     <div
@@ -320,7 +309,7 @@ export function ScoreGapByTimePressureChart({
           <ComposedChart data={data} margin={{ top: 5, right: 10, left: 0, bottom: 10 }}>
           {/* Horizontal-only fine grid — recharts 3: bind to named primary YAxis via yAxisId */}
           <CartesianGrid vertical={false} yAxisId="value" />
-          {/* Hidden full-range numeric x-axis the zone bands bind to. The
+          {/* Hidden full-range numeric x-axis the typical band binds to. The
               visible category axis is padded (datapoints inset off the
               borders), so a category-bound band would inherit that inset and
               leave uncolored gutters. Binding the bands to this unpadded
@@ -346,18 +335,7 @@ export function ScoreGapByTimePressureChart({
             hide
             allowDataOverflow
           />
-          {/* Three flat zone bands — full-bleed via xAxisId="bleed" x1=0/x2=1. */}
-          <ReferenceArea
-            xAxisId="bleed"
-            yAxisId="value"
-            x1={0}
-            x2={1}
-            y1={yDomain[0]}
-            y2={PRESSURE_SCORE_GAP_NEUTRAL_MIN}
-            fill={ZONE_DANGER}
-            fillOpacity={ZONE_OPACITY}
-            ifOverflow="visible"
-          />
+          {/* One grey typical band, full-bleed via xAxisId="bleed" x1=0/x2=1. */}
           <ReferenceArea
             xAxisId="bleed"
             yAxisId="value"
@@ -365,20 +343,13 @@ export function ScoreGapByTimePressureChart({
             x2={1}
             y1={PRESSURE_SCORE_GAP_NEUTRAL_MIN}
             y2={PRESSURE_SCORE_GAP_NEUTRAL_MAX}
-            fill={ZONE_NEUTRAL}
-            fillOpacity={ZONE_OPACITY}
+            fill={TYPICAL_BAND_FILL}
             ifOverflow="visible"
-          />
-          <ReferenceArea
-            xAxisId="bleed"
-            yAxisId="value"
-            x1={0}
-            x2={1}
-            y1={PRESSURE_SCORE_GAP_NEUTRAL_MAX}
-            y2={yDomain[1]}
-            fill={ZONE_SUCCESS}
-            fillOpacity={ZONE_OPACITY}
-            ifOverflow="visible"
+            label={{
+              value: TYPICAL_LABEL,
+              position: 'insideTopLeft',
+              style: { fontSize: TYPICAL_LABEL_FONT_SIZE, fill: 'var(--muted-foreground)' },
+            }}
           />
           {/* Category x-axis — 4 bucket-center labels. Edge padding insets the
               first/last datapoints off the chart borders (post-UAT 88.4). */}
@@ -431,7 +402,7 @@ export function ScoreGapByTimePressureChart({
             yAxisId="value"
             type="monotone"
             dataKey="delta"
-            stroke="white"
+            stroke={NEUTRAL_SERIES_COLOR}
             strokeWidth={2}
             connectNulls={false}
             isAnimationActive={false}

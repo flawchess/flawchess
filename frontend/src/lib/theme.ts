@@ -305,41 +305,36 @@ export const ZONE_DANGER = 'oklch(0.50 0.15 25)';       // red zone (same hue as
 export const ZONE_NEUTRAL = 'oklch(0.50 0.14 260)';     // blue zone (L/C match WDL)
 export const ZONE_SUCCESS = 'oklch(0.50 0.14 145)';     // green zone (same hue as WDL_WIN)
 
-// Endgame gauge zone colors — fixed per-bucket thresholds.
-// Blue marks the "typical skill-cohort range" for each bucket; red below,
-// green above. The Diff column + bullet chart in the same section still
-// carry the opponent-relative verdict against the user's actual opponents.
-// The two signals can disagree when the opponent pool is unusual (e.g.
-// filtered by opponent strength) — that disagreement is informative,
-// not a bug.
-const GAUGE_DANGER = ZONE_DANGER;                       // red zone — internal use only
-const GAUGE_SUCCESS = ZONE_SUCCESS;                     // green zone — internal use only
-export const GAUGE_NEUTRAL = 'oklch(0.55 0.18 260)';        // blue skill-cohort / neutral zone (matches MY_SCORE_COLOR / Recovery line)
+// Blue for the typical middle: the 25-75 percentile-bar dot and other neutral
+// endgame marks (matches MY_SCORE_COLOR / Recovery line).
+export const GAUGE_NEUTRAL = 'oklch(0.55 0.18 260)';
 
-export interface GaugeZone {
-  from: number;  // 0..1
-  to: number;    // 0..1
-  color: string; // CSS color
-}
+// Phase 238 percentile bar (D-00a): one 0-100 axis for every peer-ranked metric.
+// The track is a faint trough, the 25-75 "typical half of players" band sits a
+// little brighter, and the median tick marks 50. The dot reuses ZONE_DANGER /
+// GAUGE_NEUTRAL / ZONE_SUCCESS (red below 25, blue 25-75, green above 75).
+export const PERCENTILE_TRACK = 'oklch(1 0 0 / 0.07)';
+export const PERCENTILE_TYPICAL_BAND = 'oklch(1 0 0 / 0.13)';
+export const PERCENTILE_MEDIAN_TICK = 'oklch(1 0 0 / 0.35)';
 
-// Fallback used only when a caller omits the `zones` prop on EndgameGauge.
-// All current callers pass explicit bucket-specific zones.
-export const DEFAULT_GAUGE_ZONES: GaugeZone[] = [
-  { from: 0, to: 0.4, color: GAUGE_DANGER },
-  { from: 0.4, to: 0.6, color: GAUGE_NEUTRAL },
-  { from: 0.6, to: 1.0, color: GAUGE_SUCCESS },
-];
+// Phase 238 Endgame Metrics cards (D-00d): the bracket under the WDL bar marks which
+// segments the headline rate counts (wins, wins + draws); the segments it does not
+// count are dimmed with a card-colored veil. Neutral greys, no red/green meaning.
+export const METRIC_BRACKET_COLOR = 'oklch(0.708 0 0)';
+export const METRIC_BRACKET_DIM_OVERLAY = 'oklch(0.205 0 0 / 0.55)';
 
-// Gauge bands are 3-tuples [weak, neutral, strong] across every endgame gauge;
-// numeric bounds come from the codegen'd registry (`@/generated/endgameZones`)
-// so colors live here as a positional triple the FE pairs with those bounds.
-export const GAUGE_ZONE_COLORS = [GAUGE_DANGER, GAUGE_NEUTRAL, GAUGE_SUCCESS] as const;
+// Phase 238 time-pressure charts (D-00f): one grey "typical" band replaces the red/blue/green
+// zone bands, and every line, dot and tooltip swatch uses one neutral series color.
+export const TYPICAL_BAND_FILL = 'oklch(1 0 0 / 0.09)';
+export const NEUTRAL_SERIES_COLOR = 'oklch(0.95 0 0)';
 
-// Pair numeric `{from, to}` bands from the Python-owned zone registry with
-// the FE-owned `GAUGE_ZONE_COLORS` triple. Caller must pass exactly 3 bands.
-export function colorizeGaugeZones(bands: readonly { from: number; to: number }[]): GaugeZone[] {
-  return bands.map((b, i) => ({ ...b, color: GAUGE_ZONE_COLORS[i] ?? GAUGE_NEUTRAL }));
-}
+// Phase 238 Endgame Type Breakdown (D-00e): each conversion / recovery / vs.-engine cell shows
+// a grey typical range with a white "you" tick. The value text is red below the range, green
+// above it and white inside it (238 UAT replaced the below-only amber). Lighter than
+// ZONE_DANGER / ZONE_SUCCESS so the text reads on the charcoal card.
+export const TYPICAL_BELOW_VALUE = 'oklch(0.70 0.17 25)';
+export const TYPICAL_ABOVE_VALUE = 'oklch(0.75 0.16 145)';
+export const TYPICAL_YOU_TICK = 'oklch(0.985 0 0)';
 
 // Minimum games required for reliable stats — rows/charts below this threshold are dimmed
 export const MIN_GAMES_FOR_RELIABLE_STATS = 10;

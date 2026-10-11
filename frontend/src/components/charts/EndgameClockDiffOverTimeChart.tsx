@@ -2,8 +2,9 @@
  * Phase 88.2 / Plan 88-15 (CONTEXT §2 A-2) — restored "Average Clock Difference
  * over Time" line chart. Plots the rolling-window mean of
  * (user_clock - opp_clock) / base_clock at endgame entry, per ISO Monday,
- * with per-week game volume rendered as muted bars behind the line. Three zone
- * bands tint regions above / inside / below ±NEUTRAL_PCT_THRESHOLD.
+ * with per-week game volume rendered as muted bars behind the line. One grey
+ * "typical" band spans ±NEUTRAL_PCT_THRESHOLD (Phase 238 D-00f); the line is
+ * neutral and the dots keep their zone colors (238 UAT brought them back).
  *
  * Restored after the Phase 88-07 cleanup deleted the pre-existing chart —
  * user-approved scope amendment to ROADMAP Phase 88 SC #1 (bullet cards
@@ -17,8 +18,8 @@
  *   - vertical "Clock diff %" Y-axis label on desktop, hidden on mobile
  *   - dynamic Y domain expands past ±30% to include any point that would
  *     otherwise be clipped (Math.max/Math.min around the data extremes)
- *   - three zone bands: danger (red), neutral (blue), success (green)
- *   - white line with zone-colored dots, dot radius 2.5
+ *   - one grey typical band (Phase 238 D-00f, replaces the red/blue/green zone bands)
+ *   - neutral line, zone-colored dots (red / blue / green), dot radius 2.5
  *   - detailed info-popover copy mirroring the previous component
  */
 
@@ -40,6 +41,8 @@ import { ChartTooltipBox } from '@/components/ui/chart-tooltip-box';
 import { NEUTRAL_PCT_THRESHOLD } from '@/generated/endgameZones';
 import {
   ENDGAME_VOLUME_BAR_COLOR,
+  NEUTRAL_SERIES_COLOR,
+  TYPICAL_BAND_FILL,
   ZONE_DANGER,
   ZONE_NEUTRAL,
   ZONE_SUCCESS,
@@ -54,10 +57,9 @@ import type { ClockDiffTimelinePoint } from '@/types/endgames';
 const Y_DOMAIN_BASE: [number, number] = [-30, 30];
 const Y_TICKS_BASE = [-30, -20, -10, 0, 10, 20, 30];
 
-// Muted opacity for the zone-tinted ReferenceArea bands. Lower than the bullet
-// chart's 0.35 because the chart area is much larger and a denser tint would
-// dominate the line. Pre-deletion convention.
-const ZONE_OPACITY = 0.15;
+// Label of the grey band, at the text-sm floor (14px) from frontend/CLAUDE.md.
+const TYPICAL_LABEL = 'typical';
+const TYPICAL_LABEL_FONT_SIZE = 14;
 
 // Mobile breakpoint for hiding the vertical Y-axis label (Tailwind `sm:`).
 const MOBILE_BREAKPOINT_PX = 640;
@@ -77,7 +79,10 @@ function useIsMobile(): boolean {
   return isMobile;
 }
 
-/** Pick the zone color for a point based on its value vs the neutral threshold. */
+/**
+ * Zone color for a point vs the neutral threshold. Phase 238 made the dots neutral;
+ * the 238 UAT asked for the colored dots back, so only the line and band stay neutral.
+ */
 function zoneColor(diffPct: number): string {
   if (diffPct > NEUTRAL_PCT_THRESHOLD) return ZONE_SUCCESS;
   if (diffPct < -NEUTRAL_PCT_THRESHOLD) return ZONE_DANGER;
@@ -110,6 +115,33 @@ interface ChartPoint {
   avg_clock_diff_pct: number;
   game_count: number;
   per_week_game_count: number;
+}
+
+/**
+ * Tooltip body for one week. Exported so the test renders the real tooltip
+ * instead of a reimplementation.
+ */
+export function ClockGapTooltipContent({ point, label }: { point: ChartPoint; label: string }) {
+  const diff = point.avg_clock_diff_pct;
+  const sign = diff > 0 ? '+' : '';
+  return (
+    <ChartTooltipBox data-testid="clock-diff-tooltip">
+      <div className="font-medium">Week of {formatDateWithYear(label)}</div>
+      <div className="flex items-center gap-1.5">
+        <div
+          className="h-2 w-2 shrink-0 rounded-[2px]"
+          data-testid="clock-diff-tooltip-swatch"
+          style={{ backgroundColor: zoneColor(diff) }}
+        />
+        <span>
+          Clock Gap: {sign}
+          {diff.toFixed(1)}%
+          <span className="text-muted-foreground ml-1">(trailing {point.game_count})</span>
+        </span>
+      </div>
+      <div className="text-muted-foreground">Games this week: {point.per_week_game_count}</div>
+    </ChartTooltipBox>
+  );
 }
 
 export function EndgameClockDiffOverTimeChart({
@@ -157,10 +189,9 @@ export function EndgameClockDiffOverTimeChart({
             arrived with more time left.
           </p>
           <p className="mt-1">
-            Dots are colored by zone: green when your lead exceeds
-            +{NEUTRAL_PCT_THRESHOLD}%, red when you're down more than
-            −{NEUTRAL_PCT_THRESHOLD}%, blue in between. Bars at the bottom
-            show how many games you played.
+            The grey band marks the typical range, within ±{NEUTRAL_PCT_THRESHOLD}%
+            of the base time. Dots are green above it, red below it and blue inside
+            it. Bars at the bottom show how many games you played.
           </p>
         </InfoPopover>
       </CardHeader>
@@ -192,31 +223,19 @@ export function EndgameClockDiffOverTimeChart({
           >
             {/* recharts 3: CartesianGrid must bind to the named primary YAxis via yAxisId */}
             <CartesianGrid vertical={false} yAxisId="value" />
-            {/* Three zone bands (danger / neutral / success). The pre-deletion
-                chart used these to make the verdict readable at a glance. */}
-            <ReferenceArea
-              yAxisId="value"
-              y1={yDomain[0]}
-              y2={-NEUTRAL_PCT_THRESHOLD}
-              fill={ZONE_DANGER}
-              fillOpacity={ZONE_OPACITY}
-              ifOverflow="visible"
-            />
+            {/* One grey typical band: dots, line and tooltip stay neutral, so the
+                chart shows where the typical range lies without a verdict. */}
             <ReferenceArea
               yAxisId="value"
               y1={-NEUTRAL_PCT_THRESHOLD}
               y2={NEUTRAL_PCT_THRESHOLD}
-              fill={ZONE_NEUTRAL}
-              fillOpacity={ZONE_OPACITY}
+              fill={TYPICAL_BAND_FILL}
               ifOverflow="visible"
-            />
-            <ReferenceArea
-              yAxisId="value"
-              y1={NEUTRAL_PCT_THRESHOLD}
-              y2={yDomain[1]}
-              fill={ZONE_SUCCESS}
-              fillOpacity={ZONE_OPACITY}
-              ifOverflow="visible"
+              label={{
+                value: TYPICAL_LABEL,
+                position: 'insideTopLeft',
+                style: { fontSize: TYPICAL_LABEL_FONT_SIZE, fill: 'var(--muted-foreground)' },
+              }}
             />
             <XAxis dataKey="date" tickFormatter={formatDateTick} />
             <YAxis
@@ -251,31 +270,7 @@ export function EndgameClockDiffOverTimeChart({
                   (p) => (p.payload as ChartPoint | undefined)?.date !== undefined,
                 )?.payload as ChartPoint | undefined;
                 if (!point) return null;
-                const diff = point.avg_clock_diff_pct;
-                const sign = diff > 0 ? '+' : '';
-                return (
-                  <ChartTooltipBox>
-                    <div className="font-medium">
-                      Week of {formatDateWithYear(label as string)}
-                    </div>
-                    <div className="flex items-center gap-1.5">
-                      <div
-                        className="h-2 w-2 shrink-0 rounded-[2px]"
-                        style={{ backgroundColor: zoneColor(diff) }}
-                      />
-                      <span>
-                        Clock Gap: {sign}
-                        {diff.toFixed(1)}%
-                        <span className="text-muted-foreground ml-1">
-                          (trailing {point.game_count})
-                        </span>
-                      </span>
-                    </div>
-                    <div className="text-muted-foreground">
-                      Games this week: {point.per_week_game_count}
-                    </div>
-                  </ChartTooltipBox>
-                );
+                return <ClockGapTooltipContent point={point} label={label as string} />;
               }}
             />
             <Bar
@@ -290,7 +285,7 @@ export function EndgameClockDiffOverTimeChart({
               yAxisId="value"
               type="monotone"
               dataKey="avg_clock_diff_pct"
-              stroke="white"
+              stroke={NEUTRAL_SERIES_COLOR}
               strokeWidth={2}
               connectNulls={false}
               isAnimationActive={false}
@@ -303,14 +298,13 @@ export function EndgameClockDiffOverTimeChart({
                 if (!payload || !Number.isFinite(cx) || !Number.isFinite(cy)) {
                   return <g key={`nodot-${String(payload?.date ?? cx)}`} />;
                 }
-                const diff = (payload.avg_clock_diff_pct as number) ?? 0;
                 return (
                   <circle
                     key={`clock-diff-dot-${payload.date as string}`}
                     cx={cx}
                     cy={cy}
                     r={2.5}
-                    fill={zoneColor(diff)}
+                    fill={zoneColor((payload.avg_clock_diff_pct as number) ?? 0)}
                   />
                 );
               }}

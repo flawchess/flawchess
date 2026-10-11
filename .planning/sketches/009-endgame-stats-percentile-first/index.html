@@ -1,0 +1,492 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Endgame Stats Percentile-First</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@500;600&family=Nunito+Sans:wght@400;600;700&display=swap" rel="stylesheet">
+<style>
+:root {
+  --bg: oklch(0.145 0 0);
+  --card: oklch(0.205 0 0);
+  --card-2: oklch(0.235 0 0);
+  --edge: oklch(1 0 0 / 9%);
+  --fg: oklch(0.985 0 0);
+  --muted: oklch(0.708 0 0);
+  --faint: oklch(0.5 0 0);
+  --brand: oklch(0.58 0.09 55);
+  --win: oklch(0.50 0.14 145);
+  --draw: oklch(0.60 0.02 260);
+  --loss: oklch(0.50 0.15 25);
+  --low: oklch(0.62 0.17 25);
+  --mid: oklch(0.66 0.15 260);
+  --high: oklch(0.66 0.15 145);
+  --track: oklch(1 0 0 / 7%);
+  --band: oklch(1 0 0 / 13%);
+  --note-bg: oklch(0.80 0.12 85 / 8%);
+  --note-edge: oklch(0.80 0.12 85 / 45%);
+  --note-fg: oklch(0.88 0.08 85);
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--fg); font-family: 'Nunito Sans', sans-serif; font-size: 15px; line-height: 1.45; }
+h1, h2, h3 { font-family: 'Fredoka', sans-serif; font-weight: 500; margin: 0; }
+h2 { font-size: 22px; }
+h3 { font-size: 17px; }
+.wrap { max-width: 1120px; margin: 0 auto; padding: 16px 16px 80px; }
+.topbar { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; justify-content: space-between; padding: 10px 14px; border: 1px dashed var(--note-edge); border-radius: 10px; background: var(--note-bg); color: var(--note-fg); font-size: 13px; margin-bottom: 20px; }
+.topbar label { display: flex; gap: 6px; align-items: center; cursor: pointer; }
+.section { margin-top: 36px; }
+.section .q { color: var(--muted); margin: 4px 0 14px; }
+.card { background: var(--card); border: 1px solid var(--edge); border-radius: 14px; padding: 18px; }
+.card + .card { margin-top: 14px; }
+.grid2 > .card, .grid3 > .card { margin-top: 0; }
+.grid2 { display: grid; grid-template-columns: 1fr; gap: 14px; }
+.grid3 { display: grid; grid-template-columns: 1fr; gap: 14px; }
+@media (min-width: 768px) { .grid2 { grid-template-columns: 1fr 1fr; } }
+@media (min-width: 1024px) { .grid3 { grid-template-columns: 1fr 1fr 1fr; } }
+.muted { color: var(--muted); }
+.small { font-size: 13px; }
+.num { font-variant-numeric: tabular-nums; }
+
+.shelly { display: flex; gap: 12px; align-items: flex-start; background: var(--card); border: 1px solid var(--edge); border-left: 3px solid var(--brand); border-radius: 12px; padding: 12px 14px; margin-bottom: 14px; }
+.shelly .av { flex: 0 0 34px; height: 34px; border-radius: 50%; background: oklch(0.45 0.08 150); display: grid; place-items: center; font-size: 19px; }
+.shelly b { font-weight: 700; }
+.shelly ul { margin: 6px 0 0; padding-left: 18px; color: var(--muted); font-size: 14px; }
+.shelly details summary { cursor: pointer; color: var(--brand); font-size: 13px; margin-top: 4px; list-style: none; }
+
+.seg { display: inline-flex; background: var(--card-2); border: 1px solid var(--edge); border-radius: 10px; padding: 3px; gap: 2px; }
+.seg button { font: inherit; font-size: 14px; color: var(--muted); background: none; border: 0; padding: 5px 14px; border-radius: 8px; cursor: pointer; }
+.seg button.on { background: var(--brand); color: var(--fg); }
+.sechead { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; justify-content: space-between; }
+.basis { font-size: 13px; color: var(--faint); }
+
+/* Percentile bar: one 0-100 axis for every peer-ranked metric */
+.prow { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 2px 12px; align-items: center; }
+.prow .lbl { font-weight: 600; }
+.prow .val { font-weight: 700; text-align: right; }
+.pbar { grid-column: 1 / -1; display: flex; align-items: center; gap: 10px; }
+.ptrack { position: relative; flex: 1; height: 10px; border-radius: 6px; background: var(--track); }
+.ptrack .band { position: absolute; left: 25%; width: 50%; top: 0; bottom: 0; background: var(--band); border-radius: 2px; }
+.ptrack .med { position: absolute; left: 50%; top: -3px; bottom: -3px; width: 1px; background: oklch(1 0 0 / 35%); }
+.ptrack .dot { position: absolute; top: 50%; width: 16px; height: 16px; border-radius: 50%; transform: translate(-50%, -50%); border: 2px solid var(--bg); }
+.pnum { min-width: 44px; text-align: right; font-weight: 700; font-size: 14px; cursor: help; position: relative; }
+.lo { color: var(--low); } .md { color: var(--mid); } .hi { color: var(--high); }
+.bg-lo { background: var(--low); } .bg-md { background: var(--mid); } .bg-hi { background: var(--high); }
+.axis { display: flex; justify-content: space-between; font-size: 12px; color: var(--faint); margin: 2px 54px 0 0; }
+
+/* One popover per metric: plain explanation, disclosures, then greyed stats below a separator */
+.pnum .pop { display: none; position: absolute; right: 0; bottom: 130%; width: 310px; z-index: 5; background: oklch(0.96 0 0); color: oklch(0.2 0 0); font-weight: 400; font-size: 13px; text-align: left; border-radius: 10px; padding: 10px 12px; box-shadow: 0 8px 24px oklch(0 0 0 / 50%); }
+.pnum:hover .pop, .pnum:focus .pop { display: block; }
+.pop ul { margin: 4px 0 0; padding-left: 16px; }
+.pop hr { border: 0; border-top: 1px solid oklch(0.85 0 0); margin: 8px 0 6px; }
+.pop .stats { color: oklch(0.5 0 0); font-style: italic; font-size: 12px; }
+
+.wdl { display: flex; height: 22px; border-radius: 6px; overflow: hidden; font-size: 12px; font-weight: 700; }
+.wdl div { display: grid; place-items: center; min-width: 0; overflow: hidden; white-space: nowrap; }
+.wdl .w { background: var(--win); } .wdl .d { background: var(--draw); } .wdl .l { background: var(--loss); }
+.wdl .dim { opacity: .28; }
+.bracket { position: relative; height: 16px; margin-top: 2px; }
+.bracket span { position: absolute; top: 0; height: 7px; border: 1.5px solid var(--muted); border-top: 0; border-radius: 0 0 4px 4px; }
+.bracket em { position: absolute; top: 3px; font-style: normal; font-size: 12px; color: var(--muted); white-space: nowrap; }
+
+.big { font-family: 'Fredoka', sans-serif; font-size: 34px; font-weight: 500; line-height: 1.1; }
+.kv { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
+.sep { border: 0; border-top: 1px solid var(--edge); margin: 14px 0; }
+
+.vs { display: grid; grid-template-columns: 1fr auto 1fr; gap: 12px; align-items: end; }
+.vs .arrow { font-size: 22px; color: var(--faint); padding-bottom: 30px; }
+.flow { display: grid; grid-template-columns: 1fr auto 1fr auto 1fr; gap: 8px; align-items: center; text-align: center; }
+.flow .box { background: var(--card-2); border: 1px solid var(--edge); border-radius: 10px; padding: 10px 6px; }
+.flow .box .big { font-size: 26px; }
+.flow .arr { color: var(--faint); }
+
+.placeholder { border: 1px dashed var(--edge); border-radius: 14px; padding: 22px; color: var(--faint); text-align: center; font-size: 14px; }
+
+.mcard .def { font-size: 13px; color: var(--muted); margin: 2px 0 12px; }
+
+.pp-group { font-size: 12px; text-transform: uppercase; letter-spacing: .06em; color: var(--faint); margin: 14px 0 6px; }
+.pp-group:first-child { margin-top: 4px; }
+.pp { display: grid; grid-template-columns: 190px minmax(0, 1fr) 52px; gap: 6px 12px; align-items: center; padding: 3px 0; }
+.pp .l { font-size: 14px; }
+.pp .l small { color: var(--faint); }
+.pp-foot { margin: 6px 64px 0 202px; }
+@media (max-width: 560px) { .pp-foot { margin: 6px 58px 0 0; } .pp { grid-template-columns: minmax(0,1fr) 46px; } .pp .ptrack { grid-column: 1 / -1; grid-row: 2; } .pp .l { grid-column: 1; } }
+
+.chart svg { width: 100%; height: auto; display: block; }
+
+.ttab { width: 100%; border-collapse: collapse; }
+.ttab th { font-weight: 600; font-size: 13px; color: var(--muted); text-align: right; padding: 6px 8px; border-bottom: 1px solid var(--edge); white-space: nowrap; }
+.ttab th:first-child, .ttab td:first-child { text-align: left; }
+.ttab td { padding: 10px 8px; border-bottom: 1px solid var(--edge); text-align: right; vertical-align: middle; }
+.ttab tr:last-child td { border-bottom: 0; }
+.ttab .tname { font-weight: 700; }
+.ttab .tname small { display: block; font-weight: 400; color: var(--faint); font-size: 12px; }
+.cell { display: inline-flex; flex-direction: column; align-items: flex-end; gap: 3px; }
+.rng { position: relative; width: 70px; height: 6px; border-radius: 3px; background: var(--track); }
+.rng .b { position: absolute; top: 0; bottom: 0; background: oklch(1 0 0 / 22%); border-radius: 3px; }
+.rng .t { position: absolute; top: -3px; width: 2px; height: 12px; background: var(--fg); border-radius: 1px; }
+.below { color: oklch(0.80 0.10 60); }
+.wdlmini { width: 110px; height: 10px; display: inline-flex; border-radius: 3px; overflow: hidden; }
+.wdlmini div { height: 100%; }
+.lowconf { opacity: .55; }
+@media (max-width: 760px) {
+  .ttab thead { display: none; }
+  .ttab, .ttab tbody, .ttab tr, .ttab td { display: block; width: 100%; }
+  .ttab tr { border-bottom: 1px solid var(--edge); padding: 10px 0; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px 12px; }
+  .ttab tr:last-child { border-bottom: 0; }
+  .ttab td { border: 0; padding: 0; text-align: left; }
+  .ttab td:first-child { grid-column: 1 / -1; }
+  .ttab td[data-k]::before { content: attr(data-k); display: block; font-size: 12px; color: var(--faint); }
+  .ttab td.wcol { grid-column: 1 / -1; }
+  .cell { align-items: flex-start; }
+  .wdlmini { width: 100%; }
+}
+
+.note { margin-top: 12px; border: 1px dashed var(--note-edge); background: var(--note-bg); color: var(--note-fg); border-radius: 10px; padding: 10px 14px; font-size: 13.5px; }
+.note b { color: oklch(0.92 0.09 85); }
+.note ul { margin: 4px 0 0; padding-left: 18px; }
+body.hide-notes .note { display: none; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <div class="topbar">
+    <span><b>Sketch 009 · round 2</b> · Endgame Stats, percentile-first · real dev percentiles for one user (blitz ~1557, rapid ~1788). Ranked-sample WDL / with-vs-without scores / entry evals are <b>illustrative</b> (the backend does not compute them on the ranked sample yet). Hover a percentile for its popover.</span>
+    <label><input type="checkbox" id="notesToggle" checked> Show design notes</label>
+  </div>
+
+  <div class="shelly">
+    <div class="av">🐢</div>
+    <div>
+      <b>Shelly's summary.</b> Your endgames trail your middlegames. The biggest driver is the clock: in rapid you reach endgames with less time than 95% of similar-rated players.
+      <details><summary>Read full report</summary><ul><li>Overview, player profile and recommendations as today.</li></ul></details>
+    </div>
+  </div>
+
+  <!-- PEER PROFILE -->
+  <section class="section" id="profile">
+    <div class="sechead"><h2>Compared to similar-rated players</h2><div class="seg" data-seg></div></div>
+    <p class="q">Every metric we can rank against players at your rating, on one scale. Middle band = the typical half of players.</p>
+    <div class="card" id="ppCard"></div>
+    <div class="note"><b>Owner call:</b> ship it, decide later whether to keep it. <b>Risk:</b> the metric names may be hard to read without their section's context. Each row should link to its section.</div>
+  </section>
+
+  <!-- OVERALL -->
+  <section class="section" id="overall">
+    <div class="sechead"><h2>Endgame Overall Performance</h2><div class="seg" data-seg></div></div>
+    <p class="q">Do you perform better or worse when games reach an endgame?</p>
+    <div class="shelly"><div class="av">🐢</div><div><b>Endgame results lag strong opening and middlegame performance.</b></div></div>
+    <div class="grid2">
+      <div class="card">
+        <h3>Score with vs. without endgame</h3>
+        <p class="basis" style="margin:2px 0 14px" data-basis></p>
+        <div id="ovScores"></div>
+        <hr class="sep">
+        <div id="ovSg"></div>
+      </div>
+      <div class="card">
+        <h3>Do you keep your entry advantage?</h3>
+        <p class="basis" style="margin:2px 0 14px" data-basis></p>
+        <div id="ovFlow"></div>
+        <hr class="sep">
+        <div id="ovEsg"></div>
+      </div>
+    </div>
+    <div class="note"><b>Round 2:</b> the section gets the same time-control switch as the others. Every number shown is the <b>ranked value</b> (last 36 months, opponents within ±100 Elo), so the big numbers and the percentiles always describe the same games. The averaged "all time controls" percentile goes away. Plain numbers with no percentile (scores, entry eval, expected score) stay uncoloured.</div>
+    <div class="grid2" style="margin-top:14px">
+      <div class="placeholder">Endgame Score Gap over Time: unchanged</div>
+      <div class="placeholder">Endgame ELO Timeline: unchanged</div>
+    </div>
+  </section>
+
+  <!-- METRICS -->
+  <section class="section" id="metrics">
+    <div class="sechead"><h2>Endgame Metrics</h2><div class="seg" data-seg></div></div>
+    <p class="q">How do you score from winning, balanced, and losing endgames?</p>
+    <div class="shelly"><div class="av">🐢</div><div><b>Balanced and defensive positions trail peer scoring rates.</b></div></div>
+    <div class="grid3" id="metricCards"></div>
+    <div class="note"><b>Round 2:</b> the big number is the ranked value (rapid Conversion 74.6% over 299 games, not 71.5% over all filtered games). The WDL bar must come from the same games. Gauges, zone bands and CI whiskers are gone. CI, p-value and n move into the popover below a separator.</div>
+  </section>
+
+  <!-- TIME PRESSURE -->
+  <section class="section" id="time">
+    <h2>Time Pressure</h2>
+    <div class="card chart" style="margin-top:14px">
+      <h3>Clock Gap at Endgame Entry</h3>
+      <p class="q" style="margin:2px 0 8px">Are you banking time into the endgame or burning it down?</p>
+      <div id="clockTimeline"></div>
+      <div class="muted small" style="text-align:center">Week (rolling average of the last 100 games)</div>
+    </div>
+    <div class="note"><b>Round 2:</b> the red/blue/green zones (±5%) become one grey "typical" band, and the line and dots are neutral instead of zone-colored. This matches the curve below.</div>
+
+    <div class="sechead" style="margin-top:24px"><p class="q" style="margin:0">How does your score change under time pressure?</p><div class="seg" data-seg></div></div>
+    <div class="shelly" style="margin-top:14px"><div class="av">🐢</div><div><b>Severe clock deficits drive sharp performance drops in late stages.</b></div></div>
+    <div class="card chart">
+      <div class="grid2" style="gap:24px">
+        <div>
+          <h3>Score vs. opponent by clock left</h3>
+          <p class="muted small" style="margin:2px 0 8px">Your score minus your opponents' score when they had the same clock left.</p>
+          <div id="tpCurve"></div>
+        </div>
+        <div id="tpPeers"></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- TYPES -->
+  <section class="section" id="types">
+    <div class="sechead"><h2>Endgame Type Breakdown</h2><div class="seg" data-seg></div></div>
+    <p class="q">Which endgame types do you convert or defend worse than usual?</p>
+    <div class="shelly"><div class="av">🐢</div><div><b>Pawn endings and queen conversions present the clearest challenges.</b></div></div>
+    <div class="card"><table class="ttab" id="typeTable"></table>
+      <p class="muted small" style="margin:12px 0 0">Grey band = typical range for all players in this time control and endgame type. White tick = you. <span class="below">Amber</span> = below the typical range. Faded rows have fewer than 100 games.</p>
+    </div>
+    <div class="note"><b>Owner call:</b> the grey typical range is fine here (no per-type peer percentiles). <b>Open for discuss-phase:</b> does this table also switch to the ranked sample for consistency, or keep the filtered all-history games?</div>
+  </section>
+
+</div>
+
+<script>
+const PEER_LOW = 25, PEER_HIGH = 75;
+const Z95 = 1.96;
+const LOW_CONF_GAMES = 100;
+const TYPE_GAP_BAND = [-4, 5];
+const CLOCK_GAP_TYPICAL = 5; // ±5% today's NEUTRAL_PCT_THRESHOLD, now a grey band
+
+const DATA = {
+  blitz: {
+    anchor: 1557, mix: '307 chess.com games (median 1183, converted)',
+    sg:   { v: -2.5, p: 40, n: 180 },
+    esg:  { v: 0.7,  p: 55, n: 132 },
+    ov: { non: 58.4, eg: 55.9, nNon: 96, nEg: 180, wdlNon: [56, 5, 39], wdlEg: [51, 10, 39], entry: '+0.21', exp: 51.0, act: 51.7 },
+    conv: { rate: 64.0, n: 50,  w: 64.0, d: 9.0,  rp: 14, gap: -4.8, gp: 51, gn: 72 },
+    par:  { rate: 51.6, n: 32,  w: 45.0, d: 13.2, rp: 61, gap: 2.6,  gp: 75, gn: 47 },
+    rec:  { rate: 40.0, n: 50,  w: 28.0, d: 12.0, rp: 93, gap: 5.3,  gp: 50, gn: 63 },
+    clock: { v: -27, p: 1, n: 132 }, flag: { v: -7, p: 22, n: 132 }, tpsg: { v: -5, p: 29, n: 44 },
+    curve: [-19, -8, -3, 2, 6], band: 6,
+    types: [
+      { k: 'Rook', n: 111, w: 45, d: 12.6, l: 42.3, score: 51.4, conv: 79.2, rec: 21.6, gap: -2.9, cb: [0.67, 0.82], rb: [0.20, 0.37] },
+      { k: 'Minor Piece', n: 76, w: 28.9, d: 18.4, l: 52.6, score: 38.2, conv: 68.0, rec: 14.7, gap: -4.5, cb: [0.64, 0.81], rb: [0.21, 0.40] },
+      { k: 'Pawn', n: 68, w: 30.9, d: 14.7, l: 54.4, score: 38.2, conv: 81.0, rec: 13.5, gap: 1.8, cb: [0.68, 0.87], rb: [0.17, 0.36] },
+      { k: 'Queen', n: 42, w: 33.3, d: 16.7, l: 50.0, score: 41.7, conv: 76.9, rec: 5.6, gap: -5.8, cb: [0.70, 0.90], rb: [0.14, 0.31] },
+    ],
+  },
+  rapid: {
+    anchor: 1788, mix: '657 chess.com games (median 1466, converted) and 741 lichess games (median 1765)',
+    sg:   { v: -9.7, p: 24, n: 871 },
+    esg:  { v: -4.3, p: 17, n: 740 },
+    ov: { non: 59.0, eg: 49.3, nNon: 512, nEg: 871, wdlNon: [57, 4, 39], wdlEg: [45, 9, 46], entry: '+0.31', exp: 53.0, act: 48.7 },
+    conv: { rate: 74.6, n: 299, w: 74.6, d: 5.0,  rp: 46, gap: -2.9, gp: 31, gn: 421 },
+    par:  { rate: 42.5, n: 200, w: 35.5, d: 14.0, rp: 16, gap: -5.0, gp: 19, gn: 312 },
+    rec:  { rate: 21.6, n: 241, w: 15.0, d: 6.6,  rp: 24, gap: -1.1, gp: 25, gn: 367 },
+    clock: { v: -22, p: 5, n: 740 }, flag: { v: -7, p: 10, n: 740 }, tpsg: { v: -10, p: 27, n: 166 },
+    curve: [-5.8, -13.6, -4.5, 7.4, 9.4], band: 6,
+    types: [
+      { k: 'Rook', n: 241, w: 40.7, d: 13.3, l: 46.1, score: 47.3, conv: 72.9, rec: 22.1, gap: -5.0, cb: [0.69, 0.83], rb: [0.17, 0.30] },
+      { k: 'Minor Piece', n: 160, w: 39.4, d: 15.0, l: 45.6, score: 46.9, conv: 72.1, rec: 17.3, gap: -4.8, cb: [0.68, 0.83], rb: [0.15, 0.33] },
+      { k: 'Pawn', n: 128, w: 36.7, d: 15.6, l: 47.7, score: 44.5, conv: 81.0, rec: 12.1, gap: 1.3, cb: [0.75, 0.91], rb: [0.10, 0.28] },
+      { k: 'Queen', n: 63, w: 50.8, d: 9.5, l: 39.7, score: 55.6, conv: 71.4, rec: 15.8, gap: -7.3, cb: [0.75, 0.92], rb: [0.08, 0.25] },
+    ],
+  },
+};
+// Weekly clock-gap timeline, all TCs (illustrative shape of the dev data).
+const CLOCK_SERIES = [-4, -8, -12, -6, 2, 4, -3, -10, -15, -18, -14, -9, -16, -22, -19, -24, -20, -17, -21, -25, -23, -19];
+
+let tc = 'rapid';
+
+const band = p => p < PEER_LOW ? 'lo' : p > PEER_HIGH ? 'hi' : 'md';
+const sign = v => (v > 0 ? '+' : '') + v;
+const fmt1 = v => (Math.round(v * 10) / 10).toString();
+const ord = p => { const n = Math.round(p); const s = n % 100 >= 11 && n % 100 <= 13 ? 'th' : ({ 1: 'st', 2: 'nd', 3: 'rd' }[n % 10] || 'th'); return n + s; };
+
+// Illustrative stats footer: a binomial CI for rates, a rough score-diff CI for gaps.
+function statsFooter(kind, v, n) {
+  const half = kind === 'rate'
+    ? Z95 * Math.sqrt((v / 100) * (1 - v / 100) / n) * 100
+    : Z95 * 0.45 / Math.sqrt(n) * 100;
+  const z = kind === 'rate' ? null : Math.abs(v) / (half / Z95);
+  const p = z == null ? null : Math.max(0.001, 2 * (1 - normCdf(z)));
+  return `n = ${n} games · 95% CI ${fmt1(v - half)}% to ${fmt1(v + half)}%` +
+    (p == null ? '' : `<br>Two-sample z-test vs 0: p = ${p < 0.001 ? '<0.001' : p.toFixed(3)}`);
+}
+function normCdf(x) { const t = 1 / (1 + 0.2316419 * x); const d = 0.3989423 * Math.exp(-x * x / 2); return 1 - d * t * (0.3193815 + t * (-0.3565638 + t * (1.781478 + t * (-1.821256 + t * 1.330274)))); }
+
+function popover(label, what, p, stats) {
+  const d = DATA[tc];
+  return `<span class="pop"><b>${label}:</b> ${what}
+    <p style="margin:6px 0 0"><b>Better than ${Math.round(p)}% of ~${d.anchor}-rated ${tc} players.</b></p>
+    <ul>
+      <li>Compared against benchmarked Lichess players at your rating.</li>
+      <li>Your games from the last 36 months, opponents within ±100 Elo.</li>
+      <li>Filters don't change this rank.</li>
+      <li>Anchored at ~${d.anchor} Elo from ${d.mix}.</li>
+    </ul>
+    <hr><div class="stats">${stats}</div></span>`;
+}
+
+function track(p) {
+  return `<div class="ptrack"><div class="band"></div><div class="med"></div>
+    <div class="dot bg-${band(p)}" style="left:${Math.max(1, Math.min(99, p))}%"></div></div>`;
+}
+function prow(label, value, p, pop) {
+  return `<div class="prow"><div class="lbl">${label}</div><div class="val num">${value}</div>
+    <div class="pbar">${track(p)}<span class="pnum ${band(p)}" tabindex="0">${ord(p)}${pop}</span></div></div>`;
+}
+const axis = () => `<div class="axis"><span>worse than peers</span><span>typical</span><span>better</span></div>`;
+const wdlBar = ([w, d, l]) => `<div class="wdl" style="margin-top:6px"><div class="w" style="width:${w}%">${w}%</div><div class="d" style="width:${d}%"></div><div class="l" style="width:${l}%">${l}%</div></div>`;
+
+const WHAT = {
+  sg: 'your score in games that reach an endgame minus your score in games that end before. Negative = you do worse once an endgame is reached.',
+  esg: 'your endgame score minus the score the engine expected from your eval at endgame entry. Negative = you lose ground in the endgame.',
+  conv: 'how often you win endgames you entered clearly ahead.',
+  par: 'your score in endgames you entered roughly equal.',
+  rec: 'how often you save (win or draw) endgames you entered clearly behind.',
+  gap: 'your score minus the score the engine expected from your eval at endgame entry, for these games.',
+  clock: 'your clock minus your opponent\'s clock at endgame entry, as % of the base time. Negative = you arrive with less time.',
+  flag: 'how often you win on time minus how often you lose on time. Negative = you flag more than you flag opponents.',
+  tpsg: 'your score minus your opponents\' score when you were the one under time pressure.',
+};
+
+function renderOverall() {
+  const d = DATA[tc], o = d.ov;
+  document.getElementById('ovScores').innerHTML = `<div class="vs">
+      <div><div class="muted small">No endgame · ${o.nNon} games</div><div class="big num">${o.non}%</div>${wdlBar(o.wdlNon)}</div>
+      <div class="arrow">→</div>
+      <div><div class="muted small">Endgame · ${o.nEg} games</div><div class="big num">${o.eg}%</div>${wdlBar(o.wdlEg)}</div></div>`;
+  document.getElementById('ovFlow').innerHTML = `<div class="flow">
+      <div class="box"><div class="muted small">Entry eval</div><div class="big num">${o.entry}</div></div><div class="arr">→</div>
+      <div class="box"><div class="muted small">Expected</div><div class="big num">${o.exp}%</div></div><div class="arr">→</div>
+      <div class="box"><div class="muted small">Actual</div><div class="big num">${o.act}%</div></div></div>`;
+  document.getElementById('ovSg').innerHTML = prow('Endgame Score Gap', `${sign(d.sg.v)}%`, d.sg.p,
+    popover('Endgame Score Gap', WHAT.sg, d.sg.p, statsFooter('gap', d.sg.v, d.sg.n))) + axis();
+  document.getElementById('ovEsg').innerHTML = prow('Eval Score Gap', `${sign(d.esg.v)}%`, d.esg.p,
+    popover('Eval Score Gap', WHAT.esg, d.esg.p, statsFooter('gap', d.esg.v, d.esg.n))) + axis();
+}
+
+function renderProfile() {
+  const d = DATA[tc];
+  const groups = [
+    ['Endgame results', [['Endgame Score Gap', `${sign(d.sg.v)}%`, d.sg.p, 'sg'], ['Eval Score Gap', `${sign(d.esg.v)}%`, d.esg.p, 'esg']]],
+    ['Winning · balanced · losing endgames', [
+      ['Conversion', `${d.conv.rate}%`, d.conv.rp, 'conv'], ['Parity', `${d.par.rate}%`, d.par.rp, 'par'], ['Recovery', `${d.rec.rate}%`, d.rec.rp, 'rec'],
+      ['Conversion <small>vs. eval</small>', `${sign(d.conv.gap)}%`, d.conv.gp, 'gap'], ['Parity <small>vs. eval</small>', `${sign(d.par.gap)}%`, d.par.gp, 'gap'], ['Recovery <small>vs. eval</small>', `${sign(d.rec.gap)}%`, d.rec.gp, 'gap'],
+    ]],
+    ['Clock', [['Clock Gap', `${d.clock.v}%`, d.clock.p, 'clock'], ['Net Flag Rate', `${d.flag.v}%`, d.flag.p, 'flag'], ['Score under time pressure', `${d.tpsg.v}%`, d.tpsg.p, 'tpsg']]],
+  ];
+  let html = '';
+  for (const [g, rows] of groups) {
+    html += `<div class="pp-group">${g}</div>`;
+    for (const [l, v, p, k] of rows) {
+      html += `<div class="pp"><div class="l">${l} <span class="muted num">${v}</span></div>${track(p)}
+        <span class="pnum ${band(p)}" tabindex="0">${ord(p)}${popover(l.replace(/<[^>]+>/g, ''), WHAT[k], p, 'Details in the section below.')}</span></div>`;
+    }
+  }
+  html += `<div class="axis pp-foot"><span>0</span><span>typical (25–75)</span><span>100</span></div>`;
+  document.getElementById('ppCard').innerHTML = html;
+}
+
+function wdlBracket(m, kind) {
+  const l = Math.round((100 - m.w - m.d) * 10) / 10;
+  const covered = kind === 'conv' ? m.w : kind === 'rec' ? m.w + m.d : null;
+  const dim = seg => (kind === 'conv' && seg !== 'w') || (kind === 'rec' && seg === 'l') ? ' dim' : '';
+  const bar = `<div class="wdl"><div class="w${dim('w')}" style="width:${m.w}%">${Math.round(m.w)}%</div>
+      <div class="d${dim('d')}" style="width:${m.d}%"></div><div class="l${dim('l')}" style="width:${l}%">${Math.round(l)}%</div></div>`;
+  const label = kind === 'conv' ? `wins = ${m.rate}%` : kind === 'rec' ? `wins + draws = ${m.rate}%` : `score (W + ½D) = ${m.rate}%`;
+  const br = covered == null ? `<div class="bracket"><em style="left:0">${label}</em></div>`
+    : `<div class="bracket"><span style="left:0;width:${covered}%"></span><em style="left:${Math.min(covered + 2, 60)}%">${label}</em></div>`;
+  return bar + br;
+}
+
+function renderMetrics() {
+  const d = DATA[tc];
+  const defs = {
+    conv: ['Conversion', 'Endgames you entered clearly ahead. How often you won.'],
+    par: ['Parity', 'Endgames you entered roughly equal. Your score.'],
+    rec: ['Recovery', 'Endgames you entered clearly behind. How often you saved them.'],
+  };
+  document.getElementById('metricCards').innerHTML = ['conv', 'par', 'rec'].map(k => {
+    const m = d[k];
+    return `<div class="card mcard"><h3>${defs[k][0]}</h3><div class="def">${defs[k][1]}</div>
+      <div class="kv"><span class="big num">${m.rate}%</span><span class="muted small">${m.n} games</span></div>
+      <div style="margin:8px 0 14px">${wdlBracket(m, k)}</div>
+      ${prow(`${defs[k][0]} vs. peers`, '', m.rp, popover(defs[k][0], WHAT[k], m.rp, statsFooter('rate', m.rate, m.n)))}
+      <div style="height:12px"></div>
+      ${prow('vs. engine expectation', `${sign(m.gap)}%`, m.gp, popover(`${defs[k][0]} Eval Score Gap`, WHAT.gap, m.gp, statsFooter('gap', m.gap, m.gn)))}
+    </div>`;
+  }).join('');
+}
+
+function lineChart({ values, labels, ymax, bandHalf, W = 360, H = 190, padL = 38, connect = true, xLabelEvery = 1 }) {
+  const padR = 10, padT = 10, padB = 30;
+  const n = values.length;
+  const x = i => padL + (i + 0.5) * (W - padL - padR) / n;
+  const y = v => padT + (ymax - v) * (H - padT - padB) / (2 * ymax);
+  let g = `<rect x="${padL}" y="${y(bandHalf)}" width="${W - padL - padR}" height="${y(-bandHalf) - y(bandHalf)}" fill="oklch(1 0 0 / 9%)"/>`;
+  const step = ymax > 20 ? 10 : 5;
+  for (let t = -ymax + (ymax % step); t <= ymax; t += step) {
+    g += `<line x1="${padL}" x2="${W - padR}" y1="${y(t)}" y2="${y(t)}" stroke="oklch(1 0 0 / ${t === 0 ? 30 : 8}%)" ${t === 0 ? 'stroke-dasharray="4 3"' : ''}/>
+          <text x="${padL - 6}" y="${y(t) + 4}" fill="oklch(0.6 0 0)" font-size="11" text-anchor="end">${sign(t)}%</text>`;
+  }
+  g += `<polyline points="${values.map((v, i) => `${x(i)},${y(v)}`).join(' ')}" fill="none" stroke="oklch(0.95 0 0)" stroke-width="2"/>`;
+  values.forEach((v, i) => {
+    g += `<circle cx="${x(i)}" cy="${y(v)}" r="${n > 10 ? 2.5 : 4.5}" fill="oklch(0.95 0 0)"/>`;
+    if (labels && i % xLabelEvery === 0) g += `<text x="${x(i)}" y="${H - 12}" fill="oklch(0.6 0 0)" font-size="11" text-anchor="middle">${labels[i]}</text>`;
+  });
+  g += `<text x="${padL + 4}" y="${y(bandHalf) - 4}" fill="oklch(0.6 0 0)" font-size="10">typical</text>`;
+  return `<svg viewBox="0 0 ${W} ${H}" role="img">${g}</svg>`;
+}
+
+function renderTimePressure() {
+  const d = DATA[tc];
+  document.getElementById('tpCurve').innerHTML = lineChart({ values: d.curve, labels: ['0–20%', '20–40%', '40–60%', '60–80%', '80–100%'], ymax: 25, bandHalf: d.band })
+    + `<div class="muted small" style="text-align:center">Clock left at endgame entry</div>`;
+  const row = (label, k, m) => prow(label, `${m.v}%`, m.p, popover(label, WHAT[k], m.p, statsFooter('gap', m.v, m.n)));
+  document.getElementById('tpPeers').innerHTML = `<h3 style="margin-bottom:12px">Your clock vs. peers</h3>` +
+    row('Clock Gap at entry', 'clock', d.clock) + `<div style="height:14px"></div>` +
+    row('Net Flag Rate', 'flag', d.flag) + `<div style="height:14px"></div>` +
+    row('Score under time pressure', 'tpsg', d.tpsg) + axis();
+}
+
+function renderClockTimeline() {
+  const labels = CLOCK_SERIES.map((_, i) => ['Aug \'22', '', '', '', '', '', 'Oct \'23', '', '', '', '', '', '', 'Jan \'26', '', '', '', '', '', '', '', 'Aug \'26'][i]);
+  document.getElementById('clockTimeline').innerHTML = lineChart({ values: CLOCK_SERIES, labels, ymax: 30, bandHalf: CLOCK_GAP_TYPICAL, W: 720, H: 220, padL: 44 });
+}
+
+function rangeCell(value, lo, hi, txt, domain) {
+  const pos = v => Math.max(0, Math.min(100, (v - domain[0]) / (domain[1] - domain[0]) * 100));
+  return `<span class="cell"><span class="num ${value < lo ? 'below' : ''}">${txt}</span>
+    <span class="rng"><span class="b" style="left:${pos(lo)}%;width:${pos(hi) - pos(lo)}%"></span><span class="t" style="left:${pos(value)}%"></span></span></span>`;
+}
+
+function renderTypes() {
+  let html = `<thead><tr><th>Type</th><th>Results</th><th>Score</th><th>Conversion</th><th>Recovery</th><th>vs. engine</th></tr></thead><tbody>`;
+  for (const t of DATA[tc].types) {
+    html += `<tr class="${t.n < LOW_CONF_GAMES ? 'lowconf' : ''}">
+      <td class="tname">${t.k}<small>${t.n} games</small></td>
+      <td class="wcol" data-k="Results"><span class="wdlmini"><div style="width:${t.w}%;background:var(--win)"></div><div style="width:${t.d}%;background:var(--draw)"></div><div style="width:${t.l}%;background:var(--loss)"></div></span></td>
+      <td data-k="Score" class="num">${t.score}%</td>
+      <td data-k="Conversion">${rangeCell(t.conv / 100, t.cb[0], t.cb[1], t.conv + '%', [0.4, 1])}</td>
+      <td data-k="Recovery">${rangeCell(t.rec / 100, t.rb[0], t.rb[1], t.rec + '%', [0, 0.6])}</td>
+      <td data-k="vs. engine">${rangeCell(t.gap, TYPE_GAP_BAND[0], TYPE_GAP_BAND[1], sign(t.gap) + '%', [-15, 15])}</td></tr>`;
+  }
+  document.getElementById('typeTable').innerHTML = html + '</tbody>';
+}
+
+function renderSegs() {
+  document.querySelectorAll('[data-seg]').forEach(el => {
+    el.innerHTML = ['blitz', 'rapid'].map(k => `<button class="${k === tc ? 'on' : ''}" data-tc="${k}">${k[0].toUpperCase() + k.slice(1)}</button>`).join('');
+  });
+  document.querySelectorAll('[data-basis]').forEach(el => el.textContent = `Your ${tc} games from the last 36 months vs. opponents within ±100 Elo.`);
+}
+
+function render() { renderSegs(); renderProfile(); renderOverall(); renderMetrics(); renderTimePressure(); renderTypes(); }
+
+document.addEventListener('click', e => { const b = e.target.closest('[data-tc]'); if (b) { tc = b.dataset.tc; render(); } });
+document.getElementById('notesToggle').addEventListener('change', e => document.body.classList.toggle('hide-notes', !e.target.checked));
+renderClockTimeline();
+render();
+</script>
+</body>
+</html>

@@ -1,19 +1,19 @@
 ---
 gsd_state_version: "1.0"
 milestone: v2.24
-current_phase_name: Train Reveal Verdict Strip, Line Chips & One Move Tree (SEED-194)
+current_phase: 238
+current_phase_name: Endgame Stats Percentile-First Redesign (SEED-196)
 status: completed
-stopped_at: v2.22, v2.23 and v2.24 closed (phases 228–237 regrouped), no open milestone
-last_updated: "2026-10-10T08:32:18.448Z"
-state_head: 0cd92a603ff027b57570a351eb02379d3f698db8
+stopped_at: Phase 238 complete, squash-merged to main
+last_updated: "2026-10-11T19:40:00.000Z"
+state_head: 6d15ebdc01b6a068c341b687d66ba8f6fae07314
 progress:
-  total_phases: 10
+  total_phases: 1
   completed_phases: 103
-  total_plans: 57
+  total_plans: 9
   completed_plans: 57
 milestone_name: Train Grading Integrity & One-Screen Reveal
 last_activity: 2026-10-10
-current_phase: 237
 last_activity_desc: "Completed quick task 261010-e5l: live-engine good-move alternatives at the soft puzzle position in the Train reveal"
 ---
 
@@ -21,10 +21,10 @@ last_activity_desc: "Completed quick task 261010-e5l: live-engine good-move alte
 
 ## Current Position
 
-Phase: none (next standalone phase is 238)
-Plan: Not started
+Phase: 238 (Endgame Stats Percentile-First Redesign (SEED-196)) — COMPLETE
+Plan: 9 of 9
 
-Status: No open milestone; v2.24 closed 2026-10-09
+Status: Phase 238 complete 2026-10-11 (verified, UAT passed, squash-merged to main; unreleased). SEED-196 closed.
 
 Open threads carried forward (not blockers):
 
@@ -178,6 +178,7 @@ v1.29 Live-Engine Analysis Page shipped 2026-06-29 — 5 phases (136–140), 14 
 
 ### Roadmap Evolution
 
+- Phase 238 added 2026-10-11 (explicit user request "create a phase for SEED-196", planted the same day from the ad-hoc Endgame Stats UX review + sketch 009 round 2): **Endgame Stats Percentile-First Redesign** (SEED-196). One percentile bar per peer-ranked metric replaces zone-colored bullets, gauges and chips; displayed numbers become the ranked-sample values (backend computes WDL/scores/entry evals/CI on that sample, LLM payload aligned); one popover per metric with greyed stats below a separator; Overall cut to 2 cards, Type Breakdown becomes a table with grey typical ranges, grey bands on the clock-gap timeline and pressure curve, synced per-section TC switch, new peer dot-plot card. Written by hand as 238 (known mature-ROADMAP behavior). Next: `/gsd-discuss-phase 238`.
 - Phase 237 added 2026-10-08 (explicit user request via `/gsd-phase @SEED-194`, planted the same day from the ad-hoc reveal UX review + sketch 008): **Train Reveal Verdict Strip, Line Chips & One Move Tree** (SEED-194). Verdict strip replaces the bot bubble, You/Best/Game chips (with "You = Best/Game" merge) replace the line cards, chip-driven board fades inactive arrows, the three lines become pre-loaded branches of one `useAnalysisBoard` tree (no separate free-play mode), a phone action bar replaces the bottom nav for the whole reveal (first view fits 390x844), desktop right column keeps the full bubble, and the first-reveal onboarding tour is rewritten for the new screen. Frontend only. Written by hand as 237 (known mature-ROADMAP behavior). Next: `/gsd-discuss-phase 237`.
 - Phase 236 added 2026-10-08 (explicit user request via `/gsd-phase @SEED-193`, planted the same day from the ad-hoc Train grading audit, user 28, quick tasks 261008-ob1 / 261008-opg): **Train Phone Grade Record & Instant Server Verdict** (SEED-193). Part 1: a `phone_grade` JSONB record on every keyed `drill_solves` row (tier, key/played ES, depths; `SolveRecheck` shape), `move_quality` stays effective so the override rate is a column compare. Part 2: server-graded moves (soft vetted, herring good band, sharp runner-up) with tiers in the puzzle payload so those ~17% of solves get an instant verdict, after-move search continues in the background for the "Your move" card and the Part 1 record. Written by hand as 236 (known mature-ROADMAP behavior). Next: `/gsd-discuss-phase 236`.
 - Phase 235 added 2026-10-07 (explicit user request via `/gsd-phase SEED-192`, planted the same day from the ad-hoc prod analysis of a contradictory Train reveal, user 28): **Train Grading Anchored to the Server Answer Key** (SEED-192). The server key is the reveal's solution (P-01: key in `SolveResponse` only vs relaxing for the best UCI, decided in discuss); grade the played move by client after-move searches of played vs server key; sharp runner-up `su` graded server-side; longer re-search only on disagreement, benefit of the doubt with new copy, disagreement flag recorded queryably; no classification hardening (step 4 = monitoring). Written by hand as 235 (known mature-ROADMAP behavior). Next: `/gsd-discuss-phase 235`.
@@ -1020,6 +1021,7 @@ None active.
 | 261009-por | add live engine arrows on known lines | 2026-10-09 | dcca42380 | [261009-por-add-live-engine-arrows-on-known-lines](./quick/261009-por-add-live-engine-arrows-on-known-lines/) |
 | 133 | Train mobile: progress bar spans board only, settings cog in top-right corner | 2026-10-10 | 40bf20959 | — |
 | 261010-e5l | Train reveal: live-engine good-move alternatives at the soft puzzle position (up to 3 incl. server alt, good only, depth>=10) | 2026-10-10 | 0cd92a603 | [261010-e5l-train-reveal-live-engine-good-move-alter](./quick/261010-e5l-train-reveal-live-engine-good-move-alter/) |
+| 261011-lwy | Implement SEED-197: Train reveal live engine preview instead of fixed chip lines | 2026-10-11 | 9fd9f3425 | [261011-lwy-implement-seed-197-train-reveal-live-eng](./quick/261011-lwy-implement-seed-197-train-reveal-live-eng/) |
 
 ## Deferred Items
 
@@ -1072,9 +1074,9 @@ Items acknowledged and deferred at **v1.29 milestone close on 2026-06-29** (user
 
 ## Session Continuity
 
-**Last session:** 2026-10-09T01:22:08.992Z
-**Stopped at:** Completed 237-10-PLAN.md
-**Resume file:** None
+**Last session:** 2026-10-11T09:49:30.032Z
+**Stopped at:** Phase 238 context gathered
+**Resume file:** .planning/phases/238-endgame-stats-percentile-first/238-CONTEXT.md
 
 Previous session note (Phase 227):
 refit (calibration parity holds). Verification passed 17/17; code review 0 blockers (WR-01 + 3 info fixed). Next:

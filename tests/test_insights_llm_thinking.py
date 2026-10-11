@@ -30,13 +30,13 @@ from app.schemas.insights import (
     EndgameInsightsReport,
     SectionInsight,
     EndgameTabFindings,
-    FilterContext,
 )
 from app.services import insights_llm
 
 
 def _sample_report() -> EndgameInsightsReport:
     return EndgameInsightsReport(
+        summary="Endgames lift your rating; rook endings need work.",
         player_profile="profile",
         overview="thinking-tokens coverage",
         recommendations=["rec one", "rec two"],
@@ -234,12 +234,9 @@ class TestGenerateInsightsPersistsThinkingTokens:
 
         user = seeded_user
 
-        async def _fake_compute_findings(
-            fc: FilterContext, session: Any, uid: int
-        ) -> EndgameTabFindings:
+        async def _fake_compute_findings(session: Any, uid: int) -> EndgameTabFindings:
             return EndgameTabFindings(
                 as_of=datetime.datetime.now(datetime.UTC),
-                filters=fc,
                 findings=[],
                 findings_hash="t" * 64,
             )
@@ -261,7 +258,6 @@ class TestGenerateInsightsPersistsThinkingTokens:
         session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
         async with session_maker() as session:
             response = await insights_llm.generate_insights(
-                filter_context=FilterContext(),
                 user_id=user.id,
                 session=session,
             )

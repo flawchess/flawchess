@@ -44,16 +44,13 @@ from app.services.endgame_zones import (
 )
 from app.schemas.endgames import (
     EndgameCategoryStats,
-    EndgamePerformanceResponse,
-    TimePressureCardsResponse,
-    TimePressureChartResponse,
+    RankedTcStats,
 )
 
 __all__ = [
     "EndgameInsightsReport",
     "EndgameInsightsResponse",
     "EndgameTabFindings",
-    "FilterContext",
     "InsightsError",
     "InsightsErrorResponse",
     "InsightsStatus",
@@ -109,12 +106,12 @@ class RatingAnchorContext(BaseModel):
 
     Phase 102 (Plan 05): mirrors RatingAnchorOut from app/schemas/endgames.py so the
     insights pipeline carries full platform-composition disclosure to the LLM without
-    re-reading EndgameOverviewResponse. Fields are a subset of RatingAnchorOut — only
+    re-reading the ranked payload. Fields are a subset of RatingAnchorOut — only
     the fields needed for the [rating basis] block.
 
     `anchor_rating` is the blended Lichess-equivalent (post-conversion for chess.com
-    games; native for lichess games). The four disclosure branches mirror the chip
-    tooltip's PercentileChipPopoverBody:
+    games; native for lichess games). The disclosure branches mirror the anchor
+    disclosure in RankedMetricPopover:
       (a) Mixed user (n_chesscom_games > 0 AND n_lichess_games > 0): both platforms.
       (b) Pure-lichess user (n_chesscom_games == 0): no conversion note.
       (c) Pure-chess.com user (n_lichess_games == 0): chesscom_median_native and
@@ -145,8 +142,8 @@ class MetricPercentileRecord(BaseModel):
         None when not available from the source row.
       anchor: blended rating anchor (Lichess-equivalent) for the cohort.
         None when no anchor is available for this (metric, tc) cell.
-      tc: time-control bucket for per-TC metrics; None for page-level weighted
-        metrics (score_gap, achievable_score_gap).
+      tc: time-control bucket the metric was ranked in. Every record is per TC
+        since Phase 238 (D-04); the page-level game-count-weighted records are gone.
     """
 
     percentile: float
@@ -154,51 +151,6 @@ class MetricPercentileRecord(BaseModel):
     n_games: int | None = None
     anchor: int | None = None
     tc: Literal["bullet", "blitz", "rapid", "classical"] | None = None
-
-
-class FilterContext(BaseModel):
-    """User's active dashboard filter state, forwarded to `compute_findings`.
-
-    Mirrors the endgame router's query-parameter surface. Three caveats:
-
-    1. ``color`` is carried here for filter-faithfulness but is NOT forwarded
-       to ``endgame_service.get_endgame_overview`` (which has no color filter).
-       Per INS-03, ``color`` is also NOT fed into the LLM prompt — Phase 65
-       treats it as context-only. Plan 63-03 defines the schema; wiring is a
-       Plan 63-04 concern (the service must drop ``color`` before calling
-       the endgame service).
-
-    2. ``rated_only`` is included for filter-faithfulness and IS forwarded
-       to the endgame service (as the ``rated`` parameter). Per INS-03 it is
-       not fed into the LLM prompt.
-
-    3. ``opponent_type`` is hardcoded to ``"human"`` inside
-       ``compute_findings``; Phase 63 does not expose bot-filter findings.
-
-    4. ``from_date`` / ``to_date`` are the user's dashboard date range filter —
-       SEPARATE from the two internal windows (``all_time``, ``last_3mo``) that
-       ``compute_findings`` always produces (RESEARCH.md §Pitfall 4). Both
-       default to None, which corresponds to the old ``"all_time"`` semantics
-       (no date filter applied).
-    """
-
-    from_date: datetime.date | None = None
-    to_date: datetime.date | None = None
-    opponent_strength: Literal["any", "stronger", "similar", "weaker"] = "any"
-    color: Literal["all", "white", "black"] = "all"
-    time_controls: list[str] = Field(default_factory=list)
-    platforms: list[str] = Field(default_factory=list)
-    rated_only: bool = False
-
-    @model_validator(mode="after")
-    def _check_date_range(self) -> "FilterContext":
-        if (
-            self.from_date is not None
-            and self.to_date is not None
-            and self.from_date > self.to_date
-        ):
-            raise ValueError("from_date must be <= to_date")
-        return self
 
 
 class SubsectionFinding(BaseModel):
@@ -258,46 +210,18 @@ class EndgameTabFindings(BaseModel):
     """
 
     as_of: datetime.datetime
-    filters: FilterContext
     findings: list[SubsectionFinding]
-    # Raw 10-bucket time-pressure chart data (user_series + opp_series) from
-    # the all_time window. Rendered directly in the user prompt by
-    # `_assemble_user_prompt` because the 20-point curve does not fit the
-    # single-value SubsectionFinding shape. Optional so existing test fixtures
-    # that construct EndgameTabFindings without chart data still work.
-    time_pressure_chart: TimePressureChartResponse | None = None
-    # Endgame vs non-endgame WDL summary (all_time window) — feeds the
-    # `## Chart: overall_wdl` block in the user prompt so the LLM can see the
-    # underlying Win/Draw/Loss/Score % rows behind the single `score_gap`
-    # finding. Optional for backwards compatibility with test fixtures.
-    overall_performance: EndgamePerformanceResponse | None = None
-    # Per-endgame-type W/D/L summary (all_time window) — feeds the
-    # `## Chart: results_by_endgame_type_wdl` block so the LLM can see the
-    # Score % per type behind the single `win_rate` finding (which excludes
-    # draws). Optional for backwards compatibility.
-    type_categories: list[EndgameCategoryStats] | None = None
     # Per-(platform, time_control) Elo context used by the LLM to calibrate
     # narrative tone to skill level. None when no qualifying combo exists
     # (new user with too few games). See PlayerProfileEntry for shape.
     player_profile: list["PlayerProfileEntry"] | None = None
-    # Phase 102 (Plan 01): per-TC time-pressure cards from the all_time window.
-    # Carries the 5 quintiles + per-TC TPCTL percentiles so the assembler can
-    # render the Score-Gap-by-time chart block and read per-TC percentiles.
-    # Optional so existing test fixtures that construct EndgameTabFindings
-    # without this kwarg still work. Append-only: adding it after player_profile
-    # preserves declaration order for findings_hash stability.
-    time_pressure_cards: TimePressureCardsResponse | None = None
-    # Phase 102 (Plan 01): page-level MetricId → percentile lookup (game-count
-    # weighted, same value the chip shows). Keys present only when the source
-    # percentile is non-None (e.g. "score_gap", "achievable_score_gap").
-    # Per-TC time-pressure metric percentiles live directly on time_pressure_cards
-    # instead (direct per-TC TPCTL, no weighting — D-06). Optional for hash
-    # stability and backwards compat.
-    # Phase 102 (Plan 04): changed from dict[str, float] to dict[str, MetricPercentileRecord]
-    # to carry value + n_games + anchor alongside the percentile. Backwards-incompatible
-    # field-type change is safe: the field is optional and no external consumer
-    # reads it directly (it is internal to the prompt assembly pipeline).
-    metric_percentiles: dict[str, "MetricPercentileRecord"] | None = None
+    # Phase 238 (D-04): the all_time ranked payload (one RankedTcStats per time
+    # control with ranked games). Source of the per-TC overall WDL chart block and the
+    # time-pressure quintile tables (ranked_tcs[i].time_pressure.quintiles, which
+    # replaced the removed time_pressure_cards field); every number the LLM narrates comes from here or
+    # from findings built over the same ranked sample. Appended after player_profile,
+    # before findings_hash (load-bearing: the hash stays last).
+    ranked_tcs: list[RankedTcStats] = []
     # Phase 102 (Plan 04): per-TC metric percentiles for the 6 per-TC metrics
     # (score_gap_conv, score_gap_parity, recovery_score_gap per TC, plus
     # conversion_rate, parity_rate, recovery_rate per TC). Keyed as
@@ -305,9 +229,9 @@ class EndgameTabFindings(BaseModel):
     # backwards compat; None when no per-TC percentiles are available.
     per_tc_metric_percentiles: dict[str, "MetricPercentileRecord"] | None = None
     # Phase 102 (Plan 01): time-control bucket → anchor_rating mapping derived
-    # from EndgameOverviewResponse.rating_anchors. Lets the assembler build cohort
+    # from RankedTcStats.anchor. Lets the assembler build cohort
     # framing ("vs ~{anchor}-rated {tc} peers") without re-reading the full
-    # EndgameOverviewResponse. Optional for backwards compat.
+    # ranked payload. Optional for backwards compat.
     # Phase 102 (Plan 05): type changed from dict[str, int] to
     # dict[str, RatingAnchorContext] to carry platform-composition disclosure
     # (n_chesscom_games, n_lichess_games, chesscom_median_native, lichess_median_native)
@@ -321,7 +245,7 @@ class EndgameTabFindings(BaseModel):
     # `results_by_endgame_type` + `conversion_recovery_by_type` blocks — the LLM
     # renders one WDL table + Conv/Recov/Score-Gap bullets per eligible TC. Keyed
     # by TC bucket; mixed/pawnless already excluded upstream by
-    # _aggregate_endgame_stats_by_tc. Optional for backwards compat with fixtures
+    # aggregate_endgame_stats_by_tc. Optional for backwards compat with fixtures
     # and older responses; appended before findings_hash so the hash stays last
     # (load-bearing for findings_hash stability).
     type_categories_by_tc: (
@@ -416,6 +340,10 @@ class TimePoint(BaseModel):
     non_endgame_elo: int | None = None
 
 
+# Phase 238 UAT: the report summary is the Insights block header, 1-2 sentences.
+SUMMARY_MAX_CHARS = 300
+
+
 class SectionInsight(BaseModel):
     """One `section` entry in EndgameInsightsReport. LLM emits up to 4 of these.
 
@@ -446,8 +374,11 @@ class EndgameInsightsReport(BaseModel):
         (2-4 short bullets) are first-class top-of-page blocks rendered above
         the `overview`. The LLM derives both from the `## Player profile`
         block in the user prompt and the per-section findings.
+      - v49 (Phase 238 UAT): `summary` is a 1-2 sentence takeaway rendered as
+        the quoted header of the Insights block.
     """
 
+    summary: str = Field(..., min_length=1, max_length=SUMMARY_MAX_CHARS)
     player_profile: str = Field(..., min_length=1, max_length=800)
     overview: str
     recommendations: list[str] = Field(..., min_length=2, max_length=4)

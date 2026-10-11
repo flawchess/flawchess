@@ -1,7 +1,7 @@
 /**
  * PersonaEloDisclosurePopover — the D-08 measurement-disclosure popover
  * (Phase 184, CAL-05) mounted on every persona's detail-surface ELO label.
- * Mirrors `MetricStatPopover.tsx`'s exact hover/tap shell (100ms hover-open
+ * Mirrors `RankedMetricPopover.tsx`'s hover/tap shell (100ms hover-open
  * delay, `PopoverPrimitive` Root/Trigger/Portal/Content, `side="top"
  * sideOffset={4}`, identical animation classes, `text-xs` body — the
  * documented CLAUDE.md popover-body exception).
@@ -13,7 +13,7 @@
  * acknowledgment line: the weakest personas sit at or beyond the directly
  * measured range and are extrapolated. Per D-08, this disclosure surface
  * overrides the general popover-copy-minimalism convention (mirrors the
- * PercentileChip disclosure precedent).
+ * RankedMetricPopover percentile-disclosure precedent).
  *
  * While `PERSONA_CALIBRATION_MEASURED` is false the generated labels are
  * provisional (`--bootstrap` fit: approx_blitz = rung), so BOTH the measured

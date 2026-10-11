@@ -35,6 +35,36 @@ export interface HorizontalMoveItem {
   /** data-testid for the move button. */
   testId?: string;
   ariaLabel?: string;
+  /** Click handler for this chip; when set it replaces `onMoveClick(ply)` (Train preview tokens). */
+  onSelect?: () => void;
+  /**
+   * Node rendered as a sibling AFTER the move button, not inside it, so an
+   * interactive child (a delete x) is never a button nested in a button.
+   */
+  after?: ReactNode;
+  /**
+   * Marks the end of a trailing run the auto-scroll should reveal along with the
+   * current move (the Train preview's last token): the box scrolls so the current
+   * move sits as high as needed for this item to fit, never above the top row.
+   */
+  scrollTail?: boolean;
+}
+
+/** Breathing room (px) kept above the current move / below the tail when scrolling. */
+const SCROLL_TAIL_PADDING_PX = 4;
+
+/**
+ * Box scrollTop that keeps `active` visible while revealing as much of the run
+ * ending at `tail` as fits. SEED-197 UAT: with a plain `nearest` scroll on the
+ * two-row mobile Train list, the current move parked on the bottom row and the
+ * whole live preview after it sat below the fold.
+ */
+function tailFollowScrollTop(box: HTMLElement, active: HTMLElement, tail: HTMLElement): number {
+  const boxTop = box.getBoundingClientRect().top - box.scrollTop;
+  const activeTop = active.getBoundingClientRect().top - boxTop;
+  const tailBottom = tail.getBoundingClientRect().bottom - boxTop;
+  const revealTail = tailBottom - box.clientHeight + SCROLL_TAIL_PADDING_PX;
+  return Math.max(0, Math.min(activeTop - SCROLL_TAIL_PADDING_PX, revealTail));
 }
 
 interface HorizontalMoveListProps {
@@ -64,13 +94,27 @@ export function HorizontalMoveList({
   activeItemClassName = 'bg-primary text-primary-foreground hover:bg-primary/90',
 }: HorizontalMoveListProps) {
   const activeRef = useRef<HTMLButtonElement>(null);
+  const boxRef = useRef<HTMLDivElement>(null);
+  const tailRef = useRef<HTMLButtonElement>(null);
 
   // Auto-scroll to keep the current move visible. Keyed on the current item's
-  // key so it re-runs whenever the active step changes.
+  // key so it re-runs whenever the active step changes. With a scroll tail (the
+  // Train preview) the box itself scrolls so the tail shows too.
   const currentKey = items.find((item) => item.isCurrent)?.key ?? null;
+  const hasTail = items.some((item) => item.scrollTail);
   useEffect(() => {
-    activeRef.current?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
-  }, [currentKey]);
+    const active = activeRef.current;
+    const tail = tailRef.current;
+    const box = boxRef.current;
+    if (active && tail && box) {
+      const top = tailFollowScrollTop(box, active, tail);
+      // jsdom has no Element.scrollTo; plain assignment keeps the position right there.
+      if (typeof box.scrollTo === 'function') box.scrollTo({ top, behavior: 'smooth' });
+      else box.scrollTop = top;
+      return;
+    }
+    active?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+  }, [currentKey, hasTail]);
 
   if (items.length === 0) {
     return (
@@ -88,6 +132,7 @@ export function HorizontalMoveList({
 
   return (
     <div
+      ref={boxRef}
       data-testid={testId}
       className={cn(
         'overflow-y-auto thin-scrollbar rounded border border-border bg-muted/30 p-2 text-sm',
@@ -101,8 +146,8 @@ export function HorizontalMoveList({
               <span className="text-muted-foreground select-none">{item.numberLabel}</span>
             )}
             <button
-              ref={item.isCurrent ? activeRef : undefined}
-              onClick={() => onMoveClick(item.ply)}
+              ref={item.isCurrent ? activeRef : item.scrollTail ? tailRef : undefined}
+              onClick={() => (item.onSelect ? item.onSelect() : onMoveClick(item.ply))}
               data-testid={item.testId}
               aria-label={item.ariaLabel}
               aria-current={item.isCurrent ? 'step' : undefined}
@@ -118,6 +163,7 @@ export function HorizontalMoveList({
               <span>{item.san}</span>
               {item.trailing}
             </button>
+            {item.after}
           </span>
         ))}
       </div>

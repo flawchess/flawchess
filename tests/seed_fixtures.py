@@ -383,7 +383,7 @@ async def _seed_portfolio(user_id: int) -> None:
             for class_int in spec["endgame"]:
                 sig, imbalance = _CLASS_DEFAULT[class_int]
                 # Build the clock series only for the FIRST span of each game
-                # (that's where endgame entry lies — _extract_entry_clocks only
+                # (that's where endgame entry lies — extract_entry_clocks only
                 # reads entry plies, and query_clock_stats_rows collapses
                 # multi-span to the earliest span).
                 clock_series: list[float | None] = [None] * ENDGAME_PLY_THRESHOLD

@@ -113,7 +113,7 @@ async def test_post_openings_endpoint_rejects_user_id_in_request_body(
 async def test_post_openings_endpoint_does_NOT_apply_full_history_gate(
     auth_headers: dict[str, str],
 ) -> None:
-    """D-14: the endpoint must NOT inherit _validate_full_history_filters.
+    """D-14: the endpoint must NOT copy the (since removed, Phase 238) endgame full-history gate.
     A request with mixed filters that would return 400 on the endgame route
     must succeed here with 200.
 
@@ -157,22 +157,45 @@ ENDGAME_INSIGHTS_ENDPOINT = "/api/insights/endgame"
 
 
 @pytest.mark.asyncio
-async def test_insights_blocked_when_from_date_set(
+async def test_endgame_insights_no_longer_gated_by_from_date(
     auth_headers: dict[str, str],
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Phase 92 §Pitfall 3: insights/endgame must block when from_date is set.
+    """Phase 238 (D-04): insights/endgame takes no filters, so from_date no longer 400s.
 
-    After the recency→from_date/to_date refactor, _validate_full_history_filters
-    gates on ``filters.from_date is not None or filters.to_date is not None``.
-    If that guard is missing or wrong, the LLM would generate a report over a
-    truncated dataset while the system prompt says "your full history". This
-    test is a silent-regression gate (T-92-06-01).
-
-    A fresh user with from_date set must receive HTTP 400 with a blocking message
-    that includes "Clear Custom date range filter". Mirror the pattern used by
-    test_post_openings_endpoint_does_NOT_apply_full_history_gate but for the
-    endgame endpoint which DOES apply the gate.
+    Before Phase 238 this was a silent-regression gate (T-92-06-01) for the v8
+    full-history filter gate. The gate is intentionally gone: the report narrates
+    the ranked sample, whatever the page filters are, and an undeclared ``from_date``
+    query parameter is ignored (the transient frontend still sends it until plan
+    238-07). generate_insights is stubbed so no LLM or findings pipeline runs.
     """
+    from app.schemas.insights import (
+        EndgameInsightsReport,
+        EndgameInsightsResponse,
+        SectionInsight,
+    )
+
+    calls: list[tuple[int, object]] = []
+
+    async def _stub_generate_insights(user_id: int, session: object) -> EndgameInsightsResponse:
+        calls.append((user_id, session))
+        return EndgameInsightsResponse(
+            report=EndgameInsightsReport(
+                summary="Endgames lift your rating; rook endings need work.",
+                player_profile="Player around 1500 blitz.",
+                overview="Stub overview.",
+                recommendations=["Drill rook endings.", "Review time trouble."],
+                sections=[
+                    SectionInsight(section_id="overall", headline="Stub", bullets=["Stub bullet"])
+                ],
+                model_used="test",
+                prompt_version="endgame_v49",
+            ),
+            status="fresh",
+        )
+
+    monkeypatch.setattr("app.services.insights_llm.generate_insights", _stub_generate_insights)
+
     async with httpx.AsyncClient(
         transport=httpx.ASGITransport(app=app), base_url="http://test"
     ) as client:
@@ -181,6 +204,6 @@ async def test_insights_blocked_when_from_date_set(
             params={"from_date": "2026-03-01"},
             headers=auth_headers,
         )
-    assert response.status_code == 400
-    detail = str(response.json())
-    assert "Clear Custom date range filter" in detail
+    assert response.status_code == 200
+    assert response.json()["status"] == "fresh"
+    assert len(calls) == 1

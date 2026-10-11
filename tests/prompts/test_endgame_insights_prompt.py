@@ -125,3 +125,60 @@ def test_section_mapping_assigns_endgame_elo_timeline_to_overall() -> None:
     assert "| endgame_elo_timeline | metrics_elo " not in body_normalised, (
         "Legacy `endgame_elo_timeline | metrics_elo` mapping row still in prompt"
     )
+
+
+# ---------------------------------------------------------------------------
+# Phase 238 (D-04): filter-free, per-TC, ranked-sample report (prompt v48).
+# ---------------------------------------------------------------------------
+
+
+def test_no_scoping_caveat_or_opponent_strength_scoping() -> None:
+    """D-04: the report has no filters, so the scoping caveat and its section are gone."""
+    assert "Scoping caveat" not in _PROMPT_TEXT
+    assert "Opponent strength scoping" not in _PROMPT_TEXT
+    assert "opponent strength filter" not in _PROMPT_TEXT_LOWER
+
+
+def test_no_page_level_weighted_peer_rank() -> None:
+    """D-04: every pctl token is per TC; the game-count-weighted page-level rank is gone."""
+    assert "weighted mean across TCs" not in _PROMPT_TEXT
+    assert "game-count-weighted" not in _PROMPT_TEXT
+    assert "Page-level tokens" not in _PROMPT_TEXT
+    assert "Worked example — page-level" not in _PROMPT_TEXT
+
+
+def test_granularity_rule_states_every_pctl_token_is_per_tc() -> None:
+    """D-04: score_gap and achievable_score_gap tokens are per TC too."""
+    assert "Every `pctl=` token is per time control" in _PROMPT_TEXT
+    assert "including `score_gap` and `achievable_score_gap`" in _PROMPT_TEXT
+    assert "never average or combine tokens across time controls" in _PROMPT_TEXT
+
+
+def test_window_anchoring_describes_the_ranked_sample_not_gauges() -> None:
+    """D-04: the page shows the ranked sample per TC; the gauges are gone."""
+    assert "all_time` in the payload IS that ranked sample" in _PROMPT_TEXT
+    assert "last 36 months" in _PROMPT_TEXT
+    assert "headline gauges" not in _PROMPT_TEXT
+    assert "the page's headline numbers" in _PROMPT_TEXT
+
+
+def test_overall_subsections_are_narrated_per_time_control() -> None:
+    """D-04 / D-00h: overall findings carry time_control and are never averaged across TCs."""
+    assert "**Per time control.**" in _PROMPT_TEXT
+    assert "`| time_control=<tc>` dim" in _PROMPT_TEXT
+    assert "never average across time controls" in _PROMPT_TEXT
+
+
+def test_banned_vocabulary_and_peer_rank_phrasing_rules_survive() -> None:
+    """The v48 edit must not touch the banned-vocabulary or peer-rank phrasing rules."""
+    assert "Banned vocabulary" in _PROMPT_TEXT
+    assert 'Never write "percentile"' in _PROMPT_TEXT
+    assert "No parallel significance signal" in _PROMPT_TEXT
+    assert "in the bottom N% of ~A-rated {tc} players" in _PROMPT_TEXT
+
+
+def test_prompt_version_is_v48() -> None:
+    """D-04: the version bump invalidates every v47 cache row."""
+    from app.services import insights_llm
+
+    assert insights_llm._PROMPT_VERSION == "endgame_v49"

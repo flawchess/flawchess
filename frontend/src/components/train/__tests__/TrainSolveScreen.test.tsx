@@ -24,7 +24,7 @@ import { TrainSolveScreen } from '@/components/train/TrainSolveScreen';
 import { useMobileBoardControls } from '@/lib/mobileBoardControls';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import { DARK_GREEN } from '@/lib/arrowColor';
-import { TRAIN_STEP_HIGHLIGHT } from '@/lib/trainArrows';
+import { TRAIN_LIVE_ALT_MIN_DEPTH, TRAIN_STEP_HIGHLIGHT } from '@/lib/trainArrows';
 import { MOVE_TIER_POINTS, scorePuzzle } from '@/lib/trainScore';
 import { SETTINGS_STORAGE_KEYS } from '@/lib/engineSettings';
 import {
@@ -158,6 +158,11 @@ function tapListMove(index = 0): void {
   const token = tokens[index];
   expect(token, `list move ${index}`).toBeDefined();
   fireEvent.click(token!);
+}
+
+/** SEED-197: tap the dimmed preview token at `index` (commits index + 1 plies). */
+function tapPreview(index = 0): void {
+  fireEvent.click(screen.getByTestId(`variation-preview-${index}`));
 }
 
 // ─── ChessBoard mock ────────────────────────────────────────────────────────
@@ -1461,16 +1466,17 @@ describe('TrainSolveScreen — progress, last move, grading state, engine failur
     expect(board().getAttribute('data-arrow-ucis')).toBe('g1f3');
   });
 
-  it('quick 261009-por: a stepped known-line position shows a disagreeing reveal-engine move as a secondary arrow under the line pointer', async () => {
+  it('quick 261009-por / SEED-197: while the live PV is shallower than the replacement depth the graded tail stays the pointer and a disagreeing engine move is a secondary arrow', async () => {
     // First Worker = grading engine (builds the Best line e4 e5 Nf3); later
     // Workers = the reveal engine, which disagrees with the line ('b1c3' vs the
-    // line's 'g1f3'); no depth gate, so the FakeWorker's shallow depth draws.
+    // line's 'g1f3') but only at depth 9, below TRAIN_LIVE_ALT_MIN_DEPTH, so it does
+    // not replace the preview. Arrows themselves carry no depth gate.
     let workerCallCount = 0;
     stubWorker(() => {
       workerCallCount += 1;
       return workerCallCount === 1
         ? new FakeWorker('e2e4', 'e2e4 e7e5 g1f3')
-        : new FakeWorker('b1c3', 'b1c3');
+        : new FakeWorker('b1c3', 'b1c3', TRAIN_LIVE_ALT_MIN_DEPTH - 1);
     });
     await renderScreen(makePuzzle());
     fireEvent.click(screen.getByTestId('btn-train-guess-critical'));
@@ -1482,13 +1488,41 @@ describe('TrainSolveScreen — progress, last move, grading state, engine failur
     fireEvent.click(screen.getByTestId('train-chip-best'));
     await waitFor(() => expectLitArrows(board(), ['e2e4']));
 
-    fireEvent.click(within(screen.getByTestId('train-move-tree')).getByText('e5'));
+    // Tapping the e5 preview token commits e4 e5; the preview is now the graded tail (Nf3).
+    fireEvent.click(screen.getByTestId('variation-preview-0'));
     await waitFor(() => expect(board().getAttribute('data-position')).not.toBe(START_FEN));
     await waitFor(() => expect(board().getAttribute('data-arrows-count')).toBe('2'));
     expect(board().getAttribute('data-arrow-ucis')).toBe('b1c3,g1f3');
     expect(board().getAttribute('data-arrow-colors')).toBe(
       `${STOCKFISH_SECONDARY_LINE},${TRAIN_BEST_MOVE_ARROW}`,
     );
+    expect(screen.getByTestId('variation-preview-0').textContent).toContain('Nf3');
+  });
+
+  it('SEED-197: once the live PV reaches the replacement depth it becomes the preview and the board pointer', async () => {
+    let workerCallCount = 0;
+    stubWorker(() => {
+      workerCallCount += 1;
+      return workerCallCount === 1
+        ? new FakeWorker('e2e4', 'e2e4 e7e5 g1f3')
+        : new FakeWorker('b1c3', 'b1c3', TRAIN_LIVE_ALT_MIN_DEPTH);
+    });
+    await renderScreen(makePuzzle());
+    fireEvent.click(screen.getByTestId('btn-train-guess-critical'));
+    await act(async () => {
+      fireEvent.click(screen.getByTestId('drop-d2d4'));
+    });
+    await waitForReveal();
+    const board = () => screen.getByTestId('chessboard');
+    fireEvent.click(screen.getByTestId('train-chip-best'));
+    await waitFor(() => expectLitArrows(board(), ['e2e4']));
+
+    fireEvent.click(screen.getByTestId('variation-preview-0'));
+    await waitFor(() => expect(board().getAttribute('data-position')).not.toBe(START_FEN));
+    // The live Nc3 replaces the graded Nf3: it is the preview AND the solid pointer.
+    await waitFor(() => expect(screen.getByTestId('variation-preview-0').textContent).toContain('Nc3'));
+    expect(board().getAttribute('data-arrow-ucis')).toBe('b1c3');
+    expect(board().getAttribute('data-arrow-colors')).toBe(TRAIN_BEST_MOVE_ARROW);
   });
 
   // ─── 190.1 UAT: reveal-line stepping clears the overlay; Solution restores ─
@@ -1523,9 +1557,12 @@ describe('TrainSolveScreen — progress, last move, grading state, engine failur
     expect(board().getAttribute('data-last-move-color')).toBe(TRAIN_STEP_HIGHLIGHT.best);
     expect(board().getAttribute('data-arrows-count')).toBe('1');
 
-    // Deeper into the line (an engine continuation): no quality badge at all.
-    tapListMove(1);
+    // Deeper into the line (a preview move committed): ungraded, so no quality badge
+    // and a plain last-move highlight.
+    tapPreview(0);
     await waitFor(() => expect(board().getAttribute('data-markers-count')).toBe('0'));
+    expect(board().getAttribute('data-last-move')).toBe('e7e5');
+    expect(board().getAttribute('data-last-move-color')).toBe('');
 
     // Solution: board back at the puzzle position, full overlay + the
     // arrival-move highlight restored.
@@ -1589,7 +1626,7 @@ describe('TrainSolveScreen — progress, last move, grading state, engine failur
 
     // Walk into the Best line (chip first, so the list shows the Best line), two plies deep.
     fireEvent.click(screen.getByTestId('train-chip-best'));
-    tapListMove(1);
+    tapPreview(0);
     await waitFor(() => expect(board().getAttribute('data-position')).not.toBe(START_FEN));
     const positionInLine = board().getAttribute('data-position');
 
@@ -2626,7 +2663,7 @@ describe('TrainSolveScreen — progress, last move, grading state, engine failur
     );
   });
 
-  it('Stockfish arrows 0 (Phase 228 D-13): a sideline draws no live arrow, yet the reveal legend arrows still draw and return after Solution', async () => {
+  it('Stockfish arrows 0 (Phase 228 D-13): a sideline draws no live secondary arrow (only the preview pointer), yet the reveal legend arrows still draw and return after Solution', async () => {
     localStorage.setItem(SETTINGS_STORAGE_KEYS.sfArrows, '0');
     let workerCallCount = 0;
     stubWorker(() => {
@@ -2648,7 +2685,10 @@ describe('TrainSolveScreen — progress, last move, grading state, engine failur
     fireEvent.click(screen.getByTestId('drop-d2d4')); // forks a sideline
     const board = () => screen.getByTestId('chessboard');
     await waitFor(() => expect(board().getAttribute('data-markers-count')).toBe('1'));
-    expect(board().getAttribute('data-arrows-count')).toBe('0');
+    // SEED-197: the solid pointer is the preview's next move (what Forward commits)
+    // whatever the arrows setting says; only the live secondaries honor the 0.
+    await waitFor(() => expect(board().getAttribute('data-arrows-count')).toBe('1'));
+    expect(board().getAttribute('data-arrow-ucis')).toBe('e7e5');
 
     fireEvent.click(screen.getByTestId('board-btn-reset'));
     await waitFor(() =>
@@ -2688,14 +2728,19 @@ describe('TrainSolveScreen — progress, last move, grading state, engine failur
     const { board, moveList } = await startSideline();
     // The move list is the one tree: the user's fork is already in it.
     expect(within(moveList()).getByText('d4')).not.toBeNull();
-    // On the known lines the row is absent; here it is present.
+    // At the puzzle position the row is absent; here it is present.
     expect(screen.getByTestId('train-sf-row')).not.toBeNull();
 
+    // SEED-197: the sideline's leaf carries the dimmed live preview (the engine's top
+    // line, 1...e5), and the row still leads with that same line as Line 1 (UAT: the
+    // live eval reads in the row, not in the move list).
+    await waitFor(() => expect(screen.getByTestId('variation-preview-0').textContent).toContain('e5'));
     await waitFor(() => expect(screen.getByTestId('engine-line-0-move-0')).not.toBeNull());
     const positionBeforeClick = board().getAttribute('data-position');
     fireEvent.click(screen.getByTestId('engine-line-0-move-0'));
     await waitFor(() => expect(board().getAttribute('data-position')).not.toBe(positionBeforeClick));
-    expect(within(moveList()).getByText('e5')).not.toBeNull();
+    // e5 is now a real node, not just a preview token.
+    expect(within(moveList()).getByText('e5').closest('[data-testid^="variation-node-"]')).not.toBeNull();
   });
 
   // Quick 261009-por: the row shows on every node but the puzzle position (the
@@ -2756,9 +2801,9 @@ describe('TrainSolveScreen — progress, last move, grading state, engine failur
       return workerCallCount === 1 ? new FakeWorker() : new FakeWorker('e7e5', 'e7e5');
     });
     const { moveList } = await startSideline();
-    // Wait for the reveal engine to have searched the d4 position, so playing
-    // its top move grades 'best' against the cached parent.
-    await waitFor(() => expect(screen.getByTestId('engine-line-0-move-0')).not.toBeNull());
+    // Wait for the reveal engine to have searched the d4 position (its top line is
+    // the leaf's preview), so playing its top move grades 'best' against the cached parent.
+    await waitFor(() => expect(screen.getByTestId('variation-preview-0')).not.toBeNull());
     fireEvent.click(screen.getByTestId('drop-e7e5'));
     await waitFor(() => expect(within(moveList()).getByText('e5')).not.toBeNull());
 
@@ -3216,6 +3261,49 @@ describe('TrainSolveScreen — progress, last move, grading state, engine failur
       await waitFor(() => expect(position()).not.toBe(afterFirst));
       fireEvent.keyDown(window, { key: 'Home' });
       await waitFor(() => expect(position()).toBe(START_FEN));
+    });
+  });
+
+  describe('forward commits the live preview (SEED-197)', () => {
+    it('ArrowRight at the puzzle position steps to the chip move, then each further press adds the preview move as a real node', async () => {
+      stubWorker(() => new FakeWorker('e2e4', 'e2e4 e7e5 g1f3'));
+      await renderScreen(makePuzzle());
+      fireEvent.click(screen.getByTestId('btn-train-guess-critical'));
+      await act(async () => {
+        fireEvent.click(screen.getByTestId('drop-e2e4'));
+      });
+      await waitForReveal();
+      const position = () => screen.getByTestId('chessboard').getAttribute('data-position');
+      const nodeCount = () =>
+        screen.getByTestId('train-move-tree').querySelectorAll('[data-testid^="variation-node-"]').length;
+      expect(nodeCount()).toBe(1); // only the chip's first move; the rest is the dimmed preview
+
+      fireEvent.keyDown(window, { key: 'ArrowRight' });
+      await waitFor(() => expect(position()).not.toBe(START_FEN));
+      expect(nodeCount()).toBe(1); // stepping onto the chip move commits nothing
+
+      fireEvent.keyDown(window, { key: 'ArrowRight' }); // commits the preview's e5
+      await waitFor(() => expect(nodeCount()).toBe(2));
+      expect(position()).toContain('rnbqkbnr/pppp1ppp/8/4p3/4P3');
+      fireEvent.keyDown(window, { key: 'ArrowRight' }); // and Nf3 after it
+      await waitFor(() => expect(nodeCount()).toBe(3));
+    });
+
+    it('Analyze saves the committed preview moves in the cache entry, never the uncommitted preview', async () => {
+      stubWorker(() => new FakeWorker('e2e4', 'e2e4 e7e5 g1f3'));
+      await renderScreen(makePuzzle());
+      fireEvent.click(screen.getByTestId('btn-train-guess-critical'));
+      await act(async () => {
+        fireEvent.click(screen.getByTestId('drop-e2e4'));
+      });
+      await waitForReveal();
+      fireEvent.click(screen.getByTestId('variation-preview-0')); // commits e4 e5; Nf3 stays a preview
+      await waitFor(() => expect(screen.getByTestId('variation-preview-0').textContent).toContain('Nf3'));
+      fireEvent.click(screen.getByTestId('btn-train-analyze'));
+
+      const tree = readTrainRevealCache()?.revealTree;
+      expect(tree?.currentPath).toEqual(['e2e4', 'e7e5']);
+      expect(JSON.stringify(tree)).not.toContain('g1f3');
     });
   });
 
@@ -4367,8 +4455,9 @@ describe('TrainSolveScreen — per-puzzle telemetry (Phase 233)', () => {
     // The mocked board's drop buttons call onPieceDrop, the one entry point for
     // desktop drag AND mobile tap-to-move in the real ChessBoard.
     fireEvent.click(screen.getByTestId('drop-d2d4')); // board move 1, forks a sideline
-    await waitFor(() => expect(screen.getByTestId('engine-line-0-move-0')).not.toBeNull());
-    fireEvent.click(screen.getByTestId('engine-line-0-move-0')); // engine-line click (1...e5)
+    // The previewed leaf shows engine lines 2..N (the preview already carries line 1).
+    await waitFor(() => expect(screen.getByTestId('engine-line-1-move-0')).not.toBeNull());
+    fireEvent.click(screen.getByTestId('engine-line-1-move-0')); // engine-line click (1...e5)
     await waitFor(() => expect(screen.getByTestId('chessboard').getAttribute('data-position')).toContain('4p3'));
     fireEvent.click(screen.getByTestId('drop-e2e4')); // board move 2
 

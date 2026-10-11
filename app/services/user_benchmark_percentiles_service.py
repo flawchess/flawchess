@@ -297,7 +297,7 @@ async def compute_anchors_for_user(
     the per-user median of the pooled set is the anchor. Per-platform
     game counts and native medians are emitted alongside for tooltip
     composition disclosure (D-07 bullet 4 amendment-revised; rendered by
-    Plan 11's PercentileChip tooltip body).
+    the RankedMetricPopover anchor disclosure).
 
     See ``.planning/notes/percentile-anchor-d12-reversal.md`` for the
     design-decision record (rationale, risk profile, why D-12 was walked

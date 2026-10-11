@@ -12,15 +12,15 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { useTrainRevealTree } from '@/hooks/useTrainRevealTree';
 import type { RevealChipLine, UseTrainRevealTreeOptions } from '@/hooks/useTrainRevealTree';
 import type { TreeSeedEval } from '@/hooks/useTreeMoveGrading';
-import { TRAIN_LIVE_ALT_ROOT_MULTIPV } from '@/lib/trainArrows';
+import { TRAIN_LIVE_ALT_MIN_DEPTH, TRAIN_LIVE_ALT_ROOT_MULTIPV } from '@/lib/trainArrows';
 import type { TrainFineMove } from '@/lib/trainArrows';
 import { SETTINGS_STORAGE_KEYS } from '@/lib/engineSettings';
 import {
   REVEAL_TREE_SNAPSHOT_MAX_PATHS,
   REVEAL_TREE_SNAPSHOT_MAX_PLIES,
-  walkLinePath,
 } from '@/lib/trainRevealLines';
 import type { RevealTreeSnapshot } from '@/lib/trainRevealLines';
+import { TRAIN_PREVIEW_MAX_PLIES } from '@/lib/trainRevealPreview';
 import { Chess } from 'chess.js';
 import { playSound } from '@/lib/sounds';
 
@@ -42,6 +42,10 @@ const engineState: {
   /** First move of the mocked engine's rank-1 PV for whatever position it is on:
    * feeds the cached parent `bestUci`. Deliberately a move no test plays. */
   pvFirstMove: string;
+  /** Depth the mocked engine reports (the preview goes live at TRAIN_LIVE_ALT_MIN_DEPTH). */
+  pvDepth: number;
+  /** The rank-1 PV moves; null = just `[pvFirstMove]`. */
+  pvMoves: string[] | null;
   isAnalyzing: boolean;
   currentFen: string | null;
   /** The options the hook last passed to the (mocked) engine. */
@@ -52,6 +56,8 @@ const engineState: {
   scoresByFen: {},
   defaultScoreCp: 20,
   pvFirstMove: 'a7a6',
+  pvDepth: 10,
+  pvMoves: null,
   isAnalyzing: false,
   currentFen: null,
   lastMultiPv: null,
@@ -71,9 +77,17 @@ vi.mock('@/hooks/useStockfishEngine', () => ({
       evalCp,
       evalMate: null,
       pvLines: live
-        ? [{ multipv: 1, depth: 10, moves: [engineState.pvFirstMove], evalCp, evalMate: null }]
+        ? [
+            {
+              multipv: 1,
+              depth: engineState.pvDepth,
+              moves: engineState.pvMoves ?? [engineState.pvFirstMove],
+              evalCp,
+              evalMate: null,
+            },
+          ]
         : [],
-      depth: live ? 10 : 0,
+      depth: live ? engineState.pvDepth : 0,
       isAnalyzing: engineState.isAnalyzing,
       isReady: true,
       currentFen: live ? (engineState.currentFen ?? options.fen) : null,
@@ -89,9 +103,24 @@ const YOUR_LINE = ['e2e4', 'e7e5', 'g1f3'];
 const BEST_LINE = ['d2d4', 'd7d5'];
 const GAME_LINE = ['c2c4'];
 
-const YOUR: RevealChipLine = { key: 'your', lineUcis: YOUR_LINE };
-const BEST: RevealChipLine = { key: 'best', lineUcis: BEST_LINE };
-const GAME: RevealChipLine = { key: 'game', lineUcis: GAME_LINE };
+/** A chip's graded line (white POV eval) for the chip's first move + tail. */
+function chipOf(key: RevealChipLine['key'], moves: string[], evalCp = 30): RevealChipLine {
+  return { key, uci: moves[0]!, line: { moves, evalCp, evalMate: null } };
+}
+
+const YOUR: RevealChipLine = chipOf('your', YOUR_LINE);
+const BEST: RevealChipLine = chipOf('best', BEST_LINE, 45);
+// A one-move line has no tail, so the Game chip seeds no preview.
+const GAME: RevealChipLine = chipOf('game', GAME_LINE);
+
+/** Make the mocked engine too shallow to go live, so the seed / inherited tail shows. */
+function keepSeedVisible(): void {
+  engineState.pvDepth = TRAIN_LIVE_ALT_MIN_DEPTH - 1;
+}
+
+function previewSans(tree: { preview: { steps: { san: string }[] } | null }): string[] | undefined {
+  return tree.preview?.steps.map((step) => step.san);
+}
 
 // The hook registers window key/wheel listeners and this project's vitest setup
 // has no auto-cleanup: unmount every instance or listeners leak across tests.
@@ -116,6 +145,8 @@ beforeEach(() => {
   engineState.scoresByFen = {};
   engineState.defaultScoreCp = 20;
   engineState.pvFirstMove = 'a7a6';
+  engineState.pvDepth = 10;
+  engineState.pvMoves = null;
   engineState.isAnalyzing = false;
   engineState.currentFen = null;
   engineState.lastMultiPv = null;
@@ -131,25 +162,26 @@ afterEach(() => {
 });
 
 describe('useTrainRevealTree seeding', () => {
-  it('seeds nothing while the hook is inactive (T-190-16 / T-237-04)', () => {
+  it('seeds nothing and previews nothing while the hook is inactive (T-190-16 / T-237-04 / T-261011-lwy-01)', () => {
     const { result } = renderTree({ active: false });
     expect(result.current.nodes.size).toBe(0);
     expect(result.current.currentNodeId).toBeNull();
     expect(result.current.linePaths).toEqual({ your: [], best: [], game: [] });
+    expect(result.current.preview).toBeNull();
+    expect(result.current.canGoForward).toBe(false);
   });
 
-  it('seeds every chip line as a root branch, parked at the puzzle position with You focused', () => {
+  it('seeds only each chip FIRST move as a root node, parked at the puzzle position with You focused', () => {
     const { result } = renderTree();
 
-    expect(result.current.nodes.size).toBe(6); // 3 + 2 + 1
+    expect(result.current.nodes.size).toBe(3); // one node per chip, none of the tails
     expect(result.current.isAtRoot).toBe(true);
     expect(result.current.fen).toBe(START_FEN);
     expect(result.current.rootFocus).toBe('your');
     expect(result.current.activeChip).toBe('your');
-    expect(result.current.linePaths.your).toHaveLength(3);
-    expect(result.current.linePaths.best).toHaveLength(2);
+    expect(result.current.linePaths.your).toHaveLength(1);
+    expect(result.current.linePaths.best).toHaveLength(1);
     expect(result.current.linePaths.game).toHaveLength(1);
-    // The three lines are roots' children, not one chain.
     const rootChildren = [...result.current.nodes.values()].filter((n) => n.parentId === null);
     expect(rootChildren).toHaveLength(3);
     expect(mockPlaySound).not.toHaveBeenCalled();
@@ -160,13 +192,14 @@ describe('useTrainRevealTree seeding', () => {
     expect(result.current.nodes.size).toBe(0);
 
     rerender({ startFen: START_FEN, active: true, chips: [YOUR, BEST, GAME] });
-    expect(result.current.nodes.size).toBe(6);
+    expect(result.current.nodes.size).toBe(3);
 
     rerender({ startFen: START_FEN, active: false, chips: [YOUR, BEST, GAME] });
     expect(result.current.nodes.size).toBe(0);
+    expect(result.current.preview).toBeNull();
   });
 
-  it('a new array identity carrying the same lines does not rebuild the tree', () => {
+  it('a new array identity carrying the same moves does not rebuild the tree', () => {
     const { result, rerender } = renderTree();
     const nodesBefore = result.current.nodes;
 
@@ -185,10 +218,10 @@ describe('useTrainRevealTree seeding', () => {
     rerender({
       startFen: OTHER_FEN,
       active: true,
-      chips: [{ key: 'your', lineUcis: ['g1f3', 'b8c6'] }],
+      chips: [chipOf('your', ['g1f3', 'b8c6'])],
     });
 
-    expect(result.current.nodes.size).toBe(2);
+    expect(result.current.nodes.size).toBe(1);
     expect(result.current.fen).toBe(OTHER_FEN);
     expect(result.current.rootFocus).toBe('your');
   });
@@ -216,9 +249,9 @@ describe('useTrainRevealTree chip focus (tracer)', () => {
 
   it('away from the root the active chip is the owner of the shown position', () => {
     const { result } = renderTree();
-    const bestSecond = result.current.linePaths.best![1]!;
+    const bestFirst = result.current.linePaths.best![0]!;
 
-    act(() => result.current.goToNode(bestSecond));
+    act(() => result.current.goToNode(bestFirst));
 
     expect(result.current.activeChip).toBe('best');
     expect(result.current.rootFocus).toBe('your'); // root focus is untouched
@@ -228,43 +261,31 @@ describe('useTrainRevealTree chip focus (tracer)', () => {
 describe('useTrainRevealTree late lines', () => {
   it('a game chip arriving in a later render grafts in place and never moves the board', () => {
     const { result, rerender } = renderTree({ chips: [YOUR, BEST] });
-    expect(result.current.nodes.size).toBe(5);
-    const d7d5 = result.current.linePaths.best![1]!;
-    act(() => result.current.goToNode(d7d5));
-    expect(result.current.currentNodeId).toBe(d7d5);
+    expect(result.current.nodes.size).toBe(2);
+    const d4 = result.current.linePaths.best![0]!;
+    act(() => result.current.goToNode(d4));
+    expect(result.current.currentNodeId).toBe(d4);
     mockPlaySound.mockClear();
 
     rerender({ startFen: START_FEN, active: true, chips: [YOUR, BEST, GAME] });
 
-    expect(result.current.nodes.size).toBe(6);
-    expect(result.current.currentNodeId).toBe(d7d5); // Pitfall 1: not yanked
-    expect(result.current.fen).toBe(result.current.nodes.get(d7d5)?.fen);
+    expect(result.current.nodes.size).toBe(3);
+    expect(result.current.currentNodeId).toBe(d4); // Pitfall 1: not yanked
+    expect(result.current.fen).toBe(result.current.nodes.get(d4)?.fen);
     expect(result.current.linePaths.game).toHaveLength(1);
     expect(mockPlaySound).not.toHaveBeenCalled();
   });
 
-  it('a line that grows (its search resolved) only adds the new tail', () => {
-    const { result, rerender } = renderTree({ chips: [{ key: 'your', lineUcis: ['e2e4'] }] });
+  it('a late-arriving line adds no nodes but changes the preview steps', () => {
+    keepSeedVisible();
+    const { result, rerender } = renderTree({ chips: [{ ...YOUR, line: null }] });
     expect(result.current.nodes.size).toBe(1);
-    const firstId = result.current.linePaths.your![0]!;
+    expect(result.current.preview).toBeNull(); // no graded line yet: nothing to seed from
 
     rerender({ startFen: START_FEN, active: true, chips: [YOUR] });
 
-    expect(result.current.nodes.size).toBe(3);
-    expect(result.current.linePaths.your![0]).toBe(firstId); // reused, not duplicated
-    expect(result.current.linePaths.your).toHaveLength(3);
-  });
-
-  it('caps a pre-loaded line at MAX_LINE_PLIES (D-03)', () => {
-    const long = [
-      'e2e4', 'e7e5', 'g1f3', 'b8c6', 'f1c4', 'f8c5',
-      'c2c3', 'g8f6', 'd2d3', 'd7d6', 'b1d2', 'c8e6',
-      'c4b3', 'd8d7',
-    ];
-    const { result } = renderTree({ chips: [{ key: 'your', lineUcis: long }] });
-
-    expect(result.current.nodes.size).toBe(12);
-    expect(walkLinePath(result.current.nodes, long)).toHaveLength(12);
+    expect(result.current.nodes.size).toBe(1);
+    expect(previewSans(result.current)).toEqual(['e5', 'Nf3']);
   });
 });
 
@@ -287,12 +308,18 @@ describe('useTrainRevealTree forward navigation', () => {
     expect(result.current.currentNodeId).toBe(bestFirst);
   });
 
-  it('below the root it returns to the last-visited child, then follows the known line', () => {
+  it('below the root it returns to the last-visited child, then the lowest-id child', () => {
+    keepSeedVisible();
     const { result } = renderTree();
-    const [e4, e5] = result.current.linePaths.your!;
+    const e4 = result.current.linePaths.your![0]!;
 
-    act(() => result.current.goToNode(e4!));
-    act(() => result.current.playMove('c7', 'c5')); // a free sideline off 1.e4
+    act(() => result.current.goToNode(e4));
+    act(() => result.current.goForward()); // commits the preview's e5: first-added child
+    const e5 = result.current.currentNodeId!;
+    act(() => result.current.goBack());
+    act(() => {
+      result.current.playMove('c7', 'c5'); // a later-added sideline off 1.e4
+    });
     const sideline = result.current.currentNodeId!;
     expect(sideline).not.toBe(e5);
 
@@ -301,13 +328,14 @@ describe('useTrainRevealTree forward navigation', () => {
     expect(result.current.currentNodeId).toBe(sideline); // last visited wins
 
     act(() => result.current.goBack());
-    act(() => result.current.goToNode(e5!));
+    act(() => result.current.goToNode(e5));
     act(() => result.current.goBack());
     act(() => result.current.goForward());
     expect(result.current.currentNodeId).toBe(e5); // now e5 is the last visited
   });
 
   it('reports canGoForward / canGoBack for the position', () => {
+    keepSeedVisible();
     const { result } = renderTree();
     expect(result.current.canGoBack).toBe(false);
     expect(result.current.canGoForward).toBe(true);
@@ -315,7 +343,10 @@ describe('useTrainRevealTree forward navigation', () => {
     const last = result.current.linePaths.game![0]!;
     act(() => result.current.goToNode(last));
     expect(result.current.canGoBack).toBe(true);
-    expect(result.current.canGoForward).toBe(false); // the game line is one move long
+    // The Game line is one move long: no seed tail, no deep-enough live line, so
+    // there is nothing to commit.
+    expect(result.current.preview).toBeNull();
+    expect(result.current.canGoForward).toBe(false);
   });
 });
 
@@ -356,7 +387,6 @@ describe('useTrainRevealTree user moves (D-04, D-13)', () => {
     expect(onChipSelect).not.toHaveBeenCalled();
     expect(result.current.rootFocus).toBeNull();
     expect(result.current.activeChip).toBeNull();
-    expect(result.current.isOffLine).toBe(true);
     expect(result.current.listView.mainLine).toEqual([]);
     expect([...result.current.listView.nodes.keys()]).toEqual([result.current.currentNodeId]);
   });
@@ -410,7 +440,6 @@ describe('useTrainRevealTree user moves (D-04, D-13)', () => {
     const free = result.current.currentNodeId!;
     expect(free).not.toBe(e4);
     expect(onUserMove).toHaveBeenCalledWith({ source: 'board', forked: true });
-    expect(result.current.isOffLine).toBe(true);
     expect(result.current.activeChip).toBe('your');
     expect(result.current.rootFocus).toBe('your'); // a mid-line move never touches the root focus
 
@@ -463,12 +492,13 @@ describe('useTrainRevealTree user moves (D-04, D-13)', () => {
 describe('useTrainRevealTree step reporting', () => {
   it('goBack / goForward / goToNode report a user step; goToRoot and selectChip do not', () => {
     const onUserStep = vi.fn();
+    keepSeedVisible();
     const { result } = renderTree({ onUserStep });
-    const [e4, e5] = result.current.linePaths.your!;
+    const [e4] = result.current.linePaths.your!;
 
     act(() => result.current.goForward());
     expect(onUserStep).toHaveBeenCalledTimes(1);
-    act(() => result.current.goToNode(e5!));
+    act(() => result.current.goForward()); // commits the preview's e5
     expect(onUserStep).toHaveBeenCalledTimes(2);
     act(() => result.current.goBack());
     expect(onUserStep).toHaveBeenCalledTimes(3);
@@ -508,6 +538,7 @@ describe('useTrainRevealTree step reporting', () => {
 
     expect(result.current.goBack).toBe(before.goBack);
     expect(result.current.goForward).toBe(before.goForward);
+    expect(result.current.commitPreview).toBe(before.commitPreview);
     expect(result.current.playMove).toBe(before.playMove);
     expect(result.current.selectChip).toBe(before.selectChip);
   });
@@ -574,7 +605,8 @@ describe('useTrainRevealTree list view', () => {
     act(() => result.current.selectChip('best'));
 
     const { nodes, mainLine } = result.current.listView;
-    expect(mainLine).toEqual(result.current.linePaths.best);
+    // The chip's first move, then the first-added continuation (the Best sideline).
+    expect(mainLine).toEqual([bestFirst, freeOffBest]);
     const shown = new Set(nodes.keys());
     expect(shown).toEqual(new Set([...result.current.linePaths.best!, freeOffBest, rootFork]));
     expect(shown.has(freeOffYour)).toBe(false);
@@ -583,42 +615,31 @@ describe('useTrainRevealTree list view', () => {
   });
 });
 
-describe('useTrainRevealTree step info', () => {
-  it('reports the line position on known nodes, and null at the root and on free nodes', () => {
+describe('useTrainRevealTree chip move and path', () => {
+  it('chipMove is set on a chip first-move node and null at the root and on later nodes', () => {
+    keepSeedVisible();
     const { result } = renderTree();
-    const [e4, e5, nf3] = result.current.linePaths.your!;
-    expect(result.current.stepInfo).toBeNull();
+    const [e4] = result.current.linePaths.your!;
+    expect(result.current.chipMove).toBeNull();
     expect(result.current.currentPathUcis).toEqual([]);
     expect(result.current.lastMove).toBeNull();
 
     act(() => result.current.goToNode(e4!));
-    expect(result.current.stepInfo).toEqual({
-      line: 'your',
-      index: 0,
-      lastMoveUci: 'e2e4',
-      nextMoveUci: 'e7e5',
-      isFirstMove: true,
-    });
+    expect(result.current.chipMove).toEqual({ line: 'your', uci: 'e2e4' });
     expect(result.current.lastMove).toEqual({ from: 'e2', to: 'e4' });
 
-    act(() => result.current.goToNode(e5!));
-    expect(result.current.stepInfo).toMatchObject({ index: 1, nextMoveUci: 'g1f3', isFirstMove: false });
+    act(() => result.current.goForward()); // commit e5
+    expect(result.current.chipMove).toBeNull();
     expect(result.current.currentPathUcis).toEqual(['e2e4', 'e7e5']);
 
-    act(() => result.current.goToNode(nf3!));
-    expect(result.current.stepInfo).toMatchObject({ index: 2, lastMoveUci: 'g1f3', nextMoveUci: null });
-
-    act(() => {
-      result.current.playMove('b8', 'c6'); // a free move off the end of the line
-    });
-    expect(result.current.stepInfo).toBeNull();
-    expect(result.current.currentPathUcis).toEqual(['e2e4', 'e7e5', 'g1f3', 'b8c6']);
+    act(() => result.current.goToNode(result.current.linePaths.best![0]!));
+    expect(result.current.chipMove).toEqual({ line: 'best', uci: 'd2d4' });
   });
 
   it('numbers moves from the puzzle position ply', () => {
     const { result } = renderTree({
       startFen: OTHER_FEN, // white to move, full move 2 -> ply 2
-      chips: [{ key: 'your', lineUcis: ['g1f3'] }],
+      chips: [chipOf('your', ['g1f3'])],
     });
     expect(result.current.rootPly).toBe(2);
   });
@@ -637,15 +658,16 @@ describe('useTrainRevealTree keyboard', () => {
     return { ref: { current: div }, remove: () => div.remove() };
   }
 
-  it('ArrowRight / ArrowLeft step the active line and Home returns to the puzzle position', () => {
+  it('ArrowRight enters the chip then commits the preview; ArrowLeft steps back and Home returns to the puzzle position', () => {
+    keepSeedVisible();
     const board = mountBoard();
     const { result } = renderTree({ navContainerRef: board.ref });
-    const [e4, e5] = result.current.linePaths.your!;
+    const [e4] = result.current.linePaths.your!;
 
     press('ArrowRight');
     expect(result.current.currentNodeId).toBe(e4);
     press('ArrowRight');
-    expect(result.current.currentNodeId).toBe(e5);
+    expect(result.current.currentPathUcis).toEqual(['e2e4', 'e7e5']);
     press('ArrowLeft');
     expect(result.current.currentNodeId).toBe(e4);
     press('Home');
@@ -695,7 +717,8 @@ describe('useTrainRevealTree snapshot / restore', () => {
     expect(result.current.snapshot()).toEqual({
       rootFocus: 'best',
       currentPath: ['d2d4', 'g8f6'],
-      sidelinePaths: [['g1f3'], ['d2d4', 'g8f6']],
+      // DFS pre-order, children by ascending id: the chip nodes were seeded first.
+      sidelinePaths: [['d2d4', 'g8f6'], ['g1f3']],
     });
   });
 
@@ -721,7 +744,6 @@ describe('useTrainRevealTree snapshot / restore', () => {
     expect(result.current.rootFocus).toBe('best');
     expect(result.current.activeChip).toBe('best');
     expect(result.current.currentPathUcis).toEqual(['d2d4', 'g8f6']);
-    expect(result.current.isOffLine).toBe(true);
     expect(result.current.snapshot()).toEqual(snapshot);
     expect(mockPlaySound).not.toHaveBeenCalled();
   });
@@ -1004,7 +1026,6 @@ describe('useTrainRevealTree: root-ply grading reads the served vetted key (D-06
       result.current.playMove('e2', 'e4'); // the You line's first move
     });
 
-    expect(result.current.isOffLine).toBe(false);
     expect(result.current.boardMarkers).toEqual([]);
     expect(result.current.moveListMarkers.size).toBe(0);
   });
@@ -1024,7 +1045,6 @@ describe('useTrainRevealTree: root-ply grading reads the served vetted key (D-06
       result.current.playMove('c7', 'c5'); // not the line's e5: a fork
     });
 
-    expect(result.current.isOffLine).toBe(true);
     expect(result.current.boardMarkers).toEqual([{ square: 'c5', severity: 'blunder' }]);
   });
 });
@@ -1037,11 +1057,9 @@ describe('useTrainRevealTree: the one reveal engine', () => {
     act(() => {
       result.current.playMove('d2', 'd4'); // matches the Best line's first move: still known
     });
-    expect(result.current.isOffLine).toBe(false);
     act(() => {
       result.current.playMove('g8', 'f6'); // not the line's d5: off the known lines
     });
-    expect(result.current.isOffLine).toBe(true);
     return engineState.lastMultiPv;
   }
 
@@ -1051,7 +1069,6 @@ describe('useTrainRevealTree: the one reveal engine', () => {
     act(() => {
       result.current.playMove('e2', 'e4');
     });
-    expect(result.current.isOffLine).toBe(false);
     expect(engineState.lastMultiPv).toBe(2);
   });
 
@@ -1061,7 +1078,6 @@ describe('useTrainRevealTree: the one reveal engine', () => {
     act(() => {
       result.current.playMove('e2', 'e4');
     });
-    expect(result.current.isOffLine).toBe(false);
     expect(engineState.lastMultiPv).toBe(2);
     act(() => {
       result.current.goToRoot();
@@ -1081,7 +1097,6 @@ describe('useTrainRevealTree: the one reveal engine', () => {
     act(() => {
       result.current.playMove('e2', 'e4');
     });
-    expect(result.current.isOffLine).toBe(false);
     expect(engineState.lastMultiPv).toBe(3);
   });
 
@@ -1176,5 +1191,322 @@ describe('useTrainRevealTree: onUserMove counting (Phase 233 D-14, Phase 237 D-1
     act(() => result.current.selectChip('best'));
     act(() => result.current.deleteLine(result.current.currentNodeId ?? 0));
     expect(onUserMove).not.toHaveBeenCalled();
+  });
+});
+
+// ─── SEED-197: the live engine preview ───────────────────────────────────────
+
+describe('useTrainRevealTree preview', () => {
+  it('at open the preview hangs off the active chip first move and equals the seed; live is ignored there', () => {
+    // A legal, deep live PV exists, but the anchor (the chip node) is not the
+    // node the engine is on, so only the seed can show.
+    engineState.pvMoves = ['a7a6'];
+    const { result } = renderTree();
+    const e4 = result.current.linePaths.your![0]!;
+
+    expect(result.current.preview?.anchorId).toBe(e4);
+    expect(previewSans(result.current)).toEqual(['e5', 'Nf3']);
+    expect(result.current.canGoForward).toBe(true);
+  });
+
+  it('forward at the root enters the chip node and commits nothing; forward at that leaf commits exactly one node', () => {
+    keepSeedVisible();
+    const { result } = renderTree();
+    const e4 = result.current.linePaths.your![0]!;
+    const sizeBefore = result.current.nodes.size;
+
+    act(() => result.current.goForward());
+    expect(result.current.currentNodeId).toBe(e4);
+    expect(result.current.nodes.size).toBe(sizeBefore);
+
+    act(() => result.current.goForward());
+    expect(result.current.nodes.size).toBe(sizeBefore + 1);
+    expect(result.current.currentPathUcis).toEqual(['e2e4', 'e7e5']);
+    expect(result.current.nodes.get(result.current.currentNodeId!)?.san).toBe('e5');
+  });
+
+  it('commitPreview(2) from the root plays the chip move plus 2 plies and lands on the second preview ply', () => {
+    keepSeedVisible();
+    const onUserStep = vi.fn();
+    const onUserMove = vi.fn();
+    const { result } = renderTree({ onUserStep, onUserMove });
+
+    act(() => result.current.commitPreview(2));
+
+    expect(result.current.currentPathUcis).toEqual(['e2e4', 'e7e5', 'g1f3']);
+    expect(result.current.nodes.size).toBe(5); // 3 chip nodes + e5 + Nf3
+    expect(onUserStep).toHaveBeenCalledTimes(1);
+    expect(onUserMove).not.toHaveBeenCalled(); // stepping, never a move or a fork
+  });
+
+  it('ignores commitPreview when there is no preview or fewer than one ply', () => {
+    keepSeedVisible();
+    const { result } = renderTree({ chips: [GAME] });
+    const sizeBefore = result.current.nodes.size;
+
+    act(() => result.current.commitPreview(1)); // the Game chip has no tail
+    act(() => result.current.commitPreview(0));
+
+    expect(result.current.nodes.size).toBe(sizeBefore);
+    expect(result.current.isAtRoot).toBe(true);
+  });
+
+  it('inherits the seed tail after a commit when the live PV is illegal at the new leaf', () => {
+    // Rook e1 to e8 is illegal both after 1.e4 and after 1.e4 e5.
+    engineState.pvMoves = ['e1e8'];
+    const { result } = renderTree();
+    const e4 = result.current.linePaths.your![0]!;
+    act(() => result.current.goToNode(e4));
+    expect(previewSans(result.current)).toEqual(['e5', 'Nf3']); // live illegal -> seed
+
+    act(() => result.current.goForward());
+    expect(result.current.currentPathUcis).toEqual(['e2e4', 'e7e5']);
+    expect(previewSans(result.current)).toEqual(['Nf3']); // the seed's remaining tail
+    expect(result.current.preview?.anchorId).toBe(result.current.currentNodeId);
+  });
+
+  it('a live PV below TRAIN_LIVE_ALT_MIN_DEPTH does not replace the tail, and one at the depth does', () => {
+    engineState.pvMoves = ['b8c6'];
+    keepSeedVisible(); // depth 9
+    const { result } = renderTree();
+    act(() => result.current.goToNode(result.current.linePaths.your![0]!));
+    expect(previewSans(result.current)).toEqual(['e5', 'Nf3']);
+
+    engineState.pvDepth = TRAIN_LIVE_ALT_MIN_DEPTH;
+    const { result: deep } = renderTree();
+    act(() => deep.current.goToNode(deep.current.linePaths.your![0]!));
+    expect(previewSans(deep.current)).toEqual(['Nc6']);
+  });
+
+  it('stepping away from a leaf and back shows its stored live PV immediately', () => {
+    engineState.pvMoves = ['b8c6', 'g1f3'];
+    const { result } = renderTree();
+    const e4 = result.current.linePaths.your![0]!;
+    act(() => result.current.goToNode(e4));
+    expect(previewSans(result.current)).toEqual(['Nc6', 'Nf3']);
+
+    // Now the engine goes shallow: only the stored line can still explain the leaf.
+    keepSeedVisible();
+    act(() => result.current.goToRoot());
+    act(() => result.current.goToNode(e4));
+    expect(previewSans(result.current)).toEqual(['Nc6', 'Nf3']);
+  });
+
+  it('shows no preview on a node with children, and committed nodes never change when the live PV does', () => {
+    engineState.pvMoves = ['e7e5', 'g1f3'];
+    const { result } = renderTree();
+    const e4 = result.current.linePaths.your![0]!;
+    act(() => result.current.goToNode(e4));
+    act(() => result.current.goForward());
+    const e5 = result.current.currentNodeId!;
+    const sanBefore = result.current.nodes.get(e5)?.san;
+
+    engineState.pvMoves = ['c7c5'];
+    act(() => result.current.goToRoot());
+    act(() => result.current.goToNode(e4)); // e4 now has a child
+    expect(result.current.preview).toBeNull();
+    expect(result.current.nodes.get(e5)?.san).toBe(sanBefore);
+  });
+
+  it('caps the displayed preview at TRAIN_PREVIEW_MAX_PLIES but lets the user keep committing past it', () => {
+    keepSeedVisible();
+    const long = ['e2e4', 'e7e5', 'g1f3', 'b8c6', 'f1c4', 'f8c5', 'c2c3', 'g8f6', 'd2d4'];
+    const { result } = renderTree({ chips: [chipOf('your', long)] });
+
+    expect(result.current.preview?.steps).toHaveLength(TRAIN_PREVIEW_MAX_PLIES);
+    act(() => result.current.commitPreview(TRAIN_PREVIEW_MAX_PLIES));
+    // The chip move plus six plies are committed; the rest of the line is inherited.
+    expect(result.current.currentPathUcis).toEqual(long.slice(0, TRAIN_PREVIEW_MAX_PLIES + 1));
+    expect(previewSans(result.current)).toEqual(['Nf6', 'd4']);
+  });
+
+  it('has no preview at a finished game and canGoForward is false there', () => {
+    const mate = ['f2f3', 'e7e5', 'g2g4', 'd8h4'];
+    const { result } = renderTree({ chips: [chipOf('your', mate)] });
+    act(() => result.current.commitPreview(3)); // f3 e5 g4 Qh4#
+
+    expect(result.current.nodes.get(result.current.currentNodeId!)?.san).toBe('Qh4#');
+    expect(result.current.preview).toBeNull();
+    expect(result.current.canGoForward).toBe(false);
+  });
+
+  it('chip first-move nodes keep their place: the snapshot never contains the preview, and a restore regenerates it', () => {
+    keepSeedVisible();
+    const original = renderTree();
+    act(() => original.result.current.commitPreview(2));
+    const snapshot = original.result.current.snapshot();
+    expect(snapshot.currentPath).toEqual(['e2e4', 'e7e5', 'g1f3']);
+    expect(snapshot.sidelinePaths).toEqual([['e2e4', 'e7e5', 'g1f3']]);
+
+    const { result } = renderTree({ restored: snapshot });
+    expect(result.current.currentPathUcis).toEqual(['e2e4', 'e7e5', 'g1f3']);
+    // The seed tail is exhausted ([e5, Nf3] both committed), so no preview is left.
+    expect(result.current.preview).toBeNull();
+    expect(result.current.listView.mainLine).toHaveLength(3);
+  });
+});
+
+describe('useTrainRevealTree preview commits are ungraded', () => {
+  it('a preview-committed node gets no marker while a hand-played fork still does', () => {
+    keepSeedVisible();
+    engineState.scoresByFen[fenAfter(START_FEN, 'e4')] = 30;
+    engineState.scoresByFen[fenAfter(START_FEN, 'e4', 'e5')] = 900; // would grade as a blunder
+    engineState.scoresByFen[fenAfter(START_FEN, 'e4', 'c5')] = 900;
+    const { result } = renderTree({ seedEval: makeSeed([]) });
+    act(() => result.current.goToNode(result.current.linePaths.your![0]!));
+
+    act(() => result.current.goForward()); // commits e5
+    const committed = result.current.currentNodeId!;
+    expect(result.current.moveListMarkers.has(committed)).toBe(false);
+    expect(result.current.boardMarkers).toEqual([]);
+
+    act(() => result.current.goBack());
+    act(() => {
+      result.current.playMove('c7', 'c5'); // a hand-played fork
+    });
+    expect(result.current.boardMarkers).toEqual([{ square: 'c5', severity: 'blunder' }]);
+    expect(result.current.moveListMarkers.has(result.current.currentNodeId!)).toBe(true);
+    expect(result.current.moveListMarkers.has(committed)).toBe(false);
+  });
+});
+
+describe('useTrainRevealTree preview commits survive Analyze -> Back (WR-02)', () => {
+  /** e4 chip leaf, then the preview's e5 committed with ArrowRight, parked on e5. */
+  function committedE5Tree() {
+    keepSeedVisible();
+    engineState.scoresByFen[fenAfter(START_FEN, 'e4')] = 30;
+    engineState.scoresByFen[fenAfter(START_FEN, 'e4', 'e5')] = 900; // would grade as a blunder
+    const original = renderTree({ seedEval: makeSeed([]) });
+    act(() => original.result.current.goToNode(original.result.current.linePaths.your![0]!));
+    act(() => original.result.current.goForward()); // commits e5
+    return original;
+  }
+
+  it('persists the committed node as a UCI path in the snapshot', () => {
+    const original = committedE5Tree();
+
+    expect(original.result.current.snapshot().committedPaths).toEqual([['e2e4', 'e7e5']]);
+  });
+
+  it('a restored preview-committed node is still never graded; a hand-played one still is', () => {
+    const snapshot = committedE5Tree().result.current.snapshot();
+    engineState.scoresByFen[fenAfter(START_FEN, 'e4', 'c5')] = 900;
+
+    const { result } = renderTree({ restored: snapshot, seedEval: makeSeed([]) });
+    expect(result.current.currentPathUcis).toEqual(['e2e4', 'e7e5']);
+    // Visit the parent so the engine caches its eval, then step back onto e5.
+    const e5 = result.current.currentNodeId!;
+    act(() => result.current.goBack());
+    act(() => result.current.goToNode(e5));
+
+    expect(result.current.moveListMarkers.has(e5)).toBe(false);
+    expect(result.current.boardMarkers).toEqual([]);
+
+    act(() => result.current.goBack());
+    act(() => {
+      result.current.playMove('c7', 'c5');
+    });
+    expect(result.current.moveListMarkers.has(result.current.currentNodeId!)).toBe(true);
+  });
+
+  it('an older snapshot without committedPaths restores with nothing marked (graded as before)', () => {
+    const snapshot = committedE5Tree().result.current.snapshot();
+    delete snapshot.committedPaths;
+
+    const { result } = renderTree({ restored: snapshot, seedEval: makeSeed([]) });
+    const e5 = result.current.currentNodeId!;
+    act(() => result.current.goBack());
+    act(() => result.current.goToNode(e5));
+
+    expect(result.current.moveListMarkers.has(e5)).toBe(true);
+  });
+});
+
+describe('useTrainRevealTree commitPreview id bookkeeping (WR-01)', () => {
+  it('two commits in one event graft once and do not exempt the next hand-played move from grading', () => {
+    keepSeedVisible();
+    engineState.scoresByFen[fenAfter(START_FEN, 'e4', 'e5')] = 30;
+    engineState.scoresByFen[fenAfter(START_FEN, 'e4', 'e5', 'Nc3')] = -900; // white blunders
+    const { result } = renderTree({ seedEval: makeSeed([]) });
+    const sizeBefore = result.current.nodes.size;
+
+    // latestRef only syncs after a render, so the second call sees the pre-commit
+    // preview and nextId. Its predicted ids (nextId + 0..1) must not be marked: the
+    // board grafts nothing for it, and nextId + 1 is the next node the user plays.
+    act(() => {
+      result.current.commitPreview(1);
+      result.current.commitPreview(2);
+    });
+
+    expect(result.current.nodes.size).toBe(sizeBefore + 1);
+    expect(result.current.currentPathUcis).toEqual(['e2e4', 'e7e5']);
+    const committed = result.current.currentNodeId!;
+    expect(result.current.moveListMarkers.has(committed)).toBe(false);
+
+    act(() => {
+      result.current.playMove('b1', 'c3');
+    });
+    const handPlayed = result.current.currentNodeId!;
+    expect(handPlayed).not.toBe(committed);
+    expect(result.current.moveListMarkers.has(handPlayed)).toBe(true);
+    expect(result.current.boardMarkers).toEqual([{ square: 'c3', severity: 'blunder' }]);
+  });
+
+  it('commits made in separate events are each applied and each ungraded', () => {
+    keepSeedVisible();
+    const { result } = renderTree({ seedEval: makeSeed([]) });
+
+    act(() => result.current.commitPreview(1));
+    const first = result.current.currentNodeId!;
+    act(() => result.current.commitPreview(1));
+    const second = result.current.currentNodeId!;
+
+    expect(second).not.toBe(first);
+    expect(result.current.currentPathUcis).toEqual(['e2e4', 'e7e5', 'g1f3']);
+    expect(result.current.moveListMarkers.has(first)).toBe(false);
+    expect(result.current.moveListMarkers.has(second)).toBe(false);
+  });
+
+  it('a committed id range exactly matches the newly grafted node ids', () => {
+    keepSeedVisible();
+    const { result } = renderTree({ seedEval: makeSeed([]) });
+    const idsBefore = new Set(result.current.nodes.keys());
+
+    act(() => result.current.commitPreview(2));
+
+    const grafted = [...result.current.nodes.keys()].filter((id) => !idsBefore.has(id));
+    expect(grafted).toHaveLength(2);
+    const snapshot = result.current.snapshot();
+    // The snapshot's committed paths are derived from the committed id set, so they
+    // pin exactly the two grafted nodes (and not the chip node or a phantom id).
+    expect(snapshot.committedPaths).toEqual([
+      ['e2e4', 'e7e5'],
+      ['e2e4', 'e7e5', 'g1f3'],
+    ]);
+  });
+});
+
+describe('useTrainRevealTree playMove vs the preview', () => {
+  it('a board move equal to the preview next move is not a fork, a different one is; both are graded', () => {
+    keepSeedVisible();
+    engineState.scoresByFen[fenAfter(START_FEN, 'e4')] = 30;
+    engineState.scoresByFen[fenAfter(START_FEN, 'e4', 'e5')] = 900;
+    const onUserMove = vi.fn();
+    const { result } = renderTree({ onUserMove, seedEval: makeSeed([]) });
+    act(() => result.current.goToNode(result.current.linePaths.your![0]!));
+    const e4 = result.current.currentNodeId!;
+
+    act(() => {
+      result.current.playMove('e7', 'e5'); // the preview's own next move
+    });
+    expect(onUserMove).toHaveBeenLastCalledWith({ source: 'board', forked: false });
+    // Hand-played, so it IS graded even though it matches the preview.
+    expect(result.current.moveListMarkers.has(result.current.currentNodeId!)).toBe(true);
+
+    act(() => result.current.goToNode(e4));
+    act(() => {
+      result.current.playMove('c7', 'c5'); // not the preview's move
+    });
+    expect(onUserMove).toHaveBeenLastCalledWith({ source: 'board', forked: true });
   });
 });

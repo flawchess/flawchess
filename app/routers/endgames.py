@@ -1,7 +1,9 @@
 """Endgames router: HTTP endpoints for endgame analytics.
 
 Endpoints (all mounted under /api/endgames):
-- GET /overview: all four endgame dashboard payloads in a single request
+- GET /ranked-stats: filter-free per-TC ranked-sample payload for the percentile-first
+  Stats tab (Phase 238)
+- GET /stats: filtered per-category endgame stats for the Games tab (Phase 238)
 - GET /games: paginated game list filtered by endgame class
 """
 
@@ -16,16 +18,41 @@ from app.models.user import User
 from app.schemas.endgames import (
     EndgameClass,
     EndgameGamesResponse,
-    EndgameOverviewResponse,
+    EndgameRankedStatsResponse,
+    EndgameStatsResponse,
 )
-from app.services import endgame_service
+from app.services import endgame_ranked_service, endgame_service
 from app.users import current_active_user
 
 router = APIRouter(prefix="/endgames", tags=["endgames"])
 
 
-@router.get("/overview", response_model=EndgameOverviewResponse)
-async def get_endgame_overview(
+@router.get("/ranked-stats", response_model=EndgameRankedStatsResponse)
+async def get_endgame_ranked_stats(
+    session: Annotated[AsyncSession, Depends(get_async_session)],
+    user: Annotated[User, Depends(current_active_user)],
+) -> EndgameRankedStatsResponse:
+    """Return the per-time-control ranked-sample Endgame Stats (Phase 238, SEED-196).
+
+    Takes NO filter parameters (D-01): the Stats tab always describes the canonical
+    ranked sample (rated, human opponents, within 100 Elo, last 36 months, at most
+    3000 games per time control), so any query string produces the same body.
+    ``user_id`` comes only from the authenticated user, never from the request.
+
+    Dev-clock exception: the ranked window uses SQL ``NOW()`` rather than the
+    ``dev_now_utc`` dependency (CLAUDE.md). The window must match the persisted
+    Stage A/B percentile basis byte for byte (D-07), and those SQL builders anchor
+    the 36-month bound to ``NOW()``. The 36-month edge therefore cannot be dev-clock
+    tested; this is a deliberate trade-off.
+
+    Time controls with no ranked game are omitted; an empty ranked sample returns
+    ``{"tcs": []}``. All internal queries run sequentially on one AsyncSession.
+    """
+    return await endgame_ranked_service.get_ranked_stats(session, user_id=user.id)
+
+
+@router.get("/stats", response_model=EndgameStatsResponse)
+async def get_endgame_stats(
     session: Annotated[AsyncSession, Depends(get_async_session)],
     user: Annotated[User, Depends(current_active_user)],
     # NO color parameter — per D-02 (no color filter on endgame endpoints)
@@ -35,22 +62,17 @@ async def get_endgame_overview(
     to_date: datetime.date | None = Query(default=None),
     rated: bool | None = Query(default=None),
     opponent_type: str = Query(default="human"),
-    window: int = Query(default=50, ge=5, le=200),
     opponent_gap_min: int | None = Query(default=None),
     opponent_gap_max: int | None = Query(default=None),
-) -> EndgameOverviewResponse:
-    """Return all four endgame dashboard payloads in a single response.
+) -> EndgameStatsResponse:
+    """Return the filtered per-category endgame stats the Games tab needs (Phase 238, D-01).
 
-    Combines stats, performance, timeline, and conv-recov-timeline into one
-    HTTP request. All internal queries execute sequentially on one AsyncSession
-    (no asyncio.gather), reducing the Endgames tab from 4 parallel requests
-    down to 1 (Phase 52).
-
-    No color filter is applied — per D-02 endgame stats cover both colors.
+    Unlike /ranked-stats this honours every sidebar filter, so the Games tab keeps
+    working with filters after the Stats tab moves to the ranked sample.
     """
     if from_date is not None and to_date is not None and from_date > to_date:
         raise HTTPException(status_code=422, detail="from_date must be <= to_date")
-    return await endgame_service.get_endgame_overview(
+    return await endgame_service.get_endgame_stats(
         session,
         user_id=user.id,
         time_control=time_control,
@@ -59,7 +81,6 @@ async def get_endgame_overview(
         opponent_type=opponent_type,
         from_date=from_date,
         to_date=to_date,
-        window=window,
         opponent_gap_min=opponent_gap_min,
         opponent_gap_max=opponent_gap_max,
     )
@@ -88,7 +109,7 @@ async def get_endgame_games(
 
     Games are reused with the GameRecord schema consistent with the openings endpoints.
     Kept as a standalone endpoint because endgame_class changes independently of the
-    overview filters (user picks a class from a selector, not a sidebar filter).
+    sidebar filters (user picks a class from a selector, not a sidebar filter).
     """
     if from_date is not None and to_date is not None and from_date > to_date:
         raise HTTPException(status_code=422, detail="from_date must be <= to_date")

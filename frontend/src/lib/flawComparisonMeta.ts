@@ -234,8 +234,8 @@ export const FLAW_COMPARISON_META: Record<string, FlawComparisonTagMeta> = {
 
 // ─── Stat helpers (shared by the grid + the metric tooltip) ────────────────────
 
-// Same p-value buckets the rest of the app uses (see scoreConfidence.ts /
-// MetricStatTooltip): high < 0.01, medium < 0.05, low otherwise. The grid uses
+// Same p-value buckets the rest of the app uses (see scoreConfidence.ts):
+// high < 0.01, medium < 0.05, low otherwise. The grid uses
 // the same threshold to decide when to apply the zone color to the rate_diff —
 // the number is tinted only when the result is significant (medium/high), i.e.
 // when the 95% CI excludes zero.
@@ -269,7 +269,7 @@ export function flawDeltaZoneColor(delta: number, zoneLo: number, zoneHi: number
   return ZONE_SUCCESS;
 }
 
-/** "p < 0.001" for tiny values, else "p = 0.XXX" — mirrors MetricStatTooltip. */
+/** "p < 0.001" for tiny values, else "p = 0.XXX" (also used by the RankedMetricPopover footer). */
 export function formatPValue(pValue: number): string {
   if (pValue < 0.001) return 'p < 0.001';
   return `p = ${pValue.toFixed(3)}`;

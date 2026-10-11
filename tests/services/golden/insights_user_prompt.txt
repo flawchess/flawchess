@@ -6,8 +6,8 @@
 
 ## Section: overall
 
-### Chart: overall_wdl (all_time)
-Two-row WDL comparison for games that reached an Endgame Phase vs games that did not. All columns are whole-number percentages; score_pct uses wins=100, draws=50, losses=0.
+### Chart: overall_wdl (blitz, all_time)
+Two-row WDL comparison for blitz games that reached an Endgame Phase vs games that did not. All columns are whole-number percentages; score_pct uses wins=100, draws=50, losses=0.
 | series      | games | win_pct | draw_pct | loss_pct | score_pct |
 | ----------- | ----- | ------- | -------- | -------- | --------- |
 | endgame     | 240   | 50     | 17      | 33      | 58       |

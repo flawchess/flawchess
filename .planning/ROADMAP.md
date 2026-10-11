@@ -128,6 +128,62 @@
 
 No open milestone. Standalone phases continue absolute numbering from v2.24's Phase 237.
 
+### Phase 238: Endgame Stats Percentile-First Redesign (SEED-196)
+
+**Goal**: Make the Endgame Stats tab readable by giving every metric one verdict. Today each metric carries
+three that can contradict each other in the same red/blue/green: population-IQR zone color on the filtered
+whole-history value, a peer percentile chip on a different (ranked) value, and a z-test verdict in the
+magnifier popover (Endgame Score Gap −13% reads red + "real weakness" while its chip says typical 27th).
+Gauges duplicate the WDL bar. Direction is the owner-approved sketch 009 round 2
+(`.planning/sketches/009-endgame-stats-percentile-first/`; locked decisions in SEED-196).
+
+- **1. Percentile-first:** one 0-100 percentile bar per peer-ranked metric (typical band 25-75, median tick,
+  dot colored by band); values uncolored. No zone bands, CI whiskers or zone-colored numbers on ranked metrics.
+- **2. Ranked value displayed:** the big number, its WDL bar and the percentile describe the same games
+  (last 36 months, opponents ±100 Elo, per TC). Backend computes the missing components on the ranked
+  sample (conv/parity/recovery WDL, with/without-endgame scores, entry eval / expected / actual, CI and
+  p-value inputs); aggregated cross-TC chips retire. LLM insights payload narrates the same ranked values.
+- **3. One popover per metric:** WHAT + sign, percentile statement + the four disclosures, then n / 95% CI /
+  p-value greyed below a separator (merges `MetricStatPopover` and `PercentileChip`).
+- **4. Sections:** "Compared to similar-rated players" dot plot (all ranked metrics for the TC, rows link to
+  sections; owner may drop it later); Overall reduced to 2 cards; Endgame Metrics cards without gauges
+  (bracket on the WDL bar); Time Pressure curve and Clock Gap timeline get one grey typical band with
+  neutral line/dots; Endgame Type Breakdown becomes a table with grey typical ranges and an amber
+  below-typical mark (no per-type percentiles). One TC switch per section, synced, replaces the accordions.
+- **Guardrails:** percentile tooltip disclosure contract; no flame icons; `MiniBulletChart` stays (Openings);
+  CDF-side and user-side SQL stay byte-identical; concepts accordion copy updated; mobile and desktop UAT.
+- **Open for discuss:** what filters still do on the Stats tab; TCs below the anchor floor; whether the Type
+  table also moves to the ranked sample; default TC; card state before Stage B percentiles land.
+
+**Depends on**: nothing in flight (builds on Phase 94.4 peer-relative percentiles and Phase 99 rate percentiles)
+**Requirements**: TBD (coverage contract = CONTEXT decisions D-00a..D-00i, D-01..D-14)
+**Plans:** 9/9 plans executed
+**Status**: Complete 2026-10-11 (squash-merged to `main`, unreleased)
+
+Plans:
+**Wave 1**
+- [x] 238-01-PLAN.md — Backend ranked-sample core: GET /endgames/ranked-stats, 11 metrics on read with CTE parity, rank status (wave 1)
+
+**Wave 2** *(blocked on Wave 1 completion)*
+- [x] 238-02-PLAN.md — Backend per-TC timelines, time-pressure curve, type categories, filtered GET /endgames/stats, latency probe (wave 2)
+- [x] 238-03-PLAN.md — Frontend foundation: synced TC switch, PercentileBar, merged popover, Overall section, peers card, empty state (wave 2)
+
+**Wave 3** *(blocked on Wave 2 completion)*
+- [x] 238-04-PLAN.md — Filter-free Shelly insights on the ranked payload, endgame_v48, deliberate golden regen (wave 3)
+- [x] 238-05-PLAN.md — Frontend Metrics cards, Time Pressure grey bands, Type table, filter-free Stats tab, concepts copy (wave 3)
+
+**Wave 4** *(blocked on Wave 3 completion)*
+- [x] 238-06-PLAN.md — Retirement sweep: delete gauges/chips/stat popovers and old section components, stale-reference grep (wave 4, run inline)
+
+**Wave 5** *(blocked on Wave 4 completion)*
+- [x] 238-07-PLAN.md — Frontend insights without filters, Games tab on /stats, filters hidden on Stats, overview types retired (wave 5)
+
+**Wave 6** *(blocked on Wave 5 completion)*
+- [x] 238-08-PLAN.md — Backend /overview and aggregated chips retired, zone codegen pruned, CHANGELOG (wave 6, after 238-07)
+
+**Wave 7** *(blocked on Wave 6 completion)*
+- [x] 238-09-PLAN.md — Pre-merge gate, final stale-reference grep and latency, Claude-run desktop + mobile UAT and live Shelly smoke (wave 7)
+
 Phase detail for every shipped milestone lives in `milestones/vX.Y-ROADMAP.md`, its phase directories in `milestones/vX.Y-phases/`, and the per-milestone summaries in [MILESTONES.md](MILESTONES.md).
 
 ## Backlog

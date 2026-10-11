@@ -277,12 +277,27 @@
       "number": "225",
       "name": "227. v2.21 phases",
       "status": "complete"
+    },
+    {
+      "number": "228",
+      "name": "232. v2.22 phases",
+      "status": "complete"
+    },
+    {
+      "number": "233",
+      "name": "234. v2.23 phases",
+      "status": "complete"
+    },
+    {
+      "number": "235",
+      "name": "237. v2.24 phases",
+      "status": "complete"
     }
   ],
   "next": {
-    "command": "/gsd-new-milestone",
-    "label": "Start the next milestone or a standalone phase",
-    "reason": "v2.24 closed 2026-10-09; no open milestone"
+    "command": "/gsd:progress --next",
+    "label": "Advance to the next step",
+    "reason": "Phase 238 of 1 · executing"
   },
-  "updated_at": "2026-10-09T13:00:00.000Z"
+  "updated_at": "2026-10-11T12:12:43.249Z"
 }

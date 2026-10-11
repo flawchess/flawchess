@@ -1,12 +1,8 @@
-"""Wave 0 schema tests for Phase 87.5 — Endgame ELO Timeline field rename.
+"""Schema tests for the endgame API contract.
 
-Verify the Pydantic contract after Phase 87.5 D-06:
-- EndgameEloTimelinePoint.conversion_elo → endgame_elo
-- EndgameOverviewResponse.conversion_elo_timeline → endgame_elo_timeline
-- ScoreGapMaterialResponse continues to drop the Phase 78 Skill composite fields.
-
-Tests are written BEFORE the implementation (RED gate). They will pass once Task 3
-in Plan 87.5-01 renames the fields end-to-end.
+Phase 87.5 D-06: EndgameEloTimelinePoint exposes endgame_elo, not conversion_elo.
+Phase 238 D-00h: the filtered overview and its aggregated cross-TC chip fields are
+gone from the wire; the ranked payload carries per-TC percentiles only.
 """
 
 from __future__ import annotations
@@ -14,38 +10,55 @@ from __future__ import annotations
 import pydantic
 import pytest
 
+from app.schemas import endgames as endgames_schemas
 from app.schemas.endgames import (
     EndgameEloTimelinePoint,
-    EndgameOverviewResponse,
-    EndgamePerformanceResponse,
-    ScoreGapMaterialResponse,
+    RankedMetricOut,
+    RankedTcStats,
 )
 
-
-class TestScoreGapMaterialResponseSkillDropped:
-    """SC#1 (backend, inherited from Phase 78): Skill composite fields stay off-wire."""
-
-    def test_score_gap_response_drops_skill_fields(self) -> None:
-        keys = set(ScoreGapMaterialResponse.model_fields.keys())
-        forbidden = {
-            "score_gap_skill_mean",
-            "score_gap_skill_n",
-            "score_gap_skill_p_value",
-            "score_gap_skill_ci_low",
-            "score_gap_skill_ci_high",
-            "endgame_skill_rate_mean",
-        }
-        leaked = forbidden & keys
-        assert leaked == set(), f"Skill fields still present on wire: {leaked}"
+# Aggregated cross-TC fields (and the per-TC chip value fields) retired by D-00h.
+RETIRED_AGGREGATED_FIELDS = {
+    "score_gap_percentile",
+    "achievable_score_gap_percentile",
+    "score_gap_per_tc",
+    "achievable_score_gap_per_tc",
+    "percentile_value",
+    "rate_percentile_value",
+}
 
 
-class TestEndgameOverviewResponseEndgameEloTimeline:
-    """SC#6 (Phase 87.5): EndgameOverviewResponse uses endgame_elo_timeline."""
+class TestOverviewSchemasRetired:
+    """D-00h: the overview response, its per-TC breakdown and the cards payloads are gone."""
 
-    def test_overview_response_uses_endgame_elo_timeline(self) -> None:
-        keys = set(EndgameOverviewResponse.model_fields.keys())
-        assert "endgame_elo_timeline" in keys
-        assert "conversion_elo_timeline" not in keys
+    # Substrings of the retired class names (kept partial so this guard does not
+    # reintroduce the full retired identifiers into the codebase).
+    RETIRED_NAME_PARTS = (
+        "EndgameOverview",
+        "PerTcBreakdown",
+        "ScoreGapMaterial",
+        "EndgamePerformance",
+        "EndgameTimelineResponse",
+        "TimePressureTcCard",
+        "EndgameMetricsTcCard",
+    )
+
+    def test_overview_only_schemas_removed(self) -> None:
+        public = [n for n in dir(endgames_schemas) if not n.startswith("_")]
+        leaked = [n for n in public if any(part in n for part in self.RETIRED_NAME_PARTS)]
+        assert leaked == [], f"Retired overview schemas still exported: {leaked}"
+
+
+class TestAggregatedChipFieldsRetired:
+    """D-00h: no aggregated cross-TC percentile field on the ranked payload."""
+
+    def test_ranked_tc_stats_has_no_aggregated_fields(self) -> None:
+        leaked = RETIRED_AGGREGATED_FIELDS & set(RankedTcStats.model_fields.keys())
+        assert leaked == set(), f"Retired fields still on RankedTcStats: {leaked}"
+
+    def test_ranked_metric_out_has_no_aggregated_fields(self) -> None:
+        leaked = RETIRED_AGGREGATED_FIELDS & set(RankedMetricOut.model_fields.keys())
+        assert leaked == set(), f"Retired fields still on RankedMetricOut: {leaked}"
 
 
 class TestEndgameEloTimelinePointFieldRename:
@@ -78,42 +91,3 @@ class TestEndgameEloTimelinePointFieldRename:
                     "per_week_endgame_games": 10,
                 }
             )
-
-
-class TestPercentileFieldsPresent:
-    """Phase 94 (PCTL-02) / Phase 97 D-10: percentile fields on the wire.
-
-    Phase 94 added 4 nullable `_percentile` fields:
-      - score_gap_percentile (Overall Performance chip — KEPT)
-      - achievable_score_gap_percentile (Overall Performance chip — KEPT)
-      - score_gap_conv_percentile (Metrics-section chip — REMOVED in Phase 97 D-10)
-      - score_gap_parity_percentile (Metrics-section chip — REMOVED in Phase 97 D-10)
-
-    Phase 97 D-10: score_gap_conv_percentile, score_gap_parity_percentile,
-    and recovery_score_gap_percentile were Metrics-section-only and are removed
-    now that the EndgameMetricsSection component is deleted (superseded by per-TC
-    cards). Only the Overall-Performance chips survive.
-    """
-
-    def test_score_gap_response_has_overall_percentile_field(self) -> None:
-        keys = set(ScoreGapMaterialResponse.model_fields.keys())
-        assert "score_gap_percentile" in keys, (
-            "score_gap_percentile missing — Overall Performance chip must remain"
-        )
-        # Metrics-section-only fields removed in Phase 97 D-10.
-        removed = {
-            "score_gap_conv_percentile",
-            "score_gap_parity_percentile",
-            "recovery_score_gap_percentile",
-            "score_gap_conv_per_tc",
-            "score_gap_parity_per_tc",
-            "recovery_score_gap_per_tc",
-        }
-        leaked = removed & keys
-        assert leaked == set(), f"Metrics-section-only fields still present: {leaked}"
-
-    def test_performance_response_has_percentile_field(self) -> None:
-        keys = set(EndgamePerformanceResponse.model_fields.keys())
-        assert "achievable_score_gap_percentile" in keys, (
-            "achievable_score_gap_percentile missing from EndgamePerformanceResponse.model_fields"
-        )

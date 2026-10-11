@@ -19,7 +19,7 @@ import type {
   BookmarkPhaseEntryRequest,
   BookmarkPhaseEntryResponse,
 } from '@/types/stats';
-import type { EndgameGamesResponse, EndgameOverviewResponse } from '@/types/endgames';
+import type { EndgameGamesResponse, EndgameRankedStatsResponse, EndgameStatsResponse } from '@/types/endgames';
 import type { GameFlawCard, LibraryGamesResponse, FlawStatsResponse, LibraryFlawsResponse, FlawComparisonResponse, TacticComparisonResponse, TacticLinesResponse } from '@/types/library';
 import type { OpponentStrengthRange } from '@/types/api';
 import { rangeToQueryParams } from '@/lib/opponentStrength';
@@ -243,7 +243,9 @@ export const statsApi = {
 
 // No color parameter passed — endgame stats are color-agnostic per D-02.
 export const endgameApi = {
-  getOverview: (params: {
+  // Phase 238 (D-01): the Games tab's filtered per-category stats (and its
+  // "N of M games with an endgame matched" total). Honours every sidebar filter.
+  getStats: (params: {
     time_control?: string[] | null;
     platform?: string[] | null;
     from_date?: string | null;
@@ -251,11 +253,15 @@ export const endgameApi = {
     rated?: boolean | null;
     opponent_type?: string;
     opponent_strength?: OpponentStrengthRange;
-    window?: number;
   }) =>
-    apiClient.get<EndgameOverviewResponse>('/endgames/overview', {
+    apiClient.get<EndgameStatsResponse>('/endgames/stats', {
       params: buildFilterParams(params),
     }).then(r => r.data),
+
+  // Phase 238 (D-01): ranked-sample stats per time control. Takes no filters:
+  // the Stats tab ignores the shared filter state entirely.
+  getRankedStats: () =>
+    apiClient.get<EndgameRankedStatsResponse>('/endgames/ranked-stats').then(r => r.data),
 
   getGames: (params: {
     endgame_class: string;

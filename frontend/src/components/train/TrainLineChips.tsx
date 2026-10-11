@@ -45,13 +45,21 @@ function ChipEval({ chip, testid }: { chip: ChipGroup; testid: string }): ReactE
   // WR-01: a restored Analyze stand-in grade carries an eval-less empty line;
   // formatScore(null, null) would render a permanent "…" pill, so hide it.
   if (chip.line.evalCp === null && chip.line.evalMate === null) return null;
+  // SEED-197: the pill is the FROZEN graded reading of the chip's line. The move
+  // list's dimmed preview carries its own live eval pill, so label this one.
+  const score = formatScore(chip.line.evalCp, chip.line.evalMate);
   return (
     <span
       className="rounded px-1.5 py-0.5 text-sm font-semibold text-white"
       style={{ backgroundColor: BEST_MOVE_ARROW }}
       data-testid={`${testid}-eval`}
+      title="Graded eval"
     >
-      {formatScore(chip.line.evalCp, chip.line.evalMate)}
+      {/* IN-05: `title` never shows on touch and `aria-label` on a role-less span is
+          not announced reliably (ARIA prohibits naming a generic role), so the label
+          is real visually hidden text that every screen reader reads. */}
+      <span className="sr-only">Graded eval </span>
+      {score}
     </span>
   );
 }

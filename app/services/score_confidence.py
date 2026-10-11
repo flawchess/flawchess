@@ -125,7 +125,7 @@ def _wilson_score_test_vs_half(score: float, n: int) -> tuple[float, float]:
 # compute_score_delta_vs_reference were removed. Their sole consumer was the
 # Phase 88 per-quintile Score-Delta bullet, which now uses
 # compute_score_difference_test against an in-set opponent-quintile split (see
-# app/services/endgame_service._build_quintile_bullets).
+# app/services/endgame_service.build_quintile_bullets).
 
 
 def _bucket_from_p_value(p_value: float, n: int) -> Literal["low", "medium", "high"]:
@@ -207,7 +207,7 @@ def compute_score_difference_test(
     `shared_n` (Phase 148 item 3, D-04 covariance correction): the count of
     observations shared between the two cohorts (e.g. the same game
     contributing to both `score_eg` and `score_ne` via `score_ne = 1 -
-    score_eg`, as in `endgame_service._build_quintile_bullets`). When the two
+    score_eg`, as in `endgame_service.build_quintile_bullets`). When the two
     cohorts overlap like this, `Cov(score_eg, score_ne) = -shared_n * v /
     (eg_n * ne_n)` (derived from `Var(A - B) = Var(A) + Var(B) - 2*Cov(A,B)`),
     which widens SE_diff relative to the naive independent-samples formula.

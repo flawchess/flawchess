@@ -30,7 +30,7 @@ import type {
   RecencyPreset,
   TimeControl,
 } from '@/types/api';
-import type { EndgameClass } from '@/types/endgames';
+import type { EndgameClass, TimeControlBucket } from '@/types/endgames';
 import type { FlawSeverity, FlawTag, TacticOrientation } from '@/types/library';
 
 /** The subset of an outgoing tracker payload this module rewrites. */
@@ -446,6 +446,7 @@ export const OPTION_TARGETS = [
   'import-cap',
   'train-puzzles-per-session',
   'train-reminder-hour',
+  'endgame-stats-tc',
 ] as const;
 
 /** FilterPanel's Rated ToggleGroup item values. */
@@ -480,7 +481,9 @@ export type OptionChangeProps =
   | { target: 'bot-color'; value: BotSetupSettings['colorPreference'] }
   | { target: 'import-cap'; value: `${GameCap}` }
   | { target: 'train-puzzles-per-session'; value: (typeof TRAIN_PUZZLES_PER_SESSION_VALUES)[number] }
-  | { target: 'train-reminder-hour'; value: (typeof REMINDER_HOUR_VALUES)[number] };
+  | { target: 'train-reminder-hour'; value: (typeof REMINDER_HOUR_VALUES)[number] }
+  // Phase 238 D-00h: the synced time-control switch on the Endgame Stats tab.
+  | { target: 'endgame-stats-tc'; value: TimeControlBucket };
 
 /** Every action target keeps the bare shape except the reminder opt-in funnel, which carries source and outcome. */
 export type ActionProps =

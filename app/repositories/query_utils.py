@@ -4,7 +4,8 @@ import datetime
 from collections.abc import Sequence
 from typing import Any, Literal, cast, get_args
 
-from sqlalchemy import and_, case, literal, or_
+from sqlalchemy import Integer, and_, any_, bindparam, case, literal, or_
+from sqlalchemy.dialects.postgresql import ARRAY
 from sqlalchemy.sql.elements import ColumnElement
 
 from app.models.game import Game
@@ -149,6 +150,23 @@ def player_only_gate(
     return ~is_opponent_expr(ply_col, user_color_col)
 
 
+def game_ids_any_predicate(column: Any, game_ids: Sequence[int]) -> ColumnElement[bool]:
+    """``column = ANY(:ids)`` against ONE bound ``int[]`` parameter (Phase 238).
+
+    Used by the on-read ranked Endgame Stats path to restrict a statement (or an
+    inner aggregation subquery) to the ranked-sample game ids. Deliberately NOT an
+    expanded ``IN (1, 2, ...)`` list and NOT an ``IN (subquery)``: the latter is the
+    form documented as hanging the planner on users with many endgame games
+    (see query_clock_stats_rows). ``unique=True`` gives each call its own parameter
+    name so several statements / subqueries in one query can each carry the array.
+    The ids come from our own ranked-sample query, never from a request.
+    """
+    ids_param = bindparam(
+        "ranked_game_ids", value=list(game_ids), type_=ARRAY(Integer), unique=True
+    )
+    return column == any_(ids_param)
+
+
 def apply_game_filters(
     stmt: Any,
     time_control: Sequence[str] | None,
@@ -179,6 +197,10 @@ def apply_game_filters(
     max_tactic_depth: int | None = None,
     has_gem: bool | None = None,
     has_great: bool | None = None,
+    # Phase 238: keyword-only, default None = unchanged behavior for every existing
+    # caller. Only the on-read ranked Endgame Stats path sets it, to restrict a
+    # statement to the ranked-sample game ids (alongside neutral other filters).
+    game_ids: Sequence[int] | None = None,
 ) -> Any:
     """Apply standard game filter WHERE clauses to a SELECT statement.
 
@@ -274,6 +296,10 @@ def apply_game_filters(
         has_great: Same as has_gem for the 'great' tier. has_gem=True AND
                          has_great=True is a UNION (gem OR great on the single
                          EXISTS), mirroring the flaw-family EXISTS union (D-05).
+        game_ids: Phase 238. When set, restrict to ``Game.id = ANY(:ids)`` (one bound
+                         int[] parameter; see ``game_ids_any_predicate``). None (default)
+                         leaves the statement unchanged. Internal keyword: routers must
+                         never expose it.
 
     Notes:
         When either gap bound is set, games with missing white/black ratings
@@ -413,4 +439,6 @@ def apply_game_filters(
         best_move_tiers.append("great")
     if best_move_tiers:
         stmt = stmt.where(best_move_exists_from_table(best_move_tiers))
+    if game_ids is not None:
+        stmt = stmt.where(game_ids_any_predicate(Game.id, game_ids))
     return stmt

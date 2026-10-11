@@ -232,12 +232,6 @@ export interface EngineLinesProps {
    * wrapping rows). Font size no longer differs between the two (Quick 260628-r5v).
    */
   compact?: boolean;
-  /**
-   * Draw every badge in the secondary color, line 1 included (Quick 261009-por).
-   * Train's stepped known lines own the primary (solid blue) move themselves,
-   * so the live rows there are all secondary, matching their board arrows.
-   */
-  allSecondary?: boolean;
 }
 
 interface PvLineRowProps {
@@ -249,7 +243,6 @@ interface PvLineRowProps {
   onMoveClick: (uciMoves: string[]) => void;
   addSeparator: boolean;
   compact: boolean;
-  allSecondary: boolean;
 }
 
 /** Renders a single PV line as one row: eval badge + move chips. */
@@ -262,7 +255,6 @@ function PvLineRow({
   onMoveClick,
   addSeparator,
   compact,
-  allSecondary,
 }: PvLineRowProps) {
   // Per-line expand toggle: collapsed shows the first MAX_PLIES moves; the chevron
   // reveals the whole PV (Quick 260628-shc UAT). State persists across the engine's
@@ -277,7 +269,7 @@ function PvLineRow({
   // Badge matches the board arrow: solid blue best move, one translucent blue for
   // every later line. White text (BADGE_CLASS) stays legible on both fills.
   const badgeColor =
-    lineIndex === 0 && !allSecondary ? BEST_MOVE_ARROW : STOCKFISH_BADGE_SECONDARY;
+    lineIndex === 0 ? BEST_MOVE_ARROW : STOCKFISH_BADGE_SECONDARY;
 
   return (
     <div
@@ -312,7 +304,7 @@ function PvLineRow({
           // Safe: moveIndex is within moves.slice(0, MAX_PLIES) bounds.
           const from = uciMove.slice(0, 2);
           const to = uciMove.slice(2, 4);
-          const label = moveLabel(startPly, lineIndex === 0 ? moveIndex : moveIndex);
+          const label = moveLabel(startPly, moveIndex);
           const isWhiteMove = (startPly + moveIndex) % 2 === 0;
           // SAN when available, raw UCI as fallback.
           const step = steps[moveIndex];
@@ -408,7 +400,6 @@ export function EngineLines({
   flipped = false,
   onMoveClick,
   compact = false,
-  allSecondary = false,
 }: EngineLinesProps) {
   const visibleLines = pvLines.slice(0, maxLines);
 
@@ -440,7 +431,6 @@ export function EngineLines({
             onMoveClick={onMoveClick}
             addSeparator={lineIndex > 0}
             compact={compact}
-            allSecondary={allSecondary}
           />
         );
       })}

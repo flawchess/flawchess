@@ -1,7 +1,7 @@
 """Tests for the Phase 63 findings-pipeline Pydantic schemas (app/schemas/insights.py).
 
 Covers:
-- FilterContext: defaults, Literal validation, field set matches INS-03 spec
+- FilterContext is GONE (Phase 238 D-04): the endgame insights take no filters
 - SubsectionFinding: required + optional fields, NaN value round-trip, Literal validation
 - EndgameTabFindings: composition, required fields
 - SectionId Literal alias matches the Phase 65 prompt sections
@@ -17,7 +17,6 @@ from pydantic import ValidationError
 
 from app.schemas.insights import (
     EndgameTabFindings,
-    FilterContext,
     MetricId,
     RatingAnchorContext,
     SampleQuality,
@@ -30,75 +29,22 @@ from app.schemas.insights import (
 )
 
 
-class TestFilterContext:
-    """FilterContext mirrors the endgame router's filter surface."""
+class TestFilterContextRemoved:
+    """Phase 238 (D-04): the insights are filter-independent; FilterContext no longer exists."""
 
-    def test_defaults_all_optional(self) -> None:
-        """FilterContext() instantiates cleanly — every field has a default."""
-        fc = FilterContext()
-        assert fc.from_date is None
-        assert fc.to_date is None
-        assert fc.opponent_strength == "any"
-        assert fc.color == "all"
-        assert fc.time_controls == []
-        assert fc.platforms == []
-        assert fc.rated_only is False
+    def test_filter_context_is_not_part_of_the_schema_module(self) -> None:
+        from app.schemas import insights
 
-    def test_populated(self) -> None:
-        """Caller-provided values round-trip through model_dump."""
-        fc = FilterContext(
-            from_date=datetime.date(2026, 1, 1),
-            to_date=datetime.date(2026, 3, 31),
-            opponent_strength="stronger",
-            color="white",
-            time_controls=["blitz", "rapid"],
-            platforms=["chess.com"],
-            rated_only=True,
-        )
-        dumped = fc.model_dump()
-        assert dumped == {
-            "from_date": datetime.date(2026, 1, 1),
-            "to_date": datetime.date(2026, 3, 31),
-            "opponent_strength": "stronger",
-            "color": "white",
-            "time_controls": ["blitz", "rapid"],
-            "platforms": ["chess.com"],
-            "rated_only": True,
-        }
+        assert not hasattr(insights, "FilterContext")
+        assert "FilterContext" not in insights.__all__
 
-    def test_date_range_validator_rejects_invalid_range(self) -> None:
-        """Pydantic v2 model_validator rejects from_date > to_date."""
-        with pytest.raises(ValidationError):
-            FilterContext(
-                from_date=datetime.date(2026, 3, 31),
-                to_date=datetime.date(2026, 1, 1),
-            )
+    def test_llm_log_filter_context_keeps_its_json_shape(self) -> None:
+        """No migration: llm_logs.filter_context still holds {"opponent_strength": ...}."""
+        from app.schemas.llm_log import LlmLogFilterContext
+        from app.services.insights_llm import INSIGHTS_CACHE_OPPONENT_STRENGTH
 
-    def test_opponent_strength_rejects_unknown_literal(self) -> None:
-        with pytest.raises(ValidationError):
-            FilterContext(opponent_strength="bogus")  # ty: ignore[invalid-argument-type]
-
-    def test_color_rejects_unknown_literal(self) -> None:
-        with pytest.raises(ValidationError):
-            FilterContext(color="purple")  # ty: ignore[invalid-argument-type]
-
-    def test_field_order_locked(self) -> None:
-        """Field order is load-bearing for findings_hash determinism (FIND-05).
-
-        Pydantic v2 model_dump_json emits fields in declaration order; the
-        service post-processes with json.dumps(sort_keys=True) but the raw
-        declaration order is asserted here so Plan 04's hash computation has
-        a stable input shape to reason about.
-        """
-        assert list(FilterContext.model_fields.keys()) == [
-            "from_date",
-            "to_date",
-            "opponent_strength",
-            "color",
-            "time_controls",
-            "platforms",
-            "rated_only",
-        ]
+        ctx = LlmLogFilterContext(opponent_strength=INSIGHTS_CACHE_OPPONENT_STRENGTH)
+        assert ctx.model_dump() == {"opponent_strength": "any"}
 
 
 class TestSubsectionFinding:
@@ -188,7 +134,7 @@ class TestSubsectionFinding:
 
 
 class TestEndgameTabFindings:
-    """EndgameTabFindings composes filters + findings + flags + hash."""
+    """EndgameTabFindings composes findings + the ranked payload + percentile context + hash."""
 
     def _valid_finding(self) -> SubsectionFinding:
         return SubsectionFinding(
@@ -207,7 +153,6 @@ class TestEndgameTabFindings:
     def test_minimal_instantiation(self) -> None:
         findings = EndgameTabFindings(
             as_of=datetime.datetime(2026, 4, 20, 12, 0, 0, tzinfo=datetime.timezone.utc),
-            filters=FilterContext(),
             findings=[],
             findings_hash="",
         )
@@ -215,11 +160,9 @@ class TestEndgameTabFindings:
         assert findings.findings_hash == ""
 
     def test_populated(self) -> None:
-        fc = FilterContext(from_date=datetime.date(2026, 1, 15), to_date=datetime.date(2026, 4, 15))
         f = self._valid_finding()
         findings = EndgameTabFindings(
             as_of=datetime.datetime(2026, 4, 20, tzinfo=datetime.timezone.utc),
-            filters=fc,
             findings=[f],
             findings_hash="0" * 64,
         )
@@ -230,19 +173,13 @@ class TestEndgameTabFindings:
     def test_field_order_locked(self) -> None:
         assert list(EndgameTabFindings.model_fields.keys()) == [
             "as_of",
-            "filters",
             "findings",
-            "time_pressure_chart",
-            "overall_performance",
-            "type_categories",
             "player_profile",
-            # Phase 102 (Plan 01): appended before findings_hash so the hash stays last
-            # (load-bearing for findings_hash stability); optional non-breaking payload adds.
-            "time_pressure_cards",
-            "metric_percentiles",
+            # Phase 238 (D-04): the all_time ranked payload, appended after player_profile and
+            # before findings_hash so the hash stays last (load-bearing for stability).
+            "ranked_tcs",
             # Phase 102 (Plan 04): per-TC metric percentiles for Section 2 ΔES-gap +
-            # raw-rate + time-pressure metrics. Appended after metric_percentiles,
-            # before cohort_anchors, to preserve findings_hash stability.
+            # raw-rate + time-pressure metrics, keyed "{metric}:{tc}".
             "per_tc_metric_percentiles",
             # Phase 102 (Plan 05): cohort_anchors changed from dict[str, int] to
             # dict[str, RatingAnchorContext] — field position is unchanged.
@@ -253,6 +190,35 @@ class TestEndgameTabFindings:
             "type_categories_by_tc",
             "findings_hash",
         ]
+
+    def test_ranked_payload_replaces_the_filtered_overview_fields(self) -> None:
+        """Phase 238 (D-04): ranked_tcs is the data source; the filter-era fields are gone."""
+        fields = EndgameTabFindings.model_fields
+        assert "ranked_tcs" in fields
+        for removed in (
+            "filters",
+            "metric_percentiles",
+            "overall_performance",
+            "type_categories",
+            "time_pressure_chart",
+            "time_pressure_cards",
+        ):
+            assert removed not in fields, f"{removed} must not exist on EndgameTabFindings"
+
+    def test_ranked_tcs_defaults_to_empty_and_round_trips(self) -> None:
+        from tests.services.ranked_payload_fixtures import make_ranked_tc
+
+        empty = EndgameTabFindings(
+            as_of=datetime.datetime(2026, 4, 20, tzinfo=datetime.timezone.utc),
+            findings=[],
+            findings_hash="",
+        )
+        assert empty.ranked_tcs == []
+
+        populated = empty.model_copy(update={"ranked_tcs": [make_ranked_tc("blitz")]})
+        restored = EndgameTabFindings.model_validate_json(populated.model_dump_json())
+        assert [t.tc for t in restored.ranked_tcs] == ["blitz"]
+        assert restored.ranked_tcs[0].metrics["score_gap"].value == pytest.approx(0.05)
 
 
 class TestSectionIdLiteral:
@@ -310,7 +276,6 @@ class TestModuleAll:
             "EndgameInsightsReport",
             "EndgameInsightsResponse",
             "EndgameTabFindings",
-            "FilterContext",
             "InsightsError",
             "InsightsErrorResponse",
             "InsightsStatus",
@@ -384,7 +349,6 @@ class TestRatingAnchorContext:
         )
         findings = EndgameTabFindings(
             as_of=datetime.datetime(2026, 6, 1, tzinfo=datetime.timezone.utc),
-            filters=FilterContext(),
             findings=[],
             cohort_anchors={"blitz": ctx},
             findings_hash="",
@@ -462,6 +426,7 @@ class TestEndgameInsightsReport:
 
     def test_happy_path(self) -> None:
         r = EndgameInsightsReport(
+            summary="Endgames lift your rating; rook endings need work.",
             player_profile=self._DEFAULT_PROFILE,
             overview="Summary of endgame signals.",
             recommendations=self._DEFAULT_RECS,
@@ -476,6 +441,7 @@ class TestEndgameInsightsReport:
     def test_sections_min_length_1(self) -> None:
         with pytest.raises(ValidationError):
             EndgameInsightsReport(
+                summary="Endgames lift your rating; rook endings need work.",
                 player_profile=self._DEFAULT_PROFILE,
                 overview="x",
                 recommendations=self._DEFAULT_RECS,
@@ -489,6 +455,7 @@ class TestEndgameInsightsReport:
         # distinct valid section_ids, then add one invalid 5th via cast.
         with pytest.raises(ValidationError):
             EndgameInsightsReport(
+                summary="Endgames lift your rating; rook endings need work.",
                 player_profile=self._DEFAULT_PROFILE,
                 overview="x",
                 recommendations=self._DEFAULT_RECS,
@@ -507,6 +474,7 @@ class TestEndgameInsightsReport:
         """D-20: duplicate section_id raises → pydantic-ai retries upstream."""
         with pytest.raises(ValidationError) as exc_info:
             EndgameInsightsReport(
+                summary="Endgames lift your rating; rook endings need work.",
                 player_profile=self._DEFAULT_PROFILE,
                 overview="x",
                 recommendations=self._DEFAULT_RECS,
@@ -525,6 +493,7 @@ class TestEndgameInsightsReport:
         the system prompt, not the schema. Pydantic rejects only NULL.
         """
         r = EndgameInsightsReport(
+            summary="Endgames lift your rating; rook endings need work.",
             player_profile=self._DEFAULT_PROFILE,
             overview="",
             recommendations=self._DEFAULT_RECS,
@@ -538,6 +507,7 @@ class TestEndgameInsightsReport:
         """INS-06: overview is `str`, not `str | None`."""
         with pytest.raises(ValidationError):
             EndgameInsightsReport(
+                summary="Endgames lift your rating; rook endings need work.",
                 player_profile=self._DEFAULT_PROFILE,
                 overview=None,  # ty: ignore[invalid-argument-type]
                 recommendations=self._DEFAULT_RECS,
@@ -550,6 +520,7 @@ class TestEndgameInsightsReport:
         """v9: player_profile is required and must not be empty (min_length=1)."""
         with pytest.raises(ValidationError):
             EndgameInsightsReport(
+                summary="Endgames lift your rating; rook endings need work.",
                 player_profile="",
                 overview="x",
                 recommendations=self._DEFAULT_RECS,
@@ -562,6 +533,7 @@ class TestEndgameInsightsReport:
         """v9: recommendations must have at least 2 items."""
         with pytest.raises(ValidationError):
             EndgameInsightsReport(
+                summary="Endgames lift your rating; rook endings need work.",
                 player_profile=self._DEFAULT_PROFILE,
                 overview="x",
                 recommendations=["only one"],
@@ -574,6 +546,7 @@ class TestEndgameInsightsReport:
         """v9: recommendations cap at 4 items."""
         with pytest.raises(ValidationError):
             EndgameInsightsReport(
+                summary="Endgames lift your rating; rook endings need work.",
                 player_profile=self._DEFAULT_PROFILE,
                 overview="x",
                 recommendations=["a", "b", "c", "d", "e"],
@@ -586,6 +559,7 @@ class TestEndgameInsightsReport:
         """v9: each recommendation must be non-empty (validator)."""
         with pytest.raises(ValidationError):
             EndgameInsightsReport(
+                summary="Endgames lift your rating; rook endings need work.",
                 player_profile=self._DEFAULT_PROFILE,
                 overview="x",
                 recommendations=["valid", "  "],
@@ -598,6 +572,7 @@ class TestEndgameInsightsReport:
         """v9: each recommendation must be <= 200 chars."""
         with pytest.raises(ValidationError):
             EndgameInsightsReport(
+                summary="Endgames lift your rating; rook endings need work.",
                 player_profile=self._DEFAULT_PROFILE,
                 overview="x",
                 recommendations=["valid", "x" * 201],
@@ -612,6 +587,7 @@ class TestEndgameInsightsResponse:
 
     def _report(self) -> EndgameInsightsReport:
         return EndgameInsightsReport(
+            summary="Endgames lift your rating; rook endings need work.",
             player_profile="profile",
             overview="x",
             recommendations=["one", "two"],

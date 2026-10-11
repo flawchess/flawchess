@@ -221,8 +221,8 @@ class TestRegistrySanity:
 
         Phase 87.1 (SEED-016 D-02/D-04): `endgame_type_achievable_score_gap`
         (placeholder ±0.05 band) added — per-span, per-type version of
-        achievable_score_gap, surfaced on every EndgameTypeCard "Score Gap"
-        row (Plan 03) and through the LLM type_breakdown payload (Plan 04).
+        achievable_score_gap, surfaced in the Endgame Type breakdown
+        (Plan 03) and through the LLM type_breakdown payload (Plan 04).
         Bands calibrate from benchmarks SKILL.md §3.4.2.
 
         Phase 87.2 (SEC2-ΔES-03): `score_gap_{conv,parity,recov,skill}`

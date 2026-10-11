@@ -41,6 +41,7 @@ from app.services.canonical_slice_sql import (
     equal_footing_filter_sql,
     per_user_cte_median_anchor,
     per_user_cte_score_gap_tc,
+    ranked_games_sql,
     selected_users_cte,
     sparse_exclusion_sql,
 )
@@ -1174,3 +1175,142 @@ class TestRecoveryRateTcBuilder:
         assert "n_games" in sql, "per_user_values must alias n_games"
         # recovery rate = (wins + draws) / spans — both wins and draws count as saves
         assert "/" in sql, "recovery rate formula must contain a division"
+
+
+# ---------------------------------------------------------------------------
+# Phase 238 D-07 guard: golden SHA-256 of every EXISTING canonical builder.
+#
+# Captured from HEAD BEFORE any Phase 238 edit to canonical_slice_sql.py. The
+# existing source-mode parity tests only assert benchmark == single_user, so an
+# edit applied to both sides would pass them. This golden catches that: the
+# on-read ranked slice (238) and the persisted Stage A/B percentiles must keep
+# ranking the exact same SQL text. The benchmark side is guarded separately by
+# tests/scripts/test_gen_global_percentile_cdf_unchanged.py.
+#
+# If this test fails after an intentional builder change, the change also moves
+# the persisted-percentile basis: regenerate the percentiles, do not just
+# refresh the hashes.
+# ---------------------------------------------------------------------------
+
+_GOLDEN_BUILDER_SHA256: dict[str, str] = {
+    "selected_users:single_user": "c5ed50e945e737aaa1fe18b6440ec226f8f21d907febd9fbdfb2661f8329e58f",
+    "recent_capped:bullet": "36b0005b59d1cd4dad15970745f5689cc0125b4320e2f14e976b0f7e6e8c155d",
+    "score_gap_tc:bullet": "f6c7c547b0540ae1868b70a3027a02f67f616f7a355fd2a0ba0ea0ba6bd46df2",
+    "achievable_tc:bullet": "336cda01017fb7d4afcfa650db563f20b562065fa563ae7d54490f56e0fc2104",
+    "conv_rate_tc:bullet": "05a4c3889191def5262b63a0554e9ca8cfb8895e2f67c3b8514d3d9e65ff782a",
+    "parity_rate_tc:bullet": "4bce50bbbfbc12071ae97dca5db653fc71cc47e21e060cde16256e9fcbe5dc4d",
+    "recovery_rate_tc:bullet": "f57510599c7495b5f428745e66eca8201e6fd239dbf6f2e7702fe04e51572a0a",
+    "time_pressure_score_gap:bullet": "aa9f1582dc4421661611dd6ef01a5412e30275c423fec08751d4ed57725fefe1",
+    "clock_gap:bullet": "41806911413cb348e20155a8e316d7b23d544ae945dda414e31faa5a464ca4bb",
+    "net_flag_rate:bullet": "f67108ce8fa9c42da76526dcd49cf611eca482e63b12963cdb68fc67aaf8b303",
+    "score_gap_bucket_conversion_tc:bullet": "9f36e7f3ef214eec796747631fb10873d92983a922797dbfdf984b9244a0a07c",
+    "score_gap_bucket_parity_tc:bullet": "16f71f7b57da1d1b6dd05e3dc6fbc06ee23da6e426576972ff88685fafc3da5e",
+    "score_gap_bucket_recovery_tc:bullet": "0bfa0b848c4947ad0305e1fee4d70f28e376e681ce98c9eadf53aeadfcf4ffcb",
+    "median_anchor_blend:bullet": "7992fd09036f17d48c4c5098c550a2c35180dece1b80e5406c51e3d3bdb4622b",
+    "recent_capped:blitz": "93e18d1ba034710495549c306785335b66242403fe2837f64056ed1faefa83ee",
+    "score_gap_tc:blitz": "64aeb04042bbf94730f0ab7739b7a440c3e86a8a9ab9c82c7bd225f57fd71a20",
+    "achievable_tc:blitz": "fc730798150525c460750ca84775430e9f6552715098d9a502ff4b1c205330c4",
+    "conv_rate_tc:blitz": "33918aeb98eec479fc45a269c0902e455169b904b003b61deb86d93612a0c0be",
+    "parity_rate_tc:blitz": "9e3377db2c74463b7335b1a93dca09687bd1c1c4e020e7f9c32fe80d6e5befa1",
+    "recovery_rate_tc:blitz": "3231f20251fe8af627c4761129c3ec71bbf3305193f9d89506de8d7097f7733f",
+    "time_pressure_score_gap:blitz": "4838f54910a97e857a9a29a9bc9dd76c2cd2a31791ac797577fa0914d43b1d7c",
+    "clock_gap:blitz": "7192d0487fce42c5ae8efaa5a8baef5dd989a34f4a3d032fd47f6464e7b383bc",
+    "net_flag_rate:blitz": "d7fadcc471a6905bf72e4aee8dd5630d8a2827707a8f9b52d40852b3fa8fb956",
+    "score_gap_bucket_conversion_tc:blitz": "e1cd9c7644f4e334e4173ba63b4f51ca6dc12ac1368734af56e2aeb31f375fa0",
+    "score_gap_bucket_parity_tc:blitz": "fb17d0eca41a96101d017df23a26fca2e4ccf6c19caf2a79f3ff945a31bfa289",
+    "score_gap_bucket_recovery_tc:blitz": "27e33bf3850527f40db21b8a5bff72545719492c9bdd75e43f09ea7d422da2b0",
+    "median_anchor_blend:blitz": "2edb711ba4936d50484392bc391334201a88a712cb5d71c9f87f53dd2330617e",
+    "recent_capped:rapid": "6524c46f196918dec666fe6b469be999bf0b96a3153a5b6c50ee2f3870ba4bab",
+    "score_gap_tc:rapid": "07da99c050f649f2390d1738f336f8f4256fa0dfcf47a3469de388f05351643f",
+    "achievable_tc:rapid": "7455637a6e1939994da86fb6fd689eb8c44153b56d559547e32193390a561b39",
+    "conv_rate_tc:rapid": "bf1d563d8abd283ba72cdfe9584255a9fc06c9cbe911391847c68fb10ed2b363",
+    "parity_rate_tc:rapid": "32f50c7d21a7ad65d912f9ff66242f67dead7dc69bb558f7a8c1c4e9086bb0f8",
+    "recovery_rate_tc:rapid": "c3b0c843d166a189c2e937fae4a585443239d2a40ba41127e764f6ef073ad7f9",
+    "time_pressure_score_gap:rapid": "8900ad6002945bee35742dffbdefc8a923849b775a268f98a397693a541ba814",
+    "clock_gap:rapid": "1ed1b0c0a85d16ae5aba9788b849cdf27012c3eb0329fab83b38a140d0a89113",
+    "net_flag_rate:rapid": "e35454e19f39fd8e9ede9dc119e71fea864f92a9f6e08a331e8ad4c22c7d28bc",
+    "score_gap_bucket_conversion_tc:rapid": "f154654c6d07fedbb64b7edd335fabd43936d8a0b791955f1a6b1d2d9f4f8456",
+    "score_gap_bucket_parity_tc:rapid": "c21244a5d16b4f299499c9a2e2f944f87ab7bdf963a9e74508582bd83f3a1998",
+    "score_gap_bucket_recovery_tc:rapid": "2ee0859d8cdb8617d59f590846c5fe23c62be81c39c20338b8b5c0eea73b0d23",
+    "median_anchor_blend:rapid": "d3988001e43a43668fe86f505b303f1c291e48809d1a6af43fe10edc540e64d2",
+    "recent_capped:classical": "63c6b74e66094b4dd1538b6a78565499e23092d738b4d1b4f18b445348174a01",
+    "score_gap_tc:classical": "2b75016fd941e7c58730713f8f2dd172dc547290d6a646fbe2ce96f58f4d4f54",
+    "achievable_tc:classical": "c002df704129d24b9f9b2a7997a587983fe6d547b0cdbd9b513edab052a22e8f",
+    "conv_rate_tc:classical": "1a491b6fab893354c7bcaae7b5ec72746dca72100955266d8dda9b3109302b54",
+    "parity_rate_tc:classical": "eb5faedce7ba93a43a28edc588ec7ec037234be7f7cafc081a11fa1dbb6a4b50",
+    "recovery_rate_tc:classical": "aa034f3e8473a8489ce3276b6d95859ac9776618eb19bc41ee2fd3b58409b869",
+    "time_pressure_score_gap:classical": "3549e22ca91fd231c2d3d8b66e135879863de07c0754dbe192d090272019a7f6",
+    "clock_gap:classical": "657fa7da1b528b9b7df84d3e3f4a1de801cc66c0b4aa78da3451d53b17705512",
+    "net_flag_rate:classical": "aa67011f2558c6a0d8af5de9ad069f7090bd785c84fc819f7c7555b9cde972c2",
+    "score_gap_bucket_conversion_tc:classical": "d55e4d41018bca5f35527ee9801cb719f36becc0cb4a1c6307d72272f859aece",
+    "score_gap_bucket_parity_tc:classical": "7f10260f58d01e21eceee0989c1df39249c9b66c2512cafa73ca02686ad9d533",
+    "score_gap_bucket_recovery_tc:classical": "af99599e922a7d0433f4041ec4d230db36fba10700d6198fe7bab2ee361ec7e6",
+    "median_anchor_blend:classical": "a1611baa3c826d49069d445129534d1468b0fdeae0f5d072b50fb0e3b9458212",
+}
+
+
+def _current_builder_sha256() -> dict[str, str]:
+    """Recompute the golden dict from the live builders (same labels as the constant)."""
+    import hashlib
+
+    from app.services import canonical_slice_sql as c
+
+    def digest(sql: str) -> str:
+        return hashlib.sha256(sql.encode()).hexdigest()
+
+    tcs: tuple[TimeControlBucket, ...] = ("bullet", "blitz", "rapid", "classical")
+    bucket_labels: tuple[Literal["conversion", "parity", "recovery"], ...] = (
+        "conversion",
+        "parity",
+        "recovery",
+    )
+    out: dict[str, str] = {
+        "selected_users:single_user": digest(c.selected_users_cte(source="single_user"))
+    }
+    for tc in tcs:
+        out[f"recent_capped:{tc}"] = digest(c._recent_capped_per_tc_cte(None, tc))
+        simple_builders = {
+            "score_gap_tc": c.per_user_cte_score_gap_tc,
+            "achievable_tc": c.per_user_cte_achievable_tc,
+            "conv_rate_tc": c.per_user_cte_conv_rate_tc,
+            "parity_rate_tc": c.per_user_cte_parity_rate_tc,
+            "recovery_rate_tc": c.per_user_cte_recovery_rate_tc,
+            "time_pressure_score_gap": c.per_user_cte_time_pressure_score_gap,
+            "clock_gap": c.per_user_cte_clock_gap,
+            "net_flag_rate": c.per_user_cte_net_flag_rate,
+        }
+        for name, builder in simple_builders.items():
+            out[f"{name}:{tc}"] = digest(builder(tc, source="single_user", snapshot_date=None))
+        for label in bucket_labels:
+            out[f"score_gap_bucket_{label}_tc:{tc}"] = digest(
+                c.per_user_cte_score_gap_bucket_tc(
+                    tc, source="single_user", snapshot_date=None, bucket_label=label
+                )
+            )
+        out[f"median_anchor_blend:{tc}"] = digest(
+            c.per_user_cte_median_anchor(tc, source="single_user", blend=True)
+        )
+    return out
+
+
+def test_existing_builders_golden_sha256() -> None:
+    """D-07: every pre-Phase-238 canonical builder emits byte-identical SQL."""
+    current = _current_builder_sha256()
+    assert current.keys() == _GOLDEN_BUILDER_SHA256.keys()
+    drifted = sorted(k for k, v in current.items() if v != _GOLDEN_BUILDER_SHA256[k])
+    assert drifted == [], f"canonical builder SQL drifted from the golden baseline: {drifted}"
+
+
+@pytest.mark.parametrize("tc", ["bullet", "blitz", "rapid", "classical"])
+def test_ranked_games_sql_reuses_canonical_prelude(tc: TimeControlBucket) -> None:
+    """D-07: ranked_games_sql composes the unchanged Stage A/B prelude and binds user_id."""
+    sql = ranked_games_sql(tc)
+    prelude = (
+        "WITH "
+        + selected_users_cte(source="single_user")
+        + ",\n"
+        + _recent_capped_per_tc_cte(None, tc)
+    )
+    assert sql.startswith(prelude)
+    # user_id only through the bindparam seam (T-238-01): .bindparams must not raise.
+    text(sql).bindparams(user_id=1)

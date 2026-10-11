@@ -13,15 +13,6 @@
 
 import type { EndgameClass, MaterialBucket } from '@/types/endgames';
 
-// Short display names — the eval threshold indicator ("≥ +1.0", "≤ −1.0")
-// lives in the section description, freeing column/card space (especially
-// on mobile).
-export const BUCKET_DISPLAY_LABELS: Record<MaterialBucket, string> = {
-  conversion: 'Conversion',
-  parity: 'Parity',
-  recovery: 'Recovery',
-};
-
 // Phase 87.4 (D-03 / D-04): presentation-layer affine that recenters the
 // per-bucket Conv / Parity / Recov Score Gap bullets on a single visual zero
 // without mutating the calibrated zone bands. Shift values are the midpoint
@@ -36,11 +27,9 @@ export const SCORE_GAP_BUCKET_DISPLAY_SHIFT: Record<MaterialBucket, number> = {
   recovery: 0.06,
 } as const;
 
-// Phase 87 (D-11): One-sentence descriptions per endgame class, surfaced in the
-// per-card title InfoPopover on EndgameTypeCard. Lifted from
-// EndgameWDLChart.tsx:30-37 in Plan 02; `pawnless` omitted because pawnless is
-// hidden via HIDDEN_ENDGAME_CLASSES (Endgames.tsx:53) and never reaches the new
-// section orchestrator.
+// One-sentence description per endgame class, shown in the TypeTable row's info
+// popover (restored in the 238 UAT). `pawnless` is omitted because
+// HIDDEN_ENDGAME_CLASSES keeps it out of the table.
 export const ENDGAME_TYPE_DESCRIPTIONS: Record<Exclude<EndgameClass, 'pawnless'>, string> = {
   rook: 'Endgames with rooks as the only non-king, non-pawn pieces. The most common Endgame Type besides Mixed.',
   minor_piece: 'Endgames with bishops and/or knights as the only non-king, non-pawn pieces.',
@@ -49,16 +38,8 @@ export const ENDGAME_TYPE_DESCRIPTIONS: Record<Exclude<EndgameClass, 'pawnless'>
   mixed: 'Endgames with pieces from two or more piece types: rooks, minor pieces (bishops/knights), and queens (e.g. queen + rook, rook + knight).',
 };
 
-// Phase 87 (D-04): Mobile real-device density check in Plan 03 HUMAN-UAT decides
-// the final value. When false, the WDL bar row in EndgameTypeCard is suppressed
-// and the Games deep-link moves to a standalone row under the gauges so the
-// deep-link stays visible (per D-07 fallback rule). Card layout adapts; gauges
-// and peer bullets are never dropped under the fallback.
-export const SHOW_WDL_BAR_IN_TYPE_CARDS: boolean = true;
-
 // Phase 87 (D-16): Hyphenated URL slug + testid suffix per endgame class. Powers
-// /endgames/games?type=... deep-link and `type-card-{slug}` data-testid in
-// EndgameTypeCard / EndgameTypeBreakdownSection. Lifted verbatim from
+// the /endgames/games?type=... deep-link from each TypeTable row. Lifted verbatim from
 // EndgameWDLChart.tsx:21-28; all 6 entries kept for completeness even though
 // pawnless is filtered upstream by HIDDEN_ENDGAME_CLASSES.
 export const ENDGAME_CLASS_TO_SLUG: Record<EndgameClass, string> = {
@@ -72,7 +53,7 @@ export const ENDGAME_CLASS_TO_SLUG: Record<EndgameClass, string> = {
 
 // Phase 87 (Plan 03 D-03): Pawnless endgames are rare (~0.5% of positions in
 // prod) and per-user sample sizes are usually too small to be meaningful. Hidden
-// from the Endgames tab UI and from EndgameTypeBreakdownSection. Classification
+// from the Endgames tab UI and from the TypeTable rows. Classification
 // stays in the DB so the class can be re-enabled without a reimport. Lifted
 // from Endgames.tsx:53 so the orchestrator and the page share one source of
 // truth.

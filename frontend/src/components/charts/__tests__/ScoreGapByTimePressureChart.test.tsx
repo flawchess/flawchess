@@ -37,6 +37,13 @@ import {
   computeScoreGapYAxis,
   type ScoreGapAxisPoint,
 } from '@/lib/pressureBulletConfig';
+import {
+  NEUTRAL_SERIES_COLOR,
+  TYPICAL_BAND_FILL,
+  ZONE_DANGER,
+  ZONE_NEUTRAL,
+  ZONE_SUCCESS,
+} from '@/lib/theme';
 
 // Minimal axis-point factory — computeScoreGapYAxis only reads delta + ciError.
 function pt(delta: number, ciError?: [number, number]): ScoreGapAxisPoint {
@@ -113,13 +120,21 @@ describe('ScoreGapByTimePressureChart', () => {
     expect(screen.getByTestId('score-gap-by-time-pressure-chart-bullet')).toBeTruthy();
   });
 
-  // Test 2: exactly 3 zone bands
-  it('renders exactly 3 zone-band ReferenceArea elements', () => {
+  // Test 2: exactly one grey typical band (D-00f)
+  it('shows an empty-state line instead of a blank plot when no bin has games', () => {
+    const empty = FOUR_BIN_FIXTURE.map((bin) => ({ ...bin, n: 0 }));
+    render(<ScoreGapByTimePressureChart quintiles={empty} tc="rapid" />);
+    expect(screen.queryByTestId('score-gap-by-time-pressure-chart-rapid')).toBeNull();
+    expect(screen.getByTestId('score-gap-by-time-pressure-empty-rapid')).toBeTruthy();
+  });
+
+  it('renders exactly one grey typical-band ReferenceArea', () => {
     const { container } = render(
       <ScoreGapByTimePressureChart quintiles={FOUR_BIN_FIXTURE} tc="bullet" />,
     );
     const bands = container.querySelectorAll('.recharts-reference-area-rect');
-    expect(bands.length).toBe(3);
+    expect(bands.length, 'one typical band instead of three zone bands').toBe(1);
+    expect(bands[0]?.getAttribute('fill')).toBe(TYPICAL_BAND_FILL);
   });
 
   // Test 2b: zone bands span the full chart width (recharts 3 regression guard — D-01 Wave 6 UAT)
@@ -139,7 +154,7 @@ describe('ScoreGapByTimePressureChart', () => {
       <ScoreGapByTimePressureChart quintiles={FOUR_BIN_FIXTURE} tc="bullet" />,
     );
     const bands = container.querySelectorAll<SVGRectElement>('.recharts-reference-area-rect');
-    expect(bands.length).toBe(3);
+    expect(bands.length).toBe(1);
     for (const band of bands) {
       const x = parseFloat(band.getAttribute('x') ?? '0');
       const width = parseFloat(band.getAttribute('width') ?? '0');
@@ -150,14 +165,26 @@ describe('ScoreGapByTimePressureChart', () => {
     }
   });
 
-  // Test 3: white line stroke
-  it('renders the line with white stroke', () => {
+  // Test 3: neutral line, zone-colored dots (238 UAT brought the dot colors back)
+  it('draws a neutral line with dots colored by zone against the ±6% band', () => {
     const { container } = render(
-      <ScoreGapByTimePressureChart quintiles={FOUR_BIN_FIXTURE} tc="bullet" />,
+      <ScoreGapByTimePressureChart
+        quintiles={[
+          makeBin(0, { delta: -0.17 }),
+          makeBin(1, { delta: 0.0 }),
+          makeBin(2, { delta: 0.12 }),
+          makeBin(3, { delta: 0.03 }),
+        ]}
+        tc="bullet"
+      />,
     );
     const linePath = container.querySelector('.recharts-line-curve');
-    expect(linePath).not.toBeNull();
-    expect(linePath?.getAttribute('stroke')).toBe('white');
+    expect(linePath, 'line path present').not.toBeNull();
+    expect(linePath?.getAttribute('stroke')).toBe(NEUTRAL_SERIES_COLOR);
+    const fills = Array.from(container.querySelectorAll('.recharts-line-dots circle')).map((dot) =>
+      dot.getAttribute('fill'),
+    );
+    expect(fills).toEqual([ZONE_DANGER, ZONE_NEUTRAL, ZONE_SUCCESS, ZONE_NEUTRAL]);
   });
 
   // Test 4: 4-bin fixture (Q0..Q4 all n>0) → exactly 4 rendered data dots (Q4 filtered out)
@@ -213,7 +240,7 @@ describe('ScoreGapByTimePressureChart', () => {
 
   // Test 8: tooltip surfaces per-bucket stats — renders the REAL exported
   // production tooltip (no reimplementation). Fixes REVIEW.md IN-01 tautology.
-  it('tooltip: range header, two-line You/Opponents split, conclusion, italic test+CI', () => {
+  it('tooltip: range header, You/Opp split, greyed p-value, italic test+CI, no verdict', () => {
     const { getByTestId, getByText } = render(
       <ScoreGapTooltipContent
         point={{
@@ -230,34 +257,51 @@ describe('ScoreGapByTimePressureChart', () => {
       />,
     );
     const tooltip = getByTestId('score-gap-tooltip');
-    expect(tooltip).toBeTruthy();
     // Compact text-xs body, matching the Average Clock Gap chart tooltip.
     expect(tooltip.className).toContain('text-xs');
-    // Header is the full bucket RANGE, not the axis center value.
     expect(tooltip.textContent).toContain('Time Bucket: 0-20%');
     expect(tooltip.textContent).toContain('Score gap: -17.0%');
-    // Two separate lines, each with its own independent game count:
     // userScore = opp_score + delta = 0.55 + (-0.17) = 0.38.
     expect(tooltip.textContent).toContain('You: 38.0% (40 games)');
     expect(tooltip.textContent).toContain('Opp: 55.0% (37 games)');
-    expect(tooltip.textContent).not.toContain('n = 40');
-    // Conclusion: p=0.03 → medium → "Possibly"; delta ≤ -0.06 → weakness.
-    // No confidence-label clause (dropped per UAT) — p-value only.
-    expect(tooltip.textContent).toContain(
-      'Possibly a real weakness (p = 0.030)',
-    );
-    expect(tooltip.textContent).not.toContain('confidence');
-    // p-value appears exactly once (conclusion line) — NOT repeated in the
-    // italic test footnote.
+    // The per-metric z-test verdict left the visible UI (A12).
+    expect(tooltip.textContent).not.toMatch(/Likely a real|Possibly a real|Inconclusive/);
+    // The p-value stays, greyed, exactly once.
+    const pValue = tooltip.querySelector('[data-testid="score-gap-tooltip-p-value"]');
+    expect(pValue, 'p-value line present').not.toBeNull();
+    expect(pValue?.textContent).toBe('p = 0.030');
+    expect(pValue?.className).toContain('text-muted-foreground');
+    expect(tooltip.textContent?.match(/p = 0\.030/g)?.length).toBe(1);
     const testFootnote = getByText('Independent two-sample test.');
     expect(testFootnote.className).toContain('italic');
-    expect(testFootnote.textContent).not.toContain('p = ');
-    // CI is on its own italic line.
     const ciFootnote = getByText('95% CI [-2.0%, +2.0%]');
     expect(ciFootnote.className).toContain('italic');
-    expect(
-      tooltip.textContent?.match(/p = 0\.030/g)?.length,
-    ).toBe(1);
+  });
+
+  it('tooltip swatch uses the dot zone color', () => {
+    const { getByTestId } = render(
+      <ScoreGapTooltipContent
+        point={{
+          label: '10%',
+          rangeLabel: '0-20%',
+          delta: -0.17,
+          n: 40,
+          n_opp: 40,
+          opp_score: 0.55,
+          p_value: 0.03,
+          ci_low: null,
+          ci_high: null,
+        }}
+      />,
+    );
+    const swatch = getByTestId('score-gap-tooltip').querySelector<HTMLElement>(
+      '[data-testid="score-gap-tooltip-swatch"]',
+    );
+    expect(swatch, 'swatch present').not.toBeNull();
+    const reference = document.createElement('div');
+    // delta -0.17 sits below the -6% band: red, same as its dot.
+    reference.style.backgroundColor = ZONE_DANGER;
+    expect(swatch?.style.backgroundColor).toBe(reference.style.backgroundColor);
   });
 
   it('tooltip degrades gracefully when opp_score / p_value / CI are null', () => {
@@ -281,11 +325,7 @@ describe('ScoreGapByTimePressureChart', () => {
     expect(tooltip.textContent).toContain('You: n/a (7 games)');
     expect(tooltip.textContent).toContain('Opp: n/a (5 games)');
     expect(tooltip.textContent).toContain('Score gap: +4.0%');
-    // n < 10 gate → low → "Inconclusive", no confidence label, no p segment.
-    expect(tooltip.textContent).toContain('Inconclusive');
-    expect(tooltip.textContent).not.toContain('confidence');
     expect(tooltip.textContent).not.toContain('p = ');
-    // CI falls back to the methodology phrase.
     expect(tooltip.textContent).toContain('95% normal-approx CI');
   });
 });

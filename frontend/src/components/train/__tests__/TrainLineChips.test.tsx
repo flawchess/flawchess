@@ -22,7 +22,6 @@ function chip(overrides: Partial<ChipGroup> & { key: RoleKey }): ChipGroup {
     san: 'e4',
     label,
     line: { moves: ['e2e4', 'e7e5'], evalCp: 120, evalMate: null },
-    lineUcis: ['e2e4', 'e7e5'],
     pending: null,
     quality: 'good',
     ...overrides,
@@ -72,11 +71,24 @@ describe('TrainLineChips', () => {
     ]);
     expect(screen.getByTestId('train-chip-your-label').textContent).toBe('Move');
     expect(screen.getByTestId('train-chip-best-san').textContent).toBe('d4');
-    expect(screen.getByTestId('train-chip-your-eval').textContent).toBe('+1.2');
-    expect(screen.getByTestId('train-chip-best-eval').textContent).toBe('-0.4');
-    expect(screen.getByTestId('train-chip-game-eval').textContent).toBe('#+3');
+    // The score is the visible text; the "Graded eval" label is sr-only text before it.
+    expect(screen.getByTestId('train-chip-your-eval').textContent).toBe('Graded eval +1.2');
+    expect(screen.getByTestId('train-chip-best-eval').textContent).toBe('Graded eval -0.4');
+    expect(screen.getByTestId('train-chip-game-eval').textContent).toBe('Graded eval #+3');
     expect(screen.getByTestId('train-chip-best-quality').getAttribute('data-quality')).toBe('best');
     expect(screen.getByTestId('train-chip-game-quality').getAttribute('data-quality')).toBe('blunder');
+  });
+
+  it('labels the chip eval as the graded reading (SEED-197)', () => {
+    renderChips([chip({ key: 'your' })]);
+    const pill = screen.getByTestId('train-chip-your-eval');
+    expect(pill.getAttribute('title')).toBe('Graded eval');
+    // IN-05: title never shows on touch and aria-label on a role-less span is not
+    // announced reliably, so the label is real (visually hidden) text.
+    expect(pill.getAttribute('aria-label')).toBeNull();
+    const hidden = pill.querySelector('.sr-only');
+    expect(hidden?.textContent).toBe('Graded eval ');
+    expect(pill.textContent).toBe('Graded eval +1.2');
   });
 
   it('hides the eval pill for an eval-less stand-in line instead of a permanent "…" (WR-01)', () => {
@@ -128,7 +140,7 @@ describe('TrainLineChips', () => {
   });
 
   it('a loading chip shows a spinner instead of an eval (Phase 236 D-14)', () => {
-    renderChips([chip({ key: 'your', pending: 'loading', line: null, lineUcis: ['e2e4'] })]);
+    renderChips([chip({ key: 'your', pending: 'loading', line: null })]);
     const button = screen.getByTestId('train-chip-your');
     expect(button.getAttribute('data-line-status')).toBe('loading');
     expect(screen.getByTestId('train-chip-your-loading')).not.toBeNull();
@@ -137,7 +149,7 @@ describe('TrainLineChips', () => {
   });
 
   it('a failed chip keeps SAN and mark but renders no eval and no spinner (Phase 236 D-15)', () => {
-    renderChips([chip({ key: 'your', pending: 'failed', line: null, lineUcis: ['e2e4'] })]);
+    renderChips([chip({ key: 'your', pending: 'failed', line: null })]);
     expect(screen.getByTestId('train-chip-your').getAttribute('data-line-status')).toBe('failed');
     expect(screen.getByTestId('train-chip-your-san').textContent).toBe('e4');
     expect(screen.getByTestId('train-chip-your-quality')).not.toBeNull();

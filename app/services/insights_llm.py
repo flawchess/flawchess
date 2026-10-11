@@ -2,9 +2,9 @@
 
 Scope (Phase 65):
 - get_insights_agent(): singleton pydantic-ai Agent per CONTEXT.md D-21.
-- generate_insights(filter_context, user_id, session): sole orchestration
-  entry point called by app/routers/insights.py. Handles tier-1 cache,
-  fresh LLM call, and log-row write.
+- generate_insights(user_id, session): sole orchestration entry point called by
+  app/routers/insights.py. Handles tier-1 cache, fresh LLM call, and log-row
+  write. Filter-free since Phase 238 (D-04): one report per user.
 - Custom exceptions map to HTTP status codes at the router layer (Plan 06).
 
 Critical invariants:
@@ -38,12 +38,11 @@ from app.repositories.llm_log_repository import (
     create_llm_log,
     get_latest_successful_log_for_user,
 )
-from app.schemas.endgames import EndgameCategoryStats, EndgameClass, TimePressureTcCard
+from app.schemas.endgames import EndgameCategoryStats, EndgameClass, RankedTcStats, RankStatus
 from app.schemas.insights import (
     EndgameInsightsReport,
     EndgameInsightsResponse,
     EndgameTabFindings,
-    FilterContext,
     MetricPercentileRecord,
     PlayerProfileEntry,
     RatingAnchorContext,
@@ -63,6 +62,7 @@ from app.services.endgame_zones import (
     ZoneSpec,
     tc_metric_zone_spec,
 )
+from app.services.global_percentile_cdf import CdfMetricId
 from app.services.insights_service import (
     SPARSE_COMBO_FLOOR,
     _sorted_type_categories,
@@ -85,7 +85,13 @@ _TC_BAND_METRICS: frozenset[str] = frozenset(
     }
 )
 
-_PROMPT_VERSION = "endgame_v47"  # v47 (FLAWCHESS-AG, cache-flush only — prompt text unchanged): the router now pins the findings population to rated-only (SEED-163 2a default) instead of all games. The cache key is (user_id, prompt_version, model, opponent_strength) and carries no filter, so rows cached under the old all-games population would have kept being served for up to INSIGHTS_CACHE_MAX_AGE_DAYS. Bumping the version is the only lever that invalidates them.
+# Phase 238 (D-04): the insights cache is one row per (user_id, prompt_version, model).
+# `llm_logs.filter_context.opponent_strength` is kept as a column/JSON shape (no
+# migration) and always written and matched as this constant.
+INSIGHTS_CACHE_OPPONENT_STRENGTH: Literal["any"] = "any"
+
+_PROMPT_VERSION = "endgame_v49"  # v49 (Phase 238 UAT): adds the 1-2 sentence `summary` field shown as the Insights block header.
+# v48 (Phase 238, D-04): findings come from the ranked sample (last 36 months, opponents within 100 Elo, up to 3000 games per TC), overall findings are per TC, no filter scoping; bumping invalidates every v47 cache row.
 _OUTPUT_RETRIES = 2  # CONTEXT.md D-24, RESEARCH.md §2
 _ENDPOINT: LlmLogEndpoint = "insights.endgame"
 
@@ -487,27 +493,6 @@ def _format_zone_bounds(metric_id: str, dimension: dict[str, str] | None) -> str
     return ""
 
 
-def _format_filters_for_prompt(filters: FilterContext) -> list[str]:
-    """Emit only the `## Scoping caveat` line when opponent_strength is set.
-
-    v9: dropped the always-on `Filters:` header. The router enforces defaults
-    for `from_date` / `to_date`, `time_controls`, `platforms`, `rated_only`,
-    and `color` (INS-03 / D-31), so the only filter that can be non-default is
-    `opponent_strength`. When it's `any`, no filter context is relevant to
-    the LLM and we emit nothing. When it's `stronger` / `similar` / `weaker`,
-    we emit the scoping caveat the system prompt tells the LLM to lead the
-    overview with.
-    """
-    if filters.opponent_strength == "any":
-        return []
-    return [
-        f"## Scoping caveat: opponent strength filter is active "
-        f"({filters.opponent_strength}) — all findings reflect performance "
-        f"vs {filters.opponent_strength} opponents only; lead the overview "
-        f"with this scoping."
-    ]
-
-
 def _render_player_profile_entry(entry: PlayerProfileEntry) -> list[str]:
     """Render one (platform, time_control) combo's `[summary actual_elo]` block.
 
@@ -611,7 +596,7 @@ def _format_rating_basis_block(
     Phase 102 (Plan 05): emitted once near the top of the user prompt (after the
     player profile, before the Section blocks) so the LLM has one clear place to
     learn the Lichess-equivalent framing for this user's time controls. Mirrors the
-    four disclosure branches from PercentileChipPopoverBody:
+    disclosure branches of the RankedMetricPopover anchor disclosure:
 
       (a) Mixed user (n_chesscom_games > 0 AND n_lichess_games > 0):
           Both platforms listed with their native medians.
@@ -701,42 +686,48 @@ def _format_rating_basis_block(
 
 
 def _format_overall_wdl_chart_block(findings: EndgameTabFindings) -> list[str]:
-    """Render the endgame-vs-non-endgame WDL + Score % comparison as a table.
+    """Render the endgame-vs-non-endgame WDL + Score % comparison, one table per TC.
 
-    Emits a `## Chart: overall_wdl` header followed by a 2-row markdown table
-    (endgame, non_endgame) with win_pct / draw_pct / loss_pct / score_pct
-    columns. score_pct = (wins + 0.5*draws) / total (matches the UI's
-    Endgame Performance section). Rows with fewer than
-    _MIN_GAMES_FOR_RELIABLE_BUCKET games are skipped. Returns [] when the
-    performance payload is absent or both rows are empty.
+    Phase 238 (D-04, D-00h): built from each ranked TC's ``overall`` block, so the rows
+    are exactly the games the Stats tab shows for that time control, and the TCs are
+    never pooled. Emits one ``### Chart: overall_wdl ({tc}, all_time)`` header per TC
+    followed by a 2-row markdown table (endgame, non_endgame) with win_pct / draw_pct /
+    loss_pct / score_pct columns. score_pct = (wins + 0.5*draws) / total (matches the
+    UI's Endgame Performance section). Rows with fewer than
+    _MIN_GAMES_FOR_RELIABLE_BUCKET games are skipped; a TC with no row is omitted.
+    Returns [] when no ranked TC has a row.
     """
-    perf = findings.overall_performance
-    if perf is None:
-        return []
-
-    rows: list[str] = []
-    for label, summary in (("endgame", perf.endgame_wdl), ("non_endgame", perf.non_endgame_wdl)):
-        total = summary.total
-        if total < _MIN_GAMES_FOR_RELIABLE_BUCKET:
+    lines: list[str] = []
+    for tc_stats in findings.ranked_tcs:
+        perf = tc_stats.overall
+        rows: list[str] = []
+        for label, summary in (
+            ("endgame", perf.endgame_wdl),
+            ("non_endgame", perf.non_endgame_wdl),
+        ):
+            total = summary.total
+            if total < _MIN_GAMES_FOR_RELIABLE_BUCKET:
+                continue
+            score_pct = (summary.wins + 0.5 * summary.draws) / total * 100.0
+            rows.append(
+                f"| {label:<11} | {total:<5} | {summary.win_pct:.0f}     | "
+                f"{summary.draw_pct:.0f}      | {summary.loss_pct:.0f}      | "
+                f"{score_pct:.0f}       |"
+            )
+        if not rows:
             continue
-        score_pct = (summary.wins + 0.5 * summary.draws) / total * 100.0
-        rows.append(
-            f"| {label:<11} | {total:<5} | {summary.win_pct:.0f}     | {summary.draw_pct:.0f}      | "
-            f"{summary.loss_pct:.0f}      | {score_pct:.0f}       |"
+        lines.extend(
+            [
+                f"### Chart: overall_wdl ({tc_stats.tc}, all_time)",
+                f"Two-row WDL comparison for {tc_stats.tc} games that reached an Endgame Phase "
+                "vs games that did not. All columns are whole-number percentages; score_pct "
+                "uses wins=100, draws=50, losses=0.",
+                "| series      | games | win_pct | draw_pct | loss_pct | score_pct |",
+                "| ----------- | ----- | ------- | -------- | -------- | --------- |",
+            ]
         )
-
-    if not rows:
-        return []
-
-    lines: list[str] = [
-        "### Chart: overall_wdl (all_time)",
-        "Two-row WDL comparison for games that reached an Endgame Phase vs games that did not. "
-        "All columns are whole-number percentages; score_pct uses wins=100, draws=50, losses=0.",
-        "| series      | games | win_pct | draw_pct | loss_pct | score_pct |",
-        "| ----------- | ----- | ------- | -------- | -------- | --------- |",
-    ]
-    lines.extend(rows)
-    lines.append("")
+        lines.extend(rows)
+        lines.append("")
     return lines
 
 
@@ -744,10 +735,10 @@ def _format_type_wdl_table(tc: str, categories: Sequence["EndgameCategoryStats"]
     """Render the per-TC W/D/L + Score % table that leads an `endgame_type_<tc>` subsection.
 
     Phase 102 UAT (2026-06-02): replaces the aggregate-over-TC
-    `results_by_endgame_type_wdl` chart. Mirrors the per-TC card's WDL bar +
-    score bullet (EndgameTypeTcCard, Phase 98): one row per visible endgame type
+    `results_by_endgame_type_wdl` chart. Mirrors the TypeTable row's WDL bar +
+    score: one row per visible endgame type
     (rook / minor_piece / pawn / queen — mixed and pawnless are already excluded
-    upstream by `_aggregate_endgame_stats_by_tc`). score_pct uses wins=100,
+    upstream by `aggregate_endgame_stats_by_tc`). score_pct uses wins=100,
     draws=50, losses=0; a value above 50 means the user outscores opponents in
     that type (both sides played the same games), so the opponent/diff columns
     the old aggregate chart carried are redundant and dropped.
@@ -758,7 +749,7 @@ def _format_type_wdl_table(tc: str, categories: Sequence["EndgameCategoryStats"]
     is emitted above the table when one type clearly stands out.
     """
     # Defensive: mixed + pawnless are excluded upstream by
-    # _aggregate_endgame_stats_by_tc, but drop them here too so the table can never
+    # aggregate_endgame_stats_by_tc, but drop them here too so the table can never
     # surface a type the UI hides (mirrors the bullet-level pawnless filter).
     sorted_cats = [
         c
@@ -842,10 +833,15 @@ def _format_time_pressure_score_gap_chart_block(
     """Render per-TC Score-Gap-by-Remaining-Time chart (Q0-Q3) + percentile aggregates.
 
     Phase 102 (Plan 01): restores the per-quintile Score-Delta decomposition that
-    Phase 88.1 stripped from the payload. For each TC card, emits a sub-table with
+    Phase 88.1 stripped from the payload. For each TC, emits a sub-table with
     Q0-Q3 quintile rows (Q0=0-20% clock remaining / max pressure, Q3=60-80%). Q4
     (80-100% / min pressure) is excluded. Rows where opp_score is None (n-gate
     unmet) are skipped.
+
+    Phase 238 (D-04): reads ``findings.ranked_tcs`` (``time_pressure.quintiles`` plus the
+    TC's ranked ``metrics``) instead of the filtered overview's time pressure cards, so
+    the tables are the ranked-sample curve the Stats tab shows. A TC is rendered when its
+    ranked endgame game count reaches MIN_GAMES_PER_TC_CARD (the old per-TC card gate).
 
     Per-quintile user_score and opp_score are fractions (0..1) — multiplied by 100
     here for the 0-100 scale. The typical_band column is sourced from
@@ -863,19 +859,18 @@ def _format_time_pressure_score_gap_chart_block(
     """
     from app.services.endgame_zones import PRESSURE_BIN_SCORE_NEUTRAL_ZONES
 
-    if findings.time_pressure_cards is None or not findings.time_pressure_cards.cards:
-        return []
-
     lines: list[str] = []
-    for card in findings.time_pressure_cards.cards:
-        tc = card.tc
+    for tc_stats in findings.ranked_tcs:
+        tc = tc_stats.tc
+        if tc_stats.overall.endgame_wdl.total < MIN_GAMES_PER_TC_CARD:
+            continue
         tc_rows: list[str] = []
-        for bullet in card.quintiles:
+        for bullet in tc_stats.time_pressure.quintiles:
             # Q4 (min pressure) excluded — matches the UI chart, no time-pressure signal.
             if bullet.quintile_index > _MAX_NARRATED_QUINTILE_INDEX:
                 continue
             # Skip quintiles where the n-gate is unmet (opp_score is None when
-            # min(n_user, n_opp) < MIN_GAMES_PER_PRESSURE_BIN in _build_quintile_bullets).
+            # min(n_user, n_opp) < MIN_GAMES_PER_PRESSURE_BIN in build_quintile_bullets).
             if bullet.opp_score is None:
                 continue
             user_score_pct = (
@@ -913,25 +908,35 @@ def _format_time_pressure_score_gap_chart_block(
         )
         lines.extend(tc_rows)
         lines.append("")
-        lines.extend(_time_pressure_aggregate_lines(card, tc, per_tc_metric_percentiles))
+        lines.extend(_time_pressure_aggregate_lines(tc_stats, tc, per_tc_metric_percentiles))
 
     return lines
 
 
-def _aggregate_value_or_pctl(rec: "MetricPercentileRecord | None", fallback_fraction: float) -> str:
-    """Render the pctl= token when a percentile record exists, else the raw card value.
+# Rank statuses whose ranked value cleared its sample floor (see RankStatus).
+_FLOOR_CLEARED_STATUSES: frozenset[RankStatus] = frozenset({"ranked", "unranked"})
 
-    `fallback_fraction` is the user's card value as a fraction (×100 → signed %).
-    Used for Clock Gap / Net Flag Rate, which always carry a card-side value even
-    when the user sits below the cohort inclusion floor (no percentile row).
+
+def _aggregate_value_or_pctl(
+    label: str, rec: "MetricPercentileRecord | None", fallback_fraction: float | None
+) -> str | None:
+    """Render one aggregate bullet: the pctl= token when a percentile record exists, else
+    the raw ranked value, else nothing.
+
+    `fallback_fraction` is the TC's ranked metric value as a fraction (×100 → signed %).
+    The caller passes it only for cells that cleared their sample floor (status ranked or
+    unranked), so a below-floor value is never narrated.
+    Returns None when there is neither a percentile nor a value (nothing to narrate).
     """
     if rec is not None:
-        return _build_pctl_token(rec)
-    return f"value={fallback_fraction * 100:+.0f}% (no peer percentile yet)"
+        return label + _build_pctl_token(rec)
+    if fallback_fraction is not None:
+        return label + f"value={fallback_fraction * 100:+.0f}% (no peer percentile yet)"
+    return None
 
 
 def _time_pressure_aggregate_lines(
-    card: "TimePressureTcCard",
+    tc_stats: "RankedTcStats",
     tc: str,
     per_tc_metric_percentiles: dict[str, "MetricPercentileRecord"] | None,
 ) -> list[str]:
@@ -943,9 +948,9 @@ def _time_pressure_aggregate_lines(
       • Clock Gap + Net Flag Rate — FREQUENCY of pressure (how *often* the player
         is the one short on time / gets flagged).
     Each line cites the percentile vs equally-rated peers (value embedded in the
-    pctl= token). Clock Gap / Net Flag Rate always render (card carries the value);
-    Time-Pressure Score Gap renders only when a percentile/value exists (dual-gated
-    aggregate with no separate card-side raw value).
+    pctl= token). Phase 238: values come from the TC's ranked ``metrics``; a line is
+    rendered when a percentile record or a floor-cleared ranked value exists, and
+    omitted otherwise.
     """
     percentiles = per_tc_metric_percentiles or {}
     lines: list[str] = [
@@ -955,26 +960,32 @@ def _time_pressure_aggregate_lines(
         "short on time). A weak score gap AND frequent pressure compound:"
     ]
 
-    tps_rec = percentiles.get(f"time_pressure_score_gap:{tc}")
-    tps_label = (
-        "- Time-Pressure Score Gap (Q0+Q1 combined, own clock <40% remaining; higher is better): "
+    aggregates: tuple[tuple[CdfMetricId, str], ...] = (
+        (
+            "time_pressure_score_gap",
+            "- Time-Pressure Score Gap (Q0+Q1 combined, own clock <40% remaining; "
+            "higher is better): ",
+        ),
+        (
+            "clock_gap",
+            "- Clock Gap (your clock vs opponent's at endgame entry; higher is better): ",
+        ),
+        ("net_flag_rate", "- Net Flag Rate (flag wins − flag losses; higher is better): "),
     )
-    if tps_rec is not None:
-        lines.append(tps_label + _build_pctl_token(tps_rec))
-    elif card.time_pressure_score_gap_value is not None:
-        lines.append(
-            tps_label
-            + f"value={card.time_pressure_score_gap_value * 100:+.0f}% (no peer percentile yet)"
+    for metric_key, label in aggregates:
+        ranked_metric = tc_stats.metrics.get(metric_key)
+        # RankedMetricOut.value is NOT floor-gated (a time-pressure score gap exists from
+        # one pressured game per side), so falling back to it for a below_floor/pending
+        # cell narrated values built from a handful of games. Only cells that cleared
+        # their floor may fall back to the raw value (pre-238 TPSG behavior).
+        fallback = (
+            ranked_metric.value
+            if ranked_metric is not None and ranked_metric.status in _FLOOR_CLEARED_STATUSES
+            else None
         )
-
-    lines.append(
-        "- Clock Gap (your clock vs opponent's at endgame entry; higher is better): "
-        + _aggregate_value_or_pctl(percentiles.get(f"clock_gap:{tc}"), card.clock_gap.mean_diff_pct)
-    )
-    lines.append(
-        "- Net Flag Rate (flag wins − flag losses; higher is better): "
-        + _aggregate_value_or_pctl(percentiles.get(f"net_flag_rate:{tc}"), card.net_timeout_rate)
-    )
+        line = _aggregate_value_or_pctl(label, percentiles.get(f"{metric_key}:{tc}"), fallback)
+        if line is not None:
+            lines.append(line)
     lines.append("")
     return lines
 
@@ -1294,6 +1305,22 @@ def _dim_key_for_finding(f: SubsectionFinding) -> str:
     return ", ".join(f"{k}={v}" for k, v in sorted(f.dimension.items()))
 
 
+# (metric, subsection_id, dim_key): the identity of ONE series across its two windows.
+SeriesKey = tuple[str, str, str]
+
+
+def _series_key(f: SubsectionFinding) -> SeriesKey:
+    """Return the full series identity used by the C2 / C5 window filters.
+
+    Phase 238 review (BE-WR-02): score_timeline became per time control, so
+    (metric, subsection_id) is shared by up to four TCs. Keying C2/C5 on that pair let
+    one TC's series state trim or suppress another TC's series (a new rapid with only
+    recent games lost its last_3mo series because blitz had an all_time one). The
+    dim_key separates the combos.
+    """
+    return (f.metric, f.subsection_id, _dim_key_for_finding(f))
+
+
 def _within_noise_shift(
     metric: str,
     all_time: SubsectionFinding,
@@ -1320,7 +1347,7 @@ def _series_granularity(finding: SubsectionFinding) -> str:
     """Weekly for last_3mo; monthly for all_time.
 
     Exception: score_timeline (Phase 68) is always weekly (ISO-week is the
-    natural grain of the underlying `_compute_score_gap_timeline`; the two-line
+    natural grain of the underlying `compute_score_gap_timeline`; the two-line
     chart reads weekly points directly and the insights series is built without
     monthly resampling — see `_findings_score_timeline`).
     """
@@ -1669,14 +1696,13 @@ def _render_non_endgame_elo_summary_block(
 def _lookup_pctl_record(
     metric: str,
     dim_key: str,
-    metric_percentiles: dict[str, "MetricPercentileRecord"] | None,
     per_tc_metric_percentiles: dict[str, "MetricPercentileRecord"] | None,
 ) -> "MetricPercentileRecord | None":
     """Look up a MetricPercentileRecord for a (metric, dim_key) pair.
 
-    Checks page-level metric_percentiles first (score_gap, achievable_score_gap),
-    then per-TC records keyed as "{metric}:{tc}". The dim_key typically encodes
-    the TC as "bucket=conversion, time_control=blitz" — we parse out the tc part.
+    Every record is per TC (Phase 238 D-04: no page-level weighted record exists),
+    keyed as "{metric}:{tc}". The dim_key typically encodes the TC as
+    "time_control=blitz" — we parse out the tc part.
     D-04: this is metadata only and never gates emission.
 
     Phase 102 UAT fix: only the per-TC Endgame Metrics subsections carry
@@ -1688,8 +1714,6 @@ def _lookup_pctl_record(
     own class-specific mean. Type Breakdown has no percentiles by design, so
     skip the per-TC lookup whenever the finding is class-scoped.
     """
-    if metric_percentiles and metric in metric_percentiles:
-        return metric_percentiles[metric]
     if "endgame_class=" in dim_key:
         # Class-scoped finding (Endgame Type Breakdown) — no percentile by design.
         return None
@@ -1718,7 +1742,6 @@ def _render_summary_block(
     all_time_series: list[TimePoint] | None,
     last_3mo_series: list[TimePoint] | None,
     stale_markers: dict[int, str],
-    metric_percentiles: dict[str, "MetricPercentileRecord"] | None = None,
     per_tc_metric_percentiles: dict[str, "MetricPercentileRecord"] | None = None,
     cohort_anchors: "dict[str, RatingAnchorContext] | None" = None,
 ) -> list[str]:
@@ -1729,7 +1752,7 @@ def _render_summary_block(
     shape. `no data` stands in on the last_3mo line when only the all_time
     window has a finding (keeps the paired-line visual consistent).
 
-    Phase 102 (Plan 01): optional metric_percentiles thread pctl= annotations
+    Phase 102 (Plan 01): optional per_tc_metric_percentiles thread pctl= annotations
     into the all_time and last_3mo window lines. D-04 applies: percentile is
     metadata only and never gates emission.
     Phase 102 (Plan 04): enriched MetricPercentileRecord carries anchor +
@@ -1743,11 +1766,9 @@ def _render_summary_block(
     header += "]"
     lines: list[str] = [header]
 
-    # Phase 102 (Plan 04): resolve enriched percentile record from either the
-    # page-level dict or the per-TC dict. D-04: pctl is metadata only.
-    pctl_record = _lookup_pctl_record(
-        metric, dim_key, metric_percentiles, per_tc_metric_percentiles
-    )
+    # Phase 102 (Plan 04): resolve the enriched percentile record from the per-TC
+    # dict. D-04: pctl is metadata only.
+    pctl_record = _lookup_pctl_record(metric, dim_key, per_tc_metric_percentiles)
 
     if all_time is not None:
         stale = stale_markers.get(id(all_time), "")
@@ -1816,13 +1837,10 @@ def _payload_summary_lines(
     overclaim a long-term trajectory beyond the actual cap.
     """
     lines: list[str] = ["## Payload summary"]
-    if findings.overall_performance is not None:
-        total_games = (
-            findings.overall_performance.endgame_wdl.total
-            + findings.overall_performance.non_endgame_wdl.total
-        )
-        if total_games > 0:
-            lines.append(f"- Total games in scope: {total_games}")
+    # Phase 238: games in the ranked sample, summed over the per-TC ranked payload.
+    total_games = sum(t.ranked_games for t in findings.ranked_tcs)
+    if total_games > 0:
+        lines.append(f"- Total games in scope: {total_games}")
     if newest_date is not None:
         lines.append(f"- Newest bucket across all series: {newest_date.isoformat()}")
     if all_time_window is not None:
@@ -1953,7 +1971,7 @@ def _apply_c2_filter(
 def _retained_series_for_summary(
     finding: SubsectionFinding,
     *,
-    last_3mo_pairs: set[tuple[str, str]],
+    last_3mo_pairs: set[SeriesKey],
     all_time_cutoff: str,
 ) -> list[TimePoint] | None:
     """Return the retained series points for a timeline finding, or None.
@@ -1969,7 +1987,7 @@ def _retained_series_for_summary(
     is_all_time = finding.window == "all_time"
     points = _apply_c2_filter(
         points,
-        drop_last_90_days=is_all_time and (finding.metric, finding.subsection_id) in last_3mo_pairs,
+        drop_last_90_days=is_all_time and _series_key(finding) in last_3mo_pairs,
         all_time_cutoff=all_time_cutoff,
     )
     if is_all_time:
@@ -2090,7 +2108,7 @@ def _apply_c5_filter(
     candidate_finding: SubsectionFinding | None,
     candidate_series: list[TimePoint] | None,
     *,
-    all_time_series_pairs: set[tuple[str, str]],
+    all_time_series_pairs: set[SeriesKey],
     live_series_metrics: set[tuple[str, str]],
     stale_markers: dict[int, str],
 ) -> bool:
@@ -2098,15 +2116,17 @@ def _apply_c5_filter(
     block be emitted?
 
     False when there is nothing to render, when this is a `last_3mo` series
-    superseded by an `all_time` series for the same (metric, subsection) pair
-    (C5 proper), or when this is a stale combo shadowed by a live twin for
-    the same pair.
+    superseded by an `all_time` series for the same series key (C5 proper), or
+    when this is a stale combo shadowed by a live twin for the same
+    (metric, subsection) pair. The stale gate is deliberately cross-combo: a stale
+    combo keeps its [summary] with the stale marker but drops its raw series
+    whenever another combo is live (the prompt allows it one historical clause).
     """
     if candidate_finding is None or not candidate_series:
         return False
     if (
         candidate_finding.window == "last_3mo"
-        and (candidate_finding.metric, candidate_finding.subsection_id) in all_time_series_pairs
+        and _series_key(candidate_finding) in all_time_series_pairs
     ):
         return False
     if (
@@ -2123,11 +2143,10 @@ def _render_subsection_block(
     members: list[SubsectionFinding],
     stale_markers: dict[int, str],
     live_series_metrics: set[tuple[str, str]],
-    last_3mo_pairs: set[tuple[str, str]],
-    all_time_series_pairs: set[tuple[str, str]],
+    last_3mo_pairs: set[SeriesKey],
+    all_time_series_pairs: set[SeriesKey],
     all_time_cutoff: str,
     type_wdl_table: list[str] | None = None,
-    metric_percentiles: dict[str, "MetricPercentileRecord"] | None = None,
     per_tc_metric_percentiles: dict[str, "MetricPercentileRecord"] | None = None,
     cohort_anchors: "dict[str, RatingAnchorContext] | None" = None,
 ) -> list[str]:
@@ -2229,7 +2248,6 @@ def _render_subsection_block(
                 all_time_series=all_time_series,
                 last_3mo_series=last_3mo_series,
                 stale_markers=stale_markers,
-                metric_percentiles=metric_percentiles,
                 per_tc_metric_percentiles=per_tc_metric_percentiles,
                 cohort_anchors=cohort_anchors,
             )
@@ -2244,7 +2262,7 @@ def _render_subsection_block(
 
         # Raw [series ...] block below the summary. _apply_c5_filter carries
         # the same C5 / stale-live-twin gates as before: skip last_3mo series
-        # when an all_time series exists for the same (metric, subsection);
+        # when an all_time series exists for the same series key;
         # skip stale combos when a live combo exists.
         for candidate_finding, candidate_series in (
             (all_time, all_time_series),
@@ -2291,10 +2309,10 @@ def _apply_a2_filter(raw_findings: list[SubsectionFinding]) -> list[SubsectionFi
 def _compute_all_time_series_pairs(
     visible: list[SubsectionFinding],
     *,
-    last_3mo_pairs: set[tuple[str, str]],
+    last_3mo_pairs: set[SeriesKey],
     all_time_cutoff: str,
-) -> set[tuple[str, str]]:
-    """Register a (metric, subsection) pair ONLY when the all_time series
+) -> set[SeriesKey]:
+    """Register a series key ONLY when the all_time series
     still has retained points after the A4/C2/C6 filter chain.
 
     For short-history users whose entire history fits inside the 90-day C2
@@ -2303,7 +2321,7 @@ def _compute_all_time_series_pairs(
     the LLM would see [summary] lines pointing at no series data. See
     `.planning/debug/llm-prompt-missing-sections.md` (Fix A).
     """
-    all_time_series_pairs: set[tuple[str, str]] = set()
+    all_time_series_pairs: set[SeriesKey] = set()
     for f in visible:
         if f.window != "all_time" or f.series is None:
             continue
@@ -2313,7 +2331,7 @@ def _compute_all_time_series_pairs(
             all_time_cutoff=all_time_cutoff,
         )
         if retained:
-            all_time_series_pairs.add((f.metric, f.subsection_id))
+            all_time_series_pairs.add(_series_key(f))
     return all_time_series_pairs
 
 
@@ -2351,8 +2369,8 @@ def _render_layout_item(
     type_wdl_tables: dict[str, list[str]],
     stale_markers: dict[int, str],
     live_series_metrics: set[tuple[str, str]],
-    last_3mo_pairs: set[tuple[str, str]],
-    all_time_series_pairs: set[tuple[str, str]],
+    last_3mo_pairs: set[SeriesKey],
+    all_time_series_pairs: set[SeriesKey],
     all_time_cutoff: str,
     findings: EndgameTabFindings,
 ) -> list[str]:
@@ -2398,7 +2416,6 @@ def _render_layout_item(
         all_time_series_pairs=all_time_series_pairs,
         all_time_cutoff=all_time_cutoff,
         type_wdl_table=wdl_table,
-        metric_percentiles=findings.metric_percentiles,
         per_tc_metric_percentiles=findings.per_tc_metric_percentiles,
         cohort_anchors=findings.cohort_anchors,
     )
@@ -2407,7 +2424,7 @@ def _render_layout_item(
 def _assemble_user_prompt(findings: EndgameTabFindings) -> str:
     """Render EndgameTabFindings as structured text for the LLM (D-29 format).
 
-    v8 layout: payload summary + filters (+ scoping caveat) + player profile,
+    v8 layout: payload summary + player profile (Phase 238: no filter block),
     then one `## Section:` block per UI section with subsection and chart
     blocks interleaved in UI order. Each section maps 1:1 to one `section_id`
     in the LLM output. Empty sections (no qualifying blocks) are omitted.
@@ -2474,9 +2491,7 @@ def _assemble_user_prompt(findings: EndgameTabFindings) -> str:
     # rolling-window series — the prompt reads two lines instead of
     # narrating the signed difference as a scalar.
 
-    last_3mo_pairs: set[tuple[str, str]] = {
-        (f.metric, f.subsection_id) for f in visible if f.window == "last_3mo"
-    }
+    last_3mo_pairs: set[SeriesKey] = {_series_key(f) for f in visible if f.window == "last_3mo"}
     today = datetime.datetime.now(datetime.UTC).date()
     all_time_cutoff = (today - datetime.timedelta(days=_ALL_TIME_CUTOFF_DAYS)).isoformat()
     all_time_series_pairs = _compute_all_time_series_pairs(
@@ -2508,7 +2523,6 @@ def _assemble_user_prompt(findings: EndgameTabFindings) -> str:
             all_time_window=all_time_window,
         )
     )
-    lines.extend(_format_filters_for_prompt(findings.filters))
     lines.append("")
     lines.extend(_format_player_profile_block(findings.player_profile))
     # Phase 102 (Plan 05): rating-basis block teaches the LLM about the
@@ -2641,13 +2655,14 @@ async def _run_agent(
 
 
 async def generate_insights(
-    filter_context: FilterContext,
     user_id: int,
     session: AsyncSession,
 ) -> EndgameInsightsResponse:
     """Tier-1 structural cache -> fresh LLM call.
 
-    Cache key (260425-dxh): (user_id, prompt_version, model, opponent_strength).
+    Cache key (260425-dxh, Phase 238 D-04): (user_id, prompt_version, model) plus the
+    constant INSIGHTS_CACHE_OPPONENT_STRENGTH; there is no filter input, so exactly one
+    report is cached per user.
     Validity rule: row.created_at >= MAX(import_jobs.completed_at WHERE
     games_imported > 0) for this user, AND row younger than
     INSIGHTS_CACHE_MAX_AGE. Reordered so compute_findings only runs on miss.
@@ -2663,7 +2678,7 @@ async def generate_insights(
     model = settings.PYDANTIC_AI_MODEL_INSIGHTS
 
     # Tier-1 STRUCTURAL cache lookup (260425-dxh): cheap query on
-    # (user_id, prompt_version, model, opponent_strength) + freshness checks.
+    # (user_id, prompt_version, model, constant opponent_strength) + freshness checks.
     # Runs BEFORE compute_findings so cache hits skip the heavy DB pipeline.
     # Bug-fix note: the previous findings_hash-based lookup was unstable across
     # days because EndgameTabFindings includes time-relative fields (sliding
@@ -2676,7 +2691,7 @@ async def generate_insights(
         user_id=user_id,
         prompt_version=_PROMPT_VERSION,
         model=model,
-        opponent_strength=filter_context.opponent_strength,
+        opponent_strength=INSIGHTS_CACHE_OPPONENT_STRENGTH,
         max_age=INSIGHTS_CACHE_MAX_AGE,
     )
     if cached is not None:
@@ -2692,7 +2707,7 @@ async def generate_insights(
             )
 
     # Cache miss path: now we pay for compute_findings.
-    findings = await compute_findings(filter_context, session, user_id)
+    findings = await compute_findings(session, user_id)
 
     # Fresh call.
     user_prompt = _assemble_user_prompt(findings)
@@ -2718,7 +2733,7 @@ async def generate_insights(
             model=model,
             prompt_version=_PROMPT_VERSION,
             findings_hash=findings.findings_hash,
-            filter_context=LlmLogFilterContext(opponent_strength=filter_context.opponent_strength),
+            filter_context=LlmLogFilterContext(opponent_strength=INSIGHTS_CACHE_OPPONENT_STRENGTH),
             user_prompt=user_prompt,
             response_json=report.model_dump() if report is not None else None,
             input_tokens=in_tokens,

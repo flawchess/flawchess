@@ -145,6 +145,17 @@ function isUciPath(value: unknown): value is string[] {
   return Array.isArray(value) && value.length <= REVEAL_TREE_SNAPSHOT_MAX_PLIES && value.every((uci) => typeof uci === 'string');
 }
 
+/** `committedPaths` is optional (absent in an older bundle's entry or when nothing
+ * was committed from the preview); when present it is capped like the sidelines. */
+function isOptionalCommittedPaths(value: unknown): boolean {
+  if (value === undefined) return true;
+  return (
+    Array.isArray(value) &&
+    value.length <= REVEAL_TREE_SNAPSHOT_MAX_PATHS &&
+    value.every(isUciPath)
+  );
+}
+
 /** Shape + cap check of a persisted tree snapshot. Paths are replayed through
  * chess.js by the tree hook (an illegal move stops the graft), and the snapshot
  * never feeds grading, scoring or the solve POST (T-237-16). */
@@ -157,6 +168,7 @@ function isRevealTreeSnapshot(value: unknown): value is RevealTreeSnapshot {
     isUciPath(v.currentPath) &&
     Array.isArray(v.sidelinePaths) &&
     v.sidelinePaths.length <= REVEAL_TREE_SNAPSHOT_MAX_PATHS &&
-    v.sidelinePaths.every(isUciPath)
+    v.sidelinePaths.every(isUciPath) &&
+    isOptionalCommittedPaths(v.committedPaths)
   );
 }

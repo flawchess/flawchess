@@ -27,10 +27,10 @@ LlmLogEndpoint = Literal["insights.endgame"]
 class LlmLogFilterContext(BaseModel):
     """Minimal filter state persisted per log row.
 
-    The insights router rejects (HTTP 400) any filter other than
-    `opponent_strength` that is non-default, so every log row's filter context
-    collapses to just this one field. Keeping the shape narrow matches what
-    actually varies; widen it if future versions lift the full-history gate.
+    Since Phase 238 (D-04) the endgame insights are filter-independent, so every
+    new log row carries the single constant value `insights_llm.INSIGHTS_CACHE_OPPONENT_STRENGTH`
+    ("any"). The shape is kept (the Literal still lists the legacy values that
+    older rows may hold) so no JSON-shape migration is needed.
     """
 
     opponent_strength: Literal["any", "stronger", "similar", "weaker"]

@@ -437,7 +437,7 @@ class TestComputeScoreDifferenceTest:
 
     # --- shared_n covariance correction (Phase 148 item 3, D-04) ----------
     # Quintile cohorts overlap when a game lands in the same quintile on both
-    # the user and opponent splits (endgame_service._build_quintile_bullets).
+    # the user and opponent splits (endgame_service.build_quintile_bullets).
     # shared_n tracks that overlap count; see RESEARCH.md "Item 3 — D-04
     # covariance algebra" for the full derivation and worked example.
 

@@ -88,6 +88,14 @@ describe('trainRevealCache', () => {
       expect(readTrainRevealCache()?.revealTree).toEqual(tree);
     });
 
+    it('round-trips committedPaths and tolerates their absence (WR-02)', () => {
+      const tree = { ...TREE, committedPaths: [['e2e4', 'e7e5']] };
+      saveTrainRevealCache({ ...CACHED, revealTree: tree });
+      expect(readTrainRevealCache()?.revealTree).toEqual(tree);
+      saveTrainRevealCache({ ...CACHED, revealTree: TREE });
+      expect(readTrainRevealCache()?.revealTree).toEqual(TREE);
+    });
+
     it('an entry from an older bundle without the field still restores', () => {
       saveTrainRevealCache(CACHED);
       const restored = readTrainRevealCache();
@@ -108,6 +116,11 @@ describe('trainRevealCache', () => {
       [
         'a path longer than the ply cap',
         { ...TREE, currentPath: Array.from({ length: REVEAL_TREE_SNAPSHOT_MAX_PLIES + 1 }, () => 'e2e4') },
+      ],
+      ['a malformed committedPaths', { ...TREE, committedPaths: [['e2e4', 3]] }],
+      [
+        'more committed paths than the cap',
+        { ...TREE, committedPaths: Array.from({ length: REVEAL_TREE_SNAPSHOT_MAX_PATHS + 1 }, () => ['e2e4']) },
       ],
       ['a non-object value', 'e2e4'],
       ['null', null],
