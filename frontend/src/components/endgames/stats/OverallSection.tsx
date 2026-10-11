@@ -2,9 +2,9 @@ import type { ReactNode } from 'react';
 import { Card, CardBody, CardHeader } from '@/components/ui/card';
 import { EndgameEloTimelineSection } from '@/components/charts/EndgameEloTimelineSection';
 import { EndgameScoreOverTimeChart } from '@/components/charts/EndgameScoreOverTimeChart';
-import { MiniWDLBar } from '@/components/stats/MiniWDLBar';
 import { useEndgameStatsTc } from '@/hooks/useEndgameStatsTc';
 import type { EndgameWDLSummary, RankedTcStats } from '@/types/endgames';
+import { BracketedWdlBar } from './BracketedWdlBar';
 import { RankedMetricRow } from './RankedMetricRow';
 import { SECTION_ID_OVERALL, TC_LABELS } from './rankedMetrics';
 import { TcSwitch } from './TcSwitch';
@@ -45,9 +45,11 @@ function ScoreColumn({ label, wdl, testId }: ScoreColumnProps) {
         {formatScore(wdlScore(wdl))}
       </div>
       {wdl.total > 0 && (
-        <div className="mt-1.5">
-          <MiniWDLBar win_pct={wdl.win_pct} draw_pct={wdl.draw_pct} loss_pct={wdl.loss_pct} />
-        </div>
+        <BracketedWdlBar
+          shares={{ win: wdl.win_pct, draw: wdl.draw_pct, loss: wdl.loss_pct }}
+          covered={wdl.win_pct + wdl.draw_pct / 2}
+          testId={testId}
+        />
       )}
     </div>
   );
@@ -57,9 +59,9 @@ function ScoreColumn({ label, wdl, testId }: ScoreColumnProps) {
 function ScoreCard({ tcStats }: { tcStats: RankedTcStats }) {
   const { overall, tc } = tcStats;
   return (
-    <Card data-testid="endgame-overall-score-card">
+    <Card className="flex flex-col" data-testid="endgame-overall-score-card">
       <CardHeader>Score with vs. without endgame</CardHeader>
-      <CardBody className="flex flex-col gap-4">
+      <CardBody className="flex flex-1 flex-col gap-4">
         <p className="text-sm text-muted-foreground">
           Your {tc} games from the last 36 months vs. opponents within ±100 Elo.
         </p>
@@ -78,7 +80,7 @@ function ScoreCard({ tcStats }: { tcStats: RankedTcStats }) {
             testId="endgame-overall-endgame"
           />
         </div>
-        <hr className="border-card-edge" />
+        <hr className="mt-auto border-card-edge" />
         <RankedMetricRow
           metric={tcStats.metrics.score_gap}
           tcStats={tcStats}
@@ -116,9 +118,9 @@ function FlowBox({ label, value, testId }: FlowBoxProps) {
 function EntryCard({ tcStats }: { tcStats: RankedTcStats }) {
   const flow = tcStats.overall.entry_flow;
   return (
-    <Card data-testid="endgame-overall-entry-card">
+    <Card className="flex flex-col" data-testid="endgame-overall-entry-card">
       <CardHeader>Do you keep your entry advantage?</CardHeader>
-      <CardBody className="flex flex-col gap-4">
+      <CardBody className="flex flex-1 flex-col gap-4">
         <p className="text-sm text-muted-foreground">
           Your {tcStats.tc} games from the last 36 months vs. opponents within ±100 Elo.
         </p>
@@ -145,7 +147,7 @@ function EntryCard({ tcStats }: { tcStats: RankedTcStats }) {
             testId="endgame-overall-actual"
           />
         </div>
-        <hr className="border-card-edge" />
+        <hr className="mt-auto border-card-edge" />
         <RankedMetricRow
           metric={tcStats.metrics.achievable_score_gap}
           tcStats={tcStats}
