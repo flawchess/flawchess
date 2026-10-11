@@ -3,13 +3,13 @@ gsd_state_version: "1.0"
 milestone: v2.24
 current_phase_name: Train Reveal Verdict Strip, Line Chips & One Move Tree (SEED-194)
 status: completed
-stopped_at: v2.22, v2.23 and v2.24 closed (phases 228–237 regrouped), no open milestone
-last_updated: "2026-10-10T08:32:18.448Z"
-state_head: 0cd92a603ff027b57570a351eb02379d3f698db8
+stopped_at: Phase 238 context gathered
+last_updated: "2026-10-11T09:49:30.122Z"
+state_head: a2ff11037fa79b93299570dd2da723585ebe2aa9
 progress:
-  total_phases: 10
+  total_phases: 1
   completed_phases: 103
-  total_plans: 57
+  total_plans: 0
   completed_plans: 57
 milestone_name: Train Grading Integrity & One-Screen Reveal
 last_activity: 2026-10-10
@@ -1073,9 +1073,9 @@ Items acknowledged and deferred at **v1.29 milestone close on 2026-06-29** (user
 
 ## Session Continuity
 
-**Last session:** 2026-10-09T01:22:08.992Z
-**Stopped at:** Completed 237-10-PLAN.md
-**Resume file:** None
+**Last session:** 2026-10-11T09:49:30.032Z
+**Stopped at:** Phase 238 context gathered
+**Resume file:** .planning/phases/238-endgame-stats-percentile-first/238-CONTEXT.md
 
 Previous session note (Phase 227):
 refit (calibration parity holds). Verification passed 17/17; code review 0 blockers (WR-01 + 3 info fixed). Next:
