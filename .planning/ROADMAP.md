@@ -160,14 +160,27 @@ Gauges duplicate the WDL bar. Direction is the owner-approved sketch 009 round 2
 **Plans:** 9 plans
 
 Plans:
+**Wave 1**
 - [ ] 238-01-PLAN.md — Backend ranked-sample core: GET /endgames/ranked-stats, 11 metrics on read with CTE parity, rank status (wave 1)
+
+**Wave 2** *(blocked on Wave 1 completion)*
 - [ ] 238-02-PLAN.md — Backend per-TC timelines, time-pressure curve, type categories, filtered GET /endgames/stats, latency probe (wave 2)
 - [ ] 238-03-PLAN.md — Frontend foundation: synced TC switch, PercentileBar, merged popover, Overall section, peers card, empty state (wave 2)
+
+**Wave 3** *(blocked on Wave 2 completion)*
 - [ ] 238-04-PLAN.md — Filter-free Shelly insights on the ranked payload, endgame_v48, deliberate golden regen (wave 3)
 - [ ] 238-05-PLAN.md — Frontend Metrics cards, Time Pressure grey bands, Type table, filter-free Stats tab, concepts copy (wave 3)
+
+**Wave 4** *(blocked on Wave 3 completion)*
 - [ ] 238-06-PLAN.md — Retirement sweep: delete gauges/chips/stat popovers and old section components, stale-reference grep (wave 4, run inline)
+
+**Wave 5** *(blocked on Wave 4 completion)*
 - [ ] 238-07-PLAN.md — Frontend insights without filters, Games tab on /stats, filters hidden on Stats, overview types retired (wave 5)
+
+**Wave 6** *(blocked on Wave 5 completion)*
 - [ ] 238-08-PLAN.md — Backend /overview and aggregated chips retired, zone codegen pruned, CHANGELOG (wave 6, after 238-07)
+
+**Wave 7** *(blocked on Wave 6 completion)*
 - [ ] 238-09-PLAN.md — Pre-merge gate, final stale-reference grep and latency, Claude-run desktop + mobile UAT and live Shelly smoke (wave 7)
 
 Phase detail for every shipped milestone lives in `milestones/vX.Y-ROADMAP.md`, its phase directories in `milestones/vX.Y-phases/`, and the per-milestone summaries in [MILESTONES.md](MILESTONES.md).

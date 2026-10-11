@@ -1,19 +1,19 @@
 ---
 gsd_state_version: "1.0"
 milestone: v2.24
-current_phase_name: Train Reveal Verdict Strip, Line Chips & One Move Tree (SEED-194)
+current_phase: 238
+current_phase_name: Endgame Stats Percentile-First Redesign (SEED-196)
 status: completed
 stopped_at: Phase 238 context gathered
-last_updated: "2026-10-11T09:49:30.122Z"
-state_head: a2ff11037fa79b93299570dd2da723585ebe2aa9
+last_updated: "2026-10-11T12:04:44.837Z"
+state_head: 04fb07517d3d7636d7a1d797af06c18ea1b47d75
 progress:
   total_phases: 1
   completed_phases: 103
-  total_plans: 0
+  total_plans: 9
   completed_plans: 57
 milestone_name: Train Grading Integrity & One-Screen Reveal
 last_activity: 2026-10-10
-current_phase: 237
 last_activity_desc: "Completed quick task 261010-e5l: live-engine good-move alternatives at the soft puzzle position in the Train reveal"
 ---
 
@@ -21,7 +21,7 @@ last_activity_desc: "Completed quick task 261010-e5l: live-engine good-move alte
 
 ## Current Position
 
-Phase: none (next standalone phase is 238)
+Phase: 238 (Endgame Stats Percentile-First Redesign (SEED-196)) — READY TO EXECUTE
 Plan: Not started
 
 Status: No open milestone; v2.24 closed 2026-10-09
