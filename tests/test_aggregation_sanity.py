@@ -30,7 +30,8 @@ from app.schemas.openings import (
     TimeSeriesBookmarkParam,
     TimeSeriesRequest,
 )
-from app.services.endgame_service import get_endgame_overview
+from app.services.endgame_ranked_service import get_ranked_stats
+from app.services.endgame_service import get_endgame_stats
 from app.services.openings_service import analyze as openings_analyze
 from app.services.openings_service import get_time_series
 from app.services.stats_service import get_global_stats
@@ -490,7 +491,7 @@ class TestEndgameClassTransition:
             )
         await db_session.commit()
 
-        resp = await get_endgame_overview(
+        resp = await get_endgame_stats(
             db_session,
             user_id=_USER_ENDGAME_TRANS,
             time_control=None,
@@ -501,9 +502,16 @@ class TestEndgameClassTransition:
             to_date=None,
         )
         # Distinct-game count (one game, regardless of multi-class)
-        assert resp.performance.endgame_wdl.total == 1
+        assert resp.endgame_games == 1
 
         # Per-category breakdown: both rook and pawn see this game
-        by_class = {c.endgame_class: c.total for c in resp.stats.categories}
+        by_class = {c.endgame_class: c.total for c in resp.categories}
         assert by_class.get("rook") == 1, f"categories={by_class}"
         assert by_class.get("pawn") == 1, f"categories={by_class}"
+
+        # The ranked sample (Stats tab) applies the same invariants per time control
+        ranked = await get_ranked_stats(db_session, user_id=_USER_ENDGAME_TRANS)
+        assert [tc.tc for tc in ranked.tcs] == ["rapid"]
+        ranked_by_class = {c.endgame_class: c.total for c in ranked.tcs[0].type_categories}
+        assert ranked_by_class.get("rook") == 1, f"ranked categories={ranked_by_class}"
+        assert ranked_by_class.get("pawn") == 1, f"ranked categories={ranked_by_class}"

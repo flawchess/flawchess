@@ -1,17 +1,22 @@
-"""Tests for app/services/insights_service.py — Phase 63 Plan 05.
+"""Tests for app/services/insights_service.py — Phase 63 Plan 05, re-based on the
+ranked payload in Phase 238 plan 04 (D-04).
 
 Coverage by requirement:
 
 - FIND-01 (layering): TestComputeFindingsLayering asserts that
   `insights_service` imports no repositories and never calls
-  `asyncio.gather`, and that `compute_findings` issues exactly two
-  sequential calls to `endgame_service.get_endgame_overview`
-  (from_date=None/to_date=None then from_date=today-90d/to_date=None).
+  `asyncio.gather`, and that `compute_findings` awaits `fetch_ranked_inputs`
+  exactly once, then builds the all_time window (`since=None`) and the last_3mo
+  window (`since=now-90d`) from the same inputs with `build_ranked_stats`.
 - FIND-04 (trend gate): TestComputeTrend covers count-fail, ratio-fail,
   both-pass (improving / declining), and flat (stable).
 - FIND-05 (hash stability): TestComputeHash covers the 64-char lowercase
   hex format, `as_of` / `findings_hash` exclusion, value-change
   discrimination, NaN safety, and dict-insertion-order invariance.
+- D-04 / D-00b (ranked alignment): TestRankedPayloadAlignment pins that every
+  narrated number equals the ranked per-TC value, that last_3mo is the ranked
+  subset played in the last 90 days, and that percentile records exist exactly
+  for ranked metrics (all per TC).
 
 Additional coverage: TestEmptyFinding verifies the empty-window
 convention (value=NaN, zone="typical", is_headline_eligible=False,
@@ -23,18 +28,20 @@ SubsectionFinding lists — zero DB access. Target runtime < 30s.
 
 from __future__ import annotations
 
+import datetime
 import inspect
 import math
-from typing import Any, cast
-from unittest.mock import AsyncMock, patch
+import re
+from typing import Any, NamedTuple, cast
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
 import app.services.insights_service as insights_module
-from app.schemas.endgames import EndgameOverviewResponse
+from app.repositories.endgame_ranked_repository import RankedGameRow
+from app.schemas.endgames import EndgameRankedStatsResponse, RankedTcStats
 from app.schemas.insights import (
     EndgameTabFindings,
-    FilterContext,
     MetricId,
     SampleQuality,
     SubsectionFinding,
@@ -43,15 +50,25 @@ from app.schemas.insights import (
     Window,
     Zone,
 )
+from app.services.endgame_ranked_service import RankedInputs
 from app.services.endgame_zones import (
     TREND_MIN_SLOPE_VOL_RATIO,
     TREND_MIN_WEEKLY_POINTS,
 )
 from app.services.insights_service import (
+    LAST_3MO_WINDOW_DAYS,
     _compute_hash,
     _compute_trend,
     _empty_finding,
+    build_findings,
     compute_findings,
+)
+from tests.services.ranked_payload_fixtures import (
+    make_category,
+    make_elo_combo,
+    make_metric,
+    make_ranked_tc,
+    make_score_timeline,
 )
 
 
@@ -197,7 +214,6 @@ class TestComputeHash:
 
         return EndgameTabFindings(
             as_of=datetime.datetime(2026, 4, 20, tzinfo=datetime.UTC),
-            filters=FilterContext(),
             findings=[_make_finding("overall", "score_gap", 0.05, "typical")],
             findings_hash="",
         )
@@ -232,13 +248,17 @@ class TestComputeHash:
         )
         assert _compute_hash(a) != _compute_hash(b)
 
-    def test_hash_differs_on_filter_change(self) -> None:
-        """Different FilterContext → different hash (cache discrimination)."""
-        a = self._base_findings().model_copy(
-            update={"filters": FilterContext(opponent_strength="stronger")},
-        )
+    def test_hash_differs_on_ranked_payload_change(self) -> None:
+        """A different ranked payload (Phase 238) -> different hash (cache discrimination)."""
+        a = self._base_findings().model_copy(update={"ranked_tcs": [make_ranked_tc("blitz")]})
         b = a.model_copy(
-            update={"filters": FilterContext(opponent_strength="weaker")},
+            update={
+                "ranked_tcs": [
+                    make_ranked_tc(
+                        "blitz", metrics={"score_gap": make_metric("score_gap", value=0.31)}
+                    )
+                ]
+            }
         )
         assert _compute_hash(a) != _compute_hash(b)
 
@@ -347,13 +367,17 @@ class TestEmptyFinding:
 
 
 # ---------------------------------------------------------------------------
-# TestComputeFindingsLayering — FIND-01: service-only access, two sequential
-# awaits of get_endgame_overview, no asyncio.gather, no repository imports.
+# TestComputeFindingsLayering — FIND-01: service-only access, ONE sequential
+# fetch of the ranked inputs, no asyncio.gather, no repository imports.
 # ---------------------------------------------------------------------------
 
 
+def _ranked_response(*tcs: RankedTcStats) -> EndgameRankedStatsResponse:
+    return EndgameRankedStatsResponse(tcs=list(tcs))
+
+
 class TestComputeFindingsLayering:
-    """FIND-01: insights_service consumes only endgame_service.get_endgame_overview."""
+    """FIND-01: insights_service consumes only the ranked service (Phase 238, D-04)."""
 
     def test_no_repository_import_in_module_source(self) -> None:
         """Module source has no `from app.repositories` import (FIND-01)."""
@@ -370,288 +394,446 @@ class TestComputeFindingsLayering:
             "AsyncSession is not safe for concurrent gather; use sequential awaits."
         )
 
-    @pytest.mark.asyncio
-    async def test_calls_get_endgame_overview_twice(self) -> None:
-        """compute_findings issues exactly 2 awaits of get_endgame_overview."""
-        mock_response = EndgameOverviewResponse.model_construct()
-        with patch.object(
-            insights_module,
-            "get_endgame_overview",
-            new=AsyncMock(return_value=mock_response),
-        ) as mocked:
-            try:
-                await compute_findings(
-                    FilterContext(),
-                    session=AsyncMock(),
-                    user_id=1,
-                )
-            except Exception:
-                # compute_findings may fail downstream because model_construct
-                # skips required fields; we only care about the two-call
-                # invariant on the mocked overview service here.
-                pass
-            assert mocked.await_count == 2
+    def test_compute_findings_takes_no_filter_argument(self) -> None:
+        """D-04: the only inputs are the session and the user id."""
+        assert list(inspect.signature(compute_findings).parameters) == ["session", "user_id"]
 
     @pytest.mark.asyncio
-    async def test_first_call_uses_from_date_none(self) -> None:
-        """First call passes from_date=None, to_date=None (all_time window)."""
-        mock_response = EndgameOverviewResponse.model_construct()
-        with patch.object(
-            insights_module,
-            "get_endgame_overview",
-            new=AsyncMock(return_value=mock_response),
-        ) as mocked:
-            try:
-                await compute_findings(
-                    FilterContext(),
-                    session=AsyncMock(),
-                    user_id=1,
-                )
-            except Exception:
-                pass
-            first_kwargs = mocked.await_args_list[0].kwargs
-            assert first_kwargs["from_date"] is None
-            assert first_kwargs["to_date"] is None
+    async def test_fetches_ranked_inputs_once_and_builds_both_windows(self) -> None:
+        """One fetch, two pure builds: all_time (since=None) then last_3mo (since=now-90d)."""
+        sentinel = RankedInputs(games_by_tc={})
+        fetch = AsyncMock(return_value=sentinel)
+        build = MagicMock(return_value=_ranked_response(make_ranked_tc("blitz")))
+        session = AsyncMock()
+        before = datetime.datetime.now(datetime.UTC)
+        with (
+            patch.object(insights_module, "fetch_ranked_inputs", new=fetch),
+            patch.object(insights_module, "build_ranked_stats", new=build),
+        ):
+            await compute_findings(session, 7)
+        after = datetime.datetime.now(datetime.UTC)
+
+        assert fetch.await_count == 1
+        assert fetch.await_args is not None
+        assert fetch.await_args.args == (session,)
+        assert fetch.await_args.kwargs == {"user_id": 7}
+
+        assert build.call_count == 2
+        all_time_call, last_3mo_call = build.call_args_list
+        assert all_time_call.args == (sentinel,)
+        assert all_time_call.kwargs == {}  # since=None: the full ranked sample
+        assert last_3mo_call.args == (sentinel,)
+        since = last_3mo_call.kwargs["since"]
+        window = datetime.timedelta(days=LAST_3MO_WINDOW_DAYS)
+        assert before - window <= since <= after - window
 
     @pytest.mark.asyncio
-    async def test_second_call_uses_last_3mo_window(self) -> None:
-        """Second call passes from_date=today-90d, to_date=None (last_3mo window)."""
-        import datetime
-
-        mock_response = EndgameOverviewResponse.model_construct()
-        with patch.object(
-            insights_module,
-            "get_endgame_overview",
-            new=AsyncMock(return_value=mock_response),
-        ) as mocked:
-            try:
-                await compute_findings(
-                    FilterContext(),
-                    session=AsyncMock(),
-                    user_id=1,
-                )
-            except Exception:
-                pass
-            second_kwargs = mocked.await_args_list[1].kwargs
-            expected_from_date = datetime.datetime.now(datetime.UTC).date() - datetime.timedelta(
-                days=90
-            )
-            assert second_kwargs["from_date"] == expected_from_date
-            assert second_kwargs["to_date"] is None
-
-    @pytest.mark.asyncio
-    async def test_color_is_not_forwarded_to_endgame_service(self) -> None:
-        """FilterContext.color is carried by the schema but NOT threaded to
-        get_endgame_overview (the endgame service has no color filter)."""
-        mock_response = EndgameOverviewResponse.model_construct()
-        with patch.object(
-            insights_module,
-            "get_endgame_overview",
-            new=AsyncMock(return_value=mock_response),
-        ) as mocked:
-            try:
-                await compute_findings(
-                    FilterContext(color="white"),
-                    session=AsyncMock(),
-                    user_id=1,
-                )
-            except Exception:
-                pass
-            for call in mocked.await_args_list:
-                assert "color" not in call.kwargs
+    async def test_fetch_failure_is_captured_and_reraised(self) -> None:
+        """A failing fetch reaches Sentry once and propagates (CLAUDE.md §Sentry)."""
+        boom = RuntimeError("db down")
+        with (
+            patch.object(insights_module, "fetch_ranked_inputs", new=AsyncMock(side_effect=boom)),
+            patch.object(insights_module.sentry_sdk, "capture_exception") as capture,
+            patch.object(insights_module.sentry_sdk, "set_context") as set_context,
+            pytest.raises(RuntimeError),
+        ):
+            await compute_findings(AsyncMock(), 7)
+        capture.assert_called_once_with(boom)
+        set_context.assert_called_once_with("insights", {"user_id": 7})
 
 
 # ---------------------------------------------------------------------------
 # TestComputeFindingsReturnContract — REVIEW WR-03: end-to-end contract that
 # compute_findings returns an EndgameTabFindings whose findings_hash is
 # populated (64-char lowercase hex) so a refactor cannot silently drop the
-# hash assignment. Subsection extraction is patched to [] so the test does
-# not need a full EndgameOverviewResponse fixture — only the wiring from
-# compute_findings' hash step to the returned model matters here.
+# hash assignment.
 # ---------------------------------------------------------------------------
-
-import re  # noqa: E402
-
-
-def _stub_endgame_overview_response() -> EndgameOverviewResponse:
-    """Build a minimal EndgameOverviewResponse for compute_findings wiring tests.
-
-    `model_construct` skips validation but does not set defaults, so any field
-    `compute_findings` reads must be populated explicitly. Subsection extraction
-    is patched to [] in the wiring tests, so per-subsection field accesses inside
-    `_compute_subsection_findings` don't matter here — only the top-level fields
-    read by `compute_findings` itself need stub values.
-
-    Phase 102 (Plan 01): added score_gap_material (for score_gap_percentile),
-    time_pressure_cards (passed through to EndgameTabFindings), and rating_anchors
-    (for cohort_anchors) to the stub so compute_findings' new field population
-    does not AttributeError on model_construct instances.
-    """
-    from app.schemas.endgames import (
-        ScoreGapMaterialResponse,
-        TimePressureCardsResponse,
-    )
-
-    stub_score_gap_material = ScoreGapMaterialResponse(
-        endgame_score=0.5,
-        non_endgame_score=0.5,
-        score_difference=0.0,
-        material_rows=[],
-        timeline=[],
-        timeline_window=50,
-    )
-    stub_time_pressure_cards = TimePressureCardsResponse(cards=[])
-
-    return EndgameOverviewResponse.model_construct(
-        time_pressure_chart=None,
-        performance=None,
-        stats=type("StatsStub", (), {"categories": [], "categories_by_tc": None})(),
-        endgame_elo_timeline=type("EloTimelineStub", (), {"combos": []})(),
-        score_gap_material=stub_score_gap_material,
-        time_pressure_cards=stub_time_pressure_cards,
-        rating_anchors={},
-    )
 
 
 class TestComputeFindingsReturnContract:
     """End-to-end wiring of compute_findings → EndgameTabFindings."""
 
+    @staticmethod
+    def _patches(*tcs: RankedTcStats) -> Any:
+        return (
+            patch.object(
+                insights_module,
+                "fetch_ranked_inputs",
+                new=AsyncMock(return_value=RankedInputs(games_by_tc={})),
+            ),
+            patch.object(
+                insights_module,
+                "build_ranked_stats",
+                new=MagicMock(return_value=_ranked_response(*tcs)),
+            ),
+        )
+
     @pytest.mark.asyncio
     async def test_returns_endgame_tab_findings_with_populated_hash(self) -> None:
-        mock_response = _stub_endgame_overview_response()
-        fc = FilterContext()
-        with (
-            patch.object(
-                insights_module,
-                "get_endgame_overview",
-                new=AsyncMock(return_value=mock_response),
-            ),
-            patch.object(
-                insights_module,
-                "_compute_subsection_findings",
-                return_value=[],
-            ),
-        ):
-            result = await compute_findings(fc, session=AsyncMock(), user_id=1)
+        fetch_patch, build_patch = self._patches(make_ranked_tc("blitz"))
+        with fetch_patch, build_patch:
+            result = await compute_findings(AsyncMock(), 1)
 
         assert isinstance(result, EndgameTabFindings)
         assert re.fullmatch(r"[0-9a-f]{64}", result.findings_hash), (
             f"findings_hash must be 64-char lowercase hex, got: {result.findings_hash!r}"
         )
-        assert result.filters == fc
-        assert result.findings == []
+        assert result.findings, "ranked TC must yield findings"
+        assert [t.tc for t in result.ranked_tcs] == ["blitz"]
+        assert not hasattr(result, "filters")
 
     @pytest.mark.asyncio
     async def test_hash_is_stable_across_two_invocations_end_to_end(self) -> None:
         """Calling compute_findings twice with the same inputs produces the
         same findings_hash (as_of differs between calls but is excluded)."""
-        mock_response = _stub_endgame_overview_response()
-        fc = FilterContext(opponent_strength="stronger")
-        with (
-            patch.object(
-                insights_module,
-                "get_endgame_overview",
-                new=AsyncMock(return_value=mock_response),
-            ),
-            patch.object(
-                insights_module,
-                "_compute_subsection_findings",
-                return_value=[],
-            ),
-        ):
-            first = await compute_findings(fc, session=AsyncMock(), user_id=1)
-            second = await compute_findings(fc, session=AsyncMock(), user_id=1)
+        fetch_patch, build_patch = self._patches(make_ranked_tc("blitz"), make_ranked_tc("rapid"))
+        with fetch_patch, build_patch:
+            first = await compute_findings(AsyncMock(), 1)
+            second = await compute_findings(AsyncMock(), 1)
 
         assert first.findings_hash == second.findings_hash
+
+    @pytest.mark.asyncio
+    async def test_empty_ranked_sample_yields_empty_findings(self) -> None:
+        """D-10: an empty ranked sample is a valid (empty) payload, not an error."""
+        fetch_patch, build_patch = self._patches()
+        with fetch_patch, build_patch:
+            result = await compute_findings(AsyncMock(), 1)
+
+        # Only the standing empty ELO placeholders remain (NaN value, dropped when rendered).
+        assert all(math.isnan(f.value) and f.sample_size == 0 for f in result.findings)
+        assert result.ranked_tcs == []
+        assert result.player_profile is None
+        assert result.per_tc_metric_percentiles is None
+        assert result.cohort_anchors is None
+        assert re.fullmatch(r"[0-9a-f]{64}", result.findings_hash)
+
+
+# ---------------------------------------------------------------------------
+# TestRankedPayloadAlignment — D-04 / D-00b: every narrated number is the ranked
+# value the Stats tab shows; last_3mo is the ranked subset; percentile records
+# exist exactly for ranked metrics.
+# ---------------------------------------------------------------------------
+
+
+class _PerfRow(NamedTuple):
+    """Shape of the repository's performance rows (indexed by the WDL summary helper)."""
+
+    played_at: datetime.datetime
+    result: str
+    user_color: str
+    platform: str
+    time_control_bucket: str
+
+
+_NOW = datetime.datetime.now(datetime.UTC)
+_RECENT_DAYS = 10  # inside the last-90-day window
+_OLD_DAYS = 200  # outside it
+
+
+def _expected_value(tc_stats: RankedTcStats, f: SubsectionFinding) -> float | None:
+    """The ranked value a finding must narrate (None for metrics checked elsewhere)."""
+    m = tc_stats.metrics
+    overall = tc_stats.overall
+    flow = overall.entry_flow
+    eg, ne = overall.endgame_wdl, overall.non_endgame_wdl
+    by_metric: dict[str, float | None] = {
+        "score_gap": m["score_gap"].value,
+        "achievable_score_gap": m["achievable_score_gap"].value,
+        "conversion_win_pct": m["conversion_rate"].value,
+        "parity_score_pct": m["parity_rate"].value,
+        "recovery_save_pct": m["recovery_rate"].value,
+        "score_gap_conv": m["score_gap_conv"].value,
+        "score_gap_parity": m["score_gap_parity"].value,
+        "score_gap_recov": m["recovery_score_gap"].value,
+        "endgame_score": (eg.wins + 0.5 * eg.draws) / eg.total,
+        "non_endgame_score": (ne.wins + 0.5 * ne.draws) / ne.total,
+        "entry_eval_pawns": flow.entry_eval_mean_pawns,
+        "entry_expected_score": flow.expected_score,
+    }
+    return by_metric.get(f.metric)
+
+
+class TestRankedPayloadAlignment:
+    def test_findings_values_equal_ranked_payload(self) -> None:
+        """Every all_time finding with a time_control dimension (and no series) carries
+        the ranked value of THAT TC: rates and gaps from metrics, scores from the overall
+        WDL, entry metrics from entry_flow. Two TCs with different values catch any
+        cross-TC mixing or pooling."""
+        blitz = make_ranked_tc("blitz")
+        rapid = make_ranked_tc(
+            "rapid",
+            endgame=(40, 5, 15),
+            non_endgame=(10, 10, 30),
+            entry_eval_mean_pawns=-0.4,
+            expected_score=0.42,
+            metrics={
+                "score_gap": make_metric("score_gap", value=0.17),
+                "achievable_score_gap": make_metric("achievable_score_gap", value=-0.06),
+                "conversion_rate": make_metric("conversion_rate", value=0.81),
+                "parity_rate": make_metric("parity_rate", value=0.44),
+                "recovery_rate": make_metric("recovery_rate", value=0.22),
+                "score_gap_conv": make_metric("score_gap_conv", value=0.09),
+                "score_gap_parity": make_metric("score_gap_parity", value=-0.11),
+                "recovery_score_gap": make_metric("recovery_score_gap", value=-0.07),
+            },
+        )
+        result = build_findings([blitz, rapid], [], as_of=_NOW)
+        by_tc = {t.tc: t for t in (blitz, rapid)}
+
+        checked = 0
+        for f in result.findings:
+            if f.window != "all_time" or f.series is not None:
+                continue
+            assert f.dimension is not None and "endgame_class" not in f.dimension
+            tc_stats = by_tc[cast(Any, f.dimension["time_control"])]
+            expected = _expected_value(tc_stats, f)
+            assert expected is not None, f"unmapped finding metric {f.metric}"
+            assert f.value == pytest.approx(expected), (f.subsection_id, f.metric, tc_stats.tc)
+            checked += 1
+        # 4 start_vs_end + 2 score_gap + 6 metrics, for both TCs.
+        assert checked == 2 * (4 + 2 + 6)
+        # The two TCs really narrate different numbers (no pooling).
+        sg = {
+            f.dimension["time_control"]: f.value
+            for f in result.findings
+            if f.subsection_id == "score_gap" and f.metric == "score_gap" and f.dimension
+        }
+        assert sg["blitz"] != sg["rapid"]
+
+    def test_overall_findings_are_per_tc_never_pooled(self) -> None:
+        result = build_findings([make_ranked_tc("bullet"), make_ranked_tc("rapid")], [], as_of=_NOW)
+        for subsection in ("endgame_start_vs_end", "score_gap", "score_timeline"):
+            members = [f for f in result.findings if f.subsection_id == subsection]
+            assert members, subsection
+            assert all(f.dimension and "time_control" in f.dimension for f in members), subsection
+            assert {f.dimension["time_control"] for f in members if f.dimension} == {
+                "bullet",
+                "rapid",
+            }
+
+    @staticmethod
+    def _game(game_id: int, days_ago: int) -> RankedGameRow:
+        return RankedGameRow(
+            game_id=game_id,
+            played_at=_NOW - datetime.timedelta(days=days_ago),
+            platform="lichess",
+            time_control_str="180+0",
+            user_elo=1500,
+            eval_pending=False,
+        )
+
+    @staticmethod
+    def _row(days_ago: int, outcome: str, *, color: str = "white") -> Any:
+        result = {"win": "1-0", "draw": "1/2-1/2", "loss": "0-1"}[outcome]
+        return _PerfRow(
+            played_at=_NOW - datetime.timedelta(days=days_ago),
+            result=result,
+            user_color=color,
+            platform="lichess",
+            time_control_bucket="blitz",
+        )
+
+    def _inputs(self, *, old_outcome: str) -> RankedInputs:
+        """12 recent endgame wins + 12 recent non-endgame draws; plus 30 OLD games per side
+        whose endgame outcome is ``old_outcome`` (non-endgame old games are draws)."""
+        recent_eg = [self._row(_RECENT_DAYS + i % 5, "win") for i in range(12)]
+        recent_ne = [self._row(_RECENT_DAYS + i % 5, "draw") for i in range(12)]
+        old_eg = [self._row(_OLD_DAYS + i, old_outcome) for i in range(30)]
+        old_ne = [self._row(_OLD_DAYS + i, "draw") for i in range(30)]
+        games = [self._game(i + 1, _RECENT_DAYS + i % 5) for i in range(24)] + [
+            self._game(100 + i, _OLD_DAYS + i) for i in range(60)
+        ]
+        return RankedInputs(
+            games_by_tc={"blitz": games},
+            endgame_rows=recent_eg + old_eg,
+            non_endgame_rows=recent_ne + old_ne,
+        )
+
+    @staticmethod
+    def _last_3mo(result: EndgameTabFindings, subsection: str, metric: str) -> SubsectionFinding:
+        return next(
+            f
+            for f in result.findings
+            if f.window == "last_3mo" and f.subsection_id == subsection and f.metric == metric
+        )
+
+    @pytest.mark.asyncio
+    async def test_last_3mo_uses_ranked_subset(self) -> None:
+        """last_3mo = build_ranked_stats(since=now-90d): games older than 90 days do not
+        move it, while the all_time window (the full ranked sample) does."""
+        results = {}
+        for old_outcome in ("loss", "win"):
+            with patch.object(
+                insights_module,
+                "fetch_ranked_inputs",
+                new=AsyncMock(return_value=self._inputs(old_outcome=old_outcome)),
+            ):
+                results[old_outcome] = await compute_findings(AsyncMock(), 1)
+
+        for result in results.values():
+            sg = self._last_3mo(result, "score_gap", "score_gap")
+            assert sg.value == pytest.approx(0.5)  # endgame score 1.0 minus non-endgame 0.5
+            es = self._last_3mo(result, "endgame_start_vs_end", "endgame_score")
+            assert es.value == pytest.approx(1.0)
+            assert es.sample_size == 12  # only the recent games
+
+        lost, won = results["loss"], results["win"]
+        # Identical last_3mo whatever the old games did ...
+        assert self._last_3mo(lost, "score_gap", "score_gap").value == pytest.approx(
+            self._last_3mo(won, "score_gap", "score_gap").value
+        )
+
+        # ... while all_time moves with them.
+        def all_time_gap(r: EndgameTabFindings) -> float:
+            return next(
+                f.value
+                for f in r.findings
+                if f.window == "all_time"
+                and f.subsection_id == "score_gap"
+                and f.metric == "score_gap"
+            )
+
+        assert all_time_gap(lost) != pytest.approx(all_time_gap(won))
+
+    def test_pctl_records_only_for_ranked_status(self) -> None:
+        """per_tc_metric_percentiles has "{metric}:{tc}" exactly when the metric is
+        'ranked'; every record is per TC and there is no page-level weighted record."""
+        tc_stats = make_ranked_tc(
+            "blitz",
+            metrics={
+                "score_gap": make_metric("score_gap", status="ranked", percentile=71.0),
+                "achievable_score_gap": make_metric("achievable_score_gap", status="below_floor"),
+                "score_gap_conv": make_metric("score_gap_conv", status="pending"),
+                "score_gap_parity": make_metric("score_gap_parity", status="unranked"),
+                "recovery_score_gap": make_metric(
+                    "recovery_score_gap", status="ranked", percentile=33.0
+                ),
+                "clock_gap": make_metric("clock_gap", status="ranked", percentile=58.0),
+                "net_flag_rate": make_metric("net_flag_rate", status="below_floor"),
+                "time_pressure_score_gap": make_metric(
+                    "time_pressure_score_gap", status="unranked"
+                ),
+                "conversion_rate": make_metric("conversion_rate", status="ranked", percentile=64.0),
+                "parity_rate": make_metric("parity_rate", status="below_floor"),
+                "recovery_rate": make_metric("recovery_rate", status="pending"),
+            },
+        )
+        result = build_findings([tc_stats], [], as_of=_NOW)
+        records = result.per_tc_metric_percentiles
+        assert records is not None
+        assert set(records) == {
+            "score_gap:blitz",
+            "score_gap_recov:blitz",  # recovery bridge: both names are written
+            "recovery_score_gap:blitz",
+            "clock_gap:blitz",
+            "conversion_win_pct:blitz",
+        }
+        assert not any(":" not in key for key in records), "no page-level record"
+        sg = records["score_gap:blitz"]
+        assert sg.percentile == 71.0
+        assert sg.tc == "blitz"
+        assert sg.anchor == 1500
+        assert sg.n_games == tc_stats.metrics["score_gap"].n
+        assert sg.value == pytest.approx(0.05 * 100.0)  # DEFAULT_METRIC_VALUES["score_gap"] x100
+        assert records["score_gap_recov:blitz"] is records["recovery_score_gap:blitz"]
+
+    def test_pctl_records_are_not_built_from_the_last_3mo_window(self) -> None:
+        """The windowed sample never carries persisted percentiles (D-04): only the
+        all_time payload feeds per_tc_metric_percentiles."""
+        ranked = make_ranked_tc("blitz")
+        windowed = make_ranked_tc(
+            "blitz", metrics={"score_gap": make_metric("score_gap", status="unranked")}
+        )
+        result = build_findings([ranked], [windowed], as_of=_NOW)
+        assert result.per_tc_metric_percentiles is not None
+        assert "score_gap:blitz" in result.per_tc_metric_percentiles
+
+    def test_elo_and_score_timeline_from_ranked_series(self) -> None:
+        """endgame_elo_timeline and score_timeline series come from each TC's own ranked
+        elo_timeline / score_gap_timeline."""
+        blitz_elo = make_elo_combo(13, time_control="blitz", endgame_elo=1500, actual_elo=1400)
+        rapid_elo = make_elo_combo(
+            12, platform="lichess", time_control="rapid", endgame_elo=1650, actual_elo=1700
+        )
+        blitz = make_ranked_tc(
+            "blitz", elo_timeline=[blitz_elo], score_gap_timeline=make_score_timeline(13)
+        )
+        rapid = make_ranked_tc(
+            "rapid", elo_timeline=[rapid_elo], score_gap_timeline=make_score_timeline(14)
+        )
+        result = build_findings([blitz, rapid], [], as_of=_NOW)
+
+        elo = [f for f in result.findings if f.subsection_id == "endgame_elo_timeline"]
+        assert [
+            (f.dimension["platform"], f.dimension["time_control"]) for f in elo if f.dimension
+        ] == [("chess.com", "blitz"), ("lichess", "rapid")]
+        by_tc = {f.dimension["time_control"]: f for f in elo if f.dimension}
+        assert by_tc["blitz"].value == pytest.approx(100.0)  # 1500 - 1400
+        assert by_tc["rapid"].value == pytest.approx(-50.0)  # 1650 - 1700
+        # all_time series are resampled monthly; the Actual ELO on the points identifies
+        # which TC's ranked combo each series came from.
+        blitz_series, rapid_series = by_tc["blitz"].series, by_tc["rapid"].series
+        assert blitz_series is not None and {p.actual_elo for p in blitz_series} == {1400}
+        assert rapid_series is not None and {p.actual_elo for p in rapid_series} == {1700}
+
+        st = [
+            f
+            for f in result.findings
+            if f.subsection_id == "score_timeline" and f.metric == "endgame_score_timeline"
+        ]
+        lengths = {f.dimension["time_control"]: len(f.series or []) for f in st if f.dimension}
+        assert lengths == {"blitz": 13, "rapid": 14}
+
+        # The player profile is built from the concatenation of every TC's combos.
+        assert result.player_profile is not None
+        assert {(e.platform, e.time_control) for e in result.player_profile} == {
+            ("chess.com", "blitz"),
+            ("lichess", "rapid"),
+        }
+
+    def test_type_categories_by_tc_filled_from_ranked_lists(self) -> None:
+        cats = [make_category("rook", conv_games=20, conv_wins=16, recov_games=10, recov_wins=3)]
+        result = build_findings(
+            [make_ranked_tc("blitz", type_categories=cats), make_ranked_tc("rapid")], [], as_of=_NOW
+        )
+        assert result.type_categories_by_tc is not None
+        assert set(result.type_categories_by_tc) == {"blitz"}
+        assert result.type_categories_by_tc["blitz"] == cats
+
+    def test_cohort_anchors_come_from_each_tc_anchor(self) -> None:
+        result = build_findings(
+            [make_ranked_tc("blitz"), make_ranked_tc("rapid", anchor=None)], [], as_of=_NOW
+        )
+        assert result.cohort_anchors is not None
+        assert set(result.cohort_anchors) == {"blitz"}
+        assert result.cohort_anchors["blitz"].anchor_rating == 1500
 
 
 # ---------------------------------------------------------------------------
 # TestFindingsEndgameMetrics — 260422-tnb A1: bucket-matched metric emission.
-# Each MaterialRow maps to exactly ONE finding whose metric matches the
-# bucket (conversion -> conversion_win_pct, parity -> parity_score_pct,
-# recovery -> recovery_save_pct). Phase 87.4 (D-05): the aggregate
-# ``endgame_skill`` finding was removed end-to-end. Total emitted = N bucket
-# rate findings + 3 score_gap_* findings (Phase 87.2 D-09 minus the
-# retired "skill" bucket).
+# Each bucket maps to exactly ONE rate finding whose metric matches the bucket
+# (conversion -> conversion_win_pct, parity -> parity_score_pct, recovery ->
+# recovery_save_pct). Phase 87.4 (D-05): the aggregate ``endgame_skill`` finding
+# was removed end-to-end. Total emitted per TC = 3 rate + 3 score_gap_* findings.
 # ---------------------------------------------------------------------------
 
 
 class TestFindingsEndgameMetrics:
-    """Unit tests for _findings_endgame_metrics.
+    """Unit tests for _findings_endgame_metrics (one ranked TC at a time).
 
-    Phase 102 UAT (2026-06-02): the aggregate-over-TC ``endgame_metrics``
-    subsection (which read ``score_gap_material``) is retired in favour of one
-    ``endgame_metrics_<tc>`` subsection per time control, sourced from
-    ``response.endgame_metrics_cards.cards``. Each card emits 6 findings —
-    3 rate (conversion/parity/recovery) + 3 ΔES gap (score_gap_conv/parity/recov)
-    — all carrying ``dimension={"time_control": tc}``.
+    Phase 102 UAT (2026-06-02): one ``endgame_metrics_<tc>`` subsection per time
+    control. Phase 238: sourced from ``RankedTcStats.metrics`` (value and n). Each TC
+    emits 6 findings — 3 rate (conversion/parity/recovery) + 3 ΔES gap
+    (score_gap_conv/parity/recov) — all carrying ``dimension={"time_control": tc}``.
     """
 
-    def _make_stats(
-        self,
-        *,
-        games: int,
-        rate: float | None,
-        score_gap_mean: float | None,
-        score_gap_n: int | None,
-    ) -> Any:
-        from app.schemas.endgames import PerTcBucketStats
-
-        return PerTcBucketStats(
-            games=games,
-            win_pct=0.0,
-            draw_pct=0.0,
-            loss_pct=0.0,
-            rate=rate,
-            score_gap_mean=score_gap_mean,
-            score_gap_n=score_gap_n,
-            score_gap_p_value=None,
-            score_gap_ci_low=None,
-            score_gap_ci_high=None,
-            percentile=None,
-        )
-
-    def _make_card(
-        self,
-        tc: str,
-        *,
-        conv: Any,
-        parity: Any,
-        recov: Any,
-    ) -> Any:
-        from app.schemas.endgames import EndgameMetricsTcCard
-
-        return EndgameMetricsTcCard(
-            tc=cast(Any, tc),
-            total=conv.games + parity.games + recov.games,
-            conversion=conv,
-            parity=parity,
-            recovery=recov,
-        )
-
-    def _make_overview_with_cards(self, cards: list[Any]) -> Any:
-        from app.schemas.endgames import EndgameMetricsCardsResponse
-
-        return EndgameOverviewResponse.model_construct(
-            endgame_metrics_cards=EndgameMetricsCardsResponse(cards=cards),
-        )
-
-    def _full_card(self, tc: str) -> Any:
-        """A card with all three buckets populated (rich rate samples, n>=10 gaps)."""
-        return self._make_card(
-            tc,
-            conv=self._make_stats(games=100, rate=0.68, score_gap_mean=-0.08, score_gap_n=100),
-            parity=self._make_stats(games=80, rate=0.50, score_gap_mean=-0.02, score_gap_n=80),
-            recov=self._make_stats(games=60, rate=0.35, score_gap_mean=0.04, score_gap_n=60),
-        )
-
-    def test_card_emits_six_findings_three_rate_three_gap(self) -> None:
-        """One fully-populated card -> 3 rate findings + 3 ΔES-gap findings = 6,
+    def test_tc_emits_six_findings_three_rate_three_gap(self) -> None:
+        """One fully-populated TC -> 3 rate findings + 3 ΔES-gap findings = 6,
         all under endgame_metrics_<tc> with dimension time_control=<tc>."""
         from app.services.insights_service import _findings_endgame_metrics
 
-        response = self._make_overview_with_cards([self._full_card("blitz")])
-        findings = _findings_endgame_metrics(response, window="all_time")
+        findings = _findings_endgame_metrics(make_ranked_tc("blitz"), window="all_time")
 
         assert len(findings) == 6
         assert all(f.subsection_id == "endgame_metrics_blitz" for f in findings)
@@ -670,45 +852,51 @@ class TestFindingsEndgameMetrics:
         assert gap_metrics == ["score_gap_conv", "score_gap_parity", "score_gap_recov"]
 
     def test_one_subsection_per_time_control(self) -> None:
-        """Multiple cards -> one endgame_metrics_<tc> subsection each, 6 findings per TC."""
-        from app.services.insights_service import _findings_endgame_metrics
+        """Two TCs -> one endgame_metrics_<tc> subsection each, 6 findings per TC."""
+        findings = build_findings(
+            [make_ranked_tc("bullet"), make_ranked_tc("rapid")], [], as_of=_NOW
+        ).findings
+        metrics = [f for f in findings if f.subsection_id.startswith("endgame_metrics_")]
 
-        response = self._make_overview_with_cards(
-            [self._full_card("bullet"), self._full_card("rapid")]
-        )
-        findings = _findings_endgame_metrics(response, window="all_time")
-
-        assert len(findings) == 12
-        subsection_ids = {f.subsection_id for f in findings}
-        assert subsection_ids == {"endgame_metrics_bullet", "endgame_metrics_rapid"}
-        bullet = [f for f in findings if f.subsection_id == "endgame_metrics_bullet"]
-        rapid = [f for f in findings if f.subsection_id == "endgame_metrics_rapid"]
+        assert len(metrics) == 12
+        assert {f.subsection_id for f in metrics} == {
+            "endgame_metrics_bullet",
+            "endgame_metrics_rapid",
+        }
+        bullet = [f for f in metrics if f.subsection_id == "endgame_metrics_bullet"]
+        rapid = [f for f in metrics if f.subsection_id == "endgame_metrics_rapid"]
         assert len(bullet) == 6
         assert len(rapid) == 6
         assert all(f.dimension == {"time_control": "bullet"} for f in bullet)
         assert all(f.dimension == {"time_control": "rapid"} for f in rapid)
 
-    def test_no_cards_emits_no_findings(self) -> None:
-        """No eligible per-TC cards -> no findings (the page shows no Metrics cards)."""
+    def test_tc_below_game_gate_emits_no_findings(self) -> None:
+        """A TC under MIN_GAMES_PER_TC_CARD ranked endgame games shows no Metrics card."""
+        from app.services.endgame_zones import MIN_GAMES_PER_TC_CARD
         from app.services.insights_service import _findings_endgame_metrics
 
-        response = self._make_overview_with_cards([])
-        findings = _findings_endgame_metrics(response, window="all_time")
-        assert findings == []
+        assert 8 < MIN_GAMES_PER_TC_CARD
+        tc_stats = make_ranked_tc("blitz", endgame=(5, 1, 2))
+        assert _findings_endgame_metrics(tc_stats, window="all_time") == []
 
     def test_empty_bucket_emits_empty_rate_and_nan_gap(self) -> None:
-        """A bucket with games=0 / rate=None emits an empty rate finding (NaN, n=0,
-        not headline-eligible); its ΔES gap finding (n=0, mean=None) is NaN too."""
+        """A bucket with n=0 / value=None emits an empty rate finding (NaN, n=0,
+        not headline-eligible); its ΔES gap finding (n=0, value=None) is NaN too."""
         from app.services.insights_service import _findings_endgame_metrics
 
-        card = self._make_card(
+        tc_stats = make_ranked_tc(
             "blitz",
-            conv=self._make_stats(games=0, rate=None, score_gap_mean=None, score_gap_n=0),
-            parity=self._make_stats(games=50, rate=0.50, score_gap_mean=-0.02, score_gap_n=50),
-            recov=self._make_stats(games=0, rate=None, score_gap_mean=None, score_gap_n=0),
+            metrics={
+                "conversion_rate": make_metric("conversion_rate", n=0),
+                "score_gap_conv": make_metric("score_gap_conv", n=0),
+                "recovery_rate": make_metric("recovery_rate", n=0),
+                "recovery_score_gap": make_metric("recovery_score_gap", n=0),
+            },
         )
-        response = self._make_overview_with_cards([card])
-        findings = _findings_endgame_metrics(response, window="all_time")
+        # make_metric substitutes the default value for None, so null the values explicitly.
+        for key in ("conversion_rate", "score_gap_conv", "recovery_rate", "recovery_score_gap"):
+            tc_stats.metrics[key] = tc_stats.metrics[key].model_copy(update={"value": None})
+        findings = _findings_endgame_metrics(tc_stats, window="all_time")
 
         assert len(findings) == 6
 
@@ -726,12 +914,11 @@ class TestFindingsEndgameMetrics:
         parity_rate = next(f for f in findings if f.metric == "parity_score_pct")
         assert parity_rate.value == pytest.approx(0.50)
 
-    def test_rate_value_is_stats_rate(self) -> None:
-        """Each rate finding's value is the bucket's precomputed ``rate`` field."""
+    def test_rate_value_is_metric_value(self) -> None:
+        """Each rate finding's value is the ranked metric's value."""
         from app.services.insights_service import _findings_endgame_metrics
 
-        response = self._make_overview_with_cards([self._full_card("blitz")])
-        findings = _findings_endgame_metrics(response, window="all_time")
+        findings = _findings_endgame_metrics(make_ranked_tc("blitz"), window="all_time")
 
         conv = next(f for f in findings if f.metric == "conversion_win_pct")
         parity = next(f for f in findings if f.metric == "parity_score_pct")
@@ -739,13 +926,14 @@ class TestFindingsEndgameMetrics:
         assert conv.value == pytest.approx(0.68)
         assert parity.value == pytest.approx(0.50)
         assert recov.value == pytest.approx(0.35)
+        assert (conv.sample_size, parity.sample_size, recov.sample_size) == (100, 80, 60)
 
-    def test_gap_value_is_score_gap_mean(self) -> None:
-        """Each ΔES-gap finding's value is the bucket's ``score_gap_mean``."""
+    def test_gap_value_is_metric_value_with_recovery_bridge(self) -> None:
+        """Each ΔES-gap finding's value is the ranked gap metric; the finding id
+        score_gap_recov maps to the ranked recovery_score_gap metric."""
         from app.services.insights_service import _findings_endgame_metrics
 
-        response = self._make_overview_with_cards([self._full_card("blitz")])
-        findings = _findings_endgame_metrics(response, window="all_time")
+        findings = _findings_endgame_metrics(make_ranked_tc("blitz"), window="all_time")
 
         conv = next(f for f in findings if f.metric == "score_gap_conv")
         parity = next(f for f in findings if f.metric == "score_gap_parity")
@@ -755,22 +943,24 @@ class TestFindingsEndgameMetrics:
         assert recov.value == pytest.approx(0.04)
 
 
+def _by_metric(findings: list[SubsectionFinding]) -> dict[str, SubsectionFinding]:
+    return {f.metric: f for f in findings}
+
+
 class TestFindingsEndgameStartVsEnd:
     """Unit tests for _findings_endgame_start_vs_end (Phase 82 D-16/D-17/D-18/D-19/D-20).
 
-    Phase 102 UAT: emitter now returns FOUR findings in UI-card order —
+    Phase 102 UAT: emitter returns FOUR findings in UI-card order —
     endgame_score, non_endgame_score, entry_eval_pawns, entry_expected_score.
-    Assertions are keyed by metric (via `_by_metric`) so they survive future
-    reordering. Covers independent per-tile gates, zone boundary dispatch via
-    assign_zone, and is_headline_eligible = (sample_quality != "thin").
+    Phase 238 (D-04, D-00h): one ranked TC at a time, each finding carries
+    ``dimension={"time_control": tc}``. Assertions are keyed by metric (via
+    `_by_metric`) so they survive future reordering. Covers independent per-tile gates,
+    zone boundary dispatch via assign_zone, and is_headline_eligible =
+    (sample_quality != "thin").
     """
 
     @staticmethod
-    def _by_metric(findings: list[Any]) -> dict[str, Any]:
-        return {f.metric: f for f in findings}
-
-    def _make_overview(
-        self,
+    def _make_tc(
         *,
         entry_eval_mean_pawns: float = 0.0,
         entry_eval_n: int = 50,
@@ -782,49 +972,24 @@ class TestFindingsEndgameStartVsEnd:
         non_losses: int = 20,
         entry_expected_score: float = 0.50,
         entry_expected_score_n: int = 50,
-    ) -> Any:
-        """Build a minimal EndgameOverviewResponse for endgame_start_vs_end tests."""
-        from app.schemas.endgames import (
-            EndgameOverviewResponse,
-            EndgamePerformanceResponse,
-            EndgameWDLSummary,
-        )
-
-        total = wins + draws + losses
-        non_total = non_wins + non_draws + non_losses
-        perf = EndgamePerformanceResponse.model_construct(
+    ) -> RankedTcStats:
+        return make_ranked_tc(
+            "blitz",
+            endgame=(wins, draws, losses),
+            non_endgame=(non_wins, non_draws, non_losses),
             entry_eval_mean_pawns=entry_eval_mean_pawns,
             entry_eval_n=entry_eval_n,
-            entry_expected_score=entry_expected_score,
-            entry_expected_score_n=entry_expected_score_n,
-            endgame_wdl=EndgameWDLSummary(
-                wins=wins,
-                draws=draws,
-                losses=losses,
-                total=total,
-                win_pct=wins / total * 100 if total else 0.0,
-                draw_pct=draws / total * 100 if total else 0.0,
-                loss_pct=losses / total * 100 if total else 0.0,
-            ),
-            non_endgame_wdl=EndgameWDLSummary(
-                wins=non_wins,
-                draws=non_draws,
-                losses=non_losses,
-                total=non_total,
-                win_pct=non_wins / non_total * 100 if non_total else 0.0,
-                draw_pct=non_draws / non_total * 100 if non_total else 0.0,
-                loss_pct=non_losses / non_total * 100 if non_total else 0.0,
-            ),
-            endgame_win_rate=wins / total * 100 if total else 0.0,
+            expected_score=entry_expected_score,
+            flow_n=entry_expected_score_n,
         )
-        return EndgameOverviewResponse.model_construct(performance=perf)
 
     def test_returns_four_findings_in_canonical_ui_order(self) -> None:
         """Phase 102 UAT: all gates pass -> FOUR findings, score cards leading."""
         from app.services.insights_service import _findings_endgame_start_vs_end
 
-        response = self._make_overview(entry_eval_mean_pawns=0.62)
-        findings = _findings_endgame_start_vs_end(response, "all_time")
+        findings = _findings_endgame_start_vs_end(
+            self._make_tc(entry_eval_mean_pawns=0.62), "all_time"
+        )
 
         assert [f.metric for f in findings] == [
             "endgame_score",
@@ -837,8 +1002,9 @@ class TestFindingsEndgameStartVsEnd:
         """entry_eval_n < 10 -> entry_eval_pawns empty; endgame_score still populated."""
         from app.services.insights_service import _findings_endgame_start_vs_end
 
-        response = self._make_overview(entry_eval_n=5)
-        tiles = self._by_metric(_findings_endgame_start_vs_end(response, "all_time"))
+        tiles = _by_metric(
+            _findings_endgame_start_vs_end(self._make_tc(entry_eval_n=5), "all_time")
+        )
 
         assert tiles["entry_eval_pawns"].sample_quality == "thin"
         assert tiles["entry_eval_pawns"].is_headline_eligible is False
@@ -848,8 +1014,11 @@ class TestFindingsEndgameStartVsEnd:
         """endgame_wdl.total < 10 -> endgame_score empty; entry_eval_pawns populated."""
         from app.services.insights_service import _findings_endgame_start_vs_end
 
-        response = self._make_overview(entry_eval_n=50, wins=3, draws=1, losses=1)
-        tiles = self._by_metric(_findings_endgame_start_vs_end(response, "all_time"))
+        tiles = _by_metric(
+            _findings_endgame_start_vs_end(
+                self._make_tc(entry_eval_n=50, wins=3, draws=1, losses=1), "all_time"
+            )
+        )
 
         assert tiles["endgame_score"].sample_quality == "thin"
         assert tiles["endgame_score"].is_headline_eligible is False
@@ -859,8 +1028,11 @@ class TestFindingsEndgameStartVsEnd:
         """Both pre-existing gates fail -> endgame_score and entry_eval_pawns empty."""
         from app.services.insights_service import _findings_endgame_start_vs_end
 
-        response = self._make_overview(entry_eval_n=5, wins=2, draws=1, losses=2)
-        tiles = self._by_metric(_findings_endgame_start_vs_end(response, "all_time"))
+        tiles = _by_metric(
+            _findings_endgame_start_vs_end(
+                self._make_tc(entry_eval_n=5, wins=2, draws=1, losses=2), "all_time"
+            )
+        )
 
         assert tiles["entry_eval_pawns"].sample_quality == "thin"
         assert tiles["endgame_score"].sample_quality == "thin"
@@ -874,10 +1046,11 @@ class TestFindingsEndgameStartVsEnd:
         """
         from app.services.insights_service import _findings_endgame_start_vs_end
 
-        response = self._make_overview(entry_eval_mean_pawns=0.30, entry_eval_n=10)
-        eval_tile = self._by_metric(_findings_endgame_start_vs_end(response, "all_time"))[
-            "entry_eval_pawns"
-        ]
+        eval_tile = _by_metric(
+            _findings_endgame_start_vs_end(
+                self._make_tc(entry_eval_mean_pawns=0.30, entry_eval_n=10), "all_time"
+            )
+        )["entry_eval_pawns"]
 
         assert eval_tile.sample_size == 10
         assert eval_tile.sample_quality == "adequate"
@@ -887,10 +1060,11 @@ class TestFindingsEndgameStartVsEnd:
         """Boundary: endgame_wdl.total == 10 -> endgame_score populated, adequate."""
         from app.services.insights_service import _findings_endgame_start_vs_end
 
-        response = self._make_overview(entry_eval_n=50, wins=5, draws=2, losses=3)
-        score_tile = self._by_metric(_findings_endgame_start_vs_end(response, "all_time"))[
-            "endgame_score"
-        ]
+        score_tile = _by_metric(
+            _findings_endgame_start_vs_end(
+                self._make_tc(entry_eval_n=50, wins=5, draws=2, losses=3), "all_time"
+            )
+        )["endgame_score"]
 
         assert score_tile.sample_size == 10
         assert score_tile.sample_quality == "adequate"
@@ -900,20 +1074,31 @@ class TestFindingsEndgameStartVsEnd:
         """Boundary: entry_eval_n == 9 (just below the floor) -> empty/thin."""
         from app.services.insights_service import _findings_endgame_start_vs_end
 
-        response = self._make_overview(entry_eval_n=9)
-        eval_tile = self._by_metric(_findings_endgame_start_vs_end(response, "all_time"))[
-            "entry_eval_pawns"
-        ]
+        eval_tile = _by_metric(
+            _findings_endgame_start_vs_end(self._make_tc(entry_eval_n=9), "all_time")
+        )["entry_eval_pawns"]
 
         assert eval_tile.sample_quality == "thin"
         assert eval_tile.is_headline_eligible is False
+
+    def test_entry_eval_none_is_empty_even_with_sample(self) -> None:
+        """A ranked TC with no mean entry eval (pending evals) emits the empty tile."""
+        from app.services.insights_service import _findings_endgame_start_vs_end
+
+        tc_stats = make_ranked_tc("blitz", entry_eval_mean_pawns=None, entry_eval_n=50)
+        eval_tile = _by_metric(_findings_endgame_start_vs_end(tc_stats, "all_time"))[
+            "entry_eval_pawns"
+        ]
+        assert math.isnan(eval_tile.value)
+        assert eval_tile.sample_quality == "thin"
 
     def test_zone_strong_for_entry_eval_above_band(self) -> None:
         """entry_eval_mean_pawns = 1.00 -> zone = 'strong' (above typical_upper=0.75)."""
         from app.services.insights_service import _findings_endgame_start_vs_end
 
-        response = self._make_overview(entry_eval_mean_pawns=1.00)
-        tiles = self._by_metric(_findings_endgame_start_vs_end(response, "all_time"))
+        tiles = _by_metric(
+            _findings_endgame_start_vs_end(self._make_tc(entry_eval_mean_pawns=1.00), "all_time")
+        )
 
         assert tiles["entry_eval_pawns"].zone == "strong"
 
@@ -921,8 +1106,9 @@ class TestFindingsEndgameStartVsEnd:
         """entry_eval_mean_pawns = -1.00 -> zone = 'weak' (below typical_lower=-0.75)."""
         from app.services.insights_service import _findings_endgame_start_vs_end
 
-        response = self._make_overview(entry_eval_mean_pawns=-1.00)
-        tiles = self._by_metric(_findings_endgame_start_vs_end(response, "all_time"))
+        tiles = _by_metric(
+            _findings_endgame_start_vs_end(self._make_tc(entry_eval_mean_pawns=-1.00), "all_time")
+        )
 
         assert tiles["entry_eval_pawns"].zone == "weak"
 
@@ -930,8 +1116,9 @@ class TestFindingsEndgameStartVsEnd:
         """entry_eval_mean_pawns = 0.30 -> zone = 'typical' (inside [-0.75, 0.75])."""
         from app.services.insights_service import _findings_endgame_start_vs_end
 
-        response = self._make_overview(entry_eval_mean_pawns=0.30)
-        tiles = self._by_metric(_findings_endgame_start_vs_end(response, "all_time"))
+        tiles = _by_metric(
+            _findings_endgame_start_vs_end(self._make_tc(entry_eval_mean_pawns=0.30), "all_time")
+        )
 
         assert tiles["entry_eval_pawns"].zone == "typical"
 
@@ -939,8 +1126,9 @@ class TestFindingsEndgameStartVsEnd:
         """wins=12, draws=4, losses=4 -> score=14/20=0.70 -> zone='strong'."""
         from app.services.insights_service import _findings_endgame_start_vs_end
 
-        response = self._make_overview(wins=12, draws=4, losses=4)
-        tiles = self._by_metric(_findings_endgame_start_vs_end(response, "all_time"))
+        tiles = _by_metric(
+            _findings_endgame_start_vs_end(self._make_tc(wins=12, draws=4, losses=4), "all_time")
+        )
 
         assert tiles["endgame_score"].zone == "strong"
 
@@ -948,8 +1136,9 @@ class TestFindingsEndgameStartVsEnd:
         """wins=4, draws=4, losses=12 -> score=6/20=0.30 -> zone='weak'."""
         from app.services.insights_service import _findings_endgame_start_vs_end
 
-        response = self._make_overview(wins=4, draws=4, losses=12)
-        tiles = self._by_metric(_findings_endgame_start_vs_end(response, "all_time"))
+        tiles = _by_metric(
+            _findings_endgame_start_vs_end(self._make_tc(wins=4, draws=4, losses=12), "all_time")
+        )
 
         assert tiles["endgame_score"].zone == "weak"
 
@@ -962,25 +1151,27 @@ class TestFindingsEndgameStartVsEnd:
         from app.services.insights_service import _findings_endgame_start_vs_end
 
         # non: wins=12, draws=4, losses=4 -> score=14/20=0.70 -> strong (band [0.45, 0.55]).
-        response = self._make_overview(non_wins=12, non_draws=4, non_losses=4)
-        non_tile = self._by_metric(_findings_endgame_start_vs_end(response, "all_time"))[
-            "non_endgame_score"
-        ]
+        non_tile = _by_metric(
+            _findings_endgame_start_vs_end(
+                self._make_tc(non_wins=12, non_draws=4, non_losses=4), "all_time"
+            )
+        )["non_endgame_score"]
 
         assert non_tile.value == pytest.approx(0.70)
         assert non_tile.zone == "strong"
         assert non_tile.sample_size == 20
-        assert non_tile.dimension is None
+        assert non_tile.dimension == {"time_control": "blitz"}
         assert non_tile.series is None
 
     def test_non_endgame_score_zone_weak_below_band(self) -> None:
         """non score = 6/20 = 0.30 -> zone='weak'."""
         from app.services.insights_service import _findings_endgame_start_vs_end
 
-        response = self._make_overview(non_wins=4, non_draws=4, non_losses=12)
-        non_tile = self._by_metric(_findings_endgame_start_vs_end(response, "all_time"))[
-            "non_endgame_score"
-        ]
+        non_tile = _by_metric(
+            _findings_endgame_start_vs_end(
+                self._make_tc(non_wins=4, non_draws=4, non_losses=12), "all_time"
+            )
+        )["non_endgame_score"]
 
         assert non_tile.zone == "weak"
 
@@ -988,31 +1179,32 @@ class TestFindingsEndgameStartVsEnd:
         """non_endgame_wdl.total < 10 -> non_endgame_score empty (thin, not headline)."""
         from app.services.insights_service import _findings_endgame_start_vs_end
 
-        response = self._make_overview(non_wins=2, non_draws=1, non_losses=2)
-        non_tile = self._by_metric(_findings_endgame_start_vs_end(response, "all_time"))[
-            "non_endgame_score"
-        ]
+        non_tile = _by_metric(
+            _findings_endgame_start_vs_end(
+                self._make_tc(non_wins=2, non_draws=1, non_losses=2), "all_time"
+            )
+        )["non_endgame_score"]
 
         assert math.isnan(non_tile.value)
         assert non_tile.sample_quality == "thin"
         assert non_tile.is_headline_eligible is False
         assert non_tile.sample_size == 0
 
-    def test_dimension_and_series_are_none(self) -> None:
-        """All findings must have dimension=None and series=None (D-19/D-20)."""
+    def test_dimension_is_time_control_and_series_none(self) -> None:
+        """All findings carry the TC dimension (D-00h) and no series (D-19/D-20)."""
         from app.services.insights_service import _findings_endgame_start_vs_end
 
-        findings = _findings_endgame_start_vs_end(self._make_overview(), "all_time")
+        findings = _findings_endgame_start_vs_end(self._make_tc(), "all_time")
 
         for f in findings:
-            assert f.dimension is None
+            assert f.dimension == {"time_control": "blitz"}
             assert f.series is None
 
     def test_subsection_and_window_propagate(self) -> None:
         """All findings carry correct subsection_id and window."""
         from app.services.insights_service import _findings_endgame_start_vs_end
 
-        findings = _findings_endgame_start_vs_end(self._make_overview(), "last_3mo")
+        findings = _findings_endgame_start_vs_end(self._make_tc(), "last_3mo")
 
         for f in findings:
             assert f.subsection_id == "endgame_start_vs_end"
@@ -1027,14 +1219,15 @@ class TestFindingsEndgameStartVsEnd:
         """entry_expected_score_n >= 10 -> tile populated with the correct shape."""
         from app.services.insights_service import _findings_endgame_start_vs_end
 
-        response = self._make_overview(entry_expected_score=0.58, entry_expected_score_n=50)
-        tile = self._by_metric(_findings_endgame_start_vs_end(response, "all_time"))[
-            "entry_expected_score"
-        ]
+        tile = _by_metric(
+            _findings_endgame_start_vs_end(
+                self._make_tc(entry_expected_score=0.58, entry_expected_score_n=50), "all_time"
+            )
+        )["entry_expected_score"]
 
         assert tile.value == pytest.approx(0.58)
         assert tile.zone in {"weak", "typical", "strong"}
-        assert tile.dimension is None
+        assert tile.dimension == {"time_control": "blitz"}
         assert tile.trend == "n_a"
         assert tile.sample_size == 50
         assert tile.weekly_points_in_window == 0
@@ -1046,10 +1239,11 @@ class TestFindingsEndgameStartVsEnd:
         """entry_expected_score_n < 10 -> tile empty (thin, NaN value, not headline)."""
         from app.services.insights_service import _findings_endgame_start_vs_end
 
-        response = self._make_overview(entry_expected_score=0.62, entry_expected_score_n=9)
-        tile = self._by_metric(_findings_endgame_start_vs_end(response, "all_time"))[
-            "entry_expected_score"
-        ]
+        tile = _by_metric(
+            _findings_endgame_start_vs_end(
+                self._make_tc(entry_expected_score=0.62, entry_expected_score_n=9), "all_time"
+            )
+        )["entry_expected_score"]
 
         assert math.isnan(tile.value)
         assert tile.zone == "typical"
@@ -1061,8 +1255,11 @@ class TestFindingsEndgameStartVsEnd:
         """entry_expected_score=0.60 (above typical_upper=0.55) -> zone='strong'."""
         from app.services.insights_service import _findings_endgame_start_vs_end
 
-        response = self._make_overview(entry_expected_score=0.60, entry_expected_score_n=50)
-        tiles = self._by_metric(_findings_endgame_start_vs_end(response, "all_time"))
+        tiles = _by_metric(
+            _findings_endgame_start_vs_end(
+                self._make_tc(entry_expected_score=0.60, entry_expected_score_n=50), "all_time"
+            )
+        )
 
         assert tiles["entry_expected_score"].zone == "strong"
 
@@ -1070,8 +1267,11 @@ class TestFindingsEndgameStartVsEnd:
         """entry_expected_score=0.40 (below typical_lower=0.45) -> zone='weak'."""
         from app.services.insights_service import _findings_endgame_start_vs_end
 
-        response = self._make_overview(entry_expected_score=0.40, entry_expected_score_n=50)
-        tiles = self._by_metric(_findings_endgame_start_vs_end(response, "all_time"))
+        tiles = _by_metric(
+            _findings_endgame_start_vs_end(
+                self._make_tc(entry_expected_score=0.40, entry_expected_score_n=50), "all_time"
+            )
+        )
 
         assert tiles["entry_expected_score"].zone == "weak"
 
@@ -1084,10 +1284,11 @@ class TestFindingsEndgameStartVsEnd:
         """
         from app.services.insights_service import _findings_endgame_start_vs_end
 
-        response = self._make_overview(entry_expected_score=0.58, entry_expected_score_n=50)
-        tile = self._by_metric(_findings_endgame_start_vs_end(response, "all_time"))[
-            "entry_expected_score"
-        ]
+        tile = _by_metric(
+            _findings_endgame_start_vs_end(
+                self._make_tc(entry_expected_score=0.58, entry_expected_score_n=50), "all_time"
+            )
+        )["entry_expected_score"]
 
         assert not hasattr(tile, "verdict")
         assert "verdict" not in tile.model_dump()
@@ -1100,13 +1301,17 @@ class TestFindingsEndgameStartVsEnd:
         """
         from app.services.insights_service import _findings_endgame_start_vs_end
 
-        response = self._make_overview(
-            entry_eval_mean_pawns=0.30,
-            entry_eval_n=50,
-            entry_expected_score=0.58,
-            entry_expected_score_n=5,  # thin
+        tiles = _by_metric(
+            _findings_endgame_start_vs_end(
+                self._make_tc(
+                    entry_eval_mean_pawns=0.30,
+                    entry_eval_n=50,
+                    entry_expected_score=0.58,
+                    entry_expected_score_n=5,  # thin
+                ),
+                "all_time",
+            )
         )
-        tiles = self._by_metric(_findings_endgame_start_vs_end(response, "all_time"))
 
         assert tiles["entry_eval_pawns"].sample_quality != "thin"
         assert tiles["endgame_score"].sample_quality != "thin"
@@ -1116,8 +1321,9 @@ class TestFindingsEndgameStartVsEnd:
         """Adding non_endgame_score must not regress entry_eval/endgame_score shape."""
         from app.services.insights_service import _findings_endgame_start_vs_end
 
-        response = self._make_overview(entry_eval_mean_pawns=0.30)
-        tiles = self._by_metric(_findings_endgame_start_vs_end(response, "all_time"))
+        tiles = _by_metric(
+            _findings_endgame_start_vs_end(self._make_tc(entry_eval_mean_pawns=0.30), "all_time")
+        )
 
         assert tiles["entry_eval_pawns"].value == pytest.approx(0.30)
         assert tiles["entry_eval_pawns"].sample_size == 50
@@ -1127,76 +1333,50 @@ class TestFindingsEndgameStartVsEnd:
 
 
 class TestFindingsScoreGap:
-    """Unit tests for _findings_score_gap (Phase 102 UAT).
+    """Unit tests for _findings_score_gap (Phase 102 UAT; ranked per-TC since Phase 238).
 
     The dedicated `score_gap` subsection mirrors the UI "Endgame Score
     Differences" card: achievable_score_gap ("Eval Score Gap") first, then
-    score_gap ("Endgame Score Gap"). Relocated from the retired `overall`
-    subsection, with achievable_score_gap newly wired as a finding.
+    score_gap ("Endgame Score Gap"), each per time control.
     """
 
     @staticmethod
-    def _by_metric(findings: list[Any]) -> dict[str, Any]:
-        return {f.metric: f for f in findings}
-
-    def _make_overview(
-        self,
+    def _make_tc(
         *,
         score_difference: float = -0.08,
         achievable_score_gap: float = -0.03,
         entry_expected_score_n: int = 60,
         endgame_total: int = 240,
         non_endgame_total: int = 700,
-    ) -> Any:
-        from app.schemas.endgames import (
-            EndgameOverviewResponse,
-            EndgamePerformanceResponse,
-            EndgameWDLSummary,
-            ScoreGapMaterialResponse,
-        )
-
-        def _wdl(total: int) -> Any:
-            return EndgameWDLSummary(
-                wins=total,
-                draws=0,
-                losses=0,
-                total=total,
-                win_pct=100.0 if total else 0.0,
-                draw_pct=0.0,
-                loss_pct=0.0,
-            )
-
-        perf = EndgamePerformanceResponse.model_construct(
-            achievable_score_gap=achievable_score_gap,
-            entry_expected_score_n=entry_expected_score_n,
-            endgame_wdl=_wdl(endgame_total),
-            non_endgame_wdl=_wdl(non_endgame_total),
-        )
-        return EndgameOverviewResponse.model_construct(
-            performance=perf,
-            score_gap_material=ScoreGapMaterialResponse.model_construct(
-                score_difference=score_difference
-            ),
+    ) -> RankedTcStats:
+        return make_ranked_tc(
+            "blitz",
+            endgame=(endgame_total, 0, 0),
+            non_endgame=(non_endgame_total, 0, 0),
+            metrics={
+                "score_gap": make_metric("score_gap", value=score_difference),
+                "achievable_score_gap": make_metric(
+                    "achievable_score_gap", value=achievable_score_gap, n=entry_expected_score_n
+                ),
+            },
         )
 
     def test_emits_two_findings_in_card_order(self) -> None:
         from app.services.insights_service import _findings_score_gap
 
-        findings = _findings_score_gap(self._make_overview(), "all_time")
+        findings = _findings_score_gap(self._make_tc(), "all_time")
 
         assert [f.metric for f in findings] == ["achievable_score_gap", "score_gap"]
         for f in findings:
             assert f.subsection_id == "score_gap"
-            assert f.dimension is None
+            assert f.dimension == {"time_control": "blitz"}
             assert f.series is None
             assert f.parent_subsection_id is None
 
     def test_score_gap_value_and_zone(self) -> None:
         from app.services.insights_service import _findings_score_gap
 
-        tiles = self._by_metric(
-            _findings_score_gap(self._make_overview(score_difference=-0.15), "all_time")
-        )
+        tiles = _by_metric(_findings_score_gap(self._make_tc(score_difference=-0.15), "all_time"))
         sg = tiles["score_gap"]
         assert sg.value == pytest.approx(-0.15)
         assert sg.zone == "weak"  # below score_gap band lower bound (-0.10)
@@ -1205,10 +1385,9 @@ class TestFindingsScoreGap:
     def test_achievable_score_gap_value_and_gate(self) -> None:
         from app.services.insights_service import _findings_score_gap
 
-        tiles = self._by_metric(
+        tiles = _by_metric(
             _findings_score_gap(
-                self._make_overview(achievable_score_gap=0.04, entry_expected_score_n=80),
-                "all_time",
+                self._make_tc(achievable_score_gap=0.04, entry_expected_score_n=80), "all_time"
             )
         )
         asg = tiles["achievable_score_gap"]
@@ -1219,9 +1398,7 @@ class TestFindingsScoreGap:
     def test_achievable_score_gap_empty_when_n_below_10(self) -> None:
         from app.services.insights_service import _findings_score_gap
 
-        tiles = self._by_metric(
-            _findings_score_gap(self._make_overview(entry_expected_score_n=5), "all_time")
-        )
+        tiles = _by_metric(_findings_score_gap(self._make_tc(entry_expected_score_n=5), "all_time"))
         asg = tiles["achievable_score_gap"]
         assert math.isnan(asg.value)
         assert asg.sample_quality == "thin"
@@ -1230,11 +1407,16 @@ class TestFindingsScoreGap:
     def test_score_gap_empty_when_no_games(self) -> None:
         from app.services.insights_service import _findings_score_gap
 
-        tiles = self._by_metric(
-            _findings_score_gap(
-                self._make_overview(endgame_total=0, non_endgame_total=0), "all_time"
-            )
+        tc_stats = make_ranked_tc(
+            "blitz",
+            endgame=(0, 0, 0),
+            non_endgame=(0, 0, 0),
+            metrics={"score_gap": make_metric("score_gap", n=0)},
         )
+        tc_stats.metrics["score_gap"] = tc_stats.metrics["score_gap"].model_copy(
+            update={"value": None}
+        )
+        tiles = _by_metric(_findings_score_gap(tc_stats, "all_time"))
         assert math.isnan(tiles["score_gap"].value)
         assert tiles["score_gap"].sample_quality == "thin"
 
@@ -1357,101 +1539,26 @@ class TestComputePlayerProfile:
 
 class TestD15LlmPathInvariant:
     """Phase 102 UAT (2026-06-02): D-15 is REVERSED. The LLM type_breakdown path
-    now reads response.stats.categories_by_tc (per-(class × TC)) and emits one
-    `endgame_type_<tc>` subsection per eligible time control, mirroring the UI's
-    per-TC collapsible cards. The pooled `categories` are no longer the source for
-    the type breakdown. These tests assert the new per-TC behavior.
+    reads the per-(class × TC) type rows and emits one `endgame_type_<tc>`
+    subsection per eligible time control, mirroring the UI's per-TC collapsible
+    cards. Phase 238: the rows come from each ranked TC's ``type_categories``.
     """
 
-    @staticmethod
-    def _make_category(
-        endgame_class: str,
-        conv_games: int,
-        conv_wins: int,
-        recov_games: int,
-        recov_wins: int,
-    ) -> Any:
-        """Build a minimal EndgameCategoryStats for insights path smoke testing."""
-        from app.schemas.endgames import (
-            ConversionRecoveryStats,
-            EndgameCategoryStats,
-        )
-
-        conv_draws = 0
-        conv_losses = conv_games - conv_wins - conv_draws
-        recov_draws = 0
-        recovery_saves = recov_wins + recov_draws
-        return EndgameCategoryStats(
-            endgame_class=cast(Any, endgame_class),
-            label=cast(Any, endgame_class.capitalize()),
-            wins=conv_wins,
-            draws=recov_draws,
-            losses=conv_losses,
-            total=conv_games + recov_games,
-            win_pct=round(conv_wins / (conv_games + recov_games) * 100, 1),
-            draw_pct=0.0,
-            loss_pct=round(conv_losses / (conv_games + recov_games) * 100, 1),
-            conversion=ConversionRecoveryStats(
-                conversion_pct=(round(conv_wins / conv_games * 100, 1) if conv_games else 0.0),
-                conversion_games=conv_games,
-                conversion_wins=conv_wins,
-                conversion_draws=conv_draws,
-                conversion_losses=conv_losses,
-                recovery_pct=(round(recovery_saves / recov_games * 100, 1) if recov_games else 0.0),
-                recovery_games=recov_games,
-                recovery_saves=recovery_saves,
-                recovery_wins=recov_wins,
-                recovery_draws=recov_draws,
-                opponent_conversion_pct=None,
-                opponent_conversion_games=recov_games,
-                opponent_recovery_pct=None,
-                opponent_recovery_games=conv_games,
-            ),
-        )
-
-    def _make_stats(
-        self,
-        categories: list[Any],
-        categories_by_tc: Any = None,
-    ) -> Any:
-        """Build an EndgameStatsResponse with or without categories_by_tc."""
-        from app.schemas.endgames import EndgameStatsResponse
-
-        return EndgameStatsResponse(
-            categories=categories,
-            total_games=100,
-            endgame_games=50,
-            categories_by_tc=categories_by_tc,
-        )
-
-    def _make_response(self, stats: Any) -> Any:
-        """Build a minimal EndgameOverviewResponse containing the given stats."""
-        return EndgameOverviewResponse.model_construct(
-            stats=stats,
-            time_pressure_chart=None,
-            performance=None,
-        )
-
     def test_per_tc_producer_emits_endgame_type_subsections(self) -> None:
-        """The per-TC producer reads categories_by_tc and emits endgame_type_<tc>
+        """The per-TC producer reads type_categories and emits endgame_type_<tc>
         findings (Conv/Recov per class) carrying a {endgame_class, time_control} dim."""
         from app.services.insights_service import _findings_endgame_type_by_tc
 
         # blitz clears the per-TC games gate (totals 30 + 23 = 53 >= 20).
-        tc_cats = {
-            "blitz": [
-                self._make_category(
-                    "rook", conv_games=20, conv_wins=16, recov_games=10, recov_wins=3
-                ),
-                self._make_category(
-                    "pawn", conv_games=15, conv_wins=12, recov_games=8, recov_wins=2
-                ),
+        blitz = make_ranked_tc(
+            "blitz",
+            type_categories=[
+                make_category("rook", conv_games=20, conv_wins=16, recov_games=10, recov_wins=3),
+                make_category("pawn", conv_games=15, conv_wins=12, recov_games=8, recov_wins=2),
             ],
-        }
-        stats = self._make_stats([], categories_by_tc=cast(Any, tc_cats))
-        resp = self._make_response(stats)
+        )
 
-        findings = _findings_endgame_type_by_tc(resp, "all_time")
+        findings = _findings_endgame_type_by_tc([blitz], "all_time")
 
         assert findings, "expected per-TC Endgame Type findings"
         assert all(f.subsection_id == "endgame_type_blitz" for f in findings)
@@ -1465,22 +1572,28 @@ class TestD15LlmPathInvariant:
         # win_rate is NOT emitted — the renderer's per-TC WDL table carries that framing.
         assert "win_rate" not in metrics
 
-    def test_no_findings_when_categories_by_tc_absent(self) -> None:
-        """D-15 reversal: the pooled `categories` are no longer the type-breakdown
-        source. With categories_by_tc=None the producer emits nothing (section omitted)."""
+    def test_one_subsection_per_ranked_tc(self) -> None:
         from app.services.insights_service import _findings_endgame_type_by_tc
 
-        stats = self._make_stats(
+        cats = [make_category("rook", conv_games=20, conv_wins=16, recov_games=10, recov_wins=3)]
+        findings = _findings_endgame_type_by_tc(
             [
-                self._make_category(
-                    "rook", conv_games=20, conv_wins=16, recov_games=10, recov_wins=3
-                )
+                make_ranked_tc("bullet", type_categories=cats),
+                make_ranked_tc("rapid", type_categories=cats),
             ],
-            categories_by_tc=None,
+            "all_time",
         )
-        resp = self._make_response(stats)
+        assert {f.subsection_id for f in findings} == {
+            "endgame_type_bullet",
+            "endgame_type_rapid",
+        }
 
-        assert _findings_endgame_type_by_tc(resp, "all_time") == []
+    def test_no_findings_when_type_categories_absent(self) -> None:
+        """A ranked TC without type rows (no endgames) emits nothing (section omitted)."""
+        from app.services.insights_service import _findings_endgame_type_by_tc
+
+        assert _findings_endgame_type_by_tc([make_ranked_tc("blitz")], "all_time") == []
+        assert _findings_endgame_type_by_tc([], "all_time") == []
 
     def test_tc_below_game_gate_is_omitted(self) -> None:
         """A TC whose summed endgame games fall below MIN_GAMES_PER_TC_CARD emits no findings."""
@@ -1489,12 +1602,11 @@ class TestD15LlmPathInvariant:
 
         # rapid total = 5 + 3 = 8, below the gate.
         assert 8 < MIN_GAMES_PER_TC_CARD
-        tc_cats = {
-            "rapid": [
-                self._make_category("rook", conv_games=5, conv_wins=2, recov_games=3, recov_wins=1),
+        rapid = make_ranked_tc(
+            "rapid",
+            type_categories=[
+                make_category("rook", conv_games=5, conv_wins=2, recov_games=3, recov_wins=1)
             ],
-        }
-        stats = self._make_stats([], categories_by_tc=cast(Any, tc_cats))
-        resp = self._make_response(stats)
+        )
 
-        assert _findings_endgame_type_by_tc(resp, "all_time") == []
+        assert _findings_endgame_type_by_tc([rapid], "all_time") == []

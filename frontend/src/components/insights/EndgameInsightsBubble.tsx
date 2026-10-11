@@ -106,9 +106,9 @@ function GenerateButton({
  * Retry is gated on `blockedReason` exactly like Generate.
  *
  * WHY (FLAWCHESS-AG): this button used to be unconditionally enabled, so once
- * any failure put the block into the error state the user could apply a
- * blocking filter and keep firing requests the router rejects with 400
- * filters_not_supported — the one path around getBlockedReason.
+ * any failure put the block into the error state the user could keep firing
+ * requests while a blocking condition held — the one path around
+ * getBlockedReason.
  */
 function RetryButton({
   disabled,

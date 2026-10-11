@@ -27,7 +27,15 @@ export interface SectionInsight {
   bullets: string[];   // 0..2 items, each <= 200 chars (~20 words)
 }
 
+/** Pending / error view of the Generate mutation, shared across the Stats tab's two mounts. */
+export interface InsightsGenerateState {
+  isPending: boolean;
+  isError: boolean;
+}
+
 export interface EndgameInsightsReport {
+  /** v49 (238 UAT): 1-2 sentence takeaway, the quoted header of the Insights block. */
+  summary: string;
   /** v9: Player profile paragraph (~3-5 sentences). Always populated. */
   player_profile: string;
   /**

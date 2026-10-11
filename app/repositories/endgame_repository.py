@@ -4,9 +4,7 @@ Functions:
 - query_endgame_entry_rows: one row per (game, endgame_class) span meeting the ply threshold
 - query_endgame_games: paginated Game objects for a given endgame class
 - query_endgame_performance_rows: endgame and non-endgame game rows for performance comparison
-- query_endgame_timeline_rows: rows for rolling-window time series, overall and per-type
 - query_clock_stats_rows: rows for time pressure at endgame entry (Phase 54)
-- query_endgame_elo_timeline_rows: all-game rows per-combo for Phase 57 Endgame ELO timeline (Phase 87.5 D-06 rebuild on Endgame Score Gap; function name kept as-is for internal grep continuity)
 """
 
 import datetime
@@ -22,7 +20,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.game import Game
 from app.models.game_position import GamePosition
-from app.repositories.query_utils import apply_game_filters
+from app.repositories.query_utils import apply_game_filters, game_ids_any_predicate
 from app.schemas.endgames import EndgameClass
 
 # Piece-count threshold for endgame classification (Lichess definition).
@@ -40,7 +38,7 @@ ENDGAME_PIECE_COUNT_THRESHOLD = 6
 ENDGAME_PLY_THRESHOLD = 6
 
 
-def _any_endgame_ply_subquery(user_id: int) -> Any:
+def _any_endgame_ply_subquery(user_id: int, game_ids: Sequence[int] | None = None) -> Any:
     """Subquery returning game_ids that spent >= ENDGAME_PLY_THRESHOLD plies in any endgame class.
 
     Single source of truth for "game reached an endgame phase" across the entire endgame
@@ -53,14 +51,21 @@ def _any_endgame_ply_subquery(user_id: int) -> Any:
     Used by `count_endgame_games`, `query_endgame_performance_rows`, and indirectly by
     `query_endgame_bucket_rows` (which re-applies the same HAVING on its own subquery).
     Per quick-260414-ae4.
+
+    Phase 238: `game_ids` (default None = unchanged SQL) additionally restricts the
+    per-game aggregation to the given game ids, so the on-read ranked path scans only
+    the ranked games' positions instead of every endgame position the user has. The
+    HAVING counts rows within each retained game, so the restriction does not change
+    any retained game's count.
     """
+    stmt = select(GamePosition.game_id).where(
+        GamePosition.user_id == user_id,
+        GamePosition.endgame_class.isnot(None),
+    )
+    if game_ids is not None:
+        stmt = stmt.where(game_ids_any_predicate(GamePosition.game_id, game_ids))
     return (
-        select(GamePosition.game_id)
-        .where(
-            GamePosition.user_id == user_id,
-            GamePosition.endgame_class.isnot(None),
-        )
-        .group_by(GamePosition.game_id)
+        stmt.group_by(GamePosition.game_id)
         .having(func.count(GamePosition.ply) >= ENDGAME_PLY_THRESHOLD)
         .subquery("any_endgame_game_ids")
     )
@@ -152,6 +157,7 @@ async def query_endgame_entry_rows(
     to_date: datetime.date | None,
     opponent_gap_min: int | None = None,
     opponent_gap_max: int | None = None,
+    game_ids: Sequence[int] | None = None,
 ) -> list[Row[Any]]:
     """Return one row per (game, endgame_class) span meeting the ply threshold.
 
@@ -166,7 +172,7 @@ async def query_endgame_entry_rows(
     where endgame_class is an integer (1-6, see EndgameClassInt).
 
     Phase 98 fix: `time_control_bucket` (col 9) lets the per-(class × TC) type
-    breakdown (`_aggregate_endgame_stats_by_tc`) group these per-class spans by TC.
+    breakdown (`aggregate_endgame_stats_by_tc`) group these per-class spans by TC.
     The earlier implementation grouped `query_endgame_bucket_rows` (one row per
     game, class = first endgame position) which classified almost every game as
     "mixed", leaving the rook/minor/pawn/queen tiles empty.
@@ -185,6 +191,9 @@ async def query_endgame_entry_rows(
     sort key of the ix_gp_user_endgame_game index covering this query.
 
     NO color filter is applied per D-02 — stats cover both white and black games.
+
+    Phase 238: `game_ids` (default None = unchanged SQL) restricts the rows, and the inner
+    per-span aggregation, to the on-read ranked-sample game ids.
     """
     # Single subquery: group by (game_id, endgame_class), count plies per span,
     # AND grab eval_cp/eval_mate at entry ply via array_agg ordered by ply.
@@ -203,23 +212,26 @@ async def query_endgame_entry_rows(
         ARRAY(SmallIntegerType),
     )[1]
 
+    span_stmt = select(
+        GamePosition.game_id.label("game_id"),
+        GamePosition.endgame_class.label("endgame_class"),
+        entry_eval_cp_agg.label("entry_eval_cp"),
+        entry_eval_mate_agg.label("entry_eval_mate"),
+        # Phase 87.1 (SEED-016 D-06): span_min_ply orders spans within a game
+        # so the LEAD() window can look up the NEXT span's entry eval. Computed
+        # during the existing GROUP BY at zero extra scan cost (ply is already
+        # the sort key of ix_gp_user_endgame_game).
+        func.min(GamePosition.ply).label("span_min_ply"),
+    ).where(
+        GamePosition.user_id == user_id,
+        GamePosition.endgame_class.isnot(None),
+    )
+    if game_ids is not None:
+        # Phase 238: aggregate only the ranked games' positions (bound-array ANY, never
+        # an IN (subquery); see query_clock_stats_rows for the planner hang).
+        span_stmt = span_stmt.where(game_ids_any_predicate(GamePosition.game_id, game_ids))
     span_subq = (
-        select(
-            GamePosition.game_id.label("game_id"),
-            GamePosition.endgame_class.label("endgame_class"),
-            entry_eval_cp_agg.label("entry_eval_cp"),
-            entry_eval_mate_agg.label("entry_eval_mate"),
-            # Phase 87.1 (SEED-016 D-06): span_min_ply orders spans within a game
-            # so the LEAD() window can look up the NEXT span's entry eval. Computed
-            # during the existing GROUP BY at zero extra scan cost (ply is already
-            # the sort key of ix_gp_user_endgame_game).
-            func.min(GamePosition.ply).label("span_min_ply"),
-        )
-        .where(
-            GamePosition.user_id == user_id,
-            GamePosition.endgame_class.isnot(None),
-        )
-        .group_by(GamePosition.game_id, GamePosition.endgame_class)
+        span_stmt.group_by(GamePosition.game_id, GamePosition.endgame_class)
         .having(func.count(GamePosition.ply) >= ENDGAME_PLY_THRESHOLD)
         .subquery("span")
     )
@@ -289,6 +301,7 @@ async def query_endgame_entry_rows(
         to_date=to_date,
         opponent_gap_min=opponent_gap_min,
         opponent_gap_max=opponent_gap_max,
+        game_ids=game_ids,
     )
 
     result = await session.execute(stmt)
@@ -306,6 +319,7 @@ async def query_endgame_bucket_rows(
     to_date: datetime.date | None,
     opponent_gap_min: int | None = None,
     opponent_gap_max: int | None = None,
+    game_ids: Sequence[int] | None = None,
 ) -> list[Row[Any]]:
     """Return exactly one row per endgame game for conv/even/recov bucketing.
 
@@ -331,7 +345,7 @@ async def query_endgame_bucket_rows(
     Since this query groups by game_id (one row per game), the LEAD partition
     always contains a single row — both next-eval columns are always NULL,
     making every bucket row a "terminal span" that uses the game result as exit
-    score in `_compute_span_gap`. This is semantically correct for the per-game
+    score in `compute_span_gap`. This is semantically correct for the per-game
     bucket aggregation.
 
     Semantics:
@@ -341,6 +355,9 @@ async def query_endgame_bucket_rows(
       _classify_endgame_bucket applies the user-color flip (REFAC-02).
     - NULL eval (engine error / not yet backfilled) routes to the "parity" bucket
       via NULL-handling in _classify_endgame_bucket.
+
+    Phase 238: `game_ids` (default None = unchanged SQL) restricts the rows, and the inner
+    per-game aggregation, to the on-read ranked-sample game ids.
     """
     # Single per-game aggregation: pull entry endgame_class, eval_cp, eval_mate
     # from one index-only scan over ix_gp_user_endgame_game (INCLUDE(eval_cp, eval_mate)).
@@ -360,23 +377,27 @@ async def query_endgame_bucket_rows(
         ARRAY(SmallIntegerType),
     )[1]
 
+    first_endgame_stmt = select(
+        GamePosition.game_id.label("game_id"),
+        entry_endgame_class_agg.label("endgame_class"),
+        entry_eval_cp_agg.label("entry_eval_cp"),
+        entry_eval_mate_agg.label("entry_eval_mate"),
+        # Phase 97: span_min_ply used as the LEAD() window ordering key.
+        # Since bucket_rows groups by game_id (one row per game), the LEAD
+        # partition contains exactly one row so next_entry_eval_* are always
+        # NULL — but the LEAD() syntax requires an ORDER BY column.
+        func.min(GamePosition.ply).label("span_min_ply"),
+    ).where(
+        GamePosition.user_id == user_id,
+        GamePosition.endgame_class.isnot(None),
+    )
+    if game_ids is not None:
+        # Phase 238: aggregate only the ranked games' positions (bound-array ANY).
+        first_endgame_stmt = first_endgame_stmt.where(
+            game_ids_any_predicate(GamePosition.game_id, game_ids)
+        )
     span_subq = (
-        select(
-            GamePosition.game_id.label("game_id"),
-            entry_endgame_class_agg.label("endgame_class"),
-            entry_eval_cp_agg.label("entry_eval_cp"),
-            entry_eval_mate_agg.label("entry_eval_mate"),
-            # Phase 97: span_min_ply used as the LEAD() window ordering key.
-            # Since bucket_rows groups by game_id (one row per game), the LEAD
-            # partition contains exactly one row so next_entry_eval_* are always
-            # NULL — but the LEAD() syntax requires an ORDER BY column.
-            func.min(GamePosition.ply).label("span_min_ply"),
-        )
-        .where(
-            GamePosition.user_id == user_id,
-            GamePosition.endgame_class.isnot(None),
-        )
-        .group_by(GamePosition.game_id)
+        first_endgame_stmt.group_by(GamePosition.game_id)
         .having(func.count(GamePosition.ply) >= ENDGAME_PLY_THRESHOLD)
         .subquery("first_endgame")
     )
@@ -436,6 +457,7 @@ async def query_endgame_bucket_rows(
         to_date=to_date,
         opponent_gap_min=opponent_gap_min,
         opponent_gap_max=opponent_gap_max,
+        game_ids=game_ids,
     )
 
     result = await session.execute(stmt)
@@ -519,11 +541,6 @@ async def query_endgame_games(
     return games, matched_count
 
 
-# Integer values for all six endgame classes — used in per-type timeline queries.
-# Avoids importing from endgame_service which would create a circular import.
-_ENDGAME_CLASS_INTS = range(1, 7)
-
-
 async def query_endgame_performance_rows(
     session: AsyncSession,
     user_id: int,
@@ -535,6 +552,7 @@ async def query_endgame_performance_rows(
     to_date: datetime.date | None,
     opponent_gap_min: int | None = None,
     opponent_gap_max: int | None = None,
+    game_ids: Sequence[int] | None = None,
 ) -> tuple[list[Row[Any]], list[Row[Any]]]:
     """Return endgame and non-endgame game rows for performance comparison.
 
@@ -556,8 +574,11 @@ async def query_endgame_performance_rows(
     timeline.
 
     Rows are ordered by played_at ASC for chronological processing.
+
+    Phase 238: `game_ids` (default None) restricts both row sets, and the endgame
+    subquery, to the given ranked-sample game ids.
     """
-    endgame_game_ids_subq = _any_endgame_ply_subquery(user_id)
+    endgame_game_ids_subq = _any_endgame_ply_subquery(user_id, game_ids)
 
     # Base select for game rows — columns needed for WDL derivation, timeline,
     # and (Phase 87.5) per-combo partitioning. Per-side opponent ratings are
@@ -589,6 +610,7 @@ async def query_endgame_performance_rows(
         to_date=to_date,
         opponent_gap_min=opponent_gap_min,
         opponent_gap_max=opponent_gap_max,
+        game_ids=game_ids,
     )
 
     # Non-endgame games: id NOT in the endgame subquery
@@ -605,6 +627,7 @@ async def query_endgame_performance_rows(
         to_date=to_date,
         opponent_gap_min=opponent_gap_min,
         opponent_gap_max=opponent_gap_max,
+        game_ids=game_ids,
     )
 
     # Execute sequentially — AsyncSession is not safe for concurrent use from
@@ -614,146 +637,6 @@ async def query_endgame_performance_rows(
     non_endgame_result = await session.execute(non_endgame_stmt)
 
     return list(endgame_result.fetchall()), list(non_endgame_result.fetchall())
-
-
-async def query_endgame_timeline_rows(
-    session: AsyncSession,
-    user_id: int,
-    time_control: Sequence[str] | None,
-    platform: Sequence[str] | None,
-    rated: bool | None,
-    opponent_type: str,
-    from_date: datetime.date | None,
-    to_date: datetime.date | None,
-    opponent_gap_min: int | None = None,
-    opponent_gap_max: int | None = None,
-) -> tuple[list[Any], list[Any], dict[int, list[Any]]]:
-    """Return rows for rolling-window time series (overall and per endgame class).
-
-    Issues exactly 2 queries against game_positions (sequential execution is
-    mandatory on the same AsyncSession).
-
-    Query A: one pass over game_positions grouped by (game_id, endgame_class) with
-    HAVING count(ply) >= ENDGAME_PLY_THRESHOLD. Returns one row per qualifying
-    (game, class) span including the endgame_class column so Python can bucket them.
-    The overall endgame series is derived from these rows by deduplicating per game_id.
-
-    Query B: non-endgame games (games never reaching any qualifying endgame span),
-    derived via NOT IN on the game_ids projected from the SAME (game_id, endgame_class)
-    subquery used by Query A — one shared scan, one consistent definition of
-    "qualified for any endgame class".
-
-    Returns: (endgame_rows, non_endgame_rows, per_type_rows)
-    where per_type_rows is dict[class_int, list[(played_at, result, user_color)]].
-    All lists in per_type_rows are ordered by played_at ASC.
-    All 6 class integers (1..6) are initialized (to empty lists) for deterministic iteration.
-
-    Each row in endgame_rows and non_endgame_rows is (played_at, result, user_color).
-    """
-    # --- Query A: one pass returns (game_id, endgame_class, played_at, result, user_color) ---
-    # Subquery: (game_id, endgame_class) pairs with >= ENDGAME_PLY_THRESHOLD plies.
-    # Uses ix_gp_user_endgame_game index for an Index Only Scan.
-    per_class_subq = (
-        select(
-            GamePosition.game_id.label("game_id"),
-            GamePosition.endgame_class.label("endgame_class"),
-        )
-        .where(
-            GamePosition.user_id == user_id,
-            GamePosition.endgame_class.isnot(None),
-        )
-        .group_by(GamePosition.game_id, GamePosition.endgame_class)
-        .having(func.count(GamePosition.ply) >= ENDGAME_PLY_THRESHOLD)
-        .subquery("per_class_spans")
-    )
-
-    # Join Game to the per-class subquery; select game data + class column.
-    per_class_stmt = (
-        select(
-            Game.id.label("game_id"),
-            per_class_subq.c.endgame_class,
-            Game.played_at,
-            Game.result,
-            Game.user_color,
-        )
-        .join(per_class_subq, Game.id == per_class_subq.c.game_id)
-        .where(
-            Game.user_id == user_id,
-            Game.played_at.isnot(None),
-        )
-        .order_by(Game.played_at.asc())
-    )
-    per_class_stmt = apply_game_filters(
-        per_class_stmt,
-        time_control=time_control,
-        platform=platform,
-        rated=rated,
-        opponent_type=opponent_type,
-        from_date=from_date,
-        to_date=to_date,
-        opponent_gap_min=opponent_gap_min,
-        opponent_gap_max=opponent_gap_max,
-    )
-
-    # Execute sequentially — AsyncSession is not safe for concurrent use from
-    # multiple coroutines, and a single session uses one DB connection so there's
-    # no concurrency benefit from asyncio.gather here.
-    per_class_result = await session.execute(per_class_stmt)
-    per_class_raw = list(per_class_result.fetchall())
-
-    # --- Python-side bucketing (no extra DB round trips) ---
-    # Initialize all 6 class slots to empty lists so downstream callers can
-    # iterate deterministically even when some classes have no data.
-    per_type_rows: dict[int, list[Any]] = {ci: [] for ci in _ENDGAME_CLASS_INTS}
-
-    # Deduplicate per game_id for the overall endgame series.
-    # Walk rows once: bucket by class, and collect one (played_at, result, user_color)
-    # row per distinct game_id (first seen = earliest class span, already ordered ASC).
-    seen_game_ids: set[int] = set()
-    endgame_rows_unsorted: list[tuple[Any, ...]] = []
-
-    for row in per_class_raw:
-        game_id = row.game_id
-        class_int = row.endgame_class
-        # Strip endgame_class: service layer expects 3-tuple (played_at, result, user_color)
-        three_tuple = (row.played_at, row.result, row.user_color)
-        per_type_rows[class_int].append(three_tuple)
-        if game_id not in seen_game_ids:
-            seen_game_ids.add(game_id)
-            endgame_rows_unsorted.append(three_tuple)
-
-    # Sort the deduplicated overall series by played_at ASC (same ordering as Query B).
-    endgame_rows: list[Any] = sorted(endgame_rows_unsorted, key=lambda r: r[0])
-
-    # --- Query B: non-endgame games (games never reaching any qualifying span) ---
-    # Reuse per_class_subq from Query A — its game_id column yields duplicates
-    # across classes, but Game.id.notin_(...) handles that correctly. This
-    # guarantees identical semantics (same HAVING, same class filter) with a
-    # single GamePosition scan shared between the two branches.
-    game_cols = select(Game.played_at, Game.result, Game.user_color).where(
-        Game.user_id == user_id,
-        Game.played_at.isnot(None),
-    )
-
-    non_endgame_stmt = game_cols.where(Game.id.notin_(select(per_class_subq.c.game_id))).order_by(
-        Game.played_at.asc()
-    )
-    non_endgame_stmt = apply_game_filters(
-        non_endgame_stmt,
-        time_control=time_control,
-        platform=platform,
-        rated=rated,
-        opponent_type=opponent_type,
-        from_date=from_date,
-        to_date=to_date,
-        opponent_gap_min=opponent_gap_min,
-        opponent_gap_max=opponent_gap_max,
-    )
-
-    non_endgame_result = await session.execute(non_endgame_stmt)
-    non_endgame_rows: list[Row[Any]] = list(non_endgame_result.fetchall())
-
-    return endgame_rows, non_endgame_rows, per_type_rows
 
 
 async def query_clock_stats_rows(
@@ -767,6 +650,7 @@ async def query_clock_stats_rows(
     to_date: datetime.date | None,
     opponent_gap_min: int | None = None,
     opponent_gap_max: int | None = None,
+    game_ids: Sequence[int] | None = None,
 ) -> list[Row[Any]]:
     """Return rows for Time Pressure at Endgame Entry and Time Pressure vs Performance.
 
@@ -792,7 +676,7 @@ async def query_clock_stats_rows(
         to build a weekly rolling-window series (quick-260416-w3q). Unused by the
         existing table/chart consumers, which ignore trailing columns.
 
-    Ordering by ply ensures _extract_entry_clocks finds the earliest user-parity and
+    Ordering by ply ensures extract_entry_clocks finds the earliest user-parity and
     opp-parity clocks (the moment the game first reached an endgame phase, regardless
     of which endgame class came first).
 
@@ -805,6 +689,9 @@ async def query_clock_stats_rows(
     fragile Python-side collapse in _compute_clock_pressure. The whole-game rule via
     _any_endgame_ply_subquery matches the rest of the endgame tab and makes both
     consumers straight-through aggregations.
+
+    Phase 238: `game_ids` (default None = unchanged SQL) restricts the rows, and the inner
+    per-game aggregation, to the on-read ranked-sample game ids.
     """
     # Aggregate full ply and clock arrays ordered by ply ascending.
     # Using type_coerce with ARRAY types so SQLAlchemy returns Python lists.
@@ -824,17 +711,20 @@ async def query_clock_stats_rows(
     # single scan — the IN form caused the planner to misestimate cardinality (every
     # row estimate at 1 vs ~110k actual) and pick a Nested Loop / Join Filter cross
     # comparison that hung indefinitely on users with many endgame games.
+    per_game_stmt = select(
+        GamePosition.game_id.label("game_id"),
+        ply_array_agg.label("ply_array"),
+        clock_array_agg.label("clock_array"),
+    ).where(
+        GamePosition.user_id == user_id,
+        GamePosition.endgame_class.isnot(None),
+    )
+    if game_ids is not None:
+        # Phase 238: aggregate only the ranked games' positions. A bound-array ANY, not
+        # the IN (subquery) form the comment above documents as hanging the planner.
+        per_game_stmt = per_game_stmt.where(game_ids_any_predicate(GamePosition.game_id, game_ids))
     per_game_subq = (
-        select(
-            GamePosition.game_id.label("game_id"),
-            ply_array_agg.label("ply_array"),
-            clock_array_agg.label("clock_array"),
-        )
-        .where(
-            GamePosition.user_id == user_id,
-            GamePosition.endgame_class.isnot(None),
-        )
-        .group_by(GamePosition.game_id)
+        per_game_stmt.group_by(GamePosition.game_id)
         .having(func.count(GamePosition.ply) >= ENDGAME_PLY_THRESHOLD)
         .subquery("clock_per_game")
     )
@@ -870,89 +760,14 @@ async def query_clock_stats_rows(
         to_date=to_date,
         opponent_gap_min=opponent_gap_min,
         opponent_gap_max=opponent_gap_max,
+        game_ids=game_ids,
     )
 
     result = await session.execute(stmt)
     return list(result.fetchall())
 
 
-async def query_endgame_elo_timeline_rows(
-    session: AsyncSession,
-    user_id: int,
-    time_control: Sequence[str] | None,
-    platform: Sequence[str] | None,
-    rated: bool | None,
-    opponent_type: str,
-    from_date: datetime.date | None,
-    to_date: datetime.date | None,
-    opponent_gap_min: int | None = None,
-    opponent_gap_max: int | None = None,
-) -> list[Row[Any]]:
-    """Return all-game rows for the Phase 57 Endgame ELO timeline (Phase 87.5 D-06
-    rebuild on Endgame Score Gap; function name preserved for internal grep continuity).
-
-    Returns one row per ALL user games (endgame + non-endgame) for the combo:
-
-        (played_at, platform, time_control_bucket, user_color,
-         white_rating, black_rating)
-
-    Drives per-window mean(user_rating) for the Actual ELO line (D-04).
-
-    Phase 87.5 D-06: the prior ``bucket_rows`` subquery (which projected
-    ``eval_cp / eval_mate / result`` for the deleted ``_windowed_conv_delta_es``
-    aggregator) was removed wholesale. With the additive K formula deriving the
-    Endgame ELO line from the per-combo Endgame Score Gap series (built upstream
-    from ``query_endgame_performance_rows``), the bucket subquery's eval columns
-    are dead weight.
-
-    Filters:
-    - Filter by Game.user_id == user_id at the TOP LEVEL (user scoping).
-    - Use apply_game_filters for time_control/platform/rated/opponent_type/
-      from_date/to_date/opponent_gap_{min,max}. Never duplicate filter logic.
-    - Exclude rows with NULL played_at.
-    - Exclude rows where white_rating IS NULL OR black_rating IS NULL (needed
-      for per-side Elo math; a game without ratings can't contribute).
-    - ORDER BY played_at ASC for chronological walking by the service layer.
-
-    The from_date/to_date params are deliberately forwarded to apply_game_filters
-    but the orchestrator passes None so the rolling window pre-fills (Pitfall 2
-    in 57-RESEARCH.md). Callers filter emitted timeline points afterwards.
-    """
-    all_stmt = (
-        select(
-            Game.played_at,
-            Game.platform,
-            Game.time_control_bucket,
-            Game.user_color,
-            Game.white_rating,
-            Game.black_rating,
-        )
-        .where(
-            Game.user_id == user_id,
-            Game.played_at.isnot(None),
-            Game.white_rating.isnot(None),
-            Game.black_rating.isnot(None),
-        )
-        .order_by(Game.played_at.asc())
-    )
-    all_stmt = apply_game_filters(
-        all_stmt,
-        time_control=time_control,
-        platform=platform,
-        rated=rated,
-        opponent_type=opponent_type,
-        from_date=from_date,
-        to_date=to_date,
-        opponent_gap_min=opponent_gap_min,
-        opponent_gap_max=opponent_gap_max,
-    )
-
-    all_result = await session.execute(all_stmt)
-    return list(all_result.fetchall())
-
-
 # Phase 88.1 (D-07 supersedes D-05, REVIEW.md CR-01): query_cohort_clock_rows
 # removed. The cohort layer was replaced by a same-game opponent-quintile split
-# in endgame_service._iterate_clock_rows / _build_quintile_bullets, which uses
-# only the existing query_clock_stats_rows. See 88-CONTEXT.md D-07 and
-# 88-VERIFICATION.md "Resolution Direction" (lines 177-220) for the design.
+# in endgame_service.iterate_clock_rows / build_quintile_bullets, which uses
+# only the existing query_clock_stats_rows. See 88-CONTEXT.md D-07 for the design.

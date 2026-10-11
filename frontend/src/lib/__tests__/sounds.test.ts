@@ -24,8 +24,7 @@
  * Each test re-imports the module fresh via vi.resetModules() + dynamic
  * import — sounds.ts caches Audio instances and listeners at module scope,
  * which would otherwise bleed a prior test's mocked Audio constructor across
- * test cases (mirrors the resetModules precedent in
- * EndgameTypeCard.test.tsx).
+ * test cases.
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';

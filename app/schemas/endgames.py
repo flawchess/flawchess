@@ -3,29 +3,30 @@
 Provides response models for:
 - GET /api/endgames/stats: per-category W/D/L with inline conversion/recovery stats
 - GET /api/endgames/games: paginated game list filtered by endgame class
-- GET /api/endgames/overview: composed response including time pressure cards (Phase 88)
+- GET /api/endgames/ranked-stats: filter-free per-TC ranked-sample payload for the
+  percentile-first Stats tab (Phase 238; EndgameRankedStatsResponse)
 """
 
 import datetime
 from typing import Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel
 
 from app.schemas.openings import GameRecord
+from app.services.global_percentile_cdf import CdfMetricId
 
 EndgameClass = Literal["rook", "minor_piece", "pawn", "queen", "mixed", "pawnless"]
 EndgameLabel = Literal["Rook", "Minor Piece", "Pawn", "Queen", "Mixed", "Pawnless"]
 
-# Phase 94.4 D-07 bullet 4: time-control union used as the key type for the
-# rating_anchors block on EndgameOverviewResponse. Inline string union matches
-# the existing `tc: 'bullet' | 'blitz' | 'rapid' | 'classical'` pattern used on
-# TimePressureTcCard and EndgameEloTimelineCombo — no separate Literal alias is
-# defined elsewhere in this module.
+# Time-control union used as the key type for the per-TC ranked payload and the
+# rating anchors. Inline string union matches the
+# `tc: 'bullet' | 'blitz' | 'rapid' | 'classical'` pattern used on
+# EndgameEloTimelineCombo and RankedTcStats.
 TimeControlBucket = Literal["bullet", "blitz", "rapid", "classical"]
 
 
 class RatingAnchorOut(BaseModel):
-    """Blended anchor + per-platform composition for the percentile chip tooltip.
+    """Blended anchor + per-platform composition for the ranked-metric popover.
 
     D-12 Reversal Amendment (CONTEXT 2026-05-27). The anchor is the
     game-weighted median of converted-chess.com + native-lichess ratings.
@@ -34,14 +35,14 @@ class RatingAnchorOut(BaseModel):
     `anchor_rating` is the blended Lichess-equivalent (post-conversion for
     chess.com games; native for lichess games). The per-platform game-count and
     native-median fields exist solely to support the four tooltip-disclosure
-    branches in `PercentileChipPopoverBody`:
+    branches in `RankedMetricPopover`:
       (a) Mixed user (n_chesscom_games > 0 AND n_lichess_games > 0): blended
           composition prose — names both platforms with their native medians.
       (b) Pure-lichess user (n_chesscom_games == 0): drops the chess.com clause;
           flags "native rating" so the user knows no conversion was applied.
       (c) Pure-chess.com user (n_lichess_games == 0): drops the lichess clause;
           discloses the ChessGoals snapshot conversion.
-      (d) Suppression (both counts == 0): chip suppresses entirely at the caller.
+      (d) Suppression (both counts == 0): the popover omits the anchor line at the caller.
 
     Provenance: populated from the `user_rating_anchors` row written by
     `app/services/user_benchmark_percentiles_service.py::compute_anchors_for_user`
@@ -53,42 +54,6 @@ class RatingAnchorOut(BaseModel):
     n_lichess_games: int
     chesscom_median_native: int | None = None
     lichess_median_native: int | None = None
-
-
-class PerTcBreakdownOut(BaseModel):
-    """One per-TC line for the percentile chip tooltip bullet 2.
-
-    Quick task 260527-q0b: aggregated chips (score-gap, achievable, parity,
-    conversion, recovery) expose a per-TC breakdown so users see concrete game
-    counts + per-TC value + per-TC percentile instead of the misleading "3000
-    games per time control" copy.
-
-    Branch semantics (frontend renders per-line accordingly):
-      - `value != None && percentile != None`: above floor with percentile;
-        renders `<tc>: <value> over <n_games> games -> <percentile> percentile`.
-      - `value != None && percentile == None`: above floor but CDF out-of-range;
-        backend emits, frontend DROPS the line. Backend stays honest about
-        wire shape; frontend is the renderer.
-      - `value == None && n_games > 0`: below the per-(metric, TC) inclusion
-        floor; renders `<tc>: insufficient games`.
-      - `n_games == 0`: backend SHOULD NOT emit; defensive frontend drop.
-
-    Fields:
-      tc: time-control bucket (matches TimeControlBucket Literal).
-      value: chip-cohort value (PercentileRow.value) for this TC; None when
-        below the inclusion floor.
-      n_games: user's game count in this TC (>= 0; 0 entries are NOT emitted).
-      percentile: per-TC cohort percentile in [0, 100]; None when above floor
-        but the CDF is out of range for the user's value.
-    """
-
-    tc: TimeControlBucket
-    value: float | None
-    n_games: int
-    percentile: float | None
-    # 260529-l1i: per-TC rating anchor for the two-line tooltip row; None when
-    # no anchor for this TC.
-    anchor: int | None = None
 
 
 class ConversionRecoveryStats(BaseModel):
@@ -153,9 +118,8 @@ class EndgameCategoryStats(BaseModel):
     conversion: ConversionRecoveryStats  # Inline, not a separate section (D-10)
 
     # Phase 87 follow-up: Wilson score-test p-value of this class's WDL vs 50%.
-    # Gated to None when `total < PVALUE_RELIABILITY_MIN_N`. Drives the per-card
-    # Score bullet sig-gating triple (n >= MIN_GAMES_FOR_RELIABLE_STATS AND
-    # isConfident(level) AND outside neutral band) in EndgameTypeCard.
+    # Gated to None when `total < PVALUE_RELIABILITY_MIN_N`. Kept on the
+    # response for compatibility; the TypeTable does not render it.
     score_p_value: float | None = None
 
     # Phase 87.1 (SEED-016, D-05): per-span mean Score Gap for this endgame type.
@@ -218,12 +182,6 @@ class EndgameStatsResponse(BaseModel):
     categories: list[EndgameCategoryStats]
     total_games: int  # Total games matching current filters (not just endgame games)
     endgame_games: int  # Games that reached an endgame phase
-    # Phase 98: per-(class × TC) rates for the collapsible endgame type cards.
-    # Optional for back-compat; frontend gates on presence before rendering.
-    # D-15: the LLM insights path reads `categories` (pooled) and never touches this field.
-    categories_by_tc: (
-        dict[Literal["bullet", "blitz", "rapid", "classical"], list[EndgameCategoryStats]] | None
-    ) = None
 
 
 class EndgameGamesResponse(BaseModel):
@@ -244,7 +202,7 @@ class EndgameGamesResponse(BaseModel):
 class EndgameWDLSummary(BaseModel):
     """W/D/L summary for a set of games (endgame or non-endgame).
 
-    Used in EndgamePerformanceResponse to compare endgame games vs non-endgame games.
+    Used in RankedOverallOut to compare endgame games vs non-endgame games.
     All percentages are 0-100.
     """
 
@@ -257,175 +215,13 @@ class EndgameWDLSummary(BaseModel):
     loss_pct: float
 
 
-class EndgamePerformanceResponse(BaseModel):
-    """Response for GET /api/endgames/performance (Phase 59-trimmed).
-
-    Provides WDL comparison for endgame vs non-endgame games and the endgame win rate.
-    Endgame games = games that spent >= ENDGAME_PLY_THRESHOLD plies in any endgame class.
-    Non-endgame games = games that never reached any endgame class above the threshold.
-    Phase 59 removed the aggregate conversion/recovery/skill fields (along with the
-    admin gauge UI that consumed them) — see .planning/phases/59-*/59-CONTEXT.md.
-    """
-
-    endgame_wdl: EndgameWDLSummary  # games reaching any endgame class >= ENDGAME_PLY_THRESHOLD
-    non_endgame_wdl: EndgameWDLSummary  # games NOT reaching any endgame class
-    endgame_win_rate: float  # wins / total for endgame games only, 0-100
-
-    # Phase 81 (D-11): entry-eval aggregation for "Endgame Start vs End" twin-tile section.
-    # Defaults are required so existing call sites that build the response without these
-    # fields (tests, prior callers) keep working — see Pitfall 7 in 81-RESEARCH.md.
-    entry_eval_mean_pawns: float = 0.0
-    """Avg Stockfish eval at endgame entry, signed from user's perspective, in pawns. 0.0 when n=0."""
-
-    entry_eval_n: int = 0
-    """Count of games contributing to entry_eval_mean_pawns. Mate scores and NULL evals excluded; per-game (deduped over multi-class entry_rows)."""
-
-    entry_eval_p_value: float | None = None
-    """Wald-z two-sided p-value of mean vs 0 cp. None when entry_eval_n < 10 (D-05 reliability gate)."""
-
-    endgame_score_p_value: float | None = None
-    """Wilson score-test two-sided p-value of endgame_wdl score vs 50%. None when endgame_wdl.total < 10."""
-
-    non_endgame_score_p_value: float | None = None
-    """Wilson score-test two-sided p-value of non_endgame_wdl score vs 50%. None when non_endgame_wdl.total < 10."""
-
-    entry_eval_ci_low_pawns: float | None = None
-    """Lower bound of 95% Wald-z CI on entry_eval_mean_pawns (signed, in pawns). None when entry_eval_n < 2."""
-
-    entry_eval_ci_high_pawns: float | None = None
-    """Upper bound of 95% Wald-z CI on entry_eval_mean_pawns (signed, in pawns). None when entry_eval_n < 2."""
-
-    # Phase 83 (D-21): Stockfish-baseline achievable score for "Where you start" tile.
-    # Defaults match the Phase 81 D-11 safe-empty pattern so existing call sites keep working.
-    entry_expected_score: float = 0.0
-    """Mean per-game expected score from endgame-entry eval, via Lichess sigmoid (mate->0/1). 0.0 when n=0."""
-
-    entry_expected_score_n: int = 0
-    """Count of games contributing to entry_expected_score. Mate INCLUDED (D-06); NULL evals excluded; |eval_cp| < 2000 clip applied."""
-
-    entry_expected_score_p_value: float | None = None
-    """Two-sided p-value vs 50%. None when entry_expected_score_n < 10."""
-
-    entry_expected_score_ci_low: float | None = None
-    """Lower bound of 95% CI on entry_expected_score. None when entry_expected_score_n < 2."""
-
-    entry_expected_score_ci_high: float | None = None
-    """Upper bound of 95% CI on entry_expected_score. None when entry_expected_score_n < 2."""
-
-    # Phase 85.1 (SEC1-10): paired one-sample z-test of per-game
-    # (actual_score - expected_score) across the same bucket_rows cohort as
-    # entry_expected_score. Server-authoritative — replaces the previous
-    # frontend derivation `endgame_score - entry_expected_score`.
-    # Defaults match the Phase 83 D-11 safe-empty pattern so existing call
-    # sites (older tests) construct the response without explicit args.
-    achievable_score_gap: float = 0.0
-    """Mean over the surviving bucket_rows of (actual_score_i - expected_score_i).
-    Always-present scalar (0.0 when n=0). Same cohort filter as entry_expected_score."""
-
-    achievable_score_gap_p_value: float | None = None
-    """Paired one-sample two-sided z-test p-value of mean diff vs 0.
-    None when surviving n < PVALUE_RELIABILITY_MIN_N (=10)."""
-
-    achievable_score_gap_ci_low: float | None = None
-    """Lower bound of 95% Wald-z CI on achievable_score_gap.
-    None when surviving n < 2 (Bessel variance undefined)."""
-
-    achievable_score_gap_ci_high: float | None = None
-    """Upper bound of 95% Wald-z CI on achievable_score_gap.
-    None when surviving n < 2 (Bessel variance undefined)."""
-
-    # Phase 94 (PCTL-02): cohort percentile of achievable_score_gap vs the
-    # Phase 93 global empirical CDF. Field name mirrors the MetricId literal
-    # "achievable_score_gap" used to key GLOBAL_PERCENTILE_CDF.
-    achievable_score_gap_percentile: float | None = None
-    """Cohort percentile (in [0, 100]) of achievable_score_gap vs the Phase 93
-    global empirical CDF (app/services/global_percentile_cdf.py).
-    None when ex_n < PVALUE_RELIABILITY_MIN_N (=10) — same single-N gate as
-    achievable_score_gap_p_value / _ci_*."""
-
-    # Quick task 260527-q0b: per-TC breakdown for the percentile chip tooltip
-    # bullet 2. Default [] for back-compat with existing test fixtures.
-    achievable_score_gap_per_tc: list[PerTcBreakdownOut] = []
-
-
-class EndgameTimelinePoint(BaseModel):
-    """Single data point in the per-type rolling-window time series, sampled weekly.
-
-    Represents the rolling win rate over the trailing `window` games of history
-    (see EndgameTimelineResponse.window), measured after the final game of one
-    ISO week. `date` is the Monday of that week as `YYYY-MM-DD`. Early points
-    with fewer than MIN_GAMES_FOR_TIMELINE games in the window are dropped.
-    """
-
-    date: str  # Monday of the ISO week, "YYYY-MM-DD"
-    win_rate: float  # rolling win rate (0.0-1.0) over trailing `window` games
-    game_count: int  # number of games in the rolling window (<= window)
-    # Count of games for THIS specific ISO week (NOT the trailing window).
-    # Drives the muted volume-bar series on the frontend Win Rate by Endgame Type
-    # chart so users see at a glance whether a weekly point is well-supported or
-    # marginal (just over the 10-game floor). Mirrors `per_week_endgame_games`
-    # on EndgameEloTimelinePoint (Phase 57.1).
-    per_week_game_count: int
-
-
-class EndgameOverallPoint(BaseModel):
-    """Single data point in the overall endgame vs non-endgame rolling-window time series.
-
-    Tracks two parallel series (endgame games, non-endgame games) merged by date.
-    Either win_rate may be None if that series has no games on this date's window.
-    """
-
-    date: str
-    endgame_win_rate: float | None  # rolling win rate for endgame games
-    non_endgame_win_rate: float | None  # rolling win rate for non-endgame games
-    endgame_game_count: int  # rolling window size for endgame series
-    non_endgame_game_count: int  # rolling window size for non-endgame series
-    window_size: int  # configured window size
-
-
-class EndgameTimelineResponse(BaseModel):
-    """Response for GET /api/endgames/timeline.
-
-    overall: merged endgame vs non-endgame series aligned by date.
-    per_type: per-endgame-class rolling win-rate series (keys are EndgameClass strings).
-    window: configured rolling window size.
-
-    Uses dict[str, ...] not dict[EndgameClass, ...] because Pydantic requires str keys
-    for JSON serialization of dict models.
-    """
-
-    overall: list[EndgameOverallPoint]
-    # per_type: per-endgame-class weekly win-rate series (keys are EndgameClass strings).
-    per_type: dict[str, list[EndgameTimelinePoint]]
-    window: int
-
-
 MaterialBucket = Literal["conversion", "parity", "recovery"]
 
 
-class MaterialRow(BaseModel):
-    """One row in the eval-stratified WDL table (section 2 of endgame-analysis-v2.md).
-
-    Represents the user's performance when entering endgames with a specific
-    Stockfish evaluation at the endgame-entry ply (REFAC-02 \u2014 material_imbalance
-    + 4-ply persistence proxy retired in favor of 100% Stockfish eval coverage):
-    conversion (eval >= +1.0), parity (eval between -1.0 and +1.0), or
-    recovery (eval <= -1.0). The bucket name is kept as `MaterialBucket` for
-    schema/wire compatibility, but the underlying signal is engine eval, not
-    material imbalance.
-    """
-
-    bucket: MaterialBucket
-    label: str  # "Conversion (>= +1.0)" | "Parity" | "Recovery (<= -1.0)"
-    games: int
-    win_pct: float  # 0-100
-    draw_pct: float  # 0-100
-    loss_pct: float  # 0-100
-    score: float  # 0.0-1.0, formula: (win_pct + draw_pct/2) / 100
-    # Phase 87.2 (D-05): opponent_score, opponent_games, diff_p_value, diff_ci_low,
-    # diff_ci_high deleted. The mirror-bucket Wald-z peer-bullet was mathematically
-    # degenerate (Conv-Gap == Recov-Gap by symmetry; Parity-Gap affine of gauge).
-    # Replaced by the eval-baseline Delta-ES Score Gap fields on ScoreGapMaterialResponse.
+# Phase 87.2 (D-05): opponent_score, opponent_games, diff_p_value, diff_ci_low,
+# diff_ci_high deleted. The mirror-bucket Wald-z peer-bullet was mathematically
+# degenerate (Conv-Gap == Recov-Gap by symmetry; Parity-Gap affine of gauge).
+# Replaced by the eval-baseline Delta-ES Score Gap (the achievable_score_gap metric).
 
 
 class ScoreGapTimelinePoint(BaseModel):
@@ -472,101 +268,6 @@ class ScoreGapTimelinePoint(BaseModel):
     endgame_score: float
     non_endgame_score: float
 
-
-class ScoreGapMaterialResponse(BaseModel):
-    """Endgame score difference + eval-stratified WDL table (Phase 53; REFAC-02 cutover).
-
-    endgame_score: user's score (0.0-1.0) in games that reached an endgame.
-    non_endgame_score: user's score in games that never reached an endgame.
-    score_difference: endgame_score - non_endgame_score (signed, can be negative).
-    material_rows: 3-row table — conversion / parity / recovery — split by the
-        Stockfish eval at the endgame-entry ply (>= +1.0 / between -1.0 and
-        +1.0 / <= -1.0). Field name kept as `material_rows` for wire-format
-        compatibility; the underlying signal is engine eval, not material.
-
-    Phase 87.2 (D-05/D-06): the 5 mirror-bucket rate-diff fields (skill, opp_skill,
-    skill_diff_p_value, skill_diff_ci_low, skill_diff_ci_high on this response;
-    opponent_score, opponent_games, diff_p_value, diff_ci_low, diff_ci_high on
-    MaterialRow) have been deleted and replaced by the 20 eval-baseline Delta-ES
-    Score Gap fields below (score_gap_{conv,parity,recov,skill}_{mean,n,
-    p_value,ci_low,ci_high}). The rate-based peer-bullet was mathematically
-    degenerate; see Phase 87.2 CONTEXT D-05.
-
-    quick-260417-o2l: `timeline` is a weekly rolling-window series of the score
-    difference between endgame and non-endgame games. Each side keeps its own
-    trailing `timeline_window`-game window so weeks with sparse activity on one
-    side still reflect the broader history of that side.
-    """
-
-    endgame_score: float  # 0.0-1.0
-    non_endgame_score: float  # 0.0-1.0
-    score_difference: float  # endgame_score - non_endgame_score (signed)
-    material_rows: list[MaterialRow]  # 3 rows: conversion / parity / recovery
-    timeline: list[ScoreGapTimelinePoint]
-    timeline_window: int
-
-    # Phase 85.1 (SEC1-08, SEC1-09): independent two-sample z-test on the
-    # chess-score difference between endgame and non-endgame cohorts.
-    # p_value is gated to None when min(endgame_wdl.total, non_endgame_wdl.total)
-    # < PVALUE_RELIABILITY_MIN_N (=10); CI bounds are gated when min n < 2.
-    # Defaults are None so existing tests that construct ScoreGapMaterialResponse
-    # without these fields keep working.
-    score_difference_p_value: float | None = None
-    """Two-sided p-value of (endgame_score - non_endgame_score) vs 0.
-    None when min(endgame_wdl.total, non_endgame_wdl.total) < PVALUE_RELIABILITY_MIN_N (=10)."""
-
-    score_difference_ci_low: float | None = None
-    """Lower bound of 95% Wald-z CI on score_difference. None when min(...) < 2."""
-
-    score_difference_ci_high: float | None = None
-    """Upper bound of 95% Wald-z CI on score_difference. None when min(...) < 2."""
-
-    # Phase 94 (PCTL-02): cohort percentile of score_difference (Endgame Score
-    # Gap) vs the Phase 93 global empirical CDF. Field name deliberately
-    # diverges from sibling `score_difference_*` — it mirrors the MetricId
-    # literal "score_gap" used to key GLOBAL_PERCENTILE_CDF (D-11).
-    # DO NOT rename to score_difference_percentile "for consistency": the
-    # field name is the public API and the wire-format frontend mirror
-    # depends on it.
-    score_gap_percentile: float | None = None
-    """Cohort percentile (in [0, 100]) of score_difference vs the Phase 93
-    global empirical CDF (app/services/global_percentile_cdf.py).
-    Field-name divergence from sibling score_difference_* is intentional —
-    the name mirrors MetricId "score_gap" (the CDF key), not the wire-format
-    score_difference value (Phase 94 D-11).
-    None when min(endgame_wdl.total, non_endgame_wdl.total) <
-    PVALUE_RELIABILITY_MIN_N (=10) — same dual-N gate as score_difference_p_value
-    / _ci_*."""
-
-    # Quick task 260527-q0b: per-TC breakdown for bullet 2 of the chip tooltip.
-    # Default [] preserves back-compat with constructor call sites in older tests.
-    score_gap_per_tc: list[PerTcBreakdownOut] = []
-
-    # Phase 87.2 (D-06): per-bucket Score Gap fields on the Section 2 response.
-    # Flat shape mirrors Phase 87.1's type_achievable_score_gap_* on EndgameCategoryStats.
-    # D-01: positive = user outperformed Stockfish baseline; negative = below.
-    # Defaults are None for backward compat with existing constructor call sites.
-
-    # Conversion bucket (eval_entry >= +1.0 pawn, user perspective):
-    score_gap_conv_mean: float | None = None
-    score_gap_conv_n: int | None = None
-    score_gap_conv_p_value: float | None = None
-    score_gap_conv_ci_low: float | None = None
-    score_gap_conv_ci_high: float | None = None
-    # Parity bucket (|eval_entry| <= 1.0 pawn):
-    score_gap_parity_mean: float | None = None
-    score_gap_parity_n: int | None = None
-    score_gap_parity_p_value: float | None = None
-    score_gap_parity_ci_low: float | None = None
-    score_gap_parity_ci_high: float | None = None
-
-    # Recovery bucket (eval_entry <= -1.0 pawn):
-    score_gap_recov_mean: float | None = None
-    score_gap_recov_n: int | None = None
-    score_gap_recov_p_value: float | None = None
-    score_gap_recov_ci_low: float | None = None
-    score_gap_recov_ci_high: float | None = None
-
     # Phase 87.4 (D-05): Skill composite retired end-to-end. The previous
     # score_gap_skill_* fields (ΔES Skill, equal-weighted mean of
     # the three bucket means) and endgame_skill_rate_mean (rate composite for
@@ -574,31 +275,6 @@ class ScoreGapMaterialResponse(BaseModel):
     # conversion-elo.md for rationale (no composite definition survived
     # scrutiny on cohort de-confounding, individual interpretation, temporal
     # stability, or the Phase 57 median-coincide invariant).
-
-
-class ClockStatsRow(BaseModel):
-    """One row in the Clock Stats table — one per time control (Phase 54).
-
-    Represents clock state at endgame entry for a specific time control bucket.
-    Games without clock data are excluded from time columns but counted for net timeout.
-    """
-
-    time_control: Literal["bullet", "blitz", "rapid", "classical"]
-    label: str  # "Bullet" | "Blitz" | "Rapid" | "Classical"
-    total_endgame_games: int
-    clock_games: int  # games where both user and opp clocks were available
-    user_avg_pct: (
-        float | None
-    )  # mean (user_clock / base_time_seconds * 100) at entry; None if no base_time_seconds
-    user_avg_seconds: float | None  # mean user_clock at entry in seconds; None if no clock data
-    opp_avg_pct: (
-        float | None
-    )  # mean (opp_clock / base_time_seconds * 100) at entry; None if no base_time_seconds
-    opp_avg_seconds: float | None  # mean opp_clock at entry in seconds; None if no clock data
-    avg_clock_diff_seconds: (
-        float | None
-    )  # mean (user_clock - opp_clock) in seconds at entry; None if no clock data
-    net_timeout_rate: float  # (timeout wins - timeout losses) / total_endgame_games * 100
 
 
 class ClockDiffTimelinePoint(BaseModel):
@@ -633,8 +309,8 @@ class ClockDiffTimelinePoint(BaseModel):
 class ClockDiffTimelineResponse(BaseModel):
     """Wrapper for the Average Clock Difference over Time line chart payload.
 
-    Plan 88-15 (CONTEXT §2 A-2): served on EndgameOverviewResponse alongside
-    time_pressure_cards. points is empty when no game in the user's filtered
+    Plan 88-15 (CONTEXT §2 A-2): returned by compute_clock_diff_timeline; the ranked service
+    reads its points per time control. points is empty when no game in the user's filtered
     set passes the clock-eligibility predicate — the frontend hides the chart
     in that case.
 
@@ -642,42 +318,6 @@ class ClockDiffTimelineResponse(BaseModel):
     """
 
     points: list[ClockDiffTimelinePoint]
-
-
-class TimePressureBucketPoint(BaseModel):
-    """One data point in the time-pressure performance chart (Phase 55).
-
-    bucket_index: 0-9 (0 = 0-10% time remaining, 9 = 90-100%)
-    bucket_label: "0-10%" ... "90-100%"
-    score: AVG score for this series in this bucket (0.0-1.0); None if game_count == 0
-    game_count: number of games backing this data point
-    """
-
-    bucket_index: int
-    bucket_label: str
-    score: float | None
-    game_count: int
-
-
-class TimePressureChartResponse(BaseModel):
-    """Time Pressure vs Performance chart data (Phase 55, quick-260416-pkx pooled shape).
-
-    user_series: 10 bucket points, pre-aggregated across all time controls that
-        passed MIN_GAMES_FOR_CLOCK_STATS. Each point is the weighted average
-        (score_sum / game_count) of user scores by user's time-remaining bucket.
-    opp_series: 10 bucket points, same aggregation but by opponent's bucket
-        and using 1 - user_score per game.
-    total_endgame_games: total endgame games across all contributing time controls
-        (used by the frontend for empty-state detection and the "Based on X" note).
-
-    Per-time-control rows were dropped in quick-260416-pkx — the frontend previously
-    re-aggregated them into a single series anyway, so the math now lives in the
-    service layer (closer to the data).
-    """
-
-    user_series: list[TimePressureBucketPoint]
-    opp_series: list[TimePressureBucketPoint]
-    total_endgame_games: int
 
 
 class EndgameEloTimelinePoint(BaseModel):
@@ -742,21 +382,6 @@ class EndgameEloTimelineCombo(BaseModel):
     points: list[EndgameEloTimelinePoint]
 
 
-class EndgameEloTimelineResponse(BaseModel):
-    """Response wrapper for the Endgame ELO timeline (Phase 57 ELO-05).
-
-    combos: one series per qualifying (platform, time_control). Ordered
-        chess.com-first then lichess, bullet->blitz->rapid->classical within each
-        platform (matches _TIME_CONTROL_ORDER elsewhere in endgame_service).
-        Empty list when no combo has any qualifying weekly point, the frontend
-        then swaps the chart body to an empty-state.
-    timeline_window: rolling window size used for each point (== ENDGAME_ELO_TIMELINE_WINDOW).
-    """
-
-    combos: list[EndgameEloTimelineCombo]
-    timeline_window: int
-
-
 class PressureQuintileBullet(BaseModel):
     """Per-quintile Score-Delta bullet for the time pressure card.
 
@@ -773,7 +398,7 @@ class PressureQuintileBullet(BaseModel):
     quintile_label: human-readable range string e.g. "0-20%".
     n: user-side games in this quintile bin (drives the displayed sample-size
         chip; the opponent-side count is gated by min(n_user, n_opp) >=
-        MIN_GAMES_PER_PRESSURE_BIN inside _build_quintile_bullets).
+        MIN_GAMES_PER_PRESSURE_BIN inside build_quintile_bullets).
     n_opp: opponent-side games in the matching opponent-clock quintile. The
         two splits are independent samples drawn from the same game-set, so
         this can differ from n; the tooltip shows both counts separately.
@@ -799,210 +424,134 @@ class PressureQuintileBullet(BaseModel):
     opp_score: float | None
 
 
-class ClockGapBullet(BaseModel):
-    """Clock advantage/disadvantage at endgame entry (Phase 88).
+# ---------------------------------------------------------------------------
+# Phase 238 (SEED-196): percentile-first Endgame Stats payload.
+#
+# GET /api/endgames/ranked-stats returns, per time control that has at least one
+# ranked-sample game, the 11 peer-ranked metric values computed ON READ from the
+# canonical ranked slice (rated, human, opponents within 100 Elo, last 36 months,
+# at most 3000 games per TC). Values describe the same games the persisted
+# percentiles rank (D-00b, D-07). The endpoint takes no filters (D-01).
+# ---------------------------------------------------------------------------
 
-    Summarises the per-game (user_clock - opp_clock) / base_clock distribution
-    for one time control. The mean_diff_pct is a fraction (not a percentage):
-    0.05 means the user had 5% more base-clock time than the opponent at entry.
+# Rank status of one (metric, TC) cell (D-09 / D-11):
+#   ranked      - value plus a persisted percentile
+#   below_floor - not enough games to rank yet (binding count vs floor in the metric)
+#   unranked    - value is computable but no persisted percentile exists yet
+#   pending     - entry evals missing, value not computable yet ("analyzing")
+RankStatus = Literal["ranked", "below_floor", "unranked", "pending"]
 
-    n: games with both clocks available and valid base_clock.
-    mean_diff_pct: mean per-game (user_clock - opp_clock) / base_clock.
-    p_value/ci_low/ci_high: paired one-sample z-test output from
-        compute_paired_difference_test; None when insufficient data.
+
+class RankedMetricOut(BaseModel):
+    """One peer-ranked metric for one time control.
+
+    value: fraction units (0.62 = 62%, a score gap of 0.05 = 5 points); None only
+        when it is not computable (no eligible row, or entry evals still pending).
+    n: metric-relevant sample size under the Stage A/B CTE's n definition (endgame
+        games for score_gap; non-null d_i for achievable; bucket spans for the rates
+        and bucket gaps; least(user, opponent pressured) for time pressure; pool
+        size for the clock metrics).
+    floor_n / floor_required: the BINDING count and the floor it is compared to
+        (e.g. min(endgame, non-endgame) vs 30 for score_gap). When the TC has no
+        anchor yet, floor_n is the non-Daily ranked game count and floor_required
+        is the 30-game anchor floor ("18 of 30").
+    percentile: the persisted Stage A/B percentile; set only when status == "ranked".
+    ci_low / ci_high / p_value: popover-footer statistics (None where the metric has
+        none or the n-gate is unmet).
     """
 
+    metric: CdfMetricId
+    value: float | None
     n: int
-    mean_diff_pct: float
-    p_value: float | None
-    ci_low: float | None
-    ci_high: float | None
-
-
-class PerTcBucketStats(BaseModel):
-    """Per-bucket (conversion/parity/recovery) stats for one TC metric block (Phase 97).
-
-    Carries WDL percentages (0-100), the headline rate, per-bucket ΔES score-gap stats,
-    and two separate percentile triplets — the ΔES-gap percentile and (Phase 99) the
-    raw-rate percentile — read directly from user_benchmark_percentiles.
-
-    games: total games in this bucket for the TC.
-    win_pct/draw_pct/loss_pct: WDL breakdown as percent 0-100 (for MiniWDLBar).
-    rate: headline metric — conversion_win_pct, parity_score_pct, or recovery_save_pct.
-        None when the bucket has zero games.
-    score_gap_mean/n/p_value/ci_low/ci_high: ΔES gap stats from compute_paired_difference_test.
-        mean is None when n == 0 (avoids 0.0 polluting wire).
-    percentile: per-TC ΔES-gap percentile from user_benchmark_percentiles. None when
-        the user is below the pooled inclusion floor for this (metric, TC) cell.
-    percentile_n_games/percentile_value: the chip-cohort n_games and value from the
-        same PercentileRow that produced ``percentile`` — surfaced so the chip tooltip
-        states the actual game count and value (mirrors TimePressureTcCard's
-        clock_gap_n_games/value). Both None when no percentile row exists for the cell.
-        Defaulted so existing fixtures that build PerTcBucketStats keyword-style without
-        these args do not break.
-    rate_percentile: per-TC RAW-RATE percentile from user_benchmark_percentiles
-        (Phase 99). This is a SEPARATE signal from the skill-adjusted ΔES-gap
-        percentile above (D-01: both coexist on the same block). None when the user
-        is below the pooled inclusion floor for this (rate metric, TC) cell, or when
-        no cohort CDF has been backfilled yet. Defaulted None for backward compat.
-    rate_percentile_n_games/rate_percentile_value: chip-cohort n_games and metric
-        value from the same PercentileRow that produced ``rate_percentile``.
-        Mirror percentile_n_games/percentile_value but for the raw-rate chip tooltip.
-        Both None when no rate-percentile row exists for the cell.
-    """
-
-    games: int
-    win_pct: float
-    draw_pct: float
-    loss_pct: float
-    rate: float | None
-    score_gap_mean: float | None
-    score_gap_n: int | None
-    score_gap_p_value: float | None
-    score_gap_ci_low: float | None
-    score_gap_ci_high: float | None
+    floor_n: int
+    floor_required: int
     percentile: float | None
-    percentile_n_games: int | None = None
-    percentile_value: float | None = None
-    # Phase 99: raw-rate percentile chip (separate from ΔES-gap percentile — D-01).
-    rate_percentile: float | None = None
-    rate_percentile_n_games: int | None = None
-    rate_percentile_value: float | None = None
+    status: RankStatus
+    ci_low: float | None = None
+    ci_high: float | None = None
+    p_value: float | None = None
 
 
-class EndgameMetricsTcCard(BaseModel):
-    """Per-TC endgame metrics card: Conv/Parity/Recovery trifecta for one time control (Phase 97).
+class RankedBucketOut(BaseModel):
+    """W/D/L counts for one entry-eval bucket (conversion / parity / recovery).
 
-    Mirrors TimePressureTcCard structure: one card per TC with per-bucket sub-blocks.
-    Cards are pre-filtered to TCs where total endgame games >= MIN_GAMES_PER_TC_CARD,
-    ordered bullet -> blitz -> rapid -> classical.
-
-    tc: time control bucket.
-    total: total endgame games in this TC (used to gate card visibility).
-    conversion: stats for the conversion bucket (eval >= +1.0, user perspective).
-    parity: stats for the parity bucket (no clear material advantage).
-    recovery: stats for the recovery bucket (eval <= -1.0, user perspective).
+    Counted over the same games as the conversion / parity / recovery rate, so
+    rate == wins/games, (wins + draws/2)/games, (wins + draws)/games hold exactly.
     """
 
-    tc: Literal["bullet", "blitz", "rapid", "classical"]
-    total: int
-    conversion: PerTcBucketStats
-    parity: PerTcBucketStats
-    recovery: PerTcBucketStats
+    bucket: MaterialBucket
+    games: int
+    wins: int
+    draws: int
+    losses: int
 
 
-class EndgameMetricsCardsResponse(BaseModel):
-    """Per-TC endgame metrics cards response (Phase 97).
+class RankedEntryFlowOut(BaseModel):
+    """Endgame entry flow: mean entry eval, expected vs actual score.
 
-    cards: list of EndgameMetricsTcCard, ordered bullet -> blitz -> rapid -> classical.
-        Only includes TCs where total endgame games >= MIN_GAMES_PER_TC_CARD.
+    expected_score / actual_score are means over the achievable-score-gap cohort
+    (n games), so actual - expected equals the achievable_score_gap metric value.
+    entry_eval_mean_pawns is the mean white-signed-to-user entry eval in pawns over
+    cp-only rows (entry_eval_n).
     """
 
-    cards: list[EndgameMetricsTcCard]
+    entry_eval_mean_pawns: float | None
+    entry_eval_n: int
+    expected_score: float | None
+    actual_score: float | None
+    n: int
 
 
-class TimePressureTcCard(BaseModel):
-    """Per-time-control time pressure card carrying Clock Gap + Score-Delta bullets (Phase 88).
+class RankedOverallOut(BaseModel):
+    """Overall block for one TC: endgame vs non-endgame WDL plus the entry flow."""
 
-    tc: time control bucket.
-    total: total endgame games for this TC (used to gate card visibility).
-    clock_gap: paired clock-advantage bullet across all games in this TC.
-    quintiles: exactly 5 PressureQuintileBullet entries, ordered Q0..Q4 (0=max pressure).
+    endgame_wdl: EndgameWDLSummary
+    non_endgame_wdl: EndgameWDLSummary
+    entry_flow: RankedEntryFlowOut
 
-    Top-zone summary stats restored from the deleted EndgameClockPressureSection
-    (CONTEXT §2 A-3, Plan 88-14). The 5 averages are None when no game in this
-    TC has clock data (e.g. legacy imports without ply/clock arrays). All ship
-    with explicit Pydantic defaults so legacy call sites that build
-    TimePressureTcCard(...) keyword-style without these new args do not break
-    (B-2 lock).
 
-    user_avg_pct: mean (user_clock / base_time_seconds) across clock-eligible
-        games in this TC. Fraction (0..1) — 0.47 means the user entered endgames
-        with 47% of their starting clock remaining on average.
-    user_avg_seconds: mean user_clock in absolute seconds at endgame entry.
-    opp_avg_pct: mean (opp_clock / base_time_seconds), fraction.
-    opp_avg_seconds: mean opp_clock in absolute seconds.
-    avg_clock_diff_seconds: mean (user_clock − opp_clock) in absolute seconds.
-        Related to clock_gap.mean_diff_pct (same metric in fraction units) but
-        NOT redundant — one is a fraction, the other is signed seconds.
-    net_timeout_rate: (timeout_wins − timeout_losses) / total. Fraction units
-        (0.005 = 0.5%) consistent with clock_gap.mean_diff_pct's convention.
-        0.0 when neither side timed out.
+class RankedTimePressureOut(BaseModel):
+    """Time Pressure curve for one TC (per-quintile score gaps); empty without clock data."""
+
+    quintiles: list[PressureQuintileBullet] = []
+
+
+class RankedTcStats(BaseModel):
+    """Everything the Stats tab shows for one time control, from the ranked sample.
+
+    ranked_games: games in the ranked sample (includes chess.com Daily).
+    anchor_games: games counted toward the rating anchor (excludes chess.com Daily,
+        mirroring the anchor CTE); anchor_min_games is the 30-game floor.
+    eval_pending_games: ranked games whose entry evals are not completed yet.
+    metrics: all 11 CdfMetricId keys, always present for a listed TC.
+    buckets: three entries in conversion, parity, recovery order.
+    The timelines, time_pressure curve and type_categories are empty for a TC
+    without the data to build them.
     """
 
-    tc: Literal["bullet", "blitz", "rapid", "classical"]
-    total: int
-    user_avg_pct: float | None = None
-    user_avg_seconds: float | None = None
-    opp_avg_pct: float | None = None
-    opp_avg_seconds: float | None = None
-    avg_clock_diff_seconds: float | None = None
-    net_timeout_rate: float = 0.0
-    clock_gap: ClockGapBullet
-    quintiles: list[PressureQuintileBullet]  # always 5, ordered Q0..Q4
-    # Phase 94.3: per-(metric × TC) percentile annotations.
-    # None when: (a) user below pooled >=30 inclusion floor for the metric × TC
-    # combo, (b) Stage B has not yet computed (race window after import +
-    # cold-drain), (c) the metric is not yet supported by the CDF.
-    # Frontend gates chip rendering on `!= null`. Defaults preserve the B-2 lock
-    # (existing test fixtures that build TimePressureTcCard keyword-style without
-    # these args do not break).
-    time_pressure_score_gap_percentile: float | None = None
-    clock_gap_percentile: float | None = None
-    net_flag_rate_percentile: float | None = None
-    # Quick task 260527-q0b: per-TC chip tooltip bullet 2 simplified framing.
-    # The 3 (n_games, value) pairs are sourced from the PercentileRow consumed
-    # at endgame_service.py per-TC lookup (`tps_row` / `cg_row` / `nf_row`).
-    # `value` is the chip-cohort value (PercentileRow.value), which can differ
-    # from the card's headline number (CONTEXT — render the percentile basis,
-    # not the headline). Defaults preserve B-2 lock for older fixtures.
-    time_pressure_score_gap_n_games: int | None = None
-    time_pressure_score_gap_value: float | None = None
-    clock_gap_n_games: int | None = None
-    clock_gap_value: float | None = None
-    net_flag_rate_n_games: int | None = None
-    net_flag_rate_value: float | None = None
+    tc: TimeControlBucket
+    ranked_games: int
+    anchor_games: int
+    anchor_min_games: int
+    anchor: RatingAnchorOut | None
+    eval_pending_games: int
+    metrics: dict[CdfMetricId, RankedMetricOut]
+    overall: RankedOverallOut
+    buckets: list[RankedBucketOut]
+    time_pressure: RankedTimePressureOut
+    score_gap_timeline: list[ScoreGapTimelinePoint] = []
+    score_gap_timeline_window: int
+    clock_diff_timeline: list[ClockDiffTimelinePoint] = []
+    elo_timeline: list[EndgameEloTimelineCombo] = []
+    elo_timeline_window: int
+    type_categories: list[EndgameCategoryStats] = []
 
 
-class TimePressureCardsResponse(BaseModel):
-    """Time pressure cards response — one card per TC that meets MIN_GAMES_PER_TC_CARD (Phase 88).
+class EndgameRankedStatsResponse(BaseModel):
+    """GET /api/endgames/ranked-stats.
 
-    cards: list of TimePressureTcCard, ordered bullet -> blitz -> rapid -> classical.
-        Only includes TCs where total endgame games >= MIN_GAMES_PER_TC_CARD (20).
+    tcs lists only time controls with at least one ranked-sample game, ordered
+    bullet, blitz, rapid, classical (D-14). An empty ranked sample returns [] (D-10).
     """
 
-    cards: list[TimePressureTcCard]
-
-
-class EndgameOverviewResponse(BaseModel):
-    """Composed response for GET /api/endgames/overview.
-
-    Serves the endgame dashboard payloads from a single request so the
-    frontend can issue one HTTP call that runs sequentially on one AsyncSession
-    (Phase 52). The conv/recov rolling timeline sub-payload was removed in Phase 59
-    along with the admin gauge UI that consumed it.
-    """
-
-    stats: EndgameStatsResponse
-    performance: EndgamePerformanceResponse
-    timeline: EndgameTimelineResponse
-    score_gap_material: ScoreGapMaterialResponse  # Phase 53: score gap & material breakdown
-    time_pressure_cards: TimePressureCardsResponse  # Phase 88: per-TC time pressure cards
-    clock_diff_timeline: ClockDiffTimelineResponse  # Plan 88-15 (CONTEXT §2 A-2): restored Average Clock Difference over Time line chart payload
-    endgame_elo_timeline: EndgameEloTimelineResponse  # Phase 57 / 87.5 D-06: paired Endgame ELO + Actual ELO series per (platform, TC) via additive K · eg_score_gap
-    # Phase 94.4 D-07 bullet 4 + RESEARCH Open Question 4: top-level
-    # rating-anchor disclosure block, keyed by time control. The percentile
-    # chip tooltip's 4th bullet renders one entry per TC the user has an
-    # anchor for; missing TCs (below the inclusion floor or conversion
-    # suppressed) are absent from the dict, not None. The structure is a
-    # top-level block — NOT embedded per-chip — so all chips on the page can
-    # read from the same shared map without duplicating the anchor across
-    # response sub-payloads. Default factory keeps existing constructor call
-    # sites (older tests that build EndgameOverviewResponse keyword-style
-    # without this arg) working.
-    rating_anchors: dict[TimeControlBucket, RatingAnchorOut] = Field(default_factory=dict)
-    # Phase 97: per-TC endgame metrics cards (conv/parity/recovery per time control).
-    # Default factory keeps existing constructor call sites working (B-2 lock).
-    endgame_metrics_cards: EndgameMetricsCardsResponse = Field(
-        default_factory=lambda: EndgameMetricsCardsResponse(cards=[])
-    )
+    tcs: list[RankedTcStats]

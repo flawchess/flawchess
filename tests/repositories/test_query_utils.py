@@ -17,6 +17,7 @@ import typing
 
 import pytest
 from sqlalchemy import literal, select
+from sqlalchemy.dialects import postgresql
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.game import Game
@@ -227,3 +228,47 @@ class TestMoverColorExpr:
         ply = 11
         expected = "white" if mover_is_white_at_ply(ply) else "black"
         assert await self._eval_mover_color(db_session, ply) == expected == "black"
+
+
+class TestGameIdsKeyword:
+    """Phase 238: apply_game_filters(game_ids=...) restricts to the ranked-sample ids."""
+
+    @staticmethod
+    def _filtered(game_ids: list[int] | None) -> typing.Any:
+        return apply_game_filters(
+            select(Game.id),
+            time_control=None,
+            platform=None,
+            rated=None,
+            opponent_type="all",
+            from_date=None,
+            to_date=None,
+            game_ids=game_ids,
+        )
+
+    @staticmethod
+    def _sql(stmt: typing.Any) -> str:
+        return str(stmt.compile(dialect=postgresql.dialect()))
+
+    def test_game_ids_none_leaves_sql_unchanged(self) -> None:
+        unfiltered = apply_game_filters(
+            select(Game.id),
+            time_control=None,
+            platform=None,
+            rated=None,
+            opponent_type="all",
+            from_date=None,
+            to_date=None,
+        )
+        assert self._sql(unfiltered) == self._sql(self._filtered(None))
+
+    def test_game_ids_adds_any_predicate(self) -> None:
+        plain = self._sql(self._filtered(None))
+        restricted = self._filtered([11, 22, 33])
+        sql = self._sql(restricted)
+        # One bound int[] parameter compared with = ANY(...), never an expanded IN list.
+        assert sql.count("= ANY") == 1
+        assert plain.count("= ANY") == 0
+        assert sql.count("%(ranked_game_ids") == 1
+        params = restricted.compile(dialect=postgresql.dialect()).params
+        assert [11, 22, 33] in [v for v in params.values() if isinstance(v, list)]

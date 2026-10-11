@@ -135,35 +135,32 @@ class TestGlobalStatsRouter:
 
 
 # -----------------------------------------------------------------------------
-# TestEndgamesOverviewRouter
+# TestEndgamesStatsRouter (Phase 238 D-01: filtered stats for the Games tab)
 # -----------------------------------------------------------------------------
 
 
-class TestEndgamesOverviewRouter:
+class TestEndgamesStatsRouter:
     @pytest.mark.asyncio
-    async def test_endgame_wdl_total(self, seeded_user: SeededUser) -> None:
+    async def test_endgame_games_total(self, seeded_user: SeededUser) -> None:
         async with httpx.AsyncClient(
             transport=httpx.ASGITransport(app=app), base_url=_BASE
         ) as client:
-            resp = await client.get("/api/endgames/overview", headers=seeded_user.auth_headers)
+            resp = await client.get("/api/endgames/stats", headers=seeded_user.auth_headers)
         assert resp.status_code == 200, resp.text
         data = resp.json()
-        assert (
-            data["performance"]["endgame_wdl"]["total"]
-            == (seeded_user.expected["endgame_games_distinct"])
-        )
+        assert data["endgame_games"] == seeded_user.expected["endgame_games_distinct"]
 
     @pytest.mark.asyncio
     async def test_per_type_rook_count(self, seeded_user: SeededUser) -> None:
-        """stats.categories contains a row per endgame_class with a total count."""
+        """categories contains a row per endgame_class with a total count."""
         async with httpx.AsyncClient(
             transport=httpx.ASGITransport(app=app), base_url=_BASE
         ) as client:
-            resp = await client.get("/api/endgames/overview", headers=seeded_user.auth_headers)
+            resp = await client.get("/api/endgames/stats", headers=seeded_user.auth_headers)
         data = resp.json()
-        by_class = {c["endgame_class"]: c["total"] for c in data["stats"]["categories"]}
+        by_class = {c["endgame_class"]: c["total"] for c in data["categories"]}
         assert by_class.get("rook") == seeded_user.expected["endgame_rook_games"], (
-            f"stats.categories={by_class}"
+            f"categories={by_class}"
         )
 
     @pytest.mark.asyncio
@@ -171,98 +168,28 @@ class TestEndgamesOverviewRouter:
         async with httpx.AsyncClient(
             transport=httpx.ASGITransport(app=app), base_url=_BASE
         ) as client:
-            resp = await client.get("/api/endgames/overview", headers=seeded_user.auth_headers)
+            resp = await client.get("/api/endgames/stats", headers=seeded_user.auth_headers)
         data = resp.json()
-        by_class = {c["endgame_class"]: c["total"] for c in data["stats"]["categories"]}
+        by_class = {c["endgame_class"]: c["total"] for c in data["categories"]}
         assert by_class.get("pawn") == seeded_user.expected["endgame_pawn_games"], (
-            f"stats.categories={by_class}"
+            f"categories={by_class}"
         )
 
     @pytest.mark.asyncio
-    async def test_material_rows_sum_equals_endgame_total(self, seeded_user: SeededUser) -> None:
-        """Phase 59 invariant verified at the router layer with real seeded data."""
-        async with httpx.AsyncClient(
-            transport=httpx.ASGITransport(app=app), base_url=_BASE
-        ) as client:
-            resp = await client.get("/api/endgames/overview", headers=seeded_user.auth_headers)
-        data = resp.json()
-        rows_sum = sum(r["games"] for r in data["score_gap_material"]["material_rows"])
-        assert rows_sum == data["performance"]["endgame_wdl"]["total"]
-
-    @pytest.mark.asyncio
     async def test_all_six_endgame_classes_present(self, seeded_user: SeededUser) -> None:
-        """stats.categories includes every class from EXPECTED with the right totals."""
+        """categories includes every class from EXPECTED with the right totals."""
         async with httpx.AsyncClient(
             transport=httpx.ASGITransport(app=app), base_url=_BASE
         ) as client:
-            resp = await client.get("/api/endgames/overview", headers=seeded_user.auth_headers)
+            resp = await client.get("/api/endgames/stats", headers=seeded_user.auth_headers)
         data = resp.json()
-        by_class = {c["endgame_class"]: c["total"] for c in data["stats"]["categories"]}
+        by_class = {c["endgame_class"]: c["total"] for c in data["categories"]}
         expected_by_class = seeded_user.expected["endgame_by_class"]
         for klass, expected_total in expected_by_class.items():
             assert by_class.get(klass) == expected_total, (
                 f"class {klass!r}: got {by_class.get(klass)} expected {expected_total} "
-                f"(full stats.categories={by_class})"
+                f"(full categories={by_class})"
             )
-
-
-# -----------------------------------------------------------------------------
-# TestTimePressureCardsRouter — Phase 88 time-pressure cards
-# -----------------------------------------------------------------------------
-
-
-class TestTimePressureCardsRouter:
-    """GET /api/endgames/overview → time_pressure_cards sub-payload (Phase 88).
-
-    The seed has 11 blitz endgame games, which is below MIN_GAMES_PER_TC_CARD=20,
-    so no TC card qualifies. The response must have a cards list (possibly empty).
-    """
-
-    @pytest.mark.asyncio
-    async def test_time_pressure_cards_present_in_response(self, seeded_user: SeededUser) -> None:
-        """time_pressure_cards key must be present in the overview response."""
-        async with httpx.AsyncClient(
-            transport=httpx.ASGITransport(app=app), base_url=_BASE
-        ) as client:
-            resp = await client.get("/api/endgames/overview", headers=seeded_user.auth_headers)
-        assert resp.status_code == 200, resp.text
-        data = resp.json()
-        assert "time_pressure_cards" in data, f"missing time_pressure_cards key; keys={list(data)}"
-        assert "cards" in data["time_pressure_cards"], (
-            f"missing cards key; time_pressure_cards={data['time_pressure_cards']}"
-        )
-
-    @pytest.mark.asyncio
-    async def test_no_cards_below_threshold(self, seeded_user: SeededUser) -> None:
-        """Seed has 11 blitz endgame games, below MIN_GAMES_PER_TC_CARD=20, so cards is empty."""
-        async with httpx.AsyncClient(
-            transport=httpx.ASGITransport(app=app), base_url=_BASE
-        ) as client:
-            resp = await client.get("/api/endgames/overview", headers=seeded_user.auth_headers)
-        data = resp.json()
-        cards = data["time_pressure_cards"]["cards"]
-        assert isinstance(cards, list), f"cards must be a list, got {type(cards)}"
-        # Blitz is the only TC with clock data, but it only has 11 endgame games
-        # (below MIN_GAMES_PER_TC_CARD=20), so no card should be emitted.
-        assert cards == [], (
-            f"expected no cards (all TCs below threshold), got {len(cards)} card(s): "
-            f"{[c.get('tc') for c in cards]}"
-        )
-
-    @pytest.mark.asyncio
-    async def test_legacy_clock_pressure_field_absent(self, seeded_user: SeededUser) -> None:
-        """Phase 88: clock_pressure and time_pressure_chart fields removed from overview."""
-        async with httpx.AsyncClient(
-            transport=httpx.ASGITransport(app=app), base_url=_BASE
-        ) as client:
-            resp = await client.get("/api/endgames/overview", headers=seeded_user.auth_headers)
-        data = resp.json()
-        assert "clock_pressure" not in data, (
-            "clock_pressure should no longer be in the overview response (Phase 88)"
-        )
-        assert "time_pressure_chart" not in data, (
-            "time_pressure_chart should no longer be in the overview response (Phase 88)"
-        )
 
 
 # -----------------------------------------------------------------------------
@@ -290,125 +217,6 @@ class TestOpeningsNextMovesRouter:
             data["position_stats"]["total"]
             == (seeded_user.expected["starting_position_game_count"])
         )
-
-
-# -----------------------------------------------------------------------------
-# TestEndgameEloTimelineRouter — Phase 57 endgame_elo_timeline sub-payload (Phase 87.5 D-06 restore)
-# -----------------------------------------------------------------------------
-
-
-class TestEndgameEloTimelineRouter:
-    """GET /api/endgames/overview -> endgame_elo_timeline sub-payload (Phase 57 ELO-05; Phase 87.5 D-06).
-
-    Covers SC-2 (filter responsiveness via platform=chess.com narrowing) and
-    SC-3 (cold-start: no qualifying combos yields empty `combos: []`).
-
-    The 25-game seeded portfolio distributes endgame games across both platforms
-    and multiple time controls; per-combo counts may fall below
-    MIN_GAMES_FOR_TIMELINE=10 so the qualifying combos list can legitimately be
-    empty. Assertions below are phrased to tolerate either outcome while still
-    proving the contract holds.
-    """
-
-    @pytest.mark.asyncio
-    async def test_endgame_overview_elo_timeline_respects_filters(
-        self, seeded_user: SeededUser
-    ) -> None:
-        """SC-2: platform=chess.com filter excludes lichess combos from the response."""
-        async with httpx.AsyncClient(
-            transport=httpx.ASGITransport(app=app), base_url=_BASE
-        ) as client:
-            resp = await client.get(
-                "/api/endgames/overview?platform=chess.com",
-                headers=seeded_user.auth_headers,
-            )
-        assert resp.status_code == 200, resp.text
-        data = resp.json()
-        elo_timeline = data["endgame_elo_timeline"]
-        assert elo_timeline["timeline_window"] == 100
-        # Every returned combo must have platform="chess.com" — zero lichess leakage.
-        for combo in elo_timeline["combos"]:
-            assert combo["platform"] == "chess.com", (
-                f"lichess combo leaked through platform=chess.com filter: {combo}"
-            )
-
-    @pytest.mark.asyncio
-    async def test_endgame_overview_elo_timeline_cold_start_returns_empty_combos(
-        self, seeded_user: SeededUser
-    ) -> None:
-        """SC-3: narrow recency filter drops every combo below MIN_GAMES_FOR_TIMELINE=10.
-
-        The seeded portfolio's games are dated far in the past relative to the
-        recency filter applied here, so no combo has >=10 endgame games within
-        the filter window. Response must be `combos: []` with the window constant
-        still present.
-        """
-        import datetime as _dt
-
-        from_date_str = (_dt.date.today() - _dt.timedelta(days=7)).isoformat()
-        async with httpx.AsyncClient(
-            transport=httpx.ASGITransport(app=app), base_url=_BASE
-        ) as client:
-            # from_date narrows to the past 7 days; seed fixture uses historic
-            # dates so nothing qualifies. If the seed is ever changed to use
-            # current-date games, switch to a smaller date window or add an
-            # explicit "fresh user with 0 games" test path here.
-            resp = await client.get(
-                f"/api/endgames/overview?from_date={from_date_str}",
-                headers=seeded_user.auth_headers,
-            )
-        assert resp.status_code == 200, resp.text
-        data = resp.json()
-        elo_timeline = data["endgame_elo_timeline"]
-        assert elo_timeline["timeline_window"] == 100
-        assert elo_timeline["combos"] == [], (
-            f"expected empty combos for cold-start / narrow-recency seed, "
-            f"got {len(elo_timeline['combos'])}: {elo_timeline['combos']}"
-        )
-
-    @pytest.mark.asyncio
-    async def test_endgame_overview_elo_timeline_includes_per_week_count(
-        self, seeded_user: SeededUser
-    ) -> None:
-        """Phase 57.1 D-19: every emitted point exposes per_week_endgame_games as an int >= 0.
-
-        The seeded portfolio's per-combo counts may not all clear MIN_GAMES_FOR_TIMELINE,
-        so the assertion is shape-only: when a point is emitted, the new field is
-        present and non-negative. Math correctness is covered by the unit tests in
-        tests/test_endgame_service.py::TestEndgameEloTimeline.
-        """
-        async with httpx.AsyncClient(
-            transport=httpx.ASGITransport(app=app), base_url=_BASE
-        ) as client:
-            resp = await client.get(
-                "/api/endgames/overview",
-                headers=seeded_user.auth_headers,
-            )
-        assert resp.status_code == 200, resp.text
-        data = resp.json()
-        elo_timeline = data["endgame_elo_timeline"]
-        for combo in elo_timeline["combos"]:
-            for point in combo["points"]:
-                assert "per_week_endgame_games" in point, (
-                    f"missing per_week_endgame_games on point: {point}"
-                )
-                assert isinstance(point["per_week_endgame_games"], int), (
-                    f"per_week_endgame_games must be int, got {type(point['per_week_endgame_games'])}"
-                )
-                assert point["per_week_endgame_games"] >= 0
-                # UAT 2026-05-17: per_week_total_games (endgame + non-endgame)
-                # carries through to the ELO Timeline so its volume bars reflect
-                # total weekly activity (both PR lines), not endgame-only games.
-                assert "per_week_total_games" in point, (
-                    f"missing per_week_total_games on point: {point}"
-                )
-                assert isinstance(point["per_week_total_games"], int), (
-                    f"per_week_total_games must be int, got {type(point['per_week_total_games'])}"
-                )
-                assert point["per_week_total_games"] >= point["per_week_endgame_games"]
-                # Sanity: actual_elo is now an asof rating, must be a positive int.
-                assert isinstance(point["actual_elo"], int) and point["actual_elo"] > 0
-                assert isinstance(point["endgame_elo"], int) and point["endgame_elo"] > 0
 
 
 # -----------------------------------------------------------------------------

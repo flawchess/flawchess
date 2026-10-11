@@ -1172,7 +1172,7 @@ def _user_moves_from_ply_count(user_color: str, ply_count: int) -> int:
 def _compute_flaw_trend(rows: list[Any]) -> list[FlawTrendPoint]:
     """ISO-week per-100-move MACRO flaw trend over a trailing FLAW_TREND_WINDOW window.
 
-    Mirrors the Endgame ELO Timeline windowing (endgame_service._compute_score_gap_timeline):
+    Mirrors the Endgame ELO Timeline windowing (endgame_service.compute_score_gap_timeline):
     walk games chronologically, keep a trailing FLAW_TREND_WINDOW-game window of per-game
     rates, and emit ONE point per ISO week — the window state at that week's last game.
     Each rate is the macro mean over the window of (oracle_count / user_moves * 100), the

@@ -1,73 +1,62 @@
-import { useMutation, useQuery } from '@tanstack/react-query';
+import { useIsMutating, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import axios from 'axios';
-import { apiClient, buildFilterParams } from '@/api/client';
-import { resolveDateRange, dateRangeToWireParams } from '@/lib/recency';
-import type { FilterState } from '@/components/filters/FilterPanel';
+import { apiClient } from '@/api/client';
 import type {
   EndgameInsightsResponse,
   InsightsAxiosError,
 } from '@/types/insights';
 
-function buildInsightsParams(filters: FilterState): Record<string, unknown> {
-  const dateParams = dateRangeToWireParams(resolveDateRange(filters));
-  return {
-    ...buildFilterParams({
-      time_control: filters.timeControls,
-      platform: filters.platforms,
-      ...dateParams,
-      rated: filters.rated,
-      // NOTE: opponent_type intentionally omitted — insights router rejects it.
-      opponent_strength: filters.opponentStrength,
-    }),
-    color: filters.color,
-  };
-}
+// One cached report per user (D-04): it does not depend on any page filter, so the key
+// is constant. App.tsx invalidates the ['endgame-insights'] prefix on import completion.
+const CACHED_ENDGAME_INSIGHTS_KEY = ['endgame-insights', 'cached'] as const;
+
+// Shared by every Generate mutation so useEndgameInsightsGenerating sees a request
+// started by either Stats-tab mount (the tab mounts twice, desktop + mobile).
+const ENDGAME_INSIGHTS_MUTATION_KEY = ['endgame-insights', 'generate'] as const;
 
 /**
  * POST /api/insights/endgame — generate LLM-produced Endgame Insights report.
  *
- * Shared filter serialization with useEndgames via buildFilterParams.
- * Appends `color` (only param the insights endpoint accepts but endgame endpoint doesn't).
- * Does NOT pass `opponent_type` — insights router does not accept it
- * (hardcoded to "human" server-side per Phase 65).
+ * Sends no query parameters: the report is filter-free (D-04), so Generate never
+ * reads or resets the page filters.
+ *
+ * On success the result is written into the cached-report query, which is the single
+ * source of truth for the rendered report. Phase 238 review (FE-WR-01): the result used
+ * to live in component state only, so a Stats-tab remount fell back to the stale
+ * pre-Generate cache entry and the freshly generated report vanished.
  *
  * Error capture: global MutationCache.onError in lib/queryClient.ts handles Sentry.
  * Do NOT add Sentry.captureException in consumers of this hook.
  */
 export function useEndgameInsights() {
-  return useMutation<EndgameInsightsResponse, InsightsAxiosError, FilterState>({
-    mutationFn: async (filters: FilterState) => {
-      const params = buildInsightsParams(filters);
-      const response = await apiClient.post<EndgameInsightsResponse>(
-        '/insights/endgame',
-        null,
-        { params },
-      );
+  const queryClient = useQueryClient();
+  return useMutation<EndgameInsightsResponse, InsightsAxiosError, void>({
+    mutationKey: ENDGAME_INSIGHTS_MUTATION_KEY,
+    mutationFn: async () => {
+      const response = await apiClient.post<EndgameInsightsResponse>('/insights/endgame');
       return response.data;
+    },
+    onSuccess: (data) => {
+      queryClient.setQueryData(CACHED_ENDGAME_INSIGHTS_KEY, data);
     },
   });
 }
 
 /**
- * GET /api/insights/endgame/cached — auto-load a previously-cached report.
+ * GET /api/insights/endgame/cached — auto-load the user's previously-cached report.
  *
  * Returns null on 404 (no cache row) so callers can render the empty state
  * silently. Other axios errors propagate. The endpoint never invokes the LLM
  * and never consumes rate-limit budget, so it is safe to fire on every page
- * mount and filter change.
- *
- * Shares filter serialization with useEndgameInsights via buildInsightsParams
- * so the cache lookup keys exactly match what a Generate click would produce.
+ * mount. Takes no filters and uses one constant query key (D-04).
  */
-export function useCachedEndgameInsights(filters: FilterState) {
-  const params = buildInsightsParams(filters);
+export function useCachedEndgameInsights() {
   return useQuery<EndgameInsightsResponse | null>({
-    queryKey: ['endgame-insights', 'cached', params],
+    queryKey: CACHED_ENDGAME_INSIGHTS_KEY,
     queryFn: async () => {
       try {
         const response = await apiClient.get<EndgameInsightsResponse>(
           '/insights/endgame/cached',
-          { params },
         );
         return response.data;
       } catch (err) {
@@ -81,4 +70,9 @@ export function useCachedEndgameInsights(filters: FilterState) {
     refetchOnWindowFocus: false,
     retry: false,
   });
+}
+
+/** True while any Generate request is in flight, whichever Stats-tab mount started it. */
+export function useEndgameInsightsGenerating(): boolean {
+  return useIsMutating({ mutationKey: ENDGAME_INSIGHTS_MUTATION_KEY }) > 0;
 }

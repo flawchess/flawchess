@@ -1,14 +1,10 @@
-import type { UseMutationResult } from '@tanstack/react-query';
-import { BarChart3, BookOpen, Lightbulb, ListChecks, Loader2, Sparkles, Target, UserCircle2 } from 'lucide-react';
+import { BarChart3, BookOpen, ListChecks, Loader2, Sparkles, Target, UserCircle2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Tooltip } from '@/components/ui/tooltip';
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
-import type { FilterState } from '@/components/filters/FilterPanel';
+import { ShellyQuote } from '@/components/insights/ShellyQuote';
 import { useActiveJobs } from '@/hooks/useImport';
-import type {
-  EndgameInsightsResponse,
-  InsightsAxiosError,
-} from '@/types/insights';
+import type { EndgameInsightsResponse, InsightsGenerateState } from '@/types/insights';
 import {
   EndgameInsightsBubble,
   type InsightsBubbleStatus,
@@ -23,6 +19,9 @@ import {
 // and clickable rather than emitted as dead plain text by the model.
 const ENDGAME_STUDY_URL = 'https://lichess.org/study/mtiahamI';
 
+// Header fallback for a report without a summary (defensive: v49+ always has one).
+const FALLBACK_HEADER = 'Insights';
+
 // Lichess endgame puzzle trainer, shown alongside the study link for hands-on
 // practice. Kept out of the LLM payload for the same reason as the study URL.
 const ENDGAME_PUZZLES_URL = 'https://lichess.org/training/endgame';
@@ -30,30 +29,34 @@ const ENDGAME_PUZZLES_URL = 'https://lichess.org/training/endgame';
 /**
  * Top-of-tab Insights block.
  *
- * Parent owns the mutation + rendered state and only passes `rendered` when
- * the cached report matches current filters, so this component never has to
- * reason about "outdated" reports. When filters drift away from what the
- * report was generated against, the parent clears it and we fall back to
- * Shelly's bubble.
+ * Parent owns the mutation + rendered state. The report is filter-free (one
+ * per user, D-04), so `rendered` is whatever report the parent holds and this
+ * component never has to reason about "outdated" reports.
  *
  * Quick 260927-b05: every no-report state (idle, pending, error, blocked) is
  * Shelly the Turtle in a bot bubble (`EndgameInsightsBubble`); the report
  * card only renders once a report exists. Error still outranks a rendered
  * report, so a failed regenerate falls back to the bubble.
  *
- * Button gating: Generate / Try again are disabled only while an import is
- * running. Non-default filters don't block; onGenerate resets them first.
+ * Button gating: Generate / Update / Try again are disabled only while an
+ * import is running. Page filters never block and are never touched.
+ *
+ * 238 UAT: the header is the report's 1-2 sentence summary in Shelly's voice,
+ * collapsed by default with a "click or tap for details" hint (second UAT round,
+ * was expanded); the tab auto-generates a missing report, so the report
+ * card's action is "Update Insights".
  */
 export interface EndgameInsightsBlockProps {
   rendered: EndgameInsightsResponse | null;
-  mutation: UseMutationResult<EndgameInsightsResponse, InsightsAxiosError, FilterState>;
+  /** Pending / error of the Generate mutation (a full mutation result also fits). */
+  mutation: InsightsGenerateState;
   onGenerate: () => void;
 }
 
 /**
  * Returns the reason that prevents generating an insights report, or null
- * when the button should be enabled. Filters never block: the parent's
- * onGenerate resets them to the insights-compatible state (toInsightsFilters).
+ * when the button should be enabled. Page filters never block (the report is
+ * filter-free).
  */
 function getBlockedReason(hasActiveImport: boolean): BlockedReason | null {
   return hasActiveImport ? 'import-running' : null;
@@ -89,7 +92,7 @@ export function EndgameInsightsBlock({
   }
 
   return (
-    <Accordion type="single" collapsible defaultValue="insights">
+    <Accordion type="single" collapsible>
       <AccordionItem
         value="insights"
         data-testid="insights-block"
@@ -99,12 +102,13 @@ export function EndgameInsightsBlock({
           data-testid="insights-block-trigger"
           band
         >
-          <span className="flex items-center gap-2 flex-1">
-            <span className="insight-lightbulb" aria-hidden="true">
-              <Lightbulb className="size-5" />
-            </span>
-            <h2 className="text-base font-semibold text-foreground">Insights</h2>
-          </span>
+          <h2 className="flex-1 text-base font-semibold" data-testid="insights-block-summary">
+            <ShellyQuote
+              text={rendered.report.summary || FALLBACK_HEADER}
+              avatarClassName="size-12"
+              expandHint
+            />
+          </h2>
         </AccordionTrigger>
         <AccordionContent className="p-4">
           <RenderedState
@@ -242,7 +246,7 @@ function RenderedState({
             data-testid="btn-generate-insights"
           >
             <Sparkles className="h-4 w-4" />
-            Generate Insights
+            Update Insights
           </Button>
         </MaybeBlockedTooltip>
         {isPending && (

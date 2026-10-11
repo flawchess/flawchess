@@ -10,6 +10,11 @@ in `YYYY-MM-DD` (Europe/Zurich).
 
 ### Changed
 
+- Endgame Stats now compares you with similar-rated players: one peer percentile bar per metric, based on your recent ranked games per time control (rated games against human opponents within 100 Elo of you, last 36 months).
+- Endgame Stats has one time-control switch per section, and it remembers your choice between visits.
+- Endgame Stats replaces the gauges and colored zones with win/draw/loss bars that carry a bracket and a grey typical range. The Endgame Type Breakdown is now a table.
+- The filter panel now only appears on the Games tab. The Stats tab always describes your recent ranked games, so filters no longer apply there.
+- Shelly's endgame report no longer depends on your filters. There is one report per account, and it talks about the same numbers the Stats page shows.
 - Train: each solution chip now gives only its first move (its eval is the graded eval), and the rest of the line is a faded live engine line at the end of the move list that improves while the engine searches. The forward button or right arrow adds its next move, tapping a faded move adds the line up to it, and engine moves added this way are not graded.
 - Train: on puzzles with several good moves, the solution board now shows up to three good alternatives at the puzzle position. The certified alternative comes first, and the engine fills the remaining slots with its own good moves once its search is deep enough, shown the same way (green arrow with a checkmark, listed under "Also fine"); moves it rates an inaccuracy or worse are never shown.
 - Train: on phones, the solution screen's bottom bar now matches the analysis page's board controls (icon with a label under it), with Analyze as one more control beside them; the forward button reads "Fwd" so it is not confused with Next. The small analyze icon next to the game line is gone, since the Analyze button does the same.

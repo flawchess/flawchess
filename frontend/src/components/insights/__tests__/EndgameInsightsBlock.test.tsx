@@ -2,7 +2,6 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { render, screen, cleanup, fireEvent } from '@testing-library/react';
 import type { UseMutationResult } from '@tanstack/react-query';
-import type { FilterState } from '@/components/filters/FilterPanel';
 import type {
   EndgameInsightsResponse,
   InsightsAxiosError,
@@ -46,7 +45,7 @@ function makeMutation(
     isError: boolean;
     error: InsightsAxiosError | null;
   }> = {},
-): UseMutationResult<EndgameInsightsResponse, InsightsAxiosError, FilterState> {
+): UseMutationResult<EndgameInsightsResponse, InsightsAxiosError, void> {
   return {
     isPending: overrides.isPending ?? false,
     isError: overrides.isError ?? false,
@@ -65,11 +64,12 @@ function makeMutation(
     failureReason: null,
     submittedAt: 0,
     context: undefined,
-  } as unknown as UseMutationResult<EndgameInsightsResponse, InsightsAxiosError, FilterState>;
+  } as unknown as UseMutationResult<EndgameInsightsResponse, InsightsAxiosError, void>;
 }
 
 const RESPONSE_FRESH: EndgameInsightsResponse = {
   report: {
+    summary: 'Your endgames lift your score, and rook endings are your best type.',
     player_profile:
       'Active rapid player around 1500 Elo, range 1200-1600 over the last two years.',
     overview: 'You converted winning endgames at 62% in the last 90 days.',
@@ -85,6 +85,11 @@ const RESPONSE_FRESH: EndgameInsightsResponse = {
   },
   status: 'fresh',
 };
+
+/** The report card starts collapsed (238 UAT): open it to reach the body. */
+function expandReport() {
+  fireEvent.click(screen.getByTestId('insights-block-trigger'));
+}
 
 describe('EndgameInsightsBlock', () => {
   it('renders Shelly bubble with Generate button when idle and no report', () => {
@@ -159,12 +164,13 @@ describe('EndgameInsightsBlock', () => {
         onGenerate={vi.fn()}
       />,
     );
+    expandReport();
     expect(screen.queryByTestId('insights-bubble')).toBeNull();
     expect(screen.queryByTestId('insights-overview')).not.toBeNull();
     expect(screen.getByTestId('btn-generate-insights').getAttribute('aria-busy')).toBe('true');
   });
 
-  it('renders overview + Generate Insights button when report landed', () => {
+  it('renders overview + Update Insights button when report landed', () => {
     render(
       <EndgameInsightsBlock
         rendered={RESPONSE_FRESH}
@@ -172,11 +178,29 @@ describe('EndgameInsightsBlock', () => {
         onGenerate={vi.fn()}
       />,
     );
+    expandReport();
     expect(screen.getByTestId('insights-overview').textContent).toContain(
       'You converted winning endgames at 62% in the last 90 days.',
     );
-    expect(screen.getByTestId('btn-generate-insights').textContent).toContain('Generate Insights');
+    expect(screen.getByTestId('btn-generate-insights').textContent).toContain('Update Insights');
     expect(screen.queryByTestId('insights-stale-banner')).toBeNull();
+  });
+
+  it('shows the report summary as a quoted header, collapsed by default with a details hint', () => {
+    render(
+      <EndgameInsightsBlock
+        rendered={RESPONSE_FRESH}
+        mutation={makeMutation()}
+        onGenerate={vi.fn()}
+      />,
+    );
+    const header = screen.getByTestId('insights-block-summary');
+    expect(header.querySelector('q')?.textContent).toBe(
+      'Your endgames lift your score, and rook endings are your best type.',
+    );
+    expect(header.textContent).toContain('Click or tap for details');
+    expect(screen.getByTestId('insights-block-trigger').getAttribute('aria-expanded')).toBe('false');
+    expect(screen.queryByTestId('insights-overview')).toBeNull();
   });
 
   it('v9: renders player profile, data analysis, and recommendations as stacked cards', () => {
@@ -187,6 +211,7 @@ describe('EndgameInsightsBlock', () => {
         onGenerate={vi.fn()}
       />,
     );
+    expandReport();
     const profile = screen.getByTestId('insights-player-profile');
     expect(profile.textContent).toContain('Player Profile');
     expect(profile.textContent).toContain('Active rapid player around 1500 Elo');
@@ -214,15 +239,14 @@ describe('EndgameInsightsBlock', () => {
         onGenerate={vi.fn()}
       />,
     );
+    expandReport();
     expect(screen.queryByTestId('insights-overview')).toBeNull();
     expect(screen.queryByTestId('btn-generate-insights')).not.toBeNull();
   });
 
   it('does NOT render a cache-mismatch indicator (parent gates the rendered prop)', () => {
-    // Filter-mismatch gating now lives in the parent (Endgames.tsx) — it only
-    // passes `rendered` when the cached report matches current filters. The
-    // component therefore has no notion of "outdated" and never shows that
-    // indicator.
+    // The report is filter-free (one per user), so the component has no notion
+    // of "outdated" and never shows that indicator.
     render(
       <EndgameInsightsBlock
         rendered={RESPONSE_FRESH}
@@ -282,7 +306,7 @@ describe('EndgameInsightsBlock', () => {
     );
   });
 
-  it('non-default filters do not block Generate (the parent resets them on click)', () => {
+  it('page filters never block Generate (the report is filter-free)', () => {
     const onGenerate = vi.fn();
     render(<EndgameInsightsBlock rendered={null} mutation={makeMutation()} onGenerate={onGenerate} />);
     fireEvent.click(screen.getByTestId('btn-generate-insights'));

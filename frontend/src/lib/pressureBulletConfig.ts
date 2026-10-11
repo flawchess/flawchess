@@ -1,6 +1,6 @@
 /**
- * Pressure Score-Delta bullet chart configuration. Used by EndgameTimePressureCard
- * to render per-(TC, pressure-quintile) score-delta and clock-gap bullets.
+ * Pressure Score-Delta bullet chart configuration: per-(TC, pressure-quintile)
+ * score-delta and clock-gap bullet domains, used by ScoreGapByTimePressureChart.
  * Domain constants keep the visual scale comparable across the 4-TC grid;
  * wide CIs render with open-ended whiskers when they overflow the axis.
  *

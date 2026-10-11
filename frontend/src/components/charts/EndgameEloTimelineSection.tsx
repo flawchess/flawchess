@@ -100,7 +100,7 @@ function getComboLabel(combo_key: string): string {
 }
 
 // 260530-pll: replaced the old active-weeks/top-1-by-games heuristic with a
-// primary-TC heuristic that aligns with EndgameMetricsByTcSection's accordion.
+// primary-TC heuristic (the TC the user plays most).
 // All combos whose time_control equals the primary TC are visible by default
 // (both platforms when both were played). Other-TC combos start hidden.
 //
@@ -326,8 +326,8 @@ export function EndgameEloTimelineSection({
   );
 
   // Card header band: recessed background + bottom separator, full-bleed to the
-  // card edges (matches EndgameMetricsByTcCard / EndgameTimePressureCard). The
-  // subtitle moves into the padded body below, rendered by each branch.
+  // card edges. The subtitle moves into the padded body below, rendered by
+  // each branch.
   const headerBand = (
     <CardHeader data-testid="endgame-elo-timeline-header">
       Endgame ELO Timeline

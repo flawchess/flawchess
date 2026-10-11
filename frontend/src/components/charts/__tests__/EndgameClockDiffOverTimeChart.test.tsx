@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, it, expect, beforeAll, afterEach, vi } from 'vitest';
-import { render, screen, cleanup } from '@testing-library/react';
+import { render, screen, cleanup, fireEvent } from '@testing-library/react';
 import { cloneElement, isValidElement } from 'react';
 import type { ReactElement } from 'react';
 import type { ClockDiffTimelinePoint } from '@/types/endgames';
@@ -27,7 +27,19 @@ vi.mock('recharts', async () => {
   };
 });
 
-import { EndgameClockDiffOverTimeChart, computeYDomain } from '../EndgameClockDiffOverTimeChart';
+import {
+  ClockGapTooltipContent,
+  EndgameClockDiffOverTimeChart,
+  computeYDomain,
+} from '../EndgameClockDiffOverTimeChart';
+import {
+  NEUTRAL_SERIES_COLOR,
+  TYPICAL_BAND_FILL,
+  ZONE_DANGER,
+  ZONE_NEUTRAL,
+  ZONE_SUCCESS,
+} from '@/lib/theme';
+import { NEUTRAL_PCT_THRESHOLD } from '@/generated/endgameZones';
 
 beforeAll(() => {
   Object.defineProperty(window, 'matchMedia', {
@@ -123,16 +135,29 @@ describe('EndgameClockDiffOverTimeChart', () => {
     ).toBeTruthy();
   });
 
-  it('renders three zone-tinted ReferenceArea bands (danger / neutral / success)', () => {
+  it('renders exactly one grey typical-band ReferenceArea (D-00f)', () => {
     const { container } = render(
       <EndgameClockDiffOverTimeChart timeline={THREE_POINT_FIXTURE} />,
     );
-    // Post-UAT: the neutral middle band (blue) was missing from the first
-    // restore pass. Now we render three bands — danger (below -threshold),
-    // neutral (within ±threshold), success (above +threshold). Recharts emits
-    // one SVG rect per ReferenceArea at .recharts-reference-area-rect.
     const bands = container.querySelectorAll('.recharts-reference-area-rect');
-    expect(bands.length).toBe(3);
+    expect(bands.length, 'one typical band instead of three zone bands').toBe(1);
+    expect(bands[0]?.getAttribute('fill')).toBe(TYPICAL_BAND_FILL);
+  });
+
+  it('the typical band spans ±NEUTRAL_PCT_THRESHOLD around zero', () => {
+    const { container } = render(
+      <EndgameClockDiffOverTimeChart timeline={THREE_POINT_FIXTURE} />,
+    );
+    const band = container.querySelector<SVGRectElement>('.recharts-reference-area-rect');
+    expect(band, 'band rect present').not.toBeNull();
+    const bandHeight = parseFloat(band?.getAttribute('height') ?? '0');
+    // Horizontal grid lines sit on the ticks -30..+30, so their pixel span is the 60-point domain.
+    const gridYs = Array.from(
+      container.querySelectorAll('.recharts-cartesian-grid-horizontal line'),
+    ).map((line) => parseFloat(line.getAttribute('y1') ?? '0'));
+    const domainPixels = Math.max(...gridYs) - Math.min(...gridYs);
+    const domainSpan = 60;
+    expect(bandHeight / domainPixels).toBeCloseTo((2 * NEUTRAL_PCT_THRESHOLD) / domainSpan, 2);
   });
 
   it('expands Y domain to include values outside the ±30% envelope', () => {
@@ -148,15 +173,54 @@ describe('EndgameClockDiffOverTimeChart', () => {
     expect(computeYDomain([-45, 5])).toEqual([-45, 30]);
   });
 
-  it('uses a white line stroke', () => {
+  it('draws a neutral line with zone-colored dots (238 UAT)', () => {
     const { container } = render(
       <EndgameClockDiffOverTimeChart timeline={THREE_POINT_FIXTURE} />,
     );
-    // Post-UAT: the visible line uses a white stroke; per-point dots carry
-    // the zone color. Recharts emits the Line's path under .recharts-line-curve.
     const linePath = container.querySelector('.recharts-line-curve');
-    expect(linePath).not.toBeNull();
-    expect(linePath?.getAttribute('stroke')).toBe('white');
+    expect(linePath, 'line path present').not.toBeNull();
+    expect(linePath?.getAttribute('stroke')).toBe(NEUTRAL_SERIES_COLOR);
+    // Fixture holds +10 (above the ±5 band), -5 (on its edge, still typical) and +2.5.
+    const dots = Array.from(container.querySelectorAll('.recharts-line-dots circle'));
+    expect(dots.length, 'one dot per point').toBe(THREE_POINT_FIXTURE.length);
+    expect(dots.map((dot) => dot.getAttribute('fill'))).toEqual([
+      ZONE_SUCCESS,
+      ZONE_NEUTRAL,
+      ZONE_NEUTRAL,
+    ]);
+  });
+
+  it.each([
+    [10, ZONE_SUCCESS],
+    [-8, ZONE_DANGER],
+    [2.5, ZONE_NEUTRAL],
+  ])('tooltip swatch is zone-colored for a %s point', (value, expected) => {
+    const { getByTestId } = render(
+      <ClockGapTooltipContent
+        point={{
+          date: '2025-01-06',
+          avg_clock_diff_pct: value,
+          game_count: 10,
+          per_week_game_count: 3,
+        }}
+        label="2025-01-06"
+      />,
+    );
+    expect(getByTestId('clock-diff-tooltip-swatch').style.backgroundColor).not.toBe('');
+    const swatch = getByTestId('clock-diff-tooltip-swatch');
+    // jsdom normalizes oklch to its own string; compare with a reference element.
+    const reference = document.createElement('div');
+    reference.style.backgroundColor = expected;
+    expect(swatch.style.backgroundColor).toBe(reference.style.backgroundColor);
+  });
+
+  it('the info popover copy describes the grey typical band and the dot colors', () => {
+    render(<EndgameClockDiffOverTimeChart timeline={THREE_POINT_FIXTURE} />);
+    fireEvent.click(screen.getByLabelText('Clock gap at endgame entry info'));
+    const bandCopy = screen.getByText(/grey band marks the typical range/i);
+    const popoverCopy = bandCopy.parentElement?.textContent ?? '';
+    expect(popoverCopy).toContain('Positive means you arrived with more time left');
+    expect(popoverCopy).toMatch(/green above it, red below it and blue inside it/);
   });
 
   it('renders the vertical "Clock Gap" Y-axis label on desktop', () => {

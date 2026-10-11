@@ -1,12 +1,10 @@
 import { useState, useCallback, useEffect, useMemo, useRef } from 'react';
-import { useNavigate, useLocation, useSearchParams, Navigate, Link } from 'react-router';
-import { SlidersHorizontal, BarChart2Icon, SwordsIcon, Lightbulb, Cpu } from 'lucide-react';
-import { SidebarLayout } from '@/components/layout/SidebarLayout';
-import { Accordion, AccordionItem, AccordionTrigger, AccordionContent } from '@/components/ui/accordion';
+import { useNavigate, useLocation, useSearchParams, Navigate } from 'react-router';
+import { SlidersHorizontal, BarChart2Icon, SwordsIcon } from 'lucide-react';
+import { SidebarLayout, type SidebarPanelConfig } from '@/components/layout/SidebarLayout';
 import { Button } from '@/components/ui/button';
 import { LoadError } from '@/components/ui/load-error';
 import { EmptyState } from '@/components/ui/empty-state';
-import { NoHumanRatedGamesState, shouldShowNoHumanRatedGames } from '@/components/ui/no-human-rated-games-state';
 import { MobileFilterDrawer } from '@/components/filters/MobileFilterDrawer';
 import {
   Select,
@@ -20,99 +18,22 @@ import { InfoPopover } from '@/components/ui/info-popover';
 import { FilterPanel, DEFAULT_FILTERS, areFiltersEqual, FILTER_DOT_FIELDS, resetFilterState } from '@/components/filters/FilterPanel';
 import { FilterActions } from '@/components/filters/FilterActions';
 import { useFilterStore } from '@/hooks/useFilterStore';
-import { useGameCountValue } from '@/hooks/useGameCount';
-import { EndgameOverallPerformanceSection } from '@/components/charts/EndgameOverallPerformanceSection';
-import { EndgameScoreOverTimeChart } from '@/components/charts/EndgameScoreOverTimeChart';
-import { EndgameMetricsByTcSection } from '@/components/charts/EndgameMetricsByTcSection';
-// EndgameMetricsSection removed in favour of EndgameMetricsByTcSection (Phase 97 Plan 03).
-// The old component is deleted in Plan 04.
-import { EndgameTypeBreakdownSection } from '@/components/charts/EndgameTypeBreakdownSection';
 import {
   ENDGAME_CLASS_TO_SLUG,
   HIDDEN_ENDGAME_CLASSES,
 } from '@/lib/endgameMetrics';
-import { EndgameTimePressureSection } from '@/components/charts/EndgameTimePressureSection';
-import { EndgameClockDiffOverTimeChart } from '@/components/charts/EndgameClockDiffOverTimeChart';
-import { EndgameEloTimelineSection } from '@/components/charts/EndgameEloTimelineSection';
 import { GameCardList } from '@/components/results/GameCardList';
 import { PositionResultsPanel } from '@/components/charts/PositionResultsPanel';
-import { useEndgameOverview, useEndgameGames } from '@/hooks/useEndgames';
-import { EndgameInsightsBlock } from '@/components/insights/EndgameInsightsBlock';
-import { toInsightsFilters } from '@/lib/insightsFilters';
+import { EndgameStatsTab } from '@/components/endgames/EndgameStatsTab';
+import { useEndgameStats, useEndgameGames } from '@/hooks/useEndgames';
 import { trackFeature } from '@/lib/analytics';
 import { EvalCoverageHeader } from '@/components/EvalCoverageHeader';
-import { useCachedEndgameInsights, useEndgameInsights } from '@/hooks/useEndgameInsights';
-import { useActiveJobs } from '@/hooks/useImport';
 import { useReadiness } from '@/hooks/useReadiness';
 import { EndgamesProcessingState } from '@/components/EndgamesProcessingState';
 import type { FilterState } from '@/components/filters/FilterPanel';
-import type { EndgameClass, EndgameStatsResponse } from '@/types/endgames';
-import type { EndgameInsightsResponse, SectionId } from '@/types/insights';
+import type { EndgameClass } from '@/types/endgames';
 
 const PAGE_SIZE = 20;
-
-// SEED-163 2d: extracted to a standalone function (rather than inlined
-// booleans in EndgamesPage) so its branches count toward THIS function's
-// complexity, not EndgamesPage's — that page is already at the eslint
-// `complexity` per-file baseline (frontend/CLAUDE.md: fix new breaches,
-// don't widen the baseline). total_games is "games matching current
-// filters" — the correct signal here. categories.length === 0 (checked
-// separately below) is NOT: a user can have games but no endgames, which
-// is a different message.
-function shouldShowEndgamesNoHumanRatedGames(
-  statsData: EndgameStatsResponse | undefined,
-  appliedFilters: FilterState,
-  gameCount: number | null,
-): boolean {
-  if (!statsData || statsData.total_games !== 0) return false;
-  return shouldShowNoHumanRatedGames(appliedFilters, gameCount);
-}
-
-interface EndgamesTailEmptyStateProps {
-  statsData: EndgameStatsResponse | undefined;
-  appliedFilters: FilterState;
-  gameCount: number | null;
-}
-
-/**
- * The three mutually-exclusive tail states once overview data has loaded
- * without error and without any categories to render: the new SEED-163 2d
- * Human+Rated empty state, the pre-existing "no endgames reached" state, and
- * the pre-existing "no games imported" state. Extracted (rather than a 3-way
- * inline ternary chain) so its branches count toward THIS component's
- * complexity, not EndgamesPage's — that page is already at the eslint
- * `complexity` per-file baseline (frontend/CLAUDE.md).
- */
-function EndgamesTailEmptyState({
-  statsData,
-  appliedFilters,
-  gameCount,
-}: EndgamesTailEmptyStateProps) {
-  if (shouldShowEndgamesNoHumanRatedGames(statsData, appliedFilters, gameCount)) {
-    return <NoHumanRatedGamesState totalGames={gameCount} />;
-  }
-  if (statsData && statsData.categories.length === 0) {
-    return (
-      <EmptyState
-        layout="page"
-        title="No endgame data yet"
-        subtitle="No games have reached an Endgame Phase yet with the current filters. Try adjusting the time control or recency filters."
-      />
-    );
-  }
-  return (
-    <EmptyState
-      layout="page"
-      title="No games imported yet"
-      subtitle="Import your games from chess.com or lichess to see endgame analysis."
-      action={
-        <Button variant="outline" size="sm" asChild>
-          <Link to="/library/import">Import Games</Link>
-        </Button>
-      }
-    />
-  );
-}
 
 const ENDGAME_CLASS_LABELS: Record<EndgameClass, string> = {
   mixed: 'Mixed',
@@ -124,7 +45,7 @@ const ENDGAME_CLASS_LABELS: Record<EndgameClass, string> = {
 };
 
 // HIDDEN_ENDGAME_CLASSES lifted to @/lib/endgameMetrics in Phase 87 Plan 03 so
-// EndgameTypeBreakdownSection and this page share one source of truth (pawnless
+// TypeTable and this page share one source of truth (pawnless
 // is hidden everywhere). Classification stays in the DB so re-enabling does
 // not require a reimport.
 
@@ -171,120 +92,6 @@ export function EndgamesPage() {
   // Queries only fire when the sidebar/drawer closes and commits pending -> applied.
   const [appliedFilters, setAppliedFilters] = useFilterStore();
   const [pendingFilters, setPendingFilters] = useState<FilterState>(appliedFilters);
-
-  // SEED-163 2d: total imported-game count (all platforms), used to detect
-  // when the Human+Rated defaults alone emptied the endgame population.
-  const gameCount = useGameCountValue();
-
-  // ── Endgame Insights ────────────────────────────────────────────────────────
-  // Mutation state lifted here so per-section slots in each H2 can observe the
-  // same report without a context provider. No network request fires unless
-  // the user clicks Generate.
-  //
-  // Cache shape: a list of (filter-state, response) pairs. A report is rendered
-  // whenever the current filter state matches a cached entry (via
-  // areFiltersEqual), so toggling among previously-generated filter states
-  // brings back their reports without another click. New Generate calls
-  // upsert into the list. Import-completion clears the whole list because new
-  // games invalidate every cached report (findings_hash content-addresses the
-  // aggregates on the server side, but the client list is coarse-invalidated
-  // to avoid stale UI between an import landing and a regenerate click).
-  const insightsMutation = useEndgameInsights();
-  const [insightsCache, setInsightsCache] = useState<
-    Array<{ filters: FilterState; response: EndgameInsightsResponse }>
-  >([]);
-
-  // Auto-load any previously-cached report for the current applied filters.
-  // GET /insights/endgame/cached never invokes the LLM and never consumes
-  // rate-limit budget, so it is safe to fire on mount and on every filter
-  // change. On a 404 (no cache row), the hook resolves to null silently —
-  // matchingInsights stays null and the user sees the pre-Generate state.
-  const cachedInsights = useCachedEndgameInsights(appliedFilters);
-  useEffect(() => {
-    const result = cachedInsights.data;
-    if (!result) return;
-    setInsightsCache((prev) => {
-      const idx = prev.findIndex((entry) => areFiltersEqual(entry.filters, appliedFilters));
-      if (idx >= 0) {
-        if (prev[idx]?.response === result) return prev;
-        const next = [...prev];
-        next[idx] = { filters: appliedFilters, response: result };
-        return next;
-      }
-      return [...prev, { filters: appliedFilters, response: result }];
-    });
-  }, [cachedInsights.data, appliedFilters]);
-
-  // Insights only support the default filters (opponent strength may stay on
-  // a preset), so Generate resets the page filters to that state first rather
-  // than blocking the button until the user resets them by hand.
-  const handleGenerateInsights = useCallback(async () => {
-    const insightsFilters = toInsightsFilters(appliedFilters);
-    if (!areFiltersEqual(insightsFilters, appliedFilters)) {
-      setAppliedFilters(insightsFilters);
-    }
-    try {
-      const result = await insightsMutation.mutateAsync(insightsFilters);
-      setInsightsCache((prev) => {
-        const idx = prev.findIndex((entry) => areFiltersEqual(entry.filters, insightsFilters));
-        if (idx >= 0) {
-          const next = [...prev];
-          next[idx] = { filters: insightsFilters, response: result };
-          return next;
-        }
-        return [...prev, { filters: insightsFilters, response: result }];
-      });
-    } catch {
-      // Error is surfaced via insightsMutation.isError → EndgameInsightsBlock error state.
-      // Global MutationCache.onError in lib/queryClient.ts captures Sentry; do not
-      // add a local capture here (would double-report).
-    }
-  }, [insightsMutation, appliedFilters, setAppliedFilters]);
-
-  // The rendered report is whichever cached entry matches the current filter
-  // state — switching back to a previously-generated filter set re-renders
-  // that report without a network call.
-  const matchingInsights: EndgameInsightsResponse | null = useMemo(() => {
-    const hit = insightsCache.find((entry) => areFiltersEqual(entry.filters, appliedFilters));
-    return hit?.response ?? null;
-  }, [insightsCache, appliedFilters]);
-
-  // Clear the cached insights when an import completes — new games change the
-  // findings, so every cached report no longer reflects current data. We watch
-  // the active-jobs count transition from >0 to 0 and invalidate on the edge.
-  // No effect fires on initial mount because prevJobsCountRef is seeded with
-  // the first observation.
-  const { data: activeJobsForInsights } = useActiveJobs(true);
-  const activeJobsCount = activeJobsForInsights?.length ?? 0;
-  const prevJobsCountRef = useRef<number | null>(null);
-  useEffect(() => {
-    if (prevJobsCountRef.current === null) {
-      prevJobsCountRef.current = activeJobsCount;
-      return;
-    }
-    if (prevJobsCountRef.current > 0 && activeJobsCount === 0) {
-      setInsightsCache([]);
-    }
-    prevJobsCountRef.current = activeJobsCount;
-  }, [activeJobsCount]);
-
-  // Build a lookup for O(1) per-slot access during render. Null for sections
-  // the backend did not return — or whenever the cached report's filters no
-  // longer match the applied filters (see matchingInsights above).
-  const sectionBySection: Record<SectionId, { headline: string; bullets: string[] } | null> = {
-    overall: null,
-    metrics_elo: null,
-    time_pressure: null,
-    type_breakdown: null,
-  };
-  if (matchingInsights && !insightsMutation.isError) {
-    for (const section of matchingInsights.report.sections) {
-      sectionBySection[section.section_id] = {
-        headline: section.headline,
-        bullets: section.bullets,
-      };
-    }
-  }
 
   // Sync pending -> applied when the filter store changes from another page/tab
   useEffect(() => {
@@ -350,13 +157,13 @@ export function EndgamesPage() {
   ) : undefined;
 
   // ── Data ─────────────────────────────────────────────────────────────────────
-  const {
-    data: overviewData,
-    isLoading: overviewLoading,
-    isError: overviewError,
-  } = useEndgameOverview(appliedFilters, { enabled: tier2 });
+  // The Games tab reads the filtered per-category stats (and the match label total)
+  // from GET /endgames/stats (Phase 238 D-01); the Stats tab never sees the filters.
+  // Both Games-tab queries run only while that tab is active: the filtered GROUP BY is
+  // expensive and the Stats tab never reads it (Phase 238 review FE-IN-03).
+  const gamesTabActive = tier2 && activeTab === 'games';
+  const { data: rawStatsData } = useEndgameStats(appliedFilters, { enabled: gamesTabActive });
 
-  const rawStatsData = overviewData?.stats;
   const statsData = useMemo(() => {
     if (!rawStatsData) return rawStatsData;
     return {
@@ -366,20 +173,12 @@ export function EndgamesPage() {
       ),
     };
   }, [rawStatsData]);
-  const perfData = overviewData?.performance;
-  const scoreGapData = overviewData?.score_gap_material;
-  const timePressureCardsData = overviewData?.time_pressure_cards;
-  const clockDiffTimelineData = overviewData?.clock_diff_timeline;
-  const showClockDiffTimeline = !!(
-    clockDiffTimelineData && clockDiffTimelineData.points.length > 0
-  );
-  const eloTimelineData = overviewData?.endgame_elo_timeline;
-
   const { data: gamesData, isLoading: gamesLoading, isError: gamesError } = useEndgameGames(
     selectedCategory,
     appliedFilters,
     gamesOffset,
     PAGE_SIZE,
+    { enabled: gamesTabActive },
   );
 
   // ── Desktop sidebar handler — staged Apply-only model ────────────────────────
@@ -416,6 +215,18 @@ export function EndgamesPage() {
     setMobileFiltersOpen(false);
   }, [pendingFilters, setAppliedFilters, setGamesOffset]);
 
+  // ── Filter UI is hidden on the Stats tab (Phase 238 D-02) ───────────────────
+  // Entering the Stats tab closes any open desktop panel / mobile drawer. Only the
+  // open flags reset: the applied-filter setter is never called and the pending draft
+  // is never committed, so the filter store is exactly as it was when the user returns
+  // to the Games tab.
+  useEffect(() => {
+    if (activeTab === 'stats') {
+      setSidebarOpen(null);
+      setMobileFiltersOpen(false);
+    }
+  }, [activeTab]);
+
   // ── Category selection handler ──────────────────────────────────────────────
 
   const handleCategorySelect = useCallback((category: EndgameClass) => {
@@ -442,350 +253,13 @@ export function EndgamesPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [searchParams]);
 
-  // ── Stats tab content ──────────────────────────────────────────────────────
+// ── Stats tab content ──────────────────────────────────────────────────────
 
-  // Summary line + collapsible explaining endgame concepts and metric limitations
-  const showPerfSection = !!(perfData && perfData.endgame_wdl.total > 0);
-  const showTimePressureCards = !!(timePressureCardsData && timePressureCardsData.cards.length > 0);
-
+  // The Stats tab owns its data, insights state and sections (Phase 238); the
+  // page only tells it whether the Tier-2 queries may fire and where the per-type
+  // games links should navigate. It takes no filter state (D-01).
   const statisticsContent = (
-    <div className="flex flex-col gap-4">
-      <EndgameInsightsBlock
-        rendered={matchingInsights}
-        mutation={insightsMutation}
-        onGenerate={handleGenerateInsights}
-      />
-      {overviewLoading ? (
-        <div className="charcoal-texture rounded-md p-12 flex items-center justify-center">
-          <p className="text-muted-foreground">Loading endgame analytics...</p>
-        </div>
-      ) : statsData && statsData.categories.length > 0 ? (
-        <>
-          {/* ── Endgame Overall Performance ── */}
-          {showPerfSection && (
-            <>
-              <Accordion type="single" collapsible>
-                <AccordionItem value="concepts" className="charcoal-texture rounded-md overflow-hidden" data-testid="endgame-concepts-trigger">
-                  <AccordionTrigger band>
-                    <span className="flex items-center gap-2 flex-1">
-                      <h3 className="text-base font-semibold text-foreground">Endgame Statistics Concepts</h3>
-                    </span>
-                  </AccordionTrigger>
-                  <AccordionContent className="text-muted-foreground space-y-2 p-4">
-                    <p>
-                      <strong>FlawChess Benchmark:</strong> a stratified sample of Lichess players across rating
-                      and time control buckets, used to calibrate the typical range for each metric. The latest
-                      run is published as the {' '}
-                      <a
-                        href="https://github.com/flawchess/flawchess/blob/main/reports/benchmark/benchmarks-latest.md"
-                        data-umami-event="outbound-report-benchmarks"
-                        className="text-primary underline-offset-4 hover:underline"
-                        target="_blank"
-                        rel="noopener noreferrer"
-                      >
-                        FlawChess Benchmark
-                      </a>
-                      {' '}report and powers both the color zones on gauges/charts and the percentile badges shown
-                      next to individual metrics.
-                    </p>
-                    <p>
-                      <strong>Color Zones:</strong> the blue band on each gauge and chart marks the typical range,
-                      defined by the middle 50% of benchmark players (interquartile range). Values inside the blue
-                      zone are typical, while red and green zones flag below- and above-average performance relative
-                      to the benchmark cohort.
-                    </p>
-                    <p>
-                      <strong>Percentile Badges:</strong> the small badge next to a metric (e.g. a blue "23" or
-                      green "82") shows where you rank against a peer cohort of benchmark players at your rating
-                      and time control. Red ({'<'} 25), neutral (25-75), green ({'>'} 75). Computed in five steps:
-                    </p>
-                    <ol className="list-decimal pl-6 space-y-1">
-                      <li>
-                        <strong>Anchor your rating per time control.</strong> For each time control
-                        (bullet/blitz/rapid/classical) we take your most recent 3000 rated games in that time
-                        control over the last 36 months (the same pool used to compute your metrics in step 3,
-                        excluding chess.com Daily), then compute the median of your rating at game time across
-                        those games. chess.com ratings are converted to Lichess-equivalent via the{' '}
-                        <a
-                          href="https://chessgoals.com/rating-comparison"
-                          data-umami-event="outbound-chessgoals"
-                          className="text-primary underline-offset-4 hover:underline"
-                          target="_blank"
-                          rel="noopener noreferrer"
-                        >
-                          ChessGoals rating conversion tables
-                        </a>
-                        {' '}so everyone is compared on the same scale.
-                      </li>
-                      <li>
-                        <strong>Pick the matching peer cohort.</strong> From the FlawChess Benchmark, we select
-                        all Lichess players within +/-200 Elo of your anchor in the same time control. A cell
-                        only qualifies if at least 100 benchmark users fall in that window, otherwise the badge
-                        is suppressed.
-                      </li>
-                      <li>
-                        <strong>Compute your recent metric value.</strong> Your most recent 3000 rated games
-                        per time control over the last 36 months, vs opponents within +/-100 Elo, are used to
-                        compute the same metric (Endgame Score Gap, Conversion, Recovery, Eval Score Gap,
-                        etc.) the same way it is computed for each benchmark user.
-                      </li>
-                      <li>
-                        <strong>Look up your percentile in the cohort distribution, per time control.</strong>
-                        {' '}Steps 1-3 are performed independently for each time control you play. For each TC,
-                        the benchmark cell stores 99 precomputed percentile breakpoints for that metric; your
-                        per-TC value is interpolated against those breakpoints to produce a per-TC percentile.
-                        For page-level chips that span time controls (Endgame Score Gap, Eval Score Gap,
-                        Conversion, Parity, Recovery), the per-TC percentiles are then combined into a single
-                        chip value via a game-count-weighted mean, so the time controls you play most weigh
-                        most heavily. Per-TC chips on the Time Pressure cards skip this aggregation step and
-                        render their own TC's percentile directly.
-                      </li>
-                      <li>
-                        <strong>Color and display.</strong> The integer percentile is rendered on the badge with
-                        the red/neutral/green band described above. UI filters (color, opponent strength, recency)
-                        do not affect the badge: it always reflects the standardized "recent rated games vs
-                        near-peers" basis from step 3, so the comparison stays apples-to-apples.
-                      </li>
-                    </ol>
-                    <p>
-                      <strong>Endgame Phase:</strong> positions where the total count of major and minor pieces
-                      (queens, rooks, bishops, knights) across both sides is at most 6. Kings and pawns are not
-                      counted. This follows the Lichess definition. A game is only counted as having an Endgame
-                      Phase if it spans at least 3 full moves (6 half-moves) in the endgame. Shorter tactical transitions from middlegame into a checkmate are treated as no endgame.
-                    </p>
-                    <p>
-                      <strong>Endgame Types:</strong> Rook, Minor Piece (bishops/knights), Pawn (king and pawns only),
-                      Queen, and Mixed (two or more piece types).
-                    </p>
-                    <p>
-                      <strong>Endgame Sequence:</strong> a continuous stretch of at least 3 full moves (6 half-moves)
-                      spent in a single Endgame Type. A single game can produce multiple sequences. For example,
-                      a rook endgame where the rooks get traded becomes a pawn endgame, giving that game one rook
-                      sequence and one pawn sequence. Sequences drive the Endgame Type Breakdown, so a game can appear
-                      under more than one type.
-                    </p>
-                    <p>
-                      <strong>Score:</strong> your result as a percentage, counting each win as a
-                      full point and each draw as a half point (so 3 wins, 2 draws and 1 loss over
-                      6 games is 67%). 50% is an even result against equally matched opponents.
-                    </p>
-                    <p>
-                      <strong>Score Gap:</strong> the difference between two Scores. Positive means
-                      the first Score is the higher of the two, negative means it is lower.
-                    </p>
-                    <p>
-                      <Cpu className="inline h-4 w-4 -mt-0.5 mr-1" aria-hidden="true" />
-                      <strong>Eval:</strong> the Stockfish evaluation of a position, in pawns and from
-                      your perspective, where positive means you stand better (+1.0 is a one-pawn
-                      advantage). Metrics that are based on the engine are marked with this chip icon.
-                    </p>
-                    <p>
-                      <Cpu className="inline h-4 w-4 -mt-0.5 mr-1" aria-hidden="true" />
-                      <strong>Eval Score:</strong> an Eval converted into a Score with the{' '}
-                      <a
-                        href="https://lichess.org/page/accuracy"
-                        data-umami-event="outbound-lichess-accuracy"
-                        className="text-primary underline-offset-4 hover:underline"
-                        target="_blank"
-                        rel="noopener noreferrer"
-                      >
-                        Lichess expected-score formula
-                      </a>
-                      , so engine evaluations and actual results sit on the same scale. A +1.0 Eval
-                      is roughly a 60% Eval Score.
-                    </p>
-                    <p>
-                      <Cpu className="inline h-4 w-4 -mt-0.5 mr-1" aria-hidden="true" />
-                      <strong>Eval Score Gap:</strong> the gap between an Eval Score and another Score.
-                      Across your overall endgames it is your Endgame Score minus your Entry Eval Score
-                      (did you beat the engine's expectation for the positions you reached?); within an
-                      Endgame Sequence it is the change in Eval Score from start to end. Positive means
-                      you came out ahead of the engine's expectation, negative means you fell short.
-                    </p>
-                    <p>
-                      <strong>Conversion:</strong> percentage of games where you entered the endgame with a
-                      Stockfish evaluation of +1.0 or better (you ahead by at least one pawn of advantage)
-                      and went on to win. Measures how well you close out winning endgames.
-                    </p>
-                    <p>
-                      <strong>Parity:</strong> percentage of games where you entered the endgame with a
-                      Stockfish evaluation between -1.0 and +1.0 (roughly balanced). Score counts draws as
-                      half. Measures how well you handle balanced endgames.
-                    </p>
-                    <p>
-                      <strong>Recovery:</strong> percentage of games where you entered the endgame with a
-                      Stockfish evaluation of -1.0 or worse (you behind by at least one pawn of disadvantage)
-                      and drew or won. Measures how well you defend losing endgames.
-                    </p>
-                    <p>
-                      <Cpu className="inline h-4 w-4 -mt-0.5 mr-1" aria-hidden="true" />
-                      <strong>Entry Eval:</strong> the average Stockfish evaluation of
-                      the position where the endgame begins, measured in pawns from your perspective
-                      (positive means you have the better position). Mate scores are excluded.
-                    </p>
-                    <p>
-                      <Cpu className="inline h-4 w-4 -mt-0.5 mr-1" aria-hidden="true" />
-                      <strong>Entry Eval Score:</strong> your Entry Eval converted to a Score with the{' '}
-                      <a
-                        href="https://lichess.org/page/accuracy"
-                        data-umami-event="outbound-lichess-accuracy"
-                        className="text-primary underline-offset-4 hover:underline"
-                        target="_blank"
-                        rel="noopener noreferrer"
-                      >
-                        Lichess expected-score formula
-                      </a>
-                      , i.e. what a strong player would expect to score from your endgame-entry
-                      positions. The curve is fitted on 2300+ rapid games, so scoring a little below
-                      it from positive evals is normal at lower ratings. Compare it against your
-                      Endgame Score to see how well you convert the positions you reach.
-                    </p>
-                    <p>
-                      <strong>Endgame Score:</strong> your win rate (with draws counted as half)
-                      across all games that reach an endgame, tested against 50%, the baseline against rating-matched opponents. Use the Opponent Strength filter
-                      to tighten the test against equal-rated opponents specifically.
-                    </p>
-                    <p>
-                      <strong>Endgame Score Gap:</strong> the score difference between games that reach an endgame (Endgame Score) vs. games that end before (Non-Endgame Score). Positive means endgames are your strength; negative
-                      means you perform worse once games reach an endgame.
-                    </p>
-                    <p>
-                      <strong>Endgame ELO and Non-Endgame ELO:</strong> what your rating would be if your whole
-                      game played at the level of just your endgame games, or just your non-endgame games. Both
-                      sit symmetrically around your Actual ELO: we take your trailing-window score on each side
-                      (S_E for endgame games, S_N for non-endgame games), convert the score gap into an ELO
-                      spread via the Elo logistic, and split it across the two lines:
-                      {' '}
-                      <code>
-                        spread = 400 · log₁₀((S_E / (1 − S_E)) / (S_N / (1 − S_N)))
-                      </code>
-                      , {' '}
-                      <code>Endgame ELO = Actual ELO + spread / 2</code>, {' '}
-                      <code>Non-Endgame ELO = Actual ELO − spread / 2</code>. The midpoint
-                      equals your Actual ELO by construction. When Endgame ELO sits above Non-Endgame ELO your
-                      endgame play is lifting your rating (green band); when it sits below, your endgame is
-                      holding it back (red band).
-                    </p>
-                  </AccordionContent>
-                </AccordionItem>
-              </Accordion>
-              <h2 className="text-lg font-semibold text-foreground mt-2">Endgame Overall Performance</h2>
-              {scoreGapData && (
-                <EndgameOverallPerformanceSection
-                  data={perfData}
-                  scoreGap={scoreGapData}
-                />
-              )}
-              {scoreGapData && scoreGapData.timeline.length > 0 && (
-                <div className="charcoal-texture rounded-md overflow-hidden">
-                  <EndgameScoreOverTimeChart
-                    timeline={scoreGapData.timeline}
-                    window={scoreGapData.timeline_window}
-                  />
-                </div>
-              )}
-              {/* Phase 87.5 SC#2: Endgame ELO Timeline relocated here, directly
-                  below the Score Gap timeline, inside the "Endgame Overall
-                  Performance" section. The chart shares the same filter
-                  plumbing (overviewData) as EndgameScoreOverTimeChart above. */}
-              {eloTimelineData && (
-                <div
-                  className="charcoal-texture rounded-md overflow-hidden"
-                  data-testid="endgame-elo-timeline-section"
-                >
-                  <EndgameEloTimelineSection
-                    data={eloTimelineData}
-                    isLoading={overviewLoading}
-                    isError={overviewError}
-                  />
-                </div>
-              )}
-              <SectionInsightSlot sectionId="overall" data={sectionBySection.overall} />
-              {perfData && (
-                <>
-                  <h2 className="text-lg font-semibold text-foreground mt-2">
-                    Endgame Metrics
-                  </h2>
-                  {/* Phase 97 Plan 03: replaced aggregated EndgameMetricsSection with per-TC
-                      cards fed by endgame_metrics_cards. The ?? fallback handles older server
-                      responses where endgame_metrics_cards is absent. */}
-                  <EndgameMetricsByTcSection
-                    data={overviewData?.endgame_metrics_cards ?? { cards: [] }}
-                    ratingAnchors={overviewData?.rating_anchors}
-                    filterKey={JSON.stringify(appliedFilters)}
-                  />
-                  <SectionInsightSlot sectionId="metrics_elo" data={sectionBySection.metrics_elo} />
-                </>
-              )}
-            </>
-          )}
-
-          {/* ── Time Pressure ── */}
-          {/* Plan 88-13 A-1: no outer charcoal-texture wrap; each TC card carries
-              its own charcoal container, matching the EndgameTypeBreakdownSection
-              convention below. */}
-          {showTimePressureCards && timePressureCardsData && (
-            <>
-              <h2 className="text-lg font-semibold text-foreground mt-2">Time Pressure</h2>
-              {/* Plan 88-15 + post-UAT reorder (CONTEXT §2 A-2): restored
-                  Average Clock Difference over Time line chart. Sits ABOVE the
-                  per-TC cards so the user sees the trend story first, then
-                  drills into per-TC breakdowns. Hides when no eligible points. */}
-              {showClockDiffTimeline && clockDiffTimelineData && (
-                <div className="charcoal-texture rounded-md overflow-hidden">
-                  <EndgameClockDiffOverTimeChart timeline={clockDiffTimelineData.points} />
-                </div>
-              )}
-              <EndgameTimePressureSection
-                data={timePressureCardsData}
-                ratingAnchors={overviewData?.rating_anchors}
-                filterKey={JSON.stringify(appliedFilters)}
-              />
-              <SectionInsightSlot sectionId="time_pressure" data={sectionBySection.time_pressure} />
-            </>
-          )}
-
-          {/* ── Endgame Type Breakdown ── */}
-          <h2
-            id="endgame-type-breakdown-heading"
-            className="text-lg font-semibold text-foreground mt-2"
-          >
-            <span className="inline-flex items-center gap-1">
-              Endgame Type Breakdown
-              <InfoPopover
-                ariaLabel="Endgame Type Breakdown info"
-                testId="endgame-type-breakdown-info"
-                side="bottom"
-              >
-                <div className="space-y-2">
-                  <p>
-                    <strong>Endgame Type Breakdown:</strong> how you perform across the different
-                    kinds of endgames (rook, minor piece, pawn, queen, mixed).
-                  </p>
-                  <p>
-                    Each card shows your win, draw, and loss rate for that endgame type.
-                  </p>
-                </div>
-              </InfoPopover>
-            </span>
-          </h2>
-          <EndgameTypeBreakdownSection
-            categoriesByTc={statsData.categories_by_tc}
-            filterKey={JSON.stringify(appliedFilters)}
-            onCategorySelect={handleCategorySelect}
-          />
-          <SectionInsightSlot sectionId="type_breakdown" data={sectionBySection.type_breakdown} />
-        </>
-      ) : overviewError ? (
-        <LoadError variant="centered" resource="endgame data" />
-      ) : (
-        <EndgamesTailEmptyState
-          statsData={statsData}
-          appliedFilters={appliedFilters}
-          gameCount={gameCount}
-        />
-      )}
-    </div>
+    <EndgameStatsTab tier2={tier2} onCategorySelect={handleCategorySelect} />
   );
 
   // ── Games tab content ────────────────────────────────────────────────────────
@@ -862,6 +336,39 @@ export function EndgamesPage() {
     </div>
   );
 
+  // The Games-tab filter panel (D-02: the Stats tab renders no filter UI at all).
+  const filtersPanel: SidebarPanelConfig = {
+    id: 'filters',
+    label: 'Filters',
+    icon: <SlidersHorizontal className="h-5 w-5" />,
+    notificationDot: modifiedDotNode,
+    content: (
+      <div className="p-3">
+        {/* 'playedAs' omitted: endgame queries ignore color/playedAs entirely
+            (see useEndgames "no color per D-02"), so the control was a no-op here. */}
+        <FilterPanel
+          filters={pendingFilters}
+          onChange={setPendingFilters}
+          visibleFilters={['timeControl', 'platform', 'opponent', 'opponentStrength', 'rated', 'recency']}
+          hideReset
+        />
+      </div>
+    ),
+    // Reset/Apply pinned to the panel bottom, below the scrolling filters
+    // (mirrors the mobile drawer's pinned footer).
+    footer: (
+      <div className="px-3 pb-3">
+        <FilterActions
+          onReset={() => setPendingFilters(resetFilterState(pendingFilters))}
+          onApply={handleDesktopFiltersApply}
+        />
+      </div>
+    ),
+  };
+
+  // An empty list makes SidebarLayout skip the strip entirely on the Stats tab.
+  const desktopPanels: SidebarPanelConfig[] = activeTab === 'games' ? [filtersPanel] : [];
+
   // ── Render ───────────────────────────────────────────────────────────────────
 
   // Whole-page lock until Tier 2 (D-01/D-02): uniform for first-import and
@@ -918,36 +425,7 @@ export function EndgamesPage() {
             </TabsTrigger>
           </TabsList>
           <SidebarLayout
-            panels={[
-              {
-                id: 'filters',
-                label: 'Filters',
-                icon: <SlidersHorizontal className="h-5 w-5" />,
-                notificationDot: modifiedDotNode,
-                content: (
-                  <div className="p-3">
-                    {/* 'playedAs' omitted: endgame queries ignore color/playedAs entirely
-                        (see useEndgames "no color per D-02"), so the control was a no-op here. */}
-                    <FilterPanel
-                      filters={pendingFilters}
-                      onChange={setPendingFilters}
-                      visibleFilters={['timeControl', 'platform', 'opponent', 'opponentStrength', 'rated', 'recency']}
-                      hideReset
-                    />
-                  </div>
-                ),
-                // Reset/Apply pinned to the panel bottom, below the scrolling filters
-                // (mirrors the mobile drawer's pinned footer).
-                footer: (
-                  <div className="px-3 pb-3">
-                    <FilterActions
-                      onReset={() => setPendingFilters(resetFilterState(pendingFilters))}
-                      onApply={handleDesktopFiltersApply}
-                    />
-                  </div>
-                ),
-              },
-            ]}
+            panels={desktopPanels}
             activePanel={sidebarOpen}
             onActivePanelChange={handleSidebarOpenChange}
           >
@@ -993,52 +471,55 @@ export function EndgamesPage() {
               </TabsList>
             </div>
 
-            {/* Sticky Filters button, styled like the Library page. The full-width
-                subnav above is non-sticky; this button pins on scroll. */}
-            <div className="sticky top-0 z-20 flex justify-end gap-2 py-2 bg-background/80 backdrop-blur-sm">
-              <Button
-                variant="brand-outline"
-                className="relative"
-                onClick={() => setMobileFiltersOpen(true)}
-                data-testid="btn-open-filter-drawer"
-                aria-label="Open filters"
-              >
-                <SlidersHorizontal className="mr-2 h-4 w-4" />
-                Filters
-                {modifiedDotNode}
-              </Button>
-            </div>
+            {/* Mobile filter UI exists only on the Games tab (Phase 238 D-02). */}
+            {activeTab === 'games' && (
+              <>
+                {/* Sticky Filters button, styled like the Library page. The full-width
+                    subnav above is non-sticky; this button pins on scroll. */}
+                <div className="sticky top-0 z-20 flex justify-end gap-2 py-2 bg-background/80 backdrop-blur-sm">
+                  <Button
+                    variant="brand-outline"
+                    className="relative"
+                    onClick={() => setMobileFiltersOpen(true)}
+                    data-testid="btn-open-filter-drawer"
+                    aria-label="Open filters"
+                  >
+                    <SlidersHorizontal className="mr-2 h-4 w-4" />
+                    Filters
+                    {modifiedDotNode}
+                  </Button>
+                </div>
 
-            {/* Filter drawer */}
-            <MobileFilterDrawer
-              open={mobileFiltersOpen}
-              onOpenChange={handleMobileFiltersOpenChange}
-              panel="filters"
-              title="Filters"
-              contentTestId="drawer-filter-sidebar"
-              closeTestId="btn-close-filter-drawer"
-              bodyClassName="space-y-4"
-              footer={
-                <FilterActions
-                  onReset={() => setPendingFilters(resetFilterState(pendingFilters))}
-                  onApply={handleMobileFiltersApply}
-                />
-              }
-            >
-              {/* 'playedAs' omitted — see desktop panel note (no-op for endgame queries). */}
-              <FilterPanel
-                filters={pendingFilters}
-                onChange={setPendingFilters}
-                visibleFilters={['timeControl', 'platform', 'opponent', 'opponentStrength', 'rated', 'recency']}
-                hideReset
-              />
-            </MobileFilterDrawer>
+                {/* Filter drawer */}
+                <MobileFilterDrawer
+                  open={mobileFiltersOpen}
+                  onOpenChange={handleMobileFiltersOpenChange}
+                  panel="filters"
+                  title="Filters"
+                  contentTestId="drawer-filter-sidebar"
+                  closeTestId="btn-close-filter-drawer"
+                  bodyClassName="space-y-4"
+                  footer={
+                    <FilterActions
+                      onReset={() => setPendingFilters(resetFilterState(pendingFilters))}
+                      onApply={handleMobileFiltersApply}
+                    />
+                  }
+                >
+                  {/* 'playedAs' omitted — see desktop panel note (no-op for endgame queries). */}
+                  <FilterPanel
+                    filters={pendingFilters}
+                    onChange={setPendingFilters}
+                    visibleFilters={['timeControl', 'platform', 'opponent', 'opponentStrength', 'rated', 'recency']}
+                    hideReset
+                  />
+                </MobileFilterDrawer>
+              </>
+            )}
 
-            {/* `-mt-2` cancels the Tabs root's `gap-2`, so the stats content
-                (Shelly's bubble, or the report card) starts right at the sticky
-                Filters row's bottom edge: the minimum gap under the button
-                without sliding beneath the row's backdrop. */}
-            <TabsContent value="stats" className="-mt-2">
+            {/* No sticky Filters row on the Stats tab (D-02), so the content sits
+                directly under the sub-navigation at the Tabs root's `gap-2`. */}
+            <TabsContent value="stats">
               {statisticsContent}
             </TabsContent>
             <TabsContent value="games" className="mt-4">
@@ -1048,70 +529,5 @@ export function EndgamesPage() {
         </div>
       </main>
     </div>
-  );
-}
-
-// ── SectionInsightSlot ──────────────────────────────────────────────────────
-// Renders a per-section insight (headline + 0-2 bullets) above the first chart
-// card of each H2 group when the backend returned a matching section_id. Returns
-// null when no matching data exists, e.g. pre-generate state, or any section
-// the LLM chose to omit (Phase 65 min=1/max=4).
-function SectionInsightSlot({
-  sectionId,
-  data,
-}: {
-  sectionId: SectionId;
-  data: { headline: string; bullets: string[] } | null;
-}) {
-  if (!data) return null;
-
-  // Header band content shared by both the plain (headline-only) and the
-  // collapsible (headline + bullets) variants.
-  const headline = (
-    <span className="flex items-center gap-2 flex-1 text-sm font-semibold text-foreground">
-      <span className="insight-lightbulb shrink-0" aria-hidden="true">
-        <Lightbulb className="size-4" />
-      </span>
-      {data.headline}
-    </span>
-  );
-
-  // No bullets: nothing to fold, so render a plain header card without a
-  // chevron rather than a collapsible with an empty body.
-  if (data.bullets.length === 0) {
-    return (
-      <div
-        data-testid={`insights-section-${sectionId}`}
-        className="charcoal-texture rounded-md overflow-hidden"
-      >
-        <div className="w-full flex items-center gap-2 px-4 py-3 bg-card-band">
-          {headline}
-        </div>
-      </div>
-    );
-  }
-
-  return (
-    <Accordion type="single" collapsible defaultValue="insight">
-      <AccordionItem
-        value="insight"
-        data-testid={`insights-section-${sectionId}`}
-        className="charcoal-texture rounded-md overflow-hidden"
-      >
-        <AccordionTrigger
-          data-testid={`insights-section-${sectionId}-trigger`}
-          band
-        >
-          {headline}
-        </AccordionTrigger>
-        <AccordionContent className="p-4">
-          <ul className="list-disc list-outside pl-5 space-y-1 text-sm text-muted-foreground">
-            {data.bullets.map((b, i) => (
-              <li key={i}>{b}</li>
-            ))}
-          </ul>
-        </AccordionContent>
-      </AccordionItem>
-    </Accordion>
   );
 }

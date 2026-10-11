@@ -34,7 +34,8 @@ vi.mock('@/hooks/useReadiness', () => ({
 
 // ── Mock all heavy data hooks and chart components so the test renders quickly.
 vi.mock('@/hooks/useEndgames', () => ({
-  useEndgameOverview: () => ({ data: null, isLoading: false, isError: false }),
+  useEndgameStats: () => ({ data: null, isLoading: false, isError: false }),
+  useEndgameRankedStats: () => ({ data: { tcs: [] }, isLoading: false, isError: false }),
   useEndgameGames: () => ({
     data: { games: [], matched_count: 0, offset: 0, limit: 20 },
     isLoading: false,
@@ -43,6 +44,7 @@ vi.mock('@/hooks/useEndgames', () => ({
 }));
 
 vi.mock('@/hooks/useEndgameInsights', () => ({
+  useEndgameInsightsGenerating: () => false,
   useCachedEndgameInsights: () => ({ data: null, isLoading: false, isError: false }),
   useEndgameInsights: () => ({
     mutateAsync: vi.fn(),
@@ -66,12 +68,6 @@ vi.mock('@/hooks/useEvalCoverage', () => ({
   }),
 }));
 
-// SEED-163 2d: Endgames page now reads useGameCountValue for the Human+Rated
-// empty state. Mock it so the test does not need a QueryClientProvider.
-vi.mock('@/hooks/useGameCount', () => ({
-  useGameCountValue: () => 10,
-}));
-
 vi.mock('@/hooks/useFilterStore', () => ({
   useFilterStore: () => [
     {
@@ -87,28 +83,8 @@ vi.mock('@/hooks/useFilterStore', () => ({
   ],
 }));
 
-vi.mock('@/components/charts/EndgameOverallPerformanceSection', () => ({
-  EndgameOverallPerformanceSection: () => (
-    <div data-testid="mock-endgame-overall-performance-section" />
-  ),
-}));
-
 vi.mock('@/components/charts/EndgameScoreOverTimeChart', () => ({
   EndgameScoreOverTimeChart: () => <div data-testid="mock-endgame-score-over-time-chart" />,
-}));
-
-vi.mock('@/components/charts/EndgameMetricsSection', () => ({
-  EndgameMetricsSection: () => <div data-testid="mock-endgame-metrics-section" />,
-}));
-
-vi.mock('@/components/charts/EndgameTypeBreakdownSection', () => ({
-  EndgameTypeBreakdownSection: () => (
-    <div data-testid="mock-endgame-type-breakdown-section" />
-  ),
-}));
-
-vi.mock('@/components/charts/EndgameTimePressureSection', () => ({
-  EndgameTimePressureSection: () => <div data-testid="mock-endgame-time-pressure-section" />,
 }));
 
 vi.mock('@/components/charts/EndgameClockDiffOverTimeChart', () => ({

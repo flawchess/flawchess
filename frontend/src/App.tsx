@@ -1050,6 +1050,11 @@ function AppRoutes() {
     // percentile badges only appear on /endgames after a hard refresh. Partial-match
     // on ['endgameOverview'] invalidates every cached (params, window) variant.
     queryClient.invalidateQueries({ queryKey: ['endgameOverview'] });
+    // Phase 238 review (FE-WR-02): new games change the insights findings, so the
+    // server answers 404 for a report older than the latest import. This used to be
+    // handled by an active-jobs edge effect inside the Endgame Stats tab, which missed
+    // imports that finished while the tab was unmounted and kept serving the stale report.
+    queryClient.invalidateQueries({ queryKey: ['endgame-insights'] });
   }, [queryClient]);
 
   // Called when user dismisses a completed progress bar

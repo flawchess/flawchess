@@ -4,8 +4,8 @@ milestone: v2.24
 current_phase: 238
 current_phase_name: Endgame Stats Percentile-First Redesign (SEED-196)
 status: completed
-stopped_at: Phase 238 context gathered
-last_updated: "2026-10-11T15:13:32.194Z"
+stopped_at: Phase 238 complete, squash-merged to main
+last_updated: "2026-10-11T19:40:00.000Z"
 state_head: 6d15ebdc01b6a068c341b687d66ba8f6fae07314
 progress:
   total_phases: 1
@@ -21,10 +21,10 @@ last_activity_desc: "Completed quick task 261010-e5l: live-engine good-move alte
 
 ## Current Position
 
-Phase: 238 (Endgame Stats Percentile-First Redesign (SEED-196)) — READY TO EXECUTE
-Plan: Not started
+Phase: 238 (Endgame Stats Percentile-First Redesign (SEED-196)) — COMPLETE
+Plan: 9 of 9
 
-Status: No open milestone; v2.24 closed 2026-10-09
+Status: Phase 238 complete 2026-10-11 (verified, UAT passed, squash-merged to main; unreleased). SEED-196 closed.
 
 Open threads carried forward (not blockers):
 

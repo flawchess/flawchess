@@ -22,6 +22,7 @@ export interface SidebarPanelConfig {
 }
 
 interface SidebarLayoutProps {
+  /** Panels shown in the strip. An empty list (with no `sideContent`) renders no strip at all. */
   panels: SidebarPanelConfig[];
   /** Currently active panel id, or null if collapsed */
   activePanel: string | null;
@@ -173,6 +174,17 @@ export function SidebarLayout({ panels, activePanel, onActivePanelChange, sideCo
   const wrapperClass = breakpoint === 'lg'
     ? `hidden lg:flex lg:flex-row lg:min-h-0 lg:flex-1 lg:relative ${hasSideContent ? 'lg:items-start' : 'lg:items-stretch'}`
     : `hidden md:flex md:flex-row md:min-h-0 md:flex-1 md:relative ${hasSideContent ? 'md:items-start' : 'md:items-stretch'}`;
+
+  // No panels and no side content: nothing for a strip to hold, so render the main
+  // column alone (Endgames Stats tab hides its filter UI, Phase 238 D-02). The column
+  // widens by the strip width; no left margin without a strip to separate from.
+  if (panels.length === 0 && !hasSideContent) {
+    return (
+      <div className={wrapperClass}>
+        <div className="flex-1 min-w-0">{children}</div>
+      </div>
+    );
+  }
 
   return (
     <div className={wrapperClass}>

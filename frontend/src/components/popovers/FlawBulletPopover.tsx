@@ -1,7 +1,7 @@
 /**
  * FlawBulletPopover — magnifying-glass info popover for one flaw-comparison
- * bullet (Phase 115 UAT). Mirrors the endgame MetricStatPopover shell exactly
- * (Search trigger, 100ms hover-open, Portal + Content side="top").
+ * bullet (Phase 115 UAT). Mirrors the endgame RankedMetricPopover shell
+ * (100ms hover-open, Portal + Content side="top").
  *
  * Body — four paragraphs, matching the endgame metric tooltips:
  *   1. Family-colored icon + bold label, then the tag definition (sourced from

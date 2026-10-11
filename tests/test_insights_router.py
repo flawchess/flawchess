@@ -25,7 +25,6 @@ from app.models.user import User
 from app.schemas.insights import (
     EndgameInsightsReport,
     EndgameTabFindings,
-    FilterContext,
     SectionInsight,
 )
 from app.services import insights_llm
@@ -40,6 +39,7 @@ INSIGHTS_ENDPOINT = "/api/insights/endgame"
 
 def _sample_report(overview: str = "FlawChess played solidly overall.") -> EndgameInsightsReport:
     return EndgameInsightsReport(
+        summary="Endgames lift your rating; rook endings need work.",
         player_profile="Player around 1500 rapid, range 1200-1600 over 2 years.",
         overview=overview,
         recommendations=["Try drilling pawn endings.", "Review losses on time."],
@@ -56,7 +56,6 @@ def _sample_report(overview: str = "FlawChess played solidly overall.") -> Endga
 
 
 async def _fake_compute_findings(
-    filter_context: FilterContext,
     session: AsyncSession,
     user_id: int,
     findings_hash: str = "b" * 64,
@@ -64,7 +63,6 @@ async def _fake_compute_findings(
     """Stub for compute_findings — returns minimal valid findings without hitting the DB."""
     return EndgameTabFindings(
         as_of=datetime.datetime.now(datetime.UTC),
-        filters=filter_context,
         findings=[],
         findings_hash=findings_hash,
     )
@@ -227,12 +225,9 @@ class TestHappyPath:
         fake_insights_agent(_sample_report())
 
         # Stub compute_findings with a known hash so our seeded row matches
-        async def _compute_with_known_hash(
-            fc: FilterContext, session: AsyncSession, uid: int
-        ) -> EndgameTabFindings:
+        async def _compute_with_known_hash(session: AsyncSession, uid: int) -> EndgameTabFindings:
             return EndgameTabFindings(
                 as_of=datetime.datetime.now(datetime.UTC),
-                filters=fc,
                 findings=[],
                 findings_hash="m" * 64,
             )
@@ -369,122 +364,68 @@ class TestHideOverview:
 
 
 # ---------------------------------------------------------------------------
-# TestFilterPassing
+# TestFilterFree: Phase 238 D-04, the endgame insights take no filters
 # ---------------------------------------------------------------------------
 
+# Every query string the pre-238 router either rejected (400 filters_not_supported) or
+# keyed the cache on. The filter-free router declares no parameters, so all of them
+# must behave exactly like no query string at all.
+LEGACY_FILTER_PARAMS: list[dict[str, str]] = [
+    {},
+    {"time_control": "blitz"},
+    {"platform": "chess.com"},
+    {"from_date": "2026-01-01"},
+    {"to_date": "2026-02-01"},
+    {"rated": "false"},
+    {"rated": "true"},
+    {"opponent_gap_min": "50"},
+    {"opponent_gap_min": "13", "opponent_gap_max": "27"},
+    {"color": "white"},
+    {"time_control": "blitz", "platform": "lichess", "from_date": "2026-01-01", "rated": "false"},
+    {"unknown_param": "x"},
+]
+LEGACY_FILTER_PARAM_IDS = [
+    "none",
+    "time_control",
+    "platform",
+    "from_date",
+    "to_date",
+    "rated_false",
+    "rated_true",
+    "gap_stronger",
+    "gap_custom",
+    "color",
+    "combined",
+    "unknown",
+]
 
-class TestFilterPassing:
+
+class TestFilterFree:
+    @pytest.mark.parametrize("params", LEGACY_FILTER_PARAMS, ids=LEGACY_FILTER_PARAM_IDS)
     @pytest.mark.asyncio
-    async def test_query_params_flow_through(
-        self,
-        authed_user_with_session: tuple[dict[str, str], User],
-        fake_insights_agent: Any,
-        monkeypatch: pytest.MonkeyPatch,
-        test_engine: AsyncEngine,
-    ) -> None:
-        """opponent_gap_min/max → derived preset on FilterContext (v8: the only
-        non-default filter the router accepts)."""
-        headers, user = authed_user_with_session
-        fake_insights_agent(_sample_report())
-
-        captured_filter: dict[str, Any] = {}
-
-        async def _capture_compute_findings(
-            fc: FilterContext, session: AsyncSession, uid: int
-        ) -> EndgameTabFindings:
-            captured_filter.update(fc.model_dump())
-            return EndgameTabFindings(
-                as_of=datetime.datetime.now(datetime.UTC),
-                filters=fc,
-                findings=[],
-                findings_hash="z" * 64,
-            )
-
-        monkeypatch.setattr("app.services.insights_llm.compute_findings", _capture_compute_findings)
-
-        async with httpx.AsyncClient(
-            transport=httpx.ASGITransport(app=app), base_url="http://test"
-        ) as client:
-            response = await client.post(
-                INSIGHTS_ENDPOINT,
-                params={"opponent_gap_min": 50},
-                headers=headers,
-            )
-
-        assert response.status_code == 200
-        assert captured_filter["opponent_strength"] == "stronger"
-        assert captured_filter["time_controls"] == []
-        assert captured_filter["platforms"] == []
-
-    @pytest.mark.asyncio
-    async def test_rejects_non_default_filters(
-        self,
-        authed_user_with_session: tuple[dict[str, str], User],
-        test_engine: AsyncEngine,
-    ) -> None:
-        """v8: router returns 400 when any filter other than opponent_strength
-        is non-default. Frontend already gates the button; the server check is
-        the defensive safety net.
-
-        Each case asserts its own `blocking` reason, not just the error code:
-        FLAWCHESS-AG was a wrong *default* (rated), so a test that only checked
-        for `filters_not_supported` would have stayed green while every request
-        was rejected for the wrong reason.
-        """
-        headers, _user = authed_user_with_session
-
-        async with httpx.AsyncClient(
-            transport=httpx.ASGITransport(app=app), base_url="http://test"
-        ) as client:
-            cases = [
-                ({"time_control": "blitz"}, "Remove Time control filter"),
-                ({"platform": "chess.com"}, "Remove Platform filter"),
-                ({"from_date": "2026-01-01"}, "Clear Custom date range filter"),
-                # rated-only is the DEFAULT population (SEED-163 2a), so it is
-                # the casual/all selection that truncates the dataset.
-                ({"rated": "false"}, "Set the Rated filter to Rated"),
-            ]
-            for params, blocking in cases:
-                response = await client.post(INSIGHTS_ENDPOINT, params=params, headers=headers)
-                assert response.status_code == 400, f"expected 400 for params={params}"
-                body = response.json()
-                assert body["detail"]["error"] == "filters_not_supported"
-                assert blocking in body["detail"]["blocking"], (
-                    f"expected {blocking!r} in blocking for params={params}"
-                )
-
-    @pytest.mark.parametrize("params", [{"rated": "true"}, {}], ids=["explicit", "omitted"])
-    @pytest.mark.asyncio
-    async def test_default_filters_are_accepted(
+    async def test_query_strings_behave_like_no_query_string(
         self,
         params: dict[str, str],
         authed_user_with_session: tuple[dict[str, str], User],
         fake_insights_agent: Any,
         monkeypatch: pytest.MonkeyPatch,
-        test_engine: AsyncEngine,
     ) -> None:
-        """FLAWCHESS-AG regression: the frontend's DEFAULT_FILTERS must pass.
+        """POST accepts any query string and answers 200 (never 400 filters_not_supported).
 
-        `DEFAULT_FILTERS.rated` flipped null -> true (SEED-163 2a) while the
-        router still rejected `rated=true`, so the Generate Insights button —
-        gated on those same defaults, and therefore left enabled — 400'd for
-        every user on a filter they had never touched. Both the explicit
-        `rated=true` the frontend sends and an omitted `rated` must be accepted
-        AND must reach compute_findings as rated-only, since the LLM cache key
-        carries no filter and so cannot distinguish two populations.
+        compute_findings receives only (session, user_id): the removed filter plumbing
+        cannot reach the service, so one report per user is served whatever the page
+        filters were. The transient frontend (filters still sent until plan 238-07)
+        therefore keeps working.
         """
-        headers, _user = authed_user_with_session
+        headers, user = authed_user_with_session
         fake_insights_agent(_sample_report())
 
-        captured_filter: dict[str, Any] = {}
+        captured: dict[str, Any] = {}
 
-        async def _capture_compute_findings(
-            fc: FilterContext, session: AsyncSession, uid: int
-        ) -> EndgameTabFindings:
-            captured_filter.update(fc.model_dump())
+        async def _capture_compute_findings(session: AsyncSession, uid: int) -> EndgameTabFindings:
+            captured["user_id"] = uid
             return EndgameTabFindings(
                 as_of=datetime.datetime.now(datetime.UTC),
-                filters=fc,
                 findings=[],
                 findings_hash="z" * 64,
             )
@@ -497,7 +438,76 @@ class TestFilterPassing:
             response = await client.post(INSIGHTS_ENDPOINT, params=params, headers=headers)
 
         assert response.status_code == 200, f"expected 200 for params={params}: {response.text}"
-        assert captured_filter["rated_only"] is True
+        assert response.json()["status"] == "fresh"
+        assert captured["user_id"] == user.id
+
+    @pytest.mark.asyncio
+    async def test_cache_lookup_uses_constant_opponent_strength(
+        self,
+        authed_user_with_session: tuple[dict[str, str], User],
+        fake_insights_agent: Any,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """The cache lookup keys on user, prompt version, model and the constant 'any'."""
+        headers, user = authed_user_with_session
+        fake_insights_agent(_sample_report())
+        monkeypatch.setattr("app.services.insights_llm.compute_findings", _fake_compute_findings)
+
+        lookups: list[dict[str, Any]] = []
+
+        async def _spy_lookup(session: AsyncSession, **kwargs: Any) -> None:
+            lookups.append(kwargs)
+            return None
+
+        monkeypatch.setattr(
+            "app.services.insights_llm.get_latest_successful_log_for_user", _spy_lookup
+        )
+
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=app), base_url="http://test"
+        ) as client:
+            # opponent_gap_min=50 used to derive opponent_strength="stronger".
+            response = await client.post(
+                INSIGHTS_ENDPOINT, params={"opponent_gap_min": 50}, headers=headers
+            )
+
+        assert response.status_code == 200
+        assert len(lookups) == 1
+        assert lookups[0]["opponent_strength"] == "any"
+        assert lookups[0]["opponent_strength"] == insights_llm.INSIGHTS_CACHE_OPPONENT_STRENGTH
+        assert lookups[0]["user_id"] == user.id
+        assert lookups[0]["prompt_version"] == insights_llm._PROMPT_VERSION
+
+    @pytest.mark.asyncio
+    async def test_log_row_written_with_constant_opponent_strength(
+        self,
+        authed_user_with_session: tuple[dict[str, str], User],
+        fake_insights_agent: Any,
+        monkeypatch: pytest.MonkeyPatch,
+        test_engine: AsyncEngine,
+    ) -> None:
+        """A fresh report is logged with filter_context.opponent_strength == 'any'."""
+        headers, user = authed_user_with_session
+        fake_insights_agent(_sample_report())
+        monkeypatch.setattr("app.services.insights_llm.compute_findings", _fake_compute_findings)
+
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=app), base_url="http://test"
+        ) as client:
+            response = await client.post(
+                INSIGHTS_ENDPOINT, params={"opponent_gap_min": 50}, headers=headers
+            )
+        assert response.status_code == 200
+
+        session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
+        async with session_maker() as session:
+            rows = (
+                (await session.execute(select(LlmLog).where(LlmLog.user_id == user.id)))
+                .scalars()
+                .all()
+            )
+        assert len(rows) == 1
+        assert rows[0].filter_context == {"opponent_strength": "any"}
 
 
 # ---------------------------------------------------------------------------
@@ -530,13 +540,10 @@ class TestCachedEndpoint:
         # Spy on compute_findings + LLM agent — they must NOT be called.
         compute_calls = {"n": 0}
 
-        async def _spy_compute(
-            fc: FilterContext, session: AsyncSession, uid: int
-        ) -> EndgameTabFindings:
+        async def _spy_compute(session: AsyncSession, uid: int) -> EndgameTabFindings:
             compute_calls["n"] += 1
             return EndgameTabFindings(
                 as_of=datetime.datetime.now(datetime.UTC),
-                filters=fc,
                 findings=[],
                 findings_hash="x" * 64,
             )
@@ -580,13 +587,10 @@ class TestCachedEndpoint:
         """No cache row → 404. compute_findings not called."""
         compute_calls = {"n": 0}
 
-        async def _spy_compute(
-            fc: FilterContext, session: AsyncSession, uid: int
-        ) -> EndgameTabFindings:
+        async def _spy_compute(session: AsyncSession, uid: int) -> EndgameTabFindings:
             compute_calls["n"] += 1
             return EndgameTabFindings(
                 as_of=datetime.datetime.now(datetime.UTC),
-                filters=fc,
                 findings=[],
                 findings_hash="x" * 64,
             )
@@ -601,38 +605,68 @@ class TestCachedEndpoint:
         assert response.status_code == 404
         assert compute_calls["n"] == 0
 
+    @pytest.mark.parametrize("params", LEGACY_FILTER_PARAMS, ids=LEGACY_FILTER_PARAM_IDS)
     @pytest.mark.asyncio
-    async def test_non_default_filter_returns_404_silently(
+    async def test_query_strings_serve_the_same_cached_report(
         self,
-        auth_headers: dict[str, str],
+        params: dict[str, str],
+        authed_user_with_session: tuple[dict[str, str], User],
+        test_engine: AsyncEngine,
     ) -> None:
-        """Non-default filters do NOT 400 here — they 404 because the cache
-        is keyed only on opponent_strength, so other filters cannot match a row."""
+        """Phase 238 D-04: filters no longer scope the cache. Any query string (the
+        transient frontend still sends the page filters) returns the one per-user
+        report, never a 404 caused by a filter or a custom opponent-gap range."""
+        headers, user = authed_user_with_session
+        session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
+        async with session_maker() as session:
+            await _seed(
+                session,
+                _make_row(
+                    user.id,
+                    response_json=_sample_report().model_dump(),
+                    error=None,
+                    model=insights_llm.settings.PYDANTIC_AI_MODEL_INSIGHTS,
+                    prompt_version=insights_llm._PROMPT_VERSION,
+                    opponent_strength="any",
+                ),
+            )
+
         async with httpx.AsyncClient(
             transport=httpx.ASGITransport(app=app), base_url="http://test"
         ) as client:
-            response = await client.get(
-                CACHED_ENDPOINT,
-                params={"time_control": "blitz", "from_date": "2026-01-01"},
-                headers=auth_headers,
-            )
-        assert response.status_code == 404
+            response = await client.get(CACHED_ENDPOINT, params=params, headers=headers)
+
+        assert response.status_code == 200, f"expected 200 for params={params}"
+        assert response.json()["status"] == "cache_hit"
 
     @pytest.mark.asyncio
-    async def test_custom_opponent_gap_returns_404(
+    async def test_cache_lookup_uses_constant_opponent_strength(
         self,
-        auth_headers: dict[str, str],
+        authed_user_with_session: tuple[dict[str, str], User],
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        """Custom (non-preset) opponent gap → 404 (cache miss), not 400."""
+        """The cached GET keys on user, prompt version, model and the constant 'any'."""
+        headers, user = authed_user_with_session
+        lookups: list[dict[str, Any]] = []
+
+        async def _spy_lookup(session: AsyncSession, **kwargs: Any) -> None:
+            lookups.append(kwargs)
+            return None
+
+        monkeypatch.setattr("app.routers.insights.get_latest_successful_log_for_user", _spy_lookup)
+
         async with httpx.AsyncClient(
             transport=httpx.ASGITransport(app=app), base_url="http://test"
         ) as client:
             response = await client.get(
-                CACHED_ENDPOINT,
-                params={"opponent_gap_min": 13, "opponent_gap_max": 27},
-                headers=auth_headers,
+                CACHED_ENDPOINT, params={"opponent_gap_min": 50}, headers=headers
             )
+
         assert response.status_code == 404
+        assert len(lookups) == 1
+        assert lookups[0]["opponent_strength"] == insights_llm.INSIGHTS_CACHE_OPPONENT_STRENGTH
+        assert lookups[0]["opponent_strength"] == "any"
+        assert lookups[0]["user_id"] == user.id
 
     @pytest.mark.asyncio
     async def test_invalidated_by_recent_import(

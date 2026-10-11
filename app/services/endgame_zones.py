@@ -109,7 +109,7 @@ SubsectionId = Literal[
     # Phase 102 UAT (2026-06-02): the aggregate-over-TC `results_by_endgame_type`
     # and `conversion_recovery_by_type` subsections are retired in favour of one
     # subsection per time control, mirroring the UI's per-TC collapsible Endgame
-    # Type cards (EndgameTypeTcCard, Phase 98). Each per-TC subsection carries a
+    # Type breakdown (TypeTable). Each per-TC subsection carries a
     # WDL table (rendered from categories_by_tc) plus Conversion / Recovery /
     # Score-Gap [summary] blocks per endgame class. The two ids below stay valid
     # SubsectionIds (still constructable; used by schema tests and the
@@ -191,14 +191,15 @@ NEUTRAL_PCT_THRESHOLD: float = 5.0
 # frontend constant in EndgameClockPressureSection.tsx line 23).
 NEUTRAL_TIMEOUT_THRESHOLD: float = 5.0
 
-# Phase 88 D-03: minimum endgame games per TC to emit a TimePressureTcCard.
+# Phase 88 D-03: minimum endgame games per TC before the insights prompt narrates
+# that TC's type table or time-pressure curve.
 # Codegen-emitted to frontend/src/generated/endgameZones.ts (Plan 88-10) to
 # eliminate cross-stack drift (REVIEW.md WR-04). Backend imports from here.
 MIN_GAMES_PER_TC_CARD: int = 20
 
 # Phase 88 D-03: minimum games per (TC, quintile) bin for a reliable bullet.
 # After Phase 88.1 (Plan 88-09) this is the floor for min(n_user_in_Q, n_opp_in_Q)
-# before _build_quintile_bullets emits delta + stats. Below it: stats are None.
+# before build_quintile_bullets emits delta + stats. Below it: stats are None.
 MIN_GAMES_PER_PRESSURE_BIN: int = 5
 
 # Phase 88 D-02: editorial half-width cap for the per-(TC, quintile) Score-Delta
@@ -214,7 +215,7 @@ PRESSURE_BIN_NEUTRAL_CAP: float = 0.06
 # ---------------------------------------------------------------------------
 
 ZONE_REGISTRY: Mapping[MetricId, ZoneSpec] = {
-    # Score Gap: signed 0.0-1.0 scale (score_difference from ScoreGapMaterialResponse).
+    # Score Gap: signed 0.0-1.0 scale (endgame score minus non-endgame score).
     # Typical band = -0.10 to +0.10 (±10pp), mirrors EndgamePerformanceSection.tsx
     # SCORE_GAP_NEUTRAL_MIN/MAX.
     "score_gap": ZoneSpec(
