@@ -27,6 +27,7 @@ impact) — chips are display-only in 107 (the Flaws deep-link target ships late
 | 006 | train-landing-hero | Where the flame lives on the phone landing next to a full-width Start; collapsed schedule (SEED-181) | **A — Flame beside the CTA** | train, landing, hero, mobile |
 | 007 | dark-surface-elevation | How do cards separate from the page in the dark theme (sunlight legibility), keeping all containers? | **S2 — current fills + lighter header band + white/8% border = separator** | theme, dark-mode, surfaces, elevation, mobile |
 | 008 | train-reveal-mobile-layout | How should the post-solve reveal (lines, verdict, free play, Solution/Analyze/Next) use a phone screen? | **Combined — strip + chips + one move tree + action bar (phone + desktop)** | train, reveal, mobile, lines, free-play |
+| 009 | endgame-stats-percentile-first | How to make the Endgame Stats bullet/gauge sections readable when zone colors and peer percentiles disagree? | **Round 2 — percentile-first, ranked values shown, one percentile bar per metric** (SEED-196) | endgames, stats, percentiles, mobile |
 
 ## Decisions (winners)
 
