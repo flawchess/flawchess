@@ -98,7 +98,7 @@ describe('MetricsCard', () => {
     const rateRow = byId(container, 'metrics-card-conversion-rate-row');
     const gapRow = byId(container, 'metrics-card-conversion-gap-row');
     expect(rateRow.textContent).toContain('Conversion vs. peers');
-    expect(gapRow.textContent).toContain('vs. engine expectation');
+    expect(gapRow.textContent).toContain('vs. expected');
     expect(byId(container, 'metrics-card-conversion-gap-row-value').textContent).toBe('-4%');
     // Rate row precedes the gap row in document order.
     expect(

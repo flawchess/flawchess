@@ -271,7 +271,7 @@ describe('TypeTable confidence and layout', () => {
     expect(container.querySelector('thead')?.className).toContain('max-md:hidden');
     expect(byId(container, 'type-row-rook-conversion-caption').textContent).toBe('Conversion');
     expect(byId(container, 'type-row-rook-recovery-caption').textContent).toBe('Recovery');
-    expect(byId(container, 'type-row-rook-gap-caption').textContent).toBe('vs. engine');
+    expect(byId(container, 'type-row-rook-gap-caption').textContent).toBe('vs. expected');
     expect(byId(container, 'type-row-rook-score-caption').textContent).toBe('Score');
   });
 

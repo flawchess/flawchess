@@ -188,7 +188,7 @@ export function MetricsCard({ tcStats, bucket }: MetricsCardProps) {
           metric={gap}
           tcStats={tcStats}
           testId={`${testId}-gap-row`}
-          label="vs. engine expectation"
+          label="vs. expected"
         />
       </CardBody>
     </Card>

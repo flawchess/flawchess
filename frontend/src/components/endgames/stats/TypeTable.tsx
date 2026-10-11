@@ -253,7 +253,7 @@ function TypeRow({ category, tc, onCategorySelect }: TypeRowProps) {
         format={formatPercent}
       />
       <RangeCell
-        caption="vs. engine"
+        caption="vs. expected"
         slug="gap"
         rowTestId={rowTestId}
         value={vsEngineValue(category)}
@@ -265,7 +265,7 @@ function TypeRow({ category, tc, onCategorySelect }: TypeRowProps) {
   );
 }
 
-const COLUMN_HEADERS = ['Type', 'Results', 'Score', 'Conversion', 'Recovery', 'vs. engine'] as const;
+const COLUMN_HEADERS = ['Type', 'Results', 'Score', 'Conversion', 'Recovery', 'vs. expected'] as const;
 
 interface TypeTableProps {
   tcs: readonly RankedTcStats[];
