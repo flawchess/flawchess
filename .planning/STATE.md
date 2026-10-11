@@ -1021,7 +1021,7 @@ None active.
 | 261009-por | add live engine arrows on known lines | 2026-10-09 | dcca42380 | [261009-por-add-live-engine-arrows-on-known-lines](./quick/261009-por-add-live-engine-arrows-on-known-lines/) |
 | 133 | Train mobile: progress bar spans board only, settings cog in top-right corner | 2026-10-10 | 40bf20959 | — |
 | 261010-e5l | Train reveal: live-engine good-move alternatives at the soft puzzle position (up to 3 incl. server alt, good only, depth>=10) | 2026-10-10 | 0cd92a603 | [261010-e5l-train-reveal-live-engine-good-move-alter](./quick/261010-e5l-train-reveal-live-engine-good-move-alter/) |
-| 261011-lwy | Implement SEED-197: Train reveal live engine preview instead of fixed chip lines | 2026-10-11 | 6d15ebdc0 | [261011-lwy-implement-seed-197-train-reveal-live-eng](./quick/261011-lwy-implement-seed-197-train-reveal-live-eng/) |
+| 261011-lwy | Implement SEED-197: Train reveal live engine preview instead of fixed chip lines | 2026-10-11 | 9fd9f3425 | [261011-lwy-implement-seed-197-train-reveal-live-eng](./quick/261011-lwy-implement-seed-197-train-reveal-live-eng/) |
 
 ## Deferred Items
 

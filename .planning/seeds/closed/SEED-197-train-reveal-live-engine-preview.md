@@ -1,6 +1,6 @@
 ---
 id: SEED-197
-status: implemented by quick 261011-lwy (branch quick/seed-197-live-engine-preview, 2026-10-11); close at release
+status: closed. Resolved by quick 261011-lwy (squash 9fd9f3425 on main, 2026-10-11), including the UAT follow-ups (items 6, 7, 10).
 planted: 2026-10-11
 planted_during: Phase 238 (Endgame Stats percentile-first), ad-hoc Train reveal UX discussion
 trigger_when: owner picks a Train reveal / puzzle solution screen UX pass, or any rework of useTrainRevealTree / trainRevealLines
