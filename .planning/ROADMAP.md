@@ -167,8 +167,8 @@ Plans:
 - [ ] 238-05-PLAN.md — Frontend Metrics cards, Time Pressure grey bands, Type table, filter-free Stats tab, concepts copy (wave 3)
 - [ ] 238-06-PLAN.md — Retirement sweep: delete gauges/chips/stat popovers and old section components, stale-reference grep (wave 4, run inline)
 - [ ] 238-07-PLAN.md — Frontend insights without filters, Games tab on /stats, filters hidden on Stats, overview types retired (wave 5)
-- [ ] 238-08-PLAN.md — Backend /overview and aggregated chips retired, zone codegen pruned, CHANGELOG (wave 5)
-- [ ] 238-09-PLAN.md — Pre-merge gate, final stale-reference grep and latency, Claude-run desktop + mobile UAT and live Shelly smoke (wave 6)
+- [ ] 238-08-PLAN.md — Backend /overview and aggregated chips retired, zone codegen pruned, CHANGELOG (wave 6, after 238-07)
+- [ ] 238-09-PLAN.md — Pre-merge gate, final stale-reference grep and latency, Claude-run desktop + mobile UAT and live Shelly smoke (wave 7)
 
 Phase detail for every shipped milestone lives in `milestones/vX.Y-ROADMAP.md`, its phase directories in `milestones/vX.Y-phases/`, and the per-milestone summaries in [MILESTONES.md](MILESTONES.md).
 

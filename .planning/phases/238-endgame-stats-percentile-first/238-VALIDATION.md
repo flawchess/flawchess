@@ -51,6 +51,7 @@ Task IDs are assigned by the planner; each plan task must map to one of these ro
 | D-09/D-10/D-11 | Rank status matrix (ranked / below_floor / unranked / pending, empty sample) | unit | `uv run pytest tests/services/test_endgame_ranked_service.py -k status -x` | 238-01-T3 | ❌ | ⬜ pending |
 | D-14 | Zero-game TCs omitted, bullet→classical order | unit | `uv run pytest tests/services/test_endgame_ranked_service.py -k tcs_listed -x` | 238-01-T3 | ❌ | ⬜ pending |
 | D-01 | `/endgames/ranked-stats` takes no filter params, auth required | router | `uv run pytest tests/test_endgames_router.py -k ranked -x` | 238-01-T1 | ❌ | ⬜ pending |
+| T-238-02 | Two seeded users with distinct games and planted percentiles: each user's `/endgames/ranked-stats` response and `get_ranked_stats` / `fetch_ranked_games` result carry only their own count, value, n and percentile (replaces the V4 scoping test 238-08 deletes) | integration (router + service) | `uv run pytest tests/services/test_endgame_ranked_parity.py -k isolation -x` | 238-01-T1 | ❌ W0 | ⬜ pending |
 | D-03 | Per-TC ranked Score Gap over Time + ELO Timeline series; `since` trims output | integration/unit | `uv run pytest tests/services/test_endgame_ranked_parity.py tests/services/test_endgame_ranked_service.py -k "timeline or elo" -x` | 238-02-T1 | ❌ | ⬜ pending |
 | D-05/D-06 | Per-TC quintile curve, Clock Gap timeline, type categories from ranked games | unit | `uv run pytest tests/services/test_endgame_ranked_service.py -k "quintile or clock_diff or type_categories" -x` | 238-02-T2 | ❌ | ⬜ pending |
 | D-01 (Games tab) | Filtered `/endgames/stats` honours filters | router | `uv run pytest tests/test_endgames_router.py -k EndgameStats -x` | 238-02-T3 | ❌ | ⬜ pending |
@@ -70,7 +71,7 @@ Task IDs are assigned by the planner; each plan task must map to one of these ro
 | D-04 (FE) | Insights hook sends no filters, single cached report | hook | `cd frontend && npx vitest run src/hooks/__tests__/useEndgameInsights.test.tsx` | 238-07-T1 | ⚠ rewrite | ⬜ pending |
 | D-02 | Filters hidden on Stats, shown on Games, applied state preserved | page | `cd frontend && npx vitest run src/pages/__tests__/Endgames.filterVisibility.test.tsx` | 238-07-T2 | ❌ | ⬜ pending |
 | D-00c/D-00d/D-00h | Retired gauge / chip / stat-popover generation deleted with its tests; knip green; no retired component name left in frontend/src, app/ or tests/ (comments included) outside the five files 238-07/238-08 rewrite | static | `npm --prefix frontend run knip` plus the stale-reference grep in 238-06-PLAN.md Task 2 verify | 238-06-T1, T2 | ❌ | ⬜ pending |
-| D-00h | Generator and generated zone file name no retired component; zone constants limited to live frontend consumers | static | `uv run python scripts/gen_endgame_zones_ts.py --check` plus the grep in 238-08-PLAN.md Task 2 acceptance | 238-08-T2 | ✅ | ⬜ pending |
+| D-00h | Generator and generated zone file name no retired component; zone constants limited to live frontend consumers | static | `uv run python scripts/gen_endgame_zones_ts.py --check` and `npm --prefix frontend run knip` plus the grep in 238-08-PLAN.md Task 2 acceptance | 238-08-T2 | ✅ | ⬜ pending |
 | Gate | Full CLAUDE.md pre-merge gate plus the final no-exclusion stale-reference grep over frontend/src, app/, tests/, scripts/ | all | see CLAUDE.md "Pre-merge gate" and 238-09-PLAN.md Task 1 verify | 238-09-T1 | ✅ | ⬜ pending |
 
 *Status: ⬜ pending · ✅ green · ❌ red · ⚠️ flaky*
@@ -80,7 +81,7 @@ Task IDs are assigned by the planner; each plan task must map to one of these ro
 ## Wave 0 Requirements
 
 - [ ] `tests/services/test_canonical_slice_sql.py` — golden hash baseline of all existing builder outputs (capture BEFORE any edit)
-- [ ] `tests/services/test_endgame_ranked_parity.py` + seed helper (NULL eval, sub-800, >2× clock, NULL base_time, multi-class spans, out-of-window/out-of-band games, chess.com Daily)
+- [ ] `tests/services/test_endgame_ranked_parity.py` + seed helper (NULL eval, sub-800, >2× clock, NULL base_time, multi-class spans, out-of-window/out-of-band games, chess.com Daily) + `test_ranked_stats_two_user_isolation` (T-238-02)
 - [ ] `tests/services/test_endgame_ranked_service.py` — status matrix, bucket/WDL consistency, TC listing
 - [ ] Frontend test files for new components, TC hook, and page filter visibility
 
