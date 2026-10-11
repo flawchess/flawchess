@@ -1,31 +1,24 @@
 import { Card, CardBody, CardHeader } from '@/components/ui/card';
-import { MiniWDLBar } from '@/components/stats/MiniWDLBar';
-import { METRIC_BRACKET_COLOR, METRIC_BRACKET_DIM_OVERLAY } from '@/lib/theme';
 import type {
   CdfMetricId,
   MaterialBucket,
   RankedBucketOut,
   RankedTcStats,
 } from '@/types/endgames';
+import { BracketedWdlBar, type WdlShares } from './BracketedWdlBar';
 import { RankedMetricRow } from './RankedMetricRow';
 import { formatMetricValue } from './rankedMetrics';
 
 const NO_VALUE = '—';
 const PERCENT_SCALE = 100;
 
-/**
- * The label is centered under the span, but its center stays at least this far (in % of
- * the bar width) from either bar edge so a long label under a tiny or near-full span
- * stays inside the card. Sized for the longest label ("wins + ½draws = 52%").
- */
-const BRACKET_LABEL_EDGE_PCT = 22;
 
 interface BucketCopy {
   title: string;
   definition: string;
   rateMetric: CdfMetricId;
   gapMetric: CdfMetricId;
-  /** Prefix of the bracket label; the rate follows after an equals sign. */
+  /** Formula over the bracket: what the rate counts. */
   bracketLabel: string;
 }
 
@@ -42,7 +35,6 @@ const BUCKET_COPY: Record<MaterialBucket, BucketCopy> = {
     definition: 'Endgames you entered roughly equal. Your score.',
     rateMetric: 'parity_rate',
     gapMetric: 'score_gap_parity',
-    // Keep this short: "score (W + ½D) = 52%" ran past the bar's edge on a narrow card (238 UAT).
     bracketLabel: 'wins + ½draws',
   },
   recovery: {
@@ -54,14 +46,8 @@ const BUCKET_COPY: Record<MaterialBucket, BucketCopy> = {
   },
 };
 
-interface BucketShares {
-  win: number;
-  draw: number;
-  loss: number;
-}
-
 /** W/D/L as percent of the bucket's games; null for an empty bucket. */
-function bucketShares(bucket: RankedBucketOut | undefined): BucketShares | null {
+function bucketShares(bucket: RankedBucketOut | undefined): WdlShares | null {
   if (!bucket || bucket.games === 0) return null;
   const toPct = (count: number): number => (count / bucket.games) * PERCENT_SCALE;
   return { win: toPct(bucket.wins), draw: toPct(bucket.draws), loss: toPct(bucket.losses) };
@@ -72,64 +58,10 @@ function bucketShares(bucket: RankedBucketOut | undefined): BucketShares | null 
  * counts half of each draw, so its span ends halfway through the draw segment (238 UAT:
  * the parity bracket spans its score like the other two cards instead of only labelling it).
  */
-function coveredPct(bucket: MaterialBucket, shares: BucketShares): number {
+function coveredPct(bucket: MaterialBucket, shares: WdlShares): number {
   if (bucket === 'conversion') return shares.win;
   if (bucket === 'recovery') return shares.win + shares.draw;
   return shares.win + shares.draw / 2;
-}
-
-interface BracketProps {
-  covered: number;
-  label: string;
-  testId: string;
-}
-
-/** Bracket under the WDL bar: spans what the rate counts, labelled with the rate. */
-function Bracket({ covered, label, testId }: BracketProps) {
-  const labelCenter = Math.min(
-    Math.max(covered / 2, BRACKET_LABEL_EDGE_PCT),
-    PERCENT_SCALE - BRACKET_LABEL_EDGE_PCT,
-  );
-  return (
-    <div className="relative mt-0.5 h-8" data-testid={testId}>
-      <span
-        className="absolute left-0 top-0 h-2 rounded-b-md border-x-[1.5px] border-b-[1.5px]"
-        style={{ width: `${covered}%`, borderColor: METRIC_BRACKET_COLOR }}
-        data-testid={`${testId}-span`}
-      />
-      <span
-        className="absolute top-3 -translate-x-1/2 whitespace-nowrap text-sm text-muted-foreground"
-        style={{ left: `${labelCenter}%` }}
-        data-testid={`${testId}-label`}
-      >
-        {label}
-      </span>
-    </div>
-  );
-}
-
-interface BracketedWdlBarProps {
-  shares: BucketShares;
-  covered: number;
-  label: string;
-  testId: string;
-}
-
-/** The bucket's WDL bar with everything right of the counted share dimmed, and the bracket below. */
-function BracketedWdlBar({ shares, covered, label, testId }: BracketedWdlBarProps) {
-  return (
-    <div>
-      <div className="relative" data-testid={`${testId}-bar`}>
-        <MiniWDLBar win_pct={shares.win} draw_pct={shares.draw} loss_pct={shares.loss} />
-        <div
-          className="pointer-events-none absolute inset-y-0 right-0 rounded-r-sm"
-          style={{ left: `${covered}%`, backgroundColor: METRIC_BRACKET_DIM_OVERLAY }}
-          data-testid={`${testId}-dim`}
-        />
-      </div>
-      <Bracket covered={covered} label={label} testId={`${testId}-bracket`} />
-    </div>
-  );
 }
 
 interface MetricsCardProps {
@@ -141,7 +73,7 @@ interface MetricsCardProps {
  * One material bucket (Conversion, Parity or Recovery) for the selected time
  * control (D-00d). The big rate, the WDL bar and the percentile rows all come
  * from the same ranked sample, so they always describe the same games (D-00b).
- * No gauge: the bracket under the bar shows what the rate counts instead.
+ * No gauge: the bracket over the bar shows what the rate counts instead.
  */
 export function MetricsCard({ tcStats, bucket }: MetricsCardProps) {
   const copy = BUCKET_COPY[bucket];
@@ -176,7 +108,7 @@ export function MetricsCard({ tcStats, bucket }: MetricsCardProps) {
               <BracketedWdlBar
                 shares={shares}
                 covered={coveredPct(bucket, shares)}
-                label={`${copy.bracketLabel} = ${rateText}`}
+                label={copy.bracketLabel}
                 testId={testId}
               />
             )}

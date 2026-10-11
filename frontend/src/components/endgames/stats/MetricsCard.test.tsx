@@ -51,7 +51,7 @@ describe('MetricsCard', () => {
     const { container } = renderCard('conversion');
     expect(byId(container, 'metrics-card-conversion-rate').textContent).toBe('70%');
     expect(byId(container, 'metrics-card-conversion-games').textContent).toBe('100 games');
-    expect(byId(container, 'metrics-card-conversion-bracket-label').textContent).toBe('wins = 70%');
+    expect(byId(container, 'metrics-card-conversion-bracket-label').textContent).toBe('wins');
     expect(byId(container, 'metrics-card-conversion-bracket-span').style.width).toBe('70%');
     // The draw and loss segments (everything right of the wins) are dimmed.
     expect(byId(container, 'metrics-card-conversion-dim').style.left).toBe('70%');
@@ -59,9 +59,7 @@ describe('MetricsCard', () => {
 
   it('recovery: brackets wins plus draws and dims only the losses', () => {
     const { container } = renderCard('recovery');
-    expect(byId(container, 'metrics-card-recovery-bracket-label').textContent).toBe(
-      'wins + draws = 20%',
-    );
+    expect(byId(container, 'metrics-card-recovery-bracket-label').textContent).toBe('wins + draws');
     // 4 wins + 4 draws of 40 games, the same 20% as the ranked rate.
     expect(byId(container, 'metrics-card-recovery-bracket-span').style.width).toBe('20%');
     expect(byId(container, 'metrics-card-recovery-dim').style.left).toBe('20%');
@@ -69,9 +67,7 @@ describe('MetricsCard', () => {
 
   it('parity: brackets wins plus half the draws (the score) and dims the rest', () => {
     const { container } = renderCard('parity');
-    expect(byId(container, 'metrics-card-parity-bracket-label').textContent).toBe(
-      'wins + ½draws = 50%',
-    );
+    expect(byId(container, 'metrics-card-parity-bracket-label').textContent).toBe('wins + ½draws');
     // 20 W / 10 D / 20 L of 50: 40% wins + half of the 20% draws.
     expect(byId(container, 'metrics-card-parity-bracket-span').style.width).toBe('50%');
     expect(byId(container, 'metrics-card-parity-dim').style.left).toBe('50%');
