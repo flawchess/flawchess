@@ -1,6 +1,8 @@
 ---
 id: SEED-196
-status: dormant
+status: promoted
+promoted_to: Phase 238
+promoted: 2026-10-11
 planted: 2026-10-11
 planted_during: ad-hoc Endgame Stats UX review (no phase in flight; next standalone phase is 238)
 trigger_when: owner picks the Endgame Stats redesign as a phase (owner asked for it to be implemented in a phase, 2026-10-11)

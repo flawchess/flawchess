@@ -128,6 +128,40 @@
 
 No open milestone. Standalone phases continue absolute numbering from v2.24's Phase 237.
 
+### Phase 238: Endgame Stats Percentile-First Redesign (SEED-196)
+
+**Goal**: Make the Endgame Stats tab readable by giving every metric one verdict. Today each metric carries
+three that can contradict each other in the same red/blue/green: population-IQR zone color on the filtered
+whole-history value, a peer percentile chip on a different (ranked) value, and a z-test verdict in the
+magnifier popover (Endgame Score Gap −13% reads red + "real weakness" while its chip says typical 27th).
+Gauges duplicate the WDL bar. Direction is the owner-approved sketch 009 round 2
+(`.planning/sketches/009-endgame-stats-percentile-first/`; locked decisions in SEED-196).
+
+- **1. Percentile-first:** one 0-100 percentile bar per peer-ranked metric (typical band 25-75, median tick,
+  dot colored by band); values uncolored. No zone bands, CI whiskers or zone-colored numbers on ranked metrics.
+- **2. Ranked value displayed:** the big number, its WDL bar and the percentile describe the same games
+  (last 36 months, opponents ±100 Elo, per TC). Backend computes the missing components on the ranked
+  sample (conv/parity/recovery WDL, with/without-endgame scores, entry eval / expected / actual, CI and
+  p-value inputs); aggregated cross-TC chips retire. LLM insights payload narrates the same ranked values.
+- **3. One popover per metric:** WHAT + sign, percentile statement + the four disclosures, then n / 95% CI /
+  p-value greyed below a separator (merges `MetricStatPopover` and `PercentileChip`).
+- **4. Sections:** "Compared to similar-rated players" dot plot (all ranked metrics for the TC, rows link to
+  sections; owner may drop it later); Overall reduced to 2 cards; Endgame Metrics cards without gauges
+  (bracket on the WDL bar); Time Pressure curve and Clock Gap timeline get one grey typical band with
+  neutral line/dots; Endgame Type Breakdown becomes a table with grey typical ranges and an amber
+  below-typical mark (no per-type percentiles). One TC switch per section, synced, replaces the accordions.
+- **Guardrails:** percentile tooltip disclosure contract; no flame icons; `MiniBulletChart` stays (Openings);
+  CDF-side and user-side SQL stay byte-identical; concepts accordion copy updated; mobile and desktop UAT.
+- **Open for discuss:** what filters still do on the Stats tab; TCs below the anchor floor; whether the Type
+  table also moves to the ranked sample; default TC; card state before Stage B percentiles land.
+
+**Depends on**: nothing in flight (builds on Phase 94.4 peer-relative percentiles and Phase 99 rate percentiles)
+**Requirements**: TBD
+**Plans:** 0 plans
+
+Plans:
+- [ ] TBD (run /gsd-discuss-phase 238)
+
 Phase detail for every shipped milestone lives in `milestones/vX.Y-ROADMAP.md`, its phase directories in `milestones/vX.Y-phases/`, and the per-milestone summaries in [MILESTONES.md](MILESTONES.md).
 
 ## Backlog
