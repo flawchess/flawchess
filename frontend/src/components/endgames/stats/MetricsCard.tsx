@@ -40,9 +40,9 @@ const BUCKET_COPY: Record<MaterialBucket, BucketCopy> = {
     definition: 'Endgames you entered roughly equal. Your score.',
     rateMetric: 'parity_rate',
     gapMetric: 'score_gap_parity',
-    // Short on purpose: since the 238 UAT the label sits after the span (not at 0),
-    // and "score (W + ½D) = 52%" ran past the bar's right edge on a narrow card.
-    bracketLabel: 'W + ½D',
+    // The label sits after the span (not at 0) since the 238 UAT; "score (W + ½D) = 52%"
+    // ran past the bar's right edge on a narrow card, so keep this no longer than Recovery's.
+    bracketLabel: 'wins + ½draws',
   },
   recovery: {
     title: 'Recovery',

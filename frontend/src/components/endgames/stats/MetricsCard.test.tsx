@@ -70,7 +70,7 @@ describe('MetricsCard', () => {
   it('parity: brackets wins plus half the draws (the score) and dims the rest', () => {
     const { container } = renderCard('parity');
     expect(byId(container, 'metrics-card-parity-bracket-label').textContent).toBe(
-      'W + ½D = 50%',
+      'wins + ½draws = 50%',
     );
     // 20 W / 10 D / 20 L of 50: 40% wins + half of the 20% draws.
     expect(byId(container, 'metrics-card-parity-bracket-span').style.width).toBe('50%');

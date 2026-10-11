@@ -4,6 +4,7 @@ import { EndgameEloTimelineSection } from '@/components/charts/EndgameEloTimelin
 import { EndgameScoreOverTimeChart } from '@/components/charts/EndgameScoreOverTimeChart';
 import { MiniWDLBar } from '@/components/stats/MiniWDLBar';
 import { useEndgameStatsTc } from '@/hooks/useEndgameStatsTc';
+import { METRIC_BRACKET_COLOR, METRIC_BRACKET_DIM_OVERLAY } from '@/lib/theme';
 import type { EndgameWDLSummary, RankedTcStats } from '@/types/endgames';
 import { RankedMetricRow } from './RankedMetricRow';
 import { SECTION_ID_OVERALL, TC_LABELS } from './rankedMetrics';
@@ -29,6 +30,32 @@ function formatScore(score: number | null): string {
   return score === null ? NO_VALUE : `${(score * PERCENT_SCALE).toFixed(1)}%`;
 }
 
+/**
+ * The WDL bar with its score span marked on top and everything past the score dimmed,
+ * like the Parity card's bar (score = wins + half the draws, so the span ends mid-draw).
+ */
+function ScoreSpanWdlBar({ wdl, testId }: { wdl: EndgameWDLSummary; testId: string }) {
+  const covered = wdl.win_pct + wdl.draw_pct / 2;
+  return (
+    <div className="mt-1.5">
+      <div className="relative mb-0.5 h-2" data-testid={`${testId}-span`}>
+        <span
+          className="absolute bottom-0 left-0 h-2 rounded-t-md border-x-[1.5px] border-t-[1.5px]"
+          style={{ width: `${covered}%`, borderColor: METRIC_BRACKET_COLOR }}
+        />
+      </div>
+      <div className="relative" data-testid={`${testId}-bar`}>
+        <MiniWDLBar win_pct={wdl.win_pct} draw_pct={wdl.draw_pct} loss_pct={wdl.loss_pct} />
+        <div
+          className="pointer-events-none absolute inset-y-0 right-0 rounded-r-sm"
+          style={{ left: `${covered}%`, backgroundColor: METRIC_BRACKET_DIM_OVERLAY }}
+          data-testid={`${testId}-dim`}
+        />
+      </div>
+    </div>
+  );
+}
+
 interface ScoreColumnProps {
   label: string;
   wdl: EndgameWDLSummary;
@@ -44,11 +71,7 @@ function ScoreColumn({ label, wdl, testId }: ScoreColumnProps) {
       <div className="text-2xl font-semibold tabular-nums" data-testid={`${testId}-score`}>
         {formatScore(wdlScore(wdl))}
       </div>
-      {wdl.total > 0 && (
-        <div className="mt-1.5">
-          <MiniWDLBar win_pct={wdl.win_pct} draw_pct={wdl.draw_pct} loss_pct={wdl.loss_pct} />
-        </div>
-      )}
+      {wdl.total > 0 && <ScoreSpanWdlBar wdl={wdl} testId={testId} />}
     </div>
   );
 }
