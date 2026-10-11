@@ -12,8 +12,6 @@ import { TcSwitch } from './TcSwitch';
 const NO_VALUE = '—';
 const PERCENT_SCALE = 100;
 const ENTRY_EVAL_DECIMALS = 2;
-/** Same formula as the Parity card: the score counts half of each draw. */
-const SCORE_FORMULA = 'wins + ½draws';
 
 interface OverallSectionProps {
   tcs: readonly RankedTcStats[];
@@ -50,7 +48,6 @@ function ScoreColumn({ label, wdl, testId }: ScoreColumnProps) {
         <BracketedWdlBar
           shares={{ win: wdl.win_pct, draw: wdl.draw_pct, loss: wdl.loss_pct }}
           covered={wdl.win_pct + wdl.draw_pct / 2}
-          label={SCORE_FORMULA}
           testId={testId}
         />
       )}

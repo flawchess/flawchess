@@ -18,8 +18,6 @@ interface BucketCopy {
   definition: string;
   rateMetric: CdfMetricId;
   gapMetric: CdfMetricId;
-  /** Formula over the bracket: what the rate counts. */
-  bracketLabel: string;
 }
 
 const BUCKET_COPY: Record<MaterialBucket, BucketCopy> = {
@@ -28,21 +26,18 @@ const BUCKET_COPY: Record<MaterialBucket, BucketCopy> = {
     definition: 'Endgames you entered clearly ahead. How often you won.',
     rateMetric: 'conversion_rate',
     gapMetric: 'score_gap_conv',
-    bracketLabel: 'wins',
   },
   parity: {
     title: 'Parity',
     definition: 'Endgames you entered roughly equal. Your score.',
     rateMetric: 'parity_rate',
     gapMetric: 'score_gap_parity',
-    bracketLabel: 'wins + ½draws',
   },
   recovery: {
     title: 'Recovery',
     definition: 'Endgames you entered clearly behind. How often you saved them.',
     rateMetric: 'recovery_rate',
     gapMetric: 'recovery_score_gap',
-    bracketLabel: 'wins + draws',
   },
 };
 
@@ -108,7 +103,6 @@ export function MetricsCard({ tcStats, bucket }: MetricsCardProps) {
               <BracketedWdlBar
                 shares={shares}
                 covered={coveredPct(bucket, shares)}
-                label={copy.bracketLabel}
                 testId={testId}
               />
             )}
