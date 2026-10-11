@@ -13,10 +13,12 @@ import { formatMetricValue } from './rankedMetrics';
 const NO_VALUE = '—';
 const PERCENT_SCALE = 100;
 
-/** The bracket label starts this far past the end of the bracket, in % of the bar width. */
-const BRACKET_LABEL_OFFSET_PCT = 2;
-/** The label never starts further right than this, so a long label stays inside the bar. */
-const BRACKET_LABEL_MAX_LEFT_PCT = 60;
+/**
+ * The label is centered under the span, but its center stays at least this far (in % of
+ * the bar width) from either bar edge so a long label under a tiny or near-full span
+ * stays inside the card. Sized for the longest label ("wins + ½draws = 52%").
+ */
+const BRACKET_LABEL_EDGE_PCT = 22;
 
 interface BucketCopy {
   title: string;
@@ -40,8 +42,7 @@ const BUCKET_COPY: Record<MaterialBucket, BucketCopy> = {
     definition: 'Endgames you entered roughly equal. Your score.',
     rateMetric: 'parity_rate',
     gapMetric: 'score_gap_parity',
-    // The label sits after the span (not at 0) since the 238 UAT; "score (W + ½D) = 52%"
-    // ran past the bar's right edge on a narrow card, so keep this no longer than Recovery's.
+    // Keep this short: "score (W + ½D) = 52%" ran past the bar's edge on a narrow card (238 UAT).
     bracketLabel: 'wins + ½draws',
   },
   recovery: {
@@ -85,17 +86,20 @@ interface BracketProps {
 
 /** Bracket under the WDL bar: spans what the rate counts, labelled with the rate. */
 function Bracket({ covered, label, testId }: BracketProps) {
-  const labelLeft = Math.min(covered + BRACKET_LABEL_OFFSET_PCT, BRACKET_LABEL_MAX_LEFT_PCT);
+  const labelCenter = Math.min(
+    Math.max(covered / 2, BRACKET_LABEL_EDGE_PCT),
+    PERCENT_SCALE - BRACKET_LABEL_EDGE_PCT,
+  );
   return (
-    <div className="relative mt-0.5 h-6" data-testid={testId}>
+    <div className="relative mt-0.5 h-8" data-testid={testId}>
       <span
         className="absolute left-0 top-0 h-2 rounded-b-md border-x-[1.5px] border-b-[1.5px]"
         style={{ width: `${covered}%`, borderColor: METRIC_BRACKET_COLOR }}
         data-testid={`${testId}-span`}
       />
       <span
-        className="absolute top-1 whitespace-nowrap text-sm text-muted-foreground"
-        style={{ left: `${labelLeft}%` }}
+        className="absolute top-3 -translate-x-1/2 whitespace-nowrap text-sm text-muted-foreground"
+        style={{ left: `${labelCenter}%` }}
         data-testid={`${testId}-label`}
       >
         {label}

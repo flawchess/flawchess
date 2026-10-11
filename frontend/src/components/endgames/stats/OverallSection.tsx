@@ -37,7 +37,7 @@ function formatScore(score: number | null): string {
 function ScoreSpanWdlBar({ wdl, testId }: { wdl: EndgameWDLSummary; testId: string }) {
   const covered = wdl.win_pct + wdl.draw_pct / 2;
   return (
-    <div className="mt-1.5">
+    <div>
       <div className="relative mb-0.5 h-2" data-testid={`${testId}-span`}>
         <span
           className="absolute bottom-0 left-0 h-2 rounded-t-md border-x-[1.5px] border-t-[1.5px]"
@@ -80,9 +80,9 @@ function ScoreColumn({ label, wdl, testId }: ScoreColumnProps) {
 function ScoreCard({ tcStats }: { tcStats: RankedTcStats }) {
   const { overall, tc } = tcStats;
   return (
-    <Card data-testid="endgame-overall-score-card">
+    <Card className="flex flex-col" data-testid="endgame-overall-score-card">
       <CardHeader>Score with vs. without endgame</CardHeader>
-      <CardBody className="flex flex-col gap-4">
+      <CardBody className="flex flex-1 flex-col gap-4">
         <p className="text-sm text-muted-foreground">
           Your {tc} games from the last 36 months vs. opponents within ±100 Elo.
         </p>
@@ -101,7 +101,7 @@ function ScoreCard({ tcStats }: { tcStats: RankedTcStats }) {
             testId="endgame-overall-endgame"
           />
         </div>
-        <hr className="border-card-edge" />
+        <hr className="mt-auto border-card-edge" />
         <RankedMetricRow
           metric={tcStats.metrics.score_gap}
           tcStats={tcStats}
@@ -139,9 +139,9 @@ function FlowBox({ label, value, testId }: FlowBoxProps) {
 function EntryCard({ tcStats }: { tcStats: RankedTcStats }) {
   const flow = tcStats.overall.entry_flow;
   return (
-    <Card data-testid="endgame-overall-entry-card">
+    <Card className="flex flex-col" data-testid="endgame-overall-entry-card">
       <CardHeader>Do you keep your entry advantage?</CardHeader>
-      <CardBody className="flex flex-col gap-4">
+      <CardBody className="flex flex-1 flex-col gap-4">
         <p className="text-sm text-muted-foreground">
           Your {tcStats.tc} games from the last 36 months vs. opponents within ±100 Elo.
         </p>
@@ -168,7 +168,7 @@ function EntryCard({ tcStats }: { tcStats: RankedTcStats }) {
             testId="endgame-overall-actual"
           />
         </div>
-        <hr className="border-card-edge" />
+        <hr className="mt-auto border-card-edge" />
         <RankedMetricRow
           metric={tcStats.metrics.achievable_score_gap}
           tcStats={tcStats}
