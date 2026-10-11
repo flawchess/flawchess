@@ -1,6 +1,6 @@
 ---
 id: SEED-196
-status: promoted
+status: closed. Resolved by Phase 238 (squash c51f85c19 on main, 2026-10-11), including the owner UAT rounds (peers card dropped).
 promoted_to: Phase 238
 promoted: 2026-10-11
 planted: 2026-10-11
