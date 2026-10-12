@@ -20,7 +20,6 @@ import type { MoveNode, NodeId } from '@/hooks/useAnalysisBoard';
 import {
   BEST_MOVE_ARROW,
   FLAWCHESS_ENGINE_ARROW,
-  FLAWCHESS_SECONDARY_LINE,
   ARROW_OPACITY,
   STOCKFISH_PRIMARY_ALPHA,
   STOCKFISH_SECONDARY_LINE,
@@ -29,6 +28,8 @@ import {
   ENGINE_ARROW_GRADE_MIN_DEPTH,
   gradeEngineLines,
   stockfishSecondaryArrowColor,
+  flawChessSecondaryArrowColor,
+  secondaryArrowAlpha,
 } from '@/lib/engineArrowGrades';
 import { DEFAULT_ARROWS } from '@/lib/engineSettings';
 
@@ -184,7 +185,7 @@ describe('useAnalysisBoardArrows — FlawChess arrows (D-15)', () => {
     const fc1 = byKey(all, 'fc-1');
     const sf0 = byKey(all, 'sf-0');
     expect(fc0?.color).toBe(FLAWCHESS_ENGINE_ARROW);
-    expect(fc1?.color).toBe(FLAWCHESS_SECONDARY_LINE);
+    expect(fc1?.color).toBe(flawChessSecondaryArrowColor(secondaryArrowAlpha(0.6 - 0.55)));
     expect(fc0?.width).toBe(fc1?.width);
     expect(fc0?.width).toBeGreaterThan(sf0?.width ?? Infinity);
     expect([fc1?.startSquare, fc1?.endSquare]).toEqual(['g2', 'g3']);
@@ -253,10 +254,13 @@ describe('useAnalysisBoardArrows — Stockfish arrow grades and badges (quick 26
     expect(markersFor({ engineEnabled: false, sfArrowCount: 3 }).boardSquareMarkers).toEqual([]);
   });
 
-  it('D-01: FlawChess arrows get no badge and keep the fixed secondary color', () => {
+  it('D-01: FlawChess arrows get no badge; secondaries fade with their practical-score drop', () => {
     const { boardArrows, boardSquareMarkers } = markersFor({ sfArrowCount: 0, fcArrowCount: 3 });
     expect(boardSquareMarkers).toEqual([]);
     const fc = (boardArrows ?? []).filter((a) => a.layerKey?.startsWith('fc-'));
-    expect(byKey(fc, 'fc-1')?.color).toBe(FLAWCHESS_SECONDARY_LINE);
+    // FC_LINES practical scores 0.6 / 0.55 / 0.5: the bigger drop is the fainter arrow.
+    expect(byKey(fc, 'fc-1')?.color).toBe(flawChessSecondaryArrowColor(secondaryArrowAlpha(0.6 - 0.55)));
+    expect(byKey(fc, 'fc-2')?.color).toBe(flawChessSecondaryArrowColor(secondaryArrowAlpha(0.6 - 0.5)));
+    expect(secondaryArrowAlpha(0.6 - 0.5)).toBeLessThan(secondaryArrowAlpha(0.6 - 0.55));
   });
 });

@@ -9,6 +9,9 @@ import {
   secondaryArrowAlpha,
   stockfishSecondaryArrowColor,
   stockfishSecondaryBadgeColor,
+  flawChessSecondaryAlphas,
+  flawChessSecondaryArrowColor,
+  flawChessSecondaryBadgeColor,
   type EngineLineGrade,
 } from '@/lib/engineArrowGrades';
 import { BLUNDER_DROP } from '@/generated/flawThresholds';
@@ -18,6 +21,8 @@ import type { SquareMarker } from '@/components/board/ChessBoard';
 import {
   STOCKFISH_ARROW_RGB,
   STOCKFISH_BADGE_SECONDARY,
+  FLAWCHESS_ARROW_RGB,
+  FLAWCHESS_ENGINE_BADGE_SECONDARY,
   ARROW_OPACITY,
   STOCKFISH_PRIMARY_ALPHA,
   STOCKFISH_SECONDARY_ALPHA_MAX,
@@ -145,6 +150,33 @@ describe('stockfishSecondaryBadgeColor', () => {
     expect(mid).toMatch(/^rgb\(/);
     expect(lightness(good)).toBeLessThan(lightness(mid));
     expect(lightness(mid)).toBeLessThan(lightness(bad));
+  });
+});
+
+describe('FlawChess grading', () => {
+  it('alphas follow the practical-score drop vs the top line, aligned with the lines', () => {
+    const alphas = flawChessSecondaryAlphas([
+      { practicalScore: 0.6 },
+      { practicalScore: 0.6 },
+      { practicalScore: 0.55 },
+      { practicalScore: 0.6 - BLUNDER_DROP },
+    ]);
+    expect(alphas).toEqual([
+      STOCKFISH_SECONDARY_ALPHA_MAX,
+      STOCKFISH_SECONDARY_ALPHA_MAX,
+      secondaryArrowAlpha(0.6 - 0.55),
+      STOCKFISH_SECONDARY_ALPHA_MIN,
+    ]);
+    expect(flawChessSecondaryAlphas([])).toEqual([]);
+  });
+
+  it('arrow color is the FlawChess gold at the graded alpha', () => {
+    expect(flawChessSecondaryArrowColor(0.4)).toBe(`rgba(${FLAWCHESS_ARROW_RGB}, 0.4)`);
+  });
+
+  it('badge at alpha MAX matches the fixed token; lower alphas fade toward the light square', () => {
+    expect(flawChessSecondaryBadgeColor(STOCKFISH_SECONDARY_ALPHA_MAX)).toBe(FLAWCHESS_ENGINE_BADGE_SECONDARY);
+    expect(flawChessSecondaryBadgeColor(STOCKFISH_SECONDARY_ALPHA_MIN)).toBe('rgb(227, 185, 92)');
   });
 });
 

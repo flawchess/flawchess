@@ -54,6 +54,8 @@ import {
   gradeEngineLines,
   mergeEngineBadges,
   stockfishSecondaryArrowColor,
+  flawChessSecondaryAlphas,
+  flawChessSecondaryArrowColor,
   type EngineLineGrade,
 } from '@/lib/engineArrowGrades';
 import { forkPlyForOrientation, type TacticRef } from '@/lib/analysisTactics';
@@ -61,9 +63,7 @@ import {
   TAC_MISSED,
   TAC_ALLOWED,
   FLAWCHESS_ENGINE_ARROW,
-  FLAWCHESS_SECONDARY_LINE,
   BEST_MOVE_ARROW,
-  STOCKFISH_SECONDARY_LINE,
   NEXT_MOVE_ARROW,
   MOVE_HIGHLIGHT_GEM,
   MOVE_HIGHLIGHT_GREAT,
@@ -83,8 +83,6 @@ const STOCKFISH_ENGINE_ARROW_WIDTH = 0.5;
 interface EngineArrowStyle {
   /** Solid color of the rank-1 (primary) arrow. */
   primaryColor: string;
-  /** Translucent per-engine color shared by every rank 2..N arrow. */
-  secondaryColor: string;
   width: number;
   /** layerKey prefix: `${prefix}-${rank index}`. */
   prefix: 'fc' | 'sf';
@@ -92,14 +90,12 @@ interface EngineArrowStyle {
 
 const FLAWCHESS_ARROW_STYLE: EngineArrowStyle = {
   primaryColor: FLAWCHESS_ENGINE_ARROW,
-  secondaryColor: FLAWCHESS_SECONDARY_LINE,
   width: FLAWCHESS_ENGINE_ARROW_WIDTH,
   prefix: 'fc',
 };
 
 const STOCKFISH_ARROW_STYLE: EngineArrowStyle = {
   primaryColor: BEST_MOVE_ARROW,
-  secondaryColor: STOCKFISH_SECONDARY_LINE,
   width: STOCKFISH_ENGINE_ARROW_WIDTH,
   prefix: 'sf',
 };
@@ -111,26 +107,23 @@ const STOCKFISH_ARROW_STYLE: EngineArrowStyle = {
  * primary is pushed LAST and paints on top within its width tier (D-15;
  * ChessBoard's width sort keeps input order for equal keys, RESEARCH Pitfall 7).
  * A count of 0 draws nothing for the engine (its card is unaffected).
- * `grades` (Stockfish only, quick 261012-a6m D-08): when given, ranks 1+ are colored
- * by their graded alpha (a null grade keeps the pre-gate fixed color).
+ * `secondaryColors` (aligned with `rootMoves`) colors ranks 1+: each engine's graded
+ * translucent color (quick 261012-a6m D-08; FlawChess graded the same way since).
  */
 function pushEngineArrows(
   out: BoardArrow[],
   rootMoves: ReadonlyArray<string | null>,
   count: number,
   style: EngineArrowStyle,
-  grades?: ReadonlyArray<EngineLineGrade | null>,
+  secondaryColors: ReadonlyArray<string>,
 ): void {
   for (let i = Math.min(count, rootMoves.length) - 1; i >= 0; i--) {
     const squares = uciToSquares(rootMoves[i] ?? null);
     if (!squares) continue;
-    const secondaryColor = grades
-      ? stockfishSecondaryArrowColor(grades[i] ?? null)
-      : style.secondaryColor;
     out.push({
       startSquare: squares.from,
       endSquare: squares.to,
-      color: i === 0 ? style.primaryColor : secondaryColor,
+      color: i === 0 ? style.primaryColor : (secondaryColors[i] ?? style.primaryColor),
       width: style.width,
       layerKey: `${style.prefix}-${i}`,
     });
@@ -468,6 +461,7 @@ export function useAnalysisBoardArrows(
         flawChessRankedLines.map((line) => line.rootMove),
         fcArrowCount,
         FLAWCHESS_ARROW_STYLE,
+        flawChessSecondaryAlphas(flawChessRankedLines).map(flawChessSecondaryArrowColor),
       );
     }
     if (engineEnabled) {
@@ -476,7 +470,7 @@ export function useAnalysisBoardArrows(
         stockfishArrowLines.map((line) => line.moves[0] ?? null),
         sfArrowCount,
         STOCKFISH_ARROW_STYLE,
-        stockfishGrades,
+        stockfishGrades.map((grade) => stockfishSecondaryArrowColor(grade)),
       );
     }
     return arrows;

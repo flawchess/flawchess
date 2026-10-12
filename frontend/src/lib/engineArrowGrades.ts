@@ -28,9 +28,10 @@ import { uciToSquares } from '@/lib/sanToSquares';
 import {
   ARROW_OPACITY,
   BOARD_LIGHT_SQUARE,
+  FLAWCHESS_ARROW_RGB,
+  SECONDARY_BADGE_MIX_MAX,
+  SECONDARY_BADGE_MIX_MIN,
   STOCKFISH_ARROW_RGB,
-  STOCKFISH_BADGE_MIX_MAX,
-  STOCKFISH_BADGE_MIX_MIN,
   STOCKFISH_BADGE_SECONDARY,
   STOCKFISH_PRIMARY_ALPHA,
   STOCKFISH_SECONDARY_ALPHA_MAX,
@@ -108,22 +109,50 @@ function rgbChannels(color: string): [number, number, number] {
 }
 
 /**
- * Opaque eval-badge fill for a Stockfish secondary line in the engine-lines list: the
- * Stockfish blue mixed toward BOARD_LIGHT_SQUARE, with its share scaled linearly from the
- * grade alpha (ALPHA_MAX -> BADGE_MIX_MAX, ALPHA_MIN -> BADGE_MIX_MIN), so the badge fades
- * with move quality like its board arrow and icon. Pre-gate (null) is the fixed
- * STOCKFISH_BADGE_SECONDARY. Opaque on purpose: see the token comment in theme.ts.
+ * Opaque eval-badge fill for a secondary engine line in the engine-lines lists: the
+ * engine's arrow color mixed toward BOARD_LIGHT_SQUARE, with its share scaled linearly
+ * from the line's arrow alpha (ALPHA_MAX -> BADGE_MIX_MAX, ALPHA_MIN -> BADGE_MIX_MIN), so
+ * the badge fades with move quality like its board arrow. Opaque on purpose: see the
+ * token comment in theme.ts.
  */
+function fadedBadgeColor(arrowRgb: string, alpha: number): string {
+  const t =
+    (alpha - STOCKFISH_SECONDARY_ALPHA_MIN) /
+    (STOCKFISH_SECONDARY_ALPHA_MAX - STOCKFISH_SECONDARY_ALPHA_MIN);
+  const share = SECONDARY_BADGE_MIX_MIN + t * (SECONDARY_BADGE_MIX_MAX - SECONDARY_BADGE_MIX_MIN);
+  const engine = rgbChannels(arrowRgb);
+  const base = rgbChannels(BOARD_LIGHT_SQUARE);
+  const [r, g, b] = engine.map((c, i) => Math.round(c * share + base[i]! * (1 - share)));
+  return `rgb(${r}, ${g}, ${b})`;
+}
+
+/** Stockfish secondary badge fill: graded fade, or the fixed STOCKFISH_BADGE_SECONDARY pre-gate. */
 export function stockfishSecondaryBadgeColor(grade: EngineLineGrade | null): string {
   if (grade === null) return STOCKFISH_BADGE_SECONDARY;
-  const t =
-    (grade.alpha - STOCKFISH_SECONDARY_ALPHA_MIN) /
-    (STOCKFISH_SECONDARY_ALPHA_MAX - STOCKFISH_SECONDARY_ALPHA_MIN);
-  const share = STOCKFISH_BADGE_MIX_MIN + t * (STOCKFISH_BADGE_MIX_MAX - STOCKFISH_BADGE_MIX_MIN);
-  const blue = rgbChannels(STOCKFISH_ARROW_RGB);
-  const base = rgbChannels(BOARD_LIGHT_SQUARE);
-  const [r, g, b] = blue.map((c, i) => Math.round(c * share + base[i]! * (1 - share)));
-  return `rgb(${r}, ${g}, ${b})`;
+  return fadedBadgeColor(STOCKFISH_ARROW_RGB, grade.alpha);
+}
+
+/**
+ * FlawChess secondary-line alphas, aligned with `lines`: the Stockfish mapping
+ * (secondaryArrowAlpha) applied to each line's practical-score drop vs the top line.
+ * practicalScore is already the root mover's expected score, so no conversion is needed,
+ * and a ranked line only exists once the search has scored it, so there is no depth gate.
+ * Index 0 is unused by callers (the primary arrow and badge stay solid).
+ */
+export function flawChessSecondaryAlphas(lines: ReadonlyArray<{ practicalScore: number }>): number[] {
+  const top = lines[0];
+  if (top === undefined) return [];
+  return lines.map((line) => secondaryArrowAlpha(top.practicalScore - line.practicalScore));
+}
+
+/** Translucent FlawChess secondary arrow color at a graded alpha. */
+export function flawChessSecondaryArrowColor(alpha: number): string {
+  return `rgba(${FLAWCHESS_ARROW_RGB}, ${alpha})`;
+}
+
+/** FlawChess secondary badge fill at a graded alpha (opaque fade, like Stockfish's). */
+export function flawChessSecondaryBadgeColor(alpha: number): string {
+  return fadedBadgeColor(FLAWCHESS_ARROW_RGB, alpha);
 }
 
 /**

@@ -7,8 +7,8 @@
  * (D-08/D-06/D-07):
  *  - up to `maxLines` lines (the FlawChess lines setting, 1-5, Phase 228; was a fixed 2, D-08).
  *  - a filled gold practical-score badge (dark font: solid arrow-gold
- *    `FLAWCHESS_ENGINE_BADGE_PRIMARY` on the first line, one faded
- *    `FLAWCHESS_ENGINE_BADGE_SECONDARY` on every later line — the gold analog of the
+ *    `FLAWCHESS_ENGINE_BADGE_PRIMARY` on the first line, a faded gold graded by each
+ *    later line's practical-score drop like its board arrow — the gold analog of the
  *    Stockfish primary/secondary badges, SEED-175), followed by the objective Stockfish eval of the
  *    same move in Stockfish blue (155 UAT). Both numbers are white-POV
  *    pawn-scale (D-06, DISPLAY-03). The badge NEVER renders the bare phrase "best
@@ -30,11 +30,11 @@ import { ChevronDown, Cpu, User } from 'lucide-react';
 
 import type { RankedLine } from '@/lib/engine/types';
 import { expectedScoreToWhitePovCp, sideToMoveFromFen, type MoverColor } from '@/lib/liveFlaw';
+import { flawChessSecondaryAlphas, flawChessSecondaryBadgeColor } from '@/lib/engineArrowGrades';
 import { moveLabel } from '@/lib/moveNumberLabel';
 import { cn } from '@/lib/utils';
 import {
   FLAWCHESS_ENGINE_BADGE_PRIMARY,
-  FLAWCHESS_ENGINE_BADGE_SECONDARY,
   STOCKFISH_ACCENT,
   MAIA_ACCENT,
   MOVE_HIGHLIGHT_GOOD,
@@ -139,6 +139,8 @@ export interface FlawChessEngineLinesProps {
 interface RankedLineRowProps {
   line: RankedLine;
   lineIndex: number;
+  /** This line's graded alpha vs the top line (flawChessSecondaryAlphas); rank 0 ignores it. */
+  alpha: number;
   startPly: number;
   baseFen: string | undefined;
   rootMover: MoverColor;
@@ -295,6 +297,7 @@ function ModalMoveChip({
 function RankedLineRow({
   line,
   lineIndex,
+  alpha,
   startPly,
   baseFen,
   rootMover,
@@ -322,7 +325,7 @@ function RankedLineRow({
       : formatScore(expectedScoreToWhitePovCp(line.practicalScore, rootMover), null);
   // Solid gold for the first line, one translucent gold for every later line (no
   // per-rank shades; SEED-175 styling lock).
-  const badgeColor = lineIndex === 0 ? FLAWCHESS_ENGINE_BADGE_PRIMARY : FLAWCHESS_ENGINE_BADGE_SECONDARY;
+  const badgeColor = lineIndex === 0 ? FLAWCHESS_ENGINE_BADGE_PRIMARY : flawChessSecondaryBadgeColor(alpha);
 
   const hasMore = line.modalPath.length > MAX_PLIES;
   const moves = expanded ? line.modalPath : line.modalPath.slice(0, MAX_PLIES);
@@ -452,6 +455,8 @@ export function FlawChessEngineLines({
   const resolvedRootMover: MoverColor =
     rootMover ?? (baseFen ? sideToMoveFromFen(baseFen) : 'white');
   const visibleLines = rankedLines.slice(0, maxLines);
+  // Same grading the board arrows use, so a badge fades with its arrow.
+  const alphas = flawChessSecondaryAlphas(visibleLines);
   // A terminal root has no legal moves → no ranked lines. Show a single badge row
   // (once the search has settled to empty) instead of a blank card (quick 260709).
   const showTerminalRow = terminalOutcome !== null && rankedLines.length === 0 && !isSearching;
@@ -497,6 +502,7 @@ export function FlawChessEngineLines({
             key={lineIndex}
             line={line}
             lineIndex={lineIndex}
+            alpha={alphas[lineIndex] ?? 0}
             startPly={startPly}
             baseFen={baseFen}
             rootMover={resolvedRootMover}

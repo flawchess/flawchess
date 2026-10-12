@@ -425,7 +425,9 @@ export const BEST_MOVE_ARROW = `rgba(${STOCKFISH_ARROW_RGB}, ${STOCKFISH_PRIMARY
 // engine's identity color, distinct from the blue Stockfish arrow (156 UAT). rgba (not
 // oklch) like the other arrow tokens: oklch() does not reliably paint in the SVG `fill`
 // presentation attribute, which left the arrow invisible. sRGB of oklch(0.80 0.15 80).
-export const FLAWCHESS_ENGINE_ARROW = 'rgb(213, 152, 0)';  // deep gold/amber (156 UAT: darker + fully opaque)
+// RGB triplet shared by FLAWCHESS_ENGINE_ARROW and the graded FlawChess secondary arrows.
+export const FLAWCHESS_ARROW_RGB = '213, 152, 0';
+export const FLAWCHESS_ENGINE_ARROW = `rgb(${FLAWCHESS_ARROW_RGB})`;  // deep gold/amber (156 UAT: darker + fully opaque)
 
 // Non-primary engine lines (SEED-175 styling lock, Phase 228): ONE translucent color per
 // engine for every board arrow after the first (primary stays solid: BEST_MOVE_ARROW
@@ -437,15 +439,16 @@ export const FLAWCHESS_ENGINE_ARROW = 'rgb(213, 152, 0)';  // deep gold/amber (1
 // STOCKFISH only: once the engine has searched deep enough to grade a line, its arrow
 // alpha follows its expected-score drop vs the top line (STOCKFISH_SECONDARY_ALPHA_*
 // below). STOCKFISH_SECONDARY_LINE is now the fixed PRE-DEPTH-GATE fallback look.
-// FLAWCHESS_SECONDARY_LINE keeps the single fixed alpha.
+// The FlawChess arrows follow the same alpha range from their practical-score drop
+// (engineArrowGrades.flawChessSecondaryAlphas); they have no depth gate, so no fallback.
 export const STOCKFISH_SECONDARY_LINE = 'rgba(37, 99, 235, 0.45)';  // BEST_MOVE_ARROW blue @ 45%
 // Graded secondary alpha range (quick 261012-a6m D-08): a line equal to the top move gets
 // MAX (below the primary's 0.8 so the top arrow stays distinct); a blunder-sized expected
 // score drop gets MIN (floor so blunder arrows stay visible). Owner-UAT tunable. The
-// matching quality badge uses the same value as its group opacity.
+// matching quality badge uses the same value as its group opacity. Shared by the
+// FlawChess secondary arrows despite the name.
 export const STOCKFISH_SECONDARY_ALPHA_MAX = 0.6;
 export const STOCKFISH_SECONDARY_ALPHA_MIN = 0.25;
-export const FLAWCHESS_SECONDARY_LINE = 'rgba(213, 152, 0, 0.45)';  // FLAWCHESS_ENGINE_ARROW gold @ 45%
 
 // Non-primary engine-card BADGES (Phase 228 UAT): a faded copy of the engine's primary
 // badge, not the arrow color. The FC primary badge is a darker gold than the board arrow
@@ -456,13 +459,14 @@ export const FLAWCHESS_SECONDARY_LINE = 'rgba(213, 152, 0, 0.45)';  // FLAWCHESS
 // the near-black card. Mixing toward the light square fades the badge the way the board
 // arrows/icons fade, on any background. White text on the blue stays at ~2.8:1+ (bold
 // short evals); the gold FlawChess badges carry dark text instead.
-// Stockfish secondaries are graded per line (engineArrowGrades.stockfishSecondaryBadgeColor):
-// the mix share runs from MAX (line equal to the top move) down to MIN (blunder-sized drop),
-// tracking the arrow alpha. STOCKFISH_BADGE_SECONDARY is the MAX mix, used pre-depth-gate.
-export const STOCKFISH_BADGE_MIX_MAX = 0.75;
-export const STOCKFISH_BADGE_MIX_MIN = 0.5;
+// Both engines' secondaries are graded per line (engineArrowGrades.fadedBadgeColor): the
+// mix share runs from MAX (line equal to the top move) down to MIN (blunder-sized drop),
+// tracking the arrow alpha. The *_BADGE_SECONDARY tokens are the MAX mix (Stockfish uses it
+// pre-depth-gate).
+export const SECONDARY_BADGE_MIX_MAX = 0.75;
+export const SECONDARY_BADGE_MIX_MIN = 0.5;
 export const STOCKFISH_BADGE_SECONDARY = 'rgb(88, 129, 222)';  // blue-600 75% over BOARD_LIGHT_SQUARE
-export const FLAWCHESS_ENGINE_BADGE_SECONDARY = 'rgb(220, 168, 46)';  // FLAWCHESS_ENGINE_BADGE_PRIMARY 75% over BOARD_LIGHT_SQUARE (dark text ~8:1)
+export const FLAWCHESS_ENGINE_BADGE_SECONDARY = 'rgb(220, 169, 46)';  // FLAWCHESS_ENGINE_BADGE_PRIMARY 75% over BOARD_LIGHT_SQUARE (dark text ~8:1)
 
 // Tactic Line Explorer payoff-ply arrows (Phase 135). Lighter alpha than BEST_MOVE_ARROW
 // so payoff arrows visually recede behind the punchline arrow (same blue, less prominent).
