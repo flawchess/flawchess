@@ -172,7 +172,7 @@ export const EVAL_CHART_CURSOR = 'oklch(0.985 0 0)';
 // families (TAC_* below) carry distinct hue and stand out. The per-family constant
 // names are kept (each family still has its own constant) — only the values changed
 // to grey. This applies everywhere FAM_* is consumed: the tag chips, the Tags/eval
-// tooltips, the you-vs-opponent Flaw Comparison grid, and the Flaws filter panel.
+// tooltips, and the Flaws filter panel.
 const FAM_NEUTRAL = EVAL_CHART_AREA_WHITE_AHEAD; // 'oklch(0.78 0 0)'
 const FAM_NEUTRAL_BG = 'oklch(0.78 0 0 / 0.15)';
 export const FAM_TEMPO = FAM_NEUTRAL;
@@ -181,12 +181,8 @@ export const FAM_OPPORTUNITY = FAM_NEUTRAL;
 export const FAM_OPPORTUNITY_BG = FAM_NEUTRAL_BG;
 export const FAM_IMPACT = FAM_NEUTRAL;
 export const FAM_IMPACT_BG = FAM_NEUTRAL_BG;
-export const FAM_SEVERITY = FAM_NEUTRAL;
-export const FAM_SEVERITY_BG = FAM_NEUTRAL_BG;
 export const FAM_PHASE = FAM_NEUTRAL;
 export const FAM_PHASE_BG = FAM_NEUTRAL_BG;
-export const FAM_COMBO = FAM_NEUTRAL;
-export const FAM_COMBO_BG = FAM_NEUTRAL_BG;
 
 // Tactic motif family colors (Phase 126, updated Phase 129).
 // Phase 126 UAT: every tactic family renders in a single blue (indigo) so all
