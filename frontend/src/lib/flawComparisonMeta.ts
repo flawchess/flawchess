@@ -61,7 +61,7 @@ import { TAG_DEFINITIONS } from '@/lib/tagDefinitions';
 import { BLUNDER_DROP, MISTAKE_DROP, TIME_PRESSURE_CLOCK_FRACTION } from '@/generated/flawThresholds';
 import type { GapCell } from '@/lib/gapBar';
 import type { ConfidenceLevel } from '@/lib/scoreConfidence';
-import type { FlawBullet, FlawDeltaMetric } from '@/types/library';
+import type { FlawBullet, FlawComparisonTc, FlawDeltaMetric } from '@/types/library';
 import type { TimeControlBucket } from '@/types/endgames';
 
 // ─── Families ──────────────────────────────────────────────────────────────────
@@ -364,6 +364,59 @@ export const FLAW_GAP_META: Record<FlawDeltaMetric, FlawGapMeta> = {
   },
 };
 
+// ─── You vs. your opponents: the four context-tag cards (D-00f, D-13) ──────────
+
+export type ContextTagCardKey = 'clock' | 'phase' | 'opponent_errors' | 'lost_advantages';
+
+/** The 10 context tags; blunder and mistake have tiles, never rows here (D-13). */
+export type ContextTagMetric = Exclude<FlawDeltaMetric, 'blunder' | 'mistake'>;
+
+export interface ContextTagCardDef {
+  key: ContextTagCardKey;
+  title: string;
+  /** Muted one-liner next to the title (sketch 010 GROUPS). */
+  subtitle: string;
+  metrics: readonly ContextTagMetric[];
+}
+
+/** The four cards in display order, each with its tag rows in display order (no combo row). */
+export const CONTEXT_TAG_CARDS: readonly ContextTagCardDef[] = [
+  {
+    key: 'clock',
+    title: 'Clock',
+    subtitle: 'how much time you had',
+    metrics: ['low_clock', 'hasty', 'unrushed'],
+  },
+  {
+    key: 'phase',
+    title: 'Game phase',
+    subtitle: 'where the flaw happened',
+    metrics: ['opening', 'middlegame', 'endgame_phase'],
+  },
+  {
+    key: 'opponent_errors',
+    title: 'Opponent errors',
+    subtitle: 'chances you missed or got',
+    metrics: ['miss', 'lucky'],
+  },
+  {
+    key: 'lost_advantages',
+    title: 'Lost advantages',
+    subtitle: 'what the flaw cost',
+    metrics: ['reversed', 'squandered'],
+  },
+];
+
+/** The 10 context metrics flattened in card order: What stands out ranks exactly these. */
+export const CONTEXT_TAG_METRICS: readonly ContextTagMetric[] = CONTEXT_TAG_CARDS.flatMap(
+  (card) => card.metrics,
+);
+
+/** `low_clock` -> `low-clock`: the metric segment of the gap testids. */
+export function metricTestIdSegment(metric: FlawDeltaMetric): string {
+  return metric.replace(/_/g, '-');
+}
+
 /** Adapt one API bullet to the gap-bar view model (the components never see API types). */
 export function flawBulletToGapCell(b: FlawBullet): GapCell {
   return {
@@ -380,6 +433,12 @@ export function flawBulletToGapCell(b: FlawBullet): GapCell {
     youEvents: b.player_events,
     oppEvents: b.opp_events,
   };
+}
+
+/** The gap-bar cell of one metric in a TC entry; null when the payload carries no such bullet. */
+export function flawMetricCell(tcStats: FlawComparisonTc, metric: FlawDeltaMetric): GapCell | null {
+  const bullet = tcStats.bullets.find((b) => b.tag === metric);
+  return bullet ? flawBulletToGapCell(bullet) : null;
 }
 
 function scopeText(analyzedN: number, tc: TimeControlBucket): string {
