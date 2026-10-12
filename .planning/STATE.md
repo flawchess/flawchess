@@ -5,8 +5,8 @@ current_phase: 238
 current_phase_name: Endgame Stats Percentile-First Redesign (SEED-196)
 status: completed
 stopped_at: Phase 238 complete, squash-merged to main
-last_updated: "2026-10-12T05:42:07.628Z"
-state_head: ed23039f9655b89437022aeb8e7d9ee98455b866
+last_updated: "2026-10-12T17:19:21.964Z"
+state_head: abb4d710e75e1ca73731b8243b2b1b540b407a0e
 progress:
   total_phases: 1
   completed_phases: 103
@@ -14,7 +14,7 @@ progress:
   completed_plans: 57
 milestone_name: Train Grading Integrity & One-Screen Reveal
 last_activity: 2026-10-12
-last_activity_desc: "Completed quick task 261012-a6m: graded quality badges and drop-proportional transparency on Stockfish engine arrows (Analysis + Train)"
+last_activity_desc: "Completed quick task 261012-qiz: endgame insights dedupe concurrent LLM generations (advisory lock) + 24h regen cooldown"
 ---
 
 # Project State: FlawChess
@@ -1024,6 +1024,7 @@ None active.
 | 261011-lwy | Implement SEED-197: Train reveal live engine preview instead of fixed chip lines | 2026-10-11 | 9fd9f3425 | [261011-lwy-implement-seed-197-train-reveal-live-eng](./quick/261011-lwy-implement-seed-197-train-reveal-live-eng/) |
 | 136 | Endgame page: parity formula 'wins + ½draws', score span marker + dim on Score with vs. without endgame bars | 2026-10-11 | 37c839f86 | — |
 | 261012-a6m | Stockfish engine arrows: best star on top line, graded quality badges + drop-proportional transparency on secondary lines (Analysis + Train step/free-play) | 2026-10-12 | ed23039f9 | [261012-a6m-engine-arrow-move-quality-badges-best-st](./quick/261012-a6m-engine-arrow-move-quality-badges-best-st/) |
+| 261012-qiz | Endgame insights: dedupe concurrent LLM generations (advisory lock) + 24h regen cooldown | 2026-10-12 | abb4d710e | [261012-qiz-endgame-insights-dedupe-concurrent-llm-g](./quick/261012-qiz-endgame-insights-dedupe-concurrent-llm-g/) |
 
 ## Deferred Items
 

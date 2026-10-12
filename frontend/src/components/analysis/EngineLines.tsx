@@ -4,7 +4,7 @@
  *
  * Each line is a single row:
  *  - a colored eval badge (read from pvLines[i].evalCp / pvLines[i].evalMate, D-03):
- *    solid blue (BEST_MOVE_ARROW) on the best line; every later line an opaque faded blue
+ *    solid blue (STOCKFISH_BADGE_PRIMARY) on the best line; every later line an opaque faded blue
  *    graded by its quality vs the top line, like its board arrow and icon
  *    (stockfishSecondaryBadgeColor), white text throughout (SEED-175).
  *  - up to 5 clickable PV move chips that call onMoveClick(from, to)
@@ -28,7 +28,7 @@ import type { PvLine } from '@/hooks/uciParser';
 import { gradeEngineLines, stockfishSecondaryBadgeColor, type EngineLineGrade } from '@/lib/engineArrowGrades';
 import { moveLabel } from '@/lib/moveNumberLabel';
 import { cn } from '@/lib/utils';
-import { BEST_MOVE_ARROW, MOVE_HIGHLIGHT_GOOD } from '@/lib/theme';
+import { MOVE_HIGHLIGHT_GOOD, STOCKFISH_BADGE_PRIMARY } from '@/lib/theme';
 import { MiniBoard } from '@/components/board/MiniBoard';
 import { Tooltip } from '@/components/ui/tooltip';
 import { trackFeature } from '@/lib/analytics';
@@ -269,7 +269,7 @@ function PvLineRow({
   const steps = replayPvLine(baseFen, moves);
   // Badge matches the board arrow: solid blue best move, later lines fade with their
   // grade like the arrow and icon. White text (BADGE_CLASS) stays legible on both fills.
-  const badgeColor = lineIndex === 0 ? BEST_MOVE_ARROW : stockfishSecondaryBadgeColor(grade);
+  const badgeColor = lineIndex === 0 ? STOCKFISH_BADGE_PRIMARY : stockfishSecondaryBadgeColor(grade);
 
   return (
     <div

@@ -39,7 +39,6 @@ import {
   NEXT_MOVE_ARROW,
   ARROW_OPACITY,
   STOCKFISH_PRIMARY_ALPHA,
-  STOCKFISH_SECONDARY_ALPHA_MAX,
   STOCKFISH_SECONDARY_LINE,
   TRAIN_BEST_MOVE_ARROW,
   TRAIN_FOCUS_ARROW_DIM_OPACITY,
@@ -599,7 +598,7 @@ describe('buildTrainStepOverlay (quick 261009-por, quick 261012-a6m D-04/D-08)',
     expect(badges).toEqual([]);
   });
 
-  it('preview present as a lower live line: primary-alpha graded preview badge first, live rank 0 at MAX alpha with a translucent star', () => {
+  it('preview present as a lower live line: primary-alpha graded preview badge first, live rank 0 at the primary alpha with a translucent star', () => {
     const lines = [pv(1, 'b1c3', 30), pv(2, 'g1f3', -250)];
     const { arrows, badges } = buildTrainStepOverlay('g1f3', lines, 2, GRADE_FEN);
     const g0 = gradeOf(lines, 0);
@@ -609,7 +608,7 @@ describe('buildTrainStepOverlay (quick 261009-por, quick 261012-a6m D-04/D-08)',
       { square: 'f3', severity: g1.quality, opacity: STOCKFISH_PRIMARY_ALPHA * ARROW_OPACITY },
       { square: 'c3', best: true, opacity: g0.alpha * ARROW_OPACITY },
     ]);
-    expect(g0.alpha).toBe(STOCKFISH_SECONDARY_ALPHA_MAX);
+    expect(g0.alpha).toBe(STOCKFISH_PRIMARY_ALPHA);
     const live = arrows.find((a) => a.layerKey === 'step-live-0');
     expect(live?.color).toBe(stockfishSecondaryArrowColor(g0));
     expect(arrows[arrows.length - 1]).toMatchObject({ layerKey: 'step-next', color: TRAIN_BEST_MOVE_ARROW });
@@ -670,7 +669,7 @@ describe('buildTrainStepOverlay (quick 261009-por, quick 261012-a6m D-04/D-08)',
     expect(arrows).toHaveLength(1);
     expect(arrows[0]).toMatchObject({ color: stockfishSecondaryArrowColor(gradeOf(lines, 0)) });
     expect(arrows.some((a) => a.layerKey === 'step-next')).toBe(false);
-    expect(badges).toEqual([{ square: 'c3', best: true, opacity: STOCKFISH_SECONDARY_ALPHA_MAX * ARROW_OPACITY }]);
+    expect(badges).toEqual([{ square: 'c3', best: true, opacity: STOCKFISH_PRIMARY_ALPHA * ARROW_OPACITY }]);
   });
 
   it('a count above the available lines yields only the available arrows', () => {

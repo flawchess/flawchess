@@ -28,6 +28,7 @@ impact) — chips are display-only in 107 (the Flaws deep-link target ships late
 | 007 | dark-surface-elevation | How do cards separate from the page in the dark theme (sunlight legibility), keeping all containers? | **S2 — current fills + lighter header band + white/8% border = separator** | theme, dark-mode, surfaces, elevation, mobile |
 | 008 | train-reveal-mobile-layout | How should the post-solve reveal (lines, verdict, free play, Solution/Analyze/Next) use a phone screen? | **Combined — strip + chips + one move tree + action bar (phone + desktop)** | train, reveal, mobile, lines, free-play |
 | 009 | endgame-stats-percentile-first | How to make the Endgame Stats bullet/gauge sections readable when zone colors and peer percentiles disagree? | **Round 2 — percentile-first, ranked values shown, one percentile bar per metric** (SEED-196) | endgames, stats, percentiles, mobile |
+| 010 | library-stats-you-vs-opponents | How do the Library Stats you-vs-opponent sections (context tags, tactics) become readable, consistent with 009 but without percentiles? | **Round 5: tiles + opponents, zero-centred gap bars (gap only, rates in popovers), What stands out, three tactic tables by filter group (Advanced collapsed), synced TC switch** (SEED-198) | library, stats, flaws, tactics, iqr, mobile |
 
 ## Decisions (winners)
 
@@ -112,3 +113,18 @@ schedule collapses to a one-line summary that expands on tap, day toggles filled
 - **Desktop:** board left with the same controls + Analyze/Next under it; right column = full verdict
   bubble (no strip, there is room) + chips + move tree + game line. ← → step, Home = puzzle position.
 
+
+**010 → Round 5 (Library Stats, you vs. your opponents).** Sketched 2026-10-12; seed: SEED-198. Same system
+as 009 but without percentiles: the benchmark IQR of the you-minus-opponent gap is the grey typical band.
+- **Gap bar** per metric: zero ("same as your opponents") always in the middle, grey band where the IQR is
+  (may be off-centre), dot red/blue/green, better to the right, linear inside the band and saturating
+  outside so big gaps never clip. The gap reads as words ("1.7 fewer"); typical prints white.
+- **Only the gap on the page.** Your and your opponents' rates, the typical range, flaw counts, CI and p
+  live in the lucide Search popover to the right of the gap.
+- **Tiles:** Blunders + Mistakes only (inaccuracy tile removed), each with "Opponents x.xx" and a gap bar;
+  the Severity card and "Flaw rate" row retire. **Combos** (hasty miss, low-clock miss) removed.
+- **What stands out** card: top 3 strengths / weaknesses by distance outside the band, typical tags in one line.
+- **Tactics:** three tables by filter-panel group (Piece Attacks · Checkmate, Checks & Discoveries ·
+  Advanced), Motif | Missed | Allowed, per 100 games; Advanced collapsed with "Click or tap for details".
+  Cells under 40 flaws are faded and verdict-neutral. Tactic IQRs do not exist yet.
+- **Synced TC switch** per section, card header bands, Fredoka only for h2 section titles.

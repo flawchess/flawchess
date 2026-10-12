@@ -6,7 +6,8 @@ import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
 import { trackEvent } from '@/lib/analytics';
 import {
   ARROW_COUNT_OPTIONS,
-  DEFAULT_ARROWS,
+  DEFAULT_FC_ARROWS,
+  DEFAULT_SF_ARROWS,
   DEFAULT_LINES,
   LINE_COUNT_OPTIONS,
   resetAllSettings,
@@ -124,8 +125,8 @@ export function SettingsPanel() {
     !muted &&
     fcLines === DEFAULT_LINES &&
     sfLines === DEFAULT_LINES &&
-    fcArrows === DEFAULT_ARROWS &&
-    sfArrows === DEFAULT_ARROWS;
+    fcArrows === DEFAULT_FC_ARROWS &&
+    sfArrows === DEFAULT_SF_ARROWS;
 
   const handleSoundChange = (on: boolean): void => {
     setMuted(!on);

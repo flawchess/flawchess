@@ -10,6 +10,7 @@ from fastapi.responses import RedirectResponse
 from fastapi_users import schemas as fapi_schemas
 from fastapi_users.exceptions import UserAlreadyExists
 from fastapi_users.jwt import decode_jwt, generate_jwt
+from httpx_oauth.oauth2 import GetAccessTokenError, OAuth2Token
 from sqlalchemy import func, update as sa_update
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -82,6 +83,12 @@ _CSRF_COOKIE = "flawchess_oauth_csrf"
 _PROMOTE_CALLBACK_ROUTE_NAME = "google-oauth-promote-callback"
 _OAUTH_PROMOTE_STATE_AUDIENCE = "fastapi-users:oauth-promote-state"
 
+# Fragment error code the SPA's /auth/callback page turns into a "try again" toast.
+_GOOGLE_SIGNIN_FAILED = "GOOGLE_SIGNIN_FAILED"
+# Google token-endpoint errors that mean "this code can't be redeemed" (already used,
+# expired) rather than a server misconfiguration, so they are not reported to Sentry.
+_EXPECTED_GOOGLE_TOKEN_ERRORS = frozenset({"invalid_grant"})
+
 
 def _oauth_tunnel_origins() -> set[str]:
     """Parse the comma-separated OAUTH_TUNNEL_ORIGINS allowlist into a set."""
@@ -112,6 +119,52 @@ def _resolve_oauth_bases(origin: str | None) -> tuple[str, str]:
     if not origin or origin == settings.FRONTEND_URL:
         return settings.BACKEND_URL, settings.FRONTEND_URL
     raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="OAuth origin not allowed")
+
+
+def _google_token_error(exc: GetAccessTokenError) -> tuple[str | None, str | None]:
+    """Extract Google's ``(error, error_description)`` from a failed token response."""
+    if exc.response is None:
+        return None, None
+    try:
+        body = exc.response.json()
+    except ValueError:
+        return None, None
+    if not isinstance(body, dict):
+        return None, None
+    return body.get("error"), body.get("error_description")
+
+
+async def _exchange_google_code(code: str, redirect_url: str) -> OAuth2Token | None:
+    """Exchange an authorization code for Google tokens, or return None on failure.
+
+    Bug fix (FLAWCHESS-CW, 2026-10-11): the exchange was unguarded, so a 400 from Google's
+    token endpoint surfaced as a raw 500 page. An Android Chrome user hit it five times in
+    a row (fresh code each time, same state), most likely because the callback ran twice
+    per code and the second request got invalid_grant. Callers now redirect to the SPA
+    with a retry message. Only unexpected errors (invalid_client, redirect_uri_mismatch,
+    i.e. real misconfiguration) are reported, with Google's error code attached.
+    """
+    try:
+        return await google_oauth_client.get_access_token(code, redirect_url)
+    except GetAccessTokenError as exc:
+        error, error_description = _google_token_error(exc)
+        if error in _EXPECTED_GOOGLE_TOKEN_ERRORS:
+            return None
+        sentry_sdk.set_tag("source", "auth")
+        sentry_sdk.set_context(
+            "google_token_exchange",
+            {"error": error, "error_description": error_description},
+        )
+        sentry_sdk.capture_exception(exc)
+        return None
+
+
+def _google_signin_failed_redirect(frontend_base: str) -> RedirectResponse:
+    """Send the browser back to the SPA callback page with a retryable sign-in error."""
+    return RedirectResponse(
+        url=f"{frontend_base}/auth/callback#error={_GOOGLE_SIGNIN_FAILED}",
+        status_code=status.HTTP_302_FOUND,
+    )
 
 
 @router.get("/auth/google/available", tags=["auth"], response_model=GoogleOAuthAvailableResponse)
@@ -197,7 +250,7 @@ async def google_callback(
     state: str | None = None,
     error: str | None = None,
     user_manager: UserManager = Depends(get_user_manager),
-):
+) -> RedirectResponse:
     """Handle Google OAuth callback, issue JWT, and redirect to frontend.
 
     Exchanges the authorization code manually using BACKEND_URL instead of
@@ -237,7 +290,9 @@ async def google_callback(
 
     # Exchange code for token using the same redirect_uri as the authorize step
     redirect_url = f"{backend_base}/api/auth/google/callback"
-    token = await google_oauth_client.get_access_token(code, redirect_url)
+    token = await _exchange_google_code(code, redirect_url)
+    if token is None:
+        return _google_signin_failed_redirect(frontend_base)
 
     # Decode id_token from Google (avoids People API dependency).
     # The id_token is a JWT — we only need the payload, Google already validated it.
@@ -450,7 +505,9 @@ async def google_callback_promote(
 
     # Exchange authorization code for tokens using the promote-specific redirect URI
     redirect_url = f"{backend_base}/api/auth/google/callback-promote"
-    token = await google_oauth_client.get_access_token(code, redirect_url)
+    token = await _exchange_google_code(code, redirect_url)
+    if token is None:
+        return _google_signin_failed_redirect(frontend_base)
 
     # Decode id_token to extract Google account_id (sub) and email
     # (same pattern as existing /auth/google/callback — no signature verify needed,

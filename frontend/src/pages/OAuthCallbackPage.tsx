@@ -4,6 +4,8 @@ import { toast } from 'sonner';
 
 import { useAuth } from '@/hooks/useAuth';
 
+const GOOGLE_SIGNIN_FAILED_MESSAGE = 'Google sign-in failed. Please try again.';
+
 /**
  * Handles the Google OAuth redirect callback.
  *
@@ -37,6 +39,11 @@ export function OAuthCallbackPage() {
         'This Google account is already linked to another account. Please log in instead.',
       );
       navigate('/login', { replace: true });
+    } else if (error === 'GOOGLE_SIGNIN_FAILED') {
+      // Backend could not redeem the Google auth code (e.g. it was already used by a
+      // duplicate callback request). Retrying the sign-in gets a fresh code.
+      toast.error(GOOGLE_SIGNIN_FAILED_MESSAGE);
+      navigate('/login', { replace: true });
     } else if (token) {
       loginWithToken(token);
       if (promoted === '1') {
@@ -52,7 +59,7 @@ export function OAuthCallbackPage() {
       }
       navigate('/', { replace: true });
     } else {
-      toast.error('Google sign-in failed. Please try again.');
+      toast.error(GOOGLE_SIGNIN_FAILED_MESSAGE);
       navigate('/login', { replace: true });
     }
   }, [navigate, loginWithToken]);

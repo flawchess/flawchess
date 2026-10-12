@@ -1,0 +1,548 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Library Stats You vs Opponents</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@500;600&family=Nunito+Sans:wght@400;600;700&display=swap" rel="stylesheet">
+<style>
+/* Tokens copied from sketch 009 so both redesigns read as one system. */
+:root {
+  --bg: oklch(0.145 0 0);
+  --card: oklch(0.205 0 0);
+  --card-2: oklch(0.235 0 0);
+  --edge: oklch(1 0 0 / 9%);
+  --fg: oklch(0.985 0 0);
+  --muted: oklch(0.708 0 0);
+  --faint: oklch(0.5 0 0);
+  --brand: oklch(0.58 0.09 55);
+  --low: oklch(0.62 0.17 25);
+  --mid: oklch(0.66 0.15 260);
+  --high: oklch(0.66 0.15 145);
+  --blunder: oklch(0.62 0.19 25);
+  --mistake: oklch(0.72 0.16 55);
+  --inacc: oklch(0.80 0.13 95);
+  --track: oklch(1 0 0 / 7%);
+  --band: oklch(1 0 0 / 13%);
+  --note-bg: oklch(0.80 0.12 85 / 8%);
+  --note-edge: oklch(0.80 0.12 85 / 45%);
+  --note-fg: oklch(0.88 0.08 85);
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--fg); font-family: 'Nunito Sans', sans-serif; font-size: 15px; line-height: 1.45; }
+h1, h2, h3 { font-family: 'Fredoka', sans-serif; font-weight: 500; margin: 0; }
+h2 { font-size: 22px; }
+h3 { font-size: 17px; }
+.wrap { max-width: 1120px; margin: 0 auto; padding: 16px 16px 80px; transition: max-width .2s ease; }
+.topbar { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; justify-content: space-between; padding: 10px 14px; border: 1px dashed var(--note-edge); border-radius: 10px; background: var(--note-bg); color: var(--note-fg); font-size: 13px; margin-bottom: 20px; }
+.topbar label { display: flex; gap: 6px; align-items: center; cursor: pointer; }
+.section { margin-top: 36px; }
+.section .q { color: var(--muted); margin: 4px 0 14px; }
+.card { background: var(--card); border: 1px solid var(--edge); border-radius: 14px; padding: 18px; }
+.grid2, .grid3 { display: grid; grid-template-columns: 1fr; gap: 14px; }
+@media (min-width: 768px) { .grid2 { grid-template-columns: 1fr 1fr; } }
+@media (min-width: 1024px) { .grid3 { grid-template-columns: 1fr 1fr 1fr; } }
+.narrow .grid2, .narrow .grid3, .tablet .grid3 { grid-template-columns: 1fr; }
+.tablet .grid3.keep2 { grid-template-columns: 1fr 1fr; }
+.muted { color: var(--muted); }
+.faint { color: var(--faint); }
+.small { font-size: 13px; }
+.num { font-variant-numeric: tabular-nums; }
+
+.seg { display: inline-flex; flex-wrap: wrap; background: var(--card-2); border: 1px solid var(--edge); border-radius: 10px; padding: 3px; gap: 2px; }
+.seg button { font: inherit; font-size: 13px; color: var(--muted); background: none; border: 0; padding: 5px 12px; border-radius: 8px; cursor: pointer; transition: all .15s ease; }
+.seg button:hover { color: var(--fg); }
+.seg button.on { background: var(--brand); color: var(--fg); }
+.seg.variant button.on { background: oklch(0.80 0.12 85 / 25%); color: var(--note-fg); }
+.sechead { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; justify-content: space-between; }
+.vlabel { font-size: 12px; color: var(--note-fg); margin-right: 6px; }
+
+/* ── Tiles (top band, unchanged layout) ── */
+.tiles { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+.tile { background: var(--card); border: 1px solid var(--edge); border-radius: 10px; padding: 12px 14px; }
+.tile .big { font-family: 'Fredoka', sans-serif; font-size: 30px; line-height: 1.1; }
+.tile .cap { font-size: 13px; text-transform: uppercase; letter-spacing: .03em; color: var(--muted); font-weight: 700; }
+.tile .opp { margin-top: 8px; font-size: 13px; color: var(--muted); display: flex; justify-content: space-between; gap: 6px; flex-wrap: wrap; }
+.tile .ptrack { margin-top: 6px; height: 8px; }
+.narrow .tiles { grid-template-columns: 1fr; }
+.placeholder { border: 1px dashed var(--edge); border-radius: 14px; padding: 22px; color: var(--faint); text-align: center; font-size: 14px; margin-top: 12px; }
+
+/* ── Typical-range bar (the 009 PercentileBar look, value axis instead of 0-100) ── */
+.prow { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 2px 12px; align-items: baseline; }
+.prow + .prow { margin-top: 14px; }
+.prow .lbl { font-weight: 600; min-width: 0; }
+.prow .lbl small, .hint { display: block; font-weight: 400; font-size: 12.5px; color: var(--faint); line-height: 1.3; }
+.prow .val { text-align: right; font-size: 13px; color: var(--muted); white-space: nowrap; }
+.pbar { grid-column: 1 / -1; display: flex; align-items: center; gap: 10px; margin-top: 4px; }
+.ptrack { position: relative; flex: 1; height: 10px; border-radius: 6px; background: var(--track); }
+.ptrack .band { position: absolute; top: 0; bottom: 0; background: var(--band); border-radius: 2px; }
+.ptrack .zero { position: absolute; top: -4px; bottom: -4px; width: 1px; background: oklch(1 0 0 / 40%); }
+.ptrack .dot { position: absolute; top: 50%; width: 16px; height: 16px; border-radius: 50%; transform: translate(-50%, -50%); border: 2px solid var(--bg); }
+.ptrack .dot.off::after { content: ''; position: absolute; top: 50%; width: 0; height: 0; border: 5px solid transparent; transform: translateY(-50%); }
+.ptrack .dot.off.r::after { left: 14px; border-left-color: currentColor; }
+.ptrack .dot.off.l::after { right: 14px; border-right-color: currentColor; }
+.ptrack .opp { position: absolute; top: 50%; width: 12px; height: 12px; border-radius: 50%; transform: translate(-50%, -50%); border: 2px solid oklch(0.85 0 0); background: var(--card); }
+.ptrack .link { position: absolute; top: 50%; height: 2px; transform: translateY(-50%); background: oklch(1 0 0 / 25%); }
+.pnum { min-width: 78px; text-align: right; font-weight: 700; font-size: 14px; cursor: help; position: relative; white-space: nowrap; }
+.lo { color: var(--low); } .md { color: var(--mid); } .hi { color: var(--high); }
+.bg-lo { background: var(--low); color: var(--low); } .bg-md { background: var(--mid); color: var(--mid); } .bg-hi { background: var(--high); color: var(--high); }
+.axis { display: flex; justify-content: space-between; font-size: 12px; color: var(--faint); margin: 10px 88px 0 0; }
+.lowconf { opacity: .5; }
+
+/* One popover per metric: plain explanation, disclosures, greyed stats under a separator (009 decision 3) */
+.pop { display: none; position: absolute; right: 0; bottom: 130%; width: 320px; z-index: 5; background: oklch(0.96 0 0); color: oklch(0.2 0 0); font-weight: 400; font-size: 13px; text-align: left; border-radius: 10px; padding: 10px 12px; box-shadow: 0 8px 24px oklch(0 0 0 / 50%); white-space: normal; }
+.pnum:hover .pop, .pnum:focus .pop, .tip:hover .pop, .tip:focus .pop { display: block; }
+.pop ul { margin: 4px 0 0; padding-left: 16px; }
+.pop hr { border: 0; border-top: 1px solid oklch(0.85 0 0); margin: 8px 0 6px; }
+.pop .stats { color: oklch(0.5 0 0); font-style: italic; font-size: 12px; }
+.tip { position: relative; cursor: help; }
+
+.fam { font-size: 12px; text-transform: uppercase; letter-spacing: .06em; color: var(--faint); margin: 0 0 10px; }
+.card h3 { margin-bottom: 12px; }
+
+/* ── Highlights card ── */
+.hl { display: grid; grid-template-columns: 1fr; gap: 14px; }
+@media (min-width: 768px) { .hl { grid-template-columns: 1fr 1fr; } }
+.narrow .hl { grid-template-columns: 1fr; }
+.hl h3 { display: flex; gap: 8px; align-items: center; }
+.hl ul { list-style: none; margin: 0; padding: 0; }
+.hl li { padding: 6px 0; border-top: 1px solid var(--edge); }
+.hl li:first-child { border-top: 0; }
+.hl li b { font-weight: 700; }
+.pill { display: inline-block; width: 10px; height: 10px; border-radius: 50%; }
+.even { margin-top: 12px; font-size: 13.5px; color: var(--muted); }
+
+/* ── Tables ── */
+.ttab { width: 100%; border-collapse: collapse; }
+.ttab th { font-weight: 600; font-size: 13px; color: var(--muted); text-align: right; padding: 6px 8px; border-bottom: 1px solid var(--edge); white-space: nowrap; }
+.ttab th:first-child, .ttab td:first-child { text-align: left; }
+.ttab td { padding: 9px 8px; border-bottom: 1px solid var(--edge); text-align: right; vertical-align: middle; }
+.ttab tr.grp td { padding-top: 16px; font-size: 12px; text-transform: uppercase; letter-spacing: .06em; color: var(--faint); border-bottom: 0; }
+.ttab .tname { font-weight: 700; }
+.ttab .tname small { display: block; font-weight: 400; color: var(--faint); font-size: 12px; }
+.cell { display: inline-flex; flex-direction: column; align-items: flex-end; gap: 4px; }
+.rng { position: relative; width: 96px; height: 6px; border-radius: 3px; background: var(--track); }
+.rng .b { position: absolute; top: 0; bottom: 0; background: oklch(1 0 0 / 22%); border-radius: 3px; }
+.rng .t { position: absolute; top: -3px; width: 8px; height: 12px; margin-left: -4px; border-radius: 3px; }
+.vs2 { font-size: 13px; color: var(--muted); white-space: nowrap; }
+.vs2 b { color: var(--fg); font-weight: 700; }
+.narrow .ttab thead { display: none; }
+.narrow .ttab, .narrow .ttab tbody, .narrow .ttab tr, .narrow .ttab td { display: block; width: 100%; }
+.narrow .ttab tr { border-bottom: 1px solid var(--edge); padding: 10px 0; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px 12px; }
+.narrow .ttab tr.grp { border-bottom: 0; padding-bottom: 0; }
+.narrow .ttab td { border: 0; padding: 0; text-align: left; }
+.narrow .ttab td:first-child { grid-column: 1 / -1; }
+.narrow .ttab td[data-k]::before { content: attr(data-k); display: block; font-size: 12px; color: var(--faint); }
+.narrow .cell { align-items: flex-start; }
+@media (max-width: 760px) {
+  .ttab thead { display: none; }
+  .ttab, .ttab tbody, .ttab tr, .ttab td { display: block; width: 100%; }
+  .ttab tr { border-bottom: 1px solid var(--edge); padding: 10px 0; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px 12px; }
+  .ttab tr.grp { border-bottom: 0; padding-bottom: 0; }
+  .ttab td { border: 0; padding: 0; text-align: left; }
+  .ttab td:first-child { grid-column: 1 / -1; }
+  .ttab td[data-k]::before { content: attr(data-k); display: block; font-size: 12px; color: var(--faint); }
+  .cell { align-items: flex-start; }
+}
+
+details.more { margin-top: 14px; }
+details.more summary { cursor: pointer; color: var(--brand); font-weight: 600; list-style: none; padding: 8px 0; }
+details.more summary:hover { color: oklch(0.68 0.10 55); }
+
+.legend { display: flex; flex-wrap: wrap; gap: 14px; font-size: 12.5px; color: var(--muted); margin-top: 12px; align-items: center; }
+.legend i { display: inline-block; vertical-align: middle; margin-right: 5px; }
+.legend .lb { width: 22px; height: 8px; background: var(--band); border-radius: 2px; }
+.legend .lo-d { width: 10px; height: 10px; border-radius: 50%; border: 2px solid oklch(0.85 0 0); }
+
+.note { margin-top: 12px; border: 1px dashed var(--note-edge); background: var(--note-bg); color: var(--note-fg); border-radius: 10px; padding: 10px 14px; font-size: 13.5px; }
+.note b { color: oklch(0.92 0.09 85); }
+.note ul { margin: 4px 0 0; padding-left: 18px; }
+body.hide-notes .note { display: none; }
+
+#sketch-tools { position: fixed; bottom: 12px; right: 12px; z-index: 9999; font-family: system-ui; font-size: 12px; background: rgba(0,0,0,0.75); color: white; padding: 8px 10px; border-radius: 8px; opacity: 0.5; transition: opacity 0.2s; display: flex; gap: 6px; align-items: center; }
+#sketch-tools:hover { opacity: 1; }
+#sketch-tools button { font: inherit; background: #333; color: #fff; border: 1px solid #555; border-radius: 5px; padding: 3px 8px; cursor: pointer; }
+#sketch-tools button.on { background: #8a6a3a; }
+</style>
+</head>
+<body>
+<div class="wrap" id="wrap">
+
+  <div class="topbar">
+    <span><b>Sketch 010 · round 1 (superseded, see index.html)</b> · Library Stats: you vs. your opponents · real dev data for the owner account (2,841 analyzed games, all filters default). Context-tag typical ranges are the real benchmark IQRs; <b>tactic typical ranges are made up</b> (no tactic IQRs yet). Each section has its own variant switch. Hover a coloured number for its popover.</span>
+    <label><input type="checkbox" id="notesToggle" checked> Show design notes</label>
+  </div>
+
+  <!-- ── FLAW STATS (top) ── -->
+  <section id="top">
+    <div class="sechead">
+      <h2>Flaw Stats</h2>
+      <div><span class="vlabel">Tiles</span><div class="seg variant" data-var="tiles"></div></div>
+    </div>
+    <div class="tiles" id="tiles" style="margin-top:12px"></div>
+    <div class="placeholder">Flaws Timeline: unchanged</div>
+    <div class="note"><b>Tiles B</b> folds the old Severity card (Flaw rate / Blunder / Mistake bullets) into the tiles: same numbers, so the comparison lives where the number already is. Inaccuracies have no opponent comparison today, so that tile stays as is. "Flaw rate" (mistakes + blunders) retires as a row; it is just the sum of the two tiles.</div>
+  </section>
+
+  <!-- ── CONTEXT TAGS ── -->
+  <section class="section" id="ctx">
+    <div class="sechead">
+      <h2>You vs. your opponents</h2>
+      <div><span class="vlabel">Variant</span><div class="seg variant" data-var="ctx"></div></div>
+    </div>
+    <p class="q">Same games, same yardstick: your flaws per 100 of your moves, next to your opponents' over the same games. The grey band is the gap most players at your level have against their opponents.</p>
+
+    <label class="small muted" style="display:flex;gap:6px;align-items:center;margin-bottom:12px;cursor:pointer"><input type="checkbox" id="hlToggle" checked> Show "What stands out" card</label>
+    <div id="highlights"></div>
+
+    <div id="ctxBody" style="margin-top:14px"></div>
+    <div class="legend" id="ctxLegend"></div>
+    <div class="note" id="ctxNote"></div>
+  </section>
+
+  <!-- ── TACTICS ── -->
+  <section class="section" id="tac">
+    <div class="sechead">
+      <h2>Tactic motifs</h2>
+      <div><span class="vlabel">Variant</span><div class="seg variant" data-var="tac"></div></div>
+    </div>
+    <p class="q">Tactics you missed (your opponent left one on the board) and tactics you allowed (your move handed one over), per 100 games, next to your opponents.</p>
+    <div id="tacBody"></div>
+    <div class="legend" id="tacLegend"></div>
+    <div class="note" id="tacNote"></div>
+  </section>
+
+  <section class="section">
+    <div class="placeholder">ELO Ratings and Results Breakdown: unchanged</div>
+  </section>
+
+  <div class="note" style="margin-top:28px">
+    <b>Shared rules with the Endgame redesign (SEED-196):</b>
+    <ul>
+      <li>One horizontal bar per metric, grey typical band in the middle, one dot coloured by band (red worse than typical, blue typical, green better). <b>Better is always to the right</b>, the same direction as the percentile bars, even though every metric here is a flaw rate where lower is better.</li>
+      <li>No red/green background halves, no CI whiskers, no zone-coloured numbers on the left. Statistics (events, 95% CI, p-value) move into the popover below a grey separator.</li>
+      <li>Outside the band the scale saturates (a gap 3× the band width lands near, not on, the edge), the same bounded feel as the 0-100 percentile bar. Big gaps never clip.</li>
+      <li>The difference reads as words ("1.7 fewer") instead of a signed number, which removes the "negative is good" decoding step.</li>
+      <li>Rows with fewer than 30 events on either side are faded (the endgame type table fades under 100 games).</li>
+    </ul>
+    <b>Open questions:</b>
+    <ul>
+      <li>The endgame page moved to a per-section time-control switch. Here the benchmark IQRs are per Elo × TC cell too. Do we add the same TC switch (honest band per TC), or keep the filter-driven pooled view?</li>
+      <li>Tag names (Hasty, Lucky, Squandered...) match the chips on the Games tab, so the sketch keeps them and adds a plain-language hint line instead of renaming.</li>
+    </ul>
+  </div>
+</div>
+
+<div id="sketch-tools">
+  <span>Width</span>
+  <button data-w="375">375</button><button data-w="768">768</button><button data-w="1120" class="on">Desktop</button>
+</div>
+
+<script>
+// ── Constants ──
+const BAND_LO_POS = 25, BAND_HI_POS = 75;  // the typical band always spans the middle half, like the 25-75 percentile band
+const EDGE_POS = 3;                        // clamp for off-scale values (drawn with a chevron)
+const MIN_EVENTS = 30;                     // fade rows with fewer events on either side
+const ANALYZED_GAMES = 2841;
+const PER_100_GAMES = 100;
+
+// ── Real dev data (owner account, all filters default, 2026-10-12) ──
+// [you, opponents, delta, ciLow, ciHigh, p, iqrLo, iqrHi, youEvents, oppEvents], per 100 of the user's moves
+const FLAW = {
+  flaw_rate:      [8.907, 9.982, -1.075, -1.343, -0.807, 0, -0.48, 0.36, 8790, 9316],
+  mistake:        [3.601, 4.049, -0.448, -0.632, -0.264, 0, -0.23, 0.20, 3558, 3868],
+  blunder:        [5.306, 5.933, -0.627, -0.824, -0.430, 0, -0.31, 0.25, 5232, 5448],
+  low_clock:      [0.612, 0.192, 0.421, 0.346, 0.495, 0, -0.08, 0.03, 743, 226],
+  hasty:          [0.715, 2.423, -1.708, -1.837, -1.579, 0, -0.28, 0.18, 791, 2290],
+  unrushed:       [7.580, 7.364, 0.215, -0.033, 0.463, 0.089, -0.38, 0.36, 7256, 6797],
+  opening:        [1.605, 2.187, -0.582, -0.738, -0.427, 0, -0.15, 0.13, 1175, 1532],
+  middlegame:     [4.874, 5.372, -0.498, -0.688, -0.308, 0, -0.27, 0.23, 4490, 4746],
+  endgame_phase:  [2.429, 2.423, 0.005, -0.095, 0.105, 0.918, -0.12, 0.10, 3125, 3038],
+  miss:           [2.610, 2.673, -0.063, -0.178, 0.051, 0.277, -0.11, 0.11, 2625, 2644],
+  lucky:          [1.706, 1.719, -0.014, -0.108, 0.081, 0.778, -0.09, 0.09, 1691, 1711],
+  reversed:       [0.374, 0.313, 0.061, 0.014, 0.107, 0.011, -0.04, 0.04, 357, 313],
+  squandered:     [0.701, 0.535, 0.166, 0.088, 0.244, 0, -0.07, 0.08, 758, 617],
+  hasty_miss:     [0.202, 0.577, -0.375, -0.434, -0.317, 0, -0.09, 0.06, 239, 583],
+  low_clock_miss: [0.171, 0.062, 0.110, 0.075, 0.145, 0, -0.02, 0.01, 206, 73],
+};
+const META = {
+  blunder:        ['Blunders', 'Moves that dropped your expected score by 15+ points', 'blunders'],
+  mistake:        ['Mistakes', 'Moves that dropped your expected score by 10 to 15 points', 'mistakes'],
+  low_clock:     ['Low-clock', 'Flaws with under 5% of your time left', 'low-clock flaws'],
+  hasty:          ['Hasty', 'Flaws played fast while you still had time', 'hasty flaws'],
+  unrushed:       ['Unrushed', 'Flaws despite taking your time', 'unrushed flaws'],
+  opening:        ['Opening', 'Flaws in the opening', 'opening flaws'],
+  middlegame:     ['Middlegame', 'Flaws in the middlegame', 'middlegame flaws'],
+  endgame_phase:  ['Endgame', 'Flaws in the endgame', 'endgame flaws'],
+  miss:           ['Miss', 'Your opponent erred and you missed it', 'missed chances'],
+  lucky:          ['Lucky', 'Your blunder went unpunished', 'lucky escapes'],
+  reversed:       ['Reversed', 'Winning position turned into a losing one', 'reversals'],
+  squandered:     ['Squandered', 'Winning position thrown back to equal', 'squandered wins'],
+  hasty_miss:     ['Hasty miss', 'Missed a chance by moving too fast', 'hasty misses'],
+  low_clock_miss: ['Low-clock miss', 'Missed a chance while short on time', 'low-clock misses'],
+};
+// Severity retires into the tiles; Combos merge into Tempo ("when it happened").
+const GROUPS = [
+  ['When', 'Your clock at the time', ['low_clock', 'hasty', 'unrushed', 'hasty_miss', 'low_clock_miss']],
+  ['Where', 'Game phase', ['opening', 'middlegame', 'endgame_phase']],
+  ['Chances', 'Opponent errors', ['miss', 'lucky']],
+  ['Cost', 'Thrown-away wins', ['reversed', 'squandered']],
+];
+
+// Tactics: [youRate, oppRate, p, youEvents, oppEvents] per game. IQRs are ILLUSTRATIVE (see tacIqr).
+const TAC = [
+  ['Checkmate', [0.061, 0.044, 0.021, 173, 125], [0.120, 0.141, 0.050, 341, 401]],
+  ['Fork', [0.055, 0.025, 0.000, 157, 71], [0.076, 0.111, 0.000, 216, 315]],
+  ['Hanging piece', [0.021, 0.023, 0.599, 59, 65], [0.089, 0.113, 0.006, 254, 320]],
+  ['Pin', [0.027, 0.017, 0.024, 76, 49], [0.042, 0.042, 0.903, 118, 120]],
+  ['Discovered attack', [0.016, 0.011, 0.100, 45, 30], [0.019, 0.025, 0.193, 55, 70]],
+  ['Sacrifice', [0.011, 0.007, 0.138, 32, 21], [0.025, 0.017, 0.069, 71, 49]],
+  ['Attraction', [0.009, 0.006, 0.297, 25, 18], [0.010, 0.015, 0.067, 27, 42]],
+  ['Deflection', [0.008, 0.008, 0.884, 22, 23], [0.014, 0.008, 0.050, 41, 24]],
+  ['Skewer', [0.0056, 0.0063, 0.752, 16, 18], [0.0116, 0.0085, 0.272, 33, 24]],
+  ['Discovered check', [0.0063, 0.0028, 0.050, 18, 8], [0.0099, 0.0095, 0.893, 28, 27]],
+  ['Promotion', [0.0046, 0.0067, 0.343, 13, 19], [0.0092, 0.0074, 0.475, 26, 21]],
+  ['Trapped piece', [0.0042, 0.0042, 1.000, 12, 12], [0.0056, 0.0077, 0.355, 16, 22]],
+];
+const MAIN_TAC_FAMILIES = 6;
+// Made-up band until the benchmark pipeline computes tactic IQRs: roughly ±40% of the
+// average rate, slightly skewed, so the sketch shows realistic spread.
+function tacIqr(you, opp) { const m = (you + opp) / 2; return [-0.42 * m, 0.38 * m]; }
+
+const state = { tiles: 'B', ctx: 'A', tac: 'B' };
+const VARIANTS = {
+  tiles: [['A', 'A: Today'], ['B', 'B: + opponents']],
+  ctx: [['A', 'A: Gap bars'], ['B', 'B: You vs. opponents dots'], ['C', 'C: Table']],
+  tac: [['A', 'A: Family cards'], ['B', 'B: One table'], ['C', 'C: Missed | Allowed']],
+};
+
+// ── Helpers ──
+const verdict = (d, lo, hi) => d < lo ? 'hi' : d > hi ? 'lo' : 'md';   // lower = better for every flaw metric
+const VERDICT_WORD = { hi: 'better than typical', md: 'typical', lo: 'worse than typical' };
+const fmt = v => Math.abs(v) >= 10 ? v.toFixed(0) : Math.abs(v) >= 1 ? v.toFixed(1) : v.toFixed(2);
+function gapWords(d) {
+  if (Math.abs(d) < 0.005) return 'same';
+  return `${fmt(Math.abs(d))} ${d < 0 ? 'fewer' : 'more'}`;
+}
+// Better-is-right position on a scale where the IQR maps to 25-75. Inside the band the
+// scale is linear; outside it saturates (1 - e^-x, x in band widths), so a gap 3x the
+// band width still lands short of the edge instead of every big gap clipping.
+const OUTER_SPAN = BAND_LO_POS - EDGE_POS;
+function pos(d, lo, hi) {
+  const w = hi - lo;
+  if (d >= lo && d <= hi) return BAND_LO_POS + (BAND_HI_POS - BAND_LO_POS) * (hi - d) / w;
+  const excess = (d < lo ? lo - d : d - hi) / w;
+  const off = OUTER_SPAN * (1 - Math.exp(-excess));
+  return d < lo ? BAND_HI_POS + off : BAND_LO_POS - off;
+}
+const clamp = p => Math.max(EDGE_POS, Math.min(100 - EDGE_POS, p));
+function pValueText(p) { return p < 0.001 ? 'p < 0.001' : `p = ${p.toFixed(3)}`; }
+
+function popover({ label, def, you, opp, unit, lo, hi, d, stats, illustrative }) {
+  return `<span class="pop"><b>${label}:</b> ${def}.
+    <p style="margin:6px 0 0"><b>You: ${fmt(you)} ${unit}. Opponents: ${fmt(opp)}.</b> ${d === 0 ? '' : `That is ${gapWords(d)} than the players you faced.`}</p>
+    <ul>
+      <li>Typical gap for players at your level: ${fmt(lo)} to +${fmt(hi)}${illustrative ? ' <i>(illustrative)</i>' : ''}. You are ${VERDICT_WORD[verdict(d, lo, hi)]}.</li>
+      <li>Uses your analyzed games in the current filters.</li>
+    </ul>
+    <hr><div class="stats">${stats}</div></span>`;
+}
+function flawStats(r) {
+  return `${r[8].toLocaleString()} vs ${r[9].toLocaleString()} events · difference 95% CI ${fmt(r[3])} to ${fmt(r[4])}<br>Paired test vs 0: ${pValueText(r[5])}`;
+}
+
+// The gap bar (variant A row and tiles): grey band 25-75, zero tick, coloured dot.
+function gapTrack(d, lo, hi) {
+  const raw = pos(d, lo, hi), p = clamp(raw), v = verdict(d, lo, hi);
+  const off = raw !== p ? ` off ${raw > p ? 'r' : 'l'}` : '';
+  const z = clamp(pos(0, lo, hi));
+  return `<div class="ptrack"><div class="band" style="left:${BAND_LO_POS}%;width:${BAND_HI_POS - BAND_LO_POS}%"></div>
+    <div class="zero" style="left:${z}%" title="same as opponents"></div>
+    <div class="dot bg-${v}${off}" style="left:${p}%"></div></div>`;
+}
+function gapRow({ label, hint, you, opp, d, lo, hi, unit, stats, events, illustrative }) {
+  const v = verdict(d, lo, hi);
+  const faded = Math.min(...events) < MIN_EVENTS ? ' lowconf' : '';
+  return `<div class="prow${faded}"><div class="lbl">${label}${hint ? `<small>${hint}</small>` : ''}</div>
+    <div class="val num">${fmt(you)} vs ${fmt(opp)}</div>
+    <div class="pbar">${gapTrack(d, lo, hi)}<span class="pnum ${v}" tabindex="0">${gapWords(d)}${popover({ label, def: hint, you, opp, unit, lo, hi, d, stats, illustrative })}</span></div></div>`;
+}
+const gapAxis = () => `<div class="axis"><span>worse than typical</span><span>typical</span><span>better</span></div>`;
+
+// Variant B: two dots on a real rate axis; grey band = where a typical player would sit against these opponents.
+function dotRow({ label, hint, you, opp, d, lo, hi, unit, stats, events, illustrative }) {
+  const v = verdict(d, lo, hi);
+  const max = Math.max(you, opp + hi, opp) * 1.15;
+  // Better (fewer flaws) to the right: x = 100 - value/max*100.
+  const x = val => clamp(100 - Math.max(0, val) / max * 100);
+  const bandL = x(opp + hi), bandR = x(Math.max(0, opp + lo));
+  const xy = x(you), xo = x(opp);
+  const faded = Math.min(...events) < MIN_EVENTS ? ' lowconf' : '';
+  return `<div class="prow${faded}"><div class="lbl">${label}${hint ? `<small>${hint}</small>` : ''}</div>
+    <div class="val num"><span style="color:var(--fg);font-weight:700">${fmt(you)}</span> vs ${fmt(opp)}</div>
+    <div class="pbar"><div class="ptrack">
+      <div class="band" style="left:${bandL}%;width:${bandR - bandL}%"></div>
+      <div class="link" style="left:${Math.min(xy, xo)}%;width:${Math.abs(xy - xo)}%"></div>
+      <div class="opp" style="left:${xo}%" title="opponents"></div>
+      <div class="dot bg-${v}" style="left:${xy}%" title="you"></div></div>
+      <span class="pnum ${v}" tabindex="0">${gapWords(d)}${popover({ label, def: hint, you, opp, unit, lo, hi, d, stats, illustrative })}</span></div></div>`;
+}
+const dotAxis = () => `<div class="axis"><span>more flaws</span><span></span><span>fewer flaws</span></div>`;
+
+function rangeCell(d, lo, hi, txt, pop) {
+  const v = verdict(d, lo, hi);
+  return `<span class="cell"><span class="num tip ${v}" style="font-weight:700" tabindex="0">${txt}${pop}</span>
+    <span class="rng"><span class="b" style="left:${BAND_LO_POS}%;width:${BAND_HI_POS - BAND_LO_POS}%"></span><span class="t bg-${v}" style="left:${clamp(pos(d, lo, hi))}%"></span></span></span>`;
+}
+
+function flawArgs(tag) {
+  const r = FLAW[tag], m = META[tag];
+  return { label: m[0], hint: m[1], you: r[0], opp: r[1], d: r[2], lo: r[6], hi: r[7], unit: 'per 100 moves', stats: flawStats(r), events: [r[8], r[9]] };
+}
+
+// ── Tiles ──
+function renderTiles() {
+  const tile = (val, cap, color, tag) => {
+    let extra = '';
+    if (state.tiles === 'B') {
+      if (tag) {
+        const a = flawArgs(tag);
+        const v = verdict(a.d, a.lo, a.hi);
+        extra = `<div class="opp"><span>Opponents ${fmt(a.opp)}</span><span class="pnum ${v}" style="min-width:0" tabindex="0">${gapWords(a.d)}${popover(a)}</span></div>${gapTrack(a.d, a.lo, a.hi)}`;
+      } else {
+        extra = `<div class="opp"><span class="faint">No opponent comparison</span></div>`;
+      }
+    }
+    return `<div class="tile"><div class="big num" style="color:${color}">${val}</div><div class="cap">${cap}</div>${extra}</div>`;
+  };
+  document.getElementById('tiles').innerHTML =
+    tile('5.30', 'Blunders / 100 moves', 'var(--blunder)', 'blunder') +
+    tile('3.60', 'Mistakes / 100 moves', 'var(--mistake)', 'mistake') +
+    tile('8.64', 'Inacc. / 100 moves', 'var(--inacc)', null);
+}
+
+// ── Highlights ──
+function renderHighlights() {
+  const el = document.getElementById('highlights');
+  if (!document.getElementById('hlToggle').checked) { el.innerHTML = ''; return; }
+  const all = GROUPS.flatMap(g => g[2]).map(tag => ({ tag, ...flawArgs(tag) }));
+  // Distance outside the band in IQR widths, so tags with tiny rates compete fairly.
+  const out = all.map(a => ({ ...a, v: verdict(a.d, a.lo, a.hi), dist: a.d < a.lo ? (a.lo - a.d) / (a.hi - a.lo) : a.d > a.hi ? (a.d - a.hi) / (a.hi - a.lo) : 0 }));
+  const top = v => out.filter(a => a.v === v).sort((x, y) => y.dist - x.dist).slice(0, 3);
+  const li = a => `<li><b>${a.label}</b> <span class="muted">· ${a.hint.toLowerCase()}</span><br><span class="num">You ${fmt(a.you)} vs. opponents ${fmt(a.opp)} per 100 moves</span> <span class="${a.v}" style="font-weight:700">(${gapWords(a.d)})</span></li>`;
+  const even = out.filter(a => a.v === 'md').map(a => a.label);
+  el.innerHTML = `<div class="card"><div class="hl">
+      <div><h3><span class="pill bg-hi"></span>Strengths</h3><ul>${top('hi').map(li).join('')}</ul></div>
+      <div><h3><span class="pill bg-lo"></span>Weaknesses</h3><ul>${top('lo').map(li).join('')}</ul></div></div>
+      <div class="even">Typical: ${even.join(', ')}.</div></div>`;
+}
+
+// ── Context tags ──
+function renderCtx() {
+  const body = document.getElementById('ctxBody'), note = document.getElementById('ctxNote'), legend = document.getElementById('ctxLegend');
+  const legendBase = `<span><i class="lb"></i>typical gap for players at your level (middle 50%)</span><span><i class="pill bg-hi"></i>better</span><span><i class="pill bg-md"></i>typical</span><span><i class="pill bg-lo"></i>worse</span>`;
+  if (state.ctx === 'A' || state.ctx === 'B') {
+    const row = state.ctx === 'A' ? gapRow : dotRow;
+    body.innerHTML = `<div class="grid2">${GROUPS.map(([name, sub, tags]) => `<div class="card"><h3>${name} <span class="faint small" style="font-family:'Nunito Sans'">· ${sub}</span></h3>
+      ${tags.map(t => row(flawArgs(t))).join('')}${state.ctx === 'A' ? gapAxis() : dotAxis()}</div>`).join('')}</div>`;
+    legend.innerHTML = state.ctx === 'A'
+      ? legendBase + `<span>│ tick = same as opponents</span>`
+      : `<span><i class="lo-d"></i>opponents</span><span><i class="pill bg-md"></i>you (coloured by verdict)</span><span><i class="lb"></i>where a typical player would sit against these opponents</span>`;
+    note.innerHTML = state.ctx === 'A'
+      ? `<b>A: Gap bars.</b> The closest match to the endgame PercentileBar: the grey band always spans the middle half, so a dot's distance from the band shows how unusual you are, whatever the metric's units. The raw numbers sit top right ("0.71 vs 2.42"); the verdict on the right is the gap in words. <b>Trade-off:</b> the axis has no units (each row is scaled by its own typical range), so two bars at the same spot can mean very different absolute gaps. Hasty sits off the scale (chevron).`
+      : `<b>B: You vs. opponents dots.</b> A real "flaws per 100 moves" axis per row: hollow dot = opponents, filled dot = you, the grey band is shifted to sit around the opponents ("where a typical player would land against them"). Most concrete for non-statisticians, and it shows the absolute rates. <b>Trade-off:</b> the band moves with the opponent dot, so rows do not line up visually; and the axis is still per-row.`;
+  } else {
+    let html = `<thead><tr><th>Tag</th><th>You</th><th>Opponents</th><th>Difference</th></tr></thead><tbody>`;
+    for (const [name, sub, tags] of GROUPS) {
+      html += `<tr class="grp"><td colspan="4">${name} · ${sub}</td></tr>`;
+      for (const t of tags) {
+        const a = flawArgs(t);
+        html += `<tr class="${Math.min(...a.events) < MIN_EVENTS ? 'lowconf' : ''}"><td class="tname">${a.label}<small>${a.hint}</small></td>
+          <td data-k="You" class="num" style="font-weight:700">${fmt(a.you)}</td><td data-k="Opponents" class="num muted">${fmt(a.opp)}</td>
+          <td data-k="Difference">${rangeCell(a.d, a.lo, a.hi, gapWords(a.d), popover(a))}</td></tr>`;
+      }
+    }
+    body.innerHTML = `<div class="card"><table class="ttab">${html}</tbody></table><p class="muted small" style="margin:12px 0 0">Per 100 of your moves. The bar under each difference: grey = typical gap for players at your level, fewer flaws to the right.</p></div>`;
+    legend.innerHTML = legendBase;
+    note.innerHTML = `<b>C: Table.</b> The Endgame Type Breakdown pattern: everything on one card, explicit "You" and "Opponents" columns, the difference with a small range bar. Densest and easiest to scan top to bottom; 12 rows fit without scrolling past cards. <b>Trade-off:</b> the bar is small, so the "how unusual" signal is mostly carried by the coloured word. Unlike the endgame type table (amber for below typical), this keeps red/green because these metrics do have good/bad bands.`;
+  }
+}
+
+// ── Tactics ──
+function tacArgs(name, side, orient) {
+  const [you, opp, p, ye, oe] = side;
+  const [lo, hi] = tacIqr(you, opp);
+  const k = PER_100_GAMES;
+  const verb = orient === 'missed' ? 'Missed' : 'Allowed';
+  return {
+    label: `${verb} ${name.toLowerCase()}`, hint: '',
+    you: you * k, opp: opp * k, d: (you - opp) * k, lo: lo * k, hi: hi * k, unit: 'per 100 games',
+    stats: `${ye} vs ${oe} events in ${ANALYZED_GAMES.toLocaleString()} games<br>Paired test vs 0: ${pValueText(p)}`,
+    events: [ye, oe], illustrative: true,
+  };
+}
+function tacCard([name, m, a]) {
+  const am = tacArgs(name, m, 'missed'), aa = tacArgs(name, a, 'allowed');
+  am.label = 'Missed'; aa.label = 'Allowed';
+  return `<div class="card"><h3>${name}</h3>${gapRow(am)}${gapRow(aa)}${gapAxis()}</div>`;
+}
+function renderTac() {
+  const body = document.getElementById('tacBody'), note = document.getElementById('tacNote'), legend = document.getElementById('tacLegend');
+  legend.innerHTML = `<span><i class="lb"></i>typical gap <i>(illustrative until tactic IQRs exist)</i></span><span><i class="pill bg-hi"></i>better</span><span><i class="pill bg-md"></i>typical</span><span><i class="pill bg-lo"></i>worse</span><span>faded = fewer than ${MIN_EVENTS} events</span>`;
+  if (state.tac === 'A') {
+    const main = TAC.slice(0, MAIN_TAC_FAMILIES), rest = TAC.slice(MAIN_TAC_FAMILIES);
+    body.innerHTML = `<div class="grid3 keep2">${main.map(tacCard).join('')}</div>
+      <details class="more"><summary>More tactics (${rest.length})</summary><div class="grid3 keep2">${rest.map(tacCard).join('')}</div></details>`;
+    note.innerHTML = `<b>A: Family cards.</b> Today's structure (one card per motif, Missed + Allowed rows, "More tactics" accordion) with the new gap bars. Units change from per game (0.06) to <b>per 100 games</b> (6.1) so the numbers are readable. <b>Trade-off:</b> still 12 cards of 2 rows; the most repetitive option.`;
+  } else if (state.tac === 'B') {
+    let html = `<thead><tr><th>Motif</th><th>Missed <span class="faint">you vs. opp</span></th><th>Difference</th><th>Allowed <span class="faint">you vs. opp</span></th><th>Difference</th></tr></thead><tbody>`;
+    for (const [name, m, a] of TAC) {
+      const am = tacArgs(name, m, 'missed'), aa = tacArgs(name, a, 'allowed');
+      const faded = Math.min(...am.events, ...aa.events) < MIN_EVENTS ? 'lowconf' : '';
+      html += `<tr class="${faded}"><td class="tname">${name}<small>${m[3] + a[3]} of your events</small></td>
+        <td data-k="Missed (you vs. opp)" class="vs2 num"><b>${fmt(am.you)}</b> vs ${fmt(am.opp)}</td><td data-k="Missed difference">${rangeCell(am.d, am.lo, am.hi, gapWords(am.d), popover(am))}</td>
+        <td data-k="Allowed (you vs. opp)" class="vs2 num"><b>${fmt(aa.you)}</b> vs ${fmt(aa.opp)}</td><td data-k="Allowed difference">${rangeCell(aa.d, aa.lo, aa.hi, gapWords(aa.d), popover(aa))}</td></tr>`;
+    }
+    body.innerHTML = `<div class="card"><table class="ttab">${html}</tbody></table><p class="muted small" style="margin:12px 0 0">Per 100 games. Sorted by how often the motif shows up in your games.</p></div>`;
+    note.innerHTML = `<b>B: One table.</b> All 12 motifs on one card, no accordion, Missed and Allowed side by side so "I miss forks but rarely allow them" reads in one row. Same pattern as Context variant C and the endgame type table. <b>Trade-off:</b> four number columns on desktop; on phones each row stacks into a 2×2 grid (try the 375 width).`;
+  } else {
+    const list = orient => {
+      const rows = TAC.map(([name, m, a]) => { const x = tacArgs(name, orient === 'missed' ? m : a, orient); x.label = name; return x; });
+      rows.sort((x, y) => (y.you + y.opp) - (x.you + x.opp));
+      return rows.slice(0, 8).map(gapRow).join('') + gapAxis();
+    };
+    body.innerHTML = `<div class="grid2">
+      <div class="card"><h3>Tactics you missed</h3><p class="small faint" style="margin:-8px 0 14px">Your opponent left a tactic on the board and you did not play it.</p>${list('missed')}</div>
+      <div class="card"><h3>Tactics you allowed</h3><p class="small faint" style="margin:-8px 0 14px">Your move handed your opponent a tactic.</p>${list('allowed')}</div></div>`;
+    note.innerHTML = `<b>C: Missed | Allowed.</b> Split by direction instead of by motif: two cards, top 8 motifs each by frequency. Mirrors the Flaws tab orientation filter (missed / allowed) and reads like two ranked lists. <b>Trade-off:</b> one motif's two numbers end up in different cards.`;
+  }
+}
+
+// ── Wiring ──
+function renderSegs() {
+  document.querySelectorAll('[data-var]').forEach(el => {
+    const k = el.dataset.var;
+    el.innerHTML = VARIANTS[k].map(([id, label]) => `<button class="${state[k] === id ? 'on' : ''}" data-set="${k}:${id}">${label}</button>`).join('');
+  });
+}
+function render() { renderSegs(); renderTiles(); renderHighlights(); renderCtx(); renderTac(); }
+
+document.addEventListener('click', e => {
+  const b = e.target.closest('[data-set]');
+  if (b) { const [k, v] = b.dataset.set.split(':'); state[k] = v; render(); return; }
+  const w = e.target.closest('[data-w]');
+  if (w) {
+    const wrap = document.getElementById('wrap');
+    wrap.style.maxWidth = w.dataset.w + 'px';
+    wrap.classList.toggle('narrow', +w.dataset.w < 500);
+    wrap.classList.toggle('tablet', +w.dataset.w >= 500 && +w.dataset.w < 1000);
+    document.querySelectorAll('[data-w]').forEach(x => x.classList.toggle('on', x === w));
+  }
+});
+document.getElementById('notesToggle').addEventListener('change', e => document.body.classList.toggle('hide-notes', !e.target.checked));
+document.getElementById('hlToggle').addEventListener('change', renderHighlights);
+render();
+</script>
+</body>
+</html>

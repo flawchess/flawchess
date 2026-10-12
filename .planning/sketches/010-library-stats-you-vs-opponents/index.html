@@ -1,0 +1,517 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Library Stats You vs Opponents</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@500;600&family=Nunito+Sans:wght@400;600;700&display=swap" rel="stylesheet">
+<style>
+/* Tokens measured from the live Endgame Stats page (Phase 238) so both pages read as one system. */
+:root {
+  --bg: oklch(0.145 0 0);
+  --card: #161412;
+  --band-hdr: oklch(1 0 0 / 3.5%);
+  --edge: oklch(1 0 0 / 8%);
+  --fg: oklch(0.985 0 0);
+  --muted: oklch(0.708 0 0);
+  --faint: oklch(0.5 0 0);
+  --brand: rgb(139, 94, 60);
+  --brand-light: oklch(0.72 0.07 60);
+  --low: oklch(0.62 0.17 25);
+  --mid: oklch(0.62 0.15 260);
+  --high: oklch(0.66 0.15 145);
+  --blunder: oklch(0.62 0.19 25);
+  --mistake: oklch(0.72 0.16 55);
+  --track: oklch(1 0 0 / 7%);
+  --band: oklch(1 0 0 / 13%);
+  --note-bg: oklch(0.80 0.12 85 / 8%);
+  --note-edge: oklch(0.80 0.12 85 / 45%);
+  --note-fg: oklch(0.88 0.08 85);
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--fg); font-family: 'Nunito Sans', sans-serif; font-size: 14px; line-height: 1.45; }
+h2 { font-family: 'Fredoka', sans-serif; font-weight: 600; font-size: 18px; margin: 0; }
+.wrap { max-width: 1120px; margin: 0 auto; padding: 16px 16px 80px; transition: max-width .2s ease; }
+.topbar { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; justify-content: space-between; padding: 10px 14px; border: 1px dashed var(--note-edge); border-radius: 10px; background: var(--note-bg); color: var(--note-fg); font-size: 13px; margin-bottom: 20px; }
+.topbar label { display: flex; gap: 6px; align-items: center; cursor: pointer; }
+.section { margin-top: 32px; }
+.section:first-of-type { margin-top: 8px; }
+.q { color: var(--muted); margin: 6px 0 14px; }
+.muted { color: var(--muted); } .faint { color: var(--faint); } .small { font-size: 13px; }
+.num { font-variant-numeric: tabular-nums; }
+
+/* Card: header band + body, as on the endgame page */
+.card { background: var(--card); border: 1px solid var(--edge); border-radius: 8px; }
+.card-h:first-child { border-radius: 8px 8px 0 0; }
+.card-h { padding: 12px 16px; background: var(--band-hdr); border-bottom: 1px solid var(--edge); font-size: 16px; font-weight: 600; display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+button.card-h.acc { width: 100%; font: inherit; font-size: 16px; font-weight: 600; color: var(--fg); text-align: left; cursor: pointer; align-items: center; justify-content: space-between; border: 0; border-bottom: 1px solid var(--edge); transition: background .15s ease; }
+button.card-h.acc[aria-expanded="false"] { border-bottom: 0; border-radius: 8px; }
+button.card-h.acc:hover { background: oklch(1 0 0 / 6%); }
+.acc-t { display: flex; flex-direction: column; gap: 2px; }
+.acc-hint { font-size: 12px; font-weight: 400; color: var(--muted); }
+.chev { width: 18px; height: 18px; color: var(--muted); transition: transform .2s ease; flex: none; }
+button.card-h.acc[aria-expanded="true"] .chev { transform: rotate(180deg); }
+.card-h small { font-size: 13px; font-weight: 400; color: var(--faint); }
+.card-b { padding: 16px; }
+.grid2 { display: grid; grid-template-columns: 1fr; gap: 16px; }
+@media (min-width: 768px) { .grid2 { grid-template-columns: 1fr 1fr; } }
+.narrow .grid2 { grid-template-columns: 1fr; }
+
+.sechead { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; justify-content: space-between; }
+.tcs { display: inline-flex; gap: 4px; }
+.tcs button { font: inherit; font-weight: 500; display: inline-flex; align-items: center; gap: 6px; height: 36px; padding: 0 10px; border-radius: 10px; cursor: pointer; transition: all .15s ease; background: transparent; color: var(--brand-light); border: 1px solid oklch(0.58 0.09 55 / 55%); }
+.tcs button:hover { border-color: var(--brand); color: var(--fg); }
+.tcs button.on { background: var(--brand); color: #fff; border-color: transparent; }
+.tcs svg { width: 14px; height: 14px; }
+
+/* ── Tiles ── */
+.tiles { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+.narrow .tiles { grid-template-columns: 1fr; }
+.tile .big { font-family: 'Fredoka', sans-serif; font-weight: 500; font-size: 30px; line-height: 1.1; }
+.tile .cap { font-size: 13px; text-transform: uppercase; letter-spacing: .03em; color: var(--muted); font-weight: 700; }
+.tile .card-b { display: flex; flex-direction: column; gap: 8px; }
+.placeholder { border: 1px dashed var(--edge); border-radius: 8px; padding: 22px; color: var(--faint); text-align: center; font-size: 14px; margin-top: 16px; }
+
+/* ── Gap bar: zero always in the middle, grey typical band, coloured dot ── */
+.grow + .grow { margin-top: 16px; }
+.grow .top { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
+.grow .lbl { font-weight: 600; }
+.grow .hint { display: block; font-weight: 400; font-size: 12.5px; color: var(--faint); line-height: 1.3; }
+.grow .vs { font-size: 13px; color: var(--muted); white-space: nowrap; }
+.grow .vs b { color: var(--fg); }
+.bar { display: flex; align-items: center; gap: 10px; margin-top: 6px; }
+.track { position: relative; flex: 1; height: 10px; border-radius: 6px; background: var(--track); }
+.track .band { position: absolute; top: 0; bottom: 0; background: var(--band); border-radius: 2px; }
+.track .zero { position: absolute; left: 50%; top: -4px; bottom: -4px; width: 1px; background: oklch(1 0 0 / 40%); }
+.track .dot { position: absolute; top: 50%; width: 16px; height: 16px; border-radius: 50%; transform: translate(-50%, -50%); border: 2px solid var(--bg); }
+.verdict { display: inline-flex; align-items: center; gap: 6px; justify-content: flex-end; min-width: 98px; white-space: nowrap; }
+.verdict .w { font-weight: 700; }
+.lo { color: var(--low); } .hi { color: var(--high); } .md { color: var(--fg); }
+.bg-lo { background: var(--low); } .bg-md { background: var(--mid); } .bg-hi { background: var(--high); }
+.axis { display: flex; justify-content: space-between; font-size: 12px; color: var(--faint); margin: 10px 108px 0 0; }
+.lowconf { opacity: .5; }
+
+/* Search-icon popover (RankedMetricPopover look: light bubble, text-xs, grey italic footer) */
+.info { position: relative; display: inline-flex; color: oklch(0.72 0.07 60 / 70%); cursor: pointer; }
+.info:hover, .info:focus { color: var(--brand-light); outline: none; }
+.info svg { width: 16px; height: 16px; }
+.pop { display: none; position: absolute; right: -8px; bottom: 140%; width: 320px; z-index: 20; background: var(--fg); color: oklch(0.145 0 0); font-size: 12px; font-weight: 400; text-align: left; border-radius: 6px; padding: 8px 12px; white-space: normal; line-height: 1.45; box-shadow: 0 8px 24px oklch(0 0 0 / 50%); }
+.info:hover .pop, .info:focus .pop { display: block; }
+.pop p { margin: 0 0 6px; }
+.pop ul { margin: 0 0 6px; padding-left: 16px; }
+.pop hr { border: 0; border-top: 1px solid oklch(0.145 0 0 / 25%); margin: 6px 0; }
+.pop .foot { font-style: italic; color: oklch(0.145 0 0 / 60%); margin: 0; }
+
+/* ── What stands out ── */
+.hl { display: grid; grid-template-columns: 1fr; gap: 8px 24px; }
+@media (min-width: 768px) { .hl { grid-template-columns: 1fr 1fr; } }
+.narrow .hl { grid-template-columns: 1fr; }
+.hl .sub { font-weight: 600; display: flex; gap: 8px; align-items: center; margin-bottom: 4px; }
+.hl ul { list-style: none; margin: 0; padding: 0; }
+.hl li { padding: 8px 0; border-top: 1px solid var(--edge); }
+.hl li:first-child { border-top: 0; }
+.hl li.hlrow { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
+.pill { display: inline-block; width: 10px; height: 10px; border-radius: 50%; }
+.even { margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--edge); font-size: 13px; color: var(--muted); }
+
+/* ── Tactic table ── */
+.ttab { width: 100%; border-collapse: collapse; table-layout: fixed; }
+.ttab th { font-weight: 600; font-size: 13px; color: var(--muted); text-align: right; padding: 6px 8px; border-bottom: 1px solid var(--edge); white-space: nowrap; }
+.ttab th:first-child, .ttab td:first-child { text-align: left; }
+.ttab th.grpcol { text-align: center; border-bottom: 0; padding-bottom: 0; color: var(--fg); }
+.ttab td .bar { margin-top: 0; }
+.ttab td { padding: 10px 8px; border-bottom: 1px solid var(--edge); text-align: right; vertical-align: middle; }
+.ttab tr:last-child td { border-bottom: 0; }
+.ttab .tname { font-weight: 700; }
+.ttab .tname small { display: block; font-weight: 400; color: var(--faint); font-size: 12px; }
+.cell { display: inline-flex; flex-direction: column; align-items: flex-end; gap: 5px; }
+.rng { position: relative; width: 100px; height: 6px; border-radius: 3px; background: var(--track); }
+.rng .b { position: absolute; top: 0; bottom: 0; background: oklch(1 0 0 / 20%); border-radius: 3px; }
+.rng .z { position: absolute; left: 50%; top: -3px; bottom: -3px; width: 1px; background: oklch(1 0 0 / 40%); }
+.rng .d { position: absolute; top: 50%; width: 11px; height: 11px; border-radius: 50%; transform: translate(-50%, -50%); border: 2px solid var(--card); }
+.vs2 { font-size: 13px; color: var(--muted); white-space: nowrap; }
+.vs2 b { color: var(--fg); }
+.pad-l { padding-left: 20px !important; border-left: 1px solid var(--edge); }
+.narrow .ttab thead { display: none; }
+.narrow .ttab, .narrow .ttab tbody, .narrow .ttab tr, .narrow .ttab td { display: block; width: 100%; }
+.narrow .ttab tr { border-bottom: 1px solid var(--edge); padding: 10px 0; display: grid; grid-template-columns: 1fr; gap: 8px; }
+.narrow .ttab tr:last-child { border-bottom: 0; }
+.narrow .ttab td { border: 0 !important; padding: 0 !important; text-align: left; }
+.narrow .ttab td:first-child { grid-column: 1 / -1; }
+.narrow .ttab td[data-k]::before { content: attr(data-k); display: block; font-size: 12px; color: var(--faint); }
+.narrow .cell { align-items: flex-start; }
+.narrow .pop { right: auto; left: -150px; width: 290px; }
+@media (max-width: 760px) {
+  .ttab thead { display: none; }
+  .ttab, .ttab tbody, .ttab tr, .ttab td { display: block; width: 100%; }
+  .ttab tr { border-bottom: 1px solid var(--edge); padding: 10px 0; display: grid; grid-template-columns: 1fr; gap: 8px; }
+  .ttab td { border: 0; padding: 0 !important; text-align: left; }
+  .ttab td:first-child { grid-column: 1 / -1; }
+  .ttab td[data-k]::before { content: attr(data-k); display: block; font-size: 12px; color: var(--faint); }
+  .cell { align-items: flex-start; }
+}
+
+.legend { display: flex; flex-wrap: wrap; gap: 14px; font-size: 12.5px; color: var(--muted); margin-top: 12px; align-items: center; }
+.legend i { display: inline-block; vertical-align: middle; margin-right: 5px; }
+.legend .lb { width: 22px; height: 8px; background: var(--band); border-radius: 2px; }
+
+.note { margin-top: 12px; border: 1px dashed var(--note-edge); background: var(--note-bg); color: var(--note-fg); border-radius: 10px; padding: 10px 14px; font-size: 13.5px; }
+.note b { color: oklch(0.92 0.09 85); }
+.note ul { margin: 4px 0 0; padding-left: 18px; }
+body.hide-notes .note { display: none; }
+
+#sketch-tools { position: fixed; bottom: 12px; right: 12px; z-index: 9999; font-family: system-ui; font-size: 12px; background: rgba(0,0,0,0.75); color: white; padding: 8px 10px; border-radius: 8px; opacity: 0.5; transition: opacity 0.2s; display: flex; gap: 6px; align-items: center; }
+#sketch-tools:hover { opacity: 1; }
+#sketch-tools button { font: inherit; background: #333; color: #fff; border: 1px solid #555; border-radius: 5px; padding: 3px 8px; cursor: pointer; }
+#sketch-tools button.on { background: #8a6a3a; }
+</style>
+</head>
+<body>
+<div class="wrap" id="wrap">
+
+  <div class="topbar">
+    <span><b>Sketch 010 · round 5</b> · Library Stats, you vs. your opponents · real dev data for the owner account, per time control (blitz 1,000 / rapid 1,841 analyzed games). Context-tag typical ranges are the real benchmark IQRs; <b>tactic typical ranges are made up</b>. Hover a <b>search icon</b> for its popover. Round 1 variants: <a href="round1.html" style="color:inherit">round1.html</a>.</span>
+    <label><input type="checkbox" id="notesToggle" checked> Show design notes</label>
+  </div>
+
+  <!-- ── FLAW STATS ── -->
+  <section class="section">
+    <div class="sechead"><h2>Flaw Stats</h2><div class="tcs" data-tcs></div></div>
+    <p class="q" data-basis></p>
+    <div class="tiles" id="tiles"></div>
+    <div class="placeholder">Flaws Timeline: unchanged (shows the selected time control)</div>
+    <div class="note"><b>Round 2:</b> the inaccuracy tile is gone; Blunders and Mistakes carry the opponent comparison (this replaces the old Severity card and its "Flaw rate" row). Blitz mistakes land inside the band, so the gap reads white ("0.24 fewer") with a blue dot.</div>
+  </section>
+
+  <!-- ── CONTEXT TAGS ── -->
+  <section class="section">
+    <div class="sechead"><h2>You vs. your opponents</h2><div class="tcs" data-tcs></div></div>
+    <p class="q">Your flaws per 100 of your moves, next to your opponents' in the same games. The grey band is the gap most players at your level have against their opponents.</p>
+    <div class="card" id="highlights"></div>
+    <div class="grid2" id="ctxCards" style="margin-top:16px"></div>
+    <div class="legend"><span><i class="lb"></i>typical gap for players at your level (middle 50%)</span><span>│ middle tick = same as your opponents</span><span><i class="pill bg-hi"></i>better than typical</span><span><i class="pill bg-md"></i>typical</span><span><i class="pill bg-lo"></i>worse than typical</span></div>
+    <div class="note"><b>Round 2:</b> combos (hasty miss, low-clock miss) are gone, so Clock and Game phase are both 3-row cards. The middle tick is always "same as your opponents" (a difference of 0); the grey band sits where the benchmark IQR is, so it can be off-centre (Clock: the typical player has slightly <i>fewer</i> low-clock flaws than their opponents). Inside the band the scale is linear; outside it flattens, so big gaps (hasty, rapid: 2.1 fewer) land near the edge without clipping.</div>
+  </section>
+
+  <!-- ── TACTICS ── -->
+  <section class="section">
+    <div class="sechead"><h2>Tactic motifs</h2><div class="tcs" data-tcs></div></div>
+    <p class="q">Tactics you missed (your opponent left one on the board) and tactics you allowed (your move handed one over), per 100 games, next to your opponents.</p>
+    <div id="tacTables" style="display:flex;flex-direction:column;gap:16px"></div>
+    <div class="legend"><span><i class="lb"></i>typical gap <i>(illustrative: tactic IQRs do not exist yet)</i></span><span><i class="pill bg-hi"></i>better</span><span><i class="pill bg-md"></i>typical</span><span><i class="pill bg-lo"></i>worse</span><span>faded = fewer than 40 flaws (you + opponents) in that column</span></div>
+    <div class="note"><b>Round 5:</b> Advanced is collapsed by default with the endgame page's "Click or tap for details" hint. <b>Round 4:</b> the "You vs. opp" columns are gone; each cell is a full-size gap bar, rates live in the popover. <b>Round 3:</b> search icons on the "What stands out" items too. Three tactic tables, split like the tactics filter panel (Piece Attacks · Checkmate, Checks &amp; Discoveries · Advanced), motifs in the same order as the panel. Columns are fixed-width so the three tables line up. Motifs with no flaws on either side are listed under the table instead of getting a row. Cells under 40 flaws (you + opponents) are faded and get no red/green verdict, since a 1-vs-0 difference is noise. Mini charts use the same circle dot and centred zero tick as the gap bars. Blitz has few tactic flaws per motif, so most rows fade there; rapid shows the full picture. <b>Needs:</b> per-motif missed/allowed IQRs from the benchmark full-analysis sample (classical + rapid done, blitz ~half), added to the <code>/benchmarks</code> skill.</div>
+  </section>
+
+  <div class="note" style="margin-top:28px">
+    <b>Open questions for discuss-phase:</b>
+    <ul>
+      <li><b>TC switch vs. the time-control filter.</b> With a synced switch in every section, the sidebar's time-control filter is redundant on this tab (same question SEED-196 raised for Endgames). Hide it here, or let the filter limit which TCs the switch offers?</li>
+      <li><b>Bands per TC.</b> The live API returns the same context-tag bands for blitz and rapid (the benchmark collapsed them to one global zone per metric). Fine for now; tactic IQRs should get the same Cohen's-d collapse check per TC × Elo.</li>
+      <li>Should tactics feed the "What stands out" card once their IQRs are real?</li>
+    </ul>
+  </div>
+</div>
+
+<div id="sketch-tools">
+  <span>Width</span>
+  <button data-w="375">375</button><button data-w="768">768</button><button data-w="1120" class="on">Desktop</button>
+</div>
+
+<script>
+// ── Constants ──
+const BAND_HALF_POS = 25;     // the wider side of the band reaches 25% from the centre
+const EDGE_POS = 3;           // outermost dot position (% from either edge)
+const OUTER_SPAN = 50 - BAND_HALF_POS - EDGE_POS;
+const MIN_FLAWS = 40;         // fade a row / column below this many flaws (you + opponents)
+const PER_100_GAMES = 100;
+const TOP_STANDOUTS = 3;
+
+const ICON = {
+  search: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>',
+  blitz: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8.5 14.5A2.5 2.5 0 0 0 11 12c0-1.38-.5-2-1-3-1.072-2.143-.224-4.054 2-6 .5 2.5 2 4.9 4 6.5 2 1.6 3 3.5 3 5.5a7 7 0 1 1-14 0c0-1.153.433-2.294 1-3a2.5 2.5 0 0 0 2.5 2.5z"/></svg>',
+  rapid: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M13 16a3 3 0 0 1 2.24 5"/><path d="M18 12h.01"/><path d="M18 21h-8a4 4 0 0 1-4-4 7 7 0 0 1 7-7h.2L9.6 6.4a1 1 0 1 1 2.8-2.8L15.8 7h.2c3.3 0 6 2.7 6 6v1a2 2 0 0 1-2 2h-1a3 3 0 0 0-3 3"/><path d="M20 8.54V4a2 2 0 1 0-4 0v3"/><path d="M7.612 12.524a3 3 0 1 0-1.6 4.3"/></svg>',
+};
+
+// ── Real dev data (owner account, default filters except TC, 2026-10-12) ──
+// [you, opponents, gap, ciLow, ciHigh, p, iqrLo, iqrHi, yourFlaws, oppFlaws], per 100 of the user's moves
+const DATA = {
+  blitz: {
+    games: 1000,
+    flaw: {
+      blunder:       [5.4569, 6.1176, -0.6607, -1.0028, -0.3185, 0.0002, -0.31, 0.25, 1916, 1982],
+      mistake:       [3.6588, 3.9031, -0.2444, -0.5639, 0.0752, 0.134, -0.23, 0.20, 1248, 1322],
+      low_clock:     [0.6517, 0.2169, 0.4348, 0.2968, 0.5729, 0, -0.08, 0.03, 252, 86],
+      hasty:         [0.4558, 1.4858, -1.03, -1.195, -0.865, 0, -0.28, 0.18, 187, 516],
+      unrushed:      [8.0082, 8.3126, -0.3044, -0.747, 0.1382, 0.1777, -0.38, 0.36, 2725, 2700],
+      opening:       [1.6097, 2.1794, -0.5697, -0.855, -0.2844, 0.0001, -0.15, 0.13, 415, 540],
+      middlegame:    [4.954, 5.3466, -0.3926, -0.7081, -0.077, 0.0148, -0.27, 0.23, 1587, 1651],
+      endgame_phase: [2.552, 2.4947, 0.0573, -0.1097, 0.2242, 0.5013, -0.12, 0.10, 1162, 1113],
+      miss:          [2.7089, 2.8054, -0.0965, -0.2801, 0.0872, 0.3032, -0.11, 0.11, 965, 977],
+      lucky:         [1.7589, 1.9265, -0.1676, -0.3228, -0.0124, 0.0343, -0.09, 0.09, 625, 678],
+      reversed:      [0.3979, 0.3184, 0.0795, -0.0026, 0.1615, 0.0577, -0.04, 0.04, 135, 115],
+      squandered:    [0.7426, 0.5515, 0.1911, 0.0536, 0.3287, 0.0065, -0.07, 0.08, 291, 229],
+    },
+    // family: { m: [you, opp, p, yourFlaws, oppFlaws], a: [...] } per game
+    tac: {
+      mate: { m: [0.0741, 0.0491, 0.0716, 74, 49], a: [0.1052, 0.1453, 0.0233, 105, 145] },
+      fork: { m: [0.0731, 0.0271, 0, 73, 27], a: [0.0822, 0.1353, 0.0007, 82, 135] },
+      hanging: { m: [0.0291, 0.0251, 0.6057, 29, 25], a: [0.1032, 0.1383, 0.0251, 103, 138] },
+      pin: { m: [0.023, 0.02, 0.6746, 23, 20], a: [0.0391, 0.0381, 0.9166, 39, 38] },
+      discovered_attack: { m: [0.02, 0.016, 0.5372, 20, 16], a: [0.0271, 0.0271, 1, 27, 27] },
+      sacrifice: { m: [0.011, 0.006, 0.2251, 11, 6], a: [0.023, 0.016, 0.3539, 23, 16] },
+      attraction: { m: [0.013, 0.003, 0.0073, 13, 3], a: [0.011, 0.018, 0.1778, 11, 18] },
+      deflection: { m: [0.006, 0.005, 0.7631, 6, 5], a: [0.013, 0.005, 0.059, 13, 5] },
+      skewer: { m: [0.003, 0.007, 0.285, 3, 7], a: [0.015, 0.005, 0.0409, 15, 5] },
+      discovered_check: { m: [0.007, 0.003, 0.2058, 7, 3], a: [0.014, 0.018, 0.4928, 14, 18] },
+      promotion: { m: [0.007, 0.004, 0.3658, 7, 4], a: [0.006, 0.007, 0.7816, 6, 7] },
+      trapped_piece: { m: [0.005, 0.004, 0.739, 5, 4], a: [0.002, 0.006, 0.2058, 2, 6] },
+      double_check: { m: [0.001, 0.001, 1, 1, 1], a: [0.002, 0.002, 1, 2, 2] },
+      x_ray: { m: [0.001, 0, 0.3173, 1, 0], a: [0.001, 0.001, 1, 1, 1] },
+      intermezzo: { m: [0.001, 0.001, 1, 1, 1], a: [0.006, 0.003, 0.3173, 6, 3] },
+      interference: { m: [0.001, 0.002, 0.5638, 1, 2], a: [0.002, 0.001, 0.5638, 2, 1] },
+      capturing_defender: { m: [0.002, 0.001, 0.5638, 2, 1], a: [0.001, 0.001, 1, 1, 1] },
+      en_passant: { m: [0, 0, null, 0, 0], a: [0.002, 0.002, 1, 2, 2] },
+      under_promotion: { m: [0, 0, null, 0, 0], a: [0.002, 0, 0.1571, 2, 0] },
+    },
+  },
+  rapid: {
+    games: 1841,
+    flaw: {
+      blunder:       [5.2245, 5.8332, -0.6086, -0.8494, -0.3679, 0, -0.31, 0.25, 3316, 3466],
+      mistake:       [3.5695, 4.1285, -0.5589, -0.7835, -0.3343, 0, -0.23, 0.20, 2310, 2546],
+      low_clock:     [0.5912, 0.1783, 0.4129, 0.3265, 0.4993, 0, -0.08, 0.03, 491, 140],
+      hasty:         [0.8554, 2.9306, -2.0752, -2.2498, -1.9006, 0, -0.28, 0.18, 604, 1774],
+      unrushed:      [7.3475, 6.851, 0.4965, 0.1987, 0.7943, 0.0011, -0.38, 0.36, 4531, 4097],
+      opening:       [1.6022, 2.1916, -0.5894, -0.7735, -0.4052, 0, -0.15, 0.13, 760, 992],
+      middlegame:    [4.8303, 5.3855, -0.5552, -0.7931, -0.3173, 0, -0.27, 0.23, 2903, 3095],
+      endgame_phase: [2.3616, 2.3846, -0.0229, -0.1478, 0.1019, 0.7186, -0.12, 0.10, 1963, 1925],
+      miss:          [2.5562, 2.6016, -0.0454, -0.1907, 0.0999, 0.5401, -0.11, 0.11, 1660, 1667],
+      lucky:         [1.6768, 1.6069, 0.0699, -0.0483, 0.1881, 0.2463, -0.09, 0.09, 1066, 1033],
+      reversed:      [0.3606, 0.31, 0.0506, -0.006, 0.1072, 0.0796, -0.04, 0.04, 222, 198],
+      squandered:    [0.6783, 0.5261, 0.1522, 0.0571, 0.2473, 0.0017, -0.07, 0.08, 467, 388],
+    },
+    tac: {
+      mate: { m: [0.0538, 0.0413, 0.14, 99, 76], a: [0.1282, 0.1391, 0.4226, 236, 256] },
+      fork: { m: [0.0456, 0.0239, 0.0007, 84, 44], a: [0.0728, 0.0978, 0.0122, 134, 180] },
+      pin: { m: [0.0288, 0.0158, 0.0122, 53, 29], a: [0.0429, 0.0445, 0.8226, 79, 82] },
+      hanging: { m: [0.0163, 0.0217, 0.2319, 30, 40], a: [0.082, 0.0989, 0.0911, 151, 182] },
+      discovered_attack: { m: [0.0136, 0.0076, 0.0856, 25, 14], a: [0.0152, 0.0234, 0.079, 28, 43] },
+      sacrifice: { m: [0.0114, 0.0081, 0.3304, 21, 15], a: [0.0261, 0.0179, 0.1117, 48, 33] },
+      deflection: { m: [0.0087, 0.0098, 0.7389, 16, 18], a: [0.0152, 0.0103, 0.2332, 28, 19] },
+      skewer: { m: [0.0071, 0.006, 0.695, 13, 11], a: [0.0098, 0.0103, 0.8788, 18, 19] },
+      attraction: { m: [0.0065, 0.0081, 0.5901, 12, 15], a: [0.0087, 0.013, 0.2058, 16, 24] },
+      discovered_check: { m: [0.006, 0.0027, 0.1335, 11, 5], a: [0.0076, 0.0049, 0.2752, 14, 9] },
+      trapped_piece: { m: [0.0038, 0.0043, 0.7963, 7, 8], a: [0.0076, 0.0087, 0.7237, 14, 16] },
+      double_check: { m: [0.0011, 0.0011, 1, 2, 2], a: [0.0005, 0.0005, 1, 1, 1] },
+      x_ray: { m: [0.0005, 0, 0.3173, 1, 0], a: [0, 0.0011, 0.1572, 0, 2] },
+      intermezzo: { m: [0.0005, 0, 0.3173, 1, 0], a: [0.006, 0.0049, 0.6548, 11, 9] },
+      interference: { m: [0, 0.0011, 0.1572, 0, 2], a: [0.0011, 0.0005, 0.5638, 2, 1] },
+      capturing_defender: { m: [0.0005, 0.0022, 0.2568, 1, 4], a: [0.0049, 0.0027, 0.3458, 9, 5] },
+      en_passant: { m: [0.0022, 0.0005, 0.1796, 4, 1], a: [0.0005, 0, 0.3173, 1, 0] },
+      under_promotion: { m: [0.0011, 0, 0.1572, 2, 0], a: [0, 0.0005, 0.3173, 0, 1] },
+      promotion: { m: [0.0033, 0.0081, 0.0945, 6, 15], a: [0.0109, 0.0076, 0.3173, 20, 14] },
+    },
+  },
+};
+
+// label, plain hint, plural noun for the flaw count
+const META = {
+  blunder:       ['Blunders', 'Moves that dropped your expected score by 15+ points', 'blunders'],
+  mistake:       ['Mistakes', 'Moves that dropped your expected score by 10 to 15 points', 'mistakes'],
+  low_clock:     ['Low-clock', 'Flaws with under 5% of your time left', 'low-clock flaws'],
+  hasty:         ['Hasty', 'Flaws played fast while you still had time', 'hasty flaws'],
+  unrushed:      ['Unrushed', 'Flaws despite taking your time', 'unrushed flaws'],
+  opening:       ['Opening', 'Flaws in the opening', 'opening flaws'],
+  middlegame:    ['Middlegame', 'Flaws in the middlegame', 'middlegame flaws'],
+  endgame_phase: ['Endgame', 'Flaws in the endgame', 'endgame flaws'],
+  miss:          ['Miss', 'Your opponent erred and you missed it', 'misses'],
+  lucky:         ['Lucky', 'Your flaw went unpunished', 'lucky flaws'],
+  reversed:      ['Reversed', 'Winning position turned into a losing one', 'reversals'],
+  squandered:    ['Squandered', 'Winning position thrown back to equal', 'squandered wins'],
+};
+const GROUPS = [
+  ['Clock', 'how much time you had', ['low_clock', 'hasty', 'unrushed']],
+  ['Game phase', 'where the flaw happened', ['opening', 'middlegame', 'endgame_phase']],
+  ['Opponent errors', 'chances you missed or got', ['miss', 'lucky']],
+  ['Lost advantages', 'what the flaw cost', ['reversed', 'squandered']],
+];
+const TAC_LABEL = {
+  mate: 'Checkmate', fork: 'Fork', hanging: 'Hanging piece', pin: 'Pin', discovered_attack: 'Discovered attack',
+  sacrifice: 'Sacrifice', attraction: 'Attraction', deflection: 'Deflection', skewer: 'Skewer',
+  discovered_check: 'Discovered check', promotion: 'Promotion', trapped_piece: 'Trapped piece',
+  double_check: 'Double check', x_ray: 'X-ray', intermezzo: 'Intermezzo', interference: 'Interference',
+  capturing_defender: 'Capturing defender', en_passant: 'En passant', under_promotion: 'Under-promotion',
+};
+// Same groups and order as the tactics filter panel (TACTIC_GROUPS in tacticComparisonMeta.ts).
+// Advanced holds the rare motifs (mostly faded rows): closed by default, like the filter panel's Advanced group.
+const COLLAPSED_GROUPS = new Set(['Advanced']);
+const openGroups = new Set();
+const TAC_GROUPS = [
+  ['Piece Attacks', ['fork', 'pin', 'skewer', 'hanging']],
+  ['Checkmate, Checks & Discoveries', ['mate', 'double_check', 'discovered_check', 'discovered_attack']],
+  ['Advanced', ['trapped_piece', 'x_ray', 'deflection', 'intermezzo', 'interference', 'capturing_defender', 'attraction', 'sacrifice', 'en_passant', 'under_promotion', 'promotion']],
+];
+// Made-up band until the benchmark pipeline computes tactic IQRs: roughly ±40% of the
+// average rate, slightly skewed, so the sketch shows realistic spread.
+function tacIqr(you, opp) { const m = (you + opp) / 2; return [-0.42 * m, 0.38 * m]; }
+
+let tc = 'rapid';
+
+// ── Helpers ──
+const verdict = (d, lo, hi) => d < lo ? 'hi' : d > hi ? 'lo' : 'md';   // lower = better for every flaw metric
+const VERDICT_WORD = { hi: 'better than typical', md: 'typical', lo: 'worse than typical' };
+const fmt = v => Math.abs(v) >= 10 ? v.toFixed(0) : Math.abs(v) >= 1 ? v.toFixed(1) : v.toFixed(2);
+const signed = v => (v > 0 ? '+' : v < 0 ? '−' : '') + fmt(Math.abs(v));
+const gapWords = d => Math.abs(d) < 0.005 ? 'same' : `${fmt(Math.abs(d))} ${d < 0 ? 'fewer' : 'more'}`;
+const pText = p => p == null ? 'no test (no flaws on one side)' : p < 0.001 ? 'p < 0.001' : `p = ${p.toFixed(3)}`;
+const nf = n => n.toLocaleString('en-US');
+
+// Zero is always the centre; fewer flaws (better) to the right. The wider band side
+// reaches BAND_HALF_POS from the centre; beyond the band the scale saturates (1 - e^-x,
+// x in band widths) so large gaps approach the edge without clipping.
+function pos(d, lo, hi) {
+  const s = Math.max(Math.abs(lo), Math.abs(hi));
+  const a = Math.abs(d);
+  let off;
+  if (a <= s) off = BAND_HALF_POS * a / s;
+  else off = BAND_HALF_POS + OUTER_SPAN * (1 - Math.exp(-(a - s) / (hi - lo)));
+  return d < 0 ? 50 + off : 50 - off;
+}
+
+function popover({ label, def, you, opp, unit, lo, hi, d, foot, illustrative, flaws }) {
+  return `<span class="pop"><p><b>${label}:</b> ${def}. Fewer is better.</p>
+    <p><b>You: ${fmt(you)} ${unit}. Opponents: ${fmt(opp)}.</b> ${gapWords(d) === 'same' ? 'The same as the players you faced.' : `That is ${gapWords(d)} than the players you faced.`}</p>
+    <ul>
+      <li>Typical gap for players at your level: ${signed(lo)} to ${signed(hi)}${illustrative ? ' (illustrative)' : ''}. ${flaws < MIN_FLAWS ? `Too few flaws (${flaws}) to call it.` : `You are ${VERDICT_WORD[verdict(d, lo, hi)]}.`}</li>
+      <li>Based on your ${nf(DATA[tc].games)} analyzed ${tc} games in the current filters.</li>
+    </ul>
+    <hr><p class="foot">${foot}</p></span>`;
+}
+const infoIcon = pop => `<span class="info" tabindex="0" role="button" aria-label="About this metric">${ICON.search}${pop}</span>`;
+
+function flawArgs(tag) {
+  const r = DATA[tc].flaw[tag], m = META[tag];
+  return {
+    label: m[0], def: m[1], you: r[0], opp: r[1], d: r[2], lo: r[6], hi: r[7], unit: 'per 100 moves',
+    flaws: r[8] + r[9],
+    foot: `${nf(r[8])} vs. ${nf(r[9])} ${m[2]} · gap 95% CI ${signed(r[3])} to ${signed(r[4])} · ${pText(r[5])}`,
+  };
+}
+
+function gapBar(a) {
+  // Below the sample minimum the gap is mostly noise: no red/green, the row is faded instead.
+  const v = a.flaws < MIN_FLAWS ? 'md' : verdict(a.d, a.lo, a.hi);
+  const bandL = pos(a.hi, a.lo, a.hi), bandR = pos(a.lo, a.lo, a.hi);
+  return `<div class="bar"><div class="track">
+      <div class="band" style="left:${bandL}%;width:${bandR - bandL}%"></div>
+      <div class="zero"></div>
+      <div class="dot bg-${v}" style="left:${pos(a.d, a.lo, a.hi)}%"></div></div>
+    <span class="verdict"><span class="w ${v}">${gapWords(a.d)}</span>${infoIcon(popover(a))}</span></div>`;
+}
+function gapRow(a) {
+  return `<div class="grow${a.flaws < MIN_FLAWS ? ' lowconf' : ''}"><div class="top">
+      <div class="lbl">${a.label}<span class="hint">${a.def}</span></div></div>${gapBar(a)}</div>`;
+}
+const gapAxis = () => `<div class="axis"><span>worse</span><span>same as opponents</span><span>better</span></div>`;
+
+// ── Render ──
+function renderTiles() {
+  const tile = (tag, color) => {
+    const a = flawArgs(tag);
+    return `<div class="card tile"><div class="card-b">
+      <div><div class="big num" style="color:${color}">${a.you.toFixed(2)}</div><div class="cap">${a.label} / 100 moves</div></div>
+      <div class="vs muted small">Opponents ${a.opp.toFixed(2)}</div>${gapBar(a)}</div></div>`;
+  };
+  document.getElementById('tiles').innerHTML = tile('blunder', 'var(--blunder)') + tile('mistake', 'var(--mistake)');
+}
+
+function renderHighlights() {
+  const all = GROUPS.flatMap(g => g[2]).map(t => flawArgs(t));
+  // Distance outside the band in band widths, so tags with tiny rates compete fairly.
+  const scored = all.map(a => ({ ...a, v: verdict(a.d, a.lo, a.hi), dist: a.d < a.lo ? (a.lo - a.d) / (a.hi - a.lo) : a.d > a.hi ? (a.d - a.hi) / (a.hi - a.lo) : 0 }));
+  const top = v => scored.filter(a => a.v === v).sort((x, y) => y.dist - x.dist).slice(0, TOP_STANDOUTS);
+  const li = a => `<li class="hlrow"><span><b>${a.label}</b><span class="faint small" style="display:block">${a.def}</span></span>
+    <span class="verdict" style="min-width:0"><b class="${a.v}">${gapWords(a.d)}</b>${infoIcon(popover(a))}</span></li>`;
+  const list = (v, title) => { const items = top(v); return `<div><div class="sub"><span class="pill bg-${v}"></span>${title}</div>
+    ${items.length ? `<ul>${items.map(li).join('')}</ul>` : '<p class="faint" style="margin:6px 0">Nothing outside the typical range.</p>'}</div>`; };
+  const typical = scored.filter(a => a.v === 'md').map(a => a.label);
+  document.getElementById('highlights').innerHTML = `<div class="card-h">What stands out</div><div class="card-b">
+    <div class="hl">${list('hi', 'Strengths')}${list('lo', 'Weaknesses')}</div>
+    ${typical.length ? `<div class="even">Typical: ${typical.join(', ')}.</div>` : ''}</div>`;
+}
+
+function renderCtx() {
+  document.getElementById('ctxCards').innerHTML = GROUPS.map(([name, sub, tags]) =>
+    `<div class="card"><div class="card-h">${name} <small>${sub}</small></div>
+      <div class="card-b">${tags.map(t => gapRow(flawArgs(t))).join('')}${gapAxis()}</div></div>`).join('');
+}
+
+function tacArgs(fam, orient) {
+  const [you, opp, p, ye, oe] = DATA[tc].tac[fam][orient];
+  const [lo, hi] = tacIqr(you, opp);
+  const k = PER_100_GAMES, name = TAC_LABEL[fam].toLowerCase();
+  const verb = orient === 'm' ? 'missed' : 'allowed';
+  return {
+    label: `${orient === 'm' ? 'Missed' : 'Allowed'} ${name}`,
+    def: orient === 'm' ? `your opponent left a ${name} on the board and you did not play it` : `your move handed your opponent a ${name}`,
+    you: you * k, opp: opp * k, d: (you - opp) * k, lo: lo * k, hi: hi * k, unit: 'per 100 games', flaws: ye + oe, illustrative: true,
+    foot: `${nf(ye)} vs. ${nf(oe)} flaws with a ${verb} ${name} · ${pText(p)}`,
+  };
+}
+function tacCell(a) {
+  if (a.flaws === 0) return '<span class="faint">no flaws</span>';
+  return gapBar(a);
+}
+const flawsOf = f => { const t = DATA[tc].tac[f]; return t.m[3] + t.m[4] + t.a[3] + t.a[4]; };
+function tacRow(f) {
+  const m = tacArgs(f, 'm'), a = tacArgs(f, 'a');
+  const yours = DATA[tc].tac[f].m[3] + DATA[tc].tac[f].a[3];
+  const fade = x => x.flaws < MIN_FLAWS ? 'lowconf' : '';
+  return `<tr><td class="tname">${TAC_LABEL[f]}<small>${yours} of your flaws</small></td>
+    <td data-k="Missed" class="pad-l ${fade(m)}">${tacCell(m)}</td>
+    <td data-k="Allowed" class="pad-l ${fade(a)}">${tacCell(a)}</td></tr>`;
+}
+function renderTac() {
+  document.getElementById('tacTables').innerHTML = TAC_GROUPS.map(([name, fams]) => {
+    const shown = fams.filter(f => flawsOf(f) > 0);
+    const empty = fams.filter(f => flawsOf(f) === 0).map(f => TAC_LABEL[f]);
+    const collapsible = COLLAPSED_GROUPS.has(name), open = !collapsible || openGroups.has(name);
+    const head = collapsible
+      ? `<button class="card-h acc" data-acc="${name}" aria-expanded="${open}"><span class="acc-t">${name}${open ? '' : '<span class="acc-hint">Click or tap for details</span>'}</span><svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg></button>`
+      : `<div class="card-h">${name}</div>`;
+    return `<div class="card">${head}<div class="card-b"${open ? '' : ' hidden'}>
+      <table class="ttab"><colgroup><col style="width:24%"><col style="width:38%"><col style="width:38%"></colgroup><thead>
+        <tr><th>Motif</th><th class="pad-l" style="text-align:left">Missed</th><th class="pad-l" style="text-align:left">Allowed</th></tr></thead>
+        <tbody>${shown.map(tacRow).join('')}</tbody></table>
+      ${empty.length ? `<p class="faint small" style="margin:10px 0 0">No flaws yet: ${empty.join(', ')}.</p>` : ''}</div></div>`;
+  }).join('') + `<p class="muted small" style="margin:0">Per 100 games. Middle tick = same as your opponents, better to the right. Your and your opponents' rates are in each search-icon popover.</p>`;
+}
+
+function renderTcs() {
+  document.querySelectorAll('[data-tcs]').forEach(el => {
+    el.innerHTML = ['blitz', 'rapid'].map(k => `<button class="${k === tc ? 'on' : ''}" data-tc="${k}">${ICON[k]}${k[0].toUpperCase() + k.slice(1)}</button>`).join('');
+  });
+  document.querySelectorAll('[data-basis]').forEach(el => el.textContent = `Your ${nf(DATA[tc].games)} analyzed ${tc} games in the current filters.`);
+}
+
+function render() { renderTcs(); renderTiles(); renderHighlights(); renderCtx(); renderTac(); }
+
+document.addEventListener('click', e => {
+  const acc = e.target.closest('[data-acc]');
+  if (acc) { const g = acc.dataset.acc; openGroups.has(g) ? openGroups.delete(g) : openGroups.add(g); renderTac(); return; }
+  const b = e.target.closest('[data-tc]');
+  if (b) { tc = b.dataset.tc; render(); return; }
+  const w = e.target.closest('[data-w]');
+  if (w) {
+    const wrap = document.getElementById('wrap');
+    wrap.style.maxWidth = w.dataset.w + 'px';
+    wrap.classList.toggle('narrow', +w.dataset.w < 500);
+    document.querySelectorAll('[data-w]').forEach(x => x.classList.toggle('on', x === w));
+  }
+});
+document.getElementById('notesToggle').addEventListener('change', e => document.body.classList.toggle('hide-notes', !e.target.checked));
+render();
+</script>
+</body>
+</html>

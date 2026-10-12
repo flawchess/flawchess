@@ -22,6 +22,7 @@ import {
   FLAWCHESS_ENGINE_ARROW,
   ARROW_OPACITY,
   STOCKFISH_PRIMARY_ALPHA,
+  FLAWCHESS_PRIMARY_ALPHA,
   STOCKFISH_SECONDARY_LINE,
 } from '@/lib/theme';
 import {
@@ -31,7 +32,7 @@ import {
   flawChessSecondaryArrowColor,
   secondaryArrowAlpha,
 } from '@/lib/engineArrowGrades';
-import { DEFAULT_ARROWS } from '@/lib/engineSettings';
+import { DEFAULT_FC_ARROWS, DEFAULT_SF_ARROWS } from '@/lib/engineSettings';
 
 const START_FEN = 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1';
 
@@ -103,8 +104,8 @@ function baseOptions(
     flawChessRankedLines: FC_LINES,
     engineEnabled: true,
     stockfishArrowLines: SF_LINES,
-    fcArrowCount: DEFAULT_ARROWS,
-    sfArrowCount: DEFAULT_ARROWS,
+    fcArrowCount: DEFAULT_FC_ARROWS,
+    sfArrowCount: DEFAULT_SF_ARROWS,
     gameOverlaySquareMarkers: [],
     liveFlawSquareMarkers: [],
     resolveMarkerFor: () => null,
@@ -185,7 +186,7 @@ describe('useAnalysisBoardArrows — FlawChess arrows (D-15)', () => {
     const fc1 = byKey(all, 'fc-1');
     const sf0 = byKey(all, 'sf-0');
     expect(fc0?.color).toBe(FLAWCHESS_ENGINE_ARROW);
-    expect(fc1?.color).toBe(flawChessSecondaryArrowColor(secondaryArrowAlpha(0.6 - 0.55)));
+    expect(fc1?.color).toBe(flawChessSecondaryArrowColor(secondaryArrowAlpha(0.6 - 0.55, FLAWCHESS_PRIMARY_ALPHA)));
     expect(fc0?.width).toBe(fc1?.width);
     expect(fc0?.width).toBeGreaterThan(sf0?.width ?? Infinity);
     expect([fc1?.startSquare, fc1?.endSquare]).toEqual(['g2', 'g3']);
@@ -259,8 +260,8 @@ describe('useAnalysisBoardArrows — Stockfish arrow grades and badges (quick 26
     expect(boardSquareMarkers).toEqual([]);
     const fc = (boardArrows ?? []).filter((a) => a.layerKey?.startsWith('fc-'));
     // FC_LINES practical scores 0.6 / 0.55 / 0.5: the bigger drop is the fainter arrow.
-    expect(byKey(fc, 'fc-1')?.color).toBe(flawChessSecondaryArrowColor(secondaryArrowAlpha(0.6 - 0.55)));
-    expect(byKey(fc, 'fc-2')?.color).toBe(flawChessSecondaryArrowColor(secondaryArrowAlpha(0.6 - 0.5)));
-    expect(secondaryArrowAlpha(0.6 - 0.5)).toBeLessThan(secondaryArrowAlpha(0.6 - 0.55));
+    expect(byKey(fc, 'fc-1')?.color).toBe(flawChessSecondaryArrowColor(secondaryArrowAlpha(0.6 - 0.55, FLAWCHESS_PRIMARY_ALPHA)));
+    expect(byKey(fc, 'fc-2')?.color).toBe(flawChessSecondaryArrowColor(secondaryArrowAlpha(0.6 - 0.5, FLAWCHESS_PRIMARY_ALPHA)));
+    expect(secondaryArrowAlpha(0.6 - 0.5, FLAWCHESS_PRIMARY_ALPHA)).toBeLessThan(secondaryArrowAlpha(0.6 - 0.55, FLAWCHESS_PRIMARY_ALPHA));
   });
 });

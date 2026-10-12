@@ -5,6 +5,10 @@ Scope (Phase 65):
 - generate_insights(user_id, session): sole orchestration entry point called by
   app/routers/insights.py. Handles tier-1 cache, fresh LLM call, and log-row
   write. Filter-free since Phase 238 (D-04): one report per user.
+- get_cached_insights_response(session, user_id): the regeneration cache rule
+  (import invalidation + 30d max age) used by generate_insights.
+- get_latest_insights_response(session, user_id): the display lookup behind
+  GET /insights/endgame/cached (latest report, never invalidated).
 - Custom exceptions map to HTTP status codes at the router layer (Plan 06).
 
 Critical invariants:
@@ -35,6 +39,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.config import settings
 from app.repositories.import_job_repository import get_latest_completed_import_with_games_at
 from app.repositories.llm_log_repository import (
+    acquire_insights_generation_lock,
     create_llm_log,
     get_latest_successful_log_for_user,
 )
@@ -49,6 +54,7 @@ from app.schemas.insights import (
     SubsectionFinding,
     TimePoint,
 )
+from app.models.llm_log import LlmLog
 from app.schemas.llm_log import LlmLogCreate, LlmLogEndpoint, LlmLogFilterContext
 from app.services.endgame_zones import (
     MIN_GAMES_PER_TC_CARD,
@@ -2654,6 +2660,63 @@ async def _run_agent(
 # -- Orchestration entry point (CONTEXT.md D-33) --
 
 
+def _cache_hit_response(row: LlmLog) -> EndgameInsightsResponse:
+    report = EndgameInsightsReport.model_validate(row.response_json)
+    return EndgameInsightsResponse(
+        report=_maybe_strip_overview(report),
+        status="cache_hit",
+    )
+
+
+async def _latest_report_row(
+    session: AsyncSession, user_id: int, max_age: datetime.timedelta | None
+) -> LlmLog | None:
+    return await get_latest_successful_log_for_user(
+        session,
+        user_id=user_id,
+        prompt_version=_PROMPT_VERSION,
+        model=settings.PYDANTIC_AI_MODEL_INSIGHTS,
+        opponent_strength=INSIGHTS_CACHE_OPPONENT_STRENGTH,
+        max_age=max_age,
+    )
+
+
+async def get_cached_insights_response(
+    session: AsyncSession, user_id: int
+) -> EndgameInsightsResponse | None:
+    """Regeneration cache rule for POST /insights/endgame (generate_insights).
+
+    A cached row is reused iff it is a successful row for (user, prompt_version,
+    model, constant opponent_strength) younger than INSIGHTS_CACHE_MAX_AGE
+    (30 days) AND no completed import with games_imported > 0 landed after it
+    was written. Otherwise the caller regenerates.
+    """
+    cached = await _latest_report_row(session, user_id, INSIGHTS_CACHE_MAX_AGE)
+    if cached is None:
+        return None
+    # games_imported=0 imports are excluded by the helper, so no-op resyncs do
+    # not invalidate the cache.
+    last_import_at = await get_latest_completed_import_with_games_at(session, user_id)
+    if last_import_at is not None and last_import_at > cached.created_at:
+        return None
+    return _cache_hit_response(cached)
+
+
+async def get_latest_insights_response(
+    session: AsyncSession, user_id: int
+) -> EndgameInsightsResponse | None:
+    """Display lookup for GET /insights/endgame/cached: the user's latest report.
+
+    Never invalidated by imports or age, so None means the user has no report for
+    the current (prompt_version, model) yet. The frontend auto-generates only on
+    None (quick 261012-qiz: only the first report is auto-generated; later
+    refreshes go through the "Update Insights" button, i.e. generate_insights).
+    A prompt_version or model bump therefore auto-generates one new report.
+    """
+    latest = await _latest_report_row(session, user_id, None)
+    return None if latest is None else _cache_hit_response(latest)
+
+
 async def generate_insights(
     user_id: int,
     session: AsyncSession,
@@ -2663,9 +2726,13 @@ async def generate_insights(
     Cache key (260425-dxh, Phase 238 D-04): (user_id, prompt_version, model) plus the
     constant INSIGHTS_CACHE_OPPONENT_STRENGTH; there is no filter input, so exactly one
     report is cached per user.
-    Validity rule: row.created_at >= MAX(import_jobs.completed_at WHERE
-    games_imported > 0) for this user, AND row younger than
-    INSIGHTS_CACHE_MAX_AGE. Reordered so compute_findings only runs on miss.
+    Validity rule (see get_cached_insights_response): row younger than
+    INSIGHTS_CACHE_MAX_AGE, AND row.created_at >= MAX(import_jobs.completed_at
+    WHERE games_imported > 0) for this user. Reordered so compute_findings only
+    runs on miss.
+    Generations for the same user are serialized by a per-user advisory xact
+    lock, so a concurrent duplicate request waits and returns the first one's
+    report as cache_hit instead of paying for a second LLM call.
 
     Returns EndgameInsightsResponse with status in {fresh, cache_hit}.
     Raises InsightsProviderError (router -> 502) or InsightsValidationFailure
@@ -2677,34 +2744,33 @@ async def generate_insights(
     """
     model = settings.PYDANTIC_AI_MODEL_INSIGHTS
 
+    # Bug fix (prod llm_logs 2026-10-11/12): users 1242, 1277, 1282, 1287 each got two
+    # fresh reports 20-60s apart with an identical findings_hash and no import between.
+    # A second POST (page reload/remount) arrived while the first was still inside
+    # compute_findings + the LLM call, before its llm_logs row existed, so both missed
+    # the cache. This per-user advisory xact lock serializes same-user generations:
+    # create_llm_log commits the row on its OWN session before the first request
+    # returns, and the lock is released when the first request's transaction ends
+    # (get_async_session's commit after yield, or close/rollback on the exception
+    # path). The waiter's cache lookup below then sees the committed row under READ
+    # COMMITTED and returns cache_hit. Cost: a waiting request holds one pooled
+    # connection, which it already held for the whole LLM call before this change.
+    # Deliberately NOT taken in GET /cached (read-only, must never block).
+    await acquire_insights_generation_lock(session, user_id)
+
     # Tier-1 STRUCTURAL cache lookup (260425-dxh): cheap query on
-    # (user_id, prompt_version, model, constant opponent_strength) + freshness checks.
+    # (user_id, prompt_version, model, constant opponent_strength) + freshness checks
+    # (younger than 30 days, no import with new games since).
     # Runs BEFORE compute_findings so cache hits skip the heavy DB pipeline.
     # Bug-fix note: the previous findings_hash-based lookup was unstable across
     # days because EndgameTabFindings includes time-relative fields (sliding
     # 3-month window stats and stale_months markers), so the hash drifted even
-    # with a frozen game corpus. The hash also wasn't user-scoped — a latent
-    # cross-user collision risk that the new helper closes by filtering on
+    # with a frozen game corpus. The hash also wasn't user-scoped, a latent
+    # cross-user collision risk that the structural helper closes by filtering on
     # user_id directly.
-    cached = await get_latest_successful_log_for_user(
-        session,
-        user_id=user_id,
-        prompt_version=_PROMPT_VERSION,
-        model=model,
-        opponent_strength=INSIGHTS_CACHE_OPPONENT_STRENGTH,
-        max_age=INSIGHTS_CACHE_MAX_AGE,
-    )
-    if cached is not None:
-        last_import_at = await get_latest_completed_import_with_games_at(session, user_id)
-        # Cache row valid only if no qualifying import has happened since it
-        # was written. games_imported=0 imports were intentionally excluded
-        # in the helper, so no-op resyncs do not invalidate the cache.
-        if last_import_at is None or last_import_at <= cached.created_at:
-            report = EndgameInsightsReport.model_validate(cached.response_json)
-            return EndgameInsightsResponse(
-                report=_maybe_strip_overview(report),
-                status="cache_hit",
-            )
+    cached_response = await get_cached_insights_response(session, user_id)
+    if cached_response is not None:
+        return cached_response
 
     # Cache miss path: now we pay for compute_findings.
     findings = await compute_findings(session, user_id)

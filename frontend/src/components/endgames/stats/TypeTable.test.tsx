@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 /**
  * Phase 238 validation rows D-00e / D-05: the Endgame Type Breakdown table shows a
- * grey typical range with a white "you" tick per conversion / recovery / vs.-engine
+ * grey typical range with a colored "you" dot per conversion / recovery / vs.-engine
  * cell, red below and green above the range, faded low-sample rows, stacked rows on mobile.
  */
 
@@ -10,7 +10,13 @@ import { cleanup, fireEvent, render } from '@testing-library/react';
 import { MemoryRouter } from 'react-router';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import { PER_CLASS_TC_GAUGE_ZONES } from '@/generated/endgameZones';
-import { TYPICAL_ABOVE_VALUE, TYPICAL_BELOW_VALUE } from '@/lib/theme';
+import {
+  GAUGE_NEUTRAL,
+  TYPICAL_ABOVE_VALUE,
+  TYPICAL_BELOW_VALUE,
+  ZONE_DANGER,
+  ZONE_SUCCESS,
+} from '@/lib/theme';
 import type { EndgameCategoryStats, EndgameClass } from '@/types/endgames';
 import { buildRankedTc } from './rankedFixtures';
 
@@ -186,22 +192,22 @@ describe('TypeTable typical-range cells', () => {
     );
   });
 
-  it('places the white tick at the user value', () => {
+  it('places the dot at the user value', () => {
     const { container } = renderTable();
     // Rook conversion 75% on the 0.4-1.0 domain.
-    const tick = byId(container, 'type-row-rook-conversion-tick');
-    expect(parseFloat(tick.style.left)).toBeCloseTo(((0.75 - 0.4) / 0.6) * 100, 1);
+    const dot = byId(container, 'type-row-rook-conversion-dot');
+    expect(parseFloat(dot.style.left)).toBeCloseTo(((0.75 - 0.4) / 0.6) * 100, 1);
   });
 
-  it('clamps the tick into the cell domain', () => {
+  it('clamps the dot into the cell domain', () => {
     const tc = buildRankedTc('rapid', {
       type_categories: [
         buildCategory('rook', 'Rook', { conversionPct: 10, recoveryPct: 99 }),
       ],
     });
     const { container } = renderTable([tc]);
-    expect(parseFloat(byId(container, 'type-row-rook-conversion-tick').style.left)).toBe(0);
-    expect(parseFloat(byId(container, 'type-row-rook-recovery-tick').style.left)).toBe(100);
+    expect(parseFloat(byId(container, 'type-row-rook-conversion-dot').style.left)).toBe(0);
+    expect(parseFloat(byId(container, 'type-row-rook-recovery-dot').style.left)).toBe(100);
   });
 
   it('colors the value red below, green above and leaves it white inside the typical range', () => {
@@ -221,6 +227,16 @@ describe('TypeTable typical-range cells', () => {
     expect(byId(container, 'type-row-queen-conversion-value').style.color).toBe(
       normalizedColor(TYPICAL_ABOVE_VALUE),
     );
+    // The dot uses the Endgame Metrics percentile palette: red / blue / green.
+    expect(byId(container, 'type-row-rook-conversion-dot').style.backgroundColor).toBe(
+      normalizedColor(ZONE_DANGER),
+    );
+    expect(byId(container, 'type-row-pawn-conversion-dot').style.backgroundColor).toBe(
+      normalizedColor(GAUGE_NEUTRAL),
+    );
+    expect(byId(container, 'type-row-queen-conversion-dot').style.backgroundColor).toBe(
+      normalizedColor(ZONE_SUCCESS),
+    );
   });
 
   it('shows an info popover with the endgame type description on each row', () => {
@@ -228,13 +244,13 @@ describe('TypeTable typical-range cells', () => {
     expect(byId(container, 'type-row-rook-info').getAttribute('aria-label')).toBe('Rook info');
   });
 
-  it('shows a dash and no tick for a cell without games', () => {
+  it('shows a dash and no dot for a cell without games', () => {
     const tc = buildRankedTc('rapid', {
       type_categories: [buildCategory('rook', 'Rook', { conversionGames: 0, gap: null })],
     });
     const { container } = renderTable([tc]);
     expect(byId(container, 'type-row-rook-conversion-value').textContent).toBe('—');
-    expect(queryId(container, 'type-row-rook-conversion-tick')).toBeNull();
+    expect(queryId(container, 'type-row-rook-conversion-dot')).toBeNull();
     expect(byId(container, 'type-row-rook-gap-value').textContent).toBe('—');
   });
 
@@ -284,11 +300,11 @@ describe('TypeTable confidence and layout', () => {
     expect(onCategorySelect).toHaveBeenCalledWith('minor_piece');
   });
 
-  it('explains the grey range, the white tick, red/green and faded rows in the legend', () => {
+  it('explains the grey range, the dot, red/green and faded rows in the legend', () => {
     const { container } = renderTable();
     const legend = byId(container, 'type-table-legend').textContent ?? '';
     expect(legend).toContain('Grey band');
-    expect(legend).toContain('White tick');
+    expect(legend).toContain('Dot = you');
     expect(legend).toContain('Red');
     expect(legend).toContain('green');
     expect(legend).toContain('fewer than 100 games');

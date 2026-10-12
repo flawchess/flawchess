@@ -537,6 +537,52 @@ class TestCallbackPromote:
         assert profile["is_guest"] is False
 
     @pytest.mark.asyncio
+    async def test_callback_promote_token_exchange_failure_redirects(self):
+        """A failed Google code exchange redirects to the SPA retry toast and leaves the guest
+        unpromoted, instead of surfacing a raw 500 (FLAWCHESS-CW)."""
+        from httpx_oauth.oauth2 import GetAccessTokenError
+
+        from app.routers.auth import _CSRF_COOKIE
+
+        csrf_token = "test_csrf_token_exchange_fail"
+        google_resp = httpx.Response(
+            400,
+            json={"error": "invalid_grant"},
+            request=httpx.Request("POST", "https://oauth2.googleapis.com/token"),
+        )
+
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=app),
+            base_url="http://test",
+            cookies={_CSRF_COOKIE: csrf_token},
+        ) as client:
+            guest_resp = await client.post("/api/auth/guest/create")
+            assert guest_resp.status_code == 201
+            guest_token = guest_resp.json()["access_token"]
+            guest_user_id = self._decode_user_id_from_token(guest_token)
+            state = self._make_valid_state_jwt(guest_user_id, csrf_token)
+
+            with patch(
+                "app.routers.auth.google_oauth_client.get_access_token",
+                new=AsyncMock(side_effect=GetAccessTokenError("400", google_resp)),
+            ):
+                resp = await client.get(
+                    "/api/auth/google/callback-promote",
+                    params={"code": "fake_code", "state": state},
+                    follow_redirects=False,
+                )
+
+            assert resp.status_code == 302
+            assert resp.headers["location"].endswith("#error=GOOGLE_SIGNIN_FAILED")
+
+            profile_resp = await client.get(
+                "/api/users/me/profile",
+                headers={"Authorization": f"Bearer {guest_token}"},
+            )
+        assert profile_resp.status_code == 200
+        assert profile_resp.json()["is_guest"] is True
+
+    @pytest.mark.asyncio
     async def test_callback_promote_email_collision(self):
         """Callback returns 302 redirect with error=EMAIL_ALREADY_REGISTERED when email is taken."""
         from app.routers.auth import _CSRF_COOKIE

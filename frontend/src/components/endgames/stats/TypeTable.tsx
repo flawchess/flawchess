@@ -12,11 +12,13 @@ import {
   HIDDEN_ENDGAME_CLASSES,
 } from '@/lib/endgameMetrics';
 import {
+  GAUGE_NEUTRAL,
   PERCENTILE_TRACK,
   PERCENTILE_TYPICAL_BAND,
   TYPICAL_ABOVE_VALUE,
   TYPICAL_BELOW_VALUE,
-  TYPICAL_YOU_TICK,
+  ZONE_DANGER,
+  ZONE_SUCCESS,
 } from '@/lib/theme';
 import { cn } from '@/lib/utils';
 import type {
@@ -87,7 +89,17 @@ function rangeValueColor(
   return undefined;
 }
 
-/** One typical-range cell: value text, grey band, white tick; red/green text outside the band. */
+/**
+ * "You" dot color, matching the Endgame Metrics percentile dot: red below the typical
+ * range, blue inside it (or when the class has no range), green above it.
+ */
+function rangeDotColor(value: number, band: readonly [number, number] | null): string {
+  if (band !== null && value < band[0]) return ZONE_DANGER;
+  if (band !== null && value > band[1]) return ZONE_SUCCESS;
+  return GAUGE_NEUTRAL;
+}
+
+/** One typical-range cell: value text, grey band, colored dot; red/green text outside the band. */
 function RangeCell({ caption, slug, rowTestId, value, band, domain, format }: RangeCellProps) {
   const testId = `${rowTestId}-${slug}`;
   const valueColor = rangeValueColor(value, band);
@@ -125,12 +137,12 @@ function RangeCell({ caption, slug, rowTestId, value, band, domain, format }: Ra
           )}
           {value !== null && (
             <span
-              className="absolute -inset-y-0.5 w-0.5 -translate-x-1/2 rounded-sm"
+              className="absolute top-1/2 size-3 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-background"
               style={{
                 left: `${trackPosition(value, domain)}%`,
-                backgroundColor: TYPICAL_YOU_TICK,
+                backgroundColor: rangeDotColor(value, band),
               }}
-              data-testid={`${testId}-tick`}
+              data-testid={`${testId}-dot`}
             />
           )}
         </span>
@@ -317,7 +329,7 @@ export function TypeTable({ tcs, onCategorySelect, children }: TypeTableProps) {
                 </p>
                 <p>
                   Each cell shows your value and a grey typical range for that endgame type and time
-                  control. The white tick marks you. The value turns red when you are below the
+                  control. The colored dot marks you. The value turns red when you are below the
                   typical range and green when you are above it. Rows with fewer than {TYPE_ROW_LOW_CONFIDENCE_GAMES} games are
                   faded, because their read is less reliable.
                 </p>
@@ -369,8 +381,8 @@ export function TypeTable({ tcs, onCategorySelect, children }: TypeTableProps) {
             </tbody>
           </table>
           <p className="mt-3 text-sm text-muted-foreground" data-testid="type-table-legend">
-            Grey band = typical range for all players in this time control and endgame type. White
-            tick = you. <span style={{ color: TYPICAL_BELOW_VALUE }}>Red</span> = below,{' '}
+            Grey band = typical range for all players in this time control and endgame type. Dot
+            = you. <span style={{ color: TYPICAL_BELOW_VALUE }}>Red</span> = below,{' '}
             <span style={{ color: TYPICAL_ABOVE_VALUE }}>green</span> = above the typical range. Faded rows have fewer than {TYPE_ROW_LOW_CONFIDENCE_GAMES} games.
           </p>
         </div>

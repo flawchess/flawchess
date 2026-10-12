@@ -21,11 +21,12 @@ import type { SquareMarker } from '@/components/board/ChessBoard';
 import {
   STOCKFISH_ARROW_RGB,
   STOCKFISH_BADGE_SECONDARY,
+  STOCKFISH_BADGE_PRIMARY,
   FLAWCHESS_ARROW_RGB,
-  FLAWCHESS_ENGINE_BADGE_SECONDARY,
+  FLAWCHESS_ENGINE_BADGE_PRIMARY,
+  FLAWCHESS_PRIMARY_ALPHA,
   ARROW_OPACITY,
   STOCKFISH_PRIMARY_ALPHA,
-  STOCKFISH_SECONDARY_ALPHA_MAX,
   STOCKFISH_SECONDARY_ALPHA_MIN,
   STOCKFISH_SECONDARY_LINE,
 } from '@/lib/theme';
@@ -46,19 +47,24 @@ function line(
 }
 
 describe('secondaryArrowAlpha (D-08)', () => {
-  it('drop 0 and a negative drop give MAX', () => {
-    expect(secondaryArrowAlpha(0)).toBe(STOCKFISH_SECONDARY_ALPHA_MAX);
-    expect(secondaryArrowAlpha(-0.2)).toBe(STOCKFISH_SECONDARY_ALPHA_MAX);
+  it('drop 0 and a negative drop give the primary alpha (no gap to the top arrow)', () => {
+    expect(secondaryArrowAlpha(0, STOCKFISH_PRIMARY_ALPHA)).toBe(STOCKFISH_PRIMARY_ALPHA);
+    expect(secondaryArrowAlpha(-0.2, STOCKFISH_PRIMARY_ALPHA)).toBe(STOCKFISH_PRIMARY_ALPHA);
+    expect(secondaryArrowAlpha(0, FLAWCHESS_PRIMARY_ALPHA)).toBe(FLAWCHESS_PRIMARY_ALPHA);
+  });
+
+  it('a tiny drop stays close to the primary alpha', () => {
+    expect(STOCKFISH_PRIMARY_ALPHA - secondaryArrowAlpha(0.005, STOCKFISH_PRIMARY_ALPHA)).toBeLessThan(0.02);
   });
 
   it('drop at or beyond BLUNDER_DROP gives MIN', () => {
-    expect(secondaryArrowAlpha(BLUNDER_DROP)).toBeCloseTo(STOCKFISH_SECONDARY_ALPHA_MIN, 10);
-    expect(secondaryArrowAlpha(0.5)).toBe(STOCKFISH_SECONDARY_ALPHA_MIN);
+    expect(secondaryArrowAlpha(BLUNDER_DROP, STOCKFISH_PRIMARY_ALPHA)).toBeCloseTo(STOCKFISH_SECONDARY_ALPHA_MIN, 10);
+    expect(secondaryArrowAlpha(0.5, STOCKFISH_PRIMARY_ALPHA)).toBe(STOCKFISH_SECONDARY_ALPHA_MIN);
   });
 
   it('half the blunder drop lands mid-range', () => {
-    expect(secondaryArrowAlpha(BLUNDER_DROP / 2)).toBeCloseTo(
-      (STOCKFISH_SECONDARY_ALPHA_MAX + STOCKFISH_SECONDARY_ALPHA_MIN) / 2,
+    expect(secondaryArrowAlpha(BLUNDER_DROP / 2, STOCKFISH_PRIMARY_ALPHA)).toBeCloseTo(
+      (STOCKFISH_PRIMARY_ALPHA + STOCKFISH_SECONDARY_ALPHA_MIN) / 2,
       10,
     );
   });
@@ -71,14 +77,14 @@ describe('gradeEngineLines', () => {
     const lines = [top, line(2, 'd2d4', 20), line(3, 'g1f3', -30), line(4, 'c2c4', -100), line(5, 'b2b3', -250)];
     const grades = gradeEngineLines(lines, WHITE_FEN);
     expect(grades).toHaveLength(lines.length);
-    expect(grades[0]).toEqual({ quality: 'best', alpha: STOCKFISH_SECONDARY_ALPHA_MAX });
+    expect(grades[0]).toEqual({ quality: 'best', alpha: STOCKFISH_PRIMARY_ALPHA });
     const esTop = evalToExpectedScore(30, null, 'white');
     expect(grades.map((g) => g?.quality)).toEqual(['best', 'good', 'inaccuracy', 'mistake', 'blunder']);
     for (let k = 1; k < lines.length; k++) {
       const cp = lines[k]?.evalCp ?? 0;
       const esLine = evalToExpectedScore(cp, null, 'white');
       expect(grades[k]?.quality).toBe(classifyLiveSeverity(esTop, esLine) ?? 'good');
-      expect(grades[k]?.alpha).toBe(secondaryArrowAlpha(esTop - esLine));
+      expect(grades[k]?.alpha).toBe(secondaryArrowAlpha(esTop - esLine, STOCKFISH_PRIMARY_ALPHA));
     }
   });
 
@@ -131,9 +137,9 @@ describe('stockfishSecondaryBadgeColor', () => {
     expect(stockfishSecondaryBadgeColor(null)).toBe(STOCKFISH_BADGE_SECONDARY);
   });
 
-  it('a top-equal line (alpha MAX) matches the fixed token, so the two never drift apart', () => {
-    expect(stockfishSecondaryBadgeColor({ quality: 'good', alpha: STOCKFISH_SECONDARY_ALPHA_MAX })).toBe(
-      STOCKFISH_BADGE_SECONDARY,
+  it('a top-equal line (primary alpha) gets the same fill as the best-line badge', () => {
+    expect(stockfishSecondaryBadgeColor({ quality: 'good', alpha: STOCKFISH_PRIMARY_ALPHA })).toBe(
+      STOCKFISH_BADGE_PRIMARY,
     );
   });
 
@@ -144,7 +150,7 @@ describe('stockfishSecondaryBadgeColor', () => {
   });
 
   it('is opaque and fades lighter as the grade alpha drops', () => {
-    const good = stockfishSecondaryBadgeColor({ quality: 'good', alpha: STOCKFISH_SECONDARY_ALPHA_MAX });
+    const good = stockfishSecondaryBadgeColor({ quality: 'good', alpha: STOCKFISH_PRIMARY_ALPHA });
     const mid = stockfishSecondaryBadgeColor({ quality: 'mistake', alpha: 0.4 });
     const bad = stockfishSecondaryBadgeColor({ quality: 'blunder', alpha: STOCKFISH_SECONDARY_ALPHA_MIN });
     expect(mid).toMatch(/^rgb\(/);
@@ -162,9 +168,9 @@ describe('FlawChess grading', () => {
       { practicalScore: 0.6 - BLUNDER_DROP },
     ]);
     expect(alphas).toEqual([
-      STOCKFISH_SECONDARY_ALPHA_MAX,
-      STOCKFISH_SECONDARY_ALPHA_MAX,
-      secondaryArrowAlpha(0.6 - 0.55),
+      FLAWCHESS_PRIMARY_ALPHA,
+      FLAWCHESS_PRIMARY_ALPHA,
+      secondaryArrowAlpha(0.6 - 0.55, FLAWCHESS_PRIMARY_ALPHA),
       STOCKFISH_SECONDARY_ALPHA_MIN,
     ]);
     expect(flawChessSecondaryAlphas([])).toEqual([]);
@@ -174,8 +180,8 @@ describe('FlawChess grading', () => {
     expect(flawChessSecondaryArrowColor(0.4)).toBe(`rgba(${FLAWCHESS_ARROW_RGB}, 0.4)`);
   });
 
-  it('badge at alpha MAX matches the fixed token; lower alphas fade toward the light square', () => {
-    expect(flawChessSecondaryBadgeColor(STOCKFISH_SECONDARY_ALPHA_MAX)).toBe(FLAWCHESS_ENGINE_BADGE_SECONDARY);
+  it('badge at the primary alpha matches the best-line badge; lower alphas fade toward the light square', () => {
+    expect(flawChessSecondaryBadgeColor(FLAWCHESS_PRIMARY_ALPHA)).toBe(FLAWCHESS_ENGINE_BADGE_PRIMARY);
     expect(flawChessSecondaryBadgeColor(STOCKFISH_SECONDARY_ALPHA_MIN)).toBe('rgb(227, 185, 92)');
   });
 });
