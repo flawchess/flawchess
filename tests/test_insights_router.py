@@ -653,7 +653,9 @@ class TestCachedEndpoint:
             lookups.append(kwargs)
             return None
 
-        monkeypatch.setattr("app.routers.insights.get_latest_successful_log_for_user", _spy_lookup)
+        monkeypatch.setattr(
+            "app.services.insights_llm.get_latest_successful_log_for_user", _spy_lookup
+        )
 
         async with httpx.AsyncClient(
             transport=httpx.ASGITransport(app=app), base_url="http://test"
@@ -668,30 +670,23 @@ class TestCachedEndpoint:
         assert lookups[0]["opponent_strength"] == "any"
         assert lookups[0]["user_id"] == user.id
 
-    @pytest.mark.asyncio
-    async def test_invalidated_by_recent_import(
-        self,
-        authed_user_with_session: tuple[dict[str, str], User],
-        test_engine: AsyncEngine,
-    ) -> None:
-        """Cache row is invalidated when an import with games > 0 lands after
-        the row was written. Endpoint returns 404 in that case."""
+    @staticmethod
+    async def _seed_row_and_import(
+        test_engine: AsyncEngine, user: User, cache_age: datetime.timedelta
+    ) -> str:
+        """Seed a valid cache row `cache_age` old plus a games>0 import 1h ago; return job id."""
         from app.models.import_job import ImportJob
 
-        headers, user = authed_user_with_session
         session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
-        valid_report = _sample_report()
-
-        cache_written_at = datetime.datetime.now(datetime.UTC) - datetime.timedelta(hours=2)
-        import_completed_at = datetime.datetime.now(datetime.UTC) - datetime.timedelta(hours=1)
-
+        now = datetime.datetime.now(datetime.UTC)
+        job_id = str(uuid.uuid4())
         async with session_maker() as session:
             await _seed(
                 session,
                 _make_row(
                     user.id,
-                    created_at=cache_written_at,
-                    response_json=valid_report.model_dump(),
+                    created_at=now - cache_age,
+                    response_json=_sample_report().model_dump(),
                     error=None,
                     model=insights_llm.settings.PYDANTIC_AI_MODEL_INSIGHTS,
                     prompt_version=insights_llm._PROMPT_VERSION,
@@ -700,20 +695,68 @@ class TestCachedEndpoint:
             )
             session.add(
                 ImportJob(
-                    id=str(uuid.uuid4()),
+                    id=job_id,
                     user_id=user.id,
                     platform="lichess",
                     username="someone",
                     status="completed",
                     games_imported=5,
-                    completed_at=import_completed_at,
+                    completed_at=now - datetime.timedelta(hours=1),
                 )
             )
             await session.commit()
+        return job_id
 
-        async with httpx.AsyncClient(
-            transport=httpx.ASGITransport(app=app), base_url="http://test"
-        ) as client:
-            response = await client.get(CACHED_ENDPOINT, headers=headers)
+    @staticmethod
+    async def _delete_import(test_engine: AsyncEngine, job_id: str) -> None:
+        from sqlalchemy import delete
+
+        from app.models.import_job import ImportJob
+
+        session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
+        async with session_maker() as session:
+            await session.execute(delete(ImportJob).where(ImportJob.id == job_id))
+            await session.commit()
+
+    @pytest.mark.asyncio
+    async def test_invalidated_by_recent_import(
+        self,
+        authed_user_with_session: tuple[dict[str, str], User],
+        test_engine: AsyncEngine,
+    ) -> None:
+        """A cache row older than the 24h regeneration cooldown is invalidated when
+        an import with games > 0 lands after it. Endpoint returns 404."""
+        headers, user = authed_user_with_session
+        job_id = await self._seed_row_and_import(
+            test_engine, user, insights_llm.INSIGHTS_REGEN_COOLDOWN + datetime.timedelta(hours=2)
+        )
+        try:
+            async with httpx.AsyncClient(
+                transport=httpx.ASGITransport(app=app), base_url="http://test"
+            ) as client:
+                response = await client.get(CACHED_ENDPOINT, headers=headers)
+        finally:
+            await self._delete_import(test_engine, job_id)
 
         assert response.status_code == 404
+
+    @pytest.mark.asyncio
+    async def test_recent_import_within_cooldown_still_served(
+        self,
+        authed_user_with_session: tuple[dict[str, str], User],
+        test_engine: AsyncEngine,
+    ) -> None:
+        """A cache row younger than the 24h cooldown is served even though an
+        import with games > 0 landed after it."""
+        headers, user = authed_user_with_session
+        job_id = await self._seed_row_and_import(test_engine, user, datetime.timedelta(hours=2))
+        try:
+            async with httpx.AsyncClient(
+                transport=httpx.ASGITransport(app=app), base_url="http://test"
+            ) as client:
+                response = await client.get(CACHED_ENDPOINT, headers=headers)
+        finally:
+            await self._delete_import(test_engine, job_id)
+
+        assert response.status_code == 200
+        assert response.json()["status"] == "cache_hit"

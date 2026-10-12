@@ -193,8 +193,9 @@ async def get_latest_successful_log_for_user(
 
     Returns the most recent successful log row for this user under the current
     (prompt_version, model, opponent_strength) tuple, provided it is younger
-    than max_age. The caller is responsible for the additional "no qualifying
-    import since created_at" check (see app/services/insights_llm.py).
+    than max_age. The caller is responsible for the additional 24h-cooldown /
+    "no qualifying import since created_at" check (see
+    get_cached_insights_response in app/services/insights_llm.py).
 
     "Successful" means response_json IS NOT NULL AND error IS NULL — same rule
     as get_latest_log_by_hash. cost_unknown / provider-error rows do NOT hit.

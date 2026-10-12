@@ -2,7 +2,8 @@
 
 Endpoints (mounted under /api):
 - POST /insights/endgame: returns EndgameInsightsResponse with the LLM report.
-- GET /insights/endgame/cached: cache-only lookup of the stored report.
+- GET /insights/endgame/cached: cache-only lookup of the stored report (shared
+  validity rule with the POST path, incl. the 24h regeneration cooldown).
 
 The router is deliberately thin per CONTEXT.md D-33: all cache /
 LLM-call / logging logic lives in app.services.insights_llm.generate_insights().
@@ -33,16 +34,8 @@ from app.schemas.opening_insights import (
     OpeningInsightsRequest,
     OpeningInsightsResponse,
 )
-from app.core.config import settings
-from app.repositories.import_job_repository import (
-    get_latest_completed_import_with_games_at,
-)
-from app.repositories.llm_log_repository import get_latest_successful_log_for_user
-from app.schemas.insights import EndgameInsightsReport
 from app.services import insights_llm
 from app.services.insights_llm import (
-    INSIGHTS_CACHE_MAX_AGE,
-    INSIGHTS_CACHE_OPPONENT_STRENGTH,
     InsightsProviderError,
     InsightsValidationFailure,
 )
@@ -93,40 +86,24 @@ async def get_cached_endgame_insights(
 ) -> EndgameInsightsResponse:
     """Cache-only lookup of the Tier-1 structural insights cache.
 
-    Mirrors the Tier-1 logic from `app.services.insights_llm.generate_insights`
-    without invoking compute_findings or the LLM, and without consuming any
-    rate-limit budget. Used by the frontend to auto-render a previously-generated
-    report when the Endgames page mounts.
+    Shares the validity rule with `generate_insights` via
+    `insights_llm.get_cached_insights_response`, without invoking compute_findings
+    or the LLM, and without consuming any rate-limit budget. Used by the frontend
+    to auto-render a previously-generated report when the Endgames page mounts.
 
     Takes no filter parameters (Phase 238 D-04); the cache key is
     (user_id, prompt_version, model, INSIGHTS_CACHE_OPPONENT_STRENGTH).
 
     Returns:
-        200: EndgameInsightsResponse(status='cache_hit') when a fresh,
-             non-stale (no qualifying import since written) cache row exists.
+        200: EndgameInsightsResponse(status='cache_hit') when a report younger
+             than the 24h regeneration cooldown exists, or an older one with no
+             import with new games since it was written.
         404: when no qualifying cache row exists.
     """
-    model = settings.PYDANTIC_AI_MODEL_INSIGHTS
-    cached = await get_latest_successful_log_for_user(
-        session,
-        user_id=user.id,
-        prompt_version=insights_llm._PROMPT_VERSION,
-        model=model,
-        opponent_strength=INSIGHTS_CACHE_OPPONENT_STRENGTH,
-        max_age=INSIGHTS_CACHE_MAX_AGE,
-    )
-    if cached is None:
+    response = await insights_llm.get_cached_insights_response(session, user.id)
+    if response is None:
         raise HTTPException(status_code=404, detail="no_cached_report")
-
-    last_import_at = await get_latest_completed_import_with_games_at(session, user.id)
-    if last_import_at is not None and last_import_at > cached.created_at:
-        raise HTTPException(status_code=404, detail="no_cached_report")
-
-    report = EndgameInsightsReport.model_validate(cached.response_json)
-    return EndgameInsightsResponse(
-        report=insights_llm._maybe_strip_overview(report),
-        status="cache_hit",
-    )
+    return response
 
 
 @router.post("/openings", response_model=OpeningInsightsResponse)
