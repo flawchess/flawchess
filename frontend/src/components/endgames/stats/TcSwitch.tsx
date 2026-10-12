@@ -1,9 +1,7 @@
-import { TimeControlIcon } from '@/components/icons/TimeControlIcon';
-import { Button } from '@/components/ui/button';
+import { TcSwitchButtons } from '@/components/stats/TcSwitchButtons';
 import { useEndgameStatsTc } from '@/hooks/useEndgameStatsTc';
 import { trackFeature } from '@/lib/analytics';
 import type { RankedTcStats, TimeControlBucket } from '@/types/endgames';
-import { TC_LABELS } from './rankedMetrics';
 
 interface TcSwitchProps {
   /** Distinguishes the testids of the several switches on the page (one per section). */
@@ -27,31 +25,11 @@ export function TcSwitch({ sectionId, tcs }: TcSwitchProps) {
   };
 
   return (
-    <div
-      role="group"
-      aria-label="Time control"
-      className="inline-flex gap-1"
-      data-testid={`tc-switch-${sectionId}`}
-    >
-      {tcs.map(({ tc }) => {
-        const selected = tc === selectedTc;
-        return (
-          <Button
-            key={tc}
-            type="button"
-            variant={selected ? 'default' : 'brand-outline'}
-            aria-pressed={selected}
-            // Tighter padding and icon gap on mobile so all four TCs fit on one row
-            // at 360px (238 UAT); desktop keeps the stock button spacing.
-            className="min-h-11 gap-1 px-2 sm:min-h-0 sm:gap-1.5 sm:px-2.5"
-            onClick={() => handleSelect(tc)}
-            data-testid={`tc-switch-${sectionId}-${tc}`}
-          >
-            <TimeControlIcon timeControl={tc} className="h-3.5 w-3.5" />
-            {TC_LABELS[tc]}
-          </Button>
-        );
-      })}
-    </div>
+    <TcSwitchButtons
+      sectionId={sectionId}
+      tcs={tcs.map((t) => t.tc)}
+      selected={selectedTc}
+      onSelect={handleSelect}
+    />
   );
 }
