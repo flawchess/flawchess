@@ -23,9 +23,20 @@ import pytest_asyncio
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.game import Game
-from app.services.flaw_delta_zones import FLAW_DELTA_METRICS, flaw_delta_zone
+from app.repositories.library_repository import (
+    _analyzed_game_ids_subquery,
+    count_analyzed_by_tc,
+    fetch_flaw_comparison,
+)
+from app.services.flaw_delta_zones import (
+    FLAW_DELTA_METRICS,
+    FLAW_DELTA_ZONES,
+    ZoneBand,
+    flaw_delta_zone,
+)
 from app.services.library_service import (
     FLAW_COMPARISON_GATE,
+    LOW_SAMPLE_MIN_FLAWS,
     _compute_mean_ci,
     get_flaw_comparison,
 )
@@ -432,3 +443,181 @@ async def test_zero_event_bullet(db_session: AsyncSession) -> None:
         band = flaw_delta_zone(bullet.tag, tc_entry.tc)
         assert bullet.zone_lo == band.zone_lo
         assert bullet.zone_hi == band.zone_hi
+
+
+# ---------------------------------------------------------------------------
+# Phase 239 plan 02 task 2: gate, filter, NULL-bucket, low-sample, isolation edges
+# ---------------------------------------------------------------------------
+
+_OTHER_USER = 88889
+_BELOW_GATE_GAMES = 12
+
+
+@pytest.mark.asyncio
+async def test_below_gate_tc_keeps_bullets(db_session: AsyncSession) -> None:
+    """A TC with 12 analyzed games is listed, below_gate True, with populated rates (D-03)."""
+    for _ in range(_BELOW_GATE_GAMES):
+        g = await _seed_game(db_session, user_id=_TEST_USER, time_control_bucket="rapid")
+        await _seed_analyzed(db_session, game=g)
+        await _seed_flaw(db_session, game=g, ply=2, severity=1)  # player mistake
+
+    result = await get_flaw_comparison(db_session, _TEST_USER, **_DEFAULT_FILTER_KWARGS)
+
+    assert len(result.tcs) == 1
+    tc_entry = result.tcs[0]
+    assert tc_entry.tc == "rapid"
+    assert tc_entry.analyzed_n == _BELOW_GATE_GAMES
+    assert tc_entry.below_gate is True
+    assert len(tc_entry.bullets) == 12
+    mistake = next(b for b in tc_entry.bullets if b.tag == "mistake")
+    assert mistake.player_rate is not None and mistake.player_rate > 0
+    assert mistake.opp_rate == 0.0
+
+
+@pytest.mark.asyncio
+async def test_tc_filter_narrows_list_and_omits_unanalyzed_tc(db_session: AsyncSession) -> None:
+    """time_control narrows tcs[]; a TC with games but none analyzed is omitted (D-02)."""
+    for bucket in ("blitz", "rapid"):
+        for _ in range(3):
+            g = await _seed_game(db_session, user_id=_TEST_USER, time_control_bucket=bucket)
+            await _seed_analyzed(db_session, game=g)
+    for _ in range(5):
+        # classical games exist but none is analyzed
+        await _seed_game(db_session, user_id=_TEST_USER, time_control_bucket="classical")
+
+    result_all = await get_flaw_comparison(db_session, _TEST_USER, **_DEFAULT_FILTER_KWARGS)
+    assert [t.tc for t in result_all.tcs] == ["blitz", "rapid"]
+
+    result_rapid = await get_flaw_comparison(
+        db_session, _TEST_USER, **_filters(time_control=["rapid"])
+    )
+    assert [t.tc for t in result_rapid.tcs] == ["rapid"]
+
+
+@pytest.mark.asyncio
+async def test_null_time_control_bucket_excluded(db_session: AsyncSession) -> None:
+    """A game with a NULL time_control_bucket counts nowhere (Pitfall 8)."""
+    for _ in range(FLAW_COMPARISON_GATE):
+        g = await _seed_game(db_session, user_id=_TEST_USER, time_control_bucket="blitz")
+        await _seed_analyzed(db_session, game=g)
+    for _ in range(5):
+        g = await _seed_game(db_session, user_id=_TEST_USER, time_control_bucket=None)
+        await _seed_analyzed(db_session, game=g)
+        await _seed_flaw(db_session, game=g, ply=2, severity=1)  # would be a player mistake
+
+    result = await get_flaw_comparison(db_session, _TEST_USER, **_DEFAULT_FILTER_KWARGS)
+
+    assert [t.tc for t in result.tcs] == ["blitz"]
+    assert result.tcs[0].analyzed_n == FLAW_COMPARISON_GATE
+    for bullet in result.tcs[0].bullets:
+        assert bullet.player_events == 0 and bullet.opp_events == 0
+
+    # The service also drops unknown buckets by iterating LIBRARY_TC_ORDER, so pin the
+    # repository guards directly: neither the counts nor the per-game rows may carry
+    # the NULL-bucket games.
+    counts = await count_analyzed_by_tc(db_session, _TEST_USER, **_DEFAULT_FILTER_KWARGS)
+    assert counts == {"blitz": FLAW_COMPARISON_GATE}
+    rows = await fetch_flaw_comparison(
+        db_session,
+        _TEST_USER,
+        _analyzed_game_ids_subquery(_TEST_USER),
+        **_DEFAULT_FILTER_KWARGS,
+    )
+    assert {row.tc for row in rows} == {"blitz"}
+
+
+async def _seed_mistake_cell(db_session: AsyncSession, *, user_id: int, total_flaws: int) -> None:
+    """Seed `total_flaws` analyzed blitz games with one mistake each, alternating sides.
+
+    White user: ply 2 (even) is the player's mistake, ply 3 (odd) is the opponent's.
+    """
+    for i in range(total_flaws):
+        g = await _seed_game(db_session, user_id=user_id, user_color="white")
+        await _seed_analyzed(db_session, game=g)
+        await _seed_flaw(db_session, game=g, ply=2 if i % 2 == 0 else 3, severity=1)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("total_flaws_offset", "expected_low_sample"),
+    [(-1, True), (0, False)],
+    ids=["one_below_threshold", "at_threshold"],
+)
+async def test_low_sample_boundary(
+    db_session: AsyncSession, total_flaws_offset: int, expected_low_sample: bool
+) -> None:
+    """low_sample is True below LOW_SAMPLE_MIN_FLAWS flaws (you + opponents), False at it (D-12)."""
+    total = LOW_SAMPLE_MIN_FLAWS + total_flaws_offset
+    await _seed_mistake_cell(db_session, user_id=_TEST_USER, total_flaws=total)
+
+    result = await get_flaw_comparison(db_session, _TEST_USER, **_DEFAULT_FILTER_KWARGS)
+
+    mistake = next(b for b in result.tcs[0].bullets if b.tag == "mistake")
+    assert mistake.player_events + mistake.opp_events == total
+    assert mistake.low_sample is expected_low_sample
+
+
+@pytest.mark.asyncio
+async def test_zero_event_bullet_is_low_sample(db_session: AsyncSession) -> None:
+    """A zero-event bullet has low_sample True and delta None (D-12)."""
+    for _ in range(FLAW_COMPARISON_GATE):
+        g = await _seed_game(db_session, user_id=_TEST_USER)
+        await _seed_analyzed(db_session, game=g)
+
+    result = await get_flaw_comparison(db_session, _TEST_USER, **_DEFAULT_FILTER_KWARGS)
+
+    for bullet in result.tcs[0].bullets:
+        assert bullet.delta is None
+        assert bullet.low_sample is True
+
+
+@pytest.mark.asyncio
+async def test_classical_and_bullet_bands(
+    db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Classical reads the classical band, bullet the rapid band (D-08).
+
+    Today the registry carries identical rapid and classical values, so the registry
+    is patched to make the two zone TCs distinguishable.
+    """
+    rapid_band = ZoneBand(zone_lo=-0.10, zone_hi=0.10)
+    classical_band = ZoneBand(zone_lo=-0.50, zone_hi=0.50)
+    monkeypatch.setitem(
+        FLAW_DELTA_ZONES, "hasty", {"rapid": rapid_band, "classical": classical_band}
+    )
+    for bucket in ("bullet", "classical"):
+        g = await _seed_game(db_session, user_id=_TEST_USER, time_control_bucket=bucket)
+        await _seed_analyzed(db_session, game=g)
+
+    result = await get_flaw_comparison(db_session, _TEST_USER, **_DEFAULT_FILTER_KWARGS)
+
+    by_tc = {t.tc: next(b for b in t.bullets if b.tag == "hasty") for t in result.tcs}
+    assert set(by_tc) == {"bullet", "classical"}
+    assert (by_tc["bullet"].zone_lo, by_tc["bullet"].zone_hi) == (-0.10, 0.10)
+    assert (by_tc["classical"].zone_lo, by_tc["classical"].zone_hi) == (-0.50, 0.50)
+
+
+@pytest.mark.asyncio
+async def test_two_user_isolation(db_session: AsyncSession) -> None:
+    """Each user sees only their own analyzed_n and events (T-239-03)."""
+    await _ensure_user(db_session, _OTHER_USER)
+    user_a_games, user_b_games = 4, 7
+    for _ in range(user_a_games):
+        g = await _seed_game(db_session, user_id=_TEST_USER)
+        await _seed_analyzed(db_session, game=g)
+        await _seed_flaw(db_session, game=g, ply=2, severity=1)  # A: player mistake
+    for _ in range(user_b_games):
+        g = await _seed_game(db_session, user_id=_OTHER_USER)
+        await _seed_analyzed(db_session, game=g)
+        await _seed_flaw(db_session, game=g, ply=2, severity=1)  # B: player mistake
+        await _seed_flaw(db_session, game=g, ply=4, severity=1)  # B: second player mistake
+
+    result_a = await get_flaw_comparison(db_session, _TEST_USER, **_DEFAULT_FILTER_KWARGS)
+    result_b = await get_flaw_comparison(db_session, _OTHER_USER, **_DEFAULT_FILTER_KWARGS)
+
+    assert result_a.tcs[0].analyzed_n == user_a_games
+    assert result_b.tcs[0].analyzed_n == user_b_games
+    mistake_a = next(b for b in result_a.tcs[0].bullets if b.tag == "mistake")
+    mistake_b = next(b for b in result_b.tcs[0].bullets if b.tag == "mistake")
+    assert mistake_a.player_events == user_a_games
+    assert mistake_b.player_events == 2 * user_b_games
