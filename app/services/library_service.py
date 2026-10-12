@@ -23,7 +23,7 @@ remaining tag type (game-level dedupe), in a deterministic order.
 import datetime
 import math
 from collections.abc import Sequence
-from typing import Any, Literal, cast
+from typing import Any, Final, Literal, cast
 
 import chess
 import sentry_sdk
@@ -46,6 +46,7 @@ from app.services.tactic_detector import _INT_TO_MOTIF as _TACTIC_INT_TO_MOTIF
 from app.schemas.library import (
     FlawBullet,
     FlawComparisonResponse,
+    FlawComparisonTc,
     FlawStatsResponse,
     FlawTrendPoint,
     GameFlawCard,
@@ -57,7 +58,7 @@ from app.schemas.library import (
     TagDistribution,
 )
 from app.services.best_move_candidates import classify_best_move, mover_color_for_ply
-from app.services.flaw_delta_zones import FLAW_DELTA_ZONES
+from app.services.flaw_delta_zones import FLAW_DELTA_METRICS, FlawDeltaMetric, flaw_delta_zone
 from app.models.game_position import GamePosition
 from app.schemas.library import EvalPoint, FlawMarker, PhaseTransitions
 from app.services.eval_utils import (
@@ -1492,6 +1493,14 @@ async def get_library_flaws(
 # rest on comparable sample sizes (D-09).
 FLAW_COMPARISON_GATE: int = 20
 
+# Phase 239 D-12: you + opponent flaws per cell below which the UI fades the cell and
+# gives no verdict. Applied to flaw-comparison bullets and to tactic cells (one source
+# of truth; the frontend reads the low_sample boolean).
+LOW_SAMPLE_MIN_FLAWS: int = 40
+
+# Phase 239 D-02: TC order of the per-TC payloads (fast to slow, same as the TC switch).
+LIBRARY_TC_ORDER: Final[tuple[TimeControlBucket, ...]] = ("bullet", "blitz", "rapid", "classical")
+
 
 def _compute_mean_ci(
     values: list[float],
@@ -1536,18 +1545,77 @@ def _two_sided_p(values: list[float]) -> float | None:
     return math.erfc(abs(z) / math.sqrt(2.0))
 
 
-def _compute_bullets(rows: list) -> list[FlawBullet]:
-    """Aggregate per-game rows into 15 FlawBullet objects in registry (family) order.
+def _bucket_rows_by_tc(rows: Sequence[Any]) -> dict[str, list[Any]]:
+    """Group per-game rows by their tc column (Phase 239 D-02).
 
-    Each row has: game_id, user_moves, player_<tag>, opp_<tag> for all 15 tags.
+    One fetched row set serves every TC, so the switch never costs an extra query.
+    """
+    by_tc: dict[str, list[Any]] = {}
+    for row in rows:
+        by_tc.setdefault(str(row.tc), []).append(row)
+    return by_tc
+
+
+def _build_flaw_bullet(
+    metric: FlawDeltaMetric,
+    tc: TimeControlBucket,
+    deltas: list[float],
+    player_rates: list[float],
+    opp_rates: list[float],
+    p_total: int,
+    o_total: int,
+) -> FlawBullet:
+    """Build one FlawBullet from the per-game accumulators of one metric in one TC."""
+    band = flaw_delta_zone(metric, tc)
+    # D-12: faded cell, no verdict. Zero-event cells are low-sample by definition.
+    low_sample = p_total + o_total < LOW_SAMPLE_MIN_FLAWS
+    if p_total == 0 and o_total == 0:
+        # Zero-event: no events on either side, render muted placeholder (D-11)
+        return FlawBullet(
+            tag=metric,
+            delta=None,
+            ci_low=None,
+            ci_high=None,
+            player_rate=None,
+            opp_rate=None,
+            p_value=None,
+            player_events=0,
+            opp_events=0,
+            zone_lo=band.zone_lo,
+            zone_hi=band.zone_hi,
+            has_zone=True,
+            low_sample=low_sample,
+        )
+    mean, ci_low, ci_high = _compute_mean_ci(deltas)
+    return FlawBullet(
+        tag=metric,
+        delta=mean,
+        ci_low=ci_low,
+        ci_high=ci_high,
+        player_rate=sum(player_rates) / len(player_rates) if player_rates else 0.0,
+        opp_rate=sum(opp_rates) / len(opp_rates) if opp_rates else 0.0,
+        p_value=_two_sided_p(deltas),
+        player_events=p_total,
+        opp_events=o_total,
+        zone_lo=band.zone_lo,
+        zone_hi=band.zone_hi,
+        has_zone=True,
+        low_sample=low_sample,
+    )
+
+
+def _compute_bullets(rows: Sequence[Any], tc: TimeControlBucket) -> list[FlawBullet]:
+    """Aggregate one TC's per-game rows into the 12 FlawBullet objects (FLAW_DELTA_METRICS order).
+
+    Each row has: game_id, tc, user_moves, player_<tag>, opp_<tag> for all 12 tags.
     For each metric: collect per-game deltas (player - opp) / user_moves * 100,
     plus the per-game player and opponent rates (each / user_moves * 100, so the
     comparison stays paired and player_rate - opp_rate == delta exactly), and
     accumulate total event counts. Zero-event bullet: both sides = 0 across all
-    games → delta=None (not 0.0, D-11). Zone bounds come from FLAW_DELTA_ZONES (D-07).
+    games → delta=None (not 0.0, D-11). Zone bounds come from the per-zone-TC
+    registry via flaw_delta_zone(metric, tc) (D-07, D-08).
     """
-    # Build per-metric accumulators: lists of per-game deltas / rates + total event sums
-    tags = list(FLAW_DELTA_ZONES.keys())
+    tags = FLAW_DELTA_METRICS
     deltas_by_tag: dict[str, list[float]] = {t: [] for t in tags}
     player_rates_by_tag: dict[str, list[float]] = {t: [] for t in tags}
     opp_rates_by_tag: dict[str, list[float]] = {t: [] for t in tags}
@@ -1570,51 +1638,18 @@ def _compute_bullets(rows: list) -> list[FlawBullet]:
             opp_rates_by_tag[tag].append(opp_rate)
             deltas_by_tag[tag].append(player_rate - opp_rate)
 
-    bullets: list[FlawBullet] = []
-    for tag, spec in FLAW_DELTA_ZONES.items():
-        p_total = player_totals[tag]
-        o_total = opp_totals[tag]
-        if p_total == 0 and o_total == 0:
-            # Zero-event: no events on either side — render muted placeholder (D-11)
-            bullets.append(
-                FlawBullet(
-                    tag=tag,
-                    delta=None,
-                    ci_low=None,
-                    ci_high=None,
-                    player_rate=None,
-                    opp_rate=None,
-                    p_value=None,
-                    player_events=0,
-                    opp_events=0,
-                    zone_lo=spec.zone_lo,
-                    zone_hi=spec.zone_hi,
-                    domain=spec.domain,
-                )
-            )
-        else:
-            mean, ci_low, ci_high = _compute_mean_ci(deltas_by_tag[tag])
-            player_vals = player_rates_by_tag[tag]
-            opp_vals = opp_rates_by_tag[tag]
-            player_rate = sum(player_vals) / len(player_vals) if player_vals else 0.0
-            opp_rate = sum(opp_vals) / len(opp_vals) if opp_vals else 0.0
-            bullets.append(
-                FlawBullet(
-                    tag=tag,
-                    delta=mean,
-                    ci_low=ci_low,
-                    ci_high=ci_high,
-                    player_rate=player_rate,
-                    opp_rate=opp_rate,
-                    p_value=_two_sided_p(deltas_by_tag[tag]),
-                    player_events=p_total,
-                    opp_events=o_total,
-                    zone_lo=spec.zone_lo,
-                    zone_hi=spec.zone_hi,
-                    domain=spec.domain,
-                )
-            )
-    return bullets
+    return [
+        _build_flaw_bullet(
+            tag,
+            tc,
+            deltas_by_tag[tag],
+            player_rates_by_tag[tag],
+            opp_rates_by_tag[tag],
+            player_totals[tag],
+            opp_totals[tag],
+        )
+        for tag in tags
+    ]
 
 
 async def get_flaw_comparison(
@@ -1633,13 +1668,17 @@ async def get_flaw_comparison(
     color: str | None = None,
     include_pasted: bool = False,
 ) -> FlawComparisonResponse:
-    """You-vs-opponent 15-bullet flaw comparison over the filtered analyzed set (Phase 115).
+    """Per-TC you-vs-opponent flaw comparison over the filtered analyzed set (Phase 115, 239).
 
     Pipeline:
-    1. count_filtered_and_analyzed — early gate: if analyzed_n < FLAW_COMPARISON_GATE,
-       return below_gate=True immediately (avoids the expensive per-game query, D-09).
-    2. fetch_flaw_comparison — per-game LEFT JOIN aggregation: 30 COUNT FILTER columns.
-    3. _compute_bullets — mean + Wald-z CI per metric, zone bounds from FLAW_DELTA_ZONES.
+    1. count_analyzed_by_tc: analyzed games per time control within the current
+       filters (the sidebar TC filter narrows the list, D-02). No analyzed games at
+       all → tcs=[].
+    2. fetch_flaw_comparison: ONE per-game LEFT JOIN aggregation (24 COUNT FILTER
+       columns plus the tc column); sequential awaits only, never gather on the session.
+    3. _bucket_rows_by_tc + _compute_bullets: mean + Wald-z CI per metric per TC,
+       zone bounds from the per-zone-TC registry. Bullets are ALWAYS computed, also
+       for below-gate TCs, so tiles can show rates (D-03); below_gate is flagged.
 
     IDOR guard (T-115-01): user_id is from current_active_user, never a request param.
 
@@ -1664,21 +1703,15 @@ async def get_flaw_comparison(
             color=color,
         )
 
-        # Gate on the analyzed-game count for the SEVERITY-FILTERED set (passes
+        # Analyzed-game counts per TC for the SEVERITY-FILTERED set (passes
         # flaw_severity), so analyzed_n matches the set the bullets aggregate over.
-        _total_n, analyzed_n = await library_repository.count_filtered_and_analyzed(
+        counts = await library_repository.count_analyzed_by_tc(
             session,
             user_id=user_id,
             **_filter_kwargs,
         )
-
-        if analyzed_n < FLAW_COMPARISON_GATE:
-            # Short-circuit: below gate — skip the expensive per-game query (PATTERNS pattern 4)
-            return FlawComparisonResponse(
-                bullets=[],
-                analyzed_n=analyzed_n,
-                below_gate=True,
-            )
+        if not counts:
+            return FlawComparisonResponse(tcs=[], analyzed_gate=FLAW_COMPARISON_GATE)
 
         analyzed_subq = library_repository._analyzed_game_ids_subquery(user_id)
         rows = await library_repository.fetch_flaw_comparison(
@@ -1687,12 +1720,18 @@ async def get_flaw_comparison(
             analyzed_subq,
             **_filter_kwargs,
         )
-        bullets = _compute_bullets(rows)
-        return FlawComparisonResponse(
-            bullets=bullets,
-            analyzed_n=analyzed_n,
-            below_gate=False,
-        )
+        rows_by_tc = _bucket_rows_by_tc(rows)
+        tcs = [
+            FlawComparisonTc(
+                tc=tc,
+                analyzed_n=counts[tc],
+                below_gate=counts[tc] < FLAW_COMPARISON_GATE,
+                bullets=_compute_bullets(rows_by_tc.get(tc, []), tc),
+            )
+            for tc in LIBRARY_TC_ORDER
+            if counts.get(tc)
+        ]
+        return FlawComparisonResponse(tcs=tcs, analyzed_gate=FLAW_COMPARISON_GATE)
 
     except Exception as exc:  # noqa: BLE001 — capture before re-raise for Sentry
         sentry_sdk.set_context("flaw_comparison", {"user_id": user_id})

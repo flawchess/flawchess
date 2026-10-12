@@ -231,11 +231,14 @@ async def get_flaw_comparison(
     color: str | None = Query(default=None),
     include_pasted: bool = Query(default=False),
 ) -> FlawComparisonResponse:
-    """Return the 15-bullet you-vs-opponent comparison for the filtered analyzed set (Phase 115).
+    """Return the per-TC you-vs-opponent comparison for the filtered analyzed set (Phase 115, 239).
+
+    tcs[] lists every time control the sidebar filter allows that has at least one
+    analyzed game (D-02), each with 12 bullets; below-gate TCs keep their bullets
+    (D-03). The TC switch is client-side: no TC request parameter exists.
 
     user_id is taken exclusively from the authenticated user — never from a
     request parameter (IDOR prevention, T-115-01 / T-108-10 pattern).
-    Returns below_gate=True with empty bullets when analyzed_n < 20 (FLAWCMP-05, D-09).
     `include_pasted` (Phase 208, D-11) is the Library-only opt-in that reveals
     `platform='pgn'` games, off by default, additive to whatever population
     this surface already shows.

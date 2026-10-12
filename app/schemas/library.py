@@ -20,6 +20,8 @@ from typing import Literal
 
 from pydantic import BaseModel
 
+from app.schemas.normalization import TimeControlBucket
+from app.services.flaw_delta_zones import FlawDeltaMetric
 from app.services.flaws_service import FlawSeverity, FlawTag, SeverityCounts, TempoTag
 
 
@@ -363,9 +365,9 @@ class FlawStatsResponse(BaseModel):
 
 
 class FlawBullet(BaseModel):
-    """Per-bullet data for one of the 15 flaw-delta metrics (Phase 115, FLAWCMP-01/03)."""
+    """Per-bullet data for one of the 12 flaw-delta metrics (Phase 115, FLAWCMP-01/03)."""
 
-    tag: str
+    tag: FlawDeltaMetric
     delta: (
         float | None
     )  # mean per-game delta (per 100 of user's moves); None = both sides zero events
@@ -383,27 +385,43 @@ class FlawBullet(BaseModel):
     p_value: float | None
     player_events: int  # total player-side tag events across analyzed games
     opp_events: int  # total opponent-side tag events across analyzed games
-    zone_lo: float  # Q1 from FLAW_DELTA_ZONES registry
-    zone_hi: float  # Q3 from FLAW_DELTA_ZONES registry
-    domain: float  # axis half-width from registry (D-04)
+    zone_lo: float  # Q1 from the per-zone-TC FLAW_DELTA_ZONES registry
+    zone_hi: float  # Q3 from the per-zone-TC FLAW_DELTA_ZONES registry
     has_zone: bool = True  # False for future zoneless bullets (FLAWUI-04)
+    # Phase 239 D-12: True when player_events + opp_events < LOW_SAMPLE_MIN_FLAWS.
+    # The UI fades the cell and gives no verdict; the backend owns the threshold.
+    low_sample: bool
+
+
+class FlawComparisonTc(BaseModel):
+    """One time control's you-vs-opponent flaw comparison (Phase 239 D-02/D-03).
+
+    tc: the time control bucket these bullets were computed over.
+    analyzed_n: analyzed games of this TC after the current filter set.
+    below_gate: True when analyzed_n < FLAW_COMPARISON_GATE; the bullets are still
+                populated so tiles can show rates (D-03).
+    bullets: always the 12 flaw-delta metrics in FLAW_DELTA_METRICS order.
+    """
+
+    tc: TimeControlBucket
+    analyzed_n: int
+    below_gate: bool
+    bullets: list[FlawBullet]
 
 
 class FlawComparisonResponse(BaseModel):
-    """Response for GET /api/library/flaw-comparison (Phase 115, FLAWCMP-01/03).
+    """Response for GET /api/library/flaw-comparison (Phase 115, Phase 239 D-02).
 
-    bullets: always 15 entries ordered by family (severity → tempo → phase →
-             opportunity → impact → combos) when below_gate=False; empty list
-             when below_gate=True.
-    analyzed_n: analyzed game count after the current filter set.
-    analyzed_gate: minimum required (constant = FLAW_COMPARISON_GATE = 20).
-    below_gate: True when analyzed_n < analyzed_gate — frontend shows CTA (D-10).
+    tcs: one entry per time control that the sidebar time-control filter allows and
+         that has at least one analyzed game under the current filters, ordered
+         bullet, blitz, rapid, classical. Zero-analyzed TCs are omitted (D-02), so an
+         empty list means no analyzed games at all. Below-gate TCs keep their bullets
+         (D-03). No request parameter selects a TC: the switch is client-side.
+    analyzed_gate: minimum required per TC (constant = FLAW_COMPARISON_GATE = 20).
     """
 
-    bullets: list[FlawBullet]
-    analyzed_n: int
+    tcs: list[FlawComparisonTc]
     analyzed_gate: int = 20  # exposed so frontend can render "X of 20" without hardcoding
-    below_gate: bool
 
 
 # ---------------------------------------------------------------------------
