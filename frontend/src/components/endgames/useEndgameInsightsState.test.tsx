@@ -8,14 +8,15 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, renderHook } from '@testing-library/react';
 
-const { mutateAsync, cacheState, jobsState } = vi.hoisted(() => ({
+const { mutateAsync, cacheState, jobsState, generatingState } = vi.hoisted(() => ({
   mutateAsync: vi.fn(() => Promise.resolve()),
   cacheState: { isSuccess: true, data: null as unknown, dataUpdatedAt: 0 },
   jobsState: { data: [] as unknown[] },
+  generatingState: { value: false },
 }));
 
 vi.mock('@/hooks/useEndgameInsights', () => ({
-  useEndgameInsightsGenerating: () => false,
+  useEndgameInsightsGenerating: () => generatingState.value,
   useCachedEndgameInsights: () => cacheState,
   useEndgameInsights: () => ({ mutateAsync, isPending: false, isError: false }),
 }));
@@ -36,6 +37,7 @@ beforeEach(() => {
   cacheState.data = null;
   cacheState.dataUpdatedAt = fetchTime;
   jobsState.data = [];
+  generatingState.value = false;
 });
 
 afterEach(() => {
@@ -67,6 +69,12 @@ describe('useEndgameInsightsState auto-generate', () => {
     renderHook(() => useEndgameInsightsState({ autoGenerate: true }));
     jobsState.data = [];
     renderHook(() => useEndgameInsightsState({ autoGenerate: false }));
+    expect(mutateAsync).not.toHaveBeenCalled();
+  });
+
+  it('does not generate while a Generate request is already in flight', () => {
+    generatingState.value = true;
+    renderHook(() => useEndgameInsightsState({ autoGenerate: true }));
     expect(mutateAsync).not.toHaveBeenCalled();
   });
 });

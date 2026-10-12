@@ -23,9 +23,11 @@ in `YYYY-MM-DD` (Europe/Zurich).
 - Analysis and Train: Stockfish arrows now carry move-quality icons. The top move shows the best-move star, and the other arrows show good, inaccuracy, mistake or blunder compared with the top move once the engine has searched deep enough, fading more the worse the move is.
 - Analysis and Train: the eval badges of the secondary engine lines now look the same on the dark panel as on the board (a lighter, faded tint instead of a darker one), and the Stockfish ones fade with move quality like their arrows.
 - Analysis: the FlawChess engine's eval badges now use the same gold as its board arrow, with dark text, and its other arrows and line badges fade by how much worse each line's practical score is than the top line, like the Stockfish ones.
+- Shelly's endgame report is refreshed at most once a day: games imported within 24 hours of the last report show up in the next one.
 
 ### Fixed
 
+- Shelly's endgame report is no longer written twice when you reload the Endgames page while it is being generated.
 - Analysis engine no longer restarts its Stockfish workers when the tab sits in the background, so a search left running in another tab keeps its results instead of losing them.
 - Google sign-in no longer shows a server error page when Google rejects the sign-in code (for example after a doubled redirect on Android). You land back on the login page with a "Google sign-in failed. Please try again." message.
 

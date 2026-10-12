@@ -1051,7 +1051,9 @@ function AppRoutes() {
     // on ['endgameOverview'] invalidates every cached (params, window) variant.
     queryClient.invalidateQueries({ queryKey: ['endgameOverview'] });
     // Phase 238 review (FE-WR-02): new games change the insights findings, so the
-    // server answers 404 for a report older than the latest import. This used to be
+    // server answers 404 for a report older than the latest import, but only once
+    // that report is past the 24h regeneration cooldown (a younger report keeps
+    // being served). The invalidation is what picks up the new report then. This used to be
     // handled by an active-jobs edge effect inside the Endgame Stats tab, which missed
     // imports that finished while the tab was unmounted and kept serving the stale report.
     queryClient.invalidateQueries({ queryKey: ['endgame-insights'] });
