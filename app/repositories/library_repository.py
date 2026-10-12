@@ -2149,7 +2149,7 @@ async def fetch_tactic_comparison(
     orientation: TacticOrientation = "allowed",
     tactic_filter_orientation: TacticOrientation = "allowed",
 ) -> list[Any]:
-    """Per-game player/opp counts for all 10 tactic families over the analyzed+filtered set.
+    """Per-game player/opp counts for all 19 tactic families over the analyzed+filtered set.
 
     LEFT JOIN anchor: analyzed+filtered games list → LEFT JOIN game_flaws (orientation
     tactic_motif IS NOT NULL AND tactic_confidence >= tactic_confidence_min) so games with
@@ -2164,8 +2164,9 @@ async def fetch_tactic_comparison(
     share one basis (games with a family-X tactic in either column) and match the
     gate's analyzed_n denominator, instead of inheriting the "allowed"-only default.
 
-    Returns one row per game_id with 20 COUNT columns (10 families × player/opp).
-    Python aggregates mean + CI per family in the service layer.
+    Returns one row per game_id with a `tc` column (Game.time_control_bucket, Phase 239
+    D-02: the service buckets one fetch per TC) and 38 COUNT columns (19 families ×
+    player/opp). Python aggregates mean + CI per family in the service layer.
 
     Uses is_opponent_expr from query_utils — never inline ply % 2 (CONTEXT D-01, Pitfall 3).
     """
@@ -2189,6 +2190,7 @@ async def fetch_tactic_comparison(
     anchor_subq = (
         select(
             Game.id.label("game_id"),
+            Game.time_control_bucket.label("tc"),
             Game.user_color,
         )
         .where(
@@ -2197,11 +2199,13 @@ async def fetch_tactic_comparison(
             Game.id.in_(select(analyzed_game_ids_subq.c.game_id)),
             Game.ply_count.isnot(None),
             Game.ply_count > 0,
+            # Phase 239 D-02: games without a bucket cannot be placed on the TC switch.
+            Game.time_control_bucket.isnot(None),
         )
         .subquery("anchor_tc")
     )
 
-    # Build 20 COUNT columns (10 families × player/opp).
+    # Build 38 COUNT columns (19 families × player/opp).
     # orientation_tactic_motif IS NOT NULL AND orientation_tactic_confidence >= threshold
     # gates the LEFT JOIN so only qualifying (confident enough) tactic events are counted.
     # Phase 128 D-09: _tactic_cols resolves the column pair from orientation (closed enum).
@@ -2228,7 +2232,7 @@ async def fetch_tactic_comparison(
         )
 
     stmt = (
-        select(anchor_subq.c.game_id, *count_cols)
+        select(anchor_subq.c.game_id, anchor_subq.c.tc, *count_cols)
         .outerjoin(
             GameFlaw,
             (GameFlaw.game_id == anchor_subq.c.game_id)
@@ -2236,7 +2240,7 @@ async def fetch_tactic_comparison(
             & motif_col.isnot(None)
             & (conf_col >= tactic_confidence_min),
         )
-        .group_by(anchor_subq.c.game_id, anchor_subq.c.user_color)
+        .group_by(anchor_subq.c.game_id, anchor_subq.c.tc, anchor_subq.c.user_color)
     )
     rows = (await session.execute(stmt)).all()
     return list(rows)
