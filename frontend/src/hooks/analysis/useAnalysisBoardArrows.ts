@@ -28,6 +28,14 @@
  * copies (logically equivalent, but a silent drift risk) — now imported
  * from `lib/analysisTactics.ts` (a lib module, not a page module, so
  * "hooks must not depend on page-level modules" does not apply).
+ *
+ * Quick 261012-a6m (D-01..D-08): the Stockfish arrows (never the FlawChess ones)
+ * are graded by `lib/engineArrowGrades` in ONE pass (`stockfishGrades`) once the
+ * lines are deep enough: ranks 1+ take a proportional alpha, and every drawn
+ * arrow's target square gets a move-quality badge (rank 0 the best star at the primary arrow alpha).
+ * The badges merge UNDER the existing square markers (they never displace one)
+ * and follow the arrows actually drawn: none while the move-quality hover or the
+ * PV-sideline overlay replaces the engine arrows.
  */
 
 import { useMemo } from 'react';
@@ -41,14 +49,21 @@ import type { TacticLinesResponse } from '@/types/library';
 import { toDisplayDepthForOrientation } from '@/lib/tacticDepth';
 import { buildPvArrow } from '@/lib/tacticArrows';
 import { uciToSquares } from '@/lib/sanToSquares';
+import {
+  buildRankedEngineBadges,
+  gradeEngineLines,
+  mergeEngineBadges,
+  stockfishSecondaryArrowColor,
+  flawChessSecondaryAlphas,
+  flawChessSecondaryArrowColor,
+  type EngineLineGrade,
+} from '@/lib/engineArrowGrades';
 import { forkPlyForOrientation, type TacticRef } from '@/lib/analysisTactics';
 import {
   TAC_MISSED,
   TAC_ALLOWED,
   FLAWCHESS_ENGINE_ARROW,
-  FLAWCHESS_SECONDARY_LINE,
   BEST_MOVE_ARROW,
-  STOCKFISH_SECONDARY_LINE,
   NEXT_MOVE_ARROW,
   MOVE_HIGHLIGHT_GEM,
   MOVE_HIGHLIGHT_GREAT,
@@ -68,8 +83,6 @@ const STOCKFISH_ENGINE_ARROW_WIDTH = 0.5;
 interface EngineArrowStyle {
   /** Solid color of the rank-1 (primary) arrow. */
   primaryColor: string;
-  /** Translucent per-engine color shared by every rank 2..N arrow. */
-  secondaryColor: string;
   width: number;
   /** layerKey prefix: `${prefix}-${rank index}`. */
   prefix: 'fc' | 'sf';
@@ -77,14 +90,12 @@ interface EngineArrowStyle {
 
 const FLAWCHESS_ARROW_STYLE: EngineArrowStyle = {
   primaryColor: FLAWCHESS_ENGINE_ARROW,
-  secondaryColor: FLAWCHESS_SECONDARY_LINE,
   width: FLAWCHESS_ENGINE_ARROW_WIDTH,
   prefix: 'fc',
 };
 
 const STOCKFISH_ARROW_STYLE: EngineArrowStyle = {
   primaryColor: BEST_MOVE_ARROW,
-  secondaryColor: STOCKFISH_SECONDARY_LINE,
   width: STOCKFISH_ENGINE_ARROW_WIDTH,
   prefix: 'sf',
 };
@@ -96,12 +107,15 @@ const STOCKFISH_ARROW_STYLE: EngineArrowStyle = {
  * primary is pushed LAST and paints on top within its width tier (D-15;
  * ChessBoard's width sort keeps input order for equal keys, RESEARCH Pitfall 7).
  * A count of 0 draws nothing for the engine (its card is unaffected).
+ * `secondaryColors` (aligned with `rootMoves`) colors ranks 1+: each engine's graded
+ * translucent color (quick 261012-a6m D-08; FlawChess graded the same way since).
  */
 function pushEngineArrows(
   out: BoardArrow[],
   rootMoves: ReadonlyArray<string | null>,
   count: number,
   style: EngineArrowStyle,
+  secondaryColors: ReadonlyArray<string>,
 ): void {
   for (let i = Math.min(count, rootMoves.length) - 1; i >= 0; i--) {
     const squares = uciToSquares(rootMoves[i] ?? null);
@@ -109,7 +123,7 @@ function pushEngineArrows(
     out.push({
       startSquare: squares.from,
       endSquare: squares.to,
-      color: i === 0 ? style.primaryColor : style.secondaryColor,
+      color: i === 0 ? style.primaryColor : (secondaryColors[i] ?? style.primaryColor),
       width: style.width,
       layerKey: `${style.prefix}-${i}`,
     });
@@ -186,6 +200,22 @@ function appendBookMarker(
     return withBestGood;
   }
   return [...withBestGood, { square: lastMove.to, book: true }];
+}
+
+/**
+ * Engine badges for the arrows actually drawn (D-07): only while the Stockfish
+ * arrows are the visible overlay (not replaced by the move-quality hover or the
+ * PV-sideline overlay) and the engine card is on. Existing markers win (D-03).
+ */
+function engineBadgeSquareMarkers(
+  base: SquareMarker[],
+  engineArrowsVisible: boolean,
+  lines: readonly PvLine[],
+  count: number,
+  grades: ReadonlyArray<EngineLineGrade | null>,
+): SquareMarker[] {
+  if (!engineArrowsVisible) return base;
+  return mergeEngineBadges(base, buildRankedEngineBadges(lines, count, grades));
 }
 
 export interface UseAnalysisBoardArrowsOptions {
@@ -418,6 +448,11 @@ export function useAnalysisBoardArrows(
   // reconciled argmax because that ranking's head IS the argmax; the free run's
   // own lines only appear as the pre-grading fallback inside that ranking. Ranks
   // 2..N are distinct moves in card order (the old shape repeated the argmax).
+  // Quick 261012-a6m: the ONLY grade pass; arrow colors and badges both read it.
+  const stockfishGrades = useMemo(
+    () => gradeEngineLines(stockfishArrowLines, position),
+    [stockfishArrowLines, position],
+  );
   const engineArrows = useMemo<BoardArrow[]>(() => {
     const arrows: BoardArrow[] = [];
     if (flawChessEnabled) {
@@ -426,6 +461,7 @@ export function useAnalysisBoardArrows(
         flawChessRankedLines.map((line) => line.rootMove),
         fcArrowCount,
         FLAWCHESS_ARROW_STYLE,
+        flawChessSecondaryAlphas(flawChessRankedLines).map(flawChessSecondaryArrowColor),
       );
     }
     if (engineEnabled) {
@@ -434,6 +470,7 @@ export function useAnalysisBoardArrows(
         stockfishArrowLines.map((line) => line.moves[0] ?? null),
         sfArrowCount,
         STOCKFISH_ARROW_STYLE,
+        stockfishGrades.map((grade) => stockfishSecondaryArrowColor(grade)),
       );
     }
     return arrows;
@@ -444,6 +481,7 @@ export function useAnalysisBoardArrows(
     engineEnabled,
     stockfishArrowLines,
     sfArrowCount,
+    stockfishGrades,
   ]);
 
   // Board arrows (156 UAT — game/free parity): the FC + SF engine-arrow layer is
@@ -475,7 +513,7 @@ export function useAnalysisBoardArrows(
   // seam: named helper for the marker-color decision, not five one-line helpers) keeps
   // this memo under the enforced complexity limit (Phase 172 SEED-106 D-01/D-08, Phase
   // 175 SEED-108 D-01/D-03/D-04/D-05, 163-REVIEW WR-05, Quick 260717-rbn).
-  const boardSquareMarkers = useMemo(() => {
+  const baseSquareMarkers = useMemo(() => {
     const base =
       gameOverlaySquareMarkers.length > 0 ? gameOverlaySquareMarkers : liveFlawSquareMarkers;
     // Phase 175 (SEED-108 D-01/D-03), extending Phase 172 (SEED-106 CR-01/
@@ -518,18 +556,33 @@ export function useAnalysisBoardArrows(
     storedBestGoodByPly,
   ]);
 
+  // Quick 261012-a6m D-03/D-07: engine badges merged under the base markers.
+  const engineArrowsVisible =
+    engineEnabled && qualityHoverArrows === null && pvSidelineArrows === null;
+  const boardSquareMarkers = useMemo(
+    () =>
+      engineBadgeSquareMarkers(
+        baseSquareMarkers,
+        engineArrowsVisible,
+        stockfishArrowLines,
+        sfArrowCount,
+        stockfishGrades,
+      ),
+    [baseSquareMarkers, engineArrowsVisible, stockfishArrowLines, sfArrowCount, stockfishGrades],
+  );
+
   // Gem/great last-move square highlight: color the scrubbed move's from/to squares in
   // the tier's badge hue (violet gem / blue great "best move") instead of the generic
-  // green. Derived from the already-resolved boardSquareMarkers, so it inherits their
+  // green. Derived from the already-resolved baseSquareMarkers, so it inherits their
   // severity > gem/great precedence — a tier marker sits on the square only when no
   // severity marker does, so this can never override a flaw's red/orange/yellow tint.
   const lastMoveTierColor = useMemo(() => {
     if (lastMove == null) return undefined;
-    const marker = boardSquareMarkers.find((m) => m.square === lastMove.to && (m.gem || m.great));
+    const marker = baseSquareMarkers.find((m) => m.square === lastMove.to && (m.gem || m.great));
     if (marker?.gem) return MOVE_HIGHLIGHT_GEM;
     if (marker?.great) return MOVE_HIGHLIGHT_GREAT;
     return undefined;
-  }, [boardSquareMarkers, lastMove]);
+  }, [baseSquareMarkers, lastMove]);
 
   return { sidelineNodeColors, boardArrows, boardSquareMarkers, lastMoveTierColor };
 }

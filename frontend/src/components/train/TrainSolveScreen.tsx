@@ -120,15 +120,17 @@ import { TrainBotStepper } from '@/components/train/TrainBotStepper';
 import { TrainTourOverlay } from '@/components/train/TrainTourOverlay';
 import {
   buildChipFocusOverlay,
-  buildTrainFreePlayArrows,
+  buildTrainFreePlayOverlay,
   buildTrainRevealOverlay,
   buildTrainStepMarkers,
-  buildTrainStepOverlayArrows,
+  buildTrainStepOverlay,
   classifyTrainMoveQuality,
   trainRootMultiPvFloor,
   TRAIN_STEP_HIGHLIGHT,
 } from '@/lib/trainArrows';
+import { mergeEngineBadges } from '@/lib/engineArrowGrades';
 import type {
+  TrainEngineOverlay,
   TrainFineMove,
   TrainMoveQuality,
   TrainOverlayMove,
@@ -287,15 +289,15 @@ interface RevealBoardOverlay {
 }
 
 interface RevealBoardOverlayInput {
-  /** The engine's arrows for the shown position (drawn when no preview is anchored there). */
-  offLineArrows: BoardArrow[];
+  /** The engine's arrows and badges for the shown position (drawn when no preview is anchored there). */
+  offLineOverlay: TrainEngineOverlay;
   /** The reveal engine's staleness-guarded lines for the shown position. */
   liveLines: readonly PvLine[];
   /** The Stockfish arrows setting: how many live moves a previewed position may draw. */
   liveArrowCount: number;
   tree: Pick<
     TrainRevealTree,
-    'isAtRoot' | 'currentNodeId' | 'chipMove' | 'preview' | 'activeChip' | 'lastMove' | 'boardMarkers' | 'lastMoveColor'
+    'isAtRoot' | 'currentNodeId' | 'chipMove' | 'preview' | 'activeChip' | 'lastMove' | 'boardMarkers' | 'lastMoveColor' | 'fen'
   >;
   chips: readonly ChipGroup[];
   revealOverlay: TrainRevealOverlay;
@@ -303,6 +305,46 @@ interface RevealBoardOverlayInput {
   liveAlternatives: readonly TrainFineMove[];
   /** The puzzle's arrival move (the highlight at the puzzle position). */
   puzzleLastMove: { from: string; to: string } | null;
+}
+
+/**
+ * The off-root branch of `resolveRevealBoardOverlay` (below the puzzle position):
+ * the preview step board or the free-play engine overlay, plus the chip's first-move
+ * badge or the tree's own markers, with the engine badges merged underneath (D-03).
+ */
+function resolveOffRootOverlay(
+  offLineOverlay: TrainEngineOverlay,
+  liveLines: readonly PvLine[],
+  liveArrowCount: number,
+  tree: RevealBoardOverlayInput['tree'],
+  chips: readonly ChipGroup[],
+): RevealBoardOverlay {
+  const preview = tree.preview;
+  const previewNext =
+    preview !== null && preview.anchorId === tree.currentNodeId
+      ? (preview.steps[0]?.uci ?? null)
+      : null;
+  const engine =
+    previewNext !== null
+      ? buildTrainStepOverlay(previewNext, liveLines, liveArrowCount, tree.fen)
+      : offLineOverlay;
+  const chipMove = tree.chipMove;
+  if (chipMove === null) {
+    return {
+      arrows: engine.arrows,
+      markers: mergeEngineBadges(tree.boardMarkers, engine.badges),
+      lastMove: tree.lastMove,
+      lastMoveColor: tree.lastMoveColor,
+    };
+  }
+  // A chip's first move carries its chip's quality (190.1 UAT round 3).
+  const quality = chips.find((chip) => chip.key === chipMove.line)?.quality ?? null;
+  return {
+    arrows: engine.arrows,
+    markers: mergeEngineBadges(buildTrainStepMarkers(chipMove.uci, quality, true), engine.badges),
+    lastMove: tree.lastMove,
+    lastMoveColor: quality !== null ? TRAIN_STEP_HIGHLIGHT[quality] : undefined,
+  };
 }
 
 /**
@@ -319,9 +361,13 @@ interface RevealBoardOverlayInput {
  * never hidden (`buildChipFocusOverlay`); with no chip focused (D-04) everything
  * dims. Quick 261010-e5l: a soft puzzle's live engine alternatives join that
  * overlay as green arrows with 'good' badges.
+ *
+ * Quick 261012-a6m: below the puzzle position the live Stockfish arrows also carry
+ * graded quality badges, merged UNDER the step/sideline badge (that badge wins a
+ * shared square, D-03). The reveal-root overlay is unchanged (it badges its own arrows).
  */
 function resolveRevealBoardOverlay({
-  offLineArrows,
+  offLineOverlay,
   liveLines,
   liveArrowCount,
   tree,
@@ -331,32 +377,7 @@ function resolveRevealBoardOverlay({
   puzzleLastMove,
 }: RevealBoardOverlayInput): RevealBoardOverlay {
   if (!tree.isAtRoot) {
-    const preview = tree.preview;
-    const previewNext =
-      preview !== null && preview.anchorId === tree.currentNodeId
-        ? (preview.steps[0]?.uci ?? null)
-        : null;
-    const arrows =
-      previewNext !== null
-        ? buildTrainStepOverlayArrows(previewNext, liveLines, liveArrowCount)
-        : offLineArrows;
-    const chipMove = tree.chipMove;
-    if (chipMove === null) {
-      return {
-        arrows,
-        markers: tree.boardMarkers,
-        lastMove: tree.lastMove,
-        lastMoveColor: tree.lastMoveColor,
-      };
-    }
-    // A chip's first move carries its chip's quality (190.1 UAT round 3).
-    const quality = chips.find((chip) => chip.key === chipMove.line)?.quality ?? null;
-    return {
-      arrows,
-      markers: buildTrainStepMarkers(chipMove.uci, quality, true),
-      lastMove: tree.lastMove,
-      lastMoveColor: quality !== null ? TRAIN_STEP_HIGHLIGHT[quality] : undefined,
-    };
+    return resolveOffRootOverlay(offLineOverlay, liveLines, liveArrowCount, tree, chips);
   }
   const focusedChip = chips.find((chip) => chip.key === tree.activeChip);
   const lit = buildChipFocusOverlay(
@@ -1538,14 +1559,14 @@ export function TrainSolveScreen({
   // Memoized on the staleness-guarded `pvLines` (a stable identity until the
   // engine commits) and the count, so a re-render that changes neither hands
   // `ChessBoard` the same array.
-  const offLineArrows = useMemo(
-    () => buildTrainFreePlayArrows(revealTree.pvLines, sfArrows),
-    [revealTree.pvLines, sfArrows],
+  const offLineOverlay = useMemo(
+    () => buildTrainFreePlayOverlay(revealTree.pvLines, sfArrows, revealTree.fen),
+    [revealTree.pvLines, sfArrows, revealTree.fen],
   );
   // Phase 237: ONE resolver picks the board overlay: a sideline, a stepped list
   // position, or the puzzle position with the focused chip's arrow lit.
   const boardOverlay = resolveRevealBoardOverlay({
-    offLineArrows,
+    offLineOverlay,
     liveLines: revealTree.pvLines,
     liveArrowCount: sfArrows,
     tree: revealTree,

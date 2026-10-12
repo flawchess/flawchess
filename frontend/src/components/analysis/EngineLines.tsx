@@ -4,8 +4,9 @@
  *
  * Each line is a single row:
  *  - a colored eval badge (read from pvLines[i].evalCp / pvLines[i].evalMate, D-03):
- *    solid blue (BEST_MOVE_ARROW) on the best line, one translucent blue
- *    (STOCKFISH_BADGE_SECONDARY) on every later line, white text throughout (SEED-175).
+ *    solid blue (BEST_MOVE_ARROW) on the best line; every later line an opaque faded blue
+ *    graded by its quality vs the top line, like its board arrow and icon
+ *    (stockfishSecondaryBadgeColor), white text throughout (SEED-175).
  *  - up to 5 clickable PV move chips that call onMoveClick(from, to)
  *
  * The search depth is shown by the engine info line above this component, not here.
@@ -24,13 +25,10 @@ import { Chess } from 'chess.js';
 import { ChevronDown } from 'lucide-react';
 
 import type { PvLine } from '@/hooks/uciParser';
+import { gradeEngineLines, stockfishSecondaryBadgeColor, type EngineLineGrade } from '@/lib/engineArrowGrades';
 import { moveLabel } from '@/lib/moveNumberLabel';
 import { cn } from '@/lib/utils';
-import {
-  BEST_MOVE_ARROW,
-  STOCKFISH_BADGE_SECONDARY,
-  MOVE_HIGHLIGHT_GOOD,
-} from '@/lib/theme';
+import { BEST_MOVE_ARROW, MOVE_HIGHLIGHT_GOOD } from '@/lib/theme';
 import { MiniBoard } from '@/components/board/MiniBoard';
 import { Tooltip } from '@/components/ui/tooltip';
 import { trackFeature } from '@/lib/analytics';
@@ -93,7 +91,7 @@ export function replayPvLine(baseFen: string | undefined, uciMoves: string[]): P
 const CHIP_CLASS =
   'inline-flex items-center gap-0.5 rounded px-1 py-0.5 whitespace-nowrap font-mono text-xs cursor-pointer transition-colors hover:bg-accent';
 
-// Eval badge — filled pill in the line's arrow color (solid blue best / translucent blue rest).
+// Eval badge — filled pill in the line's arrow color (solid blue best / graded faded blue rest).
 const BADGE_CLASS = 'shrink-0 rounded px-1.5 py-0.5 text-xs font-semibold text-white';
 
 // Compact variants (Quick 260628-dgv — mobile /analysis takeover): same text-xs font as the
@@ -237,6 +235,8 @@ export interface EngineLinesProps {
 interface PvLineRowProps {
   line: PvLine;
   lineIndex: number;
+  /** This line's quality grade vs the top line (null before the depth gate). */
+  grade: EngineLineGrade | null;
   startPly: number;
   baseFen: string | undefined;
   flipped: boolean;
@@ -249,6 +249,7 @@ interface PvLineRowProps {
 function PvLineRow({
   line,
   lineIndex,
+  grade,
   startPly,
   baseFen,
   flipped,
@@ -266,10 +267,9 @@ function PvLineRow({
   // SAN labels + per-step FENs (replayed from baseFen). Null SAN falls back to raw
   // UCI; null FEN skips the hover preview for that (and every later) chip.
   const steps = replayPvLine(baseFen, moves);
-  // Badge matches the board arrow: solid blue best move, one translucent blue for
-  // every later line. White text (BADGE_CLASS) stays legible on both fills.
-  const badgeColor =
-    lineIndex === 0 ? BEST_MOVE_ARROW : STOCKFISH_BADGE_SECONDARY;
+  // Badge matches the board arrow: solid blue best move, later lines fade with their
+  // grade like the arrow and icon. White text (BADGE_CLASS) stays legible on both fills.
+  const badgeColor = lineIndex === 0 ? BEST_MOVE_ARROW : stockfishSecondaryBadgeColor(grade);
 
   return (
     <div
@@ -281,7 +281,7 @@ function PvLineRow({
         addSeparator && 'border-t border-border',
       )}
     >
-      {/* Eval badge — solid blue (best) / translucent blue (later lines), matching the arrows. */}
+      {/* Eval badge — solid blue (best) / graded faded blue (later lines), matching the arrows. */}
       <span
         className={compact ? BADGE_CLASS_COMPACT : BADGE_CLASS}
         style={{ backgroundColor: badgeColor }}
@@ -402,6 +402,9 @@ export function EngineLines({
   compact = false,
 }: EngineLinesProps) {
   const visibleLines = pvLines.slice(0, maxLines);
+  // Same pure grade pass, on the same lines and FEN, as the board arrows and icons, so a
+  // badge's fade always agrees with its arrow. No FEN, no grades (fixed fallback fill).
+  const grades = baseFen ? gradeEngineLines(visibleLines, baseFen) : visibleLines.map(() => null);
 
   return (
     <div
@@ -425,6 +428,7 @@ export function EngineLines({
             key={lineIndex}
             line={line}
             lineIndex={lineIndex}
+            grade={grades[lineIndex] ?? null}
             startPly={startPly}
             baseFen={baseFen}
             flipped={flipped}

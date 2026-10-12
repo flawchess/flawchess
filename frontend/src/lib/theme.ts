@@ -140,10 +140,11 @@ export const GREAT_ACCENT_BG = 'oklch(0.58 0.18 220 / 0.14)';
 // Rendered as colored text/elements on the dark card, so a bright gold is legible.
 export const FLAWCHESS_ENGINE_ACCENT = 'oklch(0.78 0.14 80)'; // gold/amber
 // Solid FlawChess primary badge (155 UAT; 156 UAT: brown → gold; Phase 228): the fill of
-// the first (best) line's practical-score badge and the terminal-position badge, with
-// WHITE text (contrast ~6.9). Every later line uses FLAWCHESS_ENGINE_BADGE_SECONDARY instead —
-// the old rank-based shade array is gone (SEED-175 styling lock).
-export const FLAWCHESS_ENGINE_BADGE_PRIMARY = 'oklch(0.47 0.13 80)';
+// the first (best) line's practical-score badge and the terminal-position badge. Since
+// quick 261012 it is the board arrow's gold (FLAWCHESS_ENGINE_ARROW) so badge and arrow
+// match; white text is only ~2.5:1 on it, so FlawChess badges use DARK text (~7:1).
+// Every later line uses FLAWCHESS_ENGINE_BADGE_SECONDARY instead (SEED-175 styling lock).
+export const FLAWCHESS_ENGINE_BADGE_PRIMARY = 'rgb(213, 152, 0)';
 // Book/opening-theory corner-marker identity color (Phase 172, SEED-106 D-08).
 // Chroma 0.04 is deliberately the LOWEST of any corner-marker hue (gem 0.20,
 // Stockfish 0.16, FlawChess 0.14, severities 0.13-0.19), so the book badge
@@ -406,7 +407,17 @@ export const ARROW_NEUTRAL = '#6B7280';  // Tailwind gray-500 / matches WDL_BORD
 // built-in alpha so it reads as a translucent "engine suggestion" pointer — visually
 // secondary to the red flaw-move arrow it sits beside on the Flaw card, and a calm
 // overlay on the scrubbed Game-card board. rgba (not oklch) so the alpha is explicit.
-export const BEST_MOVE_ARROW = 'rgba(37, 99, 235, 0.8)';  // Tailwind blue-600 @ 80%
+// Static group opacity ChessBoard paints every board arrow at, on top of the arrow
+// color's own alpha. Engine quality badges multiply their opacity by it too so a badge
+// reads exactly as translucent as its arrow (quick 261012-a6m owner follow-up).
+export const ARROW_OPACITY = 0.75;
+// RGB triplet shared by BEST_MOVE_ARROW and the Stockfish secondary arrows (graded ones
+// are `rgba(${STOCKFISH_ARROW_RGB}, alpha)`, quick 261012-a6m).
+export const STOCKFISH_ARROW_RGB = '37, 99, 235';  // Tailwind blue-600
+// Alpha of the solid top-move arrow; the top move's best-star badge uses the same value
+// as its group opacity so the icon reads as translucent as its arrow (quick 261012-a6m).
+export const STOCKFISH_PRIMARY_ALPHA = 0.8;
+export const BEST_MOVE_ARROW = `rgba(${STOCKFISH_ARROW_RGB}, ${STOCKFISH_PRIMARY_ALPHA})`;
 
 // FlawChess Engine board arrow (Phase 156) — the practical-play move rendered on the
 // analysis board (game + free). Bright gold/amber (matching FLAWCHESS_ENGINE_ACCENT's
@@ -414,24 +425,48 @@ export const BEST_MOVE_ARROW = 'rgba(37, 99, 235, 0.8)';  // Tailwind blue-600 @
 // engine's identity color, distinct from the blue Stockfish arrow (156 UAT). rgba (not
 // oklch) like the other arrow tokens: oklch() does not reliably paint in the SVG `fill`
 // presentation attribute, which left the arrow invisible. sRGB of oklch(0.80 0.15 80).
-export const FLAWCHESS_ENGINE_ARROW = 'rgb(213, 152, 0)';  // deep gold/amber (156 UAT: darker + fully opaque)
+// RGB triplet shared by FLAWCHESS_ENGINE_ARROW and the graded FlawChess secondary arrows.
+export const FLAWCHESS_ARROW_RGB = '213, 152, 0';
+export const FLAWCHESS_ENGINE_ARROW = `rgb(${FLAWCHESS_ARROW_RGB})`;  // deep gold/amber (156 UAT: darker + fully opaque)
 
 // Non-primary engine lines (SEED-175 styling lock, Phase 228): ONE translucent color per
 // engine for every board arrow after the first (primary stays solid: BEST_MOVE_ARROW
 // blue / FLAWCHESS_ENGINE_ARROW gold). Card badges use the *_BADGE_SECONDARY tokens
-// below instead. No eval-proportional transparency (the lichess convention). Same RGB
-// as the engine's primary arrow at lower alpha; rgba (not oklch) because oklch() does
-// not reliably paint in an SVG `fill`. Starting alpha 0.45 is UAT-tuned (Plan 03 Task 3),
-// and ChessBoard additionally multiplies engine arrows by ARROW_OPACITY 0.75.
+// below instead. Same RGB as the engine's primary arrow at lower alpha; rgba (not oklch)
+// because oklch() does not reliably paint in an SVG `fill`. ChessBoard additionally
+// multiplies engine arrows by ARROW_OPACITY 0.75.
+// Quick 261012-a6m D-08 reverses the old "no eval-proportional transparency" lock for
+// STOCKFISH only: once the engine has searched deep enough to grade a line, its arrow
+// alpha follows its expected-score drop vs the top line (STOCKFISH_SECONDARY_ALPHA_*
+// below). STOCKFISH_SECONDARY_LINE is now the fixed PRE-DEPTH-GATE fallback look.
+// The FlawChess arrows follow the same alpha range from their practical-score drop
+// (engineArrowGrades.flawChessSecondaryAlphas); they have no depth gate, so no fallback.
 export const STOCKFISH_SECONDARY_LINE = 'rgba(37, 99, 235, 0.45)';  // BEST_MOVE_ARROW blue @ 45%
-export const FLAWCHESS_SECONDARY_LINE = 'rgba(213, 152, 0, 0.45)';  // FLAWCHESS_ENGINE_ARROW gold @ 45%
+// Graded secondary alpha range (quick 261012-a6m D-08): a line equal to the top move gets
+// MAX (below the primary's 0.8 so the top arrow stays distinct); a blunder-sized expected
+// score drop gets MIN (floor so blunder arrows stay visible). Owner-UAT tunable. The
+// matching quality badge uses the same value as its group opacity. Shared by the
+// FlawChess secondary arrows despite the name.
+export const STOCKFISH_SECONDARY_ALPHA_MAX = 0.6;
+export const STOCKFISH_SECONDARY_ALPHA_MIN = 0.25;
 
 // Non-primary engine-card BADGES (Phase 228 UAT): a faded copy of the engine's primary
-// badge (same color, half its opacity), not the arrow color. The FC primary badge is a
-// darker gold than the board arrow (white text needs contrast), so reusing
-// FLAWCHESS_SECONDARY_LINE gave a different-looking gold nearly as strong as the primary.
-export const STOCKFISH_BADGE_SECONDARY = 'rgba(37, 99, 235, 0.4)';  // BEST_MOVE_ARROW blue @ half its 0.8
-export const FLAWCHESS_ENGINE_BADGE_SECONDARY = 'oklch(0.47 0.13 80 / 0.5)';  // FLAWCHESS_ENGINE_BADGE_PRIMARY @ 50%
+// badge, not the arrow color. The FC primary badge is a darker gold than the board arrow
+// (white text needs contrast), so reusing FLAWCHESS_SECONDARY_LINE gave a different-looking
+// gold nearly as strong as the primary.
+// OPAQUE, pre-mixed toward BOARD_LIGHT_SQUARE (not an alpha): a translucent fill fades
+// toward whatever is behind it, so the same alpha read lighter on the board but DARKER on
+// the near-black card. Mixing toward the light square fades the badge the way the board
+// arrows/icons fade, on any background. White text on the blue stays at ~2.8:1+ (bold
+// short evals); the gold FlawChess badges carry dark text instead.
+// Both engines' secondaries are graded per line (engineArrowGrades.fadedBadgeColor): the
+// mix share runs from MAX (line equal to the top move) down to MIN (blunder-sized drop),
+// tracking the arrow alpha. The *_BADGE_SECONDARY tokens are the MAX mix (Stockfish uses it
+// pre-depth-gate).
+export const SECONDARY_BADGE_MIX_MAX = 0.75;
+export const SECONDARY_BADGE_MIX_MIN = 0.5;
+export const STOCKFISH_BADGE_SECONDARY = 'rgb(88, 129, 222)';  // blue-600 75% over BOARD_LIGHT_SQUARE
+export const FLAWCHESS_ENGINE_BADGE_SECONDARY = 'rgb(220, 169, 46)';  // FLAWCHESS_ENGINE_BADGE_PRIMARY 75% over BOARD_LIGHT_SQUARE (dark text ~8:1)
 
 // Tactic Line Explorer payoff-ply arrows (Phase 135). Lighter alpha than BEST_MOVE_ARROW
 // so payoff arrows visually recede behind the punchline arrow (same blue, less prominent).

@@ -19,7 +19,15 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { Profiler } from 'react';
 import { MemoryRouter, useNavigate } from 'react-router';
-import { BEST_MOVE_ARROW, MAIA_ACCENT, GREAT_ACCENT, STOCKFISH_SECONDARY_LINE } from '@/lib/theme';
+import {
+  BEST_MOVE_ARROW,
+  MAIA_ACCENT,
+  GREAT_ACCENT,
+  ARROW_OPACITY,
+  STOCKFISH_SECONDARY_ALPHA_MIN,
+  STOCKFISH_SECONDARY_LINE,
+} from '@/lib/theme';
+import { stockfishSecondaryArrowColor } from '@/lib/engineArrowGrades';
 import { ENGINE_TOGGLE_STORAGE_KEYS, SETTINGS_STORAGE_KEYS } from '@/lib/engineSettings';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { TooltipProvider } from '@/components/ui/tooltip';
@@ -1335,10 +1343,22 @@ describe('Settings drive search breadth, grading union and arrows (Phase 228, D-
 
       const overlay = document.querySelector('[data-testid="arrow-overlay"]');
       const solid = overlay?.querySelectorAll(`path[fill="${BEST_MOVE_ARROW}"]`) ?? [];
-      const translucent = overlay?.querySelectorAll(`path[fill="${STOCKFISH_SECONDARY_LINE}"]`) ?? [];
+      // Both grades are depth 10 (the arrow-grade gate), so the translucent arrow takes
+      // its graded alpha. Nf3 +300 is the top; e4 +20 drops by at least the blunder
+      // threshold, so it sits at the alpha floor (quick 261012-a6m D-08).
+      const gradedColor = stockfishSecondaryArrowColor({
+        quality: 'blunder',
+        alpha: STOCKFISH_SECONDARY_ALPHA_MIN,
+      });
+      const translucent = overlay?.querySelectorAll(`path[fill="${gradedColor}"]`) ?? [];
       expect(solid).toHaveLength(1);
       expect(translucent).toHaveLength(1);
       expect(solid[0]?.getAttribute('d')).not.toBe(translucent[0]?.getAttribute('d'));
+      // The badge on that arrow carries its alpha (times the board ARROW_OPACITY) as marker group opacity, so
+      // the D-08 alpha reaches ChessBoard on both the arrow and the badge.
+      expect(
+        document.querySelectorAll(`g[opacity="${STOCKFISH_SECONDARY_ALPHA_MIN * ARROW_OPACITY}"]`).length,
+      ).toBeGreaterThan(0);
     } finally {
       clientWidthSpy.mockRestore();
     }

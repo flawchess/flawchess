@@ -25,7 +25,8 @@ import { FlawChessEngineLines } from '../FlawChessEngineLines';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import type { RankedLine } from '@/lib/engine/types';
 import { DEFAULT_LINES } from '@/lib/engineSettings';
-import { FLAWCHESS_ENGINE_BADGE_SECONDARY } from '@/lib/theme';
+import { FLAWCHESS_ENGINE_ARROW } from '@/lib/theme';
+import { flawChessSecondaryAlphas, flawChessSecondaryBadgeColor } from '@/lib/engineArrowGrades';
 
 const START_FEN = 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1';
 
@@ -158,17 +159,19 @@ describe('FlawChessEngineLines', () => {
     expect(screen.queryByTestId('flawchess-line-4-move-0')).toBeNull();
   });
 
-  it('badge styling lock: lines 2..N use FLAWCHESS_ENGINE_BADGE_SECONDARY, line 1 is a different (solid) fill', () => {
+  it('badge styling: lines 2..N take their graded faded gold, line 1 the solid arrow gold', () => {
     renderWithMaxLines(4);
     // The aria-labelled wrapper's first child is the gold practical-score badge.
     const badgeOf = (n: number): HTMLElement =>
       screen.getByLabelText(new RegExp(`^Line ${n}:`)).firstElementChild as HTMLElement;
+    const alphas = flawChessSecondaryAlphas(FOUR_LINES);
     for (const n of [2, 3, 4]) {
-      expect(badgeOf(n).style.backgroundColor).toBe(FLAWCHESS_ENGINE_BADGE_SECONDARY);
+      expect(badgeOf(n).style.backgroundColor).toBe(flawChessSecondaryBadgeColor(alphas[n - 1]!));
     }
-    // jsdom drops oklch() inline values, so assert inequality rather than the solid token.
-    expect(badgeOf(1).style.backgroundColor).not.toBe(FLAWCHESS_ENGINE_BADGE_SECONDARY);
-    expect(badgeOf(1).className).toContain('text-white');
+    // Line 1 is the board arrow's gold, so badge and arrow match.
+    expect(badgeOf(1).style.backgroundColor).toBe(FLAWCHESS_ENGINE_ARROW);
+    // Dark text: white is only ~2.5:1 on the arrow gold.
+    expect(badgeOf(1).className).toContain('text-neutral-950');
   });
 
   it('the loading skeleton shows maxLines placeholder rows', () => {

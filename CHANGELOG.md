@@ -20,6 +20,9 @@ in `YYYY-MM-DD` (Europe/Zurich).
 - Train: on phones, the solution screen's bottom bar now matches the analysis page's board controls (icon with a label under it), with Analyze as one more control beside them; the forward button reads "Fwd" so it is not confused with Next. The small analyze icon next to the game line is gone, since the Analyze button does the same.
 - Train: when you step through a solution line, the board now also shows the engine's other top moves as faint arrows (as many as your Stockfish arrows setting) and the Stockfish lines row below the move list. Its top line carries the live eval and matches the faded preview, and its moves are numbered from the position on the board.
 - Train: every solution screen now has an Analyze button. Puzzles from your own games still open the whole game one move before the mistake; red herrings and warm-up puzzles open the puzzle position on the analysis board instead of linking to the source game.
+- Analysis and Train: Stockfish arrows now carry move-quality icons. The top move shows the best-move star, and the other arrows show good, inaccuracy, mistake or blunder compared with the top move once the engine has searched deep enough, fading more the worse the move is.
+- Analysis and Train: the eval badges of the secondary engine lines now look the same on the dark panel as on the board (a lighter, faded tint instead of a darker one), and the Stockfish ones fade with move quality like their arrows.
+- Analysis: the FlawChess engine's eval badges now use the same gold as its board arrow, with dark text, and its other arrows and line badges fade by how much worse each line's practical score is than the top line, like the Stockfish ones.
 
 ### Fixed
 
