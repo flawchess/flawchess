@@ -22,13 +22,16 @@ concern — the caller already has a session.
 `get_latest_successful_log_for_user` is the structural cache lookup (260425-dxh)
 keyed on (user_id, prompt_version, model, opponent_strength). `create_llm_log`
 remains the sole own-session entry point (write-path, D-02).
+
+`acquire_insights_generation_lock` takes a per-user Postgres advisory xact lock so
+concurrent endgame-insights generations for one user serialize (see its docstring).
 """
 
 import datetime
 from decimal import Decimal
 
 from genai_prices import Usage, calc_price
-from sqlalchemy import select
+from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import async_session_maker
@@ -38,6 +41,24 @@ from app.schemas.llm_log import LlmLogCreate
 _COST_UNKNOWN_PREFIX = "cost_unknown:"  # kept stable + LIKE-queryable
 _ERROR_JOIN_SEP = "; "  # concatenates caller-supplied error with cost_unknown marker
 _MODEL_SEP = ":"  # pydantic-ai "provider:model" format separator
+
+# classid half (ASCII "INSG", fits signed int4) of the two-int4 pg_advisory_xact_lock
+# form; the objid half is the user id. The two-int4 key space is separate from the
+# single-bigint keys used by eval_apply._GAME_WRITE_LOCK_NAMESPACE and the
+# tests/conftest.py template lock, so this lock cannot collide with either.
+INSIGHTS_GENERATION_LOCK_NAMESPACE: int = 0x494E5347
+
+
+async def acquire_insights_generation_lock(session: AsyncSession, user_id: int) -> None:
+    """Take a per-user advisory lock for endgame-insights generation.
+
+    Transaction-scoped (pg_advisory_xact_lock): released automatically when the
+    caller's transaction ends (commit or rollback). Blocks until the lock is free.
+    """
+    await session.execute(
+        text("SELECT pg_advisory_xact_lock(:namespace, :user_id)"),
+        {"namespace": INSIGHTS_GENERATION_LOCK_NAMESPACE, "user_id": user_id},
+    )
 
 
 async def create_llm_log(data: LlmLogCreate) -> LlmLog:

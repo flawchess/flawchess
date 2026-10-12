@@ -12,6 +12,7 @@ Rate-limit seeding uses fresh_test_user + own-session pattern (mirrors Plan 04 t
 compute_findings is monkeypatched for all orchestration tests to avoid DB-heavy Phase 63.
 """
 
+import asyncio
 import datetime
 from decimal import Decimal
 from typing import Any
@@ -3008,6 +3009,60 @@ class TestStructuralCacheInvalidation:
             r = await generate_insights(fresh_test_user.id, session)
         assert r.status == "cache_hit"
         assert called["count"] == 0
+
+
+class TestConcurrentGenerateDedup:
+    """Two concurrent generate_insights calls for one user make ONE LLM call."""
+
+    @pytest.mark.asyncio
+    async def test_concurrent_calls_make_one_llm_call(
+        self,
+        fresh_test_user: User,
+        test_engine: AsyncEngine,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """The per-user advisory lock serializes the two requests; the waiter
+        re-runs the cache lookup after the first row is committed and returns it
+        as cache_hit.
+
+        _compute_cost is patched to Decimal("0"): the model "test" is unknown to
+        genai-prices and would otherwise stamp cost_unknown:test on the row, which
+        the cache lookup rejects (error IS NULL), hiding the dedup.
+        """
+        report = _sample_report()
+        session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
+        calls = {"count": 0}
+
+        async def _slow_run_agent(
+            user_prompt: str, user_id: int, findings_hash: str
+        ) -> tuple[EndgameInsightsReport | None, int, int, int | None, int, str | None]:
+            calls["count"] += 1
+            await asyncio.sleep(0.3)
+            return report, 100, 50, None, 300, None
+
+        monkeypatch.setattr(
+            "app.services.insights_llm.compute_findings",
+            lambda sess, uid: _fake_compute_findings(sess, uid),
+        )
+        monkeypatch.setattr("app.services.insights_llm._run_agent", _slow_run_agent)
+        monkeypatch.setattr(
+            "app.repositories.llm_log_repository._compute_cost",
+            lambda model, in_tokens, out_tokens: Decimal("0"),
+        )
+
+        async def _one_request() -> str:
+            async with session_maker() as session:
+                response = await generate_insights(fresh_test_user.id, session)
+                # Mirrors get_async_session's commit after yield: ends the
+                # transaction so the xact advisory lock is released.
+                await session.commit()
+                return response.status
+
+        # Separate sessions per task, so this is not the forbidden same-session gather.
+        statuses = await asyncio.gather(_one_request(), _one_request())
+
+        assert calls["count"] == 1
+        assert sorted(statuses) == ["cache_hit", "fresh"]
 
 
 # ---------------------------------------------------------------------------

@@ -35,6 +35,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.config import settings
 from app.repositories.import_job_repository import get_latest_completed_import_with_games_at
 from app.repositories.llm_log_repository import (
+    acquire_insights_generation_lock,
     create_llm_log,
     get_latest_successful_log_for_user,
 )
@@ -2666,6 +2667,9 @@ async def generate_insights(
     Validity rule: row.created_at >= MAX(import_jobs.completed_at WHERE
     games_imported > 0) for this user, AND row younger than
     INSIGHTS_CACHE_MAX_AGE. Reordered so compute_findings only runs on miss.
+    Generations for the same user are serialized by a per-user advisory xact
+    lock, so a concurrent duplicate request waits and returns the first one's
+    report as cache_hit instead of paying for a second LLM call.
 
     Returns EndgameInsightsResponse with status in {fresh, cache_hit}.
     Raises InsightsProviderError (router -> 502) or InsightsValidationFailure
@@ -2676,6 +2680,20 @@ async def generate_insights(
     persist even if the caller's session rolls back.
     """
     model = settings.PYDANTIC_AI_MODEL_INSIGHTS
+
+    # Bug fix (prod llm_logs 2026-10-11/12): users 1242, 1277, 1282, 1287 each got two
+    # fresh reports 20-60s apart with an identical findings_hash and no import between.
+    # A second POST (page reload/remount) arrived while the first was still inside
+    # compute_findings + the LLM call, before its llm_logs row existed, so both missed
+    # the cache. This per-user advisory xact lock serializes same-user generations:
+    # create_llm_log commits the row on its OWN session before the first request
+    # returns, and the lock is released when the first request's transaction ends
+    # (get_async_session's commit after yield, or close/rollback on the exception
+    # path). The waiter's cache lookup below then sees the committed row under READ
+    # COMMITTED and returns cache_hit. Cost: a waiting request holds one pooled
+    # connection, which it already held for the whole LLM call before this change.
+    # Deliberately NOT taken in GET /cached (read-only, must never block).
+    await acquire_insights_generation_lock(session, user_id)
 
     # Tier-1 STRUCTURAL cache lookup (260425-dxh): cheap query on
     # (user_id, prompt_version, model, constant opponent_strength) + freshness checks.
