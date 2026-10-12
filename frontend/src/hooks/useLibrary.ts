@@ -174,7 +174,8 @@ export function useLibraryGames(
 }
 
 /**
- * Fetch the Flaw-Stats panel data for the current filter + flaw filter.
+ * Fetch the Flaw-Stats timeline data (one series per time control, `trend_by_tc`) plus the
+ * coverage counts for the current filter + flaw filter.
  *
  * Query key: ['library-flaw-stats', params]
  * No offset — the stats panel aggregates over all matching games, not just
@@ -194,7 +195,8 @@ export function useLibraryFlawStats(
 }
 
 /**
- * Fetch the 15-bullet flaw comparison for the current filter + flaw filter.
+ * Fetch the per-time-control flaw comparison (`tcs[]`, 12 bullets each) for the current
+ * filter + flaw filter. The selected TC is a client-side pick and never part of the key.
  *
  * Query key: ['library-flaw-comparison', params]
  * Independent of ['library-flaw-stats', params] — separate endpoint, separate type.

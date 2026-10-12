@@ -12,10 +12,7 @@ import { useFilterStore } from '@/hooks/useFilterStore';
 import { useGameCountValue } from '@/hooks/useGameCount';
 import { NoHumanRatedGamesState, shouldShowNoHumanRatedGames } from '@/components/ui/no-human-rated-games-state';
 import { useGlobalStats, useRatingHistory } from '@/hooks/useStats';
-import { useLibraryFlawStats } from '@/hooks/useLibrary';
-import { DEFAULT_FLAW_FILTER } from '@/hooks/useFlawFilterStore';
-import { FlawStatsPanel } from '@/components/library/FlawStatsPanel';
-import { EvalCoverageBadge } from '@/components/library/EvalCoverageBadge';
+import { LibraryStatsSections } from '@/components/library/stats/LibraryStatsSections';
 import { GlobalStatsCharts } from '@/components/stats/GlobalStatsCharts';
 import { EvalCoverageHeader } from '@/components/EvalCoverageHeader';
 import { useEvalCoverage } from '@/hooks/useEvalCoverage';
@@ -82,13 +79,6 @@ export function GlobalStatsPage() {
   // when the Human+Rated defaults alone emptied the Stats population.
   const gameCount = useGameCountValue();
 
-  // ── Flaw stats (empty severity — severity scoped to Games tab only) ────────
-  const {
-    data: flawStatsData,
-    isLoading: flawStatsLoading,
-    isError: flawStatsError,
-  } = useLibraryFlawStats(filters, DEFAULT_FLAW_FILTER);
-
   // ── EvalCoverageBadge source ────────────────────────────────────────────────
   // Repointed from useLibraryFlawStats (analyzed_n / total_n) to useEvalCoverage,
   // the SAME source the Games and Flaws subtab badges use. The flaw-stats numbers
@@ -99,7 +89,7 @@ export function GlobalStatsPage() {
   // Numbers and error signal still come from ONE query, which is the invariant
   // the previous comment protected: decoupling them let the badge render a
   // full-width "failed to load" while valid numbers were available, or mask a
-  // real failure. flawStatsError now only drives FlawStatsPanel.
+  // real failure.
   //
   // trackFullAnalysis mirrors the Games/Flaws tabs so the count ticks up live as
   // the background drain works through the backlog.
@@ -170,33 +160,21 @@ export function GlobalStatsPage() {
 
   const sectionsContent = (
     <div className="space-y-8">
-      {/* ── Flaw Statistics (top of page, UAT) ── */}
-      <section data-testid="flaw-stats-section">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <h2 className="text-lg font-semibold text-foreground mt-2">Flaw Stats</h2>
-          <EvalCoverageBadge
-            analyzedN={analyzedCount}
-            totalN={totalCount}
-            isGuest={isGuest}
-            isCoverageError={isCoverageError}
-          />
-        </div>
-        {/* Shared filters, empty severity (severity is scoped to Games tab) */}
-        <FlawStatsPanel
-          stats={flawStatsData}
-          isLoading={flawStatsLoading}
-          isError={flawStatsError}
-          filters={filters}
-          flawFilter={DEFAULT_FLAW_FILTER}
-        />
-      </section>
+      {/* ── Flaw Stats + Tactic motifs: per-TC sections sharing one TC switch (Phase 239) ── */}
+      <LibraryStatsSections
+        filters={filters}
+        analyzedCount={analyzedCount}
+        totalCount={totalCount}
+        isGuest={isGuest}
+        isCoverageError={isCoverageError}
+      />
 
       {/* ── ELO Ratings ── */}
       {(selectedPlatforms === null ||
         selectedPlatforms.includes('chess.com') ||
         selectedPlatforms.includes('lichess')) && (
         <section data-testid="elo-ratings-section">
-          <h2 className="text-lg font-semibold text-foreground mt-2">ELO Ratings</h2>
+          <h2 className="font-brand text-lg font-semibold text-foreground mt-2">ELO Ratings</h2>
           <div className="space-y-8 mt-3">
             {(selectedPlatforms === null || selectedPlatforms.includes('chess.com')) && (
               <Card as="section" data-testid="rating-section-chess-com">
@@ -231,7 +209,7 @@ export function GlobalStatsPage() {
 
       {/* ── Results Breakdown (Results by Time Control + Results by Color) ── */}
       <section data-testid="results-breakdown-section">
-        <h2 className="text-lg font-semibold text-foreground mt-2">Results Breakdown</h2>
+        <h2 className="font-brand text-lg font-semibold text-foreground mt-2">Results Breakdown</h2>
         <div className="mt-3">
           {/* WDL charts — each card owns its own shell inside GlobalStatsCharts */}
           <GlobalStatsCharts

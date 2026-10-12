@@ -7,6 +7,7 @@
  */
 
 import type { UserResult } from '@/types/api';
+import type { TimeControlBucket } from '@/types/endgames';
 
 // ─── Taxonomy unions ──────────────────────────────────────────────────────────
 
@@ -25,9 +26,6 @@ export type FlawTag =
 
 /** Flaw severity tiers (backend FlawSeverity literal). */
 export type FlawSeverity = 'inaccuracy' | 'mistake' | 'blunder';
-
-/** Tempo-family tags — subset of FlawTag (backend TempoTag literal). */
-export type TempoTag = 'low-clock' | 'hasty' | 'unrushed';
 
 /**
  * Tactic orientation filter (Phase 129 TACUI-06, D-06/D-07).
@@ -198,36 +196,6 @@ export interface LibraryGamesResponse {
 // ─── Flaw stats (GET /api/library/flaw-stats) ─────────────────────────────────
 
 /**
- * Per-severity rates normalized two ways (mirrors backend SeverityRates).
- * Both dicts keyed by FlawSeverity; access returns number | undefined per noUncheckedIndexedAccess.
- */
-export interface SeverityRates {
-  per_game: Record<FlawSeverity, number>;
-  per_100_moves: Record<FlawSeverity, number>;
-}
-
-/**
- * Tag distribution over the analyzed-set M+B FlawRecords (mirrors backend TagDistribution).
- *
- * tempo             = count of each tempo tag; sums to <= M+B flaws (optional — no tag
- *                     when clock data is missing). Panel must show unmeasured remainder.
- * reversed_rate     = reversed M+B flaws / total M+B flaws; 0.0 when none. (Phase 110)
- * squandered_rate   = squandered M+B flaws / total M+B flaws; 0.0 when none. (Phase 110)
- * phase_histogram   = count of flaws in each game phase.
- * miss_rate         = miss M+B flaws / total M+B flaws; 0.0 when none. (D-01, Phase 107)
- * lucky_rate = lucky M+B flaws / total M+B flaws; 0.0 when none. (D-01)
- */
-export interface TagDistribution {
-  tempo: Record<TempoTag, number>;
-  reversed_rate: number;
-  squandered_rate: number;
-  phase_histogram: Record<'opening' | 'middlegame' | 'endgame', number>;
-  // D-01 flat rate fields (Phase 107):
-  miss_rate: number;
-  lucky_rate: number;
-}
-
-/**
  * One ISO-week flaw-trend datapoint (mirrors backend FlawTrendPoint).
  *
  * `date` is the Monday of the ISO week (label for an ordinal axis, not a calendar bucket).
@@ -244,15 +212,22 @@ export interface FlawTrendPoint {
   per_week_games: number;
 }
 
+/** One time control's Flaws Timeline series (mirrors backend FlawTrendTc). */
+export interface FlawTrendTc {
+  tc: TimeControlBucket;
+  points: FlawTrendPoint[];
+}
+
 /**
  * Response for GET /api/library/flaw-stats (mirrors backend FlawStatsResponse).
- * Stats over the filtered analyzed-only set. trend_window = rolling window size (games).
+ *
+ * Phase 239 D-00k: the timeline comes per time control (`trend_by_tc`, one entry per TC
+ * that has analyzed games); the severity band, tag distribution and overall aggregates
+ * are gone. trend_window = rolling window size (games). analyzed_n / total_n are the
+ * filter-scoped coverage counts (FlawsTab reads analyzed_n).
  */
 export interface FlawStatsResponse {
-  per_severity_counts: SeverityCountsData;
-  rates: SeverityRates;
-  tag_distribution: TagDistribution;
-  trend: FlawTrendPoint[];
+  trend_by_tc: FlawTrendTc[];
   trend_window: number;
   analyzed_pct: number;
   analyzed_n: number;
@@ -327,15 +302,31 @@ export interface LibraryFlawsResponse {
 
 // ─── Flaw comparison (GET /api/library/flaw-comparison) ───────────────────────
 
+/** The 12 flaw-delta metrics (mirrors backend FlawDeltaMetric). */
+export type FlawDeltaMetric =
+  | 'mistake'
+  | 'blunder'
+  | 'low_clock'
+  | 'hasty'
+  | 'unrushed'
+  | 'opening'
+  | 'middlegame'
+  | 'endgame_phase'
+  | 'miss'
+  | 'lucky'
+  | 'reversed'
+  | 'squandered';
+
 /**
- * Per-bullet data for one of the 15 flaw-delta metrics (mirrors backend FlawBullet).
+ * Per-bullet data for one flaw-delta metric of one time control (mirrors backend FlawBullet).
  *
- * snake_case field names to match the JSON payload exactly (same convention as
- * FlawStatsResponse). delta and CI fields are null when both player_events and
- * opp_events are zero (zero-event bullet — D-11).
+ * snake_case field names to match the JSON payload exactly. delta and CI fields are null
+ * when both player_events and opp_events are zero. `low_sample` is the server-side flag
+ * for too few flaws on both sides to call a verdict (D-12); `has_zone` is always true for
+ * flaw bullets.
  */
 export interface FlawBullet {
-  tag: string;
+  tag: FlawDeltaMetric;
   delta: number | null;
   ci_low: number | null;
   ci_high: number | null;
@@ -350,8 +341,17 @@ export interface FlawBullet {
   opp_events: number;
   zone_lo: number;
   zone_hi: number;
-  domain: number;
   has_zone: boolean;
+  low_sample: boolean;
+}
+
+/** One time control's flaw comparison (mirrors backend FlawComparisonTc). */
+export interface FlawComparisonTc {
+  tc: TimeControlBucket;
+  analyzed_n: number;
+  below_gate: boolean;
+  /** 12 bullets, also below the gate (D-03: the tile numbers stay visible). */
+  bullets: FlawBullet[];
 }
 
 // ─── Tactic comparison (GET /api/library/tactic-comparison) ───────────────────
@@ -401,18 +401,14 @@ export interface TacticComparisonResponse {
 /**
  * Response for GET /api/library/flaw-comparison (mirrors backend FlawComparisonResponse).
  *
- * bullets: always 15 entries ordered by family when below_gate=false;
- *          empty list when below_gate=true.
- * analyzed_n: analyzed game count after the current filter set.
- * analyzed_gate: minimum required (constant = 20); exposed so the frontend
+ * tcs: one entry per time control with analyzed games in the current filters, in
+ *      LIBRARY_TC_ORDER. The TC switch is client-side over this list (D-02).
+ * analyzed_gate: minimum analyzed games per TC (constant = 20); exposed so the frontend
  *                can render "N of 20" without hardcoding.
- * below_gate: true when analyzed_n < analyzed_gate — frontend shows CTA (D-10).
  */
 export interface FlawComparisonResponse {
-  bullets: FlawBullet[];
-  analyzed_n: number;
+  tcs: FlawComparisonTc[];
   analyzed_gate: number;
-  below_gate: boolean;
 }
 
 // ─── Tactic Lines (GET /api/library/flaws/{game_id}/{ply}/tactic-lines) ────────
