@@ -330,12 +330,11 @@ export const TYPICAL_BAND_FILL = 'oklch(1 0 0 / 0.09)';
 export const NEUTRAL_SERIES_COLOR = 'oklch(0.95 0 0)';
 
 // Phase 238 Endgame Type Breakdown (D-00e): each conversion / recovery / vs.-engine cell shows
-// a grey typical range with a white "you" tick. The value text is red below the range, green
+// a grey typical range with a "you" dot colored like the percentile dot. The value text is red below the range, green
 // above it and white inside it (238 UAT replaced the below-only amber). Lighter than
 // ZONE_DANGER / ZONE_SUCCESS so the text reads on the charcoal card.
 export const TYPICAL_BELOW_VALUE = 'oklch(0.70 0.17 25)';
 export const TYPICAL_ABOVE_VALUE = 'oklch(0.75 0.16 145)';
-export const TYPICAL_YOU_TICK = 'oklch(0.985 0 0)';
 
 // Minimum games required for reliable stats — rows/charts below this threshold are dimmed
 export const MIN_GAMES_FOR_RELIABLE_STATS = 10;
