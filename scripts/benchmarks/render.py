@@ -69,13 +69,19 @@ def fmt_unsigned(value: float | Decimal | str, decimals: int) -> str:
 #           distribution shape (notably the low-clock right-skew) is invisible. The SQL
 #           already rounds to 6 proportion dp (= 4 pp dp), so 3 dp loses no computed
 #           precision. Mean/SD stay at 1 dp (summary stats, not the calibration quartiles).
-Unit = Literal["cp", "score", "pp", "pp3"]
+#   per100g — a per-game event-count difference rendered per 100 games (x100): signed for
+#           mean and percentile roles, SD unsigned, 2 dp for every role, no suffix (the table
+#           header or prose states the unit). Used by the §5 tactic Missed/Allowed zones.
+Unit = Literal["cp", "score", "pp", "pp3", "per100g"]
 Role = Literal["mean", "sd", "pct"]
 
-_UNIT_SCALE: dict[Unit, int] = {"cp": 1, "score": 100, "pp": 100, "pp3": 100}
+_UNIT_SCALE: dict[Unit, int] = {"cp": 1, "score": 100, "pp": 100, "pp3": 100, "per100g": 100}
 
 # Percentile-column decimal places for the pp3 unit (the §5 quartile-precision variant).
 _PP3_PCT_DECIMALS: int = 3
+
+# Decimal places for every role of the per100g unit (tactic gaps are a few events per 100 games).
+_PER100G_DECIMALS: int = 2
 
 
 def fmt_value(value: float | Decimal | str, unit: Unit, role: Role, *, pooled: bool = False) -> str:
@@ -89,10 +95,14 @@ def fmt_value(value: float | Decimal | str, unit: Unit, role: Role, *, pooled: b
         decimals = 0
     elif unit == "pp3" and role == "pct":
         decimals = _PP3_PCT_DECIMALS
+    elif unit == "per100g":
+        decimals = _PER100G_DECIMALS
     else:
         decimals = 1
-    signed = unit in ("cp", "pp", "pp3") and role != "sd"
+    signed = unit in ("cp", "pp", "pp3", "per100g") and role != "sd"
     body = fmt_signed(scaled, decimals) if signed else fmt_unsigned(scaled, decimals)
+    if unit == "per100g":
+        return body
     if unit == "score":
         return f"{body}%"
     if unit in ("pp", "pp3"):
