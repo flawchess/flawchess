@@ -24,6 +24,13 @@ in the SQL (game_flaws encodes tempo/phase as integers, opportunity/impact as bo
 The two combo metrics (hasty+miss, low-clock+miss) and the overall flaw rate were dropped
 in Phase 239 (D-00f).
 
+Tactic metrics (Phase 239 D-06): 38 = 19 tactic families x {missed, allowed}. Per game the
+estimator is the raw count difference (player − opponent) of game_flaws rows whose motif for
+that orientation is in the family's FAMILY_TO_MOTIF_INTS ints AND whose confidence is at least
+MIN_TACTIC_CHIP_CONFIDENCE (both IMPORTED from the app, so the benchmark counts exactly what
+the app counts). It is NOT divided by user moves; per-user mean over >= 20 games, shown per
+100 games via the "per100g" render unit.
+
 This is benchmark-computation ONLY: no endpoint, no UI, no committed zone constants,
 no DB table, no migration (D-09). The zone registries are hand-authored from the report.
 
@@ -44,12 +51,14 @@ from sqlalchemy import RowMapping, text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from app.core.config import db_url_for_target
+from app.repositories.library_repository import FAMILY_TO_MOTIF_INTS
+from app.services.library_service import MIN_TACTIC_CHIP_CONFIDENCE
 from scripts.benchmarks import distribution as dist
 from scripts.benchmarks import sql
-from scripts.benchmarks.render import fmt_unsigned, markdown_table
+from scripts.benchmarks.render import fmt_int, fmt_unsigned, fmt_value, markdown_table
 
 SECTION = (
-    "SKILL.md §5 — flaw-delta zones (12 flaw metrics on the full-analysis lane: "
+    "SKILL.md §5 — flaw-delta + tactic zones (12 flaw + 38 tactic metrics on the full-analysis lane: "
     "per-(ELO×TC) Q1/Q3 + collapse verdicts + viability + noise diagnostic)"
 )
 
@@ -118,6 +127,56 @@ _FLAW_TAG_PREDICATES: dict[str, str] = {
     "squandered": "gf.is_squandered = TRUE",
 }
 
+# Tactic orientations (Phase 239 D-06). `missed_tactic_*` / `allowed_tactic_*` on game_flaws
+# are the motif (SmallInteger) and winner-confidence (0-100) of the tactic the flaw missed /
+# allowed.
+TACTIC_ORIENTATIONS: tuple[str, str] = ("missed", "allowed")
+
+# The 38 tactic metrics (19 families x 2 orientations): (metric_key, delta_column). Key =
+# `tactic_{family}_{orientation}`, in FAMILY_TO_MOTIF_INTS order, missed before allowed. The
+# family -> motif-int mapping is IMPORTED (never copied) so a family remap in the app
+# re-groups the benchmark automatically.
+TACTIC_METRICS: tuple[tuple[str, str], ...] = tuple(
+    (f"tactic_{family}_{orientation}", f"delta_tactic_{family}_{orientation}")
+    for family in FAMILY_TO_MOTIF_INTS
+    for orientation in TACTIC_ORIENTATIONS
+)
+
+# metric_key -> (family, orientation), for the compact tactic table and the predicates.
+TACTIC_METRIC_PARTS: dict[str, tuple[str, str]] = {
+    f"tactic_{family}_{orientation}": (family, orientation)
+    for family in FAMILY_TO_MOTIF_INTS
+    for orientation in TACTIC_ORIENTATIONS
+}
+
+
+def _tactic_predicate(family: str, orientation: str) -> str:
+    """SQL predicate for one tactic metric.
+
+    The orientation's motif IN the family's ints AND its confidence >= MIN_TACTIC_CHIP_CONFIDENCE:
+    the exact gate the app's tactic comparison uses, so the benchmark counts what the app counts.
+
+    Every interpolated identifier and int comes from closed in-code sets (FAMILY_TO_MOTIF_INTS
+    keys/values, the two orientation literals, the imported confidence constant), never from
+    input.
+    """
+    ints = ", ".join(str(i) for i in FAMILY_TO_MOTIF_INTS[family])
+    return (
+        f"gf.{orientation}_tactic_motif IN ({ints}) "
+        f"AND gf.{orientation}_tactic_confidence >= {MIN_TACTIC_CHIP_CONFIDENCE}"
+    )
+
+
+_TACTIC_PREDICATES: dict[str, str] = {
+    key: _tactic_predicate(family, orientation)
+    for key, (family, orientation) in TACTIC_METRIC_PARTS.items()
+}
+
+# Every metric the SQL computes, flaw first. One predicate table feeds the zone query and the
+# viability query.
+_ALL_METRICS: tuple[tuple[str, str], ...] = FLAW_DELTA_METRICS + TACTIC_METRICS
+_ALL_PREDICATES: dict[str, str] = {**_FLAW_TAG_PREDICATES, **_TACTIC_PREDICATES}
+
 # Even ply = white mover, odd ply = black mover (canonical ply-parity convention).
 # Player flaws: mover parity matches user_color.
 _PLAYER_FILTER: str = (
@@ -168,7 +227,7 @@ class CohortSummary(TypedDict):
 
 class Chapter5Values(TypedDict):
     flaw: dict[str, MetricBlock]
-    tactic: dict[str, MetricBlock]  # empty until the tactic metrics land (plan 239-01 task 2)
+    tactic: dict[str, MetricBlock]  # 38 tactic metrics, per 100 games (family x orientation)
     viability: list[ViabilityRow]
     noise: dict[str, NoiseRow]
     cohort: CohortSummary
@@ -251,29 +310,33 @@ def _per_user_cte() -> str:
 
     # Build per_game_tags column list: one player column + one opponent column per metric.
     tag_cols = []
-    for metric_key, _ in FLAW_DELTA_METRICS:
-        pred = _FLAW_TAG_PREDICATES[metric_key]
+    for metric_key, _ in _ALL_METRICS:
+        pred = _ALL_PREDICATES[metric_key]
         tag_cols.append(f"    {player_count(pred)} AS p_{metric_key}")
         tag_cols.append(f"    {opp_count(pred)} AS o_{metric_key}")
     tag_cols_sql = ",\n".join(tag_cols)
 
-    # Build per_game_delta column list: (player − opp) / NULLIF(user_moves, 0).
-    # Emits proportion units (NOT ×100). The ×100 scaling to "per-100-moves" display
-    # units is applied at the render layer via the "pp" unit formatter, per the
-    # SKILL.md "Display formatting" invariant (never bake scaling into SQL).
+    # Build per_game_delta column list. Flaw metrics: (player − opp) / NULLIF(user_moves, 0),
+    # proportion units (NOT ×100; the ×100 scaling to "per-100-moves" display units is applied
+    # at the render layer via the "pp" unit formatter, per the SKILL.md "Display formatting"
+    # invariant: never bake scaling into SQL). Tactic metrics: the raw per-game count
+    # difference (player − opp), NOT divided by moves (research Pattern 2); the "per100g" unit
+    # renders it times 100.
     delta_cols = []
     for metric_key, delta_col in FLAW_DELTA_METRICS:
         delta_cols.append(
             f"    (p_{metric_key} - o_{metric_key})::float"
             f" / NULLIF(pgt.user_moves, 0) AS {delta_col}"
         )
+    for metric_key, delta_col in TACTIC_METRICS:
+        delta_cols.append(f"    (p_{metric_key} - o_{metric_key})::float AS {delta_col}")
     delta_cols_sql = ",\n".join(delta_cols)
 
     # Build per_user column list: avg of each delta column, plus the variance of that mean
     # (var_samp / n) for the noise-only IQR diagnostic. HAVING count(*) >= 20 keeps var_samp
     # defined.
     avg_cols = []
-    for metric_key, delta_col in FLAW_DELTA_METRICS:
+    for metric_key, delta_col in _ALL_METRICS:
         avg_cols.append(f"    avg(pgd.{delta_col}) AS {delta_col}")
         avg_cols.append(f"    var_samp(pgd.{delta_col}) / count(*) AS nv_{metric_key}")
     avg_cols_sql = ",\n".join(avg_cols)
@@ -417,13 +480,13 @@ async def compute(session: AsyncSession) -> Chapter5Values:
     Builds the per-user CTE chain once, then runs one aggregation per metric in one UNION ALL
     query. Viability is a separate lightweight query (D-06).
     """
-    selects = [_metric_select(metric, col) for metric, col in FLAW_DELTA_METRICS]
+    selects = [_metric_select(metric, col) for metric, col in _ALL_METRICS]
     query = _per_user_cte() + "\n" + "\nUNION ALL\n".join(selects)
     rows = await _fetch(session, query)
 
     blocks: dict[str, MetricBlock] = {}
     noise: dict[str, NoiseRow] = {}
-    for metric, _ in FLAW_DELTA_METRICS:
+    for metric, _ in _ALL_METRICS:
         metric_rows = [r for r in rows if r["metric"] == metric]
         pooled, elo, tc = dist.split_grouping_sets(metric_rows)
         blocks[metric] = _assemble_block(pooled, elo, tc)
@@ -437,8 +500,8 @@ async def compute(session: AsyncSession) -> Chapter5Values:
         row["zone_viable"] = _is_zone_viable(degenerate, row["pct_nonzero"])
 
     return Chapter5Values(
-        flaw=blocks,
-        tactic={},
+        flaw={key: blocks[key] for key, _ in FLAW_DELTA_METRICS},
+        tactic={key: blocks[key] for key, _ in TACTIC_METRICS},
         viability=viability,
         noise=noise,
         cohort=cohort,
@@ -457,8 +520,8 @@ def _viability_sql() -> str:
     """
     bucket_case = sql.elo_bucket_case_sql("ueag")
     per_user_raw_cols = ",\n  ".join(
-        f"COUNT(*) FILTER(WHERE ({_PLAYER_FILTER}) AND ({_FLAW_TAG_PREDICATES[m]})) AS raw_{m}"
-        for m, _ in FLAW_DELTA_METRICS
+        f"COUNT(*) FILTER(WHERE ({_PLAYER_FILTER}) AND ({_ALL_PREDICATES[m]})) AS raw_{m}"
+        for m, _ in _ALL_METRICS
     )
     return (
         f"WITH {sql.SELECTED_USERS_CTE},\n"
@@ -502,7 +565,7 @@ async def _compute_viability(
     users_total = len(raw_rows)
 
     viability_rows: list[ViabilityRow] = []
-    for metric_key, _ in FLAW_DELTA_METRICS:
+    for metric_key, _ in _ALL_METRICS:
         raw_col = f"raw_{metric_key}"
         events = [int(r[raw_col] or 0) for r in raw_rows]
         nonzero_count = sum(1 for e in events if e > 0)
@@ -580,7 +643,11 @@ def render(values: Chapter5Values) -> str:
         )
         parts += ["", "---", ""]
 
+    parts += _render_tactic_table(values)
+    parts += [""]
     parts += _render_viability(values["viability"], values["cohort"])
+    parts += [""]
+    parts += _render_noise_summary(values)
     return "\n".join(parts)
 
 
@@ -589,6 +656,126 @@ def _fmt_magnitude(value: float, unit: dist.Unit) -> str:
     if unit == "pp3":
         return f"{fmt_unsigned(value * 100, 3)}pp"
     return fmt_unsigned(value * 100, 2)
+
+
+# TC levels shown as their own p25-to-p75 column in the compact tactic table.
+_TACTIC_TABLE_TCS: tuple[str, str] = ("rapid", "classical")
+
+_TACTIC_TABLE_HEADERS: tuple[str, ...] = (
+    "family",
+    "orientation",
+    "n",
+    "p25",
+    "p50",
+    "p75",
+    *(f"{tc} p25 to p75" for tc in _TACTIC_TABLE_TCS),
+    "TC max abs d",
+    "ELO max abs d",
+    "pct_nonzero",
+    "noise-only IQR",
+    "zone_viable",
+)
+
+
+def _tc_range(block: MetricBlock, tc: str) -> str:
+    """`p25 to p75` of one TC marginal in per-100-games units, or n/a for a thin/absent level."""
+    for m in block["tc_marginal"]:
+        if m["label"] == tc:
+            lo = fmt_value(m["dist"]["p25"], "per100g", "pct")
+            hi = fmt_value(m["dist"]["p75"], "per100g", "pct")
+            return f"{lo} to {hi}"
+    return "n/a"
+
+
+def _max_abs_d(block: MetricBlock, axis: str) -> str:
+    """Max |Cohen's d| of one axis, or n/a when that verdict could not be computed."""
+    for v in block["verdicts"]:
+        if v["axis"] == axis:
+            return f"{v['max_abs_d']:.2f}"
+    return "n/a"
+
+
+def _render_tactic_table(values: Chapter5Values) -> list[str]:
+    """Compact tactic section: ONE table, one row per tactic metric (38 rows), per 100 games.
+
+    38 full per-metric sections would bloat the report, so the tactic metrics share a single
+    table carrying the pooled quartiles, the per-TC quartile bands, both collapse-verdict d's,
+    the viability share, the noise-only IQR and the zone_viable flag. Values are the per-user
+    mean of (you − opponent) tactic events per game, shown times 100 ("per100g" unit).
+    """
+    viability = {v["metric"]: v for v in values["viability"]}
+    rows: list[list[str]] = []
+    for key, block in values["tactic"].items():
+        family, orientation = TACTIC_METRIC_PARTS[key]
+        pooled = block["pooled"]
+        noise = values["noise"].get(key)
+        via = viability.get(key)
+        rows.append(
+            [
+                family,
+                orientation,
+                fmt_int(pooled["n"]),
+                fmt_value(pooled["p25"], "per100g", "pct"),
+                fmt_value(pooled["p50"], "per100g", "pct"),
+                fmt_value(pooled["p75"], "per100g", "pct"),
+                *(_tc_range(block, tc) for tc in _TACTIC_TABLE_TCS),
+                _max_abs_d(block, "TC"),
+                _max_abs_d(block, "ELO"),
+                f"{via['pct_nonzero']:.1f}%" if via else "n/a",
+                _fmt_magnitude(noise["pooled_noise_iqr"], "per100g") if noise else "n/a",
+                ("yes" if via["zone_viable"] else "no") if via else "n/a",
+            ]
+        )
+    aligns = ("left", "left") + ("right",) * (len(_TACTIC_TABLE_HEADERS) - 2)
+    return [
+        "### 5.13 Tactic Missed/Allowed Zones (D-06)",
+        "",
+        "> One row per tactic family and orientation. Value = per-user mean over ≥"
+        f"{FLAW_DELTA_MIN_GAMES} analyzed games of the per-game count difference",
+        "> (your tactic flaws − opponent's) whose motif is in the family's `FAMILY_TO_MOTIF_INTS`",
+        f"> ints and whose confidence is ≥ {MIN_TACTIC_CHIP_CONFIDENCE}; shown per 100 games",
+        '> ("per100g" unit). Negative = you commit/allow fewer than equally-rated opponents.',
+        "> `n/a` = a thin TC level (<"
+        f"{_CELL_CONTRIBUTOR_FLOOR} user-cells) or a verdict that could not be computed.",
+        "",
+        markdown_table(_TACTIC_TABLE_HEADERS, rows, aligns),
+    ]
+
+
+def _render_noise_summary(values: Chapter5Values) -> list[str]:
+    """Noise summary: observed pooled IQR vs the noise-only IQR, for every metric.
+
+    A noise share near (or above) 100% means the observed band is mostly sampling noise at the
+    lane's 100 games per user per TC; reported, never applied to the zones (owner call).
+    """
+    headers = ["metric", "observed IQR", "noise-only IQR", "noise share"]
+    aligns = ("left", "right", "right", "right")
+    rows: list[list[str]] = []
+    blocks = {**values["flaw"], **values["tactic"]}
+    for key, block in blocks.items():
+        noise = values["noise"].get(key)
+        if noise is None:
+            continue
+        unit: dist.Unit = "pp3" if key in values["flaw"] else "per100g"
+        observed = block["pooled"]["p75"] - block["pooled"]["p25"]
+        share = f"{noise['pooled_noise_iqr'] / observed * 100:.0f}%" if observed > 0 else "n/a"
+        rows.append(
+            [
+                key,
+                _fmt_magnitude(observed, unit),
+                _fmt_magnitude(noise["pooled_noise_iqr"], unit),
+                share,
+            ]
+        )
+    return [
+        "### 5.15 Noise-only IQR Summary",
+        "",
+        "> Noise-only IQR = `1.349 * sqrt(mean over user-cells of var(per-game delta) / n_games)`:",
+        "> the IQR per-user values would show if every user had the same true gap. Flaw metrics",
+        "> are per 100 moves (pp), tactic metrics per 100 games. Reported, not applied.",
+        "",
+        markdown_table(headers, rows, aligns),
+    ]
 
 
 def _metric_section(
@@ -646,18 +833,24 @@ def _render_viability(viability: list[ViabilityRow], cohort: CohortSummary) -> l
         "zone_viable",
     ]
     aligns = ("left",) + ("right",) * (len(headers) - 1)
-    rows = [
-        [
-            v["metric"],
-            str(v["users_contributing"]),
-            str(v["users_total"]),
-            f"{v['pct_nonzero']:.1f}%",
-            f"{v['median_events_per_user']:.1f}",
-            "yes" if v["degenerate_iqr"] else "no",
-            "yes" if v["zone_viable"] else "no",
+
+    def table_for(metrics: tuple[tuple[str, str], ...]) -> str:
+        keys = {key for key, _ in metrics}
+        rows = [
+            [
+                v["metric"],
+                str(v["users_contributing"]),
+                str(v["users_total"]),
+                f"{v['pct_nonzero']:.1f}%",
+                f"{v['median_events_per_user']:.1f}",
+                "yes" if v["degenerate_iqr"] else "no",
+                "yes" if v["zone_viable"] else "no",
+            ]
+            for v in viability
+            if v["metric"] in keys
         ]
-        for v in viability
-    ]
+        return markdown_table(headers, rows, aligns)
+
     cohort_line = (
         f"**Cohort basis**: {cohort['n_analyzed_games']:,} analyzed games across "
         f"{cohort['n_user_cells']:,} user×(ELO,TC) cells "
@@ -666,7 +859,7 @@ def _render_viability(viability: list[ViabilityRow], cohort: CohortSummary) -> l
         "not distinct users."
     )
     return [
-        "### 5.13 Viability Diagnostic (D-06)",
+        "### 5.14 Viability Diagnostic (D-06)",
         "",
         cohort_line,
         "",
@@ -676,8 +869,15 @@ def _render_viability(viability: list[ViabilityRow], cohort: CohortSummary) -> l
         "> `median_events_per_user` is a RAW, unscaled count (player events of this tag",
         "> totalled over the user's analyzed games) — NOT a per-100-moves rate, unlike the",
         "> §5.1–5.12 zone columns. It gauges raw event volume for CI-width adequacy.",
+        "> Tactic rows count player events of that family and orientation over the user's games.",
         "",
-        markdown_table(headers, rows, aligns),
+        "#### Flaw metrics",
+        "",
+        table_for(FLAW_DELTA_METRICS),
+        "",
+        "#### Tactic metrics",
+        "",
+        table_for(TACTIC_METRICS),
     ]
 
 

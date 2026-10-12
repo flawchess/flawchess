@@ -10,7 +10,10 @@ from __future__ import annotations
 
 import pytest
 
+from app.repositories.library_repository import FAMILY_TO_MOTIF_INTS
+from app.services.library_service import MIN_TACTIC_CHIP_CONFIDENCE
 from scripts.benchmarks import chapter5, distribution as dist
+from scripts.benchmarks.render import Role, Unit, fmt_value
 
 # The 12 flaw-delta metrics, in report order (combos and the overall flaw rate are gone).
 EXPECTED_FLAW_KEYS = [
@@ -161,3 +164,140 @@ class TestZoneViability:
         assert chapter5._is_zone_viable(False, chapter5.VIABILITY_MIN_PCT_NONZERO) is True
         assert chapter5._is_zone_viable(False, chapter5.VIABILITY_MIN_PCT_NONZERO - 0.1) is False
         assert chapter5._is_zone_viable(True, 100.0) is False
+
+
+class TestTacticMetrics:
+    def test_thirty_eight_keys_in_family_order_missed_before_allowed(self) -> None:
+        expected = [
+            f"tactic_{family}_{orientation}"
+            for family in FAMILY_TO_MOTIF_INTS
+            for orientation in ("missed", "allowed")
+        ]
+        assert len(expected) == 38
+        assert [k for k, _ in chapter5.TACTIC_METRICS] == expected
+
+    def test_delta_column_follows_the_key(self) -> None:
+        for key, col in chapter5.TACTIC_METRICS:
+            assert col == f"delta_{key}"
+
+    def test_fork_missed_predicate_is_built_from_the_imported_ints_and_confidence(self) -> None:
+        ints = ", ".join(str(i) for i in FAMILY_TO_MOTIF_INTS["fork"])
+        pred = chapter5._TACTIC_PREDICATES["tactic_fork_missed"]
+        assert pred == (
+            f"gf.missed_tactic_motif IN ({ints}) "
+            f"AND gf.missed_tactic_confidence >= {MIN_TACTIC_CHIP_CONFIDENCE}"
+        )
+
+    def test_allowed_orientation_uses_the_allowed_columns(self) -> None:
+        pred = chapter5._TACTIC_PREDICATES["tactic_mate_allowed"]
+        ints = ", ".join(str(i) for i in FAMILY_TO_MOTIF_INTS["mate"])
+        assert f"gf.allowed_tactic_motif IN ({ints})" in pred
+        assert f"gf.allowed_tactic_confidence >= {MIN_TACTIC_CHIP_CONFIDENCE}" in pred
+        assert "missed" not in pred
+
+    def test_sql_carries_a_player_and_an_opponent_column_per_tactic_metric(self) -> None:
+        cte = chapter5._per_user_cte()
+        for key, _ in chapter5.TACTIC_METRICS:
+            assert f"AS p_{key}" in cte
+            assert f"AS o_{key}" in cte
+            assert f"AS nv_{key}" in cte
+
+    def test_tactic_delta_is_the_raw_count_difference_not_divided_by_moves(self) -> None:
+        cte = chapter5._per_user_cte()
+        assert (
+            "(p_tactic_fork_missed - o_tactic_fork_missed)::float AS delta_tactic_fork_missed"
+            in cte
+        )
+        assert "(p_blunder - o_blunder)::float / NULLIF(pgt.user_moves, 0) AS delta_blunder" in cte
+
+    def test_one_game_flaws_scan_serves_flaw_and_tactic_metrics(self) -> None:
+        # Research A3: one LEFT JOIN to game_flaws in the zone query, no second scan.
+        assert chapter5._per_user_cte().count("LEFT JOIN game_flaws") == 1
+
+    def test_viability_sql_counts_player_events_for_every_metric(self) -> None:
+        text = chapter5._viability_sql()
+        for key, _ in chapter5.FLAW_DELTA_METRICS + chapter5.TACTIC_METRICS:
+            assert f"AS raw_{key}" in text
+
+    def test_chapter_imports_the_app_constants_instead_of_copying_them(self) -> None:
+        assert chapter5.FAMILY_TO_MOTIF_INTS is FAMILY_TO_MOTIF_INTS
+        assert chapter5.MIN_TACTIC_CHIP_CONFIDENCE == MIN_TACTIC_CHIP_CONFIDENCE
+
+
+class TestPer100gUnit:
+    def test_signed_two_decimals_no_suffix(self) -> None:
+        assert fmt_value(0.025, "per100g", "pct") == "+2.50"
+        assert fmt_value(-0.025, "per100g", "pct") == "\u22122.50"
+        assert fmt_value(0.025, "per100g", "mean") == "+2.50"
+
+    def test_sd_is_unsigned(self) -> None:
+        assert fmt_value(0.025, "per100g", "sd") == "2.50"
+
+
+# fmt_value output captured BEFORE the per100g unit was added to render.py. The other
+# chapters' diff gates format through the same function, so these must never change:
+# (unit, role, pooled, value, expected).
+EXISTING_UNIT_PINS: list[tuple[Unit, Role, bool, float, str]] = [
+    ("cp", "mean", False, 0.0123456, "+0.0"),
+    ("cp", "mean", False, -0.0123456, "+0.0"),
+    ("cp", "mean", False, 37.55, "+37.6"),
+    ("cp", "mean", True, 0.0123456, "+0.0 cp"),
+    ("cp", "mean", True, -0.0123456, "+0.0 cp"),
+    ("cp", "mean", True, 37.55, "+37.6 cp"),
+    ("cp", "sd", False, 0.0123456, "0.0"),
+    ("cp", "sd", False, -0.0123456, "-0.0"),
+    ("cp", "sd", False, 37.55, "37.6"),
+    ("cp", "sd", True, 0.0123456, "0.0 cp"),
+    ("cp", "sd", True, -0.0123456, "-0.0 cp"),
+    ("cp", "sd", True, 37.55, "37.6 cp"),
+    ("cp", "pct", False, 0.0123456, "+0"),
+    ("cp", "pct", False, -0.0123456, "+0"),
+    ("cp", "pct", False, 37.55, "+38"),
+    ("cp", "pct", True, 0.0123456, "+0 cp"),
+    ("cp", "pct", True, -0.0123456, "+0 cp"),
+    ("cp", "pct", True, 37.55, "+38 cp"),
+    ("score", "mean", False, 0.0123456, "1.2%"),
+    ("score", "mean", False, -0.0123456, "-1.2%"),
+    ("score", "mean", False, 37.55, "3755.0%"),
+    ("score", "sd", False, 0.0123456, "1.2%"),
+    ("score", "sd", False, -0.0123456, "-1.2%"),
+    ("score", "sd", False, 37.55, "3755.0%"),
+    ("score", "pct", False, 0.0123456, "1.2%"),
+    ("score", "pct", False, -0.0123456, "-1.2%"),
+    ("score", "pct", False, 37.55, "3755.0%"),
+    ("pp", "mean", False, 0.0123456, "+1.2pp"),
+    ("pp", "mean", False, -0.0123456, "−1.2pp"),
+    ("pp", "mean", False, 37.55, "+3755.0pp"),
+    ("pp", "sd", False, 0.0123456, "1.2pp"),
+    ("pp", "sd", False, -0.0123456, "-1.2pp"),
+    ("pp", "sd", False, 37.55, "3755.0pp"),
+    ("pp", "pct", False, 0.0123456, "+1.2pp"),
+    ("pp", "pct", False, -0.0123456, "−1.2pp"),
+    ("pp", "pct", False, 37.55, "+3755.0pp"),
+    ("pp3", "mean", False, 0.0123456, "+1.2pp"),
+    ("pp3", "mean", False, -0.0123456, "−1.2pp"),
+    ("pp3", "mean", False, 37.55, "+3755.0pp"),
+    ("pp3", "sd", False, 0.0123456, "1.2pp"),
+    ("pp3", "sd", False, -0.0123456, "-1.2pp"),
+    ("pp3", "sd", False, 37.55, "3755.0pp"),
+    ("pp3", "pct", False, 0.0123456, "+1.235pp"),
+    ("pp3", "pct", False, -0.0123456, "−1.235pp"),
+    ("pp3", "pct", False, 37.55, "+3755.000pp"),
+]
+
+
+@pytest.mark.parametrize(("unit", "role", "pooled", "value", "expected"), EXISTING_UNIT_PINS)
+def test_existing_units_render_unchanged(
+    unit: Unit, role: Role, pooled: bool, value: float, expected: str
+) -> None:
+    assert fmt_value(value, unit, role, pooled=pooled) == expected
+
+
+class TestTacticZoneViability:
+    def test_degenerate_tactic_block_is_not_zone_viable(self) -> None:
+        block = chapter5._assemble_block(_distribution(100, p25=0.0, p75=0.0), [], [])
+        assert chapter5._is_zone_viable(block["degenerate"], 90.0) is False
+
+    def test_rare_tactic_below_half_nonzero_is_not_zone_viable(self) -> None:
+        block = chapter5._assemble_block(_distribution(100), [], [])
+        assert chapter5._is_zone_viable(block["degenerate"], 49.9) is False
