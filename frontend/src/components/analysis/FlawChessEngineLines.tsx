@@ -6,8 +6,8 @@
  * chip/badge/hover-preview pattern, same expand chevron — with three deltas
  * (D-08/D-06/D-07):
  *  - up to `maxLines` lines (the FlawChess lines setting, 1-5, Phase 228; was a fixed 2, D-08).
- *  - a filled gold practical-score badge (white font: solid
- *    `FLAWCHESS_ENGINE_BADGE_PRIMARY` on the first line, one translucent
+ *  - a filled gold practical-score badge (dark font: solid arrow-gold
+ *    `FLAWCHESS_ENGINE_BADGE_PRIMARY` on the first line, one faded
  *    `FLAWCHESS_ENGINE_BADGE_SECONDARY` on every later line — the gold analog of the
  *    Stockfish primary/secondary badges, SEED-175), followed by the objective Stockfish eval of the
  *    same move in Stockfish blue (155 UAT). Both numbers are white-POV
@@ -85,10 +85,10 @@ function formatMaiaPct(prob: number | null): string {
 const CHIP_CLASS =
   'inline-flex items-center gap-0.5 rounded px-1 py-0.5 whitespace-nowrap font-mono text-xs transition-colors hover:bg-accent';
 // Filled gold practical-score badge — the same pill shell as EngineLines'
-// BADGE_CLASS (white font), so the two engine cards read as one visual family;
-// only the fill color differs (gold-by-rank vs SF blue). shrink-0 lives on the
-// wrapper so the badge + "SF <eval>" aside stay together on one line.
-const BADGE_CLASS = 'rounded px-1.5 py-0.5 text-xs font-semibold text-white';
+// BADGE_CLASS, so the two engine cards read as one visual family; the fill is the
+// board arrow's gold, which needs DARK text (white is ~2.5:1 on it, see theme.ts).
+// shrink-0 lives on the wrapper so the badge + "SF <eval>" aside stay together on one line.
+const BADGE_CLASS = 'rounded px-1.5 py-0.5 text-xs font-semibold text-neutral-950';
 
 export interface FlawChessEngineLinesProps {
   /** Ranked practical lines from useFlawChessEngine's latest EngineSnapshot. */
@@ -341,7 +341,7 @@ function RankedLineRow({
         addSeparator && 'border-t border-border',
       )}
     >
-      {/* Gold practical-score badge (white font, solid primary / translucent rest) + the objective
+      {/* Gold practical-score badge (dark font, solid arrow gold / faded rest) + the objective
           Stockfish eval of this same move in Stockfish blue. Never the bare phrase
           "best move" (D-06). */}
       <span

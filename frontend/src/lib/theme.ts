@@ -140,10 +140,11 @@ export const GREAT_ACCENT_BG = 'oklch(0.58 0.18 220 / 0.14)';
 // Rendered as colored text/elements on the dark card, so a bright gold is legible.
 export const FLAWCHESS_ENGINE_ACCENT = 'oklch(0.78 0.14 80)'; // gold/amber
 // Solid FlawChess primary badge (155 UAT; 156 UAT: brown → gold; Phase 228): the fill of
-// the first (best) line's practical-score badge and the terminal-position badge, with
-// WHITE text (contrast ~6.9). Every later line uses FLAWCHESS_ENGINE_BADGE_SECONDARY instead —
-// the old rank-based shade array is gone (SEED-175 styling lock).
-export const FLAWCHESS_ENGINE_BADGE_PRIMARY = 'oklch(0.47 0.13 80)';
+// the first (best) line's practical-score badge and the terminal-position badge. Since
+// quick 261012 it is the board arrow's gold (FLAWCHESS_ENGINE_ARROW) so badge and arrow
+// match; white text is only ~2.5:1 on it, so FlawChess badges use DARK text (~7:1).
+// Every later line uses FLAWCHESS_ENGINE_BADGE_SECONDARY instead (SEED-175 styling lock).
+export const FLAWCHESS_ENGINE_BADGE_PRIMARY = 'rgb(213, 152, 0)';
 // Book/opening-theory corner-marker identity color (Phase 172, SEED-106 D-08).
 // Chroma 0.04 is deliberately the LOWEST of any corner-marker hue (gem 0.20,
 // Stockfish 0.16, FlawChess 0.14, severities 0.13-0.19), so the book badge
@@ -453,14 +454,15 @@ export const FLAWCHESS_SECONDARY_LINE = 'rgba(213, 152, 0, 0.45)';  // FLAWCHESS
 // OPAQUE, pre-mixed toward BOARD_LIGHT_SQUARE (not an alpha): a translucent fill fades
 // toward whatever is behind it, so the same alpha read lighter on the board but DARKER on
 // the near-black card. Mixing toward the light square fades the badge the way the board
-// arrows/icons fade, on any background. White text stays at ~3.5:1+ (bold short evals).
+// arrows/icons fade, on any background. White text on the blue stays at ~2.8:1+ (bold
+// short evals); the gold FlawChess badges carry dark text instead.
 // Stockfish secondaries are graded per line (engineArrowGrades.stockfishSecondaryBadgeColor):
 // the mix share runs from MAX (line equal to the top move) down to MIN (blunder-sized drop),
 // tracking the arrow alpha. STOCKFISH_BADGE_SECONDARY is the MAX mix, used pre-depth-gate.
 export const STOCKFISH_BADGE_MIX_MAX = 0.75;
 export const STOCKFISH_BADGE_MIX_MIN = 0.5;
 export const STOCKFISH_BADGE_SECONDARY = 'rgb(88, 129, 222)';  // blue-600 75% over BOARD_LIGHT_SQUARE
-export const FLAWCHESS_ENGINE_BADGE_SECONDARY = 'rgb(156, 114, 46)';  // FLAWCHESS_ENGINE_BADGE_PRIMARY (rgb 128,79,0) 75% over BOARD_LIGHT_SQUARE
+export const FLAWCHESS_ENGINE_BADGE_SECONDARY = 'rgb(220, 168, 46)';  // FLAWCHESS_ENGINE_BADGE_PRIMARY 75% over BOARD_LIGHT_SQUARE (dark text ~8:1)
 
 // Tactic Line Explorer payoff-ply arrows (Phase 135). Lighter alpha than BEST_MOVE_ARROW
 // so payoff arrows visually recede behind the punchline arrow (same blue, less prominent).
