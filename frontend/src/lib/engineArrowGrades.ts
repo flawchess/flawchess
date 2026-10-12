@@ -29,12 +29,11 @@ import {
   ARROW_OPACITY,
   BOARD_LIGHT_SQUARE,
   FLAWCHESS_ARROW_RGB,
-  SECONDARY_BADGE_MIX_MAX,
+  FLAWCHESS_PRIMARY_ALPHA,
   SECONDARY_BADGE_MIX_MIN,
   STOCKFISH_ARROW_RGB,
   STOCKFISH_BADGE_SECONDARY,
   STOCKFISH_PRIMARY_ALPHA,
-  STOCKFISH_SECONDARY_ALPHA_MAX,
   STOCKFISH_SECONDARY_ALPHA_MIN,
   STOCKFISH_SECONDARY_LINE,
 } from '@/lib/theme';
@@ -57,11 +56,12 @@ export interface EngineLineGrade {
 
 /**
  * Linear alpha for a secondary arrow from its expected-score drop vs the top line:
- * drop <= 0 gives MAX, drop >= BLUNDER_DROP gives MIN (D-08).
+ * drop <= 0 gives the engine's `primaryAlpha` (the top arrow's own alpha, so an equal
+ * move looks equal), drop >= BLUNDER_DROP gives MIN (D-08).
  */
-export function secondaryArrowAlpha(drop: number): number {
+export function secondaryArrowAlpha(drop: number, primaryAlpha: number): number {
   const t = Math.min(Math.max(drop, 0), BLUNDER_DROP) / BLUNDER_DROP;
-  return STOCKFISH_SECONDARY_ALPHA_MAX - t * (STOCKFISH_SECONDARY_ALPHA_MAX - STOCKFISH_SECONDARY_ALPHA_MIN);
+  return primaryAlpha - t * (primaryAlpha - STOCKFISH_SECONDARY_ALPHA_MIN);
 }
 
 function isGradable(line: PvLine | undefined): line is PvLine {
@@ -84,12 +84,12 @@ export function gradeEngineLines(
   const mover = sideToMoveFromFen(fen);
   const esTop = evalToExpectedScore(top.evalCp, top.evalMate, mover);
   return lines.map((line, index) => {
-    if (index === 0) return { quality: 'best', alpha: secondaryArrowAlpha(0) };
+    if (index === 0) return { quality: 'best', alpha: STOCKFISH_PRIMARY_ALPHA };
     if (!isGradable(line)) return null;
     const esLine = evalToExpectedScore(line.evalCp, line.evalMate, mover);
     return {
       quality: classifyLiveSeverity(esTop, esLine) ?? 'good',
-      alpha: secondaryArrowAlpha(esTop - esLine),
+      alpha: secondaryArrowAlpha(esTop - esLine, STOCKFISH_PRIMARY_ALPHA),
     };
   });
 }
@@ -111,15 +111,13 @@ function rgbChannels(color: string): [number, number, number] {
 /**
  * Opaque eval-badge fill for a secondary engine line in the engine-lines lists: the
  * engine's arrow color mixed toward BOARD_LIGHT_SQUARE, with its share scaled linearly
- * from the line's arrow alpha (ALPHA_MAX -> BADGE_MIX_MAX, ALPHA_MIN -> BADGE_MIX_MIN), so
- * the badge fades with move quality like its board arrow. Opaque on purpose: see the
- * token comment in theme.ts.
+ * from the line's arrow alpha (primaryAlpha -> 1, i.e. the pure engine color, ALPHA_MIN ->
+ * BADGE_MIX_MIN), so the badge fades with move quality like its board arrow. Opaque on
+ * purpose: see the token comment in theme.ts.
  */
-function fadedBadgeColor(arrowRgb: string, alpha: number): string {
-  const t =
-    (alpha - STOCKFISH_SECONDARY_ALPHA_MIN) /
-    (STOCKFISH_SECONDARY_ALPHA_MAX - STOCKFISH_SECONDARY_ALPHA_MIN);
-  const share = SECONDARY_BADGE_MIX_MIN + t * (SECONDARY_BADGE_MIX_MAX - SECONDARY_BADGE_MIX_MIN);
+function fadedBadgeColor(arrowRgb: string, alpha: number, primaryAlpha: number): string {
+  const t = (alpha - STOCKFISH_SECONDARY_ALPHA_MIN) / (primaryAlpha - STOCKFISH_SECONDARY_ALPHA_MIN);
+  const share = SECONDARY_BADGE_MIX_MIN + t * (1 - SECONDARY_BADGE_MIX_MIN);
   const engine = rgbChannels(arrowRgb);
   const base = rgbChannels(BOARD_LIGHT_SQUARE);
   const [r, g, b] = engine.map((c, i) => Math.round(c * share + base[i]! * (1 - share)));
@@ -129,7 +127,7 @@ function fadedBadgeColor(arrowRgb: string, alpha: number): string {
 /** Stockfish secondary badge fill: graded fade, or the fixed STOCKFISH_BADGE_SECONDARY pre-gate. */
 export function stockfishSecondaryBadgeColor(grade: EngineLineGrade | null): string {
   if (grade === null) return STOCKFISH_BADGE_SECONDARY;
-  return fadedBadgeColor(STOCKFISH_ARROW_RGB, grade.alpha);
+  return fadedBadgeColor(STOCKFISH_ARROW_RGB, grade.alpha, STOCKFISH_PRIMARY_ALPHA);
 }
 
 /**
@@ -142,7 +140,9 @@ export function stockfishSecondaryBadgeColor(grade: EngineLineGrade | null): str
 export function flawChessSecondaryAlphas(lines: ReadonlyArray<{ practicalScore: number }>): number[] {
   const top = lines[0];
   if (top === undefined) return [];
-  return lines.map((line) => secondaryArrowAlpha(top.practicalScore - line.practicalScore));
+  return lines.map((line) =>
+    secondaryArrowAlpha(top.practicalScore - line.practicalScore, FLAWCHESS_PRIMARY_ALPHA),
+  );
 }
 
 /** Translucent FlawChess secondary arrow color at a graded alpha. */
@@ -152,7 +152,7 @@ export function flawChessSecondaryArrowColor(alpha: number): string {
 
 /** FlawChess secondary badge fill at a graded alpha (opaque fade, like Stockfish's). */
 export function flawChessSecondaryBadgeColor(alpha: number): string {
-  return fadedBadgeColor(FLAWCHESS_ARROW_RGB, alpha);
+  return fadedBadgeColor(FLAWCHESS_ARROW_RGB, alpha, FLAWCHESS_PRIMARY_ALPHA);
 }
 
 /**
