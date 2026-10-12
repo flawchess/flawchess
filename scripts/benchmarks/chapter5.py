@@ -200,7 +200,12 @@ def _base_games_cte() -> str:
         "base_games AS MATERIALIZED (\n"
         "  SELECT g.id AS game_id, g.user_id, g.user_color,\n"
         f"         ({sql.USER_ELO_AT_GAME_SQL}) AS ueag,\n"
-        "         su.tc_bucket AS tc\n"
+        "         su.tc_bucket AS tc,\n"
+        # user_moves lives here (not in a self-joined helper CTE): with the lane's small
+        # base the planner estimates 1 row, picks a nested loop and the helper self-join
+        # went O(n^2) (a 10+ min run). Floor/ceil of ply_count/2 = the user's own moves.
+        "         CASE WHEN g.user_color = 'white' THEN FLOOR(g.ply_count / 2.0)\n"
+        "              ELSE CEIL(g.ply_count / 2.0) END AS user_moves\n"
         "  FROM benchmark_selection bs\n"
         "  JOIN games g ON g.id = bs.game_id\n"
         "  JOIN selected_users su ON su.user_id = g.user_id\n"
@@ -219,9 +224,9 @@ def _per_user_cte() -> str:
     CTE chain:
       selected_users  — canonical cohort filter (benchmark_selected_users + completed checkpoint)
       base_games      — the full-analysis lane games (`_base_games_cte()`); MATERIALIZED to
-                        narrow the game_flaws scan.
-      user_moves_per_game — derived from games.ply_count (Phase 114.1): FLOOR(ply_count/2)
-                            for white, CEIL(ply_count/2) for black (no game_positions scan).
+                        narrow the game_flaws scan. Carries `user_moves` derived from
+                        games.ply_count (Phase 114.1): FLOOR(ply_count/2) for white,
+                        CEIL(ply_count/2) for black (no game_positions scan).
       per_game_tags   — per-game player/opponent tag counts for all metrics, driven from
                         base_games (ALL analyzed games) LEFT JOIN game_flaws so clean games
                         count as a 0 delta (not dropped). The ≥20 floor below is therefore over
@@ -276,18 +281,6 @@ def _per_user_cte() -> str:
     return (
         f"WITH {sql.SELECTED_USERS_CTE},\n"
         f"{_base_games_cte()},\n"
-        # user_moves_per_game: read games.ply_count (exact half-moves, Phase 114.1).
-        # floor(ply_count/2) = white user moves, ceil(ply_count/2) = black user moves.
-        # No game_positions scan needed (dropped ~87M-row join).
-        "user_moves_per_game AS (\n"
-        "  SELECT bg.game_id,\n"
-        "    CASE\n"
-        "      WHEN bg.user_color = 'white' THEN FLOOR(g.ply_count / 2.0)\n"
-        "      ELSE CEIL(g.ply_count / 2.0)\n"
-        "    END AS user_moves\n"
-        "  FROM base_games bg\n"
-        "  JOIN games g ON g.id = bg.game_id\n"
-        "),\n"
         # per_game_tags: per-game player/opponent tag counts for all metrics.
         # Driven from base_games (ALL analyzed games) with a LEFT JOIN to game_flaws, so a
         # clean game (zero detected flaws) still contributes a row with all counts = 0 and
@@ -301,12 +294,11 @@ def _per_user_cte() -> str:
         "  SELECT\n"
         "    bg.game_id,\n"
         "    bg.user_id, bg.ueag, bg.tc, bg.user_color,\n"
-        "    um.user_moves,\n"
+        "    bg.user_moves,\n"
         f"{tag_cols_sql}\n"
         "  FROM base_games bg\n"
-        "  JOIN user_moves_per_game um ON um.game_id = bg.game_id\n"
         "  LEFT JOIN game_flaws gf ON gf.game_id = bg.game_id AND gf.user_id = bg.user_id\n"
-        "  GROUP BY bg.game_id, bg.user_id, bg.ueag, bg.tc, bg.user_color, um.user_moves\n"
+        "  GROUP BY bg.game_id, bg.user_id, bg.ueag, bg.tc, bg.user_color, bg.user_moves\n"
         "),\n"
         # per_game_delta: signed proportion delta per game (D-01 estimator).
         # Proportion unit — ×100 is applied at the render layer ("pp" unit formatter).

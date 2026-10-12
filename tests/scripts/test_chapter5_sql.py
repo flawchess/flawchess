@@ -68,6 +68,13 @@ class TestFullAnalysisBasis:
         assert cte in chapter5._per_user_cte()
         assert cte in chapter5._viability_sql()
 
+    def test_user_moves_lives_in_base_games_not_a_self_joined_helper_cte(self) -> None:
+        # Regression: a user_moves_per_game helper CTE self-joined to base_games went
+        # O(n^2) on the lane (the planner estimates 1 row), a 10+ minute run. user_moves is a
+        # base_games column instead.
+        assert "AS user_moves" in chapter5._base_games_cte()
+        assert "user_moves_per_game" not in chapter5._per_user_cte()
+
     @pytest.mark.parametrize("builder", ["_per_user_cte", "_viability_sql"])
     def test_old_cheap_eval_basis_and_removed_metrics_are_gone(self, builder: str) -> None:
         text = getattr(chapter5, builder)()
