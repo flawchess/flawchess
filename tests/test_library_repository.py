@@ -22,7 +22,7 @@ from typing import Any
 
 import pytest
 import pytest_asyncio
-from sqlalchemy import Subquery, delete, func, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.game import Game
@@ -31,11 +31,9 @@ from app.models.game_flaw import GameFlaw
 from app.repositories.game_flaws_repository import bulk_insert_game_flaws
 from app.repositories.library_repository import (
     TacticOrientation,
-    _analyzed_game_ids_subquery,
     analyzed_game_ids,
     count_filtered_and_analyzed,
     fetch_page_game_flaws,
-    fetch_stats_aggregates,
     query_filtered_games,
     query_flaws,
 )
@@ -1535,166 +1533,6 @@ class TestFlawsEndpointSchema:
 
 
 # ---------------------------------------------------------------------------
-# TestStatsAggregatesPlayerOnly — D-04 no-regression baseline for R4/R5
-# ---------------------------------------------------------------------------
-
-
-class TestStatsAggregatesPlayerOnly:
-    """fetch_stats_aggregates gated to player-only (D-04, R4).
-
-    The no-regression invariant (highest-risk D-04 invariant, RESEARCH Pitfall 5):
-        gated counts == pre-phase player-only baseline
-        ungated count > baseline (opponent rows present)
-
-    Both white-user and black-user parity branches are exercised.
-    """
-
-    async def _make_analyzed_subq(self, session: AsyncSession, user_id: int) -> Subquery:
-        """Return the analyzed_game_ids subquery for use in fetch_stats_aggregates/trend."""
-        return _analyzed_game_ids_subquery(user_id)
-
-    async def _seed_analyzed_game_with_positions(
-        self,
-        session: AsyncSession,
-        *,
-        user_id: int,
-        user_color: str,
-    ) -> Game:
-        """Seed a game that passes the full_evals_completed_at analyzed gate."""
-        _now = datetime.datetime.now(tz=datetime.timezone.utc)
-        return await _seed_game(
-            session, user_id=user_id, user_color=user_color, full_evals_completed_at=_now
-        )
-
-    @pytest.mark.asyncio
-    async def test_stats_aggregates_gated_equals_player_only_baseline(
-        self, db_session: AsyncSession
-    ) -> None:
-        """gated fetch_stats_aggregates == player-only baseline; ungated > baseline.
-
-        Sets up two games (white user + black user), inserts player-only flaws first
-        (the pre-phase baseline), records the aggregate counts, then inserts opponent
-        flaws (both-sides materialized). The gated aggregate must equal the baseline;
-        a direct ungated count must be strictly larger (opponent rows present).
-
-        Exercises both parity branches per RESEARCH Pitfall 5 and the D-04 invariant.
-        """
-        # White user game: player rows at even plies, opponent at odd plies
-        game_white = await self._seed_analyzed_game_with_positions(
-            db_session, user_id=99999, user_color="white"
-        )
-        # Black user game: player rows at odd plies, opponent at even plies
-        game_black = await self._seed_analyzed_game_with_positions(
-            db_session, user_id=99999, user_color="black"
-        )
-
-        # --- BASELINE: insert player-only flaws ---
-        # White user: player = even ply (2, 4)
-        await bulk_insert_game_flaws(
-            db_session,
-            [
-                _flaw_row(user_id=99999, game_id=game_white.id, ply=2, severity=_SEV_BLUNDER),
-                _flaw_row(user_id=99999, game_id=game_white.id, ply=4, severity=_SEV_MISTAKE),
-            ],
-        )
-        # Black user: player = odd ply (1, 3)
-        await bulk_insert_game_flaws(
-            db_session,
-            [
-                _flaw_row(user_id=99999, game_id=game_black.id, ply=1, severity=_SEV_BLUNDER),
-                _flaw_row(user_id=99999, game_id=game_black.id, ply=3, severity=_SEV_MISTAKE),
-            ],
-        )
-
-        analyzed_subq = await self._make_analyzed_subq(db_session, user_id=99999)
-
-        # Capture baseline (player-only rows → this is the pre-phase state)
-        baseline = await fetch_stats_aggregates(
-            db_session,
-            user_id=99999,
-            analyzed_game_ids_subq=analyzed_subq,
-            time_control=None,
-            platform=None,
-            rated=None,
-            opponent_type="all",
-            from_date=None,
-            to_date=None,
-            flaw_severity=None,
-            opponent_gap_min=None,
-            opponent_gap_max=None,
-            color=None,
-        )
-        baseline_mistake = baseline[0]
-        baseline_blunder = baseline[1]
-        baseline_total = baseline_mistake + baseline_blunder
-        assert baseline_total == 4, (
-            "baseline must reflect exactly 4 player flaws (2 per game, 2 games)"
-        )
-
-        # --- BOTH-SIDES: add opponent flaws (simulates Phase 113 kernel generalization) ---
-        # White user: opponent = odd ply (1, 3)
-        await bulk_insert_game_flaws(
-            db_session,
-            [
-                _flaw_row(user_id=99999, game_id=game_white.id, ply=1, severity=_SEV_BLUNDER),
-                _flaw_row(user_id=99999, game_id=game_white.id, ply=3, severity=_SEV_BLUNDER),
-            ],
-        )
-        # Black user: opponent = even ply (2, 4)
-        await bulk_insert_game_flaws(
-            db_session,
-            [
-                _flaw_row(user_id=99999, game_id=game_black.id, ply=2, severity=_SEV_BLUNDER),
-                _flaw_row(user_id=99999, game_id=game_black.id, ply=4, severity=_SEV_BLUNDER),
-            ],
-        )
-
-        # GATED result must equal the baseline (no regression invariant — D-04)
-        gated = await fetch_stats_aggregates(
-            db_session,
-            user_id=99999,
-            analyzed_game_ids_subq=analyzed_subq,
-            time_control=None,
-            platform=None,
-            rated=None,
-            opponent_type="all",
-            from_date=None,
-            to_date=None,
-            flaw_severity=None,
-            opponent_gap_min=None,
-            opponent_gap_max=None,
-            color=None,
-        )
-        gated_total = gated[0] + gated[1]  # mistake + blunder
-        assert gated_total == baseline_total, (
-            f"gated aggregate (D-04) must equal pre-phase baseline: "
-            f"got {gated_total}, expected {baseline_total} "
-            "(opponent rows must not inflate the stats panel)"
-        )
-
-        # UNGATED direct count — must exceed baseline (confirms opponent rows present)
-        ungated_count_row = (
-            await db_session.execute(
-                select(func.count())
-                .select_from(GameFlaw)
-                .where(
-                    GameFlaw.user_id == 99999,
-                    GameFlaw.game_id.in_([game_white.id, game_black.id]),
-                )
-            )
-        ).scalar_one()
-        assert ungated_count_row > baseline_total, (
-            f"ungated row count ({ungated_count_row}) must exceed player-only "
-            f"baseline ({baseline_total}) after both-sides materialization"
-        )
-
-    # NOTE: the per-game M+B trend (fetch_stats_trend) was removed in the flaw-trend
-    # rebuild — the trend chart now reads the games-table oracle columns
-    # (white_/black_blunders/mistakes/inaccuracies) via fetch_flaw_trend_rows, which are
-    # inherently player-only by color selection, so no game_flaws player-gating applies.
-
-
-# ---------------------------------------------------------------------------
 # TestFetchPageActiveEvalStatus (-k active_eval_status)
 # ---------------------------------------------------------------------------
 
@@ -1812,8 +1650,6 @@ def _compile_flaw_filter_sql(tactic_families: list[str], orientation: str | None
         return ""
     from sqlalchemy import and_
 
-    from app.models.game_flaw import GameFlaw
-
     stmt = select(GameFlaw.ply).where(and_(*clauses))
     return str(
         stmt.compile(
@@ -1918,7 +1754,6 @@ def _compile_flaw_filter_sql_129(
     from sqlalchemy import and_, select
     from sqlalchemy.dialects import postgresql
 
-    from app.models.game_flaw import GameFlaw
     from app.repositories.library_repository import build_flaw_filter_clauses
 
     kwargs: dict = dict(

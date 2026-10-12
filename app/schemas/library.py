@@ -22,7 +22,7 @@ from pydantic import BaseModel
 
 from app.schemas.normalization import TimeControlBucket
 from app.services.flaw_delta_zones import FlawDeltaMetric
-from app.services.flaws_service import FlawSeverity, FlawTag, SeverityCounts, TempoTag
+from app.services.flaws_service import FlawSeverity, FlawTag, SeverityCounts
 
 
 # ---------------------------------------------------------------------------
@@ -274,59 +274,6 @@ class LibraryGamesResponse(BaseModel):
 # ---------------------------------------------------------------------------
 
 
-class SeverityRates(BaseModel):
-    """Per-severity rates normalized two ways over the filtered analyzed-only set.
-
-    per_game        = severity_count / analyzed_n (flaws per analyzed game).
-    per_100_moves   = MACRO mean of per-game (severity_count / user_moves * 100), each
-                      game weighted equally. This matches the you-vs-opponent bullet's
-                      player_rate for mistake/blunder exactly (same per-game-then-mean
-                      aggregation, same floor/ceil(ply_count/2) denominator) so the card
-                      and the comparison tooltip agree, and the card sits consistently
-                      under the §5 benchmark band.
-
-    Both dicts are keyed by FlawSeverity (inaccuracy/mistake/blunder). Mistake/blunder
-    come from game_flaws (kernel thresholds). Inaccuracy comes from the per-game oracle
-    columns (games.white_/black_inaccuracies) — game_flaws never stores inaccuracies
-    (D-03) — so it has no bullet/benchmark counterpart and stands alone.
-    """
-
-    per_game: dict[FlawSeverity, float]
-    per_100_moves: dict[FlawSeverity, float]
-
-
-class TagDistribution(BaseModel):
-    """Tag distribution over the analyzed-set M+B FlawRecords (LIBG-09).
-
-    tempo                 = count of each tempo tag (at most one per flaw). Tempo
-                            counts sum to <= M+B flaws because flaws with unavailable
-                            clock data carry no tempo tag. The Flaw-Stats panel must
-                            show the unmeasured remainder (total M+B - sum(tempo))
-                            rather than normalizing the three measured segments to 100%
-                            (per flaw-tag-definitions.md §"Structural rule: tempo is optional").
-    phase_histogram       = count of flaws in each game phase (each flaw carries
-                            exactly one phase tag).
-    miss_rate             = miss M+B flaws / total M+B flaws; 0.0 when there are
-                            no M+B flaws. (D-01, Phase 107)
-    lucky_rate     = lucky M+B flaws / total M+B flaws; 0.0 when
-                            there are no M+B flaws. (D-01, Phase 107)
-    reversed_rate         = reversed M+B flaws / total M+B flaws; 0.0 when there
-                            are no M+B flaws. (Phase 110, D-03)
-    squandered_rate       = squandered M+B flaws / total M+B flaws; 0.0 when there
-                            are no M+B flaws. (Phase 110, D-03)
-    """
-
-    tempo: dict[TempoTag, int]
-    phase_histogram: dict[Literal["opening", "middlegame", "endgame"], int]
-    # D-01: Opportunity and Impact rates.
-    # Each = count / total M+B flaws; 0.0 when there are no M+B flaws.
-    # Flat floats (no nested dicts).
-    miss_rate: float
-    lucky_rate: float
-    reversed_rate: float
-    squandered_rate: float
-
-
 class FlawTrendPoint(BaseModel):
     """One ISO-week flaw-trend datapoint (oracle-sourced, per-100-moves macro).
 
@@ -345,19 +292,29 @@ class FlawTrendPoint(BaseModel):
     per_week_games: int
 
 
-class FlawStatsResponse(BaseModel):
-    """Response for GET /api/library/flaw-stats (LIBG-09).
+class FlawTrendTc(BaseModel):
+    """One time control's Flaws Timeline series (Phase 239 D-00k)."""
 
-    Stats over the filtered analyzed-only set. analyzed_pct / analyzed_n / total_n
-    state the explicit >=90%-coverage denominator so the panel never implies clean
-    games where evals are merely absent (criterion 4). trend_window is the rolling
-    window size (games) used for the trend chart.
+    tc: TimeControlBucket
+    points: list[FlawTrendPoint]
+
+
+class FlawStatsResponse(BaseModel):
+    """Response for GET /api/library/flaw-stats (LIBG-09, Phase 239 D-00k).
+
+    trend_by_tc: one Flaws Timeline series per time control that has trend points,
+        ordered bullet, blitz, rapid, classical; the client picks the selected TC's
+        series. Games with a NULL time_control_bucket cannot be placed on the switch
+        and are excluded. Empty when there is no analyzed game.
+    analyzed_pct / analyzed_n / total_n state the explicit coverage denominator so the
+    panel never implies clean games where evals are merely absent. trend_window is the
+    rolling window size (games) used for the trend chart.
+
+    Phase 239 removed the severity counts, severity rates, tag distribution and pooled
+    trend: nothing renders them any more (the tiles read the flaw-comparison bullets).
     """
 
-    per_severity_counts: SeverityCounts
-    rates: SeverityRates
-    tag_distribution: TagDistribution
-    trend: list[FlawTrendPoint]
+    trend_by_tc: list[FlawTrendTc]
     trend_window: int
     analyzed_pct: float
     analyzed_n: int

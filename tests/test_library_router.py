@@ -212,10 +212,7 @@ class TestGetFlawStats:
 
         body = resp.json()
         required = {
-            "per_severity_counts",
-            "rates",
-            "tag_distribution",
-            "trend",
+            "trend_by_tc",
             "trend_window",
             "analyzed_pct",
             "analyzed_n",
@@ -223,6 +220,9 @@ class TestGetFlawStats:
         }
         for field in required:
             assert field in body, f"Missing field: {field}"
+        # Phase 239 D-00k: the aggregates nothing renders any more are gone.
+        for removed in ("per_severity_counts", "rates", "tag_distribution", "trend"):
+            assert removed not in body, f"Removed field still present: {removed}"
 
     @pytest.mark.asyncio
     async def test_color_white_accepted(self, auth_headers: dict[str, str]) -> None:
