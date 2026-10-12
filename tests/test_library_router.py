@@ -212,10 +212,7 @@ class TestGetFlawStats:
 
         body = resp.json()
         required = {
-            "per_severity_counts",
-            "rates",
-            "tag_distribution",
-            "trend",
+            "trend_by_tc",
             "trend_window",
             "analyzed_pct",
             "analyzed_n",
@@ -223,6 +220,9 @@ class TestGetFlawStats:
         }
         for field in required:
             assert field in body, f"Missing field: {field}"
+        # Phase 239 D-00k: the aggregates nothing renders any more are gone.
+        for removed in ("per_severity_counts", "rates", "tag_distribution", "trend"):
+            assert removed not in body, f"Removed field still present: {removed}"
 
     @pytest.mark.asyncio
     async def test_color_white_accepted(self, auth_headers: dict[str, str]) -> None:
@@ -283,6 +283,55 @@ class TestGetFlawStats:
         black_n = resp_black.json()["total_n"]
 
         assert white_n + black_n <= total
+
+
+# ---------------------------------------------------------------------------
+# GET /library/flaw-comparison (Phase 239: per-TC payload)
+# ---------------------------------------------------------------------------
+
+
+class TestGetFlawComparison:
+    """Tests for GET /library/flaw-comparison."""
+
+    @pytest.mark.asyncio
+    async def test_returns_401_without_auth(self) -> None:
+        """Request without auth token returns 401."""
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=app), base_url="http://test"
+        ) as client:
+            resp = await client.get("/api/library/flaw-comparison")
+
+        assert resp.status_code == 401
+
+    @pytest.mark.asyncio
+    async def test_returns_per_tc_shape_with_auth(self, auth_headers: dict[str, str]) -> None:
+        """Authenticated request returns 200 with exactly the tcs/analyzed_gate keys."""
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=app), base_url="http://test"
+        ) as client:
+            resp = await client.get("/api/library/flaw-comparison", headers=auth_headers)
+
+        assert resp.status_code == 200
+        body = resp.json()
+        assert set(body) == {"tcs", "analyzed_gate"}
+        assert body["tcs"] == []  # a fresh user has no analyzed games
+        assert isinstance(body["analyzed_gate"], int)
+
+    @pytest.mark.asyncio
+    async def test_returns_422_when_from_date_after_to_date(
+        self, auth_headers: dict[str, str]
+    ) -> None:
+        """from_date > to_date is rejected with 422."""
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=app), base_url="http://test"
+        ) as client:
+            resp = await client.get(
+                "/api/library/flaw-comparison",
+                params={"from_date": "2025-06-01", "to_date": "2025-01-01"},
+                headers=auth_headers,
+            )
+
+        assert resp.status_code == 422
 
 
 # ---------------------------------------------------------------------------

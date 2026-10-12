@@ -1437,101 +1437,6 @@ async def fetch_page_active_eval_status(
     return result
 
 
-async def fetch_stats_aggregates(
-    session: AsyncSession,
-    user_id: int,
-    analyzed_game_ids_subq: Subquery,
-    *,
-    time_control: Sequence[str] | None,
-    platform: Sequence[str] | None,
-    rated: bool | None,
-    opponent_type: str,
-    from_date: datetime.date | None,
-    to_date: datetime.date | None,
-    flaw_severity: Sequence[str] | None,
-    opponent_gap_min: int | None,
-    opponent_gap_max: int | None,
-    color: str | None,
-) -> tuple[int, int, int, int, int, int, int, int, int, int, int, int]:
-    """Single game_flaws JOIN games scan producing M+B stats panel aggregates.
-
-    Returns a 12-tuple:
-      (mistake_count, blunder_count,
-       tempo_low_clock, tempo_hasty, tempo_unrushed,
-       is_reversed, is_miss, is_lucky, is_squandered,
-       phase_opening, phase_middlegame, phase_endgame)
-
-    All counts are over the analyzed+filtered game set.
-    User-scoped (T-108-08). The analyzed_game_ids_subq is now the authoritative
-    games.full_evals_completed_at column (reversal of D-03's coverage-subquery
-    decision, quick-task 260617-pu4): the old per-ply coverage recompute
-    full-scanned the user's game_positions partition on every call, producing
-    pathological tail latency (135s avg / 49-min max under an eval-drain in prod).
-    full_evals_completed_at is the same formula already materialized by the drain
-    and is MORE correct because it rescues short fully-analyzed games that the live
-    recompute over-excluded (~0.17% divergence, all in the short-game direction).
-    """
-    base_filtered_subq = _filtered_games_base(
-        user_id,
-        time_control=time_control,
-        platform=platform,
-        rated=rated,
-        opponent_type=opponent_type,
-        from_date=from_date,
-        to_date=to_date,
-        flaw_severity=flaw_severity,
-        opponent_gap_min=opponent_gap_min,
-        opponent_gap_max=opponent_gap_max,
-        color=color,
-    ).subquery("filtered")
-    filtered_analyzed_subq = (
-        select(base_filtered_subq.c.id)
-        .where(base_filtered_subq.c.id.in_(select(analyzed_game_ids_subq.c.game_id)))
-        .subquery("filtered_analyzed")
-    )
-
-    # D-04: Game JOIN required so Game.user_color is in scope for player_only_gate.
-    # After Phase 113 game_flaws contains both sides; this gate ensures the stats
-    # panel aggregates count only player flaws (no opponent inflation — R4).
-    stmt = (
-        select(
-            func.count().filter(GameFlaw.severity == _SEVERITY_INT["mistake"]),
-            func.count().filter(GameFlaw.severity == _SEVERITY_INT["blunder"]),
-            func.count().filter(GameFlaw.tempo == _TEMPO_INT["low-clock"]),
-            func.count().filter(GameFlaw.tempo == _TEMPO_INT["hasty"]),
-            func.count().filter(GameFlaw.tempo == _TEMPO_INT["unrushed"]),
-            func.count().filter(GameFlaw.is_reversed.is_(True)),
-            func.count().filter(GameFlaw.is_miss.is_(True)),
-            func.count().filter(GameFlaw.is_lucky.is_(True)),
-            func.count().filter(GameFlaw.is_squandered.is_(True)),
-            func.count().filter(GameFlaw.phase == _PHASE_INT["opening"]),
-            func.count().filter(GameFlaw.phase == _PHASE_INT["middlegame"]),
-            func.count().filter(GameFlaw.phase == _PHASE_INT["endgame"]),
-        )
-        .join(Game, Game.id == GameFlaw.game_id)
-        .where(
-            GameFlaw.user_id == user_id,
-            GameFlaw.game_id.in_(select(filtered_analyzed_subq.c.id)),
-            player_only_gate(GameFlaw.ply, Game.user_color),  # D-04 player gate (R4)
-        )
-    )
-    row = (await session.execute(stmt)).one()
-    return (
-        row[0],  # mistake_count
-        row[1],  # blunder_count
-        row[2],  # tempo_low_clock
-        row[3],  # tempo_hasty
-        row[4],  # tempo_unrushed
-        row[5],  # is_reversed
-        row[6],  # is_miss
-        row[7],  # is_lucky
-        row[8],  # is_squandered
-        row[9],  # phase_opening
-        row[10],  # phase_middlegame
-        row[11],  # phase_endgame
-    )
-
-
 async def fetch_flaw_trend_rows(
     session: AsyncSession,
     user_id: int,
@@ -1548,6 +1453,10 @@ async def fetch_flaw_trend_rows(
     color: str | None,
 ) -> list[Any]:
     """Per-game oracle blunder/mistake/inaccuracy counts + ply_count for the trend chart.
+
+    Phase 239 D-00k: each row also carries its time_control_bucket (tc) so the service
+    can build one series per time control. Games with a NULL bucket cannot be placed on
+    the TC switch and are excluded (Pitfall 8).
 
     Reads the games-table oracle columns (white_/black_blunders/mistakes/inaccuracies,
     picked by user_color) directly — NOT game_flaws. _compute_flaw_trend turns these
@@ -1585,6 +1494,7 @@ async def fetch_flaw_trend_rows(
             Game.played_at,
             Game.user_color,
             Game.ply_count,
+            Game.time_control_bucket.label("tc"),
             blunders.label("blunders"),
             mistakes.label("mistakes"),
             inaccuracies.label("inaccuracies"),
@@ -1595,6 +1505,7 @@ async def fetch_flaw_trend_rows(
             Game.played_at.isnot(None),
             Game.ply_count.isnot(None),
             Game.ply_count > 0,
+            Game.time_control_bucket.isnot(None),
             # Oracle-present gate: the user's-color move-quality columns are non-null.
             or_(
                 (Game.user_color == "white") & Game.white_blunders.isnot(None),
@@ -1602,110 +1513,6 @@ async def fetch_flaw_trend_rows(
             ),
         )
         .order_by(Game.played_at.asc())
-    )
-    rows = (await session.execute(stmt)).all()
-    return list(rows)
-
-
-async def fetch_stats_per_game_rates(
-    session: AsyncSession,
-    user_id: int,
-    analyzed_game_ids_subq: Subquery,
-    *,
-    time_control: Sequence[str] | None,
-    platform: Sequence[str] | None,
-    rated: bool | None,
-    opponent_type: str,
-    from_date: datetime.date | None,
-    to_date: datetime.date | None,
-    flaw_severity: Sequence[str] | None,
-    opponent_gap_min: int | None,
-    opponent_gap_max: int | None,
-    color: str | None,
-) -> list[Any]:
-    """Per-game player M/B counts + oracle inaccuracy for the macro per-100 stats rates.
-
-    One row per analyzed+filtered game: (user_moves, player_mistake, player_blunder,
-    player_inaccuracy). The service averages count/user_moves*100 across games (MACRO,
-    each game weighted equally) so the card's blunder/mistake per-100 equal the
-    you-vs-opponent bullet's player_rate EXACTLY — same anchor, same player_only_gate,
-    same floor/ceil(ply_count/2) denominator as fetch_flaw_comparison.
-
-    Inaccuracy comes from the oracle columns (games.white_/black_inaccuracies, D-03):
-    game_flaws never stores inaccuracies, so inaccuracy has no game_flaws/bullet
-    counterpart and stands alone (NULL oracle -> 0, mirroring _build_game_flaw_card).
-    Today those columns are lichess-only (NULL for chess.com / unanalyzed); they
-    self-populate once chess.com full-game Stockfish analysis lands.
-
-    LEFT JOIN game_flaws so zero-flaw analyzed games still contribute a 0-rate row.
-    Anchor excludes ply_count NULL/0 (divide-by-zero guard, Pitfall 2). Use
-    func.count(GameFlaw.ply) NOT func.count() so absent LEFT-JOIN rows count as 0.
-    """
-    base_filtered_subq = _filtered_games_base(
-        user_id,
-        time_control=time_control,
-        platform=platform,
-        rated=rated,
-        opponent_type=opponent_type,
-        from_date=from_date,
-        to_date=to_date,
-        flaw_severity=flaw_severity,
-        opponent_gap_min=opponent_gap_min,
-        opponent_gap_max=opponent_gap_max,
-        color=color,
-    ).subquery("filtered_pgr")
-
-    # Anchor: analyzed+filtered games with valid ply_count. user_moves and the oracle
-    # inaccuracy pick are Game-only expressions, carried into the GROUP BY below.
-    anchor_subq = (
-        select(
-            Game.id.label("game_id"),
-            Game.user_color,
-            case(
-                (Game.user_color == "white", func.floor(Game.ply_count / 2.0)),
-                else_=func.ceil(Game.ply_count / 2.0),
-            ).label("user_moves"),
-            case(
-                (Game.user_color == "white", Game.white_inaccuracies),
-                else_=Game.black_inaccuracies,
-            ).label("player_inaccuracy"),
-        )
-        .where(
-            Game.user_id == user_id,
-            Game.id.in_(select(base_filtered_subq.c.id)),
-            Game.id.in_(select(analyzed_game_ids_subq.c.game_id)),
-            Game.ply_count.isnot(None),
-            Game.ply_count > 0,
-        )
-        .subquery("anchor_pgr")
-    )
-
-    stmt = (
-        select(
-            anchor_subq.c.user_moves,
-            anchor_subq.c.player_inaccuracy,
-            func.count(GameFlaw.ply)
-            .filter(
-                player_only_gate(GameFlaw.ply, anchor_subq.c.user_color),
-                GameFlaw.severity == _SEVERITY_INT["mistake"],
-            )
-            .label("player_mistake"),
-            func.count(GameFlaw.ply)
-            .filter(
-                player_only_gate(GameFlaw.ply, anchor_subq.c.user_color),
-                GameFlaw.severity == _SEVERITY_INT["blunder"],
-            )
-            .label("player_blunder"),
-        )
-        .outerjoin(
-            GameFlaw,
-            (GameFlaw.game_id == anchor_subq.c.game_id) & (GameFlaw.user_id == user_id),
-        )
-        .group_by(
-            anchor_subq.c.game_id,
-            anchor_subq.c.user_moves,
-            anchor_subq.c.player_inaccuracy,
-        )
     )
     rows = (await session.execute(stmt)).all()
     return list(rows)
@@ -1962,6 +1769,64 @@ async def count_filtered_and_analyzed(
     return total_n, analyzed_n
 
 
+async def count_analyzed_by_tc(
+    session: AsyncSession,
+    user_id: int,
+    *,
+    time_control: Sequence[str] | None,
+    platform: Sequence[str] | None,
+    rated: bool | None,
+    opponent_type: str,
+    from_date: datetime.date | None,
+    to_date: datetime.date | None,
+    flaw_severity: Sequence[str] | None = None,
+    opponent_gap_min: int | None = None,
+    opponent_gap_max: int | None = None,
+    color: str | None = None,
+    tactic_families: Sequence[str] | None = None,
+    tactic_filter_orientation: TacticOrientation = "either",
+) -> dict[str, int]:
+    """Return {time_control_bucket: analyzed game count} over the filtered set (Phase 239 D-02).
+
+    Same population as count_filtered_and_analyzed's analyzed_n (the filtered base
+    intersected with _analyzed_game_ids_subquery), split by Game.time_control_bucket.
+    The sidebar time-control filter is already applied by apply_game_filters inside
+    _filtered_games_base, so "TCs allowed by the filter" (D-02) falls out for free.
+    Games with a NULL time_control_bucket (some pasted PGNs) cannot be placed on the
+    TC switch and are excluded (Pitfall 8). Only buckets with a positive count are
+    returned. The tactic keywords exist so the tactic comparison can reuse this
+    function unchanged. User-scoped.
+    """
+    base_subq = _filtered_games_base(
+        user_id,
+        time_control=time_control,
+        platform=platform,
+        rated=rated,
+        opponent_type=opponent_type,
+        from_date=from_date,
+        to_date=to_date,
+        flaw_severity=flaw_severity,
+        opponent_gap_min=opponent_gap_min,
+        opponent_gap_max=opponent_gap_max,
+        color=color,
+        tactic_families=tactic_families,
+        tactic_orientation=tactic_filter_orientation,
+    ).subquery("filtered_tc")
+    analyzed_subq = _analyzed_game_ids_subquery(user_id)
+    stmt = (
+        select(Game.time_control_bucket, func.count(Game.id))
+        .where(
+            Game.user_id == user_id,
+            Game.id.in_(select(base_subq.c.id)),
+            Game.id.in_(select(analyzed_subq.c.game_id)),
+            Game.time_control_bucket.isnot(None),
+        )
+        .group_by(Game.time_control_bucket)
+    )
+    rows = (await session.execute(stmt)).all()
+    return {str(bucket): int(n) for bucket, n in rows if n > 0}
+
+
 async def analyzed_game_ids(
     session: AsyncSession,
     user_id: int,
@@ -2027,13 +1892,15 @@ async def fetch_flaw_comparison(
     opponent_gap_max: int | None,
     color: str | None,
 ) -> list[Any]:
-    """Per-game player/opp counts for all 15 metrics over the analyzed+filtered set.
+    """Per-game player/opp counts for the 12 metrics over the analyzed+filtered set.
 
     LEFT JOIN anchor: analyzed+filtered games list → LEFT JOIN game_flaws so games
     with zero flaws contribute a zero-delta row (§5 all-analyzed-games basis,
     Pitfall 1 / FLAWCMP-01).
-    Returns one row per (game_id, user_moves) with 30 COUNT columns (15 player +
-    15 opp). Python aggregates mean + CI per metric.
+    Returns one row per (game_id, tc, user_moves) with 24 COUNT columns (12 player +
+    12 opp). The tc column (Phase 239 D-02) lets the service bucket rows per time
+    control in Python; games with a NULL time_control_bucket are excluded.
+    Python aggregates mean + CI per metric.
 
     Pitfall 2 (divide-by-zero): games with ply_count IS NULL or ply_count = 0
     are excluded at the anchor level — _analyzed_game_ids_subquery does NOT
@@ -2060,6 +1927,7 @@ async def fetch_flaw_comparison(
         select(
             Game.id.label("game_id"),
             Game.user_color,
+            Game.time_control_bucket.label("tc"),
             case(
                 (Game.user_color == "white", func.floor(Game.ply_count / 2.0)),
                 else_=func.ceil(Game.ply_count / 2.0),
@@ -2071,30 +1939,20 @@ async def fetch_flaw_comparison(
             Game.id.in_(select(analyzed_game_ids_subq.c.game_id)),
             Game.ply_count.isnot(None),
             Game.ply_count > 0,
+            # Phase 239 Pitfall 8: a NULL bucket cannot be placed on the TC switch.
+            Game.time_control_bucket.isnot(None),
         )
         .subquery("anchor")
     )
 
-    # LEFT JOIN game_flaws — 30 COUNT(GameFlaw.ply) FILTER columns (15 metrics × 2 sides).
+    # LEFT JOIN game_flaws — 24 COUNT(GameFlaw.ply) FILTER columns (12 metrics × 2 sides).
     # func.count(GameFlaw.ply) (not func.count()) ensures NULL ply from LEFT JOIN miss = 0.
     stmt = (
         select(
             anchor_subq.c.game_id,
+            anchor_subq.c.tc,
             anchor_subq.c.user_moves,
             # --- Severity family ---
-            # flaw_rate: mistake OR blunder
-            func.count(GameFlaw.ply)
-            .filter(
-                ~is_opponent_expr(GameFlaw.ply, anchor_subq.c.user_color),
-                GameFlaw.severity.in_([_SEVERITY_INT["mistake"], _SEVERITY_INT["blunder"]]),
-            )
-            .label("player_flaw_rate"),
-            func.count(GameFlaw.ply)
-            .filter(
-                is_opponent_expr(GameFlaw.ply, anchor_subq.c.user_color),
-                GameFlaw.severity.in_([_SEVERITY_INT["mistake"], _SEVERITY_INT["blunder"]]),
-            )
-            .label("opp_flaw_rate"),
             # mistake
             func.count(GameFlaw.ply)
             .filter(
@@ -2255,43 +2113,17 @@ async def fetch_flaw_comparison(
                 GameFlaw.is_squandered.is_(True),
             )
             .label("opp_squandered"),
-            # --- Combo family ---
-            # hasty_miss: hasty AND miss
-            func.count(GameFlaw.ply)
-            .filter(
-                ~is_opponent_expr(GameFlaw.ply, anchor_subq.c.user_color),
-                GameFlaw.tempo == _TEMPO_INT["hasty"],
-                GameFlaw.is_miss.is_(True),
-            )
-            .label("player_hasty_miss"),
-            func.count(GameFlaw.ply)
-            .filter(
-                is_opponent_expr(GameFlaw.ply, anchor_subq.c.user_color),
-                GameFlaw.tempo == _TEMPO_INT["hasty"],
-                GameFlaw.is_miss.is_(True),
-            )
-            .label("opp_hasty_miss"),
-            # low_clock_miss: low-clock AND miss (D-12: ships despite degenerate zone)
-            func.count(GameFlaw.ply)
-            .filter(
-                ~is_opponent_expr(GameFlaw.ply, anchor_subq.c.user_color),
-                GameFlaw.tempo == _TEMPO_INT["low-clock"],
-                GameFlaw.is_miss.is_(True),
-            )
-            .label("player_low_clock_miss"),
-            func.count(GameFlaw.ply)
-            .filter(
-                is_opponent_expr(GameFlaw.ply, anchor_subq.c.user_color),
-                GameFlaw.tempo == _TEMPO_INT["low-clock"],
-                GameFlaw.is_miss.is_(True),
-            )
-            .label("opp_low_clock_miss"),
         )
         .outerjoin(
             GameFlaw,
             (GameFlaw.game_id == anchor_subq.c.game_id) & (GameFlaw.user_id == user_id),
         )
-        .group_by(anchor_subq.c.game_id, anchor_subq.c.user_moves, anchor_subq.c.user_color)
+        .group_by(
+            anchor_subq.c.game_id,
+            anchor_subq.c.tc,
+            anchor_subq.c.user_moves,
+            anchor_subq.c.user_color,
+        )
     )
     rows = (await session.execute(stmt)).all()
     return list(rows)
