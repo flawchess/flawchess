@@ -184,6 +184,49 @@ Plans:
 **Wave 7** *(blocked on Wave 6 completion)*
 - [x] 238-09-PLAN.md — Pre-merge gate, final stale-reference grep and latency, Claude-run desktop + mobile UAT and live Shelly smoke (wave 7)
 
+### Phase 239: Library Stats You-vs-Opponents Redesign (SEED-198)
+
+**Goal**: Make the Library Stats tab (below the Flaw Stats tiles and the Flaws Timeline) readable for
+non-statisticians. Today every one of the 15 context tags and 12+ tactic motifs is the same `MiniBulletChart`
+(red/green halves, blue IQR band, CI whiskers, inverted-sign delta, mixed per-100-moves vs per-game units),
+tactic rows have no typical band at all, and the plain-language "You: x, opponents: y" sentence hides in the
+hover popover. Direction is the owner-approved sketch 010 round 5
+(`.planning/sketches/010-library-stats-you-vs-opponents/`; locked decisions 1-12 in SEED-198), kept
+consistent with Phase 238 (Endgame Stats).
+
+- **1. One gap bar** for every you-vs-opponent metric: 0 tick in the middle, grey benchmark IQR of the gap
+  drawn where it is, one red/blue/green dot, better always to the right, saturating outside the band. No
+  red/green halves, no CI whiskers. The gap reads as words ("1.7 fewer", "same").
+- **2. Only the gap on the page**; a Search icon opens a `RankedMetricPopover`-style popover (definition,
+  You/Opponents, typical range + verdict, basis, greyed counts / 95% CI / p-value below a separator).
+- **3. Tiles:** Blunders and Mistakes only, each with an "Opponents" line and a gap bar; Inaccuracies tile,
+  Severity card and "Flaw rate" retire.
+- **4. Context tags:** combos removed; four cards (Clock | Game phase, Opponent errors | Lost advantages)
+  with one-line hints, plus a "What stands out" card (top 3 strengths / weaknesses by band-width distance).
+- **5. Tactic motifs:** three tables in `TACTIC_GROUPS` order (Advanced collapsed by default), Missed |
+  Allowed gap-bar columns per 100 games, zero-count motifs listed under the table; "More tactics" accordion
+  and the top-6 ranking (D-14) retire. Low-sample cells (< 40 flaws) faded, no verdict.
+- **6. Synced TC switch** in every section (`TcSwitch` / `useEndgameStatsTc` pattern).
+- **7. Benchmark tactic IQRs:** extend `/benchmarks` §5 (`scripts/benchmarks/chapter5.py`) with per-family
+  Missed/Allowed paired-delta zones on the fully analyzed sample only (same methodology as the 15 flaw-delta
+  zones, collapse verdict, viability table), then a tactic zone registry next to
+  `app/services/flaw_delta_zones.py` wired into `get_tactic_comparison`. Gated on the blitz full-analysis
+  benchmark sample finishing.
+- **Guardrails:** Flaws Timeline, ELO Ratings, Results Breakdown and the coverage badge unchanged; "flaws"
+  wording, never "events"; check Openings before deleting `MiniBulletChart` / `FlawBulletPopover`; mobile
+  and desktop UAT.
+- **Open for discuss:** TC switch vs the sidebar TC filter (and the pooled Flaws Timeline); default TC and
+  TCs below the 20-game gate; tactic zones per TC×Elo or pooled; ship tables band-less before the IQRs or
+  wait; tactics in "What stands out"; low-sample threshold calibration.
+
+**Depends on**: Phase 238 (`PercentileBar`, `RankedMetricPopover`, `TcSwitch`, `useEndgameStatsTc` patterns); blitz full-analysis benchmark sample for the tactic IQRs
+**Requirements**: TBD (coverage contract = CONTEXT decisions from discuss-phase)
+**Plans:** 0 plans
+**Status**: Not planned yet
+
+Plans:
+- [ ] TBD (run /gsd-discuss-phase 239)
+
 Phase detail for every shipped milestone lives in `milestones/vX.Y-ROADMAP.md`, its phase directories in `milestones/vX.Y-phases/`, and the per-milestone summaries in [MILESTONES.md](MILESTONES.md).
 
 ## Backlog
