@@ -221,14 +221,14 @@ consistent with Phase 238 (Endgame Stats).
 
 **Depends on**: Phase 238 (`PercentileBar`, `RankedMetricPopover`, `TcSwitch`, `useEndgameStatsTc` patterns); blitz full-analysis benchmark sample for the tactic IQRs
 **Requirements**: TBD (coverage contract = CONTEXT decisions from discuss-phase)
-**Plans:** 10 plans
+**Plans:** 3/10 plans executed
 **Status**: Planned
 
 Plans:
 **Wave 1**
-- [ ] 239-01-PLAN.md — §5 code on the full-analysis lane: 12 flaw + 38 tactic metrics, floor, noise diagnostic, §5-only CLI, SKILL.md, smoke wall time recorded (wave 1)
-- [ ] 239-02-PLAN.md — Backend per-TC flaw comparison + per-TC timeline, per-zone-TC flaw registry, retired combos/flaw rate/aggregates (wave 1)
-- [ ] 239-03-PLAN.md — Frontend building blocks: gap-bar math + GapBar, shared popover shell + GapPopover/GapRow, TC store factory + Library TC hook (wave 1)
+- [x] 239-01-PLAN.md — §5 code on the full-analysis lane: 12 flaw + 38 tactic metrics, floor, noise diagnostic, §5-only CLI, SKILL.md, smoke wall time recorded (wave 1)
+- [x] 239-02-PLAN.md — Backend per-TC flaw comparison + per-TC timeline, per-zone-TC flaw registry, retired combos/flaw rate/aggregates (wave 1)
+- [x] 239-03-PLAN.md — Frontend building blocks: gap-bar math + GapBar, shared popover shell + GapPopover/GapRow, TC store factory + Library TC hook (wave 1)
 
 **Wave 2** *(blocked on Wave 1 completion)*
 - [ ] 239-04-PLAN.md — Backend per-TC tactic comparison per 100 games, fixed order, tactic zone registry (wave 2)
