@@ -26,6 +26,7 @@ import {
 } from '@/lib/liveFlaw';
 import { uciToSquares } from '@/lib/sanToSquares';
 import {
+  ARROW_OPACITY,
   STOCKFISH_ARROW_RGB,
   STOCKFISH_PRIMARY_ALPHA,
   STOCKFISH_SECONDARY_ALPHA_MAX,
@@ -98,7 +99,9 @@ export function stockfishSecondaryArrowColor(grade: EngineLineGrade | null): str
  * The corner badge for a graded arrow target. Every badge is as translucent as the
  * arrow it sits on: `translucent` badges (on a graded secondary arrow) take the grade
  * alpha as group opacity, badges on the solid top-move arrow take that arrow's alpha
- * (STOCKFISH_PRIMARY_ALPHA, owner follow-up to quick 261012-a6m).
+ * (STOCKFISH_PRIMARY_ALPHA, owner follow-up to quick 261012-a6m). Both are scaled by
+ * the board's ARROW_OPACITY, the extra dimming ChessBoard applies to every arrow, so the
+ * badge's effective opacity equals its arrow's.
  */
 export function engineBadgeMarker(
   square: string,
@@ -111,7 +114,8 @@ export function engineBadgeMarker(
       : grade.quality === 'good'
         ? { square, good: true }
         : { square, severity: grade.quality };
-  return { ...marker, opacity: translucent ? grade.alpha : STOCKFISH_PRIMARY_ALPHA };
+  const arrowAlpha = translucent ? grade.alpha : STOCKFISH_PRIMARY_ALPHA;
+  return { ...marker, opacity: arrowAlpha * ARROW_OPACITY };
 }
 
 /**

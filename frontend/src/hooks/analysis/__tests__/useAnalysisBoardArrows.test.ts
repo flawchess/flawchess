@@ -21,6 +21,7 @@ import {
   BEST_MOVE_ARROW,
   FLAWCHESS_ENGINE_ARROW,
   FLAWCHESS_SECONDARY_LINE,
+  ARROW_OPACITY,
   STOCKFISH_PRIMARY_ALPHA,
   STOCKFISH_SECONDARY_LINE,
 } from '@/lib/theme';
@@ -224,9 +225,9 @@ describe('useAnalysisBoardArrows — Stockfish arrow grades and badges (quick 26
     const e4 = boardSquareMarkers.find((m) => m.square === 'e4');
     const d4 = boardSquareMarkers.find((m) => m.square === 'd4');
     const f3 = boardSquareMarkers.find((m) => m.square === 'f3');
-    expect(e4).toEqual({ square: 'e4', best: true, opacity: STOCKFISH_PRIMARY_ALPHA });
-    expect(d4?.opacity).toBe(g1?.alpha);
-    expect(f3?.opacity).toBe(g2?.alpha);
+    expect(e4).toEqual({ square: 'e4', best: true, opacity: STOCKFISH_PRIMARY_ALPHA * ARROW_OPACITY });
+    expect(d4?.opacity).toBe((g1?.alpha ?? 0) * ARROW_OPACITY);
+    expect(f3?.opacity).toBe((g2?.alpha ?? 0) * ARROW_OPACITY);
     expect(f3?.severity).toBe('blunder');
   });
 

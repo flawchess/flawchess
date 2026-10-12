@@ -406,6 +406,10 @@ export const ARROW_NEUTRAL = '#6B7280';  // Tailwind gray-500 / matches WDL_BORD
 // built-in alpha so it reads as a translucent "engine suggestion" pointer — visually
 // secondary to the red flaw-move arrow it sits beside on the Flaw card, and a calm
 // overlay on the scrubbed Game-card board. rgba (not oklch) so the alpha is explicit.
+// Static group opacity ChessBoard paints every board arrow at, on top of the arrow
+// color's own alpha. Engine quality badges multiply their opacity by it too so a badge
+// reads exactly as translucent as its arrow (quick 261012-a6m owner follow-up).
+export const ARROW_OPACITY = 0.75;
 // RGB triplet shared by BEST_MOVE_ARROW and the Stockfish secondary arrows (graded ones
 // are `rgba(${STOCKFISH_ARROW_RGB}, alpha)`, quick 261012-a6m).
 export const STOCKFISH_ARROW_RGB = '37, 99, 235';  // Tailwind blue-600

@@ -37,6 +37,7 @@ import {
   MOVE_QUALITY_INACCURACY,
   MOVE_QUALITY_MISTAKE,
   NEXT_MOVE_ARROW,
+  ARROW_OPACITY,
   STOCKFISH_PRIMARY_ALPHA,
   STOCKFISH_SECONDARY_ALPHA_MAX,
   STOCKFISH_SECONDARY_LINE,
@@ -514,7 +515,7 @@ describe('buildTrainFreePlayOverlay (Phase 200 UAT round 5, Phase 228 D-13/D-15,
       endSquare: 'e5',
       color: TRAIN_BEST_MOVE_ARROW,
     });
-    expect(badges).toEqual([{ square: 'e5', best: true, opacity: STOCKFISH_PRIMARY_ALPHA }]);
+    expect(badges).toEqual([{ square: 'e5', best: true, opacity: STOCKFISH_PRIMARY_ALPHA * ARROW_OPACITY }]);
   });
 
   it('count 3: rank 0 solid blue, ranks 1-2 graded alpha with same-opacity badges, one shared width, rank 0 last', () => {
@@ -532,9 +533,9 @@ describe('buildTrainFreePlayOverlay (Phase 200 UAT round 5, Phase 228 D-13/D-15,
     // Primary pushed last so it paints on top within its width tier.
     expect(arrows[arrows.length - 1]?.layerKey).toBe('free-0');
     expect(badges.map((b) => b.square)).toEqual(['e5', 'c5', 'f6']);
-    expect(badges[0]).toEqual({ square: 'e5', best: true, opacity: STOCKFISH_PRIMARY_ALPHA });
-    expect(badges[1]?.opacity).toBe(g1.alpha);
-    expect(badges[2]?.opacity).toBe(g2.alpha);
+    expect(badges[0]).toEqual({ square: 'e5', best: true, opacity: STOCKFISH_PRIMARY_ALPHA * ARROW_OPACITY });
+    expect(badges[1]?.opacity).toBe((g1.alpha ?? 0) * ARROW_OPACITY);
+    expect(badges[2]?.opacity).toBe((g2.alpha ?? 0) * ARROW_OPACITY);
     expect(badges[2]?.severity).toBe(g2.quality);
   });
 
@@ -579,7 +580,7 @@ describe('buildTrainStepOverlay (quick 261009-por, quick 261012-a6m D-04/D-08)',
     const { arrows, badges } = buildTrainStepOverlay('g1f3', [pv(1, 'g1f3')], 1, GRADE_FEN);
     expect(arrows).toHaveLength(1);
     expect(arrows[0]).toMatchObject({ layerKey: 'step-next', color: TRAIN_BEST_MOVE_ARROW });
-    expect(badges).toEqual([{ square: 'f3', best: true, opacity: STOCKFISH_PRIMARY_ALPHA }]);
+    expect(badges).toEqual([{ square: 'f3', best: true, opacity: STOCKFISH_PRIMARY_ALPHA * ARROW_OPACITY }]);
   });
 
   it('a disagreeing engine move draws a secondary under the line arrow, even at depth 1 (no arrow gate, no badge)', () => {
@@ -605,8 +606,8 @@ describe('buildTrainStepOverlay (quick 261009-por, quick 261012-a6m D-04/D-08)',
     const g1 = gradeOf(lines, 1);
     // Preview (primary alpha, graded) is first, then the live rank 0 (translucent star).
     expect(badges).toEqual([
-      { square: 'f3', severity: g1.quality, opacity: STOCKFISH_PRIMARY_ALPHA },
-      { square: 'c3', best: true, opacity: g0.alpha },
+      { square: 'f3', severity: g1.quality, opacity: STOCKFISH_PRIMARY_ALPHA * ARROW_OPACITY },
+      { square: 'c3', best: true, opacity: g0.alpha * ARROW_OPACITY },
     ]);
     expect(g0.alpha).toBe(STOCKFISH_SECONDARY_ALPHA_MAX);
     const live = arrows.find((a) => a.layerKey === 'step-live-0');
@@ -669,7 +670,7 @@ describe('buildTrainStepOverlay (quick 261009-por, quick 261012-a6m D-04/D-08)',
     expect(arrows).toHaveLength(1);
     expect(arrows[0]).toMatchObject({ color: stockfishSecondaryArrowColor(gradeOf(lines, 0)) });
     expect(arrows.some((a) => a.layerKey === 'step-next')).toBe(false);
-    expect(badges).toEqual([{ square: 'c3', best: true, opacity: STOCKFISH_SECONDARY_ALPHA_MAX }]);
+    expect(badges).toEqual([{ square: 'c3', best: true, opacity: STOCKFISH_SECONDARY_ALPHA_MAX * ARROW_OPACITY }]);
   });
 
   it('a count above the available lines yields only the available arrows', () => {

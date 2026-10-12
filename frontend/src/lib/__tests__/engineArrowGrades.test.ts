@@ -16,6 +16,7 @@ import type { PvLine } from '@/hooks/uciParser';
 import type { SquareMarker } from '@/components/board/ChessBoard';
 import {
   STOCKFISH_ARROW_RGB,
+  ARROW_OPACITY,
   STOCKFISH_PRIMARY_ALPHA,
   STOCKFISH_SECONDARY_ALPHA_MAX,
   STOCKFISH_SECONDARY_ALPHA_MIN,
@@ -117,19 +118,19 @@ describe('stockfishSecondaryArrowColor', () => {
 
 describe('engineBadgeMarker', () => {
   it('maps quality to the marker glyph', () => {
-    expect(engineBadgeMarker('e4', { quality: 'best', alpha: 0.6 }, false)).toEqual({ square: 'e4', best: true, opacity: STOCKFISH_PRIMARY_ALPHA });
-    expect(engineBadgeMarker('e4', { quality: 'good', alpha: 0.6 }, false)).toEqual({ square: 'e4', good: true, opacity: STOCKFISH_PRIMARY_ALPHA });
+    expect(engineBadgeMarker('e4', { quality: 'best', alpha: 0.6 }, false)).toEqual({ square: 'e4', best: true, opacity: STOCKFISH_PRIMARY_ALPHA * ARROW_OPACITY });
+    expect(engineBadgeMarker('e4', { quality: 'good', alpha: 0.6 }, false)).toEqual({ square: 'e4', good: true, opacity: STOCKFISH_PRIMARY_ALPHA * ARROW_OPACITY });
     expect(engineBadgeMarker('e4', { quality: 'mistake', alpha: 0.6 }, false)).toEqual({
       square: 'e4',
       severity: 'mistake',
-      opacity: STOCKFISH_PRIMARY_ALPHA,
+      opacity: STOCKFISH_PRIMARY_ALPHA * ARROW_OPACITY,
     });
   });
 
   it('translucent sets opacity to the grade alpha, solid to the primary arrow alpha', () => {
     const grade: EngineLineGrade = { quality: 'good', alpha: 0.4 };
-    expect(engineBadgeMarker('d4', grade, true).opacity).toBe(0.4);
-    expect(engineBadgeMarker('d4', grade, false).opacity).toBe(STOCKFISH_PRIMARY_ALPHA);
+    expect(engineBadgeMarker('d4', grade, true).opacity).toBe(0.4 * ARROW_OPACITY);
+    expect(engineBadgeMarker('d4', grade, false).opacity).toBe(STOCKFISH_PRIMARY_ALPHA * ARROW_OPACITY);
   });
 });
 
@@ -140,9 +141,9 @@ describe('buildRankedEngineBadges', () => {
   it('rank 0 is a primary-alpha star, ranks 1+ translucent with their alpha, ascending order', () => {
     const badges = buildRankedEngineBadges(lines, 3, grades);
     expect(badges.map((b) => b.square)).toEqual(['e4', 'd4', 'f3']);
-    expect(badges[0]).toEqual({ square: 'e4', best: true, opacity: STOCKFISH_PRIMARY_ALPHA });
-    expect(badges[1]?.opacity).toBe(grades[1]?.alpha);
-    expect(badges[2]?.opacity).toBe(grades[2]?.alpha);
+    expect(badges[0]).toEqual({ square: 'e4', best: true, opacity: STOCKFISH_PRIMARY_ALPHA * ARROW_OPACITY });
+    expect(badges[1]?.opacity).toBe((grades[1]?.alpha ?? 0) * ARROW_OPACITY);
+    expect(badges[2]?.opacity).toBe((grades[2]?.alpha ?? 0) * ARROW_OPACITY);
     expect(badges[2]?.severity).toBe('blunder');
   });
 

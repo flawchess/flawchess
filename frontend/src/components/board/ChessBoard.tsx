@@ -7,6 +7,7 @@ import {
   BOARD_DARK_SQUARE,
   BOARD_LIGHT_SQUARE,
   MOVE_HIGHLIGHT_SQUARE,
+  ARROW_OPACITY,
 } from '../../lib/theme';
 import { HIGHLIGHT_PULSE_DURATION_MS, HIGHLIGHT_PULSE_ITERATIONS } from '../../lib/highlightPulse';
 import { DepthLabel, SquareMarkerGroup } from './boardMarkers';
@@ -137,7 +138,6 @@ const MAX_SHAFT_WIDTH = 0.26;
 const MIN_HEAD_WIDTH = 0.25;
 const MAX_HEAD_WIDTH = 0.65;
 const HEAD_LENGTH_RATIO = 0.7; // head length = head width * this
-const ARROW_OPACITY = 0.75;
 // Blue arrows (in-between zone OR low-data OR low-confidence) render much
 // fainter at rest so reliable red/green arrows visually dominate. Hover bumps
 // any arrow back to ARROW_HOVER_OPACITY regardless of color.

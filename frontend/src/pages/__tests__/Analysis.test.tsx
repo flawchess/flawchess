@@ -23,6 +23,7 @@ import {
   BEST_MOVE_ARROW,
   MAIA_ACCENT,
   GREAT_ACCENT,
+  ARROW_OPACITY,
   STOCKFISH_SECONDARY_ALPHA_MIN,
   STOCKFISH_SECONDARY_LINE,
 } from '@/lib/theme';
@@ -1353,10 +1354,10 @@ describe('Settings drive search breadth, grading union and arrows (Phase 228, D-
       expect(solid).toHaveLength(1);
       expect(translucent).toHaveLength(1);
       expect(solid[0]?.getAttribute('d')).not.toBe(translucent[0]?.getAttribute('d'));
-      // The badge on that arrow carries the SAME alpha as its marker group opacity, so
+      // The badge on that arrow carries its alpha (times the board ARROW_OPACITY) as marker group opacity, so
       // the D-08 alpha reaches ChessBoard on both the arrow and the badge.
       expect(
-        document.querySelectorAll(`g[opacity="${STOCKFISH_SECONDARY_ALPHA_MIN}"]`).length,
+        document.querySelectorAll(`g[opacity="${STOCKFISH_SECONDARY_ALPHA_MIN * ARROW_OPACITY}"]`).length,
       ).toBeGreaterThan(0);
     } finally {
       clientWidthSpy.mockRestore();
