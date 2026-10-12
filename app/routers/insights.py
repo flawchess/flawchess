@@ -2,8 +2,9 @@
 
 Endpoints (mounted under /api):
 - POST /insights/endgame: returns EndgameInsightsResponse with the LLM report.
-- GET /insights/endgame/cached: cache-only lookup of the stored report (shared
-  validity rule with the POST path, incl. the 24h regeneration cooldown).
+- GET /insights/endgame/cached: the user's latest stored report (never
+  invalidated; a 404 means no report exists yet, which triggers the frontend's
+  one-time auto-generate).
 
 The router is deliberately thin per CONTEXT.md D-33: all cache /
 LLM-call / logging logic lives in app.services.insights_llm.generate_insights().
@@ -84,23 +85,21 @@ async def get_cached_endgame_insights(
     session: Annotated[AsyncSession, Depends(get_async_session)],
     user: Annotated[User, Depends(current_active_user)],
 ) -> EndgameInsightsResponse:
-    """Cache-only lookup of the Tier-1 structural insights cache.
+    """Return the user's latest stored report, without invoking the LLM.
 
-    Shares the validity rule with `generate_insights` via
-    `insights_llm.get_cached_insights_response`, without invoking compute_findings
-    or the LLM, and without consuming any rate-limit budget. Used by the frontend
-    to auto-render a previously-generated report when the Endgames page mounts.
+    Unlike the POST path, the report is never invalidated by a newer import or by
+    age (quick 261012-qiz): the frontend auto-generates only when this returns 404,
+    so only the first report is generated automatically and every later refresh is
+    an explicit "Update Insights" click. Consumes no rate-limit budget.
 
-    Takes no filter parameters (Phase 238 D-04); the cache key is
+    Takes no filter parameters (Phase 238 D-04); the lookup key is
     (user_id, prompt_version, model, INSIGHTS_CACHE_OPPONENT_STRENGTH).
 
     Returns:
-        200: EndgameInsightsResponse(status='cache_hit') when a report younger
-             than the 24h regeneration cooldown exists, or an older one with no
-             import with new games since it was written.
-        404: when no qualifying cache row exists.
+        200: EndgameInsightsResponse(status='cache_hit') with the latest report.
+        404: when the user has no report for the current prompt version and model.
     """
-    response = await insights_llm.get_cached_insights_response(session, user.id)
+    response = await insights_llm.get_latest_insights_response(session, user.id)
     if response is None:
         raise HTTPException(status_code=404, detail="no_cached_report")
     return response

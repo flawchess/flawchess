@@ -718,43 +718,44 @@ class TestCachedEndpoint:
             await session.execute(delete(ImportJob).where(ImportJob.id == job_id))
             await session.commit()
 
+    async def _get_cached(self, headers: dict[str, str]) -> httpx.Response:
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=app), base_url="http://test"
+        ) as client:
+            return await client.get(CACHED_ENDPOINT, headers=headers)
+
     @pytest.mark.asyncio
-    async def test_invalidated_by_recent_import(
+    async def test_stale_report_still_served_after_import(
         self,
         authed_user_with_session: tuple[dict[str, str], User],
         test_engine: AsyncEngine,
     ) -> None:
-        """A cache row older than the 24h regeneration cooldown is invalidated when
-        an import with games > 0 lands after it. Endpoint returns 404."""
-        headers, user = authed_user_with_session
-        job_id = await self._seed_row_and_import(
-            test_engine, user, insights_llm.INSIGHTS_REGEN_COOLDOWN + datetime.timedelta(hours=2)
-        )
-        try:
-            async with httpx.AsyncClient(
-                transport=httpx.ASGITransport(app=app), base_url="http://test"
-            ) as client:
-                response = await client.get(CACHED_ENDPOINT, headers=headers)
-        finally:
-            await self._delete_import(test_engine, job_id)
-
-        assert response.status_code == 404
-
-    @pytest.mark.asyncio
-    async def test_recent_import_within_cooldown_still_served(
-        self,
-        authed_user_with_session: tuple[dict[str, str], User],
-        test_engine: AsyncEngine,
-    ) -> None:
-        """A cache row younger than the 24h cooldown is served even though an
-        import with games > 0 landed after it."""
+        """Quick 261012-qiz: an import with games > 0 after the report does NOT
+        404 the display lookup (a 404 would auto-generate a second report); the
+        user refreshes explicitly via Update Insights."""
         headers, user = authed_user_with_session
         job_id = await self._seed_row_and_import(test_engine, user, datetime.timedelta(hours=2))
         try:
-            async with httpx.AsyncClient(
-                transport=httpx.ASGITransport(app=app), base_url="http://test"
-            ) as client:
-                response = await client.get(CACHED_ENDPOINT, headers=headers)
+            response = await self._get_cached(headers)
+        finally:
+            await self._delete_import(test_engine, job_id)
+
+        assert response.status_code == 200
+        assert response.json()["status"] == "cache_hit"
+
+    @pytest.mark.asyncio
+    async def test_report_older_than_max_age_still_served(
+        self,
+        authed_user_with_session: tuple[dict[str, str], User],
+        test_engine: AsyncEngine,
+    ) -> None:
+        """The 30-day regeneration max age does not apply to the display lookup."""
+        headers, user = authed_user_with_session
+        job_id = await self._seed_row_and_import(
+            test_engine, user, insights_llm.INSIGHTS_CACHE_MAX_AGE + datetime.timedelta(days=1)
+        )
+        try:
+            response = await self._get_cached(headers)
         finally:
             await self._delete_import(test_engine, job_id)
 

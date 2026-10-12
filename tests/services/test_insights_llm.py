@@ -2776,8 +2776,7 @@ class TestStructuralCacheInvalidation:
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         """A completed import with games_imported > 0 after the cached row
-        was written invalidates the cache once the row is older than the 24h
-        regeneration cooldown: next call must be fresh."""
+        was written invalidates the cache: next call must be fresh."""
         from sqlalchemy import delete
 
         from app.models.import_job import ImportJob
@@ -2785,11 +2784,7 @@ class TestStructuralCacheInvalidation:
         report = _sample_report()
         session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
 
-        old = (
-            datetime.datetime.now(datetime.UTC)
-            - insights_llm.INSIGHTS_REGEN_COOLDOWN
-            - datetime.timedelta(hours=2)
-        )
+        old = datetime.datetime.now(datetime.UTC) - datetime.timedelta(hours=2)
         newer = datetime.datetime.now(datetime.UTC) - datetime.timedelta(hours=1)
         async with session_maker() as session:
             await _seed(
@@ -2839,8 +2834,7 @@ class TestStructuralCacheInvalidation:
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         """A completed import with games_imported = 0 (daily resync that
-        fetched nothing new) must NOT invalidate the cache. The row is older than
-        the 24h cooldown so this exercises the games_imported filter."""
+        fetched nothing new) must NOT invalidate the cache."""
         from sqlalchemy import delete
 
         from app.models.import_job import ImportJob
@@ -2848,11 +2842,7 @@ class TestStructuralCacheInvalidation:
         report = _sample_report()
         session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
 
-        old = (
-            datetime.datetime.now(datetime.UTC)
-            - insights_llm.INSIGHTS_REGEN_COOLDOWN
-            - datetime.timedelta(hours=2)
-        )
+        old = datetime.datetime.now(datetime.UTC) - datetime.timedelta(hours=2)
         newer = datetime.datetime.now(datetime.UTC) - datetime.timedelta(hours=1)
         async with session_maker() as session:
             await _seed(
@@ -2891,71 +2881,6 @@ class TestStructuralCacheInvalidation:
         async with session_maker() as session:
             await session.execute(delete(ImportJob).where(ImportJob.id == "job-no-games"))
             await session.commit()
-
-    @pytest.mark.asyncio
-    async def test_import_within_cooldown_keeps_cache(
-        self,
-        fake_insights_agent: Any,
-        fresh_test_user: User,
-        test_engine: AsyncEngine,
-        monkeypatch: pytest.MonkeyPatch,
-    ) -> None:
-        """A cached row younger than the 24h regeneration cooldown is served even
-        though an import with new games landed after it; compute_findings is not run."""
-        from sqlalchemy import delete
-
-        from app.models.import_job import ImportJob
-
-        report = _sample_report()
-        session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
-
-        young = datetime.datetime.now(datetime.UTC) - datetime.timedelta(hours=2)
-        newer = datetime.datetime.now(datetime.UTC) - datetime.timedelta(hours=1)
-        job_id = "job-within-cooldown"
-        try:
-            async with session_maker() as session:
-                await _seed(
-                    session,
-                    _make_log_row(
-                        fresh_test_user.id,
-                        created_at=young,
-                        response_json=report.model_dump(),
-                    ),
-                )
-                session.add(
-                    ImportJob(
-                        id=job_id,
-                        user_id=fresh_test_user.id,
-                        platform="chess.com",
-                        username="dxhuser",
-                        status="completed",
-                        games_fetched=42,
-                        games_imported=42,
-                        started_at=newer,
-                        completed_at=newer,
-                    )
-                )
-                await session.commit()
-
-            called = {"count": 0}
-
-            async def _raising_compute_findings(sess: AsyncSession, uid: int) -> EndgameTabFindings:
-                called["count"] += 1
-                raise AssertionError("compute_findings must not be called inside the cooldown")
-
-            fake_insights_agent(report)
-            monkeypatch.setattr(
-                "app.services.insights_llm.compute_findings", _raising_compute_findings
-            )
-
-            async with session_maker() as session:
-                r = await generate_insights(fresh_test_user.id, session)
-            assert r.status == "cache_hit"
-            assert called["count"] == 0
-        finally:
-            async with session_maker() as session:
-                await session.execute(delete(ImportJob).where(ImportJob.id == job_id))
-                await session.commit()
 
     @pytest.mark.asyncio
     async def test_ttl_expiry_misses(

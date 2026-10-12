@@ -5,9 +5,10 @@ Scope (Phase 65):
 - generate_insights(user_id, session): sole orchestration entry point called by
   app/routers/insights.py. Handles tier-1 cache, fresh LLM call, and log-row
   write. Filter-free since Phase 238 (D-04): one report per user.
-- get_cached_insights_response(session, user_id): the single cache-validity rule
-  (24h regeneration cooldown + import invalidation + 30d max age) shared by
-  generate_insights and GET /insights/endgame/cached.
+- get_cached_insights_response(session, user_id): the regeneration cache rule
+  (import invalidation + 30d max age) used by generate_insights.
+- get_latest_insights_response(session, user_id): the display lookup behind
+  GET /insights/endgame/cached (latest report, never invalidated).
 - Custom exceptions map to HTTP status codes at the router layer (Plan 06).
 
 Critical invariants:
@@ -53,6 +54,7 @@ from app.schemas.insights import (
     SubsectionFinding,
     TimePoint,
 )
+from app.models.llm_log import LlmLog
 from app.schemas.llm_log import LlmLogCreate, LlmLogEndpoint, LlmLogFilterContext
 from app.services.endgame_zones import (
     MIN_GAMES_PER_TC_CARD,
@@ -104,12 +106,6 @@ _ENDPOINT: LlmLogEndpoint = "insights.endgame"
 # stale narratives.
 INSIGHTS_CACHE_MAX_AGE_DAYS = 30
 INSIGHTS_CACHE_MAX_AGE = datetime.timedelta(days=INSIGHTS_CACHE_MAX_AGE_DAYS)
-
-# Regeneration cooldown: a cached report younger than this is served even after an
-# import with new games, so a report is regenerated at most once per day (product
-# decision for quick task 261012-qiz). The 30-day INSIGHTS_CACHE_MAX_AGE still
-# bounds every row.
-INSIGHTS_REGEN_COOLDOWN = datetime.timedelta(hours=24)
 
 # Series / prompt-assembly filter constants (260422-tnb A4/C3/A5/C2/C4/C5/C6).
 MIN_BUCKET_N: int = 3  # A4: drop timeline points with n<3
@@ -2664,46 +2660,61 @@ async def _run_agent(
 # -- Orchestration entry point (CONTEXT.md D-33) --
 
 
-async def get_cached_insights_response(
-    session: AsyncSession, user_id: int
-) -> EndgameInsightsResponse | None:
-    """Return the cached report as a cache_hit response, or None when not valid.
+def _cache_hit_response(row: LlmLog) -> EndgameInsightsResponse:
+    report = EndgameInsightsReport.model_validate(row.response_json)
+    return EndgameInsightsResponse(
+        report=_maybe_strip_overview(report),
+        status="cache_hit",
+    )
 
-    Single validity rule shared by POST /insights/endgame (generate_insights) and
-    GET /insights/endgame/cached, so the two paths cannot drift. A cached row is
-    valid iff it is a successful row for (user, prompt_version, model, constant
-    opponent_strength) younger than INSIGHTS_CACHE_MAX_AGE (30 days) AND
-    (younger than INSIGHTS_REGEN_COOLDOWN (24h) OR no completed import with
-    games_imported > 0 landed after it was written).
-    """
-    cached = await get_latest_successful_log_for_user(
+
+async def _latest_report_row(
+    session: AsyncSession, user_id: int, max_age: datetime.timedelta | None
+) -> LlmLog | None:
+    return await get_latest_successful_log_for_user(
         session,
         user_id=user_id,
         prompt_version=_PROMPT_VERSION,
         model=settings.PYDANTIC_AI_MODEL_INSIGHTS,
         opponent_strength=INSIGHTS_CACHE_OPPONENT_STRENGTH,
-        max_age=INSIGHTS_CACHE_MAX_AGE,
+        max_age=max_age,
     )
+
+
+async def get_cached_insights_response(
+    session: AsyncSession, user_id: int
+) -> EndgameInsightsResponse | None:
+    """Regeneration cache rule for POST /insights/endgame (generate_insights).
+
+    A cached row is reused iff it is a successful row for (user, prompt_version,
+    model, constant opponent_strength) younger than INSIGHTS_CACHE_MAX_AGE
+    (30 days) AND no completed import with games_imported > 0 landed after it
+    was written. Otherwise the caller regenerates.
+    """
+    cached = await _latest_report_row(session, user_id, INSIGHTS_CACHE_MAX_AGE)
     if cached is None:
         return None
+    # games_imported=0 imports are excluded by the helper, so no-op resyncs do
+    # not invalidate the cache.
+    last_import_at = await get_latest_completed_import_with_games_at(session, user_id)
+    if last_import_at is not None and last_import_at > cached.created_at:
+        return None
+    return _cache_hit_response(cached)
 
-    # Real UTC, not the dev_now_utc dependency: created_at is stamped by the DB
-    # server clock (server_default now()) and the repository's 30-day cutoff also
-    # uses real now, so a shifted dev clock would mis-compare.
-    age = datetime.datetime.now(datetime.UTC) - cached.created_at
-    if age >= INSIGHTS_REGEN_COOLDOWN:
-        # Past the cooldown an import with new games invalidates the row.
-        # games_imported=0 imports are excluded by the helper, so no-op
-        # resyncs do not invalidate the cache.
-        last_import_at = await get_latest_completed_import_with_games_at(session, user_id)
-        if last_import_at is not None and last_import_at > cached.created_at:
-            return None
 
-    report = EndgameInsightsReport.model_validate(cached.response_json)
-    return EndgameInsightsResponse(
-        report=_maybe_strip_overview(report),
-        status="cache_hit",
-    )
+async def get_latest_insights_response(
+    session: AsyncSession, user_id: int
+) -> EndgameInsightsResponse | None:
+    """Display lookup for GET /insights/endgame/cached: the user's latest report.
+
+    Never invalidated by imports or age, so None means the user has no report for
+    the current (prompt_version, model) yet. The frontend auto-generates only on
+    None (quick 261012-qiz: only the first report is auto-generated; later
+    refreshes go through the "Update Insights" button, i.e. generate_insights).
+    A prompt_version or model bump therefore auto-generates one new report.
+    """
+    latest = await _latest_report_row(session, user_id, None)
+    return None if latest is None else _cache_hit_response(latest)
 
 
 async def generate_insights(
@@ -2716,9 +2727,9 @@ async def generate_insights(
     constant INSIGHTS_CACHE_OPPONENT_STRENGTH; there is no filter input, so exactly one
     report is cached per user.
     Validity rule (see get_cached_insights_response): row younger than
-    INSIGHTS_CACHE_MAX_AGE, AND (younger than the 24h INSIGHTS_REGEN_COOLDOWN OR
-    row.created_at >= MAX(import_jobs.completed_at WHERE games_imported > 0) for
-    this user). Reordered so compute_findings only runs on miss.
+    INSIGHTS_CACHE_MAX_AGE, AND row.created_at >= MAX(import_jobs.completed_at
+    WHERE games_imported > 0) for this user. Reordered so compute_findings only
+    runs on miss.
     Generations for the same user are serialized by a per-user advisory xact
     lock, so a concurrent duplicate request waits and returns the first one's
     report as cache_hit instead of paying for a second LLM call.
@@ -2749,7 +2760,7 @@ async def generate_insights(
 
     # Tier-1 STRUCTURAL cache lookup (260425-dxh): cheap query on
     # (user_id, prompt_version, model, constant opponent_strength) + freshness checks
-    # (younger than the 24h regeneration cooldown, or no import with new games since).
+    # (younger than 30 days, no import with new games since).
     # Runs BEFORE compute_findings so cache hits skip the heavy DB pipeline.
     # Bug-fix note: the previous findings_hash-based lookup was unstable across
     # days because EndgameTabFindings includes time-relative fields (sliding

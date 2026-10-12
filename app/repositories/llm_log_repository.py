@@ -187,13 +187,13 @@ async def get_latest_successful_log_for_user(
     prompt_version: str,
     model: str,
     opponent_strength: str,
-    max_age: datetime.timedelta,
+    max_age: datetime.timedelta | None,
 ) -> LlmLog | None:
     """Structural-cache lookup (260425-dxh) — replaces get_latest_log_by_hash on the hot path.
 
     Returns the most recent successful log row for this user under the current
     (prompt_version, model, opponent_strength) tuple, provided it is younger
-    than max_age. The caller is responsible for the additional 24h-cooldown /
+    than max_age (None = no age limit). The regeneration path adds the
     "no qualifying import since created_at" check (see
     get_cached_insights_response in app/services/insights_llm.py).
 
@@ -212,24 +212,21 @@ async def get_latest_successful_log_for_user(
         model: pydantic-ai provider:model string.
         opponent_strength: matched against filter_context->>'opponent_strength'
             via the JSONB text-extraction operator.
-        max_age: TTL for the structural cache (e.g. timedelta(days=30)).
+        max_age: TTL for the structural cache (e.g. timedelta(days=30)), or None
+            for no age limit (the display lookup behind GET /insights/endgame/cached).
 
     Returns:
         Most recent matching LlmLog, or None.
     """
-    cutoff = datetime.datetime.now(datetime.UTC) - max_age
-    result = await session.execute(
-        select(LlmLog)
-        .where(
-            LlmLog.user_id == user_id,
-            LlmLog.prompt_version == prompt_version,
-            LlmLog.model == model,
-            LlmLog.filter_context["opponent_strength"].astext == opponent_strength,
-            LlmLog.created_at >= cutoff,
-            LlmLog.response_json.is_not(None),
-            LlmLog.error.is_(None),
-        )
-        .order_by(LlmLog.created_at.desc())
-        .limit(1)
+    stmt = select(LlmLog).where(
+        LlmLog.user_id == user_id,
+        LlmLog.prompt_version == prompt_version,
+        LlmLog.model == model,
+        LlmLog.filter_context["opponent_strength"].astext == opponent_strength,
+        LlmLog.response_json.is_not(None),
+        LlmLog.error.is_(None),
     )
+    if max_age is not None:
+        stmt = stmt.where(LlmLog.created_at >= datetime.datetime.now(datetime.UTC) - max_age)
+    result = await session.execute(stmt.order_by(LlmLog.created_at.desc()).limit(1))
     return result.scalar_one_or_none()

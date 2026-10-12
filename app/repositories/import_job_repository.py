@@ -280,8 +280,7 @@ async def get_latest_completed_import_with_games_at(
 
     Used as the cache-invalidation timestamp for the structural insights cache
     (260425-dxh): a cached LLM log row is invalid iff its created_at is older
-    than this timestamp AND the row is itself older than the 24h regeneration
-    cooldown (INSIGHTS_REGEN_COOLDOWN in app/services/insights_llm.py). No-op resyncs (games_imported = 0) are intentionally
+    than this timestamp. No-op resyncs (games_imported = 0) are intentionally
     excluded so daily syncs that fetch zero games do NOT bust the cache.
     """
     result = await session.execute(

@@ -7,7 +7,8 @@ import type {
 } from '@/types/insights';
 
 // One cached report per user (D-04): it does not depend on any page filter, so the key
-// is constant. App.tsx invalidates the ['endgame-insights'] prefix on import completion.
+// is constant. App.tsx invalidates the ['endgame-insights'] prefix on import completion
+// (a refetch only; the server never drops an existing report after an import).
 const CACHED_ENDGAME_INSIGHTS_KEY = ['endgame-insights', 'cached'] as const;
 
 // Shared by every Generate mutation so useEndgameInsightsGenerating sees a request
