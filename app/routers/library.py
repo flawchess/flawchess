@@ -279,15 +279,16 @@ async def get_tactic_comparison(
     tactic_families: list[str] | None = Query(default=None),
     include_pasted: bool = Query(default=False),
 ) -> TacticComparisonResponse:
-    """Per-family tactic motif you-vs-opponent comparison (Phase 126/129).
+    """Per-TC tactic motif you-vs-opponent comparison, per 100 games (Phase 126/129/239).
 
-    Phase 129 (D-13/D-14, taxonomy redesign): returns up to 20 orientation-tagged bullets
-    (10 families x 2 orientations); top-6 families by Missed you_rate appear first, then overflow.
-    No orientation query param — grid always shows both orientations (D-09).
+    Phase 239 (D-02/D-03/D-00h): returns `tcs`, one entry per time control that the filters
+    allow and that has at least one analyzed game (bullet..classical order). Each TC carries
+    38 bullets (19 families x missed/allowed) in fixed FAMILY_TO_MOTIF_INTS order, missed
+    before allowed, also when the TC is below the analyzed-game gate. Rates and gaps are per
+    100 games. No ranking or top-N. No query parameter selects a TC (the switch is client-side).
 
     user_id taken exclusively from the authenticated user — never from a
     request parameter (IDOR prevention, T-126-01).
-    Returns below_gate=True with empty bullets when analyzed_n < TACTIC_COMPARISON_GATE.
     tactic_families: optional multi-select to narrow to specific motif families
     (e.g. "fork", "skewer"); unknown/dropped keys are silently ignored (T-126-02).
     Backend is NOT beta-gated per D-01a — frontend gating enforces beta rollout.

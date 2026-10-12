@@ -33,7 +33,6 @@ from app.models.game_best_move import GameBestMove
 from app.models.game_flaw import GameFlaw
 from app.repositories import library_repository
 from app.repositories.library_repository import (
-    FAMILY_TO_MOTIF_INTS,
     TacticOrientation,
     _TACTIC_CHIP_CONFIDENCE_MIN,
     _TEMPO_INT_TO_TAG,
@@ -54,9 +53,16 @@ from app.schemas.library import (
     LibraryGamesResponse,
     TacticBullet,
     TacticComparisonResponse,
+    TacticComparisonTc,
 )
 from app.services.best_move_candidates import classify_best_move, mover_color_for_ply
 from app.services.flaw_delta_zones import FLAW_DELTA_METRICS, FlawDeltaMetric, flaw_delta_zone
+from app.services.tactic_delta_zones import (
+    TACTIC_FAMILIES,
+    TacticFamily,
+    TacticSide,
+    tactic_delta_zone,
+)
 from app.models.game_position import GamePosition
 from app.schemas.library import EvalPoint, FlawMarker, PhaseTransitions
 from app.services.eval_utils import (
@@ -1602,104 +1608,102 @@ TACTIC_COMPARISON_GATE: int = 20
 MIN_TACTIC_CHIP_CONFIDENCE: int = _TACTIC_CHIP_CONFIDENCE_MIN
 
 
+# Phase 239 D-00h: tactic gaps read per 100 games. The per-game counts are multiplied once,
+# in _compute_tactic_bullets; the mean and CI scale linearly and the p-value is
+# scale-invariant, so nothing downstream rescales.
+PER_100_GAMES: float = 100.0
+
+
+def _build_tactic_bullet(
+    family: TacticFamily,
+    orientation: TacticSide,
+    tc: TimeControlBucket,
+    you_rates: list[float],
+    opp_rates: list[float],
+    you_total: int,
+    opp_total: int,
+) -> TacticBullet:
+    """Build one TacticBullet from the per-game accumulators of one family-side in one TC."""
+    band = tactic_delta_zone(family, orientation, tc)
+    zone_lo = band.zone_lo if band is not None else 0.0
+    zone_hi = band.zone_hi if band is not None else 0.0
+    # D-12: faded cell, no verdict. Zero-event cells are low-sample by definition.
+    low_sample = you_total + opp_total < LOW_SAMPLE_MIN_FLAWS
+    if you_total == 0 and opp_total == 0:
+        # Zero-event family-side: delta=None (mirrors the FlawBullet zero-event pattern, D-11).
+        return TacticBullet(
+            family=family,
+            orientation=orientation,
+            you_rate=None,
+            opp_rate=None,
+            delta=None,
+            ci_low=None,
+            ci_high=None,
+            p_value=None,
+            you_events=0,
+            opp_events=0,
+            zone_lo=zone_lo,
+            zone_hi=zone_hi,
+            has_zone=band is not None,
+            low_sample=low_sample,
+        )
+    deltas = [y - o for y, o in zip(you_rates, opp_rates, strict=True)]
+    mean, ci_low, ci_high = _compute_mean_ci(deltas)
+    return TacticBullet(
+        family=family,
+        orientation=orientation,
+        you_rate=sum(you_rates) / len(you_rates) if you_rates else 0.0,
+        opp_rate=sum(opp_rates) / len(opp_rates) if opp_rates else 0.0,
+        delta=mean,
+        ci_low=ci_low,
+        ci_high=ci_high,
+        p_value=_two_sided_p(deltas),
+        you_events=you_total,
+        opp_events=opp_total,
+        zone_lo=zone_lo,
+        zone_hi=zone_hi,
+        has_zone=band is not None,
+        low_sample=low_sample,
+    )
+
+
 def _compute_tactic_bullets(
-    rows: list[Any],
-    orientation: Literal["missed", "allowed"],
+    rows: Sequence[Any],
+    orientation: TacticSide,
+    tc: TimeControlBucket,
 ) -> list[TacticBullet]:
-    """Aggregate per-game rows into TacticBullet objects for one orientation.
+    """Aggregate one TC's per-game rows into the 19 TacticBullets of one orientation.
 
-    Phase 129 Plan 01 (D-13): accepts orientation param so get_tactic_comparison
-    can call this twice (once per orientation) and tag each bullet with its
-    orientation. The top-6 family cap is removed here — family selection is
-    performed by the caller (get_tactic_comparison, D-14).
-
-    Each row has: game_id, player_{family}, opp_{family} for all 10 families
-    (Plan 04 G-01: taxonomy expanded from 6 to 10 families).
-    For each family: collect per-game deltas (player_rate - opp_rate) in events/game,
-    plus per-game player and opp rates. Zero-event family: delta=None (D-11 pattern).
-
-    Returns all 10 family bullets (not capped), tagged with orientation.
-    Caller ranks and selects top-6 families by Missed you_rate (D-14).
+    Each row has: game_id, tc, player_{family}, opp_{family} for every family in
+    TACTIC_FAMILIES. Per game, the rate is the count times PER_100_GAMES (Phase 239
+    D-00h), so a single game with one missed fork reads 100.0. Bullets come back in
+    TACTIC_FAMILIES order with no ranking or selection; get_tactic_comparison interleaves
+    the two orientations. Zone bounds come from the tactic registry via
+    tactic_delta_zone(family, orientation, tc) (D-11); zero-event family: delta=None.
     """
-    families = list(FAMILY_TO_MOTIF_INTS.keys())
-
-    # Per-family accumulators: list of per-game rates and total event counts.
-    you_rates_by_fam: dict[str, list[float]] = {f: [] for f in families}
-    opp_rates_by_fam: dict[str, list[float]] = {f: [] for f in families}
-    deltas_by_fam: dict[str, list[float]] = {f: [] for f in families}
-    you_totals: dict[str, int] = {f: 0 for f in families}
-    opp_totals: dict[str, int] = {f: 0 for f in families}
-
-    for row in rows:
-        for fam in families:
-            you_count = int(getattr(row, f"player_{fam}", 0) or 0)
-            opp_count = int(getattr(row, f"opp_{fam}", 0) or 0)
-            you_totals[fam] += you_count
-            opp_totals[fam] += opp_count
-            # Per-game rate: events per game (not per 100 moves — D-04 per-game normalization).
-            you_rate = float(you_count)
-            opp_rate = float(opp_count)
-            you_rates_by_fam[fam].append(you_rate)
-            opp_rates_by_fam[fam].append(opp_rate)
-            deltas_by_fam[fam].append(you_rate - opp_rate)
-
     bullets: list[TacticBullet] = []
-    for fam in families:
-        y_total = you_totals[fam]
-        o_total = opp_totals[fam]
-        if y_total == 0 and o_total == 0:
-            # Zero-event family: delta=None (mirrors FlawBullet zero-event pattern, D-11).
-            bullets.append(
-                TacticBullet(
-                    family=fam,
-                    orientation=orientation,
-                    you_rate=None,
-                    opp_rate=None,
-                    delta=None,
-                    ci_low=None,
-                    ci_high=None,
-                    p_value=None,
-                    you_events=0,
-                    opp_events=0,
-                )
+    for family in TACTIC_FAMILIES:
+        you_counts = [int(getattr(row, f"player_{family}", 0) or 0) for row in rows]
+        opp_counts = [int(getattr(row, f"opp_{family}", 0) or 0) for row in rows]
+        bullets.append(
+            _build_tactic_bullet(
+                family,
+                orientation,
+                tc,
+                [c * PER_100_GAMES for c in you_counts],
+                [c * PER_100_GAMES for c in opp_counts],
+                sum(you_counts),
+                sum(opp_counts),
             )
-        else:
-            deltas = deltas_by_fam[fam]
-            mean, ci_low, ci_high = _compute_mean_ci(deltas)
-            you_vals = you_rates_by_fam[fam]
-            opp_vals = opp_rates_by_fam[fam]
-            you_rate_mean = sum(you_vals) / len(you_vals) if you_vals else 0.0
-            opp_rate_mean = sum(opp_vals) / len(opp_vals) if opp_vals else 0.0
-            bullets.append(
-                TacticBullet(
-                    family=fam,
-                    orientation=orientation,
-                    you_rate=you_rate_mean,
-                    opp_rate=opp_rate_mean,
-                    delta=mean,
-                    ci_low=ci_low,
-                    ci_high=ci_high,
-                    p_value=_two_sided_p(deltas),
-                    you_events=y_total,
-                    opp_events=o_total,
-                )
-            )
-
-    # Phase 129 D-14: top-6 family selection happens at get_tactic_comparison (caller).
-    # Return all families (no [:6] cap); the caller is the authoritative rank, ordering by
-    # Missed you_rate descending. The intra-list _sort_key sort below is NOT the final order —
-    # it only seeds the position tie-break the caller's _missed_rank_key uses for families with
-    # equal you_rate (sig-first, then |delta|, then volume).
-    def _sort_key(b: TacticBullet) -> tuple[int, float, int]:
-        is_sig = b.ci_low is not None and b.ci_high is not None and (b.ci_low > 0 or b.ci_high < 0)
-        abs_delta = abs(b.delta) if b.delta is not None else 0.0
-        volume = max(b.you_events, b.opp_events)
-        # Sort key: (0=sig first, -|delta|, -volume) — lower tuple = better rank
-        return (0 if is_sig else 1, -abs_delta, -volume)
-
-    bullets.sort(key=_sort_key)
-    # Return all families (no [:6] cap); caller applies top-6 family selection (D-14).
+        )
     return bullets
+
+
+def _interleave_tactic_bullets(
+    missed: Sequence[TacticBullet], allowed: Sequence[TacticBullet]
+) -> list[TacticBullet]:
+    """Fixed payload order: per family, missed bullet then allowed bullet (D-00h)."""
+    return [bullet for pair in zip(missed, allowed, strict=True) for bullet in pair]
 
 
 async def get_tactic_comparison(
@@ -1719,25 +1723,23 @@ async def get_tactic_comparison(
     tactic_families: Sequence[str] | None = None,
     include_pasted: bool = False,
 ) -> TacticComparisonResponse:
-    """Per-family tactic motif you-vs-opponent comparison (Phase 126/129).
+    """Per-TC tactic motif you-vs-opponent comparison, per 100 games (Phase 126/129/239).
 
-    Phase 129 Plan 01 (D-13/D-14): returns dual-orientation bullets (up to 12:
-    6 families × 2 orientations). The orientation param was removed (D-09:
-    the comparison grid always shows both orientations simultaneously).
-
-    Ordering contract (D-14): top-6 families by Missed bullet you_rate descending
-    appear first (both their missed + allowed bullets), followed by overflow families.
-    The frontend renders server order — no client re-sort needed.
+    Returns one TacticComparisonTc per time control that the filters allow and that has
+    at least one analyzed game (D-02), ordered bullet..classical. Each carries all 19
+    families x missed/allowed in fixed FAMILY_TO_MOTIF_INTS order (missed before allowed),
+    also when the TC is below the 20-game gate (D-03). No ranking, no top-N (D-00h).
 
     Pipeline:
-    1. count_filtered_and_analyzed — early gate: if analyzed_n < TACTIC_COMPARISON_GATE,
-       return below_gate=True immediately.
-    2. fetch_tactic_comparison — per-game LEFT JOIN aggregation; called TWICE (once per
-       orientation). Two fetches are post-gate acceptable cost (A3 from RESEARCH).
-    3. _compute_tactic_bullets — mean + Wald-z CI per family per orientation.
-    4. Top-6 family selection by Missed you_rate desc; both bullets per family emitted.
+    1. count_analyzed_by_tc: analyzed games per TC under the current filters
+       (tactic_filter_orientation="either", so the denominator matches both fetches).
+       No analyzed games at all → tcs=[].
+    2. fetch_tactic_comparison called TWICE (once per orientation), sequential awaits
+       only, never gather on the session.
+    3. _bucket_rows_by_tc + _compute_tactic_bullets: mean + Wald-z CI per family per
+       orientation per TC, zone bounds from the tactic registry (D-11).
 
-    IDOR guard (T-126-01): user_id is from current_active_user, never a request param.
+    IDOR guard (T-126-01, T-239-08): user_id is from current_active_user, never a request param.
 
     Phase 208 (D-11/D-12, PASTE-05/09): `include_pasted` opts pasted games into
     this analytics surface's own default population (resolve_library_platforms,
@@ -1758,36 +1760,24 @@ async def get_tactic_comparison(
             opponent_gap_min=opponent_gap_min,
             opponent_gap_max=opponent_gap_max,
             color=color,
-            # Thread the tactic-family filter into BOTH the gate count and the
-            # per-game fetch so analyzed_n matches the set the bullets aggregate
-            # over (WR-02; mirrors get_flaw_comparison threading flaw_severity).
+            # Thread the tactic-family filter into BOTH the count and the per-game
+            # fetches so analyzed_n matches the set the bullets aggregate over (WR-02).
             tactic_families=tactic_families,
             # SEED-062: the grid shows BOTH orientations, so narrow the game
             # population on "either" (not the apply_game_filters "allowed" default).
-            # Flows to the gate and both fetches via _filter_kwargs, keeping the
-            # analyzed_n denominator and both bullet populations on one basis and
-            # including games whose only family-X tactic was missed-only.
             tactic_filter_orientation="either",
         )
 
-        _total_n, analyzed_n = await library_repository.count_filtered_and_analyzed(
+        counts = await library_repository.count_analyzed_by_tc(
             session,
             user_id=user_id,
             **_filter_kwargs,
         )
-
-        if analyzed_n < TACTIC_COMPARISON_GATE:
-            return TacticComparisonResponse(
-                bullets=[],
-                analyzed_n=analyzed_n,
-                analyzed_gate=TACTIC_COMPARISON_GATE,
-                below_gate=True,
-            )
+        if not counts:
+            return TacticComparisonResponse(tcs=[], analyzed_gate=TACTIC_COMPARISON_GATE)
 
         analyzed_subq = library_repository._analyzed_game_ids_subquery(user_id)
-
-        # Phase 129 D-13 (A3): fetch per-orientation — two post-gate queries, acceptable cost.
-        # Each fetch returns 10 family rows for one orientation.
+        # Two fetches (one per orientation), each bucketed per TC in Python.
         missed_rows = await library_repository.fetch_tactic_comparison(
             session,
             user_id,
@@ -1804,52 +1794,23 @@ async def get_tactic_comparison(
             orientation="allowed",
             **_filter_kwargs,
         )
+        missed_by_tc = _bucket_rows_by_tc(missed_rows)
+        allowed_by_tc = _bucket_rows_by_tc(allowed_rows)
 
-        missed_bullets = _compute_tactic_bullets(missed_rows, "missed")
-        allowed_bullets = _compute_tactic_bullets(allowed_rows, "allowed")
-
-        # Phase 129 D-14: select top-6 families by Missed you_rate descending.
-        # Build a {family: missed_bullet} map for ranking; missed_bullets are sorted by
-        # _compute_tactic_bullets's _sort_key (sig first, |delta|, volume) as tie-break.
-        missed_by_family: dict[str, TacticBullet] = {b.family: b for b in missed_bullets}
-        allowed_by_family: dict[str, TacticBullet] = {b.family: b for b in allowed_bullets}
-
-        # Rank families by Missed you_rate descending, tie-break by the _sort_key order
-        # embedded in missed_bullets (already sorted by the helper).
-        def _missed_rank_key(fam: str) -> tuple[float, int]:
-            mb = missed_by_family.get(fam)
-            # Primary: Missed you_rate desc (negate for ascending sort).
-            # Tie-break: position in missed_bullets (lower index = higher _sort_key rank).
-            you_rate = mb.you_rate if (mb and mb.you_rate is not None) else 0.0
-            pos = next(
-                (i for i, b in enumerate(missed_bullets) if b.family == fam), len(missed_bullets)
+        tcs = [
+            TacticComparisonTc(
+                tc=tc,
+                analyzed_n=counts[tc],
+                below_gate=counts[tc] < TACTIC_COMPARISON_GATE,
+                bullets=_interleave_tactic_bullets(
+                    _compute_tactic_bullets(missed_by_tc.get(tc, []), "missed", tc),
+                    _compute_tactic_bullets(allowed_by_tc.get(tc, []), "allowed", tc),
+                ),
             )
-            return (-you_rate, pos)
-
-        all_families = list(FAMILY_TO_MOTIF_INTS.keys())
-        ranked_families = sorted(all_families, key=_missed_rank_key)
-        overflow_families = ranked_families[6:]
-
-        # Emit bullets: top-6 first (missed then allowed per family), then overflow.
-        # Server order is the contract; the frontend renders it without re-sorting (D-14).
-        bullets: list[TacticBullet] = []
-        for fam in ranked_families[:6]:
-            if fam in missed_by_family:
-                bullets.append(missed_by_family[fam])
-            if fam in allowed_by_family:
-                bullets.append(allowed_by_family[fam])
-        for fam in overflow_families:
-            if fam in missed_by_family:
-                bullets.append(missed_by_family[fam])
-            if fam in allowed_by_family:
-                bullets.append(allowed_by_family[fam])
-
-        return TacticComparisonResponse(
-            bullets=bullets,
-            analyzed_n=analyzed_n,
-            analyzed_gate=TACTIC_COMPARISON_GATE,
-            below_gate=False,
-        )
+            for tc in LIBRARY_TC_ORDER
+            if counts.get(tc)
+        ]
+        return TacticComparisonResponse(tcs=tcs, analyzed_gate=TACTIC_COMPARISON_GATE)
 
     except Exception as exc:  # noqa: BLE001 — capture before re-raise for Sentry
         sentry_sdk.set_context("tactic_comparison", {"user_id": user_id})

@@ -22,6 +22,7 @@ from pydantic import BaseModel
 
 from app.schemas.normalization import TimeControlBucket
 from app.services.flaw_delta_zones import FlawDeltaMetric
+from app.services.tactic_delta_zones import TacticFamily, TacticSide
 from app.services.flaws_service import FlawSeverity, FlawTag, SeverityCounts
 
 
@@ -387,52 +388,66 @@ class FlawComparisonResponse(BaseModel):
 
 
 class TacticBullet(BaseModel):
-    """Per-family data for one tactic-motif family row (Phase 126, TACCMP-01).
+    """Per-family, per-side data for one tactic motif cell (Phase 126, 129, 239).
 
-    Phase 129 Plan 01 (D-13): orientation field added (option A) so the frontend
-    can render two bullets per family card — one missed, one allowed.
-
-    Rates are mean tactic allowances per game (not per 100 moves).
-    Sign convention: positive delta = you allow MORE than opponents = bad
-    (mirrors FlawBullet sign convention).
-    has_zone: False until a tactic benchmark pipeline ships (out of scope Phase 126).
+    Rates are mean tactic counts per 100 games (Phase 239 D-00h): a 1-vs-0 single-game
+    difference reads 100.0. The p-value is scale-invariant and unchanged by the scaling.
+    Sign convention: positive delta = you have MORE of these tactics than the opponent
+    (mirrors FlawBullet; for both Missed and Allowed that is the bad direction).
     """
 
-    family: str  # family key e.g. "fork", "skewer" (10-family taxonomy, plan 129-04)
-    orientation: Literal["missed", "allowed"]  # Phase 129 D-13 (option A schema lock)
-    you_rate: float | None  # mean tactic allowances per game (player side); None = zero events
-    opp_rate: float | None  # mean tactic allowances per game (opponent side); None = zero events
-    delta: float | None  # you_rate - opp_rate; None = both sides zero events
-    ci_low: float | None  # 95% CI lower bound on delta
-    ci_high: float | None  # 95% CI upper bound on delta
+    family: TacticFamily
+    orientation: TacticSide  # missed (you did not play it) or allowed (you let the opponent)
+    you_rate: float | None  # mean count per 100 games (player side); None = zero events
+    opp_rate: float | None  # mean count per 100 games (opponent side); None = zero events
+    delta: float | None  # you_rate - opp_rate per 100 games; None = both sides zero events
+    ci_low: float | None  # 95% CI lower bound on delta (per 100 games)
+    ci_high: float | None  # 95% CI upper bound on delta (per 100 games)
     p_value: float | None  # two-sided p vs H0: delta == 0; None = zero events
     you_events: int  # raw event count (player side)
     opp_events: int  # raw event count (opponent side)
-    zone_lo: float = 0.0  # benchmark Q1 or 0.0 when unavailable
-    zone_hi: float = 0.0  # benchmark Q3 or 0.0 when unavailable
-    has_zone: bool = False  # False until tactic benchmark pipeline ships
+    # Typical-range bounds from the tactic zone registry (per 100 games), via the zone TC
+    # (blitz/bullet read rapid, silently). 0.0 / 0.0 / False when the family-side is unviable.
+    zone_lo: float
+    zone_hi: float
+    has_zone: bool
+    # Phase 239 D-12: True when you_events + opp_events < LOW_SAMPLE_MIN_FLAWS.
+    # The UI fades the cell and gives no verdict; the backend owns the threshold.
+    low_sample: bool
+
+
+class TacticComparisonTc(BaseModel):
+    """One time control's tactic comparison (Phase 239 D-02/D-03).
+
+    tc: the time control bucket these bullets were computed over.
+    analyzed_n: analyzed games of this TC after the current filter set.
+    below_gate: True when analyzed_n < TACTIC_COMPARISON_GATE; the bullets are still
+                populated so the UI can decide what to show (D-03).
+    bullets: always 38 entries: every family in FAMILY_TO_MOTIF_INTS order, missed
+             before allowed.
+    """
+
+    tc: TimeControlBucket
+    analyzed_n: int
+    below_gate: bool
+    bullets: list[TacticBullet]
 
 
 class TacticComparisonResponse(BaseModel):
-    """Response for GET /api/library/tactic-comparison (Phase 126, TACCMP-01/02/03).
+    """Response for GET /api/library/tactic-comparison (Phase 126, Phase 239 D-02/D-00h).
 
-    Phase 129 (D-13/D-14, taxonomy redesign): bullets now carries up to 20 orientation-tagged
-    entries (10 families x 2 orientations). Ordering contract:
-      - Top-6 families by Missed bullet you_rate descending appear first (both
-        their missed + allowed bullets before any overflow families).
-      - Overflow families follow, also paired (missed then allowed per family).
-    The frontend renders server order — no client re-sort needed.
-
-    bullets: ordered per D-14 contract; empty list when below_gate=True.
-    analyzed_n: analyzed game count after filters.
-    analyzed_gate: minimum required (mirrors TACTIC_COMPARISON_GATE = 20).
-    below_gate: True when analyzed_n < analyzed_gate.
+    tcs: one entry per time control that the sidebar time-control filter allows and
+         that has at least one analyzed game under the current filters, ordered
+         bullet, blitz, rapid, classical. Zero-analyzed TCs are omitted, so an empty
+         list means no analyzed games at all. Below-gate TCs keep their bullets
+         (D-03). No request parameter selects a TC: the switch is client-side.
+    Each TC carries all 19 families x 2 sides in fixed FAMILY_TO_MOTIF_INTS order,
+    missed before allowed. There is no ranking or top-N selection (D-00h).
+    analyzed_gate: minimum required per TC (constant = TACTIC_COMPARISON_GATE = 20).
     """
 
-    bullets: list[TacticBullet]
-    analyzed_n: int
+    tcs: list[TacticComparisonTc]
     analyzed_gate: int
-    below_gate: bool
 
 
 # ---------------------------------------------------------------------------

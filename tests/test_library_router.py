@@ -2295,10 +2295,10 @@ async def tactic_comparison_state(test_engine: Any) -> dict[str, Any]:
 
 
 class TestTacticComparisonDualOrientation:
-    """GET /library/tactic-comparison returns dual-orientation bullets (Phase 129 D-13/D-14).
+    """GET /library/tactic-comparison returns per-TC dual-orientation bullets (Phase 129, 239).
 
-    Phase 129 Task 2 TDD RED: these tests expect TacticBullet.orientation field
-    and up-to-12 bullets that do not yet exist — will fail until GREEN lands.
+    Phase 239 D-02/D-00h: the payload is `tcs[]`, each TC carries 38 bullets (19 families x
+    missed/allowed) in fixed family order, missed before allowed.
     """
 
     @pytest.mark.asyncio
@@ -2328,8 +2328,9 @@ class TestTacticComparisonDualOrientation:
                 headers=tactic_comparison_state["headers"],
             )
         data = resp.json()
-        bullets = data.get("bullets", [])
-        assert len(bullets) > 0, "Expected at least one bullet; below_gate may be True"
+        assert [tc["tc"] for tc in data["tcs"]] == ["blitz"]
+        bullets = data["tcs"][0]["bullets"]
+        assert len(bullets) == 38
         for bullet in bullets:
             assert "orientation" in bullet, (
                 f"Each bullet must have 'orientation' field; got keys: {list(bullet.keys())}"
@@ -2353,7 +2354,7 @@ class TestTacticComparisonDualOrientation:
                 headers=tactic_comparison_state["headers"],
             )
         data = resp.json()
-        bullets = data.get("bullets", [])
+        bullets = data["tcs"][0]["bullets"]
         fork_bullets = [b for b in bullets if b.get("family") == "fork"]
         assert len(fork_bullets) == 2, (
             f"Expected 2 fork bullets (missed + allowed); got {len(fork_bullets)}: {fork_bullets}"
@@ -2382,14 +2383,16 @@ class TestTacticComparisonDualOrientation:
         )
 
     @pytest.mark.asyncio
-    async def test_tactic_comparison_top_families_ordered_by_missed_you_rate(
+    async def test_tactic_comparison_fixed_family_order(
         self, tactic_comparison_state: dict[str, Any]
     ) -> None:
-        """Top families in bullets are ordered by Missed bullet you_rate descending (D-14).
+        """Bullets follow the fixed family order, missed before allowed (D-00h).
 
-        With only fork having events (missed you_rate > 0), fork's missed bullet
-        must appear before all other families' missed bullets.
+        Only fork has events, yet fork is not special-cased: the order is the registry
+        order, not a ranking by Missed rate (the retired Phase 129 D-14 top-6).
         """
+        from app.services.tactic_delta_zones import TACTIC_FAMILIES
+
         async with httpx.AsyncClient(
             transport=httpx.ASGITransport(app=app), base_url="http://test"
         ) as client:
@@ -2397,11 +2400,7 @@ class TestTacticComparisonDualOrientation:
                 "/api/library/tactic-comparison",
                 headers=tactic_comparison_state["headers"],
             )
-        data = resp.json()
-        bullets = data.get("bullets", [])
-        assert len(bullets) > 0, "Expected bullets"
-        # The first family in bullets should be fork (highest missed you_rate)
-        first_family = bullets[0]["family"]
-        assert first_family == "fork", (
-            f"First family must be fork (highest missed you_rate); got {first_family!r}"
-        )
+        bullets = resp.json()["tcs"][0]["bullets"]
+        assert [(b["family"], b["orientation"]) for b in bullets] == [
+            (family, side) for family in TACTIC_FAMILIES for side in ("missed", "allowed")
+        ]

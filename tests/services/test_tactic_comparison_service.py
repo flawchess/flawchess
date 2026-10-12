@@ -1,18 +1,16 @@
-"""Tests for Phase 126/129 tactic comparison backend (TACCMP-01/02/03, TACUI-01/05/08).
+"""Tests for Phase 126/129/239 tactic comparison backend (TACCMP-01/02/03, TACUI-01/05/08).
 
 Coverage plan:
-- test_family_mapping_ten_families           : Plan 04 Task 1 — 10 families in FAMILY_TO_MOTIF_INTS
-- test_family_mapping_excludes_combinations  : Plan 04 Task 1 — dropped combinations ints absent
-- test_family_mapping_covers_selected_motifs : Plan 04 Task 1 — all 10 family int sets correct
-- test_family_mapping_fork                   : Task 1 — fork maps to [FORK=1]
-- test_family_mapping_10_produces_overflow   : Plan 04 Task 1 — 10 families → top-6 + 4 overflow (G-01)
-- test_combinations_request_is_noop          : Plan 04 Task 2 — dropped combinations key → no-op
-- test_below_gate_short_circuit              : Task 2 — analyzed_n < gate → below_gate=True, bullets=[]
-- test_full_response_bullets                 : Task 2 — N>=gate → up to 20 TacticBullet rows
-- test_tactic_comparison_produces_overflow   : Plan 04 Task 2 — 10 families → overflow non-empty (G-01)
-- test_significant_gap_first                 : Task 2 — significant rows ranked before non-significant
-- test_zero_event_family_delta_none          : Task 2 — family with no events → delta=None
-- test_confidence_gate_chip_field            : Task 2 — tactic_motif=None when confidence < threshold
+- test_family_mapping_*                      : FAMILY_TO_MOTIF_INTS taxonomy contract (19 families)
+- test_combinations_request_is_noop          : dropped combinations key expands to no motif ints
+- test_fixed_order_per_tc                    : Phase 239 D-00h, D-02 — 38 bullets per TC, fixed order
+- test_per_100_games_unit                    : Phase 239 D-00h — rates/deltas per 100 games
+- test_below_gate_tc_still_lists_bullets    : Phase 239 D-03 — 12 analyzed games, below_gate with 38 bullets
+- test_low_sample_boundary                   : Phase 239 D-12 — LOW_SAMPLE_MIN_FLAWS - 1 vs LOW_SAMPLE_MIN_FLAWS
+- test_zone_lookup_uses_each_bullets_tc      : Phase 239 D-08/D-11 — registry band per TC, rapid stopgap
+- test_two_user_isolation                    : T-239-08 — each user sees only their own events
+- test_zero_event_family_delta_none          : family with no events -> delta=None
+- test_confidence_gate_chip_field            : tactic_motif=None when confidence < threshold
 """
 
 import uuid
@@ -91,6 +89,8 @@ async def _seed_flaw(
     severity: int = 1,
     tactic_motif: int | None = None,
     tactic_confidence: int | None = None,
+    missed_motif: int | None = None,
+    missed_confidence: int | None = None,
 ) -> None:
     from app.repositories.game_flaws_repository import bulk_insert_game_flaws
 
@@ -112,6 +112,8 @@ async def _seed_flaw(
                 "fen": "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR",
                 "allowed_tactic_motif": tactic_motif,
                 "allowed_tactic_confidence": tactic_confidence,
+                "missed_tactic_motif": missed_motif,
+                "missed_tactic_confidence": missed_confidence,
             }
         ],
     )
@@ -132,23 +134,29 @@ _DEFAULT_FILTER_KWARGS: dict = dict(
 )
 
 # Reserved user IDs (no collision with other test modules)
-_TEST_USER_GATE = 77701
-_TEST_USER_BULLETS = 77702
-_TEST_USER_RANK = 77703
+_TEST_USER_ORDER = 77701
+_TEST_USER_UNIT = 77702
 _TEST_USER_ZERO = 77704
 _TEST_USER_CHIP = 77705
-_TEST_USER_OVERFLOW = 77706  # Plan 04 G-01 overflow regression test
+_TEST_USER_GATE = 77706
+_TEST_USER_LOW = 77707
+_TEST_USER_BAND = 77708
+_TEST_USER_ISO_A = 77709
+_TEST_USER_ISO_B = 77710
 
 
 @pytest_asyncio.fixture(autouse=True)
 async def _create_test_users(db_session: AsyncSession) -> None:
     for uid in [
-        _TEST_USER_GATE,
-        _TEST_USER_BULLETS,
-        _TEST_USER_RANK,
+        _TEST_USER_ORDER,
+        _TEST_USER_UNIT,
         _TEST_USER_ZERO,
         _TEST_USER_CHIP,
-        _TEST_USER_OVERFLOW,
+        _TEST_USER_GATE,
+        _TEST_USER_LOW,
+        _TEST_USER_BAND,
+        _TEST_USER_ISO_A,
+        _TEST_USER_ISO_B,
     ]:
         await _ensure_user(db_session, uid)
 
@@ -259,50 +267,16 @@ def test_family_mapping_fork() -> None:
     assert FAMILY_TO_MOTIF_INTS["fork"] == [1]
 
 
-def test_family_mapping_produces_overflow() -> None:
-    """With 19 families, the top-6 selection leaves 13 overflow families (G-01 resolved).
-
-    This is the data-layer proof that the 'More Tactics' accordion (D-14) is
-    now reachable — it was previously blocked because 6 families == top-6 cap.
-    Quick 260623-6pd expanded the taxonomy from 10 to 15 (tier-3 Advanced families);
-    Phase 133 (plan 133-02) added attraction + sacrifice (→ 17); Quick 260623 added the
-    move-type families en_passant + under_promotion (→ 19); promotion was surfaced when
-    D-09 was reversed (→ 20). Phase 221 plan 06 (D-07) then REMOVED "clearance" (→ 19).
-    """
+def test_family_mapping_has_nineteen_families() -> None:
+    """The payload is 19 families x 2 sides = 38 bullets per TC (Phase 239 D-00h)."""
     from app.repositories.library_repository import FAMILY_TO_MOTIF_INTS
 
-    total = len(FAMILY_TO_MOTIF_INTS)
-    assert total == 19, f"Expected 19 families; got {total}"
-    # top-6 + 13 overflow
-    assert total > 6, "With 19 families, top-6 selection always produces overflow families"
-    overflow_count = total - 6
-    assert overflow_count == 13, f"Expected 13 overflow families; got {overflow_count}"
+    assert len(FAMILY_TO_MOTIF_INTS) == 19
 
 
 # ---------------------------------------------------------------------------
-# Task 2 — get_tactic_comparison service tests
+# get_tactic_comparison service tests (Phase 239: per TC, per 100 games, fixed order)
 # ---------------------------------------------------------------------------
-
-
-@pytest.mark.asyncio
-async def test_below_gate_short_circuit(db_session: AsyncSession) -> None:
-    """analyzed_n < TACTIC_COMPARISON_GATE returns below_gate=True, bullets=[]."""
-    from app.services.library_service import TACTIC_COMPARISON_GATE, get_tactic_comparison
-
-    # Seed only 5 analyzed games (below the gate of 20)
-    for _ in range(5):
-        g = await _seed_game(db_session, user_id=_TEST_USER_GATE)
-        await _seed_analyzed(db_session, game=g)
-
-    result = await get_tactic_comparison(
-        db_session,
-        user_id=_TEST_USER_GATE,
-        **_DEFAULT_FILTER_KWARGS,
-    )
-    assert result.below_gate is True
-    assert result.bullets == []
-    assert result.analyzed_n < TACTIC_COMPARISON_GATE
-    assert result.analyzed_gate == TACTIC_COMPARISON_GATE
 
 
 def test_combinations_request_is_noop() -> None:
@@ -325,113 +299,82 @@ def test_combinations_request_is_noop() -> None:
 
 
 @pytest.mark.asyncio
-async def test_full_response_bullets(db_session: AsyncSession) -> None:
-    """With enough analyzed games, response has below_gate=False and up to 20 bullets."""
-    from app.repositories.library_repository import FAMILY_TO_MOTIF_INTS
+async def test_fixed_order_per_tc(db_session: AsyncSession) -> None:
+    """25 blitz games, one missed fork: tcs == [blitz] with 38 bullets in fixed order (D-00h)."""
     from app.services.library_service import TACTIC_COMPARISON_GATE, get_tactic_comparison
-
-    # Seed 25 analyzed games (above gate)
-    for _ in range(TACTIC_COMPARISON_GATE + 5):
-        g = await _seed_game(db_session, user_id=_TEST_USER_BULLETS)
-        await _seed_analyzed(db_session, game=g)
-
-    result = await get_tactic_comparison(
-        db_session,
-        user_id=_TEST_USER_BULLETS,
-        **_DEFAULT_FILTER_KWARGS,
-    )
-    assert result.below_gate is False
-    assert result.analyzed_n >= TACTIC_COMPARISON_GATE
-    # Up to 30 bullets (15 families x 2 orientations: missed + allowed) after Quick
-    # 260623-6pd added the tier-3 Advanced families. Can be less if some families have 0 events.
-    assert len(result.bullets) <= 2 * len(FAMILY_TO_MOTIF_INTS)
-    # All bullets have a valid family key from the taxonomy
-    valid_families = set(FAMILY_TO_MOTIF_INTS.keys())
-    for bullet in result.bullets:
-        assert bullet.family in valid_families, (
-            f"bullet.family {bullet.family!r} must be one of the taxonomy keys"
-        )
-        assert bullet.orientation in ("missed", "allowed"), (
-            f"Each bullet must have orientation 'missed' or 'allowed'; got {bullet.orientation!r}"
-        )
-    # Check response shape
-    assert isinstance(result.analyzed_n, int)
-    assert isinstance(result.analyzed_gate, int)
-
-
-@pytest.mark.asyncio
-async def test_tactic_comparison_produces_overflow(db_session: AsyncSession) -> None:
-    """With 10-family taxonomy, top-6 selection leaves 4 overflow families (G-01 regression).
-
-    Phase 129 Plan 04: this is the data-layer proof that the 'More Tactics' accordion
-    (D-14) is now reachable. Previously 6 families == top-6 cap → overflow always empty.
-    With 10 families, overflow_families = ranked_families[6:] always has 4 entries.
-    """
-    from app.repositories.library_repository import FAMILY_TO_MOTIF_INTS
-    from app.services.library_service import TACTIC_COMPARISON_GATE, get_tactic_comparison
-
-    # Seed enough games to get past the gate
-    for _ in range(TACTIC_COMPARISON_GATE + 5):
-        g = await _seed_game(db_session, user_id=_TEST_USER_OVERFLOW)
-        await _seed_analyzed(db_session, game=g)
-
-    result = await get_tactic_comparison(
-        db_session,
-        user_id=_TEST_USER_OVERFLOW,
-        **_DEFAULT_FILTER_KWARGS,
-    )
-    assert result.below_gate is False
-
-    # With 10 families the server emits bullets for all of them (zero-event or not).
-    # The top-6 selection must leave 4 overflow families — verify total unique families
-    # represented in the response equals all 10 (or at least > 6, confirming overflow exists).
-    families_in_response = {b.family for b in result.bullets}
-    # All 10 families always emit at least 1 bullet (even if zero-event, delta=None).
-    assert len(families_in_response) == len(FAMILY_TO_MOTIF_INTS), (
-        f"Expected all {len(FAMILY_TO_MOTIF_INTS)} families in response; "
-        f"got {len(families_in_response)}: {sorted(families_in_response)}"
-    )
-    # With 10 families, overflow always exists (D-14 accordion reachable).
-    assert len(families_in_response) > 6, (
-        "10-family taxonomy must produce overflow; response families must exceed top-6 cap"
-    )
-
-
-@pytest.mark.asyncio
-async def test_significant_gap_first(db_session: AsyncSession) -> None:
-    """Bullets with significant gaps (ci_low>0 or ci_high<0) rank before non-significant."""
-    from app.services.library_service import TACTIC_COMPARISON_GATE, get_tactic_comparison
+    from app.services.tactic_delta_zones import TACTIC_FAMILIES
     from app.services.tactic_detector import TacticMotifInt
 
-    # Seed enough analyzed games: player gets many fork events (even ply = white mover)
-    # user_color="white", so even ply = player moves
-    games_with_forks = []
+    games = []
     for _ in range(TACTIC_COMPARISON_GATE + 5):
-        g = await _seed_game(db_session, user_id=_TEST_USER_RANK, user_color="white")
+        g = await _seed_game(db_session, user_id=_TEST_USER_ORDER, user_color="white")
         await _seed_analyzed(db_session, game=g)
-        games_with_forks.append(g)
-
-    # Give 25 games many fork events on the player side (even ply) to force significant gap
-    for g in games_with_forks:
-        for ply in [2, 4, 6]:  # even plies = white (player) side
-            await _seed_flaw(
-                db_session,
-                game=g,
-                ply=ply,
-                tactic_motif=int(TacticMotifInt.FORK),
-                tactic_confidence=90,
-            )
+        games.append(g)
+    # Ply 2 is a white (player) move: a missed fork on the user's side in one game.
+    await _seed_flaw(
+        db_session,
+        game=games[0],
+        ply=2,
+        missed_motif=int(TacticMotifInt.FORK),
+        missed_confidence=90,
+    )
 
     result = await get_tactic_comparison(
-        db_session,
-        user_id=_TEST_USER_RANK,
-        **_DEFAULT_FILTER_KWARGS,
+        db_session, user_id=_TEST_USER_ORDER, **_DEFAULT_FILTER_KWARGS
     )
-    assert result.below_gate is False
-    # Phase 129 D-13: fork now has TWO bullets (missed + allowed); with player-side
-    # allowed fork events the allowed bullet has you_rate > 0, missed may have you_rate=None.
-    fork_bullets = [b for b in result.bullets if b.family == "fork"]
-    assert len(fork_bullets) <= 2  # at most 2 fork bullets (missed + allowed per D-13)
+
+    assert result.analyzed_gate == TACTIC_COMPARISON_GATE
+    assert [tc.tc for tc in result.tcs] == ["blitz"]
+    blitz = result.tcs[0]
+    assert blitz.analyzed_n == TACTIC_COMPARISON_GATE + 5
+    assert blitz.below_gate is False
+    assert [(b.family, b.orientation) for b in blitz.bullets] == [
+        (family, side) for family in TACTIC_FAMILIES for side in ("missed", "allowed")
+    ]
+    assert len(blitz.bullets) == 38
+    fork_missed = blitz.bullets[0]
+    assert (fork_missed.family, fork_missed.orientation) == ("fork", "missed")
+    assert fork_missed.you_events == 1
+    assert fork_missed.opp_events == 0
+    # 1 event over 25 games: 100 / 25 = 4.0 per 100 games (D-00h).
+    assert fork_missed.you_rate == pytest.approx(4.0)
+    assert fork_missed.opp_rate == pytest.approx(0.0)
+    assert fork_missed.delta == pytest.approx(4.0)
+    # Registry as shipped is all-None until plan 239-07: no zone anywhere.
+    for bullet in blitz.bullets:
+        assert bullet.has_zone is False
+        assert bullet.zone_lo == 0.0
+        assert bullet.zone_hi == 0.0
+
+
+@pytest.mark.asyncio
+async def test_per_100_games_unit(db_session: AsyncSession) -> None:
+    """A single analyzed game whose only flaw is a missed fork reads 100.0 per 100 games."""
+    from app.services.library_service import get_tactic_comparison
+    from app.services.tactic_detector import TacticMotifInt
+
+    g = await _seed_game(db_session, user_id=_TEST_USER_UNIT, user_color="white")
+    await _seed_analyzed(db_session, game=g)
+    await _seed_flaw(
+        db_session,
+        game=g,
+        ply=2,
+        missed_motif=int(TacticMotifInt.FORK),
+        missed_confidence=90,
+    )
+
+    result = await get_tactic_comparison(
+        db_session, user_id=_TEST_USER_UNIT, **_DEFAULT_FILTER_KWARGS
+    )
+
+    assert [tc.tc for tc in result.tcs] == ["blitz"]
+    assert result.tcs[0].analyzed_n == 1
+    fork_missed = next(
+        b for b in result.tcs[0].bullets if (b.family, b.orientation) == ("fork", "missed")
+    )
+    assert fork_missed.you_rate == pytest.approx(100.0)
+    assert fork_missed.opp_rate == pytest.approx(0.0)
+    assert fork_missed.delta == pytest.approx(100.0)
 
 
 @pytest.mark.asyncio
@@ -451,12 +394,181 @@ async def test_zero_event_family_delta_none(db_session: AsyncSession) -> None:
         user_id=_TEST_USER_ZERO,
         **_DEFAULT_FILTER_KWARGS,
     )
-    assert result.below_gate is False
+    assert len(result.tcs) == 1
+    assert result.tcs[0].below_gate is False
     # All bullets should have delta=None since no tactic motifs were set
-    for bullet in result.bullets:
+    for bullet in result.tcs[0].bullets:
         assert bullet.delta is None
+        assert bullet.you_rate is None
         assert bullet.you_events == 0
         assert bullet.opp_events == 0
+
+
+@pytest.mark.asyncio
+async def test_below_gate_tc_still_lists_bullets(db_session: AsyncSession) -> None:
+    """A TC with 12 analyzed games is listed below_gate with 38 populated bullets (D-03)."""
+    from app.services.library_service import TACTIC_COMPARISON_GATE, get_tactic_comparison
+    from app.services.tactic_detector import TacticMotifInt
+
+    games = []
+    for _ in range(12):
+        g = await _seed_game(db_session, user_id=_TEST_USER_GATE, user_color="white")
+        await _seed_analyzed(db_session, game=g)
+        games.append(g)
+    await _seed_flaw(
+        db_session,
+        game=games[0],
+        ply=2,
+        missed_motif=int(TacticMotifInt.FORK),
+        missed_confidence=90,
+    )
+
+    result = await get_tactic_comparison(
+        db_session, user_id=_TEST_USER_GATE, **_DEFAULT_FILTER_KWARGS
+    )
+
+    assert 12 < TACTIC_COMPARISON_GATE
+    assert [tc.tc for tc in result.tcs] == ["blitz"]
+    blitz = result.tcs[0]
+    assert blitz.analyzed_n == 12
+    assert blitz.below_gate is True
+    assert len(blitz.bullets) == 38
+    fork_missed = blitz.bullets[0]
+    assert (fork_missed.family, fork_missed.orientation) == ("fork", "missed")
+    # Rates are populated below the gate: 1 event over 12 games.
+    assert fork_missed.you_rate == pytest.approx(100.0 / 12)
+
+
+@pytest.mark.asyncio
+async def test_low_sample_boundary(db_session: AsyncSession) -> None:
+    """LOW_SAMPLE_MIN_FLAWS - 1 family-orientation flaws is low_sample; LOW_SAMPLE_MIN_FLAWS is not."""
+    from app.services.library_service import LOW_SAMPLE_MIN_FLAWS, get_tactic_comparison
+    from app.services.tactic_detector import TacticMotifInt
+
+    games = []
+    for _ in range(LOW_SAMPLE_MIN_FLAWS):
+        g = await _seed_game(db_session, user_id=_TEST_USER_LOW, user_color="white")
+        await _seed_analyzed(db_session, game=g)
+        games.append(g)
+    # LOW_SAMPLE_MIN_FLAWS - 1 player-side missed forks (ply 2 is a white move).
+    for g in games[: LOW_SAMPLE_MIN_FLAWS - 1]:
+        await _seed_flaw(
+            db_session,
+            game=g,
+            ply=2,
+            missed_motif=int(TacticMotifInt.FORK),
+            missed_confidence=90,
+        )
+
+    async def fork_missed_bullet():  # noqa: ANN202 — local helper
+        result = await get_tactic_comparison(
+            db_session, user_id=_TEST_USER_LOW, **_DEFAULT_FILTER_KWARGS
+        )
+        return next(
+            b for b in result.tcs[0].bullets if (b.family, b.orientation) == ("fork", "missed")
+        )
+
+    below = await fork_missed_bullet()
+    assert below.you_events + below.opp_events == LOW_SAMPLE_MIN_FLAWS - 1
+    assert below.low_sample is True
+
+    # One opponent-side missed fork (ply 3 is a black move) brings the total to the threshold.
+    await _seed_flaw(
+        db_session,
+        game=games[-1],
+        ply=3,
+        missed_motif=int(TacticMotifInt.FORK),
+        missed_confidence=90,
+    )
+    at = await fork_missed_bullet()
+    assert at.you_events + at.opp_events == LOW_SAMPLE_MIN_FLAWS
+    assert at.low_sample is False
+
+
+@pytest.mark.asyncio
+async def test_zone_lookup_uses_each_bullets_tc(
+    db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The (fork, missed) band is read per TC: classical its own, blitz and bullet the rapid one."""
+    from app.services import tactic_delta_zones
+    from app.services.flaw_delta_zones import ZoneBand
+    from app.services.library_service import get_tactic_comparison
+
+    rapid = ZoneBand(zone_lo=-2.0, zone_hi=3.0)
+    classical = ZoneBand(zone_lo=-1.0, zone_hi=1.5)
+    patched = {
+        **tactic_delta_zones.TACTIC_DELTA_ZONES,
+        ("fork", "missed"): {"rapid": rapid, "classical": classical},
+    }
+    monkeypatch.setattr(tactic_delta_zones, "TACTIC_DELTA_ZONES", patched)
+
+    for tc in ("bullet", "blitz", "classical"):
+        g = await _seed_game(
+            db_session, user_id=_TEST_USER_BAND, user_color="white", time_control_bucket=tc
+        )
+        await _seed_analyzed(db_session, game=g)
+
+    result = await get_tactic_comparison(
+        db_session, user_id=_TEST_USER_BAND, **_DEFAULT_FILTER_KWARGS
+    )
+
+    assert [tc.tc for tc in result.tcs] == ["bullet", "blitz", "classical"]
+    expected = {"bullet": rapid, "blitz": rapid, "classical": classical}
+    for tc_entry in result.tcs:
+        fork_missed = tc_entry.bullets[0]
+        assert (fork_missed.family, fork_missed.orientation) == ("fork", "missed")
+        assert fork_missed.has_zone is True
+        assert fork_missed.zone_lo == expected[tc_entry.tc].zone_lo
+        assert fork_missed.zone_hi == expected[tc_entry.tc].zone_hi
+        # Every other family-side is still unviable in this registry.
+        assert all(b.has_zone is False for b in tc_entry.bullets[1:])
+        assert all(b.zone_lo == 0.0 and b.zone_hi == 0.0 for b in tc_entry.bullets[1:])
+
+
+@pytest.mark.asyncio
+async def test_two_user_isolation(db_session: AsyncSession) -> None:
+    """Each user's response carries only that user's counts (T-239-08)."""
+    from app.services.library_service import get_tactic_comparison
+    from app.services.tactic_detector import TacticMotifInt
+
+    game_a = await _seed_game(db_session, user_id=_TEST_USER_ISO_A, user_color="white")
+    await _seed_analyzed(db_session, game=game_a)
+    await _seed_flaw(
+        db_session,
+        game=game_a,
+        ply=2,
+        missed_motif=int(TacticMotifInt.FORK),
+        missed_confidence=90,
+    )
+    game_b = await _seed_game(db_session, user_id=_TEST_USER_ISO_B, user_color="white")
+    await _seed_analyzed(db_session, game=game_b)
+    await _seed_flaw(
+        db_session,
+        game=game_b,
+        ply=2,
+        missed_motif=int(TacticMotifInt.MATE),
+        missed_confidence=90,
+    )
+
+    def events(result, family: str) -> int:  # noqa: ANN001
+        bullet = next(
+            b for b in result.tcs[0].bullets if (b.family, b.orientation) == (family, "missed")
+        )
+        return bullet.you_events + bullet.opp_events
+
+    res_a = await get_tactic_comparison(
+        db_session, user_id=_TEST_USER_ISO_A, **_DEFAULT_FILTER_KWARGS
+    )
+    res_b = await get_tactic_comparison(
+        db_session, user_id=_TEST_USER_ISO_B, **_DEFAULT_FILTER_KWARGS
+    )
+
+    assert events(res_a, "fork") == 1
+    assert events(res_a, "mate") == 0
+    assert events(res_b, "fork") == 0
+    assert events(res_b, "mate") == 1
+    assert res_a.tcs[0].analyzed_n == 1
+    assert res_b.tcs[0].analyzed_n == 1
 
 
 @pytest.mark.asyncio
