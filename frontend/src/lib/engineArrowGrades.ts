@@ -27,6 +27,7 @@ import {
 import { uciToSquares } from '@/lib/sanToSquares';
 import {
   STOCKFISH_ARROW_RGB,
+  STOCKFISH_PRIMARY_ALPHA,
   STOCKFISH_SECONDARY_ALPHA_MAX,
   STOCKFISH_SECONDARY_ALPHA_MIN,
   STOCKFISH_SECONDARY_LINE,
@@ -94,8 +95,10 @@ export function stockfishSecondaryArrowColor(grade: EngineLineGrade | null): str
 }
 
 /**
- * The corner badge for a graded arrow target. `translucent` badges take the grade
- * alpha as group opacity (they sit on a translucent arrow); solid ones stay opaque.
+ * The corner badge for a graded arrow target. Every badge is as translucent as the
+ * arrow it sits on: `translucent` badges (on a graded secondary arrow) take the grade
+ * alpha as group opacity, badges on the solid top-move arrow take that arrow's alpha
+ * (STOCKFISH_PRIMARY_ALPHA, owner follow-up to quick 261012-a6m).
  */
 export function engineBadgeMarker(
   square: string,
@@ -108,12 +111,12 @@ export function engineBadgeMarker(
       : grade.quality === 'good'
         ? { square, good: true }
         : { square, severity: grade.quality };
-  return translucent ? { ...marker, opacity: grade.alpha } : marker;
+  return { ...marker, opacity: translucent ? grade.alpha : STOCKFISH_PRIMARY_ALPHA };
 }
 
 /**
  * Badge candidates for ranks 0..min(count, lines.length)-1 in ASCENDING rank order
- * (precedence order for mergeEngineBadges). Rank 0 is the solid arrow (opaque star);
+ * (precedence order for mergeEngineBadges). Rank 0 is the solid arrow (star at the primary alpha);
  * ranks 1+ are translucent. Malformed first moves and ungraded ranks are skipped.
  */
 export function buildRankedEngineBadges(

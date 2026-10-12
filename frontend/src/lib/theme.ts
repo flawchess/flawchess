@@ -406,7 +406,13 @@ export const ARROW_NEUTRAL = '#6B7280';  // Tailwind gray-500 / matches WDL_BORD
 // built-in alpha so it reads as a translucent "engine suggestion" pointer — visually
 // secondary to the red flaw-move arrow it sits beside on the Flaw card, and a calm
 // overlay on the scrubbed Game-card board. rgba (not oklch) so the alpha is explicit.
-export const BEST_MOVE_ARROW = 'rgba(37, 99, 235, 0.8)';  // Tailwind blue-600 @ 80%
+// RGB triplet shared by BEST_MOVE_ARROW and the Stockfish secondary arrows (graded ones
+// are `rgba(${STOCKFISH_ARROW_RGB}, alpha)`, quick 261012-a6m).
+export const STOCKFISH_ARROW_RGB = '37, 99, 235';  // Tailwind blue-600
+// Alpha of the solid top-move arrow; the top move's best-star badge uses the same value
+// as its group opacity so the icon reads as translucent as its arrow (quick 261012-a6m).
+export const STOCKFISH_PRIMARY_ALPHA = 0.8;
+export const BEST_MOVE_ARROW = `rgba(${STOCKFISH_ARROW_RGB}, ${STOCKFISH_PRIMARY_ALPHA})`;
 
 // FlawChess Engine board arrow (Phase 156) — the practical-play move rendered on the
 // analysis board (game + free). Bright gold/amber (matching FLAWCHESS_ENGINE_ACCENT's
@@ -428,9 +434,6 @@ export const FLAWCHESS_ENGINE_ARROW = 'rgb(213, 152, 0)';  // deep gold/amber (1
 // below). STOCKFISH_SECONDARY_LINE is now the fixed PRE-DEPTH-GATE fallback look.
 // FLAWCHESS_SECONDARY_LINE keeps the single fixed alpha.
 export const STOCKFISH_SECONDARY_LINE = 'rgba(37, 99, 235, 0.45)';  // BEST_MOVE_ARROW blue @ 45%
-// RGB triplet shared by BEST_MOVE_ARROW and STOCKFISH_SECONDARY_LINE; the graded
-// secondary arrows are `rgba(${STOCKFISH_ARROW_RGB}, alpha)`.
-export const STOCKFISH_ARROW_RGB = '37, 99, 235';
 // Graded secondary alpha range (quick 261012-a6m D-08): a line equal to the top move gets
 // MAX (below the primary's 0.8 so the top arrow stays distinct); a blunder-sized expected
 // score drop gets MIN (floor so blunder arrows stay visible). Owner-UAT tunable. The

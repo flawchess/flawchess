@@ -37,6 +37,7 @@ import {
   MOVE_QUALITY_INACCURACY,
   MOVE_QUALITY_MISTAKE,
   NEXT_MOVE_ARROW,
+  STOCKFISH_PRIMARY_ALPHA,
   STOCKFISH_SECONDARY_ALPHA_MAX,
   STOCKFISH_SECONDARY_LINE,
   TRAIN_BEST_MOVE_ARROW,
@@ -505,7 +506,7 @@ function gradeOf(lines: PvLine[], rank: number) {
 describe('buildTrainFreePlayOverlay (Phase 200 UAT round 5, Phase 228 D-13/D-15, quick 261012-a6m)', () => {
   const pv = gradedPv;
 
-  it("count 1 returns a single blue engine-hue arrow for the free-play engine's top move with an opaque best star", () => {
+  it("count 1 returns a single blue engine-hue arrow for the free-play engine's top move with a primary-alpha best star", () => {
     const { arrows, badges } = buildTrainFreePlayOverlay([pv(1, 'e7e5'), pv(2, 'c7c5')], 1, GRADE_FEN);
     expect(arrows).toHaveLength(1);
     expect(arrows[0]).toMatchObject({
@@ -513,7 +514,7 @@ describe('buildTrainFreePlayOverlay (Phase 200 UAT round 5, Phase 228 D-13/D-15,
       endSquare: 'e5',
       color: TRAIN_BEST_MOVE_ARROW,
     });
-    expect(badges).toEqual([{ square: 'e5', best: true }]);
+    expect(badges).toEqual([{ square: 'e5', best: true, opacity: STOCKFISH_PRIMARY_ALPHA }]);
   });
 
   it('count 3: rank 0 solid blue, ranks 1-2 graded alpha with same-opacity badges, one shared width, rank 0 last', () => {
@@ -531,7 +532,7 @@ describe('buildTrainFreePlayOverlay (Phase 200 UAT round 5, Phase 228 D-13/D-15,
     // Primary pushed last so it paints on top within its width tier.
     expect(arrows[arrows.length - 1]?.layerKey).toBe('free-0');
     expect(badges.map((b) => b.square)).toEqual(['e5', 'c5', 'f6']);
-    expect(badges[0]).toEqual({ square: 'e5', best: true });
+    expect(badges[0]).toEqual({ square: 'e5', best: true, opacity: STOCKFISH_PRIMARY_ALPHA });
     expect(badges[1]?.opacity).toBe(g1.alpha);
     expect(badges[2]?.opacity).toBe(g2.alpha);
     expect(badges[2]?.severity).toBe(g2.quality);
@@ -574,11 +575,11 @@ describe('buildTrainFreePlayOverlay (Phase 200 UAT round 5, Phase 228 D-13/D-15,
 describe('buildTrainStepOverlay (quick 261009-por, quick 261012-a6m D-04/D-08)', () => {
   const pv = gradedPv;
 
-  it('engine agrees with the line: exactly the single blue line arrow with an opaque best star', () => {
+  it('engine agrees with the line: exactly the single blue line arrow with a primary-alpha best star', () => {
     const { arrows, badges } = buildTrainStepOverlay('g1f3', [pv(1, 'g1f3')], 1, GRADE_FEN);
     expect(arrows).toHaveLength(1);
     expect(arrows[0]).toMatchObject({ layerKey: 'step-next', color: TRAIN_BEST_MOVE_ARROW });
-    expect(badges).toEqual([{ square: 'f3', best: true }]);
+    expect(badges).toEqual([{ square: 'f3', best: true, opacity: STOCKFISH_PRIMARY_ALPHA }]);
   });
 
   it('a disagreeing engine move draws a secondary under the line arrow, even at depth 1 (no arrow gate, no badge)', () => {
@@ -597,14 +598,14 @@ describe('buildTrainStepOverlay (quick 261009-por, quick 261012-a6m D-04/D-08)',
     expect(badges).toEqual([]);
   });
 
-  it('preview present as a lower live line: opaque graded preview badge first, live rank 0 at MAX alpha with a translucent star', () => {
+  it('preview present as a lower live line: primary-alpha graded preview badge first, live rank 0 at MAX alpha with a translucent star', () => {
     const lines = [pv(1, 'b1c3', 30), pv(2, 'g1f3', -250)];
     const { arrows, badges } = buildTrainStepOverlay('g1f3', lines, 2, GRADE_FEN);
     const g0 = gradeOf(lines, 0);
     const g1 = gradeOf(lines, 1);
-    // Preview (opaque, graded) is first, then the live rank 0 (translucent star).
+    // Preview (primary alpha, graded) is first, then the live rank 0 (translucent star).
     expect(badges).toEqual([
-      { square: 'f3', severity: g1.quality },
+      { square: 'f3', severity: g1.quality, opacity: STOCKFISH_PRIMARY_ALPHA },
       { square: 'c3', best: true, opacity: g0.alpha },
     ]);
     expect(g0.alpha).toBe(STOCKFISH_SECONDARY_ALPHA_MAX);

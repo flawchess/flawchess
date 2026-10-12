@@ -354,7 +354,7 @@ function previewPointerBadge(
  * With no preview (`nextMoveUci` null) the live moves draw as secondaries with no
  * primary.
  *
- * Badges (D-04), in precedence order: the preview pointer first (opaque, because
+ * Badges (D-04), in precedence order: the preview pointer first (primary arrow alpha, because
  * its arrow is solid), then each drawn live rank at its own alpha (rank 0 included:
  * the preview keeps it secondary-drawn, so its star is translucent too).
  */
@@ -408,7 +408,7 @@ export function buildTrainStepOverlay(
  *
  * Quick 261012-a6m (D-04, D-08): once the lines are deep enough
  * (ENGINE_ARROW_GRADE_MIN_DEPTH) ranks 1+ take their graded alpha and every drawn
- * arrow gets a quality badge (rank 0 the opaque best star, ranks 1+ at the arrow's
+ * arrow gets a quality badge (rank 0 the best star at the primary arrow alpha, ranks 1+ at the arrow's
  * alpha). `fen` is the shown position (the side-to-move for grading). Before the
  * gate the secondaries keep the fixed color and there are no badges.
  *

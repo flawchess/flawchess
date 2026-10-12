@@ -21,6 +21,7 @@ import {
   BEST_MOVE_ARROW,
   FLAWCHESS_ENGINE_ARROW,
   FLAWCHESS_SECONDARY_LINE,
+  STOCKFISH_PRIMARY_ALPHA,
   STOCKFISH_SECONDARY_LINE,
 } from '@/lib/theme';
 import {
@@ -210,7 +211,7 @@ describe('useAnalysisBoardArrows — Stockfish arrow grades and badges (quick 26
     return result.current;
   }
 
-  it('post-gate: sf-0 stays solid with an opaque best badge, secondaries take the graded color and same-alpha badge', () => {
+  it('post-gate: sf-0 stays solid with a primary-alpha best badge, secondaries take the graded color and same-alpha badge', () => {
     const { boardArrows, boardSquareMarkers } = markersFor({ sfArrowCount: 3 });
     const sf = (boardArrows ?? []).filter((a) => a.layerKey?.startsWith('sf-'));
     expect(byKey(sf, 'sf-0')?.color).toBe(BEST_MOVE_ARROW);
@@ -223,7 +224,7 @@ describe('useAnalysisBoardArrows — Stockfish arrow grades and badges (quick 26
     const e4 = boardSquareMarkers.find((m) => m.square === 'e4');
     const d4 = boardSquareMarkers.find((m) => m.square === 'd4');
     const f3 = boardSquareMarkers.find((m) => m.square === 'f3');
-    expect(e4).toEqual({ square: 'e4', best: true });
+    expect(e4).toEqual({ square: 'e4', best: true, opacity: STOCKFISH_PRIMARY_ALPHA });
     expect(d4?.opacity).toBe(g1?.alpha);
     expect(f3?.opacity).toBe(g2?.alpha);
     expect(f3?.severity).toBe('blunder');

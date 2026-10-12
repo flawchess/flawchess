@@ -32,7 +32,7 @@
  * Quick 261012-a6m (D-01..D-08): the Stockfish arrows (never the FlawChess ones)
  * are graded by `lib/engineArrowGrades` in ONE pass (`stockfishGrades`) once the
  * lines are deep enough: ranks 1+ take a proportional alpha, and every drawn
- * arrow's target square gets a move-quality badge (rank 0 the opaque best star).
+ * arrow's target square gets a move-quality badge (rank 0 the best star at the primary arrow alpha).
  * The badges merge UNDER the existing square markers (they never displace one)
  * and follow the arrows actually drawn: none while the move-quality hover or the
  * PV-sideline overlay replaces the engine arrows.
