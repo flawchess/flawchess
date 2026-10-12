@@ -27,6 +27,7 @@ in `YYYY-MM-DD` (Europe/Zurich).
 ### Fixed
 
 - Analysis engine no longer restarts its Stockfish workers when the tab sits in the background, so a search left running in another tab keeps its results instead of losing them.
+- Google sign-in no longer shows a server error page when Google rejects the sign-in code (for example after a doubled redirect on Android). You land back on the login page with a "Google sign-in failed. Please try again." message.
 
 ## [v2.24] Train Grading Integrity & One-Screen Reveal — 2026-10-09
 

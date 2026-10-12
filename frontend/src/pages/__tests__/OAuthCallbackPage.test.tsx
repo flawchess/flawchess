@@ -57,4 +57,13 @@ describe('OAuthCallbackPage', () => {
     await waitFor(() => expect(screen.queryByText('login')).not.toBeNull());
     expect(toast.error).toHaveBeenCalledTimes(1);
   });
+
+  it('shows the retry toast and goes to login on GOOGLE_SIGNIN_FAILED', async () => {
+    window.history.replaceState(null, '', '/auth/callback#error=GOOGLE_SIGNIN_FAILED');
+    renderApp(true);
+    await waitFor(() => expect(screen.queryByText('login')).not.toBeNull());
+    expect(toast.error).toHaveBeenCalledTimes(1);
+    expect(toast.error).toHaveBeenCalledWith('Google sign-in failed. Please try again.');
+    expect(localStorage.getItem('auth_token')).toBeNull();
+  });
 });

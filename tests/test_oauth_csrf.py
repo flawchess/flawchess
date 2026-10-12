@@ -14,10 +14,13 @@ NOTE: The callback tests do NOT require Google credentials — they exercise the
       and CSRF validation logic before any Google API calls happen.
 """
 
+from unittest.mock import AsyncMock, MagicMock, patch
+
 import httpx
 import pytest
 from fastapi import HTTPException
 from fastapi_users.jwt import generate_jwt
+from httpx_oauth.oauth2 import GetAccessTokenError
 
 from app.core.config import settings
 from app.main import app
@@ -244,3 +247,66 @@ class TestOAuthCSRFCallback:
         assert "Invalid OAuth state" in resp.text, (
             f"Expected 'Invalid OAuth state' in response body, got: {resp.text!r}"
         )
+
+
+# ---------------------------------------------------------------------------
+# Callback endpoint — Google token-exchange failures (FLAWCHESS-CW)
+# ---------------------------------------------------------------------------
+
+
+def _token_error(google_error: str) -> GetAccessTokenError:
+    """Build the GetAccessTokenError httpx_oauth raises on a 400 from Google's token endpoint."""
+    response = httpx.Response(
+        400,
+        json={"error": google_error, "error_description": "Bad Request"},
+        request=httpx.Request("POST", "https://oauth2.googleapis.com/token"),
+    )
+    return GetAccessTokenError("Client error '400 Bad Request'", response)
+
+
+async def _callback_with_token_error(google_error: str) -> tuple[httpx.Response, MagicMock]:
+    """Hit /callback with valid state + CSRF cookie while the code exchange fails."""
+    csrf = "token_exchange_csrf"
+    state = make_state_jwt(csrf)
+    capture = MagicMock()
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app),
+        base_url="http://test",
+        cookies={_CSRF_COOKIE: csrf},
+    ) as client:
+        with (
+            patch(
+                "app.routers.auth.google_oauth_client.get_access_token",
+                new=AsyncMock(side_effect=_token_error(google_error)),
+            ),
+            patch("app.routers.auth.sentry_sdk.capture_exception", new=capture),
+        ):
+            resp = await client.get(
+                "/api/auth/google/callback",
+                params={"code": "fakecode", "state": state},
+                follow_redirects=False,
+            )
+    return resp, capture
+
+
+class TestGoogleTokenExchangeFailure:
+    @pytest.mark.asyncio
+    async def test_invalid_grant_redirects_without_sentry(self):
+        """An unredeemable code (invalid_grant) redirects to the SPA retry toast, no Sentry event."""
+        resp, capture = await _callback_with_token_error("invalid_grant")
+
+        assert resp.status_code == 302
+        assert resp.headers["location"] == (
+            f"{settings.FRONTEND_URL}/auth/callback#error=GOOGLE_SIGNIN_FAILED"
+        )
+        capture.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_unexpected_google_error_redirects_and_reports(self):
+        """A misconfiguration error (invalid_client) still redirects but is reported to Sentry."""
+        resp, capture = await _callback_with_token_error("invalid_client")
+
+        assert resp.status_code == 302
+        assert resp.headers["location"].endswith("#error=GOOGLE_SIGNIN_FAILED")
+        capture.assert_called_once()
+        assert isinstance(capture.call_args.args[0], GetAccessTokenError)
