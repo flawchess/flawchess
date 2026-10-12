@@ -124,10 +124,14 @@ export function gapWords(delta: number): string {
   return `${formatGapNumber(Math.abs(delta))} ${delta < 0 ? 'fewer' : 'more'}`;
 }
 
-/** Signed number for the popover footer, with a typographic minus: "−0.66", "+0.25". */
+/**
+ * Signed number for the popover footer, with a typographic minus: "−0.66", "+0.25".
+ * Two decimals below 10 (so a CI bound of -1.0028 reads "−1.00", not "−1.0"), none above.
+ */
 export function formatSignedGap(value: number): string {
   const sign = value > 0 ? '+' : value < 0 ? '−' : '';
-  return `${sign}${formatGapNumber(Math.abs(value))}`;
+  const magnitude = Math.abs(value);
+  return `${sign}${magnitude >= GAP_WORD_ZERO_DP_FROM ? magnitude.toFixed(0) : magnitude.toFixed(2)}`;
 }
 
 /** Dot and word colour: green better, red worse, blue for typical or no verdict. */

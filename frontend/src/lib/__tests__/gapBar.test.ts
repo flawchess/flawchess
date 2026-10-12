@@ -123,6 +123,8 @@ describe('gap words', () => {
     expect(formatSignedGap(-0.66)).toBe('−0.66');
     expect(formatSignedGap(0.25)).toBe('+0.25');
     expect(formatSignedGap(0)).toBe('0.00');
+    expect(formatSignedGap(-1.0028)).toBe('\u22121.00');
+    expect(formatSignedGap(12.3)).toBe('+12');
   });
 });
 
