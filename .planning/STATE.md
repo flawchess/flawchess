@@ -5,16 +5,16 @@ current_phase: 238
 current_phase_name: Endgame Stats Percentile-First Redesign (SEED-196)
 status: completed
 stopped_at: Phase 238 complete, squash-merged to main
-last_updated: "2026-10-11T19:44:23.576Z"
-state_head: 37c839f86cb634568916902eaf8f71e76a67a92c
+last_updated: "2026-10-12T05:42:07.628Z"
+state_head: ed23039f9655b89437022aeb8e7d9ee98455b866
 progress:
   total_phases: 1
   completed_phases: 103
   total_plans: 9
   completed_plans: 57
 milestone_name: Train Grading Integrity & One-Screen Reveal
-last_activity: 2026-10-10
-last_activity_desc: "Completed quick task 261010-e5l: live-engine good-move alternatives at the soft puzzle position in the Train reveal"
+last_activity: 2026-10-12
+last_activity_desc: "Completed quick task 261012-a6m: graded quality badges and drop-proportional transparency on Stockfish engine arrows (Analysis + Train)"
 ---
 
 # Project State: FlawChess
@@ -1023,6 +1023,7 @@ None active.
 | 261010-e5l | Train reveal: live-engine good-move alternatives at the soft puzzle position (up to 3 incl. server alt, good only, depth>=10) | 2026-10-10 | 0cd92a603 | [261010-e5l-train-reveal-live-engine-good-move-alter](./quick/261010-e5l-train-reveal-live-engine-good-move-alter/) |
 | 261011-lwy | Implement SEED-197: Train reveal live engine preview instead of fixed chip lines | 2026-10-11 | 9fd9f3425 | [261011-lwy-implement-seed-197-train-reveal-live-eng](./quick/261011-lwy-implement-seed-197-train-reveal-live-eng/) |
 | 136 | Endgame page: parity formula 'wins + ½draws', score span marker + dim on Score with vs. without endgame bars | 2026-10-11 | 37c839f86 | — |
+| 261012-a6m | Stockfish engine arrows: best star on top line, graded quality badges + drop-proportional transparency on secondary lines (Analysis + Train step/free-play) | 2026-10-12 | ed23039f9 | [261012-a6m-engine-arrow-move-quality-badges-best-st](./quick/261012-a6m-engine-arrow-move-quality-badges-best-st/) |
 
 ## Deferred Items
 
