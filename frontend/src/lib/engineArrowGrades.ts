@@ -27,7 +27,11 @@ import {
 import { uciToSquares } from '@/lib/sanToSquares';
 import {
   ARROW_OPACITY,
+  BOARD_LIGHT_SQUARE,
   STOCKFISH_ARROW_RGB,
+  STOCKFISH_BADGE_MIX_MAX,
+  STOCKFISH_BADGE_MIX_MIN,
+  STOCKFISH_BADGE_SECONDARY,
   STOCKFISH_PRIMARY_ALPHA,
   STOCKFISH_SECONDARY_ALPHA_MAX,
   STOCKFISH_SECONDARY_ALPHA_MIN,
@@ -93,6 +97,33 @@ export function gradeEngineLines(
 export function stockfishSecondaryArrowColor(grade: EngineLineGrade | null): string {
   if (grade === null) return STOCKFISH_SECONDARY_LINE;
   return `rgba(${STOCKFISH_ARROW_RGB}, ${grade.alpha})`;
+}
+
+/** Parses '#RRGGBB' or an 'r, g, b' triplet into channels. */
+function rgbChannels(color: string): [number, number, number] {
+  if (color.startsWith('#')) {
+    return [1, 3, 5].map((i) => parseInt(color.slice(i, i + 2), 16)) as [number, number, number];
+  }
+  return color.split(',').map((c) => Number(c.trim())) as [number, number, number];
+}
+
+/**
+ * Opaque eval-badge fill for a Stockfish secondary line in the engine-lines list: the
+ * Stockfish blue mixed toward BOARD_LIGHT_SQUARE, with its share scaled linearly from the
+ * grade alpha (ALPHA_MAX -> BADGE_MIX_MAX, ALPHA_MIN -> BADGE_MIX_MIN), so the badge fades
+ * with move quality like its board arrow and icon. Pre-gate (null) is the fixed
+ * STOCKFISH_BADGE_SECONDARY. Opaque on purpose: see the token comment in theme.ts.
+ */
+export function stockfishSecondaryBadgeColor(grade: EngineLineGrade | null): string {
+  if (grade === null) return STOCKFISH_BADGE_SECONDARY;
+  const t =
+    (grade.alpha - STOCKFISH_SECONDARY_ALPHA_MIN) /
+    (STOCKFISH_SECONDARY_ALPHA_MAX - STOCKFISH_SECONDARY_ALPHA_MIN);
+  const share = STOCKFISH_BADGE_MIX_MIN + t * (STOCKFISH_BADGE_MIX_MAX - STOCKFISH_BADGE_MIX_MIN);
+  const blue = rgbChannels(STOCKFISH_ARROW_RGB);
+  const base = rgbChannels(BOARD_LIGHT_SQUARE);
+  const [r, g, b] = blue.map((c, i) => Math.round(c * share + base[i]! * (1 - share)));
+  return `rgb(${r}, ${g}, ${b})`;
 }
 
 /**

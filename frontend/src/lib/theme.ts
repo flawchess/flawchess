@@ -447,11 +447,20 @@ export const STOCKFISH_SECONDARY_ALPHA_MIN = 0.25;
 export const FLAWCHESS_SECONDARY_LINE = 'rgba(213, 152, 0, 0.45)';  // FLAWCHESS_ENGINE_ARROW gold @ 45%
 
 // Non-primary engine-card BADGES (Phase 228 UAT): a faded copy of the engine's primary
-// badge (same color, half its opacity), not the arrow color. The FC primary badge is a
-// darker gold than the board arrow (white text needs contrast), so reusing
-// FLAWCHESS_SECONDARY_LINE gave a different-looking gold nearly as strong as the primary.
-export const STOCKFISH_BADGE_SECONDARY = 'rgba(37, 99, 235, 0.4)';  // BEST_MOVE_ARROW blue @ half its 0.8
-export const FLAWCHESS_ENGINE_BADGE_SECONDARY = 'oklch(0.47 0.13 80 / 0.5)';  // FLAWCHESS_ENGINE_BADGE_PRIMARY @ 50%
+// badge, not the arrow color. The FC primary badge is a darker gold than the board arrow
+// (white text needs contrast), so reusing FLAWCHESS_SECONDARY_LINE gave a different-looking
+// gold nearly as strong as the primary.
+// OPAQUE, pre-mixed toward BOARD_LIGHT_SQUARE (not an alpha): a translucent fill fades
+// toward whatever is behind it, so the same alpha read lighter on the board but DARKER on
+// the near-black card. Mixing toward the light square fades the badge the way the board
+// arrows/icons fade, on any background. White text stays at ~3.5:1+ (bold short evals).
+// Stockfish secondaries are graded per line (engineArrowGrades.stockfishSecondaryBadgeColor):
+// the mix share runs from MAX (line equal to the top move) down to MIN (blunder-sized drop),
+// tracking the arrow alpha. STOCKFISH_BADGE_SECONDARY is the MAX mix, used pre-depth-gate.
+export const STOCKFISH_BADGE_MIX_MAX = 0.75;
+export const STOCKFISH_BADGE_MIX_MIN = 0.5;
+export const STOCKFISH_BADGE_SECONDARY = 'rgb(88, 129, 222)';  // blue-600 75% over BOARD_LIGHT_SQUARE
+export const FLAWCHESS_ENGINE_BADGE_SECONDARY = 'rgb(156, 114, 46)';  // FLAWCHESS_ENGINE_BADGE_PRIMARY (rgb 128,79,0) 75% over BOARD_LIGHT_SQUARE
 
 // Tactic Line Explorer payoff-ply arrows (Phase 135). Lighter alpha than BEST_MOVE_ARROW
 // so payoff arrows visually recede behind the punchline arrow (same blue, less prominent).

@@ -19,6 +19,7 @@ import { TooltipProvider } from '@/components/ui/tooltip';
 import type { PvLine } from '@/hooks/uciParser';
 import { DEFAULT_LINES } from '@/lib/engineSettings';
 import { BEST_MOVE_ARROW, STOCKFISH_BADGE_SECONDARY } from '@/lib/theme';
+import { ENGINE_ARROW_GRADE_MIN_DEPTH, gradeEngineLines, stockfishSecondaryBadgeColor } from '@/lib/engineArrowGrades';
 
 const START_FEN = 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1';
 
@@ -308,7 +309,27 @@ describe('EngineLines', () => {
     expect(screen.getAllByLabelText(/^Line \d+:/)).toHaveLength(2);
   });
 
-  it('badge styling lock: line 1 solid BEST_MOVE_ARROW, every later line STOCKFISH_BADGE_SECONDARY, no dark-ink text override', () => {
+  it('graded lines: later badges take their own grade fill (fading with quality), same grades as the board', () => {
+    const depth = ENGINE_ARROW_GRADE_MIN_DEPTH + 2;
+    const graded: PvLine[] = [
+      { ...LINE_CP, multipv: 1, depth, evalCp: 30, evalMate: null },
+      { ...LINE_CP, multipv: 2, depth, evalCp: 20, evalMate: null },
+      { ...LINE_CP, multipv: 3, depth, evalCp: -400, evalMate: null },
+    ];
+    render(
+      <TooltipProvider>
+        <EngineLines pvLines={graded} baseFen={START_FEN} isAnalyzing={false} maxLines={3} onMoveClick={vi.fn()} />
+      </TooltipProvider>,
+    );
+    const badges = screen.getAllByLabelText(/^Line \d+:/);
+    const grades = gradeEngineLines(graded, START_FEN);
+    expect(badges[0]!.style.backgroundColor).toBe(BEST_MOVE_ARROW);
+    expect(badges[1]!.style.backgroundColor).toBe(stockfishSecondaryBadgeColor(grades[1] ?? null));
+    expect(badges[2]!.style.backgroundColor).toBe(stockfishSecondaryBadgeColor(grades[2] ?? null));
+    expect(badges[1]!.style.backgroundColor).not.toBe(badges[2]!.style.backgroundColor);
+  });
+
+  it('badge styling lock (pre-gate, no FEN): line 1 solid BEST_MOVE_ARROW, every later line STOCKFISH_BADGE_SECONDARY, no dark-ink text override', () => {
     const four: PvLine[] = [1, 2, 3, 4].map((n) => ({ ...LINE_CP, multipv: n }));
     render(<EngineLines pvLines={four} isAnalyzing={false} maxLines={4} onMoveClick={vi.fn()} />);
     const badges = screen.getAllByLabelText(/^Line \d+:/);

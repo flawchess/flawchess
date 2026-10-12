@@ -8,6 +8,7 @@ import {
   mergeEngineBadges,
   secondaryArrowAlpha,
   stockfishSecondaryArrowColor,
+  stockfishSecondaryBadgeColor,
   type EngineLineGrade,
 } from '@/lib/engineArrowGrades';
 import { BLUNDER_DROP } from '@/generated/flawThresholds';
@@ -16,6 +17,7 @@ import type { PvLine } from '@/hooks/uciParser';
 import type { SquareMarker } from '@/components/board/ChessBoard';
 import {
   STOCKFISH_ARROW_RGB,
+  STOCKFISH_BADGE_SECONDARY,
   ARROW_OPACITY,
   STOCKFISH_PRIMARY_ALPHA,
   STOCKFISH_SECONDARY_ALPHA_MAX,
@@ -113,6 +115,36 @@ describe('stockfishSecondaryArrowColor', () => {
 
   it('a grade builds the rgba from the shared RGB and its alpha', () => {
     expect(stockfishSecondaryArrowColor({ quality: 'good', alpha: 0.5 })).toBe(`rgba(${STOCKFISH_ARROW_RGB}, 0.5)`);
+  });
+});
+
+describe('stockfishSecondaryBadgeColor', () => {
+  const lightness = (rgb: string): number =>
+    (rgb.match(/\d+/g) ?? []).map(Number).reduce((sum, c) => sum + c, 0);
+
+  it('null falls back to the fixed secondary badge fill', () => {
+    expect(stockfishSecondaryBadgeColor(null)).toBe(STOCKFISH_BADGE_SECONDARY);
+  });
+
+  it('a top-equal line (alpha MAX) matches the fixed token, so the two never drift apart', () => {
+    expect(stockfishSecondaryBadgeColor({ quality: 'good', alpha: STOCKFISH_SECONDARY_ALPHA_MAX })).toBe(
+      STOCKFISH_BADGE_SECONDARY,
+    );
+  });
+
+  it('a blunder-sized drop (alpha MIN) is the half-and-half mix with the light square', () => {
+    expect(stockfishSecondaryBadgeColor({ quality: 'blunder', alpha: STOCKFISH_SECONDARY_ALPHA_MIN })).toBe(
+      'rgb(139, 159, 209)',
+    );
+  });
+
+  it('is opaque and fades lighter as the grade alpha drops', () => {
+    const good = stockfishSecondaryBadgeColor({ quality: 'good', alpha: STOCKFISH_SECONDARY_ALPHA_MAX });
+    const mid = stockfishSecondaryBadgeColor({ quality: 'mistake', alpha: 0.4 });
+    const bad = stockfishSecondaryBadgeColor({ quality: 'blunder', alpha: STOCKFISH_SECONDARY_ALPHA_MIN });
+    expect(mid).toMatch(/^rgb\(/);
+    expect(lightness(good)).toBeLessThan(lightness(mid));
+    expect(lightness(mid)).toBeLessThan(lightness(bad));
   });
 });
 
