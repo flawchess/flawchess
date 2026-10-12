@@ -23,13 +23,33 @@ import {
   FLAWCHESS_SECONDARY_LINE,
   STOCKFISH_SECONDARY_LINE,
 } from '@/lib/theme';
+import {
+  ENGINE_ARROW_GRADE_MIN_DEPTH,
+  gradeEngineLines,
+  stockfishSecondaryArrowColor,
+} from '@/lib/engineArrowGrades';
 import { DEFAULT_ARROWS } from '@/lib/engineSettings';
 
 const START_FEN = 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1';
 
-function pvLine(multipv: number, firstMove: string): PvLine {
-  return { multipv, depth: 12, moves: [firstMove, 'e7e5'], evalCp: 20, evalMate: null };
+const DEEP = ENGINE_ARROW_GRADE_MIN_DEPTH + 2;
+const SHALLOW = ENGINE_ARROW_GRADE_MIN_DEPTH - 1;
+
+function pvLine(multipv: number, firstMove: string, depth = DEEP, evalCp = 20): PvLine {
+  return { multipv, depth, moves: [firstMove, 'e7e5'], evalCp, evalMate: null };
 }
+
+/** Same lines as SF_LINES but with a distinct eval per rank so alphas differ. */
+const GRADED_SF_LINES: PvLine[] = [
+  pvLine(1, 'e2e4', DEEP, 30),
+  pvLine(2, 'd2d4', DEEP, -30),
+  pvLine(3, 'g1f3', DEEP, -250),
+];
+const SHALLOW_SF_LINES: PvLine[] = [
+  pvLine(1, 'e2e4', SHALLOW),
+  pvLine(2, 'd2d4', SHALLOW),
+  pvLine(3, 'g1f3', SHALLOW),
+];
 
 /** Plain-data RankedLine (no lazy accessors needed for arrow derivation). */
 function rankedLine(rootMove: string, practicalScore: number): RankedLine {
@@ -113,13 +133,16 @@ describe('useAnalysisBoardArrows — Stockfish arrows 1..N from the reconciled r
     expect(moves.size).toBe(3);
   });
 
-  it('rank 1 is the solid BEST_MOVE_ARROW, ranks 2..N the translucent secondary, one shared width', () => {
-    const sf = arrowsFor('sf', { sfArrowCount: 3 });
+  it('pre-gate (depth 9): rank 1 is the solid BEST_MOVE_ARROW, ranks 2..N the fixed secondary, one shared width, no badges', () => {
+    const opts = { sfArrowCount: 3, stockfishArrowLines: SHALLOW_SF_LINES };
+    const sf = arrowsFor('sf', opts);
     expect(byKey(sf, 'sf-0')?.color).toBe(BEST_MOVE_ARROW);
     expect(byKey(sf, 'sf-1')?.color).toBe(STOCKFISH_SECONDARY_LINE);
     expect(byKey(sf, 'sf-2')?.color).toBe(STOCKFISH_SECONDARY_LINE);
     const widths = new Set(sf.map((a) => a.width));
     expect(widths.size).toBe(1);
+    const { result } = renderHook(() => useAnalysisBoardArrows(baseOptions(opts)));
+    expect(result.current.boardSquareMarkers).toEqual([]);
   });
 
   it('the primary is pushed LAST so it paints on top within its width tier', () => {
@@ -174,5 +197,64 @@ describe('useAnalysisBoardArrows — FlawChess arrows (D-15)', () => {
 
   it('flawChessEnabled false yields no fc arrows', () => {
     expect(arrowsFor('fc', { flawChessEnabled: false, fcArrowCount: 3 })).toHaveLength(0);
+  });
+});
+
+describe('useAnalysisBoardArrows — Stockfish arrow grades and badges (quick 261012-a6m)', () => {
+  const grades = gradeEngineLines(GRADED_SF_LINES, START_FEN);
+
+  function markersFor(overrides: Partial<UseAnalysisBoardArrowsOptions>) {
+    const { result } = renderHook(() =>
+      useAnalysisBoardArrows(baseOptions({ stockfishArrowLines: GRADED_SF_LINES, ...overrides })),
+    );
+    return result.current;
+  }
+
+  it('post-gate: sf-0 stays solid with an opaque best badge, secondaries take the graded color and same-alpha badge', () => {
+    const { boardArrows, boardSquareMarkers } = markersFor({ sfArrowCount: 3 });
+    const sf = (boardArrows ?? []).filter((a) => a.layerKey?.startsWith('sf-'));
+    expect(byKey(sf, 'sf-0')?.color).toBe(BEST_MOVE_ARROW);
+    const g1 = grades[1];
+    const g2 = grades[2];
+    expect(g1).not.toBeNull();
+    expect(g2).not.toBeNull();
+    expect(byKey(sf, 'sf-1')?.color).toBe(stockfishSecondaryArrowColor(g1 ?? null));
+    expect(byKey(sf, 'sf-2')?.color).toBe(stockfishSecondaryArrowColor(g2 ?? null));
+    const e4 = boardSquareMarkers.find((m) => m.square === 'e4');
+    const d4 = boardSquareMarkers.find((m) => m.square === 'd4');
+    const f3 = boardSquareMarkers.find((m) => m.square === 'f3');
+    expect(e4).toEqual({ square: 'e4', best: true });
+    expect(d4?.opacity).toBe(g1?.alpha);
+    expect(f3?.opacity).toBe(g2?.alpha);
+    expect(f3?.severity).toBe('blunder');
+  });
+
+  it('an existing marker on the target square wins', () => {
+    const { boardSquareMarkers } = markersFor({
+      sfArrowCount: 1,
+      liveFlawSquareMarkers: [{ square: 'e4', severity: 'mistake' }],
+    });
+    const onE4 = boardSquareMarkers.filter((m) => m.square === 'e4');
+    expect(onE4).toEqual([{ square: 'e4', severity: 'mistake' }]);
+  });
+
+  it('D-07: the move-quality hover replaces the arrows and the engine badges', () => {
+    const { boardSquareMarkers } = markersFor({
+      sfArrowCount: 3,
+      hoveredQualityMoves: [{ san: 'e4', color: '#ff0000' }],
+    });
+    expect(boardSquareMarkers).toEqual([]);
+  });
+
+  it('D-07: sfArrowCount 0 or the engine off gives no engine badges', () => {
+    expect(markersFor({ sfArrowCount: 0 }).boardSquareMarkers).toEqual([]);
+    expect(markersFor({ engineEnabled: false, sfArrowCount: 3 }).boardSquareMarkers).toEqual([]);
+  });
+
+  it('D-01: FlawChess arrows get no badge and keep the fixed secondary color', () => {
+    const { boardArrows, boardSquareMarkers } = markersFor({ sfArrowCount: 0, fcArrowCount: 3 });
+    expect(boardSquareMarkers).toEqual([]);
+    const fc = (boardArrows ?? []).filter((a) => a.layerKey?.startsWith('fc-'));
+    expect(byKey(fc, 'fc-1')?.color).toBe(FLAWCHESS_SECONDARY_LINE);
   });
 });

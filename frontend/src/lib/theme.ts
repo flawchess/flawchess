@@ -419,11 +419,24 @@ export const FLAWCHESS_ENGINE_ARROW = 'rgb(213, 152, 0)';  // deep gold/amber (1
 // Non-primary engine lines (SEED-175 styling lock, Phase 228): ONE translucent color per
 // engine for every board arrow after the first (primary stays solid: BEST_MOVE_ARROW
 // blue / FLAWCHESS_ENGINE_ARROW gold). Card badges use the *_BADGE_SECONDARY tokens
-// below instead. No eval-proportional transparency (the lichess convention). Same RGB
-// as the engine's primary arrow at lower alpha; rgba (not oklch) because oklch() does
-// not reliably paint in an SVG `fill`. Starting alpha 0.45 is UAT-tuned (Plan 03 Task 3),
-// and ChessBoard additionally multiplies engine arrows by ARROW_OPACITY 0.75.
+// below instead. Same RGB as the engine's primary arrow at lower alpha; rgba (not oklch)
+// because oklch() does not reliably paint in an SVG `fill`. ChessBoard additionally
+// multiplies engine arrows by ARROW_OPACITY 0.75.
+// Quick 261012-a6m D-08 reverses the old "no eval-proportional transparency" lock for
+// STOCKFISH only: once the engine has searched deep enough to grade a line, its arrow
+// alpha follows its expected-score drop vs the top line (STOCKFISH_SECONDARY_ALPHA_*
+// below). STOCKFISH_SECONDARY_LINE is now the fixed PRE-DEPTH-GATE fallback look.
+// FLAWCHESS_SECONDARY_LINE keeps the single fixed alpha.
 export const STOCKFISH_SECONDARY_LINE = 'rgba(37, 99, 235, 0.45)';  // BEST_MOVE_ARROW blue @ 45%
+// RGB triplet shared by BEST_MOVE_ARROW and STOCKFISH_SECONDARY_LINE; the graded
+// secondary arrows are `rgba(${STOCKFISH_ARROW_RGB}, alpha)`.
+export const STOCKFISH_ARROW_RGB = '37, 99, 235';
+// Graded secondary alpha range (quick 261012-a6m D-08): a line equal to the top move gets
+// MAX (below the primary's 0.8 so the top arrow stays distinct); a blunder-sized expected
+// score drop gets MIN (floor so blunder arrows stay visible). Owner-UAT tunable. The
+// matching quality badge uses the same value as its group opacity.
+export const STOCKFISH_SECONDARY_ALPHA_MAX = 0.6;
+export const STOCKFISH_SECONDARY_ALPHA_MIN = 0.25;
 export const FLAWCHESS_SECONDARY_LINE = 'rgba(213, 152, 0, 0.45)';  // FLAWCHESS_ENGINE_ARROW gold @ 45%
 
 // Non-primary engine-card BADGES (Phase 228 UAT): a faded copy of the engine's primary
