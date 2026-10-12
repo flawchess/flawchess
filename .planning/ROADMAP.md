@@ -221,7 +221,7 @@ consistent with Phase 238 (Endgame Stats).
 
 **Depends on**: Phase 238 (`PercentileBar`, `RankedMetricPopover`, `TcSwitch`, `useEndgameStatsTc` patterns); blitz full-analysis benchmark sample for the tactic IQRs
 **Requirements**: TBD (coverage contract = CONTEXT decisions from discuss-phase)
-**Plans:** 3/10 plans executed
+**Plans:** 5/10 plans executed
 **Status**: Planned
 
 Plans:
@@ -231,8 +231,8 @@ Plans:
 - [x] 239-03-PLAN.md — Frontend building blocks: gap-bar math + GapBar, shared popover shell + GapPopover/GapRow, TC store factory + Library TC hook (wave 1)
 
 **Wave 2** *(blocked on Wave 1 completion)*
-- [ ] 239-04-PLAN.md — Backend per-TC tactic comparison per 100 games, fixed order, tactic zone registry (wave 2)
-- [ ] 239-05-PLAN.md — Frontend Flaw Stats section: container, synced Library TC switch, Blunders/Mistakes tiles, per-TC timeline, legacy band/grid/popover removed (wave 2)
+- [x] 239-04-PLAN.md — Backend per-TC tactic comparison per 100 games, fixed order, tactic zone registry (wave 2)
+- [x] 239-05-PLAN.md — Frontend Flaw Stats section: container, synced Library TC switch, Blunders/Mistakes tiles, per-TC timeline, legacy band/grid/popover removed (wave 2)
 - [ ] 239-06-PLAN.md — Run §5 (executor or orchestrator-inline by smoke time), pin diff gate, narrate report, D-12 sanity check, owner accepts or holds zone values (wave 2, checkpoint)
 
 **Wave 3** *(blocked on Wave 2 completion)*
