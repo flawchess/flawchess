@@ -5,6 +5,10 @@ Coverage plan:
 - test_combinations_request_is_noop          : dropped combinations key expands to no motif ints
 - test_fixed_order_per_tc                    : Phase 239 D-00h, D-02 — 38 bullets per TC, fixed order
 - test_per_100_games_unit                    : Phase 239 D-00h — rates/deltas per 100 games
+- test_below_gate_tc_still_lists_bullets    : Phase 239 D-03 — 12 analyzed games, below_gate with 38 bullets
+- test_low_sample_boundary                   : Phase 239 D-12 — LOW_SAMPLE_MIN_FLAWS - 1 vs LOW_SAMPLE_MIN_FLAWS
+- test_zone_lookup_uses_each_bullets_tc      : Phase 239 D-08/D-11 — registry band per TC, rapid stopgap
+- test_two_user_isolation                    : T-239-08 — each user sees only their own events
 - test_zero_event_family_delta_none          : family with no events -> delta=None
 - test_confidence_gate_chip_field            : tactic_motif=None when confidence < threshold
 """
@@ -134,11 +138,26 @@ _TEST_USER_ORDER = 77701
 _TEST_USER_UNIT = 77702
 _TEST_USER_ZERO = 77704
 _TEST_USER_CHIP = 77705
+_TEST_USER_GATE = 77706
+_TEST_USER_LOW = 77707
+_TEST_USER_BAND = 77708
+_TEST_USER_ISO_A = 77709
+_TEST_USER_ISO_B = 77710
 
 
 @pytest_asyncio.fixture(autouse=True)
 async def _create_test_users(db_session: AsyncSession) -> None:
-    for uid in [_TEST_USER_ORDER, _TEST_USER_UNIT, _TEST_USER_ZERO, _TEST_USER_CHIP]:
+    for uid in [
+        _TEST_USER_ORDER,
+        _TEST_USER_UNIT,
+        _TEST_USER_ZERO,
+        _TEST_USER_CHIP,
+        _TEST_USER_GATE,
+        _TEST_USER_LOW,
+        _TEST_USER_BAND,
+        _TEST_USER_ISO_A,
+        _TEST_USER_ISO_B,
+    ]:
         await _ensure_user(db_session, uid)
 
 
@@ -383,6 +402,173 @@ async def test_zero_event_family_delta_none(db_session: AsyncSession) -> None:
         assert bullet.you_rate is None
         assert bullet.you_events == 0
         assert bullet.opp_events == 0
+
+
+@pytest.mark.asyncio
+async def test_below_gate_tc_still_lists_bullets(db_session: AsyncSession) -> None:
+    """A TC with 12 analyzed games is listed below_gate with 38 populated bullets (D-03)."""
+    from app.services.library_service import TACTIC_COMPARISON_GATE, get_tactic_comparison
+    from app.services.tactic_detector import TacticMotifInt
+
+    games = []
+    for _ in range(12):
+        g = await _seed_game(db_session, user_id=_TEST_USER_GATE, user_color="white")
+        await _seed_analyzed(db_session, game=g)
+        games.append(g)
+    await _seed_flaw(
+        db_session,
+        game=games[0],
+        ply=2,
+        missed_motif=int(TacticMotifInt.FORK),
+        missed_confidence=90,
+    )
+
+    result = await get_tactic_comparison(
+        db_session, user_id=_TEST_USER_GATE, **_DEFAULT_FILTER_KWARGS
+    )
+
+    assert 12 < TACTIC_COMPARISON_GATE
+    assert [tc.tc for tc in result.tcs] == ["blitz"]
+    blitz = result.tcs[0]
+    assert blitz.analyzed_n == 12
+    assert blitz.below_gate is True
+    assert len(blitz.bullets) == 38
+    fork_missed = blitz.bullets[0]
+    assert (fork_missed.family, fork_missed.orientation) == ("fork", "missed")
+    # Rates are populated below the gate: 1 event over 12 games.
+    assert fork_missed.you_rate == pytest.approx(100.0 / 12)
+
+
+@pytest.mark.asyncio
+async def test_low_sample_boundary(db_session: AsyncSession) -> None:
+    """LOW_SAMPLE_MIN_FLAWS - 1 family-orientation flaws is low_sample; LOW_SAMPLE_MIN_FLAWS is not."""
+    from app.services.library_service import LOW_SAMPLE_MIN_FLAWS, get_tactic_comparison
+    from app.services.tactic_detector import TacticMotifInt
+
+    games = []
+    for _ in range(LOW_SAMPLE_MIN_FLAWS):
+        g = await _seed_game(db_session, user_id=_TEST_USER_LOW, user_color="white")
+        await _seed_analyzed(db_session, game=g)
+        games.append(g)
+    # LOW_SAMPLE_MIN_FLAWS - 1 player-side missed forks (ply 2 is a white move).
+    for g in games[: LOW_SAMPLE_MIN_FLAWS - 1]:
+        await _seed_flaw(
+            db_session,
+            game=g,
+            ply=2,
+            missed_motif=int(TacticMotifInt.FORK),
+            missed_confidence=90,
+        )
+
+    async def fork_missed_bullet():  # noqa: ANN202 — local helper
+        result = await get_tactic_comparison(
+            db_session, user_id=_TEST_USER_LOW, **_DEFAULT_FILTER_KWARGS
+        )
+        return next(
+            b for b in result.tcs[0].bullets if (b.family, b.orientation) == ("fork", "missed")
+        )
+
+    below = await fork_missed_bullet()
+    assert below.you_events + below.opp_events == LOW_SAMPLE_MIN_FLAWS - 1
+    assert below.low_sample is True
+
+    # One opponent-side missed fork (ply 3 is a black move) brings the total to the threshold.
+    await _seed_flaw(
+        db_session,
+        game=games[-1],
+        ply=3,
+        missed_motif=int(TacticMotifInt.FORK),
+        missed_confidence=90,
+    )
+    at = await fork_missed_bullet()
+    assert at.you_events + at.opp_events == LOW_SAMPLE_MIN_FLAWS
+    assert at.low_sample is False
+
+
+@pytest.mark.asyncio
+async def test_zone_lookup_uses_each_bullets_tc(
+    db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The (fork, missed) band is read per TC: classical its own, blitz and bullet the rapid one."""
+    from app.services import tactic_delta_zones
+    from app.services.flaw_delta_zones import ZoneBand
+    from app.services.library_service import get_tactic_comparison
+
+    rapid = ZoneBand(zone_lo=-2.0, zone_hi=3.0)
+    classical = ZoneBand(zone_lo=-1.0, zone_hi=1.5)
+    patched = {
+        **tactic_delta_zones.TACTIC_DELTA_ZONES,
+        ("fork", "missed"): {"rapid": rapid, "classical": classical},
+    }
+    monkeypatch.setattr(tactic_delta_zones, "TACTIC_DELTA_ZONES", patched)
+
+    for tc in ("bullet", "blitz", "classical"):
+        g = await _seed_game(
+            db_session, user_id=_TEST_USER_BAND, user_color="white", time_control_bucket=tc
+        )
+        await _seed_analyzed(db_session, game=g)
+
+    result = await get_tactic_comparison(
+        db_session, user_id=_TEST_USER_BAND, **_DEFAULT_FILTER_KWARGS
+    )
+
+    assert [tc.tc for tc in result.tcs] == ["bullet", "blitz", "classical"]
+    expected = {"bullet": rapid, "blitz": rapid, "classical": classical}
+    for tc_entry in result.tcs:
+        fork_missed = tc_entry.bullets[0]
+        assert (fork_missed.family, fork_missed.orientation) == ("fork", "missed")
+        assert fork_missed.has_zone is True
+        assert fork_missed.zone_lo == expected[tc_entry.tc].zone_lo
+        assert fork_missed.zone_hi == expected[tc_entry.tc].zone_hi
+        # Every other family-side is still unviable in this registry.
+        assert all(b.has_zone is False for b in tc_entry.bullets[1:])
+        assert all(b.zone_lo == 0.0 and b.zone_hi == 0.0 for b in tc_entry.bullets[1:])
+
+
+@pytest.mark.asyncio
+async def test_two_user_isolation(db_session: AsyncSession) -> None:
+    """Each user's response carries only that user's counts (T-239-08)."""
+    from app.services.library_service import get_tactic_comparison
+    from app.services.tactic_detector import TacticMotifInt
+
+    game_a = await _seed_game(db_session, user_id=_TEST_USER_ISO_A, user_color="white")
+    await _seed_analyzed(db_session, game=game_a)
+    await _seed_flaw(
+        db_session,
+        game=game_a,
+        ply=2,
+        missed_motif=int(TacticMotifInt.FORK),
+        missed_confidence=90,
+    )
+    game_b = await _seed_game(db_session, user_id=_TEST_USER_ISO_B, user_color="white")
+    await _seed_analyzed(db_session, game=game_b)
+    await _seed_flaw(
+        db_session,
+        game=game_b,
+        ply=2,
+        missed_motif=int(TacticMotifInt.MATE),
+        missed_confidence=90,
+    )
+
+    def events(result, family: str) -> int:  # noqa: ANN001
+        bullet = next(
+            b for b in result.tcs[0].bullets if (b.family, b.orientation) == (family, "missed")
+        )
+        return bullet.you_events + bullet.opp_events
+
+    res_a = await get_tactic_comparison(
+        db_session, user_id=_TEST_USER_ISO_A, **_DEFAULT_FILTER_KWARGS
+    )
+    res_b = await get_tactic_comparison(
+        db_session, user_id=_TEST_USER_ISO_B, **_DEFAULT_FILTER_KWARGS
+    )
+
+    assert events(res_a, "fork") == 1
+    assert events(res_a, "mate") == 0
+    assert events(res_b, "fork") == 0
+    assert events(res_b, "mate") == 1
+    assert res_a.tcs[0].analyzed_n == 1
+    assert res_b.tcs[0].analyzed_n == 1
 
 
 @pytest.mark.asyncio
