@@ -3,10 +3,10 @@ import {
   buildChipFocusOverlay,
   buildTrainLiveAlternatives,
   buildTrainRevealOverlay,
-  buildTrainFreePlayArrows,
+  buildTrainFreePlayOverlay,
   buildTrainStepArrows,
   buildTrainStepMarkers,
-  buildTrainStepOverlayArrows,
+  buildTrainStepOverlay,
   chipArrowColor,
   classifyTrainMoveQuality,
   trainRootMultiPvFloor,
@@ -21,6 +21,11 @@ import {
 } from '@/lib/trainArrows';
 import type { TrainFineMove, TrainLiveAlternativeContext } from '@/lib/trainArrows';
 import { classifyLiveSeverity, evalToExpectedScore } from '@/lib/liveFlaw';
+import {
+  ENGINE_ARROW_GRADE_MIN_DEPTH,
+  gradeEngineLines,
+  stockfishSecondaryArrowColor,
+} from '@/lib/engineArrowGrades';
 import type { PvLine } from '@/hooks/uciParser';
 import { DARK_GREEN } from '@/lib/arrowColor';
 import {
@@ -32,6 +37,7 @@ import {
   MOVE_QUALITY_INACCURACY,
   MOVE_QUALITY_MISTAKE,
   NEXT_MOVE_ARROW,
+  STOCKFISH_SECONDARY_ALPHA_MAX,
   STOCKFISH_SECONDARY_LINE,
   TRAIN_BEST_MOVE_ARROW,
   TRAIN_FOCUS_ARROW_DIM_OPACITY,
@@ -477,77 +483,106 @@ describe('buildTrainStepArrows (190.1 UAT stepping)', () => {
   });
 });
 
-describe('buildTrainFreePlayArrows (Phase 200 UAT round 5, Phase 228 D-13/D-15)', () => {
-  const pv = (multipv: number, firstMove: string): PvLine => ({
-    multipv,
-    depth: 12,
-    moves: [firstMove, 'a7a6'],
-    evalCp: 10,
-    evalMate: null,
-  });
+const GRADE_FEN = 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1';
+const GATE_DEEP = ENGINE_ARROW_GRADE_MIN_DEPTH + 2;
+const GATE_SHALLOW = ENGINE_ARROW_GRADE_MIN_DEPTH - 1;
 
-  it("count 1 returns a single blue engine-hue arrow for the free-play engine's top move (the default)", () => {
-    const arrows = buildTrainFreePlayArrows([pv(1, 'e7e5'), pv(2, 'c7c5')], 1);
+/** A scored live line; depth/eval default to a deep, equal-eval line. */
+const gradedPv = (
+  multipv: number,
+  firstMove: string,
+  evalCp: number = 10,
+  depth: number = GATE_DEEP,
+): PvLine => ({ multipv, depth, moves: [firstMove, 'a7a6'], evalCp, evalMate: null });
+
+/** The grade the pipeline gives `lines[rank]` (test-side oracle). */
+function gradeOf(lines: PvLine[], rank: number) {
+  const grade = gradeEngineLines(lines, GRADE_FEN)[rank];
+  if (!grade) throw new Error('expected a graded line');
+  return grade;
+}
+
+describe('buildTrainFreePlayOverlay (Phase 200 UAT round 5, Phase 228 D-13/D-15, quick 261012-a6m)', () => {
+  const pv = gradedPv;
+
+  it("count 1 returns a single blue engine-hue arrow for the free-play engine's top move with an opaque best star", () => {
+    const { arrows, badges } = buildTrainFreePlayOverlay([pv(1, 'e7e5'), pv(2, 'c7c5')], 1, GRADE_FEN);
     expect(arrows).toHaveLength(1);
     expect(arrows[0]).toMatchObject({
       startSquare: 'e7',
       endSquare: 'e5',
       color: TRAIN_BEST_MOVE_ARROW,
     });
+    expect(badges).toEqual([{ square: 'e5', best: true }]);
   });
 
-  it('count 3 returns three distinct arrows: rank 0 solid blue, ranks 1-2 translucent, one shared width, rank 0 last', () => {
-    const arrows = buildTrainFreePlayArrows([pv(1, 'e7e5'), pv(2, 'c7c5'), pv(3, 'g8f6')], 3);
+  it('count 3: rank 0 solid blue, ranks 1-2 graded alpha with same-opacity badges, one shared width, rank 0 last', () => {
+    const lines = [pv(1, 'e7e5', 30), pv(2, 'c7c5', -30), pv(3, 'g8f6', -250)];
+    const { arrows, badges } = buildTrainFreePlayOverlay(lines, 3, GRADE_FEN);
     expect(arrows).toHaveLength(3);
     const byKey = (key: string) => arrows.find((a) => a.layerKey === key);
     expect(byKey('free-0')?.color).toBe(TRAIN_BEST_MOVE_ARROW);
-    expect(byKey('free-1')?.color).toBe(STOCKFISH_SECONDARY_LINE);
-    expect(byKey('free-2')?.color).toBe(STOCKFISH_SECONDARY_LINE);
+    const g1 = gradeOf(lines, 1);
+    const g2 = gradeOf(lines, 2);
+    expect(byKey('free-1')?.color).toBe(stockfishSecondaryArrowColor(g1));
+    expect(byKey('free-2')?.color).toBe(stockfishSecondaryArrowColor(g2));
     expect(new Set(arrows.map((a) => a.width))).toEqual(new Set([TRAIN_BEST_MOVE_ARROW_WIDTH]));
     expect(new Set(arrows.map((a) => `${a.startSquare}${a.endSquare}`)).size).toBe(3);
     // Primary pushed last so it paints on top within its width tier.
     expect(arrows[arrows.length - 1]?.layerKey).toBe('free-0');
+    expect(badges.map((b) => b.square)).toEqual(['e5', 'c5', 'f6']);
+    expect(badges[0]).toEqual({ square: 'e5', best: true });
+    expect(badges[1]?.opacity).toBe(g1.alpha);
+    expect(badges[2]?.opacity).toBe(g2.alpha);
+    expect(badges[2]?.severity).toBe(g2.quality);
   });
 
-  it('count 0 returns no arrows (the Stockfish arrows setting 0 hides the live arrows)', () => {
-    expect(buildTrainFreePlayArrows([pv(1, 'e7e5')], 0)).toEqual([]);
+  it('below the depth gate the secondaries keep the fixed color and there are no badges', () => {
+    const lines = [pv(1, 'e7e5', 10, GATE_SHALLOW), pv(2, 'c7c5', 10, GATE_SHALLOW)];
+    const { arrows, badges } = buildTrainFreePlayOverlay(lines, 2, GRADE_FEN);
+    expect(arrows.find((a) => a.layerKey === 'free-1')?.color).toBe(STOCKFISH_SECONDARY_LINE);
+    expect(badges).toEqual([]);
   });
 
-  it('returns no arrow while the engine has no lines for the shown position, and skips a malformed UCI', () => {
-    expect(buildTrainFreePlayArrows([], 3)).toEqual([]);
-    expect(buildTrainFreePlayArrows([pv(1, 'e7')], 1)).toEqual([]);
-    const arrows = buildTrainFreePlayArrows([pv(1, 'e7e5'), pv(2, 'zz'), pv(3, 'g8f6')], 3);
+  it('count 0 returns no arrows and no badges (the Stockfish arrows setting 0 hides the live arrows)', () => {
+    expect(buildTrainFreePlayOverlay([pv(1, 'e7e5')], 0, GRADE_FEN)).toEqual({ arrows: [], badges: [] });
+  });
+
+  it('returns nothing while the engine has no lines for the shown position, and skips a malformed UCI', () => {
+    expect(buildTrainFreePlayOverlay([], 3, GRADE_FEN)).toEqual({ arrows: [], badges: [] });
+    expect(buildTrainFreePlayOverlay([pv(1, 'e7')], 1, GRADE_FEN)).toEqual({ arrows: [], badges: [] });
+    const { arrows, badges } = buildTrainFreePlayOverlay(
+      [pv(1, 'e7e5'), pv(2, 'zz'), pv(3, 'g8f6')],
+      3,
+      GRADE_FEN,
+    );
     expect(arrows.map((a) => a.layerKey).sort()).toEqual(['free-0', 'free-2']);
+    expect(badges.map((b) => b.square)).toEqual(['e5', 'f6']);
   });
 
   it('a count above the available lines yields only the available arrows', () => {
-    expect(buildTrainFreePlayArrows([pv(1, 'e7e5')], 3)).toHaveLength(1);
+    expect(buildTrainFreePlayOverlay([pv(1, 'e7e5')], 3, GRADE_FEN).arrows).toHaveLength(1);
   });
 
   it("uses its own layerKey, so a free-play arrow never collides with the stepper's", () => {
-    const free = buildTrainFreePlayArrows([pv(1, 'e7e5')], 1)[0];
+    const free = buildTrainFreePlayOverlay([pv(1, 'e7e5')], 1, GRADE_FEN).arrows[0];
     const step = buildTrainStepArrows('e7e5')[0];
     expect(free?.layerKey).not.toBe(step?.layerKey);
   });
 });
 
-describe('buildTrainStepOverlayArrows (quick 261009-por)', () => {
-  const pv = (multipv: number, firstMove: string, depth: number = 12): PvLine => ({
-    multipv,
-    depth,
-    moves: [firstMove, 'a7a6'],
-    evalCp: 10,
-    evalMate: null,
-  });
+describe('buildTrainStepOverlay (quick 261009-por, quick 261012-a6m D-04/D-08)', () => {
+  const pv = gradedPv;
 
-  it('engine agrees with the line: exactly the single blue line arrow', () => {
-    const arrows = buildTrainStepOverlayArrows('g1f3', [pv(1, 'g1f3')], 1);
+  it('engine agrees with the line: exactly the single blue line arrow with an opaque best star', () => {
+    const { arrows, badges } = buildTrainStepOverlay('g1f3', [pv(1, 'g1f3')], 1, GRADE_FEN);
     expect(arrows).toHaveLength(1);
     expect(arrows[0]).toMatchObject({ layerKey: 'step-next', color: TRAIN_BEST_MOVE_ARROW });
+    expect(badges).toEqual([{ square: 'f3', best: true }]);
   });
 
-  it('a disagreeing engine move draws a secondary under the line arrow, even at depth 1 (no gate)', () => {
-    const arrows = buildTrainStepOverlayArrows('g1f3', [pv(1, 'b1c3', 1)], 1);
+  it('a disagreeing engine move draws a secondary under the line arrow, even at depth 1 (no arrow gate, no badge)', () => {
+    const { arrows, badges } = buildTrainStepOverlay('g1f3', [pv(1, 'b1c3', 10, 1)], 1, GRADE_FEN);
     expect(arrows).toHaveLength(2);
     expect(arrows[0]).toMatchObject({
       startSquare: 'b1',
@@ -559,28 +594,54 @@ describe('buildTrainStepOverlayArrows (quick 261009-por)', () => {
       layerKey: 'step-next',
       color: TRAIN_BEST_MOVE_ARROW,
     });
+    expect(badges).toEqual([]);
+  });
+
+  it('preview present as a lower live line: opaque graded preview badge first, live rank 0 at MAX alpha with a translucent star', () => {
+    const lines = [pv(1, 'b1c3', 30), pv(2, 'g1f3', -250)];
+    const { arrows, badges } = buildTrainStepOverlay('g1f3', lines, 2, GRADE_FEN);
+    const g0 = gradeOf(lines, 0);
+    const g1 = gradeOf(lines, 1);
+    // Preview (opaque, graded) is first, then the live rank 0 (translucent star).
+    expect(badges).toEqual([
+      { square: 'f3', severity: g1.quality },
+      { square: 'c3', best: true, opacity: g0.alpha },
+    ]);
+    expect(g0.alpha).toBe(STOCKFISH_SECONDARY_ALPHA_MAX);
+    const live = arrows.find((a) => a.layerKey === 'step-live-0');
+    expect(live?.color).toBe(stockfishSecondaryArrowColor(g0));
+    expect(arrows[arrows.length - 1]).toMatchObject({ layerKey: 'step-next', color: TRAIN_BEST_MOVE_ARROW });
+  });
+
+  it('preview absent from pvLines: no badge on the preview target, live arrows still badge', () => {
+    const lines = [pv(1, 'b1c3'), pv(2, 'd2d4')];
+    const { badges } = buildTrainStepOverlay('g1f3', lines, 2, GRADE_FEN);
+    expect(badges.map((b) => b.square)).toEqual(['c3', 'd4']);
+    expect(badges.every((b) => b.opacity !== undefined)).toBe(true);
   });
 
   it('setting 0 draws only the line arrow', () => {
-    const arrows = buildTrainStepOverlayArrows('g1f3', [pv(1, 'b1c3')], 0);
+    const { arrows, badges } = buildTrainStepOverlay('g1f3', [pv(1, 'b1c3')], 0, GRADE_FEN);
     expect(arrows.map((a) => a.layerKey)).toEqual(['step-next']);
+    expect(badges).toEqual([]);
   });
 
   it('empty pvLines (engine not at the shown position yet) draws only the line arrow', () => {
-    const arrows = buildTrainStepOverlayArrows('g1f3', [], 3);
+    const { arrows, badges } = buildTrainStepOverlay('g1f3', [], 3, GRADE_FEN);
     expect(arrows.map((a) => a.layerKey)).toEqual(['step-next']);
+    expect(badges).toEqual([]);
   });
 
-  it('count 3: disagreeing ranks all draw as unique secondaries, line arrow last', () => {
-    const arrows = buildTrainStepOverlayArrows(
-      'g1f3',
-      [pv(1, 'g1f3'), pv(2, 'b1c3'), pv(3, 'd2d4')],
-      3,
-    );
+  it('count 3: disagreeing ranks all draw as unique graded secondaries, line arrow last', () => {
+    const lines = [pv(1, 'g1f3'), pv(2, 'b1c3'), pv(3, 'd2d4')];
+    const { arrows } = buildTrainStepOverlay('g1f3', lines, 3, GRADE_FEN);
     expect(arrows).toHaveLength(3);
     expect(arrows[arrows.length - 1]?.layerKey).toBe('step-next');
     const live = arrows.slice(0, -1);
-    expect(live.map((a) => a.color)).toEqual([STOCKFISH_SECONDARY_LINE, STOCKFISH_SECONDARY_LINE]);
+    expect(live.map((a) => a.color)).toEqual([
+      stockfishSecondaryArrowColor(gradeOf(lines, 2)),
+      stockfishSecondaryArrowColor(gradeOf(lines, 1)),
+    ]);
     const keys = arrows.map((a) => a.layerKey);
     expect(new Set(keys).size).toBe(keys.length);
     for (const a of live) {
@@ -590,24 +651,28 @@ describe('buildTrainStepOverlayArrows (quick 261009-por)', () => {
   });
 
   it('dedupes by from-to squares only (an under-promotion on the same squares is hidden)', () => {
-    const arrows = buildTrainStepOverlayArrows('e7e8q', [pv(1, 'e7e8n')], 1);
+    const { arrows } = buildTrainStepOverlay('e7e8q', [pv(1, 'e7e8n')], 1, GRADE_FEN);
     expect(arrows.map((a) => a.layerKey)).toEqual(['step-next']);
   });
 
   it('skips a malformed live UCI without throwing', () => {
-    const arrows = buildTrainStepOverlayArrows('g1f3', [pv(1, 'zz'), pv(2, 'b1c3')], 2);
+    const { arrows, badges } = buildTrainStepOverlay('g1f3', [pv(1, 'zz'), pv(2, 'b1c3')], 2, GRADE_FEN);
     expect(arrows.map((a) => `${a.startSquare}${a.endSquare}`)).toEqual(['b1c3', 'g1f3']);
+    // The malformed rank draws nothing; the well-formed one still grades against the (scored) top line.
+    expect(badges.map((b) => b.square)).toEqual(['c3']);
   });
 
-  it('end of the line (null next move): live moves draw as secondaries with no primary', () => {
-    const arrows = buildTrainStepOverlayArrows(null, [pv(1, 'b1c3')], 1);
+  it('end of the line (null next move): live ranks draw at their graded alpha with badges and no primary', () => {
+    const lines = [pv(1, 'b1c3')];
+    const { arrows, badges } = buildTrainStepOverlay(null, lines, 1, GRADE_FEN);
     expect(arrows).toHaveLength(1);
-    expect(arrows[0]).toMatchObject({ color: STOCKFISH_SECONDARY_LINE });
+    expect(arrows[0]).toMatchObject({ color: stockfishSecondaryArrowColor(gradeOf(lines, 0)) });
     expect(arrows.some((a) => a.layerKey === 'step-next')).toBe(false);
+    expect(badges).toEqual([{ square: 'c3', best: true, opacity: STOCKFISH_SECONDARY_ALPHA_MAX }]);
   });
 
   it('a count above the available lines yields only the available arrows', () => {
-    const arrows = buildTrainStepOverlayArrows('g1f3', [pv(1, 'b1c3')], 3);
+    const { arrows } = buildTrainStepOverlay('g1f3', [pv(1, 'b1c3')], 3, GRADE_FEN);
     expect(arrows).toHaveLength(2);
   });
 });

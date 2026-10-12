@@ -2649,8 +2649,10 @@ describe('TrainSolveScreen — progress, last move, grading state, engine failur
     expect(board().getAttribute('data-arrow-ucis')).toBe('e7e5');
     expect(board().getAttribute('data-arrow-colors')).toBe(TRAIN_BEST_MOVE_ARROW);
     // The freely played move carries its own live quality badge, and the seeded
-    // parent eval makes the FIRST one resolve without waiting on the engine.
-    await waitFor(() => expect(board().getAttribute('data-markers-count')).toBe('1'));
+    // parent eval makes the FIRST one resolve without waiting on the engine. Quick
+    // 261012-a6m D-04: the engine's (depth-gated, deep fake reading) top-move arrow
+    // adds an opaque best star on its target, so two markers in total.
+    await waitFor(() => expect(board().getAttribute('data-markers-count')).toBe('2'));
 
     fireEvent.click(screen.getByTestId('board-btn-reset'));
     await waitFor(() =>
@@ -2684,7 +2686,9 @@ describe('TrainSolveScreen — progress, last move, grading state, engine failur
 
     fireEvent.click(screen.getByTestId('drop-d2d4')); // forks a sideline
     const board = () => screen.getByTestId('chessboard');
-    await waitFor(() => expect(board().getAttribute('data-markers-count')).toBe('1'));
+    // Two markers: the played move's badge plus (quick 261012-a6m D-04) the opaque
+    // best star on the preview pointer, which IS the live top move.
+    await waitFor(() => expect(board().getAttribute('data-markers-count')).toBe('2'));
     // SEED-197: the solid pointer is the preview's next move (what Forward commits)
     // whatever the arrows setting says; only the live secondaries honor the 0.
     await waitFor(() => expect(board().getAttribute('data-arrows-count')).toBe('1'));

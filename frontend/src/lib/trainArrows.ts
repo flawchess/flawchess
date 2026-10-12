@@ -30,6 +30,13 @@
 
 import type { BoardArrow, SquareMarker } from '@/components/board/ChessBoard';
 import { DARK_GREEN } from '@/lib/arrowColor';
+import {
+  buildRankedEngineBadges,
+  engineBadgeMarker,
+  gradeEngineLines,
+  stockfishSecondaryArrowColor,
+  type EngineLineGrade,
+} from '@/lib/engineArrowGrades';
 import { classifyLiveSeverity, evalToExpectedScore, sideToMoveFromFen } from '@/lib/liveFlaw';
 import {
   MOVE_HIGHLIGHT_BEST,
@@ -42,7 +49,6 @@ import {
   MOVE_QUALITY_MISTAKE,
   MOVE_QUALITY_BLUNDER,
   NEXT_MOVE_ARROW,
-  STOCKFISH_SECONDARY_LINE,
   TRAIN_BEST_MOVE_ARROW,
   TRAIN_FOCUS_ARROW_DIM_OPACITY,
   TRAIN_FOCUS_ARROW_LIT_OPACITY,
@@ -268,7 +274,7 @@ function enginePointerArrows(uci: string | null, layerKey: string): BoardArrow[]
  * On the reveal's move list (190.1 UAT, SEED-197), the PRIMARY arrow on the board
  * is a blue pointer for the preview's next move from the shown position, i.e.
  * what the forward button commits (it comes from a Stockfish line, so it reads
- * in the engine hue). Null/absent next move (no preview) draws nothing. `buildTrainStepOverlayArrows` adds the
+ * in the engine hue). Null/absent next move (no preview) draws nothing. `buildTrainStepOverlay` adds the
  * live engine's secondary arrows underneath it.
  */
 export function buildTrainStepArrows(nextMoveUci: string | null): BoardArrow[] {
@@ -282,55 +288,108 @@ function fromToKey(uci: string): string {
 }
 
 /**
- * Secondary arrows for the reveal engine's top moves on a previewed position.
- * Walks ranks in reverse (mirroring `buildTrainFreePlayArrows`) and skips
- * malformed first moves and moves that share from-to squares with the
- * preview's next move. Every live arrow is secondary-colored, rank 0
- * included: the preview owns the solid blue.
+ * Quick 261012-a6m D-08: arrows and badges of one engine overlay, built from a
+ * single grade pass. `badges` are precedence-ordered candidates; the caller merges
+ * them under any existing square markers with `mergeEngineBadges` (D-03).
  */
-function stepLiveArrows(
+export interface TrainEngineOverlay {
+  arrows: BoardArrow[];
+  badges: SquareMarker[];
+}
+
+/**
+ * The live ranks the step board actually draws, ascending: in range of `count`,
+ * a well-formed first move, and a from-to that differs from the preview's. ONE
+ * predicate shared by the arrow loop and the badge loop so they cannot drift.
+ */
+function drawnLiveRanks(
   nextMoveUci: string | null,
   pvLines: readonly PvLine[],
   count: number,
-): BoardArrow[] {
-  const arrows: BoardArrow[] = [];
+): number[] {
   const lineKey = nextMoveUci === null ? null : fromToKey(nextMoveUci);
-  for (let rank = Math.min(count, pvLines.length) - 1; rank >= 0; rank--) {
-    const line = pvLines[rank];
-    if (line === undefined) continue;
-    const move = line.moves[0] ?? null;
-    const squares = squaresFromUci(move);
-    if (move === null || squares === null) continue;
+  const ranks: number[] = [];
+  for (let rank = 0; rank < Math.min(count, pvLines.length); rank++) {
+    const move = pvLines[rank]?.moves[0] ?? null;
+    if (move === null || squaresFromUci(move) === null) continue;
     if (fromToKey(move) === lineKey) continue;
-    arrows.push({
-      ...squares,
-      color: STOCKFISH_SECONDARY_LINE,
-      width: TRAIN_BEST_MOVE_ARROW_WIDTH,
-      layerKey: `step-live-${rank}`,
-    });
+    ranks.push(rank);
   }
-  return arrows;
+  return ranks;
+}
+
+/**
+ * The preview pointer's badge (D-04): solid arrow, so an opaque badge. The star
+ * only when the preview IS the live top move; a lower live line grades like a
+ * secondary; a preview with no live line gets nothing.
+ */
+function previewPointerBadge(
+  nextMoveUci: string | null,
+  pvLines: readonly PvLine[],
+  grades: ReadonlyArray<EngineLineGrade | null>,
+): SquareMarker[] {
+  const squares = squaresFromUci(nextMoveUci);
+  if (nextMoveUci === null || squares === null) return [];
+  const key = fromToKey(nextMoveUci);
+  const index = pvLines.findIndex((line) => {
+    const move = line.moves[0];
+    return move !== undefined && fromToKey(move) === key;
+  });
+  const grade = index >= 0 ? (grades[index] ?? null) : null;
+  return grade === null ? [] : [engineBadgeMarker(squares.endSquare, grade, false)];
 }
 
 /**
  * Quick 261009-por / SEED-197: a previewed position keeps the preview's blue
  * pointer (its next move, what the forward button commits) AND shows the live reveal engine's other top moves (up to `count`, the
  * Stockfish arrows setting) as translucent secondaries, exactly as many as the
- * free-play board draws off the known lines. No depth gate (owner call): the
- * arrows settle as the search deepens, the same as off the known lines, and a
- * gate would leave slow phones with no live arrows at all. The preview pointer is
- * pushed LAST so
- * it paints on top (same-tier stable sort in the board's arrow overlay).
+ * free-play board draws off the known lines. The ARROWS have no depth gate (owner
+ * call): they settle as the search deepens, the same as off the known lines, and a
+ * gate would leave slow phones with no live arrows at all. Only their graded alpha
+ * and the badges wait for ENGINE_ARROW_GRADE_MIN_DEPTH (quick 261012-a6m D-02/D-08);
+ * before that they draw in the fixed STOCKFISH_SECONDARY_LINE. The preview pointer is
+ * pushed LAST so it paints on top (same-tier stable sort in the board's arrow overlay).
  * `pvLines` is the staleness-guarded list for the shown position (empty until
- * the engine reaches it). With no preview (`nextMoveUci` null) the live
- * moves draw as secondaries with no primary.
+ * the engine reaches it); `fen` is that position, the side-to-move for grading.
+ * With no preview (`nextMoveUci` null) the live moves draw as secondaries with no
+ * primary.
+ *
+ * Badges (D-04), in precedence order: the preview pointer first (opaque, because
+ * its arrow is solid), then each drawn live rank at its own alpha (rank 0 included:
+ * the preview keeps it secondary-drawn, so its star is translucent too).
  */
-export function buildTrainStepOverlayArrows(
+export function buildTrainStepOverlay(
   nextMoveUci: string | null,
   pvLines: readonly PvLine[],
   count: number,
-): BoardArrow[] {
-  return [...stepLiveArrows(nextMoveUci, pvLines, count), ...buildTrainStepArrows(nextMoveUci)];
+  fen: string,
+): TrainEngineOverlay {
+  const grades = gradeEngineLines(pvLines, fen);
+  const ranks = drawnLiveRanks(nextMoveUci, pvLines, count);
+  const arrows: BoardArrow[] = [];
+  const liveBadges: SquareMarker[] = [];
+  // Ranks come back ascending and already well-formed (drawnLiveRanks), so badges
+  // follow ascending rank (precedence) and arrows the reverse (rank 0 painted last).
+  for (const rank of ranks) {
+    const squares = squaresFromUci(pvLines[rank]?.moves[0] ?? null);
+    const grade = grades[rank] ?? null;
+    if (squares === null || grade === null) continue;
+    liveBadges.push(engineBadgeMarker(squares.endSquare, grade, true));
+  }
+  for (const rank of [...ranks].reverse()) {
+    const squares = squaresFromUci(pvLines[rank]?.moves[0] ?? null);
+    if (squares === null) continue;
+    arrows.push({
+      ...squares,
+      color: stockfishSecondaryArrowColor(grades[rank] ?? null),
+      width: TRAIN_BEST_MOVE_ARROW_WIDTH,
+      layerKey: `step-live-${rank}`,
+    });
+  }
+  return {
+    arrows: [...arrows, ...buildTrainStepArrows(nextMoveUci)],
+    badges: [...previewPointerBadge(nextMoveUci, pvLines, grades), ...liveBadges],
+  };
 }
 
 /**
@@ -347,25 +406,36 @@ export function buildTrainStepOverlayArrows(
  * order so the primary paints on top. The reveal LEGEND arrows (blue best,
  * green also-fine, game-move) are built elsewhere and always draw (D-13).
  *
+ * Quick 261012-a6m (D-04, D-08): once the lines are deep enough
+ * (ENGINE_ARROW_GRADE_MIN_DEPTH) ranks 1+ take their graded alpha and every drawn
+ * arrow gets a quality badge (rank 0 the opaque best star, ranks 1+ at the arrow's
+ * alpha). `fen` is the shown position (the side-to-move for grading). Before the
+ * gate the secondaries keep the fixed color and there are no badges.
+ *
  * The caller passes the STALENESS-GUARDED free-play `pvLines`
  * (`TrainFreePlayState.pvLines`), so a position the engine hasn't reached yet
  * simply draws nothing rather than pointing at the previous position's
  * answer. A terminal position (mate/stalemate) yields no PV and therefore no
  * arrow; a line with a malformed first move is skipped.
  */
-export function buildTrainFreePlayArrows(pvLines: readonly PvLine[], count: number): BoardArrow[] {
+export function buildTrainFreePlayOverlay(
+  pvLines: readonly PvLine[],
+  count: number,
+  fen: string,
+): TrainEngineOverlay {
+  const grades = gradeEngineLines(pvLines, fen);
   const arrows: BoardArrow[] = [];
   for (let i = Math.min(count, pvLines.length) - 1; i >= 0; i--) {
     const squares = squaresFromUci(pvLines[i]?.moves[0] ?? null);
     if (squares === null) continue;
     arrows.push({
       ...squares,
-      color: i === 0 ? TRAIN_BEST_MOVE_ARROW : STOCKFISH_SECONDARY_LINE,
+      color: i === 0 ? TRAIN_BEST_MOVE_ARROW : stockfishSecondaryArrowColor(grades[i] ?? null),
       width: TRAIN_BEST_MOVE_ARROW_WIDTH,
       layerKey: `free-${i}`,
     });
   }
-  return arrows;
+  return { arrows, badges: buildRankedEngineBadges(pvLines, count, grades) };
 }
 
 /**
