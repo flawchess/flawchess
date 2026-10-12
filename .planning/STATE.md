@@ -1,16 +1,16 @@
 ---
 gsd_state_version: "1.0"
 milestone: v2.24
-current_phase: 238
-current_phase_name: Endgame Stats Percentile-First Redesign (SEED-196)
-status: completed
+current_phase: 239
+current_phase_name: library-stats-you-vs-opponents
+status: executing
 stopped_at: Phase 239 context gathered
-last_updated: "2026-10-12T19:10:27.232Z"
-state_head: 405fe9e91832b11e096675bf0383914196ded61e
+last_updated: "2026-10-12T20:28:13.278Z"
+state_head: 6ffd9d25c401006788d99e6e0c0e032ad0362875
 progress:
   total_phases: 2
   completed_phases: 103
-  total_plans: 9
+  total_plans: 19
   completed_plans: 57
 milestone_name: Train Grading Integrity & One-Screen Reveal
 last_activity: 2026-10-12
@@ -21,10 +21,10 @@ last_activity_desc: "Completed quick task 261012-qiz: endgame insights dedupe co
 
 ## Current Position
 
-Phase: 238 (Endgame Stats Percentile-First Redesign (SEED-196)) — COMPLETE
+Phase: 239 (library-stats-you-vs-opponents) — READY TO EXECUTE
 Plan: 9 of 9
 
-Status: Phase 238 complete 2026-10-11 (verified, UAT passed, squash-merged to main; unreleased). SEED-196 closed.
+Status: Ready to execute
 
 Open threads carried forward (not blockers):
 
