@@ -23,6 +23,7 @@ in `YYYY-MM-DD` (Europe/Zurich).
 - Analysis and Train: Stockfish arrows now carry move-quality icons. The top move shows the best-move star, and the other arrows show good, inaccuracy, mistake or blunder compared with the top move once the engine has searched deep enough, fading more the worse the move is.
 - Analysis and Train: the eval badges of the secondary engine lines now look the same on the dark panel as on the board (a lighter, faded tint instead of a darker one), and the Stockfish ones fade with move quality like their arrows.
 - Analysis: the FlawChess engine's eval badges now use the same gold as its board arrow, with dark text, and its other arrows and line badges fade by how much worse each line's practical score is than the top line, like the Stockfish ones.
+- Analysis and Train: Stockfish now shows two arrows by default instead of one. If you never changed the Stockfish arrows setting, you get the new default automatically.
 - Shelly's endgame report is refreshed at most once a day: games imported within 24 hours of the last report show up in the next one.
 
 ### Fixed

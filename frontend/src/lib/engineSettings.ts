@@ -36,7 +36,8 @@ export const LINE_COUNT_OPTIONS: readonly LineCount[] = [1, 2, 3, 4, 5];
 export const ARROW_COUNT_OPTIONS: readonly ArrowCount[] = [0, 1, 2, 3];
 
 export const DEFAULT_LINES: LineCount = 2;
-export const DEFAULT_ARROWS: ArrowCount = 1;
+export const DEFAULT_FC_ARROWS: ArrowCount = 1;
+export const DEFAULT_SF_ARROWS: ArrowCount = 2;
 
 export const SETTINGS_STORAGE_KEYS: Readonly<Record<CountSettingId, string>> = {
   fcLines: 'flawchess_settings_fc_lines',
@@ -91,8 +92,12 @@ function isValidForSetting(id: CountSettingId, value: number): boolean {
   return isLineSetting(id) ? isLineCount(value) : isArrowCount(value);
 }
 
+function arrowDefaultFor(id: 'fcArrows' | 'sfArrows'): ArrowCount {
+  return id === 'fcArrows' ? DEFAULT_FC_ARROWS : DEFAULT_SF_ARROWS;
+}
+
 function defaultFor(id: CountSettingId): number {
-  return isLineSetting(id) ? DEFAULT_LINES : DEFAULT_ARROWS;
+  return isLineSetting(id) ? DEFAULT_LINES : arrowDefaultFor(id);
 }
 
 // ─── Store ──────────────────────────────────────────────────────────────────
@@ -130,7 +135,7 @@ function readLines(id: 'fcLines' | 'sfLines'): LineCount {
 
 function readArrows(id: 'fcArrows' | 'sfArrows'): ArrowCount {
   const value = readCount(id);
-  return isArrowCount(value) ? value : DEFAULT_ARROWS;
+  return isArrowCount(value) ? value : arrowDefaultFor(id);
 }
 
 const getFcLines = (): LineCount => readLines('fcLines');
@@ -141,9 +146,9 @@ const getSfArrows = (): ArrowCount => readArrows('sfArrows');
 /** Subscription to all four engine display counts. Defaults with no stored value. */
 export function useEngineDisplaySettings(): EngineDisplaySettings {
   const fcLines = useSyncExternalStore(subscribe, getFcLines, () => DEFAULT_LINES);
-  const fcArrows = useSyncExternalStore(subscribe, getFcArrows, () => DEFAULT_ARROWS);
+  const fcArrows = useSyncExternalStore(subscribe, getFcArrows, () => DEFAULT_FC_ARROWS);
   const sfLines = useSyncExternalStore(subscribe, getSfLines, () => DEFAULT_LINES);
-  const sfArrows = useSyncExternalStore(subscribe, getSfArrows, () => DEFAULT_ARROWS);
+  const sfArrows = useSyncExternalStore(subscribe, getSfArrows, () => DEFAULT_SF_ARROWS);
   return { fcLines, fcArrows, sfLines, sfArrows };
 }
 

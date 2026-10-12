@@ -1471,6 +1471,8 @@ describe('TrainSolveScreen — progress, last move, grading state, engine failur
     // Workers = the reveal engine, which disagrees with the line ('b1c3' vs the
     // line's 'g1f3') but only at depth 9, below TRAIN_LIVE_ALT_MIN_DEPTH, so it does
     // not replace the preview. Arrows themselves carry no depth gate.
+    // Pinned to one live arrow: FakeWorker repeats its PV for every MultiPV rank.
+    localStorage.setItem(SETTINGS_STORAGE_KEYS.sfArrows, '1');
     let workerCallCount = 0;
     stubWorker(() => {
       workerCallCount += 1;

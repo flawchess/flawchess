@@ -26,7 +26,7 @@ afterEach(() => {
 describe('useEngineDisplaySettings', () => {
   it('returns the locked defaults with empty localStorage', () => {
     const { result } = renderHook(() => useEngineDisplaySettings());
-    expect(result.current).toEqual({ fcLines: 2, fcArrows: 1, sfLines: 2, sfArrows: 1 });
+    expect(result.current).toEqual({ fcLines: 2, fcArrows: 1, sfLines: 2, sfArrows: 2 });
   });
 
   it('round-trips setCountSetting and re-renders a mounted subscriber', () => {
@@ -61,7 +61,7 @@ describe('useEngineDisplaySettings', () => {
       throw new Error('denied');
     });
     const { result } = renderHook(() => useEngineDisplaySettings());
-    expect(result.current).toEqual({ fcLines: 2, fcArrows: 1, sfLines: 2, sfArrows: 1 });
+    expect(result.current).toEqual({ fcLines: 2, fcArrows: 1, sfLines: 2, sfArrows: 2 });
   });
 });
 
@@ -100,7 +100,7 @@ describe('resetAllSettings', () => {
     Object.values(SETTINGS_STORAGE_KEYS).forEach((key) => {
       expect(localStorage.getItem(key)).toBeNull();
     });
-    expect(settings.result.current).toEqual({ fcLines: 2, fcArrows: 1, sfLines: 2, sfArrows: 1 });
+    expect(settings.result.current).toEqual({ fcLines: 2, fcArrows: 1, sfLines: 2, sfArrows: 2 });
     expect(muted.result.current).toBe(false);
   });
 });

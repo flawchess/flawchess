@@ -125,7 +125,7 @@ describe('Reset to defaults (D-09, D-10)', () => {
     expect(screen.getByTestId('settings-fc-lines-2').getAttribute('data-state')).toBe('on');
     expect(screen.getByTestId('settings-fc-arrows-1').getAttribute('data-state')).toBe('on');
     expect(screen.getByTestId('settings-sf-lines-2').getAttribute('data-state')).toBe('on');
-    expect(screen.getByTestId('settings-sf-arrows-1').getAttribute('data-state')).toBe('on');
+    expect(screen.getByTestId('settings-sf-arrows-2').getAttribute('data-state')).toBe('on');
     expect(screen.getByTestId('settings-sound-switch').getAttribute('aria-checked')).toBe('true');
     expect((screen.getByTestId('btn-settings-reset') as HTMLButtonElement).disabled).toBe(true);
   });
@@ -133,7 +133,7 @@ describe('Reset to defaults (D-09, D-10)', () => {
   it('is disabled with an untouched store', () => {
     render(<SettingsPanel />);
     expect((screen.getByTestId('btn-settings-reset') as HTMLButtonElement).disabled).toBe(true);
-    fireEvent.click(screen.getByTestId('settings-sf-arrows-2'));
+    fireEvent.click(screen.getByTestId('settings-sf-arrows-3'));
     expect((screen.getByTestId('btn-settings-reset') as HTMLButtonElement).disabled).toBe(false);
   });
 });

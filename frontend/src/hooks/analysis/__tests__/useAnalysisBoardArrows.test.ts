@@ -31,7 +31,7 @@ import {
   flawChessSecondaryArrowColor,
   secondaryArrowAlpha,
 } from '@/lib/engineArrowGrades';
-import { DEFAULT_ARROWS } from '@/lib/engineSettings';
+import { DEFAULT_FC_ARROWS, DEFAULT_SF_ARROWS } from '@/lib/engineSettings';
 
 const START_FEN = 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1';
 
@@ -103,8 +103,8 @@ function baseOptions(
     flawChessRankedLines: FC_LINES,
     engineEnabled: true,
     stockfishArrowLines: SF_LINES,
-    fcArrowCount: DEFAULT_ARROWS,
-    sfArrowCount: DEFAULT_ARROWS,
+    fcArrowCount: DEFAULT_FC_ARROWS,
+    sfArrowCount: DEFAULT_SF_ARROWS,
     gameOverlaySquareMarkers: [],
     liveFlawSquareMarkers: [],
     resolveMarkerFor: () => null,
