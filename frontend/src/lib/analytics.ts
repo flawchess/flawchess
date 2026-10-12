@@ -447,6 +447,7 @@ export const OPTION_TARGETS = [
   'train-puzzles-per-session',
   'train-reminder-hour',
   'endgame-stats-tc',
+  'library-stats-tc',
 ] as const;
 
 /** FilterPanel's Rated ToggleGroup item values. */
@@ -483,7 +484,10 @@ export type OptionChangeProps =
   | { target: 'train-puzzles-per-session'; value: (typeof TRAIN_PUZZLES_PER_SESSION_VALUES)[number] }
   | { target: 'train-reminder-hour'; value: (typeof REMINDER_HOUR_VALUES)[number] }
   // Phase 238 D-00h: the synced time-control switch on the Endgame Stats tab.
-  | { target: 'endgame-stats-tc'; value: TimeControlBucket };
+  | { target: 'endgame-stats-tc'; value: TimeControlBucket }
+  // Phase 239 D-02: the synced time-control switch on the Library Stats tab (one store,
+  // several section switches; tracked only on a user click, never on restore or default).
+  | { target: 'library-stats-tc'; value: TimeControlBucket };
 
 /** Every action target keeps the bare shape except the reminder opt-in funnel, which carries source and outcome. */
 export type ActionProps =
