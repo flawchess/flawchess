@@ -221,7 +221,7 @@ consistent with Phase 238 (Endgame Stats).
 
 **Depends on**: Phase 238 (`PercentileBar`, `RankedMetricPopover`, `TcSwitch`, `useEndgameStatsTc` patterns); blitz full-analysis benchmark sample for the tactic IQRs
 **Requirements**: TBD (coverage contract = CONTEXT decisions from discuss-phase)
-**Plans:** 7/10 plans executed
+**Plans:** 8/10 plans executed
 **Status**: Planned
 
 Plans:
@@ -236,7 +236,7 @@ Plans:
 - [x] 239-06-PLAN.md — Run §5 (executor or orchestrator-inline by smoke time), pin diff gate, narrate report, D-12 sanity check, owner accepts or holds zone values (wave 2, checkpoint)
 
 **Wave 3** *(blocked on Wave 2 completion)*
-- [ ] 239-07-PLAN.md — Write accepted values into both registries, accepted fade constant, Elo keying only if accepted (wave 3)
+- [x] 239-07-PLAN.md — Write accepted values into both registries, accepted fade constant, Elo keying only if accepted (wave 3)
 - [x] 239-10-PLAN.md — Frontend You vs. your opponents section (What stands out + four context cards) and legacy flaw metadata cleanup (wave 3)
 
 **Wave 4** *(blocked on Wave 3 completion)*
