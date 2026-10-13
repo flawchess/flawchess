@@ -270,8 +270,8 @@ describe('Endgames page: ranked Overall section', () => {
 
   it('defaults to the TC with the most ranked games (D-12)', () => {
     renderPage();
-    const rapid = screen.getAllByTestId('tc-switch-overall-rapid')[0];
-    const blitz = screen.getAllByTestId('tc-switch-overall-blitz')[0];
+    const rapid = screen.getAllByTestId('tc-switch-endgame-stats-rapid')[0];
+    const blitz = screen.getAllByTestId('tc-switch-endgame-stats-blitz')[0];
     expect(rapid?.getAttribute('aria-pressed')).toBe('true');
     expect(blitz?.getAttribute('aria-pressed')).toBe('false');
   });

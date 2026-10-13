@@ -24,12 +24,15 @@ vi.mock('@/components/charts/ScoreGapByTimePressureChart', () => ({
 
 type SectionModule = typeof import('./TimePressureSection');
 let TimePressureSection: SectionModule['TimePressureSection'];
+// The page's one switch (the section carries none); loaded from the same fresh module graph.
+let TcSwitch: typeof import('./TcSwitch')['TcSwitch'];
 
 beforeEach(async () => {
   // The TC selection is module-level state: load a fresh copy per test.
   vi.resetModules();
   localStorage.clear();
   ({ TimePressureSection } = await import('./TimePressureSection'));
+  ({ TcSwitch } = await import('./TcSwitch'));
 });
 
 afterEach(cleanup);
@@ -96,10 +99,15 @@ describe('TimePressureSection', () => {
   });
 
   it('follows the synced TC switch', () => {
-    const { container } = render(<TimePressureSection tcs={[BLITZ, RAPID]} />);
+    const { container } = render(
+      <>
+        <TcSwitch sectionId="endgame-stats" tcs={[BLITZ, RAPID]} />
+        <TimePressureSection tcs={[BLITZ, RAPID]} />
+      </>,
+    );
     // Rapid has more ranked games, so it is the D-12 default.
     expect(byId(container, 'mock-pressure-curve').getAttribute('data-tc')).toBe('rapid');
-    fireEvent.click(byId(container, 'tc-switch-time-pressure-blitz'));
+    fireEvent.click(byId(container, 'tc-switch-endgame-stats-blitz'));
     expect(byId(container, 'mock-pressure-curve').getAttribute('data-tc')).toBe('blitz');
     expect(byId(container, 'mock-clock-timeline').getAttribute('data-points')).toBe('3');
   });

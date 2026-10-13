@@ -7,7 +7,6 @@ import type { EndgameWDLSummary, RankedTcStats } from '@/types/endgames';
 import { BracketedWdlBar } from './BracketedWdlBar';
 import { RankedMetricRow } from './RankedMetricRow';
 import { SECTION_ID_OVERALL, TC_LABELS } from './rankedMetrics';
-import { TcSwitch } from './TcSwitch';
 
 const NO_VALUE = '—';
 const PERCENT_SCALE = 100;
@@ -205,9 +204,9 @@ export function OverallSection({ tcs, children }: OverallSectionProps) {
       data-testid="endgame-overall-section"
       aria-label={`Endgame Overall Performance, ${TC_LABELS[tcStats.tc]}`}
     >
-      <div className="flex flex-wrap items-center justify-between gap-2">
+      {/* md:h-8: the page's StickyTcBar overlays this row on desktop (see StickyTcBar). */}
+      <div className="flex flex-wrap items-center justify-between gap-2 md:h-8">
         <h2 className="font-brand text-lg font-semibold text-foreground">Endgame Overall Performance</h2>
-        <TcSwitch sectionId="overall" tcs={tcs} />
       </div>
       <p className="text-sm text-muted-foreground">
         Do you perform better or worse when games reach an endgame?

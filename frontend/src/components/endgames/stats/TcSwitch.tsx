@@ -4,16 +4,16 @@ import { trackFeature } from '@/lib/analytics';
 import type { RankedTcStats, TimeControlBucket } from '@/types/endgames';
 
 interface TcSwitchProps {
-  /** Distinguishes the testids of the several switches on the page (one per section). */
+  /** Prefix of the switch testids. */
   sectionId: string;
   /** The payload's TC list (D-14): exactly these TCs are offered, in payload order. */
   tcs: readonly RankedTcStats[];
 }
 
 /**
- * Time-control switch (D-00h). Every section mounts its own, all bound to the
- * one shared selection store, so choosing a TC in any section switches every
- * section. Tracking fires from the click only, never from restore or fallback.
+ * Time-control switch (D-00h), bound to the one shared selection store every
+ * section reads. The Stats tab mounts it once, in its StickyTcBar. Tracking
+ * fires from the click only, never from restore or fallback.
  */
 export function TcSwitch({ sectionId, tcs }: TcSwitchProps) {
   const [selectedTc, setSelectedTc] = useEndgameStatsTc(tcs);

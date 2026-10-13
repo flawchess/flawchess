@@ -11,22 +11,19 @@ interface TcSwitchButtonsProps {
   tcs: readonly TimeControlBucket[];
   selected: TimeControlBucket | null;
   onSelect: (tc: TimeControlBucket) => void;
-  /** Drop the TC icons on narrow phones, so four TCs fit next to another control. */
-  compact?: boolean;
 }
+
+// Above this many TCs the buttons drop their icons on narrow phones: four labelled TCs are
+// ~345px wide, more than the 328px a 360px phone leaves inside the page gutters.
+const MAX_TCS_WITH_ICONS_ON_NARROW = 3;
 
 /**
  * The presentational time-control switch shared by the Endgame and Library Stats tabs.
  * State, persistence and analytics belong to the wrapper (TcSwitch and its Library
  * counterpart); this only draws the buttons.
  */
-export function TcSwitchButtons({
-  sectionId,
-  tcs,
-  selected,
-  onSelect,
-  compact = false,
-}: TcSwitchButtonsProps) {
+export function TcSwitchButtons({ sectionId, tcs, selected, onSelect }: TcSwitchButtonsProps) {
+  const compact = tcs.length > MAX_TCS_WITH_ICONS_ON_NARROW;
   return (
     <div
       role="group"

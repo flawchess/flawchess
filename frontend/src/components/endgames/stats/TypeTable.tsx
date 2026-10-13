@@ -28,7 +28,6 @@ import type {
   TimeControlBucket,
 } from '@/types/endgames';
 import { TC_LABELS } from './rankedMetrics';
-import { TcSwitch } from './TcSwitch';
 
 // Cell domains: the value range each range cell maps onto its 0-100% track (D-00e).
 type Domain = readonly [number, number];
@@ -355,7 +354,6 @@ export function TypeTable({ tcs, onCategorySelect, children }: TypeTableProps) {
             </InfoPopover>
           </span>
         </h2>
-        <TcSwitch sectionId="type-breakdown" tcs={tcs} />
       </div>
       <p className="text-sm text-muted-foreground">
         Which endgame types do you convert or defend worse than usual?

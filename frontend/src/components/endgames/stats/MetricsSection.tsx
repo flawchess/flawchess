@@ -3,7 +3,6 @@ import { useEndgameStatsTc } from '@/hooks/useEndgameStatsTc';
 import type { MaterialBucket, RankedTcStats } from '@/types/endgames';
 import { MetricsCard } from './MetricsCard';
 import { SECTION_ID_METRICS, TC_LABELS } from './rankedMetrics';
-import { TcSwitch } from './TcSwitch';
 
 const BUCKET_ORDER: readonly MaterialBucket[] = ['conversion', 'parity', 'recovery'];
 
@@ -32,7 +31,6 @@ export function MetricsSection({ tcs, children }: MetricsSectionProps) {
     >
       <div className="flex flex-wrap items-center justify-between gap-2">
         <h2 className="font-brand text-lg font-semibold text-foreground">Endgame Metrics</h2>
-        <TcSwitch sectionId="metrics" tcs={tcs} />
       </div>
       <p className="text-sm text-muted-foreground">
         How do you score from winning, balanced, and losing endgames?

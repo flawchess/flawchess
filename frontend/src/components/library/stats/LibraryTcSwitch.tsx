@@ -10,10 +10,6 @@ interface LibraryTcSwitchProps {
   tcs: readonly LibraryTcCount[];
 }
 
-// Above this many TCs the switch drops its icons on narrow phones: four labelled TCs are
-// ~345px wide, more than a 360px phone has once the sticky bar's Filters button sits beside it.
-const MAX_TCS_WITH_ICONS_ON_NARROW = 3;
-
 /**
  * The Library Stats time-control switch (D-02), bound to the one Library TC store that
  * every section reads. The page mounts it once per layout, in a sticky bar. Tracking
@@ -34,7 +30,6 @@ export function LibraryTcSwitch({ sectionId, tcs }: LibraryTcSwitchProps) {
       tcs={tcs.map((t) => t.tc)}
       selected={selectedTc}
       onSelect={handleSelect}
-      compact={tcs.length > MAX_TCS_WITH_ICONS_ON_NARROW}
     />
   );
 }

@@ -22,12 +22,15 @@ import { buildRankedTc } from './rankedFixtures';
 
 type TableModule = typeof import('./TypeTable');
 let TypeTable: TableModule['TypeTable'];
+// The page's one switch (the table carries none); loaded from the same fresh module graph.
+let TcSwitch: typeof import('./TcSwitch')['TcSwitch'];
 
 beforeEach(async () => {
   // The TC selection is module-level state: load a fresh copy per test.
   vi.resetModules();
   localStorage.clear();
   ({ TypeTable } = await import('./TypeTable'));
+  ({ TcSwitch } = await import('./TcSwitch'));
 });
 
 afterEach(cleanup);
@@ -113,6 +116,7 @@ function renderTable(
   return render(
     <MemoryRouter>
       <TooltipProvider>
+        <TcSwitch sectionId="endgame-stats" tcs={tcs} />
         <TypeTable tcs={tcs} onCategorySelect={onCategorySelect} />
       </TooltipProvider>
     </MemoryRouter>,
@@ -283,7 +287,7 @@ describe('TypeTable typical-range cells', () => {
     });
     const { container } = renderTable([blitz, rapid]);
     const rapidLeft = parseFloat(byId(container, 'type-row-rook-conversion-band').style.left);
-    fireEvent.click(byId(container, 'tc-switch-type-breakdown-blitz'));
+    fireEvent.click(byId(container, 'tc-switch-endgame-stats-blitz'));
     const blitzLeft = parseFloat(byId(container, 'type-row-rook-conversion-band').style.left);
     const [rapidLo] = PER_CLASS_TC_GAUGE_ZONES.rook.rapid.conversion;
     const [blitzLo] = PER_CLASS_TC_GAUGE_ZONES.rook.blitz.conversion;

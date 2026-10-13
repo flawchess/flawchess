@@ -4,11 +4,11 @@ import {
   ANALYSIS_COVERAGE_INFO_COPY,
   LOW_COVERAGE_THRESHOLD,
 } from '@/components/library/analysisCoverageCopy';
+import { StickyTcBar } from '@/components/stats/StickyTcBar';
 import { InfoPopover } from '@/components/ui/info-popover';
 import { FlawTrendChart } from '@/components/library/FlawTrendChart';
 import { LoadError } from '@/components/ui/load-error';
 import { DEFAULT_FLAW_FILTER } from '@/hooks/useFlawFilterStore';
-import { useIsPinned } from '@/hooks/useIsPinned';
 import {
   useLibraryFlawComparison,
   useLibraryFlawStats,
@@ -32,8 +32,6 @@ const COPY_NO_ANALYZED = 'No analyzed games in the current filters yet.';
 const COPY_NO_TACTIC_DATA = 'No tactic data for this time control yet.';
 const SECTION_HEADING_CLASS = 'font-brand text-lg font-semibold text-foreground';
 const FLAW_STATS_TITLE = 'Flaw Stats';
-/** The desktop sticky TC bar's `top` (top-2): the buttons pin 8px below the viewport edge. */
-const TC_BAR_TOP_PX = 8;
 const COPY_VS_OPPONENTS_INTRO =
   "Your flaws per 100 of your moves, next to your opponents' in the same games. " +
   'The grey band is the gap most players at your level have against their opponents.';
@@ -143,8 +141,7 @@ function FlawStatsSection({ filters, isGuest }: LibraryStatsSectionsProps) {
 
   return (
     <section className="space-y-4" data-testid="flaw-stats-section" aria-label={FLAW_STATS_TITLE}>
-      {/* md:h-8 = the desktop TC button height, so the sticky switch overlaid on this
-          row (LibraryStatsSections) is vertically centred on the title. */}
+      {/* md:h-8: the StickyTcBar overlays this row on desktop (see StickyTcBar). */}
       <h2 className={cn(SECTION_HEADING_CLASS, 'md:flex md:h-8 md:items-center')}>
         {FLAW_STATS_TITLE}
       </h2>
@@ -265,34 +262,16 @@ function TacticMotifsSection({ filters }: { filters: FilterState }) {
  * Tactic motifs. The sections share one remembered TC switch (D-05). The sidebar filters
  * flow into every query (D-01).
  *
- * On desktop the switch sits in a sticky bar scoped to this wrapper, so it unpins once the
- * sections scroll away (the rating and results sections below have no TC switch). The bar
- * takes no layout height (h-8 -mb-8) and overlays the right end of the Flaw Stats heading
- * row, so only the switch pins on scroll, never the title. Its full-width blurred strip is
- * drawn only while pinned: at rest it would sit over the title and dim it.
- * Mobile pins the switch in the page's sticky Filters bar instead (GlobalStats).
+ * The switch pins in a StickyTcBar scoped to this wrapper on desktop, so it unpins once the
+ * sections scroll away (the rating and results sections below have no TC switch). Mobile
+ * pins it in the page's sticky Filters bar instead (GlobalStats).
  */
 export function LibraryStatsSections(props: LibraryStatsSectionsProps) {
-  const [sentinelRef, isPinned] = useIsPinned<HTMLDivElement>(TC_BAR_TOP_PX);
   return (
     <div>
-      <div ref={sentinelRef} className="-mb-px h-px" aria-hidden="true" />
-      <div
-        className="pointer-events-none sticky top-2 z-20 -mb-8 hidden h-8 items-center justify-end md:flex"
-        data-testid="library-stats-tc-bar"
-      >
-        {isPinned && (
-          // -inset-y-2: the strip spans 8px above and below the buttons, like the mobile
-          // bar's py-2, without changing the bar's own (zero) layout height.
-          <div
-            className="absolute inset-x-0 -inset-y-2 bg-background/80 backdrop-blur-sm"
-            data-testid="library-stats-tc-bar-backdrop"
-          />
-        )}
-        <div className="pointer-events-auto relative">
-          <LibraryStatsTcSwitch filters={props.filters} />
-        </div>
-      </div>
+      <StickyTcBar showOnMobile={false} testId="library-stats-tc-bar">
+        <LibraryStatsTcSwitch filters={props.filters} />
+      </StickyTcBar>
       <div className="space-y-8">
         <FlawStatsSection {...props} />
         <VsOpponentsSection filters={props.filters} />
