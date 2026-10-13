@@ -224,15 +224,13 @@ export interface FlawTrendTc {
  *
  * Phase 239 D-00k: the timeline comes per time control (`trend_by_tc`, one entry per TC
  * that has analyzed games); the severity band, tag distribution and overall aggregates
- * are gone. trend_window = rolling window size (games). analyzed_n / total_n are the
- * filter-scoped coverage counts (FlawsTab reads analyzed_n).
+ * are gone. trend_window = rolling window size (games). analyzed_n is the filter-scoped
+ * analyzed-game count (FlawsTab reads it).
  */
 export interface FlawStatsResponse {
   trend_by_tc: FlawTrendTc[];
   trend_window: number;
-  analyzed_pct: number;
   analyzed_n: number;
-  total_n: number;
 }
 
 // ─── Per-flaw list (GET /api/library/flaws) ───────────────────────────────────

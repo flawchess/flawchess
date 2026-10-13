@@ -7,10 +7,10 @@
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { DEFAULT_FILTERS } from '@/components/filters/FilterPanel';
-import type { FlawStatsResponse } from '@/types/library';
+import type { FlawComparisonResponse, FlawStatsResponse } from '@/types/library';
 import {
   BLITZ_ENTRY,
   BLITZ_TACTIC_ENTRY,
@@ -69,9 +69,7 @@ const STATS: FlawStatsResponse = {
     { tc: 'rapid', points: [makeTrendPoint('2026-02-02'), makeTrendPoint('2026-02-09')] },
   ],
   trend_window: TREND_WINDOW,
-  analyzed_pct: 100,
   analyzed_n: 2841,
-  total_n: 2841,
 };
 
 beforeEach(async () => {
@@ -232,6 +230,25 @@ describe('TC switch (D-02, D-05)', () => {
     await renderLoaded();
     expect(text('flaw-tile-blunder-rate')).toBe('5.22');
   });
+
+  it('does not pin a tactic-based default while the flaw comparison is loading', async () => {
+    // Tactics alone would default to blitz (their only TC); the flaw list defaults to rapid.
+    let resolveFlaw: (value: FlawComparisonResponse) => void = () => {};
+    mocks.getFlawComparison.mockReturnValue(
+      new Promise<FlawComparisonResponse>((resolve) => {
+        resolveFlaw = resolve;
+      }),
+    );
+    mocks.getTacticComparison.mockResolvedValue(makeTacticComparison([BLITZ_TACTIC_ENTRY]));
+    renderSections();
+    // Let the tactic query settle while the flaw comparison is still pending.
+    await act(() => new Promise((resolve) => setTimeout(resolve, 20)));
+    await act(async () => resolveFlaw(makeComparison([BLITZ_ENTRY, RAPID_ENTRY])));
+    await screen.findByTestId('flaw-tiles');
+    expect(
+      screen.getByTestId('tc-switch-library-stats-rapid').getAttribute('aria-pressed'),
+    ).toBe('true');
+  });
 });
 
 describe('time controls below the gate (D-03)', () => {
@@ -304,7 +321,6 @@ describe('You vs. your opponents section', () => {
   it('renders the four cards for the selected TC, between the other sections', async () => {
     await renderLoaded();
     const section = screen.getByTestId('vs-opponents-section');
-    expect(section.querySelector('[data-testid="what-stands-out"]')).toBeNull();
     expect(section.querySelector('[data-testid="context-tag-cards"]')?.children).toHaveLength(4);
     const order = [
       screen.getByTestId('flaw-stats-section'),
@@ -379,7 +395,7 @@ describe('Tactic motifs section (D-00h, D-02, D-03)', () => {
   it('renders the one tactic card for the selected TC (D-17)', async () => {
     await renderLoaded();
     const section = screen.getByTestId('tactic-motifs-section');
-    expect(await within(section).findByTestId('tactic-tables')).not.toBeNull();
+    expect(await within(section).findByTestId('most-common-tactics')).not.toBeNull();
     expect(within(section).getAllByTestId('tactic-card')).toHaveLength(1);
     expect(text('tactic-cell-fork-missed-side')).toBe('Missed · 84');
     expect(text('tactic-cell-fork-missed-bar-words')).toBe('2.2 more');
@@ -387,7 +403,7 @@ describe('Tactic motifs section (D-00h, D-02, D-03)', () => {
 
   it('switches to the page-switch TC with no new request (D-02)', async () => {
     await renderLoaded();
-    await screen.findByTestId('tactic-tables');
+    await screen.findByTestId('most-common-tactics');
     expect(mocks.getTacticComparison).toHaveBeenCalledTimes(1);
 
     fireEvent.click(screen.getByTestId('tc-switch-library-stats-blitz'));
@@ -401,7 +417,7 @@ describe('Tactic motifs section (D-00h, D-02, D-03)', () => {
   it('says so, instead of showing another TC, when the tactic payload lacks the switch TC', async () => {
     mocks.getTacticComparison.mockResolvedValue(makeTacticComparison([RAPID_TACTIC_ENTRY]));
     await renderLoaded();
-    await screen.findByTestId('tactic-tables');
+    await screen.findByTestId('most-common-tactics');
     fireEvent.click(screen.getByTestId('tc-switch-library-stats-blitz'));
     await waitFor(() =>
       expect(
@@ -410,10 +426,10 @@ describe('Tactic motifs section (D-00h, D-02, D-03)', () => {
         ),
       ).not.toBeNull(),
     );
-    expect(screen.queryByTestId('tactic-tables')).toBeNull();
+    expect(screen.queryByTestId('most-common-tactics')).toBeNull();
   });
 
-  it('shows only the gate slot below the gate, with no tables (D-03)', async () => {
+  it('shows only the gate slot below the gate, with no tactic card (D-03)', async () => {
     mocks.getTacticComparison.mockResolvedValue(
       makeTacticComparison([makeTacticTcEntry('bullet', 12), RAPID_TACTIC_ENTRY]),
     );
@@ -421,27 +437,27 @@ describe('Tactic motifs section (D-00h, D-02, D-03)', () => {
       makeComparison([makeTcEntry('bullet', { analyzedN: 12 }), RAPID_ENTRY]),
     );
     await renderLoaded();
-    await screen.findByTestId('tactic-tables');
+    await screen.findByTestId('most-common-tactics');
     fireEvent.click(screen.getByTestId('tc-switch-library-stats-bullet'));
 
     await waitFor(() =>
       expect(text('tactic-motifs-gate')).toBe('Not enough analyzed games yet (12 of 20)'),
     );
-    expect(screen.queryByTestId('tactic-tables')).toBeNull();
+    expect(screen.queryByTestId('most-common-tactics')).toBeNull();
   });
 
   it('shows LoadError, not the empty copy, when the tactic query fails', async () => {
     mocks.getTacticComparison.mockRejectedValue(new Error('boom'));
     await renderLoaded();
     expect(await screen.findByText(/Failed to load tactic comparison/)).not.toBeNull();
-    expect(screen.queryByTestId('tactic-tables')).toBeNull();
+    expect(screen.queryByTestId('most-common-tactics')).toBeNull();
     // The other sections are unaffected.
     expect(text('flaw-tile-blunder-rate')).toBe('5.22');
   });
 
   it('does not mention the benchmark zone mapping or a top-N / More tactics list (D-00h, D-09)', async () => {
     await renderLoaded();
-    await screen.findByTestId('tactic-tables');
+    await screen.findByTestId('most-common-tactics');
     // Even in an open popover: the blitz/bullet-reads-rapid stopgap is deliberately silent.
     fireEvent.click(screen.getByTestId('gap-popover-tactic-fork-missed-tc-rapid'));
     const rendered = `${text('tactic-motifs-section')}\n${text('gap-popover-tactic-fork-missed-tc-rapid-popover')}`;

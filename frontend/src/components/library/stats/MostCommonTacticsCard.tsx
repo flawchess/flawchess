@@ -16,8 +16,7 @@ import type { TacticBullet, TacticComparisonTc, TacticSide } from '@/types/libra
 
 /**
  * Two equal Missed | Allowed columns from md up (UAT: no Motif column; each cell names its
- * motif top left under the column header row); phones stack under the motif name. fr, not %: percentage
- * tracks ignore the md:gap-4 gutters and overflowed the card (found in the 239-09 UAT).
+ * motif top left under the column header row); phones stack under the motif name.
  */
 const TABLE_GRID_CLASS = 'md:grid-cols-2';
 /**
@@ -28,7 +27,6 @@ const CELL_DIVIDER_CLASS = 'md:border-b md:border-card-edge md:py-3 md:group-las
 const SIDES: readonly TacticSide[] = ['missed', 'allowed'];
 const SIDE_LABELS: Record<TacticSide, string> = { missed: 'Missed', allowed: 'Allowed' };
 const CARD_TITLE = 'Most common tactics';
-const COPY_NO_FLAWS = 'No flaws';
 const COPY_FOOTER =
   "Per 100 games. Middle tick = same as your opponents, fewer (better) to the left. Your and your opponents' rates are in each search-icon popover.";
 
@@ -47,11 +45,6 @@ function indexBullets(tcStats: TacticComparisonTc): BulletIndex {
   return new Map(tcStats.bullets.map((b) => [bulletKey(b.family, b.orientation), b]));
 }
 
-/** True when neither you nor your opponents have a flaw with this family-side. */
-function hasNoFlaws(bullet: TacticBullet): boolean {
-  return bullet.you_events + bullet.opp_events === 0;
-}
-
 interface TacticCellProps {
   bullet: TacticBullet;
   def: TacticFamilyDef;
@@ -61,8 +54,8 @@ interface TacticCellProps {
 
 /**
  * One Missed or Allowed cell: the gap bar per 100 games with its Search popover (D-00c).
- * A cell without flaws reads a muted "No flaws" and has no popover (D-00d); the bar owns
- * the verdict and its significance gate (D-14). The words line carries a label top left:
+ * A side without flaws (null gap) gets the bar's empty line and no popover (D-00d); the
+ * bar owns the verdict and its significance gate (D-14). The words line carries a label top left:
  * "Fork · 152" from md up, "Missed · 152" on phones under the row's motif name.
  * The count is the player's own flaws on that side.
  */
@@ -71,7 +64,6 @@ function TacticCell({ bullet, def, side, tcStats }: TacticCellProps) {
   const segment = tacticTestIdSegment(def.family);
   const copy = tacticSideCopy(def.name, side);
   const testId = `tactic-cell-${segment}-${side}`;
-  const noFlaws = hasNoFlaws(bullet);
   const yourFlaws = bullet.you_events.toLocaleString('en-US');
   const sideLabel = (
     <>
@@ -86,20 +78,13 @@ function TacticCell({ bullet, def, side, tcStats }: TacticCellProps) {
   );
   return (
     <div className={CELL_DIVIDER_CLASS} data-testid={testId}>
-      {noFlaws ? (
-        <>
-          {sideLabel}
-          <p className="text-sm text-muted-foreground" data-testid={`${testId}-empty`}>
-            {COPY_NO_FLAWS}
-          </p>
-        </>
-      ) : (
-        <GapBar
-          cell={cell}
-          testId={`${testId}-bar`}
-          layout="stacked"
-          leading={sideLabel}
-          trailing={
+      <GapBar
+        cell={cell}
+        testId={`${testId}-bar`}
+        layout="stacked"
+        leading={sideLabel}
+        trailing={
+          cell.delta === null ? undefined : (
             <GapPopover
               testId={`gap-popover-tactic-${segment}-${side}-tc-${tcStats.tc}`}
               label={copy.label}
@@ -109,9 +94,9 @@ function TacticCell({ bullet, def, side, tcStats }: TacticCellProps) {
               basis={libraryBasisText(tcStats.analyzed_n, tcStats.tc)}
               cell={cell}
             />
-          }
-        />
-      )}
+          )
+        }
+      />
     </div>
   );
 }
@@ -145,7 +130,7 @@ function TacticRow({ def, bullets, tcStats }: TacticRowProps) {
   );
 }
 
-interface TacticTablesProps {
+interface MostCommonTacticsCardProps {
   /** The selected time control's tactic comparison entry (at or above the gate). */
   tcStats: TacticComparisonTc;
 }
@@ -156,10 +141,10 @@ interface TacticTablesProps {
  * families happen less than once per 100 games, so their gaps were mostly noise. Every
  * row is shown, also without flaws; each cell is a gap bar per 100 games.
  */
-export function TacticTables({ tcStats }: TacticTablesProps) {
+export function MostCommonTacticsCard({ tcStats }: MostCommonTacticsCardProps) {
   const bullets = indexBullets(tcStats);
   return (
-    <div className="flex flex-col gap-4" data-testid="tactic-tables">
+    <div className="flex flex-col gap-4" data-testid="most-common-tactics">
       <Card data-testid="tactic-card">
         <CardHeader>{CARD_TITLE}</CardHeader>
         <CardBody className="relative">
@@ -200,7 +185,7 @@ export function TacticTables({ tcStats }: TacticTablesProps) {
           </div>
         </CardBody>
       </Card>
-      <p className="text-sm text-muted-foreground" data-testid="tactic-tables-footer">
+      <p className="text-sm text-muted-foreground" data-testid="most-common-tactics-footer">
         {COPY_FOOTER}
       </p>
     </div>

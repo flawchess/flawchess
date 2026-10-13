@@ -33,6 +33,7 @@ import {
   PRESSURE_SCORE_GAP_NEUTRAL_MIN,
   PRESSURE_SCORE_GAP_NEUTRAL_MAX,
 } from '../ScoreGapByTimePressureChart';
+import { COPY_CHANCE } from '@/components/endgames/stats/rankedMetrics';
 import {
   computeScoreGapYAxis,
   type ScoreGapAxisPoint,
@@ -324,6 +325,34 @@ describe('ScoreGapByTimePressureChart', () => {
     // delta -0.17 sits below the -6% band: red, same as its dot.
     reference.style.backgroundColor = ZONE_DANGER;
     expect(swatch?.style.backgroundColor).toBe(reference.style.backgroundColor);
+  });
+
+  it.each([
+    ['out of band, not significant', -0.17, false, true],
+    ['out of band, significant', -0.17, true, false],
+    ['inside the band, not significant', 0.02, false, false],
+  ] as const)('tooltip says "could be chance" only %s -> %s', (_name, delta, significant, shown) => {
+    const { getByTestId } = render(
+      <ScoreGapTooltipContent
+        point={{
+          significant,
+          label: '10%',
+          rangeLabel: '0-20%',
+          delta,
+          n: 40,
+          n_opp: 40,
+          opp_score: 0.55,
+          p_value: 0.03,
+          ci_low: null,
+          ci_high: null,
+        }}
+      />,
+    );
+    const chance = getByTestId('score-gap-tooltip').querySelector(
+      '[data-testid="score-gap-tooltip-chance"]',
+    );
+    expect(chance !== null).toBe(shown);
+    if (shown) expect(chance?.textContent).toBe(COPY_CHANCE);
   });
 
   it('tooltip degrades gracefully when opp_score / p_value / CI are null', () => {

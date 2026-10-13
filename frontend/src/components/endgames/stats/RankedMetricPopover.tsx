@@ -2,7 +2,7 @@
  * One popover per peer-ranked metric (D-00c): a plain WHAT + sign sentence, the
  * percentile statement with its disclosures (cohort, recent-games basis, anchor
  * composition), then the statistics (n, 99% CI, p-value) greyed below a separator.
- * An out-of-range percentile that is not significant (D-14) adds a could-be-chance line.
+ * An out-of-range percentile that is not significant (239 D-14) adds a could-be-chance line.
  * The Stats tab has no filters, so no filter-independence line (238 UAT). Stats vocabulary appears only in that
  * footer; the prose stays plain (popover copy minimalism).
  *
@@ -18,13 +18,13 @@ import {
   METRIC_WHAT,
   PERCENTILE_TYPICAL_HIGH,
   PERCENTILE_TYPICAL_LOW,
+  COPY_CHANCE,
   displayPercentile,
   formatCiBound,
   formatPValue,
 } from './rankedMetrics';
 
 const FOOTER_SEPARATOR = ' · ';
-const COPY_CHANCE = 'This could be chance, there are not enough games to be sure.';
 
 /** The anchor-composition disclosure: mixed, lichess-only or chess.com-only (feedback contract). */
 function anchorCompositionCopy(anchor: RatingAnchorOut): string {

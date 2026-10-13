@@ -114,7 +114,7 @@ describe('RankedMetricPopover body (D-00c)', () => {
     expect(rateFooter).not.toContain('p =');
   });
 
-  it('says an out-of-range percentile could be chance only when it is not significant (D-14)', () => {
+  it('says an out-of-range percentile could be chance only when it is not significant (239 D-14)', () => {
     const chance = openPopover(buildMetric('score_gap', { percentile: 90, significant: false }));
     expect(chance.textContent).toContain('This could be chance');
     cleanup();

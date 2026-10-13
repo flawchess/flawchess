@@ -6,8 +6,7 @@ frontend renders exactly what the registry stores. No TS codegen.
 
 Units: per 100 games (you minus opponent count per game, times 100), matching the tactic
 rates the endpoint returns (D-00h). Sign convention: negative delta = fewer tactics than
-the opponent = good. The measured Q1/Q3 stay in the source; Phase 239 D-15 turns each
-into a band symmetric around 0 (+-IQR/2, flaw_delta_zones.symmetric_band).
+the opponent = good.
 
 A registry value of None means the (family, side) has no viable benchmark zone (degenerate
 IQR or too few non-zero users, D-06): the bullet gets has_zone False, zone_lo == zone_hi ==
@@ -18,12 +17,12 @@ sample, so they read the rapid zones until /benchmarks section 5 is re-run with 
 tranches. The mapping is the SAME ZONE_TC_FOR the flaw registry uses (one stopgap mapping
 for both registries), silent in the UI and documented in reports/benchmark/benchmarks-latest.md.
 
-Basis (plan 239-06/07): reports/benchmark/benchmarks-latest.md section 5 on the full-analysis
-lane (classical + rapid games with full evals, PVs and blobs; at most 100 games per user per TC;
-per-user mean over at least 20 games), snapshot run 2026-10-12. Each band is the pooled p25 /
-p75 of the per-user paired delta (you minus opponent, per 100 games), rounded outward (lo down,
-hi up) to the 0.01 grid. The TC axis collapsed for all 38 metrics, so rapid and classical hold
-the same pooled band. No Elo keying (no metric reached a keep-separate ELO verdict).
+Basis: each band is symmetric_band() applied to the section 5 full-analysis-lane Q1/Q3
+kept in the source (reports/benchmark/benchmarks-latest.md, classical + rapid games with
+full evals, PVs and blobs, at most 100 games per user per TC, per-user mean over at least
+20 games, snapshot run 2026-10-12): +-IQR/2 around 0, the half-width rounded up to the
+0.01 grid (D-15). One pooled band per metric, identical for rapid and classical; blitz and
+bullet read rapid (the D-08 stopgap above).
 
 has_zone rule: a (family, side) gets a band only when the pooled IQR is not degenerate (p25 <
 p75) AND at least 50% of user-cells are non-zero. Exactly 9 of 38 pass; the owner accepted that

@@ -871,11 +871,11 @@ async def _seed_db_pos(
 
 
 class TestFlawStats:
-    """get_flaw_stats: coverage counts and the per-TC Flaws Timeline (Phase 239 D-00k)."""
+    """get_flaw_stats: analyzed count and the per-TC Flaws Timeline (Phase 239 D-00k)."""
 
     @pytest.mark.asyncio
     async def test_coverage_counts(self, db_session: object) -> None:
-        """analyzed_n / total_n / analyzed_pct come from the eval-coverage count."""
+        """analyzed_n comes from the eval-coverage count (unanalyzed games excluded)."""
         from sqlalchemy.ext.asyncio import AsyncSession
 
         from app.services.library_service import get_flaw_stats
@@ -902,19 +902,15 @@ class TestFlawStats:
             flaw_severity=None,
         )
         assert resp.analyzed_n == 1
-        assert resp.total_n == 2
-        assert resp.analyzed_pct == pytest.approx(0.5)
 
     def test_response_drops_the_unused_aggregates(self) -> None:
-        """The slimmed response carries exactly the per-TC trend and the coverage counts."""
+        """The slimmed response carries exactly the per-TC trend and the analyzed count."""
         from app.schemas.library import FlawStatsResponse
 
         assert set(FlawStatsResponse.model_fields) == {
             "trend_by_tc",
             "trend_window",
-            "analyzed_pct",
             "analyzed_n",
-            "total_n",
         }
 
     @pytest.mark.asyncio
@@ -1045,9 +1041,7 @@ class TestFlawStats:
             to_date=None,
             flaw_severity=None,
         )
-        assert resp.total_n == 1
         assert resp.analyzed_n == 0
-        assert resp.analyzed_pct == 0.0
         assert resp.trend_by_tc == []
 
 

@@ -98,11 +98,10 @@ from app.services.endgame_zones import PER_CLASS_TC_GAUGE_ZONES
 from app.services.global_percentile_cdf import (
     BREAKPOINT_PERCENTILES,
     CdfMetricId,
-    _round_anchor_to_grid,
+    round_anchor_to_grid,
 )
 from app.services.openings_service import derive_user_result
 from app.services.score_confidence import (
-    CI_Z_95,
     VERDICT_CI_Z_99,
     ci_excludes,
     compute_paired_difference_test,
@@ -249,7 +248,7 @@ async def _fetch_rate_cohort_medians(
     session: AsyncSession, anchors: dict[TimeControlBucket, RatingAnchorRow]
 ) -> dict[tuple[CdfMetricId, TimeControlBucket], float]:
     """Cohort p50 per (raw-rate metric, TC) at the user's anchor, in one batched read."""
-    rounded = {tc: _round_anchor_to_grid(a.anchor_rating) for tc, a in anchors.items()}
+    rounded = {tc: round_anchor_to_grid(a.anchor_rating) for tc, a in anchors.items()}
     cells = await load_cohort_cells(session, sorted(set(rounded.values())), list(rounded))
     medians: dict[tuple[CdfMetricId, TimeControlBucket], float] = {}
     for tc, anchor_elo in rounded.items():
@@ -794,16 +793,14 @@ def _rate_significant(successes: int, games: int, band: tuple[float, float]) -> 
 def _type_gap_significant(category: EndgameCategoryStats) -> bool:
     """D-14 gate for the per-class Score Gap: its 99% CI excludes 0.
 
-    The shared category builder emits a 95% Wald CI; a Wald half-width is z * SE, so the
-    99% interval is the 95% one widened by VERDICT_CI_Z_99 / CI_Z_95 around the mean.
+    The shared category builder (endgame_service._build_category_stats) already emits
+    the 99% CI, so the gate reads it directly; a missing CI (n < 2) never passes.
     """
-    mean = category.type_achievable_score_gap_mean
-    lo95 = category.type_achievable_score_gap_ci_low
-    hi95 = category.type_achievable_score_gap_ci_high
-    if mean is None or lo95 is None or hi95 is None:
-        return False
-    half = (hi95 - lo95) / 2 * VERDICT_CI_Z_99 / CI_Z_95
-    return ci_excludes(0.0, mean - half, mean + half)
+    return ci_excludes(
+        0.0,
+        category.type_achievable_score_gap_ci_low,
+        category.type_achievable_score_gap_ci_high,
+    )
 
 
 def _with_significance(

@@ -25,14 +25,14 @@ vi.mock('@/components/charts/ScoreGapByTimePressureChart', () => ({
 type SectionModule = typeof import('./TimePressureSection');
 let TimePressureSection: SectionModule['TimePressureSection'];
 // The page's one switch (the section carries none); loaded from the same fresh module graph.
-let TcSwitch: typeof import('./TcSwitch')['TcSwitch'];
+let EndgameStatsTcSwitch: typeof import('./EndgameStatsTcSwitch')['EndgameStatsTcSwitch'];
 
 beforeEach(async () => {
   // The TC selection is module-level state: load a fresh copy per test.
   vi.resetModules();
   localStorage.clear();
   ({ TimePressureSection } = await import('./TimePressureSection'));
-  ({ TcSwitch } = await import('./TcSwitch'));
+  ({ EndgameStatsTcSwitch } = await import('./EndgameStatsTcSwitch'));
 });
 
 afterEach(cleanup);
@@ -101,7 +101,7 @@ describe('TimePressureSection', () => {
   it('follows the synced TC switch', () => {
     const { container } = render(
       <>
-        <TcSwitch sectionId="endgame-stats" tcs={[BLITZ, RAPID]} />
+        <EndgameStatsTcSwitch tcs={[BLITZ, RAPID]} />
         <TimePressureSection tcs={[BLITZ, RAPID]} />
       </>,
     );

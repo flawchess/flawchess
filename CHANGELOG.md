@@ -10,15 +10,17 @@ in `YYYY-MM-DD` (Europe/Zurich).
 
 ### Changed
 
-- Library Stats now compares you with your opponents in plain words: one gap bar per metric ("1.7 fewer" style), with the details behind the search icon.
-- Library Stats has a time-control switch in each section. The switches stay in sync and remember your choice between visits.
+- Library Stats now compares you with your opponents in plain words: one gap bar per metric ("1.7 fewer" style), fewer flaws to the left, a grey typical range centred on zero, and the details behind the search icon.
+- Library Stats has one time-control switch for all its sections. It stays in reach while you scroll and remembers your choice between visits.
 - Library Stats: the Blunders and Mistakes tiles now show your opponents' rate next to yours. The Inaccuracies tile and the Severity card are gone.
-- Library Stats: a What stands out card and four context cards (Clock, Game phase, Opponent errors, Lost advantages) replace the old comparison grid.
-- Library Stats: tactic motifs are now three tables per 100 games, with Missed and Allowed side by side. The most common motifs (fork, pin, hanging piece, mate, and allowed discovered attacks) get a typical range from fully analyzed benchmark games.
+- Library Stats: four context cards (Clock, Game phase, Opponent errors, Lost advantages) replace the old comparison grid.
+- Library Stats: tactic motifs are now one "Most common tactics" card with fork, pin, hanging piece and checkmate. Missed and Allowed sit side by side per 100 games, each with a typical range from fully analyzed benchmark games.
+- Library Stats: the ELO charts show how many games you played each day, and the Results Breakdown rows no longer have the faint game-count bars.
+- Library Stats and Endgame Stats only show a result in green or red when it is very unlikely to be chance (99% confidence). Otherwise it stays neutral, and the details say it could be chance.
 - Endgame Stats now compares you with similar-rated players: one peer percentile bar per metric, based on your recent ranked games per time control (rated games against human opponents within 100 Elo of you, last 36 months).
-- Endgame Stats has one time-control switch per section, and it remembers your choice between visits.
+- Endgame Stats has one time-control switch for all its sections. It stays in reach while you scroll and remembers your choice between visits.
 - Endgame Stats replaces the gauges and colored zones with win/draw/loss bars that carry a bracket and a grey typical range. The Endgame Type Breakdown is now a table.
-- The filter panel now only appears on the Games tab. The Stats tab always describes your recent ranked games, so filters no longer apply there.
+- On the Endgames page, the filter panel now only appears on the Games tab. The Stats tab always describes your recent ranked games, so filters no longer apply there.
 - Shelly's endgame report no longer depends on your filters. There is one report per account, and it talks about the same numbers the Stats page shows.
 - Train: each solution chip now gives only its first move (its eval is the graded eval), and the rest of the line is a faded live engine line at the end of the move list that improves while the engine searches. The forward button or right arrow adds its next move, tapping a faded move adds the line up to it, and engine moves added this way are not graded.
 - Train: on puzzles with several good moves, the solution board now shows up to three good alternatives at the puzzle position. The certified alternative comes first, and the engine fills the remaining slots with its own good moves once its search is deep enough, shown the same way (green arrow with a checkmark, listed under "Also fine"); moves it rates an inaccuracy or worse are never shown.

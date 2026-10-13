@@ -94,14 +94,8 @@ describe('FlawTiles', () => {
     expect(screen.queryByTestId('gap-popover-blunder-tc-bullet')).toBeNull();
   });
 
-  it('never fades a tile, also for a bullet that is not significant', () => {
-    const entry = makeTcEntry('rapid', { analyzedN: 400, blunder: { significant: false } });
-    renderTiles(entry);
-    expect(screen.getByTestId('flaw-tile-blunder').getAttribute('style') ?? '').not.toContain('opacity');
-  });
-
   it('shows the verdict for a significant out-of-band tile and withholds it otherwise (D-14)', () => {
-    // delta -0.61 is below the fixture band (-0.31..0.25): a "better" verdict.
+    // delta -0.61 is below the fixture band (-0.3..0.3): a "better" verdict.
     renderTiles(makeTcEntry('rapid', { analyzedN: 400, blunder: { delta: -0.61, significant: true } }));
     expect(screen.getByTestId('flaw-tile-blunder-bar-dot').style.backgroundColor).toBe(
       normalized(ZONE_SUCCESS),

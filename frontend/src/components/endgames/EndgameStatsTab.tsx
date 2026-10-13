@@ -14,7 +14,7 @@ import { MetricsSection } from './stats/MetricsSection';
 import { OverallSection } from './stats/OverallSection';
 import { TimePressureSection } from './stats/TimePressureSection';
 import { TypeTable } from './stats/TypeTable';
-import { TcSwitch } from './stats/TcSwitch';
+import { EndgameStatsTcSwitch } from './stats/EndgameStatsTcSwitch';
 import { StickyTcBar } from '@/components/stats/StickyTcBar';
 import { useEndgameInsightsState } from './useEndgameInsightsState';
 import type { SectionInsight } from './useEndgameInsightsState';
@@ -346,7 +346,7 @@ export function EndgameStatsTab({ tier2, onCategorySelect }: EndgameStatsTabProp
         {/* One TC switch for every section (D-00h), pinned while the sections scroll. */}
         <div>
           <StickyTcBar testId="endgame-stats-tc-bar">
-            <TcSwitch sectionId="endgame-stats" tcs={tcs} />
+            <EndgameStatsTcSwitch tcs={tcs} />
           </StickyTcBar>
           <div className="flex flex-col gap-4">
             <OverallSection tcs={tcs}>

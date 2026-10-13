@@ -28,6 +28,7 @@ import {
 } from 'recharts';
 import { ChartContainer, ChartTooltip } from '@/components/ui/chart';
 import { ChartTooltipBox } from '@/components/ui/chart-tooltip-box';
+import { COPY_CHANCE } from '@/components/endgames/stats/rankedMetrics';
 import { NEUTRAL_SERIES_COLOR, TYPICAL_BAND_FILL, ZONE_NEUTRAL } from '@/lib/theme';
 import {
   clampDeltaCi,
@@ -162,11 +163,21 @@ function formatPValue(p: number): string {
  */
 function zoneDotColor(delta: number, significant: boolean): string {
   if (!significant) return ZONE_NEUTRAL;
+  return bandZoneColor(delta);
+}
+
+/** The dot colour before the significance gate: neutral inside the typical band. */
+function bandZoneColor(delta: number): string {
   return pressureDeltaZoneColor(
     delta,
     PRESSURE_SCORE_GAP_NEUTRAL_MIN,
     PRESSURE_SCORE_GAP_NEUTRAL_MAX,
   );
+}
+
+/** Outside the typical band but not significant: it could be chance (239 D-14). */
+function isChanceGap(point: ChartPoint): boolean {
+  return !point.significant && bandZoneColor(point.delta) !== ZONE_NEUTRAL;
 }
 
 /** Transform quintile bins into chart points, filtering Q4 and zero-n bins. */
@@ -209,7 +220,9 @@ function toChartData(quintiles: PressureQuintileBullet[]): ChartPoint[] {
  * fix). Post-UAT 88.4: header is the full bucket range ("Time Bucket: 0-20%");
  * You/Opp/Games collapse to one muted block; the p-value (greyed) and the
  * statistical test + CI methodology render below. No verdict sentence: the
- * per-metric z-test verdict left the visible UI in Phase 238 (D-00c).
+ * per-metric z-test verdict left the visible UI in Phase 238 (D-00c). An out-of-band
+ * bucket that is not significant says it could be chance, like RankedMetricPopover
+ * (239 D-14).
  *
  * Font-size note: this Recharts hover tooltip deliberately uses `text-xs` to
  * match the sibling "Clock Gap at Endgame Entry"
@@ -237,6 +250,7 @@ export function ScoreGapTooltipContent({ point }: { point: ChartPoint }) {
         />
         <span>Score gap: {formatSignedPct(point.delta)}</span>
       </div>
+      {isChanceGap(point) && <div data-testid="score-gap-tooltip-chance">{COPY_CHANCE}</div>}
       {/* Two lines: the user-side and opponent-side splits are independent
           samples from the same game-set, so their game counts can differ —
           show each count next to its own score. */}

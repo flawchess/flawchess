@@ -836,6 +836,34 @@ class TestAggregateEndgameStatsTypeScoreGap:
         assert rook.type_achievable_score_gap_mean is not None
         assert rook.type_achievable_score_gap_mean == pytest.approx(expected_mean, abs=1e-6)
 
+    def test_ci_is_99_percent(self):
+        """The per-class gap CI is the 99% Wald CI (Phase 239 D-14), not 95%."""
+        import math
+
+        from app.services.eval_utils import eval_cp_to_expected_score
+        from app.services.score_confidence import VERDICT_CI_Z_99
+
+        rows = [
+            self._gap_row(1, 1, "1-0", "white", 100, None),
+            self._gap_row(2, 1, "1/2-1/2", "white", -200, None),
+            self._gap_row(3, 1, "0-1", "white", 50, None),
+        ]
+        result, _ = _aggregate_endgame_stats(rows)
+        rook = next(c for c in result if c.endgame_class == "rook")
+        mean = rook.type_achievable_score_gap_mean
+        lo = rook.type_achievable_score_gap_ci_low
+        hi = rook.type_achievable_score_gap_ci_high
+        assert mean is not None and lo is not None and hi is not None
+        gaps = [
+            1.0 - eval_cp_to_expected_score(100, "white"),
+            0.5 - eval_cp_to_expected_score(-200, "white"),
+            0.0 - eval_cp_to_expected_score(50, "white"),
+        ]
+        g_mean = sum(gaps) / 3
+        se = math.sqrt(sum((g - g_mean) ** 2 for g in gaps) / 2 / 3)
+        assert hi - mean == pytest.approx(VERDICT_CI_Z_99 * se, abs=1e-9)
+        assert mean - lo == pytest.approx(VERDICT_CI_Z_99 * se, abs=1e-9)
+
     def test_per_class_independent_accumulation(self):
         """Two classes accumulate gap vectors independently."""
         rows = [

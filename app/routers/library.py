@@ -184,11 +184,11 @@ async def get_flaw_stats(
     color: str | None = Query(default=None),
     include_pasted: bool = Query(default=False),
 ) -> FlawStatsResponse:
-    """Return the stats-panel coverage counts and per-TC Flaws Timeline (LIBG-09, Phase 239).
+    """Return the analyzed-game count and per-TC Flaws Timeline (LIBG-09, Phase 239).
 
     trend_by_tc is one rolling-game trend series per time control (the client picks
-    the selected TC's series); analyzed_pct / analyzed_n / total_n give the explicit
-    coverage denominator. The severity counts, rates and tag distribution this
+    the selected TC's series); analyzed_n is the analyzed-game count of the filtered
+    set. The severity counts, rates and tag distribution this
     endpoint used to return are gone: the tiles read /flaw-comparison. Same filter
     set as /games (no pagination). An empty analyzed set returns zeros, never an
     error. When `color` is supplied ("white" or "black"), stats are computed over

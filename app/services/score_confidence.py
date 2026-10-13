@@ -212,16 +212,17 @@ def compute_score_difference_test(
         v_shared = (var_eg + var_ne) / 2.0
         cov_correction = 2.0 * shared_n * v_shared / (eg_n * ne_n)
         SE_diff = sqrt(var_eg / eg_n + var_ne / ne_n + cov_correction)
-        z = (score_eg - score_ne) / SE_diff
-        p_value = erfc(|z| / sqrt(2))                       # two-sided
+        z_stat = (score_eg - score_ne) / SE_diff
+        p_value = erfc(|z_stat| / sqrt(2))                  # two-sided
 
     Wald-on-difference (not Wilson) because the difference of two independent
     proportions does not reduce to a single-proportion problem; the normal
     approximation is adequate at `min(eg_n, ne_n) >= CONFIDENCE_MIN_N=10`.
 
-    95% CI (also Wald):
-        ci_low  = (score_eg - score_ne) - CI_Z_95 * SE_diff
-        ci_high = (score_eg - score_ne) + CI_Z_95 * SE_diff
+    CI (also Wald), 95% by default; ``z`` selects another level (D-14 verdicts pass
+    VERDICT_CI_Z_99):
+        ci_low  = (score_eg - score_ne) - z * SE_diff
+        ci_high = (score_eg - score_ne) + z * SE_diff
 
     `shared_n` (Phase 148 item 3, D-04 covariance correction): the count of
     observations shared between the two cohorts (e.g. the same game
@@ -309,10 +310,10 @@ def compute_paired_difference_test(
         mean_d = sum(diffs) / n
         var_d  = max(0.0, (sumsq - n * mean_d ** 2) / (n - 1))    # n >= 2
         se     = sqrt(var_d / n)
-        z      = mean_d / se
-        p_value = erfc(|z| / sqrt(2))                              # two-sided
-        ci_low  = mean_d - CI_Z_95 * se
-        ci_high = mean_d + CI_Z_95 * se
+        z_stat = mean_d / se
+        p_value = erfc(|z_stat| / sqrt(2))                         # two-sided
+        ci_low  = mean_d - z * se       # z = CI_Z_95 by default; D-14 passes VERDICT_CI_Z_99
+        ci_high = mean_d + z * se
 
     n-gates (per SEC1-10):
       - mean_d is always returned (0.0 when diffs is empty).

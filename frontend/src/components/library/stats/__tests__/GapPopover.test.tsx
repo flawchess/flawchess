@@ -12,12 +12,12 @@ afterEach(cleanup);
 const TRIGGER_ID = 'library-gap-blunder-tc-blitz';
 const BASIS = 'Based on your 1,000 analyzed blitz games in the current filters.';
 
-/** Sketch 010 blitz blunder row: you 5.46, opponents 6.12, band -0.31 to 0.25. */
+/** Sketch 010 blitz blunder row: you 5.46, opponents 6.12, band -0.3 to 0.3 (symmetric, D-15). */
 function blunderCell(overrides: Partial<GapCell> = {}): GapCell {
   return {
     delta: -0.6607,
-    zoneLo: -0.31,
-    zoneHi: 0.25,
+    zoneLo: -0.3,
+    zoneHi: 0.3,
     hasZone: true,
     significant: true,
     youRate: 5.4569,
@@ -56,7 +56,7 @@ describe('GapPopover (D-00c)', () => {
       'Blunders: Moves that dropped your expected score by 15+ points. Fewer is better.',
       'You: 5.46 per 100 moves. Opponents: 6.12.',
       'That is 0.66 fewer than the players you faced.',
-      'Typical gap for players at your level: 0.31 fewer to 0.25 more. You are better than typical.',
+      'Typical gap for players at your level: 0.30 fewer to 0.30 more. You are better than typical.',
       BASIS,
       '1,916 vs. 1,982 blunders · gap 99% CI −1.00 to −0.32 · p < 0.001',
     ];
@@ -81,7 +81,7 @@ describe('GapPopover (D-00c)', () => {
 
   it('keeps the range but says it could be chance for an out-of-band gap that is not significant', () => {
     const text = openPopover(blunderCell({ significant: false })).textContent ?? '';
-    expect(text).toContain('Typical gap for players at your level: 0.31 fewer to 0.25 more.');
+    expect(text).toContain('Typical gap for players at your level: 0.30 fewer to 0.30 more.');
     expect(text).toContain('This could be chance, there are not enough games to be sure.');
     expect(text).not.toContain('You are better than typical.');
   });
@@ -147,10 +147,5 @@ describe('GapRow', () => {
     expect(row.textContent).toContain('Moves that dropped your expected score by 15+ points');
     expect(screen.getByTestId('row-bar')).toBeTruthy();
     expect(screen.getByTestId('row-popover-trigger')).toBeTruthy();
-  });
-
-  it('never fades a row, also when the gap is not significant (D-14 replaced the D-12 fade)', () => {
-    renderRow(blunderCell({ significant: false }));
-    expect(screen.getByTestId('row').style.opacity).toBe('');
   });
 });

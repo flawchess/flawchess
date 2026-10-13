@@ -138,7 +138,7 @@ export interface PressureQuintileBullet {
   ci_low: number | null;
   ci_high: number | null;
   opp_score: number | null;     // opponent's same-game score in the matching opp-clock quintile
-  significant: boolean;         // 99% CI excludes 0: only then is the dot coloured (D-14)
+  significant: boolean;         // 99% CI excludes 0: only then is the dot coloured (239 D-14)
 }
 
 /** One ISO-week point on the Average Clock Difference over Time line chart.
@@ -290,10 +290,10 @@ export interface RankedMetricOut {
   floor_required: number;
   percentile: number | null;
   status: RankStatus;
-  ci_low: number | null;        // 99% CI (D-14)
+  ci_low: number | null;        // 99% CI (239 D-14)
   ci_high: number | null;
   p_value: number | null;
-  /** 99% CI excludes the null on the verdict's side; red/green needs it (D-14). */
+  /** 99% CI excludes the null on the verdict's side; red/green needs it (239 D-14). */
   significant: boolean;
 }
 
@@ -343,7 +343,7 @@ export interface RankedTcStats {
 }
 
 /** `tcs` lists only time controls with at least one ranked-sample game, ordered
- *  bullet, blitz, rapid, classical (D-14). An empty ranked sample returns [] (D-10). */
+ *  bullet, blitz, rapid, classical (238 D-14). An empty ranked sample returns [] (238 D-10). */
 export interface EndgameRankedStatsResponse {
   tcs: RankedTcStats[];
 }

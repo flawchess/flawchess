@@ -769,6 +769,8 @@ def _build_category_stats(
     #   n == 1 -> (mean, None, None, None) — p/CI gated.
     #   n >= 2 -> ci_low/ci_high populated.
     #   n >= CONFIDENCE_MIN_N (=10) -> p_value populated.
+    # Phase 239 D-14: the CI is 99% (displayed CIs match the verdict level), so the
+    # ranked service's significance gate reads it as-is.
     # Sign: exit_score - ES_entry (positive = outperformed Stockfish baseline).
     type_gaps = gaps_by_class[endgame_class]
     type_gap_n = len(type_gaps)
@@ -777,7 +779,7 @@ def _build_category_stats(
         type_gap_p,
         type_gap_ci_low,
         type_gap_ci_high,
-    ) = compute_paired_difference_test(type_gaps)
+    ) = compute_paired_difference_test(type_gaps, z=VERDICT_CI_Z_99)
     # When n == 0 compute_paired_difference_test returns mean=0.0. Surface
     # None on the wire so the frontend hides the row (D-08 n==0 gate),
     # matching how the cohort-empty case reads.

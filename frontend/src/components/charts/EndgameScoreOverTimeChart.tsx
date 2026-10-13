@@ -14,7 +14,7 @@ import { InfoPopover } from '@/components/ui/info-popover';
 import { CardHeader } from '@/components/ui/card';
 import { ChartTooltipBox } from '@/components/ui/chart-tooltip-box';
 import {
-  ENDGAME_VOLUME_BAR_COLOR,
+  VOLUME_BAR_COLOR,
   SCORE_TIMELINE_FILL_ABOVE,
   SCORE_TIMELINE_FILL_BELOW,
   SCORE_TIMELINE_LINE_ENDGAME,
@@ -265,7 +265,7 @@ export function EndgameScoreOverTimeChart({ timeline, window }: EndgameScoreOver
             <Bar
               yAxisId="bars"
               dataKey="per_week_total_games"
-              fill={ENDGAME_VOLUME_BAR_COLOR}
+              fill={VOLUME_BAR_COLOR}
               legendType="none"
               isAnimationActive={false}
               data-testid="endgame-score-timeline-volume-bars"

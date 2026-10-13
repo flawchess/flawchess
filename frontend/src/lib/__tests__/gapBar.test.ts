@@ -18,8 +18,9 @@ import {
   type GapCell,
 } from '../gapBar';
 
-const LO = -0.31;
-const HI = 0.25;
+// Symmetric, like every benchmark band since D-15.
+const LO = -0.3;
+const HI = 0.3;
 
 function cell(overrides: Partial<GapCell> = {}): GapCell {
   return {
@@ -48,8 +49,13 @@ describe('gapPosition (D-00a)', () => {
     expect(gapPosition(LO, LO, HI)).toBeCloseTo(25, 10);
   });
 
-  it('draws the worse edge of an off-centre band inside the right half', () => {
-    expect(gapPosition(HI, LO, HI)).toBeCloseTo(50 + (25 * 0.25) / 0.31, 10);
+  it('draws the worse (higher) edge of the band to the right (25% from the centre)', () => {
+    expect(gapPosition(HI, LO, HI)).toBeCloseTo(75, 10);
+  });
+
+  it('scales an asymmetric band by its wider side (defensive: bands are symmetric since D-15)', () => {
+    expect(gapPosition(-0.31, -0.31, 0.25)).toBeCloseTo(25, 10);
+    expect(gapPosition(0.25, -0.31, 0.25)).toBeCloseTo(50 + (25 * 0.25) / 0.31, 10);
   });
 
   it('is monotonic outside the band and never reaches the edge', () => {
@@ -91,7 +97,7 @@ describe('gapPosition (D-00a)', () => {
 describe('gapVerdict (D-00b)', () => {
   it.each([
     [-0.66, 'better'],
-    [0.3, 'worse'],
+    [0.5, 'worse'],
     [0, 'typical'],
     [LO, 'typical'],
     [HI, 'typical'],
@@ -180,7 +186,7 @@ describe('cellPosition and bandRange', () => {
     const band = bandRange(cell());
     expect(band).not.toBeNull();
     expect(band!.leftPct).toBeCloseTo(25, 10);
-    expect(band!.leftPct + band!.widthPct).toBeCloseTo(50 + (25 * 0.25) / 0.31, 10);
+    expect(band!.leftPct + band!.widthPct).toBeCloseTo(75, 10);
   });
 
   it('draws no band for a zoneless cell', () => {

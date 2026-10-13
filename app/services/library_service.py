@@ -10,9 +10,9 @@ counts come from the oracle columns (games.white_/black_inaccuracies) — never
 from game_flaws (D-03). Analysis state ("no engine analysis") is determined by
 the eval-coverage gate on game_positions (not by game_flaws row presence).
 
-Flaw-stats (Phase 239) returns the coverage counts plus a per-time-control Flaws
-Timeline. The analyzed_n/total_n denominator stays on the eval-coverage gate — a
-game analyzed with zero M+B flaws still counts toward analyzed_n (Pitfall 6/RESEARCH §7).
+Flaw-stats (Phase 239) returns the analyzed-game count plus a per-time-control Flaws
+Timeline. analyzed_n stays on the eval-coverage gate — a game analyzed with zero M+B
+flaws still counts toward it (Pitfall 6/RESEARCH §7).
 
 Chip curation (SEED-036): aggregate tags to the game level across all game_flaws
 rows, drop any phase tag (opening/middlegame/endgame), emit one chip per
@@ -20,7 +20,6 @@ remaining tag type (game-level dedupe), in a deterministic order.
 """
 
 import datetime
-import math
 from collections.abc import Sequence
 from typing import Any, Final, Literal, cast
 
@@ -57,7 +56,11 @@ from app.schemas.library import (
 )
 from app.services.best_move_candidates import classify_best_move, mover_color_for_ply
 from app.services.flaw_delta_zones import FLAW_DELTA_METRICS, FlawDeltaMetric, flaw_delta_zone
-from app.services.score_confidence import VERDICT_CI_Z_99, ci_excludes
+from app.services.score_confidence import (
+    VERDICT_CI_Z_99,
+    ci_excludes,
+    compute_paired_difference_test,
+)
 from app.services.tactic_delta_zones import (
     TACTIC_FAMILIES,
     TacticFamily,
@@ -1150,14 +1153,12 @@ def _compute_flaw_trend_by_tc(rows: Sequence[Any]) -> list[FlawTrendTc]:
     return series
 
 
-def _empty_stats(total_n: int) -> FlawStatsResponse:
+def _empty_stats() -> FlawStatsResponse:
     """Zero-valued stats for an empty analyzed set (never raises)."""
     return FlawStatsResponse(
         trend_by_tc=[],
         trend_window=FLAW_TREND_WINDOW,
-        analyzed_pct=0.0,
         analyzed_n=0,
-        total_n=total_n,
     )
 
 
@@ -1177,15 +1178,15 @@ async def get_flaw_stats(
     color: str | None = None,
     include_pasted: bool = False,
 ) -> FlawStatsResponse:
-    """Coverage counts + per-TC Flaws Timeline over the filtered set (LIBG-09, Phase 239).
+    """Analyzed-game count + per-TC Flaws Timeline over the filtered set (LIBG-09, Phase 239).
 
     Pipeline:
-    1. count_filtered_and_analyzed — total_n / analyzed_n (eval-coverage gate). An empty
+    1. count_filtered_and_analyzed — analyzed_n (eval-coverage gate). An empty
        analyzed set returns zeros + empty trend_by_tc, never raises.
     2. fetch_flaw_trend_rows — oracle per-game rows (with their tc), bucketed per time
        control by _compute_flaw_trend_by_tc.
 
-    analyzed_n / total_n derive from the eval-coverage subquery — NOT from game_flaws
+    analyzed_n derives from the eval-coverage subquery — NOT from game_flaws
     row counts (Pitfall 6). An analyzed game with zero M+B flaws counts toward
     analyzed_n. The severity counts, rates and tag distribution this endpoint used to
     return are gone (Phase 239 D-00e/D-00k): the tiles read the flaw-comparison bullets.
@@ -1198,9 +1199,9 @@ async def get_flaw_stats(
         platform, include_pasted=include_pasted, surface="analytics"
     )
     try:
-        # Coverage badge: omit flaw_severity so total_n spans the WHOLE filtered
-        # game set and analyzed_n <= total_n (a flaw EXISTS would collapse them).
-        total_n, analyzed_n = await library_repository.count_filtered_and_analyzed(
+        # Omit flaw_severity so analyzed_n spans the WHOLE filtered game set (a flaw
+        # EXISTS would drop analyzed games without a matching flaw).
+        _total_n, analyzed_n = await library_repository.count_filtered_and_analyzed(
             session,
             user_id=user_id,
             time_control=time_control,
@@ -1214,7 +1215,7 @@ async def get_flaw_stats(
             color=color,
         )
         if analyzed_n == 0:
-            return _empty_stats(total_n)
+            return _empty_stats()
 
         # Trend reads the games-table oracle columns directly (no analyzed_subq /
         # game_flaws) — its own oracle-present gate defines "analyzed" for the chart.
@@ -1240,9 +1241,7 @@ async def get_flaw_stats(
     return FlawStatsResponse(
         trend_by_tc=_compute_flaw_trend_by_tc(trend_rows),
         trend_window=FLAW_TREND_WINDOW,
-        analyzed_pct=analyzed_n / total_n if total_n > 0 else 0.0,
         analyzed_n=analyzed_n,
-        total_n=total_n,
     )
 
 
@@ -1348,62 +1347,27 @@ async def get_library_flaws(
 # rest on comparable sample sizes (D-09).
 FLAW_COMPARISON_GATE: int = 20
 
-# Phase 239 D-14 (replaces the D-12 40-flaw low-sample fade): a cell gets a red/green
-# verdict only when its 99% CI on the gap excludes 0. The bands are symmetric around 0
-# (D-15), so a gap outside the band is significant on its own side.
-MIN_DELTAS_FOR_SIGNIFICANCE: int = 2  # one game has no variance, so no CI
+# Phase 239 D-14: a cell gets a red/green verdict only when the 99% CI on its mean
+# per-game gap excludes 0. The test is score_confidence.compute_paired_difference_test
+# (shared with the endgame pages). The frontend checks the band position separately: a
+# gap outside the band whose CI still covers 0 renders neutral, like a typical one.
+# One game has no variance, so its CI is None and ci_excludes() returns False.
 
 
-def _is_significant(deltas: list[float], ci_low: float, ci_high: float) -> bool:
-    """D-14 gate: the 99% CI on the mean per-game gap excludes 0."""
-    return len(deltas) >= MIN_DELTAS_FOR_SIGNIFICANCE and ci_excludes(0.0, ci_low, ci_high)
+def _paired_gap_test(
+    deltas: Sequence[float],
+) -> tuple[float, float | None, float | None, float | None, bool]:
+    """Return (mean, p_value, ci_low, ci_high, significant) for per-game gaps (D-14).
+
+    p_value is None below the helper's n-gate and the CI is None below two games
+    (compute_paired_difference_test semantics); significant is the 99% CI excluding 0.
+    """
+    mean, p_value, ci_low, ci_high = compute_paired_difference_test(deltas, z=VERDICT_CI_Z_99)
+    return mean, p_value, ci_low, ci_high, ci_excludes(0.0, ci_low, ci_high)
 
 
 # Phase 239 D-02: TC order of the per-TC payloads (fast to slow, same as the TC switch).
 LIBRARY_TC_ORDER: Final[tuple[TimeControlBucket, ...]] = ("bullet", "blitz", "rapid", "classical")
-
-
-def _compute_mean_ci(
-    values: list[float],
-    z: float = VERDICT_CI_Z_99,
-) -> tuple[float, float, float]:
-    """Return (mean, ci_low, ci_high) for a list of per-game deltas (99% by default, D-14).
-
-    Returns (0.0, 0.0, 0.0) when values is empty.
-    Returns (mean, mean, mean) when n == 1 (undefined variance).
-    Normal/t Wald-z approximation — adequate at N >= 20 per RESEARCH §CI Method.
-    No scipy dependency: sample variance computed from stdlib math.
-    """
-    n = len(values)
-    if n == 0:
-        return 0.0, 0.0, 0.0
-    mean = sum(values) / n
-    if n == 1:
-        return mean, mean, mean
-    variance = sum((v - mean) ** 2 for v in values) / (n - 1)
-    se = math.sqrt(variance / n)
-    half = z * se
-    return mean, mean - half, mean + half
-
-
-def _two_sided_p(values: list[float]) -> float | None:
-    """Two-sided p-value for H0: mean == 0 over per-game deltas.
-
-    Uses the same Wald-z as _compute_mean_ci (z = mean / SE) and the normal
-    survival function p = erfc(|z| / sqrt(2)) — stdlib only, no scipy. Returns
-    None when n < 2 (SE undefined). Degenerate SE == 0: p = 0.0 when the mean is
-    nonzero (a perfectly tight nonzero estimate), 1.0 when the mean is exactly 0.
-    """
-    n = len(values)
-    if n < 2:
-        return None
-    mean = sum(values) / n
-    variance = sum((v - mean) ** 2 for v in values) / (n - 1)
-    se = math.sqrt(variance / n)
-    if se == 0.0:
-        return 0.0 if mean != 0.0 else 1.0
-    z = mean / se
-    return math.erfc(abs(z) / math.sqrt(2.0))
 
 
 def _bucket_rows_by_tc(rows: Sequence[Any]) -> dict[str, list[Any]]:
@@ -1445,7 +1409,7 @@ def _build_flaw_bullet(
             has_zone=True,
             significant=False,
         )
-    mean, ci_low, ci_high = _compute_mean_ci(deltas)
+    mean, p_value, ci_low, ci_high, significant = _paired_gap_test(deltas)
     return FlawBullet(
         tag=metric,
         delta=mean,
@@ -1453,13 +1417,13 @@ def _build_flaw_bullet(
         ci_high=ci_high,
         player_rate=sum(player_rates) / len(player_rates) if player_rates else 0.0,
         opp_rate=sum(opp_rates) / len(opp_rates) if opp_rates else 0.0,
-        p_value=_two_sided_p(deltas),
+        p_value=p_value,
         player_events=p_total,
         opp_events=o_total,
         zone_lo=band.zone_lo,
         zone_hi=band.zone_hi,
         has_zone=True,
-        significant=_is_significant(deltas, ci_low, ci_high),
+        significant=significant,
     )
 
 
@@ -1549,7 +1513,7 @@ async def get_flaw_comparison(
         platform, include_pasted=include_pasted, surface="analytics"
     )
     try:
-        _filter_kwargs: dict = dict(
+        _filter_kwargs: dict[str, Any] = dict(
             time_control=time_control,
             platform=platform,
             rated=rated,
@@ -1661,7 +1625,7 @@ def _build_tactic_bullet(
             significant=False,
         )
     deltas = [y - o for y, o in zip(you_rates, opp_rates, strict=True)]
-    mean, ci_low, ci_high = _compute_mean_ci(deltas)
+    mean, p_value, ci_low, ci_high, significant = _paired_gap_test(deltas)
     return TacticBullet(
         family=family,
         orientation=orientation,
@@ -1670,13 +1634,13 @@ def _build_tactic_bullet(
         delta=mean,
         ci_low=ci_low,
         ci_high=ci_high,
-        p_value=_two_sided_p(deltas),
+        p_value=p_value,
         you_events=you_total,
         opp_events=opp_total,
         zone_lo=zone_lo,
         zone_hi=zone_hi,
         has_zone=band is not None,
-        significant=_is_significant(deltas, ci_low, ci_high),
+        significant=significant,
     )
 
 

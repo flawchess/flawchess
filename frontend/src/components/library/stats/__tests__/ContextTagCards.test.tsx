@@ -125,8 +125,8 @@ describe('ContextTagCards significance gate (D-14)', () => {
     overrides: {
       hasty: {
         delta: -3,
-        zone_lo: -0.28,
-        zone_hi: 0.18,
+        zone_lo: -0.23,
+        zone_hi: 0.23,
         significant: false,
         player_events: FEW_EVENTS,
         opp_events: FEW_EVENTS,
@@ -136,10 +136,8 @@ describe('ContextTagCards significance gate (D-14)', () => {
     },
   });
 
-  it('shows a blue dot and no verdict colour without fading the row', () => {
+  it('shows a blue dot and no verdict colour', () => {
     render(<ContextTagCards tcStats={notSignificantEntry} />);
-    const row = screen.getByTestId('context-row-hasty');
-    expect(row.style.opacity).toBe('');
     const dot = screen.getByTestId('context-row-hasty-bar-dot');
     // A verdict dot would be the success green; a not-significant one is the neutral blue.
     const strengthDot = screen.getByTestId('context-row-miss-bar-dot');
@@ -147,6 +145,5 @@ describe('ContextTagCards significance gate (D-14)', () => {
     expect(dot.style.backgroundColor).not.toBe('');
     expect(dot.style.backgroundColor).not.toBe(strengthDot.style.backgroundColor);
     expect(dot.style.backgroundColor).toBe(typicalDot.style.backgroundColor);
-    expect(screen.getByTestId('context-row-miss').style.opacity).toBe('');
   });
 });

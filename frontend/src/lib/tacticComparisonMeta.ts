@@ -5,7 +5,7 @@
  * families en-passant + under-promotion → 19 families; Phase 221 plan 06 (D-07) then
  * REMOVED clearance → 19 families).
  *
- * Single source of truth consumed by TacticTables (the Library Stats tactic tables),
+ * Single source of truth consumed by MostCommonTacticsCard (the Library Stats tactic card),
  * TacticMotifChip (family color + icon), and the FilterPanel tactic-motif filter.
  *
  * Mirrors flawComparisonMeta.ts in structure. The families map the TacticMotif strings
@@ -243,8 +243,6 @@ export interface TacticFamilyDef {
   group: TacticGroupKey;
   /** Kebab-case label shown on the filter chip (e.g. "hanging-piece"). */
   chipLabel: string;
-  /** One-line explanation for the comparison tooltip's first paragraph. */
-  definition: string;
   /** All motif strings that belong to this family (must match FAMILY_TO_MOTIF_INTS). */
   motifs: string[];
 }
@@ -255,8 +253,8 @@ export interface TacticFamilyDef {
  * en-passant + under-promotion added Quick 260623; clearance REMOVED Phase 221 plan 06
  * D-07 — see the TacticFamily union doc comment above).
  * Array order doubles as the chip order within each group — the filter panel groups
- * these by `group` preserving this order, and the Library Stats tactic tables render
- * their rows in exactly this order (never re-sorted by rate). The motifs arrays mirror the backend FAMILY_TO_MOTIF_INTS mapping in
+ * these by `group` preserving this order, and the Library Stats tactic card renders
+ * its rows in exactly this order (never re-sorted by rate). The motifs arrays mirror the backend FAMILY_TO_MOTIF_INTS mapping in
  * library_repository.py (plan 129-04 contract). self-interference and clearance belong
  * to no family (promotion was added here when D-09 was reversed).
  */
@@ -267,7 +265,6 @@ export const TACTIC_COMPARISON_FAMILIES: TacticFamilyDef[] = [
     family: 'fork',
     group: 'piece_attacks',
     chipLabel: 'fork',
-    definition: 'A single piece attacks two or more enemy pieces at the same time.',
     motifs: ['fork'],
   },
   {
@@ -275,7 +272,6 @@ export const TACTIC_COMPARISON_FAMILIES: TacticFamilyDef[] = [
     family: 'pin',
     group: 'piece_attacks',
     chipLabel: 'pin',
-    definition: 'A piece cannot move without exposing a more valuable piece behind it to capture.',
     motifs: ['pin'],
   },
   {
@@ -283,7 +279,6 @@ export const TACTIC_COMPARISON_FAMILIES: TacticFamilyDef[] = [
     family: 'skewer',
     group: 'piece_attacks',
     chipLabel: 'skewer',
-    definition: 'A valuable piece is forced to move, leaving a less valuable piece behind it undefended.',
     motifs: ['skewer'],
   },
   {
@@ -291,7 +286,6 @@ export const TACTIC_COMPARISON_FAMILIES: TacticFamilyDef[] = [
     family: 'hanging',
     group: 'piece_attacks',
     chipLabel: 'hanging-piece',
-    definition: 'An undefended piece that can be captured for free.',
     motifs: ['hanging-piece'],
   },
   // ── Checkmate, Checks & Discoveries ──
@@ -303,7 +297,6 @@ export const TACTIC_COMPARISON_FAMILIES: TacticFamilyDef[] = [
     family: 'mate',
     group: 'discoveries',
     chipLabel: 'checkmate',
-    definition: 'Recurring checkmate configurations such as back-rank, smothered, and corner mates.',
     motifs: [
       'back-rank-mate',
       'smothered-mate',
@@ -321,7 +314,6 @@ export const TACTIC_COMPARISON_FAMILIES: TacticFamilyDef[] = [
     family: 'double_check',
     group: 'discoveries',
     chipLabel: 'double-check',
-    definition: 'The king is placed in check by two pieces simultaneously, leaving only a king move as the reply.',
     motifs: ['double-check'],
   },
   {
@@ -329,7 +321,6 @@ export const TACTIC_COMPARISON_FAMILIES: TacticFamilyDef[] = [
     family: 'discovered_check',
     group: 'discoveries',
     chipLabel: 'discovered-check',
-    definition: 'Moving one piece uncovers a check delivered by the piece behind it, not the piece that moved.',
     motifs: ['discovered-check'],
   },
   {
@@ -337,7 +328,6 @@ export const TACTIC_COMPARISON_FAMILIES: TacticFamilyDef[] = [
     family: 'discovered_attack',
     group: 'discoveries',
     chipLabel: 'discovered-attack',
-    definition: 'Moving one piece uncovers an attack from the piece behind it.',
     motifs: ['discovered-attack'],
   },
   // ── Advanced (tier-3, Quick 260623-6pd) ──
@@ -349,7 +339,6 @@ export const TACTIC_COMPARISON_FAMILIES: TacticFamilyDef[] = [
     family: 'trapped_piece',
     group: 'advanced',
     chipLabel: 'trapped-piece',
-    definition: 'A piece has no safe square to move to and will be lost regardless of where it goes.',
     motifs: ['trapped-piece'],
   },
   {
@@ -357,7 +346,6 @@ export const TACTIC_COMPARISON_FAMILIES: TacticFamilyDef[] = [
     family: 'x_ray',
     group: 'advanced',
     chipLabel: 'x-ray',
-    definition: 'A piece exerts indirect pressure through an enemy piece, threatening the square or piece behind it.',
     motifs: ['x-ray'],
   },
   {
@@ -365,7 +353,6 @@ export const TACTIC_COMPARISON_FAMILIES: TacticFamilyDef[] = [
     family: 'deflection',
     group: 'advanced',
     chipLabel: 'deflection',
-    definition: 'An opponent\'s piece is lured or forced away from a critical square it was defending.',
     motifs: ['deflection'],
   },
   {
@@ -373,7 +360,6 @@ export const TACTIC_COMPARISON_FAMILIES: TacticFamilyDef[] = [
     family: 'intermezzo',
     group: 'advanced',
     chipLabel: 'intermezzo',
-    definition: 'An in-between move is played before completing an expected sequence, often gaining tempo.',
     motifs: ['intermezzo'],
   },
   {
@@ -381,7 +367,6 @@ export const TACTIC_COMPARISON_FAMILIES: TacticFamilyDef[] = [
     family: 'interference',
     group: 'advanced',
     chipLabel: 'interference',
-    definition: 'A piece is placed on a square that disrupts the coordination between two of the opponent\'s pieces.',
     motifs: ['interference'],
   },
   {
@@ -389,7 +374,6 @@ export const TACTIC_COMPARISON_FAMILIES: TacticFamilyDef[] = [
     family: 'capturing_defender',
     group: 'advanced',
     chipLabel: 'capturing-defender',
-    definition: 'The piece defending a key square or piece is captured to remove that protection.',
     motifs: ['capturing-defender'],
   },
   // Phase 133 (plan 133-02): attraction + sacrifice unsuppressed, added as Advanced families.
@@ -398,7 +382,6 @@ export const TACTIC_COMPARISON_FAMILIES: TacticFamilyDef[] = [
     family: 'attraction',
     group: 'advanced',
     chipLabel: 'attraction',
-    definition: "An opponent's piece is drawn onto a square where it becomes vulnerable to a follow-up tactic.",
     motifs: ['attraction'],
   },
   {
@@ -406,7 +389,6 @@ export const TACTIC_COMPARISON_FAMILIES: TacticFamilyDef[] = [
     family: 'sacrifice',
     group: 'advanced',
     chipLabel: 'sacrifice',
-    definition: 'A piece or pawn is given up deliberately to gain a positional or tactical advantage.',
     motifs: ['sacrifice'],
   },
   // Move-type families (Quick 260623): en-passant + under-promotion unsuppressed (P=1.000 on
@@ -416,7 +398,6 @@ export const TACTIC_COMPARISON_FAMILIES: TacticFamilyDef[] = [
     family: 'en_passant',
     group: 'advanced',
     chipLabel: 'en-passant',
-    definition: 'A pawn captures an enemy pawn that has just advanced two squares, as if it had moved only one.',
     motifs: ['en-passant'],
   },
   {
@@ -424,7 +405,6 @@ export const TACTIC_COMPARISON_FAMILIES: TacticFamilyDef[] = [
     family: 'under_promotion',
     group: 'advanced',
     chipLabel: 'under-promotion',
-    definition: 'A pawn promotes to a knight, bishop, or rook instead of a queen to deliver a specific tactic.',
     motifs: ['under-promotion'],
   },
   // promotion (28): surfaced (was D-09-hidden). Perfect-precision residual move-type
@@ -436,7 +416,6 @@ export const TACTIC_COMPARISON_FAMILIES: TacticFamilyDef[] = [
     family: 'promotion',
     group: 'advanced',
     chipLabel: 'promotion',
-    definition: 'A pawn reaches the back rank and promotes to a queen, often deciding the game.',
     motifs: ['promotion'],
   },
 ];
@@ -590,7 +569,7 @@ export function tacticDepthBadge(
   return resolveVisibleTactic(orientation, motif, depth, undefined, anchored)?.depthLabel ?? null;
 }
 
-// ─── Library Stats tactic tables (Phase 239) ───────────────────────────────────
+// ─── Library Stats tactic card (Phase 239) ─────────────────────────────────────
 
 /** Adapt one API bullet to the gap-bar view model (the components never see API types). */
 export function tacticBulletToGapCell(b: TacticBullet): GapCell {

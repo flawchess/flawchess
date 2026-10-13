@@ -133,7 +133,7 @@ class EndgameCategoryStats(BaseModel):
     # dual-label rationale. n-gates follow compute_paired_difference_test:
     #   n == 0       -> mean = 0.0 (None here), p/CI all None
     #   n == 1       -> mean populated, p/CI all None
-    #   n >= 2       -> ci_low/ci_high populated
+    #   n >= 2       -> ci_low/ci_high populated (99% CI, Phase 239 D-14)
     #   n >= CONFIDENCE_MIN_N (=10) -> p_value populated
     # Defaults are None for backward compat with existing constructor call sites.
     type_achievable_score_gap_mean: float | None = None

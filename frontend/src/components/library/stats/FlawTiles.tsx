@@ -53,7 +53,7 @@ function FlawTile({ metric, tcStats, analyzedGate }: FlawTileProps) {
       <CardBody className="flex flex-col gap-2">
         <div>
           <div
-            className="font-brand text-3xl font-medium leading-tight tabular-nums"
+            className="text-3xl font-bold leading-tight tabular-nums"
             style={{ color: TILE_COLORS[metric] }}
             data-testid={`${testId}-rate`}
           >

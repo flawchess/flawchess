@@ -9,8 +9,9 @@
  */
 
 import { MetricInfoPopover } from '@/components/ui/metric-info-popover';
-import { formatPValue } from '@/components/endgames/stats/rankedMetrics';
+import { COPY_CHANCE, formatPValue } from '@/components/endgames/stats/rankedMetrics';
 import {
+  GAP_SAME_WORD,
   effectiveVerdict,
   formatSignedGap,
   isChanceGap,
@@ -22,8 +23,8 @@ import {
 const FOOTER_SEPARATOR = ' · ';
 /** Rates read to two decimals, like the tiles ("5.46 per 100 moves"). */
 const RATE_DECIMALS = 2;
-const COPY_CHANCE = 'This could be chance, there are not enough games to be sure.';
 const COPY_SAME = 'The same as the players you faced.';
+// D-16, defensive: all four shown tactic families have bands today, but a §5 refresh could drop one.
 const COPY_ZONELESS_SIGNIFICANT =
   'There is no typical range for this tactic, but the gap is too large to be chance.';
 
@@ -56,7 +57,7 @@ function formatCount(value: number): string {
 /** "That is 0.66 fewer than the players you faced." or the same-gap sentence. */
 function gapSentence(delta: number): string {
   const words = gapWords(delta);
-  return words === 'same' ? COPY_SAME : `That is ${words} than the players you faced.`;
+  return words === GAP_SAME_WORD ? COPY_SAME : `That is ${words} than the players you faced.`;
 }
 
 /** The typical-range line; for a zoneless cell (D-11) only the D-16 significance line. */

@@ -5,6 +5,7 @@ import {
   LOW_COVERAGE_THRESHOLD,
 } from '@/components/library/analysisCoverageCopy';
 import { StickyTcBar } from '@/components/stats/StickyTcBar';
+import { TcSwitch } from '@/components/stats/TcSwitch';
 import { InfoPopover } from '@/components/ui/info-popover';
 import { FlawTrendChart } from '@/components/library/FlawTrendChart';
 import { LoadError } from '@/components/ui/load-error';
@@ -20,8 +21,7 @@ import { cn } from '@/lib/utils';
 import { ContextTagCards } from './ContextTagCards';
 import { FlawTiles } from './FlawTiles';
 import { GapGateSlot } from './GapBar';
-import { LibraryTcSwitch } from './LibraryTcSwitch';
-import { TacticTables } from './TacticTables';
+import { MostCommonTacticsCard } from './MostCommonTacticsCard';
 import type { FilterState } from '@/components/filters/FilterPanel';
 import type { TimeControlBucket } from '@/types/endgames';
 import type { FlawComparisonTc, FlawStatsResponse, TacticComparisonTc } from '@/types/library';
@@ -99,15 +99,35 @@ function CoverageBasisLine({ tcStats, isGuest }: { tcStats: FlawComparisonTc; is
 }
 
 /**
- * The one Library Stats time-control switch (D-02, D-05). Every section reads the same
- * remembered TC store; the page pins this switch in its sticky bar, so it stays in reach
+ * Testid prefix per mounted copy: the desktop sticky bar and the mobile Filters row are both
+ * in the DOM (one CSS-hidden), so each copy needs its own testids.
+ */
+type LibraryStatsTcSwitchIdPrefix = 'library-stats' | 'library-stats-mobile';
+
+interface LibraryStatsTcSwitchProps {
+  filters: FilterState;
+  idPrefix: LibraryStatsTcSwitchIdPrefix;
+}
+
+/**
+ * The Library Stats time-control switch (D-02, D-05), bound to the one remembered Library
+ * TC store every section reads. The page pins it in a sticky bar, so it stays in reach
  * while scrolling. Offers the flaw-comparison TCs (the tactic TCs are a subset).
  */
-export function LibraryStatsTcSwitch({ filters }: { filters: FilterState }) {
+export function LibraryStatsTcSwitch({ filters, idPrefix }: LibraryStatsTcSwitchProps) {
   const comparison = useLibraryFlawComparison(filters, DEFAULT_FLAW_FILTER);
   const tcs = comparison.data?.tcs ?? NO_TCS;
+  const [selectedTc, setSelectedTc] = useLibraryStatsTc(tcs);
   if (tcs.length === 0) return null;
-  return <LibraryTcSwitch sectionId="library-stats" tcs={tcs} />;
+  return (
+    <TcSwitch
+      idPrefix={idPrefix}
+      tcs={tcs.map((t) => t.tc)}
+      selected={selectedTc}
+      onSelect={setSelectedTc}
+      trackTarget="library-stats-tc"
+    />
+  );
 }
 
 /** Flaw Stats (D-00e, D-00k): heading, coverage basis line, tiles, timeline. */
@@ -225,8 +245,11 @@ function TacticMotifsSection({ filters }: { filters: FilterState }) {
   const comparison = useTacticComparison(filters, DEFAULT_FLAW_FILTER);
   const tcs = comparison.data?.tcs ?? NO_TACTIC_TCS;
   const flawComparison = useLibraryFlawComparison(filters, DEFAULT_FLAW_FILTER);
-  // Falls back to the tactic list only when the flaw comparison failed (no switch then).
-  const [selectedTc] = useLibraryStatsTc(flawComparison.data?.tcs ?? tcs);
+  // While the flaw comparison loads, select from an empty list: the tactic list would let the
+  // store pin a tactic-based default the switch never offered. Fall back to the tactic list
+  // only when the flaw comparison failed (there is no switch then).
+  const selectionTcs = flawComparison.isError ? tcs : (flawComparison.data?.tcs ?? NO_TCS);
+  const [selectedTc] = useLibraryStatsTc(selectionTcs);
   const tcStats = tcs.find((t) => t.tc === selectedTc);
 
   const renderBody = () => {
@@ -245,7 +268,7 @@ function TacticMotifsSection({ filters }: { filters: FilterState }) {
         />
       );
     }
-    return <TacticTables tcStats={tcStats} />;
+    return <MostCommonTacticsCard tcStats={tcStats} />;
   };
 
   return (
@@ -270,7 +293,7 @@ export function LibraryStatsSections(props: LibraryStatsSectionsProps) {
   return (
     <div>
       <StickyTcBar showOnMobile={false} testId="library-stats-tc-bar">
-        <LibraryStatsTcSwitch filters={props.filters} />
+        <LibraryStatsTcSwitch filters={props.filters} idPrefix="library-stats" />
       </StickyTcBar>
       <div className="space-y-8">
         <FlawStatsSection {...props} />

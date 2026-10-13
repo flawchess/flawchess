@@ -81,7 +81,6 @@ export function GlobalStatsPage() {
   // when the Human+Rated defaults alone emptied the Stats population.
   const gameCount = useGameCountValue();
 
-
   const { data: profile } = useUserProfile();
   const isGuest = profile?.is_guest ?? false;
 
@@ -254,13 +253,13 @@ export function GlobalStatsPage() {
         <div className="md:hidden flex flex-col gap-4 min-w-0">
           <EvalCoverageHeader />
           {/* Sticky control bar: the Library Stats TC switch (left) and the filter
-              button (right), one row instead of a filter-only row plus a switch per
-              section. The label drops on narrow phones so four TCs still fit. */}
+              button (right) in one row. The label drops on narrow phones so four TCs
+              still fit. */}
           <div className="sticky top-0 z-20 flex items-center gap-2 py-2 bg-background/80 backdrop-blur-sm">
-            <LibraryStatsTcSwitch filters={filters} />
+            <LibraryStatsTcSwitch filters={filters} idPrefix="library-stats-mobile" />
             <Button
               variant="brand-outline"
-              // Same height as the TC buttons beside it (min-h-11 below sm, see TcSwitchButtons).
+              // Same height as the TC buttons beside it (min-h-11 below sm, see TcSwitch).
               className="relative ml-auto min-h-11 min-w-11 shrink-0 sm:min-h-0"
               onClick={() => handleMobileFiltersOpenChange(true)}
               aria-label="Open filters"

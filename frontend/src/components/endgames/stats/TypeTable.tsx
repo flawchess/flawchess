@@ -27,7 +27,7 @@ import type {
   RankedTcStats,
   TimeControlBucket,
 } from '@/types/endgames';
-import { TC_LABELS } from './rankedMetrics';
+import { TC_LABELS } from '@/lib/timeControlLabels';
 
 // Cell domains: the value range each range cell maps onto its 0-100% track (D-00e).
 type Domain = readonly [number, number];
@@ -71,7 +71,7 @@ interface RangeCellProps {
   band: readonly [number, number] | null;
   domain: Domain;
   format: (fraction: number) => string;
-  /** 99% significance vs the band centre (rates) or 0 (gap); red/green needs it (D-14). */
+  /** 99% significance vs the band centre (rates) or 0 (gap); red/green needs it (239 D-14). */
   significant: boolean;
 }
 
@@ -93,7 +93,7 @@ function rangeValueColor(
 /**
  * "You" dot color, matching the Endgame Metrics percentile dot: red below the typical
  * range, blue inside it (or when the class has no range, or the difference is not
- * significant, D-14), green above it.
+ * significant, 239 D-14), green above it.
  */
 function rangeDotColor(
   value: number,
@@ -327,34 +327,32 @@ export function TypeTable({ tcs, onCategorySelect, children }: TypeTableProps) {
       // fixed heading id is duplicated in the DOM (Phase 238 review FE-IN-02).
       aria-label="Endgame Type Breakdown"
     >
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <h2
-          className="scroll-mt-16 font-brand text-lg font-semibold text-foreground"
-        >
-          <span className="inline-flex items-center gap-1">
-            Endgame Type Breakdown
-            <InfoPopover
-              ariaLabel="Endgame Type Breakdown info"
-              testId="endgame-type-breakdown-info"
-              side="bottom"
-            >
-              <div className="space-y-2">
-                <p>
-                  <strong>Endgame Type Breakdown:</strong> how you perform across the different
-                  kinds of endgames (rook, minor piece, pawn, queen) in your {TC_LABELS[tcStats.tc]}{' '}
-                  games.
-                </p>
-                <p>
-                  Each cell shows your value and a grey typical range for that endgame type and time
-                  control. The colored dot marks you. The value turns red when you are below the
-                  typical range and green when you are above it, but only when you have enough games
-                  to be sure it is not chance.
-                </p>
-              </div>
-            </InfoPopover>
-          </span>
-        </h2>
-      </div>
+      <h2
+        className="scroll-mt-16 font-brand text-lg font-semibold text-foreground"
+      >
+        <span className="inline-flex items-center gap-1">
+          Endgame Type Breakdown
+          <InfoPopover
+            ariaLabel="Endgame Type Breakdown info"
+            testId="endgame-type-breakdown-info"
+            side="bottom"
+          >
+            <div className="space-y-2">
+              <p>
+                <strong>Endgame Type Breakdown:</strong> how you perform across the different
+                kinds of endgames (rook, minor piece, pawn, queen) in your {TC_LABELS[tcStats.tc]}{' '}
+                games.
+              </p>
+              <p>
+                Each cell shows your value and a grey typical range for that endgame type and time
+                control. The colored dot marks you. The value turns red when you are below the
+                typical range and green when you are above it, but only when you have enough games
+                to be sure it is not chance.
+              </p>
+            </div>
+          </InfoPopover>
+        </span>
+      </h2>
       <p className="text-sm text-muted-foreground">
         Which endgame types do you convert or defend worse than usual?
       </p>

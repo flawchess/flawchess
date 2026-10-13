@@ -478,13 +478,13 @@ export const PAYOFF_MOVE_ARROW = 'rgba(59, 130, 246, 0.5)';  // Tailwind blue-50
 // engine arrows so it reads as a subtle "you played this next" hint.
 export const NEXT_MOVE_ARROW = 'rgba(255, 255, 255, 0.9)';
 
-// Endgame ELO Timeline volume bars (Phase 57.1; rebuilt Phase 87.5).
-// Muted gray with alpha so the
+// Game-volume bars behind the timeline charts (endgame, flaw trend, rating; first used
+// by the Endgame ELO Timeline, Phase 57.1). Muted gray with alpha so the
 // bars read as "context, not data" on the charcoal-texture card surface.
 // L=0.55 / chroma=0 keeps the bar visually distinct from all 8 ELO_COMBO_COLORS
 // hues; alpha=0.25 lets the texture noise show through, reinforcing the
 // passive-context reading. Locked per 57.1-RESEARCH.md Pitfall 3.
-export const ENDGAME_VOLUME_BAR_COLOR = 'oklch(0.55 0 0 / 0.25)';
+export const VOLUME_BAR_COLOR = 'oklch(0.55 0 0 / 0.25)';
 
 // Phase 68 — Endgame vs Non-Endgame Score timeline.
 // Two line strokes (endgame + non-endgame) with a colored shaded band between

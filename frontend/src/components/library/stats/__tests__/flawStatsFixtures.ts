@@ -45,8 +45,8 @@ export function makeBullet(tag: FlawDeltaMetric, overrides: Partial<FlawBullet> 
     p_value: 0.05,
     player_events: 120,
     opp_events: 140,
-    zone_lo: -0.31,
-    zone_hi: 0.25,
+    zone_lo: -0.3,
+    zone_hi: 0.3,
     has_zone: true,
     significant: true,
     ...overrides,
@@ -90,9 +90,15 @@ export const RAPID_ENTRY = makeTcEntry('rapid', {
   mistake: { player_rate: 6.4, opp_rate: 6.9, delta: -0.5 },
 });
 
-/** One sketch row: gap and the real benchmark band; flaw counts default to a normal sample. */
-function sketchRow(delta: number, zoneLo: number, zoneHi: number): Partial<FlawBullet> {
-  return { delta, zone_lo: zoneLo, zone_hi: zoneHi, player_events: 500, opp_events: 500 };
+/** One sketch row: gap and a symmetric benchmark band (D-15); flaw counts default to a normal sample. */
+function sketchRow(delta: number, bandHalfWidth: number): Partial<FlawBullet> {
+  return {
+    delta,
+    zone_lo: -bandHalfWidth,
+    zone_hi: bandHalfWidth,
+    player_events: 500,
+    opp_events: 500,
+  };
 }
 
 /**
@@ -104,16 +110,16 @@ export const SKETCH_RAPID_ENTRY = makeTcEntry('rapid', {
   blunder: { player_rate: 5.22, opp_rate: 5.83, delta: -0.61 },
   mistake: { player_rate: 6.4, opp_rate: 6.9, delta: -0.5 },
   overrides: {
-    low_clock: sketchRow(0.4129, -0.08, 0.03),
-    hasty: sketchRow(-2.0752, -0.28, 0.18),
-    unrushed: sketchRow(0.4965, -0.38, 0.36),
-    opening: sketchRow(-0.5894, -0.15, 0.13),
-    middlegame: sketchRow(-0.5552, -0.27, 0.23),
-    endgame_phase: sketchRow(-0.0229, -0.12, 0.1),
-    miss: sketchRow(-0.0454, -0.11, 0.11),
-    lucky: sketchRow(0.0699, -0.09, 0.09),
-    reversed: sketchRow(0.0506, -0.04, 0.04),
-    squandered: sketchRow(0.1522, -0.07, 0.08),
+    low_clock: sketchRow(0.4129, 0.05),
+    hasty: sketchRow(-2.0752, 0.23),
+    unrushed: sketchRow(0.4965, 0.37),
+    opening: sketchRow(-0.5894, 0.14),
+    middlegame: sketchRow(-0.5552, 0.25),
+    endgame_phase: sketchRow(-0.0229, 0.11),
+    miss: sketchRow(-0.0454, 0.11),
+    lucky: sketchRow(0.0699, 0.09),
+    reversed: sketchRow(0.0506, 0.04),
+    squandered: sketchRow(0.1522, 0.07),
   },
 });
 
@@ -204,7 +210,7 @@ export function makeTacticTcEntry(
 
 /** Sketch 010 rapid: fork missed 84 vs 44, allowed 134 vs 180 (4.56 vs 2.39 and 7.28 vs 9.78 per 100 games). */
 export const SKETCH_RAPID_TACTIC_OVERRIDES: TacticOverrides = {
-  'fork:missed': { you: 84, opp: 44, zone: [-0.5, 0.9] },
+  'fork:missed': { you: 84, opp: 44, zone: [-0.7, 0.7] },
   'fork:allowed': { you: 134, opp: 180 },
   'pin:missed': { you: 42, opp: 37 },
   'pin:allowed': { you: 72, opp: 70 },

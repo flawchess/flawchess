@@ -31,7 +31,6 @@ from app.models.game_flaw import GameFlaw
 from app.repositories.game_flaws_repository import bulk_insert_game_flaws
 from app.repositories.library_repository import (
     TacticOrientation,
-    analyzed_game_ids,
     count_filtered_and_analyzed,
     fetch_page_game_flaws,
     query_filtered_games,
@@ -765,7 +764,7 @@ class TestQueryFilteredGames:
 
 
 class TestAnalyzedDenominator:
-    """count_filtered_and_analyzed + analyzed_game_ids over the filtered set."""
+    """count_filtered_and_analyzed over the filtered set."""
 
     @pytest.mark.asyncio
     async def test_analyzed_denominator_counts_only_covered_games(
@@ -773,15 +772,14 @@ class TestAnalyzedDenominator:
     ) -> None:
         """One analyzed game + one unanalyzed game: total_n==2, analyzed_n==1.
 
-        count_filtered_and_analyzed and analyzed_game_ids both key analyzed_n off
-        the authoritative full_evals_completed_at column (via
+        count_filtered_and_analyzed keys analyzed_n off the authoritative full_evals_completed_at column (via
         _analyzed_game_ids_subquery). The seeded "analyzed" game carries
         move-quality counts AND full_evals_completed_at, mirroring a real Lichess
         game with the Stockfish eval drain completed.
         """
         # Analyzed game: move-quality counts (is_analyzed) AND full_evals_completed_at set.
         _now = datetime.datetime.now(tz=datetime.timezone.utc)
-        analyzed = await _seed_game(
+        await _seed_game(
             db_session,
             user_id=99999,
             user_color="white",
@@ -790,7 +788,7 @@ class TestAnalyzedDenominator:
         )
 
         # chess.com-style game: no move-quality counts, full_evals_completed_at NULL -> NOT analyzed.
-        chesscom = await _seed_game(db_session, user_id=99999, user_color="white")
+        await _seed_game(db_session, user_id=99999, user_color="white")
 
         total_n, analyzed_n = await count_filtered_and_analyzed(
             db_session,
@@ -805,20 +803,6 @@ class TestAnalyzedDenominator:
         assert total_n == 2, "both games are in the filtered set"
         assert analyzed_n == 1, "only the game with move-quality analysis counts"
 
-        ids = await analyzed_game_ids(
-            db_session,
-            user_id=99999,
-            time_control=None,
-            platform=None,
-            rated=None,
-            opponent_type="all",
-            from_date=None,
-            to_date=None,
-            flaw_severity=None,
-        )
-        assert analyzed.id in ids
-        assert chesscom.id not in ids
-
     @pytest.mark.asyncio
     async def test_short_fully_analyzed_game_is_analyzed(self, db_session: AsyncSession) -> None:
         """Regression (260615-rb1 / 260617-pu4): a short fully-analyzed game is counted.
@@ -831,7 +815,7 @@ class TestAnalyzedDenominator:
         NOT NULL is analyzed regardless of raw position counts or ply length.
         """
         _now = datetime.datetime.now(tz=datetime.timezone.utc)
-        short = await _seed_game(
+        await _seed_game(
             db_session,
             user_id=99999,
             user_color="white",
@@ -839,7 +823,7 @@ class TestAnalyzedDenominator:
             full_evals_completed_at=_now,
         )
 
-        ids = await analyzed_game_ids(
+        _total_n, analyzed_n = await count_filtered_and_analyzed(
             db_session,
             user_id=99999,
             time_control=None,
@@ -848,9 +832,8 @@ class TestAnalyzedDenominator:
             opponent_type="all",
             from_date=None,
             to_date=None,
-            flaw_severity=None,
         )
-        assert short.id in ids, (
+        assert analyzed_n == 1, (
             "short fully-analyzed game must pass the full_evals_completed_at gate"
         )
 
@@ -990,7 +973,7 @@ class TestAnalyzedDenominator:
 
     @pytest.mark.asyncio
     async def test_analyzed_denominator_user_scoped(self, db_session: AsyncSession) -> None:
-        """A different user's analyzed game is not counted/listed."""
+        """A different user's analyzed game is not counted."""
         game = await _seed_game(db_session, user_id=99999, user_color="white")
         for ply in range(9):
             await _seed_position(db_session, game=game, ply=ply, eval_cp=0)
@@ -1008,18 +991,6 @@ class TestAnalyzedDenominator:
         )
         assert total_n == 0
         assert analyzed_n == 0
-        ids = await analyzed_game_ids(
-            db_session,
-            user_id=99998,
-            time_control=None,
-            platform=None,
-            rated=None,
-            opponent_type="all",
-            from_date=None,
-            to_date=None,
-            flaw_severity=None,
-        )
-        assert ids == []
 
 
 # ---------------------------------------------------------------------------

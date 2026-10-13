@@ -92,7 +92,7 @@ export function MetricsCard({ tcStats, bucket }: MetricsCardProps) {
           <div className="flex flex-col gap-2">
             <div className="flex items-baseline gap-2">
               {/* Uncolored on purpose: the verdict is the percentile row below. */}
-              <span className="text-2xl font-semibold tabular-nums" data-testid={`${testId}-rate`}>
+              <span className="text-2xl font-bold tabular-nums" data-testid={`${testId}-rate`}>
                 {rateText}
               </span>
               <span className="text-sm text-muted-foreground" data-testid={`${testId}-games`}>

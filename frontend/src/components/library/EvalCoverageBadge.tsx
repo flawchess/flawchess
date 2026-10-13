@@ -5,6 +5,36 @@ import { InfoPopover } from '@/components/ui/info-popover';
 import { Button } from '@/components/ui/button';
 import { LOW_COVERAGE_THRESHOLD, ANALYSIS_COVERAGE_INFO_COPY } from '@/components/library/analysisCoverageCopy';
 
+/**
+ * Guest sign-up CTA — guests can analyze one game at a time via the card "Analyze"
+ * button; signing up unlocks automatic ALL-games background analysis with no per-game
+ * clicking. Non-guests get no button: recent games are analyzed automatically in the
+ * background. Shared with the Library Stats coverage line.
+ */
+export function CoverageSignupButton() {
+  const { logoutForPromotion } = useAuth();
+  return (
+    <Button
+      variant="brand-outline"
+      size="sm"
+      data-testid="btn-coverage-signup"
+      data-umami-event="signup-cta"
+      data-umami-event-source="eval-coverage"
+      aria-label="Sign up to unlock full-game analysis"
+      // A guest holds a guest JWT, so AuthPage treats them as authenticated
+      // and bounces them off /login. Drop the guest token first (keeping
+      // guest_token for account promotion) and do a full-page nav, matching
+      // the working Welcome.tsx / Import.tsx sign-up path.
+      onClick={() => {
+        logoutForPromotion();
+        window.location.href = '/login?tab=register';
+      }}
+    >
+      Sign up to analyze all games
+    </Button>
+  );
+}
+
 interface EvalCoverageBadgeProps {
   /** Games with engine analysis (the "x" in "x of y"). */
   analyzedN: number;
@@ -45,36 +75,6 @@ interface EvalCoverageBadgeProps {
  *
  * Polling is handled by the caller's useEvalCoverage() invocation.
  */
-/**
- * Guest sign-up CTA — guests can analyze one game at a time via the card "Analyze"
- * button; signing up unlocks automatic ALL-games background analysis with no per-game
- * clicking. Non-guests get no button: recent games are analyzed automatically in the
- * background. Shared with the Library Stats coverage line.
- */
-export function CoverageSignupButton() {
-  const { logoutForPromotion } = useAuth();
-  return (
-    <Button
-      variant="brand-outline"
-      size="sm"
-      data-testid="btn-coverage-signup"
-      data-umami-event="signup-cta"
-      data-umami-event-source="eval-coverage"
-      aria-label="Sign up to unlock full-game analysis"
-      // A guest holds a guest JWT, so AuthPage treats them as authenticated
-      // and bounces them off /login. Drop the guest token first (keeping
-      // guest_token for account promotion) and do a full-page nav, matching
-      // the working Welcome.tsx / Import.tsx sign-up path.
-      onClick={() => {
-        logoutForPromotion();
-        window.location.href = '/login?tab=register';
-      }}
-    >
-      Sign up to analyze all games
-    </Button>
-  );
-}
-
 export function EvalCoverageBadge({
   analyzedN,
   totalN,

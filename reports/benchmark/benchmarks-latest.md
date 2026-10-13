@@ -716,11 +716,15 @@ Only `mixed` clears the ≥30-joined-user floor at the combined ≥10-game + ≥
 > a registry author falls back to the pooled band for them (D-10).
 > **Sparse cell**: (2400, classical) excluded from marginals and verdicts (see §1).
 
-> **Snapshot**: 2026-10-12T21:01Z (one run of `uv run python -m scripts.benchmarks.chapter5 --db benchmark`; classical 99.9% and rapid 99.9% complete in `benchmark_selection` at that moment; 138,104 analyzed games, 2,006 user×(ELO,TC) cells, 1,590 distinct users). The old whole-cohort basis (`evals_completed_at`, 1,223,105 games, up to 1000 games per user) is retired; the lane caps each user at 100 games per TC, so every per-user mean is far noisier than before and the bands are wider (see §5.15).
+> **Snapshot**: 2026-10-12T21:01Z (one run of `uv run python -m scripts.benchmarks.chapter5 --db benchmark`; classical 99.9% and rapid 99.9% complete in `benchmark_selection` at that moment; 138,104 analyzed games, 2,006 user×(ELO,TC) cells, 1,590 distinct users). The old whole-cohort basis (`evals_completed_at`, 1,223,105 games, up to 1000 games per user) is retired for the tactic bands (the 12 flaw bands still come from it, owner edit at the 239-06 checkpoint); the lane caps each user at 100 games per TC, so every per-user mean is far noisier than before and the bands are wider (see §5.15).
 >
 > **Blitz and bullet read the rapid zones in the app** until their full-analysis tranches finish (D-08/D-09 stopgap, `ZONE_TC_FOR` in the registries, silent in the UI). Refresh: add the tranche to `FULL_ANALYSIS_TRANCHES`, re-run §5.
 >
-> **Retired in Phase 239**: the overall flaw rate and the two combo flaws no longer have a zone; the Library shows 12 flaw metrics and 38 tactic metrics (19 families × Missed/Allowed).
+> **Retired in Phase 239**: the overall flaw rate and the two combo flaws no longer have a zone; the API returns 12 flaw metrics and 38 tactic metrics (19 families × Missed/Allowed). Since Phase 239 D-17 the Library shows the 12 flaw metrics (Blunders/Mistakes tiles and 10 context tags) and only 4 tactic families (fork, pin, hanging piece, checkmate), so the discovered-attack (allowed) band is not visible.
+>
+> **Served bands are symmetric (Phase 239 D-15, 2026-10-13)**: the app serves `symmetric_band(Q1, Q3)` = ±IQR/2 rounded up to the 0.01 grid, not the off-centre quartiles in the tables below (which are kept as the `symmetric_band` arguments). Served half-widths: flaw (per 100 moves) mistake ±0.22, blunder ±0.28, low_clock ±0.06, hasty ±0.23, unrushed ±0.37, opening ±0.14, middlegame ±0.25, endgame_phase ±0.11, miss ±0.11, lucky ±0.09, reversed ±0.04, squandered ±0.08; tactic (per 100 games, missed/allowed) fork ±2.17/±3.68, pin ±1.66/±2.46, discovered attack –/±1.15, hanging ±1.31/±4.08, mate ±2.54/±5.55. Verdicts are red/green only when the 99% CI on the gap excludes 0 (D-14).
+>
+> **Known user-move parity flip**: this run's per-100-moves flaw rates give White `floor(ply_count/2)` user moves and Black `ceil`; White moves first, so it is the other way round. The app was fixed in PR #420; `chapter5.py` keeps the flip so this run and its diff gate stay reproducible, and the next §5 refresh fixes both. The effect is at most one move per game and does not touch the served flaw bands (whole-cohort basis).
 
 ### 5.1 Mistakes (severity = 1)
 
@@ -1335,7 +1339,7 @@ Verdict words are in the `TC max abs d` and `ELO max abs d` columns above (colla
 | mate | missed | [−2.18, +2.90] | none (band-less) | collapse (0.06) | collapse (0.14) | 128% |
 | mate | allowed | [−7.00, +4.09] | none (band-less) | collapse (0.03) | collapse (0.06) | 95% |
 
-No tactic family has a live band today (all tactic bullets render band-less), so the 'currently set in code' comparison is `none`. The 29 non-viable metrics stay band-less (D-11): blue dot, no verdict, no typical-range line.
+No tactic family has a live band today (all tactic bullets render band-less), so the 'currently set in code' comparison is `none`. The 29 non-viable metrics stay band-less (D-11): no grey band and no typical-range line; since D-16 they turn green/red only when the 99% CI on the gap excludes 0.
 
 ### 5.14 Viability Diagnostic (D-06)
 

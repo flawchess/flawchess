@@ -15,23 +15,13 @@ identical values under both zone TCs. The values are hand-authored on a 0.01 gri
 (the grid keeps a visible neutral band on the rare tags whose IQR is below 0.05; a
 coarser grid snapped those bands to zero width).
 
-Basis (plan 239-06/07): benchmarks-latest.md section 5 on the full-analysis lane
-(classical + rapid, snapshot run 2026-10-12) was recomputed and proposed, bands are
-per 100 user moves, p25 / p75 of the per-user paired delta rounded outward (lo down,
-hi up) to the 0.01 grid, one pooled band per metric (no metric reached keep-separate
-on the TC or ELO axis, so no Elo keying). The owner accepted the proposal with ONE
-edit (239-ZONE-PROPOSAL.md ## Accepted): the 12 flaw bands keep the previous live
-values instead of the proposed 1.5x to 3.5x wider ones, because the widening was
-mostly sampling noise from the lane's 100-games-per-user-per-TC cap (noise-only IQR
-70% to 142% of the observed IQR). The values below are therefore the live
-whole-cohort bands, identical for rapid and classical, while tactic_delta_zones.py
-holds the full-analysis section 5 bands.
-
-Phase 239 D-15 (UAT, 2026-10-13): every band is symmetric around 0, built by
-symmetric_band() from the measured Q1/Q3 kept in the source: +-IQR/2, the half-width
-rounded up to the 0.01 grid. The off-centre quartiles (e.g. low_clock -0.08 / +0.03)
-came from rare, discrete per-user values and cohort selection, not a real typical
-offset, and the D-14 significance gate tests the gap against 0.
+Basis: each band is symmetric_band() applied to the live whole-cohort Q1/Q3 kept in
+the source (per 100 user moves, per-user paired delta): +-IQR/2 around 0, the
+half-width rounded up to the 0.01 grid (Phase 239 D-15). One pooled band per metric,
+identical for rapid and classical. The section 5 full-analysis-lane values were not
+adopted for flaws because the lane's 100-games-per-user-per-TC cap makes them mostly
+sampling noise (239-ZONE-PROPOSAL.md ## Accepted); tactic_delta_zones.py does use the
+lane. Bands are centred on 0 because the D-14 significance gate tests the gap against 0.
 
 Sign convention: negative delta = fewer flaws than the opponent = good. No sign flip
 is stored; the UI draws lower (better) values on the LEFT (D-14 direction flip).

@@ -7,11 +7,11 @@ is half finished, bullet is empty); the app registries map those TCs to the rapi
 
 Computes, for each of the 12 flaw-delta metrics (blunder, mistake and the 10 context tags),
 every cohort user's **you−opponent delta** on a **per-100-of-their-own-moves,
-paired-per-game** basis (D-01 unified estimator), then emits Q1/Q3 quartiles + ELO/TC
+paired-per-game** basis (Phase 114 D-01 unified estimator), then emits Q1/Q3 quartiles + ELO/TC
 marginals + the established Cohen's-d collapse verdict per axis (FLAWBMK-01/02/03), plus a
-per-metric viability diagnostic (D-06) and a noise-only IQR diagnostic.
+per-metric viability diagnostic (Phase 114 D-06) and a noise-only IQR diagnostic.
 
-D-01 estimator: for each game, delta = (player_tag_count − opp_tag_count) / user_moves
+Phase 114 D-01 estimator: for each game, delta = (player_tag_count − opp_tag_count) / user_moves
 (a proportion), where user_moves is derived from games.ply_count (Phase 114.1):
 FLOOR(ply_count/2) for white, CEIL(ply_count/2) for black (no game_positions scan). The
 SQL stores the raw proportion; the ×100 scaling to "per-100-moves" display units is
@@ -32,7 +32,7 @@ the app counts). It is NOT divided by user moves; per-user mean over >= 20 games
 100 games via the "per100g" render unit.
 
 This is benchmark-computation ONLY: no endpoint, no UI, no committed zone constants,
-no DB table, no migration (D-09). The zone registries are hand-authored from the report.
+no DB table, no migration (Phase 114 D-09). The zone registries are hand-authored from the report.
 
 Fast refresh path (this chapter alone, minutes instead of the full generator run):
     uv run python -m scripts.benchmarks.chapter5 --db benchmark --out temp/239-benchmark/run
@@ -67,7 +67,7 @@ SECTION = (
 # registry (ZONE_TC_FOR) and are never computed here. Refresh = re-run §5 once they finish.
 FULL_ANALYSIS_TRANCHES: Final[tuple[sql.TcBucket, ...]] = ("classical", "rapid")
 
-# Per-user analyzed-games floor for flaw-delta metrics (D-08).
+# Per-user analyzed-games floor for flaw-delta metrics (Phase 114 D-08).
 # Matches sql.ENDGAME_MIN_GAMES = 20 for endgame metrics — consistent uniform floor.
 FLAW_DELTA_MIN_GAMES: int = 20
 
@@ -77,9 +77,9 @@ FLAW_DELTA_MIN_GAMES: int = 20
 # The ×100 scaling to per-100-moves display units is applied at render time via "pp" unit.
 _DELTA_DIGITS: int = 6
 
-# Per-cell contributor floor (D-07/D-10): a marginal level with fewer contributing
-# user-cells than this is removed from the marginals and the verdicts inside compute()
-# and listed as a thin level, so a registry author falls back to the pooled band for it.
+# Per-cell contributor floor (Phase 114 D-07, Phase 239 D-10): a marginal level with fewer
+# contributing user-cells than this is removed from the marginals and the verdicts inside
+# compute() and listed as a thin level, so a registry author falls back to the pooled band.
 _CELL_CONTRIBUTOR_FLOOR: int = 30
 
 # IQR of a normal distribution = 1.349 SD. Turns a sampling-noise SD into a noise-only IQR.
@@ -199,8 +199,8 @@ class MetricBlock(TypedDict):
 
 class ViabilityRow(TypedDict):
     metric: str
-    users_contributing: int  # users with non-zero per-user mean delta (player has >= 1 event)
-    users_total: int  # total users passing FLAW_DELTA_MIN_GAMES floor
+    users_contributing: int  # user-cells where the player has >= 1 event of this metric
+    users_total: int  # user×(ELO,TC) cells passing the FLAW_DELTA_MIN_GAMES floor
     pct_nonzero: float  # users_contributing / users_total * 100
     median_events_per_user: float  # median per-user numerator event count (unscaled)
     degenerate_iqr: bool  # pooled p25 == p75 (filled after the blocks are computed)
@@ -263,6 +263,10 @@ def _base_games_cte() -> str:
         # user_moves lives here (not in a self-joined helper CTE): with the lane's small
         # base the planner estimates 1 row, picks a nested loop and the helper self-join
         # went O(n^2) (a 10+ min run). Floor/ceil of ply_count/2 = the user's own moves.
+        # KNOWN FLIP (PR #420 review): white moves first, so white should get CEIL and black
+        # FLOOR (the app was fixed, library_service._user_moves_from_ply_count). Kept here so
+        # the committed §5 run and its diff gate stay reproducible; fix it together with the
+        # next §5 refresh and diff-gate regeneration. Off by at most one move per game.
         "         CASE WHEN g.user_color = 'white' THEN FLOOR(g.ply_count / 2.0)\n"
         "              ELSE CEIL(g.ply_count / 2.0) END AS user_moves\n"
         "  FROM benchmark_selection bs\n"
@@ -285,7 +289,8 @@ def _per_user_cte() -> str:
       base_games      — the full-analysis lane games (`_base_games_cte()`); MATERIALIZED to
                         narrow the game_flaws scan. Carries `user_moves` derived from
                         games.ply_count (Phase 114.1): FLOOR(ply_count/2) for white,
-                        CEIL(ply_count/2) for black (no game_positions scan).
+                        CEIL(ply_count/2) for black (no game_positions scan; known flip,
+                        see base_games).
       per_game_tags   — per-game player/opponent tag counts for all metrics, driven from
                         base_games (ALL analyzed games) LEFT JOIN game_flaws so clean games
                         count as a 0 delta (not dropped). The ≥20 floor below is therefore over
@@ -295,8 +300,8 @@ def _per_user_cte() -> str:
                         unit); rows with user_moves = 0 are dropped.
       per_user        — mean delta per user per (game-time ELO, TC) cell plus the sampling
                         variance of that mean (`nv_<key>`, the noise diagnostic); HAVING
-                        count(*) >= FLAW_DELTA_MIN_GAMES (D-08 floor = 20).
-      pu              — MATERIALIZED with SPARSE_CELL_EXCLUSION (D-07 cell floor enforcement).
+                        count(*) >= FLAW_DELTA_MIN_GAMES (Phase 114 D-08 floor = 20).
+      pu              — MATERIALIZED with SPARSE_CELL_EXCLUSION (Phase 114 D-07 cell floor).
     """
     bucket_case = sql.elo_bucket_case_sql("ueag")
 
@@ -363,7 +368,7 @@ def _per_user_cte() -> str:
         "  LEFT JOIN game_flaws gf ON gf.game_id = bg.game_id AND gf.user_id = bg.user_id\n"
         "  GROUP BY bg.game_id, bg.user_id, bg.ueag, bg.tc, bg.user_color, bg.user_moves\n"
         "),\n"
-        # per_game_delta: signed proportion delta per game (D-01 estimator).
+        # per_game_delta: signed proportion delta per game (Phase 114 D-01 estimator).
         # Proportion unit — ×100 is applied at the render layer ("pp" unit formatter).
         # Games with user_moves = 0 are dropped (WHERE guard; NULLIF also handles division).
         "per_game_delta AS (\n"
@@ -373,7 +378,7 @@ def _per_user_cte() -> str:
         "  WHERE pgt.user_moves > 0\n"
         "),\n"
         # per_user: mean delta per user per (game-time ELO, TC) cell.
-        # ELO floor drops sub-800 rows. HAVING floor = 20 analyzed games (D-08).
+        # ELO floor drops sub-800 rows. HAVING floor = 20 analyzed games (Phase 114 D-08).
         "per_user AS (\n"
         f"  SELECT pgd.user_id, ({bucket_case}) AS elo_bucket, pgd.tc,\n"
         f"{avg_cols_sql}\n"
@@ -382,7 +387,7 @@ def _per_user_cte() -> str:
         "  GROUP BY pgd.user_id, elo_bucket, pgd.tc\n"
         f"  HAVING count(*) >= {FLAW_DELTA_MIN_GAMES}\n"
         "),\n"
-        # pu: sparse-cell excluded; D-07 cell floor enforced via SPARSE_CELL_EXCLUSION.
+        # pu: sparse-cell excluded; Phase 114 D-07 cell floor enforced via SPARSE_CELL_EXCLUSION.
         "pu AS MATERIALIZED (\n"
         f"  SELECT * FROM per_user WHERE {sql.SPARSE_CELL_EXCLUSION}\n"
         ")"
@@ -478,7 +483,7 @@ async def compute(session: AsyncSession) -> Chapter5Values:
     """Compute all metric blocks + viability + noise diagnostic.
 
     Builds the per-user CTE chain once, then runs one aggregation per metric in one UNION ALL
-    query. Viability is a separate lightweight query (D-06).
+    query. Viability is a separate lightweight query (Phase 114 D-06).
     """
     selects = [_metric_select(metric, col) for metric, col in _ALL_METRICS]
     query = _per_user_cte() + "\n" + "\nUNION ALL\n".join(selects)
@@ -511,8 +516,11 @@ async def compute(session: AsyncSession) -> Chapter5Values:
 def _viability_sql() -> str:
     """Viability query: one row per user×(ELO,TC) cell with raw player event counts.
 
-    Driven from the same `_base_games_cte()` as the zone query (ALL analyzed games, LEFT JOIN
-    game_flaws) so the ≥20 floor is over analyzed games and the cell set matches per_user.
+    Driven from the same `_base_games_cte()` as the zone query (ALL analyzed games, LEFT
+    JOIN game_flaws) so the ≥20 floor is over analyzed games. The cell set is close to, but
+    NOT identical with, the zone query's `pu` cells: it applies neither SPARSE_CELL_EXCLUSION
+    (so the sparse (2400, classical) cell is included) nor the per_game_delta
+    `user_moves > 0` guard (so a zero-move game still counts toward the floor).
     NOTE: users_total counts these user×cell rows, not distinct users (a user spanning
     ELO/TC buckets contributes one cell per bucket). COUNT(*) FILTER(...) is used directly
     (no outer SUM — nested aggregates are illegal in SQL); the GROUP BY (user_id,
@@ -554,10 +562,10 @@ def _median(values: Sequence[int]) -> float:
 async def _compute_viability(
     session: AsyncSession,
 ) -> tuple[list[ViabilityRow], CohortSummary]:
-    """Per-metric viability diagnostic (D-06).
+    """Per-metric viability diagnostic (Phase 114 D-06).
 
-    For each metric: counts users with non-zero player events and the median raw event
-    count per user. Lets the registry author assess whether a metric is stable enough for
+    For each metric: counts user-cells with at least one player event and the median raw
+    event count per user-cell. Lets the registry author assess whether a metric is stable enough for
     zone calibration (e.g. low_clock at ~76% non-zero vs squandered at ~99.5%).
     `degenerate_iqr` / `zone_viable` are filled by compute() once the blocks exist.
     """
@@ -822,7 +830,7 @@ def _metric_section(
 
 
 def _render_viability(viability: list[ViabilityRow], cohort: CohortSummary) -> list[str]:
-    """Render the per-metric viability diagnostic table (D-06) + cohort-size summary."""
+    """Render the per-metric viability diagnostic table (Phase 114 D-06) + cohort-size summary."""
     headers = [
         "metric",
         "users_contributing",

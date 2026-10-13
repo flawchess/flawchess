@@ -72,7 +72,7 @@ interface PercentileBarProps {
   /** Binding count and floor, shown in the below-floor slot ("18 of 30"). */
   floorN: number;
   floorRequired: number;
-  /** 99% significance of the value vs its null (D-14); red/green needs it. */
+  /** 99% significance of the value vs its null (239 D-14); red/green needs it. */
   significant: boolean;
   testId: string;
 }

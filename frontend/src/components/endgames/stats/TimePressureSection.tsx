@@ -5,7 +5,8 @@ import { Card, CardBody, CardHeader } from '@/components/ui/card';
 import { useEndgameStatsTc } from '@/hooks/useEndgameStatsTc';
 import type { RankedTcStats } from '@/types/endgames';
 import { RankedMetricRow } from './RankedMetricRow';
-import { SECTION_ID_TIME_PRESSURE, TC_LABELS } from './rankedMetrics';
+import { TC_LABELS } from '@/lib/timeControlLabels';
+import { SECTION_ID_TIME_PRESSURE } from './rankedMetrics';
 
 interface TimePressureSectionProps {
   tcs: readonly RankedTcStats[];
@@ -33,9 +34,7 @@ export function TimePressureSection({ tcs, children }: TimePressureSectionProps)
       data-testid="endgame-time-pressure-section"
       aria-label={`Time Pressure, ${TC_LABELS[tcStats.tc]}`}
     >
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <h2 className="font-brand text-lg font-semibold text-foreground">Time Pressure</h2>
-      </div>
+      <h2 className="font-brand text-lg font-semibold text-foreground">Time Pressure</h2>
       {children}
       {hasClockTimeline && (
         <div

@@ -4,7 +4,7 @@ import { ChartTooltipBox } from '@/components/ui/chart-tooltip-box';
 import { ComposedChart, Line, Bar, CartesianGrid, XAxis, YAxis } from 'recharts';
 import { createDateTickFormatter, formatDateWithYear } from '@/lib/utils';
 import { inactivityGapReferenceLines } from '@/components/charts/InactivityGapReferenceLines';
-import { ENDGAME_VOLUME_BAR_COLOR } from '@/lib/theme';
+import { VOLUME_BAR_COLOR } from '@/lib/theme';
 import type { RatingDataPoint } from '@/types/stats';
 import type { TimeControl } from '@/types/api';
 
@@ -255,7 +255,7 @@ export function RatingChart({ data, platform, enabledTimeControls }: RatingChart
         <Bar
           yAxisId="bars"
           dataKey={GAMES_KEY}
-          fill={ENDGAME_VOLUME_BAR_COLOR}
+          fill={VOLUME_BAR_COLOR}
           legendType="none"
           isAnimationActive={false}
         />

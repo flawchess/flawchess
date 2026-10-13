@@ -5,7 +5,8 @@ Validation architecture:
 - test_no_analyzed_games         : D-02 (empty tcs, gate echoed)
 - test_bullets_and_zone_bounds   : FLAWCMP-01/03 (registry-banded bullets, no domain)
 - test_rates_and_pvalue          : UAT (player_rate - opp_rate == delta, p-value)
-- test_ci_formula                : FLAWCMP-01 (Wald-z math independent of SQL)
+- test_ci_formula                : FLAWCMP-01 / D-14 (99% Wald-z math independent of SQL)
+- test_user_moves_parity         : white = ceil(ply_count/2), black = floor
 - test_filter_plumbing           : FLAWCMP-03 (filter kwargs narrow the TC list)
 - test_severity_filter_zones     : FLAWCMP-03 / D-13 (zones stay with severity filter)
 - test_zero_event_bullet         : FLAWCMP-05 / D-11 (zero-event -> delta=None)
@@ -36,7 +37,7 @@ from app.services.flaw_delta_zones import (
 )
 from app.services.library_service import (
     FLAW_COMPARISON_GATE,
-    _compute_mean_ci,
+    _build_flaw_bullet,
     get_flaw_comparison,
 )
 from app.services.score_confidence import VERDICT_CI_Z_99
@@ -279,47 +280,55 @@ async def test_rates_and_pvalue(db_session: AsyncSession) -> None:
 
 
 def test_ci_formula() -> None:
-    """_compute_mean_ci: Wald-z CI math verified independently of SQL (FLAWCMP-01).
+    """Bullet CI = the shared paired test at 99% (D-14), verified independently of SQL.
 
-    Tests:
-    - n=0 -> (0, 0, 0)
-    - n=1 -> (mean, mean, mean)  [undefined variance]
-    - n>=2 -> ci_high - mean == z99 * sample_sd / sqrt(n)  within float tolerance (D-14)
+    - n=1 -> CI None (no variance), not significant
+    - n>=2 -> ci_high - mean == z99 * sample_sd / sqrt(n)  within float tolerance
     """
-    # n=0 edge case
-    mean0, lo0, hi0 = _compute_mean_ci([])
-    assert mean0 == 0.0
-    assert lo0 == 0.0
-    assert hi0 == 0.0
+    # n=1 edge case: one game has no variance, so no CI and no verdict.
+    single = _build_flaw_bullet("mistake", "blitz", [3.5], [3.5], [0.0], 1, 0)
+    assert single.delta == 3.5
+    assert single.ci_low is None
+    assert single.ci_high is None
+    assert single.significant is False
 
-    # n=1 edge case: ci collapses to the single value
-    mean1, lo1, hi1 = _compute_mean_ci([3.5])
-    assert mean1 == 3.5
-    assert lo1 == 3.5
-    assert hi1 == 3.5
-
-    # n>=2: verify Wald-z formula explicitly
+    # n>=2: verify the Wald-z formula explicitly
     values = [1.0, 2.0, 3.0, 4.0, 5.0]
     n = len(values)
     expected_mean = sum(values) / n  # 3.0
     sample_var = sum((v - expected_mean) ** 2 for v in values) / (n - 1)  # 2.5
-    expected_se = math.sqrt(sample_var / n)
-    expected_half = VERDICT_CI_Z_99 * expected_se
+    expected_half = VERDICT_CI_Z_99 * math.sqrt(sample_var / n)
 
-    mean_r, lo_r, hi_r = _compute_mean_ci(values)
+    bullet = _build_flaw_bullet("mistake", "blitz", values, values, [0.0] * n, n, 0)
 
-    assert abs(mean_r - expected_mean) < 1e-10
-    assert abs(hi_r - mean_r - expected_half) < 1e-10, (
-        f"ci_high - mean should equal z99 * se; got {hi_r - mean_r:.6f} vs {expected_half:.6f}"
+    assert bullet.delta is not None and bullet.ci_low is not None and bullet.ci_high is not None
+    assert abs(bullet.delta - expected_mean) < 1e-10
+    assert abs(bullet.ci_high - bullet.delta - expected_half) < 1e-10
+    assert abs(bullet.delta - bullet.ci_low - expected_half) < 1e-10
+    # 99% CI = 3.0 +/- 1.82 excludes 0 -> significant.
+    assert bullet.significant is True
+
+
+@pytest.mark.asyncio
+async def test_user_moves_parity(db_session: AsyncSession) -> None:
+    """user_moves = ceil(ply_count/2) for white, floor for black (white moves first).
+
+    A 41-ply game has 21 white moves and 20 black moves. The anchor used to flip this.
+    """
+    white = await _seed_game(db_session, user_id=_TEST_USER, user_color="white", ply_count=41)
+    black = await _seed_game(db_session, user_id=_TEST_USER, user_color="black", ply_count=41)
+    for g in (white, black):
+        await _seed_analyzed(db_session, game=g)
+
+    rows = await fetch_flaw_comparison(
+        db_session,
+        _TEST_USER,
+        _analyzed_game_ids_subquery(_TEST_USER),
+        **_DEFAULT_FILTER_KWARGS,
     )
-    assert abs(mean_r - lo_r - expected_half) < 1e-10, (
-        f"mean - ci_low should equal z99 * se; got {mean_r - lo_r:.6f} vs {expected_half:.6f}"
-    )
 
-    # Negative values work correctly
-    neg_values = [-2.0, -1.0, 0.0, 1.0]
-    mean_n, lo_n, hi_n = _compute_mean_ci(neg_values)
-    assert lo_n < mean_n < hi_n
+    user_moves = {row.game_id: int(row.user_moves) for row in rows}
+    assert user_moves == {white.id: 21, black.id: 20}
 
 
 @pytest.mark.asyncio
@@ -446,7 +455,7 @@ async def test_zero_event_bullet(db_session: AsyncSession) -> None:
 
 
 # ---------------------------------------------------------------------------
-# Phase 239 plan 02 task 2: gate, filter, NULL-bucket, low-sample, isolation edges
+# Phase 239 plan 02 task 2: gate, filter, NULL-bucket, significance, isolation edges
 # ---------------------------------------------------------------------------
 
 _OTHER_USER = 88889

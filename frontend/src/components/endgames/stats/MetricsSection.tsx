@@ -2,7 +2,8 @@ import type { ReactNode } from 'react';
 import { useEndgameStatsTc } from '@/hooks/useEndgameStatsTc';
 import type { MaterialBucket, RankedTcStats } from '@/types/endgames';
 import { MetricsCard } from './MetricsCard';
-import { SECTION_ID_METRICS, TC_LABELS } from './rankedMetrics';
+import { TC_LABELS } from '@/lib/timeControlLabels';
+import { SECTION_ID_METRICS } from './rankedMetrics';
 
 const BUCKET_ORDER: readonly MaterialBucket[] = ['conversion', 'parity', 'recovery'];
 
@@ -29,9 +30,7 @@ export function MetricsSection({ tcs, children }: MetricsSectionProps) {
       data-testid="endgame-metrics-tc-section"
       aria-label={`Endgame Metrics, ${TC_LABELS[tcStats.tc]}`}
     >
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <h2 className="font-brand text-lg font-semibold text-foreground">Endgame Metrics</h2>
-      </div>
+      <h2 className="font-brand text-lg font-semibold text-foreground">Endgame Metrics</h2>
       <p className="text-sm text-muted-foreground">
         How do you score from winning, balanced, and losing endgames?
       </p>

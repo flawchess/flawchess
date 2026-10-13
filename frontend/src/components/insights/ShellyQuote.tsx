@@ -11,7 +11,7 @@ const EXPAND_HINT = 'Click or tap for details';
  * hides via the trigger's aria-expanded group variant once the body is open, so it is only
  * meaningful inside an AccordionTrigger. The one place the string and its styling live.
  */
-export function ExpandHint(): ReactElement {
+function ExpandHint(): ReactElement {
   return (
     <span className="text-xs font-normal text-muted-foreground group-aria-expanded/accordion-trigger:hidden">
       {EXPAND_HINT}

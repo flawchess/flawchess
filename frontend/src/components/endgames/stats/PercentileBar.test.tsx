@@ -53,7 +53,7 @@ describe('PercentileBar (D-00a)', () => {
   });
 
   it.each([24, 76])(
-    'keeps the dot and ordinal neutral at percentile %i when not significant (D-14)',
+    'keeps the dot and ordinal neutral at percentile %i when not significant (239 D-14)',
     (percentile) => {
       renderBar(percentile, false);
       expect(screen.getByTestId('bar-dot').style.backgroundColor).toBe(normalized(GAUGE_NEUTRAL));

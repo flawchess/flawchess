@@ -6,7 +6,8 @@ import { useEndgameStatsTc } from '@/hooks/useEndgameStatsTc';
 import type { EndgameWDLSummary, RankedTcStats } from '@/types/endgames';
 import { BracketedWdlBar } from './BracketedWdlBar';
 import { RankedMetricRow } from './RankedMetricRow';
-import { SECTION_ID_OVERALL, TC_LABELS } from './rankedMetrics';
+import { TC_LABELS } from '@/lib/timeControlLabels';
+import { SECTION_ID_OVERALL } from './rankedMetrics';
 
 const NO_VALUE = '—';
 const PERCENT_SCALE = 100;
@@ -40,7 +41,7 @@ function ScoreColumn({ label, wdl, testId }: ScoreColumnProps) {
       <div className="text-sm text-muted-foreground">
         {label} · {wdl.total.toLocaleString()} games
       </div>
-      <div className="text-2xl font-semibold tabular-nums" data-testid={`${testId}-score`}>
+      <div className="text-2xl font-bold tabular-nums" data-testid={`${testId}-score`}>
         {formatScore(wdlScore(wdl))}
       </div>
       {wdl.total > 0 && (
@@ -106,7 +107,7 @@ function FlowBox({ label, value, testId }: FlowBoxProps) {
   return (
     <div className="min-w-0 flex-1 rounded-md border border-card-edge bg-card-band px-1.5 py-2.5 text-center">
       <div className="text-sm text-muted-foreground">{label}</div>
-      <div className="text-2xl font-semibold tabular-nums" data-testid={testId}>
+      <div className="text-2xl font-bold tabular-nums" data-testid={testId}>
         {value}
       </div>
     </div>

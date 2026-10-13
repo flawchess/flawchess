@@ -214,14 +214,19 @@ class TestGetFlawStats:
         required = {
             "trend_by_tc",
             "trend_window",
-            "analyzed_pct",
             "analyzed_n",
-            "total_n",
         }
         for field in required:
             assert field in body, f"Missing field: {field}"
         # Phase 239 D-00k: the aggregates nothing renders any more are gone.
-        for removed in ("per_severity_counts", "rates", "tag_distribution", "trend"):
+        for removed in (
+            "per_severity_counts",
+            "rates",
+            "tag_distribution",
+            "trend",
+            "analyzed_pct",
+            "total_n",
+        ):
             assert removed not in body, f"Removed field still present: {removed}"
 
     @pytest.mark.asyncio
@@ -238,9 +243,9 @@ class TestGetFlawStats:
 
         assert resp.status_code == 200
         body = resp.json()
-        assert "total_n" in body
-        # For a new user without games, total_n must be 0 under white filter.
-        assert body["total_n"] == 0
+        assert "analyzed_n" in body
+        # For a new user without games, analyzed_n must be 0 under white filter.
+        assert body["analyzed_n"] == 0
 
     @pytest.mark.asyncio
     async def test_color_black_accepted(self, auth_headers: dict[str, str]) -> None:
@@ -256,13 +261,13 @@ class TestGetFlawStats:
 
         assert resp.status_code == 200
         body = resp.json()
-        assert body["total_n"] == 0
+        assert body["analyzed_n"] == 0
 
     @pytest.mark.asyncio
-    async def test_color_white_and_black_total_n_sum_matches_unfiltered(
+    async def test_color_white_and_black_analyzed_n_sum_matches_unfiltered(
         self, auth_headers: dict[str, str]
     ) -> None:
-        """total_n(white) + total_n(black) <= total_n(unfiltered).
+        """analyzed_n(white) + analyzed_n(black) <= analyzed_n(unfiltered).
 
         The inequality holds because unfiltered includes any games with NULL
         user_color (rare but possible). For a new user all three are 0.
@@ -278,9 +283,9 @@ class TestGetFlawStats:
                 "/api/library/flaw-stats", params={"color": "black"}, headers=auth_headers
             )
 
-        total = resp_all.json()["total_n"]
-        white_n = resp_white.json()["total_n"]
-        black_n = resp_black.json()["total_n"]
+        total = resp_all.json()["analyzed_n"]
+        white_n = resp_white.json()["analyzed_n"]
+        black_n = resp_black.json()["analyzed_n"]
 
         assert white_n + black_n <= total
 

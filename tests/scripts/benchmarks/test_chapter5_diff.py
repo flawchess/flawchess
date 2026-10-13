@@ -31,6 +31,8 @@ game_flaws so clean games (zero detected flaws) contribute a 0 delta.
 
 from __future__ import annotations
 
+from typing import Any
+
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -44,14 +46,14 @@ pytestmark = pytest.mark.asyncio
 # ---------------------------------------------------------------------------
 
 
-def _check_pooled(block: chapter5.MetricBlock, expected: dict) -> None:  # type: ignore[type-arg]
+def _check_pooled(block: chapter5.MetricBlock, expected: dict[str, Any]) -> None:
     pooled = block["pooled"]
     assert pooled["n"] == expected["n"]
     for key in ("mean", "sd", "p05", "p25", "p50", "p75", "p95"):
         assert pooled[key] == pytest.approx(expected[key]), key
 
 
-def _check_marginal(marginals: list, expected: dict) -> None:  # type: ignore[type-arg]
+def _check_marginal(marginals: list[dist.Marginal], expected: dict[str, Any]) -> None:
     by_label = {m["label"]: m for m in marginals}
     assert set(by_label) == set(expected)
     for label, (n, mean, sd, p25, p50, p75) in expected.items():
@@ -62,7 +64,7 @@ def _check_marginal(marginals: list, expected: dict) -> None:  # type: ignore[ty
         assert (d["p25"], d["p50"], d["p75"]) == pytest.approx((p25, p50, p75)), label
 
 
-def _check_verdicts(block: chapter5.MetricBlock, expected: dict) -> None:  # type: ignore[type-arg]
+def _check_verdicts(block: chapter5.MetricBlock, expected: dict[str, Any]) -> None:
     # block["verdicts"] only holds the axes whose verdict could be computed (a level below the
     # cell floor can leave an axis with fewer than two eligible levels), so look axes up by name.
     by_axis = {v["axis"]: v for v in block["verdicts"]}
@@ -369,7 +371,7 @@ EXPECTED_VERDICTS: dict[str, dict[str, tuple[tuple[str, str], float]]] = {
 }
 
 # Per-metric (pooled_dict, elo_dict, tc_dict) references for the test loop.
-_EXPECTED_BY_METRIC: dict[str, tuple[dict, dict, dict]] = {  # type: ignore[type-arg]
+_EXPECTED_BY_METRIC: dict[str, tuple[dict[str, Any], dict[str, Any], dict[str, Any]]] = {
     "mistake": (EXPECTED_MISTAKE_POOLED, EXPECTED_MISTAKE_ELO, EXPECTED_MISTAKE_TC),
     "blunder": (EXPECTED_BLUNDER_POOLED, EXPECTED_BLUNDER_ELO, EXPECTED_BLUNDER_TC),
     "low_clock": (EXPECTED_LOW_CLOCK_POOLED, EXPECTED_LOW_CLOCK_ELO, EXPECTED_LOW_CLOCK_TC),

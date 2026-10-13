@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
-/** Phase 239 D-00a / D-00b / D-11 / D-12: the rendered gap bar, words and dot colours. */
+/** Phase 239 D-00a / D-00b / D-11 / D-14 / D-16: the rendered gap bar, words and dot colours. */
 
+import type { ReactNode } from 'react';
 import { afterEach, describe, expect, it } from 'vitest';
 import { cleanup, render, screen } from '@testing-library/react';
 import { GAUGE_NEUTRAL, ZONE_DANGER, ZONE_SUCCESS } from '@/lib/theme';
@@ -19,8 +20,8 @@ function normalized(color: string): string {
 function cell(overrides: Partial<GapCell> = {}): GapCell {
   return {
     delta: -0.66,
-    zoneLo: -0.31,
-    zoneHi: 0.25,
+    zoneLo: -0.3,
+    zoneHi: 0.3,
     hasZone: true,
     significant: true,
     youRate: 5.46,
@@ -34,10 +35,15 @@ function cell(overrides: Partial<GapCell> = {}): GapCell {
   };
 }
 
+/** Every caller passes a leading slot (a hint, the Opponents line, a side label). */
+function renderBar(c: GapCell, trailing?: ReactNode): void {
+  render(<GapBar cell={c} testId="bar" leading={<span data-testid="lead" />} trailing={trailing} />);
+}
+
 describe('GapBar', () => {
   it('draws the band, the zero tick at 50% and the dot at the cell position', () => {
     const c = cell();
-    render(<GapBar cell={c} testId="bar" />);
+    renderBar(c);
     expect(screen.getByTestId('bar-band')).toBeTruthy();
     expect(screen.getByTestId('bar-zero').style.left).toBe('50%');
     expect(screen.getByTestId('bar-dot').style.left).toBe(`${cellPosition(c)}%`);
@@ -52,7 +58,7 @@ describe('GapBar', () => {
     ['zoneless significant', { delta: -0.66, hasZone: false }, ZONE_SUCCESS, true],
     ['zoneless not significant', { delta: -0.66, hasZone: false, significant: false }, GAUGE_NEUTRAL, false],
   ] as const)('colours a %s cell', (_name, overrides, dotColor, coloredWords) => {
-    render(<GapBar cell={cell(overrides)} testId="bar" />);
+    renderBar(cell(overrides));
     expect(screen.getByTestId('bar-dot').style.backgroundColor).toBe(normalized(dotColor));
     const words = screen.getByTestId('bar-words');
     if (coloredWords) {
@@ -65,7 +71,7 @@ describe('GapBar', () => {
   });
 
   it('writes the gap in words', () => {
-    render(<GapBar cell={cell({ delta: -1.74 })} testId="bar" />);
+    renderBar(cell({ delta: -1.74 }));
     expect(screen.getByTestId('bar-words').textContent).toBe('1.7 fewer');
     expect(screen.getByTestId('bar-track').getAttribute('aria-label')).toBe(
       '1.7 fewer flaws than your opponents',
@@ -73,37 +79,39 @@ describe('GapBar', () => {
   });
 
   it('reads "same flaws as your opponents" for a zero gap (IN-03 grammar)', () => {
-    render(<GapBar cell={cell({ delta: 0 })} testId="bar" />);
+    renderBar(cell({ delta: 0 }));
     expect(screen.getByTestId('bar-track').getAttribute('aria-label')).toBe(
       'same flaws as your opponents',
     );
   });
 
   it('draws no band for a zoneless cell', () => {
-    render(<GapBar cell={cell({ hasZone: false })} testId="bar" />);
+    renderBar(cell({ hasZone: false }));
     expect(screen.queryByTestId('bar-band')).toBeNull();
     expect(screen.getByTestId('bar-dot')).toBeTruthy();
   });
 
   it('keeps the band for a cell that is not significant', () => {
-    render(<GapBar cell={cell({ significant: false })} testId="bar" />);
+    renderBar(cell({ significant: false }));
     expect(screen.getByTestId('bar-band')).toBeTruthy();
   });
 
   it('draws a better (lower) gap left of the zero tick (D-14 number line)', () => {
-    render(<GapBar cell={cell({ delta: -0.66 })} testId="bar" />);
+    renderBar(cell({ delta: -0.66 }));
     expect(parseFloat(screen.getByTestId('bar-dot').style.left)).toBeLessThan(50);
   });
 
   it('renders "No flaws yet" and no track for a gap-less cell', () => {
-    render(<GapBar cell={cell({ delta: null })} testId="bar" />);
+    renderBar(cell({ delta: null }));
     expect(screen.getByTestId('bar-empty').textContent).toBe('No flaws yet');
+    expect(screen.getByTestId('lead')).toBeTruthy();
     expect(screen.queryByTestId('bar-track')).toBeNull();
   });
 
-  it('renders the trailing node after the words', () => {
-    render(<GapBar cell={cell()} testId="bar" trailing={<span data-testid="trail" />} />);
+  it('renders the leading slot and the trailing node', () => {
+    renderBar(cell(), <span data-testid="trail" />);
     expect(screen.getByTestId('trail')).toBeTruthy();
+    expect(screen.getByTestId('lead')).toBeTruthy();
   });
 });
 

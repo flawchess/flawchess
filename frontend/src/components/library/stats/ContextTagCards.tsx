@@ -13,7 +13,6 @@ import { GapPopover } from './GapPopover';
 import { GapRow } from './GapRow';
 import type { FlawComparisonTc } from '@/types/library';
 
-// Fewer flaws (better) sit left on every gap bar; the caption read worse/better, inverted.
 /**
  * Right margin that ends the caption row where the bar track ends: on phones the words
  * column (6rem) and popover sit right of the track; from md up the track is full width.
@@ -88,8 +87,8 @@ interface ContextTagCardsProps {
 
 /**
  * The four context-tag cards (D-00f, D-00j): Clock, Game phase, Opponent errors, Lost
- * advantages. Two columns from lg up, one on phones. Rows under the sample minimum fade
- * inside GapRow (D-12).
+ * advantages. Two columns from lg up, one on phones. Each card ends with the
+ * better / worse axis caption: fewer flaws (better) sit left on every gap bar.
  */
 export function ContextTagCards({ tcStats }: ContextTagCardsProps) {
   return (

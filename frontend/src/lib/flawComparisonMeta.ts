@@ -3,8 +3,9 @@
  *
  * Holds FLAW_GAP_META (label, hint, definition, noun for the 12 gap metrics),
  * CONTEXT_TAG_CARDS (the four cards over the 10 context tags), flawBulletToGapCell /
- * flawMetricCell (API bullet -> gap-bar view model), libraryBasisText / librarySectionBasisText (the basis lines), and the FlawIcon
- * type shared with the Flaws filter panel.
+ * flawMetricCell (API bullet -> gap-bar view model), libraryBasisText /
+ * libraryCoverageBasisText (the basis lines), and the FlawIcon type shared with the Flaws
+ * filter panel.
  *
  * Read by the Library Stats tiles (FlawTiles), the context-tag cards,
  * and FlawFilterControl (FlawIcon only). The Phase 115 comparison-grid metadata (family
@@ -119,11 +120,11 @@ export const FLAW_GAP_META: Record<FlawDeltaMetric, FlawGapMeta> = {
   },
 };
 
-// ─── You vs. your opponents: the four context-tag cards (D-00f, D-13) ──────────
+// ─── You vs. your opponents: the four context-tag cards (D-00f) ─────────────────
 
 export type ContextTagCardKey = 'clock' | 'phase' | 'opponent_errors' | 'lost_advantages';
 
-/** The 10 context tags; blunder and mistake have tiles, never rows here (D-13). */
+/** The 10 context tags; blunder and mistake have tiles, never rows here. */
 export type ContextTagMetric = Exclude<FlawDeltaMetric, 'blunder' | 'mistake'>;
 
 export interface ContextTagCardDef {

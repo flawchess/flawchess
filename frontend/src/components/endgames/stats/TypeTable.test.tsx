@@ -2,7 +2,7 @@
 /**
  * Phase 238 validation rows D-00e / D-05: the Endgame Type Breakdown table shows a
  * grey typical range with a colored "you" dot per conversion / recovery / vs.-engine
- * cell, red below and green above the range, faded low-sample rows, stacked rows on mobile.
+ * cell, red below and green above the range when significant (239 D-14), stacked rows on mobile.
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -23,14 +23,14 @@ import { buildRankedTc } from './rankedFixtures';
 type TableModule = typeof import('./TypeTable');
 let TypeTable: TableModule['TypeTable'];
 // The page's one switch (the table carries none); loaded from the same fresh module graph.
-let TcSwitch: typeof import('./TcSwitch')['TcSwitch'];
+let EndgameStatsTcSwitch: typeof import('./EndgameStatsTcSwitch')['EndgameStatsTcSwitch'];
 
 beforeEach(async () => {
   // The TC selection is module-level state: load a fresh copy per test.
   vi.resetModules();
   localStorage.clear();
   ({ TypeTable } = await import('./TypeTable'));
-  ({ TcSwitch } = await import('./TcSwitch'));
+  ({ EndgameStatsTcSwitch } = await import('./EndgameStatsTcSwitch'));
 });
 
 afterEach(cleanup);
@@ -41,7 +41,7 @@ interface CategoryOptions {
   recoveryPct?: number;
   conversionGames?: number;
   gap?: number | null;
-  /** D-14 gate for every cell of the row; true by default so out-of-band cells colour. */
+  /** 239 D-14 gate for every cell of the row; true by default so out-of-band cells colour. */
   significant?: boolean;
 }
 
@@ -116,7 +116,7 @@ function renderTable(
   return render(
     <MemoryRouter>
       <TooltipProvider>
-        <TcSwitch sectionId="endgame-stats" tcs={tcs} />
+        <EndgameStatsTcSwitch tcs={tcs} />
         <TypeTable tcs={tcs} onCategorySelect={onCategorySelect} />
       </TooltipProvider>
     </MemoryRouter>,
@@ -248,7 +248,7 @@ describe('TypeTable typical-range cells', () => {
     );
   });
 
-  it('keeps an out-of-band cell neutral when it is not significant (D-14)', () => {
+  it('keeps an out-of-band cell neutral when it is not significant (239 D-14)', () => {
     const tc = buildRankedTc('rapid', {
       type_categories: [
         buildCategory('rook', 'Rook', { conversionPct: 50, significant: false }),
@@ -298,12 +298,6 @@ describe('TypeTable typical-range cells', () => {
 });
 
 describe('TypeTable confidence and layout', () => {
-  it('never fades a row, also with few games (D-14 replaced the fade)', () => {
-    const { container } = renderTable();
-    expect(byId(container, 'type-row-minor_piece').style.opacity).toBe('');
-    expect(byId(container, 'type-row-rook').style.opacity).toBe('');
-  });
-
   it('stacks on mobile: header row hidden below md, every cell carries a caption', () => {
     const { container } = renderTable();
     expect(container.querySelector('thead')?.className).toContain('max-md:hidden');
@@ -330,6 +324,5 @@ describe('TypeTable confidence and layout', () => {
     expect(legend).toContain('Red');
     expect(legend).toContain('green');
     expect(legend).toContain('enough games to be sure');
-    expect(legend).not.toContain('Faded');
   });
 });

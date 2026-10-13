@@ -1544,7 +1544,7 @@ def _filtered_games_base(
 
     The single place the Games-surface filter set (incl. the boolean
     flaw-severity EXISTS) is composed, so query_filtered_games,
-    count_filtered_and_analyzed, and analyzed_game_ids stay in lockstep on what
+    count_filtered_and_analyzed and the comparison fetches stay in lockstep on what
     "the filtered set" means. user_id is threaded into both the base WHERE and
     the EXISTS scope (T-106-02AC / T-106-03AC).
 
@@ -1853,55 +1853,6 @@ async def count_analyzed_by_tc(
     return {str(bucket): int(n) for bucket, n in rows if n > 0}
 
 
-async def analyzed_game_ids(
-    session: AsyncSession,
-    user_id: int,
-    *,
-    time_control: Sequence[str] | None,
-    platform: Sequence[str] | None,
-    rated: bool | None,
-    opponent_type: str,
-    from_date: datetime.date | None,
-    to_date: datetime.date | None,
-    flaw_severity: Sequence[str] | None,
-    opponent_gap_min: int | None = None,
-    opponent_gap_max: int | None = None,
-    color: str | None = None,
-) -> list[int]:
-    """Return the analyzed (>=90% coverage) filtered game_ids, played_at ASC.
-
-    The chronological game-id list the stats service iterates for its per-game
-    kernel re-call (D1 pragmatic path) and rolling-GAME-window trend (D3). Same
-    filter set + analyzed gate as count_filtered_and_analyzed; ordered oldest
-    first so the trend windows accumulate in play order. User-scoped.
-    """
-    base = _filtered_games_base(
-        user_id,
-        time_control=time_control,
-        platform=platform,
-        rated=rated,
-        opponent_type=opponent_type,
-        from_date=from_date,
-        to_date=to_date,
-        flaw_severity=flaw_severity,
-        opponent_gap_min=opponent_gap_min,
-        opponent_gap_max=opponent_gap_max,
-        color=color,
-    )
-    base_subq = base.subquery("filtered")
-    analyzed_subq = _analyzed_game_ids_subquery(user_id)
-    stmt = (
-        select(Game.id)
-        .where(
-            Game.id.in_(select(base_subq.c.id)),
-            Game.id.in_(select(analyzed_subq.c.game_id)),
-        )
-        .order_by(Game.played_at.asc().nulls_last())
-    )
-    rows = (await session.execute(stmt)).scalars().all()
-    return list(rows)
-
-
 async def fetch_flaw_comparison(
     session: AsyncSession,
     user_id: int,
@@ -1954,9 +1905,13 @@ async def fetch_flaw_comparison(
             Game.id.label("game_id"),
             Game.user_color,
             Game.time_control_bucket.label("tc"),
+            # ply_count = total half-moves and white moves first, so white plays
+            # ceil(ply_count/2) moves and black floor(ply_count/2). This used to be
+            # flipped (white floor, black ceil), mis-normalising every odd-length game;
+            # same rule as library_service._user_moves_from_ply_count.
             case(
-                (Game.user_color == "white", func.floor(Game.ply_count / 2.0)),
-                else_=func.ceil(Game.ply_count / 2.0),
+                (Game.user_color == "white", func.ceil(Game.ply_count / 2.0)),
+                else_=func.floor(Game.ply_count / 2.0),
             ).label("user_moves"),
         )
         .where(

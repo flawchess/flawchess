@@ -25,17 +25,15 @@ interface GapBarProps {
   trailing?: ReactNode;
   /**
    * Where the words sit (one DOM tree for every width, placed on a 3-column grid):
-   * - 'responsive' (default): right of the track on phones; top right above a full-width
-   *   track from md up, with `leading` top left on the same line.
-   * - 'stacked': top right above a full-width track at every width, with `leading` top left
-   *   (the Most common tactics table).
+   * - 'responsive' (default): `leading` spans the full width above the bar and the words
+   *   sit right of the track on phones; from md up `leading` and the words share the top
+   *   line above a full-width track.
+   * - 'stacked': `leading` top left and the words top right above a full-width track at
+   *   every width (the Most common tactics card).
    */
   layout?: GapBarLayout;
-  /**
-   * The top-left slot on the words line (a row's label and hint, a side label). In the
-   * responsive layout it spans the full width above the bar on phones.
-   */
-  leading?: ReactNode;
+  /** The top-left slot on the words line (a row's hint, the Opponents line, a side label). */
+  leading: ReactNode;
 }
 
 type GapBarLayout = 'responsive' | 'stacked';
@@ -52,15 +50,8 @@ const GRID_ROOT = 'grid grid-cols-[1fr_auto_auto] items-center';
 
 // Explicit grid placement throughout: a leading slot hidden by its caller (display: none)
 // must never let the words auto-flow into the 1fr column.
-const LAYOUT_CLASSES = {
+const LAYOUT_CLASSES: Record<GapBarLayout, LayoutClasses> = {
   responsive: {
-    root: `${GRID_ROOT} gap-x-3 md:gap-x-2 md:gap-y-2`,
-    leading: '',
-    track: 'col-start-1 row-start-1 md:col-span-3 md:row-start-2',
-    words: 'col-start-2 row-start-1 min-w-24 text-right md:min-w-0',
-    trailing: 'col-start-3 row-start-1',
-  },
-  responsiveLeading: {
     root: `${GRID_ROOT} gap-x-3 gap-y-1 md:gap-x-2 md:gap-y-2`,
     leading: 'col-span-3 row-start-1 md:col-span-1 md:col-start-1',
     track: 'col-start-1 row-start-2 md:col-span-3',
@@ -74,12 +65,7 @@ const LAYOUT_CLASSES = {
     words: 'col-start-2 row-start-1 text-right',
     trailing: 'col-start-3 row-start-1',
   },
-} satisfies Record<string, LayoutClasses>;
-
-function layoutClasses(layout: GapBarLayout, hasLeading: boolean): LayoutClasses {
-  if (layout === 'stacked') return LAYOUT_CLASSES.stacked;
-  return hasLeading ? LAYOUT_CLASSES.responsiveLeading : LAYOUT_CLASSES.responsive;
-}
+};
 
 /**
  * The one visual of the Library Stats tab (D-00a): a zero-centred track with the
@@ -96,13 +82,11 @@ export function GapBar({ cell, testId, trailing, layout = 'responsive', leading 
         {COPY_NO_FLAWS}
       </p>
     );
-    return leading ? (
+    return (
       <div className="space-y-1">
         {leading}
         {empty}
       </div>
-    ) : (
-      empty
     );
   }
 
@@ -117,10 +101,10 @@ export function GapBar({ cell, testId, trailing, layout = 'responsive', leading 
       ? `${words} flaws as your opponents`
       : `${words} flaws than your opponents`;
 
-  const classes = layoutClasses(layout, Boolean(leading));
+  const classes = LAYOUT_CLASSES[layout];
   return (
     <div className={classes.root} data-testid={testId}>
-      {leading && <div className={classes.leading}>{leading}</div>}
+      <div className={classes.leading}>{leading}</div>
       <span
         className={cn(
           'whitespace-nowrap text-sm font-semibold tabular-nums',

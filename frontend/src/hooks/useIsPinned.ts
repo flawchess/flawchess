@@ -1,11 +1,13 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, type RefObject } from 'react';
 
 /**
  * Whether a `position: sticky` element is currently pinned. Put the returned ref on a
  * 1px sentinel directly before the sticky element (in the same container); `topOffsetPx`
  * is the sticky element's `top`. Pinned = the sentinel has scrolled above that offset.
  */
-export function useIsPinned<T extends HTMLElement>(topOffsetPx: number) {
+export function useIsPinned<T extends HTMLElement>(
+  topOffsetPx: number,
+): readonly [RefObject<T | null>, boolean] {
   const sentinelRef = useRef<T>(null);
   const [isPinned, setIsPinned] = useState(false);
 

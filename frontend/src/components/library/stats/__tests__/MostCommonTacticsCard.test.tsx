@@ -7,7 +7,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { GAUGE_NEUTRAL, ZONE_SUCCESS } from '@/lib/theme';
 import { indefiniteArticle, tacticSideCopy } from '@/lib/tacticComparisonMeta';
-import { TacticTables } from '../TacticTables';
+import { MostCommonTacticsCard } from '../MostCommonTacticsCard';
 import {
   BLITZ_TACTIC_ENTRY,
   RAPID_TACTIC_ENTRY,
@@ -24,8 +24,8 @@ function normalized(color: string): string {
   return probe.style.color;
 }
 
-function renderTables(tcStats = RAPID_TACTIC_ENTRY): void {
-  render(<TacticTables tcStats={tcStats} />);
+function renderCard(tcStats = RAPID_TACTIC_ENTRY): void {
+  render(<MostCommonTacticsCard tcStats={tcStats} />);
 }
 
 function text(testId: string): string {
@@ -42,9 +42,9 @@ function rowNames(): string[] {
 
 const SHOWN = ['Fork', 'Pin', 'Hanging piece', 'Checkmate'];
 
-describe('TacticTables card (D-17)', () => {
+describe('MostCommonTacticsCard (D-17)', () => {
   it('shows one card titled "Most common tactics"', () => {
-    renderTables();
+    renderCard();
     expect(screen.getAllByTestId('tactic-card')).toHaveLength(1);
     expect(screen.getAllByRole('heading', { level: 3 }).map((h) => h.textContent)).toEqual([
       'Most common tactics',
@@ -52,12 +52,12 @@ describe('TacticTables card (D-17)', () => {
   });
 
   it('lists exactly Fork, Pin, Hanging piece and Checkmate in the filter panel order', () => {
-    renderTables();
+    renderCard();
     expect(rowNames()).toEqual(SHOWN);
   });
 
   it('leaves out the rarer families, also when they have flaws', () => {
-    renderTables();
+    renderCard();
     // The fixture has discovered-attack and sacrifice flaws.
     expect(screen.queryByTestId('tactic-row-discovered-attack')).toBeNull();
     expect(screen.queryByTestId('tactic-row-sacrifice')).toBeNull();
@@ -65,12 +65,12 @@ describe('TacticTables card (D-17)', () => {
   });
 
   it('never lets the payload order decide the row order', () => {
-    renderTables(makeTacticTcEntry('rapid', 1841, SKETCH_RAPID_TACTIC_OVERRIDES, true));
+    renderCard(makeTacticTcEntry('rapid', 1841, SKETCH_RAPID_TACTIC_OVERRIDES, true));
     expect(rowNames()).toEqual(SHOWN);
   });
 
   it('does not re-sort the rows by rate (a busier later family stays later)', () => {
-    renderTables(
+    renderCard(
       makeTacticTcEntry('rapid', 1841, {
         'fork:missed': { you: 5, opp: 5 },
         'hanging:missed': { you: 400, opp: 100 },
@@ -80,41 +80,41 @@ describe('TacticTables card (D-17)', () => {
   });
 
   it('keeps a row for a shown family without any flaws', () => {
-    renderTables(makeTacticTcEntry('rapid', 1841, {}));
+    renderCard(makeTacticTcEntry('rapid', 1841, {}));
     expect(rowNames()).toEqual(SHOWN);
-    expect(text('tactic-cell-pin-missed-empty')).toBe('No flaws');
+    expect(text('tactic-cell-pin-missed-bar-empty')).toBe('No flaws yet');
   });
 
   it("counts the player's own flaws per side, not the opponents'", () => {
-    renderTables();
+    renderCard();
     // 84 vs. 44 missed forks: the label carries only the player's 84.
     expect(text('tactic-cell-fork-missed-side')).toBe('Missed · 84');
     expect(text('tactic-cell-fork-missed-label')).toBe('Fork · 84');
   });
 });
 
-describe('TacticTables cells (D-00a, D-00b, D-00c)', () => {
+describe('MostCommonTacticsCard cells (D-00a, D-00b, D-00c)', () => {
   it('shows each side as a gap bar per 100 games with the gap in words', () => {
-    renderTables();
+    renderCard();
     expect(text('tactic-cell-fork-missed-bar-words')).toBe('2.2 more');
     expect(text('tactic-cell-fork-allowed-bar-words')).toBe('2.5 fewer');
   });
 
   it('draws the band only for a banded family-side (D-11)', () => {
-    renderTables();
+    renderCard();
     expect(screen.queryByTestId('tactic-cell-fork-missed-bar-band')).not.toBeNull();
     expect(screen.queryByTestId('tactic-cell-fork-allowed-bar-band')).toBeNull();
   });
 
   it('puts a per-side, per-TC Search popover on each non-empty cell', () => {
-    renderTables();
+    renderCard();
     expect(screen.getByTestId('gap-popover-tactic-fork-missed-tc-rapid')).not.toBeNull();
     expect(screen.getByTestId('gap-popover-tactic-fork-allowed-tc-rapid')).not.toBeNull();
     expect(screen.getByTestId('gap-popover-tactic-mate-allowed-tc-rapid')).not.toBeNull();
   });
 
   it('words the popover per side with the per 100 games unit', () => {
-    renderTables();
+    renderCard();
     fireEvent.click(screen.getByTestId('gap-popover-tactic-fork-missed-tc-rapid'));
     const missed = text('gap-popover-tactic-fork-missed-tc-rapid-popover');
     expect(missed).toContain('Missed fork');
@@ -128,10 +128,10 @@ describe('TacticTables cells (D-00a, D-00b, D-00c)', () => {
     expect(allowed).toContain('Your move handed your opponent a hanging piece.');
   });
 
-  it('shows a muted "No flaws" and no popover for a zero-flaw side of an active family', () => {
-    renderTables();
+  it('shows a muted "No flaws yet" and no popover for a zero-flaw side of an active family', () => {
+    renderCard();
     // Hanging piece was only ever allowed in the fixture.
-    expect(text('tactic-cell-hanging-missed-empty')).toBe('No flaws');
+    expect(text('tactic-cell-hanging-missed-bar-empty')).toBe('No flaws yet');
     expect(screen.queryByTestId('gap-popover-tactic-hanging-missed-tc-rapid')).toBeNull();
     expect(screen.queryByTestId('tactic-cell-hanging-missed-bar')).toBeNull();
     expect(screen.getByTestId('gap-popover-tactic-hanging-allowed-tc-rapid')).not.toBeNull();
@@ -163,31 +163,29 @@ describe('tactic copy helpers', () => {
 });
 
 describe('not-significant and band-less cells (D-11, D-14)', () => {
-  it('gives an out-of-band cell that is not significant a blue dot and no verdict colour, unfaded', () => {
-    renderTables(
+  it('gives an out-of-band cell that is not significant a blue dot and no verdict colour', () => {
+    renderCard(
       makeTacticTcEntry('rapid', 1841, {
         // 9 vs 3 flaws: outside the band, but the fixture CI (gap +- 1) covers 0.
         'fork:missed': { you: 9, opp: 3, zone: [-0.1, 0.1] },
         'fork:allowed': { you: 80, opp: 90, zone: [-0.5, 0.5] },
       }),
     );
-    expect(screen.getByTestId('tactic-cell-fork-missed').style.opacity).toBe('');
     expect(screen.getByTestId('tactic-cell-fork-missed-bar-dot').style.backgroundColor).toBe(
       normalized(GAUGE_NEUTRAL),
     );
     expect(screen.getByTestId('tactic-cell-fork-missed-bar-words').style.color).toBe('');
-    expect(screen.getByTestId('tactic-cell-fork-allowed').style.opacity).toBe('');
   });
 
   it('draws no band and no typical-range line for a band-less cell, blue when not significant', () => {
     // fork:allowed has no zone; 45 vs 50 over 1000 games is a gap the fixture CI covers.
-    renderTables(BLITZ_TACTIC_ENTRY);
+    renderCard(BLITZ_TACTIC_ENTRY);
     expect(screen.queryByTestId('tactic-cell-fork-allowed-bar-band')).toBeNull();
     expect(screen.getByTestId('tactic-cell-fork-allowed-bar-dot').style.backgroundColor).toBe(
       normalized(GAUGE_NEUTRAL),
     );
     cleanup();
-    renderTables();
+    renderCard();
     fireEvent.click(screen.getByTestId('gap-popover-tactic-fork-allowed-tc-rapid'));
     expect(text('gap-popover-tactic-fork-allowed-tc-rapid-popover')).not.toContain('Typical gap');
     // The banded sibling does carry the line.
@@ -196,7 +194,7 @@ describe('not-significant and band-less cells (D-11, D-14)', () => {
   });
 
   it('colours a significant band-less cell on significance alone (D-16)', () => {
-    renderTables();
+    renderCard();
     // fork:allowed: 134 vs 180 over 1841 games, 2.5 fewer per 100 games, CI clear of 0.
     expect(screen.getByTestId('tactic-cell-fork-allowed-bar-dot').style.backgroundColor).toBe(
       normalized(ZONE_SUCCESS),
@@ -208,18 +206,17 @@ describe('not-significant and band-less cells (D-11, D-14)', () => {
   });
 
   it('colours a banded, well-sampled cell that sits outside its band', () => {
-    renderTables();
+    renderCard();
     // fork:missed: 2.2 more per 100 games, band -0.5 to 0.9, 128 flaws: worse (not blue).
     expect(screen.getByTestId('tactic-cell-fork-missed-bar-dot').style.backgroundColor).not.toBe(
       normalized(GAUGE_NEUTRAL),
     );
-    expect(screen.getByTestId('tactic-cell-fork-missed').style.opacity).toBe('');
   });
 });
 
 describe('phone layout and footer (D-00h)', () => {
   it('shows a desktop-only Missed | Allowed header; cells name motif and your flaw count', () => {
-    renderTables();
+    renderCard();
     const header = screen.getByTestId('tactic-card-header');
     expect(header.className).toContain('hidden');
     expect(header.className).toContain('md:grid');
@@ -235,7 +232,7 @@ describe('phone layout and footer (D-00h)', () => {
   });
 
   it('stacks the cells with side labels on phones', () => {
-    renderTables();
+    renderCard();
     const row = screen.getByTestId('tactic-row-fork');
     expect(row.className).toContain('grid-cols-1');
     expect(row.className).toContain('md:grid-cols-2');
@@ -253,7 +250,7 @@ describe('phone layout and footer (D-00h)', () => {
   });
 
   it('captions the bars better/worse under the rows, once on phones and per column from md up', () => {
-    renderTables();
+    renderCard();
     const axis = screen.getByTestId('tactic-card-axis');
     expect(axis.className).toContain('md:grid-cols-2');
     const [missed, allowed] = Array.from(axis.children);
@@ -270,7 +267,7 @@ describe('phone layout and footer (D-00h)', () => {
   });
 
   it('draws the Missed | Allowed divider from md up only', () => {
-    renderTables();
+    renderCard();
     const divider = screen.getByTestId('tactic-card-divider');
     expect(divider.className).toContain('hidden');
     expect(divider.className).toContain('md:block');
@@ -283,15 +280,15 @@ describe('phone layout and footer (D-00h)', () => {
   });
 
   it('shows the footer line once after the card, with lower (better) to the left', () => {
-    renderTables();
-    expect(screen.getAllByTestId('tactic-tables-footer')).toHaveLength(1);
-    expect(text('tactic-tables-footer')).toBe(
+    renderCard();
+    expect(screen.getAllByTestId('most-common-tactics-footer')).toHaveLength(1);
+    expect(text('most-common-tactics-footer')).toBe(
       "Per 100 games. Middle tick = same as your opponents, fewer (better) to the left. Your and your opponents' rates are in each search-icon popover.",
     );
   });
 
   it('never uses text-xs in the card', () => {
-    renderTables();
-    expect(screen.getByTestId('tactic-tables').querySelectorAll('.text-xs')).toHaveLength(0);
+    renderCard();
+    expect(screen.getByTestId('most-common-tactics').querySelectorAll('.text-xs')).toHaveLength(0);
   });
 });

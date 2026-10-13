@@ -13,7 +13,7 @@
 
 import { GAUGE_NEUTRAL, ZONE_DANGER, ZONE_SUCCESS } from '@/lib/theme';
 
-/** The wider side of the benchmark band reaches this far (in %) from the centre. */
+/** The benchmark band edge sits this far (in %) from the centre (bands are symmetric since D-15). */
 const GAP_BAND_HALF_POS = 25;
 /** The outermost dot position, in % from either edge: the dot never touches the edge. */
 export const GAP_EDGE_POS = 3;
@@ -56,8 +56,9 @@ export interface GapCell {
 
 /**
  * Position (0-100, % from the left) of a gap on the zero-centred track. Linear inside
- * the band (the wider band side maps to GAP_BAND_HALF_POS), then saturating with
- * 1 - e^-x (x in band widths) so large gaps approach the edge without clipping.
+ * the band (its half-width maps to GAP_BAND_HALF_POS), then saturating with 1 - e^-x
+ * (x in band widths) so large gaps approach the edge without clipping. Bands are
+ * symmetric since D-15; the max() over both sides only keeps an asymmetric band sane.
  */
 export function gapPosition(delta: number, zoneLo: number, zoneHi: number): number {
   const s = Math.max(Math.abs(zoneLo), Math.abs(zoneHi));
@@ -100,6 +101,7 @@ function rawVerdict(cell: GapCell): GapVerdict | null {
  * when its 99% CI excludes 0, no verdict otherwise.
  */
 export function effectiveVerdict(cell: GapCell): GapVerdict | null {
+  // Defensive: all four shown tactic families have bands today, but a §5 refresh could drop one.
   if (!cell.hasZone && cell.delta !== null) {
     if (!cell.significant) return null;
     return cell.delta < 0 ? 'better' : 'worse';

@@ -307,9 +307,10 @@ class FlawStatsResponse(BaseModel):
         ordered bullet, blitz, rapid, classical; the client picks the selected TC's
         series. Games with a NULL time_control_bucket cannot be placed on the switch
         and are excluded. Empty when there is no analyzed game.
-    analyzed_pct / analyzed_n / total_n state the explicit coverage denominator so the
-    panel never implies clean games where evals are merely absent. trend_window is the
-    rolling window size (games) used for the trend chart.
+    analyzed_n: analyzed games in the filtered set (the Flaws tab's "no analyzed games"
+        probe reads it). The per-TC coverage line reads FlawComparisonTc.analyzed_n /
+        total_n instead. trend_window is the rolling window size (games) used for the
+        trend chart.
 
     Phase 239 removed the severity counts, severity rates, tag distribution and pooled
     trend: nothing renders them any more (the tiles read the flaw-comparison bullets).
@@ -317,9 +318,7 @@ class FlawStatsResponse(BaseModel):
 
     trend_by_tc: list[FlawTrendTc]
     trend_window: int
-    analyzed_pct: float
     analyzed_n: int
-    total_n: int
 
 
 class FlawBullet(BaseModel):
@@ -329,8 +328,10 @@ class FlawBullet(BaseModel):
     delta: (
         float | None
     )  # mean per-game delta (per 100 of user's moves); None = both sides zero events
-    ci_low: float | None  # 99% CI lower bound (per 100 moves, D-14)
-    ci_high: float | None  # 99% CI upper bound (per 100 moves, D-14)
+    # 99% CI on delta (per 100 moves, D-14); None for zero-event bullets and below
+    # two games (score_confidence.compute_paired_difference_test n-gates).
+    ci_low: float | None
+    ci_high: float | None
     # Per-player rates (Phase 115 UAT): mean per-game flaw rate per 100 of the
     # user's moves, for player and opponent separately. Both opponent and player
     # counts are normalized by the user's move count per game so that
@@ -339,13 +340,18 @@ class FlawBullet(BaseModel):
     player_rate: float | None
     opp_rate: float | None
     # Two-sided p-value vs H0: delta == 0, from the same Wald-z that produces the
-    # CI (z = mean / SE, p = erfc(|z| / sqrt(2))). None for zero-event bullets.
+    # CI (z = mean / SE, p = erfc(|z| / sqrt(2))). None for zero-event bullets and
+    # below CONFIDENCE_MIN_N (10) games (compute_paired_difference_test n-gate).
     p_value: float | None
     player_events: int  # total player-side tag events across analyzed games
     opp_events: int  # total opponent-side tag events across analyzed games
-    zone_lo: float  # Q1 from the per-zone-TC FLAW_DELTA_ZONES registry
-    zone_hi: float  # Q3 from the per-zone-TC FLAW_DELTA_ZONES registry
-    has_zone: bool = True  # False for future zoneless bullets (FLAWUI-04)
+    # Typical-range bounds from the per-zone-TC FLAW_DELTA_ZONES registry: a band
+    # symmetric around 0 (±IQR/2 of the measured quartiles, Phase 239 D-15).
+    zone_lo: float
+    zone_hi: float
+    # Always True: every flaw metric has a band. Kept so FlawBullet and TacticBullet
+    # share one shape (tactic family-sides without a viable band send False).
+    has_zone: bool = True
     # Phase 239 D-14: True when the 99% CI on delta excludes 0. Only a significant cell
     # outside the band gets a red/green verdict; the backend owns the test.
     significant: bool
@@ -378,11 +384,12 @@ class FlawComparisonResponse(BaseModel):
          bullet, blitz, rapid, classical. Zero-analyzed TCs are omitted (D-02), so an
          empty list means no analyzed games at all. Below-gate TCs keep their bullets
          (D-03). No request parameter selects a TC: the switch is client-side.
-    analyzed_gate: minimum required per TC (constant = FLAW_COMPARISON_GATE = 20).
+    analyzed_gate: minimum analyzed games per TC (library_service.FLAW_COMPARISON_GATE),
+        exposed so the frontend can render "X of N" without hardcoding the gate.
     """
 
     tcs: list[FlawComparisonTc]
-    analyzed_gate: int = 20  # exposed so frontend can render "X of 20" without hardcoding
+    analyzed_gate: int
 
 
 # ---------------------------------------------------------------------------
@@ -404,18 +411,24 @@ class TacticBullet(BaseModel):
     you_rate: float | None  # mean count per 100 games (player side); None = zero events
     opp_rate: float | None  # mean count per 100 games (opponent side); None = zero events
     delta: float | None  # you_rate - opp_rate per 100 games; None = both sides zero events
-    ci_low: float | None  # 99% CI lower bound on delta (per 100 games, D-14)
-    ci_high: float | None  # 99% CI upper bound on delta (per 100 games, D-14)
-    p_value: float | None  # two-sided p vs H0: delta == 0; None = zero events
+    # 99% CI on delta (per 100 games, D-14) and the two-sided p vs H0: delta == 0.
+    # None for zero events; the CI below two games and p below CONFIDENCE_MIN_N (10)
+    # games (score_confidence.compute_paired_difference_test n-gates).
+    ci_low: float | None
+    ci_high: float | None
+    p_value: float | None
     you_events: int  # raw event count (player side)
     opp_events: int  # raw event count (opponent side)
     # Typical-range bounds from the tactic zone registry (per 100 games), via the zone TC
-    # (blitz/bullet read rapid, silently). 0.0 / 0.0 / False when the family-side is unviable.
+    # (blitz/bullet read rapid, silently): symmetric ±IQR/2 around 0 (D-15).
+    # 0.0 / 0.0 / False when the family-side has no viable band.
     zone_lo: float
     zone_hi: float
     has_zone: bool
-    # Phase 239 D-14: True when the 99% CI on delta excludes 0. Only a significant cell
-    # outside the band gets a red/green verdict; the backend owns the test.
+    # Phase 239 D-14: True when the 99% CI on delta excludes 0. With a band, only a
+    # significant cell outside the band gets a red/green verdict; without one
+    # (has_zone False, D-16) the cell is judged on this flag alone. The backend owns
+    # the test.
     significant: bool
 
 
@@ -446,7 +459,8 @@ class TacticComparisonResponse(BaseModel):
          (D-03). No request parameter selects a TC: the switch is client-side.
     Each TC carries all 19 families x 2 sides in fixed FAMILY_TO_MOTIF_INTS order,
     missed before allowed. There is no ranking or top-N selection (D-00h).
-    analyzed_gate: minimum required per TC (constant = TACTIC_COMPARISON_GATE = 20).
+    analyzed_gate: minimum analyzed games per TC (library_service.TACTIC_COMPARISON_GATE),
+        exposed so the frontend can render "X of N" without hardcoding the gate.
     """
 
     tcs: list[TacticComparisonTc]
