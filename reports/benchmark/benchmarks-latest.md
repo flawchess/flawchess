@@ -16,7 +16,7 @@
 - **Deleted calibration targets** (retracted Phase 87.4): `endgame_skill` and `section2_score_gap_skill` composites — §3.2.1 / §3.2.2 report distributions for completeness only, no band.
 - **Verdict thresholds**: Cohen's d **< 0.2 collapse** / **0.2–0.5 review** / **≥ 0.5 keep separate** (per axis, independently).
 - **§4 (Global Percentile CDF)**: separate deliverable, NOT part of this report — generator chapter is `REFERENCE`-only. See `app/services/global_percentile_cdf.py` / `reports/percentile/`.
-- **§5 (Flaw-Delta and Tactic-Delta Zones)**: recomputed 2026-10-12T21:01Z (Phase 239, plan 239-06) on the full-analysis lane only (classical 99.9% and rapid 99.9% of `benchmark_selection` complete at the snapshot; 138,104 analyzed games across 2,006 user×(ELO,TC) cells, 1,590 distinct users), replacing the old whole-cohort `evals_completed_at` basis (1,223,105 games). 12 flaw metrics plus 38 tactic metrics (19 families × Missed/Allowed); the overall flaw rate and the two combo flaws are retired (Phase 239). **Blitz and bullet use the rapid zones in the app** until their tranches finish (D-08/D-09 stopgap); the half-finished blitz tranche is never used. Per-user values come from at most 100 games per TC (the lane cap), so each band includes sampling noise: the noise-only IQR is reported next to the observed IQR for every metric (§5.15), and the bands are mostly noise. Negative delta = fewer flaws than equally rated opponents. Verdicts: no metric reaches keep-separate on either axis, so every band is one pooled band for both zone TCs and nothing is Elo keyed.
+- **§5 (Flaw-Delta and Tactic-Delta Zones)**: recomputed 2026-10-12T21:01Z (Phase 239, plan 239-06) on the full-analysis lane only (classical 99.9% and rapid 99.9% of `benchmark_selection` complete at the snapshot; 138,104 analyzed games across 2,006 user×(ELO,TC) cells, 1,590 distinct users), on a new basis. **Owner decision (239-06 checkpoint, accept with edits): the 12 flaw bands are NOT adopted from this run; the app keeps the live flaw bands** (derived on the older whole-cohort `evals_completed_at` basis, 1,223,105 games, up to 1000 games per user), because the proposed widening (1.5x to 3.5x) is mostly sampling noise from the lane's 100-games-per-TC cap. The flaw-delta values in this section are therefore the noise-inflated proposal that was not adopted; the 9 viable tactic bands are adopted as measured. 12 flaw metrics plus 38 tactic metrics (19 families × Missed/Allowed); the overall flaw rate and the two combo flaws are retired (Phase 239). **Blitz and bullet use the rapid zones in the app** until their tranches finish (D-08/D-09 stopgap); the half-finished blitz tranche is never used. Per-user values come from at most 100 games per TC (the lane cap), so each band includes sampling noise: the noise-only IQR is reported next to the observed IQR for every metric (§5.15), and the bands are mostly noise. Negative delta = fewer flaws than equally rated opponents. Verdicts: no metric reaches keep-separate on either axis, so every band is one pooled band for both zone TCs and nothing is Elo keyed.
 
 ---
 
@@ -698,6 +698,10 @@ Only `mixed` clears the ≥30-joined-user floor at the combined ≥10-game + ≥
 > `benchmark_selection`: armed games with full evals, full PVs and tactic blobs done).
 > Blitz and bullet are not computed here; the app registries map them to the rapid zones
 > (D-09 stopgap) until their full-analysis samples finish.
+>
+> **Owner override (239-06 checkpoint)**: the flaw-delta bands below are the noise-inflated
+> proposal that was NOT adopted; the app keeps the live flaw bands (see the registry mapping
+> table at the end of this report). The tactic bands (5.13) are adopted as measured.
 >
 > **D-01 unified estimator**: per game, delta = (player_tag_count − opp_tag_count)
 > / user_moves_in_game (proportion); displayed as per-100-moves via ×100 at the
@@ -1508,18 +1512,18 @@ All 12 flaw metrics have a noise share between 70% and 142%; the two noisiest ar
 | Per-class recovery | 3.4.1 | **keep (1.3–1.7)** | review (pawn keep 0.65) | **Flag: stratify per-(class×TC)** |
 | Per-class per-span ΔES Score Gap | 3.4.2 | collapse (≤0.20) | review (≤0.31) | Keep per-class bands |
 | Endgame Type redundancy | 3.4.3 | r=0.105 | — | Keep all three signals |
-| **Mistakes** | **5.1** | **collapse (0.00)** | **collapse (0.18)** | **Pooled band [−0.66, +0.39]; noise share 98%** |
-| **Blunders** | **5.2** | **collapse (0.15)** | **collapse (0.14)** | **Pooled band [−0.83, +0.31]; noise share 97%** |
-| **Low-Clock Flaws** | **5.3** | **collapse (0.03)** | **review (0.25)** | **Pooled band [−0.12, +0.05]; 41% zero-rate users, thin numerator; noise share 142%** |
-| **Hasty Flaws** | **5.4** | **review (0.21)** | **review (0.28)** | **Pooled band [−1.16, +0.45]; TC review, per-TC bands are the alternative; noise share 71%** |
-| **Unrushed Flaws** | **5.5** | **collapse (0.11)** | **review (0.36)** | **Pooled band [−0.94, +0.74]; noise share 70%** |
-| **Opening-Phase Flaws** | **5.6** | **review (0.20)** | **review (0.33)** | **Pooled band [−0.60, +0.27]; TC review, per-TC bands are the alternative; noise share 125%** |
-| **Middlegame Flaws** | **5.7** | **collapse (0.02)** | **review (0.34)** | **Pooled band [−0.62, +0.35]; noise share 91%** |
-| **Endgame-Phase Flaws** | **5.8** | **collapse (0.09)** | **review (0.44)** | **Pooled band [−0.24, +0.18]; ELO review closest to keep-separate; noise share 102%** |
-| **Missed-Win Flaws** | **5.9** | **collapse (0.02)** | **collapse (0.16)** | **Pooled band [−0.32, +0.28]; noise share 112%** |
-| **Lucky-Escape Flaws** | **5.10** | **collapse (0.07)** | **collapse (0.09)** | **Pooled band [−0.23, +0.26]; noise share 118%** |
-| **Reversed Advantage Flaws** | **5.11** | **collapse (0.01)** | **collapse (0.13)** | **Pooled band [−0.12, +0.11]; noise share 138%** |
-| **Squandered Win Flaws** | **5.12** | **collapse (0.03)** | **collapse (0.11)** | **Pooled band [−0.17, +0.19]; noise share 115%** |
+| **Mistakes** | **5.1** | **collapse (0.00)** | **collapse (0.18)** | **Measured pooled band [−0.66, +0.39]; noise share 98%; not adopted, the app keeps the live band (owner edit, 239-06)** |
+| **Blunders** | **5.2** | **collapse (0.15)** | **collapse (0.14)** | **Measured pooled band [−0.83, +0.31]; noise share 97%; not adopted, the app keeps the live band (owner edit, 239-06)** |
+| **Low-Clock Flaws** | **5.3** | **collapse (0.03)** | **review (0.25)** | **Measured pooled band [−0.12, +0.05]; 41% zero-rate users, thin numerator; noise share 142%; not adopted, the app keeps the live band (owner edit, 239-06)** |
+| **Hasty Flaws** | **5.4** | **review (0.21)** | **review (0.28)** | **Measured pooled band [−1.16, +0.45]; TC review, per-TC bands are the alternative; noise share 71%; not adopted, the app keeps the live band (owner edit, 239-06)** |
+| **Unrushed Flaws** | **5.5** | **collapse (0.11)** | **review (0.36)** | **Measured pooled band [−0.94, +0.74]; noise share 70%; not adopted, the app keeps the live band (owner edit, 239-06)** |
+| **Opening-Phase Flaws** | **5.6** | **review (0.20)** | **review (0.33)** | **Measured pooled band [−0.60, +0.27]; TC review, per-TC bands are the alternative; noise share 125%; not adopted, the app keeps the live band (owner edit, 239-06)** |
+| **Middlegame Flaws** | **5.7** | **collapse (0.02)** | **review (0.34)** | **Measured pooled band [−0.62, +0.35]; noise share 91%; not adopted, the app keeps the live band (owner edit, 239-06)** |
+| **Endgame-Phase Flaws** | **5.8** | **collapse (0.09)** | **review (0.44)** | **Measured pooled band [−0.24, +0.18]; ELO review closest to keep-separate; noise share 102%; not adopted, the app keeps the live band (owner edit, 239-06)** |
+| **Missed-Win Flaws** | **5.9** | **collapse (0.02)** | **collapse (0.16)** | **Measured pooled band [−0.32, +0.28]; noise share 112%; not adopted, the app keeps the live band (owner edit, 239-06)** |
+| **Lucky-Escape Flaws** | **5.10** | **collapse (0.07)** | **collapse (0.09)** | **Measured pooled band [−0.23, +0.26]; noise share 118%; not adopted, the app keeps the live band (owner edit, 239-06)** |
+| **Reversed Advantage Flaws** | **5.11** | **collapse (0.01)** | **collapse (0.13)** | **Measured pooled band [−0.12, +0.11]; noise share 138%; not adopted, the app keeps the live band (owner edit, 239-06)** |
+| **Squandered Win Flaws** | **5.12** | **collapse (0.03)** | **collapse (0.11)** | **Measured pooled band [−0.17, +0.19]; noise share 115%; not adopted, the app keeps the live band (owner edit, 239-06)** |
 | **Tactic fork (missed)** | **5.13** | **collapse (0.04)** | **collapse (0.05)** | **Pooled band [−2.21, +2.13] per 100 games; noise share 124%** |
 | **Tactic fork (allowed)** | **5.13** | **collapse (0.01)** | **collapse (0.14)** | **Pooled band [−4.12, +3.23] per 100 games; noise share 110%** |
 | **Tactic pin (missed)** | **5.13** | **collapse (0.04)** | **collapse (0.08)** | **Pooled band [−1.42, +1.89] per 100 games; noise share 120%** |
@@ -1564,18 +1568,18 @@ All 12 flaw metrics have a noise share between 70% and 142%; the two noisiest ar
 | Per-class achievable_score_gap | 3.4.2 | `PER_CLASS_GAUGE_ZONES[*].achievable_score_gap` | per-class | within ±0.5pp of measured | TC collapse / ELO review | **keep all 6** |
 | Global type-gap default | 3.4.2 | `endgame_type_achievable_score_gap` | `(−0.04, +0.04)` | `(−0.04, +0.04)` | TC collapse / ELO review | **keep** |
 | EG Type chart inventory | 3.4.3 | `EndgameTypeCard.tsx` layout | Score + Gap + WDL (+Conv/Recov) | keep all 3 (r=0.105) | n/a | **keep layout** (no constant) |
-| Flaw delta mistake | 5.1 | `FLAW_DELTA_ZONES['mistake']` (rapid, classical) | `[−0.23, +0.20]` | `[−0.66, +0.39]` both zone TCs | TC collapse / ELO collapse | **change** (owner accepts at the 239-06 checkpoint) |
-| Flaw delta blunder | 5.2 | `FLAW_DELTA_ZONES['blunder']` (rapid, classical) | `[−0.31, +0.25]` | `[−0.83, +0.31]` both zone TCs | TC collapse / ELO collapse | **change** (owner accepts at the 239-06 checkpoint) |
-| Flaw delta low_clock | 5.3 | `FLAW_DELTA_ZONES['low_clock']` (rapid, classical) | `[−0.08, +0.03]` | `[−0.12, +0.05]` both zone TCs | TC collapse / ELO review | **change** (owner accepts at the 239-06 checkpoint) |
-| Flaw delta hasty | 5.4 | `FLAW_DELTA_ZONES['hasty']` (rapid, classical) | `[−0.28, +0.18]` | `[−1.16, +0.45]` both zone TCs | TC review / ELO review | **change** (owner accepts at the 239-06 checkpoint) |
-| Flaw delta unrushed | 5.5 | `FLAW_DELTA_ZONES['unrushed']` (rapid, classical) | `[−0.38, +0.36]` | `[−0.94, +0.74]` both zone TCs | TC collapse / ELO review | **change** (owner accepts at the 239-06 checkpoint) |
-| Flaw delta opening | 5.6 | `FLAW_DELTA_ZONES['opening']` (rapid, classical) | `[−0.15, +0.13]` | `[−0.60, +0.27]` both zone TCs | TC review / ELO review | **change** (owner accepts at the 239-06 checkpoint) |
-| Flaw delta middlegame | 5.7 | `FLAW_DELTA_ZONES['middlegame']` (rapid, classical) | `[−0.27, +0.23]` | `[−0.62, +0.35]` both zone TCs | TC collapse / ELO review | **change** (owner accepts at the 239-06 checkpoint) |
-| Flaw delta endgame_phase | 5.8 | `FLAW_DELTA_ZONES['endgame_phase']` (rapid, classical) | `[−0.12, +0.10]` | `[−0.24, +0.18]` both zone TCs | TC collapse / ELO review | **change** (owner accepts at the 239-06 checkpoint) |
-| Flaw delta miss | 5.9 | `FLAW_DELTA_ZONES['miss']` (rapid, classical) | `[−0.11, +0.11]` | `[−0.32, +0.28]` both zone TCs | TC collapse / ELO collapse | **change** (owner accepts at the 239-06 checkpoint) |
-| Flaw delta lucky | 5.10 | `FLAW_DELTA_ZONES['lucky']` (rapid, classical) | `[−0.09, +0.09]` | `[−0.23, +0.26]` both zone TCs | TC collapse / ELO collapse | **change** (owner accepts at the 239-06 checkpoint) |
-| Flaw delta reversed | 5.11 | `FLAW_DELTA_ZONES['reversed']` (rapid, classical) | `[−0.04, +0.04]` | `[−0.12, +0.11]` both zone TCs | TC collapse / ELO collapse | **change** (owner accepts at the 239-06 checkpoint) |
-| Flaw delta squandered | 5.12 | `FLAW_DELTA_ZONES['squandered']` (rapid, classical) | `[−0.07, +0.08]` | `[−0.17, +0.19]` both zone TCs | TC collapse / ELO collapse | **change** (owner accepts at the 239-06 checkpoint) |
+| Flaw delta mistake | 5.1 | `FLAW_DELTA_ZONES['mistake']` (rapid, classical) | `[−0.23, +0.20]` | `[−0.23, +0.20]` kept (proposal `[−0.66, +0.39]` not adopted: noise-inflated) | TC collapse / ELO collapse | **keep** (owner edit at the 239-06 checkpoint) |
+| Flaw delta blunder | 5.2 | `FLAW_DELTA_ZONES['blunder']` (rapid, classical) | `[−0.31, +0.25]` | `[−0.31, +0.25]` kept (proposal `[−0.83, +0.31]` not adopted: noise-inflated) | TC collapse / ELO collapse | **keep** (owner edit at the 239-06 checkpoint) |
+| Flaw delta low_clock | 5.3 | `FLAW_DELTA_ZONES['low_clock']` (rapid, classical) | `[−0.08, +0.03]` | `[−0.08, +0.03]` kept (proposal `[−0.12, +0.05]` not adopted: noise-inflated) | TC collapse / ELO review | **keep** (owner edit at the 239-06 checkpoint) |
+| Flaw delta hasty | 5.4 | `FLAW_DELTA_ZONES['hasty']` (rapid, classical) | `[−0.28, +0.18]` | `[−0.28, +0.18]` kept (proposal `[−1.16, +0.45]` not adopted: noise-inflated) | TC review / ELO review | **keep** (owner edit at the 239-06 checkpoint) |
+| Flaw delta unrushed | 5.5 | `FLAW_DELTA_ZONES['unrushed']` (rapid, classical) | `[−0.38, +0.36]` | `[−0.38, +0.36]` kept (proposal `[−0.94, +0.74]` not adopted: noise-inflated) | TC collapse / ELO review | **keep** (owner edit at the 239-06 checkpoint) |
+| Flaw delta opening | 5.6 | `FLAW_DELTA_ZONES['opening']` (rapid, classical) | `[−0.15, +0.13]` | `[−0.15, +0.13]` kept (proposal `[−0.60, +0.27]` not adopted: noise-inflated) | TC review / ELO review | **keep** (owner edit at the 239-06 checkpoint) |
+| Flaw delta middlegame | 5.7 | `FLAW_DELTA_ZONES['middlegame']` (rapid, classical) | `[−0.27, +0.23]` | `[−0.27, +0.23]` kept (proposal `[−0.62, +0.35]` not adopted: noise-inflated) | TC collapse / ELO review | **keep** (owner edit at the 239-06 checkpoint) |
+| Flaw delta endgame_phase | 5.8 | `FLAW_DELTA_ZONES['endgame_phase']` (rapid, classical) | `[−0.12, +0.10]` | `[−0.12, +0.10]` kept (proposal `[−0.24, +0.18]` not adopted: noise-inflated) | TC collapse / ELO review | **keep** (owner edit at the 239-06 checkpoint) |
+| Flaw delta miss | 5.9 | `FLAW_DELTA_ZONES['miss']` (rapid, classical) | `[−0.11, +0.11]` | `[−0.11, +0.11]` kept (proposal `[−0.32, +0.28]` not adopted: noise-inflated) | TC collapse / ELO collapse | **keep** (owner edit at the 239-06 checkpoint) |
+| Flaw delta lucky | 5.10 | `FLAW_DELTA_ZONES['lucky']` (rapid, classical) | `[−0.09, +0.09]` | `[−0.09, +0.09]` kept (proposal `[−0.23, +0.26]` not adopted: noise-inflated) | TC collapse / ELO collapse | **keep** (owner edit at the 239-06 checkpoint) |
+| Flaw delta reversed | 5.11 | `FLAW_DELTA_ZONES['reversed']` (rapid, classical) | `[−0.04, +0.04]` | `[−0.04, +0.04]` kept (proposal `[−0.12, +0.11]` not adopted: noise-inflated) | TC collapse / ELO collapse | **keep** (owner edit at the 239-06 checkpoint) |
+| Flaw delta squandered | 5.12 | `FLAW_DELTA_ZONES['squandered']` (rapid, classical) | `[−0.07, +0.08]` | `[−0.07, +0.08]` kept (proposal `[−0.17, +0.19]` not adopted: noise-inflated) | TC collapse / ELO collapse | **keep** (owner edit at the 239-06 checkpoint) |
 | Tactic delta fork missed | 5.13 | `TACTIC_DELTA_ZONES` (fork_missed) | none (band-less) | `[−2.21, +2.13]` both zone TCs | TC collapse / ELO collapse | **add** (owner accepts) |
 | Tactic delta fork allowed | 5.13 | `TACTIC_DELTA_ZONES` (fork_allowed) | none (band-less) | `[−4.12, +3.23]` both zone TCs | TC collapse / ELO collapse | **add** (owner accepts) |
 | Tactic delta pin missed | 5.13 | `TACTIC_DELTA_ZONES` (pin_missed) | none (band-less) | `[−1.42, +1.89]` both zone TCs | TC collapse / ELO collapse | **add** (owner accepts) |
