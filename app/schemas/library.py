@@ -356,6 +356,8 @@ class FlawComparisonTc(BaseModel):
 
     tc: the time control bucket these bullets were computed over.
     analyzed_n: analyzed games of this TC after the current filter set.
+    total_n: all games of this TC after the current filter set, analyzed or not; the
+             coverage denominator of the Flaw Stats basis line (analyzed_n <= total_n).
     below_gate: True when analyzed_n < FLAW_COMPARISON_GATE; the bullets are still
                 populated so tiles can show rates (D-03).
     bullets: always the 12 flaw-delta metrics in FLAW_DELTA_METRICS order.
@@ -363,6 +365,7 @@ class FlawComparisonTc(BaseModel):
 
     tc: TimeControlBucket
     analyzed_n: int
+    total_n: int
     below_gate: bool
     bullets: list[FlawBullet]
 

@@ -1,6 +1,7 @@
 import { TC_LABELS } from '@/components/endgames/stats/rankedMetrics';
 import { TimeControlIcon } from '@/components/icons/TimeControlIcon';
 import { Button } from '@/components/ui/button';
+import { cn } from '@/lib/utils';
 import type { TimeControlBucket } from '@/types/endgames';
 
 interface TcSwitchButtonsProps {
@@ -10,6 +11,8 @@ interface TcSwitchButtonsProps {
   tcs: readonly TimeControlBucket[];
   selected: TimeControlBucket | null;
   onSelect: (tc: TimeControlBucket) => void;
+  /** Drop the TC icons on narrow phones, so four TCs fit next to another control. */
+  compact?: boolean;
 }
 
 /**
@@ -17,7 +20,13 @@ interface TcSwitchButtonsProps {
  * State, persistence and analytics belong to the wrapper (TcSwitch and its Library
  * counterpart); this only draws the buttons.
  */
-export function TcSwitchButtons({ sectionId, tcs, selected, onSelect }: TcSwitchButtonsProps) {
+export function TcSwitchButtons({
+  sectionId,
+  tcs,
+  selected,
+  onSelect,
+  compact = false,
+}: TcSwitchButtonsProps) {
   return (
     <div
       role="group"
@@ -39,7 +48,10 @@ export function TcSwitchButtons({ sectionId, tcs, selected, onSelect }: TcSwitch
             onClick={() => onSelect(tc)}
             data-testid={`tc-switch-${sectionId}-${tc}`}
           >
-            <TimeControlIcon timeControl={tc} className="h-3.5 w-3.5" />
+            <TimeControlIcon
+              timeControl={tc}
+              className={cn('h-3.5 w-3.5', compact && 'max-[419px]:hidden')}
+            />
             {TC_LABELS[tc]}
           </Button>
         );

@@ -1,14 +1,22 @@
-import { EvalCoverageBadge } from '@/components/library/EvalCoverageBadge';
+import { Cpu } from 'lucide-react';
+import { CoverageSignupButton } from '@/components/library/EvalCoverageBadge';
+import {
+  ANALYSIS_COVERAGE_INFO_COPY,
+  LOW_COVERAGE_THRESHOLD,
+} from '@/components/library/analysisCoverageCopy';
+import { InfoPopover } from '@/components/ui/info-popover';
 import { FlawTrendChart } from '@/components/library/FlawTrendChart';
 import { LoadError } from '@/components/ui/load-error';
 import { DEFAULT_FLAW_FILTER } from '@/hooks/useFlawFilterStore';
+import { useIsPinned } from '@/hooks/useIsPinned';
 import {
   useLibraryFlawComparison,
   useLibraryFlawStats,
   useTacticComparison,
 } from '@/hooks/useLibrary';
 import { useLibraryStatsTc } from '@/hooks/useLibraryStatsTc';
-import { librarySectionBasisText } from '@/lib/flawComparisonMeta';
+import { libraryCoverageBasisText } from '@/lib/flawComparisonMeta';
+import { cn } from '@/lib/utils';
 import { ContextTagCards } from './ContextTagCards';
 import { FlawTiles } from './FlawTiles';
 import { GapGateSlot } from './GapBar';
@@ -21,7 +29,11 @@ import type { FlawComparisonTc, FlawStatsResponse, TacticComparisonTc } from '@/
 const NO_TCS: readonly FlawComparisonTc[] = [];
 const NO_TACTIC_TCS: readonly TacticComparisonTc[] = [];
 const COPY_NO_ANALYZED = 'No analyzed games in the current filters yet.';
+const COPY_NO_TACTIC_DATA = 'No tactic data for this time control yet.';
 const SECTION_HEADING_CLASS = 'font-brand text-lg font-semibold text-foreground';
+const FLAW_STATS_TITLE = 'Flaw Stats';
+/** The desktop sticky TC bar's `top` (top-2): the buttons pin 8px below the viewport edge. */
+const TC_BAR_TOP_PX = 8;
 const COPY_VS_OPPONENTS_INTRO =
   "Your flaws per 100 of your moves, next to your opponents' in the same games. " +
   'The grey band is the gap most players at your level have against their opponents.';
@@ -32,10 +44,7 @@ const COPY_TACTICS_INTRO =
 interface LibraryStatsSectionsProps {
   /** Sidebar filters: every query of the Stats tab reads these (D-01). */
   filters: FilterState;
-  analyzedCount: number;
-  totalCount: number;
   isGuest: boolean;
-  isCoverageError: boolean;
 }
 
 function SectionSkeleton() {
@@ -67,14 +76,44 @@ function FlawTimeline({ stats, isLoading, isError, selectedTc }: FlawTimelinePro
   return <FlawTrendChart trend={points} windowSize={stats.trend_window} />;
 }
 
-/** Flaw Stats (D-00e, D-00k): header with the TC switch, basis line, tiles, timeline. */
-function FlawStatsSection({
-  filters,
-  analyzedCount,
-  totalCount,
-  isGuest,
-  isCoverageError,
-}: LibraryStatsSectionsProps) {
+/**
+ * The basis line, merged with the coverage readout: "1,768 of 1,790 rapid games analyzed
+ * in the current filters." It replaced the library-wide "N of M analyzed" badge, which
+ * counted every TC while every number below it is for the selected TC only.
+ */
+function CoverageBasisLine({ tcStats, isGuest }: { tcStats: FlawComparisonTc; isGuest: boolean }) {
+  const isIncomplete = tcStats.analyzed_n < tcStats.total_n;
+  const isLowCoverage = tcStats.analyzed_n < tcStats.total_n * LOW_COVERAGE_THRESHOLD;
+  return (
+    <div className="flex flex-wrap items-center gap-x-2 gap-y-2">
+      <div className="flex items-center gap-1.5 text-sm text-muted-foreground">
+        <Cpu className={cn('h-4 w-4 shrink-0', isIncomplete && 'animate-pulse')} aria-hidden="true" />
+        <p data-testid="flaw-stats-basis">
+          {libraryCoverageBasisText(tcStats.analyzed_n, tcStats.total_n, tcStats.tc)}
+        </p>
+        <InfoPopover ariaLabel="About game analysis coverage" testId="flaw-stats-coverage-info">
+          <p>{ANALYSIS_COVERAGE_INFO_COPY}</p>
+        </InfoPopover>
+      </div>
+      {isGuest && isLowCoverage && <CoverageSignupButton />}
+    </div>
+  );
+}
+
+/**
+ * The one Library Stats time-control switch (D-02, D-05). Every section reads the same
+ * remembered TC store; the page pins this switch in its sticky bar, so it stays in reach
+ * while scrolling. Offers the flaw-comparison TCs (the tactic TCs are a subset).
+ */
+export function LibraryStatsTcSwitch({ filters }: { filters: FilterState }) {
+  const comparison = useLibraryFlawComparison(filters, DEFAULT_FLAW_FILTER);
+  const tcs = comparison.data?.tcs ?? NO_TCS;
+  if (tcs.length === 0) return null;
+  return <LibraryTcSwitch sectionId="library-stats" tcs={tcs} />;
+}
+
+/** Flaw Stats (D-00e, D-00k): heading, coverage basis line, tiles, timeline. */
+function FlawStatsSection({ filters, isGuest }: LibraryStatsSectionsProps) {
   const comparison = useLibraryFlawComparison(filters, DEFAULT_FLAW_FILTER);
   const stats = useLibraryFlawStats(filters, DEFAULT_FLAW_FILTER);
   // The selected TC picks an entry out of the payload; it is never part of a query key (D-02).
@@ -90,9 +129,7 @@ function FlawStatsSection({
     }
     return (
       <>
-        <p className="text-sm text-muted-foreground" data-testid="flaw-stats-basis">
-          {librarySectionBasisText(tcStats.analyzed_n, tcStats.tc)}
-        </p>
+        <CoverageBasisLine tcStats={tcStats} isGuest={isGuest} />
         <FlawTiles tcStats={tcStats} analyzedGate={comparison.data.analyzed_gate} />
         <FlawTimeline
           stats={stats.data}
@@ -105,19 +142,12 @@ function FlawStatsSection({
   };
 
   return (
-    <section className="space-y-4" data-testid="flaw-stats-section" aria-label="Flaw Stats">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <h2 className={SECTION_HEADING_CLASS}>Flaw Stats</h2>
-        <div className="flex flex-wrap items-center gap-3">
-          <EvalCoverageBadge
-            analyzedN={analyzedCount}
-            totalN={totalCount}
-            isGuest={isGuest}
-            isCoverageError={isCoverageError}
-          />
-          {tcs.length > 0 && <LibraryTcSwitch sectionId="library-flaw-stats" tcs={tcs} />}
-        </div>
-      </div>
+    <section className="space-y-4" data-testid="flaw-stats-section" aria-label={FLAW_STATS_TITLE}>
+      {/* md:h-8 = the desktop TC button height, so the sticky switch overlaid on this
+          row (LibraryStatsSections) is vertically centred on the title. */}
+      <h2 className={cn(SECTION_HEADING_CLASS, 'md:flex md:h-8 md:items-center')}>
+        {FLAW_STATS_TITLE}
+      </h2>
       {renderBody()}
     </section>
   );
@@ -138,8 +168,8 @@ function VsOpponentsSkeleton() {
 /**
  * You vs. your opponents (D-00f): the four context-tag cards
  * for the selected TC. It reads the same comparison query as Flaw Stats (one cache entry,
- * no extra request) and the same remembered TC store, so a switch click here also switches
- * Flaw Stats (D-02). Below the gate one slot replaces everything (D-03).
+ * no extra request) and the same remembered TC store as the page's one switch (D-02).
+ * Below the gate one slot replaces everything (D-03).
  */
 function VsOpponentsSection({ filters }: { filters: FilterState }) {
   const comparison = useLibraryFlawComparison(filters, DEFAULT_FLAW_FILTER);
@@ -169,10 +199,7 @@ function VsOpponentsSection({ filters }: { filters: FilterState }) {
       data-testid="vs-opponents-section"
       aria-label="You vs. your opponents"
     >
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <h2 className={SECTION_HEADING_CLASS}>You vs. your opponents</h2>
-        {tcs.length > 0 && <LibraryTcSwitch sectionId="library-vs-opponents" tcs={tcs} />}
-      </div>
+      <h2 className={SECTION_HEADING_CLASS}>You vs. your opponents</h2>
       <p className="text-sm text-muted-foreground">{COPY_VS_OPPONENTS_INTRO}</p>
       {renderBody()}
     </section>
@@ -190,19 +217,28 @@ function TacticsSkeleton() {
 
 /**
  * Tactic motifs (D-00h, D-17): one card of the four most common tactics for the selected TC.
- * The payload is per TC, so the switch is a client-side pick (never in the query key) bound
+ * The payload is per TC, so the TC is a client-side pick (never in the query key) bound
  * to the same remembered TC store as the other sections (D-02). Below the gate one slot replaces the card (D-03).
+ *
+ * The TC comes from the flaw-comparison list, the one the page switch offers: the tactic
+ * list can lack a TC (blob-pending games), and resolving against it would silently show a
+ * different TC than the switch says.
  */
 function TacticMotifsSection({ filters }: { filters: FilterState }) {
   const comparison = useTacticComparison(filters, DEFAULT_FLAW_FILTER);
   const tcs = comparison.data?.tcs ?? NO_TACTIC_TCS;
-  const [selectedTc] = useLibraryStatsTc(tcs);
+  const flawComparison = useLibraryFlawComparison(filters, DEFAULT_FLAW_FILTER);
+  // Falls back to the tactic list only when the flaw comparison failed (no switch then).
+  const [selectedTc] = useLibraryStatsTc(flawComparison.data?.tcs ?? tcs);
   const tcStats = tcs.find((t) => t.tc === selectedTc);
 
   const renderBody = () => {
     if (comparison.isError) return <LoadError resource="tactic comparison" />;
-    if (comparison.isLoading || !comparison.data) return <TacticsSkeleton />;
-    if (!tcStats) return <p className="text-sm text-muted-foreground">{COPY_NO_ANALYZED}</p>;
+    if (comparison.isLoading || flawComparison.isLoading || !comparison.data) {
+      return <TacticsSkeleton />;
+    }
+    if (tcs.length === 0) return <p className="text-sm text-muted-foreground">{COPY_NO_ANALYZED}</p>;
+    if (!tcStats) return <p className="text-sm text-muted-foreground">{COPY_NO_TACTIC_DATA}</p>;
     if (tcStats.below_gate) {
       return (
         <GapGateSlot
@@ -217,10 +253,7 @@ function TacticMotifsSection({ filters }: { filters: FilterState }) {
 
   return (
     <section className="space-y-4" data-testid="tactic-motifs-section" aria-label="Tactic motifs">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <h2 className={SECTION_HEADING_CLASS}>Tactic motifs</h2>
-        {tcs.length > 0 && <LibraryTcSwitch sectionId="library-tactics" tcs={tcs} />}
-      </div>
+      <h2 className={SECTION_HEADING_CLASS}>Tactic motifs</h2>
       <p className="text-sm text-muted-foreground">{COPY_TACTICS_INTRO}</p>
       {renderBody()}
     </section>
@@ -231,13 +264,40 @@ function TacticMotifsSection({ filters }: { filters: FilterState }) {
  * The redesigned top of the Library Stats tab: Flaw Stats, You vs. your opponents, then
  * Tactic motifs. The sections share one remembered TC switch (D-05). The sidebar filters
  * flow into every query (D-01).
+ *
+ * On desktop the switch sits in a sticky bar scoped to this wrapper, so it unpins once the
+ * sections scroll away (the rating and results sections below have no TC switch). The bar
+ * takes no layout height (h-8 -mb-8) and overlays the right end of the Flaw Stats heading
+ * row, so only the switch pins on scroll, never the title. Its full-width blurred strip is
+ * drawn only while pinned: at rest it would sit over the title and dim it.
+ * Mobile pins the switch in the page's sticky Filters bar instead (GlobalStats).
  */
 export function LibraryStatsSections(props: LibraryStatsSectionsProps) {
+  const [sentinelRef, isPinned] = useIsPinned<HTMLDivElement>(TC_BAR_TOP_PX);
   return (
-    <>
-      <FlawStatsSection {...props} />
-      <VsOpponentsSection filters={props.filters} />
-      <TacticMotifsSection filters={props.filters} />
-    </>
+    <div>
+      <div ref={sentinelRef} className="-mb-px h-px" aria-hidden="true" />
+      <div
+        className="pointer-events-none sticky top-2 z-20 -mb-8 hidden h-8 items-center justify-end md:flex"
+        data-testid="library-stats-tc-bar"
+      >
+        {isPinned && (
+          // -inset-y-2: the strip spans 8px above and below the buttons, like the mobile
+          // bar's py-2, without changing the bar's own (zero) layout height.
+          <div
+            className="absolute inset-x-0 -inset-y-2 bg-background/80 backdrop-blur-sm"
+            data-testid="library-stats-tc-bar-backdrop"
+          />
+        )}
+        <div className="pointer-events-auto relative">
+          <LibraryStatsTcSwitch filters={props.filters} />
+        </div>
+      </div>
+      <div className="space-y-8">
+        <FlawStatsSection {...props} />
+        <VsOpponentsSection filters={props.filters} />
+        <TacticMotifsSection filters={props.filters} />
+      </div>
+    </div>
   );
 }

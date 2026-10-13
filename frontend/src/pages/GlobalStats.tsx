@@ -12,10 +12,12 @@ import { useFilterStore } from '@/hooks/useFilterStore';
 import { useGameCountValue } from '@/hooks/useGameCount';
 import { NoHumanRatedGamesState, shouldShowNoHumanRatedGames } from '@/components/ui/no-human-rated-games-state';
 import { useGlobalStats, useRatingHistory } from '@/hooks/useStats';
-import { LibraryStatsSections } from '@/components/library/stats/LibraryStatsSections';
+import {
+  LibraryStatsSections,
+  LibraryStatsTcSwitch,
+} from '@/components/library/stats/LibraryStatsSections';
 import { GlobalStatsCharts } from '@/components/stats/GlobalStatsCharts';
 import { EvalCoverageHeader } from '@/components/EvalCoverageHeader';
-import { useEvalCoverage } from '@/hooks/useEvalCoverage';
 import { RatingChart } from '@/components/stats/RatingChart';
 import { useUserProfile } from '@/hooks/useUserProfile';
 import type { ReactNode } from 'react';
@@ -79,25 +81,6 @@ export function GlobalStatsPage() {
   // when the Human+Rated defaults alone emptied the Stats population.
   const gameCount = useGameCountValue();
 
-  // ── EvalCoverageBadge source ────────────────────────────────────────────────
-  // Repointed from useLibraryFlawStats (analyzed_n / total_n) to useEvalCoverage,
-  // the SAME source the Games and Flaws subtab badges use. The flaw-stats numbers
-  // are filter-scoped (and drop flawchess bot-practice games via
-  // DEFAULT_EXCLUDED_PLATFORMS), so the identical-looking badge read "2845 of
-  // 2847" here while the sibling tabs read "2848 of 2848".
-  //
-  // Numbers and error signal still come from ONE query, which is the invariant
-  // the previous comment protected: decoupling them let the badge render a
-  // full-width "failed to load" while valid numbers were available, or mask a
-  // real failure.
-  //
-  // trackFullAnalysis mirrors the Games/Flaws tabs so the count ticks up live as
-  // the background drain works through the backlog.
-  const {
-    analyzedCount,
-    totalCount,
-    isError: isCoverageError,
-  } = useEvalCoverage({ trackFullAnalysis: true });
 
   const { data: profile } = useUserProfile();
   const isGuest = profile?.is_guest ?? false;
@@ -161,13 +144,7 @@ export function GlobalStatsPage() {
   const sectionsContent = (
     <div className="space-y-8">
       {/* ── Flaw Stats + Tactic motifs: per-TC sections sharing one TC switch (Phase 239) ── */}
-      <LibraryStatsSections
-        filters={filters}
-        analyzedCount={analyzedCount}
-        totalCount={totalCount}
-        isGuest={isGuest}
-        isCoverageError={isCoverageError}
-      />
+      <LibraryStatsSections filters={filters} isGuest={isGuest} />
 
       {/* ── ELO Ratings ── */}
       {(selectedPlatforms === null ||
@@ -276,17 +253,21 @@ export function GlobalStatsPage() {
         {/* Mobile: single column */}
         <div className="md:hidden flex flex-col gap-4 min-w-0">
           <EvalCoverageHeader />
-          {/* Sticky filter button (top right) */}
-          <div className="sticky top-0 z-20 flex justify-end gap-2 py-2 bg-background/80 backdrop-blur-sm">
+          {/* Sticky control bar: the Library Stats TC switch (left) and the filter
+              button (right), one row instead of a filter-only row plus a switch per
+              section. The label drops on narrow phones so four TCs still fit. */}
+          <div className="sticky top-0 z-20 flex items-center gap-2 py-2 bg-background/80 backdrop-blur-sm">
+            <LibraryStatsTcSwitch filters={filters} />
             <Button
               variant="brand-outline"
-              className="relative"
+              // Same height as the TC buttons beside it (min-h-11 below sm, see TcSwitchButtons).
+              className="relative ml-auto min-h-11 min-w-11 shrink-0 sm:min-h-0"
               onClick={() => handleMobileFiltersOpenChange(true)}
               aria-label="Open filters"
               data-testid="btn-filters"
             >
-              <SlidersHorizontal className="mr-2 h-4 w-4" />
-              Filters
+              <SlidersHorizontal className="h-4 w-4 min-[420px]:mr-2" />
+              <span className="hidden min-[420px]:inline">Filters</span>
               {filterDotNode}
             </Button>
           </div>

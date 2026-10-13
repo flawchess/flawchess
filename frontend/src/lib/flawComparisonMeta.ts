@@ -200,8 +200,15 @@ export function libraryBasisText(analyzedN: number, tc: TimeControlBucket): stri
   return `Based on ${scopeText(analyzedN, tc)}`;
 }
 
-/** The section basis line under a heading: "Your 1,841 analyzed rapid games in the current filters." */
-export function librarySectionBasisText(analyzedN: number, tc: TimeControlBucket): string {
-  const text = scopeText(analyzedN, tc);
-  return `${text.charAt(0).toUpperCase()}${text.slice(1)}`;
+/**
+ * The Flaw Stats basis line, which doubles as the per-TC coverage readout:
+ * "1,768 of 1,790 rapid games analyzed in the current filters."
+ */
+export function libraryCoverageBasisText(
+  analyzedN: number,
+  totalN: number,
+  tc: TimeControlBucket,
+): string {
+  const fmt = (n: number): string => n.toLocaleString('en-US');
+  return `${fmt(analyzedN)} of ${fmt(totalN)} ${tc} games analyzed in the current filters.`;
 }

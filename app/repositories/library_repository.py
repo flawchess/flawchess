@@ -1786,6 +1786,7 @@ async def count_analyzed_by_tc(
     tactic_families: Sequence[str] | None = None,
     tactic_filter_orientation: TacticOrientation = "either",
     require_tactic_blobs: bool = False,
+    analyzed_only: bool = True,
 ) -> dict[str, int]:
     """Return {time_control_bucket: analyzed game count} over the filtered set (Phase 239 D-02).
 
@@ -1804,6 +1805,10 @@ async def count_analyzed_by_tc(
 
     require_tactic_blobs additionally restricts to games whose tactic blobs are done
     (WR-01); only the tactic path sets it. The flaw comparison leaves it False.
+
+    analyzed_only=False drops the analyzed restriction and counts every filtered game of
+    the TC, the coverage denominator of the "1,768 of 1,790 rapid games analyzed" line.
+    Every other predicate is shared, so the analyzed count never exceeds it.
     """
     base_subq = _filtered_games_base(
         user_id,
@@ -1820,11 +1825,9 @@ async def count_analyzed_by_tc(
         tactic_families=tactic_families,
         tactic_orientation=tactic_filter_orientation,
     ).subquery("filtered_tc")
-    analyzed_subq = _analyzed_game_ids_subquery(user_id)
     predicates = [
         Game.user_id == user_id,
         Game.id.in_(select(base_subq.c.id)),
-        Game.id.in_(select(analyzed_subq.c.game_id)),
         Game.time_control_bucket.isnot(None),
         # WR-03: same ply_count gate as the fetch anchors. Without it a TC whose
         # analyzed games all have NULL/0 ply_count (pasted PGNs) was offered above the
@@ -1833,6 +1836,9 @@ async def count_analyzed_by_tc(
         Game.ply_count.isnot(None),
         Game.ply_count > 0,
     ]
+    if analyzed_only:
+        analyzed_subq = _analyzed_game_ids_subquery(user_id)
+        predicates.append(Game.id.in_(select(analyzed_subq.c.game_id)))
     if require_tactic_blobs:
         # WR-01: tactic motifs are suppressed to NULL while a flaw blob is pending, so a
         # blob-pending analyzed game would count as a false zero-tactic game and dilute

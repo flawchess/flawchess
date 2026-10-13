@@ -55,6 +55,8 @@ export function makeBullet(tag: FlawDeltaMetric, overrides: Partial<FlawBullet> 
 
 interface TcEntryOptions {
   analyzedN: number;
+  /** Coverage denominator; defaults to analyzedN (fully analyzed). */
+  totalN?: number;
   blunder?: Partial<FlawBullet>;
   mistake?: Partial<FlawBullet>;
   /** Per-metric overrides for any of the 12 metrics (applied after blunder / mistake). */
@@ -66,6 +68,7 @@ export function makeTcEntry(tc: TimeControlBucket, options: TcEntryOptions): Fla
   return {
     tc,
     analyzed_n: options.analyzedN,
+    total_n: options.totalN ?? options.analyzedN,
     below_gate: options.analyzedN < ANALYZED_GATE,
     bullets: FLAW_DELTA_METRICS.map((tag) => {
       const base = tag === 'blunder' ? options.blunder : tag === 'mistake' ? options.mistake : undefined;

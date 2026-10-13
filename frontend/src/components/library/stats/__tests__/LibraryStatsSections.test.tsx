@@ -56,7 +56,7 @@ vi.mock('@/components/library/FlawTrendChart', () => ({
 }));
 
 vi.mock('@/components/library/EvalCoverageBadge', () => ({
-  EvalCoverageBadge: () => <div data-testid="coverage-badge-stub" />,
+  CoverageSignupButton: () => <button data-testid="btn-coverage-signup" />,
 }));
 
 type SectionsModule = typeof import('../LibraryStatsSections');
@@ -94,17 +94,11 @@ afterEach(() => {
   localStorage.clear();
 });
 
-function renderSections(): void {
+function renderSections(isGuest = false): void {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   render(
     <QueryClientProvider client={client}>
-      <LibraryStatsSections
-        filters={DEFAULT_FILTERS}
-        analyzedCount={2841}
-        totalCount={2841}
-        isGuest={false}
-        isCoverageError={false}
-      />
+      <LibraryStatsSections filters={DEFAULT_FILTERS} isGuest={isGuest} />
     </QueryClientProvider>,
   );
 }
@@ -121,13 +115,20 @@ function text(testId: string): string {
 describe('Flaw Stats section (default selection)', () => {
   it('shows the most populated TC with a switch of exactly the payload TCs', async () => {
     await renderLoaded();
-    expect(screen.getByTestId('tc-switch-library-flaw-stats-blitz')).not.toBeNull();
-    expect(screen.getByTestId('tc-switch-library-flaw-stats-rapid')).not.toBeNull();
-    expect(screen.queryByTestId('tc-switch-library-flaw-stats-bullet')).toBeNull();
+    expect(screen.getByTestId('tc-switch-library-stats-blitz')).not.toBeNull();
+    expect(screen.getByTestId('tc-switch-library-stats-rapid')).not.toBeNull();
+    expect(screen.queryByTestId('tc-switch-library-stats-bullet')).toBeNull();
     expect(
-      screen.getByTestId('tc-switch-library-flaw-stats-rapid').getAttribute('aria-pressed'),
+      screen.getByTestId('tc-switch-library-stats-rapid').getAttribute('aria-pressed'),
     ).toBe('true');
-    expect(text('flaw-stats-basis')).toBe('Your 1,841 analyzed rapid games in the current filters.');
+    expect(text('flaw-stats-basis')).toBe('1,841 of 1,841 rapid games analyzed in the current filters.');
+  });
+
+  it('is the only TC switch on the page: no section carries its own', async () => {
+    await renderLoaded();
+    expect(screen.getAllByRole('group', { name: 'Time control' })).toHaveLength(1);
+    expect(screen.queryByTestId('tc-switch-library-vs-opponents')).toBeNull();
+    expect(screen.queryByTestId('tc-switch-library-tactics')).toBeNull();
   });
 
   it('renders the rapid tiles: rate, Opponents line, gap words and per-TC popover', async () => {
@@ -158,17 +159,44 @@ describe('Flaw Stats section (default selection)', () => {
 
 });
 
+describe('coverage basis line', () => {
+  it('shows per-TC analyzed of total, pulsing the cpu icon while incomplete', async () => {
+    mocks.getFlawComparison.mockResolvedValue(
+      makeComparison([BLITZ_ENTRY, makeTcEntry('rapid', { analyzedN: 1768, totalN: 1790 })]),
+    );
+    await renderLoaded();
+    expect(text('flaw-stats-basis')).toBe('1,768 of 1,790 rapid games analyzed in the current filters.');
+    expect(screen.getByTestId('flaw-stats-coverage-info')).not.toBeNull();
+    expect(screen.queryByTestId('btn-coverage-signup')).toBeNull();
+  });
+
+  it('offers guests the sign-up CTA only below the low-coverage threshold', async () => {
+    mocks.getFlawComparison.mockResolvedValue(
+      makeComparison([makeTcEntry('rapid', { analyzedN: 30, totalN: 300 })]),
+    );
+    renderSections(true);
+    await screen.findByTestId('flaw-tiles');
+    expect(screen.getByTestId('btn-coverage-signup')).not.toBeNull();
+  });
+
+  it('shows no CTA to a guest whose selected TC is mostly analyzed', async () => {
+    renderSections(true);
+    await screen.findByTestId('flaw-tiles');
+    expect(screen.queryByTestId('btn-coverage-signup')).toBeNull();
+  });
+});
+
 describe('TC switch (D-02, D-05)', () => {
   it('re-renders the tiles for the clicked TC, tracks once, and makes no new request', async () => {
     await renderLoaded();
     expect(mocks.getFlawComparison).toHaveBeenCalledTimes(1);
     expect(mocks.getFlawStats).toHaveBeenCalledTimes(1);
 
-    fireEvent.click(screen.getByTestId('tc-switch-library-flaw-stats-blitz'));
+    fireEvent.click(screen.getByTestId('tc-switch-library-stats-blitz'));
 
     await waitFor(() => expect(text('flaw-tile-blunder-rate')).toBe('5.46'));
     expect(text('flaw-tile-blunder-opponents')).toBe('Opponents 6.12');
-    expect(text('flaw-stats-basis')).toBe('Your 1,000 analyzed blitz games in the current filters.');
+    expect(text('flaw-stats-basis')).toBe('1,000 of 1,000 blitz games analyzed in the current filters.');
     expect(screen.getByTestId('trend-stub').getAttribute('data-dates')).toBe('2026-01-05');
     expect(mocks.trackFeature).toHaveBeenCalledTimes(1);
     expect(mocks.trackFeature).toHaveBeenCalledWith('option-change', {
@@ -182,13 +210,13 @@ describe('TC switch (D-02, D-05)', () => {
 
   it('does not track a click on the already selected TC', async () => {
     await renderLoaded();
-    fireEvent.click(screen.getByTestId('tc-switch-library-flaw-stats-rapid'));
+    fireEvent.click(screen.getByTestId('tc-switch-library-stats-rapid'));
     expect(mocks.trackFeature).not.toHaveBeenCalled();
   });
 
   it('remembers the choice under library_stats_tc', async () => {
     await renderLoaded();
-    fireEvent.click(screen.getByTestId('tc-switch-library-flaw-stats-blitz'));
+    fireEvent.click(screen.getByTestId('tc-switch-library-stats-blitz'));
     expect(localStorage.getItem('library_stats_tc')).toBe('blitz');
   });
 
@@ -218,7 +246,7 @@ describe('time controls below the gate (D-03)', () => {
       ]),
     );
     await renderLoaded();
-    fireEvent.click(screen.getByTestId('tc-switch-library-flaw-stats-bullet'));
+    fireEvent.click(screen.getByTestId('tc-switch-library-stats-bullet'));
 
     await waitFor(() => expect(text('flaw-tile-blunder-rate')).toBe('4.10'));
     expect(text('flaw-tile-blunder-opponents')).toBe('Opponents 4.60');
@@ -248,7 +276,7 @@ describe('empty and failed states', () => {
     await waitFor(() =>
       expect(screen.getAllByText('No analyzed games in the current filters yet.')).toHaveLength(3),
     );
-    expect(screen.queryByTestId('tc-switch-library-flaw-stats')).toBeNull();
+    expect(screen.queryByTestId('tc-switch-library-stats')).toBeNull();
     expect(screen.queryByTestId('flaw-tiles')).toBeNull();
   });
 
@@ -257,7 +285,7 @@ describe('empty and failed states', () => {
     renderSections();
     expect(await screen.findByText(/Failed to load flaw statistics/)).not.toBeNull();
     expect(screen.queryByText('No analyzed games in the current filters yet.')).toBeNull();
-    expect(screen.queryByTestId('tc-switch-library-flaw-stats')).toBeNull();
+    expect(screen.queryByTestId('tc-switch-library-stats')).toBeNull();
   });
 
   it('shows a timeline-only error while the tiles stay', async () => {
@@ -287,46 +315,12 @@ describe('You vs. your opponents section', () => {
     expect(order[1]!.compareDocumentPosition(order[2]!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 
-  it('carries its own switch with the payload TCs, bound to the library-vs-opponents id', async () => {
+  it('follows the page switch, with no new request (D-02)', async () => {
     await renderLoaded();
-    expect(screen.getByTestId('tc-switch-library-vs-opponents-blitz')).not.toBeNull();
-    expect(
-      screen.getByTestId('tc-switch-library-vs-opponents-rapid').getAttribute('aria-pressed'),
-    ).toBe('true');
-    expect(screen.queryByTestId('tc-switch-library-vs-opponents-bullet')).toBeNull();
-  });
-
-  it('a click in its switch also switches the Flaw Stats tiles, with no new request (D-02)', async () => {
-    await renderLoaded();
-    expect(text('flaw-tile-blunder-rate')).toBe('5.22');
+    expect(screen.getByTestId('gap-popover-low-clock-tc-rapid')).not.toBeNull();
+    fireEvent.click(screen.getByTestId('tc-switch-library-stats-blitz'));
+    await waitFor(() => expect(screen.getByTestId('gap-popover-low-clock-tc-blitz')).not.toBeNull());
     expect(mocks.getFlawComparison).toHaveBeenCalledTimes(1);
-
-    fireEvent.click(screen.getByTestId('tc-switch-library-vs-opponents-blitz'));
-
-    await waitFor(() => expect(text('flaw-tile-blunder-rate')).toBe('5.46'));
-    expect(
-      screen.getByTestId('tc-switch-library-flaw-stats-blitz').getAttribute('aria-pressed'),
-    ).toBe('true');
-    // The context-tag cards re-rendered for blitz.
-    expect(screen.getByTestId('gap-popover-low-clock-tc-blitz')).not.toBeNull();
-    expect(mocks.trackFeature).toHaveBeenCalledTimes(1);
-    expect(mocks.trackFeature).toHaveBeenCalledWith('option-change', {
-      target: 'library-stats-tc',
-      value: 'blitz',
-    });
-    expect(mocks.getFlawComparison).toHaveBeenCalledTimes(1);
-    expect(mocks.getFlawStats).toHaveBeenCalledTimes(1);
-  });
-
-  it('a click in the Flaw Stats switch also switches this section', async () => {
-    await renderLoaded();
-    fireEvent.click(screen.getByTestId('tc-switch-library-flaw-stats-blitz'));
-    await waitFor(() =>
-      expect(
-        screen.getByTestId('tc-switch-library-vs-opponents-blitz').getAttribute('aria-pressed'),
-      ).toBe('true'),
-    );
-    expect(screen.getByTestId('gap-popover-low-clock-tc-blitz')).not.toBeNull();
   });
 
   it('shows only the gate slot below the gate, with no cards (D-03)', async () => {
@@ -334,14 +328,12 @@ describe('You vs. your opponents section', () => {
       makeComparison([makeTcEntry('bullet', { analyzedN: 12 }), RAPID_ENTRY]),
     );
     await renderLoaded();
-    fireEvent.click(screen.getByTestId('tc-switch-library-vs-opponents-bullet'));
+    fireEvent.click(screen.getByTestId('tc-switch-library-stats-bullet'));
 
     await waitFor(() =>
       expect(text('vs-opponents-gate')).toBe('Not enough analyzed games yet (12 of 20)'),
     );
     expect(screen.queryByTestId('context-tag-cards')).toBeNull();
-    // The section heading, switch and intro stay.
-    expect(screen.getByTestId('tc-switch-library-vs-opponents-bullet')).not.toBeNull();
   });
 
   it('shows the empty copy and no switch when no TC has analyzed games', async () => {
@@ -349,7 +341,6 @@ describe('You vs. your opponents section', () => {
     renderSections();
     await screen.findAllByText('No analyzed games in the current filters yet.');
     expect(within(screen.getByTestId('vs-opponents-section')).getByText('No analyzed games in the current filters yet.')).not.toBeNull();
-    expect(screen.queryByTestId('tc-switch-library-vs-opponents-rapid')).toBeNull();
     expect(screen.queryByTestId('context-tag-cards')).toBeNull();
   });
 
@@ -394,42 +385,32 @@ describe('Tactic motifs section (D-00h, D-02, D-03)', () => {
     expect(text('tactic-cell-fork-missed-bar-words')).toBe('2.2 more');
   });
 
-  it('carries its own switch with the payload TCs, bound to the library-tactics id', async () => {
-    await renderLoaded();
-    expect(await screen.findByTestId('tc-switch-library-tactics-blitz')).not.toBeNull();
-    expect(
-      screen.getByTestId('tc-switch-library-tactics-rapid').getAttribute('aria-pressed'),
-    ).toBe('true');
-    expect(screen.queryByTestId('tc-switch-library-tactics-bullet')).toBeNull();
-  });
-
-  it('switches to the clicked TC with no new request and syncs the other sections (D-02)', async () => {
+  it('switches to the page-switch TC with no new request (D-02)', async () => {
     await renderLoaded();
     await screen.findByTestId('tactic-tables');
     expect(mocks.getTacticComparison).toHaveBeenCalledTimes(1);
 
-    fireEvent.click(screen.getByTestId('tc-switch-library-tactics-blitz'));
+    fireEvent.click(screen.getByTestId('tc-switch-library-stats-blitz'));
 
     await waitFor(() => expect(text('tactic-row-fork-flaws')).toBe('75 of your flaws'));
     expect(text('tactic-cell-fork-missed-bar-words')).toBe('1.8 more');
-    expect(text('flaw-tile-blunder-rate')).toBe('5.46');
-    expect(
-      screen.getByTestId('tc-switch-library-vs-opponents-blitz').getAttribute('aria-pressed'),
-    ).toBe('true');
-    expect(mocks.trackFeature).toHaveBeenCalledTimes(1);
-    expect(mocks.trackFeature).toHaveBeenCalledWith('option-change', {
-      target: 'library-stats-tc',
-      value: 'blitz',
-    });
     // The selected TC is a client-side pick: the query key is unchanged, so no refetch.
     expect(mocks.getTacticComparison).toHaveBeenCalledTimes(1);
   });
 
-  it('follows a click in another section switch', async () => {
+  it('says so, instead of showing another TC, when the tactic payload lacks the switch TC', async () => {
+    mocks.getTacticComparison.mockResolvedValue(makeTacticComparison([RAPID_TACTIC_ENTRY]));
     await renderLoaded();
     await screen.findByTestId('tactic-tables');
-    fireEvent.click(screen.getByTestId('tc-switch-library-flaw-stats-blitz'));
-    await waitFor(() => expect(text('tactic-row-fork-flaws')).toBe('75 of your flaws'));
+    fireEvent.click(screen.getByTestId('tc-switch-library-stats-blitz'));
+    await waitFor(() =>
+      expect(
+        within(screen.getByTestId('tactic-motifs-section')).getByText(
+          'No tactic data for this time control yet.',
+        ),
+      ).not.toBeNull(),
+    );
+    expect(screen.queryByTestId('tactic-tables')).toBeNull();
   });
 
   it('shows only the gate slot below the gate, with no tables (D-03)', async () => {
@@ -441,13 +422,12 @@ describe('Tactic motifs section (D-00h, D-02, D-03)', () => {
     );
     await renderLoaded();
     await screen.findByTestId('tactic-tables');
-    fireEvent.click(screen.getByTestId('tc-switch-library-tactics-bullet'));
+    fireEvent.click(screen.getByTestId('tc-switch-library-stats-bullet'));
 
     await waitFor(() =>
       expect(text('tactic-motifs-gate')).toBe('Not enough analyzed games yet (12 of 20)'),
     );
     expect(screen.queryByTestId('tactic-tables')).toBeNull();
-    expect(screen.getByTestId('tc-switch-library-tactics-bullet')).not.toBeNull();
   });
 
   it('shows LoadError, not the empty copy, when the tactic query fails', async () => {
@@ -455,7 +435,6 @@ describe('Tactic motifs section (D-00h, D-02, D-03)', () => {
     await renderLoaded();
     expect(await screen.findByText(/Failed to load tactic comparison/)).not.toBeNull();
     expect(screen.queryByTestId('tactic-tables')).toBeNull();
-    expect(screen.queryByTestId('tc-switch-library-tactics-rapid')).toBeNull();
     // The other sections are unaffected.
     expect(text('flaw-tile-blunder-rate')).toBe('5.22');
   });

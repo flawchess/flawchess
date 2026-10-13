@@ -551,6 +551,31 @@ async def test_null_or_zero_ply_count_not_counted(db_session: AsyncSession) -> N
     assert result.tcs[0].analyzed_n == FLAW_COMPARISON_GATE
 
 
+@pytest.mark.asyncio
+async def test_total_n_counts_unanalyzed_games(db_session: AsyncSession) -> None:
+    """total_n is the per-TC coverage denominator: unanalyzed games count toward it only.
+
+    The ply_count gate is shared with analyzed_n, so analyzed_n <= total_n holds and a
+    NULL-ply game counts toward neither.
+    """
+    for _ in range(FLAW_COMPARISON_GATE):
+        g = await _seed_game(db_session, user_id=_TEST_USER, time_control_bucket="blitz")
+        await _seed_analyzed(db_session, game=g)
+    for _ in range(3):
+        await _seed_game(db_session, user_id=_TEST_USER, time_control_bucket="blitz")
+    # Unanalyzed rapid games alone do not put rapid on the switch (D-02).
+    await _seed_game(db_session, user_id=_TEST_USER, time_control_bucket="rapid")
+    g = await _seed_game(db_session, user_id=_TEST_USER, time_control_bucket="blitz")
+    g.ply_count = None
+    await db_session.flush()
+
+    result = await get_flaw_comparison(db_session, _TEST_USER, **_DEFAULT_FILTER_KWARGS)
+
+    assert [(t.tc, t.analyzed_n, t.total_n) for t in result.tcs] == [
+        ("blitz", FLAW_COMPARISON_GATE, FLAW_COMPARISON_GATE + 3),
+    ]
+
+
 async def _seed_mistake_cell(db_session: AsyncSession, *, user_id: int, total_flaws: int) -> None:
     """Seed `total_flaws` analyzed blitz games with one mistake each, alternating sides.
 

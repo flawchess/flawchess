@@ -350,6 +350,8 @@ export interface FlawBullet {
 export interface FlawComparisonTc {
   tc: TimeControlBucket;
   analyzed_n: number;
+  /** All games of this TC in the current filters, analyzed or not (coverage denominator). */
+  total_n: number;
   below_gate: boolean;
   /** 12 bullets, also below the gate (D-03: the tile numbers stay visible). */
   bullets: FlawBullet[];

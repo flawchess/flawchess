@@ -1571,6 +1571,15 @@ async def get_flaw_comparison(
         )
         if not counts:
             return FlawComparisonResponse(tcs=[], analyzed_gate=FLAW_COMPARISON_GATE)
+        # Coverage denominator per TC: the same filtered set without the analyzed
+        # restriction. flaw_severity is None from the Stats tab, so unanalyzed games
+        # (which have no game_flaws rows) are not dropped by the severity EXISTS.
+        totals = await library_repository.count_analyzed_by_tc(
+            session,
+            user_id=user_id,
+            analyzed_only=False,
+            **_filter_kwargs,
+        )
 
         analyzed_subq = library_repository._analyzed_game_ids_subquery(user_id)
         rows = await library_repository.fetch_flaw_comparison(
@@ -1584,6 +1593,7 @@ async def get_flaw_comparison(
             FlawComparisonTc(
                 tc=tc,
                 analyzed_n=counts[tc],
+                total_n=totals[tc],
                 below_gate=counts[tc] < FLAW_COMPARISON_GATE,
                 bullets=_compute_bullets(rows_by_tc.get(tc, []), tc),
             )
