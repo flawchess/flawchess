@@ -70,6 +70,13 @@ describe('GapBar', () => {
     );
   });
 
+  it('reads "same flaws as your opponents" for a zero gap (IN-03 grammar)', () => {
+    render(<GapBar cell={cell({ delta: 0 })} testId="bar" />);
+    expect(screen.getByTestId('bar-track').getAttribute('aria-label')).toBe(
+      'same flaws as your opponents',
+    );
+  });
+
   it('draws no band for a zoneless cell', () => {
     render(<GapBar cell={cell({ hasZone: false })} testId="bar" />);
     expect(screen.queryByTestId('bar-band')).toBeNull();

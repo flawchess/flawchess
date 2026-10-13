@@ -6,6 +6,7 @@ import {
 } from '@/lib/theme';
 import {
   GAP_CENTRE,
+  GAP_SAME_WORD,
   bandRange,
   cellPosition,
   effectiveVerdict,
@@ -46,6 +47,11 @@ export function GapBar({ cell, testId, trailing }: GapBarProps) {
   const band = bandRange(cell);
   const words = gapWords(cell.delta);
   const colored = verdict === 'better' || verdict === 'worse';
+  // IN-03: "same flaws than your opponents" was ungrammatical; "same" takes "as".
+  const ariaLabel =
+    words === GAP_SAME_WORD
+      ? `${words} flaws as your opponents`
+      : `${words} flaws than your opponents`;
 
   return (
     <div className="flex items-center gap-3" data-testid={testId}>
@@ -53,7 +59,7 @@ export function GapBar({ cell, testId, trailing }: GapBarProps) {
         className="relative h-2.5 flex-1 rounded-full"
         style={{ backgroundColor: PERCENTILE_TRACK }}
         role="img"
-        aria-label={`${words} flaws than your opponents`}
+        aria-label={ariaLabel}
         data-testid={`${testId}-track`}
       >
         {band && (
