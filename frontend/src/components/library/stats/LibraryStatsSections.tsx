@@ -1,26 +1,34 @@
 import { EvalCoverageBadge } from '@/components/library/EvalCoverageBadge';
 import { FlawTrendChart } from '@/components/library/FlawTrendChart';
-import { TacticComparisonGrid } from '@/components/library/TacticComparisonGrid';
 import { LoadError } from '@/components/ui/load-error';
 import { DEFAULT_FLAW_FILTER } from '@/hooks/useFlawFilterStore';
-import { useLibraryFlawComparison, useLibraryFlawStats } from '@/hooks/useLibrary';
+import {
+  useLibraryFlawComparison,
+  useLibraryFlawStats,
+  useTacticComparison,
+} from '@/hooks/useLibrary';
 import { useLibraryStatsTc } from '@/hooks/useLibraryStatsTc';
 import { librarySectionBasisText } from '@/lib/flawComparisonMeta';
 import { ContextTagCards } from './ContextTagCards';
 import { FlawTiles } from './FlawTiles';
 import { GapGateSlot } from './GapBar';
 import { LibraryTcSwitch } from './LibraryTcSwitch';
+import { TacticTables } from './TacticTables';
 import { WhatStandsOut } from './WhatStandsOut';
 import type { FilterState } from '@/components/filters/FilterPanel';
 import type { TimeControlBucket } from '@/types/endgames';
-import type { FlawComparisonTc, FlawStatsResponse } from '@/types/library';
+import type { FlawComparisonTc, FlawStatsResponse, TacticComparisonTc } from '@/types/library';
 
 const NO_TCS: readonly FlawComparisonTc[] = [];
+const NO_TACTIC_TCS: readonly TacticComparisonTc[] = [];
 const COPY_NO_ANALYZED = 'No analyzed games in the current filters yet.';
 const SECTION_HEADING_CLASS = 'font-brand text-lg font-semibold text-foreground';
 const COPY_VS_OPPONENTS_INTRO =
   "Your flaws per 100 of your moves, next to your opponents' in the same games. " +
   'The grey band is the gap most players at your level have against their opponents.';
+const COPY_TACTICS_INTRO =
+  'Tactics you missed (your opponent left one on the board) and tactics you allowed ' +
+  '(your move handed one over), per 100 games, next to your opponents.';
 
 interface LibraryStatsSectionsProps {
   /** Sidebar filters: every query of the Stats tab reads these (D-01). */
@@ -177,6 +185,54 @@ function VsOpponentsSection({ filters }: { filters: FilterState }) {
   );
 }
 
+function TacticsSkeleton() {
+  return (
+    <div className="animate-pulse space-y-4" data-testid="tactic-comparison-loading">
+      <div className="h-48 rounded border border-border bg-charcoal" />
+      <div className="h-48 rounded border border-border bg-charcoal" />
+    </div>
+  );
+}
+
+/**
+ * Tactic motifs (D-00h): three tables for the selected TC. The payload is per TC, so the
+ * switch is a client-side pick (never in the query key) bound to the same remembered TC
+ * store as the other sections (D-02). Below the gate one slot replaces the tables (D-03).
+ */
+function TacticMotifsSection({ filters }: { filters: FilterState }) {
+  const comparison = useTacticComparison(filters, DEFAULT_FLAW_FILTER);
+  const tcs = comparison.data?.tcs ?? NO_TACTIC_TCS;
+  const [selectedTc] = useLibraryStatsTc(tcs);
+  const tcStats = tcs.find((t) => t.tc === selectedTc);
+
+  const renderBody = () => {
+    if (comparison.isError) return <LoadError resource="tactic comparison" />;
+    if (comparison.isLoading || !comparison.data) return <TacticsSkeleton />;
+    if (!tcStats) return <p className="text-sm text-muted-foreground">{COPY_NO_ANALYZED}</p>;
+    if (tcStats.below_gate) {
+      return (
+        <GapGateSlot
+          analyzedN={tcStats.analyzed_n}
+          gate={comparison.data.analyzed_gate}
+          testId="tactic-motifs-gate"
+        />
+      );
+    }
+    return <TacticTables tcStats={tcStats} />;
+  };
+
+  return (
+    <section className="space-y-4" data-testid="tactic-motifs-section" aria-label="Tactic motifs">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <h2 className={SECTION_HEADING_CLASS}>Tactic motifs</h2>
+        {tcs.length > 0 && <LibraryTcSwitch sectionId="library-tactics" tcs={tcs} />}
+      </div>
+      <p className="text-sm text-muted-foreground">{COPY_TACTICS_INTRO}</p>
+      {renderBody()}
+    </section>
+  );
+}
+
 /**
  * The redesigned top of the Library Stats tab: Flaw Stats, You vs. your opponents, then
  * Tactic motifs. The sections share one remembered TC switch (D-05). The sidebar filters
@@ -187,10 +243,7 @@ export function LibraryStatsSections(props: LibraryStatsSectionsProps) {
     <>
       <FlawStatsSection {...props} />
       <VsOpponentsSection filters={props.filters} />
-      <section className="space-y-4" data-testid="tactic-motifs-section">
-        <h2 className={SECTION_HEADING_CLASS}>Tactic motifs</h2>
-        <TacticComparisonGrid filters={props.filters} flawFilter={DEFAULT_FLAW_FILTER} />
-      </section>
+      <TacticMotifsSection filters={props.filters} />
     </>
   );
 }

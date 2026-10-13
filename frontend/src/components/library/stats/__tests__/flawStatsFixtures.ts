@@ -3,6 +3,7 @@
  * entries modelled on the sketch 010 dev data.
  */
 
+import { TACTIC_COMPARISON_FAMILIES, type TacticFamily } from '@/lib/tacticComparisonMeta';
 import type { TimeControlBucket } from '@/types/endgames';
 import type {
   FlawBullet,
@@ -10,6 +11,10 @@ import type {
   FlawComparisonTc,
   FlawDeltaMetric,
   FlawTrendPoint,
+  TacticBullet,
+  TacticComparisonResponse,
+  TacticComparisonTc,
+  TacticSide,
 } from '@/types/library';
 
 export const ANALYZED_GATE = 20;
@@ -123,4 +128,98 @@ export function makeTrendPoint(date: string): FlawTrendPoint {
     games_in_window: 20,
     per_week_games: 4,
   };
+}
+
+// ─── Tactic comparison (per 100 games) ─────────────────────────────────────────
+
+export const TACTIC_SIDES: readonly TacticSide[] = ['missed', 'allowed'];
+/** Mirrors the backend LOW_SAMPLE_MIN_FLAWS: cells under it are faded and carry no verdict. */
+export const LOW_SAMPLE_MIN_FLAWS = 40;
+
+interface TacticBulletOptions {
+  /** Your flaws with this family on this side. */
+  you?: number;
+  /** Your opponents' flaws with it. */
+  opp?: number;
+  analyzedN?: number;
+  /** Typical-gap band per 100 games; omit for a band-less family-side (has_zone false). */
+  zone?: readonly [number, number];
+}
+
+/** One tactic bullet built from raw flaw counts: rates per 100 games, zero flaws -> null stats. */
+export function makeTacticBullet(
+  family: TacticFamily,
+  orientation: TacticSide,
+  options: TacticBulletOptions = {},
+): TacticBullet {
+  const { you = 0, opp = 0, analyzedN = 1841, zone } = options;
+  const none = you + opp === 0;
+  const youRate = none ? null : (you / analyzedN) * 100;
+  const oppRate = none ? null : (opp / analyzedN) * 100;
+  const delta = youRate === null || oppRate === null ? null : youRate - oppRate;
+  return {
+    family,
+    orientation,
+    you_rate: youRate,
+    opp_rate: oppRate,
+    delta,
+    ci_low: delta === null ? null : delta - 1,
+    ci_high: delta === null ? null : delta + 1,
+    p_value: delta === null ? null : 0.04,
+    you_events: you,
+    opp_events: opp,
+    zone_lo: zone ? zone[0] : 0,
+    zone_hi: zone ? zone[1] : 0,
+    has_zone: zone !== undefined,
+    low_sample: you + opp < LOW_SAMPLE_MIN_FLAWS,
+  };
+}
+
+/** `fork:missed` -> options; every other family-side is a zero-flaw, band-less bullet. */
+export type TacticOverrides = Partial<Record<`${TacticFamily}:${TacticSide}`, TacticBulletOptions>>;
+
+/**
+ * One TC entry with all 38 bullets in the API order (family order, missed before allowed).
+ * Pass `reverse` to scramble the payload order: the UI must not depend on it.
+ */
+export function makeTacticTcEntry(
+  tc: TimeControlBucket,
+  analyzedN: number,
+  overrides: TacticOverrides = {},
+  reverse = false,
+): TacticComparisonTc {
+  const bullets = TACTIC_COMPARISON_FAMILIES.flatMap(({ family }) =>
+    TACTIC_SIDES.map((side) =>
+      makeTacticBullet(family, side, { analyzedN, ...overrides[`${family}:${side}`] }),
+    ),
+  );
+  return {
+    tc,
+    analyzed_n: analyzedN,
+    below_gate: analyzedN < ANALYZED_GATE,
+    bullets: reverse ? bullets.reverse() : bullets,
+  };
+}
+
+/** Sketch 010 rapid: fork missed 84 vs 44, allowed 134 vs 180 (4.56 vs 2.39 and 7.28 vs 9.78 per 100 games). */
+export const SKETCH_RAPID_TACTIC_OVERRIDES: TacticOverrides = {
+  'fork:missed': { you: 84, opp: 44, zone: [-0.5, 0.9] },
+  'fork:allowed': { you: 134, opp: 180 },
+  'pin:missed': { you: 42, opp: 37 },
+  'pin:allowed': { you: 72, opp: 70 },
+  'hanging:allowed': { you: 190, opp: 254 },
+  'mate:missed': { you: 136, opp: 90 },
+  'mate:allowed': { you: 193, opp: 267 },
+  'discovered_attack:allowed': { you: 50, opp: 50 },
+  'sacrifice:missed': { you: 20, opp: 11 },
+};
+
+export const RAPID_TACTIC_ENTRY = makeTacticTcEntry('rapid', 1841, SKETCH_RAPID_TACTIC_OVERRIDES);
+export const BLITZ_TACTIC_ENTRY = makeTacticTcEntry('blitz', 1000, {
+  'fork:missed': { you: 30, opp: 12 },
+  'fork:allowed': { you: 45, opp: 50 },
+});
+
+export function makeTacticComparison(tcs: TacticComparisonTc[]): TacticComparisonResponse {
+  return { tcs, analyzed_gate: ANALYZED_GATE };
 }
