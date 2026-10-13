@@ -1,22 +1,12 @@
-import { ExpandHint } from '@/components/insights/ShellyQuote';
-import {
-  Accordion,
-  AccordionContent,
-  AccordionItem,
-  AccordionTrigger,
-} from '@/components/ui/accordion';
 import { Card, CardBody, CardHeader } from '@/components/ui/card';
-import { useTrackedOpen } from '@/hooks/useTrackedOpen';
-import { trackFeature } from '@/lib/analytics';
 import { libraryBasisText } from '@/lib/flawComparisonMeta';
 import {
+  LIBRARY_STATS_TACTIC_FAMILIES,
   TACTIC_COMPARISON_FAMILIES,
-  TACTIC_GROUPS,
   tacticBulletToGapCell,
   tacticSideCopy,
   tacticTestIdSegment,
   type TacticFamilyDef,
-  type TacticGroupDef,
 } from '@/lib/tacticComparisonMeta';
 import { cn } from '@/lib/utils';
 import { GapBar } from './GapBar';
@@ -24,7 +14,7 @@ import { GapPopover } from './GapPopover';
 import type { TacticBullet, TacticComparisonTc, TacticSide } from '@/types/library';
 
 /**
- * Fixed column proportions so the three tables line up (D-00h); phones stack instead.
+ * Fixed column proportions for the Motif | Missed | Allowed table (D-00h); phones stack.
  * fr, not %: percentage tracks summing to 100% ignore the md:gap-4 gutters, so the
  * row overflowed its card by 32px and the card's overflow-hidden clipped the
  * Allowed column's search icon at every desktop width (found in the 239-09 UAT).
@@ -32,11 +22,15 @@ import type { TacticBullet, TacticComparisonTc, TacticSide } from '@/types/libra
 const TABLE_GRID_CLASS = 'md:grid-cols-[24fr_38fr_38fr]';
 const SIDES: readonly TacticSide[] = ['missed', 'allowed'];
 const SIDE_LABELS: Record<TacticSide, string> = { missed: 'Missed', allowed: 'Allowed' };
-/** The group that starts collapsed: the rare motifs, mostly faded rows (D-00i). */
-const COLLAPSED_GROUP_KEY: TacticGroupDef['key'] = 'advanced';
+const CARD_TITLE = 'Most common tactics';
 const COPY_NO_FLAWS = 'No flaws';
 const COPY_FOOTER =
-  "Per 100 games. Middle tick = same as your opponents, better to the right. Your and your opponents' rates are in each search-icon popover.";
+  "Per 100 games. Middle tick = same as your opponents, fewer (better) to the left. Your and your opponents' rates are in each search-icon popover.";
+
+/** The shown families in filter-panel order (D-17), never re-sorted by rate. */
+const SHOWN_FAMILIES: readonly TacticFamilyDef[] = TACTIC_COMPARISON_FAMILIES.filter((def) =>
+  LIBRARY_STATS_TACTIC_FAMILIES.includes(def.family),
+);
 
 type BulletIndex = ReadonlyMap<string, TacticBullet>;
 
@@ -46,14 +40,6 @@ function bulletKey(family: string, side: TacticSide): string {
 
 function indexBullets(tcStats: TacticComparisonTc): BulletIndex {
   return new Map(tcStats.bullets.map((b) => [bulletKey(b.family, b.orientation), b]));
-}
-
-/** Total flaws on both sides and both orientations: a family with none gets no row. */
-function familyFlaws(bullets: BulletIndex, family: string): number {
-  return SIDES.reduce((sum, side) => {
-    const b = bullets.get(bulletKey(family, side));
-    return sum + (b ? b.you_events + b.opp_events : 0);
-  }, 0);
 }
 
 /** The player's own flaws with this family, missed plus allowed ("N of your flaws"). */
@@ -147,115 +133,37 @@ function TacticRow({ def, bullets, tcStats }: TacticRowProps) {
   );
 }
 
-interface TacticGroupProps {
-  group: TacticGroupDef;
-  bullets: BulletIndex;
-  tcStats: TacticComparisonTc;
-}
-
-/**
- * The table of one group: header row, a row per family with flaws, and the families
- * without any listed under the table (D-00h).
- */
-function TacticGroupTable({ group, bullets, tcStats }: TacticGroupProps) {
-  // Families render in TACTIC_COMPARISON_FAMILIES order, never re-sorted by rate (D-00h).
-  const families = TACTIC_COMPARISON_FAMILIES.filter((f) => f.group === group.key);
-  const shown = families.filter((f) => familyFlaws(bullets, f.family) > 0);
-  const empty = families.filter((f) => familyFlaws(bullets, f.family) === 0);
-  return (
-    <>
-      <div
-        className={cn('hidden gap-4 pb-2 font-semibold text-muted-foreground md:grid', TABLE_GRID_CLASS)}
-        data-testid={`tactic-group-${group.key}-header`}
-      >
-        <div>Motif</div>
-        <div>Missed</div>
-        <div>Allowed</div>
-      </div>
-      {shown.map((def) => (
-        <TacticRow key={def.family} def={def} bullets={bullets} tcStats={tcStats} />
-      ))}
-      {empty.length > 0 && (
-        <p
-          className="mt-3 text-sm text-muted-foreground"
-          data-testid={`tactic-group-${group.key}-no-flaws`}
-        >
-          No flaws yet: {empty.map((f) => f.name).join(', ')}.
-        </p>
-      )}
-    </>
-  );
-}
-
-/** A group that is always open: a plain header-band card (D-00j). */
-function StaticTacticGroup(props: TacticGroupProps) {
-  return (
-    <Card data-testid={`tactic-group-${props.group.key}`}>
-      <CardHeader>{props.group.label}</CardHeader>
-      <CardBody>
-        <TacticGroupTable {...props} />
-      </CardBody>
-    </Card>
-  );
-}
-
-/**
- * The collapsed-by-default group (D-00i): an accordion whose header band carries the
- * shared expand hint. Opening it sends one panel-open event per mount.
- */
-function CollapsibleTacticGroup(props: TacticGroupProps) {
-  const { group } = props;
-  const [open, setOpen] = useTrackedOpen(
-    () => trackFeature('panel-open', { target: 'tactic-advanced' }),
-    { once: true },
-  );
-  return (
-    <Accordion
-      type="single"
-      collapsible
-      value={open ? group.key : ''}
-      onValueChange={(value) => setOpen(value === group.key)}
-    >
-      <AccordionItem
-        value={group.key}
-        className="charcoal-texture overflow-hidden rounded-md"
-        data-testid={`tactic-group-${group.key}`}
-      >
-        <AccordionTrigger band data-testid={`tactic-group-${group.key}-trigger`}>
-          <span className="flex flex-1 flex-col gap-0.5">
-            <span className="text-base font-semibold">{group.label}</span>
-            <ExpandHint />
-          </span>
-        </AccordionTrigger>
-        <AccordionContent className="p-4">
-          <TacticGroupTable {...props} />
-        </AccordionContent>
-      </AccordionItem>
-    </Accordion>
-  );
-}
-
 interface TacticTablesProps {
   /** The selected time control's tactic comparison entry (at or above the gate). */
   tcStats: TacticComparisonTc;
 }
 
 /**
- * The three tactic tables of the Tactic motifs section (sketch 010 round 5): groups in
- * TACTIC_GROUPS order, families in the filter panel's order, each cell a gap bar per 100
- * games for the missed or allowed side. Advanced starts collapsed (D-00i).
+ * The Tactic motifs section body (Phase 239 D-17, UAT): one card with the four most common
+ * tactic families, the only ones with a benchmark typical range on both sides. The rarer
+ * families happen less than once per 100 games, so their gaps were mostly noise. Every
+ * row is shown, also without flaws; each cell is a gap bar per 100 games.
  */
 export function TacticTables({ tcStats }: TacticTablesProps) {
   const bullets = indexBullets(tcStats);
   return (
     <div className="flex flex-col gap-4" data-testid="tactic-tables">
-      {TACTIC_GROUPS.map((group) =>
-        group.key === COLLAPSED_GROUP_KEY ? (
-          <CollapsibleTacticGroup key={group.key} group={group} bullets={bullets} tcStats={tcStats} />
-        ) : (
-          <StaticTacticGroup key={group.key} group={group} bullets={bullets} tcStats={tcStats} />
-        ),
-      )}
+      <Card data-testid="tactic-card">
+        <CardHeader>{CARD_TITLE}</CardHeader>
+        <CardBody>
+          <div
+            className={cn('hidden gap-4 pb-2 font-semibold text-muted-foreground md:grid', TABLE_GRID_CLASS)}
+            data-testid="tactic-card-header"
+          >
+            <div>Motif</div>
+            <div>Missed</div>
+            <div>Allowed</div>
+          </div>
+          {SHOWN_FAMILIES.map((def) => (
+            <TacticRow key={def.family} def={def} bullets={bullets} tcStats={tcStats} />
+          ))}
+        </CardBody>
+      </Card>
       <p className="text-sm text-muted-foreground" data-testid="tactic-tables-footer">
         {COPY_FOOTER}
       </p>

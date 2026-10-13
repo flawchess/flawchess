@@ -385,13 +385,11 @@ describe('You vs. your opponents section', () => {
 });
 
 describe('Tactic motifs section (D-00h, D-02, D-03)', () => {
-  it('renders the three tables for the selected TC', async () => {
+  it('renders the one tactic card for the selected TC (D-17)', async () => {
     await renderLoaded();
     const section = screen.getByTestId('tactic-motifs-section');
     expect(await within(section).findByTestId('tactic-tables')).not.toBeNull();
-    expect(within(section).getByTestId('tactic-group-piece_attacks')).not.toBeNull();
-    expect(within(section).getByTestId('tactic-group-discoveries')).not.toBeNull();
-    expect(within(section).getByTestId('tactic-group-advanced')).not.toBeNull();
+    expect(within(section).getAllByTestId('tactic-card')).toHaveLength(1);
     expect(text('tactic-row-fork-flaws')).toBe('218 of your flaws');
     expect(text('tactic-cell-fork-missed-bar-words')).toBe('2.2 more');
   });

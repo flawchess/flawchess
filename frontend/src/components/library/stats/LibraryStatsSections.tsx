@@ -189,9 +189,9 @@ function TacticsSkeleton() {
 }
 
 /**
- * Tactic motifs (D-00h): three tables for the selected TC. The payload is per TC, so the
- * switch is a client-side pick (never in the query key) bound to the same remembered TC
- * store as the other sections (D-02). Below the gate one slot replaces the tables (D-03).
+ * Tactic motifs (D-00h, D-17): one card of the four most common tactics for the selected TC.
+ * The payload is per TC, so the switch is a client-side pick (never in the query key) bound
+ * to the same remembered TC store as the other sections (D-02). Below the gate one slot replaces the card (D-03).
  */
 function TacticMotifsSection({ filters }: { filters: FilterState }) {
   const comparison = useTacticComparison(filters, DEFAULT_FLAW_FILTER);

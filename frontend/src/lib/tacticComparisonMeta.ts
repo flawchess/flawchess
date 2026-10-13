@@ -225,6 +225,14 @@ export const TACTIC_GROUPS: TacticGroupDef[] = [
   { key: 'advanced', label: 'Advanced' },
 ];
 
+/**
+ * The families the Library Stats tactic card shows (Phase 239 D-17, UAT): the four most
+ * common, and the only ones whose benchmark typical range is viable on both the missed and
+ * the allowed side. The other 15 occur under once per 100 games per player, so their
+ * you-vs-opponent gaps were mostly noise. The filter panel still offers all 19.
+ */
+export const LIBRARY_STATS_TACTIC_FAMILIES: readonly TacticFamily[] = ['fork', 'pin', 'hanging', 'mate'];
+
 // ─── Family definitions ───────────────────────────────────────────────────────
 
 export interface TacticFamilyDef {
