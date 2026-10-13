@@ -11,7 +11,7 @@ into a band symmetric around 0 (+-IQR/2, flaw_delta_zones.symmetric_band).
 
 A registry value of None means the (family, side) has no viable benchmark zone (degenerate
 IQR or too few non-zero users, D-06): the bullet gets has_zone False, zone_lo == zone_hi ==
-0.0, and the UI draws no band and gives no verdict (D-11).
+0.0, and the UI draws no band (D-11); the cell is coloured only on its 99% significance (D-16).
 
 Phase 239 D-08/D-09 stopgap: blitz and bullet have no finished full-analysis benchmark
 sample, so they read the rapid zones until /benchmarks section 5 is re-run with those

@@ -92,10 +92,16 @@ function rawVerdict(cell: GapCell): GapVerdict | null {
 }
 
 /**
- * The verdict a cell shows; null when it can have none (zoneless, no gap). An out-of-band
- * gap that is not significant reads 'typical' (D-14): neutral dot and words.
+ * The verdict a cell shows; null when it has none. An out-of-band gap that is not
+ * significant reads 'typical' (D-14): neutral dot and words. A zoneless cell (D-11) has
+ * no band to be outside of, so it is judged on significance alone (D-16): better or worse
+ * when its 99% CI excludes 0, no verdict otherwise.
  */
 export function effectiveVerdict(cell: GapCell): GapVerdict | null {
+  if (!cell.hasZone && cell.delta !== null) {
+    if (!cell.significant) return null;
+    return cell.delta < 0 ? 'better' : 'worse';
+  }
   const raw = rawVerdict(cell);
   if (raw === null || raw === 'typical') return raw;
   return cell.significant ? raw : 'typical';

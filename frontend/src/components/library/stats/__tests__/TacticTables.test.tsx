@@ -5,10 +5,11 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
-import { GAUGE_NEUTRAL } from '@/lib/theme';
+import { GAUGE_NEUTRAL, ZONE_SUCCESS } from '@/lib/theme';
 import { indefiniteArticle, tacticSideCopy } from '@/lib/tacticComparisonMeta';
 import { TacticTables } from '../TacticTables';
 import {
+  BLITZ_TACTIC_ENTRY,
   RAPID_TACTIC_ENTRY,
   SKETCH_RAPID_TACTIC_OVERRIDES,
   makeTacticTcEntry,
@@ -285,18 +286,32 @@ describe('not-significant and band-less cells (D-11, D-14)', () => {
     expect(screen.getByTestId('tactic-cell-fork-allowed').style.opacity).toBe('');
   });
 
-  it('draws no band and no typical-range line for a band-less cell, keeping its blue dot', () => {
-    renderTables();
-    // fork:allowed has no zone in the fixture.
+  it('draws no band and no typical-range line for a band-less cell, blue when not significant', () => {
+    // fork:allowed has no zone; 45 vs 50 over 1000 games is a gap the fixture CI covers.
+    renderTables(BLITZ_TACTIC_ENTRY);
     expect(screen.queryByTestId('tactic-cell-fork-allowed-bar-band')).toBeNull();
     expect(screen.getByTestId('tactic-cell-fork-allowed-bar-dot').style.backgroundColor).toBe(
       normalized(GAUGE_NEUTRAL),
     );
+    cleanup();
+    renderTables();
     fireEvent.click(screen.getByTestId('gap-popover-tactic-fork-allowed-tc-rapid'));
     expect(text('gap-popover-tactic-fork-allowed-tc-rapid-popover')).not.toContain('Typical gap');
     // The banded sibling does carry the line.
     fireEvent.click(screen.getByTestId('gap-popover-tactic-fork-missed-tc-rapid'));
     expect(text('gap-popover-tactic-fork-missed-tc-rapid-popover')).toContain('Typical gap');
+  });
+
+  it('colours a significant band-less cell on significance alone (D-16)', () => {
+    renderTables();
+    // fork:allowed: 134 vs 180 over 1841 games, 2.5 fewer per 100 games, CI clear of 0.
+    expect(screen.getByTestId('tactic-cell-fork-allowed-bar-dot').style.backgroundColor).toBe(
+      normalized(ZONE_SUCCESS),
+    );
+    fireEvent.click(screen.getByTestId('gap-popover-tactic-fork-allowed-tc-rapid'));
+    expect(text('gap-popover-tactic-fork-allowed-tc-rapid-popover')).toContain(
+      'There is no typical range for this tactic, but the gap is too large to be chance.',
+    );
   });
 
   it('colours a banded, well-sampled cell that sits outside its band', () => {

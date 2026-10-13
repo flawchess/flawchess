@@ -30,7 +30,8 @@ interface GapBarProps {
  * benchmark band (symmetric around 0, D-15), a zero tick, and a dot. Lower (fewer flaws,
  * better) is to the left (D-14). The gap reads in words next to the bar (D-00b): green or
  * red for a significant better or worse, plain foreground for typical or a gap that could
- * be chance (D-14). A zoneless cell draws no band and gives no verdict (D-11).
+ * be chance (D-14). A zoneless cell draws no band (D-11) and is coloured only when its gap
+ * is significant (D-16).
  */
 export function GapBar({ cell, testId, trailing }: GapBarProps) {
   if (cell.delta === null) {

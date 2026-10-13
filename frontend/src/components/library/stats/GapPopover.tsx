@@ -24,6 +24,8 @@ const FOOTER_SEPARATOR = ' · ';
 const RATE_DECIMALS = 2;
 const COPY_CHANCE = 'This could be chance, there are not enough games to be sure.';
 const COPY_SAME = 'The same as the players you faced.';
+const COPY_ZONELESS_SIGNIFICANT =
+  'There is no typical range for this tactic, but the gap is too large to be chance.';
 
 export type GapUnit = 'per 100 moves' | 'per 100 games';
 
@@ -57,9 +59,9 @@ function gapSentence(delta: number): string {
   return words === 'same' ? COPY_SAME : `That is ${words} than the players you faced.`;
 }
 
-/** The typical-range line; null for a zoneless cell (D-11). */
+/** The typical-range line; for a zoneless cell (D-11) only the D-16 significance line. */
 function rangeLine(cell: GapCell): string | null {
-  if (!cell.hasZone) return null;
+  if (!cell.hasZone) return effectiveVerdict(cell) === null ? null : COPY_ZONELESS_SIGNIFICANT;
   const range = `Typical gap for players at your level: ${gapWords(cell.zoneLo)} to ${gapWords(cell.zoneHi)}.`;
   if (isChanceGap(cell)) return `${range} ${COPY_CHANCE}`;
   const verdict = effectiveVerdict(cell);

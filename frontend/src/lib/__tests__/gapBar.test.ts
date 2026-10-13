@@ -140,10 +140,15 @@ describe('effectiveVerdict (D-11, D-14)', () => {
   });
 
   it.each([
-    ['zoneless', { hasZone: false }],
+    ['zoneless not-significant', { hasZone: false, significant: false }],
     ['gap-less', { delta: null }],
   ])('returns null for a %s cell', (_name, overrides) => {
     expect(effectiveVerdict(cell(overrides))).toBeNull();
+  });
+
+  it('judges a zoneless cell on significance alone (D-16)', () => {
+    expect(effectiveVerdict(cell({ hasZone: false, delta: -0.66 }))).toBe('better');
+    expect(effectiveVerdict(cell({ hasZone: false, delta: 0.5 }))).toBe('worse');
   });
 });
 

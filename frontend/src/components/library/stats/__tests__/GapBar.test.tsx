@@ -49,7 +49,8 @@ describe('GapBar', () => {
     ['typical', { delta: 0.1 }, GAUGE_NEUTRAL, false],
     ['not-significant better', { delta: -0.66, significant: false }, GAUGE_NEUTRAL, false],
     ['not-significant worse', { delta: 0.5, significant: false }, GAUGE_NEUTRAL, false],
-    ['zoneless', { delta: -0.66, hasZone: false }, GAUGE_NEUTRAL, false],
+    ['zoneless significant', { delta: -0.66, hasZone: false }, ZONE_SUCCESS, true],
+    ['zoneless not significant', { delta: -0.66, hasZone: false, significant: false }, GAUGE_NEUTRAL, false],
   ] as const)('colours a %s cell', (_name, overrides, dotColor, coloredWords) => {
     render(<GapBar cell={cell(overrides)} testId="bar" />);
     expect(screen.getByTestId('bar-dot').style.backgroundColor).toBe(normalized(dotColor));
