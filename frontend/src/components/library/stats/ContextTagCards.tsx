@@ -14,8 +14,11 @@ import type { FlawComparisonTc } from '@/types/library';
 
 // Fewer flaws (better) sit left on every gap bar; the caption read worse/better, inverted.
 const AXIS_LABELS = ['better', 'worse'] as const;
-/** Right margin that ends the caption row where the bar track ends (words column 6rem + popover). */
-const AXIS_CAPTION_CLASS = 'mr-34 flex justify-between text-sm text-muted-foreground';
+/**
+ * Right margin that ends the caption row where the bar track ends: on phones the words
+ * column (6rem) and popover sit right of the track; from md up the track is full width.
+ */
+const AXIS_CAPTION_CLASS = 'mr-34 md:mr-0 flex justify-between text-sm text-muted-foreground';
 
 interface ContextTagRowProps {
   metric: ContextTagMetric;

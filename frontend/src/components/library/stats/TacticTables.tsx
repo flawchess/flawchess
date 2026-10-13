@@ -90,7 +90,7 @@ function TacticCell({ bullet, def, side, tcStats }: TacticCellProps) {
           cell={cell}
           testId={`${testId}-bar`}
           layout="stacked"
-          mobileLabel={sideLabel}
+          leading={sideLabel}
           trailing={
             <GapPopover
               testId={`gap-popover-tactic-${segment}-${side}-tc-${tcStats.tc}`}

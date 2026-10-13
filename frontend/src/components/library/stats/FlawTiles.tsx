@@ -42,6 +42,11 @@ function FlawTile({ metric, tcStats, analyzedGate }: FlawTileProps) {
   const meta = FLAW_GAP_META[metric];
   const cell = flawBulletToGapCell(bullet);
   const testId = `flaw-tile-${metric}`;
+  const opponents = (
+    <div className="text-sm text-muted-foreground" data-testid={`${testId}-opponents`}>
+      Opponents {formatRate(bullet.opp_rate)}
+    </div>
+  );
 
   return (
     <Card data-testid={testId}>
@@ -58,19 +63,20 @@ function FlawTile({ metric, tcStats, analyzedGate }: FlawTileProps) {
             {meta.label} / 100 moves
           </div>
         </div>
-        <div className="text-sm text-muted-foreground" data-testid={`${testId}-opponents`}>
-          Opponents {formatRate(bullet.opp_rate)}
-        </div>
         {tcStats.below_gate ? (
-          <GapGateSlot
-            analyzedN={tcStats.analyzed_n}
-            gate={analyzedGate}
-            testId={`${testId}-gate`}
-          />
+          <>
+            {opponents}
+            <GapGateSlot
+              analyzedN={tcStats.analyzed_n}
+              gate={analyzedGate}
+              testId={`${testId}-gate`}
+            />
+          </>
         ) : (
           <GapBar
             cell={cell}
             testId={`${testId}-bar`}
+            leading={opponents}
             trailing={
               <GapPopover
                 testId={`gap-popover-${metric}-tc-${tcStats.tc}`}

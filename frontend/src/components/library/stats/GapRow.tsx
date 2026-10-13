@@ -13,17 +13,20 @@ interface GapRowProps {
 }
 
 /**
- * One metric row: label with its hint, then the gap bar with the popover trigger after
- * the words. The bar owns the verdict and its significance gate (D-14).
+ * One metric row: the label, then the gap bar with the hint on the words line and the
+ * popover trigger after the words. From md up the hint sits top left, level with the words,
+ * above a full-width bar. The bar owns the verdict and its significance gate (D-14).
  */
 export function GapRow({ label, hint, cell, popover, testId }: GapRowProps) {
   return (
-    <div className="space-y-1" data-testid={testId}>
-      <div>
-        <div className="font-semibold">{label}</div>
-        <div className="text-sm text-muted-foreground">{hint}</div>
-      </div>
-      <GapBar cell={cell} testId={`${testId}-bar`} trailing={popover} />
+    <div data-testid={testId}>
+      <div className="font-semibold">{label}</div>
+      <GapBar
+        cell={cell}
+        testId={`${testId}-bar`}
+        trailing={popover}
+        leading={<div className="text-sm text-muted-foreground">{hint}</div>}
+      />
     </div>
   );
 }
