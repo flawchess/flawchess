@@ -526,6 +526,31 @@ async def test_null_time_control_bucket_excluded(db_session: AsyncSession) -> No
     assert {row.tc for row in rows} == {"blitz"}
 
 
+@pytest.mark.asyncio
+async def test_null_or_zero_ply_count_not_counted(db_session: AsyncSession) -> None:
+    """Games with ply_count NULL or 0 are not counted in analyzed_n (WR-03).
+
+    count_analyzed_by_tc must share the ply_count gate of the fetch anchors; otherwise
+    a TC of such games is offered above the gate while its aggregated rows are empty.
+    """
+    for _ in range(FLAW_COMPARISON_GATE):
+        g = await _seed_game(db_session, user_id=_TEST_USER, time_control_bucket="blitz")
+        await _seed_analyzed(db_session, game=g)
+    # A rapid TC made only of games the aggregation drops (ply_count NULL / 0).
+    for bad_ply_count in (None, 0):
+        for _ in range(FLAW_COMPARISON_GATE):
+            g = await _seed_game(db_session, user_id=_TEST_USER, time_control_bucket="rapid")
+            g.ply_count = bad_ply_count
+            await _seed_analyzed(db_session, game=g)
+
+    counts = await count_analyzed_by_tc(db_session, _TEST_USER, **_DEFAULT_FILTER_KWARGS)
+    assert counts == {"blitz": FLAW_COMPARISON_GATE}
+
+    result = await get_flaw_comparison(db_session, _TEST_USER, **_DEFAULT_FILTER_KWARGS)
+    assert [t.tc for t in result.tcs] == ["blitz"]
+    assert result.tcs[0].analyzed_n == FLAW_COMPARISON_GATE
+
+
 async def _seed_mistake_cell(db_session: AsyncSession, *, user_id: int, total_flaws: int) -> None:
     """Seed `total_flaws` analyzed blitz games with one mistake each, alternating sides.
 

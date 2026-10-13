@@ -1796,6 +1796,10 @@ async def count_analyzed_by_tc(
     TC switch and are excluded (Pitfall 8). Only buckets with a positive count are
     returned. The tactic keywords exist so the tactic comparison can reuse this
     function unchanged. User-scoped.
+
+    The population carries the same ply_count gate as the fetch_flaw_comparison /
+    fetch_tactic_comparison anchors (NOT NULL and > 0), so analyzed_n, below_gate and the
+    offered TCs agree with the rows that get aggregated (WR-03).
     """
     base_subq = _filtered_games_base(
         user_id,
@@ -1820,6 +1824,12 @@ async def count_analyzed_by_tc(
             Game.id.in_(select(base_subq.c.id)),
             Game.id.in_(select(analyzed_subq.c.game_id)),
             Game.time_control_bucket.isnot(None),
+            # WR-03: same ply_count gate as the fetch anchors. Without it a TC whose
+            # analyzed games all have NULL/0 ply_count (pasted PGNs) was offered above the
+            # gate while the aggregation dropped every one of its games, rendering
+            # all-zero bars.
+            Game.ply_count.isnot(None),
+            Game.ply_count > 0,
         )
         .group_by(Game.time_control_bucket)
     )
