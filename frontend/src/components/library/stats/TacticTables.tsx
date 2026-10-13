@@ -62,8 +62,8 @@ interface TacticCellProps {
 /**
  * One Missed or Allowed cell: the gap bar per 100 games with its Search popover (D-00c).
  * A cell without flaws reads a muted "No flaws" and has no popover (D-00d); the bar owns
- * the verdict and its significance gate (D-14). On phones a side
- * label sits above the cell, since the column header row is hidden (D-00h).
+ * the verdict and its significance gate (D-14). On phones a side label sits on the
+ * words line, left of the words, since the column header row is hidden (D-00h).
  */
 function TacticCell({ bullet, def, side, tcStats }: TacticCellProps) {
   const cell = tacticBulletToGapCell(bullet);
@@ -71,19 +71,26 @@ function TacticCell({ bullet, def, side, tcStats }: TacticCellProps) {
   const copy = tacticSideCopy(def.name, side);
   const testId = `tactic-cell-${segment}-${side}`;
   const noFlaws = hasNoFlaws(bullet);
+  const sideLabel = (
+    <div className="text-sm text-muted-foreground md:hidden" data-testid={`${testId}-side`}>
+      {SIDE_LABELS[side]}
+    </div>
+  );
   return (
     <div data-testid={testId}>
-      <div className="text-sm text-muted-foreground md:hidden" data-testid={`${testId}-side`}>
-        {SIDE_LABELS[side]}
-      </div>
       {noFlaws ? (
-        <p className="text-sm text-muted-foreground" data-testid={`${testId}-empty`}>
-          {COPY_NO_FLAWS}
-        </p>
+        <>
+          {sideLabel}
+          <p className="text-sm text-muted-foreground" data-testid={`${testId}-empty`}>
+            {COPY_NO_FLAWS}
+          </p>
+        </>
       ) : (
         <GapBar
           cell={cell}
           testId={`${testId}-bar`}
+          layout="stacked"
+          mobileLabel={sideLabel}
           trailing={
             <GapPopover
               testId={`gap-popover-tactic-${segment}-${side}-tc-${tcStats.tc}`}

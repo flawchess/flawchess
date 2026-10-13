@@ -12,7 +12,8 @@ import { GapPopover } from './GapPopover';
 import { GapRow } from './GapRow';
 import type { FlawComparisonTc } from '@/types/library';
 
-const AXIS_LABELS = ['worse', 'same as opponents', 'better'] as const;
+// Fewer flaws (better) sit left on every gap bar; the caption read worse/better, inverted.
+const AXIS_LABELS = ['better', 'worse'] as const;
 /** Right margin that ends the caption row where the bar track ends (words column 6rem + popover). */
 const AXIS_CAPTION_CLASS = 'mr-34 flex justify-between text-sm text-muted-foreground';
 

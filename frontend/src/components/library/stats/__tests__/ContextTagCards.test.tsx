@@ -73,14 +73,13 @@ describe('ContextTagCards structure', () => {
     expect(text('context-row-endgame-phase')).toContain('Endgame');
   });
 
-  it('puts the worse / same as opponents / better caption at the bottom of each card', () => {
+  it('puts the better / worse caption at the bottom of each card', () => {
     render(<ContextTagCards tcStats={SKETCH_RAPID_ENTRY} />);
     for (const key of ['clock', 'phase', 'opponent-errors', 'lost-advantages']) {
       const axis = screen.getByTestId(`context-card-${key}-axis`);
       expect(Array.from(axis.children).map((c) => c.textContent)).toEqual([
-        'worse',
-        'same as opponents',
         'better',
+        'worse',
       ]);
     }
   });
