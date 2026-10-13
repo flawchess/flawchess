@@ -370,13 +370,9 @@ export const PANEL_TARGETS = [
   'more-drawer',
   'train-schedule',
   'train-verdict-strip',
-  'endgame-type-tc',
-  'endgame-metrics-tc',
-  'time-pressure-tc',
   'opening-insights-more',
   'opening-stats-more',
   'tactic-motifs-more',
-  'tactic-advanced',
   'move-stats-expand',
 ] as const;
 type PanelTarget = (typeof PANEL_TARGETS)[number];
@@ -387,7 +383,6 @@ export const ACTION_TARGETS = [
   'bookmark-load',
   'analyze',
   'train-solution',
-  'train-solve-retry',
   'train-sideline-fork',
   'reminder-banner-dismiss',
   'persona-open',
