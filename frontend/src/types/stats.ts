@@ -2,6 +2,8 @@ export interface RatingDataPoint {
   date: string;
   rating: number;
   time_control_bucket: string;
+  /** Games played that day in this time control (daily volume bars). */
+  game_count: number;
 }
 
 export interface RatingHistoryResponse {

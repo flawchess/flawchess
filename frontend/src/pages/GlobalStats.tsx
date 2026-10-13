@@ -181,7 +181,7 @@ export function GlobalStatsPage() {
                 <CardHeader data-testid="rating-chess-com-header">
                   Chess.com Rating
                   <InfoPopover ariaLabel="Chess.com rating info" testId="rating-chess-com-info" side="top">
-                    Your Chess.com rating over time by time control. Granularity adapts automatically: daily for shorter spans, weekly or monthly for longer ones.
+                    Your Chess.com rating over time by time control, one point per day (your rating after the day's last game). Grey bars show how many games you played that day.
                   </InfoPopover>
                 </CardHeader>
                 <CardBody>
@@ -195,7 +195,7 @@ export function GlobalStatsPage() {
                 <CardHeader data-testid="rating-lichess-header">
                   Lichess Rating
                   <InfoPopover ariaLabel="Lichess rating info" testId="rating-lichess-info" side="top">
-                    Your Lichess rating over time by time control. Granularity adapts automatically: daily for shorter spans, weekly or monthly for longer ones. Lichess uses Glicko-2 ratings which start at 1500 and tend to run 200-400 points higher than Chess.com, so the two are not directly comparable.
+                    Your Lichess rating over time by time control, one point per day (your rating after the day's last game). Grey bars show how many games you played that day. Lichess uses Glicko-2 ratings which start at 1500 and tend to run 200-400 points higher than Chess.com, so the two are not directly comparable.
                   </InfoPopover>
                 </CardHeader>
                 <CardBody>

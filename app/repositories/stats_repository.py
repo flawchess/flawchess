@@ -91,11 +91,14 @@ async def query_rating_history(
 ) -> list[Row[Any]]:
     """Return one rating data point per (date, time_control_bucket) for a given platform.
 
-    Each row is a (date, rating, time_control_bucket) tuple where date is a
-    Python date object (UTC-normalized from the timestamptz column).
+    Each row is a (date, rating, time_control_bucket, game_count) tuple where date
+    is a Python date object (UTC-normalized from the timestamptz column) and
+    game_count is the number of games played that day in that time control
+    (drives the chart's daily volume bars).
 
     Uses DISTINCT ON to keep only the last game's rating per day per time control,
     avoiding redundant per-game rows when multiple games are played on the same day.
+    The window count is evaluated before DISTINCT ON, so it sees every game of the day.
     """
     user_rating_expr = case(
         (Game.user_color == "white", Game.white_rating),
@@ -103,9 +106,12 @@ async def query_rating_history(
     ).label("user_rating")
 
     date_col = cast(func.timezone("UTC", Game.played_at), Date).label("date")
+    game_count_expr = (
+        func.count().over(partition_by=[date_col, Game.time_control_bucket]).label("game_count")
+    )
 
     stmt = (
-        select(date_col, user_rating_expr, Game.time_control_bucket)
+        select(date_col, user_rating_expr, Game.time_control_bucket, game_count_expr)
         .distinct(date_col, Game.time_control_bucket)
         .where(
             Game.user_id == user_id,

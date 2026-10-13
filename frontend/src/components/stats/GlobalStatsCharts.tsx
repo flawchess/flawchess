@@ -39,7 +39,6 @@ function WDLCategoryChart({ data, title, testId, infoTooltip }: WDLCategoryChart
                 key={cat.label}
                 data={cat}
                 label={cat.label}
-                maxTotal={Math.max(...data.map((d) => d.total))}
                 testId={`${testId}-${cat.label.toLowerCase()}`}
               />
             ))}
