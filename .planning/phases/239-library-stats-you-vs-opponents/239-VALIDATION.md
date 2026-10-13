@@ -38,27 +38,28 @@ created: "2026-10-12"
 
 ## Per-Task Verification Map
 
-Task IDs are filled in once plans exist; rows are keyed by decision.
+Rows mapped to the executed plans; status from the 239-09 pre-merge gate run (2026-10-13: backend 5390 passed, frontend 5578 passed).
 
-| Decision | Plan | Behavior | Test Type | Automated Command | File Exists | Status |
-|----------|------|----------|-----------|-------------------|-------------|--------|
-| D-06/D-07/D-08 | 01 | §5 base uses `benchmark_selection` (classical+rapid, completion predicates incl. blobs); 12 flaw + tactic metric keys; no combos/flaw_rate | unit (SQL string) | `uv run pytest tests/scripts/test_chapter5_sql.py -x` | ❌ W0 | ⬜ pending |
-| D-06/D-07 | 01 | Numbers reproduce the narrated report | integration (benchmark DB, on demand) | `uv run pytest tests/scripts/benchmarks/test_chapter5_diff.py -q` | ✅ (regenerate EXPECTED_*) | ⬜ pending |
-| D-08/D-09/D-10 | 01 | blitz/bullet → rapid zones; registry has exactly 12 flaw metrics; lookup per TC | unit | `uv run pytest tests/services/test_flaw_delta_zones.py -x` | ❌ W0 | ⬜ pending |
-| D-11/D-06 | 01 | Tactic registry covers all families × Missed/Allowed; unviable → `has_zone=False` | unit | `uv run pytest tests/services/test_tactic_delta_zones.py -x` | ❌ W0 | ⬜ pending |
-| D-02/D-03 | 02 | `tcs[]` lists only TCs with ≥1 analyzed game inside the TC filter; below-gate TC still has bullets | integration | `uv run pytest tests/services/test_flaw_comparison.py -x` | ✅ rewrite | ⬜ pending |
-| D-00e/D-00f | 02 | 12 bullets (blunder, mistake, 10 tags), no combos/flaw_rate | integration | `uv run pytest tests/services/test_flaw_comparison.py -x` | ✅ rewrite | ⬜ pending |
-| D-00h/D-11 | 02 | Tactic bullets per 100 games, fixed order, all families, no top-6; zones from registry | integration | `uv run pytest tests/services/test_tactic_comparison_service.py -x` | ✅ rewrite | ⬜ pending |
-| D-12 | 02 | `low_sample` true below 40 you+opp flaws, false at 40 | integration | same two files | ❌ new tests | ⬜ pending |
-| D-00k | 02 | `trend_by_tc` per TC; `analyzed_n` kept | integration | `uv run pytest tests/services/test_library_service.py -x -k flaw_stats` | ✅ extend | ⬜ pending |
-| API | 02 | Router shapes, 422 on bad params | integration | `uv run pytest tests/test_library_router.py -x` | ✅ update | ⬜ pending |
-| D-00a/D-00b | 03 | gap position (centre, band edges, saturation, zero-width guards), gap words, verdict | unit | `cd frontend && npm test -- --run src/lib/__tests__/gapBar.test.ts` | ❌ W0 | ⬜ pending |
-| D-00a/D-11/D-12 | 03 | GapBar band/no band, blue dot when faded/zoneless | component | `cd frontend && npm test -- --run src/components/library/stats/__tests__/GapBar.test.tsx` | ❌ W0 | ⬜ pending |
-| D-00c | 03 | Gap popover sections, "Too few flaws to call it", no range line when zoneless, CI/p footer | component | `cd frontend && npm test -- --run src/components/library/stats/__tests__/GapPopover.test.tsx` | ❌ W0 | ⬜ pending |
-| D-02/D-04/D-05 | 03 | Default TC rule, separate key, stored TC ignored when not offered | hook | `cd frontend && npm test -- --run src/hooks/__tests__/useLibraryStatsTc.test.ts` | ❌ W0 | ⬜ pending |
-| D-00g/D-13 | 03 | Top 3 per side by band-width distance; faded/zoneless excluded; Typical line; empty copy | component | `cd frontend && npm test -- --run src/components/library/stats/__tests__/WhatStandsOut.test.tsx` | ❌ W0 | ⬜ pending |
-| D-00f/D-03 | 03 | Four cards, tag order, hints, gate slot "(12 of 20)" | component | `cd frontend && npm test -- --run src/components/library/__tests__/FlawComparisonGrid.test.tsx` | ✅ rewrite | ⬜ pending |
-| D-00h/D-00i/D-03 | 03 | Three tables in TACTIC_GROUPS order, zero-count motifs under table, Advanced collapsed with hint | component | `cd frontend && npm test -- --run src/components/library/__tests__/TacticComparisonGrid.test.tsx` | ✅ rewrite | ⬜ pending |
+| Decision | Plan / Task | Behavior | Test Type | Automated Command | File Exists | Status |
+|----------|-------------|----------|-----------|-------------------|-------------|--------|
+| D-06/D-07/D-08 | 239-01 T1-T2 | §5 base on the full-analysis lane; 12 flaw + 38 tactic metric keys; no combos/flaw_rate | unit (SQL string) | `uv run pytest tests/scripts/test_chapter5_sql.py -x` | ✅ | ✅ green |
+| D-06/D-07 | 239-06 T1 | Numbers reproduce the narrated report | integration (benchmark DB, on demand) | `uv run pytest tests/scripts/benchmarks/test_chapter5_diff.py -q` | ✅ | ✅ green (4 passed, 239-06) |
+| D-08/D-09/D-10 | 239-02 T1, 239-07 T1 | blitz/bullet → rapid zones; registry has exactly 12 flaw metrics; lookup per TC; accepted values pinned | unit | `uv run pytest tests/services/test_flaw_delta_zones.py -x` | ✅ | ✅ green |
+| D-11/D-06 | 239-04 T1, 239-07 T1 | Tactic registry covers all families × Missed/Allowed; 9 accepted bands; unviable → `has_zone=False` | unit | `uv run pytest tests/services/test_tactic_delta_zones.py -x` | ✅ | ✅ green |
+| D-02/D-03 | 239-02 T1-T2 | `tcs[]` lists only TCs with ≥1 analyzed game inside the TC filter; below-gate TC still has bullets | integration | `uv run pytest tests/services/test_flaw_comparison.py -x` | ✅ | ✅ green |
+| D-00e/D-00f | 239-02 T1 | 12 bullets (blunder, mistake, 10 tags), no combos/flaw_rate | integration | `uv run pytest tests/services/test_flaw_comparison.py -x` | ✅ | ✅ green |
+| D-00h/D-11 | 239-04 T1-T2 | Tactic bullets per 100 games, fixed order, all families, no top-6; zones from registry | integration | `uv run pytest tests/services/test_tactic_comparison_service.py -x` | ✅ | ✅ green |
+| D-12 | 239-02 T2, 239-04 T2 | `low_sample` true below 40 you+opp flaws, false at 40 | integration | same two files | ✅ | ✅ green |
+| D-00k | 239-02 T3 | `trend_by_tc` per TC; `analyzed_n` kept | integration | `uv run pytest tests/services/test_library_service.py -x -k flaw_stats` | ✅ | ✅ green |
+| API | 239-02 T3, 239-04 T2 | Router shapes, 422 on bad params | integration | `uv run pytest tests/test_library_router.py tests/routers/test_library_tactic_comparison.py -x` | ✅ | ✅ green |
+| D-00a/D-00b | 239-03 T1 | gap position (centre, band edges, saturation, zero-width guards), gap words, verdict | unit | `cd frontend && npm test -- --run src/lib/__tests__/gapBar.test.ts` | ✅ | ✅ green |
+| D-00a/D-11/D-12 | 239-03 T1 | GapBar band/no band, blue dot when faded/zoneless | component | `cd frontend && npm test -- --run src/components/library/stats/__tests__/GapBar.test.tsx` | ✅ | ✅ green |
+| D-00c | 239-03 T2 | Gap popover sections, "Too few flaws to call it", no range line when zoneless, CI/p footer | component | `cd frontend && npm test -- --run src/components/library/stats/__tests__/GapPopover.test.tsx` | ✅ | ✅ green |
+| D-02/D-04/D-05 | 239-03 T3 | Default TC rule, separate key, stored TC ignored when not offered | hook | `cd frontend && npm test -- --run src/hooks/__tests__/useLibraryStatsTc.test.ts` | ✅ | ✅ green |
+| D-00j/D-02 | 239-05 T1 | Flaw Stats tiles and synced TC switch, no refetch on TC change | component | `cd frontend && npm test -- --run src/components/library/stats/__tests__/FlawTiles.test.tsx src/components/library/stats/__tests__/LibraryStatsSections.test.tsx` | ✅ | ✅ green |
+| D-00g/D-13 | 239-10 T1 | Top 3 per side by band-width distance; faded/zoneless excluded; Typical line; empty copy | component | `cd frontend && npm test -- --run src/components/library/stats/__tests__/WhatStandsOut.test.tsx` | ✅ | ✅ green |
+| D-00f/D-03 | 239-10 T1 | Four cards, tag order, hints, gate slot "(12 of 20)" | component | `cd frontend && npm test -- --run src/components/library/stats/__tests__/ContextTagCards.test.tsx` | ✅ | ✅ green |
+| D-00h/D-00i/D-03 | 239-08 T1-T2 | Three tables in TACTIC_GROUPS order, zero-count motifs under table, Advanced collapsed with hint | component | `cd frontend && npm test -- --run src/components/library/stats/__tests__/TacticTables.test.tsx` | ✅ | ✅ green |
 
 *Status: ⬜ pending · ✅ green · ❌ red · ⚠️ flaky*
 

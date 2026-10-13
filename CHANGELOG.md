@@ -10,6 +10,11 @@ in `YYYY-MM-DD` (Europe/Zurich).
 
 ### Changed
 
+- Library Stats now compares you with your opponents in plain words: one gap bar per metric ("1.7 fewer" style), with the details behind the search icon.
+- Library Stats has a time-control switch in each section. The switches stay in sync and remember your choice between visits.
+- Library Stats: the Blunders and Mistakes tiles now show your opponents' rate next to yours. The Inaccuracies tile and the Severity card are gone.
+- Library Stats: a What stands out card and four context cards (Clock, Game phase, Opponent errors, Lost advantages) replace the old comparison grid.
+- Library Stats: tactic motifs are now three tables per 100 games, with Missed and Allowed side by side. The most common motifs (fork, pin, hanging piece, mate, and allowed discovered attacks) get a typical range from fully analyzed benchmark games.
 - Endgame Stats now compares you with similar-rated players: one peer percentile bar per metric, based on your recent ranked games per time control (rated games against human opponents within 100 Elo of you, last 36 months).
 - Endgame Stats has one time-control switch per section, and it remembers your choice between visits.
 - Endgame Stats replaces the gauges and colored zones with win/draw/loss bars that carry a bracket and a grey typical range. The Endgame Type Breakdown is now a table.
