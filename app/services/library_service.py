@@ -1771,6 +1771,9 @@ async def get_tactic_comparison(
         counts = await library_repository.count_analyzed_by_tc(
             session,
             user_id=user_id,
+            # WR-01: the tactic population is blob-done games only (the section 5
+            # calibration basis); the flaw comparison does not pass this.
+            require_tactic_blobs=True,
             **_filter_kwargs,
         )
         if not counts:

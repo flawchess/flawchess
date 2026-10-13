@@ -9,6 +9,8 @@ Coverage plan:
 - test_low_sample_boundary                   : Phase 239 D-12 — LOW_SAMPLE_MIN_FLAWS - 1 vs LOW_SAMPLE_MIN_FLAWS
 - test_zone_lookup_uses_each_bullets_tc      : Phase 239 D-08/D-11 — registry band per TC, rapid stopgap
 - test_accepted_viable_entries_*             : Phase 239 plan 07 — accepted registry bands reach the API, no monkeypatch
+- test_blob_pending_games_excluded_from_tactic_population : WR-01 — blob-pending analyzed games excluded from tactic, kept in flaw
+- test_blob_pending_games_excluded_from_tactic_population : WR-01 — blob-pending games out of tactic, kept in flaw
 - test_two_user_isolation                    : T-239-08 — each user sees only their own events
 - test_zero_event_family_delta_none          : family with no events -> delta=None
 - test_confidence_gate_chip_field            : tactic_motif=None when confidence < threshold
@@ -72,13 +74,21 @@ async def _seed_game(
     return game
 
 
-async def _seed_analyzed(session: AsyncSession, *, game: "Game") -> None:  # type: ignore[name-defined]
-    """Mark the game analyzed (both gates — mirrors test_flaw_comparison.py)."""
+async def _seed_analyzed(session: AsyncSession, *, game: "Game", blobs_done: bool = True) -> None:  # type: ignore[name-defined]
+    """Mark the game analyzed (both gates — mirrors test_flaw_comparison.py).
+
+    The tactic population is blob-done games only (WR-01), so blobs_completed_at is
+    set by default; pass blobs_done=False to seed an analyzed game whose tactic blobs
+    are still pending.
+    """
     import datetime
 
+    now = datetime.datetime.now(tz=datetime.timezone.utc)
     if game.white_blunders is None:
         game.white_blunders = 0
-    game.full_evals_completed_at = datetime.datetime.now(tz=datetime.timezone.utc)
+    game.full_evals_completed_at = now
+    if blobs_done:
+        game.blobs_completed_at = now
     await session.flush()
 
 
@@ -145,6 +155,7 @@ _TEST_USER_BAND = 77708
 _TEST_USER_ISO_A = 77709
 _TEST_USER_ISO_B = 77710
 _TEST_USER_E2E = 77711
+_TEST_USER_BLOBS = 77712
 
 
 @pytest_asyncio.fixture(autouse=True)
@@ -160,6 +171,7 @@ async def _create_test_users(db_session: AsyncSession) -> None:
         _TEST_USER_ISO_A,
         _TEST_USER_ISO_B,
         _TEST_USER_E2E,
+        _TEST_USER_BLOBS,
     ]:
         await _ensure_user(db_session, uid)
 
@@ -441,6 +453,55 @@ async def test_below_gate_tc_still_lists_bullets(db_session: AsyncSession) -> No
     assert (fork_missed.family, fork_missed.orientation) == ("fork", "missed")
     # Rates are populated below the gate: 1 event over 12 games.
     assert fork_missed.you_rate == pytest.approx(100.0 / 12)
+
+
+@pytest.mark.asyncio
+async def test_blob_pending_games_excluded_from_tactic_population(
+    db_session: AsyncSession,
+) -> None:
+    """An analyzed game without tactic blobs is not a tactic game (WR-01).
+
+    Tactic motifs are NULL while a flaw blob is pending, so such a game would count as a
+    false zero-tactic game. It must be excluded from the tactic analyzed_n and rates but
+    still be counted by the flaw comparison (tags do not depend on blobs).
+    """
+    from app.services.library_service import get_flaw_comparison, get_tactic_comparison
+    from app.services.tactic_detector import TacticMotifInt
+
+    blob_done = 4
+    blob_pending = 6
+    games = []
+    for _ in range(blob_done):
+        g = await _seed_game(db_session, user_id=_TEST_USER_BLOBS, user_color="white")
+        await _seed_analyzed(db_session, game=g)
+        games.append(g)
+    for _ in range(blob_pending):
+        g = await _seed_game(db_session, user_id=_TEST_USER_BLOBS, user_color="white")
+        await _seed_analyzed(db_session, game=g, blobs_done=False)
+    await _seed_flaw(
+        db_session,
+        game=games[0],
+        ply=2,
+        missed_motif=int(TacticMotifInt.FORK),
+        missed_confidence=90,
+    )
+
+    tactic = await get_tactic_comparison(
+        db_session, user_id=_TEST_USER_BLOBS, **_DEFAULT_FILTER_KWARGS
+    )
+    assert [tc.tc for tc in tactic.tcs] == ["blitz"]
+    assert tactic.tcs[0].analyzed_n == blob_done
+    fork_missed = tactic.tcs[0].bullets[0]
+    assert (fork_missed.family, fork_missed.orientation) == ("fork", "missed")
+    # 1 event over the 4 blob-done games only; the pending games add no false zeros.
+    assert fork_missed.you_rate == pytest.approx(100.0 / blob_done)
+
+    flaw = await get_flaw_comparison(
+        db_session,
+        _TEST_USER_BLOBS,
+        **{k: v for k, v in _DEFAULT_FILTER_KWARGS.items() if k != "tactic_families"},
+    )
+    assert flaw.tcs[0].analyzed_n == blob_done + blob_pending
 
 
 @pytest.mark.asyncio

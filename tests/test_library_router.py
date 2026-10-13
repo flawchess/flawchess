@@ -2254,6 +2254,7 @@ async def tactic_comparison_state(test_engine: Any) -> dict[str, Any]:
                 is_computer_game=False,
                 played_at=datetime.datetime(2026, 1, i + 1, tzinfo=datetime.timezone.utc),
                 full_evals_completed_at=analyzed_at,
+                blobs_completed_at=analyzed_at,  # WR-01: tactic population needs blobs done
                 white_blunders=0,  # non-NULL → is_analyzed = True
                 ply_count=40,  # non-NULL, > 0 → passes anchor gate in fetch_tactic_comparison
             )

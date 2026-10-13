@@ -1785,6 +1785,7 @@ async def count_analyzed_by_tc(
     color: str | None = None,
     tactic_families: Sequence[str] | None = None,
     tactic_filter_orientation: TacticOrientation = "either",
+    require_tactic_blobs: bool = False,
 ) -> dict[str, int]:
     """Return {time_control_bucket: analyzed game count} over the filtered set (Phase 239 D-02).
 
@@ -1800,6 +1801,9 @@ async def count_analyzed_by_tc(
     The population carries the same ply_count gate as the fetch_flaw_comparison /
     fetch_tactic_comparison anchors (NOT NULL and > 0), so analyzed_n, below_gate and the
     offered TCs agree with the rows that get aggregated (WR-03).
+
+    require_tactic_blobs additionally restricts to games whose tactic blobs are done
+    (WR-01); only the tactic path sets it. The flaw comparison leaves it False.
     """
     base_subq = _filtered_games_base(
         user_id,
@@ -1817,20 +1821,26 @@ async def count_analyzed_by_tc(
         tactic_orientation=tactic_filter_orientation,
     ).subquery("filtered_tc")
     analyzed_subq = _analyzed_game_ids_subquery(user_id)
+    predicates = [
+        Game.user_id == user_id,
+        Game.id.in_(select(base_subq.c.id)),
+        Game.id.in_(select(analyzed_subq.c.game_id)),
+        Game.time_control_bucket.isnot(None),
+        # WR-03: same ply_count gate as the fetch anchors. Without it a TC whose
+        # analyzed games all have NULL/0 ply_count (pasted PGNs) was offered above the
+        # gate while the aggregation dropped every one of its games, rendering
+        # all-zero bars.
+        Game.ply_count.isnot(None),
+        Game.ply_count > 0,
+    ]
+    if require_tactic_blobs:
+        # WR-01: tactic motifs are suppressed to NULL while a flaw blob is pending, so a
+        # blob-pending analyzed game would count as a false zero-tactic game and dilute
+        # the gap. Matches the section 5 calibration basis (chapter5.py _base_games_cte).
+        predicates.append(Game.blobs_completed_at.isnot(None))
     stmt = (
         select(Game.time_control_bucket, func.count(Game.id))
-        .where(
-            Game.user_id == user_id,
-            Game.id.in_(select(base_subq.c.id)),
-            Game.id.in_(select(analyzed_subq.c.game_id)),
-            Game.time_control_bucket.isnot(None),
-            # WR-03: same ply_count gate as the fetch anchors. Without it a TC whose
-            # analyzed games all have NULL/0 ply_count (pasted PGNs) was offered above the
-            # gate while the aggregation dropped every one of its games, rendering
-            # all-zero bars.
-            Game.ply_count.isnot(None),
-            Game.ply_count > 0,
-        )
+        .where(*predicates)
         .group_by(Game.time_control_bucket)
     )
     rows = (await session.execute(stmt)).all()
@@ -2211,6 +2221,11 @@ async def fetch_tactic_comparison(
             Game.ply_count > 0,
             # Phase 239 D-02: games without a bucket cannot be placed on the TC switch.
             Game.time_control_bucket.isnot(None),
+            # WR-01: blob-pending games have NULL tactic motifs, so they would enter as
+            # false zero-tactic rows and dilute the gap toward "typical". Restrict to
+            # blobs_completed_at IS NOT NULL, the basis the tactic zones were calibrated
+            # on (scripts/benchmarks/chapter5.py _base_games_cte).
+            Game.blobs_completed_at.isnot(None),
         )
         .subquery("anchor_tc")
     )

@@ -86,6 +86,12 @@ async def _seed_games(
                         if analyzed
                         else None
                     ),
+                    # WR-01: the tactic population also requires blobs_completed_at.
+                    blobs_completed_at=(
+                        datetime.datetime(2026, 1, 1, tzinfo=datetime.timezone.utc)
+                        if analyzed
+                        else None
+                    ),
                 )
                 session.add(game)
                 await session.flush()
