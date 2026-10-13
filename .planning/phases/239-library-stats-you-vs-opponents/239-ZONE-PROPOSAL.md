@@ -160,3 +160,46 @@ Largest band shifts versus the live flaw registry (live = whole-cohort Lichess-e
 - **hold**: keep current values and reopen the methodology (for example a shrinkage estimator). Phase pause: 239-07 and 239-09 are not started; 239-08 may still run with band-less tactic tables.
 
 ## Accepted
+
+**Decision: accept with edits** (owner, 2026-10-13, at the plan 239-06 Task 4 checkpoint).
+
+**Edit (the only one):** the 12 flaw bands are NOT widened. They keep today's live values for both zone TCs (rapid and classical), which is what plan 239-02 already carried forward into the per-zone-TC registry. Reason: the proposed widening (1.5x to 3.5x) is driven by sampling noise from the lane's 100-games-per-TC cap (noise-only IQR 70% to 142% of the observed IQR), so the new bands would mostly measure noise and rarely flag users with a few hundred analyzed games. The live bands came from the older ~1000-game basis and are less noise-inflated; this also follows the standing preference for editorial judgement over raw IQR when small effects matter.
+
+Everything else is accepted as proposed:
+
+- **Structure:** one pooled band per metric, shared by rapid and classical; blitz and bullet read the rapid band silently (D-08/D-09). No per-TC split for hasty/opening.
+- **Elo keying:** none.
+- **`LOW_SAMPLE_MIN_FLAWS`:** stays 40.
+
+Final flaw registry (per 100 user moves; identical for rapid and classical; unchanged from live):
+
+| metric | lo / hi |
+|---|---|
+| mistake | -0.23 / +0.20 |
+| blunder | -0.31 / +0.25 |
+| low_clock | -0.08 / +0.03 |
+| hasty | -0.28 / +0.18 |
+| unrushed | -0.38 / +0.36 |
+| opening | -0.15 / +0.13 |
+| middlegame | -0.27 / +0.23 |
+| endgame_phase | -0.12 / +0.10 |
+| miss | -0.11 / +0.11 |
+| lucky | -0.09 / +0.09 |
+| reversed | -0.04 / +0.04 |
+| squandered | -0.07 / +0.08 |
+
+Final tactic registry (per 100 games; identical for rapid and classical; has_zone true for exactly these 9, the other 29 stay `None`):
+
+| family | side | lo / hi |
+|---|---|---|
+| fork | missed | -2.21 / +2.13 |
+| fork | allowed | -4.12 / +3.23 |
+| pin | missed | -1.42 / +1.89 |
+| pin | allowed | -2.86 / +2.05 |
+| discovered_attack | allowed | -1.24 / +1.06 |
+| hanging | missed | -1.13 / +1.48 |
+| hanging | allowed | -5.11 / +3.04 |
+| mate | missed | -2.18 / +2.90 |
+| mate | allowed | -7.00 / +4.09 |
+
+Note for plan 239-07: the flaw registry values need no change (only verify they equal the table above); the tactic registry gets the 9 bands; no Elo keying code.
