@@ -35,8 +35,8 @@ function text(testId: string): string {
 /** Motif names of the card's rows, in rendered order. */
 function rowNames(): string[] {
   const card = screen.getByTestId('tactic-card');
-  return Array.from(card.querySelectorAll('[data-testid^="tactic-row-"]:not([data-testid$="-flaws"])')).map(
-    (row) => row.firstElementChild?.firstElementChild?.textContent ?? '',
+  return Array.from(card.querySelectorAll('[data-testid^="tactic-row-"][data-testid$="-name"]')).map(
+    (name) => name.textContent ?? '',
   );
 }
 
@@ -85,9 +85,11 @@ describe('TacticTables card (D-17)', () => {
     expect(text('tactic-cell-pin-missed-empty')).toBe('No flaws');
   });
 
-  it('reads "N of your flaws" as missed plus allowed for the player only', () => {
+  it("counts the player's own flaws per side, not the opponents'", () => {
     renderTables();
-    expect(text('tactic-row-fork-flaws')).toBe('218 of your flaws');
+    // 84 vs. 44 missed forks: the label carries only the player's 84.
+    expect(text('tactic-cell-fork-missed-side')).toBe('Missed · 84');
+    expect(text('tactic-cell-fork-missed-label')).toBe('Fork · 84');
   });
 });
 
@@ -216,26 +218,68 @@ describe('not-significant and band-less cells (D-11, D-14)', () => {
 });
 
 describe('phone layout and footer (D-00h)', () => {
-  it('hides the column header row below md and stacks the cells with side labels', () => {
+  it('shows a desktop-only Missed | Allowed header; cells name motif and your flaw count', () => {
     renderTables();
     const header = screen.getByTestId('tactic-card-header');
     expect(header.className).toContain('hidden');
     expect(header.className).toContain('md:grid');
-    expect(header.textContent).toBe('MotifMissedAllowed');
+    expect(header.textContent).toBe('MissedAllowed');
+    const missed = screen.getByTestId('tactic-cell-fork-missed-label');
+    const allowed = screen.getByTestId('tactic-cell-fork-allowed-label');
+    expect(missed.textContent).toBe('Fork · 84');
+    expect(allowed.textContent).toBe('Fork · 134');
+    expect(missed.className).toContain('hidden');
+    expect(missed.className).toContain('md:block');
+    // The row's motif name is phone-only.
+    expect(screen.getByTestId('tactic-row-fork-name').className).toContain('md:hidden');
+  });
 
+  it('stacks the cells with side labels on phones', () => {
+    renderTables();
     const row = screen.getByTestId('tactic-row-fork');
     expect(row.className).toContain('grid-cols-1');
-    expect(row.className).toContain('md:grid-cols-[24fr_38fr_38fr]');
+    expect(row.className).toContain('md:grid-cols-2');
     const missedLabel = screen.getByTestId('tactic-cell-fork-missed-side');
     const allowedLabel = screen.getByTestId('tactic-cell-fork-allowed-side');
-    expect(missedLabel.textContent).toBe('Missed');
-    expect(allowedLabel.textContent).toBe('Allowed');
+    expect(missedLabel.textContent).toBe('Missed · 84');
+    expect(allowedLabel.textContent).toBe('Allowed · 134');
     expect(missedLabel.className).toContain('md:hidden');
     expect(allowedLabel.className).toContain('md:hidden');
     // Name first, then Missed, then Allowed.
-    expect(row.children[0]?.textContent).toContain('Fork');
+    expect(row.children[0]).toBe(screen.getByTestId('tactic-row-fork-name'));
+    expect(row.children[0]?.textContent).toBe('Fork');
     expect(row.children[1]).toBe(screen.getByTestId('tactic-cell-fork-missed'));
     expect(row.children[2]).toBe(screen.getByTestId('tactic-cell-fork-allowed'));
+  });
+
+  it('captions the bars better/worse under the rows, once on phones and per column from md up', () => {
+    renderTables();
+    const axis = screen.getByTestId('tactic-card-axis');
+    expect(axis.className).toContain('md:grid-cols-2');
+    const [missed, allowed] = Array.from(axis.children);
+    expect(missed?.textContent).toBe('betterworse');
+    expect(allowed?.textContent).toBe('betterworse');
+    expect(missed?.className).not.toContain('hidden');
+    expect(allowed?.className).toContain('hidden');
+    expect(allowed?.className).toContain('md:flex');
+    // After the last row, inside the card.
+    const card = screen.getByTestId('tactic-card');
+    const rows = card.querySelectorAll('[data-testid^="tactic-row-"][data-testid$="-name"]');
+    const lastRow = rows[rows.length - 1];
+    expect(lastRow && lastRow.compareDocumentPosition(axis) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
+  it('draws the Missed | Allowed divider from md up only', () => {
+    renderTables();
+    const divider = screen.getByTestId('tactic-card-divider');
+    expect(divider.className).toContain('hidden');
+    expect(divider.className).toContain('md:block');
+    expect(divider.className).toContain('left-1/2');
+    // From md up the row dividers sit on the cells, gapped at the column gutter.
+    const row = screen.getByTestId('tactic-row-fork');
+    expect(row.className).toContain('md:border-b-0');
+    expect(screen.getByTestId('tactic-cell-fork-missed').className).toContain('md:border-b');
+    expect(screen.getByTestId('tactic-cell-fork-allowed').className).toContain('md:border-b');
   });
 
   it('shows the footer line once after the card, with lower (better) to the left', () => {

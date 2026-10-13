@@ -24,6 +24,8 @@ const GAP_OUTER_SPAN = GAP_CENTRE - GAP_BAND_HALF_POS - GAP_EDGE_POS;
 const GAP_SAME_EPSILON = 0.005;
 /** What gapWords returns for a gap below GAP_SAME_EPSILON. */
 export const GAP_SAME_WORD = 'same';
+/** The axis caption under the bars: fewer flaws (better) sit left on every gap bar. */
+export const GAP_AXIS_LABELS = ['better', 'worse'] as const;
 /** Number formatting: at or above this magnitude one decimal, at or above the next none. */
 const GAP_WORD_ONE_DP_FROM = 1;
 const GAP_WORD_ZERO_DP_FROM = 10;

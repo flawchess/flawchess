@@ -8,12 +8,12 @@ import {
   type ContextTagCardDef,
   type ContextTagMetric,
 } from '@/lib/flawComparisonMeta';
+import { GAP_AXIS_LABELS } from '@/lib/gapBar';
 import { GapPopover } from './GapPopover';
 import { GapRow } from './GapRow';
 import type { FlawComparisonTc } from '@/types/library';
 
 // Fewer flaws (better) sit left on every gap bar; the caption read worse/better, inverted.
-const AXIS_LABELS = ['better', 'worse'] as const;
 /**
  * Right margin that ends the caption row where the bar track ends: on phones the words
  * column (6rem) and popover sit right of the track; from md up the track is full width.
@@ -72,7 +72,7 @@ function ContextTagCard({ card, tcStats }: ContextTagCardProps) {
           <ContextTagRow key={metric} metric={metric} tcStats={tcStats} />
         ))}
         <div className={AXIS_CAPTION_CLASS} data-testid={`${testId}-axis`}>
-          {AXIS_LABELS.map((label) => (
+          {GAP_AXIS_LABELS.map((label) => (
             <span key={label}>{label}</span>
           ))}
         </div>

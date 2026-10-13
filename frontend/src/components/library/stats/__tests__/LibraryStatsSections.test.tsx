@@ -381,7 +381,7 @@ describe('Tactic motifs section (D-00h, D-02, D-03)', () => {
     const section = screen.getByTestId('tactic-motifs-section');
     expect(await within(section).findByTestId('tactic-tables')).not.toBeNull();
     expect(within(section).getAllByTestId('tactic-card')).toHaveLength(1);
-    expect(text('tactic-row-fork-flaws')).toBe('218 of your flaws');
+    expect(text('tactic-cell-fork-missed-side')).toBe('Missed · 84');
     expect(text('tactic-cell-fork-missed-bar-words')).toBe('2.2 more');
   });
 
@@ -392,7 +392,7 @@ describe('Tactic motifs section (D-00h, D-02, D-03)', () => {
 
     fireEvent.click(screen.getByTestId('tc-switch-library-stats-blitz'));
 
-    await waitFor(() => expect(text('tactic-row-fork-flaws')).toBe('75 of your flaws'));
+    await waitFor(() => expect(text('tactic-cell-fork-missed-side')).toBe('Missed · 30'));
     expect(text('tactic-cell-fork-missed-bar-words')).toBe('1.8 more');
     // The selected TC is a client-side pick: the query key is unchanged, so no refetch.
     expect(mocks.getTacticComparison).toHaveBeenCalledTimes(1);
