@@ -85,9 +85,6 @@ import {
   TAC_UNDER_PROMOTION_BG,
   TAC_PROMOTION,
   TAC_PROMOTION_BG,
-  ZONE_DANGER,
-  ZONE_NEUTRAL,
-  ZONE_SUCCESS,
 } from '@/lib/theme';
 import { TACTIC_MOTIF_DEFINITIONS } from '@/lib/tacticMotifDefinitions';
 import {
@@ -101,9 +98,6 @@ import {
 import type { GapCell } from '@/lib/gapBar';
 import type { TacticBullet, TacticSide } from '@/types/library';
 import type { FlawFilterState } from '@/hooks/useFlawFilterStore';
-
-// Re-export TacticBullet for consumers that import from this module.
-export type { TacticBullet };
 
 // ─── Icon shape ───────────────────────────────────────────────────────────────
 
@@ -253,9 +247,8 @@ export interface TacticFamilyDef {
  * en-passant + under-promotion added Quick 260623; clearance REMOVED Phase 221 plan 06
  * D-07 — see the TacticFamily union doc comment above).
  * Array order doubles as the chip order within each group — the filter panel groups
- * these by `group` preserving this order. The comparison grid resolves families by
- * `.find(f => f.family === ...)` and renders in server order, so it is unaffected by
- * this ordering. The motifs arrays mirror the backend FAMILY_TO_MOTIF_INTS mapping in
+ * these by `group` preserving this order, and the Library Stats tactic tables render
+ * their rows in exactly this order (never re-sorted by rate). The motifs arrays mirror the backend FAMILY_TO_MOTIF_INTS mapping in
  * library_repository.py (plan 129-04 contract). self-interference and clearance belong
  * to no family (promotion was added here when D-09 was reversed).
  */
@@ -587,29 +580,6 @@ export function tacticDepthBadge(
   anchored = true,
 ): string | null {
   return resolveVisibleTactic(orientation, motif, depth, undefined, anchored)?.depthLabel ?? null;
-}
-
-// ─── Stat helpers (shared by the grid + tooltips) ──────────────────────────────
-
-/**
- * Two-sided significance at alpha = 0.05: the 95% CI excludes zero.
- * Mirrors isFlawDeltaSignificant from flawComparisonMeta.ts.
- * Used to gate the delta color: significant → zone color, otherwise muted.
- */
-export function isTacticDeltaSignificant(bullet: TacticBullet): boolean {
-  if (bullet.ci_low == null || bullet.ci_high == null) return false;
-  return bullet.ci_low > 0 || bullet.ci_high < 0;
-}
-
-/**
- * Zone color for the signed tactic delta. Inverted convention: fewer tactic
- * allowances than opponents (delta below the band) is good → green (ZONE_SUCCESS).
- * Mirrors flawDeltaZoneColor from flawComparisonMeta.ts.
- */
-export function tacticDeltaZoneColor(delta: number, zoneLo: number, zoneHi: number): string {
-  if (delta >= zoneHi) return ZONE_DANGER;
-  if (delta >= zoneLo) return ZONE_NEUTRAL;
-  return ZONE_SUCCESS;
 }
 
 // ─── Library Stats tactic tables (Phase 239) ───────────────────────────────────

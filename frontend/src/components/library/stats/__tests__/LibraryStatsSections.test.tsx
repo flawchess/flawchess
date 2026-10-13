@@ -396,7 +396,7 @@ describe('Tactic motifs section (D-00h, D-02, D-03)', () => {
     expect(within(section).getByTestId('tactic-group-discoveries')).not.toBeNull();
     expect(within(section).getByTestId('tactic-group-advanced')).not.toBeNull();
     expect(text('tactic-row-fork-flaws')).toBe('218 of your flaws');
-    expect(text('tactic-cell-fork-missed-words')).toBe('2.2 more');
+    expect(text('tactic-cell-fork-missed-bar-words')).toBe('2.2 more');
   });
 
   it('carries its own switch with the payload TCs, bound to the library-tactics id', async () => {
@@ -416,7 +416,7 @@ describe('Tactic motifs section (D-00h, D-02, D-03)', () => {
     fireEvent.click(screen.getByTestId('tc-switch-library-tactics-blitz'));
 
     await waitFor(() => expect(text('tactic-row-fork-flaws')).toBe('75 of your flaws'));
-    expect(text('tactic-cell-fork-missed-words')).toBe('1.8 more');
+    expect(text('tactic-cell-fork-missed-bar-words')).toBe('1.8 more');
     expect(text('flaw-tile-blunder-rate')).toBe('5.46');
     expect(
       screen.getByTestId('tc-switch-library-vs-opponents-blitz').getAttribute('aria-pressed'),
