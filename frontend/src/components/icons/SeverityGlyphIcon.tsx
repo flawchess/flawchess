@@ -10,8 +10,9 @@
  * caller passes (callers tint lucide icons that way; these self-color instead).
  *
  * Shape-compatible with `LucideIcon` usage — accepts `className`, `style`, and
- * `aria-hidden` so they drop into the same call sites (FlawComparisonGrid /
- * FlawBulletPopover) as the lucide icons they replace.
+ * `aria-hidden` so they drop into the same call sites (the Flaws filter panel's
+ * FlawFilterControl) as the lucide icons they replace. The Library Stats tiles
+ * (FlawTiles) and gap popovers (GapPopover) use no glyph, only the severity colour.
  */
 
 import type { CSSProperties } from 'react';

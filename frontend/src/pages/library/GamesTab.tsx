@@ -51,7 +51,7 @@ const ANALYZE_INFLIGHT_TIMEOUT_MS = 120_000;
  *
  * Composes two separate filter panels (game-metadata + Tags/flaw filter) +
  * LibraryGameCardList, wiring useLibraryGames to the shared filter + shared flaw
- * filter state. FlawStatsPanel lives on the Stats tab (GlobalStats.tsx).
+ * filter state. The flaw statistics live on the Stats tab (LibraryStatsSections, mounted by GlobalStats.tsx).
  *
  * Desktop layout: SidebarLayout with two strip panels — "Filters" (game metadata,
  * LibraryFilterPanel) and "Tags" (severity + tags, FlawFilterControl + FilterActions).

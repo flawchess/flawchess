@@ -7,13 +7,14 @@
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { DEFAULT_FILTERS } from '@/components/filters/FilterPanel';
 import type { FlawStatsResponse } from '@/types/library';
 import {
   BLITZ_ENTRY,
   RAPID_ENTRY,
+  SKETCH_RAPID_ENTRY,
   makeComparison,
   makeTcEntry,
   makeTrendPoint,
@@ -138,10 +139,14 @@ describe('Flaw Stats section (default selection)', () => {
     expect(trend.getAttribute('data-window')).toBe(String(TREND_WINDOW));
   });
 
-  it('uses the Fredoka brand font on the Flaw Stats and Tactic motifs titles (D-00j)', async () => {
+  it('uses the Fredoka brand font on the three section titles (D-00j)', async () => {
     await renderLoaded();
     const headings = screen.getAllByRole('heading', { level: 2 });
-    expect(headings.map((h) => h.textContent)).toEqual(['Flaw Stats', 'Tactic motifs']);
+    expect(headings.map((h) => h.textContent)).toEqual([
+      'Flaw Stats',
+      'You vs. your opponents',
+      'Tactic motifs',
+    ]);
     headings.forEach((h) => expect(h.className).toContain('font-brand'));
   });
 
@@ -236,7 +241,8 @@ describe('empty and failed states', () => {
   it('shows the empty copy and no switch when no TC has analyzed games', async () => {
     mocks.getFlawComparison.mockResolvedValue(makeComparison([]));
     renderSections();
-    expect(await screen.findByText('No analyzed games in the current filters yet.')).not.toBeNull();
+    // Flaw Stats and You vs. your opponents each show the empty copy.
+    expect(await screen.findAllByText('No analyzed games in the current filters yet.')).toHaveLength(2);
     expect(screen.queryByTestId('tc-switch-library-flaw-stats')).toBeNull();
     expect(screen.queryByTestId('flaw-tiles')).toBeNull();
   });
@@ -254,5 +260,124 @@ describe('empty and failed states', () => {
     await renderLoaded();
     expect(await screen.findByText(/Failed to load flaws timeline/)).not.toBeNull();
     expect(text('flaw-tile-blunder-rate')).toBe('5.22');
+  });
+});
+
+describe('You vs. your opponents section', () => {
+  beforeEach(() => {
+    mocks.getFlawComparison.mockResolvedValue(makeComparison([BLITZ_ENTRY, SKETCH_RAPID_ENTRY]));
+  });
+
+  it('renders What stands out and the four cards for the selected TC, between the other sections', async () => {
+    await renderLoaded();
+    const section = screen.getByTestId('vs-opponents-section');
+    expect(section.querySelector('[data-testid="what-stands-out"]')).not.toBeNull();
+    expect(section.querySelector('[data-testid="context-tag-cards"]')?.children).toHaveLength(4);
+    expect(text('standout-hasty-words')).toBe('2.1 fewer');
+    const order = [
+      screen.getByTestId('flaw-stats-section'),
+      section,
+      screen.getByTestId('tactic-motifs-section'),
+    ];
+    expect(order[0]!.compareDocumentPosition(order[1]!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(order[1]!.compareDocumentPosition(order[2]!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
+  it('carries its own switch with the payload TCs, bound to the library-vs-opponents id', async () => {
+    await renderLoaded();
+    expect(screen.getByTestId('tc-switch-library-vs-opponents-blitz')).not.toBeNull();
+    expect(
+      screen.getByTestId('tc-switch-library-vs-opponents-rapid').getAttribute('aria-pressed'),
+    ).toBe('true');
+    expect(screen.queryByTestId('tc-switch-library-vs-opponents-bullet')).toBeNull();
+  });
+
+  it('a click in its switch also switches the Flaw Stats tiles, with no new request (D-02)', async () => {
+    await renderLoaded();
+    expect(text('flaw-tile-blunder-rate')).toBe('5.22');
+    expect(mocks.getFlawComparison).toHaveBeenCalledTimes(1);
+
+    fireEvent.click(screen.getByTestId('tc-switch-library-vs-opponents-blitz'));
+
+    await waitFor(() => expect(text('flaw-tile-blunder-rate')).toBe('5.46'));
+    expect(
+      screen.getByTestId('tc-switch-library-flaw-stats-blitz').getAttribute('aria-pressed'),
+    ).toBe('true');
+    // Blitz has no strengths among the default-banded context rows: the card re-rendered.
+    expect(screen.getByTestId('gap-popover-low-clock-tc-blitz')).not.toBeNull();
+    expect(mocks.trackFeature).toHaveBeenCalledTimes(1);
+    expect(mocks.trackFeature).toHaveBeenCalledWith('option-change', {
+      target: 'library-stats-tc',
+      value: 'blitz',
+    });
+    expect(mocks.getFlawComparison).toHaveBeenCalledTimes(1);
+    expect(mocks.getFlawStats).toHaveBeenCalledTimes(1);
+  });
+
+  it('a click in the Flaw Stats switch also switches this section', async () => {
+    await renderLoaded();
+    fireEvent.click(screen.getByTestId('tc-switch-library-flaw-stats-blitz'));
+    await waitFor(() =>
+      expect(
+        screen.getByTestId('tc-switch-library-vs-opponents-blitz').getAttribute('aria-pressed'),
+      ).toBe('true'),
+    );
+    expect(screen.queryByTestId('standout-hasty')).toBeNull();
+  });
+
+  it('shows only the gate slot below the gate, with no What stands out or cards (D-03)', async () => {
+    mocks.getFlawComparison.mockResolvedValue(
+      makeComparison([makeTcEntry('bullet', { analyzedN: 12 }), RAPID_ENTRY]),
+    );
+    await renderLoaded();
+    fireEvent.click(screen.getByTestId('tc-switch-library-vs-opponents-bullet'));
+
+    await waitFor(() =>
+      expect(text('vs-opponents-gate')).toBe('Not enough analyzed games yet (12 of 20)'),
+    );
+    expect(screen.queryByTestId('what-stands-out')).toBeNull();
+    expect(screen.queryByTestId('context-tag-cards')).toBeNull();
+    // The section heading, switch and intro stay.
+    expect(screen.getByTestId('tc-switch-library-vs-opponents-bullet')).not.toBeNull();
+  });
+
+  it('shows the empty copy and no switch when no TC has analyzed games', async () => {
+    mocks.getFlawComparison.mockResolvedValue(makeComparison([]));
+    renderSections();
+    await screen.findAllByText('No analyzed games in the current filters yet.');
+    expect(within(screen.getByTestId('vs-opponents-section')).getByText('No analyzed games in the current filters yet.')).not.toBeNull();
+    expect(screen.queryByTestId('tc-switch-library-vs-opponents-rapid')).toBeNull();
+    expect(screen.queryByTestId('what-stands-out')).toBeNull();
+  });
+
+  it('shows its own LoadError when the comparison query fails', async () => {
+    mocks.getFlawComparison.mockRejectedValue(new Error('boom'));
+    renderSections();
+    expect(await screen.findByText(/Failed to load opponent comparison/)).not.toBeNull();
+  });
+
+  it('says flaws, blunders and mistakes, never events, across tiles, What stands out and the cards (D-00d)', async () => {
+    await renderLoaded();
+    const rendered = [
+      text('flaw-tiles'),
+      text('what-stands-out'),
+      text('context-tag-cards'),
+      text('vs-opponents-section'),
+    ].join('\n');
+    expect(rendered).not.toMatch(/\bevents?\b/i);
+    expect(rendered).toContain('flaws');
+  });
+
+  it('keeps the popover bodies free of events too (D-00d)', async () => {
+    await renderLoaded();
+    for (const id of [
+      'gap-popover-blunder-tc-rapid',
+      'gap-popover-standout-hasty-tc-rapid',
+      'gap-popover-unrushed-tc-rapid',
+    ]) {
+      // One popover is open at a time: open, read, then the next click closes it.
+      fireEvent.click(screen.getByTestId(id));
+      expect(text(`${id}-popover`)).not.toMatch(/\bevents?\b/i);
+    }
   });
 });
