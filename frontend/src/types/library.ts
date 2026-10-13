@@ -8,6 +8,7 @@
 
 import type { UserResult } from '@/types/api';
 import type { TimeControlBucket } from '@/types/endgames';
+import type { TacticFamily } from '@/lib/tacticComparisonMeta';
 
 // ─── Taxonomy unions ──────────────────────────────────────────────────────────
 
@@ -356,46 +357,53 @@ export interface FlawComparisonTc {
 
 // ─── Tactic comparison (GET /api/library/tactic-comparison) ───────────────────
 
+/** Which side of a tactic a cell describes (mirrors backend TacticSide). */
+export type TacticSide = 'missed' | 'allowed';
+
 /**
- * Per-family data for one tactic-motif family row (Phase 126, mirrors backend TacticBullet).
+ * One tactic family on one side (mirrors backend TacticBullet, Phase 239).
  *
- * sign convention: positive delta = you allow MORE tactic motifs than opponents = bad.
- * delta and CI fields are null when both you_events and opp_events are zero.
- *
- * Phase 129: orientation field added to mirror backend schema option A
- * (TacticBullet.orientation: Literal["missed","allowed"]).
+ * Rates and delta are per 100 games. Sign convention: positive delta = you have MORE of
+ * these tactics than your opponents = bad, for both sides. Rate, delta, CI and p-value
+ * are null when neither side has a flaw (then `low_sample` is true).
  */
 export interface TacticBullet {
-  family: string;              // family key e.g. "fork", "skewer" (10-family taxonomy, plan 129-04/05)
-  you_rate: number | null;     // mean tactic allowances per game (player side); null = zero events
-  opp_rate: number | null;     // mean tactic allowances per game (opponent side); null = zero events
-  delta: number | null;        // you_rate - opp_rate; null = both sides zero events
+  family: TacticFamily;
+  orientation: TacticSide;
+  you_rate: number | null;     // per 100 games, player side
+  opp_rate: number | null;     // per 100 games, opponent side
+  delta: number | null;        // you_rate - opp_rate per 100 games
   ci_low: number | null;       // 95% CI lower bound on delta
   ci_high: number | null;      // 95% CI upper bound on delta
-  p_value: number | null;      // two-sided p vs H0: delta === 0; null = zero events
-  you_events: number;          // raw event count (player side)
-  opp_events: number;          // raw event count (opponent side)
-  zone_lo: number;             // benchmark Q1 or 0.0 when unavailable
-  zone_hi: number;             // benchmark Q3 or 0.0 when unavailable
-  has_zone: boolean;           // false until tactic benchmark pipeline ships
-  /** Phase 129: orientation tag per bullet (plan 01 schema option A). */
-  orientation: 'missed' | 'allowed';
+  p_value: number | null;      // two-sided p vs H0: delta === 0
+  you_events: number;          // raw flaw count, player side
+  opp_events: number;          // raw flaw count, opponent side
+  zone_lo: number;             // typical-range bounds per 100 games; 0.0 when has_zone is false
+  zone_hi: number;
+  has_zone: boolean;           // false when this family-side has no viable benchmark band (D-11)
+  low_sample: boolean;         // fewer flaws than the sample minimum (D-12)
+}
+
+/** One time control's tactic comparison (mirrors backend TacticComparisonTc). */
+export interface TacticComparisonTc {
+  tc: TimeControlBucket;
+  analyzed_n: number;
+  below_gate: boolean;
+  /** 38 bullets in family order, missed before allowed; populated below the gate too. */
+  bullets: TacticBullet[];
 }
 
 /**
- * Response for GET /api/library/tactic-comparison (Phase 126, mirrors backend TacticComparisonResponse).
+ * Response for GET /api/library/tactic-comparison (mirrors backend TacticComparisonResponse).
  *
- * bullets: up to 20 entries (10 families × missed/allowed), top-6 families by Missed you_rate
- *          first then overflow; empty list when below_gate=true.
- * analyzed_n: analyzed game count after filters.
- * analyzed_gate: minimum required (mirrors TACTIC_COMPARISON_GATE).
- * below_gate: true when analyzed_n < analyzed_gate.
+ * tcs: one entry per time control with analyzed games in the current filters, in
+ *      LIBRARY_TC_ORDER. The TC switch is client-side over this list (D-02).
+ * analyzed_gate: minimum analyzed games per TC; exposed so the frontend renders "N of 20"
+ *                without hardcoding.
  */
 export interface TacticComparisonResponse {
-  bullets: TacticBullet[];
-  analyzed_n: number;
+  tcs: TacticComparisonTc[];
   analyzed_gate: number;
-  below_gate: boolean;
 }
 
 /**

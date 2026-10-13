@@ -7,7 +7,6 @@ import type { FlawTag, TacticLinesResponse } from '@/types/library';
 import { isFlawFilterNonDefault } from '@/hooks/useFlawFilterStore';
 import type { FlawFilterState } from '@/hooks/useFlawFilterStore';
 import type { GameFlawCard } from '@/types/library';
-import type { TacticFamily } from '@/lib/tacticComparisonMeta';
 import { depthToQueryParams } from '@/lib/tacticDepth';
 import { LIBRARY_GAMES_POLL_INTERVAL_MS } from '@/hooks/useEvalCoverage';
 
@@ -217,29 +216,23 @@ export function useLibraryFlawComparison(
 }
 
 /**
- * Fetch the 6-family tactic-motif comparison for the current filter + flaw filter.
+ * Fetch the per-time-control tactic comparison (38 bullets per TC, per 100 games) for the
+ * current filter + flaw filter.
  *
- * Self-fetch for TacticComparisonGrid (Phase 126). Mirrors useLibraryFlawComparison
- * exactly but adds the tactic_families dimension to the query key so filter changes
- * trigger a re-fetch.
+ * Self-fetch for the Library Stats Tactic motifs section. The selected time control is a
+ * client-side pick over the payload (D-02), so it never enters the key, and neither does
+ * a tactic-family list: the Stats tab always compares every family. The backend
+ * `tactic_families` parameter stays available but is not sent from here.
  *
- * Query key: ['library-tactic-comparison', params, tacticFamilies]
+ * Query key: ['library-tactic-comparison', params]
  * Do NOT add a manual Sentry.captureException — TanStack Query errors are captured
  * globally (CLAUDE.md).
  */
-export function useTacticComparison(
-  filters: FilterState,
-  flawFilter: FlawFilterState,
-  tacticFamilies: TacticFamily[],
-) {
+export function useTacticComparison(filters: FilterState, flawFilter: FlawFilterState) {
   const params = buildLibraryParams(filters, flawFilter.severity, flawFilter.tags);
   return useQuery({
-    queryKey: ['library-tactic-comparison', params, tacticFamilies],
-    queryFn: () =>
-      libraryApi.getTacticComparison({
-        ...params,
-        tactic_families: tacticFamilies.length > 0 ? tacticFamilies : undefined,
-      }),
+    queryKey: ['library-tactic-comparison', params],
+    queryFn: () => libraryApi.getTacticComparison(params),
     staleTime: LIBRARY_STALE_TIME,
     refetchOnWindowFocus: false,
   });

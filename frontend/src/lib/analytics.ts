@@ -376,7 +376,7 @@ export const PANEL_TARGETS = [
   'opening-insights-more',
   'opening-stats-more',
   'tactic-motifs-more',
-  'tactic-grid-more',
+  'tactic-advanced',
   'move-stats-expand',
 ] as const;
 type PanelTarget = (typeof PANEL_TARGETS)[number];

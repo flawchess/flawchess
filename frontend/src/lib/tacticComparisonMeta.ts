@@ -5,7 +5,7 @@
  * families en-passant + under-promotion → 19 families; Phase 221 plan 06 (D-07) then
  * REMOVED clearance → 19 families).
  *
- * Single source of truth consumed by TacticComparisonGrid (family cards + rows),
+ * Single source of truth consumed by TacticTables (the Library Stats tactic tables),
  * TacticMotifChip (family color + icon), and the FilterPanel tactic-motif filter.
  *
  * Mirrors flawComparisonMeta.ts in structure. The families map the TacticMotif strings
@@ -85,9 +85,6 @@ import {
   TAC_UNDER_PROMOTION_BG,
   TAC_PROMOTION,
   TAC_PROMOTION_BG,
-  ZONE_DANGER,
-  ZONE_NEUTRAL,
-  ZONE_SUCCESS,
 } from '@/lib/theme';
 import { TACTIC_MOTIF_DEFINITIONS } from '@/lib/tacticMotifDefinitions';
 import {
@@ -98,11 +95,9 @@ import {
   DEFAULT_TACTIC_DEPTH_VALUE,
   type TacticDepthOrientation,
 } from '@/lib/tacticDepth';
-import type { TacticBullet } from '@/types/library';
+import type { GapCell } from '@/lib/gapBar';
+import type { TacticBullet, TacticSide } from '@/types/library';
 import type { FlawFilterState } from '@/hooks/useFlawFilterStore';
-
-// Re-export TacticBullet for consumers that import from this module.
-export type { TacticBullet };
 
 // ─── Icon shape ───────────────────────────────────────────────────────────────
 
@@ -252,9 +247,8 @@ export interface TacticFamilyDef {
  * en-passant + under-promotion added Quick 260623; clearance REMOVED Phase 221 plan 06
  * D-07 — see the TacticFamily union doc comment above).
  * Array order doubles as the chip order within each group — the filter panel groups
- * these by `group` preserving this order. The comparison grid resolves families by
- * `.find(f => f.family === ...)` and renders in server order, so it is unaffected by
- * this ordering. The motifs arrays mirror the backend FAMILY_TO_MOTIF_INTS mapping in
+ * these by `group` preserving this order, and the Library Stats tactic tables render
+ * their rows in exactly this order (never re-sorted by rate). The motifs arrays mirror the backend FAMILY_TO_MOTIF_INTS mapping in
  * library_repository.py (plan 129-04 contract). self-interference and clearance belong
  * to no family (promotion was added here when D-09 was reversed).
  */
@@ -588,25 +582,59 @@ export function tacticDepthBadge(
   return resolveVisibleTactic(orientation, motif, depth, undefined, anchored)?.depthLabel ?? null;
 }
 
-// ─── Stat helpers (shared by the grid + tooltips) ──────────────────────────────
+// ─── Library Stats tactic tables (Phase 239) ───────────────────────────────────
 
-/**
- * Two-sided significance at alpha = 0.05: the 95% CI excludes zero.
- * Mirrors isFlawDeltaSignificant from flawComparisonMeta.ts.
- * Used to gate the delta color: significant → zone color, otherwise muted.
- */
-export function isTacticDeltaSignificant(bullet: TacticBullet): boolean {
-  if (bullet.ci_low == null || bullet.ci_high == null) return false;
-  return bullet.ci_low > 0 || bullet.ci_high < 0;
+/** Adapt one API bullet to the gap-bar view model (the components never see API types). */
+export function tacticBulletToGapCell(b: TacticBullet): GapCell {
+  return {
+    delta: b.delta,
+    zoneLo: b.zone_lo,
+    zoneHi: b.zone_hi,
+    hasZone: b.has_zone,
+    lowSample: b.low_sample,
+    youRate: b.you_rate,
+    oppRate: b.opp_rate,
+    ciLow: b.ci_low,
+    ciHigh: b.ci_high,
+    pValue: b.p_value,
+    youEvents: b.you_events,
+    oppEvents: b.opp_events,
+  };
 }
 
-/**
- * Zone color for the signed tactic delta. Inverted convention: fewer tactic
- * allowances than opponents (delta below the band) is good → green (ZONE_SUCCESS).
- * Mirrors flawDeltaZoneColor from flawComparisonMeta.ts.
- */
-export function tacticDeltaZoneColor(delta: number, zoneLo: number, zoneHi: number): string {
-  if (delta >= zoneHi) return ZONE_DANGER;
-  if (delta >= zoneLo) return ZONE_NEUTRAL;
-  return ZONE_SUCCESS;
+/** "a" or "an" for a lowercase noun phrase: "an" before a vowel letter or "x-" (x-ray). */
+export function indefiniteArticle(name: string): 'a' | 'an' {
+  return /^([aeiou]|x-)/i.test(name) ? 'an' : 'a';
+}
+
+export interface TacticSideCopy {
+  /** Popover label: "Missed fork". */
+  label: string;
+  /** One plain sentence for the popover: "Your opponent left a fork on the board and you did not play it." */
+  definition: string;
+  /** Plural noun for the popover footer counts: "flaws with a missed fork". */
+  noun: string;
+}
+
+/** Per-side popover copy for one tactic family (sketch 010 tacArgs). Says flaws, never events (D-00d). */
+export function tacticSideCopy(familyName: string, side: TacticSide): TacticSideCopy {
+  const name = familyName.toLowerCase();
+  const article = indefiniteArticle(name);
+  if (side === 'missed') {
+    return {
+      label: `Missed ${name}`,
+      definition: `Your opponent left ${article} ${name} on the board and you did not play it.`,
+      noun: `flaws with a missed ${name}`,
+    };
+  }
+  return {
+    label: `Allowed ${name}`,
+    definition: `Your move handed your opponent ${article} ${name}.`,
+    noun: `flaws with an allowed ${name}`,
+  };
+}
+
+/** `discovered_attack` -> `discovered-attack`: the family segment of the tactic testids. */
+export function tacticTestIdSegment(family: TacticFamily): string {
+  return family.replace(/_/g, '-');
 }

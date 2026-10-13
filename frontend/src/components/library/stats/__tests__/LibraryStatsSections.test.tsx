@@ -13,9 +13,13 @@ import { DEFAULT_FILTERS } from '@/components/filters/FilterPanel';
 import type { FlawStatsResponse } from '@/types/library';
 import {
   BLITZ_ENTRY,
+  BLITZ_TACTIC_ENTRY,
   RAPID_ENTRY,
+  RAPID_TACTIC_ENTRY,
   SKETCH_RAPID_ENTRY,
   makeComparison,
+  makeTacticComparison,
+  makeTacticTcEntry,
   makeTcEntry,
   makeTrendPoint,
 } from './flawStatsFixtures';
@@ -23,6 +27,7 @@ import {
 const mocks = vi.hoisted(() => ({
   getFlawComparison: vi.fn(),
   getFlawStats: vi.fn(),
+  getTacticComparison: vi.fn(),
   trackFeature: vi.fn(),
 }));
 
@@ -31,6 +36,7 @@ vi.mock('@/api/client', async (importOriginal) => ({
   libraryApi: {
     getFlawComparison: mocks.getFlawComparison,
     getFlawStats: mocks.getFlawStats,
+    getTacticComparison: mocks.getTacticComparison,
   },
 }));
 
@@ -47,10 +53,6 @@ vi.mock('@/components/library/FlawTrendChart', () => ({
       data-window={windowSize}
     />
   ),
-}));
-
-vi.mock('@/components/library/TacticComparisonGrid', () => ({
-  TacticComparisonGrid: () => <div data-testid="tactic-grid-stub" />,
 }));
 
 vi.mock('@/components/library/EvalCoverageBadge', () => ({
@@ -77,9 +79,13 @@ beforeEach(async () => {
   localStorage.clear();
   mocks.getFlawComparison.mockReset();
   mocks.getFlawStats.mockReset();
+  mocks.getTacticComparison.mockReset();
   mocks.trackFeature.mockReset();
   mocks.getFlawComparison.mockResolvedValue(makeComparison([BLITZ_ENTRY, RAPID_ENTRY]));
   mocks.getFlawStats.mockResolvedValue(STATS);
+  mocks.getTacticComparison.mockResolvedValue(
+    makeTacticComparison([BLITZ_TACTIC_ENTRY, RAPID_TACTIC_ENTRY]),
+  );
   ({ LibraryStatsSections } = await import('../LibraryStatsSections'));
 });
 
@@ -150,10 +156,6 @@ describe('Flaw Stats section (default selection)', () => {
     headings.forEach((h) => expect(h.className).toContain('font-brand'));
   });
 
-  it('still mounts the existing tactic grid until the tactic plan replaces it', async () => {
-    await renderLoaded();
-    expect(screen.getByTestId('tactic-grid-stub')).not.toBeNull();
-  });
 });
 
 describe('TC switch (D-02, D-05)', () => {
@@ -240,9 +242,12 @@ describe('timeline for a TC without a series', () => {
 describe('empty and failed states', () => {
   it('shows the empty copy and no switch when no TC has analyzed games', async () => {
     mocks.getFlawComparison.mockResolvedValue(makeComparison([]));
+    mocks.getTacticComparison.mockResolvedValue(makeTacticComparison([]));
     renderSections();
-    // Flaw Stats and You vs. your opponents each show the empty copy.
-    expect(await screen.findAllByText('No analyzed games in the current filters yet.')).toHaveLength(2);
+    // Flaw Stats, You vs. your opponents and Tactic motifs each show the empty copy.
+    await waitFor(() =>
+      expect(screen.getAllByText('No analyzed games in the current filters yet.')).toHaveLength(3),
+    );
     expect(screen.queryByTestId('tc-switch-library-flaw-stats')).toBeNull();
     expect(screen.queryByTestId('flaw-tiles')).toBeNull();
   });
@@ -379,5 +384,94 @@ describe('You vs. your opponents section', () => {
       fireEvent.click(screen.getByTestId(id));
       expect(text(`${id}-popover`)).not.toMatch(/\bevents?\b/i);
     }
+  });
+});
+
+describe('Tactic motifs section (D-00h, D-02, D-03)', () => {
+  it('renders the three tables for the selected TC', async () => {
+    await renderLoaded();
+    const section = screen.getByTestId('tactic-motifs-section');
+    expect(await within(section).findByTestId('tactic-tables')).not.toBeNull();
+    expect(within(section).getByTestId('tactic-group-piece_attacks')).not.toBeNull();
+    expect(within(section).getByTestId('tactic-group-discoveries')).not.toBeNull();
+    expect(within(section).getByTestId('tactic-group-advanced')).not.toBeNull();
+    expect(text('tactic-row-fork-flaws')).toBe('218 of your flaws');
+    expect(text('tactic-cell-fork-missed-bar-words')).toBe('2.2 more');
+  });
+
+  it('carries its own switch with the payload TCs, bound to the library-tactics id', async () => {
+    await renderLoaded();
+    expect(await screen.findByTestId('tc-switch-library-tactics-blitz')).not.toBeNull();
+    expect(
+      screen.getByTestId('tc-switch-library-tactics-rapid').getAttribute('aria-pressed'),
+    ).toBe('true');
+    expect(screen.queryByTestId('tc-switch-library-tactics-bullet')).toBeNull();
+  });
+
+  it('switches to the clicked TC with no new request and syncs the other sections (D-02)', async () => {
+    await renderLoaded();
+    await screen.findByTestId('tactic-tables');
+    expect(mocks.getTacticComparison).toHaveBeenCalledTimes(1);
+
+    fireEvent.click(screen.getByTestId('tc-switch-library-tactics-blitz'));
+
+    await waitFor(() => expect(text('tactic-row-fork-flaws')).toBe('75 of your flaws'));
+    expect(text('tactic-cell-fork-missed-bar-words')).toBe('1.8 more');
+    expect(text('flaw-tile-blunder-rate')).toBe('5.46');
+    expect(
+      screen.getByTestId('tc-switch-library-vs-opponents-blitz').getAttribute('aria-pressed'),
+    ).toBe('true');
+    expect(mocks.trackFeature).toHaveBeenCalledTimes(1);
+    expect(mocks.trackFeature).toHaveBeenCalledWith('option-change', {
+      target: 'library-stats-tc',
+      value: 'blitz',
+    });
+    // The selected TC is a client-side pick: the query key is unchanged, so no refetch.
+    expect(mocks.getTacticComparison).toHaveBeenCalledTimes(1);
+  });
+
+  it('follows a click in another section switch', async () => {
+    await renderLoaded();
+    await screen.findByTestId('tactic-tables');
+    fireEvent.click(screen.getByTestId('tc-switch-library-flaw-stats-blitz'));
+    await waitFor(() => expect(text('tactic-row-fork-flaws')).toBe('75 of your flaws'));
+  });
+
+  it('shows only the gate slot below the gate, with no tables (D-03)', async () => {
+    mocks.getTacticComparison.mockResolvedValue(
+      makeTacticComparison([makeTacticTcEntry('bullet', 12), RAPID_TACTIC_ENTRY]),
+    );
+    mocks.getFlawComparison.mockResolvedValue(
+      makeComparison([makeTcEntry('bullet', { analyzedN: 12 }), RAPID_ENTRY]),
+    );
+    await renderLoaded();
+    await screen.findByTestId('tactic-tables');
+    fireEvent.click(screen.getByTestId('tc-switch-library-tactics-bullet'));
+
+    await waitFor(() =>
+      expect(text('tactic-motifs-gate')).toBe('Not enough analyzed games yet (12 of 20)'),
+    );
+    expect(screen.queryByTestId('tactic-tables')).toBeNull();
+    expect(screen.getByTestId('tc-switch-library-tactics-bullet')).not.toBeNull();
+  });
+
+  it('shows LoadError, not the empty copy, when the tactic query fails', async () => {
+    mocks.getTacticComparison.mockRejectedValue(new Error('boom'));
+    await renderLoaded();
+    expect(await screen.findByText(/Failed to load tactic comparison/)).not.toBeNull();
+    expect(screen.queryByTestId('tactic-tables')).toBeNull();
+    expect(screen.queryByTestId('tc-switch-library-tactics-rapid')).toBeNull();
+    // The other sections are unaffected.
+    expect(text('flaw-tile-blunder-rate')).toBe('5.22');
+  });
+
+  it('does not mention the benchmark zone mapping or a top-N / More tactics list (D-00h, D-09)', async () => {
+    await renderLoaded();
+    await screen.findByTestId('tactic-tables');
+    // Even in an open popover: the blitz/bullet-reads-rapid stopgap is deliberately silent.
+    fireEvent.click(screen.getByTestId('gap-popover-tactic-fork-missed-tc-rapid'));
+    const rendered = `${text('tactic-motifs-section')}\n${text('gap-popover-tactic-fork-missed-tc-rapid-popover')}`;
+    expect(rendered).not.toMatch(/more tactics|stopgap|mapped|zone/i);
+    expect(screen.queryByTestId('tactic-grid-more-tactics')).toBeNull();
   });
 });
