@@ -221,8 +221,8 @@ consistent with Phase 238 (Endgame Stats).
 
 **Depends on**: Phase 238 (`PercentileBar`, `RankedMetricPopover`, `TcSwitch`, `useEndgameStatsTc` patterns); blitz full-analysis benchmark sample for the tactic IQRs
 **Requirements**: TBD (coverage contract = CONTEXT decisions from discuss-phase)
-**Plans:** 10/10 plans executed
-**Status**: Planned
+**Plans:** 10/10 plans complete
+**Status**: Complete 2026-10-13 (verified on branch `gsd/phase-239-library-stats-you-vs-opponents`, not yet squash-merged to `main`)
 
 Plans:
 **Wave 1**
