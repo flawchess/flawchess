@@ -82,6 +82,21 @@ Rows mapped to the executed plans; status from the 239-09 pre-merge gate run (20
 |----------|----------|------------|-------------------|
 | Desktop + mobile look matches sketch 010 round 5; TC switch syncs across all three sections | D-00a..D-00k, D-02 | Visual layout | Claude-in-Chrome on the dev build, desktop and phone widths |
 | D-12 40-flaw constant sanity check vs CI width | D-12 | Needs dev DB data + new bands | Run the RESEARCH.md SQL on dev data after Plan 01; adjust constant only if clearly off |
+| Live per-TC API smoke (239-09 T2) | D-02/D-08/D-11 | Real dev data | ✅ `temp/239-uat/smoke.py` exit 0 on user 28 (2,864 analyzed): blitz 1,000 / rapid 1,841 analyzed, 12 flaw + 38 tactic bullets per TC, blitz hasty band = rapid band, 9 has_zone per TC. Latency flaw_comparison 424 ms, tactic_comparison 395 ms, flaw_stats 61 ms |
+
+### Browser UAT results (239-09, 2026-10-13, Chrome on the dev build, owner's dev account)
+
+| Step | Viewport | Result |
+|------|----------|--------|
+| 1 Layout: Flaw Stats tiles + timeline, You vs. your opponents (What stands out + 4 cards), Tactic motifs (3 tables, Advanced collapsed), ELO + Results unchanged | 1034 px | ✅ after fix d800d6838: the tactic grid used `24%/38%/38%` + `gap-4`, so rows overflowed the card by 32 px and the Allowed search icon was clipped at every desktop width; now `fr` tracks |
+| 2 TC switch sync, no refetch, persists across reload | 1034 px | ✅ all three switches follow a click in any one; zero `/api/` requests on switch; `library_stats_tc` restored after reload |
+| 3 Popovers (tile, context row, What stands out, tactic cell) | 1034 px + 375 px | ✅ definition + "Fewer is better.", You/Opponents with units, typical range + verdict, basis line, greyed counts/CI/p; no "event" wording on the page |
+| 4 Verdict colours, blue dot when typical, dots inset from edge | 1034 px | ✅ |
+| 5 Sidebar TC filter drops a TC from every switch | 1034 px | ✅ Blitz excluded → all switches Rapid-only; Results Breakdown follows the filter |
+| 6 Below-gate slot "(N of 20)" | n/a | ⚠️ not reachable live: no preset recency window gives 1-19 analyzed games for this account (30 days → 0 = empty state ✅, 3 months → 34). Covered by the ContextTagCards / LibraryStatsSections component tests |
+| 7 Phone: stacking, tap popovers, switches on one row | 375 px (same-origin iframe; the Chrome window could not be resized) | ✅ no horizontal scroll, Missed/Allowed stacked under the motif, tap opens popover |
+| 8 Console errors | both | ✅ none |
+
 
 ---
 

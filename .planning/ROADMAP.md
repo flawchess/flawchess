@@ -221,7 +221,7 @@ consistent with Phase 238 (Endgame Stats).
 
 **Depends on**: Phase 238 (`PercentileBar`, `RankedMetricPopover`, `TcSwitch`, `useEndgameStatsTc` patterns); blitz full-analysis benchmark sample for the tactic IQRs
 **Requirements**: TBD (coverage contract = CONTEXT decisions from discuss-phase)
-**Plans:** 9/10 plans executed
+**Plans:** 10/10 plans executed
 **Status**: Planned
 
 Plans:
@@ -243,7 +243,7 @@ Plans:
 - [x] 239-08-PLAN.md — Frontend tactic tables with collapsible Advanced, legacy grid removed (wave 4)
 
 **Wave 5** *(blocked on Wave 4 completion)*
-- [ ] 239-09-PLAN.md — Pre-merge gate, stale-name sweep, CHANGELOG, live smoke, browser UAT steps (wave 5)
+- [x] 239-09-PLAN.md — Pre-merge gate, stale-name sweep, CHANGELOG, live smoke, browser UAT steps (wave 5)
 
 Phase detail for every shipped milestone lives in `milestones/vX.Y-ROADMAP.md`, its phase directories in `milestones/vX.Y-phases/`, and the per-milestone summaries in [MILESTONES.md](MILESTONES.md).
 
