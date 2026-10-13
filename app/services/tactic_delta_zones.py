@@ -17,8 +17,17 @@ sample, so they read the rapid zones until /benchmarks section 5 is re-run with 
 tranches. The mapping is the SAME ZONE_TC_FOR the flaw registry uses (one stopgap mapping
 for both registries), silent in the UI and documented in reports/benchmark/benchmarks-latest.md.
 
-Values come from reports/benchmark/benchmarks-latest.md section 5 (plan 239-07 writes them).
-Until then every entry is None, which is exactly what users see today (no tactic zones).
+Basis (plan 239-06/07): reports/benchmark/benchmarks-latest.md section 5 on the full-analysis
+lane (classical + rapid games with full evals, PVs and blobs; at most 100 games per user per TC;
+per-user mean over at least 20 games), snapshot run 2026-10-12. Each band is the pooled p25 /
+p75 of the per-user paired delta (you minus opponent, per 100 games), rounded outward (lo down,
+hi up) to the 0.01 grid. The TC axis collapsed for all 38 metrics, so rapid and classical hold
+the same pooled band. No Elo keying (no metric reached a keep-separate ELO verdict).
+
+has_zone rule: a (family, side) gets a band only when the pooled IQR is not degenerate (p25 <
+p75) AND at least 50% of user-cells are non-zero. Exactly 9 of 38 pass; the owner accepted that
+set as proposed at the plan 239-06 checkpoint (see 239-ZONE-PROPOSAL.md ## Accepted). The other
+29 stay None.
 
 TACTIC_FAMILIES is spelled out here, not derived from library_repository.FAMILY_TO_MOTIF_INTS,
 because the schemas import this module and the repository imports the schemas (a derived
@@ -83,10 +92,34 @@ TACTIC_FAMILIES: Final[tuple[TacticFamily, ...]] = (
 TacticSide = Literal["missed", "allowed"]
 TACTIC_SIDES: Final[tuple[TacticSide, TacticSide]] = ("missed", "allowed")
 
+
+def _both_tcs(zone_lo: float, zone_hi: float) -> Mapping[ZoneTc, ZoneBand]:
+    """One pooled band shared by both zone TCs (the TC axis collapsed for these metrics)."""
+    band = ZoneBand(zone_lo=zone_lo, zone_hi=zone_hi)
+    return {"rapid": band, "classical": band}
+
+
+# Accepted viable bands (per 100 games), copied from 239-ZONE-PROPOSAL.md ## Accepted.
+_VIABLE_TACTIC_ZONES: Final[Mapping[tuple[TacticFamily, TacticSide], Mapping[ZoneTc, ZoneBand]]] = {
+    ("fork", "missed"): _both_tcs(-2.21, +2.13),
+    ("fork", "allowed"): _both_tcs(-4.12, +3.23),
+    ("pin", "missed"): _both_tcs(-1.42, +1.89),
+    ("pin", "allowed"): _both_tcs(-2.86, +2.05),
+    ("discovered_attack", "allowed"): _both_tcs(-1.24, +1.06),
+    ("hanging", "missed"): _both_tcs(-1.13, +1.48),
+    ("hanging", "allowed"): _both_tcs(-5.11, +3.04),
+    ("mate", "missed"): _both_tcs(-2.18, +2.90),
+    ("mate", "allowed"): _both_tcs(-7.00, +4.09),
+}
+
 # 38 entries (19 families x 2 sides). None = unviable, see module docstring.
 TACTIC_DELTA_ZONES: Final[
     Mapping[tuple[TacticFamily, TacticSide], Mapping[ZoneTc, ZoneBand] | None]
-] = {(family, side): None for family in TACTIC_FAMILIES for side in TACTIC_SIDES}
+] = {
+    (family, side): _VIABLE_TACTIC_ZONES.get((family, side))
+    for family in TACTIC_FAMILIES
+    for side in TACTIC_SIDES
+}
 
 
 def tactic_delta_zone(

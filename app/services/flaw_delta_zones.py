@@ -11,10 +11,21 @@ is re-run with those tranches. The mapping lives in ZONE_TC_FOR, is silent in
 the UI, and is documented in reports/benchmark/benchmarks-latest.md section 5.
 
 The registry is keyed metric -> zone TC -> band. A collapsed TC axis is just
-identical values under both zone TCs. The values are hand-authored from the
-narrated benchmark report on a 0.01 grid (the grid keeps a visible neutral band
-on the rare tags whose IQR is below 0.05; a coarser grid snapped those bands
-to zero width).
+identical values under both zone TCs. The values are hand-authored on a 0.01 grid
+(the grid keeps a visible neutral band on the rare tags whose IQR is below 0.05; a
+coarser grid snapped those bands to zero width).
+
+Basis (plan 239-06/07): benchmarks-latest.md section 5 on the full-analysis lane
+(classical + rapid, snapshot run 2026-10-12) was recomputed and proposed, bands are
+per 100 user moves, p25 / p75 of the per-user paired delta rounded outward (lo down,
+hi up) to the 0.01 grid, one pooled band per metric (no metric reached keep-separate
+on the TC or ELO axis, so no Elo keying). The owner accepted the proposal with ONE
+edit (239-ZONE-PROPOSAL.md ## Accepted): the 12 flaw bands keep the previous live
+values instead of the proposed 1.5x to 3.5x wider ones, because the widening was
+mostly sampling noise from the lane's 100-games-per-user-per-TC cap (noise-only IQR
+70% to 142% of the observed IQR). The values below are therefore the live
+whole-cohort bands, identical for rapid and classical, while tactic_delta_zones.py
+holds the full-analysis section 5 bands.
 
 Sign convention: negative delta = fewer flaws than the opponent = good. The
 registry stores raw Q1/Q3 values with no sign flip; the UI draws better to the
@@ -85,8 +96,8 @@ class ZoneBand:
     zone_hi: float
 
 
-# Phase 239 plan 02 carries the existing 12 pooled bands forward unchanged for both
-# zone TCs; plan 239-07 writes the values recomputed on the full-analysis sample.
+# Phase 239 owner-accepted values (239-ZONE-PROPOSAL.md ## Accepted): the live pooled
+# bands, kept unchanged for both zone TCs. The tests pin them against that table.
 FLAW_DELTA_ZONES: Final[Mapping[FlawDeltaMetric, Mapping[ZoneTc, ZoneBand]]] = {
     # Severity family
     "mistake": {
