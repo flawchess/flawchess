@@ -40,7 +40,7 @@ import { CardHeader } from '@/components/ui/card';
 import { ChartTooltipBox } from '@/components/ui/chart-tooltip-box';
 import { NEUTRAL_PCT_THRESHOLD } from '@/generated/endgameZones';
 import {
-  ENDGAME_VOLUME_BAR_COLOR,
+  VOLUME_BAR_COLOR,
   NEUTRAL_SERIES_COLOR,
   TYPICAL_BAND_FILL,
   ZONE_DANGER,
@@ -82,6 +82,8 @@ function useIsMobile(): boolean {
 /**
  * Zone color for a point vs the neutral threshold. Phase 238 made the dots neutral;
  * the 238 UAT asked for the colored dots back, so only the line and band stay neutral.
+ * This weekly trend line has no CI, so it is deliberately exempt from the 239 D-14
+ * significance gate: the dots colour on the threshold alone.
  */
 function zoneColor(diffPct: number): string {
   if (diffPct > NEUTRAL_PCT_THRESHOLD) return ZONE_SUCCESS;
@@ -276,7 +278,7 @@ export function EndgameClockDiffOverTimeChart({
             <Bar
               yAxisId="bars"
               dataKey="per_week_game_count"
-              fill={ENDGAME_VOLUME_BAR_COLOR}
+              fill={VOLUME_BAR_COLOR}
               legendType="none"
               isAnimationActive={false}
               data-testid="clock-diff-over-time-volume-bars"

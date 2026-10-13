@@ -1,5 +1,6 @@
 import { cn } from '@/lib/utils';
 import {
+  GAUGE_NEUTRAL,
   PERCENTILE_MEDIAN_TICK,
   PERCENTILE_TRACK,
   PERCENTILE_TYPICAL_BAND,
@@ -71,21 +72,25 @@ interface PercentileBarProps {
   /** Binding count and floor, shown in the below-floor slot ("18 of 30"). */
   floorN: number;
   floorRequired: number;
+  /** 99% significance of the value vs its null (239 D-14); red/green needs it. */
+  significant: boolean;
   testId: string;
 }
 
 /**
  * One 0-100 percentile axis (D-00a): the 25-75 band shaded, a median tick at 50
  * and a dot at the peer percentile, colored red below 25, blue 25-75, green above
- * 75. The ordinal on the right shares the dot's color. The metric value itself is
- * rendered elsewhere, uncolored; the dot is the only verdict and carries no icon.
- * Cells without a percentile show their status line in the same slot instead.
+ * 75, but only when the value is significant (Phase 239 D-14); otherwise blue. The
+ * ordinal on the right shares the dot's color. The metric value itself is rendered
+ * elsewhere, uncolored; the dot is the only verdict and carries no icon. Cells
+ * without a percentile show their status line in the same slot instead.
  */
 export function PercentileBar({
   status,
   percentile,
   floorN,
   floorRequired,
+  significant,
   testId,
 }: PercentileBarProps) {
   if (status !== 'ranked') {
@@ -101,7 +106,7 @@ export function PercentileBar({
   if (percentile === null) return null;
 
   const shown = displayPercentile(percentile);
-  const bandColor = percentileBandColor(shown);
+  const bandColor = significant ? percentileBandColor(shown) : GAUGE_NEUTRAL;
   return (
     <div className="flex items-center gap-3" data-testid={testId}>
       <div

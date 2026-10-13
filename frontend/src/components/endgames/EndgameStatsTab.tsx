@@ -14,6 +14,8 @@ import { MetricsSection } from './stats/MetricsSection';
 import { OverallSection } from './stats/OverallSection';
 import { TimePressureSection } from './stats/TimePressureSection';
 import { TypeTable } from './stats/TypeTable';
+import { EndgameStatsTcSwitch } from './stats/EndgameStatsTcSwitch';
+import { StickyTcBar } from '@/components/stats/StickyTcBar';
 import { useEndgameInsightsState } from './useEndgameInsightsState';
 import type { SectionInsight } from './useEndgameInsightsState';
 
@@ -341,18 +343,26 @@ export function EndgameStatsTab({ tier2, onCategorySelect }: EndgameStatsTabProp
     body = (
       <>
         <EndgameConceptsAccordion />
-        <OverallSection tcs={tcs}>
-          <SectionInsightSlot sectionId="overall" data={sectionBySection.overall} />
-        </OverallSection>
-        <MetricsSection tcs={tcs}>
-          <SectionInsightSlot sectionId="metrics_elo" data={sectionBySection.metrics_elo} />
-        </MetricsSection>
-        <TimePressureSection tcs={tcs}>
-          <SectionInsightSlot sectionId="time_pressure" data={sectionBySection.time_pressure} />
-        </TimePressureSection>
-        <TypeTable tcs={tcs} onCategorySelect={onCategorySelect}>
-          <SectionInsightSlot sectionId="type_breakdown" data={sectionBySection.type_breakdown} />
-        </TypeTable>
+        {/* One TC switch for every section (D-00h), pinned while the sections scroll. */}
+        <div>
+          <StickyTcBar testId="endgame-stats-tc-bar">
+            <EndgameStatsTcSwitch tcs={tcs} />
+          </StickyTcBar>
+          <div className="flex flex-col gap-4">
+            <OverallSection tcs={tcs}>
+              <SectionInsightSlot sectionId="overall" data={sectionBySection.overall} />
+            </OverallSection>
+            <MetricsSection tcs={tcs}>
+              <SectionInsightSlot sectionId="metrics_elo" data={sectionBySection.metrics_elo} />
+            </MetricsSection>
+            <TimePressureSection tcs={tcs}>
+              <SectionInsightSlot sectionId="time_pressure" data={sectionBySection.time_pressure} />
+            </TimePressureSection>
+            <TypeTable tcs={tcs} onCategorySelect={onCategorySelect}>
+              <SectionInsightSlot sectionId="type_breakdown" data={sectionBySection.type_breakdown} />
+            </TypeTable>
+          </div>
+        </div>
       </>
     );
   }

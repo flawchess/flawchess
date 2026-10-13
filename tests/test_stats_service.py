@@ -296,6 +296,7 @@ class TestGetRatingHistory:
             assert isinstance(pt.date, str), "date must be a string"
             assert isinstance(pt.rating, int), "rating must be an int"
             assert isinstance(pt.time_control_bucket, str), "time_control_bucket must be a string"
+            assert pt.game_count >= 1, "game_count counts the day's games, at least the kept one"
 
 
 # ---------------------------------------------------------------------------

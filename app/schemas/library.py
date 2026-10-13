@@ -20,7 +20,10 @@ from typing import Literal
 
 from pydantic import BaseModel
 
-from app.services.flaws_service import FlawSeverity, FlawTag, SeverityCounts, TempoTag
+from app.schemas.normalization import TimeControlBucket
+from app.services.flaw_delta_zones import FlawDeltaMetric
+from app.services.tactic_delta_zones import TacticFamily, TacticSide
+from app.services.flaws_service import FlawSeverity, FlawTag, SeverityCounts
 
 
 # ---------------------------------------------------------------------------
@@ -272,59 +275,6 @@ class LibraryGamesResponse(BaseModel):
 # ---------------------------------------------------------------------------
 
 
-class SeverityRates(BaseModel):
-    """Per-severity rates normalized two ways over the filtered analyzed-only set.
-
-    per_game        = severity_count / analyzed_n (flaws per analyzed game).
-    per_100_moves   = MACRO mean of per-game (severity_count / user_moves * 100), each
-                      game weighted equally. This matches the you-vs-opponent bullet's
-                      player_rate for mistake/blunder exactly (same per-game-then-mean
-                      aggregation, same floor/ceil(ply_count/2) denominator) so the card
-                      and the comparison tooltip agree, and the card sits consistently
-                      under the §5 benchmark band.
-
-    Both dicts are keyed by FlawSeverity (inaccuracy/mistake/blunder). Mistake/blunder
-    come from game_flaws (kernel thresholds). Inaccuracy comes from the per-game oracle
-    columns (games.white_/black_inaccuracies) — game_flaws never stores inaccuracies
-    (D-03) — so it has no bullet/benchmark counterpart and stands alone.
-    """
-
-    per_game: dict[FlawSeverity, float]
-    per_100_moves: dict[FlawSeverity, float]
-
-
-class TagDistribution(BaseModel):
-    """Tag distribution over the analyzed-set M+B FlawRecords (LIBG-09).
-
-    tempo                 = count of each tempo tag (at most one per flaw). Tempo
-                            counts sum to <= M+B flaws because flaws with unavailable
-                            clock data carry no tempo tag. The Flaw-Stats panel must
-                            show the unmeasured remainder (total M+B - sum(tempo))
-                            rather than normalizing the three measured segments to 100%
-                            (per flaw-tag-definitions.md §"Structural rule: tempo is optional").
-    phase_histogram       = count of flaws in each game phase (each flaw carries
-                            exactly one phase tag).
-    miss_rate             = miss M+B flaws / total M+B flaws; 0.0 when there are
-                            no M+B flaws. (D-01, Phase 107)
-    lucky_rate     = lucky M+B flaws / total M+B flaws; 0.0 when
-                            there are no M+B flaws. (D-01, Phase 107)
-    reversed_rate         = reversed M+B flaws / total M+B flaws; 0.0 when there
-                            are no M+B flaws. (Phase 110, D-03)
-    squandered_rate       = squandered M+B flaws / total M+B flaws; 0.0 when there
-                            are no M+B flaws. (Phase 110, D-03)
-    """
-
-    tempo: dict[TempoTag, int]
-    phase_histogram: dict[Literal["opening", "middlegame", "endgame"], int]
-    # D-01: Opportunity and Impact rates.
-    # Each = count / total M+B flaws; 0.0 when there are no M+B flaws.
-    # Flat floats (no nested dicts).
-    miss_rate: float
-    lucky_rate: float
-    reversed_rate: float
-    squandered_rate: float
-
-
 class FlawTrendPoint(BaseModel):
     """One ISO-week flaw-trend datapoint (oracle-sourced, per-100-moves macro).
 
@@ -343,34 +293,45 @@ class FlawTrendPoint(BaseModel):
     per_week_games: int
 
 
-class FlawStatsResponse(BaseModel):
-    """Response for GET /api/library/flaw-stats (LIBG-09).
+class FlawTrendTc(BaseModel):
+    """One time control's Flaws Timeline series (Phase 239 D-00k)."""
 
-    Stats over the filtered analyzed-only set. analyzed_pct / analyzed_n / total_n
-    state the explicit >=90%-coverage denominator so the panel never implies clean
-    games where evals are merely absent (criterion 4). trend_window is the rolling
-    window size (games) used for the trend chart.
+    tc: TimeControlBucket
+    points: list[FlawTrendPoint]
+
+
+class FlawStatsResponse(BaseModel):
+    """Response for GET /api/library/flaw-stats (LIBG-09, Phase 239 D-00k).
+
+    trend_by_tc: one Flaws Timeline series per time control that has trend points,
+        ordered bullet, blitz, rapid, classical; the client picks the selected TC's
+        series. Games with a NULL time_control_bucket cannot be placed on the switch
+        and are excluded. Empty when there is no analyzed game.
+    analyzed_n: analyzed games in the filtered set (the Flaws tab's "no analyzed games"
+        probe reads it). The per-TC coverage line reads FlawComparisonTc.analyzed_n /
+        total_n instead. trend_window is the rolling window size (games) used for the
+        trend chart.
+
+    Phase 239 removed the severity counts, severity rates, tag distribution and pooled
+    trend: nothing renders them any more (the tiles read the flaw-comparison bullets).
     """
 
-    per_severity_counts: SeverityCounts
-    rates: SeverityRates
-    tag_distribution: TagDistribution
-    trend: list[FlawTrendPoint]
+    trend_by_tc: list[FlawTrendTc]
     trend_window: int
-    analyzed_pct: float
     analyzed_n: int
-    total_n: int
 
 
 class FlawBullet(BaseModel):
-    """Per-bullet data for one of the 15 flaw-delta metrics (Phase 115, FLAWCMP-01/03)."""
+    """Per-bullet data for one of the 12 flaw-delta metrics (Phase 115, FLAWCMP-01/03)."""
 
-    tag: str
+    tag: FlawDeltaMetric
     delta: (
         float | None
     )  # mean per-game delta (per 100 of user's moves); None = both sides zero events
-    ci_low: float | None  # 95% CI lower bound (per 100 moves)
-    ci_high: float | None  # 95% CI upper bound (per 100 moves)
+    # 99% CI on delta (per 100 moves, D-14); None for zero-event bullets and below
+    # two games (score_confidence.compute_paired_difference_test n-gates).
+    ci_low: float | None
+    ci_high: float | None
     # Per-player rates (Phase 115 UAT): mean per-game flaw rate per 100 of the
     # user's moves, for player and opponent separately. Both opponent and player
     # counts are normalized by the user's move count per game so that
@@ -379,31 +340,56 @@ class FlawBullet(BaseModel):
     player_rate: float | None
     opp_rate: float | None
     # Two-sided p-value vs H0: delta == 0, from the same Wald-z that produces the
-    # CI (z = mean / SE, p = erfc(|z| / sqrt(2))). None for zero-event bullets.
+    # CI (z = mean / SE, p = erfc(|z| / sqrt(2))). None for zero-event bullets and
+    # below CONFIDENCE_MIN_N (10) games (compute_paired_difference_test n-gate).
     p_value: float | None
     player_events: int  # total player-side tag events across analyzed games
     opp_events: int  # total opponent-side tag events across analyzed games
-    zone_lo: float  # Q1 from FLAW_DELTA_ZONES registry
-    zone_hi: float  # Q3 from FLAW_DELTA_ZONES registry
-    domain: float  # axis half-width from registry (D-04)
-    has_zone: bool = True  # False for future zoneless bullets (FLAWUI-04)
+    # Typical-range bounds from the per-zone-TC FLAW_DELTA_ZONES registry: a band
+    # symmetric around 0 (±IQR/2 of the measured quartiles, Phase 239 D-15).
+    zone_lo: float
+    zone_hi: float
+    # Always True: every flaw metric has a band. Kept so FlawBullet and TacticBullet
+    # share one shape (tactic family-sides without a viable band send False).
+    has_zone: bool = True
+    # Phase 239 D-14: True when the 99% CI on delta excludes 0. Only a significant cell
+    # outside the band gets a red/green verdict; the backend owns the test.
+    significant: bool
+
+
+class FlawComparisonTc(BaseModel):
+    """One time control's you-vs-opponent flaw comparison (Phase 239 D-02/D-03).
+
+    tc: the time control bucket these bullets were computed over.
+    analyzed_n: analyzed games of this TC after the current filter set.
+    total_n: all games of this TC after the current filter set, analyzed or not; the
+             coverage denominator of the Flaw Stats basis line (analyzed_n <= total_n).
+    below_gate: True when analyzed_n < FLAW_COMPARISON_GATE; the bullets are still
+                populated so tiles can show rates (D-03).
+    bullets: always the 12 flaw-delta metrics in FLAW_DELTA_METRICS order.
+    """
+
+    tc: TimeControlBucket
+    analyzed_n: int
+    total_n: int
+    below_gate: bool
+    bullets: list[FlawBullet]
 
 
 class FlawComparisonResponse(BaseModel):
-    """Response for GET /api/library/flaw-comparison (Phase 115, FLAWCMP-01/03).
+    """Response for GET /api/library/flaw-comparison (Phase 115, Phase 239 D-02).
 
-    bullets: always 15 entries ordered by family (severity → tempo → phase →
-             opportunity → impact → combos) when below_gate=False; empty list
-             when below_gate=True.
-    analyzed_n: analyzed game count after the current filter set.
-    analyzed_gate: minimum required (constant = FLAW_COMPARISON_GATE = 20).
-    below_gate: True when analyzed_n < analyzed_gate — frontend shows CTA (D-10).
+    tcs: one entry per time control that the sidebar time-control filter allows and
+         that has at least one analyzed game under the current filters, ordered
+         bullet, blitz, rapid, classical. Zero-analyzed TCs are omitted (D-02), so an
+         empty list means no analyzed games at all. Below-gate TCs keep their bullets
+         (D-03). No request parameter selects a TC: the switch is client-side.
+    analyzed_gate: minimum analyzed games per TC (library_service.FLAW_COMPARISON_GATE),
+        exposed so the frontend can render "X of N" without hardcoding the gate.
     """
 
-    bullets: list[FlawBullet]
-    analyzed_n: int
-    analyzed_gate: int = 20  # exposed so frontend can render "X of 20" without hardcoding
-    below_gate: bool
+    tcs: list[FlawComparisonTc]
+    analyzed_gate: int
 
 
 # ---------------------------------------------------------------------------
@@ -412,52 +398,73 @@ class FlawComparisonResponse(BaseModel):
 
 
 class TacticBullet(BaseModel):
-    """Per-family data for one tactic-motif family row (Phase 126, TACCMP-01).
+    """Per-family, per-side data for one tactic motif cell (Phase 126, 129, 239).
 
-    Phase 129 Plan 01 (D-13): orientation field added (option A) so the frontend
-    can render two bullets per family card — one missed, one allowed.
-
-    Rates are mean tactic allowances per game (not per 100 moves).
-    Sign convention: positive delta = you allow MORE than opponents = bad
-    (mirrors FlawBullet sign convention).
-    has_zone: False until a tactic benchmark pipeline ships (out of scope Phase 126).
+    Rates are mean tactic counts per 100 games (Phase 239 D-00h): a 1-vs-0 single-game
+    difference reads 100.0. The p-value is scale-invariant and unchanged by the scaling.
+    Sign convention: positive delta = you have MORE of these tactics than the opponent
+    (mirrors FlawBullet; for both Missed and Allowed that is the bad direction).
     """
 
-    family: str  # family key e.g. "fork", "skewer" (10-family taxonomy, plan 129-04)
-    orientation: Literal["missed", "allowed"]  # Phase 129 D-13 (option A schema lock)
-    you_rate: float | None  # mean tactic allowances per game (player side); None = zero events
-    opp_rate: float | None  # mean tactic allowances per game (opponent side); None = zero events
-    delta: float | None  # you_rate - opp_rate; None = both sides zero events
-    ci_low: float | None  # 95% CI lower bound on delta
-    ci_high: float | None  # 95% CI upper bound on delta
-    p_value: float | None  # two-sided p vs H0: delta == 0; None = zero events
+    family: TacticFamily
+    orientation: TacticSide  # missed (you did not play it) or allowed (you let the opponent)
+    you_rate: float | None  # mean count per 100 games (player side); None = zero events
+    opp_rate: float | None  # mean count per 100 games (opponent side); None = zero events
+    delta: float | None  # you_rate - opp_rate per 100 games; None = both sides zero events
+    # 99% CI on delta (per 100 games, D-14) and the two-sided p vs H0: delta == 0.
+    # None for zero events; the CI below two games and p below CONFIDENCE_MIN_N (10)
+    # games (score_confidence.compute_paired_difference_test n-gates).
+    ci_low: float | None
+    ci_high: float | None
+    p_value: float | None
     you_events: int  # raw event count (player side)
     opp_events: int  # raw event count (opponent side)
-    zone_lo: float = 0.0  # benchmark Q1 or 0.0 when unavailable
-    zone_hi: float = 0.0  # benchmark Q3 or 0.0 when unavailable
-    has_zone: bool = False  # False until tactic benchmark pipeline ships
+    # Typical-range bounds from the tactic zone registry (per 100 games), via the zone TC
+    # (blitz/bullet read rapid, silently): symmetric ±IQR/2 around 0 (D-15).
+    # 0.0 / 0.0 / False when the family-side has no viable band.
+    zone_lo: float
+    zone_hi: float
+    has_zone: bool
+    # Phase 239 D-14: True when the 99% CI on delta excludes 0. With a band, only a
+    # significant cell outside the band gets a red/green verdict; without one
+    # (has_zone False, D-16) the cell is judged on this flag alone. The backend owns
+    # the test.
+    significant: bool
+
+
+class TacticComparisonTc(BaseModel):
+    """One time control's tactic comparison (Phase 239 D-02/D-03).
+
+    tc: the time control bucket these bullets were computed over.
+    analyzed_n: analyzed games of this TC after the current filter set.
+    below_gate: True when analyzed_n < TACTIC_COMPARISON_GATE; the bullets are still
+                populated so the UI can decide what to show (D-03).
+    bullets: always 38 entries: every family in FAMILY_TO_MOTIF_INTS order, missed
+             before allowed.
+    """
+
+    tc: TimeControlBucket
+    analyzed_n: int
+    below_gate: bool
+    bullets: list[TacticBullet]
 
 
 class TacticComparisonResponse(BaseModel):
-    """Response for GET /api/library/tactic-comparison (Phase 126, TACCMP-01/02/03).
+    """Response for GET /api/library/tactic-comparison (Phase 126, Phase 239 D-02/D-00h).
 
-    Phase 129 (D-13/D-14, taxonomy redesign): bullets now carries up to 20 orientation-tagged
-    entries (10 families x 2 orientations). Ordering contract:
-      - Top-6 families by Missed bullet you_rate descending appear first (both
-        their missed + allowed bullets before any overflow families).
-      - Overflow families follow, also paired (missed then allowed per family).
-    The frontend renders server order — no client re-sort needed.
-
-    bullets: ordered per D-14 contract; empty list when below_gate=True.
-    analyzed_n: analyzed game count after filters.
-    analyzed_gate: minimum required (mirrors TACTIC_COMPARISON_GATE = 20).
-    below_gate: True when analyzed_n < analyzed_gate.
+    tcs: one entry per time control that the sidebar time-control filter allows and
+         that has at least one analyzed game under the current filters, ordered
+         bullet, blitz, rapid, classical. Zero-analyzed TCs are omitted, so an empty
+         list means no analyzed games at all. Below-gate TCs keep their bullets
+         (D-03). No request parameter selects a TC: the switch is client-side.
+    Each TC carries all 19 families x 2 sides in fixed FAMILY_TO_MOTIF_INTS order,
+    missed before allowed. There is no ranking or top-N selection (D-00h).
+    analyzed_gate: minimum analyzed games per TC (library_service.TACTIC_COMPARISON_GATE),
+        exposed so the frontend can render "X of N" without hardcoding the gate.
     """
 
-    bullets: list[TacticBullet]
-    analyzed_n: int
+    tcs: list[TacticComparisonTc]
     analyzed_gate: int
-    below_gate: bool
 
 
 # ---------------------------------------------------------------------------

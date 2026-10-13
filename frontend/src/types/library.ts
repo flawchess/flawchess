@@ -7,6 +7,8 @@
  */
 
 import type { UserResult } from '@/types/api';
+import type { TimeControlBucket } from '@/types/endgames';
+import type { TacticFamily } from '@/lib/tacticComparisonMeta';
 
 // ─── Taxonomy unions ──────────────────────────────────────────────────────────
 
@@ -25,9 +27,6 @@ export type FlawTag =
 
 /** Flaw severity tiers (backend FlawSeverity literal). */
 export type FlawSeverity = 'inaccuracy' | 'mistake' | 'blunder';
-
-/** Tempo-family tags — subset of FlawTag (backend TempoTag literal). */
-export type TempoTag = 'low-clock' | 'hasty' | 'unrushed';
 
 /**
  * Tactic orientation filter (Phase 129 TACUI-06, D-06/D-07).
@@ -198,36 +197,6 @@ export interface LibraryGamesResponse {
 // ─── Flaw stats (GET /api/library/flaw-stats) ─────────────────────────────────
 
 /**
- * Per-severity rates normalized two ways (mirrors backend SeverityRates).
- * Both dicts keyed by FlawSeverity; access returns number | undefined per noUncheckedIndexedAccess.
- */
-export interface SeverityRates {
-  per_game: Record<FlawSeverity, number>;
-  per_100_moves: Record<FlawSeverity, number>;
-}
-
-/**
- * Tag distribution over the analyzed-set M+B FlawRecords (mirrors backend TagDistribution).
- *
- * tempo             = count of each tempo tag; sums to <= M+B flaws (optional — no tag
- *                     when clock data is missing). Panel must show unmeasured remainder.
- * reversed_rate     = reversed M+B flaws / total M+B flaws; 0.0 when none. (Phase 110)
- * squandered_rate   = squandered M+B flaws / total M+B flaws; 0.0 when none. (Phase 110)
- * phase_histogram   = count of flaws in each game phase.
- * miss_rate         = miss M+B flaws / total M+B flaws; 0.0 when none. (D-01, Phase 107)
- * lucky_rate = lucky M+B flaws / total M+B flaws; 0.0 when none. (D-01)
- */
-export interface TagDistribution {
-  tempo: Record<TempoTag, number>;
-  reversed_rate: number;
-  squandered_rate: number;
-  phase_histogram: Record<'opening' | 'middlegame' | 'endgame', number>;
-  // D-01 flat rate fields (Phase 107):
-  miss_rate: number;
-  lucky_rate: number;
-}
-
-/**
  * One ISO-week flaw-trend datapoint (mirrors backend FlawTrendPoint).
  *
  * `date` is the Monday of the ISO week (label for an ordinal axis, not a calendar bucket).
@@ -244,19 +213,24 @@ export interface FlawTrendPoint {
   per_week_games: number;
 }
 
+/** One time control's Flaws Timeline series (mirrors backend FlawTrendTc). */
+export interface FlawTrendTc {
+  tc: TimeControlBucket;
+  points: FlawTrendPoint[];
+}
+
 /**
  * Response for GET /api/library/flaw-stats (mirrors backend FlawStatsResponse).
- * Stats over the filtered analyzed-only set. trend_window = rolling window size (games).
+ *
+ * Phase 239 D-00k: the timeline comes per time control (`trend_by_tc`, one entry per TC
+ * that has analyzed games); the severity band, tag distribution and overall aggregates
+ * are gone. trend_window = rolling window size (games). analyzed_n is the filter-scoped
+ * analyzed-game count (FlawsTab reads it).
  */
 export interface FlawStatsResponse {
-  per_severity_counts: SeverityCountsData;
-  rates: SeverityRates;
-  tag_distribution: TagDistribution;
-  trend: FlawTrendPoint[];
+  trend_by_tc: FlawTrendTc[];
   trend_window: number;
-  analyzed_pct: number;
   analyzed_n: number;
-  total_n: number;
 }
 
 // ─── Per-flaw list (GET /api/library/flaws) ───────────────────────────────────
@@ -327,15 +301,31 @@ export interface LibraryFlawsResponse {
 
 // ─── Flaw comparison (GET /api/library/flaw-comparison) ───────────────────────
 
+/** The 12 flaw-delta metrics (mirrors backend FlawDeltaMetric). */
+export type FlawDeltaMetric =
+  | 'mistake'
+  | 'blunder'
+  | 'low_clock'
+  | 'hasty'
+  | 'unrushed'
+  | 'opening'
+  | 'middlegame'
+  | 'endgame_phase'
+  | 'miss'
+  | 'lucky'
+  | 'reversed'
+  | 'squandered';
+
 /**
- * Per-bullet data for one of the 15 flaw-delta metrics (mirrors backend FlawBullet).
+ * Per-bullet data for one flaw-delta metric of one time control (mirrors backend FlawBullet).
  *
- * snake_case field names to match the JSON payload exactly (same convention as
- * FlawStatsResponse). delta and CI fields are null when both player_events and
- * opp_events are zero (zero-event bullet — D-11).
+ * snake_case field names to match the JSON payload exactly. delta and CI fields are null
+ * when both player_events and opp_events are zero. `significant` is the server-side 99%
+ * test (CI excludes 0) that an out-of-band verdict needs (D-14); `has_zone` is always true
+ * for flaw bullets.
  */
 export interface FlawBullet {
-  tag: string;
+  tag: FlawDeltaMetric;
   delta: number | null;
   ci_low: number | null;
   ci_high: number | null;
@@ -350,69 +340,83 @@ export interface FlawBullet {
   opp_events: number;
   zone_lo: number;
   zone_hi: number;
-  domain: number;
   has_zone: boolean;
+  significant: boolean;
+}
+
+/** One time control's flaw comparison (mirrors backend FlawComparisonTc). */
+export interface FlawComparisonTc {
+  tc: TimeControlBucket;
+  analyzed_n: number;
+  /** All games of this TC in the current filters, analyzed or not (coverage denominator). */
+  total_n: number;
+  below_gate: boolean;
+  /** 12 bullets, also below the gate (D-03: the tile numbers stay visible). */
+  bullets: FlawBullet[];
 }
 
 // ─── Tactic comparison (GET /api/library/tactic-comparison) ───────────────────
 
+/** Which side of a tactic a cell describes (mirrors backend TacticSide). */
+export type TacticSide = 'missed' | 'allowed';
+
 /**
- * Per-family data for one tactic-motif family row (Phase 126, mirrors backend TacticBullet).
+ * One tactic family on one side (mirrors backend TacticBullet, Phase 239).
  *
- * sign convention: positive delta = you allow MORE tactic motifs than opponents = bad.
- * delta and CI fields are null when both you_events and opp_events are zero.
- *
- * Phase 129: orientation field added to mirror backend schema option A
- * (TacticBullet.orientation: Literal["missed","allowed"]).
+ * Rates and delta are per 100 games. Sign convention: positive delta = you have MORE of
+ * these tactics than your opponents = bad, for both sides. Rate, delta, CI and p-value
+ * are null when neither side has a flaw (then `significant` is false).
  */
 export interface TacticBullet {
-  family: string;              // family key e.g. "fork", "skewer" (10-family taxonomy, plan 129-04/05)
-  you_rate: number | null;     // mean tactic allowances per game (player side); null = zero events
-  opp_rate: number | null;     // mean tactic allowances per game (opponent side); null = zero events
-  delta: number | null;        // you_rate - opp_rate; null = both sides zero events
-  ci_low: number | null;       // 95% CI lower bound on delta
-  ci_high: number | null;      // 95% CI upper bound on delta
-  p_value: number | null;      // two-sided p vs H0: delta === 0; null = zero events
-  you_events: number;          // raw event count (player side)
-  opp_events: number;          // raw event count (opponent side)
-  zone_lo: number;             // benchmark Q1 or 0.0 when unavailable
-  zone_hi: number;             // benchmark Q3 or 0.0 when unavailable
-  has_zone: boolean;           // false until tactic benchmark pipeline ships
-  /** Phase 129: orientation tag per bullet (plan 01 schema option A). */
-  orientation: 'missed' | 'allowed';
+  family: TacticFamily;
+  orientation: TacticSide;
+  you_rate: number | null;     // per 100 games, player side
+  opp_rate: number | null;     // per 100 games, opponent side
+  delta: number | null;        // you_rate - opp_rate per 100 games
+  ci_low: number | null;       // 99% CI lower bound on delta (D-14)
+  ci_high: number | null;      // 99% CI upper bound on delta (D-14)
+  p_value: number | null;      // two-sided p vs H0: delta === 0
+  you_events: number;          // raw flaw count, player side
+  opp_events: number;          // raw flaw count, opponent side
+  zone_lo: number;             // typical-range bounds per 100 games; 0.0 when has_zone is false
+  zone_hi: number;
+  has_zone: boolean;           // false when this family-side has no viable benchmark band (D-11)
+  significant: boolean;        // 99% CI on delta excludes 0 (D-14)
+}
+
+/** One time control's tactic comparison (mirrors backend TacticComparisonTc). */
+export interface TacticComparisonTc {
+  tc: TimeControlBucket;
+  analyzed_n: number;
+  below_gate: boolean;
+  /** 38 bullets in family order, missed before allowed; populated below the gate too. */
+  bullets: TacticBullet[];
 }
 
 /**
- * Response for GET /api/library/tactic-comparison (Phase 126, mirrors backend TacticComparisonResponse).
+ * Response for GET /api/library/tactic-comparison (mirrors backend TacticComparisonResponse).
  *
- * bullets: up to 20 entries (10 families × missed/allowed), top-6 families by Missed you_rate
- *          first then overflow; empty list when below_gate=true.
- * analyzed_n: analyzed game count after filters.
- * analyzed_gate: minimum required (mirrors TACTIC_COMPARISON_GATE).
- * below_gate: true when analyzed_n < analyzed_gate.
+ * tcs: one entry per time control with analyzed games in the current filters, in
+ *      LIBRARY_TC_ORDER. The TC switch is client-side over this list (D-02).
+ * analyzed_gate: minimum analyzed games per TC; exposed so the frontend renders "N of 20"
+ *                without hardcoding.
  */
 export interface TacticComparisonResponse {
-  bullets: TacticBullet[];
-  analyzed_n: number;
+  tcs: TacticComparisonTc[];
   analyzed_gate: number;
-  below_gate: boolean;
 }
 
 /**
  * Response for GET /api/library/flaw-comparison (mirrors backend FlawComparisonResponse).
  *
- * bullets: always 15 entries ordered by family when below_gate=false;
- *          empty list when below_gate=true.
- * analyzed_n: analyzed game count after the current filter set.
- * analyzed_gate: minimum required (constant = 20); exposed so the frontend
+ * tcs: one entry per time control with analyzed games in the current filters, in
+ *      LIBRARY_TC_ORDER. The TC switch is client-side over this list (D-02).
+ * analyzed_gate: minimum analyzed games per TC (constant = 20); exposed so the frontend
  *                can render "N of 20" without hardcoding.
- * below_gate: true when analyzed_n < analyzed_gate — frontend shows CTA (D-10).
  */
 export interface FlawComparisonResponse {
-  bullets: FlawBullet[];
-  analyzed_n: number;
+  tcs: FlawComparisonTc[];
   analyzed_gate: number;
-  below_gate: boolean;
 }
 
 // ─── Tactic Lines (GET /api/library/flaws/{game_id}/{ply}/tactic-lines) ────────

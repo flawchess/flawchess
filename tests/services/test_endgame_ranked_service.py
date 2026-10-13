@@ -24,6 +24,10 @@ from app.services.endgame_ranked_service import (
     EVAL_DEPENDENT_METRICS,
     RankedInputs,
     _asof_by_platform,
+    _metric_significant,
+    _MetricCore,
+    _net_flag_metric,
+    _rate_significant,
     build_ranked_stats,
 )
 from app.services.endgame_service import (
@@ -425,15 +429,13 @@ def test_bucket_rate_consistency() -> None:
 
 
 def test_ci_p_shapes() -> None:
-    """Rates: Wilson CI only; net_flag_rate: nothing; every other metric: CI and p (n >= 10)."""
+    """Rates: Wilson CI only; every other metric (net_flag_rate too, D-14): CI and p (n >= 10)."""
     metrics = _tc(build_ranked_stats(_full_inputs())).metrics
     for metric_id in ("conversion_rate", "parity_rate", "recovery_rate"):
         metric = metrics[metric_id]
         assert metric.ci_low is not None and metric.ci_high is not None
         assert metric.ci_low <= (metric.value or 0.0) <= metric.ci_high
         assert metric.p_value is None
-    net_flag = metrics["net_flag_rate"]
-    assert (net_flag.ci_low, net_flag.ci_high, net_flag.p_value) == (None, None, None)
     for metric_id in (
         "score_gap",
         "achievable_score_gap",
@@ -442,6 +444,7 @@ def test_ci_p_shapes() -> None:
         "recovery_score_gap",
         "time_pressure_score_gap",
         "clock_gap",
+        "net_flag_rate",
     ):
         metric = metrics[metric_id]
         assert metric.value is not None
@@ -620,7 +623,16 @@ def test_type_categories_per_tc() -> None:
     inputs = _type_inputs()
     response = build_ranked_stats(inputs)
     blitz = _tc(response, "blitz")
-    assert blitz.type_categories == aggregate_endgame_stats_by_tc(inputs.entry_rows)["blitz"]
+    # The ranked rows add only the D-14 significance flags to the shared aggregator's rows.
+    gates = {
+        "conversion_significant",
+        "recovery_significant",
+        "type_achievable_score_gap_significant",
+    }
+    assert [c.model_dump(exclude=gates) for c in blitz.type_categories] == [
+        c.model_dump(exclude=gates)
+        for c in aggregate_endgame_stats_by_tc(inputs.entry_rows)["blitz"]
+    ]
     by_class = {c.endgame_class: c.total for c in blitz.type_categories}
     assert by_class == {"rook": _TYPE_ROOK_GAMES, "pawn": _TYPE_PAWN_GAMES}
     # The bullet rook span never leaks into blitz.
@@ -631,3 +643,69 @@ def test_type_categories_empty_without_endgames() -> None:
     """A TC with ranked games but no endgame spans has no type rows."""
     response = build_ranked_stats(_type_inputs(with_endgames=False))
     assert _tc(response, "blitz").type_categories == []
+
+
+# ── Phase 239 D-14: the red/green significance gate ──────────────────────────
+
+
+def _core(value: float, ci_low: float | None, ci_high: float | None) -> _MetricCore:
+    return _MetricCore(
+        value=value, n=100, floor_n=100, floor_required=30, ci_low=ci_low, ci_high=ci_high
+    )
+
+
+@pytest.mark.parametrize(
+    ("core", "percentile", "expected"),
+    [
+        # Difference metric: the 99% CI must exclude 0 on the percentile's side.
+        (_core(0.05, 0.01, 0.09), 90.0, True),
+        (_core(-0.05, -0.09, -0.01), 10.0, True),
+        (_core(0.05, -0.01, 0.11), 90.0, False),  # CI covers 0
+        (_core(-0.05, -0.09, -0.01), 90.0, False),  # significant, but below 0 vs a high pctl
+        (_core(0.05, None, None), 90.0, False),  # no CI, no verdict
+        (_core(0.05, 0.01, 0.09), None, False),  # unranked
+    ],
+)
+def test_metric_significant_difference_tests_against_zero(
+    core: _MetricCore, percentile: float | None, expected: bool
+) -> None:
+    assert _metric_significant("score_gap", core, percentile, None) is expected
+
+
+def test_metric_significant_rate_tests_against_the_cohort_median() -> None:
+    above_median = _core(0.80, 0.74, 0.86)
+    assert _metric_significant("conversion_rate", above_median, 90.0, 0.70) is True
+    # A CI that excludes 0 but covers the cohort median is not significant for a rate.
+    assert _metric_significant("conversion_rate", above_median, 90.0, 0.78) is False
+    # No cohort cell for the anchor: no median, no verdict.
+    assert _metric_significant("conversion_rate", above_median, 90.0, None) is False
+
+
+def test_net_flag_rate_keeps_its_value_and_gains_a_ci() -> None:
+    rows = [
+        SimpleNamespace(termination="timeout", result="1-0", user_color="white"),
+        SimpleNamespace(termination="timeout", result="0-1", user_color="white"),
+        SimpleNamespace(termination="timeout", result="0-1", user_color="black"),
+        SimpleNamespace(termination="resign", result="1-0", user_color="white"),
+    ]
+    core = _net_flag_metric(rows)
+    # (2 timeout wins - 1 timeout loss) / 4 endgame games.
+    assert core.value == pytest.approx(0.25)
+    assert core.n == 4
+    assert core.ci_low is not None and core.ci_high is not None
+    assert core.ci_low < 0.25 < core.ci_high
+
+
+def test_rate_significant_uses_the_band_centre() -> None:
+    # Band (0.69, 0.83) centre 0.76: 90 of 100 conversions clear it at 99%, 80 do not.
+    assert _rate_significant(90, 100, (0.69, 0.83)) is True
+    assert _rate_significant(80, 100, (0.69, 0.83)) is False
+    assert _rate_significant(0, 0, (0.69, 0.83)) is False
+
+
+def test_quintile_bullets_carry_the_99_percent_gate() -> None:
+    key = ("blitz", 0)
+    lopsided = build_quintile_bullets("blitz", {key: (40, 0, 0)}, {key: (0, 0, 40)}, {})
+    assert lopsided[0].significant is True
+    even = build_quintile_bullets("blitz", {key: (10, 0, 10)}, {key: (10, 0, 10)}, {})
+    assert even[0].significant is False

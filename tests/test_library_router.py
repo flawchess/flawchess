@@ -212,17 +212,22 @@ class TestGetFlawStats:
 
         body = resp.json()
         required = {
+            "trend_by_tc",
+            "trend_window",
+            "analyzed_n",
+        }
+        for field in required:
+            assert field in body, f"Missing field: {field}"
+        # Phase 239 D-00k: the aggregates nothing renders any more are gone.
+        for removed in (
             "per_severity_counts",
             "rates",
             "tag_distribution",
             "trend",
-            "trend_window",
             "analyzed_pct",
-            "analyzed_n",
             "total_n",
-        }
-        for field in required:
-            assert field in body, f"Missing field: {field}"
+        ):
+            assert removed not in body, f"Removed field still present: {removed}"
 
     @pytest.mark.asyncio
     async def test_color_white_accepted(self, auth_headers: dict[str, str]) -> None:
@@ -238,9 +243,9 @@ class TestGetFlawStats:
 
         assert resp.status_code == 200
         body = resp.json()
-        assert "total_n" in body
-        # For a new user without games, total_n must be 0 under white filter.
-        assert body["total_n"] == 0
+        assert "analyzed_n" in body
+        # For a new user without games, analyzed_n must be 0 under white filter.
+        assert body["analyzed_n"] == 0
 
     @pytest.mark.asyncio
     async def test_color_black_accepted(self, auth_headers: dict[str, str]) -> None:
@@ -256,13 +261,13 @@ class TestGetFlawStats:
 
         assert resp.status_code == 200
         body = resp.json()
-        assert body["total_n"] == 0
+        assert body["analyzed_n"] == 0
 
     @pytest.mark.asyncio
-    async def test_color_white_and_black_total_n_sum_matches_unfiltered(
+    async def test_color_white_and_black_analyzed_n_sum_matches_unfiltered(
         self, auth_headers: dict[str, str]
     ) -> None:
-        """total_n(white) + total_n(black) <= total_n(unfiltered).
+        """analyzed_n(white) + analyzed_n(black) <= analyzed_n(unfiltered).
 
         The inequality holds because unfiltered includes any games with NULL
         user_color (rare but possible). For a new user all three are 0.
@@ -278,11 +283,60 @@ class TestGetFlawStats:
                 "/api/library/flaw-stats", params={"color": "black"}, headers=auth_headers
             )
 
-        total = resp_all.json()["total_n"]
-        white_n = resp_white.json()["total_n"]
-        black_n = resp_black.json()["total_n"]
+        total = resp_all.json()["analyzed_n"]
+        white_n = resp_white.json()["analyzed_n"]
+        black_n = resp_black.json()["analyzed_n"]
 
         assert white_n + black_n <= total
+
+
+# ---------------------------------------------------------------------------
+# GET /library/flaw-comparison (Phase 239: per-TC payload)
+# ---------------------------------------------------------------------------
+
+
+class TestGetFlawComparison:
+    """Tests for GET /library/flaw-comparison."""
+
+    @pytest.mark.asyncio
+    async def test_returns_401_without_auth(self) -> None:
+        """Request without auth token returns 401."""
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=app), base_url="http://test"
+        ) as client:
+            resp = await client.get("/api/library/flaw-comparison")
+
+        assert resp.status_code == 401
+
+    @pytest.mark.asyncio
+    async def test_returns_per_tc_shape_with_auth(self, auth_headers: dict[str, str]) -> None:
+        """Authenticated request returns 200 with exactly the tcs/analyzed_gate keys."""
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=app), base_url="http://test"
+        ) as client:
+            resp = await client.get("/api/library/flaw-comparison", headers=auth_headers)
+
+        assert resp.status_code == 200
+        body = resp.json()
+        assert set(body) == {"tcs", "analyzed_gate"}
+        assert body["tcs"] == []  # a fresh user has no analyzed games
+        assert isinstance(body["analyzed_gate"], int)
+
+    @pytest.mark.asyncio
+    async def test_returns_422_when_from_date_after_to_date(
+        self, auth_headers: dict[str, str]
+    ) -> None:
+        """from_date > to_date is rejected with 422."""
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=app), base_url="http://test"
+        ) as client:
+            resp = await client.get(
+                "/api/library/flaw-comparison",
+                params={"from_date": "2025-06-01", "to_date": "2025-01-01"},
+                headers=auth_headers,
+            )
+
+        assert resp.status_code == 422
 
 
 # ---------------------------------------------------------------------------
@@ -2205,6 +2259,7 @@ async def tactic_comparison_state(test_engine: Any) -> dict[str, Any]:
                 is_computer_game=False,
                 played_at=datetime.datetime(2026, 1, i + 1, tzinfo=datetime.timezone.utc),
                 full_evals_completed_at=analyzed_at,
+                blobs_completed_at=analyzed_at,  # WR-01: tactic population needs blobs done
                 white_blunders=0,  # non-NULL → is_analyzed = True
                 ply_count=40,  # non-NULL, > 0 → passes anchor gate in fetch_tactic_comparison
             )
@@ -2246,10 +2301,10 @@ async def tactic_comparison_state(test_engine: Any) -> dict[str, Any]:
 
 
 class TestTacticComparisonDualOrientation:
-    """GET /library/tactic-comparison returns dual-orientation bullets (Phase 129 D-13/D-14).
+    """GET /library/tactic-comparison returns per-TC dual-orientation bullets (Phase 129, 239).
 
-    Phase 129 Task 2 TDD RED: these tests expect TacticBullet.orientation field
-    and up-to-12 bullets that do not yet exist — will fail until GREEN lands.
+    Phase 239 D-02/D-00h: the payload is `tcs[]`, each TC carries 38 bullets (19 families x
+    missed/allowed) in fixed family order, missed before allowed.
     """
 
     @pytest.mark.asyncio
@@ -2279,8 +2334,9 @@ class TestTacticComparisonDualOrientation:
                 headers=tactic_comparison_state["headers"],
             )
         data = resp.json()
-        bullets = data.get("bullets", [])
-        assert len(bullets) > 0, "Expected at least one bullet; below_gate may be True"
+        assert [tc["tc"] for tc in data["tcs"]] == ["blitz"]
+        bullets = data["tcs"][0]["bullets"]
+        assert len(bullets) == 38
         for bullet in bullets:
             assert "orientation" in bullet, (
                 f"Each bullet must have 'orientation' field; got keys: {list(bullet.keys())}"
@@ -2304,7 +2360,7 @@ class TestTacticComparisonDualOrientation:
                 headers=tactic_comparison_state["headers"],
             )
         data = resp.json()
-        bullets = data.get("bullets", [])
+        bullets = data["tcs"][0]["bullets"]
         fork_bullets = [b for b in bullets if b.get("family") == "fork"]
         assert len(fork_bullets) == 2, (
             f"Expected 2 fork bullets (missed + allowed); got {len(fork_bullets)}: {fork_bullets}"
@@ -2333,14 +2389,16 @@ class TestTacticComparisonDualOrientation:
         )
 
     @pytest.mark.asyncio
-    async def test_tactic_comparison_top_families_ordered_by_missed_you_rate(
+    async def test_tactic_comparison_fixed_family_order(
         self, tactic_comparison_state: dict[str, Any]
     ) -> None:
-        """Top families in bullets are ordered by Missed bullet you_rate descending (D-14).
+        """Bullets follow the fixed family order, missed before allowed (D-00h).
 
-        With only fork having events (missed you_rate > 0), fork's missed bullet
-        must appear before all other families' missed bullets.
+        Only fork has events, yet fork is not special-cased: the order is the registry
+        order, not a ranking by Missed rate (the retired Phase 129 D-14 top-6).
         """
+        from app.services.tactic_delta_zones import TACTIC_FAMILIES
+
         async with httpx.AsyncClient(
             transport=httpx.ASGITransport(app=app), base_url="http://test"
         ) as client:
@@ -2348,11 +2406,7 @@ class TestTacticComparisonDualOrientation:
                 "/api/library/tactic-comparison",
                 headers=tactic_comparison_state["headers"],
             )
-        data = resp.json()
-        bullets = data.get("bullets", [])
-        assert len(bullets) > 0, "Expected bullets"
-        # The first family in bullets should be fork (highest missed you_rate)
-        first_family = bullets[0]["family"]
-        assert first_family == "fork", (
-            f"First family must be fork (highest missed you_rate); got {first_family!r}"
-        )
+        bullets = resp.json()["tcs"][0]["bullets"]
+        assert [(b["family"], b["orientation"]) for b in bullets] == [
+            (family, side) for family in TACTIC_FAMILIES for side in ("missed", "allowed")
+        ]

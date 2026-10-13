@@ -1,17 +1,17 @@
 ---
 gsd_state_version: "1.0"
 milestone: v2.24
-current_phase: 238
-current_phase_name: Endgame Stats Percentile-First Redesign (SEED-196)
+current_phase: 239
 status: completed
-stopped_at: Phase 238 complete, squash-merged to main
-last_updated: "2026-10-12T17:19:21.964Z"
-state_head: abb4d710e75e1ca73731b8243b2b1b540b407a0e
+stopped_at: Phase 239 complete — all phases complete
+last_updated: "2026-10-13T02:52:05.823Z"
+state_head: b085fa14a50e4094d8abfd030af08dc1b20a4222
 progress:
-  total_phases: 1
+  total_phases: 2
   completed_phases: 103
-  total_plans: 9
+  total_plans: 19
   completed_plans: 57
+  percent: 100
 milestone_name: Train Grading Integrity & One-Screen Reveal
 last_activity: 2026-10-12
 last_activity_desc: "Completed quick task 261012-qiz: endgame insights dedupe concurrent LLM generations (advisory lock) + 24h regen cooldown"
@@ -21,10 +21,10 @@ last_activity_desc: "Completed quick task 261012-qiz: endgame insights dedupe co
 
 ## Current Position
 
-Phase: 238 (Endgame Stats Percentile-First Redesign (SEED-196)) — COMPLETE
-Plan: 9 of 9
+Phase: 239
+Plan: Not started
 
-Status: Phase 238 complete 2026-10-11 (verified, UAT passed, squash-merged to main; unreleased). SEED-196 closed.
+Status: All phases complete
 
 Open threads carried forward (not blockers):
 
@@ -178,6 +178,7 @@ v1.29 Live-Engine Analysis Page shipped 2026-06-29 — 5 phases (136–140), 14 
 
 ### Roadmap Evolution
 
+- Phase 239 added 2026-10-12 (explicit user request via `/gsd-phase @SEED-198`, planted the same day from the ad-hoc Library Stats UX review + sketch 010 round 5): **Library Stats You-vs-Opponents Redesign** (SEED-198). One gap bar (0 tick, grey benchmark IQR of the gap, red/blue/green dot, better to the right) replaces every `MiniBulletChart` on the Stats tab; only the gap shown, details in a Search popover; tiles cut to Blunders/Mistakes with opponent lines, Severity card and combos retire; four context cards + "What stands out"; tactic motifs as three `TACTIC_GROUPS` tables (Missed/Allowed per 100 games, Advanced collapsed); synced TC switch per section; benchmark §5 tactic-family IQRs on the fully analyzed sample (gated on blitz finishing) wired into `get_tactic_comparison`. Written by hand as 239 (known mature-ROADMAP behavior). Next: `/gsd-discuss-phase 239`.
 - Phase 238 added 2026-10-11 (explicit user request "create a phase for SEED-196", planted the same day from the ad-hoc Endgame Stats UX review + sketch 009 round 2): **Endgame Stats Percentile-First Redesign** (SEED-196). One percentile bar per peer-ranked metric replaces zone-colored bullets, gauges and chips; displayed numbers become the ranked-sample values (backend computes WDL/scores/entry evals/CI on that sample, LLM payload aligned); one popover per metric with greyed stats below a separator; Overall cut to 2 cards, Type Breakdown becomes a table with grey typical ranges, grey bands on the clock-gap timeline and pressure curve, synced per-section TC switch, new peer dot-plot card. Written by hand as 238 (known mature-ROADMAP behavior). Next: `/gsd-discuss-phase 238`.
 - Phase 237 added 2026-10-08 (explicit user request via `/gsd-phase @SEED-194`, planted the same day from the ad-hoc reveal UX review + sketch 008): **Train Reveal Verdict Strip, Line Chips & One Move Tree** (SEED-194). Verdict strip replaces the bot bubble, You/Best/Game chips (with "You = Best/Game" merge) replace the line cards, chip-driven board fades inactive arrows, the three lines become pre-loaded branches of one `useAnalysisBoard` tree (no separate free-play mode), a phone action bar replaces the bottom nav for the whole reveal (first view fits 390x844), desktop right column keeps the full bubble, and the first-reveal onboarding tour is rewritten for the new screen. Frontend only. Written by hand as 237 (known mature-ROADMAP behavior). Next: `/gsd-discuss-phase 237`.
 - Phase 236 added 2026-10-08 (explicit user request via `/gsd-phase @SEED-193`, planted the same day from the ad-hoc Train grading audit, user 28, quick tasks 261008-ob1 / 261008-opg): **Train Phone Grade Record & Instant Server Verdict** (SEED-193). Part 1: a `phone_grade` JSONB record on every keyed `drill_solves` row (tier, key/played ES, depths; `SolveRecheck` shape), `move_quality` stays effective so the override rate is a column compare. Part 2: server-graded moves (soft vetted, herring good band, sharp runner-up) with tiers in the puzzle payload so those ~17% of solves get an instant verdict, after-move search continues in the background for the "Your move" card and the Part 1 record. Written by hand as 236 (known mature-ROADMAP behavior). Next: `/gsd-discuss-phase 236`.
@@ -1077,9 +1078,9 @@ Items acknowledged and deferred at **v1.29 milestone close on 2026-06-29** (user
 
 ## Session Continuity
 
-**Last session:** 2026-10-11T09:49:30.032Z
-**Stopped at:** Phase 238 context gathered
-**Resume file:** .planning/phases/238-endgame-stats-percentile-first/238-CONTEXT.md
+**Last session:** 2026-10-12T19:10:27.088Z
+**Stopped at:** Phase 239 complete — all phases complete
+**Resume file:** .planning/phases/239-library-stats-you-vs-opponents/239-CONTEXT.md
 
 Previous session note (Phase 227):
 refit (calibration parity holds). Verification passed 17/17; code review 0 blockers (WR-01 + 3 info fixed). Next:

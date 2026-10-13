@@ -2,7 +2,7 @@
 /**
  * Phase 238 validation rows D-00e / D-05: the Endgame Type Breakdown table shows a
  * grey typical range with a colored "you" dot per conversion / recovery / vs.-engine
- * cell, red below and green above the range, faded low-sample rows, stacked rows on mobile.
+ * cell, red below and green above the range when significant (239 D-14), stacked rows on mobile.
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -22,12 +22,15 @@ import { buildRankedTc } from './rankedFixtures';
 
 type TableModule = typeof import('./TypeTable');
 let TypeTable: TableModule['TypeTable'];
+// The page's one switch (the table carries none); loaded from the same fresh module graph.
+let EndgameStatsTcSwitch: typeof import('./EndgameStatsTcSwitch')['EndgameStatsTcSwitch'];
 
 beforeEach(async () => {
   // The TC selection is module-level state: load a fresh copy per test.
   vi.resetModules();
   localStorage.clear();
   ({ TypeTable } = await import('./TypeTable'));
+  ({ EndgameStatsTcSwitch } = await import('./EndgameStatsTcSwitch'));
 });
 
 afterEach(cleanup);
@@ -38,6 +41,8 @@ interface CategoryOptions {
   recoveryPct?: number;
   conversionGames?: number;
   gap?: number | null;
+  /** 239 D-14 gate for every cell of the row; true by default so out-of-band cells colour. */
+  significant?: boolean;
 }
 
 function buildCategory(
@@ -78,6 +83,9 @@ function buildCategory(
     type_achievable_score_gap_p_value: 0.3,
     type_achievable_score_gap_ci_low: -0.02,
     type_achievable_score_gap_ci_high: 0.04,
+    conversion_significant: options.significant ?? true,
+    recovery_significant: options.significant ?? true,
+    type_achievable_score_gap_significant: options.significant ?? true,
     type_achievable_score_start_mean: 0.5,
     type_achievable_score_end_mean: 0.51,
     score: (wins + draws / 2) / total,
@@ -108,6 +116,7 @@ function renderTable(
   return render(
     <MemoryRouter>
       <TooltipProvider>
+        <EndgameStatsTcSwitch tcs={tcs} />
         <TypeTable tcs={tcs} onCategorySelect={onCategorySelect} />
       </TooltipProvider>
     </MemoryRouter>,
@@ -239,6 +248,19 @@ describe('TypeTable typical-range cells', () => {
     );
   });
 
+  it('keeps an out-of-band cell neutral when it is not significant (239 D-14)', () => {
+    const tc = buildRankedTc('rapid', {
+      type_categories: [
+        buildCategory('rook', 'Rook', { conversionPct: 50, significant: false }),
+      ],
+    });
+    const { container } = renderTable([tc]);
+    expect(byId(container, 'type-row-rook-conversion-value').style.color).toBe('');
+    expect(byId(container, 'type-row-rook-conversion-dot').style.backgroundColor).toBe(
+      normalizedColor(GAUGE_NEUTRAL),
+    );
+  });
+
   it('shows an info popover with the endgame type description on each row', () => {
     const { container } = renderTable();
     expect(byId(container, 'type-row-rook-info').getAttribute('aria-label')).toBe('Rook info');
@@ -265,7 +287,7 @@ describe('TypeTable typical-range cells', () => {
     });
     const { container } = renderTable([blitz, rapid]);
     const rapidLeft = parseFloat(byId(container, 'type-row-rook-conversion-band').style.left);
-    fireEvent.click(byId(container, 'tc-switch-type-breakdown-blitz'));
+    fireEvent.click(byId(container, 'tc-switch-endgame-stats-blitz'));
     const blitzLeft = parseFloat(byId(container, 'type-row-rook-conversion-band').style.left);
     const [rapidLo] = PER_CLASS_TC_GAUGE_ZONES.rook.rapid.conversion;
     const [blitzLo] = PER_CLASS_TC_GAUGE_ZONES.rook.blitz.conversion;
@@ -276,12 +298,6 @@ describe('TypeTable typical-range cells', () => {
 });
 
 describe('TypeTable confidence and layout', () => {
-  it('fades rows with fewer than 100 games', () => {
-    const { container } = renderTable();
-    expect(byId(container, 'type-row-minor_piece').style.opacity).not.toBe('');
-    expect(byId(container, 'type-row-rook').style.opacity).toBe('');
-  });
-
   it('stacks on mobile: header row hidden below md, every cell carries a caption', () => {
     const { container } = renderTable();
     expect(container.querySelector('thead')?.className).toContain('max-md:hidden');
@@ -300,13 +316,13 @@ describe('TypeTable confidence and layout', () => {
     expect(onCategorySelect).toHaveBeenCalledWith('minor_piece');
   });
 
-  it('explains the grey range, the dot, red/green and faded rows in the legend', () => {
+  it('explains the grey range, the dot and the significance-gated red/green in the legend', () => {
     const { container } = renderTable();
     const legend = byId(container, 'type-table-legend').textContent ?? '';
     expect(legend).toContain('Grey band');
     expect(legend).toContain('Dot = you');
     expect(legend).toContain('Red');
     expect(legend).toContain('green');
-    expect(legend).toContain('fewer than 100 games');
+    expect(legend).toContain('enough games to be sure');
   });
 });

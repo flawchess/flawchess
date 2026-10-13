@@ -1,6 +1,8 @@
 ---
 id: SEED-198
-status: open
+status: promoted
+promoted_to: Phase 239
+promoted: 2026-10-12
 planted: 2026-10-12
 planted_during: ad-hoc Library Stats UX review (no phase in flight)
 trigger_when: owner picks the Library Stats redesign as a phase; the tactic-IQR plan can start once the blitz full-analysis benchmark sample is done

@@ -33,6 +33,7 @@ import {
   PRESSURE_SCORE_GAP_NEUTRAL_MIN,
   PRESSURE_SCORE_GAP_NEUTRAL_MAX,
 } from '../ScoreGapByTimePressureChart';
+import { COPY_CHANCE } from '@/components/endgames/stats/rankedMetrics';
 import {
   computeScoreGapYAxis,
   type ScoreGapAxisPoint,
@@ -87,6 +88,7 @@ function makeBin(
     ci_high?: number | null;
     opp_score?: number | null;
     p_value?: number | null;
+    significant?: boolean;
   } = {},
 ): PressureQuintileBullet {
   const labels = ['0-20%', '20-40%', '40-60%', '60-80%', '80-100%'] as const;
@@ -101,6 +103,8 @@ function makeBin(
     ci_low: opts.ci_low !== undefined ? opts.ci_low : (n > 0 ? -0.02 : null),
     ci_high: opts.ci_high !== undefined ? opts.ci_high : (n > 0 ? 0.02 : null),
     opp_score: opts.opp_score !== undefined ? opts.opp_score : (n > 0 ? 0.5 : null),
+    // D-14: true by default so out-of-band fixture dots keep their zone colours.
+    significant: opts.significant ?? true,
   };
 }
 
@@ -187,6 +191,23 @@ describe('ScoreGapByTimePressureChart', () => {
     expect(fills).toEqual([ZONE_DANGER, ZONE_NEUTRAL, ZONE_SUCCESS, ZONE_NEUTRAL]);
   });
 
+  it('keeps an out-of-band dot neutral when its 99% CI covers 0 (D-14)', () => {
+    const { container } = render(
+      <ScoreGapByTimePressureChart
+        quintiles={[
+          makeBin(0, { delta: -0.17, significant: false }),
+          makeBin(1, { delta: 0.12, significant: false }),
+          makeBin(2, { delta: 0.12 }),
+        ]}
+        tc="bullet"
+      />,
+    );
+    const fills = Array.from(container.querySelectorAll('.recharts-line-dots circle')).map((dot) =>
+      dot.getAttribute('fill'),
+    );
+    expect(fills).toEqual([ZONE_NEUTRAL, ZONE_NEUTRAL, ZONE_SUCCESS]);
+  });
+
   // Test 4: 4-bin fixture (Q0..Q4 all n>0) → exactly 4 rendered data dots (Q4 filtered out)
   it('renders exactly 4 dots for a 5-bin fixture where Q4 is filtered out', () => {
     const { container } = render(
@@ -244,6 +265,7 @@ describe('ScoreGapByTimePressureChart', () => {
     const { getByTestId, getByText } = render(
       <ScoreGapTooltipContent
         point={{
+          significant: true,
           label: '10%',
           rangeLabel: '0-20%',
           delta: -0.17,
@@ -274,7 +296,7 @@ describe('ScoreGapByTimePressureChart', () => {
     expect(tooltip.textContent?.match(/p = 0\.030/g)?.length).toBe(1);
     const testFootnote = getByText('Independent two-sample test.');
     expect(testFootnote.className).toContain('italic');
-    const ciFootnote = getByText('95% CI [-2.0%, +2.0%]');
+    const ciFootnote = getByText('99% CI [-2.0%, +2.0%]');
     expect(ciFootnote.className).toContain('italic');
   });
 
@@ -282,6 +304,7 @@ describe('ScoreGapByTimePressureChart', () => {
     const { getByTestId } = render(
       <ScoreGapTooltipContent
         point={{
+          significant: true,
           label: '10%',
           rangeLabel: '0-20%',
           delta: -0.17,
@@ -304,10 +327,39 @@ describe('ScoreGapByTimePressureChart', () => {
     expect(swatch?.style.backgroundColor).toBe(reference.style.backgroundColor);
   });
 
+  it.each([
+    ['out of band, not significant', -0.17, false, true],
+    ['out of band, significant', -0.17, true, false],
+    ['inside the band, not significant', 0.02, false, false],
+  ] as const)('tooltip says "could be chance" only %s -> %s', (_name, delta, significant, shown) => {
+    const { getByTestId } = render(
+      <ScoreGapTooltipContent
+        point={{
+          significant,
+          label: '10%',
+          rangeLabel: '0-20%',
+          delta,
+          n: 40,
+          n_opp: 40,
+          opp_score: 0.55,
+          p_value: 0.03,
+          ci_low: null,
+          ci_high: null,
+        }}
+      />,
+    );
+    const chance = getByTestId('score-gap-tooltip').querySelector(
+      '[data-testid="score-gap-tooltip-chance"]',
+    );
+    expect(chance !== null).toBe(shown);
+    if (shown) expect(chance?.textContent).toBe(COPY_CHANCE);
+  });
+
   it('tooltip degrades gracefully when opp_score / p_value / CI are null', () => {
     const { getByTestId } = render(
       <ScoreGapTooltipContent
         point={{
+          significant: true,
           label: '30%',
           rangeLabel: '20-40%',
           delta: 0.04,
@@ -326,7 +378,7 @@ describe('ScoreGapByTimePressureChart', () => {
     expect(tooltip.textContent).toContain('Opp: n/a (5 games)');
     expect(tooltip.textContent).toContain('Score gap: +4.0%');
     expect(tooltip.textContent).not.toContain('p = ');
-    expect(tooltip.textContent).toContain('95% normal-approx CI');
+    expect(tooltip.textContent).toContain('99% normal-approx CI');
   });
 });
 

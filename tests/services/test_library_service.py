@@ -1,10 +1,10 @@
 """Unit tests for the Phase 106 library-service severity-count seam.
 
-Phase 108 D-02 migration: chip curation and tag-distribution tests updated to
-use the new game_flaws-backed API (_curate_chips_from_rows, _build_tag_distribution).
-The _curate_chips (FlawRecord-based) and _GameFlaws/_compute_tag_distribution helpers
-were retired; tests now either use GameFlaw objects (chip curation) or call
-_build_tag_distribution with direct keyword aggregates (distribution unit tests).
+Phase 108 D-02 migration: chip curation tests use the game_flaws-backed API
+(_curate_chips_from_rows). The _curate_chips (FlawRecord-based) and
+_GameFlaws/_compute_tag_distribution helpers were retired. Phase 239 retired the
+flaw-stats tag distribution and rates; TestFlawStats now covers the coverage counts
+and the per-TC Flaws Timeline.
 
 Wave-0 scaffold (106-01). Covers the additive `count_game_severities` kernel
 helper: per-game B/M/I counts (incl. inaccuracy) restricted to the USER's moves,
@@ -871,11 +871,11 @@ async def _seed_db_pos(
 
 
 class TestFlawStats:
-    """get_flaw_stats: counts/rates, tag distribution, trend, denominator."""
+    """get_flaw_stats: analyzed count and the per-TC Flaws Timeline (Phase 239 D-00k)."""
 
     @pytest.mark.asyncio
-    async def test_per_100_moves_and_counts(self, db_session: object) -> None:
-        """1 user blunder over 5 user moves -> per_100_moves blunder == 20.0."""
+    async def test_coverage_counts(self, db_session: object) -> None:
+        """analyzed_n comes from the eval-coverage count (unanalyzed games excluded)."""
         from sqlalchemy.ext.asyncio import AsyncSession
 
         from app.services.library_service import get_flaw_stats
@@ -884,18 +884,11 @@ class TestFlawStats:
         session = cast(AsyncSession, db_session)
         await ensure_test_user(session, 99971)
 
-        prev_b, curr_b = _cp_for_white_drop(BLUNDER_DROP)
-        # White (user) game, plies 0..10 (11 positions, all evaled -> coverage 1.0).
-        # Macro per-100 denominator = floor(ply_count/2) = floor(10/2) = 5 user moves.
-        # game_positions provide eval coverage; game_flaws provide the M+B count.
-        game = await _seed_db_game(session, user_id=99971, user_color="white", ply_count=10)
-        await _seed_db_pos(session, game=game, ply=0, eval_cp=prev_b)
-        await _seed_db_pos(session, game=game, ply=1, eval_cp=prev_b)  # black clean
-        await _seed_db_pos(session, game=game, ply=2, eval_cp=curr_b)  # white blunder
-        for ply in range(3, 11):
-            await _seed_db_pos(session, game=game, ply=ply, eval_cp=curr_b)  # flat -> clean
-        # Seed one game_flaws row: blunder at ply 2 (white mover, phase=middlegame).
-        await _seed_db_flaw(session, game=game, ply=2, severity=2, phase=1)
+        analyzed = await _seed_db_game(session, user_id=99971, user_color="white")
+        await _seed_db_flaw(session, game=analyzed, ply=2, severity=2, phase=1)
+        await _seed_db_game(
+            session, user_id=99971, user_color="white", platform="chess.com", analyzed=False
+        )
 
         resp = await get_flaw_stats(
             session,
@@ -908,160 +901,25 @@ class TestFlawStats:
             to_date=None,
             flaw_severity=None,
         )
-        assert resp.per_severity_counts["blunder"] == 1
-        assert resp.per_severity_counts["mistake"] == 0
-        # No oracle inaccuracies seeded -> NULL -> 0.
-        assert resp.per_severity_counts["inaccuracy"] == 0
         assert resp.analyzed_n == 1
-        assert resp.total_n == 1
-        assert resp.analyzed_pct == 1.0
-        # Macro: single game, 1 blunder / 5 user moves * 100 = 20.0.
-        assert resp.rates.per_100_moves["blunder"] == pytest.approx(20.0)
-        assert resp.rates.per_100_moves["inaccuracy"] == 0.0
-        # 1 blunder / 1 analyzed game = 1.0
-        assert resp.rates.per_game["blunder"] == pytest.approx(1.0)
+
+    def test_response_drops_the_unused_aggregates(self) -> None:
+        """The slimmed response carries exactly the per-TC trend and the analyzed count."""
+        from app.schemas.library import FlawStatsResponse
+
+        assert set(FlawStatsResponse.model_fields) == {
+            "trend_by_tc",
+            "trend_window",
+            "analyzed_n",
+        }
 
     @pytest.mark.asyncio
-    async def test_per_100_inaccuracy_from_oracle_columns(self, db_session: object) -> None:
-        """Inaccuracy per-100 comes from the oracle columns (D-03), not game_flaws.
+    async def test_trend_by_tc_is_computed_per_time_control(self, db_session: object) -> None:
+        """Each TC's timeline is built from that TC's games only (D-00k).
 
-        White user, ply_count=10 -> 5 user moves, white_inaccuracies=2 -> 2/5*100=40.0.
-        """
-        from sqlalchemy.ext.asyncio import AsyncSession
-
-        from app.services.library_service import get_flaw_stats
-        from tests.conftest import ensure_test_user
-
-        session = cast(AsyncSession, db_session)
-        await ensure_test_user(session, 99981)
-
-        # Analyzed (full eval coverage) white game with 2 oracle inaccuracies, no M+B.
-        game = await _seed_db_game(
-            session, user_id=99981, user_color="white", ply_count=10, white_inaccuracies=2
-        )
-        for ply in range(11):
-            await _seed_db_pos(session, game=game, ply=ply, eval_cp=0)  # flat -> no M+B
-
-        resp = await get_flaw_stats(
-            session,
-            user_id=99981,
-            time_control=None,
-            platform=None,
-            rated=None,
-            opponent_type="all",
-            from_date=None,
-            to_date=None,
-            flaw_severity=None,
-        )
-        assert resp.per_severity_counts["inaccuracy"] == 2
-        assert resp.per_severity_counts["mistake"] == 0
-        assert resp.per_severity_counts["blunder"] == 0
-        # 2 inaccuracies / 5 user moves * 100 = 40.0
-        assert resp.rates.per_100_moves["inaccuracy"] == pytest.approx(40.0)
-        assert resp.rates.per_100_moves["blunder"] == 0.0
-
-    @pytest.mark.asyncio
-    async def test_per_100_is_macro_mean_of_per_game_rates(self, db_session: object) -> None:
-        """per_100_moves is a MACRO mean of per-game rates, not a pooled (micro) rate.
-
-        Game A: ply_count=10 (5 user moves), 1 blunder -> 20.0/100.
-        Game B: ply_count=40 (20 user moves), 1 blunder -> 5.0/100.
-        Macro mean = (20 + 5) / 2 = 12.5. (Micro/pooled would be 2/25*100 = 8.0.)
-        This is the fix that makes the card equal the you-vs-opponent bullet's
-        player_rate, which aggregates the same per-game-then-mean way.
-        """
-        from sqlalchemy.ext.asyncio import AsyncSession
-
-        from app.services.library_service import get_flaw_stats
-        from tests.conftest import ensure_test_user
-
-        session = cast(AsyncSession, db_session)
-        await ensure_test_user(session, 99982)
-
-        # Game A — short: 10 plies, one white blunder at ply 2.
-        game_a = await _seed_db_game(session, user_id=99982, user_color="white", ply_count=10)
-        for ply in range(11):
-            await _seed_db_pos(session, game=game_a, ply=ply, eval_cp=0)
-        await _seed_db_flaw(session, game=game_a, ply=2, severity=2, phase=1)
-
-        # Game B — long: 40 plies, one white blunder at ply 2.
-        game_b = await _seed_db_game(session, user_id=99982, user_color="white", ply_count=40)
-        for ply in range(41):
-            await _seed_db_pos(session, game=game_b, ply=ply, eval_cp=0)
-        await _seed_db_flaw(session, game=game_b, ply=2, severity=2, phase=1)
-
-        resp = await get_flaw_stats(
-            session,
-            user_id=99982,
-            time_control=None,
-            platform=None,
-            rated=None,
-            opponent_type="all",
-            from_date=None,
-            to_date=None,
-            flaw_severity=None,
-        )
-        assert resp.analyzed_n == 2
-        assert resp.per_severity_counts["blunder"] == 2
-        # Macro mean of per-game rates: (20.0 + 5.0) / 2 = 12.5 (NOT the micro 8.0).
-        assert resp.rates.per_100_moves["blunder"] == pytest.approx(12.5)
-
-    @pytest.mark.asyncio
-    async def test_reversed_rate_and_distribution(self, db_session: object) -> None:
-        """1 reversed of 2 M+B flaws -> reversed_rate == 0.5."""
-        from sqlalchemy.ext.asyncio import AsyncSession
-
-        from app.services.library_service import get_flaw_stats
-        from tests.conftest import ensure_test_user
-
-        session = cast(AsyncSession, db_session)
-        await ensure_test_user(session, 99972)
-
-        prev_b, curr_b = _cp_for_white_drop(BLUNDER_DROP)
-        # Two white (user) blunders. game_positions provide eval coverage.
-        # game_flaws rows carry the tag columns (is_reversed, phase).
-        game = await _seed_db_game(session, user_id=99972, user_color="white", result="1-0")
-        win_cp = 800  # white-POV winning ES ~ >=0.85
-        await _seed_db_pos(session, game=game, ply=0, eval_cp=win_cp, phase=1)
-        await _seed_db_pos(session, game=game, ply=1, eval_cp=win_cp, phase=1)  # black clean
-        await _seed_db_pos(session, game=game, ply=2, eval_cp=0, phase=1)  # white blunder #1
-        await _seed_db_pos(session, game=game, ply=3, eval_cp=0, phase=2)  # black clean
-        await _seed_db_pos(session, game=game, ply=4, eval_cp=curr_b, phase=2)  # white blunder #2
-        for ply in range(5, 11):
-            await _seed_db_pos(session, game=game, ply=ply, eval_cp=curr_b, phase=2)
-        # Blunder #1: phase=middlegame (1), reversed=True (was winning >=0.70, dropped to <=0.30).
-        # Blunder #2: phase=endgame (2), reversed=False (already losing on both sides).
-        await _seed_db_flaw(session, game=game, ply=2, severity=2, phase=1, is_reversed=True)
-        await _seed_db_flaw(session, game=game, ply=4, severity=2, phase=2, is_reversed=False)
-
-        resp = await get_flaw_stats(
-            session,
-            user_id=99972,
-            time_control=None,
-            platform=None,
-            rated=None,
-            opponent_type="all",
-            from_date=None,
-            to_date=None,
-            flaw_severity=None,
-        )
-        assert resp.per_severity_counts["blunder"] == 2
-        # exactly one of the two blunders is reversed -> rate == 0.5
-        assert resp.tag_distribution.reversed_rate == pytest.approx(0.5)
-        # phase histogram: blunder #1 phase=1=middlegame, blunder #2 phase=2=endgame
-        hist = resp.tag_distribution.phase_histogram
-        assert hist["middlegame"] == 1
-        assert hist["endgame"] == 1
-        # tempo: no clock data seeded -> all tempo counts are 0
-        assert sum(resp.tag_distribution.tempo.values()) == 0
-
-    @pytest.mark.asyncio
-    async def test_trend_iso_week_macro_rates_from_oracle(self, db_session: object) -> None:
-        """The trend is per-100-moves MACRO from oracle columns, bucketed by ISO week.
-
-        10 white games in one ISO week, ply_count=10 (5 user moves), oracle
-        blunders=1 / mistakes=0 / inaccuracies=2 each -> one point with
-        blunder_rate=20, mistake_rate=0, inaccuracy_rate=40, dated the week's Monday.
+        MIN_GAMES_FOR_TIMELINE blitz games with 1 oracle blunder (5 user moves ->
+        20 per 100) and as many rapid games with 0 blunders, all in one ISO week.
+        A pooled series would show 10 per 100 over twice the games for both TCs.
         """
         import datetime as _dt
 
@@ -1076,21 +934,19 @@ class TestFlawStats:
 
         n_games = MIN_GAMES_FOR_TIMELINE  # exactly fills the partial-window floor
         played = _dt.datetime(2026, 6, 10, 12, 0, tzinfo=_dt.timezone.utc)  # all same ISO week
-        for _ in range(n_games):
-            game = await _seed_db_game(
-                session,
-                user_id=99973,
-                user_color="white",
-                ply_count=10,
-                played_at=played,
-                white_blunders=1,
-                white_mistakes=0,
-                white_inaccuracies=2,
-            )
-            # full_evals_completed_at is set by _seed_db_game (analyzed=True default);
-            # positions no longer needed for the analyzed gate (260617-pu4 reversal).
-            for ply in range(10):
-                await _seed_db_pos(session, game=game, ply=ply, eval_cp=0)
+        for bucket, blunders in (("blitz", 1), ("rapid", 0)):
+            for _ in range(n_games):
+                await _seed_db_game(
+                    session,
+                    user_id=99973,
+                    user_color="white",
+                    ply_count=10,
+                    played_at=played,
+                    white_blunders=blunders,
+                    white_mistakes=0,
+                    white_inaccuracies=2,
+                    time_control_bucket=bucket,
+                )
 
         resp = await get_flaw_stats(
             session,
@@ -1104,15 +960,58 @@ class TestFlawStats:
             flaw_severity=None,
         )
         assert resp.trend_window == FLAW_TREND_WINDOW
-        assert len(resp.trend) == 1
-        pt = resp.trend[0]
+        assert [series.tc for series in resp.trend_by_tc] == ["blitz", "rapid"]
         iso = played.isocalendar()
-        assert pt.date == _dt.date.fromisocalendar(iso.year, iso.week, 1).isoformat()
-        assert pt.games_in_window == n_games
-        assert pt.per_week_games == n_games
-        assert pt.blunder_rate == pytest.approx(20.0)  # 1 / 5 * 100
-        assert pt.mistake_rate == pytest.approx(0.0)
-        assert pt.inaccuracy_rate == pytest.approx(40.0)  # 2 / 5 * 100
+        monday = _dt.date.fromisocalendar(iso.year, iso.week, 1).isoformat()
+        blitz, rapid = resp.trend_by_tc
+        assert len(blitz.points) == 1 and len(rapid.points) == 1
+        for series, expected_blunder_rate in ((blitz, 20.0), (rapid, 0.0)):
+            pt = series.points[0]
+            assert pt.date == monday
+            # Never exceeds this TC's own game count (a pooled series would show 2x).
+            assert pt.games_in_window == n_games
+            assert pt.per_week_games == n_games
+            assert pt.blunder_rate == pytest.approx(expected_blunder_rate)
+            assert pt.mistake_rate == pytest.approx(0.0)
+            assert pt.inaccuracy_rate == pytest.approx(40.0)  # 2 / 5 * 100
+
+    @pytest.mark.asyncio
+    async def test_null_time_control_bucket_has_no_series(self, db_session: object) -> None:
+        """Games with a NULL time_control_bucket cannot be placed on the switch (Pitfall 8)."""
+        import datetime as _dt
+
+        from sqlalchemy.ext.asyncio import AsyncSession
+
+        from app.services.library_service import get_flaw_stats
+        from app.services.openings_service import MIN_GAMES_FOR_TIMELINE
+        from tests.conftest import ensure_test_user
+
+        session = cast(AsyncSession, db_session)
+        await ensure_test_user(session, 99976)
+
+        played = _dt.datetime(2026, 6, 10, 12, 0, tzinfo=_dt.timezone.utc)
+        for _ in range(MIN_GAMES_FOR_TIMELINE):
+            await _seed_db_game(
+                session,
+                user_id=99976,
+                user_color="white",
+                ply_count=10,
+                played_at=played,
+                time_control_bucket=None,
+            )
+
+        resp = await get_flaw_stats(
+            session,
+            user_id=99976,
+            time_control=None,
+            platform=None,
+            rated=None,
+            opponent_type="all",
+            from_date=None,
+            to_date=None,
+            flaw_severity=None,
+        )
+        assert resp.trend_by_tc == []
 
     @pytest.mark.asyncio
     async def test_empty_analyzed_set_returns_zeros(self, db_session: object) -> None:
@@ -1142,115 +1041,8 @@ class TestFlawStats:
             to_date=None,
             flaw_severity=None,
         )
-        assert resp.total_n == 1
         assert resp.analyzed_n == 0
-        assert resp.analyzed_pct == 0.0
-        assert resp.per_severity_counts["blunder"] == 0
-        assert resp.rates.per_100_moves["blunder"] == 0.0
-        assert resp.trend == []
-
-    @pytest.mark.asyncio
-    async def test_miss_rate_and_lucky_rate(self, db_session: object) -> None:
-        """1 miss + 1 lucky out of 2 M+B flaws -> rates == 0.5 each.
-
-        D-02 migration: seeds game_flaws rows directly (is_miss / is_lucky
-        boolean columns) instead of calling the retired _compute_tag_distribution
-        with hand-crafted FlawRecord objects. The API (get_flaw_stats) reads from
-        game_flaws via fetch_stats_aggregates (COUNT(*) FILTER aggregates).
-        """
-        from sqlalchemy.ext.asyncio import AsyncSession
-
-        from app.services.library_service import get_flaw_stats
-        from tests.conftest import ensure_test_user
-
-        session = cast(AsyncSession, db_session)
-        await ensure_test_user(session, 99975)
-
-        prev_b, curr_b = _cp_for_white_drop(BLUNDER_DROP)
-        # White (user) game, plies 0..10 all evaled -> full coverage -> analyzed.
-        win_cp = 800
-        game = await _seed_db_game(session, user_id=99975, user_color="white", result="1-0")
-        await _seed_db_pos(session, game=game, ply=0, eval_cp=win_cp)
-        await _seed_db_pos(session, game=game, ply=1, eval_cp=win_cp)  # black clean
-        await _seed_db_pos(session, game=game, ply=2, eval_cp=0)  # white blunder #1
-        await _seed_db_pos(session, game=game, ply=3, eval_cp=0)  # black clean
-        await _seed_db_pos(session, game=game, ply=4, eval_cp=curr_b)  # white blunder #2
-        for ply in range(5, 11):
-            await _seed_db_pos(session, game=game, ply=ply, eval_cp=curr_b)
-
-        # Seed two game_flaws rows: blunder #1 is a miss, blunder #2 is a lucky.
-        await _seed_db_flaw(session, game=game, ply=2, severity=2, phase=1, is_miss=True)
-        await _seed_db_flaw(session, game=game, ply=4, severity=2, phase=2, is_lucky=True)
-
-        resp = await get_flaw_stats(
-            session,
-            user_id=99975,
-            time_control=None,
-            platform=None,
-            rated=None,
-            opponent_type="all",
-            from_date=None,
-            to_date=None,
-            flaw_severity=None,
-        )
-        assert resp.per_severity_counts["blunder"] == 2
-        assert resp.tag_distribution.miss_rate == pytest.approx(0.5)
-        assert resp.tag_distribution.lucky_rate == pytest.approx(0.5)
-        assert resp.tag_distribution.reversed_rate == 0.0
-
-    def test_reversed_rate(self) -> None:
-        """1 reversed of 2 M+B flaws -> reversed_rate == 0.5 (pure unit test).
-
-        D-02 migration: calls _build_tag_distribution with direct keyword aggregates
-        (from the SQL COUNT(*) FILTER scan) instead of the retired
-        _compute_tag_distribution(_GameFlaws) per-game FlawRecord loop.
-        """
-        from app.services.library_service import _build_tag_distribution
-
-        dist = _build_tag_distribution(
-            mistake_count=0,
-            blunder_count=2,
-            tempo_low_clock=0,
-            tempo_hasty=0,
-            tempo_unrushed=0,
-            is_reversed=1,
-            is_miss=1,
-            is_lucky=0,
-            is_squandered=0,
-            phase_opening=0,
-            phase_middlegame=1,
-            phase_endgame=1,
-        )
-        assert dist.reversed_rate == pytest.approx(0.5)
-        assert dist.miss_rate == pytest.approx(0.5)
-        assert dist.lucky_rate == 0.0
-
-    def test_rates_zero_when_no_mb_flaws(self) -> None:
-        """0 M+B flaws -> all four rates are 0.0 (no ZeroDivisionError).
-
-        D-02 migration: calls _build_tag_distribution with all-zero aggregates
-        instead of the retired _compute_tag_distribution([]).
-        """
-        from app.services.library_service import _build_tag_distribution
-
-        dist = _build_tag_distribution(
-            mistake_count=0,
-            blunder_count=0,
-            tempo_low_clock=0,
-            tempo_hasty=0,
-            tempo_unrushed=0,
-            is_reversed=0,
-            is_miss=0,
-            is_lucky=0,
-            is_squandered=0,
-            phase_opening=0,
-            phase_middlegame=0,
-            phase_endgame=0,
-        )
-        assert dist.miss_rate == 0.0
-        assert dist.lucky_rate == 0.0
-        assert dist.reversed_rate == 0.0
-        assert dist.squandered_rate == 0.0
+        assert resp.trend_by_tc == []
 
 
 # ---------------------------------------------------------------------------

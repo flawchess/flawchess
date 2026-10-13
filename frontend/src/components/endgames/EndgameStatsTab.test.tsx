@@ -166,7 +166,7 @@ describe('EndgameStatsTab with a ranked payload (D-01, D-00h, D-03)', () => {
   it('renders the Overall section for the D-12 default TC', () => {
     renderTab();
     byId('endgame-overall-section');
-    expect(byId('tc-switch-overall-rapid').getAttribute('aria-pressed')).toBe('true');
+    expect(byId('tc-switch-endgame-stats-rapid').getAttribute('aria-pressed')).toBe('true');
   });
 
   it('calls the ranked hook without any filter argument', () => {
@@ -178,21 +178,7 @@ describe('EndgameStatsTab with a ranked payload (D-01, D-00h, D-03)', () => {
     }
   });
 
-  it('switching TC in one section switches every section (D-00h)', () => {
-    renderTab();
-    expect(byId('tc-switch-time-pressure-rapid').getAttribute('aria-pressed')).toBe('true');
-    expect(byId('endgame-overall-no-endgame-score').textContent).toBe('59.0%');
-
-    fireEvent.click(byId('tc-switch-time-pressure-blitz'));
-
-    expect(byId('tc-switch-overall-blitz').getAttribute('aria-pressed')).toBe('true');
-    expect(byId('tc-switch-time-pressure-blitz').getAttribute('aria-pressed')).toBe('true');
-    // Blitz fixture: no-endgame 60W/40L -> 60.0%, endgame 50W/50L -> 50.0%.
-    expect(byId('endgame-overall-no-endgame-score').textContent).toBe('60.0%');
-    expect(byId('endgame-overall-endgame-score').textContent).toBe('50.0%');
-  });
-
-  it('mounts the five ranked sections and switches them all from one switch (D-01, D-00h)', () => {
+  it('switches every section from the one sticky switch (D-00h)', () => {
     renderTab();
     for (const section of [
       'endgame-overall-section',
@@ -202,15 +188,23 @@ describe('EndgameStatsTab with a ranked payload (D-01, D-00h, D-03)', () => {
     ]) {
       byId(section);
     }
-    expect(byId('tc-switch-metrics-rapid').getAttribute('aria-pressed')).toBe('true');
-    fireEvent.click(byId('tc-switch-metrics-blitz'));
-    for (const switchId of [
-      'tc-switch-overall-blitz',
-      'tc-switch-time-pressure-blitz',
-      'tc-switch-type-breakdown-blitz',
-    ]) {
-      expect(byId(switchId).getAttribute('aria-pressed')).toBe('true');
-    }
+    // One switch for the tab, inside the sticky bar; no section carries its own.
+    expect(screen.getAllByRole('group', { name: 'Time control' })).toHaveLength(1);
+    expect(byId('endgame-stats-tc-bar').contains(byId('tc-switch-endgame-stats'))).toBe(true);
+    expect(byId('endgame-overall-no-endgame-score').textContent).toBe('59.0%');
+
+    fireEvent.click(byId('tc-switch-endgame-stats-blitz'));
+
+    expect(byId('tc-switch-endgame-stats-blitz').getAttribute('aria-pressed')).toBe('true');
+    // Blitz fixture: no-endgame 60W/40L -> 60.0%, endgame 50W/50L -> 50.0%.
+    expect(byId('endgame-overall-no-endgame-score').textContent).toBe('60.0%');
+    expect(byId('endgame-overall-endgame-score').textContent).toBe('50.0%');
+    expect(byId('endgame-time-pressure-section').getAttribute('aria-label')).toBe(
+      'Time Pressure, Blitz',
+    );
+    expect(byId('endgame-metrics-tc-section').getAttribute('aria-label')).toBe(
+      'Endgame Metrics, Blitz',
+    );
   });
 
   it('feeds the timelines from the selected TC (D-03)', () => {
@@ -219,7 +213,7 @@ describe('EndgameStatsTab with a ranked payload (D-01, D-00h, D-03)', () => {
     expect(screen.queryByTestId('mock-score-chart')).toBeNull();
     expect(byId('mock-elo-timeline').getAttribute('data-window')).toBe('100');
 
-    fireEvent.click(byId('tc-switch-overall-blitz'));
+    fireEvent.click(byId('tc-switch-endgame-stats-blitz'));
 
     expect(byId('mock-score-chart').getAttribute('data-points')).toBe('1');
     expect(byId('mock-score-chart').getAttribute('data-window')).toBe('100');

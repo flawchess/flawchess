@@ -176,7 +176,7 @@ def _interpolate_with_table(table: CdfTable, value: float) -> float | None:
     return lo_pct + frac * (hi_pct - lo_pct)
 
 
-def _round_anchor_to_grid(anchor: int) -> int:
+def round_anchor_to_grid(anchor: int) -> int:
     """Round ``anchor`` to the nearest ``COHORT_ANCHOR_STEP_ELO`` (50-Elo grid step).
 
     Tie-breaking uses banker's-rounding-equivalent ``round(x / step) * step``
@@ -191,7 +191,7 @@ def interpolate_cohort_percentile(value: float, table: CdfTable | None) -> float
     Phase 99.1 shape (D-04, supersedes Phase 94.4 D-09a wording): the caller
     is responsible for fetching the ``CdfTable`` from the DB via
     ``app.repositories.benchmark_cohort_cdf_repository.load_cohort_cells``
-    and resolving the correct cell with ``_round_anchor_to_grid``.  This
+    and resolving the correct cell with ``round_anchor_to_grid``.  This
     function is pure / synchronous and performs no DB or I/O.
 
     Returns None when:

@@ -1,9 +1,10 @@
 import { useState, useMemo, useCallback, useEffect } from 'react';
 import { ChartContainer, ChartTooltip, ChartLegend, ChartLegendContent } from '@/components/ui/chart';
 import { ChartTooltipBox } from '@/components/ui/chart-tooltip-box';
-import { LineChart, Line, CartesianGrid, XAxis, YAxis } from 'recharts';
+import { ComposedChart, Line, Bar, CartesianGrid, XAxis, YAxis } from 'recharts';
 import { createDateTickFormatter, formatDateWithYear } from '@/lib/utils';
 import { inactivityGapReferenceLines } from '@/components/charts/InactivityGapReferenceLines';
+import { VOLUME_BAR_COLOR } from '@/lib/theme';
 import type { RatingDataPoint } from '@/types/stats';
 import type { TimeControl } from '@/types/api';
 
@@ -21,6 +22,14 @@ interface RatingChartProps {
 const TIME_CONTROLS: TimeControl[] = ['bullet', 'blitz', 'rapid', 'classical'];
 
 const MOBILE_BREAKPOINT_PX = 768;
+
+// The bars axis domain is [0, max * BAR_DOMAIN_FACTOR], which pins the tallest
+// daily game-count bar to the bottom ~20% of the canvas (same envelope as the
+// Endgame ELO Timeline volume bars).
+const BAR_DOMAIN_FACTOR = 5;
+
+// Per-row key holding the day's game count summed over the visible TCs.
+const GAMES_KEY = 'games_visible';
 
 function useIsMobile(): boolean {
   const [isMobile, setIsMobile] = useState(() =>
@@ -78,16 +87,27 @@ export function RatingChart({ data, platform, enabledTimeControls }: RatingChart
 
   // Group by date, keep last rating per (date, time_control_bucket).
   // Data is sorted by played_at (backend guarantees chronological order).
+  // The daily game-count bar sums game_count over the TCs that are rendered and
+  // not legend-hidden, so it always describes the lines on screen.
   const chartData = useMemo(() => {
     if (data.length === 0) return [];
     const map = new Map<string, Record<string, string | number>>();
     for (const pt of data) {
-      const row = map.get(pt.date) ?? { date: pt.date };
+      const row = map.get(pt.date) ?? { date: pt.date, [GAMES_KEY]: 0 };
       row[pt.time_control_bucket] = pt.rating;
+      const tc = pt.time_control_bucket as TimeControl;
+      if (visibleTcs.includes(tc) && !hiddenKeys.has(tc)) {
+        row[GAMES_KEY] = (row[GAMES_KEY] as number) + pt.game_count;
+      }
       map.set(pt.date, row);
     }
     return Array.from(map.values());
-  }, [data]);
+  }, [data, visibleTcs, hiddenKeys]);
+
+  const barMax = useMemo(
+    () => Math.max(1, ...chartData.map((row) => row[GAMES_KEY] as number)),
+    [chartData],
+  );
 
   const allDates = useMemo(() => chartData.map((d) => d.date as string), [chartData]);
   const formatDateTick = useMemo(() => createDateTickFormatter(allDates), [allDates]);
@@ -175,25 +195,31 @@ export function RatingChart({ data, platform, enabledTimeControls }: RatingChart
 
   return (
     <ChartContainer config={legendConfig} className="w-full h-72" data-testid={testId}>
-      <LineChart
+      <ComposedChart
         data={chartData}
         margin={{ top: 5, right: 10, left: isMobile ? 0 : 10, bottom: 10 }}
       >
-        <CartesianGrid vertical={false} />
+        {/* recharts 3: CartesianGrid must bind to the named primary YAxis via yAxisId */}
+        <CartesianGrid vertical={false} yAxisId="elo" />
         <XAxis
           dataKey="date"
           tickFormatter={formatDateTick}
           tick={{ fontSize: 12 }}
         />
-        <YAxis domain={yDomain} ticks={yTicks} interval={0} tick={{ fontSize: 12 }} width={44} />
+        <YAxis yAxisId="elo" domain={yDomain} ticks={yTicks} interval={0} tick={{ fontSize: 12 }} width={44} />
+        {/* Hidden right axis dedicated to the daily game-count bars. */}
+        <YAxis yAxisId="bars" orientation="right" hide domain={[0, barMax * BAR_DOMAIN_FACTOR]} />
         <ChartTooltip
           content={({ active, payload, label }) => {
             if (!active || !payload?.length) return null;
             return (
               <ChartTooltipBox>
                 <div className="font-medium">{formatDateWithYear(label as string)}</div>
+                <div className="text-muted-foreground">
+                  Games this day: {(payload[0]?.payload as Record<string, number> | undefined)?.[GAMES_KEY] ?? 0}
+                </div>
                 {payload
-                  .filter((item) => item.value !== undefined)
+                  .filter((item) => item.value !== undefined && item.dataKey !== GAMES_KEY)
                   .map((item) => {
                     const tc = item.dataKey as string;
                     const cfg = chartConfig[tc as keyof typeof chartConfig];
@@ -220,13 +246,23 @@ export function RatingChart({ data, platform, enabledTimeControls }: RatingChart
             >90-day gap. Placed BEFORE the TIME_CONTROLS Line series so annotations
             sit behind the data in SVG z-order. sortedGapDates is a defensively
             sorted copy of allDates so computeInactivityGaps' ascending-sort
-            requirement is guaranteed even if the backend order shifts. No yAxisId
-            (single default axis). Covers both Chess.com and Lichess instances
+            requirement is guaranteed even if the backend order shifts. Bound to the
+            "elo" axis (the bars have their own hidden axis). Covers both Chess.com and Lichess instances
             (same component, platform prop only affects testid/labels). */}
-        {inactivityGapReferenceLines({ dates: sortedGapDates })}
+        {inactivityGapReferenceLines({ dates: sortedGapDates, yAxisId: 'elo' })}
+        {/* Muted daily game-count bars, bound to the hidden bars axis and drawn
+            before the lines so they sit behind them. */}
+        <Bar
+          yAxisId="bars"
+          dataKey={GAMES_KEY}
+          fill={VOLUME_BAR_COLOR}
+          legendType="none"
+          isAnimationActive={false}
+        />
         {visibleTcs.map((tc) => (
           <Line
             key={tc}
+            yAxisId="elo"
             type="monotone"
             dataKey={tc}
             stroke={`var(--color-${tc})`}
@@ -236,7 +272,7 @@ export function RatingChart({ data, platform, enabledTimeControls }: RatingChart
             hide={hiddenKeys.has(tc)}
           />
         ))}
-      </LineChart>
+      </ComposedChart>
     </ChartContainer>
   );
 }

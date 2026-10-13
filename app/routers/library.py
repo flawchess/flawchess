@@ -184,15 +184,15 @@ async def get_flaw_stats(
     color: str | None = Query(default=None),
     include_pasted: bool = Query(default=False),
 ) -> FlawStatsResponse:
-    """Return the stats-panel aggregate over the filtered analyzed-only set (LIBG-09).
+    """Return the analyzed-game count and per-TC Flaws Timeline (LIBG-09, Phase 239).
 
-    Per-severity counts + rates (per game and per 100 user-moves), the full tag
-    distribution (tempo split, reversed/squandered rates, phase histogram), a
-    rolling-game trend, and the explicit >=90%-coverage analyzed denominator
-    (analyzed_pct / analyzed_n / total_n). Same filter set as /games (no
-    pagination). An empty analyzed set returns zeros, never an error. When
-    `color` is supplied ("white" or "black"), stats are computed over only games
-    played as that color. `include_pasted` (Phase 208, D-11) is the Library-only
+    trend_by_tc is one rolling-game trend series per time control (the client picks
+    the selected TC's series); analyzed_n is the analyzed-game count of the filtered
+    set. The severity counts, rates and tag distribution this
+    endpoint used to return are gone: the tiles read /flaw-comparison. Same filter
+    set as /games (no pagination). An empty analyzed set returns zeros, never an
+    error. When `color` is supplied ("white" or "black"), stats are computed over
+    only games played as that color. `include_pasted` (Phase 208, D-11) is the Library-only
     opt-in that reveals `platform='pgn'` games, off by default, additive to
     whatever population this surface already shows.
     """
@@ -231,11 +231,14 @@ async def get_flaw_comparison(
     color: str | None = Query(default=None),
     include_pasted: bool = Query(default=False),
 ) -> FlawComparisonResponse:
-    """Return the 15-bullet you-vs-opponent comparison for the filtered analyzed set (Phase 115).
+    """Return the per-TC you-vs-opponent comparison for the filtered analyzed set (Phase 115, 239).
+
+    tcs[] lists every time control the sidebar filter allows that has at least one
+    analyzed game (D-02), each with 12 bullets; below-gate TCs keep their bullets
+    (D-03). The TC switch is client-side: no TC request parameter exists.
 
     user_id is taken exclusively from the authenticated user — never from a
     request parameter (IDOR prevention, T-115-01 / T-108-10 pattern).
-    Returns below_gate=True with empty bullets when analyzed_n < 20 (FLAWCMP-05, D-09).
     `include_pasted` (Phase 208, D-11) is the Library-only opt-in that reveals
     `platform='pgn'` games, off by default, additive to whatever population
     this surface already shows.
@@ -276,15 +279,16 @@ async def get_tactic_comparison(
     tactic_families: list[str] | None = Query(default=None),
     include_pasted: bool = Query(default=False),
 ) -> TacticComparisonResponse:
-    """Per-family tactic motif you-vs-opponent comparison (Phase 126/129).
+    """Per-TC tactic motif you-vs-opponent comparison, per 100 games (Phase 126/129/239).
 
-    Phase 129 (D-13/D-14, taxonomy redesign): returns up to 20 orientation-tagged bullets
-    (10 families x 2 orientations); top-6 families by Missed you_rate appear first, then overflow.
-    No orientation query param — grid always shows both orientations (D-09).
+    Phase 239 (D-02/D-03/D-00h): returns `tcs`, one entry per time control that the filters
+    allow and that has at least one analyzed game (bullet..classical order). Each TC carries
+    38 bullets (19 families x missed/allowed) in fixed FAMILY_TO_MOTIF_INTS order, missed
+    before allowed, also when the TC is below the analyzed-game gate. Rates and gaps are per
+    100 games. No ranking or top-N. No query parameter selects a TC (the switch is client-side).
 
     user_id taken exclusively from the authenticated user — never from a
     request parameter (IDOR prevention, T-126-01).
-    Returns below_gate=True with empty bullets when analyzed_n < TACTIC_COMPARISON_GATE.
     tactic_families: optional multi-select to narrow to specific motif families
     (e.g. "fork", "skewer"); unknown/dropped keys are silently ignored (T-126-02).
     Backend is NOT beta-gated per D-01a — frontend gating enforces beta rollout.

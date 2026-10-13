@@ -40,9 +40,6 @@ interface WDLChartRowProps {
   /** data-testid for the open games button */
   openGamesTestId?: string;
 
-  /** When present, renders a grey-outlined proportional game count bar. Value = max total across all rows for proportional sizing. */
-  maxTotal?: number;
-
   /** Minimum games threshold for reliable stats. Below this, bar and legend are dimmed. Defaults to MIN_GAMES_FOR_RELIABLE_STATS (10). */
   minGamesForReliable?: number;
 
@@ -69,7 +66,6 @@ export function WDLChartRow({
   gamesLinkAriaLabel,
   onOpenGames,
   openGamesTestId,
-  maxTotal,
   minGamesForReliable = MIN_GAMES_FOR_RELIABLE_STATS,
   gameCountLabel,
   barHeight = 'h-5',
@@ -174,20 +170,6 @@ export function WDLChartRow({
           </div>
         )}
       </div>
-
-      {/* Grey-outlined game count bar — proportional to max total across all rows */}
-      {maxTotal !== undefined && (
-        <div className="h-2 mt-0.5 mb-1">
-          <div
-            className="h-full rounded-sm"
-            style={{
-              width: `${(data.total / maxTotal) * 100}%`,
-              border: '1px solid oklch(0.6 0 0)',
-              backgroundColor: 'transparent',
-            }}
-          />
-        </div>
-      )}
     </div>
   );
 }

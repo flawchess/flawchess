@@ -184,6 +184,67 @@ Plans:
 **Wave 7** *(blocked on Wave 6 completion)*
 - [x] 238-09-PLAN.md — Pre-merge gate, final stale-reference grep and latency, Claude-run desktop + mobile UAT and live Shelly smoke (wave 7)
 
+### Phase 239: Library Stats You-vs-Opponents Redesign (SEED-198)
+
+**Goal**: Make the Library Stats tab (below the Flaw Stats tiles and the Flaws Timeline) readable for
+non-statisticians. Today every one of the 15 context tags and 12+ tactic motifs is the same `MiniBulletChart`
+(red/green halves, blue IQR band, CI whiskers, inverted-sign delta, mixed per-100-moves vs per-game units),
+tactic rows have no typical band at all, and the plain-language "You: x, opponents: y" sentence hides in the
+hover popover. Direction is the owner-approved sketch 010 round 5
+(`.planning/sketches/010-library-stats-you-vs-opponents/`; locked decisions 1-12 in SEED-198), kept
+consistent with Phase 238 (Endgame Stats).
+
+- **1. One gap bar** for every you-vs-opponent metric: 0 tick in the middle, grey benchmark IQR of the gap
+  drawn where it is, one red/blue/green dot, better always to the right, saturating outside the band. No
+  red/green halves, no CI whiskers. The gap reads as words ("1.7 fewer", "same").
+- **2. Only the gap on the page**; a Search icon opens a `RankedMetricPopover`-style popover (definition,
+  You/Opponents, typical range + verdict, basis, greyed counts / 95% CI / p-value below a separator).
+- **3. Tiles:** Blunders and Mistakes only, each with an "Opponents" line and a gap bar; Inaccuracies tile,
+  Severity card and "Flaw rate" retire.
+- **4. Context tags:** combos removed; four cards (Clock | Game phase, Opponent errors | Lost advantages)
+  with one-line hints, plus a "What stands out" card (top 3 strengths / weaknesses by band-width distance).
+- **5. Tactic motifs:** three tables in `TACTIC_GROUPS` order (Advanced collapsed by default), Missed |
+  Allowed gap-bar columns per 100 games, zero-count motifs listed under the table; "More tactics" accordion
+  and the top-6 ranking (D-14) retire. Low-sample cells (< 40 flaws) faded, no verdict.
+- **6. Synced TC switch** in every section (`TcSwitch` / `useEndgameStatsTc` pattern).
+- **7. Benchmark tactic IQRs:** extend `/benchmarks` §5 (`scripts/benchmarks/chapter5.py`) with per-family
+  Missed/Allowed paired-delta zones on the fully analyzed sample only (same methodology as the 15 flaw-delta
+  zones, collapse verdict, viability table), then a tactic zone registry next to
+  `app/services/flaw_delta_zones.py` wired into `get_tactic_comparison`. Gated on the blitz full-analysis
+  benchmark sample finishing.
+- **Guardrails:** Flaws Timeline, ELO Ratings, Results Breakdown and the coverage badge unchanged; "flaws"
+  wording, never "events"; check Openings before deleting `MiniBulletChart` / `FlawBulletPopover`; mobile
+  and desktop UAT.
+- **Open for discuss:** TC switch vs the sidebar TC filter (and the pooled Flaws Timeline); default TC and
+  TCs below the 20-game gate; tactic zones per TC×Elo or pooled; ship tables band-less before the IQRs or
+  wait; tactics in "What stands out"; low-sample threshold calibration.
+
+**Depends on**: Phase 238 (`PercentileBar`, `RankedMetricPopover`, `TcSwitch`, `useEndgameStatsTc` patterns); blitz full-analysis benchmark sample for the tactic IQRs
+**Requirements**: TBD (coverage contract = CONTEXT decisions from discuss-phase)
+**Plans:** 10/10 plans complete
+**Status**: Complete 2026-10-13 (verified on branch `gsd/phase-239-library-stats-you-vs-opponents`, not yet squash-merged to `main`)
+
+Plans:
+**Wave 1**
+- [x] 239-01-PLAN.md — §5 code on the full-analysis lane: 12 flaw + 38 tactic metrics, floor, noise diagnostic, §5-only CLI, SKILL.md, smoke wall time recorded (wave 1)
+- [x] 239-02-PLAN.md — Backend per-TC flaw comparison + per-TC timeline, per-zone-TC flaw registry, retired combos/flaw rate/aggregates (wave 1)
+- [x] 239-03-PLAN.md — Frontend building blocks: gap-bar math + GapBar, shared popover shell + GapPopover/GapRow, TC store factory + Library TC hook (wave 1)
+
+**Wave 2** *(blocked on Wave 1 completion)*
+- [x] 239-04-PLAN.md — Backend per-TC tactic comparison per 100 games, fixed order, tactic zone registry (wave 2)
+- [x] 239-05-PLAN.md — Frontend Flaw Stats section: container, synced Library TC switch, Blunders/Mistakes tiles, per-TC timeline, legacy band/grid/popover removed (wave 2)
+- [x] 239-06-PLAN.md — Run §5 (executor or orchestrator-inline by smoke time), pin diff gate, narrate report, D-12 sanity check, owner accepts or holds zone values (wave 2, checkpoint)
+
+**Wave 3** *(blocked on Wave 2 completion)*
+- [x] 239-07-PLAN.md — Write accepted values into both registries, accepted fade constant, Elo keying only if accepted (wave 3)
+- [x] 239-10-PLAN.md — Frontend You vs. your opponents section (What stands out + four context cards) and legacy flaw metadata cleanup (wave 3)
+
+**Wave 4** *(blocked on Wave 3 completion)*
+- [x] 239-08-PLAN.md — Frontend tactic tables with collapsible Advanced, legacy grid removed (wave 4)
+
+**Wave 5** *(blocked on Wave 4 completion)*
+- [x] 239-09-PLAN.md — Pre-merge gate, stale-name sweep, CHANGELOG, live smoke, browser UAT steps (wave 5)
+
 Phase detail for every shipped milestone lives in `milestones/vX.Y-ROADMAP.md`, its phase directories in `milestones/vX.Y-phases/`, and the per-milestone summaries in [MILESTONES.md](MILESTONES.md).
 
 ## Backlog
