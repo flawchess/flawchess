@@ -30,10 +30,12 @@ capabilities beyond SEED-198.
 - **D-00e:** Tiles: Blunders and Mistakes only (Inaccuracies tile, Severity card and "Flaw rate" retire).
 - **D-00f:** Context tags: combos (hasty miss, low-clock miss) removed; four cards Clock | Game phase, Opponent errors | Lost advantages, tag names unchanged, one-line hint per tag.
 - **D-00g:** "What stands out" card above the context cards: top 3 strengths / top 3 weaknesses ranked by distance outside the band in band widths, each with hint, coloured gap and Search popover, then one "Typical: …" line.
+  - **Owner override, 2026-10-13 (UAT):** the "What stands out" card was dropped. The You vs. your opponents section shows only the four context-tag cards; `WhatStandsOut` and its ranking helpers (`pickStandouts`, `standoutDistance`) were deleted.
 - **D-00h:** Tactic motifs: three tables in `TACTIC_GROUPS` order, Motif (+ "N of your flaws") | Missed | Allowed, full-size gap bars per 100 games, fixed column widths, phones stack Missed/Allowed under the motif, zero-count motifs listed under the table. "More tactics" accordion and the top-6 ranking (Phase 129 D-14) retire.
 - **D-00i:** Advanced table collapsed by default with chevron and the `ShellyQuote` `EXPAND_HINT` "Click or tap for details" hint, hidden once open.
 - **D-00j:** Card header bands throughout; Fredoka only for the h2 section titles.
 - **D-00k:** Unchanged: Flaws Timeline visuals (it follows the selected TC), ELO Ratings, Results Breakdown, analyzed-coverage badge.
+  - **Owner override, 2026-10-13 (UAT):** ELO Ratings and Results Breakdown did change. The ELO charts gained grey daily game-count bars (like the Endgame ELO Timeline; `/stats/rating-history` now returns `game_count` per day and TC), and the Results Breakdown rows lost their transparent relative game-count bars.
 
 ### Filters and the TC switch
 - **D-01:** The sidebar filter panel **stays** on the Library Stats tab (unlike Phase 238 D-01/D-02: there is no ranked sample here, so recency, platform, color and opponent-strength filters stay meaningful). All gap metrics are computed over the filtered analyzed games of the selected TC.
@@ -54,6 +56,7 @@ capabilities beyond SEED-198.
 ### Low sample and "What stands out"
 - **D-12:** Low-sample fade = a named constant of **40 flaws (you + opponents) per cell**, applied to tactic cells **and** context-tag rows: faded, no red/green verdict (dot neutral), popover says "Too few flaws to call it". The planner sanity-checks 40 against the CI width on the owner's dev blitz/rapid data and adjusts the constant only if clearly off.
 - **D-13:** "What stands out" ranks **context tags only** (not tactics, not the Blunders/Mistakes tiles). Faded (low-sample) rows never qualify.
+  - **Moot since 2026-10-13 (UAT):** the "What stands out" card was dropped (see D-00g).
 
 ### Claude's Discretion
 - Plan split (likely: benchmark §5 + zone registries, backend payload, frontend rework).
