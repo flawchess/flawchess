@@ -16,6 +16,8 @@ from app.services.tactic_delta_zones import (
     TACTIC_DELTA_ZONES,
     TACTIC_FAMILIES,
     TACTIC_SIDES,
+    TacticFamily,
+    TacticSide,
     tactic_delta_zone,
 )
 
@@ -43,6 +45,62 @@ def test_registry_values_are_none_or_cover_both_zone_tcs() -> None:
     for value in TACTIC_DELTA_ZONES.values():
         if value is not None:
             assert set(value) == {"rapid", "classical"}
+
+
+# The owner-accepted viable set (239-ZONE-PROPOSAL.md ## Accepted): has_zone true for exactly
+# these 9 (family, side) pairs; the other 29 stay None. Pinned literally on purpose.
+_ACCEPTED_VIABLE: frozenset[tuple[TacticFamily, TacticSide]] = frozenset(
+    {
+        ("fork", "missed"),
+        ("fork", "allowed"),
+        ("pin", "missed"),
+        ("pin", "allowed"),
+        ("discovered_attack", "allowed"),
+        ("hanging", "missed"),
+        ("hanging", "allowed"),
+        ("mate", "missed"),
+        ("mate", "allowed"),
+    }
+)
+
+# Accepted bands (per 100 games), identical for rapid and classical.
+_ACCEPTED_BANDS: dict[tuple[TacticFamily, TacticSide], tuple[float, float]] = {
+    ("fork", "missed"): (-2.21, +2.13),
+    ("fork", "allowed"): (-4.12, +3.23),
+    ("pin", "missed"): (-1.42, +1.89),
+    ("pin", "allowed"): (-2.86, +2.05),
+    ("discovered_attack", "allowed"): (-1.24, +1.06),
+    ("hanging", "missed"): (-1.13, +1.48),
+    ("hanging", "allowed"): (-5.11, +3.04),
+    ("mate", "missed"): (-2.18, +2.90),
+    ("mate", "allowed"): (-7.00, +4.09),
+}
+
+
+def test_viable_set_is_exactly_the_accepted_nine() -> None:
+    viable = {key for key, value in TACTIC_DELTA_ZONES.items() if value is not None}
+    assert viable == _ACCEPTED_VIABLE
+    assert len(viable) == 9
+
+
+def test_viable_bands_equal_the_accepted_values() -> None:
+    assert set(_ACCEPTED_BANDS) == _ACCEPTED_VIABLE
+    for key, (lo, hi) in _ACCEPTED_BANDS.items():
+        zones = TACTIC_DELTA_ZONES[key]
+        assert zones is not None, key
+        for zone_tc in ("rapid", "classical"):
+            band = zones[zone_tc]
+            assert (band.zone_lo, band.zone_hi) == (lo, hi), f"{key}/{zone_tc}"
+            assert band.zone_lo < band.zone_hi
+
+
+def test_viable_bands_are_on_the_grid() -> None:
+    for zones in TACTIC_DELTA_ZONES.values():
+        if zones is None:
+            continue
+        for band in zones.values():
+            for value in (band.zone_lo, band.zone_hi):
+                assert round(value * 100) / 100 == pytest.approx(value, abs=1e-9)
 
 
 def _patch_fork_missed(

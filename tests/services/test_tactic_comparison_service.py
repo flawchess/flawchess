@@ -8,6 +8,7 @@ Coverage plan:
 - test_below_gate_tc_still_lists_bullets    : Phase 239 D-03 — 12 analyzed games, below_gate with 38 bullets
 - test_low_sample_boundary                   : Phase 239 D-12 — LOW_SAMPLE_MIN_FLAWS - 1 vs LOW_SAMPLE_MIN_FLAWS
 - test_zone_lookup_uses_each_bullets_tc      : Phase 239 D-08/D-11 — registry band per TC, rapid stopgap
+- test_accepted_viable_entries_*             : Phase 239 plan 07 — accepted registry bands reach the API, no monkeypatch
 - test_two_user_isolation                    : T-239-08 — each user sees only their own events
 - test_zero_event_family_delta_none          : family with no events -> delta=None
 - test_confidence_gate_chip_field            : tactic_motif=None when confidence < threshold
@@ -143,6 +144,7 @@ _TEST_USER_LOW = 77707
 _TEST_USER_BAND = 77708
 _TEST_USER_ISO_A = 77709
 _TEST_USER_ISO_B = 77710
+_TEST_USER_E2E = 77711
 
 
 @pytest_asyncio.fixture(autouse=True)
@@ -157,6 +159,7 @@ async def _create_test_users(db_session: AsyncSession) -> None:
         _TEST_USER_BAND,
         _TEST_USER_ISO_A,
         _TEST_USER_ISO_B,
+        _TEST_USER_E2E,
     ]:
         await _ensure_user(db_session, uid)
 
@@ -302,7 +305,7 @@ def test_combinations_request_is_noop() -> None:
 async def test_fixed_order_per_tc(db_session: AsyncSession) -> None:
     """25 blitz games, one missed fork: tcs == [blitz] with 38 bullets in fixed order (D-00h)."""
     from app.services.library_service import TACTIC_COMPARISON_GATE, get_tactic_comparison
-    from app.services.tactic_delta_zones import TACTIC_FAMILIES
+    from app.services.tactic_delta_zones import TACTIC_FAMILIES, tactic_delta_zone
     from app.services.tactic_detector import TacticMotifInt
 
     games = []
@@ -340,11 +343,12 @@ async def test_fixed_order_per_tc(db_session: AsyncSession) -> None:
     assert fork_missed.you_rate == pytest.approx(4.0)
     assert fork_missed.opp_rate == pytest.approx(0.0)
     assert fork_missed.delta == pytest.approx(4.0)
-    # Registry as shipped is all-None until plan 239-07: no zone anywhere.
+    # has_zone mirrors the registry (plan 239-07 populated the 9 accepted viable entries).
     for bullet in blitz.bullets:
-        assert bullet.has_zone is False
-        assert bullet.zone_lo == 0.0
-        assert bullet.zone_hi == 0.0
+        band = tactic_delta_zone(bullet.family, bullet.orientation, "blitz")
+        assert bullet.has_zone is (band is not None)
+        assert bullet.zone_lo == (band.zone_lo if band else 0.0)
+        assert bullet.zone_hi == (band.zone_hi if band else 0.0)
 
 
 @pytest.mark.asyncio
@@ -493,6 +497,7 @@ async def test_zone_lookup_uses_each_bullets_tc(
     from app.services import tactic_delta_zones
     from app.services.flaw_delta_zones import ZoneBand
     from app.services.library_service import get_tactic_comparison
+    from app.services.tactic_delta_zones import tactic_delta_zone
 
     rapid = ZoneBand(zone_lo=-2.0, zone_hi=3.0)
     classical = ZoneBand(zone_lo=-1.0, zone_hi=1.5)
@@ -520,9 +525,44 @@ async def test_zone_lookup_uses_each_bullets_tc(
         assert fork_missed.has_zone is True
         assert fork_missed.zone_lo == expected[tc_entry.tc].zone_lo
         assert fork_missed.zone_hi == expected[tc_entry.tc].zone_hi
-        # Every other family-side is still unviable in this registry.
-        assert all(b.has_zone is False for b in tc_entry.bullets[1:])
-        assert all(b.zone_lo == 0.0 and b.zone_hi == 0.0 for b in tc_entry.bullets[1:])
+        # Every other family-side reads the (accepted) registry as usual.
+        for b in tc_entry.bullets[1:]:
+            other = tactic_delta_zone(b.family, b.orientation, tc_entry.tc)
+            assert b.has_zone is (other is not None)
+
+
+@pytest.mark.asyncio
+async def test_accepted_viable_entries_report_the_registry_band_end_to_end(
+    db_session: AsyncSession,
+) -> None:
+    """No monkeypatch: a blitz user's viable bullets carry the accepted rapid band (D-08/D-09/D-11).
+
+    Unviable bullets report has_zone False and a zero-width 0.0 band.
+    """
+    from app.services.library_service import TACTIC_COMPARISON_GATE, get_tactic_comparison
+    from app.services.tactic_delta_zones import TACTIC_DELTA_ZONES
+
+    for _ in range(TACTIC_COMPARISON_GATE + 5):
+        g = await _seed_game(db_session, user_id=_TEST_USER_E2E, user_color="white")
+        await _seed_analyzed(db_session, game=g)
+
+    result = await get_tactic_comparison(
+        db_session, user_id=_TEST_USER_E2E, **_DEFAULT_FILTER_KWARGS
+    )
+
+    assert [tc.tc for tc in result.tcs] == ["blitz"]
+    viable_seen = 0
+    for bullet in result.tcs[0].bullets:
+        zones = TACTIC_DELTA_ZONES[(bullet.family, bullet.orientation)]
+        if zones is None:
+            assert bullet.has_zone is False
+            assert (bullet.zone_lo, bullet.zone_hi) == (0.0, 0.0)
+            continue
+        viable_seen += 1
+        assert bullet.has_zone is True
+        assert bullet.zone_lo == zones["rapid"].zone_lo
+        assert bullet.zone_hi == zones["rapid"].zone_hi
+    assert viable_seen == 9
 
 
 @pytest.mark.asyncio
