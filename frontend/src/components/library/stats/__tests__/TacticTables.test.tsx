@@ -321,7 +321,7 @@ describe('phone layout and footer (D-00h)', () => {
 
     const row = screen.getByTestId('tactic-row-fork');
     expect(row.className).toContain('grid-cols-1');
-    expect(row.className).toContain('md:grid-cols-[24%_38%_38%]');
+    expect(row.className).toContain('md:grid-cols-[24fr_38fr_38fr]');
     const missedLabel = screen.getByTestId('tactic-cell-fork-missed-side');
     const allowedLabel = screen.getByTestId('tactic-cell-fork-allowed-side');
     expect(missedLabel.textContent).toBe('Missed');

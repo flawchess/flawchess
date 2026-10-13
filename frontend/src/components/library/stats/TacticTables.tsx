@@ -24,8 +24,13 @@ import { GapBar } from './GapBar';
 import { GapPopover } from './GapPopover';
 import type { TacticBullet, TacticComparisonTc, TacticSide } from '@/types/library';
 
-/** Fixed column widths so the three tables line up (D-00h); phones stack instead. */
-const TABLE_GRID_CLASS = 'md:grid-cols-[24%_38%_38%]';
+/**
+ * Fixed column proportions so the three tables line up (D-00h); phones stack instead.
+ * fr, not %: percentage tracks summing to 100% ignore the md:gap-4 gutters, so the
+ * row overflowed its card by 32px and the card's overflow-hidden clipped the
+ * Allowed column's search icon at every desktop width (found in the 239-09 UAT).
+ */
+const TABLE_GRID_CLASS = 'md:grid-cols-[24fr_38fr_38fr]';
 const SIDES: readonly TacticSide[] = ['missed', 'allowed'];
 const SIDE_LABELS: Record<TacticSide, string> = { missed: 'Missed', allowed: 'Allowed' };
 /** The group that starts collapsed: the rare motifs, mostly faded rows (D-00i). */
