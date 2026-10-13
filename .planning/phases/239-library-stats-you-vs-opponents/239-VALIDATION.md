@@ -3,9 +3,9 @@ phase: "239"
 slug: "library-stats-you-vs-opponents"
 # status lifecycle: draft (seeded by plan-phase) → validated (set by validate-phase §6)
 # audit-milestone §5.5 distinguishes NOT-VALIDATED (draft) from PARTIAL (validated + nyquist_compliant: false) (#2117)
-status: draft
-nyquist_compliant: false
-wave_0_complete: false
+status: validated
+nyquist_compliant: true
+wave_0_complete: true
 created: "2026-10-12"
 ---
 
@@ -60,6 +60,8 @@ Rows mapped to the executed plans; status from the 239-09 pre-merge gate run (20
 | D-00g/D-13 | 239-10 T1 | Top 3 per side by band-width distance; faded/zoneless excluded; Typical line; empty copy | component | `cd frontend && npm test -- --run src/components/library/stats/__tests__/WhatStandsOut.test.tsx` | ✅ | ✅ green |
 | D-00f/D-03 | 239-10 T1 | Four cards, tag order, hints, gate slot "(12 of 20)" | component | `cd frontend && npm test -- --run src/components/library/stats/__tests__/ContextTagCards.test.tsx` | ✅ | ✅ green |
 | D-00h/D-00i/D-03 | 239-08 T1-T2 | Three tables in TACTIC_GROUPS order, zero-count motifs under table, Advanced collapsed with hint | component | `cd frontend && npm test -- --run src/components/library/stats/__tests__/TacticTables.test.tsx` | ✅ | ✅ green |
+| D-00d | 239-03 T2, 239-08, 239-10 T1 | Copy says flaws/blunders/mistakes, never "events" (regex `/\bevents?\b/i` asserted on tiles, popovers, What stands out, cards, tactic tables) | component | `cd frontend && npm test -- --run src/components/library/stats/__tests__/` | ✅ | ✅ green |
+| D-01 | 239-02 T2, 239-04 T2 | Sidebar filters narrow the analyzed set per TC (filter + NULL-bucket edges; tactic_families filter narrows 3 → 1) | integration | `uv run pytest tests/services/test_flaw_comparison.py tests/services/test_tactic_comparison_service.py -x` | ✅ | ✅ green (+ UAT step 5) |
 
 *Status: ⬜ pending · ✅ green · ❌ red · ⚠️ flaky*
 
@@ -67,11 +69,11 @@ Rows mapped to the executed plans; status from the 239-09 pre-merge gate run (20
 
 ## Wave 0 Requirements
 
-- [ ] `tests/scripts/test_chapter5_sql.py` — DB-free; NOT under `tests/scripts/benchmarks/` (that dir is `--ignore`d by `pyproject.toml` addopts)
-- [ ] `tests/services/test_flaw_delta_zones.py`, `tests/services/test_tactic_delta_zones.py`
-- [ ] `frontend/src/lib/__tests__/gapBar.test.ts`
-- [ ] `frontend/src/components/library/stats/__tests__/{GapBar,GapPopover,WhatStandsOut}.test.tsx`
-- [ ] `frontend/src/hooks/__tests__/useLibraryStatsTc.test.ts`
+- [x] `tests/scripts/test_chapter5_sql.py` — DB-free; NOT under `tests/scripts/benchmarks/` (that dir is `--ignore`d by `pyproject.toml` addopts)
+- [x] `tests/services/test_flaw_delta_zones.py`, `tests/services/test_tactic_delta_zones.py`
+- [x] `frontend/src/lib/__tests__/gapBar.test.ts`
+- [x] `frontend/src/components/library/stats/__tests__/{GapBar,GapPopover,WhatStandsOut}.test.tsx`
+- [x] `frontend/src/hooks/__tests__/useLibraryStatsTc.test.ts`
 - Prove new tests by reverting the fix once (mutation check), not by symbol presence.
 
 ---
@@ -102,11 +104,19 @@ Rows mapped to the executed plans; status from the 239-09 pre-merge gate run (20
 
 ## Validation Sign-Off
 
-- [ ] All tasks have `<automated>` verify or Wave 0 dependencies
-- [ ] Sampling continuity: no 3 consecutive tasks without automated verify
-- [ ] Wave 0 covers all MISSING references
-- [ ] No watch-mode flags
-- [ ] Feedback latency < 60s
-- [ ] `nyquist_compliant: true` set in frontmatter
+- [x] All tasks have `<automated>` verify or Wave 0 dependencies
+- [x] Sampling continuity: no 3 consecutive tasks without automated verify
+- [x] Wave 0 covers all MISSING references
+- [x] No watch-mode flags
+- [x] Feedback latency < 60s
+- [x] `nyquist_compliant: true` set in frontmatter
 
-**Approval:** pending
+**Approval:** validated 2026-10-13 (validate-phase, after the 239-09 gate run)
+
+## Validation Audit 2026-10-13
+
+| Metric | Count |
+|---|---|
+| Gaps found | 0 |
+| Resolved | 0 |
+| Escalated | 0 |
