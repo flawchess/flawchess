@@ -329,8 +329,8 @@ class FlawBullet(BaseModel):
     delta: (
         float | None
     )  # mean per-game delta (per 100 of user's moves); None = both sides zero events
-    ci_low: float | None  # 95% CI lower bound (per 100 moves)
-    ci_high: float | None  # 95% CI upper bound (per 100 moves)
+    ci_low: float | None  # 99% CI lower bound (per 100 moves, D-14)
+    ci_high: float | None  # 99% CI upper bound (per 100 moves, D-14)
     # Per-player rates (Phase 115 UAT): mean per-game flaw rate per 100 of the
     # user's moves, for player and opponent separately. Both opponent and player
     # counts are normalized by the user's move count per game so that
@@ -346,9 +346,9 @@ class FlawBullet(BaseModel):
     zone_lo: float  # Q1 from the per-zone-TC FLAW_DELTA_ZONES registry
     zone_hi: float  # Q3 from the per-zone-TC FLAW_DELTA_ZONES registry
     has_zone: bool = True  # False for future zoneless bullets (FLAWUI-04)
-    # Phase 239 D-12: True when player_events + opp_events < LOW_SAMPLE_MIN_FLAWS.
-    # The UI fades the cell and gives no verdict; the backend owns the threshold.
-    low_sample: bool
+    # Phase 239 D-14: True when the 99% CI on delta excludes 0. Only a significant cell
+    # outside the band gets a red/green verdict; the backend owns the test.
+    significant: bool
 
 
 class FlawComparisonTc(BaseModel):
@@ -401,8 +401,8 @@ class TacticBullet(BaseModel):
     you_rate: float | None  # mean count per 100 games (player side); None = zero events
     opp_rate: float | None  # mean count per 100 games (opponent side); None = zero events
     delta: float | None  # you_rate - opp_rate per 100 games; None = both sides zero events
-    ci_low: float | None  # 95% CI lower bound on delta (per 100 games)
-    ci_high: float | None  # 95% CI upper bound on delta (per 100 games)
+    ci_low: float | None  # 99% CI lower bound on delta (per 100 games, D-14)
+    ci_high: float | None  # 99% CI upper bound on delta (per 100 games, D-14)
     p_value: float | None  # two-sided p vs H0: delta == 0; None = zero events
     you_events: int  # raw event count (player side)
     opp_events: int  # raw event count (opponent side)
@@ -411,9 +411,9 @@ class TacticBullet(BaseModel):
     zone_lo: float
     zone_hi: float
     has_zone: bool
-    # Phase 239 D-12: True when you_events + opp_events < LOW_SAMPLE_MIN_FLAWS.
-    # The UI fades the cell and gives no verdict; the backend owns the threshold.
-    low_sample: bool
+    # Phase 239 D-14: True when the 99% CI on delta excludes 0. Only a significant cell
+    # outside the band gets a red/green verdict; the backend owns the test.
+    significant: bool
 
 
 class TacticComparisonTc(BaseModel):

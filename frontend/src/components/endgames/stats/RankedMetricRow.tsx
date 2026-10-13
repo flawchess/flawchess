@@ -44,6 +44,7 @@ export function RankedMetricRow({ metric, tcStats, testId, label }: RankedMetric
         percentile={metric.percentile}
         floorN={metric.floor_n}
         floorRequired={metric.floor_required}
+        significant={metric.significant}
         testId={`${testId}-bar`}
       />
     </div>

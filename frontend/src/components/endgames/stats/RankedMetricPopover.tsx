@@ -1,7 +1,8 @@
 /**
  * One popover per peer-ranked metric (D-00c): a plain WHAT + sign sentence, the
  * percentile statement with its disclosures (cohort, recent-games basis, anchor
- * composition), then the statistics (n, 95% CI, p-value) greyed below a separator.
+ * composition), then the statistics (n, 99% CI, p-value) greyed below a separator.
+ * An out-of-range percentile that is not significant (D-14) adds a could-be-chance line.
  * The Stats tab has no filters, so no filter-independence line (238 UAT). Stats vocabulary appears only in that
  * footer; the prose stays plain (popover copy minimalism).
  *
@@ -15,12 +16,15 @@ import { RankStatusLine } from './PercentileBar';
 import {
   METRIC_LABELS,
   METRIC_WHAT,
+  PERCENTILE_TYPICAL_HIGH,
+  PERCENTILE_TYPICAL_LOW,
   displayPercentile,
   formatCiBound,
   formatPValue,
 } from './rankedMetrics';
 
 const FOOTER_SEPARATOR = ' · ';
+const COPY_CHANCE = 'This could be chance, there are not enough games to be sure.';
 
 /** The anchor-composition disclosure: mixed, lichess-only or chess.com-only (feedback contract). */
 function anchorCompositionCopy(anchor: RatingAnchorOut): string {
@@ -36,12 +40,12 @@ function anchorCompositionCopy(anchor: RatingAnchorOut): string {
   return `Anchored at ~${anchor_rating} Elo from ${n_chesscom_games} chess.com games (median ${chesscomMedian}, converted to Lichess-equivalent).`;
 }
 
-/** Greyed statistics line: n, 95% CI and p-value, each only when the metric has it. */
+/** Greyed statistics line: n, 99% CI and p-value, each only when the metric has it. */
 function footerText(metric: RankedMetricOut): string {
   const parts = [`n = ${metric.n}`];
   if (metric.ci_low !== null && metric.ci_high !== null) {
     parts.push(
-      `95% CI ${formatCiBound(metric.metric, metric.ci_low)} to ${formatCiBound(metric.metric, metric.ci_high)}`,
+      `99% CI ${formatCiBound(metric.metric, metric.ci_low)} to ${formatCiBound(metric.metric, metric.ci_high)}`,
     );
   }
   if (metric.p_value !== null) parts.push(formatPValue(metric.p_value));
@@ -58,11 +62,13 @@ interface PopoverBodyProps {
 function RankedDisclosures({ metric, tcStats }: Omit<PopoverBodyProps, 'testId'>) {
   const { tc, anchor } = tcStats;
   const percentile = displayPercentile(metric.percentile ?? 0);
+  const outOfRange = percentile < PERCENTILE_TYPICAL_LOW || percentile > PERCENTILE_TYPICAL_HIGH;
   const peers = anchor ? `~${anchor.anchor_rating}-rated ${tc} players` : `similarly-rated ${tc} players`;
   return (
     <>
       <p className="font-semibold">
         Better than {percentile}% of {peers}.
+        {outOfRange && !metric.significant && ` ${COPY_CHANCE}`}
       </p>
       <ul className="list-disc space-y-0.5 pl-4">
         <li>Compared against benchmarked Lichess players at your rating.</li>

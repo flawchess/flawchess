@@ -6,7 +6,7 @@ Coverage plan:
 - test_fixed_order_per_tc                    : Phase 239 D-00h, D-02 — 38 bullets per TC, fixed order
 - test_per_100_games_unit                    : Phase 239 D-00h — rates/deltas per 100 games
 - test_below_gate_tc_still_lists_bullets    : Phase 239 D-03 — 12 analyzed games, below_gate with 38 bullets
-- test_low_sample_boundary                   : Phase 239 D-12 — LOW_SAMPLE_MIN_FLAWS - 1 vs LOW_SAMPLE_MIN_FLAWS
+- test_significance_gate                     : Phase 239 D-14 — 99% CI on the gap excludes 0
 - test_zone_lookup_uses_each_bullets_tc      : Phase 239 D-08/D-11 — registry band per TC, rapid stopgap
 - test_accepted_viable_entries_*             : Phase 239 plan 07 — accepted registry bands reach the API, no monkeypatch
 - test_blob_pending_games_excluded_from_tactic_population : WR-01 — blob-pending analyzed games excluded from tactic, kept in flaw
@@ -504,26 +504,35 @@ async def test_blob_pending_games_excluded_from_tactic_population(
     assert flaw.tcs[0].analyzed_n == blob_done + blob_pending
 
 
+# D-14 significance fixture: 40 analyzed games. One missed fork leaves the 99% CI on the
+# per-game gap covering 0; forks in 21 of the 40 games push it clear of 0.
+_SIG_GAMES = 40
+_SIG_FEW_FORKS = 1
+_SIG_MANY_FORKS = 21
+
+
 @pytest.mark.asyncio
-async def test_low_sample_boundary(db_session: AsyncSession) -> None:
-    """LOW_SAMPLE_MIN_FLAWS - 1 family-orientation flaws is low_sample; LOW_SAMPLE_MIN_FLAWS is not."""
-    from app.services.library_service import LOW_SAMPLE_MIN_FLAWS, get_tactic_comparison
+async def test_significance_gate(db_session: AsyncSession) -> None:
+    """significant is the 99% CI on the gap excluding 0 (D-14, replaces the D-12 count rule)."""
+    from app.services.library_service import get_tactic_comparison
     from app.services.tactic_detector import TacticMotifInt
 
     games = []
-    for _ in range(LOW_SAMPLE_MIN_FLAWS):
+    for _ in range(_SIG_GAMES):
         g = await _seed_game(db_session, user_id=_TEST_USER_LOW, user_color="white")
         await _seed_analyzed(db_session, game=g)
         games.append(g)
-    # LOW_SAMPLE_MIN_FLAWS - 1 player-side missed forks (ply 2 is a white move).
-    for g in games[: LOW_SAMPLE_MIN_FLAWS - 1]:
-        await _seed_flaw(
-            db_session,
-            game=g,
-            ply=2,
-            missed_motif=int(TacticMotifInt.FORK),
-            missed_confidence=90,
-        )
+
+    async def seed_forks(batch: list) -> None:  # noqa: ANN001 — local helper
+        # Player-side missed forks (ply 2 is a white move).
+        for g in batch:
+            await _seed_flaw(
+                db_session,
+                game=g,
+                ply=2,
+                missed_motif=int(TacticMotifInt.FORK),
+                missed_confidence=90,
+            )
 
     async def fork_missed_bullet():  # noqa: ANN202 — local helper
         result = await get_tactic_comparison(
@@ -533,21 +542,17 @@ async def test_low_sample_boundary(db_session: AsyncSession) -> None:
             b for b in result.tcs[0].bullets if (b.family, b.orientation) == ("fork", "missed")
         )
 
-    below = await fork_missed_bullet()
-    assert below.you_events + below.opp_events == LOW_SAMPLE_MIN_FLAWS - 1
-    assert below.low_sample is True
+    await seed_forks(games[:_SIG_FEW_FORKS])
+    few = await fork_missed_bullet()
+    assert few.you_events == _SIG_FEW_FORKS
+    assert few.ci_low is not None and few.ci_low < 0.0
+    assert few.significant is False
 
-    # One opponent-side missed fork (ply 3 is a black move) brings the total to the threshold.
-    await _seed_flaw(
-        db_session,
-        game=games[-1],
-        ply=3,
-        missed_motif=int(TacticMotifInt.FORK),
-        missed_confidence=90,
-    )
-    at = await fork_missed_bullet()
-    assert at.you_events + at.opp_events == LOW_SAMPLE_MIN_FLAWS
-    assert at.low_sample is False
+    await seed_forks(games[_SIG_FEW_FORKS:_SIG_MANY_FORKS])
+    many = await fork_missed_bullet()
+    assert many.you_events == _SIG_MANY_FORKS
+    assert many.ci_low is not None and many.ci_low > 0.0
+    assert many.significant is True
 
 
 @pytest.mark.asyncio

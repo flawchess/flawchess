@@ -36,10 +36,10 @@ from app.services.flaw_delta_zones import (
 )
 from app.services.library_service import (
     FLAW_COMPARISON_GATE,
-    LOW_SAMPLE_MIN_FLAWS,
     _compute_mean_ci,
     get_flaw_comparison,
 )
+from app.services.score_confidence import VERDICT_CI_Z_99
 
 # ---------------------------------------------------------------------------
 # Seed helpers (mirror tests/test_library_repository.py pattern)
@@ -284,7 +284,7 @@ def test_ci_formula() -> None:
     Tests:
     - n=0 -> (0, 0, 0)
     - n=1 -> (mean, mean, mean)  [undefined variance]
-    - n>=2 -> ci_high - mean == 1.96 * sample_sd / sqrt(n)  within float tolerance
+    - n>=2 -> ci_high - mean == z99 * sample_sd / sqrt(n)  within float tolerance (D-14)
     """
     # n=0 edge case
     mean0, lo0, hi0 = _compute_mean_ci([])
@@ -304,16 +304,16 @@ def test_ci_formula() -> None:
     expected_mean = sum(values) / n  # 3.0
     sample_var = sum((v - expected_mean) ** 2 for v in values) / (n - 1)  # 2.5
     expected_se = math.sqrt(sample_var / n)
-    expected_half = 1.96 * expected_se
+    expected_half = VERDICT_CI_Z_99 * expected_se
 
     mean_r, lo_r, hi_r = _compute_mean_ci(values)
 
     assert abs(mean_r - expected_mean) < 1e-10
     assert abs(hi_r - mean_r - expected_half) < 1e-10, (
-        f"ci_high - mean should equal 1.96 * se; got {hi_r - mean_r:.6f} vs {expected_half:.6f}"
+        f"ci_high - mean should equal z99 * se; got {hi_r - mean_r:.6f} vs {expected_half:.6f}"
     )
     assert abs(mean_r - lo_r - expected_half) < 1e-10, (
-        f"mean - ci_low should equal 1.96 * se; got {mean_r - lo_r:.6f} vs {expected_half:.6f}"
+        f"mean - ci_low should equal z99 * se; got {mean_r - lo_r:.6f} vs {expected_half:.6f}"
     )
 
     # Negative values work correctly
@@ -562,29 +562,41 @@ async def _seed_mistake_cell(db_session: AsyncSession, *, user_id: int, total_fl
         await _seed_flaw(db_session, game=g, ply=2 if i % 2 == 0 else 3, severity=1)
 
 
+# D-14 fixture size: enough games that a one-sided cell clears the 99% CI.
+_SIGNIFICANCE_GAMES = 40
+
+
 @pytest.mark.asyncio
-@pytest.mark.parametrize(
-    ("total_flaws_offset", "expected_low_sample"),
-    [(-1, True), (0, False)],
-    ids=["one_below_threshold", "at_threshold"],
-)
-async def test_low_sample_boundary(
-    db_session: AsyncSession, total_flaws_offset: int, expected_low_sample: bool
-) -> None:
-    """low_sample is True below LOW_SAMPLE_MIN_FLAWS flaws (you + opponents), False at it (D-12)."""
-    total = LOW_SAMPLE_MIN_FLAWS + total_flaws_offset
-    await _seed_mistake_cell(db_session, user_id=_TEST_USER, total_flaws=total)
+async def test_balanced_cell_is_not_significant(db_session: AsyncSession) -> None:
+    """Mistakes split evenly between you and opponents: the 99% CI covers 0 (D-14)."""
+    await _seed_mistake_cell(db_session, user_id=_TEST_USER, total_flaws=_SIGNIFICANCE_GAMES)
 
     result = await get_flaw_comparison(db_session, _TEST_USER, **_DEFAULT_FILTER_KWARGS)
 
     mistake = next(b for b in result.tcs[0].bullets if b.tag == "mistake")
-    assert mistake.player_events + mistake.opp_events == total
-    assert mistake.low_sample is expected_low_sample
+    assert mistake.player_events == mistake.opp_events
+    assert mistake.significant is False
 
 
 @pytest.mark.asyncio
-async def test_zero_event_bullet_is_low_sample(db_session: AsyncSession) -> None:
-    """A zero-event bullet has low_sample True and delta None (D-12)."""
+async def test_one_sided_cell_is_significant(db_session: AsyncSession) -> None:
+    """A mistake by you in every game and none by opponents: the 99% CI excludes 0 (D-14)."""
+    for _ in range(_SIGNIFICANCE_GAMES):
+        g = await _seed_game(db_session, user_id=_TEST_USER, user_color="white")
+        await _seed_analyzed(db_session, game=g)
+        await _seed_flaw(db_session, game=g, ply=2, severity=1)
+
+    result = await get_flaw_comparison(db_session, _TEST_USER, **_DEFAULT_FILTER_KWARGS)
+
+    mistake = next(b for b in result.tcs[0].bullets if b.tag == "mistake")
+    assert mistake.opp_events == 0
+    assert mistake.ci_low is not None and mistake.ci_low > 0.0
+    assert mistake.significant is True
+
+
+@pytest.mark.asyncio
+async def test_zero_event_bullet_is_not_significant(db_session: AsyncSession) -> None:
+    """A zero-event bullet has significant False and delta None (D-14)."""
     for _ in range(FLAW_COMPARISON_GATE):
         g = await _seed_game(db_session, user_id=_TEST_USER)
         await _seed_analyzed(db_session, game=g)
@@ -593,7 +605,7 @@ async def test_zero_event_bullet_is_low_sample(db_session: AsyncSession) -> None
 
     for bullet in result.tcs[0].bullets:
         assert bullet.delta is None
-        assert bullet.low_sample is True
+        assert bullet.significant is False
 
 
 @pytest.mark.asyncio

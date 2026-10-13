@@ -5,7 +5,7 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
-import { GAUGE_NEUTRAL, UNRELIABLE_OPACITY } from '@/lib/theme';
+import { GAUGE_NEUTRAL } from '@/lib/theme';
 import { indefiniteArticle, tacticSideCopy } from '@/lib/tacticComparisonMeta';
 import { TacticTables } from '../TacticTables';
 import {
@@ -268,18 +268,16 @@ describe('families without flaws (D-00h, D-00d)', () => {
   });
 });
 
-describe('low-sample and band-less cells (D-11, D-12)', () => {
-  it('fades a low-sample cell and gives it a blue dot and no verdict colour', () => {
+describe('not-significant and band-less cells (D-11, D-14)', () => {
+  it('gives an out-of-band cell that is not significant a blue dot and no verdict colour, unfaded', () => {
     renderTables(
       makeTacticTcEntry('rapid', 1841, {
-        // 9 + 3 flaws: well under the sample minimum, with a band so only the sample is at fault.
+        // 9 vs 3 flaws: outside the band, but the fixture CI (gap +- 1) covers 0.
         'fork:missed': { you: 9, opp: 3, zone: [-0.1, 0.1] },
         'fork:allowed': { you: 80, opp: 90, zone: [-0.5, 0.5] },
       }),
     );
-    expect(screen.getByTestId('tactic-cell-fork-missed').style.opacity).toBe(
-      String(UNRELIABLE_OPACITY),
-    );
+    expect(screen.getByTestId('tactic-cell-fork-missed').style.opacity).toBe('');
     expect(screen.getByTestId('tactic-cell-fork-missed-bar-dot').style.backgroundColor).toBe(
       normalized(GAUGE_NEUTRAL),
     );

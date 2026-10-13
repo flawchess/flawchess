@@ -142,6 +142,14 @@ class EndgameCategoryStats(BaseModel):
     type_achievable_score_gap_ci_low: float | None = None
     type_achievable_score_gap_ci_high: float | None = None
 
+    # Phase 239 D-14: TypeTable verdict gates, set by the ranked service only (False
+    # elsewhere). A cell outside its typical band gets red/green only when True: the
+    # 99% Wilson CI of the rate excludes the band centre (cohort median stand-in), or
+    # the 99% CI of the Score Gap excludes 0.
+    conversion_significant: bool = False
+    recovery_significant: bool = False
+    type_achievable_score_gap_significant: bool = False
+
     # quick-260519-ni3: descriptive components of the Score Gap. Computed over the
     # exact same span cohort as type_achievable_score_gap_* (same NULL-eval gate),
     # so end_mean - start_mean == gap_mean holds exactly (reconciliation invariant).
@@ -407,10 +415,12 @@ class PressureQuintileBullet(BaseModel):
         this quintile (no signal to compare).
     p_value: unpaired two-sample Wilson score-test p-value of
         H0: user_score - opp_score == 0; None when the n-gate is unmet.
-    ci_low/ci_high: 95% CI on delta from the same two-sample test; None when
-        the n-gate is unmet.
+    ci_low/ci_high: 99% CI on delta (Phase 239 D-14) from the same two-sample
+        test; None when the n-gate is unmet.
     opp_score: opponent's same-game score in the matching opponent-clock
         quintile; None when the n-gate is unmet.
+    significant: the 99% CI excludes 0 (D-14). Only then does a dot outside the
+        typical band get its red/green colour.
     """
 
     quintile_index: int  # 0..4
@@ -422,6 +432,7 @@ class PressureQuintileBullet(BaseModel):
     ci_low: float | None
     ci_high: float | None
     opp_score: float | None
+    significant: bool = False
 
 
 # ---------------------------------------------------------------------------
@@ -456,8 +467,8 @@ class RankedMetricOut(BaseModel):
         anchor yet, floor_n is the non-Daily ranked game count and floor_required
         is the 30-game anchor floor ("18 of 30").
     percentile: the persisted Stage A/B percentile; set only when status == "ranked".
-    ci_low / ci_high / p_value: popover-footer statistics (None where the metric has
-        none or the n-gate is unmet).
+    ci_low / ci_high / p_value: popover-footer statistics, 99% CI (None where the metric
+        has none or the n-gate is unmet).
     """
 
     metric: CdfMetricId
@@ -470,6 +481,10 @@ class RankedMetricOut(BaseModel):
     ci_low: float | None = None
     ci_high: float | None = None
     p_value: float | None = None
+    # Phase 239 D-14: the percentile verdict (red/green) shows only when True: the 99% CI
+    # excludes the null (0 for a difference, the cohort p50 for a raw rate) on the
+    # verdict's side. A ranked cell outside 25-75 without it renders neutral.
+    significant: bool = False
 
 
 class RankedBucketOut(BaseModel):

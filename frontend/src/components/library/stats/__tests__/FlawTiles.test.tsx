@@ -94,23 +94,26 @@ describe('FlawTiles', () => {
     expect(screen.queryByTestId('gap-popover-blunder-tc-bullet')).toBeNull();
   });
 
-  it('never fades a tile, also for a low-sample bullet (D-12 names tactic cells and rows only)', () => {
-    const entry = makeTcEntry('rapid', { analyzedN: 400, blunder: { low_sample: true } });
+  it('never fades a tile, also for a bullet that is not significant', () => {
+    const entry = makeTcEntry('rapid', { analyzedN: 400, blunder: { significant: false } });
     renderTiles(entry);
     expect(screen.getByTestId('flaw-tile-blunder').getAttribute('style') ?? '').not.toContain('opacity');
   });
 
-  it('still shows the verdict for a low-sample tile bullet (WR-02: D-12 does not apply to tiles)', () => {
-    const entry = makeTcEntry('rapid', {
-      analyzedN: 400,
-      // delta -0.61 is below the fixture band (-0.31..0.25): a "better" verdict.
-      blunder: { delta: -0.61, low_sample: true },
-    });
-    renderTiles(entry);
-    const dot = screen.getByTestId('flaw-tile-blunder-bar-dot');
-    expect(dot.style.backgroundColor).toBe(normalized(ZONE_SUCCESS));
+  it('shows the verdict for a significant out-of-band tile and withholds it otherwise (D-14)', () => {
+    // delta -0.61 is below the fixture band (-0.31..0.25): a "better" verdict.
+    renderTiles(makeTcEntry('rapid', { analyzedN: 400, blunder: { delta: -0.61, significant: true } }));
+    expect(screen.getByTestId('flaw-tile-blunder-bar-dot').style.backgroundColor).toBe(
+      normalized(ZONE_SUCCESS),
+    );
     expect(screen.getByTestId('flaw-tile-blunder-bar-words').style.color).toBe(
       normalized(ZONE_SUCCESS),
     );
+    cleanup();
+    renderTiles(makeTcEntry('rapid', { analyzedN: 400, blunder: { delta: -0.61, significant: false } }));
+    expect(screen.getByTestId('flaw-tile-blunder-bar-dot').style.backgroundColor).not.toBe(
+      normalized(ZONE_SUCCESS),
+    );
+    expect(screen.getByTestId('flaw-tile-blunder-bar-words').style.color).toBe('');
   });
 });

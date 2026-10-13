@@ -42,6 +42,10 @@ export interface EndgameCategoryStats {
   type_achievable_score_gap_p_value: number | null;
   type_achievable_score_gap_ci_low: number | null;
   type_achievable_score_gap_ci_high: number | null;
+  // Phase 239 D-14: TypeTable verdict gates (ranked payload only; false elsewhere).
+  conversion_significant: boolean;
+  recovery_significant: boolean;
+  type_achievable_score_gap_significant: boolean;
   // quick-260519-ni3: descriptive start/end components of the Score Gap.
   // end_mean - start_mean == gap_mean exactly (same span cohort, reconciliation invariant).
   // null when type_achievable_score_gap_n == 0.
@@ -134,6 +138,7 @@ export interface PressureQuintileBullet {
   ci_low: number | null;
   ci_high: number | null;
   opp_score: number | null;     // opponent's same-game score in the matching opp-clock quintile
+  significant: boolean;         // 99% CI excludes 0: only then is the dot coloured (D-14)
 }
 
 /** One ISO-week point on the Average Clock Difference over Time line chart.
@@ -285,9 +290,11 @@ export interface RankedMetricOut {
   floor_required: number;
   percentile: number | null;
   status: RankStatus;
-  ci_low: number | null;
+  ci_low: number | null;        // 99% CI (D-14)
   ci_high: number | null;
   p_value: number | null;
+  /** 99% CI excludes the null on the verdict's side; red/green needs it (D-14). */
+  significant: boolean;
 }
 
 export interface RankedBucketOut {

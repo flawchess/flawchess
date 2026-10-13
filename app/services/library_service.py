@@ -57,6 +57,7 @@ from app.schemas.library import (
 )
 from app.services.best_move_candidates import classify_best_move, mover_color_for_ply
 from app.services.flaw_delta_zones import FLAW_DELTA_METRICS, FlawDeltaMetric, flaw_delta_zone
+from app.services.score_confidence import VERDICT_CI_Z_99, ci_excludes
 from app.services.tactic_delta_zones import (
     TACTIC_FAMILIES,
     TacticFamily,
@@ -1347,10 +1348,16 @@ async def get_library_flaws(
 # rest on comparable sample sizes (D-09).
 FLAW_COMPARISON_GATE: int = 20
 
-# Phase 239 D-12: you + opponent flaws per cell below which the UI fades the cell and
-# gives no verdict. Applied to flaw-comparison bullets and to tactic cells (one source
-# of truth; the frontend reads the low_sample boolean).
-LOW_SAMPLE_MIN_FLAWS: int = 40
+# Phase 239 D-14 (replaces the D-12 40-flaw low-sample fade): a cell gets a red/green
+# verdict only when its 99% CI on the gap excludes 0. The bands are symmetric around 0
+# (D-15), so a gap outside the band is significant on its own side.
+MIN_DELTAS_FOR_SIGNIFICANCE: int = 2  # one game has no variance, so no CI
+
+
+def _is_significant(deltas: list[float], ci_low: float, ci_high: float) -> bool:
+    """D-14 gate: the 99% CI on the mean per-game gap excludes 0."""
+    return len(deltas) >= MIN_DELTAS_FOR_SIGNIFICANCE and ci_excludes(0.0, ci_low, ci_high)
+
 
 # Phase 239 D-02: TC order of the per-TC payloads (fast to slow, same as the TC switch).
 LIBRARY_TC_ORDER: Final[tuple[TimeControlBucket, ...]] = ("bullet", "blitz", "rapid", "classical")
@@ -1358,9 +1365,9 @@ LIBRARY_TC_ORDER: Final[tuple[TimeControlBucket, ...]] = ("bullet", "blitz", "ra
 
 def _compute_mean_ci(
     values: list[float],
-    z: float = 1.96,
+    z: float = VERDICT_CI_Z_99,
 ) -> tuple[float, float, float]:
-    """Return (mean, ci_low, ci_high) for a list of per-game deltas.
+    """Return (mean, ci_low, ci_high) for a list of per-game deltas (99% by default, D-14).
 
     Returns (0.0, 0.0, 0.0) when values is empty.
     Returns (mean, mean, mean) when n == 1 (undefined variance).
@@ -1421,8 +1428,6 @@ def _build_flaw_bullet(
 ) -> FlawBullet:
     """Build one FlawBullet from the per-game accumulators of one metric in one TC."""
     band = flaw_delta_zone(metric, tc)
-    # D-12: faded cell, no verdict. Zero-event cells are low-sample by definition.
-    low_sample = p_total + o_total < LOW_SAMPLE_MIN_FLAWS
     if p_total == 0 and o_total == 0:
         # Zero-event: no events on either side, render muted placeholder (D-11)
         return FlawBullet(
@@ -1438,7 +1443,7 @@ def _build_flaw_bullet(
             zone_lo=band.zone_lo,
             zone_hi=band.zone_hi,
             has_zone=True,
-            low_sample=low_sample,
+            significant=False,
         )
     mean, ci_low, ci_high = _compute_mean_ci(deltas)
     return FlawBullet(
@@ -1454,7 +1459,7 @@ def _build_flaw_bullet(
         zone_lo=band.zone_lo,
         zone_hi=band.zone_hi,
         has_zone=True,
-        low_sample=low_sample,
+        significant=_is_significant(deltas, ci_low, ci_high),
     )
 
 
@@ -1627,8 +1632,6 @@ def _build_tactic_bullet(
     band = tactic_delta_zone(family, orientation, tc)
     zone_lo = band.zone_lo if band is not None else 0.0
     zone_hi = band.zone_hi if band is not None else 0.0
-    # D-12: faded cell, no verdict. Zero-event cells are low-sample by definition.
-    low_sample = you_total + opp_total < LOW_SAMPLE_MIN_FLAWS
     if you_total == 0 and opp_total == 0:
         # Zero-event family-side: delta=None (mirrors the FlawBullet zero-event pattern, D-11).
         return TacticBullet(
@@ -1645,7 +1648,7 @@ def _build_tactic_bullet(
             zone_lo=zone_lo,
             zone_hi=zone_hi,
             has_zone=band is not None,
-            low_sample=low_sample,
+            significant=False,
         )
     deltas = [y - o for y, o in zip(you_rates, opp_rates, strict=True)]
     mean, ci_low, ci_high = _compute_mean_ci(deltas)
@@ -1663,7 +1666,7 @@ def _build_tactic_bullet(
         zone_lo=zone_lo,
         zone_hi=zone_hi,
         has_zone=band is not None,
-        low_sample=low_sample,
+        significant=_is_significant(deltas, ci_low, ci_high),
     )
 
 

@@ -30,10 +30,6 @@ import type {
 import { TC_LABELS } from './rankedMetrics';
 import { TcSwitch } from './TcSwitch';
 
-/** Rows with fewer games than this render faded: the typical-range read is shaky. */
-const TYPE_ROW_LOW_CONFIDENCE_GAMES = 100;
-const TYPE_ROW_LOW_CONFIDENCE_OPACITY = 0.55;
-
 // Cell domains: the value range each range cell maps onto its 0-100% track (D-00e).
 type Domain = readonly [number, number];
 const CONVERSION_DOMAIN: Domain = [0.4, 1.0];
@@ -76,14 +72,20 @@ interface RangeCellProps {
   band: readonly [number, number] | null;
   domain: Domain;
   format: (fraction: number) => string;
+  /** 99% significance vs the band centre (rates) or 0 (gap); red/green needs it (D-14). */
+  significant: boolean;
 }
 
-/** Value text color: red below the typical range, green above it, default (white) inside. */
+/**
+ * Value text color: red below the typical range, green above it, default (white) inside
+ * or when the difference is not significant (Phase 239 D-14).
+ */
 function rangeValueColor(
   value: number | null,
   band: readonly [number, number] | null,
+  significant: boolean,
 ): string | undefined {
-  if (value === null || band === null) return undefined;
+  if (value === null || band === null || !significant) return undefined;
   if (value < band[0]) return TYPICAL_BELOW_VALUE;
   if (value > band[1]) return TYPICAL_ABOVE_VALUE;
   return undefined;
@@ -91,18 +93,33 @@ function rangeValueColor(
 
 /**
  * "You" dot color, matching the Endgame Metrics percentile dot: red below the typical
- * range, blue inside it (or when the class has no range), green above it.
+ * range, blue inside it (or when the class has no range, or the difference is not
+ * significant, D-14), green above it.
  */
-function rangeDotColor(value: number, band: readonly [number, number] | null): string {
+function rangeDotColor(
+  value: number,
+  band: readonly [number, number] | null,
+  significant: boolean,
+): string {
+  if (!significant) return GAUGE_NEUTRAL;
   if (band !== null && value < band[0]) return ZONE_DANGER;
   if (band !== null && value > band[1]) return ZONE_SUCCESS;
   return GAUGE_NEUTRAL;
 }
 
 /** One typical-range cell: value text, grey band, colored dot; red/green text outside the band. */
-function RangeCell({ caption, slug, rowTestId, value, band, domain, format }: RangeCellProps) {
+function RangeCell({
+  caption,
+  slug,
+  rowTestId,
+  value,
+  band,
+  domain,
+  format,
+  significant,
+}: RangeCellProps) {
   const testId = `${rowTestId}-${slug}`;
-  const valueColor = rangeValueColor(value, band);
+  const valueColor = rangeValueColor(value, band, significant);
   return (
     <td className="max-md:min-w-0 md:text-right md:align-middle">
       <span
@@ -140,7 +157,7 @@ function RangeCell({ caption, slug, rowTestId, value, band, domain, format }: Ra
               className="absolute top-1/2 size-3 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-background"
               style={{
                 left: `${trackPosition(value, domain)}%`,
-                backgroundColor: rangeDotColor(value, band),
+                backgroundColor: rangeDotColor(value, band, significant),
               }}
               data-testid={`${testId}-dot`}
             />
@@ -187,13 +204,11 @@ interface TypeRowProps {
 
 function TypeRow({ category, tc, onCategorySelect }: TypeRowProps) {
   const rowTestId = `type-row-${category.endgame_class}`;
-  const isLowConfidence = category.total < TYPE_ROW_LOW_CONFIDENCE_GAMES;
   const score = category.total > 0 ? (category.wins + category.draws / 2) / category.total : null;
 
   return (
     <tr
       className="border-b border-card-edge last:border-b-0 max-md:grid max-md:grid-cols-2 max-md:gap-x-3 max-md:gap-y-2 max-md:py-3"
-      style={isLowConfidence ? { opacity: TYPE_ROW_LOW_CONFIDENCE_OPACITY } : undefined}
       data-testid={rowTestId}
     >
       <td className="py-2.5 text-left max-md:col-span-2 max-md:py-0 md:pr-2">
@@ -254,6 +269,7 @@ function TypeRow({ category, tc, onCategorySelect }: TypeRowProps) {
         band={typicalBand(category.endgame_class, tc, 'conversion')}
         domain={CONVERSION_DOMAIN}
         format={formatPercent}
+        significant={category.conversion_significant}
       />
       <RangeCell
         caption="Recovery"
@@ -263,6 +279,7 @@ function TypeRow({ category, tc, onCategorySelect }: TypeRowProps) {
         band={typicalBand(category.endgame_class, tc, 'recovery')}
         domain={RECOVERY_DOMAIN}
         format={formatPercent}
+        significant={category.recovery_significant}
       />
       <RangeCell
         caption="vs. expected"
@@ -272,6 +289,7 @@ function TypeRow({ category, tc, onCategorySelect }: TypeRowProps) {
         band={typicalBand(category.endgame_class, tc, 'achievable_score_gap')}
         domain={VS_ENGINE_DOMAIN}
         format={formatSignedPercent}
+        significant={category.type_achievable_score_gap_significant}
       />
     </tr>
   );
@@ -330,8 +348,8 @@ export function TypeTable({ tcs, onCategorySelect, children }: TypeTableProps) {
                 <p>
                   Each cell shows your value and a grey typical range for that endgame type and time
                   control. The colored dot marks you. The value turns red when you are below the
-                  typical range and green when you are above it. Rows with fewer than {TYPE_ROW_LOW_CONFIDENCE_GAMES} games are
-                  faded, because their read is less reliable.
+                  typical range and green when you are above it, but only when you have enough games
+                  to be sure it is not chance.
                 </p>
               </div>
             </InfoPopover>
@@ -383,7 +401,7 @@ export function TypeTable({ tcs, onCategorySelect, children }: TypeTableProps) {
           <p className="mt-3 text-sm text-muted-foreground" data-testid="type-table-legend">
             Grey band = typical range for all players in this time control and endgame type. Dot
             = you. <span style={{ color: TYPICAL_BELOW_VALUE }}>Red</span> = below,{' '}
-            <span style={{ color: TYPICAL_ABOVE_VALUE }}>green</span> = above the typical range. Faded rows have fewer than {TYPE_ROW_LOW_CONFIDENCE_GAMES} games.
+            <span style={{ color: TYPICAL_ABOVE_VALUE }}>green</span> = above the typical range, when there are enough games to be sure.
           </p>
         </div>
       )}

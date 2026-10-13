@@ -63,6 +63,23 @@ from app.services.opening_insights_constants import (
     OPENING_INSIGHTS_SCORE_PIVOT as SCORE_PIVOT,
 )
 
+# Phase 239 D-14: red/green verdicts on the Library and Endgame Stats pages need 99%
+# significance (about 50 cells on one page, so 95% flags 2-3 by chance alone). The
+# displayed CIs on those pages use the same z so the popover and the verdict agree.
+# Two-sided 99% normal quantile.
+VERDICT_CI_Z_99: float = 2.5758293035489
+
+
+def ci_excludes(null: float, ci_low: float | None, ci_high: float | None) -> bool:
+    """True when the CI lies entirely on one side of ``null`` (the D-14 gate).
+
+    A missing CI (too few units for a variance) never passes the gate.
+    """
+    if ci_low is None or ci_high is None:
+        return False
+    return ci_low > null or ci_high < null
+
+
 # Phase 87.2 (D-05): compute_skill_diff_test, compute_per_bucket_diff_test, and
 # their shared internals (_BucketName, _SkillBucketRow, _headline_rate,
 # _opp_headline_rate, _headline_rate_variance, _opp_headline_rate_variance) were
@@ -71,8 +88,10 @@ from app.services.opening_insights_constants import (
 # is the sole math helper for the new Section 2 bullets.
 
 
-def wilson_bounds(p: float, n: int) -> tuple[float, float]:
-    """Return (lower, upper) Wilson 95% score interval bounds, clamped to [0, 1].
+def wilson_bounds(p: float, n: int, z: float = CI_Z_95) -> tuple[float, float]:
+    """Return (lower, upper) Wilson score interval bounds, clamped to [0, 1].
+
+    95% by default; ``z`` selects another level (D-14 verdicts pass VERDICT_CI_Z_99).
 
     Preferred over Wald for chess-score proportions in [0, 1]:
       - Wald (score +/- z * SE) is symmetric around p, so it routinely extends
@@ -91,7 +110,6 @@ def wilson_bounds(p: float, n: int) -> tuple[float, float]:
     """
     if n <= 0:
         return (0.0, 1.0)
-    z = CI_Z_95
     z2 = z * z
     denom = 1.0 + z2 / n
     center = (p + z2 / (2 * n)) / denom
@@ -180,6 +198,7 @@ def compute_score_difference_test(
     ne_l: int,
     ne_n: int,
     shared_n: int = 0,
+    z: float = CI_Z_95,
 ) -> tuple[float | None, float | None, float | None]:
     """Return (p_value, ci_low, ci_high) for the two-sample z-test on the
     chess-score difference between two WDL cohorts.
@@ -252,11 +271,11 @@ def compute_score_difference_test(
         # be 0/0 — instead resolve the test by direct comparison of the means.
         p_value: float = 0.0 if diff != 0.0 else 1.0
     else:
-        z = diff / se_diff
+        z_stat = diff / se_diff
         # Two-sided p-value: erfc(|z| / sqrt(2)) is in [0, 1] for any finite z.
-        p_value = math.erfc(abs(z) / math.sqrt(2.0))
+        p_value = math.erfc(abs(z_stat) / math.sqrt(2.0))
 
-    ci_half_width = CI_Z_95 * se_diff
+    ci_half_width = z * se_diff
     ci_low: float = diff - ci_half_width
     ci_high: float = diff + ci_half_width
 
@@ -275,6 +294,7 @@ def compute_score_difference_test(
 
 def compute_paired_difference_test(
     diffs: Sequence[float],
+    z: float = CI_Z_95,
 ) -> tuple[float, float | None, float | None, float | None]:
     """Return (mean_d, p_value, ci_low, ci_high) for the paired one-sample
     z-test on a pre-computed sequence of per-game differences `d_i`.
@@ -331,10 +351,10 @@ def compute_paired_difference_test(
         # All diffs identical. Resolve directly against H0 = 0.
         p_value: float = 0.0 if mean_d != 0.0 else 1.0
     else:
-        z = mean_d / se
-        p_value = math.erfc(abs(z) / math.sqrt(2.0))
+        z_stat = mean_d / se
+        p_value = math.erfc(abs(z_stat) / math.sqrt(2.0))
 
-    ci_half_width = CI_Z_95 * se
+    ci_half_width = z * se
     ci_low: float = mean_d - ci_half_width
     ci_high: float = mean_d + ci_half_width
 

@@ -1,9 +1,8 @@
 // @vitest-environment jsdom
-/** Phase 239 D-00c / D-00d / D-11 / D-12: the gap popover copy on the shared shell, and GapRow. */
+/** Phase 239 D-00c / D-00d / D-11 / D-14: the gap popover copy on the shared shell, and GapRow. */
 
 import { afterEach, describe, expect, it } from 'vitest';
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
-import { UNRELIABLE_OPACITY } from '@/lib/theme';
 import type { GapCell } from '@/lib/gapBar';
 import { GapPopover } from '../GapPopover';
 import { GapRow } from '../GapRow';
@@ -20,7 +19,7 @@ function blunderCell(overrides: Partial<GapCell> = {}): GapCell {
     zoneLo: -0.31,
     zoneHi: 0.25,
     hasZone: true,
-    lowSample: false,
+    significant: true,
     youRate: 5.4569,
     oppRate: 6.1176,
     ciLow: -1.0028,
@@ -59,7 +58,7 @@ describe('GapPopover (D-00c)', () => {
       'That is 0.66 fewer than the players you faced.',
       'Typical gap for players at your level: 0.31 fewer to 0.25 more. You are better than typical.',
       BASIS,
-      '1,916 vs. 1,982 blunders · gap 95% CI −1.00 to −0.32 · p < 0.001',
+      '1,916 vs. 1,982 blunders · gap 99% CI −1.00 to −0.32 · p < 0.001',
     ];
     const indexes = parts.map((part) => text.indexOf(part));
     indexes.forEach((index, i) => expect(index, `missing: ${parts[i]}`).toBeGreaterThanOrEqual(0));
@@ -80,11 +79,17 @@ describe('GapPopover (D-00c)', () => {
     expect(openPopover(blunderCell({ delta: 0.1 })).textContent).toContain('You are typical.');
   });
 
-  it('keeps the range but says "Too few flaws to call it." for a low-sample cell', () => {
-    const text = openPopover(blunderCell({ lowSample: true })).textContent ?? '';
+  it('keeps the range but says it could be chance for an out-of-band gap that is not significant', () => {
+    const text = openPopover(blunderCell({ significant: false })).textContent ?? '';
     expect(text).toContain('Typical gap for players at your level: 0.31 fewer to 0.25 more.');
-    expect(text).toContain('Too few flaws to call it.');
+    expect(text).toContain('This could be chance, there are not enough games to be sure.');
     expect(text).not.toContain('You are better than typical.');
+  });
+
+  it('still calls an in-band gap typical when it is not significant', () => {
+    const text = openPopover(blunderCell({ delta: 0.1, significant: false })).textContent ?? '';
+    expect(text).toContain('You are typical.');
+    expect(text).not.toContain('could be chance');
   });
 
   it('has no typical-gap line for a zoneless cell', () => {
@@ -92,12 +97,6 @@ describe('GapPopover (D-00c)', () => {
     expect(text).not.toContain('Typical gap');
     expect(text).not.toContain('You are');
     expect(text).toContain(BASIS);
-  });
-
-  it('shows only "Too few flaws to call it." in the range position for a zoneless low-sample cell', () => {
-    const text = openPopover(blunderCell({ hasZone: false, lowSample: true })).textContent ?? '';
-    expect(text).not.toContain('Typical gap');
-    expect(text).toContain('Too few flaws to call it.');
   });
 
   it('reads a same gap as the same as the players you faced', () => {
@@ -109,7 +108,7 @@ describe('GapPopover (D-00c)', () => {
   it('omits the p part of the footer for a null p-value', () => {
     openPopover(blunderCell({ pValue: null }));
     const footer = screen.getByTestId(`${TRIGGER_ID}-footer`).textContent ?? '';
-    expect(footer).toContain('gap 95% CI');
+    expect(footer).toContain('gap 99% CI');
     expect(footer).not.toMatch(/\bp [<=]/);
   });
 
@@ -120,7 +119,7 @@ describe('GapPopover (D-00c)', () => {
 
   it.each([
     ['zoned', {}],
-    ['low-sample', { lowSample: true }],
+    ['not-significant', { significant: false }],
     ['zoneless', { hasZone: false }],
   ])('never says "event" in a %s popover (D-00d)', (_name, overrides) => {
     const popover = openPopover(blunderCell(overrides));
@@ -150,11 +149,8 @@ describe('GapRow', () => {
     expect(screen.getByTestId('row-popover-trigger')).toBeTruthy();
   });
 
-  it('fades a low-sample row and leaves a normal row at full opacity', () => {
-    renderRow(blunderCell({ lowSample: true }));
-    expect(screen.getByTestId('row').style.opacity).toBe(String(UNRELIABLE_OPACITY));
-    cleanup();
-    renderRow(blunderCell());
+  it('never fades a row, also when the gap is not significant (D-14 replaced the D-12 fade)', () => {
+    renderRow(blunderCell({ significant: false }));
     expect(screen.getByTestId('row').style.opacity).toBe('');
   });
 });

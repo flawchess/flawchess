@@ -1,4 +1,4 @@
-/** Phase 239 D-00a / D-00b / D-11 / D-12 / D-13: the gap-bar math, words and ranking. */
+/** Phase 239 D-00a / D-00b / D-11 / D-14: the gap-bar math, words and the significance gate. */
 
 import { describe, expect, it } from 'vitest';
 import { GAUGE_NEUTRAL, ZONE_DANGER, ZONE_SUCCESS } from '@/lib/theme';
@@ -14,6 +14,7 @@ import {
   gapVerdict,
   gapVerdictColor,
   gapWords,
+  isChanceGap,
   type GapCell,
 } from '../gapBar';
 
@@ -26,7 +27,7 @@ function cell(overrides: Partial<GapCell> = {}): GapCell {
     zoneLo: LO,
     zoneHi: HI,
     hasZone: true,
-    lowSample: false,
+    significant: true,
     youRate: 5.46,
     oppRate: 6.12,
     ciLow: -1.0,
@@ -43,27 +44,27 @@ describe('gapPosition (D-00a)', () => {
     expect(gapPosition(0, LO, HI)).toBe(GAP_CENTRE);
   });
 
-  it('draws the better edge of the band to the right (25% from the centre)', () => {
-    expect(gapPosition(LO, LO, HI)).toBeCloseTo(75, 10);
+  it('draws the better (lower) edge of the band to the left (25% from the centre)', () => {
+    expect(gapPosition(LO, LO, HI)).toBeCloseTo(25, 10);
   });
 
-  it('draws the worse edge of an off-centre band inside the left half', () => {
-    expect(gapPosition(HI, LO, HI)).toBeCloseTo(50 - (25 * 0.25) / 0.31, 10);
+  it('draws the worse edge of an off-centre band inside the right half', () => {
+    expect(gapPosition(HI, LO, HI)).toBeCloseTo(50 + (25 * 0.25) / 0.31, 10);
   });
 
   it('is monotonic outside the band and never reaches the edge', () => {
     const gaps = [-0.4, -0.7, -1, -3, -10, -100];
     const positions = gaps.map((g) => gapPosition(g, LO, HI));
     for (let i = 1; i < positions.length; i++) {
-      expect(positions[i]!).toBeGreaterThan(positions[i - 1]!);
+      expect(positions[i]!).toBeLessThan(positions[i - 1]!);
     }
-    expect(gapPosition(-100, LO, HI)).toBeGreaterThan(gapPosition(-1, LO, HI));
-    expect(gapPosition(-100, LO, HI)).toBeLessThanOrEqual(100 - GAP_EDGE_POS);
-    expect(gapPosition(100, LO, HI)).toBeGreaterThanOrEqual(GAP_EDGE_POS);
+    expect(gapPosition(-100, LO, HI)).toBeLessThan(gapPosition(-1, LO, HI));
+    expect(gapPosition(-100, LO, HI)).toBeGreaterThanOrEqual(GAP_EDGE_POS);
+    expect(gapPosition(100, LO, HI)).toBeLessThanOrEqual(100 - GAP_EDGE_POS);
   });
 
   it('saturates on the matching side for worse gaps', () => {
-    expect(gapPosition(1, LO, HI)).toBeLessThan(25);
+    expect(gapPosition(1, LO, HI)).toBeGreaterThan(75);
   });
 
   describe('guards', () => {
@@ -74,15 +75,15 @@ describe('gapPosition (D-00a)', () => {
     it('sends a non-zero gap on a zero band to the saturated edge of its side', () => {
       const worse = gapPosition(1, 0, 0);
       expect(Number.isFinite(worse)).toBe(true);
-      expect(worse).toBeLessThan(GAP_CENTRE);
-      expect(worse).toBe(GAP_EDGE_POS);
-      expect(gapPosition(-1, 0, 0)).toBe(100 - GAP_EDGE_POS);
+      expect(worse).toBeGreaterThan(GAP_CENTRE);
+      expect(worse).toBe(100 - GAP_EDGE_POS);
+      expect(gapPosition(-1, 0, 0)).toBe(GAP_EDGE_POS);
     });
 
     it('stays finite when the band has zero width but a non-zero scale', () => {
       const position = gapPosition(0.2, 0.05, 0.05);
       expect(Number.isFinite(position)).toBe(true);
-      expect(position).toBeLessThan(GAP_CENTRE);
+      expect(position).toBeGreaterThan(GAP_CENTRE);
     });
   });
 });
@@ -126,25 +127,39 @@ describe('gap words', () => {
   });
 });
 
-describe('effectiveVerdict (D-11, D-12)', () => {
-  it('returns the verdict for a zoned, normal cell', () => {
+describe('effectiveVerdict (D-11, D-14)', () => {
+  it('returns the verdict for a zoned, significant cell', () => {
     expect(effectiveVerdict(cell())).toBe('better');
     expect(effectiveVerdict(cell({ delta: 0.5 }))).toBe('worse');
     expect(effectiveVerdict(cell({ delta: 0 }))).toBe('typical');
   });
 
+  it('reads an out-of-band gap that is not significant as typical', () => {
+    expect(effectiveVerdict(cell({ significant: false }))).toBe('typical');
+    expect(effectiveVerdict(cell({ delta: 0.5, significant: false }))).toBe('typical');
+  });
+
   it.each([
     ['zoneless', { hasZone: false }],
-    ['low-sample', { lowSample: true }],
     ['gap-less', { delta: null }],
   ])('returns null for a %s cell', (_name, overrides) => {
     expect(effectiveVerdict(cell(overrides))).toBeNull();
   });
 });
 
+describe('isChanceGap (D-14)', () => {
+  it('is true only for an out-of-band gap that is not significant', () => {
+    expect(isChanceGap(cell({ significant: false }))).toBe(true);
+    expect(isChanceGap(cell())).toBe(false);
+    expect(isChanceGap(cell({ delta: 0, significant: false }))).toBe(false);
+    expect(isChanceGap(cell({ hasZone: false, significant: false }))).toBe(false);
+    expect(isChanceGap(cell({ delta: null, significant: false }))).toBe(false);
+  });
+});
+
 describe('cellPosition and bandRange', () => {
   it('positions a zoned cell on its band scale', () => {
-    expect(cellPosition(cell({ delta: LO }))).toBeCloseTo(75, 10);
+    expect(cellPosition(cell({ delta: LO }))).toBeCloseTo(25, 10);
   });
 
   it('positions a zoneless cell against a virtual band of max(you, opponents)', () => {
@@ -156,11 +171,11 @@ describe('cellPosition and bandRange', () => {
     expect(cellPosition(cell({ delta: null }))).toBe(GAP_CENTRE);
   });
 
-  it('draws the band from the worse edge to the better edge', () => {
+  it('draws the band from the better (lower) edge to the worse edge', () => {
     const band = bandRange(cell());
     expect(band).not.toBeNull();
-    expect(band!.leftPct).toBeCloseTo(50 - (25 * 0.25) / 0.31, 10);
-    expect(band!.leftPct + band!.widthPct).toBeCloseTo(75, 10);
+    expect(band!.leftPct).toBeCloseTo(25, 10);
+    expect(band!.leftPct + band!.widthPct).toBeCloseTo(50 + (25 * 0.25) / 0.31, 10);
   });
 
   it('draws no band for a zoneless cell', () => {

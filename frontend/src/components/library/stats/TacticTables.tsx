@@ -9,7 +9,6 @@ import { Card, CardBody, CardHeader } from '@/components/ui/card';
 import { useTrackedOpen } from '@/hooks/useTrackedOpen';
 import { trackFeature } from '@/lib/analytics';
 import { libraryBasisText } from '@/lib/flawComparisonMeta';
-import { UNRELIABLE_OPACITY } from '@/lib/theme';
 import {
   TACTIC_COMPARISON_FAMILIES,
   TACTIC_GROUPS,
@@ -76,8 +75,8 @@ interface TacticCellProps {
 
 /**
  * One Missed or Allowed cell: the gap bar per 100 games with its Search popover (D-00c).
- * A cell without flaws reads a muted "No flaws" and has no popover (D-00d); a low-sample
- * cell is faded and its bar shows a neutral dot and no verdict (D-12). On phones a side
+ * A cell without flaws reads a muted "No flaws" and has no popover (D-00d); the bar owns
+ * the verdict and its significance gate (D-14). On phones a side
  * label sits above the cell, since the column header row is hidden (D-00h).
  */
 function TacticCell({ bullet, def, side, tcStats }: TacticCellProps) {
@@ -87,10 +86,7 @@ function TacticCell({ bullet, def, side, tcStats }: TacticCellProps) {
   const testId = `tactic-cell-${segment}-${side}`;
   const noFlaws = hasNoFlaws(bullet);
   return (
-    <div
-      style={bullet.low_sample && !noFlaws ? { opacity: UNRELIABLE_OPACITY } : undefined}
-      data-testid={testId}
-    >
+    <div data-testid={testId}>
       <div className="text-sm text-muted-foreground md:hidden" data-testid={`${testId}-side`}>
         {SIDE_LABELS[side]}
       </div>

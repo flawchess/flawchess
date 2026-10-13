@@ -1,12 +1,14 @@
 /**
  * Pure math and vocabulary for the Library Stats you-vs-opponents gap bar
- * (Phase 239, sketch 010 round 5). No React: the GapBar, GapPopover and the
- * "What stands out" ranking all read from here so they never disagree.
+ * (Phase 239, sketch 010 round 5). No React: the GapBar and GapPopover both read from
+ * here so they never disagree.
  *
  * Sign convention: the API's gap is you minus opponents per 100 moves / games, so a
- * NEGATIVE gap means FEWER flaws, which is good. The bar flips it visually: zero is the
- * centre and better (negative) is drawn to the RIGHT, matching the Endgame percentile
- * bar where right is good.
+ * NEGATIVE gap means FEWER flaws, which is good. The bar follows the number line: zero
+ * is the centre and lower (better) gaps are drawn to the LEFT (Phase 239 D-14, UAT).
+ *
+ * Verdicts need significance (D-14): a gap outside the band whose 99% CI still covers 0
+ * renders neutral like a typical one, and the popover says it could be chance.
  */
 
 import { GAUGE_NEUTRAL, ZONE_DANGER, ZONE_SUCCESS } from '@/lib/theme';
@@ -39,8 +41,8 @@ export interface GapCell {
   zoneHi: number;
   /** False for an unviable family (D-11): no band, no verdict. */
   hasZone: boolean;
-  /** Fewer flaws than the sample minimum (D-12): no verdict, row is faded by its container. */
-  lowSample: boolean;
+  /** The 99% CI on the gap excludes 0 (D-14): only then may an out-of-band gap be coloured. */
+  significant: boolean;
   youRate: number | null;
   oppRate: number | null;
   ciLow: number | null;
@@ -58,8 +60,8 @@ export interface GapCell {
 export function gapPosition(delta: number, zoneLo: number, zoneHi: number): number {
   const s = Math.max(Math.abs(zoneLo), Math.abs(zoneHi));
   const a = Math.abs(delta);
-  // Fewer flaws (negative gap) is better and is drawn to the right.
-  const sign = delta < 0 ? 1 : -1;
+  // Number line: fewer flaws (negative gap, better) is drawn to the left (D-14 flip).
+  const sign = delta < 0 ? -1 : 1;
   if (s === 0) {
     // A band collapsed onto zero has no scale: only a zero gap sits at the centre,
     // any other gap goes to the saturated edge on its side.
@@ -83,10 +85,26 @@ export function gapVerdict(delta: number, zoneLo: number, zoneHi: number): GapVe
   return 'typical';
 }
 
-/** The verdict a cell may show; null when it must show none (zoneless, low sample, no gap). */
-export function effectiveVerdict(cell: GapCell): GapVerdict | null {
-  if (!cell.hasZone || cell.lowSample || cell.delta === null) return null;
+/** The band verdict before the significance gate; null without a band or a gap. */
+function rawVerdict(cell: GapCell): GapVerdict | null {
+  if (!cell.hasZone || cell.delta === null) return null;
   return gapVerdict(cell.delta, cell.zoneLo, cell.zoneHi);
+}
+
+/**
+ * The verdict a cell shows; null when it can have none (zoneless, no gap). An out-of-band
+ * gap that is not significant reads 'typical' (D-14): neutral dot and words.
+ */
+export function effectiveVerdict(cell: GapCell): GapVerdict | null {
+  const raw = rawVerdict(cell);
+  if (raw === null || raw === 'typical') return raw;
+  return cell.significant ? raw : 'typical';
+}
+
+/** True when the gap is outside the band but not significant: it could be chance (D-14). */
+export function isChanceGap(cell: GapCell): boolean {
+  const raw = rawVerdict(cell);
+  return raw !== null && raw !== 'typical' && !cell.significant;
 }
 
 /**
@@ -104,9 +122,9 @@ export function cellPosition(cell: GapCell): number {
 /** Left offset and width (in %) of the drawn benchmark band; null for a zoneless cell. */
 export function bandRange(cell: GapCell): { leftPct: number; widthPct: number } | null {
   if (!cell.hasZone) return null;
-  // zoneHi is on the left (more flaws = worse), zoneLo on the right.
-  const leftPct = gapPosition(cell.zoneHi, cell.zoneLo, cell.zoneHi);
-  const rightPct = gapPosition(cell.zoneLo, cell.zoneLo, cell.zoneHi);
+  // zoneLo (fewer flaws, better) is on the left, zoneHi on the right.
+  const leftPct = gapPosition(cell.zoneLo, cell.zoneLo, cell.zoneHi);
+  const rightPct = gapPosition(cell.zoneHi, cell.zoneLo, cell.zoneHi);
   return { leftPct, widthPct: rightPct - leftPct };
 }
 

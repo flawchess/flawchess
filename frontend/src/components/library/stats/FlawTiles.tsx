@@ -33,19 +33,14 @@ interface FlawTileProps {
  * One headline tile (D-00e): the player's rate big in the severity colour, the opponents'
  * rate under it, then the gap bar with its Search popover (D-00a to D-00c). Below the
  * analyzed-games gate the numbers stay and the bar slot reads the gate line (D-03).
- * Tiles are never faded (research open question 4: D-12 fades tactic cells and context
- * rows only).
+ * The verdict follows the same 99% significance gate as every other gap (D-14).
  */
 function FlawTile({ metric, tcStats, analyzedGate }: FlawTileProps) {
   const bullet = tcStats.bullets.find((b) => b.tag === metric);
   if (!bullet) return null;
 
   const meta = FLAW_GAP_META[metric];
-  // WR-02: the backend sets low_sample on all 12 flaw bullets, but D-12 scopes the
-  // low-sample treatment to tactic cells and context-tag rows. Left on, a tile with fewer
-  // than 40 combined blunders lost its verdict (blue dot, "Too few flaws to call it")
-  // exactly at the 20-game gate where D-03 says tiles must be shown. Tiles ignore it.
-  const cell = { ...flawBulletToGapCell(bullet), lowSample: false };
+  const cell = flawBulletToGapCell(bullet);
   const testId = `flaw-tile-${metric}`;
 
   return (

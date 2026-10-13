@@ -322,9 +322,9 @@ export type FlawDeltaMetric =
  * Per-bullet data for one flaw-delta metric of one time control (mirrors backend FlawBullet).
  *
  * snake_case field names to match the JSON payload exactly. delta and CI fields are null
- * when both player_events and opp_events are zero. `low_sample` is the server-side flag
- * for too few flaws on both sides to call a verdict (D-12); `has_zone` is always true for
- * flaw bullets.
+ * when both player_events and opp_events are zero. `significant` is the server-side 99%
+ * test (CI excludes 0) that an out-of-band verdict needs (D-14); `has_zone` is always true
+ * for flaw bullets.
  */
 export interface FlawBullet {
   tag: FlawDeltaMetric;
@@ -343,7 +343,7 @@ export interface FlawBullet {
   zone_lo: number;
   zone_hi: number;
   has_zone: boolean;
-  low_sample: boolean;
+  significant: boolean;
 }
 
 /** One time control's flaw comparison (mirrors backend FlawComparisonTc). */
@@ -365,7 +365,7 @@ export type TacticSide = 'missed' | 'allowed';
  *
  * Rates and delta are per 100 games. Sign convention: positive delta = you have MORE of
  * these tactics than your opponents = bad, for both sides. Rate, delta, CI and p-value
- * are null when neither side has a flaw (then `low_sample` is true).
+ * are null when neither side has a flaw (then `significant` is false).
  */
 export interface TacticBullet {
   family: TacticFamily;
@@ -373,15 +373,15 @@ export interface TacticBullet {
   you_rate: number | null;     // per 100 games, player side
   opp_rate: number | null;     // per 100 games, opponent side
   delta: number | null;        // you_rate - opp_rate per 100 games
-  ci_low: number | null;       // 95% CI lower bound on delta
-  ci_high: number | null;      // 95% CI upper bound on delta
+  ci_low: number | null;       // 99% CI lower bound on delta (D-14)
+  ci_high: number | null;      // 99% CI upper bound on delta (D-14)
   p_value: number | null;      // two-sided p vs H0: delta === 0
   you_events: number;          // raw flaw count, player side
   opp_events: number;          // raw flaw count, opponent side
   zone_lo: number;             // typical-range bounds per 100 games; 0.0 when has_zone is false
   zone_hi: number;
   has_zone: boolean;           // false when this family-side has no viable benchmark band (D-11)
-  low_sample: boolean;         // fewer flaws than the sample minimum (D-12)
+  significant: boolean;        // 99% CI on delta excludes 0 (D-14)
 }
 
 /** One time control's tactic comparison (mirrors backend TacticComparisonTc). */

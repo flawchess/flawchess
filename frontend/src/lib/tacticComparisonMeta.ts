@@ -591,7 +591,7 @@ export function tacticBulletToGapCell(b: TacticBullet): GapCell {
     zoneLo: b.zone_lo,
     zoneHi: b.zone_hi,
     hasZone: b.has_zone,
-    lowSample: b.low_sample,
+    significant: b.significant,
     youRate: b.you_rate,
     oppRate: b.opp_rate,
     ciLow: b.ci_low,

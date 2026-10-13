@@ -38,6 +38,8 @@ interface CategoryOptions {
   recoveryPct?: number;
   conversionGames?: number;
   gap?: number | null;
+  /** D-14 gate for every cell of the row; true by default so out-of-band cells colour. */
+  significant?: boolean;
 }
 
 function buildCategory(
@@ -78,6 +80,9 @@ function buildCategory(
     type_achievable_score_gap_p_value: 0.3,
     type_achievable_score_gap_ci_low: -0.02,
     type_achievable_score_gap_ci_high: 0.04,
+    conversion_significant: options.significant ?? true,
+    recovery_significant: options.significant ?? true,
+    type_achievable_score_gap_significant: options.significant ?? true,
     type_achievable_score_start_mean: 0.5,
     type_achievable_score_end_mean: 0.51,
     score: (wins + draws / 2) / total,
@@ -239,6 +244,19 @@ describe('TypeTable typical-range cells', () => {
     );
   });
 
+  it('keeps an out-of-band cell neutral when it is not significant (D-14)', () => {
+    const tc = buildRankedTc('rapid', {
+      type_categories: [
+        buildCategory('rook', 'Rook', { conversionPct: 50, significant: false }),
+      ],
+    });
+    const { container } = renderTable([tc]);
+    expect(byId(container, 'type-row-rook-conversion-value').style.color).toBe('');
+    expect(byId(container, 'type-row-rook-conversion-dot').style.backgroundColor).toBe(
+      normalizedColor(GAUGE_NEUTRAL),
+    );
+  });
+
   it('shows an info popover with the endgame type description on each row', () => {
     const { container } = renderTable();
     expect(byId(container, 'type-row-rook-info').getAttribute('aria-label')).toBe('Rook info');
@@ -276,9 +294,9 @@ describe('TypeTable typical-range cells', () => {
 });
 
 describe('TypeTable confidence and layout', () => {
-  it('fades rows with fewer than 100 games', () => {
+  it('never fades a row, also with few games (D-14 replaced the fade)', () => {
     const { container } = renderTable();
-    expect(byId(container, 'type-row-minor_piece').style.opacity).not.toBe('');
+    expect(byId(container, 'type-row-minor_piece').style.opacity).toBe('');
     expect(byId(container, 'type-row-rook').style.opacity).toBe('');
   });
 
@@ -300,13 +318,14 @@ describe('TypeTable confidence and layout', () => {
     expect(onCategorySelect).toHaveBeenCalledWith('minor_piece');
   });
 
-  it('explains the grey range, the dot, red/green and faded rows in the legend', () => {
+  it('explains the grey range, the dot and the significance-gated red/green in the legend', () => {
     const { container } = renderTable();
     const legend = byId(container, 'type-table-legend').textContent ?? '';
     expect(legend).toContain('Grey band');
     expect(legend).toContain('Dot = you');
     expect(legend).toContain('Red');
     expect(legend).toContain('green');
-    expect(legend).toContain('fewer than 100 games');
+    expect(legend).toContain('enough games to be sure');
+    expect(legend).not.toContain('Faded');
   });
 });

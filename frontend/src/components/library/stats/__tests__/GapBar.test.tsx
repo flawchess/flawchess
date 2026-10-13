@@ -22,7 +22,7 @@ function cell(overrides: Partial<GapCell> = {}): GapCell {
     zoneLo: -0.31,
     zoneHi: 0.25,
     hasZone: true,
-    lowSample: false,
+    significant: true,
     youRate: 5.46,
     oppRate: 6.12,
     ciLow: -1.0,
@@ -47,7 +47,8 @@ describe('GapBar', () => {
     ['better', { delta: -0.66 }, ZONE_SUCCESS, true],
     ['worse', { delta: 0.5 }, ZONE_DANGER, true],
     ['typical', { delta: 0.1 }, GAUGE_NEUTRAL, false],
-    ['low-sample', { delta: -0.66, lowSample: true }, GAUGE_NEUTRAL, false],
+    ['not-significant better', { delta: -0.66, significant: false }, GAUGE_NEUTRAL, false],
+    ['not-significant worse', { delta: 0.5, significant: false }, GAUGE_NEUTRAL, false],
     ['zoneless', { delta: -0.66, hasZone: false }, GAUGE_NEUTRAL, false],
   ] as const)('colours a %s cell', (_name, overrides, dotColor, coloredWords) => {
     render(<GapBar cell={cell(overrides)} testId="bar" />);
@@ -83,9 +84,14 @@ describe('GapBar', () => {
     expect(screen.getByTestId('bar-dot')).toBeTruthy();
   });
 
-  it('keeps the band for a low-sample cell', () => {
-    render(<GapBar cell={cell({ lowSample: true })} testId="bar" />);
+  it('keeps the band for a cell that is not significant', () => {
+    render(<GapBar cell={cell({ significant: false })} testId="bar" />);
     expect(screen.getByTestId('bar-band')).toBeTruthy();
+  });
+
+  it('draws a better (lower) gap left of the zero tick (D-14 number line)', () => {
+    render(<GapBar cell={cell({ delta: -0.66 })} testId="bar" />);
+    expect(parseFloat(screen.getByTestId('bar-dot').style.left)).toBeLessThan(50);
   });
 
   it('renders "No flaws yet" and no track for a gap-less cell', () => {

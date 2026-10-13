@@ -43,6 +43,7 @@ export function buildMetric(
     ci_low: 0.01,
     ci_high: 0.09,
     p_value: 0.032,
+    significant: false,
     ...overrides,
   };
 }

@@ -24,6 +24,7 @@ capabilities beyond SEED-198.
 
 ### Carried forward from SEED-198 (locked 2026-10-12, do not re-ask)
 - **D-00a:** Gap bar is the one visual: 0 tick in the middle, grey benchmark IQR of the gap drawn where it is (may be off-centre), one dot red/blue/green, better always to the right, linear inside the band and saturating outside (`1 - e^-x`, x in band widths). No red/green halves, no CI whiskers.
+  - **Owner override, 2026-10-13 (UAT, D-14/D-15):** direction flipped: lower values (fewer flaws = better) on the LEFT, following the number line. The grey band is now symmetric around 0 (D-15), so it is always centred.
 - **D-00b:** The gap reads as words ("1.7 fewer", "0.42 more", "same"); typical gaps print white, only better/worse are green/red; the dot stays blue for typical.
 - **D-00c:** Only the gap is on the page (tiles keep their "Opponents x.xx" line). A lucide Search icon opens a `RankedMetricPopover`-shell popover: definition + "Fewer is better", You/Opponents, typical gap range + verdict, basis, then greyed counts / 95% CI / p-value below a separator.
 - **D-00d:** "flaws" / "blunders" / "mistakes", never "events".
@@ -55,8 +56,13 @@ capabilities beyond SEED-198.
 
 ### Low sample and "What stands out"
 - **D-12:** Low-sample fade = a named constant of **40 flaws (you + opponents) per cell**, applied to tactic cells **and** context-tag rows: faded, no red/green verdict (dot neutral), popover says "Too few flaws to call it". The planner sanity-checks 40 against the CI width on the owner's dev blitz/rapid data and adjusts the constant only if clearly off.
+  - **Owner override, 2026-10-13 (UAT):** replaced by the significance gate (D-14). `LOW_SAMPLE_MIN_FLAWS` and `low_sample` are removed.
 - **D-13:** "What stands out" ranks **context tags only** (not tactics, not the Blunders/Mistakes tiles). Faded (low-sample) rows never qualify.
   - **Moot since 2026-10-13 (UAT):** the "What stands out" card was dropped (see D-00g).
+
+### Significance gate and symmetric bands (added 2026-10-13, UAT discussion)
+- **D-14:** Red/green verdicts require statistical significance at **99%**, on the Library page (gap bars, tiles' gap) **and** the Endgame Stats page (percentile bars and any other red/green verdict). A cell outside the band / outside the 25-75 percentile range but not significant renders **neutral like typical** (blue dot, white text; endgame: blue dot and neutral ordinal), and the popover says it may be chance. Nulls: **difference metrics test against 0** (99% CI excludes 0 on the verdict's side); the endgame **raw rates** (conversion, parity, recovery rate) test against the **cohort median** (p50 of the cohort CDF at the user's anchor). Displayed CIs switch to 99% so popover and verdict agree. Replaces D-12. Skipped: percentiles for Library stats (benchmark bands are mostly sampling noise, see 239-ZONE-PROPOSAL.md).
+- **D-15:** All Library difference bands (12 flaw + 9 viable tactic) become **symmetric around 0: ±IQR/2** of the measured quartiles, rounded up to the 0.01 grid. Rationale: the off-centre quartiles (e.g. low-clock −0.08/+0.03) come from rare, discrete per-user values and cohort selection, not a real typical offset, and the gate tests against 0. — **Reversibility:** registry constants.
 
 ### Claude's Discretion
 - Plan split (likely: benchmark §5 + zone registries, backend payload, frontend rework).

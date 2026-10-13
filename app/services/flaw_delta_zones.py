@@ -27,15 +27,21 @@ mostly sampling noise from the lane's 100-games-per-user-per-TC cap (noise-only 
 whole-cohort bands, identical for rapid and classical, while tactic_delta_zones.py
 holds the full-analysis section 5 bands.
 
-Sign convention: negative delta = fewer flaws than the opponent = good. The
-registry stores raw Q1/Q3 values with no sign flip; the UI draws better to the
-right.
+Phase 239 D-15 (UAT, 2026-10-13): every band is symmetric around 0, built by
+symmetric_band() from the measured Q1/Q3 kept in the source: +-IQR/2, the half-width
+rounded up to the 0.01 grid. The off-centre quartiles (e.g. low_clock -0.08 / +0.03)
+came from rare, discrete per-user values and cohort selection, not a real typical
+offset, and the D-14 significance gate tests the gap against 0.
+
+Sign convention: negative delta = fewer flaws than the opponent = good. No sign flip
+is stored; the UI draws lower (better) values on the LEFT (D-14 direction flip).
 
 This module is pure Python with no DB or I/O. All functions are synchronous
 and side-effect free.
 """
 
 from collections.abc import Mapping
+import math
 from dataclasses import dataclass
 from typing import Final, Literal
 
@@ -88,69 +94,84 @@ ZONE_TC_FOR: Final[Mapping[TimeControlBucket, ZoneTc]] = {
 class ZoneBand:
     """Typical-range bounds of one flaw-delta bullet, per 100 user moves.
 
-    zone_lo: Q1 of the per-user paired delta (rounded to the 0.01 grid).
-    zone_hi: Q3 of the per-user paired delta (rounded to the 0.01 grid).
+    zone_lo / zone_hi: -h / +h with h = IQR / 2 of the per-user paired delta, rounded up
+    to the 0.01 grid (D-15, symmetric_band).
     """
 
     zone_lo: float
     zone_hi: float
 
 
-# Phase 239 owner-accepted values (239-ZONE-PROPOSAL.md ## Accepted): the live pooled
-# bands, kept unchanged for both zone TCs. The tests pin them against that table.
+# Grid the band half-width is rounded up to (hundredths).
+_BAND_GRID_STEPS_PER_UNIT: Final[int] = 100
+# Rounds away float noise such as 28.000000000000004 before the ceiling.
+_BAND_GRID_FLOAT_DIGITS: Final[int] = 6
+
+
+def symmetric_band(q1: float, q3: float) -> ZoneBand:
+    """+-IQR/2 around 0 from the measured quartiles, half-width rounded up to 0.01 (D-15)."""
+    half_steps = math.ceil(
+        round((q3 - q1) / 2 * _BAND_GRID_STEPS_PER_UNIT, _BAND_GRID_FLOAT_DIGITS)
+    )
+    half = half_steps / _BAND_GRID_STEPS_PER_UNIT
+    return ZoneBand(zone_lo=-half, zone_hi=half)
+
+
+# Phase 239 owner-accepted quartiles (239-ZONE-PROPOSAL.md ## Accepted): the live pooled
+# Q1 / Q3, identical for both zone TCs, made symmetric by symmetric_band (D-15).
 FLAW_DELTA_ZONES: Final[Mapping[FlawDeltaMetric, Mapping[ZoneTc, ZoneBand]]] = {
     # Severity family
     "mistake": {
-        "rapid": ZoneBand(zone_lo=-0.23, zone_hi=+0.20),
-        "classical": ZoneBand(zone_lo=-0.23, zone_hi=+0.20),
+        "rapid": symmetric_band(-0.23, +0.20),
+        "classical": symmetric_band(-0.23, +0.20),
     },
     "blunder": {
-        "rapid": ZoneBand(zone_lo=-0.31, zone_hi=+0.25),
-        "classical": ZoneBand(zone_lo=-0.31, zone_hi=+0.25),
+        "rapid": symmetric_band(-0.31, +0.25),
+        "classical": symmetric_band(-0.31, +0.25),
     },
     # Tempo family
     "low_clock": {
-        "rapid": ZoneBand(zone_lo=-0.08, zone_hi=+0.03),
-        "classical": ZoneBand(zone_lo=-0.08, zone_hi=+0.03),
+        "rapid": symmetric_band(-0.08, +0.03),
+        "classical": symmetric_band(-0.08, +0.03),
     },
     "hasty": {
-        "rapid": ZoneBand(zone_lo=-0.28, zone_hi=+0.18),
-        "classical": ZoneBand(zone_lo=-0.28, zone_hi=+0.18),
+        "rapid": symmetric_band(-0.28, +0.18),
+        "classical": symmetric_band(-0.28, +0.18),
     },
     "unrushed": {
-        "rapid": ZoneBand(zone_lo=-0.38, zone_hi=+0.36),
-        "classical": ZoneBand(zone_lo=-0.38, zone_hi=+0.36),
+        "rapid": symmetric_band(-0.38, +0.36),
+        "classical": symmetric_band(-0.38, +0.36),
     },
     # Phase family
     "opening": {
-        "rapid": ZoneBand(zone_lo=-0.15, zone_hi=+0.13),
-        "classical": ZoneBand(zone_lo=-0.15, zone_hi=+0.13),
+        "rapid": symmetric_band(-0.15, +0.13),
+        "classical": symmetric_band(-0.15, +0.13),
     },
     "middlegame": {
-        "rapid": ZoneBand(zone_lo=-0.27, zone_hi=+0.23),
-        "classical": ZoneBand(zone_lo=-0.27, zone_hi=+0.23),
+        "rapid": symmetric_band(-0.27, +0.23),
+        "classical": symmetric_band(-0.27, +0.23),
     },
     "endgame_phase": {
-        "rapid": ZoneBand(zone_lo=-0.12, zone_hi=+0.10),
-        "classical": ZoneBand(zone_lo=-0.12, zone_hi=+0.10),
+        "rapid": symmetric_band(-0.12, +0.10),
+        "classical": symmetric_band(-0.12, +0.10),
     },
     # Opportunity family
     "miss": {
-        "rapid": ZoneBand(zone_lo=-0.11, zone_hi=+0.11),
-        "classical": ZoneBand(zone_lo=-0.11, zone_hi=+0.11),
+        "rapid": symmetric_band(-0.11, +0.11),
+        "classical": symmetric_band(-0.11, +0.11),
     },
     "lucky": {
-        "rapid": ZoneBand(zone_lo=-0.09, zone_hi=+0.09),
-        "classical": ZoneBand(zone_lo=-0.09, zone_hi=+0.09),
+        "rapid": symmetric_band(-0.09, +0.09),
+        "classical": symmetric_band(-0.09, +0.09),
     },
     # Impact family
     "reversed": {
-        "rapid": ZoneBand(zone_lo=-0.04, zone_hi=+0.04),
-        "classical": ZoneBand(zone_lo=-0.04, zone_hi=+0.04),
+        "rapid": symmetric_band(-0.04, +0.04),
+        "classical": symmetric_band(-0.04, +0.04),
     },
     "squandered": {
-        "rapid": ZoneBand(zone_lo=-0.07, zone_hi=+0.08),
-        "classical": ZoneBand(zone_lo=-0.07, zone_hi=+0.08),
+        "rapid": symmetric_band(-0.07, +0.08),
+        "classical": symmetric_band(-0.07, +0.08),
     },
 }
 

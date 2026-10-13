@@ -48,7 +48,7 @@ export function makeBullet(tag: FlawDeltaMetric, overrides: Partial<FlawBullet> 
     zone_lo: -0.31,
     zone_hi: 0.25,
     has_zone: true,
-    low_sample: false,
+    significant: true,
     ...overrides,
   };
 }
@@ -132,8 +132,6 @@ export function makeTrendPoint(date: string): FlawTrendPoint {
 // ─── Tactic comparison (per 100 games) ─────────────────────────────────────────
 
 export const TACTIC_SIDES: readonly TacticSide[] = ['missed', 'allowed'];
-/** Mirrors the backend LOW_SAMPLE_MIN_FLAWS: cells under it are faded and carry no verdict. */
-export const LOW_SAMPLE_MIN_FLAWS = 40;
 
 interface TacticBulletOptions {
   /** Your flaws with this family on this side. */
@@ -170,7 +168,8 @@ export function makeTacticBullet(
     zone_lo: zone ? zone[0] : 0,
     zone_hi: zone ? zone[1] : 0,
     has_zone: zone !== undefined,
-    low_sample: you + opp < LOW_SAMPLE_MIN_FLAWS,
+    // Mirrors the backend D-14 gate on the fixture CI (delta +- 1): it excludes 0.
+    significant: delta !== null && Math.abs(delta) > 1,
   };
 }
 

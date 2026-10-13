@@ -28,7 +28,7 @@ import {
 } from 'recharts';
 import { ChartContainer, ChartTooltip } from '@/components/ui/chart';
 import { ChartTooltipBox } from '@/components/ui/chart-tooltip-box';
-import { NEUTRAL_SERIES_COLOR, TYPICAL_BAND_FILL } from '@/lib/theme';
+import { NEUTRAL_SERIES_COLOR, TYPICAL_BAND_FILL, ZONE_NEUTRAL } from '@/lib/theme';
 import {
   clampDeltaCi,
   computeScoreGapYAxis,
@@ -135,6 +135,7 @@ interface ChartPoint {
   p_value: number | null;
   ci_low: number | null;
   ci_high: number | null;
+  significant: boolean;
   ciError?: [number, number]; // [downward_offset, upward_offset] for ErrorBar
 }
 
@@ -155,8 +156,12 @@ function formatPValue(p: number): string {
   return p < 0.001 ? 'p < 0.001' : `p = ${p.toFixed(3)}`;
 }
 
-/** Zone color for a score-gap dot relative to the TC-collapsed typical band. */
-function zoneDotColor(delta: number): string {
+/**
+ * Zone color for a score-gap dot relative to the TC-collapsed typical band. A dot whose
+ * 99% CI covers 0 stays neutral even outside the band (Phase 239 D-14).
+ */
+function zoneDotColor(delta: number, significant: boolean): string {
+  if (!significant) return ZONE_NEUTRAL;
   return pressureDeltaZoneColor(
     delta,
     PRESSURE_SCORE_GAP_NEUTRAL_MIN,
@@ -192,6 +197,7 @@ function toChartData(quintiles: PressureQuintileBullet[]): ChartPoint[] {
         p_value: bin.p_value,
         ci_low: bin.ci_low,
         ci_high: bin.ci_high,
+        significant: bin.significant,
         ciError,
       };
     });
@@ -217,8 +223,8 @@ export function ScoreGapTooltipContent({ point }: { point: ChartPoint }) {
   const testLine = 'Independent two-sample test.';
   const ciLine =
     point.ci_low != null && point.ci_high != null
-      ? `95% CI [${formatSignedPct(point.ci_low)}, ${formatSignedPct(point.ci_high)}]`
-      : '95% normal-approx CI';
+      ? `99% CI [${formatSignedPct(point.ci_low)}, ${formatSignedPct(point.ci_high)}]`
+      : '99% normal-approx CI';
 
   return (
     <ChartTooltipBox data-testid="score-gap-tooltip">
@@ -227,7 +233,7 @@ export function ScoreGapTooltipContent({ point }: { point: ChartPoint }) {
         <div
           className="h-2 w-2 shrink-0 rounded-[2px]"
           data-testid="score-gap-tooltip-swatch"
-          style={{ backgroundColor: zoneDotColor(point.delta) }}
+          style={{ backgroundColor: zoneDotColor(point.delta, point.significant) }}
         />
         <span>Score gap: {formatSignedPct(point.delta)}</span>
       </div>
@@ -418,13 +424,14 @@ export function ScoreGapByTimePressureChart({
               const delta = (payload.delta as number) ?? 0;
               const n = (payload.n as number) ?? 0;
               const nOpp = (payload.n_opp as number) ?? 0;
+              const significant = (payload.significant as boolean) ?? false;
               return (
                 <circle
                   key={`score-gap-dot-${payload.label as string}`}
                   cx={cx}
                   cy={cy}
                   r={dotRadius(n, nOpp)}
-                  fill={zoneDotColor(delta)}
+                  fill={zoneDotColor(delta, significant)}
                 />
               );
             }}

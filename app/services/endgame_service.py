@@ -65,6 +65,8 @@ from app.services.openings_service import (
 )
 from app.repositories.stats_repository import EVAL_OUTLIER_TRIM_CP
 from app.services.score_confidence import (
+    VERDICT_CI_Z_99,
+    ci_excludes,
     compute_paired_difference_test,
     compute_score_difference_test,
 )
@@ -1667,8 +1669,9 @@ def build_quintile_bullets(
         opp_score = (o_w + 0.5 * o_d) / n_opp
         delta = user_score - opp_score
         m = shared_wdl_count.get((tc, q), 0)
+        # Phase 239 D-14: 99% CI, the level of the dot-colour verdict gate.
         p_value, ci_low, ci_high = compute_score_difference_test(
-            u_w, u_d, u_l, n_user, o_w, o_d, o_l, n_opp, shared_n=m
+            u_w, u_d, u_l, n_user, o_w, o_d, o_l, n_opp, shared_n=m, z=VERDICT_CI_Z_99
         )
         bullets.append(
             PressureQuintileBullet(
@@ -1681,6 +1684,7 @@ def build_quintile_bullets(
                 ci_low=ci_low,
                 ci_high=ci_high,
                 opp_score=opp_score,
+                significant=ci_excludes(0.0, ci_low, ci_high),
             )
         )
     return bullets

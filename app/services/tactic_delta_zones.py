@@ -6,7 +6,8 @@ frontend renders exactly what the registry stores. No TS codegen.
 
 Units: per 100 games (you minus opponent count per game, times 100), matching the tactic
 rates the endpoint returns (D-00h). Sign convention: negative delta = fewer tactics than
-the opponent = good; the registry stores raw Q1/Q3 with no sign flip.
+the opponent = good. The measured Q1/Q3 stay in the source; Phase 239 D-15 turns each
+into a band symmetric around 0 (+-IQR/2, flaw_delta_zones.symmetric_band).
 
 A registry value of None means the (family, side) has no viable benchmark zone (degenerate
 IQR or too few non-zero users, D-06): the bullet gets has_zone False, zone_lo == zone_hi ==
@@ -41,7 +42,7 @@ from collections.abc import Mapping
 from typing import Final, Literal
 
 from app.schemas.normalization import TimeControlBucket
-from app.services.flaw_delta_zones import ZONE_TC_FOR, ZoneBand, ZoneTc
+from app.services.flaw_delta_zones import ZONE_TC_FOR, ZoneBand, ZoneTc, symmetric_band
 
 TacticFamily = Literal[
     "fork",
@@ -93,9 +94,9 @@ TacticSide = Literal["missed", "allowed"]
 TACTIC_SIDES: Final[tuple[TacticSide, TacticSide]] = ("missed", "allowed")
 
 
-def _both_tcs(zone_lo: float, zone_hi: float) -> Mapping[ZoneTc, ZoneBand]:
-    """One pooled band shared by both zone TCs (the TC axis collapsed for these metrics)."""
-    band = ZoneBand(zone_lo=zone_lo, zone_hi=zone_hi)
+def _both_tcs(q1: float, q3: float) -> Mapping[ZoneTc, ZoneBand]:
+    """One pooled symmetric band shared by both zone TCs (the TC axis collapsed, D-15)."""
+    band = symmetric_band(q1, q3)
     return {"rapid": band, "classical": band}
 
 

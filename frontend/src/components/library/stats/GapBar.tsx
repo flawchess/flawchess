@@ -27,11 +27,10 @@ interface GapBarProps {
 
 /**
  * The one visual of the Library Stats tab (D-00a): a zero-centred track with the
- * benchmark band drawn where it is (possibly off-centre), a zero tick, and a dot. Better
- * (fewer flaws) is to the right. The gap reads in words next to the bar (D-00b): green or
- * red for better or worse, plain foreground for typical. A zoneless cell draws no band
- * (D-11), a low-sample cell draws its band but a blue dot and no verdict (D-12). Fading
- * a low-sample cell is the container's job (GapRow, tactic cells), not done here.
+ * benchmark band (symmetric around 0, D-15), a zero tick, and a dot. Lower (fewer flaws,
+ * better) is to the left (D-14). The gap reads in words next to the bar (D-00b): green or
+ * red for a significant better or worse, plain foreground for typical or a gap that could
+ * be chance (D-14). A zoneless cell draws no band and gives no verdict (D-11).
  */
 export function GapBar({ cell, testId, trailing }: GapBarProps) {
   if (cell.delta === null) {

@@ -143,7 +143,7 @@ async def test_200_shape(test_engine) -> None:
         for bullet in blitz["bullets"]:
             assert bullet["orientation"] in ("missed", "allowed")
             assert isinstance(bullet["family"], str)
-            assert isinstance(bullet["low_sample"], bool)
+            assert isinstance(bullet["significant"], bool)
             assert isinstance(bullet["has_zone"], bool)
     finally:
         await _delete_games(test_engine, game_ids)

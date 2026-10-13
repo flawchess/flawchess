@@ -97,21 +97,32 @@ describe('RankedMetricPopover body (D-00c)', () => {
     expect(footer.className).toMatch(/text-background\/\d+/);
     // Stats jargon lives in the footer only, never in the prose part.
     const prose = (popover.textContent ?? '').replace(footer.textContent ?? '', '');
-    expect(prose).not.toMatch(/95% CI|p =|p </);
+    expect(prose).not.toMatch(/99% CI|p =|p </);
   });
 
   it('writes a signed CI for gaps, a plain CI for rates, and the p-value', () => {
     openPopover(buildMetric('score_gap', { ci_low: 0.01, ci_high: 0.09, p_value: 0.032 }));
     const footer = byId(`${TRIGGER_ID}-footer`).textContent ?? '';
     expect(footer).toContain('n = 120');
-    expect(footer).toContain('95% CI +1.0% to +9.0%');
+    expect(footer).toContain('99% CI +1.0% to +9.0%');
     expect(footer).toContain('p = 0.032');
     cleanup();
 
     openPopover(buildMetric('conversion_rate' as CdfMetricId, { ci_low: 0.7, ci_high: 0.8, p_value: null }));
     const rateFooter = byId(`${TRIGGER_ID}-footer`).textContent ?? '';
-    expect(rateFooter).toContain('95% CI 70.0% to 80.0%');
+    expect(rateFooter).toContain('99% CI 70.0% to 80.0%');
     expect(rateFooter).not.toContain('p =');
+  });
+
+  it('says an out-of-range percentile could be chance only when it is not significant (D-14)', () => {
+    const chance = openPopover(buildMetric('score_gap', { percentile: 90, significant: false }));
+    expect(chance.textContent).toContain('This could be chance');
+    cleanup();
+    const sure = openPopover(buildMetric('score_gap', { percentile: 90, significant: true }));
+    expect(sure.textContent).not.toContain('could be chance');
+    cleanup();
+    const typical = openPopover(buildMetric('score_gap', { percentile: 46, significant: false }));
+    expect(typical.textContent).not.toContain('could be chance');
   });
 
   it('omits the CI and p lines when they are null', () => {

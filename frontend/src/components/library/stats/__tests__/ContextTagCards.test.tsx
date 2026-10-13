@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 /**
- * Phase 239 D-00f, D-00j, D-12: the four context-tag cards.
+ * Phase 239 D-00f, D-00j, D-14: the four context-tag cards.
  */
 
 import { afterEach, describe, expect, it } from 'vitest';
@@ -10,7 +10,7 @@ import { RAPID_ENTRY, SKETCH_RAPID_ENTRY, makeTcEntry } from './flawStatsFixture
 
 afterEach(cleanup);
 
-const LOW_SAMPLE_EVENTS = 15;
+const FEW_EVENTS = 15;
 
 function text(testId: string): string {
   return screen.getByTestId(testId).textContent ?? '';
@@ -120,29 +120,29 @@ describe('ContextTagCards popovers', () => {
   });
 });
 
-describe('ContextTagCards low-sample rows (D-12)', () => {
-  const lowSampleEntry = makeTcEntry('rapid', {
+describe('ContextTagCards significance gate (D-14)', () => {
+  const notSignificantEntry = makeTcEntry('rapid', {
     analyzedN: 1841,
     overrides: {
       hasty: {
         delta: -3,
         zone_lo: -0.28,
         zone_hi: 0.18,
-        low_sample: true,
-        player_events: LOW_SAMPLE_EVENTS,
-        opp_events: LOW_SAMPLE_EVENTS,
+        significant: false,
+        player_events: FEW_EVENTS,
+        opp_events: FEW_EVENTS,
       },
-      // A normal-sample strength next to it: this one gets the verdict colour.
+      // A significant strength next to it: this one gets the verdict colour.
       miss: { delta: -3, zone_lo: -0.11, zone_hi: 0.11 },
     },
   });
 
-  it('fades the row, shows a blue dot and no verdict colour', () => {
-    render(<ContextTagCards tcStats={lowSampleEntry} />);
+  it('shows a blue dot and no verdict colour without fading the row', () => {
+    render(<ContextTagCards tcStats={notSignificantEntry} />);
     const row = screen.getByTestId('context-row-hasty');
-    expect(row.style.opacity).toBe('0.5');
+    expect(row.style.opacity).toBe('');
     const dot = screen.getByTestId('context-row-hasty-bar-dot');
-    // A verdict dot would be the success green; a low-sample one is the neutral blue.
+    // A verdict dot would be the success green; a not-significant one is the neutral blue.
     const strengthDot = screen.getByTestId('context-row-miss-bar-dot');
     const typicalDot = screen.getByTestId('context-row-opening-bar-dot');
     expect(dot.style.backgroundColor).not.toBe('');

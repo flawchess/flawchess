@@ -93,9 +93,18 @@ from app.services.endgame_service import (
     iterate_clock_rows,
 )
 from app.services.eval_utils import eval_cp_to_expected_score
-from app.services.global_percentile_cdf import CdfMetricId
+from app.repositories.benchmark_cohort_cdf_repository import load_cohort_cells
+from app.services.endgame_zones import PER_CLASS_TC_GAUGE_ZONES
+from app.services.global_percentile_cdf import (
+    BREAKPOINT_PERCENTILES,
+    CdfMetricId,
+    _round_anchor_to_grid,
+)
 from app.services.openings_service import derive_user_result
 from app.services.score_confidence import (
+    CI_Z_95,
+    VERDICT_CI_Z_99,
+    ci_excludes,
     compute_paired_difference_test,
     compute_score_difference_test,
     wilson_bounds,
@@ -136,6 +145,9 @@ class RankedInputs:
         default_factory=dict
     )
     anchors: dict[TimeControlBucket, RatingAnchorRow] = field(default_factory=dict)
+    # Phase 239 D-14: cohort p50 of each raw-rate metric at the user's anchor, the null
+    # the rate's 99% CI is tested against. Missing key = no cohort cell, no verdict gate.
+    cohort_medians: dict[tuple[CdfMetricId, TimeControlBucket], float] = field(default_factory=dict)
 
 
 class _RowQueryKwargs(TypedDict):
@@ -157,7 +169,8 @@ class _MetricCore:
 
     ci_low / ci_high / p_value feed the popover footer (planner assumption A3): rates
     carry a Wilson CI only, score_gap and time_pressure a two-sample CI + p, the paired
-    metrics a paired CI + p, net_flag_rate nothing.
+    metrics (net_flag_rate included since Phase 239 D-14) a paired CI + p. Every CI is
+    99% (D-14), the level the red/green verdict gate uses.
     """
 
     value: float | None
@@ -210,6 +223,7 @@ async def fetch_ranked_inputs(session: AsyncSession, *, user_id: int) -> RankedI
         clock_rows = await query_clock_stats_rows(session, **row_kwargs)
     percentile_rows = await fetch_for_user(session, user_id=user_id)
     anchors = await fetch_anchors_for_user(session, user_id=user_id)
+    cohort_medians = await _fetch_rate_cohort_medians(session, anchors)
     return RankedInputs(
         games_by_tc=games_by_tc,
         endgame_rows=endgame_rows,
@@ -219,7 +233,31 @@ async def fetch_ranked_inputs(session: AsyncSession, *, user_id: int) -> RankedI
         clock_rows=clock_rows,
         percentile_rows=percentile_rows,
         anchors=anchors,
+        cohort_medians=cohort_medians,
     )
+
+
+# Raw-rate metrics: no natural 0 null, so the D-14 gate tests them against the cohort p50.
+RATE_METRICS: Final[frozenset[CdfMetricId]] = frozenset(
+    {"conversion_rate", "parity_rate", "recovery_rate"}
+)
+_MEDIAN_PERCENTILE: Final[float] = 50.0
+_MEDIAN_BREAKPOINT_INDEX: Final[int] = BREAKPOINT_PERCENTILES.index(_MEDIAN_PERCENTILE)
+
+
+async def _fetch_rate_cohort_medians(
+    session: AsyncSession, anchors: dict[TimeControlBucket, RatingAnchorRow]
+) -> dict[tuple[CdfMetricId, TimeControlBucket], float]:
+    """Cohort p50 per (raw-rate metric, TC) at the user's anchor, in one batched read."""
+    rounded = {tc: _round_anchor_to_grid(a.anchor_rating) for tc, a in anchors.items()}
+    cells = await load_cohort_cells(session, sorted(set(rounded.values())), list(rounded))
+    medians: dict[tuple[CdfMetricId, TimeControlBucket], float] = {}
+    for tc, anchor_elo in rounded.items():
+        for metric in RATE_METRICS:
+            table = cells.get((metric, anchor_elo, tc))
+            if table is not None:
+                medians[(metric, tc)] = table.breakpoints[_MEDIAN_BREAKPOINT_INDEX]
+    return medians
 
 
 # ---------------------------------------------------------------------------
@@ -281,7 +319,7 @@ def _paired_core(diffs: Sequence[float], floor_required: int) -> _MetricCore:
     n = len(diffs)
     if n == 0:
         return _MetricCore(value=None, n=0, floor_n=0, floor_required=floor_required)
-    mean_d, p_value, ci_low, ci_high = compute_paired_difference_test(diffs)
+    mean_d, p_value, ci_low, ci_high = compute_paired_difference_test(diffs, z=VERDICT_CI_Z_99)
     return _MetricCore(
         value=mean_d,
         n=n,
@@ -323,6 +361,7 @@ def _restrict_to_since(inputs: RankedInputs, since: datetime.datetime) -> Ranked
         clock_rows=[r for r in inputs.clock_rows if r.game_id in keep_ids],
         percentile_rows={},
         anchors=inputs.anchors,
+        cohort_medians=inputs.cohort_medians,
     )
 
 
@@ -372,7 +411,7 @@ def _score_gap_core(endgame_rows: Sequence[Any], non_endgame_rows: Sequence[Any]
     if eg_n > 0 and ne_n > 0:
         value = sum(eg_scores) / eg_n - sum(ne_scores) / ne_n
         p_value, ci_low, ci_high = compute_score_difference_test(
-            *_wdl_counts(eg_scores), eg_n, *_wdl_counts(ne_scores), ne_n
+            *_wdl_counts(eg_scores), eg_n, *_wdl_counts(ne_scores), ne_n, z=VERDICT_CI_Z_99
         )
     return _MetricCore(
         value=value,
@@ -476,10 +515,11 @@ def _rate_of(bucket: MaterialBucket, wins: int, draws: int, n: int) -> float | N
 
 
 def _wilson_interval(value: float | None, n: int) -> tuple[float | None, float | None]:
-    """Wilson 95% bounds for a rate (no p-value: a rate has no natural null)."""
+    """Wilson 99% bounds for a rate (D-14). No p-value: a rate has no natural null; the
+    verdict gate tests the CI against the cohort median instead."""
     if value is None or n <= 0:
         return None, None
-    return wilson_bounds(value, n)
+    return wilson_bounds(value, n, z=VERDICT_CI_Z_99)
 
 
 def _rate_metrics(
@@ -597,19 +637,24 @@ def _clock_gap_metric(entries: Sequence[_ClockEntry]) -> _MetricCore:
     )
 
 
+def _net_flag_per_game(row: Any) -> float:
+    """+1 for a timeout win, -1 for a timeout loss, 0 for any other endgame game."""
+    if row.termination != "timeout":
+        return 0.0
+    result = derive_user_result(row.result, row.user_color)
+    if result == "win":
+        return 1.0
+    return -1.0 if result == "loss" else 0.0
+
+
 def _net_flag_metric(clock_rows: Sequence[Any]) -> _MetricCore:
     """(timeout wins - timeout losses) / endgame games.
 
     The denominator is EVERY endgame game of the TC: the CTE has no base-clock check.
+    Phase 239 D-14: the mean of the per-game +1 / 0 / -1 values is the same number, and
+    the paired test on them gives the CI the verdict gate needs (it had none before).
     """
-    timeouts = [
-        derive_user_result(row.result, row.user_color)
-        for row in clock_rows
-        if row.termination == "timeout"
-    ]
-    n = len(clock_rows)
-    value = (timeouts.count("win") - timeouts.count("loss")) / n if n else None
-    return _MetricCore(value=value, n=n, floor_n=n, floor_required=NET_FLAG_RATE_MIN_POOL_N)
+    return _paired_core([_net_flag_per_game(row) for row in clock_rows], NET_FLAG_RATE_MIN_POOL_N)
 
 
 def _time_pressure_score_gap_metric(entries: Sequence[_ClockEntry]) -> _MetricCore:
@@ -633,6 +678,7 @@ def _time_pressure_score_gap_metric(entries: Sequence[_ClockEntry]) -> _MetricCo
         *_wdl_counts(opp_pressured),
         len(opp_pressured),
         shared_n=shared_n,
+        z=VERDICT_CI_Z_99,
     )
     return _MetricCore(
         value=value,
@@ -729,11 +775,67 @@ def _clock_diff_points(
     return compute_clock_diff_timeline(full_clock_rows, cutoff=since).points
 
 
+def _band_mid(band: tuple[float, float]) -> float:
+    return (band[0] + band[1]) / 2
+
+
+def _rate_significant(successes: int, games: int, band: tuple[float, float]) -> bool:
+    """D-14 gate for a per-class rate: the 99% Wilson CI excludes the band centre.
+
+    The per-class bands are cohort p25/p75 per (class, TC); their centre stands in for
+    the cohort median, which the per-class registry does not store.
+    """
+    if games <= 0:
+        return False
+    lo, hi = wilson_bounds(successes / games, games, z=VERDICT_CI_Z_99)
+    return ci_excludes(_band_mid(band), lo, hi)
+
+
+def _type_gap_significant(category: EndgameCategoryStats) -> bool:
+    """D-14 gate for the per-class Score Gap: its 99% CI excludes 0.
+
+    The shared category builder emits a 95% Wald CI; a Wald half-width is z * SE, so the
+    99% interval is the 95% one widened by VERDICT_CI_Z_99 / CI_Z_95 around the mean.
+    """
+    mean = category.type_achievable_score_gap_mean
+    lo95 = category.type_achievable_score_gap_ci_low
+    hi95 = category.type_achievable_score_gap_ci_high
+    if mean is None or lo95 is None or hi95 is None:
+        return False
+    half = (hi95 - lo95) / 2 * VERDICT_CI_Z_99 / CI_Z_95
+    return ci_excludes(0.0, mean - half, mean + half)
+
+
+def _with_significance(
+    category: EndgameCategoryStats, tc: TimeControlBucket
+) -> EndgameCategoryStats:
+    """Attach the D-14 verdict gates of one TypeTable row (zoneless classes get none)."""
+    zones = PER_CLASS_TC_GAUGE_ZONES.get(category.endgame_class)
+    if zones is None:
+        return category
+    bands = zones[tc]
+    conv = category.conversion
+    return category.model_copy(
+        update={
+            "conversion_significant": _rate_significant(
+                conv.conversion_wins, conv.conversion_games, bands.conversion
+            ),
+            "recovery_significant": _rate_significant(
+                conv.recovery_saves, conv.recovery_games, bands.recovery
+            ),
+            "type_achievable_score_gap_significant": _type_gap_significant(category),
+        }
+    )
+
+
 def _type_categories(
     tc: TimeControlBucket, entry_rows: Sequence[Any]
 ) -> list[EndgameCategoryStats]:
     """Rook / minor piece / pawn / queen rows for one TC (mixed and pawnless excluded)."""
-    return aggregate_endgame_stats_by_tc(entry_rows).get(tc, [])
+    return [
+        _with_significance(category, tc)
+        for category in aggregate_endgame_stats_by_tc(entry_rows).get(tc, [])
+    ]
 
 
 @dataclass(frozen=True)
@@ -817,11 +919,32 @@ class _StatusContext:
     eval_pending: int
 
 
+def _metric_significant(
+    metric: CdfMetricId,
+    core: _MetricCore,
+    percentile: float | None,
+    cohort_median: float | None,
+) -> bool:
+    """Phase 239 D-14 verdict gate for one ranked metric.
+
+    The 99% CI must exclude the null (0 for a difference metric, the cohort p50 for a raw
+    rate) on the same side as the percentile verdict, so a green "above typical" never
+    rests on a value significantly below the null.
+    """
+    if percentile is None or core.value is None:
+        return False
+    null = cohort_median if metric in RATE_METRICS else 0.0
+    if null is None or not ci_excludes(null, core.ci_low, core.ci_high):
+        return False
+    return (core.value > null) == (percentile > _MEDIAN_PERCENTILE)
+
+
 def _metric_out(
     metric: CdfMetricId,
     core: _MetricCore,
     row: PercentileRow | None,
     ctx: _StatusContext,
+    cohort_median: float | None,
 ) -> RankedMetricOut:
     status, floor_n, floor_required = _rank_status(
         has_anchor=ctx.has_anchor,
@@ -833,18 +956,20 @@ def _metric_out(
         floor_required=core.floor_required,
         row=row,
     )
+    # The percentile is only meaningful (and only shown) for a ranked cell.
+    percentile = row.percentile if status == "ranked" and row is not None else None
     return RankedMetricOut(
         metric=metric,
         value=core.value,
         n=core.n,
         floor_n=floor_n,
         floor_required=floor_required,
-        # The percentile is only meaningful (and only shown) for a ranked cell.
-        percentile=row.percentile if status == "ranked" and row is not None else None,
+        percentile=percentile,
         status=status,
         ci_low=core.ci_low,
         ci_high=core.ci_high,
         p_value=core.p_value,
+        significant=_metric_significant(metric, core, percentile, cohort_median),
     )
 
 
@@ -874,7 +999,13 @@ def _build_tc_stats(
         eval_pending=eval_pending_games,
     )
     metrics = {
-        metric: _metric_out(metric, core, inputs.percentile_rows.get(metric, {}).get(tc), ctx)
+        metric: _metric_out(
+            metric,
+            core,
+            inputs.percentile_rows.get(metric, {}).get(tc),
+            ctx,
+            inputs.cohort_medians.get((metric, tc)),
+        )
         for metric, core in canonical.cores.items()
     }
     return RankedTcStats(
