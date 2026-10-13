@@ -221,7 +221,7 @@ consistent with Phase 238 (Endgame Stats).
 
 **Depends on**: Phase 238 (`PercentileBar`, `RankedMetricPopover`, `TcSwitch`, `useEndgameStatsTc` patterns); blitz full-analysis benchmark sample for the tactic IQRs
 **Requirements**: TBD (coverage contract = CONTEXT decisions from discuss-phase)
-**Plans:** 8/10 plans executed
+**Plans:** 9/10 plans executed
 **Status**: Planned
 
 Plans:
@@ -240,7 +240,7 @@ Plans:
 - [x] 239-10-PLAN.md — Frontend You vs. your opponents section (What stands out + four context cards) and legacy flaw metadata cleanup (wave 3)
 
 **Wave 4** *(blocked on Wave 3 completion)*
-- [ ] 239-08-PLAN.md — Frontend tactic tables with collapsible Advanced, legacy grid removed (wave 4)
+- [x] 239-08-PLAN.md — Frontend tactic tables with collapsible Advanced, legacy grid removed (wave 4)
 
 **Wave 5** *(blocked on Wave 4 completion)*
 - [ ] 239-09-PLAN.md — Pre-merge gate, stale-name sweep, CHANGELOG, live smoke, browser UAT steps (wave 5)
