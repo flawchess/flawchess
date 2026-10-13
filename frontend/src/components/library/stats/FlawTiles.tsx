@@ -41,7 +41,11 @@ function FlawTile({ metric, tcStats, analyzedGate }: FlawTileProps) {
   if (!bullet) return null;
 
   const meta = FLAW_GAP_META[metric];
-  const cell = flawBulletToGapCell(bullet);
+  // WR-02: the backend sets low_sample on all 12 flaw bullets, but D-12 scopes the
+  // low-sample treatment to tactic cells and context-tag rows. Left on, a tile with fewer
+  // than 40 combined blunders lost its verdict (blue dot, "Too few flaws to call it")
+  // exactly at the 20-game gate where D-03 says tiles must be shown. Tiles ignore it.
+  const cell = { ...flawBulletToGapCell(bullet), lowSample: false };
   const testId = `flaw-tile-${metric}`;
 
   return (

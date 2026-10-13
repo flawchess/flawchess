@@ -5,6 +5,7 @@
 
 import { afterEach, describe, expect, it } from 'vitest';
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { ZONE_SUCCESS } from '@/lib/theme';
 import { FlawTiles } from '../FlawTiles';
 import { ANALYZED_GATE, BLITZ_ENTRY, RAPID_ENTRY, makeTcEntry } from './flawStatsFixtures';
 
@@ -12,6 +13,13 @@ afterEach(cleanup);
 
 function renderTiles(tcStats = RAPID_ENTRY) {
   render(<FlawTiles tcStats={tcStats} analyzedGate={ANALYZED_GATE} />);
+}
+
+/** jsdom normalizes color strings; compare normalized forms (same helper as GapBar.test). */
+function normalized(color: string): string {
+  const probe = document.createElement('div');
+  probe.style.color = color;
+  return probe.style.color;
 }
 
 function text(testId: string): string {
@@ -90,5 +98,19 @@ describe('FlawTiles', () => {
     const entry = makeTcEntry('rapid', { analyzedN: 400, blunder: { low_sample: true } });
     renderTiles(entry);
     expect(screen.getByTestId('flaw-tile-blunder').getAttribute('style') ?? '').not.toContain('opacity');
+  });
+
+  it('still shows the verdict for a low-sample tile bullet (WR-02: D-12 does not apply to tiles)', () => {
+    const entry = makeTcEntry('rapid', {
+      analyzedN: 400,
+      // delta -0.61 is below the fixture band (-0.31..0.25): a "better" verdict.
+      blunder: { delta: -0.61, low_sample: true },
+    });
+    renderTiles(entry);
+    const dot = screen.getByTestId('flaw-tile-blunder-bar-dot');
+    expect(dot.style.backgroundColor).toBe(normalized(ZONE_SUCCESS));
+    expect(screen.getByTestId('flaw-tile-blunder-bar-words').style.color).toBe(
+      normalized(ZONE_SUCCESS),
+    );
   });
 });
