@@ -14,7 +14,6 @@ import { FlawTiles } from './FlawTiles';
 import { GapGateSlot } from './GapBar';
 import { LibraryTcSwitch } from './LibraryTcSwitch';
 import { TacticTables } from './TacticTables';
-import { WhatStandsOut } from './WhatStandsOut';
 import type { FilterState } from '@/components/filters/FilterPanel';
 import type { TimeControlBucket } from '@/types/endgames';
 import type { FlawComparisonTc, FlawStatsResponse, TacticComparisonTc } from '@/types/library';
@@ -137,7 +136,7 @@ function VsOpponentsSkeleton() {
 }
 
 /**
- * You vs. your opponents (D-00f, D-00g): What stands out, then the four context-tag cards
+ * You vs. your opponents (D-00f): the four context-tag cards
  * for the selected TC. It reads the same comparison query as Flaw Stats (one cache entry,
  * no extra request) and the same remembered TC store, so a switch click here also switches
  * Flaw Stats (D-02). Below the gate one slot replaces everything (D-03).
@@ -161,12 +160,7 @@ function VsOpponentsSection({ filters }: { filters: FilterState }) {
         />
       );
     }
-    return (
-      <>
-        <WhatStandsOut tcStats={tcStats} />
-        <ContextTagCards tcStats={tcStats} />
-      </>
-    );
+    return <ContextTagCards tcStats={tcStats} />;
   };
 
   return (

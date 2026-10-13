@@ -93,9 +93,8 @@ function sketchRow(delta: number, zoneLo: number, zoneHi: number): Partial<FlawB
 }
 
 /**
- * Sketch 010 rapid context-tag rows (gap, benchmark band). Ranked by band-width distance:
- * strengths hasty 3.9, opening 1.6, middlegame 0.6; weaknesses low_clock 3.5, squandered 0.5,
- * unrushed 0.2, reversed 0.1 (cut by the top 3); typical: endgame, miss, lucky.
+ * Sketch 010 rapid context-tag rows (gap, benchmark band): better hasty, opening,
+ * middlegame; worse low_clock, squandered, unrushed, reversed; typical endgame, miss, lucky.
  */
 export const SKETCH_RAPID_ENTRY = makeTcEntry('rapid', {
   analyzedN: 1841,

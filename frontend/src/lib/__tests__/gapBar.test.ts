@@ -14,8 +14,6 @@ import {
   gapVerdict,
   gapVerdictColor,
   gapWords,
-  pickStandouts,
-  standoutDistance,
   type GapCell,
 } from '../gapBar';
 
@@ -176,61 +174,5 @@ describe('gapVerdictColor', () => {
     expect(gapVerdictColor('worse')).toBe(ZONE_DANGER);
     expect(gapVerdictColor('typical')).toBe(GAUGE_NEUTRAL);
     expect(gapVerdictColor(null)).toBe(GAUGE_NEUTRAL);
-  });
-});
-
-describe('standoutDistance (D-00g)', () => {
-  it('measures the distance outside the band in band widths', () => {
-    expect(standoutDistance(-0.87, LO, HI)).toBeCloseTo((LO - -0.87) / (HI - LO), 10);
-    expect(standoutDistance(0.81, LO, HI)).toBeCloseTo((0.81 - HI) / (HI - LO), 10);
-  });
-
-  it('is 0 inside the band', () => {
-    expect(standoutDistance(0, LO, HI)).toBe(0);
-  });
-
-  it('is null for a degenerate band', () => {
-    expect(standoutDistance(-1, 0.1, 0.1)).toBeNull();
-    expect(standoutDistance(-1, 0.2, 0.1)).toBeNull();
-  });
-});
-
-describe('pickStandouts (D-00g, D-13)', () => {
-  const row = (key: string, overrides: Partial<GapCell>) => ({ key, cell: cell(overrides) });
-
-  it('drops low-sample, zoneless and gap-less rows entirely', () => {
-    const result = pickStandouts([
-      row('low', { lowSample: true }),
-      row('zoneless', { hasZone: false }),
-      row('empty', { delta: null }),
-    ]);
-    expect(result.strengths).toEqual([]);
-    expect(result.weaknesses).toEqual([]);
-    expect(result.typical).toEqual([]);
-  });
-
-  it('ranks strengths and weaknesses by distance and keeps the top N per side', () => {
-    const result = pickStandouts(
-      [
-        row('s1', { delta: -0.4 }),
-        row('s2', { delta: -2 }),
-        row('s3', { delta: -0.9 }),
-        row('s4', { delta: -1.5 }),
-        row('w1', { delta: 0.4 }),
-        row('w2', { delta: 3 }),
-        row('t1', { delta: 0 }),
-        row('t2', { delta: 0.1 }),
-      ],
-      3,
-    );
-    expect(result.strengths.map((r) => r.key)).toEqual(['s2', 's4', 's3']);
-    expect(result.weaknesses.map((r) => r.key)).toEqual(['w2', 'w1']);
-    expect(result.typical.map((r) => r.key)).toEqual(['t1', 't2']);
-    expect(result.strengths[0]!.distance).toBeCloseTo((LO - -2) / (HI - LO), 10);
-  });
-
-  it('defaults to the top three per side', () => {
-    const rows = ['a', 'b', 'c', 'd'].map((key, i) => row(key, { delta: -1 - i }));
-    expect(pickStandouts(rows).strengths).toHaveLength(3);
   });
 });

@@ -273,12 +273,11 @@ describe('You vs. your opponents section', () => {
     mocks.getFlawComparison.mockResolvedValue(makeComparison([BLITZ_ENTRY, SKETCH_RAPID_ENTRY]));
   });
 
-  it('renders What stands out and the four cards for the selected TC, between the other sections', async () => {
+  it('renders the four cards for the selected TC, between the other sections', async () => {
     await renderLoaded();
     const section = screen.getByTestId('vs-opponents-section');
-    expect(section.querySelector('[data-testid="what-stands-out"]')).not.toBeNull();
+    expect(section.querySelector('[data-testid="what-stands-out"]')).toBeNull();
     expect(section.querySelector('[data-testid="context-tag-cards"]')?.children).toHaveLength(4);
-    expect(text('standout-hasty-words')).toBe('2.1 fewer');
     const order = [
       screen.getByTestId('flaw-stats-section'),
       section,
@@ -308,7 +307,7 @@ describe('You vs. your opponents section', () => {
     expect(
       screen.getByTestId('tc-switch-library-flaw-stats-blitz').getAttribute('aria-pressed'),
     ).toBe('true');
-    // Blitz has no strengths among the default-banded context rows: the card re-rendered.
+    // The context-tag cards re-rendered for blitz.
     expect(screen.getByTestId('gap-popover-low-clock-tc-blitz')).not.toBeNull();
     expect(mocks.trackFeature).toHaveBeenCalledTimes(1);
     expect(mocks.trackFeature).toHaveBeenCalledWith('option-change', {
@@ -327,10 +326,10 @@ describe('You vs. your opponents section', () => {
         screen.getByTestId('tc-switch-library-vs-opponents-blitz').getAttribute('aria-pressed'),
       ).toBe('true'),
     );
-    expect(screen.queryByTestId('standout-hasty')).toBeNull();
+    expect(screen.getByTestId('gap-popover-low-clock-tc-blitz')).not.toBeNull();
   });
 
-  it('shows only the gate slot below the gate, with no What stands out or cards (D-03)', async () => {
+  it('shows only the gate slot below the gate, with no cards (D-03)', async () => {
     mocks.getFlawComparison.mockResolvedValue(
       makeComparison([makeTcEntry('bullet', { analyzedN: 12 }), RAPID_ENTRY]),
     );
@@ -340,7 +339,6 @@ describe('You vs. your opponents section', () => {
     await waitFor(() =>
       expect(text('vs-opponents-gate')).toBe('Not enough analyzed games yet (12 of 20)'),
     );
-    expect(screen.queryByTestId('what-stands-out')).toBeNull();
     expect(screen.queryByTestId('context-tag-cards')).toBeNull();
     // The section heading, switch and intro stay.
     expect(screen.getByTestId('tc-switch-library-vs-opponents-bullet')).not.toBeNull();
@@ -352,7 +350,7 @@ describe('You vs. your opponents section', () => {
     await screen.findAllByText('No analyzed games in the current filters yet.');
     expect(within(screen.getByTestId('vs-opponents-section')).getByText('No analyzed games in the current filters yet.')).not.toBeNull();
     expect(screen.queryByTestId('tc-switch-library-vs-opponents-rapid')).toBeNull();
-    expect(screen.queryByTestId('what-stands-out')).toBeNull();
+    expect(screen.queryByTestId('context-tag-cards')).toBeNull();
   });
 
   it('shows its own LoadError when the comparison query fails', async () => {
@@ -361,11 +359,10 @@ describe('You vs. your opponents section', () => {
     expect(await screen.findByText(/Failed to load opponent comparison/)).not.toBeNull();
   });
 
-  it('says flaws, blunders and mistakes, never events, across tiles, What stands out and the cards (D-00d)', async () => {
+  it('says flaws, blunders and mistakes, never events, across tiles and the cards (D-00d)', async () => {
     await renderLoaded();
     const rendered = [
       text('flaw-tiles'),
-      text('what-stands-out'),
       text('context-tag-cards'),
       text('vs-opponents-section'),
     ].join('\n');
@@ -377,7 +374,7 @@ describe('You vs. your opponents section', () => {
     await renderLoaded();
     for (const id of [
       'gap-popover-blunder-tc-rapid',
-      'gap-popover-standout-hasty-tc-rapid',
+      'gap-popover-hasty-tc-rapid',
       'gap-popover-unrushed-tc-rapid',
     ]) {
       // One popover is open at a time: open, read, then the next click closes it.

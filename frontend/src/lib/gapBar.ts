@@ -25,8 +25,6 @@ export const GAP_SAME_WORD = 'same';
 /** Number formatting: at or above this magnitude one decimal, at or above the next none. */
 const GAP_WORD_ONE_DP_FROM = 1;
 const GAP_WORD_ZERO_DP_FROM = 10;
-/** What stands out: how many strengths and weaknesses are listed (D-00g). */
-export const TOP_STANDOUTS = 3;
 
 export type GapVerdict = 'better' | 'typical' | 'worse';
 
@@ -141,59 +139,4 @@ export function gapVerdictColor(verdict: GapVerdict | null): string {
   if (verdict === 'better') return ZONE_SUCCESS;
   if (verdict === 'worse') return ZONE_DANGER;
   return GAUGE_NEUTRAL;
-}
-
-/** How far outside the band a gap sits, in band widths; 0 inside, null for a degenerate band. */
-export function standoutDistance(delta: number, zoneLo: number, zoneHi: number): number | null {
-  const width = zoneHi - zoneLo;
-  if (width <= 0) return null;
-  if (delta < zoneLo) return (zoneLo - delta) / width;
-  if (delta > zoneHi) return (delta - zoneHi) / width;
-  return 0;
-}
-
-export interface StandoutRow<K extends string = string> {
-  key: K;
-  cell: GapCell;
-}
-
-export interface RankedStandout<K extends string = string> extends StandoutRow<K> {
-  /** Distance outside the band in band widths. */
-  distance: number;
-}
-
-/**
- * D-00g / D-13: rank the rows that clear the bar. Zoneless, low-sample and gap-less rows
- * never qualify (they are dropped, not listed as typical). Strengths and weaknesses are
- * the top `topN` per side by distance outside the band; `typical` is every qualifying
- * row inside the band, in input order.
- */
-export function pickStandouts<K extends string>(
-  rows: readonly StandoutRow<K>[],
-  topN: number = TOP_STANDOUTS,
-): {
-  strengths: RankedStandout<K>[];
-  weaknesses: RankedStandout<K>[];
-  typical: StandoutRow<K>[];
-} {
-  const strengths: RankedStandout<K>[] = [];
-  const weaknesses: RankedStandout<K>[] = [];
-  const typical: StandoutRow<K>[] = [];
-  for (const row of rows) {
-    const verdict = effectiveVerdict(row.cell);
-    if (verdict === null || row.cell.delta === null) continue;
-    if (verdict === 'typical') {
-      typical.push(row);
-      continue;
-    }
-    const distance = standoutDistance(row.cell.delta, row.cell.zoneLo, row.cell.zoneHi);
-    if (distance === null) continue;
-    (verdict === 'better' ? strengths : weaknesses).push({ ...row, distance });
-  }
-  const byDistance = (a: RankedStandout<K>, b: RankedStandout<K>): number => b.distance - a.distance;
-  return {
-    strengths: strengths.sort(byDistance).slice(0, topN),
-    weaknesses: weaknesses.sort(byDistance).slice(0, topN),
-    typical,
-  };
 }

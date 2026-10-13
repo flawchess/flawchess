@@ -2,12 +2,11 @@
  * Metadata for the Library Stats you-vs-opponents views (Phase 239, sketch 010 round 5).
  *
  * Holds FLAW_GAP_META (label, hint, definition, noun for the 12 gap metrics),
- * CONTEXT_TAG_CARDS / CONTEXT_TAG_METRICS (the four cards and the 10 context tags that
- * What stands out ranks), flawBulletToGapCell / flawMetricCell (API bullet -> gap-bar view
- * model), libraryBasisText / librarySectionBasisText (the basis lines), and the FlawIcon
+ * CONTEXT_TAG_CARDS (the four cards over the 10 context tags), flawBulletToGapCell /
+ * flawMetricCell (API bullet -> gap-bar view model), libraryBasisText / librarySectionBasisText (the basis lines), and the FlawIcon
  * type shared with the Flaws filter panel.
  *
- * Read by the Library Stats tiles (FlawTiles), What stands out, the context-tag cards,
+ * Read by the Library Stats tiles (FlawTiles), the context-tag cards,
  * and FlawFilterControl (FlawIcon only). The Phase 115 comparison-grid metadata (family
  * colours, per-tag icons, confidence/significance helpers) was retired with the grid.
  *
@@ -47,7 +46,7 @@ export interface FlawGapMeta {
   hint: string;
   /** The popover's first sentence, from the tag definitions (D-00c). */
   definition: string;
-  /** Plural noun for the popover counts and the standout sentences (D-00d: flaws, never events). */
+  /** Plural noun for the popover counts (D-00d: flaws, never events). */
   noun: string;
 }
 
@@ -162,11 +161,6 @@ export const CONTEXT_TAG_CARDS: readonly ContextTagCardDef[] = [
     metrics: ['reversed', 'squandered'],
   },
 ];
-
-/** The 10 context metrics flattened in card order: What stands out ranks exactly these. */
-export const CONTEXT_TAG_METRICS: readonly ContextTagMetric[] = CONTEXT_TAG_CARDS.flatMap(
-  (card) => card.metrics,
-);
 
 /** `low_clock` -> `low-clock`: the metric segment of the gap testids. */
 export function metricTestIdSegment(metric: FlawDeltaMetric): string {
