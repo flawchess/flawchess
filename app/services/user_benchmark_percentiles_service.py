@@ -119,7 +119,7 @@ from app.repositories.benchmark_cohort_cdf_repository import load_cohort_cells
 from app.services.global_percentile_cdf import (
     CdfMetricId,
     CdfTable,
-    _round_anchor_to_grid,
+    round_anchor_to_grid,
     interpolate_cohort_percentile,
 )
 
@@ -452,7 +452,7 @@ async def _compute_and_upsert_cell(
             # Below per-TC floor for this (metric, tc) → no row.
             return
         value, n_games = result
-        table = cohort.get((metric, _round_anchor_to_grid(anchor.anchor_rating), tc))
+        table = cohort.get((metric, round_anchor_to_grid(anchor.anchor_rating), tc))
         percentile: float | None = interpolate_cohort_percentile(value, table)
         await upsert_percentile(
             session,
@@ -507,7 +507,7 @@ async def compute_stage_a(
                 anchors = await compute_anchors_for_user(session, user_id)
                 # D-03: one batched prefetch per import for all (anchor, TC) cells.
                 # The ~few per-TC lookups inside the loop then hit the in-memory dict.
-                rounded_anchors = [_round_anchor_to_grid(a.anchor_rating) for a in anchors.values()]
+                rounded_anchors = [round_anchor_to_grid(a.anchor_rating) for a in anchors.values()]
                 cohort_a = await load_cohort_cells(session, rounded_anchors, list(anchors.keys()))
                 for tc, anchor in anchors.items():
                     await _compute_and_upsert_cell(
@@ -576,7 +576,7 @@ async def compute_stage_b(
                 # D-03: one batched prefetch per import for all (anchor, TC) cells.
                 # The ~32 per-import lookups inside the loop then hit the in-memory dict.
                 rounded_anchors_b = [
-                    _round_anchor_to_grid(a.anchor_rating) for a in anchors.values()
+                    round_anchor_to_grid(a.anchor_rating) for a in anchors.values()
                 ]
                 cohort_b = await load_cohort_cells(session, rounded_anchors_b, list(anchors.keys()))
                 # Flattened into one loop over the (family, tc) product (216-06):

@@ -1,60 +1,171 @@
 """Flaw-delta zone registry: authoritative backend source for per-bullet zone constants.
 
 Backend is the single source of truth per Phase 115 D-07. The endpoint embeds
-zone_lo / zone_hi / domain in every FlawBullet response so the frontend renders
-exactly what the registry stores. No TS codegen — the frontend does not commit
+zone_lo / zone_hi / has_zone in every FlawBullet response so the frontend renders
+exactly what the registry stores. No TS codegen: the frontend does not commit
 these constants locally.
+
+Phase 239 D-08/D-09 stopgap: blitz and bullet have no finished full-analysis
+benchmark sample, so they read the rapid zones until the /benchmarks section 5
+is re-run with those tranches. The mapping lives in ZONE_TC_FOR, is silent in
+the UI, and is documented in reports/benchmark/benchmarks-latest.md section 5.
+
+The registry is keyed metric -> zone TC -> band. A collapsed TC axis is just
+identical values under both zone TCs. The values are hand-authored on a 0.01 grid
+(the grid keeps a visible neutral band on the rare tags whose IQR is below 0.05; a
+coarser grid snapped those bands to zero width).
+
+Basis: each band is symmetric_band() applied to the live whole-cohort Q1/Q3 kept in
+the source (per 100 user moves, per-user paired delta): +-IQR/2 around 0, the
+half-width rounded up to the 0.01 grid (Phase 239 D-15). One pooled band per metric,
+identical for rapid and classical. The section 5 full-analysis-lane values were not
+adopted for flaws because the lane's 100-games-per-user-per-TC cap makes them mostly
+sampling noise (239-ZONE-PROPOSAL.md ## Accepted); tactic_delta_zones.py does use the
+lane. Bands are centred on 0 because the D-14 significance gate tests the gap against 0.
+
+Sign convention: negative delta = fewer flaws than the opponent = good. No sign flip
+is stored; the UI draws lower (better) values on the LEFT (D-14 direction flip).
 
 This module is pure Python with no DB or I/O. All functions are synchronous
 and side-effect free.
 """
 
 from collections.abc import Mapping
+import math
 from dataclasses import dataclass
+from typing import Final, Literal
+
+from app.schemas.normalization import TimeControlBucket
+
+FlawDeltaMetric = Literal[
+    "mistake",
+    "blunder",
+    "low_clock",
+    "hasty",
+    "unrushed",
+    "opening",
+    "middlegame",
+    "endgame_phase",
+    "miss",
+    "lucky",
+    "reversed",
+    "squandered",
+]
+
+# Display / payload order of the 12 metrics: severity, tempo, phase, opportunity, impact.
+FLAW_DELTA_METRICS: Final[tuple[FlawDeltaMetric, ...]] = (
+    "mistake",
+    "blunder",
+    "low_clock",
+    "hasty",
+    "unrushed",
+    "opening",
+    "middlegame",
+    "endgame_phase",
+    "miss",
+    "lucky",
+    "reversed",
+    "squandered",
+)
+
+# Time controls that own a zone band. Blitz and bullet are not here (D-08).
+ZoneTc = Literal["rapid", "classical"]
+
+# D-08/D-09 stopgap: blitz and bullet read the rapid zones.
+ZONE_TC_FOR: Final[Mapping[TimeControlBucket, ZoneTc]] = {
+    "bullet": "rapid",
+    "blitz": "rapid",
+    "rapid": "rapid",
+    "classical": "classical",
+}
 
 
 @dataclass(frozen=True)
-class FlawDeltaZoneSpec:
-    """Zone bounds and axis domain for one flaw-delta bullet.
+class ZoneBand:
+    """Typical-range bounds of one flaw-delta bullet, per 100 user moves.
 
-    zone_lo: Q1 in pp (§5 pooled benchmark, rounded to a 0.01 grid).
-    zone_hi: Q3 in pp (§5 pooled benchmark, rounded to a 0.01 grid).
-    domain: axis half-width in pp (hand-set from p05/p95 per D-04).
-
-    The 0.01 rounding grid keeps a visible neutral band on the rare tags
-    (reversed, low_clock_miss) whose IQR is below 0.05 pp; a coarser 0.1 grid
-    snapped those bands to zero width.
-
-    Sign convention (D-08): negative delta = fewer flaws than opponent = good.
-    The MiniBulletChart invertColors mode handles color inversion; the registry
-    stores raw Q1/Q3 values with no sign flip.
+    zone_lo / zone_hi: -h / +h with h = IQR / 2 of the per-user paired delta, rounded up
+    to the 0.01 grid (D-15, symmetric_band).
     """
 
     zone_lo: float
     zone_hi: float
-    domain: float
 
 
-FLAW_DELTA_ZONES: Mapping[str, FlawDeltaZoneSpec] = {
+# Grid the band half-width is rounded up to (hundredths).
+_BAND_GRID_STEPS_PER_UNIT: Final[int] = 100
+# Rounds away float noise such as 28.000000000000004 before the ceiling.
+_BAND_GRID_FLOAT_DIGITS: Final[int] = 6
+
+
+def symmetric_band(q1: float, q3: float) -> ZoneBand:
+    """+-IQR/2 around 0 from the measured quartiles, half-width rounded up to 0.01 (D-15)."""
+    half_steps = math.ceil(
+        round((q3 - q1) / 2 * _BAND_GRID_STEPS_PER_UNIT, _BAND_GRID_FLOAT_DIGITS)
+    )
+    half = half_steps / _BAND_GRID_STEPS_PER_UNIT
+    return ZoneBand(zone_lo=-half, zone_hi=half)
+
+
+# Phase 239 owner-accepted quartiles (239-ZONE-PROPOSAL.md ## Accepted): the live pooled
+# Q1 / Q3, identical for both zone TCs, made symmetric by symmetric_band (D-15).
+FLAW_DELTA_ZONES: Final[Mapping[FlawDeltaMetric, Mapping[ZoneTc, ZoneBand]]] = {
     # Severity family
-    "flaw_rate": FlawDeltaZoneSpec(zone_lo=-0.48, zone_hi=+0.36, domain=2.0),
-    "mistake": FlawDeltaZoneSpec(zone_lo=-0.23, zone_hi=+0.20, domain=1.0),
-    "blunder": FlawDeltaZoneSpec(zone_lo=-0.31, zone_hi=+0.25, domain=1.4),
+    "mistake": {
+        "rapid": symmetric_band(-0.23, +0.20),
+        "classical": symmetric_band(-0.23, +0.20),
+    },
+    "blunder": {
+        "rapid": symmetric_band(-0.31, +0.25),
+        "classical": symmetric_band(-0.31, +0.25),
+    },
     # Tempo family
-    "low_clock": FlawDeltaZoneSpec(zone_lo=-0.08, zone_hi=+0.03, domain=0.5),
-    "hasty": FlawDeltaZoneSpec(zone_lo=-0.28, zone_hi=+0.18, domain=1.2),
-    "unrushed": FlawDeltaZoneSpec(zone_lo=-0.38, zone_hi=+0.36, domain=1.7),
+    "low_clock": {
+        "rapid": symmetric_band(-0.08, +0.03),
+        "classical": symmetric_band(-0.08, +0.03),
+    },
+    "hasty": {
+        "rapid": symmetric_band(-0.28, +0.18),
+        "classical": symmetric_band(-0.28, +0.18),
+    },
+    "unrushed": {
+        "rapid": symmetric_band(-0.38, +0.36),
+        "classical": symmetric_band(-0.38, +0.36),
+    },
     # Phase family
-    "opening": FlawDeltaZoneSpec(zone_lo=-0.15, zone_hi=+0.13, domain=0.8),
-    "middlegame": FlawDeltaZoneSpec(zone_lo=-0.27, zone_hi=+0.23, domain=1.3),
-    "endgame_phase": FlawDeltaZoneSpec(zone_lo=-0.12, zone_hi=+0.10, domain=0.5),
+    "opening": {
+        "rapid": symmetric_band(-0.15, +0.13),
+        "classical": symmetric_band(-0.15, +0.13),
+    },
+    "middlegame": {
+        "rapid": symmetric_band(-0.27, +0.23),
+        "classical": symmetric_band(-0.27, +0.23),
+    },
+    "endgame_phase": {
+        "rapid": symmetric_band(-0.12, +0.10),
+        "classical": symmetric_band(-0.12, +0.10),
+    },
     # Opportunity family
-    "miss": FlawDeltaZoneSpec(zone_lo=-0.11, zone_hi=+0.11, domain=0.5),
-    "lucky": FlawDeltaZoneSpec(zone_lo=-0.09, zone_hi=+0.09, domain=0.5),
+    "miss": {
+        "rapid": symmetric_band(-0.11, +0.11),
+        "classical": symmetric_band(-0.11, +0.11),
+    },
+    "lucky": {
+        "rapid": symmetric_band(-0.09, +0.09),
+        "classical": symmetric_band(-0.09, +0.09),
+    },
     # Impact family
-    "reversed": FlawDeltaZoneSpec(zone_lo=-0.04, zone_hi=+0.04, domain=0.3),
-    "squandered": FlawDeltaZoneSpec(zone_lo=-0.07, zone_hi=+0.08, domain=0.4),
-    # Combo family
-    "hasty_miss": FlawDeltaZoneSpec(zone_lo=-0.09, zone_hi=+0.06, domain=0.4),
-    "low_clock_miss": FlawDeltaZoneSpec(zone_lo=-0.02, zone_hi=+0.01, domain=0.2),
+    "reversed": {
+        "rapid": symmetric_band(-0.04, +0.04),
+        "classical": symmetric_band(-0.04, +0.04),
+    },
+    "squandered": {
+        "rapid": symmetric_band(-0.07, +0.08),
+        "classical": symmetric_band(-0.07, +0.08),
+    },
 }
+
+
+def flaw_delta_zone(metric: FlawDeltaMetric, tc: TimeControlBucket) -> ZoneBand:
+    """Return the typical-range band for a metric in a time control (D-08 stopgap applied)."""
+    return FLAW_DELTA_ZONES[metric][ZONE_TC_FOR[tc]]

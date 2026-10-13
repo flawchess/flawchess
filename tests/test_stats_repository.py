@@ -142,9 +142,38 @@ class TestQueryRatingHistory:
         )
 
         assert len(rows) == 1
-        date_val, rating, tc_bucket = rows[0]
+        date_val, rating, tc_bucket, game_count = rows[0]
         assert rating == 1600
         assert tc_bucket == "blitz"
+        assert game_count == 1
+
+    @pytest.mark.asyncio
+    async def test_game_count_counts_all_games_of_the_day_per_tc(
+        self, db_session: AsyncSession
+    ) -> None:
+        """DISTINCT ON keeps one row per (day, TC); game_count still counts every game."""
+        day = datetime.datetime(2026, 3, 10, 12, tzinfo=datetime.timezone.utc)
+        for i, rating in enumerate([1500, 1510, 1520]):
+            await _seed_game(
+                db_session,
+                user_color="white",
+                white_rating=rating,
+                played_at=day + datetime.timedelta(minutes=i),
+            )
+        await _seed_game(
+            db_session,
+            user_color="white",
+            white_rating=1700,
+            time_control_bucket="rapid",
+            played_at=day,
+        )
+
+        rows = await query_rating_history(
+            db_session, user_id=99999, platform="chess.com", from_date=None, to_date=None
+        )
+
+        by_tc = {tc: (rating, count) for _, rating, tc, count in rows}
+        assert by_tc == {"blitz": (1520, 3), "rapid": (1700, 1)}
 
     @pytest.mark.asyncio
     async def test_excludes_null_rating(self, db_session: AsyncSession) -> None:

@@ -1,27 +1,37 @@
-"""Numeric acceptance gate for Chapter 5 / §5 (flaw-delta zones).
+"""Numeric acceptance gate for Chapter 5 / §5 (flaw-delta and tactic-delta zones).
 
-Runs chapter5.compute() against the live benchmark DB and asserts pooled + ELO + TC
-marginals and Cohen's d verdicts for all 15 metrics. Skips when the benchmark DB is
-unreachable. `benchmark_session` is from conftest.py.
+Runs chapter5.compute() against the live benchmark DB and asserts, for the 12 flaw metrics,
+the pooled + ELO + TC marginals and Cohen's d verdicts, and for the 38 tactic metrics the
+pooled (n, p25, p50, p75) and the verdicts, plus the zone_viable set. Skips when the benchmark
+DB is unreachable. `benchmark_session` is from conftest.py.
 
-Values are populated after the first successful generator run (Task 3) and committed.
+Basis (Phase 239, plan 239-06): the full-analysis lane only (classical + rapid tranches of
+`benchmark_selection`, armed, full evals + PVs + blobs), 12 flaw + 38 tactic metrics.
+Snapshot: 2026-10-12T21:01Z (one run of `python -m scripts.benchmarks.chapter5`; lane status at
+that moment: classical 99.9% and rapid 99.9% complete; 138,104 analyzed games across 2,006
+user-cells and 1,590 distinct users). The lane is still finishing a handful of stragglers (the
+benchmark DB is not static), so a late-finishing game can move these numbers by a hair; if the
+gate drifts by a hair after a lane refresh, re-run the fast path and regenerate this file from
+the same run that the report narrates (Pitfall 5).
+
 The EXPECTED_* dicts below use the same shape as test_chapter3_diff.py:
   - pooled: {n, mean, sd, p05, p25, p50, p75, p95}  (6 dp, proportion scale)
   - ELO/TC: label -> (n, mean, sd, p25, p50, p75)   (6 dp, proportion scale)
   - verdicts: metric -> {axis: ((a, b), max_abs_d)}
+  - tactic pooled: metric -> (n, p25, p50, p75)      (6 dp, per-game count difference, NOT x100)
 
-NOTE: Values are in proportion units (NOT ×100). The rendered "pp" values in the
-report are these values multiplied by 100. E.g. flaw_rate pooled p50 ≈ 0.000177
-renders as +0.02pp. The double-×100 bug (Phase 114 fix) would cause p50 ≈ 0.0177
-which renders as +1.77pp (100× too large). The render-layer guard test catches this.
+NOTE: Flaw values are in proportion units (NOT x100). The rendered "pp" values in the report
+are these values multiplied by 100. E.g. blunder pooled p50 = -0.002134 renders as -0.21pp. The
+double-x100 bug (Phase 114 fix) would cause a p50 100x larger. The render-layer guard test catches
+this. Tactic values are per-game count differences; the "per 100 games" report values are x100.
 
-All-analyzed-games basis (Phase 114 final fix, commit 08ab86d5): the per_game_tags CTE
-now uses base_games LEFT JOIN game_flaws so clean games (zero detected flaws) contribute
-a 0 delta. This ~4× increases the contributing user×cell count (3,725 → 4,644) and
-compresses all magnitudes toward zero (because clean-game 0 deltas are now included).
+All-analyzed-games basis (Phase 114 final fix): the per_game_tags CTE uses base_games LEFT JOIN
+game_flaws so clean games (zero detected flaws) contribute a 0 delta.
 """
 
 from __future__ import annotations
+
+from typing import Any
 
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -36,14 +46,14 @@ pytestmark = pytest.mark.asyncio
 # ---------------------------------------------------------------------------
 
 
-def _check_pooled(block: chapter5.MetricBlock, expected: dict) -> None:  # type: ignore[type-arg]
+def _check_pooled(block: chapter5.MetricBlock, expected: dict[str, Any]) -> None:
     pooled = block["pooled"]
     assert pooled["n"] == expected["n"]
     for key in ("mean", "sd", "p05", "p25", "p50", "p75", "p95"):
         assert pooled[key] == pytest.approx(expected[key]), key
 
 
-def _check_marginal(marginals: list, expected: dict) -> None:  # type: ignore[type-arg]
+def _check_marginal(marginals: list[dist.Marginal], expected: dict[str, Any]) -> None:
     by_label = {m["label"]: m for m in marginals}
     assert set(by_label) == set(expected)
     for label, (n, mean, sd, p25, p50, p75) in expected.items():
@@ -54,413 +64,316 @@ def _check_marginal(marginals: list, expected: dict) -> None:  # type: ignore[ty
         assert (d["p25"], d["p50"], d["p75"]) == pytest.approx((p25, p50, p75)), label
 
 
-def _check_verdicts(block: chapter5.MetricBlock, expected: dict) -> None:  # type: ignore[type-arg]
+def _check_verdicts(block: chapter5.MetricBlock, expected: dict[str, Any]) -> None:
+    # block["verdicts"] only holds the axes whose verdict could be computed (a level below the
+    # cell floor can leave an axis with fewer than two eligible levels), so look axes up by name.
     by_axis = {v["axis"]: v for v in block["verdicts"]}
+    assert set(by_axis) == set(expected), "verdict axes differ from the recorded run"
     for axis, (pair, d) in expected.items():
-        assert by_axis[axis]["pair"] == pair, axis
+        assert tuple(by_axis[axis]["pair"]) == pair, axis
         assert round(by_axis[axis]["max_abs_d"], 2) == d, axis
 
 
+# One compute() per test session: each call scans the benchmark DB for about a minute, and the
+# result is plain data that does not depend on the (function-scoped) session it was fetched with.
+_VALUES_CACHE: list[chapter5.Chapter5Values] = []
+
+
+async def _values(session: AsyncSession) -> chapter5.Chapter5Values:
+    if not _VALUES_CACHE:
+        _VALUES_CACHE.append(await chapter5.compute(session))
+    return _VALUES_CACHE[0]
+
+
 # ---------------------------------------------------------------------------
-# Expected values — re-populated after the 2026-06-11 mate-ladder game_flaws
-# backfill (lila MateAdvice port, commit c403467e: +9.1% flaw rows, lichess
-# parity ~100%). Same all-analyzed-games basis as Phase 114 (pooled n = 4,644).
-# All values are proportions: multiply by 100 to get the rendered "pp" values.
+# Expected values, flaw metrics (12). All values are proportions: multiply by 100 for "pp".
 # ---------------------------------------------------------------------------
-
-EXPECTED_FLAW_RATE_POOLED = {
-    "n": 4644,
-    "mean": -0.000521,
-    "sd": 0.010825,
-    "p05": -0.018978,
-    "p25": -0.00477,
-    "p50": 0.000194,
-    "p75": 0.003644,
-    "p95": 0.017026,
-}
-EXPECTED_FLAW_RATE_ELO = {
-    "800": (813, 0.000377, 0.012048, -0.00482, 0.000887, 0.005575),
-    "1200": (1091, 0.000107, 0.01154, -0.003595, 0.000731, 0.004456),
-    "1600": (1139, -0.00067, 0.011167, -0.0049, 0.000205, 0.003755),
-    "2000": (1015, -0.001506, 0.009892, -0.005804, -0.000287, 0.002479),
-    "2400": (586, -0.000938, 0.00803, -0.004156, -0.000237, 0.001984),
-}
-EXPECTED_FLAW_RATE_TC = {
-    "bullet": (1246, 0.000586, 0.0099, -0.001783, 0.000164, 0.002708),
-    "blitz": (1311, -0.000733, 0.010098, -0.003986, 0.000244, 0.002593),
-    "rapid": (1376, -0.001575, 0.011375, -0.007001, -8.9e-05, 0.003613),
-    "classical": (711, -2.6e-05, 0.012294, -0.006782, 0.001179, 0.006825),
-}
-
-EXPECTED_LOW_CLOCK_POOLED = {
-    "n": 4644,
-    "mean": 3e-06,
-    "sd": 0.002735,
-    "p05": -0.003601,
-    "p25": -0.000814,
-    "p50": -1.9e-05,
-    "p75": 0.000285,
-    "p95": 0.004032,
-}
-EXPECTED_LOW_CLOCK_ELO = {
-    "800": (813, 4.2e-05, 0.001915, -0.000472, 0.0, 0.000181),
-    "1200": (1091, 1.2e-05, 0.002224, -0.00043, 0.0, 0.000138),
-    "1600": (1139, 5.7e-05, 0.002731, -0.000764, -5.3e-05, 0.000233),
-    "2000": (1015, 2e-06, 0.003415, -0.001397, -0.000158, 0.000491),
-    "2400": (586, -0.000172, 0.003211, -0.00151, -0.000146, 0.000671),
-}
-EXPECTED_LOW_CLOCK_TC = {
-    "bullet": (1246, -2.4e-05, 0.001991, -0.000431, 0.0, 0.000316),
-    "blitz": (1311, 6.3e-05, 0.003164, -0.001017, -7.2e-05, 0.000484),
-    "rapid": (1376, -3.3e-05, 0.002733, -0.000954, -0.000114, 0.000217),
-    "classical": (711, 8e-06, 0.003005, -0.000696, 0.0, 0.0),
-}
-
-EXPECTED_HASTY_POOLED = {
-    "n": 4644,
-    "mean": -0.000468,
-    "sd": 0.007219,
-    "p05": -0.011327,
-    "p25": -0.002769,
-    "p50": -0.000125,
-    "p75": 0.001771,
-    "p95": 0.01064,
-}
-EXPECTED_HASTY_ELO = {
-    "800": (813, -0.000505, 0.008251, -0.00358, -0.000171, 0.0022),
-    "1200": (1091, -0.000479, 0.008825, -0.002668, -6.6e-05, 0.00219),
-    "1600": (1139, -0.000618, 0.007409, -0.003384, -0.00012, 0.001699),
-    "2000": (1015, -0.000399, 0.005383, -0.002524, -0.000152, 0.001441),
-    "2400": (586, -0.000221, 0.004115, -0.002059, -0.000122, 0.001288),
-}
-EXPECTED_HASTY_TC = {
-    "bullet": (1246, 0.000111, 0.004553, -0.001157, -2.8e-05, 0.000827),
-    "blitz": (1311, -4.3e-05, 0.003973, -0.001739, -5.8e-05, 0.001229),
-    "rapid": (1376, -0.000882, 0.007571, -0.004614, -0.000475, 0.002346),
-    "classical": (711, -0.001462, 0.012731, -0.007763, -0.001352, 0.00559),
-}
-
-EXPECTED_UNRUSHED_POOLED = {
-    "n": 4644,
-    "mean": -5.2e-05,
-    "sd": 0.009608,
-    "p05": -0.016131,
-    "p25": -0.003757,
-    "p50": 0.000167,
-    "p75": 0.003588,
-    "p95": 0.015546,
-}
-EXPECTED_UNRUSHED_ELO = {
-    "800": (813, 0.000853, 0.010443, -0.00328, 0.000681, 0.005108),
-    "1200": (1091, 0.000582, 0.010458, -0.00317, 0.000314, 0.004118),
-    "1600": (1139, -0.000116, 0.010017, -0.004021, 0.000167, 0.003859),
-    "2000": (1015, -0.001107, 0.008604, -0.00481, -0.000203, 0.002387),
-    "2400": (586, -0.000534, 0.007064, -0.003547, 0.0, 0.002517),
-}
-EXPECTED_UNRUSHED_TC = {
-    "bullet": (1246, 0.000511, 0.00848, -0.001696, 0.000128, 0.00251),
-    "blitz": (1311, -0.000752, 0.009087, -0.003921, 0.0002, 0.002657),
-    "rapid": (1376, -0.000654, 0.009424, -0.004732, 6e-05, 0.003513),
-    "classical": (711, 0.001417, 0.012201, -0.005924, 0.000381, 0.007928),
-}
-
-EXPECTED_OPENING_POOLED = {
-    "n": 4644,
-    "mean": -0.000103,
-    "sd": 0.004339,
-    "p05": -0.006943,
-    "p25": -0.001477,
-    "p50": 0.0,
-    "p75": 0.001311,
-    "p95": 0.006849,
-}
-EXPECTED_OPENING_ELO = {
-    "800": (813, -6.6e-05, 0.006087, -0.002451, 0.000114, 0.002439),
-    "1200": (1091, -0.000167, 0.004862, -0.001729, 3.9e-05, 0.001512),
-    "1600": (1139, -0.000119, 0.00416, -0.001574, 0.0, 0.001295),
-    "2000": (1015, -4.3e-05, 0.002959, -0.001071, -1.1e-05, 0.000987),
-    "2400": (586, -0.00011, 0.002248, -0.001061, -3e-06, 0.000714),
-}
-EXPECTED_OPENING_TC = {
-    "bullet": (1246, 0.000202, 0.004027, -0.000886, 0.0, 0.000769),
-    "blitz": (1311, -0.000117, 0.003525, -0.001144, 2e-06, 0.000951),
-    "rapid": (1376, -0.000255, 0.004389, -0.001679, 2.4e-05, 0.001387),
-    "classical": (711, -0.000319, 0.005846, -0.003402, -6.7e-05, 0.00288),
-}
-
-EXPECTED_MIDDLEGAME_POOLED = {
-    "n": 4644,
-    "mean": -0.000288,
-    "sd": 0.006564,
-    "p05": -0.011632,
-    "p25": -0.002695,
-    "p50": 0.000129,
-    "p75": 0.002255,
-    "p95": 0.010148,
-}
-EXPECTED_MIDDLEGAME_ELO = {
-    "800": (813, 0.000246, 0.006349, -0.002426, 0.000377, 0.002989),
-    "1200": (1091, 8.1e-05, 0.006708, -0.001995, 0.000329, 0.002606),
-    "1600": (1139, -0.000445, 0.006921, -0.003048, 0.000112, 0.002091),
-    "2000": (1015, -0.000943, 0.006785, -0.003601, -0.000169, 0.001672),
-    "2400": (586, -0.000275, 0.005269, -0.002366, 5e-06, 0.001733),
-}
-EXPECTED_MIDDLEGAME_TC = {
-    "bullet": (1246, 0.000309, 0.005819, -0.00123, 8.3e-05, 0.001531),
-    "blitz": (1311, -0.000324, 0.006256, -0.002656, 0.000102, 0.001801),
-    "rapid": (1376, -0.000987, 0.006893, -0.004012, 8.6e-05, 0.002165),
-    "classical": (711, 8.6e-05, 0.007511, -0.003306, 0.000597, 0.004134),
-}
-
-EXPECTED_ENDGAME_PHASE_POOLED = {
-    "n": 4644,
-    "mean": -0.00013,
-    "sd": 0.003001,
-    "p05": -0.005309,
-    "p25": -0.001207,
-    "p50": 3.6e-05,
-    "p75": 0.00104,
-    "p95": 0.004725,
-}
-EXPECTED_ENDGAME_PHASE_ELO = {
-    "800": (813, 0.000197, 0.002357, -0.000822, 0.000221, 0.001106),
-    "1200": (1091, 0.000193, 0.002845, -0.000737, 0.000192, 0.001153),
-    "1600": (1139, -0.000107, 0.003159, -0.001363, 5.3e-05, 0.001061),
-    "2000": (1015, -0.000519, 0.003325, -0.001657, -6.9e-05, 0.000899),
-    "2400": (586, -0.000553, 0.003056, -0.001863, -0.000243, 0.000667),
-}
-EXPECTED_ENDGAME_PHASE_TC = {
-    "bullet": (1246, 7.5e-05, 0.002518, -0.000518, 0.0, 0.000619),
-    "blitz": (1311, -0.000293, 0.002891, -0.001292, 0.0, 0.000735),
-    "rapid": (1376, -0.000333, 0.003293, -0.001929, 5.4e-05, 0.001107),
-    "classical": (711, 0.000207, 0.003324, -0.001382, 0.000576, 0.001958),
-}
-
-EXPECTED_MISS_POOLED = {
-    "n": 4644,
-    "mean": -6e-05,
-    "sd": 0.002975,
-    "p05": -0.005132,
-    "p25": -0.001114,
-    "p50": 1.3e-05,
-    "p75": 0.001074,
-    "p95": 0.00473,
-}
-EXPECTED_MISS_ELO = {
-    "800": (813, 0.000194, 0.003561, -0.00108, 0.000152, 0.001726),
-    "1200": (1091, -5.1e-05, 0.003073, -0.001134, 2.1e-05, 0.001212),
-    "1600": (1139, -0.000148, 0.002974, -0.001273, 0.0, 0.000845),
-    "2000": (1015, -0.000158, 0.002665, -0.001115, -1.5e-05, 0.000896),
-    "2400": (586, -9e-05, 0.002324, -0.000942, 4.1e-05, 0.000819),
-}
-EXPECTED_MISS_TC = {
-    "bullet": (1246, 5.4e-05, 0.002848, -0.000647, 2.1e-05, 0.000776),
-    "blitz": (1311, -0.000165, 0.002743, -0.000969, 0.0, 0.000805),
-    "rapid": (1376, -0.000145, 0.002913, -0.001373, -1.1e-05, 0.001136),
-    "classical": (711, 9.9e-05, 0.003639, -0.001485, 0.000113, 0.001889),
-}
-
-EXPECTED_LUCKY_POOLED = {
-    "n": 4644,
-    "mean": 1.6e-05,
-    "sd": 0.002541,
-    "p05": -0.004016,
-    "p25": -0.000907,
-    "p50": -7e-06,
-    "p75": 0.000891,
-    "p95": 0.004074,
-}
-EXPECTED_LUCKY_ELO = {
-    "800": (813, -5.9e-05, 0.003168, -0.001226, -8.5e-05, 0.001025),
-    "1200": (1091, 5.8e-05, 0.002773, -0.000949, 0.0, 0.001022),
-    "1600": (1139, 7.1e-05, 0.002407, -0.000846, 0.0, 0.000969),
-    "2000": (1015, 4.4e-05, 0.002144, -0.000767, 0.0, 0.000873),
-    "2400": (586, -0.000108, 0.001925, -0.000811, -4.5e-05, 0.000504),
-}
-EXPECTED_LUCKY_TC = {
-    "bullet": (1246, -9.8e-05, 0.002422, -0.000555, -3e-06, 0.000533),
-    "blitz": (1311, 5.1e-05, 0.002289, -0.00076, 0.0, 0.000763),
-    "rapid": (1376, 5.1e-05, 0.002479, -0.001032, -5.7e-05, 0.000969),
-    "classical": (711, 8.6e-05, 0.003214, -0.001593, 4e-05, 0.001555),
-}
-
-EXPECTED_REVERSED_POOLED = {
-    "n": 4644,
-    "mean": -6e-06,
-    "sd": 0.001247,
-    "p05": -0.002021,
-    "p25": -0.000399,
-    "p50": 0.0,
-    "p75": 0.00041,
-    "p95": 0.00198,
-}
-EXPECTED_REVERSED_ELO = {
-    "800": (813, -4.5e-05, 0.001647, -0.000641, 0.0, 0.00061),
-    "1200": (1091, 5.2e-05, 0.001441, -0.000468, 1.5e-05, 0.000572),
-    "1600": (1139, 1.2e-05, 0.001149, -0.000376, 0.0, 0.000405),
-    "2000": (1015, -2.1e-05, 0.000943, -0.000337, 0.0, 0.000299),
-    "2400": (586, -6.9e-05, 0.00076, -0.000309, 0.0, 0.000186),
-}
-EXPECTED_REVERSED_TC = {
-    "bullet": (1246, -3.8e-05, 0.001127, -0.000292, 0.0, 0.000236),
-    "blitz": (1311, -1.1e-05, 0.001181, -0.000376, 0.0, 0.000307),
-    "rapid": (1376, -4.1e-05, 0.001223, -0.000496, 0.0, 0.000442),
-    "classical": (711, 0.000126, 0.001563, -0.000528, 0.000109, 0.000787),
-}
-
-EXPECTED_SQUANDERED_POOLED = {
-    "n": 4644,
-    "mean": 4e-06,
-    "sd": 0.002148,
-    "p05": -0.003467,
-    "p25": -0.000733,
-    "p50": 0.0,
-    "p75": 0.000755,
-    "p95": 0.003501,
-}
-EXPECTED_SQUANDERED_ELO = {
-    "800": (813, 7e-06, 0.002616, -0.001008, -2.1e-05, 0.00095),
-    "1200": (1091, 1e-05, 0.00247, -0.00087, 0.0, 0.000944),
-    "1600": (1139, 2.4e-05, 0.001992, -0.000556, 0.0, 0.000764),
-    "2000": (1015, -7e-05, 0.001774, -0.000739, -3.4e-05, 0.000589),
-    "2400": (586, 7.8e-05, 0.001607, -0.000507, 4.2e-05, 0.000599),
-}
-EXPECTED_SQUANDERED_TC = {
-    "bullet": (1246, 8e-06, 0.00212, -0.000447, 0.0, 0.00045),
-    "blitz": (1311, -8e-05, 0.001841, -0.000669, -3e-06, 0.00064),
-    "rapid": (1376, -1.1e-05, 0.002179, -0.000797, -2.8e-05, 0.000826),
-    "classical": (711, 0.00018, 0.00261, -0.001125, 5.5e-05, 0.001466),
-}
-
-EXPECTED_HASTY_MISS_POOLED = {
-    "n": 4644,
-    "mean": -0.0001,
-    "sd": 0.002367,
-    "p05": -0.003714,
-    "p25": -0.000853,
-    "p50": -1.3e-05,
-    "p75": 0.000607,
-    "p95": 0.003499,
-}
-EXPECTED_HASTY_MISS_ELO = {
-    "800": (813, -0.000182, 0.00305, -0.001245, -3.7e-05, 0.00084),
-    "1200": (1091, -0.000165, 0.002821, -0.000949, -1.1e-05, 0.000704),
-    "1600": (1139, -7.4e-05, 0.002307, -0.000962, -3.3e-05, 0.000476),
-    "2000": (1015, -3.8e-05, 0.00159, -0.00065, 0.0, 0.000536),
-    "2400": (586, -2.3e-05, 0.001403, -0.00058, -4e-06, 0.000563),
-}
-EXPECTED_HASTY_MISS_TC = {
-    "bullet": (1246, -1e-06, 0.001537, -0.00036, 0.0, 0.000274),
-    "blitz": (1311, 1.5e-05, 0.001429, -0.000481, 0.0, 0.000467),
-    "rapid": (1376, -0.000196, 0.002491, -0.001246, -0.0001, 0.000866),
-    "classical": (711, -0.000301, 0.004076, -0.002217, -0.000257, 0.001697),
-}
-
-EXPECTED_LOW_CLOCK_MISS_POOLED = {
-    "n": 4644,
-    "mean": 1.3e-05,
-    "sd": 0.000994,
-    "p05": -0.00141,
-    "p25": -0.000236,
-    "p50": 0.0,
-    "p75": 0.000119,
-    "p95": 0.001539,
-}
-EXPECTED_LOW_CLOCK_MISS_ELO = {
-    "800": (813, 2.1e-05, 0.000802, -0.000173, 0.0, 7.9e-05),
-    "1200": (1091, 1.2e-05, 0.000948, -0.000143, 0.0, 5.9e-05),
-    "1600": (1139, -2e-06, 0.000974, -0.000232, 0.0, 6.4e-05),
-    "2000": (1015, 4.3e-05, 0.001165, -0.000356, 0.0, 0.000188),
-    "2400": (586, -2.4e-05, 0.00104, -0.000436, -1.2e-05, 0.000293),
-}
-EXPECTED_LOW_CLOCK_MISS_TC = {
-    "bullet": (1246, 1.2e-05, 0.001026, -0.000164, 0.0, 0.000149),
-    "blitz": (1311, 6.2e-05, 0.001169, -0.000296, 0.0, 0.000257),
-    "rapid": (1376, -1.6e-05, 0.000856, -0.000293, 0.0, 6.9e-05),
-    "classical": (711, -2.1e-05, 0.000822, -0.000167, 0.0, 0.0),
-}
 
 EXPECTED_MISTAKE_POOLED = {
-    "n": 4644,
-    "mean": -0.000143,
-    "sd": 0.005813,
-    "p05": -0.00991,
-    "p25": -0.002274,
-    "p50": 6.9e-05,
-    "p75": 0.002017,
-    "p95": 0.009197,
+    "n": 2004,
+    "mean": -0.001254,
+    "sd": 0.009425,
+    "p05": -0.015266,
+    "p25": -0.006515,
+    "p50": -0.001356,
+    "p75": 0.003897,
+    "p95": 0.013423,
 }
 EXPECTED_MISTAKE_ELO = {
-    "800": (813, 7.2e-05, 0.006323, -0.00249, 0.000127, 0.002258),
-    "1200": (1091, -4.6e-05, 0.006201, -0.002152, 0.000114, 0.002186),
-    "1600": (1139, -0.000123, 0.005824, -0.002285, 0.00012, 0.00199),
-    "2000": (1015, -0.000498, 0.005529, -0.002487, -5.3e-05, 0.001838),
-    "2400": (586, -4.3e-05, 0.004664, -0.001823, 4.2e-05, 0.001541),
+    "800": (354, 1e-06, 0.013065, -0.007045, -0.000608, 0.006596),
+    "1200": (503, -0.001457, 0.010853, -0.00792, -0.001625, 0.005187),
+    "1600": (549, -0.001365, 0.00762, -0.005575, -0.001316, 0.00349),
+    "2000": (436, -0.001785, 0.006938, -0.006203, -0.001513, 0.002688),
+    "2400": (162, -0.001558, 0.0056, -0.005395, -0.001152, 0.001868),
 }
 EXPECTED_MISTAKE_TC = {
-    "bullet": (1246, 0.000291, 0.005468, -0.001098, 3.4e-05, 0.0013),
-    "blitz": (1311, -0.000236, 0.005174, -0.002097, 6e-05, 0.001466),
-    "rapid": (1376, -0.000395, 0.006012, -0.002908, 8.2e-05, 0.002175),
-    "classical": (711, -0.000241, 0.006977, -0.004001, 0.000371, 0.003795),
+    "rapid": (1271, -0.001237, 0.008531, -0.0063, -0.0015, 0.003711),
+    "classical": (733, -0.001283, 0.010806, -0.006902, -0.001055, 0.004394),
 }
 
 EXPECTED_BLUNDER_POOLED = {
-    "n": 4644,
-    "mean": -0.000378,
-    "sd": 0.007046,
-    "p05": -0.01283,
-    "p25": -0.003137,
-    "p50": 0.000126,
-    "p75": 0.00246,
-    "p95": 0.01081,
+    "n": 2004,
+    "mean": -0.002775,
+    "sd": 0.010058,
+    "p05": -0.019493,
+    "p25": -0.008256,
+    "p50": -0.002134,
+    "p75": 0.003069,
+    "p95": 0.012279,
 }
 EXPECTED_BLUNDER_ELO = {
-    "800": (813, 0.000306, 0.007833, -0.002899, 0.000692, 0.004182),
-    "1200": (1091, 0.000153, 0.007469, -0.002353, 0.000541, 0.003536),
-    "1600": (1139, -0.000548, 0.007449, -0.003328, 0.000159, 0.002469),
-    "2000": (1015, -0.001007, 0.006317, -0.00368, -0.000228, 0.001539),
-    "2400": (586, -0.000895, 0.005064, -0.003018, -0.000302, 0.0012),
+    "800": (354, -0.003013, 0.012521, -0.010845, -0.001627, 0.004788),
+    "1200": (503, -0.003626, 0.011932, -0.010432, -0.00332, 0.003221),
+    "1600": (549, -0.002112, 0.009085, -0.007237, -0.001814, 0.00344),
+    "2000": (436, -0.002553, 0.007596, -0.007205, -0.002118, 0.002094),
+    "2400": (162, -0.002461, 0.005468, -0.006085, -0.002144, 0.00108),
 }
 EXPECTED_BLUNDER_TC = {
-    "bullet": (1246, 0.000295, 0.006214, -0.001272, 0.000143, 0.001828),
-    "blitz": (1311, -0.000497, 0.006613, -0.003035, 7.3e-05, 0.001802),
-    "rapid": (1376, -0.00118, 0.007538, -0.004887, -1.9e-05, 0.00234),
-    "classical": (711, 0.000215, 0.007988, -0.004046, 0.000796, 0.004881),
+    "rapid": (1271, -0.00224, 0.009228, -0.00778, -0.001961, 0.003107),
+    "classical": (733, -0.003704, 0.0113, -0.009705, -0.002568, 0.003047),
+}
+
+EXPECTED_LOW_CLOCK_POOLED = {
+    "n": 2004,
+    "mean": 7.5e-05,
+    "sd": 0.003237,
+    "p05": -0.003847,
+    "p25": -0.001177,
+    "p50": 0.0,
+    "p75": 0.000496,
+    "p95": 0.00549,
+}
+EXPECTED_LOW_CLOCK_ELO = {
+    "800": (354, 0.000111, 0.001922, -0.000526, 0.0, 0.0),
+    "1200": (503, -3.9e-05, 0.002001, -0.000724, 0.0, 0.0),
+    "1600": (549, 0.000344, 0.003426, -0.001085, -7.3e-05, 0.000621),
+    "2000": (436, 6.8e-05, 0.004462, -0.002018, -0.000375, 0.001458),
+    "2400": (162, -0.000542, 0.003917, -0.003025, -0.000802, 0.001528),
+}
+EXPECTED_LOW_CLOCK_TC = {
+    "rapid": (1271, 4.3e-05, 0.003225, -0.001373, -0.000228, 0.000767),
+    "classical": (733, 0.000132, 0.003259, -0.000737, 0.0, 0.0),
+}
+
+EXPECTED_HASTY_POOLED = {
+    "n": 2004,
+    "mean": -0.00372,
+    "sd": 0.0158,
+    "p05": -0.029829,
+    "p25": -0.011507,
+    "p50": -0.003519,
+    "p75": 0.004424,
+    "p95": 0.021855,
+}
+EXPECTED_HASTY_ELO = {
+    "800": (354, -0.005808, 0.022358, -0.019961, -0.006211, 0.007651),
+    "1200": (503, -0.005602, 0.019808, -0.01675, -0.007282, 0.007409),
+    "1600": (549, -0.003116, 0.012573, -0.011449, -0.003246, 0.004318),
+    "2000": (436, -0.001729, 0.008029, -0.006988, -0.002371, 0.002487),
+    "2400": (162, -0.000722, 0.00568, -0.004714, -0.00112, 0.003066),
+}
+EXPECTED_HASTY_TC = {
+    "rapid": (1271, -0.002494, 0.012498, -0.009644, -0.002981, 0.004335),
+    "classical": (733, -0.005846, 0.020123, -0.016509, -0.004997, 0.005299),
+}
+
+EXPECTED_UNRUSHED_POOLED = {
+    "n": 2004,
+    "mean": -0.00038,
+    "sd": 0.015172,
+    "p05": -0.02308,
+    "p25": -0.00939,
+    "p50": -0.001016,
+    "p75": 0.007331,
+    "p95": 0.026525,
+}
+EXPECTED_UNRUSHED_ELO = {
+    "800": (354, 0.002701, 0.019528, -0.008914, 0.002296, 0.013095),
+    "1200": (503, 0.000571, 0.018481, -0.011468, -0.000426, 0.010961),
+    "1600": (549, -0.000714, 0.013176, -0.009292, -0.000557, 0.006381),
+    "2000": (436, -0.00268, 0.009738, -0.008511, -0.002037, 0.003456),
+    "2400": (162, -0.002748, 0.008467, -0.007828, -0.002121, 0.002178),
+}
+EXPECTED_UNRUSHED_TC = {
+    "rapid": (1271, -0.001009, 0.01315, -0.008602, -0.001217, 0.006639),
+    "classical": (733, 0.000709, 0.018112, -0.010852, -0.000426, 0.009276),
+}
+
+EXPECTED_OPENING_POOLED = {
+    "n": 2004,
+    "mean": -0.002045,
+    "sd": 0.010075,
+    "p05": -0.018915,
+    "p25": -0.005947,
+    "p50": -0.001429,
+    "p75": 0.002685,
+    "p95": 0.012624,
+}
+EXPECTED_OPENING_ELO = {
+    "800": (354, -0.003101, 0.01536, -0.010657, -0.00299, 0.006027),
+    "1200": (503, -0.003712, 0.01231, -0.01021, -0.003226, 0.003634),
+    "1600": (549, -0.001309, 0.007248, -0.004973, -0.001409, 0.002689),
+    "2000": (436, -0.000503, 0.004857, -0.00314, -0.000551, 0.002011),
+    "2400": (162, -0.001205, 0.003212, -0.00272, -0.000863, 0.000715),
+}
+EXPECTED_OPENING_TC = {
+    "rapid": (1271, -0.001311, 0.008463, -0.005069, -0.00105, 0.002563),
+    "classical": (733, -0.003318, 0.012285, -0.008287, -0.002278, 0.002865),
+}
+
+EXPECTED_MIDDLEGAME_POOLED = {
+    "n": 2004,
+    "mean": -0.001626,
+    "sd": 0.007887,
+    "p05": -0.014941,
+    "p25": -0.006161,
+    "p50": -0.001081,
+    "p75": 0.003407,
+    "p95": 0.010345,
+}
+EXPECTED_MIDDLEGAME_ELO = {
+    "800": (354, -0.000205, 0.007784, -0.004459, 0.000192, 0.004862),
+    "1200": (503, -0.00129, 0.008132, -0.006018, -0.000214, 0.003762),
+    "1600": (549, -0.001872, 0.007959, -0.006648, -0.001458, 0.003423),
+    "2000": (436, -0.002832, 0.007883, -0.007084, -0.00257, 0.002028),
+    "2400": (162, -0.001693, 0.00651, -0.005421, -0.001042, 0.002409),
+}
+EXPECTED_MIDDLEGAME_TC = {
+    "rapid": (1271, -0.001693, 0.007689, -0.006172, -0.001354, 0.003235),
+    "classical": (733, -0.00151, 0.008222, -0.006054, -0.000627, 0.003684),
+}
+
+EXPECTED_ENDGAME_PHASE_POOLED = {
+    "n": 2004,
+    "mean": -0.000358,
+    "sd": 0.003589,
+    "p05": -0.006569,
+    "p25": -0.002331,
+    "p50": -0.000215,
+    "p75": 0.001799,
+    "p95": 0.005278,
+}
+EXPECTED_ENDGAME_PHASE_ELO = {
+    "800": (354, 0.000295, 0.00299, -0.00157, 7.8e-05, 0.002025),
+    "1200": (503, -8e-05, 0.003631, -0.001936, 0.000173, 0.001868),
+    "1600": (549, -0.000296, 0.003555, -0.002341, -6e-05, 0.001917),
+    "2000": (436, -0.001003, 0.003879, -0.003, -0.000704, 0.001372),
+    "2400": (162, -0.00112, 0.003608, -0.003564, -0.001128, 0.001156),
+}
+EXPECTED_ENDGAME_PHASE_TC = {
+    "rapid": (1271, -0.000473, 0.003602, -0.002481, -0.000358, 0.001767),
+    "classical": (733, -0.000159, 0.003561, -0.002052, 0.000118, 0.001901),
+}
+
+EXPECTED_MISS_POOLED = {
+    "n": 2004,
+    "mean": -0.000215,
+    "sd": 0.005411,
+    "p05": -0.008561,
+    "p25": -0.003136,
+    "p50": -0.000145,
+    "p75": 0.002703,
+    "p95": 0.007948,
+}
+EXPECTED_MISS_ELO = {
+    "800": (354, -0.000434, 0.008117, -0.004652, -0.000271, 0.004151),
+    "1200": (503, -0.000228, 0.005991, -0.00389, -0.000324, 0.003277),
+    "1600": (549, -0.000128, 0.004408, -0.002898, -8.4e-05, 0.00251),
+    "2000": (436, -0.000303, 0.003499, -0.002643, -0.000132, 0.001755),
+    "2400": (162, 0.000246, 0.002877, -0.001247, 9e-05, 0.001942),
+}
+EXPECTED_MISS_TC = {
+    "rapid": (1271, -0.000255, 0.004844, -0.002896, -0.000145, 0.00257),
+    "classical": (733, -0.000146, 0.006276, -0.003416, -0.000145, 0.003051),
+}
+
+EXPECTED_LUCKY_POOLED = {
+    "n": 2004,
+    "mean": 0.000185,
+    "sd": 0.00466,
+    "p05": -0.006849,
+    "p25": -0.002234,
+    "p50": 2.1e-05,
+    "p75": 0.002509,
+    "p95": 0.007363,
+}
+EXPECTED_LUCKY_ELO = {
+    "800": (354, 0.000426, 0.007142, -0.003621, 0.000757, 0.003916),
+    "1200": (503, 0.000342, 0.005295, -0.002833, 6.6e-05, 0.003344),
+    "1600": (549, 4.2e-05, 0.003708, -0.002095, -8.5e-05, 0.002259),
+    "2000": (436, 0.0001, 0.00256, -0.001526, -5e-05, 0.001661),
+    "2400": (162, -0.000108, 0.002455, -0.001507, -0.000157, 0.001156),
+}
+EXPECTED_LUCKY_TC = {
+    "rapid": (1271, 6.4e-05, 0.004003, -0.00224, -5.8e-05, 0.00223),
+    "classical": (733, 0.000396, 0.005618, -0.002231, 0.000246, 0.002921),
+}
+
+EXPECTED_REVERSED_POOLED = {
+    "n": 2004,
+    "mean": -0.00014,
+    "sd": 0.002512,
+    "p05": -0.00421,
+    "p25": -0.001157,
+    "p50": -6.9e-05,
+    "p75": 0.001009,
+    "p95": 0.003489,
+}
+EXPECTED_REVERSED_ELO = {
+    "800": (354, -0.000446, 0.004156, -0.002706, -0.000212, 0.001833),
+    "1200": (503, -5.5e-05, 0.002855, -0.001788, -5e-05, 0.001546),
+    "1600": (549, -6.3e-05, 0.0017, -0.001034, -5e-05, 0.000895),
+    "2000": (436, -7.6e-05, 0.001267, -0.000766, 0.0, 0.000699),
+    "2400": (162, -0.000166, 0.000897, -0.000583, -0.000118, 0.000277),
+}
+EXPECTED_REVERSED_TC = {
+    "rapid": (1271, -0.000145, 0.002303, -0.001166, -7e-05, 0.000931),
+    "classical": (733, -0.000131, 0.002841, -0.001135, -5.1e-05, 0.001111),
+}
+
+EXPECTED_SQUANDERED_POOLED = {
+    "n": 2004,
+    "mean": 0.000112,
+    "sd": 0.003332,
+    "p05": -0.005328,
+    "p25": -0.001657,
+    "p50": 0.000144,
+    "p75": 0.0019,
+    "p95": 0.005191,
+}
+EXPECTED_SQUANDERED_ELO = {
+    "800": (354, 1.8e-05, 0.005076, -0.003043, 1.4e-05, 0.003167),
+    "1200": (503, 0.000139, 0.00363, -0.002002, 0.000268, 0.002225),
+    "1600": (549, 0.000148, 0.002618, -0.001375, 0.000215, 0.001839),
+    "2000": (436, 0.000173, 0.002231, -0.001222, 0.000182, 0.001639),
+    "2400": (162, -5.3e-05, 0.00192, -0.00098, -0.000134, 0.001032),
+}
+EXPECTED_SQUANDERED_TC = {
+    "rapid": (1271, 0.000154, 0.003075, -0.001555, 0.000198, 0.001906),
+    "classical": (733, 3.9e-05, 0.003737, -0.001846, 9.9e-05, 0.001897),
 }
 
 # Verdicts: metric -> {axis: ((level_a, level_b), max_abs_d_rounded_2dp)}
-# Cohen's d is scale-invariant: verdicts are identical before and after the
-# proportion-scale fix (d = (mean_a - mean_b) / pooled_sd is unchanged when
-# both numerator and denominator scale by the same factor). The mate-ladder
-# basis shifts some verdict pairs because the distribution shape changed.
+# Cohen's d is scale-invariant. The TC axis has only two levels (rapid vs classical).
 EXPECTED_VERDICTS: dict[str, dict[str, tuple[tuple[str, str], float]]] = {
-    "flaw_rate": {"TC": (("bullet", "rapid"), 0.2), "ELO": (("800", "2000"), 0.17)},
-    "low_clock": {"TC": (("bullet", "blitz"), 0.03), "ELO": (("800", "2400"), 0.08)},
-    "hasty": {"TC": (("bullet", "classical"), 0.19), "ELO": (("1600", "2400"), 0.06)},
-    "unrushed": {"TC": (("blitz", "classical"), 0.21), "ELO": (("800", "2000"), 0.21)},
-    "opening": {"TC": (("bullet", "classical"), 0.11), "ELO": (("1200", "2000"), 0.03)},
-    "middlegame": {"TC": (("bullet", "rapid"), 0.2), "ELO": (("800", "2000"), 0.18)},
-    "endgame_phase": {"TC": (("blitz", "classical"), 0.16), "ELO": (("800", "2400"), 0.28)},
-    "miss": {"TC": (("blitz", "classical"), 0.09), "ELO": (("800", "2000"), 0.11)},
-    "lucky": {"TC": (("bullet", "classical"), 0.07), "ELO": (("1600", "2400"), 0.08)},
-    "reversed": {"TC": (("bullet", "classical"), 0.13), "ELO": (("1200", "2400"), 0.1)},
-    "squandered": {"TC": (("blitz", "classical"), 0.12), "ELO": (("2000", "2400"), 0.09)},
-    "hasty_miss": {"TC": (("blitz", "classical"), 0.12), "ELO": (("800", "2400"), 0.06)},
-    "low_clock_miss": {"TC": (("blitz", "classical"), 0.08), "ELO": (("2000", "2400"), 0.06)},
-    "mistake": {"TC": (("bullet", "rapid"), 0.12), "ELO": (("800", "2000"), 0.1)},
-    "blunder": {"TC": (("bullet", "rapid"), 0.21), "ELO": (("800", "2000"), 0.19)},
+    "mistake": {"TC": (("rapid", "classical"), 0.0), "ELO": (("800", "2000"), 0.18)},
+    "blunder": {"TC": (("rapid", "classical"), 0.15), "ELO": (("1200", "1600"), 0.14)},
+    "low_clock": {"TC": (("rapid", "classical"), 0.03), "ELO": (("1600", "2400"), 0.25)},
+    "hasty": {"TC": (("rapid", "classical"), 0.21), "ELO": (("1200", "2400"), 0.28)},
+    "unrushed": {"TC": (("rapid", "classical"), 0.11), "ELO": (("800", "2000"), 0.36)},
+    "opening": {"TC": (("rapid", "classical"), 0.2), "ELO": (("1200", "2000"), 0.33)},
+    "middlegame": {"TC": (("rapid", "classical"), 0.02), "ELO": (("800", "2000"), 0.34)},
+    "endgame_phase": {"TC": (("rapid", "classical"), 0.09), "ELO": (("800", "2400"), 0.44)},
+    "miss": {"TC": (("rapid", "classical"), 0.02), "ELO": (("2000", "2400"), 0.16)},
+    "lucky": {"TC": (("rapid", "classical"), 0.07), "ELO": (("1200", "2400"), 0.09)},
+    "reversed": {"TC": (("rapid", "classical"), 0.01), "ELO": (("800", "1600"), 0.13)},
+    "squandered": {"TC": (("rapid", "classical"), 0.03), "ELO": (("2000", "2400"), 0.11)},
 }
 
 # Per-metric (pooled_dict, elo_dict, tc_dict) references for the test loop.
-_EXPECTED_BY_METRIC: dict[
-    str,
-    tuple[
-        dict,  # type: ignore[type-arg]
-        dict,  # type: ignore[type-arg]
-        dict,  # type: ignore[type-arg]
-    ],
-] = {
-    "flaw_rate": (EXPECTED_FLAW_RATE_POOLED, EXPECTED_FLAW_RATE_ELO, EXPECTED_FLAW_RATE_TC),
+_EXPECTED_BY_METRIC: dict[str, tuple[dict[str, Any], dict[str, Any], dict[str, Any]]] = {
+    "mistake": (EXPECTED_MISTAKE_POOLED, EXPECTED_MISTAKE_ELO, EXPECTED_MISTAKE_TC),
+    "blunder": (EXPECTED_BLUNDER_POOLED, EXPECTED_BLUNDER_ELO, EXPECTED_BLUNDER_TC),
     "low_clock": (EXPECTED_LOW_CLOCK_POOLED, EXPECTED_LOW_CLOCK_ELO, EXPECTED_LOW_CLOCK_TC),
     "hasty": (EXPECTED_HASTY_POOLED, EXPECTED_HASTY_ELO, EXPECTED_HASTY_TC),
     "unrushed": (EXPECTED_UNRUSHED_POOLED, EXPECTED_UNRUSHED_ELO, EXPECTED_UNRUSHED_TC),
@@ -475,40 +388,230 @@ _EXPECTED_BY_METRIC: dict[
     "lucky": (EXPECTED_LUCKY_POOLED, EXPECTED_LUCKY_ELO, EXPECTED_LUCKY_TC),
     "reversed": (EXPECTED_REVERSED_POOLED, EXPECTED_REVERSED_ELO, EXPECTED_REVERSED_TC),
     "squandered": (EXPECTED_SQUANDERED_POOLED, EXPECTED_SQUANDERED_ELO, EXPECTED_SQUANDERED_TC),
-    "hasty_miss": (EXPECTED_HASTY_MISS_POOLED, EXPECTED_HASTY_MISS_ELO, EXPECTED_HASTY_MISS_TC),
-    "low_clock_miss": (
-        EXPECTED_LOW_CLOCK_MISS_POOLED,
-        EXPECTED_LOW_CLOCK_MISS_ELO,
-        EXPECTED_LOW_CLOCK_MISS_TC,
-    ),
-    "mistake": (EXPECTED_MISTAKE_POOLED, EXPECTED_MISTAKE_ELO, EXPECTED_MISTAKE_TC),
-    "blunder": (EXPECTED_BLUNDER_POOLED, EXPECTED_BLUNDER_ELO, EXPECTED_BLUNDER_TC),
 }
+
+# ---------------------------------------------------------------------------
+# Expected values, tactic metrics (38 = 19 families x missed/allowed).
+# Per-game count difference (player - opponent), per-user mean over >= 20 games.
+# ---------------------------------------------------------------------------
+
+EXPECTED_TACTIC_POOLED: dict[str, tuple[int, float, float, float]] = {
+    "tactic_fork_missed": (2004, -0.022039, 0.0, 0.021277),
+    "tactic_fork_allowed": (2004, -0.041131, 0.0, 0.032258),
+    "tactic_skewer_missed": (2004, 0.0, 0.0, 0.0),
+    "tactic_skewer_allowed": (2004, 0.0, 0.0, 0.0),
+    "tactic_pin_missed": (2004, -0.014135, 0.0, 0.018868),
+    "tactic_pin_allowed": (2004, -0.028571, 0.0, 0.020408),
+    "tactic_x_ray_missed": (2004, 0.0, 0.0, 0.0),
+    "tactic_x_ray_allowed": (2004, 0.0, 0.0, 0.0),
+    "tactic_double_check_missed": (2004, 0.0, 0.0, 0.0),
+    "tactic_double_check_allowed": (2004, 0.0, 0.0, 0.0),
+    "tactic_discovered_check_missed": (2004, 0.0, 0.0, 0.0),
+    "tactic_discovered_check_allowed": (2004, -0.01, 0.0, 0.01),
+    "tactic_discovered_attack_missed": (2004, 0.0, 0.0, 0.0),
+    "tactic_discovered_attack_allowed": (2004, -0.012346, 0.0, 0.010554),
+    "tactic_trapped_piece_missed": (2004, 0.0, 0.0, 0.0),
+    "tactic_trapped_piece_allowed": (2004, 0.0, 0.0, 0.0025),
+    "tactic_hanging_missed": (2004, -0.011268, 0.0, 0.014761),
+    "tactic_hanging_allowed": (2004, -0.05102, -0.01, 0.030303),
+    "tactic_mate_missed": (2004, -0.021739, 0.0, 0.028986),
+    "tactic_mate_allowed": (2004, -0.07, -0.011629, 0.040886),
+    "tactic_deflection_missed": (2004, 0.0, 0.0, 0.0),
+    "tactic_deflection_allowed": (2004, -0.01, 0.0, 0.01),
+    "tactic_intermezzo_missed": (2004, 0.0, 0.0, 0.0),
+    "tactic_intermezzo_allowed": (2004, 0.0, 0.0, 0.0),
+    "tactic_interference_missed": (2004, 0.0, 0.0, 0.0),
+    "tactic_interference_allowed": (2004, 0.0, 0.0, 0.0),
+    "tactic_capturing_defender_missed": (2004, 0.0, 0.0, 0.0),
+    "tactic_capturing_defender_allowed": (2004, 0.0, 0.0, 0.0),
+    "tactic_attraction_missed": (2004, 0.0, 0.0, 0.0),
+    "tactic_attraction_allowed": (2004, -0.010101, 0.0, 0.01),
+    "tactic_sacrifice_missed": (2004, 0.0, 0.0, 0.0),
+    "tactic_sacrifice_allowed": (2004, 0.0, 0.0, 0.0),
+    "tactic_en_passant_missed": (2004, 0.0, 0.0, 0.0),
+    "tactic_en_passant_allowed": (2004, 0.0, 0.0, 0.0),
+    "tactic_under_promotion_missed": (2004, 0.0, 0.0, 0.0),
+    "tactic_under_promotion_allowed": (2004, 0.0, 0.0, 0.0),
+    "tactic_promotion_missed": (2004, 0.0, 0.0, 0.0),
+    "tactic_promotion_allowed": (2004, 0.0, 0.0, 0.0),
+}
+
+# Verdicts for every tactic metric (the TC axis is rapid vs classical).
+EXPECTED_TACTIC_VERDICTS: dict[str, dict[str, tuple[tuple[str, str], float]]] = {
+    "tactic_fork_missed": {"TC": (("rapid", "classical"), 0.04), "ELO": (("800", "1600"), 0.05)},
+    "tactic_fork_allowed": {"TC": (("rapid", "classical"), 0.01), "ELO": (("800", "2000"), 0.14)},
+    "tactic_skewer_missed": {"TC": (("rapid", "classical"), 0.05), "ELO": (("800", "1600"), 0.04)},
+    "tactic_skewer_allowed": {
+        "TC": (("rapid", "classical"), 0.04),
+        "ELO": (("1600", "2000"), 0.07),
+    },
+    "tactic_pin_missed": {"TC": (("rapid", "classical"), 0.04), "ELO": (("1600", "2400"), 0.08)},
+    "tactic_pin_allowed": {"TC": (("rapid", "classical"), 0.05), "ELO": (("800", "1600"), 0.12)},
+    "tactic_x_ray_missed": {"TC": (("rapid", "classical"), 0.02), "ELO": (("1600", "2400"), 0.1)},
+    "tactic_x_ray_allowed": {"TC": (("rapid", "classical"), 0.02), "ELO": (("1200", "2400"), 0.1)},
+    "tactic_double_check_missed": {
+        "TC": (("rapid", "classical"), 0.06),
+        "ELO": (("800", "1600"), 0.08),
+    },
+    "tactic_double_check_allowed": {
+        "TC": (("rapid", "classical"), 0.0),
+        "ELO": (("1600", "2000"), 0.11),
+    },
+    "tactic_discovered_check_missed": {
+        "TC": (("rapid", "classical"), 0.01),
+        "ELO": (("1200", "2400"), 0.12),
+    },
+    "tactic_discovered_check_allowed": {
+        "TC": (("rapid", "classical"), 0.06),
+        "ELO": (("800", "1200"), 0.06),
+    },
+    "tactic_discovered_attack_missed": {
+        "TC": (("rapid", "classical"), 0.01),
+        "ELO": (("800", "2400"), 0.09),
+    },
+    "tactic_discovered_attack_allowed": {
+        "TC": (("rapid", "classical"), 0.01),
+        "ELO": (("800", "1200"), 0.08),
+    },
+    "tactic_trapped_piece_missed": {
+        "TC": (("rapid", "classical"), 0.06),
+        "ELO": (("2000", "2400"), 0.22),
+    },
+    "tactic_trapped_piece_allowed": {
+        "TC": (("rapid", "classical"), 0.05),
+        "ELO": (("800", "2000"), 0.18),
+    },
+    "tactic_hanging_missed": {"TC": (("rapid", "classical"), 0.0), "ELO": (("2000", "2400"), 0.2)},
+    "tactic_hanging_allowed": {
+        "TC": (("rapid", "classical"), 0.05),
+        "ELO": (("800", "1600"), 0.15),
+    },
+    "tactic_mate_missed": {"TC": (("rapid", "classical"), 0.06), "ELO": (("1600", "2000"), 0.14)},
+    "tactic_mate_allowed": {"TC": (("rapid", "classical"), 0.03), "ELO": (("800", "1600"), 0.06)},
+    "tactic_deflection_missed": {
+        "TC": (("rapid", "classical"), 0.04),
+        "ELO": (("1200", "2400"), 0.23),
+    },
+    "tactic_deflection_allowed": {
+        "TC": (("rapid", "classical"), 0.06),
+        "ELO": (("1200", "2400"), 0.23),
+    },
+    "tactic_intermezzo_missed": {
+        "TC": (("rapid", "classical"), 0.03),
+        "ELO": (("1200", "2400"), 0.15),
+    },
+    "tactic_intermezzo_allowed": {
+        "TC": (("rapid", "classical"), 0.07),
+        "ELO": (("1600", "2400"), 0.22),
+    },
+    "tactic_interference_missed": {
+        "TC": (("rapid", "classical"), 0.09),
+        "ELO": (("1600", "2400"), 0.12),
+    },
+    "tactic_interference_allowed": {
+        "TC": (("rapid", "classical"), 0.03),
+        "ELO": (("1600", "2000"), 0.15),
+    },
+    "tactic_capturing_defender_missed": {
+        "TC": (("rapid", "classical"), 0.04),
+        "ELO": (("2000", "2400"), 0.28),
+    },
+    "tactic_capturing_defender_allowed": {
+        "TC": (("rapid", "classical"), 0.05),
+        "ELO": (("1200", "2400"), 0.23),
+    },
+    "tactic_attraction_missed": {
+        "TC": (("rapid", "classical"), 0.07),
+        "ELO": (("2000", "2400"), 0.1),
+    },
+    "tactic_attraction_allowed": {
+        "TC": (("rapid", "classical"), 0.13),
+        "ELO": (("2000", "2400"), 0.11),
+    },
+    "tactic_sacrifice_missed": {
+        "TC": (("rapid", "classical"), 0.01),
+        "ELO": (("800", "2400"), 0.11),
+    },
+    "tactic_sacrifice_allowed": {
+        "TC": (("rapid", "classical"), 0.04),
+        "ELO": (("800", "2400"), 0.11),
+    },
+    "tactic_en_passant_missed": {
+        "TC": (("rapid", "classical"), 0.01),
+        "ELO": (("800", "2000"), 0.08),
+    },
+    "tactic_en_passant_allowed": {
+        "TC": (("rapid", "classical"), 0.05),
+        "ELO": (("800", "2400"), 0.24),
+    },
+    "tactic_under_promotion_missed": {
+        "TC": (("rapid", "classical"), 0.07),
+        "ELO": (("800", "2000"), 0.1),
+    },
+    "tactic_under_promotion_allowed": {
+        "TC": (("rapid", "classical"), 0.04),
+        "ELO": (("800", "1200"), 0.1),
+    },
+    "tactic_promotion_missed": {
+        "TC": (("rapid", "classical"), 0.07),
+        "ELO": (("1200", "1600"), 0.12),
+    },
+    "tactic_promotion_allowed": {
+        "TC": (("rapid", "classical"), 0.05),
+        "ELO": (("2000", "2400"), 0.09),
+    },
+}
+
+# The zone_viable set (pooled IQR not degenerate AND pct_nonzero >= 50) over all 50 metrics.
+# zone_viable decides has_zone for a tactic metric in the registry (plan 239-07).
+EXPECTED_ZONE_VIABLE: frozenset[str] = frozenset(
+    {
+        "blunder",
+        "endgame_phase",
+        "hasty",
+        "low_clock",
+        "lucky",
+        "middlegame",
+        "miss",
+        "mistake",
+        "opening",
+        "reversed",
+        "squandered",
+        "tactic_discovered_attack_allowed",
+        "tactic_fork_allowed",
+        "tactic_fork_missed",
+        "tactic_hanging_allowed",
+        "tactic_hanging_missed",
+        "tactic_mate_allowed",
+        "tactic_mate_missed",
+        "tactic_pin_allowed",
+        "tactic_pin_missed",
+        "unrushed",
+    }
+)
 
 
 async def test_chapter5_render_scale_guard(benchmark_session: AsyncSession) -> None:
-    """Render-layer regression guard: catches double-×100 scaling bugs.
+    """Render-layer regression guard: catches double-x100 scaling bugs.
 
-    The D-01 estimator emits proportion-scale values from SQL (e.g. flaw_rate p50 ≈ 0.000177).
-    The 'pp' render unit multiplies by 100 to display per-100-moves values (e.g. ~0.02pp).
-    If someone re-introduces ×100 in the SQL (the bug fixed in Phase 114), the rendered
-    flaw_rate pooled p50 would jump to ~1.77pp or ~17.7pp — caught here.
+    The D-01 estimator emits proportion-scale values from SQL (e.g. blunder p50 = -0.002134).
+    The 'pp' render unit multiplies by 100 to display per-100-moves values (e.g. -0.21pp).
+    If someone re-introduces x100 in the SQL (the bug fixed in Phase 114), the rendered
+    blunder pooled p50 would jump to ~-21pp or worse, which is caught here.
 
-    Guard: flaw_rate pooled p50 rendered as pp must be in the plausible range (-2.0, 2.0).
-    This is generous enough to survive future benchmark DB changes while reliably catching
-    double-scaling (which would produce values ~100× larger, i.e. ±1.77pp or worse).
+    Guard: blunder pooled p50 rendered as pp must be in the plausible range (-2.0, 2.0).
     """
-    values = await chapter5.compute(benchmark_session)
-    block = values["flaw_rate"]
+    values = await _values(benchmark_session)
+    block = values["flaw"]["blunder"]
     pooled = block["pooled"]
 
-    # Rendered p50: proportion value × 100 (the "pp" unit scale factor).
+    # Rendered p50: proportion value x 100 (the "pp" unit scale factor).
     rendered_p50_pp = float(pooled["p50"]) * 100
 
     assert abs(rendered_p50_pp) < 2.0, (
-        f"flaw_rate pooled p50 rendered as {rendered_p50_pp:.4f}pp — expected < 2.0pp in abs. "
+        f"blunder pooled p50 rendered as {rendered_p50_pp:.4f}pp, expected < 2.0pp in abs. "
         f"Raw SQL value: {pooled['p50']}. "
-        "If this is ~1.77pp or ~17.7pp, the SQL-side ×100 double-scaling bug was reintroduced."
+        "If this is ~100x larger, the SQL-side x100 double-scaling bug was reintroduced."
     )
 
     # Also verify the rendered pooled table string contains a plausible 'pp' value.
@@ -518,15 +621,16 @@ async def test_chapter5_render_scale_guard(benchmark_session: AsyncSession) -> N
 
 
 async def test_chapter5_flaw_delta(benchmark_session: AsyncSession) -> None:
-    """Numeric diff gate for all 15 flaw-delta metrics.
+    """Numeric diff gate for all 12 flaw-delta metrics.
 
     Asserts pooled + ELO + TC marginals and Cohen's d verdicts for every metric.
     Also checks that the viability list has one entry per metric with users_total > 0.
     """
-    values = await chapter5.compute(benchmark_session)
+    values = await _values(benchmark_session)
+    assert set(values["flaw"]) == set(_EXPECTED_BY_METRIC)
 
     for metric_key, (exp_pooled, exp_elo, exp_tc) in _EXPECTED_BY_METRIC.items():
-        block = values[metric_key]  # ty: ignore[invalid-key]  # dynamic key over known set
+        block = values["flaw"][metric_key]
         _check_pooled(block, exp_pooled)
         _check_marginal(block["elo_marginal"], exp_elo)
         _check_marginal(block["tc_marginal"], exp_tc)
@@ -534,6 +638,31 @@ async def test_chapter5_flaw_delta(benchmark_session: AsyncSession) -> None:
 
     # Viability sanity: one entry per metric, all users_total > 0.
     viability = values["viability"]
-    assert len(viability) == len(chapter5._FLAW_DELTA_METRICS)
+    assert len(viability) == len(chapter5.FLAW_DELTA_METRICS) + len(values["tactic"])
     for row in viability:
         assert row["users_total"] > 0, f"viability users_total == 0 for metric={row['metric']}"
+
+
+async def test_chapter5_tactic_delta(benchmark_session: AsyncSession) -> None:
+    """Numeric diff gate for all 38 tactic metrics: pooled (n, p25, p50, p75) and verdicts."""
+    values = await _values(benchmark_session)
+    assert set(values["tactic"]) == set(EXPECTED_TACTIC_POOLED)
+
+    for metric_key, (n, p25, p50, p75) in EXPECTED_TACTIC_POOLED.items():
+        block = values["tactic"][metric_key]
+        pooled = block["pooled"]
+        assert pooled["n"] == n, metric_key
+        assert (pooled["p25"], pooled["p50"], pooled["p75"]) == pytest.approx((p25, p50, p75)), (
+            metric_key
+        )
+        if metric_key in EXPECTED_TACTIC_VERDICTS:
+            _check_verdicts(block, EXPECTED_TACTIC_VERDICTS[metric_key])
+        else:
+            assert block["verdicts"] == [], metric_key
+
+
+async def test_chapter5_zone_viable_set(benchmark_session: AsyncSession) -> None:
+    """The zone_viable flags equal the recorded set (decides has_zone for tactic metrics)."""
+    values = await _values(benchmark_session)
+    viable = {row["metric"] for row in values["viability"] if row["zone_viable"]}
+    assert viable == set(EXPECTED_ZONE_VIABLE)

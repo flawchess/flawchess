@@ -15,8 +15,17 @@ function normalized(color: string): string {
   return probe.style.color;
 }
 
-function renderBar(percentile: number | null) {
-  return render(<PercentileBar status="ranked" percentile={percentile} floorN={120} floorRequired={30} testId="bar" />);
+function renderBar(percentile: number | null, significant = true) {
+  return render(
+    <PercentileBar
+      status="ranked"
+      percentile={percentile}
+      floorN={120}
+      floorRequired={30}
+      significant={significant}
+      testId="bar"
+    />,
+  );
 }
 
 describe('PercentileBar (D-00a)', () => {
@@ -42,6 +51,15 @@ describe('PercentileBar (D-00a)', () => {
     expect(screen.getByTestId('bar-dot').style.backgroundColor).toBe(normalized(color));
     expect(screen.getByTestId('bar-number').style.color).toBe(normalized(color));
   });
+
+  it.each([24, 76])(
+    'keeps the dot and ordinal neutral at percentile %i when not significant (239 D-14)',
+    (percentile) => {
+      renderBar(percentile, false);
+      expect(screen.getByTestId('bar-dot').style.backgroundColor).toBe(normalized(GAUGE_NEUTRAL));
+      expect(screen.getByTestId('bar-number').style.color).toBe(normalized(GAUGE_NEUTRAL));
+    },
+  );
 
   it.each([
     [0.4, '1%'],

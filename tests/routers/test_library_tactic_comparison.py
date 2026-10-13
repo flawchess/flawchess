@@ -1,7 +1,7 @@
 """Integration tests for GET /api/library/tactic-comparison (Phase 126).
 
 Coverage:
-- test_200_shape              : authenticated request returns 200 with bullets/analyzed_n/analyzed_gate/below_gate
+- test_200_shape              : authenticated request returns 200 with per-TC tcs[] and analyzed_gate (Phase 239)
 - test_401_unauthenticated    : no-auth returns 401
 - test_422_date_guard         : from_date > to_date returns 422
 - test_tactic_families_filter : tactic_families param accepted, response is valid
@@ -9,6 +9,7 @@ Coverage:
 
 from __future__ import annotations
 
+import datetime
 import uuid
 
 import httpx
@@ -18,6 +19,7 @@ from sqlalchemy.ext.asyncio import async_sessionmaker
 
 from app.main import app
 from app.models.game import Game
+from app.models.game_flaw import GameFlaw
 
 ENDPOINT = "/api/library/tactic-comparison"
 
@@ -45,7 +47,9 @@ async def _register_and_login(email: str, password: str = "testpass123!") -> tup
     return user_id, token
 
 
-async def _seed_games(test_engine, user_id: int, count: int = 1) -> list[int]:
+async def _seed_games(
+    test_engine, user_id: int, count: int = 1, *, analyzed: bool = False
+) -> list[int]:
     """Insert game rows for the given user via a committed session. Returns game IDs.
 
     The seeded games default to full_evals_completed_at IS NULL AND
@@ -76,6 +80,18 @@ async def _seed_games(test_engine, user_id: int, count: int = 1) -> list[int]:
                     rated=True,
                     is_computer_game=False,
                     ply_count=40,
+                    # Analyzed marker for _analyzed_game_ids_subquery (full-analysis lane).
+                    full_evals_completed_at=(
+                        datetime.datetime(2026, 1, 1, tzinfo=datetime.timezone.utc)
+                        if analyzed
+                        else None
+                    ),
+                    # WR-01: the tactic population also requires blobs_completed_at.
+                    blobs_completed_at=(
+                        datetime.datetime(2026, 1, 1, tzinfo=datetime.timezone.utc)
+                        if analyzed
+                        else None
+                    ),
                 )
                 session.add(game)
                 await session.flush()
@@ -101,28 +117,51 @@ async def _delete_games(test_engine, game_ids: list[int]) -> None:
 
 @pytest.mark.asyncio
 async def test_200_shape(test_engine) -> None:
-    """Authenticated request returns 200 with correct response keys."""
+    """Authenticated request returns 200 with the per-TC response keys (Phase 239 D-02)."""
     email = f"tac-cmp-router-shape-{uuid.uuid4().hex[:8]}@example.com"
     user_id, token = await _register_and_login(email)
+    game_ids = await _seed_games(test_engine, user_id, count=3, analyzed=True)
+
+    try:
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=app), base_url="http://test"
+        ) as client:
+            resp = await client.get(
+                ENDPOINT,
+                headers={"Authorization": f"Bearer {token}"},
+            )
+
+        assert resp.status_code == 200
+        body = resp.json()
+        assert set(body) == {"tcs", "analyzed_gate"}
+        assert isinstance(body["analyzed_gate"], int)
+        assert [tc["tc"] for tc in body["tcs"]] == ["blitz"]
+        blitz = body["tcs"][0]
+        assert blitz["analyzed_n"] == 3
+        assert blitz["below_gate"] is True  # 3 < gate, bullets are still emitted (D-03)
+        assert len(blitz["bullets"]) == 38
+        for bullet in blitz["bullets"]:
+            assert bullet["orientation"] in ("missed", "allowed")
+            assert isinstance(bullet["family"], str)
+            assert isinstance(bullet["significant"], bool)
+            assert isinstance(bullet["has_zone"], bool)
+    finally:
+        await _delete_games(test_engine, game_ids)
+
+
+@pytest.mark.asyncio
+async def test_no_analyzed_games_returns_empty_tcs(test_engine) -> None:
+    """A user without analyzed games gets tcs == [] (zero-analyzed TCs are omitted)."""
+    email = f"tac-cmp-router-empty-{uuid.uuid4().hex[:8]}@example.com"
+    _user_id, token = await _register_and_login(email)
 
     async with httpx.AsyncClient(
         transport=httpx.ASGITransport(app=app), base_url="http://test"
     ) as client:
-        resp = await client.get(
-            ENDPOINT,
-            headers={"Authorization": f"Bearer {token}"},
-        )
+        resp = await client.get(ENDPOINT, headers={"Authorization": f"Bearer {token}"})
 
     assert resp.status_code == 200
-    body = resp.json()
-    assert "bullets" in body
-    assert "analyzed_n" in body
-    assert "analyzed_gate" in body
-    assert "below_gate" in body
-    assert isinstance(body["bullets"], list)
-    assert isinstance(body["analyzed_n"], int)
-    assert isinstance(body["analyzed_gate"], int)
-    assert isinstance(body["below_gate"], bool)
+    assert resp.json()["tcs"] == []
 
 
 @pytest.mark.asyncio
@@ -154,12 +193,31 @@ async def test_422_date_guard() -> None:
 
 @pytest.mark.asyncio
 async def test_tactic_families_filter(test_engine) -> None:
-    """tactic_families param is accepted and response is valid TacticComparisonResponse."""
+    """tactic_families narrows the analyzed population to games with a matching tactic."""
     email = f"tac-cmp-router-fam-{uuid.uuid4().hex[:8]}@example.com"
     user_id, token = await _register_and_login(email)
 
-    # Seed a few games so we get a real (below-gate but valid) response
-    game_ids = await _seed_games(test_engine, user_id, count=3)
+    game_ids = await _seed_games(test_engine, user_id, count=3, analyzed=True)
+    # One game carries an allowed fork (user plays white: ply 2 is a user move).
+    session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
+    async with session_maker() as session:
+        async with session.begin():
+            session.add(
+                GameFlaw(
+                    user_id=user_id,
+                    game_id=game_ids[0],
+                    ply=2,
+                    severity=1,
+                    phase=1,
+                    is_miss=False,
+                    is_lucky=False,
+                    is_reversed=False,
+                    is_squandered=False,
+                    fen="rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR",
+                    allowed_tactic_motif=1,
+                    allowed_tactic_confidence=90,
+                )
+            )
 
     try:
         async with httpx.AsyncClient(
@@ -177,10 +235,10 @@ async def test_tactic_families_filter(test_engine) -> None:
 
         assert resp_filtered.status_code == 200
         assert resp_unfiltered.status_code == 200
-        # Both responses must have the required keys
-        for body in [resp_filtered.json(), resp_unfiltered.json()]:
-            assert "bullets" in body
-            assert "analyzed_n" in body
-            assert "below_gate" in body
+        filtered = resp_filtered.json()
+        unfiltered = resp_unfiltered.json()
+        assert set(filtered) == {"tcs", "analyzed_gate"}
+        assert [tc["analyzed_n"] for tc in filtered["tcs"]] == [1]
+        assert [tc["analyzed_n"] for tc in unfiltered["tcs"]] == [3]
     finally:
         await _delete_games(test_engine, game_ids)

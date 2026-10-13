@@ -5,7 +5,7 @@
  */
 
 import { GAUGE_NEUTRAL, ZONE_DANGER, ZONE_SUCCESS } from '@/lib/theme';
-import type { CdfMetricId, TimeControlBucket } from '@/types/endgames';
+import type { CdfMetricId } from '@/types/endgames';
 
 // ── Percentile bar geometry and bands (D-00a) ────────────────────────────────
 
@@ -46,15 +46,6 @@ export function formatOrdinal(value: number): string {
   const suffix = isTeen ? 'th' : (ORDINAL_SUFFIXES[n % 10] ?? 'th');
   return `${n}${suffix}`;
 }
-
-// ── Time controls ────────────────────────────────────────────────────────────
-
-export const TC_LABELS: Record<TimeControlBucket, string> = {
-  bullet: 'Bullet',
-  blitz: 'Blitz',
-  rapid: 'Rapid',
-  classical: 'Classic',
-};
 
 // ── Metric labels and copy ───────────────────────────────────────────────────
 
@@ -111,11 +102,14 @@ export function formatMetricValue(metric: CdfMetricId, value: number): string {
   return `${pct >= 0 ? '+' : ''}${pct}%`;
 }
 
+/** Said where a value outside the typical range is not significant (239 D-14). */
+export const COPY_CHANCE = 'This could be chance, there are not enough games to be sure.';
+
 const CI_DECIMALS = 1;
 const P_VALUE_DECIMALS = 3;
 const P_VALUE_FLOOR = 0.001;
 
-/** One bound of the 95% CI in the popover footer: signed for gaps, plain for rates. */
+/** One bound of the 99% CI in the popover footer: signed for gaps, plain for rates. */
 export function formatCiBound(metric: CdfMetricId, value: number): string {
   const pct = (value * PERCENT_SCALE).toFixed(CI_DECIMALS);
   if (RATE_METRICS.has(metric)) return `${pct}%`;

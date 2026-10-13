@@ -1,0 +1,125 @@
+// @vitest-environment jsdom
+/** Phase 239 D-00a / D-00b / D-11 / D-14 / D-16: the rendered gap bar, words and dot colours. */
+
+import type { ReactNode } from 'react';
+import { afterEach, describe, expect, it } from 'vitest';
+import { cleanup, render, screen } from '@testing-library/react';
+import { GAUGE_NEUTRAL, ZONE_DANGER, ZONE_SUCCESS } from '@/lib/theme';
+import { cellPosition, type GapCell } from '@/lib/gapBar';
+import { GapBar, GapGateSlot } from '../GapBar';
+
+afterEach(cleanup);
+
+/** jsdom normalizes color strings (oklch(0.50 ..) -> oklch(0.5 ..)); compare normalized forms. */
+function normalized(color: string): string {
+  const probe = document.createElement('div');
+  probe.style.color = color;
+  return probe.style.color;
+}
+
+function cell(overrides: Partial<GapCell> = {}): GapCell {
+  return {
+    delta: -0.66,
+    zoneLo: -0.3,
+    zoneHi: 0.3,
+    hasZone: true,
+    significant: true,
+    youRate: 5.46,
+    oppRate: 6.12,
+    ciLow: -1.0,
+    ciHigh: -0.32,
+    pValue: 0.0002,
+    youEvents: 1916,
+    oppEvents: 1982,
+    ...overrides,
+  };
+}
+
+/** Every caller passes a leading slot (a hint, the Opponents line, a side label). */
+function renderBar(c: GapCell, trailing?: ReactNode): void {
+  render(<GapBar cell={c} testId="bar" leading={<span data-testid="lead" />} trailing={trailing} />);
+}
+
+describe('GapBar', () => {
+  it('draws the band, the zero tick at 50% and the dot at the cell position', () => {
+    const c = cell();
+    renderBar(c);
+    expect(screen.getByTestId('bar-band')).toBeTruthy();
+    expect(screen.getByTestId('bar-zero').style.left).toBe('50%');
+    expect(screen.getByTestId('bar-dot').style.left).toBe(`${cellPosition(c)}%`);
+  });
+
+  it.each([
+    ['better', { delta: -0.66 }, ZONE_SUCCESS, true],
+    ['worse', { delta: 0.5 }, ZONE_DANGER, true],
+    ['typical', { delta: 0.1 }, GAUGE_NEUTRAL, false],
+    ['not-significant better', { delta: -0.66, significant: false }, GAUGE_NEUTRAL, false],
+    ['not-significant worse', { delta: 0.5, significant: false }, GAUGE_NEUTRAL, false],
+    ['zoneless significant', { delta: -0.66, hasZone: false }, ZONE_SUCCESS, true],
+    ['zoneless not significant', { delta: -0.66, hasZone: false, significant: false }, GAUGE_NEUTRAL, false],
+  ] as const)('colours a %s cell', (_name, overrides, dotColor, coloredWords) => {
+    renderBar(cell(overrides));
+    expect(screen.getByTestId('bar-dot').style.backgroundColor).toBe(normalized(dotColor));
+    const words = screen.getByTestId('bar-words');
+    if (coloredWords) {
+      expect(words.style.color).toBe(normalized(dotColor));
+      expect(words.className).not.toContain('text-foreground');
+    } else {
+      expect(words.style.color).toBe('');
+      expect(words.className).toContain('text-foreground');
+    }
+  });
+
+  it('writes the gap in words', () => {
+    renderBar(cell({ delta: -1.74 }));
+    expect(screen.getByTestId('bar-words').textContent).toBe('1.7 fewer');
+    expect(screen.getByTestId('bar-track').getAttribute('aria-label')).toBe(
+      '1.7 fewer flaws than your opponents',
+    );
+  });
+
+  it('reads "same flaws as your opponents" for a zero gap (IN-03 grammar)', () => {
+    renderBar(cell({ delta: 0 }));
+    expect(screen.getByTestId('bar-track').getAttribute('aria-label')).toBe(
+      'same flaws as your opponents',
+    );
+  });
+
+  it('draws no band for a zoneless cell', () => {
+    renderBar(cell({ hasZone: false }));
+    expect(screen.queryByTestId('bar-band')).toBeNull();
+    expect(screen.getByTestId('bar-dot')).toBeTruthy();
+  });
+
+  it('keeps the band for a cell that is not significant', () => {
+    renderBar(cell({ significant: false }));
+    expect(screen.getByTestId('bar-band')).toBeTruthy();
+  });
+
+  it('draws a better (lower) gap left of the zero tick (D-14 number line)', () => {
+    renderBar(cell({ delta: -0.66 }));
+    expect(parseFloat(screen.getByTestId('bar-dot').style.left)).toBeLessThan(50);
+  });
+
+  it('renders "No flaws yet" and no track for a gap-less cell', () => {
+    renderBar(cell({ delta: null }));
+    expect(screen.getByTestId('bar-empty').textContent).toBe('No flaws yet');
+    expect(screen.getByTestId('lead')).toBeTruthy();
+    expect(screen.queryByTestId('bar-track')).toBeNull();
+  });
+
+  it('renders the leading slot and the trailing node', () => {
+    renderBar(cell(), <span data-testid="trail" />);
+    expect(screen.getByTestId('trail')).toBeTruthy();
+    expect(screen.getByTestId('lead')).toBeTruthy();
+  });
+});
+
+describe('GapGateSlot', () => {
+  it('shows the analyzed count against the gate', () => {
+    render(<GapGateSlot analyzedN={12} gate={20} testId="gate" />);
+    expect(screen.getByTestId('gate').textContent).toBe(
+      'Not enough analyzed games yet (12 of 20)',
+    );
+  });
+});

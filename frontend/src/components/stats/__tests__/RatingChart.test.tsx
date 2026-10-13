@@ -62,7 +62,7 @@ afterEach(() => {
 });
 
 function makePoint(date: string, rating: number = 1500, tc: RatingDataPoint['time_control_bucket'] = 'blitz'): RatingDataPoint {
-  return { date, rating, time_control_bucket: tc };
+  return { date, rating, time_control_bucket: tc, game_count: 1 };
 }
 
 /** Dates with a >90-day gap between index 0 and 1 (121 days). */
@@ -174,5 +174,38 @@ describe('RatingChart empty-series omission', () => {
     );
     const lines = container.querySelectorAll('.recharts-line');
     expect(lines.length).toBe(4);
+  });
+});
+
+// ── Daily game-count bars (Phase 239 UAT) ──────────────────────────────────
+
+/** Day 1: 3 blitz + 3 bullet games. Day 2: 6 blitz games. */
+const VOLUME_DATA: RatingDataPoint[] = [
+  { date: '2024-01-01', rating: 1500, time_control_bucket: 'blitz', game_count: 3 },
+  { date: '2024-01-01', rating: 1200, time_control_bucket: 'bullet', game_count: 3 },
+  { date: '2024-01-02', rating: 1510, time_control_bucket: 'blitz', game_count: 6 },
+];
+
+function barHeights(container: HTMLElement): number[] {
+  return Array.from(container.querySelectorAll('.recharts-bar-rectangle path')).map((el) =>
+    Number(el.getAttribute('height')),
+  );
+}
+
+describe('RatingChart daily game-count bars', () => {
+  it('sums game_count across all visible TCs per day', () => {
+    const { container } = render(<RatingChart data={VOLUME_DATA} platform="chess.com" />);
+    const [day1, day2] = barHeights(container);
+    expect(day1).toBeGreaterThan(0);
+    expect(day1).toBeCloseTo(day2 ?? -1);
+  });
+
+  it('excludes filter-disabled TCs from the daily sum', () => {
+    const { container } = render(
+      <RatingChart data={VOLUME_DATA} platform="chess.com" enabledTimeControls={['blitz']} />,
+    );
+    const [day1, day2] = barHeights(container);
+    expect(day1).toBeGreaterThan(0);
+    expect(day1).toBeCloseTo((day2 ?? 0) / 2);
   });
 });

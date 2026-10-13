@@ -5,7 +5,7 @@ import { ChartContainer, ChartTooltip } from '@/components/ui/chart';
 import { ChartTooltipBox } from '@/components/ui/chart-tooltip-box';
 import { inactivityGapReferenceLines } from '@/components/charts/InactivityGapReferenceLines';
 import {
-  ENDGAME_VOLUME_BAR_COLOR,
+  VOLUME_BAR_COLOR,
   SEV_BLUNDER,
   SEV_INACCURACY,
   SEV_MISTAKE,
@@ -140,7 +140,7 @@ export function FlawTrendChart({ trend, windowSize }: FlawTrendChartProps) {
                 <Bar
                   yAxisId="bars"
                   dataKey="per_week_games"
-                  fill={ENDGAME_VOLUME_BAR_COLOR}
+                  fill={VOLUME_BAR_COLOR}
                   legendType="none"
                   isAnimationActive={false}
                   data-testid="flaw-trend-volume-bars"

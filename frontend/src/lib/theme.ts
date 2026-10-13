@@ -172,7 +172,7 @@ export const EVAL_CHART_CURSOR = 'oklch(0.985 0 0)';
 // families (TAC_* below) carry distinct hue and stand out. The per-family constant
 // names are kept (each family still has its own constant) — only the values changed
 // to grey. This applies everywhere FAM_* is consumed: the tag chips, the Tags/eval
-// tooltips, the you-vs-opponent Flaw Comparison grid, and the Flaws filter panel.
+// tooltips, and the Flaws filter panel.
 const FAM_NEUTRAL = EVAL_CHART_AREA_WHITE_AHEAD; // 'oklch(0.78 0 0)'
 const FAM_NEUTRAL_BG = 'oklch(0.78 0 0 / 0.15)';
 export const FAM_TEMPO = FAM_NEUTRAL;
@@ -181,12 +181,8 @@ export const FAM_OPPORTUNITY = FAM_NEUTRAL;
 export const FAM_OPPORTUNITY_BG = FAM_NEUTRAL_BG;
 export const FAM_IMPACT = FAM_NEUTRAL;
 export const FAM_IMPACT_BG = FAM_NEUTRAL_BG;
-export const FAM_SEVERITY = FAM_NEUTRAL;
-export const FAM_SEVERITY_BG = FAM_NEUTRAL_BG;
 export const FAM_PHASE = FAM_NEUTRAL;
 export const FAM_PHASE_BG = FAM_NEUTRAL_BG;
-export const FAM_COMBO = FAM_NEUTRAL;
-export const FAM_COMBO_BG = FAM_NEUTRAL_BG;
 
 // Tactic motif family colors (Phase 126, updated Phase 129).
 // Phase 126 UAT: every tactic family renders in a single blue (indigo) so all
@@ -482,13 +478,13 @@ export const PAYOFF_MOVE_ARROW = 'rgba(59, 130, 246, 0.5)';  // Tailwind blue-50
 // engine arrows so it reads as a subtle "you played this next" hint.
 export const NEXT_MOVE_ARROW = 'rgba(255, 255, 255, 0.9)';
 
-// Endgame ELO Timeline volume bars (Phase 57.1; rebuilt Phase 87.5).
-// Muted gray with alpha so the
+// Game-volume bars behind the timeline charts (endgame, flaw trend, rating; first used
+// by the Endgame ELO Timeline, Phase 57.1). Muted gray with alpha so the
 // bars read as "context, not data" on the charcoal-texture card surface.
 // L=0.55 / chroma=0 keeps the bar visually distinct from all 8 ELO_COMBO_COLORS
 // hues; alpha=0.25 lets the texture noise show through, reinforcing the
 // passive-context reading. Locked per 57.1-RESEARCH.md Pitfall 3.
-export const ENDGAME_VOLUME_BAR_COLOR = 'oklch(0.55 0 0 / 0.25)';
+export const VOLUME_BAR_COLOR = 'oklch(0.55 0 0 / 0.25)';
 
 // Phase 68 — Endgame vs Non-Endgame Score timeline.
 // Two line strokes (endgame + non-endgame) with a colored shaded band between

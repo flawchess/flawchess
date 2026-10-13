@@ -221,29 +221,29 @@ consistent with Phase 238 (Endgame Stats).
 
 **Depends on**: Phase 238 (`PercentileBar`, `RankedMetricPopover`, `TcSwitch`, `useEndgameStatsTc` patterns); blitz full-analysis benchmark sample for the tactic IQRs
 **Requirements**: TBD (coverage contract = CONTEXT decisions from discuss-phase)
-**Plans:** 10 plans
-**Status**: Planned
+**Plans:** 10/10 plans complete
+**Status**: Complete 2026-10-13 (verified on branch `gsd/phase-239-library-stats-you-vs-opponents`, not yet squash-merged to `main`)
 
 Plans:
 **Wave 1**
-- [ ] 239-01-PLAN.md — §5 code on the full-analysis lane: 12 flaw + 38 tactic metrics, floor, noise diagnostic, §5-only CLI, SKILL.md, smoke wall time recorded (wave 1)
-- [ ] 239-02-PLAN.md — Backend per-TC flaw comparison + per-TC timeline, per-zone-TC flaw registry, retired combos/flaw rate/aggregates (wave 1)
-- [ ] 239-03-PLAN.md — Frontend building blocks: gap-bar math + GapBar, shared popover shell + GapPopover/GapRow, TC store factory + Library TC hook (wave 1)
+- [x] 239-01-PLAN.md — §5 code on the full-analysis lane: 12 flaw + 38 tactic metrics, floor, noise diagnostic, §5-only CLI, SKILL.md, smoke wall time recorded (wave 1)
+- [x] 239-02-PLAN.md — Backend per-TC flaw comparison + per-TC timeline, per-zone-TC flaw registry, retired combos/flaw rate/aggregates (wave 1)
+- [x] 239-03-PLAN.md — Frontend building blocks: gap-bar math + GapBar, shared popover shell + GapPopover/GapRow, TC store factory + Library TC hook (wave 1)
 
 **Wave 2** *(blocked on Wave 1 completion)*
-- [ ] 239-04-PLAN.md — Backend per-TC tactic comparison per 100 games, fixed order, tactic zone registry (wave 2)
-- [ ] 239-05-PLAN.md — Frontend Flaw Stats section: container, synced Library TC switch, Blunders/Mistakes tiles, per-TC timeline, legacy band/grid/popover removed (wave 2)
-- [ ] 239-06-PLAN.md — Run §5 (executor or orchestrator-inline by smoke time), pin diff gate, narrate report, D-12 sanity check, owner accepts or holds zone values (wave 2, checkpoint)
+- [x] 239-04-PLAN.md — Backend per-TC tactic comparison per 100 games, fixed order, tactic zone registry (wave 2)
+- [x] 239-05-PLAN.md — Frontend Flaw Stats section: container, synced Library TC switch, Blunders/Mistakes tiles, per-TC timeline, legacy band/grid/popover removed (wave 2)
+- [x] 239-06-PLAN.md — Run §5 (executor or orchestrator-inline by smoke time), pin diff gate, narrate report, D-12 sanity check, owner accepts or holds zone values (wave 2, checkpoint)
 
 **Wave 3** *(blocked on Wave 2 completion)*
-- [ ] 239-07-PLAN.md — Write accepted values into both registries, accepted fade constant, Elo keying only if accepted (wave 3)
-- [ ] 239-10-PLAN.md — Frontend You vs. your opponents section (What stands out + four context cards) and legacy flaw metadata cleanup (wave 3)
+- [x] 239-07-PLAN.md — Write accepted values into both registries, accepted fade constant, Elo keying only if accepted (wave 3)
+- [x] 239-10-PLAN.md — Frontend You vs. your opponents section (What stands out + four context cards) and legacy flaw metadata cleanup (wave 3)
 
 **Wave 4** *(blocked on Wave 3 completion)*
-- [ ] 239-08-PLAN.md — Frontend tactic tables with collapsible Advanced, legacy grid removed (wave 4)
+- [x] 239-08-PLAN.md — Frontend tactic tables with collapsible Advanced, legacy grid removed (wave 4)
 
 **Wave 5** *(blocked on Wave 4 completion)*
-- [ ] 239-09-PLAN.md — Pre-merge gate, stale-name sweep, CHANGELOG, live smoke, browser UAT steps (wave 5)
+- [x] 239-09-PLAN.md — Pre-merge gate, stale-name sweep, CHANGELOG, live smoke, browser UAT steps (wave 5)
 
 Phase detail for every shipped milestone lives in `milestones/vX.Y-ROADMAP.md`, its phase directories in `milestones/vX.Y-phases/`, and the per-milestone summaries in [MILESTONES.md](MILESTONES.md).
 

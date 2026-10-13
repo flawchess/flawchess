@@ -139,7 +139,7 @@ async def get_rating_history(
 
     def rows_to_points(rows: list) -> list[RatingDataPoint]:
         points = []
-        for date_val, rating, tc_bucket in rows:
+        for date_val, rating, tc_bucket, game_count in rows:
             # date_val is a date object from CAST(... AS DATE) — use isoformat directly
             date_str = date_val.isoformat() if hasattr(date_val, "isoformat") else str(date_val)
             points.append(
@@ -147,6 +147,7 @@ async def get_rating_history(
                     date=date_str,
                     rating=rating,
                     time_control_bucket=tc_bucket or "unknown",
+                    game_count=game_count,
                 )
             )
         return points

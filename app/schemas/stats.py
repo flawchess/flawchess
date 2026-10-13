@@ -7,11 +7,12 @@ from pydantic import BaseModel, model_validator
 
 
 class RatingDataPoint(BaseModel):
-    """A single rating data point for one game."""
+    """Last rating of the day for one time control, plus that day's game count."""
 
     date: str
     rating: int
     time_control_bucket: str
+    game_count: int
 
 
 class RatingHistoryResponse(BaseModel):

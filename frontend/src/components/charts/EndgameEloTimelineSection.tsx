@@ -40,7 +40,7 @@ import { ChartTooltipBox } from '@/components/ui/chart-tooltip-box';
 import { createDateTickFormatter, formatDateWithYear, niceEloAxis } from '@/lib/utils';
 import {
   ELO_COMBO_COLORS,
-  ENDGAME_VOLUME_BAR_COLOR,
+  VOLUME_BAR_COLOR,
   SCORE_TIMELINE_FILL_ABOVE,
   SCORE_TIMELINE_FILL_BELOW,
 } from '@/lib/theme';
@@ -559,7 +559,7 @@ export function EndgameEloTimelineSection({
             <Bar
               yAxisId="bars"
               dataKey="per_week_total_visible"
-              fill={ENDGAME_VOLUME_BAR_COLOR}
+              fill={VOLUME_BAR_COLOR}
               legendType="none"
               isAnimationActive={false}
               data-testid="endgame-elo-volume-bars"
