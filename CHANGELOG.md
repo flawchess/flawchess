@@ -43,6 +43,7 @@ in `YYYY-MM-DD` (Europe/Zurich).
 - Shelly's endgame report is no longer written twice when you reload the Endgames page while it is being generated.
 - Analysis engine no longer restarts its Stockfish workers when the tab sits in the background, so a search left running in another tab keeps its results instead of losing them.
 - Google sign-in no longer shows a server error page when Google rejects the sign-in code (for example after a doubled redirect on Android). You land back on the login page with a "Google sign-in failed. Please try again." message.
+- Admin: closing the impersonation pill now takes you back to your own admin session on the Admin page instead of signing you out.
 
 ## [v2.24] Train Grading Integrity & One-Screen Reveal — 2026-10-09
 

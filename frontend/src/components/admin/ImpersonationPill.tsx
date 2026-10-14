@@ -16,13 +16,12 @@ interface Props {
 
 /**
  * Header pill shown when the authenticated request is an impersonation session.
- * The × ends the impersonation session (calls useAuth().logout which clears the
- * token and redirects to the login screen). Shown alongside the regular Logout
- * button so the user always has a way to sign out — the pill is not always
- * visible on mobile (title takes precedence when space is tight).
+ * The × ends the impersonation session and returns to the admin's own session on
+ * /admin (useAuth().endImpersonation), falling back to a full logout when no admin
+ * token was stashed. The regular Logout button next to it stays a full sign-out.
  */
 export function ImpersonationPill({ impersonation, emailMaxWidthClass = 'max-w-[12rem]' }: Props) {
-  const { logout } = useAuth();
+  const { endImpersonation } = useAuth();
 
   return (
     <div
@@ -42,7 +41,7 @@ export function ImpersonationPill({ impersonation, emailMaxWidthClass = 'max-w-[
       </span>
       <button
         type="button"
-        onClick={logout}
+        onClick={endImpersonation}
         aria-label="End impersonation session"
         data-testid="btn-impersonation-pill-logout"
         className="rounded-full p-0.5 hover:bg-black/20 focus:outline-none focus:ring-2 focus:ring-offset-1"

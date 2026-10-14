@@ -4,8 +4,8 @@ milestone: v2.24
 current_phase: 239
 status: completed
 stopped_at: Phase 239 complete — all phases complete
-last_updated: "2026-10-14T17:24:52.194Z"
-state_head: 15d855812854b54bee2e72b21ea781b5a731ea7e
+last_updated: "2026-10-14T18:23:59.550Z"
+state_head: e3e3a55427890621c0ab6e10605a9a07c87d198d
 progress:
   total_phases: 2
   completed_phases: 103
@@ -13,8 +13,8 @@ progress:
   completed_plans: 57
   percent: 100
 milestone_name: Train Grading Integrity & One-Screen Reveal
-last_activity: 2026-10-12
-last_activity_desc: "Completed quick task 261012-qiz: endgame insights dedupe concurrent LLM generations (advisory lock) + 24h regen cooldown"
+last_activity: 2026-10-14
+last_activity_desc: "Completed quick task 261014-s0b: restore admin session when ending impersonation"
 ---
 
 # Project State: FlawChess
@@ -1028,6 +1028,7 @@ None active.
 | 261012-qiz | Endgame insights: dedupe concurrent LLM generations (advisory lock) + 24h regen cooldown | 2026-10-12 | abb4d710e | [261012-qiz-endgame-insights-dedupe-concurrent-llm-g](./quick/261012-qiz-endgame-insights-dedupe-concurrent-llm-g/) |
 | 261014-pb9 | Library Stats: 3x3 tempo x game-phase flaw gap heatmap (you vs opponents) | 2026-10-14 | 68c5a3cad | [261014-pb9-library-stats-3x3-tempo-x-game-phase-fla](./quick/261014-pb9-library-stats-3x3-tempo-x-game-phase-fla/) |
 | 261014-qj8 | Benchmark bands for the tempo x phase heatmap cells | 2026-10-14 | 15d855812 | [261014-qj8-benchmark-bands-for-the-tempo-x-phase-he](./quick/261014-qj8-benchmark-bands-for-the-tempo-x-phase-he/) |
+| 261014-s0b | Restore admin session when ending impersonation | 2026-10-14 | e3e3a5542 | [261014-s0b-restore-admin-session-when-ending-impers](./quick/261014-s0b-restore-admin-session-when-ending-impers/) |
 
 ## Deferred Items
 

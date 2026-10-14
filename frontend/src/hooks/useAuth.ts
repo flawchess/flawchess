@@ -4,8 +4,11 @@ import { queryClient } from '@/lib/queryClient';
 import { apiClient } from '@/api/client';
 import type { GuestCreateResponse, LoginResponse, UserResponse } from '@/types/api';
 import type { ImpersonateResponse } from '@/types/admin';
+import { ADMIN_RETURN_TOKEN_STORAGE_KEY } from '@/lib/impersonation';
 
 const GUEST_TOKEN_KEY = 'guest_token';
+// Mirrors the /admin Route in App.tsx, which exports no route constant.
+const ADMIN_ROUTE_PATH = '/admin';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -24,9 +27,15 @@ interface AuthState {
    * Calls POST /api/admin/impersonate/{userId}, swaps the stored token, clears
    * TanStack Query cache so no admin-scoped data leaks, and updates context
    * state. Token ordering mirrors `login` — store FIRST, clear AFTER, set state
-   * LAST (see login bug-fix comment).
+   * LAST (see login bug-fix comment). The superuser's own token is stashed under
+   * ADMIN_RETURN_TOKEN_STORAGE_KEY for endImpersonation, only when no stash exists yet.
    */
   impersonate: (userId: number) => Promise<void>;
+  /**
+   * End an impersonation session and return to the superuser's own session on /admin.
+   * Restores the stashed admin token; falls back to a full logout when none was stashed.
+   */
+  endImpersonation: () => void;
   logout: () => void;
   /**
    * Clear auth state without redirect — used when a guest navigates to the register page.
@@ -67,6 +76,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
       const { access_token } = response.data;
       localStorage.setItem('auth_token', access_token);
+      localStorage.removeItem(ADMIN_RETURN_TOKEN_STORAGE_KEY);
       // Clear AFTER storing new token so any refetches triggered by the clear
       // use the new user's token, not the previous user's token.
       queryClient.clear();
@@ -79,6 +89,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const loginWithToken = useCallback((externalToken: string): void => {
     localStorage.setItem('auth_token', externalToken);
+    localStorage.removeItem(ADMIN_RETURN_TOKEN_STORAGE_KEY);
     // Clear AFTER storing new token so any refetches triggered by the clear
     // use the new user's token, not the previous user's token.
     queryClient.clear();
@@ -103,6 +114,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         `/admin/impersonate/${userId}`,
       );
       const { access_token } = response.data;
+      // Stash the admin's own token (read from storage, not the stale `token` closure)
+      // only after the POST succeeded and only when no stash exists, so a nested or
+      // repeat call can never overwrite it with an impersonation token.
+      const currentToken = localStorage.getItem('auth_token');
+      if (currentToken !== null && localStorage.getItem(ADMIN_RETURN_TOKEN_STORAGE_KEY) === null) {
+        localStorage.setItem(ADMIN_RETURN_TOKEN_STORAGE_KEY, currentToken);
+      }
       localStorage.setItem('auth_token', access_token);
       // Clear AFTER storing new token — same ordering as login. A refetch
       // triggered by .clear() must use the new token, not the previous user's.
@@ -164,6 +182,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     queryClient.clear();
     // Keep guest_token so the same guest account is reused on next "Use as Guest"
     localStorage.removeItem('auth_token');
+    // Every session start or end drops the admin stash so a stale admin token can never
+    // be restored into another session. register, loginAsGuest, the OAuth callback and
+    // RegisterForm inherit the removal through login/loginWithToken.
+    localStorage.removeItem(ADMIN_RETURN_TOKEN_STORAGE_KEY);
     // Drop any stale promote intent so a later sign-in isn't wrongly routed through guest
     // promotion (see getGoogleAuthorizationUrl).
     sessionStorage.removeItem('promote_intent');
@@ -176,9 +198,36 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     window.location.href = '/';
   };
 
+  // Bug fix: the impersonation pill's x used to call logout(), so ending an
+  // impersonation signed the superuser out and forced a fresh login. impersonate()
+  // now stashes the admin's own JWT; this restores it and lands on /admin.
+  // The hard navigation is load-bearing (same as logout): it resets the TanStack
+  // cache and the Umami in-memory identity (Phase 229 D-07), so keep it a full page
+  // load, not a client-side navigate. An expired stashed admin token needs no
+  // handling: the 401 interceptor sends the admin to /login. A backend endpoint that
+  // mints an admin token from the impersonation claims was deliberately NOT added:
+  // a leaked 1h impersonation token could then be exchanged for a 7-day admin token,
+  // defeating Phase 62 D-03.
+  const endImpersonation = (): void => {
+    const stashed = localStorage.getItem(ADMIN_RETURN_TOKEN_STORAGE_KEY);
+    if (stashed === null) {
+      // No stashed admin token (e.g. impersonation started before the stash existed).
+      logout();
+      return;
+    }
+    localStorage.setItem('auth_token', stashed);
+    localStorage.removeItem(ADMIN_RETURN_TOKEN_STORAGE_KEY);
+    // Clear AFTER storing the admin token so a refetch triggered by the clear carries it.
+    queryClient.clear();
+    setToken(stashed);
+    setUser(null);
+    window.location.href = ADMIN_ROUTE_PATH;
+  };
+
   const logoutForPromotion = useCallback((): void => {
     queryClient.clear();
     localStorage.removeItem('auth_token');
+    localStorage.removeItem(ADMIN_RETURN_TOKEN_STORAGE_KEY);
     setToken(null);
     setUser(null);
     // Signal that the upcoming sign-up should promote the saved guest account in place.
@@ -190,7 +239,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     // No redirect — caller navigates to register page.
   }, []);
 
-  const value: AuthState = { user, token, isLoading, login, loginWithToken, refreshAuthToken, loginAsGuest, register, impersonate, logout, logoutForPromotion };
+  const value: AuthState = { user, token, isLoading, login, loginWithToken, refreshAuthToken, loginAsGuest, register, impersonate, endImpersonation, logout, logoutForPromotion };
 
   return React.createElement(AuthContext.Provider, { value }, children);
 }

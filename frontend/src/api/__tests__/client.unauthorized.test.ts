@@ -9,6 +9,7 @@ import type { InternalAxiosRequestConfig } from 'axios';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { apiClient } from '@/api/client';
 import { peekReturnTo } from '@/lib/returnTo';
+import { ADMIN_RETURN_TOKEN_STORAGE_KEY } from '@/lib/impersonation';
 
 const fakeLocation = { pathname: '/train', search: '', href: 'http://localhost/train' };
 
@@ -38,6 +39,14 @@ describe('401 interceptor', () => {
     expect(window.location.href).toBe('/login');
     expect(localStorage.getItem('auth_token')).toBeNull();
     expect(peekReturnTo()).toBe('/train');
+  });
+
+  it('drops the stashed admin token next to auth_token on a token-bearing 401', async () => {
+    localStorage.setItem('auth_token', 'expired-impersonation');
+    localStorage.setItem(ADMIN_RETURN_TOKEN_STORAGE_KEY, 'admin-token');
+    await expect(apiClient.get('/users/me/profile')).rejects.toBeInstanceOf(AxiosError);
+    expect(localStorage.getItem('auth_token')).toBeNull();
+    expect(localStorage.getItem(ADMIN_RETURN_TOKEN_STORAGE_KEY)).toBeNull();
   });
 
   it('leaves a tokenless 401 alone', async () => {
