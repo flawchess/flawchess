@@ -111,8 +111,8 @@ interface TempoPhaseHeatmapProps {
  * your moves for flaws carrying BOTH tags, worded like the gap bars. Colour follows the gap
  * bars: green (fewer) or red (more) only when the gap is outside the typical range for your
  * level and too large to be chance; strength grows with the distance beyond the range. The
- * low-clock opening cell has no range and is judged on chance alone. Flaws with no clock
- * data are in no cell.
+ * low-clock opening and low-clock middlegame cells have no range and are judged on chance
+ * alone (the backend sends has_zone false). Flaws with no clock data are in no cell.
  */
 export function TempoPhaseHeatmap({ tcStats }: TempoPhaseHeatmapProps) {
   return (

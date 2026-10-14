@@ -4,8 +4,8 @@ milestone: v2.24
 current_phase: 239
 status: completed
 stopped_at: Phase 239 complete — all phases complete
-last_updated: "2026-10-14T18:23:59.550Z"
-state_head: e3e3a55427890621c0ab6e10605a9a07c87d198d
+last_updated: "2026-10-14T18:47:03.979Z"
+state_head: a743e253e894871d91c99e3fb68ee9bdb9a0c745
 progress:
   total_phases: 2
   completed_phases: 103
@@ -14,7 +14,7 @@ progress:
   percent: 100
 milestone_name: Train Grading Integrity & One-Screen Reveal
 last_activity: 2026-10-14
-last_activity_desc: "Completed quick task 261014-s0b: restore admin session when ending impersonation"
+last_activity_desc: "Completed quick task 261014-rux: Benchmark §5 whole-cohort basis and per-TC flaw bands"
 ---
 
 # Project State: FlawChess
@@ -1029,6 +1029,7 @@ None active.
 | 261014-pb9 | Library Stats: 3x3 tempo x game-phase flaw gap heatmap (you vs opponents) | 2026-10-14 | 68c5a3cad | [261014-pb9-library-stats-3x3-tempo-x-game-phase-fla](./quick/261014-pb9-library-stats-3x3-tempo-x-game-phase-fla/) |
 | 261014-qj8 | Benchmark bands for the tempo x phase heatmap cells | 2026-10-14 | 15d855812 | [261014-qj8-benchmark-bands-for-the-tempo-x-phase-he](./quick/261014-qj8-benchmark-bands-for-the-tempo-x-phase-he/) |
 | 261014-s0b | Restore admin session when ending impersonation | 2026-10-14 | e3e3a5542 | [261014-s0b-restore-admin-session-when-ending-impers](./quick/261014-s0b-restore-admin-session-when-ending-impers/) |
+| 261014-rux | Benchmark §5: whole-cohort basis and per-TC bands for the 12 flaw metrics | 2026-10-14 | a743e253e | [261014-rux-benchmark-5-whole-cohort-basis-and-per-t](./quick/261014-rux-benchmark-5-whole-cohort-basis-and-per-t/) |
 
 ## Deferred Items
 

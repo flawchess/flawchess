@@ -1,8 +1,8 @@
-# FlawChess Benchmarks — 2026-10-12
+# FlawChess Benchmarks — 2026-10-14
 
 - **DB**: benchmark (Docker on localhost:5433, flawchess_benchmark)
 - **Benchmark DB dump**: https://drive.google.com/file/d/1JWGPIvjAPIXsRowOy4IaHcDwSngnjxcC/view?usp=sharing
-- **Snapshot taken**: §1 to §4 are carried over verbatim from `benchmarks-2026-08-18.md` (the benchmark DB population for those chapters is unchanged since the 2026-06-10 snapshot; the only edit is the §1 sentence that describes the §5 basis); **§5 was recomputed on 2026-10-12T21:01Z** on the Phase 212 full-analysis lane (`benchmark_selection`, armed, classical + rapid, full evals + PVs + blobs). Population counts below are the carried-over §1 to §4 cohort, not the §5 lane sample (138,104 games).
+- **Snapshot taken**: §1 to §4 are carried over verbatim from `benchmarks-2026-08-18.md` (the benchmark DB population for those chapters is unchanged since the 2026-06-10 snapshot; the only edit is the §1 sentence that describes the §5 basis); **§5 was recomputed on 2026-10-14T18:22Z** on two bases: the 12 flaw metrics and the 9 tempo x phase cells on the whole cohort (every eval'd game of a selected user, all four TCs, 1,338,092 games), the 38 tactic metrics on the Phase 212 full-analysis lane (classical + rapid, 138,104 games). Population counts below are the carried-over §1 to §4 cohort.
 - **Population**: 4,697 users / 2,767,158 games / 190,934,222 positions (candidate pool: 9,523 selected-user rows)
 - **Generator**: `scripts/gen_benchmarks.py --db benchmark` (deterministic; numeric tables spliced from `benchmarks-generated.md`, verdict words + recommendations authored here)
 - **Cell anchoring**: 400-wide ELO buckets via the cohort user's **rating at game time** (`games.white_rating`/`games.black_rating`, sub-800 dropped) — NOT the frozen `benchmark_selected_users.rating_bucket`. **Methodology change (2026-05-19): rating-at-game-time bucketing.** `rating_bucket`/`median_elo` retained as longitudinal/trajectory columns only. `tc_bucket` from `benchmark_selected_users`; per-user TC restricted to selected `tc_bucket`.
@@ -16,7 +16,7 @@
 - **Deleted calibration targets** (retracted Phase 87.4): `endgame_skill` and `section2_score_gap_skill` composites — §3.2.1 / §3.2.2 report distributions for completeness only, no band.
 - **Verdict thresholds**: Cohen's d **< 0.2 collapse** / **0.2–0.5 review** / **≥ 0.5 keep separate** (per axis, independently).
 - **§4 (Global Percentile CDF)**: separate deliverable, NOT part of this report — generator chapter is `REFERENCE`-only. See `app/services/global_percentile_cdf.py` / `reports/percentile/`.
-- **§5 (Flaw-Delta and Tactic-Delta Zones)**: recomputed 2026-10-12T21:01Z (Phase 239, plan 239-06) on the full-analysis lane only (classical 99.9% and rapid 99.9% of `benchmark_selection` complete at the snapshot; 138,104 analyzed games across 2,006 user×(ELO,TC) cells, 1,590 distinct users), on a new basis. **Owner decision (239-06 checkpoint, accept with edits): the 12 flaw bands are NOT adopted from this run; the app keeps the live flaw bands** (derived on the older whole-cohort `evals_completed_at` basis, 1,223,105 games, up to 1000 games per user), because the proposed widening (1.5x to 3.5x) is mostly sampling noise from the lane's 100-games-per-TC cap. The flaw-delta values in this section are therefore the noise-inflated proposal that was not adopted; the 9 viable tactic bands are adopted as measured. 12 flaw metrics plus 38 tactic metrics (19 families × Missed/Allowed); the overall flaw rate and the two combo flaws are retired (Phase 239). **Blitz and bullet use the rapid zones in the app** until their tranches finish (D-08/D-09 stopgap); the half-finished blitz tranche is never used. Per-user values come from at most 100 games per TC (the lane cap), so each band includes sampling noise: the noise-only IQR is reported next to the observed IQR for every metric (§5.15), and the bands are mostly noise. Negative delta = fewer flaws than equally rated opponents. Verdicts: no metric reaches keep-separate on either axis, so every band is one pooled band for both zone TCs and nothing is Elo keyed.
+- **§5 (Flaw-Delta and Tactic-Delta Zones)**: recomputed 2026-10-14T18:22Z (quick 261014-rux). Flaw metrics and tempo x phase cells: whole cohort, all four TCs (1,338,092 games, 4,831 user-cells, 3,559 distinct users, up to 1000 games per user per TC). **Owner decision (2026-10-14, rule B): each TC gets its own flaw band** (symmetric_band of that TC's Q1/Q3), because the per-TC IQRs differ 3x to 15x while the Cohen's-d verdict (a test of the mean) never reaches keep-separate. Tactic metrics: full-analysis lane, classical + rapid (138,104 games, 2,006 user-cells); the 9 viable tactic bands are served as adopted on 2026-10-12, blitz and bullet tactics read the rapid band. User-move parity fixed (white CEIL, black FLOOR). Bands are noise-dominated on both bases (§5.15). Negative delta = fewer flaws than equally rated opponents. Nothing is Elo keyed.
 
 ---
 
@@ -167,10 +167,12 @@ subset as loss-tilted, and do not read any outcome-rate computed on it as a popu
 
 Two scope notes. The paired estimator excludes users at either coverage extreme (485 of the
 classical cell's users qualify), so it describes users who analyze *some* of their games. And
-§5's zones (recomputed 2026-10-12, Phase 239) are built on the full-analysis lane instead: classical and rapid
+§5's tactic zones (recomputed 2026-10-14) are built on the full-analysis lane instead: classical and rapid
 games of `benchmark_selection` whose evals, PVs and tactic blobs were all computed by our engine (both the
-lichess-analyzed and the never-analyzed arm are re-evaluated), capped at 100 games per user per TC. That is a
-different, equal-footing, engine-homogeneous sample, so the loss tilt above does not transfer to §5 without its own check.
+lichess-analyzed and the never-analyzed arm are re-evaluated), capped at 100 games per user per TC. §5's flaw
+zones use every eval'd cohort game (all four TCs, mixed eval provenance), so they include the analyzed
+subset; their paired you-minus-opponent delta compares both players of the same game, which the loss tilt
+above does not bias in an obvious direction, but it has not been checked separately.
 
 **The equal-footing filter does not distort availability.** Every level moves by less than 3pp
 and always in the same direction (analyzed games are marginally more often rating-mismatched).
@@ -694,20 +696,22 @@ Only `mixed` clears the ≥30-joined-user floor at the combined ≥10-game + ≥
 
 ## 5. Flaw-Delta Zones
 
-> **Basis (Phase 239 D-07/D-08)**: the full-analysis lane only (classical + rapid tranches of
-> `benchmark_selection`: armed games with full evals, full PVs and tactic blobs done).
-> Blitz and bullet are not computed here; the app registries map them to the rapid zones
-> (D-09 stopgap) until their full-analysis samples finish.
+> **Basis, flaw metrics (5.1 to 5.12) and tempo x phase cells (5.16)**: the whole
+> cohort, every eval'd game (`evals_completed_at`) of a selected user in all four TCs,
+> up to 1000 games per user per TC. Severity and context tags are game_flaws columns set
+> at classification, so every eval'd game carries them. Eval provenance is mixed
+> (Lichess-imported and our engine), disclosed, not excluded (Phase 212 D-06).
 >
-> **Owner override (239-06 checkpoint)**: the flaw-delta bands below are the noise-inflated
-> proposal that was NOT adopted; the app keeps the live flaw bands (see the registry mapping
-> table at the end of this report). The tactic bands (5.13) are adopted as measured.
+> **Basis, tactic metrics (5.13)**: the full-analysis lane (classical + rapid tranches of
+> `benchmark_selection`: armed games with full evals, full PVs and tactic blobs done).
+> Tactic motifs only exist where the flaw blob ran. Blitz and bullet tactic zones read
+> the rapid ones in the app (ZONE_TC_FOR) until their lane tranches finish.
 >
 > **D-01 unified estimator**: per game, delta = (player_tag_count − opp_tag_count)
 > / user_moves_in_game (proportion); displayed as per-100-moves via ×100 at the
 > render layer ("pp" unit). user_moves derived from `games.ply_count` (Phase 114.1):
-> FLOOR(ply_count/2) for white, CEIL(ply_count/2) for black — no game_positions scan.
-> Per-cohort-user delta = mean
+> CEIL(ply_count/2) for white, FLOOR(ply_count/2) for black (white moves first; runs
+> before 2026-10-14 had the two swapped). Per-cohort-user delta = mean
 > over ≥20 analyzed games. Negative delta means cohort
 > users commit fewer flaws of this type than equally-rated opponents.
 >
@@ -716,15 +720,11 @@ Only `mixed` clears the ≥30-joined-user floor at the combined ≥10-game + ≥
 > a registry author falls back to the pooled band for them (D-10).
 > **Sparse cell**: (2400, classical) excluded from marginals and verdicts (see §1).
 
-> **Snapshot**: 2026-10-12T21:01Z (one run of `uv run python -m scripts.benchmarks.chapter5 --db benchmark`; classical 99.9% and rapid 99.9% complete in `benchmark_selection` at that moment; 138,104 analyzed games, 2,006 user×(ELO,TC) cells, 1,590 distinct users). The old whole-cohort basis (`evals_completed_at`, 1,223,105 games, up to 1000 games per user) is retired for the tactic bands (the 12 flaw bands still come from it, owner edit at the 239-06 checkpoint); the lane caps each user at 100 games per TC, so every per-user mean is far noisier than before and the bands are wider (see §5.15).
+> **Snapshot**: 2026-10-14T18:22Z (one run of `uv run python -m scripts.benchmarks.chapter5 --db benchmark`; lane classical 99.9% and rapid 99.9% complete in `benchmark_selection`). Whole cohort: 1,338,092 analyzed games, 4,831 user×(ELO,TC) cells, 3,559 distinct users. Lane: 138,104 games, 2,006 user-cells, 1,590 distinct users.
 >
-> **Blitz and bullet read the rapid zones in the app** until their full-analysis tranches finish (D-08/D-09 stopgap, `ZONE_TC_FOR` in the registries, silent in the UI). Refresh: add the tranche to `FULL_ANALYSIS_TRANCHES`, re-run §5.
+> **Basis change (quick 261014-rux, owner decision 2026-10-14)**: the flaw metrics are measured on the whole cohort again, now with all four TCs, and the app serves each TC its own band (rule B). The D-10 Cohen's-d TC verdict tests a shift of the per-user MEAN between TCs; every flaw metric stays below 0.5 (largest 0.35, hasty), but the band is an IQR, a SPREAD, and the per-TC IQRs differ 3x to 15x (bullet narrowest, classical widest). Under the verdict rule every TC would get the pooled band, 2x to 3.6x too wide for bullet and (low_clock aside) 1.7x to 3.3x too narrow for classical. The 2026-10-12 lane-based flaw proposal (archived in `benchmarks-2026-10-12.md`) is superseded.
 >
-> **Retired in Phase 239**: the overall flaw rate and the two combo flaws no longer have a zone; the API returns 12 flaw metrics and 38 tactic metrics (19 families × Missed/Allowed). Since Phase 239 D-17 the Library shows the 12 flaw metrics (Blunders/Mistakes tiles and 10 context tags) and only 4 tactic families (fork, pin, hanging piece, checkmate), so the discovered-attack (allowed) band is not visible.
->
-> **Served bands are symmetric (Phase 239 D-15, 2026-10-13)**: the app serves `symmetric_band(Q1, Q3)` = ±IQR/2 rounded up to the 0.01 grid, not the off-centre quartiles in the tables below (which are kept as the `symmetric_band` arguments). Served half-widths: flaw (per 100 moves) mistake ±0.22, blunder ±0.28, low_clock ±0.06, hasty ±0.23, unrushed ±0.37, opening ±0.14, middlegame ±0.25, endgame_phase ±0.11, miss ±0.11, lucky ±0.09, reversed ±0.04, squandered ±0.08; tactic (per 100 games, missed/allowed) fork ±2.17/±3.68, pin ±1.66/±2.46, discovered attack –/±1.15, hanging ±1.31/±4.08, mate ±2.54/±5.55. Verdicts are red/green only when the 99% CI on the gap excludes 0 (D-14).
->
-> **Known user-move parity flip**: this run's per-100-moves flaw rates give White `floor(ply_count/2)` user moves and Black `ceil`; White moves first, so it is the other way round. The app was fixed in PR #420; `chapter5.py` keeps the flip so this run and its diff gate stay reproducible, and the next §5 refresh fixes both. The effect is at most one move per game and does not touch the served flaw bands (whole-cohort basis).
+> **Parity fix**: user moves are now CEIL(ply_count/2) for white and FLOOR for black. Runs before 2026-10-14 had the two swapped (off by at most one move per game).
 
 ### 5.1 Mistakes (severity = 1)
 
@@ -732,41 +732,45 @@ Only `mixed` clears the ≥30-joined-user floor at the combined ≥10-game + ≥
 
 | n | mean | SD | p05 | p25 | p50 | p75 | p95 |
 |---:|---:|---:|---:|---:|---:|---:|---:|
-| 2,004 | −0.1pp | 0.9pp | −1.527pp | −0.652pp | −0.136pp | +0.390pp | +1.342pp |
+| 4,828 | +0.0pp | 0.6pp | −1.037pp | −0.267pp | −0.003pp | +0.196pp | +0.950pp |
 
-Noise-only IQR: 1.022pp (observed IQR: 1.041pp)
+Noise-only IQR: 0.641pp (observed IQR: 0.463pp)
 
 #### ELO marginal
 
 | ELO | n | mean | SD | p05 | p25 | p50 | p75 | p95 |
 |---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| 800 | 354 | +0.0pp | 1.3pp | −1.837pp | −0.705pp | −0.061pp | +0.660pp | +2.096pp |
-| 1200 | 503 | −0.1pp | 1.1pp | −1.897pp | −0.792pp | −0.163pp | +0.519pp | +1.544pp |
-| 1600 | 549 | −0.1pp | 0.8pp | −1.358pp | −0.558pp | −0.132pp | +0.349pp | +1.103pp |
-| 2000 | 436 | −0.2pp | 0.7pp | −1.305pp | −0.620pp | −0.151pp | +0.269pp | +0.965pp |
-| 2400 | 162 | −0.2pp | 0.6pp | −1.064pp | −0.540pp | −0.115pp | +0.187pp | +0.715pp |
+| 800 | 835 | +0.0pp | 0.8pp | −1.230pp | −0.340pp | +0.000pp | +0.298pp | +1.307pp |
+| 1200 | 1,138 | +0.0pp | 0.7pp | −1.208pp | −0.283pp | +0.005pp | +0.223pp | +1.057pp |
+| 1600 | 1,190 | +0.0pp | 0.6pp | −0.968pp | −0.273pp | +0.007pp | +0.204pp | +0.900pp |
+| 2000 | 1,061 | −0.1pp | 0.5pp | −0.983pp | −0.289pp | −0.018pp | +0.164pp | +0.825pp |
+| 2400 | 604 | +0.0pp | 0.4pp | −0.656pp | −0.153pp | −0.007pp | +0.089pp | +0.580pp |
 
 #### TC marginal
 
 | TC | n | mean | SD | p05 | p25 | p50 | p75 | p95 |
 |---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| rapid | 1,271 | −0.1pp | 0.9pp | −1.426pp | −0.630pp | −0.150pp | +0.371pp | +1.215pp |
-| classical | 733 | −0.1pp | 1.1pp | −1.752pp | −0.690pp | −0.106pp | +0.439pp | +1.421pp |
+| bullet | 1,269 | +0.0pp | 0.5pp | −0.770pp | −0.089pp | +0.005pp | +0.102pp | +0.927pp |
+| blitz | 1,374 | +0.0pp | 0.5pp | −0.863pp | −0.234pp | −0.004pp | +0.173pp | +0.695pp |
+| rapid | 1,421 | −0.1pp | 0.6pp | −1.075pp | −0.357pp | −0.022pp | +0.217pp | +0.972pp |
+| classical | 764 | −0.1pp | 1.0pp | −1.571pp | −0.539pp | −0.042pp | +0.410pp | +1.288pp |
 
 #### Collapse verdict
 
-- **TC axis**: max |d| = **0.00** (rapid vs classical)
-- **ELO axis**: max |d| = **0.18** (800 vs 2000)
+- **TC axis**: max |d| = **0.18** (bullet vs classical)
+- **ELO axis**: max |d| = **0.09** (800 vs 2000)
+
 
 #### Verdicts and recommendation
 
-- **TC verdict**: collapse (max |d| = 0.00, rapid vs classical)
-- **ELO verdict**: collapse (max |d| = 0.18, 800 vs 2000)
-- ELO mean by level (pp): 800 +0.00, 1200 −0.15, 1600 −0.14, 2000 −0.18, 2400 −0.16 (not monotone)
-- **Currently set in code**: [−0.23, +0.20] per 100 moves, one pooled band for every TC (whole-cohort Lichess-eval basis, carried over unchanged by plan 239-02).
-- **Noise**: noise-only IQR 1.022pp against an observed IQR of 1.041pp (noise share 98%): the band is essentially sampling noise: it is about what per-user means would spread to if every user had the same true gap.
+- **TC verdict**: collapse (max |d| = 0.18, bullet vs classical)
+- **ELO verdict**: collapse (max |d| = 0.09, 800 vs 2000)
+- ELO mean by level (pp): 800 −0.00, 1200 −0.04, 1600 −0.02, 2000 −0.06, 2400 −0.03
+- **Per-TC IQR** (pp): bullet 0.191, blitz 0.407, rapid 0.574, classical 0.949 (widest / narrowest = 5.0x). The TC verdict tests the mean, not this spread.
+- **Noise**: closed-form noise-only IQR 0.641pp against an observed pooled IQR of 0.463pp (138%; conservative, see 5.15). Simulated noise share per TC: bullet 75%, blitz 70%, rapid 68%, classical 72%.
+- **Previously served**: ±0.22 per 100 moves, one pooled band for every TC.
 
-**Recommendation**: one pooled band for both zone TCs: **[−0.66, +0.39] per 100 moves** (p25 and p75 of the pooled distribution rounded outward to the 0.01 grid). Elo keying: none (ELO verdict: collapse). Versus the live band this is 2.4x as wide (0.43 to 1.05). Negative delta = fewer flaws than equally rated opponents = good.
+**Served (owner rule B, per-TC)**: bullet ±0.10, blitz ±0.21, rapid ±0.29, classical ±0.48 per 100 moves (symmetric_band of each TC's own Q1/Q3, D-15). Elo keying: none (ELO verdict: collapse). Negative delta = fewer flaws than equally rated opponents = good.
 
 ---
 
@@ -776,41 +780,45 @@ Noise-only IQR: 1.022pp (observed IQR: 1.041pp)
 
 | n | mean | SD | p05 | p25 | p50 | p75 | p95 |
 |---:|---:|---:|---:|---:|---:|---:|---:|
-| 2,004 | −0.3pp | 1.0pp | −1.949pp | −0.826pp | −0.213pp | +0.307pp | +1.228pp |
+| 4,828 | +0.0pp | 0.7pp | −1.277pp | −0.315pp | +0.005pp | +0.245pp | +1.047pp |
 
-Noise-only IQR: 1.102pp (observed IQR: 1.133pp)
+Noise-only IQR: 0.675pp (observed IQR: 0.560pp)
 
 #### ELO marginal
 
 | ELO | n | mean | SD | p05 | p25 | p50 | p75 | p95 |
 |---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| 800 | 354 | −0.3pp | 1.3pp | −2.425pp | −1.085pp | −0.163pp | +0.479pp | +1.480pp |
-| 1200 | 503 | −0.4pp | 1.2pp | −2.339pp | −1.043pp | −0.332pp | +0.322pp | +1.485pp |
-| 1600 | 549 | −0.2pp | 0.9pp | −1.802pp | −0.724pp | −0.181pp | +0.344pp | +1.155pp |
-| 2000 | 436 | −0.3pp | 0.8pp | −1.512pp | −0.720pp | −0.212pp | +0.209pp | +0.885pp |
-| 2400 | 162 | −0.2pp | 0.5pp | −1.151pp | −0.609pp | −0.214pp | +0.108pp | +0.635pp |
+| 800 | 835 | +0.0pp | 0.9pp | −1.400pp | −0.366pp | +0.049pp | +0.384pp | +1.335pp |
+| 1200 | 1,138 | +0.0pp | 0.8pp | −1.582pp | −0.293pp | +0.038pp | +0.300pp | +1.187pp |
+| 1600 | 1,190 | +0.0pp | 0.7pp | −1.234pp | −0.336pp | +0.012pp | +0.268pp | +1.056pp |
+| 2000 | 1,061 | −0.1pp | 0.6pp | −1.075pp | −0.325pp | −0.030pp | +0.176pp | +0.806pp |
+| 2400 | 604 | −0.1pp | 0.4pp | −0.762pp | −0.215pp | −0.003pp | +0.101pp | +0.541pp |
 
 #### TC marginal
 
 | TC | n | mean | SD | p05 | p25 | p50 | p75 | p95 |
 |---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| rapid | 1,271 | −0.2pp | 0.9pp | −1.733pp | −0.778pp | −0.196pp | +0.311pp | +1.217pp |
-| classical | 733 | −0.4pp | 1.1pp | −2.279pp | −0.971pp | −0.257pp | +0.305pp | +1.236pp |
+| bullet | 1,269 | +0.0pp | 0.6pp | −0.921pp | −0.104pp | +0.015pp | +0.154pp | +1.083pp |
+| blitz | 1,374 | +0.0pp | 0.6pp | −0.970pp | −0.261pp | +0.006pp | +0.227pp | +0.898pp |
+| rapid | 1,421 | −0.1pp | 0.7pp | −1.344pp | −0.420pp | −0.011pp | +0.254pp | +0.893pp |
+| classical | 764 | −0.1pp | 1.0pp | −1.916pp | −0.617pp | −0.050pp | +0.443pp | +1.417pp |
 
 #### Collapse verdict
 
-- **TC axis**: max |d| = **0.15** (rapid vs classical)
-- **ELO axis**: max |d| = **0.14** (1200 vs 1600)
+- **TC axis**: max |d| = **0.24** (bullet vs classical)
+- **ELO axis**: max |d| = **0.12** (800 vs 2000)
+
 
 #### Verdicts and recommendation
 
-- **TC verdict**: collapse (max |d| = 0.15, rapid vs classical)
-- **ELO verdict**: collapse (max |d| = 0.14, 1200 vs 1600)
-- ELO mean by level (pp): 800 −0.30, 1200 −0.36, 1600 −0.21, 2000 −0.26, 2400 −0.25 (not monotone)
-- **Currently set in code**: [−0.31, +0.25] per 100 moves, one pooled band for every TC (whole-cohort Lichess-eval basis, carried over unchanged by plan 239-02).
-- **Noise**: noise-only IQR 1.102pp against an observed IQR of 1.133pp (noise share 97%): the band is essentially sampling noise: it is about what per-user means would spread to if every user had the same true gap.
+- **TC verdict**: review (max |d| = 0.24, bullet vs classical)
+- **ELO verdict**: collapse (max |d| = 0.12, 800 vs 2000)
+- ELO mean by level (pp): 800 −0.00, 1200 −0.03, 1600 −0.03, 2000 −0.09, 2400 −0.07
+- **Per-TC IQR** (pp): bullet 0.257, blitz 0.488, rapid 0.674, classical 1.060 (widest / narrowest = 4.1x). The TC verdict tests the mean, not this spread.
+- **Noise**: closed-form noise-only IQR 0.675pp against an observed pooled IQR of 0.560pp (120%; conservative, see 5.15). Simulated noise share per TC: bullet 57%, blitz 61%, rapid 61%, classical 67%.
+- **Previously served**: ±0.28 per 100 moves, one pooled band for every TC.
 
-**Recommendation**: one pooled band for both zone TCs: **[−0.83, +0.31] per 100 moves** (p25 and p75 of the pooled distribution rounded outward to the 0.01 grid). Elo keying: none (ELO verdict: collapse). Versus the live band this is 2.0x as wide (0.56 to 1.14). Negative delta = fewer flaws than equally rated opponents = good.
+**Served (owner rule B, per-TC)**: bullet ±0.13, blitz ±0.25, rapid ±0.34, classical ±0.53 per 100 moves (symmetric_band of each TC's own Q1/Q3, D-15). Elo keying: none (ELO verdict: collapse). Negative delta = fewer flaws than equally rated opponents = good.
 
 ---
 
@@ -820,43 +828,47 @@ Noise-only IQR: 1.102pp (observed IQR: 1.133pp)
 
 | n | mean | SD | p05 | p25 | p50 | p75 | p95 |
 |---:|---:|---:|---:|---:|---:|---:|---:|
-| 2,004 | +0.0pp | 0.3pp | −0.385pp | −0.118pp | +0.000pp | +0.050pp | +0.549pp |
+| 4,828 | +0.0pp | 0.3pp | −0.331pp | −0.081pp | −0.005pp | +0.038pp | +0.433pp |
 
-Noise-only IQR: 0.238pp (observed IQR: 0.167pp)
+Noise-only IQR: 0.186pp (observed IQR: 0.119pp)
 
 #### ELO marginal
 
 | ELO | n | mean | SD | p05 | p25 | p50 | p75 | p95 |
 |---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| 800 | 354 | +0.0pp | 0.2pp | −0.175pp | −0.053pp | +0.000pp | +0.000pp | +0.290pp |
-| 1200 | 503 | +0.0pp | 0.2pp | −0.239pp | −0.072pp | +0.000pp | +0.000pp | +0.256pp |
-| 1600 | 549 | +0.0pp | 0.3pp | −0.316pp | −0.109pp | −0.007pp | +0.062pp | +0.705pp |
-| 2000 | 436 | +0.0pp | 0.4pp | −0.563pp | −0.202pp | −0.038pp | +0.146pp | +0.762pp |
-| 2400 | 162 | −0.1pp | 0.4pp | −0.618pp | −0.303pp | −0.080pp | +0.153pp | +0.606pp |
+| 800 | 835 | +0.0pp | 0.2pp | −0.237pp | −0.051pp | +0.000pp | +0.034pp | +0.331pp |
+| 1200 | 1,138 | +0.0pp | 0.2pp | −0.244pp | −0.054pp | +0.000pp | +0.023pp | +0.284pp |
+| 1600 | 1,190 | +0.0pp | 0.3pp | −0.280pp | −0.083pp | −0.008pp | +0.039pp | +0.437pp |
+| 2000 | 1,061 | +0.0pp | 0.3pp | −0.449pp | −0.127pp | −0.014pp | +0.060pp | +0.603pp |
+| 2400 | 604 | +0.0pp | 0.3pp | −0.451pp | −0.135pp | −0.007pp | +0.050pp | +0.536pp |
 
 #### TC marginal
 
 | TC | n | mean | SD | p05 | p25 | p50 | p75 | p95 |
 |---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| rapid | 1,271 | +0.0pp | 0.3pp | −0.398pp | −0.137pp | −0.023pp | +0.077pp | +0.609pp |
-| classical | 733 | +0.0pp | 0.3pp | −0.319pp | −0.074pp | +0.000pp | +0.000pp | +0.456pp |
+| bullet | 1,269 | +0.0pp | 0.2pp | −0.272pp | −0.034pp | +0.000pp | +0.026pp | +0.291pp |
+| blitz | 1,374 | +0.0pp | 0.3pp | −0.378pp | −0.120pp | −0.018pp | +0.072pp | +0.556pp |
+| rapid | 1,421 | +0.0pp | 0.3pp | −0.325pp | −0.091pp | −0.017pp | +0.038pp | +0.473pp |
+| classical | 764 | +0.0pp | 0.3pp | −0.302pp | −0.068pp | +0.000pp | +0.000pp | +0.440pp |
 
 #### Collapse verdict
 
-- **TC axis**: max |d| = **0.03** (rapid vs classical)
-- **ELO axis**: max |d| = **0.25** (1600 vs 2400)
+- **TC axis**: max |d| = **0.05** (bullet vs blitz)
+- **ELO axis**: max |d| = **0.10** (1600 vs 2400)
+
 
 #### Verdicts and recommendation
 
-- **TC verdict**: collapse (max |d| = 0.03, rapid vs classical)
-- **ELO verdict**: review (max |d| = 0.25, 1600 vs 2400)
-- ELO mean by level (pp): 800 +0.01, 1200 −0.00, 1600 +0.03, 2000 +0.01, 2400 −0.05 (not monotone)
-- **Currently set in code**: [−0.08, +0.03] per 100 moves, one pooled band for every TC (whole-cohort Lichess-eval basis, carried over unchanged by plan 239-02).
-- **Noise**: noise-only IQR 0.238pp against an observed IQR of 0.167pp (noise share 142%): the closed-form noise-only IQR meets or exceeds the observed IQR, so none of the band can be read as a real between-user difference (the per-game deltas are zero-inflated and skewed, which makes the closed form conservative, but the direction is unambiguous).
+- **TC verdict**: collapse (max |d| = 0.05, bullet vs blitz)
+- **ELO verdict**: collapse (max |d| = 0.10, 1600 vs 2400)
+- ELO mean by level (pp): 800 +0.01, 1200 +0.01, 1600 +0.02, 2000 +0.01, 2400 −0.01
+- **Per-TC IQR** (pp): bullet 0.060, blitz 0.193, rapid 0.129, classical 0.068 (widest / narrowest = 3.2x). The TC verdict tests the mean, not this spread.
+- **Noise**: closed-form noise-only IQR 0.186pp against an observed pooled IQR of 0.119pp (156%; conservative, see 5.15). Simulated noise share per TC: bullet 69%, blitz 48%, rapid 57%, classical 55%.
+- **Previously served**: ±0.06 per 100 moves, one pooled band for every TC.
 
-**Recommendation**: one pooled band for both zone TCs: **[−0.12, +0.05] per 100 moves** (p25 and p75 of the pooled distribution rounded outward to the 0.01 grid). Elo keying: none (ELO verdict: review). Versus the live band this is 1.5x as wide (0.11 to 0.17). Negative delta = fewer flaws than equally rated opponents = good.
+**Served (owner rule B, per-TC)**: bullet ±0.03, blitz ±0.10, rapid ±0.07, classical ±0.04 per 100 moves (symmetric_band of each TC's own Q1/Q3, D-15). Elo keying: none (ELO verdict: collapse). Negative delta = fewer flaws than equally rated opponents = good.
 
-**Thin numerator**: only 59.1% of user-cells have at least one player low-clock flaw (median 2 events per user), below the 80% flag threshold. The classical marginal's p75 is +0.000pp, so the upper edge of the typical range sits at zero there. The registry still gets a band (`zone_viable`), but the owner may prefer to hold this metric back.
+**Thin numerator**: 76.3% of user-cells have at least one player low-clock flaw (median 5 events per user), below the 80% flag threshold but above the 50% viability floor. Unlike every other metric, the low-clock spread peaks in blitz and is narrow in classical, where clock trouble is rare.
 
 ---
 
@@ -866,43 +878,45 @@ Noise-only IQR: 0.238pp (observed IQR: 0.167pp)
 
 | n | mean | SD | p05 | p25 | p50 | p75 | p95 |
 |---:|---:|---:|---:|---:|---:|---:|---:|
-| 2,004 | −0.4pp | 1.6pp | −2.983pp | −1.151pp | −0.352pp | +0.442pp | +2.185pp |
+| 4,828 | −0.1pp | 0.9pp | −1.489pp | −0.362pp | −0.026pp | +0.178pp | +1.248pp |
 
-Noise-only IQR: 1.126pp (observed IQR: 1.593pp)
+Noise-only IQR: 0.641pp (observed IQR: 0.540pp)
 
 #### ELO marginal
 
 | ELO | n | mean | SD | p05 | p25 | p50 | p75 | p95 |
 |---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| 800 | 354 | −0.6pp | 2.2pp | −4.283pp | −1.996pp | −0.621pp | +0.765pp | +2.989pp |
-| 1200 | 503 | −0.6pp | 2.0pp | −3.694pp | −1.675pp | −0.728pp | +0.741pp | +2.659pp |
-| 1600 | 549 | −0.3pp | 1.3pp | −2.201pp | −1.145pp | −0.325pp | +0.432pp | +1.737pp |
-| 2000 | 436 | −0.2pp | 0.8pp | −1.302pp | −0.699pp | −0.237pp | +0.249pp | +1.181pp |
-| 2400 | 162 | −0.1pp | 0.6pp | −0.899pp | −0.471pp | −0.112pp | +0.307pp | +0.879pp |
+| 800 | 835 | −0.2pp | 1.3pp | −2.636pp | −0.520pp | −0.049pp | +0.254pp | +1.525pp |
+| 1200 | 1,138 | −0.1pp | 1.2pp | −2.169pp | −0.470pp | −0.035pp | +0.211pp | +1.689pp |
+| 1600 | 1,190 | −0.1pp | 0.8pp | −1.417pp | −0.432pp | −0.031pp | +0.195pp | +1.241pp |
+| 2000 | 1,061 | +0.0pp | 0.5pp | −0.961pp | −0.257pp | −0.021pp | +0.155pp | +0.876pp |
+| 2400 | 604 | +0.0pp | 0.4pp | −0.674pp | −0.139pp | −0.005pp | +0.107pp | +0.612pp |
 
 #### TC marginal
 
 | TC | n | mean | SD | p05 | p25 | p50 | p75 | p95 |
 |---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| rapid | 1,271 | −0.2pp | 1.2pp | −2.202pp | −0.964pp | −0.298pp | +0.434pp | +1.846pp |
-| classical | 733 | −0.6pp | 2.0pp | −4.176pp | −1.651pp | −0.500pp | +0.530pp | +2.717pp |
+| bullet | 1,269 | +0.0pp | 0.4pp | −0.620pp | −0.088pp | −0.001pp | +0.063pp | +0.673pp |
+| blitz | 1,374 | +0.0pp | 0.5pp | −0.696pp | −0.195pp | −0.016pp | +0.171pp | +0.765pp |
+| rapid | 1,421 | −0.1pp | 0.9pp | −1.514pp | −0.575pp | −0.108pp | +0.284pp | +1.324pp |
+| classical | 764 | −0.4pp | 1.8pp | −3.645pp | −1.278pp | −0.350pp | +0.525pp | +2.412pp |
 
 #### Collapse verdict
 
-- **TC axis**: max |d| = **0.21** (rapid vs classical)
-- **ELO axis**: max |d| = **0.28** (1200 vs 2400)
+- **TC axis**: max |d| = **0.35** (bullet vs classical)
+- **ELO axis**: max |d| = **0.16** (800 vs 2400)
+
 
 #### Verdicts and recommendation
 
-- **TC verdict**: review (max |d| = 0.21, rapid vs classical)
-- **ELO verdict**: review (max |d| = 0.28, 1200 vs 2400)
-- ELO mean by level (pp): 800 −0.58, 1200 −0.56, 1600 −0.31, 2000 −0.17, 2400 −0.07 (monotone rising)
-- **Currently set in code**: [−0.28, +0.18] per 100 moves, one pooled band for every TC (whole-cohort Lichess-eval basis, carried over unchanged by plan 239-02).
-- **Noise**: noise-only IQR 1.126pp against an observed IQR of 1.593pp (noise share 71%): most of the band is sampling noise, with a small real between-user component.
+- **TC verdict**: review (max |d| = 0.35, bullet vs classical)
+- **ELO verdict**: collapse (max |d| = 0.16, 800 vs 2400)
+- ELO mean by level (pp): 800 −0.18, 1200 −0.15, 1600 −0.08, 2000 −0.03, 2400 −0.02
+- **Per-TC IQR** (pp): bullet 0.151, blitz 0.366, rapid 0.858, classical 1.803 (widest / narrowest = 11.9x). The TC verdict tests the mean, not this spread.
+- **Noise**: closed-form noise-only IQR 0.641pp against an observed pooled IQR of 0.540pp (119%; conservative, see 5.15). Simulated noise share per TC: bullet 58%, blitz 53%, rapid 41%, classical 40%.
+- **Previously served**: ±0.23 per 100 moves, one pooled band for every TC.
 
-**Recommendation**: one pooled band for both zone TCs: **[−1.16, +0.45] per 100 moves** (p25 and p75 of the pooled distribution rounded outward to the 0.01 grid). Elo keying: none (ELO verdict: review). Versus the live band this is 3.5x as wide (0.46 to 1.61). Negative delta = fewer flaws than equally rated opponents = good.
-
-TC is a `review` verdict (d = 0.21): the rapid marginal IQR is [−0.97, +0.44] and the classical one is [−1.66, +0.53]. The verdict rule keeps the pooled band; per-TC bands are the owner's alternative if the classical tail should be honoured.
+**Served (owner rule B, per-TC)**: bullet ±0.08, blitz ±0.19, rapid ±0.43, classical ±0.91 per 100 moves (symmetric_band of each TC's own Q1/Q3, D-15). Elo keying: none (ELO verdict: collapse). Negative delta = fewer flaws than equally rated opponents = good.
 
 ---
 
@@ -912,41 +926,45 @@ TC is a `review` verdict (d = 0.21): the rapid marginal IQR is [−0.97, +0.44] 
 
 | n | mean | SD | p05 | p25 | p50 | p75 | p95 |
 |---:|---:|---:|---:|---:|---:|---:|---:|
-| 2,004 | +0.0pp | 1.5pp | −2.308pp | −0.939pp | −0.102pp | +0.733pp | +2.653pp |
+| 4,828 | +0.0pp | 1.0pp | −1.612pp | −0.423pp | +0.013pp | +0.392pp | +1.714pp |
 
-Noise-only IQR: 1.165pp (observed IQR: 1.672pp)
+Noise-only IQR: 0.753pp (observed IQR: 0.814pp)
 
 #### ELO marginal
 
 | ELO | n | mean | SD | p05 | p25 | p50 | p75 | p95 |
 |---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| 800 | 354 | +0.3pp | 2.0pp | −3.088pp | −0.891pp | +0.230pp | +1.310pp | +3.902pp |
-| 1200 | 503 | +0.1pp | 1.8pp | −2.782pp | −1.147pp | −0.043pp | +1.096pp | +3.122pp |
-| 1600 | 549 | −0.1pp | 1.3pp | −2.210pp | −0.929pp | −0.056pp | +0.638pp | +2.079pp |
-| 2000 | 436 | −0.3pp | 1.0pp | −1.930pp | −0.851pp | −0.204pp | +0.346pp | +1.182pp |
-| 2400 | 162 | −0.3pp | 0.8pp | −1.724pp | −0.783pp | −0.212pp | +0.218pp | +0.990pp |
+| 800 | 835 | +0.2pp | 1.3pp | −1.778pp | −0.437pp | +0.090pp | +0.679pp | +2.433pp |
+| 1200 | 1,138 | +0.1pp | 1.2pp | −1.925pp | −0.462pp | +0.037pp | +0.535pp | +2.122pp |
+| 1600 | 1,190 | +0.0pp | 1.0pp | −1.582pp | −0.420pp | +0.025pp | +0.435pp | +1.647pp |
+| 2000 | 1,061 | −0.1pp | 0.8pp | −1.482pp | −0.461pp | −0.033pp | +0.230pp | +1.063pp |
+| 2400 | 604 | −0.1pp | 0.6pp | −1.142pp | −0.280pp | +0.000pp | +0.154pp | +0.728pp |
 
 #### TC marginal
 
 | TC | n | mean | SD | p05 | p25 | p50 | p75 | p95 |
 |---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| rapid | 1,271 | −0.1pp | 1.3pp | −2.218pp | −0.860pp | −0.122pp | +0.664pp | +2.030pp |
-| classical | 733 | +0.1pp | 1.8pp | −2.552pp | −1.085pp | −0.043pp | +0.928pp | +3.487pp |
+| bullet | 1,269 | +0.1pp | 0.8pp | −1.248pp | −0.142pp | +0.014pp | +0.186pp | +1.516pp |
+| blitz | 1,374 | −0.1pp | 0.8pp | −1.491pp | −0.406pp | +0.013pp | +0.305pp | +1.103pp |
+| rapid | 1,421 | +0.0pp | 1.0pp | −1.533pp | −0.546pp | −0.013pp | +0.477pp | +1.669pp |
+| classical | 764 | +0.1pp | 1.6pp | −2.158pp | −0.873pp | +0.048pp | +0.888pp | +3.033pp |
 
 #### Collapse verdict
 
-- **TC axis**: max |d| = **0.11** (rapid vs classical)
-- **ELO axis**: max |d| = **0.36** (800 vs 2000)
+- **TC axis**: max |d| = **0.18** (blitz vs classical)
+- **ELO axis**: max |d| = **0.28** (800 vs 2000)
+
 
 #### Verdicts and recommendation
 
-- **TC verdict**: collapse (max |d| = 0.11, rapid vs classical)
-- **ELO verdict**: review (max |d| = 0.36, 800 vs 2000)
-- ELO mean by level (pp): 800 +0.27, 1200 +0.06, 1600 −0.07, 2000 −0.27, 2400 −0.27 (monotone falling)
-- **Currently set in code**: [−0.38, +0.36] per 100 moves, one pooled band for every TC (whole-cohort Lichess-eval basis, carried over unchanged by plan 239-02).
-- **Noise**: noise-only IQR 1.165pp against an observed IQR of 1.672pp (noise share 70%): most of the band is sampling noise, with a small real between-user component.
+- **TC verdict**: collapse (max |d| = 0.18, blitz vs classical)
+- **ELO verdict**: review (max |d| = 0.28, 800 vs 2000)
+- ELO mean by level (pp): 800 +0.17, 1200 +0.06, 1600 +0.01, 2000 −0.12, 2400 −0.07
+- **Per-TC IQR** (pp): bullet 0.328, blitz 0.711, rapid 1.023, classical 1.761 (widest / narrowest = 5.4x). The TC verdict tests the mean, not this spread.
+- **Noise**: closed-form noise-only IQR 0.753pp against an observed pooled IQR of 0.814pp (93%; conservative, see 5.15). Simulated noise share per TC: bullet 58%, blitz 52%, rapid 47%, classical 43%.
+- **Previously served**: ±0.37 per 100 moves, one pooled band for every TC.
 
-**Recommendation**: one pooled band for both zone TCs: **[−0.94, +0.74] per 100 moves** (p25 and p75 of the pooled distribution rounded outward to the 0.01 grid). Elo keying: none (ELO verdict: review). Versus the live band this is 2.3x as wide (0.74 to 1.68). Negative delta = fewer flaws than equally rated opponents = good.
+**Served (owner rule B, per-TC)**: bullet ±0.17, blitz ±0.36, rapid ±0.52, classical ±0.89 per 100 moves (symmetric_band of each TC's own Q1/Q3, D-15). Elo keying: none (ELO verdict: review). Negative delta = fewer flaws than equally rated opponents = good.
 
 ---
 
@@ -956,43 +974,45 @@ Noise-only IQR: 1.165pp (observed IQR: 1.672pp)
 
 | n | mean | SD | p05 | p25 | p50 | p75 | p95 |
 |---:|---:|---:|---:|---:|---:|---:|---:|
-| 2,004 | −0.2pp | 1.0pp | −1.892pp | −0.595pp | −0.143pp | +0.268pp | +1.262pp |
+| 4,828 | +0.0pp | 0.6pp | −0.895pp | −0.195pp | −0.007pp | +0.143pp | +0.766pp |
 
-Noise-only IQR: 1.080pp (observed IQR: 0.863pp)
+Noise-only IQR: 0.618pp (observed IQR: 0.338pp)
 
 #### ELO marginal
 
 | ELO | n | mean | SD | p05 | p25 | p50 | p75 | p95 |
 |---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| 800 | 354 | −0.3pp | 1.5pp | −2.944pp | −1.066pp | −0.299pp | +0.603pp | +2.292pp |
-| 1200 | 503 | −0.4pp | 1.2pp | −2.482pp | −1.021pp | −0.323pp | +0.363pp | +1.586pp |
-| 1600 | 549 | −0.1pp | 0.7pp | −1.267pp | −0.497pp | −0.141pp | +0.269pp | +1.042pp |
-| 2000 | 436 | −0.1pp | 0.5pp | −0.906pp | −0.314pp | −0.055pp | +0.201pp | +0.750pp |
-| 2400 | 162 | −0.1pp | 0.3pp | −0.681pp | −0.272pp | −0.086pp | +0.072pp | +0.318pp |
+| 800 | 835 | +0.0pp | 1.0pp | −1.434pp | −0.396pp | −0.013pp | +0.324pp | +1.346pp |
+| 1200 | 1,138 | −0.1pp | 0.8pp | −1.268pp | −0.303pp | −0.012pp | +0.161pp | +0.972pp |
+| 1600 | 1,190 | +0.0pp | 0.4pp | −0.688pp | −0.189pp | −0.008pp | +0.143pp | +0.681pp |
+| 2000 | 1,061 | +0.0pp | 0.3pp | −0.497pp | −0.129pp | −0.007pp | +0.108pp | +0.532pp |
+| 2400 | 604 | +0.0pp | 0.2pp | −0.342pp | −0.075pp | −0.002pp | +0.047pp | +0.265pp |
 
 #### TC marginal
 
 | TC | n | mean | SD | p05 | p25 | p50 | p75 | p95 |
 |---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| rapid | 1,271 | −0.1pp | 0.8pp | −1.473pp | −0.507pp | −0.105pp | +0.256pp | +1.138pp |
-| classical | 733 | −0.3pp | 1.2pp | −2.550pp | −0.829pp | −0.228pp | +0.287pp | +1.476pp |
+| bullet | 1,269 | +0.0pp | 0.4pp | −0.551pp | −0.069pp | +0.000pp | +0.066pp | +0.650pp |
+| blitz | 1,374 | +0.0pp | 0.5pp | −0.628pp | −0.153pp | +0.000pp | +0.134pp | +0.620pp |
+| rapid | 1,421 | +0.0pp | 0.6pp | −0.855pp | −0.227pp | −0.020pp | +0.168pp | +0.826pp |
+| classical | 764 | −0.2pp | 1.1pp | −2.010pp | −0.524pp | −0.106pp | +0.283pp | +1.379pp |
 
 #### Collapse verdict
 
-- **TC axis**: max |d| = **0.20** (rapid vs classical)
-- **ELO axis**: max |d| = **0.33** (1200 vs 2000)
+- **TC axis**: max |d| = **0.29** (bullet vs classical)
+- **ELO axis**: max |d| = **0.14** (1200 vs 2000)
+
 
 #### Verdicts and recommendation
 
-- **TC verdict**: review (max |d| = 0.20, rapid vs classical)
-- **ELO verdict**: review (max |d| = 0.33, 1200 vs 2000)
-- ELO mean by level (pp): 800 −0.31, 1200 −0.37, 1600 −0.13, 2000 −0.05, 2400 −0.12 (not monotone)
-- **Currently set in code**: [−0.15, +0.13] per 100 moves, one pooled band for every TC (whole-cohort Lichess-eval basis, carried over unchanged by plan 239-02).
-- **Noise**: noise-only IQR 1.080pp against an observed IQR of 0.863pp (noise share 125%): the closed-form noise-only IQR meets or exceeds the observed IQR, so none of the band can be read as a real between-user difference (the per-game deltas are zero-inflated and skewed, which makes the closed form conservative, but the direction is unambiguous).
+- **TC verdict**: review (max |d| = 0.29, bullet vs classical)
+- **ELO verdict**: collapse (max |d| = 0.14, 1200 vs 2000)
+- ELO mean by level (pp): 800 −0.04, 1200 −0.08, 1600 −0.01, 2000 −0.00, 2400 −0.02
+- **Per-TC IQR** (pp): bullet 0.135, blitz 0.286, rapid 0.395, classical 0.808 (widest / narrowest = 6.0x). The TC verdict tests the mean, not this spread.
+- **Noise**: closed-form noise-only IQR 0.618pp against an observed pooled IQR of 0.338pp (183%; conservative, see 5.15). Simulated noise share per TC: bullet 71%, blitz 69%, rapid 74%, classical 72%.
+- **Previously served**: ±0.14 per 100 moves, one pooled band for every TC.
 
-**Recommendation**: one pooled band for both zone TCs: **[−0.60, +0.27] per 100 moves** (p25 and p75 of the pooled distribution rounded outward to the 0.01 grid). Elo keying: none (ELO verdict: review). Versus the live band this is 3.1x as wide (0.28 to 0.87). Negative delta = fewer flaws than equally rated opponents = good.
-
-TC is a `review` verdict (d = 0.20): the rapid marginal IQR is [−0.51, +0.26] and the classical one is [−0.83, +0.29]. The verdict rule keeps the pooled band; per-TC bands are the owner's alternative.
+**Served (owner rule B, per-TC)**: bullet ±0.07, blitz ±0.15, rapid ±0.20, classical ±0.41 per 100 moves (symmetric_band of each TC's own Q1/Q3, D-15). Elo keying: none (ELO verdict: collapse). Negative delta = fewer flaws than equally rated opponents = good.
 
 ---
 
@@ -1002,41 +1022,45 @@ TC is a `review` verdict (d = 0.20): the rapid marginal IQR is [−0.51, +0.26] 
 
 | n | mean | SD | p05 | p25 | p50 | p75 | p95 |
 |---:|---:|---:|---:|---:|---:|---:|---:|
-| 2,004 | −0.2pp | 0.8pp | −1.494pp | −0.616pp | −0.108pp | +0.341pp | +1.035pp |
+| 4,828 | +0.0pp | 0.6pp | −1.107pp | −0.271pp | +0.008pp | +0.224pp | +0.899pp |
 
-Noise-only IQR: 0.869pp (observed IQR: 0.957pp)
+Noise-only IQR: 0.577pp (observed IQR: 0.495pp)
 
 #### ELO marginal
 
 | ELO | n | mean | SD | p05 | p25 | p50 | p75 | p95 |
 |---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| 800 | 354 | +0.0pp | 0.8pp | −1.386pp | −0.446pp | +0.019pp | +0.486pp | +1.127pp |
-| 1200 | 503 | −0.1pp | 0.8pp | −1.496pp | −0.602pp | −0.021pp | +0.376pp | +1.034pp |
-| 1600 | 549 | −0.2pp | 0.8pp | −1.498pp | −0.665pp | −0.146pp | +0.342pp | +1.026pp |
-| 2000 | 436 | −0.3pp | 0.8pp | −1.577pp | −0.708pp | −0.257pp | +0.203pp | +0.915pp |
-| 2400 | 162 | −0.2pp | 0.7pp | −1.288pp | −0.542pp | −0.104pp | +0.241pp | +0.760pp |
+| 800 | 835 | +0.0pp | 0.6pp | −1.014pp | −0.264pp | +0.025pp | +0.320pp | +0.989pp |
+| 1200 | 1,138 | +0.0pp | 0.6pp | −1.142pp | −0.220pp | +0.034pp | +0.259pp | +0.924pp |
+| 1600 | 1,190 | +0.0pp | 0.6pp | −1.174pp | −0.315pp | +0.005pp | +0.244pp | +0.989pp |
+| 2000 | 1,061 | −0.1pp | 0.6pp | −1.177pp | −0.327pp | −0.022pp | +0.171pp | +0.840pp |
+| 2400 | 604 | +0.0pp | 0.4pp | −0.696pp | −0.189pp | +0.001pp | +0.141pp | +0.610pp |
 
 #### TC marginal
 
 | TC | n | mean | SD | p05 | p25 | p50 | p75 | p95 |
 |---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| rapid | 1,271 | −0.2pp | 0.8pp | −1.429pp | −0.617pp | −0.135pp | +0.324pp | +1.025pp |
-| classical | 733 | −0.2pp | 0.8pp | −1.676pp | −0.605pp | −0.063pp | +0.368pp | +1.066pp |
+| bullet | 1,269 | +0.0pp | 0.5pp | −0.818pp | −0.098pp | +0.010pp | +0.125pp | +1.047pp |
+| blitz | 1,374 | +0.0pp | 0.5pp | −0.923pp | −0.238pp | +0.012pp | +0.215pp | +0.743pp |
+| rapid | 1,421 | −0.1pp | 0.6pp | −1.176pp | −0.366pp | −0.021pp | +0.223pp | +0.783pp |
+| classical | 764 | −0.1pp | 0.8pp | −1.484pp | −0.421pp | +0.045pp | +0.408pp | +1.086pp |
 
 #### Collapse verdict
 
-- **TC axis**: max |d| = **0.02** (rapid vs classical)
-- **ELO axis**: max |d| = **0.34** (800 vs 2000)
+- **TC axis**: max |d| = **0.24** (bullet vs rapid)
+- **ELO axis**: max |d| = **0.18** (800 vs 2000)
+
 
 #### Verdicts and recommendation
 
-- **TC verdict**: collapse (max |d| = 0.02, rapid vs classical)
-- **ELO verdict**: review (max |d| = 0.34, 800 vs 2000)
-- ELO mean by level (pp): 800 −0.02, 1200 −0.13, 1600 −0.19, 2000 −0.28, 2400 −0.17 (not monotone)
-- **Currently set in code**: [−0.27, +0.23] per 100 moves, one pooled band for every TC (whole-cohort Lichess-eval basis, carried over unchanged by plan 239-02).
-- **Noise**: noise-only IQR 0.869pp against an observed IQR of 0.957pp (noise share 91%): the band is essentially sampling noise: it is about what per-user means would spread to if every user had the same true gap.
+- **TC verdict**: review (max |d| = 0.24, bullet vs rapid)
+- **ELO verdict**: collapse (max |d| = 0.18, 800 vs 2000)
+- ELO mean by level (pp): 800 +0.02, 1200 −0.01, 1600 −0.04, 2000 −0.10, 2400 −0.03
+- **Per-TC IQR** (pp): bullet 0.223, blitz 0.453, rapid 0.589, classical 0.829 (widest / narrowest = 3.7x). The TC verdict tests the mean, not this spread.
+- **Noise**: closed-form noise-only IQR 0.577pp against an observed pooled IQR of 0.495pp (116%; conservative, see 5.15). Simulated noise share per TC: bullet 65%, blitz 63%, rapid 65%, classical 74%.
+- **Previously served**: ±0.25 per 100 moves, one pooled band for every TC.
 
-**Recommendation**: one pooled band for both zone TCs: **[−0.62, +0.35] per 100 moves** (p25 and p75 of the pooled distribution rounded outward to the 0.01 grid). Elo keying: none (ELO verdict: review). Versus the live band this is 1.9x as wide (0.50 to 0.97). Negative delta = fewer flaws than equally rated opponents = good.
+**Served (owner rule B, per-TC)**: bullet ±0.12, blitz ±0.23, rapid ±0.30, classical ±0.42 per 100 moves (symmetric_band of each TC's own Q1/Q3, D-15). Elo keying: none (ELO verdict: collapse). Negative delta = fewer flaws than equally rated opponents = good.
 
 ---
 
@@ -1046,43 +1070,45 @@ Noise-only IQR: 0.869pp (observed IQR: 0.957pp)
 
 | n | mean | SD | p05 | p25 | p50 | p75 | p95 |
 |---:|---:|---:|---:|---:|---:|---:|---:|
-| 2,004 | +0.0pp | 0.4pp | −0.657pp | −0.233pp | −0.022pp | +0.180pp | +0.528pp |
+| 4,828 | +0.0pp | 0.3pp | −0.486pp | −0.119pp | +0.000pp | +0.101pp | +0.417pp |
 
-Noise-only IQR: 0.421pp (observed IQR: 0.413pp)
+Noise-only IQR: 0.287pp (observed IQR: 0.221pp)
 
 #### ELO marginal
 
 | ELO | n | mean | SD | p05 | p25 | p50 | p75 | p95 |
 |---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| 800 | 354 | +0.0pp | 0.3pp | −0.446pp | −0.157pp | +0.008pp | +0.202pp | +0.553pp |
-| 1200 | 503 | +0.0pp | 0.4pp | −0.684pp | −0.194pp | +0.017pp | +0.187pp | +0.564pp |
-| 1600 | 549 | +0.0pp | 0.4pp | −0.621pp | −0.234pp | −0.006pp | +0.192pp | +0.512pp |
-| 2000 | 436 | −0.1pp | 0.4pp | −0.736pp | −0.300pp | −0.070pp | +0.137pp | +0.429pp |
-| 2400 | 162 | −0.1pp | 0.4pp | −0.680pp | −0.356pp | −0.113pp | +0.116pp | +0.445pp |
+| 800 | 835 | +0.0pp | 0.2pp | −0.352pp | −0.079pp | +0.019pp | +0.117pp | +0.410pp |
+| 1200 | 1,138 | +0.0pp | 0.3pp | −0.452pp | −0.093pp | +0.010pp | +0.119pp | +0.436pp |
+| 1600 | 1,190 | +0.0pp | 0.3pp | −0.489pp | −0.127pp | +0.002pp | +0.113pp | +0.458pp |
+| 2000 | 1,061 | +0.0pp | 0.3pp | −0.591pp | −0.154pp | −0.012pp | +0.084pp | +0.383pp |
+| 2400 | 604 | +0.0pp | 0.3pp | −0.493pp | −0.145pp | −0.009pp | +0.045pp | +0.325pp |
 
 #### TC marginal
 
 | TC | n | mean | SD | p05 | p25 | p50 | p75 | p95 |
 |---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| rapid | 1,271 | +0.0pp | 0.4pp | −0.656pp | −0.248pp | −0.036pp | +0.177pp | +0.512pp |
-| classical | 733 | +0.0pp | 0.4pp | −0.658pp | −0.205pp | +0.012pp | +0.190pp | +0.530pp |
+| bullet | 1,269 | +0.0pp | 0.2pp | −0.342pp | −0.040pp | +0.000pp | +0.052pp | +0.426pp |
+| blitz | 1,374 | +0.0pp | 0.2pp | −0.465pp | −0.124pp | −0.003pp | +0.085pp | +0.326pp |
+| rapid | 1,421 | +0.0pp | 0.3pp | −0.528pp | −0.159pp | −0.001pp | +0.117pp | +0.421pp |
+| classical | 764 | +0.0pp | 0.3pp | −0.585pp | −0.175pp | +0.022pp | +0.198pp | +0.494pp |
 
 #### Collapse verdict
 
-- **TC axis**: max |d| = **0.09** (rapid vs classical)
-- **ELO axis**: max |d| = **0.44** (800 vs 2400)
+- **TC axis**: max |d| = **0.16** (bullet vs blitz)
+- **ELO axis**: max |d| = **0.28** (800 vs 2400)
+
 
 #### Verdicts and recommendation
 
-- **TC verdict**: collapse (max |d| = 0.09, rapid vs classical)
-- **ELO verdict**: review (max |d| = 0.44, 800 vs 2400)
-- ELO mean by level (pp): 800 +0.03, 1200 −0.01, 1600 −0.03, 2000 −0.10, 2400 −0.11 (monotone falling)
-- **Currently set in code**: [−0.12, +0.10] per 100 moves, one pooled band for every TC (whole-cohort Lichess-eval basis, carried over unchanged by plan 239-02).
-- **Noise**: noise-only IQR 0.421pp against an observed IQR of 0.413pp (noise share 102%): the closed-form noise-only IQR meets or exceeds the observed IQR, so none of the band can be read as a real between-user difference (the per-game deltas are zero-inflated and skewed, which makes the closed form conservative, but the direction is unambiguous).
+- **TC verdict**: collapse (max |d| = 0.16, bullet vs blitz)
+- **ELO verdict**: review (max |d| = 0.28, 800 vs 2400)
+- ELO mean by level (pp): 800 +0.02, 1200 +0.01, 1600 −0.01, 2000 −0.05, 2400 −0.04
+- **Per-TC IQR** (pp): bullet 0.092, blitz 0.209, rapid 0.276, classical 0.373 (widest / narrowest = 4.0x). The TC verdict tests the mean, not this spread.
+- **Noise**: closed-form noise-only IQR 0.287pp against an observed pooled IQR of 0.221pp (130%; conservative, see 5.15). Simulated noise share per TC: bullet 75%, blitz 68%, rapid 69%, classical 74%.
+- **Previously served**: ±0.11 per 100 moves, one pooled band for every TC.
 
-**Recommendation**: one pooled band for both zone TCs: **[−0.24, +0.18] per 100 moves** (p25 and p75 of the pooled distribution rounded outward to the 0.01 grid). Elo keying: none (ELO verdict: review). Versus the live band this is 1.9x as wide (0.22 to 0.42). Negative delta = fewer flaws than equally rated opponents = good.
-
-The ELO axis is the strongest of the 12 (`review`, d = 0.44, below the 0.5 keep-separate line): no Elo keying is triggered, but it is the metric closest to it.
+**Served (owner rule B, per-TC)**: bullet ±0.05, blitz ±0.11, rapid ±0.14, classical ±0.19 per 100 moves (symmetric_band of each TC's own Q1/Q3, D-15). Elo keying: none (ELO verdict: review). Negative delta = fewer flaws than equally rated opponents = good.
 
 ---
 
@@ -1092,41 +1118,45 @@ The ELO axis is the strongest of the 12 (`review`, d = 0.44, below the 0.5 keep-
 
 | n | mean | SD | p05 | p25 | p50 | p75 | p95 |
 |---:|---:|---:|---:|---:|---:|---:|---:|
-| 2,004 | +0.0pp | 0.5pp | −0.856pp | −0.314pp | −0.015pp | +0.270pp | +0.795pp |
+| 4,828 | +0.0pp | 0.3pp | −0.548pp | −0.128pp | +0.001pp | +0.117pp | +0.523pp |
 
-Noise-only IQR: 0.652pp (observed IQR: 0.584pp)
+Noise-only IQR: 0.417pp (observed IQR: 0.245pp)
 
 #### ELO marginal
 
 | ELO | n | mean | SD | p05 | p25 | p50 | p75 | p95 |
 |---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| 800 | 354 | +0.0pp | 0.8pp | −1.358pp | −0.465pp | −0.027pp | +0.415pp | +1.212pp |
-| 1200 | 503 | +0.0pp | 0.6pp | −0.972pp | −0.389pp | −0.032pp | +0.328pp | +0.941pp |
-| 1600 | 549 | +0.0pp | 0.4pp | −0.749pp | −0.290pp | −0.008pp | +0.251pp | +0.698pp |
-| 2000 | 436 | +0.0pp | 0.3pp | −0.532pp | −0.264pp | −0.013pp | +0.176pp | +0.490pp |
-| 2400 | 162 | +0.0pp | 0.3pp | −0.464pp | −0.125pp | +0.009pp | +0.194pp | +0.533pp |
+| 800 | 835 | +0.0pp | 0.5pp | −0.742pp | −0.186pp | +0.007pp | +0.190pp | +0.716pp |
+| 1200 | 1,138 | +0.0pp | 0.4pp | −0.577pp | −0.141pp | +0.001pp | +0.142pp | +0.630pp |
+| 1600 | 1,190 | +0.0pp | 0.3pp | −0.534pp | −0.149pp | −0.001pp | +0.109pp | +0.503pp |
+| 2000 | 1,061 | +0.0pp | 0.3pp | −0.463pp | −0.107pp | −0.002pp | +0.090pp | +0.386pp |
+| 2400 | 604 | +0.0pp | 0.2pp | −0.289pp | −0.071pp | +0.005pp | +0.068pp | +0.289pp |
 
 #### TC marginal
 
 | TC | n | mean | SD | p05 | p25 | p50 | p75 | p95 |
 |---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| rapid | 1,271 | +0.0pp | 0.5pp | −0.817pp | −0.290pp | −0.015pp | +0.257pp | +0.704pp |
-| classical | 733 | +0.0pp | 0.6pp | −0.977pp | −0.342pp | −0.015pp | +0.305pp | +0.926pp |
+| bullet | 1,269 | +0.0pp | 0.3pp | −0.452pp | −0.056pp | +0.002pp | +0.062pp | +0.474pp |
+| blitz | 1,374 | +0.0pp | 0.3pp | −0.482pp | −0.127pp | −0.009pp | +0.094pp | +0.426pp |
+| rapid | 1,421 | +0.0pp | 0.3pp | −0.551pp | −0.151pp | +0.003pp | +0.133pp | +0.479pp |
+| classical | 764 | +0.0pp | 0.5pp | −0.761pp | −0.260pp | +0.021pp | +0.239pp | +0.873pp |
 
 #### Collapse verdict
 
-- **TC axis**: max |d| = **0.02** (rapid vs classical)
-- **ELO axis**: max |d| = **0.16** (2000 vs 2400)
+- **TC axis**: max |d| = **0.08** (bullet vs blitz)
+- **ELO axis**: max |d| = **0.06** (1200 vs 1600)
+
 
 #### Verdicts and recommendation
 
-- **TC verdict**: collapse (max |d| = 0.02, rapid vs classical)
-- **ELO verdict**: collapse (max |d| = 0.16, 2000 vs 2400)
-- ELO mean by level (pp): 800 −0.04, 1200 −0.02, 1600 −0.01, 2000 −0.03, 2400 +0.02 (not monotone)
-- **Currently set in code**: [−0.11, +0.11] per 100 moves, one pooled band for every TC (whole-cohort Lichess-eval basis, carried over unchanged by plan 239-02).
-- **Noise**: noise-only IQR 0.652pp against an observed IQR of 0.584pp (noise share 112%): the closed-form noise-only IQR meets or exceeds the observed IQR, so none of the band can be read as a real between-user difference (the per-game deltas are zero-inflated and skewed, which makes the closed form conservative, but the direction is unambiguous).
+- **TC verdict**: collapse (max |d| = 0.08, bullet vs blitz)
+- **ELO verdict**: collapse (max |d| = 0.06, 1200 vs 1600)
+- ELO mean by level (pp): 800 +0.00, 1200 +0.00, 1600 −0.02, 2000 −0.01, 2400 −0.00
+- **Per-TC IQR** (pp): bullet 0.118, blitz 0.222, rapid 0.283, classical 0.499 (widest / narrowest = 4.2x). The TC verdict tests the mean, not this spread.
+- **Noise**: closed-form noise-only IQR 0.417pp against an observed pooled IQR of 0.245pp (170%; conservative, see 5.15). Simulated noise share per TC: bullet 83%, blitz 83%, rapid 85%, classical 81%.
+- **Previously served**: ±0.11 per 100 moves, one pooled band for every TC.
 
-**Recommendation**: one pooled band for both zone TCs: **[−0.32, +0.28] per 100 moves** (p25 and p75 of the pooled distribution rounded outward to the 0.01 grid). Elo keying: none (ELO verdict: collapse). Versus the live band this is 2.7x as wide (0.22 to 0.60). Negative delta = fewer flaws than equally rated opponents = good.
+**Served (owner rule B, per-TC)**: bullet ±0.06, blitz ±0.12, rapid ±0.15, classical ±0.25 per 100 moves (symmetric_band of each TC's own Q1/Q3, D-15). Elo keying: none (ELO verdict: collapse). Negative delta = fewer flaws than equally rated opponents = good.
 
 ---
 
@@ -1136,41 +1166,45 @@ Noise-only IQR: 0.652pp (observed IQR: 0.584pp)
 
 | n | mean | SD | p05 | p25 | p50 | p75 | p95 |
 |---:|---:|---:|---:|---:|---:|---:|---:|
-| 2,004 | +0.0pp | 0.5pp | −0.685pp | −0.223pp | +0.002pp | +0.251pp | +0.736pp |
+| 4,828 | +0.0pp | 0.3pp | −0.412pp | −0.098pp | +0.000pp | +0.105pp | +0.442pp |
 
-Noise-only IQR: 0.559pp (observed IQR: 0.474pp)
+Noise-only IQR: 0.360pp (observed IQR: 0.203pp)
 
 #### ELO marginal
 
 | ELO | n | mean | SD | p05 | p25 | p50 | p75 | p95 |
 |---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| 800 | 354 | +0.0pp | 0.7pp | −1.048pp | −0.362pp | +0.076pp | +0.392pp | +1.172pp |
-| 1200 | 503 | +0.0pp | 0.5pp | −0.870pp | −0.283pp | +0.007pp | +0.334pp | +0.930pp |
-| 1600 | 549 | +0.0pp | 0.4pp | −0.559pp | −0.210pp | −0.009pp | +0.226pp | +0.590pp |
-| 2000 | 436 | +0.0pp | 0.3pp | −0.381pp | −0.153pp | −0.005pp | +0.166pp | +0.441pp |
-| 2400 | 162 | +0.0pp | 0.2pp | −0.378pp | −0.151pp | −0.016pp | +0.116pp | +0.394pp |
+| 800 | 835 | +0.0pp | 0.5pp | −0.647pp | −0.139pp | +0.003pp | +0.166pp | +0.696pp |
+| 1200 | 1,138 | +0.0pp | 0.3pp | −0.496pp | −0.119pp | +0.002pp | +0.133pp | +0.548pp |
+| 1600 | 1,190 | +0.0pp | 0.2pp | −0.380pp | −0.091pp | +0.002pp | +0.106pp | +0.409pp |
+| 2000 | 1,061 | +0.0pp | 0.2pp | −0.295pp | −0.077pp | +0.000pp | +0.082pp | +0.315pp |
+| 2400 | 604 | +0.0pp | 0.2pp | −0.228pp | −0.068pp | −0.005pp | +0.045pp | +0.221pp |
 
 #### TC marginal
 
 | TC | n | mean | SD | p05 | p25 | p50 | p75 | p95 |
 |---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| rapid | 1,271 | +0.0pp | 0.4pp | −0.623pp | −0.224pp | −0.006pp | +0.223pp | +0.662pp |
-| classical | 733 | +0.0pp | 0.6pp | −0.877pp | −0.223pp | +0.025pp | +0.292pp | +0.939pp |
+| bullet | 1,269 | +0.0pp | 0.2pp | −0.395pp | −0.044pp | +0.000pp | +0.044pp | +0.344pp |
+| blitz | 1,374 | +0.0pp | 0.2pp | −0.331pp | −0.085pp | +0.002pp | +0.099pp | +0.380pp |
+| rapid | 1,421 | +0.0pp | 0.3pp | −0.401pp | −0.113pp | −0.005pp | +0.119pp | +0.419pp |
+| classical | 764 | +0.0pp | 0.5pp | −0.740pp | −0.187pp | +0.019pp | +0.211pp | +0.809pp |
 
 #### Collapse verdict
 
-- **TC axis**: max |d| = **0.07** (rapid vs classical)
-- **ELO axis**: max |d| = **0.09** (1200 vs 2400)
+- **TC axis**: max |d| = **0.09** (bullet vs classical)
+- **ELO axis**: max |d| = **0.06** (2000 vs 2400)
+
 
 #### Verdicts and recommendation
 
-- **TC verdict**: collapse (max |d| = 0.07, rapid vs classical)
-- **ELO verdict**: collapse (max |d| = 0.09, 1200 vs 2400)
-- ELO mean by level (pp): 800 +0.04, 1200 +0.03, 1600 +0.00, 2000 +0.01, 2400 −0.01 (not monotone)
-- **Currently set in code**: [−0.09, +0.09] per 100 moves, one pooled band for every TC (whole-cohort Lichess-eval basis, carried over unchanged by plan 239-02).
-- **Noise**: noise-only IQR 0.559pp against an observed IQR of 0.474pp (noise share 118%): the closed-form noise-only IQR meets or exceeds the observed IQR, so none of the band can be read as a real between-user difference (the per-game deltas are zero-inflated and skewed, which makes the closed form conservative, but the direction is unambiguous).
+- **TC verdict**: collapse (max |d| = 0.09, bullet vs classical)
+- **ELO verdict**: collapse (max |d| = 0.06, 2000 vs 2400)
+- ELO mean by level (pp): 800 +0.01, 1200 +0.01, 1600 +0.01, 2000 +0.01, 2400 −0.01
+- **Per-TC IQR** (pp): bullet 0.087, blitz 0.183, rapid 0.232, classical 0.398 (widest / narrowest = 4.6x). The TC verdict tests the mean, not this spread.
+- **Noise**: closed-form noise-only IQR 0.360pp against an observed pooled IQR of 0.203pp (178%; conservative, see 5.15). Simulated noise share per TC: bullet 98%, blitz 84%, rapid 85%, classical 83%.
+- **Previously served**: ±0.09 per 100 moves, one pooled band for every TC.
 
-**Recommendation**: one pooled band for both zone TCs: **[−0.23, +0.26] per 100 moves** (p25 and p75 of the pooled distribution rounded outward to the 0.01 grid). Elo keying: none (ELO verdict: collapse). Versus the live band this is 2.7x as wide (0.18 to 0.49). Negative delta = fewer flaws than equally rated opponents = good.
+**Served (owner rule B, per-TC)**: bullet ±0.05, blitz ±0.10, rapid ±0.12, classical ±0.20 per 100 moves (symmetric_band of each TC's own Q1/Q3, D-15). Elo keying: none (ELO verdict: collapse). Negative delta = fewer flaws than equally rated opponents = good.
 
 State-conditional (D-03): under ELO-matched pairing this reads partly as 'how often the situation arose', not purely luck.
 
@@ -1182,41 +1216,45 @@ State-conditional (D-03): under ELO-matched pairing this reads partly as 'how of
 
 | n | mean | SD | p05 | p25 | p50 | p75 | p95 |
 |---:|---:|---:|---:|---:|---:|---:|---:|
-| 2,004 | +0.0pp | 0.3pp | −0.421pp | −0.116pp | −0.007pp | +0.101pp | +0.349pp |
+| 4,828 | +0.0pp | 0.2pp | −0.215pp | −0.046pp | +0.000pp | +0.047pp | +0.214pp |
 
-Noise-only IQR: 0.300pp (observed IQR: 0.217pp)
+Noise-only IQR: 0.184pp (observed IQR: 0.093pp)
 
 #### ELO marginal
 
 | ELO | n | mean | SD | p05 | p25 | p50 | p75 | p95 |
 |---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| 800 | 354 | +0.0pp | 0.4pp | −0.744pp | −0.271pp | −0.021pp | +0.183pp | +0.585pp |
-| 1200 | 503 | +0.0pp | 0.3pp | −0.449pp | −0.179pp | −0.005pp | +0.155pp | +0.426pp |
-| 1600 | 549 | +0.0pp | 0.2pp | −0.299pp | −0.103pp | −0.005pp | +0.090pp | +0.274pp |
-| 2000 | 436 | +0.0pp | 0.1pp | −0.222pp | −0.077pp | +0.000pp | +0.070pp | +0.186pp |
-| 2400 | 162 | +0.0pp | 0.1pp | −0.161pp | −0.058pp | −0.012pp | +0.028pp | +0.125pp |
+| 800 | 835 | +0.0pp | 0.2pp | −0.381pp | −0.091pp | +0.000pp | +0.080pp | +0.348pp |
+| 1200 | 1,138 | +0.0pp | 0.2pp | −0.263pp | −0.058pp | +0.002pp | +0.072pp | +0.262pp |
+| 1600 | 1,190 | +0.0pp | 0.1pp | −0.182pp | −0.040pp | +0.000pp | +0.048pp | +0.202pp |
+| 2000 | 1,061 | +0.0pp | 0.1pp | −0.141pp | −0.038pp | +0.000pp | +0.036pp | +0.142pp |
+| 2400 | 604 | +0.0pp | 0.1pp | −0.096pp | −0.025pp | +0.000pp | +0.015pp | +0.075pp |
 
 #### TC marginal
 
 | TC | n | mean | SD | p05 | p25 | p50 | p75 | p95 |
 |---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| rapid | 1,271 | +0.0pp | 0.2pp | −0.377pp | −0.117pp | −0.007pp | +0.093pp | +0.338pp |
-| classical | 733 | +0.0pp | 0.3pp | −0.464pp | −0.113pp | −0.005pp | +0.111pp | +0.385pp |
+| bullet | 1,269 | +0.0pp | 0.1pp | −0.170pp | −0.023pp | +0.000pp | +0.019pp | +0.171pp |
+| blitz | 1,374 | +0.0pp | 0.1pp | −0.167pp | −0.042pp | +0.000pp | +0.044pp | +0.187pp |
+| rapid | 1,421 | +0.0pp | 0.1pp | −0.210pp | −0.060pp | +0.000pp | +0.056pp | +0.214pp |
+| classical | 764 | +0.0pp | 0.2pp | −0.380pp | −0.071pp | +0.002pp | +0.095pp | +0.331pp |
 
 #### Collapse verdict
 
-- **TC axis**: max |d| = **0.01** (rapid vs classical)
-- **ELO axis**: max |d| = **0.13** (800 vs 1600)
+- **TC axis**: max |d| = **0.04** (bullet vs blitz)
+- **ELO axis**: max |d| = **0.10** (1600 vs 2400)
+
 
 #### Verdicts and recommendation
 
-- **TC verdict**: collapse (max |d| = 0.01, rapid vs classical)
-- **ELO verdict**: collapse (max |d| = 0.13, 800 vs 1600)
-- ELO mean by level (pp): 800 −0.04, 1200 −0.01, 1600 −0.01, 2000 −0.01, 2400 −0.02 (not monotone)
-- **Currently set in code**: [−0.04, +0.04] per 100 moves, one pooled band for every TC (whole-cohort Lichess-eval basis, carried over unchanged by plan 239-02).
-- **Noise**: noise-only IQR 0.300pp against an observed IQR of 0.217pp (noise share 138%): the closed-form noise-only IQR meets or exceeds the observed IQR, so none of the band can be read as a real between-user difference (the per-game deltas are zero-inflated and skewed, which makes the closed form conservative, but the direction is unambiguous).
+- **TC verdict**: collapse (max |d| = 0.04, bullet vs blitz)
+- **ELO verdict**: collapse (max |d| = 0.10, 1600 vs 2400)
+- ELO mean by level (pp): 800 −0.01, 1200 +0.00, 1600 +0.00, 2000 −0.00, 2400 −0.01
+- **Per-TC IQR** (pp): bullet 0.042, blitz 0.086, rapid 0.116, classical 0.166 (widest / narrowest = 4.0x). The TC verdict tests the mean, not this spread.
+- **Noise**: closed-form noise-only IQR 0.184pp against an observed pooled IQR of 0.093pp (198%; conservative, see 5.15). Simulated noise share per TC: bullet 85%, blitz 79%, rapid 75%, classical 87%.
+- **Previously served**: ±0.04 per 100 moves, one pooled band for every TC.
 
-**Recommendation**: one pooled band for both zone TCs: **[−0.12, +0.11] per 100 moves** (p25 and p75 of the pooled distribution rounded outward to the 0.01 grid). Elo keying: none (ELO verdict: collapse). Versus the live band this is 2.9x as wide (0.08 to 0.23). Negative delta = fewer flaws than equally rated opponents = good.
+**Served (owner rule B, per-TC)**: bullet ±0.03, blitz ±0.05, rapid ±0.06, classical ±0.09 per 100 moves (symmetric_band of each TC's own Q1/Q3, D-15). Elo keying: none (ELO verdict: collapse). Negative delta = fewer flaws than equally rated opponents = good.
 
 ---
 
@@ -1226,41 +1264,45 @@ Noise-only IQR: 0.300pp (observed IQR: 0.217pp)
 
 | n | mean | SD | p05 | p25 | p50 | p75 | p95 |
 |---:|---:|---:|---:|---:|---:|---:|---:|
-| 2,004 | +0.0pp | 0.3pp | −0.533pp | −0.166pp | +0.014pp | +0.190pp | +0.519pp |
+| 4,828 | +0.0pp | 0.2pp | −0.359pp | −0.080pp | +0.000pp | +0.080pp | +0.355pp |
 
-Noise-only IQR: 0.410pp (observed IQR: 0.356pp)
+Noise-only IQR: 0.269pp (observed IQR: 0.160pp)
 
 #### ELO marginal
 
 | ELO | n | mean | SD | p05 | p25 | p50 | p75 | p95 |
 |---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| 800 | 354 | +0.0pp | 0.5pp | −0.806pp | −0.304pp | +0.001pp | +0.317pp | +0.838pp |
-| 1200 | 503 | +0.0pp | 0.4pp | −0.567pp | −0.200pp | +0.027pp | +0.223pp | +0.605pp |
-| 1600 | 549 | +0.0pp | 0.3pp | −0.411pp | −0.137pp | +0.022pp | +0.184pp | +0.438pp |
-| 2000 | 436 | +0.0pp | 0.2pp | −0.342pp | −0.122pp | +0.018pp | +0.164pp | +0.381pp |
-| 2400 | 162 | +0.0pp | 0.2pp | −0.370pp | −0.098pp | −0.013pp | +0.103pp | +0.281pp |
+| 800 | 835 | +0.0pp | 0.3pp | −0.478pp | −0.116pp | −0.003pp | +0.126pp | +0.488pp |
+| 1200 | 1,138 | +0.0pp | 0.3pp | −0.425pp | −0.104pp | +0.000pp | +0.110pp | +0.389pp |
+| 1600 | 1,190 | +0.0pp | 0.2pp | −0.338pp | −0.069pp | +0.000pp | +0.079pp | +0.324pp |
+| 2000 | 1,061 | +0.0pp | 0.2pp | −0.271pp | −0.071pp | +0.000pp | +0.064pp | +0.241pp |
+| 2400 | 604 | +0.0pp | 0.1pp | −0.191pp | −0.040pp | +0.002pp | +0.044pp | +0.231pp |
 
 #### TC marginal
 
 | TC | n | mean | SD | p05 | p25 | p50 | p75 | p95 |
 |---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| rapid | 1,271 | +0.0pp | 0.3pp | −0.470pp | −0.156pp | +0.020pp | +0.191pp | +0.499pp |
-| classical | 733 | +0.0pp | 0.4pp | −0.610pp | −0.185pp | +0.010pp | +0.190pp | +0.573pp |
+| bullet | 1,269 | +0.0pp | 0.2pp | −0.328pp | −0.038pp | +0.000pp | +0.038pp | +0.331pp |
+| blitz | 1,374 | +0.0pp | 0.2pp | −0.307pp | −0.073pp | +0.000pp | +0.073pp | +0.289pp |
+| rapid | 1,421 | +0.0pp | 0.2pp | −0.331pp | −0.092pp | −0.001pp | +0.091pp | +0.341pp |
+| classical | 764 | +0.0pp | 0.3pp | −0.527pp | −0.147pp | +0.009pp | +0.158pp | +0.488pp |
 
 #### Collapse verdict
 
-- **TC axis**: max |d| = **0.03** (rapid vs classical)
-- **ELO axis**: max |d| = **0.11** (2000 vs 2400)
+- **TC axis**: max |d| = **0.03** (blitz vs rapid)
+- **ELO axis**: max |d| = **0.06** (2000 vs 2400)
+
 
 #### Verdicts and recommendation
 
-- **TC verdict**: collapse (max |d| = 0.03, rapid vs classical)
-- **ELO verdict**: collapse (max |d| = 0.11, 2000 vs 2400)
-- ELO mean by level (pp): 800 +0.00, 1200 +0.01, 1600 +0.01, 2000 +0.02, 2400 −0.01 (not monotone)
-- **Currently set in code**: [−0.07, +0.08] per 100 moves, one pooled band for every TC (whole-cohort Lichess-eval basis, carried over unchanged by plan 239-02).
-- **Noise**: noise-only IQR 0.410pp against an observed IQR of 0.356pp (noise share 115%): the closed-form noise-only IQR meets or exceeds the observed IQR, so none of the band can be read as a real between-user difference (the per-game deltas are zero-inflated and skewed, which makes the closed form conservative, but the direction is unambiguous).
+- **TC verdict**: collapse (max |d| = 0.03, blitz vs rapid)
+- **ELO verdict**: collapse (max |d| = 0.06, 2000 vs 2400)
+- ELO mean by level (pp): 800 −0.00, 1200 −0.00, 1600 +0.00, 2000 −0.00, 2400 +0.01
+- **Per-TC IQR** (pp): bullet 0.076, blitz 0.147, rapid 0.184, classical 0.305 (widest / narrowest = 4.0x). The TC verdict tests the mean, not this spread.
+- **Noise**: closed-form noise-only IQR 0.269pp against an observed pooled IQR of 0.160pp (168%; conservative, see 5.15). Simulated noise share per TC: bullet 83%, blitz 80%, rapid 82%, classical 80%.
+- **Previously served**: ±0.08 per 100 moves, one pooled band for every TC.
 
-**Recommendation**: one pooled band for both zone TCs: **[−0.17, +0.19] per 100 moves** (p25 and p75 of the pooled distribution rounded outward to the 0.01 grid). Elo keying: none (ELO verdict: collapse). Versus the live band this is 2.4x as wide (0.15 to 0.36). Negative delta = fewer flaws than equally rated opponents = good.
+**Served (owner rule B, per-TC)**: bullet ±0.04, blitz ±0.08, rapid ±0.10, classical ±0.16 per 100 moves (symmetric_band of each TC's own Q1/Q3, D-15). Elo keying: none (ELO verdict: collapse). Negative delta = fewer flaws than equally rated opponents = good.
 
 State-conditional (D-03): under ELO-matched pairing this reads partly as 'how often the situation arose', not purely conversion skill.
 
@@ -1268,83 +1310,78 @@ State-conditional (D-03): under ELO-matched pairing this reads partly as 'how of
 
 ### 5.13 Tactic Missed/Allowed Zones (D-06)
 
-> One row per tactic family and orientation. Value = per-user mean over ≥20 analyzed games of the per-game count difference
-> (your tactic flaws − opponent's) whose motif is in the family's `FAMILY_TO_MOTIF_INTS`
-> ints and whose confidence is ≥ 70; shown per 100 games
-> ("per100g" unit). Negative = you commit/allow fewer than equally-rated opponents.
-> `n/a` = a thin TC level (<30 user-cells) or a verdict that could not be computed.
+> Full-analysis lane basis. One row per tactic family and orientation. Value =
+> per-user mean over ≥20 analyzed games of the per-game count
+> difference (your tactic flaws − opponent's) whose motif is in the family's
+> `FAMILY_TO_MOTIF_INTS` ints and whose confidence is ≥ 70;
+> shown per 100 games ("per100g" unit). Negative = you commit/allow fewer than
+> equally-rated opponents. `n/a` = a thin TC level (<30 user-cells) or a verdict that could not be computed.
 
 | family | orientation | n | p25 | p50 | p75 | rapid p25 to p75 | classical p25 to p75 | TC max abs d | ELO max abs d | pct_nonzero | noise-only IQR | zone_viable |
 |---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| fork | missed | 2,004 | −2.20 | +0.00 | +2.13 | −2.33 to +2.13 | −2.00 to +2.13 | 0.04 (collapse) | 0.05 (collapse) | 79.2% | 5.37 | yes |
-| fork | allowed | 2,004 | −4.11 | +0.00 | +3.23 | −4.10 to +3.11 | −4.11 to +3.53 | 0.01 (collapse) | 0.14 (collapse) | 93.8% | 8.06 | yes |
-| skewer | missed | 2,004 | +0.00 | +0.00 | +0.00 | +0.00 to +0.00 | +0.00 to +0.00 | 0.05 (collapse) | 0.04 (collapse) | 23.1% | 1.78 | no |
-| skewer | allowed | 2,004 | +0.00 | +0.00 | +0.00 | −1.00 to +1.00 | +0.00 to +0.00 | 0.04 (collapse) | 0.07 (collapse) | 35.6% | 2.38 | no |
-| pin | missed | 2,004 | −1.41 | +0.00 | +1.89 | −1.54 to +2.00 | −1.25 to +1.69 | 0.04 (collapse) | 0.08 (collapse) | 66.1% | 3.95 | yes |
-| pin | allowed | 2,004 | −2.86 | +0.00 | +2.04 | −2.63 to +2.07 | −3.00 to +2.00 | 0.05 (collapse) | 0.12 (collapse) | 80.0% | 5.20 | yes |
-| x_ray | missed | 2,004 | +0.00 | +0.00 | +0.00 | +0.00 to +0.00 | +0.00 to +0.00 | 0.02 (collapse) | 0.10 (collapse) | 1.1% | 0.41 | no |
-| x_ray | allowed | 2,004 | +0.00 | +0.00 | +0.00 | +0.00 to +0.00 | +0.00 to +0.00 | 0.02 (collapse) | 0.10 (collapse) | 1.5% | 0.39 | no |
-| double_check | missed | 2,004 | +0.00 | +0.00 | +0.00 | +0.00 to +0.00 | +0.00 to +0.00 | 0.06 (collapse) | 0.08 (collapse) | 4.1% | 0.69 | no |
-| double_check | allowed | 2,004 | +0.00 | +0.00 | +0.00 | +0.00 to +0.00 | +0.00 to +0.00 | 0.00 (collapse) | 0.11 (collapse) | 7.9% | 0.96 | no |
-| discovered_check | missed | 2,004 | +0.00 | +0.00 | +0.00 | +0.00 to +0.00 | +0.00 to +0.00 | 0.01 (collapse) | 0.12 (collapse) | 25.8% | 1.92 | no |
-| discovered_check | allowed | 2,004 | −1.00 | +0.00 | +1.00 | −1.00 to +1.00 | −1.00 to +1.00 | 0.06 (collapse) | 0.06 (collapse) | 41.7% | 2.60 | no |
-| discovered_attack | missed | 2,004 | +0.00 | +0.00 | +0.00 | −1.00 to +0.00 | +0.00 to +0.00 | 0.01 (collapse) | 0.09 (collapse) | 37.3% | 2.40 | no |
-| discovered_attack | allowed | 2,004 | −1.23 | +0.00 | +1.06 | −1.28 to +1.09 | −1.19 to +1.01 | 0.01 (collapse) | 0.08 (collapse) | 55.3% | 3.15 | yes |
-| trapped_piece | missed | 2,004 | +0.00 | +0.00 | +0.00 | +0.00 to +0.00 | +0.00 to +0.00 | 0.06 (collapse) | 0.22 (review) | 23.6% | 1.75 | no |
-| trapped_piece | allowed | 2,004 | +0.00 | +0.00 | +0.25 | −1.00 to +1.00 | +0.00 to +0.00 | 0.05 (collapse) | 0.18 (collapse) | 37.4% | 2.30 | no |
-| hanging | missed | 2,004 | −1.13 | +0.00 | +1.48 | −1.18 to +1.57 | −1.04 to +1.41 | 0.00 (collapse) | 0.20 (review) | 61.4% | 4.43 | yes |
-| hanging | allowed | 2,004 | −5.10 | −1.00 | +3.03 | −5.00 to +3.09 | −5.36 to +2.86 | 0.05 (collapse) | 0.15 (collapse) | 92.8% | 9.03 | yes |
-| mate | missed | 2,004 | −2.17 | +0.00 | +2.90 | −2.33 to +2.78 | −1.89 to +3.00 | 0.06 (collapse) | 0.14 (collapse) | 78.9% | 6.50 | yes |
-| mate | allowed | 2,004 | −7.00 | −1.16 | +4.09 | −7.00 to +4.00 | −7.00 to +4.35 | 0.03 (collapse) | 0.06 (collapse) | 95.8% | 10.55 | yes |
-| deflection | missed | 2,004 | +0.00 | +0.00 | +0.00 | +0.00 to +0.00 | +0.00 to +0.00 | 0.04 (collapse) | 0.23 (review) | 30.4% | 1.97 | no |
-| deflection | allowed | 2,004 | −1.00 | +0.00 | +1.00 | −1.02 to +1.00 | +0.00 to +1.00 | 0.06 (collapse) | 0.23 (review) | 40.4% | 2.46 | no |
-| intermezzo | missed | 2,004 | +0.00 | +0.00 | +0.00 | +0.00 to +0.00 | +0.00 to +0.00 | 0.03 (collapse) | 0.15 (collapse) | 11.7% | 1.15 | no |
-| intermezzo | allowed | 2,004 | +0.00 | +0.00 | +0.00 | +0.00 to +0.00 | +0.00 to +0.00 | 0.07 (collapse) | 0.22 (review) | 18.3% | 1.43 | no |
-| interference | missed | 2,004 | +0.00 | +0.00 | +0.00 | +0.00 to +0.00 | +0.00 to +0.00 | 0.09 (collapse) | 0.12 (collapse) | 5.4% | 0.74 | no |
-| interference | allowed | 2,004 | +0.00 | +0.00 | +0.00 | +0.00 to +0.00 | +0.00 to +0.00 | 0.03 (collapse) | 0.15 (collapse) | 7.8% | 0.92 | no |
-| capturing_defender | missed | 2,004 | +0.00 | +0.00 | +0.00 | +0.00 to +0.00 | +0.00 to +0.00 | 0.04 (collapse) | 0.28 (review) | 7.9% | 0.88 | no |
-| capturing_defender | allowed | 2,004 | +0.00 | +0.00 | +0.00 | +0.00 to +0.00 | +0.00 to +0.00 | 0.05 (collapse) | 0.23 (review) | 13.0% | 1.28 | no |
-| attraction | missed | 2,004 | +0.00 | +0.00 | +0.00 | +0.00 to +1.00 | +0.00 to +0.00 | 0.07 (collapse) | 0.10 (collapse) | 34.1% | 2.16 | no |
-| attraction | allowed | 2,004 | −1.01 | +0.00 | +1.00 | −1.05 to +1.00 | +0.00 to +1.00 | 0.13 (collapse) | 0.11 (collapse) | 43.2% | 2.55 | no |
-| sacrifice | missed | 2,004 | +0.00 | +0.00 | +0.00 | +0.00 to +0.00 | +0.00 to +0.00 | 0.01 (collapse) | 0.11 (collapse) | 33.3% | 2.16 | no |
-| sacrifice | allowed | 2,004 | +0.00 | +0.00 | +0.00 | +0.00 to +0.00 | +0.00 to +0.00 | 0.04 (collapse) | 0.11 (collapse) | 32.5% | 2.15 | no |
-| en_passant | missed | 2,004 | +0.00 | +0.00 | +0.00 | +0.00 to +0.00 | +0.00 to +0.00 | 0.01 (collapse) | 0.08 (collapse) | 6.1% | 0.72 | no |
-| en_passant | allowed | 2,004 | +0.00 | +0.00 | +0.00 | +0.00 to +0.00 | +0.00 to +0.00 | 0.05 (collapse) | 0.24 (review) | 9.9% | 0.95 | no |
-| under_promotion | missed | 2,004 | +0.00 | +0.00 | +0.00 | +0.00 to +0.00 | +0.00 to +0.00 | 0.07 (collapse) | 0.10 (collapse) | 0.2% | 0.20 | no |
-| under_promotion | allowed | 2,004 | +0.00 | +0.00 | +0.00 | +0.00 to +0.00 | +0.00 to +0.00 | 0.04 (collapse) | 0.10 (collapse) | 0.5% | 0.29 | no |
-| promotion | missed | 2,004 | +0.00 | +0.00 | +0.00 | +0.00 to +0.00 | +0.00 to +0.00 | 0.07 (collapse) | 0.12 (collapse) | 21.0% | 1.58 | no |
-| promotion | allowed | 2,004 | +0.00 | +0.00 | +0.00 | +0.00 to +0.00 | +0.00 to +0.00 | 0.05 (collapse) | 0.09 (collapse) | 31.2% | 2.05 | no |
+| fork | missed | 2,006 | −2.22 | +0.00 | +2.13 | −2.33 to +2.13 | −2.00 to +2.13 | 0.04 | 0.05 | 79.2% | 5.37 | yes |
+| fork | allowed | 2,006 | −4.08 | +0.00 | +3.23 | −4.08 to +3.13 | −4.08 to +3.53 | 0.01 | 0.14 | 93.8% | 8.06 | yes |
+| skewer | missed | 2,006 | +0.00 | +0.00 | +0.00 | +0.00 to +0.00 | +0.00 to +0.00 | 0.05 | 0.04 | 23.1% | 1.78 | no |
+| skewer | allowed | 2,006 | +0.00 | +0.00 | +0.00 | −1.00 to +1.00 | +0.00 to +0.00 | 0.04 | 0.07 | 35.6% | 2.38 | no |
+| pin | missed | 2,006 | −1.42 | +0.00 | +1.89 | −1.54 to +2.00 | −1.25 to +1.69 | 0.04 | 0.08 | 66.1% | 3.97 | yes |
+| pin | allowed | 2,006 | −2.86 | +0.00 | +2.04 | −2.63 to +2.08 | −3.00 to +2.00 | 0.05 | 0.11 | 80.0% | 5.21 | yes |
+| x_ray | missed | 2,006 | +0.00 | +0.00 | +0.00 | +0.00 to +0.00 | +0.00 to +0.00 | 0.02 | 0.10 | 1.1% | 0.41 | no |
+| x_ray | allowed | 2,006 | +0.00 | +0.00 | +0.00 | +0.00 to +0.00 | +0.00 to +0.00 | 0.02 | 0.10 | 1.5% | 0.39 | no |
+| double_check | missed | 2,006 | +0.00 | +0.00 | +0.00 | +0.00 to +0.00 | +0.00 to +0.00 | 0.06 | 0.09 | 4.1% | 0.70 | no |
+| double_check | allowed | 2,006 | +0.00 | +0.00 | +0.00 | +0.00 to +0.00 | +0.00 to +0.00 | 0.01 | 0.12 | 7.9% | 1.01 | no |
+| discovered_check | missed | 2,006 | +0.00 | +0.00 | +0.00 | +0.00 to +0.00 | +0.00 to +0.00 | 0.01 | 0.11 | 25.8% | 1.92 | no |
+| discovered_check | allowed | 2,006 | −1.00 | +0.00 | +1.00 | −1.00 to +1.00 | −1.00 to +1.00 | 0.06 | 0.06 | 41.7% | 2.61 | no |
+| discovered_attack | missed | 2,006 | +0.00 | +0.00 | +0.00 | −1.00 to +0.00 | +0.00 to +0.00 | 0.01 | 0.09 | 37.3% | 2.40 | no |
+| discovered_attack | allowed | 2,006 | −1.23 | +0.00 | +1.05 | −1.28 to +1.09 | −1.19 to +1.01 | 0.01 | 0.08 | 55.3% | 3.15 | yes |
+| trapped_piece | missed | 2,006 | +0.00 | +0.00 | +0.00 | +0.00 to +0.00 | +0.00 to +0.00 | 0.06 | 0.22 | 23.6% | 1.74 | no |
+| trapped_piece | allowed | 2,006 | +0.00 | +0.00 | +0.00 | −1.00 to +1.00 | +0.00 to +0.00 | 0.05 | 0.18 | 37.4% | 2.29 | no |
+| hanging | missed | 2,006 | −1.13 | +0.00 | +1.47 | −1.18 to +1.56 | −1.04 to +1.41 | 0.00 | 0.20 | 61.4% | 4.44 | yes |
+| hanging | allowed | 2,006 | −5.10 | −1.00 | +3.03 | −5.00 to +3.09 | −5.36 to +2.86 | 0.05 | 0.15 | 92.8% | 9.03 | yes |
+| mate | missed | 2,006 | −2.17 | +0.00 | +2.89 | −2.33 to +2.78 | −1.89 to +3.00 | 0.06 | 0.14 | 78.9% | 6.50 | yes |
+| mate | allowed | 2,006 | −7.00 | −1.20 | +4.07 | −7.00 to +4.00 | −7.00 to +4.35 | 0.03 | 0.06 | 95.8% | 10.55 | yes |
+| deflection | missed | 2,006 | +0.00 | +0.00 | +0.00 | +0.00 to +0.00 | +0.00 to +0.00 | 0.04 | 0.23 | 30.4% | 1.97 | no |
+| deflection | allowed | 2,006 | −1.00 | +0.00 | +1.00 | −1.02 to +1.00 | +0.00 to +1.00 | 0.07 | 0.23 | 40.4% | 2.46 | no |
+| intermezzo | missed | 2,006 | +0.00 | +0.00 | +0.00 | +0.00 to +0.00 | +0.00 to +0.00 | 0.03 | 0.15 | 11.7% | 1.15 | no |
+| intermezzo | allowed | 2,006 | +0.00 | +0.00 | +0.00 | +0.00 to +0.00 | +0.00 to +0.00 | 0.07 | 0.22 | 18.3% | 1.43 | no |
+| interference | missed | 2,006 | +0.00 | +0.00 | +0.00 | +0.00 to +0.00 | +0.00 to +0.00 | 0.09 | 0.12 | 5.4% | 0.74 | no |
+| interference | allowed | 2,006 | +0.00 | +0.00 | +0.00 | +0.00 to +0.00 | +0.00 to +0.00 | 0.03 | 0.15 | 7.8% | 0.92 | no |
+| capturing_defender | missed | 2,006 | +0.00 | +0.00 | +0.00 | +0.00 to +0.00 | +0.00 to +0.00 | 0.04 | 0.28 | 7.9% | 0.88 | no |
+| capturing_defender | allowed | 2,006 | +0.00 | +0.00 | +0.00 | +0.00 to +0.00 | +0.00 to +0.00 | 0.06 | 0.23 | 13.0% | 1.29 | no |
+| attraction | missed | 2,006 | +0.00 | +0.00 | +0.00 | +0.00 to +1.00 | +0.00 to +0.00 | 0.07 | 0.10 | 34.1% | 2.16 | no |
+| attraction | allowed | 2,006 | −1.01 | +0.00 | +1.00 | −1.04 to +1.00 | +0.00 to +1.00 | 0.13 | 0.11 | 43.2% | 2.55 | no |
+| sacrifice | missed | 2,006 | +0.00 | +0.00 | +0.00 | +0.00 to +0.00 | +0.00 to +0.00 | 0.01 | 0.11 | 33.3% | 2.16 | no |
+| sacrifice | allowed | 2,006 | +0.00 | +0.00 | +0.00 | +0.00 to +0.00 | +0.00 to +0.00 | 0.04 | 0.11 | 32.5% | 2.15 | no |
+| en_passant | missed | 2,006 | +0.00 | +0.00 | +0.00 | +0.00 to +0.00 | +0.00 to +0.00 | 0.01 | 0.08 | 6.1% | 0.72 | no |
+| en_passant | allowed | 2,006 | +0.00 | +0.00 | +0.00 | +0.00 to +0.00 | +0.00 to +0.00 | 0.05 | 0.24 | 9.9% | 0.95 | no |
+| under_promotion | missed | 2,006 | +0.00 | +0.00 | +0.00 | +0.00 to +0.00 | +0.00 to +0.00 | 0.07 | 0.10 | 0.2% | 0.20 | no |
+| under_promotion | allowed | 2,006 | +0.00 | +0.00 | +0.00 | +0.00 to +0.00 | +0.00 to +0.00 | 0.04 | 0.10 | 0.5% | 0.29 | no |
+| promotion | missed | 2,006 | +0.00 | +0.00 | +0.00 | +0.00 to +0.00 | +0.00 to +0.00 | 0.07 | 0.12 | 21.0% | 1.58 | no |
+| promotion | allowed | 2,006 | +0.00 | +0.00 | +0.00 | +0.00 to +0.00 | +0.00 to +0.00 | 0.05 | 0.09 | 31.2% | 2.07 | no |
 
-#### Tactic verdicts and viability narrative
+#### Tactic verdicts and served bands
 
-Verdict words are in the `TC max abs d` and `ELO max abs d` columns above (collapse < 0.2, review 0.2 to 0.5, keep separate >= 0.5). On the TC axis (rapid vs classical) every one of the 38 tactic metrics is a `collapse` (largest d = 0.13); on the ELO axis 30 collapse and 8 are `review` (largest d = 0.28). Nothing reaches keep-separate, so no tactic metric needs Elo keying and every viable family gets one pooled band for both zone TCs.
+The lane game set is unchanged from the 2026-10-12 run (138,104 games), but the pooled n moves from 2,004 to 2,006 user-cells, most likely through the parity fix: a one-move game now counts for white instead of black at the `user_moves > 0` guard, which nudges a few cells across the 20-game floor. Largest TC d = 0.13 (rapid vs classical), largest ELO d = 0.28: nothing reaches keep-separate. The same 9 of 38 metrics are `zone_viable` (fork, pin and mate both ways, hanging both ways, discovered attack allowed); the other 29 stay band-less (D-11, D-16).
 
-**Viable (9 of 38, `has_zone = true`)**: fork (missed), fork (allowed), pin (missed), pin (allowed), discovered attack (allowed), hanging (missed), hanging (allowed), mate (missed), mate (allowed). These are the families where at least half of the user-cells have one or more events (55.3% to 95.8% non-zero) and the pooled IQR has width.
+**Drift note**: the served tactic bands come from the 2026-10-12 run (tactic_delta_zones.py, unchanged here, out of scope). Re-deriving them from this run moves no half-width by more than 0.02 per 100 games, far inside the noise:
 
-**Not viable (29 of 38, `has_zone = false`)**: all 29 are below 50% non-zero (from 43.2% for attraction allowed down to 0.2% for under-promotion missed); 25 of them also have a degenerate pooled IQR (p25 = p75 = 0), so a band would be zero-width and would paint any non-zero gap as better or worse than typical. The remaining 4 have a non-degenerate IQR but still fail the 50% rule: discovered check allowed (41.7%), trapped piece allowed (37.4%), deflection allowed (40.4%), attraction allowed (43.2%). `tactic_trapped_piece_allowed` shows a 918% noise share (observed IQR 0.25 per 100 games against 2.30 noise-only).
+| family | orientation | served band (all zone TCs) | this run | TC verdict | ELO verdict |
+|---|---|---:|---:|---|---|
+| fork | missed | ±2.17 | ±2.18 | collapse (0.04) | collapse (0.05) |
+| fork | allowed | ±3.68 | ±3.66 | collapse (0.01) | collapse (0.14) |
+| pin | missed | ±1.66 | ±1.66 | collapse (0.04) | collapse (0.08) |
+| pin | allowed | ±2.46 | ±2.45 | collapse (0.05) | collapse (0.11) |
+| discovered attack | allowed | ±1.15 | ±1.14 | collapse (0.01) | collapse (0.08) |
+| hanging | missed | ±1.31 | ±1.30 | collapse (0.00) | review (0.20) |
+| hanging | allowed | ±4.08 | ±4.07 | collapse (0.05) | collapse (0.15) |
+| mate | missed | ±2.54 | ±2.53 | collapse (0.06) | collapse (0.14) |
+| mate | allowed | ±5.55 | ±5.54 | collapse (0.03) | collapse (0.06) |
 
-**Noise**: every viable tactic metric has a noise share between 95% and 170% (see §5.15): at 100 games per user the per-user spread of rare events is almost entirely Poisson noise. The bands below are what the lane measures; they are not evidence of real between-user differences.
-
-#### Proposed tactic bands (pooled, both zone TCs, per 100 games)
-
-| family | orientation | proposed band | live band | TC verdict | ELO verdict | noise share |
-|---|---|---:|---|---|---|---:|
-| fork | missed | [−2.21, +2.13] | none (band-less) | collapse (0.04) | collapse (0.05) | 124% |
-| fork | allowed | [−4.12, +3.23] | none (band-less) | collapse (0.01) | collapse (0.14) | 110% |
-| pin | missed | [−1.42, +1.89] | none (band-less) | collapse (0.04) | collapse (0.08) | 120% |
-| pin | allowed | [−2.86, +2.05] | none (band-less) | collapse (0.05) | collapse (0.12) | 106% |
-| discovered_attack | allowed | [−1.24, +1.06] | none (band-less) | collapse (0.01) | collapse (0.08) | 138% |
-| hanging | missed | [−1.13, +1.48] | none (band-less) | collapse (0.00) | review (0.20) | 170% |
-| hanging | allowed | [−5.11, +3.04] | none (band-less) | collapse (0.05) | collapse (0.15) | 111% |
-| mate | missed | [−2.18, +2.90] | none (band-less) | collapse (0.06) | collapse (0.14) | 128% |
-| mate | allowed | [−7.00, +4.09] | none (band-less) | collapse (0.03) | collapse (0.06) | 95% |
-
-No tactic family has a live band today (all tactic bullets render band-less), so the 'currently set in code' comparison is `none`. The 29 non-viable metrics stay band-less (D-11): no grey band and no typical-range line; since D-16 they turn green/red only when the 99% CI on the gap excludes 0.
+Blitz and bullet tactic bullets still read the rapid band (ZONE_TC_FOR) until their lane tranches finish.
 
 ### 5.14 Viability Diagnostic (D-06)
 
-**Cohort basis**: 138,104 analyzed games across 2,006 user×(ELO,TC) cells (1,590 distinct users). All analyzed games count (clean games = a 0 delta); the per-cell `users_total` below = these user×cell rows, not distinct users.
-
+> All analyzed games count (clean games = a 0 delta); the per-cell `users_total` =
+> user×(ELO,TC) rows of that basis, not distinct users.
 > Flags rare numerators so the registry author can assess CI-width adequacy.
 > Non-zero = user has ≥1 player event of this tag over their ≥20 analyzed games.
 > `zone_viable` = pooled IQR not degenerate (p25 < p75) AND pct_nonzero ≥ 50%.
@@ -1353,24 +1390,46 @@ No tactic family has a live band today (all tactic bullets render band-less), so
 > §5.1–5.12 zone columns. It gauges raw event volume for CI-width adequacy.
 > Tactic rows count player events of that family and orientation over the user's games.
 
-#### Flaw metrics
+#### Whole-cohort basis
+
+**Cohort**: 1,338,092 analyzed games across 4,831 user×(ELO,TC) cells (3,559 distinct users).
+
+Flaw metrics:
 
 | metric | users_contributing | users_total | pct_nonzero | median_events_per_user | degenerate_iqr | zone_viable |
 |---|---:|---:|---:|---:|---:|---:|
-| mistake | 2006 | 2006 | 100.0% | 90.0 | no | yes |
-| blunder | 2006 | 2006 | 100.0% | 122.0 | no | yes |
-| low_clock | 1186 | 2006 | 59.1% | 2.0 | no | yes |
-| hasty | 2005 | 2006 | 100.0% | 65.0 | no | yes |
-| unrushed | 2003 | 2006 | 99.9% | 120.5 | no | yes |
-| opening | 2001 | 2006 | 99.8% | 37.0 | no | yes |
-| middlegame | 2006 | 2006 | 100.0% | 101.0 | no | yes |
-| endgame_phase | 2006 | 2006 | 100.0% | 60.0 | no | yes |
-| miss | 2006 | 2006 | 100.0% | 60.0 | no | yes |
-| lucky | 2004 | 2006 | 99.9% | 38.0 | no | yes |
-| reversed | 1902 | 2006 | 94.8% | 7.0 | no | yes |
-| squandered | 1991 | 2006 | 99.3% | 14.0 | no | yes |
+| mistake | 4807 | 4831 | 99.5% | 107.0 | no | yes |
+| blunder | 4811 | 4831 | 99.6% | 151.0 | no | yes |
+| low_clock | 3686 | 4831 | 76.3% | 5.0 | no | yes |
+| hasty | 4766 | 4831 | 98.7% | 55.0 | no | yes |
+| unrushed | 4808 | 4831 | 99.5% | 171.0 | no | yes |
+| opening | 4782 | 4831 | 99.0% | 43.0 | no | yes |
+| middlegame | 4808 | 4831 | 99.5% | 128.0 | no | yes |
+| endgame_phase | 4775 | 4831 | 98.8% | 72.0 | no | yes |
+| miss | 4800 | 4831 | 99.4% | 78.0 | no | yes |
+| lucky | 4789 | 4831 | 99.1% | 51.0 | no | yes |
+| reversed | 4589 | 4831 | 95.0% | 10.0 | no | yes |
+| squandered | 4689 | 4831 | 97.1% | 18.0 | no | yes |
 
-#### Tactic metrics
+Tempo x phase cells:
+
+| metric | users_contributing | users_total | pct_nonzero | median_events_per_user | degenerate_iqr | zone_viable |
+|---|---:|---:|---:|---:|---:|---:|
+| low_clock__opening | 82 | 4831 | 1.7% | 0.0 | yes | no |
+| hasty__opening | 4506 | 4831 | 93.3% | 10.0 | no | yes |
+| unrushed__opening | 4751 | 4831 | 98.3% | 28.0 | no | yes |
+| low_clock__middlegame | 2246 | 4831 | 46.5% | 0.0 | no | no |
+| hasty__middlegame | 4624 | 4831 | 95.7% | 19.0 | no | yes |
+| unrushed__middlegame | 4795 | 4831 | 99.3% | 98.0 | no | yes |
+| low_clock__endgame_phase | 3544 | 4831 | 73.4% | 4.0 | no | yes |
+| hasty__endgame_phase | 4582 | 4831 | 94.8% | 20.0 | no | yes |
+| unrushed__endgame_phase | 4729 | 4831 | 97.9% | 39.0 | no | yes |
+
+#### Full-analysis lane
+
+**Cohort**: 138,104 analyzed games across 2,006 user×(ELO,TC) cells (1,590 distinct users).
+
+Tactic metrics:
 
 | metric | users_contributing | users_total | pct_nonzero | median_events_per_user | degenerate_iqr | zone_viable |
 |---|---:|---:|---:|---:|---:|---:|
@@ -1389,7 +1448,7 @@ No tactic family has a live band today (all tactic bullets render band-less), so
 | tactic_discovered_attack_missed | 749 | 2006 | 37.3% | 0.0 | yes | no |
 | tactic_discovered_attack_allowed | 1110 | 2006 | 55.3% | 1.0 | no | yes |
 | tactic_trapped_piece_missed | 474 | 2006 | 23.6% | 0.0 | yes | no |
-| tactic_trapped_piece_allowed | 751 | 2006 | 37.4% | 0.0 | no | no |
+| tactic_trapped_piece_allowed | 751 | 2006 | 37.4% | 0.0 | yes | no |
 | tactic_hanging_missed | 1232 | 2006 | 61.4% | 1.0 | no | yes |
 | tactic_hanging_allowed | 1862 | 2006 | 92.8% | 6.0 | no | yes |
 | tactic_mate_missed | 1582 | 2006 | 78.9% | 2.0 | no | yes |
@@ -1413,51 +1472,66 @@ No tactic family has a live band today (all tactic bullets render band-less), so
 | tactic_promotion_missed | 422 | 2006 | 21.0% | 0.0 | yes | no |
 | tactic_promotion_allowed | 626 | 2006 | 31.2% | 0.0 | yes | no |
 
-#### Viability interpretation
+#### Viability reading
 
-- Flaw metrics: every metric except `low_clock` and `reversed` is at 99.3% to 100.0% non-zero, so there is no viability concern. `reversed` is at 94.8% (median 7 events per user) and `low_clock` at **59.1%** (median 2 events per user), a thin numerator below the 80% flag threshold (it was 71.4% on the old basis; with 100 games per user instead of up to 1000, fewer users accumulate a low-clock flaw).
-- Tactic metrics: 9 of 38 are `zone_viable`; the rest are degenerate or under 50% non-zero (see the narrative above).
+Whole cohort: all 12 flaw metrics are viable; the thinnest is low_clock at 76.3% non-zero. 7 of the 9 tempo x phase cells are viable; low_clock x opening (1.7%, degenerate IQR) and low_clock x middlegame (46.5%) are not. Lane: 9 of 38 tactic metrics are viable, as in the 2026-10-12 run.
 
 ### 5.15 Noise-only IQR Summary
 
 > Noise-only IQR = `1.349 * sqrt(mean over user-cells of var(per-game delta) / n_games)`:
-> the IQR per-user values would show if every user had the same true gap. Flaw metrics
-> are per 100 moves (pp), tactic metrics per 100 games. Reported, not applied.
+> the IQR per-user values would show if every user had the same true gap. A share near
+> or above 100% means the band is mostly sampling noise. Reported, not applied.
+
+#### Whole-cohort basis (flaw metrics and tempo x phase cells, per 100 moves)
 
 | metric | observed IQR | noise-only IQR | noise share |
 |---|---:|---:|---:|
-| mistake | 1.041pp | 1.022pp | 98% |
-| blunder | 1.133pp | 1.102pp | 97% |
-| low_clock | 0.167pp | 0.238pp | 142% |
-| hasty | 1.593pp | 1.126pp | 71% |
-| unrushed | 1.672pp | 1.165pp | 70% |
-| opening | 0.863pp | 1.080pp | 125% |
-| middlegame | 0.957pp | 0.869pp | 91% |
-| endgame_phase | 0.413pp | 0.421pp | 102% |
-| miss | 0.584pp | 0.652pp | 112% |
-| lucky | 0.474pp | 0.559pp | 118% |
-| reversed | 0.217pp | 0.300pp | 138% |
-| squandered | 0.356pp | 0.410pp | 115% |
-| tactic_fork_missed | 4.33 | 5.37 | 124% |
-| tactic_fork_allowed | 7.34 | 8.06 | 110% |
+| mistake | 0.463pp | 0.641pp | 138% |
+| blunder | 0.560pp | 0.675pp | 120% |
+| low_clock | 0.119pp | 0.186pp | 156% |
+| hasty | 0.540pp | 0.641pp | 119% |
+| unrushed | 0.814pp | 0.753pp | 93% |
+| opening | 0.338pp | 0.618pp | 183% |
+| middlegame | 0.495pp | 0.577pp | 116% |
+| endgame_phase | 0.221pp | 0.287pp | 130% |
+| miss | 0.245pp | 0.417pp | 170% |
+| lucky | 0.203pp | 0.360pp | 178% |
+| reversed | 0.093pp | 0.184pp | 198% |
+| squandered | 0.160pp | 0.269pp | 168% |
+| low_clock__opening | 0.000pp | 0.030pp | n/a |
+| hasty__opening | 0.215pp | 0.488pp | 227% |
+| unrushed__opening | 0.284pp | 0.466pp | 164% |
+| low_clock__middlegame | 0.028pp | 0.112pp | 400% |
+| hasty__middlegame | 0.261pp | 0.344pp | 132% |
+| unrushed__middlegame | 0.497pp | 0.523pp | 105% |
+| low_clock__endgame_phase | 0.087pp | 0.139pp | 160% |
+| hasty__endgame_phase | 0.141pp | 0.198pp | 140% |
+| unrushed__endgame_phase | 0.192pp | 0.248pp | 129% |
+
+#### Full-analysis lane (tactic metrics, per 100 games)
+
+| metric | observed IQR | noise-only IQR | noise share |
+|---|---:|---:|---:|
+| tactic_fork_missed | 4.34 | 5.37 | 124% |
+| tactic_fork_allowed | 7.31 | 8.06 | 110% |
 | tactic_skewer_missed | 0.00 | 1.78 | n/a |
 | tactic_skewer_allowed | 0.00 | 2.38 | n/a |
-| tactic_pin_missed | 3.30 | 3.95 | 120% |
-| tactic_pin_allowed | 4.90 | 5.20 | 106% |
+| tactic_pin_missed | 3.31 | 3.97 | 120% |
+| tactic_pin_allowed | 4.90 | 5.21 | 106% |
 | tactic_x_ray_missed | 0.00 | 0.41 | n/a |
 | tactic_x_ray_allowed | 0.00 | 0.39 | n/a |
-| tactic_double_check_missed | 0.00 | 0.69 | n/a |
-| tactic_double_check_allowed | 0.00 | 0.96 | n/a |
+| tactic_double_check_missed | 0.00 | 0.70 | n/a |
+| tactic_double_check_allowed | 0.00 | 1.01 | n/a |
 | tactic_discovered_check_missed | 0.00 | 1.92 | n/a |
-| tactic_discovered_check_allowed | 2.00 | 2.60 | 130% |
+| tactic_discovered_check_allowed | 2.00 | 2.61 | 130% |
 | tactic_discovered_attack_missed | 0.00 | 2.40 | n/a |
 | tactic_discovered_attack_allowed | 2.29 | 3.15 | 138% |
-| tactic_trapped_piece_missed | 0.00 | 1.75 | n/a |
-| tactic_trapped_piece_allowed | 0.25 | 2.30 | 918% |
-| tactic_hanging_missed | 2.60 | 4.43 | 170% |
+| tactic_trapped_piece_missed | 0.00 | 1.74 | n/a |
+| tactic_trapped_piece_allowed | 0.00 | 2.29 | n/a |
+| tactic_hanging_missed | 2.60 | 4.44 | 170% |
 | tactic_hanging_allowed | 8.13 | 9.03 | 111% |
-| tactic_mate_missed | 5.07 | 6.50 | 128% |
-| tactic_mate_allowed | 11.09 | 10.55 | 95% |
+| tactic_mate_missed | 5.06 | 6.50 | 128% |
+| tactic_mate_allowed | 11.07 | 10.55 | 95% |
 | tactic_deflection_missed | 0.00 | 1.97 | n/a |
 | tactic_deflection_allowed | 2.00 | 2.46 | 123% |
 | tactic_intermezzo_missed | 0.00 | 1.15 | n/a |
@@ -1465,7 +1539,7 @@ No tactic family has a live band today (all tactic bullets render band-less), so
 | tactic_interference_missed | 0.00 | 0.74 | n/a |
 | tactic_interference_allowed | 0.00 | 0.92 | n/a |
 | tactic_capturing_defender_missed | 0.00 | 0.88 | n/a |
-| tactic_capturing_defender_allowed | 0.00 | 1.28 | n/a |
+| tactic_capturing_defender_allowed | 0.00 | 1.29 | n/a |
 | tactic_attraction_missed | 0.00 | 2.16 | n/a |
 | tactic_attraction_allowed | 2.01 | 2.55 | 127% |
 | tactic_sacrifice_missed | 0.00 | 2.16 | n/a |
@@ -1475,11 +1549,64 @@ No tactic family has a live band today (all tactic bullets render band-less), so
 | tactic_under_promotion_missed | 0.00 | 0.20 | n/a |
 | tactic_under_promotion_allowed | 0.00 | 0.29 | n/a |
 | tactic_promotion_missed | 0.00 | 1.58 | n/a |
-| tactic_promotion_allowed | 0.00 | 2.05 | n/a |
+| tactic_promotion_allowed | 0.00 | 2.07 | n/a |
 
 #### Noise reading
 
-All 12 flaw metrics have a noise share between 70% and 142%; the two noisiest are `low_clock` (142%) and `reversed` (138%), the two least noisy are `unrushed` (70%) and `hasty` (71%). The noise-only IQR is `1.349 * sqrt(mean over user-cells of var(per-game delta) / n_games)`; a share near or above 100% means the observed per-user spread is what pure sampling noise produces if every user had the same true gap. It is reported, not applied: no shrinkage or correction was made to any band, because a methodology change is the owner's call.
+The closed-form noise-only IQR assumes every user-cell has the same sampling variance. On the whole cohort per-cell game counts range from 20 to 1000, so a few small cells dominate the mean variance and the closed form overstates the noise (shares of 93% to 198% for the flaw metrics). A like-for-like check that draws each user-cell's noise from its own variance (`temp/261014-rux/noise_compare.py`, 200 draws, 2026-10-14) gives these simulated noise shares of the observed IQR per TC, on both bases:
+
+| metric | whole cohort (bullet / blitz / rapid / classical) | lane (rapid / classical) |
+|---|---|---|
+| mistake | 75% / 70% / 68% / 72% | 80% / 81% |
+| blunder | 57% / 61% / 61% / 67% | 78% / 75% |
+| low_clock | 69% / 48% / 57% / 55% | 65% / 57% |
+| hasty | 58% / 53% / 41% / 40% | 53% / 45% |
+| unrushed | 58% / 52% / 47% / 43% | 65% / 48% |
+| opening | 71% / 69% / 74% / 72% | 85% / 73% |
+| middlegame | 65% / 63% / 65% / 74% | 79% / 82% |
+| endgame_phase | 75% / 68% / 69% / 74% | 86% / 91% |
+| miss | 83% / 83% / 85% / 81% | 91% / 84% |
+| lucky | 98% / 84% / 85% / 83% | 92% / 87% |
+| reversed | 85% / 79% / 75% / 87% | 86% / 86% |
+| squandered | 83% / 80% / 82% / 80% | 89% / 83% |
+
+Both bases are mostly noise for most metrics; the whole cohort is moderately less noisy (median about 70% against about 83% on the lane), and it is the only basis with bullet and blitz. Hasty and unrushed carry the most real between-user spread (40% to 58% noise). The IQR share is not a variance share: a 70% IQR share means about half of the variance is noise. Reported, not applied: no band is shrunk.
+
+### 5.16 Tempo x Phase Crossed Cells
+
+> Whole-cohort basis. One row per crossed cell (a flaw counts when it carries both
+> the tempo tag and the phase tag). Same D-01 estimator as 5.1 to 5.12, per 100 moves.
+> `n/a` = a thin TC level (<30 user-cells) or a verdict that could not be computed.
+
+| tempo | phase | n | p25 | p50 | p75 | bullet p25 to p75 | blitz p25 to p75 | rapid p25 to p75 | classical p25 to p75 | TC max abs d | ELO max abs d | pct_nonzero | noise-only IQR | zone_viable |
+|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| low_clock | opening | 4,828 | +0.000pp | +0.000pp | +0.000pp | +0.000pp to +0.000pp | +0.000pp to +0.000pp | +0.000pp to +0.000pp | +0.000pp to +0.000pp | 0.07 | 0.05 | 1.7% | 0.030pp | no |
+| hasty | opening | 4,828 | −0.144pp | −0.011pp | +0.071pp | −0.049pp to +0.030pp | −0.095pp to +0.060pp | −0.205pp to +0.109pp | −0.627pp to +0.203pp | 0.37 | 0.21 | 93.3% | 0.488pp | yes |
+| unrushed | opening | 4,828 | −0.134pp | +0.000pp | +0.149pp | −0.057pp to +0.062pp | −0.107pp to +0.125pp | −0.168pp to +0.189pp | −0.325pp to +0.378pp | 0.10 | 0.14 | 98.3% | 0.466pp | yes |
+| low_clock | middlegame | 4,828 | −0.023pp | +0.000pp | +0.005pp | −0.010pp to +0.008pp | −0.033pp to +0.017pp | −0.023pp to +0.000pp | −0.019pp to +0.000pp | 0.07 | 0.10 | 46.5% | 0.112pp | no |
+| hasty | middlegame | 4,828 | −0.167pp | −0.011pp | +0.094pp | −0.034pp to +0.031pp | −0.096pp to +0.086pp | −0.287pp to +0.146pp | −0.579pp to +0.378pp | 0.25 | 0.15 | 95.7% | 0.344pp | yes |
+| unrushed | middlegame | 4,828 | −0.257pp | +0.012pp | +0.240pp | −0.094pp to +0.120pp | −0.259pp to +0.179pp | −0.331pp to +0.261pp | −0.499pp to +0.583pp | 0.16 | 0.26 | 99.3% | 0.523pp | yes |
+| low_clock | endgame_phase | 4,828 | −0.056pp | +0.000pp | +0.030pp | −0.021pp to +0.019pp | −0.077pp to +0.055pp | −0.069pp to +0.037pp | −0.045pp to +0.000pp | 0.04 | 0.08 | 73.4% | 0.139pp | yes |
+| hasty | endgame_phase | 4,828 | −0.079pp | −0.001pp | +0.062pp | −0.020pp to +0.022pp | −0.058pp to +0.054pp | −0.141pp to +0.088pp | −0.193pp to +0.146pp | 0.14 | 0.06 | 94.8% | 0.198pp | yes |
+| unrushed | endgame_phase | 4,828 | −0.099pp | +0.000pp | +0.094pp | −0.040pp to +0.045pp | −0.118pp to +0.081pp | −0.121pp to +0.112pp | −0.134pp to +0.181pp | 0.18 | 0.26 | 97.9% | 0.248pp | yes |
+
+#### Served tempo x phase bands (per 100 moves, owner rule B)
+
+Same rule as 5.1 to 5.12: each TC gets symmetric_band of its own Q1/Q3; a non-viable cell has no band in any TC (judged on the 99% CI alone, D-16). These replace the quick 261014-qj8 probe values (pooled across TCs, flipped parity).
+
+| cell | bullet | blitz | rapid | classical | previously served |
+|---|---:|---:|---:|---:|---:|
+| low_clock x opening | none | none | none | none | none |
+| hasty x opening | ±0.04 | ±0.08 | ±0.16 | ±0.42 | ±0.11 |
+| unrushed x opening | ±0.06 | ±0.12 | ±0.18 | ±0.36 | ±0.15 |
+| low_clock x middlegame | none | none | none | none | ±0.02 |
+| hasty x middlegame | ±0.04 | ±0.10 | ±0.22 | ±0.48 | ±0.13 |
+| unrushed x middlegame | ±0.11 | ±0.22 | ±0.30 | ±0.55 | ±0.25 |
+| low_clock x endgame_phase | ±0.02 | ±0.07 | ±0.06 | ±0.03 | ±0.05 |
+| hasty x endgame_phase | ±0.03 | ±0.06 | ±0.12 | ±0.17 | ±0.07 |
+| unrushed x endgame_phase | ±0.05 | ±0.10 | ±0.12 | ±0.16 | ±0.10 |
+
+**Change**: low_clock x middlegame drops to 46.5% non-zero, below the 50% viability floor, so it loses its band. The qj8 probe counted a user-cell as non-zero when the mean gap was non-zero (68%); chapter5 counts player events (the rule every other metric uses). low_clock x opening stays band-less (degenerate IQR).
 
 ---
 
@@ -1516,18 +1643,19 @@ All 12 flaw metrics have a noise share between 70% and 142%; the two noisiest ar
 | Per-class recovery | 3.4.1 | **keep (1.3–1.7)** | review (pawn keep 0.65) | **Flag: stratify per-(class×TC)** |
 | Per-class per-span ΔES Score Gap | 3.4.2 | collapse (≤0.20) | review (≤0.31) | Keep per-class bands |
 | Endgame Type redundancy | 3.4.3 | r=0.105 | — | Keep all three signals |
-| **Mistakes** | **5.1** | **collapse (0.00)** | **collapse (0.18)** | **Measured pooled band [−0.66, +0.39]; noise share 98%; not adopted, the app keeps the live band (owner edit, 239-06)** |
-| **Blunders** | **5.2** | **collapse (0.15)** | **collapse (0.14)** | **Measured pooled band [−0.83, +0.31]; noise share 97%; not adopted, the app keeps the live band (owner edit, 239-06)** |
-| **Low-Clock Flaws** | **5.3** | **collapse (0.03)** | **review (0.25)** | **Measured pooled band [−0.12, +0.05]; 41% zero-rate users, thin numerator; noise share 142%; not adopted, the app keeps the live band (owner edit, 239-06)** |
-| **Hasty Flaws** | **5.4** | **review (0.21)** | **review (0.28)** | **Measured pooled band [−1.16, +0.45]; TC review, per-TC bands are the alternative; noise share 71%; not adopted, the app keeps the live band (owner edit, 239-06)** |
-| **Unrushed Flaws** | **5.5** | **collapse (0.11)** | **review (0.36)** | **Measured pooled band [−0.94, +0.74]; noise share 70%; not adopted, the app keeps the live band (owner edit, 239-06)** |
-| **Opening-Phase Flaws** | **5.6** | **review (0.20)** | **review (0.33)** | **Measured pooled band [−0.60, +0.27]; TC review, per-TC bands are the alternative; noise share 125%; not adopted, the app keeps the live band (owner edit, 239-06)** |
-| **Middlegame Flaws** | **5.7** | **collapse (0.02)** | **review (0.34)** | **Measured pooled band [−0.62, +0.35]; noise share 91%; not adopted, the app keeps the live band (owner edit, 239-06)** |
-| **Endgame-Phase Flaws** | **5.8** | **collapse (0.09)** | **review (0.44)** | **Measured pooled band [−0.24, +0.18]; ELO review closest to keep-separate; noise share 102%; not adopted, the app keeps the live band (owner edit, 239-06)** |
-| **Missed-Win Flaws** | **5.9** | **collapse (0.02)** | **collapse (0.16)** | **Measured pooled band [−0.32, +0.28]; noise share 112%; not adopted, the app keeps the live band (owner edit, 239-06)** |
-| **Lucky-Escape Flaws** | **5.10** | **collapse (0.07)** | **collapse (0.09)** | **Measured pooled band [−0.23, +0.26]; noise share 118%; not adopted, the app keeps the live band (owner edit, 239-06)** |
-| **Reversed Advantage Flaws** | **5.11** | **collapse (0.01)** | **collapse (0.13)** | **Measured pooled band [−0.12, +0.11]; noise share 138%; not adopted, the app keeps the live band (owner edit, 239-06)** |
-| **Squandered Win Flaws** | **5.12** | **collapse (0.03)** | **collapse (0.11)** | **Measured pooled band [−0.17, +0.19]; noise share 115%; not adopted, the app keeps the live band (owner edit, 239-06)** |
+| **Mistakes** | **5.1** | **collapse (0.18)** | **collapse (0.09)** | **Per-TC bands (rule B): bullet ±0.10, blitz ±0.21, rapid ±0.29, classical ±0.48; per-TC IQR ratio 5.0x** |
+| **Blunders** | **5.2** | **review (0.24)** | **collapse (0.12)** | **Per-TC bands (rule B): bullet ±0.13, blitz ±0.25, rapid ±0.34, classical ±0.53; per-TC IQR ratio 4.1x** |
+| **Low-Clock Flaws** | **5.3** | **collapse (0.05)** | **collapse (0.10)** | **Per-TC bands (rule B): bullet ±0.03, blitz ±0.10, rapid ±0.07, classical ±0.04; per-TC IQR ratio 3.2x** |
+| **Hasty Flaws** | **5.4** | **review (0.35)** | **collapse (0.16)** | **Per-TC bands (rule B): bullet ±0.08, blitz ±0.19, rapid ±0.43, classical ±0.91; per-TC IQR ratio 11.9x** |
+| **Unrushed Flaws** | **5.5** | **collapse (0.18)** | **review (0.28)** | **Per-TC bands (rule B): bullet ±0.17, blitz ±0.36, rapid ±0.52, classical ±0.89; per-TC IQR ratio 5.4x** |
+| **Opening-Phase Flaws** | **5.6** | **review (0.29)** | **collapse (0.14)** | **Per-TC bands (rule B): bullet ±0.07, blitz ±0.15, rapid ±0.20, classical ±0.41; per-TC IQR ratio 6.0x** |
+| **Middlegame Flaws** | **5.7** | **review (0.24)** | **collapse (0.18)** | **Per-TC bands (rule B): bullet ±0.12, blitz ±0.23, rapid ±0.30, classical ±0.42; per-TC IQR ratio 3.7x** |
+| **Endgame-Phase Flaws** | **5.8** | **collapse (0.16)** | **review (0.28)** | **Per-TC bands (rule B): bullet ±0.05, blitz ±0.11, rapid ±0.14, classical ±0.19; per-TC IQR ratio 4.0x** |
+| **Missed-Win Flaws** | **5.9** | **collapse (0.08)** | **collapse (0.06)** | **Per-TC bands (rule B): bullet ±0.06, blitz ±0.12, rapid ±0.15, classical ±0.25; per-TC IQR ratio 4.2x** |
+| **Lucky-Escape Flaws** | **5.10** | **collapse (0.09)** | **collapse (0.06)** | **Per-TC bands (rule B): bullet ±0.05, blitz ±0.10, rapid ±0.12, classical ±0.20; per-TC IQR ratio 4.6x** |
+| **Reversed Advantage Flaws** | **5.11** | **collapse (0.04)** | **collapse (0.10)** | **Per-TC bands (rule B): bullet ±0.03, blitz ±0.05, rapid ±0.06, classical ±0.09; per-TC IQR ratio 4.0x** |
+| **Squandered Win Flaws** | **5.12** | **collapse (0.03)** | **collapse (0.06)** | **Per-TC bands (rule B): bullet ±0.04, blitz ±0.08, rapid ±0.10, classical ±0.16; per-TC IQR ratio 4.0x** |
+| **Tempo x phase cells** | **5.16** | **collapse/review (<= 0.37)** | **collapse/review (<= 0.26)** | **Per-TC bands for the 7 viable cells; low_clock x opening and low_clock x middlegame band-less** |
 | **Tactic fork (missed)** | **5.13** | **collapse (0.04)** | **collapse (0.05)** | **Pooled band [−2.21, +2.13] per 100 games; noise share 124%** |
 | **Tactic fork (allowed)** | **5.13** | **collapse (0.01)** | **collapse (0.14)** | **Pooled band [−4.12, +3.23] per 100 games; noise share 110%** |
 | **Tactic pin (missed)** | **5.13** | **collapse (0.04)** | **collapse (0.08)** | **Pooled band [−1.42, +1.89] per 100 games; noise share 120%** |
@@ -1572,18 +1700,27 @@ All 12 flaw metrics have a noise share between 70% and 142%; the two noisiest ar
 | Per-class achievable_score_gap | 3.4.2 | `PER_CLASS_GAUGE_ZONES[*].achievable_score_gap` | per-class | within ±0.5pp of measured | TC collapse / ELO review | **keep all 6** |
 | Global type-gap default | 3.4.2 | `endgame_type_achievable_score_gap` | `(−0.04, +0.04)` | `(−0.04, +0.04)` | TC collapse / ELO review | **keep** |
 | EG Type chart inventory | 3.4.3 | `EndgameTypeCard.tsx` layout | Score + Gap + WDL (+Conv/Recov) | keep all 3 (r=0.105) | n/a | **keep layout** (no constant) |
-| Flaw delta mistake | 5.1 | `FLAW_DELTA_ZONES['mistake']` (rapid, classical) | `[−0.23, +0.20]` | `[−0.23, +0.20]` kept (proposal `[−0.66, +0.39]` not adopted: noise-inflated) | TC collapse / ELO collapse | **keep** (owner edit at the 239-06 checkpoint) |
-| Flaw delta blunder | 5.2 | `FLAW_DELTA_ZONES['blunder']` (rapid, classical) | `[−0.31, +0.25]` | `[−0.31, +0.25]` kept (proposal `[−0.83, +0.31]` not adopted: noise-inflated) | TC collapse / ELO collapse | **keep** (owner edit at the 239-06 checkpoint) |
-| Flaw delta low_clock | 5.3 | `FLAW_DELTA_ZONES['low_clock']` (rapid, classical) | `[−0.08, +0.03]` | `[−0.08, +0.03]` kept (proposal `[−0.12, +0.05]` not adopted: noise-inflated) | TC collapse / ELO review | **keep** (owner edit at the 239-06 checkpoint) |
-| Flaw delta hasty | 5.4 | `FLAW_DELTA_ZONES['hasty']` (rapid, classical) | `[−0.28, +0.18]` | `[−0.28, +0.18]` kept (proposal `[−1.16, +0.45]` not adopted: noise-inflated) | TC review / ELO review | **keep** (owner edit at the 239-06 checkpoint) |
-| Flaw delta unrushed | 5.5 | `FLAW_DELTA_ZONES['unrushed']` (rapid, classical) | `[−0.38, +0.36]` | `[−0.38, +0.36]` kept (proposal `[−0.94, +0.74]` not adopted: noise-inflated) | TC collapse / ELO review | **keep** (owner edit at the 239-06 checkpoint) |
-| Flaw delta opening | 5.6 | `FLAW_DELTA_ZONES['opening']` (rapid, classical) | `[−0.15, +0.13]` | `[−0.15, +0.13]` kept (proposal `[−0.60, +0.27]` not adopted: noise-inflated) | TC review / ELO review | **keep** (owner edit at the 239-06 checkpoint) |
-| Flaw delta middlegame | 5.7 | `FLAW_DELTA_ZONES['middlegame']` (rapid, classical) | `[−0.27, +0.23]` | `[−0.27, +0.23]` kept (proposal `[−0.62, +0.35]` not adopted: noise-inflated) | TC collapse / ELO review | **keep** (owner edit at the 239-06 checkpoint) |
-| Flaw delta endgame_phase | 5.8 | `FLAW_DELTA_ZONES['endgame_phase']` (rapid, classical) | `[−0.12, +0.10]` | `[−0.12, +0.10]` kept (proposal `[−0.24, +0.18]` not adopted: noise-inflated) | TC collapse / ELO review | **keep** (owner edit at the 239-06 checkpoint) |
-| Flaw delta miss | 5.9 | `FLAW_DELTA_ZONES['miss']` (rapid, classical) | `[−0.11, +0.11]` | `[−0.11, +0.11]` kept (proposal `[−0.32, +0.28]` not adopted: noise-inflated) | TC collapse / ELO collapse | **keep** (owner edit at the 239-06 checkpoint) |
-| Flaw delta lucky | 5.10 | `FLAW_DELTA_ZONES['lucky']` (rapid, classical) | `[−0.09, +0.09]` | `[−0.09, +0.09]` kept (proposal `[−0.23, +0.26]` not adopted: noise-inflated) | TC collapse / ELO collapse | **keep** (owner edit at the 239-06 checkpoint) |
-| Flaw delta reversed | 5.11 | `FLAW_DELTA_ZONES['reversed']` (rapid, classical) | `[−0.04, +0.04]` | `[−0.04, +0.04]` kept (proposal `[−0.12, +0.11]` not adopted: noise-inflated) | TC collapse / ELO collapse | **keep** (owner edit at the 239-06 checkpoint) |
-| Flaw delta squandered | 5.12 | `FLAW_DELTA_ZONES['squandered']` (rapid, classical) | `[−0.07, +0.08]` | `[−0.07, +0.08]` kept (proposal `[−0.17, +0.19]` not adopted: noise-inflated) | TC collapse / ELO collapse | **keep** (owner edit at the 239-06 checkpoint) |
+| Flaw delta mistake | 5.1 | `FLAW_DELTA_ZONES['mistake']` (per TC) | ±0.22 every TC | bullet ±0.10, blitz ±0.21, rapid ±0.29, classical ±0.48 | TC collapse / ELO collapse | **per-TC** (owner rule B, 261014-rux) |
+| Flaw delta blunder | 5.2 | `FLAW_DELTA_ZONES['blunder']` (per TC) | ±0.28 every TC | bullet ±0.13, blitz ±0.25, rapid ±0.34, classical ±0.53 | TC review / ELO collapse | **per-TC** (owner rule B, 261014-rux) |
+| Flaw delta low_clock | 5.3 | `FLAW_DELTA_ZONES['low_clock']` (per TC) | ±0.06 every TC | bullet ±0.03, blitz ±0.10, rapid ±0.07, classical ±0.04 | TC collapse / ELO collapse | **per-TC** (owner rule B, 261014-rux) |
+| Flaw delta hasty | 5.4 | `FLAW_DELTA_ZONES['hasty']` (per TC) | ±0.23 every TC | bullet ±0.08, blitz ±0.19, rapid ±0.43, classical ±0.91 | TC review / ELO collapse | **per-TC** (owner rule B, 261014-rux) |
+| Flaw delta unrushed | 5.5 | `FLAW_DELTA_ZONES['unrushed']` (per TC) | ±0.37 every TC | bullet ±0.17, blitz ±0.36, rapid ±0.52, classical ±0.89 | TC collapse / ELO review | **per-TC** (owner rule B, 261014-rux) |
+| Flaw delta opening | 5.6 | `FLAW_DELTA_ZONES['opening']` (per TC) | ±0.14 every TC | bullet ±0.07, blitz ±0.15, rapid ±0.20, classical ±0.41 | TC review / ELO collapse | **per-TC** (owner rule B, 261014-rux) |
+| Flaw delta middlegame | 5.7 | `FLAW_DELTA_ZONES['middlegame']` (per TC) | ±0.25 every TC | bullet ±0.12, blitz ±0.23, rapid ±0.30, classical ±0.42 | TC review / ELO collapse | **per-TC** (owner rule B, 261014-rux) |
+| Flaw delta endgame_phase | 5.8 | `FLAW_DELTA_ZONES['endgame_phase']` (per TC) | ±0.11 every TC | bullet ±0.05, blitz ±0.11, rapid ±0.14, classical ±0.19 | TC collapse / ELO review | **per-TC** (owner rule B, 261014-rux) |
+| Flaw delta miss | 5.9 | `FLAW_DELTA_ZONES['miss']` (per TC) | ±0.11 every TC | bullet ±0.06, blitz ±0.12, rapid ±0.15, classical ±0.25 | TC collapse / ELO collapse | **per-TC** (owner rule B, 261014-rux) |
+| Flaw delta lucky | 5.10 | `FLAW_DELTA_ZONES['lucky']` (per TC) | ±0.09 every TC | bullet ±0.05, blitz ±0.10, rapid ±0.12, classical ±0.20 | TC collapse / ELO collapse | **per-TC** (owner rule B, 261014-rux) |
+| Flaw delta reversed | 5.11 | `FLAW_DELTA_ZONES['reversed']` (per TC) | ±0.04 every TC | bullet ±0.03, blitz ±0.05, rapid ±0.06, classical ±0.09 | TC collapse / ELO collapse | **per-TC** (owner rule B, 261014-rux) |
+| Flaw delta squandered | 5.12 | `FLAW_DELTA_ZONES['squandered']` (per TC) | ±0.08 every TC | bullet ±0.04, blitz ±0.08, rapid ±0.10, classical ±0.16 | TC collapse / ELO collapse | **per-TC** (owner rule B, 261014-rux) |
+| Tempo x phase low_clock x opening | 5.16 | `TEMPO_PHASE_ZONES[('low_clock', 'opening')]` | none | `None` | n/a | **keep band-less** |
+| Tempo x phase hasty x opening | 5.16 | `TEMPO_PHASE_ZONES[('hasty', 'opening')]` | ±0.11 every TC | bullet ±0.04, blitz ±0.08, rapid ±0.16, classical ±0.42 | n/a | **per-TC** (owner rule B, 261014-rux) |
+| Tempo x phase unrushed x opening | 5.16 | `TEMPO_PHASE_ZONES[('unrushed', 'opening')]` | ±0.15 every TC | bullet ±0.06, blitz ±0.12, rapid ±0.18, classical ±0.36 | n/a | **per-TC** (owner rule B, 261014-rux) |
+| Tempo x phase low_clock x middlegame | 5.16 | `TEMPO_PHASE_ZONES[('low_clock', 'middlegame')]` | ±0.02 every TC | `None` | n/a | **drop band** (not zone_viable) |
+| Tempo x phase hasty x middlegame | 5.16 | `TEMPO_PHASE_ZONES[('hasty', 'middlegame')]` | ±0.13 every TC | bullet ±0.04, blitz ±0.10, rapid ±0.22, classical ±0.48 | n/a | **per-TC** (owner rule B, 261014-rux) |
+| Tempo x phase unrushed x middlegame | 5.16 | `TEMPO_PHASE_ZONES[('unrushed', 'middlegame')]` | ±0.25 every TC | bullet ±0.11, blitz ±0.22, rapid ±0.30, classical ±0.55 | n/a | **per-TC** (owner rule B, 261014-rux) |
+| Tempo x phase low_clock x endgame_phase | 5.16 | `TEMPO_PHASE_ZONES[('low_clock', 'endgame_phase')]` | ±0.05 every TC | bullet ±0.02, blitz ±0.07, rapid ±0.06, classical ±0.03 | n/a | **per-TC** (owner rule B, 261014-rux) |
+| Tempo x phase hasty x endgame_phase | 5.16 | `TEMPO_PHASE_ZONES[('hasty', 'endgame_phase')]` | ±0.07 every TC | bullet ±0.03, blitz ±0.06, rapid ±0.12, classical ±0.17 | n/a | **per-TC** (owner rule B, 261014-rux) |
+| Tempo x phase unrushed x endgame_phase | 5.16 | `TEMPO_PHASE_ZONES[('unrushed', 'endgame_phase')]` | ±0.10 every TC | bullet ±0.05, blitz ±0.10, rapid ±0.12, classical ±0.16 | n/a | **per-TC** (owner rule B, 261014-rux) |
 | Tactic delta fork missed | 5.13 | `TACTIC_DELTA_ZONES` (fork_missed) | none (band-less) | `[−2.21, +2.13]` both zone TCs | TC collapse / ELO collapse | **add** (owner accepts) |
 | Tactic delta fork allowed | 5.13 | `TACTIC_DELTA_ZONES` (fork_allowed) | none (band-less) | `[−4.12, +3.23]` both zone TCs | TC collapse / ELO collapse | **add** (owner accepts) |
 | Tactic delta pin missed | 5.13 | `TACTIC_DELTA_ZONES` (pin_missed) | none (band-less) | `[−1.42, +1.89]` both zone TCs | TC collapse / ELO collapse | **add** (owner accepts) |

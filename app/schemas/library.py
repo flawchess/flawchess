@@ -345,7 +345,7 @@ class FlawBullet(BaseModel):
     p_value: float | None
     player_events: int  # total player-side tag events across analyzed games
     opp_events: int  # total opponent-side tag events across analyzed games
-    # Typical-range bounds from the per-zone-TC FLAW_DELTA_ZONES registry: a band
+    # Typical-range bounds from the per-TC FLAW_DELTA_ZONES registry: a band
     # symmetric around 0 (±IQR/2 of the measured quartiles, Phase 239 D-15).
     zone_lo: float
     zone_hi: float
@@ -374,9 +374,9 @@ class TempoPhaseCell(BaseModel):
 
     Counts only flaws carrying BOTH the tempo tag and the phase tag, on the same
     paired per-100-user-moves basis as FlawBullet (same CI, p-value, significance).
-    Quick 261014-qj8: 8 of the 9 cells carry a pooled benchmark band from
-    TEMPO_PHASE_ZONES (has_zone True, symmetric zone bounds). low_clock x opening is
-    degenerate and has none (has_zone False, zone bounds 0). Flaws with NULL tempo (no
+    Quick 261014-qj8 / 261014-rux: 7 of the 9 cells carry a per-TC benchmark band from
+    TEMPO_PHASE_ZONES (has_zone True, symmetric zone bounds). low_clock x opening and
+    low_clock x middlegame are not zone-viable and have none (has_zone False, zone bounds 0). Flaws with NULL tempo (no
     clock data) are in no cell. Deliberately NOT part of FLAW_DELTA_METRICS, which drives
     the 12-bullet zone registry.
     """

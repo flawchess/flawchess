@@ -224,7 +224,7 @@ async def test_no_analyzed_games(db_session: AsyncSession) -> None:
 
 @pytest.mark.asyncio
 async def test_bullets_and_zone_bounds(db_session: AsyncSession) -> None:
-    """Blitz and rapid hasty bullets carry the rapid band; no bullet has a domain (D-08/D-09)."""
+    """Each TC's bullets carry that TC's own band; no bullet has a domain (quick 261014-rux)."""
     for bucket in ("blitz", "rapid"):
         for _ in range(FLAW_COMPARISON_GATE):
             g = await _seed_game(db_session, user_id=_TEST_USER, time_control_bucket=bucket)
@@ -234,11 +234,10 @@ async def test_bullets_and_zone_bounds(db_session: AsyncSession) -> None:
     result = await get_flaw_comparison(db_session, _TEST_USER, **_DEFAULT_FILTER_KWARGS)
 
     assert [t.tc for t in result.tcs] == ["blitz", "rapid"]
-    rapid_band = flaw_delta_zone("hasty", "rapid")
     for tc_entry in result.tcs:
         hasty = next(b for b in tc_entry.bullets if b.tag == "hasty")
-        assert hasty.zone_lo == rapid_band.zone_lo
-        assert hasty.zone_hi == rapid_band.zone_hi
+        own_band = flaw_delta_zone("hasty", tc_entry.tc)
+        assert (hasty.zone_lo, hasty.zone_hi) == (own_band.zone_lo, own_band.zone_hi)
         assert hasty.has_zone is True
         for bullet in tc_entry.bullets:
             assert "domain" not in type(bullet).model_fields
@@ -647,15 +646,20 @@ async def test_zero_event_bullet_is_not_significant(db_session: AsyncSession) ->
 async def test_classical_and_bullet_bands(
     db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Classical reads the classical band, bullet the rapid band (D-08).
+    """Bullet reads the bullet band and classical the classical band (quick 261014-rux).
 
-    Today the registry carries identical rapid and classical values, so the registry
-    is patched to make the two zone TCs distinguishable.
+    The registry is patched with four distinct bands so a lookup that falls back to another
+    TC (e.g. the tactic-only ZONE_TC_FOR mapping bullet -> rapid) fails here.
     """
-    rapid_band = ZoneBand(zone_lo=-0.10, zone_hi=0.10)
-    classical_band = ZoneBand(zone_lo=-0.50, zone_hi=0.50)
     monkeypatch.setitem(
-        FLAW_DELTA_ZONES, "hasty", {"rapid": rapid_band, "classical": classical_band}
+        FLAW_DELTA_ZONES,
+        "hasty",
+        {
+            "bullet": ZoneBand(zone_lo=-0.05, zone_hi=0.05),
+            "blitz": ZoneBand(zone_lo=-0.20, zone_hi=0.20),
+            "rapid": ZoneBand(zone_lo=-0.10, zone_hi=0.10),
+            "classical": ZoneBand(zone_lo=-0.50, zone_hi=0.50),
+        },
     )
     for bucket in ("bullet", "classical"):
         g = await _seed_game(db_session, user_id=_TEST_USER, time_control_bucket=bucket)
@@ -665,7 +669,7 @@ async def test_classical_and_bullet_bands(
 
     by_tc = {t.tc: next(b for b in t.bullets if b.tag == "hasty") for t in result.tcs}
     assert set(by_tc) == {"bullet", "classical"}
-    assert (by_tc["bullet"].zone_lo, by_tc["bullet"].zone_hi) == (-0.10, 0.10)
+    assert (by_tc["bullet"].zone_lo, by_tc["bullet"].zone_hi) == (-0.05, 0.05)
     assert (by_tc["classical"].zone_lo, by_tc["classical"].zone_hi) == (-0.50, 0.50)
 
 
@@ -703,7 +707,9 @@ async def test_two_user_isolation(db_session: AsyncSession) -> None:
 _TEMPO_LOW_CLOCK, _TEMPO_HASTY, _TEMPO_UNRUSHED = 0, 1, 2
 _PHASE_OPENING, _PHASE_MIDDLEGAME, _PHASE_ENDGAME = 0, 1, 2
 _CELL_COUNT = 9
-_BANDED_CELL_COUNT = 8
+_BANDED_CELL_COUNT = 7
+# Crossed cells without a band in the 2026-10-14 section 5 run (not zone_viable).
+_ZONELESS_CELLS = {("low_clock", "opening"), ("low_clock", "middlegame")}
 
 
 def _cell(tc_entry: Any, tempo: str, phase: str) -> Any:
@@ -712,10 +718,11 @@ def _cell(tc_entry: Any, tempo: str, phase: str) -> Any:
 
 @pytest.mark.asyncio
 async def test_tempo_phase_cells_shape_and_order(db_session: AsyncSession) -> None:
-    """Exactly 9 cells, phase-major, tempo order inside each phase; 8 carry the registry band.
+    """Exactly 9 cells, phase-major, tempo order inside each phase; 7 carry the registry band.
 
     Every cell is a zero-event cell here, so this also proves the zero-event return path
-    carries the band (quick 261014-qj8). low_clock x opening has none (has_zone False).
+    carries the band (quick 261014-qj8). low_clock x opening and low_clock x middlegame have
+    none (has_zone False).
     """
     for _ in range(FLAW_COMPARISON_GATE):
         g = await _seed_game(db_session, user_id=_TEST_USER)
@@ -736,7 +743,7 @@ async def test_tempo_phase_cells_shape_and_order(db_session: AsyncSession) -> No
     for c in cells:
         band = tempo_phase_zone(c.tempo, c.phase, entry.tc)
         if band is None:
-            assert (c.tempo, c.phase) == ("low_clock", "opening")
+            assert (c.tempo, c.phase) in _ZONELESS_CELLS
             assert c.has_zone is False
             assert (c.zone_lo, c.zone_hi) == (0.0, 0.0)
         else:

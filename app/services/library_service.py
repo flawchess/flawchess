@@ -1485,8 +1485,8 @@ def _compute_bullets(rows: Sequence[Any], tc: TimeControlBucket) -> list[FlawBul
     For each metric: _paired_series collects per-game deltas (player - opp) /
     user_moves * 100, the per-game player and opponent rates, and total event counts.
     Zero-event bullet: both sides = 0 across all games → delta=None (not 0.0, D-11).
-    Zone bounds come from the per-zone-TC registry via flaw_delta_zone(metric, tc)
-    (D-07, D-08).
+    Zone bounds come from the per-TC registry via flaw_delta_zone(metric, tc)
+    (D-07; each TC has its own band since quick 261014-rux).
     """
     bullets: list[FlawBullet] = []
     for tag in FLAW_DELTA_METRICS:
@@ -1563,7 +1563,7 @@ def _compute_tempo_phase_cells(rows: Sequence[Any], tc: TimeControlBucket) -> li
 
     Same paired per-100-user-moves machinery as the bullets, over the crossed COUNT
     FILTER columns. Flaws with NULL tempo are counted in no cell. Each cell carries its
-    pooled benchmark band for this TC (quick 261014-qj8).
+    benchmark band for this TC (quick 261014-qj8, per-TC since 261014-rux).
     """
     cells: list[TempoPhaseCell] = []
     for phase in TEMPO_PHASE_PHASES:
@@ -1602,7 +1602,7 @@ async def get_flaw_comparison(
     2. fetch_flaw_comparison: ONE per-game LEFT JOIN aggregation (42 COUNT FILTER
        columns plus the tc column); sequential awaits only, never gather on the session.
     3. _bucket_rows_by_tc + _compute_bullets: mean + Wald-z CI per metric per TC,
-       zone bounds from the per-zone-TC registry; also the 9 crossed tempo x phase
+       zone bounds from the per-TC registry; also the 9 crossed tempo x phase
        cells (_compute_tempo_phase_cells, banded from TEMPO_PHASE_ZONES). Bullets are ALWAYS computed, also
        for below-gate TCs, so tiles can show rates (D-03); below_gate is flagged.
 

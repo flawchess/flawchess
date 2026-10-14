@@ -3,7 +3,8 @@
 The numeric diff gate (tests/scripts/benchmarks/test_chapter5_diff.py) needs the benchmark DB
 and is excluded from normal pytest runs by pyproject addopts. This file is deliberately NOT
 under tests/scripts/benchmarks/ so the normal suite pins the SQL text and the pure helpers:
-the full-analysis basis, the metric lists, the cell floor and the safe verdict.
+the two bases (whole cohort for flaw metrics and crossed cells, full-analysis lane for
+tactics), the metric lists, the cell floor and the safe verdict.
 """
 
 from __future__ import annotations
@@ -13,6 +14,7 @@ import pytest
 from app.repositories.library_repository import FAMILY_TO_MOTIF_INTS
 from app.services.library_service import MIN_TACTIC_CHIP_CONFIDENCE
 from scripts.benchmarks import chapter5, distribution as dist
+from scripts.benchmarks.chapter5 import Basis
 from scripts.benchmarks.render import Role, Unit, fmt_value
 
 # The 12 flaw-delta metrics, in report order (combos and the overall flaw rate are gone).
@@ -31,9 +33,28 @@ EXPECTED_FLAW_KEYS = [
     "squandered",
 ]
 
-# Removed metric keys / the old cheap-eval basis must not appear in any §5 SQL string.
+# The 9 tempo x phase crossed cells, phase-major, tempo order inside each phase.
+EXPECTED_TEMPO_PHASE_KEYS = [
+    f"{tempo}__{phase}"
+    for phase in ("opening", "middlegame", "endgame_phase")
+    for tempo in ("low_clock", "hasty", "unrushed")
+]
+
+# Removed metric keys must not appear in any §5 SQL string.
 REMOVED_METRIC_KEYS = ("hasty_miss", "low_clock_miss", "flaw_rate")
-OLD_BASIS_PREDICATE = "g.evals_completed_at IS NOT NULL"
+
+# The whole-cohort basis (flaw metrics + crossed cells): every eval'd game of a selected user.
+WHOLE_COHORT_PREDICATE = "g.evals_completed_at IS NOT NULL"
+# Lane-only fragments that must never reach the whole-cohort base CTE.
+LANE_ONLY_FRAGMENTS = (
+    "benchmark_selection",
+    "bs.armed",
+    "tc_tranche",
+    "full_evals_completed_at",
+    "full_pv_completed_at",
+    "blobs_completed_at",
+)
+BASES: tuple[Basis, ...] = ("whole_cohort", "lane")
 
 
 def _distribution(n: int, *, p25: float = -0.001, p75: float = 0.001) -> dist.Distribution:
@@ -46,44 +67,119 @@ def _marginal(label: str, n: int, mean: float = 0.0, var: float = 1e-6) -> dist.
     return dist.Marginal(label=label, dist=_distribution(n), mean_raw=mean, var=var)
 
 
-class TestFullAnalysisBasis:
+class TestWholeCohortBasis:
+    def test_base_cte_is_every_evald_game_of_a_selected_user(self) -> None:
+        cte = chapter5._base_games_cte("whole_cohort")
+        assert "FROM games g" in cte
+        assert "JOIN selected_users su ON su.user_id = g.user_id" in cte
+        assert WHOLE_COHORT_PREDICATE in cte
+        # BASE_GAME_FILTER carries the TC anchor that keeps one selected_users row per game.
+        assert "g.time_control_bucket::text = su.tc_bucket" in cte
+
+    def test_base_cte_has_no_lane_gate(self) -> None:
+        cte = chapter5._base_games_cte("whole_cohort")
+        for lane_only in LANE_ONLY_FRAGMENTS:
+            assert lane_only not in cte
+
+    def test_zone_sql_carries_flaw_and_crossed_metrics_but_no_tactic(self) -> None:
+        cte = chapter5._per_user_cte("whole_cohort")
+        for key in [*EXPECTED_FLAW_KEYS, *EXPECTED_TEMPO_PHASE_KEYS]:
+            assert f"AS nv_{key}" in cte
+        assert "tactic_" not in cte
+
+    def test_crossed_delta_is_a_rate_per_user_move(self) -> None:
+        cte = chapter5._per_user_cte("whole_cohort")
+        assert (
+            "(p_hasty__middlegame - o_hasty__middlegame)::float / NULLIF(pgt.user_moves, 0)"
+            " AS delta_hasty__middlegame" in cte
+        )
+        assert "(p_blunder - o_blunder)::float / NULLIF(pgt.user_moves, 0) AS delta_blunder" in cte
+
+
+class TestLaneBasis:
     def test_tranches_are_classical_and_rapid_only(self) -> None:
         assert chapter5.FULL_ANALYSIS_TRANCHES == ("classical", "rapid")
 
     def test_base_cte_reads_the_lane_with_all_completion_predicates(self) -> None:
-        cte = chapter5._base_games_cte()
+        cte = chapter5._base_games_cte("lane")
         assert "FROM benchmark_selection bs" in cte
         assert "bs.armed" in cte
         assert "bs.tc_tranche IN ('classical', 'rapid')" in cte
         assert "g.full_evals_completed_at IS NOT NULL" in cte
         assert "g.full_pv_completed_at IS NOT NULL" in cte
         assert "g.blobs_completed_at IS NOT NULL" in cte
-        # BASE_GAME_FILTER carries the TC anchor that keeps one selected_users row per game.
         assert "g.time_control_bucket::text = su.tc_bucket" in cte
 
-    def test_blitz_and_bullet_never_enter_the_basis(self) -> None:
-        cte = chapter5._base_games_cte()
+    def test_blitz_and_bullet_never_enter_the_lane(self) -> None:
+        cte = chapter5._base_games_cte("lane")
         assert "'blitz'" not in cte
         assert "'bullet'" not in cte
 
-    def test_per_user_and_viability_sql_embed_the_same_base_cte(self) -> None:
-        cte = chapter5._base_games_cte()
-        assert cte in chapter5._per_user_cte()
-        assert cte in chapter5._viability_sql()
+    def test_lane_does_not_use_the_whole_cohort_predicate(self) -> None:
+        assert WHOLE_COHORT_PREDICATE not in chapter5._base_games_cte("lane")
 
-    def test_user_moves_lives_in_base_games_not_a_self_joined_helper_cte(self) -> None:
+    def test_zone_sql_carries_tactic_metrics_but_no_flaw(self) -> None:
+        cte = chapter5._per_user_cte("lane")
+        for key, _ in chapter5.TACTIC_METRICS:
+            assert f"AS nv_{key}" in cte
+        for key in EXPECTED_FLAW_KEYS:
+            assert f"AS nv_{key}" not in cte
+
+
+class TestBothBases:
+    @pytest.mark.parametrize("basis", BASES)
+    def test_per_user_and_viability_sql_embed_the_same_base_cte(self, basis: Basis) -> None:
+        cte = chapter5._base_games_cte(basis)
+        assert cte in chapter5._per_user_cte(basis)
+        assert cte in chapter5._viability_sql(basis)
+
+    @pytest.mark.parametrize("basis", BASES)
+    def test_user_moves_lives_in_base_games_not_a_self_joined_helper_cte(
+        self, basis: Basis
+    ) -> None:
         # Regression: a user_moves_per_game helper CTE self-joined to base_games went
         # O(n^2) on the lane (the planner estimates 1 row), a 10+ minute run. user_moves is a
         # base_games column instead.
-        assert "AS user_moves" in chapter5._base_games_cte()
-        assert "user_moves_per_game" not in chapter5._per_user_cte()
+        assert "AS user_moves" in chapter5._base_games_cte(basis)
+        assert "user_moves_per_game" not in chapter5._per_user_cte(basis)
 
+    @pytest.mark.parametrize("basis", BASES)
+    def test_white_plays_the_odd_half_moves(self, basis: Basis) -> None:
+        # White moves first, so a game of ply_count half-moves gives white CEIL(ply_count/2)
+        # moves and black FLOOR (library_service._user_moves_from_ply_count). Runs before
+        # 2026-10-14 had the two swapped.
+        cte = chapter5._base_games_cte(basis)
+        assert "WHEN g.user_color = 'white' THEN CEIL(g.ply_count / 2.0)" in cte
+        assert "ELSE FLOOR(g.ply_count / 2.0)" in cte
+
+    @pytest.mark.parametrize("basis", BASES)
     @pytest.mark.parametrize("builder", ["_per_user_cte", "_viability_sql"])
-    def test_old_cheap_eval_basis_and_removed_metrics_are_gone(self, builder: str) -> None:
-        text = getattr(chapter5, builder)()
-        assert OLD_BASIS_PREDICATE not in text
+    def test_removed_metrics_are_gone(self, builder: str, basis: Basis) -> None:
+        text = getattr(chapter5, builder)(basis)
         for key in REMOVED_METRIC_KEYS:
             assert key not in text
+
+    @pytest.mark.parametrize("basis", BASES)
+    def test_one_game_flaws_scan_per_zone_query(self, basis: Basis) -> None:
+        # Research A3: one LEFT JOIN to game_flaws in the zone query, no second scan.
+        assert chapter5._per_user_cte(basis).count("LEFT JOIN game_flaws") == 1
+
+
+class TestTempoPhaseMetrics:
+    def test_nine_keys_phase_major(self) -> None:
+        assert [k for k, _ in chapter5.TEMPO_PHASE_METRICS] == EXPECTED_TEMPO_PHASE_KEYS
+
+    def test_delta_column_follows_the_key(self) -> None:
+        for key, col in chapter5.TEMPO_PHASE_METRICS:
+            assert col == f"delta_{key}"
+
+    def test_predicate_is_the_tempo_and_the_phase_predicate(self) -> None:
+        preds = chapter5._FLAW_TAG_PREDICATES
+        for key, _ in chapter5.TEMPO_PHASE_METRICS:
+            tempo, phase = key.split("__")
+            assert chapter5._TEMPO_PHASE_PREDICATES[key] == (
+                f"({preds[tempo]}) AND ({preds[phase]})"
+            )
 
 
 class TestFlawMetricList:
@@ -97,10 +193,10 @@ class TestFlawMetricList:
     def test_predicates_cover_exactly_the_metric_keys(self) -> None:
         assert set(chapter5._FLAW_TAG_PREDICATES) == set(EXPECTED_FLAW_KEYS)
 
-    def test_noise_variance_column_per_metric(self) -> None:
-        cte = chapter5._per_user_cte()
-        for key in EXPECTED_FLAW_KEYS:
-            assert f"AS nv_{key}" in cte
+    def test_rate_metrics_are_the_flaw_metrics_and_the_crossed_cells(self) -> None:
+        assert chapter5._RATE_METRIC_KEYS == frozenset(
+            EXPECTED_FLAW_KEYS + EXPECTED_TEMPO_PHASE_KEYS
+        )
 
 
 class TestCellFloor:
@@ -196,28 +292,27 @@ class TestTacticMetrics:
         assert "missed" not in pred
 
     def test_sql_carries_a_player_and_an_opponent_column_per_tactic_metric(self) -> None:
-        cte = chapter5._per_user_cte()
+        cte = chapter5._per_user_cte("lane")
         for key, _ in chapter5.TACTIC_METRICS:
             assert f"AS p_{key}" in cte
             assert f"AS o_{key}" in cte
             assert f"AS nv_{key}" in cte
 
     def test_tactic_delta_is_the_raw_count_difference_not_divided_by_moves(self) -> None:
-        cte = chapter5._per_user_cte()
+        cte = chapter5._per_user_cte("lane")
         assert (
             "(p_tactic_fork_missed - o_tactic_fork_missed)::float AS delta_tactic_fork_missed"
             in cte
         )
-        assert "(p_blunder - o_blunder)::float / NULLIF(pgt.user_moves, 0) AS delta_blunder" in cte
 
-    def test_one_game_flaws_scan_serves_flaw_and_tactic_metrics(self) -> None:
-        # Research A3: one LEFT JOIN to game_flaws in the zone query, no second scan.
-        assert chapter5._per_user_cte().count("LEFT JOIN game_flaws") == 1
-
-    def test_viability_sql_counts_player_events_for_every_metric(self) -> None:
-        text = chapter5._viability_sql()
-        for key, _ in chapter5.FLAW_DELTA_METRICS + chapter5.TACTIC_METRICS:
-            assert f"AS raw_{key}" in text
+    def test_viability_sql_counts_player_events_for_every_metric_of_its_basis(self) -> None:
+        whole = chapter5._viability_sql("whole_cohort")
+        for key, _ in chapter5.FLAW_DELTA_METRICS + chapter5.TEMPO_PHASE_METRICS:
+            assert f"AS raw_{key}" in whole
+        lane = chapter5._viability_sql("lane")
+        for key, _ in chapter5.TACTIC_METRICS:
+            assert f"AS raw_{key}" in lane
+        assert "AS raw_blunder" not in lane
 
     def test_chapter_imports_the_app_constants_instead_of_copying_them(self) -> None:
         assert chapter5.FAMILY_TO_MOTIF_INTS is FAMILY_TO_MOTIF_INTS

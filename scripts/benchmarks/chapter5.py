@@ -1,28 +1,35 @@
 """Chapter 5 — Flaw-Delta Zones (SKILL.md §5).
 
-Basis (Phase 239 D-07/D-08): the **Phase 212 full-analysis lane** only. A game counts when
-it is an armed `benchmark_selection` row in the classical or rapid tranche AND carries full
-evals, full PVs and tactic blobs. The blitz and bullet tranches never enter the basis (blitz
-is half finished, bullet is empty); the app registries map those TCs to the rapid zones.
+Two bases (2026-10-14, quick 261014-rux):
 
-Computes, for each of the 12 flaw-delta metrics (blunder, mistake and the 10 context tags),
-every cohort user's **you−opponent delta** on a **per-100-of-their-own-moves,
-paired-per-game** basis (Phase 114 D-01 unified estimator), then emits Q1/Q3 quartiles + ELO/TC
-marginals + the established Cohen's-d collapse verdict per axis (FLAWBMK-01/02/03), plus a
-per-metric viability diagnostic (Phase 114 D-06) and a noise-only IQR diagnostic.
+- **Whole cohort** (the 12 flaw metrics and the 9 tempo x phase crossed cells): every eval'd
+  game (`evals_completed_at`) of a selected user in all four TCs, up to 1000 games per user per
+  TC. Severity and the context tags (tempo, phase, miss, lucky, reversed, squandered) are plain
+  game_flaws columns set at classification, so they exist for every eval'd game. This is the
+  pre-Phase-239 basis; at the lane's 100-game cap the per-user means were 70 to 140% sampling
+  noise (lane report §5.15), so the flaw bands moved back here.
+- **Full-analysis lane** (the 38 tactic metrics, Phase 239 D-07/D-08): armed
+  `benchmark_selection` rows in the classical and rapid tranches with full evals, full PVs and
+  tactic blobs. Tactic motifs only exist where the flaw blob ran (outside the lane game_flaws
+  carries no PV lines), so tactics cannot use the whole cohort. Blitz and bullet tactic zones
+  read the rapid ones in the app (ZONE_TC_FOR).
 
-Phase 114 D-01 estimator: for each game, delta = (player_tag_count − opp_tag_count) / user_moves
-(a proportion), where user_moves is derived from games.ply_count (Phase 114.1):
-FLOOR(ply_count/2) for white, CEIL(ply_count/2) for black (no game_positions scan). The
-SQL stores the raw proportion; the ×100 scaling to "per-100-moves" display units is
-applied at the render layer via the "pp" unit formatter (SKILL.md "Display formatting"
-invariant: never bake scaling into SQL, apply at the rendering layer). Per-cohort-user
-delta = mean of those per-game deltas.
+Computes, for each metric, every cohort user's **you−opponent delta** paired per game (Phase
+114 D-01 unified estimator), then emits Q1/Q3 quartiles + ELO/TC marginals + the established
+Cohen's-d collapse verdict per axis (FLAWBMK-01/02/03), plus a per-metric viability
+diagnostic (Phase 114 D-06) and a noise-only IQR diagnostic.
 
-The 12 metrics use integer/boolean column predicates — tag name strings do NOT appear
-in the SQL (game_flaws encodes tempo/phase as integers, opportunity/impact as booleans).
-The two combo metrics (hasty+miss, low-clock+miss) and the overall flaw rate were dropped
-in Phase 239 (D-00f).
+Rate metrics (flaw + crossed): per game, delta = (player_tag_count − opp_tag_count) /
+user_moves (a proportion), where user_moves comes from games.ply_count (Phase 114.1):
+CEIL(ply_count/2) for white, FLOOR(ply_count/2) for black (white moves first; no
+game_positions scan). The SQL stores the raw proportion; the ×100 scaling to "per-100-moves"
+display units is applied at the render layer via the "pp" unit formatter (SKILL.md "Display
+formatting" invariant: never bake scaling into SQL). Per-cohort-user delta = mean of those
+per-game deltas.
+
+The flaw metrics use integer/boolean column predicates — tag name strings do NOT appear in the
+SQL (game_flaws encodes tempo/phase as integers, opportunity/impact as booleans). A crossed
+cell is its tempo predicate AND its phase predicate.
 
 Tactic metrics (Phase 239 D-06): 38 = 19 tactic families x {missed, allowed}. Per game the
 estimator is the raw count difference (player − opponent) of game_flaws rows whose motif for
@@ -45,7 +52,7 @@ import asyncio
 import json
 from collections.abc import Mapping, Sequence
 from pathlib import Path
-from typing import Any, Final, TypedDict
+from typing import Any, Final, Literal, TypedDict
 
 from sqlalchemy import RowMapping, text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
@@ -58,13 +65,18 @@ from scripts.benchmarks import sql
 from scripts.benchmarks.render import fmt_int, fmt_unsigned, fmt_value, markdown_table
 
 SECTION = (
-    "SKILL.md §5 — flaw-delta + tactic zones (12 flaw + 38 tactic metrics on the full-analysis lane: "
-    "per-(ELO×TC) Q1/Q3 + collapse verdicts + viability + noise diagnostic)"
+    "SKILL.md §5 — flaw-delta + tactic zones (12 flaw + 9 tempo x phase metrics on the whole "
+    "cohort, 38 tactic metrics on the full-analysis lane: per-(ELO×TC) Q1/Q3 + collapse "
+    "verdicts + viability + noise diagnostic)"
 )
 
+# Which games a metric is measured on (see the module docstring).
+Basis = Literal["whole_cohort", "lane"]
+BASES: Final[tuple[Basis, ...]] = ("whole_cohort", "lane")
+
 # Phase 239 D-08: the only benchmark_selection tranches whose full-analysis lane has
-# finished. Blitz is half finished and bullet is empty; both read the rapid zones in the app
-# registry (ZONE_TC_FOR) and are never computed here. Refresh = re-run §5 once they finish.
+# finished (tactic metrics only). Blitz and bullet tactic zones read the rapid ones in the app
+# registry (ZONE_TC_FOR). Refresh = add a tranche here once it finishes and re-run §5.
 FULL_ANALYSIS_TRANCHES: Final[tuple[sql.TcBucket, ...]] = ("classical", "rapid")
 
 # Per-user analyzed-games floor for flaw-delta metrics (Phase 114 D-08).
@@ -127,6 +139,24 @@ _FLAW_TAG_PREDICATES: dict[str, str] = {
     "squandered": "gf.is_squandered = TRUE",
 }
 
+# The 9 tempo x phase crossed cells (quick 261014-qj8 heatmap): (metric_key, delta_column).
+# Key = `{tempo}__{phase}`, phase-major (opening, middlegame, endgame_phase) with tempo order
+# low_clock, hasty, unrushed inside each phase. Rate metrics like the 12.
+_CROSSED_TEMPOS: tuple[str, ...] = ("low_clock", "hasty", "unrushed")
+_CROSSED_PHASES: tuple[str, ...] = ("opening", "middlegame", "endgame_phase")
+TEMPO_PHASE_METRICS: tuple[tuple[str, str], ...] = tuple(
+    (f"{tempo}__{phase}", f"delta_{tempo}__{phase}")
+    for phase in _CROSSED_PHASES
+    for tempo in _CROSSED_TEMPOS
+)
+
+# A crossed cell's predicate ANDs the existing tempo and phase predicates (no new SQL literals).
+_TEMPO_PHASE_PREDICATES: dict[str, str] = {
+    f"{tempo}__{phase}": f"({_FLAW_TAG_PREDICATES[tempo]}) AND ({_FLAW_TAG_PREDICATES[phase]})"
+    for phase in _CROSSED_PHASES
+    for tempo in _CROSSED_TEMPOS
+}
+
 # Tactic orientations (Phase 239 D-06). `missed_tactic_*` / `allowed_tactic_*` on game_flaws
 # are the motif (SmallInteger) and winner-confidence (0-100) of the tactic the flaw missed /
 # allowed.
@@ -172,10 +202,31 @@ _TACTIC_PREDICATES: dict[str, str] = {
     for key, (family, orientation) in TACTIC_METRIC_PARTS.items()
 }
 
-# Every metric the SQL computes, flaw first. One predicate table feeds the zone query and the
-# viability query.
-_ALL_METRICS: tuple[tuple[str, str], ...] = FLAW_DELTA_METRICS + TACTIC_METRICS
-_ALL_PREDICATES: dict[str, str] = {**_FLAW_TAG_PREDICATES, **_TACTIC_PREDICATES}
+# The metrics each basis computes. One predicate table feeds the zone and viability queries.
+_BASIS_METRICS: dict[Basis, tuple[tuple[str, str], ...]] = {
+    "whole_cohort": FLAW_DELTA_METRICS + TEMPO_PHASE_METRICS,
+    "lane": TACTIC_METRICS,
+}
+_ALL_PREDICATES: dict[str, str] = {
+    **_FLAW_TAG_PREDICATES,
+    **_TEMPO_PHASE_PREDICATES,
+    **_TACTIC_PREDICATES,
+}
+
+# Rate metrics divide the per-game count difference by the user's moves; tactics do not.
+_RATE_METRIC_KEYS: frozenset[str] = frozenset(
+    key for key, _ in FLAW_DELTA_METRICS + TEMPO_PHASE_METRICS
+)
+
+# The user's own moves in a game, as a base_games column. White moves first, so white plays
+# the odd half-moves: CEIL(ply_count/2) for white, FLOOR for black.
+# BUG FIX (2026-10-14): §5 runs before this date had the two swapped (white FLOOR, black
+# CEIL), off by one move in odd-length games. The direction now matches
+# library_service._user_moves_from_ply_count (PR #420 review).
+_USER_MOVES_SQL: Final[str] = (
+    "CASE WHEN g.user_color = 'white' THEN CEIL(g.ply_count / 2.0)\n"
+    "              ELSE FLOOR(g.ply_count / 2.0) END AS user_moves"
+)
 
 # Even ply = white mover, odd ply = black mover (canonical ply-parity convention).
 # Player flaws: mover parity matches user_color.
@@ -220,17 +271,18 @@ class NoiseRow(TypedDict):
 
 
 class CohortSummary(TypedDict):
-    n_analyzed_games: int  # total analyzed games feeding §5 (all qualifying user×cell rows)
+    n_analyzed_games: int  # total analyzed games feeding one basis (qualifying user×cell rows)
     n_user_cells: int  # user×(ELO,TC) rows passing the floor (= the pooled `n`)
     n_distinct_users: int  # distinct cohort users (a user spanning buckets counts once)
 
 
 class Chapter5Values(TypedDict):
-    flaw: dict[str, MetricBlock]
-    tactic: dict[str, MetricBlock]  # 38 tactic metrics, per 100 games (family x orientation)
-    viability: list[ViabilityRow]
+    flaw: dict[str, MetricBlock]  # 12 flaw metrics, whole cohort, per 100 moves
+    tempo_phase: dict[str, MetricBlock]  # 9 crossed cells, whole cohort, per 100 moves
+    tactic: dict[str, MetricBlock]  # 38 tactic metrics, lane, per 100 games
+    viability: list[ViabilityRow]  # 12 + 9 + 38 rows
     noise: dict[str, NoiseRow]
-    cohort: CohortSummary
+    cohorts: dict[Basis, CohortSummary]
 
 
 async def _fetch(session: AsyncSession, sql_text: str) -> Sequence[RowMapping]:
@@ -238,38 +290,48 @@ async def _fetch(session: AsyncSession, sql_text: str) -> Sequence[RowMapping]:
     return result.mappings().all()
 
 
-def _base_games_cte() -> str:
-    """The full-analysis `base_games` CTE, shared by `_per_user_cte()` and `_viability_sql()`.
+def _base_games_cte(basis: Basis) -> str:
+    """The `base_games` CTE of one basis, shared by `_per_user_cte()` and `_viability_sql()`.
 
-    One definition, two call sites: the zone query and the viability query can never drift
-    onto different games. Each predicate has a reason:
+    One definition per basis, two call sites: a basis's zone query and viability query can
+    never drift onto different games. Both bases carry `user_moves` as a base_games column
+    (not a self-joined helper CTE: with the lane's small base the planner estimates 1 row,
+    picks a nested loop and the helper self-join went O(n^2), a 10+ min run).
+
+    whole_cohort (flaw metrics + crossed cells): every game of a selected user passing
+    BASE_GAME_FILTER (rated, human opponent, equal footing, and the TC anchor
+    `g.time_control_bucket::text = su.tc_bucket` that keeps ONE selected_users row per game)
+    with `evals_completed_at` set, in all four TCs. game_flaws severity and context-tag columns
+    exist for every such game; no lane, full-eval, full-PV or blob gate.
+
+    lane (tactic metrics), each predicate has a reason:
       - `bs.armed`: unarmed rows are invisible to every claim lane, so they cannot have been
         analyzed.
       - `bs.tc_tranche IN (...)`: D-08, only the finished tranches (FULL_ANALYSIS_TRANCHES).
-      - BASE_GAME_FILTER: rated, human opponent, equal-footing, and the TC anchor
-        `g.time_control_bucket::text = su.tc_bucket` that keeps ONE selected_users row per game.
       - `full_evals_completed_at` / `full_pv_completed_at`: the engine finished the game.
       - `blobs_completed_at`: tactic motifs are suppressed to NULL while a flaw blob is
         pending, so a game without it would contribute false zero tactic counts.
     `lichess_evals_at` is deliberately NOT used as a provenance filter: lichess-arm lane games
     keep it set even though their stored evals were homogenized to ours.
     """
-    tranches = ", ".join(f"'{t}'" for t in FULL_ANALYSIS_TRANCHES)
-    return (
+    select = (
         "base_games AS MATERIALIZED (\n"
         "  SELECT g.id AS game_id, g.user_id, g.user_color,\n"
         f"         ({sql.USER_ELO_AT_GAME_SQL}) AS ueag,\n"
         "         su.tc_bucket AS tc,\n"
-        # user_moves lives here (not in a self-joined helper CTE): with the lane's small
-        # base the planner estimates 1 row, picks a nested loop and the helper self-join
-        # went O(n^2) (a 10+ min run). Floor/ceil of ply_count/2 = the user's own moves.
-        # KNOWN FLIP (PR #420 review): white moves first, so white should get CEIL and black
-        # FLOOR (the app was fixed, library_service._user_moves_from_ply_count). Kept here so
-        # the committed §5 run and its diff gate stay reproducible; fix it together with the
-        # next §5 refresh and diff-gate regeneration. Off by at most one move per game.
-        "         CASE WHEN g.user_color = 'white' THEN FLOOR(g.ply_count / 2.0)\n"
-        "              ELSE CEIL(g.ply_count / 2.0) END AS user_moves\n"
-        "  FROM benchmark_selection bs\n"
+        f"         {_USER_MOVES_SQL}\n"
+    )
+    if basis == "whole_cohort":
+        return (
+            select + "  FROM games g\n"
+            "  JOIN selected_users su ON su.user_id = g.user_id\n"
+            f"  WHERE {sql.BASE_GAME_FILTER}\n"
+            "    AND g.evals_completed_at IS NOT NULL\n"
+            ")"
+        )
+    tranches = ", ".join(f"'{t}'" for t in FULL_ANALYSIS_TRANCHES)
+    return (
+        select + "  FROM benchmark_selection bs\n"
         "  JOIN games g ON g.id = bs.game_id\n"
         "  JOIN selected_users su ON su.user_id = g.user_id\n"
         f"  WHERE bs.armed AND bs.tc_tranche IN ({tranches})\n"
@@ -281,16 +343,15 @@ def _base_games_cte() -> str:
     )
 
 
-def _per_user_cte() -> str:
-    """Per-user flaw-delta CTE chain for all metrics (one row per user per ELO×TC cell).
+def _per_user_cte(basis: Basis) -> str:
+    """Per-user delta CTE chain for one basis's metrics (one row per user per ELO×TC cell).
 
     CTE chain:
       selected_users  — canonical cohort filter (benchmark_selected_users + completed checkpoint)
-      base_games      — the full-analysis lane games (`_base_games_cte()`); MATERIALIZED to
+      base_games      — the basis's games (`_base_games_cte(basis)`); MATERIALIZED to
                         narrow the game_flaws scan. Carries `user_moves` derived from
-                        games.ply_count (Phase 114.1): FLOOR(ply_count/2) for white,
-                        CEIL(ply_count/2) for black (no game_positions scan; known flip,
-                        see base_games).
+                        games.ply_count (Phase 114.1): CEIL(ply_count/2) for white,
+                        FLOOR(ply_count/2) for black (no game_positions scan).
       per_game_tags   — per-game player/opponent tag counts for all metrics, driven from
                         base_games (ALL analyzed games) LEFT JOIN game_flaws so clean games
                         count as a 0 delta (not dropped). The ≥20 floor below is therefore over
@@ -304,6 +365,7 @@ def _per_user_cte() -> str:
       pu              — MATERIALIZED with SPARSE_CELL_EXCLUSION (Phase 114 D-07 cell floor).
     """
     bucket_case = sql.elo_bucket_case_sql("ueag")
+    metrics = _BASIS_METRICS[basis]
 
     def player_count(predicate: str) -> str:
         """COUNT(*) FILTER for player flaws matching a tag predicate."""
@@ -315,40 +377,36 @@ def _per_user_cte() -> str:
 
     # Build per_game_tags column list: one player column + one opponent column per metric.
     tag_cols = []
-    for metric_key, _ in _ALL_METRICS:
+    for metric_key, _ in metrics:
         pred = _ALL_PREDICATES[metric_key]
         tag_cols.append(f"    {player_count(pred)} AS p_{metric_key}")
         tag_cols.append(f"    {opp_count(pred)} AS o_{metric_key}")
     tag_cols_sql = ",\n".join(tag_cols)
 
-    # Build per_game_delta column list. Flaw metrics: (player − opp) / NULLIF(user_moves, 0),
+    # Build per_game_delta column list. Rate metrics: (player − opp) / NULLIF(user_moves, 0),
     # proportion units (NOT ×100; the ×100 scaling to "per-100-moves" display units is applied
     # at the render layer via the "pp" unit formatter, per the SKILL.md "Display formatting"
     # invariant: never bake scaling into SQL). Tactic metrics: the raw per-game count
     # difference (player − opp), NOT divided by moves (research Pattern 2); the "per100g" unit
     # renders it times 100.
     delta_cols = []
-    for metric_key, delta_col in FLAW_DELTA_METRICS:
-        delta_cols.append(
-            f"    (p_{metric_key} - o_{metric_key})::float"
-            f" / NULLIF(pgt.user_moves, 0) AS {delta_col}"
-        )
-    for metric_key, delta_col in TACTIC_METRICS:
-        delta_cols.append(f"    (p_{metric_key} - o_{metric_key})::float AS {delta_col}")
+    for metric_key, delta_col in metrics:
+        per_moves = " / NULLIF(pgt.user_moves, 0)" if metric_key in _RATE_METRIC_KEYS else ""
+        delta_cols.append(f"    (p_{metric_key} - o_{metric_key})::float{per_moves} AS {delta_col}")
     delta_cols_sql = ",\n".join(delta_cols)
 
     # Build per_user column list: avg of each delta column, plus the variance of that mean
     # (var_samp / n) for the noise-only IQR diagnostic. HAVING count(*) >= 20 keeps var_samp
     # defined.
     avg_cols = []
-    for metric_key, delta_col in _ALL_METRICS:
+    for metric_key, delta_col in metrics:
         avg_cols.append(f"    avg(pgd.{delta_col}) AS {delta_col}")
         avg_cols.append(f"    var_samp(pgd.{delta_col}) / count(*) AS nv_{metric_key}")
     avg_cols_sql = ",\n".join(avg_cols)
 
     return (
         f"WITH {sql.SELECTED_USERS_CTE},\n"
-        f"{_base_games_cte()},\n"
+        f"{_base_games_cte(basis)},\n"
         # per_game_tags: per-game player/opponent tag counts for all metrics.
         # Driven from base_games (ALL analyzed games) with a LEFT JOIN to game_flaws, so a
         # clean game (zero detected flaws) still contributes a row with all counts = 0 and
@@ -479,25 +537,43 @@ def _is_zone_viable(degenerate: bool, pct_nonzero: float) -> bool:
     return not degenerate and pct_nonzero >= VIABILITY_MIN_PCT_NONZERO
 
 
-async def compute(session: AsyncSession) -> Chapter5Values:
-    """Compute all metric blocks + viability + noise diagnostic.
-
-    Builds the per-user CTE chain once, then runs one aggregation per metric in one UNION ALL
-    query. Viability is a separate lightweight query (Phase 114 D-06).
-    """
-    selects = [_metric_select(metric, col) for metric, col in _ALL_METRICS]
-    query = _per_user_cte() + "\n" + "\nUNION ALL\n".join(selects)
+async def _compute_blocks(
+    session: AsyncSession, basis: Basis
+) -> tuple[dict[str, MetricBlock], dict[str, NoiseRow]]:
+    """One basis's zone query: one aggregation per metric in one UNION ALL over its `pu`."""
+    metrics = _BASIS_METRICS[basis]
+    selects = [_metric_select(metric, col) for metric, col in metrics]
+    query = _per_user_cte(basis) + "\n" + "\nUNION ALL\n".join(selects)
     rows = await _fetch(session, query)
 
     blocks: dict[str, MetricBlock] = {}
     noise: dict[str, NoiseRow] = {}
-    for metric, _ in _ALL_METRICS:
+    for metric, _ in metrics:
         metric_rows = [r for r in rows if r["metric"] == metric]
         pooled, elo, tc = dist.split_grouping_sets(metric_rows)
         blocks[metric] = _assemble_block(pooled, elo, tc)
         noise[metric] = _noise_row(metric, metric_rows)
+    return blocks, noise
 
-    viability, cohort = await _compute_viability(session)
+
+async def compute(session: AsyncSession) -> Chapter5Values:
+    """Compute all metric blocks + viability + noise diagnostic, per basis.
+
+    Four queries run sequentially on the one session (never asyncio.gather on an
+    AsyncSession): the zone query and the viability query of each basis (Phase 114 D-06).
+    """
+    blocks: dict[str, MetricBlock] = {}
+    noise: dict[str, NoiseRow] = {}
+    for basis in BASES:
+        basis_blocks, basis_noise = await _compute_blocks(session, basis)
+        blocks.update(basis_blocks)
+        noise.update(basis_noise)
+
+    viability: list[ViabilityRow] = []
+    cohorts: dict[Basis, CohortSummary] = {}
+    for basis in BASES:
+        rows, cohorts[basis] = await _compute_viability(session, basis)
+        viability += rows
     # degenerate_iqr / zone_viable need the pooled IQR from the blocks computed above.
     for row in viability:
         degenerate = blocks[row["metric"]]["degenerate"]
@@ -506,17 +582,18 @@ async def compute(session: AsyncSession) -> Chapter5Values:
 
     return Chapter5Values(
         flaw={key: blocks[key] for key, _ in FLAW_DELTA_METRICS},
+        tempo_phase={key: blocks[key] for key, _ in TEMPO_PHASE_METRICS},
         tactic={key: blocks[key] for key, _ in TACTIC_METRICS},
         viability=viability,
         noise=noise,
-        cohort=cohort,
+        cohorts=cohorts,
     )
 
 
-def _viability_sql() -> str:
-    """Viability query: one row per user×(ELO,TC) cell with raw player event counts.
+def _viability_sql(basis: Basis) -> str:
+    """Viability query of one basis: one row per user×(ELO,TC) cell with raw player event counts.
 
-    Driven from the same `_base_games_cte()` as the zone query (ALL analyzed games, LEFT
+    Driven from the same `_base_games_cte(basis)` as that basis's zone query (ALL analyzed games, LEFT
     JOIN game_flaws) so the ≥20 floor is over analyzed games. The cell set is close to, but
     NOT identical with, the zone query's `pu` cells: it applies neither SPARSE_CELL_EXCLUSION
     (so the sparse (2400, classical) cell is included) nor the per_game_delta
@@ -529,11 +606,11 @@ def _viability_sql() -> str:
     bucket_case = sql.elo_bucket_case_sql("ueag")
     per_user_raw_cols = ",\n  ".join(
         f"COUNT(*) FILTER(WHERE ({_PLAYER_FILTER}) AND ({_ALL_PREDICATES[m]})) AS raw_{m}"
-        for m, _ in _ALL_METRICS
+        for m, _ in _BASIS_METRICS[basis]
     )
     return (
         f"WITH {sql.SELECTED_USERS_CTE},\n"
-        f"{_base_games_cte()},\n"
+        f"{_base_games_cte(basis)},\n"
         "per_user_raw AS (\n"
         f"  SELECT bg.user_id, ({bucket_case}) AS elo_bucket, bg.tc,\n"
         "  COUNT(DISTINCT bg.game_id) AS n_games,\n"
@@ -560,7 +637,7 @@ def _median(values: Sequence[int]) -> float:
 
 
 async def _compute_viability(
-    session: AsyncSession,
+    session: AsyncSession, basis: Basis
 ) -> tuple[list[ViabilityRow], CohortSummary]:
     """Per-metric viability diagnostic (Phase 114 D-06).
 
@@ -569,11 +646,11 @@ async def _compute_viability(
     zone calibration (e.g. low_clock at ~76% non-zero vs squandered at ~99.5%).
     `degenerate_iqr` / `zone_viable` are filled by compute() once the blocks exist.
     """
-    raw_rows = await _fetch(session, _viability_sql())
+    raw_rows = await _fetch(session, _viability_sql(basis))
     users_total = len(raw_rows)
 
     viability_rows: list[ViabilityRow] = []
-    for metric_key, _ in _ALL_METRICS:
+    for metric_key, _ in _BASIS_METRICS[basis]:
         raw_col = f"raw_{metric_key}"
         events = [int(r[raw_col] or 0) for r in raw_rows]
         nonzero_count = sum(1 for e in events if e > 0)
@@ -620,16 +697,22 @@ def render(values: Chapter5Values) -> str:
     tranches = " + ".join(FULL_ANALYSIS_TRANCHES)
     parts: list[str] = ["## 5. Flaw-Delta Zones", ""]
     parts += [
-        f"> **Basis (Phase 239 D-07/D-08)**: the full-analysis lane only ({tranches} tranches of",
+        "> **Basis, flaw metrics (5.1 to 5.12) and tempo x phase cells (5.16)**: the whole",
+        "> cohort, every eval'd game (`evals_completed_at`) of a selected user in all four TCs,",
+        "> up to 1000 games per user per TC. Severity and context tags are game_flaws columns set",
+        "> at classification, so every eval'd game carries them. Eval provenance is mixed",
+        "> (Lichess-imported and our engine), disclosed, not excluded (Phase 212 D-06).",
+        ">",
+        f"> **Basis, tactic metrics (5.13)**: the full-analysis lane ({tranches} tranches of",
         "> `benchmark_selection`: armed games with full evals, full PVs and tactic blobs done).",
-        "> Blitz and bullet are not computed here; the app registries map them to the rapid zones",
-        "> (D-09 stopgap) until their full-analysis samples finish.",
+        "> Tactic motifs only exist where the flaw blob ran. Blitz and bullet tactic zones read",
+        "> the rapid ones in the app (ZONE_TC_FOR) until their lane tranches finish.",
         ">",
         "> **D-01 unified estimator**: per game, delta = (player_tag_count − opp_tag_count)",
         "> / user_moves_in_game (proportion); displayed as per-100-moves via ×100 at the",
         '> render layer ("pp" unit). user_moves derived from `games.ply_count` (Phase 114.1):',
-        "> FLOOR(ply_count/2) for white, CEIL(ply_count/2) for black — no game_positions scan.",
-        "> Per-cohort-user delta = mean",
+        "> CEIL(ply_count/2) for white, FLOOR(ply_count/2) for black (white moves first; runs",
+        "> before 2026-10-14 had the two swapped). Per-cohort-user delta = mean",
         f"> over ≥{FLAW_DELTA_MIN_GAMES} analyzed games. Negative delta means cohort",
         "> users commit fewer flaws of this type than equally-rated opponents.",
         ">",
@@ -653,9 +736,11 @@ def render(values: Chapter5Values) -> str:
 
     parts += _render_tactic_table(values)
     parts += [""]
-    parts += _render_viability(values["viability"], values["cohort"])
+    parts += _render_viability(values["viability"], values["cohorts"])
     parts += [""]
     parts += _render_noise_summary(values)
+    parts += [""]
+    parts += _render_tempo_phase_table(values)
     return "\n".join(parts)
 
 
@@ -666,17 +751,12 @@ def _fmt_magnitude(value: float, unit: dist.Unit) -> str:
     return fmt_unsigned(value * 100, 2)
 
 
-# TC levels shown as their own p25-to-p75 column in the compact tactic table.
-_TACTIC_TABLE_TCS: tuple[str, str] = ("rapid", "classical")
+# TC levels shown as their own p25-to-p75 column in each compact table.
+_TACTIC_TABLE_TCS: tuple[str, ...] = ("rapid", "classical")
+_TEMPO_PHASE_TABLE_TCS: tuple[str, ...] = ("bullet", "blitz", "rapid", "classical")
 
-_TACTIC_TABLE_HEADERS: tuple[str, ...] = (
-    "family",
-    "orientation",
-    "n",
-    "p25",
-    "p50",
-    "p75",
-    *(f"{tc} p25 to p75" for tc in _TACTIC_TABLE_TCS),
+# Columns after the per-TC ranges, shared by the tactic and the tempo x phase tables.
+_COMPACT_TAIL_HEADERS: tuple[str, ...] = (
     "TC max abs d",
     "ELO max abs d",
     "pct_nonzero",
@@ -685,12 +765,17 @@ _TACTIC_TABLE_HEADERS: tuple[str, ...] = (
 )
 
 
-def _tc_range(block: MetricBlock, tc: str) -> str:
-    """`p25 to p75` of one TC marginal in per-100-games units, or n/a for a thin/absent level."""
+def _fmt_quartile(value: float, unit: dist.Unit) -> str:
+    """One quartile in a compact table: pp3 for rate metrics, per100g for tactics."""
+    return fmt_value(value, unit, "pct")
+
+
+def _tc_range(block: MetricBlock, tc: str, unit: dist.Unit) -> str:
+    """`p25 to p75` of one TC marginal in the metric's unit, or n/a for a thin/absent level."""
     for m in block["tc_marginal"]:
         if m["label"] == tc:
-            lo = fmt_value(m["dist"]["p25"], "per100g", "pct")
-            hi = fmt_value(m["dist"]["p75"], "per100g", "pct")
+            lo = _fmt_quartile(m["dist"]["p25"], unit)
+            hi = _fmt_quartile(m["dist"]["p75"], unit)
             return f"{lo} to {hi}"
     return "n/a"
 
@@ -703,6 +788,43 @@ def _max_abs_d(block: MetricBlock, axis: str) -> str:
     return "n/a"
 
 
+def _compact_row(
+    values: Chapter5Values,
+    key: str,
+    block: MetricBlock,
+    unit: dist.Unit,
+    tcs: Sequence[str],
+) -> list[str]:
+    """The shared part of a compact-table row: n, quartiles, per-TC ranges and the tail."""
+    via = next((v for v in values["viability"] if v["metric"] == key), None)
+    noise = values["noise"].get(key)
+    pooled = block["pooled"]
+    return [
+        fmt_int(pooled["n"]),
+        _fmt_quartile(pooled["p25"], unit),
+        _fmt_quartile(pooled["p50"], unit),
+        _fmt_quartile(pooled["p75"], unit),
+        *(_tc_range(block, tc, unit) for tc in tcs),
+        _max_abs_d(block, "TC"),
+        _max_abs_d(block, "ELO"),
+        f"{via['pct_nonzero']:.1f}%" if via else "n/a",
+        _fmt_magnitude(noise["pooled_noise_iqr"], unit) if noise else "n/a",
+        ("yes" if via["zone_viable"] else "no") if via else "n/a",
+    ]
+
+
+def _compact_headers(lead: Sequence[str], tcs: Sequence[str]) -> tuple[str, ...]:
+    return (
+        *lead,
+        "n",
+        "p25",
+        "p50",
+        "p75",
+        *(f"{tc} p25 to p75" for tc in tcs),
+        *_COMPACT_TAIL_HEADERS,
+    )
+
+
 def _render_tactic_table(values: Chapter5Values) -> list[str]:
     """Compact tactic section: ONE table, one row per tactic metric (38 rows), per 100 games.
 
@@ -711,60 +833,59 @@ def _render_tactic_table(values: Chapter5Values) -> list[str]:
     the viability share, the noise-only IQR and the zone_viable flag. Values are the per-user
     mean of (you − opponent) tactic events per game, shown times 100 ("per100g" unit).
     """
-    viability = {v["metric"]: v for v in values["viability"]}
-    rows: list[list[str]] = []
-    for key, block in values["tactic"].items():
-        family, orientation = TACTIC_METRIC_PARTS[key]
-        pooled = block["pooled"]
-        noise = values["noise"].get(key)
-        via = viability.get(key)
-        rows.append(
-            [
-                family,
-                orientation,
-                fmt_int(pooled["n"]),
-                fmt_value(pooled["p25"], "per100g", "pct"),
-                fmt_value(pooled["p50"], "per100g", "pct"),
-                fmt_value(pooled["p75"], "per100g", "pct"),
-                *(_tc_range(block, tc) for tc in _TACTIC_TABLE_TCS),
-                _max_abs_d(block, "TC"),
-                _max_abs_d(block, "ELO"),
-                f"{via['pct_nonzero']:.1f}%" if via else "n/a",
-                _fmt_magnitude(noise["pooled_noise_iqr"], "per100g") if noise else "n/a",
-                ("yes" if via["zone_viable"] else "no") if via else "n/a",
-            ]
-        )
-    aligns = ("left", "left") + ("right",) * (len(_TACTIC_TABLE_HEADERS) - 2)
+    headers = _compact_headers(("family", "orientation"), _TACTIC_TABLE_TCS)
+    rows = [
+        [
+            *TACTIC_METRIC_PARTS[key],
+            *_compact_row(values, key, block, "per100g", _TACTIC_TABLE_TCS),
+        ]
+        for key, block in values["tactic"].items()
+    ]
+    aligns = ("left", "left") + ("right",) * (len(headers) - 2)
     return [
         "### 5.13 Tactic Missed/Allowed Zones (D-06)",
         "",
-        "> One row per tactic family and orientation. Value = per-user mean over ≥"
-        f"{FLAW_DELTA_MIN_GAMES} analyzed games of the per-game count difference",
-        "> (your tactic flaws − opponent's) whose motif is in the family's `FAMILY_TO_MOTIF_INTS`",
-        f"> ints and whose confidence is ≥ {MIN_TACTIC_CHIP_CONFIDENCE}; shown per 100 games",
-        '> ("per100g" unit). Negative = you commit/allow fewer than equally-rated opponents.',
-        "> `n/a` = a thin TC level (<"
+        "> Full-analysis lane basis. One row per tactic family and orientation. Value =",
+        f"> per-user mean over ≥{FLAW_DELTA_MIN_GAMES} analyzed games of the per-game count",
+        "> difference (your tactic flaws − opponent's) whose motif is in the family's",
+        f"> `FAMILY_TO_MOTIF_INTS` ints and whose confidence is ≥ {MIN_TACTIC_CHIP_CONFIDENCE};",
+        '> shown per 100 games ("per100g" unit). Negative = you commit/allow fewer than',
+        "> equally-rated opponents. `n/a` = a thin TC level (<"
         f"{_CELL_CONTRIBUTOR_FLOOR} user-cells) or a verdict that could not be computed.",
         "",
-        markdown_table(_TACTIC_TABLE_HEADERS, rows, aligns),
+        markdown_table(headers, rows, aligns),
     ]
 
 
-def _render_noise_summary(values: Chapter5Values) -> list[str]:
-    """Noise summary: observed pooled IQR vs the noise-only IQR, for every metric.
+def _render_tempo_phase_table(values: Chapter5Values) -> list[str]:
+    """Compact 5.16 section: one row per tempo x phase crossed cell (9 rows), per 100 moves."""
+    headers = _compact_headers(("tempo", "phase"), _TEMPO_PHASE_TABLE_TCS)
+    rows = [
+        [*key.split("__"), *_compact_row(values, key, block, "pp3", _TEMPO_PHASE_TABLE_TCS)]
+        for key, block in values["tempo_phase"].items()
+    ]
+    aligns = ("left", "left") + ("right",) * (len(headers) - 2)
+    return [
+        "### 5.16 Tempo x Phase Crossed Cells",
+        "",
+        "> Whole-cohort basis. One row per crossed cell (a flaw counts when it carries both",
+        "> the tempo tag and the phase tag). Same D-01 estimator as 5.1 to 5.12, per 100 moves.",
+        "> `n/a` = a thin TC level (<"
+        f"{_CELL_CONTRIBUTOR_FLOOR} user-cells) or a verdict that could not be computed.",
+        "",
+        markdown_table(headers, rows, aligns),
+    ]
 
-    A noise share near (or above) 100% means the observed band is mostly sampling noise at the
-    lane's 100 games per user per TC; reported, never applied to the zones (owner call).
-    """
+
+def _noise_table(values: Chapter5Values, blocks: Mapping[str, MetricBlock], unit: dist.Unit) -> str:
+    """Observed pooled IQR vs noise-only IQR for one basis's metrics."""
     headers = ["metric", "observed IQR", "noise-only IQR", "noise share"]
     aligns = ("left", "right", "right", "right")
     rows: list[list[str]] = []
-    blocks = {**values["flaw"], **values["tactic"]}
     for key, block in blocks.items():
         noise = values["noise"].get(key)
         if noise is None:
             continue
-        unit: dist.Unit = "pp3" if key in values["flaw"] else "per100g"
         observed = block["pooled"]["p75"] - block["pooled"]["p25"]
         share = f"{noise['pooled_noise_iqr'] / observed * 100:.0f}%" if observed > 0 else "n/a"
         rows.append(
@@ -775,14 +896,29 @@ def _render_noise_summary(values: Chapter5Values) -> list[str]:
                 share,
             ]
         )
+    return markdown_table(headers, rows, aligns)
+
+
+def _render_noise_summary(values: Chapter5Values) -> list[str]:
+    """Noise summary per basis: observed pooled IQR vs the noise-only IQR, for every metric.
+
+    A noise share near (or above) 100% means the observed band is mostly sampling noise at
+    that basis's games per user; reported, never applied to the zones (owner call).
+    """
     return [
         "### 5.15 Noise-only IQR Summary",
         "",
         "> Noise-only IQR = `1.349 * sqrt(mean over user-cells of var(per-game delta) / n_games)`:",
-        "> the IQR per-user values would show if every user had the same true gap. Flaw metrics",
-        "> are per 100 moves (pp), tactic metrics per 100 games. Reported, not applied.",
+        "> the IQR per-user values would show if every user had the same true gap. A share near",
+        "> or above 100% means the band is mostly sampling noise. Reported, not applied.",
         "",
-        markdown_table(headers, rows, aligns),
+        "#### Whole-cohort basis (flaw metrics and tempo x phase cells, per 100 moves)",
+        "",
+        _noise_table(values, {**values["flaw"], **values["tempo_phase"]}, "pp3"),
+        "",
+        "#### Full-analysis lane (tactic metrics, per 100 games)",
+        "",
+        _noise_table(values, values["tactic"], "per100g"),
     ]
 
 
@@ -829,7 +965,17 @@ def _metric_section(
     return lines
 
 
-def _render_viability(viability: list[ViabilityRow], cohort: CohortSummary) -> list[str]:
+def _cohort_line(cohort: CohortSummary) -> str:
+    return (
+        f"**Cohort**: {cohort['n_analyzed_games']:,} analyzed games across "
+        f"{cohort['n_user_cells']:,} user×(ELO,TC) cells "
+        f"({cohort['n_distinct_users']:,} distinct users)."
+    )
+
+
+def _render_viability(
+    viability: list[ViabilityRow], cohorts: Mapping[Basis, CohortSummary]
+) -> list[str]:
     """Render the per-metric viability diagnostic table (Phase 114 D-06) + cohort-size summary."""
     headers = [
         "metric",
@@ -859,18 +1005,11 @@ def _render_viability(viability: list[ViabilityRow], cohort: CohortSummary) -> l
         ]
         return markdown_table(headers, rows, aligns)
 
-    cohort_line = (
-        f"**Cohort basis**: {cohort['n_analyzed_games']:,} analyzed games across "
-        f"{cohort['n_user_cells']:,} user×(ELO,TC) cells "
-        f"({cohort['n_distinct_users']:,} distinct users). All analyzed games count "
-        "(clean games = a 0 delta); the per-cell `users_total` below = these user×cell rows, "
-        "not distinct users."
-    )
     return [
         "### 5.14 Viability Diagnostic (D-06)",
         "",
-        cohort_line,
-        "",
+        "> All analyzed games count (clean games = a 0 delta); the per-cell `users_total` =",
+        "> user×(ELO,TC) rows of that basis, not distinct users.",
         "> Flags rare numerators so the registry author can assess CI-width adequacy.",
         "> Non-zero = user has ≥1 player event of this tag over their ≥20 analyzed games.",
         f"> `zone_viable` = pooled IQR not degenerate (p25 < p75) AND pct_nonzero ≥ {VIABILITY_MIN_PCT_NONZERO:.0f}%.",
@@ -879,11 +1018,23 @@ def _render_viability(viability: list[ViabilityRow], cohort: CohortSummary) -> l
         "> §5.1–5.12 zone columns. It gauges raw event volume for CI-width adequacy.",
         "> Tactic rows count player events of that family and orientation over the user's games.",
         "",
-        "#### Flaw metrics",
+        "#### Whole-cohort basis",
+        "",
+        _cohort_line(cohorts["whole_cohort"]),
+        "",
+        "Flaw metrics:",
         "",
         table_for(FLAW_DELTA_METRICS),
         "",
-        "#### Tactic metrics",
+        "Tempo x phase cells:",
+        "",
+        table_for(TEMPO_PHASE_METRICS),
+        "",
+        "#### Full-analysis lane",
+        "",
+        _cohort_line(cohorts["lane"]),
+        "",
+        "Tactic metrics:",
         "",
         table_for(TACTIC_METRICS),
     ]
@@ -904,11 +1055,15 @@ async def build(session: AsyncSession) -> dict[str, Any]:
 
 
 def _summary_line(values: Chapter5Values) -> str:
-    """One-line run summary: metric counts, TC levels of the blunder block, game count."""
+    """One-line run summary: metric counts, TC levels of the blunder block, games per basis."""
     tc_levels = ", ".join(m["label"] for m in values["flaw"]["blunder"]["tc_marginal"])
+    cohorts = values["cohorts"]
     return (
-        f"chapter5: {len(values['flaw'])} flaw + {len(values['tactic'])} tactic metrics; "
-        f"TC levels: {tc_levels}; games: {values['cohort']['n_analyzed_games']}"
+        f"chapter5: {len(values['flaw'])} flaw + {len(values['tempo_phase'])} tempo x phase + "
+        f"{len(values['tactic'])} tactic metrics; flaw TC levels: {tc_levels}; "
+        f"games: whole_cohort {cohorts['whole_cohort']['n_analyzed_games']}, "
+        f"lane {cohorts['lane']['n_analyzed_games']}; "
+        f"flaw pooled n: {values['flaw']['blunder']['pooled']['n']}"
     )
 
 
