@@ -51,18 +51,18 @@ describe('TempoPhaseHeatmap', () => {
       .map((el) => el.getAttribute('data-testid') ?? '')
       .filter((id) => !id.endsWith('-words') && !id.includes('-popover'));
     expect(ids).toEqual([
-      'tempo-phase-cell-low-clock-opening',
-      'tempo-phase-cell-hasty-opening',
       'tempo-phase-cell-unrushed-opening',
-      'tempo-phase-cell-low-clock-middlegame',
-      'tempo-phase-cell-hasty-middlegame',
+      'tempo-phase-cell-hasty-opening',
+      'tempo-phase-cell-low-clock-opening',
       'tempo-phase-cell-unrushed-middlegame',
-      'tempo-phase-cell-low-clock-endgame-phase',
-      'tempo-phase-cell-hasty-endgame-phase',
+      'tempo-phase-cell-hasty-middlegame',
+      'tempo-phase-cell-low-clock-middlegame',
       'tempo-phase-cell-unrushed-endgame-phase',
+      'tempo-phase-cell-hasty-endgame-phase',
+      'tempo-phase-cell-low-clock-endgame-phase',
     ]);
     const card = text('tempo-phase-card');
-    for (const label of ['Low-clock', 'Hasty', 'Unrushed', 'Opening', 'Middlegame', 'Endgame']) {
+    for (const label of ['Unrushed', 'Hasty', 'Low-clock', 'Opening', 'Middlegame', 'Endgame']) {
       expect(card).toContain(label);
     }
   });

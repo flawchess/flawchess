@@ -175,8 +175,11 @@ export function metricTestIdSegment(metric: FlawDeltaMetric): string {
   return metric.replace(/_/g, '-');
 }
 
-/** Heatmap columns in Clock-card order (mirrors backend TEMPO_PHASE_TEMPOS). */
-export const TEMPO_PHASE_TEMPOS: readonly FlawTempoMetric[] = ['low_clock', 'hasty', 'unrushed'];
+/**
+ * Heatmap columns, from most to least time on the clock (unrushed, hasty, low-clock). Cells
+ * are looked up by tempo + phase, so this display order is independent of the backend's.
+ */
+export const TEMPO_PHASE_TEMPOS: readonly FlawTempoMetric[] = ['unrushed', 'hasty', 'low_clock'];
 
 /** Heatmap rows in game order (mirrors backend TEMPO_PHASE_PHASES). */
 export const TEMPO_PHASE_PHASES: readonly FlawPhaseMetric[] = [
