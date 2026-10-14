@@ -3,6 +3,7 @@
  * entries modelled on the sketch 010 dev data.
  */
 
+import { TEMPO_PHASE_PHASES, TEMPO_PHASE_TEMPOS } from '@/lib/flawComparisonMeta';
 import { TACTIC_COMPARISON_FAMILIES, type TacticFamily } from '@/lib/tacticComparisonMeta';
 import type { TimeControlBucket } from '@/types/endgames';
 import type {
@@ -10,11 +11,14 @@ import type {
   FlawComparisonResponse,
   FlawComparisonTc,
   FlawDeltaMetric,
+  FlawPhaseMetric,
+  FlawTempoMetric,
   FlawTrendPoint,
   TacticBullet,
   TacticComparisonResponse,
   TacticComparisonTc,
   TacticSide,
+  TempoPhaseCell,
 } from '@/types/library';
 
 export const ANALYZED_GATE = 20;
@@ -53,6 +57,31 @@ export function makeBullet(tag: FlawDeltaMetric, overrides: Partial<FlawBullet> 
   };
 }
 
+/** A small, non-significant crossed cell (no zone) unless overridden. */
+export function makeTempoPhaseCell(
+  tempo: FlawTempoMetric,
+  phase: FlawPhaseMetric,
+  overrides: Partial<TempoPhaseCell> = {},
+): TempoPhaseCell {
+  return {
+    tempo,
+    phase,
+    delta: 0.1,
+    ci_low: -0.2,
+    ci_high: 0.4,
+    player_rate: 0.6,
+    opp_rate: 0.5,
+    p_value: 0.5,
+    player_events: 30,
+    opp_events: 25,
+    zone_lo: 0,
+    zone_hi: 0,
+    has_zone: false,
+    significant: false,
+    ...overrides,
+  };
+}
+
 interface TcEntryOptions {
   analyzedN: number;
   /** Coverage denominator; defaults to analyzedN (fully analyzed). */
@@ -61,6 +90,8 @@ interface TcEntryOptions {
   mistake?: Partial<FlawBullet>;
   /** Per-metric overrides for any of the 12 metrics (applied after blunder / mistake). */
   overrides?: Partial<Record<FlawDeltaMetric, Partial<FlawBullet>>>;
+  /** Per-cell overrides of the 9 crossed tempo x phase cells, keyed `tempo:phase`. */
+  tempoPhase?: Partial<Record<`${FlawTempoMetric}:${FlawPhaseMetric}`, Partial<TempoPhaseCell>>>;
 }
 
 /** One TC entry with all 12 bullets; blunder and mistake can be overridden per test. */
@@ -74,6 +105,11 @@ export function makeTcEntry(tc: TimeControlBucket, options: TcEntryOptions): Fla
       const base = tag === 'blunder' ? options.blunder : tag === 'mistake' ? options.mistake : undefined;
       return makeBullet(tag, { ...base, ...options.overrides?.[tag] });
     }),
+    tempo_phase_cells: TEMPO_PHASE_PHASES.flatMap((phase) =>
+      TEMPO_PHASE_TEMPOS.map((tempo) =>
+        makeTempoPhaseCell(tempo, phase, options.tempoPhase?.[`${tempo}:${phase}`]),
+      ),
+    ),
   };
 }
 

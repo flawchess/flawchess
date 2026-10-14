@@ -6,6 +6,7 @@ import {
 } from '@/lib/theme';
 import {
   GAP_CENTRE,
+  GAP_EMPTY_WORDS,
   GAP_SAME_WORD,
   bandRange,
   cellPosition,
@@ -15,8 +16,6 @@ import {
   type GapCell,
 } from '@/lib/gapBar';
 import { cn } from '@/lib/utils';
-
-const COPY_NO_FLAWS = 'No flaws yet';
 
 interface GapBarProps {
   cell: GapCell;
@@ -79,7 +78,7 @@ export function GapBar({ cell, testId, trailing, layout = 'responsive', leading 
   if (cell.delta === null) {
     const empty = (
       <p className="text-sm text-muted-foreground" data-testid={`${testId}-empty`}>
-        {COPY_NO_FLAWS}
+        {GAP_EMPTY_WORDS}
       </p>
     );
     return (

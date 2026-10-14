@@ -331,6 +331,15 @@ describe('You vs. your opponents section', () => {
     expect(order[1]!.compareDocumentPosition(order[2]!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 
+  it('renders the Clock by game phase heatmap after the context cards (quick 261014-pb9)', async () => {
+    await renderLoaded();
+    const section = screen.getByTestId('vs-opponents-section');
+    const cards = within(section).getByTestId('context-tag-cards');
+    const heatmap = within(section).getByTestId('tempo-phase-card');
+    expect(cards.compareDocumentPosition(heatmap) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(heatmap.querySelectorAll('[data-testid^="tempo-phase-cell-"][data-testid$="-words"]')).toHaveLength(9);
+  });
+
   it('follows the page switch, with no new request (D-02)', async () => {
     await renderLoaded();
     expect(screen.getByTestId('gap-popover-low-clock-tc-rapid')).not.toBeNull();
@@ -350,6 +359,7 @@ describe('You vs. your opponents section', () => {
       expect(text('vs-opponents-gate')).toBe('Not enough analyzed games yet (12 of 20)'),
     );
     expect(screen.queryByTestId('context-tag-cards')).toBeNull();
+    expect(screen.queryByTestId('tempo-phase-card')).toBeNull();
   });
 
   it('shows the empty copy and no switch when no TC has analyzed games', async () => {

@@ -24,6 +24,8 @@ const GAP_OUTER_SPAN = GAP_CENTRE - GAP_BAND_HALF_POS - GAP_EDGE_POS;
 const GAP_SAME_EPSILON = 0.005;
 /** What gapWords returns for a gap below GAP_SAME_EPSILON. */
 export const GAP_SAME_WORD = 'same';
+/** What a gap cell shows when neither side has a flaw to compare (the bars and the heatmap). */
+export const GAP_EMPTY_WORDS = 'No flaws yet';
 /** The axis caption under the bars: fewer flaws (better) sit left on every gap bar. */
 export const GAP_AXIS_LABELS = ['better', 'worse'] as const;
 /** Number formatting: at or above this magnitude one decimal, at or above the next none. */

@@ -34,7 +34,14 @@ from app.repositories.game_flaws_repository import (
     _TEMPO_INT,
 )
 from app.repositories.query_utils import apply_game_filters, is_opponent_expr, player_only_gate
-from app.schemas.library import FlawListItem, TacticLinesResponse
+from app.schemas.library import (
+    TEMPO_PHASE_PHASES,
+    TEMPO_PHASE_TEMPOS,
+    FlawListItem,
+    FlawPhaseMetric,
+    FlawTempoMetric,
+    TacticLinesResponse,
+)
 from app.services.best_move_candidates import best_move_tier_sql
 from app.services.flaws_service import (
     FlawSeverity,
@@ -1853,6 +1860,59 @@ async def count_analyzed_by_tc(
     return {str(bucket): int(n) for bucket, n in rows if n > 0}
 
 
+# ---------------------------------------------------------------------------
+# Quick 261014-pb9 — tempo x phase crossed COUNT FILTER columns
+# ---------------------------------------------------------------------------
+
+TempoPhaseSide = Literal["player", "opp"]
+
+# Metric names (low_clock, endgame_phase) differ from the SQL dict keys (low-clock, endgame).
+_TEMPO_METRIC_INT: dict[FlawTempoMetric, int] = {
+    "low_clock": _TEMPO_INT["low-clock"],
+    "hasty": _TEMPO_INT["hasty"],
+    "unrushed": _TEMPO_INT["unrushed"],
+}
+_PHASE_METRIC_INT: dict[FlawPhaseMetric, int] = {
+    "opening": _PHASE_INT["opening"],
+    "middlegame": _PHASE_INT["middlegame"],
+    "endgame_phase": _PHASE_INT["endgame"],
+}
+
+
+def tempo_phase_count_label(
+    side: TempoPhaseSide, tempo: FlawTempoMetric, phase: FlawPhaseMetric
+) -> str:
+    """Column label of one crossed COUNT FILTER column, e.g. player_hasty_x_middlegame.
+
+    Built only from Literal constants, never request input, so T-108-06 still holds.
+    The repository emits and the service reads labels through this one helper.
+    """
+    return f"{side}_{tempo}_x_{phase}"
+
+
+def _tempo_phase_count_columns(user_color_col: Any) -> list[Any]:
+    """The 18 crossed (side x tempo x phase) COUNT FILTER columns of fetch_flaw_comparison.
+
+    A NULL tempo needs no handling: `tempo == X` is never true for NULL, so no-clock
+    flaws are counted in no cell.
+    """
+    columns: list[Any] = []
+    for phase in TEMPO_PHASE_PHASES:
+        for tempo in TEMPO_PHASE_TEMPOS:
+            for side, is_opp in (("player", False), ("opp", True)):
+                side_pred = is_opponent_expr(GameFlaw.ply, user_color_col)
+                columns.append(
+                    func.count(GameFlaw.ply)
+                    .filter(
+                        side_pred if is_opp else ~side_pred,
+                        GameFlaw.tempo == _TEMPO_METRIC_INT[tempo],
+                        GameFlaw.phase == _PHASE_METRIC_INT[phase],
+                    )
+                    .label(tempo_phase_count_label(side, tempo, phase))
+                )
+    return columns
+
+
 async def fetch_flaw_comparison(
     session: AsyncSession,
     user_id: int,
@@ -1874,8 +1934,8 @@ async def fetch_flaw_comparison(
     LEFT JOIN anchor: analyzed+filtered games list → LEFT JOIN game_flaws so games
     with zero flaws contribute a zero-delta row (§5 all-analyzed-games basis,
     Pitfall 1 / FLAWCMP-01).
-    Returns one row per (game_id, tc, user_moves) with 24 COUNT columns (12 player +
-    12 opp). The tc column (Phase 239 D-02) lets the service bucket rows per time
+    Returns one row per (game_id, tc, user_moves) with 42 COUNT columns (12 player +
+    12 opp marginals, plus 18 crossed tempo x phase columns). The tc column (Phase 239 D-02) lets the service bucket rows per time
     control in Python; games with a NULL time_control_bucket are excluded.
     Python aggregates mean + CI per metric.
 
@@ -1926,7 +1986,8 @@ async def fetch_flaw_comparison(
         .subquery("anchor")
     )
 
-    # LEFT JOIN game_flaws — 24 COUNT(GameFlaw.ply) FILTER columns (12 metrics × 2 sides).
+    # LEFT JOIN game_flaws — 42 COUNT(GameFlaw.ply) FILTER columns (12 metrics × 2 sides,
+    # plus 18 crossed tempo × phase × side columns).
     # func.count(GameFlaw.ply) (not func.count()) ensures NULL ply from LEFT JOIN miss = 0.
     stmt = (
         select(
@@ -2094,6 +2155,8 @@ async def fetch_flaw_comparison(
                 GameFlaw.is_squandered.is_(True),
             )
             .label("opp_squandered"),
+            # --- Crossed tempo x phase family (quick 261014-pb9) ---
+            *_tempo_phase_count_columns(anchor_subq.c.user_color),
         )
         .outerjoin(
             GameFlaw,

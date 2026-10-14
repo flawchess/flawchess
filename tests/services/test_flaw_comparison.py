@@ -692,3 +692,144 @@ async def test_two_user_isolation(db_session: AsyncSession) -> None:
     mistake_b = next(b for b in result_b.tcs[0].bullets if b.tag == "mistake")
     assert mistake_a.player_events == user_a_games
     assert mistake_b.player_events == 2 * user_b_games
+
+
+# ---------------------------------------------------------------------------
+# Quick 261014-pb9 — tempo x phase crossed cells
+# ---------------------------------------------------------------------------
+
+# SQL ints for the seed helper (game_flaws_repository._TEMPO_INT / _PHASE_INT).
+_TEMPO_LOW_CLOCK, _TEMPO_HASTY, _TEMPO_UNRUSHED = 0, 1, 2
+_PHASE_OPENING, _PHASE_MIDDLEGAME, _PHASE_ENDGAME = 0, 1, 2
+_CELL_COUNT = 9
+
+
+def _cell(tc_entry: Any, tempo: str, phase: str) -> Any:
+    return next(c for c in tc_entry.tempo_phase_cells if c.tempo == tempo and c.phase == phase)
+
+
+@pytest.mark.asyncio
+async def test_tempo_phase_cells_shape_and_order(db_session: AsyncSession) -> None:
+    """Exactly 9 cells, phase-major, tempo order inside each phase, no zone (CONTEXT Data)."""
+    for _ in range(FLAW_COMPARISON_GATE):
+        g = await _seed_game(db_session, user_id=_TEST_USER)
+        await _seed_analyzed(db_session, game=g)
+
+    result = await get_flaw_comparison(db_session, _TEST_USER, **_DEFAULT_FILTER_KWARGS)
+
+    cells = result.tcs[0].tempo_phase_cells
+    assert len(cells) == _CELL_COUNT
+    assert [(c.phase, c.tempo) for c in cells] == [
+        (phase, tempo)
+        for phase in ("opening", "middlegame", "endgame_phase")
+        for tempo in ("low_clock", "hasty", "unrushed")
+    ]
+    for c in cells:
+        assert c.has_zone is False
+        assert c.zone_lo == 0.0
+        assert c.zone_hi == 0.0
+
+
+@pytest.mark.asyncio
+async def test_tempo_phase_cells_count_both_sides(db_session: AsyncSession) -> None:
+    """Crossed cells count flaws carrying BOTH tags, for the player and the opponent."""
+    for _ in range(FLAW_COMPARISON_GATE):
+        g = await _seed_game(db_session, user_id=_TEST_USER, user_color="white")
+        await _seed_analyzed(db_session, game=g)
+        await _seed_flaw(db_session, game=g, ply=2, tempo=_TEMPO_HASTY, phase=_PHASE_MIDDLEGAME)
+        await _seed_flaw(db_session, game=g, ply=3, tempo=_TEMPO_HASTY, phase=_PHASE_MIDDLEGAME)
+        await _seed_flaw(db_session, game=g, ply=4, tempo=_TEMPO_HASTY, phase=_PHASE_ENDGAME)
+
+    result = await get_flaw_comparison(db_session, _TEST_USER, **_DEFAULT_FILTER_KWARGS)
+    entry = result.tcs[0]
+
+    hasty_mid = _cell(entry, "hasty", "middlegame")
+    assert hasty_mid.player_events == FLAW_COMPARISON_GATE
+    assert hasty_mid.opp_events == FLAW_COMPARISON_GATE
+    hasty_end = _cell(entry, "hasty", "endgame_phase")
+    assert hasty_end.player_events == FLAW_COMPARISON_GATE
+    assert hasty_end.opp_events == 0
+    low_mid = _cell(entry, "low_clock", "middlegame")
+    assert low_mid.delta is None
+    assert low_mid.significant is False
+
+
+@pytest.mark.asyncio
+async def test_tempo_phase_cells_exclude_null_tempo(db_session: AsyncSession) -> None:
+    """Flaws with NULL tempo (no clock data) land in the phase marginal but in no cell."""
+    for _ in range(FLAW_COMPARISON_GATE):
+        g = await _seed_game(db_session, user_id=_TEST_USER, user_color="white")
+        await _seed_analyzed(db_session, game=g)
+        await _seed_flaw(db_session, game=g, ply=2, tempo=None, phase=_PHASE_MIDDLEGAME)
+
+    result = await get_flaw_comparison(db_session, _TEST_USER, **_DEFAULT_FILTER_KWARGS)
+    entry = result.tcs[0]
+
+    middlegame = next(b for b in entry.bullets if b.tag == "middlegame")
+    assert middlegame.player_events == FLAW_COMPARISON_GATE
+    for c in entry.tempo_phase_cells:
+        assert c.player_events == 0
+        assert c.opp_events == 0
+        assert c.delta is None
+
+
+@pytest.mark.asyncio
+async def test_tempo_phase_cells_marginal_sum_invariant(db_session: AsyncSession) -> None:
+    """With non-NULL tempo everywhere, crossed cells sum to the matching marginal bullets."""
+    # (ply, tempo, phase) spread over several combos; even ply = player, odd = opponent.
+    combos = [
+        (2, _TEMPO_LOW_CLOCK, _PHASE_OPENING),
+        (4, _TEMPO_HASTY, _PHASE_MIDDLEGAME),
+        (6, _TEMPO_UNRUSHED, _PHASE_ENDGAME),
+        (8, _TEMPO_HASTY, _PHASE_ENDGAME),
+        (10, _TEMPO_UNRUSHED, _PHASE_OPENING),
+        (3, _TEMPO_LOW_CLOCK, _PHASE_ENDGAME),
+        (5, _TEMPO_HASTY, _PHASE_OPENING),
+        (7, _TEMPO_UNRUSHED, _PHASE_MIDDLEGAME),
+    ]
+    for _ in range(FLAW_COMPARISON_GATE):
+        g = await _seed_game(db_session, user_id=_TEST_USER, user_color="white")
+        await _seed_analyzed(db_session, game=g)
+        for ply, tempo, phase in combos:
+            await _seed_flaw(db_session, game=g, ply=ply, tempo=tempo, phase=phase)
+
+    result = await get_flaw_comparison(db_session, _TEST_USER, **_DEFAULT_FILTER_KWARGS)
+    entry = result.tcs[0]
+    bullets = {b.tag: b for b in entry.bullets}
+
+    for phase in ("opening", "middlegame", "endgame_phase"):
+        cells = [c for c in entry.tempo_phase_cells if c.phase == phase]
+        assert sum(c.player_events for c in cells) == bullets[phase].player_events
+        assert sum(c.opp_events for c in cells) == bullets[phase].opp_events
+    for tempo in ("low_clock", "hasty", "unrushed"):
+        cells = [c for c in entry.tempo_phase_cells if c.tempo == tempo]
+        assert sum(c.player_events for c in cells) == bullets[tempo].player_events
+        assert sum(c.opp_events for c in cells) == bullets[tempo].opp_events
+
+
+@pytest.mark.asyncio
+async def test_tempo_phase_cell_significance(db_session: AsyncSession) -> None:
+    """A one-sided crossed cell clears the 99% CI and keeps player_rate - opp_rate == delta."""
+    for _ in range(_SIGNIFICANCE_GAMES):
+        g = await _seed_game(db_session, user_id=_TEST_USER, user_color="white")
+        await _seed_analyzed(db_session, game=g)
+        await _seed_flaw(db_session, game=g, ply=2, tempo=_TEMPO_HASTY, phase=_PHASE_MIDDLEGAME)
+
+    result = await get_flaw_comparison(db_session, _TEST_USER, **_DEFAULT_FILTER_KWARGS)
+
+    cell = _cell(result.tcs[0], "hasty", "middlegame")
+    assert cell.ci_low is not None and cell.ci_low > 0.0
+    assert cell.p_value is not None
+    assert cell.significant is True
+    assert cell.delta is not None
+    assert cell.player_rate is not None and cell.opp_rate is not None
+    assert cell.player_rate - cell.opp_rate == pytest.approx(cell.delta, abs=1e-9)
+
+
+def test_tempo_phase_cell_field_parity() -> None:
+    """TempoPhaseCell carries exactly FlawBullet's stat fields, plus tempo and phase."""
+    from app.schemas.library import FlawBullet, TempoPhaseCell
+
+    assert set(TempoPhaseCell.model_fields) - {"tempo", "phase"} == set(FlawBullet.model_fields) - {
+        "tag"
+    }

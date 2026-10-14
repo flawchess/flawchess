@@ -16,7 +16,7 @@ internal *_hash columns (CLAUDE.md V5).
 """
 
 import datetime
-from typing import Literal
+from typing import Final, Literal
 
 from pydantic import BaseModel
 
@@ -357,6 +357,47 @@ class FlawBullet(BaseModel):
     significant: bool
 
 
+# Quick 261014-pb9: tempo x phase crossed cells. Same spellings as the FlawDeltaMetric
+# tags so the frontend reuses its FLAW_GAP_META labels.
+FlawTempoMetric = Literal["low_clock", "hasty", "unrushed"]
+FlawPhaseMetric = Literal["opening", "middlegame", "endgame_phase"]
+
+# Cell order of FlawComparisonTc.tempo_phase_cells: phase-major (game order), tempo order
+# (Clock-card order) inside each phase.
+TEMPO_PHASE_TEMPOS: Final[tuple[FlawTempoMetric, ...]] = ("low_clock", "hasty", "unrushed")
+TEMPO_PHASE_PHASES: Final[tuple[FlawPhaseMetric, ...]] = (
+    "opening",
+    "middlegame",
+    "endgame_phase",
+)
+
+
+class TempoPhaseCell(BaseModel):
+    """One crossed tempo x game-phase cell of the flaw comparison (quick 261014-pb9).
+
+    Counts only flaws carrying BOTH the tempo tag and the phase tag, on the same
+    paired per-100-user-moves basis as FlawBullet (same CI, p-value, significance).
+    There is no benchmark zone for a crossed cell, so has_zone is always False and the
+    zone bounds stay 0. Flaws with NULL tempo (no clock data) are in no cell. Deliberately
+    NOT part of FLAW_DELTA_METRICS, which drives the benchmark zone registry.
+    """
+
+    tempo: FlawTempoMetric
+    phase: FlawPhaseMetric
+    delta: float | None
+    ci_low: float | None
+    ci_high: float | None
+    player_rate: float | None
+    opp_rate: float | None
+    p_value: float | None
+    player_events: int
+    opp_events: int
+    zone_lo: float = 0.0
+    zone_hi: float = 0.0
+    has_zone: bool = False
+    significant: bool
+
+
 class FlawComparisonTc(BaseModel):
     """One time control's you-vs-opponent flaw comparison (Phase 239 D-02/D-03).
 
@@ -367,6 +408,9 @@ class FlawComparisonTc(BaseModel):
     below_gate: True when analyzed_n < FLAW_COMPARISON_GATE; the bullets are still
                 populated so tiles can show rates (D-03).
     bullets: always the 12 flaw-delta metrics in FLAW_DELTA_METRICS order.
+    tempo_phase_cells: always 9 crossed tempo x phase cells, phase-major (opening,
+                       middlegame, endgame_phase; low_clock, hasty, unrushed inside each).
+                       Computed also below the gate, like bullets.
     """
 
     tc: TimeControlBucket
@@ -374,6 +418,7 @@ class FlawComparisonTc(BaseModel):
     total_n: int
     below_gate: bool
     bullets: list[FlawBullet]
+    tempo_phase_cells: list[TempoPhaseCell]
 
 
 class FlawComparisonResponse(BaseModel):
