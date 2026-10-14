@@ -344,6 +344,23 @@ export interface FlawBullet {
   significant: boolean;
 }
 
+/** The three clock tags of a crossed cell (mirrors backend FlawTempoMetric). */
+export type FlawTempoMetric = 'low_clock' | 'hasty' | 'unrushed';
+
+/** The three game-phase tags of a crossed cell (mirrors backend FlawPhaseMetric). */
+export type FlawPhaseMetric = 'opening' | 'middlegame' | 'endgame_phase';
+
+/**
+ * One crossed tempo x game-phase cell (mirrors backend TempoPhaseCell): flaws carrying
+ * BOTH tags, same paired per-100-moves basis as FlawBullet. 8 of 9 cells carry the
+ * backend's pooled benchmark band (TEMPO_PHASE_ZONES); low_clock x opening has none
+ * (has_zone false, zones 0). Flaws with no clock data (NULL tempo) are in no cell.
+ */
+export interface TempoPhaseCell extends Omit<FlawBullet, 'tag'> {
+  tempo: FlawTempoMetric;
+  phase: FlawPhaseMetric;
+}
+
 /** One time control's flaw comparison (mirrors backend FlawComparisonTc). */
 export interface FlawComparisonTc {
   tc: TimeControlBucket;
@@ -353,6 +370,8 @@ export interface FlawComparisonTc {
   below_gate: boolean;
   /** 12 bullets, also below the gate (D-03: the tile numbers stay visible). */
   bullets: FlawBullet[];
+  /** 9 crossed tempo x phase cells, phase-major (opening, middlegame, endgame_phase; low_clock, hasty, unrushed inside each). */
+  tempo_phase_cells: TempoPhaseCell[];
 }
 
 // ─── Tactic comparison (GET /api/library/tactic-comparison) ───────────────────

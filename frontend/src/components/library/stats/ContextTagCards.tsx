@@ -1,3 +1,5 @@
+import type { ReactNode } from 'react';
+
 import { Card, CardBody, CardHeader } from '@/components/ui/card';
 import {
   CONTEXT_TAG_CARDS,
@@ -18,6 +20,9 @@ import type { FlawComparisonTc } from '@/types/library';
  * column (6rem) and popover sit right of the track; from md up the track is full width.
  */
 const AXIS_CAPTION_CLASS = 'mr-34 md:mr-0 flex justify-between text-sm text-muted-foreground';
+
+/** Cards per row from lg up; the `afterFirstRow` slot goes in after this many cards. */
+const CARDS_PER_ROW = 2;
 
 interface ContextTagRowProps {
   metric: ContextTagMetric;
@@ -83,19 +88,23 @@ function ContextTagCard({ card, tcStats }: ContextTagCardProps) {
 interface ContextTagCardsProps {
   /** The selected time control's comparison entry. */
   tcStats: FlawComparisonTc;
+  /** Full-width content between the first and second card rows (the Clock by game phase heatmap). */
+  afterFirstRow?: ReactNode;
 }
 
 /**
- * The four context-tag cards (D-00f, D-00j): Clock, Game phase, Opponent errors, Lost
- * advantages. Two columns from lg up, one on phones. Each card ends with the
+ * The four context-tag cards (D-00f, D-00j): Game phase, Clock, Lost advantages, Opponent
+ * errors. Two columns from lg up, one on phones. Each card ends with the
  * better / worse axis caption: fewer flaws (better) sit left on every gap bar.
  */
-export function ContextTagCards({ tcStats }: ContextTagCardsProps) {
+export function ContextTagCards({ tcStats, afterFirstRow }: ContextTagCardsProps) {
+  const renderCards = (cards: readonly ContextTagCardDef[]) =>
+    cards.map((card) => <ContextTagCard key={card.key} card={card} tcStats={tcStats} />);
   return (
     <div className="grid grid-cols-1 gap-4 lg:grid-cols-2" data-testid="context-tag-cards">
-      {CONTEXT_TAG_CARDS.map((card) => (
-        <ContextTagCard key={card.key} card={card} tcStats={tcStats} />
-      ))}
+      {renderCards(CONTEXT_TAG_CARDS.slice(0, CARDS_PER_ROW))}
+      {afterFirstRow && <div className="lg:col-span-2">{afterFirstRow}</div>}
+      {renderCards(CONTEXT_TAG_CARDS.slice(CARDS_PER_ROW))}
     </div>
   );
 }

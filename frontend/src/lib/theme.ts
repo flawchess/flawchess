@@ -314,6 +314,17 @@ export const PERCENTILE_TRACK = 'oklch(1 0 0 / 0.07)';
 export const PERCENTILE_TYPICAL_BAND = 'oklch(1 0 0 / 0.13)';
 export const PERCENTILE_MEDIAN_TICK = 'oklch(1 0 0 / 0.35)';
 
+// Quick 261014-pb9 / 261014-qj8 Library Stats tempo x phase heatmap: a cell is tinted
+// ZONE_SUCCESS / ZONE_DANGER by color-mix with transparent, only like the gap bars (gap
+// outside the band AND significant; the zoneless cell on significance alone). The percent
+// rises from MIN to MAX with the GapBar position beyond the band (saturating); the MIN
+// floor keeps a just-outside cell visibly tinted, and a MAX below 100 keeps the
+// foreground text readable on the strongest red and green. Neutral and empty cells use the
+// gap bar's trough so they match the bars.
+export const GAP_HEATMAP_TINT_MIN_PERCENT = 35;
+export const GAP_HEATMAP_TINT_MAX_PERCENT = 90;
+export const GAP_HEATMAP_NEUTRAL_FILL = PERCENTILE_TRACK;
+
 // Phase 238 Endgame Metrics cards (D-00d): the bracket under the WDL bar marks which
 // segments the headline rate counts (wins, wins + draws); the segments it does not
 // count are dimmed with a card-colored veil. Neutral greys, no red/green meaning.

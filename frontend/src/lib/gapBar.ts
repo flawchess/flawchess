@@ -11,7 +11,14 @@
  * renders neutral like a typical one, and the popover says it could be chance.
  */
 
-import { GAUGE_NEUTRAL, ZONE_DANGER, ZONE_SUCCESS } from '@/lib/theme';
+import {
+  GAP_HEATMAP_NEUTRAL_FILL,
+  GAP_HEATMAP_TINT_MAX_PERCENT,
+  GAP_HEATMAP_TINT_MIN_PERCENT,
+  GAUGE_NEUTRAL,
+  ZONE_DANGER,
+  ZONE_SUCCESS,
+} from '@/lib/theme';
 
 /** The benchmark band edge sits this far (in %) from the centre (bands are symmetric since D-15). */
 const GAP_BAND_HALF_POS = 25;
@@ -24,6 +31,10 @@ const GAP_OUTER_SPAN = GAP_CENTRE - GAP_BAND_HALF_POS - GAP_EDGE_POS;
 const GAP_SAME_EPSILON = 0.005;
 /** What gapWords returns for a gap below GAP_SAME_EPSILON. */
 export const GAP_SAME_WORD = 'same';
+/** What a gap bar shows when neither side has a flaw to compare. */
+export const GAP_EMPTY_WORDS = 'No flaws yet';
+/** The same for a Clock by game phase heatmap cell: shorter to fit the narrow cell. */
+export const HEATMAP_EMPTY_WORDS = 'No flaws';
 /** The axis caption under the bars: fewer flaws (better) sit left on every gap bar. */
 export const GAP_AXIS_LABELS = ['better', 'worse'] as const;
 /** Number formatting: at or above this magnitude one decimal, at or above the next none. */
@@ -167,4 +178,57 @@ export function gapVerdictColor(verdict: GapVerdict | null): string {
   if (verdict === 'better') return ZONE_SUCCESS;
   if (verdict === 'worse') return ZONE_DANGER;
   return GAUGE_NEUTRAL;
+}
+
+export type GapHeatmapTint = 'better' | 'worse' | 'neutral';
+
+/** The verdicts that tint a heatmap cell: a significant gap, in either direction. */
+function isTintedVerdict(verdict: GapVerdict | null): verdict is 'better' | 'worse' {
+  return verdict === 'better' || verdict === 'worse';
+}
+
+/** Clamp helper for the heatmap share. */
+function clamp01(value: number): number {
+  return Math.min(1, Math.max(0, value));
+}
+
+/**
+ * Tint strength share in [0, 1], read off the same position curve the GapBar dot uses
+ * (quick 261014-qj8). Banded cell: how far beyond the band edge the dot sits along the
+ * saturating outer span, so a gap just outside the band is faint and a far one saturates.
+ * Zoneless cell: its dot sits inside the virtual max-rate band, so the share is the gap
+ * relative to the larger rate.
+ */
+function heatmapShare(cell: GapCell): number {
+  const offset = Math.abs(cellPosition(cell) - GAP_CENTRE);
+  if (cell.hasZone) return clamp01((offset - GAP_BAND_HALF_POS) / GAP_OUTER_SPAN);
+  return clamp01(offset / GAP_BAND_HALF_POS);
+}
+
+/**
+ * Background of one heatmap cell, coloured exactly like the gap bars (quick 261014-qj8):
+ * only a cell with a better/worse effectiveVerdict is tinted, i.e. a banded cell whose gap
+ * is outside the band AND significant (D-14), or a zoneless cell that is significant
+ * (D-16). Every other cell (inside the band, could-be-chance, null gap) is neutral with
+ * percent 0. The tint percent rises from GAP_HEATMAP_TINT_MIN_PERCENT to
+ * GAP_HEATMAP_TINT_MAX_PERCENT with the GapBar position beyond the band.
+ */
+export function gapHeatmapFill(cell: GapCell): {
+  tint: GapHeatmapTint;
+  background: string;
+  percent: number;
+} {
+  const verdict = effectiveVerdict(cell);
+  if (cell.delta === null || !isTintedVerdict(verdict)) {
+    return { tint: 'neutral', background: GAP_HEATMAP_NEUTRAL_FILL, percent: 0 };
+  }
+  const percent = Math.round(
+    GAP_HEATMAP_TINT_MIN_PERCENT +
+      (GAP_HEATMAP_TINT_MAX_PERCENT - GAP_HEATMAP_TINT_MIN_PERCENT) * heatmapShare(cell),
+  );
+  return {
+    tint: verdict,
+    background: `color-mix(in oklch, ${gapVerdictColor(verdict)} ${percent}%, transparent)`,
+    percent,
+  };
 }

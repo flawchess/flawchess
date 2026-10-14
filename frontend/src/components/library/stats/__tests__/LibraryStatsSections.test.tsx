@@ -321,7 +321,7 @@ describe('You vs. your opponents section', () => {
   it('renders the four cards for the selected TC, between the other sections', async () => {
     await renderLoaded();
     const section = screen.getByTestId('vs-opponents-section');
-    expect(section.querySelector('[data-testid="context-tag-cards"]')?.children).toHaveLength(4);
+    expect(section.querySelectorAll('[data-testid^="context-card-"][data-testid$="-axis"]')).toHaveLength(4);
     const order = [
       screen.getByTestId('flaw-stats-section'),
       section,
@@ -329,6 +329,17 @@ describe('You vs. your opponents section', () => {
     ];
     expect(order[0]!.compareDocumentPosition(order[1]!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(order[1]!.compareDocumentPosition(order[2]!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
+  it('renders the Clock by game phase heatmap between the Clock and Lost advantages cards', async () => {
+    await renderLoaded();
+    const section = screen.getByTestId('vs-opponents-section');
+    const clock = within(section).getByTestId('context-card-clock');
+    const lost = within(section).getByTestId('context-card-lost-advantages');
+    const heatmap = within(section).getByTestId('tempo-phase-card');
+    expect(clock.compareDocumentPosition(heatmap) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(heatmap.compareDocumentPosition(lost) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(heatmap.querySelectorAll('[data-testid^="tempo-phase-cell-"][data-testid$="-words"]')).toHaveLength(9);
   });
 
   it('follows the page switch, with no new request (D-02)', async () => {
@@ -350,6 +361,7 @@ describe('You vs. your opponents section', () => {
       expect(text('vs-opponents-gate')).toBe('Not enough analyzed games yet (12 of 20)'),
     );
     expect(screen.queryByTestId('context-tag-cards')).toBeNull();
+    expect(screen.queryByTestId('tempo-phase-card')).toBeNull();
   });
 
   it('shows the empty copy and no switch when no TC has analyzed games', async () => {

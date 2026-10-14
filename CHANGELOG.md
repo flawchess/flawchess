@@ -8,8 +8,13 @@ in `YYYY-MM-DD` (Europe/Zurich).
 
 ## [Unreleased]
 
+### Added
+
+- Library Stats: a new "Clock by game phase" card under the context cards crosses the three clock tags with the three game phases, so you can see, for example, whether your hasty flaws pile up in the middlegame. Each cell shows your gap to your opponents per 100 moves, in green or red only when the gap is outside the typical range for your level and very unlikely to be chance, the same rule as the gap bars above it.
+
 ### Changed
 
+- Library Stats: the typical range for each flaw comparison is now measured on games of the selected time control, so bullet and blitz get their own ranges instead of the rapid one. Ranges are narrower in fast games and wider in classical, where flaw rates vary more between players.
 - Library Stats now compares you with your opponents in plain words: one gap bar per metric ("1.7 fewer" style), fewer flaws to the left, a grey typical range centred on zero, and the details behind the search icon.
 - Library Stats has one time-control switch for all its sections. It stays in reach while you scroll and remembers your choice between visits.
 - Library Stats: the Blunders and Mistakes tiles now show your opponents' rate next to yours. The Inaccuracies tile and the Severity card are gone.
@@ -39,6 +44,16 @@ in `YYYY-MM-DD` (Europe/Zurich).
 - Shelly's endgame report is no longer written twice when you reload the Endgames page while it is being generated.
 - Analysis engine no longer restarts its Stockfish workers when the tab sits in the background, so a search left running in another tab keeps its results instead of losing them.
 - Google sign-in no longer shows a server error page when Google rejects the sign-in code (for example after a doubled redirect on Android). You land back on the login page with a "Google sign-in failed. Please try again." message.
+- Admin: closing the impersonation pill now takes you back to your own admin session on the Admin page instead of signing you out.
+
+### Security
+
+- Signing in with Google can no longer hand your account to someone who registered your email address before you did. If Google links to an email/password account whose address was never confirmed, the old password is replaced and every existing session is logged out; you can set a new password with "Forgot password". Google sign-ins with an unconfirmed Google email are refused.
+- Resetting your password now logs out all other sessions.
+- Passwords must be 8 to 128 characters, now also checked by the server (the sign-up form already asked for 8). No other rules.
+- After 10 failed password logins for an email within 15 minutes, further logins for that email are paused until the window passes. Google sign-in and "Forgot password" keep working.
+- Email addresses are now unique regardless of upper/lowercase. Previously, upgrading a guest account could create "Name@example.com" next to an existing "name@example.com", which broke login for the original account.
+- Limits per IP address (such as the cap on new guest accounts) can no longer be bypassed by sending a fake forwarding header.
 
 ## [v2.24] Train Grading Integrity & One-Screen Reveal — 2026-10-09
 

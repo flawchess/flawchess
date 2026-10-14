@@ -7,6 +7,7 @@ import {
   readDevClockOffsetMinutes,
 } from '@/lib/devClock';
 import { stashReturnTo } from '@/lib/returnTo';
+import { ADMIN_RETURN_TOKEN_STORAGE_KEY } from '@/lib/impersonation';
 import type {
   PositionBookmarkResponse, PositionBookmarkCreate, PositionBookmarkUpdate,
   PositionBookmarkReorderRequest, TimeSeriesRequest, TimeSeriesResponse,
@@ -117,6 +118,9 @@ apiClient.interceptors.response.use(
       if (!onLoginPage && !isAuthRoute && sentToken) {
         queryClient.clear();
         localStorage.removeItem('auth_token');
+        // An expired impersonation session must not leave the superuser's 7-day JWT
+        // behind in storage with no visible session.
+        localStorage.removeItem(ADMIN_RETURN_TOKEN_STORAGE_KEY);
         // Quick 260926-9bg: an expired session (e.g. a Train reminder push to
         // /train) returns to the page after re-login instead of the default landing.
         stashReturnTo(window.location.pathname + window.location.search);

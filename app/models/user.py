@@ -4,7 +4,7 @@ from datetime import datetime
 from typing import Any, List
 
 from fastapi_users.db import SQLAlchemyBaseUserTable
-from sqlalchemy import Boolean, DateTime, Integer, String, func, text
+from sqlalchemy import Boolean, DateTime, Index, Integer, String, func, text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -13,6 +13,13 @@ from app.models.base import Base
 
 class User(SQLAlchemyBaseUserTable[int], Base):
     __tablename__ = "users"
+    __table_args__ = (
+        # FastAPI-Users looks emails up case-insensitively and expects at most one
+        # match, but its own ix_users_email unique index is case-sensitive. This index
+        # makes "Victim@x.com" and "victim@x.com" impossible to hold at once on every
+        # write path, including concurrent registrations.
+        Index("ix_users_email_lower", text("lower(email)"), unique=True),
+    )
 
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
 
@@ -121,6 +128,17 @@ class User(SQLAlchemyBaseUserTable[int], Base):
     # ORM inserts (registration, guest creation, test fixtures).
     prompt_state: Mapped[dict[str, Any]] = mapped_column(
         JSONB, nullable=False, server_default=text("'{}'::jsonb"), default=dict
+    )
+
+    # Embedded in every auth JWT as the `tv` claim; app/users.py rejects a token whose
+    # claim differs. Bumping it invalidates every outstanding token for the user (JWTs
+    # are otherwise valid until they expire). Bumped when a Google sign-in claims an
+    # unverified password account and when a password reset completes.
+    token_version: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+        server_default=text("0"),
+        default=0,
     )
 
     oauth_accounts: Mapped[List["OAuthAccount"]] = relationship(  # ty: ignore[unresolved-reference]

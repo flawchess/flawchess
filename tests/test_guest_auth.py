@@ -312,7 +312,7 @@ class TestGuestRateLimit:
 class TestPromoteGuestWithPassword:
     @pytest.mark.asyncio
     async def test_promotion_updates_user_fields(self, db_session):
-        """promote_guest_with_password updates is_guest, email, is_verified in DB."""
+        """promote_guest_with_password updates is_guest and email; the email stays unverified."""
         from app.services.guest_service import create_guest_user, promote_guest_with_password
 
         user, _token = await create_guest_user(db_session)
@@ -323,7 +323,8 @@ class TestPromoteGuestWithPassword:
 
         assert updated_user.is_guest is False
         assert updated_user.email == new_email
-        assert updated_user.is_verified is True
+        # Nothing proves the guest owns this address (security review 2026-10-14).
+        assert updated_user.is_verified is False
 
     @pytest.mark.asyncio
     async def test_promotion_sets_promoted_at_in_database(self, db_session):

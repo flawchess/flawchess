@@ -26,29 +26,38 @@ class _SlidingWindowRateLimiter:
         # Keyed by IP string; values are sorted lists of monotonic timestamps
         self._timestamps: defaultdict[str, list[float]] = defaultdict(list)
 
-    def is_allowed(self, ip: str) -> bool:
-        """Return True if the request from `ip` is within the rate limit, else False."""
-        now = time.monotonic()
-        cutoff = now - self._window_seconds
-
-        # Evict timestamps outside the sliding window
-        timestamps = self._timestamps[ip]
-        self._timestamps[ip] = [t for t in timestamps if t > cutoff]
+    def _prune(self, key: str) -> list[float]:
+        """Evict timestamps outside the window and return the live ones for `key`."""
+        cutoff = time.monotonic() - self._window_seconds
+        live = [t for t in self._timestamps.get(key, ()) if t > cutoff]
 
         # Bug fix (F-17/SEED-161): a pruned-to-empty entry was never removed
         # from the dict, so every IP that ever hit this limiter stayed in
-        # memory for the process lifetime. An empty list can never satisfy
-        # the count check below, so deleting it here doesn't change the
-        # accept/reject outcome — the defaultdict transparently re-creates
-        # the key on the .append(now) call a few lines down.
-        if not self._timestamps[ip]:
-            del self._timestamps[ip]
+        # memory for the process lifetime. Only non-empty lists are stored.
+        if live:
+            self._timestamps[key] = live
+        else:
+            self._timestamps.pop(key, None)
+        return live
 
-        if len(self._timestamps[ip]) >= self._max_requests:
+    def is_allowed(self, ip: str) -> bool:
+        """Return True if the request from `ip` is within the rate limit, else False.
+
+        Counts the request when allowed (check-and-record in one call).
+        """
+        if len(self._prune(ip)) >= self._max_requests:
             return False
-
-        self._timestamps[ip].append(now)
+        self._timestamps[ip].append(time.monotonic())
         return True
+
+    def is_blocked(self, key: str) -> bool:
+        """Return True if `key` has used up the window, without counting this call."""
+        return len(self._prune(key)) >= self._max_requests
+
+    def record(self, key: str) -> None:
+        """Count one event for `key` (for limiters that count only some outcomes)."""
+        self._prune(key)
+        self._timestamps[key].append(time.monotonic())
 
 
 # Module-level singleton used by the guest creation endpoint

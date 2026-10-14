@@ -1,6 +1,6 @@
 ---
 name: benchmarks
-description: Generate FlawChess population benchmarks from the benchmark DB. Computes per-user distributions for endgame metrics (score gap endgame vs non-endgame, Conversion/Parity/Recovery rates, the informational Endgame Skill composite, time pressure at endgame entry, time-pressure-vs-performance curves, per-endgame-class score and conv/recov rates), flaw-delta and tactic-motif zones (12 flaw + 38 tactic you−opponent paired-delta metrics on the full-analysis lane), and whole-game Lichess analysis coverage per cell. Cells are 400-wide ELO buckets (800/1200/1600/2000/2400) from the cohort user's **rating at game time** (`games.white_rating`/`games.black_rating`, never the frozen selection-snapshot rating — see "Rating-lag selection bias" in chapter 1) × the 4 TC buckets (`benchmark_selected_users.tc_bucket`). Zone-calibrated metrics get a Cohen's-d collapse verdict per axis ({TC, ELO}) deciding between cell-specific zones and one global zone. Use when the user asks what's typical or baseline for a metric, about neutral zones / gauge ranges / threshold calibration, comparing time controls or rating bands, collapsing zones across TC or ELO, endgame-class breakdowns, you-vs-opponent flaw comparisons, or how many benchmark games carry Lichess analysis. Writes the latest markdown report to reports/benchmark/benchmarks-latest.md, rotating any prior latest file to reports/benchmark/benchmarks-YYYY-MM-DD.md based on its first-line date.
+description: Generate FlawChess population benchmarks from the benchmark DB. Computes per-user distributions for endgame metrics (score gap endgame vs non-endgame, Conversion/Parity/Recovery rates, the informational Endgame Skill composite, time pressure at endgame entry, time-pressure-vs-performance curves, per-endgame-class score and conv/recov rates), flaw-delta and tactic-motif zones (12 flaw + 9 tempo x phase metrics on the whole cohort with per-TC bands, 38 tactic metrics on the full-analysis lane; all you−opponent paired deltas), and whole-game Lichess analysis coverage per cell. Cells are 400-wide ELO buckets (800/1200/1600/2000/2400) from the cohort user's **rating at game time** (`games.white_rating`/`games.black_rating`, never the frozen selection-snapshot rating — see "Rating-lag selection bias" in chapter 1) × the 4 TC buckets (`benchmark_selected_users.tc_bucket`). Zone-calibrated metrics get a Cohen's-d collapse verdict per axis ({TC, ELO}) deciding between cell-specific zones and one global zone. Use when the user asks what's typical or baseline for a metric, about neutral zones / gauge ranges / threshold calibration, comparing time controls or rating bands, collapsing zones across TC or ELO, endgame-class breakdowns, you-vs-opponent flaw comparisons, or how many benchmark games carry Lichess analysis. Writes the latest markdown report to reports/benchmark/benchmarks-latest.md, rotating any prior latest file to reports/benchmark/benchmarks-YYYY-MM-DD.md based on its first-line date.
 ---
 
 # Benchmarks
@@ -260,7 +260,7 @@ Distinct from the eval-coverage check above. That one asks "is there a Stockfish
 our own backfill fills it). This one asks how many games carry **whole-game move-quality
 analysis** — the Lichess server-side Stockfish pass that produces per-ply evals plus the
 per-color inaccuracy/mistake/blunder counts. It is the ceiling on every all-ply analysis built
-on this DB (the ad-hoc story reports under `stories/`; §5 flaw-delta zones no longer depend on it, they read the full-analysis lane), and it is
+on this DB (the ad-hoc story reports under `stories/`; §5 tactic zones read the full-analysis lane instead; §5 flaw zones read every eval'd game), and it is
 strongly non-uniform across cells, so it belongs in the methodology preamble rather than
 buried in a caveat.
 
@@ -355,9 +355,11 @@ Snapshot result (paired Δ, score): bullet −3.5pp, blitz −3.4pp, rapid −5.
 subset is loss-tilted in **every** TC — a low share does not mean a cell is unselected, and a
 high share does not mean it is clean (classical is both the best-covered and the most tilted).
 Narrate that no outcome rate computed on the analyzed subset is a population rate. Note the
-estimator's own scope limit (it excludes users at either coverage extreme) and that §5's basis is
-the Phase 212 full-analysis lane (both arms re-evaluated by our engine on an equal-footing draw),
-not the lichess-analyzed subset, so this finding does not transfer to §5.
+estimator's own scope limit (it excludes users at either coverage extreme) and that §5's tactic
+basis is the Phase 212 full-analysis lane (both arms re-evaluated by our engine on an equal-footing
+draw), not the lichess-analyzed subset, so this finding does not transfer to §5 tactics. §5's flaw
+basis is every eval'd game (it includes the analyzed subset); its paired you-minus-opponent delta is
+not obviously biased by the loss tilt, but say it has not been checked separately.
 If a future snapshot changes the sign or collapses the classical gap, that belongs in the report
 header, not just here.
 
@@ -591,7 +593,7 @@ Before running each subchapter, grep the code for the constants the subchapter's
 | §3.3.3 | Chess score per pressure bin | `app/services/endgame_zones.py` → generated `frontend/src/generated/endgameZones.ts` | `PRESSURE_BIN_SCORE_NEUTRAL_ZONES` (nested dict by tc/quintile); `PRESSURE_BIN_NEUTRAL_CAP = 0.06` (bands calibrated per tc/quintile). |
 | 3.4.1 | Per-class chess-score bullet + conv/recov gauges | `frontend/src/components/charts/EndgameTypeCard.tsx`, `EndgameTypeBreakdownSection.tsx`, `frontend/src/generated/endgameZones.ts`, `frontend/src/lib/scoreBulletConfig.ts` | Score bullet uses GLOBAL `SCORE_BULLET_NEUTRAL_MIN/MAX` (0.45/0.55) + `SCORE_BULLET_CENTER` (no per-class zones yet — see 3.4.1 recommendations); gauges use per-class IQR-derived `PER_CLASS_GAUGE_ZONES.{class}.{conversion,recovery}` |
 | 3.4.2 | Per-span Score Gap by endgame type (per-type card "Score Gap" bullet) | `app/services/endgame_zones.py` → generated `frontend/src/generated/endgameZones.ts`; consumed by `frontend/src/components/charts/EndgameTypeCard.tsx` | `endgame_type_achievable_score_gap` ZoneSpec; `ENDGAME_TYPE_SCORE_GAP_NEUTRAL_MIN/MAX`; `PER_CLASS_GAUGE_ZONES.{class}.achievable_score_gap` (calibrated). |
-| 5.1-5.13 | Flaw-delta and tactic-delta bands (Library Stats gap bars) | `app/services/flaw_delta_zones.py`, `app/services/tactic_delta_zones.py` | `FLAW_DELTA_ZONES`, `TACTIC_DELTA_ZONES`, `ZONE_TC_FOR`. Bands are `symmetric_band(q1, q3)` (D-15): record the effective ±half-width the app serves, not the Q1/Q3 arguments. |
+| 5.1-5.13, 5.16 | Flaw-delta, tempo x phase and tactic-delta bands (Library Stats gap bars, heatmap) | `app/services/flaw_delta_zones.py`, `app/services/tactic_delta_zones.py` | `FLAW_DELTA_ZONES` and `TEMPO_PHASE_ZONES` (per TC), `TACTIC_DELTA_ZONES` + `ZONE_TC_FOR`. Bands are `symmetric_band(q1, q3)` (D-15): record the effective ±half-width the app serves, not the Q1/Q3 arguments. |
 
 Use the Grep tool, not bash. Record literal values.
 
@@ -1843,13 +1845,24 @@ For the §3.4.3 block in `reports/benchmark/benchmarks-latest.md`:
 
 ## 5. Flaw-Delta Zones
 
-> This chapter computes the population-level "typical zone" for **12 flaw-delta metrics and 38 tactic-motif metrics** (you − opponent paired deltas) on the **Phase 212 full-analysis lane**. The code/LLM seam is identical to §§2–3: `scripts/benchmarks/chapter5.py` computes the numbers; you apply the verdict *words* and write recommendations. Phase 239 (2026-10-12) rebuilt this chapter: new basis, combos and the overall flaw rate dropped, tactic metrics added, cell floor enforced, noise diagnostic added.
+> This chapter computes the population-level "typical zone" for **12 flaw-delta metrics and 9 tempo x phase crossed cells on the whole cohort** and **38 tactic-motif metrics on the Phase 212 full-analysis lane** (all you − opponent paired deltas). The code/LLM seam is identical to §§2–3: `scripts/benchmarks/chapter5.py` computes the numbers; you apply the verdict *words* and write recommendations. Phase 239 (2026-10-12) rebuilt this chapter (lane basis, tactic metrics, cell floor, noise diagnostic); quick 261014-rux (2026-10-14) moved the flaw metrics back to the whole cohort with all four TCs, added the crossed cells (5.16), fixed the user-move parity and switched flaw bands to per-TC.
 
 This chapter is **read from the generator artifact** (`chapters["5-flaw-delta-zones"]` in `reports/benchmark/benchmarks-generated.json`) or from the §5-only fast path below. Do NOT re-run any SQL by hand. The per-metric markdown tables are already rendered (`reports/benchmark/benchmarks-generated.md`, or `chapter5.md` from the fast path) — splice them and write the verdict words + recommendations.
 
-### Basis: the full-analysis lane (Phase 239 D-07, D-08)
+### Two bases (quick 261014-rux)
 
-Constant `FULL_ANALYSIS_TRANCHES = ("classical", "rapid")` in `chapter5.py`. One helper, `_base_games_cte()`, defines `base_games` for both the zone query and the viability query (never copy it). A game counts when ALL of these hold:
+`Basis = Literal["whole_cohort", "lane"]` in `chapter5.py`; `_BASIS_METRICS` maps each basis to its metrics. One helper, `_base_games_cte(basis)`, defines `base_games` for both the zone query and the viability query of that basis (never copy it). `compute()` runs four queries sequentially: zone + viability per basis.
+
+| Basis | Metrics | Games |
+|---|---|---|
+| `whole_cohort` | 12 flaw metrics (5.1 to 5.12) and 9 tempo x phase cells (5.16) | every game of a selected user passing `sql.BASE_GAME_FILTER` with `g.evals_completed_at IS NOT NULL`, all four TCs, up to 1000 per user per TC (1,338,092 games at the 2026-10-14 run) |
+| `lane` | 38 tactic metrics (5.13) | the full-analysis lane below (138,104 games) |
+
+**Why two bases.** Severity and the context tags (tempo, phase, miss, lucky, reversed, squandered) are plain `game_flaws` columns set at classification, so every eval'd game carries them. Tactic motifs (and PV lines) only exist where the flaw blob ran, i.e. on the lane (outside it `game_flaws` has no `pv_lines` at all). The lane's 100-games-per-user cap makes per-user means noisier and it has no bullet or blitz, so flaw metrics use the whole cohort.
+
+### Lane basis (tactics; Phase 239 D-07, D-08)
+
+Constant `FULL_ANALYSIS_TRANCHES = ("classical", "rapid")` in `chapter5.py`. A lane game counts when ALL of these hold:
 
 | Predicate | Why |
 |---|---|
@@ -1860,21 +1873,21 @@ Constant `FULL_ANALYSIS_TRANCHES = ("classical", "rapid")` in `chapter5.py`. One
 | `g.full_evals_completed_at`, `g.full_pv_completed_at` NOT NULL | The engine finished the game (evals and PVs). |
 | `g.blobs_completed_at IS NOT NULL` | A detected tactic motif is suppressed to NULL while a flaw's PV blob is pending, so a game without blobs would contribute false zero tactic counts. |
 
-**`games.lichess_evals_at` is deliberately NOT a provenance filter.** A homogenized lichess-arm game keeps it set although its stored evals are now ours (see "Mixed eval provenance" below). The old basis (`g.evals_completed_at IS NOT NULL` over the whole cohort, 1.22M games) is retired: it mixed lichess and engine evals and was a differently-selected, much larger sample.
+**`games.lichess_evals_at` is deliberately NOT a provenance filter.** A homogenized lichess-arm game keeps it set although its stored evals are now ours (see "Mixed eval provenance" below). The whole-cohort basis mixes lichess and engine evals; that is disclosed, not excluded (Phase 212 D-06).
 
 Before a run, confirm the lane state: `uv run python scripts/benchmark_lane.py status --all-tranches --db benchmark` (classical and rapid at 99%+ complete). The benchmark DB is live (stragglers keep finishing): run §5 once, note the snapshot timestamp in the report header, and regenerate the diff-gate numbers from that same run.
 
-### Blitz and bullet stopgap (D-08, D-09)
+### Blitz and bullet stopgap (tactics only; D-08, D-09)
 
-Blitz and bullet have no finished full-analysis sample, so the app zone registries (`app/services/flaw_delta_zones.py`, `app/services/tactic_delta_zones.py`) map them to the **rapid** zones through `ZONE_TC_FOR` (`bullet → rapid`, `blitz → rapid`, `rapid → rapid`, `classical → classical`). The stopgap is **silent in the UI** (popover copy minimalism); it is documented in the registry module and in this report. The half-finished blitz tranche is never used. **Refresh**: once the blitz (and bullet) tranches finish, add them to `FULL_ANALYSIS_TRANCHES`, re-run §5, and replace the mapping in the registries.
+Blitz and bullet have no finished full-analysis sample, so the **tactic** registry (`app/services/tactic_delta_zones.py`) maps them to the **rapid** zones through `ZONE_TC_FOR` (`bullet → rapid`, `blitz → rapid`, `rapid → rapid`, `classical → classical`). The flaw and tempo x phase registries (`flaw_delta_zones.py`) are keyed by all four TCs and index the TC directly. The stopgap is **silent in the UI** (popover copy minimalism). **Refresh**: once the blitz (and bullet) tranches finish, add them to `FULL_ANALYSIS_TRANCHES`, re-run §5, and give the tactic registry its own blitz/bullet entries.
 
-### D-01 unified estimator for the 12 flaw metrics
+### D-01 unified estimator for the 12 flaw metrics and the 9 crossed cells
 
 For each cohort user, for each metric:
 - **Per game**: `delta = (player_tag_count − opp_tag_count) / user_moves_in_game` (a proportion; the `pp` render unit shows it ×100 as "per 100 moves")
   - `player_tag_count`: count of `game_flaws` rows where ply-parity matches user_color AND the tag predicate holds (even ply = white mover, odd ply = black mover)
   - `opp_tag_count`: count of `game_flaws` rows where ply-parity is the OTHER color AND the tag predicate holds
-  - `user_moves_in_game`: `games.ply_count` based, `FLOOR(ply_count/2)` for white and `CEIL(ply_count/2)` for black (Phase 114.1; no `game_positions` scan). This is a KNOWN FLIP (white moves first, so white should get CEIL; the app was fixed in PR #420): fix it in the next §5 refresh together with the diff-gate snapshot. It is a `base_games` column, NOT a self-joined helper CTE (a helper CTE went O(n²) on the lane's small base).
+  - `user_moves_in_game`: `games.ply_count` based, `CEIL(ply_count/2)` for white and `FLOOR(ply_count/2)` for black (white moves first; Phase 114.1, no `game_positions` scan). Runs before 2026-10-14 had the two swapped; the constant `_USER_MOVES_SQL` now matches `library_service._user_moves_from_ply_count`. It is a `base_games` column, NOT a self-joined helper CTE (a helper CTE went O(n²) on the lane's small base).
 - **Per-cohort-user delta**: mean of per-game deltas over ≥20 analyzed games (D-08 floor = `FLAW_DELTA_MIN_GAMES`), per (user, game-time ELO bucket, TC) cell.
 - **All analyzed games count** (Phase 114 fix): the estimator is driven from `base_games` LEFT JOIN `game_flaws`, so a game with zero detected flaws contributes a 0 delta rather than being dropped. The ≥20 floor is over **analyzed** games, not flawed games.
 - **Sign convention**: negative delta means the cohort user commits FEWER flaws of this type than equal-rated opponents, which is *good*. State this explicitly in every metric's recommendation prose.
@@ -1915,17 +1928,19 @@ where `player_count` / `opp_count` count `game_flaws` rows (same ply-parity filt
 
 ### Noise diagnostic (research open question 1)
 
-Each band is the IQR of per-user means, and the lane caps users at 100 games per TC, so part of every band is pure sampling noise. For each metric the report shows a **noise-only IQR** next to the observed pooled IQR:
+Each band is the IQR of per-user means, so part of every band is pure sampling noise (more on the lane, capped at 100 games per user per TC). For each metric the report shows a **noise-only IQR** next to the observed pooled IQR, in one table per basis (§5.15):
 
 `noise-only IQR = 1.349 × sqrt( mean over user-cells of ( var_samp(per-game delta) / n_games ) )`
 
 It is the IQR the per-user values would show if every user had the same true gap. A noise share (noise-only ÷ observed) near or above 100% means the band is mostly noise. It is **reported, not applied**: no shrinkage or other correction is made to the zones (a methodology change is an owner call). Narrate the noise share for the owner before the registry values are locked.
 
+**The closed form overstates noise when per-cell game counts vary a lot.** It assumes one common variance; on the whole cohort cells run from 20 to 1000 games, so a few small cells dominate the mean variance (closed-form shares of 93% to 198% on 2026-10-14). A like-for-like estimate draws each user-cell's noise from its own variance and takes the IQR (`temp/261014-rux/noise_compare.py`, gitignored scratch): 40% to 98% per TC on the whole cohort (median about 70%), 45% to 92% on the lane (median about 83%). Never compare a closed-form share on one basis with a median-SE or simulated share on another (that mistake is how the whole cohort was first oversold as "signal/noise 1.1 to 2.4").
+
 ### Viability and `zone_viable`
 
-The viability table (`values["viability"]`, 50 rows) carries `users_contributing`, `users_total`, `pct_nonzero`, `median_events_per_user` (a RAW unscaled player event count totalled over the user's games, NOT a rate), `degenerate_iqr` (pooled p25 == p75) and `zone_viable`. **`zone_viable` = pooled IQR not degenerate (p25 < p75) AND `pct_nonzero ≥ 50`** (`VIABILITY_MIN_PCT_NONZERO`). `zone_viable` decides the registry's `has_zone` for a tactic metric: `False` means no band at all (the UI renders band-less: no grey band, and the cell turns green/red only when the 99% CI on the gap excludes 0, Phase 239 D-16), because a zero-width band at 0 would paint any non-zero gap as better or worse than typical. The owner confirms the resulting `has_zone` set from this table. `users_total` counts user×(ELO,TC) cells, not distinct users.
+The viability table (`values["viability"]`, 59 rows: 12 flaw + 9 crossed on the whole cohort, 38 tactic on the lane, each with its basis's `users_total`) carries `users_contributing`, `users_total`, `pct_nonzero`, `median_events_per_user` (a RAW unscaled player event count totalled over the user's games, NOT a rate), `degenerate_iqr` (pooled p25 == p75) and `zone_viable`. **`zone_viable` = pooled IQR not degenerate (p25 < p75) AND `pct_nonzero ≥ 50`** (`VIABILITY_MIN_PCT_NONZERO`). `zone_viable` decides the registry's `has_zone` for a tactic metric and a crossed cell: `False` means no band at all (the UI renders band-less: no grey band, and the cell turns green/red only when the 99% CI on the gap excludes 0, Phase 239 D-16), because a zero-width band at 0 would paint any non-zero gap as better or worse than typical. The owner confirms the resulting `has_zone` set from this table. `users_total` counts user×(ELO,TC) cells, not distinct users.
 
-Interpretation: `squandered` and `lucky` should be ~99–100% non-zero. `low_clock` is ~75–77% non-zero. Rare tactic families (x-ray, en passant, under-promotion, double check) sit far below 50% and get `has_zone = false`.
+Interpretation: `squandered` and `lucky` should be ~97–100% non-zero. `low_clock` is ~76% non-zero on the whole cohort. Crossed cells: `low_clock__opening` (~2%, degenerate) and `low_clock__middlegame` (~47%) are not viable. Rare tactic families (x-ray, en passant, under-promotion, double check) sit far below 50% and get `has_zone = false`.
 
 ### Mixed eval provenance in `game_flaws` (Phase 212)
 
@@ -1935,7 +1950,7 @@ Before Phase 212, every `game_flaws` row in the benchmark DB was classified from
 - **`bs.lichess_arm IS TRUE`** — this game had lichess evals at import time and was re-evaluated by our engine anyway (homogenized). Its `game_flaws` rows now derive from our Stockfish, not lichess.
 - **No `benchmark_selection` row for this game at all** — untouched, still lichess-classified data, exactly as before Phase 212.
 
-**§5 now reads only lane games** (since Phase 239), so both of its arms are engine-evaluated and the eval source is homogeneous; the split above matters only for other chapters or ad-hoc queries over the rest of the DB.
+**§5 tactics read only lane games**, so their eval source is homogeneous. **§5 flaw metrics read every eval'd game** (since 261014-rux), so their `game_flaws` rows mix lichess-classified and engine-homogenized games; disclosed, not excluded.
 
 **Deliberate non-choices, so a future reader does not "fix" them:**
 - **No anti-join is applied outside the lane and no frozen basis is kept.** Disclosure was chosen over exclusion for this phase — see `[[feedback_benchmark_source_of_truth]]` and 212-CONTEXT.md D-06.
@@ -1950,17 +1965,17 @@ Same as §§1–3 — the generator emits `max_abs_d` per (metric, axis); you co
 - **0.2–0.5**: review — marginal or partial stratification may help; inspect the ELO/TC marginal shape
 - **≥ 0.5**: keep separate — cell-specific zones are warranted; collapsing would lose meaningful variation
 
-Report each metric's verdict for both TC and ELO axes. The generator's `chapters["5-flaw-delta-zones"]["values"]["flaw"][metric_key]["verdicts"]` (and `["tactic"][metric_key]["verdicts"]`) hold the axes whose verdict could be computed, as `Verdict` objects with `max_abs_d` and `pair`. An axis missing from the list is `n/a` (too few eligible levels after the cell floor). On the lane the TC axis has only two levels (rapid vs classical).
+Report each metric's verdict for both TC and ELO axes. The generator's `chapters["5-flaw-delta-zones"]["values"]["flaw"][metric_key]["verdicts"]` (and `["tactic"][metric_key]["verdicts"]`) hold the axes whose verdict could be computed, as `Verdict` objects with `max_abs_d` and `pair`. An axis missing from the list is `n/a` (too few eligible levels after the cell floor). Flaw metrics and crossed cells have four TC levels; on the lane (tactics) the TC axis has only two (rapid vs classical).
 
 ### Verdict to registry rule (D-10)
 
-How a verdict becomes a registry value in `app/services/flaw_delta_zones.py` / `app/services/tactic_delta_zones.py` (zone TCs are `rapid` and `classical`; `ZONE_TC_FOR` maps blitz/bullet to rapid):
-- **TC axis `collapse` or `review`**: ONE band for both zone TCs = the **pooled** p25/p75.
-- **TC axis `keep separate`**: the per-TC **marginal** p25/p75 for each zone TC. A thin TC level (in `thin_levels`) falls back to the pooled band.
+How a verdict becomes a registry value in `app/services/flaw_delta_zones.py` / `app/services/tactic_delta_zones.py`:
+- **Flaw metrics and crossed cells: per-TC everywhere (owner rule B, 2026-10-14).** Each of bullet, blitz, rapid and classical gets `symmetric_band` of its own TC marginal p25/p75 (×100, 3 dp), regardless of the TC verdict. Reason: the Cohen's-d verdict tests a shift of the per-user MEAN between TCs (every flaw metric stays below 0.5), while a band is an IQR, a SPREAD, and the per-TC IQRs differ 3x to 15x. A thin TC level (in `thin_levels`) or a degenerate one (p25 = p75) falls back to the pooled band.
+- **Tactic metrics (zone TCs `rapid` and `classical`; `ZONE_TC_FOR` maps blitz/bullet to rapid)**: TC axis `collapse` or `review` gives ONE band for both zone TCs = the **pooled** p25/p75; `keep separate` gives the per-TC marginal p25/p75 for each zone TC.
 - **ELO axis**: the **only** trigger for Elo-keyed bands is an ELO verdict of `keep separate` on a metric. Then key that metric by the 400-wide Elo bucket and look up the user's Elo from `user_rating_anchors.anchor_rating` (Lichess-equivalent, filter-independent); fall back to the TC/pooled band when the user has no anchor row. Otherwise (`collapse`/`review`) ship no Elo keying.
-- **`zone_viable = False`** (tactic metrics): registry value `None`, i.e. `has_zone = false`.
+- **`zone_viable = False`** (tactic metrics, crossed cells): registry value `None` in every TC, i.e. `has_zone = false`. A non-viable flaw metric has no fallback (the flaw registry is non-optional): escalate to the owner.
 - **Symmetric bands (Phase 239 D-15)**: the registries serve a band symmetric around 0, `symmetric_band(q1, q3)` = ±IQR/2 rounded **up** to the 0.01 grid, in the metric's display unit (per 100 moves for flaw metrics, per 100 games for tactic metrics). Write the measured quartiles as the `symmetric_band(q1, q3)` arguments; never write a `ZoneBand(lo, hi)` directly. The off-centre quartiles come from rare, discrete per-user values and cohort selection, not a real typical offset, and the significance gate tests against 0.
-- **Flaw bands keep the whole-cohort basis (Phase 239 D-07 override)**: the 12 flaw bands in `flaw_delta_zones.py` hold the older whole-cohort quartiles, because the lane's 100-games-per-TC cap makes the lane IQR mostly sampling noise (noise-only IQR 70% to 142% of observed, see `239-ZONE-PROPOSAL.md`). Narrate the lane values as a proposal and replace the flaw registry only when the noise share is well below 100%. The 9 viable tactic bands do use the lane quartiles.
+- **Generate, never hand-transcribe**: derive the registry literals and the test pins mechanically from the run's `chapter5.json` (the 261014-rux `temp/261014-rux/derive_bands.py` did this, with a `--check` mode comparing the imported registry).
 
 ### Narration procedure
 
@@ -1980,16 +1995,17 @@ For each of the 12 flaw metrics (splice from the artifact; the 38 tactic metrics
 
 ### Fast path (§5 only)
 
-`uv run python -m scripts.benchmarks.chapter5 --db benchmark --out <dir>` runs §5 alone in a READ ONLY transaction (about a minute) and writes `<dir>/chapter5.md` (the rendered chapter) and `<dir>/chapter5.json` (the values). It prints `chapter5: <F> flaw + <T> tactic metrics; TC levels: ...; games: <N>`. Use it when only `chapter5.py` changed or when only the §5 zones need refreshing; the full `scripts/gen_benchmarks.py` run takes ~33 minutes for every chapter. Run it in the foreground, one benchmark-DB scan at a time. The numeric diff gate is `uv run pytest tests/scripts/benchmarks/test_chapter5_diff.py -q`; the DB-free SQL-shape test `tests/scripts/test_chapter5_sql.py` runs in the normal suite.
+`uv run python -m scripts.benchmarks.chapter5 --db benchmark --out <dir>` runs §5 alone in a READ ONLY transaction and writes `<dir>/chapter5.md` (the rendered chapter) and `<dir>/chapter5.json` (the values). It takes about 4 minutes (the whole-cohort scan dominates) and prints `chapter5: <F> flaw + <P> tempo x phase + <T> tactic metrics; flaw TC levels: ...; games: whole_cohort <N>, lane <M>; flaw pooled n: <n>`. Use it when only `chapter5.py` changed or when only the §5 zones need refreshing; the full `scripts/gen_benchmarks.py` run takes ~33 minutes for every chapter. Run it in the foreground, one benchmark-DB scan at a time. The numeric diff gate is `uv run pytest tests/scripts/benchmarks/test_chapter5_diff.py -q`; the DB-free SQL-shape test `tests/scripts/test_chapter5_sql.py` runs in the normal suite.
 
 ### Report section structure
 
 ```markdown
 ## 5. Flaw-Delta Zones
 
-> **Basis (Phase 239)**: the full-analysis lane only (classical + rapid tranches of
-> `benchmark_selection`, armed, full evals + PVs + blobs). Blitz/bullet read the rapid zones
-> in the app registries (D-09 stopgap). Snapshot: <timestamp>.
+> **Basis**: flaw metrics and tempo x phase cells on the whole cohort (every eval'd game of a
+> selected user, all four TCs); tactic metrics on the full-analysis lane (classical + rapid
+> tranches of `benchmark_selection`, armed, full evals + PVs + blobs; blitz/bullet tactics read
+> the rapid zones, D-09 stopgap). Snapshot: <timestamp>, games per basis.
 >
 > **D-01 unified estimator**: flaw metrics = (player − opp tag count) / user_moves per game,
 > shown per 100 moves; tactic metrics = (player − opp count) per game, shown per 100 games.
@@ -2011,7 +2027,7 @@ Noise-only IQR: <x> (observed IQR: <p75 − p25>)
 
 [verdict_block from generator, with verdict WORDS applied]
 
-**Recommendation**: [registry implication per the Verdict to registry rule]
+**Served**: [per-TC half-widths per the Verdict to registry rule, plus the previously served band]
 
 ---
 
@@ -2024,14 +2040,18 @@ Noise-only IQR: <x> (observed IQR: <p75 − p25>)
 
 ### 5.14 Viability Diagnostic (D-06)
 
-**Cohort basis** (from `values["cohort"]`): `{n_analyzed_games} analyzed games across {n_user_cells}
-user×(ELO,TC) cells ({n_distinct_users} distinct users)`. Splice this line above the tables.
-
-[flaw viability table] [tactic viability table, with degenerate_iqr and zone_viable columns]
+Two sub-blocks, each with its cohort line from `values["cohorts"][basis]`:
+"Whole-cohort basis" (flaw table, tempo x phase table) and "Full-analysis lane" (tactic table).
 
 ### 5.15 Noise-only IQR Summary
 
-[table: metric, observed IQR, noise-only IQR, noise share]
+[one table per basis: metric, observed IQR, noise-only IQR, noise share; narrate that the
+ closed form is conservative on the whole cohort]
+
+### 5.16 Tempo x Phase Crossed Cells
+
+[compact table from generator: one row per cell, per 100 moves, four per-TC bands; then the
+ served per-TC half-widths per cell and which cells are band-less]
 ```
 
 ---
@@ -2113,9 +2133,11 @@ Write to `reports/benchmark/benchmarks-latest.md`. Before writing, if that file 
 ### 5.13 Tactic Missed/Allowed Zones (D-06)
 (One compact table: 19 families x missed/allowed, per 100 games, zone_viable column)
 ### 5.14 Viability Diagnostic (D-06)
-(Flaw + tactic viability tables: users_contributing / users_total / pct_nonzero / median_events_per_user / degenerate_iqr / zone_viable)
+(Whole-cohort flaw + crossed tables and lane tactic table: users_contributing / users_total / pct_nonzero / median_events_per_user / degenerate_iqr / zone_viable)
 ### 5.15 Noise-only IQR Summary
-(Per-metric observed IQR vs noise-only IQR and noise share)
+(Per-metric observed IQR vs noise-only IQR and noise share, one table per basis)
+### 5.16 Tempo x Phase Crossed Cells
+(One compact table: 9 cells, per 100 moves, bullet/blitz/rapid/classical bands, zone_viable)
 
 ## Top-axis collapse summary (HEADLINE DELIVERABLE)
 

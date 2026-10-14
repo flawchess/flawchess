@@ -3,7 +3,8 @@
  *
  * Holds FLAW_GAP_META (label, hint, definition, noun for the 12 gap metrics),
  * CONTEXT_TAG_CARDS (the four cards over the 10 context tags), flawBulletToGapCell /
- * flawMetricCell (API bullet -> gap-bar view model), libraryBasisText /
+ * flawMetricCell / tempoPhaseGapCell (API bullet or crossed tempo x phase cell ->
+ * gap-bar view model), TEMPO_PHASE_TEMPOS / TEMPO_PHASE_PHASES (the heatmap axes), libraryBasisText /
  * libraryCoverageBasisText (the basis lines), and the FlawIcon type shared with the Flaws
  * filter panel.
  *
@@ -20,7 +21,13 @@ import type { ComponentType, CSSProperties } from 'react';
 import { TAG_DEFINITIONS } from '@/lib/tagDefinitions';
 import { BLUNDER_DROP, MISTAKE_DROP, TIME_PRESSURE_CLOCK_FRACTION } from '@/generated/flawThresholds';
 import type { GapCell } from '@/lib/gapBar';
-import type { FlawBullet, FlawComparisonTc, FlawDeltaMetric } from '@/types/library';
+import type {
+  FlawBullet,
+  FlawComparisonTc,
+  FlawDeltaMetric,
+  FlawPhaseMetric,
+  FlawTempoMetric,
+} from '@/types/library';
 import type { TimeControlBucket } from '@/types/endgames';
 
 /**
@@ -138,28 +145,28 @@ export interface ContextTagCardDef {
 /** The four cards in display order, each with its tag rows in display order (no combo row). */
 export const CONTEXT_TAG_CARDS: readonly ContextTagCardDef[] = [
   {
-    key: 'clock',
-    title: 'Clock',
-    subtitle: 'how much time you had',
-    metrics: ['low_clock', 'hasty', 'unrushed'],
-  },
-  {
     key: 'phase',
     title: 'Game phase',
     subtitle: 'where the flaw happened',
     metrics: ['opening', 'middlegame', 'endgame_phase'],
   },
   {
-    key: 'opponent_errors',
-    title: 'Opponent errors',
-    subtitle: 'chances you missed or got',
-    metrics: ['miss', 'lucky'],
+    key: 'clock',
+    title: 'Clock',
+    subtitle: 'how much time you had',
+    metrics: ['unrushed', 'hasty', 'low_clock'],
   },
   {
     key: 'lost_advantages',
     title: 'Lost advantages',
     subtitle: 'what the flaw cost',
     metrics: ['reversed', 'squandered'],
+  },
+  {
+    key: 'opponent_errors',
+    title: 'Opponent errors',
+    subtitle: 'chances you missed or got',
+    metrics: ['miss', 'lucky'],
   },
 ];
 
@@ -168,8 +175,24 @@ export function metricTestIdSegment(metric: FlawDeltaMetric): string {
   return metric.replace(/_/g, '-');
 }
 
-/** Adapt one API bullet to the gap-bar view model (the components never see API types). */
-export function flawBulletToGapCell(b: FlawBullet): GapCell {
+/**
+ * Heatmap columns, from most to least time on the clock (unrushed, hasty, low-clock). Cells
+ * are looked up by tempo + phase, so this display order is independent of the backend's.
+ */
+export const TEMPO_PHASE_TEMPOS: readonly FlawTempoMetric[] = ['unrushed', 'hasty', 'low_clock'];
+
+/** Heatmap rows in game order (mirrors backend TEMPO_PHASE_PHASES). */
+export const TEMPO_PHASE_PHASES: readonly FlawPhaseMetric[] = [
+  'opening',
+  'middlegame',
+  'endgame_phase',
+];
+
+/**
+ * Adapt one API bullet or crossed cell to the gap-bar view model (the components never see
+ * API types). Takes the shared stat fields only, so both payload shapes fit.
+ */
+export function flawBulletToGapCell(b: Omit<FlawBullet, 'tag'>): GapCell {
   return {
     delta: b.delta,
     zoneLo: b.zone_lo,
@@ -190,6 +213,40 @@ export function flawBulletToGapCell(b: FlawBullet): GapCell {
 export function flawMetricCell(tcStats: FlawComparisonTc, metric: FlawDeltaMetric): GapCell | null {
   const bullet = tcStats.bullets.find((b) => b.tag === metric);
   return bullet ? flawBulletToGapCell(bullet) : null;
+}
+
+const TEMPO_ADJECTIVE: Record<FlawTempoMetric, string> = {
+  low_clock: 'low-clock',
+  hasty: 'hasty',
+  unrushed: 'unrushed',
+};
+
+const PHASE_WORD: Record<FlawPhaseMetric, string> = {
+  opening: 'opening',
+  middlegame: 'middlegame',
+  endgame_phase: 'endgame',
+};
+
+/** Popover copy of a crossed cell: the two tag hints combined ("Hasty, middlegame"). */
+export function tempoPhaseMeta(tempo: FlawTempoMetric, phase: FlawPhaseMetric): FlawGapMeta {
+  const phaseWord = PHASE_WORD[phase];
+  const hint = `${FLAW_GAP_META[tempo].hint}, in the ${phaseWord}`;
+  return {
+    label: `${FLAW_GAP_META[tempo].label}, ${phaseWord}`,
+    hint,
+    definition: hint,
+    noun: `${TEMPO_ADJECTIVE[tempo]} ${phaseWord} flaws`,
+  };
+}
+
+/** The gap-bar cell of one tempo x phase combination; null when the payload carries no such cell. */
+export function tempoPhaseGapCell(
+  tcStats: FlawComparisonTc,
+  tempo: FlawTempoMetric,
+  phase: FlawPhaseMetric,
+): GapCell | null {
+  const cell = tcStats.tempo_phase_cells.find((c) => c.tempo === tempo && c.phase === phase);
+  return cell ? flawBulletToGapCell(cell) : null;
 }
 
 function scopeText(analyzedN: number, tc: TimeControlBucket): string {

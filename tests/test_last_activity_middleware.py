@@ -112,11 +112,12 @@ class TestExtractUserId:
         # Create a mock user object with just the fields needed for write_token
         class _MockUser:
             id = 42
+            token_version = 0
 
         strategy = auth_backend.get_strategy()
         # get_strategy()'s return type is a union across possible dependency-injection
         # shapes (ty can't narrow which branch applies here), and _MockUser is a minimal
-        # duck-typed stand-in (id only) for FastAPI-Users' generic `models.UP` User
+        # duck-typed stand-in (id + token_version) for FastAPI-Users' generic `models.UP` User
         # protocol rather than a real User instance.
         token: str = await strategy.write_token(  # ty: ignore[unresolved-attribute]
             _MockUser()  # ty: ignore[invalid-argument-type]

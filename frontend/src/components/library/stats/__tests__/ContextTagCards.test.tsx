@@ -28,10 +28,10 @@ describe('ContextTagCards structure', () => {
     render(<ContextTagCards tcStats={SKETCH_RAPID_ENTRY} />);
     const cards = screen.getByTestId('context-tag-cards').children;
     expect(Array.from(cards).map((c) => c.getAttribute('data-testid'))).toEqual([
-      'context-card-clock',
       'context-card-phase',
-      'context-card-opponent-errors',
+      'context-card-clock',
       'context-card-lost-advantages',
+      'context-card-opponent-errors',
     ]);
     expect(text('context-card-clock')).toContain('how much time you had');
     expect(text('context-card-phase')).toContain('where the flaw happened');
@@ -42,9 +42,9 @@ describe('ContextTagCards structure', () => {
   it('lists the rows of each card in order and has no combo row', () => {
     render(<ContextTagCards tcStats={SKETCH_RAPID_ENTRY} />);
     expect(rowIds('context-card-clock')).toEqual([
-      'context-row-low-clock',
-      'context-row-hasty',
       'context-row-unrushed',
+      'context-row-hasty',
+      'context-row-low-clock',
     ]);
     expect(rowIds('context-card-phase')).toEqual([
       'context-row-opening',

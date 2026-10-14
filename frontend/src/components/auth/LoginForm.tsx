@@ -19,6 +19,9 @@ import { apiClient } from '@/api/client';
 import { getGoogleAuthorizationUrl } from '@/api/googleAuth';
 import { trackEvent } from '@/lib/analytics';
 
+const LOGIN_RATE_LIMITED_MESSAGE =
+  'Too many failed login attempts. Please wait 15 minutes, or use "Forgot password".';
+
 export function LoginForm() {
   const { login } = useAuth();
   const navigate = useNavigate();
@@ -44,7 +47,10 @@ export function LoginForm() {
       navigate('/', { replace: true });
     } catch (err: unknown) {
       let message = 'Login failed. Please check your credentials.';
-      if (axios.isAxiosError(err) && (err.response?.status === 400 || err.response?.status === 401)) {
+      if (axios.isAxiosError(err) && err.response?.status === 429) {
+        // Expected — the backend refuses logins after too many recent failures.
+        message = LOGIN_RATE_LIMITED_MESSAGE;
+      } else if (axios.isAxiosError(err) && (err.response?.status === 400 || err.response?.status === 401)) {
         // Expected — invalid credentials / unauthorized are not bugs
         message = 'Invalid email or password.';
       } else {

@@ -48,6 +48,8 @@ interface GapPopoverProps {
   /** The "Based on your N analyzed rapid games in the current filters." line. */
   basis: string;
   cell: GapCell;
+  /** Overrides the D-16 sentence of a zoneless significant cell (default names the tactic). */
+  zonelessSignificantCopy?: string;
 }
 
 function formatCount(value: number): string {
@@ -61,8 +63,8 @@ function gapSentence(delta: number): string {
 }
 
 /** The typical-range line; for a zoneless cell (D-11) only the D-16 significance line. */
-function rangeLine(cell: GapCell): string | null {
-  if (!cell.hasZone) return effectiveVerdict(cell) === null ? null : COPY_ZONELESS_SIGNIFICANT;
+function rangeLine(cell: GapCell, zonelessSignificantCopy: string): string | null {
+  if (!cell.hasZone) return effectiveVerdict(cell) === null ? null : zonelessSignificantCopy;
   const range = `Typical gap for players at your level: ${gapWords(cell.zoneLo)} to ${gapWords(cell.zoneHi)}.`;
   if (isChanceGap(cell)) return `${range} ${COPY_CHANCE}`;
   const verdict = effectiveVerdict(cell);
@@ -87,8 +89,9 @@ function GapPopoverBody({
   noun,
   basis,
   cell,
+  zonelessSignificantCopy = COPY_ZONELESS_SIGNIFICANT,
 }: GapPopoverProps) {
-  const range = rangeLine(cell);
+  const range = rangeLine(cell, zonelessSignificantCopy);
   return (
     <div className="space-y-1.5">
       <p>

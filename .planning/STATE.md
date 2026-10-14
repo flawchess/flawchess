@@ -4,8 +4,8 @@ milestone: v2.24
 current_phase: 239
 status: completed
 stopped_at: Phase 239 complete — all phases complete
-last_updated: "2026-10-13T02:52:05.823Z"
-state_head: b085fa14a50e4094d8abfd030af08dc1b20a4222
+last_updated: "2026-10-14T18:47:03.979Z"
+state_head: a743e253e894871d91c99e3fb68ee9bdb9a0c745
 progress:
   total_phases: 2
   completed_phases: 103
@@ -13,8 +13,8 @@ progress:
   completed_plans: 57
   percent: 100
 milestone_name: Train Grading Integrity & One-Screen Reveal
-last_activity: 2026-10-12
-last_activity_desc: "Completed quick task 261012-qiz: endgame insights dedupe concurrent LLM generations (advisory lock) + 24h regen cooldown"
+last_activity: 2026-10-14
+last_activity_desc: "Completed quick task 261014-rux: Benchmark §5 whole-cohort basis and per-TC flaw bands"
 ---
 
 # Project State: FlawChess
@@ -1026,6 +1026,10 @@ None active.
 | 136 | Endgame page: parity formula 'wins + ½draws', score span marker + dim on Score with vs. without endgame bars | 2026-10-11 | 37c839f86 | — |
 | 261012-a6m | Stockfish engine arrows: best star on top line, graded quality badges + drop-proportional transparency on secondary lines (Analysis + Train step/free-play) | 2026-10-12 | ed23039f9 | [261012-a6m-engine-arrow-move-quality-badges-best-st](./quick/261012-a6m-engine-arrow-move-quality-badges-best-st/) |
 | 261012-qiz | Endgame insights: dedupe concurrent LLM generations (advisory lock) + 24h regen cooldown | 2026-10-12 | abb4d710e | [261012-qiz-endgame-insights-dedupe-concurrent-llm-g](./quick/261012-qiz-endgame-insights-dedupe-concurrent-llm-g/) |
+| 261014-pb9 | Library Stats: 3x3 tempo x game-phase flaw gap heatmap (you vs opponents) | 2026-10-14 | 68c5a3cad | [261014-pb9-library-stats-3x3-tempo-x-game-phase-fla](./quick/261014-pb9-library-stats-3x3-tempo-x-game-phase-fla/) |
+| 261014-qj8 | Benchmark bands for the tempo x phase heatmap cells | 2026-10-14 | 15d855812 | [261014-qj8-benchmark-bands-for-the-tempo-x-phase-he](./quick/261014-qj8-benchmark-bands-for-the-tempo-x-phase-he/) |
+| 261014-s0b | Restore admin session when ending impersonation | 2026-10-14 | e3e3a5542 | [261014-s0b-restore-admin-session-when-ending-impers](./quick/261014-s0b-restore-admin-session-when-ending-impers/) |
+| 261014-rux | Benchmark §5: whole-cohort basis and per-TC bands for the 12 flaw metrics | 2026-10-14 | a743e253e | [261014-rux-benchmark-5-whole-cohort-basis-and-per-t](./quick/261014-rux-benchmark-5-whole-cohort-basis-and-per-t/) |
 
 ## Deferred Items
 

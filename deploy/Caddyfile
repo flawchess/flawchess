@@ -213,7 +213,16 @@ flawchess.com {
 
     # Backend API — single rule, all backend routes are under /api/
     handle /api/* {
-        reverse_proxy backend:8000
+        reverse_proxy backend:8000 {
+            # Security fix (review 2026-10-14): replace X-Forwarded-For with the one
+            # resolved client IP. Caddy otherwise keeps the incoming header from trusted
+            # proxies (Cloudflare), and Cloudflare keeps whatever the client sent, so a
+            # forged "X-Forwarded-For: 6.6.6.6" arrived leftmost. Uvicorn
+            # (--forwarded-allow-ips='*') takes the leftmost entry as request.client.host,
+            # which let anyone dodge per-IP limits such as guest_create_limiter.
+            # {client_ip} = Cf-Connecting-Ip for Cloudflare peers, else the socket peer.
+            header_up X-Forwarded-For {client_ip}
+        }
     }
 
     # SPA fallback — all remaining paths get index.html

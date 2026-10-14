@@ -44,6 +44,17 @@ function GoogleIcon() {
 
 const GUEST_TOKEN_KEY = 'guest_token';
 
+/** The server's reason for a 400 (FastAPI-Users `{code, reason}` detail), else the fallback. */
+function passwordRejectionReason(
+  detail: unknown,
+  fallback = 'Registration failed. Please try again.',
+): string {
+  if (detail && typeof detail === 'object' && 'reason' in detail && typeof detail.reason === 'string') {
+    return detail.reason;
+  }
+  return fallback;
+}
+
 export function RegisterForm() {
   const { register, loginWithToken } = useAuth();
   const navigate = useNavigate();
@@ -102,6 +113,12 @@ export function RegisterForm() {
             toast.error('An account with this email already exists.');
             return;
           }
+          // Bug fix: any other error dropped the guest token and fell through to plain
+          // registration, orphaning the guest's games. A rejected password must keep it.
+          if (axios.isAxiosError(err) && err.response?.status === 400) {
+            toast.error(passwordRejectionReason(err.response.data?.detail));
+            return;
+          }
           // Guest token expired or invalid — fall through to regular registration
           localStorage.removeItem(GUEST_TOKEN_KEY);
         }
@@ -113,11 +130,13 @@ export function RegisterForm() {
       let message = 'Registration failed. Please try again.';
       if (axios.isAxiosError(err) && err.response?.status === 400) {
         // Expected — validation errors and duplicate accounts are not bugs
+        // Bug fix: the string check used to run first, so REGISTER_USER_ALREADY_EXISTS
+        // was shown raw and an invalid-password object fell back to the generic message.
         const detail = err.response.data?.detail;
-        if (typeof detail === 'string') {
-          message = detail;
-        } else if (detail === 'REGISTER_USER_ALREADY_EXISTS') {
+        if (detail === 'REGISTER_USER_ALREADY_EXISTS') {
           message = 'An account with this email already exists.';
+        } else {
+          message = passwordRejectionReason(detail, message);
         }
       } else {
         Sentry.captureException(err, {

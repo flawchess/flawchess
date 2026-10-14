@@ -21,6 +21,7 @@ remaining tag type (game-level dedupe), in a deterministic order.
 
 import datetime
 from collections.abc import Sequence
+from dataclasses import dataclass
 from typing import Any, Final, Literal, cast
 
 import chess
@@ -53,9 +54,19 @@ from app.schemas.library import (
     TacticBullet,
     TacticComparisonResponse,
     TacticComparisonTc,
+    TEMPO_PHASE_PHASES,
+    TEMPO_PHASE_TEMPOS,
+    TempoPhaseCell,
+    FlawPhaseMetric,
+    FlawTempoMetric,
 )
 from app.services.best_move_candidates import classify_best_move, mover_color_for_ply
-from app.services.flaw_delta_zones import FLAW_DELTA_METRICS, FlawDeltaMetric, flaw_delta_zone
+from app.services.flaw_delta_zones import (
+    FLAW_DELTA_METRICS,
+    FlawDeltaMetric,
+    flaw_delta_zone,
+    tempo_phase_zone,
+)
 from app.services.score_confidence import (
     VERDICT_CI_Z_99,
     ci_excludes,
@@ -1427,52 +1438,143 @@ def _build_flaw_bullet(
     )
 
 
+@dataclass(frozen=True)
+class _PairedSeries:
+    """Per-game paired series of one (player column, opponent column) pair in one TC."""
+
+    deltas: list[float]
+    player_rates: list[float]
+    opp_rates: list[float]
+    player_total: int
+    opp_total: int
+
+
+def _paired_series(rows: Sequence[Any], player_col: str, opp_col: str) -> _PairedSeries:
+    """Collect the paired per-game rates of one player/opponent column pair.
+
+    The single owner of the denominator rule for the 12 bullets and the crossed cells:
+    both sides are divided by the USER's move count * 100, so the comparison stays
+    paired and player_rate - opp_rate == delta exactly. Rows with a degenerate
+    denominator are skipped (should be excluded by the anchor).
+    """
+    deltas: list[float] = []
+    player_rates: list[float] = []
+    opp_rates: list[float] = []
+    player_total = 0
+    opp_total = 0
+    for row in rows:
+        user_moves = int(row.user_moves) if row.user_moves else 0
+        if user_moves <= 0:
+            continue
+        player_count = int(getattr(row, player_col, 0) or 0)
+        opp_count = int(getattr(row, opp_col, 0) or 0)
+        player_total += player_count
+        opp_total += opp_count
+        player_rate = player_count / user_moves * 100.0
+        opp_rate = opp_count / user_moves * 100.0
+        player_rates.append(player_rate)
+        opp_rates.append(opp_rate)
+        deltas.append(player_rate - opp_rate)
+    return _PairedSeries(deltas, player_rates, opp_rates, player_total, opp_total)
+
+
 def _compute_bullets(rows: Sequence[Any], tc: TimeControlBucket) -> list[FlawBullet]:
     """Aggregate one TC's per-game rows into the 12 FlawBullet objects (FLAW_DELTA_METRICS order).
 
     Each row has: game_id, tc, user_moves, player_<tag>, opp_<tag> for all 12 tags.
-    For each metric: collect per-game deltas (player - opp) / user_moves * 100,
-    plus the per-game player and opponent rates (each / user_moves * 100, so the
-    comparison stays paired and player_rate - opp_rate == delta exactly), and
-    accumulate total event counts. Zero-event bullet: both sides = 0 across all
-    games → delta=None (not 0.0, D-11). Zone bounds come from the per-zone-TC
-    registry via flaw_delta_zone(metric, tc) (D-07, D-08).
+    For each metric: _paired_series collects per-game deltas (player - opp) /
+    user_moves * 100, the per-game player and opponent rates, and total event counts.
+    Zero-event bullet: both sides = 0 across all games → delta=None (not 0.0, D-11).
+    Zone bounds come from the per-TC registry via flaw_delta_zone(metric, tc)
+    (D-07; each TC has its own band since quick 261014-rux).
     """
-    tags = FLAW_DELTA_METRICS
-    deltas_by_tag: dict[str, list[float]] = {t: [] for t in tags}
-    player_rates_by_tag: dict[str, list[float]] = {t: [] for t in tags}
-    opp_rates_by_tag: dict[str, list[float]] = {t: [] for t in tags}
-    player_totals: dict[str, int] = {t: 0 for t in tags}
-    opp_totals: dict[str, int] = {t: 0 for t in tags}
-
-    for row in rows:
-        user_moves = int(row.user_moves) if row.user_moves else 0
-        if user_moves <= 0:
-            # Guard: skip rows with degenerate denominator (should be excluded by anchor)
-            continue
-        for tag in tags:
-            player_count = int(getattr(row, f"player_{tag}", 0) or 0)
-            opp_count = int(getattr(row, f"opp_{tag}", 0) or 0)
-            player_totals[tag] += player_count
-            opp_totals[tag] += opp_count
-            player_rate = player_count / user_moves * 100.0
-            opp_rate = opp_count / user_moves * 100.0
-            player_rates_by_tag[tag].append(player_rate)
-            opp_rates_by_tag[tag].append(opp_rate)
-            deltas_by_tag[tag].append(player_rate - opp_rate)
-
-    return [
-        _build_flaw_bullet(
-            tag,
-            tc,
-            deltas_by_tag[tag],
-            player_rates_by_tag[tag],
-            opp_rates_by_tag[tag],
-            player_totals[tag],
-            opp_totals[tag],
+    bullets: list[FlawBullet] = []
+    for tag in FLAW_DELTA_METRICS:
+        series = _paired_series(rows, f"player_{tag}", f"opp_{tag}")
+        bullets.append(
+            _build_flaw_bullet(
+                tag,
+                tc,
+                series.deltas,
+                series.player_rates,
+                series.opp_rates,
+                series.player_total,
+                series.opp_total,
+            )
         )
-        for tag in tags
-    ]
+    return bullets
+
+
+def _build_tempo_phase_cell(
+    tempo: FlawTempoMetric,
+    phase: FlawPhaseMetric,
+    series: _PairedSeries,
+    tc: TimeControlBucket,
+) -> TempoPhaseCell:
+    """Build one crossed TempoPhaseCell; mirrors _build_flaw_bullet.
+
+    The band comes from tempo_phase_zone (quick 261014-qj8): None for the degenerate
+    low_clock x opening cell (has_zone False, zones 0.0), set on both return paths.
+    """
+    band = tempo_phase_zone(tempo, phase, tc)
+    zone_lo = band.zone_lo if band is not None else 0.0
+    zone_hi = band.zone_hi if band is not None else 0.0
+    has_zone = band is not None
+    if series.player_total == 0 and series.opp_total == 0:
+        # Zero-event cell: no flaw carries this tempo AND phase on either side.
+        return TempoPhaseCell(
+            tempo=tempo,
+            phase=phase,
+            delta=None,
+            ci_low=None,
+            ci_high=None,
+            player_rate=None,
+            opp_rate=None,
+            p_value=None,
+            player_events=0,
+            opp_events=0,
+            zone_lo=zone_lo,
+            zone_hi=zone_hi,
+            has_zone=has_zone,
+            significant=False,
+        )
+    mean, p_value, ci_low, ci_high, significant = _paired_gap_test(series.deltas)
+    n_games = len(series.player_rates)
+    return TempoPhaseCell(
+        tempo=tempo,
+        phase=phase,
+        delta=mean,
+        ci_low=ci_low,
+        ci_high=ci_high,
+        player_rate=sum(series.player_rates) / n_games if n_games else 0.0,
+        opp_rate=sum(series.opp_rates) / n_games if n_games else 0.0,
+        p_value=p_value,
+        player_events=series.player_total,
+        opp_events=series.opp_total,
+        zone_lo=zone_lo,
+        zone_hi=zone_hi,
+        has_zone=has_zone,
+        significant=significant,
+    )
+
+
+def _compute_tempo_phase_cells(rows: Sequence[Any], tc: TimeControlBucket) -> list[TempoPhaseCell]:
+    """The 9 crossed tempo x phase cells of one TC, phase-major (quick 261014-pb9).
+
+    Same paired per-100-user-moves machinery as the bullets, over the crossed COUNT
+    FILTER columns. Flaws with NULL tempo are counted in no cell. Each cell carries its
+    benchmark band for this TC (quick 261014-qj8, per-TC since 261014-rux).
+    """
+    cells: list[TempoPhaseCell] = []
+    for phase in TEMPO_PHASE_PHASES:
+        for tempo in TEMPO_PHASE_TEMPOS:
+            series = _paired_series(
+                rows,
+                library_repository.tempo_phase_count_label("player", tempo, phase),
+                library_repository.tempo_phase_count_label("opp", tempo, phase),
+            )
+            cells.append(_build_tempo_phase_cell(tempo, phase, series, tc))
+    return cells
 
 
 async def get_flaw_comparison(
@@ -1497,10 +1599,11 @@ async def get_flaw_comparison(
     1. count_analyzed_by_tc: analyzed games per time control within the current
        filters (the sidebar TC filter narrows the list, D-02). No analyzed games at
        all → tcs=[].
-    2. fetch_flaw_comparison: ONE per-game LEFT JOIN aggregation (24 COUNT FILTER
+    2. fetch_flaw_comparison: ONE per-game LEFT JOIN aggregation (42 COUNT FILTER
        columns plus the tc column); sequential awaits only, never gather on the session.
     3. _bucket_rows_by_tc + _compute_bullets: mean + Wald-z CI per metric per TC,
-       zone bounds from the per-zone-TC registry. Bullets are ALWAYS computed, also
+       zone bounds from the per-TC registry; also the 9 crossed tempo x phase
+       cells (_compute_tempo_phase_cells, banded from TEMPO_PHASE_ZONES). Bullets are ALWAYS computed, also
        for below-gate TCs, so tiles can show rates (D-03); below_gate is flagged.
 
     IDOR guard (T-115-01): user_id is from current_active_user, never a request param.
@@ -1560,6 +1663,7 @@ async def get_flaw_comparison(
                 total_n=totals[tc],
                 below_gate=counts[tc] < FLAW_COMPARISON_GATE,
                 bullets=_compute_bullets(rows_by_tc.get(tc, []), tc),
+                tempo_phase_cells=_compute_tempo_phase_cells(rows_by_tc.get(tc, []), tc),
             )
             for tc in LIBRARY_TC_ORDER
             if counts.get(tc)

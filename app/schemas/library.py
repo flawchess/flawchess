@@ -16,12 +16,12 @@ internal *_hash columns (CLAUDE.md V5).
 """
 
 import datetime
-from typing import Literal
+from typing import Final, Literal
 
 from pydantic import BaseModel
 
 from app.schemas.normalization import TimeControlBucket
-from app.services.flaw_delta_zones import FlawDeltaMetric
+from app.services.flaw_delta_zones import FlawDeltaMetric, FlawPhaseMetric, FlawTempoMetric
 from app.services.tactic_delta_zones import TacticFamily, TacticSide
 from app.services.flaws_service import FlawSeverity, FlawTag, SeverityCounts
 
@@ -345,7 +345,7 @@ class FlawBullet(BaseModel):
     p_value: float | None
     player_events: int  # total player-side tag events across analyzed games
     opp_events: int  # total opponent-side tag events across analyzed games
-    # Typical-range bounds from the per-zone-TC FLAW_DELTA_ZONES registry: a band
+    # Typical-range bounds from the per-TC FLAW_DELTA_ZONES registry: a band
     # symmetric around 0 (±IQR/2 of the measured quartiles, Phase 239 D-15).
     zone_lo: float
     zone_hi: float
@@ -354,6 +354,46 @@ class FlawBullet(BaseModel):
     has_zone: bool = True
     # Phase 239 D-14: True when the 99% CI on delta excludes 0. Only a significant cell
     # outside the band gets a red/green verdict; the backend owns the test.
+    significant: bool
+
+
+# FlawTempoMetric / FlawPhaseMetric live in app.services.flaw_delta_zones (the crossed-cell
+# zone registry needs them and this module imports from there). Re-exported by import.
+# Cell order of FlawComparisonTc.tempo_phase_cells: phase-major (game order), tempo order
+# (Clock-card order) inside each phase.
+TEMPO_PHASE_TEMPOS: Final[tuple[FlawTempoMetric, ...]] = ("low_clock", "hasty", "unrushed")
+TEMPO_PHASE_PHASES: Final[tuple[FlawPhaseMetric, ...]] = (
+    "opening",
+    "middlegame",
+    "endgame_phase",
+)
+
+
+class TempoPhaseCell(BaseModel):
+    """One crossed tempo x game-phase cell of the flaw comparison (quick 261014-pb9).
+
+    Counts only flaws carrying BOTH the tempo tag and the phase tag, on the same
+    paired per-100-user-moves basis as FlawBullet (same CI, p-value, significance).
+    Quick 261014-qj8 / 261014-rux: 7 of the 9 cells carry a per-TC benchmark band from
+    TEMPO_PHASE_ZONES (has_zone True, symmetric zone bounds). low_clock x opening and
+    low_clock x middlegame are not zone-viable and have none (has_zone False, zone bounds 0). Flaws with NULL tempo (no
+    clock data) are in no cell. Deliberately NOT part of FLAW_DELTA_METRICS, which drives
+    the 12-bullet zone registry.
+    """
+
+    tempo: FlawTempoMetric
+    phase: FlawPhaseMetric
+    delta: float | None
+    ci_low: float | None
+    ci_high: float | None
+    player_rate: float | None
+    opp_rate: float | None
+    p_value: float | None
+    player_events: int
+    opp_events: int
+    zone_lo: float
+    zone_hi: float
+    has_zone: bool
     significant: bool
 
 
@@ -367,6 +407,9 @@ class FlawComparisonTc(BaseModel):
     below_gate: True when analyzed_n < FLAW_COMPARISON_GATE; the bullets are still
                 populated so tiles can show rates (D-03).
     bullets: always the 12 flaw-delta metrics in FLAW_DELTA_METRICS order.
+    tempo_phase_cells: always 9 crossed tempo x phase cells, phase-major (opening,
+                       middlegame, endgame_phase; low_clock, hasty, unrushed inside each).
+                       Computed also below the gate, like bullets.
     """
 
     tc: TimeControlBucket
@@ -374,6 +417,7 @@ class FlawComparisonTc(BaseModel):
     total_n: int
     below_gate: bool
     bullets: list[FlawBullet]
+    tempo_phase_cells: list[TempoPhaseCell]
 
 
 class FlawComparisonResponse(BaseModel):

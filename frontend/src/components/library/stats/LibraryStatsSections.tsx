@@ -19,6 +19,7 @@ import { useLibraryStatsTc } from '@/hooks/useLibraryStatsTc';
 import { libraryCoverageBasisText } from '@/lib/flawComparisonMeta';
 import { cn } from '@/lib/utils';
 import { ContextTagCards } from './ContextTagCards';
+import { TempoPhaseHeatmap } from './TempoPhaseHeatmap';
 import { FlawTiles } from './FlawTiles';
 import { GapGateSlot } from './GapBar';
 import { MostCommonTacticsCard } from './MostCommonTacticsCard';
@@ -33,7 +34,7 @@ const COPY_NO_TACTIC_DATA = 'No tactic data for this time control yet.';
 const SECTION_HEADING_CLASS = 'font-brand text-lg font-semibold text-foreground';
 const FLAW_STATS_TITLE = 'Flaw Stats';
 const COPY_VS_OPPONENTS_INTRO =
-  "Your flaws per 100 of your moves, next to your opponents' in the same games. " +
+  "Your flaws (blunders and mistakes) per 100 of your moves, next to your opponents' in the same games. " +
   'The grey band is the gap most players at your level have against their opponents.';
 const COPY_TACTICS_INTRO =
   'Tactics you missed (your opponent left one on the board) and tactics you allowed ' +
@@ -183,8 +184,8 @@ function VsOpponentsSkeleton() {
 }
 
 /**
- * You vs. your opponents (D-00f): the four context-tag cards
- * for the selected TC. It reads the same comparison query as Flaw Stats (one cache entry,
+ * You vs. your opponents (D-00f): the four context-tag cards with the full-width
+ * Clock by game phase heatmap (quick 261014-pb9) after the first row, for the selected TC. It reads the same comparison query as Flaw Stats (one cache entry,
  * no extra request) and the same remembered TC store as the page's one switch (D-02).
  * Below the gate one slot replaces everything (D-03).
  */
@@ -207,7 +208,12 @@ function VsOpponentsSection({ filters }: { filters: FilterState }) {
         />
       );
     }
-    return <ContextTagCards tcStats={tcStats} />;
+    return (
+      <ContextTagCards
+        tcStats={tcStats}
+        afterFirstRow={<TempoPhaseHeatmap tcStats={tcStats} />}
+      />
+    );
   };
 
   return (
