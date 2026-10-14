@@ -11,6 +11,7 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { TempoPhaseHeatmap } from '../TempoPhaseHeatmap';
+import { GAP_HEATMAP_TINT_MIN_PERCENT } from '@/lib/theme';
 import { makeTcEntry } from './flawStatsFixtures';
 
 afterEach(cleanup);
@@ -120,6 +121,17 @@ describe('TempoPhaseHeatmap', () => {
     expect(cellEl('unrushed', 'middlegame').getAttribute('data-tint')).toBe('better');
   });
 
+  it('tints further beyond the band stronger, and neutral cells read percent 0', () => {
+    render(<TempoPhaseHeatmap tcStats={ENTRY} />);
+    const percent = (tempo: string, phase: string): number =>
+      Number(cellEl(tempo, phase).getAttribute('data-tint-percent'));
+    expect(percent('hasty', 'middlegame')).toBeGreaterThan(percent('unrushed', 'middlegame'));
+    expect(percent('unrushed', 'middlegame')).toBeGreaterThanOrEqual(GAP_HEATMAP_TINT_MIN_PERCENT);
+    expect(percent('hasty', 'opening')).toBe(0);
+    expect(percent('unrushed', 'endgame-phase')).toBe(0);
+    expect(percent('low-clock', 'endgame-phase')).toBe(0);
+  });
+
   it('keeps an out-of-band gap that is not significant neutral', () => {
     render(<TempoPhaseHeatmap tcStats={ENTRY} />);
     const neutral = cellEl('unrushed', 'endgame-phase');
@@ -164,6 +176,6 @@ describe('TempoPhaseHeatmap', () => {
 
   it('renders the legend line', () => {
     render(<TempoPhaseHeatmap tcStats={ENTRY} />);
-    expect(screen.getByTestId('tempo-phase-legend')).not.toBeNull();
+    expect(text('tempo-phase-legend')).toContain('typical for your level or no clear difference');
   });
 });

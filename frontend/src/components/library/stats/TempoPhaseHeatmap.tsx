@@ -11,7 +11,6 @@ import {
 import {
   GAP_EMPTY_WORDS,
   gapHeatmapFill,
-  gapHeatmapScale,
   gapWords,
   type GapCell,
 } from '@/lib/gapBar';
@@ -21,7 +20,7 @@ import { GapPopover } from './GapPopover';
 const COPY_ZONELESS_SIGNIFICANT =
   'There is no typical range for this combination, but the gap is too large to be chance.';
 const COPY_LEGEND =
-  'Green: fewer flaws than your opponents. Red: more. Grey: no clear difference.';
+  'Green: fewer flaws than your opponents. Red: more. Grey: typical for your level or no clear difference.';
 
 interface HeatmapCellProps {
   tcStats: FlawComparisonTc;
@@ -29,24 +28,23 @@ interface HeatmapCellProps {
   phase: FlawPhaseMetric;
   /** The adapted cell, null when the payload carries none. */
   cell: GapCell | null;
-  /** Tint scale of the whole TC (gapHeatmapScale). */
-  scale: number;
 }
 
-/** One grid cell: the gap in words on a significance-gated tint, plus its popover. */
-function HeatmapCell({ tcStats, tempo, phase, cell, scale }: HeatmapCellProps) {
+/** One grid cell: the gap in words on a gap-bar-rule tint, plus its popover. */
+function HeatmapCell({ tcStats, tempo, phase, cell }: HeatmapCellProps) {
   // A missing payload cell keeps the grid shape with an empty placeholder.
   if (!cell) return <div />;
   const tempoSeg = metricTestIdSegment(tempo);
   const phaseSeg = metricTestIdSegment(phase);
   const cellId = `tempo-phase-cell-${tempoSeg}-${phaseSeg}`;
   const meta = tempoPhaseMeta(tempo, phase);
-  const fill = gapHeatmapFill(cell, scale);
+  const fill = gapHeatmapFill(cell);
   return (
     <div
       className="flex min-h-14 min-w-0 flex-wrap items-center justify-center gap-1 rounded px-1 py-2 text-center"
       style={{ backgroundColor: fill.background }}
       data-tint={fill.tint}
+      data-tint-percent={fill.percent}
       data-testid={cellId}
     >
       {cell.delta === null ? (
@@ -81,10 +79,9 @@ function HeatmapCell({ tcStats, tempo, phase, cell, scale }: HeatmapCellProps) {
 interface PhaseRowProps {
   tcStats: FlawComparisonTc;
   phase: FlawPhaseMetric;
-  scale: number;
 }
 
-function PhaseRow({ tcStats, phase, scale }: PhaseRowProps) {
+function PhaseRow({ tcStats, phase }: PhaseRowProps) {
   return (
     <>
       <div className="self-center pr-2 text-sm text-muted-foreground">
@@ -97,7 +94,6 @@ function PhaseRow({ tcStats, phase, scale }: PhaseRowProps) {
           tempo={tempo}
           phase={phase}
           cell={tempoPhaseGapCell(tcStats, tempo, phase)}
-          scale={scale}
         />
       ))}
     </>
@@ -112,15 +108,13 @@ interface TempoPhaseHeatmapProps {
 /**
  * The Clock by game phase card (quick 261014-pb9): the three clock tags (columns) crossed
  * with the three game phases (rows). Each cell is the you-minus-opponents gap per 100 of
- * your moves for flaws carrying BOTH tags, worded like the gap bars. Only a significant
- * gap is tinted (green fewer, red more), scaled to the strongest significant cell. Flaws
- * with no clock data are in no cell.
+ * your moves for flaws carrying BOTH tags, worded like the gap bars. Colour follows the gap
+ * bars: green (fewer) or red (more) only when the gap is outside the typical range for your
+ * level and too large to be chance; strength grows with the distance beyond the range. The
+ * low-clock opening cell has no range and is judged on chance alone. Flaws with no clock
+ * data are in no cell.
  */
 export function TempoPhaseHeatmap({ tcStats }: TempoPhaseHeatmapProps) {
-  const allCells = TEMPO_PHASE_PHASES.flatMap((phase) =>
-    TEMPO_PHASE_TEMPOS.map((tempo) => tempoPhaseGapCell(tcStats, tempo, phase)),
-  );
-  const scale = gapHeatmapScale(allCells.filter((c): c is GapCell => c !== null));
   return (
     <Card data-testid="tempo-phase-card">
       <CardHeader>
@@ -141,7 +135,7 @@ export function TempoPhaseHeatmap({ tcStats }: TempoPhaseHeatmapProps) {
             </div>
           ))}
           {TEMPO_PHASE_PHASES.map((phase) => (
-            <PhaseRow key={phase} tcStats={tcStats} phase={phase} scale={scale} />
+            <PhaseRow key={phase} tcStats={tcStats} phase={phase} />
           ))}
         </div>
         <p className="text-sm text-muted-foreground" data-testid="tempo-phase-legend">

@@ -20,7 +20,6 @@ import {
   gapPosition,
   gapVerdict,
   gapHeatmapFill,
-  gapHeatmapScale,
   gapVerdictColor,
   gapWords,
   isChanceGap,
@@ -222,48 +221,66 @@ function tintBackground(color: string, percent: number): string {
   return `color-mix(in oklch, ${color} ${percent}%, transparent)`;
 }
 
-describe('gapHeatmapScale', () => {
-  it('is the max |gap| over significant cells only', () => {
-    const cells = [
-      zonelessCell(-1.0, true),
-      zonelessCell(0.5, true),
-      zonelessCell(3.0, false),
-      zonelessCell(null, false),
-    ];
-    expect(gapHeatmapScale(cells)).toBe(1.0);
-  });
-
-  it('is 0 when no cell is significant', () => {
-    expect(gapHeatmapScale([zonelessCell(3.0, false), zonelessCell(null, false)])).toBe(0);
-  });
-});
-
 describe('gapHeatmapFill', () => {
-  it('saturates the strongest significant better cell in ZONE_SUCCESS', () => {
-    const fill = gapHeatmapFill(zonelessCell(-1.0, true), 1.0);
+  const significantAt = (delta: number): GapCell =>
+    cell({ delta, significant: true, zoneLo: LO, zoneHi: HI });
+
+  it('tints a significant gap just outside the band faintly, in ZONE_DANGER', () => {
+    const fill = gapHeatmapFill(significantAt(0.31));
+    expect(fill.tint).toBe('worse');
+    expect(fill.percent).toBeGreaterThanOrEqual(GAP_HEATMAP_TINT_MIN_PERCENT);
+    const midpoint = (GAP_HEATMAP_TINT_MIN_PERCENT + GAP_HEATMAP_TINT_MAX_PERCENT) / 2;
+    expect(fill.percent).toBeLessThan(midpoint);
+    expect(fill.background).toBe(tintBackground(ZONE_DANGER, fill.percent));
+  });
+
+  it('saturates ten band widths beyond the band at the max, ZONE_SUCCESS for a negative gap', () => {
+    const fill = gapHeatmapFill(significantAt(-(HI + 10 * (HI - LO))));
     expect(fill.tint).toBe('better');
+    expect(fill.percent).toBe(GAP_HEATMAP_TINT_MAX_PERCENT);
     expect(fill.background).toBe(tintBackground(ZONE_SUCCESS, GAP_HEATMAP_TINT_MAX_PERCENT));
   });
 
-  it('keeps a weak significant worse cell visibly tinted between the floor and the max', () => {
-    const fill = gapHeatmapFill(zonelessCell(0.1, true), 1.0);
-    expect(fill.tint).toBe('worse');
-    const match = /^color-mix\(in oklch, (.+) (\d+)%, transparent\)$/.exec(fill.background);
-    expect(match?.[1]).toBe(ZONE_DANGER);
-    const percent = Number(match?.[2]);
-    expect(percent).toBeGreaterThan(GAP_HEATMAP_TINT_MIN_PERCENT);
-    expect(percent).toBeLessThan(GAP_HEATMAP_TINT_MAX_PERCENT);
+  it('never weakens as the gap grows beyond the band', () => {
+    const gaps = [0.31, 0.4, 0.6, 1.0, 2.0, 5.0];
+    const percents = gaps.map((g) => gapHeatmapFill(significantAt(g)).percent);
+    for (let i = 1; i < percents.length; i += 1) {
+      expect(percents[i] ?? 0).toBeGreaterThanOrEqual(percents[i - 1] ?? 0);
+    }
+    expect(percents[percents.length - 1] ?? 0).toBeGreaterThan(percents[0] ?? 0);
   });
 
-  it('gives a non-significant cell with a large gap the neutral fill', () => {
-    const fill = gapHeatmapFill(zonelessCell(5.0, false), 1.0);
+  it('renders a significant gap INSIDE the band neutral', () => {
+    const fill = gapHeatmapFill(significantAt(0.2));
     expect(fill.tint).toBe('neutral');
+    expect(fill.percent).toBe(0);
+    expect(fill.background).toBe(GAP_HEATMAP_NEUTRAL_FILL);
+  });
+
+  it('renders an out-of-band gap that is not significant neutral', () => {
+    const fill = gapHeatmapFill(cell({ delta: 1.0, significant: false, zoneLo: LO, zoneHi: HI }));
+    expect(fill.tint).toBe('neutral');
+    expect(fill.percent).toBe(0);
+    expect(fill.background).toBe(GAP_HEATMAP_NEUTRAL_FILL);
+  });
+
+  it('tints a significant one-sided zoneless cell at the max', () => {
+    const fill = gapHeatmapFill({ ...zonelessCell(1.0, true), youRate: 1.0, oppRate: 0 });
+    expect(fill.tint).toBe('worse');
+    expect(fill.percent).toBe(GAP_HEATMAP_TINT_MAX_PERCENT);
+  });
+
+  it('gives a non-significant zoneless cell the neutral fill', () => {
+    const fill = gapHeatmapFill(zonelessCell(5.0, false));
+    expect(fill.tint).toBe('neutral');
+    expect(fill.percent).toBe(0);
     expect(fill.background).toBe(GAP_HEATMAP_NEUTRAL_FILL);
   });
 
   it('gives a null-delta cell the neutral fill', () => {
-    const fill = gapHeatmapFill(zonelessCell(null, false), 1.0);
+    const fill = gapHeatmapFill(zonelessCell(null, false));
     expect(fill.tint).toBe('neutral');
+    expect(fill.percent).toBe(0);
     expect(fill.background).toBe(GAP_HEATMAP_NEUTRAL_FILL);
   });
 });
