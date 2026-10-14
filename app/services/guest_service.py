@@ -74,7 +74,7 @@ async def promote_guest_with_password(
 ) -> tuple[User, str]:
     """Promote a guest account to a full email/password account in-place.
 
-    Updates the user row: sets is_guest=False, is_verified=True,
+    Updates the user row: sets is_guest=False, is_verified=False,
     promoted_at=now(), stores the new email and an argon2id-hashed password.
     Issues a standard 7-day JWT via auth_backend (not the guest 30-day
     strategy).
@@ -107,7 +107,10 @@ async def promote_guest_with_password(
             email=email,
             hashed_password=hashed_password,
             is_guest=False,
-            is_verified=True,
+            # Security fix (review 2026-10-14): was True, but nothing proves the
+            # promoting guest owns this address. An unverified account has its
+            # password replaced if Google later links to it (UserManager.google_sign_in).
+            is_verified=False,
             promoted_at=func.now(),
         )
     )

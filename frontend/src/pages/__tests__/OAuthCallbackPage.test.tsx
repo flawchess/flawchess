@@ -66,4 +66,20 @@ describe('OAuthCallbackPage', () => {
     expect(toast.error).toHaveBeenCalledWith('Google sign-in failed. Please try again.');
     expect(localStorage.getItem('auth_token')).toBeNull();
   });
+
+  it('queues the password-replaced notice when Google replaced an unverified password', async () => {
+    window.history.replaceState(null, '', '/auth/callback#token=abc123&password_replaced=1');
+    renderApp(true);
+    await waitFor(() => expect(screen.queryByText('home')).not.toBeNull());
+    expect(localStorage.getItem('auth_token')).toBe('abc123');
+    expect(sessionStorage.getItem('pending_toast')).toContain('Forgot password');
+    expect(toast.error).not.toHaveBeenCalled();
+  });
+
+  it('queues no notice on a plain Google sign-in', async () => {
+    window.history.replaceState(null, '', '/auth/callback#token=abc123');
+    renderApp(true);
+    await waitFor(() => expect(screen.queryByText('home')).not.toBeNull());
+    expect(sessionStorage.getItem('pending_toast')).toBeNull();
+  });
 });

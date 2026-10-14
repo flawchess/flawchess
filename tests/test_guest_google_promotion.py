@@ -48,7 +48,7 @@ async def login_user(client: httpx.AsyncClient, email: str, password: str) -> ht
 
 def make_fake_id_token(sub: str = "google_sub_123", email: str = "user@gmail.com") -> str:
     """Build a minimal fake id_token JWT (header.payload.signature) for mocking."""
-    payload = {"sub": sub, "email": email}
+    payload = {"sub": sub, "email": email, "email_verified": True}
     payload_b64 = base64.urlsafe_b64encode(json.dumps(payload).encode()).decode().rstrip("=")
     return f"header.{payload_b64}.signature"
 

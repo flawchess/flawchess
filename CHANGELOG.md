@@ -46,6 +46,11 @@ in `YYYY-MM-DD` (Europe/Zurich).
 - Google sign-in no longer shows a server error page when Google rejects the sign-in code (for example after a doubled redirect on Android). You land back on the login page with a "Google sign-in failed. Please try again." message.
 - Admin: closing the impersonation pill now takes you back to your own admin session on the Admin page instead of signing you out.
 
+### Security
+
+- Signing in with Google can no longer hand your account to someone who registered your email address before you did. If Google links to an email/password account whose address was never confirmed, the old password is replaced and every existing session is logged out; you can set a new password with "Forgot password". Google sign-ins with an unconfirmed Google email are refused.
+- Resetting your password now logs out all other sessions.
+
 ## [v2.24] Train Grading Integrity & One-Screen Reveal — 2026-10-09
 
 ### Changed

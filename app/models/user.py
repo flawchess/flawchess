@@ -123,6 +123,17 @@ class User(SQLAlchemyBaseUserTable[int], Base):
         JSONB, nullable=False, server_default=text("'{}'::jsonb"), default=dict
     )
 
+    # Embedded in every auth JWT as the `tv` claim; app/users.py rejects a token whose
+    # claim differs. Bumping it invalidates every outstanding token for the user (JWTs
+    # are otherwise valid until they expire). Bumped when a Google sign-in claims an
+    # unverified password account and when a password reset completes.
+    token_version: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+        server_default=text("0"),
+        default=0,
+    )
+
     oauth_accounts: Mapped[List["OAuthAccount"]] = relationship(  # ty: ignore[unresolved-reference]
         "OAuthAccount", lazy="joined"
     )

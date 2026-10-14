@@ -1,5 +1,6 @@
 """Auth router: register, JWT login/logout, Google OAuth, and guest session endpoints via FastAPI-Users."""
 
+import base64
 import json
 import secrets
 from typing import Annotated
@@ -159,6 +160,41 @@ async def _exchange_google_code(code: str, redirect_url: str) -> OAuth2Token | N
         return None
 
 
+def _google_identity(token: OAuth2Token) -> tuple[str, str]:
+    """Return ``(account_id, email)`` from Google's id_token, or raise 400.
+
+    The id_token is decoded without signature verification: it was just received
+    server-to-server over TLS from Google's token endpoint (avoids a People API call).
+
+    Security fix (review 2026-10-14): ``email_verified`` is now required. Google sign-in
+    links to an existing FlawChess account by email (and replaces an unverified
+    account's password, see UserManager.google_sign_in), which is only safe when Google
+    has proven the caller owns that address.
+    """
+    id_token = token.get("id_token")
+    if not id_token:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="No id_token in Google response",
+        )
+    payload_b64 = id_token.split(".")[1]
+    payload_b64 += "=" * (-len(payload_b64) % 4)  # pad base64
+    id_claims = json.loads(base64.urlsafe_b64decode(payload_b64))
+    account_email = id_claims.get("email")
+    if account_email is None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="No email returned from Google",
+        )
+    # Google documents a boolean; older token formats sent the string "true".
+    if id_claims.get("email_verified") not in (True, "true"):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Google email is not verified",
+        )
+    return id_claims["sub"], account_email
+
+
 def _google_signin_failed_redirect(frontend_base: str) -> RedirectResponse:
     """Send the browser back to the SPA callback page with a retryable sign-in error."""
     return RedirectResponse(
@@ -294,40 +330,16 @@ async def google_callback(
     if token is None:
         return _google_signin_failed_redirect(frontend_base)
 
-    # Decode id_token from Google (avoids People API dependency).
-    # The id_token is a JWT — we only need the payload, Google already validated it.
-    id_token = token.get("id_token")
-    if not id_token:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="No id_token in Google response",
-        )
-    # Decode payload without verification (token was just received over TLS from Google)
-    import base64
-
-    payload_b64 = id_token.split(".")[1]
-    payload_b64 += "=" * (-len(payload_b64) % 4)  # pad base64
-    id_claims = json.loads(base64.urlsafe_b64decode(payload_b64))
-    account_id = id_claims["sub"]
-    account_email = id_claims.get("email")
-
-    if account_email is None:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="No email returned from Google",
-        )
+    account_id, account_email = _google_identity(token)
 
     try:
-        user = await user_manager.oauth_callback(  # ty: ignore[invalid-argument-type]  # FastAPI-Users generic typing not resolved by ty beta
-            oauth_name=google_oauth_client.name,
-            access_token=token["access_token"],
+        user, password_replaced = await user_manager.google_sign_in(
             account_id=account_id,
             account_email=account_email,
+            access_token=token["access_token"],
             expires_at=token.get("expires_at"),
             refresh_token=token.get("refresh_token"),
             request=request,
-            associate_by_email=True,
-            is_verified_by_default=True,
         )
     except UserAlreadyExists:
         raise HTTPException(
@@ -351,8 +363,11 @@ async def google_callback(
     strategy = auth_backend.get_strategy()
     access_token = await strategy.write_token(user)  # ty: ignore[unresolved-attribute]  # FastAPI-Users generic typing not resolved by ty beta
 
-    # Redirect to frontend callback page with token in fragment
+    # Redirect to frontend callback page with token in fragment. password_replaced tells
+    # the SPA to explain why the account's old password no longer works.
     frontend_redirect = f"{frontend_base}/auth/callback#token={access_token}"
+    if password_replaced:
+        frontend_redirect += "&password_replaced=1"
     return RedirectResponse(url=frontend_redirect, status_code=status.HTTP_302_FOUND)
 
 
@@ -509,29 +524,7 @@ async def google_callback_promote(
     if token is None:
         return _google_signin_failed_redirect(frontend_base)
 
-    # Decode id_token to extract Google account_id (sub) and email
-    # (same pattern as existing /auth/google/callback — no signature verify needed,
-    # token was received over TLS from Google)
-    id_token = token.get("id_token")
-    if not id_token:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="No id_token in Google response",
-        )
-
-    import base64
-
-    payload_b64 = id_token.split(".")[1]
-    payload_b64 += "=" * (-len(payload_b64) % 4)
-    id_claims = json.loads(base64.urlsafe_b64decode(payload_b64))
-    account_id = id_claims["sub"]
-    account_email = id_claims.get("email")
-
-    if account_email is None:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="No email returned from Google",
-        )
+    account_id, account_email = _google_identity(token)
 
     try:
         _updated_user, jwt_token = await guest_service.promote_guest_with_google(

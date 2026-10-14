@@ -5,6 +5,8 @@ import { toast } from 'sonner';
 import { useAuth } from '@/hooks/useAuth';
 
 const GOOGLE_SIGNIN_FAILED_MESSAGE = 'Google sign-in failed. Please try again.';
+const PASSWORD_REPLACED_MESSAGE =
+  'Signed in with Google. The password previously set for this email was removed. Use "Forgot password" to set a new one.';
 
 /**
  * Handles the Google OAuth redirect callback.
@@ -33,6 +35,9 @@ export function OAuthCallbackPage() {
     const token = params.get('token');
     const error = params.get('error');
     const promoted = params.get('promoted');
+    // Set when Google linked to an unverified email/password account and the backend
+    // replaced its password (protects against someone pre-registering your email).
+    const passwordReplaced = params.get('password_replaced');
 
     if (error === 'EMAIL_ALREADY_REGISTERED') {
       toast.error(
@@ -56,6 +61,9 @@ export function OAuthCallbackPage() {
           'pending_toast',
           'Account created with Google. Your data is saved.',
         );
+      } else if (passwordReplaced === '1') {
+        // Deferred for the same redirect-chain reason as the promoted toast above.
+        sessionStorage.setItem('pending_toast', PASSWORD_REPLACED_MESSAGE);
       }
       navigate('/', { replace: true });
     } else {

@@ -13,6 +13,7 @@ Phase 62 adds two JWT strategies on top of the default:
   User is the impersonated target when an impersonation token is presented.
 """
 
+import asyncio
 import base64
 import json
 from collections.abc import AsyncGenerator
@@ -184,6 +185,96 @@ class UserManager(IntegerIDMixin, BaseUserManager[User, int]):
             to=user.email, reset_url=reset_url, user_id=user.id
         )
 
+    async def on_after_reset_password(self, user: User, request: Request | None = None) -> None:
+        """A completed reset proves email ownership and evicts every other session.
+
+        The reset link only reaches the mailbox owner, so the account counts as
+        verified from here on (a later Google sign-in then links without replacing
+        the password). Bumping token_version invalidates every JWT issued before the
+        reset, including any held by whoever knew the old password.
+        """
+        async with async_session_maker() as session:
+            await session.execute(
+                sa_update(User)
+                .where(User.id == user.id)
+                .values(is_verified=True, token_version=User.token_version + 1)
+            )
+            await session.commit()
+
+    async def _unverified_account_for_oauth(
+        self, oauth_name: str, account_id: str, account_email: str
+    ) -> User | None:
+        """Return the account an OAuth sign-in is about to link by email, if unverified.
+
+        None when the OAuth account is already linked (normal returning sign-in), when
+        no account has this email (a new account will be created), or when the
+        matching account has proven its email ownership.
+        """
+        try:
+            await self.get_by_oauth_account(oauth_name, account_id)
+            return None
+        except exceptions.UserNotExists:
+            pass
+        try:
+            user = await self.get_by_email(account_email)
+        except exceptions.UserNotExists:
+            return None
+        return None if user.is_verified else user
+
+    async def google_sign_in(
+        self,
+        *,
+        account_id: str,
+        account_email: str,
+        access_token: str,
+        expires_at: int | None,
+        refresh_token: str | None,
+        request: Request | None,
+    ) -> tuple[User, bool]:
+        """Run the Google OAuth callback; return (user, password_replaced).
+
+        Security fix (review 2026-10-14): email/password signup does not verify the
+        address, and Google sign-in links to an existing account by email. Anyone
+        could register victim@gmail.com with their own password, wait for the real
+        owner to sign in with Google, and keep password access to the now-shared
+        account. When Google (which has proven the email) links to an UNVERIFIED
+        account, the old password is replaced with a random one and token_version
+        is bumped, so neither the old password nor any token issued with it works.
+        The owner can set a new password via forgot-password.
+        """
+        claimed = await self._unverified_account_for_oauth(
+            google_oauth_client.name, account_id, account_email
+        )
+        user = await self.oauth_callback(
+            oauth_name=google_oauth_client.name,
+            access_token=access_token,
+            account_id=account_id,
+            account_email=account_email,
+            expires_at=expires_at,
+            refresh_token=refresh_token,
+            request=request,
+            associate_by_email=True,
+            is_verified_by_default=True,
+        )
+        if claimed is None or claimed.id != user.id:
+            return user, False
+
+        password_replaced = _has_password(claimed)
+        # Same unusable random password FastAPI-Users gives new OAuth accounts, so the
+        # forgot-password flow (gated on _has_password) stays open to the owner.
+        new_hash = await asyncio.to_thread(
+            self.password_helper.hash, self.password_helper.generate()
+        )
+        user = await self.user_db.update(
+            user,
+            {
+                "hashed_password": new_hash,
+                "is_verified": True,
+                "token_version": user.token_version + 1,
+            },
+        )
+        return user, password_replaced
+
 
 async def get_user_manager(
     user_db: SQLAlchemyUserDatabase = Depends(get_user_db),
@@ -198,15 +289,64 @@ async def get_user_manager(
 bearer_transport = BearerTransport(tokenUrl="auth/jwt/login")
 
 
-def get_jwt_strategy() -> JWTStrategy:
-    return JWTStrategy(secret=settings.SECRET_KEY, lifetime_seconds=604800)  # 7 days
+# JWT claim carrying User.token_version at issue time.
+_TOKEN_VERSION_CLAIM = "tv"
+
+
+class VersionedJWTStrategy(JWTStrategy[User, int]):
+    """JWT strategy whose tokens are revoked by bumping User.token_version.
+
+    Stock FastAPI-Users JWTs cannot be invalidated before they expire. Every token
+    issued here carries the user's token_version, and read_token rejects a token
+    whose claim no longer matches the row.
+    """
+
+    async def write_token(self, user: User) -> str:
+        data: dict[str, Any] = {
+            "sub": str(user.id),
+            "aud": self.token_audience,
+            _TOKEN_VERSION_CLAIM: user.token_version,
+        }
+        return generate_jwt(data, self.encode_key, self.lifetime_seconds, algorithm=self.algorithm)
+
+    async def read_token(
+        self,
+        token: str | None,
+        user_manager: BaseUserManager[User, int],
+    ) -> User | None:
+        if token is None:
+            return None
+        try:
+            data = decode_jwt(
+                token, self.decode_key, self.token_audience, algorithms=[self.algorithm]
+            )
+        except pyjwt.PyJWTError:
+            return None
+        user_id = data.get("sub")
+        if user_id is None:
+            return None
+        try:
+            user = await user_manager.get(user_manager.parse_id(user_id))
+        except exceptions.UserNotExists, exceptions.InvalidID:
+            return None
+        # Tokens issued before token_version existed carry no claim and count as
+        # version 0, so deploying this logs nobody out.
+        if data.get(_TOKEN_VERSION_CLAIM, 0) != user.token_version:
+            return None
+        return user
+
+
+def get_jwt_strategy() -> VersionedJWTStrategy:
+    return VersionedJWTStrategy(secret=settings.SECRET_KEY, lifetime_seconds=604800)  # 7 days
 
 
 _GUEST_JWT_LIFETIME_SECONDS = 31536000  # 365 days
 
 
-def get_guest_jwt_strategy() -> JWTStrategy:
-    return JWTStrategy(secret=settings.SECRET_KEY, lifetime_seconds=_GUEST_JWT_LIFETIME_SECONDS)
+def get_guest_jwt_strategy() -> VersionedJWTStrategy:
+    return VersionedJWTStrategy(
+        secret=settings.SECRET_KEY, lifetime_seconds=_GUEST_JWT_LIFETIME_SECONDS
+    )
 
 
 # D-03: 1 hour — deliberately short to minimize blast radius of a leaked
@@ -214,7 +354,7 @@ def get_guest_jwt_strategy() -> JWTStrategy:
 _IMPERSONATION_JWT_LIFETIME_SECONDS = 3600
 
 
-class ImpersonationJWTStrategy(JWTStrategy[User, int]):
+class ImpersonationJWTStrategy(VersionedJWTStrategy):
     """Issues + validates impersonation JWTs.
 
     Additional claims on top of the default `sub` and `aud`:
@@ -307,7 +447,7 @@ def _peek_is_impersonation(token: str | None) -> bool:
         return False
 
 
-class ClaimAwareJWTStrategy(JWTStrategy[User, int]):
+class ClaimAwareJWTStrategy(VersionedJWTStrategy):
     """Single strategy that routes per-token to ImpersonationJWTStrategy when
     the `is_impersonation` claim is present. Keeps every downstream
     `Depends(current_active_user)` unchanged — returns the impersonated target
