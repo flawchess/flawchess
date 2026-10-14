@@ -4,8 +4,8 @@ milestone: v2.24
 current_phase: 239
 status: completed
 stopped_at: Phase 239 complete — all phases complete
-last_updated: "2026-10-14T16:35:11.200Z"
-state_head: 68c5a3caddf60ccca72fa73a8f35fe81a31b7ff7
+last_updated: "2026-10-14T17:24:52.194Z"
+state_head: 15d855812854b54bee2e72b21ea781b5a731ea7e
 progress:
   total_phases: 2
   completed_phases: 103
@@ -1027,6 +1027,7 @@ None active.
 | 261012-a6m | Stockfish engine arrows: best star on top line, graded quality badges + drop-proportional transparency on secondary lines (Analysis + Train step/free-play) | 2026-10-12 | ed23039f9 | [261012-a6m-engine-arrow-move-quality-badges-best-st](./quick/261012-a6m-engine-arrow-move-quality-badges-best-st/) |
 | 261012-qiz | Endgame insights: dedupe concurrent LLM generations (advisory lock) + 24h regen cooldown | 2026-10-12 | abb4d710e | [261012-qiz-endgame-insights-dedupe-concurrent-llm-g](./quick/261012-qiz-endgame-insights-dedupe-concurrent-llm-g/) |
 | 261014-pb9 | Library Stats: 3x3 tempo x game-phase flaw gap heatmap (you vs opponents) | 2026-10-14 | 68c5a3cad | [261014-pb9-library-stats-3x3-tempo-x-game-phase-fla](./quick/261014-pb9-library-stats-3x3-tempo-x-game-phase-fla/) |
+| 261014-qj8 | Benchmark bands for the tempo x phase heatmap cells | 2026-10-14 | 15d855812 | [261014-qj8-benchmark-bands-for-the-tempo-x-phase-he](./quick/261014-qj8-benchmark-bands-for-the-tempo-x-phase-he/) |
 
 ## Deferred Items
 
