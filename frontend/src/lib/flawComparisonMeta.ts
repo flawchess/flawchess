@@ -145,28 +145,28 @@ export interface ContextTagCardDef {
 /** The four cards in display order, each with its tag rows in display order (no combo row). */
 export const CONTEXT_TAG_CARDS: readonly ContextTagCardDef[] = [
   {
-    key: 'clock',
-    title: 'Clock',
-    subtitle: 'how much time you had',
-    metrics: ['low_clock', 'hasty', 'unrushed'],
-  },
-  {
     key: 'phase',
     title: 'Game phase',
     subtitle: 'where the flaw happened',
     metrics: ['opening', 'middlegame', 'endgame_phase'],
   },
   {
-    key: 'opponent_errors',
-    title: 'Opponent errors',
-    subtitle: 'chances you missed or got',
-    metrics: ['miss', 'lucky'],
+    key: 'clock',
+    title: 'Clock',
+    subtitle: 'how much time you had',
+    metrics: ['unrushed', 'hasty', 'low_clock'],
   },
   {
     key: 'lost_advantages',
     title: 'Lost advantages',
     subtitle: 'what the flaw cost',
     metrics: ['reversed', 'squandered'],
+  },
+  {
+    key: 'opponent_errors',
+    title: 'Opponent errors',
+    subtitle: 'chances you missed or got',
+    metrics: ['miss', 'lucky'],
   },
 ];
 

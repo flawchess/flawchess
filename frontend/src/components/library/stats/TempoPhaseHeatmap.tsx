@@ -9,7 +9,7 @@ import {
   tempoPhaseMeta,
 } from '@/lib/flawComparisonMeta';
 import {
-  GAP_EMPTY_WORDS,
+  HEATMAP_EMPTY_WORDS,
   gapHeatmapFill,
   gapWords,
   type GapCell,
@@ -49,7 +49,7 @@ function HeatmapCell({ tcStats, tempo, phase, cell }: HeatmapCellProps) {
     >
       {cell.delta === null ? (
         <span className="text-sm text-muted-foreground" data-testid={`${cellId}-words`}>
-          {GAP_EMPTY_WORDS}
+          {HEATMAP_EMPTY_WORDS}
         </span>
       ) : (
         <>

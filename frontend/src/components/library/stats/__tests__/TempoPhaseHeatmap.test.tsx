@@ -146,7 +146,7 @@ describe('TempoPhaseHeatmap', () => {
 
   it('shows the empty copy and no popover trigger for a null-delta cell', () => {
     render(<TempoPhaseHeatmap tcStats={ENTRY} />);
-    expect(text('tempo-phase-cell-low-clock-endgame-phase-words')).toBe('No flaws yet');
+    expect(text('tempo-phase-cell-low-clock-endgame-phase-words')).toBe('No flaws');
     expect(cellEl('low-clock', 'endgame-phase').getAttribute('data-tint')).toBe('neutral');
     expect(
       screen.queryByTestId('gap-popover-tempo-phase-low-clock-endgame-phase-tc-rapid'),

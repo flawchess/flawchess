@@ -321,7 +321,7 @@ describe('You vs. your opponents section', () => {
   it('renders the four cards for the selected TC, between the other sections', async () => {
     await renderLoaded();
     const section = screen.getByTestId('vs-opponents-section');
-    expect(section.querySelector('[data-testid="context-tag-cards"]')?.children).toHaveLength(4);
+    expect(section.querySelectorAll('[data-testid^="context-card-"][data-testid$="-axis"]')).toHaveLength(4);
     const order = [
       screen.getByTestId('flaw-stats-section'),
       section,
@@ -331,12 +331,14 @@ describe('You vs. your opponents section', () => {
     expect(order[1]!.compareDocumentPosition(order[2]!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 
-  it('renders the Clock by game phase heatmap after the context cards (quick 261014-pb9)', async () => {
+  it('renders the Clock by game phase heatmap between the Clock and Lost advantages cards', async () => {
     await renderLoaded();
     const section = screen.getByTestId('vs-opponents-section');
-    const cards = within(section).getByTestId('context-tag-cards');
+    const clock = within(section).getByTestId('context-card-clock');
+    const lost = within(section).getByTestId('context-card-lost-advantages');
     const heatmap = within(section).getByTestId('tempo-phase-card');
-    expect(cards.compareDocumentPosition(heatmap) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(clock.compareDocumentPosition(heatmap) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(heatmap.compareDocumentPosition(lost) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(heatmap.querySelectorAll('[data-testid^="tempo-phase-cell-"][data-testid$="-words"]')).toHaveLength(9);
   });
 
