@@ -352,8 +352,9 @@ export type FlawPhaseMetric = 'opening' | 'middlegame' | 'endgame_phase';
 
 /**
  * One crossed tempo x game-phase cell (mirrors backend TempoPhaseCell): flaws carrying
- * BOTH tags, same paired per-100-moves basis as FlawBullet. has_zone is always false (no
- * benchmark band), and flaws with no clock data (NULL tempo) are in no cell.
+ * BOTH tags, same paired per-100-moves basis as FlawBullet. 8 of 9 cells carry the
+ * backend's pooled benchmark band (TEMPO_PHASE_ZONES); low_clock x opening has none
+ * (has_zone false, zones 0). Flaws with no clock data (NULL tempo) are in no cell.
  */
 export interface TempoPhaseCell extends Omit<FlawBullet, 'tag'> {
   tempo: FlawTempoMetric;

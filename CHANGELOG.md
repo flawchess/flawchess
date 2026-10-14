@@ -10,7 +10,7 @@ in `YYYY-MM-DD` (Europe/Zurich).
 
 ### Added
 
-- Library Stats: a new "Clock by game phase" card under the context cards crosses the three clock tags with the three game phases, so you can see, for example, whether your hasty flaws pile up in the middlegame. Each cell shows your gap to your opponents per 100 moves, in green or red only when it is very unlikely to be chance.
+- Library Stats: a new "Clock by game phase" card under the context cards crosses the three clock tags with the three game phases, so you can see, for example, whether your hasty flaws pile up in the middlegame. Each cell shows your gap to your opponents per 100 moves, in green or red only when the gap is outside the typical range for your level and very unlikely to be chance, the same rule as the gap bars above it.
 
 ### Changed
 
