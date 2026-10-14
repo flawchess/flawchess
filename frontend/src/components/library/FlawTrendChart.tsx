@@ -153,7 +153,7 @@ export function FlawTrendChart({ trend, windowSize }: FlawTrendChartProps) {
                     dataKey={s.key}
                     stroke={s.color}
                     strokeWidth={2}
-                    dot={{ r: 2.5, fill: s.color, strokeWidth: 0 }}
+                    dot={false}
                     activeDot={{ r: 4, fill: s.color, strokeWidth: 0 }}
                     isAnimationActive={false}
                     hide={hiddenKeys.has(s.key)}
