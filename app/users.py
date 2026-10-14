@@ -20,9 +20,9 @@ from collections.abc import AsyncGenerator
 from typing import Any
 
 import jwt as pyjwt
-from fastapi import Depends, Request, Response
+from fastapi import Depends, HTTPException, Request, Response, status
 from fastapi.security import OAuth2PasswordRequestForm
-from fastapi_users import BaseUserManager, FastAPIUsers, IntegerIDMixin, exceptions
+from fastapi_users import BaseUserManager, FastAPIUsers, IntegerIDMixin, exceptions, models, schemas
 from fastapi_users.authentication import AuthenticationBackend, BearerTransport, JWTStrategy
 from fastapi_users.db import SQLAlchemyUserDatabase
 from fastapi_users.jwt import decode_jwt, generate_jwt
@@ -32,6 +32,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
 from app.core.database import async_session_maker, get_async_session
+from app.core.login_rate_limiter import login_failure_limiter
+from app.core.password_policy import password_policy_violation
 from app.core.reset_password_rate_limiter import reset_password_limiter
 from app.models.oauth_account import OAuthAccount
 from app.models.user import User
@@ -80,8 +82,37 @@ class UserManager(IntegerIDMixin, BaseUserManager[User, int]):
     reset_password_token_secret = settings.SECRET_KEY
     verification_token_secret = settings.SECRET_KEY
 
+    async def validate_password(
+        self, password: str, user: schemas.BaseUserCreate | models.UP
+    ) -> None:
+        """Enforce the length-only policy on registration and password reset.
+
+        Upstream's default accepts anything, so before this a 1-character password
+        could be set by calling the API directly (the frontend checked 8 chars).
+        """
+        reason = password_policy_violation(password)
+        if reason is not None:
+            raise exceptions.InvalidPasswordException(reason=reason)
+
     async def authenticate(self, credentials: OAuth2PasswordRequestForm) -> User | None:
-        """Override upstream authenticate() to guard empty-hash accounts.
+        """Password login, refused with 429 once an email has too many recent failures.
+
+        Security fix (review 2026-10-14): login had no brute-force protection. Failures
+        are counted per lowercased submitted email whether or not the account exists,
+        so the 429 discloses nothing about which emails are registered.
+        """
+        email_key = credentials.username.lower()
+        if login_failure_limiter.is_blocked(email_key):
+            raise HTTPException(
+                status_code=status.HTTP_429_TOO_MANY_REQUESTS, detail="LOGIN_RATE_LIMITED"
+            )
+        user = await self._verify_credentials(credentials)
+        if user is None:
+            login_failure_limiter.record(email_key)
+        return user
+
+    async def _verify_credentials(self, credentials: OAuth2PasswordRequestForm) -> User | None:
+        """Upstream authenticate(), guarded for empty-hash accounts.
 
         FLAWCHESS-BQ / FLAWCHESS-2A: Google-only and guest accounts store
         hashed_password="" (see app/services/guest_service.py lines 41 and

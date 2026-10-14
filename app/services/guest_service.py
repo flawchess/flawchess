@@ -8,13 +8,14 @@ their 30-day JWT tokens. Guest accounts have sentinel emails in the form
 import asyncio
 from uuid import uuid4
 
-from fastapi_users.exceptions import UserAlreadyExists
+from fastapi_users.exceptions import InvalidPasswordException, UserAlreadyExists
 from fastapi_users.password import PasswordHelper
 from sqlalchemy import func, select
 from sqlalchemy import update as sa_update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.password_policy import password_policy_violation
 from app.models.oauth_account import OAuthAccount
 from app.models.user import User
 from app.users import auth_backend, get_guest_jwt_strategy
@@ -81,10 +82,17 @@ async def promote_guest_with_password(
 
     Raises:
         ValueError: if the user is not a guest
+        InvalidPasswordException: if the password violates the password policy
         UserAlreadyExists: if the given email is already registered by another user
     """
     if not user.is_guest:
         raise ValueError("Not a guest user")
+
+    # This path hashes the password itself instead of going through
+    # UserManager.validate_password, so it must apply the same policy explicitly.
+    reason = password_policy_violation(password)
+    if reason is not None:
+        raise InvalidPasswordException(reason=reason)
 
     # Check email uniqueness before updating
     result = await session.execute(

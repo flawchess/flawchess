@@ -9,7 +9,7 @@ import sentry_sdk
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from fastapi.responses import RedirectResponse
 from fastapi_users import schemas as fapi_schemas
-from fastapi_users.exceptions import UserAlreadyExists
+from fastapi_users.exceptions import InvalidPasswordException, UserAlreadyExists
 from fastapi_users.jwt import decode_jwt, generate_jwt
 from httpx_oauth.oauth2 import GetAccessTokenError, OAuth2Token
 from sqlalchemy import func, update as sa_update
@@ -575,6 +575,12 @@ async def promote_guest_email(
         _updated_user, token = await guest_service.promote_guest_with_password(
             session, user, body.email, body.password
         )
+    except InvalidPasswordException as exc:
+        # Same detail shape as FastAPI-Users' /auth/register, so the SPA reads one format.
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail={"code": "REGISTER_INVALID_PASSWORD", "reason": exc.reason},
+        ) from None
     except UserAlreadyExists:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,

@@ -50,6 +50,8 @@ in `YYYY-MM-DD` (Europe/Zurich).
 
 - Signing in with Google can no longer hand your account to someone who registered your email address before you did. If Google links to an email/password account whose address was never confirmed, the old password is replaced and every existing session is logged out; you can set a new password with "Forgot password". Google sign-ins with an unconfirmed Google email are refused.
 - Resetting your password now logs out all other sessions.
+- Passwords must be 8 to 128 characters, now also checked by the server (the sign-up form already asked for 8). No other rules.
+- After 10 failed password logins for an email within 15 minutes, further logins for that email are paused until the window passes. Google sign-in and "Forgot password" keep working.
 
 ## [v2.24] Train Grading Integrity & One-Screen Reveal — 2026-10-09
 

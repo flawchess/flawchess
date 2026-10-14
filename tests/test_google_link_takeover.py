@@ -120,9 +120,7 @@ async def _get_user(email: str) -> User:
 
 async def _oauth_account_count(user_id: int) -> int:
     async with db_module.async_session_maker() as session:
-        result = await session.execute(
-            select(OAuthAccount).where(OAuthAccount.user_id == user_id)
-        )
+        result = await session.execute(select(OAuthAccount).where(OAuthAccount.user_id == user_id))
         return len(result.scalars().all())
 
 
