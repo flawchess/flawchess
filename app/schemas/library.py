@@ -21,7 +21,7 @@ from typing import Final, Literal
 from pydantic import BaseModel
 
 from app.schemas.normalization import TimeControlBucket
-from app.services.flaw_delta_zones import FlawDeltaMetric
+from app.services.flaw_delta_zones import FlawDeltaMetric, FlawPhaseMetric, FlawTempoMetric
 from app.services.tactic_delta_zones import TacticFamily, TacticSide
 from app.services.flaws_service import FlawSeverity, FlawTag, SeverityCounts
 
@@ -357,11 +357,8 @@ class FlawBullet(BaseModel):
     significant: bool
 
 
-# Quick 261014-pb9: tempo x phase crossed cells. Same spellings as the FlawDeltaMetric
-# tags so the frontend reuses its FLAW_GAP_META labels.
-FlawTempoMetric = Literal["low_clock", "hasty", "unrushed"]
-FlawPhaseMetric = Literal["opening", "middlegame", "endgame_phase"]
-
+# FlawTempoMetric / FlawPhaseMetric live in app.services.flaw_delta_zones (the crossed-cell
+# zone registry needs them and this module imports from there). Re-exported by import.
 # Cell order of FlawComparisonTc.tempo_phase_cells: phase-major (game order), tempo order
 # (Clock-card order) inside each phase.
 TEMPO_PHASE_TEMPOS: Final[tuple[FlawTempoMetric, ...]] = ("low_clock", "hasty", "unrushed")
@@ -377,9 +374,11 @@ class TempoPhaseCell(BaseModel):
 
     Counts only flaws carrying BOTH the tempo tag and the phase tag, on the same
     paired per-100-user-moves basis as FlawBullet (same CI, p-value, significance).
-    There is no benchmark zone for a crossed cell, so has_zone is always False and the
-    zone bounds stay 0. Flaws with NULL tempo (no clock data) are in no cell. Deliberately
-    NOT part of FLAW_DELTA_METRICS, which drives the benchmark zone registry.
+    Quick 261014-qj8: 8 of the 9 cells carry a pooled benchmark band from
+    TEMPO_PHASE_ZONES (has_zone True, symmetric zone bounds). low_clock x opening is
+    degenerate and has none (has_zone False, zone bounds 0). Flaws with NULL tempo (no
+    clock data) are in no cell. Deliberately NOT part of FLAW_DELTA_METRICS, which drives
+    the 12-bullet zone registry.
     """
 
     tempo: FlawTempoMetric
@@ -392,9 +391,9 @@ class TempoPhaseCell(BaseModel):
     p_value: float | None
     player_events: int
     opp_events: int
-    zone_lo: float = 0.0
-    zone_hi: float = 0.0
-    has_zone: bool = False
+    zone_lo: float
+    zone_hi: float
+    has_zone: bool
     significant: bool
 
 

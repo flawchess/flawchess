@@ -26,6 +26,9 @@ lane. Bands are centred on 0 because the D-14 significance gate tests the gap ag
 Sign convention: negative delta = fewer flaws than the opponent = good. No sign flip
 is stored; the UI draws lower (better) values on the LEFT (D-14 direction flip).
 
+The module also holds the crossed tempo x phase registry (TEMPO_PHASE_ZONES, quick
+261014-qj8) for the 3x3 heatmap cells, kept apart from the 12 bullets.
+
 This module is pure Python with no DB or I/O. All functions are synchronous
 and side-effect free.
 """
@@ -51,6 +54,12 @@ FlawDeltaMetric = Literal[
     "reversed",
     "squandered",
 ]
+
+# Quick 261014-pb9: tempo x phase crossed cells. Same spellings as the FlawDeltaMetric
+# tags so the frontend reuses its FLAW_GAP_META labels. Defined here (not in
+# app.schemas.library) because app.schemas.library imports this module.
+FlawTempoMetric = Literal["low_clock", "hasty", "unrushed"]
+FlawPhaseMetric = Literal["opening", "middlegame", "endgame_phase"]
 
 # Display / payload order of the 12 metrics: severity, tempo, phase, opportunity, impact.
 FLAW_DELTA_METRICS: Final[tuple[FlawDeltaMetric, ...]] = (
@@ -169,3 +178,68 @@ FLAW_DELTA_ZONES: Final[Mapping[FlawDeltaMetric, Mapping[ZoneTc, ZoneBand]]] = {
 def flaw_delta_zone(metric: FlawDeltaMetric, tc: TimeControlBucket) -> ZoneBand:
     """Return the typical-range band for a metric in a time control (D-08 stopgap applied)."""
     return FLAW_DELTA_ZONES[metric][ZONE_TC_FOR[tc]]
+
+
+# Quick 261014-qj8: benchmark bands for the crossed tempo x phase heatmap cells.
+#
+# Basis: the pre-239 section 5 basis (every eval'd game of a selected user, all TCs
+# pooled, no per-user cap, at least 20 games per user x (ELO, TC) cell), NOT the 239
+# full-analysis lane, which the owner rejected for flaw bands as noise-inflated
+# (239-ZONE-PROPOSAL.md ## Accepted). The pooled quartiles are rounded to the 0.01 grid,
+# then symmetric_band (D-15). One pooled band per cell, identical under both zone TCs
+# (blitz/bullet via ZONE_TC_FOR, D-08). Viability rule from chapter5 (IQR not degenerate
+# AND at least 50% of user-cells nonzero) passes 8 of 9 cells; low_clock x opening is
+# degenerate (2% nonzero) and has no band (None). The probe reproduces the live marginal
+# bands within data drift. Evidence:
+# .planning/quick/261014-qj8-benchmark-bands-for-the-tempo-x-phase-he/261014-qj8-PROBE.md
+# (2026-10-14).
+#
+# Deliberately separate from FLAW_DELTA_METRICS / FLAW_DELTA_ZONES, which drive the 12
+# bullets and the section 5 diff gate. Keys are (tempo, phase), phase-major.
+TEMPO_PHASE_ZONES: Final[
+    Mapping[tuple[FlawTempoMetric, FlawPhaseMetric], Mapping[ZoneTc, ZoneBand | None]]
+] = {
+    # Opening
+    ("low_clock", "opening"): {"rapid": None, "classical": None},
+    ("hasty", "opening"): {
+        "rapid": symmetric_band(-0.15, +0.07),
+        "classical": symmetric_band(-0.15, +0.07),
+    },
+    ("unrushed", "opening"): {
+        "rapid": symmetric_band(-0.15, +0.14),
+        "classical": symmetric_band(-0.15, +0.14),
+    },
+    # Middlegame
+    ("low_clock", "middlegame"): {
+        "rapid": symmetric_band(-0.02, +0.01),
+        "classical": symmetric_band(-0.02, +0.01),
+    },
+    ("hasty", "middlegame"): {
+        "rapid": symmetric_band(-0.17, +0.09),
+        "classical": symmetric_band(-0.17, +0.09),
+    },
+    ("unrushed", "middlegame"): {
+        "rapid": symmetric_band(-0.28, +0.22),
+        "classical": symmetric_band(-0.28, +0.22),
+    },
+    # Endgame
+    ("low_clock", "endgame_phase"): {
+        "rapid": symmetric_band(-0.06, +0.03),
+        "classical": symmetric_band(-0.06, +0.03),
+    },
+    ("hasty", "endgame_phase"): {
+        "rapid": symmetric_band(-0.08, +0.06),
+        "classical": symmetric_band(-0.08, +0.06),
+    },
+    ("unrushed", "endgame_phase"): {
+        "rapid": symmetric_band(-0.10, +0.09),
+        "classical": symmetric_band(-0.10, +0.09),
+    },
+}
+
+
+def tempo_phase_zone(
+    tempo: FlawTempoMetric, phase: FlawPhaseMetric, tc: TimeControlBucket
+) -> ZoneBand | None:
+    """Typical-range band of a crossed cell in a time control (D-08 stopgap), None if unbanded."""
+    return TEMPO_PHASE_ZONES[(tempo, phase)][ZONE_TC_FOR[tc]]

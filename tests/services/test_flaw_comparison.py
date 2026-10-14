@@ -34,6 +34,7 @@ from app.services.flaw_delta_zones import (
     FLAW_DELTA_ZONES,
     ZoneBand,
     flaw_delta_zone,
+    tempo_phase_zone,
 )
 from app.services.library_service import (
     FLAW_COMPARISON_GATE,
@@ -702,6 +703,7 @@ async def test_two_user_isolation(db_session: AsyncSession) -> None:
 _TEMPO_LOW_CLOCK, _TEMPO_HASTY, _TEMPO_UNRUSHED = 0, 1, 2
 _PHASE_OPENING, _PHASE_MIDDLEGAME, _PHASE_ENDGAME = 0, 1, 2
 _CELL_COUNT = 9
+_BANDED_CELL_COUNT = 8
 
 
 def _cell(tc_entry: Any, tempo: str, phase: str) -> Any:
@@ -710,7 +712,11 @@ def _cell(tc_entry: Any, tempo: str, phase: str) -> Any:
 
 @pytest.mark.asyncio
 async def test_tempo_phase_cells_shape_and_order(db_session: AsyncSession) -> None:
-    """Exactly 9 cells, phase-major, tempo order inside each phase, no zone (CONTEXT Data)."""
+    """Exactly 9 cells, phase-major, tempo order inside each phase; 8 carry the registry band.
+
+    Every cell is a zero-event cell here, so this also proves the zero-event return path
+    carries the band (quick 261014-qj8). low_clock x opening has none (has_zone False).
+    """
     for _ in range(FLAW_COMPARISON_GATE):
         g = await _seed_game(db_session, user_id=_TEST_USER)
         await _seed_analyzed(db_session, game=g)
@@ -724,10 +730,18 @@ async def test_tempo_phase_cells_shape_and_order(db_session: AsyncSession) -> No
         for phase in ("opening", "middlegame", "endgame_phase")
         for tempo in ("low_clock", "hasty", "unrushed")
     ]
+    entry = result.tcs[0]
+    banded = [c for c in cells if c.has_zone]
+    assert len(banded) == _BANDED_CELL_COUNT
     for c in cells:
-        assert c.has_zone is False
-        assert c.zone_lo == 0.0
-        assert c.zone_hi == 0.0
+        band = tempo_phase_zone(c.tempo, c.phase, entry.tc)
+        if band is None:
+            assert (c.tempo, c.phase) == ("low_clock", "opening")
+            assert c.has_zone is False
+            assert (c.zone_lo, c.zone_hi) == (0.0, 0.0)
+        else:
+            assert c.has_zone is True
+            assert (c.zone_lo, c.zone_hi) == (band.zone_lo, band.zone_hi)
 
 
 @pytest.mark.asyncio

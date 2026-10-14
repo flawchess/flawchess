@@ -61,7 +61,12 @@ from app.schemas.library import (
     FlawTempoMetric,
 )
 from app.services.best_move_candidates import classify_best_move, mover_color_for_ply
-from app.services.flaw_delta_zones import FLAW_DELTA_METRICS, FlawDeltaMetric, flaw_delta_zone
+from app.services.flaw_delta_zones import (
+    FLAW_DELTA_METRICS,
+    FlawDeltaMetric,
+    flaw_delta_zone,
+    tempo_phase_zone,
+)
 from app.services.score_confidence import (
     VERDICT_CI_Z_99,
     ci_excludes,
@@ -1501,9 +1506,20 @@ def _compute_bullets(rows: Sequence[Any], tc: TimeControlBucket) -> list[FlawBul
 
 
 def _build_tempo_phase_cell(
-    tempo: FlawTempoMetric, phase: FlawPhaseMetric, series: _PairedSeries
+    tempo: FlawTempoMetric,
+    phase: FlawPhaseMetric,
+    series: _PairedSeries,
+    tc: TimeControlBucket,
 ) -> TempoPhaseCell:
-    """Build one crossed TempoPhaseCell; mirrors _build_flaw_bullet without a zone band."""
+    """Build one crossed TempoPhaseCell; mirrors _build_flaw_bullet.
+
+    The band comes from tempo_phase_zone (quick 261014-qj8): None for the degenerate
+    low_clock x opening cell (has_zone False, zones 0.0), set on both return paths.
+    """
+    band = tempo_phase_zone(tempo, phase, tc)
+    zone_lo = band.zone_lo if band is not None else 0.0
+    zone_hi = band.zone_hi if band is not None else 0.0
+    has_zone = band is not None
     if series.player_total == 0 and series.opp_total == 0:
         # Zero-event cell: no flaw carries this tempo AND phase on either side.
         return TempoPhaseCell(
@@ -1517,6 +1533,9 @@ def _build_tempo_phase_cell(
             p_value=None,
             player_events=0,
             opp_events=0,
+            zone_lo=zone_lo,
+            zone_hi=zone_hi,
+            has_zone=has_zone,
             significant=False,
         )
     mean, p_value, ci_low, ci_high, significant = _paired_gap_test(series.deltas)
@@ -1532,15 +1551,19 @@ def _build_tempo_phase_cell(
         p_value=p_value,
         player_events=series.player_total,
         opp_events=series.opp_total,
+        zone_lo=zone_lo,
+        zone_hi=zone_hi,
+        has_zone=has_zone,
         significant=significant,
     )
 
 
-def _compute_tempo_phase_cells(rows: Sequence[Any]) -> list[TempoPhaseCell]:
+def _compute_tempo_phase_cells(rows: Sequence[Any], tc: TimeControlBucket) -> list[TempoPhaseCell]:
     """The 9 crossed tempo x phase cells of one TC, phase-major (quick 261014-pb9).
 
     Same paired per-100-user-moves machinery as the bullets, over the crossed COUNT
-    FILTER columns. Flaws with NULL tempo are counted in no cell.
+    FILTER columns. Flaws with NULL tempo are counted in no cell. Each cell carries its
+    pooled benchmark band for this TC (quick 261014-qj8).
     """
     cells: list[TempoPhaseCell] = []
     for phase in TEMPO_PHASE_PHASES:
@@ -1550,7 +1573,7 @@ def _compute_tempo_phase_cells(rows: Sequence[Any]) -> list[TempoPhaseCell]:
                 library_repository.tempo_phase_count_label("player", tempo, phase),
                 library_repository.tempo_phase_count_label("opp", tempo, phase),
             )
-            cells.append(_build_tempo_phase_cell(tempo, phase, series))
+            cells.append(_build_tempo_phase_cell(tempo, phase, series, tc))
     return cells
 
 
@@ -1580,7 +1603,7 @@ async def get_flaw_comparison(
        columns plus the tc column); sequential awaits only, never gather on the session.
     3. _bucket_rows_by_tc + _compute_bullets: mean + Wald-z CI per metric per TC,
        zone bounds from the per-zone-TC registry; also the 9 crossed tempo x phase
-       cells (_compute_tempo_phase_cells, no zone). Bullets are ALWAYS computed, also
+       cells (_compute_tempo_phase_cells, banded from TEMPO_PHASE_ZONES). Bullets are ALWAYS computed, also
        for below-gate TCs, so tiles can show rates (D-03); below_gate is flagged.
 
     IDOR guard (T-115-01): user_id is from current_active_user, never a request param.
@@ -1640,7 +1663,7 @@ async def get_flaw_comparison(
                 total_n=totals[tc],
                 below_gate=counts[tc] < FLAW_COMPARISON_GATE,
                 bullets=_compute_bullets(rows_by_tc.get(tc, []), tc),
-                tempo_phase_cells=_compute_tempo_phase_cells(rows_by_tc.get(tc, [])),
+                tempo_phase_cells=_compute_tempo_phase_cells(rows_by_tc.get(tc, []), tc),
             )
             for tc in LIBRARY_TC_ORDER
             if counts.get(tc)
