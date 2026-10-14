@@ -212,6 +212,30 @@ export function flawMetricCell(tcStats: FlawComparisonTc, metric: FlawDeltaMetri
   return bullet ? flawBulletToGapCell(bullet) : null;
 }
 
+const TEMPO_ADJECTIVE: Record<FlawTempoMetric, string> = {
+  low_clock: 'low-clock',
+  hasty: 'hasty',
+  unrushed: 'unrushed',
+};
+
+const PHASE_WORD: Record<FlawPhaseMetric, string> = {
+  opening: 'opening',
+  middlegame: 'middlegame',
+  endgame_phase: 'endgame',
+};
+
+/** Popover copy of a crossed cell: the two tag hints combined ("Hasty, middlegame"). */
+export function tempoPhaseMeta(tempo: FlawTempoMetric, phase: FlawPhaseMetric): FlawGapMeta {
+  const phaseWord = PHASE_WORD[phase];
+  const hint = `${FLAW_GAP_META[tempo].hint}, in the ${phaseWord}`;
+  return {
+    label: `${FLAW_GAP_META[tempo].label}, ${phaseWord}`,
+    hint,
+    definition: hint,
+    noun: `${TEMPO_ADJECTIVE[tempo]} ${phaseWord} flaws`,
+  };
+}
+
 /** The gap-bar cell of one tempo x phase combination; null when the payload carries no such cell. */
 export function tempoPhaseGapCell(
   tcStats: FlawComparisonTc,

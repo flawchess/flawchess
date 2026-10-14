@@ -11,7 +11,14 @@
  * renders neutral like a typical one, and the popover says it could be chance.
  */
 
-import { GAUGE_NEUTRAL, ZONE_DANGER, ZONE_SUCCESS } from '@/lib/theme';
+import {
+  GAP_HEATMAP_NEUTRAL_FILL,
+  GAP_HEATMAP_TINT_MAX_PERCENT,
+  GAP_HEATMAP_TINT_MIN_PERCENT,
+  GAUGE_NEUTRAL,
+  ZONE_DANGER,
+  ZONE_SUCCESS,
+} from '@/lib/theme';
 
 /** The benchmark band edge sits this far (in %) from the centre (bands are symmetric since D-15). */
 const GAP_BAND_HALF_POS = 25;
@@ -169,4 +176,56 @@ export function gapVerdictColor(verdict: GapVerdict | null): string {
   if (verdict === 'better') return ZONE_SUCCESS;
   if (verdict === 'worse') return ZONE_DANGER;
   return GAUGE_NEUTRAL;
+}
+
+export type GapHeatmapTint = 'better' | 'worse' | 'neutral';
+
+/** The verdicts that tint a heatmap cell: a significant gap, in either direction. */
+function isTintedVerdict(verdict: GapVerdict | null): verdict is 'better' | 'worse' {
+  return verdict === 'better' || verdict === 'worse';
+}
+
+/**
+ * The heatmap's tint scale: the largest |gap| among the SIGNIFICANT cells, 0 when none is.
+ * Scaling against the strongest significant cell, not every cell, is deliberate: a large
+ * non-significant gap (a rare combination with huge variance) would otherwise dim every
+ * real signal, and the strongest significant cell must come out clearly saturated.
+ */
+export function gapHeatmapScale(cells: readonly GapCell[]): number {
+  let scale = 0;
+  for (const c of cells) {
+    if (c.delta !== null && isTintedVerdict(effectiveVerdict(c))) {
+      scale = Math.max(scale, Math.abs(c.delta));
+    }
+  }
+  return scale;
+}
+
+/** Tint percent: linear from the floor to the max with |gap| / scale (max when scale is 0). */
+function heatmapPercent(delta: number, scale: number): number {
+  const share = scale <= 0 ? 1 : Math.min(1, Math.abs(delta) / scale);
+  return Math.round(
+    GAP_HEATMAP_TINT_MIN_PERCENT +
+      (GAP_HEATMAP_TINT_MAX_PERCENT - GAP_HEATMAP_TINT_MIN_PERCENT) * share,
+  );
+}
+
+/**
+ * Background of one heatmap cell. Only a cell with a better/worse effectiveVerdict (a
+ * significant gap, D-16 for zoneless cells) is tinted; every other cell, including a
+ * large non-significant gap and a null gap, is neutral.
+ */
+export function gapHeatmapFill(
+  cell: GapCell,
+  scale: number,
+): { tint: GapHeatmapTint; background: string } {
+  const verdict = effectiveVerdict(cell);
+  if (cell.delta === null || !isTintedVerdict(verdict)) {
+    return { tint: 'neutral', background: GAP_HEATMAP_NEUTRAL_FILL };
+  }
+  const percent = heatmapPercent(cell.delta, scale);
+  return {
+    tint: verdict,
+    background: `color-mix(in oklch, ${gapVerdictColor(verdict)} ${percent}%, transparent)`,
+  };
 }

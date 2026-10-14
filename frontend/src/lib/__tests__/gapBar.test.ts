@@ -1,7 +1,14 @@
 /** Phase 239 D-00a / D-00b / D-11 / D-14: the gap-bar math, words and the significance gate. */
 
 import { describe, expect, it } from 'vitest';
-import { GAUGE_NEUTRAL, ZONE_DANGER, ZONE_SUCCESS } from '@/lib/theme';
+import {
+  GAP_HEATMAP_NEUTRAL_FILL,
+  GAP_HEATMAP_TINT_MAX_PERCENT,
+  GAP_HEATMAP_TINT_MIN_PERCENT,
+  GAUGE_NEUTRAL,
+  ZONE_DANGER,
+  ZONE_SUCCESS,
+} from '@/lib/theme';
 import {
   GAP_CENTRE,
   GAP_EDGE_POS,
@@ -12,6 +19,8 @@ import {
   formatSignedGap,
   gapPosition,
   gapVerdict,
+  gapHeatmapFill,
+  gapHeatmapScale,
   gapVerdictColor,
   gapWords,
   isChanceGap,
@@ -200,5 +209,61 @@ describe('gapVerdictColor', () => {
     expect(gapVerdictColor('worse')).toBe(ZONE_DANGER);
     expect(gapVerdictColor('typical')).toBe(GAUGE_NEUTRAL);
     expect(gapVerdictColor(null)).toBe(GAUGE_NEUTRAL);
+  });
+});
+
+// ─── Heatmap tint (quick 261014-pb9) ──────────────────────────────────────────
+
+function zonelessCell(delta: number | null, significant: boolean): GapCell {
+  return cell({ delta, significant, hasZone: false, zoneLo: 0, zoneHi: 0 });
+}
+
+function tintBackground(color: string, percent: number): string {
+  return `color-mix(in oklch, ${color} ${percent}%, transparent)`;
+}
+
+describe('gapHeatmapScale', () => {
+  it('is the max |gap| over significant cells only', () => {
+    const cells = [
+      zonelessCell(-1.0, true),
+      zonelessCell(0.5, true),
+      zonelessCell(3.0, false),
+      zonelessCell(null, false),
+    ];
+    expect(gapHeatmapScale(cells)).toBe(1.0);
+  });
+
+  it('is 0 when no cell is significant', () => {
+    expect(gapHeatmapScale([zonelessCell(3.0, false), zonelessCell(null, false)])).toBe(0);
+  });
+});
+
+describe('gapHeatmapFill', () => {
+  it('saturates the strongest significant better cell in ZONE_SUCCESS', () => {
+    const fill = gapHeatmapFill(zonelessCell(-1.0, true), 1.0);
+    expect(fill.tint).toBe('better');
+    expect(fill.background).toBe(tintBackground(ZONE_SUCCESS, GAP_HEATMAP_TINT_MAX_PERCENT));
+  });
+
+  it('keeps a weak significant worse cell visibly tinted between the floor and the max', () => {
+    const fill = gapHeatmapFill(zonelessCell(0.1, true), 1.0);
+    expect(fill.tint).toBe('worse');
+    const match = /^color-mix\(in oklch, (.+) (\d+)%, transparent\)$/.exec(fill.background);
+    expect(match?.[1]).toBe(ZONE_DANGER);
+    const percent = Number(match?.[2]);
+    expect(percent).toBeGreaterThan(GAP_HEATMAP_TINT_MIN_PERCENT);
+    expect(percent).toBeLessThan(GAP_HEATMAP_TINT_MAX_PERCENT);
+  });
+
+  it('gives a non-significant cell with a large gap the neutral fill', () => {
+    const fill = gapHeatmapFill(zonelessCell(5.0, false), 1.0);
+    expect(fill.tint).toBe('neutral');
+    expect(fill.background).toBe(GAP_HEATMAP_NEUTRAL_FILL);
+  });
+
+  it('gives a null-delta cell the neutral fill', () => {
+    const fill = gapHeatmapFill(zonelessCell(null, false), 1.0);
+    expect(fill.tint).toBe('neutral');
+    expect(fill.background).toBe(GAP_HEATMAP_NEUTRAL_FILL);
   });
 });
