@@ -4,7 +4,7 @@ from datetime import datetime
 from typing import Any, List
 
 from fastapi_users.db import SQLAlchemyBaseUserTable
-from sqlalchemy import Boolean, DateTime, Integer, String, func, text
+from sqlalchemy import Boolean, DateTime, Index, Integer, String, func, text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -13,6 +13,13 @@ from app.models.base import Base
 
 class User(SQLAlchemyBaseUserTable[int], Base):
     __tablename__ = "users"
+    __table_args__ = (
+        # FastAPI-Users looks emails up case-insensitively and expects at most one
+        # match, but its own ix_users_email unique index is case-sensitive. This index
+        # makes "Victim@x.com" and "victim@x.com" impossible to hold at once on every
+        # write path, including concurrent registrations.
+        Index("ix_users_email_lower", text("lower(email)"), unique=True),
+    )
 
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
 

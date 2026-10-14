@@ -94,10 +94,11 @@ async def promote_guest_with_password(
     if reason is not None:
         raise InvalidPasswordException(reason=reason)
 
-    # Check email uniqueness before updating
-    result = await session.execute(
-        select(User).where(User.email == email)  # ty: ignore[invalid-argument-type]  # SQLAlchemy column comparisons return ColumnElement, not bool
-    )
+    # Check email uniqueness before updating. Case-insensitive, matching FastAPI-Users'
+    # get_by_email: an exact-match check let a guest promote to "Victim@x.com" beside
+    # "victim@x.com", after which every lookup of that email found two rows and the
+    # victim's login, reset and Google sign-in 500'd (security review 2026-10-14).
+    result = await session.execute(select(User).where(func.lower(User.email) == email.lower()))
     if result.unique().scalar_one_or_none() is not None:
         raise UserAlreadyExists()
 
@@ -169,8 +170,9 @@ async def promote_guest_with_google(
         raise ValueError("Not a guest user")
 
     # Check email uniqueness before updating — prevent silent account merge
+    # Case-insensitive for the same reason as promote_guest_with_password.
     result = await session.execute(
-        select(User).where(User.email == account_email)  # ty: ignore[invalid-argument-type]  # SQLAlchemy column comparisons return ColumnElement, not bool
+        select(User).where(func.lower(User.email) == account_email.lower())
     )
     existing = result.unique().scalar_one_or_none()
     if existing is not None and existing.id != user.id:
