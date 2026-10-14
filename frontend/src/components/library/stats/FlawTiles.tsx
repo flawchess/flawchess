@@ -1,4 +1,5 @@
 import { Card, CardBody } from '@/components/ui/card';
+import { MoveQualityIcon } from '@/components/icons/MoveQualityIcon';
 import { SEV_BLUNDER, SEV_MISTAKE } from '@/lib/theme';
 import {
   FLAW_GAP_META,
@@ -52,12 +53,15 @@ function FlawTile({ metric, tcStats, analyzedGate }: FlawTileProps) {
     <Card data-testid={testId}>
       <CardBody className="flex flex-col gap-2">
         <div>
-          <div
-            className="text-3xl font-bold leading-tight tabular-nums"
-            style={{ color: TILE_COLORS[metric] }}
-            data-testid={`${testId}-rate`}
-          >
-            {formatRate(bullet.player_rate)}
+          <div className="flex items-center gap-2">
+            <MoveQualityIcon quality={metric} className="h-7 w-7 shrink-0" />
+            <div
+              className="text-3xl font-bold leading-tight tabular-nums"
+              style={{ color: TILE_COLORS[metric] }}
+              data-testid={`${testId}-rate`}
+            >
+              {formatRate(bullet.player_rate)}
+            </div>
           </div>
           <div className="text-sm font-bold uppercase tracking-wide text-muted-foreground">
             {meta.label} / 100 moves
