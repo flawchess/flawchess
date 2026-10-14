@@ -34,7 +34,7 @@ const COPY_NO_TACTIC_DATA = 'No tactic data for this time control yet.';
 const SECTION_HEADING_CLASS = 'font-brand text-lg font-semibold text-foreground';
 const FLAW_STATS_TITLE = 'Flaw Stats';
 const COPY_VS_OPPONENTS_INTRO =
-  "Your flaws per 100 of your moves, next to your opponents' in the same games. " +
+  "Your flaws (blunders and mistakes) per 100 of your moves, next to your opponents' in the same games. " +
   'The grey band is the gap most players at your level have against their opponents.';
 const COPY_TACTICS_INTRO =
   'Tactics you missed (your opponent left one on the board) and tactics you allowed ' +
