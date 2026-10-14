@@ -63,7 +63,7 @@ function FlawTile({ metric, tcStats, analyzedGate }: FlawTileProps) {
               {formatRate(bullet.player_rate)}
             </div>
           </div>
-          <div className="text-sm font-bold uppercase tracking-wide text-muted-foreground">
+          <div className="text-sm font-bold text-muted-foreground">
             {meta.label} / 100 moves
           </div>
         </div>
