@@ -382,6 +382,7 @@ def override_get_async_session(test_engine):
     import app.core.database as db_module
     import app.middleware.last_activity as activity_module
     import app.repositories.llm_log_repository as llm_log_repo_module
+    import app.routers.auth as auth_router_module
     import app.services.eval_queue_service as eval_queue_module
     import app.users as users_module
     from app.core.database import get_async_session, get_engine
@@ -400,11 +401,15 @@ def override_get_async_session(test_engine):
     # captured at module import time.  Patch the service module binding so enqueue
     # calls during router tests hit the test DB.
     original_eval_queue_session_maker = eval_queue_module.async_session_maker
+    # google_callback writes last_login through its own import-time binding. Unpatched,
+    # the Google-link tests passed locally against the dev DB but failed in CI (no dev DB).
+    original_auth_router_session_maker = auth_router_module.async_session_maker
     db_module.async_session_maker = test_session_maker
     users_module.async_session_maker = test_session_maker
     activity_module.async_session_maker = test_session_maker
     llm_log_repo_module.async_session_maker = test_session_maker
     eval_queue_module.async_session_maker = test_session_maker
+    auth_router_module.async_session_maker = test_session_maker
 
     async def _test_session_generator():
         async with test_session_maker() as session:
@@ -426,6 +431,7 @@ def override_get_async_session(test_engine):
     activity_module.async_session_maker = original_activity_session_maker
     llm_log_repo_module.async_session_maker = original_llm_log_repo_session_maker
     eval_queue_module.async_session_maker = original_eval_queue_session_maker
+    auth_router_module.async_session_maker = original_auth_router_session_maker
 
 
 @pytest.fixture(scope="session", autouse=True)
