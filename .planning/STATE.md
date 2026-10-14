@@ -4,8 +4,8 @@ milestone: v2.24
 current_phase: 239
 status: completed
 stopped_at: Phase 239 complete — all phases complete
-last_updated: "2026-10-13T02:52:05.823Z"
-state_head: b085fa14a50e4094d8abfd030af08dc1b20a4222
+last_updated: "2026-10-14T16:35:11.200Z"
+state_head: 68c5a3caddf60ccca72fa73a8f35fe81a31b7ff7
 progress:
   total_phases: 2
   completed_phases: 103
@@ -1026,6 +1026,7 @@ None active.
 | 136 | Endgame page: parity formula 'wins + ½draws', score span marker + dim on Score with vs. without endgame bars | 2026-10-11 | 37c839f86 | — |
 | 261012-a6m | Stockfish engine arrows: best star on top line, graded quality badges + drop-proportional transparency on secondary lines (Analysis + Train step/free-play) | 2026-10-12 | ed23039f9 | [261012-a6m-engine-arrow-move-quality-badges-best-st](./quick/261012-a6m-engine-arrow-move-quality-badges-best-st/) |
 | 261012-qiz | Endgame insights: dedupe concurrent LLM generations (advisory lock) + 24h regen cooldown | 2026-10-12 | abb4d710e | [261012-qiz-endgame-insights-dedupe-concurrent-llm-g](./quick/261012-qiz-endgame-insights-dedupe-concurrent-llm-g/) |
+| 261014-pb9 | Library Stats: 3x3 tempo x game-phase flaw gap heatmap (you vs opponents) | 2026-10-14 | 68c5a3cad | [261014-pb9-library-stats-3x3-tempo-x-game-phase-fla](./quick/261014-pb9-library-stats-3x3-tempo-x-game-phase-fla/) |
 
 ## Deferred Items
 
