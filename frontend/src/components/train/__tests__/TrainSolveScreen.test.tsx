@@ -38,7 +38,7 @@ import {
   TRAIN_FOCUS_BADGE_LIT_OPACITY,
 } from '@/lib/theme';
 import { buildAnalysisFenUrl, buildGameAnalysisUrl } from '@/lib/analysisUrl';
-import { HILDA_ID, introStepCount } from '@/lib/trainBotCopy';
+import { HILDA_ID, STEPPER_COPY_MAX_CHARS, introStepCount } from '@/lib/trainBotCopy';
 import { PERSONA_REGISTRY } from '@/lib/personas/personaRegistry';
 import { useTrainSession } from '@/hooks/useTrainSession';
 import {
@@ -51,6 +51,7 @@ import type { GradeResult, TrainGradingEngine } from '@/hooks/useTrainGradingEng
 import { fenAfterUciMove } from '@/hooks/trainGradingSupport';
 import { waitForReveal } from './revealTestUtils';
 import { readTrainRevealCache, type CachedTrainReveal } from '@/lib/trainRevealCache';
+import { animateScrollTop } from '@/lib/animatedScroll';
 import type {
   ReviewRequest,
   SolveRequest,
@@ -719,11 +720,13 @@ async function renderScreen(
   session: TrainSessionResponse = makeSession(),
   restoredSolve: CachedTrainReveal | null = null,
   gradeMoveOverride?: TrainGradingEngine['gradeMove'],
+  // Phase 240 plan 04: a case that rewrites the train settings cache mid-reveal
+  // (the part latch) needs the client the screen runs against.
+  queryClient: QueryClient = new QueryClient({
+    defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+  }),
 ) {
   composeOrResumeSession.mockResolvedValue(session);
-  const queryClient = new QueryClient({
-    defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
-  });
   const result = render(
     <MemoryRouter>
       <QueryClientProvider client={queryClient}>
@@ -4103,6 +4106,240 @@ describe('TrainSolveScreen — progress, last move, grading state, engine failur
       await waitFor(() => expect(screen.getByTestId('train-bot-verdict-line')).not.toBeNull());
       expect(screen.queryByTestId('train-tour-overlay')).toBeNull();
       expect(screen.queryByTestId('train-bot-walkthrough')).toBeNull();
+    });
+
+    // ── Parts 2 and 3 (plan 04): consecutive reveals, per-part counters ──
+    const stepCount = (): string => screen.getByTestId('train-tour-step-count').textContent ?? '';
+    const treeSpotlit = (): boolean => spotlit(screen.getByTestId('train-tree-tour-ring'));
+    // The board row's spotlight sits on an ancestor of the board.
+    const boardSpotlit = (): boolean => {
+      for (let el = screen.getByTestId('chessboard').parentElement; el !== null; el = el.parentElement) {
+        if (spotlit(el)) return true;
+      }
+      return false;
+    };
+    const ANALYZE_GAME_COPY =
+      'The Analyze button opens the whole game one move before the mistake, so you can see how you got there.';
+    const ANALYZE_POSITION_COPY = 'The Analyze button opens this position on the analysis board.';
+
+    it('stage 1 on a phone: chips (1 / 2, not spotlit), then stepping (2 / 2, list spotlit); the puzzle stays and nothing is stamped', async () => {
+      matchMediaMatches = false;
+      await openReveal(1);
+      await waitFor(() => expect(screen.getByTestId('train-bot-walkthrough')).not.toBeNull());
+      expect(tourCopyText()).toContain('The Move, Best, and Game chips are the lines, one per move. Tap one to focus it on the board.');
+      expect(stepCount()).toBe('1 / 2');
+      expect(spotlit(screen.getByTestId('train-line-chips'))).toBe(false);
+      expect(spotlit(screen.getByTestId('train-verdict-strip-root'))).toBe(false);
+      expect(treeSpotlit()).toBe(false);
+
+      clickBarNext();
+      await waitFor(() => expect(tourCopyText()).toContain('Step through the focused line with'));
+      expect(stepCount()).toBe('2 / 2');
+      expect(treeSpotlit()).toBe(true);
+      // Phone variant, with the bar's own icons instead of glyphs or tokens.
+      expect(tourCopyText()).toContain('in the bar, or tap a move in the list.');
+      expect(screen.getByTestId('train-tour-icon-back')).not.toBeNull();
+      expect(screen.getByTestId('train-tour-icon-forward')).not.toBeNull();
+      expect(tourCopyText()).not.toContain('{');
+      expect(screen.getByTestId('train-reveal')).not.toBeNull();
+      expect(stampOnboarding).not.toHaveBeenCalled();
+      expect(nextFlush).not.toHaveBeenCalled();
+    });
+
+    it('stage 1: the bar Next on the stepping step stamps reveal_tour_2 exactly once and leaves the puzzle', async () => {
+      await openReveal(1);
+      await waitFor(() => expect(screen.getByTestId('train-bot-walkthrough')).not.toBeNull());
+      clickBarNext();
+      await waitFor(() => expect(stepCount()).toBe('2 / 2'));
+      clickBarNext();
+      await waitFor(() => expect(stampOnboarding).toHaveBeenCalledTimes(1));
+      expect(stampOnboarding).toHaveBeenCalledWith('reveal_tour_2');
+      await waitFor(() => expect(nextFlush).toHaveBeenCalledTimes(1));
+    });
+
+    it('stage 1 on desktop: the stepping copy is the desktop variant (under the board, the arrow keys)', async () => {
+      matchMediaMatches = true;
+      await openReveal(1);
+      await waitFor(() => expect(screen.getByTestId('train-bot-walkthrough')).not.toBeNull());
+      expect(stepCount()).toBe('1 / 2');
+      clickBarNext();
+      await waitFor(() => expect(stepCount()).toBe('2 / 2'));
+      expect(tourCopyText()).toContain('under the board, the arrow keys, or a tap on a move in the list.');
+      expect(tourCopyText()).not.toContain('in the bar');
+    });
+
+    it('stage 2 on a phone: sidelines 1 / 3, understand 2 / 3, Analyze 3 / 3; the bar Next on Analyze stamps reveal_tour_3 once', async () => {
+      matchMediaMatches = false;
+      await openReveal(2);
+      await waitFor(() => expect(screen.getByTestId('train-bot-walkthrough')).not.toBeNull());
+      expect(tourCopyText()).toContain('Move a piece to try your own idea: it branches off as a sideline.');
+      expect(tourCopyText()).toContain('in the bar takes you back to the puzzle position.');
+      expect(screen.getByTestId('train-tour-icon-rewind')).not.toBeNull();
+      expect(stepCount()).toBe('1 / 3');
+      expect(boardSpotlit()).toBe(true);
+      expect(treeSpotlit()).toBe(false);
+
+      clickBarNext();
+      await waitFor(() => expect(tourCopyText()).toContain("Don't just memorize the answer."));
+      expect(stepCount()).toBe('2 / 3');
+      expect(treeSpotlit()).toBe(true);
+      expect(boardSpotlit()).toBe(false);
+
+      clickBarNext();
+      await waitFor(() => expect(tourCopyText()).toBe(ANALYZE_GAME_COPY));
+      expect(stepCount()).toBe('3 / 3');
+      expect(spotlit(screen.getByTestId('train-reveal-action-bar'))).toBe(false);
+      expect(stampOnboarding).not.toHaveBeenCalled();
+      expect(nextFlush).not.toHaveBeenCalled();
+
+      clickBarNext();
+      await waitFor(() => expect(stampOnboarding).toHaveBeenCalledTimes(1));
+      expect(stampOnboarding).toHaveBeenCalledWith('reveal_tour_3');
+      await waitFor(() => expect(nextFlush).toHaveBeenCalledTimes(1));
+    });
+
+    it('stage 2: the Analyze button on the Analyze step stamps reveal_tour_3 exactly once and takes the Analyze exit', async () => {
+      await openReveal(2);
+      await waitFor(() => expect(screen.getByTestId('train-bot-walkthrough')).not.toBeNull());
+      clickBarNext();
+      clickBarNext();
+      await waitFor(() => expect(stepCount()).toBe('3 / 3'));
+      fireEvent.click(screen.getByTestId('btn-train-analyze'));
+      await waitFor(() => expect(stampOnboarding).toHaveBeenCalledTimes(1));
+      expect(stampOnboarding).toHaveBeenCalledWith('reveal_tour_3');
+      // The Analyze exit (not Next) ran: the reveal snapshot is cached for Back, and
+      // no Next flush fired.
+      expect(readTrainRevealCache()).not.toBeNull();
+      expect(nextFlush).not.toHaveBeenCalled();
+    });
+
+    it('stage 2: the Analyze step names the position when the puzzle has no game of the user', async () => {
+      // A red herring's game belongs to another user: Analyze opens just the position.
+      await openReveal(2, { puzzle_type: 'herring', source: 'red_herring' });
+      await waitFor(() => expect(screen.getByTestId('train-bot-walkthrough')).not.toBeNull());
+      clickBarNext();
+      clickBarNext();
+      await waitFor(() => expect(stepCount()).toBe('3 / 3'));
+      expect(tourCopyText()).toBe(ANALYZE_POSITION_COPY);
+    });
+
+    it('stage 2 on desktop: the sidelines copy is the desktop variant (rewind or Home)', async () => {
+      matchMediaMatches = true;
+      await openReveal(2);
+      await waitFor(() => expect(screen.getByTestId('train-bot-walkthrough')).not.toBeNull());
+      expect(stepCount()).toBe('1 / 3');
+      expect(tourCopyText()).toContain('or Home takes you back to the puzzle position.');
+      expect(tourCopyText()).not.toContain('in the bar');
+    });
+
+    it('stage 1: a "Move = Best" reveal appends that sentence to the chips copy, within the budget', async () => {
+      matchMediaMatches = false;
+      await openReveal(1); // played e2e4 = the engine's best move: the Move and Best chips merge
+      await waitFor(() => expect(tourCopyText()).toContain('"Move = Best" means you found the best move.'));
+      expect(screen.getByTestId('train-chip-your').textContent).toContain('Best');
+      expect(tourCopyText().length).toBeLessThanOrEqual(STEPPER_COPY_MAX_CHARS);
+    });
+
+    it('stage 1: a "Move = Game" reveal appends that sentence to the chips copy, within the budget', async () => {
+      matchMediaMatches = false;
+      // The game move (d2d4) is the move played here, and is not the engine's best.
+      revealPuzzle.mockResolvedValueOnce({
+        game_id: 100,
+        ply: 20,
+        fen: START_FEN,
+        played_in_game_san: 'd4',
+        played_in_game_move_uci: 'd2d4',
+        puzzle_type: 'sharp',
+        source: 'sr_item',
+        has_tactic_lines: false,
+      });
+      getSettings.mockResolvedValue(makeSettings({ reveal_tour_stage: 1 }));
+      await renderScreen(makePuzzle());
+      fireEvent.click(screen.getByTestId('btn-train-guess-critical'));
+      await act(async () => {
+        fireEvent.click(screen.getByTestId('drop-d2d4'));
+      });
+      await waitFor(() => expect(tourCopyText()).toContain('"Move = Game" means you played the game move.'));
+      expect(tourCopyText()).not.toContain('"Move = Best"');
+      expect(tourCopyText().length).toBeLessThanOrEqual(STEPPER_COPY_MAX_CHARS);
+    });
+
+    it('the board arrow set is identical across the steps of part 2 and of part 3: the chip focus is never touched', async () => {
+      for (const stage of [1, 2] as const) {
+        await openReveal(stage);
+        await waitFor(() => expect(screen.getByTestId('train-bot-walkthrough')).not.toBeNull());
+        const board = screen.getByTestId('chessboard');
+        const firstArrows = board.getAttribute('data-arrow-ucis');
+        expect(firstArrows).not.toBe('');
+        const lastStep = stage === 1 ? 2 : 3;
+        for (let click = 1; click < lastStep; click += 1) {
+          clickBarNext();
+          await waitFor(() => expect(stepCount()).toBe(`${click + 1} / ${lastStep}`));
+          expect(board.getAttribute('data-arrow-ucis')).toBe(firstArrows);
+        }
+        cleanup();
+        stampOnboarding.mockClear();
+      }
+    });
+
+    // The phone scrolls the chips (part 2, step 1) and the list (part 2, step 2)
+    // into view between the pinned board and the fixed bottom bar.
+    describe('phone scroll to the tour target', () => {
+      let rectSpy: { mockRestore: () => void } | null = null;
+      afterEach(() => {
+        rectSpy?.mockRestore();
+        rectSpy = null;
+      });
+
+      /** Stubs the layout BEFORE the reveal mounts: the chips step is part 2's first
+       * step, so its scroll fires as soon as the verdict lands. */
+      function mockLayout(rects: { pinned: Partial<DOMRect>; chips: Partial<DOMRect> }): void {
+        const none = { top: 0, bottom: 0, height: 0 } as DOMRect;
+        rectSpy = vi.spyOn(Element.prototype, 'getBoundingClientRect').mockImplementation(function (this: Element) {
+          if (this.getAttribute('data-testid') === 'train-pinned-board') return rects.pinned as DOMRect;
+          if (this.getAttribute('data-tour-target') === 'chips') return rects.chips as DOMRect;
+          return none;
+        });
+      }
+
+      async function openChipsStepOnPhone(rects: { pinned: Partial<DOMRect>; chips: Partial<DOMRect> }): Promise<void> {
+        matchMediaMatches = false;
+        vi.mocked(animateScrollTop).mockClear();
+        mockLayout(rects);
+        await openReveal(1);
+        await waitFor(() => expect(tourCopyText()).toContain('Tap one to focus it'));
+      }
+
+      it('chips already on screen need no scroll', async () => {
+        // jsdom's viewport is 768px tall and no fixed bar is mounted from sm up.
+        await openChipsStepOnPhone({
+          pinned: { top: 0, bottom: 300, height: 300 },
+          chips: { top: 400, bottom: 480, height: 80 },
+        });
+        expect(vi.mocked(animateScrollTop)).not.toHaveBeenCalled();
+      });
+
+      it('chips below the fold scroll up just enough to clear the bottom edge', async () => {
+        await openChipsStepOnPhone({
+          pinned: { top: 0, bottom: 300, height: 300 },
+          chips: { top: 700, bottom: 780, height: 80 },
+        });
+        const scrollTween = vi.mocked(animateScrollTop);
+        await waitFor(() => expect(scrollTween).toHaveBeenCalledTimes(1));
+        // 780 (chips bottom) + 12 (gap) - 768 (viewport bottom), over the 700ms tween.
+        expect(scrollTween).toHaveBeenCalledWith(document.documentElement, 24, 700);
+      });
+
+      it('a target taller than the gap never scrolls its top behind the pinned block', async () => {
+        await openChipsStepOnPhone({
+          pinned: { top: 0, bottom: 300, height: 300 },
+          chips: { top: 350, bottom: 1200, height: 850 },
+        });
+        const scrollTween = vi.mocked(animateScrollTop);
+        await waitFor(() => expect(scrollTween).toHaveBeenCalledTimes(1));
+        // Capped at 350 (chips top) - 300 (pinned height) - 12 (gap).
+        expect(scrollTween).toHaveBeenCalledWith(document.documentElement, 38, 700);
+      });
     });
   });
 });
