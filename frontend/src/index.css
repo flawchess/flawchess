@@ -60,11 +60,6 @@
     --brand-brown-hover: #6B4226;
     --brand-brown-active: #6B4226;
     --brand-brown-highlight: #F0DBB9;
-    /* Bronze "brand glow": the exact value of FLAW_FIXED_GLOW and the Home
-       feature cards, reused verbatim by the Train tour spotlight (Phase 240
-       D-20). A keyframe can only read CSS, hence the vars. */
-    --brand-glow: rgba(205, 127, 50, 0.85);
-    --brand-glow-halo: rgba(205, 127, 50, 0.35);
     --charcoal: #161412;
     --charcoal-hover: #262220;
     /* SEED-161/F-20 housekeeping: hoisted from raw #1a1a1a literals in
@@ -350,14 +345,22 @@
    shifts when a step turns it on or off. Never combine with a Tailwind ring
    utility (ring is also a box-shadow and would overwrite the glow). The class
    is present only while its tour step is active, so the infinite loop stops
-   with the step; the reduced-motion block below makes it a static glow. */
+   with the step; the reduced-motion block below makes it a static glow.
+   Phase 240 UAT: gold (FLAWCHESS_ENGINE_ACCENT, the FlawChess engine card's
+   color) with a brighter halo, instead of the bronze brand glow, which sat
+   too close to the active chip's own bronze border. */
+.train-tour-spotlight {
+  --tour-glow: oklch(0.78 0.14 80);
+  --tour-glow-halo: oklch(0.78 0.14 80 / 0.6);
+}
+
 @keyframes train-tour-spotlight-pulse {
-  0%, 100% { box-shadow: 0 0 0 2px var(--brand-glow), 0 0 12px var(--brand-glow-halo); }
-  50%      { box-shadow: 0 0 0 2px var(--brand-glow), 0 0 28px 4px var(--brand-glow-halo); }
+  0%, 100% { box-shadow: 0 0 0 2px var(--tour-glow), 0 0 16px 2px var(--tour-glow-halo); }
+  50%      { box-shadow: 0 0 0 2px var(--tour-glow), 0 0 32px 8px var(--tour-glow-halo); }
 }
 
 .train-tour-spotlight {
-  box-shadow: 0 0 0 2px var(--brand-glow), 0 0 24px var(--brand-glow-halo);
+  box-shadow: 0 0 0 2px var(--tour-glow), 0 0 28px 6px var(--tour-glow-halo);
   animation: train-tour-spotlight-pulse 1.6s ease-in-out infinite;
 }
 
