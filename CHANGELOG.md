@@ -15,6 +15,9 @@ in `YYYY-MM-DD` (Europe/Zurich).
 
 ### Changed
 
+- Train: your first session asks less of you before you play. Two intro bubbles, then the guess. The first puzzle of your first session is one where only one move works, and a puzzle with several good moves shows up as puzzle 2 or 3, so the first results teach both cases.
+- Train: the walkthrough of the result screen is now split over your first three reveals, two or three short steps each, with a pulsing highlight on the part of the screen each step explains. The first result also explains what "only one" or "several" meant for that position. The reminder prompt waits until you have seen all three parts.
+- Train: your first finished session ends with a line on why practice matters, and the score screen no longer lists how many puzzles come back.
 - Library Stats: while fewer than 98% of the selected time control's games are analyzed, the coverage line at the top is highlighted and says the stats below will keep updating as analysis continues (guests see that only analyzed games are counted). Once analysis is complete it reads "All N games … are analyzed." Right after an import, before any game is analyzed, it shows "0 of N games analyzed" instead of only "No analyzed games". The analysis-in-progress banner is also easier to read on the dark theme.
 - Library Stats: the typical range for each flaw comparison is now measured on games of the selected time control, so bullet and blitz get their own ranges instead of the rapid one. Ranges are narrower in fast games and wider in classical, where flaw rates vary more between players.
 - Library Stats now compares you with your opponents in plain words: one gap bar per metric ("1.7 fewer" style), fewer flaws to the left, a grey typical range centred on zero, and the details behind the search icon.
