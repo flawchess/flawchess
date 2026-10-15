@@ -275,7 +275,7 @@ Locked design in SEED-200.
 
 **Depends on**: nothing in flight (builds on Phase 222 onboarding and Phase 237 reveal tour)
 **Requirements**: TBD (coverage contract = CONTEXT decisions from discuss-phase)
-**Plans:** 4/7 plans executed
+**Plans:** 5/7 plans executed
 **Status**: Planned
 
 Plans:
@@ -288,7 +288,7 @@ Plans:
 - [x] 240-04-PLAN.md — Frontend: tour parts 2 and 3 end to end, one part per reveal, abandon replay, the D-19 tour copy matrix
 
 **Wave 3** *(blocked on Wave 2 completion)*
-- [ ] 240-05-PLAN.md — Frontend: two-bubble intro; score screen rationale in line 1, no returning counts, sr_explained in any branch
+- [x] 240-05-PLAN.md — Frontend: two-bubble intro; score screen rationale in line 1, no returning counts, sr_explained in any branch
 
 **Wave 4** *(blocked on Wave 3 completion)*
 - [ ] 240-06-PLAN.md — Frontend: one shared pulsing bronze spotlight on every tour target, incl. chips row and phone bar
