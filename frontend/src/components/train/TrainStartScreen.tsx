@@ -233,11 +233,14 @@ function TrainHeader({
   isGuest,
   hasGames,
   feedbackAskDays,
+  sessionCompleted,
 }: {
   session: TrainSessionResponse | null;
   isGuest: boolean;
   hasGames: boolean;
   feedbackAskDays: number | null;
+  /** Today's session is done (the 'completed' landing state). */
+  sessionCompleted: boolean;
 }): ReactElement {
   const { data: settings } = useTrainSettings();
   const host = landingHost({
@@ -257,8 +260,10 @@ function TrainHeader({
   // Phase 240 UAT: the guest sign-up ask (sentence and buttons) waits until the
   // guest has completed a session, so they try Train before being asked to
   // sign up. `sr_explained_at` is stamped by the first completed session's
-  // score screen, warm-up sessions included.
-  const showSignupAsk = isGuest && settings != null && settings.sr_explained_at !== null;
+  // score screen, warm-up sessions included, but a reload around the end of
+  // the session skips that screen (and its stamp), so today's completed
+  // landing counts on its own.
+  const showSignupAsk = isGuest && (sessionCompleted || settings?.sr_explained_at != null);
   // Quick 261004-dta: on a phone the avatar + bubble pushed the streak card and
   // its Start button below the fold, so the bubble is phone-hidden. Tank's intro
   // (intro stepper not yet completed) keeps it there, and so do the sign-up and
@@ -429,6 +434,7 @@ export function TrainStartScreen({
           isGuest={isGuest}
           hasGames={hasGames}
           feedbackAskDays={feedbackAskDays}
+          sessionCompleted
         />
         <TrainStreakCard />
         <TrainScheduleSettings
@@ -460,11 +466,12 @@ export function TrainStartScreen({
       <TrainMedalDialogHost isGuest={isGuest} />
       <TrainReminderResurfaceBanner />
       <TrainHeader
-          session={session}
-          isGuest={isGuest}
-          hasGames={hasGames}
-          feedbackAskDays={feedbackAskDays}
-        />
+        session={session}
+        isGuest={isGuest}
+        hasGames={hasGames}
+        feedbackAskDays={feedbackAskDays}
+        sessionCompleted={false}
+      />
       <TrainStreakCard
         action={
           <Button

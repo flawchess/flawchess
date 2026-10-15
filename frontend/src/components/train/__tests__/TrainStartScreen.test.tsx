@@ -546,6 +546,20 @@ describe('TrainStartScreen — 224 UAT round 2: no warm-up info card, guest sign
     expect(screen.getByTestId('btn-signup-free-train-landing')).not.toBeNull();
   });
 
+  // Phase 240 UAT: a reload around the end of the session skips the score
+  // screen and its sr_explained stamp; today's completed landing still counts.
+  it('guest: a completed session today shows the ask even without the sr_explained stamp', () => {
+    mockTrainSettingsData = { ...mockTrainSettingsData, ...SESSION_COMPLETED, sr_explained_at: null };
+    renderScreen({
+      isGuest: true,
+      session: { ...BASE_SESSION, puzzle_count: 6, solved_count: 6 },
+      sessionScore: 6,
+    });
+    expect(screen.getByTestId('train-landing-signup-ask')).not.toBeNull();
+    expect(screen.getByTestId('btn-signup-free-train-landing')).not.toBeNull();
+    expect(screen.getByTestId('train-landing-host').className).not.toContain('max-sm:hidden');
+  });
+
   it('Phase 240 UAT: guest who has not completed a session (first visit, or tour done mid-session): no sign-up sentence or buttons', () => {
     renderScreen({ isGuest: true, session: { ...BASE_SESSION, is_warmup: true } });
     expect(screen.queryByTestId('train-landing-signup-ask')).toBeNull();
