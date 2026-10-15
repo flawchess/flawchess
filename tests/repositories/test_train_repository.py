@@ -44,7 +44,7 @@ import dataclasses
 import datetime
 import uuid
 from collections.abc import Sequence
-from typing import Literal
+from typing import Literal, get_args
 
 import pytest
 from sqlalchemy import delete, func, select, update
@@ -61,7 +61,7 @@ from app.models.game_position import GamePosition
 from app.models.herring_pool import HerringPool
 from app.models.train_settings import TrainSettings
 from app.repositories import train_repository
-from app.schemas.train import SolveRecheck
+from app.schemas.train import OnboardingStep, SolveRecheck
 from app.services import sharp_filler
 from app.services.sharp_filler import SharpPuzzle
 from app.services.flaws_service import classify_severity
@@ -4013,6 +4013,48 @@ async def test_upsert_settings_leaves_onboarding_seen_unchanged(db_session: Asyn
     assert row.intro_seen_at == stamped_at
     assert row.reveal_tour_stage == 2
     assert row.sr_explained_at == stamped_at
+
+
+@pytest.mark.asyncio
+async def test_stamp_onboarding_step_reveal_tour_forward_only(db_session: AsyncSession) -> None:
+    """Phase 240 (D-09): stamp_onboarding_step with reveal_tour_1..3 advances
+    reveal_tour_stage in order, ignores an out-of-order step and a replay, never
+    moves the stage backwards, and never writes a timestamp column."""
+    await ensure_test_user(db_session, _USER_ID)
+
+    async def stamp(step: OnboardingStep) -> int:
+        row = await train_repository.stamp_onboarding_step(
+            db_session, user_id=_USER_ID, step=step, now_utc=_PROGRESS_NOW
+        )
+        assert row.intro_seen_at is None
+        assert row.sr_explained_at is None
+        return row.reveal_tour_stage
+
+    # Out of order from stage 0: parts 2 and 3 match zero rows.
+    assert await stamp("reveal_tour_2") == 0
+    assert await stamp("reveal_tour_3") == 0
+    # In order.
+    assert await stamp("reveal_tour_1") == 1
+    assert await stamp("reveal_tour_3") == 1  # still skips a part
+    assert await stamp("reveal_tour_2") == 2
+    # Replays never move it.
+    assert await stamp("reveal_tour_2") == 2
+    assert await stamp("reveal_tour_3") == 3
+    # Never backwards.
+    assert await stamp("reveal_tour_1") == 3
+    assert await stamp("reveal_tour_2") == 3
+    assert await stamp("reveal_tour_3") == 3
+
+
+def test_onboarding_step_dicts_partition_the_literal() -> None:
+    """Phase 240 (D-09 / T-240-02): the timestamp-step dict and the tour-stage
+    dict are disjoint and together cover every OnboardingStep member, so no step
+    can fall through `stamp_onboarding_step` unhandled."""
+    timestamp_steps = set(train_repository._ONBOARDING_COLUMNS)
+    tour_steps = set(train_repository._REVEAL_TOUR_TARGET_STAGE)
+
+    assert timestamp_steps.isdisjoint(tour_steps)
+    assert timestamp_steps | tour_steps == set(get_args(OnboardingStep))
 
 
 @pytest.mark.asyncio
