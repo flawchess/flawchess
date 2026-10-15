@@ -92,14 +92,15 @@ import {
   RECHECK_COPY,
   HILDA_ID,
   introStepCount,
-  WALKTHROUGH_STEP_COUNT,
   dropNudgeCopy,
   introCopy,
   movePromptCopy,
   pickPuzzleHost,
   promptCopy,
   verdictCopy,
-  walkthroughCopy,
+  isRevealTourDone,
+  tourAnswerKind,
+  tourStepCopy,
 } from '@/lib/trainBotCopy';
 import type {
   IntroStep,
@@ -983,11 +984,11 @@ export function TrainSolveScreen({
     [analyzeOpens, puzzle.game_id, puzzle.ply, puzzle.fen, puzzle.side_to_move],
   );
 
-  // Phase 222 (D-24): the first-reveal walkthrough — step state, the bar-Next
-  // routing, the phone overlay's hidden flag, the phone scroll-to-target effect
-  // and the leave-stamp all live in the hook; this component only reads
-  // `activeStep` / `target` (the strip, board-row, list and bar rings) and
-  // threads the handlers through.
+  // Phase 222 (D-24), split by Phase 240 (D-06): the first-reveal tour, one part
+  // per reveal. The part latch, step state, the bar-Next routing, the phone
+  // overlay's hidden flag, the phone scroll-to-target effect and the leave-stamp
+  // all live in the hook; this component only reads `activeStep` / `target`
+  // (the strip, board-row, list and bar rings) and threads the handlers through.
   // Phase 237 plan 10 (D-09): the tour explains "Move = Best" / "Move = Game" only
   // when that merged chip is actually on screen: the Move chip's second role.
   const mergedChip = useMemo<WalkthroughContext['mergedChip']>(() => {
@@ -1000,6 +1001,11 @@ export function TrainSolveScreen({
     analyzeOpens,
     mergedChip,
     isDesktop,
+    // With no verdict the tour is inactive, so the 'soft' fallback is never shown.
+    answerKind: tourAnswerKind(verdict?.puzzle_type ?? 'soft'),
+    // A reveal restored after the Analyze round trip is the one the user already
+    // saw: it never starts a tour part (Phase 240 D-07).
+    isRestored: restoredSolve !== null,
     screenRef,
     pinnedRef,
     stamp,
@@ -1023,9 +1029,9 @@ export function TrainSolveScreen({
     walkthrough.activeStep === null || tourPersona === undefined ? null : (
       <TrainTourOverlay
         persona={tourPersona}
-        copy={walkthroughCopy(walkthrough.activeStep, walkthrough.context).copy}
-        step={walkthrough.activeStep}
-        stepCount={WALKTHROUGH_STEP_COUNT}
+        copy={tourStepCopy(walkthrough.activeStep, walkthrough.context).copy}
+        step={walkthrough.stepIndex}
+        stepCount={walkthrough.stepCount}
         hidden={walkthrough.overlayHidden}
         onReopen={walkthrough.reopen}
       />
@@ -1685,9 +1691,9 @@ export function TrainSolveScreen({
   // (`puzzle.position` — Math.random, not seeded, not persisted; a reload may
   // recast, which D-02 accepts). Phase 237 UAT: any persona can host, and the
   // host also speaks the verdict below. Hilda is excluded unless the settings
-  // confirm the first-reveal tour was already seen (still loading counts as
-  // pending), since she narrates that tour herself.
-  const tourMaybePending = settings?.reveal_walkthrough_seen_at == null;
+  // confirm the whole three-part tour is done (still loading counts as pending),
+  // since she narrates whichever part is due.
+  const tourMaybePending = settings === undefined || !isRevealTourDone(settings.reveal_tour_stage);
   // eslint-disable-next-line react-hooks/exhaustive-deps -- `puzzle.position` is intentionally NOT read inside the callback: it exists purely to re-run the draw (a fresh Math.random) on every puzzle transition, per D-02. `tourMaybePending` is read at that moment only, so a settings load mid-puzzle never recasts the host.
   const bot = useMemo(() => pickPuzzleHost(tourMaybePending), [puzzle.position]);
 

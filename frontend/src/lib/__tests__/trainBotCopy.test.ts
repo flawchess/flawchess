@@ -22,11 +22,11 @@ import {
   STEPPER_COPY_MAX_CHARS,
   TANK_ID,
   LANDING_HILDA_HANDOFF,
-  WALKTHROUGH_STEP_COUNT,
   dropNudgeCopy,
   introCopy,
   introStepCount,
   introSteps,
+  isRevealTourDone,
   landingHost,
   lookCloserCopy,
   movePromptCopy,
@@ -35,10 +35,13 @@ import {
   promptCopy,
   returnPhrase,
   scoreBubbleCopy,
+  tourAnswerKind,
+  tourPartForStage,
+  tourPartSteps,
+  tourStepCopy,
   verdictClauseParts,
   verdictCopy,
   verdictStripLine,
-  walkthroughCopy,
 } from '@/lib/trainBotCopy';
 import type {
   IntroStep,
@@ -46,7 +49,6 @@ import type {
   ScoreBubbleOutcome,
   TrainCopyAudience,
   WalkthroughContext,
-  WalkthroughStep,
 } from '@/lib/trainBotCopy';
 import { PERSONA_REGISTRY, personaForId } from '@/lib/personas/personaRegistry';
 import type { PersonaId } from '@/lib/personas/personaRegistry';
@@ -669,96 +671,74 @@ describe('returnPhrase — D-03 games-less warm-up tail audience branch (Phase 2
   });
 });
 
-describe('walkthroughCopy', () => {
-  const BASE_CTX: WalkthroughContext = { analyzeOpens: 'game', mergedChip: null, isDesktop: false };
-  const STEPS: WalkthroughStep[] = [0, 1, 2, 3, 4, 5];
-  const ALL_CONTEXTS: WalkthroughContext[] = [];
-  for (const analyzeOpens of ['game', 'position'] as const) {
-    for (const mergedChip of [null, 'best', 'game'] as const) {
-      for (const isDesktop of [false, true]) {
-        ALL_CONTEXTS.push({ analyzeOpens, mergedChip, isDesktop });
-      }
-    }
-  }
+describe('reveal tour parts (Phase 240)', () => {
+  const BASE_CTX: WalkthroughContext = {
+    analyzeOpens: 'game',
+    mergedChip: null,
+    isDesktop: false,
+    answerKind: 'sharp',
+  };
 
-  it('the six steps map to verdict, chips, tree, board, lines, bar', () => {
-    expect(WALKTHROUGH_STEP_COUNT).toBe(6);
-    expect(STEPS.map((step) => walkthroughCopy(step, BASE_CTX).spotlightTarget)).toEqual([
-      'verdict',
-      'chips',
-      'tree',
-      'board',
-      'lines',
-      'bar',
+  it('the stage picks the part due: 0, 1, 2 map to parts, 3 means done', () => {
+    expect([0, 1, 2, 3].map((stage) => tourPartForStage(stage as 0 | 1 | 2 | 3))).toEqual([0, 1, 2, null]);
+    expect([0, 1, 2, 3].map((stage) => isRevealTourDone(stage as 0 | 1 | 2 | 3))).toEqual([
+      false,
+      false,
+      false,
+      true,
     ]);
   });
 
-  it('step 0 explains the two point sources; "Tap it" only where a strip exists (phone)', () => {
-    const phone = walkthroughCopy(0, BASE_CTX).copy;
-    expect(phone).toContain('a point for the right call');
-    expect(phone).toContain('up to two for the move');
-    expect(phone).toContain('Tap it');
-    const desktop = walkthroughCopy(0, { ...BASE_CTX, isDesktop: true }).copy;
-    expect(desktop).toContain('up to two for the move');
-    expect(desktop).not.toContain('Tap it');
-    expect(desktop).not.toContain('strip');
+  it('part 1 is result + next, part 2 chips + stepping, part 3 sidelines + understand + analyze', () => {
+    expect(tourPartSteps(0)).toEqual(['result', 'next']);
+    expect(tourPartSteps(1)).toEqual(['chips', 'stepping']);
+    expect(tourPartSteps(2)).toEqual(['sidelines', 'understand', 'analyze']);
   });
 
-  it('step 1 explains "Move = Best" / "Move = Game" only when that merged chip is on screen', () => {
-    const alone = walkthroughCopy(1, BASE_CTX).copy;
-    expect(alone).toContain('Tap one to focus it');
-    expect(alone).not.toContain('Move =');
-    expect(walkthroughCopy(1, { ...BASE_CTX, mergedChip: 'best' }).copy).toContain('"Move = Best"');
-    expect(walkthroughCopy(1, { ...BASE_CTX, mergedChip: 'best' }).copy).not.toContain('Move = Game');
-    expect(walkthroughCopy(1, { ...BASE_CTX, mergedChip: 'game' }).copy).toContain('"Move = Game"');
-    expect(walkthroughCopy(1, { ...BASE_CTX, mergedChip: 'game' }).copy).not.toContain('Move = Best');
+  it('soft and herring puzzles teach the several wording, sharp the only-one wording', () => {
+    expect(tourAnswerKind('sharp')).toBe('sharp');
+    expect(tourAnswerKind('soft')).toBe('several');
+    expect(tourAnswerKind('herring')).toBe('several');
   });
 
-  it('step 2 names the bar on phones and the arrow keys on desktop', () => {
-    expect(walkthroughCopy(2, BASE_CTX).copy).toContain('in the bar');
-    expect(walkthroughCopy(2, BASE_CTX).copy).not.toContain('arrow keys');
-    expect(walkthroughCopy(2, { ...BASE_CTX, isDesktop: true }).copy).toContain('arrow keys');
-  });
-
-  it('step 3 explains sidelines and the rewind; Home only on desktop', () => {
-    const phone = walkthroughCopy(3, BASE_CTX).copy;
-    expect(phone).toContain('sideline');
-    expect(phone).toContain('puzzle position');
-    expect(phone).not.toContain('Home');
-    expect(walkthroughCopy(3, { ...BASE_CTX, isDesktop: true }).copy).toContain('Home');
-  });
-
-  it('step 4 carries the "understand, don\'t just memorize" line on chips + list', () => {
-    expect(walkthroughCopy(4, BASE_CTX).spotlightTarget).toBe('lines');
-    expect(walkthroughCopy(4, BASE_CTX).copy).toContain("Don't just memorize the answer");
-  });
-
-  it('the last step says Analyze opens the game for an own-game puzzle, the position otherwise (warm-up first reveal)', () => {
-    expect(walkthroughCopy(5, BASE_CTX).copy).toMatch(/^The Analyze button opens the whole game/);
-    const warmup = walkthroughCopy(5, { ...BASE_CTX, analyzeOpens: 'position' });
-    expect(warmup.spotlightTarget).toBe('bar');
-    expect(warmup.copy).toMatch(/^The Analyze button opens this position/);
-    expect(warmup.copy).toContain('Next takes you to the next puzzle');
-  });
-
-  it('no step mentions a card, a Solution button or the eval bar, and no copy has an em-dash', () => {
-    for (const step of STEPS) {
-      for (const ctx of ALL_CONTEXTS) {
-        const { copy } = walkthroughCopy(step, ctx);
-        expect(copy).not.toMatch(/card/i);
-        expect(copy).not.toContain('Solution');
-        expect(copy).not.toContain('—');
-      }
+  it('the result bubble is the D-19 sheet verbatim per device and answer kind, spotlighting the verdict', () => {
+    const cases: Array<[boolean, 'sharp' | 'several', string]> = [
+      [
+        false,
+        'sharp',
+        'This strip is your result. Here only one move was good, every other move was a mistake. Tap the strip for the full feedback.',
+      ],
+      [
+        false,
+        'several',
+        'This strip is your result. Here several moves were fine, so any good move works. Tap the strip for the full feedback.',
+      ],
+      [
+        true,
+        'sharp',
+        'Your result is in the highlighted bubble. Here only one move was good, every other move was a mistake.',
+      ],
+      [
+        true,
+        'several',
+        'Your result is in the highlighted bubble. Here several moves were fine, so any good move works.',
+      ],
+    ];
+    for (const [isDesktop, answerKind, expected] of cases) {
+      const step = tourStepCopy('result', { ...BASE_CTX, isDesktop, answerKind });
+      expect(step.copy).toBe(expected);
+      expect(step.spotlightTarget).toBe('verdict');
+      // D-05: no scoring sentence; D-19: no em-dash.
+      expect(step.copy).not.toMatch(/point/i);
+      expect(step.copy).not.toContain('—');
+      expect(step.copy.length).toBeLessThanOrEqual(STEPPER_COPY_MAX_CHARS);
     }
   });
 
-  it('every step fits the phone copy budget in all 12 context combinations', () => {
-    expect(ALL_CONTEXTS).toHaveLength(12);
-    for (const step of STEPS) {
-      for (const ctx of ALL_CONTEXTS) {
-        expect(walkthroughCopy(step, ctx).copy.length).toBeLessThanOrEqual(STEPPER_COPY_MAX_CHARS);
-      }
-    }
+  it('the next bubble spotlights the bar', () => {
+    const step = tourStepCopy('next', BASE_CTX);
+    expect(step.copy).toBe('Next takes you to the next puzzle.');
+    expect(step.spotlightTarget).toBe('bar');
   });
 });
 

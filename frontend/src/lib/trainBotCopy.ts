@@ -32,6 +32,7 @@ import { GUESS_CALL_LABELS } from '@/lib/trainGuessLabels';
 import type { Guess } from '@/lib/trainGuessLabels';
 import { GUESS_POINTS, MOVE_TIER_POINTS } from '@/lib/trainScore';
 import type { TrainMoveTier, TrainRatingBand } from '@/lib/trainScore';
+import type { RevealTourStage, SolveResponse } from '@/types/train';
 
 /**
  * D-05: the fixed teacher for the intro stepper (steps 2-3) and the first
@@ -599,23 +600,63 @@ export function returnPhrase(input: ReturnPhraseInput): string {
   return `Let's see if you remember this in ${days} days.`;
 }
 
-/** D-24 first-reveal walkthrough step index (Phase 237 rewrote the six steps
- * for the chips + single move tree screen: result, chips, stepping, board,
- * "understand, don't just memorize", action bar). */
-export type WalkthroughStep = 0 | 1 | 2 | 3 | 4 | 5;
-export const WALKTHROUGH_STEP_COUNT = 6;
+/**
+ * Phase 240 (D-06): the first-reveal tour ids. The Phase 237 six-step tour is
+ * split into three parts that run on consecutive reveals (at most one per
+ * reveal, D-07): part 0 is the result + Next, part 1 the chips + stepping, part
+ * 2 sidelines, "understand, don't memorize" and Analyze. Part N finishing stamps
+ * the server's `reveal_tour_stage` to N + 1.
+ */
+export type TourStepId = 'result' | 'next' | 'chips' | 'stepping' | 'sidelines' | 'understand' | 'analyze';
+export type TourPart = 0 | 1 | 2;
+
+/** Mirrors the backend `REVEAL_TOUR_STAGE_MAX`: a `reveal_tour_stage` equal to it
+ * means the whole tour is done. */
+const TOUR_PART_COUNT = 3;
+
+const TOUR_PARTS: Record<TourPart, readonly TourStepId[]> = {
+  0: ['result', 'next'],
+  1: ['chips', 'stepping'],
+  2: ['sidelines', 'understand', 'analyze'],
+};
+
+/** The ordered steps of one tour part. */
+export function tourPartSteps(part: TourPart): readonly TourStepId[] {
+  return TOUR_PARTS[part];
+}
+
+/** The part due on the next reveal for a `reveal_tour_stage`, or null once the
+ * whole tour is done (stage 3). */
+export function tourPartForStage(stage: RevealTourStage): TourPart | null {
+  return stage >= TOUR_PART_COUNT ? null : (stage as TourPart);
+}
+
+/** True once all three parts are done (D-22 also gates the landing reminder ask on it). */
+export function isRevealTourDone(stage: RevealTourStage): boolean {
+  return stage >= TOUR_PART_COUNT;
+}
 
 /**
- * Phase 237 plan 10 (D-10): what a walkthrough step spotlights.
+ * Phase 240 (D-04): what the result bubble teaches about the position just
+ * solved. `sharp` = only one move was good; `several` = a soft SR item or a red
+ * herring, where several moves were fine.
+ */
+export type TourAnswerKind = 'sharp' | 'several';
+
+export function tourAnswerKind(puzzleType: SolveResponse['puzzle_type']): TourAnswerKind {
+  return puzzleType === 'sharp' ? 'sharp' : 'several';
+}
+
+/**
+ * D-24 (Phase 240 D-03): what a tour step spotlights.
  *  - `verdict`: the one-line strip on phones, the verdict bubble on desktop.
- *  - `chips`: the chips row (never ringed as a row: the active chip's own ring
- *    already marks it, Phase 237 UAT). `tree`: the move list. `lines`: chips + list.
+ *  - `chips`: the chips row. `tree`: the move list. `lines`: chips + list.
  *  - `board`: the board row (free play / sidelines).
  *  - `bar`: the reveal action bar (fixed bottom bar on phones, in-flow on sm+).
  */
 export type WalkthroughTarget = 'verdict' | 'chips' | 'tree' | 'board' | 'lines' | 'bar';
 
-/** D-24: one first-reveal walkthrough step's copy + the element it spotlights. */
+/** D-24: one tour step's copy + the element it spotlights. */
 export interface WalkthroughStepCopy {
   copy: string;
   spotlightTarget: WalkthroughTarget;
@@ -627,12 +668,14 @@ export interface WalkthroughStepCopy {
  * one of the user's own games, otherwise just the puzzle position. `mergedChip`: the second role of the merged "Move"
  * chip ("Move = Best" / "Move = Game"), null when the Move chip stands alone.
  * `isDesktop`: desktop has no strip (the verdict bubble shows the feedback
- * already), the arrow keys step the tree, and Home rewinds.
+ * already), the arrow keys step the tree, and Home rewinds. `answerKind`
+ * (Phase 240 D-04): which result sentence the result step uses.
  */
 export interface WalkthroughContext {
   analyzeOpens: 'game' | 'position';
   mergedChip: 'best' | 'game' | null;
   isDesktop: boolean;
+  answerKind: TourAnswerKind;
 }
 
 /** The reveal action bar's icon-only buttons the tour copy names. */
@@ -645,10 +688,21 @@ export const TOUR_ICON_TOKEN: Record<TourIcon, string> = {
   forward: '{forward}',
 };
 
-const WALKTHROUGH_RESULT_PHONE =
-  'This strip is your result: a point for the right call and up to two for the move. Tap it to read the full feedback.';
-const WALKTHROUGH_RESULT_DESKTOP =
-  'Your result is in the highlighted bubble beside the board: a point for the right call and up to two for the move.';
+// Phase 240 D-19: the result bubble teaches what "only one" vs "several" meant
+// for the position just solved. No points sentence (D-05): the strip and the
+// verdict already show the points.
+const TOUR_RESULT_PHONE_SHARP =
+  'This strip is your result. Here only one move was good, every other move was a mistake. Tap the strip for the full feedback.';
+const TOUR_RESULT_PHONE_SEVERAL =
+  'This strip is your result. Here several moves were fine, so any good move works. Tap the strip for the full feedback.';
+const TOUR_RESULT_DESKTOP_SHARP =
+  'Your result is in the highlighted bubble. Here only one move was good, every other move was a mistake.';
+const TOUR_RESULT_DESKTOP_SEVERAL =
+  'Your result is in the highlighted bubble. Here several moves were fine, so any good move works.';
+const TOUR_NEXT = 'Next takes you to the next puzzle.';
+const TOUR_ANALYZE_GAME =
+  'The Analyze button opens the whole game one move before the mistake, so you can see how you got there.';
+const TOUR_ANALYZE_POSITION = 'The Analyze button opens this position on the analysis board.';
 const WALKTHROUGH_CHIPS =
   'The Move, Best, and Game chips are the lines, one per move. Tap one to focus it on the board.';
 const WALKTHROUGH_MERGED_BEST = ' "Move = Best" means you found the best move.';
@@ -668,42 +722,46 @@ const WALKTHROUGH_UNDERSTAND =
   'Understanding why a move works or fails by analyzing the lines is what makes ' +
   "the pattern stick. Don't just memorize the answer.";
 
+/** The result step's copy: device x answer kind (D-04, D-19). */
+function tourResultCopy(ctx: WalkthroughContext): string {
+  if (ctx.isDesktop) {
+    return ctx.answerKind === 'sharp' ? TOUR_RESULT_DESKTOP_SHARP : TOUR_RESULT_DESKTOP_SEVERAL;
+  }
+  return ctx.answerKind === 'sharp' ? TOUR_RESULT_PHONE_SHARP : TOUR_RESULT_PHONE_SEVERAL;
+}
+
 /**
- * D-24: the Hilda walkthrough of the reveal, run once on the user's
- * first-ever reveal. Six steps (Phase 237 plan 10, D-09), in target order
- * verdict, chips, tree, board, lines, bar: the result, the chips, stepping,
- * sidelines + rewind, D-21's "understanding, not memorizing", and the action
- * bar. Each step stays within the phone copy budget (`STEPPER_COPY_MAX_CHARS`)
- * and only describes what is on screen for this context (D-09): no cards, no
- * Solution button, Analyze only when the puzzle has it, a merged chip only when
- * it is shown.
+ * D-24 (Phase 240 D-06/D-07): the Hilda tour of the reveal, three parts on
+ * consecutive reveals, at most one per reveal. Each step stays within the phone
+ * copy budget (`STEPPER_COPY_MAX_CHARS`) and only describes what is on screen
+ * for this context (Phase 237 D-09): no cards, no Solution button, Analyze only
+ * when the puzzle has it, a merged chip only when it is shown.
  */
-export function walkthroughCopy(
-  step: WalkthroughStep,
-  ctx: WalkthroughContext,
-): WalkthroughStepCopy {
+export function tourStepCopy(step: TourStepId, ctx: WalkthroughContext): WalkthroughStepCopy {
   switch (step) {
-    case 0:
-      return {
-        spotlightTarget: 'verdict',
-        copy: ctx.isDesktop ? WALKTHROUGH_RESULT_DESKTOP : WALKTHROUGH_RESULT_PHONE,
-      };
-    case 1:
+    case 'result':
+      return { spotlightTarget: 'verdict', copy: tourResultCopy(ctx) };
+    case 'next':
+      return { spotlightTarget: 'bar', copy: TOUR_NEXT };
+    case 'chips':
       return { spotlightTarget: 'chips', copy: WALKTHROUGH_CHIPS + mergedChipSentence(ctx.mergedChip) };
-    case 2:
+    case 'stepping':
       return {
         spotlightTarget: 'tree',
         copy: ctx.isDesktop ? WALKTHROUGH_STEP_DESKTOP : WALKTHROUGH_STEP_PHONE,
       };
-    case 3:
+    case 'sidelines':
       return {
         spotlightTarget: 'board',
         copy: ctx.isDesktop ? WALKTHROUGH_BOARD_DESKTOP : WALKTHROUGH_BOARD_PHONE,
       };
-    case 4:
+    case 'understand':
       return { spotlightTarget: 'lines', copy: WALKTHROUGH_UNDERSTAND };
-    case 5:
-      return { spotlightTarget: 'bar', copy: walkthroughActionsCopy(ctx.analyzeOpens) };
+    case 'analyze':
+      return {
+        spotlightTarget: 'bar',
+        copy: ctx.analyzeOpens === 'game' ? TOUR_ANALYZE_GAME : TOUR_ANALYZE_POSITION,
+      };
   }
 }
 
@@ -712,15 +770,6 @@ function mergedChipSentence(mergedChip: WalkthroughContext['mergedChip']): strin
   if (mergedChip === 'best') return WALKTHROUGH_MERGED_BEST;
   if (mergedChip === 'game') return WALKTHROUGH_MERGED_GAME;
   return '';
-}
-
-const WALKTHROUGH_NEXT_PART = 'Next takes you to the next puzzle.';
-/** The last walkthrough step: what Analyze opens on this puzzle, then Next. */
-function walkthroughActionsCopy(analyzeOpens: WalkthroughContext['analyzeOpens']): string {
-  if (analyzeOpens === 'game') {
-    return `The Analyze button opens the whole game one move before the mistake. ${WALKTHROUGH_NEXT_PART}`;
-  }
-  return `The Analyze button opens this position on the analysis board. ${WALKTHROUGH_NEXT_PART}`;
 }
 
 /**

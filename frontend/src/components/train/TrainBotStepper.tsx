@@ -4,7 +4,7 @@
  * a CONTROLLED component — the caller owns the step index (`step`) in its
  * own `useState`, because the parent also needs that same number to feed
  * `resolveBubbleState`'s `introStep` and the matching `introCopy`/
- * `walkthroughCopy` resolver. `TrainBotStepper` owns NO copy of its own —
+ * `tourStepCopy` resolver. `TrainBotStepper` owns NO copy of its own —
  * it renders whatever `children` the caller passes for the current step.
  *
  * NOT a wrapper around `TrainLineStepper` (RESEARCH Pitfall 4): that
