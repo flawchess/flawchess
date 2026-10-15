@@ -4,9 +4,9 @@ milestone: v2.24
 current_phase: 240
 current_phase_name: Train First-Session Onboarding Load (SEED-200)
 status: executing
-stopped_at: Completed 240-05-PLAN.md
-last_updated: "2026-10-15T20:22:36.384Z"
-state_head: a35d82cabe786c168754eaf7d0aa5490fab61d7d
+stopped_at: Completed 240-06-PLAN.md
+last_updated: "2026-10-15T20:34:27.861Z"
+state_head: 7a883d44d6a4c810559bd3b8604ac027ea091427
 progress:
   total_phases: 3
   completed_phases: 103
@@ -22,7 +22,7 @@ last_activity_desc: "Completed quick task 261014-rux: Benchmark §5 whole-cohort
 ## Current Position
 
 Phase: 240 (Train First-Session Onboarding Load (SEED-200)) — EXECUTING
-Plan: 6 of 7
+Plan: 7 of 7
 
 Status: Ready to execute
 
@@ -874,6 +874,7 @@ flagged as an open decision for plan 06 / a human, not auto-fixed.
 - [Phase 240]: 240-04: renderScreen takes an optional trailing QueryClient; phone scroll tests stub Element.prototype.getBoundingClientRect before the reveal mounts; raw copy length (icon tokens included) asserted against STEPPER_COPY_MAX_CHARS
 - [Phase 240]: 240-05: intro is a fixed two-bubble sequence (INTRO_STEP_COUNT = 2), warm-up notice dropped with no relocation (D-01, D-02)
 - [Phase 240]: 240-05: sr_explained is stamped whenever the first-completed score variant rendered, in any branch; a first warm-up session never later shows the habit line (D-21)
+- [Phase 240]: Tour spotlight is one box-shadow-only class (.train-tour-spotlight, --brand-glow vars = FLAW_FIXED_GLOW), never combined with a ring utility; understand step glows one chips-plus-list wrapper
 
 ### Pending Todos
 
@@ -1093,8 +1094,8 @@ Items acknowledged and deferred at **v1.29 milestone close on 2026-06-29** (user
 
 ## Session Continuity
 
-**Last session:** 2026-10-15T20:22:36.237Z
-**Stopped at:** Completed 240-05-PLAN.md
+**Last session:** 2026-10-15T20:34:27.772Z
+**Stopped at:** Completed 240-06-PLAN.md
 **Resume file:** None
 
 Previous session note (Phase 227):
@@ -1341,6 +1342,7 @@ priority comment in `workerPoolState.ts:434-437` (verifier info item).
 | Phase 240 P02 | 20min | 2 tasks | 2 files |
 | Phase 240 P04 | 9 min | 2 tasks | 4 files |
 | Phase 240 P05 | 12 min | 2 tasks | 10 files |
+| Phase 240 P06 | 10min | 2 tasks | 15 files |
 
 ## Performance Metrics
 
