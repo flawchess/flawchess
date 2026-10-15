@@ -4,8 +4,8 @@ milestone: v2.24
 current_phase: 239
 status: completed
 stopped_at: Phase 239 complete — all phases complete
-last_updated: "2026-10-14T18:47:03.979Z"
-state_head: a743e253e894871d91c99e3fb68ee9bdb9a0c745
+last_updated: "2026-10-15T16:27:47.505Z"
+state_head: cb0be8e3a3b429e3222ad3fcc25ba744d817c2a5
 progress:
   total_phases: 2
   completed_phases: 103
@@ -1030,6 +1030,7 @@ None active.
 | 261014-qj8 | Benchmark bands for the tempo x phase heatmap cells | 2026-10-14 | 15d855812 | [261014-qj8-benchmark-bands-for-the-tempo-x-phase-he](./quick/261014-qj8-benchmark-bands-for-the-tempo-x-phase-he/) |
 | 261014-s0b | Restore admin session when ending impersonation | 2026-10-14 | e3e3a5542 | [261014-s0b-restore-admin-session-when-ending-impers](./quick/261014-s0b-restore-admin-session-when-ending-impers/) |
 | 261014-rux | Benchmark §5: whole-cohort basis and per-TC bands for the 12 flaw metrics | 2026-10-14 | a743e253e | [261014-rux-benchmark-5-whole-cohort-basis-and-per-t](./quick/261014-rux-benchmark-5-whole-cohort-basis-and-per-t/) |
+| 261015-pjr | Truthful Train warm-up copy for guests with imported games | 2026-10-15 | cb0be8e3a | [261015-pjr-truthful-train-warm-up-copy-for-guests-w](./quick/261015-pjr-truthful-train-warm-up-copy-for-guests-w/) |
 
 ## Deferred Items
 
