@@ -348,19 +348,20 @@
    with the step; the reduced-motion block below makes it a static glow.
    Phase 240 UAT: gold (FLAWCHESS_ENGINE_ACCENT, the FlawChess engine card's
    color) with a brighter halo, instead of the bronze brand glow, which sat
-   too close to the active chip's own bronze border. */
+   too close to the active chip's own bronze border. A second UAT pass dropped
+   the solid 2px gold ring (it read as a stray border); the pulsing halo alone
+   carries the spotlight. */
 .train-tour-spotlight {
-  --tour-glow: oklch(0.78 0.14 80);
   --tour-glow-halo: oklch(0.78 0.14 80 / 0.6);
 }
 
 @keyframes train-tour-spotlight-pulse {
-  0%, 100% { box-shadow: 0 0 0 2px var(--tour-glow), 0 0 16px 2px var(--tour-glow-halo); }
-  50%      { box-shadow: 0 0 0 2px var(--tour-glow), 0 0 32px 8px var(--tour-glow-halo); }
+  0%, 100% { box-shadow: 0 0 16px 2px var(--tour-glow-halo); }
+  50%      { box-shadow: 0 0 32px 8px var(--tour-glow-halo); }
 }
 
 .train-tour-spotlight {
-  box-shadow: 0 0 0 2px var(--tour-glow), 0 0 28px 6px var(--tour-glow-halo);
+  box-shadow: 0 0 28px 6px var(--tour-glow-halo);
   animation: train-tour-spotlight-pulse 1.6s ease-in-out infinite;
 }
 
