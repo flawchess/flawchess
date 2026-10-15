@@ -3,15 +3,14 @@ gsd_state_version: "1.0"
 milestone: v2.24
 current_phase: 239
 status: completed
-stopped_at: Phase 239 complete — all phases complete
-last_updated: "2026-10-15T17:30:59.357Z"
-state_head: b2896d32e328b70b63dff99e0ae8c3703deaaafa
+stopped_at: Phase 240 context gathered
+last_updated: "2026-10-15T18:20:49.717Z"
+state_head: f0b68075d8f297c816d20e8d5d0774df4fa2ea41
 progress:
-  total_phases: 2
+  total_phases: 3
   completed_phases: 103
   total_plans: 19
   completed_plans: 57
-  percent: 100
 milestone_name: Train Grading Integrity & One-Screen Reveal
 last_activity: 2026-10-14
 last_activity_desc: "Completed quick task 261014-rux: Benchmark §5 whole-cohort basis and per-TC flaw bands"
@@ -1033,6 +1032,7 @@ None active.
 | 261014-rux | Benchmark §5: whole-cohort basis and per-TC bands for the 12 flaw metrics | 2026-10-14 | a743e253e | [261014-rux-benchmark-5-whole-cohort-basis-and-per-t](./quick/261014-rux-benchmark-5-whole-cohort-basis-and-per-t/) |
 | 261015-pjr | Truthful Train warm-up copy for guests with imported games | 2026-10-15 | cb0be8e3a | [261015-pjr-truthful-train-warm-up-copy-for-guests-w](./quick/261015-pjr-truthful-train-warm-up-copy-for-guests-w/) |
 | 261015-qxr | Library Stats coverage line salience and still-updating hint | 2026-10-15 | b2896d32e | [261015-qxr-library-stats-coverage-line-salience-and](./quick/261015-qxr-library-stats-coverage-line-salience-and/) |
+| 261015-s05 | Train reveal: clock-context line under the game footer (think time + clock left) | 2026-10-15 | f0b68075d | [261015-s05-train-reveal-clock-context-line-under-th](./quick/261015-s05-train-reveal-clock-context-line-under-th/) |
 
 ## Deferred Items
 
@@ -1085,9 +1085,9 @@ Items acknowledged and deferred at **v1.29 milestone close on 2026-06-29** (user
 
 ## Session Continuity
 
-**Last session:** 2026-10-12T19:10:27.088Z
-**Stopped at:** Phase 239 complete — all phases complete
-**Resume file:** .planning/phases/239-library-stats-you-vs-opponents/239-CONTEXT.md
+**Last session:** 2026-10-15T17:54:19.555Z
+**Stopped at:** Phase 240 context gathered
+**Resume file:** .planning/phases/240-train-first-session-onboarding-load/240-CONTEXT.md
 
 Previous session note (Phase 227):
 refit (calibration parity holds). Verification passed 17/17; code review 0 blockers (WR-01 + 3 info fixed). Next:
