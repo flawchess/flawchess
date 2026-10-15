@@ -266,9 +266,11 @@ export function libraryBasisText(analyzedN: number, tc: TimeControlBucket): stri
 export function libraryCoverageBasisText(
   analyzedN: number,
   totalN: number,
-  tc: TimeControlBucket,
+  tc: TimeControlBucket | null,
 ): string {
   const fmt = (n: number): string => n.toLocaleString('en-US');
-  if (analyzedN >= totalN) return `All ${fmt(totalN)} ${tc} games in the current filters are analyzed.`;
-  return `${fmt(analyzedN)} of ${fmt(totalN)} ${tc} games analyzed in the current filters.`;
+  // tc is null before any game is analyzed (no TC on the switch yet): "0 of 523 games ...".
+  const games = tc === null ? 'games' : `${tc} games`;
+  if (analyzedN >= totalN) return `All ${fmt(totalN)} ${games} in the current filters are analyzed.`;
+  return `${fmt(analyzedN)} of ${fmt(totalN)} ${games} analyzed in the current filters.`;
 }

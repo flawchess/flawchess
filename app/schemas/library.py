@@ -430,10 +430,14 @@ class FlawComparisonResponse(BaseModel):
          (D-03). No request parameter selects a TC: the switch is client-side.
     analyzed_gate: minimum analyzed games per TC (library_service.FLAW_COMPARISON_GATE),
         exposed so the frontend can render "X of N" without hardcoding the gate.
+    total_n: all games (analyzed or not) under the current filters, summed over the TCs
+        the sidebar filter allows. Lets the frontend tell "nothing analyzed yet" (tcs=[]
+        and total_n > 0, show the coverage line) apart from "no games in these filters".
     """
 
     tcs: list[FlawComparisonTc]
     analyzed_gate: int
+    total_n: int
 
 
 # ---------------------------------------------------------------------------

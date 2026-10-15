@@ -211,6 +211,33 @@ describe('coverage basis line', () => {
     expect(screen.queryByTestId('btn-coverage-signup')).toBeNull();
   });
 
+  it('shows "0 of N" with the fill-in hint when games exist but none is analyzed yet', async () => {
+    mocks.getFlawComparison.mockResolvedValue(makeComparison([], 523));
+    renderSections();
+    await screen.findByTestId('flaw-stats-coverage-line');
+    expect(text('flaw-stats-basis')).toBe('0 of 523 games analyzed in the current filters.');
+    expect(text('flaw-stats-coverage-hint')).toBe(' Stats below fill in as analysis continues.');
+    expect(isTinted()).toBe(true);
+    expect(isPulsing()).toBe(true);
+    expect(screen.queryByTestId('flaw-tiles')).toBeNull();
+  });
+
+  it('gives a guest with nothing analyzed the guest hint and the sign-up CTA', async () => {
+    mocks.getFlawComparison.mockResolvedValue(makeComparison([], 120));
+    renderSections(true);
+    await screen.findByTestId('flaw-stats-coverage-line');
+    expect(text('flaw-stats-coverage-hint')).toBe(' Only analyzed games are counted.');
+    expect(isPulsing()).toBe(false);
+    expect(screen.getByTestId('btn-coverage-signup')).not.toBeNull();
+  });
+
+  it('keeps the plain empty state when the filters match no games at all', async () => {
+    mocks.getFlawComparison.mockResolvedValue(makeComparison([], 0));
+    renderSections();
+    await screen.findAllByText('No analyzed games in the current filters yet.');
+    expect(screen.queryByTestId('flaw-stats-coverage-line')).toBeNull();
+  });
+
   it('offers guests the sign-up CTA only below the low-coverage threshold', async () => {
     mocks.getFlawComparison.mockResolvedValue(
       makeComparison([makeTcEntry('rapid', { analyzedN: 30, totalN: 300 })]),

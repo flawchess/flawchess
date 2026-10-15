@@ -310,7 +310,7 @@ class TestGetFlawComparison:
 
     @pytest.mark.asyncio
     async def test_returns_per_tc_shape_with_auth(self, auth_headers: dict[str, str]) -> None:
-        """Authenticated request returns 200 with exactly the tcs/analyzed_gate keys."""
+        """Authenticated request returns 200 with exactly the tcs/analyzed_gate/total_n keys."""
         async with httpx.AsyncClient(
             transport=httpx.ASGITransport(app=app), base_url="http://test"
         ) as client:
@@ -318,9 +318,10 @@ class TestGetFlawComparison:
 
         assert resp.status_code == 200
         body = resp.json()
-        assert set(body) == {"tcs", "analyzed_gate"}
+        assert set(body) == {"tcs", "analyzed_gate", "total_n"}
         assert body["tcs"] == []  # a fresh user has no analyzed games
         assert isinstance(body["analyzed_gate"], int)
+        assert body["total_n"] == 0  # ...and no games at all
 
     @pytest.mark.asyncio
     async def test_returns_422_when_from_date_after_to_date(

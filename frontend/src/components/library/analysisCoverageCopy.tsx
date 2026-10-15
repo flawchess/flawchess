@@ -19,6 +19,9 @@ export const COVERAGE_UPDATING_THRESHOLD = 0.98;
 /** Basis-line hint for a signed-up user whose games are still being analyzed. */
 export const COVERAGE_UPDATING_HINT = 'Stats below update as analysis continues.';
 
+/** Basis-line hint for a signed-up user with nothing analyzed yet (sections below are empty). */
+export const COVERAGE_STARTING_HINT = 'Stats below fill in as analysis continues.';
+
 /** Basis-line hint for a guest: no background analysis, so nothing is "updating". */
 export const COVERAGE_GUEST_HINT = 'Only analyzed games are counted.';
 
