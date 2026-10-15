@@ -355,28 +355,17 @@
   --tour-glow-halo: oklch(0.78 0.14 80 / 0.6);
 }
 
+/* Phase 240 UAT: the original 16-32px blur halo swamped the targets on both
+   desktop and mobile; this tighter pulse keeps the spotlight readable without
+   bleeding over neighbors. */
 @keyframes train-tour-spotlight-pulse {
-  0%, 100% { box-shadow: 0 0 16px 2px var(--tour-glow-halo); }
-  50%      { box-shadow: 0 0 32px 8px var(--tour-glow-halo); }
-}
-
-.train-tour-spotlight {
-  box-shadow: 0 0 28px 6px var(--tour-glow-halo);
-  animation: train-tour-spotlight-pulse 1.6s ease-in-out infinite;
-}
-
-/* Phase 240 UAT: on desktop the phone-sized halo swamped the targets; a
-   tighter pulse keeps the spotlight readable without bleeding over neighbors. */
-@keyframes train-tour-spotlight-pulse-desktop {
   0%, 100% { box-shadow: 0 0 8px 1px var(--tour-glow-halo); }
   50%      { box-shadow: 0 0 16px 4px var(--tour-glow-halo); }
 }
 
-@media (min-width: 640px) {
-  .train-tour-spotlight {
-    box-shadow: 0 0 14px 3px var(--tour-glow-halo);
-    animation-name: train-tour-spotlight-pulse-desktop;
-  }
+.train-tour-spotlight {
+  box-shadow: 0 0 14px 3px var(--tour-glow-halo);
+  animation: train-tour-spotlight-pulse 1.6s ease-in-out infinite;
 }
 
 /* Train reveal "Points: +N" flash (190.1 UAT round 7, TrainSolveScreen).
