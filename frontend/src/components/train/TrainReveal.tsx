@@ -132,12 +132,13 @@ export interface TrainRevealProps {
    */
   alsoFineMoves?: TrainFineMove[];
   /**
-   * Phase 237 plan 10 (D-10): the first-reveal tour's active target, or null
-   * when no tour is showing. Rings the strip / verdict bubble (`verdict`) and
-   * the move list (`tree`, `lines`); the chips row is never ringed (the active
-   * chip's own ring marks it, Phase 237 UAT); `board` and `bar` are ringed by
-   * the board owner. Independent of the chip
-   * focus: the tour must never touch which arrow is lit.
+   * Phase 237 plan 10 (D-10): the reveal tour's active target, or null when no
+   * tour is showing. Spotlights (Phase 240 D-20, the shared TOUR_SPOTLIGHT_CLASS
+   * glow) the strip / verdict bubble (`verdict`), the chips row (`chips`, the
+   * active chip keeps its own selection ring), the move list (`tree`) and the
+   * chips-plus-list region (`lines`); `board` and `bar` are spotlit by the board
+   * owner. Independent of the chip focus: the tour must never touch which arrow
+   * is lit.
    */
   walkthroughTarget?: WalkthroughTarget | null;
   /**
@@ -405,27 +406,36 @@ export function TrainReveal({
           one move list showing the focused chip's pre-loaded line (plus the
           user's own sidelines). Every eval/line comes from the client grading
           engine (`gradeResult` or the reveal-time search), never a stored
-          server line. */}
-      {showChipRow && (
-        <div data-tour-target="chips">
-          <TrainLineChips
-            chips={chips}
-            activeChip={activeChip}
-            onSelect={onChipSelect}
-            sanOnlyGameMove={sanOnlyGameMove}
-          />
-        </div>
-      )}
-      {chips.length > 0 && (
+          server line. Phase 240 D-20: the tour spotlights the chips row, the
+          list, or (the understand step) this wrapper around both; the wrapper
+          keeps the reveal column's gap, so the layout does not move. */}
+      {(showChipRow || chips.length > 0) && (
         <div
-          data-tour-target="tree"
-          data-testid="train-tree-tour-ring"
-          className={cn(
-            (walkthroughTarget === 'tree' || walkthroughTarget === 'lines') &&
-              `rounded-md ${TOUR_SPOTLIGHT_CLASS}`,
-          )}
+          data-testid="train-lines-tour-target"
+          className={cn('flex flex-col gap-4 rounded-md', walkthroughTarget === 'lines' && TOUR_SPOTLIGHT_CLASS)}
         >
-          {treeList}
+          {showChipRow && (
+            <div
+              data-tour-target="chips"
+              className={cn('rounded-md', walkthroughTarget === 'chips' && TOUR_SPOTLIGHT_CLASS)}
+            >
+              <TrainLineChips
+                chips={chips}
+                activeChip={activeChip}
+                onSelect={onChipSelect}
+                sanOnlyGameMove={sanOnlyGameMove}
+              />
+            </div>
+          )}
+          {chips.length > 0 && (
+            <div
+              data-tour-target="tree"
+              data-testid="train-tree-tour-ring"
+              className={cn('rounded-md', walkthroughTarget === 'tree' && TOUR_SPOTLIGHT_CLASS)}
+            >
+              {treeList}
+            </div>
+          )}
         </div>
       )}
 

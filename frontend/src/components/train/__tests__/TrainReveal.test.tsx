@@ -22,6 +22,7 @@ import { PERSONA_REGISTRY } from '@/lib/personas/personaRegistry';
 import { verdictCopy } from '@/lib/trainBotCopy';
 import { buildChipGroups } from '@/lib/trainRevealLines';
 import type { BuildChipGroupsInput, ChipGroup } from '@/lib/trainRevealLines';
+import { TOUR_SPOTLIGHT_CLASS } from '@/lib/theme';
 import type { GradeResult, TrainEngineLine, TrainGradingEngine } from '@/hooks/useTrainGradingEngine';
 import type { PuzzleRevealResponse, SolveResponse, TrainPuzzle } from '@/types/train';
 import type { EvalPoint, GameFlawCard } from '@/types/library';
@@ -498,7 +499,7 @@ describe('TrainReveal', () => {
     expect(screen.queryByTestId('train-move-tree-slot')).toBeNull();
   });
 
-  describe('Phase 237 plan 10: first-reveal tour rings and bubble slot (D-10)', () => {
+  describe('Phase 237 plan 10 / Phase 240 D-20: reveal tour spotlights and bubble slot', () => {
     const TREE_SLOT = <div data-testid="train-move-tree-slot" />;
     const renderWithTarget = async (
       walkthroughTarget: ComponentProps<typeof TrainReveal>['walkthroughTarget'],
@@ -513,41 +514,52 @@ describe('TrainReveal', () => {
       });
       await waitFor(() => screen.getByTestId('train-line-chips'));
     };
-    const chipsRinged = (): boolean => screen.getByTestId('train-line-chips').className.includes('ring-2');
-    const treeRinged = (): boolean =>
-      screen.getByTestId('train-tree-tour-ring').className.includes('ring-2');
+    const spotlit = (element: Element | null): boolean =>
+      element !== null && element.classList.contains(TOUR_SPOTLIGHT_CLASS);
+    const chipsSpotlit = (): boolean =>
+      spotlit(screen.getByTestId('train-line-chips').closest('[data-tour-target="chips"]'));
+    const treeSpotlit = (): boolean => spotlit(screen.getByTestId('train-tree-tour-ring'));
+    const linesSpotlit = (): boolean => spotlit(screen.getByTestId('train-lines-tour-target'));
 
-    // Phase 237 UAT: the chips row is never ringed as a row (the active chip's
-    // own ring already marks it).
-    it('chips rings nothing: the active chip carries its own ring', async () => {
+    // Phase 240 D-20: the chips row is spotlit as a row, and the active chip keeps
+    // its own selection ring.
+    it('chips spotlights the chips row only; the active chip keeps its own ring', async () => {
       await renderWithTarget('chips');
-      expect(chipsRinged()).toBe(false);
-      expect(treeRinged()).toBe(false);
+      expect(chipsSpotlit()).toBe(true);
+      expect(treeSpotlit()).toBe(false);
+      expect(linesSpotlit()).toBe(false);
       expect(screen.getByTestId('train-chip-your').className).toContain('ring-2');
     });
 
-    it('tree rings the move list only', async () => {
+    it('tree spotlights the move list only', async () => {
       await renderWithTarget('tree');
-      expect(chipsRinged()).toBe(false);
-      expect(treeRinged()).toBe(true);
+      expect(chipsSpotlit()).toBe(false);
+      expect(treeSpotlit()).toBe(true);
+      expect(linesSpotlit()).toBe(false);
     });
 
-    it('lines rings the move list (never the chips row)', async () => {
+    it('lines spotlights the one wrapper around the chips row and the list, not the parts', async () => {
       await renderWithTarget('lines');
-      expect(chipsRinged()).toBe(false);
-      expect(treeRinged()).toBe(true);
+      expect(linesSpotlit()).toBe(true);
+      expect(chipsSpotlit()).toBe(false);
+      expect(treeSpotlit()).toBe(false);
+      const wrapper = screen.getByTestId('train-lines-tour-target');
+      expect(wrapper.contains(screen.getByTestId('train-line-chips'))).toBe(true);
+      expect(wrapper.contains(screen.getByTestId('train-move-tree-slot'))).toBe(true);
     });
 
-    it.each(['verdict', 'board', 'bar'] as const)('%s rings neither the chips row nor the list', async (target) => {
+    it.each(['verdict', 'board', 'bar'] as const)('%s spotlights neither the chips row nor the list', async (target) => {
       await renderWithTarget(target);
-      expect(chipsRinged()).toBe(false);
-      expect(treeRinged()).toBe(false);
+      expect(chipsSpotlit()).toBe(false);
+      expect(treeSpotlit()).toBe(false);
+      expect(linesSpotlit()).toBe(false);
     });
 
-    it('no target (null) rings nothing', async () => {
+    it('no target (null) spotlights nothing', async () => {
       await renderWithTarget(null);
-      expect(chipsRinged()).toBe(false);
-      expect(treeRinged()).toBe(false);
+      expect(chipsSpotlit()).toBe(false);
+      expect(treeSpotlit()).toBe(false);
+      expect(linesSpotlit()).toBe(false);
     });
 
     it('the chips row and the list sit inside their tour-target wrappers', async () => {
@@ -557,15 +569,15 @@ describe('TrainReveal', () => {
       expect(screen.getByTestId('train-move-tree-slot').closest('[data-tour-target="tree"]')).not.toBeNull();
     });
 
-    it('on desktop the verdict target rings the verdict card', () => {
+    it('on desktop the verdict target spotlights the verdict card', () => {
       renderReveal({ walkthroughTarget: 'verdict' });
-      expect(screen.getByTestId('train-verdict-card').className).toContain('ring-2');
+      expect(spotlit(screen.getByTestId('train-verdict-card'))).toBe(true);
     });
 
-    it('on a phone the verdict target rings the strip', () => {
+    it('on a phone the verdict target spotlights the strip', () => {
       matchMediaMatches = false;
       renderReveal({ walkthroughTarget: 'verdict' });
-      expect(screen.getByTestId('train-verdict-strip-root').className).toContain('ring-2');
+      expect(spotlit(screen.getByTestId('train-verdict-strip-root'))).toBe(true);
     });
   });
 

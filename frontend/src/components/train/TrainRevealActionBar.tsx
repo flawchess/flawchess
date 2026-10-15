@@ -100,9 +100,9 @@ export function TrainRevealActionBar({
   return (
     <div
       data-testid="train-reveal-action-bar"
-      // Phase 237 UAT: the walkthrough's last step used to ring this bar; the
-      // ring was clipped by the fixed mobile bottom bar and added little, so
-      // the tour bubble alone points at it now.
+      // Phase 240 D-20: the caller adds the shared tour spotlight
+      // (TOUR_SPOTLIGHT_CLASS) through `className` while a tour step targets
+      // this bar, in the page flow and in the fixed phone bar alike.
       className={cn('flex items-center gap-2', className)}
     >
       {framed ? (

@@ -114,6 +114,7 @@ afterEach(() => {
 
 import { NavHeader, MobileBottomBar, MobileMoreDrawer, MobileHeader, AnalysisMobileHeader } from './App';
 import { usePublishMobileBoardControls } from '@/lib/mobileBoardControls';
+import { TOUR_SPOTLIGHT_CLASS } from '@/lib/theme';
 import { MUTE_KEY } from '@/lib/sounds';
 import { SETTINGS_STORAGE_KEYS } from '@/lib/engineSettings';
 
@@ -1160,6 +1161,7 @@ describe('Phase 237 plan 07: MobileBottomBar swaps to the Train reveal bar', () 
     analyzeTo: string | null;
     onAnalyzeClick: () => void;
     onReset?: () => void;
+    spotlight?: boolean;
   }) {
     usePublishMobileBoardControls({
       onBack: vi.fn(),
@@ -1172,6 +1174,7 @@ describe('Phase 237 plan 07: MobileBottomBar swaps to the Train reveal bar', () 
       onNext: props.onNext,
       analyzeTo: props.analyzeTo,
       onAnalyzeClick: props.onAnalyzeClick,
+      spotlight: props.spotlight,
     });
     return null;
   }
@@ -1224,6 +1227,31 @@ describe('Phase 237 plan 07: MobileBottomBar swaps to the Train reveal bar', () 
     expect(screen.queryByTestId('btn-train-analyze')).toBeNull();
   });
 
+  // Phase 240 D-20: the fixed phone bar carries the tour's shared spotlight class
+  // exactly while the published payload says so.
+  it('a payload with spotlight true renders the fixed reveal bar with the tour spotlight class', () => {
+    profileState = FULL_PROFILE;
+    tier1State = true;
+
+    renderMobileBottomBar(
+      '/train',
+      <MobileBoardControlsRevealProbe onNext={vi.fn()} analyzeTo={null} onAnalyzeClick={vi.fn()} spotlight />,
+    );
+
+    expect(screen.getByTestId('train-reveal-action-bar').classList.contains(TOUR_SPOTLIGHT_CLASS)).toBe(true);
+  });
+
+  it.each([{ spotlight: false }, {}])('a payload with spotlight %o renders the bar without the spotlight class', (extra) => {
+    profileState = FULL_PROFILE;
+    tier1State = true;
+
+    renderMobileBottomBar(
+      '/train',
+      <MobileBoardControlsRevealProbe onNext={vi.fn()} analyzeTo={null} onAnalyzeClick={vi.fn()} {...extra} />,
+    );
+
+    expect(screen.getByTestId('train-reveal-action-bar').classList.contains(TOUR_SPOTLIGHT_CLASS)).toBe(false);
+  });
 });
 
 // Quick 260824-qaz (D-7/D-8): the hosted Activity Pulse dashboard's nav entry

@@ -594,9 +594,12 @@ export function tourAnswerKind(puzzleType: SolveResponse['puzzle_type']): TourAn
 /**
  * D-24 (Phase 240 D-03): what a tour step spotlights.
  *  - `verdict`: the one-line strip on phones, the verdict bubble on desktop.
- *  - `chips`: the chips row. `tree`: the move list. `lines`: chips + list.
+ *  - `chips`: the chips row (spotlit too since D-20; the active chip keeps its
+ *    own selection ring). `tree`: the move list. `lines`: the chips-plus-list
+ *    region (the understand step).
  *  - `board`: the board row (free play / sidelines).
- *  - `bar`: the reveal action bar (fixed bottom bar on phones, in-flow on sm+).
+ *  - `bar`: the reveal action bar, in flow on sm+ and in the fixed phone bar on
+ *    phones (carried there by the published payload's `spotlight` flag).
  */
 export type WalkthroughTarget = 'verdict' | 'chips' | 'tree' | 'board' | 'lines' | 'bar';
 

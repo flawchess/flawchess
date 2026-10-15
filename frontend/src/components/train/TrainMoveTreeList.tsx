@@ -39,8 +39,6 @@ interface TrainMoveTreeListProps {
   tree: TrainRevealTree;
   /** Board orientation, so the Stockfish row's hover-preview miniboards match. */
   flipped: boolean;
-  /** The brand ring marking the list as the focused surface. */
-  ring?: boolean;
 }
 
 /** The Stockfish row: the lines setting, compact (sideways scroll) on mobile.
@@ -93,7 +91,6 @@ function toVariationPreview(tree: TrainRevealTree): VariationTreePreview | undef
 export function TrainMoveTreeList({
   tree,
   flipped,
-  ring = false,
 }: TrainMoveTreeListProps): ReactElement {
   // The Stockfish row is a SIBLING of the list's testid wrapper, so queries that
   // read the list's move tokens never pick up the engine line's moves. It sits
@@ -101,10 +98,7 @@ export function TrainMoveTreeList({
   // appears or leaves.
   return (
     <div className="flex flex-col gap-1">
-      <div
-        data-testid="train-move-tree"
-        className={ring ? 'rounded-md ring-2 ring-brand-brown' : undefined}
-      >
+      <div data-testid="train-move-tree">
         <VariationTree
           variant="wrap"
           nodes={tree.listView.nodes}

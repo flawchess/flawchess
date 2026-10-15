@@ -1474,6 +1474,7 @@ export function TrainSolveScreen({
             onNext: handleBarNext,
             analyzeTo,
             onAnalyzeClick: handleBarAnalyzeClick,
+            spotlight: walkthroughTarget === 'bar',
           }
         : null,
     [
@@ -1490,6 +1491,7 @@ export function TrainSolveScreen({
       handleBarNext,
       analyzeTo,
       handleBarAnalyzeClick,
+      walkthroughTarget,
     ],
   );
   usePublishMobileBoardControls(mobileBoardControls);
@@ -1968,7 +1970,7 @@ export function TrainSolveScreen({
           onAnalyzeClick={handleBarAnalyzeClick}
           onNext={handleBarNext}
           framed
-          className="w-full"
+          className={cn('w-full rounded-md', walkthroughTarget === 'bar' && TOUR_SPOTLIGHT_CLASS)}
         />
       )}
       </div>

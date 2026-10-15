@@ -756,6 +756,7 @@ function MobileBoardControlsProbe(): ReactElement {
           <span data-testid="mbc-can-reset">{String(controls.canReset)}</span>
           <span data-testid="mbc-has-next">{String(controls.onNext != null)}</span>
           <span data-testid="mbc-analyze-to">{String(controls.analyzeTo)}</span>
+          <span data-testid="mbc-spotlight">{String(controls.spotlight === true)}</span>
           <button data-testid="mbc-btn-next" onClick={controls.onNext}>next</button>
           <button data-testid="mbc-btn-back" onClick={controls.onBack}>back</button>
           <button data-testid="mbc-btn-forward" onClick={controls.onForward}>forward</button>
@@ -4065,6 +4066,9 @@ describe('TrainSolveScreen — progress, last move, grading state, engine failur
       clickBarNext();
       await waitFor(() => expect(tourCopyText()).toBe('Next takes you to the next puzzle.'));
       expect(screen.getByTestId('train-tour-step-count').textContent).toBe('2 / 2');
+      // The Next step spotlights the in-flow bar (sm and up) and no longer the strip.
+      expect(actionBarSpotlit()).toBe(true);
+      expect(spotlit(screen.getByTestId('train-verdict-strip-root'))).toBe(false);
       expect(screen.getByTestId('train-reveal')).not.toBeNull();
       expect(stampOnboarding).not.toHaveBeenCalled();
       expect(nextFlush).not.toHaveBeenCalled();
@@ -4099,15 +4103,16 @@ describe('TrainSolveScreen — progress, last move, grading state, engine failur
       expect(document.querySelector(`.${TOUR_SPOTLIGHT_CLASS}`)).toBeNull();
     });
 
-    it('leaving the last step of part 1 removes the spotlight', async () => {
+    it('exactly one element is spotlit at a time, and the glow moves with the step', async () => {
       matchMediaMatches = false;
       await openReveal(0);
       await waitFor(() => expect(document.querySelector(`.${TOUR_SPOTLIGHT_CLASS}`)).not.toBeNull());
+      expect(document.querySelectorAll(`.${TOUR_SPOTLIGHT_CLASS}`)).toHaveLength(1);
+      expect(screen.getByTestId('train-verdict-strip-root').classList.contains(TOUR_SPOTLIGHT_CLASS)).toBe(true);
       clickBarNext();
       await waitFor(() => expect(screen.getByTestId('train-tour-step-count').textContent).toBe('2 / 2'));
-      clickBarNext();
-      await waitFor(() => expect(stampOnboarding).toHaveBeenCalledWith('reveal_tour_1'));
-      expect(document.querySelector(`.${TOUR_SPOTLIGHT_CLASS}`)).toBeNull();
+      expect(document.querySelectorAll(`.${TOUR_SPOTLIGHT_CLASS}`)).toHaveLength(1);
+      expect(screen.getByTestId('train-verdict-strip-root').classList.contains(TOUR_SPOTLIGHT_CLASS)).toBe(false);
     });
 
     it('stage 3: no tour overlay on the reveal and the verdict shows immediately', async () => {
@@ -4120,6 +4125,12 @@ describe('TrainSolveScreen — progress, last move, grading state, engine failur
     // ── Parts 2 and 3 (plan 04): consecutive reveals, per-part counters ──
     const stepCount = (): string => screen.getByTestId('train-tour-step-count').textContent ?? '';
     const treeSpotlit = (): boolean => spotlit(screen.getByTestId('train-tree-tour-ring'));
+    const linesSpotlit = (): boolean => spotlit(screen.getByTestId('train-lines-tour-target'));
+    const chipsRowSpotlit = (): boolean => {
+      const row = screen.getByTestId('train-line-chips').closest('[data-tour-target="chips"]');
+      return row instanceof HTMLElement && spotlit(row);
+    };
+    const actionBarSpotlit = (): boolean => spotlit(screen.getByTestId('train-reveal-action-bar'));
     // The board row's spotlight sits on an ancestor of the board.
     const boardSpotlit = (): boolean => {
       for (let el = screen.getByTestId('chessboard').parentElement; el !== null; el = el.parentElement) {
@@ -4131,20 +4142,24 @@ describe('TrainSolveScreen — progress, last move, grading state, engine failur
       'The Analyze button opens the whole game one move before the mistake, so you can see how you got there.';
     const ANALYZE_POSITION_COPY = 'The Analyze button opens this position on the analysis board.';
 
-    it('stage 1 on a phone: chips (1 / 2, not spotlit), then stepping (2 / 2, list spotlit); the puzzle stays and nothing is stamped', async () => {
+    it('stage 1 on a phone: chips (1 / 2, row spotlit), then stepping (2 / 2, list spotlit); the puzzle stays and nothing is stamped', async () => {
       matchMediaMatches = false;
       await openReveal(1);
       await waitFor(() => expect(screen.getByTestId('train-bot-walkthrough')).not.toBeNull());
       expect(tourCopyText()).toContain('The Move, Best, and Game chips are the lines, one per move. Tap one to focus it on the board.');
       expect(stepCount()).toBe('1 / 2');
-      expect(spotlit(screen.getByTestId('train-line-chips'))).toBe(false);
+      expect(chipsRowSpotlit()).toBe(true);
       expect(spotlit(screen.getByTestId('train-verdict-strip-root'))).toBe(false);
       expect(treeSpotlit()).toBe(false);
+      expect(linesSpotlit()).toBe(false);
+      // The active chip keeps its own selection ring next to the row glow (D-20).
+      expect(screen.getByTestId('train-chip-your').className).toContain('ring-brand-brown');
 
       clickBarNext();
       await waitFor(() => expect(tourCopyText()).toContain('Step through the focused line with'));
       expect(stepCount()).toBe('2 / 2');
       expect(treeSpotlit()).toBe(true);
+      expect(chipsRowSpotlit()).toBe(false);
       // Phone variant, with the bar's own icons instead of glyphs or tokens.
       expect(tourCopyText()).toContain('in the bar, or tap a move in the list.');
       expect(screen.getByTestId('train-tour-icon-back')).not.toBeNull();
@@ -4191,13 +4206,17 @@ describe('TrainSolveScreen — progress, last move, grading state, engine failur
       clickBarNext();
       await waitFor(() => expect(tourCopyText()).toContain("Don't just memorize the answer."));
       expect(stepCount()).toBe('2 / 3');
-      expect(treeSpotlit()).toBe(true);
+      // The understand step spotlights the chips row and the list as one region.
+      expect(linesSpotlit()).toBe(true);
+      expect(treeSpotlit()).toBe(false);
+      expect(chipsRowSpotlit()).toBe(false);
       expect(boardSpotlit()).toBe(false);
 
       clickBarNext();
       await waitFor(() => expect(tourCopyText()).toBe(ANALYZE_GAME_COPY));
       expect(stepCount()).toBe('3 / 3');
-      expect(spotlit(screen.getByTestId('train-reveal-action-bar'))).toBe(false);
+      expect(actionBarSpotlit()).toBe(true);
+      expect(linesSpotlit()).toBe(false);
       expect(stampOnboarding).not.toHaveBeenCalled();
       expect(nextFlush).not.toHaveBeenCalled();
 
@@ -4239,6 +4258,41 @@ describe('TrainSolveScreen — progress, last move, grading state, engine failur
       expect(stepCount()).toBe('1 / 3');
       expect(tourCopyText()).toContain('or Home takes you back to the puzzle position.');
       expect(tourCopyText()).not.toContain('in the bar');
+    });
+
+    // Below sm the bar is the fixed phone bar, fed by the published payload: its
+    // `spotlight` flag follows the tour step that targets the bar (D-20).
+    async function openRevealWithProbe(stage: TrainSettingsResponse['reveal_tour_stage']): Promise<void> {
+      getSettings.mockResolvedValue(makeSettings({ reveal_tour_stage: stage }));
+      solvePuzzle.mockResolvedValue(SOLVE_RESPONSE);
+      matchMediaMatches = false;
+      await renderScreenWithProbe(makePuzzle());
+      fireEvent.click(screen.getByTestId('btn-train-guess-critical'));
+      await act(async () => {
+        fireEvent.click(screen.getByTestId('drop-e2e4'));
+      });
+      await waitFor(() => expect(screen.getByTestId('train-bot-walkthrough')).not.toBeNull());
+    }
+    const payloadSpotlight = (): string => screen.getByTestId('mbc-spotlight').textContent ?? '';
+
+    it('phone bar, part 1: the payload spotlights the bar on the Next step only', async () => {
+      await openRevealWithProbe(0);
+      expect(stepCount()).toBe('1 / 2');
+      expect(payloadSpotlight()).toBe('false');
+      fireEvent.click(screen.getByTestId('mbc-btn-next'));
+      await waitFor(() => expect(stepCount()).toBe('2 / 2'));
+      expect(payloadSpotlight()).toBe('true');
+    });
+
+    it('phone bar, part 3: the payload spotlights the bar on the Analyze step only', async () => {
+      await openRevealWithProbe(2);
+      expect(payloadSpotlight()).toBe('false');
+      fireEvent.click(screen.getByTestId('mbc-btn-next'));
+      await waitFor(() => expect(stepCount()).toBe('2 / 3'));
+      expect(payloadSpotlight()).toBe('false');
+      fireEvent.click(screen.getByTestId('mbc-btn-next'));
+      await waitFor(() => expect(stepCount()).toBe('3 / 3'));
+      expect(payloadSpotlight()).toBe('true');
     });
 
     it('stage 1: a "Move = Best" reveal appends that sentence to the chips copy, within the budget', async () => {
