@@ -6,6 +6,11 @@
  * (<elo>) · <date>". The Analyze/Next row that used to close the reveal lives in
  * the reveal action bar, whose Analyze also replaced the footer's own
  * open-on-the-analysis-board icon (redundant beside it).
+ *
+ * Quick 261015-s05: a second line under the footer shows the clock context of the
+ * flawed move ("Played after 13s, with 3:56 left."). It reads `eval_series` from the
+ * same post-solve card query (no extra fetch) and is suppressed with the footer for
+ * non-SR sources, so SOLV-05 / T-190-16 are unchanged.
  */
 
 import type { ReactElement } from 'react';
@@ -13,6 +18,7 @@ import { useLibraryGame } from '@/hooks/useLibrary';
 import { LoadError } from '@/components/ui/load-error';
 import { formatDateWithYear } from '@/lib/utils';
 import { formatTimeControl } from '@/lib/formatTimeControl';
+import { clockContextLine } from '@/lib/trainClockContext';
 import type { SolveResponse, TrainPuzzle } from '@/types/train';
 
 export interface TrainRevealGameFooterProps {
@@ -59,23 +65,35 @@ export function TrainRevealGameFooter({
   const opponentRating =
     game !== null ? (game.user_color === 'white' ? game.black_rating : game.white_rating) : null;
 
+  // The puzzle's `ply` is the flawed move's ply; its eval-series point carries the
+  // mover's clock after the move and the time spent on it.
+  const point = game?.eval_series?.find((p) => p.ply === puzzle.ply);
+  const clockLine = point ? clockContextLine(point.clock_seconds, point.move_seconds) : null;
+
   return (
     <>
       {gameQuery.isError && <LoadError resource="the game" data-testid="train-gamecard-error" />}
       {game !== null && (
-        <p className="text-sm text-muted-foreground" data-testid="train-reveal-footer">
-          Game:{' '}
-          {game.time_control_bucket !== null && (
-            <>
-              <span className="capitalize">{game.time_control_bucket}</span>
-              {game.time_control_str !== null && ` ${formatTimeControl(game.time_control_str)}`}
-              {' · '}
-            </>
+        <div className="flex flex-col gap-1">
+          <p className="text-sm text-muted-foreground" data-testid="train-reveal-footer">
+            Game:{' '}
+            {game.time_control_bucket !== null && (
+              <>
+                <span className="capitalize">{game.time_control_bucket}</span>
+                {game.time_control_str !== null && ` ${formatTimeControl(game.time_control_str)}`}
+                {' · '}
+              </>
+            )}
+            vs {opponentName}
+            {opponentRating !== null && ` (${opponentRating})`}
+            {game.played_at !== null && ` · ${formatDateWithYear(game.played_at)}`}
+          </p>
+          {clockLine !== null && (
+            <p className="text-sm text-muted-foreground" data-testid="train-reveal-clock-line">
+              {clockLine}
+            </p>
           )}
-          vs {opponentName}
-          {opponentRating !== null && ` (${opponentRating})`}
-          {game.played_at !== null && ` · ${formatDateWithYear(game.played_at)}`}
-        </p>
+        </div>
       )}
     </>
   );

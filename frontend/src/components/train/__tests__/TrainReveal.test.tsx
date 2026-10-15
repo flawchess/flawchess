@@ -24,7 +24,7 @@ import { buildChipGroups } from '@/lib/trainRevealLines';
 import type { BuildChipGroupsInput, ChipGroup } from '@/lib/trainRevealLines';
 import type { GradeResult, TrainEngineLine, TrainGradingEngine } from '@/hooks/useTrainGradingEngine';
 import type { PuzzleRevealResponse, SolveResponse, TrainPuzzle } from '@/types/train';
-import type { GameFlawCard } from '@/types/library';
+import type { EvalPoint, GameFlawCard } from '@/types/library';
 
 const START_FEN = 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1';
 
@@ -149,6 +149,22 @@ function makeGradingEngine(overrides: Partial<TrainGradingEngine> = {}): TrainGr
     recheckMove: vi.fn(),
     startGameMoveSearch: vi.fn<(puzzleFen: string, gameMoveUci: string) => Promise<TrainEngineLine>>()
       .mockResolvedValue({ moves: [], evalCp: null, evalMate: null }),
+    ...overrides,
+  };
+}
+
+/** Minimal `EvalPoint` fixture: every nullable field null unless overridden. */
+function makeEvalPoint(overrides: Partial<EvalPoint> = {}): EvalPoint {
+  return {
+    ply: 20,
+    es: null,
+    eval_cp: null,
+    eval_mate: null,
+    clock_seconds: null,
+    move_seconds: null,
+    best_move: null,
+    best_move_tier: null,
+    maia_prob: null,
     ...overrides,
   };
 }
@@ -794,6 +810,26 @@ describe('TrainReveal', () => {
     renderReveal();
     await waitFor(() => expect(screen.getByTestId('train-gamecard-error')).not.toBeNull());
     expect(screen.getByTestId('train-verdict-guess')).not.toBeNull();
+  });
+
+  it('clock line reads "Played after 13s, with 3:56 left." as its own element under the footer', async () => {
+    getGame.mockResolvedValue(
+      makeGame({
+        analysis_state: 'analyzed',
+        eval_series: [
+          makeEvalPoint({ ply: 19, clock_seconds: 250, move_seconds: 4 }),
+          makeEvalPoint({ ply: 20, clock_seconds: 236.9, move_seconds: 13.0 }),
+        ],
+      }),
+    );
+    renderReveal();
+    await waitFor(() => expect(screen.getByTestId('train-reveal-clock-line')).not.toBeNull());
+    expect(screen.getByTestId('train-reveal-clock-line').textContent).toBe(
+      'Played after 13s, with 3:56 left.',
+    );
+    const footerText = screen.getByTestId('train-reveal-footer').textContent ?? '';
+    expect(footerText).toContain('vs bob');
+    expect(footerText).not.toContain('Played');
   });
 
   // ─── D-07: herring reveal omits the game info line entirely (Phase 192) ──
