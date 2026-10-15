@@ -275,7 +275,7 @@ Locked design in SEED-200.
 
 **Depends on**: nothing in flight (builds on Phase 222 onboarding and Phase 237 reveal tour)
 **Requirements**: TBD (coverage contract = CONTEXT decisions from discuss-phase)
-**Plans:** 6/7 plans executed
+**Plans:** 7/7 plans executed
 **Status**: Planned
 
 Plans:
@@ -294,7 +294,7 @@ Plans:
 - [x] 240-06-PLAN.md — Frontend: one shared pulsing bronze spotlight on every tour target, incl. chips row and phone bar
 
 **Wave 5** *(blocked on Wave 4 completion)*
-- [ ] 240-07-PLAN.md — Close-out: CHANGELOG, pre-merge gate, browser walkthrough, pre-deploy funnel snapshot (orchestrator)
+- [x] 240-07-PLAN.md — Close-out: CHANGELOG, pre-merge gate, browser walkthrough, pre-deploy funnel snapshot (orchestrator)
 
 Phase detail for every shipped milestone lives in `milestones/vX.Y-ROADMAP.md`, its phase directories in `milestones/vX.Y-phases/`, and the per-milestone summaries in [MILESTONES.md](MILESTONES.md).
 
