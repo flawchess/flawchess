@@ -286,6 +286,15 @@ export const TAC_ALLOWED_LABEL = 'oklch(0.84 0.13 10)'; // lighter crimson
 // classes are constant here; callers combine this with a family color string.
 export const ACTIVE_FILTER_RING_CLASS = 'ring-2 ring-offset-1';
 
+// "Stockfish is still working" tint: border + fill shared by the Quick Scan banner
+// (EvalCoverageHeader), the opening-card eval placeholder bar (EvalCpuPlaceholder) and the Library Stats coverage
+// line while analysis is incomplete. Pair with the pulsing Cpu icon in
+// ANALYSIS_PENDING_ICON_CLASS. Same tones as the Alert "warning" variant: the previous
+// light-theme tint (bg-amber-50/60 + text-amber-700) put near-white text on a pale fill
+// in the app's permanent dark theme and was barely readable.
+export const ANALYSIS_PENDING_TINT_CLASS = 'border border-amber-500/30 bg-amber-500/10';
+export const ANALYSIS_PENDING_ICON_CLASS = 'text-amber-400';
+
 // Phase histogram bar fills (PHASE_OPENING/MIDDLEGAME/ENDGAME) were used by
 // FlawTagDistribution (deleted Phase 115 D-02). Removed to keep knip clean.
 

@@ -260,7 +260,8 @@ export function libraryBasisText(analyzedN: number, tc: TimeControlBucket): stri
 
 /**
  * The Flaw Stats basis line, which doubles as the per-TC coverage readout:
- * "1,768 of 1,790 rapid games analyzed in the current filters."
+ * "1,768 of 1,790 rapid games analyzed in the current filters.", or
+ * "All 1,841 rapid games in the current filters are analyzed." once complete.
  */
 export function libraryCoverageBasisText(
   analyzedN: number,
@@ -268,5 +269,6 @@ export function libraryCoverageBasisText(
   tc: TimeControlBucket,
 ): string {
   const fmt = (n: number): string => n.toLocaleString('en-US');
+  if (analyzedN >= totalN) return `All ${fmt(totalN)} ${tc} games in the current filters are analyzed.`;
   return `${fmt(analyzedN)} of ${fmt(totalN)} ${tc} games analyzed in the current filters.`;
 }

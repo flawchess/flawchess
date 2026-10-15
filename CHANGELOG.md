@@ -14,6 +14,7 @@ in `YYYY-MM-DD` (Europe/Zurich).
 
 ### Changed
 
+- Library Stats: while fewer than 98% of the selected time control's games are analyzed, the coverage line at the top is highlighted and says the stats below will keep updating as analysis continues (guests see that only analyzed games are counted). Once analysis is complete it reads "All N games … are analyzed." The analysis-in-progress banner is also easier to read on the dark theme.
 - Library Stats: the typical range for each flaw comparison is now measured on games of the selected time control, so bullet and blitz get their own ranges instead of the rapid one. Ranges are narrower in fast games and wider in classical, where flaw rates vary more between players.
 - Library Stats now compares you with your opponents in plain words: one gap bar per metric ("1.7 fewer" style), fewer flaws to the left, a grey typical range centred on zero, and the details behind the search icon.
 - Library Stats has one time-control switch for all its sections. It stays in reach while you scroll and remembers your choice between visits.

@@ -123,8 +123,8 @@ describe('EvalCpuPlaceholder — standalone', () => {
   it('contains the amber border and background classes (Constraint 6 styling)', () => {
     render(<EvalCpuPlaceholder />);
     const el = document.querySelector('[data-testid="eval-cpu-placeholder"]') as HTMLElement | null;
-    expect(el?.className).toMatch(/border-amber-400\/40/);
-    expect(el?.className).toMatch(/bg-amber-50\/60/);
+    expect(el?.className).toMatch(/border-amber-500\/30/);
+    expect(el?.className).toMatch(/bg-amber-500\/10/);
   });
 
   it('contains a Cpu icon element (animate-pulse class)', () => {

@@ -119,7 +119,7 @@ describe('Flaw Stats section (default selection)', () => {
     expect(
       screen.getByTestId('tc-switch-library-stats-rapid').getAttribute('aria-pressed'),
     ).toBe('true');
-    expect(text('flaw-stats-basis')).toBe('1,841 of 1,841 rapid games analyzed in the current filters.');
+    expect(text('flaw-stats-basis')).toBe('All 1,841 rapid games in the current filters are analyzed.');
   });
 
   it('is the only TC switch on the page: no section carries its own', async () => {
@@ -158,13 +158,56 @@ describe('Flaw Stats section (default selection)', () => {
 });
 
 describe('coverage basis line', () => {
-  it('shows per-TC analyzed of total, pulsing the cpu icon while incomplete', async () => {
+  function isPulsing(): boolean {
+    return screen.getByTestId('flaw-stats-coverage-icon').getAttribute('class')?.includes('animate-pulse') ?? false;
+  }
+
+  function isTinted(): boolean {
+    return screen.getByTestId('flaw-stats-coverage-line').getAttribute('data-updating') === 'true';
+  }
+
+  it('reads as a plain muted line once the selected TC is fully analyzed', async () => {
+    await renderLoaded();
+    expect(screen.queryByTestId('flaw-stats-coverage-hint')).toBeNull();
+    expect(isTinted()).toBe(false);
+    expect(isPulsing()).toBe(false);
+  });
+
+  it('stays plain at or above the updating threshold even when not quite complete', async () => {
     mocks.getFlawComparison.mockResolvedValue(
       makeComparison([BLITZ_ENTRY, makeTcEntry('rapid', { analyzedN: 1768, totalN: 1790 })]),
     );
     await renderLoaded();
     expect(text('flaw-stats-basis')).toBe('1,768 of 1,790 rapid games analyzed in the current filters.');
     expect(screen.getByTestId('flaw-stats-coverage-info')).not.toBeNull();
+    expect(screen.queryByTestId('flaw-stats-coverage-hint')).toBeNull();
+    expect(isTinted()).toBe(false);
+    expect(isPulsing()).toBe(false);
+    expect(screen.queryByTestId('btn-coverage-signup')).toBeNull();
+  });
+
+  it('tints, pulses and says the stats are still updating below the threshold', async () => {
+    mocks.getFlawComparison.mockResolvedValue(
+      makeComparison([BLITZ_ENTRY, makeTcEntry('rapid', { analyzedN: 1242, totalN: 2701 })]),
+    );
+    await renderLoaded();
+    expect(text('flaw-stats-basis')).toBe('1,242 of 2,701 rapid games analyzed in the current filters.');
+    expect(text('flaw-stats-coverage-hint')).toBe(' Stats below update as analysis continues.');
+    expect(isTinted()).toBe(true);
+    expect(isPulsing()).toBe(true);
+    expect(screen.queryByTestId('btn-coverage-signup')).toBeNull();
+  });
+
+  it('tells guests only analyzed games count, without the "working" pulse', async () => {
+    mocks.getFlawComparison.mockResolvedValue(
+      makeComparison([makeTcEntry('rapid', { analyzedN: 270, totalN: 300 })]),
+    );
+    renderSections(true);
+    await screen.findByTestId('flaw-tiles');
+    expect(text('flaw-stats-coverage-hint')).toBe(' Only analyzed games are counted.');
+    expect(isTinted()).toBe(true);
+    expect(isPulsing()).toBe(false);
+    // 90% is above the low-coverage CTA threshold: hint, but no sign-up button.
     expect(screen.queryByTestId('btn-coverage-signup')).toBeNull();
   });
 
@@ -175,6 +218,7 @@ describe('coverage basis line', () => {
     renderSections(true);
     await screen.findByTestId('flaw-tiles');
     expect(screen.getByTestId('btn-coverage-signup')).not.toBeNull();
+    expect(text('flaw-stats-coverage-hint')).toBe(' Only analyzed games are counted.');
   });
 
   it('shows no CTA to a guest whose selected TC is mostly analyzed', async () => {
@@ -194,7 +238,7 @@ describe('TC switch (D-02, D-05)', () => {
 
     await waitFor(() => expect(text('flaw-tile-blunder-rate')).toBe('5.46'));
     expect(text('flaw-tile-blunder-opponents')).toBe('Opponents 6.12');
-    expect(text('flaw-stats-basis')).toBe('1,000 of 1,000 blitz games analyzed in the current filters.');
+    expect(text('flaw-stats-basis')).toBe('All 1,000 blitz games in the current filters are analyzed.');
     expect(screen.getByTestId('trend-stub').getAttribute('data-dates')).toBe('2026-01-05');
     expect(mocks.trackFeature).toHaveBeenCalledTimes(1);
     expect(mocks.trackFeature).toHaveBeenCalledWith('option-change', {
