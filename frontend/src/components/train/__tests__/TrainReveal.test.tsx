@@ -832,6 +832,70 @@ describe('TrainReveal', () => {
     expect(footerText).not.toContain('Played');
   });
 
+  it('clock line is absent when the game has no eval series', async () => {
+    getGame.mockResolvedValue(makeGame());
+    renderReveal();
+    await waitFor(() => expect(screen.getByTestId('train-reveal-footer')).not.toBeNull());
+    expect(screen.queryByTestId('train-reveal-clock-line')).toBeNull();
+  });
+
+  it('clock line is absent when the flaw-ply point has no clock data', async () => {
+    getGame.mockResolvedValue(
+      makeGame({ analysis_state: 'analyzed', eval_series: [makeEvalPoint({ ply: 20 })] }),
+    );
+    renderReveal();
+    await waitFor(() => expect(screen.getByTestId('train-reveal-footer')).not.toBeNull());
+    expect(screen.queryByTestId('train-reveal-clock-line')).toBeNull();
+  });
+
+  it('clock line keys on puzzle.ply: a point at another ply is ignored', async () => {
+    getGame.mockResolvedValue(
+      makeGame({
+        analysis_state: 'analyzed',
+        eval_series: [makeEvalPoint({ ply: 21, clock_seconds: 236, move_seconds: 13 })],
+      }),
+    );
+    renderReveal();
+    await waitFor(() => expect(screen.getByTestId('train-reveal-footer')).not.toBeNull());
+    expect(screen.queryByTestId('train-reveal-clock-line')).toBeNull();
+  });
+
+  it('clock line falls back to "Played with 3:56 left." when think time is unknown', async () => {
+    getGame.mockResolvedValue(
+      makeGame({
+        analysis_state: 'analyzed',
+        eval_series: [makeEvalPoint({ ply: 20, clock_seconds: 236, move_seconds: null })],
+      }),
+    );
+    renderReveal();
+    await waitFor(() => expect(screen.getByTestId('train-reveal-clock-line')).not.toBeNull());
+    expect(screen.getByTestId('train-reveal-clock-line').textContent).toBe(
+      'Played with 3:56 left.',
+    );
+  });
+
+  it('clock line is absent for a herring reveal even with clock data on the flaw ply', async () => {
+    getGame.mockResolvedValue(
+      makeGame({
+        analysis_state: 'analyzed',
+        eval_series: [makeEvalPoint({ ply: 20, clock_seconds: 236, move_seconds: 13 })],
+      }),
+    );
+    const { client } = renderReveal({
+      verdict: makeVerdict({
+        puzzle_type: 'herring',
+        source: 'red_herring',
+        item_status: null,
+        due_date: null,
+        streak: null,
+      }),
+    });
+    await waitFor(() =>
+      expect(client.getQueryState(['library-game', 100])?.status).toBe('success'),
+    );
+    expect(screen.queryByTestId('train-reveal-clock-line')).toBeNull();
+  });
+
   // ─── D-07: herring reveal omits the game info line entirely (Phase 192) ──
 
   it('renders no game footer for a herring reveal', async () => {
