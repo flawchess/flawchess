@@ -4,9 +4,9 @@ milestone: v2.24
 current_phase: 240
 current_phase_name: Train First-Session Onboarding Load (SEED-200)
 status: executing
-stopped_at: Completed 240-03-PLAN.md
-last_updated: "2026-10-15T19:56:38.847Z"
-state_head: 378c59161acea975424a413cd7e68d977612ed9f
+stopped_at: Completed 240-02-PLAN.md
+last_updated: "2026-10-15T20:03:24.105Z"
+state_head: 86cc15de3fae91b85effdb9b57a22823d0f16dc5
 progress:
   total_phases: 3
   completed_phases: 103
@@ -22,7 +22,7 @@ last_activity_desc: "Completed quick task 261014-rux: Benchmark §5 whole-cohort
 ## Current Position
 
 Phase: 240 (Train First-Session Onboarding Load (SEED-200)) — EXECUTING
-Plan: 3 of 7
+Plan: 4 of 7
 
 Status: Ready to execute
 
@@ -870,6 +870,7 @@ flagged as an open decision for plan 06 / a human, not auto-fixed.
 - [Phase 240]: 240-01: reveal_tour_stage forward-only 0..3 counter (migration 5448f030de58) replaces the Phase 222 walkthrough timestamp; POST /train/onboarding/reveal_tour_1..3 via fixed dict + guarded N-1 -> N UPDATE; retired step name 422s
 - [Phase 240]: 240-03: a restored reveal (restoredSolve !== null) never starts a tour part; a part left halfway replays on the next puzzle's reveal
 - [Phase 240]: 240-03: Hilda stays out of the random host pool while reveal_tour_stage < 3; TOUR_PART_COUNT stays module-private
+- [Phase 240]: 240-02: first-ever session reorder computes puzzle types after assembly (one PK-scoped blob query), gated on no earlier drill_sessions row of any status
 
 ### Pending Todos
 
@@ -1089,8 +1090,8 @@ Items acknowledged and deferred at **v1.29 milestone close on 2026-06-29** (user
 
 ## Session Continuity
 
-**Last session:** 2026-10-15T19:56:38.716Z
-**Stopped at:** Completed 240-03-PLAN.md
+**Last session:** 2026-10-15T20:03:23.968Z
+**Stopped at:** Completed 240-02-PLAN.md
 **Resume file:** None
 
 Previous session note (Phase 227):
@@ -1334,6 +1335,7 @@ priority comment in `workerPoolState.ts:434-437` (verifier info item).
 | Phase 237 P10 | 12 min | 2 tasks | 8 files |
 | Phase 240 P01 | 10min | 2 tasks | 11 files |
 | Phase 240 P03 | 8min | 2 tasks | 13 files |
+| Phase 240 P02 | 20min | 2 tasks | 2 files |
 
 ## Performance Metrics
 

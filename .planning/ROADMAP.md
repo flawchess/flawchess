@@ -275,7 +275,7 @@ Locked design in SEED-200.
 
 **Depends on**: nothing in flight (builds on Phase 222 onboarding and Phase 237 reveal tour)
 **Requirements**: TBD (coverage contract = CONTEXT decisions from discuss-phase)
-**Plans:** 2/7 plans executed
+**Plans:** 3/7 plans executed
 **Status**: Planned
 
 Plans:
@@ -284,7 +284,7 @@ Plans:
 - [x] 240-03-PLAN.md — Frontend: three-part reveal tour model and hook, part 1 (only one / several) end to end, landing gate and the stage field swap
 
 **Wave 2** *(blocked on Wave 1 completion)*
-- [ ] 240-02-PLAN.md — Backend: first-ever session opens on a sharp puzzle, a several puzzle at 2 or 3
+- [x] 240-02-PLAN.md — Backend: first-ever session opens on a sharp puzzle, a several puzzle at 2 or 3
 - [ ] 240-04-PLAN.md — Frontend: tour parts 2 and 3 end to end, one part per reveal, abandon replay, the D-19 tour copy matrix
 
 **Wave 3** *(blocked on Wave 2 completion)*
