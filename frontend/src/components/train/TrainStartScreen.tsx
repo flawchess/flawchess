@@ -213,6 +213,7 @@ function resolveLandingState(
  * sees on landing and on finishing are literally the same words. This
  * replaced the "Warm-up session" info card, which told guests their games
  * were being analyzed although nothing is analyzed for a guest.
+ * Phase 240 UAT: hidden until the reveal tour is done, like the reminder ask.
  *
  * 2026-09-18: a registered account with no push subscription from a phone
  * (`has_mobile_subscription === false`, account-wide) gets the reminder ask
@@ -253,6 +254,11 @@ function TrainHeader({
   const onboardingDone = settings !== undefined && isRevealTourDone(settings.reveal_tour_stage);
   const showReminderAsk =
     !isGuest && !showImportAsk && onboardingDone && settings?.has_mobile_subscription === false;
+  // Phase 240 UAT: the guest sign-up ask (sentence and buttons) waits for the
+  // same finished tour, so a guest tries Train before being asked to sign up.
+  // The intro welcome, the warm-up verdict tails and the score screen already
+  // carry the ask during the first session.
+  const showSignupAsk = isGuest && onboardingDone;
   // Quick 261004-dta: on a phone the avatar + bubble pushed the streak card and
   // its Start button below the fold. Only Tank's intro (intro stepper not yet
   // completed) keeps it there; the sign-up/import/install asks it would carry
@@ -281,10 +287,12 @@ function TrainHeader({
           persona={host.persona}
           state="prompt"
           avatarSize="large"
-          actions={landingActions(isGuest, showImportAsk)}
+          actions={landingActions(showSignupAsk, showImportAsk)}
         >
           <p data-testid="train-tagline">{host.copy}</p>
-          {isGuest && <p data-testid="train-landing-signup-ask">{GUEST_SIGNUP_ASK_SCORE}</p>}
+          {showSignupAsk && (
+            <p data-testid="train-landing-signup-ask">{GUEST_SIGNUP_ASK_SCORE}</p>
+          )}
           {showImportAsk && <p data-testid="train-landing-import-ask">{IMPORT_ASK_LANDING}</p>}
           {showReminderAsk && (
             <p data-testid="train-landing-reminder-ask">{REMINDER_INSTALL_ASK}</p>
@@ -295,8 +303,8 @@ function TrainHeader({
   );
 }
 
-function landingActions(isGuest: boolean, showImportAsk: boolean): ReactElement | undefined {
-  if (isGuest) return <SignupAskActions source="train-landing" />;
+function landingActions(showSignupAsk: boolean, showImportAsk: boolean): ReactElement | undefined {
+  if (showSignupAsk) return <SignupAskActions source="train-landing" />;
   if (showImportAsk) return <ImportAskActions source="train-landing" />;
   return undefined;
 }

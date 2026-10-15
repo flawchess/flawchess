@@ -484,6 +484,12 @@ describe('TrainStartScreen — six landing states', () => {
   });
 });
 
+// Phase 240 UAT: the guest landing sign-up ask waits for the finished reveal tour.
+const TOUR_DONE = {
+  intro_seen_at: '2026-07-01T10:00:00Z',
+  reveal_tour_stage: 3 as const,
+};
+
 describe('TrainStartScreen — 224 UAT round 2: no warm-up info card, guest sign-up ask in the host bubble', () => {
   it('is_warmup true: renders no warm-up card and the plain Start CTA', () => {
     renderScreen({
@@ -495,6 +501,7 @@ describe('TrainStartScreen — 224 UAT round 2: no warm-up info card, guest sign
   });
 
   it('guest: the host bubble carries the score-screen sign-up sentence and both action buttons', () => {
+    mockTrainSettingsData = { ...mockTrainSettingsData, ...TOUR_DONE };
     renderScreen({ isGuest: true, session: { ...BASE_SESSION, is_warmup: true } });
     expect(screen.getByTestId('train-tagline')).not.toBeNull();
     expect(screen.getByTestId('train-landing-signup-ask').textContent).toBe(GUEST_SIGNUP_ASK_SCORE);
@@ -505,6 +512,7 @@ describe('TrainStartScreen — 224 UAT round 2: no warm-up info card, guest sign
   });
 
   it('guest: the ask also renders on the completed landing state', () => {
+    mockTrainSettingsData = { ...mockTrainSettingsData, ...TOUR_DONE };
     renderScreen({
       isGuest: true,
       session: { ...BASE_SESSION, puzzle_count: 6, solved_count: 6 },
@@ -512,6 +520,18 @@ describe('TrainStartScreen — 224 UAT round 2: no warm-up info card, guest sign
     });
     expect(screen.getByTestId('train-landing-signup-ask')).not.toBeNull();
     expect(screen.getByTestId('btn-signup-free-train-landing')).not.toBeNull();
+  });
+
+  it('Phase 240 UAT: guest before the tour is done (first visit, or stage 2): no sign-up sentence or buttons', () => {
+    renderScreen({ isGuest: true, session: { ...BASE_SESSION, is_warmup: true } });
+    expect(screen.queryByTestId('train-landing-signup-ask')).toBeNull();
+    expect(document.querySelectorAll('[data-testid^="btn-signup-"]')).toHaveLength(0);
+    cleanup();
+
+    mockTrainSettingsData = { ...mockTrainSettingsData, ...TOUR_DONE, reveal_tour_stage: 2 };
+    renderScreen({ isGuest: true, session: { ...BASE_SESSION, is_warmup: true } });
+    expect(screen.queryByTestId('train-landing-signup-ask')).toBeNull();
+    expect(document.querySelectorAll('[data-testid^="btn-signup-"]')).toHaveLength(0);
   });
 
   it('registered account: no sign-up sentence and no btn-signup- element, warm-up or not', () => {
@@ -557,7 +577,7 @@ describe('TrainStartScreen — landing reminder ask (no push subscription from a
   });
 
   it('guest without a phone subscription: the sign-up ask wins, no reminder sentence', () => {
-    mockTrainSettingsData = { ...mockTrainSettingsData, has_mobile_subscription: false };
+    mockTrainSettingsData = { ...mockTrainSettingsData, ...TOUR_DONE, has_mobile_subscription: false };
     renderScreen({ isGuest: true, session: { ...BASE_SESSION, is_warmup: true } });
     expect(screen.getByTestId('train-landing-signup-ask')).not.toBeNull();
     expect(screen.queryByTestId('train-landing-reminder-ask')).toBeNull();
@@ -591,6 +611,7 @@ describe('TrainStartScreen — quick 260926-8p5: import ask for a registered zer
   });
 
   it('guest without games: the sign-up ask wins, no import button', () => {
+    mockTrainSettingsData = { ...mockTrainSettingsData, ...TOUR_DONE };
     renderScreen({ isGuest: true, hasGames: false, session: { ...BASE_SESSION, is_warmup: true } });
     expect(screen.getByTestId('train-landing-signup-ask')).not.toBeNull();
     expect(screen.queryByTestId('btn-import-games-train-landing')).toBeNull();
