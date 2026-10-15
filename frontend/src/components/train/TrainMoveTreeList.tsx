@@ -31,9 +31,10 @@ import { useEngineDisplaySettings } from '@/lib/engineSettings';
  * (lg), without scrolling. A row is 24px (text-sm 20px line + py-0.5) with a 2px
  * gap-y; the box adds 16px padding + 2px border (Phase 237 UAT: h-16 scrolled at
  * two rows). Mobile bumped h-17 -> h-18 (UAT 2026-10-09: a little more air
- * under the second row; +4px keeps the 4px grid).
+ * under the second row; +4px keeps the 4px grid), then h-18 -> h-19 (Phase 240
+ * UAT: about 5px taller; +4px stays on the grid).
  */
-export const TRAIN_MOVE_TREE_HEIGHT_CLASS = 'h-18 lg:h-30';
+export const TRAIN_MOVE_TREE_HEIGHT_CLASS = 'h-19 lg:h-30';
 
 interface TrainMoveTreeListProps {
   tree: TrainRevealTree;
