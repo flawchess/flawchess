@@ -45,6 +45,7 @@ in `YYYY-MM-DD` (Europe/Zurich).
 - Analysis engine no longer restarts its Stockfish workers when the tab sits in the background, so a search left running in another tab keeps its results instead of losing them.
 - Google sign-in no longer shows a server error page when Google rejects the sign-in code (for example after a doubled redirect on Android). You land back on the login page with a "Google sign-in failed. Please try again." message.
 - Admin: closing the impersonation pill now takes you back to your own admin session on the Admin page instead of signing you out.
+- Train: guests who imported games are no longer told their games are being analyzed. Guest games are not analyzed automatically, so warm-up sessions now say so and point to signing up, which is what brings your own mistakes into Train.
 
 ### Security
 
