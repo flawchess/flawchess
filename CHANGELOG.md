@@ -10,6 +10,7 @@ in `YYYY-MM-DD` (Europe/Zurich).
 
 ### Added
 
+- Train: after you solve a puzzle from your own games, a line under the game details shows how long you took over the move and how much time was left on your clock (for example "Played after 13s, with 3:56 left.").
 - Library Stats: a new "Clock by game phase" card under the context cards crosses the three clock tags with the three game phases, so you can see, for example, whether your hasty flaws pile up in the middlegame. Each cell shows your gap to your opponents per 100 moves, in green or red only when the gap is outside the typical range for your level and very unlikely to be chance, the same rule as the gap bars above it.
 
 ### Changed
