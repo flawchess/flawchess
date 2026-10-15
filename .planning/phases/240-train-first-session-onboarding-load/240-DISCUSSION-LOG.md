@@ -107,3 +107,13 @@ verdict return tails stay).
 ## Deferred Ideas
 
 None.
+
+## Follow-up (same session)
+
+- Owner asked for the full copy sheet with conditional variants; reviewed and accepted it, with the
+  warm-up shortening on the first completed session (line 1 drops "nothing to bring back yet"). Added
+  as D-19 + the sheet in CONTEXT `<specifics>`.
+- Owner: "the highlighting of the elements which are being explained should be more salient. How about
+  a gold border (like the flaw fixed card) with a pulsating golden glow?" Added as D-20 (reuses the
+  flaw-fixed bronze `rgba(205,127,50,…)`, one shared spotlight class, reduced-motion fallback, the chips
+  row now gets highlighted too).

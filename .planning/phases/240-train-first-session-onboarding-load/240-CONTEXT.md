@@ -106,10 +106,32 @@ where the code contradicted the seed. Where they differ, this file wins.
   Clean up whatever `ScoreBubbleInput` fields only that sentence used (`outcomes`, `session_date`,
   `expires_on` if nothing else reads them).
 
+### Copy sheet
+- **D-19:** The copy sheet in `<specifics>` below is the **owner-reviewed starting draft** for every
+  step and conditional variant. Planner and executor implement it verbatim. Small wording fixes found
+  at UAT are fine, but every bubble stays within 145 chars and no step is added. This includes the
+  warm-up shortening on the first completed session (line 1 drops "nothing to bring back yet").
+
+### Tour spotlight styling
+- **D-20:** The element a tour step explains gets a **more salient highlight**: the flaw-fixed card's
+  border (`FLAW_FIXED_GLOW` in `frontend/src/components/train/TrainFlawFixedBanner.tsx`:
+  `rgba(205,127,50,0.85)`, the homepage "brand glow". The owner calls it gold; it is the bronze brand
+  color, so reuse that exact value) plus a **pulsating glow** of the same color. This replaces today's
+  scattered `ring-2 ring-brand-brown` spotlights (`TrainReveal.tsx` verdict/tree/lines,
+  `TrainSolveScreen.tsx` board, the action bar) with **one shared class/constant** used by every tour
+  target. It applies to all three tour parts.
+  - Pulse = a new `@keyframes` in `frontend/src/index.css` animating the `box-shadow` glow (alpha/blur),
+    looping while the step is active, next to the existing `arrow-pulse` / `row-highlight-pulse`.
+  - `prefers-reduced-motion`: static glow, no pulse.
+  - The highlight must not shift layout (border width compensated, or `outline`/`box-shadow` only) and
+    must not be clipped by `overflow` parents (the board row, the fixed phone action bar).
+  - Phase 237 UAT left the chips row un-ringed because the active chip's own ring already marked it.
+    With the new glow the **chips row container does get the highlight** (salience is the goal, and
+    the glow reads differently from a chip's selection ring). Recheck at UAT that the two don't clash.
+
 ### Claude's Discretion
-- All new/rewritten copy (P1 sharp/several result bubbles, P2/P3 regrouped steps, score-screen
-  rationale), within the 145-char budget and Phase 237 D-09's "describe only what is on screen". Owner
-  reviews at UAT. Whether the P1 bubble refers to the user's own guess is also Claude's call.
+- Copy beyond D-19's sheet (none expected). Whether the P1 bubble refers to the user's own guess: no,
+  per the sheet.
 - Onboarding endpoint shape for the stage advance (e.g. `POST /train/onboarding/reveal_tour` with the
   target stage, or step literals mapping to stages), keeping the fixed-dict / no-`getattr` rule from
   T-222-02-03.
@@ -177,11 +199,79 @@ where the code contradicted the seed. Where they differ, this file wins.
 <specifics>
 ## Specific Ideas
 
-- P1 result bubble draft (sharp, phone): "This strip is your result. Here there was only one good move:
-  anything else was a mistake. Tap the strip for the details." P1 step 2: "Next takes you to the next
-  puzzle."
-- Score line 1 draft: "{opener} Practice teaches you when to calculate and when a quick good move is
-  enough."
+### Copy sheet (D-19)
+
+"Unchanged" = today's string in `frontend/src/lib/trainBotCopy.ts`. `{back}`/`{forward}`/`{rewind}` are
+`TOUR_ICON_TOKEN`s rendered as icons. Char counts measured with tokens as text (all ≤ 145).
+
+**Intro (puzzle 1, before the first move): 2 steps**
+
+- **I-1 Welcome** (unchanged, `INTRO_WELCOME_COPY` per audience):
+  - has_games: "Welcome to FlawChess Train! You will improve by solving puzzles created from your own games."
+  - has_games_guest: "Welcome to FlawChess Train! Sign up free and you will improve by solving puzzles created from your own mistakes."
+  - no_games: "Welcome to FlawChess Train! Import your games and you will improve by solving puzzles created from your own mistakes."
+  - no_games_guest: "Welcome to FlawChess Train! Import your games and sign up, and you will improve by solving puzzles created from your own mistakes."
+- **I-2 Closing prompt + guess buttons** (unchanged): "Decide first, then play. Your turn. You play {white|black}. Is there only one good move, or several?"
+- Retired: `INTRO_QUESTION`, `INTRO_VOCABULARY`, `INTRO_PRACTICE`, `INTRO_WARMUP_COPY`.
+
+**Warm-up verdict tail** (unchanged, carries the warm-up notice per D-02): "That one was a warm-up, so it
+won't come back." + has_games "Your own positions will." / has_games_guest "Sign up free and your own
+positions will." / no_games "Import your games and your own positions will." / no_games_guest "Import
+your games, then sign up, and your own positions will."
+
+**Tour part 1 (first reveal): 2 steps**
+
+- **P1-1 Result + vocabulary** (new, spotlight `verdict`), by device × answer type (sharp = key type
+  `sharp`; several = `soft` or `herring`):
+  - phone + sharp (124): "This strip is your result. Here only one move was good, every other move was a mistake. Tap the strip for the full feedback."
+  - phone + several (117): "This strip is your result. Here several moves were fine, so any good move works. Tap the strip for the full feedback."
+  - desktop + sharp (102): "Your result is in the highlighted bubble. Here only one move was good, every other move was a mistake."
+  - desktop + several (95): "Your result is in the highlighted bubble. Here several moves were fine, so any good move works."
+- **P1-2 Next** (new, spotlight `bar`): "Next takes you to the next puzzle."
+
+**Tour part 2 (next reveal after part 1): 2 steps**
+
+- **P2-1 Chips** (unchanged, spotlight `chips`): "The Move, Best, and Game chips are the lines, one per
+  move. Tap one to focus it on the board." + only when shown: ' "Move = Best" means you found the best
+  move.' / ' "Move = Game" means you played the game move.' (max 139)
+- **P2-2 Stepping** (unchanged, spotlight `tree`):
+  - phone (90): "Step through the focused line with {back} {forward} in the bar, or tap a move in the list."
+  - desktop (116): "Step through the focused line with {back} {forward} under the board, the arrow keys, or a tap on a move in the list."
+
+**Tour part 3 (next reveal after part 2): 3 steps**
+
+- **P3-1 Sidelines** (unchanged, spotlight `board`):
+  - phone (124): "Move a piece to try your own idea: it branches off as a sideline. {rewind} in the bar takes you back to the puzzle position."
+  - desktop (121): "Move a piece to try your own idea: it branches off as a sideline. {rewind} or Home takes you back to the puzzle position."
+- **P3-2 Understand** (unchanged, spotlight `lines`, 127): "Understanding why a move works or fails by analyzing the lines is what makes the pattern stick. Don't just memorize the answer."
+- **P3-3 Analyze** (changed: the Next sentence moved to P1-2; spotlight `bar`):
+  - analyzeOpens = game (102): "The Analyze button opens the whole game one move before the mistake, so you can see how you got there."
+  - analyzeOpens = position (61): "The Analyze button opens this position on the analysis board."
+
+**Score screen** (`scoreBubbleCopy`). `{rationale}` = "Practice teaches you when to calculate and when a
+quick good move is enough." (76), first completed session only (D-17). The returning-counts sentence is
+gone from every branch (D-18).
+
+| Branch | Line 1 | Line 2 |
+|---|---|---|
+| Regular, first completed | `{opener} {rationale}` | "Reminders build the habit that makes Train work." + `{reminder ask}` |
+| Regular, later | `{opener} See you tomorrow.` | none |
+| Perfect, first completed | "Nothing got away today." + `{rationale}` | "Reminders build the habit that makes Train work." + `{reminder ask}` |
+| Perfect, later | "Nothing got away today." | `{reminder ask}`; if reminders already on: "Remember to analyze why the moves work or fail, not just memorize the best move." |
+| Warm-up, first completed | `{opener} {rationale} Those were warm-ups. {warm-up clause}` (shortened, ~180 max) | guest: `GUEST_SIGNUP_ASK_SCORE`; has_games: `WARMUP_REMINDER_ASK_COPY`; no_games: none |
+| Warm-up, later | `{opener} Those were warm-ups, nothing to bring back yet. {warm-up clause}` (unchanged) | same as above |
+
+- `{opener}` (unchanged): green "Strong session." / yellow "Solid session, with a few that got away." /
+  red "Tough session. That is exactly what Train is for." / no band "Session done."
+- `{reminder ask}` (unchanged `REMINDER_ASK_COPY`): remind_me "Turn on Remind me and let the next session
+  find you." / scan_qr "Train works best on your phone: scan the code below to install FlawChess there
+  and turn on reminders." / none "Yours are already on, so the next session will find you."
+- `{warm-up clause}` (unchanged `WARMUP_SCORE_CLAUSE`): has_games "Once your games are analyzed, your own
+  mistakes take over." / has_games_guest "Guest games are not analyzed automatically, so your own
+  mistakes are not here yet." / no_games "Import your games and your own mistakes take over." /
+  no_games_guest "Import your games, then sign up, and your own mistakes take over."
+
+### Measurement
 - Measurement: re-run the SEED-200 clean-cohort funnel (split guest-origin vs registered) before and
   after. "Never finished the tour" becomes `reveal_tour_stage < 3` (or `= 0` for "never finished
   part 1"). Commit a "before" snapshot during the phase; the "after" read is a post-deploy follow-up,
