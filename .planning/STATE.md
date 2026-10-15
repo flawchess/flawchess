@@ -2,11 +2,11 @@
 gsd_state_version: "1.0"
 milestone: v2.24
 current_phase: 240
-current_phase_name: train-first-session-onboarding-load
-status: completed
-stopped_at: Phase 240 planned (7 plans)
-last_updated: "2026-10-15T19:38:30.334Z"
-state_head: 29671b1360c61b78f21d0f57070d7811492228e5
+current_phase_name: Train First-Session Onboarding Load (SEED-200)
+status: executing
+stopped_at: Completed 240-01-PLAN.md
+last_updated: "2026-10-15T19:49:25.672Z"
+state_head: f6581b804c51503f0ee2e292965f5e5944b21419
 progress:
   total_phases: 3
   completed_phases: 103
@@ -21,8 +21,8 @@ last_activity_desc: "Completed quick task 261014-rux: Benchmark §5 whole-cohort
 
 ## Current Position
 
-Phase: 240 (train-first-session-onboarding-load) — READY TO EXECUTE
-Plan: Not started
+Phase: 240 (Train First-Session Onboarding Load (SEED-200)) — EXECUTING
+Plan: 2 of 7
 
 Status: Ready to execute
 
@@ -867,6 +867,7 @@ flagged as an open decision for plan 06 / a human, not auto-fixed.
 - [Phase 237]: 237-09: malformed cached revealTree is dropped on read, the rest of the reveal-cache entry still restores (T-237-16)
 - [Phase 237]: 237-10: phone tour scroll aligns Hilda's bubble under the pinned block when the target still fits above the bottom bar, else scrolls the target itself
 - [Phase 237]: 237-10: 'Got it' (btn-train-bot-walkthrough-done) ends the tour in place, stamps once; re-onboarding stays option (a) (no migration)
+- [Phase 240]: 240-01: reveal_tour_stage forward-only 0..3 counter (migration 5448f030de58) replaces the Phase 222 walkthrough timestamp; POST /train/onboarding/reveal_tour_1..3 via fixed dict + guarded N-1 -> N UPDATE; retired step name 422s
 
 ### Pending Todos
 
@@ -1086,9 +1087,9 @@ Items acknowledged and deferred at **v1.29 milestone close on 2026-06-29** (user
 
 ## Session Continuity
 
-**Last session:** 2026-10-15T17:54:19.555Z
-**Stopped at:** Phase 240 context gathered
-**Resume file:** .planning/phases/240-train-first-session-onboarding-load/240-CONTEXT.md
+**Last session:** 2026-10-15T19:49:25.585Z
+**Stopped at:** Completed 240-01-PLAN.md
+**Resume file:** None
 
 Previous session note (Phase 227):
 refit (calibration parity holds). Verification passed 17/17; code review 0 blockers (WR-01 + 3 info fixed). Next:
@@ -1329,6 +1330,7 @@ priority comment in `workerPoolState.ts:434-437` (verifier info item).
 | Phase 237 P08 | 55 min | 3 tasks | 13 files |
 | Phase 237 P09 | 8 min | 2 tasks | 9 files |
 | Phase 237 P10 | 12 min | 2 tasks | 8 files |
+| Phase 240 P01 | 10min | 2 tasks | 11 files |
 
 ## Performance Metrics
 

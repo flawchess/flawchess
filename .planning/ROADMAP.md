@@ -275,12 +275,12 @@ Locked design in SEED-200.
 
 **Depends on**: nothing in flight (builds on Phase 222 onboarding and Phase 237 reveal tour)
 **Requirements**: TBD (coverage contract = CONTEXT decisions from discuss-phase)
-**Plans:** 7 plans
+**Plans:** 1/7 plans executed
 **Status**: Planned
 
 Plans:
 **Wave 1**
-- [ ] 240-01-PLAN.md — Backend: reveal_tour_stage counter replaces the walkthrough timestamp (migration, forward-only onboarding advance, settings response)
+- [x] 240-01-PLAN.md — Backend: reveal_tour_stage counter replaces the walkthrough timestamp (migration, forward-only onboarding advance, settings response)
 - [ ] 240-03-PLAN.md — Frontend: three-part reveal tour model and hook, part 1 (only one / several) end to end, landing gate and the stage field swap
 
 **Wave 2** *(blocked on Wave 1 completion)*
