@@ -42,6 +42,7 @@ from __future__ import annotations
 
 import dataclasses
 import datetime
+import random
 import uuid
 from collections.abc import Sequence
 from typing import Literal, get_args
@@ -5924,3 +5925,327 @@ def test_resolve_grade_instant_payload_tier_d10() -> None:
     )
     assert live.effective_quality == "good"
     assert (live.graded_es_before, live.graded_es_after) == (0.6, 0.58)
+
+
+# ---------------------------------------------------------------------------
+# Phase 240 (D-13..D-15) — the first-ever session opens on a sharp puzzle and
+# carries a "several" puzzle at puzzle 2 or 3.
+# ---------------------------------------------------------------------------
+
+_FIRST_SESSION_SOFT_TYPES: frozenset[str] = frozenset({"soft", "herring"})
+
+
+def _reconstructed(
+    ply: int, source: int = DrillSource.SR_ITEM
+) -> train_repository._ReconstructedPuzzle:
+    """A lightweight puzzle whose `ply` doubles as its identity in the pure-helper table."""
+    return train_repository._ReconstructedPuzzle(
+        game_id=ply,
+        ply=ply,
+        fen="rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
+        last_move_uci=None,
+        side_to_move="white",
+        source=source,
+        herring_pool_id=None,
+        sharp_puzzle_id=None,
+    )
+
+
+_Type = Literal["sharp", "soft", "herring"]
+
+
+def _order_types(types: list[_Type], seed: str = "fixed") -> tuple[list[int], list[_Type]]:
+    """Run `_first_session_order` over puzzles identified 0..n-1; return
+    (the resulting identity order, the types in that order)."""
+    puzzles = [_reconstructed(i) for i in range(len(types))]
+    ordered = train_repository._first_session_order(puzzles, types, random.Random(seed))
+    identities = [p.ply for p in ordered]
+    return identities, [types[i] for i in identities]
+
+
+def test_first_session_order_sharp_first_and_several_in_slot_1_or_2() -> None:
+    identities, ordered_types = _order_types(["soft", "herring", "sharp", "soft", "soft", "soft"])
+    assert ordered_types[0] == "sharp"
+    assert ordered_types[1] in _FIRST_SESSION_SOFT_TYPES or ordered_types[2] in (
+        _FIRST_SESSION_SOFT_TYPES
+    )
+    assert sorted(identities) == [0, 1, 2, 3, 4, 5]
+
+
+def test_first_session_order_no_sharp_keeps_input_order() -> None:
+    identities, _ = _order_types(["soft", "soft", "herring", "soft"])
+    assert identities == [0, 1, 2, 3]
+
+
+def test_first_session_order_sharp_without_several_only_moves_the_sharp() -> None:
+    identities, _ = _order_types(["sharp", "sharp", "sharp", "sharp"])
+    assert identities == [0, 1, 2, 3]
+
+
+def test_first_session_order_sharp_moves_to_front_preserving_the_rest() -> None:
+    identities, _ = _order_types(["soft", "soft", "soft", "sharp", "soft"])
+    assert identities == [3, 0, 1, 2, 4]
+
+
+def test_first_session_order_several_already_in_slot_1_or_2_means_no_swap() -> None:
+    identities, _ = _order_types(["sharp", "sharp", "soft", "sharp", "herring"])
+    assert identities == [0, 1, 2, 3, 4]
+
+
+def test_first_session_order_swaps_a_several_into_slot_1_or_2() -> None:
+    seen_slots: set[int] = set()
+    for seed in range(40):
+        identities, ordered_types = _order_types(
+            ["sharp", "sharp", "sharp", "sharp", "soft"], seed=str(seed)
+        )
+        assert ordered_types[0] == "sharp"
+        slot = identities.index(4)
+        assert slot in (1, 2)
+        seen_slots.add(slot)
+    assert seen_slots == {1, 2}
+
+
+@pytest.mark.parametrize("only_type", ["sharp", "soft", "herring"])
+def test_first_session_order_single_puzzle_never_raises(only_type: _Type) -> None:
+    identities, _ = _order_types([only_type])
+    assert identities == [0]
+
+
+def test_first_session_order_two_puzzles_put_the_sharp_first() -> None:
+    identities, ordered_types = _order_types(["soft", "sharp"])
+    assert identities == [1, 0]
+    assert ordered_types == ["sharp", "soft"]
+    identities, _ = _order_types(["herring", "soft"])
+    assert identities == [0, 1]
+
+
+def test_first_session_order_is_deterministic_for_the_same_seed() -> None:
+    types: list[_Type] = ["sharp", "sharp", "sharp", "soft", "herring", "sharp"]
+    assert _order_types(types, seed="day-1") == _order_types(types, seed="day-1")
+
+
+class _FirstSessionSpy:
+    """Records every `_first_session_order` call and delegates to the real one."""
+
+    def __init__(self) -> None:
+        self.calls: list[
+            tuple[
+                list[train_repository._ReconstructedPuzzle],
+                list[train_repository._ReconstructedPuzzle],
+            ]
+        ] = []
+        self._real = train_repository._first_session_order
+
+    def __call__(
+        self,
+        puzzles: Sequence[train_repository._ReconstructedPuzzle],
+        types: Sequence[Literal["sharp", "soft", "herring"]],
+        rng: random.Random,
+    ) -> list[train_repository._ReconstructedPuzzle]:
+        result = self._real(puzzles, types, rng)
+        self.calls.append((list(puzzles), result))
+        return result
+
+
+def _install_first_session_spy(monkeypatch: pytest.MonkeyPatch) -> _FirstSessionSpy:
+    spy = _FirstSessionSpy()
+    monkeypatch.setattr(train_repository, "_first_session_order", spy)
+    return spy
+
+
+async def _set_session_size(db_session: AsyncSession, n: int) -> None:
+    await train_repository.upsert_settings(
+        db_session,
+        user_id=_USER_ID,
+        timezone="UTC",
+        weekday_mask=0,
+        puzzles_per_session=n,
+        reminder_enabled=False,
+        reminder_hour=18,
+        reminder_intent_at=None,
+        now_utc=_NOW,
+    )
+
+
+async def _seed_first_session_material(
+    db_session: AsyncSession, *, sharp_sr: int, soft_sr: int, herrings: int
+) -> None:
+    for i in range(sharp_sr):
+        await _seed_flaw_game(
+            db_session, _USER_ID, f"fs-sharp-{i}", missed_pv_lines=_SHARP_KEYED_PV_LINES
+        )
+    for i in range(soft_sr):
+        await _seed_flaw_game(
+            db_session, _USER_ID, f"fs-soft-{i}", missed_pv_lines=_SOFT_KEYED_PV_LINES
+        )
+    for i in range(herrings):
+        await _seed_herring_pool_row(db_session, _USER_ID, f"fs-herring-{i}")
+
+
+@pytest.mark.asyncio
+async def test_first_session_opens_on_sharp_and_several_in_slot_1_or_2(
+    db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Tracer (D-13..D-15): the spy proves the stage is wired between assembly and
+    materialization regardless of how the D-09 shuffle happened to fall."""
+    await ensure_test_user(db_session, _USER_ID)
+    await _seed_first_session_material(db_session, sharp_sr=1, soft_sr=4, herrings=2)
+    spy = _install_first_session_spy(monkeypatch)
+
+    composed = await train_repository.compose_and_materialize_session(
+        db_session, user_id=_USER_ID, now_utc=_NOW
+    )
+
+    assert len(spy.calls) == 1
+    assert composed.puzzle_count == 6
+    types = [p.puzzle_type for p in composed.puzzles]
+    assert types[0] == "sharp"
+    assert types[1] in _FIRST_SESSION_SOFT_TYPES or types[2] in _FIRST_SESSION_SOFT_TYPES
+    # Positions are the frozen order: the served order IS the materialized order.
+    assert [p.position for p in composed.puzzles] == list(range(6))
+
+
+@pytest.mark.asyncio
+async def test_first_session_order_is_reproducible_for_the_same_user_and_day(
+    db_session: AsyncSession,
+) -> None:
+    """D-13: the stage is a pure function of (user, day, assembled items), so
+    re-running it on the same assembly yields the same order."""
+    await ensure_test_user(db_session, _USER_ID)
+    await _seed_first_session_material(db_session, sharp_sr=1, soft_sr=4, herrings=2)
+    items = await train_repository._assemble_session_items(
+        db_session, user_id=_USER_ID, today=_TODAY, n=6
+    )
+
+    first = await train_repository._order_first_ever_session(
+        db_session, user_id=_USER_ID, today=_TODAY, items=items
+    )
+    second = await train_repository._order_first_ever_session(
+        db_session, user_id=_USER_ID, today=_TODAY, items=items
+    )
+
+    assert first.reconstructed == second.reconstructed
+    assert first.reconstructed != items.reconstructed or items.reconstructed[0].ply == 2
+
+
+@pytest.mark.asyncio
+async def test_first_session_gate_blocks_an_expired_earlier_session(
+    db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """D-13: an earlier drill_sessions row of status expired disables the reorder."""
+    await ensure_test_user(db_session, _USER_ID)
+    old = await _seed_open_session_dated(
+        db_session, _USER_ID, "fs-expired", session_date=_TODAY - datetime.timedelta(days=10)
+    )
+    await _seed_first_session_material(db_session, sharp_sr=1, soft_sr=4, herrings=2)
+    spy = _install_first_session_spy(monkeypatch)
+
+    composed = await train_repository.compose_and_materialize_session(
+        db_session, user_id=_USER_ID, now_utc=_NOW
+    )
+
+    assert composed.session_id is not None and composed.session_id != old.id
+    status = (
+        await db_session.execute(select(DrillSession.status).where(DrillSession.id == old.id))
+    ).scalar_one()
+    assert status == "expired"
+    assert spy.calls == []
+
+
+@pytest.mark.asyncio
+async def test_first_session_gate_blocks_an_earlier_completed_session(
+    db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """D-13: an earlier completed session outside today's window disables the reorder."""
+    await ensure_test_user(db_session, _USER_ID)
+    await _seed_completed_session(db_session, _USER_ID, _TODAY - datetime.timedelta(days=10))
+    await _seed_first_session_material(db_session, sharp_sr=1, soft_sr=4, herrings=2)
+    spy = _install_first_session_spy(monkeypatch)
+
+    composed = await train_repository.compose_and_materialize_session(
+        db_session, user_id=_USER_ID, now_utc=_NOW
+    )
+
+    assert composed.session_id is not None
+    assert spy.calls == []
+
+
+@pytest.mark.asyncio
+async def test_first_session_resized_untouched_session_is_recomposed_with_the_reorder(
+    db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """D-13: a first session discarded as untouched-and-resized still counts as
+    first-ever, because the discard DELETE runs before the check."""
+    # Sharp fillers make a sharp puzzle available at every session size.
+    _install_sharp_fixture(monkeypatch)
+    await ensure_test_user(db_session, _USER_ID)
+    await _set_session_size(db_session, 6)
+    await _seed_first_session_material(db_session, sharp_sr=0, soft_sr=2, herrings=1)
+    spy = _install_first_session_spy(monkeypatch)
+
+    first = await train_repository.compose_and_materialize_session(
+        db_session, user_id=_USER_ID, now_utc=_NOW
+    )
+    assert first.puzzle_count == 6
+    assert len(spy.calls) == 1
+    assert first.puzzles[0].puzzle_type == "sharp"
+
+    await _set_session_size(db_session, 7)
+    second = await train_repository.compose_and_materialize_session(
+        db_session, user_id=_USER_ID, now_utc=_NOW
+    )
+
+    assert second.session_id != first.session_id
+    assert second.puzzle_count == 7
+    assert len(spy.calls) == 2
+    assert second.puzzles[0].puzzle_type == "sharp"
+
+
+@pytest.mark.asyncio
+async def test_first_session_slot_0_is_the_sharp_filler_when_sr_items_are_all_soft(
+    db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _install_sharp_fixture(monkeypatch)
+    await ensure_test_user(db_session, _USER_ID)
+    await _seed_first_session_material(db_session, sharp_sr=0, soft_sr=2, herrings=0)
+    spy = _install_first_session_spy(monkeypatch)
+
+    composed = await train_repository.compose_and_materialize_session(
+        db_session, user_id=_USER_ID, now_utc=_NOW
+    )
+
+    assert len(spy.calls) == 1
+    source_by_position = dict(
+        (
+            await db_session.execute(
+                select(DrillSolve.position, DrillSolve.source).where(
+                    DrillSolve.session_id == composed.session_id
+                )
+            )
+        )
+        .tuples()
+        .all()
+    )
+    assert source_by_position[0] == DrillSource.SHARP_FILLER
+    assert composed.puzzles[0].puzzle_type == "sharp"
+    assert any(p.puzzle_type == "soft" for p in composed.puzzles[1:3])
+
+
+@pytest.mark.asyncio
+async def test_first_session_without_sharp_or_several_slots_keeps_the_shuffled_order(
+    db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Only soft SR items and an empty sharp set: no sharp to promote and slots 1-2
+    already hold several puzzles, so the spy returns exactly what it received."""
+    await ensure_test_user(db_session, _USER_ID)
+    await _seed_first_session_material(db_session, sharp_sr=0, soft_sr=6, herrings=0)
+    spy = _install_first_session_spy(monkeypatch)
+
+    composed = await train_repository.compose_and_materialize_session(
+        db_session, user_id=_USER_ID, now_utc=_NOW
+    )
+
+    assert composed.puzzle_count == 6
+    assert len(spy.calls) == 1
+    received, returned = spy.calls[0]
+    assert returned == received

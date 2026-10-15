@@ -18,11 +18,23 @@ from __future__ import annotations
 import datetime
 import random
 from collections import Counter
+from collections.abc import Sequence
 from dataclasses import dataclass, field, replace
 from typing import Any, Literal, cast
 
 import chess
-from sqlalchemy import ColumnElement, and_, delete, exists, func, literal, or_, select, update
+from sqlalchemy import (
+    ColumnElement,
+    and_,
+    delete,
+    exists,
+    func,
+    literal,
+    or_,
+    select,
+    tuple_,
+    update,
+)
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.exc import IntegrityError
@@ -2007,6 +2019,132 @@ async def _resolve_existing_session(
     return None
 
 
+# Phase 240 (D-15): puzzle 2 or 3 of the first-ever session holds a "several"
+# puzzle (zero-based indices 1 and 2).
+_FIRST_SESSION_SEVERAL_SLOTS: tuple[int, ...] = (1, 2)
+# A "several" puzzle is any whose answer-key type is not sharp (soft SR item or herring).
+_SEVERAL_PUZZLE_TYPES: frozenset[TrainPuzzleType] = frozenset({"soft", "herring"})
+# Distinct from the D-09 shuffle seed so the two draws are independent yet reproducible.
+_FIRST_SESSION_SEED_SUFFIX = "first-session"
+
+
+def _first_session_order(
+    puzzles: Sequence[_ReconstructedPuzzle],
+    types: Sequence[TrainPuzzleType],
+    rng: random.Random,
+) -> list[_ReconstructedPuzzle]:
+    """Reorder an already-shuffled first-ever session (Phase 240 D-13..D-15).
+
+    (a) The first sharp puzzle (in shuffled order) moves to slot 0, keeping the
+    relative order of the rest. (b) A "several" puzzle (soft or herring) then
+    sits at index 1 or 2: when neither slot holds one, the first several puzzle
+    after slot 0 is swapped into a seeded choice of the two slots.
+
+    A session without a sharp puzzle (own-games, all soft) keeps its shuffled
+    slot 0; a session without a several puzzle keeps slots 1-2; sessions of one
+    or two puzzles clamp the slots so nothing indexes out of range.
+
+    Args:
+        puzzles: The post-D-09-shuffle puzzles.
+        types: Each puzzle's answer-key type, aligned with `puzzles`.
+        rng: Seeded generator picking between the several slots.
+    """
+    order = list(range(len(puzzles)))
+    sharp_at = next((pos for pos in order if types[pos] == "sharp"), None)
+    if sharp_at is not None:
+        order.insert(0, order.pop(sharp_at))
+
+    slots = [slot for slot in _FIRST_SESSION_SEVERAL_SLOTS if slot < len(order)]
+    slot_held_by_several = any(types[order[slot]] in _SEVERAL_PUZZLE_TYPES for slot in slots)
+    several_at = next(
+        (pos for pos in range(1, len(order)) if types[order[pos]] in _SEVERAL_PUZZLE_TYPES),
+        None,
+    )
+    if slots and not slot_held_by_several and several_at is not None:
+        target = rng.choice(slots)
+        order[target], order[several_at] = order[several_at], order[target]
+    return [puzzles[pos] for pos in order]
+
+
+async def _is_first_ever_session(session: AsyncSession, *, user_id: int) -> bool:
+    """True when the user has no `drill_sessions` row of any status (D-13).
+
+    Runs only after `_resolve_existing_session` returned None, so a discarded
+    untouched-and-resized first session's row is already deleted and the
+    recomposition still counts as first-ever.
+    """
+    result = await session.execute(
+        select(select(DrillSession.id).where(DrillSession.user_id == user_id).exists())
+    )
+    return not result.scalar_one()
+
+
+async def _composition_puzzle_types(
+    session: AsyncSession, *, user_id: int, puzzles: Sequence[_ReconstructedPuzzle]
+) -> list[TrainPuzzleType]:
+    """Each puzzle's answer-key type, from the verdict's own derivation (D-14).
+
+    One query loads the live `game_flaws` blobs of the SR items (user_id in the
+    WHERE, V4); herrings and sharp fillers need no query because their type is
+    fixed by `answer_key_for`. The type never depends on the key move, so the
+    move arguments are None; a missing blob classifies as "soft", the same
+    non-leaking default the verdict uses.
+    """
+    sr_keys = [
+        (puzzle.game_id, puzzle.ply)
+        for puzzle in puzzles
+        if puzzle.source == DrillSource.SR_ITEM and puzzle.game_id is not None
+    ]
+    blobs: dict[tuple[int, int], list[Any] | None] = {}
+    if sr_keys:
+        rows = await session.execute(
+            select(GameFlaw.game_id, GameFlaw.ply, GameFlaw.missed_pv_lines).where(
+                GameFlaw.user_id == user_id,
+                tuple_(GameFlaw.game_id, GameFlaw.ply).in_(sr_keys),
+            )
+        )
+        blobs = {(row.game_id, row.ply): row.missed_pv_lines for row in rows}
+    return [
+        answer_key_for(
+            source=puzzle.source,
+            ply=puzzle.ply,
+            missed_pv_lines=(
+                blobs.get((puzzle.game_id, puzzle.ply))
+                if puzzle.source == DrillSource.SR_ITEM and puzzle.game_id is not None
+                else None
+            ),
+            best_move=None,
+            ladder=None,
+            filler_solution_uci=None,
+        ).puzzle_type
+        for puzzle in puzzles
+    ]
+
+
+async def _order_first_ever_session(
+    session: AsyncSession,
+    *,
+    user_id: int,
+    today: datetime.date,
+    items: _AssembledSessionItems,
+) -> _AssembledSessionItems:
+    """Phase 240 (D-13): apply `_first_session_order` to a first-ever composition.
+
+    Returns `items` unchanged for an empty composition or any user with an
+    earlier `drill_sessions` row (any status), so later sessions keep the plain
+    D-09 shuffle and the only leak is that slot 0 of session 1 is never a
+    herring. `surviving_sr_keys` and `is_warmup` are set-valued, so they stay
+    correct after the reorder.
+    """
+    if not items.reconstructed:
+        return items
+    if not await _is_first_ever_session(session, user_id=user_id):
+        return items
+    types = await _composition_puzzle_types(session, user_id=user_id, puzzles=items.reconstructed)
+    rng = random.Random(f"{user_id}:{today.isoformat()}:{_FIRST_SESSION_SEED_SUFFIX}")
+    return replace(items, reconstructed=_first_session_order(items.reconstructed, types, rng))
+
+
 @dataclass(frozen=True)
 class _AssembledSessionItems:
     """The item-assembly stage's output (Phase 214 Plan 06 task 2). Four
@@ -2512,7 +2650,9 @@ async def compose_and_materialize_session(
        backfilled — the slot arithmetic already ran).
     6. If nothing survives, return zero puzzles and write NO `drill_sessions`
        row. Otherwise shuffle deterministically by `(user_id, today)` (D-09:
-       a red herring's position must not be inferable from ordering) and
+       a red herring's position must not be inferable from ordering), reorder
+       a user's first-ever session to open on a sharp puzzle with a "several"
+       puzzle at puzzle 2 or 3 (Phase 240 D-13..D-15), and
        materialize the session header plus one pre-inserted `DrillSolve` per
        puzzle.
     7. The `DrillSession` insert (plus any new `drill_items` padding rows) is
@@ -2564,6 +2704,9 @@ async def compose_and_materialize_session(
         return await _attach_answer_keys(session, user_id=user_id, composed=resolved)
 
     items = await _assemble_session_items(session, user_id=user_id, today=today, n=n)
+    # Phase 240 (D-13..D-15): first-ever session only, after the D-09 shuffle and
+    # before materialize (positions are frozen into drill_solves.position).
+    items = await _order_first_ever_session(session, user_id=user_id, today=today, items=items)
     if not items.reconstructed:
         return ComposedSession(
             session_id=None,
