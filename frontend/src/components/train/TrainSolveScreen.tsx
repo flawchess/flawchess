@@ -151,6 +151,7 @@ import {
   TRAIN_POINTS_FG_ON_DARK,
   TRAIN_POINTS_FG_ON_LIGHT,
   STOCKFISH_ACCENT,
+  TOUR_SPOTLIGHT_CLASS,
 } from '@/lib/theme';
 
 export interface TrainSolveScreenProps {
@@ -1880,8 +1881,9 @@ export function TrainSolveScreen({
         ref={boardRef}
         className={cn(
           'flex w-full flex-row items-stretch gap-2',
-          // Phase 222 UAT: the walkthrough's free-play step rings the board row.
-          walkthroughTarget === 'board' && 'rounded-md ring-2 ring-brand-brown ring-offset-4 ring-offset-background',
+          // Phase 240 D-20: the tour's free-play step spotlights the board row
+          // (the glow sits outside ChessBoard's own overflow-hidden square).
+          walkthroughTarget === 'board' && `rounded-md ${TOUR_SPOTLIGHT_CLASS}`,
         )}
       >
         <div

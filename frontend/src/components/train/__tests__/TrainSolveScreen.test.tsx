@@ -36,6 +36,7 @@ import {
   TRAIN_FOCUS_ARROW_LIT_OPACITY,
   TRAIN_FOCUS_BADGE_DIM_OPACITY,
   TRAIN_FOCUS_BADGE_LIT_OPACITY,
+  TOUR_SPOTLIGHT_CLASS,
 } from '@/lib/theme';
 import { buildAnalysisFenUrl, buildGameAnalysisUrl } from '@/lib/analysisUrl';
 import { HILDA_ID, INTRO_STEP_COUNT, STEPPER_COPY_MAX_CHARS } from '@/lib/trainBotCopy';
@@ -4013,9 +4014,8 @@ describe('TrainSolveScreen — progress, last move, grading state, engine failur
   });
 
   describe('Phase 240: split reveal tour', () => {
-    // Plan 06 swaps this body for the shared spotlight class; every spotlight
-    // assertion in this describe goes through it.
-    const spotlit = (element: HTMLElement): boolean => element.className.includes('ring-2');
+    // Every spotlight assertion in this describe goes through this helper.
+    const spotlit = (element: HTMLElement): boolean => element.classList.contains(TOUR_SPOTLIGHT_CLASS);
 
     /** Opens a reveal for an account at `stage` on the current viewport; `solve`
      * overrides fields of the graded verdict (e.g. `puzzle_type`). */
@@ -4091,6 +4091,23 @@ describe('TrainSolveScreen — progress, last move, grading state, engine failur
       const reveal = screen.getByTestId('train-reveal');
       expect(spotlit(within(reveal).getByTestId('train-verdict-card'))).toBe(true);
       expect(screen.getByTestId('train-tour-step-count').textContent).toBe('1 / 2');
+    });
+
+    it('stage 3: nothing is spotlit anywhere on the screen', async () => {
+      await openReveal(3);
+      await waitFor(() => expect(screen.getByTestId('train-bot-verdict-line')).not.toBeNull());
+      expect(document.querySelector(`.${TOUR_SPOTLIGHT_CLASS}`)).toBeNull();
+    });
+
+    it('leaving the last step of part 1 removes the spotlight', async () => {
+      matchMediaMatches = false;
+      await openReveal(0);
+      await waitFor(() => expect(document.querySelector(`.${TOUR_SPOTLIGHT_CLASS}`)).not.toBeNull());
+      clickBarNext();
+      await waitFor(() => expect(screen.getByTestId('train-tour-step-count').textContent).toBe('2 / 2'));
+      clickBarNext();
+      await waitFor(() => expect(stampOnboarding).toHaveBeenCalledWith('reveal_tour_1'));
+      expect(document.querySelector(`.${TOUR_SPOTLIGHT_CLASS}`)).toBeNull();
     });
 
     it('stage 3: no tour overlay on the reveal and the verdict shows immediately', async () => {

@@ -60,6 +60,11 @@
     --brand-brown-hover: #6B4226;
     --brand-brown-active: #6B4226;
     --brand-brown-highlight: #F0DBB9;
+    /* Bronze "brand glow": the exact value of FLAW_FIXED_GLOW and the Home
+       feature cards, reused verbatim by the Train tour spotlight (Phase 240
+       D-20). A keyframe can only read CSS, hence the vars. */
+    --brand-glow: rgba(205, 127, 50, 0.85);
+    --brand-glow-halo: rgba(205, 127, 50, 0.35);
     --charcoal: #161412;
     --charcoal-hover: #262220;
     /* SEED-161/F-20 housekeeping: hoisted from raw #1a1a1a literals in
@@ -341,6 +346,21 @@
   animation-fill-mode: forwards;
 }
 
+/* Train reveal tour spotlight (Phase 240 D-20). Box-shadow only, so nothing
+   shifts when a step turns it on or off. Never combine with a Tailwind ring
+   utility (ring is also a box-shadow and would overwrite the glow). The class
+   is present only while its tour step is active, so the infinite loop stops
+   with the step; the reduced-motion block below makes it a static glow. */
+@keyframes train-tour-spotlight-pulse {
+  0%, 100% { box-shadow: 0 0 0 2px var(--brand-glow), 0 0 12px var(--brand-glow-halo); }
+  50%      { box-shadow: 0 0 0 2px var(--brand-glow), 0 0 28px 4px var(--brand-glow-halo); }
+}
+
+.train-tour-spotlight {
+  box-shadow: 0 0 0 2px var(--brand-glow), 0 0 24px var(--brand-glow-halo);
+  animation: train-tour-spotlight-pulse 1.6s ease-in-out infinite;
+}
+
 /* Train reveal "Points: +N" flash (190.1 UAT round 7, TrainSolveScreen).
    The translate(-50%, -50%) board-centering lives INSIDE the keyframes on
    purpose — the element uses no Tailwind translate utilities, because the
@@ -532,6 +552,7 @@
   .train-freeze-popin, .train-freeze-popin::after { animation: none !important; }
   .train-freeze-half-left, .train-freeze-half-right { display: none; }
   .animate-medal-pop { animation: none; }
+  .train-tour-spotlight { animation: none; }
 }
 
 /* Mobile typography bump.

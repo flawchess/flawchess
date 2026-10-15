@@ -47,6 +47,7 @@ import { TrainVerdictCard, TrainVerdictStrip } from '@/components/train/TrainVer
 import type { TrainFineMove } from '@/lib/trainArrows';
 import { scorePuzzle } from '@/lib/trainScore';
 import { cn } from '@/lib/utils';
+import { TOUR_SPOTLIGHT_CLASS } from '@/lib/theme';
 import { verdictStripLine } from '@/lib/trainBotCopy';
 import type { TrainCopyAudience, VerdictCopy, WalkthroughTarget } from '@/lib/trainBotCopy';
 import type { Persona } from '@/lib/personas/personaRegistry';
@@ -302,7 +303,7 @@ export function TrainReveal({
   // here is safe.
   const motif = revealQuery.data?.motif ?? null;
   const showChipRow = chips.length > 0 || sanOnlyGameMove !== null;
-  const tourRingVerdict = walkthroughTarget === 'verdict';
+  const tourSpotlightVerdict = walkthroughTarget === 'verdict';
 
   // Quick 260803-iv6 (Task 3): the guess card states the verdict but never
   // says WHY it landed where it did — one locked prose sentence, derived
@@ -374,14 +375,14 @@ export function TrainReveal({
           `scorePuzzle` (D-23 Option B); `isBest` only selects wording. */}
       {verdictBot !== null && verdictOpening !== null && (
         isDesktop ? (
-          <TrainVerdictCard persona={verdictBot} ring={tourRingVerdict} renderDetails={renderVerdictDetails} />
+          <TrainVerdictCard persona={verdictBot} spotlight={tourSpotlightVerdict} renderDetails={renderVerdictDetails} />
         ) : (
           <TrainVerdictStrip
             persona={verdictBot}
             points={scorePuzzle(verdict.correct_guess, verdict.move_quality)}
             line={verdictStripLine(verdict.correct_guess, verdict.move_quality, isBest)}
             onExpand={onStripExpand}
-            ring={tourRingVerdict}
+            spotlight={tourSpotlightVerdict}
           >
             {renderVerdictDetails()}
           </TrainVerdictStrip>
@@ -421,7 +422,7 @@ export function TrainReveal({
           data-testid="train-tree-tour-ring"
           className={cn(
             (walkthroughTarget === 'tree' || walkthroughTarget === 'lines') &&
-              'rounded-md ring-2 ring-brand-brown',
+              `rounded-md ${TOUR_SPOTLIGHT_CLASS}`,
           )}
         >
           {treeList}
