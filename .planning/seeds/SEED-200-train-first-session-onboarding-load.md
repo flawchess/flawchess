@@ -1,6 +1,8 @@
 ---
 id: SEED-200
-status: dormant
+status: promoted
+promoted_to: Phase 240
+promoted: 2026-10-15
 planted: 2026-10-15
 planted_during: ad-hoc Train return-rate analysis + guest walkthrough (quick 261015-pjr shipped the guest copy fix from the same session); design refined in /gsd-explore the same day
 trigger_when: owner wants to lift Train first-session completion or second-session return, or any Train onboarding/stepper work; re-pull the funnel split below first (entered_at only exists since 2026-09-27, so the sample is still small)

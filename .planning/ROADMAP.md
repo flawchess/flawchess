@@ -245,6 +245,42 @@ Plans:
 **Wave 5** *(blocked on Wave 4 completion)*
 - [x] 239-09-PLAN.md — Pre-merge gate, stale-name sweep, CHANGELOG, live smoke, browser UAT steps (wave 5)
 
+### Phase 240: Train First-Session Onboarding Load (SEED-200)
+
+**Goal**: Cut first-session Train abandonment by lightening the tutorial around puzzle 1. In the clean
+first-ever-session cohort (since 2026-09-28) about 44% of both guests and registered users abandon session 1,
+and the puzzle-1 reveal tour is the largest single drop point (8 of 81 first sessions end inside it). Today
+puzzle 1 carries 11-12 bubbles: 5-6 intro steps before the first move plus a 6-step reveal walkthrough.
+Guiding rule (owner-agreed in explore 2026-10-15): **the user acts within one or two taps, and reads later.**
+Locked design in SEED-200.
+
+- **1. Intro shrinks to 2 bubbles:** welcome, then the merged closing prompt with the guess buttons.
+  `INTRO_QUESTION` (duplicates `promptCopy`) and `INTRO_VOCABULARY` retire.
+- **2. The first verdict teaches the vocabulary** ("only one" / "several" explained for this position).
+- **3. Practice rationale moves to the session-1 score screen.**
+- **4. Warm-up notice leaves the intro** (after puzzle 1: verdict tail or score screen).
+- **5. Reveal tour spreads over puzzles 1-3** (P1: result + Next; P2: chips + stepping through lines; P3:
+  sidelines, "understand, don't memorize", Analyze), each step once per account, so
+  `reveal_walkthrough_seen_at` becomes per-step stamps or a counter. Chips stay visible but unexplained on P1.
+- **6. Backend session composition:** first puzzle of the first-ever session is a sharp one (moved to slot 0
+  after the D-09 shuffle in `train_repository.py`, first-ever session only; own-games sessions without a
+  sharp puzzle keep random order), and a soft or herring puzzle lands in slots 2-3.
+- **Guardrails:** every bubble within `STEPPER_COPY_MAX_CHARS` (145), shortened not concatenated; step-count
+  assertions (`introStepCount`, `WALKTHROUGH_STEP_COUNT`, `IntroStep`, `WalkthroughStep`) updated; no herring
+  slot leak in later sessions; the reveal overlay reads as Hilda; mobile and desktop UAT.
+- **Measure:** re-run the SEED-200 clean-cohort funnel query before/after (split guest-origin vs registered),
+  adapting the "never finished the tour" column to the new per-step stamps.
+- **Open for discuss:** warm-up notice placement; per-step stamp shape (columns vs counter vs JSONB);
+  whether the welcome copy is tightened; the soft-vs-herring choice for slots 2-3.
+
+**Depends on**: nothing in flight (builds on Phase 222 onboarding and Phase 237 reveal tour)
+**Requirements**: TBD (coverage contract = CONTEXT decisions from discuss-phase)
+**Plans:** 0 plans
+**Status**: Not planned yet
+
+Plans:
+- [ ] TBD (run /gsd-discuss-phase 240 or /gsd-plan-phase 240)
+
 Phase detail for every shipped milestone lives in `milestones/vX.Y-ROADMAP.md`, its phase directories in `milestones/vX.Y-phases/`, and the per-milestone summaries in [MILESTONES.md](MILESTONES.md).
 
 ## Backlog
