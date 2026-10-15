@@ -471,19 +471,6 @@ export function lookCloserCopy(points: 0 | 1 | 2 | 3): string | null {
 const NEXT_SESSION_TAIL = "We'll try this one again in the next session.";
 const MASTERED_TAIL = "Three in a row. You have this one down, it won't come back.";
 const PARKED_TAIL = 'This one keeps slipping, so it is parked for now. On to positions that stick.';
-/**
- * D-23 warm-up return tail, per D-03 audience (Phase 224). `has_games` is
- * today's string verbatim.
- */
-const WARMUP_TAIL_COPY: Record<CopyAudienceKey, string> = {
-  has_games: "That one was a warm-up, so it won't come back. Your own positions will.",
-  has_games_guest: "That one was a warm-up, so it won't come back. Sign up free and your own " +
-    'positions will.',
-  no_games: "That one was a warm-up, so it won't come back. Import your games and your own " +
-    'positions will.',
-  no_games_guest: "That one was a warm-up, so it won't come back. Import your games, then sign " +
-    'up, and your own positions will.',
-};
 /** Quick 260915-sht: the non-return lines for a herring/filler solved in a
  * REGULAR session. Bug: `returnPhrase` used to return `WARMUP_TAIL` for these
  * sources unconditionally, so a user with plenty of SR items was told a
@@ -502,25 +489,24 @@ export interface ReturnPhraseInput {
   item_status?: 'active' | 'mastered' | 'parked' | null;
   due_date?: string | null;
   /** `TrainSessionResponse.is_warmup` — the SESSION is a warm-up (zero
-   * surviving SR items at composition, Phase 206 D-06/D-07). Decides whether
-   * a herring/filler tail says "warm-up" or just "won't come back". */
+   * surviving SR items at composition, Phase 206 D-06/D-07). A warm-up
+   * herring/filler gets no tail at all (Phase 240 UAT). */
   is_warmup?: boolean;
   /** `TrainSessionResponse.session_date` — the session's own calendar date. */
   session_date?: string;
   /** `TrainSessionResponse.expires_on` — the first scheduled day strictly
    * after `session_date` (`app/services/train_scheduler.py`). */
   expires_on?: string;
-  /** D-03 (Phase 224): selects the warm-up tail's audience variant. Every
-   * OTHER field on this interface stays optional for the pre-206 cached-
-   * reveal degrade path; `audience` is not optional because both call sites
-   * (`TrainSolveScreen`) always have it, built from `useUserProfile().data`. */
-  audience: TrainCopyAudience;
 }
 
 /**
  * D-15/D-16: the return-date phrase for a single solved item. Herrings and
- * fillers never return: they get the warm-up line only in a warm-up SESSION
- * (`is_warmup`), else a neutral non-return line. Status is
+ * fillers never return: in a warm-up SESSION (`is_warmup`) they get no tail,
+ * else a neutral non-return line. Phase 240 UAT dropped the warm-up tail
+ * ("That one was a warm-up, so it won't come back. ... your own positions
+ * will."): repeated on every warm-up puzzle, it was one more import/sign-up
+ * ask during the first session, and the score screen already says the
+ * session was warm-ups. Status is
  * checked strictly BEFORE any date comparison — `due_date` is a STALE value
  * for mastered/parked items (RESEARCH Finding E: `apply_result` leaves it
  * untouched on both branches), so phrasing it as a return date would lie.
@@ -530,7 +516,7 @@ export interface ReturnPhraseInput {
  */
 export function returnPhrase(input: ReturnPhraseInput): string {
   const neverReturns = input.source === 'red_herring' || input.source === 'sharp_filler';
-  if (neverReturns && input.is_warmup === true) return WARMUP_TAIL_COPY[audienceKey(input.audience)];
+  if (neverReturns && input.is_warmup === true) return '';
   if (input.source === 'red_herring') return HERRING_TAIL;
   if (input.source === 'sharp_filler') return FILLER_TAIL;
   if (input.item_status === 'mastered') return MASTERED_TAIL;

@@ -3947,13 +3947,14 @@ describe('TrainSolveScreen — progress, last move, grading state, engine failur
     });
 
     // Quick 260915-sht: warm-up is a SESSION property. A herring solved in a
-    // regular session (the user has SR items) must not be called a warm-up.
+    // regular session (the user has SR items) gets the neutral non-return line;
+    // Phase 240 UAT: in a warm-up session it gets no tail at all.
     it.each([
-      { is_warmup: false, expectWarmup: false },
-      { is_warmup: true, expectWarmup: true },
+      { is_warmup: false, expectTail: true },
+      { is_warmup: true, expectTail: false },
     ])(
-      'a red_herring verdict says "warm-up" only when the session is a warm-up (is_warmup=$is_warmup)',
-      async ({ is_warmup, expectWarmup }) => {
+      'a red_herring verdict has a non-return tail only outside a warm-up (is_warmup=$is_warmup)',
+      async ({ is_warmup, expectTail }) => {
         solvePuzzle.mockResolvedValue({
           correct_guess: true,
           correct_move: true,
@@ -3971,8 +3972,8 @@ describe('TrainSolveScreen — progress, last move, grading state, engine failur
           fireEvent.click(screen.getByTestId('drop-e2e4'));
         });
         const verdictLine = await waitFor(() => screen.getByTestId('train-bot-verdict-line'));
-        expect(verdictLine.textContent).toContain("won't come back");
-        expect(verdictLine.textContent?.includes('warm-up')).toBe(expectWarmup);
+        expect(verdictLine.textContent?.includes("won't come back")).toBe(expectTail);
+        expect(verdictLine.textContent).not.toContain('warm-up');
         expect(screen.queryByTestId('train-bot-return-tail')).toBeNull();
       },
     );

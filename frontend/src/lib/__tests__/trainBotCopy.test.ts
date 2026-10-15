@@ -451,29 +451,29 @@ describe('verdictCopy', () => {
 });
 
 describe('returnPhrase (D-15/D-16 truth table)', () => {
-  it('a red_herring source in a warm-up session returns the warm-up tail regardless of due_date', () => {
+  // Phase 240 UAT: a warm-up herring/filler gets no tail. The per-puzzle
+  // "That one was a warm-up ... your own positions will." line repeated the
+  // import/sign-up ask on every warm-up puzzle.
+  it('a red_herring source in a warm-up session returns no tail, regardless of due_date', () => {
     const phrase = returnPhrase({
       source: 'red_herring',
       is_warmup: true,
       due_date: '2020-01-01', // arbitrary, must be ignored
       session_date: '2026-09-13',
       expires_on: '2026-09-14',
-      audience: AUDIENCE_HAS_GAMES,
     });
-    expect(phrase).toContain('warm-up');
-    expect(phrase).toContain('Your own positions will');
+    expect(phrase).toBe('');
   });
 
-  it('a sharp_filler source in a warm-up session with a non-null due_date still returns the warm-up tail', () => {
+  it('a sharp_filler source in a warm-up session with a non-null due_date returns no tail', () => {
     const phrase = returnPhrase({
       source: 'sharp_filler',
       is_warmup: true,
       due_date: '2026-12-25',
       session_date: '2026-09-13',
       expires_on: '2026-09-14',
-      audience: AUDIENCE_HAS_GAMES,
     });
-    expect(phrase).toContain('warm-up');
+    expect(phrase).toBe('');
   });
 
   // Quick 260915-sht: a red herring is a regular part of every session. A
@@ -488,7 +488,6 @@ describe('returnPhrase (D-15/D-16 truth table)', () => {
         due_date: '2020-01-01', // arbitrary, must be ignored
         session_date: '2026-09-13',
         expires_on: '2026-09-14',
-        audience: AUDIENCE_HAS_GAMES,
       });
       expect(phrase).toContain("won't come back");
       expect(phrase).not.toContain('warm-up');
@@ -498,15 +497,15 @@ describe('returnPhrase (D-15/D-16 truth table)', () => {
 
   it('a red_herring names itself; a sharp_filler is a tactics puzzle', () => {
     expect(
-      returnPhrase({ source: 'red_herring', is_warmup: false, audience: AUDIENCE_HAS_GAMES }),
+      returnPhrase({ source: 'red_herring', is_warmup: false }),
     ).toContain('red herring');
     expect(
-      returnPhrase({ source: 'sharp_filler', is_warmup: false, audience: AUDIENCE_HAS_GAMES }),
+      returnPhrase({ source: 'sharp_filler', is_warmup: false }),
     ).toContain('tactics puzzle');
   });
 
   it('an absent is_warmup (pre-fix cached reveal) degrades to the neutral line, not the warm-up claim', () => {
-    expect(returnPhrase({ source: 'red_herring', audience: AUDIENCE_HAS_GAMES })).not.toContain(
+    expect(returnPhrase({ source: 'red_herring' })).not.toContain(
       'warm-up',
     );
   });
@@ -517,7 +516,6 @@ describe('returnPhrase (D-15/D-16 truth table)', () => {
       due_date: '2026-09-01', // stale — well before expires_on
       session_date: '2026-09-13',
       expires_on: '2026-09-14',
-      audience: AUDIENCE_HAS_GAMES,
     });
     expect(phrase).toContain("won't come back");
   });
@@ -528,7 +526,6 @@ describe('returnPhrase (D-15/D-16 truth table)', () => {
       due_date: '2026-09-14',
       session_date: '2026-09-13',
       expires_on: '2026-09-14',
-      audience: AUDIENCE_HAS_GAMES,
     });
     expect(phrase).toContain("won't come back");
   });
@@ -539,7 +536,6 @@ describe('returnPhrase (D-15/D-16 truth table)', () => {
       due_date: '2026-08-01', // long stale
       session_date: '2026-09-13',
       expires_on: '2026-09-14',
-      audience: AUDIENCE_HAS_GAMES,
     });
     expect(phrase).toContain('parked');
   });
@@ -550,7 +546,6 @@ describe('returnPhrase (D-15/D-16 truth table)', () => {
       due_date: '2026-09-14',
       session_date: '2026-09-13',
       expires_on: '2026-09-14',
-      audience: AUDIENCE_HAS_GAMES,
     });
     expect(phrase).toBe("We'll try this one again in the next session.");
   });
@@ -561,7 +556,6 @@ describe('returnPhrase (D-15/D-16 truth table)', () => {
       due_date: '2026-09-17',
       session_date: '2026-09-13',
       expires_on: '2026-09-14',
-      audience: AUDIENCE_HAS_GAMES,
     });
     expect(phrase).toBe("Let's see if you remember this in 4 days.");
   });
@@ -573,7 +567,6 @@ describe('returnPhrase (D-15/D-16 truth table)', () => {
         due_date: null,
         session_date: '2026-09-13',
         expires_on: '2026-09-14',
-        audience: AUDIENCE_HAS_GAMES,
       }),
     ).not.toThrow();
     expect(
@@ -582,58 +575,12 @@ describe('returnPhrase (D-15/D-16 truth table)', () => {
         due_date: null,
         session_date: '2026-09-13',
         expires_on: '2026-09-14',
-        audience: AUDIENCE_HAS_GAMES,
       }),
     ).toBe('');
   });
 
   it('source, item_status and due_date all undefined returns an empty string', () => {
-    expect(returnPhrase({ audience: AUDIENCE_HAS_GAMES })).toBe('');
-  });
-});
-
-describe('returnPhrase — D-03 games-less warm-up tail audience branch (Phase 224)', () => {
-  const NEVER_ANALYZED = /(are analyzed|analyzing your games)/i;
-  const warmupTail = (audience: TrainCopyAudience): string =>
-    returnPhrase({
-      source: 'red_herring',
-      is_warmup: true,
-      session_date: '2026-09-13',
-      expires_on: '2026-09-14',
-      audience,
-    });
-
-  it('a registered account with games is byte-identical to today\'s warm-up tail', () => {
-    expect(warmupTail(AUDIENCE_HAS_GAMES)).toBe(
-      "That one was a warm-up, so it won't come back. Your own positions will.",
-    );
-  });
-
-  it('quick 261015-pjr: a guest with games gets the sign-up tail, never the bare "your own positions will"', () => {
-    const phrase = warmupTail(AUDIENCE_GUEST_WITH_GAMES);
-    expect(phrase).not.toBe(warmupTail(AUDIENCE_HAS_GAMES));
-    expect(phrase).toContain('Sign up free');
-    expect(phrase).not.toContain('Import your games');
-  });
-
-  it('no zero-game audience claims its games are being analyzed', () => {
-    expect(warmupTail(AUDIENCE_NO_GAMES)).not.toMatch(NEVER_ANALYZED);
-    expect(warmupTail(AUDIENCE_NO_GAMES_GUEST)).not.toMatch(NEVER_ANALYZED);
-  });
-
-  it('a registered zero-game account reads import-only copy, never a sign-up ask', () => {
-    const phrase = warmupTail(AUDIENCE_NO_GAMES);
-    expect(phrase).not.toContain('sign up');
-    expect(phrase).toContain('Import your games');
-  });
-
-  it('a zero-game guest reads import first, sign up second', () => {
-    const phrase = warmupTail(AUDIENCE_NO_GAMES_GUEST);
-    expect(phrase).toContain('sign up');
-    const importIndex = phrase.toLowerCase().indexOf('mport');
-    const signUpIndex = phrase.toLowerCase().indexOf('sign up');
-    expect(importIndex).toBeGreaterThanOrEqual(0);
-    expect(signUpIndex).toBeGreaterThan(importIndex);
+    expect(returnPhrase({})).toBe('');
   });
 });
 

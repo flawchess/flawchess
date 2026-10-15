@@ -2072,7 +2072,6 @@ export function TrainSolveScreen({
           sessionDate={trainSession.session?.session_date}
           expiresOn={trainSession.session?.expires_on}
           isWarmup={isWarmup}
-          audience={audience}
           onStripExpand={handleStripExpand}
         />
       )}

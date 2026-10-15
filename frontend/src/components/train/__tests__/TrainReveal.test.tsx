@@ -250,7 +250,6 @@ function renderReveal(
     verdictOpening: verdictCopy(2, true, 'good', false, () => 0),
     isBest: false,
     isWarmup: false,
-    audience: { hasGames: true, isGuest: false },
     ...props,
   };
   const result = render(
@@ -1402,7 +1401,6 @@ describe('instant-path game-move search (Phase 236)', () => {
       verdictOpening: verdictCopy(2, true, 'good', false, () => 0),
       isBest: false,
       isWarmup: false,
-      audience: { hasGames: true, isGuest: false },
     };
     const tree = (props: ComponentProps<typeof TrainReveal>) => (
       <MemoryRouter>

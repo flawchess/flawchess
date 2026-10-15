@@ -49,7 +49,7 @@ import { scorePuzzle } from '@/lib/trainScore';
 import { cn } from '@/lib/utils';
 import { TOUR_SPOTLIGHT_CLASS } from '@/lib/theme';
 import { verdictStripLine } from '@/lib/trainBotCopy';
-import type { TrainCopyAudience, VerdictCopy, WalkthroughTarget } from '@/lib/trainBotCopy';
+import type { VerdictCopy, WalkthroughTarget } from '@/lib/trainBotCopy';
 import type { Persona } from '@/lib/personas/personaRegistry';
 import { guessFeedbackProse } from '@/lib/trainGuessLabels';
 import type { Guess } from '@/lib/trainGuessLabels';
@@ -157,7 +157,6 @@ export interface TrainRevealProps {
   sessionDate?: string;
   expiresOn?: string;
   isWarmup: boolean;
-  audience: TrainCopyAudience;
   /** Fired once per strip expansion (collapsed -> open), for the board owner's
    * telemetry. The Umami event itself is sent by the strip. */
   onStripExpand?: () => void;
@@ -189,7 +188,6 @@ export function TrainReveal({
   sessionDate,
   expiresOn,
   isWarmup,
-  audience,
   onStripExpand,
 }: TrainRevealProps): ReactElement | null {
   const { startGameMoveSearch } = gradingEngine;
@@ -349,7 +347,6 @@ export function TrainReveal({
         sessionDate={sessionDate}
         expiresOn={expiresOn}
         isWarmup={isWarmup}
-        audience={audience}
         guess={guess}
         guessProse={guessProse}
         motif={motif}
