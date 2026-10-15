@@ -3923,22 +3923,23 @@ async def test_upsert_settings_leaves_reminder_last_sent_on_unchanged(
 async def test_get_or_create_settings_onboarding_seen_defaults_null(
     db_session: AsyncSession,
 ) -> None:
-    """Phase 222 (TRAINBOT-05, D-13): a freshly created settings row reads
-    back NULL on all three onboarding-seen columns via get_or_create_settings
-    — no backfill, every brand-new user starts unseen on all three."""
+    """Phase 222 (TRAINBOT-05, D-13) + Phase 240 (D-09): a freshly created
+    settings row reads back NULL on both onboarding-seen timestamps and stage 0
+    on reveal_tour_stage via get_or_create_settings — no backfill, every
+    brand-new user starts unseen."""
     await ensure_test_user(db_session, _USER_ID)
 
     settings_row = await train_repository.get_or_create_settings(db_session, user_id=_USER_ID)
 
     assert settings_row.intro_seen_at is None
-    assert settings_row.reveal_walkthrough_seen_at is None
+    assert settings_row.reveal_tour_stage == 0
     assert settings_row.sr_explained_at is None
 
     row = (
         await db_session.execute(select(TrainSettings).where(TrainSettings.user_id == _USER_ID))
     ).scalar_one()
     assert row.intro_seen_at is None
-    assert row.reveal_walkthrough_seen_at is None
+    assert row.reveal_tour_stage == 0
     assert row.sr_explained_at is None
 
 
@@ -3947,7 +3948,7 @@ async def test_get_settings_round_trips_onboarding_seen_timestamps(
     db_session: AsyncSession,
 ) -> None:
     """get_settings round-trips a manually stamped onboarding-seen value
-    exactly, for each of the three columns independently."""
+    exactly, for each of the three onboarding columns independently."""
     await ensure_test_user(db_session, _USER_ID)
     await train_repository.get_or_create_settings(db_session, user_id=_USER_ID)
     stamped_at = datetime.datetime(2026, 9, 13, 10, 0, tzinfo=datetime.timezone.utc)
@@ -3956,7 +3957,7 @@ async def test_get_settings_round_trips_onboarding_seen_timestamps(
         .where(TrainSettings.user_id == _USER_ID)
         .values(
             intro_seen_at=stamped_at,
-            reveal_walkthrough_seen_at=stamped_at,
+            reveal_tour_stage=2,
             sr_explained_at=stamped_at,
         )
     )
@@ -3965,14 +3966,15 @@ async def test_get_settings_round_trips_onboarding_seen_timestamps(
 
     assert settings_row is not None
     assert settings_row.intro_seen_at == stamped_at
-    assert settings_row.reveal_walkthrough_seen_at == stamped_at
+    assert settings_row.reveal_tour_stage == 2
     assert settings_row.sr_explained_at == stamped_at
 
 
 @pytest.mark.asyncio
 async def test_upsert_settings_leaves_onboarding_seen_unchanged(db_session: AsyncSession) -> None:
     """Phase 222 (TRAINBOT-05, D-12): upsert_settings (PUT /train/settings)
-    must never move any of the three onboarding-seen watermarks — the same
+    must never move any of the three onboarding columns (two timestamps and
+    the Phase 240 reveal_tour_stage) — the same
     "leaves it unchanged" contract as reminder_last_sent_on above. This is
     the assertion that would fail if the PUT handler's settings save ever
     caused a completed stepper to silently replay."""
@@ -3984,7 +3986,7 @@ async def test_upsert_settings_leaves_onboarding_seen_unchanged(db_session: Asyn
         .where(TrainSettings.user_id == _USER_ID)
         .values(
             intro_seen_at=stamped_at,
-            reveal_walkthrough_seen_at=stamped_at,
+            reveal_tour_stage=2,
             sr_explained_at=stamped_at,
         )
     )
@@ -4002,14 +4004,14 @@ async def test_upsert_settings_leaves_onboarding_seen_unchanged(db_session: Asyn
     )
 
     assert updated.intro_seen_at == stamped_at
-    assert updated.reveal_walkthrough_seen_at == stamped_at
+    assert updated.reveal_tour_stage == 2
     assert updated.sr_explained_at == stamped_at
 
     row = (
         await db_session.execute(select(TrainSettings).where(TrainSettings.user_id == _USER_ID))
     ).scalar_one()
     assert row.intro_seen_at == stamped_at
-    assert row.reveal_walkthrough_seen_at == stamped_at
+    assert row.reveal_tour_stage == 2
     assert row.sr_explained_at == stamped_at
 
 

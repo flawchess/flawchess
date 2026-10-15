@@ -172,13 +172,14 @@ class TrainSettingsRow:
     reminder_hour: int
     reminder_last_sent_on: datetime.date | None
     reminder_intent_at: datetime.datetime | None
-    # Phase 222 (TRAINBOT-05, D-11/D-12). Response-only onboarding-seen
-    # watermarks -- exposed on this row because the stamp endpoint and
-    # GET/PUT /train/settings all read it, never because a client writes it
-    # through the PUT body (that is `stamp_onboarding_step`'s job instead).
+    # Phase 222 (TRAINBOT-05, D-11/D-12) + Phase 240 (D-09). Response-only
+    # onboarding state (two seen timestamps and the reveal-tour stage counter)
+    # -- exposed on this row because the stamp endpoint and GET/PUT
+    # /train/settings all read it, never because a client writes it through the
+    # PUT body (that is `stamp_onboarding_step`'s job instead).
     intro_seen_at: datetime.datetime | None
-    reveal_walkthrough_seen_at: datetime.datetime | None
     sr_explained_at: datetime.datetime | None
+    reveal_tour_stage: int
 
 
 @dataclass(frozen=True)
@@ -316,8 +317,8 @@ async def get_settings(session: AsyncSession, *, user_id: int) -> TrainSettingsR
         reminder_last_sent_on=row.reminder_last_sent_on,
         reminder_intent_at=row.reminder_intent_at,
         intro_seen_at=row.intro_seen_at,
-        reveal_walkthrough_seen_at=row.reveal_walkthrough_seen_at,
         sr_explained_at=row.sr_explained_at,
+        reveal_tour_stage=row.reveal_tour_stage,
     )
 
 
@@ -360,12 +361,12 @@ async def get_or_create_settings(session: AsyncSession, *, user_id: int) -> Trai
         # intent -- NULL, same create-on-first-touch seam as every other
         # default here.
         reminder_intent_at=None,
-        # Phase 222 (TRAINBOT-05, D-13): a brand-new user has never seen any
-        # of the three onboarding steppers -- NULL, same create-on-first-
-        # touch seam as every other default here.
+        # Phase 222 (TRAINBOT-05, D-13) + Phase 240 (D-09): a brand-new user
+        # has never seen any onboarding stepper -- NULL timestamps and tour
+        # stage 0, same create-on-first-touch seam as every other default here.
         intro_seen_at=None,
-        reveal_walkthrough_seen_at=None,
         sr_explained_at=None,
+        reveal_tour_stage=0,
     )
     # ON CONFLICT DO NOTHING: a concurrent first-touch may have already
     # inserted the row between the get_settings check above and this insert;
@@ -385,8 +386,8 @@ async def get_or_create_settings(session: AsyncSession, *, user_id: int) -> Trai
         reminder_last_sent_on=None,
         reminder_intent_at=None,
         intro_seen_at=None,
-        reveal_walkthrough_seen_at=None,
         sr_explained_at=None,
+        reveal_tour_stage=0,
     )
 
 
@@ -503,10 +504,11 @@ async def upsert_settings(
     # is included here too for the same reason: this UPSERT never writes it
     # (T-201-13), so the returned row must reflect whatever is already
     # persisted, not a fabricated value.
-    # Phase 222 (TRAINBOT-05, D-12): the three onboarding-seen columns are
-    # ALSO absent from values()/set_ above -- this UPSERT structurally
-    # cannot write them (D-12's PUT-can-never-smuggle-them rule) -- so they
-    # are RETURNING'd here for the identical reason reminder_last_sent_on is:
+    # Phase 222 (TRAINBOT-05, D-12) + Phase 240 (D-09): the onboarding columns
+    # (two seen timestamps and reveal_tour_stage) are ALSO absent from
+    # values()/set_ above -- this UPSERT structurally cannot write them
+    # (D-12's PUT-can-never-smuggle-them rule) -- so they are RETURNING'd here
+    # for the identical reason reminder_last_sent_on is:
     # the returned row must reflect whatever is already persisted, never a
     # fabricated value.
     stmt = stmt.returning(
@@ -516,8 +518,8 @@ async def upsert_settings(
         TrainSettings.pool_eligible_since,
         TrainSettings.reminder_last_sent_on,
         TrainSettings.intro_seen_at,
-        TrainSettings.reveal_walkthrough_seen_at,
         TrainSettings.sr_explained_at,
+        TrainSettings.reveal_tour_stage,
     )
     result = await session.execute(stmt)
     (
@@ -527,8 +529,8 @@ async def upsert_settings(
         pool_eligible_since,
         reminder_last_sent_on,
         intro_seen_at,
-        reveal_walkthrough_seen_at,
         sr_explained_at,
+        reveal_tour_stage,
     ) = result.one()
     return TrainSettingsRow(
         timezone=timezone,
@@ -543,8 +545,8 @@ async def upsert_settings(
         reminder_last_sent_on=reminder_last_sent_on,
         reminder_intent_at=reminder_intent_at,
         intro_seen_at=intro_seen_at,
-        reveal_walkthrough_seen_at=reveal_walkthrough_seen_at,
         sr_explained_at=sr_explained_at,
+        reveal_tour_stage=reveal_tour_stage,
     )
 
 
@@ -678,21 +680,53 @@ async def _stamp_pool_eligibility(
 # documented widening for the same reason.
 _ONBOARDING_COLUMNS: dict[OnboardingStep, Any] = {
     "intro": TrainSettings.intro_seen_at,
-    "reveal_walkthrough": TrainSettings.reveal_walkthrough_seen_at,
     "sr_explained": TrainSettings.sr_explained_at,
 }
+
+# Phase 240 (D-09): the step->target-stage lookup for the reveal-tour steps.
+# Same fixed-dict rule as `_ONBOARDING_COLUMNS` above (T-222-02-03): never
+# `getattr`, never SQL interpolation. Together the two dicts partition
+# `OnboardingStep` (pinned by a test): a step is either a timestamp step or a
+# tour-stage step.
+_REVEAL_TOUR_TARGET_STAGE: dict[OnboardingStep, int] = {
+    "reveal_tour_1": 1,
+    "reveal_tour_2": 2,
+    "reveal_tour_3": 3,
+}
+
+
+async def _advance_reveal_tour_stage(
+    session: AsyncSession, *, user_id: int, target_stage: int
+) -> None:
+    """D-09: advance `reveal_tour_stage` to `target_stage`, forward-only.
+
+    Guarded on `reveal_tour_stage == target_stage - 1`: the stage moves to N
+    only from N-1, so a replayed POST, a concurrent duplicate and an
+    out-of-order POST all match zero rows and leave the stage unchanged. Same
+    first-write-wins spirit as the `IS NULL` guard on the timestamp steps.
+    """
+    await session.execute(
+        update(TrainSettings)
+        .where(
+            TrainSettings.user_id == user_id,
+            TrainSettings.reveal_tour_stage == target_stage - 1,
+        )
+        .values(reveal_tour_stage=target_stage)
+    )
 
 
 async def stamp_onboarding_step(
     session: AsyncSession, *, user_id: int, step: OnboardingStep, now_utc: datetime.datetime
 ) -> TrainSettingsRow:
-    """D-12: stamp one onboarding-seen watermark, first-write-wins, the first
-    time a stepper is completed; never overwrite an existing one.
+    """D-12: record completion of one onboarding step, forward-only and
+    idempotent; never overwrite earlier progress.
 
-    Mirrors `_stamp_pool_eligibility`'s "stamp once, never overwrite" shape.
-    `get_or_create_settings` runs first so a user who has never touched Train
-    still gets a row before the stamp UPDATE — mirroring that function's own
-    create-on-first-touch precedent.
+    `intro` / `sr_explained` stamp their seen-timestamp first-write-wins.
+    `reveal_tour_N` (Phase 240, D-09) advances `reveal_tour_stage` to N only
+    from N-1, so a replayed or out-of-order POST is a no-op and the stage never
+    moves backwards. Mirrors `_stamp_pool_eligibility`'s "stamp once, never
+    overwrite" shape. `get_or_create_settings` runs first so a user who has
+    never touched Train still gets a row before the UPDATE.
 
     Args:
         session: AsyncSession. Caller commits.
@@ -700,22 +734,26 @@ async def stamp_onboarding_step(
         step: The `Literal` step name (validated by FastAPI at the path-
             parameter boundary before this function is ever called).
         now_utc: The current UTC instant. Never `datetime.now()` (the caller
-            takes it from the `dev_now_utc` dependency).
+            takes it from the `dev_now_utc` dependency). Unused by the tour
+            steps (the stage carries no timestamp).
 
     Returns:
-        The refreshed `TrainSettingsRow` — unchanged on a replayed POST
-        (first-write-wins), stamped on the first call for this step.
+        The refreshed `TrainSettingsRow` -- unchanged on a replayed POST.
     """
     await get_or_create_settings(session, user_id=user_id)
-    column = _ONBOARDING_COLUMNS[step]
-    # Guarded on IS NULL: a replayed POST (or a concurrent one racing this
-    # one) can never move an already-stamped timestamp — the same
-    # first-write-wins shape as `_stamp_pool_eligibility`'s guarded UPDATE.
-    await session.execute(
-        update(TrainSettings)
-        .where(TrainSettings.user_id == user_id, column.is_(None))
-        .values({column: now_utc})
-    )
+    target_stage = _REVEAL_TOUR_TARGET_STAGE.get(step)
+    if target_stage is not None:
+        await _advance_reveal_tour_stage(session, user_id=user_id, target_stage=target_stage)
+    else:
+        column = _ONBOARDING_COLUMNS[step]
+        # Guarded on IS NULL: a replayed POST (or a concurrent one racing this
+        # one) can never move an already-stamped timestamp -- the same
+        # first-write-wins shape as `_stamp_pool_eligibility`'s guarded UPDATE.
+        await session.execute(
+            update(TrainSettings)
+            .where(TrainSettings.user_id == user_id, column.is_(None))
+            .values({column: now_utc})
+        )
     refreshed = await get_settings(session, user_id=user_id)
     assert refreshed is not None  # get_or_create_settings above guarantees the row exists.
     return refreshed
@@ -847,8 +885,8 @@ async def get_progress(
             reminder_last_sent_on=settings_row.reminder_last_sent_on,
             reminder_intent_at=settings_row.reminder_intent_at,
             intro_seen_at=settings_row.intro_seen_at,
-            reveal_walkthrough_seen_at=settings_row.reveal_walkthrough_seen_at,
             sr_explained_at=settings_row.sr_explained_at,
+            reveal_tour_stage=settings_row.reveal_tour_stage,
         )
 
     view = await settle_streak_snapshot(

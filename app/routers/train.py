@@ -483,8 +483,8 @@ async def _settings_response(
         reminder_hour=settings_row.reminder_hour,
         reminder_intent_at=settings_row.reminder_intent_at,
         intro_seen_at=settings_row.intro_seen_at,
-        reveal_walkthrough_seen_at=settings_row.reveal_walkthrough_seen_at,
         sr_explained_at=settings_row.sr_explained_at,
+        reveal_tour_stage=settings_row.reveal_tour_stage,
         has_mobile_subscription=await push_repository.has_mobile_subscription(
             session, user_id=user_id
         ),
@@ -558,18 +558,22 @@ async def stamp_onboarding_step(
     user: Annotated[User, Depends(current_active_user)],
     now_utc: NowUtc,
 ) -> TrainSettingsResponse:
-    """Stamp one bot-onboarding "explanation seen" watermark (D-11/D-12).
+    """Record completion of one bot-onboarding step (D-11/D-12, Phase 240 D-09).
 
     Only a COMPLETED stepper counts: the client calls this once the user
     reaches the stepper's last step, never on an abandoned/partial one — an
-    abandoned stepper leaves its column NULL and replays next time. Returns
+    abandoned stepper leaves its state untouched and replays next time.
+    `intro` / `sr_explained` stamp their seen-timestamp first-write-wins;
+    `reveal_tour_N` advances `reveal_tour_stage` to N, forward-only (a replayed
+    or out-of-order POST is a no-op). Returns
     the full `TrainSettingsResponse` so the client can `setQueryData` on the
     shared `['train','settings']` cache without a second fetch (D-12,
     RESEARCH Finding D).
 
     `step` arrives as a `Literal` path parameter — FastAPI 422s any value
-    outside `OnboardingStep`'s three names before this body ever runs, so
-    there is no hand-rolled validation and no body schema at all.
+    outside `OnboardingStep`'s five names (including the retired Phase 222
+    walkthrough name, D-11) before this body ever runs, so there is no
+    hand-rolled validation and no body schema at all.
 
     The user id always comes from `current_active_user.id` — never from a
     request body or path parameter (V4/IDOR guard), mirroring every other
