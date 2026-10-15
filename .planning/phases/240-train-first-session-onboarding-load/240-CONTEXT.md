@@ -129,6 +129,16 @@ where the code contradicted the seed. Where they differ, this file wins.
     With the new glow the **chips row container does get the highlight** (salience is the goal, and
     the glow reads differently from a chip's selection ring). Recheck at UAT that the two don't clash.
 
+### Post-research owner decisions (plan-phase, 2026-10-15)
+- **D-21:** **`sr_explained` stamps whenever the first-completed variant renders, in any branch**
+  (regular, perfect, warm-up), replacing today's `firstExplanation && !isWarmup && missedCount > 0`
+  gate in `TrainScoreScreen.tsx`. Prevents a zero-game guest (all warm-ups) from seeing the rationale
+  every session. Accepted side effect: a user whose first completed session was a warm-up never sees
+  the later "Reminders build the habit…" line. Flip the affected `TrainScoreScreen.test.tsx` cases.
+- **D-22:** The landing reminder ask (`TrainStartScreen.tsx`) unlocks only when the **whole tour is
+  done** (`reveal_tour_stage >= 3`, via a named constant), same meaning as today.
+- **D-23:** The tour overlay's "n / m" counter counts **per part** (e.g. "1 / 2"), not globally.
+
 ### Claude's Discretion
 - Copy beyond D-19's sheet (none expected). Whether the P1 bubble refers to the user's own guess: no,
   per the sheet.
