@@ -753,7 +753,9 @@ const WARMUP_SCORE_CLAUSE: Record<CopyAudienceKey, string> = {
   // line, so this clause only states why there are no own mistakes yet.
   has_games_guest: 'Guest games are not analyzed automatically, so your own mistakes are not here yet.',
   no_games: 'Import your games and your own mistakes take over.',
-  no_games_guest: 'Import your games, then sign up, and your own mistakes take over.',
+  // UAT 240: empty on purpose. The sign-up line below already says the guest's
+  // own blunders replace the warm-ups; repeating it here read as a double ask.
+  no_games_guest: '',
 };
 
 /**
@@ -867,10 +869,16 @@ export function scoreBubbleCopy(input: ScoreBubbleInput): ScoreBubbleCopy {
   if (input.isWarmup) {
     const key = audienceKey(input.audience);
     const opener = sessionOpener(input.band);
-    const warmupNote = first
-      ? `${PRACTICE_RATIONALE} Those were warm-ups. `
-      : 'Those were warm-ups, nothing to bring back yet. ';
-    const opening = `${opener} ${warmupNote}${WARMUP_SCORE_CLAUSE[key]}`;
+    // UAT 240: a guest's sign-up line already says "instead of warm-ups", so
+    // the guest opening skips the warm-up note rather than saying it twice.
+    const warmupNote = input.audience.isGuest
+      ? ''
+      : first
+        ? 'Those were warm-ups.'
+        : 'Those were warm-ups, nothing to bring back yet.';
+    const opening = [opener, first ? PRACTICE_RATIONALE : '', warmupNote, WARMUP_SCORE_CLAUSE[key]]
+      .filter((part) => part !== '')
+      .join(' ');
     // Quick task 260926-8p5: a registered zero-game account gets the
     // "Import games" button in the bubble instead of a second line. The
     // reminder ask ("so the habit is there when they arrive") promised

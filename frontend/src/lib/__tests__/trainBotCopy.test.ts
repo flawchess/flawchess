@@ -758,15 +758,14 @@ describe('scoreBubbleCopy (Phase 240 D-16..D-19)', () => {
     yellow: 'Solid session, with a few that got away.',
     red: 'Tough session. That is exactly what Train is for.',
   } as const;
+  // Registered audiences only: a guest's opening skips the warm-up note (its
+  // sign-up line already says "instead of warm-ups"), covered separately below.
   const WARM_CLAUSE = [
     [AUDIENCE_HAS_GAMES, 'Once your games are analyzed, your own mistakes take over.'],
-    [
-      AUDIENCE_GUEST_WITH_GAMES,
-      'Guest games are not analyzed automatically, so your own mistakes are not here yet.',
-    ],
     [AUDIENCE_NO_GAMES, 'Import your games and your own mistakes take over.'],
-    [AUDIENCE_NO_GAMES_GUEST, 'Import your games, then sign up, and your own mistakes take over.'],
   ] as const;
+  const GUEST_WITH_GAMES_CLAUSE =
+    'Guest games are not analyzed automatically, so your own mistakes are not here yet.';
   const BASE: ScoreBubbleInput = {
     missedCount: 0,
     isFirstCompletedSession: false,
@@ -859,6 +858,38 @@ describe('scoreBubbleCopy (Phase 240 D-16..D-19)', () => {
     }
   });
 
+  it('UAT 240: a guest warm-up opening skips the warm-up note; a zero-game guest gets no clause', () => {
+    const firstNoGames = scoreBubbleCopy({
+      ...BASE,
+      isWarmup: true,
+      isFirstCompletedSession: true,
+      band: 'yellow',
+      audience: AUDIENCE_NO_GAMES_GUEST,
+    });
+    expect(firstNoGames.lines).toEqual([`${OPENER.yellow} ${RATIONALE}`, GUEST_SIGNUP_ASK_SCORE]);
+    const laterNoGames = scoreBubbleCopy({
+      ...BASE,
+      isWarmup: true,
+      band: 'green',
+      audience: AUDIENCE_NO_GAMES_GUEST,
+    });
+    expect(laterNoGames.lines).toEqual([OPENER.green, GUEST_SIGNUP_ASK_SCORE]);
+    const firstWithGames = scoreBubbleCopy({
+      ...BASE,
+      isWarmup: true,
+      isFirstCompletedSession: true,
+      band: 'red',
+      audience: AUDIENCE_GUEST_WITH_GAMES,
+    });
+    expect(firstWithGames.lines[0]).toBe(`${OPENER.red} ${RATIONALE} ${GUEST_WITH_GAMES_CLAUSE}`);
+    for (const audience of [AUDIENCE_NO_GAMES_GUEST, AUDIENCE_GUEST_WITH_GAMES]) {
+      for (const isFirstCompletedSession of [true, false]) {
+        const copy = scoreBubbleCopy({ ...BASE, isWarmup: true, isFirstCompletedSession, audience });
+        expect(copy.lines[0]).not.toContain('warm-ups');
+      }
+    }
+  });
+
   it('warm-up line 2 is unchanged in first and later sessions: guest sign-up ask, has_games reminder ask, nothing for no_games', () => {
     for (const isFirstCompletedSession of [true, false]) {
       const input = { ...BASE, isWarmup: true, isFirstCompletedSession };
@@ -887,7 +918,12 @@ describe('scoreBubbleCopy (Phase 240 D-16..D-19)', () => {
         [0, 1].flatMap((missedCount) =>
           bands.flatMap((band) =>
             asks.flatMap((reminderAsk) =>
-              WARM_CLAUSE.map(([audience]) => ({
+              [
+                AUDIENCE_HAS_GAMES,
+                AUDIENCE_GUEST_WITH_GAMES,
+                AUDIENCE_NO_GAMES,
+                AUDIENCE_NO_GAMES_GUEST,
+              ].map((audience) => ({
                 isWarmup,
                 isFirstCompletedSession,
                 missedCount,
@@ -982,12 +1018,10 @@ describe('scoreBubbleCopy, D-03/S-3 games-less warm-up audience branch (Phase 22
     expect(copy.lines[0]).toContain('Import your games');
   });
 
-  it('a zero-game guest opener clause reads import first, sign up second', () => {
+  it('UAT 240: a zero-game guest opener never repeats the sign-up ask of line 2', () => {
     const copy = scoreBubbleCopy({ ...WARM, audience: AUDIENCE_NO_GAMES_GUEST });
-    const importIndex = copy.lines[0].toLowerCase().indexOf('mport');
-    const signUpIndex = copy.lines[0].toLowerCase().indexOf('sign up');
-    expect(importIndex).toBeGreaterThanOrEqual(0);
-    expect(signUpIndex).toBeGreaterThan(importIndex);
+    expect(copy.lines[0].toLowerCase()).not.toContain('sign up');
+    expect(copy.lines[1]).toBe(GUEST_SIGNUP_ASK_SCORE);
   });
 
   it('the non-warm-up scoreBubbleCopy variants are audience-independent', () => {

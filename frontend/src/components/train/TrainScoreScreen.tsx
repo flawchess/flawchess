@@ -96,6 +96,11 @@ const BADGE_TINT_PERCENT = 14;
 /** Thickness of the badge ring, in px. */
 const BADGE_RING_WIDTH_PX = 4;
 
+/** UAT 240: the bubble and button column. 384px (max-w-sm) on phones, which
+ * fills the screen anyway; 512px from md up, where the narrow column wrapped
+ * the bubble into a tall block next to empty space. */
+const SCORE_COLUMN_MAX_W = 'max-w-sm md:max-w-lg';
+
 export interface TrainScoreScreenProps {
   score: TrainSessionScore;
   /**
@@ -274,7 +279,7 @@ export function TrainScoreScreen({
           BEFORE the Remind me ask below — the whole point of SC4. Replaces
           the old "Session complete" heading, which said nothing about the
           loop this screen is meant to open. */}
-      <div className="w-full max-w-sm text-left" data-testid="train-score-bubble">
+      <div className={cn('w-full text-left', SCORE_COLUMN_MAX_W)} data-testid="train-score-bubble">
         <TrainBotBubble
           persona={bot}
           state="verdict"
@@ -327,7 +332,7 @@ export function TrainScoreScreen({
           block) never crowds into this row; it renders on its own full-width
           line below via `reminderBelowRow`, wrapped in this flex-col so both
           pieces stay inside the same max-w-sm column. */}
-      <div className="flex w-full max-w-sm flex-col gap-2">
+      <div className={cn('flex w-full flex-col gap-2', SCORE_COLUMN_MAX_W)}>
         <div className="flex w-full items-center gap-2" data-testid="train-score-button-row">
           <GuardedReminderControl isGuest={isGuest} reminderControl={reminderControl} />
           <Button
