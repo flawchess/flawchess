@@ -41,6 +41,7 @@ import { buildAnalysisFenUrl, buildGameAnalysisUrl } from '@/lib/analysisUrl';
 import { HILDA_ID, STEPPER_COPY_MAX_CHARS, introStepCount } from '@/lib/trainBotCopy';
 import { PERSONA_REGISTRY } from '@/lib/personas/personaRegistry';
 import { useTrainSession } from '@/hooks/useTrainSession';
+import { TRAIN_SETTINGS_QUERY_KEY } from '@/hooks/useTrainSettings';
 import {
   TRAIN_RECHECK_MAX_NODES,
   TRAIN_RECHECK_MOVETIME_MS,
@@ -4031,10 +4032,11 @@ describe('TrainSolveScreen — progress, last move, grading state, engine failur
     async function openReveal(
       stage: TrainSettingsResponse['reveal_tour_stage'],
       solve: Partial<SolveResponse> = {},
+      queryClient?: QueryClient,
     ): Promise<ReturnType<typeof render>> {
       getSettings.mockResolvedValue(makeSettings({ reveal_tour_stage: stage }));
       solvePuzzle.mockResolvedValue({ ...SOLVE_RESPONSE, ...solve });
-      const rendered = await renderScreen(makePuzzle());
+      const rendered = await renderScreen(makePuzzle(), makeSession(), null, undefined, queryClient);
       fireEvent.click(screen.getByTestId('btn-train-guess-critical'));
       await act(async () => {
         fireEvent.click(screen.getByTestId('drop-e2e4'));
@@ -4280,6 +4282,177 @@ describe('TrainSolveScreen — progress, last move, grading state, engine failur
         cleanup();
         stampOnboarding.mockClear();
       }
+    });
+
+    // ── One part per reveal, abandon and replay, hide and reopen (plan 04 Task 2) ──
+    const overlayShown = (): boolean => screen.queryByTestId('train-tour-overlay') !== null;
+    const badgeShown = (): boolean => screen.queryByTestId('btn-train-tour-reopen') !== null;
+    const SIDELINES_COPY = 'Move a piece to try your own idea: it branches off as a sideline.';
+    const STEPPING_COPY = 'Step through the focused line with';
+
+    it('latch (D-07): a stage write that lands mid-reveal never switches the part', async () => {
+      const queryClient = new QueryClient({
+        defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+      });
+      await openReveal(0, {}, queryClient);
+      await waitFor(() => expect(screen.getByTestId('train-bot-walkthrough')).not.toBeNull());
+      clickBarNext();
+      await waitFor(() => expect(tourCopyText()).toBe('Next takes you to the next puzzle.'));
+      expect(screen.getByTestId('train-tour-step-count').textContent).toBe('2 / 2');
+
+      // What the leave stamp's onSuccess does: the cached stage moves 0 -> 1 while this
+      // reveal is still on screen. Part 2 (chips) must NOT replace part 1's Next bubble.
+      act(() => {
+        queryClient.setQueryData(TRAIN_SETTINGS_QUERY_KEY, makeSettings({ reveal_tour_stage: 1 }));
+      });
+      // TanStack defers observer notifications to a macrotask: wait one out, or the
+      // screen has not seen the new stage yet and the assertions below prove nothing.
+      await act(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 20));
+      });
+      expect(tourCopyText()).toBe('Next takes you to the next puzzle.');
+      expect(screen.getByTestId('train-tour-step-count').textContent).toBe('2 / 2');
+
+      // Leaving still finishes part 1, not part 2.
+      clickBarNext();
+      await waitFor(() => expect(stampOnboarding).toHaveBeenCalledTimes(1));
+      expect(stampOnboarding).toHaveBeenCalledWith('reveal_tour_1');
+    });
+
+    it('a reveal restored after the Analyze round trip starts no part and stamps nothing (D-07)', async () => {
+      const restoredPuzzle = makePuzzle();
+      const restored: CachedTrainReveal = {
+        sessionId: 1,
+        puzzle: restoredPuzzle,
+        verdict: SOLVE_RESPONSE,
+        verdictBotId: 'wall-1800',
+        guess: 'critical',
+        playedMoveUci: 'e2e4',
+        gradeResult: {
+          moveTier: 'good',
+          bestMoveUci: 'e2e4',
+          esBefore: 0.5,
+          esAfter: 0.5,
+          bestLine: { moves: ['e2e4'], evalCp: 19, evalMate: null },
+          playedLine: { moves: ['e2e4'], evalCp: 19, evalMate: null },
+          lines: [],
+        },
+      };
+      // Stage 0: a fresh reveal at this stage WOULD run part 1; the restored one must not.
+      getSettings.mockResolvedValue(makeSettings({ reveal_tour_stage: 0 }));
+      matchMediaMatches = true;
+      await renderScreen(restoredPuzzle, makeSession(), restored);
+      await waitForReveal();
+      await waitFor(() => expect(getSettings).toHaveBeenCalled());
+      await act(async () => {});
+      await waitFor(() => expect(screen.getByTestId('train-bot-verdict-line')).not.toBeNull());
+      expect(overlayShown()).toBe(false);
+      expect(screen.queryByTestId('train-bot-walkthrough')).toBeNull();
+      expect(stampOnboarding).not.toHaveBeenCalled();
+    });
+
+    it('a part left on its last step (unmount) stamps nothing and replays from 1 / n on the next reveal (D-08)', async () => {
+      const { unmount } = await openReveal(2);
+      await waitFor(() => expect(screen.getByTestId('train-bot-walkthrough')).not.toBeNull());
+      clickBarNext();
+      clickBarNext();
+      await waitFor(() => expect(screen.getByTestId('train-tour-step-count').textContent).toBe('3 / 3'));
+      unmount();
+      await act(async () => {});
+      expect(stampOnboarding).not.toHaveBeenCalled();
+
+      // Nothing was stamped, so the account is still at stage 2: part 3 starts over.
+      await openReveal(2);
+      await waitFor(() => expect(screen.getByTestId('train-bot-walkthrough')).not.toBeNull());
+      expect(screen.getByTestId('train-tour-step-count').textContent).toBe('1 / 3');
+      expect(tourCopyText()).toContain(SIDELINES_COPY);
+    });
+
+    it('the Analyze button from a middle step of a part stamps nothing (D-08)', async () => {
+      await openReveal(2);
+      await waitFor(() => expect(screen.getByTestId('train-bot-walkthrough')).not.toBeNull());
+      expect(screen.getByTestId('train-tour-step-count').textContent).toBe('1 / 3');
+      fireEvent.click(screen.getByTestId('btn-train-analyze'));
+      await act(async () => {});
+      expect(readTrainRevealCache()).not.toBeNull(); // the Analyze exit ran
+      expect(stampOnboarding).not.toHaveBeenCalled();
+    });
+
+    // Phase 237 UAT (G-01): an interaction hides the overlay but never moves the
+    // tour; the next bar Next shows the overlay with the next step. Same on every part.
+    it('part 2 on a phone: a chip tap hides the overlay without advancing; Next shows the stepping step', async () => {
+      matchMediaMatches = false;
+      await openReveal(1);
+      await waitFor(() => expect(overlayShown()).toBe(true));
+      fireEvent.click(screen.getByTestId('train-chip-your'));
+      await waitFor(() => expect(overlayShown()).toBe(false));
+      expect(badgeShown()).toBe(true);
+      clickBarNext();
+      await waitFor(() => expect(overlayShown()).toBe(true));
+      expect(tourCopyText()).toContain(STEPPING_COPY);
+      expect(screen.getByTestId('train-tour-step-count').textContent).toBe('2 / 2');
+      expect(badgeShown()).toBe(false);
+    });
+
+    it("part 2 on a phone: a list tap hides the overlay and Hilda's badge brings the stepping step back", async () => {
+      matchMediaMatches = false;
+      await openReveal(1);
+      await waitFor(() => expect(overlayShown()).toBe(true));
+      clickBarNext();
+      await waitFor(() => expect(tourCopyText()).toContain(STEPPING_COPY));
+      await waitFor(() => expect(screen.getByTestId('train-move-tree')).not.toBeNull());
+      tapListMove(0);
+      await waitFor(() => expect(badgeShown()).toBe(true));
+      expect(overlayShown()).toBe(false);
+      fireEvent.click(screen.getByTestId('btn-train-tour-reopen'));
+      expect(overlayShown()).toBe(true);
+      expect(tourCopyText()).toContain(STEPPING_COPY);
+    });
+
+    it('part 2 on a phone: a touch on the board hides the overlay', async () => {
+      matchMediaMatches = false;
+      await openReveal(1);
+      await waitFor(() => expect(overlayShown()).toBe(true));
+      fireEvent.pointerDown(screen.getByTestId('chessboard'));
+      await waitFor(() => expect(badgeShown()).toBe(true));
+      expect(overlayShown()).toBe(false);
+    });
+
+    it('part 1 on a phone: expanding the strip hides the overlay and leaves the tour on the result step', async () => {
+      matchMediaMatches = false;
+      await openReveal(0);
+      await waitFor(() => expect(overlayShown()).toBe(true));
+      fireEvent.click(screen.getByTestId('train-verdict-strip'));
+      await waitFor(() => expect(badgeShown()).toBe(true));
+      fireEvent.click(screen.getByTestId('btn-train-tour-reopen'));
+      expect(tourCopyText()).toContain('This strip is your result.');
+      expect(screen.getByTestId('train-tour-step-count').textContent).toBe('1 / 2');
+    });
+
+    it('part 3 on a phone: a fork hides the overlay and leaves the tour on the sidelines step', async () => {
+      matchMediaMatches = false;
+      await openReveal(2);
+      await waitFor(() => expect(tourCopyText()).toContain(SIDELINES_COPY));
+      await act(async () => {
+        fireEvent.click(screen.getByTestId('drop-d2d4'));
+      });
+      await waitFor(() => expect(badgeShown()).toBe(true));
+      fireEvent.click(screen.getByTestId('btn-train-tour-reopen'));
+      expect(tourCopyText()).toContain(SIDELINES_COPY);
+      expect(screen.getByTestId('train-tour-step-count').textContent).toBe('1 / 3');
+    });
+
+    it('part 2 on desktop: an interaction hides the overlay behind the badge but never moves the tour', async () => {
+      matchMediaMatches = true;
+      await openReveal(1);
+      await waitFor(() => expect(overlayShown()).toBe(true));
+      fireEvent.click(screen.getByTestId('train-chip-your'));
+      // The overlay covers the board on desktop too, so it hides.
+      expect(overlayShown()).toBe(false);
+      expect(badgeShown()).toBe(true);
+      fireEvent.click(screen.getByTestId('btn-train-tour-reopen'));
+      expect(tourCopyText()).toContain('Tap one to focus it');
+      expect(screen.getByTestId('train-tour-step-count').textContent).toBe('1 / 2');
     });
 
     // The phone scrolls the chips (part 2, step 1) and the list (part 2, step 2)
