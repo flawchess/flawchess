@@ -4081,7 +4081,7 @@ describe('TrainSolveScreen — progress, last move, grading state, engine failur
       await openReveal(0, { puzzle_type: 'herring' });
       await waitFor(() => expect(screen.getByTestId('train-bot-walkthrough')).not.toBeNull());
       expect(tourCopyText()).toBe(
-        'Your result is in the highlighted bubble. Here several moves were fine, so any good move works.',
+        'Your result is in the highlighted box. Here several moves were fine, so any good move works.',
       );
       const reveal = screen.getByTestId('train-reveal');
       expect(spotlit(within(reveal).getByTestId('train-verdict-card'))).toBe(true);

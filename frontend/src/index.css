@@ -365,6 +365,20 @@
   animation: train-tour-spotlight-pulse 1.6s ease-in-out infinite;
 }
 
+/* Phase 240 UAT: on desktop the phone-sized halo swamped the targets; a
+   tighter pulse keeps the spotlight readable without bleeding over neighbors. */
+@keyframes train-tour-spotlight-pulse-desktop {
+  0%, 100% { box-shadow: 0 0 8px 1px var(--tour-glow-halo); }
+  50%      { box-shadow: 0 0 16px 4px var(--tour-glow-halo); }
+}
+
+@media (min-width: 640px) {
+  .train-tour-spotlight {
+    box-shadow: 0 0 14px 3px var(--tour-glow-halo);
+    animation-name: train-tour-spotlight-pulse-desktop;
+  }
+}
+
 /* Train reveal "Points: +N" flash (190.1 UAT round 7, TrainSolveScreen).
    The translate(-50%, -50%) board-centering lives INSIDE the keyframes on
    purpose — the element uses no Tailwind translate utilities, because the

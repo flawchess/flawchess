@@ -631,9 +631,9 @@ const TOUR_RESULT_PHONE_SHARP =
 const TOUR_RESULT_PHONE_SEVERAL =
   'This strip is your result. Here several moves were fine, so any good move works. Tap the strip for the full feedback.';
 const TOUR_RESULT_DESKTOP_SHARP =
-  'Your result is in the highlighted bubble. Here only one move was good, every other move was a mistake.';
+  'Your result is in the highlighted box. Here only one move was good, every other move was a mistake.';
 const TOUR_RESULT_DESKTOP_SEVERAL =
-  'Your result is in the highlighted bubble. Here several moves were fine, so any good move works.';
+  'Your result is in the highlighted box. Here several moves were fine, so any good move works.';
 const TOUR_ANALYZE_GAME =
   'The Analyze button opens the whole game one move before the mistake, so you can see how you got there.';
 const TOUR_ANALYZE_POSITION = 'The Analyze button opens this position on the analysis board.';

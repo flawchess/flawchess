@@ -629,12 +629,12 @@ describe('reveal tour parts (Phase 240)', () => {
       [
         true,
         'sharp',
-        'Your result is in the highlighted bubble. Here only one move was good, every other move was a mistake.',
+        'Your result is in the highlighted box. Here only one move was good, every other move was a mistake.',
       ],
       [
         true,
         'several',
-        'Your result is in the highlighted bubble. Here several moves were fine, so any good move works.',
+        'Your result is in the highlighted box. Here several moves were fine, so any good move works.',
       ],
     ];
     for (const [isDesktop, answerKind, expected] of cases) {
