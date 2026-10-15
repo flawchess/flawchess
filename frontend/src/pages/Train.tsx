@@ -257,8 +257,6 @@ export default function TrainPage(): ReactElement {
           nextSessionDate={trainSession.session.expires_on}
           onDone={returnToLanding}
           solvedOutcomes={trainSession.solvedOutcomes}
-          sessionDate={trainSession.session.session_date}
-          expiresOn={trainSession.session.expires_on}
           isWarmup={trainSession.session.is_warmup}
           hasGames={hasGames}
           isGuest={isGuest}

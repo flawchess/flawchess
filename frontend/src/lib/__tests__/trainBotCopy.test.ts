@@ -47,7 +47,6 @@ import {
 import type {
   IntroStep,
   ScoreBubbleInput,
-  ScoreBubbleOutcome,
   TourStepId,
   TrainCopyAudience,
   WalkthroughContext,
@@ -797,236 +796,202 @@ describe('reveal tour parts (Phase 240)', () => {
   });
 });
 
-describe('scoreBubbleCopy', () => {
+describe('scoreBubbleCopy (Phase 240 D-16..D-19)', () => {
+  const RATIONALE = 'Practice teaches you when to calculate and when a quick good move is enough.';
+  const HABIT = 'Reminders build the habit that makes Train work.';
+  const ASK = {
+    remind_me: 'Turn on Remind me and let the next session find you.',
+    scan_qr:
+      'Train works best on your phone: scan the code below to install FlawChess there ' +
+      'and turn on reminders.',
+    none: 'Yours are already on, so the next session will find you.',
+  } as const;
+  const WARM_ASK = {
+    remind_me: 'Turn on Remind me so the habit is there when they arrive.',
+    scan_qr:
+      'Scan the code below to install FlawChess on your phone and turn on reminders, so ' +
+      'the habit is ready when they arrive.',
+    none: 'Your reminders are on, so the habit will be there when they arrive.',
+  } as const;
+  const OPENER = {
+    green: 'Strong session.',
+    yellow: 'Solid session, with a few that got away.',
+    red: 'Tough session. That is exactly what Train is for.',
+  } as const;
+  const WARM_CLAUSE = [
+    [AUDIENCE_HAS_GAMES, 'Once your games are analyzed, your own mistakes take over.'],
+    [
+      AUDIENCE_GUEST_WITH_GAMES,
+      'Guest games are not analyzed automatically, so your own mistakes are not here yet.',
+    ],
+    [AUDIENCE_NO_GAMES, 'Import your games and your own mistakes take over.'],
+    [AUDIENCE_NO_GAMES_GUEST, 'Import your games, then sign up, and your own mistakes take over.'],
+  ] as const;
   const BASE: ScoreBubbleInput = {
-    outcomes: [],
     missedCount: 0,
     isFirstCompletedSession: false,
     isWarmup: false,
     reminderAsk: 'remind_me',
     band: 'yellow',
-    session_date: '2026-09-13',
-    expires_on: '2026-09-14',
     audience: AUDIENCE_HAS_GAMES,
   };
 
-  const activeOutcome = (dueDate: string): ScoreBubbleOutcome => ({
-    source: 'sr_item',
-    item_status: 'active',
-    due_date: dueDate,
-  });
-
-  it('first completed session is two lines: result + returns, then the habit sentence and ask (UAT round 6 cut the origin/goal messages)', () => {
-    const copy = scoreBubbleCopy({
-      ...BASE,
-      outcomes: [activeOutcome('2026-09-14'), activeOutcome('2026-09-17')],
-      missedCount: 2,
-      isFirstCompletedSession: true,
-    });
-    expect(copy.lines).toHaveLength(2);
-    expect(copy.lines[0]).toContain('come');
-    expect(copy.lines[1]).toContain('Reminders build the habit that makes Train work.');
-    const text = copy.lines.join(' ');
-    expect(text).not.toContain('ordinary puzzles');
-    expect(text).not.toContain('memorizing');
-  });
-
-  it('a later (non-first) session returns a one-liner, without the full SR explanation', () => {
-    const copy = scoreBubbleCopy({
-      ...BASE,
-      outcomes: [activeOutcome('2026-09-14')],
-      missedCount: 1,
-      isFirstCompletedSession: false,
-    });
-    expect(copy.lines).toHaveLength(1);
-    expect(copy.lines[0]).not.toContain('ordinary puzzles');
-    expect(copy.lines[0]).toContain('See you tomorrow.');
-  });
-
-  it('a warm-up session (isWarmup, no SR items) returns the warm-up variant', () => {
-    const copy = scoreBubbleCopy({ ...BASE, isWarmup: true, missedCount: 0 });
-    const text = copy.lines.join(' ');
-    expect(text).toContain('warm-ups');
-    expect(text).toContain('Remind me');
-  });
-
-  // Phase 222 UAT round 5: the ask names what is actually on screen below the
-  // row (the row button, the QR block, or nothing when the phone already has
-  // reminders). The three must-survive messages are platform-independent.
-  it('scan_qr first completed session keeps the habit sentence and asks for the phone scan, not Remind me', () => {
-    const copy = scoreBubbleCopy({
-      ...BASE,
-      outcomes: [activeOutcome('2026-09-14')],
-      missedCount: 1,
-      isFirstCompletedSession: true,
-      reminderAsk: 'scan_qr',
-    });
-    const text = copy.lines.join(' ');
-    expect(text).toContain('Reminders build the habit that makes Train work.');
-    expect(text).toContain('scan the code below');
-    expect(text).not.toContain('Remind me');
-  });
-
-  it('none (phone reminders already on) first completed session asks for nothing', () => {
-    const copy = scoreBubbleCopy({
-      ...BASE,
-      outcomes: [activeOutcome('2026-09-14')],
-      missedCount: 1,
-      isFirstCompletedSession: true,
-      reminderAsk: 'none',
-    });
-    const text = copy.lines.join(' ');
-    expect(text).toContain('Reminders build the habit that makes Train work.');
-    expect(text).toContain('already on');
-    expect(text).not.toContain('Remind me');
-    expect(text).not.toContain('scan');
-  });
-
-  it('scan_qr warm-up session asks for the phone scan, not Remind me', () => {
-    const copy = scoreBubbleCopy({ ...BASE, isWarmup: true, missedCount: 0, reminderAsk: 'scan_qr' });
-    const text = copy.lines.join(' ');
-    expect(text).toContain('warm-ups');
-    expect(text).toContain('Scan the code below');
-    expect(text).not.toContain('Remind me');
-  });
-
-  it('later session is the same one-liner for every ask (no ask at all)', () => {
-    for (const reminderAsk of ['remind_me', 'scan_qr', 'none'] as const) {
-      const copy = scoreBubbleCopy({
-        ...BASE,
-        outcomes: [activeOutcome('2026-09-14')],
-        missedCount: 1,
-        reminderAsk,
-      });
-      expect(copy.lines).toHaveLength(1);
-      expect(copy.lines[0]).not.toContain('scan');
+  it('regular first completed session: opener + rationale, then the habit line and the reminder ask, for every band and ask', () => {
+    for (const band of ['green', 'yellow', 'red'] as const) {
+      for (const reminderAsk of ['remind_me', 'scan_qr', 'none'] as const) {
+        const copy = scoreBubbleCopy({
+          ...BASE,
+          missedCount: 2,
+          isFirstCompletedSession: true,
+          band,
+          reminderAsk,
+        });
+        expect(copy.lines).toEqual([
+          `${OPENER[band]} ${RATIONALE}`,
+          `${HABIT} ${ASK[reminderAsk]}`,
+        ]);
+      }
     }
   });
 
-  it('every session opens with the result comment per band (first, later, warm-up), neutral with no band', () => {
-    const variants: Array<Partial<ScoreBubbleInput>> = [
-      { outcomes: [activeOutcome('2026-09-14')], missedCount: 1, isFirstCompletedSession: true },
-      { outcomes: [activeOutcome('2026-09-14')], missedCount: 1, isFirstCompletedSession: false },
-      { isWarmup: true, missedCount: 0 },
-    ];
-    for (const variant of variants) {
-      const first = (band: ScoreBubbleInput['band']): string =>
-        scoreBubbleCopy({ ...BASE, ...variant, band }).lines[0] ?? '';
-      expect(first('green')).toMatch(/^Strong session\./);
-      expect(first('yellow')).toMatch(/^Solid session/);
-      expect(first('red')).toMatch(/^Tough session/);
-      expect(first(null)).toMatch(/^Session done\./);
-    }
+  it('regular first completed session with no band uses the neutral opener', () => {
+    const copy = scoreBubbleCopy({ ...BASE, missedCount: 1, isFirstCompletedSession: true, band: null });
+    expect(copy.lines[0]).toBe(`Session done. ${RATIONALE}`);
   });
 
-  it('the first-session opener leads straight into the return counts', () => {
+  it('regular later session is one line: opener + "See you tomorrow.", for every ask', () => {
+    for (const band of ['green', 'yellow', 'red'] as const) {
+      for (const reminderAsk of ['remind_me', 'scan_qr', 'none'] as const) {
+        const copy = scoreBubbleCopy({ ...BASE, missedCount: 1, band, reminderAsk });
+        expect(copy.lines).toEqual([`${OPENER[band]} See you tomorrow.`]);
+      }
+    }
+    expect(scoreBubbleCopy({ ...BASE, missedCount: 1, band: null }).lines).toEqual([
+      'Session done. See you tomorrow.',
+    ]);
+  });
+
+  it('perfect first session: "Nothing got away today." + rationale, then the habit line and ask, ignoring the band', () => {
     for (const band of ['green', 'yellow', 'red', null] as const) {
-      const copy = scoreBubbleCopy({
-        ...BASE,
-        outcomes: [activeOutcome('2026-09-14')],
-        missedCount: 1,
-        isFirstCompletedSession: true,
-        band,
-      });
-      expect(copy.lines[0]).toContain('1 comes back next session.');
+      for (const reminderAsk of ['remind_me', 'scan_qr', 'none'] as const) {
+        const copy = scoreBubbleCopy({ ...BASE, isFirstCompletedSession: true, band, reminderAsk });
+        expect(copy.lines).toEqual([
+          `Nothing got away today. ${RATIONALE}`,
+          `${HABIT} ${ASK[reminderAsk]}`,
+        ]);
+      }
     }
   });
 
-  it('the nothing-missed variant keeps its own opener, no band comment', () => {
-    const copy = scoreBubbleCopy({
-      ...BASE,
-      outcomes: [activeOutcome('2026-09-14')],
-      missedCount: 0,
-      band: 'green',
-    });
-    expect(copy.lines[0]).toMatch(/^Nothing got away today\./);
+  it('perfect later session: "Nothing got away today." plus the ask, or the understanding tip when there is none', () => {
+    for (const reminderAsk of ['remind_me', 'scan_qr'] as const) {
+      const copy = scoreBubbleCopy({ ...BASE, reminderAsk });
+      expect(copy.lines).toEqual(['Nothing got away today.', ASK[reminderAsk]]);
+    }
+    expect(scoreBubbleCopy({ ...BASE, reminderAsk: 'none' }).lines).toEqual([
+      'Nothing got away today.',
+      'Remember to analyze why the moves work or fail, not just memorize the best move.',
+    ]);
   });
 
-  it('"nothing missed" (missedCount === 0) returns its own variant', () => {
-    const copy = scoreBubbleCopy({
-      ...BASE,
-      outcomes: [activeOutcome('2026-09-14')],
-      missedCount: 0,
-      isFirstCompletedSession: true,
-    });
-    expect(copy.lines[0]).toContain('Nothing got away today.');
+  it('warm-up first session: rationale in line 1 before "Those were warm-ups.", the audience clause after', () => {
+    for (const [audience, clause] of WARM_CLAUSE) {
+      const copy = scoreBubbleCopy({
+        ...BASE,
+        isWarmup: true,
+        isFirstCompletedSession: true,
+        band: 'red',
+        audience,
+      });
+      expect(copy.lines[0]).toBe(
+        `${OPENER.red} ${RATIONALE} Those were warm-ups. ${clause}`,
+      );
+    }
   });
 
-  it('UAT round 6: a perfect first session still closes on the habit sentence + reminder ask', () => {
-    const copy = scoreBubbleCopy({
-      ...BASE,
-      outcomes: [activeOutcome('2026-09-14')],
-      missedCount: 0,
-      isFirstCompletedSession: true,
-      reminderAsk: 'scan_qr',
-    });
-    expect(copy.lines).toHaveLength(2);
-    expect(copy.lines[1]).toMatch(/^Reminders build the habit/);
-    expect(copy.lines[1]).toContain('scan the code below');
+  it('warm-up later session: the unchanged "nothing to bring back yet" line 1, no rationale', () => {
+    for (const [audience, clause] of WARM_CLAUSE) {
+      const copy = scoreBubbleCopy({ ...BASE, isWarmup: true, band: 'green', audience });
+      expect(copy.lines[0]).toBe(
+        `${OPENER.green} Those were warm-ups, nothing to bring back yet. ${clause}`,
+      );
+      expect(copy.lines[0]).not.toContain(RATIONALE);
+    }
   });
 
-  it('UAT round 6: a perfect later session on desktop without a phone install still asks for the QR scan', () => {
-    const copy = scoreBubbleCopy({
-      ...BASE,
-      outcomes: [activeOutcome('2026-09-14')],
-      missedCount: 0,
-      isFirstCompletedSession: false,
-      reminderAsk: 'scan_qr',
-    });
-    expect(copy.lines).toHaveLength(2);
-    expect(copy.lines[1]).toContain('scan the code below');
-    expect(copy.lines[1]).not.toContain('Reminders build the habit');
+  it('warm-up line 2 is unchanged in first and later sessions: guest sign-up ask, has_games reminder ask, nothing for no_games', () => {
+    for (const isFirstCompletedSession of [true, false]) {
+      const input = { ...BASE, isWarmup: true, isFirstCompletedSession };
+      for (const reminderAsk of ['remind_me', 'scan_qr', 'none'] as const) {
+        expect(scoreBubbleCopy({ ...input, reminderAsk }).lines[1]).toBe(WARM_ASK[reminderAsk]);
+      }
+      expect(scoreBubbleCopy({ ...input, audience: AUDIENCE_NO_GAMES_GUEST }).lines[1]).toBe(
+        GUEST_SIGNUP_ASK_SCORE,
+      );
+      expect(scoreBubbleCopy({ ...input, audience: AUDIENCE_GUEST_WITH_GAMES }).lines[1]).toBe(
+        GUEST_SIGNUP_ASK_SCORE,
+      );
+      expect(scoreBubbleCopy({ ...input, audience: AUDIENCE_NO_GAMES }).lines).toHaveLength(1);
+    }
   });
 
-  it('a perfect later session with nothing left to ask for (none) closes with the understanding tip, not a reminder ask', () => {
-    const copy = scoreBubbleCopy({
-      ...BASE,
-      outcomes: [activeOutcome('2026-09-14')],
-      missedCount: 0,
-      isFirstCompletedSession: false,
-      reminderAsk: 'none',
-    });
-    expect(copy.lines).toHaveLength(2);
-    expect(copy.lines[1]).toContain('analyze why the moves work or fail');
-    expect(copy.lines[1]).not.toContain('Remind me');
+  // D-17/D-18/D-19: whatever the branch, the bubble is at most two lines and
+  // never says how many puzzles come back or when.
+  it('matrix: at most 2 lines and no returning text in any branch, band, audience and reminder ask', () => {
+    const RETURN_TEXT = /come back|comes back|coming back|in \d+ days|next session\./i;
+    const bands = ['green', 'yellow', 'red', null] as const;
+    const asks = ['remind_me', 'scan_qr', 'none'] as const;
+    const flags = [false, true];
+    const inputs: ScoreBubbleInput[] = flags.flatMap((isWarmup) =>
+      flags.flatMap((isFirstCompletedSession) =>
+        [0, 1].flatMap((missedCount) =>
+          bands.flatMap((band) =>
+            asks.flatMap((reminderAsk) =>
+              WARM_CLAUSE.map(([audience]) => ({
+                isWarmup,
+                isFirstCompletedSession,
+                missedCount,
+                band,
+                reminderAsk,
+                audience,
+              })),
+            ),
+          ),
+        ),
+      ),
+    );
+    expect(inputs).toHaveLength(2 * 2 * 2 * 4 * 3 * 4);
+    for (const input of inputs) {
+      const { lines } = scoreBubbleCopy(input);
+      expect(lines.length).toBeGreaterThanOrEqual(1);
+      expect(lines.length).toBeLessThanOrEqual(2);
+      // The guest sign-up ask is a fixed, unchanged line (D-19) that says
+      // "your own blunders come back": it is not a returning-counts
+      // sentence, so it is the one allowed match.
+      const checked = lines.filter((line) => line !== GUEST_SIGNUP_ASK_SCORE);
+      for (const line of checked) expect(line).not.toMatch(RETURN_TEXT);
+    }
   });
 
-  it('return counts are grouped by WHEN, never by position identifier — two items due the same day collapse into one count', () => {
-    const copy = scoreBubbleCopy({
-      ...BASE,
-      outcomes: [activeOutcome('2026-09-17'), activeOutcome('2026-09-17')],
-      missedCount: 2,
-      isFirstCompletedSession: false,
-    });
-    expect(copy.lines[0]).toContain('2 in 4 days');
-  });
-
-  it('mastered/parked/non-sr_item outcomes are excluded from the grouped return counts', () => {
-    const copy = scoreBubbleCopy({
-      ...BASE,
-      outcomes: [
-        { source: 'sr_item', item_status: 'mastered', due_date: '2026-09-01' },
-        { source: 'sr_item', item_status: 'parked', due_date: '2026-09-01' },
-        { source: 'red_herring', item_status: null, due_date: null },
-        activeOutcome('2026-09-14'),
-      ],
-      missedCount: 1,
-      isFirstCompletedSession: false,
-    });
-    expect(copy.lines[0]).toContain('1 comes back next session');
+  it('the rationale appears in line 1 only on a first completed session', () => {
+    for (const isWarmup of [false, true]) {
+      for (const missedCount of [0, 1]) {
+        const first = scoreBubbleCopy({ ...BASE, isWarmup, missedCount, isFirstCompletedSession: true });
+        const later = scoreBubbleCopy({ ...BASE, isWarmup, missedCount, isFirstCompletedSession: false });
+        expect(first.lines[0]).toContain(RATIONALE);
+        expect(later.lines.join(' ')).not.toContain(RATIONALE);
+      }
+    }
   });
 });
 
-describe('scoreBubbleCopy — D-03/S-3 games-less warm-up audience branch (Phase 224)', () => {
+describe('scoreBubbleCopy, D-03/S-3 games-less warm-up audience branch (Phase 224)', () => {
   const WARM: ScoreBubbleInput = {
-    outcomes: [],
     missedCount: 0,
     isFirstCompletedSession: false,
     isWarmup: true,
     reminderAsk: 'remind_me',
     band: 'yellow',
-    session_date: '2026-09-13',
-    expires_on: '2026-09-14',
     audience: AUDIENCE_HAS_GAMES,
   };
   const NEVER_ANALYZED = /(are analyzed|analyzing your games)/i;
@@ -1085,28 +1050,11 @@ describe('scoreBubbleCopy — D-03/S-3 games-less warm-up audience branch (Phase
     expect(signUpIndex).toBeGreaterThan(importIndex);
   });
 
-  it('the four non-warm-up scoreBubbleCopy variants are unchanged for every audience', () => {
-    const activeOutcome = (dueDate: string): ScoreBubbleOutcome => ({
-      source: 'sr_item',
-      item_status: 'active',
-      due_date: dueDate,
-    });
+  it('the non-warm-up scoreBubbleCopy variants are audience-independent', () => {
     const nonWarmupInputs: ScoreBubbleInput[] = [
-      { ...WARM, isWarmup: false, missedCount: 0, outcomes: [activeOutcome('2026-09-14')] },
-      {
-        ...WARM,
-        isWarmup: false,
-        missedCount: 1,
-        isFirstCompletedSession: true,
-        outcomes: [activeOutcome('2026-09-14')],
-      },
-      {
-        ...WARM,
-        isWarmup: false,
-        missedCount: 1,
-        isFirstCompletedSession: false,
-        outcomes: [activeOutcome('2026-09-14')],
-      },
+      { ...WARM, isWarmup: false, missedCount: 0 },
+      { ...WARM, isWarmup: false, missedCount: 1, isFirstCompletedSession: true },
+      { ...WARM, isWarmup: false, missedCount: 1, isFirstCompletedSession: false },
     ];
     for (const input of nonWarmupInputs) {
       const hasGames = scoreBubbleCopy({ ...input, audience: AUDIENCE_HAS_GAMES });

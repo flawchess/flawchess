@@ -118,7 +118,8 @@ vi.mock('@/hooks/useTrainOnboarding', () => ({
 }));
 
 const NEXT_SESSION_DATE = '2026-08-01';
-const SESSION_DATE = '2026-07-25';
+const PRACTICE_RATIONALE_TEXT =
+  'Practice teaches you when to calculate and when a quick good move is enough.';
 
 const onDone = vi.fn();
 
@@ -145,8 +146,6 @@ function renderScoreScreen(
       nextSessionDate={NEXT_SESSION_DATE}
       onDone={onDone}
       solvedOutcomes={[]}
-      sessionDate={SESSION_DATE}
-      expiresOn={NEXT_SESSION_DATE}
       isWarmup={false}
       hasGames={true}
       isGuest={false}
@@ -250,8 +249,6 @@ describe('TrainScoreScreen', () => {
         nextSessionDate={NEXT_SESSION_DATE}
         onDone={onDone}
         solvedOutcomes={[]}
-        sessionDate={SESSION_DATE}
-        expiresOn={NEXT_SESSION_DATE}
         isWarmup={false}
         hasGames={true}
         isGuest={false}
@@ -397,8 +394,9 @@ describe('TrainScoreScreen', () => {
     });
   });
 
-  // Phase 222 (D-04/D-12/D-15/D-16/D-18/D-25, SC4): the score bubble that
-  // states what returns and when, before the reminder ask.
+  // Phase 222 (D-04/D-12/D-25, SC4), reworked in Phase 240 (D-16..D-19, D-21):
+  // the score bubble, before the reminder ask. It carries the practice
+  // rationale on the first completed session and says nothing about returns.
   describe('the score bubble (D-25)', () => {
     it('renders BEFORE the button row in the JSX return', () => {
       renderScoreScreen({ total: 20, max: 20 });
@@ -415,7 +413,7 @@ describe('TrainScoreScreen', () => {
       expect(screen.getByTestId('train-score-bubble')).not.toBeNull();
     });
 
-    it('sr_explained_at === null with at least one missed SR item renders the full first-completed-session explanation and stamps exactly once', () => {
+    it('sr_explained_at === null with at least one missed item renders the rationale and the habit line and stamps exactly once', () => {
       getSettingsMock.mockReturnValue({
         data: { ...SETTINGS_FIXTURE, sr_explained_at: null },
       });
@@ -428,12 +426,14 @@ describe('TrainScoreScreen', () => {
         },
       );
       const text = screen.getByTestId('train-score-bubble-returns').textContent ?? '';
+      expect(text).toContain(PRACTICE_RATIONALE_TEXT);
       expect(text).toContain('Reminders build the habit that makes Train work.');
+      expect(text).not.toMatch(/come back|comes back|coming back|in \d+ days/);
       expect(stampMock).toHaveBeenCalledTimes(1);
       expect(stampMock).toHaveBeenCalledWith('sr_explained');
     });
 
-    it('BUG FIX (UAT round 5): the full explanation survives the stamp writing sr_explained_at back into the settings cache', () => {
+    it('BUG FIX (UAT round 5): the first-completed copy survives the stamp writing sr_explained_at back into the settings cache', () => {
       getSettingsMock.mockReturnValue({
         data: { ...SETTINGS_FIXTURE, sr_explained_at: null },
       });
@@ -456,14 +456,13 @@ describe('TrainScoreScreen', () => {
           solvedOutcomes={[
             makeSolvedResult({ correct_guess: false, move_quality: 'wrong', due_date: '2026-07-26' }),
           ]}
-          sessionDate={SESSION_DATE}
-          expiresOn={NEXT_SESSION_DATE}
           isWarmup={false}
           hasGames={true}
           isGuest={false}
         />,
       );
       const text = screen.getByTestId('train-score-bubble-returns').textContent ?? '';
+      expect(text).toContain(PRACTICE_RATIONALE_TEXT);
       expect(text).toContain('Reminders build the habit that makes Train work.');
       expect(stampMock).toHaveBeenCalledTimes(1);
     });
@@ -478,11 +477,12 @@ describe('TrainScoreScreen', () => {
         },
       );
       const text = screen.getByTestId('train-score-bubble-returns').textContent ?? '';
-      expect(text).not.toContain('ordinary puzzles');
+      expect(text).toContain('See you tomorrow.');
+      expect(text).not.toContain(PRACTICE_RATIONALE_TEXT);
       expect(stampMock).not.toHaveBeenCalled();
     });
 
-    it('a warm-up session (is_warmup, no SR items) renders the warm-up variant regardless of sr_explained_at, and stamps nothing', () => {
+    it('a first warm-up session carries the rationale in line 1, no return text, and stamps exactly once (D-21)', () => {
       getSettingsMock.mockReturnValue({
         data: { ...SETTINGS_FIXTURE, sr_explained_at: null },
       });
@@ -491,12 +491,22 @@ describe('TrainScoreScreen', () => {
         { isWarmup: true, solvedOutcomes: [] },
       );
       const text = screen.getByTestId('train-score-bubble-returns').textContent ?? '';
-      expect(text).toContain('warm-ups');
-      expect(text).not.toContain('come back');
+      expect(text).toContain(PRACTICE_RATIONALE_TEXT);
+      expect(text).toContain('Those were warm-ups.');
+      expect(text).not.toMatch(/come back|comes back|coming back/);
+      expect(stampMock).toHaveBeenCalledTimes(1);
+      expect(stampMock).toHaveBeenCalledWith('sr_explained');
+    });
+
+    it('a later warm-up session keeps the unchanged warm-up line, no rationale, and never stamps', () => {
+      renderScoreScreen({ total: 0, max: 0 }, { isWarmup: true, solvedOutcomes: [] });
+      const text = screen.getByTestId('train-score-bubble-returns').textContent ?? '';
+      expect(text).toContain('Those were warm-ups, nothing to bring back yet.');
+      expect(text).not.toContain(PRACTICE_RATIONALE_TEXT);
       expect(stampMock).not.toHaveBeenCalled();
     });
 
-    it('a session where nothing was missed renders the nothing-missed variant, even on the first completed session', () => {
+    it('a first perfect session carries the rationale after "Nothing got away today." and stamps exactly once (D-17, D-21)', () => {
       getSettingsMock.mockReturnValue({
         data: { ...SETTINGS_FIXTURE, sr_explained_at: null },
       });
@@ -505,9 +515,20 @@ describe('TrainScoreScreen', () => {
         { solvedOutcomes: [makeSolvedResult({ due_date: '2026-07-26' })] },
       );
       const text = screen.getByTestId('train-score-bubble-returns').textContent ?? '';
+      expect(text).toContain(`Nothing got away today. ${PRACTICE_RATIONALE_TEXT}`);
+      expect(text).toContain('Reminders build the habit that makes Train work.');
+      expect(stampMock).toHaveBeenCalledTimes(1);
+      expect(stampMock).toHaveBeenCalledWith('sr_explained');
+    });
+
+    it('a later perfect session reads "Nothing got away today." without the rationale and never stamps', () => {
+      renderScoreScreen(
+        { total: 20, max: 20 },
+        { solvedOutcomes: [makeSolvedResult({ due_date: '2026-07-26' })] },
+      );
+      const text = screen.getByTestId('train-score-bubble-returns').textContent ?? '';
       expect(text).toContain('Nothing got away today.');
-      // D-12: the full explanation never actually rendered here (the
-      // nothing-missed variant won the precedence), so it must not stamp.
+      expect(text).not.toContain(PRACTICE_RATIONALE_TEXT);
       expect(stampMock).not.toHaveBeenCalled();
     });
 
@@ -529,22 +550,6 @@ describe('TrainScoreScreen', () => {
       expect(text).toContain('Nothing got away today.');
       expect(text).toContain('analyze why the moves work or fail');
       expect(text).not.toContain('Remind me');
-    });
-
-    it('a mastered outcome is excluded from the "comes back" counts', () => {
-      renderScoreScreen(
-        { total: 12, max: 20 },
-        {
-          solvedOutcomes: [
-            makeSolvedResult({ item_status: 'mastered', due_date: '2026-06-01' }),
-            makeSolvedResult({ due_date: '2026-07-26' }),
-          ],
-        },
-      );
-      const text = screen.getByTestId('train-score-bubble-returns').textContent ?? '';
-      // Only the one genuinely-active item is counted — the mastered entry
-      // never inflates the "comes back" total (D-16).
-      expect(text).toContain('1 comes back next session');
     });
 
     it('renders no position number, game id or ply anywhere in the bubble text', () => {

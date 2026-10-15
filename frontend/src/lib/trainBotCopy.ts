@@ -720,12 +720,18 @@ function mergedChipSentence(mergedChip: WalkthroughContext['mergedChip']): strin
  * D-21 named three must-survive messages for the first completed session:
  * origin ("these come from your own mistakes"), goal ("understanding, not
  * memorizing") and habit. Phase 222 UAT round 6 cut the first two from the
- * score bubble: at five lines it pushed the session score below the fold on
- * a phone, and the origin/goal messages are already told by the solve-loop
- * intro stepper and walkthrough. Only the habit sentence survives here, as
- * the lead-in to the reminder ask.
+ * score bubble (five lines pushed the session score below the fold on a
+ * phone; the origin/goal messages are told by the intro and the reveal tour).
+ * Phase 240 D-16 brings the practice rationale back into LINE 1 as one short
+ * sentence (`PRACTICE_RATIONALE`), so the bubble stays at two lines. The habit
+ * sentence stays as the lead-in to the reminder ask in line 2.
  */
 const MUST_SURVIVE_HABIT = 'Reminders build the habit that makes Train work.';
+
+/** Phase 240 D-16/D-19: why Train practices at all, said once in line 1 of
+ * the first completed session (every branch, D-17). */
+const PRACTICE_RATIONALE =
+  'Practice teaches you when to calculate and when a quick good move is enough.';
 
 /** The reminder ask, per `ReminderAsk`. `scan_qr` names the QR block the
  * desktop score screen renders below the button row (`useTrainReminderSlot`),
@@ -804,23 +810,11 @@ function sessionOpener(band: TrainRatingBand | null): string {
   return band === null ? SESSION_OPENER_NEUTRAL : SESSION_OPENER[band];
 }
 
-/** One item this session's outcome, enough to classify its return bucket
- * (D-16) — mirrors the fields `SolvedResult` gains in a later plan task. */
-export interface ScoreBubbleOutcome {
-  source: 'sr_item' | 'red_herring' | 'sharp_filler';
-  item_status: 'active' | 'mastered' | 'parked' | null;
-  due_date: string | null;
-}
-
 export type ReminderAsk = 'remind_me' | 'scan_qr' | 'none';
 
 export interface ScoreBubbleInput {
-  /** Every item solved this session (D-17/RESEARCH Finding C). */
-  outcomes: ScoreBubbleOutcome[];
   /** Count of items NOT fully correct this session (guess or move wrong) —
-   * drives the "nothing missed" variant. Tracked separately from `outcomes`
-   * because a fully-correct item still returns later (D-18), so "returning"
-   * and "missed" are independent facts. */
+   * drives the "nothing missed" variant. */
   missedCount: number;
   isFirstCompletedSession: boolean;
   /** D-25: a warm-up session has zero surviving SR items — mirrors
@@ -837,8 +831,6 @@ export interface ScoreBubbleInput {
    * variant except nothing-missed — `null` when nothing was scored
    * (`max === 0`). */
   band: TrainRatingBand | null;
-  session_date: string;
-  expires_on: string;
   /** D-03/S-3 (Phase 224): selects the warm-up variant's copy AND, when
    * `isGuest` is true, replaces the warm-up reminder ask with
    * `GUEST_SIGNUP_ASK_SCORE` (D-13: a guest gets no reminder slot). */
@@ -847,38 +839,6 @@ export interface ScoreBubbleInput {
 
 export interface ScoreBubbleCopy {
   lines: string[];
-}
-
-/**
- * D-18: groups returning `sr_item`/`active` outcomes by WHEN they return
- * ("next session" vs "in N days") — never by position identifier. Mastered,
- * parked, and non-`sr_item` sources never return (D-16) and are excluded.
- * Guard-clause `continue` per loop iteration, never a nested `if` (CLAUDE.md
- * nested-loop guidance).
- */
-function returningCountsSentence(input: ScoreBubbleInput): string {
-  let nextSessionCount = 0;
-  const laterCounts = new Map<number, number>();
-  for (const outcome of input.outcomes) {
-    if (outcome.source !== 'sr_item') continue;
-    if (outcome.item_status !== 'active') continue;
-    if (outcome.due_date == null) continue;
-    if (outcome.due_date <= input.expires_on) {
-      nextSessionCount += 1;
-      continue;
-    }
-    const days = differenceInCalendarDays(parseISO(outcome.due_date), parseISO(input.session_date));
-    laterCounts.set(days, (laterCounts.get(days) ?? 0) + 1);
-  }
-  const parts: string[] = [];
-  if (nextSessionCount > 0) {
-    parts.push(`${nextSessionCount} come${nextSessionCount === 1 ? 's' : ''} back next session`);
-  }
-  for (const [days, count] of [...laterCounts.entries()].sort((a, b) => a[0] - b[0])) {
-    parts.push(`${count} in ${days} days`);
-  }
-  if (parts.length === 0) return 'Nothing else is coming back yet.';
-  return `${parts.join(', ')}.`;
 }
 
 /** 2026-09-28: closes a perfect later session when there is no reminder ask
@@ -905,17 +865,24 @@ function nothingMissedReminderAsk(input: ScoreBubbleInput): string[] {
 }
 
 /**
- * D-25/D-18: the score screen's bubble copy — four mutually exclusive
+ * D-25/D-19: the score screen's bubble copy — four mutually exclusive
  * variants, evaluated in this precedence order: warm-up session, nothing
- * missed, first completed session (result + returns, then the habit
- * sentence and reminder ask), later session (one-liner).
+ * missed, first completed session (result + the practice rationale, then the
+ * habit sentence and reminder ask), later session (one-liner). Phase 240
+ * D-16/D-17: the rationale sits in line 1 of the first completed session in
+ * the warm-up, perfect and regular branches alike. D-18: no variant says how
+ * many puzzles come back or when (the per-puzzle verdict tails still do). The
+ * bubble never exceeds two lines.
  */
 export function scoreBubbleCopy(input: ScoreBubbleInput): ScoreBubbleCopy {
+  const first = input.isFirstCompletedSession;
   if (input.isWarmup) {
     const key = audienceKey(input.audience);
-    const opening =
-      `${sessionOpener(input.band)} Those were warm-ups, nothing to bring back yet. ` +
-      WARMUP_SCORE_CLAUSE[key];
+    const opener = sessionOpener(input.band);
+    const warmupNote = first
+      ? `${PRACTICE_RATIONALE} Those were warm-ups. `
+      : 'Those were warm-ups, nothing to bring back yet. ';
+    const opening = `${opener} ${warmupNote}${WARMUP_SCORE_CLAUSE[key]}`;
     // Quick task 260926-8p5: a registered zero-game account gets the
     // "Import games" button in the bubble instead of a second line. The
     // reminder ask ("so the habit is there when they arrive") promised
@@ -930,17 +897,17 @@ export function scoreBubbleCopy(input: ScoreBubbleInput): ScoreBubbleCopy {
       ],
     };
   }
-  const returning = returningCountsSentence(input);
   if (input.missedCount === 0) {
-    return { lines: [`Nothing got away today. ${returning}`, ...nothingMissedReminderAsk(input)] };
+    const lead = first ? `Nothing got away today. ${PRACTICE_RATIONALE}` : 'Nothing got away today.';
+    return { lines: [lead, ...nothingMissedReminderAsk(input)] };
   }
-  if (input.isFirstCompletedSession) {
+  if (first) {
     return {
       lines: [
-        `${sessionOpener(input.band)} ${returning}`,
+        `${sessionOpener(input.band)} ${PRACTICE_RATIONALE}`,
         `${MUST_SURVIVE_HABIT} ${REMINDER_ASK_COPY[input.reminderAsk]}`,
       ],
     };
   }
-  return { lines: [`${sessionOpener(input.band)} ${returning} See you tomorrow.`] };
+  return { lines: [`${sessionOpener(input.band)} See you tomorrow.`] };
 }
