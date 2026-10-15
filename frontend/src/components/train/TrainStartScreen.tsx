@@ -42,6 +42,7 @@ import {
   GUEST_SIGNUP_ASK_SCORE,
   IMPORT_ASK_LANDING,
   REMINDER_INSTALL_ASK,
+  isRevealTourDone,
   landingHost,
 } from '@/lib/trainBotCopy';
 import { TRAIN_POINTS_PER_PUZZLE } from '@/lib/trainScore';
@@ -246,9 +247,10 @@ function TrainHeader({
   // in place of the reminder ask, the first step before Train has anything of
   // its own to serve.
   const showImportAsk = !isGuest && !hasGames;
-  // Phase 237 UAT: the install/reminder ask waits until onboarding is over (the
-  // reveal walkthrough completed), so a first visit only reads Tank's welcome.
-  const onboardingDone = settings?.reveal_walkthrough_seen_at != null;
+  // Phase 237 UAT: the install/reminder ask waits until onboarding is over, so a
+  // first visit only reads Tank's welcome. Phase 240 D-22: that means the whole
+  // three-part reveal tour is done, not just its first part.
+  const onboardingDone = settings !== undefined && isRevealTourDone(settings.reveal_tour_stage);
   const showReminderAsk =
     !isGuest && !showImportAsk && onboardingDone && settings?.has_mobile_subscription === false;
   // Quick 261004-dta: on a phone the avatar + bubble pushed the streak card and

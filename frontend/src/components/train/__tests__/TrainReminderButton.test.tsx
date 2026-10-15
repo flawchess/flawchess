@@ -114,7 +114,7 @@ const BASE_SETTINGS: TrainSettingsResponse = {
   // "sent undefined/null by accident".
   reminder_intent_at: '2026-08-02T12:00:00Z',
   intro_seen_at: null,
-  reveal_walkthrough_seen_at: null,
+  reveal_tour_stage: 0,
   sr_explained_at: null,
   has_mobile_subscription: false,
 };

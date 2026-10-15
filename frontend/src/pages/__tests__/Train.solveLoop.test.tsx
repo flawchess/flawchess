@@ -146,7 +146,7 @@ const SETTINGS_RESPONSE: TrainSettingsResponse = {
   reminder_hour: 9,
   reminder_intent_at: null,
   intro_seen_at: '2026-01-01T00:00:00Z',
-  reveal_walkthrough_seen_at: '2026-01-01T00:00:00Z',
+  reveal_tour_stage: 3,
   sr_explained_at: '2026-01-01T00:00:00Z',
   has_mobile_subscription: false,
 };

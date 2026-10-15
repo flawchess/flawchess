@@ -38,7 +38,6 @@ import {
   TRAIN_FOCUS_BADGE_LIT_OPACITY,
 } from '@/lib/theme';
 import { buildAnalysisFenUrl, buildGameAnalysisUrl } from '@/lib/analysisUrl';
-import { animateScrollTop } from '@/lib/animatedScroll';
 import { HILDA_ID, introStepCount } from '@/lib/trainBotCopy';
 import { PERSONA_REGISTRY } from '@/lib/personas/personaRegistry';
 import { useTrainSession } from '@/hooks/useTrainSession';

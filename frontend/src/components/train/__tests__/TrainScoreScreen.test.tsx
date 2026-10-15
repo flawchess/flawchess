@@ -101,7 +101,7 @@ const SETTINGS_FIXTURE: TrainSettingsResponse = {
   reminder_hour: 18,
   reminder_intent_at: null,
   intro_seen_at: PAST_TIMESTAMP,
-  reveal_walkthrough_seen_at: PAST_TIMESTAMP,
+  reveal_tour_stage: 3,
   sr_explained_at: PAST_TIMESTAMP,
   has_mobile_subscription: false,
 };

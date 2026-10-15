@@ -79,14 +79,14 @@ let mockTrainSettingsData: {
   weekday_mask: number;
   puzzles_per_session: number;
   intro_seen_at: string | null;
-  reveal_walkthrough_seen_at: string | null;
+  reveal_tour_stage: 0 | 1 | 2 | 3;
   has_mobile_subscription: boolean;
 } = {
   timezone: 'UTC',
   weekday_mask: 127,
   puzzles_per_session: 6,
   intro_seen_at: null,
-  reveal_walkthrough_seen_at: null,
+  reveal_tour_stage: 0,
   has_mobile_subscription: true,
 };
 
@@ -212,7 +212,7 @@ afterEach(() => {
     weekday_mask: 127,
     puzzles_per_session: 6,
     intro_seen_at: null,
-    reveal_walkthrough_seen_at: null,
+    reveal_tour_stage: 0,
     has_mobile_subscription: true,
   };
   resurfaceMock = { shouldResurface: false };
@@ -529,7 +529,7 @@ describe('TrainStartScreen — 224 UAT round 2: no warm-up info card, guest sign
 describe('TrainStartScreen — landing reminder ask (no push subscription from a phone)', () => {
   const ONBOARDED = {
     intro_seen_at: '2026-07-01T10:00:00Z',
-    reveal_walkthrough_seen_at: '2026-07-01T10:05:00Z',
+    reveal_tour_stage: 3 as const,
   };
 
   it('registered account without a phone subscription: the host bubble carries the reminder sentence', () => {
@@ -539,11 +539,11 @@ describe('TrainStartScreen — landing reminder ask (no push subscription from a
     expect(screen.queryByTestId('train-landing-signup-ask')).toBeNull();
   });
 
-  it('Phase 237 UAT: no reminder sentence until the reveal walkthrough is completed', () => {
+  it('Phase 240 D-22: no reminder sentence until the whole three-part tour is done (stage 2 is not enough)', () => {
     mockTrainSettingsData = {
       ...mockTrainSettingsData,
       intro_seen_at: '2026-07-01T10:00:00Z',
-      reveal_walkthrough_seen_at: null,
+      reveal_tour_stage: 2,
       has_mobile_subscription: false,
     };
     renderScreen({ isGuest: false, session: { ...BASE_SESSION, is_warmup: false } });
