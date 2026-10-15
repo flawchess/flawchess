@@ -16,6 +16,7 @@ import {
   GRADING_COPY,
   GUEST_SIGNUP_ASK_SCORE,
   HILDA_ID,
+  INTRO_STEP_COUNT,
   LANDING_GREETINGS,
   LANDING_HOST_IDS,
   LANDING_ROTATION_EPOCH,
@@ -25,7 +26,6 @@ import {
   LANDING_HILDA_HANDOFF,
   dropNudgeCopy,
   introCopy,
-  introStepCount,
   introSteps,
   isRevealTourDone,
   landingHost,
@@ -236,134 +236,99 @@ describe('promptCopy / movePromptCopy / GRADING_COPY', () => {
   });
 });
 
-describe('introCopy', () => {
-  it('step 0 is hosted by Hilda and welcomes the user to FlawChess Train', () => {
-    expect(introCopy(0, 'white', false, AUDIENCE_HAS_GAMES).personaId).toBe(HILDA_ID);
-    expect(introCopy(0, 'white', false, AUDIENCE_HAS_GAMES).copy).toContain('Welcome to FlawChess Train!');
-    expect(introCopy(0, 'white', false, AUDIENCE_HAS_GAMES).copy).toContain('your own games');
+const ALL_AUDIENCES: TrainCopyAudience[] = [
+  AUDIENCE_HAS_GAMES,
+  AUDIENCE_GUEST_WITH_GAMES,
+  AUDIENCE_NO_GAMES,
+  AUDIENCE_NO_GAMES_GUEST,
+];
+// The four D-19 audience welcomes, verbatim (Phase 240 D-01 keeps them).
+const WELCOME_BY_AUDIENCE: [TrainCopyAudience, string][] = [
+  [
+    AUDIENCE_HAS_GAMES,
+    'Welcome to FlawChess Train! You will improve by solving puzzles created from your own games.',
+  ],
+  [
+    AUDIENCE_GUEST_WITH_GAMES,
+    'Welcome to FlawChess Train! Sign up free and you will improve by solving puzzles created from your own mistakes.',
+  ],
+  [
+    AUDIENCE_NO_GAMES,
+    'Welcome to FlawChess Train! Import your games and you will improve by solving puzzles created from your own mistakes.',
+  ],
+  [
+    AUDIENCE_NO_GAMES_GUEST,
+    'Welcome to FlawChess Train! Import your games and sign up, and you will improve by solving puzzles created from your own mistakes.',
+  ],
+];
+
+describe('introCopy / introSteps (Phase 240 D-01, D-02: two bubbles)', () => {
+  it('is exactly INTRO_STEP_COUNT (2) steps for every audience and side', () => {
+    expect(INTRO_STEP_COUNT).toBe(2);
+    for (const audience of ALL_AUDIENCES) {
+      for (const side of ['white', 'black'] as const) {
+        expect(introSteps(side, audience)).toHaveLength(INTRO_STEP_COUNT);
+      }
+    }
   });
 
-  it('steps 1-2 are hosted by Hilda and define the guess vocabulary', () => {
-    expect(introCopy(1, 'white', false, AUDIENCE_HAS_GAMES).personaId).toBe(HILDA_ID);
-    expect(introCopy(1, 'white', false, AUDIENCE_HAS_GAMES).copy).toContain('only one good move');
-    // Quick task 260914-uer: reworded opening clause (was "Every move in a
-    // game starts with..."); this assertion is what makes the reword
-    // regression-proof.
-    expect(introCopy(1, 'white', false, AUDIENCE_HAS_GAMES).copy).toContain('Every puzzle starts with one question:');
-    const step = introCopy(2, 'white', false, AUDIENCE_HAS_GAMES);
-    expect(step.personaId).toBe(HILDA_ID);
-    expect(step.copy).toContain('Only one');
-    expect(step.copy).toContain('Several');
+  it('step 0 is Hilda and the audience welcome, verbatim', () => {
+    for (const [audience, welcome] of WELCOME_BY_AUDIENCE) {
+      const step = introCopy(0, 'white', audience);
+      expect(step.personaId).toBe(HILDA_ID);
+      expect(step.copy).toBe(welcome);
+    }
   });
 
-  it('step 3 carries the D-21 "when to spend time vs. play quickly" message', () => {
-    const step = introCopy(3, 'white', false, AUDIENCE_HAS_GAMES);
-    expect(step.personaId).toBe(HILDA_ID);
-    expect(step.copy).toContain('slow down and calculate');
-    expect(step.copy).toContain('good enough move played quickly');
+  it('step 1 is Hilda and the closing prompt for the puzzle side, for every audience', () => {
+    for (const audience of ALL_AUDIENCES) {
+      for (const side of ['white', 'black'] as const) {
+        const step = introCopy(1, side, audience);
+        expect(step.personaId).toBe(HILDA_ID);
+        expect(step.copy).toBe(
+          `Decide first, then play. Your turn. You play ${side}. Is there only one good move, or several?`,
+        );
+      }
+    }
   });
 
-  it('the last step is hosted by Hilda and asks the actual guess question for the puzzle side', () => {
-    const count = introStepCount(false, AUDIENCE_HAS_GAMES);
-    expect(count).toBe(5);
-    const step = introCopy((count - 1) as IntroStep, 'black', false, AUDIENCE_HAS_GAMES);
-    expect(step.personaId).toBe(HILDA_ID);
-    expect(step.copy).toContain('black');
-    expect(step.copy).toContain('only one good move, or several');
-  });
-
-  // Phase 222 UAT round 3: a warm-up first session (games still being
-  // analyzed) gets one extra step right before the closing guess step.
-  it('a warm-up session inserts the "still analyzing" step before the closing step', () => {
-    expect(introStepCount(true, AUDIENCE_HAS_GAMES)).toBe(6);
-    const warmup = introCopy(4, 'white', true, AUDIENCE_HAS_GAMES);
-    expect(warmup.personaId).toBe(HILDA_ID);
-    expect(warmup.copy).toContain('still analyzing your games');
-    expect(warmup.copy).toContain('warm-up session');
-    expect(introCopy(5, 'white', true, AUDIENCE_HAS_GAMES).copy).toContain('only one good move, or several');
-    // The regular run never mentions the warm-up.
-    const regular = introSteps('white', false, AUDIENCE_HAS_GAMES).map((step) => step.copy);
-    expect(regular.some((copy) => copy.includes('warm-up'))).toBe(false);
+  it('no intro copy defines the vocabulary, gives the rationale or announces a warm-up', () => {
+    for (const audience of ALL_AUDIENCES) {
+      for (const side of ['white', 'black'] as const) {
+        for (const step of introSteps(side, audience)) {
+          expect(step.copy).not.toMatch(/warm-up/i);
+          expect(step.copy).not.toContain('Only one:');
+          expect(step.copy).not.toMatch(/practice/i);
+          expect(step.copy).not.toContain('Every puzzle starts');
+        }
+      }
+    }
   });
 
   it('a step index past the end resolves to the closing step instead of throwing', () => {
-    expect(introCopy(5, 'white', false, AUDIENCE_HAS_GAMES).copy).toBe(introCopy(4, 'white', false, AUDIENCE_HAS_GAMES).copy);
+    const past = 5 as IntroStep;
+    expect(introCopy(past, 'white', AUDIENCE_HAS_GAMES).copy).toBe(
+      introCopy(1, 'white', AUDIENCE_HAS_GAMES).copy,
+    );
   });
 
-  // Plan 06 UAT: no internal scrolling in bubbles — every stepper step must
+  // Plan 06 UAT: no internal scrolling in bubbles, every stepper step must
   // fit the calibrated phone budget (see STEPPER_COPY_MAX_CHARS).
-  it('every intro step, for both sides and both session kinds, fits the phone copy budget', () => {
-    for (const isWarmup of [false, true]) {
+  it('every intro step, for every audience and side, fits the phone copy budget', () => {
+    for (const audience of ALL_AUDIENCES) {
       for (const side of ['white', 'black'] as const) {
-        for (const step of introSteps(side, isWarmup, AUDIENCE_HAS_GAMES)) {
+        for (const step of introSteps(side, audience)) {
           expect(step.copy.length).toBeLessThanOrEqual(STEPPER_COPY_MAX_CHARS);
         }
       }
     }
   });
-});
 
-describe('introCopy / introSteps — D-03 games-less audience branch (Phase 224)', () => {
-  const NEVER_ANALYZED = /(are analyzed|analyzing your games)/i;
-
-  it('a registered account with games is byte-identical to today\'s welcome and warm-up copy', () => {
-    expect(introCopy(0, 'white', false, AUDIENCE_HAS_GAMES).copy).toBe(
-      'Welcome to FlawChess Train! You will improve by solving puzzles ' +
-        'created from your own games.',
-    );
-    expect(introCopy(4, 'white', true, AUDIENCE_HAS_GAMES).copy).toBe(
-      "We're still analyzing your games to find your mistakes. In the meantime, " +
-        "let's start with a warm-up session.",
-    );
-  });
-
-  it('quick 261015-pjr: a guest with games is never told its games are being analyzed, and gets the sign-up pitch', () => {
-    const welcome = introCopy(0, 'white', false, AUDIENCE_GUEST_WITH_GAMES).copy;
-    const warmup = introCopy(4, 'white', true, AUDIENCE_GUEST_WITH_GAMES).copy;
-    for (const copy of [welcome, warmup]) {
-      expect(copy).not.toMatch(NEVER_ANALYZED);
-      expect(copy.toLowerCase()).toContain('sign up');
-      expect(copy).not.toContain('Import your games');
-    }
+  it('quick 261015-pjr: a guest with games is never told its games are being analyzed and gets the sign-up pitch', () => {
+    const welcome = introCopy(0, 'white', AUDIENCE_GUEST_WITH_GAMES).copy;
+    expect(welcome).not.toMatch(/(are analyzed|analyzing your games)/i);
+    expect(welcome.toLowerCase()).toContain('sign up');
     expect(welcome).not.toContain('created from your own games');
-    for (const side of ['white', 'black'] as const) {
-      for (const step of introSteps(side, true, AUDIENCE_GUEST_WITH_GAMES)) {
-        expect(step.copy.length).toBeLessThanOrEqual(STEPPER_COPY_MAX_CHARS);
-      }
-    }
-  });
-
-  it('no zero-game audience is ever told its games are being analyzed', () => {
-    for (const audience of [AUDIENCE_NO_GAMES, AUDIENCE_NO_GAMES_GUEST]) {
-      expect(introCopy(0, 'white', false, audience).copy).not.toMatch(NEVER_ANALYZED);
-      expect(introCopy(4, 'white', true, audience).copy).not.toMatch(NEVER_ANALYZED);
-    }
-  });
-
-  it('a registered zero-game account reads import-only copy, never a sign-up ask', () => {
-    expect(introCopy(0, 'white', false, AUDIENCE_NO_GAMES).copy).not.toContain('sign up');
-    expect(introCopy(4, 'white', true, AUDIENCE_NO_GAMES).copy).not.toContain('sign up');
-    expect(introCopy(0, 'white', false, AUDIENCE_NO_GAMES).copy).toContain('Import your games');
-  });
-
-  it('a zero-game guest reads import first, sign up second, in every branched string', () => {
-    for (const copy of [
-      introCopy(0, 'white', false, AUDIENCE_NO_GAMES_GUEST).copy,
-      introCopy(4, 'white', true, AUDIENCE_NO_GAMES_GUEST).copy,
-    ]) {
-      expect(copy).toContain('sign up');
-      const importIndex = copy.toLowerCase().indexOf('mport');
-      const signUpIndex = copy.toLowerCase().indexOf('sign up');
-      expect(importIndex).toBeGreaterThanOrEqual(0);
-      expect(signUpIndex).toBeGreaterThan(importIndex);
-    }
-  });
-
-  it('the step COUNT never changes with audience — only the welcome/warm-up copy does', () => {
-    for (const audience of [AUDIENCE_HAS_GAMES, AUDIENCE_NO_GAMES, AUDIENCE_NO_GAMES_GUEST]) {
-      expect(introStepCount(false, audience)).toBe(5);
-      expect(introStepCount(true, audience)).toBe(6);
-    }
   });
 });
 

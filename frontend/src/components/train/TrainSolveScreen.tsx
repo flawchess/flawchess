@@ -91,7 +91,7 @@ import {
   GRADING_COPY,
   RECHECK_COPY,
   HILDA_ID,
-  introStepCount,
+  INTRO_STEP_COUNT,
   dropNudgeCopy,
   introCopy,
   movePromptCopy,
@@ -486,10 +486,7 @@ interface BubbleBodyDeps {
   suppressPrompt: boolean;
   onIntroNext: () => void;
   onIntroGuess: (guess: Guess) => void;
-  /** Phase 222 UAT round 3: a warm-up first session gets one extra intro step. */
-  isWarmup: boolean;
-  /** D-03 (Phase 224): threaded into `introCopy`/`introStepCount` (the
-   * welcome/warm-up intro copy). */
+  /** D-03 (Phase 224): threaded into `introCopy` (the welcome intro copy). */
   audience: TrainCopyAudience;
 }
 
@@ -557,10 +554,10 @@ function renderTrainBotBubbleBody(
   }
   if (bubbleState.kind === 'intro') {
     return {
-      copy: <p>{introCopy(bubbleState.step, deps.sideToMove, deps.isWarmup, deps.audience).copy}</p>,
+      copy: <p>{introCopy(bubbleState.step, deps.sideToMove, deps.audience).copy}</p>,
       actions: (
         <TrainBotStepper
-          stepCount={introStepCount(deps.isWarmup, deps.audience)}
+          stepCount={INTRO_STEP_COUNT}
           step={bubbleState.step}
           onNext={deps.onIntroNext}
           lastControl={guessButtons(deps.onIntroGuess)}
@@ -597,13 +594,10 @@ function resolveBubblePersona(
   sideToMove: 'white' | 'black',
   regularBot: Persona,
   verdictBot: Persona | null,
-  isWarmup: boolean,
   audience: TrainCopyAudience,
 ): Persona {
   if (bubbleState.kind === 'intro') {
-    return (
-      personaForId(introCopy(bubbleState.step, sideToMove, isWarmup, audience).personaId) ?? regularBot
-    );
+    return personaForId(introCopy(bubbleState.step, sideToMove, audience).personaId) ?? regularBot;
   }
   if (bubbleState.kind === 'verdict' && verdictBot !== null) return verdictBot;
   return regularBot;
@@ -1708,13 +1702,13 @@ export function TrainSolveScreen({
     introStep,
   );
 
-  // Phase 222 UAT round 3: a warm-up first session (games still being
-  // analyzed) gets one extra intro step explaining that, right before the
-  // closing guess step.
+  // Phase 240 D-01/D-02: the intro is two bubbles whether or not the session is
+  // a warm-up (a warm-up first session learns that from the puzzle-1 verdict
+  // tail); the flag is still read by the reveal below.
   const isWarmup = trainSession.session?.is_warmup ?? false;
 
   function handleIntroNext(): void {
-    setIntroStep((step) => Math.min(step + 1, introStepCount(isWarmup, audience) - 1) as IntroStep);
+    setIntroStep((step) => Math.min(step + 1, INTRO_STEP_COUNT - 1) as IntroStep);
   }
 
   // Phase 222 (D-12): fires the one-shot stamp alongside the existing guess
@@ -1797,7 +1791,6 @@ export function TrainSolveScreen({
     suppressPrompt,
     onIntroNext: handleIntroNext,
     onIntroGuess: handleIntroGuess,
-    isWarmup,
     audience,
   });
   const bubblePersona = resolveBubblePersona(
@@ -1805,7 +1798,6 @@ export function TrainSolveScreen({
     puzzle.side_to_move,
     bot,
     verdictBot,
-    isWarmup,
     audience,
   );
 

@@ -73,7 +73,7 @@ describe('resolveBubbleState', () => {
 
   it('submitting beats move, intro, drop-nudge', () => {
     expect(
-      resolveBubbleState({ ...BASE, isSubmitting: true, guessMade: true, introStep: 2, nudgeActive: true }),
+      resolveBubbleState({ ...BASE, isSubmitting: true, guessMade: true, introStep: 1, nudgeActive: true }),
     ).toEqual({ kind: 'submitting' });
   });
 
@@ -90,7 +90,7 @@ describe('resolveBubbleState', () => {
           isRechecking: false,
           isSubmitting: false,
           guessMade: true,
-          introStep: 2,
+          introStep: 1,
           nudgeActive: true,
         }),
       ).toEqual({ kind: 'verdict' });
@@ -104,7 +104,7 @@ describe('resolveBubbleState', () => {
           isRechecking: false,
           isSubmitting: false,
           guessMade: true,
-          introStep: 2,
+          introStep: 1,
           nudgeActive: true,
         }),
       ).toEqual({ kind: 'grading', recheck: false });
@@ -118,7 +118,7 @@ describe('resolveBubbleState', () => {
           isRechecking: false,
           isSubmitting: false,
           guessMade: true,
-          introStep: 2,
+          introStep: 1,
           nudgeActive: true,
         }),
       ).toEqual({ kind: 'move' });

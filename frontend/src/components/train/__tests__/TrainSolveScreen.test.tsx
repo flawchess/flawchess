@@ -38,7 +38,7 @@ import {
   TRAIN_FOCUS_BADGE_LIT_OPACITY,
 } from '@/lib/theme';
 import { buildAnalysisFenUrl, buildGameAnalysisUrl } from '@/lib/analysisUrl';
-import { HILDA_ID, STEPPER_COPY_MAX_CHARS, introStepCount } from '@/lib/trainBotCopy';
+import { HILDA_ID, INTRO_STEP_COUNT, STEPPER_COPY_MAX_CHARS } from '@/lib/trainBotCopy';
 import { PERSONA_REGISTRY } from '@/lib/personas/personaRegistry';
 import { useTrainSession } from '@/hooks/useTrainSession';
 import { TRAIN_SETTINGS_QUERY_KEY } from '@/hooks/useTrainSettings';
@@ -3544,56 +3544,47 @@ describe('TrainSolveScreen — progress, last move, grading state, engine failur
       expect(screen.getByTestId('btn-train-bot-step-next')).not.toBeNull();
     });
 
-    // Plan 06 UAT: short steps instead of three long ones, so nothing scrolls
-    // inside the phone bubble — four Next clicks reach the guess buttons on a
-    // regular session. Phase 237 UAT: Hilda hosts every step, the welcome too.
-    it('advances through the Hilda steps, showing the guess buttons only on the closing step', async () => {
+    // Phase 240 D-01: exactly two bubbles. One Next click reaches the guess
+    // buttons. Phase 237 UAT: Hilda hosts every step, the welcome too.
+    it('advances welcome then closing prompt, showing the guess buttons only on the closing step', async () => {
       getSettings.mockResolvedValue(makeSettings({ intro_seen_at: null }));
       await renderScreen(makePuzzle());
       await waitFor(() =>
         expect(screen.getByTestId('train-bot-copy').textContent).toContain('Welcome to FlawChess Train!'),
       );
       expect(screen.getByTestId('train-bot-name').textContent).toBe('Hilda the Hippo');
-      fireEvent.click(screen.getByTestId('btn-train-bot-step-next'));
-      await waitFor(() =>
-        expect(screen.getByTestId('train-bot-copy').textContent).not.toContain('Welcome'),
-      );
-      expect(screen.getByTestId('train-bot-name').textContent).toBe('Hilda the Hippo');
       expect(screen.queryByTestId('btn-train-guess-critical')).toBeNull();
-      for (let click = 0; click < introStepCount(false, { hasGames: true, isGuest: false }) - 2; click += 1) {
-        expect(screen.queryByTestId('btn-train-guess-critical')).toBeNull();
-        fireEvent.click(screen.getByTestId('btn-train-bot-step-next'));
-      }
+      fireEvent.click(screen.getByTestId('btn-train-bot-step-next'));
       await waitFor(() => expect(screen.getByTestId('btn-train-guess-critical')).not.toBeNull());
       expect(screen.getByTestId('train-bot-name').textContent).toBe('Hilda the Hippo');
       expect(screen.getByTestId('btn-train-guess-several')).not.toBeNull();
       expect(screen.queryByTestId('btn-train-bot-step-next')).toBeNull();
+      expect(screen.getByTestId('train-bot-copy').textContent).toContain(
+        'Decide first, then play. Your turn.',
+      );
       expect(screen.getByTestId('train-bot-copy').textContent).not.toContain('warm-up');
     });
 
-    // Phase 222 UAT round 3: a warm-up first session gets the "still
-    // analyzing" step right before the closing guess step.
-    it('a warm-up session shows the "still analyzing" step right before the guess buttons', async () => {
+    // Phase 240 D-02: a warm-up first session gets the same two bubbles; it
+    // learns it is a warm-up from the puzzle-1 verdict tail, not from the intro.
+    it('a warm-up session is also exactly two bubbles, with no warm-up notice', async () => {
       getSettings.mockResolvedValue(makeSettings({ intro_seen_at: null }));
       await renderScreen(makePuzzle(), makeSession({ is_warmup: true }));
       await waitFor(() => expect(screen.getByTestId('btn-train-bot-step-next')).not.toBeNull());
-      for (let click = 0; click < introStepCount(true, { hasGames: true, isGuest: false }) - 2; click += 1) {
+      expect(screen.getByTestId('train-bot-copy').textContent).toContain('Welcome to FlawChess Train!');
+      for (let click = 0; click < INTRO_STEP_COUNT - 1; click += 1) {
         fireEvent.click(screen.getByTestId('btn-train-bot-step-next'));
       }
-      await waitFor(() =>
-        expect(screen.getByTestId('train-bot-copy').textContent).toContain(
-          'still analyzing your games',
-        ),
-      );
-      expect(screen.queryByTestId('btn-train-guess-critical')).toBeNull();
-      fireEvent.click(screen.getByTestId('btn-train-bot-step-next'));
       await waitFor(() => expect(screen.getByTestId('btn-train-guess-critical')).not.toBeNull());
+      expect(screen.queryByTestId('btn-train-bot-step-next')).toBeNull();
+      expect(screen.getByTestId('train-bot-copy').textContent).not.toContain('analyzing');
+      expect(screen.getByTestId('train-bot-copy').textContent).not.toContain('warm-up');
     });
 
     it('stamps intro exactly once on the closing-step guess click and commits the guess', async () => {
       getSettings.mockResolvedValue(makeSettings({ intro_seen_at: null }));
       await renderScreen(makePuzzle());
-      for (let click = 0; click < introStepCount(false, { hasGames: true, isGuest: false }) - 1; click += 1) {
+      for (let click = 0; click < INTRO_STEP_COUNT - 1; click += 1) {
         fireEvent.click(screen.getByTestId('btn-train-bot-step-next'));
       }
       await waitFor(() => expect(screen.getByTestId('btn-train-guess-critical')).not.toBeNull());
@@ -3604,10 +3595,9 @@ describe('TrainSolveScreen — progress, last move, grading state, engine failur
       await waitFor(() => expect(screen.getByTestId('train-move-prompt')).not.toBeNull());
     });
 
-    it('does not stamp when the component unmounts mid-stepper (step 3)', async () => {
+    it('does not stamp when the component unmounts on the closing step', async () => {
       getSettings.mockResolvedValue(makeSettings({ intro_seen_at: null }));
       const { unmount } = await renderScreen(makePuzzle());
-      fireEvent.click(screen.getByTestId('btn-train-bot-step-next'));
       fireEvent.click(screen.getByTestId('btn-train-bot-step-next'));
       await waitFor(() =>
         expect(screen.getByTestId('train-bot-name').textContent).toBe('Hilda the Hippo'),

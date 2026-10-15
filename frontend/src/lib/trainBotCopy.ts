@@ -35,8 +35,8 @@ import type { TrainMoveTier, TrainRatingBand } from '@/lib/trainScore';
 import type { RevealTourStage, SolveResponse } from '@/types/train';
 
 /**
- * D-05: the fixed teacher for the intro stepper (steps 2-3) and the first
- * reveal walkthrough. Always Hilda — never randomly cast.
+ * D-05: the fixed teacher for the intro stepper and the reveal tour parts.
+ * Always Hilda — never randomly cast.
  */
 export const HILDA_ID: PersonaId = 'wall-1800';
 
@@ -277,10 +277,17 @@ function audienceKey(audience: TrainCopyAudience): CopyAudienceKey {
 }
 
 /**
- * D-22 intro stepper step index. Five steps on a regular first session, six
- * on a warm-up one (`introStepCount`) — the union covers the longer run.
+ * D-22 intro stepper step index. Phase 240 D-01: two steps (welcome, then the
+ * closing prompt with the guess buttons) for every audience and for warm-up
+ * sessions alike.
  */
-export type IntroStep = 0 | 1 | 2 | 3 | 4 | 5;
+export type IntroStep = 0 | 1;
+
+/**
+ * Phase 240 D-01: the intro always has exactly two bubbles. The count never
+ * varies with warm-up or audience (only the welcome copy does).
+ */
+export const INTRO_STEP_COUNT = 2;
 
 /** D-22: the first-session intro stepper's speaking persona + copy per step. */
 export interface IntroStepCopy {
@@ -308,87 +315,25 @@ const INTRO_WELCOME_COPY: Record<CopyAudienceKey, string> = {
     'Welcome to FlawChess Train! Import your games and sign up, and you ' +
     'will improve by solving puzzles created from your own mistakes.',
 };
-const INTRO_QUESTION: IntroStepCopy = {
-  personaId: HILDA_ID,
-  copy:
-    'Every puzzle starts with one question: is there only one good move ' +
-    'here, or several?',
-};
-const INTRO_VOCABULARY: IntroStepCopy = {
-  personaId: HILDA_ID,
-  copy:
-    'Only one: a single move is clearly best, all other moves are mistakes. ' +
-    'Several: a normal position, just play a good move.',
-};
-const INTRO_PRACTICE: IntroStepCopy = {
-  personaId: HILDA_ID,
-  copy:
-    "With practice, you'll learn when to slow down and calculate, and when a good " +
-    'enough move played quickly is right.',
-};
-/**
- * Phase 222 UAT round 3: shown only on a warm-up first session. Train unlocks
- * once an import has completed, but the analysis that finds the user's own
- * mistakes may still be running, so the session is served from warm-up
- * puzzles (`TrainSessionResponse.is_warmup`). On a first-ever session that is
- * the only cause of `is_warmup` — the "caught up" cause needs prior sessions.
- *
- * D-03 (Phase 224): `has_games` is today's string verbatim. A zero-game
- * account is never told "we're analyzing your games" — nothing is being
- * analyzed for an account with no games at all (RESEARCH Finding C); the
- * zero-game variants say to import instead, and the guest variant adds
- * sign-up after import.
- */
-const INTRO_WARMUP_COPY: Record<CopyAudienceKey, string> = {
-  has_games:
-    "We're still analyzing your games to find your mistakes. In the meantime, " +
-    "let's start with a warm-up session.",
-  has_games_guest:
-    'Guest games are not analyzed automatically, so this is a warm-up session. Sign up ' +
-    'free and your own mistakes take over.',
-  no_games:
-    'You have no games here yet, so this is a warm-up session. Import your games and your ' +
-    'own mistakes take over.',
-  no_games_guest:
-    'You have no games here yet, so this is a warm-up session. Import your games, then sign ' +
-    'up, and your own mistakes take over.',
-};
 
 /**
- * D-22 intro stepper, all Hilda (Phase 237 UAT: Tank only hosts the landing
- * greeting, Hilda runs every onboarding step). Short
- * steps rather than the CONTEXT's three: the plan 06 phone UAT showed the
- * three-step copy at 8-9 lines each in the 204px phone bubble, and the user
- * chose more Next clicks over internal scrolling (D-21 lets the copy be
- * tightened and split). The warm-up step is inserted right before the
- * closing step only when the session is a warm-up; the closing step asks
- * the actual guess question, so it takes `sideToMove` like `promptCopy`.
- * `audience` (Phase 224 D-03) selects the welcome/warm-up copy variant.
+ * D-22 intro stepper, all Hilda, two steps (Phase 240 D-01, D-02): the audience
+ * welcome, then the closing prompt that asks the actual guess question (so it
+ * takes `sideToMove` like `promptCopy`) and carries the guess buttons. The
+ * guiding rule is to act within one or two taps and read later: the
+ * vocabulary is taught by tour part 1, the practice rationale on the first
+ * score screen, and a warm-up first session learns it is a warm-up from the
+ * puzzle-1 verdict tail. `audience` (Phase 224 D-03) selects the welcome
+ * copy variant.
  */
 export function introSteps(
   sideToMove: 'white' | 'black',
-  isWarmup: boolean,
   audience: TrainCopyAudience,
 ): IntroStepCopy[] {
-  const key = audienceKey(audience);
-  const steps: IntroStepCopy[] = [
-    { personaId: HILDA_ID, copy: INTRO_WELCOME_COPY[key] },
-    INTRO_QUESTION,
-    INTRO_VOCABULARY,
-    INTRO_PRACTICE,
+  return [
+    { personaId: HILDA_ID, copy: INTRO_WELCOME_COPY[audienceKey(audience)] },
+    { personaId: HILDA_ID, copy: `Decide first, then play. Your turn. ${promptCopy(sideToMove)}` },
   ];
-  if (isWarmup) steps.push({ personaId: HILDA_ID, copy: INTRO_WARMUP_COPY[key] });
-  steps.push({
-    personaId: HILDA_ID,
-    copy: `Decide first, then play. Your turn. ${promptCopy(sideToMove)}`,
-  });
-  return steps;
-}
-
-/** Number of intro steps for this session (5 regular, 6 warm-up). The step
- * COUNT never varies with audience — only the welcome/warm-up copy does. */
-export function introStepCount(isWarmup: boolean, audience: TrainCopyAudience): number {
-  return introSteps('white', isWarmup, audience).length;
 }
 
 /**
@@ -400,10 +345,9 @@ export function introStepCount(isWarmup: boolean, audience: TrainCopyAudience): 
 export function introCopy(
   step: IntroStep,
   sideToMove: 'white' | 'black',
-  isWarmup: boolean,
   audience: TrainCopyAudience,
 ): IntroStepCopy {
-  const steps = introSteps(sideToMove, isWarmup, audience);
+  const steps = introSteps(sideToMove, audience);
   const closing = steps[steps.length - 1];
   if (closing === undefined) throw new Error('introSteps: unexpectedly empty');
   return steps[step] ?? closing;
