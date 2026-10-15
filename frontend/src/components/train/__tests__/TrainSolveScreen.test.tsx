@@ -3399,14 +3399,14 @@ describe('TrainSolveScreen — progress, last move, grading state, engine failur
     });
 
     it("the published bar's Next walks the tour part to its last step without flushing", async () => {
-      getSettings.mockResolvedValue(makeSettings({ reveal_tour_stage: 0 }));
+      getSettings.mockResolvedValue(makeSettings({ reveal_tour_stage: 1 }));
       await renderScreenWithProbe(makePuzzle());
       fireEvent.click(screen.getByTestId('btn-train-guess-critical'));
       await act(async () => {
         fireEvent.click(screen.getByTestId('drop-e2e4'));
       });
       await waitFor(() => expect(screen.getByTestId('train-bot-walkthrough')).not.toBeNull());
-      // Phase 237 UAT (G-01): the published bar's Next walks the tour. Part 1 has
+      // Phase 237 UAT (G-01): the published bar's Next walks the tour. Part 2 has
       // two steps (Phase 240 D-06), so one Next reaches the last.
       fireEvent.click(screen.getByTestId('mbc-btn-next'));
       await waitFor(() =>
@@ -4052,33 +4052,23 @@ describe('TrainSolveScreen — progress, last move, grading state, engine failur
       expect(tourCopyText()).toBe(
         'This strip is your result. Here only one move was good, every other move was a mistake. Tap the strip for the full feedback.',
       );
-      expect(within(overlay).getByTestId('train-tour-step-count').textContent).toBe('1 / 2');
+      // Phase 240 UAT: part 1 is one step, so no "1 / 1" counter.
+      expect(within(overlay).queryByTestId('train-tour-step-count')).toBeNull();
       expect(spotlit(screen.getByTestId('train-verdict-strip-root'))).toBe(true);
       // One Next on screen: the bar's.
       expect(screen.queryByTestId('btn-train-bot-walkthrough-next')).toBeNull();
       expect(screen.getAllByTestId('btn-train-next')).toHaveLength(1);
     });
 
-    it('the first bar Next only advances to the Next bubble: the puzzle stays and nothing is stamped', async () => {
+    // Phase 240 UAT: part 1 lost its "Next takes you to the next puzzle." step
+    // (the user had to press Next to reach it), so the bar is never spotlit
+    // in part 1 and the first Next already finishes the part.
+    it('part 1 is the result step alone: the bar is not spotlit and the first bar Next stamps reveal_tour_1 and leaves', async () => {
       matchMediaMatches = false;
       await openReveal(0);
       await waitFor(() => expect(screen.getByTestId('train-bot-walkthrough')).not.toBeNull());
-      clickBarNext();
-      await waitFor(() => expect(tourCopyText()).toBe('Next takes you to the next puzzle.'));
-      expect(screen.getByTestId('train-tour-step-count').textContent).toBe('2 / 2');
-      // The Next step spotlights the in-flow bar (sm and up) and no longer the strip.
-      expect(actionBarSpotlit()).toBe(true);
-      expect(spotlit(screen.getByTestId('train-verdict-strip-root'))).toBe(false);
-      expect(screen.getByTestId('train-reveal')).not.toBeNull();
+      expect(actionBarSpotlit()).toBe(false);
       expect(stampOnboarding).not.toHaveBeenCalled();
-      expect(nextFlush).not.toHaveBeenCalled();
-    });
-
-    it('the bar Next on the last step of part 1 stamps reveal_tour_1 exactly once and leaves the puzzle', async () => {
-      await openReveal(0);
-      await waitFor(() => expect(screen.getByTestId('train-bot-walkthrough')).not.toBeNull());
-      clickBarNext();
-      await waitFor(() => expect(screen.getByTestId('train-tour-step-count').textContent).toBe('2 / 2'));
       clickBarNext();
       await waitFor(() => expect(stampOnboarding).toHaveBeenCalledTimes(1));
       expect(stampOnboarding).toHaveBeenCalledWith('reveal_tour_1');
@@ -4094,7 +4084,7 @@ describe('TrainSolveScreen — progress, last move, grading state, engine failur
       );
       const reveal = screen.getByTestId('train-reveal');
       expect(spotlit(within(reveal).getByTestId('train-verdict-card'))).toBe(true);
-      expect(screen.getByTestId('train-tour-step-count').textContent).toBe('1 / 2');
+      expect(screen.queryByTestId('train-tour-step-count')).toBeNull();
     });
 
     it('stage 3: nothing is spotlit anywhere on the screen', async () => {
@@ -4105,14 +4095,15 @@ describe('TrainSolveScreen — progress, last move, grading state, engine failur
 
     it('exactly one element is spotlit at a time, and the glow moves with the step', async () => {
       matchMediaMatches = false;
-      await openReveal(0);
+      await openReveal(1);
       await waitFor(() => expect(document.querySelector(`.${TOUR_SPOTLIGHT_CLASS}`)).not.toBeNull());
       expect(document.querySelectorAll(`.${TOUR_SPOTLIGHT_CLASS}`)).toHaveLength(1);
-      expect(screen.getByTestId('train-verdict-strip-root').classList.contains(TOUR_SPOTLIGHT_CLASS)).toBe(true);
+      const firstSpotlit = document.querySelector(`.${TOUR_SPOTLIGHT_CLASS}`);
       clickBarNext();
       await waitFor(() => expect(screen.getByTestId('train-tour-step-count').textContent).toBe('2 / 2'));
-      expect(document.querySelectorAll(`.${TOUR_SPOTLIGHT_CLASS}`)).toHaveLength(1);
-      expect(screen.getByTestId('train-verdict-strip-root').classList.contains(TOUR_SPOTLIGHT_CLASS)).toBe(false);
+      const nowSpotlit = document.querySelectorAll(`.${TOUR_SPOTLIGHT_CLASS}`);
+      expect(nowSpotlit).toHaveLength(1);
+      expect(nowSpotlit[0]).not.toBe(firstSpotlit);
     });
 
     it('stage 3: no tour overlay on the reveal and the verdict shows immediately', async () => {
@@ -4275,13 +4266,11 @@ describe('TrainSolveScreen — progress, last move, grading state, engine failur
     }
     const payloadSpotlight = (): string => screen.getByTestId('mbc-spotlight').textContent ?? '';
 
-    it('phone bar, part 1: the payload spotlights the bar on the Next step only', async () => {
+    // Phase 240 UAT: part 1 no longer has a bar step, so the phone bar is never spotlit.
+    it('phone bar, part 1: the payload never spotlights the bar', async () => {
       await openRevealWithProbe(0);
-      expect(stepCount()).toBe('1 / 2');
+      expect(screen.queryByTestId('train-tour-step-count')).toBeNull();
       expect(payloadSpotlight()).toBe('false');
-      fireEvent.click(screen.getByTestId('mbc-btn-next'));
-      await waitFor(() => expect(stepCount()).toBe('2 / 2'));
-      expect(payloadSpotlight()).toBe('true');
     });
 
     it('phone bar, part 3: the payload spotlights the bar on the Analyze step only', async () => {
@@ -4357,12 +4346,11 @@ describe('TrainSolveScreen — progress, last move, grading state, engine failur
       });
       await openReveal(0, {}, queryClient);
       await waitFor(() => expect(screen.getByTestId('train-bot-walkthrough')).not.toBeNull());
-      clickBarNext();
-      await waitFor(() => expect(tourCopyText()).toBe('Next takes you to the next puzzle.'));
-      expect(screen.getByTestId('train-tour-step-count').textContent).toBe('2 / 2');
+      const resultCopy = tourCopyText();
+      expect(resultCopy).toContain('Your result');
 
       // What the leave stamp's onSuccess does: the cached stage moves 0 -> 1 while this
-      // reveal is still on screen. Part 2 (chips) must NOT replace part 1's Next bubble.
+      // reveal is still on screen. Part 2 (chips) must NOT replace part 1's result bubble.
       act(() => {
         queryClient.setQueryData(TRAIN_SETTINGS_QUERY_KEY, makeSettings({ reveal_tour_stage: 1 }));
       });
@@ -4371,8 +4359,8 @@ describe('TrainSolveScreen — progress, last move, grading state, engine failur
       await act(async () => {
         await new Promise((resolve) => setTimeout(resolve, 20));
       });
-      expect(tourCopyText()).toBe('Next takes you to the next puzzle.');
-      expect(screen.getByTestId('train-tour-step-count').textContent).toBe('2 / 2');
+      expect(tourCopyText()).toBe(resultCopy);
+      expect(screen.queryByTestId('train-tour-step-count')).toBeNull();
 
       // Leaving still finishes part 1, not part 2.
       clickBarNext();
@@ -4487,7 +4475,7 @@ describe('TrainSolveScreen — progress, last move, grading state, engine failur
       await waitFor(() => expect(badgeShown()).toBe(true));
       fireEvent.click(screen.getByTestId('btn-train-tour-reopen'));
       expect(tourCopyText()).toContain('This strip is your result.');
-      expect(screen.getByTestId('train-tour-step-count').textContent).toBe('1 / 2');
+      expect(screen.queryByTestId('train-tour-step-count')).toBeNull();
     });
 
     it('part 3 on a phone: a fork hides the overlay and leaves the tour on the sidelines step', async () => {

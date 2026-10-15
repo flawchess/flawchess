@@ -655,8 +655,8 @@ describe('reveal tour parts (Phase 240)', () => {
     ]);
   });
 
-  it('part 1 is result + next, part 2 chips + stepping, part 3 sidelines + understand + analyze', () => {
-    expect(tourPartSteps(0)).toEqual(['result', 'next']);
+  it('part 1 is the result alone, part 2 chips + stepping, part 3 sidelines + understand + analyze', () => {
+    expect(tourPartSteps(0)).toEqual(['result']);
     expect(tourPartSteps(1)).toEqual(['chips', 'stepping']);
     expect(tourPartSteps(2)).toEqual(['sidelines', 'understand', 'analyze']);
   });
@@ -701,12 +701,6 @@ describe('reveal tour parts (Phase 240)', () => {
     }
   });
 
-  it('the next bubble spotlights the bar', () => {
-    const step = tourStepCopy('next', BASE_CTX);
-    expect(step.copy).toBe('Next takes you to the next puzzle.');
-    expect(step.spotlightTarget).toBe('bar');
-  });
-
   it('the Analyze bubble is the D-19 sheet per analyze target and spotlights the bar', () => {
     const game = tourStepCopy('analyze', { ...BASE_CTX, analyzeOpens: 'game' });
     const position = tourStepCopy('analyze', { ...BASE_CTX, analyzeOpens: 'position' });
@@ -748,7 +742,6 @@ describe('reveal tour parts (Phase 240)', () => {
   it('every step spotlights its target, whatever the context', () => {
     const targets: Record<TourStepId, string> = {
       result: 'verdict',
-      next: 'bar',
       chips: 'chips',
       stepping: 'tree',
       sidelines: 'board',
@@ -767,7 +760,7 @@ describe('reveal tour parts (Phase 240)', () => {
   // answer kind, no step overruns the budget, uses an em-dash, mentions points or
   // scoring, or names a surface the reveal does not show.
   it('no step, in any context, overruns the budget, has an em-dash, a scoring word, or names a card, Solution button or eval bar', () => {
-    const steps: TourStepId[] = ['result', 'next', 'chips', 'stepping', 'sidelines', 'understand', 'analyze'];
+    const steps: TourStepId[] = ['result', 'chips', 'stepping', 'sidelines', 'understand', 'analyze'];
     const contexts: WalkthroughContext[] = [];
     for (const isDesktop of [false, true]) {
       for (const mergedChip of ['best', 'game', null] as const) {

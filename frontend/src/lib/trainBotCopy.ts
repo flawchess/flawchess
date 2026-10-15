@@ -547,11 +547,13 @@ export function returnPhrase(input: ReturnPhraseInput): string {
 /**
  * Phase 240 (D-06): the first-reveal tour ids. The Phase 237 six-step tour is
  * split into three parts that run on consecutive reveals (at most one per
- * reveal, D-07): part 0 is the result + Next, part 1 the chips + stepping, part
- * 2 sidelines, "understand, don't memorize" and Analyze. Part N finishing stamps
- * the server's `reveal_tour_stage` to N + 1.
+ * reveal, D-07): part 0 is the result, part 1 the chips + stepping, part 2
+ * sidelines, "understand, don't memorize" and Analyze. Part N finishing stamps
+ * the server's `reveal_tour_stage` to N + 1. Phase 240 UAT dropped part 0's
+ * "Next takes you to the next puzzle." step: the user had to press Next to
+ * reach it, so it taught nothing.
  */
-export type TourStepId = 'result' | 'next' | 'chips' | 'stepping' | 'sidelines' | 'understand' | 'analyze';
+export type TourStepId = 'result' | 'chips' | 'stepping' | 'sidelines' | 'understand' | 'analyze';
 export type TourPart = 0 | 1 | 2;
 
 /** Mirrors the backend `REVEAL_TOUR_STAGE_MAX`: a `reveal_tour_stage` equal to it
@@ -559,7 +561,7 @@ export type TourPart = 0 | 1 | 2;
 const TOUR_PART_COUNT = 3;
 
 const TOUR_PARTS: Record<TourPart, readonly TourStepId[]> = {
-  0: ['result', 'next'],
+  0: ['result'],
   1: ['chips', 'stepping'],
   2: ['sidelines', 'understand', 'analyze'],
 };
@@ -646,7 +648,6 @@ const TOUR_RESULT_DESKTOP_SHARP =
   'Your result is in the highlighted bubble. Here only one move was good, every other move was a mistake.';
 const TOUR_RESULT_DESKTOP_SEVERAL =
   'Your result is in the highlighted bubble. Here several moves were fine, so any good move works.';
-const TOUR_NEXT = 'Next takes you to the next puzzle.';
 const TOUR_ANALYZE_GAME =
   'The Analyze button opens the whole game one move before the mistake, so you can see how you got there.';
 const TOUR_ANALYZE_POSITION = 'The Analyze button opens this position on the analysis board.';
@@ -688,8 +689,6 @@ export function tourStepCopy(step: TourStepId, ctx: WalkthroughContext): Walkthr
   switch (step) {
     case 'result':
       return { spotlightTarget: 'verdict', copy: tourResultCopy(ctx) };
-    case 'next':
-      return { spotlightTarget: 'bar', copy: TOUR_NEXT };
     case 'chips':
       return { spotlightTarget: 'chips', copy: WALKTHROUGH_CHIPS + mergedChipSentence(ctx.mergedChip) };
     case 'stepping':
