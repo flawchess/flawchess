@@ -3,15 +3,14 @@ gsd_state_version: "1.0"
 milestone: v2.24
 current_phase: 239
 status: completed
-stopped_at: Phase 239 complete — all phases complete
-last_updated: "2026-10-15T17:30:59.357Z"
-state_head: b2896d32e328b70b63dff99e0ae8c3703deaaafa
+stopped_at: Phase 240 context gathered
+last_updated: "2026-10-15T17:54:19.748Z"
+state_head: c95905157df8a9429f494dbb178d65d0e754888e
 progress:
-  total_phases: 2
+  total_phases: 3
   completed_phases: 103
   total_plans: 19
   completed_plans: 57
-  percent: 100
 milestone_name: Train Grading Integrity & One-Screen Reveal
 last_activity: 2026-10-14
 last_activity_desc: "Completed quick task 261014-rux: Benchmark §5 whole-cohort basis and per-TC flaw bands"
@@ -1085,9 +1084,9 @@ Items acknowledged and deferred at **v1.29 milestone close on 2026-06-29** (user
 
 ## Session Continuity
 
-**Last session:** 2026-10-12T19:10:27.088Z
-**Stopped at:** Phase 239 complete — all phases complete
-**Resume file:** .planning/phases/239-library-stats-you-vs-opponents/239-CONTEXT.md
+**Last session:** 2026-10-15T17:54:19.555Z
+**Stopped at:** Phase 240 context gathered
+**Resume file:** .planning/phases/240-train-first-session-onboarding-load/240-CONTEXT.md
 
 Previous session note (Phase 227):
 refit (calibration parity holds). Verification passed 17/17; code review 0 blockers (WR-01 + 3 info fixed). Next:
