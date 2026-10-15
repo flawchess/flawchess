@@ -1,4 +1,6 @@
 import { Cpu } from 'lucide-react';
+import { ANALYSIS_PENDING_ICON_CLASS, ANALYSIS_PENDING_TINT_CLASS } from '@/lib/theme';
+import { cn } from '@/lib/utils';
 
 /**
  * Inline placeholder bar shown in OpeningStatsCard when Tier 2 is not yet
@@ -16,10 +18,10 @@ import { Cpu } from 'lucide-react';
 export function EvalCpuPlaceholder() {
   return (
     <div
-      className="flex h-5 items-center gap-1.5 rounded-sm border border-amber-400/40 bg-amber-50/60 px-2 col-span-2"
+      className={cn('flex h-5 items-center gap-1.5 rounded-sm px-2 col-span-2', ANALYSIS_PENDING_TINT_CLASS)}
       data-testid="eval-cpu-placeholder"
     >
-      <Cpu className="h-3.5 w-3.5 shrink-0 text-amber-700 animate-pulse" aria-hidden="true" />
+      <Cpu className={cn('h-3.5 w-3.5 shrink-0 animate-pulse', ANALYSIS_PENDING_ICON_CLASS)} aria-hidden="true" />
       <span className="text-foreground text-sm truncate">Analyzing…</span>
     </div>
   );

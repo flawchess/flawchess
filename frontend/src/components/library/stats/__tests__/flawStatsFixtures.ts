@@ -159,8 +159,12 @@ export const SKETCH_RAPID_ENTRY = makeTcEntry('rapid', {
   },
 });
 
-export function makeComparison(tcs: FlawComparisonTc[]): FlawComparisonResponse {
-  return { tcs, analyzed_gate: ANALYZED_GATE };
+export function makeComparison(tcs: FlawComparisonTc[], totalN?: number): FlawComparisonResponse {
+  return {
+    tcs,
+    analyzed_gate: ANALYZED_GATE,
+    total_n: totalN ?? tcs.reduce((sum, t) => sum + t.total_n, 0),
+  };
 }
 
 export function makeTrendPoint(date: string): FlawTrendPoint {

@@ -4,8 +4,8 @@ milestone: v2.24
 current_phase: 239
 status: completed
 stopped_at: Phase 239 complete — all phases complete
-last_updated: "2026-10-14T18:47:03.979Z"
-state_head: a743e253e894871d91c99e3fb68ee9bdb9a0c745
+last_updated: "2026-10-15T17:30:59.357Z"
+state_head: b2896d32e328b70b63dff99e0ae8c3703deaaafa
 progress:
   total_phases: 2
   completed_phases: 103
@@ -178,6 +178,7 @@ v1.29 Live-Engine Analysis Page shipped 2026-06-29 — 5 phases (136–140), 14 
 
 ### Roadmap Evolution
 
+- Phase 240 added 2026-10-15 (explicit user request via `/gsd-phase @SEED-200`, planted and refined in `/gsd-explore` the same day from the Train return-rate analysis): **Train First-Session Onboarding Load** (SEED-200). Intro cut to 2 bubbles (welcome + merged guess prompt), first verdict teaches the only-one/several vocabulary, practice rationale to the session-1 score screen, warm-up notice out of the intro, reveal tour spread over puzzles 1-3 with per-step seen stamps, first-ever session opens on a sharp puzzle with a soft/herring in slots 2-3 (after the D-09 shuffle). Copy stays within `STEPPER_COPY_MAX_CHARS`; measured by the SEED-200 clean-cohort funnel. Written by hand as 240 (known mature-ROADMAP behavior). Next: `/gsd-discuss-phase 240`.
 - Phase 239 added 2026-10-12 (explicit user request via `/gsd-phase @SEED-198`, planted the same day from the ad-hoc Library Stats UX review + sketch 010 round 5): **Library Stats You-vs-Opponents Redesign** (SEED-198). One gap bar (0 tick, grey benchmark IQR of the gap, red/blue/green dot, better to the right) replaces every `MiniBulletChart` on the Stats tab; only the gap shown, details in a Search popover; tiles cut to Blunders/Mistakes with opponent lines, Severity card and combos retire; four context cards + "What stands out"; tactic motifs as three `TACTIC_GROUPS` tables (Missed/Allowed per 100 games, Advanced collapsed); synced TC switch per section; benchmark §5 tactic-family IQRs on the fully analyzed sample (gated on blitz finishing) wired into `get_tactic_comparison`. Written by hand as 239 (known mature-ROADMAP behavior). Next: `/gsd-discuss-phase 239`.
 - Phase 238 added 2026-10-11 (explicit user request "create a phase for SEED-196", planted the same day from the ad-hoc Endgame Stats UX review + sketch 009 round 2): **Endgame Stats Percentile-First Redesign** (SEED-196). One percentile bar per peer-ranked metric replaces zone-colored bullets, gauges and chips; displayed numbers become the ranked-sample values (backend computes WDL/scores/entry evals/CI on that sample, LLM payload aligned); one popover per metric with greyed stats below a separator; Overall cut to 2 cards, Type Breakdown becomes a table with grey typical ranges, grey bands on the clock-gap timeline and pressure curve, synced per-section TC switch, new peer dot-plot card. Written by hand as 238 (known mature-ROADMAP behavior). Next: `/gsd-discuss-phase 238`.
 - Phase 237 added 2026-10-08 (explicit user request via `/gsd-phase @SEED-194`, planted the same day from the ad-hoc reveal UX review + sketch 008): **Train Reveal Verdict Strip, Line Chips & One Move Tree** (SEED-194). Verdict strip replaces the bot bubble, You/Best/Game chips (with "You = Best/Game" merge) replace the line cards, chip-driven board fades inactive arrows, the three lines become pre-loaded branches of one `useAnalysisBoard` tree (no separate free-play mode), a phone action bar replaces the bottom nav for the whole reveal (first view fits 390x844), desktop right column keeps the full bubble, and the first-reveal onboarding tour is rewritten for the new screen. Frontend only. Written by hand as 237 (known mature-ROADMAP behavior). Next: `/gsd-discuss-phase 237`.
@@ -1030,6 +1031,8 @@ None active.
 | 261014-qj8 | Benchmark bands for the tempo x phase heatmap cells | 2026-10-14 | 15d855812 | [261014-qj8-benchmark-bands-for-the-tempo-x-phase-he](./quick/261014-qj8-benchmark-bands-for-the-tempo-x-phase-he/) |
 | 261014-s0b | Restore admin session when ending impersonation | 2026-10-14 | e3e3a5542 | [261014-s0b-restore-admin-session-when-ending-impers](./quick/261014-s0b-restore-admin-session-when-ending-impers/) |
 | 261014-rux | Benchmark §5: whole-cohort basis and per-TC bands for the 12 flaw metrics | 2026-10-14 | a743e253e | [261014-rux-benchmark-5-whole-cohort-basis-and-per-t](./quick/261014-rux-benchmark-5-whole-cohort-basis-and-per-t/) |
+| 261015-pjr | Truthful Train warm-up copy for guests with imported games | 2026-10-15 | cb0be8e3a | [261015-pjr-truthful-train-warm-up-copy-for-guests-w](./quick/261015-pjr-truthful-train-warm-up-copy-for-guests-w/) |
+| 261015-qxr | Library Stats coverage line salience and still-updating hint | 2026-10-15 | b2896d32e | [261015-qxr-library-stats-coverage-line-salience-and](./quick/261015-qxr-library-stats-coverage-line-salience-and/) |
 
 ## Deferred Items
 

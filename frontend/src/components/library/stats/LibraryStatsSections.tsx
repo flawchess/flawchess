@@ -2,6 +2,10 @@ import { Cpu } from 'lucide-react';
 import { CoverageSignupButton } from '@/components/library/EvalCoverageBadge';
 import {
   ANALYSIS_COVERAGE_INFO_COPY,
+  COVERAGE_GUEST_HINT,
+  COVERAGE_STARTING_HINT,
+  COVERAGE_UPDATING_HINT,
+  COVERAGE_UPDATING_THRESHOLD,
   LOW_COVERAGE_THRESHOLD,
 } from '@/components/library/analysisCoverageCopy';
 import { StickyTcBar } from '@/components/stats/StickyTcBar';
@@ -17,6 +21,7 @@ import {
 } from '@/hooks/useLibrary';
 import { useLibraryStatsTc } from '@/hooks/useLibraryStatsTc';
 import { libraryCoverageBasisText } from '@/lib/flawComparisonMeta';
+import { ANALYSIS_PENDING_ICON_CLASS, ANALYSIS_PENDING_TINT_CLASS } from '@/lib/theme';
 import { cn } from '@/lib/utils';
 import { ContextTagCards } from './ContextTagCards';
 import { TempoPhaseHeatmap } from './TempoPhaseHeatmap';
@@ -80,15 +85,59 @@ function FlawTimeline({ stats, isLoading, isError, selectedTc }: FlawTimelinePro
  * in the current filters." It replaced the library-wide "N of M analyzed" badge, which
  * counted every TC while every number below it is for the selected TC only.
  */
-function CoverageBasisLine({ tcStats, isGuest }: { tcStats: FlawComparisonTc; isGuest: boolean }) {
-  const isIncomplete = tcStats.analyzed_n < tcStats.total_n;
-  const isLowCoverage = tcStats.analyzed_n < tcStats.total_n * LOW_COVERAGE_THRESHOLD;
+interface CoverageBasisLineProps {
+  analyzedN: number;
+  totalN: number;
+  /** null when nothing is analyzed yet: there is no TC on the switch to scope the line to. */
+  tc: TimeControlBucket | null;
+  isGuest: boolean;
+}
+
+function coverageHint(analyzedN: number, isGuest: boolean): string {
+  if (isGuest) return COVERAGE_GUEST_HINT;
+  return analyzedN === 0 ? COVERAGE_STARTING_HINT : COVERAGE_UPDATING_HINT;
+}
+
+function CoverageBasisLine({ analyzedN, totalN, tc, isGuest }: CoverageBasisLineProps) {
+  // Below the updating threshold the line takes the Quick Scan banner's amber tint and
+  // says the numbers are still moving. Only signed-up users get background analysis, so
+  // only they get the pulsing "working" icon and the "update as analysis continues" copy.
+  const isUpdating = analyzedN < totalN * COVERAGE_UPDATING_THRESHOLD;
+  const isLowCoverage = analyzedN < totalN * LOW_COVERAGE_THRESHOLD;
   return (
-    <div className="flex flex-wrap items-center gap-x-2 gap-y-2">
-      <div className="flex items-center gap-1.5 text-sm text-muted-foreground">
-        <Cpu className={cn('h-4 w-4 shrink-0', isIncomplete && 'animate-pulse')} aria-hidden="true" />
-        <p data-testid="flaw-stats-basis">
-          {libraryCoverageBasisText(tcStats.analyzed_n, tcStats.total_n, tcStats.tc)}
+    <div
+      className={cn(
+        'flex flex-wrap items-center gap-x-2 gap-y-2',
+        isUpdating && cn('rounded-md px-3 py-2', ANALYSIS_PENDING_TINT_CLASS),
+      )}
+      data-testid="flaw-stats-coverage-line"
+      data-updating={isUpdating}
+    >
+      <div
+        className={cn(
+          'flex items-center gap-1.5 text-sm',
+          isUpdating ? 'text-foreground' : 'text-muted-foreground',
+        )}
+      >
+        <Cpu
+          className={cn(
+            'h-4 w-4 shrink-0',
+            isUpdating && ANALYSIS_PENDING_ICON_CLASS,
+            isUpdating && !isGuest && 'animate-pulse',
+          )}
+          aria-hidden="true"
+          data-testid="flaw-stats-coverage-icon"
+        />
+        <p>
+          <span data-testid="flaw-stats-basis">
+            {libraryCoverageBasisText(analyzedN, totalN, tc)}
+          </span>
+          {isUpdating && (
+            <span data-testid="flaw-stats-coverage-hint">
+              {' '}
+              {coverageHint(analyzedN, isGuest)}
+            </span>
+          )}
         </p>
         <InfoPopover ariaLabel="About game analysis coverage" testId="flaw-stats-coverage-info">
           <p>{ANALYSIS_COVERAGE_INFO_COPY}</p>
@@ -143,12 +192,24 @@ function FlawStatsSection({ filters, isGuest }: LibraryStatsSectionsProps) {
   const renderBody = () => {
     if (comparison.isError) return <LoadError resource="flaw statistics" />;
     if (comparison.isLoading || !comparison.data) return <SectionSkeleton />;
+    if (tcs.length === 0 && comparison.data.total_n > 0) {
+      // Fresh import, nothing analyzed yet: there is no TC to show, but the user should
+      // still see that analysis is under way rather than a bare "no analyzed games".
+      return (
+        <CoverageBasisLine analyzedN={0} totalN={comparison.data.total_n} tc={null} isGuest={isGuest} />
+      );
+    }
     if (!tcStats || selectedTc === null) {
       return <p className="text-sm text-muted-foreground">{COPY_NO_ANALYZED}</p>;
     }
     return (
       <>
-        <CoverageBasisLine tcStats={tcStats} isGuest={isGuest} />
+        <CoverageBasisLine
+          analyzedN={tcStats.analyzed_n}
+          totalN={tcStats.total_n}
+          tc={tcStats.tc}
+          isGuest={isGuest}
+        />
         <FlawTiles tcStats={tcStats} analyzedGate={comparison.data.analyzed_gate} />
         <FlawTimeline
           stats={stats.data}

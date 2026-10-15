@@ -57,6 +57,9 @@ import type { PersonaId } from '@/lib/personas/personaRegistry';
 const AUDIENCE_HAS_GAMES: TrainCopyAudience = { hasGames: true, isGuest: false };
 const AUDIENCE_NO_GAMES: TrainCopyAudience = { hasGames: false, isGuest: false };
 const AUDIENCE_NO_GAMES_GUEST: TrainCopyAudience = { hasGames: false, isGuest: true };
+// Quick 261015-pjr: a guest WITH games is its own audience (guest games are
+// never analyzed automatically), no longer folded into HAS_GAMES.
+const AUDIENCE_GUEST_WITH_GAMES: TrainCopyAudience = { hasGames: true, isGuest: true };
 
 describe('pickBot', () => {
   it('with an injected rng returning 0, resolves to a member of the requested pool', () => {
@@ -299,17 +302,30 @@ describe('introCopy', () => {
 describe('introCopy / introSteps — D-03 games-less audience branch (Phase 224)', () => {
   const NEVER_ANALYZED = /(are analyzed|analyzing your games)/i;
 
-  it('the has_games audience (any isGuest value) is byte-identical to today\'s welcome and warm-up copy', () => {
-    const guestWithGames: TrainCopyAudience = { hasGames: true, isGuest: true };
-    for (const audience of [AUDIENCE_HAS_GAMES, guestWithGames]) {
-      expect(introCopy(0, 'white', false, audience).copy).toBe(
-        'Welcome to FlawChess Train! You will improve by solving puzzles ' +
-          'created from your own games.',
-      );
-      expect(introCopy(4, 'white', true, audience).copy).toBe(
-        "We're still analyzing your games to find your mistakes. In the meantime, " +
-          "let's start with a warm-up session.",
-      );
+  it('a registered account with games is byte-identical to today\'s welcome and warm-up copy', () => {
+    expect(introCopy(0, 'white', false, AUDIENCE_HAS_GAMES).copy).toBe(
+      'Welcome to FlawChess Train! You will improve by solving puzzles ' +
+        'created from your own games.',
+    );
+    expect(introCopy(4, 'white', true, AUDIENCE_HAS_GAMES).copy).toBe(
+      "We're still analyzing your games to find your mistakes. In the meantime, " +
+        "let's start with a warm-up session.",
+    );
+  });
+
+  it('quick 261015-pjr: a guest with games is never told its games are being analyzed, and gets the sign-up pitch', () => {
+    const welcome = introCopy(0, 'white', false, AUDIENCE_GUEST_WITH_GAMES).copy;
+    const warmup = introCopy(4, 'white', true, AUDIENCE_GUEST_WITH_GAMES).copy;
+    for (const copy of [welcome, warmup]) {
+      expect(copy).not.toMatch(NEVER_ANALYZED);
+      expect(copy.toLowerCase()).toContain('sign up');
+      expect(copy).not.toContain('Import your games');
+    }
+    expect(welcome).not.toContain('created from your own games');
+    for (const side of ['white', 'black'] as const) {
+      for (const step of introSteps(side, true, AUDIENCE_GUEST_WITH_GAMES)) {
+        expect(step.copy.length).toBeLessThanOrEqual(STEPPER_COPY_MAX_CHARS);
+      }
     }
   });
 
@@ -619,13 +635,17 @@ describe('returnPhrase — D-03 games-less warm-up tail audience branch (Phase 2
       audience,
     });
 
-  it('the has_games audience (any isGuest value) is byte-identical to today\'s warm-up tail', () => {
+  it('a registered account with games is byte-identical to today\'s warm-up tail', () => {
     expect(warmupTail(AUDIENCE_HAS_GAMES)).toBe(
       "That one was a warm-up, so it won't come back. Your own positions will.",
     );
-    expect(warmupTail({ hasGames: true, isGuest: true })).toBe(
-      "That one was a warm-up, so it won't come back. Your own positions will.",
-    );
+  });
+
+  it('quick 261015-pjr: a guest with games gets the sign-up tail, never the bare "your own positions will"', () => {
+    const phrase = warmupTail(AUDIENCE_GUEST_WITH_GAMES);
+    expect(phrase).not.toBe(warmupTail(AUDIENCE_HAS_GAMES));
+    expect(phrase).toContain('Sign up free');
+    expect(phrase).not.toContain('Import your games');
   });
 
   it('no zero-game audience claims its games are being analyzed', () => {
@@ -1000,6 +1020,13 @@ describe('scoreBubbleCopy — D-03/S-3 games-less warm-up audience branch (Phase
   it('the has_games audience is byte-identical to today\'s warm-up opener clause', () => {
     const copy = scoreBubbleCopy({ ...WARM, audience: AUDIENCE_HAS_GAMES });
     expect(copy.lines[0]).toContain('Once your games are analyzed, your own mistakes take over.');
+  });
+
+  it('quick 261015-pjr: a guest with games is never told its games will be analyzed', () => {
+    const copy = scoreBubbleCopy({ ...WARM, audience: AUDIENCE_GUEST_WITH_GAMES });
+    expect(copy.lines[0]).not.toMatch(NEVER_ANALYZED);
+    expect(copy.lines[0]).not.toContain('Once your games are analyzed');
+    expect(copy.lines[1]).toBe(GUEST_SIGNUP_ASK_SCORE);
   });
 
   it('no zero-game audience is told its games are being analyzed', () => {

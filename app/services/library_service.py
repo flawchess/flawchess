@@ -1636,17 +1636,23 @@ async def get_flaw_comparison(
             user_id=user_id,
             **_filter_kwargs,
         )
-        if not counts:
-            return FlawComparisonResponse(tcs=[], analyzed_gate=FLAW_COMPARISON_GATE)
         # Coverage denominator per TC: the same filtered set without the analyzed
         # restriction. flaw_severity is None from the Stats tab, so unanalyzed games
         # (which have no game_flaws rows) are not dropped by the severity EXISTS.
+        # Computed before the empty check: a fresh import with nothing analyzed yet
+        # used to return tcs=[] alone, so the page could not show "0 of N analyzed"
+        # and read as if the filters matched no games.
         totals = await library_repository.count_analyzed_by_tc(
             session,
             user_id=user_id,
             analyzed_only=False,
             **_filter_kwargs,
         )
+        total_n = sum(totals.values())
+        if not counts:
+            return FlawComparisonResponse(
+                tcs=[], analyzed_gate=FLAW_COMPARISON_GATE, total_n=total_n
+            )
 
         analyzed_subq = library_repository._analyzed_game_ids_subquery(user_id)
         rows = await library_repository.fetch_flaw_comparison(
@@ -1668,7 +1674,7 @@ async def get_flaw_comparison(
             for tc in LIBRARY_TC_ORDER
             if counts.get(tc)
         ]
-        return FlawComparisonResponse(tcs=tcs, analyzed_gate=FLAW_COMPARISON_GATE)
+        return FlawComparisonResponse(tcs=tcs, analyzed_gate=FLAW_COMPARISON_GATE, total_n=total_n)
 
     except Exception as exc:  # noqa: BLE001 — capture before re-raise for Sentry
         sentry_sdk.set_context("flaw_comparison", {"user_id": user_id})

@@ -14,6 +14,7 @@ in `YYYY-MM-DD` (Europe/Zurich).
 
 ### Changed
 
+- Library Stats: while fewer than 98% of the selected time control's games are analyzed, the coverage line at the top is highlighted and says the stats below will keep updating as analysis continues (guests see that only analyzed games are counted). Once analysis is complete it reads "All N games … are analyzed." Right after an import, before any game is analyzed, it shows "0 of N games analyzed" instead of only "No analyzed games". The analysis-in-progress banner is also easier to read on the dark theme.
 - Library Stats: the typical range for each flaw comparison is now measured on games of the selected time control, so bullet and blitz get their own ranges instead of the rapid one. Ranges are narrower in fast games and wider in classical, where flaw rates vary more between players.
 - Library Stats now compares you with your opponents in plain words: one gap bar per metric ("1.7 fewer" style), fewer flaws to the left, a grey typical range centred on zero, and the details behind the search icon.
 - Library Stats has one time-control switch for all its sections. It stays in reach while you scroll and remembers your choice between visits.
@@ -45,6 +46,7 @@ in `YYYY-MM-DD` (Europe/Zurich).
 - Analysis engine no longer restarts its Stockfish workers when the tab sits in the background, so a search left running in another tab keeps its results instead of losing them.
 - Google sign-in no longer shows a server error page when Google rejects the sign-in code (for example after a doubled redirect on Android). You land back on the login page with a "Google sign-in failed. Please try again." message.
 - Admin: closing the impersonation pill now takes you back to your own admin session on the Admin page instead of signing you out.
+- Train: guests who imported games are no longer told their games are being analyzed. Guest games are not analyzed automatically, so warm-up sessions now say so and point to signing up, which is what brings your own mistakes into Train.
 
 ### Security
 

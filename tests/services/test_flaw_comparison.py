@@ -2,7 +2,7 @@
 
 Validation architecture:
 - test_per_tc_split              : D-02 (one entry per TC, fast to slow, 12 bullets each)
-- test_no_analyzed_games         : D-02 (empty tcs, gate echoed)
+- test_no_analyzed_games         : D-02 (empty tcs, gate echoed, total_n still counts)
 - test_bullets_and_zone_bounds   : FLAWCMP-01/03 (registry-banded bullets, no domain)
 - test_rates_and_pvalue          : UAT (player_rate - opp_rate == delta, p-value)
 - test_ci_formula                : FLAWCMP-01 / D-14 (99% Wald-z math independent of SQL)
@@ -220,6 +220,18 @@ async def test_no_analyzed_games(db_session: AsyncSession) -> None:
 
     assert result.tcs == []
     assert result.analyzed_gate == FLAW_COMPARISON_GATE
+    # The unanalyzed game still counts, so the page can show "0 of 1 analyzed"
+    # instead of reading as if the filters matched nothing.
+    assert result.total_n == 1
+
+
+@pytest.mark.asyncio
+async def test_no_games_total_n_zero(db_session: AsyncSession) -> None:
+    """No games at all -> tcs == [] and total_n == 0 (the true "nothing here" case)."""
+    result = await get_flaw_comparison(db_session, _TEST_USER, **_DEFAULT_FILTER_KWARGS)
+
+    assert result.tcs == []
+    assert result.total_n == 0
 
 
 @pytest.mark.asyncio
@@ -583,6 +595,8 @@ async def test_total_n_counts_unanalyzed_games(db_session: AsyncSession) -> None
     assert [(t.tc, t.analyzed_n, t.total_n) for t in result.tcs] == [
         ("blitz", FLAW_COMPARISON_GATE, FLAW_COMPARISON_GATE + 3),
     ]
+    # The response-level total spans every allowed TC, unanalyzed rapid included.
+    assert result.total_n == FLAW_COMPARISON_GATE + 3 + 1
 
 
 async def _seed_mistake_cell(db_session: AsyncSession, *, user_id: int, total_flaws: int) -> None:

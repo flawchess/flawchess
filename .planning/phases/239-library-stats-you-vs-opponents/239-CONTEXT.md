@@ -82,7 +82,7 @@ capabilities beyond SEED-198.
 **Downstream agents MUST read these before planning or implementing.**
 
 ### Design and locked decisions
-- `.planning/seeds/SEED-198-library-stats-you-vs-opponents-redesign.md` — locked decisions 1-12, work implied, breadcrumbs
+- `../../seeds/closed/SEED-198-library-stats-you-vs-opponents-redesign.md` — locked decisions 1-12, work implied, breadcrumbs
 - `.planning/sketches/010-library-stats-you-vs-opponents/index.html` — owner-approved round 5 layout (tactic IQRs in the sketch are made up)
 - `.planning/sketches/010-library-stats-you-vs-opponents/README.md` — round 1-5 decisions, real vs made-up data
 - `.planning/ROADMAP.md` §Phase 239 — goal, guardrails, open questions (answered here)

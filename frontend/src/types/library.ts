@@ -436,6 +436,8 @@ export interface TacticComparisonResponse {
 export interface FlawComparisonResponse {
   tcs: FlawComparisonTc[];
   analyzed_gate: number;
+  /** All games (analyzed or not) under the current filters, across the allowed TCs. */
+  total_n: number;
 }
 
 // ─── Tactic Lines (GET /api/library/flaws/{game_id}/{ply}/tactic-lines) ────────

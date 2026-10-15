@@ -248,9 +248,10 @@ export const STEPPER_COPY_MAX_CHARS = 145;
  * shared `hasImportedGames` helper) selects "import your games" wording for
  * ANY zero-game account; `isGuest` (also from `useUserProfile().data`, NEVER
  * `useAuth().user` — FLAWCHESS-64) appends the sign-up ask on top of that.
- * `hasGames` deliberately WINS over `isGuest` in `audienceKey`: a guest WITH
- * games keeps today's strings verbatim, per D-03 — the sign-up ask never
- * appears once an account has real games to analyze.
+ * A guest WITH games gets its own bucket (`has_games_guest`, quick
+ * 261015-pjr): guest games are never analyzed automatically, so the
+ * registered-account "we're analyzing your games" copy would be a promise
+ * that never comes true.
  */
 export interface TrainCopyAudience {
   hasGames: boolean;
@@ -258,15 +259,18 @@ export interface TrainCopyAudience {
 }
 
 /**
- * The three audience buckets every D-03 copy record keys on. Module-private:
+ * The four audience buckets every D-03 copy record keys on. Module-private:
  * callers pass a `TrainCopyAudience`, never this key, so `audienceKey` stays
  * the single place the two flags collapse into one lookup key.
  */
-type CopyAudienceKey = 'has_games' | 'no_games' | 'no_games_guest';
+type CopyAudienceKey = 'has_games' | 'has_games_guest' | 'no_games' | 'no_games_guest';
 
-/** D-03: `hasGames` wins over `isGuest` — see `TrainCopyAudience`'s doc. */
 function audienceKey(audience: TrainCopyAudience): CopyAudienceKey {
-  if (audience.hasGames) return 'has_games';
+  // Quick 261015-pjr: Phase 224 D-03 let `hasGames` win over `isGuest`, so a
+  // guest who imported games was told three times per session that their
+  // games were being analyzed. The eval queue skips guest games (only a
+  // manual per-game Analyze click runs), so their own mistakes never arrived.
+  if (audience.hasGames) return audience.isGuest ? 'has_games_guest' : 'has_games';
   if (audience.isGuest) return 'no_games_guest';
   return 'no_games';
 }
@@ -293,6 +297,9 @@ const INTRO_WELCOME_COPY: Record<CopyAudienceKey, string> = {
   has_games:
     'Welcome to FlawChess Train! You will improve by solving puzzles ' +
     'created from your own games.',
+  has_games_guest:
+    'Welcome to FlawChess Train! Sign up free and you will improve by solving ' +
+    'puzzles created from your own mistakes.',
   no_games:
     'Welcome to FlawChess Train! Import your games and you will improve ' +
     'by solving puzzles created from your own mistakes.',
@@ -335,6 +342,9 @@ const INTRO_WARMUP_COPY: Record<CopyAudienceKey, string> = {
   has_games:
     "We're still analyzing your games to find your mistakes. In the meantime, " +
     "let's start with a warm-up session.",
+  has_games_guest:
+    'Guest games are not analyzed automatically, so this is a warm-up session. Sign up ' +
+    'free and your own mistakes take over.',
   no_games:
     'You have no games here yet, so this is a warm-up session. Import your games and your ' +
     'own mistakes take over.',
@@ -522,6 +532,8 @@ const PARKED_TAIL = 'This one keeps slipping, so it is parked for now. On to pos
  */
 const WARMUP_TAIL_COPY: Record<CopyAudienceKey, string> = {
   has_games: "That one was a warm-up, so it won't come back. Your own positions will.",
+  has_games_guest: "That one was a warm-up, so it won't come back. Sign up free and your own " +
+    'positions will.',
   no_games: "That one was a warm-up, so it won't come back. Import your games and your own " +
     'positions will.',
   no_games_guest: "That one was a warm-up, so it won't come back. Import your games, then sign " +
@@ -750,6 +762,9 @@ const WARMUP_REMINDER_ASK_COPY: Record<ReminderAsk, string> = {
  */
 const WARMUP_SCORE_CLAUSE: Record<CopyAudienceKey, string> = {
   has_games: 'Once your games are analyzed, your own mistakes take over.',
+  // The guest sign-up ask (`GUEST_SIGNUP_ASK_SCORE`) follows as the second
+  // line, so this clause only states why there are no own mistakes yet.
+  has_games_guest: 'Guest games are not analyzed automatically, so your own mistakes are not here yet.',
   no_games: 'Import your games and your own mistakes take over.',
   no_games_guest: 'Import your games, then sign up, and your own mistakes take over.',
 };
