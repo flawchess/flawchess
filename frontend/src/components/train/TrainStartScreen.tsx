@@ -254,17 +254,20 @@ function TrainHeader({
   const onboardingDone = settings !== undefined && isRevealTourDone(settings.reveal_tour_stage);
   const showReminderAsk =
     !isGuest && !showImportAsk && onboardingDone && settings?.has_mobile_subscription === false;
-  // Phase 240 UAT: the guest sign-up ask (sentence and buttons) waits for the
-  // same finished tour, so a guest tries Train before being asked to sign up.
-  // The intro welcome, the warm-up verdict tails and the score screen already
-  // carry the ask during the first session.
-  const showSignupAsk = isGuest && onboardingDone;
+  // Phase 240 UAT: the guest sign-up ask (sentence and buttons) waits until the
+  // guest has completed a session, so they try Train before being asked to
+  // sign up. `sr_explained_at` is stamped by the first completed session's
+  // score screen, warm-up sessions included.
+  const showSignupAsk = isGuest && settings != null && settings.sr_explained_at !== null;
   // Quick 261004-dta: on a phone the avatar + bubble pushed the streak card and
-  // its Start button below the fold. Only Tank's intro (intro stepper not yet
-  // completed) keeps it there; the sign-up/import/install asks it would carry
-  // are repeated on the session score screen. Gated on loaded settings so a
-  // returning user's bubble never flashes in before hiding.
+  // its Start button below the fold, so the bubble is phone-hidden. Tank's intro
+  // (intro stepper not yet completed) keeps it there, and so do the sign-up and
+  // import asks (Phase 240 UAT: their buttons are the next step for a guest or a
+  // zero-game account, worth the push-down). The reminder-install ask stays
+  // desktop-only. Gated on loaded settings so a returning user's bubble never
+  // flashes in before hiding.
   const isIntroHost = settings != null && settings.intro_seen_at == null;
+  const keepOnPhone = isIntroHost || showSignupAsk || showImportAsk;
   // D-04: Tank's intro wins; Hilda takes the host only once the intro stepper is
   // completed. Requiring LOADED settings also means no view is counted on a
   // render that would flip to Tank a moment later.
@@ -274,7 +277,7 @@ function TrainHeader({
     <div
       // SEED-191 #3: the ask shows on phones while active, accepting that it
       // pushes the streak card down; otherwise the phone-hiding rule is unchanged.
-      className={cn('w-full', !isIntroHost && askDays == null && 'max-sm:hidden')}
+      className={cn('w-full', !keepOnPhone && askDays == null && 'max-sm:hidden')}
       data-testid="train-landing-host"
     >
       {askDays != null ? (
