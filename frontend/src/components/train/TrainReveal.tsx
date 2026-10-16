@@ -47,8 +47,9 @@ import { TrainVerdictCard, TrainVerdictStrip } from '@/components/train/TrainVer
 import type { TrainFineMove } from '@/lib/trainArrows';
 import { scorePuzzle } from '@/lib/trainScore';
 import { cn } from '@/lib/utils';
+import { TOUR_SPOTLIGHT_CLASS } from '@/lib/theme';
 import { verdictStripLine } from '@/lib/trainBotCopy';
-import type { TrainCopyAudience, VerdictCopy, WalkthroughTarget } from '@/lib/trainBotCopy';
+import type { VerdictCopy, WalkthroughTarget } from '@/lib/trainBotCopy';
 import type { Persona } from '@/lib/personas/personaRegistry';
 import { guessFeedbackProse } from '@/lib/trainGuessLabels';
 import type { Guess } from '@/lib/trainGuessLabels';
@@ -131,12 +132,13 @@ export interface TrainRevealProps {
    */
   alsoFineMoves?: TrainFineMove[];
   /**
-   * Phase 237 plan 10 (D-10): the first-reveal tour's active target, or null
-   * when no tour is showing. Rings the strip / verdict bubble (`verdict`) and
-   * the move list (`tree`, `lines`); the chips row is never ringed (the active
-   * chip's own ring marks it, Phase 237 UAT); `board` and `bar` are ringed by
-   * the board owner. Independent of the chip
-   * focus: the tour must never touch which arrow is lit.
+   * Phase 237 plan 10 (D-10): the reveal tour's active target, or null when no
+   * tour is showing. Spotlights (Phase 240 D-20, the shared TOUR_SPOTLIGHT_CLASS
+   * glow) the strip / verdict bubble (`verdict`), the chips row (`chips`, the
+   * active chip keeps its own selection ring), the move list (`tree`) and the
+   * chips-plus-list region (`lines`); `board` and `bar` are spotlit by the board
+   * owner. Independent of the chip focus: the tour must never touch which arrow
+   * is lit.
    */
   walkthroughTarget?: WalkthroughTarget | null;
   /**
@@ -155,7 +157,6 @@ export interface TrainRevealProps {
   sessionDate?: string;
   expiresOn?: string;
   isWarmup: boolean;
-  audience: TrainCopyAudience;
   /** Fired once per strip expansion (collapsed -> open), for the board owner's
    * telemetry. The Umami event itself is sent by the strip. */
   onStripExpand?: () => void;
@@ -187,7 +188,6 @@ export function TrainReveal({
   sessionDate,
   expiresOn,
   isWarmup,
-  audience,
   onStripExpand,
 }: TrainRevealProps): ReactElement | null {
   const { startGameMoveSearch } = gradingEngine;
@@ -302,7 +302,7 @@ export function TrainReveal({
   // here is safe.
   const motif = revealQuery.data?.motif ?? null;
   const showChipRow = chips.length > 0 || sanOnlyGameMove !== null;
-  const tourRingVerdict = walkthroughTarget === 'verdict';
+  const tourSpotlightVerdict = walkthroughTarget === 'verdict';
 
   // Quick 260803-iv6 (Task 3): the guess card states the verdict but never
   // says WHY it landed where it did — one locked prose sentence, derived
@@ -347,7 +347,6 @@ export function TrainReveal({
         sessionDate={sessionDate}
         expiresOn={expiresOn}
         isWarmup={isWarmup}
-        audience={audience}
         guess={guess}
         guessProse={guessProse}
         motif={motif}
@@ -374,14 +373,14 @@ export function TrainReveal({
           `scorePuzzle` (D-23 Option B); `isBest` only selects wording. */}
       {verdictBot !== null && verdictOpening !== null && (
         isDesktop ? (
-          <TrainVerdictCard persona={verdictBot} ring={tourRingVerdict} renderDetails={renderVerdictDetails} />
+          <TrainVerdictCard persona={verdictBot} spotlight={tourSpotlightVerdict} renderDetails={renderVerdictDetails} />
         ) : (
           <TrainVerdictStrip
             persona={verdictBot}
             points={scorePuzzle(verdict.correct_guess, verdict.move_quality)}
             line={verdictStripLine(verdict.correct_guess, verdict.move_quality, isBest)}
             onExpand={onStripExpand}
-            ring={tourRingVerdict}
+            spotlight={tourSpotlightVerdict}
           >
             {renderVerdictDetails()}
           </TrainVerdictStrip>
@@ -404,27 +403,36 @@ export function TrainReveal({
           one move list showing the focused chip's pre-loaded line (plus the
           user's own sidelines). Every eval/line comes from the client grading
           engine (`gradeResult` or the reveal-time search), never a stored
-          server line. */}
-      {showChipRow && (
-        <div data-tour-target="chips">
-          <TrainLineChips
-            chips={chips}
-            activeChip={activeChip}
-            onSelect={onChipSelect}
-            sanOnlyGameMove={sanOnlyGameMove}
-          />
-        </div>
-      )}
-      {chips.length > 0 && (
+          server line. Phase 240 D-20: the tour spotlights the chips row, the
+          list, or (the understand step) this wrapper around both; the wrapper
+          keeps the reveal column's gap, so the layout does not move. */}
+      {(showChipRow || chips.length > 0) && (
         <div
-          data-tour-target="tree"
-          data-testid="train-tree-tour-ring"
-          className={cn(
-            (walkthroughTarget === 'tree' || walkthroughTarget === 'lines') &&
-              'rounded-md ring-2 ring-brand-brown',
-          )}
+          data-testid="train-lines-tour-target"
+          className={cn('flex flex-col gap-4 rounded-md', walkthroughTarget === 'lines' && TOUR_SPOTLIGHT_CLASS)}
         >
-          {treeList}
+          {showChipRow && (
+            <div
+              data-tour-target="chips"
+              className={cn('rounded-md', walkthroughTarget === 'chips' && TOUR_SPOTLIGHT_CLASS)}
+            >
+              <TrainLineChips
+                chips={chips}
+                activeChip={activeChip}
+                onSelect={onChipSelect}
+                sanOnlyGameMove={sanOnlyGameMove}
+              />
+            </div>
+          )}
+          {chips.length > 0 && (
+            <div
+              data-tour-target="tree"
+              data-testid="train-tree-tour-ring"
+              className={cn('rounded-md', walkthroughTarget === 'tree' && TOUR_SPOTLIGHT_CLASS)}
+            >
+              {treeList}
+            </div>
+          )}
         </div>
       )}
 

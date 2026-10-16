@@ -1,16 +1,26 @@
 /**
- * useTrainWalkthrough — Phase 222 (D-24/D-12), rewritten by Phase 237 plan 10
- * for the chips + single move tree reveal and reworked by the Phase 237 UAT:
- * the first-reveal walkthrough's step state and everything that moves it,
- * extracted from `TrainSolveScreen` so the handlers and the scroll effect do
- * not push the component over its statement gate.
+ * useTrainWalkthrough: Phase 222 (D-24/D-12), rewritten by Phase 237 plan 10
+ * for the chips + single move tree reveal and by Phase 240 (D-06..D-08, D-23)
+ * for the split tour: the first-reveal tour's state and everything that moves
+ * it, extracted from `TrainSolveScreen` so the handlers and the scroll effect
+ * do not push the component over its statement gate.
  *
- * Owns: the step index (reset per puzzle by the caller), the active-step
- * resolution against the settings watermark, the reveal bar's Next while the
- * tour runs (`consumeNext`), the tour overlay's hidden flag (`hide` on any
- * interaction with the reveal, `reopen` from Hilda's badge), the phone
- * scroll-to-target effect, and the stamp fired when the user leaves the reveal
- * from the last step.
+ * The tour is three parts on consecutive reveals, at most one per reveal. The
+ * part due is `tourPartForStage(settings.reveal_tour_stage)`, LATCHED once per
+ * reveal at the first render that has a verdict and loaded settings: the leave
+ * stamp's `setQueryData` bumps the stage mid-reveal, and without the latch that
+ * would switch the part under the user (RESEARCH Pitfall 2). A stale latch can
+ * only replay a part (the server no-ops the duplicate advance), never skip one.
+ * A reveal restored after the Analyze round trip (`isRestored`) never starts a
+ * part: it is the same reveal the user left, so "at most one part per reveal"
+ * holds even when the part was finished by the Analyze click; a part left
+ * halfway replays on the next puzzle's reveal (D-08).
+ *
+ * Owns: the latch, the step index within the part (reset per puzzle by the
+ * caller), the reveal bar's Next while a part runs (`consumeNext`), the tour
+ * overlay's hidden flag (`hide` on any interaction with the reveal, `reopen`
+ * from Hilda's badge), the phone scroll-to-target effect, and the stamp fired
+ * when the user leaves the reveal from a part's last step.
  *
  * Phase 237 UAT (G-01): there is ONE Next, the reveal bar's. The tour never
  * auto-advances and never gates Next on the step's action; an interaction only
@@ -19,12 +29,25 @@
  */
 import { useCallback, useEffect, useState } from 'react';
 import type { RefObject } from 'react';
-import { WALKTHROUGH_STEP_COUNT, walkthroughCopy } from '@/lib/trainBotCopy';
-import type { WalkthroughContext, WalkthroughStep, WalkthroughTarget } from '@/lib/trainBotCopy';
+import { isRevealTourDone, tourPartForStage, tourPartSteps, tourStepCopy } from '@/lib/trainBotCopy';
+import type {
+  TourPart,
+  TourStepId,
+  WalkthroughContext,
+  WalkthroughTarget,
+} from '@/lib/trainBotCopy';
 import { prefersReducedMotion } from '@/lib/confetti';
 import { animateScrollTop } from '@/lib/animatedScroll';
 import type { TrainSettingsResponse } from '@/types/train';
-import type { OnboardingStep } from '@/hooks/useTrainOnboarding';
+import type { OnboardingStep, RevealTourStep } from '@/hooks/useTrainOnboarding';
+
+/** The onboarding step stamped when a part is finished (Phase 240 D-09): part N
+ * advances the server's stage to N + 1. */
+const REVEAL_TOUR_STAMP: Record<TourPart, RevealTourStep> = {
+  0: 'reveal_tour_1',
+  1: 'reveal_tour_2',
+  2: 'reveal_tour_3',
+};
 
 /** Targets whose element the phone scrolls into view during the tour (D-10);
  * the strip, the board row and the bar are already on screen (or fixed) and
@@ -53,10 +76,12 @@ export interface UseTrainWalkthroughInput {
   hasVerdict: boolean;
   /** What the action bar's Analyze opens: the own source game, or just the puzzle position. */
   analyzeOpens: WalkthroughContext['analyzeOpens'];
-  /** The second role of the merged Move chip ("Move = Best" / "Move = Game"), or
-   * null when the Move chip stands alone — step 2 explains only what is shown. */
-  mergedChip: WalkthroughContext['mergedChip'];
+  /** Desktop skips the phone-only scroll-to-target; of the copy, only the result
+   * step branches on it (the phone strip opens on tap). */
   isDesktop: boolean;
+  /** True when the reveal on screen was restored after the Analyze round trip: it
+   * never starts a part (the user already saw this reveal). */
+  isRestored: boolean;
   /** The solve screen root — the tour targets are looked up inside it. */
   screenRef: RefObject<HTMLDivElement | null>;
   /** The phone-pinned progress + board block. */
@@ -65,16 +90,23 @@ export interface UseTrainWalkthroughInput {
 }
 
 export interface UseTrainWalkthroughResult {
-  /** Non-null exactly while the walkthrough is showing. */
-  activeStep: WalkthroughStep | null;
+  /** Non-null exactly while a tour part is showing. */
+  activeStep: TourStepId | null;
+  /** Index of the active step within its part (D-23: the counter is per part). */
+  stepIndex: number;
+  /** Number of steps in the active part, 0 while inactive. */
+  stepCount: number;
+  /** The part on screen, or null while inactive. */
+  part: TourPart | null;
   /** The active step's spotlight target, or null while inactive. */
   target: WalkthroughTarget | null;
   /** The copy context the active step was resolved with (screen conditions). */
   context: WalkthroughContext;
-  /** Resets the step index — call on every puzzle transition (D-12). */
+  /** Clears the part latch, the step index and the hidden flag: call on every
+   * puzzle transition (D-12). */
   reset: () => void;
-  /** The reveal bar's Next while the tour runs: on any step but the last it
-   * advances the tour (showing the overlay again) and returns true, so the
+  /** The reveal bar's Next while a part runs: on any step but the part's last it
+   * advances the part (showing the overlay again) and returns true, so the
    * caller must NOT also leave the puzzle. False when the tour is inactive or on
    * its last step: the bar's Next is then the real next-puzzle Next. */
   consumeNext: () => boolean;
@@ -87,25 +119,20 @@ export interface UseTrainWalkthroughResult {
   /** Hilda's badge: shows the current step's overlay again. Stable identity. */
   reopen: () => void;
   /** Call when the user leaves the reveal through the action row (Next or
-   * Analyze): stamps `reveal_walkthrough` if the walkthrough is on its last
-   * step, else a no-op. */
+   * Analyze): stamps `reveal_tour_{part + 1}` if the part is on its last step,
+   * else a no-op (an abandoned part stamps nothing and replays, D-08). */
   leave: () => void;
 }
 
 /**
- * Resolves whether the walkthrough is active this render — null while
- * inactive (settings not yet loaded, no verdict yet, or
- * `reveal_walkthrough_seen_at` already stamped), else the active step index.
+ * The part due on this reveal: null while settings are not loaded, the reveal is
+ * a restored one, or the whole tour is done; else the part for the stage.
  */
-function resolveWalkthroughStep(
-  settings: TrainSettingsResponse | undefined,
-  hasVerdict: boolean,
-  step: WalkthroughStep,
-): WalkthroughStep | null {
+function resolveLivePart(settings: TrainSettingsResponse | undefined, isRestored: boolean): TourPart | null {
   if (settings === undefined) return null;
-  if (!hasVerdict) return null;
-  if (settings.reveal_walkthrough_seen_at !== null) return null;
-  return step;
+  if (isRestored) return null;
+  if (isRevealTourDone(settings.reveal_tour_stage)) return null;
+  return tourPartForStage(settings.reveal_tour_stage);
 }
 
 /**
@@ -132,29 +159,41 @@ function visibleBottomEdge(): number {
 }
 
 export function useTrainWalkthrough(input: UseTrainWalkthroughInput): UseTrainWalkthroughResult {
-  const { settings, hasVerdict, analyzeOpens, mergedChip, isDesktop, screenRef, pinnedRef } = input;
-  const { stamp } = input;
-  // Only meaningful while `resolveWalkthroughStep` reports it active;
-  // otherwise ignored. The caller resets it per puzzle so an abandoned
-  // stepper replays on the next reveal (D-12).
-  const [step, setStep] = useState<WalkthroughStep>(0);
+  const { settings, hasVerdict, analyzeOpens, isDesktop, isRestored } = input;
+  const { screenRef, pinnedRef, stamp } = input;
+  // The part latched for this reveal (see the module docstring); cleared per puzzle.
+  const [latchedPart, setLatchedPart] = useState<TourPart | null>(null);
+  // Index within the latched part. The caller resets it per puzzle so an
+  // abandoned part replays on the next reveal (D-08).
+  const [stepIndex, setStepIndex] = useState(0);
   // Phase 237 UAT (G-01): the phone overlay hides on any reveal interaction so
   // the arrows and moves it covers are readable; Next or Hilda's badge shows it
   // again. Reset per puzzle with the step.
   const [overlayHidden, setOverlayHidden] = useState(false);
-  const activeStep = resolveWalkthroughStep(settings, hasVerdict, step);
-  const context: WalkthroughContext = { analyzeOpens, mergedChip, isDesktop };
-  const target = activeStep === null ? null : walkthroughCopy(activeStep, context).spotlightTarget;
-  const isLastStep = activeStep === WALKTHROUGH_STEP_COUNT - 1;
+
+  const livePart = hasVerdict ? resolveLivePart(settings, isRestored) : null;
+  // Latch once (only while empty), so the leave stamp's cache write can never
+  // switch the part mid-reveal.
+  useEffect(() => {
+    if (livePart !== null && latchedPart === null) setLatchedPart(livePart);
+  }, [livePart, latchedPart]);
+  const part = hasVerdict ? (latchedPart ?? livePart) : null;
+  const steps = part === null ? null : tourPartSteps(part);
+  const stepCount = steps?.length ?? 0;
+  const activeStep: TourStepId | null = steps?.[stepIndex] ?? null;
+  const context: WalkthroughContext = { analyzeOpens, isDesktop };
+  const target = activeStep === null ? null : tourStepCopy(activeStep, context).spotlightTarget;
+  const isLastStep = activeStep !== null && stepIndex === stepCount - 1;
   const consumesNext = activeStep !== null && !isLastStep;
 
   const reset = useCallback(() => {
-    setStep(0);
+    setLatchedPart(null);
+    setStepIndex(0);
     setOverlayHidden(false);
   }, []);
   const consumeNext = useCallback((): boolean => {
     if (!consumesNext) return false;
-    setStep((current) => Math.min(current + 1, WALKTHROUGH_STEP_COUNT - 1) as WalkthroughStep);
+    setStepIndex((current) => current + 1);
     setOverlayHidden(false);
     return true;
   }, [consumesNext]);
@@ -186,17 +225,16 @@ export function useTrainWalkthrough(input: UseTrainWalkthroughInput): UseTrainWa
     animateScrollTop(scroller as HTMLElement, delta, prefersReducedMotion() ? 0 : WALKTHROUGH_SCROLL_DURATION_MS);
   }, [target, isDesktop, screenRef, pinnedRef]);
 
-  // D-12 (UAT round 3): the walkthrough is stamped as seen when the user
-  // LEAVES the first reveal through its last step's action row (Next or
-  // Analyze). Guarded on the LAST step so an abandoned walkthrough (unmount,
-  // reload) still replays next time; the stamp's `onSuccess` writes the
-  // settings cache, which flips `activeStep` to null (same settings-only-guard
-  // pattern plan 04 used for the intro stamp). Rewind stays inside the reveal
-  // and never completes it.
+  // D-08 (Phase 240; D-12 UAT round 3 before it): a part is stamped as done when
+  // the user LEAVES the reveal through its last step's action row (Next or
+  // Analyze). Guarded on the LAST step so an abandoned part (unmount, reload)
+  // still replays next time; the stamp's `onSuccess` writes the settings cache,
+  // which moves the live part on (the latch keeps this reveal on its own part).
+  // Rewind stays inside the reveal and never completes it.
   const leave = useCallback(() => {
-    if (!isLastStep) return;
-    stamp('reveal_walkthrough');
-  }, [isLastStep, stamp]);
+    if (!isLastStep || part === null) return;
+    stamp(REVEAL_TOUR_STAMP[part]);
+  }, [isLastStep, part, stamp]);
 
-  return { activeStep, target, context, reset, consumeNext, overlayHidden, hide, reopen, leave };
+  return { activeStep, stepIndex, stepCount, part, target, context, reset, consumeNext, overlayHidden, hide, reopen, leave };
 }

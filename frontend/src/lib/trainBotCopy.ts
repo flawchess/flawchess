@@ -32,10 +32,11 @@ import { GUESS_CALL_LABELS } from '@/lib/trainGuessLabels';
 import type { Guess } from '@/lib/trainGuessLabels';
 import { GUESS_POINTS, MOVE_TIER_POINTS } from '@/lib/trainScore';
 import type { TrainMoveTier, TrainRatingBand } from '@/lib/trainScore';
+import type { RevealTourStage } from '@/types/train';
 
 /**
- * D-05: the fixed teacher for the intro stepper (steps 2-3) and the first
- * reveal walkthrough. Always Hilda — never randomly cast.
+ * D-05: the fixed teacher for the intro stepper and the reveal tour parts.
+ * Always Hilda — never randomly cast.
  */
 export const HILDA_ID: PersonaId = 'wall-1800';
 
@@ -276,10 +277,17 @@ function audienceKey(audience: TrainCopyAudience): CopyAudienceKey {
 }
 
 /**
- * D-22 intro stepper step index. Five steps on a regular first session, six
- * on a warm-up one (`introStepCount`) — the union covers the longer run.
+ * D-22 intro stepper step index. Phase 240 D-01: two steps (welcome, then the
+ * closing prompt with the guess buttons) for every audience and for warm-up
+ * sessions alike.
  */
-export type IntroStep = 0 | 1 | 2 | 3 | 4 | 5;
+export type IntroStep = 0 | 1;
+
+/**
+ * Phase 240 D-01: the intro always has exactly two bubbles. The count never
+ * varies with warm-up or audience (only the welcome copy does).
+ */
+export const INTRO_STEP_COUNT = 2;
 
 /** D-22: the first-session intro stepper's speaking persona + copy per step. */
 export interface IntroStepCopy {
@@ -288,106 +296,40 @@ export interface IntroStepCopy {
 }
 
 /**
- * D-03: the intro welcome's copy per audience. `has_games` is today's string,
- * character for character — the existing (has-games) audience regresses
- * nowhere. The zero-game variants name the import step before anything else;
- * the guest variant additionally names sign-up, after import (ROADMAP SC 7).
+ * Phase 240 UAT: the intro welcome. It opens with a plain "Hi there!" (Tanks
+ * already welcomes the user to Train on the start screen) and carries no
+ * import or sign-up ask, so a new user is not sent away before the first
+ * puzzle; the score screen makes that ask instead. A warm-up session says so
+ * up front: its puzzles are not from the user's own games yet.
  */
-const INTRO_WELCOME_COPY: Record<CopyAudienceKey, string> = {
-  has_games:
-    'Welcome to FlawChess Train! You will improve by solving puzzles ' +
-    'created from your own games.',
-  has_games_guest:
-    'Welcome to FlawChess Train! Sign up free and you will improve by solving ' +
-    'puzzles created from your own mistakes.',
-  no_games:
-    'Welcome to FlawChess Train! Import your games and you will improve ' +
-    'by solving puzzles created from your own mistakes.',
-  no_games_guest:
-    'Welcome to FlawChess Train! Import your games and sign up, and you ' +
-    'will improve by solving puzzles created from your own mistakes.',
-};
-const INTRO_QUESTION: IntroStepCopy = {
-  personaId: HILDA_ID,
-  copy:
-    'Every puzzle starts with one question: is there only one good move ' +
-    'here, or several?',
-};
-const INTRO_VOCABULARY: IntroStepCopy = {
-  personaId: HILDA_ID,
-  copy:
-    'Only one: a single move is clearly best, all other moves are mistakes. ' +
-    'Several: a normal position, just play a good move.',
-};
-const INTRO_PRACTICE: IntroStepCopy = {
-  personaId: HILDA_ID,
-  copy:
-    "With practice, you'll learn when to slow down and calculate, and when a good " +
-    'enough move played quickly is right.',
-};
+const INTRO_WELCOME_COPY = 'Hi there! You will improve by solving puzzles created from your own games.';
+const INTRO_WARMUP_WELCOME_COPY =
+  "Hi there! Let's start with some warm-up puzzles. They're not from your own games yet.";
+
+/** Phase 240 UAT: the guess vocabulary, phrased as a legend for the "Only one"
+ * and "Several" buttons it sits above (see `introSteps`). */
+const INTRO_GUESS_LEGEND =
+  'Only one: a single move works, the others are mistakes. Several: there are at least two good moves.';
+
 /**
- * Phase 222 UAT round 3: shown only on a warm-up first session. Train unlocks
- * once an import has completed, but the analysis that finds the user's own
- * mistakes may still be running, so the session is served from warm-up
- * puzzles (`TrainSessionResponse.is_warmup`). On a first-ever session that is
- * the only cause of `is_warmup` — the "caught up" cause needs prior sessions.
+ * D-22 intro stepper, all Hilda, two steps (Phase 240 D-01, D-02): the
+ * welcome, then the closing prompt that carries the guess buttons (so it
+ * takes `sideToMove` like `promptCopy`). The guiding rule is to act within one
+ * or two taps and read later; the practice rationale waits for the first
+ * score screen. `isWarmup` (`TrainSessionResponse.is_warmup`) selects the
+ * welcome variant.
  *
- * D-03 (Phase 224): `has_games` is today's string verbatim. A zero-game
- * account is never told "we're analyzing your games" — nothing is being
- * analyzed for an account with no games at all (RESEARCH Finding C); the
- * zero-game variants say to import instead, and the guest variant adds
- * sign-up after import.
+ * Phase 240 UAT: the closing prompt defines the two calls next to their
+ * buttons (`INTRO_GUESS_LEGEND`). Tour part 1 was meant to teach them after the
+ * first move, but that step was cut as repeating the verdict box, which on
+ * phones only opens on a tap, so nothing defined the game's central question
+ * for a new user. The legend replaces the bare question, so no step is added.
  */
-const INTRO_WARMUP_COPY: Record<CopyAudienceKey, string> = {
-  has_games:
-    "We're still analyzing your games to find your mistakes. In the meantime, " +
-    "let's start with a warm-up session.",
-  has_games_guest:
-    'Guest games are not analyzed automatically, so this is a warm-up session. Sign up ' +
-    'free and your own mistakes take over.',
-  no_games:
-    'You have no games here yet, so this is a warm-up session. Import your games and your ' +
-    'own mistakes take over.',
-  no_games_guest:
-    'You have no games here yet, so this is a warm-up session. Import your games, then sign ' +
-    'up, and your own mistakes take over.',
-};
-
-/**
- * D-22 intro stepper, all Hilda (Phase 237 UAT: Tank only hosts the landing
- * greeting, Hilda runs every onboarding step). Short
- * steps rather than the CONTEXT's three: the plan 06 phone UAT showed the
- * three-step copy at 8-9 lines each in the 204px phone bubble, and the user
- * chose more Next clicks over internal scrolling (D-21 lets the copy be
- * tightened and split). The warm-up step is inserted right before the
- * closing step only when the session is a warm-up; the closing step asks
- * the actual guess question, so it takes `sideToMove` like `promptCopy`.
- * `audience` (Phase 224 D-03) selects the welcome/warm-up copy variant.
- */
-export function introSteps(
-  sideToMove: 'white' | 'black',
-  isWarmup: boolean,
-  audience: TrainCopyAudience,
-): IntroStepCopy[] {
-  const key = audienceKey(audience);
-  const steps: IntroStepCopy[] = [
-    { personaId: HILDA_ID, copy: INTRO_WELCOME_COPY[key] },
-    INTRO_QUESTION,
-    INTRO_VOCABULARY,
-    INTRO_PRACTICE,
+export function introSteps(sideToMove: 'white' | 'black', isWarmup: boolean): IntroStepCopy[] {
+  return [
+    { personaId: HILDA_ID, copy: isWarmup ? INTRO_WARMUP_WELCOME_COPY : INTRO_WELCOME_COPY },
+    { personaId: HILDA_ID, copy: `Decide first, then play. You play ${sideToMove}. ${INTRO_GUESS_LEGEND}` },
   ];
-  if (isWarmup) steps.push({ personaId: HILDA_ID, copy: INTRO_WARMUP_COPY[key] });
-  steps.push({
-    personaId: HILDA_ID,
-    copy: `Decide first, then play. Your turn. ${promptCopy(sideToMove)}`,
-  });
-  return steps;
-}
-
-/** Number of intro steps for this session (5 regular, 6 warm-up). The step
- * COUNT never varies with audience — only the welcome/warm-up copy does. */
-export function introStepCount(isWarmup: boolean, audience: TrainCopyAudience): number {
-  return introSteps('white', isWarmup, audience).length;
 }
 
 /**
@@ -400,9 +342,8 @@ export function introCopy(
   step: IntroStep,
   sideToMove: 'white' | 'black',
   isWarmup: boolean,
-  audience: TrainCopyAudience,
 ): IntroStepCopy {
-  const steps = introSteps(sideToMove, isWarmup, audience);
+  const steps = introSteps(sideToMove, isWarmup);
   const closing = steps[steps.length - 1];
   if (closing === undefined) throw new Error('introSteps: unexpectedly empty');
   return steps[step] ?? closing;
@@ -483,15 +424,20 @@ function verdictClause(correctGuess: boolean, moveQuality: TrainMoveTier, isBest
   return `${parts.guessLabel} [+${parts.guessPoints}], ${parts.moveLabel} [+${parts.movePoints}].`;
 }
 
+/** The article `verdictClauseParts` puts after "but" (`but the` / `but a`). */
+const STRIP_ARTICLE_PATTERN = /^but (the|a) /;
+
 /** Phase 237 (D-05): the phone strip's one line, the clause without the
- * point brackets ("Right call, best move"). */
+ * point brackets ("Right call, best move"). Phase 240 UAT: the strip drops
+ * the article after "but" ("Wrong call, but best move") to keep it short;
+ * the full clause in the details keeps it. */
 export function verdictStripLine(
   correctGuess: boolean,
   moveQuality: TrainMoveTier,
   isBest: boolean,
 ): string {
   const parts = verdictClauseParts(correctGuess, moveQuality, isBest);
-  return `${parts.guessLabel}, ${parts.moveLabel}`;
+  return `${parts.guessLabel}, ${parts.moveLabel.replace(STRIP_ARTICLE_PATTERN, 'but ')}`;
 }
 
 /**
@@ -526,19 +472,6 @@ export function lookCloserCopy(points: 0 | 1 | 2 | 3): string | null {
 const NEXT_SESSION_TAIL = "We'll try this one again in the next session.";
 const MASTERED_TAIL = "Three in a row. You have this one down, it won't come back.";
 const PARKED_TAIL = 'This one keeps slipping, so it is parked for now. On to positions that stick.';
-/**
- * D-23 warm-up return tail, per D-03 audience (Phase 224). `has_games` is
- * today's string verbatim.
- */
-const WARMUP_TAIL_COPY: Record<CopyAudienceKey, string> = {
-  has_games: "That one was a warm-up, so it won't come back. Your own positions will.",
-  has_games_guest: "That one was a warm-up, so it won't come back. Sign up free and your own " +
-    'positions will.',
-  no_games: "That one was a warm-up, so it won't come back. Import your games and your own " +
-    'positions will.',
-  no_games_guest: "That one was a warm-up, so it won't come back. Import your games, then sign " +
-    'up, and your own positions will.',
-};
 /** Quick 260915-sht: the non-return lines for a herring/filler solved in a
  * REGULAR session. Bug: `returnPhrase` used to return `WARMUP_TAIL` for these
  * sources unconditionally, so a user with plenty of SR items was told a
@@ -557,25 +490,24 @@ export interface ReturnPhraseInput {
   item_status?: 'active' | 'mastered' | 'parked' | null;
   due_date?: string | null;
   /** `TrainSessionResponse.is_warmup` — the SESSION is a warm-up (zero
-   * surviving SR items at composition, Phase 206 D-06/D-07). Decides whether
-   * a herring/filler tail says "warm-up" or just "won't come back". */
+   * surviving SR items at composition, Phase 206 D-06/D-07). A warm-up
+   * herring/filler gets no tail at all (Phase 240 UAT). */
   is_warmup?: boolean;
   /** `TrainSessionResponse.session_date` — the session's own calendar date. */
   session_date?: string;
   /** `TrainSessionResponse.expires_on` — the first scheduled day strictly
    * after `session_date` (`app/services/train_scheduler.py`). */
   expires_on?: string;
-  /** D-03 (Phase 224): selects the warm-up tail's audience variant. Every
-   * OTHER field on this interface stays optional for the pre-206 cached-
-   * reveal degrade path; `audience` is not optional because both call sites
-   * (`TrainSolveScreen`) always have it, built from `useUserProfile().data`. */
-  audience: TrainCopyAudience;
 }
 
 /**
  * D-15/D-16: the return-date phrase for a single solved item. Herrings and
- * fillers never return: they get the warm-up line only in a warm-up SESSION
- * (`is_warmup`), else a neutral non-return line. Status is
+ * fillers never return: in a warm-up SESSION (`is_warmup`) they get no tail,
+ * else a neutral non-return line. Phase 240 UAT dropped the warm-up tail
+ * ("That one was a warm-up, so it won't come back. ... your own positions
+ * will."): repeated on every warm-up puzzle, it was one more import/sign-up
+ * ask during the first session, and the score screen already says the
+ * session was warm-ups. Status is
  * checked strictly BEFORE any date comparison — `due_date` is a STALE value
  * for mastered/parked items (RESEARCH Finding E: `apply_result` leaves it
  * untouched on both branches), so phrasing it as a return date would lie.
@@ -585,7 +517,7 @@ export interface ReturnPhraseInput {
  */
 export function returnPhrase(input: ReturnPhraseInput): string {
   const neverReturns = input.source === 'red_herring' || input.source === 'sharp_filler';
-  if (neverReturns && input.is_warmup === true) return WARMUP_TAIL_COPY[audienceKey(input.audience)];
+  if (neverReturns && input.is_warmup === true) return '';
   if (input.source === 'red_herring') return HERRING_TAIL;
   if (input.source === 'sharp_filler') return FILLER_TAIL;
   if (input.item_status === 'mastered') return MASTERED_TAIL;
@@ -599,39 +531,73 @@ export function returnPhrase(input: ReturnPhraseInput): string {
   return `Let's see if you remember this in ${days} days.`;
 }
 
-/** D-24 first-reveal walkthrough step index (Phase 237 rewrote the six steps
- * for the chips + single move tree screen: result, chips, stepping, board,
- * "understand, don't just memorize", action bar). */
-export type WalkthroughStep = 0 | 1 | 2 | 3 | 4 | 5;
-export const WALKTHROUGH_STEP_COUNT = 6;
+/**
+ * Phase 240 (D-06): the first-reveal tour ids. The Phase 237 six-step tour is
+ * split into three parts that run on consecutive reveals (at most one per
+ * reveal, D-07): part 0 is the result, part 1 the chips + stepping, part 2
+ * sidelines, "understand, don't memorize" and Analyze. Part N finishing stamps
+ * the server's `reveal_tour_stage` to N + 1. Phase 240 UAT dropped part 0's
+ * "Next takes you to the next puzzle." step: the user had to press Next to
+ * reach it, so it taught nothing.
+ */
+export type TourStepId = 'result' | 'chips' | 'stepping' | 'sidelines' | 'understand' | 'analyze';
+export type TourPart = 0 | 1 | 2;
+
+/** Mirrors the backend `REVEAL_TOUR_STAGE_MAX`: a `reveal_tour_stage` equal to it
+ * means the whole tour is done. */
+const TOUR_PART_COUNT = 3;
+
+const TOUR_PARTS: Record<TourPart, readonly TourStepId[]> = {
+  0: ['result'],
+  1: ['chips', 'stepping'],
+  2: ['sidelines', 'understand', 'analyze'],
+};
+
+/** The ordered steps of one tour part. */
+export function tourPartSteps(part: TourPart): readonly TourStepId[] {
+  return TOUR_PARTS[part];
+}
+
+/** The part due on the next reveal for a `reveal_tour_stage`, or null once the
+ * whole tour is done (stage 3). */
+export function tourPartForStage(stage: RevealTourStage): TourPart | null {
+  return stage >= TOUR_PART_COUNT ? null : (stage as TourPart);
+}
+
+/** True once all three parts are done (D-22 also gates the landing reminder ask on it). */
+export function isRevealTourDone(stage: RevealTourStage): boolean {
+  return stage >= TOUR_PART_COUNT;
+}
 
 /**
- * Phase 237 plan 10 (D-10): what a walkthrough step spotlights.
+ * D-24 (Phase 240 D-03): what a tour step spotlights.
  *  - `verdict`: the one-line strip on phones, the verdict bubble on desktop.
- *  - `chips`: the chips row (never ringed as a row: the active chip's own ring
- *    already marks it, Phase 237 UAT). `tree`: the move list. `lines`: chips + list.
+ *  - `chips`: the chips row (spotlit too since D-20; the active chip keeps its
+ *    own selection ring). `tree`: the move list. `lines`: the chips-plus-list
+ *    region (the understand step).
  *  - `board`: the board row (free play / sidelines).
- *  - `bar`: the reveal action bar (fixed bottom bar on phones, in-flow on sm+).
+ *  - `analyze`: the Analyze button alone (Phase 240 UAT: not the whole action
+ *    bar), in flow on sm+ and in the fixed phone bar on phones (carried there
+ *    by the published payload's `spotlightAnalyze` flag).
  */
-export type WalkthroughTarget = 'verdict' | 'chips' | 'tree' | 'board' | 'lines' | 'bar';
+export type WalkthroughTarget = 'verdict' | 'chips' | 'tree' | 'board' | 'lines' | 'analyze';
 
-/** D-24: one first-reveal walkthrough step's copy + the element it spotlights. */
+/** D-24: one tour step's copy + the element it spotlights. */
 export interface WalkthroughStepCopy {
   copy: string;
   spotlightTarget: WalkthroughTarget;
 }
 
 /**
- * Phase 237 plan 10 (D-09/D-11): what is on screen, which the copy may describe
- * and nothing else. `analyzeOpens`: Analyze opens the whole game for a puzzle from
- * one of the user's own games, otherwise just the puzzle position. `mergedChip`: the second role of the merged "Move"
- * chip ("Move = Best" / "Move = Game"), null when the Move chip stands alone.
- * `isDesktop`: desktop has no strip (the verdict bubble shows the feedback
- * already), the arrow keys step the tree, and Home rewinds.
+ * Phase 237 plan 10 (D-09/D-11): the puzzle facts the copy may branch on.
+ * `analyzeOpens`: Analyze opens the whole game for a puzzle from one of the
+ * user's own games, otherwise just the puzzle position. `isDesktop`: only the
+ * result step reads it, to tell phone users the collapsed verdict strip opens
+ * on tap (the desktop card is always open). Never the chip set (Phase 240
+ * UAT): every string must hold for every combination of chips.
  */
 export interface WalkthroughContext {
   analyzeOpens: 'game' | 'position';
-  mergedChip: 'best' | 'game' | null;
   isDesktop: boolean;
 }
 
@@ -645,94 +611,87 @@ export const TOUR_ICON_TOKEN: Record<TourIcon, string> = {
   forward: '{forward}',
 };
 
-const WALKTHROUGH_RESULT_PHONE =
-  'This strip is your result: a point for the right call and up to two for the move. Tap it to read the full feedback.';
-const WALKTHROUGH_RESULT_DESKTOP =
-  'Your result is in the highlighted bubble beside the board: a point for the right call and up to two for the move.';
+// Phase 240 UAT: the result bubble only points at the verdict box. It used to
+// teach what "only one" vs "several" meant for the position just solved
+// (D-19), which repeated the box's own guess feedback. No points sentence
+// (D-05): the strip and the verdict already show the points. On phones the
+// verdict is a collapsed strip, so the bubble says it opens on tap.
+//
+// Phase 240 UAT: every other tour string is true on phone AND desktop and for
+// every chip set the reveal can show, so no other step branches on the device. The old
+// phone/desktop pairs named the bar's location ("in the bar", "under the
+// board"), keys a phone lacks, and "tap" alone; the chips step assumed three
+// chips and a second one to tap, though the Game chip is often missing and a
+// merged chip can be the only one.
+const TOUR_RESULT_DESKTOP = 'Your result is in the highlighted box. Proceed with Next when ready.';
+const TOUR_RESULT_PHONE =
+  'Your result is in the highlighted box. Tap it for details. Proceed with Next when ready.';
+const TOUR_ANALYZE_GAME =
+  'The Analyze button opens the whole game one move before the mistake, so you can see how you got there.';
+const TOUR_ANALYZE_POSITION = 'The Analyze button opens this position on the analysis board.';
 const WALKTHROUGH_CHIPS =
-  'The Move, Best, and Game chips are the lines, one per move. Tap one to focus it on the board.';
-const WALKTHROUGH_MERGED_BEST = ' "Move = Best" means you found the best move.';
-const WALKTHROUGH_MERGED_GAME = ' "Move = Game" means you played the game move.';
+  "Each chip is a line: your Move, the engine's Best, and your Game move if known. " +
+  'Same moves share a chip. Tap or click a chip to show its line.';
 // Phase 237 UAT: the bar's buttons are named by icon tokens, which the tour
 // renders as the bar's real lucide icons (`TourCopy`). Glyphs drifted from the
-// bar: ⏮ has two triangles, the bar's rewind (SkipBack) one.
-const WALKTHROUGH_STEP_PHONE =
-  `Step through the focused line with ${TOUR_ICON_TOKEN.back} ${TOUR_ICON_TOKEN.forward} in the bar, or tap a move in the list.`;
-const WALKTHROUGH_STEP_DESKTOP =
-  `Step through the focused line with ${TOUR_ICON_TOKEN.back} ${TOUR_ICON_TOKEN.forward} under the board, the arrow keys, or a tap on a move in the list.`;
-const WALKTHROUGH_BOARD_PHONE =
-  `Move a piece to try your own idea: it branches off as a sideline. ${TOUR_ICON_TOKEN.rewind} in the bar takes you back to the puzzle position.`;
-const WALKTHROUGH_BOARD_DESKTOP =
-  `Move a piece to try your own idea: it branches off as a sideline. ${TOUR_ICON_TOKEN.rewind} or Home takes you back to the puzzle position.`;
+// bar: ⏮ has two triangles, the bar's rewind (SkipBack) one. The icons are the
+// pointer, so the copy names no location (the phone bar sits at the bottom of
+// the screen, not under the board).
+const WALKTHROUGH_STEP =
+  `Step through the line with ${TOUR_ICON_TOKEN.back} ${TOUR_ICON_TOKEN.forward}, or tap or click a move in the list.`;
+const WALKTHROUGH_BOARD =
+  `Move a piece to try your own idea: it branches off as a sideline. ${TOUR_ICON_TOKEN.rewind} takes you back to the puzzle position.`;
 const WALKTHROUGH_UNDERSTAND =
   'Understanding why a move works or fails by analyzing the lines is what makes ' +
   "the pattern stick. Don't just memorize the answer.";
 
+
 /**
- * D-24: the Hilda walkthrough of the reveal, run once on the user's
- * first-ever reveal. Six steps (Phase 237 plan 10, D-09), in target order
- * verdict, chips, tree, board, lines, bar: the result, the chips, stepping,
- * sidelines + rewind, D-21's "understanding, not memorizing", and the action
- * bar. Each step stays within the phone copy budget (`STEPPER_COPY_MAX_CHARS`)
- * and only describes what is on screen for this context (D-09): no cards, no
- * Solution button, Analyze only when the puzzle has it, a merged chip only when
- * it is shown.
+ * D-24 (Phase 240 D-06/D-07): the Hilda tour of the reveal, three parts on
+ * consecutive reveals, at most one per reveal. Each step stays within the phone
+ * copy budget (`STEPPER_COPY_MAX_CHARS`) and only describes what is on screen
+ * for this context (Phase 237 D-09): no cards, no Solution button, and the same
+ * words on phone and desktop (Phase 240 UAT).
  */
-export function walkthroughCopy(
-  step: WalkthroughStep,
-  ctx: WalkthroughContext,
-): WalkthroughStepCopy {
+export function tourStepCopy(step: TourStepId, ctx: WalkthroughContext): WalkthroughStepCopy {
   switch (step) {
-    case 0:
+    case 'result':
       return {
         spotlightTarget: 'verdict',
-        copy: ctx.isDesktop ? WALKTHROUGH_RESULT_DESKTOP : WALKTHROUGH_RESULT_PHONE,
+        copy: ctx.isDesktop ? TOUR_RESULT_DESKTOP : TOUR_RESULT_PHONE,
       };
-    case 1:
-      return { spotlightTarget: 'chips', copy: WALKTHROUGH_CHIPS + mergedChipSentence(ctx.mergedChip) };
-    case 2:
-      return {
-        spotlightTarget: 'tree',
-        copy: ctx.isDesktop ? WALKTHROUGH_STEP_DESKTOP : WALKTHROUGH_STEP_PHONE,
-      };
-    case 3:
-      return {
-        spotlightTarget: 'board',
-        copy: ctx.isDesktop ? WALKTHROUGH_BOARD_DESKTOP : WALKTHROUGH_BOARD_PHONE,
-      };
-    case 4:
+    case 'chips':
+      return { spotlightTarget: 'chips', copy: WALKTHROUGH_CHIPS };
+    case 'stepping':
+      return { spotlightTarget: 'tree', copy: WALKTHROUGH_STEP };
+    case 'sidelines':
+      return { spotlightTarget: 'board', copy: WALKTHROUGH_BOARD };
+    case 'understand':
       return { spotlightTarget: 'lines', copy: WALKTHROUGH_UNDERSTAND };
-    case 5:
-      return { spotlightTarget: 'bar', copy: walkthroughActionsCopy(ctx.analyzeOpens) };
+    case 'analyze':
+      return {
+        spotlightTarget: 'analyze',
+        copy: ctx.analyzeOpens === 'game' ? TOUR_ANALYZE_GAME : TOUR_ANALYZE_POSITION,
+      };
   }
-}
-
-/** The merged-chip explanation, only for the merged chip actually on screen. */
-function mergedChipSentence(mergedChip: WalkthroughContext['mergedChip']): string {
-  if (mergedChip === 'best') return WALKTHROUGH_MERGED_BEST;
-  if (mergedChip === 'game') return WALKTHROUGH_MERGED_GAME;
-  return '';
-}
-
-const WALKTHROUGH_NEXT_PART = 'Next takes you to the next puzzle.';
-/** The last walkthrough step: what Analyze opens on this puzzle, then Next. */
-function walkthroughActionsCopy(analyzeOpens: WalkthroughContext['analyzeOpens']): string {
-  if (analyzeOpens === 'game') {
-    return `The Analyze button opens the whole game one move before the mistake. ${WALKTHROUGH_NEXT_PART}`;
-  }
-  return `The Analyze button opens this position on the analysis board. ${WALKTHROUGH_NEXT_PART}`;
 }
 
 /**
  * D-21 named three must-survive messages for the first completed session:
  * origin ("these come from your own mistakes"), goal ("understanding, not
  * memorizing") and habit. Phase 222 UAT round 6 cut the first two from the
- * score bubble: at five lines it pushed the session score below the fold on
- * a phone, and the origin/goal messages are already told by the solve-loop
- * intro stepper and walkthrough. Only the habit sentence survives here, as
- * the lead-in to the reminder ask.
+ * score bubble (five lines pushed the session score below the fold on a
+ * phone; the origin/goal messages are told by the intro and the reveal tour).
+ * Phase 240 D-16 brings the practice rationale back into LINE 1 as one short
+ * sentence (`PRACTICE_RATIONALE`), so the bubble stays at two lines. The habit
+ * sentence stays as the lead-in to the reminder ask in line 2.
  */
 const MUST_SURVIVE_HABIT = 'Reminders build the habit that makes Train work.';
+
+/** Phase 240 D-16/D-19: why Train practices at all, said once in line 1 of
+ * the first completed session (every branch, D-17). */
+const PRACTICE_RATIONALE =
+  'Practice teaches you when to calculate and when a quick good move is enough.';
 
 /** The reminder ask, per `ReminderAsk`. `scan_qr` names the QR block the
  * desktop score screen renders below the button row (`useTrainReminderSlot`),
@@ -766,7 +725,9 @@ const WARMUP_SCORE_CLAUSE: Record<CopyAudienceKey, string> = {
   // line, so this clause only states why there are no own mistakes yet.
   has_games_guest: 'Guest games are not analyzed automatically, so your own mistakes are not here yet.',
   no_games: 'Import your games and your own mistakes take over.',
-  no_games_guest: 'Import your games, then sign up, and your own mistakes take over.',
+  // UAT 240: empty on purpose. The sign-up line below already says the guest's
+  // own blunders replace the warm-ups; repeating it here read as a double ask.
+  no_games_guest: '',
 };
 
 /**
@@ -811,23 +772,11 @@ function sessionOpener(band: TrainRatingBand | null): string {
   return band === null ? SESSION_OPENER_NEUTRAL : SESSION_OPENER[band];
 }
 
-/** One item this session's outcome, enough to classify its return bucket
- * (D-16) — mirrors the fields `SolvedResult` gains in a later plan task. */
-export interface ScoreBubbleOutcome {
-  source: 'sr_item' | 'red_herring' | 'sharp_filler';
-  item_status: 'active' | 'mastered' | 'parked' | null;
-  due_date: string | null;
-}
-
 export type ReminderAsk = 'remind_me' | 'scan_qr' | 'none';
 
 export interface ScoreBubbleInput {
-  /** Every item solved this session (D-17/RESEARCH Finding C). */
-  outcomes: ScoreBubbleOutcome[];
   /** Count of items NOT fully correct this session (guess or move wrong) —
-   * drives the "nothing missed" variant. Tracked separately from `outcomes`
-   * because a fully-correct item still returns later (D-18), so "returning"
-   * and "missed" are independent facts. */
+   * drives the "nothing missed" variant. */
   missedCount: number;
   isFirstCompletedSession: boolean;
   /** D-25: a warm-up session has zero surviving SR items — mirrors
@@ -844,8 +793,6 @@ export interface ScoreBubbleInput {
    * variant except nothing-missed — `null` when nothing was scored
    * (`max === 0`). */
   band: TrainRatingBand | null;
-  session_date: string;
-  expires_on: string;
   /** D-03/S-3 (Phase 224): selects the warm-up variant's copy AND, when
    * `isGuest` is true, replaces the warm-up reminder ask with
    * `GUEST_SIGNUP_ASK_SCORE` (D-13: a guest gets no reminder slot). */
@@ -854,38 +801,6 @@ export interface ScoreBubbleInput {
 
 export interface ScoreBubbleCopy {
   lines: string[];
-}
-
-/**
- * D-18: groups returning `sr_item`/`active` outcomes by WHEN they return
- * ("next session" vs "in N days") — never by position identifier. Mastered,
- * parked, and non-`sr_item` sources never return (D-16) and are excluded.
- * Guard-clause `continue` per loop iteration, never a nested `if` (CLAUDE.md
- * nested-loop guidance).
- */
-function returningCountsSentence(input: ScoreBubbleInput): string {
-  let nextSessionCount = 0;
-  const laterCounts = new Map<number, number>();
-  for (const outcome of input.outcomes) {
-    if (outcome.source !== 'sr_item') continue;
-    if (outcome.item_status !== 'active') continue;
-    if (outcome.due_date == null) continue;
-    if (outcome.due_date <= input.expires_on) {
-      nextSessionCount += 1;
-      continue;
-    }
-    const days = differenceInCalendarDays(parseISO(outcome.due_date), parseISO(input.session_date));
-    laterCounts.set(days, (laterCounts.get(days) ?? 0) + 1);
-  }
-  const parts: string[] = [];
-  if (nextSessionCount > 0) {
-    parts.push(`${nextSessionCount} come${nextSessionCount === 1 ? 's' : ''} back next session`);
-  }
-  for (const [days, count] of [...laterCounts.entries()].sort((a, b) => a[0] - b[0])) {
-    parts.push(`${count} in ${days} days`);
-  }
-  if (parts.length === 0) return 'Nothing else is coming back yet.';
-  return `${parts.join(', ')}.`;
 }
 
 /** 2026-09-28: closes a perfect later session when there is no reminder ask
@@ -912,17 +827,30 @@ function nothingMissedReminderAsk(input: ScoreBubbleInput): string[] {
 }
 
 /**
- * D-25/D-18: the score screen's bubble copy — four mutually exclusive
+ * D-25/D-19: the score screen's bubble copy — four mutually exclusive
  * variants, evaluated in this precedence order: warm-up session, nothing
- * missed, first completed session (result + returns, then the habit
- * sentence and reminder ask), later session (one-liner).
+ * missed, first completed session (result + the practice rationale, then the
+ * habit sentence and reminder ask), later session (one-liner). Phase 240
+ * D-16/D-17: the rationale sits in line 1 of the first completed session in
+ * the warm-up, perfect and regular branches alike. D-18: no variant says how
+ * many puzzles come back or when (the per-puzzle verdict tails still do). The
+ * bubble never exceeds two lines.
  */
 export function scoreBubbleCopy(input: ScoreBubbleInput): ScoreBubbleCopy {
+  const first = input.isFirstCompletedSession;
   if (input.isWarmup) {
     const key = audienceKey(input.audience);
-    const opening =
-      `${sessionOpener(input.band)} Those were warm-ups, nothing to bring back yet. ` +
-      WARMUP_SCORE_CLAUSE[key];
+    const opener = sessionOpener(input.band);
+    // UAT 240: a guest's sign-up line already says "instead of warm-ups", so
+    // the guest opening skips the warm-up note rather than saying it twice.
+    const warmupNote = input.audience.isGuest
+      ? ''
+      : first
+        ? 'Those were warm-ups.'
+        : 'Those were warm-ups, nothing to bring back yet.';
+    const opening = [opener, first ? PRACTICE_RATIONALE : '', warmupNote, WARMUP_SCORE_CLAUSE[key]]
+      .filter((part) => part !== '')
+      .join(' ');
     // Quick task 260926-8p5: a registered zero-game account gets the
     // "Import games" button in the bubble instead of a second line. The
     // reminder ask ("so the habit is there when they arrive") promised
@@ -937,17 +865,17 @@ export function scoreBubbleCopy(input: ScoreBubbleInput): ScoreBubbleCopy {
       ],
     };
   }
-  const returning = returningCountsSentence(input);
   if (input.missedCount === 0) {
-    return { lines: [`Nothing got away today. ${returning}`, ...nothingMissedReminderAsk(input)] };
+    const lead = first ? `Nothing got away today. ${PRACTICE_RATIONALE}` : 'Nothing got away today.';
+    return { lines: [lead, ...nothingMissedReminderAsk(input)] };
   }
-  if (input.isFirstCompletedSession) {
+  if (first) {
     return {
       lines: [
-        `${sessionOpener(input.band)} ${returning}`,
+        `${sessionOpener(input.band)} ${PRACTICE_RATIONALE}`,
         `${MUST_SURVIVE_HABIT} ${REMINDER_ASK_COPY[input.reminderAsk]}`,
       ],
     };
   }
-  return { lines: [`${sessionOpener(input.band)} ${returning} See you tomorrow.`] };
+  return { lines: [`${sessionOpener(input.band)} See you tomorrow.`] };
 }

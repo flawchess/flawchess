@@ -14,7 +14,7 @@
 
 import type { ReactElement, ReactNode } from 'react';
 import { returnPhrase, verdictClauseParts } from '@/lib/trainBotCopy';
-import type { TrainCopyAudience, VerdictCopy } from '@/lib/trainBotCopy';
+import type { VerdictCopy } from '@/lib/trainBotCopy';
 import { TRAIN_VERDICT_CORRECT, TRAIN_VERDICT_INCORRECT } from '@/lib/theme';
 import { GUESS_CALL_LABELS } from '@/lib/trainGuessLabels';
 import type { Guess } from '@/lib/trainGuessLabels';
@@ -52,7 +52,6 @@ export interface TrainVerdictDetailsProps {
   sessionDate: string | undefined;
   expiresOn: string | undefined;
   isWarmup: boolean;
-  audience: TrainCopyAudience;
   guess: Guess | null;
   guessProse: string | null;
   motif: string | null;
@@ -85,11 +84,7 @@ function VerdictParagraph({
   sessionDate,
   expiresOn,
   isWarmup,
-  audience,
-}: Pick<
-  TrainVerdictDetailsProps,
-  'verdict' | 'opening' | 'isBest' | 'sessionDate' | 'expiresOn' | 'isWarmup' | 'audience'
->): ReactElement {
+}: Pick<TrainVerdictDetailsProps, 'verdict' | 'opening' | 'isBest' | 'sessionDate' | 'expiresOn' | 'isWarmup'>): ReactElement {
   const clause = verdictClauseParts(verdict.correct_guess, verdict.move_quality, isBest);
   const returnTail =
     verdict.source === undefined
@@ -101,7 +96,6 @@ function VerdictParagraph({
           is_warmup: isWarmup,
           session_date: sessionDate,
           expires_on: expiresOn,
-          audience,
         });
   // D-16: a mastered/parked/herring/filler item's tail explains WHY it won't
   // return — it is not itself a return promise. `train-bot-return-tail`
@@ -145,7 +139,6 @@ export function TrainVerdictDetails({
   sessionDate,
   expiresOn,
   isWarmup,
-  audience,
   guess,
   guessProse,
   motif,
@@ -165,7 +158,6 @@ export function TrainVerdictDetails({
           sessionDate={sessionDate}
           expiresOn={expiresOn}
           isWarmup={isWarmup}
-          audience={audience}
         />
       </div>
       <div className="flex flex-col gap-2 border-t border-border pt-2" data-testid="train-verdict-guess">

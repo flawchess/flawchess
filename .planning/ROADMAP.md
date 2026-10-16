@@ -275,11 +275,26 @@ Locked design in SEED-200.
 
 **Depends on**: nothing in flight (builds on Phase 222 onboarding and Phase 237 reveal tour)
 **Requirements**: TBD (coverage contract = CONTEXT decisions from discuss-phase)
-**Plans:** 0 plans
-**Status**: Not planned yet
+**Plans:** 7/7 plans executed
+**Status**: Planned
 
 Plans:
-- [ ] TBD (run /gsd-discuss-phase 240 or /gsd-plan-phase 240)
+**Wave 1**
+- [x] 240-01-PLAN.md — Backend: reveal_tour_stage counter replaces the walkthrough timestamp (migration, forward-only onboarding advance, settings response)
+- [x] 240-03-PLAN.md — Frontend: three-part reveal tour model and hook, part 1 (only one / several) end to end, landing gate and the stage field swap
+
+**Wave 2** *(blocked on Wave 1 completion)*
+- [x] 240-02-PLAN.md — Backend: first-ever session opens on a sharp puzzle, a several puzzle at 2 or 3
+- [x] 240-04-PLAN.md — Frontend: tour parts 2 and 3 end to end, one part per reveal, abandon replay, the D-19 tour copy matrix
+
+**Wave 3** *(blocked on Wave 2 completion)*
+- [x] 240-05-PLAN.md — Frontend: two-bubble intro; score screen rationale in line 1, no returning counts, sr_explained in any branch
+
+**Wave 4** *(blocked on Wave 3 completion)*
+- [x] 240-06-PLAN.md — Frontend: one shared pulsing bronze spotlight on every tour target, incl. chips row and phone bar
+
+**Wave 5** *(blocked on Wave 4 completion)*
+- [x] 240-07-PLAN.md — Close-out: CHANGELOG, pre-merge gate, browser walkthrough, pre-deploy funnel snapshot (orchestrator)
 
 Phase detail for every shipped milestone lives in `milestones/vX.Y-ROADMAP.md`, its phase directories in `milestones/vX.Y-phases/`, and the per-milestone summaries in [MILESTONES.md](MILESTONES.md).
 

@@ -1,6 +1,10 @@
 /**
- * TrainTourOverlay — Phase 237 UAT (G-01): Hilda's first-reveal tour, drawn ON
- * the board instead of in the page flow. On phones the strip and the chips it
+ * TrainTourOverlay — Phase 237 UAT (G-01): Hilda's reveal tour, drawn ON
+ * the board instead of in the page flow. Since Phase 240 (D-06) the tour is
+ * three parts on consecutive reveals, at most one part per reveal: part 1 is the
+ * result bubble and the Next bubble, part 2 the chips and stepping bubbles, part
+ * 3 sidelines, "understand" and Analyze. The overlay renders whichever step the
+ * active part is on and counts per part ("1 / 2", D-23), never across the tour. On phones the strip and the chips it
  * talks about fit under the board without scrolling; on desktop it keeps Hilda
  * from stacking a second avatar on top of the verdict bubble.
  *
@@ -58,8 +62,11 @@ function TourCopy({ copy }: { copy: string }): ReactElement {
   );
 }
 
-/** "2 / 6": where the user is in the tour, since its Next lives in the bar. */
-function TourStepCount({ step, stepCount }: { step: number; stepCount: number }): ReactElement {
+/** "1 / 2": where the user is in the part on screen (D-23: the counter is per
+ * part, so 2 / 2, 1 / 3 and so on), since the tour's Next lives in the bar.
+ * A one-step part (part 1 since the Phase 240 UAT) shows no "1 / 1". */
+function TourStepCount({ step, stepCount }: { step: number; stepCount: number }): ReactElement | null {
+  if (stepCount <= 1) return null;
   return (
     <span className="text-sm text-muted-foreground" data-testid="train-tour-step-count">
       {step + 1} / {stepCount}

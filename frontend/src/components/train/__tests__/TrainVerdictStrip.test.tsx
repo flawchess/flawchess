@@ -58,7 +58,6 @@ function renderStrip(onExpand?: () => void): void {
         sessionDate="2026-07-27"
         expiresOn={undefined}
         isWarmup={false}
-        audience={{ hasGames: true, isGuest: false }}
         guess="critical"
         guessProse="You spotted the only move."
         motif={null}

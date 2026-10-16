@@ -107,6 +107,12 @@ _DAYS_IN_WEEK: int = 7
 # returns.
 SHIELD_CAP: int = 7
 
+# Phase 240 (D-06/D-09): the number of reveal-tour parts. `reveal_tour_stage`
+# counts completed parts, so a stage of REVEAL_TOUR_STAGE_MAX means the whole
+# tour is done. The single source of truth for the model's CHECK; the frontend
+# mirrors it as `TOUR_PART_COUNT`.
+REVEAL_TOUR_STAGE_MAX: int = 3
+
 # Phase 201 (REMIND-01, D-18): default state for a never-configured user's
 # reminder settings. `DEFAULT_REMINDER_HOUR` (18) is REMIND-01's stated
 # default local hour -- the single source of truth for the model's

@@ -18,7 +18,7 @@ import { TrainScoreChip } from '@/components/train/TrainVerdictDetails';
 import { trackFeature } from '@/lib/analytics';
 import { placeholderAvatarFor, resolveAvatarSrc } from '@/lib/personas/personaAvatars';
 import type { Persona } from '@/lib/personas/personaRegistry';
-import { TRAIN_BUBBLE_BORDER } from '@/lib/theme';
+import { TOUR_SPOTLIGHT_CLASS, TRAIN_BUBBLE_BORDER } from '@/lib/theme';
 import { cn } from '@/lib/utils';
 
 /** The strip's avatar is smaller than the 40px points-flash face (sketch 008). */
@@ -32,8 +32,8 @@ export interface TrainVerdictStripProps {
   line: string;
   /** Called once per collapsed -> open transition (the board owner's telemetry). */
   onExpand?: () => void;
-  /** Phase 237 plan 10 (D-10): the first-reveal tour spotlights the strip. */
-  ring?: boolean;
+  /** Phase 240 D-20: the reveal tour spotlights the strip with the shared glow. */
+  spotlight?: boolean;
   /** The expansion body (`TrainVerdictDetails`). */
   children: ReactNode;
 }
@@ -43,7 +43,7 @@ export function TrainVerdictStrip({
   points,
   line,
   onExpand,
-  ring = false,
+  spotlight = false,
   children,
 }: TrainVerdictStripProps): ReactElement {
   const [expanded, setExpanded] = useState(false);
@@ -60,7 +60,7 @@ export function TrainVerdictStrip({
 
   return (
     <div
-      className={cn('w-full rounded-2xl border-2 bg-background', ring && 'ring-2 ring-brand-brown')}
+      className={cn('w-full rounded-2xl border-2 bg-background', spotlight && TOUR_SPOTLIGHT_CLASS)}
       style={{ borderColor: TRAIN_BUBBLE_BORDER }}
       data-testid="train-verdict-strip-root"
     >
@@ -115,8 +115,8 @@ const CARD_AVATAR_CLASS = 'size-15 text-3xl';
 
 export interface TrainVerdictCardProps {
   persona: Persona;
-  /** Phase 237 plan 10 (D-10): the first-reveal tour spotlights the card. */
-  ring?: boolean;
+  /** Phase 240 D-20: the reveal tour spotlights the card with the shared glow. */
+  spotlight?: boolean;
   /** Renders the verdict body with the floated avatar as its `leading` slot. */
   renderDetails: (avatar: ReactNode) => ReactNode;
 }
@@ -127,7 +127,7 @@ export interface TrainVerdictCardProps {
  * avatar floats left of the verdict paragraph, and the Your-call block below
  * the separator uses the whole width. Replaces the avatar-column speech bubble.
  */
-export function TrainVerdictCard({ persona, ring = false, renderDetails }: TrainVerdictCardProps): ReactElement {
+export function TrainVerdictCard({ persona, spotlight = false, renderDetails }: TrainVerdictCardProps): ReactElement {
   const avatar = placeholderAvatarFor(persona);
   const avatarSrc = resolveAvatarSrc(persona);
   const avatarNode = (
@@ -149,7 +149,7 @@ export function TrainVerdictCard({ persona, ring = false, renderDetails }: Train
     <div
       role="group"
       aria-label={persona.name}
-      className={cn('w-full rounded-2xl border-2 bg-background px-4 py-3 text-sm', ring && 'ring-2 ring-brand-brown')}
+      className={cn('w-full rounded-2xl border-2 bg-background px-4 py-3 text-sm', spotlight && TOUR_SPOTLIGHT_CLASS)}
       style={{ borderColor: TRAIN_BUBBLE_BORDER }}
       data-testid="train-verdict-card"
     >

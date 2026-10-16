@@ -132,8 +132,9 @@ export function TrainLineChips({
       role="group"
       aria-label="Lines"
       data-testid="train-line-chips"
-      // Phase 237 UAT: no row ring for the tour; the active chip's own ring
-      // already marks the row, and a second border around it read as clutter.
+      // Phase 240 D-20: the tour spotlights this row through the wrapper
+      // carrying data-tour-target="chips" (TrainReveal); the active chip keeps
+      // its own selection ring below.
       className="grid grid-flow-col auto-cols-fr gap-2"
     >
       {chips.map((chip) => (

@@ -498,6 +498,8 @@ function renderBoardControlsBar(boardControls: MobileBoardControls): ReactElemen
         analyzeTo={boardControls.analyzeTo ?? null}
         onAnalyzeClick={boardControls.onAnalyzeClick ?? (() => {})}
         onNext={boardControls.onNext}
+        // Phase 240 UAT: the tour's Analyze step spotlights the Analyze button alone.
+        spotlightAnalyze={boardControls.spotlightAnalyze === true}
         className="flex-1"
       />
     );
@@ -795,10 +797,9 @@ function ProtectedLayout() {
   }, []);
 
   // HANDOFF-02/D-12: capture the desktop→phone QR handoff marker as early as
-  // possible on first load, mirroring how googleAuth.ts's promote_intent is
-  // captured before its own SSO hop — ProtectedLayout is the stable mount
-  // point that sees the raw URL on arrival, before Google's redirect chain
-  // strips the query string.
+  // possible on first load — ProtectedLayout is the stable mount point that
+  // sees the raw URL on arrival, before Google's redirect chain strips the
+  // query string.
   useEffect(() => {
     captureHandoffMarker(window.location.search);
   }, []);

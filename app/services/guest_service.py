@@ -76,7 +76,8 @@ async def promote_guest_with_password(
     """Promote a guest account to a full email/password account in-place.
 
     Updates the user row: sets is_guest=False, is_verified=False,
-    promoted_at=now(), stores the new email and an argon2id-hashed password.
+    promoted_at=now(), bumps token_version (revoking the guest JWT), stores the new
+    email and an argon2id-hashed password.
     Issues a standard 7-day JWT via auth_backend (not the guest 30-day
     strategy).
 
@@ -116,6 +117,11 @@ async def promote_guest_with_password(
             email=email,
             hashed_password=hashed_password,
             is_guest=False,
+            # Promotion can now start from any persisted guest_token (quick 261016-fwd),
+            # so the long-lived (365-day) guest JWT must stop authenticating the
+            # now-registered account. The refresh below gives the returned JWT the new
+            # version.
+            token_version=User.token_version + 1,
             # Security fix (review 2026-10-14): was True, but nothing proves the
             # promoting guest owns this address. An unverified account has its
             # password replaced if Google later links to it (UserManager.google_sign_in).
@@ -157,7 +163,7 @@ async def promote_guest_with_google(
     """Promote a guest account to a Google-linked full account in-place.
 
     Updates the user row: sets is_guest=False, is_verified=True,
-    promoted_at=now(), stores the Google email, and clears hashed_password
+    promoted_at=now(), bumps token_version (revoking the guest JWT), stores the Google email, and clears hashed_password
     (Google users authenticate via OAuth only). Inserts an OAuthAccount row
     linking the Google account to this user's ID. Issues a standard 7-day
     JWT via auth_backend.
@@ -185,6 +191,8 @@ async def promote_guest_with_google(
             email=account_email,
             hashed_password="",  # Google users have no password
             is_guest=False,
+            # Revoke the long-lived guest JWT, same reason as promote_guest_with_password.
+            token_version=User.token_version + 1,
             is_verified=True,
             promoted_at=func.now(),
         )

@@ -15,6 +15,10 @@ in `YYYY-MM-DD` (Europe/Zurich).
 
 ### Changed
 
+- Train: your first session asks less of you before you play. Two intro bubbles, then the guess, with a short explanation of what "Only one" and "Several" mean right above the buttons. The first puzzle of your first session is one where only one move works, and a puzzle with several good moves shows up as puzzle 2 or 3, so the first results teach both cases.
+- Train: the walkthrough of the result screen is now split over your first three reveals. The first one only points you to your result, the next two take two or three short steps each, and a pulsing gold highlight marks what each step explains. The reminder prompt waits until you have seen all three parts.
+- Train: as a guest, the sign-up ask on the Train page now waits until you have finished a session. The sign-up and import asks now also show on phones.
+- Train: your first finished session ends with a line on why practice matters, and the score screen no longer lists how many puzzles come back.
 - Library Stats: while fewer than 98% of the selected time control's games are analyzed, the coverage line at the top is highlighted and says the stats below will keep updating as analysis continues (guests see that only analyzed games are counted). Once analysis is complete it reads "All N games … are analyzed." Right after an import, before any game is analyzed, it shows "0 of N games analyzed" instead of only "No analyzed games". The analysis-in-progress banner is also easier to read on the dark theme.
 - Library Stats: the typical range for each flaw comparison is now measured on games of the selected time control, so bullet and blitz get their own ranges instead of the rapid one. Ranges are narrower in fast games and wider in classical, where flaw rates vary more between players.
 - Library Stats now compares you with your opponents in plain words: one gap bar per metric ("1.7 fewer" style), fewer flaws to the left, a grey typical range centred on zero, and the details behind the search icon.
@@ -43,6 +47,8 @@ in `YYYY-MM-DD` (Europe/Zurich).
 
 ### Fixed
 
+- Signing up with Google after using FlawChess as a guest now keeps your guest data even if you logged out first or retried the Google sign-in, instead of creating a second, empty account. If your Google account already has a FlawChess account, you are signed into it.
+- Library Flaws: the "Sign up free" button shown to guests when no game is analyzed yet now opens the sign-up page instead of doing nothing.
 - Shelly's endgame report is no longer written twice when you reload the Endgames page while it is being generated.
 - Analysis engine no longer restarts its Stockfish workers when the tab sits in the background, so a search left running in another tab keeps its results instead of losing them.
 - Google sign-in no longer shows a server error page when Google rejects the sign-in code (for example after a doubled redirect on Android). You land back on the login page with a "Google sign-in failed. Please try again." message.

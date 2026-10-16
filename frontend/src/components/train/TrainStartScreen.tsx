@@ -42,6 +42,7 @@ import {
   GUEST_SIGNUP_ASK_SCORE,
   IMPORT_ASK_LANDING,
   REMINDER_INSTALL_ASK,
+  isRevealTourDone,
   landingHost,
 } from '@/lib/trainBotCopy';
 import { TRAIN_POINTS_PER_PUZZLE } from '@/lib/trainScore';
@@ -212,6 +213,8 @@ function resolveLandingState(
  * sees on landing and on finishing are literally the same words. This
  * replaced the "Warm-up session" info card, which told guests their games
  * were being analyzed although nothing is analyzed for a guest.
+ * Phase 240 UAT: hidden until the guest has completed a session (today's, or
+ * an earlier one stamped `sr_explained_at`), and shown on phones too.
  *
  * 2026-09-18: a registered account with no push subscription from a phone
  * (`has_mobile_subscription === false`, account-wide) gets the reminder ask
@@ -231,11 +234,14 @@ function TrainHeader({
   isGuest,
   hasGames,
   feedbackAskDays,
+  sessionCompleted,
 }: {
   session: TrainSessionResponse | null;
   isGuest: boolean;
   hasGames: boolean;
   feedbackAskDays: number | null;
+  /** Today's session is done (the 'completed' landing state). */
+  sessionCompleted: boolean;
 }): ReactElement {
   const { data: settings } = useTrainSettings();
   const host = landingHost({
@@ -246,17 +252,28 @@ function TrainHeader({
   // in place of the reminder ask, the first step before Train has anything of
   // its own to serve.
   const showImportAsk = !isGuest && !hasGames;
-  // Phase 237 UAT: the install/reminder ask waits until onboarding is over (the
-  // reveal walkthrough completed), so a first visit only reads Tank's welcome.
-  const onboardingDone = settings?.reveal_walkthrough_seen_at != null;
+  // Phase 237 UAT: the install/reminder ask waits until onboarding is over, so a
+  // first visit only reads Tank's welcome. Phase 240 D-22: that means the whole
+  // three-part reveal tour is done, not just its first part.
+  const onboardingDone = settings !== undefined && isRevealTourDone(settings.reveal_tour_stage);
   const showReminderAsk =
     !isGuest && !showImportAsk && onboardingDone && settings?.has_mobile_subscription === false;
+  // Phase 240 UAT: the guest sign-up ask (sentence and buttons) waits until the
+  // guest has completed a session, so they try Train before being asked to
+  // sign up. `sr_explained_at` is stamped by the first completed session's
+  // score screen, warm-up sessions included, but a reload around the end of
+  // the session skips that screen (and its stamp), so today's completed
+  // landing counts on its own.
+  const showSignupAsk = isGuest && (sessionCompleted || settings?.sr_explained_at != null);
   // Quick 261004-dta: on a phone the avatar + bubble pushed the streak card and
-  // its Start button below the fold. Only Tank's intro (intro stepper not yet
-  // completed) keeps it there; the sign-up/import/install asks it would carry
-  // are repeated on the session score screen. Gated on loaded settings so a
-  // returning user's bubble never flashes in before hiding.
+  // its Start button below the fold, so the bubble is phone-hidden. Tank's intro
+  // (intro stepper not yet completed) keeps it there, and so do the sign-up and
+  // import asks (Phase 240 UAT: their buttons are the next step for a guest or a
+  // zero-game account, worth the push-down). The reminder-install ask stays
+  // desktop-only. Gated on loaded settings so a returning user's bubble never
+  // flashes in before hiding.
   const isIntroHost = settings != null && settings.intro_seen_at == null;
+  const keepOnPhone = isIntroHost || showSignupAsk || showImportAsk;
   // D-04: Tank's intro wins; Hilda takes the host only once the intro stepper is
   // completed. Requiring LOADED settings also means no view is counted on a
   // render that would flip to Tank a moment later.
@@ -266,7 +283,7 @@ function TrainHeader({
     <div
       // SEED-191 #3: the ask shows on phones while active, accepting that it
       // pushes the streak card down; otherwise the phone-hiding rule is unchanged.
-      className={cn('w-full', !isIntroHost && askDays == null && 'max-sm:hidden')}
+      className={cn('w-full', !keepOnPhone && askDays == null && 'max-sm:hidden')}
       data-testid="train-landing-host"
     >
       {askDays != null ? (
@@ -279,10 +296,12 @@ function TrainHeader({
           persona={host.persona}
           state="prompt"
           avatarSize="large"
-          actions={landingActions(isGuest, showImportAsk)}
+          actions={landingActions(showSignupAsk, showImportAsk)}
         >
           <p data-testid="train-tagline">{host.copy}</p>
-          {isGuest && <p data-testid="train-landing-signup-ask">{GUEST_SIGNUP_ASK_SCORE}</p>}
+          {showSignupAsk && (
+            <p data-testid="train-landing-signup-ask">{GUEST_SIGNUP_ASK_SCORE}</p>
+          )}
           {showImportAsk && <p data-testid="train-landing-import-ask">{IMPORT_ASK_LANDING}</p>}
           {showReminderAsk && (
             <p data-testid="train-landing-reminder-ask">{REMINDER_INSTALL_ASK}</p>
@@ -293,8 +312,8 @@ function TrainHeader({
   );
 }
 
-function landingActions(isGuest: boolean, showImportAsk: boolean): ReactElement | undefined {
-  if (isGuest) return <SignupAskActions source="train-landing" />;
+function landingActions(showSignupAsk: boolean, showImportAsk: boolean): ReactElement | undefined {
+  if (showSignupAsk) return <SignupAskActions source="train-landing" />;
   if (showImportAsk) return <ImportAskActions source="train-landing" />;
   return undefined;
 }
@@ -416,6 +435,7 @@ export function TrainStartScreen({
           isGuest={isGuest}
           hasGames={hasGames}
           feedbackAskDays={feedbackAskDays}
+          sessionCompleted
         />
         <TrainStreakCard />
         <TrainScheduleSettings
@@ -447,11 +467,12 @@ export function TrainStartScreen({
       <TrainMedalDialogHost isGuest={isGuest} />
       <TrainReminderResurfaceBanner />
       <TrainHeader
-          session={session}
-          isGuest={isGuest}
-          hasGames={hasGames}
-          feedbackAskDays={feedbackAskDays}
-        />
+        session={session}
+        isGuest={isGuest}
+        hasGames={hasGames}
+        feedbackAskDays={feedbackAskDays}
+        sessionCompleted={false}
+      />
       <TrainStreakCard
         action={
           <Button

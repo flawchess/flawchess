@@ -61,13 +61,14 @@ describe('useAuth logout', () => {
 });
 
 describe('useAuth logoutForPromotion', () => {
-  it('clears auth_token, sets promote_intent, and leaves navigation to the caller', () => {
+  it('clears auth_token, keeps guest_token, and leaves navigation to the caller', () => {
+    localStorage.setItem('guest_token', 'guest-token-value');
     const { result } = renderHook(() => useAuth(), { wrapper });
     act(() => {
       result.current.logoutForPromotion();
     });
     expect(localStorage.getItem('auth_token')).toBeNull();
-    expect(sessionStorage.getItem('promote_intent')).toBe('1');
+    expect(localStorage.getItem('guest_token')).toBe('guest-token-value');
     expect(window.location.href).toBe('');
   });
 });
@@ -144,13 +145,12 @@ describe('useAuth admin stash hygiene', () => {
     expect(window.location.href).toBe('/');
   });
 
-  it('logoutForPromotion removes the stash and sets promote_intent without navigating', () => {
+  it('logoutForPromotion removes the stash without navigating', () => {
     const { result } = renderHook(() => useAuth(), { wrapper });
     act(() => {
       result.current.logoutForPromotion();
     });
     expect(localStorage.getItem(ADMIN_RETURN_TOKEN_STORAGE_KEY)).toBeNull();
-    expect(sessionStorage.getItem('promote_intent')).toBe('1');
     expect(window.location.href).toBe('');
   });
 

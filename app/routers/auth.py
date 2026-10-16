@@ -9,7 +9,7 @@ import sentry_sdk
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from fastapi.responses import RedirectResponse
 from fastapi_users import schemas as fapi_schemas
-from fastapi_users.exceptions import InvalidPasswordException, UserAlreadyExists
+from fastapi_users.exceptions import InvalidPasswordException, UserAlreadyExists, UserNotExists
 from fastapi_users.jwt import decode_jwt, generate_jwt
 from httpx_oauth.oauth2 import GetAccessTokenError, OAuth2Token
 from sqlalchemy import func, update as sa_update
@@ -203,6 +203,76 @@ def _google_signin_failed_redirect(frontend_base: str) -> RedirectResponse:
     )
 
 
+async def _existing_google_user(
+    user_manager: UserManager, account_id: str, account_email: str
+) -> User | None:
+    """Return the account a Google identity already belongs to, or None.
+
+    Looks up the linked Google account id first, then the (case-insensitive) email —
+    the same two ways ``oauth_callback(associate_by_email=True)`` would resolve it.
+    """
+    try:
+        return await user_manager.get_by_oauth_account(google_oauth_client.name, account_id)
+    except UserNotExists:
+        pass
+    try:
+        return await user_manager.get_by_email(account_email)
+    except UserNotExists:
+        return None
+
+
+async def _complete_google_sign_in(
+    request: Request,
+    user_manager: UserManager,
+    token: OAuth2Token,
+    account_id: str,
+    account_email: str,
+    frontend_base: str,
+) -> RedirectResponse:
+    """Sign the Google identity into its account (creating it if new) and redirect to the SPA.
+
+    Shared by the plain ``/callback`` and by ``/callback-promote`` when the Google identity
+    already belongs to an existing account.
+    """
+    try:
+        user, password_replaced = await user_manager.google_sign_in(
+            account_id=account_id,
+            account_email=account_email,
+            access_token=token["access_token"],
+            expires_at=token.get("expires_at"),
+            refresh_token=token.get("refresh_token"),
+            request=request,
+        )
+    except UserAlreadyExists:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="User already exists with a different OAuth account",
+        ) from None
+
+    if not user.is_active:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="User account is not active",
+        )
+
+    # Update last_login — on_after_login is not called for OAuth flow
+    async with async_session_maker() as session:
+        await session.execute(
+            sa_update(User).where(User.id == user.id).values(last_login=func.now())
+        )
+        await session.commit()
+
+    strategy = auth_backend.get_strategy()
+    access_token = await strategy.write_token(user)  # ty: ignore[unresolved-attribute]  # FastAPI-Users generic typing not resolved by ty beta
+
+    # Redirect to frontend callback page with token in fragment. password_replaced tells
+    # the SPA to explain why the account's old password no longer works.
+    frontend_redirect = f"{frontend_base}/auth/callback#token={access_token}"
+    if password_replaced:
+        frontend_redirect += "&password_replaced=1"
+    return RedirectResponse(url=frontend_redirect, status_code=status.HTTP_302_FOUND)
+
+
 @router.get("/auth/google/available", tags=["auth"], response_model=GoogleOAuthAvailableResponse)
 async def google_oauth_available() -> GoogleOAuthAvailableResponse:
     """Return whether Google OAuth is configured on this server."""
@@ -331,44 +401,9 @@ async def google_callback(
         return _google_signin_failed_redirect(frontend_base)
 
     account_id, account_email = _google_identity(token)
-
-    try:
-        user, password_replaced = await user_manager.google_sign_in(
-            account_id=account_id,
-            account_email=account_email,
-            access_token=token["access_token"],
-            expires_at=token.get("expires_at"),
-            refresh_token=token.get("refresh_token"),
-            request=request,
-        )
-    except UserAlreadyExists:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="User already exists with a different OAuth account",
-        ) from None
-
-    if not user.is_active:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="User account is not active",
-        )
-
-    # Update last_login — on_after_login is not called for OAuth flow
-    async with async_session_maker() as session:
-        await session.execute(
-            sa_update(User).where(User.id == user.id).values(last_login=func.now())
-        )
-        await session.commit()
-
-    strategy = auth_backend.get_strategy()
-    access_token = await strategy.write_token(user)  # ty: ignore[unresolved-attribute]  # FastAPI-Users generic typing not resolved by ty beta
-
-    # Redirect to frontend callback page with token in fragment. password_replaced tells
-    # the SPA to explain why the account's old password no longer works.
-    frontend_redirect = f"{frontend_base}/auth/callback#token={access_token}"
-    if password_replaced:
-        frontend_redirect += "&password_replaced=1"
-    return RedirectResponse(url=frontend_redirect, status_code=status.HTTP_302_FOUND)
+    return await _complete_google_sign_in(
+        request, user_manager, token, account_id, account_email, frontend_base
+    )
 
 
 # -- Guest session endpoints ------------------------------------------------
@@ -459,6 +494,7 @@ async def google_authorize_promote(
 async def google_callback_promote(
     request: Request,
     session: Annotated[AsyncSession, Depends(get_async_session)],
+    user_manager: Annotated[UserManager, Depends(get_user_manager)],
     code: str | None = None,
     state: str | None = None,
     error: str | None = None,
@@ -468,10 +504,13 @@ async def google_callback_promote(
     NOT protected by current_active_user — the browser redirect has no Authorization header.
     Guest identity is recovered from the state JWT's guest_user_id field.
 
-    Promotes the guest user in-place (same user ID), inserts an OAuthAccount row,
-    issues a standard 7-day JWT, and redirects to FRONTEND_URL/auth/callback with
-    token and promoted=1 in the fragment. On email collision, redirects with
-    error=EMAIL_ALREADY_REGISTERED.
+    If the Google identity already belongs to an account (linked Google id or same email),
+    signs that account in exactly like the plain ``/callback`` and leaves the guest
+    untouched. Otherwise promotes the guest user in-place (same user ID), inserts an
+    OAuthAccount row, issues a standard 7-day JWT, and redirects to
+    FRONTEND_URL/auth/callback with token and promoted=1 in the fragment.
+    error=EMAIL_ALREADY_REGISTERED is only left for a race between that lookup and the
+    promotion.
     """
     if error is not None:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"OAuth error: {error}")
@@ -525,6 +564,25 @@ async def google_callback_promote(
         return _google_signin_failed_redirect(frontend_base)
 
     account_id, account_email = _google_identity(token)
+
+    # Bug fix (quick 261016-fwd): this used to promote unconditionally and answer an
+    # existing Google identity with EMAIL_ALREADY_REGISTERED. That lockout (2026-06-23)
+    # is why the SPA only started promotion behind a one-shot intent flag, and that flag
+    # was lost when a guest logged out first or retried an abandoned Google screen, so
+    # the plain flow created ~20 duplicate accounts in prod with the guest's games
+    # orphaned. Signing an existing identity in here lets the SPA start promotion from
+    # any persisted guest_token. Security: this grants nothing beyond what the plain
+    # /callback already grants to whoever completes Google auth for that identity. The
+    # state JWT is audience-separated and the CSRF double-submit was checked above,
+    # before any lookup; guest_user_id only comes from the server-signed state;
+    # _google_identity requires email_verified; and an unverified email/password
+    # account keeps its password-replacement protection because the same
+    # google_sign_in runs. The guest is never merged into the existing account.
+    existing_user = await _existing_google_user(user_manager, account_id, account_email)
+    if existing_user is not None:
+        return await _complete_google_sign_in(
+            request, user_manager, token, account_id, account_email, frontend_base
+        )
 
     try:
         _updated_user, jwt_token = await guest_service.promote_guest_with_google(

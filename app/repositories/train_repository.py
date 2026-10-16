@@ -18,11 +18,23 @@ from __future__ import annotations
 import datetime
 import random
 from collections import Counter
+from collections.abc import Sequence
 from dataclasses import dataclass, field, replace
 from typing import Any, Literal, cast
 
 import chess
-from sqlalchemy import ColumnElement, and_, delete, exists, func, literal, or_, select, update
+from sqlalchemy import (
+    ColumnElement,
+    and_,
+    delete,
+    exists,
+    func,
+    literal,
+    or_,
+    select,
+    tuple_,
+    update,
+)
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.exc import IntegrityError
@@ -172,13 +184,14 @@ class TrainSettingsRow:
     reminder_hour: int
     reminder_last_sent_on: datetime.date | None
     reminder_intent_at: datetime.datetime | None
-    # Phase 222 (TRAINBOT-05, D-11/D-12). Response-only onboarding-seen
-    # watermarks -- exposed on this row because the stamp endpoint and
-    # GET/PUT /train/settings all read it, never because a client writes it
-    # through the PUT body (that is `stamp_onboarding_step`'s job instead).
+    # Phase 222 (TRAINBOT-05, D-11/D-12) + Phase 240 (D-09). Response-only
+    # onboarding state (two seen timestamps and the reveal-tour stage counter)
+    # -- exposed on this row because the stamp endpoint and GET/PUT
+    # /train/settings all read it, never because a client writes it through the
+    # PUT body (that is `stamp_onboarding_step`'s job instead).
     intro_seen_at: datetime.datetime | None
-    reveal_walkthrough_seen_at: datetime.datetime | None
     sr_explained_at: datetime.datetime | None
+    reveal_tour_stage: int
 
 
 @dataclass(frozen=True)
@@ -316,8 +329,8 @@ async def get_settings(session: AsyncSession, *, user_id: int) -> TrainSettingsR
         reminder_last_sent_on=row.reminder_last_sent_on,
         reminder_intent_at=row.reminder_intent_at,
         intro_seen_at=row.intro_seen_at,
-        reveal_walkthrough_seen_at=row.reveal_walkthrough_seen_at,
         sr_explained_at=row.sr_explained_at,
+        reveal_tour_stage=row.reveal_tour_stage,
     )
 
 
@@ -360,12 +373,12 @@ async def get_or_create_settings(session: AsyncSession, *, user_id: int) -> Trai
         # intent -- NULL, same create-on-first-touch seam as every other
         # default here.
         reminder_intent_at=None,
-        # Phase 222 (TRAINBOT-05, D-13): a brand-new user has never seen any
-        # of the three onboarding steppers -- NULL, same create-on-first-
-        # touch seam as every other default here.
+        # Phase 222 (TRAINBOT-05, D-13) + Phase 240 (D-09): a brand-new user
+        # has never seen any onboarding stepper -- NULL timestamps and tour
+        # stage 0, same create-on-first-touch seam as every other default here.
         intro_seen_at=None,
-        reveal_walkthrough_seen_at=None,
         sr_explained_at=None,
+        reveal_tour_stage=0,
     )
     # ON CONFLICT DO NOTHING: a concurrent first-touch may have already
     # inserted the row between the get_settings check above and this insert;
@@ -385,8 +398,8 @@ async def get_or_create_settings(session: AsyncSession, *, user_id: int) -> Trai
         reminder_last_sent_on=None,
         reminder_intent_at=None,
         intro_seen_at=None,
-        reveal_walkthrough_seen_at=None,
         sr_explained_at=None,
+        reveal_tour_stage=0,
     )
 
 
@@ -503,10 +516,11 @@ async def upsert_settings(
     # is included here too for the same reason: this UPSERT never writes it
     # (T-201-13), so the returned row must reflect whatever is already
     # persisted, not a fabricated value.
-    # Phase 222 (TRAINBOT-05, D-12): the three onboarding-seen columns are
-    # ALSO absent from values()/set_ above -- this UPSERT structurally
-    # cannot write them (D-12's PUT-can-never-smuggle-them rule) -- so they
-    # are RETURNING'd here for the identical reason reminder_last_sent_on is:
+    # Phase 222 (TRAINBOT-05, D-12) + Phase 240 (D-09): the onboarding columns
+    # (two seen timestamps and reveal_tour_stage) are ALSO absent from
+    # values()/set_ above -- this UPSERT structurally cannot write them
+    # (D-12's PUT-can-never-smuggle-them rule) -- so they are RETURNING'd here
+    # for the identical reason reminder_last_sent_on is:
     # the returned row must reflect whatever is already persisted, never a
     # fabricated value.
     stmt = stmt.returning(
@@ -516,8 +530,8 @@ async def upsert_settings(
         TrainSettings.pool_eligible_since,
         TrainSettings.reminder_last_sent_on,
         TrainSettings.intro_seen_at,
-        TrainSettings.reveal_walkthrough_seen_at,
         TrainSettings.sr_explained_at,
+        TrainSettings.reveal_tour_stage,
     )
     result = await session.execute(stmt)
     (
@@ -527,8 +541,8 @@ async def upsert_settings(
         pool_eligible_since,
         reminder_last_sent_on,
         intro_seen_at,
-        reveal_walkthrough_seen_at,
         sr_explained_at,
+        reveal_tour_stage,
     ) = result.one()
     return TrainSettingsRow(
         timezone=timezone,
@@ -543,8 +557,8 @@ async def upsert_settings(
         reminder_last_sent_on=reminder_last_sent_on,
         reminder_intent_at=reminder_intent_at,
         intro_seen_at=intro_seen_at,
-        reveal_walkthrough_seen_at=reveal_walkthrough_seen_at,
         sr_explained_at=sr_explained_at,
+        reveal_tour_stage=reveal_tour_stage,
     )
 
 
@@ -678,21 +692,53 @@ async def _stamp_pool_eligibility(
 # documented widening for the same reason.
 _ONBOARDING_COLUMNS: dict[OnboardingStep, Any] = {
     "intro": TrainSettings.intro_seen_at,
-    "reveal_walkthrough": TrainSettings.reveal_walkthrough_seen_at,
     "sr_explained": TrainSettings.sr_explained_at,
 }
+
+# Phase 240 (D-09): the step->target-stage lookup for the reveal-tour steps.
+# Same fixed-dict rule as `_ONBOARDING_COLUMNS` above (T-222-02-03): never
+# `getattr`, never SQL interpolation. Together the two dicts partition
+# `OnboardingStep` (pinned by a test): a step is either a timestamp step or a
+# tour-stage step.
+_REVEAL_TOUR_TARGET_STAGE: dict[OnboardingStep, int] = {
+    "reveal_tour_1": 1,
+    "reveal_tour_2": 2,
+    "reveal_tour_3": 3,
+}
+
+
+async def _advance_reveal_tour_stage(
+    session: AsyncSession, *, user_id: int, target_stage: int
+) -> None:
+    """D-09: advance `reveal_tour_stage` to `target_stage`, forward-only.
+
+    Guarded on `reveal_tour_stage == target_stage - 1`: the stage moves to N
+    only from N-1, so a replayed POST, a concurrent duplicate and an
+    out-of-order POST all match zero rows and leave the stage unchanged. Same
+    first-write-wins spirit as the `IS NULL` guard on the timestamp steps.
+    """
+    await session.execute(
+        update(TrainSettings)
+        .where(
+            TrainSettings.user_id == user_id,
+            TrainSettings.reveal_tour_stage == target_stage - 1,
+        )
+        .values(reveal_tour_stage=target_stage)
+    )
 
 
 async def stamp_onboarding_step(
     session: AsyncSession, *, user_id: int, step: OnboardingStep, now_utc: datetime.datetime
 ) -> TrainSettingsRow:
-    """D-12: stamp one onboarding-seen watermark, first-write-wins, the first
-    time a stepper is completed; never overwrite an existing one.
+    """D-12: record completion of one onboarding step, forward-only and
+    idempotent; never overwrite earlier progress.
 
-    Mirrors `_stamp_pool_eligibility`'s "stamp once, never overwrite" shape.
-    `get_or_create_settings` runs first so a user who has never touched Train
-    still gets a row before the stamp UPDATE — mirroring that function's own
-    create-on-first-touch precedent.
+    `intro` / `sr_explained` stamp their seen-timestamp first-write-wins.
+    `reveal_tour_N` (Phase 240, D-09) advances `reveal_tour_stage` to N only
+    from N-1, so a replayed or out-of-order POST is a no-op and the stage never
+    moves backwards. Mirrors `_stamp_pool_eligibility`'s "stamp once, never
+    overwrite" shape. `get_or_create_settings` runs first so a user who has
+    never touched Train still gets a row before the UPDATE.
 
     Args:
         session: AsyncSession. Caller commits.
@@ -700,22 +746,26 @@ async def stamp_onboarding_step(
         step: The `Literal` step name (validated by FastAPI at the path-
             parameter boundary before this function is ever called).
         now_utc: The current UTC instant. Never `datetime.now()` (the caller
-            takes it from the `dev_now_utc` dependency).
+            takes it from the `dev_now_utc` dependency). Unused by the tour
+            steps (the stage carries no timestamp).
 
     Returns:
-        The refreshed `TrainSettingsRow` — unchanged on a replayed POST
-        (first-write-wins), stamped on the first call for this step.
+        The refreshed `TrainSettingsRow` -- unchanged on a replayed POST.
     """
     await get_or_create_settings(session, user_id=user_id)
-    column = _ONBOARDING_COLUMNS[step]
-    # Guarded on IS NULL: a replayed POST (or a concurrent one racing this
-    # one) can never move an already-stamped timestamp — the same
-    # first-write-wins shape as `_stamp_pool_eligibility`'s guarded UPDATE.
-    await session.execute(
-        update(TrainSettings)
-        .where(TrainSettings.user_id == user_id, column.is_(None))
-        .values({column: now_utc})
-    )
+    target_stage = _REVEAL_TOUR_TARGET_STAGE.get(step)
+    if target_stage is not None:
+        await _advance_reveal_tour_stage(session, user_id=user_id, target_stage=target_stage)
+    else:
+        column = _ONBOARDING_COLUMNS[step]
+        # Guarded on IS NULL: a replayed POST (or a concurrent one racing this
+        # one) can never move an already-stamped timestamp -- the same
+        # first-write-wins shape as `_stamp_pool_eligibility`'s guarded UPDATE.
+        await session.execute(
+            update(TrainSettings)
+            .where(TrainSettings.user_id == user_id, column.is_(None))
+            .values({column: now_utc})
+        )
     refreshed = await get_settings(session, user_id=user_id)
     assert refreshed is not None  # get_or_create_settings above guarantees the row exists.
     return refreshed
@@ -847,8 +897,8 @@ async def get_progress(
             reminder_last_sent_on=settings_row.reminder_last_sent_on,
             reminder_intent_at=settings_row.reminder_intent_at,
             intro_seen_at=settings_row.intro_seen_at,
-            reveal_walkthrough_seen_at=settings_row.reveal_walkthrough_seen_at,
             sr_explained_at=settings_row.sr_explained_at,
+            reveal_tour_stage=settings_row.reveal_tour_stage,
         )
 
     view = await settle_streak_snapshot(
@@ -1969,6 +2019,132 @@ async def _resolve_existing_session(
     return None
 
 
+# Phase 240 (D-15): puzzle 2 or 3 of the first-ever session holds a "several"
+# puzzle (zero-based indices 1 and 2).
+_FIRST_SESSION_SEVERAL_SLOTS: tuple[int, ...] = (1, 2)
+# A "several" puzzle is any whose answer-key type is not sharp (soft SR item or herring).
+_SEVERAL_PUZZLE_TYPES: frozenset[TrainPuzzleType] = frozenset({"soft", "herring"})
+# Distinct from the D-09 shuffle seed so the two draws are independent yet reproducible.
+_FIRST_SESSION_SEED_SUFFIX = "first-session"
+
+
+def _first_session_order(
+    puzzles: Sequence[_ReconstructedPuzzle],
+    types: Sequence[TrainPuzzleType],
+    rng: random.Random,
+) -> list[_ReconstructedPuzzle]:
+    """Reorder an already-shuffled first-ever session (Phase 240 D-13..D-15).
+
+    (a) The first sharp puzzle (in shuffled order) moves to slot 0, keeping the
+    relative order of the rest. (b) A "several" puzzle (soft or herring) then
+    sits at index 1 or 2: when neither slot holds one, the first several puzzle
+    after slot 0 is swapped into a seeded choice of the two slots.
+
+    A session without a sharp puzzle (own-games, all soft) keeps its shuffled
+    slot 0; a session without a several puzzle keeps slots 1-2; sessions of one
+    or two puzzles clamp the slots so nothing indexes out of range.
+
+    Args:
+        puzzles: The post-D-09-shuffle puzzles.
+        types: Each puzzle's answer-key type, aligned with `puzzles`.
+        rng: Seeded generator picking between the several slots.
+    """
+    order = list(range(len(puzzles)))
+    sharp_at = next((pos for pos in order if types[pos] == "sharp"), None)
+    if sharp_at is not None:
+        order.insert(0, order.pop(sharp_at))
+
+    slots = [slot for slot in _FIRST_SESSION_SEVERAL_SLOTS if slot < len(order)]
+    slot_held_by_several = any(types[order[slot]] in _SEVERAL_PUZZLE_TYPES for slot in slots)
+    several_at = next(
+        (pos for pos in range(1, len(order)) if types[order[pos]] in _SEVERAL_PUZZLE_TYPES),
+        None,
+    )
+    if slots and not slot_held_by_several and several_at is not None:
+        target = rng.choice(slots)
+        order[target], order[several_at] = order[several_at], order[target]
+    return [puzzles[pos] for pos in order]
+
+
+async def _is_first_ever_session(session: AsyncSession, *, user_id: int) -> bool:
+    """True when the user has no `drill_sessions` row of any status (D-13).
+
+    Runs only after `_resolve_existing_session` returned None, so a discarded
+    untouched-and-resized first session's row is already deleted and the
+    recomposition still counts as first-ever.
+    """
+    result = await session.execute(
+        select(select(DrillSession.id).where(DrillSession.user_id == user_id).exists())
+    )
+    return not result.scalar_one()
+
+
+async def _composition_puzzle_types(
+    session: AsyncSession, *, user_id: int, puzzles: Sequence[_ReconstructedPuzzle]
+) -> list[TrainPuzzleType]:
+    """Each puzzle's answer-key type, from the verdict's own derivation (D-14).
+
+    One query loads the live `game_flaws` blobs of the SR items (user_id in the
+    WHERE, V4); herrings and sharp fillers need no query because their type is
+    fixed by `answer_key_for`. The type never depends on the key move, so the
+    move arguments are None; a missing blob classifies as "soft", the same
+    non-leaking default the verdict uses.
+    """
+    sr_keys = [
+        (puzzle.game_id, puzzle.ply)
+        for puzzle in puzzles
+        if puzzle.source == DrillSource.SR_ITEM and puzzle.game_id is not None
+    ]
+    blobs: dict[tuple[int, int], list[Any] | None] = {}
+    if sr_keys:
+        rows = await session.execute(
+            select(GameFlaw.game_id, GameFlaw.ply, GameFlaw.missed_pv_lines).where(
+                GameFlaw.user_id == user_id,
+                tuple_(GameFlaw.game_id, GameFlaw.ply).in_(sr_keys),
+            )
+        )
+        blobs = {(row.game_id, row.ply): row.missed_pv_lines for row in rows}
+    return [
+        answer_key_for(
+            source=puzzle.source,
+            ply=puzzle.ply,
+            missed_pv_lines=(
+                blobs.get((puzzle.game_id, puzzle.ply))
+                if puzzle.source == DrillSource.SR_ITEM and puzzle.game_id is not None
+                else None
+            ),
+            best_move=None,
+            ladder=None,
+            filler_solution_uci=None,
+        ).puzzle_type
+        for puzzle in puzzles
+    ]
+
+
+async def _order_first_ever_session(
+    session: AsyncSession,
+    *,
+    user_id: int,
+    today: datetime.date,
+    items: _AssembledSessionItems,
+) -> _AssembledSessionItems:
+    """Phase 240 (D-13): apply `_first_session_order` to a first-ever composition.
+
+    Returns `items` unchanged for an empty composition or any user with an
+    earlier `drill_sessions` row (any status), so later sessions keep the plain
+    D-09 shuffle and the only leak is that slot 0 of session 1 is never a
+    herring. `surviving_sr_keys` and `is_warmup` are set-valued, so they stay
+    correct after the reorder.
+    """
+    if not items.reconstructed:
+        return items
+    if not await _is_first_ever_session(session, user_id=user_id):
+        return items
+    types = await _composition_puzzle_types(session, user_id=user_id, puzzles=items.reconstructed)
+    rng = random.Random(f"{user_id}:{today.isoformat()}:{_FIRST_SESSION_SEED_SUFFIX}")
+    return replace(items, reconstructed=_first_session_order(items.reconstructed, types, rng))
+
+
 @dataclass(frozen=True)
 class _AssembledSessionItems:
     """The item-assembly stage's output (Phase 214 Plan 06 task 2). Four
@@ -2474,7 +2650,9 @@ async def compose_and_materialize_session(
        backfilled — the slot arithmetic already ran).
     6. If nothing survives, return zero puzzles and write NO `drill_sessions`
        row. Otherwise shuffle deterministically by `(user_id, today)` (D-09:
-       a red herring's position must not be inferable from ordering) and
+       a red herring's position must not be inferable from ordering), reorder
+       a user's first-ever session to open on a sharp puzzle with a "several"
+       puzzle at puzzle 2 or 3 (Phase 240 D-13..D-15), and
        materialize the session header plus one pre-inserted `DrillSolve` per
        puzzle.
     7. The `DrillSession` insert (plus any new `drill_items` padding rows) is
@@ -2526,6 +2704,9 @@ async def compose_and_materialize_session(
         return await _attach_answer_keys(session, user_id=user_id, composed=resolved)
 
     items = await _assemble_session_items(session, user_id=user_id, today=today, n=n)
+    # Phase 240 (D-13..D-15): first-ever session only, after the D-09 shuffle and
+    # before materialize (positions are frozen into drill_solves.position).
+    items = await _order_first_ever_session(session, user_id=user_id, today=today, items=items)
     if not items.reconstructed:
         return ComposedSession(
             session_id=None,

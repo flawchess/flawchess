@@ -1,15 +1,16 @@
 ---
 gsd_state_version: "1.0"
 milestone: v2.24
-current_phase: 239
-status: completed
-stopped_at: Phase 240 context gathered
-last_updated: "2026-10-15T18:20:49.717Z"
-state_head: f0b68075d8f297c816d20e8d5d0774df4fa2ea41
+current_phase: 240
+current_phase_name: Train First-Session Onboarding Load (SEED-200)
+status: verifying
+stopped_at: Phase 240 plans 7/7 executed; verification next
+last_updated: "2026-10-16T09:58:54.017Z"
+state_head: daabb0e4c83375eb423694405b3ad44440b2648c
 progress:
   total_phases: 3
   completed_phases: 103
-  total_plans: 19
+  total_plans: 26
   completed_plans: 57
 milestone_name: Train Grading Integrity & One-Screen Reveal
 last_activity: 2026-10-14
@@ -20,10 +21,10 @@ last_activity_desc: "Completed quick task 261014-rux: Benchmark §5 whole-cohort
 
 ## Current Position
 
-Phase: 239
-Plan: Not started
+Phase: 240 (Train First-Session Onboarding Load (SEED-200)) — EXECUTING
+Plan: 7 of 7
 
-Status: All phases complete
+Status: Phase complete — ready for verification
 
 Open threads carried forward (not blockers):
 
@@ -866,6 +867,14 @@ flagged as an open decision for plan 06 / a human, not auto-fixed.
 - [Phase 237]: 237-09: malformed cached revealTree is dropped on read, the rest of the reveal-cache entry still restores (T-237-16)
 - [Phase 237]: 237-10: phone tour scroll aligns Hilda's bubble under the pinned block when the target still fits above the bottom bar, else scrolls the target itself
 - [Phase 237]: 237-10: 'Got it' (btn-train-bot-walkthrough-done) ends the tour in place, stamps once; re-onboarding stays option (a) (no migration)
+- [Phase 240]: 240-01: reveal_tour_stage forward-only 0..3 counter (migration 5448f030de58) replaces the Phase 222 walkthrough timestamp; POST /train/onboarding/reveal_tour_1..3 via fixed dict + guarded N-1 -> N UPDATE; retired step name 422s
+- [Phase 240]: 240-03: a restored reveal (restoredSolve !== null) never starts a tour part; a part left halfway replays on the next puzzle's reveal
+- [Phase 240]: 240-03: Hilda stays out of the random host pool while reveal_tour_stage < 3; TOUR_PART_COUNT stays module-private
+- [Phase 240]: 240-02: first-ever session reorder computes puzzle types after assembly (one PK-scoped blob query), gated on no earlier drill_sessions row of any status
+- [Phase 240]: 240-04: renderScreen takes an optional trailing QueryClient; phone scroll tests stub Element.prototype.getBoundingClientRect before the reveal mounts; raw copy length (icon tokens included) asserted against STEPPER_COPY_MAX_CHARS
+- [Phase 240]: 240-05: intro is a fixed two-bubble sequence (INTRO_STEP_COUNT = 2), warm-up notice dropped with no relocation (D-01, D-02)
+- [Phase 240]: 240-05: sr_explained is stamped whenever the first-completed score variant rendered, in any branch; a first warm-up session never later shows the habit line (D-21)
+- [Phase 240]: Tour spotlight is one box-shadow-only class (.train-tour-spotlight, --brand-glow vars = FLAW_FIXED_GLOW), never combined with a ring utility; understand step glows one chips-plus-list wrapper
 
 ### Pending Todos
 
@@ -1033,6 +1042,7 @@ None active.
 | 261015-pjr | Truthful Train warm-up copy for guests with imported games | 2026-10-15 | cb0be8e3a | [261015-pjr-truthful-train-warm-up-copy-for-guests-w](./quick/261015-pjr-truthful-train-warm-up-copy-for-guests-w/) |
 | 261015-qxr | Library Stats coverage line salience and still-updating hint | 2026-10-15 | b2896d32e | [261015-qxr-library-stats-coverage-line-salience-and](./quick/261015-qxr-library-stats-coverage-line-salience-and/) |
 | 261015-s05 | Train reveal: clock-context line under the game footer (think time + clock left) | 2026-10-15 | f0b68075d | [261015-s05-train-reveal-clock-context-line-under-th](./quick/261015-s05-train-reveal-clock-context-line-under-th/) |
+| 261016-fwd | Google sign-in promotes saved guest instead of creating duplicate account | 2026-10-16 | daabb0e4c | [261016-fwd-google-sign-in-promotes-saved-guest-inst](./quick/261016-fwd-google-sign-in-promotes-saved-guest-inst/) |
 
 ## Deferred Items
 
@@ -1085,9 +1095,9 @@ Items acknowledged and deferred at **v1.29 milestone close on 2026-06-29** (user
 
 ## Session Continuity
 
-**Last session:** 2026-10-15T17:54:19.555Z
-**Stopped at:** Phase 240 context gathered
-**Resume file:** .planning/phases/240-train-first-session-onboarding-load/240-CONTEXT.md
+**Last session:** 2026-10-15T20:43:55.587Z
+**Stopped at:** Phase 240 plans 7/7 executed; verification next
+**Resume file:** None
 
 Previous session note (Phase 227):
 refit (calibration parity holds). Verification passed 17/17; code review 0 blockers (WR-01 + 3 info fixed). Next:
@@ -1328,6 +1338,12 @@ priority comment in `workerPoolState.ts:434-437` (verifier info item).
 | Phase 237 P08 | 55 min | 3 tasks | 13 files |
 | Phase 237 P09 | 8 min | 2 tasks | 9 files |
 | Phase 237 P10 | 12 min | 2 tasks | 8 files |
+| Phase 240 P01 | 10min | 2 tasks | 11 files |
+| Phase 240 P03 | 8min | 2 tasks | 13 files |
+| Phase 240 P02 | 20min | 2 tasks | 2 files |
+| Phase 240 P04 | 9 min | 2 tasks | 4 files |
+| Phase 240 P05 | 12 min | 2 tasks | 10 files |
+| Phase 240 P06 | 10min | 2 tasks | 15 files |
 
 ## Performance Metrics
 

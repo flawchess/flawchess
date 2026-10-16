@@ -36,12 +36,13 @@ import {
   TRAIN_FOCUS_ARROW_LIT_OPACITY,
   TRAIN_FOCUS_BADGE_DIM_OPACITY,
   TRAIN_FOCUS_BADGE_LIT_OPACITY,
+  TOUR_SPOTLIGHT_CLASS,
 } from '@/lib/theme';
 import { buildAnalysisFenUrl, buildGameAnalysisUrl } from '@/lib/analysisUrl';
-import { animateScrollTop } from '@/lib/animatedScroll';
-import { HILDA_ID, introStepCount, WALKTHROUGH_STEP_COUNT } from '@/lib/trainBotCopy';
+import { HILDA_ID, INTRO_STEP_COUNT, STEPPER_COPY_MAX_CHARS } from '@/lib/trainBotCopy';
 import { PERSONA_REGISTRY } from '@/lib/personas/personaRegistry';
 import { useTrainSession } from '@/hooks/useTrainSession';
+import { TRAIN_SETTINGS_QUERY_KEY } from '@/hooks/useTrainSettings';
 import {
   TRAIN_RECHECK_MAX_NODES,
   TRAIN_RECHECK_MOVETIME_MS,
@@ -52,6 +53,7 @@ import type { GradeResult, TrainGradingEngine } from '@/hooks/useTrainGradingEng
 import { fenAfterUciMove } from '@/hooks/trainGradingSupport';
 import { waitForReveal } from './revealTestUtils';
 import { readTrainRevealCache, type CachedTrainReveal } from '@/lib/trainRevealCache';
+import { animateScrollTop } from '@/lib/animatedScroll';
 import type {
   ReviewRequest,
   SolveRequest,
@@ -256,7 +258,9 @@ function makeSettings(overrides: Partial<TrainSettingsResponse> = {}): TrainSett
     reminder_hour: 9,
     reminder_intent_at: null,
     intro_seen_at: '2026-01-01T00:00:00Z',
-    reveal_walkthrough_seen_at: '2026-01-01T00:00:00Z',
+    // Phase 240 D-09: stage 3 = the whole reveal tour is done, so every test that
+    // is not about the tour sees none.
+    reveal_tour_stage: 3,
     sr_explained_at: '2026-01-01T00:00:00Z',
     has_mobile_subscription: false,
     ...overrides,
@@ -659,8 +663,6 @@ function Harness({
       trainSession={trainSession}
       gradingEngine={gradingEngine}
       restoredSolve={restoredSolve}
-      hasGames={true}
-      isGuest={false}
     />
   );
 }
@@ -705,8 +707,6 @@ function RemountHarness({
           puzzle={remounted ? nextPuzzle : puzzle}
           trainSession={trainSession}
           gradingEngine={gradingEngine}
-          hasGames={true}
-          isGuest={false}
         />
       )}
     </>
@@ -718,11 +718,13 @@ async function renderScreen(
   session: TrainSessionResponse = makeSession(),
   restoredSolve: CachedTrainReveal | null = null,
   gradeMoveOverride?: TrainGradingEngine['gradeMove'],
+  // Phase 240 plan 04: a case that rewrites the train settings cache mid-reveal
+  // (the part latch) needs the client the screen runs against.
+  queryClient: QueryClient = new QueryClient({
+    defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+  }),
 ) {
   composeOrResumeSession.mockResolvedValue(session);
-  const queryClient = new QueryClient({
-    defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
-  });
   const result = render(
     <MemoryRouter>
       <QueryClientProvider client={queryClient}>
@@ -750,6 +752,7 @@ function MobileBoardControlsProbe(): ReactElement {
           <span data-testid="mbc-can-reset">{String(controls.canReset)}</span>
           <span data-testid="mbc-has-next">{String(controls.onNext != null)}</span>
           <span data-testid="mbc-analyze-to">{String(controls.analyzeTo)}</span>
+          <span data-testid="mbc-spotlight">{String(controls.spotlightAnalyze === true)}</span>
           <button data-testid="mbc-btn-next" onClick={controls.onNext}>next</button>
           <button data-testid="mbc-btn-back" onClick={controls.onBack}>back</button>
           <button data-testid="mbc-btn-forward" onClick={controls.onForward}>forward</button>
@@ -3391,22 +3394,19 @@ describe('TrainSolveScreen — progress, last move, grading state, engine failur
       await waitFor(() => expect(nextFlush).toHaveBeenCalledTimes(1));
     });
 
-    it("the published bar's Next walks the tour to its last step without flushing", async () => {
-      getSettings.mockResolvedValue(makeSettings({ reveal_walkthrough_seen_at: null }));
+    it("the published bar's Next walks the tour part to its last step without flushing", async () => {
+      getSettings.mockResolvedValue(makeSettings({ reveal_tour_stage: 1 }));
       await renderScreenWithProbe(makePuzzle());
       fireEvent.click(screen.getByTestId('btn-train-guess-critical'));
       await act(async () => {
         fireEvent.click(screen.getByTestId('drop-e2e4'));
       });
       await waitFor(() => expect(screen.getByTestId('train-bot-walkthrough')).not.toBeNull());
-      // Phase 237 UAT (G-01): the published bar's Next walks the tour.
-      for (let click = 0; click < WALKTHROUGH_STEP_COUNT - 1; click += 1) {
-        fireEvent.click(screen.getByTestId('mbc-btn-next'));
-      }
+      // Phase 237 UAT (G-01): the published bar's Next walks the tour. Part 2 has
+      // two steps (Phase 240 D-06), so one Next reaches the last.
+      fireEvent.click(screen.getByTestId('mbc-btn-next'));
       await waitFor(() =>
-        expect(screen.getByTestId('train-tour-step-count').textContent).toBe(
-          `${WALKTHROUGH_STEP_COUNT} / ${WALKTHROUGH_STEP_COUNT}`,
-        ),
+        expect(screen.getByTestId('train-tour-step-count').textContent).toBe('2 / 2'),
       );
       expect(nextFlush).not.toHaveBeenCalled();
     });
@@ -3536,62 +3536,55 @@ describe('TrainSolveScreen — progress, last move, grading state, engine failur
       getSettings.mockResolvedValue(makeSettings({ intro_seen_at: null }));
       await renderScreen(makePuzzle());
       expect(screen.getByTestId('train-bot-name').textContent).toBe('Hilda the Hippo');
-      expect(screen.getByTestId('train-bot-copy').textContent).toContain('Welcome to FlawChess Train!');
+      expect(screen.getByTestId('train-bot-copy').textContent).toContain('Hi there!');
       expect(screen.queryByTestId('btn-train-guess-critical')).toBeNull();
       expect(screen.queryByTestId('btn-train-guess-several')).toBeNull();
       expect(screen.getByTestId('btn-train-bot-step-next')).not.toBeNull();
     });
 
-    // Plan 06 UAT: short steps instead of three long ones, so nothing scrolls
-    // inside the phone bubble — four Next clicks reach the guess buttons on a
-    // regular session. Phase 237 UAT: Hilda hosts every step, the welcome too.
-    it('advances through the Hilda steps, showing the guess buttons only on the closing step', async () => {
+    // Phase 240 D-01: exactly two bubbles. One Next click reaches the guess
+    // buttons. Phase 237 UAT: Hilda hosts every step, the welcome too.
+    it('advances welcome then closing prompt, showing the guess buttons only on the closing step', async () => {
       getSettings.mockResolvedValue(makeSettings({ intro_seen_at: null }));
       await renderScreen(makePuzzle());
       await waitFor(() =>
-        expect(screen.getByTestId('train-bot-copy').textContent).toContain('Welcome to FlawChess Train!'),
-      );
-      expect(screen.getByTestId('train-bot-name').textContent).toBe('Hilda the Hippo');
-      fireEvent.click(screen.getByTestId('btn-train-bot-step-next'));
-      await waitFor(() =>
-        expect(screen.getByTestId('train-bot-copy').textContent).not.toContain('Welcome'),
+        expect(screen.getByTestId('train-bot-copy').textContent).toContain('Hi there!'),
       );
       expect(screen.getByTestId('train-bot-name').textContent).toBe('Hilda the Hippo');
       expect(screen.queryByTestId('btn-train-guess-critical')).toBeNull();
-      for (let click = 0; click < introStepCount(false, { hasGames: true, isGuest: false }) - 2; click += 1) {
-        expect(screen.queryByTestId('btn-train-guess-critical')).toBeNull();
-        fireEvent.click(screen.getByTestId('btn-train-bot-step-next'));
-      }
+      fireEvent.click(screen.getByTestId('btn-train-bot-step-next'));
       await waitFor(() => expect(screen.getByTestId('btn-train-guess-critical')).not.toBeNull());
       expect(screen.getByTestId('train-bot-name').textContent).toBe('Hilda the Hippo');
       expect(screen.getByTestId('btn-train-guess-several')).not.toBeNull();
       expect(screen.queryByTestId('btn-train-bot-step-next')).toBeNull();
+      expect(screen.getByTestId('train-bot-copy').textContent).toContain(
+        'Decide first, then play. You play',
+      );
       expect(screen.getByTestId('train-bot-copy').textContent).not.toContain('warm-up');
     });
 
-    // Phase 222 UAT round 3: a warm-up first session gets the "still
-    // analyzing" step right before the closing guess step.
-    it('a warm-up session shows the "still analyzing" step right before the guess buttons', async () => {
+    // Phase 240 D-02: a warm-up first session gets the same two bubbles; UAT:
+    // the welcome bubble (only) says it is a warm-up, with no import/sign-up ask.
+    it('a warm-up session is also exactly two bubbles, with the warm-up note on the welcome only', async () => {
       getSettings.mockResolvedValue(makeSettings({ intro_seen_at: null }));
       await renderScreen(makePuzzle(), makeSession({ is_warmup: true }));
       await waitFor(() => expect(screen.getByTestId('btn-train-bot-step-next')).not.toBeNull());
-      for (let click = 0; click < introStepCount(true, { hasGames: true, isGuest: false }) - 2; click += 1) {
+      expect(screen.getByTestId('train-bot-copy').textContent).toBe(
+        "Hi there! Let's start with some warm-up puzzles. They're not from your own games yet.",
+      );
+      for (let click = 0; click < INTRO_STEP_COUNT - 1; click += 1) {
         fireEvent.click(screen.getByTestId('btn-train-bot-step-next'));
       }
-      await waitFor(() =>
-        expect(screen.getByTestId('train-bot-copy').textContent).toContain(
-          'still analyzing your games',
-        ),
-      );
-      expect(screen.queryByTestId('btn-train-guess-critical')).toBeNull();
-      fireEvent.click(screen.getByTestId('btn-train-bot-step-next'));
       await waitFor(() => expect(screen.getByTestId('btn-train-guess-critical')).not.toBeNull());
+      expect(screen.queryByTestId('btn-train-bot-step-next')).toBeNull();
+      expect(screen.getByTestId('train-bot-copy').textContent).not.toContain('analyzing');
+      expect(screen.getByTestId('train-bot-copy').textContent).not.toContain('warm-up');
     });
 
     it('stamps intro exactly once on the closing-step guess click and commits the guess', async () => {
       getSettings.mockResolvedValue(makeSettings({ intro_seen_at: null }));
       await renderScreen(makePuzzle());
-      for (let click = 0; click < introStepCount(false, { hasGames: true, isGuest: false }) - 1; click += 1) {
+      for (let click = 0; click < INTRO_STEP_COUNT - 1; click += 1) {
         fireEvent.click(screen.getByTestId('btn-train-bot-step-next'));
       }
       await waitFor(() => expect(screen.getByTestId('btn-train-guess-critical')).not.toBeNull());
@@ -3602,10 +3595,9 @@ describe('TrainSolveScreen — progress, last move, grading state, engine failur
       await waitFor(() => expect(screen.getByTestId('train-move-prompt')).not.toBeNull());
     });
 
-    it('does not stamp when the component unmounts mid-stepper (step 3)', async () => {
+    it('does not stamp when the component unmounts on the closing step', async () => {
       getSettings.mockResolvedValue(makeSettings({ intro_seen_at: null }));
       const { unmount } = await renderScreen(makePuzzle());
-      fireEvent.click(screen.getByTestId('btn-train-bot-step-next'));
       fireEvent.click(screen.getByTestId('btn-train-bot-step-next'));
       await waitFor(() =>
         expect(screen.getByTestId('train-bot-name').textContent).toBe('Hilda the Hippo'),
@@ -3640,7 +3632,7 @@ describe('TrainSolveScreen — progress, last move, grading state, engine failur
       expect(screen.queryByTestId('btn-train-guess-critical')).toBeNull();
       resolveSettings(makeSettings({ intro_seen_at: null }));
       await waitFor(() =>
-        expect(screen.getByTestId('train-bot-copy').textContent).toContain('Welcome to FlawChess Train!'),
+        expect(screen.getByTestId('train-bot-copy').textContent).toContain('Hi there!'),
       );
     });
 
@@ -3768,9 +3760,10 @@ describe('TrainSolveScreen — progress, last move, grading state, engine failur
     });
 
     // Phase 237 UAT: Hilda narrates the first-reveal tour, so she never hosts a
-    // puzzle while that tour is pending, even on a draw that lands on her slot.
+    // puzzle while any part of it is pending (Phase 240: stage < 3), even on a
+    // draw that lands on her slot.
     it('Hilda never hosts the puzzle while the first-reveal tour is pending', async () => {
-      getSettings.mockResolvedValue(makeSettings({ reveal_walkthrough_seen_at: null }));
+      getSettings.mockResolvedValue(makeSettings({ reveal_tour_stage: 0 }));
       const all = Object.values(PERSONA_REGISTRY);
       const hildaSlot = all.findIndex((p) => p.id === HILDA_ID);
       const random = vi.spyOn(Math, 'random').mockReturnValue((hildaSlot + 0.5) / all.length);
@@ -3952,13 +3945,14 @@ describe('TrainSolveScreen — progress, last move, grading state, engine failur
     });
 
     // Quick 260915-sht: warm-up is a SESSION property. A herring solved in a
-    // regular session (the user has SR items) must not be called a warm-up.
+    // regular session (the user has SR items) gets the neutral non-return line;
+    // Phase 240 UAT: in a warm-up session it gets no tail at all.
     it.each([
-      { is_warmup: false, expectWarmup: false },
-      { is_warmup: true, expectWarmup: true },
+      { is_warmup: false, expectTail: true },
+      { is_warmup: true, expectTail: false },
     ])(
-      'a red_herring verdict says "warm-up" only when the session is a warm-up (is_warmup=$is_warmup)',
-      async ({ is_warmup, expectWarmup }) => {
+      'a red_herring verdict has a non-return tail only outside a warm-up (is_warmup=$is_warmup)',
+      async ({ is_warmup, expectTail }) => {
         solvePuzzle.mockResolvedValue({
           correct_guess: true,
           correct_move: true,
@@ -3976,8 +3970,8 @@ describe('TrainSolveScreen — progress, last move, grading state, engine failur
           fireEvent.click(screen.getByTestId('drop-e2e4'));
         });
         const verdictLine = await waitFor(() => screen.getByTestId('train-bot-verdict-line'));
-        expect(verdictLine.textContent).toContain("won't come back");
-        expect(verdictLine.textContent?.includes('warm-up')).toBe(expectWarmup);
+        expect(verdictLine.textContent?.includes("won't come back")).toBe(expectTail);
+        expect(verdictLine.textContent).not.toContain('warm-up');
         expect(screen.queryByTestId('train-bot-return-tail')).toBeNull();
       },
     );
@@ -4019,300 +4013,561 @@ describe('TrainSolveScreen — progress, last move, grading state, engine failur
     });
   });
 
-  describe('Phase 222: first-reveal walkthrough (D-24/D-12/TRAINBOT-10)', () => {
-    /** Opens a first reveal (tour active) on the current viewport. */
-    async function openFirstReveal(): Promise<ReturnType<typeof render>> {
-      getSettings.mockResolvedValue(makeSettings({ reveal_walkthrough_seen_at: null }));
-      const rendered = await renderScreen(makePuzzle());
+  describe('Phase 240: split reveal tour', () => {
+    // Every spotlight assertion in this describe goes through this helper.
+    const spotlit = (element: HTMLElement): boolean => element.classList.contains(TOUR_SPOTLIGHT_CLASS);
+
+    /** Opens a reveal for an account at `stage` on the current viewport; `solve`
+     * overrides fields of the graded verdict (e.g. `puzzle_type`). */
+    async function openReveal(
+      stage: TrainSettingsResponse['reveal_tour_stage'],
+      solve: Partial<SolveResponse> = {},
+      queryClient?: QueryClient,
+    ): Promise<ReturnType<typeof render>> {
+      getSettings.mockResolvedValue(makeSettings({ reveal_tour_stage: stage }));
+      solvePuzzle.mockResolvedValue({ ...SOLVE_RESPONSE, ...solve });
+      const rendered = await renderScreen(makePuzzle(), makeSession(), null, undefined, queryClient);
       fireEvent.click(screen.getByTestId('btn-train-guess-critical'));
       await act(async () => {
         fireEvent.click(screen.getByTestId('drop-e2e4'));
       });
-      await waitFor(() => expect(screen.getByTestId('train-bot-walkthrough')).not.toBeNull());
       return rendered;
     }
     // Phase 237 UAT (G-01): the reveal bar's Next is the tour's only Next.
-    const clickWalkthroughNext = (): void => {
+    const clickBarNext = (): void => {
       fireEvent.click(screen.getByTestId('btn-train-next'));
     };
-    const walkthroughCopyText = (): string =>
-      screen.getByTestId('train-bot-walkthrough').textContent ?? '';
-    const overlayShown = (): boolean => screen.queryByTestId('train-tour-overlay') !== null;
-    const badgeShown = (): boolean => screen.queryByTestId('btn-train-tour-reopen') !== null;
+    const tourCopyText = (): string => screen.getByTestId('train-bot-walkthrough').textContent ?? '';
 
-    it('tracer: on a phone Hilda speaks from an overlay on the board and the strip is ringed', async () => {
+    it('tracer: phone, stage 0: the result bubble speaks from the board overlay and spotlights the strip', async () => {
       matchMediaMatches = false; // below lg: the strip is the verdict surface, the tour an overlay
-      await openFirstReveal();
+      await openReveal(0, { puzzle_type: 'sharp' });
+      await waitFor(() => expect(screen.getByTestId('train-bot-walkthrough')).not.toBeNull());
       const overlay = screen.getByTestId('train-tour-overlay');
       // G-01: the tour copy sits on the board, not in the reveal column.
       expect(screen.getByTestId('train-pinned-board').contains(overlay)).toBe(true);
       expect(within(screen.getByTestId('train-reveal')).queryByTestId('train-bot-walkthrough')).toBeNull();
       expect(overlay.className).toContain('pointer-events-none');
-      expect(screen.getByTestId('train-verdict-strip').getAttribute('aria-expanded')).toBe('false');
-      expect(screen.getByTestId('train-verdict-strip-root').className).toContain('ring-2');
-      expect(walkthroughCopyText()).toContain('Tap it');
-      expect(within(overlay).getByTestId('train-tour-step-count').textContent).toBe(`1 / ${WALKTHROUGH_STEP_COUNT}`);
+      expect(tourCopyText()).toBe(
+        'Your result is in the highlighted box. Tap it for details. Proceed with Next when ready.',
+      );
+      // Phase 240 UAT: part 1 is one step, so no "1 / 1" counter.
+      expect(within(overlay).queryByTestId('train-tour-step-count')).toBeNull();
+      expect(spotlit(screen.getByTestId('train-verdict-strip-root'))).toBe(true);
       // One Next on screen: the bar's.
       expect(screen.queryByTestId('btn-train-bot-walkthrough-next')).toBeNull();
       expect(screen.getAllByTestId('btn-train-next')).toHaveLength(1);
-      expect(screen.queryByTestId('train-bot-verdict-line')).toBeNull();
     });
 
-    it('on desktop Hilda also speaks from the board overlay, and the verdict bubble is ringed', async () => {
-      matchMediaMatches = true;
-      await openFirstReveal();
-      const overlay = screen.getByTestId('train-tour-overlay');
-      // Phase 237 UAT: no second bot bubble stacked over the verdict bubble.
-      expect(screen.getByTestId('train-pinned-board').contains(overlay)).toBe(true);
-      const reveal = screen.getByTestId('train-reveal');
-      expect(within(reveal).queryByTestId('train-bot-walkthrough')).toBeNull();
-      expect(within(reveal).queryByTestId('train-bot-bubble')).toBeNull();
-      expect(within(reveal).getByTestId('train-verdict-card').className).toContain('ring-2');
-      expect(within(overlay).getByTestId('train-tour-step-count').textContent).toBe(
-        `1 / ${WALKTHROUGH_STEP_COUNT}`,
-      );
-      expect(walkthroughCopyText()).not.toContain('Tap it');
-      expect(screen.queryByTestId('btn-train-bot-walkthrough-next')).toBeNull();
-      expect(within(reveal).queryByTestId('train-verdict-strip')).toBeNull();
-    });
-
-    it('the bar Next moves the tour to the chips step and off the strip, and never rings the chips row', async () => {
+    // Phase 240 UAT: part 1 lost its "Next takes you to the next puzzle." step
+    // (the user had to press Next to reach it), so the bar is never spotlit
+    // in part 1 and the first Next already finishes the part.
+    it('part 1 is the result step alone: the bar is not spotlit and the first bar Next stamps reveal_tour_1 and leaves', async () => {
       matchMediaMatches = false;
-      await openFirstReveal();
-      clickWalkthroughNext();
-      await waitFor(() => expect(walkthroughCopyText()).toContain('Tap one to focus it'));
-      expect(screen.getByTestId('train-verdict-strip-root').className).not.toContain('ring-2');
-      expect(screen.getByTestId('train-line-chips').className).not.toContain('ring-2');
-      expect(screen.getByTestId('train-tour-step-count').textContent).toBe(`2 / ${WALKTHROUGH_STEP_COUNT}`);
-    });
-
-    it('the ring follows the target: list, board row, list, then nothing on the bar step', async () => {
-      matchMediaMatches = false;
-      await openFirstReveal();
-      const treeRinged = (): boolean =>
-        screen.getByTestId('train-tree-tour-ring').className.includes('ring-2');
-      const boardRinged = (): boolean =>
-        screen.getByTestId('chessboard').closest('[class*="ring-2"]') !== null;
-      // Step 1: the chips (the active chip's own ring only).
-      clickWalkthroughNext();
-      expect([treeRinged(), boardRinged()]).toEqual([false, false]);
-      // Step 2: the move list.
-      clickWalkthroughNext();
-      expect([treeRinged(), boardRinged()]).toEqual([true, false]);
-      // Step 3: the board row.
-      clickWalkthroughNext();
-      expect([treeRinged(), boardRinged()]).toEqual([false, true]);
-      // Step 4: chips and list together (the list carries the ring).
-      clickWalkthroughNext();
-      expect([treeRinged(), boardRinged()]).toEqual([true, false]);
-      // Step 5: the action bar step rings nothing (Phase 237 UAT: the bar ring
-      // was clipped in the fixed mobile bottom bar, so the bubble points alone).
-      clickWalkthroughNext();
-      await waitFor(() =>
-        expect(screen.getByTestId('train-tour-step-count').textContent).toBe(
-          `${WALKTHROUGH_STEP_COUNT} / ${WALKTHROUGH_STEP_COUNT}`,
-        ),
-      );
-      expect(screen.getByTestId('train-reveal-action-bar').className).not.toContain('ring-2');
-      expect([treeRinged(), boardRinged()]).toEqual([false, false]);
-      expect(screen.getByTestId('train-line-chips').className).not.toContain('ring-2');
-    });
-
-    it('the bar Next walks the tour without leaving the puzzle; on the last step it leaves and stamps once', async () => {
-      await openFirstReveal();
-      for (let click = 0; click < WALKTHROUGH_STEP_COUNT - 1; click += 1) {
-        clickWalkthroughNext();
-        // The puzzle stays: the reveal is still on screen and nothing is stamped or flushed.
-        expect(screen.getByTestId('train-reveal')).not.toBeNull();
-      }
-      expect(nextFlush).not.toHaveBeenCalled();
+      await openReveal(0);
+      await waitFor(() => expect(screen.getByTestId('train-bot-walkthrough')).not.toBeNull());
+      expect(analyzeSpotlit()).toBe(false);
+      expect(actionBarSpotlit()).toBe(false);
       expect(stampOnboarding).not.toHaveBeenCalled();
-      clickWalkthroughNext();
+      clickBarNext();
       await waitFor(() => expect(stampOnboarding).toHaveBeenCalledTimes(1));
-      expect(stampOnboarding).toHaveBeenCalledWith('reveal_walkthrough');
+      expect(stampOnboarding).toHaveBeenCalledWith('reveal_tour_1');
       await waitFor(() => expect(nextFlush).toHaveBeenCalledTimes(1));
     });
 
-    it('unmounting on the last step (before leaving through Next) fires no stamp — an abandoned stepper replays', async () => {
-      const { unmount } = await openFirstReveal();
-      for (let click = 0; click < WALKTHROUGH_STEP_COUNT - 1; click += 1) clickWalkthroughNext();
-      await waitFor(() =>
-        expect(screen.getByTestId('train-tour-step-count').textContent).toBe(
-          `${WALKTHROUGH_STEP_COUNT} / ${WALKTHROUGH_STEP_COUNT}`,
-        ),
+    it('desktop, stage 0: no tap hint, and the verdict card is spotlit', async () => {
+      matchMediaMatches = true;
+      await openReveal(0, { puzzle_type: 'herring' });
+      await waitFor(() => expect(screen.getByTestId('train-bot-walkthrough')).not.toBeNull());
+      expect(tourCopyText()).toBe(
+        'Your result is in the highlighted box. Proceed with Next when ready.',
       );
-      unmount();
+      const reveal = screen.getByTestId('train-reveal');
+      expect(spotlit(within(reveal).getByTestId('train-verdict-card'))).toBe(true);
+      expect(screen.queryByTestId('train-tour-step-count')).toBeNull();
+    });
+
+    it('stage 3: nothing is spotlit anywhere on the screen', async () => {
+      await openReveal(3);
+      await waitFor(() => expect(screen.getByTestId('train-bot-verdict-line')).not.toBeNull());
+      expect(document.querySelector(`.${TOUR_SPOTLIGHT_CLASS}`)).toBeNull();
+    });
+
+    it('exactly one element is spotlit at a time, and the glow moves with the step', async () => {
+      matchMediaMatches = false;
+      await openReveal(1);
+      await waitFor(() => expect(document.querySelector(`.${TOUR_SPOTLIGHT_CLASS}`)).not.toBeNull());
+      expect(document.querySelectorAll(`.${TOUR_SPOTLIGHT_CLASS}`)).toHaveLength(1);
+      const firstSpotlit = document.querySelector(`.${TOUR_SPOTLIGHT_CLASS}`);
+      clickBarNext();
+      await waitFor(() => expect(screen.getByTestId('train-tour-step-count').textContent).toBe('2 / 2'));
+      const nowSpotlit = document.querySelectorAll(`.${TOUR_SPOTLIGHT_CLASS}`);
+      expect(nowSpotlit).toHaveLength(1);
+      expect(nowSpotlit[0]).not.toBe(firstSpotlit);
+    });
+
+    it('stage 3: no tour overlay on the reveal and the verdict shows immediately', async () => {
+      await openReveal(3);
+      await waitFor(() => expect(screen.getByTestId('train-bot-verdict-line')).not.toBeNull());
+      expect(screen.queryByTestId('train-tour-overlay')).toBeNull();
+      expect(screen.queryByTestId('train-bot-walkthrough')).toBeNull();
+    });
+
+    // ── Parts 2 and 3 (plan 04): consecutive reveals, per-part counters ──
+    const stepCount = (): string => screen.getByTestId('train-tour-step-count').textContent ?? '';
+    const treeSpotlit = (): boolean => spotlit(screen.getByTestId('train-tree-tour-ring'));
+    const linesSpotlit = (): boolean => spotlit(screen.getByTestId('train-lines-tour-target'));
+    const chipsRowSpotlit = (): boolean => {
+      const row = screen.getByTestId('train-line-chips').closest('[data-tour-target="chips"]');
+      return row instanceof HTMLElement && spotlit(row);
+    };
+    // Phase 240 UAT: the Analyze step spotlights the Analyze button alone.
+    const analyzeSpotlit = (): boolean => spotlit(screen.getByTestId('btn-train-analyze'));
+    const actionBarSpotlit = (): boolean => spotlit(screen.getByTestId('train-reveal-action-bar'));
+    // The board row's spotlight sits on an ancestor of the board.
+    const boardSpotlit = (): boolean => {
+      for (let el = screen.getByTestId('chessboard').parentElement; el !== null; el = el.parentElement) {
+        if (spotlit(el)) return true;
+      }
+      return false;
+    };
+    const ANALYZE_GAME_COPY =
+      'The Analyze button opens the whole game one move before the mistake, so you can see how you got there.';
+    const ANALYZE_POSITION_COPY = 'The Analyze button opens this position on the analysis board.';
+    const CHIPS_COPY =
+      "Each chip is a line: your Move, the engine's Best, and your Game move if known. Same moves share a chip. Tap or click a chip to show its line.";
+
+    it('stage 1 on a phone: chips (1 / 2, row spotlit), then stepping (2 / 2, list spotlit); the puzzle stays and nothing is stamped', async () => {
+      matchMediaMatches = false;
+      await openReveal(1);
+      await waitFor(() => expect(screen.getByTestId('train-bot-walkthrough')).not.toBeNull());
+      expect(tourCopyText()).toContain("Each chip is a line: your Move, the engine's Best, and your Game move if known.");
+      expect(stepCount()).toBe('1 / 2');
+      expect(chipsRowSpotlit()).toBe(true);
+      expect(spotlit(screen.getByTestId('train-verdict-strip-root'))).toBe(false);
+      expect(treeSpotlit()).toBe(false);
+      expect(linesSpotlit()).toBe(false);
+      // The active chip keeps its own selection ring next to the row glow (D-20).
+      expect(screen.getByTestId('train-chip-your').className).toContain('ring-brand-brown');
+
+      clickBarNext();
+      await waitFor(() => expect(tourCopyText()).toContain('Step through the line with'));
+      expect(stepCount()).toBe('2 / 2');
+      expect(treeSpotlit()).toBe(true);
+      expect(chipsRowSpotlit()).toBe(false);
+      // The bar's own icons instead of glyphs or tokens.
+      expect(tourCopyText()).toContain(', or tap or click a move in the list.');
+      expect(screen.getByTestId('train-tour-icon-back')).not.toBeNull();
+      expect(screen.getByTestId('train-tour-icon-forward')).not.toBeNull();
+      expect(tourCopyText()).not.toContain('{');
+      expect(screen.getByTestId('train-reveal')).not.toBeNull();
+      expect(stampOnboarding).not.toHaveBeenCalled();
+      expect(nextFlush).not.toHaveBeenCalled();
+    });
+
+    it('stage 1: the bar Next on the stepping step stamps reveal_tour_2 exactly once and leaves the puzzle', async () => {
+      await openReveal(1);
+      await waitFor(() => expect(screen.getByTestId('train-bot-walkthrough')).not.toBeNull());
+      clickBarNext();
+      await waitFor(() => expect(stepCount()).toBe('2 / 2'));
+      clickBarNext();
+      await waitFor(() => expect(stampOnboarding).toHaveBeenCalledTimes(1));
+      expect(stampOnboarding).toHaveBeenCalledWith('reveal_tour_2');
+      await waitFor(() => expect(nextFlush).toHaveBeenCalledTimes(1));
+    });
+
+    // Phase 240 UAT: the tour copy no longer branches on the device.
+    it('stage 1 on desktop: the stepping copy is the same string as on a phone', async () => {
+      matchMediaMatches = true;
+      await openReveal(1);
+      await waitFor(() => expect(screen.getByTestId('train-bot-walkthrough')).not.toBeNull());
+      expect(stepCount()).toBe('1 / 2');
+      clickBarNext();
+      await waitFor(() => expect(stepCount()).toBe('2 / 2'));
+      expect(tourCopyText()).toContain(', or tap or click a move in the list.');
+    });
+
+    it('stage 2 on a phone: sidelines 1 / 3, understand 2 / 3, Analyze 3 / 3; the bar Next on Analyze stamps reveal_tour_3 once', async () => {
+      matchMediaMatches = false;
+      await openReveal(2);
+      await waitFor(() => expect(screen.getByTestId('train-bot-walkthrough')).not.toBeNull());
+      expect(tourCopyText()).toContain('Move a piece to try your own idea: it branches off as a sideline.');
+      expect(tourCopyText()).toContain('takes you back to the puzzle position.');
+      expect(screen.getByTestId('train-tour-icon-rewind')).not.toBeNull();
+      expect(stepCount()).toBe('1 / 3');
+      expect(boardSpotlit()).toBe(true);
+      expect(treeSpotlit()).toBe(false);
+
+      clickBarNext();
+      await waitFor(() => expect(tourCopyText()).toContain("Don't just memorize the answer."));
+      expect(stepCount()).toBe('2 / 3');
+      // The understand step spotlights the chips row and the list as one region.
+      expect(linesSpotlit()).toBe(true);
+      expect(treeSpotlit()).toBe(false);
+      expect(chipsRowSpotlit()).toBe(false);
+      expect(boardSpotlit()).toBe(false);
+
+      clickBarNext();
+      await waitFor(() => expect(tourCopyText()).toBe(ANALYZE_GAME_COPY));
+      expect(stepCount()).toBe('3 / 3');
+      expect(analyzeSpotlit()).toBe(true);
+      expect(actionBarSpotlit()).toBe(false);
+      expect(linesSpotlit()).toBe(false);
+      expect(stampOnboarding).not.toHaveBeenCalled();
+      expect(nextFlush).not.toHaveBeenCalled();
+
+      clickBarNext();
+      await waitFor(() => expect(stampOnboarding).toHaveBeenCalledTimes(1));
+      expect(stampOnboarding).toHaveBeenCalledWith('reveal_tour_3');
+      await waitFor(() => expect(nextFlush).toHaveBeenCalledTimes(1));
+    });
+
+    it('stage 2: the Analyze button on the Analyze step stamps reveal_tour_3 exactly once and takes the Analyze exit', async () => {
+      await openReveal(2);
+      await waitFor(() => expect(screen.getByTestId('train-bot-walkthrough')).not.toBeNull());
+      clickBarNext();
+      clickBarNext();
+      await waitFor(() => expect(stepCount()).toBe('3 / 3'));
+      fireEvent.click(screen.getByTestId('btn-train-analyze'));
+      await waitFor(() => expect(stampOnboarding).toHaveBeenCalledTimes(1));
+      expect(stampOnboarding).toHaveBeenCalledWith('reveal_tour_3');
+      // The Analyze exit (not Next) ran: the reveal snapshot is cached for Back, and
+      // no Next flush fired.
+      expect(readTrainRevealCache()).not.toBeNull();
+      expect(nextFlush).not.toHaveBeenCalled();
+    });
+
+    it('stage 2: the Analyze step names the position when the puzzle has no game of the user', async () => {
+      // A red herring's game belongs to another user: Analyze opens just the position.
+      await openReveal(2, { puzzle_type: 'herring', source: 'red_herring' });
+      await waitFor(() => expect(screen.getByTestId('train-bot-walkthrough')).not.toBeNull());
+      clickBarNext();
+      clickBarNext();
+      await waitFor(() => expect(stepCount()).toBe('3 / 3'));
+      expect(tourCopyText()).toBe(ANALYZE_POSITION_COPY);
+    });
+
+    it('stage 2 on desktop: the sidelines copy is the same string as on a phone', async () => {
+      matchMediaMatches = true;
+      await openReveal(2);
+      await waitFor(() => expect(screen.getByTestId('train-bot-walkthrough')).not.toBeNull());
+      expect(stepCount()).toBe('1 / 3');
+      expect(tourCopyText()).toContain('takes you back to the puzzle position.');
+    });
+
+    // Below sm the bar is the fixed phone bar, fed by the published payload: its
+    // `spotlight` flag follows the tour step that targets the bar (D-20).
+    async function openRevealWithProbe(stage: TrainSettingsResponse['reveal_tour_stage']): Promise<void> {
+      getSettings.mockResolvedValue(makeSettings({ reveal_tour_stage: stage }));
+      solvePuzzle.mockResolvedValue(SOLVE_RESPONSE);
+      matchMediaMatches = false;
+      await renderScreenWithProbe(makePuzzle());
+      fireEvent.click(screen.getByTestId('btn-train-guess-critical'));
+      await act(async () => {
+        fireEvent.click(screen.getByTestId('drop-e2e4'));
+      });
+      await waitFor(() => expect(screen.getByTestId('train-bot-walkthrough')).not.toBeNull());
+    }
+    const payloadSpotlight = (): string => screen.getByTestId('mbc-spotlight').textContent ?? '';
+
+    // Phase 240 UAT: part 1 no longer has a bar step, so the phone bar is never spotlit.
+    it('phone bar, part 1: the payload never spotlights the bar', async () => {
+      await openRevealWithProbe(0);
+      expect(screen.queryByTestId('train-tour-step-count')).toBeNull();
+      expect(payloadSpotlight()).toBe('false');
+    });
+
+    it('phone bar, part 3: the payload spotlights Analyze on the Analyze step only', async () => {
+      await openRevealWithProbe(2);
+      expect(payloadSpotlight()).toBe('false');
+      fireEvent.click(screen.getByTestId('mbc-btn-next'));
+      await waitFor(() => expect(stepCount()).toBe('2 / 3'));
+      expect(payloadSpotlight()).toBe('false');
+      fireEvent.click(screen.getByTestId('mbc-btn-next'));
+      await waitFor(() => expect(stepCount()).toBe('3 / 3'));
+      expect(payloadSpotlight()).toBe('true');
+    });
+
+    // Phase 240 UAT: the chips copy is one string for every chip set, so a lone
+    // merged chip never gets "tap the other one" advice it cannot follow.
+    it('stage 1: a "Move = Best" reveal gets the same chips copy', async () => {
+      matchMediaMatches = false;
+      await openReveal(1); // played e2e4 = the engine's best move: the Move and Best chips merge
+      await waitFor(() => expect(tourCopyText()).toBe(CHIPS_COPY));
+      expect(screen.getByTestId('train-chip-your').textContent).toContain('Best');
+      expect(tourCopyText().length).toBeLessThanOrEqual(STEPPER_COPY_MAX_CHARS);
+    });
+
+    it('stage 1: a "Move = Game" reveal gets the same chips copy', async () => {
+      matchMediaMatches = false;
+      // The game move (d2d4) is the move played here, and is not the engine's best.
+      revealPuzzle.mockResolvedValueOnce({
+        game_id: 100,
+        ply: 20,
+        fen: START_FEN,
+        played_in_game_san: 'd4',
+        played_in_game_move_uci: 'd2d4',
+        puzzle_type: 'sharp',
+        source: 'sr_item',
+        has_tactic_lines: false,
+      });
+      getSettings.mockResolvedValue(makeSettings({ reveal_tour_stage: 1 }));
+      await renderScreen(makePuzzle());
+      fireEvent.click(screen.getByTestId('btn-train-guess-critical'));
+      await act(async () => {
+        fireEvent.click(screen.getByTestId('drop-d2d4'));
+      });
+      await waitFor(() => expect(screen.getByTestId('train-chip-your').textContent).toContain('Game'));
+      expect(tourCopyText()).toBe(CHIPS_COPY);
+      expect(tourCopyText().length).toBeLessThanOrEqual(STEPPER_COPY_MAX_CHARS);
+    });
+
+    it('the board arrow set is identical across the steps of part 2 and of part 3: the chip focus is never touched', async () => {
+      for (const stage of [1, 2] as const) {
+        await openReveal(stage);
+        await waitFor(() => expect(screen.getByTestId('train-bot-walkthrough')).not.toBeNull());
+        const board = screen.getByTestId('chessboard');
+        const firstArrows = board.getAttribute('data-arrow-ucis');
+        expect(firstArrows).not.toBe('');
+        const lastStep = stage === 1 ? 2 : 3;
+        for (let click = 1; click < lastStep; click += 1) {
+          clickBarNext();
+          await waitFor(() => expect(stepCount()).toBe(`${click + 1} / ${lastStep}`));
+          expect(board.getAttribute('data-arrow-ucis')).toBe(firstArrows);
+        }
+        cleanup();
+        stampOnboarding.mockClear();
+      }
+    });
+
+    // ── One part per reveal, abandon and replay, hide and reopen (plan 04 Task 2) ──
+    const overlayShown = (): boolean => screen.queryByTestId('train-tour-overlay') !== null;
+    const badgeShown = (): boolean => screen.queryByTestId('btn-train-tour-reopen') !== null;
+    const SIDELINES_COPY = 'Move a piece to try your own idea: it branches off as a sideline.';
+    const STEPPING_COPY = 'Step through the line with';
+
+    it('latch (D-07): a stage write that lands mid-reveal never switches the part', async () => {
+      const queryClient = new QueryClient({
+        defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+      });
+      await openReveal(0, {}, queryClient);
+      await waitFor(() => expect(screen.getByTestId('train-bot-walkthrough')).not.toBeNull());
+      const resultCopy = tourCopyText();
+      expect(resultCopy).toContain('Your result');
+
+      // What the leave stamp's onSuccess does: the cached stage moves 0 -> 1 while this
+      // reveal is still on screen. Part 2 (chips) must NOT replace part 1's result bubble.
+      act(() => {
+        queryClient.setQueryData(TRAIN_SETTINGS_QUERY_KEY, makeSettings({ reveal_tour_stage: 1 }));
+      });
+      // TanStack defers observer notifications to a macrotask: wait one out, or the
+      // screen has not seen the new stage yet and the assertions below prove nothing.
+      await act(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 20));
+      });
+      expect(tourCopyText()).toBe(resultCopy);
+      expect(screen.queryByTestId('train-tour-step-count')).toBeNull();
+
+      // Leaving still finishes part 1, not part 2.
+      clickBarNext();
+      await waitFor(() => expect(stampOnboarding).toHaveBeenCalledTimes(1));
+      expect(stampOnboarding).toHaveBeenCalledWith('reveal_tour_1');
+    });
+
+    it('a reveal restored after the Analyze round trip starts no part and stamps nothing (D-07)', async () => {
+      const restoredPuzzle = makePuzzle();
+      const restored: CachedTrainReveal = {
+        sessionId: 1,
+        puzzle: restoredPuzzle,
+        verdict: SOLVE_RESPONSE,
+        verdictBotId: 'wall-1800',
+        guess: 'critical',
+        playedMoveUci: 'e2e4',
+        gradeResult: {
+          moveTier: 'good',
+          bestMoveUci: 'e2e4',
+          esBefore: 0.5,
+          esAfter: 0.5,
+          bestLine: { moves: ['e2e4'], evalCp: 19, evalMate: null },
+          playedLine: { moves: ['e2e4'], evalCp: 19, evalMate: null },
+          lines: [],
+        },
+      };
+      // Stage 0: a fresh reveal at this stage WOULD run part 1; the restored one must not.
+      getSettings.mockResolvedValue(makeSettings({ reveal_tour_stage: 0 }));
+      matchMediaMatches = true;
+      await renderScreen(restoredPuzzle, makeSession(), restored);
+      await waitForReveal();
+      await waitFor(() => expect(getSettings).toHaveBeenCalled());
+      await act(async () => {});
+      await waitFor(() => expect(screen.getByTestId('train-bot-verdict-line')).not.toBeNull());
+      expect(overlayShown()).toBe(false);
+      expect(screen.queryByTestId('train-bot-walkthrough')).toBeNull();
       expect(stampOnboarding).not.toHaveBeenCalled();
     });
 
-    it('step 2 explains the Move = Best chip only when the played move is the best move', async () => {
-      matchMediaMatches = false;
-      await openFirstReveal();
-      clickWalkthroughNext();
-      const merged = screen.queryByTestId('train-chip-your')?.textContent?.includes('Best') ?? false;
-      expect(walkthroughCopyText().includes('"Move = Best"')).toBe(merged);
+    it('a part left on its last step (unmount) stamps nothing and replays from 1 / n on the next reveal (D-08)', async () => {
+      const { unmount } = await openReveal(2);
+      await waitFor(() => expect(screen.getByTestId('train-bot-walkthrough')).not.toBeNull());
+      clickBarNext();
+      clickBarNext();
+      await waitFor(() => expect(screen.getByTestId('train-tour-step-count').textContent).toBe('3 / 3'));
+      unmount();
+      await act(async () => {});
+      expect(stampOnboarding).not.toHaveBeenCalled();
+
+      // Nothing was stamped, so the account is still at stage 2: part 3 starts over.
+      await openReveal(2);
+      await waitFor(() => expect(screen.getByTestId('train-bot-walkthrough')).not.toBeNull());
+      expect(screen.getByTestId('train-tour-step-count').textContent).toBe('1 / 3');
+      expect(tourCopyText()).toContain(SIDELINES_COPY);
     });
 
-    it('the bar copy shows the bar icons, not glyphs', async () => {
-      matchMediaMatches = false;
-      await openFirstReveal();
-      clickWalkthroughNext();
-      clickWalkthroughNext();
-      expect(screen.getByTestId('train-tour-icon-back')).not.toBeNull();
-      expect(screen.getByTestId('train-tour-icon-forward')).not.toBeNull();
-      clickWalkthroughNext();
-      expect(screen.getByTestId('train-tour-icon-rewind')).not.toBeNull();
-      expect(walkthroughCopyText()).not.toContain('{');
+    it('the Analyze button from a middle step of a part stamps nothing (D-08)', async () => {
+      await openReveal(2);
+      await waitFor(() => expect(screen.getByTestId('train-bot-walkthrough')).not.toBeNull());
+      expect(screen.getByTestId('train-tour-step-count').textContent).toBe('1 / 3');
+      fireEvent.click(screen.getByTestId('btn-train-analyze'));
+      await act(async () => {});
+      expect(readTrainRevealCache()).not.toBeNull(); // the Analyze exit ran
+      expect(stampOnboarding).not.toHaveBeenCalled();
     });
 
-    // Phase 237 UAT (G-01): an interaction hides the phone overlay but never
-    // moves the tour; the next bar Next shows the overlay with the next step.
-    it('on a phone, a chip tap hides the overlay without advancing; Next shows the next step', async () => {
+    // Phase 237 UAT (G-01): an interaction hides the overlay but never moves the
+    // tour; the next bar Next shows the overlay with the next step. Same on every part.
+    it('part 2 on a phone: a chip tap hides the overlay without advancing; Next shows the stepping step', async () => {
       matchMediaMatches = false;
-      await openFirstReveal();
-      clickWalkthroughNext();
-      expect(overlayShown()).toBe(true);
+      await openReveal(1);
+      await waitFor(() => expect(overlayShown()).toBe(true));
       fireEvent.click(screen.getByTestId('train-chip-your'));
       await waitFor(() => expect(overlayShown()).toBe(false));
       expect(badgeShown()).toBe(true);
-      clickWalkthroughNext();
+      clickBarNext();
       await waitFor(() => expect(overlayShown()).toBe(true));
-      expect(walkthroughCopyText()).toContain('Step through the focused line');
+      expect(tourCopyText()).toContain(STEPPING_COPY);
+      expect(screen.getByTestId('train-tour-step-count').textContent).toBe('2 / 2');
       expect(badgeShown()).toBe(false);
     });
 
-    it("on a phone, Hilda's badge brings the current step back", async () => {
+    it("part 2 on a phone: a list tap hides the overlay and Hilda's badge brings the stepping step back", async () => {
       matchMediaMatches = false;
-      await openFirstReveal();
-      clickWalkthroughNext();
-      clickWalkthroughNext();
+      await openReveal(1);
+      await waitFor(() => expect(overlayShown()).toBe(true));
+      clickBarNext();
+      await waitFor(() => expect(tourCopyText()).toContain(STEPPING_COPY));
+      await waitFor(() => expect(screen.getByTestId('train-move-tree')).not.toBeNull());
       tapListMove(0);
       await waitFor(() => expect(badgeShown()).toBe(true));
+      expect(overlayShown()).toBe(false);
       fireEvent.click(screen.getByTestId('btn-train-tour-reopen'));
       expect(overlayShown()).toBe(true);
-      expect(walkthroughCopyText()).toContain('Step through the focused line');
+      expect(tourCopyText()).toContain(STEPPING_COPY);
     });
 
-    it('on a phone, a touch on the board hides the overlay', async () => {
+    it('part 2 on a phone: a touch on the board hides the overlay', async () => {
       matchMediaMatches = false;
-      await openFirstReveal();
+      await openReveal(1);
+      await waitFor(() => expect(overlayShown()).toBe(true));
       fireEvent.pointerDown(screen.getByTestId('chessboard'));
       await waitFor(() => expect(badgeShown()).toBe(true));
       expect(overlayShown()).toBe(false);
     });
 
-    it('on a phone, expanding the strip hides the overlay and leaves the tour on the result step', async () => {
+    it('part 1 on a phone: expanding the strip hides the overlay and leaves the tour on the result step', async () => {
       matchMediaMatches = false;
-      await openFirstReveal();
+      await openReveal(0);
+      await waitFor(() => expect(overlayShown()).toBe(true));
       fireEvent.click(screen.getByTestId('train-verdict-strip'));
       await waitFor(() => expect(badgeShown()).toBe(true));
       fireEvent.click(screen.getByTestId('btn-train-tour-reopen'));
-      expect(walkthroughCopyText()).toContain('Tap it');
+      expect(tourCopyText()).toContain('Your result is in the highlighted box.');
+      expect(screen.queryByTestId('train-tour-step-count')).toBeNull();
     });
 
-    it('a fork hides the overlay and leaves the tour on its step', async () => {
+    it('part 3 on a phone: a fork hides the overlay and leaves the tour on the sidelines step', async () => {
       matchMediaMatches = false;
-      await openFirstReveal();
-      clickWalkthroughNext();
-      clickWalkthroughNext();
-      clickWalkthroughNext();
-      expect(walkthroughCopyText()).toContain('Move a piece');
+      await openReveal(2);
+      await waitFor(() => expect(tourCopyText()).toContain(SIDELINES_COPY));
       await act(async () => {
         fireEvent.click(screen.getByTestId('drop-d2d4'));
       });
       await waitFor(() => expect(badgeShown()).toBe(true));
       fireEvent.click(screen.getByTestId('btn-train-tour-reopen'));
-      expect(walkthroughCopyText()).toContain('Move a piece');
+      expect(tourCopyText()).toContain(SIDELINES_COPY);
+      expect(screen.getByTestId('train-tour-step-count').textContent).toBe('1 / 3');
     });
 
-    it('on desktop an interaction hides the tour overlay behind the badge but never moves the tour', async () => {
+    it('part 2 on desktop: an interaction hides the overlay behind the badge but never moves the tour', async () => {
       matchMediaMatches = true;
-      await openFirstReveal();
-      clickWalkthroughNext();
+      await openReveal(1);
+      await waitFor(() => expect(overlayShown()).toBe(true));
       fireEvent.click(screen.getByTestId('train-chip-your'));
-      // Phase 237 UAT: the overlay covers the board on desktop too, so it hides.
+      // The overlay covers the board on desktop too, so it hides.
       expect(overlayShown()).toBe(false);
       expect(badgeShown()).toBe(true);
       fireEvent.click(screen.getByTestId('btn-train-tour-reopen'));
-      expect(walkthroughCopyText()).toContain('Tap one to focus it');
+      expect(tourCopyText()).toContain('Tap or click a chip');
+      expect(screen.getByTestId('train-tour-step-count').textContent).toBe('1 / 2');
     });
 
-    async function openOnPhoneAndMockLayout(rects: {
-      pinned: Partial<DOMRect>;
-      chips: Partial<DOMRect>;
-    }): Promise<void> {
-      matchMediaMatches = false;
-      const scrollTween = vi.mocked(animateScrollTop);
-      scrollTween.mockClear();
-      await openFirstReveal();
-      await waitFor(() => expect(screen.getByTestId('train-line-chips')).not.toBeNull());
-      vi.spyOn(screen.getByTestId('train-pinned-board'), 'getBoundingClientRect').mockReturnValue(
-        rects.pinned as DOMRect,
-      );
-      // The scroll target is the chips wrapper (`data-tour-target="chips"`).
-      const chipsAnchor = screen.getByTestId('train-reveal').querySelector('[data-tour-target="chips"]');
-      expect(chipsAnchor).not.toBeNull();
-      vi.spyOn(chipsAnchor as Element, 'getBoundingClientRect').mockReturnValue(rects.chips as DOMRect);
-      expect(scrollTween).not.toHaveBeenCalled();
-      clickWalkthroughNext();
-    }
-
-    it('on a phone, chips already on screen need no scroll', async () => {
-      // jsdom's viewport is 768px tall and no fixed bar is mounted from sm up.
-      await openOnPhoneAndMockLayout({
-        pinned: { top: 0, bottom: 300, height: 300 },
-        chips: { top: 400, bottom: 480, height: 80 },
+    // The phone scrolls the chips (part 2, step 1) and the list (part 2, step 2)
+    // into view between the pinned board and the fixed bottom bar.
+    describe('phone scroll to the tour target', () => {
+      let rectSpy: { mockRestore: () => void } | null = null;
+      afterEach(() => {
+        rectSpy?.mockRestore();
+        rectSpy = null;
       });
-      await waitFor(() => expect(walkthroughCopyText()).toContain('Tap one to focus it'));
-      expect(vi.mocked(animateScrollTop)).not.toHaveBeenCalled();
-    });
 
-    it('on a phone, chips below the fold scroll up just enough to clear the bottom edge', async () => {
-      await openOnPhoneAndMockLayout({
-        pinned: { top: 0, bottom: 300, height: 300 },
-        chips: { top: 700, bottom: 780, height: 80 },
-      });
-      const scrollTween = vi.mocked(animateScrollTop);
-      await waitFor(() => expect(scrollTween).toHaveBeenCalledTimes(1));
-      // 780 (chips bottom) + 12 (gap) - 768 (viewport bottom), over the 700ms tween.
-      expect(scrollTween).toHaveBeenCalledWith(document.documentElement, 24, 700);
-    });
-
-    it('on a phone, a target taller than the gap never scrolls its top behind the pinned block', async () => {
-      await openOnPhoneAndMockLayout({
-        pinned: { top: 0, bottom: 300, height: 300 },
-        chips: { top: 350, bottom: 1200, height: 850 },
-      });
-      const scrollTween = vi.mocked(animateScrollTop);
-      await waitFor(() => expect(scrollTween).toHaveBeenCalledTimes(1));
-      // Capped at 350 (chips top) - 300 (pinned height) - 12 (gap).
-      expect(scrollTween).toHaveBeenCalledWith(document.documentElement, 38, 700);
-    });
-
-    it('with reveal_walkthrough_seen_at already stamped, no walkthrough renders and the verdict shows immediately', async () => {
-      getSettings.mockResolvedValue(
-        makeSettings({ reveal_walkthrough_seen_at: '2026-01-01T00:00:00Z' }),
-      );
-      await renderScreen(makePuzzle());
-      fireEvent.click(screen.getByTestId('btn-train-guess-critical'));
-      await act(async () => {
-        fireEvent.click(screen.getByTestId('drop-e2e4'));
-      });
-      await waitFor(() => expect(screen.getByTestId('train-bot-verdict-line')).not.toBeNull());
-      expect(screen.queryByTestId('train-bot-walkthrough')).toBeNull();
-    });
-
-    it('the board arrow set is identical across all walkthrough steps — the chip focus is never touched', async () => {
-      await openFirstReveal();
-      const board = screen.getByTestId('chessboard');
-      const step0Arrows = board.getAttribute('data-arrow-ucis');
-      expect(step0Arrows).not.toBe('');
-      for (let click = 0; click < WALKTHROUGH_STEP_COUNT - 1; click += 1) {
-        clickWalkthroughNext();
-        expect(board.getAttribute('data-arrow-ucis')).toBe(step0Arrows);
+      /** Stubs the layout BEFORE the reveal mounts: the chips step is part 2's first
+       * step, so its scroll fires as soon as the verdict lands. */
+      function mockLayout(rects: { pinned: Partial<DOMRect>; chips: Partial<DOMRect> }): void {
+        const none = { top: 0, bottom: 0, height: 0 } as DOMRect;
+        rectSpy = vi.spyOn(Element.prototype, 'getBoundingClientRect').mockImplementation(function (this: Element) {
+          if (this.getAttribute('data-testid') === 'train-pinned-board') return rects.pinned as DOMRect;
+          if (this.getAttribute('data-tour-target') === 'chips') return rects.chips as DOMRect;
+          return none;
+        });
       }
-      await waitFor(() => expect(screen.getByTestId('btn-train-next')).not.toBeNull());
-      expect(board.getAttribute('data-arrow-ucis')).toBe(step0Arrows);
+
+      async function openChipsStepOnPhone(rects: { pinned: Partial<DOMRect>; chips: Partial<DOMRect> }): Promise<void> {
+        matchMediaMatches = false;
+        vi.mocked(animateScrollTop).mockClear();
+        mockLayout(rects);
+        await openReveal(1);
+        await waitFor(() => expect(tourCopyText()).toContain('Tap or click a chip'));
+      }
+
+      it('chips already on screen need no scroll', async () => {
+        // jsdom's viewport is 768px tall and no fixed bar is mounted from sm up.
+        await openChipsStepOnPhone({
+          pinned: { top: 0, bottom: 300, height: 300 },
+          chips: { top: 400, bottom: 480, height: 80 },
+        });
+        expect(vi.mocked(animateScrollTop)).not.toHaveBeenCalled();
+      });
+
+      it('chips below the fold scroll up just enough to clear the bottom edge', async () => {
+        await openChipsStepOnPhone({
+          pinned: { top: 0, bottom: 300, height: 300 },
+          chips: { top: 700, bottom: 780, height: 80 },
+        });
+        const scrollTween = vi.mocked(animateScrollTop);
+        await waitFor(() => expect(scrollTween).toHaveBeenCalledTimes(1));
+        // 780 (chips bottom) + 12 (gap) - 768 (viewport bottom), over the 700ms tween.
+        expect(scrollTween).toHaveBeenCalledWith(document.documentElement, 24, 700);
+      });
+
+      it('a target taller than the gap never scrolls its top behind the pinned block', async () => {
+        await openChipsStepOnPhone({
+          pinned: { top: 0, bottom: 300, height: 300 },
+          chips: { top: 350, bottom: 1200, height: 850 },
+        });
+        const scrollTween = vi.mocked(animateScrollTop);
+        await waitFor(() => expect(scrollTween).toHaveBeenCalledTimes(1));
+        // Capped at 350 (chips top) - 300 (pinned height) - 12 (gap).
+        expect(scrollTween).toHaveBeenCalledWith(document.documentElement, 38, 700);
+      });
     });
   });
 });
@@ -4423,7 +4678,7 @@ describe('TrainSolveScreen — per-puzzle telemetry (Phase 233)', () => {
   });
 
   it('telemetry: a list step and an active walkthrough reach the Next flush', async () => {
-    getSettings.mockResolvedValue(makeSettings({ reveal_walkthrough_seen_at: null }));
+    getSettings.mockResolvedValue(makeSettings({ reveal_tour_stage: 0 }));
     await renderScreen(makePuzzle());
     fireEvent.click(screen.getByTestId('btn-train-guess-critical'));
     await act(async () => {
@@ -4432,9 +4687,9 @@ describe('TrainSolveScreen — per-puzzle telemetry (Phase 233)', () => {
     await waitFor(() => expect(screen.getByTestId('train-bot-walkthrough')).not.toBeNull());
     await waitFor(() => expect(screen.getByTestId('train-move-tree')).not.toBeNull());
     tapListMove(0);
-    // Walk the walkthrough with the bar's Next (Phase 237 UAT G-01); on its last
-    // step the same Next leaves the puzzle.
-    for (let click = 0; click < WALKTHROUGH_STEP_COUNT; click += 1) {
+    // Walk part 1 (two steps) with the bar's Next (Phase 237 UAT G-01); on its
+    // last step the same Next leaves the puzzle.
+    for (let click = 0; click < 2; click += 1) {
       fireEvent.click(screen.getByTestId('btn-train-next'));
     }
 

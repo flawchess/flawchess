@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { AxiosError, AxiosHeaders } from 'axios';
 
 // Mock apiClient at module level. Preserve other exports via importActual.
 vi.mock('@/api/client', async () => {
@@ -17,9 +18,27 @@ import { getGoogleAuthorizationUrl } from '@/api/googleAuth';
 
 const mockedGet = vi.mocked(apiClient.get);
 const GUEST_TOKEN_KEY = 'guest_token';
-const PROMOTE_INTENT_KEY = 'promote_intent';
 const PROMOTE_URL = 'https://accounts.google.com/o/oauth2/v2/auth?promote=1';
 const PLAIN_URL = 'https://accounts.google.com/o/oauth2/v2/auth?plain=1';
+
+function httpError(status: number, data: unknown = {}): AxiosError {
+  const config = { headers: new AxiosHeaders() };
+  return new AxiosError('Request failed', 'ERR_BAD_RESPONSE', config, null, {
+    status,
+    statusText: '',
+    headers: {},
+    config,
+    data,
+  });
+}
+
+function networkError(): AxiosError {
+  return new AxiosError('Network Error', AxiosError.ERR_NETWORK, { headers: new AxiosHeaders() });
+}
+
+function calledPaths(): string[] {
+  return mockedGet.mock.calls.map(([path]) => path);
+}
 
 beforeEach(() => {
   localStorage.clear();
@@ -28,9 +47,10 @@ beforeEach(() => {
 });
 
 describe('getGoogleAuthorizationUrl', () => {
-  it('uses the promote endpoint with the guest Bearer header when promote intent is set', async () => {
+  it('uses the promote endpoint with the guest Bearer header whenever a guest_token is saved', async () => {
+    // No intent flag needed (quick 261016-fwd): a guest who logged out first or retried an
+    // abandoned Google screen must still be promoted, not duplicated.
     localStorage.setItem(GUEST_TOKEN_KEY, 'guest-jwt-abc');
-    sessionStorage.setItem(PROMOTE_INTENT_KEY, '1');
     mockedGet.mockResolvedValueOnce({ data: { authorization_url: PROMOTE_URL } });
 
     const url = await getGoogleAuthorizationUrl();
@@ -40,56 +60,59 @@ describe('getGoogleAuthorizationUrl', () => {
     const [path, config] = mockedGet.mock.calls[0]!;
     expect(path).toContain('/auth/google/authorize-promote');
     expect(config).toMatchObject({ headers: { Authorization: 'Bearer guest-jwt-abc' } });
-    // Guest token preserved on success (cleared later by the OAuth callback page).
+    // Guest token preserved on success (cleared later by the OAuth callback page), so a
+    // retry after an abandoned Google screen promotes again.
     expect(localStorage.getItem(GUEST_TOKEN_KEY)).toBe('guest-jwt-abc');
-    // One-shot intent is consumed so a retry can't strand on the promote path.
-    expect(sessionStorage.getItem(PROMOTE_INTENT_KEY)).toBeNull();
   });
 
-  it('uses the plain endpoint when a guest_token exists but there is no promote intent', async () => {
-    // Regression guard (2026-06-23): a returning registered user with a stale, persisted
-    // guest_token must NOT be routed through guest promotion — that collided with their
-    // existing account and locked them out. No intent => plain sign-in.
-    localStorage.setItem(GUEST_TOKEN_KEY, 'stale-guest-jwt');
-    mockedGet.mockResolvedValueOnce({ data: { authorization_url: PLAIN_URL } });
+  it.each([
+    ['401', () => httpError(401)],
+    ['403 Not a guest user', () => httpError(403, { detail: 'Not a guest user' })],
+  ])(
+    'drops a rejected guest_token (%s) and falls back to plain sign-in',
+    async (_label, makeError) => {
+      localStorage.setItem(GUEST_TOKEN_KEY, 'stale-jwt');
+      mockedGet
+        .mockRejectedValueOnce(makeError())
+        .mockResolvedValueOnce({ data: { authorization_url: PLAIN_URL } });
 
-    const url = await getGoogleAuthorizationUrl();
+      const url = await getGoogleAuthorizationUrl();
 
-    expect(url).toBe(PLAIN_URL);
-    expect(mockedGet).toHaveBeenCalledTimes(1);
-    expect(mockedGet.mock.calls[0]![0]).toContain('/auth/google/authorize');
-    expect(mockedGet.mock.calls[0]![0]).not.toContain('authorize-promote');
-    // The stale token is left untouched so "Use as Guest" can still resume that session.
-    expect(localStorage.getItem(GUEST_TOKEN_KEY)).toBe('stale-guest-jwt');
+      expect(url).toBe(PLAIN_URL);
+      const paths = calledPaths();
+      expect(paths).toHaveLength(2);
+      expect(paths[0]).toContain('authorize-promote');
+      expect(paths[1]).toContain('/auth/google/authorize');
+      expect(paths[1]).not.toContain('authorize-promote');
+      expect(localStorage.getItem(GUEST_TOKEN_KEY)).toBeNull();
+    },
+  );
+
+  it.each([
+    ['a 500', () => httpError(500)],
+    ['a foreign 403 (proxy/WAF)', () => httpError(403, 'Forbidden')],
+    ['a network error', networkError],
+  ])('rethrows %s without falling back or dropping the guest_token', async (_label, makeError) => {
+    // Falling back to plain sign-in on a transient error is what orphaned guest accounts.
+    localStorage.setItem(GUEST_TOKEN_KEY, 'guest-jwt-abc');
+    mockedGet.mockRejectedValueOnce(makeError());
+
+    await expect(getGoogleAuthorizationUrl()).rejects.toBeInstanceOf(AxiosError);
+
+    expect(calledPaths()).toHaveLength(1);
+    expect(calledPaths()[0]).toContain('authorize-promote');
+    expect(localStorage.getItem(GUEST_TOKEN_KEY)).toBe('guest-jwt-abc');
   });
 
   it('uses the plain endpoint when no guest_token exists', async () => {
-    sessionStorage.setItem(PROMOTE_INTENT_KEY, '1'); // intent without a token still falls back
     mockedGet.mockResolvedValueOnce({ data: { authorization_url: PLAIN_URL } });
 
     const url = await getGoogleAuthorizationUrl();
 
     expect(url).toBe(PLAIN_URL);
-    expect(mockedGet).toHaveBeenCalledTimes(1);
-    expect(mockedGet.mock.calls[0]![0]).toContain('/auth/google/authorize');
-    expect(mockedGet.mock.calls[0]![0]).not.toContain('authorize-promote');
-  });
-
-  it('falls back to the plain endpoint and clears a rejected guest_token', async () => {
-    localStorage.setItem(GUEST_TOKEN_KEY, 'stale-jwt');
-    sessionStorage.setItem(PROMOTE_INTENT_KEY, '1');
-    mockedGet
-      .mockRejectedValueOnce(new Error('401 expired guest token'))
-      .mockResolvedValueOnce({ data: { authorization_url: PLAIN_URL } });
-
-    const url = await getGoogleAuthorizationUrl();
-
-    expect(url).toBe(PLAIN_URL);
-    expect(mockedGet).toHaveBeenCalledTimes(2);
-    expect(mockedGet.mock.calls[0]![0]).toContain('authorize-promote');
-    expect(mockedGet.mock.calls[1]![0]).toContain('/auth/google/authorize');
-    expect(mockedGet.mock.calls[1]![0]).not.toContain('authorize-promote');
-    // Stale token removed so it isn't retried on the next attempt.
-    expect(localStorage.getItem(GUEST_TOKEN_KEY)).toBeNull();
+    const paths = calledPaths();
+    expect(paths).toHaveLength(1);
+    expect(paths[0]).toContain('/auth/google/authorize');
+    expect(paths[0]).not.toContain('authorize-promote');
   });
 });

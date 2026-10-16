@@ -186,9 +186,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     // be restored into another session. register, loginAsGuest, the OAuth callback and
     // RegisterForm inherit the removal through login/loginWithToken.
     localStorage.removeItem(ADMIN_RETURN_TOKEN_STORAGE_KEY);
-    // Drop any stale promote intent so a later sign-in isn't wrongly routed through guest
-    // promotion (see getGoogleAuthorizationUrl).
-    sessionStorage.removeItem('promote_intent');
     setToken(null);
     setUser(null);
     // Load-bearing for analytics identity: this hard navigation is also the
@@ -230,12 +227,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     localStorage.removeItem(ADMIN_RETURN_TOKEN_STORAGE_KEY);
     setToken(null);
     setUser(null);
-    // Signal that the upcoming sign-up should promote the saved guest account in place.
-    // This is the ONLY thing that should drive guest promotion once auth_token is cleared:
-    // gating promotion on the mere presence of the persisted guest_token locked out a
-    // returning registered user whose stale guest_token collided with their account
-    // (2026-06-23). guest_token itself is preserved so the register flow can promote.
-    sessionStorage.setItem('promote_intent', '1');
+    // guest_token is preserved: both sign-up paths (email and Google) promote the saved
+    // guest account in place from it (see getGoogleAuthorizationUrl).
     // No redirect — caller navigates to register page.
   }, []);
 

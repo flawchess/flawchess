@@ -718,9 +718,13 @@ class PuzzleRevealResponse(BaseModel):
 #: Phase 222 (TRAINBOT-05, D-11/D-12): the path parameter for
 #: POST /train/onboarding/{step}. FastAPI 422s any value outside this set
 #: before the handler body runs — no hand-rolled validation, and the
-#: repository maps each member through a fixed column lookup (never a
-#: string interpolated into SQL, never `getattr` on a request-supplied name).
-OnboardingStep = Literal["intro", "reveal_walkthrough", "sr_explained"]
+#: repository maps each member through a fixed lookup (never a string
+#: interpolated into SQL, never `getattr` on a request-supplied name).
+#: Phase 240 (D-09/D-11): `intro` and `sr_explained` stamp their own timestamp
+#: (first-write-wins); each `reveal_tour_N` advances `reveal_tour_stage` to N,
+#: forward-only. The Phase 222 walkthrough step name is gone on purpose (D-11,
+#: hard cut): a stale PWA bundle POSTing it gets a 422 until it reloads.
+OnboardingStep = Literal["intro", "sr_explained", "reveal_tour_1", "reveal_tour_2", "reveal_tour_3"]
 
 
 class TrainSettingsResponse(BaseModel):
@@ -735,15 +739,15 @@ class TrainSettingsResponse(BaseModel):
     OPPOSITE of `reminder_last_sent_on`: it IS client-writable (stamped when
     the user taps the iOS install affordance), so it appears here.
 
-    `intro_seen_at`/`reveal_walkthrough_seen_at`/`sr_explained_at` (Phase 222,
-    TRAINBOT-05, D-11/D-12/D-13) are the three bot-onboarding "explanation
-    seen" watermarks. Like `reminder_last_sent_on`, each is a server-owned
-    fact — but unlike it, all three ARE readable here (so the client can
+    `intro_seen_at`/`sr_explained_at` (Phase 222, TRAINBOT-05, D-11/D-12/D-13)
+    are the bot-onboarding "explanation seen" watermarks, and
+    `reveal_tour_stage` (Phase 240, D-09/D-10) is the number of completed
+    reveal-tour parts (0..3). Like `reminder_last_sent_on`, each is a
+    server-owned fact — but unlike it, all ARE readable here (so the client can
     branch on them without a second fetch) while remaining absent from
-    `TrainSettingsUpdate`: they are stamped ONLY by the dedicated
+    `TrainSettingsUpdate`: they are written ONLY by the dedicated
     `POST /train/onboarding/{step}` endpoint on stepper completion, never by
-    a settings PUT. No backfill (D-13): every row that predates these
-    columns reads back NULL on all three, meaning "never seen."
+    a settings PUT. The timestamps read back NULL for "never seen".
 
     `has_mobile_subscription` (Phase 222 UAT round 5) is a derived, read-only
     fact: whether ANY of the account's push subscriptions came from a mobile
@@ -759,8 +763,8 @@ class TrainSettingsResponse(BaseModel):
     reminder_hour: int
     reminder_intent_at: datetime | None
     intro_seen_at: datetime | None
-    reveal_walkthrough_seen_at: datetime | None
     sr_explained_at: datetime | None
+    reveal_tour_stage: int
     has_mobile_subscription: bool
 
 

@@ -2659,9 +2659,9 @@ async def test_get_settings_creates_defaults_on_first_touch(test_engine) -> None
     # False/18 — see DEFAULT_REMINDER_ENABLED/DEFAULT_REMINDER_HOUR.
     # Phase 203 (OFFER-03): reminder_intent_at defaults to None — a brand-new
     # user has never expressed install intent.
-    # Phase 222 (TRAINBOT-05): intro_seen_at/reveal_walkthrough_seen_at/
-    # sr_explained_at default to None — a brand-new user has never seen any
-    # of the three onboarding steppers (D-13, no backfill).
+    # Phase 222 (TRAINBOT-05): intro_seen_at/sr_explained_at default to None
+    # and Phase 240 (D-09) reveal_tour_stage defaults to 0 — a brand-new user
+    # has never seen any onboarding stepper (D-13, no backfill).
     assert resp.json() == {
         "timezone": "UTC",
         "weekday_mask": 127,
@@ -2670,8 +2670,8 @@ async def test_get_settings_creates_defaults_on_first_touch(test_engine) -> None
         "reminder_hour": 18,
         "reminder_intent_at": None,
         "intro_seen_at": None,
-        "reveal_walkthrough_seen_at": None,
         "sr_explained_at": None,
+        "reveal_tour_stage": 0,
         "has_mobile_subscription": False,
     }
 
@@ -2762,8 +2762,8 @@ async def test_put_settings_persists_and_round_trips(test_engine) -> None:
         "reminder_hour": 7,
         "reminder_intent_at": None,
         "intro_seen_at": None,
-        "reveal_walkthrough_seen_at": None,
         "sr_explained_at": None,
+        "reveal_tour_stage": 0,
         "has_mobile_subscription": False,
     }
 
@@ -2882,8 +2882,8 @@ async def test_guest_onboarding_stamp_200(test_engine) -> None:
 @pytest.mark.asyncio
 async def test_onboarding_unknown_step_422_no_db_write(test_engine) -> None:
     """An unknown step name is rejected 422 by FastAPI's Literal path-param
-    validation before the handler body runs — no DB write, all three
-    columns stay NULL."""
+    validation before the handler body runs — no DB write, both timestamps
+    stay NULL and the reveal-tour stage stays 0."""
     email = f"train-onboarding-bogus-{uuid.uuid4().hex[:8]}@example.com"
     _user_id, token = await _register_and_login(email)
 
@@ -2892,21 +2892,21 @@ async def test_onboarding_unknown_step_422_no_db_write(test_engine) -> None:
 
     get_resp = await _get_settings(token)
     assert get_resp.json()["intro_seen_at"] is None
-    assert get_resp.json()["reveal_walkthrough_seen_at"] is None
+    assert get_resp.json()["reveal_tour_stage"] == 0
     assert get_resp.json()["sr_explained_at"] is None
 
 
 @pytest.mark.asyncio
 async def test_onboarding_stamps_matching_column_others_stay_null(test_engine) -> None:
-    """A valid POST sets the matching column and returns it on the response
-    body; the other two stay NULL."""
+    """A valid POST sets the matching state and returns it on the response
+    body; the timestamps stay NULL for a tour step."""
     email = f"train-onboarding-single-{uuid.uuid4().hex[:8]}@example.com"
     _user_id, token = await _register_and_login(email)
 
-    resp = await _stamp_onboarding(token, "reveal_walkthrough")
+    resp = await _stamp_onboarding(token, "reveal_tour_1")
     assert resp.status_code == 200
     body = resp.json()
-    assert body["reveal_walkthrough_seen_at"] is not None
+    assert body["reveal_tour_stage"] == 1
     assert body["intro_seen_at"] is None
     assert body["sr_explained_at"] is None
 
@@ -2930,7 +2930,8 @@ async def test_onboarding_replay_leaves_first_timestamp_unchanged(test_engine) -
 
 @pytest.mark.asyncio
 async def test_onboarding_each_step_writes_only_its_own_column(test_engine) -> None:
-    """Each of the three step names writes its own column and no other."""
+    """Each step name writes its own state and no other: the timestamp steps
+    leave the tour stage alone, and the tour step leaves both timestamps alone."""
     email = f"train-onboarding-allthree-{uuid.uuid4().hex[:8]}@example.com"
     _user_id, token = await _register_and_login(email)
 
@@ -2938,46 +2939,120 @@ async def test_onboarding_each_step_writes_only_its_own_column(test_engine) -> N
     assert intro_resp.status_code == 200
     body = intro_resp.json()
     assert body["intro_seen_at"] is not None
-    assert body["reveal_walkthrough_seen_at"] is None
+    assert body["reveal_tour_stage"] == 0
     assert body["sr_explained_at"] is None
 
-    walkthrough_resp = await _stamp_onboarding(token, "reveal_walkthrough")
-    assert walkthrough_resp.status_code == 200
-    body = walkthrough_resp.json()
+    tour_resp = await _stamp_onboarding(token, "reveal_tour_1")
+    assert tour_resp.status_code == 200
+    body = tour_resp.json()
     assert body["intro_seen_at"] is not None
-    assert body["reveal_walkthrough_seen_at"] is not None
+    assert body["reveal_tour_stage"] == 1
     assert body["sr_explained_at"] is None
 
     sr_resp = await _stamp_onboarding(token, "sr_explained")
     assert sr_resp.status_code == 200
     body = sr_resp.json()
     assert body["intro_seen_at"] is not None
-    assert body["reveal_walkthrough_seen_at"] is not None
+    assert body["reveal_tour_stage"] == 1
     assert body["sr_explained_at"] is not None
 
 
 @pytest.mark.asyncio
-async def test_get_settings_exposes_all_three_onboarding_timestamps(test_engine) -> None:
-    """GET /train/settings exposes all three onboarding-seen timestamps."""
+async def test_onboarding_reveal_tour_advances_in_order(test_engine) -> None:
+    """D-09: reveal_tour_1, _2, _3 advance the stage 0 -> 1 -> 2 -> 3."""
+    email = f"train-onboarding-tour-order-{uuid.uuid4().hex[:8]}@example.com"
+    _user_id, token = await _register_and_login(email)
+
+    assert (await _get_settings(token)).json()["reveal_tour_stage"] == 0
+    for step, expected_stage in (
+        ("reveal_tour_1", 1),
+        ("reveal_tour_2", 2),
+        ("reveal_tour_3", 3),
+    ):
+        resp = await _stamp_onboarding(token, step)
+        assert resp.status_code == 200
+        assert resp.json()["reveal_tour_stage"] == expected_stage
+
+    assert (await _get_settings(token)).json()["reveal_tour_stage"] == 3
+
+
+@pytest.mark.asyncio
+async def test_onboarding_reveal_tour_out_of_order_is_noop(test_engine) -> None:
+    """D-09: a stage advances to N only from N-1, so POSTing reveal_tour_2 or
+    _3 on a stage-0 account returns 200 and leaves the stage at 0."""
+    email = f"train-onboarding-tour-skip-{uuid.uuid4().hex[:8]}@example.com"
+    _user_id, token = await _register_and_login(email)
+
+    for step in ("reveal_tour_2", "reveal_tour_3"):
+        resp = await _stamp_onboarding(token, step)
+        assert resp.status_code == 200
+        assert resp.json()["reveal_tour_stage"] == 0
+
+    assert (await _get_settings(token)).json()["reveal_tour_stage"] == 0
+
+
+@pytest.mark.asyncio
+async def test_onboarding_reveal_tour_replay_never_moves_backwards(test_engine) -> None:
+    """D-09: a replayed reveal_tour_1 leaves stage 1; at stage 3 a stale
+    reveal_tour_1 (or _2) leaves stage 3 — the stage never moves backwards."""
+    email = f"train-onboarding-tour-replay-{uuid.uuid4().hex[:8]}@example.com"
+    _user_id, token = await _register_and_login(email)
+
+    assert (await _stamp_onboarding(token, "reveal_tour_1")).json()["reveal_tour_stage"] == 1
+    assert (await _stamp_onboarding(token, "reveal_tour_1")).json()["reveal_tour_stage"] == 1
+
+    await _stamp_onboarding(token, "reveal_tour_2")
+    await _stamp_onboarding(token, "reveal_tour_3")
+    assert (await _get_settings(token)).json()["reveal_tour_stage"] == 3
+
+    for step in ("reveal_tour_1", "reveal_tour_2", "reveal_tour_3"):
+        resp = await _stamp_onboarding(token, step)
+        assert resp.status_code == 200
+        assert resp.json()["reveal_tour_stage"] == 3
+
+
+@pytest.mark.asyncio
+async def test_onboarding_retired_walkthrough_step_is_422(test_engine) -> None:
+    """D-11: the Phase 222 walkthrough step name left the Literal on purpose
+    (hard cut, no compat shim), so FastAPI 422s it and nothing is written."""
+    email = f"train-onboarding-retired-{uuid.uuid4().hex[:8]}@example.com"
+    _user_id, token = await _register_and_login(email)
+
+    resp = await _stamp_onboarding(token, "reveal_walkthrough")
+    assert resp.status_code == 422
+
+    body = (await _get_settings(token)).json()
+    assert body["reveal_tour_stage"] == 0
+    assert body["intro_seen_at"] is None
+    assert body["sr_explained_at"] is None
+
+
+@pytest.mark.asyncio
+async def test_get_settings_exposes_onboarding_state(test_engine) -> None:
+    """GET /train/settings exposes both onboarding timestamps and the
+    reveal-tour stage, and no longer carries the retired walkthrough key."""
     email = f"train-onboarding-get-{uuid.uuid4().hex[:8]}@example.com"
     _user_id, token = await _register_and_login(email)
 
     await _stamp_onboarding(token, "intro")
     await _stamp_onboarding(token, "sr_explained")
+    await _stamp_onboarding(token, "reveal_tour_1")
 
     get_resp = await _get_settings(token)
     assert get_resp.status_code == 200
     body = get_resp.json()
     assert body["intro_seen_at"] is not None
-    assert body["reveal_walkthrough_seen_at"] is None
     assert body["sr_explained_at"] is not None
+    assert body["reveal_tour_stage"] == 1
+    assert "reveal_walkthrough_seen_at" not in body
 
 
 @pytest.mark.asyncio
 async def test_put_settings_cannot_smuggle_onboarding_seen_timestamp(test_engine) -> None:
-    """D-12: a PUT /train/settings body carrying intro_seen_at (a field the
-    write schema does not even declare) does not change the stored value —
-    the write schema cannot smuggle a server-owned field."""
+    """D-12 / T-240-01: a PUT /train/settings body carrying intro_seen_at or
+    reveal_tour_stage (fields the write schema does not even declare) does not
+    change the stored values — the write schema cannot smuggle a server-owned
+    field."""
     email = f"train-onboarding-smuggle-{uuid.uuid4().hex[:8]}@example.com"
     _user_id, token = await _register_and_login(email)
 
@@ -2985,6 +3060,7 @@ async def test_put_settings_cannot_smuggle_onboarding_seen_timestamp(test_engine
     assert stamped.status_code == 200
     stamped_at = stamped.json()["intro_seen_at"]
     assert stamped_at is not None
+    assert (await _stamp_onboarding(token, "reveal_tour_1")).json()["reveal_tour_stage"] == 1
 
     async with httpx.AsyncClient(
         transport=httpx.ASGITransport(app=app), base_url="http://test"
@@ -3003,13 +3079,16 @@ async def test_put_settings_cannot_smuggle_onboarding_seen_timestamp(test_engine
                 # ignores an extra key by default; this proves it has no
                 # effect even so.
                 "intro_seen_at": None,
+                "reveal_tour_stage": 3,
             },
         )
     assert put_resp.status_code == 200
     assert put_resp.json()["intro_seen_at"] == stamped_at
+    assert put_resp.json()["reveal_tour_stage"] == 1
 
     get_resp = await _get_settings(token)
     assert get_resp.json()["intro_seen_at"] == stamped_at
+    assert get_resp.json()["reveal_tour_stage"] == 1
 
 
 @pytest.mark.asyncio

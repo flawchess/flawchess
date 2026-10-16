@@ -46,6 +46,12 @@ export interface MobileBoardControls {
   onNext?: () => void;
   analyzeTo?: string | null;
   onAnalyzeClick?: () => void;
+  /**
+   * Phase 240 D-20 (Train reveal only): true while the reveal tour's Analyze
+   * step is active, so the fixed phone bar's Analyze button carries the shared
+   * spotlight glow. Not in `NOOP_PAYLOAD`: absent means no spotlight.
+   */
+  spotlightAnalyze?: boolean;
 }
 
 const NOOP_PAYLOAD: MobileBoardControls = Object.freeze({
@@ -100,6 +106,8 @@ export function usePublishMobileBoardControls(controls: MobileBoardControls | nu
     onNext,
     analyzeTo,
     onAnalyzeClick,
+    // Phase 240 D-20: the tour's Analyze-step glow; absent means no spotlight.
+    spotlightAnalyze,
   } = controls ?? {};
   const hasControls = controls != null;
 
@@ -117,6 +125,7 @@ export function usePublishMobileBoardControls(controls: MobileBoardControls | nu
       onNext,
       analyzeTo,
       onAnalyzeClick,
+      spotlightAnalyze,
     });
     return () => setPayload(null);
   }, [
@@ -132,5 +141,6 @@ export function usePublishMobileBoardControls(controls: MobileBoardControls | nu
     onNext,
     analyzeTo,
     onAnalyzeClick,
+    spotlightAnalyze,
   ]);
 }
