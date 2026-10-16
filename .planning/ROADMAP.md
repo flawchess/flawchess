@@ -296,6 +296,36 @@ Plans:
 **Wave 5** *(blocked on Wave 4 completion)*
 - [x] 240-07-PLAN.md — Close-out: CHANGELOG, pre-merge gate, browser walkthrough, pre-deploy funnel snapshot (orchestrator)
 
+### Phase 241: Codebase Cleanup (naming + comments)
+
+**Goal**: A thorough hygiene pass after many iterations: no architecture refactoring, no behavior change.
+Strip planning-artifact tags from code comments (~11,400 `Phase NNN` / `D-NN` / `SEED-NNN` in `app/` +
+`frontend/src`, ~3,500 in `tests/`), fix comments that contradict the code or reference things that no longer
+exist, and apply the owner-approved renames. Pure refactor: the full pre-merge gate passes with **no test
+assertion changed**; any diff line that is neither a comment nor a rename needs a justification.
+
+- **Inputs (already done, skip research):** `241-STYLE-GUIDE.md` (comment policy, naming conventions,
+  off-limits contracts) and `241-INVENTORY.md` (read-only multi-agent audit 2026-10-16, 711/711 files,
+  adversarially verified): 86 renames (39 local, 40 module, 9 cross-layer, 0 contract), 772 comment fixes
+  (369 outdated, 200 history narration, 137 dead references, 51 wrong docstrings, 13 stale TODOs),
+  79 glossary conflicts, 50 seed candidates, 11 suspected bugs.
+- **Discuss:** owner prunes the inventory, picks canonical terms for the glossary (STYLE-GUIDE §3.3), approves
+  the two open style-guide calls (open-seed `(see SEED-NNN)` pointers stay; internal names mirroring a wire
+  field only renamed with an explicit alias). Lock all of it in CONTEXT.md.
+- **Plan shape:** (1) comment cleanup per area, one parallel wave (disjoint files); (2) local + module renames
+  per area; (3) cross-layer renames sequential, one commit each (`refactor(naming): old → new`). Keep plans
+  small (long executor runs die mid-response). A mechanical check that the diff outside comments/renames is
+  empty, then the full pre-merge gate.
+- **Out of scope:** suspected bugs (INVENTORY §7.2; the three confirmed ones were fixed as quick tasks
+  2026-10-16), seed candidates (list only, owner decides), DB/API/worker-protocol/Umami/Sentry/storage/testid
+  names, `alembic/`, `analysis/`, `stories/`, `scripts/archive/`, large-file splits.
+- **Run alone:** no other phase or quick task in this checkout while it runs (repo-wide diff, HEAD race).
+
+**Depends on**: nothing in flight
+**Requirements**: TBD (coverage contract = CONTEXT decisions from discuss-phase)
+**Plans:** 0 plans
+**Status**: Not started
+
 Phase detail for every shipped milestone lives in `milestones/vX.Y-ROADMAP.md`, its phase directories in `milestones/vX.Y-phases/`, and the per-milestone summaries in [MILESTONES.md](MILESTONES.md).
 
 ## Backlog
