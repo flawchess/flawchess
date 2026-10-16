@@ -587,8 +587,6 @@ describe('returnPhrase (D-15/D-16 truth table)', () => {
 describe('reveal tour parts (Phase 240)', () => {
   const BASE_CTX: WalkthroughContext = {
     analyzeOpens: 'game',
-    mergedChip: null,
-    isDesktop: false,
     answerKind: 'sharp',
   };
 
@@ -614,31 +612,19 @@ describe('reveal tour parts (Phase 240)', () => {
     expect(tourAnswerKind('herring')).toBe('several');
   });
 
-  it('the result bubble is the D-19 sheet verbatim per device and answer kind, spotlighting the verdict', () => {
-    const cases: Array<[boolean, 'sharp' | 'several', string]> = [
+  it('the result bubble is one string per answer kind on every device, ending on the Next hint', () => {
+    const cases: Array<['sharp' | 'several', string]> = [
       [
-        false,
         'sharp',
-        'This strip is your result. Here only one move was good, every other move was a mistake. Tap the strip for the full feedback.',
+        'Your result is in the highlighted box. Here only one move was good, every other move was a mistake. Proceed with Next when ready.',
       ],
       [
-        false,
         'several',
-        'This strip is your result. Here several moves were fine, so any good move works. Tap the strip for the full feedback.',
-      ],
-      [
-        true,
-        'sharp',
-        'Your result is in the highlighted box. Here only one move was good, every other move was a mistake.',
-      ],
-      [
-        true,
-        'several',
-        'Your result is in the highlighted box. Here several moves were fine, so any good move works.',
+        'Your result is in the highlighted box. Here several moves were fine, so any good move works. Proceed with Next when ready.',
       ],
     ];
-    for (const [isDesktop, answerKind, expected] of cases) {
-      const step = tourStepCopy('result', { ...BASE_CTX, isDesktop, answerKind });
+    for (const [answerKind, expected] of cases) {
+      const step = tourStepCopy('result', { ...BASE_CTX, answerKind });
       expect(step.copy).toBe(expected);
       expect(step.spotlightTarget).toBe('verdict');
       // D-05: no scoring sentence; D-19: no em-dash.
@@ -659,27 +645,16 @@ describe('reveal tour parts (Phase 240)', () => {
     expect(position.spotlightTarget).toBe('bar');
   });
 
-  it('chips, stepping, sidelines and understand are today\'s strings, per device and merged chip', () => {
+  it('chips, stepping, sidelines and understand are one string each, whatever the device or chip set', () => {
     const { back, forward, rewind } = TOUR_ICON_TOKEN;
-    const chips = 'The Move, Best, and Game chips are the lines, one per move. Tap one to focus it on the board.';
-    expect(tourStepCopy('chips', BASE_CTX).copy).toBe(chips);
-    expect(tourStepCopy('chips', { ...BASE_CTX, mergedChip: 'best' }).copy).toBe(
-      `${chips} "Move = Best" means you found the best move.`,
+    expect(tourStepCopy('chips', BASE_CTX).copy).toBe(
+      "Each chip is a line: your Move, the engine's Best, and your Game move if known. Same moves share a chip. Tap or click a chip to show its line.",
     );
-    expect(tourStepCopy('chips', { ...BASE_CTX, mergedChip: 'game' }).copy).toBe(
-      `${chips} "Move = Game" means you played the game move.`,
+    expect(tourStepCopy('stepping', BASE_CTX).copy).toBe(
+      `Step through the line with ${back} ${forward}, or tap or click a move in the list.`,
     );
-    expect(tourStepCopy('stepping', { ...BASE_CTX, isDesktop: false }).copy).toBe(
-      `Step through the focused line with ${back} ${forward} in the bar, or tap a move in the list.`,
-    );
-    expect(tourStepCopy('stepping', { ...BASE_CTX, isDesktop: true }).copy).toBe(
-      `Step through the focused line with ${back} ${forward} under the board, the arrow keys, or a tap on a move in the list.`,
-    );
-    expect(tourStepCopy('sidelines', { ...BASE_CTX, isDesktop: false }).copy).toBe(
-      `Move a piece to try your own idea: it branches off as a sideline. ${rewind} in the bar takes you back to the puzzle position.`,
-    );
-    expect(tourStepCopy('sidelines', { ...BASE_CTX, isDesktop: true }).copy).toBe(
-      `Move a piece to try your own idea: it branches off as a sideline. ${rewind} or Home takes you back to the puzzle position.`,
+    expect(tourStepCopy('sidelines', BASE_CTX).copy).toBe(
+      `Move a piece to try your own idea: it branches off as a sideline. ${rewind} takes you back to the puzzle position.`,
     );
     expect(tourStepCopy('understand', BASE_CTX).copy).toBe(
       "Understanding why a move works or fails by analyzing the lines is what makes the pattern stick. Don't just memorize the answer.",
@@ -697,28 +672,26 @@ describe('reveal tour parts (Phase 240)', () => {
     };
     for (const [step, target] of Object.entries(targets)) {
       expect(tourStepCopy(step as TourStepId, BASE_CTX).spotlightTarget, step).toBe(target);
-      expect(tourStepCopy(step as TourStepId, { ...BASE_CTX, isDesktop: true, answerKind: 'several' }).spotlightTarget, step).toBe(
+      expect(tourStepCopy(step as TourStepId, { ...BASE_CTX, answerKind: 'several' }).spotlightTarget, step).toBe(
         target,
       );
     }
   });
 
-  // D-05, D-19, Phase 237 D-09: over every device, merged chip, analyze target and
-  // answer kind, no step overruns the budget, uses an em-dash, mentions points or
-  // scoring, or names a surface the reveal does not show.
+  // D-05, D-19, Phase 237 D-09: over every analyze target and answer kind, no
+  // step overruns the budget, uses an em-dash, mentions points or scoring, or
+  // names a surface the reveal does not show. Phase 240 UAT: nor uses wording
+  // that only fits one device (a lone "tap", hover, swipe, keys, the phone
+  // strip or a bar location).
   it('no step, in any context, overruns the budget, has an em-dash, a scoring word, or names a card, Solution button or eval bar', () => {
     const steps: TourStepId[] = ['result', 'chips', 'stepping', 'sidelines', 'understand', 'analyze'];
     const contexts: WalkthroughContext[] = [];
-    for (const isDesktop of [false, true]) {
-      for (const mergedChip of ['best', 'game', null] as const) {
-        for (const analyzeOpens of ['game', 'position'] as const) {
-          for (const answerKind of ['sharp', 'several'] as const) {
-            contexts.push({ isDesktop, mergedChip, analyzeOpens, answerKind });
-          }
-        }
+    for (const analyzeOpens of ['game', 'position'] as const) {
+      for (const answerKind of ['sharp', 'several'] as const) {
+        contexts.push({ analyzeOpens, answerKind });
       }
     }
-    expect(contexts).toHaveLength(24);
+    expect(contexts).toHaveLength(4);
     for (const step of steps) {
       for (const ctx of contexts) {
         const { copy } = tourStepCopy(step, ctx);
@@ -731,6 +704,9 @@ describe('reveal tour parts (Phase 240)', () => {
         expect(copy, label).not.toMatch(/\bcards?\b/i);
         expect(copy, label).not.toMatch(/solution/i);
         expect(copy, label).not.toMatch(/eval(uation)?\s+bar/i);
+        if (/\btap\b/i.test(copy)) expect(copy, label).toMatch(/\btap or click\b/i);
+        expect(copy, label).not.toMatch(/\b(hover|swipe|arrow keys?|home|strip)\b/i);
+        expect(copy, label).not.toMatch(/\b(in|under|below) the (bar|board)\b/i);
       }
     }
   });

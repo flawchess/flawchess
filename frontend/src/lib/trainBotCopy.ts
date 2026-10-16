@@ -598,18 +598,15 @@ export interface WalkthroughStepCopy {
 }
 
 /**
- * Phase 237 plan 10 (D-09/D-11): what is on screen, which the copy may describe
- * and nothing else. `analyzeOpens`: Analyze opens the whole game for a puzzle from
- * one of the user's own games, otherwise just the puzzle position. `mergedChip`: the second role of the merged "Move"
- * chip ("Move = Best" / "Move = Game"), null when the Move chip stands alone.
- * `isDesktop`: desktop has no strip (the verdict bubble shows the feedback
- * already), the arrow keys step the tree, and Home rewinds. `answerKind`
- * (Phase 240 D-04): which result sentence the result step uses.
+ * Phase 237 plan 10 (D-09/D-11): the puzzle facts the copy may branch on.
+ * `analyzeOpens`: Analyze opens the whole game for a puzzle from one of the
+ * user's own games, otherwise just the puzzle position. `answerKind` (Phase 240
+ * D-04): which result sentence the result step uses. Never the device or the
+ * chip set (Phase 240 UAT): every string must hold on both devices and for
+ * every combination of chips.
  */
 export interface WalkthroughContext {
   analyzeOpens: 'game' | 'position';
-  mergedChip: 'best' | 'game' | null;
-  isDesktop: boolean;
   answerKind: TourAnswerKind;
 }
 
@@ -626,67 +623,60 @@ export const TOUR_ICON_TOKEN: Record<TourIcon, string> = {
 // Phase 240 D-19: the result bubble teaches what "only one" vs "several" meant
 // for the position just solved. No points sentence (D-05): the strip and the
 // verdict already show the points.
-const TOUR_RESULT_PHONE_SHARP =
-  'This strip is your result. Here only one move was good, every other move was a mistake. Tap the strip for the full feedback.';
-const TOUR_RESULT_PHONE_SEVERAL =
-  'This strip is your result. Here several moves were fine, so any good move works. Tap the strip for the full feedback.';
-const TOUR_RESULT_DESKTOP_SHARP =
-  'Your result is in the highlighted box. Here only one move was good, every other move was a mistake.';
-const TOUR_RESULT_DESKTOP_SEVERAL =
-  'Your result is in the highlighted box. Here several moves were fine, so any good move works.';
+//
+// Phase 240 UAT: every tour string is true on phone AND desktop and for every
+// chip set the reveal can show, so no step branches on the device. The old
+// phone/desktop pairs named the bar's location ("in the bar", "under the
+// board"), keys a phone lacks, and "tap" alone; the chips step assumed three
+// chips and a second one to tap, though the Game chip is often missing and a
+// merged chip can be the only one.
+const TOUR_PROCEED = 'Proceed with Next when ready.';
+const TOUR_RESULT_SHARP =
+  'Your result is in the highlighted box. Here only one move was good, every other move was a mistake. ' +
+  TOUR_PROCEED;
+const TOUR_RESULT_SEVERAL =
+  'Your result is in the highlighted box. Here several moves were fine, so any good move works. ' +
+  TOUR_PROCEED;
 const TOUR_ANALYZE_GAME =
   'The Analyze button opens the whole game one move before the mistake, so you can see how you got there.';
 const TOUR_ANALYZE_POSITION = 'The Analyze button opens this position on the analysis board.';
 const WALKTHROUGH_CHIPS =
-  'The Move, Best, and Game chips are the lines, one per move. Tap one to focus it on the board.';
-const WALKTHROUGH_MERGED_BEST = ' "Move = Best" means you found the best move.';
-const WALKTHROUGH_MERGED_GAME = ' "Move = Game" means you played the game move.';
+  "Each chip is a line: your Move, the engine's Best, and your Game move if known. " +
+  'Same moves share a chip. Tap or click a chip to show its line.';
 // Phase 237 UAT: the bar's buttons are named by icon tokens, which the tour
 // renders as the bar's real lucide icons (`TourCopy`). Glyphs drifted from the
-// bar: ⏮ has two triangles, the bar's rewind (SkipBack) one.
-const WALKTHROUGH_STEP_PHONE =
-  `Step through the focused line with ${TOUR_ICON_TOKEN.back} ${TOUR_ICON_TOKEN.forward} in the bar, or tap a move in the list.`;
-const WALKTHROUGH_STEP_DESKTOP =
-  `Step through the focused line with ${TOUR_ICON_TOKEN.back} ${TOUR_ICON_TOKEN.forward} under the board, the arrow keys, or a tap on a move in the list.`;
-const WALKTHROUGH_BOARD_PHONE =
-  `Move a piece to try your own idea: it branches off as a sideline. ${TOUR_ICON_TOKEN.rewind} in the bar takes you back to the puzzle position.`;
-const WALKTHROUGH_BOARD_DESKTOP =
-  `Move a piece to try your own idea: it branches off as a sideline. ${TOUR_ICON_TOKEN.rewind} or Home takes you back to the puzzle position.`;
+// bar: ⏮ has two triangles, the bar's rewind (SkipBack) one. The icons are the
+// pointer, so the copy names no location (the phone bar sits at the bottom of
+// the screen, not under the board).
+const WALKTHROUGH_STEP =
+  `Step through the line with ${TOUR_ICON_TOKEN.back} ${TOUR_ICON_TOKEN.forward}, or tap or click a move in the list.`;
+const WALKTHROUGH_BOARD =
+  `Move a piece to try your own idea: it branches off as a sideline. ${TOUR_ICON_TOKEN.rewind} takes you back to the puzzle position.`;
 const WALKTHROUGH_UNDERSTAND =
   'Understanding why a move works or fails by analyzing the lines is what makes ' +
   "the pattern stick. Don't just memorize the answer.";
 
-/** The result step's copy: device x answer kind (D-04, D-19). */
-function tourResultCopy(ctx: WalkthroughContext): string {
-  if (ctx.isDesktop) {
-    return ctx.answerKind === 'sharp' ? TOUR_RESULT_DESKTOP_SHARP : TOUR_RESULT_DESKTOP_SEVERAL;
-  }
-  return ctx.answerKind === 'sharp' ? TOUR_RESULT_PHONE_SHARP : TOUR_RESULT_PHONE_SEVERAL;
-}
 
 /**
  * D-24 (Phase 240 D-06/D-07): the Hilda tour of the reveal, three parts on
  * consecutive reveals, at most one per reveal. Each step stays within the phone
  * copy budget (`STEPPER_COPY_MAX_CHARS`) and only describes what is on screen
- * for this context (Phase 237 D-09): no cards, no Solution button, Analyze only
- * when the puzzle has it, a merged chip only when it is shown.
+ * for this context (Phase 237 D-09): no cards, no Solution button, and the same
+ * words on phone and desktop (Phase 240 UAT).
  */
 export function tourStepCopy(step: TourStepId, ctx: WalkthroughContext): WalkthroughStepCopy {
   switch (step) {
     case 'result':
-      return { spotlightTarget: 'verdict', copy: tourResultCopy(ctx) };
+      return {
+        spotlightTarget: 'verdict',
+        copy: ctx.answerKind === 'sharp' ? TOUR_RESULT_SHARP : TOUR_RESULT_SEVERAL,
+      };
     case 'chips':
-      return { spotlightTarget: 'chips', copy: WALKTHROUGH_CHIPS + mergedChipSentence(ctx.mergedChip) };
+      return { spotlightTarget: 'chips', copy: WALKTHROUGH_CHIPS };
     case 'stepping':
-      return {
-        spotlightTarget: 'tree',
-        copy: ctx.isDesktop ? WALKTHROUGH_STEP_DESKTOP : WALKTHROUGH_STEP_PHONE,
-      };
+      return { spotlightTarget: 'tree', copy: WALKTHROUGH_STEP };
     case 'sidelines':
-      return {
-        spotlightTarget: 'board',
-        copy: ctx.isDesktop ? WALKTHROUGH_BOARD_DESKTOP : WALKTHROUGH_BOARD_PHONE,
-      };
+      return { spotlightTarget: 'board', copy: WALKTHROUGH_BOARD };
     case 'understand':
       return { spotlightTarget: 'lines', copy: WALKTHROUGH_UNDERSTAND };
     case 'analyze':
@@ -695,13 +685,6 @@ export function tourStepCopy(step: TourStepId, ctx: WalkthroughContext): Walkthr
         copy: ctx.analyzeOpens === 'game' ? TOUR_ANALYZE_GAME : TOUR_ANALYZE_POSITION,
       };
   }
-}
-
-/** The merged-chip explanation, only for the merged chip actually on screen. */
-function mergedChipSentence(mergedChip: WalkthroughContext['mergedChip']): string {
-  if (mergedChip === 'best') return WALKTHROUGH_MERGED_BEST;
-  if (mergedChip === 'game') return WALKTHROUGH_MERGED_GAME;
-  return '';
 }
 
 /**

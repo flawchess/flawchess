@@ -984,17 +984,10 @@ export function TrainSolveScreen({
   // overlay's hidden flag, the phone scroll-to-target effect and the leave-stamp
   // all live in the hook; this component only reads `activeStep` / `target`
   // (the strip, board-row, list and bar rings) and threads the handlers through.
-  // Phase 237 plan 10 (D-09): the tour explains "Move = Best" / "Move = Game" only
-  // when that merged chip is actually on screen: the Move chip's second role.
-  const mergedChip = useMemo<WalkthroughContext['mergedChip']>(() => {
-    const secondRole = chips.find((chip) => chip.roles.includes('your'))?.roles.find((role) => role !== 'your');
-    return secondRole === 'best' || secondRole === 'game' ? secondRole : null;
-  }, [chips]);
   const walkthrough = useTrainWalkthrough({
     settings,
     hasVerdict: verdict !== null,
     analyzeOpens,
-    mergedChip,
     isDesktop,
     // With no verdict the tour is inactive, so the 'soft' fallback is never shown.
     answerKind: tourAnswerKind(verdict?.puzzle_type ?? 'soft'),

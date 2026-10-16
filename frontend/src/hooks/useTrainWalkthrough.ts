@@ -77,9 +77,7 @@ export interface UseTrainWalkthroughInput {
   hasVerdict: boolean;
   /** What the action bar's Analyze opens: the own source game, or just the puzzle position. */
   analyzeOpens: WalkthroughContext['analyzeOpens'];
-  /** The second role of the merged Move chip ("Move = Best" / "Move = Game"), or
-   * null when the Move chip stands alone — step 2 explains only what is shown. */
-  mergedChip: WalkthroughContext['mergedChip'];
+  /** Desktop skips the phone-only scroll-to-target; the copy never branches on it. */
   isDesktop: boolean;
   /** What the result step teaches (Phase 240 D-04); only read once a verdict exists. */
   answerKind: TourAnswerKind;
@@ -163,7 +161,7 @@ function visibleBottomEdge(): number {
 }
 
 export function useTrainWalkthrough(input: UseTrainWalkthroughInput): UseTrainWalkthroughResult {
-  const { settings, hasVerdict, analyzeOpens, mergedChip, isDesktop, answerKind, isRestored } = input;
+  const { settings, hasVerdict, analyzeOpens, isDesktop, answerKind, isRestored } = input;
   const { screenRef, pinnedRef, stamp } = input;
   // The part latched for this reveal (see the module docstring); cleared per puzzle.
   const [latchedPart, setLatchedPart] = useState<TourPart | null>(null);
@@ -185,7 +183,7 @@ export function useTrainWalkthrough(input: UseTrainWalkthroughInput): UseTrainWa
   const steps = part === null ? null : tourPartSteps(part);
   const stepCount = steps?.length ?? 0;
   const activeStep: TourStepId | null = steps?.[stepIndex] ?? null;
-  const context: WalkthroughContext = { analyzeOpens, mergedChip, isDesktop, answerKind };
+  const context: WalkthroughContext = { analyzeOpens, answerKind };
   const target = activeStep === null ? null : tourStepCopy(activeStep, context).spotlightTarget;
   const isLastStep = activeStep !== null && stepIndex === stepCount - 1;
   const consumesNext = activeStep !== null && !isLastStep;
