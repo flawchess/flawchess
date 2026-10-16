@@ -306,19 +306,29 @@ const INTRO_WELCOME_COPY = 'Hi there! You will improve by solving puzzles create
 const INTRO_WARMUP_WELCOME_COPY =
   "Hi there! Let's start with some warm-up puzzles. They're not from your own games yet.";
 
+/** Phase 240 UAT: the guess vocabulary, phrased as a legend for the "Only one"
+ * and "Several" buttons it sits above (see `introSteps`). */
+const INTRO_GUESS_LEGEND =
+  'Only one: a single move works, the others are mistakes. Several: any good move will do.';
+
 /**
  * D-22 intro stepper, all Hilda, two steps (Phase 240 D-01, D-02): the
- * welcome, then the closing prompt that asks the actual guess question (so it
- * takes `sideToMove` like `promptCopy`) and carries the guess buttons. The
- * guiding rule is to act within one or two taps and read later: the
- * vocabulary is taught by tour part 1 and the practice rationale on the first
+ * welcome, then the closing prompt that carries the guess buttons (so it
+ * takes `sideToMove` like `promptCopy`). The guiding rule is to act within one
+ * or two taps and read later; the practice rationale waits for the first
  * score screen. `isWarmup` (`TrainSessionResponse.is_warmup`) selects the
  * welcome variant.
+ *
+ * Phase 240 UAT: the closing prompt defines the two calls next to their
+ * buttons (`INTRO_GUESS_LEGEND`). Tour part 1 was meant to teach them after the
+ * first move, but that step was cut as repeating the verdict box, which on
+ * phones only opens on a tap, so nothing defined the game's central question
+ * for a new user. The legend replaces the bare question, so no step is added.
  */
 export function introSteps(sideToMove: 'white' | 'black', isWarmup: boolean): IntroStepCopy[] {
   return [
     { personaId: HILDA_ID, copy: isWarmup ? INTRO_WARMUP_WELCOME_COPY : INTRO_WELCOME_COPY },
-    { personaId: HILDA_ID, copy: `Decide first, then play. ${promptCopy(sideToMove)}` },
+    { personaId: HILDA_ID, copy: `Decide first, then play. You play ${sideToMove}. ${INTRO_GUESS_LEGEND}` },
   ];
 }
 

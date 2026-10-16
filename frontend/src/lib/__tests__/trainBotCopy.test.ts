@@ -276,19 +276,25 @@ describe('introCopy / introSteps (Phase 240 D-01, D-02: two bubbles)', () => {
         const step = introCopy(1, side, isWarmup);
         expect(step.personaId).toBe(HILDA_ID);
         expect(step.copy).toBe(
-          `Decide first, then play. You play ${side}. Is there only one good move, or several?`,
+          `Decide first, then play. You play ${side}. Only one: a single move works, ` +
+            'the others are mistakes. Several: any good move will do.',
         );
       }
     }
   });
 
-  it('no intro copy defines the vocabulary or gives the rationale; only a warm-up mentions warm-up', () => {
+  it('only the closing step defines the vocabulary; no rationale; only a warm-up mentions warm-up', () => {
     for (const side of SIDES) {
       for (const step of introSteps(side, false)) {
         expect(step.copy).not.toMatch(/warm-up/i);
       }
+      for (const isWarmup of WARMUP_FLAGS) {
+        const [welcome, closing] = introSteps(side, isWarmup);
+        expect(welcome?.copy).not.toContain('Only one:');
+        expect(closing?.copy).toContain('Only one:');
+        expect(closing?.copy).toContain('Several:');
+      }
       for (const step of introSteps(side, true)) {
-        expect(step.copy).not.toContain('Only one:');
         expect(step.copy).not.toMatch(/practice/i);
         expect(step.copy).not.toContain('Every puzzle starts');
       }

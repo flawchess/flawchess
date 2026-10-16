@@ -15,7 +15,7 @@ in `YYYY-MM-DD` (Europe/Zurich).
 
 ### Changed
 
-- Train: your first session asks less of you before you play. Two intro bubbles, then the guess. The first puzzle of your first session is one where only one move works, and a puzzle with several good moves shows up as puzzle 2 or 3, so the first results teach both cases.
+- Train: your first session asks less of you before you play. Two intro bubbles, then the guess, with a short explanation of what "Only one" and "Several" mean right above the buttons. The first puzzle of your first session is one where only one move works, and a puzzle with several good moves shows up as puzzle 2 or 3, so the first results teach both cases.
 - Train: the walkthrough of the result screen is now split over your first three reveals. The first one only points you to your result, the next two take two or three short steps each, and a pulsing gold highlight marks what each step explains. The reminder prompt waits until you have seen all three parts.
 - Train: as a guest, the sign-up ask on the Train page now waits until you have finished a session. The sign-up and import asks now also show on phones.
 - Train: your first finished session ends with a line on why practice matters, and the score screen no longer lists how many puzzles come back.
