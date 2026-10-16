@@ -4,11 +4,11 @@ milestone: v2.24
 current_phase: 240
 current_phase_name: Train First-Session Onboarding Load (SEED-200)
 status: verifying
-stopped_at: Phase 240 plans 7/7 executed; verification next
-last_updated: "2026-10-16T11:44:13.443Z"
-state_head: 38baedf8b185ecd529ff479ec9ddfc92f1d5fdef
+stopped_at: Phase 241 context gathered
+last_updated: "2026-10-16T12:20:38.715Z"
+state_head: ec911836580845da6691f51c940cf2f641b63d53
 progress:
-  total_phases: 3
+  total_phases: 4
   completed_phases: 103
   total_plans: 26
   completed_plans: 57
@@ -1099,9 +1099,9 @@ Items acknowledged and deferred at **v1.29 milestone close on 2026-06-29** (user
 
 ## Session Continuity
 
-**Last session:** 2026-10-15T20:43:55.587Z
-**Stopped at:** Phase 240 plans 7/7 executed; verification next
-**Resume file:** None
+**Last session:** 2026-10-16T12:20:38.008Z
+**Stopped at:** Phase 241 context gathered
+**Resume file:** .planning/phases/241-codebase-cleanup/241-CONTEXT.md
 
 Previous session note (Phase 227):
 refit (calibration parity holds). Verification passed 17/17; code review 0 blockers (WR-01 + 3 info fixed). Next:
