@@ -532,9 +532,16 @@ class TestCallbackPromote:
                 "/api/users/me/profile",
                 headers={"Authorization": f"Bearer {new_token}"},
             )
+            # Promotion revokes the long-lived guest JWT (quick 261016-fwd).
+            stale_resp = await client2.get(
+                "/api/users/me/profile",
+                headers={"Authorization": f"Bearer {guest_token}"},
+            )
         assert profile_resp2.status_code == 200
         profile = profile_resp2.json()
         assert profile["is_guest"] is False
+        assert self._decode_user_id_from_token(new_token) == guest_user_id
+        assert stale_resp.status_code == 401
 
     @pytest.mark.asyncio
     async def test_callback_promote_token_exchange_failure_redirects(self):
@@ -582,47 +589,131 @@ class TestCallbackPromote:
         assert profile_resp.status_code == 200
         assert profile_resp.json()["is_guest"] is True
 
+    async def _run_callback_promote(
+        self,
+        client: httpx.AsyncClient,
+        guest_token: str,
+        csrf_token: str,
+        account_sub: str,
+        account_email: str,
+    ) -> dict[str, str]:
+        """Run callback-promote for a guest with a mocked Google identity; return the fragment."""
+        state = self._make_valid_state_jwt(self._decode_user_id_from_token(guest_token), csrf_token)
+        with patch(
+            "app.routers.auth.google_oauth_client.get_access_token",
+            new=AsyncMock(return_value=make_fake_token_response(account_sub, account_email)),
+        ):
+            resp = await client.get(
+                "/api/auth/google/callback-promote",
+                params={"code": "fake_code", "state": state},
+                follow_redirects=False,
+            )
+        assert resp.status_code == 302
+        fragment = resp.headers["location"].split("#", 1)[1]
+        return dict(pair.split("=", 1) for pair in fragment.split("&") if "=" in pair)
+
+    async def _assert_still_guest(self, client: httpx.AsyncClient, guest_token: str) -> None:
+        profile_resp = await client.get(
+            "/api/users/me/profile", headers={"Authorization": f"Bearer {guest_token}"}
+        )
+        assert profile_resp.status_code == 200
+        assert profile_resp.json()["is_guest"] is True
+
     @pytest.mark.asyncio
-    async def test_callback_promote_email_collision(self):
-        """Callback returns 302 redirect with error=EMAIL_ALREADY_REGISTERED when email is taken."""
+    async def test_callback_promote_existing_email_signs_in_existing_account(self):
+        """A Google email that already has an account signs that account in (no
+        EMAIL_ALREADY_REGISTERED lockout) and leaves the guest untouched. The upper-case
+        email proves the case-insensitive lookup."""
         from app.routers.auth import _CSRF_COOKIE
 
-        csrf_token = "test_csrf_collision_xyz"
-        existing_email = unique_email("collision_target")
+        csrf_token = "test_csrf_existing_email"
+        existing_email = unique_email("existing_target")
 
         async with httpx.AsyncClient(
             transport=httpx.ASGITransport(app=app),
             base_url="http://test",
             cookies={_CSRF_COOKIE: csrf_token},
         ) as client:
-            # Register the email on a different account first
-            await register_user(client, existing_email, "password123")
+            reg_resp = await register_user(client, existing_email, "password123!")
+            assert reg_resp.status_code == 201
+            existing_id = reg_resp.json()["id"]
 
-            # Create a guest user
             guest_resp = await client.post("/api/auth/guest/create")
             assert guest_resp.status_code == 201
             guest_token = guest_resp.json()["access_token"]
 
-            guest_user_id = self._decode_user_id_from_token(guest_token)
-            state = self._make_valid_state_jwt(guest_user_id, csrf_token)
-
-            fake_token_resp = make_fake_token_response(
-                sub="sub_collision_test", email=existing_email
+            params = await self._run_callback_promote(
+                client,
+                guest_token,
+                csrf_token,
+                f"google_sub_{uuid.uuid4().hex}",
+                existing_email.upper(),
             )
 
-            with patch(
-                "app.routers.auth.google_oauth_client.get_access_token",
-                new=AsyncMock(return_value=fake_token_resp),
-            ):
-                resp = await client.get(
-                    "/api/auth/google/callback-promote",
-                    params={"code": "fake_code", "state": state},
-                    follow_redirects=False,
+            assert self._decode_user_id_from_token(params["token"]) == existing_id
+            assert "promoted" not in params
+            assert "error" not in params
+            # Unverified password account: the takeover protection still replaced it.
+            assert params.get("password_replaced") == "1"
+            await self._assert_still_guest(client, guest_token)
+
+    @pytest.mark.asyncio
+    async def test_callback_promote_linked_google_account_signs_in_owner(self):
+        """A Google account id already linked to a user signs that user in, even when its
+        current email differs, and the second guest stays a guest."""
+        from app.routers.auth import _CSRF_COOKIE
+
+        csrf_token = "test_csrf_linked_account"
+        account_sub = f"google_sub_{uuid.uuid4().hex}"
+
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=app),
+            base_url="http://test",
+            cookies={_CSRF_COOKIE: csrf_token},
+        ) as client:
+            guest_a = (await client.post("/api/auth/guest/create")).json()["access_token"]
+            guest_a_id = self._decode_user_id_from_token(guest_a)
+            first = await self._run_callback_promote(
+                client, guest_a, csrf_token, account_sub, unique_email("linked_a")
+            )
+            assert first.get("promoted") == "1"
+
+            guest_b = (await client.post("/api/auth/guest/create")).json()["access_token"]
+            second = await self._run_callback_promote(
+                client, guest_b, csrf_token, account_sub, unique_email("linked_b")
+            )
+
+            assert self._decode_user_id_from_token(second["token"]) == guest_a_id
+            assert "promoted" not in second
+            assert "password_replaced" not in second
+            await self._assert_still_guest(client, guest_b)
+
+    @pytest.mark.asyncio
+    async def test_callback_promote_race_collision_still_redirects_email_already_registered(
+        self,
+    ):
+        """If the account appears between the lookup and the promotion, the
+        EMAIL_ALREADY_REGISTERED fallback still fires instead of a silent merge."""
+        from app.routers.auth import _CSRF_COOKIE
+
+        csrf_token = "test_csrf_race"
+        existing_email = unique_email("race_target")
+
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=app),
+            base_url="http://test",
+            cookies={_CSRF_COOKIE: csrf_token},
+        ) as client:
+            await register_user(client, existing_email, "password123!")
+            guest_token = (await client.post("/api/auth/guest/create")).json()["access_token"]
+
+            with patch("app.routers.auth._existing_google_user", new=AsyncMock(return_value=None)):
+                params = await self._run_callback_promote(
+                    client, guest_token, csrf_token, "sub_race_test", existing_email
                 )
 
-        assert resp.status_code == 302
-        location = resp.headers["location"]
-        assert "EMAIL_ALREADY_REGISTERED" in location
+            assert params.get("error") == "EMAIL_ALREADY_REGISTERED"
+            await self._assert_still_guest(client, guest_token)
 
     @pytest.mark.asyncio
     async def test_callback_promote_invalid_csrf(self):
@@ -645,13 +736,22 @@ class TestCallbackPromote:
             # State JWT has csrf_in_state but cookie has csrf_in_cookie
             state = self._make_valid_state_jwt(guest_user_id, csrf_in_state)
 
-            resp = await client.get(
-                "/api/auth/google/callback-promote",
-                params={"code": "fake_code", "state": state},
-                follow_redirects=False,
-            )
+            exchange = AsyncMock()
+            lookup = AsyncMock()
+            with (
+                patch("app.routers.auth.google_oauth_client.get_access_token", new=exchange),
+                patch("app.routers.auth._existing_google_user", new=lookup),
+            ):
+                resp = await client.get(
+                    "/api/auth/google/callback-promote",
+                    params={"code": "fake_code", "state": state},
+                    follow_redirects=False,
+                )
 
         assert resp.status_code == 400
+        # Rejected before the code exchange and before any account lookup.
+        exchange.assert_not_awaited()
+        lookup.assert_not_awaited()
 
     @pytest.mark.asyncio
     async def test_callback_promote_invalid_state_audience(self):
@@ -680,10 +780,18 @@ class TestCallbackPromote:
             }
             wrong_state = generate_jwt(wrong_state_data, settings.SECRET_KEY, lifetime_seconds=600)
 
-            resp = await client.get(
-                "/api/auth/google/callback-promote",
-                params={"code": "fake_code", "state": wrong_state},
-                follow_redirects=False,
-            )
+            exchange = AsyncMock()
+            lookup = AsyncMock()
+            with (
+                patch("app.routers.auth.google_oauth_client.get_access_token", new=exchange),
+                patch("app.routers.auth._existing_google_user", new=lookup),
+            ):
+                resp = await client.get(
+                    "/api/auth/google/callback-promote",
+                    params={"code": "fake_code", "state": wrong_state},
+                    follow_redirects=False,
+                )
 
         assert resp.status_code == 400
+        exchange.assert_not_awaited()
+        lookup.assert_not_awaited()

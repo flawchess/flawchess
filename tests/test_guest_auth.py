@@ -572,6 +572,32 @@ class TestGuestPromotion:
             assert profile["email"] == new_email
 
     @pytest.mark.asyncio
+    async def test_guest_token_rejected_after_email_promotion(self):
+        """Promotion revokes the long-lived guest JWT; only the returned token works
+        (quick 261016-fwd)."""
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=app), base_url="http://test"
+        ) as client:
+            guest_token = (await client.post("/api/auth/guest/create")).json()["access_token"]
+            promo_resp = await client.post(
+                "/api/auth/guest/promote/email",
+                json={"email": unique_email("revoke"), "password": "TestPass123!"},
+                headers={"Authorization": f"Bearer {guest_token}"},
+            )
+            assert promo_resp.status_code == 200
+            new_token = promo_resp.json()["access_token"]
+
+            stale_resp = await client.get(
+                "/api/users/me/profile", headers={"Authorization": f"Bearer {guest_token}"}
+            )
+            fresh_resp = await client.get(
+                "/api/users/me/profile", headers={"Authorization": f"Bearer {new_token}"}
+            )
+        assert stale_resp.status_code == 401
+        assert fresh_resp.status_code == 200
+        assert fresh_resp.json()["is_guest"] is False
+
+    @pytest.mark.asyncio
     async def test_promotion_email_conflict(self):
         """POST /auth/guest/promote/email returns 409 with EMAIL_ALREADY_REGISTERED."""
         existing_email = unique_email("existingpromo")
