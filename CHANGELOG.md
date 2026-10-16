@@ -47,6 +47,8 @@ in `YYYY-MM-DD` (Europe/Zurich).
 
 ### Fixed
 
+- Signing up with Google after using FlawChess as a guest now keeps your guest data even if you logged out first or retried the Google sign-in, instead of creating a second, empty account. If your Google account already has a FlawChess account, you are signed into it.
+- Library Flaws: the "Sign up free" button shown to guests when no game is analyzed yet now opens the sign-up page instead of doing nothing.
 - Shelly's endgame report is no longer written twice when you reload the Endgames page while it is being generated.
 - Analysis engine no longer restarts its Stockfish workers when the tab sits in the background, so a search left running in another tab keeps its results instead of losing them.
 - Google sign-in no longer shows a server error page when Google rejects the sign-in code (for example after a doubled redirect on Android). You land back on the login page with a "Google sign-in failed. Please try again." message.
