@@ -5,8 +5,8 @@ current_phase: 240
 current_phase_name: Train First-Session Onboarding Load (SEED-200)
 status: verifying
 stopped_at: Phase 240 plans 7/7 executed; verification next
-last_updated: "2026-10-16T10:21:46.558Z"
-state_head: d3921bb0cd9b9ed63c882be020d19312f47d50fc
+last_updated: "2026-10-16T11:44:13.443Z"
+state_head: 38baedf8b185ecd529ff479ec9ddfc92f1d5fdef
 progress:
   total_phases: 3
   completed_phases: 103
@@ -1044,6 +1044,9 @@ None active.
 | 261015-s05 | Train reveal: clock-context line under the game footer (think time + clock left) | 2026-10-15 | f0b68075d | [261015-s05-train-reveal-clock-context-line-under-th](./quick/261015-s05-train-reveal-clock-context-line-under-th/) |
 | 261016-fwd | Google sign-in promotes saved guest instead of creating duplicate account | 2026-10-16 | daabb0e4c | [261016-fwd-google-sign-in-promotes-saved-guest-inst](./quick/261016-fwd-google-sign-in-promotes-saved-guest-inst/) |
 | 147 | Add a "Feedback" label to the floating feedback button | 2026-10-16 | d3921bb0c | — |
+| 148 | Fix 401 interceptor: auth routes excluded from session-expired redirect | 2026-10-16 | 164754ce9 | — |
+| 149 | Fix opening insights TypeError on all-custom-start transition groups | 2026-10-16 | 07dd60fb4 | — |
+| 150 | Fix tactic depth summary highlight vs High default | 2026-10-16 | 38baedf8b | — |
 
 ## Deferred Items
 
