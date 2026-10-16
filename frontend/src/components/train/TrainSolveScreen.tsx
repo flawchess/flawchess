@@ -1683,7 +1683,7 @@ export function TrainSolveScreen({
   );
 
   // Phase 240 D-01/D-02: the intro is two bubbles whether or not the session is
-  // a warm-up; a warm-up only appends a note to the welcome bubble (UAT).
+  // a warm-up; a warm-up only swaps in its own welcome copy (UAT).
   const isWarmup = trainSession.session?.is_warmup ?? false;
 
   function handleIntroNext(): void {

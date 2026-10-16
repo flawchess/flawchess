@@ -213,7 +213,8 @@ function resolveLandingState(
  * sees on landing and on finishing are literally the same words. This
  * replaced the "Warm-up session" info card, which told guests their games
  * were being analyzed although nothing is analyzed for a guest.
- * Phase 240 UAT: hidden until the reveal tour is done, like the reminder ask.
+ * Phase 240 UAT: hidden until the guest has completed a session (today's, or
+ * an earlier one stamped `sr_explained_at`), and shown on phones too.
  *
  * 2026-09-18: a registered account with no push subscription from a phone
  * (`has_mobile_subscription === false`, account-wide) gets the reminder ask
