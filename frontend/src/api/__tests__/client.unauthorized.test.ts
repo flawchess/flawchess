@@ -49,6 +49,17 @@ describe('401 interceptor', () => {
     expect(localStorage.getItem(ADMIN_RETURN_TOKEN_STORAGE_KEY)).toBeNull();
   });
 
+  it('leaves a token-bearing 401 from an auth route alone', async () => {
+    // loginAsGuest retries /auth/guest/refresh with a saved, possibly expired
+    // guest token and falls back to a new guest on 401; a redirect would cut that off.
+    localStorage.setItem('auth_token', 'still-valid');
+    await expect(
+      apiClient.post('/auth/guest/refresh', null, { headers: { Authorization: 'Bearer expired-guest' } }),
+    ).rejects.toBeInstanceOf(AxiosError);
+    expect(window.location.href).toBe(fakeLocation.href);
+    expect(localStorage.getItem('auth_token')).toBe('still-valid');
+  });
+
   it('leaves a tokenless 401 alone', async () => {
     await expect(apiClient.get('/users/me/profile')).rejects.toBeInstanceOf(AxiosError);
     expect(window.location.href).toBe(fakeLocation.href);

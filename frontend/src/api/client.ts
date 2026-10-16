@@ -108,7 +108,11 @@ apiClient.interceptors.response.use(
       error.response?.status === 401
     ) {
       const onLoginPage = window.location.pathname === '/login';
-      const isAuthRoute = (error.config?.url ?? '').startsWith('/api/auth/');
+      // config.url is relative to baseURL ('/api'), so auth routes start with
+      // '/auth/'. The old '/api/auth/' prefix never matched, so a saved guest
+      // token that 401'd on /auth/guest/refresh hard-redirected to /login instead
+      // of falling through to a fresh guest in loginAsGuest.
+      const isAuthRoute = (error.config?.url ?? '').startsWith('/auth/');
       // Quick 260926-9bg: only a request that carried a token can mean "session
       // expired". ProtectedLayout's profile query fires before its no-token
       // redirect to the home page; its tokenless 401 used to hard-redirect a
