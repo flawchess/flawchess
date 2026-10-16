@@ -45,13 +45,15 @@ export function FeedbackButton() {
         <Button
           // Brand-brown primary so the floating trigger reads as the high-emphasis CTA
           variant="default"
-          // Override stock size="icon" (size-8/32px) to meet 44px touch target (D-02)
-          className="h-11 w-11"
+          // h-11 meets the 44px touch target (D-02); the visible label makes the
+          // icon's purpose obvious, which the bare icon did not
+          className="h-11 px-4"
           aria-label="Send feedback"
           data-testid="btn-feedback-open"
           onClick={() => setOpen(true)}
         >
           <MessageSquare className="size-4" aria-hidden="true" />
+          Feedback
         </Button>
       </div>
 
