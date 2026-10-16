@@ -309,7 +309,7 @@ const INTRO_WARMUP_WELCOME_COPY =
 /** Phase 240 UAT: the guess vocabulary, phrased as a legend for the "Only one"
  * and "Several" buttons it sits above (see `introSteps`). */
 const INTRO_GUESS_LEGEND =
-  'Only one: a single move works, the others are mistakes. Several: any good move will do.';
+  'Only one: a single move works, the others are mistakes. Several: there are at least two good moves.';
 
 /**
  * D-22 intro stepper, all Hilda, two steps (Phase 240 D-01, D-02): the

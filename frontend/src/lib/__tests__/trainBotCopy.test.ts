@@ -277,7 +277,7 @@ describe('introCopy / introSteps (Phase 240 D-01, D-02: two bubbles)', () => {
         expect(step.personaId).toBe(HILDA_ID);
         expect(step.copy).toBe(
           `Decide first, then play. You play ${side}. Only one: a single move works, ` +
-            'the others are mistakes. Several: any good move will do.',
+            'the others are mistakes. Several: there are at least two good moves.',
         );
       }
     }
