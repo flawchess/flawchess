@@ -339,11 +339,12 @@ export const trainApi = {
    * Idempotent server-side; resolves to undefined (204). */
   claimMedals: (medals: MedalKey[]) =>
     apiClient.post<void>('/train/medals/claim', { medals }).then(() => undefined),
-  /** Phase 222 (D-11/D-12): stamps one of the three onboarding "seen"
-   * watermarks on stepper completion. Returns the full settings response so
-   * `useTrainOnboarding`'s `onSuccess` can refresh the shared cache with no
-   * extra fetch (RESEARCH Finding D). Plan 02 implements the matching
-   * server-side handler with the same three step names. */
+  /** Stamps one onboarding step: `intro` and `sr_explained` set a "seen"
+   * watermark on stepper completion; `reveal_tour_1`, `reveal_tour_2` and
+   * `reveal_tour_3` each finish one part of the reveal tour and advance the
+   * server's forward-only `reveal_tour_stage` counter (Phase 240 D-09). Returns
+   * the full settings response so `useTrainOnboarding`'s `onSuccess` can refresh
+   * the shared cache with no extra fetch (RESEARCH Finding D). */
   stampOnboarding: (step: OnboardingStep) =>
     apiClient.post<TrainSettingsResponse>(`/train/onboarding/${step}`).then(r => r.data),
 };

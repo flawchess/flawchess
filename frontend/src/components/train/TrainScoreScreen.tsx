@@ -28,22 +28,19 @@
  * resumes, and a secondary "Done" returns to the landing so the session
  * finishes on the streak card showing the tick it just earned.
  *
- * Phase 222 (D-25, SC4): the screen now OPENS on a bot bubble stating what
- * returns and when, BEFORE the Remind me ask — SEED-166's second leak was
- * that this screen closed a loop instead of opening one. Hosted by a random
- * smart bot regardless of the session's rating band (D-04), memoised once
- * per mount so a re-render never recasts mid-read. The bubble's copy comes
- * from `scoreBubbleCopy` (plan 01, D-18/D-21/D-25) fed by `solvedOutcomes`
- * (plan 05 task 1, RESEARCH Finding C) — the same array is correct whether
- * the session was played straight through or resumed/reloaded/handed off.
+ * Phase 222 (D-25, SC4): the screen OPENS on a bot bubble, BEFORE the Remind
+ * me ask — SEED-166's second leak was that this screen closed a loop instead
+ * of opening one. Hosted by a random smart bot regardless of the session's
+ * rating band (D-04), memoised once per mount so a re-render never recasts
+ * mid-read. The bubble's copy comes from `scoreBubbleCopy` (D-19), fed by
+ * the miss count derived from `solvedOutcomes` — the same array is correct
+ * whether the session was played straight through or resumed/reloaded/handed
+ * off. Phase 240 D-18: the bubble no longer says what returns or when.
  *
- * The full spaced-repetition explanation shows exactly once, gated on
- * `useTrainSettings().data.sr_explained_at === null` (D-12) — but ONLY when
- * that variant actually renders: `scoreBubbleCopy`'s own precedence puts the
- * warm-up and nothing-missed variants ahead of the full explanation, so
- * `showsFullExplanation` mirrors that same precedence here before firing the
- * one-shot stamp. An explanation that was never shown must never be stamped
- * (D-12) — it would silently downgrade a future first-timer to the one-liner.
+ * The first-completed-session copy (the practice rationale in line 1) shows
+ * exactly once, gated on `useTrainSettings().data.sr_explained_at === null`
+ * (D-12) and stamped in ANY branch that rendered it (D-21): without that, an
+ * all-warm-up guest would read the rationale every session.
  */
 
 import { useEffect, useMemo, useRef, useState, type ReactElement } from 'react';
@@ -99,6 +96,11 @@ const BADGE_TINT_PERCENT = 14;
 /** Thickness of the badge ring, in px. */
 const BADGE_RING_WIDTH_PX = 4;
 
+/** UAT 240: the bubble and button column. 384px (max-w-sm) on phones, which
+ * fills the screen anyway; 512px from md up, where the narrow column wrapped
+ * the bubble into a tall block next to empty space. */
+const SCORE_COLUMN_MAX_W = 'max-w-sm md:max-w-lg';
+
 export interface TrainScoreScreenProps {
   score: TrainSessionScore;
   /**
@@ -129,14 +131,6 @@ export interface TrainScoreScreenProps {
    * The score bubble's sole source for "what returns and when".
    */
   solvedOutcomes: SolvedResult[];
-  /** `TrainSessionResponse.session_date` — the day-arithmetic base for the
-   * "in N days" phrasing (D-15, no client clock math anywhere). */
-  sessionDate: string;
-  /** `TrainSessionResponse.expires_on` — the boundary between "next
-   * session" and "in N days" (D-15). Same value as `nextSessionDate` above,
-   * threaded separately because the two props serve different call sites
-   * (the existing "Next session:" line vs. the new bubble copy). */
-  expiresOn: string;
   /** `TrainSessionResponse.is_warmup` — a warm-up session (zero surviving
    * SR items) gets its own D-25 variant regardless of `sr_explained_at`. */
   isWarmup: boolean;
@@ -171,8 +165,6 @@ export function TrainScoreScreen({
   nextSessionDate,
   onDone,
   solvedOutcomes,
-  sessionDate,
-  expiresOn,
   isWarmup,
   hasGames,
   isGuest,
@@ -201,8 +193,7 @@ export function TrainScoreScreen({
   });
 
   // ScoreBubbleInput's own docstring: "NOT fully correct" (guess or move
-  // wrong) — the same items still return later (D-18), so "returning" and
-  // "missed" are independent facts.
+  // wrong).
   const missedCount = useMemo(
     () => solvedOutcomes.filter((outcome) => !(outcome.correct_guess && outcome.move_quality === 'good'))
       .length,
@@ -231,27 +222,28 @@ export function TrainScoreScreen({
     firstExplanationLatch === null
       ? null
       : scoreBubbleCopy({
-          outcomes: solvedOutcomes,
           missedCount,
           isFirstCompletedSession: firstExplanation,
           isWarmup,
           reminderAsk,
           band,
-          session_date: sessionDate,
-          expires_on: expiresOn,
           audience: { hasGames, isGuest } satisfies TrainCopyAudience,
         });
 
-  // D-12: mirrors `scoreBubbleCopy`'s own precedence (isWarmup and
-  // missedCount===0 both win over isFirstCompletedSession) — an explanation
-  // that was never actually rendered must never be stamped.
-  const showsFullExplanation = firstExplanation && !isWarmup && missedCount > 0;
+  // D-12/D-21: stamp whenever the first-completed variant actually rendered,
+  // in any branch (warm-up, nothing missed, regular). An explanation that was
+  // never rendered must never be stamped (`bubbleCopy` is still null until
+  // settings resolve), but one that WAS rendered in a warm-up or perfect
+  // session must be, or an all-warm-up guest would see the rationale every
+  // session. Accepted (D-21): a user whose first completed session was a
+  // warm-up never later sees the "Reminders build the habit" line.
+  const showsFirstSessionCopy = bubbleCopy !== null && firstExplanation;
   const stampedRef = useRef(false);
   useEffect(() => {
-    if (!showsFullExplanation || stampedRef.current) return;
+    if (!showsFirstSessionCopy || stampedRef.current) return;
     stampedRef.current = true;
     stamp('sr_explained');
-  }, [showsFullExplanation, stamp]);
+  }, [showsFirstSessionCopy, stamp]);
   // Plan 04 UAT round 1: called directly here (not via `<TrainReminderButton />`)
   // so `control` and `belowRow` can be placed in two different rows — see
   // TrainReminderButton.tsx's module docstring for why the split exists. One
@@ -287,7 +279,7 @@ export function TrainScoreScreen({
           BEFORE the Remind me ask below — the whole point of SC4. Replaces
           the old "Session complete" heading, which said nothing about the
           loop this screen is meant to open. */}
-      <div className="w-full max-w-sm text-left" data-testid="train-score-bubble">
+      <div className={cn('w-full text-left', SCORE_COLUMN_MAX_W)} data-testid="train-score-bubble">
         <TrainBotBubble
           persona={bot}
           state="verdict"
@@ -340,7 +332,7 @@ export function TrainScoreScreen({
           block) never crowds into this row; it renders on its own full-width
           line below via `reminderBelowRow`, wrapped in this flex-col so both
           pieces stay inside the same max-w-sm column. */}
-      <div className="flex w-full max-w-sm flex-col gap-2">
+      <div className={cn('flex w-full flex-col gap-2', SCORE_COLUMN_MAX_W)}>
         <div className="flex w-full items-center gap-2" data-testid="train-score-button-row">
           <GuardedReminderControl isGuest={isGuest} reminderControl={reminderControl} />
           <Button

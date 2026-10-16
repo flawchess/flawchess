@@ -649,6 +649,11 @@ export const TRAIN_FOCUS_BADGE_DIM_OPACITY = 0.32;
 export const TRAIN_BUBBLE_BORDER = 'oklch(0.55 0.02 40)'; // neutral warm grey-brown
 export const TRAIN_BUBBLE_NUDGE_BORDER = 'oklch(0.75 0.15 85)'; // amber, same family as TRAIN_RATING_YELLOW
 
+// Train reveal tour spotlight (Phase 240 D-20): the one class every tour target
+// carries while its step is active. The rule, keyframes and the gold --tour-glow-halo
+// var live in index.css; box-shadow only (a halo, no ring), so no layout shift.
+export const TOUR_SPOTLIGHT_CLASS = 'train-tour-spotlight';
+
 // Train streak flame + freeze meter (SEED-181, sketch 005 A). The streak count
 // sits inside a 3-layer flame (red outer, orange middle, yellow core); the 0-7
 // `shield_level` buffer renders as snowflake "freezes" in an icy blue. Hot vs

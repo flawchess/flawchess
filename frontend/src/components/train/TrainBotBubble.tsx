@@ -63,14 +63,6 @@ export interface TrainBotBubbleProps {
   /** Optional action row (guess buttons, or Next/Solution/Analyze), rendered
    * as its own row INSIDE the bubble, below `children`. */
   actions?: ReactNode;
-  /**
-   * Phase 222 plan 06 (D-24): true while this bubble itself is the active
-   * first-reveal-walkthrough spotlight target (step 1, "verdict"). Reuses
-   * the exact `ring-2 ring-brand-brown` idiom TrainReveal's own line-box
-   * highlight already uses (never the `spotlightKey`/`onSpotlightChange`
-   * board-arrow channel).
-   */
-  ring?: boolean;
   /** Avatar size step; only the /train landing page uses `'large'`. */
   avatarSize?: TrainBotAvatarSize;
 }
@@ -107,7 +99,6 @@ export function TrainBotBubble({
   nudgeNonce,
   children,
   actions,
-  ring = false,
   avatarSize = 'default',
 }: TrainBotBubbleProps): ReactElement {
   const isNudge = state === 'drop-nudge';
@@ -141,7 +132,6 @@ export function TrainBotBubble({
         className={cn(
           'relative min-w-0 flex-1 rounded-2xl border-2 bg-background px-4 py-3',
           !prefersReducedMotion() && pulses && 'animate-train-bubble-nudge',
-          ring && 'ring-2 ring-brand-brown',
         )}
         style={{ borderColor }}
       >

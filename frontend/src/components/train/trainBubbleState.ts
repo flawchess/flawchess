@@ -17,10 +17,8 @@
  * Finding B / Pattern 2.
  *
  * Precedence (highest first): verdict > grading > submitting > move > intro
- * > drop-nudge > prompt. Only `prompt`, `move` and `grading` are reachable from
- * `TrainSolveScreen` after plan 01 — `intro` and `drop-nudge` are wired in
- * plan 04 (their inputs default to `introStep: null` / `nudgeActive: false`
- * until then, which structurally can never win the precedence chain).
+ * > drop-nudge > prompt. The `intro` state carries a step of the two-bubble
+ * first-session intro (Phase 240 D-01: welcome, then the closing prompt).
  */
 
 import type { IntroStep } from '@/lib/trainBotCopy';
@@ -52,10 +50,9 @@ export interface ResolveBubbleStateInput {
   /** True once the guess has been committed (`guess !== null`). */
   guessMade: boolean;
   /** The active first-session intro-stepper step, or `null` when the intro
-   * is not showing (already seen, later puzzle, or not yet wired — plan 04). */
+   * is not showing (already seen, or a later puzzle). */
   introStep: IntroStep | null;
-  /** True for the render(s) following a piece dropped before the guess
-   * (not yet wired — plan 04, always `false` until then). */
+  /** True for the render(s) following a piece dropped before the guess. */
   nudgeActive: boolean;
 }
 

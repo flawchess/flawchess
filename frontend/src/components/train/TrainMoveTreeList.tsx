@@ -31,16 +31,15 @@ import { useEngineDisplaySettings } from '@/lib/engineSettings';
  * (lg), without scrolling. A row is 24px (text-sm 20px line + py-0.5) with a 2px
  * gap-y; the box adds 16px padding + 2px border (Phase 237 UAT: h-16 scrolled at
  * two rows). Mobile bumped h-17 -> h-18 (UAT 2026-10-09: a little more air
- * under the second row; +4px keeps the 4px grid).
+ * under the second row; +4px keeps the 4px grid), then h-18 -> h-19 (Phase 240
+ * UAT: about 5px taller; +4px stays on the grid).
  */
-export const TRAIN_MOVE_TREE_HEIGHT_CLASS = 'h-18 lg:h-30';
+export const TRAIN_MOVE_TREE_HEIGHT_CLASS = 'h-19 lg:h-30';
 
 interface TrainMoveTreeListProps {
   tree: TrainRevealTree;
   /** Board orientation, so the Stockfish row's hover-preview miniboards match. */
   flipped: boolean;
-  /** The brand ring marking the list as the focused surface. */
-  ring?: boolean;
 }
 
 /** The Stockfish row: the lines setting, compact (sideways scroll) on mobile.
@@ -93,7 +92,6 @@ function toVariationPreview(tree: TrainRevealTree): VariationTreePreview | undef
 export function TrainMoveTreeList({
   tree,
   flipped,
-  ring = false,
 }: TrainMoveTreeListProps): ReactElement {
   // The Stockfish row is a SIBLING of the list's testid wrapper, so queries that
   // read the list's move tokens never pick up the engine line's moves. It sits
@@ -101,10 +99,7 @@ export function TrainMoveTreeList({
   // appears or leaves.
   return (
     <div className="flex flex-col gap-1">
-      <div
-        data-testid="train-move-tree"
-        className={ring ? 'rounded-md ring-2 ring-brand-brown' : undefined}
-      >
+      <div data-testid="train-move-tree">
         <VariationTree
           variant="wrap"
           nodes={tree.listView.nodes}

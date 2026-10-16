@@ -19,6 +19,7 @@ import { Search } from 'lucide-react';
 import { BoardControls, LABELLED_BUTTON_CLASS } from '@/components/board/BoardControls';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
+import { TOUR_SPOTLIGHT_CLASS } from '@/lib/theme';
 import { cn } from '@/lib/utils';
 
 export interface TrainRevealActionBarProps {
@@ -40,6 +41,9 @@ export interface TrainRevealActionBarProps {
    * icon-over-label columns, with Analyze as one more column.
    */
   framed?: boolean;
+  /** Phase 240 UAT: the reveal tour's Analyze step spotlights the Analyze
+   * button alone, not the whole bar, in the page flow and the fixed phone bar. */
+  spotlightAnalyze?: boolean;
   className?: string;
 }
 
@@ -62,13 +66,15 @@ export function TrainRevealActionBar({
   onAnalyzeClick,
   onNext,
   framed = false,
+  spotlightAnalyze = false,
   className,
 }: TrainRevealActionBarProps): ReactElement {
+  const analyzeSpotlightClass = spotlightAnalyze ? TOUR_SPOTLIGHT_CLASS : undefined;
   // Phone bottom bar: Analyze reads as one more board-control column, the same
   // ghost icon-over-label shape as Start/Back/Next/Flip. It rides in the
   // controls' own row (infoSlot) so all five columns share the width equally.
   const labelledAnalyze = !framed && analyzeTo !== null && (
-    <Button asChild variant="ghost" className={cn(LABELLED_BUTTON_CLASS, 'hover:bg-accent')}>
+    <Button asChild variant="ghost" className={cn(LABELLED_BUTTON_CLASS, 'hover:bg-accent', analyzeSpotlightClass)}>
       <Link
         to={analyzeTo}
         data-testid="btn-train-analyze"
@@ -100,9 +106,6 @@ export function TrainRevealActionBar({
   return (
     <div
       data-testid="train-reveal-action-bar"
-      // Phase 237 UAT: the walkthrough's last step used to ring this bar; the
-      // ring was clipped by the fixed mobile bottom bar and added little, so
-      // the tour bubble alone points at it now.
       className={cn('flex items-center gap-2', className)}
     >
       {framed ? (
@@ -113,7 +116,7 @@ export function TrainRevealActionBar({
         controls
       )}
       {framed && analyzeTo !== null && (
-        <Button asChild variant="brand-outline" className={ACTION_BUTTON_CLASS}>
+        <Button asChild variant="brand-outline" className={cn(ACTION_BUTTON_CLASS, analyzeSpotlightClass)}>
           <Link
             to={analyzeTo}
             data-testid="btn-train-analyze"

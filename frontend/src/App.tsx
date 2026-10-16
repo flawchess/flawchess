@@ -498,6 +498,8 @@ function renderBoardControlsBar(boardControls: MobileBoardControls): ReactElemen
         analyzeTo={boardControls.analyzeTo ?? null}
         onAnalyzeClick={boardControls.onAnalyzeClick ?? (() => {})}
         onNext={boardControls.onNext}
+        // Phase 240 UAT: the tour's Analyze step spotlights the Analyze button alone.
+        spotlightAnalyze={boardControls.spotlightAnalyze === true}
         className="flex-1"
       />
     );

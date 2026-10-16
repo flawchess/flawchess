@@ -91,19 +91,18 @@ import {
   GRADING_COPY,
   RECHECK_COPY,
   HILDA_ID,
-  introStepCount,
-  WALKTHROUGH_STEP_COUNT,
+  INTRO_STEP_COUNT,
   dropNudgeCopy,
   introCopy,
   movePromptCopy,
   pickPuzzleHost,
   promptCopy,
   verdictCopy,
-  walkthroughCopy,
+  isRevealTourDone,
+  tourStepCopy,
 } from '@/lib/trainBotCopy';
 import type {
   IntroStep,
-  TrainCopyAudience,
   VerdictCopy,
   WalkthroughContext,
 } from '@/lib/trainBotCopy';
@@ -150,6 +149,7 @@ import {
   TRAIN_POINTS_FG_ON_DARK,
   TRAIN_POINTS_FG_ON_LIGHT,
   STOCKFISH_ACCENT,
+  TOUR_SPOTLIGHT_CLASS,
 } from '@/lib/theme';
 
 export interface TrainSolveScreenProps {
@@ -171,13 +171,6 @@ export interface TrainSolveScreenProps {
    * game-move search still runs — it is independent of the mount search.
    */
   restoredSolve?: CachedTrainReveal | null;
-  /** D-03 (Phase 224): true when the account has at least one imported game
-   * (`hasImportedGames`, `useUserProfile().data`). Selects the intro/verdict
-   * copy variant threaded through the bot bubble. */
-  hasGames: boolean;
-  /** D-03 (Phase 224): from `useUserProfile().data`, never `useAuth().user`
-   * (FLAWCHESS-64). Adds the sign-up clause to the games-less copy. */
-  isGuest: boolean;
 }
 
 /**
@@ -485,11 +478,8 @@ interface BubbleBodyDeps {
   suppressPrompt: boolean;
   onIntroNext: () => void;
   onIntroGuess: (guess: Guess) => void;
-  /** Phase 222 UAT round 3: a warm-up first session gets one extra intro step. */
+  /** Phase 240 UAT: selects the warm-up variant of the intro welcome. */
   isWarmup: boolean;
-  /** D-03 (Phase 224): threaded into `introCopy`/`introStepCount` (the
-   * welcome/warm-up intro copy). */
-  audience: TrainCopyAudience;
 }
 
 /**
@@ -556,10 +546,10 @@ function renderTrainBotBubbleBody(
   }
   if (bubbleState.kind === 'intro') {
     return {
-      copy: <p>{introCopy(bubbleState.step, deps.sideToMove, deps.isWarmup, deps.audience).copy}</p>,
+      copy: <p>{introCopy(bubbleState.step, deps.sideToMove, deps.isWarmup).copy}</p>,
       actions: (
         <TrainBotStepper
-          stepCount={introStepCount(deps.isWarmup, deps.audience)}
+          stepCount={INTRO_STEP_COUNT}
           step={bubbleState.step}
           onNext={deps.onIntroNext}
           lastControl={guessButtons(deps.onIntroGuess)}
@@ -597,12 +587,9 @@ function resolveBubblePersona(
   regularBot: Persona,
   verdictBot: Persona | null,
   isWarmup: boolean,
-  audience: TrainCopyAudience,
 ): Persona {
   if (bubbleState.kind === 'intro') {
-    return (
-      personaForId(introCopy(bubbleState.step, sideToMove, isWarmup, audience).personaId) ?? regularBot
-    );
+    return personaForId(introCopy(bubbleState.step, sideToMove, isWarmup).personaId) ?? regularBot;
   }
   if (bubbleState.kind === 'verdict' && verdictBot !== null) return verdictBot;
   return regularBot;
@@ -614,12 +601,7 @@ export function TrainSolveScreen({
   gradingEngine,
   onNext,
   restoredSolve = null,
-  hasGames,
-  isGuest,
 }: TrainSolveScreenProps): ReactElement {
-  // D-03 (Phase 224): built once per render, threaded through unchanged —
-  // no new branch is added HERE, the audience is only ever passed through.
-  const audience: TrainCopyAudience = { hasGames, isGuest };
   // Suppress the mobile app header while a puzzle is on screen — the board
   // needs the vertical space (ProtectedLayout reads this flag; same pattern
   // as BotsGame).
@@ -983,23 +965,19 @@ export function TrainSolveScreen({
     [analyzeOpens, puzzle.game_id, puzzle.ply, puzzle.fen, puzzle.side_to_move],
   );
 
-  // Phase 222 (D-24): the first-reveal walkthrough — step state, the bar-Next
-  // routing, the phone overlay's hidden flag, the phone scroll-to-target effect
-  // and the leave-stamp all live in the hook; this component only reads
-  // `activeStep` / `target` (the strip, board-row, list and bar rings) and
-  // threads the handlers through.
-  // Phase 237 plan 10 (D-09): the tour explains "Move = Best" / "Move = Game" only
-  // when that merged chip is actually on screen: the Move chip's second role.
-  const mergedChip = useMemo<WalkthroughContext['mergedChip']>(() => {
-    const secondRole = chips.find((chip) => chip.roles.includes('your'))?.roles.find((role) => role !== 'your');
-    return secondRole === 'best' || secondRole === 'game' ? secondRole : null;
-  }, [chips]);
+  // Phase 222 (D-24), split by Phase 240 (D-06): the first-reveal tour, one part
+  // per reveal. The part latch, step state, the bar-Next routing, the phone
+  // overlay's hidden flag, the phone scroll-to-target effect and the leave-stamp
+  // all live in the hook; this component only reads `activeStep` / `target`
+  // (the strip, board-row, list and bar rings) and threads the handlers through.
   const walkthrough = useTrainWalkthrough({
     settings,
     hasVerdict: verdict !== null,
     analyzeOpens,
-    mergedChip,
     isDesktop,
+    // A reveal restored after the Analyze round trip is the one the user already
+    // saw: it never starts a tour part (Phase 240 D-07).
+    isRestored: restoredSolve !== null,
     screenRef,
     pinnedRef,
     stamp,
@@ -1023,9 +1001,9 @@ export function TrainSolveScreen({
     walkthrough.activeStep === null || tourPersona === undefined ? null : (
       <TrainTourOverlay
         persona={tourPersona}
-        copy={walkthroughCopy(walkthrough.activeStep, walkthrough.context).copy}
-        step={walkthrough.activeStep}
-        stepCount={WALKTHROUGH_STEP_COUNT}
+        copy={tourStepCopy(walkthrough.activeStep, walkthrough.context).copy}
+        step={walkthrough.stepIndex}
+        stepCount={walkthrough.stepCount}
         hidden={walkthrough.overlayHidden}
         onReopen={walkthrough.reopen}
       />
@@ -1473,6 +1451,7 @@ export function TrainSolveScreen({
             onNext: handleBarNext,
             analyzeTo,
             onAnalyzeClick: handleBarAnalyzeClick,
+            spotlightAnalyze: walkthroughTarget === 'analyze',
           }
         : null,
     [
@@ -1489,6 +1468,7 @@ export function TrainSolveScreen({
       handleBarNext,
       analyzeTo,
       handleBarAnalyzeClick,
+      walkthroughTarget,
     ],
   );
   usePublishMobileBoardControls(mobileBoardControls);
@@ -1685,9 +1665,9 @@ export function TrainSolveScreen({
   // (`puzzle.position` — Math.random, not seeded, not persisted; a reload may
   // recast, which D-02 accepts). Phase 237 UAT: any persona can host, and the
   // host also speaks the verdict below. Hilda is excluded unless the settings
-  // confirm the first-reveal tour was already seen (still loading counts as
-  // pending), since she narrates that tour herself.
-  const tourMaybePending = settings?.reveal_walkthrough_seen_at == null;
+  // confirm the whole three-part tour is done (still loading counts as pending),
+  // since she narrates whichever part is due.
+  const tourMaybePending = settings === undefined || !isRevealTourDone(settings.reveal_tour_stage);
   // eslint-disable-next-line react-hooks/exhaustive-deps -- `puzzle.position` is intentionally NOT read inside the callback: it exists purely to re-run the draw (a fresh Math.random) on every puzzle transition, per D-02. `tourMaybePending` is read at that moment only, so a settings load mid-puzzle never recasts the host.
   const bot = useMemo(() => pickPuzzleHost(tourMaybePending), [puzzle.position]);
 
@@ -1702,13 +1682,12 @@ export function TrainSolveScreen({
     introStep,
   );
 
-  // Phase 222 UAT round 3: a warm-up first session (games still being
-  // analyzed) gets one extra intro step explaining that, right before the
-  // closing guess step.
+  // Phase 240 D-01/D-02: the intro is two bubbles whether or not the session is
+  // a warm-up; a warm-up only swaps in its own welcome copy (UAT).
   const isWarmup = trainSession.session?.is_warmup ?? false;
 
   function handleIntroNext(): void {
-    setIntroStep((step) => Math.min(step + 1, introStepCount(isWarmup, audience) - 1) as IntroStep);
+    setIntroStep((step) => Math.min(step + 1, INTRO_STEP_COUNT - 1) as IntroStep);
   }
 
   // Phase 222 (D-12): fires the one-shot stamp alongside the existing guess
@@ -1792,7 +1771,6 @@ export function TrainSolveScreen({
     onIntroNext: handleIntroNext,
     onIntroGuess: handleIntroGuess,
     isWarmup,
-    audience,
   });
   const bubblePersona = resolveBubblePersona(
     bubbleState,
@@ -1800,7 +1778,6 @@ export function TrainSolveScreen({
     bot,
     verdictBot,
     isWarmup,
-    audience,
   );
 
   return (
@@ -1882,8 +1859,9 @@ export function TrainSolveScreen({
         ref={boardRef}
         className={cn(
           'flex w-full flex-row items-stretch gap-2',
-          // Phase 222 UAT: the walkthrough's free-play step rings the board row.
-          walkthroughTarget === 'board' && 'rounded-md ring-2 ring-brand-brown ring-offset-4 ring-offset-background',
+          // Phase 240 D-20: the tour's free-play step spotlights the board row
+          // (the glow sits outside ChessBoard's own overflow-hidden square).
+          walkthroughTarget === 'board' && `rounded-md ${TOUR_SPOTLIGHT_CLASS}`,
         )}
       >
         <div
@@ -1968,6 +1946,7 @@ export function TrainSolveScreen({
           onAnalyzeClick={handleBarAnalyzeClick}
           onNext={handleBarNext}
           framed
+          spotlightAnalyze={walkthroughTarget === 'analyze'}
           className="w-full"
         />
       )}
@@ -2070,7 +2049,6 @@ export function TrainSolveScreen({
           sessionDate={trainSession.session?.session_date}
           expiresOn={trainSession.session?.expires_on}
           isWarmup={isWarmup}
-          audience={audience}
           onStripExpand={handleStripExpand}
         />
       )}

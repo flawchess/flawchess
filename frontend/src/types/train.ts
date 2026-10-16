@@ -360,6 +360,9 @@ export interface PuzzleRevealResponse {
  * `reminder_intent_at` (Phase 203, OFFER-03/OFFER-05/D-02/D-15) is an ISO
  * instant string, or null if the user has never expressed install intent.
  */
+/** Phase 240 (D-09): finished reveal-tour parts, 0..3; 3 means the whole tour is done. */
+export type RevealTourStage = 0 | 1 | 2 | 3;
+
 export interface TrainSettingsResponse {
   timezone: string;
   weekday_mask: number;
@@ -369,14 +372,16 @@ export interface TrainSettingsResponse {
   reminder_intent_at: string | null;
   /**
    * Phase 222 (D-11/D-12): server-stamped, read-only "seen" watermarks for
-   * the three onboarding steppers — stamped by `POST /train/onboarding/
-   * {step}` only on a COMPLETED stepper (an abandoned one replays). Never
-   * writable via `TrainSettingsUpdate` (D-12) — a PUT body can never smuggle
-   * a server-owned field, same rule as `reminder_last_sent_on`. `null` for
-   * every existing row (D-13: no backfill) until the client stamps it once.
+   * the intro and score-explanation steppers (`intro_seen_at`,
+   * `sr_explained_at`), stamped by `POST /train/onboarding/{step}` only on a
+   * COMPLETED stepper (an abandoned one replays). Phase 240 (D-09): the
+   * first-reveal tour is a forward-only count of finished parts instead,
+   * `reveal_tour_stage` (0 = none, 3 = whole tour done). None of these is
+   * writable via `TrainSettingsUpdate` (D-12): a PUT body can never smuggle a
+   * server-owned field, same rule as `reminder_last_sent_on`.
    */
   intro_seen_at: string | null;
-  reveal_walkthrough_seen_at: string | null;
+  reveal_tour_stage: RevealTourStage;
   sr_explained_at: string | null;
   /**
    * Phase 222 UAT round 5: whether ANY of the account's push subscriptions
