@@ -1,0 +1,12 @@
+app/services/accuracy_acpl.py
+app/services/best_move_candidates.py
+app/services/engine.py
+app/services/eval_confidence.py
+app/services/eval_queue_service.py
+app/services/eval_utils.py
+app/services/maia_encoding.py
+app/services/maia_engine.py
+app/services/position_classifier.py
+app/services/score_confidence.py
+app/services/sharp_filler.py
+app/services/zobrist.py

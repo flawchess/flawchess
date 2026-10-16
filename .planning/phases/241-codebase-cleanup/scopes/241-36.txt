@@ -1,0 +1,2 @@
+frontend/src/components/train/TrainReveal.tsx
+frontend/src/components/train/TrainSolveScreen.tsx

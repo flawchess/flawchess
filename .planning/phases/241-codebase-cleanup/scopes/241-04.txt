@@ -1,0 +1,14 @@
+frontend/src/App.css
+frontend/src/components/import/ImportBotBubble.tsx
+frontend/src/components/import/__tests__/ImportBotBubble.test.tsx
+frontend/src/components/import/importBotBubbleCopy.ts
+frontend/src/components/install/InstallPromptBanner.tsx
+frontend/src/components/install/__tests__/InstallPromptBanner.test.tsx
+frontend/src/components/layout/PublicHeader.tsx
+frontend/src/components/layout/SidebarLayout.tsx
+frontend/src/components/layout/__tests__/panelOpenTracking.test.tsx
+frontend/src/index.css
+frontend/src/instrument.ts
+frontend/src/main.tsx
+frontend/src/prerender.tsx
+frontend/src/vitest.setup.ts

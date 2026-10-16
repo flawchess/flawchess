@@ -1,0 +1,7 @@
+app/services/insights_llm.py
+app/services/insights_service.py
+app/services/opening_insights_constants.py
+app/services/opening_insights_service.py
+app/services/opening_lookup.py
+app/services/openings_service.py
+app/services/stats_service.py

@@ -1,0 +1,17 @@
+app/routers/__init__.py
+app/routers/admin.py
+app/routers/admin_activity.py
+app/routers/auth.py
+app/routers/bots.py
+app/routers/endgames.py
+app/routers/eval_remote.py
+app/routers/feedback.py
+app/routers/imports.py
+app/routers/insights.py
+app/routers/library.py
+app/routers/openings.py
+app/routers/position_bookmarks.py
+app/routers/push.py
+app/routers/stats.py
+app/routers/train.py
+app/routers/users.py

@@ -1,0 +1,13 @@
+frontend/src/App.tsx
+frontend/src/components/board/BoardControls.tsx
+frontend/src/components/board/ChessBoard.tsx
+frontend/src/components/board/HorizontalMoveList.tsx
+frontend/src/components/board/LazyMiniBoard.tsx
+frontend/src/components/board/MaterialDisplay.tsx
+frontend/src/components/board/MiniBoard.tsx
+frontend/src/components/board/MoveList.tsx
+frontend/src/components/board/PlayerBar.tsx
+frontend/src/components/board/arrowGeometry.ts
+frontend/src/components/board/boardMarkers.tsx
+frontend/src/components/board/boardSize.ts
+frontend/src/components/move-explorer/MoveExplorer.tsx

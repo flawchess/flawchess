@@ -1,0 +1,8 @@
+tests/services/test_flaw_comparison.py
+tests/services/test_flaw_delta_zones.py
+tests/services/test_flaw_upsert_equivalence.py
+tests/services/test_flaws_service.py
+tests/services/test_forcing_line_gate.py
+tests/services/test_tactic_comparison_service.py
+tests/services/test_tactic_delta_zones.py
+tests/services/test_tactic_detector.py

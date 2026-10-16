@@ -323,8 +323,105 @@ assertion changed**; any diff line that is neither a comment nor a rename needs 
 
 **Depends on**: nothing in flight
 **Requirements**: TBD (coverage contract = CONTEXT decisions from discuss-phase)
-**Plans:** 0 plans
+**Plans:** 70 plans
 **Status**: Not started
+
+Plans:
+**Wave 1**
+- [ ] 241-01-PLAN.md: STYLE-GUIDE §3.3 glossary from INVENTORY §2 (wave 1)
+- [ ] 241-02-PLAN.md: tracer, cleanup toolkit (scan, diff, rows, ledger) proven on app/core (wave 1)
+
+**Wave 2** *(blocked on Wave 1 completion)*
+- [ ] 241-03-PLAN.md: toolkit extras (codemod, absent, decision) + app/main, app/users, app/middleware (wave 2)
+- [ ] 241-04-PLAN.md: toolkit TypeScript/JSX/CSS support + frontend entry slice (wave 2)
+
+**Wave 3** *(blocked on Wave 2 completion)*
+- [ ] 241-05-PLAN.md: comments, app/models (wave 3)
+- [ ] 241-06-PLAN.md: comments, app/schemas (wave 3)
+- [ ] 241-07-PLAN.md: comments, app/routers (wave 3)
+- [ ] 241-08-PLAN.md: comments, Train/push/feedback repositories (wave 3)
+- [ ] 241-09-PLAN.md: comments, library/query_utils/flaw repositories (wave 3)
+- [ ] 241-10-PLAN.md: comments, remaining repositories (wave 3)
+- [ ] 241-11-PLAN.md: comments, eval_apply.py (wave 3)
+- [ ] 241-12-PLAN.md: comments, eval_drain.py and eval_entry.py (wave 3)
+- [ ] 241-13-PLAN.md: comments, engine, eval queue and score utility services (wave 3)
+- [ ] 241-14-PLAN.md: comments, tactic detector, forcing-line gate, flaw services (wave 3)
+- [ ] 241-15-PLAN.md: comments, import pipeline, platform clients, account services (wave 3)
+- [ ] 241-16-PLAN.md: comments, library_service.py and Train services (wave 3)
+- [ ] 241-17-PLAN.md: comments, insights and openings services (wave 3)
+- [ ] 241-18-PLAN.md: comments, endgame services (wave 3)
+- [ ] 241-19-PLAN.md: comments, benchmark slice, percentile, activity services (wave 3)
+- [ ] 241-20-PLAN.md: tests, tactic and flaw service tests (wave 3)
+- [ ] 241-21-PLAN.md: tests, eval pipeline, engine and Maia tests (wave 3)
+- [ ] 241-22-PLAN.md: tests, insights, openings, endgame, percentile, score tests (wave 3)
+- [ ] 241-23-PLAN.md: tests, remaining tests/services and tests/test_[n-z] (wave 3)
+- [ ] 241-24-PLAN.md: tests, conftest and tests/test_[a-f] (wave 3)
+- [ ] 241-25-PLAN.md: tests, tests/test_[g-m] (wave 3)
+- [ ] 241-26-PLAN.md: tests, tests/scripts (wave 3)
+- [ ] 241-27-PLAN.md: tests, routers/repositories/schemas/models/integration/prompts (wave 3)
+- [ ] 241-28-PLAN.md: comments, bot-game hooks (wave 3)
+- [ ] 241-29-PLAN.md: comments, Stockfish/Maia/engine hooks (wave 3)
+- [ ] 241-30-PLAN.md: comments, Train hooks (wave 3)
+- [ ] 241-31-PLAN.md: comments, analysis and remaining data hooks (wave 3)
+- [ ] 241-32-PLAN.md: comments, engine search and bot-style modules (wave 3)
+- [ ] 241-33-PLAN.md: comments, engine worker pool, Maia worker host, assets (wave 3)
+- [ ] 241-34-PLAN.md: comments, Train/push/bot/persona libraries (wave 3)
+- [ ] 241-35-PLAN.md: comments, general frontend libraries (wave 3)
+- [ ] 241-36-PLAN.md: comments, Train solve screen and reveal (wave 3)
+- [ ] 241-37-PLAN.md: comments, remaining Train components (wave 3)
+- [ ] 241-38-PLAN.md: comments, analysis components (wave 3)
+- [ ] 241-39-PLAN.md: comments, bot-play components (wave 3)
+- [ ] 241-40-PLAN.md: comments, pages Analysis and Bots (wave 3)
+- [ ] 241-41-PLAN.md: comments, types, API client, other pages (wave 3)
+- [ ] 241-42-PLAN.md: comments, Library and results components (wave 3)
+- [ ] 241-43-PLAN.md: comments, chart, endgame, insights, opening-stats components (wave 3)
+- [ ] 241-44-PLAN.md: comments, App, move explorer, board (wave 3)
+- [ ] 241-45-PLAN.md: comments, filters and small component folders (wave 3)
+- [ ] 241-46-PLAN.md: tests, frontend engine tests (wave 3)
+- [ ] 241-47-PLAN.md: tests, Train component tests (wave 3)
+- [ ] 241-48-PLAN.md: tests, hook tests (wave 3)
+- [ ] 241-49-PLAN.md: tests, library tests (wave 3)
+- [ ] 241-50-PLAN.md: tests, pages/App/API client/root tests (wave 3)
+- [ ] 241-51-PLAN.md: tests, component tests outside Train (wave 3)
+
+**Wave 4** *(blocked on Wave 3 completion)*
+- [ ] 241-52-PLAN.md: renames, backend surface and repositories (wave 4)
+- [ ] 241-53-PLAN.md: renames, eval engine (wave 4)
+- [ ] 241-54-PLAN.md: renames, endgame and insights modules incl. G1 filters (wave 4)
+- [ ] 241-55-PLAN.md: renames, stats and openings (wave 4)
+- [ ] 241-56-PLAN.md: renames, import, Train, tactics (wave 4)
+- [ ] 241-57-PLAN.md: renames, Train components (wave 4)
+- [ ] 241-58-PLAN.md: renames, bot play (wave 4)
+- [ ] 241-59-PLAN.md: renames, analysis surface (wave 4)
+- [ ] 241-60-PLAN.md: renames, lib and hooks (arrow color, Maia worker path) (wave 4)
+- [ ] 241-61-PLAN.md: renames, confidence popovers and eval coverage (wave 4)
+- [ ] 241-62-PLAN.md: renames, endgame stats and charts (wave 4)
+- [ ] 241-63-PLAN.md: renames, bookmarks and import (wave 4)
+- [ ] 241-64-PLAN.md: renames, Openings page family (wave 4)
+
+**Wave 5** *(blocked on Wave 4 completion)*
+- [ ] 241-65-PLAN.md: renames, Library card (wave 5)
+- [ ] 241-66-PLAN.md: cross-layer X1, X3, X5 + D-16 backend sweep (wave 5)
+
+**Wave 6** *(blocked on Wave 5 completion)*
+- [ ] 241-67-PLAN.md: cross-layer X4, X6, X7 (wave 6)
+
+**Wave 7** *(blocked on Wave 6 completion)*
+- [ ] 241-68-PLAN.md: cross-layer X8+X9, X2 (wave 7)
+
+**Wave 8** *(blocked on Wave 7 completion)*
+- [ ] 241-69-PLAN.md: walkthrough → tour (D-05) + D-16 frontend sweep (wave 8)
+
+**Wave 9** *(blocked on Wave 8 completion)*
+- [ ] 241-70-PLAN.md: phase-wide diff/ledger checks + full pre-merge gate, run inline (wave 9)
+
+**Cross-cutting constraints:**
+- Rewritten comments use STYLE-GUIDE §3.3 canonical terms and actual identifier names (D-01)
+- pytest collects the same number of tests from these files before and after, and they all pass
+- Rewritten test docstrings use STYLE-GUIDE §3.3 canonical terms (D-01)
+- Every tagged test function or class name is rewritten to say what it tests (D-14); no reference to an old name remains outside .planning
+- vitest runs the same number of tests in these files before and after, and they all pass
+- Rewritten titles use STYLE-GUIDE §3.3 canonical terms (D-01)
 
 Phase detail for every shipped milestone lives in `milestones/vX.Y-ROADMAP.md`, its phase directories in `milestones/vX.Y-phases/`, and the per-milestone summaries in [MILESTONES.md](MILESTONES.md).
 

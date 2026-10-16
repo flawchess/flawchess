@@ -1,0 +1,16 @@
+app/services/admin_service.py
+app/services/bot_game_pgn.py
+app/services/chesscom_client.py
+app/services/chesscom_to_lichess.py
+app/services/email_service.py
+app/services/feedback_ask_service.py
+app/services/feedback_service.py
+app/services/guest_cleanup_service.py
+app/services/guest_service.py
+app/services/import_service.py
+app/services/lichess_client.py
+app/services/normalization.py
+app/services/push_crypto.py
+app/services/push_send.py
+app/services/store_bot_game_service.py
+app/services/store_paste_game_service.py
