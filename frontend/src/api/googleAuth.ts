@@ -3,18 +3,22 @@ import { apiClient } from '@/api/client';
 
 const GUEST_TOKEN_KEY = 'guest_token';
 
-/**
- * Statuses meaning the saved guest token can no longer start a promotion: 401 = expired,
- * invalid or revoked (promotion revokes it), 403 = the account is no longer a guest.
- */
-const GUEST_TOKEN_REJECTED_STATUSES: ReadonlySet<number> = new Set([401, 403]);
+const HTTP_UNAUTHORIZED = 401;
+const HTTP_FORBIDDEN = 403;
+/** authorize-promote's 403 detail when the token's account was already promoted. */
+const NOT_A_GUEST_DETAIL = 'Not a guest user';
 
+/**
+ * True when the saved guest token can no longer start a promotion: 401 = expired, invalid
+ * or revoked (promotion revokes it), or our own 403 saying the account is no longer a guest.
+ * Any other 403 (e.g. a proxy/WAF block) must not count: dropping a valid guest_token there
+ * would orphan the guest's games again.
+ */
 function isGuestTokenRejected(error: unknown): boolean {
-  return (
-    axios.isAxiosError(error) &&
-    error.response !== undefined &&
-    GUEST_TOKEN_REJECTED_STATUSES.has(error.response.status)
-  );
+  if (!axios.isAxiosError(error) || error.response === undefined) return false;
+  const { status, data } = error.response;
+  if (status === HTTP_UNAUTHORIZED) return true;
+  return status === HTTP_FORBIDDEN && data?.detail === NOT_A_GUEST_DETAIL;
 }
 
 /**
@@ -35,7 +39,7 @@ function isGuestTokenRejected(error: unknown): boolean {
  * with a stale guest_token out with EMAIL_ALREADY_REGISTERED (2026-06-23). The backend
  * now signs that user into their account instead, so the flag is gone.
  *
- * Only a rejected guest token (401/403) falls back to plain sign-in. A network error or 5xx
+ * Only a rejected guest token (401, or 403 "Not a guest user") falls back to plain sign-in. A network error or 5xx
  * is re-thrown so the caller asks the user to retry: falling back on a transient error is
  * exactly what orphaned guest accounts.
  */

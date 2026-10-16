@@ -21,14 +21,14 @@ const GUEST_TOKEN_KEY = 'guest_token';
 const PROMOTE_URL = 'https://accounts.google.com/o/oauth2/v2/auth?promote=1';
 const PLAIN_URL = 'https://accounts.google.com/o/oauth2/v2/auth?plain=1';
 
-function httpError(status: number): AxiosError {
+function httpError(status: number, data: unknown = {}): AxiosError {
   const config = { headers: new AxiosHeaders() };
   return new AxiosError('Request failed', 'ERR_BAD_RESPONSE', config, null, {
     status,
     statusText: '',
     headers: {},
     config,
-    data: {},
+    data,
   });
 }
 
@@ -65,12 +65,15 @@ describe('getGoogleAuthorizationUrl', () => {
     expect(localStorage.getItem(GUEST_TOKEN_KEY)).toBe('guest-jwt-abc');
   });
 
-  it.each([401, 403])(
-    'drops a rejected guest_token (%i) and falls back to plain sign-in',
-    async (status) => {
+  it.each([
+    ['401', () => httpError(401)],
+    ['403 Not a guest user', () => httpError(403, { detail: 'Not a guest user' })],
+  ])(
+    'drops a rejected guest_token (%s) and falls back to plain sign-in',
+    async (_label, makeError) => {
       localStorage.setItem(GUEST_TOKEN_KEY, 'stale-jwt');
       mockedGet
-        .mockRejectedValueOnce(httpError(status))
+        .mockRejectedValueOnce(makeError())
         .mockResolvedValueOnce({ data: { authorization_url: PLAIN_URL } });
 
       const url = await getGoogleAuthorizationUrl();
@@ -87,6 +90,7 @@ describe('getGoogleAuthorizationUrl', () => {
 
   it.each([
     ['a 500', () => httpError(500)],
+    ['a foreign 403 (proxy/WAF)', () => httpError(403, 'Forbidden')],
     ['a network error', networkError],
   ])('rethrows %s without falling back or dropping the guest_token', async (_label, makeError) => {
     // Falling back to plain sign-in on a transient error is what orphaned guest accounts.
