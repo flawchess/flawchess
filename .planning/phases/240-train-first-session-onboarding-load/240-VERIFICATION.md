@@ -1,7 +1,7 @@
 ---
 phase: 240-train-first-session-onboarding-load
 verified: 2026-10-15T21:30:00Z
-status: human_needed
+status: passed
 score: 6/6 must-haves verified
 covered_files:
   - ".planning/phases/240-train-first-session-onboarding-load/240-01-PLAN.md"
@@ -48,9 +48,14 @@ covered_files:
   - "frontend/src/pages/Train.tsx"
   - "frontend/src/types/train.ts"
   - "scripts/reset_train_state.py"
-covered_digest: "v3:sha256:1db362b34c0a3d053ca03920af16a2439464f734c3e24808b2e27558d2776186"
+covered_digest: "v3:sha256:d700a3c40dc3e612732cb18b32ee8cd6cc567d3a2ff30547e340edd5461c7a75"
 behavior_unverified: 0
-overrides_applied: 0
+overrides_applied: 1
+overrides:
+  - must_have: "Human verification: WR-01 375x667 warm-up score fold, and desktop tour parts 2-3 plus reduced-motion glow"
+    reason: "Owner marked UAT complete after squash-merge (d9e944d52). WR-01 accepted as is (guest variant already shortened in 83645579b; registered has-games variant not re-measured). Desktop parts 1-3 were walked by the orchestrator on 2026-10-15; reduced motion was not visually emulated, the static CSS override is present."
+    accepted_by: "owner (Adrian Imfeld)"
+    accepted_at: "2026-10-16"
 human_verification:
   - test: "Owner decision on WR-01 / the 375x667 UAT gap: accept the current warm-up first-completed score bubble, or trim it"
     expected: "At 375x667 a guest's first warm-up session (green or red band) shows the 'Points: N/N' line (train-score-total) above the fixed bottom nav. Recommended fix (reviewer's, ~1 line in scoreBubbleCopy): drop 'Those were warm-ups.' from the first-completed warm-up note, plus a test capping lines[0] length for every audience x band."
@@ -64,7 +69,7 @@ human_verification:
 
 **Phase Goal:** Cut first-session Train abandonment by lightening the tutorial around puzzle 1 (SEED-200): 2-bubble intro, first verdict teaches the vocabulary, practice rationale on the session-1 score screen, warm-up notice out of the intro, reveal tour spread over puzzles 1-3 with per-step stamps, and backend first-session composition (sharp puzzle first, several puzzle at slot 2-3).
 **Verified:** 2026-10-15
-**Status:** human_needed
+**Status:** passed (owner override for the two human-verification items, 2026-10-16)
 **Re-verification:** No, initial verification
 
 ## Goal Achievement
