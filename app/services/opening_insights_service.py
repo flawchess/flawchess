@@ -637,8 +637,14 @@ async def _collect_attribution_hashes(
             opponent_gap_max=request.opponent_gap_max,
         )
         # Unpack ARRAY[ply, game_id] into (game_id, ply) — sample_pair is paired
-        # so each (game_id, ply) refers to a real row in the SQL group.
-        samples = [(int(r.sample_pair[1]), int(r.sample_pair[0])) for r in raw_rows]
+        # so each (game_id, ply) refers to a real row in the SQL group. Skip NULL
+        # pairs (all-custom-start groups): this ran before _wrap_transition_row's
+        # None guard, so such a group raised TypeError and failed compute_insights.
+        samples = [
+            (int(r.sample_pair[1]), int(r.sample_pair[0]))
+            for r in raw_rows
+            if r.sample_pair is not None
+        ]
         prefixes = await query_transition_prefixes(session, user_id, samples)
         wrapped: list[_TransitionRow] = []
         for r in raw_rows:

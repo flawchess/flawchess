@@ -1719,6 +1719,68 @@ def test_row_wrapping_drops_unreachable_san_and_reports_a_warning() -> None:
     assert context_dict["reason"] == "san_prefix_unreplayable"
 
 
+@pytest.mark.asyncio
+async def test_attribution_stage_drops_all_custom_group_without_raising() -> None:
+    """The stage that collects SAN-prefix samples must skip a NULL sample_pair too.
+
+    Building the samples list ran before _wrap_transition_row's None guard, so an
+    all-custom-start group raised TypeError and failed compute_insights. The NULL
+    row is dropped, the standard-start row still resolves.
+    """
+    from app.services.opening_insights_service import _collect_attribution_hashes
+
+    standard_row = SimpleNamespace(
+        entry_hash=88001,
+        move_san="e4",
+        sample_pair=[0, 7],
+        n=10,
+        w=5,
+        d=2,
+        l=3,
+        last_played_at=None,
+    )
+    custom_row = SimpleNamespace(
+        entry_hash=88002,
+        move_san="Bxb4",
+        sample_pair=None,
+        n=50,
+        w=34,
+        d=0,
+        l=16,
+        last_played_at=None,
+    )
+
+    with (
+        patch(
+            "app.services.opening_insights_service.query_opening_transitions",
+            new_callable=AsyncMock,
+            return_value=[standard_row, custom_row],
+        ),
+        patch(
+            "app.services.opening_insights_service.query_transition_prefixes",
+            new_callable=AsyncMock,
+            return_value={(7, 0): []},
+        ) as mock_prefixes,
+        patch(
+            "app.services.opening_insights_service.query_openings_by_hashes",
+            new_callable=AsyncMock,
+            return_value={},
+        ),
+        patch("app.services.opening_insights_service.sentry_sdk"),
+    ):
+        ctx = await _collect_attribution_hashes(
+            session=AsyncMock(),
+            user_id=1,
+            request=_default_request(color="white"),
+            from_date=None,
+            to_date=None,
+            colors_to_query=["white"],
+        )
+
+    assert mock_prefixes.call_args.args[2] == [(7, 0)]
+    assert [r.entry_hash for r in ctx.rows_by_color["white"]] == [88001]
+
+
 def test_row_wrapping_drops_all_custom_group_without_raising() -> None:
     """A group in which EVERY game is custom-start yields a NULL sample_pair, and
     _wrap_transition_row drops it cleanly rather than raising.
