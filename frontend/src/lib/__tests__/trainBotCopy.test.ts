@@ -347,7 +347,10 @@ describe('verdictClauseParts / verdictCopy clause / verdictStripLine (Phase 237 
       expect(verdictCopy(0, correct, tier, isBest, () => 0).clause).toBe(
         `${guessLabel} [+${guessPoints}], ${moveLabel} [+${movePoints}].`,
       );
-      expect(verdictStripLine(correct, tier, isBest)).toBe(`${guessLabel}, ${moveLabel}`);
+      // Phase 240 UAT: the strip drops the article after "but".
+      expect(verdictStripLine(correct, tier, isBest)).toBe(
+        `${guessLabel}, ${moveLabel.replace(/^but (the|a) /, 'but ')}`,
+      );
     },
   );
 
@@ -357,7 +360,8 @@ describe('verdictClauseParts / verdictCopy clause / verdictStripLine (Phase 237 
       'Wrong call [+0], but a good move [+2].',
     );
     expect(verdictStripLine(true, 'good', true)).toBe('Right call, best move');
-    expect(verdictStripLine(false, 'good', false)).toBe('Wrong call, but a good move');
+    expect(verdictStripLine(false, 'good', false)).toBe('Wrong call, but good move');
+    expect(verdictStripLine(false, 'good', true)).toBe('Wrong call, but best move');
     expect(verdictStripLine(true, 'wrong', false)).toBe('Right call, wrong move');
   });
 

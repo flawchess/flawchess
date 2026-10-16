@@ -414,15 +414,20 @@ function verdictClause(correctGuess: boolean, moveQuality: TrainMoveTier, isBest
   return `${parts.guessLabel} [+${parts.guessPoints}], ${parts.moveLabel} [+${parts.movePoints}].`;
 }
 
+/** The article `verdictClauseParts` puts after "but" (`but the` / `but a`). */
+const STRIP_ARTICLE_PATTERN = /^but (the|a) /;
+
 /** Phase 237 (D-05): the phone strip's one line, the clause without the
- * point brackets ("Right call, best move"). */
+ * point brackets ("Right call, best move"). Phase 240 UAT: the strip drops
+ * the article after "but" ("Wrong call, but best move") to keep it short;
+ * the full clause in the details keeps it. */
 export function verdictStripLine(
   correctGuess: boolean,
   moveQuality: TrainMoveTier,
   isBest: boolean,
 ): string {
   const parts = verdictClauseParts(correctGuess, moveQuality, isBest);
-  return `${parts.guessLabel}, ${parts.moveLabel}`;
+  return `${parts.guessLabel}, ${parts.moveLabel.replace(STRIP_ARTICLE_PATTERN, 'but ')}`;
 }
 
 /**
