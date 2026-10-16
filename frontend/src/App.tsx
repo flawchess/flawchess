@@ -11,7 +11,6 @@ import { TooltipProvider } from '@/components/ui/tooltip';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
-import { TOUR_SPOTLIGHT_CLASS } from '@/lib/theme';
 import { ArrowLeft, BookOpenIcon, MenuIcon, LogOutIcon, TrophyIcon, DoorOpen, Shield, FolderOpen, Bot, Puzzle, Search, Activity, Settings as SettingsIcon } from 'lucide-react';
 import {
   Drawer, DrawerContent, DrawerHeader, DrawerTitle, DrawerClose,
@@ -499,8 +498,9 @@ function renderBoardControlsBar(boardControls: MobileBoardControls): ReactElemen
         analyzeTo={boardControls.analyzeTo ?? null}
         onAnalyzeClick={boardControls.onAnalyzeClick ?? (() => {})}
         onNext={boardControls.onNext}
-        // Phase 240 D-20: the tour's Next / Analyze steps spotlight the fixed bar.
-        className={cn('flex-1 rounded-md', boardControls.spotlight === true && TOUR_SPOTLIGHT_CLASS)}
+        // Phase 240 UAT: the tour's Analyze step spotlights the Analyze button alone.
+        spotlightAnalyze={boardControls.spotlightAnalyze === true}
+        className="flex-1"
       />
     );
   }

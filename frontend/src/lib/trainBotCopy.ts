@@ -32,7 +32,7 @@ import { GUESS_CALL_LABELS } from '@/lib/trainGuessLabels';
 import type { Guess } from '@/lib/trainGuessLabels';
 import { GUESS_POINTS, MOVE_TIER_POINTS } from '@/lib/trainScore';
 import type { TrainMoveTier, TrainRatingBand } from '@/lib/trainScore';
-import type { RevealTourStage, SolveResponse } from '@/types/train';
+import type { RevealTourStage } from '@/types/train';
 
 /**
  * D-05: the fixed teacher for the intro stepper and the reveal tour parts.
@@ -296,43 +296,29 @@ export interface IntroStepCopy {
 }
 
 /**
- * D-03: the intro welcome's copy per audience. `has_games` is today's string,
- * character for character — the existing (has-games) audience regresses
- * nowhere. The zero-game variants name the import step before anything else;
- * the guest variant additionally names sign-up, after import (ROADMAP SC 7).
+ * Phase 240 UAT: the intro welcome. It opens with a plain "Hi there!" (Tanks
+ * already welcomes the user to Train on the start screen) and carries no
+ * import or sign-up ask, so a new user is not sent away before the first
+ * puzzle; the score screen makes that ask instead. A warm-up session says so
+ * up front: its puzzles are not from the user's own games yet.
  */
-const INTRO_WELCOME_COPY: Record<CopyAudienceKey, string> = {
-  has_games:
-    'Welcome to FlawChess Train! You will improve by solving puzzles ' +
-    'created from your own games.',
-  has_games_guest:
-    'Welcome to FlawChess Train! Sign up free and you will improve by solving ' +
-    'puzzles created from your own mistakes.',
-  no_games:
-    'Welcome to FlawChess Train! Import your games and you will improve ' +
-    'by solving puzzles created from your own mistakes.',
-  no_games_guest:
-    'Welcome to FlawChess Train! Import your games and sign up, and you ' +
-    'will improve by solving puzzles created from your own mistakes.',
-};
+const INTRO_WELCOME_COPY = 'Hi there! You will improve by solving puzzles created from your own games.';
+const INTRO_WARMUP_WELCOME_COPY =
+  "Hi there! Let's start with some warm-up puzzles. They're not from your own games yet.";
 
 /**
- * D-22 intro stepper, all Hilda, two steps (Phase 240 D-01, D-02): the audience
+ * D-22 intro stepper, all Hilda, two steps (Phase 240 D-01, D-02): the
  * welcome, then the closing prompt that asks the actual guess question (so it
  * takes `sideToMove` like `promptCopy`) and carries the guess buttons. The
  * guiding rule is to act within one or two taps and read later: the
- * vocabulary is taught by tour part 1, the practice rationale on the first
- * score screen, and a warm-up first session learns it is a warm-up from the
- * puzzle-1 verdict tail. `audience` (Phase 224 D-03) selects the welcome
- * copy variant.
+ * vocabulary is taught by tour part 1 and the practice rationale on the first
+ * score screen. `isWarmup` (`TrainSessionResponse.is_warmup`) selects the
+ * welcome variant.
  */
-export function introSteps(
-  sideToMove: 'white' | 'black',
-  audience: TrainCopyAudience,
-): IntroStepCopy[] {
+export function introSteps(sideToMove: 'white' | 'black', isWarmup: boolean): IntroStepCopy[] {
   return [
-    { personaId: HILDA_ID, copy: INTRO_WELCOME_COPY[audienceKey(audience)] },
-    { personaId: HILDA_ID, copy: `Decide first, then play. Your turn. ${promptCopy(sideToMove)}` },
+    { personaId: HILDA_ID, copy: isWarmup ? INTRO_WARMUP_WELCOME_COPY : INTRO_WELCOME_COPY },
+    { personaId: HILDA_ID, copy: `Decide first, then play. ${promptCopy(sideToMove)}` },
   ];
 }
 
@@ -345,9 +331,9 @@ export function introSteps(
 export function introCopy(
   step: IntroStep,
   sideToMove: 'white' | 'black',
-  audience: TrainCopyAudience,
+  isWarmup: boolean,
 ): IntroStepCopy {
-  const steps = introSteps(sideToMove, audience);
+  const steps = introSteps(sideToMove, isWarmup);
   const closing = steps[steps.length - 1];
   if (closing === undefined) throw new Error('introSteps: unexpectedly empty');
   return steps[step] ?? closing;
@@ -569,27 +555,17 @@ export function isRevealTourDone(stage: RevealTourStage): boolean {
 }
 
 /**
- * Phase 240 (D-04): what the result bubble teaches about the position just
- * solved. `sharp` = only one move was good; `several` = a soft SR item or a red
- * herring, where several moves were fine.
- */
-export type TourAnswerKind = 'sharp' | 'several';
-
-export function tourAnswerKind(puzzleType: SolveResponse['puzzle_type']): TourAnswerKind {
-  return puzzleType === 'sharp' ? 'sharp' : 'several';
-}
-
-/**
  * D-24 (Phase 240 D-03): what a tour step spotlights.
  *  - `verdict`: the one-line strip on phones, the verdict bubble on desktop.
  *  - `chips`: the chips row (spotlit too since D-20; the active chip keeps its
  *    own selection ring). `tree`: the move list. `lines`: the chips-plus-list
  *    region (the understand step).
  *  - `board`: the board row (free play / sidelines).
- *  - `bar`: the reveal action bar, in flow on sm+ and in the fixed phone bar on
- *    phones (carried there by the published payload's `spotlight` flag).
+ *  - `analyze`: the Analyze button alone (Phase 240 UAT: not the whole action
+ *    bar), in flow on sm+ and in the fixed phone bar on phones (carried there
+ *    by the published payload's `spotlightAnalyze` flag).
  */
-export type WalkthroughTarget = 'verdict' | 'chips' | 'tree' | 'board' | 'lines' | 'bar';
+export type WalkthroughTarget = 'verdict' | 'chips' | 'tree' | 'board' | 'lines' | 'analyze';
 
 /** D-24: one tour step's copy + the element it spotlights. */
 export interface WalkthroughStepCopy {
@@ -600,14 +576,14 @@ export interface WalkthroughStepCopy {
 /**
  * Phase 237 plan 10 (D-09/D-11): the puzzle facts the copy may branch on.
  * `analyzeOpens`: Analyze opens the whole game for a puzzle from one of the
- * user's own games, otherwise just the puzzle position. `answerKind` (Phase 240
- * D-04): which result sentence the result step uses. Never the device or the
- * chip set (Phase 240 UAT): every string must hold on both devices and for
- * every combination of chips.
+ * user's own games, otherwise just the puzzle position. `isDesktop`: only the
+ * result step reads it, to tell phone users the collapsed verdict strip opens
+ * on tap (the desktop card is always open). Never the chip set (Phase 240
+ * UAT): every string must hold for every combination of chips.
  */
 export interface WalkthroughContext {
   analyzeOpens: 'game' | 'position';
-  answerKind: TourAnswerKind;
+  isDesktop: boolean;
 }
 
 /** The reveal action bar's icon-only buttons the tour copy names. */
@@ -620,23 +596,21 @@ export const TOUR_ICON_TOKEN: Record<TourIcon, string> = {
   forward: '{forward}',
 };
 
-// Phase 240 D-19: the result bubble teaches what "only one" vs "several" meant
-// for the position just solved. No points sentence (D-05): the strip and the
-// verdict already show the points.
+// Phase 240 UAT: the result bubble only points at the verdict box. It used to
+// teach what "only one" vs "several" meant for the position just solved
+// (D-19), which repeated the box's own guess feedback. No points sentence
+// (D-05): the strip and the verdict already show the points. On phones the
+// verdict is a collapsed strip, so the bubble says it opens on tap.
 //
-// Phase 240 UAT: every tour string is true on phone AND desktop and for every
-// chip set the reveal can show, so no step branches on the device. The old
+// Phase 240 UAT: every other tour string is true on phone AND desktop and for
+// every chip set the reveal can show, so no other step branches on the device. The old
 // phone/desktop pairs named the bar's location ("in the bar", "under the
 // board"), keys a phone lacks, and "tap" alone; the chips step assumed three
 // chips and a second one to tap, though the Game chip is often missing and a
 // merged chip can be the only one.
-const TOUR_PROCEED = 'Proceed with Next when ready.';
-const TOUR_RESULT_SHARP =
-  'Your result is in the highlighted box. Here only one move was good, every other move was a mistake. ' +
-  TOUR_PROCEED;
-const TOUR_RESULT_SEVERAL =
-  'Your result is in the highlighted box. Here several moves were fine, so any good move works. ' +
-  TOUR_PROCEED;
+const TOUR_RESULT_DESKTOP = 'Your result is in the highlighted box. Proceed with Next when ready.';
+const TOUR_RESULT_PHONE =
+  'Your result is in the highlighted box. Tap it for details. Proceed with Next when ready.';
 const TOUR_ANALYZE_GAME =
   'The Analyze button opens the whole game one move before the mistake, so you can see how you got there.';
 const TOUR_ANALYZE_POSITION = 'The Analyze button opens this position on the analysis board.';
@@ -669,7 +643,7 @@ export function tourStepCopy(step: TourStepId, ctx: WalkthroughContext): Walkthr
     case 'result':
       return {
         spotlightTarget: 'verdict',
-        copy: ctx.answerKind === 'sharp' ? TOUR_RESULT_SHARP : TOUR_RESULT_SEVERAL,
+        copy: ctx.isDesktop ? TOUR_RESULT_DESKTOP : TOUR_RESULT_PHONE,
       };
     case 'chips':
       return { spotlightTarget: 'chips', copy: WALKTHROUGH_CHIPS };
@@ -681,7 +655,7 @@ export function tourStepCopy(step: TourStepId, ctx: WalkthroughContext): Walkthr
       return { spotlightTarget: 'lines', copy: WALKTHROUGH_UNDERSTAND };
     case 'analyze':
       return {
-        spotlightTarget: 'bar',
+        spotlightTarget: 'analyze',
         copy: ctx.analyzeOpens === 'game' ? TOUR_ANALYZE_GAME : TOUR_ANALYZE_POSITION,
       };
   }

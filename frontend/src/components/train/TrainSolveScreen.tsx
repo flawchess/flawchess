@@ -99,12 +99,10 @@ import {
   promptCopy,
   verdictCopy,
   isRevealTourDone,
-  tourAnswerKind,
   tourStepCopy,
 } from '@/lib/trainBotCopy';
 import type {
   IntroStep,
-  TrainCopyAudience,
   VerdictCopy,
   WalkthroughContext,
 } from '@/lib/trainBotCopy';
@@ -173,13 +171,6 @@ export interface TrainSolveScreenProps {
    * game-move search still runs — it is independent of the mount search.
    */
   restoredSolve?: CachedTrainReveal | null;
-  /** D-03 (Phase 224): true when the account has at least one imported game
-   * (`hasImportedGames`, `useUserProfile().data`). Selects the intro/verdict
-   * copy variant threaded through the bot bubble. */
-  hasGames: boolean;
-  /** D-03 (Phase 224): from `useUserProfile().data`, never `useAuth().user`
-   * (FLAWCHESS-64). Adds the sign-up clause to the games-less copy. */
-  isGuest: boolean;
 }
 
 /**
@@ -487,8 +478,8 @@ interface BubbleBodyDeps {
   suppressPrompt: boolean;
   onIntroNext: () => void;
   onIntroGuess: (guess: Guess) => void;
-  /** D-03 (Phase 224): threaded into `introCopy` (the welcome intro copy). */
-  audience: TrainCopyAudience;
+  /** Phase 240 UAT: selects the warm-up variant of the intro welcome. */
+  isWarmup: boolean;
 }
 
 /**
@@ -555,7 +546,7 @@ function renderTrainBotBubbleBody(
   }
   if (bubbleState.kind === 'intro') {
     return {
-      copy: <p>{introCopy(bubbleState.step, deps.sideToMove, deps.audience).copy}</p>,
+      copy: <p>{introCopy(bubbleState.step, deps.sideToMove, deps.isWarmup).copy}</p>,
       actions: (
         <TrainBotStepper
           stepCount={INTRO_STEP_COUNT}
@@ -595,10 +586,10 @@ function resolveBubblePersona(
   sideToMove: 'white' | 'black',
   regularBot: Persona,
   verdictBot: Persona | null,
-  audience: TrainCopyAudience,
+  isWarmup: boolean,
 ): Persona {
   if (bubbleState.kind === 'intro') {
-    return personaForId(introCopy(bubbleState.step, sideToMove, audience).personaId) ?? regularBot;
+    return personaForId(introCopy(bubbleState.step, sideToMove, isWarmup).personaId) ?? regularBot;
   }
   if (bubbleState.kind === 'verdict' && verdictBot !== null) return verdictBot;
   return regularBot;
@@ -610,12 +601,7 @@ export function TrainSolveScreen({
   gradingEngine,
   onNext,
   restoredSolve = null,
-  hasGames,
-  isGuest,
 }: TrainSolveScreenProps): ReactElement {
-  // D-03 (Phase 224): built once per render, threaded through unchanged —
-  // no new branch is added HERE, the audience is only ever passed through.
-  const audience: TrainCopyAudience = { hasGames, isGuest };
   // Suppress the mobile app header while a puzzle is on screen — the board
   // needs the vertical space (ProtectedLayout reads this flag; same pattern
   // as BotsGame).
@@ -989,8 +975,6 @@ export function TrainSolveScreen({
     hasVerdict: verdict !== null,
     analyzeOpens,
     isDesktop,
-    // With no verdict the tour is inactive, so the 'soft' fallback is never shown.
-    answerKind: tourAnswerKind(verdict?.puzzle_type ?? 'soft'),
     // A reveal restored after the Analyze round trip is the one the user already
     // saw: it never starts a tour part (Phase 240 D-07).
     isRestored: restoredSolve !== null,
@@ -1467,7 +1451,7 @@ export function TrainSolveScreen({
             onNext: handleBarNext,
             analyzeTo,
             onAnalyzeClick: handleBarAnalyzeClick,
-            spotlight: walkthroughTarget === 'bar',
+            spotlightAnalyze: walkthroughTarget === 'analyze',
           }
         : null,
     [
@@ -1699,8 +1683,7 @@ export function TrainSolveScreen({
   );
 
   // Phase 240 D-01/D-02: the intro is two bubbles whether or not the session is
-  // a warm-up (a warm-up first session learns that from the puzzle-1 verdict
-  // tail); the flag is still read by the reveal below.
+  // a warm-up; a warm-up only appends a note to the welcome bubble (UAT).
   const isWarmup = trainSession.session?.is_warmup ?? false;
 
   function handleIntroNext(): void {
@@ -1787,14 +1770,14 @@ export function TrainSolveScreen({
     suppressPrompt,
     onIntroNext: handleIntroNext,
     onIntroGuess: handleIntroGuess,
-    audience,
+    isWarmup,
   });
   const bubblePersona = resolveBubblePersona(
     bubbleState,
     puzzle.side_to_move,
     bot,
     verdictBot,
-    audience,
+    isWarmup,
   );
 
   return (
@@ -1963,7 +1946,8 @@ export function TrainSolveScreen({
           onAnalyzeClick={handleBarAnalyzeClick}
           onNext={handleBarNext}
           framed
-          className={cn('w-full rounded-md', walkthroughTarget === 'bar' && TOUR_SPOTLIGHT_CLASS)}
+          spotlightAnalyze={walkthroughTarget === 'analyze'}
+          className="w-full"
         />
       )}
       </div>

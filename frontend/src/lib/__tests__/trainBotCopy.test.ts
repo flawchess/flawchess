@@ -36,7 +36,6 @@ import {
   promptCopy,
   returnPhrase,
   scoreBubbleCopy,
-  tourAnswerKind,
   tourPartForStage,
   tourPartSteps,
   tourStepCopy,
@@ -235,99 +234,82 @@ describe('promptCopy / movePromptCopy / GRADING_COPY', () => {
   });
 });
 
-const ALL_AUDIENCES: TrainCopyAudience[] = [
-  AUDIENCE_HAS_GAMES,
-  AUDIENCE_GUEST_WITH_GAMES,
-  AUDIENCE_NO_GAMES,
-  AUDIENCE_NO_GAMES_GUEST,
-];
-// The four D-19 audience welcomes, verbatim (Phase 240 D-01 keeps them).
-const WELCOME_BY_AUDIENCE: [TrainCopyAudience, string][] = [
-  [
-    AUDIENCE_HAS_GAMES,
-    'Welcome to FlawChess Train! You will improve by solving puzzles created from your own games.',
-  ],
-  [
-    AUDIENCE_GUEST_WITH_GAMES,
-    'Welcome to FlawChess Train! Sign up free and you will improve by solving puzzles created from your own mistakes.',
-  ],
-  [
-    AUDIENCE_NO_GAMES,
-    'Welcome to FlawChess Train! Import your games and you will improve by solving puzzles created from your own mistakes.',
-  ],
-  [
-    AUDIENCE_NO_GAMES_GUEST,
-    'Welcome to FlawChess Train! Import your games and sign up, and you will improve by solving puzzles created from your own mistakes.',
-  ],
-];
+const SIDES = ['white', 'black'] as const;
+const WARMUP_FLAGS = [false, true] as const;
 
 describe('introCopy / introSteps (Phase 240 D-01, D-02: two bubbles)', () => {
-  it('is exactly INTRO_STEP_COUNT (2) steps for every audience and side', () => {
+  it('is exactly INTRO_STEP_COUNT (2) steps for every side and warm-up flag', () => {
     expect(INTRO_STEP_COUNT).toBe(2);
-    for (const audience of ALL_AUDIENCES) {
-      for (const side of ['white', 'black'] as const) {
-        expect(introSteps(side, audience)).toHaveLength(INTRO_STEP_COUNT);
+    for (const side of SIDES) {
+      for (const isWarmup of WARMUP_FLAGS) {
+        expect(introSteps(side, isWarmup)).toHaveLength(INTRO_STEP_COUNT);
       }
     }
   });
 
-  it('step 0 is Hilda and the audience welcome, verbatim', () => {
-    for (const [audience, welcome] of WELCOME_BY_AUDIENCE) {
-      const step = introCopy(0, 'white', audience);
-      expect(step.personaId).toBe(HILDA_ID);
-      expect(step.copy).toBe(welcome);
+  it('step 0 is Hilda and the welcome, verbatim, per warm-up flag', () => {
+    const regular = introCopy(0, 'white', false);
+    expect(regular.personaId).toBe(HILDA_ID);
+    expect(regular.copy).toBe(
+      'Hi there! You will improve by solving puzzles created from your own games.',
+    );
+    const warmup = introCopy(0, 'white', true);
+    expect(warmup.personaId).toBe(HILDA_ID);
+    expect(warmup.copy).toBe(
+      "Hi there! Let's start with some warm-up puzzles. They're not from your own games yet.",
+    );
+  });
+
+  // Phase 240 UAT: no import or sign-up ask before the first puzzle (it would
+  // send a new user away); the score screen makes that ask.
+  it('the welcome never asks to import or sign up', () => {
+    for (const isWarmup of WARMUP_FLAGS) {
+      const copy = introCopy(0, 'white', isWarmup).copy;
+      expect(copy).not.toMatch(/import|sign up/i);
+      expect(copy).not.toContain('Welcome');
     }
   });
 
-  it('step 1 is Hilda and the closing prompt for the puzzle side, for every audience', () => {
-    for (const audience of ALL_AUDIENCES) {
-      for (const side of ['white', 'black'] as const) {
-        const step = introCopy(1, side, audience);
+  it('step 1 is Hilda and the closing prompt for the puzzle side', () => {
+    for (const side of SIDES) {
+      for (const isWarmup of WARMUP_FLAGS) {
+        const step = introCopy(1, side, isWarmup);
         expect(step.personaId).toBe(HILDA_ID);
         expect(step.copy).toBe(
-          `Decide first, then play. Your turn. You play ${side}. Is there only one good move, or several?`,
+          `Decide first, then play. You play ${side}. Is there only one good move, or several?`,
         );
       }
     }
   });
 
-  it('no intro copy defines the vocabulary, gives the rationale or announces a warm-up', () => {
-    for (const audience of ALL_AUDIENCES) {
-      for (const side of ['white', 'black'] as const) {
-        for (const step of introSteps(side, audience)) {
-          expect(step.copy).not.toMatch(/warm-up/i);
-          expect(step.copy).not.toContain('Only one:');
-          expect(step.copy).not.toMatch(/practice/i);
-          expect(step.copy).not.toContain('Every puzzle starts');
-        }
+  it('no intro copy defines the vocabulary or gives the rationale; only a warm-up mentions warm-up', () => {
+    for (const side of SIDES) {
+      for (const step of introSteps(side, false)) {
+        expect(step.copy).not.toMatch(/warm-up/i);
+      }
+      for (const step of introSteps(side, true)) {
+        expect(step.copy).not.toContain('Only one:');
+        expect(step.copy).not.toMatch(/practice/i);
+        expect(step.copy).not.toContain('Every puzzle starts');
       }
     }
   });
 
   it('a step index past the end resolves to the closing step instead of throwing', () => {
     const past = 5 as IntroStep;
-    expect(introCopy(past, 'white', AUDIENCE_HAS_GAMES).copy).toBe(
-      introCopy(1, 'white', AUDIENCE_HAS_GAMES).copy,
-    );
+    expect(introCopy(past, 'white', false).copy).toBe(introCopy(1, 'white', false).copy);
   });
 
   // Plan 06 UAT: no internal scrolling in bubbles, every stepper step must
   // fit the calibrated phone budget (see STEPPER_COPY_MAX_CHARS).
-  it('every intro step, for every audience and side, fits the phone copy budget', () => {
-    for (const audience of ALL_AUDIENCES) {
-      for (const side of ['white', 'black'] as const) {
-        for (const step of introSteps(side, audience)) {
+  it('every intro step, for every side and warm-up flag, fits the phone copy budget', () => {
+    for (const side of SIDES) {
+      for (const isWarmup of WARMUP_FLAGS) {
+        for (const step of introSteps(side, isWarmup)) {
           expect(step.copy.length).toBeLessThanOrEqual(STEPPER_COPY_MAX_CHARS);
         }
       }
     }
-  });
-
-  it('quick 261015-pjr: a guest with games is never told its games are being analyzed and gets the sign-up pitch', () => {
-    const welcome = introCopy(0, 'white', AUDIENCE_GUEST_WITH_GAMES).copy;
-    expect(welcome).not.toMatch(/(are analyzed|analyzing your games)/i);
-    expect(welcome.toLowerCase()).toContain('sign up');
-    expect(welcome).not.toContain('created from your own games');
   });
 });
 
@@ -587,7 +569,7 @@ describe('returnPhrase (D-15/D-16 truth table)', () => {
 describe('reveal tour parts (Phase 240)', () => {
   const BASE_CTX: WalkthroughContext = {
     analyzeOpens: 'game',
-    answerKind: 'sharp',
+    isDesktop: false,
   };
 
   it('the stage picks the part due: 0, 1, 2 map to parts, 3 means done', () => {
@@ -606,27 +588,17 @@ describe('reveal tour parts (Phase 240)', () => {
     expect(tourPartSteps(2)).toEqual(['sidelines', 'understand', 'analyze']);
   });
 
-  it('soft and herring puzzles teach the several wording, sharp the only-one wording', () => {
-    expect(tourAnswerKind('sharp')).toBe('sharp');
-    expect(tourAnswerKind('soft')).toBe('several');
-    expect(tourAnswerKind('herring')).toBe('several');
-  });
-
-  it('the result bubble is one string per answer kind on every device, ending on the Next hint', () => {
-    const cases: Array<['sharp' | 'several', string]> = [
-      [
-        'sharp',
-        'Your result is in the highlighted box. Here only one move was good, every other move was a mistake. Proceed with Next when ready.',
-      ],
-      [
-        'several',
-        'Your result is in the highlighted box. Here several moves were fine, so any good move works. Proceed with Next when ready.',
-      ],
-    ];
-    for (const [answerKind, expected] of cases) {
-      const step = tourStepCopy('result', { ...BASE_CTX, answerKind });
-      expect(step.copy).toBe(expected);
+  it('the result bubble points at the verdict box; only phones add the tap hint', () => {
+    const phone = tourStepCopy('result', { ...BASE_CTX, isDesktop: false });
+    const desktop = tourStepCopy('result', { ...BASE_CTX, isDesktop: true });
+    expect(phone.copy).toBe(
+      'Your result is in the highlighted box. Tap it for details. Proceed with Next when ready.',
+    );
+    expect(desktop.copy).toBe('Your result is in the highlighted box. Proceed with Next when ready.');
+    for (const step of [phone, desktop]) {
       expect(step.spotlightTarget).toBe('verdict');
+      // Phase 240 UAT: no move feedback, the verdict box already gives it.
+      expect(step.copy).not.toMatch(/only one|several/i);
       // D-05: no scoring sentence; D-19: no em-dash.
       expect(step.copy).not.toMatch(/point/i);
       expect(step.copy).not.toContain('—');
@@ -634,15 +606,15 @@ describe('reveal tour parts (Phase 240)', () => {
     }
   });
 
-  it('the Analyze bubble is the D-19 sheet per analyze target and spotlights the bar', () => {
+  it('the Analyze bubble is the D-19 sheet per analyze target and spotlights the Analyze button', () => {
     const game = tourStepCopy('analyze', { ...BASE_CTX, analyzeOpens: 'game' });
     const position = tourStepCopy('analyze', { ...BASE_CTX, analyzeOpens: 'position' });
     expect(game.copy).toBe(
       'The Analyze button opens the whole game one move before the mistake, so you can see how you got there.',
     );
     expect(position.copy).toBe('The Analyze button opens this position on the analysis board.');
-    expect(game.spotlightTarget).toBe('bar');
-    expect(position.spotlightTarget).toBe('bar');
+    expect(game.spotlightTarget).toBe('analyze');
+    expect(position.spotlightTarget).toBe('analyze');
   });
 
   it('chips, stepping, sidelines and understand are one string each, whatever the device or chip set', () => {
@@ -668,27 +640,27 @@ describe('reveal tour parts (Phase 240)', () => {
       stepping: 'tree',
       sidelines: 'board',
       understand: 'lines',
-      analyze: 'bar',
+      analyze: 'analyze',
     };
     for (const [step, target] of Object.entries(targets)) {
       expect(tourStepCopy(step as TourStepId, BASE_CTX).spotlightTarget, step).toBe(target);
-      expect(tourStepCopy(step as TourStepId, { ...BASE_CTX, answerKind: 'several' }).spotlightTarget, step).toBe(
+      expect(tourStepCopy(step as TourStepId, { ...BASE_CTX, isDesktop: true }).spotlightTarget, step).toBe(
         target,
       );
     }
   });
 
-  // D-05, D-19, Phase 237 D-09: over every analyze target and answer kind, no
+  // D-05, D-19, Phase 237 D-09: over every analyze target and device, no
   // step overruns the budget, uses an em-dash, mentions points or scoring, or
   // names a surface the reveal does not show. Phase 240 UAT: nor uses wording
   // that only fits one device (a lone "tap", hover, swipe, keys, the phone
-  // strip or a bar location).
+  // strip or a bar location), except the phone-only result tap hint.
   it('no step, in any context, overruns the budget, has an em-dash, a scoring word, or names a card, Solution button or eval bar', () => {
     const steps: TourStepId[] = ['result', 'chips', 'stepping', 'sidelines', 'understand', 'analyze'];
     const contexts: WalkthroughContext[] = [];
     for (const analyzeOpens of ['game', 'position'] as const) {
-      for (const answerKind of ['sharp', 'several'] as const) {
-        contexts.push({ analyzeOpens, answerKind });
+      for (const isDesktop of [false, true]) {
+        contexts.push({ analyzeOpens, isDesktop });
       }
     }
     expect(contexts).toHaveLength(4);
@@ -704,7 +676,8 @@ describe('reveal tour parts (Phase 240)', () => {
         expect(copy, label).not.toMatch(/\bcards?\b/i);
         expect(copy, label).not.toMatch(/solution/i);
         expect(copy, label).not.toMatch(/eval(uation)?\s+bar/i);
-        if (/\btap\b/i.test(copy)) expect(copy, label).toMatch(/\btap or click\b/i);
+        const phoneTapHint = step === 'result' && !ctx.isDesktop;
+        if (/\btap\b/i.test(copy) && !phoneTapHint) expect(copy, label).toMatch(/\btap or click\b/i);
         expect(copy, label).not.toMatch(/\b(hover|swipe|arrow keys?|home|strip)\b/i);
         expect(copy, label).not.toMatch(/\b(in|under|below) the (bar|board)\b/i);
       }

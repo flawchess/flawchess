@@ -1161,7 +1161,7 @@ describe('Phase 237 plan 07: MobileBottomBar swaps to the Train reveal bar', () 
     analyzeTo: string | null;
     onAnalyzeClick: () => void;
     onReset?: () => void;
-    spotlight?: boolean;
+    spotlightAnalyze?: boolean;
   }) {
     usePublishMobileBoardControls({
       onBack: vi.fn(),
@@ -1174,7 +1174,7 @@ describe('Phase 237 plan 07: MobileBottomBar swaps to the Train reveal bar', () 
       onNext: props.onNext,
       analyzeTo: props.analyzeTo,
       onAnalyzeClick: props.onAnalyzeClick,
-      spotlight: props.spotlight,
+      spotlightAnalyze: props.spotlightAnalyze,
     });
     return null;
   }
@@ -1227,29 +1227,41 @@ describe('Phase 237 plan 07: MobileBottomBar swaps to the Train reveal bar', () 
     expect(screen.queryByTestId('btn-train-analyze')).toBeNull();
   });
 
-  // Phase 240 D-20: the fixed phone bar carries the tour's shared spotlight class
-  // exactly while the published payload says so.
-  it('a payload with spotlight true renders the fixed reveal bar with the tour spotlight class', () => {
+  // Phase 240 UAT: the tour's Analyze step spotlights the fixed bar's Analyze
+  // button alone (never the whole bar), exactly while the payload says so.
+  it('a payload with spotlightAnalyze true spotlights the Analyze button, not the bar', () => {
     profileState = FULL_PROFILE;
     tier1State = true;
 
     renderMobileBottomBar(
       '/train',
-      <MobileBoardControlsRevealProbe onNext={vi.fn()} analyzeTo={null} onAnalyzeClick={vi.fn()} spotlight />,
+      <MobileBoardControlsRevealProbe
+        onNext={vi.fn()}
+        analyzeTo="/analysis/100?ply=19"
+        onAnalyzeClick={vi.fn()}
+        spotlightAnalyze
+      />,
     );
 
-    expect(screen.getByTestId('train-reveal-action-bar').classList.contains(TOUR_SPOTLIGHT_CLASS)).toBe(true);
+    expect(screen.getByTestId('btn-train-analyze').classList.contains(TOUR_SPOTLIGHT_CLASS)).toBe(true);
+    expect(screen.getByTestId('train-reveal-action-bar').classList.contains(TOUR_SPOTLIGHT_CLASS)).toBe(false);
   });
 
-  it.each([{ spotlight: false }, {}])('a payload with spotlight %o renders the bar without the spotlight class', (extra) => {
+  it.each([{ spotlightAnalyze: false }, {}])('a payload with spotlightAnalyze %o spotlights nothing', (extra) => {
     profileState = FULL_PROFILE;
     tier1State = true;
 
     renderMobileBottomBar(
       '/train',
-      <MobileBoardControlsRevealProbe onNext={vi.fn()} analyzeTo={null} onAnalyzeClick={vi.fn()} {...extra} />,
+      <MobileBoardControlsRevealProbe
+        onNext={vi.fn()}
+        analyzeTo="/analysis/100?ply=19"
+        onAnalyzeClick={vi.fn()}
+        {...extra}
+      />,
     );
 
+    expect(screen.getByTestId('btn-train-analyze').classList.contains(TOUR_SPOTLIGHT_CLASS)).toBe(false);
     expect(screen.getByTestId('train-reveal-action-bar').classList.contains(TOUR_SPOTLIGHT_CLASS)).toBe(false);
   });
 });

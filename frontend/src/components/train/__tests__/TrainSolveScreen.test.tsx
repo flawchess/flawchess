@@ -663,8 +663,6 @@ function Harness({
       trainSession={trainSession}
       gradingEngine={gradingEngine}
       restoredSolve={restoredSolve}
-      hasGames={true}
-      isGuest={false}
     />
   );
 }
@@ -709,8 +707,6 @@ function RemountHarness({
           puzzle={remounted ? nextPuzzle : puzzle}
           trainSession={trainSession}
           gradingEngine={gradingEngine}
-          hasGames={true}
-          isGuest={false}
         />
       )}
     </>
@@ -756,7 +752,7 @@ function MobileBoardControlsProbe(): ReactElement {
           <span data-testid="mbc-can-reset">{String(controls.canReset)}</span>
           <span data-testid="mbc-has-next">{String(controls.onNext != null)}</span>
           <span data-testid="mbc-analyze-to">{String(controls.analyzeTo)}</span>
-          <span data-testid="mbc-spotlight">{String(controls.spotlight === true)}</span>
+          <span data-testid="mbc-spotlight">{String(controls.spotlightAnalyze === true)}</span>
           <button data-testid="mbc-btn-next" onClick={controls.onNext}>next</button>
           <button data-testid="mbc-btn-back" onClick={controls.onBack}>back</button>
           <button data-testid="mbc-btn-forward" onClick={controls.onForward}>forward</button>
@@ -3540,7 +3536,7 @@ describe('TrainSolveScreen — progress, last move, grading state, engine failur
       getSettings.mockResolvedValue(makeSettings({ intro_seen_at: null }));
       await renderScreen(makePuzzle());
       expect(screen.getByTestId('train-bot-name').textContent).toBe('Hilda the Hippo');
-      expect(screen.getByTestId('train-bot-copy').textContent).toContain('Welcome to FlawChess Train!');
+      expect(screen.getByTestId('train-bot-copy').textContent).toContain('Hi there!');
       expect(screen.queryByTestId('btn-train-guess-critical')).toBeNull();
       expect(screen.queryByTestId('btn-train-guess-several')).toBeNull();
       expect(screen.getByTestId('btn-train-bot-step-next')).not.toBeNull();
@@ -3552,7 +3548,7 @@ describe('TrainSolveScreen — progress, last move, grading state, engine failur
       getSettings.mockResolvedValue(makeSettings({ intro_seen_at: null }));
       await renderScreen(makePuzzle());
       await waitFor(() =>
-        expect(screen.getByTestId('train-bot-copy').textContent).toContain('Welcome to FlawChess Train!'),
+        expect(screen.getByTestId('train-bot-copy').textContent).toContain('Hi there!'),
       );
       expect(screen.getByTestId('train-bot-name').textContent).toBe('Hilda the Hippo');
       expect(screen.queryByTestId('btn-train-guess-critical')).toBeNull();
@@ -3562,18 +3558,20 @@ describe('TrainSolveScreen — progress, last move, grading state, engine failur
       expect(screen.getByTestId('btn-train-guess-several')).not.toBeNull();
       expect(screen.queryByTestId('btn-train-bot-step-next')).toBeNull();
       expect(screen.getByTestId('train-bot-copy').textContent).toContain(
-        'Decide first, then play. Your turn.',
+        'Decide first, then play. You play',
       );
       expect(screen.getByTestId('train-bot-copy').textContent).not.toContain('warm-up');
     });
 
-    // Phase 240 D-02: a warm-up first session gets the same two bubbles; it
-    // learns it is a warm-up from the puzzle-1 verdict tail, not from the intro.
-    it('a warm-up session is also exactly two bubbles, with no warm-up notice', async () => {
+    // Phase 240 D-02: a warm-up first session gets the same two bubbles; UAT:
+    // the welcome bubble (only) says it is a warm-up, with no import/sign-up ask.
+    it('a warm-up session is also exactly two bubbles, with the warm-up note on the welcome only', async () => {
       getSettings.mockResolvedValue(makeSettings({ intro_seen_at: null }));
       await renderScreen(makePuzzle(), makeSession({ is_warmup: true }));
       await waitFor(() => expect(screen.getByTestId('btn-train-bot-step-next')).not.toBeNull());
-      expect(screen.getByTestId('train-bot-copy').textContent).toContain('Welcome to FlawChess Train!');
+      expect(screen.getByTestId('train-bot-copy').textContent).toBe(
+        "Hi there! Let's start with some warm-up puzzles. They're not from your own games yet.",
+      );
       for (let click = 0; click < INTRO_STEP_COUNT - 1; click += 1) {
         fireEvent.click(screen.getByTestId('btn-train-bot-step-next'));
       }
@@ -3634,7 +3632,7 @@ describe('TrainSolveScreen — progress, last move, grading state, engine failur
       expect(screen.queryByTestId('btn-train-guess-critical')).toBeNull();
       resolveSettings(makeSettings({ intro_seen_at: null }));
       await waitFor(() =>
-        expect(screen.getByTestId('train-bot-copy').textContent).toContain('Welcome to FlawChess Train!'),
+        expect(screen.getByTestId('train-bot-copy').textContent).toContain('Hi there!'),
       );
     });
 
@@ -4041,7 +4039,7 @@ describe('TrainSolveScreen — progress, last move, grading state, engine failur
     };
     const tourCopyText = (): string => screen.getByTestId('train-bot-walkthrough').textContent ?? '';
 
-    it('tracer: phone, stage 0, sharp: the result bubble speaks from the board overlay and spotlights the strip', async () => {
+    it('tracer: phone, stage 0: the result bubble speaks from the board overlay and spotlights the strip', async () => {
       matchMediaMatches = false; // below lg: the strip is the verdict surface, the tour an overlay
       await openReveal(0, { puzzle_type: 'sharp' });
       await waitFor(() => expect(screen.getByTestId('train-bot-walkthrough')).not.toBeNull());
@@ -4051,7 +4049,7 @@ describe('TrainSolveScreen — progress, last move, grading state, engine failur
       expect(within(screen.getByTestId('train-reveal')).queryByTestId('train-bot-walkthrough')).toBeNull();
       expect(overlay.className).toContain('pointer-events-none');
       expect(tourCopyText()).toBe(
-        'Your result is in the highlighted box. Here only one move was good, every other move was a mistake. Proceed with Next when ready.',
+        'Your result is in the highlighted box. Tap it for details. Proceed with Next when ready.',
       );
       // Phase 240 UAT: part 1 is one step, so no "1 / 1" counter.
       expect(within(overlay).queryByTestId('train-tour-step-count')).toBeNull();
@@ -4068,6 +4066,7 @@ describe('TrainSolveScreen — progress, last move, grading state, engine failur
       matchMediaMatches = false;
       await openReveal(0);
       await waitFor(() => expect(screen.getByTestId('train-bot-walkthrough')).not.toBeNull());
+      expect(analyzeSpotlit()).toBe(false);
       expect(actionBarSpotlit()).toBe(false);
       expect(stampOnboarding).not.toHaveBeenCalled();
       clickBarNext();
@@ -4076,12 +4075,12 @@ describe('TrainSolveScreen — progress, last move, grading state, engine failur
       await waitFor(() => expect(nextFlush).toHaveBeenCalledTimes(1));
     });
 
-    it('desktop, stage 0, herring: the several wording, and the verdict card is spotlit', async () => {
+    it('desktop, stage 0: no tap hint, and the verdict card is spotlit', async () => {
       matchMediaMatches = true;
       await openReveal(0, { puzzle_type: 'herring' });
       await waitFor(() => expect(screen.getByTestId('train-bot-walkthrough')).not.toBeNull());
       expect(tourCopyText()).toBe(
-        'Your result is in the highlighted box. Here several moves were fine, so any good move works. Proceed with Next when ready.',
+        'Your result is in the highlighted box. Proceed with Next when ready.',
       );
       const reveal = screen.getByTestId('train-reveal');
       expect(spotlit(within(reveal).getByTestId('train-verdict-card'))).toBe(true);
@@ -4122,6 +4121,8 @@ describe('TrainSolveScreen — progress, last move, grading state, engine failur
       const row = screen.getByTestId('train-line-chips').closest('[data-tour-target="chips"]');
       return row instanceof HTMLElement && spotlit(row);
     };
+    // Phase 240 UAT: the Analyze step spotlights the Analyze button alone.
+    const analyzeSpotlit = (): boolean => spotlit(screen.getByTestId('btn-train-analyze'));
     const actionBarSpotlit = (): boolean => spotlit(screen.getByTestId('train-reveal-action-bar'));
     // The board row's spotlight sits on an ancestor of the board.
     const boardSpotlit = (): boolean => {
@@ -4209,7 +4210,8 @@ describe('TrainSolveScreen — progress, last move, grading state, engine failur
       clickBarNext();
       await waitFor(() => expect(tourCopyText()).toBe(ANALYZE_GAME_COPY));
       expect(stepCount()).toBe('3 / 3');
-      expect(actionBarSpotlit()).toBe(true);
+      expect(analyzeSpotlit()).toBe(true);
+      expect(actionBarSpotlit()).toBe(false);
       expect(linesSpotlit()).toBe(false);
       expect(stampOnboarding).not.toHaveBeenCalled();
       expect(nextFlush).not.toHaveBeenCalled();
@@ -4275,7 +4277,7 @@ describe('TrainSolveScreen — progress, last move, grading state, engine failur
       expect(payloadSpotlight()).toBe('false');
     });
 
-    it('phone bar, part 3: the payload spotlights the bar on the Analyze step only', async () => {
+    it('phone bar, part 3: the payload spotlights Analyze on the Analyze step only', async () => {
       await openRevealWithProbe(2);
       expect(payloadSpotlight()).toBe('false');
       fireEvent.click(screen.getByTestId('mbc-btn-next'));

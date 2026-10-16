@@ -234,8 +234,6 @@ export default function TrainPage(): ReactElement {
           gradingEngine={gradingEngine}
           restoredSolve={restoredReveal}
           onNext={handleRestoredNext}
-          hasGames={hasGames}
-          isGuest={isGuest}
         />
       )}
       {showLoop && trainSession.currentPuzzle && (
@@ -244,8 +242,6 @@ export default function TrainPage(): ReactElement {
           trainSession={trainSession}
           gradingEngine={gradingEngine}
           onNext={handleNext}
-          hasGames={hasGames}
-          isGuest={isGuest}
         />
       )}
       {showScoreScreen && trainSession.session && (
