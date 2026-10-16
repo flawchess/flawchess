@@ -5,8 +5,8 @@ current_phase: 240
 current_phase_name: Train First-Session Onboarding Load (SEED-200)
 status: verifying
 stopped_at: Phase 240 plans 7/7 executed; verification next
-last_updated: "2026-10-16T09:58:54.017Z"
-state_head: daabb0e4c83375eb423694405b3ad44440b2648c
+last_updated: "2026-10-16T10:21:46.558Z"
+state_head: d3921bb0cd9b9ed63c882be020d19312f47d50fc
 progress:
   total_phases: 3
   completed_phases: 103
@@ -1043,6 +1043,7 @@ None active.
 | 261015-qxr | Library Stats coverage line salience and still-updating hint | 2026-10-15 | b2896d32e | [261015-qxr-library-stats-coverage-line-salience-and](./quick/261015-qxr-library-stats-coverage-line-salience-and/) |
 | 261015-s05 | Train reveal: clock-context line under the game footer (think time + clock left) | 2026-10-15 | f0b68075d | [261015-s05-train-reveal-clock-context-line-under-th](./quick/261015-s05-train-reveal-clock-context-line-under-th/) |
 | 261016-fwd | Google sign-in promotes saved guest instead of creating duplicate account | 2026-10-16 | daabb0e4c | [261016-fwd-google-sign-in-promotes-saved-guest-inst](./quick/261016-fwd-google-sign-in-promotes-saved-guest-inst/) |
+| 147 | Add a "Feedback" label to the floating feedback button | 2026-10-16 | d3921bb0c | — |
 
 ## Deferred Items
 
