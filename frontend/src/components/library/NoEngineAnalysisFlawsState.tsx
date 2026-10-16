@@ -1,6 +1,7 @@
 import { Cpu } from 'lucide-react';
-import { Link, useNavigate } from 'react-router';
+import { Link } from 'react-router';
 import { Button } from '@/components/ui/button';
+import { useAuth } from '@/hooks/useAuth';
 
 interface NoEngineAnalysisFlawsStateProps {
   /** Whether the current user is a guest (show sign-up CTA). */
@@ -12,7 +13,7 @@ interface NoEngineAnalysisFlawsStateProps {
  * but none have analyzed flaws.
  *
  * Branches:
- * - Guest: sign-up CTA linking to /login?tab=register (D-118-13).
+ * - Guest: sign-up CTA to /login?tab=register that keeps the guest data (D-118-13).
  * - Non-guest: passive explainer — analysis runs automatically in the
  *   background; points to the per-game "Analyze" button on the Games tab
  *   for immediate single-game analysis. No bulk button (auto-enqueue covers it).
@@ -26,7 +27,7 @@ interface NoEngineAnalysisFlawsStateProps {
  * now covers the "analysis is running" signal for all tiers.
  */
 export function NoEngineAnalysisFlawsState({ isGuest }: NoEngineAnalysisFlawsStateProps) {
-  const navigate = useNavigate();
+  const { logoutForPromotion } = useAuth();
 
   return (
     <div
@@ -50,7 +51,14 @@ export function NoEngineAnalysisFlawsState({ isGuest }: NoEngineAnalysisFlawsSta
             data-umami-event="signup-cta"
             data-umami-event-source="flaws-no-analysis"
             aria-label="Sign up to unlock full-game analysis"
-            onClick={() => navigate('/login?tab=register')}
+            // Bug fix (quick 261016-fwd): this used to navigate('/login?tab=register')
+            // while the guest was still signed in, so AuthPage bounced them back to /
+            // and the button did nothing. Drop the guest session first (guest_token is
+            // kept for promotion) and hard-navigate, like EvalCoverageBadge.
+            onClick={() => {
+              logoutForPromotion();
+              window.location.href = '/login?tab=register';
+            }}
           >
             Sign up free
           </Button>
