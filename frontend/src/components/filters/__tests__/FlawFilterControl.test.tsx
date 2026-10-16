@@ -7,7 +7,11 @@ import { OpponentStrengthFilter } from '../OpponentStrengthFilter';
 import { TacticDepthFilter } from '../TacticDepthFilter';
 import { ANY_RANGE } from '@/lib/opponentStrength';
 import type { OpponentStrengthRange } from '@/types/api';
-import { DEFAULT_TACTIC_DEPTH_VALUE, type TacticDepthValue } from '@/lib/tacticDepth';
+import {
+  DEFAULT_TACTIC_DEPTH_VALUE,
+  presetToRange,
+  type TacticDepthValue,
+} from '@/lib/tacticDepth';
 import type { FlawTag } from '@/types/library';
 import { SLIDER_TRACK_DEBOUNCE_MS } from '@/hooks/useDebouncedTrackFeature';
 
@@ -608,5 +612,22 @@ describe('filter-change tracking (Phase 229)', () => {
       // Default is the full range (high); dragging the low thumb to ~3 matches no preset.
       expect(track.mock.calls[0]?.[1]).toMatchObject({ target: 'tactic-depth', value: 'custom' });
     });
+  });
+});
+
+describe('TacticDepthFilter summary highlight', () => {
+  afterEach(cleanup);
+
+  const summary = () => screen.getByTestId('filter-tactic-depth-summary');
+
+  it('stays muted at the default (High, full range)', () => {
+    render(<TacticDepthFilter value={DEFAULT_TACTIC_DEPTH_VALUE} onChange={vi.fn()} />);
+    expect(summary().className).toContain('text-muted-foreground');
+    expect(summary().className).not.toContain('text-toggle-active');
+  });
+
+  it('highlights once the range narrows to Medium', () => {
+    render(<TacticDepthFilter value={presetToRange('medium')} onChange={vi.fn()} />);
+    expect(summary().className).toContain('text-toggle-active');
   });
 });

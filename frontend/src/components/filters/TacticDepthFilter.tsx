@@ -13,6 +13,7 @@ import type { PresetOption } from './PresetRangeFilter';
 import { trackFeature } from '@/lib/analytics';
 import { useDebouncedTrackFeature } from '@/hooks/useDebouncedTrackFeature';
 import {
+  DEPTH_DEFAULT_PRESET,
   DEPTH_MIN,
   DEPTH_MAX,
   DEPTH_STEP,
@@ -77,9 +78,10 @@ export function TacticDepthFilter({ value, onChange }: TacticDepthFilterProps) {
     [onChange, activePreset],
   );
 
-  // The summary goes text-toggle-active when the active range is not the
-  // always-on Medium default (preset null/custom or non-medium).
-  const isSummaryActive = activePreset !== 'medium';
+  // The summary goes text-toggle-active when the range narrows from the default
+  // (High, the full range). It compared against 'medium' after the default moved
+  // to High, so the summary lit up at the default and dimmed when narrowed to Medium.
+  const isSummaryActive = activePreset !== DEPTH_DEFAULT_PRESET;
 
   return (
     <PresetRangeFilter
