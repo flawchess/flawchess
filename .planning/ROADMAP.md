@@ -164,12 +164,12 @@ significance-only verdict without a band (D-16), "show less rather than noise" (
 
 **Depends on**: nothing in flight (builds on Phases 238/239 verdict-bar components)
 **Requirements**: TBD (coverage contract = CONTEXT decisions from discuss-phase)
-**Plans:** 9 plans
+**Plans:** 1/9 plans executed
 **Status**: Planned (9 plans, 7 waves), ready to execute
 
 Plans:
 **Wave 1**
-- [ ] 242-01-PLAN.md — Backend /stats: current/past cutoff (200 games or 60 days, filters, dev clock), most-played fetch 60 → dedupe → bookmark-twin drop → cutoff-restricted second fetch when current rows run short → 10 current + 10 past, baseline-centred eval finalizer + 99% CIs, shared score verdict fields (wave 1)
+- [x] 242-01-PLAN.md — Backend /stats: current/past cutoff (200 games or 60 days, filters, dev clock), most-played fetch 60 → dedupe → bookmark-twin drop → cutoff-restricted second fetch when current rows run short → 10 current + 10 past, baseline-centred eval finalizer + 99% CIs, shared score verdict fields (wave 1)
 
 **Wave 2** *(blocked on Wave 1 completion)*
 - [ ] 242-02-PLAN.md — Backend /insights/openings: 99% cards (≤5, current first), "Not clear yet" medium list (≤10 + full count), is_current, centred eval on cards (wave 2)
