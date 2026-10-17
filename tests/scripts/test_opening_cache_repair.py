@@ -114,7 +114,9 @@ from scripts.opening_cache_repair import (
     write_repair_report,
 )
 
-pytestmark = pytest.mark.asyncio
+# No module-level `pytestmark = pytest.mark.asyncio`: asyncio_mode = "auto"
+# already runs the async tests, and the blanket mark raised a PytestWarning on
+# each sync test (TestConfirm, TestPoolFromEnv).
 
 # A real 6-half-move opening (Ruy Lopez) -- plies 0-5, well inside ply 1..20.
 _RUY_LOPEZ_PGN = "1. e4 e5 2. Nf3 Nc6 3. Bb5 a6 *"

@@ -684,7 +684,7 @@ async def entry_submit_eval(
     # SF-version gate FIRST, same as the other submit endpoints — check before DB access.
     if settings.EXPECTED_SF_VERSION and body.sf_version != settings.EXPECTED_SF_VERSION:
         raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
             detail="Stockfish version mismatch",
         )
 
@@ -998,7 +998,7 @@ async def _apply_flaw_blob_submit(
     for e in body.evals:
         if e.token not in valid_tokens:
             raise HTTPException(
-                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
                 detail=f"Unknown or foreign token: {e.token!r}",
             )
 
@@ -1120,7 +1120,7 @@ async def flaw_blob_submit(
     # SF-version gate (same as the other submit endpoints).
     if settings.EXPECTED_SF_VERSION and body.sf_version != settings.EXPECTED_SF_VERSION:
         raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
             detail="Stockfish version mismatch",
         )
     return await _apply_flaw_blob_submit(
@@ -1325,12 +1325,12 @@ async def _apply_atomic_submit(
             node_flaw_ply, _line, _k = _parse_token(node.token)
         except ValueError as exc:
             raise HTTPException(
-                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
                 detail=f"Malformed token: {node.token!r}",
             ) from exc
         if not (0 <= node_flaw_ply < game_length):
             raise HTTPException(
-                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
                 detail=f"Unknown or foreign token: {node.token!r}",
             )
 
@@ -1342,7 +1342,7 @@ async def _apply_atomic_submit(
     for second_best_entry in body.second_best:
         if not (0 <= second_best_entry.ply < game_length):
             raise HTTPException(
-                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
                 detail="Unknown or foreign second_best ply",
             )
 
@@ -1514,7 +1514,7 @@ async def atomic_submit_eval(
     # SF-version gate (same as the other submit endpoints).
     if settings.EXPECTED_SF_VERSION and body.sf_version != settings.EXPECTED_SF_VERSION:
         raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
             detail="Stockfish version mismatch",
         )
     return await _apply_atomic_submit(
@@ -1600,7 +1600,7 @@ async def bestmove_submit(
     # SF-version gate (same as the other submit endpoints).
     if settings.EXPECTED_SF_VERSION and body.sf_version != settings.EXPECTED_SF_VERSION:
         raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
             detail="Stockfish version mismatch",
         )
     return await _apply_bestmove_submit(

@@ -57,7 +57,7 @@ gh run view <run-id> --log-failed
 gh run watch <run-id> --exit-status   # `gh pr checks --watch` exits 0 even on failures
 ```
 
-**Test isolation**: each pytest session clones its own PostgreSQL database from a migrated template that auto-refreshes when the Alembic head changes, so parallel runs are fully isolated and no manual template rebuild is needed after a migration (see `tests/conftest.py`). CI keeps serial execution (D-02); `-n auto` is a local-only convenience.
+**Test isolation**: each pytest session (each xdist worker) clones its own PostgreSQL database from a migrated template that auto-refreshes when the Alembic head changes, so no manual template rebuild is needed after a migration (see `tests/conftest.py`). xdist DB names carry the run's `PYTEST_XDIST_TESTRUNUID`, so concurrent `-n auto` sessions from different worktrees or agents don't collide; DBs left by a killed run are swept at the next session start (only `flawchess_test_%` DBs with zero connections, never the template). Two concurrent 16-worker sessions peak near 140 connections, above Postgres' default 100: the dev DB runs with `max_connections=300` (`docker-compose.dev.yml`; recreate the container with the `up -d` command above after pulling the change). Isolation covers the database only, not shared files or ports. CI keeps serial execution (D-02); `-n auto` is a local-only convenience.
 
 ### Pre-merge gate (MANDATORY before squash-merging to `main`)
 

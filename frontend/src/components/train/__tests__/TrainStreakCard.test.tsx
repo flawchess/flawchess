@@ -9,7 +9,7 @@
  */
 import type { ReactNode } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 
 vi.mock('@/api/client', async () => {
@@ -34,9 +34,14 @@ import type { TrainProgressResponse } from '@/types/train';
 
 const OWNER = 'user@example.com';
 
+// Fake-clock time that covers StreakFlame's count-up (450 ms delay + 500 ms
+// run) and the earned-freeze pop-in delay, with headroom.
+const ARRIVAL_ANIMATIONS_SETTLE_MS = 2000;
+
 beforeEach(() => localStorage.clear());
 
 afterEach(() => {
+  vi.useRealTimers();
   cleanup();
   vi.mocked(trainApi.getProgress).mockReset();
   vi.unstubAllGlobals();
@@ -199,14 +204,22 @@ describe('TrainStreakCard', () => {
     });
 
     it('streak up: the flame ignites and counts up from the last-seen value; the earned freeze pops in', async () => {
+      // Fake clock: on real timers the count-up raced the test under CPU load
+      // (it read 50/51 after a 3 s waitFor). Only timers and frames are faked,
+      // so the mocked query still resolves through microtasks.
+      vi.useFakeTimers({
+        toFake: ['setTimeout', 'clearTimeout', 'requestAnimationFrame', 'cancelAnimationFrame', 'performance'],
+      });
       writeStreakLastSeen(OWNER, { streak: 51, freezes: 4 });
-      await renderPopulated({ session_streak_count: 52, shield_level: 5 });
+      vi.mocked(trainApi.getProgress).mockResolvedValue({ ...BASE, session_streak_count: 52, shield_level: 5 });
+      renderWithClient();
+      // Fire only the timers due now (the query's notify batch), not the count-up.
+      await act(() => vi.advanceTimersByTimeAsync(0));
 
       expect(screen.getByTestId('train-streak-flame').classList.contains('train-flame-ignite')).toBe(true);
       expect(screen.getByTestId('train-streak-count').textContent).toBe('51');
-      await waitFor(() => expect(screen.getByTestId('train-streak-count').textContent).toBe('52'), {
-        timeout: 3000,
-      });
+      await act(() => vi.advanceTimersByTimeAsync(ARRIVAL_ANIMATIONS_SETTLE_MS));
+      expect(screen.getByTestId('train-streak-count').textContent).toBe('52');
       const popped = screen
         .getAllByTestId('train-freeze-slot')
         .filter((el) => el.classList.contains('train-freeze-popin'));

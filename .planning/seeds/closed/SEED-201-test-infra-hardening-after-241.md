@@ -1,6 +1,6 @@
 ---
 id: SEED-201
-status: planted
+status: closed. Resolved by quick 261017-986 (2026-10-17); the report's §3.3.3 "14/20" cap count is left as an owner flag.
 planted: 2026-10-17
 planted_during: Phase 241 execution (13 parallel executors in wave 4 exposed the DB collision; the rest surfaced in executor reports and the pytest output)
 trigger_when: next time two worktrees or agents run pytest at the same time, or any test-infra / flake cleanup pass; item 1 is worth doing before the next parallel GSD phase

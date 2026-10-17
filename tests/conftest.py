@@ -47,7 +47,7 @@ pytest_plugins = ["tests.seed_fixtures"]
 # OVERVIEW
 # --------
 # (a) Each pytest session (and each xdist worker) gets its own database
-#     "flawchess_test_<worker|pid>" cloned from the migrated template
+#     "flawchess_test_<uid>_<worker>" / "flawchess_test_<pid>" cloned from the migrated template
 #     "flawchess_test_template" via CREATE DATABASE ... TEMPLATE.  This removes
 #     the session-start whole-schema ACCESS EXCLUSIVE lock (from the old
 #     per-session table wipe) that blocked concurrent agent runs.
@@ -60,11 +60,21 @@ pytest_plugins = ["tests.seed_fixtures"]
 #     on the lock and then re-check drift after acquiring it, so they skip the
 #     refresh and proceed directly to cloning.
 #
-# (c) Killed runs self-heal: a DROP DATABASE IF EXISTS before each CREATE
-#     DATABASE acts as a stale-DB reaper — residue from a previously killed
-#     pytest session is cleaned up automatically on the next invocation.
+# (c) Concurrent sessions are isolated from each other.  xdist run DBs carry
+#     the session's PYTEST_XDIST_TESTRUNUID ("flawchess_test_<uid>_gw0"), so two
+#     `pytest -n auto` sessions (e.g. from two worktrees) never share a name.
+#     Each session holds a keeper connection to its own run DB for its whole
+#     lifetime, opened while still holding the advisory lock that guards
+#     creation, so a live run DB always shows at least one connection.
 #
-# (d) No manual template rebuild is ever needed.  After a migration the
+# (d) Killed runs self-heal: before creating its run DB, every session sweeps
+#     flawchess_test_% databases (never the template) that have NO
+#     connections — residue of a killed session, whose keeper died with it.
+#     The sweep runs under the same advisory lock as creation.  It replaces
+#     the old DROP-before-CREATE reaper, which dropped a concurrent session's
+#     live gw0..gwN databases because names were only per-worker (SEED-201).
+#
+# (e) No manual template rebuild is ever needed.  After a migration the
 #     template auto-refreshes on the next pytest run, paying migration time
 #     (~1.7 s for 66 migrations) once and serving all subsequent clones.
 #
@@ -85,16 +95,28 @@ _TEMPLATE_DB_NAME: str = "flawchess_test_template"
 # carry a statement-injection payload.
 _DB_NAME_RE = re.compile(r"^[a-z_][a-z0-9_]{0,62}$")
 
+# Prefix shared by every per-run DB; the orphan sweep matches on it.
+_RUN_DB_PREFIX: str = "flawchess_test_"
+
+# Characters of PYTEST_XDIST_TESTRUNUID (a uuid4 hex) kept in xdist run DB
+# names: 48 bits is plenty to keep concurrent sessions apart, and
+# prefix + uid + "_gwNNN" stays far below the 63-byte identifier limit.
+_RUN_UID_LEN: int = 12
+
 
 def _get_run_db_name() -> str:
     """Derive the per-run / per-worker database name.
 
     Priority order:
       1. TEST_DB_NAME env var — explicit override
-      2. PYTEST_XDIST_WORKER env var — set by pytest-xdist to "gw0", "gw1", …
+      2. PYTEST_XDIST_WORKER env var — set by pytest-xdist to "gw0", "gw1", …,
+         prefixed with the session's PYTEST_XDIST_TESTRUNUID (same in every
+         worker of one run, different per run) so concurrent sessions never
+         collide.  The worker name alone made a second `pytest -n auto` drop
+         the first session's live DBs (SEED-201).
       3. os.getpid() fallback for serial (non-xdist) runs
 
-    Returns a name like "flawchess_test_gw0" or "flawchess_test_<pid>".
+    Returns a name like "flawchess_test_<uid>_gw0" or "flawchess_test_<pid>".
     DB names derive only from trusted sources (fixed prefix + xdist-set env
     var / PID / dev-controlled env var) — never from user/request input.
     The dev-controlled TEST_DB_NAME override is validated as a PostgreSQL
@@ -110,8 +132,13 @@ def _get_run_db_name() -> str:
         return explicit
     worker = os.environ.get("PYTEST_XDIST_WORKER")
     if worker:
-        return f"flawchess_test_{worker}"
-    return f"flawchess_test_{os.getpid()}"
+        raw_uid = os.environ.get("PYTEST_XDIST_TESTRUNUID", "")
+        uid = re.sub(r"[^a-z0-9]", "", raw_uid.lower())[:_RUN_UID_LEN] or str(os.getpid())
+        name = f"{_RUN_DB_PREFIX}{uid}_{worker.lower()}"
+        if not _DB_NAME_RE.match(name):
+            raise ValueError(f"Derived xdist run DB name {name!r} is not a valid identifier")
+        return name
+    return f"{_RUN_DB_PREFIX}{os.getpid()}"
 
 
 def _maint_dsn(test_db_url: str) -> str:
@@ -240,18 +267,59 @@ async def _ensure_template_fresh(maint_dsn: str) -> None:
         await admin.close()
 
 
-async def _create_run_db(maint_dsn: str, run_db_name: str) -> None:
-    """Drop any stale run DB then clone a fresh one from the template.
+async def _sweep_orphan_run_dbs(admin: asyncpg.Connection) -> None:
+    """Drop per-run DBs left behind by killed sessions.
 
-    The DROP DATABASE IF EXISTS is the stale-DB reaper — it cleans up residue
-    from killed pytest runs so they self-heal on the next invocation.
-    asyncpg autocommit ensures both DDL statements run outside a transaction.
+    Caller MUST hold the advisory lock.  A DB counts as orphaned when no
+    backend is connected to it: every live session keeps a keeper connection
+    on its run DB (opened under this same lock in _create_run_db), so a
+    zero-connection flawchess_test_% DB can only belong to a dead session.
+    The template is excluded by name and by datistemplate.
+    """
+    rows = await admin.fetch(
+        """SELECT d.datname FROM pg_database d
+           WHERE d.datname LIKE $1 AND d.datname <> $2 AND NOT d.datistemplate
+             AND NOT EXISTS (SELECT 1 FROM pg_stat_activity a WHERE a.datname = d.datname)""",
+        _RUN_DB_PREFIX.replace("_", r"\_") + "%",
+        _TEMPLATE_DB_NAME,
+    )
+    for row in rows:
+        name: str = row["datname"]
+        if not _DB_NAME_RE.match(name):
+            continue
+        try:
+            await admin.execute(f"DROP DATABASE IF EXISTS {name}")
+        except asyncpg.exceptions.ObjectInUseError:
+            # Someone connected between the check and the drop: not an orphan.
+            continue
+
+
+async def _create_run_db(maint_dsn: str, run_db_name: str) -> asyncpg.Connection:
+    """Sweep orphaned run DBs, clone a fresh run DB, and return its keeper.
+
+    Sweep, CREATE and the keeper connection all happen under the advisory
+    lock, so another session's sweep can never observe this run DB in its
+    connection-less window between CREATE and first use.  The caller keeps the
+    returned connection open for the session's lifetime and closes it before
+    dropping the run DB.  asyncpg autocommit runs the DDL outside a
+    transaction.
     """
     admin = await asyncpg.connect(maint_dsn)
     try:
-        # Stale reaper: clean up residue from a previously killed run.
-        await admin.execute(f"DROP DATABASE IF EXISTS {run_db_name}")
-        await admin.execute(f"CREATE DATABASE {run_db_name} TEMPLATE {_TEMPLATE_DB_NAME}")
+        await admin.execute(f"SELECT pg_advisory_lock({_TEMPLATE_ADVISORY_LOCK_KEY})")
+        try:
+            await _sweep_orphan_run_dbs(admin)
+            await admin.execute(f"CREATE DATABASE {run_db_name} TEMPLATE {_TEMPLATE_DB_NAME}")
+            p = urllib.parse.urlparse(maint_dsn)
+            return await asyncpg.connect(
+                host=p.hostname,
+                port=p.port,
+                user=p.username,
+                password=p.password,
+                database=run_db_name,
+            )
+        finally:
+            await admin.execute(f"SELECT pg_advisory_unlock({_TEMPLATE_ADVISORY_LOCK_KEY})")
     finally:
         await admin.close()
 
@@ -305,44 +373,58 @@ async def _silence_connection_lost_noise() -> AsyncGenerator[None, None]:
     yield
 
 
-@pytest.fixture(scope="session")
-def test_engine():
-    """Create a per-run async engine cloned from the migrated template DB.
-
-    Session-scoped: created once per pytest session (and once per xdist worker
-    subprocess), disposed at teardown.
+@pytest_asyncio.fixture(scope="session")
+async def _run_db() -> AsyncGenerator[str, None]:
+    """Create this session's run DB, keep it alive, drop it at teardown.
 
     Setup:
       1. Ensure flawchess_test_template is up to date with Alembic head
          (advisory-lock-guarded refresh; re-checked after lock acquisition).
-      2. DROP DATABASE IF EXISTS the per-run DB (stale reaper, self-heal
-         for killed runs) then CREATE DATABASE <run_db> TEMPLATE <template>.
-      3. Patch settings.DATABASE_URL to the per-run DB URL so all code that
+      2. Under the same advisory lock: sweep orphaned run DBs, CREATE DATABASE
+         <run_db> TEMPLATE <template>, and open the keeper connection.
+      3. Yield the run DB name.
+
+    Teardown (runs after test_engine's, which disposes the pool first): close
+    the keeper, then DROP DATABASE ... WITH (FORCE).
+
+    Async on the session loop (asyncio_default_fixture_loop_scope =
+    "session") so the keeper connection lives for the whole session; an
+    asyncio.run() throwaway loop would close it on return.
+    """
+    run_db_name = _get_run_db_name()
+    maint = _maint_dsn(settings.DATABASE_URL_TEST)
+    await _ensure_template_fresh(maint)
+    keeper = await _create_run_db(maint, run_db_name)
+    try:
+        yield run_db_name
+    finally:
+        try:
+            await keeper.close()
+        finally:
+            await _drop_run_db(maint, run_db_name)
+
+
+@pytest.fixture(scope="session")
+def test_engine(_run_db: str):
+    """Create a per-run async engine on this session's run DB.
+
+    Session-scoped: created once per pytest session (and once per xdist worker
+    subprocess), disposed at teardown.  The run DB itself is created and
+    dropped by the _run_db fixture.
+
+    Setup:
+      1. Patch settings.DATABASE_URL to the per-run DB URL so all code that
          opens its own sessions (on_after_login, LastActivityMiddleware, etc.)
          also hits the per-run DB.
-      4. Yield the async engine.
+      2. Yield the async engine.
 
     Teardown ordering is STRICT:
       - engine.sync_engine.dispose() FIRST (releases SQLAlchemy pool connections)
-      - DROP DATABASE IF EXISTS <run_db> (fails if connections are still open)
       - Restore settings.DATABASE_URL
-
-    asyncpg DDL runs via asyncio.run() throwaway loops — asyncpg pools are
-    event-loop-bound so each DDL block uses its own short-lived loop
-    (same pattern used by the old per-session table-wipe).
+      - _run_db teardown then closes its keeper and drops the run DB
     """
     original_url = settings.DATABASE_URL
-    run_db_name = _get_run_db_name()
-    maint = _maint_dsn(settings.DATABASE_URL_TEST)
-
-    # Ensure the template DB exists and is at Alembic head.  The advisory-lock-
-    # guarded refresh (drop + recreate + migrate) all happens inside
-    # _ensure_template_fresh under the lock — the migration no longer
-    # leaks out into this sync fixture.
-    asyncio.run(_ensure_template_fresh(maint))
-
-    # Clone a per-run DB from the (now fresh) template.
-    asyncio.run(_create_run_db(maint, run_db_name))
+    run_db_name = _run_db
 
     p = urllib.parse.urlparse(settings.DATABASE_URL_TEST)
     run_db_url = (
@@ -359,12 +441,10 @@ def test_engine():
     try:
         yield engine
     finally:
-        # Teardown: dispose engine BEFORE drop (open connections block DROP
-        # DATABASE).  Wrapped so settings.DATABASE_URL is
-        # always restored even if dispose/drop raises.
+        # Teardown: dispose engine BEFORE _run_db drops the DB.  Wrapped so
+        # settings.DATABASE_URL is always restored even if dispose raises.
         try:
             engine.sync_engine.dispose()
-            asyncio.run(_drop_run_db(maint, run_db_name))
         finally:
             settings.DATABASE_URL = original_url
 

@@ -4,8 +4,8 @@ milestone: v2.24
 current_phase: 241
 status: completed
 stopped_at: Phase 241 complete — all phases complete
-last_updated: "2026-10-16T21:53:36.100Z"
-state_head: a17b625d8b981381ec0a8a77603178d5e6114c79
+last_updated: "2026-10-17T05:09:37.693Z"
+state_head: d42a6ace0076266546af3da895c0bed86bad934e
 progress:
   total_phases: 4
   completed_phases: 103
@@ -1047,6 +1047,7 @@ None active.
 | 148 | Fix 401 interceptor: auth routes excluded from session-expired redirect | 2026-10-16 | 164754ce9 | — |
 | 149 | Fix opening insights TypeError on all-custom-start transition groups | 2026-10-16 | 07dd60fb4 | — |
 | 150 | Fix tactic depth summary highlight vs High default | 2026-10-16 | 38baedf8b | — |
+| 261017-986 | SEED-201: concurrent pytest isolation, TrainStreakCard flake, 422 rename + asyncio mark, INV-L1012 comment | 2026-10-17 | d42a6ace0 | [261017-986-seed-201-test-infra-hardening-after-241](./quick/261017-986-seed-201-test-infra-hardening-after-241/) |
 
 ## Deferred Items
 

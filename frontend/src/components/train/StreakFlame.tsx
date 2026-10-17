@@ -87,8 +87,13 @@ function useCountUp(from: number, to: number, enabled: boolean): number {
     if (!enabled) return;
     let frame = 0;
     const timer = setTimeout(() => {
-      const start = performance.now();
+      // Anchor on the first frame's timestamp, not performance.now(): a rAF
+      // timestamp is the frame's start and can predate a performance.now()
+      // taken in this callback, which made progress negative and briefly
+      // showed `from - 1` (seen as "50" for a 51 -> 52 count-up under load).
+      let start: number | null = null;
       const step = (now: number): void => {
+        start ??= now;
         const progress = Math.min(1, (now - start) / COUNT_UP_DURATION_MS);
         setValue(Math.round(from + (to - from) * progress));
         if (progress < 1) frame = requestAnimationFrame(step);

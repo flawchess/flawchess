@@ -59,12 +59,13 @@ function useIsMobile(): boolean {
   return isMobile;
 }
 
-// TC-collapsed neutral band for the score-gap line chart.
-// Derived from PRESSURE_BIN_SCORE_NEUTRAL_ZONES TC-collapse: all 20 (TC, quintile)
-// cells cap at ±0.06 under opp-quintile semantics.
+// TC-collapsed neutral band for the score-gap line chart: the ±0.06 editorial
+// cap (PRESSURE_BIN_NEUTRAL_CAP), i.e. the widest band any (TC, quintile) cell
+// allows. Of the 20 per-cell bands in PRESSURE_BIN_SCORE_NEUTRAL_ZONES
+// (app/services/endgame_zones.py), 12 sit at the cap on both edges (all of
+// classical plus the Q0/Q4 extremes elsewhere); the other 8 are narrower on at
+// least one edge, by at most 0.022, which this one-band chart does not show.
 // Source: reports/benchmark/benchmarks-latest.md §3.3.3.
-// The PRESSURE_BIN_NEUTRAL_CAP = 0.06 fully dominates; raw IQR widths (0.166–0.370)
-// are swamped by the cap, so TC differences in the neutral band cannot be observed.
 export const PRESSURE_SCORE_GAP_NEUTRAL_MIN = -0.06;
 export const PRESSURE_SCORE_GAP_NEUTRAL_MAX = 0.06;
 

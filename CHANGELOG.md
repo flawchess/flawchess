@@ -47,6 +47,7 @@ in `YYYY-MM-DD` (Europe/Zurich).
 
 ### Fixed
 
+- Train: the streak counter's count-up no longer flickers one below your previous streak for a frame on a busy device.
 - Continuing as a guest with an expired saved guest session now starts a fresh guest session instead of sending you to the login page.
 - Opening insights no longer fail to load when you have played a line only from custom starting positions.
 - Library filters: the Tactic Depth summary is now highlighted only when you narrow the range, not at the default.

@@ -2681,7 +2681,7 @@ async def _apply_bestmove_submit(
     for e in body.evals:
         if not (0 <= e.ply < game_length):
             raise HTTPException(
-                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
                 detail="Unknown or foreign ply",
             )
 

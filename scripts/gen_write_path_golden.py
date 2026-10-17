@@ -127,7 +127,9 @@ async def regenerate() -> dict[str, dict[str, dict[str, Any]]]:
 
     run_db_name = f"flawchess_test_gengolden_{os.getpid()}"
     _log(f"Cloning ephemeral run DB {run_db_name!r} from the template...")
-    await _create_run_db(maint, run_db_name)
+    # Hold the keeper connection for the whole run so a concurrent pytest
+    # session's orphan sweep never mistakes this DB for residue of a dead run.
+    keeper = await _create_run_db(maint, run_db_name)
 
     p = urllib.parse.urlparse(settings.DATABASE_URL_TEST)
     run_db_url = (
@@ -153,6 +155,7 @@ async def regenerate() -> dict[str, dict[str, dict[str, Any]]]:
         # defers actual connection teardown to GC finalizers that fire after the
         # loop closes, which raises a benign-but-noisy MissingGreenlet warning.
         await engine.dispose()
+        await keeper.close()
         _log(f"Dropping ephemeral run DB {run_db_name!r}...")
         await _drop_run_db(maint, run_db_name)
 
