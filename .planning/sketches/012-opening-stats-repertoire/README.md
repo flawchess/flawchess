@@ -58,7 +58,7 @@ Round 2 (owner feedback, 2026-10-17):
   white/black swatch) is the average game for that colour, the ±0.30 band sits around it, and the verdict
   dot and 99% test use `eval − baseline`. A faint dashed tick marks 0 (equal). Labels keep the raw eval.
   Rationale: benchmark §2.1 measured the ±0.30 IQR on baseline-centred data, and anchoring on 0 turns
-  colour into a verdict (owner data: 5 of 27 repertoire verdicts change, all colour-driven). Reverses
+  colour into a verdict (owner data: 5 of 25 repertoire verdicts change, all colour-driven). Reverses
   the "H0 = 0 cp, baseline is only a tick" choice in `opening_insights_constants.py` / `stats_service.py`.
 - **p-values in the popover footers** (greyed stats line): score vs 50% (findings use the backend Wilson
   p), eval vs the colour baseline, next to the 99% CI and n. Finding cards' score gets the same popover.
