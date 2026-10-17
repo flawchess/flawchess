@@ -88,6 +88,10 @@ export interface WDLStats {
   avg_eval_pawns?: number | null;
   eval_ci_low_pawns?: number | null;
   eval_ci_high_pawns?: number | null;
+  // 99% CI on the mean MG-entry eval (Phase 242, D-00). eval_p_value / eval_confidence
+  // test the mean against the request colour's baseline (+0.25 White, -0.25 Black).
+  eval_ci99_low_pawns?: number | null;
+  eval_ci99_high_pawns?: number | null;
   eval_n: number;
   eval_p_value?: number | null;
   eval_confidence: 'low' | 'medium' | 'high';

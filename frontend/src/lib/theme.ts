@@ -313,6 +313,9 @@ export const GAUGE_NEUTRAL = 'oklch(0.55 0.18 260)';
 export const PERCENTILE_TRACK = 'oklch(1 0 0 / 0.07)';
 export const PERCENTILE_TYPICAL_BAND = 'oklch(1 0 0 / 0.13)';
 export const PERCENTILE_MEDIAN_TICK = 'oklch(1 0 0 / 0.35)';
+// Faint dashed "0 = equal" tick on baseline-centred eval verdict bars (Openings): the bar is
+// centred on the colour's average eval, so equal (0) sits off-centre and gets its own marker.
+export const VERDICT_ZERO_TICK = 'oklch(1 0 0 / 0.22)';
 
 // Library Stats tempo x phase heatmap: a cell is tinted
 // ZONE_SUCCESS / ZONE_DANGER by color-mix with transparent, only like the gap bars (gap
