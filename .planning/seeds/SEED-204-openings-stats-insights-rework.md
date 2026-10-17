@@ -34,8 +34,8 @@ gaps, Search-icon popover with a greyed stats footer, red/green only at 99% (D-1
   "why" that reads only the eval (hidden when unremarkable). No "your move / their move" badges.
 - **Repertoire table** replaces the 4 bookmark / most-played sections: bookmarks pinned, then most played,
   one table per colour. Columns: Opening (44px board, name without ECO, move line) · Games (count + last
-  played) · Results (WDL bar + score) · Eval after opening (compact signed value "+0.9" + verdict dot +
-  popover). No Trend column, no score bullet, no left spines, no coloured fonts, no CI whiskers. Rows
+  played) · Results (WDL bar) · Score (compact "56%" + verdict dot + popover) · Eval after opening (compact
+  signed value "+0.9" + verdict dot + popover). No Trend column, no score bullet, no left spines, no coloured fonts, no CI whiskers. Rows
   under 20 games are faded and never coloured.
 - **Duplicate rows collapse:** same colour + position (bookmark wins), and most-played rows with
   identical W/D/L and eval under two names (keep the deeper line). Owner data: "Caro-Kann: Advance,
@@ -91,7 +91,8 @@ gaps, Search-icon popover with a greyed stats footer, red/green only at 99% (D-1
   with a faint zero tick.
 - `ScoreChart`: optional weekly volume series; keep the multi-bookmark mode wherever else it is used, or
   retire it if this page was the only caller.
-- Phone layout: rows stack (name + eval top right, WDL bar with "N games · last played" below).
+- Phone layout: rows stack (name left; Score above Eval top right, each with dot + popover; WDL bar
+  with "N games · last played" full width below).
 - Testids and Umami events for the new controls (frontend/CLAUDE.md).
 
 ## Open for discuss-phase

@@ -51,6 +51,9 @@ Round 2 (owner feedback, 2026-10-17):
   shown only when the chart holds a single opening. Findings from older games get an "older games" chip and sort
   after current ones. Owner data: 6 of 9 White most-played rows are past (Queen's Gambit, 280 games, last played
   Oct 2023).
+- **Score column:** the score moves out of the Results cell into its own column, compact like the eval
+  (verdict dot + "56%" + popover). On phone, Score and Eval stack top right next to the opening name;
+  the WDL bar runs full width below with "N games · last played".
 - **Lighter table:** the eval column is a compact "+0.9" with a verdict dot (full bar only in the
   expanded row); the Trend sparkline column is gone (score-over-time chart stays in the expanded row).
   On phone the eval sits top right, next to the opening name.

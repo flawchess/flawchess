@@ -144,7 +144,6 @@ h2 { font-family: 'Fredoka', sans-serif; font-weight: 600; font-size: 18px; marg
 tr.open .chev { transform: rotate(180deg); }
 .res { display: flex; align-items: center; gap: 8px; min-width: 150px; }
 .res .wdl { flex: 1; }
-.res .s { font-weight: 700; width: 36px; text-align: right; }
 .cellgap { display: flex; flex-direction: column; gap: 6px; min-width: 140px; }
 .cellgap .verdict { justify-content: flex-start; font-size: 13px; }
 .cellgap .track { flex: none; width: 100%; }
@@ -181,14 +180,17 @@ tr.open .chev { transform: rotate(180deg); }
 .narrow .rep td.c-chev { display: none; }
 .narrow .rep tr.row.open { border-bottom-color: transparent; }
 .narrow .rep tr.row td { padding: 0; border: 0; }
-.narrow .rep tr.row td.c-opn { grid-column: 1; grid-row: 1; min-width: 0; }
+.narrow .rep tr.row td.c-opn { grid-column: 1; grid-row: 1 / 3; min-width: 0; }
 .narrow .rep tr.row td.c-n { display: none; }
 .res .ng { display: none; }
 .narrow .res .ng { display: inline; font-size: 12.5px; color: var(--faint); white-space: nowrap; }
 .narrow .rep td.c-n { grid-column: 2; text-align: right; color: var(--muted); font-size: 13px; align-self: center; }
-.narrow .rep td.c-res { grid-column: 1 / -1; }
-.narrow .rep td.c-ev { grid-column: 2; grid-row: 1; align-self: start; padding-top: 2px; }
-.narrow .rep td.c-ev .evc::before { content: 'Eval'; font-size: 12px; color: var(--faint); margin-right: 2px; }
+.narrow .rep td.c-res { grid-column: 1 / -1; grid-row: 3; }
+/* phone: Score above Eval in the right column, next to the opening name; WDL bar full width below */
+.narrow .rep td.c-sc { grid-column: 2; grid-row: 1; justify-self: end; padding-top: 2px; }
+.narrow .rep td.c-ev { grid-column: 2; grid-row: 2; justify-self: end; align-self: start; }
+.narrow .rep td.c-sc .evc::before { content: 'Score'; font-size: 12px; color: var(--faint); margin-right: 2px; display: inline-block; width: 34px; text-align: right; font-weight: 400; }
+.narrow .rep td.c-ev .evc::before { content: 'Eval'; font-size: 12px; color: var(--faint); margin-right: 2px; display: inline-block; width: 34px; text-align: right; font-weight: 400; }
 .narrow .cellgap { min-width: 0; gap: 4px; }
 .narrow .pinsep td { padding: 6px 12px; }
 .narrow .exp td { padding: 0 12px 16px !important; }
@@ -428,6 +430,10 @@ function evRel(r) {           // eval minus the colour baseline: what the band, 
   const b = EV_BASELINE[r.c];
   return { b, v: r.ev - b, ci99: r.ev99 ? [r.ev99[0] - b, r.ev99[1] - b] : null };
 }
+function scoreCompact(r) {   // same compact shape as the eval cell: verdict dot + value + popover
+  const st = scoreStats(r), v = verdict(st.v, SCORE_BAND, st.ci99, r.n);
+  return `<span class="evc"><i class="pill bg-${v}"></i><span class="num">${Math.round(r.score)}%</span>${infoIcon(scorePop(r, st))}</span>`;
+}
 function evCompact(r) {
   if (r.ev == null) return '<span class="faint">—</span>';
   const e = evRel(r), v = verdict(e.v, EV_BAND, e.ci99, r.n);
@@ -511,11 +517,12 @@ function rowHtml(r, i) {
       <div class="nm">${isBm ? ICON.bookmark : ''}${name}${isBm && !isCurrent(r) ? '<span class="chip">not played recently</span>' : ''}</div>
       <div class="mv">${r.moves}</div></div></div></td>
     <td class="c-n r num">${nf(r.n)}<span class="lp">${ago(r.lp)}</span></td>
-    <td class="c-res"><div class="res">${wdl(r.w, r.d, r.l)}<span class="s num">${Math.round(r.score)}%</span><span class="ng num">${nf(r.n)} games · ${ago(r.lp)}</span></div></td>
+    <td class="c-res"><div class="res">${wdl(r.w, r.d, r.l)}<span class="ng num">${nf(r.n)} games · ${ago(r.lp)}</span></div></td>
+    <td class="c-sc">${scoreCompact(r)}</td>
     <td class="c-ev">${evCompact(r)}</td>
     <td class="c-chev" style="width:24px">${ICON.chev}</td></tr>`;
   if (open) {
-    h += `<tr class="exp"><td colspan="5"><div class="expg">
+    h += `<tr class="exp"><td colspan="6"><div class="expg">
       <div class="bwrap">${board(r.fen, r.c === 'black', 200)}
         <div class="links"><button class="linkbtn">${ICON.moves} Moves</button><button class="linkbtn">${ICON.games} ${nf(r.n)} Games</button>
         <button class="linkbtn" data-bm="${key}">${isBm ? ICON.bookmarkOff + ' Remove bookmark' : ICON.bookmarkOff + ' Bookmark'}</button></div></div>
@@ -529,11 +536,11 @@ function rowHtml(r, i) {
 function renderStats() {
   const { pinned, rest: all } = repRows();
   const rest = all.filter(isCurrent), past = all.filter(r => !isCurrent(r));
-  let h = `<table class="rep"><thead><tr><th>Opening</th><th class="r">Games</th><th>Results</th><th>Eval after opening</th><th></th></tr></thead><tbody>`;
-  if (pinned.length) h += `<tr class="pinsep"><td colspan="5">Bookmarks</td></tr>` + pinned.map(rowHtml).join('');
-  h += `<tr class="pinsep"><td colspan="5">Most played</td></tr>` + rest.map(rowHtml).join('');
+  let h = `<table class="rep"><thead><tr><th>Opening</th><th class="r">Games</th><th>Results</th><th>Score</th><th>Eval after opening</th><th></th></tr></thead><tbody>`;
+  if (pinned.length) h += `<tr class="pinsep"><td colspan="6">Bookmarks</td></tr>` + pinned.map(rowHtml).join('');
+  h += `<tr class="pinsep"><td colspan="6">Most played</td></tr>` + rest.map(rowHtml).join('');
   if (past.length) {
-    h += `<tr class="pinsep pastsep" data-past aria-expanded="${pastOpen}"><td colspan="5">Played before (${past.length})<span class="h">not in your last 200 games as ${color === 'white' ? 'White' : 'Black'}</span>${ICON.chev}</td></tr>`;
+    h += `<tr class="pinsep pastsep" data-past aria-expanded="${pastOpen}"><td colspan="6">Played before (${past.length})<span class="h">not in your last 200 games as ${color === 'white' ? 'White' : 'Black'}</span>${ICON.chev}</td></tr>`;
     if (pastOpen) h += past.map(rowHtml).join('');
   }
   h += '</tbody></table>';
