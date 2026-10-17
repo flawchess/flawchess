@@ -1,4 +1,4 @@
-FROM node:24-alpine@sha256:ebfe2f90462722a7a4de65e91990e97fe0d401c70e0e762c5b53302f905ec1c1 AS builder
+FROM node:24-alpine@sha256:44fce696f38ba8c987c4db89954051000bbd05ffd8d8659ba15ed4a8602e937f AS builder
 WORKDIR /app
 # Build context is project root — copy package files from frontend/ subdirectory
 COPY frontend/package.json frontend/package-lock.json ./
@@ -10,6 +10,6 @@ ARG VITE_SENTRY_TRACES_SAMPLE_RATE
 ENV VITE_SENTRY_TRACES_SAMPLE_RATE=$VITE_SENTRY_TRACES_SAMPLE_RATE
 RUN npm run build
 
-FROM caddy:2.11.6@sha256:907efba736324e43f891ccb9d760fe5abe545e313419b3d18d63d4ec670dad8d AS runtime
+FROM caddy:2.11.7@sha256:685ae3d7c34d9b5f8caeddc5d14051db7bbd88ff1f5a2fa0c16bd8ca328fb7af AS runtime
 COPY --from=builder /app/dist /srv
 COPY deploy/Caddyfile /etc/caddy/Caddyfile
