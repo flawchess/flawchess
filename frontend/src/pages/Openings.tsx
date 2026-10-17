@@ -231,13 +231,12 @@ export function OpeningsPage() {
   });
 
   // Query-derivation cluster — board arrows (from next-move frequencies),
-  // per-bookmark phase-entry metrics, and per-bookmark WDL stats.
+  // per-bookmark phase-entry metrics, and the per-bookmark time series.
   // Extracted to useOpeningsChartData.ts.
   const {
     boardArrows,
     bookmarkPhaseEntryByHash,
     tsData,
-    wdlStatsMap,
   } = useOpeningsChartData({
     bookmarks,
     nextMovesData: nextMoves.data,
@@ -306,9 +305,6 @@ export function OpeningsPage() {
   // All handlers preserve original behavior exactly: chess.loadMoves → flip board
   // → update filters → navigate → scrollTo top.
   const {
-    handleOpenChartBookmarkGames,
-    handleOpenGames,
-    handleOpenMoves,
     handleOpenFinding,
     handleOpenFindingGames,
     handleLoadBookmark,
@@ -492,15 +488,11 @@ export function OpeningsPage() {
       color={statsColor}
       onColorChange={setStatsColor}
       bookmarks={bookmarks}
-      wdlStatsMap={wdlStatsMap}
       bookmarkPhaseEntryByHash={bookmarkPhaseEntryByHash}
       mostPlayedData={mostPlayedData}
       mostPlayedLoading={mostPlayedLoading}
       mostPlayedError={mostPlayedError}
       tsData={tsData}
-      onOpenMoves={handleOpenMoves}
-      onOpenChartBookmarkGames={handleOpenChartBookmarkGames}
-      onOpenGames={handleOpenGames}
       onOpenSuggestions={openSuggestions}
     />
   );
