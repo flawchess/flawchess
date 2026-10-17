@@ -12,14 +12,13 @@ Bucketing rule (thresholds + N gate shared with score_confidence.py):
   - n >= 10 and p_value < 0.05    -> "medium"
   - n >= 10 and p_value >= 0.05   -> "low"
 
-p_value is the **two-sided** Wald z-test p against H0: mean == 0 cp (engine-balanced).
-The function exposes a `baseline_cp` parameter for arithmetic generality, but no
-production caller passes a non-zero value: the per-color
-engine-asymmetry baseline is now a display annotation (a tick on the bullet chart
-at ±0.25 pawns by color, symmetric around white's first-move tempo) rather than
-the H0 reference. This means a user whose MG-entry mean equals the engine baseline
-reads as a real signal ("the user's positions sit at the typical asymmetry"), and
-the chart's center remains the color-agnostic 0 cp.
+p_value is the **two-sided** Wald z-test p against H0: mean == baseline_cp. The default
+baseline is 0 cp (engine-balanced), which endgame_service still uses. Openings
+surfaces must NOT call this primitive with the default: they test against the per-colour
+engine baseline (+25 cp White, -25 cp Black) through opening_eval.finalize_opening_eval
+(Phase 242, D-13; stats_service in plan 01, the other Openings services follow), so a
+user whose MG-entry mean equals the colour baseline reads as typical rather than as a
+signal. Never change the baseline_cp default: it would silently move the endgame verdict.
 
 Two-sided framing: both directions are independently meaningful — mean > 0 means
 the user systematically enters MG entry above engine-balanced, mean < 0 means
@@ -35,8 +34,9 @@ runtime dependency for sub-1% precision gain. This project lists 11 runtime deps
 critical (CLAUDE.md); adding scipy is out of scope. Using math.erfc is consistent with
 score_confidence.compute_confidence_bucket, which uses the same stdlib approximation.
 
-Callers: stats_service, openings_service, opening_insights_service and endgame_service
-  (MG-entry eval: eval_sum_mg, eval_sumsq_mg, eval_n_mg). Not exposed via routers directly.
+Callers: opening_eval.finalize_opening_eval (Openings surfaces, colour baseline),
+  endgame_service (endgame-entry eval, 0 cp) and, until their Phase 242 plans land,
+  openings_service / opening_insights_service. Not exposed via routers directly.
 """
 
 import math
@@ -59,12 +59,11 @@ def compute_eval_confidence_bucket(
     eval_sumsq: sum of squared eval_cp values (centipawns squared).
     n: count of games used in the mean (mate-excluded, NULL-excluded,
        outlier-trimmed |eval_cp| < 2000; trim happens upstream in SQL).
-    baseline_cp: H0 reference for the test. Default 0.0 (engine-balanced); no
-       production caller passes a non-zero value. The parameter is retained
-       for arithmetic generality and to keep the function self-contained.
-       The per-color engine-asymmetry baseline (symmetric ±25 cp around 0,
-       white's first-move tempo) is now a display tick on the bullet chart,
-       not the test H0.
+    baseline_cp: H0 reference for the test. Default 0.0 (engine-balanced), used by
+       endgame_service. Openings callers pass the per-colour engine baseline
+       (+25 cp White / -25 cp Black, symmetric around 0 = white's first-move tempo)
+       through opening_eval.finalize_opening_eval so the verdict is centred on what is
+       typical for the colour (D-13).
 
     Procedure:
       - n == 0 -> ("low", 1.0, 0.0, 0.0).

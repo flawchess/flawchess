@@ -1,7 +1,7 @@
 """Schema-additivity tests for OpeningWDL — the MG-entry eval fields are optional.
 
 Verifies that:
-- Existing callers with only the 14 legacy fields still parse correctly.
+- Payloads without the MG-entry eval fields (but with the required score / is_current fields) still parse correctly.
 - The 6 MG-entry eval fields parse when present.
 - Literal type for eval_confidence rejects invalid values.
 - Optional fields default correctly when omitted.
@@ -27,6 +27,13 @@ _LEGACY: dict[str, object] = dict(
     win_pct=66.7,
     draw_pct=13.3,
     loss_pct=20.0,
+    # Required since Phase 242: score verdict inputs (D-18) and the current/past flag (D-04).
+    score=0.733,
+    score_confidence="high",
+    score_p_value=0.004,
+    score_ci99_low=0.45,
+    score_ci99_high=0.9,
+    is_current=True,
 )
 
 

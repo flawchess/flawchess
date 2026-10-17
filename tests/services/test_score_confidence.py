@@ -28,6 +28,8 @@ from app.services.score_confidence import (
     compute_paired_difference_test,
     compute_score_confidence_from_mean,
     compute_score_difference_test,
+    score_verdict_fields,
+    wilson_bounds,
 )
 
 
@@ -608,3 +610,30 @@ class TestComputePairedDifferenceTest:
         assert (hi - lo) / 2.0 == pytest.approx(bessel_half_width, rel=1e-9)
         # Explicitly NOT the naive half-width:
         assert (hi - lo) / 2.0 != pytest.approx(naive_half_width, rel=1e-9)
+
+
+class TestScoreVerdictFields:
+    """score_verdict_fields: shared score + p + 99% Wilson CI helper (D-18)."""
+
+    def test_zero_games_returns_neutral_defaults(self) -> None:
+        fields = score_verdict_fields(0, 0, 0)
+        assert fields["score"] == 0.5
+        assert fields["score_confidence"] == "low"
+        assert fields["score_p_value"] == 1.0
+        assert (fields["score_ci99_low"], fields["score_ci99_high"]) == (0.5, 0.5)
+
+    def test_99_ci_contains_the_score_and_is_wider_than_95(self) -> None:
+        fields = score_verdict_fields(30, 5, 5)
+        n = 40
+        score = (30 + 0.5 * 5) / n
+        assert fields["score"] == pytest.approx(score)
+        assert fields["score_ci99_low"] <= score <= fields["score_ci99_high"]
+        lo95, hi95 = wilson_bounds(score, n)
+        assert fields["score_ci99_low"] < lo95
+        assert fields["score_ci99_high"] > hi95
+
+    def test_confidence_and_p_value_match_compute_confidence_bucket(self) -> None:
+        confidence, p_value, _se = compute_confidence_bucket(30, 5, 5, 40)
+        fields = score_verdict_fields(30, 5, 5)
+        assert fields["score_confidence"] == confidence
+        assert fields["score_p_value"] == pytest.approx(p_value)

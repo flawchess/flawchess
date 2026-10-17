@@ -79,9 +79,10 @@ OPENING_INSIGHTS_CI_Z_95: float = 1.96
 # Deduping at the game level cancels that artefact and yields a single
 # symmetric tempo baseline of about ±25 cp (white's first-move advantage).
 #
-# Used only as a visual reference tick on the MG-entry bullet chart, NOT as
-# the H0 reference for the z-test. The test runs against 0 cp (engine-balanced)
-# regardless of color.
+# On Openings surfaces these are the eval bar's centre AND the H0 reference of the
+# MG-entry eval z-test (Phase 242, D-13; applied by opening_eval.finalize_opening_eval),
+# so "typical for the colour" reads as neutral. The endgame-entry eval is unchanged:
+# endgame_service still tests against 0 cp.
 EVAL_BASELINE_PAWNS_WHITE: float = 0.25
 EVAL_BASELINE_PAWNS_BLACK: float = -0.25
 
