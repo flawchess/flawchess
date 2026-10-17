@@ -219,7 +219,9 @@ function OpeningEvalVerdictRow({ stats, evalBaselinePawns, filterColor }: Openin
     delta,
     band: EVAL_VERDICT_BAND,
     confidence: stats.eval_confidence,
-    games: stats.total,
+    // WR-02: the 20-game verdict floor applies to the eval sample (eval_n), not the game count:
+    // the mean excludes mate/NULL evals and trims outliers, so a 40-game opening can rest on 11 evals.
+    games: stats.eval_n,
   };
   const verdict = openingVerdict(verdictInput);
   const colourName = filterColor === 'black' ? 'Black' : 'White';

@@ -106,7 +106,9 @@ function EvalBar({ row, testId }: { row: RepertoireRowModel; testId: string }) {
     delta: row.avgEvalPawns - baseline,
     band: EVAL_VERDICT_BAND,
     confidence: row.evalConfidence,
-    games: row.games,
+    // WR-02: the 20-game verdict floor applies to the eval sample (eval_n), not the game count:
+    // the mean excludes mate/NULL evals and trims outliers, so a 40-game opening can rest on 11 evals.
+    games: row.evalN,
   };
   return (
     <VerdictBar

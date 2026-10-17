@@ -86,7 +86,14 @@ describe('PositionResultsPanel End Eval row', () => {
   });
 
   it('keeps the dot neutral below the 20-game floor even when outside the band and confident', () => {
-    renderPanel(stats({ total: 15 }));
+    renderPanel(stats({ total: 15, eval_n: 15 }));
+    const dot = screen.getByTestId('eval-verdict-position-dot');
+    expect(dot.style.backgroundColor).toBe(normalized(GAUGE_NEUTRAL));
+  });
+
+  it('applies the 20-game floor to the eval sample, not the game count (WR-02)', () => {
+    // 100 games but only 11 usable evals (mate/NULL excluded, outliers trimmed): no verdict colour.
+    renderPanel(stats({ total: 100, eval_n: 11 }));
     const dot = screen.getByTestId('eval-verdict-position-dot');
     expect(dot.style.backgroundColor).toBe(normalized(GAUGE_NEUTRAL));
   });

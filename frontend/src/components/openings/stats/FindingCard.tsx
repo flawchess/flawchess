@@ -132,7 +132,9 @@ function EvalLine({ finding, testId }: { finding: OpeningInsightFinding; testId:
     delta: avg - baseline,
     band: EVAL_VERDICT_BAND,
     confidence: finding.eval_confidence ?? 'low',
-    games: finding.n_games,
+    // WR-02: the 20-game verdict floor applies to the eval sample (eval_n), not the game count:
+    // the mean excludes mate/NULL evals and trims outliers, so a 40-game opening can rest on 11 evals.
+    games: evalN,
   };
   const verdict = openingVerdict(input);
   const why = whyLine(verdict, finding.color);

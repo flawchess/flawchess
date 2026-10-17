@@ -224,7 +224,7 @@ describe('RepertoireTable low-sample rows', () => {
   it('fades a 15-game row and keeps its dots neutral despite high confidence', () => {
     renderTable({
       currentRows: [
-        makeRow({ key: 'mpo-small', games: 15, score: 0.9, avgEvalPawns: 2.0 }),
+        makeRow({ key: 'mpo-small', games: 15, evalN: 15, score: 0.9, avgEvalPawns: 2.0 }),
         makeRow({ key: 'mpo-big', games: 100, score: 0.9, avgEvalPawns: 2.0 }),
       ],
     });
@@ -236,6 +236,15 @@ describe('RepertoireTable low-sample rows', () => {
     expect(screen.getByTestId('repertoire-row-0-eval').getAttribute('data-verdict')).toBe('typical');
     expect(screen.getByTestId('repertoire-row-1-score').getAttribute('data-verdict')).toBe('better');
     expect(screen.getByTestId('repertoire-row-1-eval').getAttribute('data-verdict')).toBe('better');
+  });
+
+  it('applies the 20-game floor to the eval sample, not the game count (WR-02)', () => {
+    // 100 games but only 11 usable evals: the score may colour, the eval dot must stay neutral.
+    renderTable({
+      currentRows: [makeRow({ key: 'mpo-thin-eval', games: 100, evalN: 11, score: 0.9, avgEvalPawns: 2.0 })],
+    });
+    expect(screen.getByTestId('repertoire-row-0-score').getAttribute('data-verdict')).toBe('better');
+    expect(screen.getByTestId('repertoire-row-0-eval').getAttribute('data-verdict')).toBe('typical');
   });
 
   it('centres the eval verdict on the colour baseline, not on zero', () => {
