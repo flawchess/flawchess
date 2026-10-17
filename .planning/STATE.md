@@ -2,19 +2,19 @@
 gsd_state_version: "1.0"
 milestone: v2.27
 current_phase: 241
+current_phase_name: Openings Stats + Insights Rework
 status: completed
-stopped_at: v2.25, v2.26 and v2.27 closed (phases 238–241 regrouped), no open milestone
-last_updated: "2026-10-17T12:00:00.000Z"
-state_head: d42a6ace0076266546af3da895c0bed86bad934e
+stopped_at: Phase 242 context gathered
+last_updated: "2026-10-17T14:35:43.123Z"
+state_head: 630fd5577e2b2760d27a992bec5971dcdcdc882e
 progress:
-  total_phases: 4
+  total_phases: 1
   completed_phases: 103
-  total_plans: 96
+  total_plans: 0
   completed_plans: 96
-  percent: 100
 milestone_name: Codebase Cleanup
 last_activity: 2026-10-17
-last_activity_desc: "Closed milestones v2.25 (238–239), v2.26 (240) and v2.27 (241) with tags and GitHub releases; v2.27 not yet deployed"
+last_activity_desc: Closed milestones v2.25 (238–239), v2.26 (240) and v2.27 (241) with tags and GitHub releases; v2.27 not yet deployed
 ---
 
 # Project State: FlawChess
@@ -1108,9 +1108,9 @@ Items acknowledged and deferred at **v1.29 milestone close on 2026-06-29** (user
 
 ## Session Continuity
 
-**Last session:** 2026-10-17T12:00:00.000Z
-**Stopped at:** v2.25, v2.26 and v2.27 closed (phases 238–241 regrouped), no open milestone
-**Resume file:** None (v2.27 closed; Phase 241 archived to .planning/milestones/v2.27-phases/)
+**Last session:** 2026-10-17T14:35:43.021Z
+**Stopped at:** Phase 242 context gathered
+**Resume file:** .planning/phases/242-openings-stats-insights-rework/242-CONTEXT.md
 
 Previous session note (Phase 227):
 refit (calibration parity holds). Verification passed 17/17; code review 0 blockers (WR-01 + 3 info fixed). Next:
