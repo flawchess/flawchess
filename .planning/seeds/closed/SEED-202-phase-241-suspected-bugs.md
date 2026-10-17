@@ -13,7 +13,7 @@ scope: small; a series of /gsd-quick tasks (items 3-8 fit one batch, e.g. /gsd-q
 
 All eight code fixes landed on `main` (three commits after de3a44df7). Open: the data repairs for items 1 and 2.
 
-- **Item 1, measured on prod.** Prod runs the drain (`docker-compose.yml` defaults `EVAL_AUTO_DRAIN_ENABLED` to true).
+- **Item 1, measured on prod.** Prod runs the drain (`../../../docker-compose.yml` defaults `EVAL_AUTO_DRAIN_ENABLED` to true).
   Footprint check: compare `game_positions.eval_cp` at ply n-1 with the n-th `[%eval]` in the PGN (lichess
   storage is post-move, so the n-th eval maps to row n-1). Non-guest lichess-eval games with blobs done: 97,174;
   **about 4,000 match less than 50%** (Jun 85, Jul 2,167, Aug 459, Sep 303, Oct 988 by `full_evals_completed_at`
@@ -30,7 +30,7 @@ All eight code fixes landed on `main` (three commits after de3a44df7). Open: the
   from the Stats chart instead of leaving the board where it was.
 - **Item 8.** Fixed with `(pointer: coarse)` as proposed. Still not verified on touchscreen hardware.
 
-Source: `.planning/milestones/v2.27-phases/241-codebase-cleanup/241-INVENTORY.md` §7.2 (13 entries, 11 distinct).
+Source: `../../milestones/v2.27-phases/241-codebase-cleanup/241-INVENTORY.md` §7.2 (13 entries, 11 distinct).
 Already fixed in v2.27: §7.2 #3 (NULL `sample_pair`, 07dd60fb4), #6 (Tactic Depth highlight), #8 (auth-route
 401 redirect). #10 was not a bug, #11 duplicates #9. The eight below were re-checked against code on
 2026-10-17 (after the Phase 241 renames, so line numbers are current); items 1 and 2 also against prod.
