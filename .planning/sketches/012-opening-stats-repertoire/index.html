@@ -198,7 +198,12 @@ tr.open .chev { transform: rotate(180deg); }
 .narrow .pinsep { display: block; }
 .narrow .exp td { padding: 0 0 16px; }
 .narrow .expg { grid-template-columns: 1fr; gap: 16px; }
-.narrow .expg .bwrap { max-width: 240px; }
+/* phone: Moves / Games / Bookmark links stack to the right of the board */
+.narrow .expg .bwrap { display: flex; gap: 16px; align-items: flex-start; }
+.narrow .expg .links { flex-direction: column; gap: 14px; margin-top: 4px; }
+.narrow .expg .links .linkbtn { white-space: nowrap; }
+.narrow .expg .bwrap .board { width: 168px !important; }   /* leaves room for the link column at 390px */
+.narrow .expg .bwrap .board i { font-size: 16px !important; }
 .narrow .res { min-width: 0; }
 
 /* ── Insights ── */
