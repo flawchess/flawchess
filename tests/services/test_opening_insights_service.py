@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import ctypes
 import datetime
+from collections.abc import Iterator
 from typing import Any, Literal
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -26,6 +27,7 @@ from app.schemas.opening_insights import (
 from app.services.opening_insights_constants import (
     OPENING_INSIGHTS_MIN_GAMES_PER_CANDIDATE as MIN_GAMES_PER_CANDIDATE,
 )
+from app.services.repertoire_recency import CurrentCutoffs
 from app.services.opening_insights_service import (
     WEAKNESS_CAP_PER_COLOR,
     STRENGTH_CAP_PER_COLOR,
@@ -39,6 +41,24 @@ from app.services.opening_insights_service import (
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
+# Fixed dev-clock instant handed to compute_insights (it never reads the wall clock).
+NOW_UTC = datetime.datetime(2026, 10, 17, 12, 0, tzinfo=datetime.timezone.utc)
+NO_CUTOFFS: CurrentCutoffs = CurrentCutoffs(white=None, black=None)
+
+
+@pytest.fixture(autouse=True)
+def mock_resolve_cutoffs() -> Iterator[AsyncMock]:
+    """Patch the cutoff lookup so tests need no DB; default is "everything current".
+
+    Tests that exercise the cutoff override ``.return_value``.
+    """
+    with patch(
+        "app.services.opening_insights_service.resolve_current_cutoffs",
+        new_callable=AsyncMock,
+    ) as mock_cutoffs:
+        mock_cutoffs.return_value = NO_CUTOFFS
+        yield mock_cutoffs
 
 
 def _make_row(
@@ -211,6 +231,7 @@ async def _run_compute(
             session=AsyncMock(),
             user_id=1,
             request=_default_request(color=color),
+            now_utc=NOW_UTC,
         )
 
 
@@ -377,6 +398,7 @@ async def test_cross_color_same_hash_kept_as_two_findings() -> None:
             session=AsyncMock(),
             user_id=1,
             request=_default_request(color="all"),
+            now_utc=NOW_UTC,
         )
 
     # Both sections should have one finding (cross-color dedup does NOT happen)
@@ -475,6 +497,7 @@ async def test_continuation_dedupe_collapses_chain_across_sections() -> None:
             session=AsyncMock(),
             user_id=1,
             request=_default_request(color="all"),
+            now_utc=NOW_UTC,
         )
 
     # Only the shortest finding (3.exd5) should survive — both deeper continuations
@@ -665,6 +688,7 @@ async def test_attribution_lineage_walk_to_parent_hash() -> None:
             session=AsyncMock(),
             user_id=1,
             request=_default_request(color="white"),
+            now_utc=NOW_UTC,
         )
 
     assert len(response.white_weaknesses) == 1
@@ -705,6 +729,7 @@ async def test_attribution_drops_finding_when_no_lineage_match() -> None:
             session=AsyncMock(),
             user_id=1,
             request=_default_request(color="white"),
+            now_utc=NOW_UTC,
         )
 
     # Finding is dropped — no sentinel '<unnamed line>' surfaced
@@ -1064,6 +1089,7 @@ async def test_color_optimization_skips_unused_color_query() -> None:
             session=AsyncMock(),
             user_id=1,
             request=_default_request(color="white"),
+            now_utc=NOW_UTC,
         )
 
         # Only ONE query_opening_transitions call (for white)
@@ -1125,6 +1151,7 @@ async def test_display_name_vs_prefix_when_attribution_parity_disagrees() -> Non
             session=AsyncMock(),
             user_id=1,
             request=_default_request(color="all"),
+            now_utc=NOW_UTC,
         )
 
     assert len(response.black_weaknesses) == 1
@@ -1263,6 +1290,7 @@ async def test_compute_insights_eval_fields_populated_when_metrics_present() -> 
             session=AsyncMock(),
             user_id=1,
             request=_default_request(color="white"),
+            now_utc=NOW_UTC,
         )
 
     assert len(response.white_weaknesses) == 1
@@ -1315,6 +1343,7 @@ async def test_compute_insights_eval_fields_stay_at_defaults_when_no_metrics() -
             session=AsyncMock(),
             user_id=1,
             request=_default_request(color="white"),
+            now_utc=NOW_UTC,
         )
 
     assert len(response.white_weaknesses) == 1
@@ -1523,6 +1552,7 @@ class TestComputeInsightsTranspositionWdl:
                 session=AsyncMock(),
                 user_id=1,
                 request=_default_request(color="all"),
+                now_utc=NOW_UTC,
             )
 
         # Two calls, one per color (sequential per CLAUDE.md AsyncSession rule).
@@ -1589,6 +1619,7 @@ class TestComputeInsightsTranspositionWdl:
                 session=AsyncMock(),
                 user_id=1,
                 request=_default_request(color="all"),
+                now_utc=NOW_UTC,
             )
 
         # Exactly one call: only the white color (black short-circuited).
@@ -1842,3 +1873,86 @@ def test_row_wrapping_drops_all_custom_group_without_raising() -> None:
     _, context_dict = mock_set_context.call_args_list[0].args
     assert context_dict["reason"] == "all_games_custom_start"
     assert context_dict["n"] == 50
+
+
+# ---------------------------------------------------------------------------
+# Phase 242: current-repertoire cutoff (is_current) on findings
+# ---------------------------------------------------------------------------
+
+# 60 games at score 0.30 -> Wilson p ~ 0.002: a high-confidence major weakness.
+HIGH_N, HIGH_W, HIGH_D, HIGH_L = 60, 12, 12, 36
+
+
+def _distinct_weakness_rows(
+    count: int,
+    *,
+    n: int = HIGH_N,
+    w: int = HIGH_W,
+    d: int = HIGH_D,
+    losses: int = HIGH_L,
+    last_played_at: datetime.datetime | None = None,
+    first_index: int = 1,
+) -> tuple[list[SimpleNamespace], dict[int, Opening]]:
+    """Weakness rows with distinct entry/resulting hashes and candidate moves.
+
+    Distinct moves and hashes keep _dedupe_continuations from collapsing them as one line.
+    """
+    indices = range(first_index, first_index + count)
+    rows = [
+        _make_row(
+            entry_hash=i,
+            move_san=f"M{i}",
+            resulting_full_hash=1000 + i,
+            entry_san_sequence=["e4"],
+            n=n,
+            w=w,
+            d=d,
+            losses=losses,
+            last_played_at=last_played_at,
+        )
+        for i in indices
+    ]
+    openings = {i: _make_opening(full_hash=i, name=f"Opening {i}", ply_count=2) for i in indices}
+    return rows, openings
+
+
+@pytest.mark.asyncio
+async def test_findings_carry_is_current_against_the_colour_cutoff(
+    mock_resolve_cutoffs: AsyncMock,
+) -> None:
+    """A finding last played before the colour's cutoff is not current; one after is."""
+    cutoff = datetime.datetime(2026, 6, 1, tzinfo=datetime.timezone.utc)
+    mock_resolve_cutoffs.return_value = CurrentCutoffs(white=cutoff, black=None)
+    old_rows, old_openings = _distinct_weakness_rows(
+        1, last_played_at=datetime.datetime(2026, 1, 1, tzinfo=datetime.timezone.utc), first_index=1
+    )
+    new_rows, new_openings = _distinct_weakness_rows(
+        1, last_played_at=datetime.datetime(2026, 9, 1, tzinfo=datetime.timezone.utc), first_index=2
+    )
+
+    response = await _run_compute(
+        rows=old_rows + new_rows,
+        openings_by_hash={**old_openings, **new_openings},
+        color="white",
+    )
+
+    by_move = {f.candidate_move_san: f for f in response.white_weaknesses}
+    assert by_move["M1"].is_current is False
+    assert by_move["M2"].is_current is True
+    assert response.current_cutoff_white == cutoff
+    assert response.current_cutoff_black is None
+
+
+@pytest.mark.asyncio
+async def test_cutoff_lookup_receives_now_utc_and_request_filters(
+    mock_resolve_cutoffs: AsyncMock,
+) -> None:
+    """D-02/D-03: the cutoff is computed with the dev-clock instant and the findings' filters."""
+    await _run_compute(rows=[], color="white")
+
+    mock_resolve_cutoffs.assert_awaited_once()
+    await_args = mock_resolve_cutoffs.await_args
+    assert await_args is not None
+    assert await_args.kwargs["now_utc"] == NOW_UTC
+    assert await_args.kwargs["opponent_type"] == "human"
+    assert await_args.args[2] == ["white"]

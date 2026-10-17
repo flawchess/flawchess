@@ -6,14 +6,19 @@ URL: POST /api/insights/openings
 
 from __future__ import annotations
 
+import datetime
 import uuid
+from collections.abc import Iterator
+from unittest.mock import AsyncMock, patch
 
 import httpx
 import pytest
 import pytest_asyncio
 from sqlalchemy.ext.asyncio import AsyncEngine
 
+from app.core.dev_clock import dev_now_utc
 from app.main import app
+from app.schemas.opening_insights import OpeningInsightsResponse
 
 OPENINGS_ENDPOINT = "/api/insights/openings"
 
@@ -151,6 +156,58 @@ async def test_post_openings_endpoint_filter_equivalence(
     assert resp1.status_code == 200
     assert resp2.status_code == 200
     assert resp1.json() == resp2.json()
+
+
+@pytest.fixture
+def pinned_now() -> Iterator[datetime.datetime]:
+    """Pin dev_now_utc through dependency_overrides; removed on teardown."""
+    pinned = datetime.datetime(2026, 3, 10, 12, 0, tzinfo=datetime.UTC)
+    app.dependency_overrides[dev_now_utc] = lambda: pinned
+    yield pinned
+    app.dependency_overrides.pop(dev_now_utc, None)
+
+
+@pytest.mark.asyncio
+async def test_post_openings_endpoint_passes_dev_clock_now_utc(
+    auth_headers: dict[str, str], pinned_now: datetime.datetime
+) -> None:
+    """The router hands the dev_now_utc instant to compute_insights (D-03)."""
+    with patch(
+        "app.routers.insights.compute_insights",
+        new=AsyncMock(return_value=OpeningInsightsResponse()),
+    ) as mock_compute:
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=app), base_url="http://test"
+        ) as client:
+            response = await client.post(OPENINGS_ENDPOINT, json={}, headers=auth_headers)
+
+    assert response.status_code == 200
+    mock_compute.assert_awaited_once()
+    assert mock_compute.await_args is not None
+    assert mock_compute.await_args.kwargs["now_utc"] == pinned_now
+
+
+@pytest.mark.asyncio
+async def test_post_openings_endpoint_response_carries_new_fields(
+    auth_headers: dict[str, str],
+) -> None:
+    """The response exposes the not-clear lists, their full counts and both cutoffs."""
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app), base_url="http://test"
+    ) as client:
+        response = await client.post(OPENINGS_ENDPOINT, json={}, headers=auth_headers)
+    assert response.status_code == 200
+    body = response.json()
+    for key in (
+        "white_weaknesses_not_clear",
+        "black_weaknesses_not_clear",
+        "white_strengths_not_clear",
+        "black_strengths_not_clear",
+    ):
+        assert body[key] == []
+        assert body[f"{key}_count"] == 0
+    assert body["current_cutoff_white"] is None
+    assert body["current_cutoff_black"] is None
 
 
 ENDGAME_INSIGHTS_ENDPOINT = "/api/insights/endgame"

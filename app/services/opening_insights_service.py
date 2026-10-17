@@ -46,6 +46,11 @@ from app.services.opening_insights_constants import (
     OPENING_INSIGHTS_MINOR_EFFECT as MINOR_EFFECT,
     OPENING_INSIGHTS_SCORE_PIVOT as SCORE_PIVOT,
 )
+from app.services.repertoire_recency import (
+    CurrentCutoffs,
+    is_current,
+    resolve_current_cutoffs,
+)
 from app.services.score_confidence import compute_confidence_bucket, wilson_bounds
 
 # ---------------------------------------------------------------------------
@@ -588,6 +593,9 @@ class _PipelineContext:
         Literal["white", "black"],
         dict[int, tuple[int, int, int, datetime.datetime | None]],
     ]
+    # Per-colour current-repertoire cutoff (D-02); filled by compute_insights before
+    # _build_sections so _row_to_finding can stamp is_current on each finding.
+    cutoffs: CurrentCutoffs = field(default_factory=lambda: CurrentCutoffs(white=None, black=None))
 
 
 async def _fetch_attribution_context(
@@ -739,8 +747,12 @@ def _row_to_finding(
     pos_wdl_for_color: dict[int, tuple[int, int, int, datetime.datetime | None]],
     openings_by_hash: dict[int, Opening],
     parents_by_hash: dict[int, Opening],
+    cutoff: datetime.datetime | None = None,
 ) -> tuple[OpeningInsightFinding, int, float] | None:
     """Convert one _TransitionRow into a (finding, ply_count, se) tuple, or None.
+
+    ``cutoff`` is the finding colour's current-repertoire cutoff; the finding's
+    ``is_current`` compares its last_played_at against it (D-04).
 
     Returns None when the row is neutral (classify miss) or when attribution
     fails at every depth (dropped). Mirrors the inner-loop body of the
@@ -832,6 +844,7 @@ def _row_to_finding(
         # query_opening_transitions when the resulting-position
         # lookup misses (matches the W/D/L fallback above).
         last_played_at=finding_last_played_at,
+        is_current=is_current(finding_last_played_at, cutoff),
     )
     return finding, opening_ply_count, se
 
@@ -877,6 +890,7 @@ async def _build_sections(
                 ctx.pos_wdl_by_color[color_literal],
                 ctx.openings_by_hash,
                 ctx.parents_by_hash,
+                ctx.cutoffs[color_literal],
             )
             if built is None:
                 continue
@@ -989,11 +1003,15 @@ async def compute_insights(
     session: AsyncSession,
     user_id: int,
     request: OpeningInsightsRequest,
+    *,
+    now_utc: datetime.datetime,
 ) -> OpeningInsightsResponse:
     """Compute four-section opening insights for one user under a filter set.
 
     Returns OpeningInsightsResponse with white_weaknesses, black_weaknesses,
     white_strengths, black_strengths — each capped per section.
+    ``now_utc`` (from the dev_now_utc dependency) anchors the current-repertoire
+    cutoff behind every finding's ``is_current`` (D-02, D-03).
     See module docstring for pipeline details.
     """
     from_date: datetime.date | None = request.from_date
@@ -1017,6 +1035,21 @@ async def compute_insights(
         pipeline_ctx = await _fetch_position_wdl_per_color(
             session, user_id, request, from_date, to_date, colors_to_query, attribution_ctx
         )
+        # D-02: the cutoff is computed under the SAME filters as the findings.
+        pipeline_ctx.cutoffs = await resolve_current_cutoffs(
+            session,
+            user_id,
+            colors_to_query,
+            now_utc=now_utc,
+            time_control=request.time_control,
+            platform=request.platform,
+            rated=request.rated,
+            opponent_type=request.opponent_type,
+            from_date=from_date,
+            to_date=to_date,
+            opponent_gap_min=request.opponent_gap_min,
+            opponent_gap_max=request.opponent_gap_max,
+        )
         final_sections = await _build_sections(
             session, user_id, request, from_date, to_date, colors_to_query, pipeline_ctx
         )
@@ -1025,6 +1058,8 @@ async def compute_insights(
             black_weaknesses=final_sections["black_weaknesses"],
             white_strengths=final_sections["white_strengths"],
             black_strengths=final_sections["black_strengths"],
+            current_cutoff_white=pipeline_ctx.cutoffs["white"],
+            current_cutoff_black=pipeline_ctx.cutoffs["black"],
             eval_baseline_pawns_white=EVAL_BASELINE_PAWNS_WHITE,
             eval_baseline_pawns_black=EVAL_BASELINE_PAWNS_BLACK,
         )
