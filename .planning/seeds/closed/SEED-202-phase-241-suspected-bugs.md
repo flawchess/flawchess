@@ -1,6 +1,6 @@
 ---
 id: SEED-202
-status: code-fixed; item 1 data repaired on prod; item 2 data repair pending owner decision
+status: resolved (code fixed, items 1 and 2 data repaired on prod 2026-10-17)
 planted: 2026-10-17
 planted_during: owner review of the Phase 241 audit's suspected bugs (INVENTORY §7.2), after the v2.25–v2.27 close
 trigger_when: next session; start with item 1 (tier-4 lichess flag). Owner is not yet sure how big a deal items 1 and 2 are, so measure impact before sizing the fix
@@ -12,7 +12,7 @@ scope: small; a series of /gsd-quick tasks (items 3-8 fit one batch, e.g. /gsd-q
 ## Resolution (2026-10-17)
 
 All eight code fixes landed on `main` (three commits after de3a44df7) and shipped in PR #427 (production 5672b194c).
-Item 1's data repair ran on prod on 2026-10-17. Open: the data repair for item 2.
+The data repairs for items 1 and 2 ran on prod on 2026-10-17. Nothing is open.
 
 - **Item 1, measured on prod.** Prod runs the drain (`../../../docker-compose.yml` defaults `EVAL_AUTO_DRAIN_ENABLED` to true).
   Footprint check: compare `game_positions.eval_cp` at ply n-1 with the n-th `[%eval]` in the PGN (lichess
@@ -33,8 +33,13 @@ Item 1's data repair ran on prod on 2026-10-17. Open: the data repair for item 2
   file, which `restore` needs, is `temp/lichess-provenance-fix/flagged-games.json` (gitignored, local only).
   We rejected switching lichess games to our own evals: it would mean recomputing about 109k analyzed games,
   because our per-ply evals are not stored for them.
-- **Item 2.** Normalization now writes `*_imported`. Existing 15,289 rows still need the repair described below
-  (owner sign-off: it changes what Library shows for unanalyzed games).
+- **Item 2.** Normalization now writes `*_imported`. No user-visible effect: Library and the analysis panel only
+  render accuracy when `analysis_state === 'analyzed'`. The leaked values were only being lost once our compute
+  overwrote them.
+- **Item 2 data repair: DONE (2026-10-17).** The owner ran one UPDATE on prod for `full_evals_completed_at IS NULL`
+  rows: `coalesce` the canonical values into `*_imported`, then NULL the canonical columns. 14,103 rows were
+  affected, fewer than the 15,289 measured that morning. The cause is not verified: the drain probably analyzed
+  some of them in between, and those platform values are lost. Afterwards 0 leaked rows remain.
 - **Item 7.** Removing the dead branch also makes a start-position bookmark (empty `moves`) load the start position
   from the Stats chart instead of leaving the board where it was.
 - **Item 8.** Fixed with `(pointer: coarse)` as proposed. Still not verified on touchscreen hardware.
