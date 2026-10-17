@@ -158,6 +158,9 @@ class TestWDLStats:
         assert response.stats.confidence in {"low", "medium", "high"}
         assert 0.0 <= response.stats.ci_low <= response.stats.score
         assert response.stats.score <= response.stats.ci_high <= 1.0
+        # The 99% CI (Score verdict popover footer) is strictly wider than the 95% one.
+        assert 0.0 <= response.stats.ci99_low < response.stats.ci_low
+        assert response.stats.ci_high < response.stats.ci99_high <= 1.0
 
     @pytest.mark.asyncio
     async def test_zero_matches(self, db_session: AsyncSession) -> None:

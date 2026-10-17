@@ -184,3 +184,29 @@ describe('PositionResultsPanel End Eval popover', () => {
     expect(screen.queryByTestId('eval-bullet-popover-trigger-footer')).toBeNull();
   });
 });
+
+describe('PositionResultsPanel Score popover', () => {
+  it('is the repertoire Score verdict popover with the 99% CI footer and a Last played bullet', () => {
+    renderPanel(
+      stats({
+        ci99_low: 0.33,
+        ci99_high: 0.72,
+        p_value: 0.7,
+        last_played_at: new Date().toISOString(),
+      }),
+    );
+    fireEvent.click(screen.getByTestId('score-bullet-popover-trigger'));
+    expect(screen.getByTestId('score-bullet-popover-trigger-footer').textContent).toBe(
+      '99% CI 33% to 72% · p = 0.700 vs 50% · n = 40',
+    );
+    expect(screen.getByTestId('score-bullet-popover-trigger-last-played').textContent).toMatch(
+      /^Last played: /,
+    );
+  });
+
+  it('omits the Last played bullet when no game has a date', () => {
+    renderPanel(stats({ last_played_at: null }));
+    fireEvent.click(screen.getByTestId('score-bullet-popover-trigger'));
+    expect(screen.queryByTestId('score-bullet-popover-trigger-last-played')).toBeNull();
+  });
+});

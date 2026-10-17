@@ -58,6 +58,9 @@ export interface EndgameCategoryStats {
   p_value: number;
   ci_low: number;
   ci_high: number;
+  // 99% Wilson CI on the score (Score verdict popover footer). Optional for stale caches.
+  ci99_low?: number;
+  ci99_high?: number;
   avg_eval_pawns?: number | null;
   eval_ci_low_pawns?: number | null;
   eval_ci_high_pawns?: number | null;

@@ -3,11 +3,13 @@ import { Cpu, Swords } from 'lucide-react';
 import type { ReactNode } from 'react';
 import { WDLChartRow } from '@/components/charts/WDLChartRow';
 import { MiniBulletChart } from '@/components/charts/MiniBulletChart';
-import { ScoreConfidencePopover } from '@/components/insights/ScoreConfidencePopover';
 import { EvalConfidencePopover } from '@/components/insights/EvalConfidencePopover';
 import { EvalCpuPlaceholder } from '@/components/stats/EvalCpuPlaceholder';
 import { VerdictTrack } from '@/components/openings/stats/VerdictBar';
-import { EvalVerdictPopover } from '@/components/openings/stats/VerdictPopover';
+import {
+  EvalVerdictPopover,
+  ScoreVerdictPopover,
+} from '@/components/openings/stats/VerdictPopover';
 import { Card, CardHeader, CardBody } from '@/components/ui/card';
 import { useReadiness } from '@/hooks/useReadiness';
 import { formatSignedEvalPawns } from '@/lib/clockFormat';
@@ -80,12 +82,13 @@ export function PositionResultsPanel({
 
   // Score verdict: same 99% / 20-game / +-5-point rule as the repertoire cards. The value text
   // takes the dot colour only for a better or worse verdict.
-  const scoreVerdict = openingVerdict({
+  const scoreVerdictInput = {
     delta: scoreDelta(stats.score),
     band: SCORE_VERDICT_BAND,
     confidence: stats.confidence,
     games: stats.total,
-  });
+  };
+  const scoreVerdict = openingVerdict(scoreVerdictInput);
   const scoreColor = verdictValueColor(scoreVerdict);
 
   // MG-entry eval row: 'opening-end' with data renders the baseline-centred VerdictBar (D-17);
@@ -152,14 +155,19 @@ export function PositionResultsPanel({
           >
             {scorePct}%
           </span>
-          <ScoreConfidencePopover
-            level={stats.confidence}
-            pValue={stats.p_value}
-            score={stats.score}
-            gameCount={stats.total}
-            lastPlayedAt={stats.last_played_at}
+          {/* Fixed trigger testId: it is the Umami popover-open target, keep its history. */}
+          <ScoreVerdictPopover
             testId="score-bullet-popover-trigger"
-            ariaLabel="Show score confidence details"
+            score={stats.score}
+            games={stats.total}
+            wins={stats.wins}
+            draws={stats.draws}
+            losses={stats.losses}
+            reason={openingVerdictReason(scoreVerdictInput)}
+            ci99Low={stats.ci99_low ?? null}
+            ci99High={stats.ci99_high ?? null}
+            pValue={stats.p_value}
+            lastPlayedAt={stats.last_played_at}
           />
         </span>
         <div className="min-w-0" data-testid="score-bullet-position">

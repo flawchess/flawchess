@@ -79,6 +79,9 @@ export interface WDLStats {
   p_value: number;
   ci_low: number;
   ci_high: number;
+  // 99% Wilson CI on the score (Score verdict popover footer). Optional for stale caches.
+  ci99_low?: number;
+  ci99_high?: number;
   // MG-entry eval fields. Optional because the
   // position + filter combo may have no MG-entry rows; the Moves-tab
   // "Results played as" section renders an em-dash in that case.

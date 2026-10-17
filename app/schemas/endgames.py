@@ -164,6 +164,8 @@ class EndgameCategoryStats(BaseModel):
     p_value: float = 1.0
     ci_low: float = 0.5
     ci_high: float = 0.5
+    ci99_low: float = 0.5
+    ci99_high: float = 0.5
     avg_eval_pawns: float | None = None
     eval_ci_low_pawns: float | None = None
     eval_ci_high_pawns: float | None = None

@@ -75,6 +75,9 @@ class WDLStats(BaseModel):
     p_value: float
     ci_low: float
     ci_high: float
+    # 99% Wilson CI on the score: the greyed footer of the Score verdict popover (Phase 242).
+    ci99_low: float = 0.5
+    ci99_high: float = 0.5
     # MAX(games.played_at) across the games contributing to these stats. Drives
     # the "Last played: <relative>" line in the WDL confidence tooltip. None
     # when no contributing game has a populated

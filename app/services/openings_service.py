@@ -28,6 +28,7 @@ from app.repositories.stats_repository import query_opening_phase_entry_metrics_
 from app.services.opening_eval import finalize_opening_eval, resolve_eval_baseline_pawns
 from app.services.repertoire_recency import is_current, resolve_current_cutoffs
 from app.services.score_confidence import (
+    VERDICT_CI_Z_99,
     compute_confidence_bucket,
     score_verdict_fields,
     wilson_bounds,
@@ -63,7 +64,7 @@ def _build_wdl_stats(
     total: int,
     last_played_at: datetime.datetime | None = None,
 ) -> WDLStats:
-    """Construct WDLStats with score, confidence, p_value, and Wilson 95% CI.
+    """Construct WDLStats with score, confidence, p_value, and Wilson 95% and 99% CIs.
 
     Computes score = (W + 0.5·D) / total via compute_confidence_bucket. The CI
     uses Wilson bounds (shared `wilson_bounds`): well-defined at p=0/1 and always
@@ -88,8 +89,10 @@ def _build_wdl_stats(
         score = 0.5
     if total > 0:
         ci_low, ci_high = wilson_bounds(score, total)
+        ci99_low, ci99_high = wilson_bounds(score, total, z=VERDICT_CI_Z_99)
     else:
         ci_low = ci_high = 0.5
+        ci99_low = ci99_high = 0.5
 
     return WDLStats(
         wins=wins,
@@ -104,6 +107,8 @@ def _build_wdl_stats(
         p_value=p_value,
         ci_low=ci_low,
         ci_high=ci_high,
+        ci99_low=ci99_low,
+        ci99_high=ci99_high,
         last_played_at=last_played_at,
     )
 

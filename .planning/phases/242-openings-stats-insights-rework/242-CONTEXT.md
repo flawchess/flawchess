@@ -138,7 +138,8 @@ discuss-phase" and record defaults for the rest.
 - **D-29:** The Moves / Games "Results played as" card (shared `PositionResultsPanel`, so the Endgames Games
   subtab too) replaces the Score bullet chart with the verdict track (same 99% / 20-game / +-5-point rule).
   The opening-end End Eval row moves its label, value and popover into the left cell beside its track, the
-  same layout as Score. The score popover stays `ScoreConfidencePopover`.
+  same layout as Score. The Score popover is the repertoire `ScoreVerdictPopover` with an extra "Last played"
+  bullet; `WDLStats` (and `EndgameCategoryStats`) gain `ci99_low` / `ci99_high` for its 99% CI footer.
 
 </decisions>
 

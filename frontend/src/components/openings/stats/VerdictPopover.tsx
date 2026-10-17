@@ -9,6 +9,7 @@
 import { MetricInfoPopover } from '@/components/ui/metric-info-popover';
 import { COPY_CHANCE, formatPValue } from '@/components/endgames/stats/rankedMetrics';
 import { formatSignedGap } from '@/lib/gapBar';
+import { formatAbsoluteDate, formatRelativeDate } from '@/lib/relativeDate';
 import {
   EVAL_VERDICT_BAND,
   SCORE_VERDICT_BAND,
@@ -137,6 +138,8 @@ interface ScoreVerdictPopoverProps {
   ci99High: number | null;
   /** p-value of the score against 50%. */
   pValue: number | null;
+  /** MAX(games.played_at) (ISO 8601). Adds a "Last played" bullet; omitted when absent. */
+  lastPlayedAt?: string | null;
 }
 
 /** Greyed statistics line for the score: 99% CI as percentages, p-value vs 50%, n. */
@@ -166,6 +169,7 @@ export function ScoreVerdictPopover({
   ci99Low,
   ci99High,
   pValue,
+  lastPlayedAt,
 }: ScoreVerdictPopoverProps) {
   const typicalRange = `${formatScorePercent(0.5 - SCORE_VERDICT_BAND)} to ${formatScorePercent(0.5 + SCORE_VERDICT_BAND)}`;
   return (
@@ -183,6 +187,12 @@ export function ScoreVerdictPopover({
           <li>
             Typical: {typicalRange}. {SCORE_REASON_SENTENCE[reason]}
           </li>
+          {lastPlayedAt && (
+            <li data-testid={`${testId}-last-played`}>
+              Last played:{' '}
+              <span title={formatAbsoluteDate(lastPlayedAt)}>{formatRelativeDate(lastPlayedAt)}</span>
+            </li>
+          )}
         </ul>
         <hr className="border-background/25" />
         <p className="italic text-background/60" data-testid={`${testId}-footer`}>
